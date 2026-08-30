@@ -1,0 +1,1480 @@
+.onboarding-shell {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* 引导页专用窗口拖拽条：透明无底色，页面背景与氛围光晕直接透出，
+   不再出现与页面背景不一致的异色头部。双击最大化在 TSX 侧实现。 */
+.onboarding-shell .onboarding-drag-strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 20;
+  height: 34px;
+  -webkit-app-region: drag;
+}
+
+.onboarding-shell
+  :where(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    .ant-btn,
+    .ant-select,
+    .ant-input,
+    .ant-input-affix-wrapper
+  ) {
+  -webkit-app-region: no-drag;
+}
+
+/* 背景做一层非常克制的氛围光晕，替代过去纯色平板背景 —— 只在 shell 级别出现一次，
+   不会像卡片内的贴图那样重复到每一屏都很"塑料"。 */
+.onboarding-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      760px 480px at 14% -6%,
+      color-mix(in srgb, var(--primary) 10%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      620px 460px at 96% 110%,
+      color-mix(in srgb, var(--success) 8%, transparent),
+      transparent 62%
+    );
+}
+
+.onboarding-steps {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 54px 14px 18px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg-soft));
+  overflow: hidden;
+}
+
+.onboarding-steps-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  /* 让滚动条出现时步骤内容不会被遮挡 */
+  padding: 2px 2px 8px;
+  margin: 0 -2px 8px;
+  scrollbar-gutter: stable;
+}
+
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-bottom: 14px;
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.onboarding-brand img {
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #000 5%, transparent),
+    0 4px 12px color-mix(in srgb, #000 16%, transparent);
+}
+
+.onboarding-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  min-height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px 6px 4px 2px;
+  border-radius: 7px;
+  margin-bottom: 16px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 0.18s ease,
+    gap 0.18s ease,
+    transform 0.18s ease;
+}
+
+.onboarding-back svg {
+  transition: transform 0.18s ease;
+}
+
+.onboarding-back:not(:disabled):hover {
+  color: var(--text-strong);
+  gap: 9px;
+}
+
+.onboarding-back:not(:disabled):hover svg {
+  transform: translateX(-2px);
+}
+
+.onboarding-back:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.onboarding-progress-track {
+  position: relative;
+  height: 3px;
+  border-radius: 999px;
+  margin: 0 2px 16px;
+  background: color-mix(in srgb, var(--border-strong) 60%, transparent);
+  overflow: hidden;
+}
+
+.onboarding-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.onboarding-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: color 0.18s ease;
+}
+
+/* 连接线只画在两个 step 之间的空隙里（不贯穿整行），一小截、离 dot 有呼吸距离，
+   比之前贴着文字的通栏竖线干净。已完成路径用 success 色，強调"已经走过这一段"。 */
+.onboarding-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 100%;
+  width: 2px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 55%, transparent);
+  z-index: 0;
+}
+
+.onboarding-step.done:not(:last-child)::after {
+  background: color-mix(in srgb, var(--success) 65%, transparent);
+}
+
+.onboarding-step:hover:not(.active) {
+  color: var(--text-strong);
+}
+
+.onboarding-step:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+.onboarding-step-pill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.onboarding-step-dot {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.onboarding-step-label {
+  position: relative;
+  z-index: 1;
+}
+
+.onboarding-step.active {
+  color: var(--text-strong);
+  font-weight: 800;
+}
+
+.onboarding-step.active .onboarding-step-dot {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  transform: none;
+}
+
+.onboarding-step.done .onboarding-step-dot {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--success) 88%, var(--primary));
+  color: var(--primary-fg);
+}
+
+.onboarding-skip {
+  width: 100%;
+  min-height: 38px;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 9px 12px;
+  border-radius: 8px;
+  margin-top: auto;
+  text-align: center;
+  font-size: 13px;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
+}
+
+.onboarding-skip:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border-strong));
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  color: var(--text-strong);
+}
+
+.onboarding-main {
+  position: relative;
+  z-index: 30;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.onboarding-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 404px;
+  gap: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.onboarding-copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 58px clamp(28px, 3vw, 48px) 32px;
+  overflow-y: auto;
+}
+
+.onboarding-copy-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  flex: 1 1 auto;
+  overflow: visible;
+  padding: 0 0 40px;
+  box-sizing: border-box;
+  max-width: 960px;
+}
+
+.onboarding-copy h1 {
+  margin: 0 0 10px;
+  max-width: 820px;
+  color: var(--text-strong);
+  font-size: clamp(34px, 3vw, 40px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 5px 10px 5px 8px;
+  color: color-mix(in srgb, var(--primary) 92%, var(--text-strong));
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 11.5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.lead {
+  max-width: 720px;
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+  line-height: 1.7;
+  animation: riseIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 0.04s;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 6px 0 16px;
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.choice-card,
+.source-card,
+.prompt-list button {
+  position: relative;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--bg-soft));
+  box-shadow: none;
+  color: var(--text);
+  padding: 14px 15px;
+  min-height: 72px;
+  animation: cardIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.choice-grid > :nth-child(1),
+.source-list > :nth-child(1),
+.guide-panel > :nth-child(1),
+.prompt-list > :nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.choice-grid > :nth-child(2),
+.source-list > :nth-child(2),
+.guide-panel > :nth-child(2),
+.prompt-list > :nth-child(2) {
+  animation-delay: 55ms;
+}
+
+.choice-grid > :nth-child(3),
+.source-list > :nth-child(3),
+.guide-panel > :nth-child(3),
+.prompt-list > :nth-child(3) {
+  animation-delay: 110ms;
+}
+
+.choice-grid > :nth-child(4),
+.source-list > :nth-child(4),
+.guide-panel > :nth-child(4),
+.prompt-list > :nth-child(4) {
+  animation-delay: 165ms;
+}
+
+.choice-grid > :nth-child(5),
+.source-list > :nth-child(5),
+.guide-panel > :nth-child(5) {
+  animation-delay: 220ms;
+}
+
+.choice-card:hover,
+.source-card:not(:disabled):hover,
+.prompt-list button:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--primary) 6%, var(--panel));
+}
+
+.choice-card-mark {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: none;
+  transition: width 0.2s ease;
+}
+
+.choice-card strong,
+.source-card strong {
+  display: block;
+  margin: 22px 0 5px;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.source-card strong {
+  margin-top: 0;
+}
+
+.choice-card span,
+.source-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.choice-card.selected {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+}
+
+.choice-card.selected .choice-card-mark {
+  width: 40px;
+}
+
+/* 欢迎页用途选项卡：纯展示，不可点击 —— 关掉共享 .choice-card:hover 的可交互视觉 */
+.source-list {
+  display: grid;
+  gap: 10px;
+}
+
+.source-card {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 76px;
+}
+
+.source-card svg {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border-radius: 11px;
+  box-sizing: border-box;
+  color: color-mix(in srgb, var(--primary) 85%, var(--text));
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+}
+
+.source-card.recommended {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+}
+
+.source-card em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-inverse);
+  background: color-mix(in srgb, var(--warning) 88%, var(--primary));
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+
+.source-list-minimal {
+  gap: 0;
+  max-width: 760px;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.source-primary {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 0 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.source-primary > svg {
+  width: 48px;
+  height: 48px;
+  box-sizing: border-box;
+  padding: 11px;
+  border-radius: 50%;
+  color: var(--text-inverse);
+  background: var(--primary);
+}
+
+.source-primary-copy,
+.source-primary-title {
+  min-width: 0;
+}
+
+.source-primary-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+}
+
+.source-primary-title strong {
+  color: var(--text-strong);
+  font-size: 17px;
+}
+
+.source-primary-title em {
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.source-primary-copy > span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.source-primary .ant-btn {
+  min-width: 124px;
+}
+
+.source-row.source-card {
+  grid-template-columns: 40px minmax(0, 1fr) 18px;
+  min-height: 94px;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.source-row.source-card:last-of-type {
+  border-bottom: 0;
+}
+
+.source-row.source-card:hover {
+  transform: none;
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
+}
+
+.source-row.source-card strong {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.source-row.source-card > svg {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.source-row-arrow {
+  color: var(--text-muted);
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.source-skip {
+  margin-top: 26px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.source-skip:hover {
+  color: var(--text-strong);
+}
+
+/* source-card 禁用时置灰（本机 AI 工具未检测到 / Spark 账号模型开发中） */
+.source-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.local-cli-badge {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.local-cli-badge.checking {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.local-cli-badge.ok {
+  color: var(--primary-fg);
+  background: color-mix(in srgb, var(--success) 86%, var(--primary));
+}
+
+.local-cli-badge.no {
+  color: var(--danger);
+  background: var(--danger-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.notice-card,
+.test-output {
+  position: relative;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 90%, transparent);
+  padding: 14px 16px 14px 18px;
+  margin: 6px 0 16px;
+  color: var(--text);
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.notice-card::before,
+.test-output::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+// 嵌入态：AuthGate variant="embed" 的样式全部在 Auth.less 内置，
+// 这里只补一层外边距，让登录区与引导页其它内容拉开呼吸距离。
+.onboarding-auth-embed {
+  margin: var(--pad-sm) 0 var(--pad-xs);
+  max-width: 460px;
+}
+
+// 引导页的通用表单皮肤会再次装饰 antd 内层控件；认证表单已有自己的外框，
+// 在 embed 范围内清掉内层边框，避免输入框出现双层描边。
+.onboarding-copy-inner
+  .auth-page--embed
+  :where(.auth-input--flat, .captcha-btn-box)
+  :where(input, .ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.onboarding-copy-inner .auth-page--embed .auth-input--flat .ant-select {
+  min-height: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.onboarding-auth-embed + .button-row {
+  width: 100%;
+  margin-top: var(--pad-lg);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child::before,
+.onboarding-auth-embed + .button-row > .ant-btn:first-child::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child:hover {
+  color: var(--primary);
+  background: transparent;
+}
+
+.model-source-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin: 0 0 18px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.model-source-back:hover {
+  color: var(--primary);
+}
+
+.model-source-back:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.guide-panel {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 16px;
+}
+
+/* Skill / 工作流等教学页把卡片换成一条竖向时间线：图标节点 + 连接线，
+   比一排排孤立的方框更有叙事感，读起来也更像"一步步来"。 */
+.guide-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 12px 0 20px;
+}
+
+.guide-item:last-child {
+  padding-bottom: 2px;
+}
+
+.guide-item::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 42px;
+  bottom: -4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--border-strong) 65%, transparent);
+}
+
+.guide-item:last-child::before {
+  display: none;
+}
+
+.guide-item svg {
+  position: relative;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--primary) 82%, var(--text));
+  background: color-mix(in srgb, var(--primary) 11%, var(--panel));
+  box-shadow: none;
+}
+
+.guide-item strong,
+.guide-item span {
+  display: block;
+}
+
+.guide-item strong {
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  padding-top: 8px;
+}
+
+.guide-item span {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.guide-item code {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  color: var(--text-strong);
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+.guide-item .guide-prompt-example {
+  display: block;
+  margin: 8px 0 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
+  border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--border));
+  color: var(--text);
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.guide-item em {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.test-output {
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.6;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+  padding: 0;
+  padding-bottom: 16px;
+  background: transparent;
+}
+
+.onboarding-copy-inner > .button-row {
+  margin-bottom: 8px;
+  padding-bottom: 16px;
+  box-shadow: none;
+}
+
+.onboarding-card .ant-btn {
+  border-radius: 9px;
+  border-color: var(--border-strong);
+  background: var(--panel);
+  color: var(--text);
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+
+.onboarding-card .ant-btn:not(:disabled):hover {
+  transform: none;
+  border-color: var(--primary);
+  background: var(--hover);
+  color: var(--primary);
+}
+
+.onboarding-card .ant-btn:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+.onboarding-card .ant-btn-primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border: none;
+}
+
+.onboarding-card .ant-btn-primary:not(:disabled):hover {
+  background: var(--primary-hover);
+  color: var(--primary-fg);
+}
+
+.onboarding-card .ant-btn:disabled,
+.onboarding-card .ant-btn-disabled {
+  border-color: var(--border);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  opacity: 0.62;
+}
+
+.onboarding-copy-inner label {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.provider-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.provider-model-row :where(.ant-select, .ant-input, .ant-input-affix-wrapper) {
+  min-width: 0;
+}
+
+.provider-model-row .ant-select {
+  width: 100%;
+}
+
+.provider-model-row .ant-btn {
+  min-width: 88px;
+  height: auto;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.onboarding-copy-inner
+  :where(input, textarea, .ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
+  background: var(--panel) !important;
+  border-color: var(--border) !important;
+  color: var(--text-strong) !important;
+}
+
+.onboarding-copy-inner :where(.ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.onboarding-copy-inner :where(.ant-input, .ant-input-affix-wrapper, .ant-select-selector):focus,
+.onboarding-copy-inner :where(.ant-input-affix-wrapper, .ant-select-selector):focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.onboarding-copy-inner :where(input::placeholder, textarea::placeholder, .ant-input::placeholder) {
+  color: var(--text-faint) !important;
+}
+
+.onboarding-copy-inner :where(.ant-select-selection-item, .ant-select-selection-placeholder) {
+  color: var(--text-strong) !important;
+}
+
+.onboarding-copy-inner .ant-select {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  background: var(--panel) !important;
+  color: var(--text-strong) !important;
+  box-shadow: none !important;
+}
+
+.onboarding-copy-inner .ant-select:hover,
+.onboarding-copy-inner .ant-select:focus-within,
+.onboarding-copy-inner .ant-select.ant-select-open {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent) !important;
+}
+
+.onboarding-copy-inner .ant-select-content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  flex: 1;
+  color: var(--text-strong) !important;
+  background: transparent !important;
+  padding: 0 34px 0 12px;
+  pointer-events: none;
+}
+
+.onboarding-copy-inner .ant-select-input {
+  background: transparent !important;
+  color: var(--text-strong) !important;
+  caret-color: var(--primary);
+}
+
+.onboarding-copy-inner .ant-select-arrow {
+  color: var(--text-muted) !important;
+}
+
+.onboarding-copy-inner details {
+  margin: 2px 0 16px;
+  color: var(--text-muted);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-soft) 74%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 90%, transparent);
+  padding: 12px 13px;
+}
+
+.onboarding-copy-inner summary {
+  cursor: pointer;
+  color: var(--text-strong);
+  font-weight: 800;
+}
+
+.onboarding-copy-inner details[open] summary {
+  margin-bottom: 12px;
+}
+
+.prompt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.prompt-list button {
+  min-height: 38px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.welcome-use-cases {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin: 4px 0 20px;
+  border-top: 1px solid var(--border);
+}
+
+.welcome-use-case {
+  padding: 16px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.welcome-use-case strong,
+.welcome-use-case span {
+  display: block;
+}
+
+.welcome-use-case strong {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.welcome-use-case span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.welcome-start-button {
+  width: min(100%, 560px);
+  margin-top: 8px;
+  padding: 4px 0;
+}
+
+.onboarding-copy-inner textarea {
+  resize: vertical;
+  margin-bottom: 18px;
+  border-radius: 12px;
+}
+
+.onboarding-error {
+  margin-top: 16px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
+  animation: riseIn 0.3s ease both;
+}
+
+/* ───────────────────────── 右侧插画面板 ───────────────────────── */
+
+.onboarding-visual {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 92%, var(--primary) 3%),
+      var(--bg-soft)
+    ),
+    var(--bg-soft);
+  overflow: hidden;
+}
+
+.visual-stage {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 60px 28px 28px;
+}
+
+.visual-topline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.visual-preview {
+  position: relative;
+  aspect-ratio: auto;
+  height: clamp(280px, 52vh, 560px);
+  min-height: 0;
+  margin: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.visual-preview-inner {
+  position: absolute;
+  inset: 0;
+}
+
+.visual-poster {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 8px;
+}
+
+.visual-points {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.visual-points li {
+  position: relative;
+  padding: 12px 0 12px 16px;
+  border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.visual-points li:nth-child(1) {
+  animation-delay: 60ms;
+}
+
+.visual-points li:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.visual-points li:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+.visual-points li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 78%, var(--success));
+}
+
+.provider-select-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.provider-select-option > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.provider-select-option strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-select-option small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-select-dropdown:has(.provider-select-option) {
+  border: 1px solid var(--border);
+  background: var(--panel-elev) !important;
+  box-shadow: var(--shadow-lg);
+}
+
+.ant-select-dropdown:has(.provider-select-option) .ant-select-item-option {
+  color: var(--text) !important;
+}
+
+.ant-select-dropdown:has(.provider-select-option) .ant-select-item-option-active,
+.ant-select-dropdown:has(.provider-select-option) .ant-select-item-option-selected {
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-elev)) !important;
+}
+
+html[data-theme='dark'] .onboarding-shell,
+.app.theme-dark .onboarding-shell {
+  background: var(--bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eyebrow,
+  .onboarding-copy h1,
+  .lead,
+  .choice-card,
+  .source-card,
+  .prompt-list button,
+  .notice-card,
+  .test-output,
+  .visual-points li,
+  .onboarding-error {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .onboarding-card {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .onboarding-copy {
+    padding-inline: 30px;
+  }
+
+  .visual-stage {
+    padding-inline: 22px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .onboarding-shell {
+    grid-template-columns: 188px minmax(0, 1fr);
+  }
+
+  .onboarding-steps {
+    padding-inline: 10px;
+  }
+
+  .onboarding-card {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .onboarding-copy {
+    padding: 50px 24px 24px;
+  }
+
+  .onboarding-copy h1 {
+    font-size: 36px;
+  }
+
+  .visual-preview {
+    height: clamp(240px, 46vh, 430px);
+  }
+
+  .visual-points {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .onboarding-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-steps {
+    display: none;
+  }
+
+  .onboarding-main {
+    overflow-y: auto;
+  }
+
+  .onboarding-card {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100%;
+  }
+
+  .onboarding-visual {
+    min-height: 0;
+    order: -1;
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .visual-stage {
+    padding: 42px 18px 14px;
+    gap: 10px;
+  }
+
+  .visual-topline {
+    display: none;
+  }
+
+  .visual-preview {
+    height: clamp(150px, 24vh, 240px);
+    margin: 0;
+  }
+
+  .welcome-use-cases {
+    grid-template-columns: 1fr;
+  }
+
+  .source-primary {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .source-primary > svg {
+    width: 44px;
+    height: 44px;
+  }
+
+  .source-primary .ant-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .onboarding-copy {
+    padding: 24px 18px 30px;
+  }
+
+  .onboarding-copy h1 {
+    font-size: 36px;
+  }
+
+  .onboarding-copy-inner {
+    max-width: none;
+    padding-bottom: 34px;
+  }
+}
+
+@media (max-width: 720px) {
+  .onboarding-copy h1 {
+    font-size: 30px;
+    line-height: 1.12;
+  }
+
+  .lead {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .choice-grid,
+  .templates,
+  .prompt-list {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-model-row {
+    grid-template-columns: 1fr;
+  }
+
+  .button-row,
+  .onboarding-copy-inner > .button-row {
+    gap: 8px;
+  }
+
+  .button-row .ant-btn {
+    flex: 1 1 100%;
+  }
+}

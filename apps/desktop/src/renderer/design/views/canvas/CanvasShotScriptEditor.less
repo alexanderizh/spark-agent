@@ -1,0 +1,472 @@
+.canvas-storyboard-editor {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: clamp(250px, 22vw, 320px) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-sunken) 90%, #080a0d);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 4%, transparent);
+}
+
+.canvas-storyboard-shot-rail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 180px),
+    color-mix(in srgb, var(--panel) 96%, #0a0d12);
+}
+
+.canvas-storyboard-rail-head,
+.canvas-storyboard-rail-footer,
+.canvas-storyboard-inspector-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-storyboard-rail-head {
+  min-height: 64px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+}
+
+.canvas-storyboard-rail-head > div:first-child,
+.canvas-storyboard-current-title,
+.canvas-storyboard-section-heading,
+.canvas-storyboard-field-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.canvas-storyboard-rail-head strong,
+.canvas-storyboard-current-title strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.canvas-storyboard-rail-head span,
+.canvas-storyboard-rail-footer,
+.canvas-storyboard-current-title > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-storyboard-shot-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.canvas-storyboard-shot-card {
+  display: grid;
+  width: 100%;
+  min-height: 92px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: color-mix(in srgb, #ffffff 2.5%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.canvas-storyboard-shot-card:hover,
+.canvas-storyboard-shot-card:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 44%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+}
+
+.canvas-storyboard-shot-card.is-active {
+  border-color: color-mix(in srgb, var(--primary) 72%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, transparent), transparent 72%),
+    color-mix(in srgb, var(--panel-elev) 96%, #0b1018);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.canvas-storyboard-shot-number {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, #ffffff 7%, transparent);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.canvas-storyboard-shot-card.is-active .canvas-storyboard-shot-number {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.canvas-storyboard-shot-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-storyboard-shot-copy > strong,
+.canvas-storyboard-shot-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-storyboard-shot-copy > strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.canvas-storyboard-shot-copy > small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-storyboard-shot-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.canvas-storyboard-shot-meta em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.canvas-storyboard-rail-footer {
+  min-height: 46px;
+  padding: 6px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+}
+
+.canvas-storyboard-rail-footer > div,
+.canvas-storyboard-current-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-storyboard-inspector {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.canvas-storyboard-inspector-head {
+  min-height: 64px;
+  padding: 9px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 68%, transparent);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+}
+
+.canvas-storyboard-current-title {
+  gap: 2px;
+}
+
+.canvas-storyboard-current-title > span {
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.canvas-storyboard-section-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+}
+
+.canvas-storyboard-section-tabs > button {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.canvas-storyboard-section-tabs > button > svg {
+  flex: 0 0 auto;
+}
+
+.canvas-storyboard-section-tabs > button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.canvas-storyboard-section-tabs strong,
+.canvas-storyboard-section-tabs small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-storyboard-section-tabs strong {
+  font-size: 11px;
+}
+
+.canvas-storyboard-section-tabs small {
+  font-size: 9px;
+  opacity: 0.74;
+}
+
+.canvas-storyboard-section-tabs > button:hover,
+.canvas-storyboard-section-tabs > button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, #ffffff 5%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-storyboard-section-tabs > button.is-active {
+  border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-storyboard-inspector-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.canvas-storyboard-section-card {
+  width: min(1040px, 100%);
+  margin: 0 auto 12px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  border-radius: 13px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 3.5%, transparent), transparent 120px),
+    color-mix(in srgb, var(--panel) 96%, #0a0d12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.canvas-storyboard-section-heading {
+  gap: 3px;
+  margin-bottom: 14px;
+}
+
+.canvas-storyboard-section-heading strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.canvas-storyboard-section-heading span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-storyboard-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px 14px;
+}
+
+.canvas-storyboard-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-storyboard-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.canvas-storyboard-field-label {
+  min-height: 18px;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-storyboard-field-label strong {
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-storyboard-field-label small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-storyboard-field :where(.ant-input, .ant-input-affix-wrapper) {
+  min-height: 40px;
+}
+
+.canvas-storyboard-field textarea.ant-input {
+  line-height: 1.65;
+  resize: none;
+}
+
+.canvas-storyboard-character-picker {
+  display: flex;
+  min-height: 48px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, #ffffff 2%, transparent);
+}
+
+.canvas-storyboard-character-picker > button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.canvas-storyboard-character-picker > button:hover,
+.canvas-storyboard-character-picker > button:focus-visible,
+.canvas-storyboard-character-picker > button.is-active {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 46%, transparent);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-storyboard-character-picker > span {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-storyboard-prompt-note {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+
+.canvas-storyboard-prompt-note > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-storyboard-prompt-note strong {
+  color: var(--text-strong);
+  font-size: 11px;
+}
+
+.canvas-storyboard-prompt-note span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+@media (max-width: 980px) {
+  .canvas-storyboard-editor {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .canvas-storyboard-section-tabs small {
+    display: none;
+  }
+
+  .canvas-storyboard-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-storyboard-field.is-wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .canvas-storyboard-editor {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .canvas-storyboard-shot-rail {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  }
+
+  .canvas-storyboard-shot-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .canvas-storyboard-shot-card {
+    min-width: 230px;
+  }
+
+  .canvas-storyboard-section-tabs > button {
+    justify-content: center;
+  }
+
+  .canvas-storyboard-section-tabs > button > span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-storyboard-shot-card,
+  .canvas-storyboard-section-tabs > button {
+    transition: none;
+  }
+}

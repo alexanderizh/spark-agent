@@ -1,0 +1,660 @@
+/**
+ * git-panel —— 代码面板左侧栏 Git 管理面板样式。
+ *
+ * 复用 .code-viewer-panel 作用域内的 --cv-* design token，
+ * 深浅双主题由 [data-cv-theme='light'] 的变量覆盖自动生效，无需重复写两套。
+ */
+
+.gp-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+  color: var(--cv-text);
+  font-size: 12px;
+  user-select: none;
+}
+
+/* ---------- 标题行（高度对齐编辑器文件 tabs 行 .cv-filetabs 的 34px） ---------- */
+
+.gp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  flex: none;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--cv-border);
+}
+
+.gp-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--cv-text);
+}
+
+.gp-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gp-header-icon {
+  color: var(--cv-accent);
+}
+
+.gp-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 12px;
+  color: var(--cv-text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------- 加载骨架 ---------- */
+
+.gp-loading {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+}
+
+.gp-skeleton {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--cv-bg-3) 25%,
+    var(--cv-border-soft) 50%,
+    var(--cv-bg-3) 75%
+  );
+  background-size: 200% 100%;
+  animation: gp-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes gp-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------- 提交区 ---------- */
+
+.gp-commit-box {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 6px;
+}
+
+.gp-commit-input {
+  width: 100%;
+  resize: none;
+  background: var(--cv-bg);
+  border: 1px solid var(--cv-border-soft);
+  border-radius: 4px;
+  color: var(--cv-text);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 6px 8px;
+  outline: none;
+  font-family: inherit;
+  user-select: text;
+
+  &::placeholder {
+    color: var(--cv-text-faint);
+  }
+
+  &:focus {
+    border-color: var(--cv-accent);
+  }
+}
+
+.gp-commit-actions {
+  display: flex;
+}
+
+.gp-commit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  background: var(--cv-accent);
+  color: var(--cv-accent-fg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  &:disabled {
+    background: var(--cv-bg-3);
+    color: var(--cv-text-faint);
+    cursor: not-allowed;
+  }
+}
+
+/* ---------- 滚动区与分组 ---------- */
+
+.gp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0 8px;
+}
+
+.gp-group {
+  margin-bottom: 4px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.gp-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  flex: none;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--cv-bg-3);
+  }
+
+  .gp-group-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  &:hover .gp-group-actions,
+  .gp-icon-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+.gp-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--cv-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.gp-chevron {
+  flex: none;
+  color: var(--cv-text-faint);
+  transition: transform 0.12s ease;
+}
+
+.gp-group.collapsed .gp-chevron {
+  transform: rotate(-90deg);
+}
+
+.gp-group-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+
+  &.ok {
+    background: var(--cv-green);
+  }
+
+  &.warn {
+    background: var(--cv-warn);
+  }
+
+  &.accent {
+    background: var(--cv-accent);
+  }
+
+  &.muted {
+    background: var(--cv-text-faint);
+  }
+}
+
+.gp-group-count {
+  flex: none;
+  color: var(--cv-text-faint);
+  font-weight: 500;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-unpushed-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--cv-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gp-group-body {
+  padding: 2px 4px 4px;
+}
+
+.gp-group-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--cv-text-faint);
+  font-size: 12px;
+}
+
+.gp-group-error {
+  padding: 4px 10px;
+  color: var(--cv-red);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* ---------- 文件行 ---------- */
+
+.gp-file-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--cv-bg-3);
+  }
+
+  /* hover 时行数统计让位给操作按钮 */
+  .gp-file-stats {
+    display: inline-flex;
+    flex: none;
+    gap: 4px;
+    font-family: var(--cv-mono);
+    font-size: 11px;
+  }
+
+  .gp-file-actions {
+    display: none;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &:hover .gp-file-stats {
+    display: none;
+  }
+
+  &:hover .gp-file-actions {
+    display: inline-flex;
+  }
+}
+
+.gp-file-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--cv-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &:hover:not(:disabled) .gp-file-name {
+    text-decoration: underline;
+  }
+}
+
+/* 文件类型 / 文件夹图标占位（VscodeFileIcon，与文件树同源） */
+.gp-file-type-icon {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+/* ---------- 树形视图目录行 ---------- */
+
+.gp-tree-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 26px;
+  padding-right: 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--cv-bg-3);
+  }
+
+  .gp-tree-dir-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.gp-tree-chevron {
+  flex: none;
+  color: var(--cv-text-faint);
+  transition: transform 0.12s ease;
+
+  &.open {
+    transform: rotate(90deg);
+  }
+}
+
+.gp-file-badge {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-family: var(--cv-mono);
+  font-size: 11px;
+  font-weight: 600;
+
+  &.add {
+    color: var(--cv-green);
+  }
+
+  &.del {
+    color: var(--cv-red);
+  }
+
+  &.mod {
+    color: var(--cv-warn);
+  }
+}
+
+.gp-file-dir {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cv-text-faint);
+  font-size: 11px;
+}
+
+.gp-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-add {
+  color: var(--cv-green);
+}
+
+.gp-del {
+  color: var(--cv-red);
+}
+
+/* ---------- 贮藏行 ---------- */
+
+.gp-stash-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.gp-stash-icon {
+  flex: none;
+  color: var(--cv-text-faint);
+}
+
+.gp-stash-time {
+  color: var(--cv-text-faint);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+/* ---------- 提交历史行 ---------- */
+
+.gp-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  color: var(--cv-text-dim);
+
+  &:hover {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+
+  &.unpushed {
+    color: var(--cv-text);
+  }
+}
+
+.gp-commit-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cv-text-faint);
+
+  &.unpushed {
+    background: var(--cv-accent);
+  }
+}
+
+.gp-commit-hash {
+  flex: none;
+  font-family: var(--cv-mono);
+  font-size: 11px;
+  color: var(--cv-text-faint);
+}
+
+.gp-commit-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.gp-commit-meta {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--cv-text-faint);
+}
+
+.gp-commit-up {
+  color: var(--cv-accent);
+  font-weight: 700;
+}
+
+.gp-commit-author {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-commit-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- foot 栏 ---------- */
+
+.gp-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 30px;
+  padding: 0 8px;
+  border-top: 1px solid var(--cv-border);
+  font-size: 12px;
+}
+
+.gp-footer-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  color: var(--cv-accent);
+
+  .truncate {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.gp-footer-sync {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--cv-text-faint);
+  font-variant-numeric: tabular-nums;
+
+  .has {
+    font-weight: 600;
+  }
+}
+
+.gp-ahead.has {
+  color: var(--cv-green);
+}
+
+.gp-behind.has {
+  color: var(--cv-warn);
+}
+
+.gp-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+
+  &.pending {
+    color: var(--cv-accent);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+/* ---------- 通用小元素 ---------- */
+
+.gp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+
+  &.danger:hover:not(:disabled) {
+    background: var(--cv-del-bg);
+    color: var(--cv-red);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--cv-accent);
+  }
+}
+
+.gp-spin {
+  animation: cv-spin 0.9s linear infinite;
+  display: inline-flex;
+}

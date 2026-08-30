@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="摩尔线程">
+  <defs>
+    <linearGradient id="mt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00a86b"/>
+      <stop offset="100%" stop-color="#3fcf8e"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#mt)"/>
+  <path d="M22 14h20a4 4 0 0 1 4 4v4h-8v-2c0-1-1-2-2-2H26c-1 0-2 1-2 2v4h8v8h-8v6c0 1 1 2 2 2h10c1 0 2-1 2-2v-2h8v4a4 4 0 0 1-4 4H22a4 4 0 0 1-4-4V18a4 4 0 0 1 4-4Z" fill="#fff" opacity=".95"/>
+</svg>

@@ -1,0 +1,213 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import readline from 'node:readline'
+
+const serverPath = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'quick-replies-mcp-server.mjs',
+)
+
+class RpcClient {
+  private nextId = 1
+  private readonly pending = new Map<number, (value: any) => void>()
+  private readonly rl: readline.Interface
+
+  constructor(private readonly child: ChildProcessWithoutNullStreams) {
+    this.rl = readline.createInterface({ input: child.stdout })
+    this.rl.on('line', (line) => {
+      const message = JSON.parse(line) as { id?: number; result?: unknown; error?: unknown }
+      if (message.id == null) return
+      this.pending.get(message.id)?.(message.result ?? { error: message.error })
+      this.pending.delete(message.id)
+    })
+  }
+
+  call(method: string, params?: unknown): Promise<any> {
+    const id = this.nextId++
+    return new Promise((resolve) => {
+      this.pending.set(id, resolve)
+      this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+    })
+  }
+
+  dispose(): void {
+    this.rl.close()
+  }
+}
+
+describe('quick-replies MCP server', () => {
+  let child: ChildProcessWithoutNullStreams
+  let rpc: RpcClient
+
+  beforeAll(async () => {
+    child = spawn(process.execPath, [serverPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }) as ChildProcessWithoutNullStreams
+    rpc = new RpcClient(child)
+    await rpc.call('initialize', {})
+  })
+
+  afterAll(() => {
+    rpc?.dispose()
+    child?.kill()
+  })
+
+  it('exposes one optional quick-reply tool with a four-item limit', async () => {
+    const response = await rpc.call('tools/list')
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'suggest_replies',
+          inputSchema: expect.objectContaining({
+            properties: expect.objectContaining({
+              replies: expect.objectContaining({ minItems: 1, maxItems: 4 }),
+            }),
+          }),
+        }),
+      ]),
+    )
+  })
+
+  it('trims, deduplicates, limits, and length-bounds replies', async () => {
+    const longReply =
+      '这是一个明显超过四十个字符限制因此必须由工具在返回之前进行截断处理的快捷回复文本'
+    const response = await rpc.call('tools/call', {
+      name: 'suggest_replies',
+      arguments: {
+        replies: [' 确认无误 ', '确认无误', longReply, '需要调整', '先暂停', '继续讨论'],
+      },
+    })
+    const payload = JSON.parse(response.content[0].text)
+
+    expect(payload.replies).toEqual(['确认无误', longReply.slice(0, 40), '需要调整', '先暂停'])
+  })
+
+  it('exposes a sandboxed HTML fragment renderer with bounded input', async () => {
+    const response = await rpc.call('tools/list')
+
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'render_html',
+          description: expect.stringContaining('HTTP(S)'),
+          inputSchema: expect.objectContaining({
+            required: ['html'],
+            properties: expect.objectContaining({
+              html: expect.objectContaining({
+                maxLength: 200_000,
+                description: expect.stringContaining('HTTP(S)'),
+              }),
+            }),
+          }),
+        }),
+      ]),
+    )
+  })
+
+  it('returns structured HTML metadata and warnings without accepting unsafe tags', async () => {
+    const accepted = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: {
+        html: '<section style="color: red">安全片段</section>',
+        title: '示例',
+        height: 240,
+      },
+    })
+    expect(JSON.parse(accepted.content[0].text)).toMatchObject({
+      accepted: true,
+      title: '示例',
+      height: 240,
+      html: '<section style="color: red">安全片段</section>',
+      warnings: [],
+    })
+
+    const remote = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: {
+        html: '<script src="https://cdn.example.com/chart.js"></script>',
+      },
+    })
+    expect(JSON.parse(remote.content[0].text)).toMatchObject({
+      accepted: true,
+      warnings: [expect.stringContaining('允许网络加载')],
+    })
+
+    const unsafe = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: { html: '<iframe src="https://example.com"></iframe>' },
+    })
+    expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('iframe'),
+    })
+  })
+
+  it('exposes a diagram renderer for markmap and mermaid with bounded source', async () => {
+    const response = await rpc.call('tools/list')
+
+    expect(response.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'render_diagram',
+          inputSchema: expect.objectContaining({
+            required: ['type', 'source'],
+            properties: expect.objectContaining({
+              type: expect.objectContaining({ enum: ['markmap', 'mermaid', 'mindmap'] }),
+              source: expect.objectContaining({ maxLength: 50_000 }),
+            }),
+          }),
+        }),
+      ]),
+    )
+  })
+
+  it('normalizes diagram payload, accepts mindmap alias, and rejects bad type or unsafe tags', async () => {
+    const accepted = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: {
+        type: 'mindmap',
+        source: '# 主题\n## 分支',
+        title: '大纲',
+        height: 360,
+      },
+    })
+    expect(JSON.parse(accepted.content[0].text)).toMatchObject({
+      accepted: true,
+      type: 'markmap',
+      title: '大纲',
+      height: 360,
+      source: '# 主题\n## 分支',
+      warnings: [],
+    })
+
+    const mermaidOk = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'mermaid', source: 'flowchart TD\n  A --> B' },
+    })
+    expect(JSON.parse(mermaidOk.content[0].text)).toMatchObject({
+      accepted: true,
+      type: 'mermaid',
+      title: '图表',
+    })
+
+    const badType = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'graphviz', source: 'digraph {}' },
+    })
+    expect(JSON.parse(badType.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('type'),
+    })
+
+    const unsafe = await rpc.call('tools/call', {
+      name: 'render_diagram',
+      arguments: { type: 'mermaid', source: 'flowchart TD\n<iframe></iframe>' },
+    })
+    expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
+      accepted: false,
+      reason: expect.stringContaining('iframe'),
+    })
+  })
+})

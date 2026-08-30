@@ -1,0 +1,443 @@
+/* SubAppsView — 子应用管理主视图样式
+ * 设计语言与 ScheduledTasksView 一致：极简工具风，CSS 变量跟随全局主题。
+ */
+
+.sub-apps-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  /* 与头部拖拽条（--bg-soft）及其他管理页（AgentsView）保持同色，避免内容区暗一档 */
+  background: var(--bg-soft);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.sa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--divider, var(--border));
+}
+
+.sa-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-strong, var(--text));
+  }
+}
+
+.sa-count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-muted, var(--text));
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+}
+
+.sa-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sa-search {
+  width: 220px;
+}
+
+.sa-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ─── Body / grid ─────────────────────────────────────────────────────────── */
+
+.sa-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.sa-loading,
+.sa-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+}
+
+.sa-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--danger, #ef4444);
+  background: var(--danger-bg, rgb(239 68 68 / 10%));
+}
+
+.sa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+/* ─── 卡片 ────────────────────────────────────────────────────────────────── */
+
+.sa-card {
+  --sa-accent: var(--primary);
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 188px;
+  padding: 16px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-top: 2px solid var(--sa-accent);
+  border-radius: var(--r-lg, 12px);
+  background: var(--panel);
+  box-shadow: var(--shadow-xs, 0 1px 2px rgb(0 0 0 / 4%));
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--sa-accent) 72%, var(--border-strong, var(--border)));
+    box-shadow: var(--shadow-sm, 0 4px 16px rgb(0 0 0 / 8%));
+  }
+
+  &:focus-within {
+    border-color: var(--sa-accent);
+  }
+}
+
+.sa-card-panel {
+  --sa-accent: var(--info, #3b82f6);
+}
+
+.sa-card-overlay {
+  --sa-accent: var(--warning, #f59e0b);
+}
+
+.sa-card-global-window {
+  --sa-accent: var(--danger, #ef4444);
+}
+
+.sa-card-desktop-pet {
+  --sa-accent: var(--success, #10b981);
+}
+
+.sa-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sa-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 9px;
+  font-size: 18px;
+  color: var(--sa-accent);
+  border: 1px solid color-mix(in srgb, var(--sa-accent) 22%, var(--border));
+  background: color-mix(in srgb, var(--sa-accent) 12%, var(--panel));
+  overflow: hidden;
+
+  svg {
+    display: block;
+    flex: none;
+  }
+}
+
+.sa-card-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sa-card-name {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong, var(--text));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sa-card-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 1.5em;
+  color: var(--text-muted, var(--text));
+}
+
+.sa-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-faint, var(--text-muted, var(--text)));
+}
+
+.sa-surface-tag {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--sa-accent) 20%, var(--border));
+  border-radius: 6px;
+  color: var(--text-muted, var(--text));
+  background: color-mix(in srgb, var(--sa-accent) 7%, var(--panel));
+}
+
+.sa-updated {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sa-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--divider, var(--border));
+}
+
+.sa-card-action-main,
+.sa-card-action-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sa-card-action-secondary {
+  margin-left: auto;
+}
+
+/* 更多操作菜单项：图标与文字垂直对齐，仿照 agents/context menu 样式 */
+.sa-card-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* ─── 版本历史抽屉 ────────────────────────────────────────────────────────── */
+
+.sa-drawer-loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.sa-release-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sa-release-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border, rgb(128 128 128 / 18%));
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.sa-release-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.sa-release-current {
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+}
+
+.sa-release-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sa-release-version {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sa-release-time {
+  font-size: 12px;
+  color: var(--text-faint, var(--text-muted, var(--text)));
+}
+
+/* ─── Agent 创建引导 ──────────────────────────────────────────────────────── */
+
+.sa-guide {
+  font-size: 13.5px;
+  line-height: 1.7;
+
+  p {
+    margin: 0 0 8px;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li + li {
+    margin-top: 4px;
+  }
+
+  code {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--bg-soft, var(--panel));
+    font-size: 12.5px;
+  }
+}
+
+/* ─── 应用图标选择器 ─────────────────────────────────────────────────────── */
+
+.sa-icon-editor {
+  p {
+    margin: 0 0 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-muted, var(--text));
+  }
+}
+
+.sa-icon-picker {
+  display: grid;
+  // 受控图标数量多（40+），列数随弹窗宽度自适应，窄窗口自动降列；
+  // 整体限高滚动，避免撑爆小屏幕上的 Modal。
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 8px;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.sa-icon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-height: 76px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 10px;
+  color: var(--text-muted, var(--text));
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary) 52%, var(--border-strong, var(--border)));
+    color: var(--text-strong, var(--text));
+    background: color-mix(in srgb, var(--primary) 7%, var(--panel));
+  }
+
+  &.is-selected {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.55;
+  }
+}
+
+.sa-icon-option-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+
+  svg {
+    display: block;
+  }
+}
+
+/* ─── macOS 窗口拖拽 ───────────────────────────────────────────────────────── */
+
+/* App.tsx 对 sub-apps 视图跳过公用 MacWindowDragHeader，由本页头部整条承担
+   系统窗口拖拽与双击最大化，省出一条 30px 的独立拖拽条。
+   app-region 不按继承生效：可交互元素必须显式 no-drag，否则点击被拖拽吞掉。 */
+.platform-darwin .sub-apps-view .sa-header {
+  -webkit-app-region: drag;
+
+  .sa-search,
+  .sa-archived-toggle,
+  button {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* ─── 响应式：窄面板 ─────────────────────────────────────────────────────── */
+
+@media (width <= 760px) {
+  .sa-search {
+    width: 160px;
+  }
+
+  .sa-grid {
+    grid-template-columns: 1fr;
+  }
+}

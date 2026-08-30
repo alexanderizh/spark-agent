@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "lockedSdkVersion": "0.149.0",
+  "minimumRuntimeVersion": "0.144.5",
+  "testedRuntimeVersions": [
+    {
+      "version": "0.144.5",
+      "support": "minimum",
+      "evidence": "Official generate-ts schema contains Spark's required contracts; isolated two-turn App Server smoke reused one process and a loaded thread."
+    },
+    {
+      "version": "0.149.0",
+      "support": "locked",
+      "evidence": "Current packaged SDK/runtime version; two-turn App Server smoke passed and protocol drift is checked in CI."
+    }
+  ],
+  "requiredRequests": [
+    "initialize",
+    "thread/start",
+    "thread/resume",
+    "thread/compact/start",
+    "turn/start",
+    "turn/steer",
+    "turn/interrupt"
+  ],
+  "requiredNotifications": [
+    "error",
+    "thread/tokenUsage/updated",
+    "turn/started",
+    "turn/completed",
+    "item/started",
+    "item/completed",
+    "item/agentMessage/delta",
+    "item/reasoning/textDelta",
+    "item/commandExecution/outputDelta"
+  ],
+  "requiredTurnStartFields": [
+    "threadId",
+    "clientUserMessageId",
+    "input",
+    "approvalPolicy",
+    "approvalsReviewer",
+    "sandboxPolicy",
+    "effort"
+  ],
+  "requiredThreadFields": [
+    "cwd",
+    "model",
+    "approvalPolicy",
+    "approvalsReviewer",
+    "sandbox",
+    "config"
+  ],
+  "requiredSandboxVariants": ["dangerFullAccess", "readOnly", "workspaceWrite"]
+}

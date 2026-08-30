@@ -1,0 +1,485 @@
+/**
+ * videoProcessHandler — 视频处理操作分派器
+ *
+ * 把通用的 VideoProcessRequest 按 operation 字段分派到 FfmpegRunner 的具体方法。
+ * 从 ipc/index.ts 抽离，避免 IPC 注册文件过长（单文件 ≤3000 行规范）。
+ *
+ * 安全：所有从渲染进程传入的文件路径（input/outputPath/logoPath/srtPath/additionalInputs）
+ * 在 dispatch 入口处经过 assertPathAllowed 白名单校验，防止任意文件读写。
+ * 白名单复用 SafeFileProtocol.getSafeFileAllowedRoots()（userData/temp/workspace/canvas）。
+ */
+
+import { randomUUID } from 'node:crypto'
+import { join, resolve, relative, isAbsolute, sep } from 'node:path'
+import { app } from 'electron'
+import type { VideoProcessRequest, VideoProcessResponse } from '@spark/protocol'
+import {
+  probeVideo,
+  extractKeyframes,
+  extractFramesAtTimes,
+  generateThumbnail,
+  trimVideo,
+  trimAudio,
+  concatVideos,
+  segmentVideo,
+  transcodeVideo,
+  adjustSpeed,
+  adjustAudioSpeed,
+  reverseVideo,
+  cropVideo,
+  addWatermark,
+  burnSubtitle,
+  extractAudio,
+  audioExtForCodec,
+  ensureOutputDirectory,
+  type AudioExtractFormat,
+  type FfmpegProgress,
+  type KeyframeStrategy,
+  type TranscodeOpts,
+} from './FfmpegRunner.js'
+import {
+  COMPRESS_MAX_PERCENT,
+  COMPRESS_MIN_PERCENT,
+  computeEffectiveDisplaySize,
+  computeScaledEvenSize,
+  planCompression,
+  RESERVED_AUDIO_BITRATE_ARG,
+  SCALE_MAX_PERCENT,
+  SCALE_MIN_PERCENT,
+} from './videoScaleCompressMath.js'
+import { getSafeFileAllowedRoots } from './SafeFileProtocol.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('video-workbench')
+
+/** 视频产物落盘根目录：{userData}/.spark-artifacts/media/video-workbench/ */
+function getVideoArtifactDir(): string {
+  return join(app.getPath('userData'), '.spark-artifacts', 'media', 'video-workbench')
+}
+
+/** 返回路径是否位于指定根目录内；Windows 下路径比较不区分大小写。 */
+function isPathWithinRoot(target: string, root: string): boolean {
+  const targetPath = resolve(target)
+  const rootPath = resolve(root)
+  const compare = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value)
+  const relativePath = relative(compare(rootPath), compare(targetPath))
+  return (
+    relativePath === '' ||
+    (relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+  )
+}
+
+/** 统一保证视频产物的父目录存在，覆盖所有视频处理操作。 */
+function prepareOutputPath(outputPath: string): string {
+  ensureOutputDirectory(outputPath)
+  return outputPath
+}
+
+/** 缓存白名单根目录（启动后基本不变，避免每次 IPC 都查 DB） */
+let cachedAllowedRoots: string[] | null = null
+function getAllowedRoots(): string[] {
+  if (cachedAllowedRoots == null) {
+    cachedAllowedRoots = getSafeFileAllowedRoots()
+  }
+  return cachedAllowedRoots
+}
+
+/**
+ * 校验路径在白名单根目录内，防止任意文件读写。
+ *
+ * @param p 待校验的路径（绝对路径；相对路径拒绝）
+ * @param mode 'read' 读路径需在白名单内；'write' 写路径强制限定在视频产物目录内
+ * @throws 若路径不在允许范围内
+ */
+function assertPathAllowed(p: string, mode: 'read' | 'write'): void {
+  if (!p || typeof p !== 'string') {
+    throw new Error(`Invalid path: ${String(p)}`)
+  }
+  const abs = resolve(p)
+  if (!isAbsolute(abs)) {
+    throw new Error(`Path must be absolute: ${p}`)
+  }
+  // 写路径额外收紧：只允许写视频产物目录（防止覆盖用户文件）
+  if (mode === 'write') {
+    const artifactDir = resolve(getVideoArtifactDir())
+    // outputPath 可能是产物目录里的文件，检查前缀
+    const tempDir = resolve(app.getPath('temp'))
+    if (!isPathWithinRoot(abs, artifactDir) && !isPathWithinRoot(abs, tempDir)) {
+      throw new Error(`Write path outside allowed artifact directory: ${abs}`)
+    }
+    return
+  }
+  // 读路径：必须在任一白名单根目录下
+  const roots = getAllowedRoots()
+  const allowed = roots.some((root) => isPathWithinRoot(abs, root))
+  if (!allowed) {
+    throw new Error(`Path outside allowed roots: ${abs}`)
+  }
+}
+
+/** 生成产物绝对路径（带 uuid + 扩展名） */
+function makeOutputPath(ext: string): string {
+  return join(getVideoArtifactDir(), `${randomUUID()}.${ext}`)
+}
+
+/**
+ * 处理一个 VideoProcessRequest。
+ *
+ * @param req 操作请求
+ * @param onProgress 可选进度回调（probe 操作不会触发）
+ */
+export async function handleVideoProcess(
+  req: VideoProcessRequest,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<VideoProcessResponse> {
+  try {
+    const result = await dispatch(req, onProgress)
+    return { success: true, result }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error(`handleVideoProcess failed: ${message}`)
+    return { success: false, error: message }
+  }
+}
+
+async function dispatch(
+  req: VideoProcessRequest,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<unknown> {
+  const { operation, input, params } = req
+  const kind: 'video' | 'audio' = req.kind ?? 'video'
+  log.debug(
+    `dispatch operation=${operation} kind=${kind} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`,
+  )
+
+  // ── kind:'audio' 模式只允许纯音频语义，避免与视频专属操作混用 ──
+  const audioAllowedOps = new Set(['probe', 'trim', 'adjustSpeed'])
+  if (kind === 'audio' && !audioAllowedOps.has(operation)) {
+    throw new Error(
+      `音频模式不支持该操作: ${operation};仅允许 ${Array.from(audioAllowedOps).join('/')}`,
+    )
+  }
+
+  // ── 统一输入校验：路径白名单 + 数值范围 ──────────────────────────
+  assertPathAllowed(input, 'read')
+
+  // 校验所有可能的路径参数
+  const pathParams = ['outputPath', 'outputDir', 'logoPath', 'srtPath']
+  for (const key of pathParams) {
+    const v = params[key]
+    if (typeof v === 'string' && v.length > 0) {
+      assertPathAllowed(v, key === 'outputPath' || key === 'outputDir' ? 'write' : 'read')
+    }
+  }
+  // concat 的 additionalInputs 数组
+  if (operation === 'concat') {
+    const additional = params.additionalInputs
+    if (Array.isArray(additional)) {
+      if (additional.length > 50) {
+        throw new Error('concat 最多支持 50 个视频')
+      }
+      for (const f of additional) {
+        if (typeof f === 'string') assertPathAllowed(f, 'read')
+      }
+    }
+  }
+  // 数值范围校验
+  assertNumRange(params.startSec, 0, Number.MAX_SAFE_INTEGER, 'startSec')
+  assertNumRange(params.endSec, 0, Number.MAX_SAFE_INTEGER, 'endSec')
+  assertNumRange(params.segmentSec, 1, 86400, 'segmentSec')
+  assertNumRange(params.factor, 0.0625, 64, 'factor') // 1/16 ~ 64x
+  assertNumRange(params.threshold, 0.01, 0.99, 'threshold')
+  assertNumRange(params.maxFrames, 1, 200, 'maxFrames')
+  assertNumRange(params.intervalSec, 0.2, 3600, 'intervalSec')
+  assertNumRange(params.crf, 0, 51, 'crf')
+  assertNumRange(params.fps, 1, 120, 'fps')
+  assertNumRange(params.x, 0, 16384, 'crop x')
+  assertNumRange(params.y, 0, 16384, 'crop y')
+  assertNumRange(params.w, 2, 16384, 'crop w')
+  assertNumRange(params.h, 2, 16384, 'crop h')
+
+  switch (operation) {
+    // ── 探测（无进度）──────────────────────────────────────────────
+    case 'probe': {
+      return probeVideo(input)
+    }
+
+    // ── 关键帧提取 ──────────────────────────────────────────────────
+    case 'extractKeyframes': {
+      const strategy = (params.strategy as KeyframeStrategy) ?? 'scene'
+      const outputDir =
+        (params.outputDir as string) ?? join(getVideoArtifactDir(), `kf_${req.requestId}`)
+      return extractKeyframes(input, {
+        strategy,
+        threshold: asNumber(params.threshold),
+        intervalSec: asNumber(params.intervalSec),
+        maxFrames: asNumber(params.maxFrames, 20),
+        outputDir,
+        format: (params.format as 'jpg' | 'png') ?? 'jpg',
+        quality: asNumber(params.quality, 2),
+        onProgress,
+      })
+    }
+
+    // ── 指定时间点抽帧（手动标记）──────────────────────────────────
+    case 'extractFramesAtTimes': {
+      const times = (params.timesSec as number[]) ?? []
+      const outputDir =
+        (params.outputDir as string) ?? join(getVideoArtifactDir(), `manual_${req.requestId}`)
+      return extractFramesAtTimes(input, times, outputDir, {
+        format: (params.format as 'jpg' | 'png') ?? 'jpg',
+        quality: asNumber(params.quality, 2),
+        onProgress,
+      })
+    }
+
+    // ── 缩略图生成 ──────────────────────────────────────────────────
+    case 'generateThumbnail': {
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('jpg'))
+      return generateThumbnail(input, outputPath, {
+        atSec: asNumber(params.atSec, 1),
+        width: asNumber(params.width),
+      })
+    }
+
+    // ── 剪辑 ─────────────────────────────────────────────────────
+    case 'trim': {
+      const startSec = asNumber(params.startSec, 0)
+      const endSec = asNumber(params.endSec, 0)
+      if (startSec < 0) throw new Error('trim startSec 不能为负')
+      if (endSec <= startSec) throw new Error('trim endSec 必须大于 startSec')
+      if (kind === 'audio') {
+        // 纯音频模式输出扩展名按 probe 出的 audioCodec 推断；不可用时退回 m4a
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该文件没有音轨，无法截取音频')
+        if (endSec > (probe.durationSec ?? Number.MAX_SAFE_INTEGER) + 0.5) {
+          throw new Error(`trim endSec ${endSec}s 超出音频时长 ${probe.durationSec?.toFixed(2)}s`)
+        }
+        const ext = audioExtForCodec(probe.audioCodec)
+        const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+        return trimAudio(input, outputPath, {
+          startSec,
+          endSec,
+          onProgress,
+        })
+      }
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return trimVideo(input, outputPath, {
+        startSec,
+        endSec,
+        copy: params.copy !== false,
+        onProgress,
+      })
+    }
+
+    case 'concat': {
+      const inputs = [input, ...((params.additionalInputs as string[]) ?? [])]
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return concatVideos(inputs, outputPath, { onProgress })
+    }
+
+    case 'segment': {
+      const segSec = asNumber(params.segmentSec, 10)
+      const pattern = join(getVideoArtifactDir(), `seg_${req.requestId}_%03d.mp4`)
+      prepareOutputPath(pattern)
+      return segmentVideo(input, pattern, { segmentSec: segSec, onProgress })
+    }
+
+    // ── 转码 ─────────────────────────────────────────────────────
+    case 'transcode': {
+      const format = (params.format as TranscodeOpts['format']) ?? 'mp4'
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(format))
+      const opts: TranscodeOpts = {
+        format,
+        ...(params.videoCodec
+          ? { videoCodec: params.videoCodec as TranscodeOpts['videoCodec'] }
+          : {}),
+        ...(params.audioCodec
+          ? { audioCodec: params.audioCodec as TranscodeOpts['audioCodec'] }
+          : {}),
+        ...(params.resolution ? { resolution: params.resolution as { w: number; h: number } } : {}),
+        ...(params.bitrate ? { bitrate: params.bitrate as string } : {}),
+        ...(params.crf != null ? { crf: asNumber(params.crf, 23) } : {}),
+        ...(params.fps != null ? { fps: asNumber(params.fps) } : {}),
+      }
+      return transcodeVideo(input, outputPath, opts, onProgress)
+    }
+
+    // ── 画面处理 ─────────────────────────────────────────────────
+    case 'adjustSpeed': {
+      const factor = asNumber(params.factor, 1)
+      if (kind === 'audio') {
+        // 音频变速：UI 限定 0.1x – 4.0x；超出拒绝
+        if (factor < 0.1 || factor > 4) {
+          throw new Error(`音频变速 factor=${factor} 超出允许范围 [0.1, 4.0]`)
+        }
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该文件没有音轨，无法变速')
+        const ext = audioExtForCodec(probe.audioCodec)
+        const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+        return adjustAudioSpeed(input, outputPath, factor, {
+          audioCodec: probe.audioCodec,
+          onProgress,
+        })
+      }
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return adjustSpeed(input, outputPath, factor, onProgress)
+    }
+
+    case 'reverse': {
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return reverseVideo(input, outputPath, {
+        reverseAudio: params.reverseAudio === true,
+        onProgress,
+      })
+    }
+
+    case 'crop': {
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return cropVideo(input, outputPath, {
+        w: asNumber(params.w, 0),
+        h: asNumber(params.h, 0),
+        x: asNumber(params.x, 0),
+        y: asNumber(params.y, 0),
+        onProgress,
+      })
+    }
+
+    case 'watermark': {
+      const logoPath = params.logoPath as string
+      if (!logoPath) throw new Error('水印操作需要 logoPath 参数')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return addWatermark(input, logoPath, outputPath, {
+        position:
+          (params.position as
+            | 'top-left'
+            | 'top-right'
+            | 'bottom-left'
+            | 'bottom-right'
+            | 'center') ?? 'bottom-right',
+        scale: asNumber(params.scale, 0.2),
+        onProgress,
+      })
+    }
+
+    case 'burnSubtitle': {
+      const srtPath = params.srtPath as string
+      if (!srtPath) throw new Error('烧录字幕需要 srtPath 参数')
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      return burnSubtitle(input, srtPath, outputPath, onProgress)
+    }
+
+    // ── 尺寸压缩（等比缩放 + 码率百分比压缩，一次转码完成）────────
+    case 'scaleCompress': {
+      const scalePercent = asNumber(params.scalePercent)
+      const compressPercent = asNumber(params.compressPercent)
+      if (scalePercent == null || scalePercent < SCALE_MIN_PERCENT || scalePercent > SCALE_MAX_PERCENT) {
+        throw new Error(
+          `尺寸缩放比例超出允许范围 [${SCALE_MIN_PERCENT}, ${SCALE_MAX_PERCENT}]: ${String(params.scalePercent)}`,
+        )
+      }
+      if (
+        compressPercent == null ||
+        compressPercent < COMPRESS_MIN_PERCENT ||
+        compressPercent > COMPRESS_MAX_PERCENT
+      ) {
+        throw new Error(
+          `压缩比例超出允许范围 [${COMPRESS_MIN_PERCENT}, ${COMPRESS_MAX_PERCENT}]: ${String(params.compressPercent)}`,
+        )
+      }
+      const probeInfo = await probeVideo(input)
+      // probe 是编码尺寸，FFmpeg 解码时会自动转正：先换算有效显示宽高再缩放
+      const displaySize = computeEffectiveDisplaySize(probeInfo.width, probeInfo.height, probeInfo.rotation)
+      if (!displaySize) {
+        throw new Error(`无法读取视频分辨率（probe: ${probeInfo.width}x${probeInfo.height}），无法缩放`)
+      }
+      const size = computeScaledEvenSize(displaySize.width, displaySize.height, scalePercent)
+      if (!size) {
+        throw new Error(`缩放后无法得到有效分辨率：${displaySize.width}x${displaySize.height} @ ${scalePercent}%`)
+      }
+      // 「压到原文件的约 N%」：目标总码率 = 原始总码率 × N%，预留音轨码率后给视频流；
+      // 原始码率探测不到时回退 CRF 质量模式
+      const plan = planCompression({
+        totalBitrateBps: probeInfo.bitrate,
+        durationSec: probeInfo.durationSec,
+        fileSizeBytes: probeInfo.fileSize,
+        hasAudio: probeInfo.hasAudio,
+        compressPercent,
+      })
+      const outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath('mp4'))
+      const opts: TranscodeOpts = {
+        format: 'mp4',
+        videoCodec: 'libx264',
+        resolution: { w: size.width, h: size.height },
+      }
+      if (plan.mode === 'bitrate') {
+        opts.bitrate = `${Math.max(1, Math.round(plan.videoBitrateBps / 1000))}k`
+        if (plan.audioBitrateBps > 0) {
+          opts.audioCodec = 'aac'
+          opts.audioBitrate = RESERVED_AUDIO_BITRATE_ARG
+        } else {
+          // 无音轨时显式 -an，避免默认 aac 输出无意义音轨参数
+          opts.audioCodec = 'none'
+        }
+      } else {
+        // 码率未知 → CRF 质量回退（音频走编码器默认码率）
+        opts.crf = plan.crf
+        if (!probeInfo.hasAudio) opts.audioCodec = 'none'
+      }
+      await transcodeVideo(input, outputPath, opts, onProgress)
+      return {
+        path: outputPath,
+        width: size.width,
+        height: size.height,
+        // 时长与源一致；回传免得渲染端创建节点时二次 probe
+        durationSec: probeInfo.durationSec,
+        compressionMode: plan.mode,
+      }
+    }
+
+    // ── 音频分离 ──────────────────────────────────────────────────
+    case 'extractAudio': {
+      const format = (params.audioFormat as AudioExtractFormat) ?? 'mp3'
+      if (!['copy', 'mp3', 'aac', 'wav'].includes(format)) {
+        throw new Error(`未知的音频输出格式: ${String(format)}`)
+      }
+      // copy 模式扩展名取决于源音轨编码，先 probe 再定输出路径
+      let outputPath: string
+      if (format === 'copy') {
+        const probe = await probeVideo(input)
+        if (!probe.hasAudio) throw new Error('该视频没有音轨，无法分离音频')
+        outputPath = prepareOutputPath(
+          (params.outputPath as string) ?? makeOutputPath(audioExtForCodec(probe.audioCodec)),
+        )
+      } else {
+        const ext = format === 'wav' ? 'wav' : format === 'mp3' ? 'mp3' : 'm4a'
+        outputPath = prepareOutputPath((params.outputPath as string) ?? makeOutputPath(ext))
+      }
+      return extractAudio(input, outputPath, { format, onProgress })
+    }
+
+    default:
+      throw new Error(`未知的视频处理操作: ${operation}`)
+  }
+}
+
+/** 安全的数字参数解析：undefined → defaultValue */
+function asNumber(val: unknown, defaultValue: number): number
+function asNumber(val: unknown, defaultValue?: undefined): number | undefined
+function asNumber(val: unknown, defaultValue?: number): number | undefined {
+  if (val == null) return defaultValue
+  const n = typeof val === 'string' ? parseFloat(val) : (val as number)
+  return Number.isFinite(n) ? n : defaultValue
+}
+
+/**
+ * 数值范围校验：值存在时必须在 [min, max] 内，否则抛错。
+ * undefined / null 跳过（由 asNumber 的 defaultValue 兜底）。
+ */
+function assertNumRange(val: unknown, min: number, max: number, label: string): void {
+  if (val == null) return
+  const n = typeof val === 'number' ? val : typeof val === 'string' ? parseFloat(val) : NaN
+  if (!Number.isFinite(n) || n < min || n > max) {
+    throw new Error(`参数 ${label} 超出允许范围 [${min}, ${max}]: ${String(val)}`)
+  }
+}

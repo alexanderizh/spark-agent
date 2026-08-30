@@ -1,0 +1,465 @@
+// 语音输入相关样式：麦克风按钮 + 下载进度卡片
+
+// ── 麦克风按钮（挂在 composer-submit-row，紧邻发送按钮）──────────────────────
+.composer-voice-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.composer-voice-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-right: 0;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: width 0.18s ease, background 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 9%, transparent);
+    color: var(--text-strong);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &.is-starting,
+  &.is-stopping {
+    width: 68px;
+    gap: 5px;
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+    background: color-mix(in srgb, var(--primary) 9%, transparent);
+    color: var(--primary);
+  }
+
+  &.is-recording {
+    width: 116px;
+    height: 32px;
+    padding: 0;
+    gap: 7px;
+    border: 0;
+    background: transparent;
+    color: var(--danger);
+    box-shadow: none;
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--danger) 6%, transparent);
+      color: var(--danger);
+
+      .composer-voice-stop {
+        background: color-mix(in srgb, var(--danger) 24%, var(--bg-hover));
+      }
+    }
+  }
+
+  &.is-error:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 7%, transparent);
+  }
+
+  &.is-pending:not(.is-downloading):not(:disabled) {
+    color: var(--text);
+  }
+}
+
+.composer-voice-state-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.composer-voice-state-spinner {
+  flex: 0 0 auto;
+}
+
+.composer-voice-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1px;
+  // 18 根 2px 音柱 + 17 个 1px 间隔 = 53px。宽度与实际轨道对齐，
+  // 避免容器尾部空白叠加到计时器前，看起来像异常大间距。
+  width: 53px;
+  height: 20px;
+  flex: 0 0 auto;
+  overflow: hidden;
+
+  i {
+    position: relative;
+    z-index: 1;
+    width: 2px;
+    min-height: 0;
+    max-height: 16px;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+    transition: height 90ms linear, opacity 90ms linear;
+  }
+}
+
+.composer-voice-shortcut-hint {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 120;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  background: rgba(32, 32, 36, 0.96);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+
+  kbd {
+    padding: 3px 5px;
+    border: 0;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+.composer-voice-control:hover .composer-voice-shortcut-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.composer-voice-timer {
+  min-width: 27px;
+  color: color-mix(in srgb, var(--text) 78%, var(--danger));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+
+.composer-voice-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 16%, var(--bg-hover));
+  transition: background 0.15s ease, transform 0.15s ease;
+
+  i {
+    width: 7px;
+    height: 7px;
+    border-radius: 1.5px;
+    background: currentColor;
+  }
+}
+
+.composer-voice-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-voice-track i {
+    transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .composer-voice-btn.is-recording {
+    width: 112px;
+  }
+
+  .composer-voice-track {
+    width: 48px;
+  }
+}
+
+.composer-voice-spinner {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  background: var(--panel);
+  border-radius: 50%;
+  padding: 1px;
+}
+
+// ── 下载进度卡片（右上角，portal 到 body）──────────────────────────────────
+.voice-install-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  width: 300px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-panel, #1f1f24);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  color: var(--text-primary, #fff);
+  animation: voice-toast-in 0.18s ease-out;
+
+  &.is-done {
+    border-color: rgba(76, 175, 120, 0.5);
+  }
+
+  &.is-error {
+    border-color: rgba(232, 76, 84, 0.55);
+  }
+}
+
+@keyframes voice-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.voice-install-toast-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.voice-install-toast-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.voice-install-toast-spinner {
+  color: var(--accent, #4f8cff);
+  flex-shrink: 0;
+}
+
+.voice-install-toast-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #fff);
+  }
+}
+
+.voice-install-toast-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-sunken, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+}
+
+.voice-install-toast-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent, #4f8cff), var(--accent-soft, #7aa8ff));
+  transition: width 0.2s ease;
+}
+
+.voice-install-toast-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.voice-install-toast-error {
+  color: #ff8a8e;
+}
+
+.voice-install-toast-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+
+  button {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
+    background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+    color: var(--text-primary, #fff);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--bg-hover-strong, rgba(255, 255, 255, 0.12));
+    }
+  }
+}
+
+// ── 设置 → 完整性 面板中的「语音包」卡片 ─────────────────────────────────
+.voice-integrity-settings {
+  max-width: 980px;
+}
+
+.voice-integrity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.voice-integrity-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.voice-integrity-heading h2 {
+  margin-bottom: 8px;
+}
+
+.voice-integrity-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+// 让两个组件行多一行描述,层级清晰
+.voice-integrity-card .integrity-sdk-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.voice-integrity-desc {
+  font-size: 11px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.voice-integrity-progress-wrap {
+  padding: 0 var(--pad-lg, 18px) 14px;
+}
+
+.voice-integrity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+// ── 安装进度条(与 sdk-install-progress 同构,仅换前缀) ──────────────────
+.voice-progress {
+  width: 100%;
+  margin-top: 10px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+}
+
+.voice-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  line-height: 18px;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    flex: 0 0 auto;
+    color: var(--text-primary, #fff);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+.voice-progress-track {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary, #fff) 9%, transparent);
+}
+
+.voice-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #4f8cff);
+  transition: width 0.2s ease;
+}
+
+.voice-progress.is-done .voice-progress-fill {
+  background: var(--success, #4caf78);
+}
+
+.voice-progress.is-error .voice-progress-fill {
+  background: var(--danger, #e84c54);
+}
+
+.voice-progress-track.indeterminate .voice-progress-fill {
+  width: 34% !important;
+  animation: voice-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes voice-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-progress-track.indeterminate .voice-progress-fill {
+    animation: none;
+  }
+}

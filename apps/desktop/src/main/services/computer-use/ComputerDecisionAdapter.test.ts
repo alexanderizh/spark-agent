@@ -1,0 +1,644 @@
+import type { ComputerObservation, ComputerTaskContract } from '@spark/protocol'
+import type { GenerateCanvasTextParams } from '@spark/agent-runtime'
+import { describe, expect, it, vi } from 'vitest'
+import { GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
+
+const OBSERVATION = {
+  frameId: 'frame-1',
+  treeVersion: 'tree-1',
+  capturedAt: '2026-07-28T08:00:00.000Z',
+  display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+  foreground: {
+    app: { id: 'app-1', name: 'Editor' },
+    window: {
+      id: 'window-1',
+      title: 'Document',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+    },
+  },
+  screenshot: { snapshotId: 'snapshot-1', width: 800, height: 600 },
+  tree: { mode: 'full', text: 'button "Save" id=button-1', elementCount: 0 },
+  elements: [],
+  loading: false,
+  sensitiveRegions: [],
+} satisfies ComputerObservation
+
+type TestGenerate = (params: GenerateCanvasTextParams) => Promise<{ text: string }>
+
+describe('GenericComputerDecisionAdapter', () => {
+  it('combines the screenshot with accessibility state on the first decision', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Save the document',
+        action: { type: 'invoke_element', elementId: 'button-1', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Save this document',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toEqual({
+      type: 'action',
+      intent: 'Save the document',
+      action: { type: 'invoke_element', elementId: 'button-1', action: 'invoke' },
+    })
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'vision-model',
+        responseFormat: 'json',
+        prompt: expect.stringContaining('button "Save" id=button-1'),
+      }),
+    )
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
+    })
+  })
+
+  it('falls back from combined visual planning to accessibility-only planning', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'I cannot identify the target from the tree.' })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Click the visible search box',
+          action: { type: 'click', point: { x: 0.75, y: 0.08 } },
+        }),
+      })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'anthropic',
+        apiKey: 'secret',
+        model: 'glm-5.2',
+      },
+      generate,
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Search for ComfyUI',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({ type: 'action', action: { type: 'click' } })
+
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      model: 'glm-5.2',
+      images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
+    })
+    expect(generate.mock.calls[1]?.[0]).not.toHaveProperty('images')
+  })
+
+  it('accepts a safe bare action embedded in an Anthropic-compatible explanation', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'anthropic',
+        apiKey: 'secret',
+        model: 'glm-5.2',
+      },
+      generate: vi.fn(async () => ({
+        text: '我将先聚焦窗口。\n```json\n{"type":"focus_window","windowId":"window-1"}\n```',
+      })),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Continue in Bilibili',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'focus_window', windowId: 'window-1' },
+    })
+  })
+
+  it('fails closed when the model returns an unrecognized action', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: '{"type":"action","intent":"escape","action":{"type":"shell"}}',
+      }),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Save',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
+  })
+
+  it('describes the platform action schema and normalizes common launcher key aliases', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Open the operating-system launcher',
+        action: { type: 'keypress', keys: ['WIN', 'Space'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      platform: 'darwin',
+      generate,
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Open Bilibili',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'keypress', keys: ['Meta', 'Space'] },
+    })
+    expect(generate.mock.calls[0]?.[0].system).toContain('Current desktop platform: macOS')
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'keypress: {"type":"keypress","keys":["Meta","Space"]}',
+    )
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'click: {"type":"click","point":{"x":0.5,"y":0.5}',
+    )
+    expect(generate.mock.calls[0]?.[0].system).toContain(
+      'select_text: {"type":"select_text","elementId":"<id>"',
+    )
+    expect(generate.mock.calls[0]?.[0].system).not.toContain('hands control to the user')
+  })
+
+  it('tells the model to switch away from a failed Electron semantic action', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the visible search field',
+        action: { type: 'click', point: { x: 0.5, y: 0.1 } },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Search in the app',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 2,
+      previousActionFailure: {
+        code: 'action_noop',
+        actionType: 'invoke_element',
+        consecutiveFailures: 3,
+        failedStrategies: ['accessibility'],
+        requiredAlternative: true,
+      },
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          'Previous action failure: {"code":"action_noop","actionType":"invoke_element","consecutiveFailures":3,"failedStrategies":["accessibility"],"requiredAlternative":true}',
+        ),
+      }),
+    )
+  })
+
+  it('includes failed verification criteria when replanning after a false completion', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use a different save path',
+        action: { type: 'keypress', keys: ['Meta', 'Shift', 'S'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save in a different path',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 1,
+      previousVerificationFailure: {
+        failedCriteria: ['0:assertion_failed'],
+        unsupportedCriteria: 0,
+      },
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          'Previous verification failure: {"failedCriteria":["0:assertion_failed"],"unsupportedCriteria":0}',
+        ),
+      }),
+    )
+  })
+
+  it('includes bounded recent action history so the model does not redo completed work', async () => {
+    const generate = vi.fn<TestGenerate>(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Continue with the next field',
+        action: { type: 'keypress', keys: ['Tab'] },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Complete the form',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 3,
+      recentActions: [
+        {
+          action: { type: 'type_text', textLength: 8 },
+          intent: 'Fill the name field',
+          outcome: 'executed',
+          resultingAppId: 'app-1',
+          resultingWindowId: 'window-1',
+        },
+      ],
+    })
+
+    expect(generate.mock.calls[0]?.[0].prompt).toContain(
+      'Recent action history, oldest to newest (do not redo completed work)',
+    )
+    expect(generate.mock.calls[0]?.[0].prompt).toContain('"textLength":8')
+  })
+
+  it('prioritizes actionable elements and bounds large desktop prompts', async () => {
+    const generate = vi.fn<TestGenerate>(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the prioritized control',
+        action: { type: 'invoke_element', elementId: 'priority-control', action: 'invoke' },
+      }),
+    }))
+    const crowdedElements: ComputerObservation['elements'] = Array.from(
+      { length: 900 },
+      (_, index) => ({
+        id: `label-${index}`,
+        treeVersion: 'tree-crowded',
+        role: 'text',
+        name: `Label ${index} ${'x'.repeat(200)}`,
+        value: 'v'.repeat(2_000),
+        bounds: { x: 0, y: index, width: 100, height: 20 },
+        enabled: true,
+        focused: false,
+        actions: [],
+      }),
+    )
+    crowdedElements.push({
+      id: 'priority-control',
+      treeVersion: 'tree-crowded',
+      role: 'button',
+      name: 'Continue',
+      value: '',
+      bounds: { x: 20, y: 20, width: 120, height: 40 },
+      enabled: true,
+      focused: false,
+      actions: ['invoke'],
+    })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Continue',
+      successCriteria: [],
+      observation: {
+        ...OBSERVATION,
+        treeVersion: 'tree-crowded',
+        tree: { mode: 'full', text: 'tree '.repeat(20_000), elementCount: crowdedElements.length },
+        elements: crowdedElements,
+      },
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+    })
+
+    const prompt = generate.mock.calls[0]?.[0].prompt ?? ''
+    expect(prompt).toContain('priority-control')
+    expect(prompt.length).toBeLessThan(90_000)
+  })
+
+  it('continues with accessibility state when no screenshot is available', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Use the accessible save element',
+        action: { type: 'invoke_element', elementId: 'save-button', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save the document',
+      successCriteria: [],
+      observation: OBSERVATION,
+      screenshot: Buffer.alloc(0),
+      stepIndex: 0,
+    })
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('Screenshot available: false'),
+      }),
+    )
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+  })
+
+  it('rejects model-requested handoff because task authorization is already complete', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: vi.fn(async () => ({
+        text: JSON.stringify({ type: 'handoff', reason: 'Credentials require user confirmation' }),
+      })),
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Fill the authorized form',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
+  })
+
+  it('accepts only a typed allowlisted SparkWork app command', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Open SparkWork settings',
+          action: { type: 'app_command', command: { name: 'navigate', view: 'settings' } },
+        }),
+      }),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Open settings',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'app_command', command: { name: 'navigate', view: 'settings' } },
+    })
+  })
+
+  it('repairs an invalid provider response and supports explicit window recovery actions', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'not-json' })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Restore the task window',
+          action: { type: 'focus_window', windowId: 'window-1' },
+        }),
+      })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Continue in the task window',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 1,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'focus_window', windowId: 'window-1' },
+    })
+    expect(generate).toHaveBeenCalledTimes(2)
+    expect(generate.mock.calls[1]?.[0].prompt).toContain('previous provider response failed')
+  })
+
+  it('parses a valid batch of actions when allowBatch is on', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'actions',
+        intent: 'Type the sign-off',
+        actions: [
+          { type: 'click', point: { x: 0.1, y: 0.2 } },
+          { type: 'type_text', text: 'Thanks' },
+        ],
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Sign off',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).resolves.toEqual({
+      type: 'actions',
+      intent: 'Type the sign-off',
+      actions: [
+        { type: 'click', point: { x: 0.1, y: 0.2 } },
+        { type: 'type_text', text: 'Thanks' },
+      ],
+    })
+    // allowBatch must switch the system prompt to the batch variant.
+    expect(generate.mock.calls[0]?.[0].system).toContain('"type":"actions"')
+    expect(generate.mock.calls[0]?.[0].system).toContain('click a field then type')
+  })
+
+  it('keeps the single-action system prompt when allowBatch is off', async () => {
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Save',
+        action: { type: 'invoke_element', elementId: 'button-1', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save',
+      successCriteria: [] as ComputerTaskContract['successCriteria'],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+    })
+
+    expect(generate.mock.calls[0]?.[0].system).not.toContain('"type":"actions"')
+  })
+
+  it('rejects a batch below the minimum size', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'actions',
+          intent: 'One',
+          actions: [{ type: 'click', x: 1, y: 1 }],
+        }),
+      }),
+    })
+    await expect(
+      adapter.decide({
+        objective: 'x',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
+  })
+
+  it('rejects a batch containing an unsupported action', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'actions',
+          intent: 'Risky',
+          actions: [{ type: 'click', x: 1, y: 1 }, { type: 'shell' }],
+        }),
+      }),
+    })
+    await expect(
+      adapter.decide({
+        objective: 'x',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).rejects.toMatchObject({ code: 'decision_model_error' })
+  })
+})

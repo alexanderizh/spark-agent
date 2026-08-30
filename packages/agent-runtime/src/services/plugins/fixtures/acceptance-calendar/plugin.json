@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "acceptance.calendar",
+  "version": "1.0.0",
+  "displayName": "验收日历",
+  "description": "用于验证本地连接器导入、权限授权和 Skill 挂载闭环。",
+  "author": { "name": "Spark QA" },
+  "icon": "calendar",
+  "permissions": { "required": ["network"], "optional": [] },
+  "activation": "manual",
+  "contributions": {
+    "skills": [
+      {
+        "id": "acceptance-calendar",
+        "name": "验收日历",
+        "path": "skills/acceptance-calendar",
+        "description": "帮助 Agent 验证新连接器已经被正确挂载。"
+      }
+    ],
+    "mcpServers": [],
+    "connectors": []
+  }
+}

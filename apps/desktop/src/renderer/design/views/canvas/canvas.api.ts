@@ -1,0 +1,7810 @@
+import type {
+  CanvasAsset,
+  CanvasAssetType,
+  CanvasBoard,
+  CanvasEdge,
+  CanvasNode,
+  CanvasNodeType,
+  CanvasOperationType,
+  CanvasPipelineRole,
+  CanvasProject,
+  CanvasProjectSettings,
+  CanvasSnapshot,
+  CanvasTask,
+  CanvasTaskStatus,
+  CreateCanvasTaskRequest,
+  ShotScriptConfig,
+} from './canvas.types'
+import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
+import { inferCanvasConnectionType } from './canvasConnectionSemantics'
+import {
+  decodeCanvasSafeFileUrl,
+  encodeToSafeFileUrl,
+  readFileAsDataUrl,
+  readVideoDimensions,
+  resolveMediaDisplayUrl,
+} from './canvas-safe-file'
+import {
+  type CanvasProviderFileNodeInput,
+  resolveProviderFileTaskProfile,
+} from './canvasProviderFileNode'
+import {
+  filmKindToAssetType,
+  filmUid,
+  migrateFilmAssetMetadata,
+  readAssetKind,
+  readReferences,
+  readTags,
+  writeReferences,
+  writeTags,
+  type CreateFilmAssetInput,
+  type FilmAssetKind,
+  type ShotGroup,
+  type ShotSegment,
+  type FilmProjectData,
+} from './canvasFilmAssets'
+import { writeCharacterSubviews, type FilmCharacterSubview } from './canvasCharacterLibrary'
+import type { FilmReference, FilmReferenceKind, ManuscriptChapterRef } from './canvasFilmTypes'
+import {
+  upsertManuscriptChapters,
+  readManuscriptIndex,
+  clearManuscriptIndex,
+} from './canvasPipeline'
+import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
+import {
+  AUDIO_NODE_DEFAULT_SIZE,
+  GROUP_NODE_DEFAULT_SIZE,
+  IMAGE_NODE_DEFAULT_SIZE,
+  OPERATION_NODE_DEFAULT_SIZE,
+  TEXT_NODE_DEFAULT_SIZE,
+  VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasImageNodeSize,
+  fitCanvasVideoNodeSize,
+  fitShotScriptOperationNodeSize,
+  pickOperationNodeInitialSize,
+  pickTextNodeSize,
+} from './canvasNodeSize'
+import { pruneModelParamsForCanvas } from './canvasMediaContract'
+import {
+  validateCanvasLocalTaskSubmission,
+  validateCanvasMediaTaskSubmission,
+  validateCanvasTextTaskSubmission,
+} from './canvasTaskSubmissionValidation'
+import { isShotScriptText } from './canvasShotTableParse'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
+import { materializeCanvasTextTaskFallbackOutput } from './canvasTextTaskFallbackOutput'
+import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
+import { materializeSplitEpisodeOutputs } from './canvasEpisodeSplitOutput'
+import { placeAutoNodeToRight } from './canvasAutoPlacement'
+import { planGroupLayout } from './canvasGroupLayout'
+import { resolveCollisionFreeNodePosition } from './canvasCollisionPlacement'
+import { copyLocalArtifactIntoProject } from './canvasArtifactPersistence'
+import {
+  materializeCanvasImageScaleCompress,
+  type CanvasImageScaleCompressMaterializationInput,
+} from './canvasImageScaleCompressMaterialization'
+import type {
+  CanvasMediaTaskAsset,
+  CanvasMediaTaskCreateRequest,
+  CanvasMediaTaskCreateResponse,
+  CanvasTextTaskCreateResponse,
+  CanvasMediaTaskInputFile,
+  CanvasInputBinding,
+  CanvasMediaCapabilitiesListResponse,
+  CanvasMediaModelDescribeRequest,
+  CanvasMediaModelDescribeResponse,
+  CanvasMediaPruneModelParamsRequest,
+  CanvasMediaPruneModelParamsResponse,
+  CanvasMediaPruneModelParamsByInlineManifestRequest,
+  CanvasMediaPruneModelParamsByInlineManifestResponse,
+  CanvasMediaModelsListRequest,
+  CanvasMediaModelsListResponse,
+  CanvasProjectListItem,
+  CanvasPromptTaskFields,
+  CanvasSnapshotSaveRequest,
+  SessionReasoningEffort,
+} from '@spark/protocol'
+import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
+import { executionOperationForCanvasMediaCapability } from './canvasMediaInputMode'
+import { buildTaskInputFiles, canvasInputSourceBaseName } from './canvasTaskInputFiles'
+import { summarizeCanvasTaskInputFiles } from './canvasTaskInputDiagnostics'
+import {
+  appendCanvasTaskRuntimeEvent,
+  appendCanvasTaskModelOutputEvent,
+  initialCanvasTaskRuntimeEvents,
+  syncCanvasNodeRuntimeData,
+  syncCanvasTaskPrimaryOutputToNode,
+  syncCanvasTaskRuntimeToNode,
+} from './canvasTaskLifecycle'
+import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
+import {
+  buildCanvasVisiblePromptDocument,
+  normalizeCanvasFunctionalSystemPrompt,
+} from './canvasPromptInitialization'
+import { reconcilePromptConnections } from './canvasPromptConnections'
+import {
+  buildCanvasOperationSystemPrompt,
+  buildCanvasOperationPrompt,
+  mergeCanvasPresetTargetModelParams,
+  mergeCanvasOperationPresetNegativePrompt,
+  readCanvasExecutionPresetPrompt,
+  readCanvasResolvedPresetTarget,
+  resolveCanvasPresetTarget,
+  sanitizeLegacyCanvasSystemPrompt,
+} from './canvasOperationPresets'
+import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
+import { CanvasProjectMutationVersion } from './canvasProjectMutationVersion'
+import { CanvasRuntimePersistGate } from './canvasRuntimePersistGate'
+import {
+  persistCanvasRuntimeSnapshot,
+  type CanvasPersistOutcome,
+} from './canvasRuntimeSnapshotPersist'
+import { mergeCanvasRuntimeStateIntoSnapshot } from './canvasRuntimeStateMerge'
+import {
+  canvasTaskIdsSafeToDelete,
+  isCompletedCanvasTaskWithOutputs,
+  recoverCanvasTaskFromMaterializedOutputs,
+} from './canvasTaskOutputIntegrity'
+import {
+  removeDeletedCanvasNodeReferencesFromTask,
+  resolveCanvasNodeDeletionIds,
+} from './canvasNodeDeletion'
+import {
+  applyCanvasOperationOutputDeletion,
+  type CanvasOperationOutputDeletionResult,
+} from './canvasOperationOutputDeletion'
+import type { CanvasOperationOutputView } from './canvasOperationRuns'
+import {
+  applyCanvasNodeLayoutUpdates,
+  type CanvasNodeLayoutUpdate,
+} from './canvasNodeLayoutPersistence'
+import { canvasNodeTypeLabel, createCanvasNodeNaming, renameCanvasNode } from './canvasNodeNaming'
+import { canvasOperationKind } from './canvasOperationKind'
+import {
+  cleanupAssetSourceFiles,
+  cleanupAssetsSourceFiles,
+  logCanvasAssetCleanupWarning,
+} from './assetLibrary/assetFileCleanup'
+import {
+  createSnapshotAssetRepository,
+  reclaimAssetReferencesForNodes,
+} from './assetLibrary/snapshotAssetRepository'
+import type { AssetListQuery, AssetPage, AssetRepository } from './assetLibrary/assetRepository'
+import { toRelativeStorageKey, resolveStorageKeyToAbsolutePath } from './assetLibrary/storageKey'
+
+const STORAGE_KEY = 'spark-canvas:v1'
+const USER_ID = 0
+const CANVAS_TASK_VALIDATION_TOKEN = Symbol('canvas-task-validation')
+
+const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
+  heading: '按标题',
+  length: '按长度分片',
+  single: '不分章',
+  'multi-file': '多文件（一文件一章）',
+}
+
+function readCanvasTextNodeContent(node: CanvasNode, assets: CanvasAsset[]): string {
+  if (node.type !== 'text' && node.type !== 'prompt') return ''
+  const assetText = node.assetId
+    ? assets.find((asset) => asset.id === node.assetId)?.contentText
+    : undefined
+  return node.data.text?.trim() || assetText?.trim() || ''
+}
+
+function canvasTextNodeContextKind(node: CanvasNode, content: string): string {
+  if (node.data.pipelineRole === 'shot') return '分镜脚本'
+  if (node.data.pipelineRole === 'screenplay') return '剧本'
+  if (node.type === 'prompt') return '提示词节点'
+  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
+  return '文本节点'
+}
+
+function formatCanvasTextNodeContext(node: CanvasNode, assets: CanvasAsset[]): string {
+  const content = readCanvasTextNodeContent(node, assets)
+  if (!content) return ''
+  const name = node.title?.trim() || '未命名'
+  return `【${canvasTextNodeContextKind(node, content)}｜${name}】\n${content}`
+}
+
+function buildCanvasInputTextContext(
+  inputNodeIds: readonly string[] | undefined,
+  db: CanvasDb,
+): string {
+  if (!inputNodeIds || inputNodeIds.length === 0) return ''
+  const inputIdSet = new Set(inputNodeIds)
+  return db.nodes
+    .filter((node) => inputIdSet.has(node.id) && !node.hidden)
+    .map((node) => formatCanvasTextNodeContext(node, db.assets))
+    .filter((text): text is string => text.length > 0)
+    .join('\n\n')
+}
+
+function mergeCanvasPromptWithInputTextContext(
+  prompt: string | undefined,
+  context: string,
+): string | undefined {
+  const trimmedPrompt = (prompt ?? '').trim()
+  const trimmedContext = context.trim()
+  if (!trimmedContext) return trimmedPrompt || undefined
+  if (!trimmedPrompt) return trimmedContext
+  if (trimmedPrompt.includes(trimmedContext)) return trimmedPrompt
+  return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
+}
+
+function syncOperationPromptDocumentFromConnections(db: CanvasDb, target: CanvasNode): void {
+  if (!isOperationNode(target) && target.type !== 'task') return
+  const task = target.taskId
+    ? db.tasks.find((item) => item.id === target.taskId && item.projectId === target.projectId)
+    : undefined
+  const edges = db.edges.filter(
+    (edge) =>
+      edge.projectId === target.projectId &&
+      edge.targetNodeId === target.id &&
+      edge.type === 'used_as_input',
+  )
+  const connectedIds = new Set(edges.map((edge) => edge.sourceNodeId))
+  const connections = db.nodes.filter(
+    (node) => connectedIds.has(node.id) && node.projectId === target.projectId && !node.hidden,
+  )
+  const storedDocument = target.data.promptDocument ?? task?.promptDocument
+  const reconciledDocument = storedDocument
+    ? reconcilePromptConnections(storedDocument, edges).document
+    : undefined
+  const document = buildCanvasVisiblePromptDocument({
+    ...(reconciledDocument ? { document: reconciledDocument } : {}),
+    prompt: target.data.prompt ?? '',
+    nodes: db.nodes,
+    connections,
+    assets: db.assets,
+  })
+  target.data.promptDocument = document
+  target.updatedAt = now()
+  if (task) {
+    task.promptDocument = document
+    task.updatedAt = target.updatedAt
+  }
+}
+
+type CanvasWorkflowTaskStartRequest = {
+  boardId?: string
+  operation?: CanvasOperationType
+  title: string
+  prompt?: string
+  userPrompt?: string
+  inputNodeIds?: string[]
+  inputAssetIds?: string[]
+  bindToNodeId?: string
+  outputPlacement?: CreateCanvasTaskRequest['outputPlacement']
+  message?: string
+  progress?: number
+  agentId?: string
+  providerProfileId?: string
+  provider?: string
+  modelId?: string
+  reasoningEffort?: SessionReasoningEffort
+  skillIds?: string[]
+  modelParams?: Record<string, unknown>
+  taskPipelineRole?: CanvasPipelineRole
+  outputPipelineRole?: CanvasPipelineRole
+  shotScriptConfig?: ShotScriptConfig
+} & CanvasPromptTaskFields
+
+type CanvasWorkflowTaskFinishRequest = {
+  status?: Extract<CanvasTaskStatus, 'completed' | 'failed' | 'cancelled'>
+  progress?: number
+  outputNodeIds?: string[]
+  outputAssetIds?: string[]
+  message?: string
+  errorMsg?: string | null
+  errorDetail?: string | null
+  rawResponse?: unknown
+  modelOutputText?: string | null
+  agentId?: string | null
+  providerProfileId?: string | null
+  provider?: string | null
+  modelId?: string | null
+}
+
+/**
+ * SQLite 是画布的生产权威存储。默认仍以手动保存模型为主，工作区可选开启自动保存：
+ *   - writeDb 只写热存储并置 dirty=true，不自动落 SQLite。热存储默认走 localStorage，
+ *     但其约 5MB 配额装不下大数据（如导入长篇小说）时会自动转内存镜像（见 persistHotDb），
+ *     不影响 durability——SQLite 才是权威层，重开项目时从 SQLite 重建热存储。
+ *   - 保存动作（Ctrl+S / 保存按钮 / 离开确认）→ saveCanvas() → flushPersist()，
+ *     把全量快照写进 SQLite，成功后清掉 dirty。
+ *   - 自动保存开启后，工作区会在用户停止操作后调用 saveCanvas()，并在 UI 层做防抖与 30 秒节流。
+ *   - 项目生命周期（创建/重命名/归档/删除/打开）仍立即 flush，保证项目壳与元数据不丢。
+ *
+ * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
+ */
+// persistAllProjects 的在途 Promise（返回 attempted/failed 项目集合）；flushPersist 据此串行化落库并 per-project 更新 dirty。
+let persistInFlight: Promise<CanvasPersistOutcome> = Promise.resolve({
+  attempted: new Set(),
+  failed: new Set(),
+})
+/**
+ * 哪些项目有未落库的改动（per-project）。
+ *
+ * 历史上是全局单例 `let canvasDirty = false`，但「未保存」的语义针对的是**当前正在退出
+ * 的项目**，而单例会被跨项目操作（项目列表的创建/导入/改封面/删除、flushPersist 全量
+ * 落库、hydrateFromStorage 整库重建）清零，从而污染当前项目的 isCanvasDirty() 判定，
+ * 导致退出守卫跳过「未保存改动」弹窗。改成 Set 后，写操作显式标记被改动的项目，消费点
+ * 按当前 projectId 查询。
+ */
+const dirtyProjectIds = new Set<string>()
+const projectMutationVersion = new CanvasProjectMutationVersion()
+// 任务运行态（提交/进度/终态）写入热存储但尚未静默落盘的项目门闩：挂起期间
+// openSnapshot / hydrateFromStorage 不得用磁盘旧快照覆盖该项目热数据。
+const runtimePersistGate = new CanvasRuntimePersistGate()
+
+function isProjectDirty(projectId: string): boolean {
+  return dirtyProjectIds.has(projectId)
+}
+
+/**
+ * 广播 dirty 事件。
+ * - `projectId` 为具体 id：该项目的 dirty 状态变化（监听者按自己的 view 过滤）。
+ * - `projectId` 为 null：全库级操作（如 hydrateFromStorage 整库重建），detail.dirty 反映
+ *   全局「是否有任何项目未落库」（dirtyProjectIds.size > 0），监听者据此刷新徽标。
+ */
+function dispatchDirty(projectId: string | null, dirty: boolean): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('canvas:dirty', { detail: { projectId, dirty } }))
+}
+
+/**
+ * 落库全部项目。
+ *
+ * 返回本次**真正尝试落库**的项目集合（attempted）与其中**失败**的项目集合（failed）。
+ * 之所以同时返回 attempted，是因为「哪些项目该清 dirty」必须以「这次确实落库成功」为准——
+ * 若由 flushPersist 另起一次 readDb() 来推断，会在落库期间并发写操作（节点拖拽、任务回写）
+ * 导致「未落库的编辑被误清 dirty」。status==='deleted' 与无 board 被跳过的项目不在
+ * attempted 中，flushPersist 据此保留它们的 dirty（避免静默吞掉未尝试落库的改动）。
+ */
+async function persistAllProjects(db: CanvasDb): Promise<{
+  attempted: Set<string>
+  failed: Set<string>
+}> {
+  const attempted = new Set<string>()
+  const failed = new Set<string>()
+  for (const project of db.projects) {
+    if (project.status === 'deleted') continue
+    const boards = readProjectBoards(db, project.id)
+    // 序列化激活板优先用用户上次选择（project.metadata.activeBoardId），
+    // 否则回退到 isDefault / 第一个 board
+    const storedActiveBoardId = project.metadata?.activeBoardId
+    const preferredBoardId =
+      typeof storedActiveBoardId === 'string' ? storedActiveBoardId : undefined
+    const resolved = resolveActiveBoard(boards, preferredBoardId)
+    // 项目无 board（数据异常）时跳过，避免写空快照覆盖既有数据
+    if (!resolved) {
+      console.warn('[canvas] persist skipped: no board for project', project.id)
+      continue
+    }
+    // 序列化时写 boards[] + 激活 board（向下兼容旧字段 board）
+    const snapshot: CanvasSnapshot = {
+      project,
+      board: resolved.active,
+      boards: resolved.boards,
+      activeBoardId: resolved.active.id,
+      nodes: db.nodes.filter((n) => n.projectId === project.id),
+      edges: db.edges.filter((e) => e.projectId === project.id),
+      assets: db.assets.filter((a) => a.projectId === project.id),
+      tasks: db.tasks.filter((t) => t.projectId === project.id),
+    }
+    const req: CanvasSnapshotSaveRequest = {
+      projectId: project.id,
+      snapshotJson: JSON.stringify(snapshot),
+    }
+    req.meta = buildProjectMeta(project)
+    attempted.add(project.id)
+    try {
+      await window.spark.invoke('canvas:snapshot:save', req)
+    } catch (err) {
+      failed.add(project.id)
+      // 落库失败不阻断画布交互，但必须显式记录——这是「重启丢数据」的根因之一。
+      console.error('[canvas] snapshot persist failed', project.id, err)
+    }
+  }
+  return { attempted, failed }
+}
+
+/**
+ * 立即把全量快照写进 SQLite；所有项目都成功返回 true。
+ *
+ * per-project 更新 dirty：以 persistAllProjects 返回的 attempted 为准，落库成功的项目
+ * 从 dirtyProjectIds 移除并广播，失败的保留；无 board 被跳过的项目不在 attempted 中，
+ * 保留其 dirty，避免静默吞掉未保存改动。返回「是否有任一项目落库失败」。
+ *
+ * 注意：不另起 readDb() 推断「哪些项目该清 dirty」——落库期间并发的写操作会让两次读到的
+ * db 不一致，把未落库的编辑误判为已保存。
+ */
+async function flushPersist(): Promise<boolean> {
+  const previousPersist = persistInFlight
+  let persistedVersions: ReadonlyMap<string, number> = new Map()
+  // 先同步登记队列尾部，再在队列内读取热库。这样 runtime 的“加载基线→合并→保存”
+  // 无法插入 await 与赋值之间，避免旧基线最后覆盖一次更新的全量保存。
+  const run = previousPersist.then(async () => {
+    // 确保防抖的 localStorage 写入已落盘（与 SQLite 保持一致）
+    flushHotPersist()
+    // readDb 返回内存缓存引用；persistAllProjects 内部有跨 project 的 await，必须先克隆。
+    const dbSnapshot = cloneDb(readDb())
+    persistedVersions = projectMutationVersion.capture(
+      dbSnapshot.projects.map((project) => project.id),
+    )
+    return persistAllProjects(dbSnapshot)
+  })
+  persistInFlight = run
+  const { attempted, failed } = await run
+  for (const id of attempted) {
+    // 保存期间可能收到任务终态或新的用户编辑。只有当前热数据仍与保存开始时同代，
+    // 才能清 dirty；否则旧保存结果不能把尚未落库的新状态伪装成 clean。
+    if (!failed.has(id) && projectMutationVersion.isCurrent(id, persistedVersions.get(id))) {
+      dirtyProjectIds.delete(id)
+      // 全量落库已包含该项目的运行态回写，静默落盘保护同步解除。
+      runtimePersistGate.clearPersisted(id)
+      dispatchDirty(id, false)
+    }
+  }
+  return failed.size === 0
+}
+
+/** 手动保存：全量落库，返回是否成功。 */
+export async function saveCanvas(): Promise<boolean> {
+  return flushPersist()
+}
+
+/**
+ * 用户选择「不保存离开」：把指定项目回滚到 SQLite 上次保存的状态，并清掉 dirty。
+ * 否则被丢弃的改动仍留在 localStorage 里，会在下一次全量落库
+ * （saveCanvas / openSnapshot）时被悄悄写回，违背「不保存」的语义。
+ */
+export async function revertProject(projectId: string): Promise<void> {
+  // 离开守卫可能刚把活动任务改为 cancelled。先跳过防抖立即冲刷运行态，避免随后
+  // 从旧磁盘快照恢复出 running；同时等待已有全量保存，禁止回滚与保存交错。
+  await runtimePersistGate.flushPending(projectId)
+  await persistInFlight
+  const db = readDb()
+  let runtimeMergeChanged = false
+  try {
+    const persisted = await loadSnapshotFromStorage(projectId)
+    if (persisted) {
+      // 加载在途仍可能收到最后一条 provider 回调；提交回滚前再读一次热库，只把运行态
+      // 白名单合并进磁盘基线，用户未保存的节点/Prompt 编辑仍会被丢弃。
+      const merged = mergeCanvasRuntimeStateIntoSnapshot(persisted.snapshot, cloneDb(readDb()))
+      runtimeMergeChanged = JSON.stringify(merged) !== JSON.stringify(persisted.snapshot)
+      replaceProjectSnapshot(db, merged)
+    } else {
+      removeProjectFromDb(db, projectId)
+    }
+  } catch (err) {
+    // SQLite 读不到快照时，项目就地清空（等同丢弃）。
+    removeProjectFromDb(db, projectId)
+    runtimePersistGate.clearPersisted(projectId)
+    console.error('[canvas] revertProject load failed', projectId, err)
+  }
+  projectMutationVersion.mark(projectId)
+  persistHotDb(db)
+  dirtyProjectIds.delete(projectId)
+  dispatchDirty(projectId, false)
+  // 运行态合并若改变了磁盘基线，立即以 clean 完整快照落盘；否则下一次 openSnapshot
+  // 仍会从旧 latest.json 读回 running。加载期间若又收到回写，pending 也会在这里重排。
+  if (runtimeMergeChanged || runtimePersistGate.isPending(projectId)) {
+    runtimePersistGate.markPending(projectId)
+    await runtimePersistGate.flushPending(projectId)
+  }
+}
+
+export function isCanvasDirty(projectId: string): boolean {
+  return dirtyProjectIds.has(projectId)
+}
+
+/**
+ * 删除任务记录前确保最近一次运行态已经进入持久化基线。
+ *
+ * 任务取消/失败/完成不新增 dirty，但运行记录删除属于可放弃的用户编辑。若先从热库
+ * 删除 task 再放弃修改，运行态合并将失去取消终态来源，并从旧磁盘快照恢复出 running。
+ * 因此调用方必须先冲刷运行态；冲刷失败或期间又有新回写时保留记录，让用户稍后重试。
+ */
+export async function flushCanvasTaskRuntimeWrites(projectId: string): Promise<void> {
+  await runtimePersistGate.flushPending(projectId)
+  if (runtimePersistGate.isPending(projectId)) {
+    throw new Error('任务状态尚未完成持久化，请稍后重试删除')
+  }
+}
+
+/**
+ * 清除热存储内存缓存（测试用）。
+ * 测试 beforeEach 里 localStorage.clear() 后需调用此函数，
+ * 否则模块级 hotMemory 会跨测试残留旧数据。
+ */
+export function __resetCanvasHotCache(): void {
+  hotMemory = null
+  hotOverflow = null
+  dirtyProjectIds.clear()
+  persistInFlight = Promise.resolve({ attempted: new Set(), failed: new Set() })
+  projectMutationVersion.reset()
+  runtimePersistGate.reset()
+  canvasTaskDiagnosticsMigratedDbs = new WeakSet<CanvasDb>()
+  if (hotPersistTimer != null) {
+    clearTimeout(hotPersistTimer)
+    hotPersistTimer = null
+  }
+}
+
+/** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
+function buildProjectMeta(project: CanvasProject): NonNullable<CanvasSnapshotSaveRequest['meta']> {
+  const meta: NonNullable<CanvasSnapshotSaveRequest['meta']> = {
+    title: project.title,
+    status: project.status,
+    nodeCount: project.nodeCount,
+    assetCount: project.assetCount,
+    taskCount: project.taskCount,
+  }
+  if (project.description !== undefined) meta.description = project.description
+  if (project.coverAssetId !== undefined) meta.coverAssetId = project.coverAssetId
+  if (project.coverUrl !== undefined) meta.coverUrl = project.coverUrl
+  if (project.rootPath !== undefined) meta.rootPath = project.rootPath
+  if (project.pinned !== undefined) meta.pinned = project.pinned
+  if (project.pinnedAt !== undefined) meta.pinnedAt = project.pinnedAt
+  return meta
+}
+
+export function isMediaOperation(operation: CanvasOperationType): boolean {
+  return canvasOperationKind(operation) === 'cloud_media'
+}
+
+export function isTextModelOperation(operation: CanvasOperationType): boolean {
+  return canvasOperationKind(operation) === 'text'
+}
+
+const CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES = new Set([
+  'workflow',
+  'sourceAssetId',
+  'responseFormat',
+  'response_format',
+])
+
+/**
+ * Provider contracts only understand wire parameters. Canvas workflow identity and
+ * response-shape hints are renderer control metadata and must survive that pruning.
+ */
+function restoreCanvasTextControlModelParams(
+  operation: CanvasOperationType,
+  original: Record<string, unknown>,
+  pruned: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isTextModelOperation(operation)) return pruned
+  const restored = { ...pruned }
+  for (const name of CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES) {
+    if (Object.prototype.hasOwnProperty.call(original, name)) restored[name] = original[name]
+  }
+  return restored
+}
+
+export type CanvasDb = {
+  projects: CanvasProject[]
+  boards: CanvasBoard[]
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+  assets: CanvasAsset[]
+  tasks: CanvasTask[]
+}
+
+const emptyDb = (): CanvasDb => ({
+  projects: [],
+  boards: [],
+  nodes: [],
+  edges: [],
+  assets: [],
+  tasks: [],
+})
+
+type CanvasProjectExportPayload = {
+  kind: 'spark.canvas.project'
+  version: 1 | 2
+  exportedAt: string
+  app: 'Spark-Agent'
+  projectRootPath?: string
+  snapshot: CanvasSnapshot
+}
+
+function uid(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function now(): string {
+  return new Date().toISOString()
+}
+
+/**
+ * Entity versions are ISO timestamps and are also used by the renderer to decide
+ * whether an in-memory node can be reused. Two Agent edits can land in the same
+ * millisecond, so make data mutations strictly monotonic per node.
+ */
+function nextEntityUpdatedAt(previous?: string): string {
+  const candidate = now()
+  if (!previous || candidate > previous) return candidate
+  const previousTime = Date.parse(previous)
+  return Number.isFinite(previousTime) ? new Date(previousTime + 1).toISOString() : candidate
+}
+
+function toCanvasProject(project: CanvasProjectListItem): CanvasProject {
+  return {
+    ...project,
+    userId: USER_ID,
+    settings: {},
+  }
+}
+
+async function getDefaultCanvasProjectsRoot(): Promise<string> {
+  const { rootPath } = await window.spark.invoke('canvas:project:default-root', {})
+  return rootPath
+}
+
+async function ensureCanvasProjectDirectory(input: {
+  projectId: string
+  title?: string
+  rootPath?: string | null
+  parentDirectory?: string
+}): Promise<string> {
+  const result = await window.spark.invoke('canvas:project:ensure-directory', {
+    projectId: input.projectId,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.rootPath !== undefined ? { rootPath: input.rootPath } : {}),
+    ...(input.parentDirectory !== undefined ? { parentDirectory: input.parentDirectory } : {}),
+  })
+  return result.rootPath
+}
+
+/**
+ * 热存储内存缓存（性能优化）。
+ *
+ * 原实现每次 readDb 都 JSON.parse 全库、每次 writeDb 都 JSON.stringify 全库写 localStorage，
+ * 在 Agent 高频调用工具时（一轮几十次读写）成为严重瓶颈。
+ *
+ * 优化后：首次从 localStorage 加载到 hotMemory，后续 readDb 直接返回内存引用（O(1)），
+ * writeDb 只更新内存引用 + 标记 dirty，localStorage 落盘走防抖（persistHotDbDebounced）。
+ *
+ * 这不影响持久化：SQLite 才是画布的权威存储（见文件顶部说明）。
+ * localStorage 仅是同会话内的快速热缓存，防抖延迟写不影响 durability。
+ */
+let hotMemory: CanvasDb | null = null
+/** localStorage 配额超限时的内存兜底标志（保留向后兼容） */
+let hotOverflow: CanvasDb | null = null
+/** 留余量给 localStorage ~5MB 配额，超过即直接走内存，避免无谓的序列化+异常 */
+const HOT_LOCALSTORAGE_LIMIT = 4_000_000
+/** localStorage 防抖落盘间隔：合并多次 writeDb 为一次 localStorage.setItem */
+const HOT_PERSIST_DEBOUNCE_MS = 500
+let hotPersistTimer: ReturnType<typeof setTimeout> | null = null
+
+function cloneDb(db: CanvasDb): CanvasDb {
+  if (typeof structuredClone === 'function') return structuredClone(db)
+  return JSON.parse(JSON.stringify(db)) as CanvasDb
+}
+
+/**
+ * 把热存储同步落地到 localStorage（实际序列化 + setItem）。
+ * 仅由 persistHotDbDebounced 防抖调用，或 flushPersist / revertProject 等需要立即落盘的场景调用。
+ */
+function persistHotDbSync(db: CanvasDb): void {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(db)
+  } catch {
+    hotOverflow = db
+    return
+  }
+  if (serialized.length > HOT_LOCALSTORAGE_LIMIT) {
+    hotOverflow = db
+    return
+  }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, serialized)
+    hotOverflow = null
+  } catch {
+    // 多为 QuotaExceededError：清掉旧值再试一次，仍失败则转内存兜底
+    try {
+      window.localStorage.removeItem(STORAGE_KEY)
+      window.localStorage.setItem(STORAGE_KEY, serialized)
+      hotOverflow = null
+    } catch {
+      hotOverflow = db
+    }
+  }
+}
+
+/**
+ * 防抖落盘：合并多次 writeDb 为一次 localStorage.setItem。
+ * Agent 一轮调用 10 次工具 → 只落盘 1 次（最后一次的状态）。
+ */
+function persistHotDbDebounced(): void {
+  if (hotPersistTimer != null) clearTimeout(hotPersistTimer)
+  hotPersistTimer = setTimeout(() => {
+    hotPersistTimer = null
+    if (hotMemory != null) persistHotDbSync(hotMemory)
+  }, HOT_PERSIST_DEBOUNCE_MS)
+}
+
+/**
+ * 立即落盘（用于 flushPersist / revertProject / 离开页面等需要保证 localStorage 一致的场景）。
+ */
+function flushHotPersist(): void {
+  if (hotPersistTimer != null) {
+    clearTimeout(hotPersistTimer)
+    hotPersistTimer = null
+  }
+  if (hotMemory != null) persistHotDbSync(hotMemory)
+}
+
+/**
+ * 把热存储落地：更新内存引用 + 防抖写 localStorage。
+ * 能塞进 localStorage 就用 localStorage（清掉内存兜底），否则整库转内存镜像。
+ */
+function persistHotDb(db: CanvasDb): void {
+  // 始终更新内存缓存（O(1)）
+  hotMemory = db
+  if (hotOverflow) {
+    // 本会话已超配额：直接换内存引用，不再反复序列化/触发配额异常
+    hotOverflow = db
+    return
+  }
+  // 防抖落盘：合并高频写
+  persistHotDbDebounced()
+}
+
+function readDb(): CanvasDb {
+  // 内存缓存优先：首次加载后不再重复 JSON.parse（性能关键路径）
+  if (hotMemory != null) {
+    migrateFilmAssetDbInPlace(hotMemory)
+    migrateCanvasTaskDiagnosticsInPlace(hotMemory)
+    return hotMemory
+  }
+  // 内存兜底优先：此时 localStorage 是不完整/过期的
+  if (hotOverflow) {
+    const parsed = { ...emptyDb(), ...cloneDb(hotOverflow) }
+    hotMemory = parsed
+    migrateFilmAssetDbInPlace(parsed)
+    migrateCanvasTaskDiagnosticsInPlace(parsed)
+    return parsed
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) {
+      const empty = emptyDb()
+      hotMemory = empty
+      return empty
+    }
+    const parsed = { ...emptyDb(), ...JSON.parse(raw) } as CanvasDb
+    hotMemory = parsed
+    migrateFilmAssetDbInPlace(parsed)
+    migrateCanvasTaskDiagnosticsInPlace(parsed)
+    return parsed
+  } catch {
+    const empty = emptyDb()
+    hotMemory = empty
+    return empty
+  }
+}
+
+/** 一次性迁移：老 imageAssetId/attributes 资产 -> references 数组（v2 资源库模型）。
+ *  用模块级 flag 保证只跑一次，迁移完成后写回热存储（localStorage 或内存兜底）。 */
+let filmAssetV2MigrationApplied = false
+function migrateFilmAssetDbInPlace(db: CanvasDb): void {
+  if (filmAssetV2MigrationApplied) return
+  // 检查是否存在未迁移的资产
+  let touched = false
+  for (const asset of db.assets) {
+    const meta = asset.metadata
+    if (!meta) continue
+    if (Array.isArray(meta['references']) && Array.isArray(meta['tags'])) continue
+    asset.metadata = migrateFilmAssetMetadata(meta)
+    touched = true
+  }
+  // 兼容空库（无项目也无资产）也直接标记完成
+  filmAssetV2MigrationApplied = true
+  if (touched) {
+    // persistHotDb 内部已处理配额失败（转内存），不会抛
+    persistHotDb(db)
+  }
+}
+
+/** Backfill optional diagnostic fields without changing task content or status. */
+let canvasTaskDiagnosticsMigratedDbs = new WeakSet<CanvasDb>()
+function migrateCanvasTaskDiagnosticsInPlace(db: CanvasDb): void {
+  if (canvasTaskDiagnosticsMigratedDbs.has(db)) return
+  let touched = false
+  const nodeById = new Map(db.nodes.map((node) => [node.id, node]))
+  const operationNodeByTaskId = new Map<string, CanvasNode>()
+  for (const node of db.nodes) {
+    if (node.taskId && isOperationNode(node)) operationNodeByTaskId.set(node.taskId, node)
+  }
+  for (const edge of db.edges) {
+    if (!edge.taskId || operationNodeByTaskId.has(edge.taskId)) continue
+    const operationNodeId =
+      edge.type === 'used_as_input'
+        ? edge.targetNodeId
+        : edge.type === 'generated'
+          ? edge.sourceNodeId
+          : null
+    const operationNode = operationNodeId ? nodeById.get(operationNodeId) : undefined
+    if (operationNode && isOperationNode(operationNode)) {
+      operationNodeByTaskId.set(edge.taskId, operationNode)
+    }
+  }
+  for (const task of db.tasks) {
+    const operationNode = operationNodeByTaskId.get(task.id)
+    if (task.operationNodeId == null && operationNode) {
+      task.operationNodeId = operationNode.id
+      touched = true
+    }
+    if (task.taskPipelineRole === undefined && operationNode?.data.pipelineRole) {
+      task.taskPipelineRole = operationNode.data.pipelineRole
+      touched = true
+    }
+    if (task.outputPipelineRole === undefined && operationNode?.data.outputPipelineRole) {
+      task.outputPipelineRole = operationNode.data.outputPipelineRole
+      touched = true
+    }
+    if (
+      task.completedAt == null &&
+      (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled')
+    ) {
+      task.completedAt = task.updatedAt
+      touched = true
+    }
+    if (
+      task.modelOutputText == null &&
+      task.rawResponse != null &&
+      typeof task.rawResponse === 'object' &&
+      !Array.isArray(task.rawResponse)
+    ) {
+      const rawResponse = task.rawResponse as Record<string, unknown>
+      const legacyOutput =
+        typeof rawResponse.outputText === 'string'
+          ? rawResponse.outputText
+          : typeof rawResponse.text === 'string'
+            ? rawResponse.text
+            : ''
+      if (legacyOutput.trim()) {
+        task.modelOutputText = legacyOutput
+        touched = true
+      }
+    }
+  }
+  canvasTaskDiagnosticsMigratedDbs.add(db)
+  if (touched) persistHotDb(db)
+}
+
+/**
+ * 写热存储并标记 dirty。
+ *
+ * 保守地把**所有非 deleted 项目**都加入 dirtyProjectIds。绝大多数写操作是针对当前打开
+ * 的项目（编辑节点/连线/资产/任务等），而 dirty 的唯一消费方是当前画布工作区的
+ * `isCanvasDirty(projectId)`（项目列表不显示 dirty 徽标），所以「多标」是不可见的过报，
+ * 而「漏标」会吞掉未保存提醒——这里宁可过报。
+ *
+ * 真正需要精准清 dirty 的落库/回滚操作（flushPersist / revertProject）和「单项目状态
+ * 变更已先落库」的场景（deleteProject / updateProjectCover / openSnapshot 重载分支）
+ * 走 writeHotDb(db, projectId, false) 按 projectId 精确清除。
+ */
+function writeDb(db: CanvasDb): void {
+  // 热存储：能塞进 localStorage 就用 localStorage，装不下则转内存兜底（大文稿场景）。
+  // SQLite 默认在手动保存或项目生命周期操作时写入；开启自动保存后也会通过 saveCanvas() 落库。
+  persistHotDb(db)
+  for (const project of db.projects) {
+    if (project.status === 'deleted') continue
+    projectMutationVersion.mark(project.id)
+    dirtyProjectIds.add(project.id)
+    dispatchDirty(project.id, true)
+  }
+}
+
+/**
+ * 写入任务运行态，但保留项目进入本次回写前的 dirty 状态。
+ *
+ * 任务提交、失败和取消属于后台生命周期回写；它们必须更新热存储，不能因为
+ * 一个原本干净的项目收到运行态事件，就伪造出「有未保存的用户编辑」。
+ * 若项目本来已经 dirty，则继续保留 dirty，避免吞掉用户自己的画布修改。
+ */
+function writeTaskRuntimeDb(db: CanvasDb, projectId: string): void {
+  const wasDirty = dirtyProjectIds.has(projectId)
+  projectMutationVersion.mark(projectId)
+  persistHotDb(db)
+  // clean 项目静默保存完整热快照；dirty 项目由持久化层读取上次保存的磁盘基线，
+  // 只合并任务生命周期白名单，避免把节点位置、Prompt 等未保存编辑一并写盘。
+  runtimePersistGate.markPending(projectId)
+  if (wasDirty) dispatchDirty(projectId, true)
+}
+
+async function persistProjectRuntimeWrites(projectId: string): Promise<void> {
+  await persistCanvasRuntimeSnapshot({
+    projectId,
+    waitForPreviousPersist: () => persistInFlight,
+    canPersistFullSnapshot: () => !isProjectDirty(projectId),
+    flushHotPersist,
+    readDbSnapshot: () => cloneDb(readDb()),
+    loadPersistedSnapshot: async () => (await loadSnapshotFromStorage(projectId))?.snapshot ?? null,
+    mergeRuntimeState: mergeCanvasRuntimeStateIntoSnapshot,
+    resolveActiveBoard,
+    buildProjectMeta,
+    captureVersion: () => projectMutationVersion.capture([projectId]).get(projectId),
+    isVersionCurrent: (version) => projectMutationVersion.isCurrent(projectId, version),
+    saveSnapshot: (request) => window.spark.invoke('canvas:snapshot:save', request),
+    setPersistTail: (tail) => (persistInFlight = tail),
+    clearPending: () => runtimePersistGate.clearPersisted(projectId),
+    reschedulePending: () => runtimePersistGate.markPending(projectId),
+    reportError: (error) => console.error('[canvas] task runtime persist failed', projectId, error),
+  })
+}
+
+runtimePersistGate.setHandler((projectId) => persistProjectRuntimeWrites(projectId))
+
+function writeHotDb(db: CanvasDb, projectId: string, dirty: boolean): void {
+  projectMutationVersion.mark(projectId)
+  persistHotDb(db)
+  if (dirty) dirtyProjectIds.add(projectId)
+  else dirtyProjectIds.delete(projectId)
+  dispatchDirty(projectId, dirty)
+}
+
+function removeProjectFromDb(db: CanvasDb, projectId: string): void {
+  db.projects = db.projects.filter((item) => item.id !== projectId)
+  db.boards = db.boards.filter((item) => item.projectId !== projectId)
+  db.nodes = db.nodes.filter((item) => item.projectId !== projectId)
+  db.edges = db.edges.filter((item) => item.projectId !== projectId)
+  db.assets = db.assets.filter((item) => item.projectId !== projectId)
+  db.tasks = db.tasks.filter((item) => item.projectId !== projectId)
+}
+
+function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
+  const projectId = snapshot.project.id
+  removeProjectFromDb(db, projectId)
+  db.projects.push(snapshot.project)
+  // 多 board：优先写入 boards[]；向下兼容只写单 board 的旧快照
+  if (Array.isArray(snapshot.boards) && snapshot.boards.length > 0) {
+    db.boards.push(...snapshot.boards)
+  } else if (snapshot.board) {
+    db.boards.push(snapshot.board)
+  }
+  db.nodes.push(...snapshot.nodes)
+  db.edges.push(...snapshot.edges)
+  db.assets.push(...snapshot.assets)
+  db.tasks.push(...snapshot.tasks)
+}
+
+/** 读取项目内全部 board；旧快照（仅 db.boards 或单 board）归一化为数组 */
+export function readProjectBoards(db: CanvasDb, projectId: string): CanvasBoard[] {
+  return db.boards.filter((board) => board.projectId === projectId)
+}
+
+/**
+ * 选择激活 board：优先用传入 boardId，其次 snapshot.activeBoardId，
+ * 否则取标记 isDefault 的 board，最后取第一个。返回归一化的 boards 数组与激活 board。
+ */
+export function resolveActiveBoard(
+  boards: CanvasBoard[],
+  preferredBoardId?: string | null,
+): { boards: CanvasBoard[]; active: CanvasBoard } | null {
+  if (boards.length === 0) return null
+  const pick =
+    (preferredBoardId && boards.find((board) => board.id === preferredBoardId)) ||
+    boards.find((board) => board.settings?.isDefault) ||
+    boards[0]!
+  return { boards, active: pick }
+}
+
+function fullSnapshotFromDb(
+  db: CanvasDb,
+  projectId: string,
+  activeBoardId?: string | null,
+): CanvasSnapshot {
+  const project = db.projects.find((item) => item.id === projectId)
+  if (!project) throw new Error('Canvas project not found')
+  const boards = readProjectBoards(db, projectId)
+  const resolved = resolveActiveBoard(boards, activeBoardId)
+  if (!resolved) throw new Error('Canvas board not found')
+  return {
+    project,
+    board: resolved.active,
+    boards: resolved.boards,
+    activeBoardId: resolved.active.id,
+    nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId)),
+    edges: db.edges.filter((edge) => edge.projectId === projectId),
+    assets: db.assets.filter((asset) => asset.projectId === projectId),
+    tasks: db.tasks.filter((task) => task.projectId === projectId),
+  }
+}
+
+/**
+ * 工作区展示用快照：按激活 board 过滤 nodes/edges/tasks（文档 §7.1：切换 board
+ * 时不要把其他 board 的节点与任务渲染进当前工作区）。assets 保持项目级共享。
+ */
+export function snapshotFromDb(
+  db: CanvasDb,
+  projectId: string,
+  activeBoardId?: string | null,
+): CanvasSnapshot {
+  const project = db.projects.find((item) => item.id === projectId)
+  if (!project) throw new Error('Canvas project not found')
+  const boards = readProjectBoards(db, projectId)
+  const resolved = resolveActiveBoard(boards, activeBoardId)
+  if (!resolved) throw new Error('Canvas board not found')
+  const boardId = resolved.active.id
+  // 按激活 board 过滤节点/边（文档 §7.1：切换 board 不渲染其他 board 的节点）
+  let nodes = db.nodes.filter(
+    (node) => node.projectId === projectId && node.boardId === boardId && !node.hidden,
+  )
+  let edges = db.edges.filter((edge) => edge.projectId === projectId && edge.boardId === boardId)
+  // 防御性兜底：仅当项目节点全部指向已不存在的 board（旧数据 / 迁移残留）时
+  // 才回退显示全部。若节点属于另一个仍然有效的 board，当前空 board 必须保持为空，
+  // 避免跨 board 渲染节点。
+  if (nodes.length === 0) {
+    const allProjectNodes = db.nodes.filter((node) => node.projectId === projectId && !node.hidden)
+    const projectBoardIds = new Set(boards.map((board) => board.id))
+    const hasNodeOnKnownBoard = allProjectNodes.some((node) => projectBoardIds.has(node.boardId))
+    if (allProjectNodes.length > 0 && !hasNodeOnKnownBoard) {
+      nodes = allProjectNodes
+      edges = db.edges.filter((edge) => edge.projectId === projectId)
+    }
+  }
+  return {
+    project,
+    board: resolved.active,
+    boards: resolved.boards,
+    activeBoardId: boardId,
+    nodes: sortCanvasNodes(nodes),
+    edges,
+    assets: db.assets.filter((asset) => asset.projectId === projectId),
+    tasks: db.tasks.filter((task) => task.projectId === projectId && task.boardId === boardId),
+  }
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function sanitizeFileName(value: string): string {
+  const cleaned = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+  return cleaned.length > 0 ? cleaned.slice(0, 80) : 'canvas-project'
+}
+
+async function mediaUrlToDataUrl(url: string): Promise<string | null> {
+  if (url.startsWith('data:')) return url
+  if (!url.startsWith('safe-file://')) return null
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read media'))
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function embedExportableImages(snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
+  const next = cloneJson(snapshot)
+  const cache = new Map<string, Promise<string | null>>()
+  const embed = (
+    url: string | null | undefined,
+    mimeType?: string | null,
+  ): Promise<string | null> => {
+    if (!url) return Promise.resolve(null)
+    if (mimeType && !mimeType.toLowerCase().startsWith('image/')) return Promise.resolve(null)
+    if (!url.startsWith('safe-file://') && !url.startsWith('data:image/'))
+      return Promise.resolve(null)
+    const existing = cache.get(url)
+    if (existing) return existing
+    const promise = mediaUrlToDataUrl(url)
+    cache.set(url, promise)
+    return promise
+  }
+
+  for (const asset of next.assets) {
+    if (asset.type !== 'image') continue
+    const dataUrl = await embed(asset.url, asset.mimeType)
+    if (dataUrl) asset.url = dataUrl
+    const thumbnailDataUrl = await embed(asset.thumbnailUrl, asset.mimeType)
+    if (thumbnailDataUrl) asset.thumbnailUrl = thumbnailDataUrl
+  }
+
+  for (const node of next.nodes) {
+    if (node.type !== 'image') continue
+    const dataUrl = await embed(node.data.url, node.data.mimeType)
+    if (dataUrl) node.data.url = dataUrl
+    const thumbnailDataUrl = await embed(node.data.thumbnailUrl, node.data.mimeType)
+    if (thumbnailDataUrl) node.data.thumbnailUrl = thumbnailDataUrl
+  }
+
+  return next
+}
+
+function remapUnknownIds(value: unknown, idMap: Map<string, string>): unknown {
+  if (typeof value === 'string') return idMap.get(value) ?? value
+  if (Array.isArray(value)) return value.map((item) => remapUnknownIds(item, idMap))
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+      key,
+      remapUnknownIds(child, idMap),
+    ]),
+  )
+}
+
+function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
+  const next = cloneJson(snapshot)
+  const at = now()
+  const idMap = new Map<string, string>()
+  const mapId = (id: string, prefix: string): string => {
+    const existing = idMap.get(id)
+    if (existing) return existing
+    const mapped = uid(prefix)
+    idMap.set(id, mapped)
+    return mapped
+  }
+
+  const projectId = mapId(next.project.id, 'canvas_project')
+  // 多 board：把 boards[] 的每个 id 都登记到 idMap，旧快照只有单 board 时用 next.board
+  const sourceBoards =
+    Array.isArray(next.boards) && next.boards.length > 0 ? next.boards : [next.board]
+  const oldActiveBoardId = next.activeBoardId ?? next.board.id
+  for (const board of sourceBoards) mapId(board.id, 'canvas_board')
+  const newActiveBoardId = idMap.get(oldActiveBoardId) ?? idMap.get(next.board.id)!
+  for (const asset of next.assets) mapId(asset.id, 'canvas_asset')
+  for (const node of next.nodes) mapId(node.id, 'canvas_node')
+  for (const task of next.tasks) mapId(task.id, 'canvas_task')
+  for (const edge of next.edges) mapId(edge.id, 'canvas_edge')
+
+  next.project = {
+    ...next.project,
+    id: projectId,
+    userId: USER_ID,
+    title: `${next.project.title || 'Canvas Project'}（导入）`,
+    status: 'active',
+    rootPath: null,
+    lastOpenedAt: at,
+    createdAt: at,
+    updatedAt: at,
+  }
+  // 重映射全部 board，并同步 activeBoardId / board（激活板）
+  next.boards = sourceBoards.map((board) => ({
+    ...board,
+    id: mapId(board.id, 'canvas_board'),
+    projectId,
+    userId: USER_ID,
+    createdAt: at,
+    updatedAt: at,
+  }))
+  next.activeBoardId = newActiveBoardId
+  next.board = next.boards.find((board) => board.id === newActiveBoardId) ?? next.boards[0]!
+  next.assets = next.assets.map((asset) => ({
+    ...asset,
+    id: mapId(asset.id, 'canvas_asset'),
+    projectId,
+    userId: USER_ID,
+    metadata: remapUnknownIds(asset.metadata ?? {}, idMap) as Record<string, unknown>,
+  }))
+  next.nodes = next.nodes.map((node) => ({
+    ...node,
+    id: mapId(node.id, 'canvas_node'),
+    projectId,
+    // 保留节点原有 board 归属（映射到新 board id）；旧单 board 快照落到激活板
+    boardId: idMap.get(node.boardId) ?? newActiveBoardId,
+    userId: USER_ID,
+    ...(node.assetId ? { assetId: mapId(node.assetId, 'canvas_asset') } : {}),
+    ...(node.taskId ? { taskId: mapId(node.taskId, 'canvas_task') } : {}),
+    ...(node.parentNodeId ? { parentNodeId: mapId(node.parentNodeId, 'canvas_node') } : {}),
+  }))
+  next.tasks = next.tasks.map((task) => ({
+    ...task,
+    id: mapId(task.id, 'canvas_task'),
+    projectId,
+    // 保留 task 所属 board 映射；旧单 board 快照落到激活板
+    boardId: idMap.get(task.boardId) ?? newActiveBoardId,
+    userId: USER_ID,
+    inputNodeIds: task.inputNodeIds.map((id) => idMap.get(id) ?? id),
+    inputAssetIds: task.inputAssetIds.map((id) => idMap.get(id) ?? id),
+    outputNodeIds: task.outputNodeIds.map((id) => idMap.get(id) ?? id),
+    outputAssetIds: task.outputAssetIds.map((id) => idMap.get(id) ?? id),
+  }))
+  next.edges = next.edges.map((edge) => ({
+    ...edge,
+    id: mapId(edge.id, 'canvas_edge'),
+    projectId,
+    boardId: idMap.get(edge.boardId) ?? newActiveBoardId,
+    userId: USER_ID,
+    sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
+    targetNodeId: idMap.get(edge.targetNodeId) ?? edge.targetNodeId,
+    ...(edge.taskId ? { taskId: idMap.get(edge.taskId) ?? edge.taskId } : {}),
+    metadata: remapUnknownIds(edge.metadata ?? {}, idMap) as Record<string, unknown>,
+  }))
+  updateSnapshotCounts(next)
+  return next
+}
+
+function updateSnapshotCounts(snapshot: CanvasSnapshot): void {
+  snapshot.project.nodeCount = snapshot.nodes.filter((node) => !node.hidden).length
+  snapshot.project.assetCount = snapshot.assets.length
+  snapshot.project.taskCount = snapshot.tasks.length
+  snapshot.project.updatedAt = now()
+}
+
+function parseCanvasProjectExport(raw: string): CanvasSnapshot {
+  const parsed = JSON.parse(raw) as Partial<CanvasProjectExportPayload> | Partial<CanvasSnapshot>
+  const maybePayload = parsed as Partial<CanvasProjectExportPayload>
+  const snapshot =
+    maybePayload.kind === 'spark.canvas.project' && maybePayload.snapshot
+      ? maybePayload.snapshot
+      : (parsed as Partial<CanvasSnapshot>)
+  // 兼容校验：多 board 快照可能只有 boards[] 而无单 board 字段
+  const hasBoards = Array.isArray(snapshot.boards) && snapshot.boards.length > 0
+  if (
+    !snapshot.project ||
+    !(snapshot.board || hasBoards) ||
+    !Array.isArray(snapshot.nodes) ||
+    !Array.isArray(snapshot.edges) ||
+    !Array.isArray(snapshot.assets) ||
+    !Array.isArray(snapshot.tasks)
+  ) {
+    throw new Error('无效的 Canvas 项目文件')
+  }
+  // 归一化：缺 board 时从 boards[] 推导激活板，保证下游统一能读 snapshot.board
+  const normalized = snapshot as CanvasSnapshot
+  if (!normalized.board && hasBoards) {
+    const activeId = normalized.activeBoardId
+    normalized.board =
+      (activeId && normalized.boards!.find((b) => b.id === activeId)) ||
+      normalized.boards!.find((b) => b.settings?.isDefault) ||
+      normalized.boards![0]!
+    normalized.activeBoardId = normalized.board.id
+  }
+  return normalized
+}
+
+function isImageDataUrl(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^data:image\/[^;,]+;base64,/i.test(value)
+}
+
+async function materializeImageDataUrl(
+  dataUrl: string,
+  suggestedBaseName: string,
+  mimeType?: string | null,
+  projectId?: string,
+  projectRootPath?: string | null,
+): Promise<{ filePath: string; fileUrl: string } | null> {
+  try {
+    const saved = projectId
+      ? await window.spark.invoke('canvas:asset:write-data-url', {
+          projectId,
+          dataUrl,
+          ...(mimeType ? { mimeType } : {}),
+          suggestedBaseName,
+          type: 'image',
+          ...(projectRootPath ? { projectRootPath } : {}),
+        })
+      : await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          ...(mimeType ? { mimeType } : {}),
+          suggestedBaseName,
+          storageScope: 'canvas',
+        })
+    return { filePath: saved.filePath, fileUrl: encodeToSafeFileUrl(saved.filePath) }
+  } catch {
+    return null
+  }
+}
+
+async function normalizeSnapshotForHotStorage(
+  snapshot: CanvasSnapshot,
+): Promise<{ snapshot: CanvasSnapshot; changed: boolean }> {
+  const cache = new Map<string, Promise<{ filePath: string; fileUrl: string } | null>>()
+  let changed = false
+  const materialize = (dataUrl: string, name: string, mimeType?: string | null) => {
+    const existing = cache.get(dataUrl)
+    if (existing) return existing
+    const next = materializeImageDataUrl(
+      dataUrl,
+      name,
+      mimeType,
+      snapshot.project.id,
+      snapshot.project.rootPath,
+    )
+    cache.set(dataUrl, next)
+    return next
+  }
+
+  for (const asset of snapshot.assets) {
+    const baseName = (asset.title ?? asset.id).replace(/\.[^.]+$/, '')
+    // storageKey 归一（assetLibrary 缺陷 3）：项目目录内的落盘路径一律存相对 key
+    const projectRoot = snapshot.project.rootPath
+    const relativeKey = (filePath: string) => toRelativeStorageKey(filePath, projectRoot)
+    if (isImageDataUrl(asset.url)) {
+      const saved = await materialize(asset.url, baseName, asset.mimeType)
+      if (saved) {
+        asset.url = saved.fileUrl
+        asset.storageKey = relativeKey(saved.filePath)
+        asset.metadata = {
+          ...asset.metadata,
+          storageAdapter: 'local-file',
+          filePath: saved.filePath,
+        }
+        changed = true
+      }
+    }
+    if (isImageDataUrl(asset.thumbnailUrl)) {
+      const saved = await materialize(asset.thumbnailUrl, `${baseName}-thumb`, asset.mimeType)
+      if (saved) {
+        asset.thumbnailUrl = saved.fileUrl
+        asset.thumbnailKey = relativeKey(saved.filePath)
+        changed = true
+      }
+    }
+  }
+
+  for (const node of snapshot.nodes) {
+    const baseName = node.title ?? node.id
+    if (isImageDataUrl(node.data.url)) {
+      const saved = await materialize(node.data.url, baseName, node.data.mimeType)
+      if (saved) {
+        node.data.url = saved.fileUrl
+        changed = true
+      }
+    }
+    if (isImageDataUrl(node.data.thumbnailUrl)) {
+      const saved = await materialize(
+        node.data.thumbnailUrl,
+        `${baseName}-thumb`,
+        node.data.mimeType,
+      )
+      if (saved) {
+        node.data.thumbnailUrl = saved.fileUrl
+        changed = true
+      }
+    }
+  }
+
+  return { snapshot, changed }
+}
+
+async function loadSnapshotFromStorage(
+  projectId: string,
+): Promise<{ snapshot: CanvasSnapshot; changed: boolean } | null> {
+  const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+  if (!snapshotJson) return null
+  const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
+  // 兼容多 board：缺 board 时从 boards[] 推导；都没有则视为无效快照
+  const hasBoards = Array.isArray(snapshot.boards) && snapshot.boards.length > 0
+  if (!snapshot.project || !(snapshot.board || hasBoards)) return null
+  if (!snapshot.board && hasBoards) {
+    const activeId = snapshot.activeBoardId
+    snapshot.board =
+      (activeId && snapshot.boards!.find((b) => b.id === activeId)) ||
+      snapshot.boards!.find((b) => b.settings?.isDefault) ||
+      snapshot.boards![0]!
+    snapshot.activeBoardId = snapshot.board.id
+  }
+  if (!snapshot.project.rootPath) {
+    snapshot.project.rootPath = await ensureCanvasProjectDirectory({
+      projectId,
+      title: snapshot.project.title,
+    })
+  }
+  return normalizeSnapshotForHotStorage({
+    project: snapshot.project,
+    board: snapshot.board!,
+    ...(hasBoards ? { boards: snapshot.boards } : {}),
+    ...(snapshot.activeBoardId ? { activeBoardId: snapshot.activeBoardId } : {}),
+    ...(snapshot.uiState ? { uiState: snapshot.uiState } : {}),
+    nodes: snapshot.nodes ?? [],
+    edges: snapshot.edges ?? [],
+    assets: snapshot.assets ?? [],
+    tasks: snapshot.tasks ?? [],
+  })
+}
+
+function createNodeBase(input: {
+  nodes: readonly CanvasNode[]
+  id?: string
+  projectId: string
+  boardId: string
+  type: CanvasNode['type']
+  title?: string | null
+  assetId?: string | null
+  taskId?: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  data: CanvasNode['data']
+  at?: string
+}): CanvasNode {
+  const at = input.at ?? now()
+  const naming = createCanvasNodeNaming({
+    nodes: input.nodes,
+    boardId: input.boardId,
+    type: input.type,
+    title: input.title,
+  })
+  return {
+    id: input.id ?? uid('canvas_node'),
+    projectId: input.projectId,
+    boardId: input.boardId,
+    userId: USER_ID,
+    type: input.type,
+    title: naming.title,
+    assetId: input.assetId ?? null,
+    taskId: input.taskId ?? null,
+    parentNodeId: null,
+    x: input.x,
+    y: input.y,
+    width: input.width,
+    height: input.height,
+    rotation: 0,
+    zIndex: 1,
+    locked: false,
+    hidden: false,
+    data: { ...input.data, nodeSequence: naming.nodeNumber },
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
+type CanvasTaskNodeLookup = {
+  node: CanvasNode
+  ownsTask: boolean
+}
+
+function findCanvasTaskNode(
+  db: CanvasDb,
+  projectId: string,
+  taskId: string,
+): CanvasTaskNodeLookup | null {
+  const directNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
+  if (directNode) return { node: directNode, ownsTask: true }
+
+  const edgeTargetIds = db.edges
+    .filter(
+      (edge) =>
+        edge.projectId === projectId && edge.taskId === taskId && edge.type === 'used_as_input',
+    )
+    .map((edge) => edge.targetNodeId)
+  for (const nodeId of edgeTargetIds) {
+    const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
+    if (node) return { node, ownsTask: false }
+  }
+
+  const generatedSourceId = db.edges.find(
+    (edge) => edge.projectId === projectId && edge.taskId === taskId && edge.type === 'generated',
+  )?.sourceNodeId
+  if (generatedSourceId) {
+    const node = db.nodes.find(
+      (item) => item.id === generatedSourceId && item.projectId === projectId,
+    )
+    if (node) return { node, ownsTask: false }
+  }
+
+  return null
+}
+
+function canPatchCanvasTaskNode(lookup: CanvasTaskNodeLookup, taskId: string): boolean {
+  return lookup.ownsTask || lookup.node.taskId == null || lookup.node.taskId === taskId
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function pickInheritedModelParams(
+  params: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!params) return {}
+  const keys = [
+    'aspectRatio',
+    'duration',
+    'durationSeconds',
+    'fps',
+    'height',
+    'imageCount',
+    'quality',
+    'resolution',
+    'seed',
+    'size',
+    'style',
+    'width',
+  ]
+  const next: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (params[key] != null) next[key] = params[key]
+  }
+  return next
+}
+
+function mergeInheritedModelParams(
+  target: Record<string, unknown>,
+  source: Record<string, unknown> | undefined,
+): void {
+  Object.assign(target, pickInheritedModelParams(source))
+}
+
+function sortCanvasNodes(nodes: CanvasNode[]): CanvasNode[] {
+  return [...nodes].sort((left, right) => {
+    if (left.type === 'group' && right.type !== 'group') return -1
+    if (left.type !== 'group' && right.type === 'group') return 1
+    if (left.parentNodeId && !right.parentNodeId) return 1
+    if (!left.parentNodeId && right.parentNodeId) return -1
+    return left.zIndex - right.zIndex
+  })
+}
+
+function updateProjectCounts(db: CanvasDb, projectId: string): void {
+  const project = db.projects.find((item) => item.id === projectId)
+  if (!project) return
+  project.nodeCount = db.nodes.filter((node) => node.projectId === projectId && !node.hidden).length
+  project.assetCount = db.assets.filter((asset) => asset.projectId === projectId).length
+  project.taskCount = db.tasks.filter((task) => task.projectId === projectId).length
+  project.updatedAt = now()
+}
+
+type GroupMemberLayout = {
+  node: CanvasNode
+  absoluteX: number
+  absoluteY: number
+}
+
+function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], at: string): void {
+  if (members.length === 0) {
+    groupNode.width = Math.max(groupNode.width, 360)
+    groupNode.height = Math.max(groupNode.height, 220)
+    groupNode.data = {
+      ...groupNode.data,
+      text: '包含 0 个节点',
+      message: '拖入或选择节点后可加入此组',
+    }
+    groupNode.updatedAt = at
+    return
+  }
+
+  const layout = planGroupLayout(
+    members.map((item) => ({
+      id: item.node.id,
+      width: item.node.width,
+      height: item.node.height,
+      absoluteX: item.absoluteX,
+      absoluteY: item.absoluteY,
+    })),
+  )
+  if (!layout) return
+  groupNode.x = layout.x
+  groupNode.y = layout.y
+  groupNode.width = layout.width
+  groupNode.height = layout.height
+  groupNode.data = {
+    ...groupNode.data,
+    text: `包含 ${members.length} 个节点`,
+    message: members.map((item) => item.node.title ?? item.node.type).join(' / '),
+  }
+  groupNode.updatedAt = at
+
+  const positionById = new Map(layout.members.map((item) => [item.id, item]))
+  for (const member of members) {
+    const position = positionById.get(member.node.id)
+    if (!position) continue
+    member.node.parentNodeId = groupNode.id
+    member.node.x = position.x
+    member.node.y = position.y
+    member.node.zIndex = groupNode.zIndex + 1
+    member.node.updatedAt = at
+  }
+}
+
+function refreshGroupLayout(db: CanvasDb, groupNode: CanvasNode, at: string): void {
+  const members = db.nodes
+    .filter((node) => node.parentNodeId === groupNode.id && !node.hidden)
+    .map((node) => ({
+      node,
+      absoluteX: groupNode.x + node.x,
+      absoluteY: groupNode.y + node.y,
+    }))
+  applyGroupLayout(groupNode, members, at)
+}
+
+export function fitMediaNodeSize(
+  type: CanvasAssetType,
+  width?: number | null,
+  height?: number | null,
+): { width: number; height: number } {
+  if (type === 'image') {
+    return fitCanvasImageNodeSize(width, height)
+  }
+  if (type === 'video') {
+    return fitCanvasVideoNodeSize(width, height)
+  }
+  if (type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
+  return TEXT_NODE_DEFAULT_SIZE
+}
+
+function textDisplayColumns(text: string): number {
+  let columns = 0
+  for (const char of text) {
+    columns += /[\u1100-\uFFEF]/.test(char) ? 2 : 1
+  }
+  return columns
+}
+
+export function fitTextNodeSize(text: string): { width: number; height: number } {
+  const normalized = text.replace(/\r\n?/g, '\n').trim()
+  if (!normalized) return TEXT_NODE_DEFAULT_SIZE
+  if (isShotScriptText(normalized)) return pickTextNodeSize(normalized)
+
+  const lines = normalized.split('\n')
+  const longestLineColumns = Math.max(...lines.map(textDisplayColumns), 0)
+  const width = Math.min(
+    760,
+    Math.max(TEXT_NODE_DEFAULT_SIZE.width, Math.round(Math.min(longestLineColumns, 78) * 7.2 + 56)),
+  )
+  const bodyColumns = Math.max(28, Math.floor((width - 28) / 7.2))
+  const estimatedRows = lines.reduce((sum, line) => {
+    return sum + Math.max(1, Math.ceil(textDisplayColumns(line) / bodyColumns))
+  }, 0)
+  const height = Math.min(
+    860,
+    Math.max(TEXT_NODE_DEFAULT_SIZE.height, 36 + 28 + estimatedRows * 21),
+  )
+  return { width, height }
+}
+
+export function readAssetTextForNode(asset: CanvasAsset): string {
+  const contentText = nonEmptyString(asset.contentText)
+  if (contentText) return contentText
+
+  const prompt = nonEmptyString(asset.metadata?.prompt)
+  if (prompt) return prompt
+
+  const referenceText = readReferences(asset.metadata)
+    .map((ref) => ref.description.trim())
+    .filter(Boolean)
+    .join('\n')
+  if (referenceText) return referenceText
+
+  return asset.title?.trim() ?? ''
+}
+
+/**
+ * 解析媒体节点的本地文件路径：优先 node.data.filePath，回退 url 反解、关联 asset.storageKey。
+ *
+ * 供音频截取/变速、视频尺寸压缩等本地 ffmpeg 链路使用；非本地（http(s) URL）资源
+ * 不进入这些链路，调用方收到 null 时应当走"放弃"分支（toast 友好提示）。
+ *
+ * 注意：asset 回退依赖 db 参数；调用方（含视频/音频弹窗入口）应使用
+ * canvasApi.readMediaNodeLocalFilePath 以带上当前热存储 db。
+ * storageKey 双端兼容（assetLibrary 缺陷 3）：历史绝对路径原样返回；相对 key 按项目根目录解析。
+ */
+export function readMediaLocalFilePath(
+  node: Pick<CanvasNode, 'id' | 'assetId' | 'data'>,
+  db?: CanvasDb,
+): string | null {
+  const direct = typeof node.data?.filePath === 'string' ? node.data.filePath.trim() : ''
+  if (direct) return direct
+  const fromUrl = readLocalPathFromMediaUrl(node.data?.url)
+  if (fromUrl) return fromUrl
+  if (!db || !node.assetId) return null
+  const asset = db.assets.find((a) => a.id === node.assetId)
+  if (!asset) return null
+  const meta = (asset.metadata ?? {}) as { filePath?: unknown }
+  if (typeof meta.filePath === 'string' && meta.filePath) return meta.filePath
+  if (typeof asset.storageKey === 'string' && asset.storageKey) {
+    const rootPath = db.projects.find((item) => item.id === asset.projectId)?.rootPath ?? null
+    return resolveStorageKeyToAbsolutePath(asset.storageKey, rootPath)
+  }
+  return null
+}
+
+/**
+ * 从媒体 url 反解本地路径；其它形式（http(s)/data:）返回 null。
+ * 优先画布标准 `safe-file://x/<base64>`（encodeToSafeFileUrl 产物），
+ * 兼容历史 `safe-file:///<percent>` 与 `file:///<percent>` 形式。
+ */
+function readLocalPathFromMediaUrl(url: unknown): string | null {
+  if (typeof url !== 'string' || url.length === 0) return null
+  const decoded = decodeCanvasSafeFileUrl(url)
+  if (decoded) return decoded
+  if (url.startsWith('safe-file:///')) {
+    try {
+      return decodeURIComponent(url.slice('safe-file:///'.length))
+    } catch {
+      return null
+    }
+  }
+  if (url.startsWith('file://')) {
+    try {
+      return decodeURIComponent(url.slice('file://'.length))
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+function readDisplayImageDimensions(
+  src: string,
+): Promise<{ width: number; height: number } | null> {
+  if (typeof Image === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth || image.width || 0
+      const height = image.naturalHeight || image.height || 0
+      resolve(width > 0 && height > 0 ? { width, height } : null)
+    }
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
+
+/**
+ * 读取媒体产物上可选的 Provider 文件 id 透传。协议 `CanvasMediaTaskAsset` 目前
+ * 不携带 fileId；一旦运行时开始透传，`applyMediaTaskResult` 的血缘写入与
+ * `canvas:asset:cleanup-files` 清理链路即可直接命中，无需再改调用点。
+ */
+function assetOutAssetFileId(assetOut: CanvasMediaTaskAsset): string | undefined {
+  const candidate = (assetOut as unknown as { fileId?: unknown }).fileId
+  return typeof candidate === 'string' && candidate ? candidate : undefined
+}
+
+/**
+ * 资产访问层单例（P1）：读写经由注入的 readDb / writeDb 原语，与热存储
+ * 防抖 flush / dirty 标记共用同一链路。资产相关的新代码一律走本实例，
+ * 为未来抽独立资产表留替换点（步骤模式设计文档 §4.3）。
+ */
+export const canvasAssetRepository: AssetRepository = createSnapshotAssetRepository({
+  readDb,
+  writeDb,
+})
+
+export const canvasApi = {
+  async listProjects(): Promise<CanvasProject[]> {
+    try {
+      const { projects } = await window.spark.invoke('canvas:project:list', {})
+      return projects.filter((project) => project.status !== 'deleted').map(toCanvasProject)
+    } catch {
+      const db = readDb()
+      return db.projects.filter((project) => project.status !== 'deleted')
+    }
+  },
+
+  async getDefaultProjectsRoot(): Promise<string> {
+    return getDefaultCanvasProjectsRoot()
+  },
+
+  async createProject(input: {
+    title: string
+    description?: string
+    parentDirectory?: string
+  }): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const at = now()
+    const projectId = uid('canvas_project')
+    const boardId = uid('canvas_board')
+    const rootPath = await ensureCanvasProjectDirectory({
+      projectId,
+      title: input.title,
+      ...(input.parentDirectory ? { parentDirectory: input.parentDirectory } : {}),
+    })
+    const project: CanvasProject = {
+      id: projectId,
+      userId: USER_ID,
+      title: input.title,
+      description: input.description ?? null,
+      status: 'active',
+      settings: {},
+      rootPath,
+      nodeCount: 0,
+      assetCount: 0,
+      taskCount: 0,
+      lastOpenedAt: at,
+      createdAt: at,
+      updatedAt: at,
+    }
+    const board: CanvasBoard = {
+      id: boardId,
+      projectId,
+      userId: USER_ID,
+      name: 'Main canvas',
+      viewport: { x: 0, y: 0, zoom: 1 },
+      settings: { grid: true, snap: false, background: 'paper' },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.projects.unshift(project)
+    db.boards.push(board)
+    writeDb(db)
+    // 项目创建是关键操作：立即落库，确保关闭应用后 SQLite 里一定有这条记录。
+    await flushPersist()
+    return { project, board, nodes: [], edges: [], assets: [], tasks: [] }
+  },
+
+  async updateProject(
+    projectId: string,
+    patch: Partial<Pick<CanvasProject, 'title' | 'description' | 'status' | 'pinned' | 'pinnedAt'>>,
+  ): Promise<CanvasProject> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    if (patch.pinned === true) {
+      project.pinned = true
+      project.pinnedAt = patch.pinnedAt ?? now()
+    } else if (patch.pinned === false) {
+      project.pinned = false
+      project.pinnedAt = null
+    }
+    if (patch.pinnedAt !== undefined && (patch.pinned === undefined || patch.pinned === true)) {
+      project.pinnedAt = patch.pinnedAt
+    }
+    if (patch.title !== undefined) project.title = patch.title
+    if (patch.description !== undefined) project.description = patch.description
+    if (patch.status !== undefined) project.status = patch.status
+    project.updatedAt = now()
+    writeDb(db)
+    // 覆盖 rename / archive / delete(soft) / pin：状态变更立即落库，避免重启后又冒回来。
+    await flushPersist()
+    return project
+  },
+
+  /** 置顶/取消置顶项目（持久化） */
+  async setProjectPinned(projectId: string, pinned: boolean): Promise<CanvasProject> {
+    return this.updateProject(projectId, { pinned })
+  },
+
+  async updateProjectSettings(
+    projectId: string,
+    settings: CanvasProjectSettings,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    project.settings = {
+      prompt: settings.prompt?.trim() ?? '',
+      negativePrompt: settings.negativePrompt?.trim() ?? '',
+    }
+    project.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 局部更新项目级扩展元数据（浅合并 patch）。
+   * 用于行业模式数据（如影视 CanvasFilmProjectMetadata），第一阶段挂 metadata JSON。
+   */
+  async updateProjectMetadata(
+    projectId: string,
+    patch: Record<string, unknown>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    project.metadata = { ...(project.metadata ?? {}), ...patch }
+    project.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async exportProjectToFile(projectId: string): Promise<{ exported: boolean; filePath?: string }> {
+    const db = readDb()
+    let snapshot: CanvasSnapshot | null = null
+    try {
+      snapshot = fullSnapshotFromDb(db, projectId)
+    } catch {
+      try {
+        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+        if (snapshotJson) snapshot = parseCanvasProjectExport(snapshotJson)
+      } catch {
+        snapshot = null
+      }
+    }
+    if (!snapshot) throw new Error('Canvas project not found')
+
+    const portableSnapshot = await embedExportableImages(snapshot)
+    const payload: CanvasProjectExportPayload = {
+      kind: 'spark.canvas.project',
+      version: 2,
+      exportedAt: now(),
+      app: 'Spark-Agent',
+      ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      snapshot: portableSnapshot,
+    }
+    const result = await window.spark.invoke('dialog:save-file', {
+      title: '导出 Canvas 项目',
+      defaultPath: `${sanitizeFileName(snapshot.project.title)}.spark-canvas.json`,
+      filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return { exported: false }
+    await window.spark.invoke('file:write-text', {
+      path: result.filePath,
+      content: JSON.stringify(payload, null, 2),
+    })
+    return { exported: true, filePath: result.filePath }
+  },
+
+  async exportProjectPackage(
+    projectId: string,
+  ): Promise<{ exported: boolean; directoryPath?: string }> {
+    const db = readDb()
+    let snapshot: CanvasSnapshot | null = null
+    try {
+      snapshot = fullSnapshotFromDb(db, projectId)
+    } catch {
+      try {
+        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+        if (snapshotJson) snapshot = parseCanvasProjectExport(snapshotJson)
+      } catch {
+        snapshot = null
+      }
+    }
+    if (!snapshot) throw new Error('Canvas project not found')
+    const result = await window.spark.invoke('dialog:open-directory', {
+      title: '选择 Canvas 项目包导出位置',
+      ...(snapshot.project.rootPath ? { defaultPath: snapshot.project.rootPath } : {}),
+    })
+    if (result.canceled || !result.filePath) return { exported: false }
+    const response = await window.spark.invoke('canvas:project:export-package', {
+      projectId,
+      title: snapshot.project.title,
+      projectRootPath: snapshot.project.rootPath ?? null,
+      snapshotJson: JSON.stringify(snapshot),
+      targetParentDirectory: result.filePath,
+    })
+    return response
+  },
+
+  async openProjectFolder(
+    projectId: string,
+  ): Promise<{ opened: boolean; rootPath?: string; error?: string }> {
+    const db = readDb()
+    let project = db.projects.find((item) => item.id === projectId)
+    if (!project) {
+      const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+      if (snapshotJson) {
+        const snapshot = parseCanvasProjectExport(snapshotJson)
+        replaceProjectSnapshot(db, snapshot)
+        project = snapshot.project
+      }
+    }
+    if (!project) throw new Error('Canvas project not found')
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+      writeDb(db)
+      await flushPersist()
+    }
+    const result = await window.spark.invoke('tool:open-folder', { rootPath: project.rootPath })
+    return {
+      opened: result.opened,
+      rootPath: project.rootPath,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    }
+  },
+
+  async importProjectFromFile(parentDirectory?: string): Promise<CanvasSnapshot | null> {
+    const result = await window.spark.invoke('dialog:open-file', {
+      title: '导入 Canvas 项目',
+      filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    const { content } = await window.spark.invoke('file:read-text', { path: result.filePath })
+
+    // 跨设备导入：从 payload 顶层提取源电脑导出包根（writeCanvasProjectPackageFiles 写入）。
+    // 导出包内 url 编码的是源电脑绝对路径，需让 main 端把它翻译到本机导入包根，否则 fs.stat 必失败。
+    let exportedPackageRoot: string | null = null
+    try {
+      const rawPayload = JSON.parse(content) as { kind?: string; projectRootPath?: unknown }
+      if (
+        rawPayload.kind === 'spark.canvas.project' &&
+        typeof rawPayload.projectRootPath === 'string' &&
+        rawPayload.projectRootPath.trim()
+      ) {
+        exportedPackageRoot = rawPayload.projectRootPath.trim()
+      }
+    } catch {
+      // 非 payload 包裹的纯 snapshot：无源包根，走原迁移逻辑。
+    }
+    const parsedSnapshot = parseCanvasProjectExport(content)
+    if (!exportedPackageRoot && typeof parsedSnapshot.project.rootPath === 'string') {
+      exportedPackageRoot = parsedSnapshot.project.rootPath.trim() || null
+    }
+    const clonedSnapshot = cloneImportedSnapshot(parsedSnapshot)
+    clonedSnapshot.project.rootPath = await ensureCanvasProjectDirectory({
+      projectId: clonedSnapshot.project.id,
+      title: clonedSnapshot.project.title,
+      ...(parentDirectory ? { parentDirectory } : {}),
+    })
+    try {
+      const migrated = await window.spark.invoke('canvas:project:migrate-assets', {
+        projectId: clonedSnapshot.project.id,
+        projectRootPath: clonedSnapshot.project.rootPath,
+        snapshotJson: JSON.stringify(clonedSnapshot),
+        sourceFilePath: result.filePath,
+        ...(exportedPackageRoot ? { exportedPackageRoot } : {}),
+      })
+      clonedSnapshot.project = (JSON.parse(migrated.snapshotJson) as CanvasSnapshot).project
+      Object.assign(clonedSnapshot, JSON.parse(migrated.snapshotJson) as CanvasSnapshot)
+    } catch (err) {
+      // 资产迁移非阻断：即使失败也保留纯 JSON 项目可用性。记录日志便于排查跨设备导入问题。
+      console.warn('[canvas] migrate-assets failed during import', err)
+    }
+    const normalized = await normalizeSnapshotForHotStorage(clonedSnapshot)
+    const db = readDb()
+    replaceProjectSnapshot(db, normalized.snapshot)
+    writeDb(db)
+    await flushPersist()
+    return normalized.snapshot
+  },
+
+  async migrateProjectAssetsToDirectory(
+    projectId: string,
+  ): Promise<{ movedAssets: number; skippedAssets: number }> {
+    const db = readDb()
+    const snapshot = fullSnapshotFromDb(db, projectId)
+    if (!snapshot.project.rootPath) {
+      snapshot.project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: snapshot.project.title,
+      })
+    }
+    const result = await window.spark.invoke('canvas:project:migrate-assets', {
+      projectId,
+      projectRootPath: snapshot.project.rootPath,
+      snapshotJson: JSON.stringify(snapshot),
+    })
+    const migrated = JSON.parse(result.snapshotJson) as CanvasSnapshot
+    replaceProjectSnapshot(db, migrated)
+    writeDb(db)
+    await flushPersist()
+    return { movedAssets: result.movedAssets, skippedAssets: result.skippedAssets }
+  },
+
+  async cleanupLegacyCanvasAssets(): Promise<{
+    deletedFiles: number
+    deletedBytes: number
+    scannedFiles: number
+  }> {
+    const result = await window.spark.invoke('canvas:project:cleanup-orphans', {})
+    return {
+      deletedFiles: result.deletedFiles,
+      deletedBytes: result.deletedBytes,
+      scannedFiles: result.scannedFiles,
+    }
+  },
+
+  async deleteProject(projectId: string): Promise<void> {
+    const persisted = await flushPersist()
+    if (!persisted) {
+      throw new Error('项目尚未成功保存，无法安全删除；请稍后重试')
+    }
+    await window.spark.invoke('canvas:project:delete', { projectId })
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      Object.assign(project, { status: 'deleted' as const, updatedAt: now() })
+      writeHotDb(db, projectId, false)
+    }
+  },
+
+  /**
+   * 写入/清除项目封面（直接覆盖 cover_url 列，不走快照）。
+   *
+   * 传入 null 清除封面。传入 safe-file:// 或 http(s):// URL 直接落库。
+   * 上层如果是从 File 上传，应优先调用 {@link uploadProjectCoverFromFile}，
+   * 它会先把文件写入项目目录、再调用本方法。
+   */
+  async updateProjectCover(projectId: string, coverUrl: string | null): Promise<string | null> {
+    const { coverUrl: nextCoverUrl } = await window.spark.invoke('canvas:project:update-cover', {
+      projectId,
+      coverUrl,
+    })
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      project.coverUrl = nextCoverUrl
+      project.updatedAt = now()
+      writeHotDb(db, projectId, false)
+    }
+    return nextCoverUrl ?? null
+  },
+
+  /**
+   * 把用户选中的图片 File 写入项目目录并设为封面。
+   *
+   * 流程：
+   *   1) 读取 File 为 data URL
+   *   2) canvas:asset:write-data-url 落盘到 `<projectRoot>/assets/images/`，拿回 filePath
+   *   3) 渲染端把 filePath 编码成 safe-file:// URL（与 main 进程 toSafeFileUrl 同策略）
+   *   4) canvas:project:update-cover 把 URL 写入 cover_url
+   */
+  async uploadProjectCoverFromFile(
+    projectId: string,
+    file: File,
+    projectRootPath?: string | null,
+  ): Promise<string | null> {
+    const dataUrl = await readFileAsDataUrl(file)
+    const written = await window.spark.invoke('canvas:asset:write-data-url', {
+      projectId,
+      projectRootPath: projectRootPath ?? null,
+      dataUrl,
+      ...(file.type ? { mimeType: file.type } : {}),
+      suggestedBaseName: 'cover',
+      type: 'image',
+    })
+    const coverUrl = encodeToSafeFileUrl(written.filePath)
+    return await this.updateProjectCover(projectId, coverUrl)
+  },
+
+  async openSnapshot(projectId: string, activeBoardId?: string | null): Promise<CanvasSnapshot> {
+    // 解析激活 board 优先级：显式参数 > project.metadata.activeBoardId（用户上次选择）> 默认
+    const resolvePreferredBoard = (db: CanvasDb): string | null | undefined => {
+      if (activeBoardId) return activeBoardId
+      const project = db.projects.find((item) => item.id === projectId)
+      const stored = project?.metadata?.activeBoardId
+      return typeof stored === 'string' ? stored : undefined
+    }
+
+    // 任务运行态已写入热存储但尚未静默落盘：磁盘 latest.json 比热数据旧（通常仍是
+    // running），不得走下方磁盘整库替换分支，否则已显示的终态与产物会被旧快照覆盖
+    // 回 loading（750ms 工作流轮询会反复触发该分支）。这里纯读热数据返回：
+    // 不推进 mutation 代次、不改 dirty（运行态回写不触发退出拦截/未保存徽标）。
+    if (!isProjectDirty(projectId) && runtimePersistGate.isPending(projectId)) {
+      const hotDb = readDb()
+      const hasProject = hotDb.projects.some((item) => item.id === projectId)
+      if (hasProject && readProjectBoards(hotDb, projectId).length > 0) {
+        return snapshotFromDb(hotDb, projectId, resolvePreferredBoard(hotDb))
+      }
+      // 热存储缺失该项目（异常兜底）：落回磁盘加载路径。
+    }
+
+    if (!isProjectDirty(projectId)) {
+      const loadStartedAtVersion = projectMutationVersion.capture([projectId]).get(projectId)
+      try {
+        const snapshot = await loadSnapshotFromStorage(projectId)
+        // loadSnapshotFromStorage 是异步 IPC。读取在途期间可能恰好有任务完成、用户启动
+        // 另一节点或发生其他画布 mutation；此时刚返回的磁盘快照已经过期，绝不能再
+        // replaceProjectSnapshot 整库覆盖热数据。dirty/pending 覆盖语义状态，mutation
+        // 代次覆盖“状态已再次保存并恢复 clean”等仍需拒绝旧读取的完整竞态窗口。
+        const staleLoad =
+          isProjectDirty(projectId) ||
+          runtimePersistGate.isPending(projectId) ||
+          !projectMutationVersion.isCurrent(projectId, loadStartedAtVersion)
+        if (staleLoad) {
+          const hotDb = readDb()
+          const hasProject = hotDb.projects.some((item) => item.id === projectId)
+          if (!hasProject || readProjectBoards(hotDb, projectId).length === 0) {
+            throw new Error('Canvas project not found')
+          }
+          return snapshotFromDb(hotDb, projectId, resolvePreferredBoard(hotDb))
+        }
+        if (snapshot) {
+          snapshot.snapshot.project.lastOpenedAt = now()
+          const db = readDb()
+          replaceProjectSnapshot(db, snapshot.snapshot)
+          writeHotDb(db, projectId, false)
+          return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
+        }
+      } catch {
+        // SQLite 不可用时回退到 localStorage 热存储。
+      }
+    }
+
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+    }
+    project.lastOpenedAt = now()
+    writeDb(db)
+    return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
+  },
+
+  async restoreBoardSnapshot(projectId: string, snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const boardId = snapshot.activeBoardId ?? snapshot.board.id
+    const at = now()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) project.updatedAt = at
+    const boards = snapshot.boards ?? [snapshot.board]
+    const boardIds = new Set(boards.map((board) => board.id))
+    db.boards = db.boards.map((board) => {
+      if (board.projectId !== projectId || !boardIds.has(board.id)) return board
+      return boards.find((item) => item.id === board.id) ?? board
+    })
+    db.nodes = db.nodes.filter(
+      (node) => !(node.projectId === projectId && node.boardId === boardId),
+    )
+    db.edges = db.edges.filter(
+      (edge) => !(edge.projectId === projectId && edge.boardId === boardId),
+    )
+    db.tasks = db.tasks.filter(
+      (task) => !(task.projectId === projectId && task.boardId === boardId),
+    )
+    db.nodes.push(...snapshot.nodes.filter((node) => node.boardId === boardId))
+    db.edges.push(...snapshot.edges.filter((edge) => edge.boardId === boardId))
+    db.tasks.push(...snapshot.tasks.filter((task) => task.boardId === boardId))
+    const currentAssetIds = new Set(
+      db.assets.filter((asset) => asset.projectId === projectId).map((asset) => asset.id),
+    )
+    db.assets.push(...snapshot.assets.filter((asset) => !currentAssetIds.has(asset.id)))
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, boardId)
+  },
+
+  async updateViewport(
+    projectId: string,
+    viewport: CanvasBoard['viewport'],
+    boardId?: string | null,
+  ): Promise<void> {
+    const db = readDb()
+    // 多 board：按 boardId 精准定位；未指定时回退到项目第一个 board（兼容旧调用）
+    const board = boardId
+      ? db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
+    if (!board) return
+    board.viewport = viewport
+    board.updatedAt = now()
+    writeDb(db)
+  },
+
+  /**
+   * 把单个项目的当前 viewport 持久化到 localStorage + SQLite（视图偏好缓存）。
+   *
+   * 用于「无内容改动但需保留缩放比例」的场景（如关闭/切走画布）：
+   * - 不标记 dirty：viewport 属视图偏好，不应触发「未保存改动」提示，也不应被 discard 还原；
+   * - 只落当前项目：避免 saveCanvas 连带保存其他项目的未保存改动，违背 dirty 语义；
+   * - 写 SQLite：openSnapshot 在项目不 dirty 时优先读 SQLite，必须落库才能让下次加载读到新 viewport。
+   */
+  async persistProjectViewport(
+    projectId: string,
+    viewport: CanvasBoard['viewport'],
+    boardId?: string | null,
+  ): Promise<void> {
+    const db = readDb()
+    const board = boardId
+      ? db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
+    if (!board) return
+    board.viewport = viewport
+    board.updatedAt = now()
+    // 立即落 localStorage，保留项目原有 dirty 状态（不主动标记 true，也不清除已 dirty）。
+    projectMutationVersion.mark(projectId)
+    persistHotDb(db)
+    flushHotPersist()
+    // 单项目落 SQLite：构造只含本项目的 snapshot，复用 canvas:snapshot:save IPC，
+    // 不连带保存其他项目。序列化逻辑与 persistAllProjects 对齐（含多 board 与兼容字段）。
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) return
+    const resolved = resolveActiveBoard(readProjectBoards(db, projectId), board.id)
+    if (!resolved) return
+    const snapshot: CanvasSnapshot = {
+      project,
+      board: resolved.active,
+      boards: resolved.boards,
+      activeBoardId: resolved.active.id,
+      nodes: db.nodes.filter((n) => n.projectId === projectId),
+      edges: db.edges.filter((e) => e.projectId === projectId),
+      assets: db.assets.filter((a) => a.projectId === projectId),
+      tasks: db.tasks.filter((t) => t.projectId === projectId),
+    }
+    const req: CanvasSnapshotSaveRequest = {
+      projectId,
+      snapshotJson: JSON.stringify(snapshot),
+    }
+    req.meta = buildProjectMeta(project)
+    try {
+      await window.spark.invoke('canvas:snapshot:save', req)
+    } catch (err) {
+      // SQLite 落库失败不阻塞离开：localStorage 已有最新 viewport，下次若项目变 dirty 仍可读到。
+      console.error('[canvas] persistProjectViewport failed', projectId, err)
+    }
+  },
+
+  // ─── 多 board 管理（文档 §7.1）──────────────────────────────────────────
+  // board CRUD：新增/重命名/删除/复制/切换/排序/设封面。删除前做守卫（最后一个 board
+  // 不允许删除、有内容时由 UI 层确认）。切换 board 持久化 viewport 与 activeBoardId。
+
+  async createBoard(
+    projectId: string,
+    input?: { name?: string; templateId?: string | null },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const at = now()
+    const existingCount = db.boards.filter((b) => b.projectId === projectId).length
+    const board: CanvasBoard = {
+      id: uid('canvas_board'),
+      projectId,
+      userId: USER_ID,
+      name: input?.name?.trim() || `Board ${existingCount + 1}`,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      settings: { grid: true, snap: false, background: 'paper', sortOrder: existingCount },
+      ...(input?.templateId ? { templateId: input.templateId } : {}),
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.boards.push(board)
+    // 新建 board 默认其 settings.templateId（无则 undefined，保持可选）
+    if (input?.templateId) board.settings.templateId = input.templateId
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, board.id)
+  },
+
+  async renameBoard(projectId: string, boardId: string, name: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.name = name.trim() || board.name
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 删除 board 及其名下节点/边/任务。资产保持项目级共享，不随 board 删除。 */
+  async deleteBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const boards = db.boards.filter((item) => item.projectId === projectId)
+    // 守卫：最后一个 board 不允许删除（文档 §7.1 注意点）
+    if (boards.length <= 1) {
+      throw new Error('项目至少保留一个画布，无法删除')
+    }
+    const target = boards.find((item) => item.id === boardId)
+    if (!target) return this.openSnapshot(projectId)
+    const at = now()
+    // 软删 board 名下节点（保留可恢复），清理相关 edge；
+    // 软删前回收引用计数（与 deleteNodes 同口径——assetLibrary 缺陷 1）。
+    // board 恢复（restoreBoardSnapshot）回滚整个 db 快照，usageCount 一并恢复，对称安全。
+    reclaimAssetReferencesForNodes(
+      db,
+      new Set(
+        db.nodes
+          .filter((node) => node.boardId === boardId && node.projectId === projectId)
+          .map((node) => node.id),
+      ),
+    )
+    db.nodes = db.nodes.map((node) =>
+      node.boardId === boardId && node.projectId === projectId
+        ? { ...node, hidden: true, updatedAt: at }
+        : node,
+    )
+    db.edges = db.edges.filter(
+      (edge) => !(edge.boardId === boardId && edge.projectId === projectId),
+    )
+    db.tasks = db.tasks.filter(
+      (task) => !(task.boardId === boardId && task.projectId === projectId),
+    )
+    db.boards = db.boards.filter((item) => item.id !== boardId)
+    updateProjectCounts(db, projectId)
+    // 删除当前激活板时回退到第一个剩余 board，并同步持久化 activeBoardId
+    const remaining = db.boards.filter((item) => item.projectId === projectId)
+    const fallbackBoard = remaining.find((b) => b.settings?.isDefault) ?? remaining[0]
+    const fallbackId = fallbackBoard?.id ?? null
+    if (fallbackId) {
+      project.metadata = { ...(project.metadata ?? {}), activeBoardId: fallbackId }
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, fallbackId)
+  },
+
+  /**
+   * 深拷贝 board：复制其名下节点/边/任务（重映射 id），资产项目级共享不复制文件。
+   * group 结构、parentNodeId 关系一并保留。
+   */
+  async duplicateBoard(projectId: string, boardId: string, name?: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const sourceBoard = db.boards.find(
+      (item) => item.id === boardId && item.projectId === projectId,
+    )
+    if (!sourceBoard) return this.openSnapshot(projectId)
+    const at = now()
+    const newBoardId = uid('canvas_board')
+    const existingCount = db.boards.filter((b) => b.projectId === projectId).length
+    const newBoard: CanvasBoard = {
+      ...sourceBoard,
+      id: newBoardId,
+      name: name?.trim() || `${sourceBoard.name} 副本`,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      settings: {
+        ...sourceBoard.settings,
+        ...(sourceBoard.settings ?? {}),
+        isDefault: false,
+        sortOrder: existingCount,
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.boards.push(newBoard)
+
+    // 复制源 board 名下节点（非 hidden），重映射 id 并保留 group 父子关系
+    const sourceNodes = db.nodes.filter(
+      (node) => node.boardId === boardId && node.projectId === projectId && !node.hidden,
+    )
+    const idMap = new Map<string, string>()
+    for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
+    for (const node of sourceNodes) {
+      const naming = createCanvasNodeNaming({
+        nodes: db.nodes,
+        boardId: newBoardId,
+        type: node.type,
+        title: node.title,
+      })
+      const clone: CanvasNode = {
+        ...node,
+        id: idMap.get(node.id)!,
+        boardId: newBoardId,
+        title: naming.title,
+        data: { ...node.data, nodeSequence: naming.nodeNumber },
+        x: node.x + 32,
+        y: node.y + 32,
+        locked: false,
+        createdAt: at,
+        updatedAt: at,
+        ...(node.parentNodeId && idMap.has(node.parentNodeId)
+          ? { parentNodeId: idMap.get(node.parentNodeId)! }
+          : { parentNodeId: null }),
+      }
+      db.nodes.push(clone)
+    }
+    // 复制 board 内 edge
+    const sourceEdges = db.edges.filter(
+      (edge) => edge.boardId === boardId && edge.projectId === projectId,
+    )
+    const clonedNodeIds = new Set(idMap.values())
+    for (const edge of sourceEdges) {
+      const sourceId = idMap.get(edge.sourceNodeId)
+      const targetId = idMap.get(edge.targetNodeId)
+      // 仅复制两端都被复制过来的 edge（group_contains 等内部关系）
+      if (!sourceId || !targetId) continue
+      db.edges.push({
+        ...edge,
+        id: uid('canvas_edge'),
+        boardId: newBoardId,
+        sourceNodeId: sourceId,
+        targetNodeId: targetId,
+        createdAt: at,
+      })
+    }
+    // 复制 board 内 task（及其输入/输出节点引用，按 idMap 重映射）
+    const sourceTasks = db.tasks.filter(
+      (task) => task.boardId === boardId && task.projectId === projectId,
+    )
+    for (const task of sourceTasks) {
+      const newTaskId = uid('canvas_task')
+      const clone: CanvasTask = {
+        ...task,
+        id: newTaskId,
+        boardId: newBoardId,
+        status: 'cancelled',
+        progress: 0,
+        completedAt: null,
+        errorMsg: 'duplicate_of_origin',
+        errorDetail: '由复制画布生成，需手动重跑',
+        inputNodeIds: task.inputNodeIds
+          .map((id) => idMap.get(id))
+          .filter((id): id is string => Boolean(id)),
+        outputNodeIds: [],
+        outputAssetIds: [],
+        createdAt: at,
+        updatedAt: at,
+      }
+      // 复制任务节点（type=task）的 taskId 指向新 task
+      const clonedTaskNodes = db.nodes.filter(
+        (n) => n.boardId === newBoardId && n.projectId === projectId && n.taskId === task.id,
+      )
+      for (const tn of clonedTaskNodes) {
+        tn.taskId = newTaskId
+        tn.data = { ...tn.data, status: 'cancelled', progress: 0, message: '复制任务，需手动重跑' }
+      }
+      db.tasks.push(clone)
+    }
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, newBoardId)
+  },
+
+  /** 切换激活 board：持久化 activeBoardId + viewport，返回新 snapshot */
+  /**
+   * 切换激活 board：直接操作内存 db 并标记 dirty，确保切换立即生效且持久化。
+   *
+   * 不走 openSnapshot 的 loadSnapshotFromStorage 分支——那条路径在 canvasDirty=false 时
+   * 会从 SQLite 重载，覆盖刚切换的 board 选择（这是「多 board 切换无效」的根因）。
+   * activeBoardId 持久化在 project.metadata.activeBoardId，随 snapshot flush 落库。
+   */
+  async setActiveBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const targetBoard = db.boards.find(
+      (item) => item.id === boardId && item.projectId === projectId,
+    )
+    if (!targetBoard) throw new Error('Canvas board not found')
+    // 持久化用户选择的激活 board（跨会话保留）
+    project.metadata = { ...(project.metadata ?? {}), activeBoardId: boardId }
+    project.lastOpenedAt = now()
+    project.updatedAt = now()
+    writeDb(db)
+    return snapshotFromDb(db, projectId, boardId)
+  },
+
+  /** 调整 board 顺序：按传入 id 顺序写 sortOrder */
+  async reorderBoards(projectId: string, orderedBoardIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    orderedBoardIds.forEach((boardId, index) => {
+      const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      if (board) {
+        board.settings = { ...board.settings, sortOrder: index }
+        board.updatedAt = now()
+      }
+    })
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 设置 board 封面资产（用于 board 列表缩略图） */
+  async setBoardCover(
+    projectId: string,
+    boardId: string,
+    coverAssetId: string | null,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.settings = { ...board.settings, coverAssetId }
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 设为默认打开 board */
+  async setDefaultBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    for (const board of db.boards) {
+      if (board.projectId !== projectId) continue
+      board.settings = { ...board.settings, isDefault: board.id === boardId }
+      board.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 局部更新 board.settings（grid/snap/background 等显示选项） */
+  async updateBoardSettings(
+    projectId: string,
+    boardId: string,
+    patch: Partial<NonNullable<CanvasBoard['settings']>>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.settings = { ...board.settings, ...patch }
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 跨 board 复制节点：把选中节点复制到目标 board（资产共享，不复制文件）。
+   * 保留 group 父子结构与内部 edge。
+   */
+  async copyNodesToBoard(
+    projectId: string,
+    nodeIds: string[],
+    targetBoardId: string,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const targetBoard = db.boards.find(
+      (item) => item.id === targetBoardId && item.projectId === projectId,
+    )
+    if (!targetBoard) return this.openSnapshot(projectId)
+    const selected = new Set(nodeIds)
+    const sourceNodes = db.nodes.filter(
+      (node) => selected.has(node.id) && node.projectId === projectId && !node.hidden,
+    )
+    if (sourceNodes.length === 0) return this.openSnapshot(projectId)
+    const at = now()
+    const idMap = new Map<string, string>()
+    for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
+    for (const node of sourceNodes) {
+      const operationClonePatch = isOperationNode(node)
+        ? {
+            taskId: null,
+            data: {
+              ...node.data,
+              status: 'pending' as const,
+              progress: 0,
+              message: '复制任务，需确认配置后重新提交',
+            },
+          }
+        : {}
+      const naming = createCanvasNodeNaming({
+        nodes: db.nodes,
+        boardId: targetBoardId,
+        type: node.type,
+        title: node.title,
+      })
+      db.nodes.push({
+        ...node,
+        id: idMap.get(node.id)!,
+        boardId: targetBoardId,
+        x: node.x + 40,
+        y: node.y + 40,
+        locked: false,
+        createdAt: at,
+        updatedAt: at,
+        ...(node.parentNodeId && idMap.has(node.parentNodeId)
+          ? { parentNodeId: idMap.get(node.parentNodeId)! }
+          : { parentNodeId: null }),
+        ...operationClonePatch,
+        title: naming.title,
+        data: {
+          ...('data' in operationClonePatch ? operationClonePatch.data : node.data),
+          nodeSequence: naming.nodeNumber,
+        },
+      })
+    }
+    // 复制选中节点之间的内部 edge
+    const sourceEdges = db.edges.filter(
+      (edge) =>
+        edge.projectId === projectId &&
+        selected.has(edge.sourceNodeId) &&
+        selected.has(edge.targetNodeId),
+    )
+    for (const edge of sourceEdges) {
+      const targetNode = db.nodes.find((node) => node.id === idMap.get(edge.targetNodeId))
+      db.edges.push({
+        ...edge,
+        id: uid('canvas_edge'),
+        boardId: targetBoardId,
+        sourceNodeId: idMap.get(edge.sourceNodeId)!,
+        targetNodeId: idMap.get(edge.targetNodeId)!,
+        taskId: targetNode && isOperationNode(targetNode) ? null : (edge.taskId ?? null),
+        createdAt: at,
+      })
+    }
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, targetBoardId)
+  },
+
+  /**
+   * 应用模板：按 blueprint 在指定 board 的指定位置批量创建节点 + 连线（文档 §7.8）。
+   *
+   * 生产级实现：
+   *   - 重映射 blueprint ref → 真实 node id
+   *   - task 节点同步创建 CanvasTask（status=pending，等用户运行）
+   *   - 连线按重映射后的 id 建立 edge
+   *   - origin 标记为 'template'
+   * 返回新 snapshot（已按 board 过滤）。
+   */
+  async applyTemplate(input: {
+    projectId: string
+    boardId: string
+    originX: number
+    originY: number
+    nodes: Array<{
+      ref: string
+      type: CanvasNode['type']
+      title?: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      data?: Partial<CanvasNode['data']>
+    }>
+    edges?: Array<{
+      from: string
+      to: string
+      type?: CanvasEdge['type']
+      sourceHandle?: string
+      targetHandle?: string
+    }>
+  }): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
+    if (!board) throw new Error('Canvas board not found')
+    const at = now()
+    let maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
+    const refToId = new Map<string, string>()
+
+    for (const blueprint of input.nodes) {
+      if (refToId.has(blueprint.ref)) {
+        throw new Error(`Duplicate canvas template node ref: ${blueprint.ref}`)
+      }
+      refToId.set(blueprint.ref, uid('canvas_node'))
+    }
+
+    // 创建节点
+    for (const bp of input.nodes) {
+      const nodeId = refToId.get(bp.ref)
+      if (!nodeId) throw new Error(`Canvas template node ref was not allocated: ${bp.ref}`)
+      const remappedData: Partial<CanvasNode['data']> = {
+        ...(bp.data ?? {}),
+        ...(bp.data?.inputBindings
+          ? {
+              inputBindings: bp.data.inputBindings.map((binding) => ({
+                ...binding,
+                sourceNodeId: refToId.get(binding.sourceNodeId) ?? binding.sourceNodeId,
+              })),
+            }
+          : {}),
+        ...(bp.data?.staleFrom
+          ? {
+              staleFrom: bp.data.staleFrom.map((nodeRef) => refToId.get(nodeRef) ?? nodeRef),
+            }
+          : {}),
+      }
+      const baseData: CanvasNode['data'] = {
+        ...remappedData,
+        ...(isOperationNode({ type: bp.type })
+          ? {
+              status: 'pending',
+              progress: 0,
+              message: remappedData.message ?? '工作流已添加到画布，配置后可运行',
+            }
+          : {}),
+        origin: 'template',
+      }
+      const defaultSize =
+        bp.type === 'group'
+          ? GROUP_NODE_DEFAULT_SIZE
+          : isOperationNode({ type: bp.type })
+            ? OPERATION_NODE_DEFAULT_SIZE
+            : TEXT_NODE_DEFAULT_SIZE
+      const node = createNodeBase({
+        nodes: db.nodes,
+        id: nodeId,
+        projectId: input.projectId,
+        boardId: input.boardId,
+        type: bp.type,
+        title: bp.title ?? null,
+        x: input.originX + bp.x,
+        y: input.originY + bp.y,
+        width: bp.width ?? defaultSize.width,
+        height: bp.height ?? defaultSize.height,
+        data: baseData,
+        at,
+      })
+      maxZ += 1
+      node.zIndex = maxZ
+      db.nodes.push(node)
+
+      // text/prompt 节点同步创建 asset（与 createTextNode 一致）
+      if (bp.type === 'text' || bp.type === 'prompt') {
+        const asset: CanvasAsset = {
+          id: uid('canvas_asset'),
+          projectId: input.projectId,
+          userId: USER_ID,
+          type: 'text',
+          source: 'manual',
+          title: bp.title ?? null,
+          contentText: baseData.text ?? '',
+          metadata: { nodeId, origin: 'template' },
+          createdAt: at,
+          updatedAt: at,
+        }
+        node.assetId = asset.id
+        db.assets.push(asset)
+      }
+
+      // task 节点同步创建 CanvasTask（pending，等用户运行）
+      if (isOperationNode(node)) {
+        const operation =
+          baseData.operation ?? (bp.type !== 'task' ? (bp.type as CanvasOperationType) : null)
+        if (!operation) continue
+        const taskId = uid('canvas_task')
+        node.taskId = taskId
+        const task: CanvasTask = {
+          id: taskId,
+          projectId: input.projectId,
+          boardId: input.boardId,
+          userId: USER_ID,
+          operation,
+          status: 'pending',
+          progress: 0,
+          title: bp.title ?? null,
+          operationNodeId: nodeId,
+          prompt: baseData.prompt ?? null,
+          negativePrompt: baseData.negativePrompt ?? null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          providerProfileId: baseData.providerProfileId ?? null,
+          manifestId: baseData.manifestId ?? null,
+          modelId: baseData.modelId ?? null,
+          agentId: baseData.agentId ?? null,
+          skillIds: baseData.skillIds ?? [],
+          reasoningEffort: baseData.reasoningEffort ?? null,
+          modelParams: { ...(baseData.modelParams ?? {}) },
+          taskPipelineRole: baseData.pipelineRole ?? null,
+          outputPipelineRole: baseData.outputPipelineRole ?? null,
+          shotScriptConfig: baseData.shotScriptConfig ?? null,
+          ...(baseData.promptDocument ? { promptDocument: baseData.promptDocument } : {}),
+          ...(baseData.inputBindings ? { inputBindings: baseData.inputBindings } : {}),
+          ...(baseData.systemPrompt ? { systemPrompt: baseData.systemPrompt } : {}),
+          createdAt: at,
+          updatedAt: at,
+        }
+        db.tasks.push(task)
+      }
+    }
+
+    // 创建连线
+    if (input.edges) {
+      for (const edgeBp of input.edges) {
+        const sourceId = refToId.get(edgeBp.from)
+        const targetId = refToId.get(edgeBp.to)
+        if (!sourceId || !targetId) continue
+        const edgeType: CanvasEdge['type'] = edgeBp.type ?? 'used_as_input'
+        db.edges.push({
+          id: uid('canvas_edge'),
+          projectId: input.projectId,
+          boardId: input.boardId,
+          userId: USER_ID,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          type: edgeType,
+          taskId: (() => {
+            const targetNode = db.nodes.find((node) => node.id === targetId)
+            return targetNode && isOperationNode(targetNode) ? (targetNode.taskId ?? null) : null
+          })(),
+          metadata: {
+            fromTemplate: true,
+            ...(edgeBp.sourceHandle ? { sourceHandle: edgeBp.sourceHandle } : {}),
+            ...(edgeBp.targetHandle ? { targetHandle: edgeBp.targetHandle } : {}),
+          },
+          createdAt: at,
+        })
+        // 若目标节点是 task，把源节点加入 task.inputNodeIds（与 connectNodes 行为一致）
+        const targetNode = db.nodes.find((n) => n.id === targetId)
+        if (targetNode && isOperationNode(targetNode) && targetNode.taskId) {
+          const task = db.tasks.find((t) => t.id === targetNode.taskId)
+          if (task && !task.inputNodeIds.includes(sourceId)) {
+            task.inputNodeIds.push(sourceId)
+            const sourceNode = db.nodes.find((n) => n.id === sourceId)
+            if (sourceNode?.assetId && !task.inputAssetIds.includes(sourceNode.assetId)) {
+              task.inputAssetIds.push(sourceNode.assetId)
+            }
+          }
+        }
+      }
+    }
+
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return this.openSnapshot(input.projectId, input.boardId)
+  },
+
+  // ─── 资产 → board 操作（文档 §7.2）───────────────────────────────────────
+  // 资产保持项目级共享；插入 = 基于已有 asset 创建引用节点，不复制文件。
+
+  /** 把单个资产作为节点插入指定 board（复用已有 asset，不复制文件） */
+  async insertAssetToBoard(input: {
+    projectId: string
+    boardId: string
+    assetId: string
+    x: number
+    y: number
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const asset = db.assets.find(
+      (item) => item.id === input.assetId && item.projectId === input.projectId,
+    )
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
+    if (!asset || !board) return null
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
+    const nodeType: CanvasNode['type'] =
+      asset.type === 'image'
+        ? 'image'
+        : asset.type === 'video'
+          ? 'video'
+          : asset.type === 'audio'
+            ? 'audio'
+            : asset.type === 'prompt'
+              ? 'prompt'
+              : 'text'
+    const assetText =
+      nodeType === 'text' || nodeType === 'prompt' ? readAssetTextForNode(asset) : ''
+    const size =
+      nodeType === 'text' || nodeType === 'prompt'
+        ? fitTextNodeSize(assetText)
+        : fitMediaNodeSize(asset.type, asset.width, asset.height)
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const data: CanvasNode['data'] =
+      nodeType === 'text' || nodeType === 'prompt'
+        ? {
+            text: assetText,
+            format: nodeType === 'prompt' ? 'prompt' : 'plain',
+            origin: 'asset',
+          }
+        : {
+            ...(asset.url ? { url: asset.url } : {}),
+            ...(asset.thumbnailUrl ? { thumbnailUrl: asset.thumbnailUrl } : {}),
+            ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+            origin: 'asset',
+          }
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: nodeType,
+      title: asset.title ?? asset.type,
+      assetId: asset.id,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data,
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    // 记录资产最近使用（挂 metadata，第一阶段）
+    asset.metadata = {
+      ...asset.metadata,
+      lastUsedAt: now(),
+      usageCount: ((asset.metadata.usageCount as number) ?? 0) + 1,
+    }
+    asset.updatedAt = now()
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  // ─── 影视公用资产管理（文档 §7.10）──────────────────────────────────────
+  // 剧本/角色/场景/道具/特效/提示词库复用 CanvasAsset + metadata.kind；
+  // 分镜分组存 project.metadata.film.shotGroups。
+  // v2 模型：references 多图多描述 + tags 数组；老 imageAssetId/attributes 自动迁移。
+
+  /** 创建影视公用资产 */
+  async createFilmAsset(projectId: string, input: CreateFilmAssetInput): Promise<CanvasAsset> {
+    const db = readDb()
+    const at = now()
+    const assetType = filmKindToAssetType(input.kind)
+    const references = (input.references ?? []).map((ref) => ({
+      id: ref.id,
+      kind: ref.kind,
+      assetId: ref.assetId,
+      description: ref.description ?? '',
+      ...(ref.label ? { label: ref.label } : {}),
+      order: typeof ref.order === 'number' ? ref.order : 0,
+    }))
+    const tags = Array.isArray(input.tags)
+      ? input.tags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter((tag, idx, arr) => Boolean(tag) && arr.indexOf(tag) === idx)
+      : []
+    let metadata: Record<string, unknown> = {
+      kind: input.kind,
+      ...(input.prompt ? { prompt: input.prompt } : {}),
+      ...(input.attributes ? { attributes: input.attributes } : {}),
+      references,
+      tags,
+    }
+    if (input.characterSubviews !== undefined) {
+      metadata = writeCharacterSubviews(metadata, input.characterSubviews)
+    }
+    const asset: CanvasAsset = {
+      id: filmUid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: assetType,
+      source: 'manual',
+      title: input.name,
+      contentText: input.text ?? null,
+      metadata,
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.assets.push(asset)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return asset
+  },
+
+  /**
+   * 批量导入文稿：一次性创建「整篇 manuscript 索引资产 + 每章 chapter 资产」并写入
+   * 项目级章节索引，全程只 readDb / writeDb / openSnapshot 各一次。
+   *
+   * 关键：长篇小说可能切出上千章，若沿用逐章 createFilmAsset（每章一次全库
+   * JSON.parse + JSON.stringify + 重开快照 + 整画布重渲染），复杂度是 O(n²)，
+   * 几千章会直接卡死。这里把全部写入合并到单次事务里。
+   */
+  async importManuscript(
+    projectId: string,
+    input: { title: string; mode: ChapterSplitMode; chapters: ParsedChapter[] },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const at = now()
+
+    const manuscriptType = filmKindToAssetType('manuscript')
+    const chapterType = filmKindToAssetType('chapter')
+
+    const manuscriptAsset: CanvasAsset = {
+      id: filmUid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: manuscriptType,
+      source: 'manual',
+      title: input.title,
+      contentText: `共 ${input.chapters.length} 章 · 导入方式：${
+        MANUSCRIPT_SPLIT_MODE_LABELS[input.mode]
+      }`,
+      metadata: {
+        kind: 'manuscript',
+        references: [],
+        tags: [],
+        chapterCount: input.chapters.length,
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.assets.push(manuscriptAsset)
+
+    const chapterRefs: ManuscriptChapterRef[] = []
+    const chapterTag = `文稿:${input.title}`
+    for (const chapter of input.chapters) {
+      const chapterAsset: CanvasAsset = {
+        id: filmUid('canvas_asset'),
+        projectId,
+        userId: USER_ID,
+        type: chapterType,
+        source: 'manual',
+        title: chapter.title,
+        contentText: chapter.content,
+        // manuscriptId + order：让章节列表/级联删除按 id 精确归属，避免靠标题匹配
+        metadata: {
+          kind: 'chapter',
+          references: [],
+          tags: [chapterTag],
+          manuscriptId: manuscriptAsset.id,
+          order: chapter.index,
+          charCount: chapter.charCount,
+        },
+        createdAt: at,
+        updatedAt: at,
+      }
+      db.assets.push(chapterAsset)
+      chapterRefs.push({
+        id: chapterAsset.id,
+        title: chapter.title,
+        order: chapter.index,
+        status: 'draft',
+        chapterAssetId: chapterAsset.id,
+        charCount: chapter.charCount,
+      })
+    }
+
+    project.metadata = upsertManuscriptChapters(project.metadata, chapterRefs, {
+      sourceAssetId: manuscriptAsset.id,
+      title: input.title,
+    })
+    project.updatedAt = at
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 删除整部文稿：级联删除其全部 chapter 资产，并清掉项目级文稿索引。
+   * 章节通过 metadata.manuscriptId 精确归属；兼容老数据再按 tag「文稿:标题」兜底。
+   * `hardDelete=true` 时同时清理这些资产关联的本地/Provider 文件。
+   * 返回被删除的章节数 + 最新快照。
+   */
+  async deleteManuscript(
+    projectId: string,
+    manuscriptAssetId: string,
+    options?: { hardDelete?: boolean },
+  ): Promise<{ snapshot: CanvasSnapshot; deletedChapters: number }> {
+    const db = readDb()
+    const manuscript = db.assets.find(
+      (item) => item.id === manuscriptAssetId && item.projectId === projectId,
+    )
+    const title = typeof manuscript?.title === 'string' ? manuscript.title : null
+    const legacyTag = title ? `文稿:${title}` : null
+
+    const isOwnedChapter = (asset: CanvasAsset): boolean => {
+      if (asset.projectId !== projectId) return false
+      if ((asset.metadata as { kind?: string } | undefined)?.kind !== 'chapter') return false
+      const ownerId = (asset.metadata as { manuscriptId?: unknown } | undefined)?.manuscriptId
+      if (typeof ownerId === 'string') return ownerId === manuscriptAssetId
+      // 老数据无 manuscriptId：按标题 tag 兜底归属
+      if (!legacyTag) return false
+      const tags = (asset.metadata as { tags?: unknown } | undefined)?.tags
+      return Array.isArray(tags) && tags.includes(legacyTag)
+    }
+
+    const deletedAssets = db.assets.filter(
+      (asset) =>
+        (asset.id === manuscriptAssetId && asset.projectId === projectId) || isOwnedChapter(asset),
+    )
+    db.assets = db.assets.filter(
+      (asset) =>
+        !(asset.id === manuscriptAssetId && asset.projectId === projectId) &&
+        !isOwnedChapter(asset),
+    )
+    const deletedChapters = deletedAssets.filter((asset) => asset.id !== manuscriptAssetId).length
+
+    // 清掉项目级文稿索引（仅当指向被删文稿时）
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      const film = readManuscriptIndex(project.metadata)
+      if (film && film.sourceAssetId === manuscriptAssetId) {
+        project.metadata = clearManuscriptIndex(project.metadata)
+      }
+      project.updatedAt = now()
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    if (options?.hardDelete) {
+      // 单次 IPC 批量清理（assetLibrary 缺陷 4）
+      cleanupAssetsSourceFiles(deletedAssets, { projectRootPath: project?.rootPath ?? null }).catch(
+        (error) => {
+          logCanvasAssetCleanupWarning('deleteManuscript', error)
+        },
+      )
+    }
+    return { snapshot: await this.openSnapshot(projectId), deletedChapters }
+  },
+
+  /** 更新影视资产（名称/内容/references/tags/属性/默认 prompt） */
+  async updateFilmAsset(
+    projectId: string,
+    assetId: string,
+    patch: Partial<Pick<CanvasAsset, 'title' | 'contentText'>> & {
+      prompt?: string
+      references?: FilmReference[]
+      tags?: string[]
+      attributes?: Record<string, string>
+      characterSubviews?: FilmCharacterSubview[]
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const asset = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
+    if (!asset) return this.openSnapshot(projectId)
+    if (patch.title !== undefined) asset.title = patch.title
+    if (patch.contentText !== undefined) asset.contentText = patch.contentText
+    let nextMeta: Record<string, unknown> = {
+      ...asset.metadata,
+      ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
+      ...(patch.attributes !== undefined ? { attributes: patch.attributes } : {}),
+    }
+    if (patch.references !== undefined) {
+      nextMeta = writeReferences(nextMeta, patch.references)
+    }
+    if (patch.tags !== undefined) {
+      nextMeta = writeTags(nextMeta, patch.tags)
+    }
+    if (patch.characterSubviews !== undefined) {
+      nextMeta = writeCharacterSubviews(nextMeta, patch.characterSubviews)
+    }
+    asset.metadata = nextMeta
+    asset.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 删除影视资产（默认只从项目移除引用，不动源文件，文档 §11.3）。
+   *
+   * `hardDelete=true` 时才额外清理该资产关联的源文件（Provider 文件 + 本地路径），
+   * 由明确提供「删除资产」语义的管理入口调用。
+   */
+  async deleteFilmAsset(
+    projectId: string,
+    assetId: string,
+    options?: { hardDelete?: boolean },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const target = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
+    db.assets = db.assets.filter((item) => !(item.id === assetId && item.projectId === projectId))
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+
+    // 默认只移除引用，不动磁盘 / Provider 上的源文件，保留 agent 等调用方的软治理语义。
+    // 资产管理入口显式传 hardDelete=true，表示「连源文件一起删」。
+    const hardDelete = options?.hardDelete === true
+    if (hardDelete && target) {
+      const rootPath = db.projects.find((item) => item.id === projectId)?.rootPath ?? null
+      cleanupAssetSourceFiles(target, { projectRootPath: rootPath }).catch((error) => {
+        logCanvasAssetCleanupWarning('deleteFilmAsset', error)
+      })
+    }
+
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 批量删除资产（assetLibrary 缺陷 4）：一次遍历移除全部目标资产 + 级联软删引用
+   * 节点，源文件清理请求跨资产去重后**单次 IPC** 发出，替换历史上逐资产
+   * `deleteFilmAsset` 串行调用（N+1 写库 + N+1 清理 IPC）。
+   *
+   * hardDelete 语义与 deleteFilmAsset 一致：资产管理入口传 true 连源文件一起清理；
+   * Agent / 治理调用不传，只移除记录。
+   */
+  async batchDeleteFilmAssets(
+    projectId: string,
+    assetIds: string[],
+    options?: { hardDelete?: boolean },
+  ): Promise<{ deletedAssetIds: string[]; missingAssetIds: string[]; removedNodeIds: string[] }> {
+    if (assetIds.length === 0) {
+      return { deletedAssetIds: [], missingAssetIds: [], removedNodeIds: [] }
+    }
+    const result = await canvasAssetRepository.batchDelete(projectId, assetIds, {
+      hardDelete: options?.hardDelete === true,
+    })
+    return {
+      deletedAssetIds: result.deletedAssetIds,
+      missingAssetIds: result.missingAssetIds,
+      removedNodeIds: result.removedNodeIds,
+    }
+  },
+
+  /** 分页列出项目资产（P2 资产库 UI 数据入口，委托 canvasAssetRepository；筛选/排序语义见 AssetListQuery） */
+  async listAssetsPaged(projectId: string, query?: AssetListQuery): Promise<AssetPage> {
+    return canvasAssetRepository.list(projectId, query ?? {})
+  },
+
+  /**
+   * 切换资产收藏（P2 资产库）。收藏存 `metadata.favorite`（与 AssetListQuery
+   * 的 favorite 筛选同一口径）；经仓储 upsert 写入，返回更新后的资产。
+   */
+  async setFilmAssetFavorite(
+    projectId: string,
+    assetId: string,
+    favorite: boolean,
+  ): Promise<CanvasAsset | null> {
+    const asset = await canvasAssetRepository.get(projectId, assetId)
+    if (!asset) return null
+    return canvasAssetRepository.upsert({
+      projectId,
+      id: assetId,
+      type: asset.type,
+      source: asset.source,
+      metadata: { favorite },
+    })
+  },
+
+  /** 列出项目内指定种类的影视资产 */
+  listFilmAssets(db: CanvasDb, projectId: string, kind?: FilmAssetKind): CanvasAsset[] {
+    return db.assets.filter((asset) => {
+      if (asset.projectId !== projectId) return false
+      const assetKind = asset.metadata?.kind
+      if (typeof assetKind !== 'string') return false
+      if (kind && assetKind !== kind) return false
+      return true
+    })
+  },
+
+  /** 搜索/筛选项目内影视资产（v2：query/kind/tags/usageCount） */
+  searchFilmAssets(
+    projectId: string,
+    options: {
+      query?: string
+      kinds?: FilmAssetKind[]
+      tags?: string[]
+      sortBy?: 'updated' | 'created' | 'name' | 'usage'
+    } = {},
+  ): CanvasAsset[] {
+    const db = readDb()
+    const query = (options.query ?? '').trim().toLowerCase()
+    const kinds = options.kinds && options.kinds.length > 0 ? new Set(options.kinds) : null
+    const tagsFilter =
+      options.tags && options.tags.length > 0 ? options.tags.map((t) => t.toLowerCase()) : null
+    const list = this.listFilmAssets(db, projectId).filter((asset) => {
+      if (kinds) {
+        const k = asset.metadata?.['kind']
+        if (typeof k !== 'string' || !kinds.has(k as FilmAssetKind)) return false
+      }
+      if (tagsFilter) {
+        const assetTags = readTags(asset.metadata).map((t) => t.toLowerCase())
+        if (!tagsFilter.every((t) => assetTags.includes(t))) return false
+      }
+      if (query) {
+        const title = (asset.title ?? '').toLowerCase()
+        const content = (asset.contentText ?? '').toLowerCase()
+        const prompt =
+          typeof asset.metadata?.['prompt'] === 'string'
+            ? (asset.metadata['prompt'] as string).toLowerCase()
+            : ''
+        const attrs = asset.metadata?.['attributes']
+        const attrText =
+          attrs && typeof attrs === 'object' && !Array.isArray(attrs)
+            ? Object.values(attrs as Record<string, unknown>)
+                .filter((v): v is string => typeof v === 'string')
+                .join(' ')
+                .toLowerCase()
+            : ''
+        const tagText = readTags(asset.metadata).join(' ').toLowerCase()
+        if (
+          !title.includes(query) &&
+          !content.includes(query) &&
+          !prompt.includes(query) &&
+          !attrText.includes(query) &&
+          !tagText.includes(query)
+        ) {
+          return false
+        }
+      }
+      return true
+    })
+    const sortBy = options.sortBy ?? 'updated'
+    const usageMap = this.countFilmAssetUsage(projectId)
+    return list.sort((a, b) => {
+      if (sortBy === 'name') {
+        return (a.title ?? '').localeCompare(b.title ?? '')
+      }
+      if (sortBy === 'created') {
+        return b.createdAt.localeCompare(a.createdAt)
+      }
+      if (sortBy === 'usage') {
+        return (usageMap.get(b.id) ?? 0) - (usageMap.get(a.id) ?? 0)
+      }
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  },
+
+  /** 统计一个影视资产的引用次数（分镜引用 + 画布节点 assetId 引用） */
+  countFilmAssetUsage(projectId: string): Map<string, number> {
+    const db = readDb()
+    const usage = new Map<string, number>()
+    const bump = (assetId: string | null | undefined) => {
+      if (!assetId) return
+      usage.set(assetId, (usage.get(assetId) ?? 0) + 1)
+    }
+    // 画布节点 assetId 引用（过滤 hidden 软删节点，与下载/引用展示口径一致——缺陷 1）
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId) continue
+      if (node.hidden) continue
+      bump(node.assetId)
+    }
+    // 分镜引用（characterAssetIds / sceneAssetId / propAssetIds）
+    for (const project of db.projects) {
+      if (project.id !== projectId) continue
+      const film = project.metadata?.['film']
+      if (!film || typeof film !== 'object') continue
+      const groups = (film as Record<string, unknown>)['shotGroups']
+      if (!Array.isArray(groups)) continue
+      for (const group of groups) {
+        if (!group || typeof group !== 'object') continue
+        const segments = (group as Record<string, unknown>)['segments']
+        if (!Array.isArray(segments)) continue
+        for (const seg of segments) {
+          if (!seg || typeof seg !== 'object') continue
+          const s = seg as Record<string, unknown>
+          if (Array.isArray(s['characterAssetIds'])) {
+            for (const id of s['characterAssetIds'] as unknown[]) {
+              if (typeof id === 'string') bump(id)
+            }
+          }
+          if (typeof s['sceneAssetId'] === 'string') bump(s['sceneAssetId'])
+          if (Array.isArray(s['propAssetIds'])) {
+            for (const id of s['propAssetIds'] as unknown[]) {
+              if (typeof id === 'string') bump(id)
+            }
+          }
+        }
+      }
+    }
+    return usage
+  },
+
+  /** 资源库的引用详情（被哪些分镜片段 / 画布节点引用） */
+  getFilmAssetUsage(
+    projectId: string,
+    assetId: string,
+  ): {
+    shotSegments: Array<{
+      groupId: string
+      groupName: string
+      segmentId: string
+      segmentTitle: string
+      segmentIndex: number
+    }>
+    nodes: Array<{ id: string; type: string; title: string | null }>
+  } {
+    const db = readDb()
+    const shotSegments: Array<{
+      groupId: string
+      groupName: string
+      segmentId: string
+      segmentTitle: string
+      segmentIndex: number
+    }> = []
+    const nodes: Array<{ id: string; type: string; title: string | null }> = []
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId) continue
+      // 过滤 hidden 软删节点（缺陷 1）：已删节点不再出现在「引用位置」里
+      if (node.hidden) continue
+      if (node.assetId === assetId) {
+        nodes.push({ id: node.id, type: node.type, title: node.title ?? null })
+      }
+    }
+    for (const project of db.projects) {
+      if (project.id !== projectId) continue
+      const film = project.metadata?.['film']
+      if (!film || typeof film !== 'object') continue
+      const groups = (film as Record<string, unknown>)['shotGroups']
+      if (!Array.isArray(groups)) continue
+      for (const group of groups) {
+        if (!group || typeof group !== 'object') continue
+        const g = group as Record<string, unknown>
+        const segments = g['segments']
+        if (!Array.isArray(segments)) continue
+        for (const seg of segments) {
+          if (!seg || typeof seg !== 'object') continue
+          const s = seg as Record<string, unknown>
+          const charIds = Array.isArray(s['characterAssetIds'])
+            ? (s['characterAssetIds'] as unknown[]).filter(
+                (x): x is string => typeof x === 'string',
+              )
+            : []
+          const sceneId =
+            typeof s['sceneAssetId'] === 'string' ? (s['sceneAssetId'] as string) : null
+          const propIds = Array.isArray(s['propAssetIds'])
+            ? (s['propAssetIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
+            : []
+          if (charIds.includes(assetId) || sceneId === assetId || propIds.includes(assetId)) {
+            shotSegments.push({
+              groupId: typeof g['id'] === 'string' ? (g['id'] as string) : '',
+              groupName: typeof g['name'] === 'string' ? (g['name'] as string) : '未命名分组',
+              segmentId: typeof s['id'] === 'string' ? (s['id'] as string) : '',
+              segmentTitle: typeof s['title'] === 'string' ? (s['title'] as string) : '未命名片段',
+              segmentIndex: typeof s['index'] === 'number' ? (s['index'] as number) : 0,
+            })
+          }
+        }
+      }
+    }
+    return { shotSegments, nodes }
+  },
+
+  /** 给资源加/移除标签（idempotent） */
+  async setFilmAssetTags(
+    projectId: string,
+    assetId: string,
+    tags: string[],
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const asset = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
+    if (!asset) return this.openSnapshot(projectId)
+    asset.metadata = writeTags(asset.metadata, tags)
+    asset.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  // ─── 分镜分组 CRUD（存 project.metadata.film.shotGroups）─────────────────
+
+  /** 读取项目的分镜分组 */
+  readShotGroups(db: CanvasDb, projectId: string): ShotGroup[] {
+    const project = db.projects.find((item) => item.id === projectId)
+    const film = project?.metadata?.film as FilmProjectData | undefined
+    return film?.shotGroups ?? []
+  },
+
+  /** 写入分镜分组（不可变更新 project.metadata） */
+  writeShotGroups(db: CanvasDb, projectId: string, groups: ShotGroup[]): void {
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) return
+    const film = (project.metadata?.film ?? {}) as FilmProjectData
+    film.shotGroups = groups
+    project.metadata = { ...(project.metadata ?? {}), film }
+    project.updatedAt = now()
+  },
+
+  /** 新建分镜分组 */
+  async createShotGroup(
+    projectId: string,
+    input: { name: string; description?: string },
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const existing = this.readShotGroups(db, projectId)
+    const group: ShotGroup = {
+      id: filmUid('shot_group'),
+      name: input.name,
+      ...(input.description ? { description: input.description } : {}),
+      sortOrder: existing.length,
+      segments: [],
+    }
+    existing.push(group)
+    this.writeShotGroups(db, projectId, existing)
+    writeDb(db)
+    return { shotGroups: existing }
+  },
+
+  /** 更新分镜分组（名称/描述） */
+  async updateShotGroup(
+    projectId: string,
+    groupId: string,
+    patch: Partial<Pick<ShotGroup, 'name' | 'description'>>,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (group) {
+      if (patch.name !== undefined) group.name = patch.name
+      if (patch.description !== undefined) group.description = patch.description
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
+  },
+
+  /** 删除分镜分组 */
+  async deleteShotGroup(projectId: string, groupId: string): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    let groups = this.readShotGroups(db, projectId)
+    groups = groups.filter((item) => item.id !== groupId)
+    this.writeShotGroups(db, projectId, groups)
+    writeDb(db)
+    return { shotGroups: groups }
+  },
+
+  /** 新建分镜片段 */
+  async createShotSegment(
+    projectId: string,
+    groupId: string,
+    input: Partial<Omit<ShotSegment, 'id'>> & { title: string },
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (!group) return { shotGroups: groups }
+    const { id: _id, index: _index, ...fields } = input as Partial<ShotSegment>
+    const segment: ShotSegment = {
+      ...fields,
+      id: filmUid('shot_seg'),
+      index: group.segments.length + 1,
+      title: input.title,
+    }
+    group.segments.push(segment)
+    this.writeShotGroups(db, projectId, groups)
+    writeDb(db)
+    return { shotGroups: groups }
+  },
+
+  /** 更新分镜片段 */
+  async updateShotSegment(
+    projectId: string,
+    groupId: string,
+    segmentId: string,
+    patch: Partial<Omit<ShotSegment, 'id'>>,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    const segment = group?.segments.find((item) => item.id === segmentId)
+    if (segment) {
+      Object.assign(segment, patch)
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
+  },
+
+  /** 删除分镜片段 */
+  async deleteShotSegment(
+    projectId: string,
+    groupId: string,
+    segmentId: string,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (group) {
+      group.segments = group.segments.filter((item) => item.id !== segmentId)
+      // 重排镜号
+      group.segments.forEach((seg, idx) => (seg.index = idx + 1))
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
+  },
+
+  async createTextNode(input: {
+    projectId: string
+    boardId: string
+    text: string
+    x: number
+    y: number
+    kind?: 'text' | 'prompt'
+    /** 渲染格式；不传时 prompt→'prompt'，其余→'plain'。拖入 .md 文件时可显式传 'markdown' */
+    format?: 'plain' | 'markdown' | 'prompt'
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const kind = input.kind ?? 'text'
+    const format = input.format ?? (kind === 'prompt' ? 'prompt' : 'plain')
+    const size = pickTextNodeSize(input.text)
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: kind,
+      title: kind === 'prompt' ? 'Prompt' : 'Text note',
+      x: position.x,
+      y: position.y,
+      // 长文本节点（剧本/文稿等）默认放大尺寸，卡片内支持滚动（canvasNodeSize.ts）
+      ...size,
+      data: { text: input.text, format },
+    })
+    node.zIndex = maxZ + 1
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: kind,
+      source: 'manual',
+      title: node.title ?? null,
+      contentText: input.text,
+      metadata: { nodeId: node.id },
+      createdAt: node.createdAt,
+      updatedAt: node.updatedAt,
+    }
+    node.assetId = asset.id
+    db.nodes.push(node)
+    db.assets.push(asset)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /** 仅创建 image asset（不创建节点），用于资源库 references 上传图 */
+  async createImageAsset(input: {
+    projectId: string
+    file: File
+    filePath: string
+    imageWidth?: number
+    imageHeight?: number
+  }): Promise<CanvasAsset> {
+    const db = readDb()
+    const rootPath = db.projects.find((item) => item.id === input.projectId)?.rootPath ?? null
+    // storageKey 归一（assetLibrary 缺陷 3）：项目目录内存相对 key，metadata.filePath 保留绝对路径兜底
+    const storageKey = toRelativeStorageKey(input.filePath, rootPath)
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: 'image',
+      source: 'upload',
+      title: input.file.name,
+      mimeType: input.file.type,
+      storageKey,
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
+      width: input.imageWidth ?? null,
+      height: input.imageHeight ?? null,
+      sizeBytes: input.file.size,
+      metadata: { storageAdapter: 'local-file', filePath: input.filePath },
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    db.assets.push(asset)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return asset
+  },
+
+  async createImageNode(input: {
+    projectId: string
+    boardId: string
+    file: File
+    filePath: string
+    fileSize?: number
+    x: number
+    y: number
+    width?: number
+    height?: number
+    imageWidth?: number
+    imageHeight?: number
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode> {
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const imageDimensions =
+      input.imageWidth && input.imageHeight
+        ? { width: input.imageWidth, height: input.imageHeight }
+        : await readDisplayImageDimensions(fileUrl)
+    // 尺寸探测是异步的；必须在 await 之后读取最新 DB，避免批量并发导入用同一旧快照
+    // 写回，造成节点丢失或碰撞检测漏掉同批前序节点。
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const fittedSize = fitMediaNodeSize(
+      'image',
+      imageDimensions?.width ?? input.imageWidth,
+      imageDimensions?.height ?? input.imageHeight,
+    )
+    const size = {
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const rootPath = db.projects.find((item) => item.id === input.projectId)?.rootPath ?? null
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: 'image',
+      source: 'upload',
+      title: input.file.name,
+      mimeType: input.file.type,
+      // storageKey 归一（assetLibrary 缺陷 3）：项目目录内存相对 key
+      storageKey: toRelativeStorageKey(input.filePath, rootPath),
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
+      width: input.imageWidth ?? null,
+      height: input.imageHeight ?? null,
+      sizeBytes: input.fileSize ?? input.file.size,
+      metadata: { storageAdapter: 'local-file', filePath: input.filePath },
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: 'image',
+      title: input.file.name,
+      assetId: asset.id,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
+    })
+    node.zIndex = maxZ + 1
+    db.assets.push(asset)
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
+   * 创建空图片节点（工厂菜单「图片」直接落位、后续再上传图片填充）。
+   * 不构建 CanvasAsset（与「替换图片不同步 asset」一致），仅写 type:'image' + 空 data；
+   * 渲染层 CanvasNode 对空 url 图片节点已有 placeholder 占位。
+   */
+  async createEmptyImageNode(input: {
+    projectId: string
+    boardId: string
+    x: number
+    y: number
+    width?: number
+    height?: number
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const size = {
+      width: input.width ?? IMAGE_NODE_DEFAULT_SIZE.width,
+      height: input.height ?? IMAGE_NODE_DEFAULT_SIZE.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: 'image',
+      title: null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {},
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
+   * 创建空视频/音频节点（工厂菜单「视频/音频」直接落位、后续再上传填充）。
+   * 与 createEmptyImageNode 对称：不构建 CanvasAsset，仅写 type + 空 data；
+   * video 渲染层自带「上传视频」占位按钮，audio 由菜单/双击流程立即触发文件选择。
+   */
+  async createEmptyMediaNode(input: {
+    projectId: string
+    boardId: string
+    kind: 'video' | 'audio'
+    x: number
+    y: number
+    width?: number
+    height?: number
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const defaultSize = input.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
+    const size = {
+      width: input.width ?? defaultSize.width,
+      height: input.height ?? defaultSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.kind,
+      title: null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {},
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
+   * 创建视频/音频节点（拖入外部视频/音频文件时使用）。
+   *
+   * 与 {@link createImageNode} 对称：构建 CanvasAsset（source='upload'，按磁盘路径编码
+   * safe-file URL）+ CanvasNode。音频没有尺寸概念，直接用默认尺寸。
+   */
+  async createMediaNode(input: {
+    projectId: string
+    boardId: string
+    kind: 'video' | 'audio'
+    fileName: string
+    fileMimeType?: string
+    fileSize?: number
+    filePath: string
+    x: number
+    y: number
+    width?: number
+    height?: number
+    mediaWidth?: number
+    mediaHeight?: number
+    durationMs?: number
+    preservePreferredPosition?: boolean
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const mimeType = input.fileMimeType
+    const fittedSize = fitMediaNodeSize(input.kind, input.mediaWidth, input.mediaHeight)
+    const size = {
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition ? { preservePreferredPosition: true } : {}),
+    })
+    const mediaRootPath = db.projects.find((item) => item.id === input.projectId)?.rootPath ?? null
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: input.kind,
+      source: 'upload',
+      title: input.fileName,
+      ...(mimeType ? { mimeType } : {}),
+      // storageKey 归一（assetLibrary 缺陷 3）：项目目录内存相对 key
+      storageKey: toRelativeStorageKey(input.filePath, mediaRootPath),
+      url: fileUrl,
+      // 视频/音频不能用文件 url 当缩略图（<img> 加载视频会失败）；
+      // 留空，由 ensureVideoThumbnail 异步生成首帧缩略图后回填（仅 video）。
+      thumbnailUrl: null,
+      ...(input.mediaWidth ? { width: input.mediaWidth } : {}),
+      ...(input.mediaHeight ? { height: input.mediaHeight } : {}),
+      ...(input.fileSize ? { sizeBytes: input.fileSize } : {}),
+      metadata: {
+        storageAdapter: 'local-file',
+        filePath: input.filePath,
+        ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+      },
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    const data: CanvasNode['data'] = {
+      url: fileUrl,
+      // 不设 thumbnailUrl（undefined）——由 ensureVideoThumbnail 异步回填。
+      // node.data.thumbnailUrl 类型是 string（非 nullable），留 undefined 表示「无」。
+      ...(mimeType ? { mimeType } : {}),
+      origin: 'asset',
+    }
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.kind,
+      title: input.fileName,
+      assetId: asset.id,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data,
+    })
+    node.zIndex = maxZ + 1
+    db.assets.push(asset)
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    // 视频类型异步生成首帧缩略图（fire-and-forget，不阻塞节点创建）
+    if (input.kind === 'video') {
+      void ensureVideoThumbnail(input.projectId, asset.id, node.id, input.filePath)
+    }
+    return node
+  },
+
+  /**
+   * 解析媒体节点的本地文件路径（带热存储 db 的便捷入口）。
+   *
+   * 节点 data.filePath 缺失时（createMediaNode / insertAssetToBoard 只写 data.url），
+   * 需要回退查关联 asset.storageKey / metadata.filePath——该回退依赖 db，
+   * 视图层请一律使用本方法而非直接调用 readMediaLocalFilePath。
+   */
+  readMediaNodeLocalFilePath(
+    node: Pick<CanvasNode, 'id' | 'assetId' | 'data'> | null | undefined,
+  ): string | null {
+    if (!node) return null
+    return readMediaLocalFilePath(node, readDb())
+  },
+
+  /**
+   * 触发音频节点截取：调 IPC 完成 ffmpeg trim，物化为新 audio 子节点，
+   * 并用 `generated` 边与父节点相连，原节点保留。
+   *
+   * @param projectId    当前项目
+   * @param boardId      父节点所在 board
+   * @param parentNodeId 源音频节点 id
+   * @param filePath     源音频本地路径（来自 node.data.filePath || url 解码）
+   * @param fileName     源音频文件名（用于生成产物节点标题）
+   * @param mimeType     源文件 mime
+   * @param startSec     截取起点（秒）
+   * @param endSec       截取终点（秒）
+   */
+  async materializeAudioTrim(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    startSec: number
+    endSec: number
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parent = db.nodes.find(
+      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
+    )
+    if (!parent) return null
+
+    const response = await window.spark.invoke('canvas:task:audio-trim', {
+      operation: 'trim',
+      input: input.filePath,
+      params: { startSec: input.startSec, endSec: input.endSec },
+      requestId: `audio_trim_${input.parentNodeId}_${Date.now()}`,
+    })
+    const result = (response as { success: boolean; result?: { path?: string }; error?: string })
+      ?.result
+    if (!(response as { success: boolean })?.success || !result?.path) {
+      const err = (response as { error?: string })?.error ?? '音频截取失败'
+      throw new Error(err)
+    }
+
+    // 产物从全局产物目录复制进项目 assets/audio/，保证项目目录可找到全部工程产物；
+    // 复制失败降级用原路径，不阻断物化。
+    const persistedPath =
+      (await copyLocalArtifactIntoProject({
+        projectId: input.projectId,
+        sourcePath: result.path,
+        type: 'audio',
+        suggestedBaseName: `${input.fileName} 截取`,
+      })) ?? result.path
+
+    const newNode = await this.createMediaNode({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      kind: 'audio',
+      fileName: `${input.fileName} 截取`,
+      ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+      filePath: persistedPath,
+      x: parent.x + parent.width + 48,
+      y: parent.y,
+    })
+    if (!newNode) throw new Error('截取产物节点创建失败')
+
+    db.edges.push({
+      id: uid('canvas_edge'),
+      userId: USER_ID,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      sourceNodeId: input.parentNodeId,
+      targetNodeId: newNode.id,
+      type: 'generated',
+      taskId: null,
+      metadata: { audioOp: 'trim', startSec: input.startSec, endSec: input.endSec },
+      createdAt: now(),
+    })
+    writeDb(db)
+    return newNode
+  },
+
+  /**
+   * 触发音频节点变速：调 IPC 完成 ffmpeg atempo，物化为新 audio 子节点。
+   */
+  async materializeAudioSpeed(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    factor: number
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parent = db.nodes.find(
+      (n) => n.id === input.parentNodeId && n.projectId === input.projectId,
+    )
+    if (!parent) return null
+
+    const response = await window.spark.invoke('canvas:task:audio-speed', {
+      operation: 'adjustSpeed',
+      input: input.filePath,
+      params: { factor: input.factor },
+      requestId: `audio_speed_${input.parentNodeId}_${Date.now()}`,
+    })
+    const result = (response as { success: boolean; result?: { path?: string }; error?: string })
+      ?.result
+    if (!(response as { success: boolean })?.success || !result?.path) {
+      const err = (response as { error?: string })?.error ?? '音频变速失败'
+      throw new Error(err)
+    }
+
+    // 产物从全局产物目录复制进项目 assets/audio/，保证项目目录可找到全部工程产物；
+    // 复制失败降级用原路径，不阻断物化。
+    const persistedPath =
+      (await copyLocalArtifactIntoProject({
+        projectId: input.projectId,
+        sourcePath: result.path,
+        type: 'audio',
+        suggestedBaseName: `${input.fileName} ${input.factor.toFixed(2)}x`,
+      })) ?? result.path
+
+    const newNode = await this.createMediaNode({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      kind: 'audio',
+      fileName: `${input.fileName} ${input.factor.toFixed(2)}x`,
+      ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+      filePath: persistedPath,
+      x: parent.x + parent.width + 48,
+      y: parent.y,
+    })
+    if (!newNode) throw new Error('变速产物节点创建失败')
+
+    db.edges.push({
+      id: uid('canvas_edge'),
+      userId: USER_ID,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      sourceNodeId: input.parentNodeId,
+      targetNodeId: newNode.id,
+      type: 'generated',
+      taskId: null,
+      metadata: { audioOp: 'speed', factor: input.factor },
+      createdAt: now(),
+    })
+    writeDb(db)
+    return newNode
+  },
+
+  /**
+   * 触发视频节点尺寸压缩：ffmpeg 等比缩放 + 按百分比压缩码率，物化为新 video 子节点，
+   * 并用 `generated` 边与父节点相连，原节点保留。
+   *
+   * 语义与主进程 videoProcessHandler 的 scaleCompress 分支一致：
+   * - 尺寸 scalePercent（10~200）：按有效显示宽高等比缩放，100% 不改尺寸；
+   * - 压缩 compressPercent（10~90）：目标总码率 ≈ 原始总码率 × N%，探测不到回退 CRF。
+   *
+   * @param onProgress 转码进度回调（按 requestId 过滤，避免与其他视频任务串扰）
+   */
+  async materializeVideoScaleCompress(input: {
+    projectId: string
+    boardId: string
+    parentNodeId: string
+    /** 真实落库的锚点节点 id。parentNodeId 可能是 `operation-output:` 虚拟视图 id，不在 db.nodes 中 */
+    anchorNodeId?: string
+    filePath: string
+    fileName: string
+    mimeType?: string | null
+    scalePercent: number
+    compressPercent: number
+    onProgress?: (progress: { percent: number; stage: string }) => void
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parentNodeId = input.anchorNodeId ?? input.parentNodeId
+    const parent = db.nodes.find((n) => n.id === parentNodeId && n.projectId === input.projectId)
+    if (!parent) throw new Error('未找到源视频节点，无法生成压缩副本')
+
+    const requestId = `video_scale_compress_${input.parentNodeId}_${Date.now()}`
+    // 进度订阅放在本函数内：requestId 在这里生成，只有这里能正确过滤
+    const unsubscribe = input.onProgress
+      ? window.spark.on('stream:video:process-progress', (progress) => {
+          if (progress.requestId !== requestId) return
+          input.onProgress?.({ percent: progress.percent, stage: progress.stage })
+        })
+      : null
+
+    try {
+      const response = await window.spark.invoke('video:process', {
+        operation: 'scaleCompress',
+        input: input.filePath,
+        params: { scalePercent: input.scalePercent, compressPercent: input.compressPercent },
+        requestId,
+      })
+      const result = (
+        response as {
+          success: boolean
+          result?: { path?: string; width?: number; height?: number; durationSec?: number }
+          error?: string
+        }
+      )?.result
+      if (!(response as { success: boolean })?.success || !result?.path) {
+        throw new Error((response as { error?: string })?.error ?? '视频处理失败')
+      }
+
+      // 产物从全局产物目录复制进项目 assets/videos/，保证项目目录可找到全部工程产物；
+      // 复制失败降级用原路径，不阻断物化。
+      const persistedPath =
+        (await copyLocalArtifactIntoProject({
+          projectId: input.projectId,
+          sourcePath: result.path,
+          type: 'video',
+          suggestedBaseName: `${input.fileName} 尺寸压缩`,
+        })) ?? result.path
+
+      const newNode = await this.createMediaNode({
+        projectId: input.projectId,
+        boardId: input.boardId,
+        kind: 'video',
+        fileName: `${input.fileName} 尺寸压缩`,
+        ...(input.mimeType ? { fileMimeType: input.mimeType } : {}),
+        filePath: persistedPath,
+        x: parent.x + parent.width + 48,
+        y: parent.y,
+        ...(typeof result.width === 'number' && result.width > 0
+          ? { mediaWidth: result.width }
+          : {}),
+        ...(typeof result.height === 'number' && result.height > 0
+          ? { mediaHeight: result.height }
+          : {}),
+        ...(typeof result.durationSec === 'number' && result.durationSec > 0
+          ? { durationMs: Math.round(result.durationSec * 1000) }
+          : {}),
+      })
+      if (!newNode) throw new Error('尺寸压缩产物节点创建失败')
+
+      db.edges.push({
+        id: uid('canvas_edge'),
+        userId: USER_ID,
+        projectId: input.projectId,
+        boardId: input.boardId,
+        sourceNodeId: parentNodeId,
+        targetNodeId: newNode.id,
+        type: 'generated',
+        taskId: null,
+        metadata: {
+          videoOp: 'scale-compress',
+          scalePercent: input.scalePercent,
+          compressPercent: input.compressPercent,
+        },
+        createdAt: now(),
+      })
+      writeDb(db)
+      return newNode
+    } finally {
+      unsubscribe?.()
+    }
+  },
+
+  /**
+   * 触发图片节点尺寸压缩：sharp 等比缩放 + 按目标体积百分比迭代逼近压缩，
+   * 物化为新 image 子节点，并用 `generated` 边与父节点相连，原节点保留。
+   *
+   * 语义与主进程 imageProcessHandler 的 scaleCompress 分支一致：
+   * - 尺寸 scalePercent（10~200）：等比缩放，100% 不改尺寸；
+   * - 压缩 compressPercent（10~90）：目标体积 ≈ 原始字节数 × N%，quality 二分迭代逼近。
+   *
+   * @param onProgress 压缩进度回调（按 requestId 过滤，避免与其他图片任务串扰）
+   */
+  async materializeImageScaleCompress(
+    input: CanvasImageScaleCompressMaterializationInput,
+  ): Promise<CanvasNode | null> {
+    const db = readDb()
+    const parentNodeId = input.anchorNodeId ?? input.parentNodeId
+    const parent = db.nodes.find((n) => n.id === parentNodeId && n.projectId === input.projectId)
+    if (!parent) throw new Error('未找到源图片节点，无法生成压缩副本')
+
+    return materializeCanvasImageScaleCompress(input, {
+      parent,
+      createImageNode: (createInput) => this.createImageNode(createInput),
+      connectGeneratedNode: (newNode) => {
+        const currentDb = readDb()
+        currentDb.edges.push({
+          id: uid('canvas_edge'),
+          userId: USER_ID,
+          projectId: input.projectId,
+          boardId: input.boardId,
+          sourceNodeId: parentNodeId,
+          targetNodeId: newNode.id,
+          type: 'generated',
+          taskId: null,
+          metadata: {
+            imageOp: 'scale-compress',
+            scalePercent: input.scalePercent,
+            compressPercent: input.compressPercent,
+          },
+          createdAt: now(),
+        })
+        writeDb(currentDb)
+      },
+    })
+  },
+
+  /**
+   * 创建「Provider 文件」节点（来自「素材中心 → Files」上传的 MiniMax 等文件）。
+   *
+   * 与 createMediaNode 的区别：不创建本地 asset、无本地 url——文件实体在 provider 侧，
+   * 节点仅持有 fileId。提交任务时 fileId 经 buildTaskInputFiles 透传，命中 adapter
+   * 上传短路（MiniMax H3 用 `mm_file://{fileId}` 直接引用，跳过上传）。
+   * 节点无缩略图（provider 侧文件不可直接 fetch），渲染为占位，与 createEmptyImageNode 一致。
+   */
+  async createProviderFileNode(
+    input: {
+      projectId: string
+      boardId: string
+    } & CanvasProviderFileNodeInput,
+  ): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const kind = input.kind ?? 'image'
+    const fitted =
+      kind === 'image' ? IMAGE_NODE_DEFAULT_SIZE : fitMediaNodeSize(kind, undefined, undefined)
+    const size = {
+      width: input.width ?? fitted.width,
+      height: input.height ?? fitted.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: kind,
+      title: input.fileName ?? null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {
+        providerProfileId: input.providerProfileId,
+        fileId: input.fileId,
+        ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+      },
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  async createGroupNode(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const selected = new Set(nodeIds)
+    const sourceNodes = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.type !== 'group' &&
+        !node.parentNodeId &&
+        selected.has(node.id),
+    )
+    if (sourceNodes.length < 2) return this.openSnapshot(projectId)
+    const board = db.boards.find(
+      (item) => item.id === sourceNodes[0]?.boardId && item.projectId === projectId,
+    )
+    if (!board) throw new Error('Canvas board not found')
+
+    const at = now()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex),
+    )
+    const memberLayouts = sourceNodes.map((node) => ({
+      node,
+      absoluteX: node.x,
+      absoluteY: node.y,
+    }))
+
+    const groupNode = createNodeBase({
+      nodes: db.nodes,
+      projectId,
+      boardId: board.id,
+      type: 'group',
+      title: `Group ${sourceNodes.length}`,
+      x: 0,
+      y: 0,
+      width: GROUP_NODE_DEFAULT_SIZE.width,
+      height: GROUP_NODE_DEFAULT_SIZE.height,
+      data: {
+        text: `包含 ${sourceNodes.length} 个节点`,
+        message: sourceNodes.map((node) => node.title ?? node.type).join(' / '),
+      },
+      at,
+    })
+    groupNode.zIndex = maxZ + 1
+
+    const sortedNodes = [...sourceNodes].sort(
+      (leftNode, rightNode) => leftNode.x - rightNode.x || leftNode.y - rightNode.y,
+    )
+    const memberLayoutById = new Map(memberLayouts.map((item) => [item.node.id, item]))
+    const sortedMemberLayouts = sortedNodes
+      .map((node) => memberLayoutById.get(node.id))
+      .filter((item): item is GroupMemberLayout => Boolean(item))
+    applyGroupLayout(groupNode, sortedMemberLayouts, at)
+
+    db.nodes.push(groupNode)
+    db.edges.push(
+      ...sourceNodes.map(
+        (node): CanvasEdge => ({
+          id: uid('canvas_edge'),
+          projectId,
+          boardId: board.id,
+          userId: USER_ID,
+          sourceNodeId: groupNode.id,
+          targetNodeId: node.id,
+          type: 'group_contains',
+          metadata: {},
+          createdAt: at,
+        }),
+      ),
+    )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, board.id)
+  },
+
+  async dissolveGroupNode(projectId: string, groupId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const groupNode = db.nodes.find(
+      (node) =>
+        node.id === groupId &&
+        node.projectId === projectId &&
+        node.type === 'group' &&
+        !node.hidden,
+    )
+    if (!groupNode) return this.openSnapshot(projectId)
+
+    const at = now()
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId || node.hidden || node.parentNodeId !== groupNode.id)
+        continue
+      node.parentNodeId = null
+      node.x = groupNode.x + node.x
+      node.y = groupNode.y + node.y
+      node.updatedAt = at
+    }
+    groupNode.hidden = true
+    groupNode.updatedAt = at
+    db.edges = db.edges.filter(
+      (edge) => edge.sourceNodeId !== groupNode.id && edge.targetNodeId !== groupNode.id,
+    )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async addNodesToGroup(
+    projectId: string,
+    groupId: string,
+    nodeIds: string[],
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const groupNode = db.nodes.find(
+      (node) =>
+        node.id === groupId &&
+        node.projectId === projectId &&
+        node.type === 'group' &&
+        !node.hidden,
+    )
+    if (!groupNode) return this.openSnapshot(projectId)
+
+    const selected = new Set(nodeIds.filter((id) => id !== groupNode.id))
+    const nodesToAdd = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.type !== 'group' &&
+        !node.parentNodeId &&
+        selected.has(node.id),
+    )
+    if (nodesToAdd.length === 0) return this.openSnapshot(projectId)
+
+    const at = now()
+    const existingMembers: GroupMemberLayout[] = db.nodes
+      .filter(
+        (node) =>
+          node.projectId === projectId && !node.hidden && node.parentNodeId === groupNode.id,
+      )
+      .map((node) => ({
+        node,
+        absoluteX: groupNode.x + node.x,
+        absoluteY: groupNode.y + node.y,
+      }))
+    const addedMembers: GroupMemberLayout[] = nodesToAdd.map((node) => ({
+      node,
+      absoluteX: node.x,
+      absoluteY: node.y,
+    }))
+
+    applyGroupLayout(groupNode, [...existingMembers, ...addedMembers], at)
+
+    for (const node of nodesToAdd) {
+      const duplicate = db.edges.some(
+        (edge) =>
+          edge.projectId === projectId &&
+          edge.sourceNodeId === groupNode.id &&
+          edge.targetNodeId === node.id &&
+          edge.type === 'group_contains',
+      )
+      if (duplicate) continue
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: groupNode.boardId,
+        userId: USER_ID,
+        sourceNodeId: groupNode.id,
+        targetNodeId: node.id,
+        type: 'group_contains',
+        metadata: {},
+        createdAt: at,
+      })
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async removeNodesFromGroup(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const selected = new Set(nodeIds)
+    const groupById = new Map(
+      db.nodes
+        .filter((node) => node.projectId === projectId && node.type === 'group' && !node.hidden)
+        .map((node) => [node.id, node]),
+    )
+    const nodesToRemove = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.parentNodeId &&
+        selected.has(node.id) &&
+        groupById.has(node.parentNodeId),
+    )
+    if (nodesToRemove.length === 0) return this.openSnapshot(projectId)
+
+    const at = now()
+    const affectedGroupIds = new Set<string>()
+    for (const node of nodesToRemove) {
+      const groupNode = node.parentNodeId ? groupById.get(node.parentNodeId) : undefined
+      if (!groupNode) continue
+      affectedGroupIds.add(groupNode.id)
+      node.parentNodeId = null
+      node.x = groupNode.x + node.x
+      node.y = groupNode.y + node.y
+      node.zIndex = groupNode.zIndex + 1
+      node.updatedAt = at
+    }
+
+    const removedNodeIds = new Set(nodesToRemove.map((node) => node.id))
+    db.edges = db.edges.filter(
+      (edge) => !(edge.type === 'group_contains' && removedNodeIds.has(edge.targetNodeId)),
+    )
+
+    for (const groupId of affectedGroupIds) {
+      const groupNode = groupById.get(groupId)
+      if (!groupNode) continue
+      const remainingMembers = db.nodes.filter(
+        (node) => node.projectId === projectId && !node.hidden && node.parentNodeId === groupId,
+      )
+      if (remainingMembers.length === 0) {
+        groupNode.hidden = true
+        groupNode.updatedAt = at
+        db.edges = db.edges.filter(
+          (edge) => edge.sourceNodeId !== groupNode.id && edge.targetNodeId !== groupNode.id,
+        )
+        continue
+      }
+      refreshGroupLayout(db, groupNode, at)
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async updateNodes(projectId: string, nodes: CanvasNodeLayoutUpdate[]): Promise<void> {
+    const db = readDb()
+    const result = applyCanvasNodeLayoutUpdates({
+      nodes: db.nodes,
+      projectId,
+      updates: nodes,
+      updatedAt: now(),
+    })
+    if (!result.changed) return
+    db.nodes = result.nodes
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+  },
+
+  async connectNodes(
+    projectId: string,
+    input: {
+      sourceNodeId: string
+      targetNodeId: string
+      type?: CanvasEdge['type']
+    },
+  ): Promise<CanvasSnapshot> {
+    if (!input.sourceNodeId || !input.targetNodeId || input.sourceNodeId === input.targetNodeId) {
+      return this.openSnapshot(projectId)
+    }
+    const db = readDb()
+    const source = db.nodes.find(
+      (node) => node.id === input.sourceNodeId && node.projectId === projectId && !node.hidden,
+    )
+    const target = db.nodes.find(
+      (node) => node.id === input.targetNodeId && node.projectId === projectId && !node.hidden,
+    )
+    const board = db.boards.find((item) => item.projectId === projectId)
+    if (!source || !target || !board) return this.openSnapshot(projectId)
+
+    const edgeType: CanvasEdge['type'] = input.type ?? inferCanvasConnectionType(source, target)
+    const duplicate = db.edges.some(
+      (edge) =>
+        edge.projectId === projectId &&
+        edge.sourceNodeId === source.id &&
+        edge.targetNodeId === target.id &&
+        edge.type === edgeType,
+    )
+    if (duplicate) return this.openSnapshot(projectId)
+
+    const taskId =
+      edgeType === 'used_as_input'
+        ? (target.taskId ?? null)
+        : edgeType === 'generated'
+          ? (source.taskId ?? null)
+          : null
+    const at = now()
+    const edge: CanvasEdge = {
+      id: uid('canvas_edge'),
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      sourceNodeId: source.id,
+      targetNodeId: target.id,
+      type: edgeType,
+      taskId: taskId ?? null,
+      metadata: { manual: true },
+      createdAt: at,
+    }
+    db.edges.push(edge)
+
+    const task = taskId ? db.tasks.find((item) => item.id === taskId) : undefined
+    if (task && edgeType === 'used_as_input') {
+      if (!task.inputNodeIds.includes(source.id)) task.inputNodeIds.push(source.id)
+      if (source.assetId && !task.inputAssetIds.includes(source.assetId))
+        task.inputAssetIds.push(source.assetId)
+      task.updatedAt = at
+    }
+    if (edgeType === 'used_as_input') syncOperationPromptDocumentFromConnections(db, target)
+    if (task && edgeType === 'generated') {
+      recoverCanvasTaskFromMaterializedOutputs({
+        task,
+        operationNode: source,
+        outputNodeIds: [target.id],
+        outputAssetIds: target.assetId ? [target.assetId] : [],
+        at,
+      })
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async deleteEdges(projectId: string, edgeIds: string[]): Promise<CanvasSnapshot> {
+    const ids = new Set(edgeIds.filter(Boolean))
+    if (ids.size === 0) return this.openSnapshot(projectId)
+
+    const db = readDb()
+    const removedEdges = db.edges.filter((edge) => edge.projectId === projectId && ids.has(edge.id))
+    if (removedEdges.length === 0) return this.openSnapshot(projectId)
+
+    db.edges = db.edges.filter((edge) => !(edge.projectId === projectId && ids.has(edge.id)))
+    const at = now()
+    const promptTargets = new Set<string>()
+    for (const edge of removedEdges) {
+      if (!edge.taskId || edge.type === 'group_contains') continue
+      const task = db.tasks.find((item) => item.id === edge.taskId && item.projectId === projectId)
+      if (!task) continue
+      if (edge.type === 'used_as_input') {
+        promptTargets.add(edge.targetNodeId)
+        task.inputNodeIds = task.inputNodeIds.filter((id) => id !== edge.sourceNodeId)
+        const source = db.nodes.find((node) => node.id === edge.sourceNodeId)
+        if (source?.assetId)
+          task.inputAssetIds = task.inputAssetIds.filter((id) => id !== source.assetId)
+      }
+      if (edge.type === 'generated') {
+        task.outputNodeIds = task.outputNodeIds.filter((id) => id !== edge.targetNodeId)
+        const target = db.nodes.find((node) => node.id === edge.targetNodeId)
+        if (target?.assetId)
+          task.outputAssetIds = task.outputAssetIds.filter((id) => id !== target.assetId)
+      }
+      task.updatedAt = at
+    }
+    for (const targetId of promptTargets) {
+      const target = db.nodes.find(
+        (node) => node.id === targetId && node.projectId === projectId && !node.hidden,
+      )
+      if (target) syncOperationPromptDocumentFromConnections(db, target)
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async deleteOperationOutputs(
+    projectId: string,
+    input: { operationNodeId: string; outputs: CanvasOperationOutputView[] },
+  ): Promise<{ snapshot: CanvasSnapshot; result: CanvasOperationOutputDeletionResult }> {
+    const db = readDb()
+    const applied = applyCanvasOperationOutputDeletion({
+      projectId,
+      ...input,
+      nodes: db.nodes,
+      edges: db.edges,
+      tasks: db.tasks,
+      updatedAt: now(),
+    })
+    db.nodes = applied.nodes
+    db.edges = applied.edges
+    db.tasks = applied.tasks
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return { snapshot: await this.openSnapshot(projectId), result: applied.result }
+  },
+
+  async patchNodes(
+    projectId: string,
+    nodeIds: string[],
+    patch: Partial<CanvasNode>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const selected = new Set(nodeIds)
+    db.nodes = db.nodes.map((node) => {
+      if (!selected.has(node.id) || node.projectId !== projectId) return node
+      const numberedTitle: string | null =
+        patch.title === undefined
+          ? (node.title ?? null)
+          : renameCanvasNode(node, patch.title, canvasNodeTypeLabel(node.type))
+      const numberedData: CanvasNode['data'] =
+        patch.data === undefined ? node.data : { ...patch.data }
+      if (patch.data !== undefined) {
+        if (node.data.nodeSequence !== undefined) {
+          numberedData.nodeSequence = node.data.nodeSequence
+        } else {
+          delete numberedData.nodeSequence
+        }
+      }
+      return {
+        ...node,
+        ...patch,
+        title: numberedTitle,
+        data: numberedData,
+        id: node.id,
+        projectId: node.projectId,
+        boardId: node.boardId,
+        userId: node.userId,
+        updatedAt: now(),
+      }
+    })
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async updateNodeData(
+    projectId: string,
+    nodeId: string,
+    data: Partial<CanvasNode['data']>,
+  ): Promise<CanvasSnapshot> {
+    return this.updateManyNodeData(projectId, [{ nodeId, data }])
+  },
+
+  async updateNode(
+    projectId: string,
+    nodeId: string,
+    patch: { title?: string; data?: Partial<CanvasNode['data']> },
+  ): Promise<CanvasSnapshot> {
+    return this.updateManyNodeData(projectId, [
+      {
+        nodeId,
+        data: patch.data ?? {},
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+      },
+    ])
+  },
+
+  async updateManyNodeData(
+    projectId: string,
+    updates: Array<{
+      nodeId: string
+      data: Partial<CanvasNode['data']>
+      title?: string
+    }>,
+  ): Promise<CanvasSnapshot> {
+    if (updates.length === 0) return this.openSnapshot(projectId)
+    const db = readDb()
+    for (const { nodeId, data, title } of updates) {
+      const nodeIndex = db.nodes.findIndex(
+        (item) => item.id === nodeId && item.projectId === projectId,
+      )
+      const node = db.nodes[nodeIndex]
+      if (!node) continue
+      const at = nextEntityUpdatedAt(node.updatedAt)
+      const nextData = { ...node.data, ...data }
+      if (node.data.nodeSequence !== undefined) {
+        nextData.nodeSequence = node.data.nodeSequence
+      } else {
+        delete nextData.nodeSequence
+      }
+      for (const key of Object.keys(nextData)) {
+        if ((nextData as Record<string, unknown>)[key] === undefined) {
+          delete (nextData as Record<string, unknown>)[key]
+        }
+      }
+      // openSnapshot returns entity references from the hot store. Never mutate
+      // those objects in place: React may currently hold the same node reference
+      // and would then see no identity change to render.
+      db.nodes[nodeIndex] = {
+        ...node,
+        ...(title !== undefined
+          ? { title: renameCanvasNode(node, title, canvasNodeTypeLabel(node.type)) }
+          : {}),
+        data: nextData,
+        updatedAt: at,
+      }
+
+      // Operation node data is editable current configuration. Only the pending
+      // placeholder task may follow those edits; once execution starts, the task is
+      // an immutable diagnostic snapshot used by history and original-task retry.
+      const task = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (
+        task?.status === 'pending' &&
+        task.outputNodeIds.length === 0 &&
+        task.outputAssetIds.length === 0
+      ) {
+        const nextTask = { ...task }
+        if (Object.prototype.hasOwnProperty.call(data, 'prompt'))
+          nextTask.prompt = data.prompt ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'negativePrompt'))
+          nextTask.negativePrompt = data.negativePrompt ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'modelParams'))
+          nextTask.modelParams = data.modelParams ?? {}
+        if (Object.prototype.hasOwnProperty.call(data, 'agentId'))
+          nextTask.agentId = data.agentId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'providerProfileId'))
+          nextTask.providerProfileId = data.providerProfileId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'manifestId'))
+          nextTask.manifestId = data.manifestId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'modelId'))
+          nextTask.modelId = data.modelId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'skillIds'))
+          nextTask.skillIds = data.skillIds ?? []
+        if (Object.prototype.hasOwnProperty.call(data, 'reasoningEffort'))
+          nextTask.reasoningEffort = data.reasoningEffort ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'shotScriptConfig'))
+          nextTask.shotScriptConfig = data.shotScriptConfig ?? null
+        nextTask.updatedAt = at
+        const taskIndex = db.tasks.indexOf(task)
+        if (taskIndex >= 0) db.tasks[taskIndex] = nextTask
+      }
+
+      const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
+      if (
+        asset &&
+        (node.type === 'text' || node.type === 'prompt') &&
+        Object.prototype.hasOwnProperty.call(data, 'text')
+      ) {
+        const assetIndex = db.assets.indexOf(asset)
+        if (assetIndex >= 0) {
+          db.assets[assetIndex] = { ...asset, contentText: data.text ?? '', updatedAt: at }
+        }
+      }
+    }
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async duplicateNodes(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const selected = new Set(nodeIds)
+    const sourceNodes = db.nodes.filter(
+      (node) => selected.has(node.id) && node.projectId === projectId,
+    )
+    const idMap = new Map<string, string>()
+    const at = now()
+    const allocatedNodes = [...db.nodes]
+    const clones = sourceNodes.map((node) => {
+      const nextId = uid('canvas_node')
+      idMap.set(node.id, nextId)
+      const operationClonePatch = isOperationNode(node)
+        ? {
+            taskId: null,
+            data: {
+              ...node.data,
+              status: 'pending' as const,
+              progress: 0,
+              message: '复制任务，需确认配置后重新提交',
+            },
+          }
+        : {}
+      const naming = createCanvasNodeNaming({
+        nodes: allocatedNodes,
+        boardId: node.boardId,
+        type: node.type,
+        title: node.title ? `${node.title} copy` : null,
+      })
+      const clone: CanvasNode = {
+        ...node,
+        id: nextId,
+        x: node.x + 36,
+        y: node.y + 36,
+        locked: false,
+        title: naming.title,
+        createdAt: at,
+        updatedAt: at,
+        ...operationClonePatch,
+        data: {
+          ...('data' in operationClonePatch ? operationClonePatch.data : node.data),
+          nodeSequence: naming.nodeNumber,
+        },
+      }
+      allocatedNodes.push(clone)
+      return clone
+    })
+    const clonedEdges = db.edges
+      .filter((edge) => selected.has(edge.sourceNodeId) && selected.has(edge.targetNodeId))
+      .map((edge) => {
+        const targetNodeId = idMap.get(edge.targetNodeId) ?? edge.targetNodeId
+        const targetClone = clones.find((node) => node.id === targetNodeId)
+        return {
+          ...edge,
+          id: uid('canvas_edge'),
+          sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
+          targetNodeId,
+          taskId: targetClone && isOperationNode(targetClone) ? null : (edge.taskId ?? null),
+          createdAt: at,
+        }
+      })
+
+    db.nodes.push(...clones)
+    db.edges.push(...clonedEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async deleteNodes(projectId: string, nodeIds: string[]): Promise<void> {
+    const db = readDb()
+    const nodesById = new Map(db.nodes.map((node) => [node.id, node]))
+    const remove = resolveCanvasNodeDeletionIds({
+      projectId,
+      nodeIds,
+      nodes: db.nodes,
+      edges: db.edges,
+    })
+    const removedGroups = new Map(
+      db.nodes
+        .filter(
+          (node) => remove.has(node.id) && node.projectId === projectId && node.type === 'group',
+        )
+        .map((node) => [node.id, node]),
+    )
+    const at = now()
+    // 收集被删任务节点关联的 task：节点承载的 task 直接移除，
+    // 否则清除其余 task 中对这些节点的引用，保证任务队列与画布一致。
+    const removedTaskIds = new Set<string>()
+    for (const node of db.nodes) {
+      if (remove.has(node.id) && node.projectId === projectId && node.taskId) {
+        removedTaskIds.add(node.taskId)
+      }
+    }
+    // 软删前回收引用计数（assetLibrary 缺陷 1）：只对「可见 + 有 assetId」的节点生效，
+    // 撤销（restore）后重复删除不会重复递减。必须在下方标记 hidden 之前执行。
+    reclaimAssetReferencesForNodes(db, remove)
+    db.nodes = db.nodes.map((node) => {
+      if (remove.has(node.id)) return { ...node, hidden: true, updatedAt: at }
+      const parent = node.parentNodeId ? removedGroups.get(node.parentNodeId) : undefined
+      if (!parent) return node
+      return {
+        ...node,
+        parentNodeId: null,
+        x: parent.x + node.x,
+        y: parent.y + node.y,
+        updatedAt: at,
+      }
+    })
+    db.edges = db.edges.filter(
+      (edge) => !remove.has(edge.sourceNodeId) && !remove.has(edge.targetNodeId),
+    )
+    if (removedTaskIds.size > 0) {
+      db.tasks = db.tasks.filter((task) => !removedTaskIds.has(task.id))
+    }
+    // 仅当被删节点确实登记在 task.outputNodeIds 中时清理对应资产。
+    // 独立展开的引用节点会复用 assetId，但不属于任务产物记录，删除它不能回写任务。
+    db.tasks = db.tasks.map((task) => {
+      if (task.projectId !== projectId) return task
+      const next = removeDeletedCanvasNodeReferencesFromTask({
+        task,
+        nodesById,
+        deletedNodeIds: remove,
+      })
+      return next === task ? task : { ...next, updatedAt: at }
+    })
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+
+    // 画布内删节点只做软删（hidden=true，可撤销），刻意不清理源文件：
+    // 同一张图/视频可能被多个节点或分镜引用，单独删除节点只是「从画面移走」。
+    // 资产管理入口若要彻底删除，会在此之后调用 deleteFilmAsset({ hardDelete: true })。
+  },
+
+  async createTask(projectId: string, request: CreateCanvasTaskRequest): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === request.boardId)
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+    const at = now()
+    const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
+    )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
+      size: taskNodeSize,
+      nodes: db.nodes,
+      boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
+    })
+    const taskNodeData: CanvasNode['data'] = {
+      operation: request.operation,
+      status: 'pending',
+      progress: 12,
+      message: '任务已创建，等待 agent/provider 接入',
+      ...(request.taskPipelineRole != null ? { pipelineRole: request.taskPipelineRole } : {}),
+      ...(request.outputPipelineRole != null
+        ? { outputPipelineRole: request.outputPipelineRole }
+        : {}),
+    }
+    syncCanvasNodeRuntimeData(taskNodeData, request)
+    const requestPrompt = request.promptDocument
+      ? (request.compiledUserText ?? request.prompt)
+      : buildCanvasOperationPrompt(request.operation, request.prompt)
+    if (requestPrompt != null && request.promptDocument == null) taskNodeData.prompt = requestPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    const defaultTaskTitle =
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
+
+    const taskNode = createNodeBase({
+      nodes: db.nodes,
+      projectId,
+      boardId: board.id,
+      // 类型化操作节点：type === operation（如 text_to_image）
+      type: request.operation as CanvasNodeType,
+      taskId,
+      title: defaultTaskTitle,
+      x,
+      y,
+      width: taskNodeSize.width,
+      height: taskNodeSize.height,
+      data: taskNodeData,
+      at,
+    })
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation: request.operation,
+      status: 'pending',
+      progress: 12,
+      title: taskNode.title ?? defaultTaskTitle,
+      operationNodeId: taskNode.id,
+      prompt: requestPrompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
+      providerProfileId: request.providerProfileId ?? null,
+      manifestId: request.manifestId ?? null,
+      modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
+      modelParams: request.modelParams ?? {},
+      taskPipelineRole: request.taskPipelineRole ?? null,
+      outputPipelineRole: request.outputPipelineRole ?? null,
+      shotScriptConfig: request.shotScriptConfig ?? null,
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at),
+      ...pickCanvasPromptTaskFields(request),
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      }),
+    )
+    db.nodes.push(taskNode)
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async startWorkflowTask(
+    projectId: string,
+    request: CanvasWorkflowTaskStartRequest,
+  ): Promise<{ taskId: string; snapshot: CanvasSnapshot }> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    const board = request.boardId
+      ? db.boards.find((item) => item.id === request.boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+
+    const at = now()
+    const taskId = uid('canvas_task')
+    const operation = request.operation ?? 'text_generate'
+    const taskNodeSize = pickOperationNodeInitialSize(false, operation === 'extract_audio')
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
+      size: taskNodeSize,
+      nodes: db.nodes,
+      boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
+    })
+    const progress = request.progress ?? 8
+    const messageText = request.message ?? '本地画布工作流执行中'
+    const taskNodeData: CanvasNode['data'] = {
+      operation,
+      status: 'running',
+      progress,
+      message: messageText,
+    }
+    const requestPrompt = request.compiledUserText ?? request.prompt
+    const visibleUserPrompt =
+      request.userPrompt ?? (request.promptDocument ? undefined : request.prompt)
+    if (visibleUserPrompt != null) taskNodeData.prompt = visibleUserPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
+    // A bound operation node is reusable. Keep its displayed/runtime configuration in
+    // lockstep with the new task instead of retaining the model from its previous run.
+    if (request.agentId != null) taskNodeData.agentId = request.agentId
+    if (request.providerProfileId != null)
+      taskNodeData.providerProfileId = request.providerProfileId
+    if (request.modelId != null) taskNodeData.modelId = request.modelId
+    if (request.reasoningEffort != null) taskNodeData.reasoningEffort = request.reasoningEffort
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
+    if (request.inputBindings != null)
+      taskNodeData.inputBindings = request.inputBindings.map((binding) => ({ ...binding }))
+    if (request.mediaInputMode != null) taskNodeData.mediaInputMode = request.mediaInputMode
+    if (request.capabilityId != null) taskNodeData.capabilityId = request.capabilityId
+    if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
+    if (request.outputPipelineRole != null)
+      taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
+
+    let taskNode: CanvasNode
+    const bindNode = request.bindToNodeId
+      ? db.nodes.find(
+          (n) => n.id === request.bindToNodeId && n.projectId === projectId && !n.hidden,
+        )
+      : null
+    if (bindNode) {
+      const previousTask = bindNode.taskId
+        ? db.tasks.find((item) => item.id === bindNode.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === bindNode.id &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      bindNode.taskId = taskId
+      bindNode.title = renameCanvasNode(bindNode, request.title, canvasNodeTypeLabel(bindNode.type))
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      if (request.promptDocument != null && !visibleUserPrompt) delete bindNode.data.prompt
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        nodes: db.nodes,
+        projectId,
+        boardId: board.id,
+        type: operation as CanvasNodeType,
+        taskId,
+        title: request.title,
+        x,
+        y,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation,
+      status: 'running',
+      progress,
+      title: taskNode.title ?? request.title,
+      operationNodeId: taskNode.id,
+      prompt: requestPrompt ?? null,
+      negativePrompt: null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      provider: request.provider ?? 'canvas_workflow',
+      agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
+      agentMode: 'local',
+      providerProfileId: request.providerProfileId ?? null,
+      modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
+      modelParams: request.modelParams ?? {},
+      taskPipelineRole: request.taskPipelineRole ?? null,
+      outputPipelineRole: request.outputPipelineRole ?? null,
+      shotScriptConfig: request.shotScriptConfig ?? null,
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '本地工作流任务创建'),
+      ...pickCanvasPromptTaskFields(request),
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: { workflow: true },
+        createdAt: at,
+      }),
+    )
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return { taskId, snapshot: await this.openSnapshot(projectId, board.id) }
+  },
+
+  async finishWorkflowTask(
+    projectId: string,
+    taskId: string,
+    result: CanvasWorkflowTaskFinishRequest,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+
+    const at = now()
+    const status = result.status ?? 'completed'
+    const progress = result.progress ?? 100
+    task.status = status
+    task.progress = progress
+    task.updatedAt = at
+    task.completedAt = at
+    task.outputNodeIds = Array.from(new Set(result.outputNodeIds ?? task.outputNodeIds))
+    task.outputAssetIds = Array.from(new Set(result.outputAssetIds ?? task.outputAssetIds))
+    if (result.errorMsg !== undefined) task.errorMsg = result.errorMsg
+    if (result.errorDetail !== undefined) task.errorDetail = result.errorDetail
+    if (result.rawResponse !== undefined) task.rawResponse = result.rawResponse
+    if (result.modelOutputText !== undefined) task.modelOutputText = result.modelOutputText
+    if (result.agentId !== undefined) task.agentId = result.agentId
+    if (result.providerProfileId !== undefined) task.providerProfileId = result.providerProfileId
+    if (result.provider !== undefined) task.provider = result.provider
+    if (result.modelId !== undefined) task.modelId = result.modelId
+    if (result.modelOutputText != null) {
+      appendCanvasTaskModelOutputEvent(task, at, result.modelOutputText)
+    }
+    appendCanvasTaskRuntimeEvent(task, {
+      at,
+      kind: status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed',
+      label:
+        status === 'completed'
+          ? '本地工作流完成'
+          : status === 'cancelled'
+            ? '本地工作流已取消'
+            : '本地工作流失败',
+      ...(task.errorDetail ? { detail: task.errorDetail } : {}),
+    })
+
+    const defaultMessage =
+      status === 'completed'
+        ? '本地画布工作流已完成'
+        : status === 'cancelled'
+          ? '任务已取消'
+          : `失败：${task.errorDetail ?? task.errorMsg ?? '本地画布工作流失败'}`
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status,
+        progress,
+        message: result.message ?? defaultMessage,
+        ...(task.agentId ? { agentId: task.agentId } : {}),
+        ...(task.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
+        ...(task.modelId ? { modelId: task.modelId } : {}),
+      }
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
+      taskNode.updatedAt = at
+    }
+
+    for (const outputNodeId of task.outputNodeIds) {
+      if (
+        db.edges.some(
+          (edge) =>
+            edge.projectId === projectId &&
+            edge.taskId === taskId &&
+            edge.sourceNodeId === taskNode.id &&
+            edge.targetNodeId === outputNodeId &&
+            edge.type === 'generated',
+        )
+      ) {
+        continue
+      }
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: task.boardId,
+        userId: USER_ID,
+        sourceNodeId: taskNode.id,
+        targetNodeId: outputNodeId,
+        type: 'generated',
+        taskId,
+        metadata: { workflow: true },
+        createdAt: at,
+      })
+    }
+
+    updateProjectCounts(db, projectId)
+    if (status === 'completed' || task.outputNodeIds.length > 0 || task.outputAssetIds.length > 0) {
+      writeTaskRuntimeDb(db, projectId)
+      return this.openSnapshot(projectId, task.boardId)
+    }
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
+  },
+
+  /**
+   * 创建类型化操作节点（文档：AI 操作按类型分拆节点）。
+   * type=operation 的节点 + CanvasTask（pending）+ 输入 used_as_input 连线。
+   */
+  async createOperationNode(input: {
+    projectId: string
+    boardId: string
+    operation: CanvasOperationType
+    inputNodeIds: string[]
+    x: number
+    y: number
+    title?: string
+    message?: string
+    prompt?: string
+    systemPrompt?: string
+    negativePrompt?: string
+    modelParams?: Record<string, unknown>
+    agentId?: string
+    providerProfileId?: string
+    manifestId?: string
+    modelId?: string
+    reasoningEffort?: SessionReasoningEffort
+    skillIds?: string[]
+    inputBindings?: CanvasInputBinding[]
+    taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
+    outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
+    outputTitle?: CreateCanvasTaskRequest['outputTitle']
+    /** 分镜任务节点的时长配置（每镜最长时间），写入 node.data 供配置面板回显 */
+    shotScriptConfig?: ShotScriptConfig
+    preservePreferredPosition?: boolean
+    /** 节点内自动创建的后续操作：按第一个输入节点后方中轴线对齐。 */
+    autoPlaceAfterInputs?: boolean
+  }): Promise<CanvasSnapshot> {
+    let db = readDb()
+    const at = now()
+    const taskId = uid('canvas_task')
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
+    if (!board) throw new Error('Canvas board not found')
+    const inputNodes = db.nodes.filter(
+      (n) => input.inputNodeIds.includes(n.id) && n.projectId === input.projectId && !n.hidden,
+    )
+    const project = db.projects.find((item) => item.id === input.projectId)
+    const inputTasks = inputNodes
+      .map((node) =>
+        node.taskId
+          ? db.tasks.find((task) => task.id === node.taskId && task.projectId === input.projectId)
+          : null,
+      )
+      .filter((task): task is CanvasTask => task != null)
+    const explicitPrompt = nonEmptyString(input.prompt)
+    const presetTargetId = resolveCanvasPresetTarget({
+      operation: input.operation,
+      taskPipelineRole: input.taskPipelineRole ?? null,
+      outputPipelineRole: input.outputPipelineRole ?? null,
+      workflow: input.modelParams?.workflow,
+    })
+    const taskPipelineRole =
+      input.taskPipelineRole ??
+      (presetTargetId !== input.operation ? input.outputPipelineRole : undefined)
+    const operationPreset = readCanvasResolvedPresetTarget(presetTargetId, {
+      hasImageInput: inputNodes.some((node) => node.type === 'image'),
+    })
+    const explicitSystemPrompt = normalizeCanvasFunctionalSystemPrompt(
+      nonEmptyString(input.systemPrompt),
+      presetTargetId,
+    )
+    const systemPrompt = buildCanvasOperationSystemPrompt(
+      input.operation,
+      // An explicit functional contract is authoritative. Generic operation presets
+      // are only a fallback for generic nodes and must not be concatenated into it.
+      explicitSystemPrompt.length === 0 || presetTargetId !== input.operation
+        ? readCanvasExecutionPresetPrompt(presetTargetId, {
+            hasImageInput: inputNodes.some((node) => node.type === 'image'),
+          })
+        : undefined,
+      project?.settings?.prompt,
+      explicitSystemPrompt || undefined,
+    )
+    const promptDocument = buildCanvasVisiblePromptDocument({
+      prompt: explicitPrompt ?? '',
+      nodes: db.nodes,
+      connections: inputNodes,
+      assets: db.assets,
+    })
+    const inputBindings = (input.inputBindings ?? [])
+      .filter((binding) => input.inputNodeIds.includes(binding.sourceNodeId))
+      .map((binding) => ({ ...binding }))
+    const inheritedNegativePrompt =
+      inputTasks
+        .map((task) => nonEmptyString(task.negativePrompt))
+        .find((value): value is string => value != null) ||
+      inputNodes
+        .map((node) => nonEmptyString(node.data.negativePrompt))
+        .find((value): value is string => value != null) ||
+      nonEmptyString(project?.settings?.negativePrompt)
+    const negativePrompt = mergeCanvasOperationPresetNegativePrompt(
+      nonEmptyString(input.negativePrompt) ?? inheritedNegativePrompt ?? '',
+      operationPreset.negativePrompt,
+    )
+    const inheritedModelParams: Record<string, unknown> = {}
+    for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
+    for (const node of inputNodes)
+      mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
+    const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, {
+      ...inheritedModelParams,
+      ...(input.modelParams ?? {}),
+    })
+    // Contract V2 二次裁剪：preset/继承/input 合并后按目标 manifest 再次过滤，
+    // 防止上游节点的旧模型字段（如 searchEnabled / output_format）污染新模型请求。
+    // manifest 缺省时直接退回原值，不阻塞创建。
+    const providerProfileId = resolveProviderFileTaskProfile({
+      nodes: inputNodes,
+      selectedProviderProfileId: input.providerProfileId ?? operationPreset.providerProfileId,
+    })
+    const manifestId = input.manifestId ?? operationPreset.manifestId ?? null
+    const pruned = await pruneModelParamsForCanvas({
+      operation: input.operation,
+      ...(manifestId != null ? { manifestId } : {}),
+      ...(providerProfileId != null ? { providerProfileId } : {}),
+      modelParams: mergedModelParams,
+    })
+    // 参数裁剪可能走异步 IPC；创建前重新读取最新快照，避免菜单/Agent 同时添加操作节点时
+    // 后写入者覆盖前一个节点，也确保统一碰撞检测包含刚落下的节点。
+    db = readDb()
+    const modelParams = restoreCanvasTextControlModelParams(
+      input.operation,
+      mergedModelParams,
+      pruned.modelParams,
+    )
+    const droppedParams = pruned.droppedParams.filter(
+      (item) => !CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES.has(item.name),
+    )
+    const modelId = input.modelId ?? operationPreset.modelId ?? null
+    const agentId = input.agentId ?? operationPreset.agentId ?? null
+    const skillIds = input.skillIds ?? operationPreset.skillIds
+    const reasoningEffort =
+      input.reasoningEffort ??
+      inputTasks
+        .map((task) => task.reasoningEffort)
+        .find((value): value is SessionReasoningEffort => value != null) ??
+      null
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
+    const operationNodeSize = pickOperationNodeInitialSize(
+      Boolean(input.shotScriptConfig) ||
+        (input.operation === 'text_generate' && taskPipelineRole === 'shot'),
+      input.operation === 'extract_audio',
+    )
+    const autoPlacementSource = input.autoPlaceAfterInputs ? inputNodes[0] : undefined
+    const preferredPosition = autoPlacementSource
+      ? placeAutoNodeToRight(autoPlacementSource, operationNodeSize)
+      : { x: input.x, y: input.y }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: preferredPosition,
+      size: operationNodeSize,
+      nodes: db.nodes,
+      boardId: input.boardId,
+      ...(input.preservePreferredPosition || autoPlacementSource
+        ? { preservePreferredPosition: true }
+        : {}),
+    })
+    const node = createNodeBase({
+      nodes: db.nodes,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.operation as CanvasNodeType,
+      taskId,
+      title: input.title ?? canvasNodeTypeLabel(input.operation as CanvasNodeType),
+      x: position.x,
+      y: position.y,
+      width: operationNodeSize.width,
+      height: operationNodeSize.height,
+      data: {
+        operation: input.operation,
+        status: 'pending',
+        progress: 0,
+        message: input.message ?? '点击下方编辑面板调整参数后运行',
+        ...(explicitPrompt ? { prompt: explicitPrompt } : {}),
+        promptDocument,
+        ...(inputBindings.length > 0 ? { inputBindings } : {}),
+        ...(systemPrompt ? { systemPrompt } : {}),
+        ...(negativePrompt ? { negativePrompt } : {}),
+        ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+        ...(providerProfileId ? { providerProfileId } : {}),
+        ...(manifestId ? { manifestId } : {}),
+        ...(modelId ? { modelId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(skillIds.length > 0 ? { skillIds } : {}),
+        ...(taskPipelineRole != null ? { pipelineRole: taskPipelineRole } : {}),
+        ...(input.outputPipelineRole != null
+          ? { outputPipelineRole: input.outputPipelineRole }
+          : {}),
+        ...(input.outputTitle != null ? { outputTitle: input.outputTitle } : {}),
+        ...(input.shotScriptConfig ? { shotScriptConfig: input.shotScriptConfig } : {}),
+        ...(droppedParams.length > 0 ? { droppedModelParams: droppedParams } : {}),
+        ...(pruned.warnings.length > 0 ? { modelParamWarnings: pruned.warnings } : {}),
+        origin: 'manual',
+      },
+      at,
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    const task: CanvasTask = {
+      id: taskId,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      userId: USER_ID,
+      operation: input.operation,
+      status: 'pending',
+      progress: 0,
+      title: node.title ?? input.title ?? canvasNodeTypeLabel(input.operation as CanvasNodeType),
+      operationNodeId: node.id,
+      prompt: explicitPrompt ?? null,
+      negativePrompt: negativePrompt ?? null,
+      inputNodeIds: input.inputNodeIds,
+      inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
+      outputNodeIds: [],
+      outputAssetIds: [],
+      agentId,
+      skillIds,
+      providerProfileId,
+      manifestId,
+      modelId,
+      reasoningEffort,
+      modelParams,
+      taskPipelineRole: taskPipelineRole ?? null,
+      outputPipelineRole: input.outputPipelineRole ?? null,
+      shotScriptConfig: input.shotScriptConfig ?? null,
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '操作节点草稿创建'),
+      promptDocument,
+      ...(inputBindings.length > 0 ? { inputBindings } : {}),
+      ...(systemPrompt ? { systemPrompt } : {}),
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.tasks.push(task)
+    for (const sourceId of input.inputNodeIds) {
+      const sourceNode = db.nodes.find((n) => n.id === sourceId && n.projectId === input.projectId)
+      if (!sourceNode) continue
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId: input.projectId,
+        boardId: input.boardId,
+        userId: USER_ID,
+        sourceNodeId: sourceId,
+        targetNodeId: node.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: { manual: true },
+        createdAt: at,
+      })
+    }
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return this.openSnapshot(input.projectId, input.boardId)
+  },
+
+  /**
+   * 重试操作节点：基于原 task 参数创建全新 task + output 流程。
+   * 旧 output 节点和旧 task 不动。新 output 放在旧 output 右侧。
+   */
+  async retryOperationNode(
+    projectId: string,
+    nodeId: string,
+    options?: {
+      sourceTaskId?: string
+      runtimeSource?: 'current-node' | 'original-task'
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
+    if (!node || (!node.taskId && !options?.sourceTaskId)) throw new Error('操作节点未关联任务')
+    const sourceTaskId = options?.sourceTaskId ?? node.taskId
+    const oldTask = db.tasks.find((t) => t.id === sourceTaskId && t.projectId === projectId)
+    if (!oldTask) throw new Error('未找到原任务')
+    const useCurrentRuntime = options?.runtimeSource !== 'original-task'
+    // B8: retry 同样走 capability → operation 反向映射，让统一图片节点（容器 operation + capabilityId）
+    // 重试时按冻结的参考图数量还原出 image_edit / image_compose / text_to_image，而不是直接复用容器 operation。
+    const retryImageInputCount = (oldTask.inputBindings ?? []).filter(
+      (binding) => binding.enabled && binding.kind === 'image',
+    ).length
+    const retryOperation = executionOperationForCanvasMediaCapability(
+      oldTask.capabilityId,
+      oldTask.operation,
+      retryImageInputCount > 0 ? { imageInputCount: retryImageInputCount } : undefined,
+    )
+    const oldOutputNodes = db.nodes.filter((n) => oldTask.outputNodeIds.includes(n.id))
+    const baseX =
+      oldOutputNodes.length > 0
+        ? Math.max(...oldOutputNodes.map((n) => n.x + n.width)) + 60
+        : node.x + node.width + 60
+    const baseY = node.y
+    const retryInputNodes = oldTask.inputNodeIds
+      .map((inputNodeId) => {
+        const inputNode = db.nodes.find((item) => item.id === inputNodeId && !item.hidden)
+        if (!inputNode || inputNode.data.url || !inputNode.assetId) return inputNode
+        const asset = db.assets.find((item) => item.id === inputNode.assetId)
+        if (!asset?.url) return inputNode
+        return {
+          ...inputNode,
+          data: {
+            ...inputNode.data,
+            url: asset.url,
+            ...(asset.mimeType && !inputNode.data.mimeType ? { mimeType: asset.mimeType } : {}),
+          },
+        }
+      })
+      .filter((item): item is CanvasNode => item != null)
+    const retryInputFiles = await materializeCanvasTaskInputFiles(
+      buildTaskInputFiles(retryInputNodes, buildCanvasRetryInputRoles(oldTask.relationManifest)),
+      oldTask.provider === 'xai' ? 'base64' : undefined,
+    )
+    const requestedRetryModelParams = useCurrentRuntime
+      ? { ...oldTask.modelParams, ...(node.data.modelParams ?? {}) }
+      : oldTask.modelParams
+    const retryProviderProfileId =
+      resolveProviderFileTaskProfile({
+        nodes: retryInputNodes,
+        selectedProviderProfileId: useCurrentRuntime
+          ? node.data.providerProfileId
+          : oldTask.providerProfileId,
+      }) ?? undefined
+    const retryManifestId =
+      (useCurrentRuntime ? node.data.manifestId : oldTask.manifestId) ?? undefined
+    const retryModelId = (useCurrentRuntime ? node.data.modelId : oldTask.modelId) ?? undefined
+    const retryAgentId = (useCurrentRuntime ? node.data.agentId : oldTask.agentId) ?? undefined
+    const retryReasoningEffort =
+      (useCurrentRuntime ? node.data.reasoningEffort : oldTask.reasoningEffort) ?? undefined
+    const retrySkillIds = (useCurrentRuntime ? node.data.skillIds : oldTask.skillIds) ?? []
+    const retryTaskPipelineRole = useCurrentRuntime
+      ? (node.data.pipelineRole ?? oldTask.taskPipelineRole)
+      : (oldTask.taskPipelineRole ?? node.data.pipelineRole)
+    const retryOutputPipelineRole = useCurrentRuntime
+      ? (node.data.outputPipelineRole ?? oldTask.outputPipelineRole)
+      : (oldTask.outputPipelineRole ?? node.data.outputPipelineRole)
+    const retryShotScriptConfig = useCurrentRuntime
+      ? (node.data.shotScriptConfig ?? oldTask.shotScriptConfig)
+      : (oldTask.shotScriptConfig ?? node.data.shotScriptConfig)
+    const retryPresetTargetId = resolveCanvasPresetTarget({
+      operation: retryOperation,
+      taskPipelineRole: retryTaskPipelineRole ?? null,
+      outputPipelineRole: retryOutputPipelineRole ?? null,
+      workflow: requestedRetryModelParams.workflow,
+    })
+    const retryModelParams = mergeCanvasPresetTargetModelParams(
+      retryPresetTargetId,
+      requestedRetryModelParams,
+    )
+    const resolvedRetryTaskPipelineRole =
+      retryTaskPipelineRole ??
+      (retryPresetTargetId !== retryOperation ? retryOutputPipelineRole : undefined)
+    const project = db.projects.find((item) => item.id === projectId)
+    const retrySystemPrompt = normalizeCanvasFunctionalSystemPrompt(
+      sanitizeLegacyCanvasSystemPrompt({
+        operation: retryOperation,
+        targetId: retryPresetTargetId,
+        ...(oldTask.systemPrompt != null ? { systemPrompt: oldTask.systemPrompt } : {}),
+        ...(project?.settings?.prompt != null ? { projectPrompt: project.settings.prompt } : {}),
+        context: { hasImageInput: retryInputNodes.some((inputNode) => inputNode.type === 'image') },
+      }),
+      retryPresetTargetId,
+    )
+    const request: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] } = {
+      boardId: node.boardId,
+      operation: retryOperation,
+      prompt: oldTask.prompt ?? '',
+      ...(oldTask.negativePrompt ? { negativePrompt: oldTask.negativePrompt } : {}),
+      inputNodeIds: oldTask.inputNodeIds,
+      ...(oldTask.inputAssetIds.length > 0 ? { inputAssetIds: oldTask.inputAssetIds } : {}),
+      ...(retryInputFiles.length > 0 ? { inputFiles: retryInputFiles } : {}),
+      outputPlacement: { x: baseX, y: baseY },
+      ...(Object.keys(retryModelParams).length > 0 ? { modelParams: retryModelParams } : {}),
+      ...(retryProviderProfileId ? { providerProfileId: retryProviderProfileId } : {}),
+      ...(retryManifestId ? { manifestId: retryManifestId } : {}),
+      ...(retryModelId ? { modelId: retryModelId } : {}),
+      ...(retryAgentId ? { agentId: retryAgentId } : {}),
+      ...(retryReasoningEffort ? { reasoningEffort: retryReasoningEffort } : {}),
+      ...(retrySkillIds.length > 0 ? { skillIds: retrySkillIds } : {}),
+      ...(resolvedRetryTaskPipelineRole ? { taskPipelineRole: resolvedRetryTaskPipelineRole } : {}),
+      ...(retryOutputPipelineRole ? { outputPipelineRole: retryOutputPipelineRole } : {}),
+      ...(retryShotScriptConfig ? { shotScriptConfig: retryShotScriptConfig } : {}),
+      ...(oldTask.title ? { taskTitle: oldTask.title } : {}),
+      ...pickCanvasPromptTaskFields(oldTask),
+      ...(retrySystemPrompt ? { systemPrompt: retrySystemPrompt } : {}),
+    }
+    // 重试：绑定到原操作节点，不新建节点
+    const executionKind = canvasOperationKind(request.operation)
+    return executionKind === 'text'
+      ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
+      : executionKind === 'local_media'
+        ? this.createLocalDepthTask(projectId, request, { bindToNodeId: nodeId })
+        : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+  },
+
+  /**
+   * 运行操作节点：更新参数 + 调 IPC 运行，不新建节点。
+   * 适用于在编辑面板点「运行」——原操作节点关联的 task 真正执行。
+   */
+  async runOperationNode(
+    projectId: string,
+    nodeId: string,
+    params: {
+      prompt: string
+      negativePrompt?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
+      inputFiles?: CanvasMediaTaskInputFile[]
+      agentId?: string
+      providerProfileId?: string
+      manifestId?: string
+      modelId?: string
+      reasoningEffort?: SessionReasoningEffort
+      modelParams?: Record<string, unknown>
+      skipParameterValidation?: boolean
+      skillIds?: string[]
+      userPrompt?: string
+      shotScriptConfig?: ShotScriptConfig
+    } & CanvasPromptTaskFields,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
+    if (!node) throw new Error('操作节点不存在')
+    const project = db.projects.find((item) => item.id === projectId)
+    // 取输入节点（used_as_input edge 的 source）
+    const existingInputNodeIds = db.edges
+      .filter(
+        (e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId,
+      )
+      .map((e) => e.sourceNodeId)
+    const inputNodeIds = Array.from(new Set(params.inputNodeIds ?? existingInputNodeIds))
+    const inputNodes = db.nodes.filter(
+      (n) => inputNodeIds.includes(n.id) && n.projectId === projectId && !n.hidden,
+    )
+    const inputAssetIds = Array.from(
+      new Set(
+        params.inputAssetIds ??
+          inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
+      ),
+    )
+    const providerProfileId =
+      resolveProviderFileTaskProfile({
+        nodes: inputNodes,
+        selectedProviderProfileId: params.providerProfileId ?? node.data.providerProfileId,
+      }) ?? undefined
+    // output 位置：节点右侧
+    const oldOutputs = db.nodes.filter((n) =>
+      db.edges.some(
+        (e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id,
+      ),
+    )
+    const baseX =
+      oldOutputs.length > 0
+        ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
+        : node.x + node.width + 60
+    const existingReasoningEffort = node.taskId
+      ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+          ?.reasoningEffort
+      : undefined
+    const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
+    const nodeOperation = (node.data.operation ?? node.type) as CanvasOperationType
+    // B2: 标准 UI 路径下 params.inputFiles 为 undefined，参考图数量只能从 inputBindings 统计。
+    // image.edit capability 按参考图数量反推 image_edit(单图) / image_compose(多图)。
+    const imageInputCount = (params.inputBindings ?? []).filter(
+      (binding) => binding.enabled && binding.kind === 'image',
+    ).length
+    const operation = executionOperationForCanvasMediaCapability(
+      params.capabilityId,
+      nodeOperation,
+      imageInputCount > 0 ? { imageInputCount } : undefined,
+    )
+    const presetTargetId = resolveCanvasPresetTarget({
+      operation,
+      taskPipelineRole: node.data.pipelineRole ?? null,
+      outputPipelineRole: node.data.outputPipelineRole ?? null,
+      workflow: params.modelParams?.workflow ?? node.data.modelParams?.workflow,
+    })
+    const taskPipelineRole =
+      node.data.pipelineRole ??
+      (presetTargetId !== operation ? node.data.outputPipelineRole : undefined)
+    const modelParams = mergeCanvasPresetTargetModelParams(presetTargetId, params.modelParams)
+    const sanitizedSystemPrompt = sanitizeLegacyCanvasSystemPrompt({
+      operation,
+      targetId: presetTargetId,
+      ...((params.systemPrompt ?? node.data.systemPrompt) != null
+        ? { systemPrompt: params.systemPrompt ?? node.data.systemPrompt }
+        : {}),
+      ...(project?.settings?.prompt != null ? { projectPrompt: project.settings.prompt } : {}),
+      context: { hasImageInput: inputNodes.some((inputNode) => inputNode.type === 'image') },
+    })
+    const normalizedSystemPrompt = normalizeCanvasFunctionalSystemPrompt(
+      sanitizedSystemPrompt,
+      presetTargetId,
+    )
+    if (!normalizedSystemPrompt && node.data.systemPrompt) delete node.data.systemPrompt
+    let request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    } = {
+      operation,
+      prompt: params.prompt,
+      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+      inputNodeIds,
+      ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
+      ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
+      outputPlacement: { x: baseX, y: node.y },
+      taskTitle: node.title ?? operationLabel(operation),
+      ...(taskPipelineRole ? { taskPipelineRole } : {}),
+      ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
+      ...(node.data.outputTitle ? { outputTitle: node.data.outputTitle } : {}),
+      ...(params.agentId ? { agentId: params.agentId } : {}),
+      ...(providerProfileId ? { providerProfileId } : {}),
+      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+      ...(params.modelId ? { modelId: params.modelId } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+      ...(params.skipParameterValidation === true ? { skipParameterValidation: true } : {}),
+      ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+      ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
+      ...pickCanvasPromptTaskFields(params),
+      ...(normalizedSystemPrompt ? { systemPrompt: normalizedSystemPrompt } : {}),
+    }
+    if (params.inputNodeIds) {
+      const skipParameterValidation = params.skipParameterValidation === true
+      if (skipParameterValidation) {
+        // The user explicitly accepted the warning or disabled future renderer preflight.
+      } else if (isTextModelOperation(request.operation)) {
+        request = validateCanvasTextTaskSubmission(request)
+      } else if (canvasOperationKind(request.operation) === 'local_media') {
+        request = validateCanvasLocalTaskSubmission(request)
+      } else {
+        request = await validateCanvasMediaTaskSubmission(request)
+      }
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === nodeId &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      const previousTask = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      writeDb(db)
+    }
+    const executionKind = canvasOperationKind(request.operation)
+    return executionKind === 'text'
+      ? this.createTextTask(
+          projectId,
+          { ...request, boardId: node.boardId },
+          {
+            bindToNodeId: nodeId,
+            ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+            ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+          },
+        )
+      : executionKind === 'local_media'
+        ? request.operation === 'extract_audio'
+          ? this.createLocalAudioExtractTask(
+              projectId,
+              { ...request, boardId: node.boardId },
+              {
+                bindToNodeId: nodeId,
+                ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+              },
+            )
+          : request.operation === 'extract_first_last_frames'
+            ? this.createLocalFrameExtractTask(
+                projectId,
+                { ...request, boardId: node.boardId },
+                {
+                  bindToNodeId: nodeId,
+                  ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+                },
+              )
+            : this.createLocalDepthTask(
+                projectId,
+                { ...request, boardId: node.boardId },
+                {
+                  bindToNodeId: nodeId,
+                  ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+                },
+              )
+        : this.createMediaTask(
+            projectId,
+            { ...request, boardId: node.boardId },
+            {
+              bindToNodeId: nodeId,
+              ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+              ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+            },
+          )
+  },
+  async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
+    if (!task) return this.openSnapshot(projectId)
+    // 强制取消：completed/cancelled 已是终态无需再动；failed/running/pending 一律允许取消，
+    // 避免任务因 runtime 报错卡在 running 而无法清理。
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      return this.openSnapshot(projectId)
+    }
+
+    // runtime 取消尽力而为：无论返回什么状态、是否抛错，本地都继续走强制标记 cancelled，
+    // 否则 runtime 返回 failed/succeeded 时提前 return 会让本地 task 永远停在 running。
+    const runtimeTaskId = task.runtimeTaskId ?? task.requestId
+    if (runtimeTaskId) {
+      try {
+        if (task.operation === 'video_depth_map') {
+          await window.spark.invoke('canvas:task:cancel-depth-video', {
+            runtimeTaskId,
+          })
+        } else if (task.operation === 'extract_audio') {
+          await window.spark.invoke('canvas:task:cancel-extract-audio', {
+            runtimeTaskId,
+          })
+        } else if (task.operation === 'extract_first_last_frames') {
+          await window.spark.invoke('canvas:task:cancel-extract-first-last-frames', {
+            runtimeTaskId,
+          })
+        } else {
+          await window.spark.invoke('canvas:task:cancel-media', {
+            runtimeTaskId,
+          })
+        }
+      } catch {
+        // runtime 可能已随重启消失，忽略，仍走本地强制取消。
+      }
+    }
+
+    const at = now()
+    task.status = 'cancelled'
+    task.progress = 100
+    task.errorMsg = 'cancelled_by_user'
+    task.errorDetail = '任务已由用户在画布任务队列中取消。'
+    task.updatedAt = at
+    task.completedAt = at
+    appendCanvasTaskRuntimeEvent(task, {
+      at,
+      kind: 'cancelled',
+      label: '任务已由用户取消',
+      detail: task.errorDetail,
+    })
+    if (taskNode && patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'cancelled',
+        progress: 100,
+        message: '任务已取消',
+      }
+      taskNode.updatedAt = at
+    }
+
+    updateProjectCounts(db, projectId)
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
+  },
+
+  /**
+   * 删除任务记录（不经过取消流程）。
+   *
+   * 用于「清空失败/已取消任务」等清理场景。无产物记录可直接删除；仍有关联
+   * 产物节点/资产的记录会先恢复为 completed 并保留，避免删除唯一运行索引后
+   * 操作节点预览退回空状态。
+   *
+   * 不返回任何值——调用方在循环删除结束后统一 openSnapshot 刷新视图，避免每删一条
+   * 就重写一次库。
+   */
+  deleteTasks(projectId: string, taskIds: string[]): void {
+    if (taskIds.length === 0) return
+    const db = readDb()
+    const idSet = canvasTaskIdsSafeToDelete({
+      projectId,
+      taskIds,
+      tasks: db.tasks,
+      nodes: db.nodes,
+      assets: db.assets,
+      edges: db.edges,
+      at: now(),
+    })
+    db.tasks = db.tasks.filter((task) => !(task.projectId === projectId && idSet.has(task.id)))
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+  },
+
+  async createLocalDepthTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request = validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('深度视频转换需要可读取的本地视频路径')
+
+    // 主进程侧同时只允许一个深度任务在跑；提交前先探测，占用时直接提示，
+    // 避免先创建任务节点再失败。探测失败不阻断提交，由 create IPC 的主进程硬校验兜底。
+    let depthBusy: boolean
+    try {
+      const depthStatus = await window.spark.invoke('canvas:depth-model:status', {})
+      depthBusy = (depthStatus.runningDepthTaskCount ?? 0) > 0
+    } catch {
+      depthBusy = false
+    }
+    if (depthBusy) {
+      throw new Error('已有深度视频转换任务正在运行，请等待完成或先取消当前任务')
+    }
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'video_depth_map',
+      title: request.taskTitle ?? '深度视频转换',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_depth',
+      modelId: 'depth-anything-v2-small-int8',
+      modelParams: request.modelParams ?? {},
+      progress: 1,
+      message: '准备本地深度模型',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      response = await window.spark.invoke('canvas:task:create-depth-video', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+        preserveAudio: request.modelParams?.preserveAudio === true,
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_depth',
+        model: 'depth-anything-v2-small-int8',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地深度任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
+  },
+
+  /**
+   * 创建本地「分离音频」任务（走 main process → FfmpegRunner.extractAudio）。
+   *
+   * 与 createLocalDepthTask 同通道（local_media），但无模型下载：
+   * ffmpeg 是基础能力，产物通过 applyMediaTaskResult 物化为 audio 节点 + generated 连线。
+   */
+  async createLocalAudioExtractTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request = validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('分离音频需要可读取的本地视频路径')
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'extract_audio',
+      title: request.taskTitle ?? '分离音频',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_ffmpeg',
+      modelId: 'ffmpeg-extract-audio',
+      modelParams: request.modelParams ?? {},
+      progress: 1,
+      message: '准备本地 ffmpeg 音频分离',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      const sourceFileName = canvasInputSourceBaseName(inputFile)
+      response = await window.spark.invoke('canvas:task:extract-audio', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+        audioFormat: (request.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav') ?? 'mp3',
+        ...(sourceFileName ? { sourceFileName } : {}),
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_ffmpeg',
+        model: 'ffmpeg-extract-audio',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地音频分离任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
+  },
+
+  /**
+   * 创建本地「提取首尾帧」任务（走 main process → FfmpegRunner.extractFramesAtTimes）。
+   *
+   * 与 createLocalAudioExtractTask 同通道（local_media）：probe 取时长后抽
+   * [0s, duration-0.1s] 两帧，产物通过 applyMediaTaskResult 物化为两个图片节点
+   * + generated 连线（asset.title 携带「首帧/尾帧」语义化标题）。
+   */
+  async createLocalFrameExtractTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request = validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('提取首尾帧需要可读取的本地视频路径或视频 URL')
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'extract_first_last_frames',
+      title: request.taskTitle ?? '提取首尾帧',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_ffmpeg',
+      modelId: 'ffmpeg-extract-frames',
+      modelParams: request.modelParams ?? {},
+      progress: 1,
+      message: '准备本地 ffmpeg 提取首尾帧',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      const sourceFileName = canvasInputSourceBaseName(inputFile)
+      response = await window.spark.invoke('canvas:task:extract-first-last-frames', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+        ...(sourceFileName ? { sourceFileName } : {}),
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_ffmpeg',
+        model: 'ffmpeg-extract-frames',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = response.requestId ?? task.providerTaskId ?? null
+      task.requestId = response.requestId ?? response.runtimeTaskId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地提取首尾帧任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
+  },
+
+  /**
+   * 创建并执行真实多媒体任务（走 main process → MediaRouterService → 平台 adapter）。
+   *
+   * 流程（design doc §8）：
+   *   1. 写入 optimistic task node（status=running）。
+   *   2. 调 `canvas:task:create-media` IPC（API key 只在主进程内）。
+   *   3. 成功：把每个输出 asset 写回 canvas_assets，创建输出节点 + generated 边缘，
+   *      task 标记 completed，记录 provider/model/requestId/rawResponse。
+   *   4. 失败：task 标记 failed，保留 errorMsg 供 Inspector 展示。
+   */
+  async createMediaTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    },
+    options?: {
+      bindToNodeId?: string
+      userPrompt?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+      /**
+       * 步骤模式资产生成（P4）：任务产物自动回填为指定影视资产的参考图。
+       * 写入 taskNode.data.outputFilmAssetId，由 applyMediaTaskResult 的
+       * filmOwner 既有机制完成挂载（与画布 agent 生产计划同一条链路）。
+       */
+      filmOutput?: {
+        assetId: string
+        referenceKind?: FilmReferenceKind
+      }
+      /** 步骤模式分段生成（P5）：任务创建后把 taskId 回填到该可变对象，
+       * 供调用方把任务与分段关联（无竞态：本地同步写 db 后立即填充）。 */
+      createdTaskRef?: { taskId?: string }
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((node) => node.id === options.bindToNodeId && node.projectId === projectId)
+      : null
+    const boardId = bindNode?.boardId ?? requestInput.boardId
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+    const request =
+      requestInput.skipParameterValidation === true ||
+      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+        ? requestInput
+        : await validateCanvasMediaTaskSubmission(requestInput)
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+    }
+    const at = now()
+    const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
+    )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
+      size: taskNodeSize,
+      nodes: db.nodes,
+      boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
+    })
+
+    // optimistic task node
+    const taskNodeData: CanvasNode['data'] = {
+      operation: request.operation,
+      status: 'running',
+      progress: 24,
+      message: '调用平台 adapter 中…',
+    }
+    syncCanvasNodeRuntimeData(taskNodeData, request)
+    const requestPromptWithContext = request.promptDocument
+      ? request.prompt
+      : mergeCanvasPromptWithInputTextContext(
+          request.prompt,
+          buildCanvasInputTextContext(request.inputNodeIds, db),
+        )
+    const requestPrompt = request.promptDocument
+      ? request.prompt
+      : buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
+    if (requestPrompt != null && request.promptDocument == null && options?.bindToNodeId == null) {
+      taskNodeData.prompt = requestPrompt
+    }
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
+    if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
+    if (request.agentId != null) taskNodeData.agentId = request.agentId
+    if (request.providerProfileId != null)
+      taskNodeData.providerProfileId = request.providerProfileId
+    if (request.manifestId != null) taskNodeData.manifestId = request.manifestId
+    if (request.modelId != null) taskNodeData.modelId = request.modelId
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
+    if (request.inputBindings != null)
+      taskNodeData.inputBindings = request.inputBindings.map((binding) => ({ ...binding }))
+    if (request.mediaInputMode != null) taskNodeData.mediaInputMode = request.mediaInputMode
+    if (request.capabilityId != null) taskNodeData.capabilityId = request.capabilityId
+    // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
+    if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
+    if (request.outputPipelineRole != null)
+      taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
+    // 步骤模式资产生成：产物挂到指定影视资产（applyMediaTaskResult filmOwner 链路）
+    if (options?.filmOutput != null) {
+      const filmOwnerAsset = db.assets.find(
+        (item) => item.id === options.filmOutput?.assetId && item.projectId === projectId,
+      )
+      if (filmOwnerAsset) {
+        taskNodeData.outputFilmAssetId = options.filmOutput.assetId
+        taskNodeData.outputFilmReferenceKind = options.filmOutput.referenceKind ?? 'concept'
+      }
+    }
+    const defaultTaskTitle =
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
+    let taskNode: CanvasNode
+    const replacedActiveTaskId =
+      bindNode?.taskId != null &&
+      db.tasks.some(
+        (item) =>
+          item.id === bindNode.taskId &&
+          item.projectId === projectId &&
+          (item.status === 'pending' || item.status === 'running') &&
+          item.outputNodeIds.length === 0 &&
+          item.outputAssetIds.length === 0,
+      )
+        ? bindNode.taskId
+        : null
+    if (bindNode) {
+      const containerOperation = (bindNode.data.operation ?? bindNode.type) as CanvasOperationType
+      bindNode.data = { ...bindNode.data, ...taskNodeData, operation: containerOperation }
+      syncCanvasNodeRuntimeData(bindNode.data, request)
+      if (options != null && 'userPrompt' in options) {
+        const userPrompt = options.userPrompt?.trim() ?? ''
+        if (userPrompt) {
+          bindNode.data.prompt = userPrompt
+        } else {
+          delete bindNode.data.prompt
+        }
+      }
+      bindNode.taskId = taskId
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        nodes: db.nodes,
+        projectId,
+        boardId: board.id,
+        type: request.operation as CanvasNodeType,
+        taskId,
+        title: defaultTaskTitle,
+        x,
+        y,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
+    if (replacedActiveTaskId != null) {
+      db.tasks = db.tasks.filter((item) => item.id !== replacedActiveTaskId)
+      db.edges = db.edges.filter((edge) => edge.taskId !== replacedActiveTaskId)
+    }
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation: request.operation,
+      status: 'running',
+      progress: 24,
+      title: taskNode.title ?? defaultTaskTitle,
+      operationNodeId: taskNode.id,
+      prompt: requestPrompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      ...(request.inputFiles?.length
+        ? { inputFileDiagnostics: summarizeCanvasTaskInputFiles(request.inputFiles) }
+        : {}),
+      agentId: request.agentId ?? null,
+      providerProfileId: request.providerProfileId ?? null,
+      manifestId: request.manifestId ?? null,
+      modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
+      modelParams: request.modelParams ?? {},
+      taskPipelineRole: request.taskPipelineRole ?? null,
+      outputPipelineRole: request.outputPipelineRole ?? null,
+      shotScriptConfig: request.shotScriptConfig ?? null,
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '媒体任务创建并提交'),
+      ...pickCanvasPromptTaskFields(request),
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      }),
+    )
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    if (options?.createdTaskRef != null) options.createdTaskRef.taskId = taskId
+
+    // 调 IPC（API key 只在主进程）
+    const ipcRequest: CanvasMediaTaskCreateRequest = {
+      projectId,
+      clientTaskId: taskId,
+      operation: request.operation,
+      ...(requestPrompt != null ? { prompt: requestPrompt } : {}),
+      ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
+      ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
+      ...(request.providerProfileId != null
+        ? { providerProfileId: request.providerProfileId }
+        : {}),
+      ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
+      ...(request.modelId != null ? { modelId: request.modelId } : {}),
+      ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+      ...(request.skipParameterValidation === true ? { skipParameterValidation: true } : {}),
+      ...pickCanvasPromptTaskFields(request),
+      outputDir: `${project.rootPath}/assets`,
+      waitForCompletion: false,
+    }
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      response = await window.spark.invoke('canvas:task:create-media', ipcRequest)
+    } catch (err) {
+      response = {
+        providerProfileId: '',
+        provider: '',
+        model: '',
+        mode: 'sync',
+        assets: [],
+        error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
+      }
+    }
+    if (response.status === 'running') {
+      return this.markMediaTaskSubmitted(projectId, taskId, response)
+    }
+    return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  /**
+   * 继续查询已经提交到支持渠道的 Provider 任务，不重新创建 Provider 任务。
+   * 主进程按持久化的 Provider 轮询协议恢复，不重新创建 Provider 任务。
+   */
+  async repollMediaTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    if (!task) throw new Error('未找到画布任务')
+    if (task.status !== 'failed') throw new Error('只有轮询失败的任务可以重新轮询')
+    const providerProfileId = task.providerProfileId?.trim()
+    const providerTaskId = (task.providerTaskId ?? task.requestId)?.trim()
+    if (!providerProfileId || !providerTaskId) {
+      throw new Error('该任务没有可恢复的 Provider Task ID')
+    }
+    const response = await window.spark.invoke('canvas:task:repoll-media', {
+      projectId,
+      clientTaskId: taskId,
+      ...(task.runtimeTaskId ? { runtimeTaskId: task.runtimeTaskId } : {}),
+      providerProfileId,
+      providerTaskId,
+    })
+    if (response.status === 'running') {
+      return this.markMediaTaskSubmitted(projectId, taskId, response)
+    }
+    return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  /**
+   * 文本任务（text_generate / text_rewrite / prompt_optimize）：调用真实文本模型。
+   * 乐观建运行中任务节点 → 调 `canvas:task:generate-text` IPC → 写回文本资产/节点/血缘。
+   */
+  async createTextTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    },
+    options?: {
+      bindToNodeId?: string
+      userPrompt?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((node) => node.id === options.bindToNodeId && node.projectId === projectId)
+      : null
+    const boardId = bindNode?.boardId ?? requestInput.boardId
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+    const request =
+      requestInput.operation === 'image_prompt_reverse'
+        ? validateCanvasTextTaskSubmission(requestInput)
+        : requestInput.skipParameterValidation === true ||
+            options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+          ? requestInput
+          : validateCanvasTextTaskSubmission(requestInput)
+    const at = now()
+    const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+      request.operation === 'extract_audio',
+    )
+    const autoPlacementSource = db.nodes.find(
+      (node) =>
+        request.inputNodeIds?.includes(node.id) &&
+        node.projectId === projectId &&
+        node.boardId === board.id &&
+        !node.hidden,
+    )
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: autoPlacementSource
+        ? placeAutoNodeToRight(autoPlacementSource, taskNodeSize)
+        : { x: request.outputPlacement?.x ?? 360, y: request.outputPlacement?.y ?? 320 },
+      size: taskNodeSize,
+      nodes: db.nodes,
+      boardId: board.id,
+      ...(autoPlacementSource ? { preservePreferredPosition: true } : {}),
+    })
+
+    const taskNodeData: CanvasNode['data'] = {
+      operation: request.operation,
+      status: 'running',
+      progress: 30,
+      message: '调用文本模型中…',
+    }
+    syncCanvasNodeRuntimeData(taskNodeData, request)
+    const requestPrompt = request.promptDocument
+      ? request.prompt
+      : buildCanvasOperationPrompt(request.operation, request.prompt)
+    if (requestPrompt != null && request.promptDocument == null && options?.bindToNodeId == null) {
+      taskNodeData.prompt = requestPrompt
+    }
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
+    // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
+    if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
+    if (request.outputPipelineRole != null)
+      taskNodeData.outputPipelineRole = request.outputPipelineRole
+    if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    const defaultTaskTitle =
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
+    let taskNode: CanvasNode
+    const replacedActiveTaskId =
+      bindNode?.taskId != null &&
+      db.tasks.some(
+        (item) =>
+          item.id === bindNode.taskId &&
+          item.projectId === projectId &&
+          (item.status === 'pending' || item.status === 'running') &&
+          item.outputNodeIds.length === 0 &&
+          item.outputAssetIds.length === 0,
+      )
+        ? bindNode.taskId
+        : null
+    if (bindNode) {
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      syncCanvasNodeRuntimeData(bindNode.data, request)
+      if (request.operation === 'text_generate' && request.taskPipelineRole === 'shot') {
+        bindNode.width = Math.max(bindNode.width, taskNodeSize.width)
+        bindNode.height = Math.max(bindNode.height, taskNodeSize.height)
+      }
+      if (options != null && 'userPrompt' in options) {
+        const userPrompt = options.userPrompt?.trim() ?? ''
+        if (userPrompt) {
+          bindNode.data.prompt = userPrompt
+        } else {
+          delete bindNode.data.prompt
+        }
+      }
+      bindNode.taskId = taskId
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        nodes: db.nodes,
+        projectId,
+        boardId: board.id,
+        type: request.operation as CanvasNodeType,
+        taskId,
+        title: defaultTaskTitle,
+        x,
+        y,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
+    if (replacedActiveTaskId != null) {
+      db.tasks = db.tasks.filter((item) => item.id !== replacedActiveTaskId)
+      db.edges = db.edges.filter((edge) => edge.taskId !== replacedActiveTaskId)
+    }
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation: request.operation,
+      status: 'running',
+      progress: 30,
+      title: taskNode.title ?? defaultTaskTitle,
+      operationNodeId: taskNode.id,
+      prompt: request.prompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      ...(request.inputFiles?.length
+        ? { inputFileDiagnostics: summarizeCanvasTaskInputFiles(request.inputFiles) }
+        : {}),
+      agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
+      providerProfileId: request.providerProfileId ?? null,
+      manifestId: request.manifestId ?? null,
+      modelId: request.modelId ?? null,
+      reasoningEffort: request.reasoningEffort ?? null,
+      modelParams: request.modelParams ?? {},
+      taskPipelineRole: request.taskPipelineRole ?? null,
+      outputPipelineRole: request.outputPipelineRole ?? null,
+      shotScriptConfig: request.shotScriptConfig ?? null,
+      runtimeEvents: initialCanvasTaskRuntimeEvents(at, '文本任务创建并提交'),
+      ...pickCanvasPromptTaskFields(request),
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      }),
+    )
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+
+    // 后台模式：先返回 running 快照，任务节点进入「运行中」；完成后由
+    // stream:canvas:text-task 回写（store 监听 → applyTextTaskResult），不再阻塞面板。
+    void window.spark
+      .invoke('canvas:task:generate-text', {
+        operation: request.operation,
+        prompt: request.prompt ?? '',
+        ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
+        // 上游图片输入（如「提取风格」节点）随任务发给多模态文本模型作为 vision 输入
+        ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
+        ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+        ...(request.providerProfileId != null
+          ? { providerProfileId: request.providerProfileId }
+          : {}),
+        ...(request.modelId != null ? { modelId: request.modelId } : {}),
+        ...(request.agentId != null ? { agentId: request.agentId } : {}),
+        ...(request.reasoningEffort != null ? { reasoningEffort: request.reasoningEffort } : {}),
+        ...(request.skillIds != null ? { skillIds: request.skillIds } : {}),
+        ...(request.taskPipelineRole != null ? { taskPipelineRole: request.taskPipelineRole } : {}),
+        ...pickCanvasPromptTaskFields(request),
+        waitForCompletion: false,
+        projectId,
+        clientTaskId: taskId,
+      })
+      .then((response: CanvasTextTaskCreateResponse) => {
+        if (response.status === 'running') return
+        void this.applyTextTaskResult(projectId, taskId, response)
+      })
+      .catch((err) => {
+        void this.applyTextTaskResult(projectId, taskId, {
+          status: 'failed',
+          providerProfileId: '',
+          provider: '',
+          model: '',
+          text: '',
+          error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
+        })
+      })
+    return this.openSnapshot(projectId, board.id)
+  },
+
+  async applyTextTaskResult(
+    projectId: string,
+    taskId: string,
+    response: CanvasTextTaskCreateResponse,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
+    if (task.status === 'completed' || task.status === 'failed') {
+      return this.openSnapshot(projectId, task.boardId)
+    }
+
+    if (response.status === 'failed' || response.error || !response.text.trim()) {
+      const hasFallbackOutput = response.text.trim().length > 0
+      const at = now()
+      task.status = 'failed'
+      task.progress = 100
+      task.errorMsg = response.error?.code ?? 'text_generation_failed'
+      task.errorDetail = canvasTaskErrorMessage(
+        response.error?.code,
+        response.error?.message ?? '文本生成失败',
+      )
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      if (hasFallbackOutput) {
+        task.modelOutputText = response.text
+        appendCanvasTaskModelOutputEvent(task, at, response.text)
+        materializeCanvasTextTaskFallbackOutput({
+          db,
+          projectId,
+          userId: USER_ID,
+          task,
+          taskNode,
+          response,
+          text: response.text,
+          errorCode: task.errorMsg,
+          errorMessage: task.errorDetail ?? '文本生成失败',
+          at,
+          uid,
+          createNode: createNodeBase,
+        })
+      }
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      task.updatedAt = at
+      task.completedAt = at
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'failed',
+        label: '文本模型调用失败',
+        detail: task.errorDetail ?? undefined,
+      })
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'failed',
+          progress: 100,
+          message: `失败：${task.errorDetail}`,
+        }
+        syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        taskNode.updatedAt = at
+      }
+      updateProjectCounts(db, projectId)
+      if (hasFallbackOutput) {
+        writeTaskRuntimeDb(db, projectId)
+        return this.openSnapshot(projectId, task.boardId)
+      }
+      writeTaskRuntimeDb(db, projectId)
+      return snapshotFromDb(db, projectId, task.boardId)
+    }
+
+    const outputRole = task.outputPipelineRole ?? taskNode.data.outputPipelineRole
+    const taskWorkflowParam = task.modelParams?.workflow
+    const taskWorkflow = typeof taskWorkflowParam === 'string' ? taskWorkflowParam : null
+    const semanticValidation = validateCanvasSemanticTextOutput(outputRole, response.text, {
+      shotScriptConfig: task.shotScriptConfig ?? taskNode.data.shotScriptConfig ?? null,
+      ...(taskWorkflow ? { workflow: taskWorkflow } : {}),
+    })
+    if (!semanticValidation.ok) {
+      const at = now()
+      task.status = 'failed'
+      task.progress = 100
+      task.errorMsg = semanticValidation.code
+      task.errorDetail = semanticValidation.message
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      task.modelOutputText = response.text
+      appendCanvasTaskModelOutputEvent(task, at, response.text)
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      materializeCanvasTextTaskFallbackOutput({
+        db,
+        projectId,
+        userId: USER_ID,
+        task,
+        taskNode,
+        response,
+        text: response.text,
+        errorCode: semanticValidation.code,
+        errorMessage: semanticValidation.message,
+        at,
+        uid,
+        createNode: createNodeBase,
+      })
+      task.updatedAt = at
+      task.completedAt = at
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'validation',
+        label: '模型已返回文本，但业务结构解析失败',
+        detail: semanticValidation.message,
+      })
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'failed',
+          progress: 100,
+          message: `失败：${semanticValidation.message}`,
+        }
+        syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        taskNode.updatedAt = at
+      }
+      updateProjectCounts(db, projectId)
+      writeTaskRuntimeDb(db, projectId)
+      return this.openSnapshot(projectId, task.boardId)
+    }
+
+    const outputText = semanticValidation.text
+    let materializedShotGroups: ShotGroup[] = []
+    if (outputRole === 'shot' && semanticValidation.storyboardRows?.length) {
+      const project = db.projects.find((item) => item.id === projectId)
+      if (project) {
+        const materialized = materializeStoryboardRows({
+          metadata: project.metadata,
+          defaultGroupName: taskNode.data.outputTitle ?? task.title ?? '分镜脚本',
+          assets: db.assets,
+          rows: semanticValidation.storyboardRows,
+        })
+        project.metadata = materialized.metadata
+        project.updatedAt = now()
+        materializedShotGroups = materialized.createdGroups
+      }
+    }
+
+    const at = now()
+    // 分集任务（workflow=split_episodes）解析出 episodes 数组时：每集物化为一个
+    // 独立剧本节点（数组输出）；一个都没落成时继续走下方单节点路径兜底。
+    const splitEpisodeCount = semanticValidation.episodes?.length
+      ? materializeSplitEpisodeOutputs({
+          db,
+          projectId,
+          userId: USER_ID,
+          task,
+          taskNode,
+          response,
+          episodes: semanticValidation.episodes,
+          pipelineRole: outputRole,
+          at,
+          uid,
+          createNode: createNodeBase,
+        })
+      : 0
+    if (splitEpisodeCount > 0) {
+      task.status = 'completed'
+      task.progress = 100
+      task.completedAt = at
+      task.updatedAt = at
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      task.modelOutputText = response.text
+      appendCanvasTaskModelOutputEvent(task, at, response.text)
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'completed',
+        label: `文本生成与业务解析完成，已按 ${splitEpisodeCount} 集拆分为独立剧本节点`,
+      })
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'completed',
+          progress: 100,
+          message: `已按 ${splitEpisodeCount} 集拆分输出`,
+        }
+        syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
+        taskNode.updatedAt = at
+      }
+      updateProjectCounts(db, projectId)
+      writeTaskRuntimeDb(db, projectId)
+      return this.openSnapshot(projectId, task.boardId)
+    }
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: 'text',
+      source: 'ai_generated',
+      title:
+        typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim()
+          ? taskNode.data.outputTitle.trim()
+          : canvasNodeTypeLabel('text'),
+      contentText: outputText,
+      metadata: {
+        taskId,
+        providerProfileId: response.providerProfileId,
+        provider: response.provider,
+        model: response.model,
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    const storyboardRows = readRenderableShotScriptRows(outputText)
+    if (patchTaskNode && storyboardRows.length > 0) {
+      const completedSize = fitShotScriptOperationNodeSize(storyboardRows.length)
+      taskNode.width = Math.max(taskNode.width, completedSize.width)
+      taskNode.height = Math.max(taskNode.height, completedSize.height)
+      taskNode.updatedAt = at
+    }
+    const resultNodeSize = pickTextNodeSize(outputText)
+    const preferredResultNodePlacement = placeAutoNodeToRight(
+      {
+        x: taskNode.x,
+        y: taskNode.y,
+        width: taskNode.width,
+        height: taskNode.height,
+      },
+      resultNodeSize,
+    )
+    const materializedShotGroup =
+      materializedShotGroups.length === 1 ? materializedShotGroups[0] : undefined
+    const materializedShotSegment =
+      materializedShotGroup?.segments.length === 1 ? materializedShotGroup.segments[0] : undefined
+    const resultNodePlacement = resolveCollisionFreeNodePosition({
+      preferred: preferredResultNodePlacement,
+      size: resultNodeSize,
+      nodes: db.nodes,
+      boardId: task.boardId,
+      preservePreferredPosition: true,
+    })
+    const resultNode = createNodeBase({
+      nodes: db.nodes,
+      projectId,
+      boardId: task.boardId,
+      type: 'text',
+      title: asset.title ?? null,
+      assetId: asset.id,
+      x: resultNodePlacement.x,
+      y: resultNodePlacement.y,
+      width: resultNodeSize.width,
+      height: resultNodeSize.height,
+      data: {
+        text: outputText,
+        format: 'markdown',
+        origin: 'task_output',
+        ...(outputRole ? { pipelineRole: outputRole } : {}),
+        ...(materializedShotGroup ? { shotGroupId: materializedShotGroup.id } : {}),
+        ...(materializedShotSegment ? { shotSegmentId: materializedShotSegment.id } : {}),
+      },
+      at,
+    })
+    task.status = 'completed'
+    task.progress = 100
+    task.completedAt = at
+    task.updatedAt = at
+    task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+    task.provider = response.provider || task.provider || null
+    task.modelId = response.model || task.modelId || null
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
+    task.modelOutputText = response.text
+    appendCanvasTaskModelOutputEvent(task, at, response.text)
+    if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+    appendCanvasTaskRuntimeEvent(task, {
+      at,
+      kind: 'completed',
+      label: '文本生成与业务解析完成',
+    })
+    task.outputAssetIds.push(asset.id)
+    task.outputNodeIds.push(resultNode.id)
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'completed',
+        progress: 100,
+        message: '文本已生成',
+      }
+      syncCanvasTaskRuntimeToNode(task, taskNode.data)
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
+      taskNode.updatedAt = at
+    }
+    db.assets.push(asset)
+    db.nodes.push(resultNode)
+    db.edges.push({
+      id: uid('canvas_edge'),
+      projectId,
+      boardId: task.boardId,
+      userId: USER_ID,
+      sourceNodeId: taskNode.id,
+      targetNodeId: resultNode.id,
+      type: 'generated',
+      taskId,
+      metadata: {},
+      createdAt: at,
+    })
+    updateProjectCounts(db, projectId)
+    writeTaskRuntimeDb(db, projectId)
+    return this.openSnapshot(projectId, task.boardId)
+  },
+
+  async markMediaTaskSubmitted(
+    projectId: string,
+    taskId: string,
+    response: CanvasMediaTaskCreateResponse & { repoll?: boolean },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
+    if (task.status === 'completed' || (task.status === 'failed' && response.repoll !== true)) {
+      return this.openSnapshot(projectId, task.boardId)
+    }
+    task.status = 'running'
+    task.progress = Math.max(task.progress, response.progress ?? 35)
+    task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+    task.providerTaskId =
+      response.providerTaskId ?? response.requestId ?? task.providerTaskId ?? null
+    task.requestId = response.requestId ?? task.requestId ?? response.runtimeTaskId ?? null
+    if (response.repoll === true) {
+      task.errorMsg = null
+      task.errorDetail = null
+      task.completedAt = null
+    }
+    task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+    task.provider = response.provider || task.provider || null
+    if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+    if (response.pollingUnavailableReason !== undefined) {
+      task.pollingUnavailableReason = response.pollingUnavailableReason
+    }
+    task.modelId = response.model || task.modelId || null
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
+    if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
+    const at = now()
+    task.updatedAt = at
+    const stageChanged = Boolean(response.message && taskNode.data.message !== response.message)
+    if (stageChanged || (task.runtimeEvents?.length ?? 0) === 0) {
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'submitted',
+        label: response.message ?? 'Provider 已接受后台任务',
+        ...(task.providerTaskId || task.requestId
+          ? { detail: `Provider Task ${task.providerTaskId ?? task.requestId}` }
+          : {}),
+      })
+    }
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: task.progress,
+        message: response.message ?? '后台任务已提交，等待 provider 返回产物',
+      }
+      syncCanvasTaskRuntimeToNode(task, taskNode.data)
+      taskNode.updatedAt = at
+    }
+    updateProjectCounts(db, projectId)
+    writeTaskRuntimeDb(db, projectId)
+    return snapshotFromDb(db, projectId, task.boardId)
+  },
+
+  /** 把平台 adapter 的输出写回 canvas_assets / canvas_nodes / canvas_edges */
+  async applyMediaTaskResult(
+    projectId: string,
+    taskId: string,
+    response: CanvasMediaTaskCreateResponse,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
+
+    // Terminal state is monotonic once outputs are materialized. A duplicated or
+    // delayed failure/cancel event must not hide an already playable artifact.
+    if (isCompletedCanvasTaskWithOutputs(task)) {
+      return this.openSnapshot(projectId, task.boardId)
+    }
+
+    const responseProviderTaskId = response.providerTaskId ?? response.requestId ?? null
+    const responseRequestId = responseProviderTaskId ?? response.runtimeTaskId ?? null
+    if (
+      !response.error &&
+      response.status === 'succeeded' &&
+      task.status === 'completed' &&
+      task.outputAssetIds.length > 0 &&
+      task.requestId === responseRequestId
+    ) {
+      return this.openSnapshot(projectId, task.boardId)
+    }
+
+    if (response.error || response.status === 'failed' || response.status === 'cancelled') {
+      const at = now()
+      const isCancelled = response.status === 'cancelled'
+      task.status = isCancelled ? 'cancelled' : 'failed'
+      task.progress = 100
+      task.errorMsg = response.error?.code ?? (isCancelled ? 'cancelled' : 'provider_task_failed')
+      task.errorDetail = canvasTaskErrorMessage(
+        response.error?.code,
+        response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed'),
+      )
+      task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+      task.providerTaskId = responseProviderTaskId ?? task.providerTaskId ?? null
+      task.requestId = responseProviderTaskId ?? task.requestId ?? response.runtimeTaskId ?? null
+      if (response.providerProfileId) task.providerProfileId = response.providerProfileId
+      if (response.provider) task.provider = response.provider
+      if (response.model) task.modelId = response.model
+      if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+      if (response.pollingUnavailableReason !== undefined) {
+        task.pollingUnavailableReason = response.pollingUnavailableReason
+      }
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
+      task.updatedAt = at
+      task.completedAt = at
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: isCancelled ? 'cancelled' : 'failed',
+        label: isCancelled ? 'Provider 任务已取消' : 'Provider 任务失败',
+        detail: task.errorDetail ?? undefined,
+      })
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: task.status,
+          progress: 100,
+          message: isCancelled ? '任务已取消' : `失败：${task.errorDetail}`,
+        }
+        syncCanvasTaskRuntimeToNode(task, taskNode.data)
+        taskNode.updatedAt = at
+      }
+      updateProjectCounts(db, projectId)
+      writeTaskRuntimeDb(db, projectId)
+      return snapshotFromDb(db, projectId, task.boardId)
+    }
+
+    task.status = 'completed'
+    task.progress = 100
+    const at = now()
+    task.completedAt = at
+    task.updatedAt = at
+    if (response.providerProfileId) task.providerProfileId = response.providerProfileId
+    if (response.model) task.modelId = response.model
+    task.provider = response.provider || null
+    if (response.pollingAvailable !== undefined) task.pollingAvailable = response.pollingAvailable
+    if (response.pollingUnavailableReason !== undefined) {
+      task.pollingUnavailableReason = response.pollingUnavailableReason
+    }
+    task.runtimeTaskId = response.runtimeTaskId ?? task.runtimeTaskId ?? null
+    task.providerTaskId = responseProviderTaskId ?? task.providerTaskId ?? null
+    task.requestId = responseProviderTaskId ?? task.requestId ?? response.runtimeTaskId ?? null
+    task.rawResponse = response.rawResponse
+    if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
+    // 项目根目录：产物 storageKey 相对化（assetLibrary 缺陷 3）需要
+    const projectRootPath = db.projects.find((item) => item.id === projectId)?.rootPath ?? null
+
+    appendCanvasTaskRuntimeEvent(task, {
+      at,
+      kind: 'completed',
+      label: 'Provider 任务完成并返回产物',
+    })
+    const preparedOutputs: CanvasAsset[] = []
+    const explicitFilmOwner =
+      typeof taskNode.data.outputFilmAssetId === 'string'
+        ? db.assets.find(
+            (item) =>
+              item.id === taskNode.data.outputFilmAssetId &&
+              item.projectId === projectId &&
+              readAssetKind(item) !== null,
+          )
+        : undefined
+    const inferredFilmOwners =
+      taskNode.data.outputPipelineRole === 'design_card' || task.operation === 'panorama_360'
+        ? task.inputAssetIds
+            .map((assetId) => db.assets.find((item) => item.id === assetId))
+            .filter(
+              (item): item is CanvasAsset =>
+                item != null &&
+                item.projectId === projectId &&
+                (task.operation === 'panorama_360'
+                  ? readAssetKind(item) === 'scene'
+                  : ['character', 'scene', 'prop', 'effect'].includes(readAssetKind(item) ?? '')),
+            )
+        : []
+    const uniqueInferredFilmOwners = Array.from(
+      new Map(inferredFilmOwners.map((item) => [item.id, item])).values(),
+    )
+    const filmOwner =
+      explicitFilmOwner ??
+      (uniqueInferredFilmOwners.length === 1 ? uniqueInferredFilmOwners[0] : undefined)
+    const filmReferenceKind = taskNode.data.outputFilmReferenceKind ?? 'concept'
+
+    for (const assetOut of response.assets) {
+      const assetType = (assetOut.type || 'file') as CanvasAssetType
+      // 本地文件产物（深度视频转换等本地任务写在全局产物目录）复制进项目 assets/ 目录，
+      // 与云端产物下载入库的行为对齐：项目目录内可找到全部工程产物。
+      // 源已在项目内时由 copy-to-project 幂等跳过；失败降级用原路径，不阻断任务完成。
+      const sourceFilePath =
+        typeof assetOut.filePath === 'string' && assetOut.filePath ? assetOut.filePath : null
+      const persistedFilePath =
+        sourceFilePath &&
+        (assetType === 'video' ||
+          assetType === 'audio' ||
+          assetType === 'image' ||
+          assetType === 'file')
+          ? ((await copyLocalArtifactIntoProject({
+              projectId,
+              sourcePath: sourceFilePath,
+              type: assetType,
+              ...(task.title?.trim() ? { suggestedBaseName: task.title.trim() } : {}),
+              projectRootPath: db.projects.find((item) => item.id === projectId)?.rootPath ?? null,
+            })) ?? sourceFilePath)
+          : sourceFilePath
+      // 优先用 base64 预览（小图快），否则把磁盘路径编码成 safe-file:// 供 <audio>/<video>/<img> 加载
+      const displayUrl = resolveMediaDisplayUrl({
+        url: assetOut.url,
+        dataUrl: assetOut.previewDataUrl,
+        filePath: persistedFilePath ?? undefined,
+      })
+      const detectedImageSize =
+        assetType === 'image' && displayUrl && (assetOut.width == null || assetOut.height == null)
+          ? await readDisplayImageDimensions(displayUrl)
+          : null
+      const detectedVideoMetadata =
+        assetType === 'video' && displayUrl && (assetOut.width == null || assetOut.height == null)
+          ? await readVideoDimensions(displayUrl)
+          : null
+      const detectedVideoWidth = detectedVideoMetadata?.width || null
+      const detectedVideoHeight = detectedVideoMetadata?.height || null
+      const assetWidth = assetOut.width ?? detectedImageSize?.width ?? detectedVideoWidth
+      const assetHeight = assetOut.height ?? detectedImageSize?.height ?? detectedVideoHeight
+      const assetDurationMs = assetOut.durationMs ?? detectedVideoMetadata?.durationMs ?? null
+      const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
+      const outputNodeType: CanvasNodeType =
+        assetType === 'image' || assetType === 'audio' || assetType === 'video' ? assetType : 'text'
+      const defaultAssetTitle = `${canvasNodeTypeLabel(outputNodeType)}${
+        response.assets.length > 1 ? ` ${preparedOutputs.length + 1}` : ''
+      }`
+      const customOutputTitle =
+        typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim().length > 0
+          ? taskNode.data.outputTitle.trim()
+          : null
+      // 产物级标题（如提取首尾帧的「首帧/尾帧」）优先于 outputTitle 与默认「图片 N」
+      const explicitAssetTitle = assetOut.title?.trim() || null
+      const assetTitle =
+        explicitAssetTitle ??
+        (customOutputTitle != null
+          ? preparedOutputs.length === 0
+            ? customOutputTitle
+            : `${customOutputTitle} ${preparedOutputs.length + 1}`
+          : defaultAssetTitle)
+      // storageKey 必须基于持久化后的权威副本路径（copyLocalArtifactIntoProject
+      // 会把项目外产物拷进项目 assets/ 目录；失败降级回源路径）。用拷贝前的
+      // assetOut.filePath 会导致：storageKey 指向可被清理的全局产物目录、与
+      // displayUrl 的持久化路径不一致、删除资产时清错文件（assetLibrary 缺陷 3）。
+      const generatedStorageKey = persistedFilePath
+        ? toRelativeStorageKey(persistedFilePath, projectRootPath)
+        : null
+      const asset: CanvasAsset = {
+        id: uid('canvas_asset'),
+        projectId,
+        userId: USER_ID,
+        type: assetType,
+        // B7 决策点：统一图片节点把 image_to_image（角色身份板）反推为 image_edit/image_compose 后，
+        // 其产物 asset.source 由 ai_generated 变为 ai_edited（与「基于参考图生成」语义一致，计划默认接受）。
+        // 若产品希望角色身份板产物仍归「AI 生成」，可在判定里显式纳入历史 operation。
+        source:
+          task.operation === 'image_edit' || task.operation === 'image_compose'
+            ? 'ai_edited'
+            : 'ai_generated',
+        title: assetTitle,
+        mimeType: assetOut.mimeType ?? null,
+        storageKey: generatedStorageKey,
+        url: displayUrl || null,
+        thumbnailUrl: assetType === 'image' ? displayUrl || null : null,
+        contentText: assetOut.contentText ?? null,
+        ...(assetWidth != null ? { width: assetWidth } : {}),
+        ...(assetHeight != null ? { height: assetHeight } : {}),
+        ...(assetDurationMs != null ? { durationMs: assetDurationMs } : {}),
+        metadata: {
+          taskId,
+          // 生成血缘（assetLibrary 缺陷 2）：源文件清理只认 providerProfileId/fileId，
+          // 任务追溯认 originTaskId；既有值不覆盖（response 字段缺失时不写）。
+          ...(task.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
+          ...(assetOutAssetFileId(assetOut) ? { fileId: assetOutAssetFileId(assetOut) } : {}),
+          originTaskId: taskId,
+          ...(filmOwner ? { filmOwnerAssetId: filmOwner.id } : {}),
+          ...(!filmOwner && isPanorama360
+            ? {
+                kind: 'scene',
+                tags: ['360全景图'],
+              }
+            : {}),
+          ...(isPanorama360
+            ? { panorama360: { projection: 'equirectangular', sourceOperation: 'panorama_360' } }
+            : {}),
+          provider: response.provider,
+          model: response.model,
+          requestId: responseRequestId,
+          // ffmpeg / 下载链路首选的本地绝对路径：持久化副本优先（与 displayUrl 同源），
+          // 与 storageKey 的相对 key 指向同一份文件。
+          filePath: persistedFilePath ?? null,
+        },
+        createdAt: at,
+        updatedAt: at,
+      }
+      preparedOutputs.push(asset)
+    }
+
+    if (filmOwner) {
+      const currentReferences = readReferences(filmOwner.metadata)
+      const generatedReferences: FilmReference[] = preparedOutputs
+        .filter((output) => output.type === 'image')
+        .map((output, index) => ({
+          id: filmUid('ref'),
+          kind: filmReferenceKind,
+          assetId: output.id,
+          description: output.title ?? task.title ?? '',
+          order: currentReferences.length + index,
+          ...(currentReferences.length === 0 && index === 0 ? { isPrimary: true } : {}),
+        }))
+      if (generatedReferences.length > 0) {
+        filmOwner.metadata = writeReferences(filmOwner.metadata, [
+          ...currentReferences,
+          ...generatedReferences,
+        ])
+        filmOwner.updatedAt = at
+      }
+    }
+
+    // 生成完成只写入资产，暂不创建产物节点或 generated 连线；任务节点仍可直接预览。
+    // 用户点击“展开产物”后，再由现有物化链路按需创建资产引用节点。
+    for (const output of preparedOutputs) {
+      task.outputAssetIds.push(output.id)
+      db.assets.push(output)
+    }
+
+    // AI 产物的视频类型异步生成首帧缩略图（与 createMediaNode 对称）
+    for (const output of preparedOutputs) {
+      if (output.type !== 'video') continue
+      const fp = output.metadata?.filePath
+      if (typeof fp !== 'string' || !fp) continue
+      void ensureVideoThumbnail(projectId, output.id, undefined, fp)
+    }
+
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'completed',
+        progress: 100,
+        message: `${response.assets.length} 个产物已写回画布`,
+      }
+      syncCanvasTaskRuntimeToNode(task, taskNode.data)
+      syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)
+      taskNode.updatedAt = at
+    }
+    updateProjectCounts(db, projectId)
+    writeTaskRuntimeDb(db, projectId)
+    return this.openSnapshot(projectId, task.boardId)
+  },
+
+  /** 拉取当前可用的多媒体 provider 列表（不含 API key） */
+  async listMediaCapabilities(): Promise<CanvasMediaCapabilitiesListResponse> {
+    return window.spark.invoke('canvas:media-capabilities:list', {})
+  },
+
+  /** 拉取当前画布可用的 manifest 驱动模型列表（不含 API key） */
+  async listMediaModels(
+    request: CanvasMediaModelsListRequest = {},
+  ): Promise<CanvasMediaModelsListResponse> {
+    return window.spark.invoke('canvas:media-models:list', request)
+  },
+
+  /** 查询单个 manifest 的完整调用/参数描述，供参数面板和 agent 节点编排使用 */
+  async describeMediaModel(
+    request: CanvasMediaModelDescribeRequest,
+  ): Promise<CanvasMediaModelDescribeResponse> {
+    return window.spark.invoke('canvas:media-models:describe', request)
+  },
+
+  /**
+   * 按目标 manifest 的 Contract V2 裁剪 modelParams，避免上游节点继承 / preset /
+   * extraJson 中的字段误传给 provider 触发 400。返回 prunedModelParams 与
+   * droppedParams/warnings，由调用方决定是否继续提交并展示诊断信息。
+   *
+   * 适用场景：
+   *   - CanvasInlineAiComposer 提交任务前
+   *   - CanvasOperationPanel 运行任务前
+   *   - canvas.api.ts 中 preset/继承/input 合并后按目标模型再次裁剪
+   *
+   * 失败语义：manifest/capability 不存在时返回原值 + fallbackReason，不阻塞提交。
+   */
+  async pruneMediaModelParams(
+    request: CanvasMediaPruneModelParamsRequest,
+  ): Promise<CanvasMediaPruneModelParamsResponse> {
+    return window.spark.invoke('canvas:media:prune-model-params', request)
+  },
+
+  /**
+   * 不依赖目录 / Provider Profile，直接对用户在自定义 Manifest Modal 中正在编辑的 inline
+   * manifest 做 contract 裁剪，用于 dry-run 预览：用户可以看到「如果我保存这个 manifest，
+   * 当前的 modelParams 会被剪成什么样」。
+   *
+   * 失败语义同 pruneMediaModelParams：manifest/capability 不合法时返回原值 + fallbackReason。
+   */
+  async pruneMediaModelParamsByInlineManifest(
+    request: CanvasMediaPruneModelParamsByInlineManifestRequest,
+  ): Promise<CanvasMediaPruneModelParamsByInlineManifestResponse> {
+    return window.spark.invoke('canvas:media:prune-model-params-by-inline-manifest', request)
+  },
+
+  /**
+   * 从 SQLite 恢复画布数据到 localStorage（迁移 / 跨窗口恢复）。
+   *
+   * SQLite 是重启后的权威来源；如果当前会话已有未保存修改，则保留 localStorage 热存储。
+   * 否则用 SQLite 快照重建 localStorage，避免旧缓存里的项目 ID 和列表不一致。
+   */
+  async hydrateFromStorage(): Promise<{ restored: number }> {
+    // 整库重建是全库级操作：只要**任何一个**项目还有未落库改动（用户编辑 dirty、
+    // 或任务运行态尚未静默落盘），就不覆盖热存储。
+    if (dirtyProjectIds.size > 0 || runtimePersistGate.hasPending()) return { restored: 0 }
+    const hydrationStartDb = readDb()
+    const hydrationStartProjectIds = hydrationStartDb.projects.map((project) => project.id).sort()
+    const hydrationStartVersions = projectMutationVersion.capture(hydrationStartProjectIds)
+    const db = emptyDb()
+    let restored = 0
+    let migrated = false
+    try {
+      const { projects } = await window.spark.invoke('canvas:project:list', {})
+      for (const project of projects) {
+        if (project.status === 'deleted') continue
+        try {
+          const snapshot = await loadSnapshotFromStorage(project.id)
+          if (!snapshot) continue
+          replaceProjectSnapshot(db, snapshot.snapshot)
+          migrated = migrated || snapshot.changed
+          restored += 1
+        } catch {
+          // 单个项目解析失败跳过
+        }
+      }
+      // project:list / snapshot:load 跨多个异步 IPC。期间任一任务终态、节点执行或画布
+      // mutation 都会让本次整库重建过期；即便中途自动保存已把 dirty 恢复为 false，
+      // 项目集合或 mutation 代次仍能识别旧 hydrate，禁止它覆盖当前热数据。
+      const currentProjectIds = readDb()
+        .projects.map((project) => project.id)
+        .sort()
+      const projectSetChanged =
+        currentProjectIds.length !== hydrationStartProjectIds.length ||
+        currentProjectIds.some((projectId, index) => projectId !== hydrationStartProjectIds[index])
+      const projectMutated = hydrationStartProjectIds.some(
+        (projectId) =>
+          !projectMutationVersion.isCurrent(projectId, hydrationStartVersions.get(projectId)),
+      )
+      if (
+        dirtyProjectIds.size > 0 ||
+        runtimePersistGate.hasPending() ||
+        projectSetChanged ||
+        projectMutated
+      ) {
+        return { restored: 0 }
+      }
+      // 从权威源整库重建：重建出来的项目本身不带未落库改动，整体清空 dirty 集合。
+      persistHotDb(db)
+      for (const project of db.projects) projectMutationVersion.mark(project.id)
+      dirtyProjectIds.clear()
+      dispatchDirty(null, false)
+      if (migrated) {
+        await persistAllProjects(db)
+      }
+    } catch {
+      // SQLite 不可用时静默降级到 localStorage
+    }
+    return { restored }
+  },
+}
+
+export function operationLabel(operation: CanvasOperationType): string {
+  return getCanvasCapability(operation)?.label ?? operation
+}
+
+/**
+ * 异步为视频资产生成首帧缩略图。
+ *
+ * 修复视频节点 thumbnailUrl 缺失问题：视频文件 url 不能直接当 <img> src（加载失败），
+ * 需用 ffmpeg 提取一帧 jpg 作为缩略图。生成成功后回填 asset.thumbnailUrl；有节点时同步回填节点。
+ *
+ * fire-and-forget：调用方不 await，失败静默（CanvasAssetThumbnail 的 Play 占位图标兜底）。
+ * 仅当 ffmpeg 可用时执行；不可用时留空，完整性面板下载 ffmpeg 后可手动刷新。
+ */
+/** 正在生成缩略图的 assetId 集合，防止同一视频并发重复生成 */
+const thumbnailsInFlight = new Set<string>()
+
+async function ensureVideoThumbnail(
+  projectId: string,
+  assetId: string,
+  nodeId: string | undefined,
+  videoFilePath: string,
+): Promise<void> {
+  // 去重：同一 assetId 已在生成中则跳过
+  if (thumbnailsInFlight.has(assetId)) return
+  thumbnailsInFlight.add(assetId)
+  try {
+    // 先检测 ffmpeg 是否可用；不可用则跳过（不报错）
+    const status = await window.spark.invoke('ffmpeg:status', {})
+    if (!(status as { ffmpegReady?: boolean }).ffmpegReady) return
+
+    // 不传 outputPath：主进程把缩略图写到产物目录（video-workbench/）内并返回实际路径。
+    // 之前按「视频所在目录/.thumbs」拼路径，会被 video:process 的写白名单拒绝
+    // （canvas-depth/、项目目录等不在白名单内），导致项目内/全局产物视频全部无预览图。
+    const res = await window.spark.invoke('video:process', {
+      operation: 'generateThumbnail',
+      input: videoFilePath,
+      params: { atSec: 1, width: 480 },
+      requestId: `thumb_${assetId}`,
+    })
+    if (!res.success || !res.result) return
+    const { path: thumbPath } = res.result as { path: string }
+    const thumbUrl = encodeToSafeFileUrl(thumbPath)
+
+    // 回填 DB（asset + node）
+    const db = readDb()
+    const asset = db.assets.find((a) => a.id === assetId)
+    if (asset) asset.thumbnailUrl = thumbUrl
+    if (nodeId) {
+      const node = db.nodes.find((n) => n.id === nodeId)
+      if (node) node.data.thumbnailUrl = thumbUrl
+    }
+    writeDb(db)
+  } catch {
+    // 静默失败——缩略图不是关键功能，Play 占位图标兜底
+  } finally {
+    thumbnailsInFlight.delete(assetId)
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 源文件清理：在明确的资产管理入口删除资源时，同步清理数据库外的实际文件
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * 当前删除语义：
+ *  - canvas.api.deleteNodes：节点本地 DB 行只设 hidden=true（软删，可撤销），
+ *    **不清理任何源文件**——画布上的删除只是「从画面移走」，同一素材可能仍被
+ *    其它节点 / 分镜引用。
+ *  - canvas.api.deleteFilmAsset / batchDeleteFilmAssets：从 db.assets 移除
+ *    （硬删，无撤销）；只有显式传 hardDelete=true 时（资产管理入口）才继续
+ *    清理源文件。
+ *  - 批量删除经 assetLibrary.cleanupAssetsSourceFiles 一次遍历收集去重后
+ *    **单次 IPC** 发出（缺陷 4）。
+ *
+ * 识别规则与 storageKey 归一实现在 assetLibrary/assetFileCleanup.ts。
+ */

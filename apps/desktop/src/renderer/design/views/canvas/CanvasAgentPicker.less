@@ -1,0 +1,166 @@
+.canvas-agent-picker-dropdown .composer-menu.composer-agent-menu {
+  width: min(248px, calc(100vw - 24px));
+  max-width: min(248px, calc(100vw - 24px));
+  box-sizing: border-box;
+}
+
+// 画布 Agent 模型菜单通过 portal 挂到 body，不能继承侧栏面板的层级色。
+// 使用画布编辑态底色，让菜单和面板有明确的浮层层次，同时保持主题联动。
+.composer-dropdown-menu.canvas-agent-model-menu {
+  background: var(--canvas-edit-bg, var(--panel-elev, var(--panel)));
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  box-shadow: var(--shadow-lg);
+}
+
+.composer-dropdown-menu.canvas-agent-skill-menu {
+  display: flex;
+  width: min(240px, calc(100vw - 24px));
+  max-width: min(240px, calc(100vw - 24px));
+  max-height: min(340px, calc(100vh - 24px));
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  background: var(--canvas-edit-bg, var(--panel-elev, var(--panel)));
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-agent-skill-search {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 30px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.canvas-agent-skill-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.canvas-agent-skill-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.canvas-agent-skill-option {
+  min-height: 32px;
+  padding: 7px 8px;
+  gap: 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+.canvas-agent-skill-option-name {
+  min-width: 0 !important;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-skill-option-status {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.canvas-agent-skill-empty {
+  padding: 12px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+.canvas-picker-pinned-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.canvas-agent-picker-item,
+.canvas-agent-skill-option-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.canvas-agent-picker-item > .composer-menu-item,
+.canvas-agent-skill-option-row > .composer-menu-item {
+  min-width: 0;
+  flex: 1 1 auto;
+  background: transparent;
+}
+
+.canvas-agent-picker-item:hover,
+.canvas-agent-picker-item:focus-within,
+.canvas-agent-skill-option-row:hover,
+.canvas-agent-skill-option-row:focus-within {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.canvas-agent-picker-item > .composer-menu-item:hover,
+.canvas-agent-picker-item > .composer-menu-item.active,
+.canvas-agent-skill-option-row > .composer-menu-item:hover,
+.canvas-agent-skill-option-row > .composer-menu-item.active {
+  background: transparent;
+}
+
+.canvas-agent-picker-item > .composer-model-pin,
+.canvas-agent-skill-option-row > .composer-model-pin {
+  flex: 0 0 28px;
+  margin-right: 4px;
+}
+
+.canvas-agent-permission-menu {
+  width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+}
+
+.canvas-agent-permission-option {
+  min-height: 50px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  text-align: left;
+
+  &.is-danger:not(.active) strong {
+    color: var(--danger);
+  }
+}
+
+.canvas-agent-permission-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+
+  strong {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  small {
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

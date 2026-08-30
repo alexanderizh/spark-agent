@@ -1,0 +1,755 @@
+.canvas-operation-workbench {
+  container-name: canvas-operation-workbench;
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+  // min-height: clamp(340px, 56vh, 620px);
+  max-height: min(72vh, 780px);
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  // 工作台作为外层面板的内容区，不再重复绘制一层圆角；圆角由外层面板统一负责。
+  border-radius: 0;
+}
+
+.canvas-operation-workbench:has(.canvas-storyboard-editor) {
+  min-height: min(82vh, 860px);
+  max-height: min(88vh, 920px);
+}
+
+// 底部编辑器本身已经通过 max-height 约束可用空间；内联工作台不能再用
+// 固定的最小高度把父级撑破，否则低视口下父级的 overflow:hidden 会裁掉任务面板底栏。
+.canvas-node-bottom-editor:not(.is-fullscreen)
+  .canvas-operation-workbench:has(.canvas-operation-panel.is-inline.is-composer),
+.canvas-node-bottom-editor:not(.is-fullscreen)
+  .canvas-operation-workbench:has(.canvas-operation-panel.is-inline.is-composer)
+  .canvas-operation-workbench-content {
+  min-height: 0;
+}
+
+.canvas-operation-workbench-head {
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-auto-rows: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  // background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+
+.canvas-operation-workbench-tabs,
+.canvas-operation-workbench-context,
+.canvas-operation-workbench-actions {
+  height: 40px;
+  min-height: 40px;
+}
+
+.canvas-operation-workbench-tabs,
+.canvas-operation-workbench-actions,
+.canvas-operation-workbench-context,
+.canvas-operation-workbench-nav,
+.canvas-operation-workbench-run-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-operation-workbench-tabs {
+  // Tab 是头部的稳定导航区，不参与右侧产物操作增多时的宽度压缩。
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+.canvas-operation-workbench-actions {
+  flex: 0 0 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  white-space: nowrap;
+  padding-right: 10px;
+}
+
+.canvas-operation-workbench-context {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding-left: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+}
+
+.canvas-operation-workbench-actions > * {
+  flex: 0 0 auto;
+}
+
+.canvas-operation-workbench-run-nav {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.canvas-operation-workbench-run-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.canvas-operation-workbench-tab {
+  display: inline-flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.canvas-operation-workbench-tab > svg,
+.canvas-operation-workbench-count {
+  flex: 0 0 auto;
+}
+
+.canvas-operation-workbench-tab:hover:not(:disabled),
+.canvas-operation-workbench-tab.is-active {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-operation-workbench-tab:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.canvas-operation-workbench-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-operation-workbench-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-operation-workbench-content > .canvas-operation-panel.is-inline,
+.canvas-operation-workbench-content > .canvas-bottom-floating-panel.is-inline {
+  // 填满并受限于 workbench 内容区，让内部 flex 链生效：底部参数栏/按钮永远钉底可见，
+  // 提示词区有空间则撑大、空间不够则内部滚动，不再被 overflow:hidden 裁掉。
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.canvas-operation-node-settings {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 32px 20px;
+}
+
+.canvas-operation-node-settings-card {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+  border-radius: 0;
+}
+
+.canvas-operation-node-settings-card label {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.canvas-operation-node-settings-hint {
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-operation-node-settings-hint.is-error {
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-result-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-operation-workbench-context {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-operation-workbench-run-nav button,
+.canvas-operation-workbench-output-list button {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-operation-workbench-output-list button.is-selected {
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.canvas-operation-output-check {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  border-radius: 4px;
+  color: var(--primary);
+  font-size: 11px;
+}
+
+.canvas-operation-workbench-run-nav button:hover:not(:disabled),
+.canvas-operation-workbench-output-list button:hover,
+.canvas-operation-workbench-output-list button.is-active {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--text-strong);
+}
+
+.canvas-operation-workbench-run-nav button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.canvas-operation-workbench-output-list {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 36%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.canvas-operation-workbench-output-list:focus-visible {
+  border-radius: 7px;
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.canvas-operation-workbench-context .canvas-operation-workbench-output-list {
+  flex: 1 1 auto;
+}
+
+.canvas-operation-workbench-output-list button {
+  max-width: 180px;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.canvas-operation-workbench-output-list button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-operation-workbench-preview {
+  position: relative;
+  display: flex;
+  min-height: 360px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  // 详情内容属于浮层面板，使用与顶部面板一致的底色，和画布背景明确分层。
+  // background: var(--canvas-edit-bg, var(--panel));
+}
+
+.canvas-operation-workbench:not(.is-fullscreen):has(
+    .canvas-operation-workbench-preview .canvas-operation-output-media.is-detail
+  ) {
+  min-height: 0;
+}
+
+.canvas-operation-selection-bar {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-operation-selection-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-operation-selection-summary strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.canvas-operation-selection-summary span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-operation-selection-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.canvas-operation-more-menu {
+  display: flex;
+  width: 224px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px;
+}
+
+.canvas-operation-more-menu-summary {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 9px 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-operation-more-menu-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.canvas-operation-more-menu-status::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-muted);
+  content: '';
+}
+
+.canvas-operation-more-menu-status.is-completed::before {
+  background: var(--success, #22c55e);
+}
+
+.canvas-operation-more-menu-status.is-running::before {
+  background: var(--primary);
+}
+
+.canvas-operation-more-menu-status.is-failed::before {
+  background: var(--danger, #ef4444);
+}
+
+.canvas-operation-more-menu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-operation-more-menu-actions button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.canvas-operation-more-menu-actions button svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.canvas-operation-more-menu-actions button:hover:not(:disabled),
+.canvas-operation-more-menu-actions button:focus-visible:not(:disabled) {
+  outline: none;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.canvas-operation-more-menu-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.canvas-operation-more-menu-actions button.is-danger {
+  margin-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+  border-radius: 0 0 7px 7px;
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-more-menu-actions button.is-danger svg {
+  color: currentColor;
+}
+
+.canvas-operation-more-menu-actions button.is-danger:hover,
+.canvas-operation-more-menu-actions button.is-danger:focus-visible {
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+}
+
+@container canvas-operation-workbench (max-width: 1100px) {
+  .canvas-operation-workbench-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
+
+  .canvas-operation-workbench-tabs {
+    grid-column: 1 / -1;
+    padding-bottom: 0;
+  }
+
+  .canvas-operation-workbench-context {
+    grid-column: 1;
+  }
+
+  .canvas-operation-workbench-actions {
+    grid-column: 2;
+  }
+}
+
+@container canvas-operation-workbench (max-width: 720px) {
+  .canvas-operation-workbench-context,
+  .canvas-operation-workbench-actions {
+    grid-column: 1 / -1;
+  }
+
+  .canvas-operation-workbench-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .canvas-operation-selection-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .canvas-operation-selection-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+.canvas-operation-history {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.canvas-operation-history-item {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 10px minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(
+      100px,
+      1fr
+    ) 80px auto 28px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.canvas-operation-history-item:hover,
+.canvas-operation-history-item:focus-visible,
+.canvas-operation-history-item.is-active {
+  outline: none;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--text);
+}
+
+.canvas-operation-history-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.canvas-operation-history-status.is-completed {
+  background: var(--success, #22c55e);
+}
+
+.canvas-operation-history-status.is-running {
+  background: var(--primary);
+}
+
+.canvas-operation-history-status.is-failed {
+  background: var(--danger, #ef4444);
+}
+
+.canvas-operation-history-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.canvas-operation-history-main strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.canvas-operation-history-main small {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .canvas-operation-history > button {
+    grid-template-columns: 10px minmax(160px, 1fr) 80px auto;
+  }
+
+  .canvas-operation-history > button > span:nth-child(3),
+  .canvas-operation-history > button > span:nth-child(4) {
+    display: none;
+  }
+}
+
+.canvas-operation-workbench-preview .canvas-node-shot-table-wrap {
+  overflow: auto;
+}
+
+.canvas-operation-workbench-preview .canvas-node-shot-table {
+  min-width: 1120px;
+}
+
+.canvas-operation-workbench-preview .canvas-node-shot-table thead th {
+  background: var(--canvas-edit-bg, var(--panel));
+}
+
+.canvas-operation-workbench-empty {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.canvas-operation-workbench-empty > strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.canvas-operation-workbench-empty.is-failed > strong {
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-workbench-empty.is-running > strong {
+  color: var(--primary);
+}
+
+.canvas-operation-workbench-empty-msg {
+  max-width: 460px;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.canvas-operation-workbench-empty-detail {
+  max-width: 520px;
+  max-height: 160px;
+  overflow: auto;
+  text-align: left;
+
+  & summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  & pre {
+    margin: 6px 0 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+// editing 包了一层，使内层面板不再是 content 的直接子项，content 那条
+// 「flex:1 + min-height:0 + max-height:100%」的高度链对它失效；原先这里又把面板
+// max-height 置为 none，导致内部 table-wrap 的 flex:1 + overflow:auto 没有受限基准，
+// 内容一多就被外层 overflow:hidden 裁切（任务节点编辑"无法滚动"）。
+// 这里给 editing 区一个受限高度并把内层面板同样钉成受限 flex 子项，打通滚动链。
+.canvas-operation-workbench-editing {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.canvas-operation-workbench-editing > .canvas-bottom-floating-panel.is-inline {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+}
+
+@media (max-width: 1180px) {
+  .canvas-operation-workbench-head {
+    flex-wrap: wrap;
+  }
+
+  .canvas-operation-workbench-context {
+    order: 3;
+    width: 100%;
+    min-height: 34px;
+    border-left: 0;
+    border-top: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
+    padding-top: 4px;
+  }
+}
+
+// 运行中横幅：已有产物再运行时，让进度/参数在任一 tab 都可见（不自动切 tab）。
+.canvas-operation-workbench-run-banner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  background: color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+.canvas-operation-workbench-run-banner-progress {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+
+.canvas-operation-workbench-run-banner-meta {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.canvas-operation-workbench-run-banner-meta strong {
+  color: var(--text-strong);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-operation-workbench-run-banner-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+
+  & span strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+}
+
+// 当前 run 无产物时，产物列表区的占位（翻页器仍常驻）。
+.canvas-operation-workbench-output-list-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+// 运行历史条目的删除按钮（仅失败/无产物 run 出现；成功有产物的用占位保持对齐）。
+.canvas-operation-history-delete,
+.canvas-operation-history-delete-placeholder {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-operation-history-delete:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-history-delete:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

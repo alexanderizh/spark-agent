@@ -1,0 +1,37 @@
+{
+  "name": "@spark/agent-runtime",
+  "version": "0.1.0",
+  "description": "Spark Agent runtime — provider adapters (Claude/Codex), SessionService, ContextGovernor, ResourceGovernor",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test:unit": "../../scripts/sqlite-abi.sh node && vitest run; s=$?; ../../scripts/sqlite-abi.sh electron; exit $s",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@openai/codex-sdk": "0.149.0",
+    "@spark/protocol": "workspace:*",
+    "@spark/shared": "workspace:*",
+    "@spark/storage": "workspace:*",
+    "cron-parser": "5.6.2",
+    "diff": "8.0.3",
+    "openai": "^7.5.0",
+    "undici": "^7.28.0",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.238"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

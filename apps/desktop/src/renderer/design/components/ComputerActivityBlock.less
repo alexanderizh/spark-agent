@@ -1,0 +1,167 @@
+// 计算机使用活动面板
+// 视觉对齐会话内容区其他折叠面板（.tool-call / .thinking-section）：
+// 透明背景、无边框无圆角、靠 --text / --text-muted / --text-faint 文字层级。
+// 控制按钮统一使用 lobe Button type="text"，不在 less 里覆盖其外观。
+
+.computer-activity-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.computer-activity-load-error {
+  color: var(--danger, #ef4444);
+  font-size: var(--font-sm, 12px);
+}
+
+.computer-activity-card {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--font-sm, 12px);
+}
+
+// 去掉 <details> 原生三角，改用 .computer-activity-chev
+.computer-activity-card > summary {
+  list-style: none;
+}
+.computer-activity-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.computer-activity-card summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  user-select: none;
+}
+.computer-activity-card summary:hover {
+  color: var(--text-muted);
+}
+
+.computer-activity-chev {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+}
+.computer-activity-card[open] .computer-activity-chev {
+  transform: rotate(90deg);
+}
+
+.computer-activity-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--c-brand, var(--text-faint));
+  flex-shrink: 0;
+}
+.computer-activity-card.is-success .computer-activity-status-dot {
+  background: var(--c-ok, #22c55e);
+}
+.computer-activity-card.is-error .computer-activity-status-dot {
+  background: var(--danger, #ef4444);
+}
+.computer-activity-card.is-warning .computer-activity-status-dot {
+  background: var(--c-warn, #f59e0b);
+}
+.computer-activity-card.is-muted .computer-activity-status-dot {
+  background: var(--text-faint);
+}
+
+.computer-activity-title {
+  color: var(--text-muted);
+  font-size: var(--font-sm, 12px);
+  font-weight: 500;
+}
+.computer-activity-status {
+  color: var(--text-faint);
+  font-size: var(--font-sm, 12px);
+}
+.computer-activity-elapsed {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.computer-activity-events {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 4px 0 4px 22px;
+  color: var(--text-muted);
+  font-size: var(--font-sm, 12px);
+  line-height: 1.6;
+}
+.computer-activity-events li {
+  padding-left: 2px;
+}
+.computer-activity-events li::marker {
+  color: var(--text-faint);
+}
+.computer-activity-events li.is-success::marker {
+  color: var(--c-ok, #22c55e);
+}
+.computer-activity-events li.is-error::marker {
+  color: var(--danger, #ef4444);
+}
+.computer-activity-events time {
+  float: right;
+  margin-left: 12px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.computer-activity-controls {
+  display: grid;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+.computer-activity-target {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm, 12px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computer-activity-control-actions,
+.computer-activity-target-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+// lobe Button(type=text) 自带外观，这里不再覆盖；
+// 仅约束 select，保持与文本按钮同一行高。
+.computer-activity-target-picker select {
+  min-height: 24px;
+  min-width: 0;
+  flex: 1 1 220px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle, var(--border, rgb(128 128 128 / 18%)));
+  border-radius: var(--r-md, 6px);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm, 12px);
+}
+.computer-activity-target-picker select:focus {
+  outline: none;
+  border-color: var(--c-brand, var(--text-muted));
+}
+
+.computer-activity-control-error {
+  color: var(--danger, #ef4444);
+  font-size: var(--font-sm, 12px);
+}

@@ -1,0 +1,111 @@
+.avatar-cropper-modal {
+  .avatar-cropper-hint {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: var(--color-text-3, #64748b);
+  }
+
+  /* ─── 裁剪舞台（滚轮缩放事件挂在这里）──────────────────────────────────── */
+  .avatar-cropper-stage {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    background: var(--color-fill-2, #0f172a);
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    border-radius: 8px;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+
+    /* react-easy-crop 内部容器填满舞台 */
+    & > div {
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  /* ─── 控制条：旋转 + 缩放 ──────────────────────────────────────────────── */
+  .avatar-cropper-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+
+  .avatar-cropper-rotate,
+  .avatar-cropper-zoom {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .avatar-cropper-zoom {
+    flex: 1;
+    min-width: 180px;
+    gap: 6px;
+  }
+
+  .avatar-cropper-slider {
+    flex: 1;
+    min-width: 80px;
+    margin: 0 4px;
+  }
+
+  .avatar-cropper-minus-glyph {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .avatar-cropper-icon-btn {
+    appearance: none;
+    border: 1px solid var(--color-border-1, #e2e8f0);
+    background: var(--color-bg-2, #ffffff);
+    color: var(--color-text-1, #0f172a);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+
+    &:hover {
+      background: var(--color-fill-2, #f1f5f9);
+      color: #2563eb;
+      border-color: #2563eb;
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+  }
+
+  .avatar-cropper-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+}
+
+/* 窄屏：控制条堆叠 */
+@media (max-width: 480px) {
+  .avatar-cropper-modal {
+    .avatar-cropper-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .avatar-cropper-stage {
+      height: 260px;
+    }
+  }
+}

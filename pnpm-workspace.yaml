@@ -1,0 +1,75 @@
+# nodeLinker: hoisted —— 让 pnpm 产出 npm 式平铺 node_modules（而非默认 isolated 软链布局）。
+# 原因：electron-builder 假设平铺布局，对 pnpm 的 .pnpm 软链仓库收集不可靠，导致
+# bindings/file-uri-to-path(better-sqlite3)、commander/playwright-core(@playwright/mcp)、
+# @anthropic-ai SDK 平台二进制等传递依赖被漏收 → 打包后运行时 Cannot find module。
+# 平铺后这些依赖落到顶层 node_modules，electron-builder 能完整收集。
+# pnpm v11 从本文件读 nodeLinker（不读 .npmrc）。
+nodeLinker: hoisted
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# Release-security pins for vulnerable transitive runtime/build dependencies.
+# Keep these at patched, API-compatible versions until their parents catch up.
+overrides:
+  '@fast-csv/parse': 4.3.6
+  '@hono/node-server': 2.0.12
+  '@xmldom/xmldom@0.7.13': 0.8.13
+  axios: 1.18.1
+  sharp: 0.35.3
+  body-parser: 2.3.0
+  'brace-expansion@1.1.14': 1.1.16
+  'brace-expansion@2.1.1': 2.1.2
+  'brace-expansion@5.0.6': 5.0.8
+  builder-util-runtime: 9.7.0
+  dompurify: 3.4.12
+  esbuild: 0.25.12
+  fast-uri: 3.1.4
+  fast-csv: 4.3.6
+  form-data: 4.0.6
+  hono: 4.12.32
+  immutable: 4.3.9
+  lodash: 4.18.1
+  lodash-es: 4.18.1
+  'nanoid@3.3.3': 3.3.16
+  'nanoid@4.0.2': 5.0.9
+  postcss: 8.5.23
+  protobufjs: 7.6.5
+  'undici@7.26.0': 7.28.0
+  uuid: 11.1.1
+  vite: 6.4.3
+  vitest: 3.2.6
+allowBuilds:
+  '@file-viewer/web': true
+  better-sqlite3: true
+  canvas: false
+  core-js: true
+  electron: true
+  electron-winstaller: true
+  es5-ext: true
+  esbuild: true
+  keytar: true
+  lzma-native: true
+  node-pty: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
+  simple-git-hooks: true
+minimumReleaseAgeExclude:
+  - '@anthropic-ai/claude-agent-sdk'
+  - '@anthropic-ai/claude-agent-sdk-darwin-arm64'
+  - '@anthropic-ai/claude-agent-sdk-darwin-x64'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64-musl'
+  - '@anthropic-ai/claude-agent-sdk-win32-arm64'
+  - '@anthropic-ai/claude-agent-sdk-win32-x64'
+  - '@anthropic-ai/sdk'
+  - '@openai/codex'
+  - '@openai/codex-sdk'
+  - '@hono/node-server@2.0.12'
+  - '@file-viewer/preset-office@2.3.2'
+  - '@file-viewer/react@2.3.0'
+  - '@file-viewer/renderer-spreadsheet@2.3.1'
+  - '@file-viewer/renderer-word@2.3.1'
+  - '@file-viewer/web@2.3.0'

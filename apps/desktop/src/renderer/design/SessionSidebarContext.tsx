@@ -1,0 +1,2188 @@
+/**
+ * SessionSidebarContext — Shared session/workspace state for the sidebar
+ * conversation list. Extracted from ChatView so that the FloatingSidebar can
+ * render the conversation list at the top-level layout.
+ */
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useMemo } from 'react'
+import type { ReactNode } from 'react'
+import { useIpcInvoke } from './hooks/useIpc'
+import { createSingleFlightRefresh } from './services/single-flight-refresh'
+import { useOptionalToast, type ToastFn } from './components/Toast'
+import { useApp } from './AppContext'
+import { useI18n } from './i18n'
+import type {
+  SessionId,
+  CliSparkOverride,
+  SessionListResponse,
+  SessionRuntimeWorktree,
+  SessionSearchResult,
+  SessionGetQueueResponse,
+  WorkspaceInfo,
+  ProviderProfile,
+  ManagedAgent,
+  SessionAgentAdapter,
+  SessionChatMode,
+  SessionPermissionMode,
+  SessionReasoningEffort,
+  TurnId,
+  AgentEvent,
+  AgentStatusValue,
+  TeamModeConfig,
+  TerminalSessionActivity,
+  TerminalStreamEvent,
+  SidebarOrderState,
+} from '@spark/protocol'
+import { isAutoRouterProvider } from '@spark/protocol'
+import { SerialTaskQueue } from './sidebar-manual-order'
+import {
+  getPreferredProviderWithAdapterFallback,
+  getProviderAdapterKind,
+  isProviderCompatibleWithAdapter,
+} from './utils/provider-adapter'
+import { resolveSessionGroupId, sortSessionsByPinned, toTime } from './sidebar-session-sort'
+import { listAllWorkspaces } from './services/list-all-workspaces'
+import {
+  addProjectsFromDroppedPaths,
+  formatDroppedProjectSummary,
+} from './services/project-folder-drop'
+import {
+  buildSessionScheduleSummaries,
+  type SessionScheduleSummaries,
+} from './session-schedule-summary'
+import { readAgentRuntimePrefs } from './views/chat/composerAgentRuntimePrefs'
+
+// 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
+export { sortSessionsByPinned }
+
+export type SessionSummary = SessionListResponse['sessions'][number]
+
+export type ProjectGroup = {
+  workspace: WorkspaceInfo
+  sessions: SessionSummary[]
+}
+
+export type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
+
+/**
+ * 分组级批量会话操作（一键清空 / 删除分组）的确认弹窗文案覆盖。
+ * 临时会话、未归属会话这类特殊分组复用同一删除链路，但需要各自的语义化文案。
+ */
+export type SessionGroupActionCopy = {
+  title?: string
+  description?: string
+  confirmText?: string
+}
+
+// 与主进程 ipc/index.ts / TerminalService.ts 的 NO_PROJECT_WORKSPACE_NAME 保持一致：
+// 主进程统一写入/查找 DB 时使用中文名 '不使用项目'。这里如果写成 'No project'，
+// 会让 buildProjectGroups 过滤失败 → noProject workspace 没被剔除 → sidebar 直接用
+// workspace.name 显示成 '不使用项目'，让 i18n 中的 'sidebar.noProjectChats' = '临时会话'
+// 完全失效。
+export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+const LAST_SESSION_KEY = 'spark-agent:last-active-session'
+
+function getNoProjectRootPath(tempDir: string): string {
+  const sep = tempDir.includes('\\') ? '\\' : '/'
+  return `${tempDir.replace(/[\\/]$/, '')}${sep}no-project`
+}
+
+const DEFAULT_AGENT_ADAPTER: SessionAgentAdapter = 'claude-sdk'
+
+function getValidPermissionMode(
+  mode: SessionPermissionMode | undefined,
+  adapter: SessionAgentAdapter,
+): SessionPermissionMode {
+  if (!mode) {
+    if (adapter === 'codex') return 'codex-default'
+    return 'claude-auto-edits'
+  }
+  return mode
+}
+
+type ComposerPrefs = {
+  adapter?: SessionAgentAdapter
+  providerProfileId?: string
+  modelId?: string
+  permissionMode?: SessionPermissionMode
+  reasoningEffort?: SessionReasoningEffort
+  agentId?: string
+}
+
+const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+
+function readComposerPrefs(): ComposerPrefs {
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeComposerPrefs(prefs: ComposerPrefs): void {
+  try {
+    window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    /* */
+  }
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function getPreferredProvider(
+  providers: ProviderProfile[],
+  prefs: ComposerPrefs,
+  adapter: SessionAgentAdapter,
+): ProviderProfile | undefined {
+  return getPreferredProviderWithAdapterFallback(providers, prefs.providerProfileId, adapter)
+}
+
+function getProviderDefaultModel(provider: ProviderProfile): string | undefined {
+  return nonEmptyString(provider.defaultModel) ?? nonEmptyString(provider.modelIds[0])
+}
+
+function providerSupportsModel(provider: ProviderProfile, modelId: string | undefined): boolean {
+  if (modelId == null) return false
+  const configuredModels = provider.modelIds.length
+    ? provider.modelIds
+    : provider.defaultModel
+      ? [provider.defaultModel]
+      : []
+  return configuredModels.length === 0 || configuredModels.includes(modelId)
+}
+
+function resolveModelForProvider(
+  provider: ProviderProfile,
+  candidates: Array<string | undefined>,
+): string | undefined {
+  return (
+    candidates.find((modelId) => providerSupportsModel(provider, modelId)) ??
+    getProviderDefaultModel(provider)
+  )
+}
+
+function resolveNewSessionTeamConfig(teamConfig: unknown, hostAgentId: string): TeamModeConfig {
+  if (teamConfig != null) return teamConfig as TeamModeConfig
+  return {
+    enabled: false,
+    hostAgentId,
+    memberAgentIds: [],
+    maxDepth: 1,
+    allowNesting: false,
+    maxDiscussionRounds: 6,
+    enablePeerMessaging: false,
+  }
+}
+
+function getBasename(path: string): string {
+  return path.split(/[/\\]/).pop() ?? ''
+}
+
+function normalizeIdMap(value: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  if (value != null && typeof value === 'object') {
+    for (const [projectId, sessionIds] of Object.entries(value as Record<string, unknown>)) {
+      if (Array.isArray(sessionIds)) {
+        result[projectId] = sessionIds.filter(
+          (sessionId): sessionId is string => typeof sessionId === 'string',
+        )
+      }
+    }
+  }
+  return result
+}
+
+function normalizeSidebarOrder(value: unknown): SidebarOrderState {
+  const candidate = value as Partial<SidebarOrderState> | null
+  return {
+    projectIds: Array.isArray(candidate?.projectIds)
+      ? candidate.projectIds.filter(
+          (projectId): projectId is string => typeof projectId === 'string',
+        )
+      : [],
+    sessionIdsByProject: normalizeIdMap(candidate?.sessionIdsByProject),
+    pinnedSessionIdsByProject: normalizeIdMap(candidate?.pinnedSessionIdsByProject),
+  }
+}
+
+export function filterSessionsByTime(
+  sessions: SessionSummary[],
+  filter: TimeFilter,
+): SessionSummary[] {
+  if (filter === 'all') return sessions
+  const days = Number.parseInt(filter, 10)
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  return sessions.filter((session) => {
+    const updatedAt = new Date(session.updatedAt).getTime()
+    return Number.isFinite(updatedAt) && updatedAt >= cutoff
+  })
+}
+
+/** Agent 占用中、不可被一键清空的状态：思考 / 调用工具 / 等待权限 / 等待输入。 */
+const ACTIVE_AGENT_STATUSES = new Set<AgentStatusValue>([
+  'thinking',
+  'calling_tool',
+  'waiting_permission',
+  'waiting_user',
+])
+
+/**
+ * 判断会话是否处于运行中状态。
+ *
+ * 用于所有「会破坏正在执行的任务」的破坏性操作：一键清空跳过、单个删除改用更重的
+ * 确认文案、清空历史前二次确认。
+ */
+export function isSessionActive(
+  sessionId: string,
+  agentStatuses: Record<string, AgentStatusValue>,
+): boolean {
+  const status = agentStatuses[sessionId]
+  return status != null && ACTIVE_AGENT_STATUSES.has(status)
+}
+
+/** 取项目分组下最新一条会话的更新时间；无会话时回落到 workspace 自身的 updatedAt。 */
+function latestSessionAt(group: ProjectGroup): number {
+  let latest = 0
+  for (const session of group.sessions) {
+    const t = toTime(session.updatedAt)
+    if (t > latest) latest = t
+  }
+  return latest || toTime(group.workspace.updatedAt)
+}
+
+export function buildProjectGroups(
+  workspaces: WorkspaceInfo[],
+  sessions: SessionSummary[],
+): ProjectGroup[] {
+  const visible = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
+  const byId = new Map(visible.map((w) => [w.id, w] as const))
+  // 普通（基）项目构成分组；worktree workspace 不单独成组，其会话归并到 base 项目。
+  const baseWorkspaces = visible.filter((w) => w.worktreeMeta == null)
+  const baseIds = new Set(baseWorkspaces.map((w) => w.id))
+  // base 已不存在的 worktree（孤儿）作为兜底，仍保留自己的分组，避免会话丢失。
+  const orphanWorktrees = visible.filter(
+    (w) =>
+      w.worktreeMeta != null &&
+      !(w.worktreeMeta.baseWorkspaceId != null && baseIds.has(w.worktreeMeta.baseWorkspaceId)),
+  )
+  const groupWorkspaces = [...baseWorkspaces, ...orphanWorktrees]
+
+  // 把某 workspace id 解析为其展示分组 id：worktree → base（若 base 存在）。
+  const effectiveWorkspaceId = (wsId: string): string => {
+    const base = byId.get(wsId)?.worktreeMeta?.baseWorkspaceId
+    return base != null && baseIds.has(base) ? base : wsId
+  }
+
+  const sessionsByGroup = new Map<string, SessionSummary[]>()
+  for (const workspace of groupWorkspaces) {
+    sessionsByGroup.set(workspace.id, [])
+  }
+  for (const session of sessions) {
+    const seen = new Set<string>()
+    for (const workspaceId of session.workspaceIds) {
+      const groupId = effectiveWorkspaceId(workspaceId)
+      if (seen.has(groupId)) continue
+      seen.add(groupId)
+      sessionsByGroup.get(groupId)?.push(session)
+    }
+  }
+
+  const groups = groupWorkspaces.map((workspace) => ({
+    workspace,
+    sessions: sortSessionsByPinned(sessionsByGroup.get(workspace.id) ?? []),
+  }))
+
+  // 排序：置顶项目始终在前（内部按 pinnedAt 倒序，与后端 listAll 一致）；
+  // 未置顶项目之间按「最新一条会话的更新时间」倒序排列，
+  // 无会话时回落到 workspace 自身的 updatedAt。这样刚对话过的项目会浮到顶部。
+  return groups.sort((a, b) => {
+    const aPinnedAt = a.workspace.pinnedAt
+    const bPinnedAt = b.workspace.pinnedAt
+    if (aPinnedAt != null && bPinnedAt == null) return -1
+    if (aPinnedAt == null && bPinnedAt != null) return 1
+    if (aPinnedAt != null && bPinnedAt != null) {
+      return toTime(bPinnedAt) - toTime(aPinnedAt)
+    }
+    return latestSessionAt(b) - latestSessionAt(a)
+  })
+}
+
+type SessionSidebarCtx = {
+  // Data
+  sessions: SessionSummary[]
+  workspaces: WorkspaceInfo[]
+  providers: ProviderProfile[]
+  agents: ManagedAgent[]
+
+  // Active state
+  activeSessionId: SessionId | null
+  activeWorkspaceId: string | null
+  setActiveSession: (id: SessionId | null) => void
+  // Reveal target: set by the command palette when switching sessions, so the
+  // sidebar can expand/scroll the target into view. NOT set on manual clicks,
+  // so browsing the sidebar is never disrupted.
+  revealSessionId: SessionId | null
+  revealSession: (id: SessionId) => void
+  clearRevealSession: () => void
+  setActiveWorkspace: (id: string | null) => void
+  sessionScheduleTargetId: SessionId | null
+  openSessionSchedule: (id: SessionId) => void
+  closeSessionSchedule: () => void
+  sessionScheduleSummaries: SessionScheduleSummaries
+  refreshSessionScheduleSummaries: () => Promise<void>
+
+  // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
+  sessionAgentStatuses: Record<string, AgentStatusValue>
+  // Built-in terminal activity per session. Used by the sidebar to show long-running PTYs.
+  sessionTerminalActivity: Record<string, TerminalSessionActivity>
+  // Session IDs that just completed but the user hasn't viewed since — drives the blue unread dot
+  unreviewedCompletedSessions: Set<string>
+
+  // Computed
+  projectGroups: ProjectGroup[]
+  noProjectWorkspace: WorkspaceInfo | null
+  noProjectSessions: SessionSummary[]
+  ungroupedSessions: SessionSummary[]
+  sidebarOrder: SidebarOrderState
+
+  // Actions
+  refreshData: () => Promise<void>
+  updateSessionInList: (sessionId: SessionId, patch: Partial<SessionSummary>) => void
+  bumpSessionMessageCount: (sessionId: SessionId) => void
+
+  // Session actions
+  handleNewSession: (
+    workspaceId?: string | null,
+    options?: Record<string, unknown>,
+  ) => Promise<SessionId | null>
+  handleForkSession: (
+    sourceSessionId: SessionId,
+    anchorTurnId?: TurnId,
+    title?: string,
+  ) => Promise<SessionId | null>
+  handleToggleSessionPinned: (session: SessionSummary) => Promise<void>
+  commitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
+  handleRenameSession: (session: SessionSummary) => Promise<void>
+  handleDeleteSession: (session: SessionSummary) => Promise<void>
+  handleClearSessions: (
+    sessions: SessionSummary[],
+    options?: SessionGroupActionCopy | undefined,
+  ) => Promise<void>
+  handleArchiveSession: (session: SessionSummary) => Promise<void>
+  handleOpenSessionFolder: (session: SessionSummary) => Promise<void>
+
+  // Project actions
+  handleToggleProjectPinned: (workspace: WorkspaceInfo) => Promise<void>
+  handleRenameProject: (workspace: WorkspaceInfo) => Promise<void>
+  handleArchiveProject: (workspace: WorkspaceInfo) => Promise<void>
+  handleDeleteProject: (
+    workspace: WorkspaceInfo,
+    options?: SessionGroupActionCopy | undefined,
+  ) => Promise<void>
+  handleOpenProjectFolder: (workspace: WorkspaceInfo) => Promise<void>
+  handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<boolean>
+  handleReorderProjects: (projectIds: string[]) => Promise<void>
+  handleReorderSessions: (projectId: string, sessionIds: string[]) => Promise<void>
+  handleReorderPinnedSessions: (projectId: string, sessionIds: string[]) => Promise<void>
+
+  // Create project dialog
+  handleCreateProject: (useTempDir?: boolean) => Promise<void>
+  handleAddDroppedProjects: (paths: string[]) => Promise<void>
+  handlePickProjectPath: () => Promise<void>
+  handleDropProjectPath: (path: string) => Promise<void>
+  projectDialog: 'create' | null
+  setProjectDialog: (d: 'create' | null) => void
+  projectName: string
+  setProjectName: (n: string) => void
+  projectPath: string
+  setProjectPath: (p: string) => void
+  projectNotice: string
+
+  // Search
+  searchSessions: (query: string) => Promise<SessionSearchResult[]>
+
+  // Ensure no-project workspace
+  ensureNoProjectWorkspace: () => Promise<string | null>
+
+  // Refs
+  justCreatedSessionRef: React.MutableRefObject<SessionId | null>
+  selectedProviderId: string
+  setSelectedProviderId: (id: string) => void
+
+  // History import (检测/导入宿主机 Claude Code / Codex 对话历史)
+  historyImportOpen: boolean
+  setHistoryImportOpen: (open: boolean) => void
+}
+
+const Ctx = createContext<SessionSidebarCtx | null>(null)
+
+export function SessionSidebarProvider({
+  children,
+  reportAppActivity = true,
+}: {
+  children: ReactNode
+  reportAppActivity?: boolean
+}) {
+  const { t: appState, requestConfirm, requestPrompt } = useApp()
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const queueRunningRef = useRef<Record<string, boolean>>({})
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  const [active, setActiveRaw] = useState<SessionId | null>(() => {
+    const stored = window.localStorage.getItem(LAST_SESSION_KEY)
+    return (stored as SessionId | null) ?? null
+  })
+  const setActive = useCallback((id: SessionId | null) => {
+    setActiveRaw(id)
+    if (id) {
+      setUnreviewedCompleted((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [])
+  // Reveal target used by the command palette to request that the sidebar
+  // brings a session into view (expand its group + break pagination + scroll).
+  // Cleared after the target scrolls into view, so subsequent active changes
+  // (e.g. manual clicks) do not trigger scrolling.
+  const [revealSessionId, setRevealSessionId] = useState<SessionId | null>(null)
+  const revealSession = useCallback((id: SessionId) => setRevealSessionId(id), [])
+  const clearRevealSession = useCallback(() => setRevealSessionId(null), [])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const [sessionScheduleTargetId, setSessionScheduleTargetId] = useState<SessionId | null>(null)
+  const [sessionScheduleSummaries, setSessionScheduleSummaries] =
+    useState<SessionScheduleSummaries>({})
+  const openSessionSchedule = useCallback((id: SessionId) => setSessionScheduleTargetId(id), [])
+  const closeSessionSchedule = useCallback(() => setSessionScheduleTargetId(null), [])
+  const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
+  const [selectedProviderId, setSelectedProviderId] = useState('')
+  const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
+  const [projectName, setProjectName] = useState('')
+  const [projectPath, setProjectPath] = useState('')
+  const [projectNotice, setProjectNotice] = useState('')
+  const [historyImportOpen, setHistoryImportOpen] = useState(false)
+  const [sessionAgentStatuses, setSessionAgentStatuses] = useState<
+    Record<string, AgentStatusValue>
+  >({})
+  const [sessionTerminalActivity, setSessionTerminalActivity] = useState<
+    Record<string, TerminalSessionActivity>
+  >({})
+  // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
+  const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
+  const unreadSessionCount = unreviewedCompleted.size
+  const viewedSessionId = appState.view === 'chat' ? active : null
+  const viewedSessionRef = useRef<SessionId | null>(viewedSessionId)
+
+  useEffect(() => {
+    viewedSessionRef.current = viewedSessionId
+  }, [viewedSessionId])
+
+  useEffect(() => {
+    if (!reportAppActivity) return
+    void window.spark
+      ?.invoke('app:set-unread-count', {
+        count: unreadSessionCount,
+        activeSessionId: viewedSessionId,
+      })
+      .catch(() => undefined)
+  }, [reportAppActivity, unreadSessionCount, viewedSessionId])
+
+  const [sidebarOrder, setSidebarOrder] = useState<SidebarOrderState>({
+    projectIds: [],
+    sessionIdsByProject: {},
+    pinnedSessionIdsByProject: {},
+  })
+  const projectOrderMutationRef = useRef(0)
+  const sessionOrderMutationRef = useRef(new Map<string, number>())
+  const projectOrderWriteQueueRef = useRef(new SerialTaskQueue())
+  const sessionOrderWriteQueuesRef = useRef(new Map<string, SerialTaskQueue>())
+  const pinnedSessionOrderMutationRef = useRef(new Map<string, number>())
+  const pinnedSessionOrderWriteQueuesRef = useRef(new Map<string, SerialTaskQueue>())
+  // 打破 handleToggleSessionPinned → moveSessionOrderZone → handleReorder* 的声明顺序依赖。
+  const moveSessionOrderZoneRef = useRef<
+    ((sessionId: string, projectId: string | null, toPinned: boolean) => void) | null
+  >(null)
+  const justCreatedSessionRef = useRef<SessionId | null>(null)
+  const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
+  const pinMutationsRef = useRef(
+    new Map<
+      SessionId,
+      {
+        desiredPinned: boolean
+        confirmedPinnedAt: string | null
+        running: boolean
+      }
+    >(),
+  )
+  const activeRef = useRef<SessionId | null>(active)
+  const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
+  const manualWorkspaceSelectionRef = useRef<{
+    sessionId: SessionId | null
+    workspaceId: string | null
+  } | null>(null)
+  const upsertSessionInList = useCallback((session: SessionSummary) => {
+    setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
+  }, [])
+  useEffect(() => {
+    activeRef.current = active
+  }, [active])
+  const optionalToast = useOptionalToast()
+  const fallbackToast = useMemo<ToastFn>(() => {
+    const noop = () => ''
+    return Object.assign(noop, {
+      success: noop,
+      error: noop,
+      info: noop,
+      warning: noop,
+    })
+  }, [])
+  const toast = optionalToast?.toast ?? fallbackToast
+  const { t } = useI18n()
+
+  const { invoke: listSessions } = useIpcInvoke('session:list')
+  const { invoke: createSession } = useIpcInvoke('session:create')
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: listActiveTerminals } = useIpcInvoke('terminal:list-active')
+  const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
+  const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: forkSession } = useIpcInvoke('session:fork')
+  const { invoke: deleteSession } = useIpcInvoke('session:delete')
+  const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
+  const { invoke: createWorktree } = useIpcInvoke('workspace:create-worktree')
+  const { invoke: removeWorktree } = useIpcInvoke('workspace:remove-worktree')
+  const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
+  const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
+  const { invoke: openWorkspaceFolder } = useIpcInvoke('workspace:open-folder')
+  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+  const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
+  const { invoke: listSidebarOrder } = useIpcInvoke('sidebar-order:list')
+  const { invoke: updateSidebarOrder } = useIpcInvoke('sidebar-order:update')
+  const { invoke: listScheduledTasks } = useIpcInvoke('scheduled-task:list')
+
+  const refreshSessionScheduleSummaries = useCallback(async () => {
+    try {
+      const response = await listScheduledTasks({ scope: 'session' })
+      setSessionScheduleSummaries(
+        buildSessionScheduleSummaries(Array.isArray(response.tasks) ? response.tasks : []),
+      )
+    } catch (error) {
+      console.warn('[scheduled-task] failed to refresh sidebar summaries:', error)
+    }
+  }, [listScheduledTasks])
+
+  useEffect(() => {
+    if (!reportAppActivity) return
+    const initialRefresh = window.setTimeout(() => void refreshSessionScheduleSummaries(), 0)
+    const timer = window.setInterval(() => void refreshSessionScheduleSummaries(), 30_000)
+    const unsubscribe =
+      window.spark?.on?.('stream:scheduled-task:execution', () => {
+        void refreshSessionScheduleSummaries()
+      }) ?? (() => {})
+    return () => {
+      window.clearTimeout(initialRefresh)
+      window.clearInterval(timer)
+      unsubscribe()
+    }
+  }, [refreshSessionScheduleSummaries, reportAppActivity])
+
+  const sessionArchiveRevision = useMemo(
+    () => sessions.map((session) => `${session.id}:${session.archivedAt ?? ''}`).join('|'),
+    [sessions],
+  )
+
+  useEffect(() => {
+    if (!reportAppActivity || sessionArchiveRevision === '') return
+    const timer = window.setTimeout(() => void refreshSessionScheduleSummaries(), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshSessionScheduleSummaries, reportAppActivity, sessionArchiveRevision])
+
+  const refreshTerminalActivity = useCallback(async () => {
+    try {
+      const res = await listActiveTerminals({})
+      const sessions = Array.isArray(res.sessions) ? res.sessions : []
+      setSessionTerminalActivity(
+        Object.fromEntries(sessions.map((item) => [item.sessionId, item] as const)),
+      )
+    } catch (err) {
+      console.warn('[terminal] list-active failed:', err)
+    }
+  }, [listActiveTerminals])
+
+  const performRefresh = useCallback(async () => {
+    try {
+      const [workspaceRes, sessionRes, currentRes, providerRes, agentRes, sidebarOrderRes] =
+        await Promise.all([
+          listAllWorkspaces(listWorkspaces),
+          listSessions({ limit: 200 }),
+          getCurrentWorkspace({}),
+          listProviders({}),
+          listAgents({}).catch(() => ({ agents: [] as ManagedAgent[] })),
+          listSidebarOrder({}).catch(() => ({
+            projectIds: [],
+            sessionIdsByProject: {},
+            pinnedSessionIdsByProject: {},
+          })),
+        ])
+      setWorkspaces(workspaceRes.workspaces)
+      setSessions(sessionRes.sessions)
+      queueRunningRef.current = Object.fromEntries(
+        sessionRes.sessions.map((session) => [session.id, session.status === 'running']),
+      )
+      // The persisted session summary is the recovery source of truth. If a live terminal
+      // event was missed, do not let the transient agent-status map keep a stale spinner alive.
+      setSessionAgentStatuses((prev) => {
+        const runningSessionIds = new Set<string>(
+          sessionRes.sessions.filter((session) => session.status === 'running').map((s) => s.id),
+        )
+        let changed = false
+        const next: Record<string, AgentStatusValue> = {}
+        for (const [sessionId, status] of Object.entries(prev)) {
+          if (runningSessionIds.has(sessionId)) next[sessionId] = status
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+      // 收敛未读 Set：丢弃已不存在的会话 id，避免 dock 徽章因会话被删除/归档而永久虚高
+      setUnreviewedCompleted((prev) => {
+        if (prev.size === 0) return prev
+        const liveIds = new Set<string>(sessionRes.sessions.map((s) => s.id))
+        let changed = false
+        const next = new Set<string>()
+        for (const id of prev) {
+          if (liveIds.has(id)) next.add(id)
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+      setProviders(providerRes.profiles)
+      setAgents(Array.isArray(agentRes.agents) ? agentRes.agents : [])
+      setSidebarOrder(normalizeSidebarOrder(sidebarOrderRes))
+      setSelectedProviderId(
+        (prev) =>
+          prev ||
+          getPreferredProvider(providerRes.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)
+            ?.id ||
+          '',
+      )
+      setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? null)
+      void refreshTerminalActivity()
+    } catch (err) {
+      console.error('Failed to refresh session data', err)
+    }
+  }, [
+    getCurrentWorkspace,
+    listAgents,
+    listProviders,
+    listSessions,
+    listSidebarOrder,
+    listWorkspaces,
+    refreshTerminalActivity,
+  ])
+  const refreshCoordinator = useMemo(
+    () => createSingleFlightRefresh(performRefresh),
+    [performRefresh],
+  )
+  const refreshData = useCallback(() => refreshCoordinator.run(), [refreshCoordinator])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      refreshData().catch(console.error)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshData])
+
+  const applyQueueSnapshot = useCallback((snapshot: SessionGetQueueResponse) => {
+    queueRunningRef.current[snapshot.sessionId] = snapshot.running
+    setSessions((prev) => {
+      let changed = false
+      const next = prev.map((item) => {
+        if (item.id !== snapshot.sessionId) return item
+        if (snapshot.running) {
+          if (item.status === 'running') return item
+          changed = true
+          return { ...item, status: 'running' as const, updatedAt: new Date().toISOString() }
+        }
+        if (item.status !== 'running') return item
+        changed = true
+        return { ...item, status: 'idle' as const }
+      })
+      return changed ? next : prev
+    })
+    if (!snapshot.running) {
+      setSessionAgentStatuses((prev) => {
+        if (!(snapshot.sessionId in prev)) return prev
+        const { [snapshot.sessionId]: _, ...rest } = prev
+        return rest
+      })
+    }
+  }, [])
+
+  // Real-time session queue state updates
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) =>
+        applyQueueSnapshot(snapshot),
+      ) ?? (() => {})
+    )
+  }, [applyQueueSnapshot])
+
+  const activeRunningSessionId =
+    active != null &&
+    sessions.some((session) => session.id === active && session.status === 'running')
+      ? active
+      : null
+
+  // 历史会话可能残留持久化 running，却已没有主进程执行所有权。对当前活跃会话在
+  // 切换/聚焦时立即核对，并以 15s 低频兜底；后端 getQueueState 会先完成权威协调。
+  useEffect(() => {
+    if (!reportAppActivity || activeRunningSessionId == null) return
+    let disposed = false
+    let inFlight = false
+    const reconcile = async (): Promise<void> => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        // 轮询不走 useIpcInvoke：其 loading/error 状态会让整个 sidebar provider
+        // 每 15 秒无意义重渲染，直接调用 typed preload IPC 即可。
+        const snapshot = await window.spark.invoke('session:get-queue', {
+          sessionId: activeRunningSessionId,
+        })
+        if (
+          !disposed &&
+          snapshot.sessionId === activeRunningSessionId &&
+          typeof snapshot.running === 'boolean' &&
+          Array.isArray(snapshot.queuedTurns)
+        ) {
+          applyQueueSnapshot(snapshot)
+        }
+      } catch (error) {
+        console.warn('[session-queue] active session health check failed:', error)
+      } finally {
+        inFlight = false
+      }
+    }
+    void reconcile()
+    const interval = window.setInterval(() => void reconcile(), 15_000)
+    const onFocus = () => void reconcile()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void reconcile()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [activeRunningSessionId, applyQueueSnapshot, reportAppActivity])
+
+  // Real-time agent status tracking (waiting_permission / waiting_user)
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:session:agent-event', (event: AgentEvent) => {
+        if (event.type !== 'agent_status') return
+        const status = (event as { status: AgentStatusValue }).status
+        const sessionId = event.sessionId
+        const terminal =
+          status === 'idle' ||
+          status === 'completed' ||
+          status === 'cancelled' ||
+          status === 'error'
+        setSessions((prev) =>
+          prev.map((item) => {
+            if (item.id !== sessionId) return item
+            if (terminal) {
+              if (queueRunningRef.current[sessionId] === true) return item
+              return item.status === 'running' ? { ...item, status: 'idle' } : item
+            }
+            return item.status === 'running'
+              ? item
+              : { ...item, status: 'running', updatedAt: new Date().toISOString() }
+          }),
+        )
+        setSessionAgentStatuses((prev) => {
+          const current = prev[sessionId]
+          // Clear on terminal states
+          if (terminal) {
+            if (!current) return prev
+            const { [sessionId]: _, ...rest } = prev
+            return rest
+          }
+          // Only update if changed
+          if (current === status) return prev
+          return { ...prev, [sessionId]: status }
+        })
+        // Mark as unreviewed on completion (for the blue dot) — unless the user is already viewing it
+        if (status === 'completed' && viewedSessionRef.current !== sessionId) {
+          setUnreviewedCompleted((prev) => {
+            if (prev.has(sessionId)) return prev
+            const next = new Set(prev)
+            next.add(sessionId)
+            return next
+          })
+        }
+      }) ?? (() => {})
+    )
+  }, [])
+
+  // Real-time session title updates (async LLM rename after first turn)
+  useEffect(() => {
+    return (
+      window.spark?.on?.(
+        'stream:session:renamed',
+        (payload: { sessionId: string; title: string }) => {
+          setSessions((prev) =>
+            prev.map((item) =>
+              item.id === payload.sessionId ? { ...item, title: payload.title } : item,
+            ),
+          )
+        },
+      ) ?? (() => {})
+    )
+  }, [])
+
+  // Real-time session worktree state updates (agent-reported engine-level worktree):
+  // 更新列表内会话的 runtimeWorktree，驱动侧栏 worktree 徽标与环境信息面板分支覆盖。
+  useEffect(() => {
+    return (
+      window.spark?.on?.(
+        'stream:session:worktree-changed',
+        (payload: { sessionId: string; worktree: SessionRuntimeWorktree | null }) => {
+          setSessions((prev) =>
+            prev.map((item) =>
+              item.id === payload.sessionId ? { ...item, runtimeWorktree: payload.worktree } : item,
+            ),
+          )
+        },
+      ) ?? (() => {})
+    )
+  }, [])
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:session:created', ({ sessionId, session }) => {
+        const typedSessionId = sessionId as SessionId
+        if (session != null) upsertSessionInList(session)
+        else void refreshCoordinator.invalidate().catch(console.error)
+        if (!pendingCreatedWorkspaceIdsRef.current.has(typedSessionId)) return
+        const workspaceId = pendingCreatedWorkspaceIdsRef.current.get(typedSessionId) ?? null
+        pendingCreatedWorkspaceIdsRef.current.delete(typedSessionId)
+        setActiveWorkspaceId(workspaceId)
+      }) ?? (() => {})
+    )
+  }, [refreshCoordinator, upsertSessionInList])
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:terminal:event', (event: TerminalStreamEvent) => {
+        if (
+          event.type === 'created' ||
+          event.type === 'exit' ||
+          event.type === 'removed' ||
+          event.type === 'updated'
+        ) {
+          void refreshTerminalActivity()
+        }
+      }) ?? (() => {})
+    )
+  }, [refreshTerminalActivity])
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        // team 配置变化由 ChatView 单独回读会话 metadata；这里若也全量 refresh，
+        // 会把 activeWorkspaceId 再次用 workspace:get-current 覆盖，导致新建团队会话
+        // 后项目选择器偶发跳回旧项目。
+        if (event.scope === 'provider') {
+          void listProviders({})
+            .then((res) => {
+              setProviders(res.profiles)
+              setSelectedProviderId((prev) =>
+                res.profiles.some((profile) => profile.id === prev)
+                  ? prev
+                  : (getPreferredProvider(res.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)
+                      ?.id ?? ''),
+              )
+            })
+            .catch(console.error)
+        } else if (event.scope === 'agent') {
+          void listAgents({})
+            .then((res) => setAgents(Array.isArray(res.agents) ? res.agents : []))
+            .catch(console.error)
+        } else if (event.scope === 'scheduled-task') {
+          void refreshSessionScheduleSummaries()
+        }
+      }) ?? (() => {})
+    )
+  }, [listAgents, listProviders, refreshSessionScheduleSummaries])
+
+  useEffect(() => {
+    if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
+    else window.localStorage.removeItem(LAST_SESSION_KEY)
+  }, [active])
+
+  useEffect(() => {
+    if (!active) {
+      workspaceSyncedSessionRef.current = null
+      return
+    }
+    if (sessions.length === 0) return
+    const found = sessions.find((s) => s.id === active)
+    if (justCreatedSessionRef.current === active) {
+      // session:create 可能与一轮更早发起的 session:list 并行。Windows 上旧列表
+      // 较晚返回时仍不包含新会话，不能因此清空刚激活的 active；只有权威列表
+      // 真正包含该会话后，才结束这段保护期。
+      if (found == null) return
+      justCreatedSessionRef.current = null
+    }
+    const id = window.setTimeout(() => {
+      if (!found) {
+        workspaceSyncedSessionRef.current = null
+        setActive(null)
+      } else if (found.workspaceIds.length > 0) {
+        // 会话工作区可能是 worktree——UI 当前项目解析为其 base 项目
+        const first = found.workspaceIds[0]
+        const ws = first != null ? workspaces.find((w) => w.id === first) : undefined
+        const nextWorkspaceId = ws?.worktreeMeta?.baseWorkspaceId ?? first ?? null
+        const manualSelection = manualWorkspaceSelectionRef.current
+        const hasManualWorkspaceForActiveSession =
+          manualSelection?.sessionId === active && manualSelection.workspaceId === activeWorkspaceId
+        const shouldSyncWorkspace =
+          activeWorkspaceId == null ||
+          workspaceSyncedSessionRef.current !== active ||
+          !hasManualWorkspaceForActiveSession
+        workspaceSyncedSessionRef.current = active
+        if (shouldSyncWorkspace && nextWorkspaceId !== activeWorkspaceId) {
+          setActiveWorkspaceId(nextWorkspaceId)
+        }
+      }
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [active, activeWorkspaceId, sessions, workspaces])
+
+  const setActiveWorkspace = useCallback((workspaceId: string | null) => {
+    manualWorkspaceSelectionRef.current = {
+      sessionId: activeRef.current,
+      workspaceId,
+    }
+    setActiveWorkspaceId(workspaceId)
+  }, [])
+
+  const updateSessionInList = useCallback(
+    (sessionId: SessionId, patch: Partial<SessionSummary>) => {
+      setSessions((prev) =>
+        prev.map((item) => (item.id === sessionId ? { ...item, ...patch } : item)),
+      )
+      if (patch.status != null && patch.status !== 'running') {
+        setSessionAgentStatuses((prev) => {
+          if (!(sessionId in prev)) return prev
+          const { [sessionId]: _, ...rest } = prev
+          return rest
+        })
+      }
+    },
+    [],
+  )
+
+  const bumpSessionMessageCount = useCallback((sessionId: SessionId) => {
+    setSessions((prev) =>
+      prev.map((item) =>
+        item.id === sessionId
+          ? {
+              ...item,
+              turnCount: (item.turnCount ?? item.messageCount) + 1,
+              logicalMessageCount: (item.logicalMessageCount ?? item.messageCount) + 1,
+              messageCount: item.messageCount + 1,
+            }
+          : item,
+      ),
+    )
+  }, [])
+
+  const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
+    // 缓存的 id 可能已过期（「删除临时会话」会连 workspace 一起删掉），
+    // 只有仍存在于 workspaces 列表时才可直接复用，否则按名称重找或重建。
+    if (noProjectWorkspaceId && workspaces.some((w) => w.id === noProjectWorkspaceId)) {
+      return noProjectWorkspaceId
+    }
+    const existing = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
+    if (existing) {
+      setNoProjectWorkspaceId(existing.id)
+      return existing.id
+    }
+    try {
+      const { tempDir } = await getTempProjectDir({})
+      const rootPath = getNoProjectRootPath(tempDir)
+      const res = await openWorkspace({ create: { name: NO_PROJECT_WORKSPACE_NAME, rootPath } })
+      setNoProjectWorkspaceId(res.workspace.id)
+      setWorkspaces((prev) =>
+        prev.some((w) => w.id === res.workspace.id) ? prev : [...prev, res.workspace],
+      )
+      return res.workspace.id
+    } catch (err) {
+      console.error('Create no-project workspace failed', err)
+      toast.error(err instanceof Error ? err.message : t('session.noProjectCreateFailed'))
+      return null
+    }
+  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast, workspaces])
+
+  const handleNewSession = useCallback(
+    async (
+      workspaceId: string | null = activeWorkspaceId,
+      options: Record<string, unknown> = {},
+    ): Promise<SessionId | null> => {
+      try {
+        let wsId = workspaceId
+        // UI「当前项目」始终指向真实（base）项目；worktree 仅作为会话的后台 cwd，
+        // 不应成为可选项目，否则会污染项目选择器、默认项目、分支切换等。
+        let uiWorkspaceId = workspaceId
+        if (wsId == null) {
+          const noProjectId = await ensureNoProjectWorkspace()
+          if (noProjectId == null) return null
+          wsId = noProjectId
+          uiWorkspaceId = noProjectId
+          setActiveWorkspaceId(noProjectId)
+        }
+
+        // 勾选了「为本会话创建隔离 worktree」：创建 worktree workspace 并把会话绑定到它，
+        // 但 UI 当前项目仍保持 base（uiWorkspaceId 不变）。
+        // 注意放在 unusedSession 查找之前——新 worktree workspace 下必无可复用会话。
+        // 分支名：用户显式填写则用之；否则交给 main 进程调用 LLM 按任务文本生成。
+        if (options.createWorktree === true && wsId != null) {
+          const explicitBranch = nonEmptyString(options.worktreeBranch)
+          const taskText = nonEmptyString(options.worktreeTaskText)
+          const providerProfileId = nonEmptyString(options.providerProfileId)
+          const model = nonEmptyString(options.modelId)
+          try {
+            const res = await createWorktree({
+              baseWorkspaceId: wsId,
+              ...(explicitBranch ? { branch: explicitBranch } : {}),
+              ...(taskText ? { taskText } : {}),
+              ...(providerProfileId ? { providerProfileId } : {}),
+              ...(model ? { model } : {}),
+            })
+            // 会话绑定 worktree workspace；UI 当前项目保持 base（不切到 worktree）。
+            wsId = res.workspace.id
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : t('session.worktreeCreateFailed'))
+            return null
+          }
+        }
+
+        const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
+        if (providers.length === 0) setProviders(knownProviders)
+        const prefs = readComposerPrefs()
+        const optionAgentId = nonEmptyString(options.agentId)
+        const prefsAgentId = nonEmptyString(prefs.agentId)
+        const optionProviderProfileId = nonEmptyString(options.providerProfileId)
+        const selectedProvider = nonEmptyString(selectedProviderId)
+        const optionModelId = nonEmptyString(options.modelId)
+        const defaultAgent = agents.find((a) => a.isDefault && a.enabled)
+        const selectedAgent =
+          agents.find((a) => a.id === optionAgentId) ??
+          agents.find((a) => a.id === prefsAgentId) ??
+          defaultAgent ??
+          agents[0]
+        const preferredAdapter =
+          (options.agentAdapter as SessionAgentAdapter) ??
+          prefs.adapter ??
+          selectedAgent?.agentAdapter ??
+          DEFAULT_AGENT_ADAPTER
+        const selectedProviderProfile = knownProviders.find(
+          (p) => p.id === selectedProvider && isProviderCompatibleWithAdapter(p, preferredAdapter),
+        )
+        const hasConcreteCompatibleProvider = knownProviders.some(
+          (p) => !isAutoRouterProvider(p) && isProviderCompatibleWithAdapter(p, preferredAdapter),
+        )
+        const profile =
+          knownProviders.find((p) => p.id === optionProviderProfileId) ??
+          knownProviders.find(
+            (p) =>
+              p.id === selectedAgent?.providerProfileId &&
+              isProviderCompatibleWithAdapter(p, preferredAdapter),
+          ) ??
+          (selectedProviderProfile != null &&
+          (!isAutoRouterProvider(selectedProviderProfile) || !hasConcreteCompatibleProvider)
+            ? selectedProviderProfile
+            : undefined) ??
+          getPreferredProvider(knownProviders, prefs, preferredAdapter)
+        if (!profile) {
+          void requestConfirm({
+            title: t('session.needProvider.title'),
+            description: t('session.needProvider.desc'),
+            confirmText: t('common.ok'),
+          })
+          return null
+        }
+        const agentAdapter =
+          (options.agentAdapter as SessionAgentAdapter) ??
+          (selectedAgent?.providerProfileId === profile.id
+            ? selectedAgent?.agentAdapter
+            : undefined) ??
+          getProviderAdapterKind(profile)
+        // 新会话默认值优先回填「该 agent 上次被用户选择的」权限/推理强度（按 agentId 缓存）。
+        // 仅新会话创建路径生效；切换 agent 初始化与老会话初始化不受影响。
+        const agentRuntimePrefs =
+          selectedAgent != null ? readAgentRuntimePrefs(selectedAgent.id) : undefined
+        const permissionMode =
+          (options.permissionMode as SessionPermissionMode) ??
+          agentRuntimePrefs?.permissionMode ??
+          selectedAgent?.permissionMode ??
+          getValidPermissionMode(prefs.permissionMode, agentAdapter)
+        const modelId = resolveModelForProvider(profile, [
+          optionModelId,
+          selectedAgent?.providerProfileId === profile.id
+            ? nonEmptyString(selectedAgent.modelId)
+            : undefined,
+          prefs.providerProfileId === profile.id ? nonEmptyString(prefs.modelId) : undefined,
+        ])
+        const agentId =
+          optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
+        const reasoningEffort =
+          (options.reasoningEffort as SessionReasoningEffort) ??
+          agentRuntimePrefs?.reasoningEffort ??
+          prefs.reasoningEffort ??
+          'medium'
+        const fastMode = options.fastMode === true
+        const debugMode = typeof options.debugMode === 'boolean' ? options.debugMode : undefined
+        const cliSparkOverride =
+          options.cliSparkOverride === null
+            ? null
+            : (() => {
+                const value = options.cliSparkOverride
+                if (value == null || typeof value !== 'object') return undefined
+                const candidate = value as Partial<CliSparkOverride>
+                const providerProfileId = nonEmptyString(candidate.providerProfileId)
+                const modelId = nonEmptyString(candidate.modelId)
+                return providerProfileId != null && modelId != null
+                  ? { providerProfileId, modelId }
+                  : undefined
+              })()
+
+        // 如果该项目下有未使用的会话（没有消息、未归档），直接复用。
+        // 复用前必须把 provider/model/agent 等运行时同步到该空会话，否则 UI label
+        // 可能靠 draft/prefs 兜底显示为新模型，但实际 session 仍保留旧 provider/model。
+        const shouldReuseUnusedSession = options.forceNew !== true
+        const unusedSession = shouldReuseUnusedSession
+          ? sessions.find(
+              (s) =>
+                s.workspaceIds.includes(wsId!) &&
+                (s.turnCount ?? s.messageCount) === 0 &&
+                s.archivedAt == null,
+            )
+          : undefined
+        if (unusedSession) {
+          const updated = await updateSession({
+            sessionId: unusedSession.id,
+            providerProfileId: profile.id,
+            modelId: modelId ?? null,
+            agentId,
+            agentAdapter,
+            permissionMode,
+            ...(options.chatMode !== undefined
+              ? { chatMode: options.chatMode as SessionChatMode }
+              : {}),
+            reasoningEffort,
+            fastMode,
+            ...(debugMode !== undefined ? { debugMode } : {}),
+            ...(cliSparkOverride !== undefined ? { cliSparkOverride } : {}),
+          })
+          await persistTeamConfig({
+            sessionId: unusedSession.id,
+            config: resolveNewSessionTeamConfig(options.teamConfig, agentId),
+          })
+          updateSessionInList(unusedSession.id, updated.session)
+          if (options.activate !== false) setActive(unusedSession.id)
+          setSelectedProviderId(profile.id)
+          setActiveWorkspaceId(uiWorkspaceId)
+          writeComposerPrefs({
+            adapter: agentAdapter,
+            agentId,
+            providerProfileId: profile.id,
+            ...(modelId !== undefined ? { modelId } : {}),
+            permissionMode,
+            reasoningEffort,
+          })
+          // 复用「未使用」会话时，将其视为新会话：清空此前残留的输入草稿，
+          // 避免用户切换/新建会话时旧输入内容仍残留在输入框。
+          window.dispatchEvent(
+            new CustomEvent('spark:composer:reset-draft', {
+              detail: { sessionId: unusedSession.id },
+            }),
+          )
+          return unusedSession.id
+        }
+
+        const res = await createSession({
+          providerProfileId: profile.id,
+          ...(modelId !== undefined ? { modelId } : {}),
+          agentId,
+          agentAdapter,
+          permissionMode,
+          ...(options.chatMode !== undefined
+            ? { chatMode: options.chatMode as SessionChatMode }
+            : {}),
+          reasoningEffort,
+          fastMode,
+          ...(debugMode !== undefined ? { debugMode } : {}),
+          ...(cliSparkOverride !== undefined ? { cliSparkOverride } : {}),
+          workspaceId: wsId,
+        })
+        if (res.session != null) upsertSessionInList(res.session)
+        else void refreshCoordinator.invalidate().catch(console.error)
+        justCreatedSessionRef.current = res.sessionId
+        pendingCreatedWorkspaceIdsRef.current.set(res.sessionId, uiWorkspaceId)
+        // 团队模式下创建会话：在激活（setActive→ChatView 重新加载 team 配置）之前，
+        // 先把 team 配置落库到新会话 metadata。否则新会话被激活时 team:list-members 还读不到配置，
+        // 会按「无 team 配置 = 单 agent」回退，导致团队会话短暂显示成单 agent（worktree 等路径）。
+        const newTeamConfig = options.teamConfig as TeamModeConfig | undefined
+        if (newTeamConfig != null && newTeamConfig.enabled) {
+          await persistTeamConfig({ sessionId: res.sessionId, config: newTeamConfig }).catch(
+            () => {},
+          )
+        }
+        if (options.activate !== false) setActive(res.sessionId)
+        setSelectedProviderId(profile.id)
+        setActiveWorkspaceId(uiWorkspaceId)
+        // 新建会话时清空输入草稿（包括 'draft:new' 与该会话 id 的 bucket），
+        // 确保用户进入新会话时输入框是空的。
+        window.dispatchEvent(
+          new CustomEvent('spark:composer:reset-draft', {
+            detail: { sessionId: res.sessionId },
+          }),
+        )
+        writeComposerPrefs({
+          adapter: agentAdapter,
+          agentId,
+          providerProfileId: profile.id,
+          ...(modelId !== undefined ? { modelId } : {}),
+          permissionMode,
+          reasoningEffort,
+        })
+        return res.sessionId
+      } catch (err) {
+        console.error('Create session failed', err)
+        toast.error(err instanceof Error ? err.message : t('session.createFailed'))
+        return null
+      }
+    },
+    [
+      activeWorkspaceId,
+      agents,
+      createSession,
+      createWorktree,
+      ensureNoProjectWorkspace,
+      listProviders,
+      persistTeamConfig,
+      providers,
+      requestConfirm,
+      selectedProviderId,
+      sessions,
+      toast,
+      updateSession,
+      updateSessionInList,
+      upsertSessionInList,
+    ],
+  )
+
+  const handleForkSession = useCallback(
+    async (
+      sourceSessionId: SessionId,
+      anchorTurnId?: TurnId,
+      title?: string,
+    ): Promise<SessionId | null> => {
+      try {
+        const result = await forkSession({
+          sourceSessionId,
+          ...(anchorTurnId != null ? { anchorTurnId } : {}),
+          ...(title?.trim() ? { title: title.trim() } : {}),
+        })
+        upsertSessionInList(result.session)
+        justCreatedSessionRef.current = result.sessionId
+        setActive(result.sessionId)
+        const childWorkspaceId = result.session.workspaceIds[0] ?? null
+        setActiveWorkspace(childWorkspaceId)
+        if (result.sourceWasRunning) {
+          toast.info('源会话仍在运行；副本只复制到最近一个已完成轮次。')
+        }
+        window.dispatchEvent(
+          new CustomEvent('spark:composer:reset-draft', {
+            detail: { sessionId: result.sessionId },
+          }),
+        )
+        return result.sessionId
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '复制会话失败')
+        return null
+      }
+    },
+    [forkSession, setActive, setActiveWorkspace, toast, upsertSessionInList],
+  )
+
+  // 用户从系统托盘菜单触发「新建会话」：走 renderer 标准新建流程（含 worktree 复用 / 草稿清空等）。
+  // 主进程在发送事件前已展示主窗口，这里只负责新建。
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:tray:new-session', () => {
+        handleNewSession().catch((err) => console.error('Tray new-session failed', err))
+      }) ?? (() => {})
+    )
+  }, [handleNewSession])
+
+  // 用户从系统托盘菜单点击某条最近会话：刷新数据后切到该会话。
+  // 主进程在发送事件前已展示主窗口，这里只负责切换 active。
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:tray:open-session', (payload: { sessionId: string }) => {
+        refreshData()
+          .then(() => setActive(payload.sessionId as SessionId))
+          .catch((err) => console.error('Tray open-session failed', err))
+      }) ?? (() => {})
+    )
+  }, [refreshData])
+
+  // Search
+  const searchSessions = useCallback(
+    async (query: string): Promise<SessionSearchResult[]> => {
+      try {
+        const res = await searchSessionsRpc({ query, limit: 20 })
+        return res.results
+      } catch {
+        return []
+      }
+    },
+    [searchSessionsRpc],
+  )
+
+  // Project dialog
+  const applyProjectPath = useCallback(
+    (nextPath: string) => {
+      setProjectPath(nextPath)
+      if (!projectName.trim()) setProjectName(getBasename(nextPath))
+    },
+    [projectName],
+  )
+
+  const handlePickProjectPath = useCallback(async () => {
+    try {
+      const selected = await openDirectoryDialog({ title: t('project.chooseOrCreateFolder') })
+      if (selected.canceled || selected.filePath == null) return
+      applyProjectPath(selected.filePath)
+      setProjectNotice('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('project.choosePathFailed'))
+    }
+  }, [applyProjectPath, openDirectoryDialog, t, toast])
+
+  const handleDropProjectPath = useCallback(
+    async (path: string) => {
+      const nextPath = path.trim()
+      if (!nextPath) return
+      try {
+        const { kind } = await statFileKind({ path: nextPath })
+        if (kind !== 'directory') {
+          toast.warning(t('sidebar.project.dropFile'))
+          return
+        }
+        applyProjectPath(nextPath)
+        setProjectNotice('')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('sidebar.project.dropFailed'))
+      }
+    },
+    [applyProjectPath, statFileKind, t, toast],
+  )
+
+  const handleCreateProject = useCallback(
+    async (useTempDir = false) => {
+      let rootPath = projectPath.trim()
+      const name = projectName.trim() || getBasename(rootPath) || t('project.newProject')
+      if (useTempDir || !rootPath) {
+        try {
+          const { tempDir } = await getTempProjectDir({})
+          const timestamp = Date.now()
+          const safeName = name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') || 'project'
+          rootPath = `${tempDir}/${safeName}-${timestamp}`
+        } catch (err) {
+          console.error('Failed to get temp dir', err)
+          toast.error(t('project.tempDirFailed'))
+          return
+        }
+      }
+      try {
+        setProjectNotice('')
+        const res = await openWorkspace({ create: { name, rootPath } })
+        setProjectDialog(null)
+        setProjectName('')
+        setProjectPath('')
+        setActiveWorkspaceId(res.workspace.id)
+        toast.success(t('project.createdAt', { path: rootPath }))
+        await handleNewSession(res.workspace.id)
+        await refreshData()
+      } catch (err) {
+        console.error('Create project failed', err)
+        toast.error(err instanceof Error ? err.message : t('project.createFailed'))
+      }
+    },
+    [
+      getTempProjectDir,
+      handleNewSession,
+      openWorkspace,
+      projectName,
+      projectPath,
+      refreshData,
+      toast,
+    ],
+  )
+
+  const handleAddDroppedProjects = useCallback(
+    async (paths: string[]) => {
+      try {
+        const summary = await addProjectsFromDroppedPaths(paths, {
+          existingRootPaths: workspaces.map((workspace) => workspace.rootPath),
+          statFileKind,
+          openWorkspace,
+          refreshData,
+          setActiveWorkspace,
+        })
+        const message = formatDroppedProjectSummary(summary)
+        if (summary.added > 0) toast.success(message)
+        else if (summary.failed > 0) toast.error(message)
+        else toast.info(message)
+      } catch (err) {
+        console.error('Add dropped projects failed', err)
+        toast.error(err instanceof Error ? err.message : '拖拽添加项目失败')
+      }
+    },
+    [openWorkspace, refreshData, setActiveWorkspace, statFileKind, toast, workspaces],
+  )
+
+  // Project actions
+  const handleRenameProject = useCallback(
+    async (workspace: WorkspaceInfo) => {
+      const name = (
+        await requestPrompt({
+          title: t('project.renameTitle'),
+          value: workspace.name,
+          placeholder: t('project.namePlaceholder'),
+          confirmText: t('common.rename'),
+        })
+      )?.trim()
+      if (!name || name === workspace.name) return
+      try {
+        await updateWorkspace({ workspaceId: workspace.id, name })
+        await refreshData()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.renameFailed'))
+      }
+    },
+    [refreshData, requestPrompt, toast, updateWorkspace],
+  )
+
+  const handleToggleProjectPinned = useCallback(
+    async (workspace: WorkspaceInfo) => {
+      try {
+        await updateWorkspace({ workspaceId: workspace.id, pinned: workspace.pinnedAt == null })
+        await refreshData()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.pinUpdateFailed'))
+      }
+    },
+    [refreshData, toast, updateWorkspace],
+  )
+
+  const handleArchiveProject = useCallback(
+    async (workspace: WorkspaceInfo) => {
+      const confirmed = await requestConfirm({
+        title: t('project.archiveTitle', { name: workspace.name }),
+        description: t('project.archiveDesc'),
+        confirmText: t('common.archive'),
+      })
+      if (!confirmed) return
+      try {
+        await updateWorkspace({ workspaceId: workspace.id, archived: true })
+        // Sessions of an archived project leave the sidebar but remain in session:list,
+        // so clear their unread marks here; otherwise the Dock badge keeps counting them
+        // while they can no longer be viewed (and consumed) from inside the app.
+        setUnreviewedCompleted((prev) => {
+          let changed = false
+          const next = new Set(prev)
+          for (const session of sessions) {
+            if (session.workspaceIds.includes(workspace.id) && next.delete(session.id)) {
+              changed = true
+            }
+          }
+          return changed ? next : prev
+        })
+        if (activeWorkspaceId === workspace.id) {
+          setActiveWorkspaceId(null)
+          setActive(null)
+        }
+        await refreshData()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.archiveFailed'))
+      }
+    },
+    [activeWorkspaceId, refreshData, requestConfirm, sessions, toast, updateWorkspace],
+  )
+
+  const handleDeleteProject = useCallback(
+    async (workspace: WorkspaceInfo, options?: SessionGroupActionCopy) => {
+      const confirmed = await requestConfirm({
+        title: options?.title ?? t('common.confirm'),
+        description: options?.description ?? t('project.deleteDesc', { name: workspace.name }),
+        confirmText: options?.confirmText ?? t('common.delete'),
+        danger: true,
+      })
+      if (!confirmed) return
+      const previousWorkspaces = workspaces
+      const previousSessions = sessions
+      const nextSessions = sessions.filter(
+        (session) => !session.workspaceIds.includes(workspace.id),
+      )
+      const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
+      const shouldClearActive =
+        activeWorkspaceId === workspace.id ||
+        (active != null &&
+          previousSessions.some(
+            (session) => session.id === active && session.workspaceIds.includes(workspace.id),
+          ))
+      try {
+        setWorkspaces(nextWorkspaces)
+        setSessions(nextSessions)
+        if (shouldClearActive) {
+          setActiveWorkspaceId(null)
+          setActive(null)
+        }
+        const res = await deleteWorkspace({ workspaceId: workspace.id })
+        if (!res.deleted) {
+          throw new Error(t('project.deleteFailed'))
+        }
+        void refreshData()
+      } catch (err) {
+        setWorkspaces(previousWorkspaces)
+        setSessions(previousSessions)
+        if (shouldClearActive) {
+          setActiveWorkspaceId(activeWorkspaceId)
+          setActive(active)
+        }
+        toast.error(err instanceof Error ? err.message : t('project.deleteFailed'))
+      }
+    },
+    [
+      active,
+      activeWorkspaceId,
+      deleteWorkspace,
+      refreshData,
+      requestConfirm,
+      sessions,
+      t,
+      toast,
+      workspaces,
+    ],
+  )
+
+  const handleOpenProjectFolder = useCallback(
+    async (workspace: WorkspaceInfo) => {
+      try {
+        await openWorkspaceFolder({ workspaceId: workspace.id })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.openFolderFailed'))
+      }
+    },
+    [openWorkspaceFolder, toast],
+  )
+
+  const handleOpenWorkspace = useCallback(
+    async (workspace: WorkspaceInfo) => {
+      try {
+        await openWorkspace({ rootPath: workspace.rootPath })
+        return true
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.openFailed'))
+        return false
+      }
+    },
+    [openWorkspace, toast],
+  )
+
+  // Session actions
+  const handleToggleSessionPinned = useCallback(
+    async (session: SessionSummary) => {
+      const existing = pinMutationsRef.current.get(session.id)
+      if (existing) {
+        existing.desiredPinned = !existing.desiredPinned
+        updateSessionInList(session.id, {
+          pinnedAt: existing.desiredPinned ? new Date().toISOString() : null,
+        })
+        // 乐观搬运 id 到目标区头部；幂等（先两边都删再 unshift），连点安全。
+        moveSessionOrderZoneRef.current?.(
+          session.id,
+          resolveSessionGroupId(session, workspaces),
+          existing.desiredPinned,
+        )
+        return
+      }
+
+      const state = {
+        desiredPinned: session.pinnedAt == null,
+        confirmedPinnedAt: session.pinnedAt,
+        running: true,
+      }
+      pinMutationsRef.current.set(session.id, state)
+      updateSessionInList(session.id, {
+        pinnedAt: state.desiredPinned ? new Date().toISOString() : null,
+      })
+      moveSessionOrderZoneRef.current?.(
+        session.id,
+        resolveSessionGroupId(session, workspaces),
+        state.desiredPinned,
+      )
+
+      while (state.running) {
+        const requestedPinned = state.desiredPinned
+        try {
+          const updated = await updateSession({ sessionId: session.id, pinned: requestedPinned })
+          state.confirmedPinnedAt = updated.session.pinnedAt
+          if (state.desiredPinned === requestedPinned) {
+            state.running = false
+            pinMutationsRef.current.delete(session.id)
+            updateSessionInList(session.id, updated.session)
+          }
+        } catch (err) {
+          const confirmedPinned = state.confirmedPinnedAt != null
+          if (state.desiredPinned === requestedPinned || state.desiredPinned === confirmedPinned) {
+            state.running = false
+            pinMutationsRef.current.delete(session.id)
+            updateSessionInList(session.id, { pinnedAt: state.confirmedPinnedAt })
+          }
+          toast.error(err instanceof Error ? err.message : t('session.pinUpdateFailed'))
+        }
+      }
+    },
+    [toast, updateSession, updateSessionInList, workspaces],
+  )
+
+  // 纯保存逻辑：弹窗改名与悬浮卡 inline 改名共用，避免两处重复实现
+  const commitSessionTitle = useCallback(
+    async (session: SessionSummary, title: string) => {
+      const trimmed = title.trim()
+      if (!trimmed || trimmed === (session.title ?? '')) return
+      try {
+        const updated = await updateSession({ sessionId: session.id, title: trimmed })
+        updateSessionInList(session.id, updated.session)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('session.renameFailed'))
+      }
+    },
+    [t, toast, updateSession, updateSessionInList],
+  )
+
+  const handleRenameSession = useCallback(
+    async (session: SessionSummary) => {
+      const title = (
+        await requestPrompt({
+          title: t('session.renameTitle'),
+          value: session.title ?? '',
+          placeholder: t('session.titlePlaceholder'),
+          confirmText: t('common.rename'),
+        })
+      )?.trim()
+      if (!title) return
+      await commitSessionTitle(session, title)
+    },
+    [commitSessionTitle, requestPrompt, t],
+  )
+
+  const handleDeleteSession = useCallback(
+    async (session: SessionSummary) => {
+      // 运行中的会话删除后端会强制终止执行器（可能打断正在改文件的工具调用），
+      // 这一后果必须在确认框里说清楚，不能和删除一个空闲会话共用同一句话。
+      const running = isSessionActive(session.id, sessionAgentStatuses)
+      const confirmed = await requestConfirm({
+        title: t('common.confirm'),
+        description: running
+          ? t('session.deleteRunningDesc', { title: session.title ?? t('session.untitled') })
+          : t('session.deleteDesc', { title: session.title ?? t('session.untitled') }),
+        confirmText: t('common.delete'),
+        danger: true,
+      })
+      if (!confirmed) return
+      // 若该会话工作区是 worktree，额外询问是否清理 worktree 及其分支
+      const wsId = session.workspaceIds[0]
+      const ws = wsId != null ? workspaces.find((w) => w.id === wsId) : undefined
+      let cleanupWorktree = false
+      if (ws?.worktreeMeta != null) {
+        cleanupWorktree = await requestConfirm({
+          title: t('worktree.cleanupTitle'),
+          description: t('worktree.cleanupDesc', { branch: ws.worktreeMeta.branch }),
+          confirmText: t('worktree.deleteTogether'),
+          danger: true,
+        })
+      }
+      const previousSessions = sessions
+      const previousWorkspaces = workspaces
+      const nextSessions = sessions.filter((item) => item.id !== session.id)
+      const shouldRemoveWorkspace =
+        cleanupWorktree &&
+        wsId != null &&
+        sessions.filter((item) => item.workspaceIds.includes(wsId)).length <= 1
+      const nextWorkspaces =
+        shouldRemoveWorkspace && wsId != null
+          ? workspaces.filter((item) => item.id !== wsId)
+          : workspaces
+      const shouldClearActiveWorkspace =
+        wsId != null && activeWorkspaceId === wsId && shouldRemoveWorkspace
+      try {
+        setSessions(nextSessions)
+        if (shouldRemoveWorkspace) setWorkspaces(nextWorkspaces)
+        if (active === session.id) setActive(null)
+        if (shouldClearActiveWorkspace) setActiveWorkspaceId(null)
+        await deleteSession({ sessionId: session.id })
+        setUnreviewedCompleted((prev) => {
+          if (!prev.has(session.id)) return prev
+          const next = new Set(prev)
+          next.delete(session.id)
+          return next
+        })
+        if (cleanupWorktree && wsId != null) {
+          await removeWorktree({ workspaceId: wsId, force: true }).catch((err) => {
+            toast.error(err instanceof Error ? err.message : t('worktree.deleteFailed'))
+          })
+        }
+      } catch (err) {
+        setSessions(previousSessions)
+        if (shouldRemoveWorkspace) setWorkspaces(previousWorkspaces)
+        if (active === session.id) setActive(active)
+        if (shouldClearActiveWorkspace) setActiveWorkspaceId(activeWorkspaceId)
+        toast.error(err instanceof Error ? err.message : t('session.deleteFailed'))
+      }
+    },
+    [
+      active,
+      activeWorkspaceId,
+      deleteSession,
+      removeWorktree,
+      requestConfirm,
+      sessionAgentStatuses,
+      sessions,
+      t,
+      toast,
+      workspaces,
+    ],
+  )
+
+  const handleClearSessions = useCallback(
+    async (sessions: SessionSummary[], options?: SessionGroupActionCopy) => {
+      const total = sessions.length
+      const targets = sessions.filter((s) => !isSessionActive(s.id, sessionAgentStatuses))
+      const skipped = total - targets.length
+      if (targets.length === 0) {
+        toast.info(t('session.clearAllNone'))
+        return
+      }
+      const confirmed = await requestConfirm({
+        title: options?.title ?? t('common.confirm'),
+        description: options?.description ?? t('session.clearAllDesc', { count: targets.length }),
+        confirmText: options?.confirmText ?? t('session.clearAllConfirm'),
+        danger: true,
+      })
+      if (!confirmed) return
+      const results = await Promise.allSettled(
+        targets.map((s) => deleteSession({ sessionId: s.id })),
+      )
+      const failed = results.filter((r) => r.status === 'rejected').length
+      const deletedIds = new Set<string>()
+      targets.forEach((target, i) => {
+        if (results[i]?.status === 'fulfilled') deletedIds.add(target.id)
+      })
+      if (active != null && deletedIds.has(active)) setActive(null)
+      setSessions((current) => current.filter((session) => !deletedIds.has(session.id)))
+      setUnreviewedCompleted((prev) => {
+        if (prev.size === 0) return prev
+        let changed = false
+        const next = new Set(prev)
+        for (const id of deletedIds) {
+          if (next.delete(id)) changed = true
+        }
+        return changed ? next : prev
+      })
+      if (failed === 0) {
+        toast.success(t('session.clearAllDone', { count: targets.length }))
+      } else if (failed === targets.length) {
+        toast.error(t('session.clearAllFailed'))
+      } else {
+        toast.warning(t('session.clearAllPartial', { failed }))
+      }
+      if (skipped > 0) {
+        toast.info(t('session.clearAllSkipped', { count: skipped }))
+      }
+    },
+    [active, deleteSession, requestConfirm, sessionAgentStatuses, toast],
+  )
+
+  const handleArchiveSession = useCallback(
+    async (session: SessionSummary) => {
+      try {
+        await updateSession({ sessionId: session.id, archived: true })
+        setSessions((current) => current.filter((item) => item.id !== session.id))
+        setUnreviewedCompleted((prev) => {
+          if (!prev.has(session.id)) return prev
+          const next = new Set(prev)
+          next.delete(session.id)
+          return next
+        })
+
+        let undoStarted = false
+        let archiveToastId = ''
+        archiveToastId = toast.success(t('session.archived'), {
+          actions: [
+            {
+              label: t('common.undo'),
+              onClick: () => {
+                if (undoStarted) return
+                undoStarted = true
+                if (archiveToastId) optionalToast?.dismiss(archiveToastId)
+                void (async () => {
+                  try {
+                    const restored = await updateSession({ sessionId: session.id, archived: false })
+                    upsertSessionInList(restored.session)
+                    toast.success(t('session.archiveUndoSuccess'))
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : t('session.archiveUndoFailed'))
+                  }
+                })()
+              },
+            },
+          ],
+        })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('session.archiveFailed'))
+      }
+    },
+    [optionalToast, t, toast, updateSession, upsertSessionInList],
+  )
+
+  const handleOpenSessionFolder = useCallback(
+    async (session: SessionSummary) => {
+      const workspaceId = session.workspaceIds[0]
+      if (workspaceId == null) {
+        return // no workspace associated
+      }
+      try {
+        await openWorkspaceFolder({ workspaceId })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('project.openFolderFailed'))
+      }
+    },
+    [openWorkspaceFolder, toast],
+  )
+
+  const handleReorderProjects = useCallback(
+    async (projectIds: string[]) => {
+      const mutation = projectOrderMutationRef.current + 1
+      projectOrderMutationRef.current = mutation
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.projectIds
+        return { ...current, projectIds }
+      })
+      try {
+        await projectOrderWriteQueueRef.current.run(async () => {
+          await updateSidebarOrder({ scope: 'projects', itemIds: projectIds })
+        })
+      } catch (err) {
+        if (projectOrderMutationRef.current === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (projectOrderMutationRef.current !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            projectIds: persisted == null ? previous : normalizeSidebarOrder(persisted).projectIds,
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveProjectFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
+  const handleReorderSessions = useCallback(
+    async (projectId: string, sessionIds: string[]) => {
+      const mutation = (sessionOrderMutationRef.current.get(projectId) ?? 0) + 1
+      sessionOrderMutationRef.current.set(projectId, mutation)
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.sessionIdsByProject[projectId] ?? []
+        return {
+          ...current,
+          sessionIdsByProject: { ...current.sessionIdsByProject, [projectId]: sessionIds },
+        }
+      })
+      try {
+        let queue = sessionOrderWriteQueuesRef.current.get(projectId)
+        if (queue == null) {
+          queue = new SerialTaskQueue()
+          sessionOrderWriteQueuesRef.current.set(projectId, queue)
+        }
+        await queue.run(async () => {
+          await updateSidebarOrder({ scope: 'sessions', projectId, itemIds: sessionIds })
+        })
+      } catch (err) {
+        if (sessionOrderMutationRef.current.get(projectId) === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (sessionOrderMutationRef.current.get(projectId) !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            sessionIdsByProject: {
+              ...current.sessionIdsByProject,
+              [projectId]:
+                persisted == null
+                  ? previous
+                  : (normalizeSidebarOrder(persisted).sessionIdsByProject[projectId] ?? []),
+            },
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveSessionFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
+  const handleReorderPinnedSessions = useCallback(
+    async (projectId: string, sessionIds: string[]) => {
+      const mutation = (pinnedSessionOrderMutationRef.current.get(projectId) ?? 0) + 1
+      pinnedSessionOrderMutationRef.current.set(projectId, mutation)
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.pinnedSessionIdsByProject[projectId] ?? []
+        return {
+          ...current,
+          pinnedSessionIdsByProject: {
+            ...current.pinnedSessionIdsByProject,
+            [projectId]: sessionIds,
+          },
+        }
+      })
+      try {
+        let queue = pinnedSessionOrderWriteQueuesRef.current.get(projectId)
+        if (queue == null) {
+          queue = new SerialTaskQueue()
+          pinnedSessionOrderWriteQueuesRef.current.set(projectId, queue)
+        }
+        await queue.run(async () => {
+          await updateSidebarOrder({ scope: 'pinned-sessions', projectId, itemIds: sessionIds })
+        })
+      } catch (err) {
+        if (pinnedSessionOrderMutationRef.current.get(projectId) === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (pinnedSessionOrderMutationRef.current.get(projectId) !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            pinnedSessionIdsByProject: {
+              ...current.pinnedSessionIdsByProject,
+              [projectId]:
+                persisted == null
+                  ? previous
+                  : (normalizeSidebarOrder(persisted).pinnedSessionIdsByProject[projectId] ?? []),
+            },
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveSessionFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
+  /**
+   * toggle 置顶时在 pinned / normal 两套手动顺序之间幂等搬运 id：
+   * 先从两个数组都移除该 id，再 unshift 到目标区头部（新置顶/新取消置顶都排该区最前）。
+   * 持久化交给两个 reorder handler 各自的乐观 + SerialTaskQueue + 回滚流程。
+   */
+  const moveSessionOrderZone = useCallback(
+    (sessionId: string, projectId: string | null, toPinned: boolean) => {
+      if (projectId == null) return
+      const normal = (sidebarOrder.sessionIdsByProject[projectId] ?? []).filter(
+        (id) => id !== sessionId,
+      )
+      const pinned = (sidebarOrder.pinnedSessionIdsByProject[projectId] ?? []).filter(
+        (id) => id !== sessionId,
+      )
+      if (toPinned) pinned.unshift(sessionId)
+      else normal.unshift(sessionId)
+      void handleReorderSessions(projectId, normal)
+      void handleReorderPinnedSessions(projectId, pinned)
+    },
+    [handleReorderPinnedSessions, handleReorderSessions, sidebarOrder],
+  )
+  moveSessionOrderZoneRef.current = moveSessionOrderZone
+
+  // Computed
+  const projectGroups = useMemo(
+    () => buildProjectGroups(workspaces, sessions),
+    [sessions, workspaces],
+  )
+
+  const noProjectWorkspace = useMemo(
+    () => workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null,
+    [workspaces],
+  )
+
+  const noProjectSessions = useMemo(
+    () =>
+      noProjectWorkspace
+        ? sessions.filter((s) => s.workspaceIds.includes(noProjectWorkspace.id))
+        : [],
+    [noProjectWorkspace, sessions],
+  )
+
+  const ungroupedSessions = useMemo(
+    () => sessions.filter((s) => s.workspaceIds.length === 0),
+    [sessions],
+  )
+
+  const value = useMemo<SessionSidebarCtx>(
+    () => ({
+      sessions,
+      workspaces,
+      providers,
+      agents,
+      activeSessionId: active,
+      activeWorkspaceId,
+      setActiveSession: setActive,
+      revealSessionId,
+      revealSession,
+      clearRevealSession,
+      setActiveWorkspace,
+      sessionScheduleTargetId,
+      openSessionSchedule,
+      closeSessionSchedule,
+      sessionScheduleSummaries,
+      refreshSessionScheduleSummaries,
+      sessionAgentStatuses,
+      sessionTerminalActivity,
+      unreviewedCompletedSessions: unreviewedCompleted,
+      projectGroups,
+      noProjectWorkspace,
+      noProjectSessions,
+      ungroupedSessions,
+      sidebarOrder,
+      refreshData,
+      updateSessionInList,
+      bumpSessionMessageCount,
+      handleNewSession,
+      handleForkSession,
+      handleToggleSessionPinned,
+      commitSessionTitle,
+      handleRenameSession,
+      handleDeleteSession,
+      handleClearSessions,
+      handleArchiveSession,
+      handleOpenSessionFolder,
+      handleToggleProjectPinned,
+      handleRenameProject,
+      handleArchiveProject,
+      handleDeleteProject,
+      handleOpenProjectFolder,
+      handleOpenWorkspace,
+      handleReorderProjects,
+      handleReorderSessions,
+      handleReorderPinnedSessions,
+      handleCreateProject,
+      handleAddDroppedProjects,
+      handlePickProjectPath,
+      handleDropProjectPath,
+      projectDialog,
+      setProjectDialog,
+      projectName,
+      setProjectName,
+      projectPath,
+      setProjectPath,
+      projectNotice,
+      searchSessions,
+      ensureNoProjectWorkspace,
+      justCreatedSessionRef,
+      selectedProviderId,
+      setSelectedProviderId,
+      historyImportOpen,
+      setHistoryImportOpen,
+    }),
+    [
+      sessions,
+      workspaces,
+      providers,
+      agents,
+      active,
+      revealSessionId,
+      revealSession,
+      clearRevealSession,
+      activeWorkspaceId,
+      sessionScheduleTargetId,
+      openSessionSchedule,
+      closeSessionSchedule,
+      sessionScheduleSummaries,
+      refreshSessionScheduleSummaries,
+      setActiveWorkspace,
+      sessionAgentStatuses,
+      sessionTerminalActivity,
+      unreviewedCompleted,
+      projectGroups,
+      noProjectWorkspace,
+      noProjectSessions,
+      ungroupedSessions,
+      sidebarOrder,
+      refreshData,
+      updateSessionInList,
+      bumpSessionMessageCount,
+      handleNewSession,
+      handleToggleSessionPinned,
+      commitSessionTitle,
+      handleRenameSession,
+      handleDeleteSession,
+      handleClearSessions,
+      handleArchiveSession,
+      handleOpenSessionFolder,
+      handleToggleProjectPinned,
+      handleRenameProject,
+      handleArchiveProject,
+      handleDeleteProject,
+      handleOpenProjectFolder,
+      handleOpenWorkspace,
+      handleReorderProjects,
+      handleReorderSessions,
+      handleReorderPinnedSessions,
+      handleCreateProject,
+      handleAddDroppedProjects,
+      handlePickProjectPath,
+      handleDropProjectPath,
+      projectDialog,
+      projectName,
+      projectPath,
+      projectNotice,
+      searchSessions,
+      ensureNoProjectWorkspace,
+      selectedProviderId,
+      historyImportOpen,
+    ],
+  )
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}
+
+export function useSessionSidebar(): SessionSidebarCtx {
+  const v = useContext(Ctx)
+  if (!v) throw new Error('useSessionSidebar must be inside <SessionSidebarProvider>')
+  return v
+}

@@ -1,0 +1,545 @@
+// 子应用多 surface 宿主（overlay / panel）
+//
+// 层级治理：应用浮层固定 z-index 900——高于内容区普通流，
+// 低于 antd Modal/Message（≥1000）、Git 面板（1200+）、语音 UI（10000）。
+// 禁止在卡片内部再写更大 z-index。
+.subapp-surface-layer {
+  position: fixed;
+  inset: 0;
+  // 容器不吃事件，事件归各浮层/面板自己
+  pointer-events: none;
+  z-index: 900;
+}
+
+// dock/浮窗卡片/胶囊都悬浮在内容区之上，可能压住 macOS 系统拖拽条
+// （MacWindowDragHeader、统一侧板 tab 栏等，均 -webkit-app-region: drag）。
+// app-region 只认显式声明、视觉覆盖不会自动抵消拖拽区：不整体 no-drag 的话
+// dock 头部关闭按钮的点击会被系统窗口拖拽吞掉，双击还会触发窗口最大化；
+// 浮窗头部是卡片自身的拖动把手，被劫持成窗口拖拽同样会失效。
+// 前提：app-region 按 DOM 文档顺序合成、重叠区域后声明者覆盖先声明者。
+// 本组 no-drag 要生效，.subapp-surface-layer 必须渲染在 Provider children
+// 之后（即全部 drag 区域之后），见 SubAppSurfaceHost.tsx 渲染层注释。
+.subapp-panel-dock,
+.subapp-overlay-card,
+.subapp-surface-launcher {
+  -webkit-app-region: no-drag;
+}
+
+// ── overlay：带公用头部的自由浮窗 ────────────────────────────
+// 窗口矩形（left/top/width/height）由组件按持久化几何内联写入；头部是
+// 宿主提供的公用条（应用标识 + 关闭 + 拖动把手），应用本体（iframe）铺满
+// 头部之下。容器只负责边界裁切与悬浮层级辨识（阴影自带 1px 描边环）；
+// 圆角跟随主题设置（--r-lg 由 useAppearance 动态覆盖）。
+.subapp-overlay-card {
+  pointer-events: auto;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-lg, 12px);
+  box-shadow: var(--shadow-lg);
+}
+
+// 公用头部：不展示应用名/图标（应用自带标题，避免重复），仅承载关闭
+// 按钮并兼任窗口拖动把手（grab 光标），扁平态无分隔线
+.subapp-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+
+    &:hover {
+      opacity: 1;
+      background: rgba(128, 128, 128, 0.18);
+    }
+  }
+}
+
+.subapp-overlay-runner {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+// 四个拉伸入口：右缘加宽、下缘加高，右下角和左上角同时改宽高。
+// 边缘手柄 hover 高亮主色细线；角手柄是对角双杠图标，hover 应用时浮现。
+.subapp-overlay-resize {
+  position: absolute;
+  touch-action: none;
+  z-index: 2;
+
+  &[data-dir='e'] {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      right: 2px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: transparent;
+      transition: background 0.15s ease;
+    }
+
+    &:hover::after,
+    &:active::after {
+      background: var(--primary, #6366f1);
+    }
+  }
+
+  &[data-dir='s'] {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 6px;
+    cursor: ns-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: transparent;
+      transition: background 0.15s ease;
+    }
+
+    &:hover::after,
+    &:active::after {
+      background: var(--primary, #6366f1);
+    }
+  }
+
+  &[data-dir='se'] {
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      width: 9px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--text-muted, #9ca3af);
+      opacity: 0;
+      transition:
+        opacity 0.15s ease,
+        background 0.15s ease;
+    }
+
+    &::before {
+      right: 3px;
+      bottom: 6px;
+      transform: rotate(-45deg);
+    }
+
+    &::after {
+      right: 3px;
+      bottom: 3px;
+      transform: rotate(-45deg);
+    }
+
+    .subapp-overlay-card:hover &,
+    &:active {
+      &::before,
+      &::after {
+        opacity: 0.9;
+      }
+    }
+
+    &:active {
+      &::before,
+      &::after {
+        background: var(--primary, #6366f1);
+      }
+    }
+  }
+
+  &[data-dir='nw'] {
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      width: 9px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--text-muted, #9ca3af);
+      opacity: 0;
+      transition:
+        opacity 0.15s ease,
+        background 0.15s ease;
+    }
+
+    &::before {
+      top: 3px;
+      left: 3px;
+      transform: rotate(-45deg);
+    }
+
+    &::after {
+      top: 6px;
+      left: 3px;
+      transform: rotate(-45deg);
+    }
+
+    .subapp-overlay-card:hover &,
+    &:active {
+      &::before,
+      &::after {
+        opacity: 0.9;
+      }
+    }
+
+    &:active {
+      &::before,
+      &::after {
+        background: var(--primary, #6366f1);
+      }
+    }
+  }
+}
+
+// ── panel：主内容区右侧 dock ───────────────────────────────
+.subapp-panel-dock {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #303030);
+  border-left: 1px solid var(--border, #3d3d3d);
+  box-shadow:
+    -10px 0 20px -12px rgba(0, 0, 0, 0.18),
+    -1px 0 4px -2px rgba(0, 0, 0, 0.08);
+}
+
+// 左缘宽度拖拽条：hover/拖拽时高亮，拖拽期间禁用文本选择。
+// 拖拽条左移 3px 跨在边框上，命中区一半在面板外、一半在内，
+// 高亮线贴住面板左缘（覆盖 border-left）
+.subapp-panel-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+  transition: background 0.15s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: transparent;
+    transition: background 0.15s ease;
+  }
+
+  &:hover,
+  &:active {
+    &::after {
+      background: var(--primary, #6366f1);
+    }
+  }
+}
+
+.subapp-panel-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  // border-bottom: 1px solid var(--divider, #efede8);
+
+  button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.7;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+
+    &:hover {
+      opacity: 1;
+      background: rgba(128, 128, 128, 0.18);
+    }
+  }
+}
+
+.subapp-panel-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subapp-panel-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.subapp-panel-runner {
+  height: 100%;
+}
+
+// ── 统一侧面板内的 panel 子应用内容（UnifiedSubAppPanel）───────────
+.subapp-unified-runner {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.subapp-unified-panel-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted, var(--text));
+  text-align: center;
+  overflow: auto;
+}
+
+.subapp-unified-panel-state.is-error {
+  color: var(--danger, #e5484d);
+  word-break: break-all;
+}
+
+// ── 统一侧面板菜单：dock 头部 tab 切换侧板应用 ───────────────
+.subapp-panel-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--divider, #efede8);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.subapp-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 120px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+
+  &:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.14);
+  }
+
+  &.is-active {
+    opacity: 1;
+    border-color: var(--primary, #6366f1);
+    background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.subapp-panel-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── 右下角胶囊启动器：浮层/侧板应用的统一全局入口 ────────────
+// 默认锚定右下角；用户拖动后由组件内联写 right/bottom（同为右下锚定，
+// 面板展开向上生长时胶囊保持不动），位置持久化到 localStorage。
+.subapp-surface-launcher {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.subapp-launcher-capsule {
+  pointer-events: auto;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+  touch-action: none;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.subapp-launcher-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary, #6366f1);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.subapp-launcher-panel {
+  pointer-events: auto;
+  width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  border-radius: var(--r-lg, 12px);
+  border: 0;
+  background: var(--panel, #303030);
+  color: var(--text, #e4e4e7);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+}
+
+.subapp-launcher-group + .subapp-launcher-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider, #efede8);
+}
+
+.subapp-launcher-group-title {
+  font-size: 11px;
+  opacity: 0.55;
+  padding: 4px 8px;
+  user-select: none;
+}
+
+.subapp-launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--r-md, 8px);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: rgba(128, 128, 128, 0.14);
+  }
+
+  &.is-running {
+    background: var(--primary-soft, rgba(99, 102, 241, 0.12));
+  }
+}
+
+.subapp-launcher-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subapp-launcher-item-surface {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.5;
+  border: 1px solid var(--border-strong, #4a4a4a);
+  border-radius: 4px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.subapp-launcher-item-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary, #6366f1);
+}

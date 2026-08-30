@@ -1,0 +1,910 @@
+// @vitest-environment jsdom
+
+import { act, useState } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $getSelection,
+  $isElementNode,
+  $isRangeSelection,
+  $isTextNode,
+  type LexicalEditor,
+} from 'lexical'
+import type { CanvasPromptDocument } from '@spark/protocol'
+import type { CanvasAsset, CanvasNode } from './canvas.types'
+import { CanvasPromptComposer } from './CanvasPromptComposer'
+import { CANVAS_PROMPT_HOVER_MAX_HEIGHT } from './CanvasPromptHoverCard'
+import './canvasPromptComposer.less'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 1, 18)
+}
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
+const mountedRoots: Array<{ root: Root; container: HTMLElement }> = []
+
+afterEach(async () => {
+  while (mountedRoots.length > 0) {
+    const mounted = mountedRoots.pop()!
+    await act(async () => mounted.root.unmount())
+    mounted.container.remove()
+  }
+})
+
+function imageNode(): CanvasNode {
+  return {
+    id: 'hero',
+    projectId: 'p',
+    boardId: 'b',
+    userId: 1,
+    type: 'image',
+    title: '小满',
+    assetId: 'asset-hero',
+    taskId: null,
+    parentNodeId: null,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    rotation: 0,
+    zIndex: 0,
+    locked: false,
+    hidden: false,
+    data: {
+      url: 'https://example.com/hero.png',
+      thumbnailUrl: 'https://example.com/hero-thumb.png',
+    },
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+function videoNode(): CanvasNode {
+  return {
+    ...imageNode(),
+    id: 'clip',
+    type: 'video',
+    title: '参考视频',
+    assetId: 'asset-clip',
+    data: {
+      url: 'https://example.com/clip.mp4',
+      thumbnailUrl: 'https://example.com/clip-cover.png',
+    },
+  }
+}
+
+function textNode(): CanvasNode {
+  return {
+    ...imageNode(),
+    id: 'storyboard',
+    type: 'text',
+    title: '分镜表',
+    assetId: null,
+    data: { text: '| 镜号 | 画面 |\n| 01 | 女主回头 |' },
+  }
+}
+
+const asset: CanvasAsset = {
+  id: 'asset-hero',
+  projectId: 'p',
+  userId: 1,
+  type: 'image',
+  source: 'upload',
+  title: '小满',
+  url: 'https://example.com/hero.png',
+  thumbnailUrl: 'https://example.com/hero-thumb.png',
+  metadata: {},
+  createdAt: '',
+  updatedAt: '',
+}
+
+const videoAsset: CanvasAsset = {
+  ...asset,
+  id: 'asset-clip',
+  type: 'video',
+  title: '参考视频',
+  url: 'https://example.com/clip.mp4',
+  thumbnailUrl: 'https://example.com/clip-cover.png',
+}
+
+async function mountComposer(
+  initialDocument: CanvasPromptDocument,
+  nodes: CanvasNode[] = [imageNode()],
+  assets: CanvasAsset[] = [asset],
+  onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void,
+  presentationNodeBySourceId?: ReadonlyMap<string, CanvasNode>,
+  onUploadLocalFile?: (file: File) => Promise<CanvasNode | null | undefined>,
+) {
+  const container = window.document.createElement('div')
+  window.document.body.appendChild(container)
+  const root = createRoot(container)
+  mountedRoots.push({ root, container })
+  let currentDocument = initialDocument
+  let editor: LexicalEditor | null = null
+
+  function Harness() {
+    const [document, setDocument] = useState(initialDocument)
+    currentDocument = document
+    return (
+      <CanvasPromptComposer
+        document={document}
+        mentionNodes={nodes}
+        assets={assets}
+        {...(presentationNodeBySourceId ? { presentationNodeBySourceId } : {})}
+        placeholder="输入提示词"
+        onChange={setDocument}
+        {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+        {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
+        onEditorReady={(nextEditor) => {
+          editor = nextEditor
+        }}
+      />
+    )
+  }
+
+  await act(async () => root.render(<Harness />))
+  await flushEditor()
+  return {
+    container,
+    getDocument: () => currentDocument,
+    getEditor: () => {
+      if (!editor) throw new Error('Lexical editor is not ready')
+      return editor
+    },
+  }
+}
+
+async function flushEditor() {
+  await act(async () => {
+    await Promise.resolve()
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  })
+}
+
+async function replaceEditorText(editor: LexicalEditor, text: string) {
+  await act(async () => {
+    editor.update(() => {
+      const root = $getRoot()
+      root.clear()
+      const paragraph = $createParagraphNode()
+      paragraph.append($createTextNode(text))
+      root.append(paragraph)
+    })
+  })
+  await flushEditor()
+}
+
+describe('CanvasPromptComposer', () => {
+  it('renders image references as thumbnail chips', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'r1',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
+    })
+    expect(
+      mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
+    ).toBe('https://example.com/hero-thumb.png')
+    expect(mounted.container.textContent).toContain('小满')
+  })
+
+  it('renders an operation reference from its resolved image output', async () => {
+    const operation = {
+      ...imageNode(),
+      id: 'image-edit-operation',
+      type: 'image_edit' as const,
+      assetId: null,
+      title: '苏烬-家居角色卡',
+      data: {
+        operation: 'image_edit' as const,
+        prompt: '将图片改为家居服角色身份板',
+      },
+    }
+    const output = {
+      ...imageNode(),
+      id: 'image-edit-output',
+      assetId: null,
+      data: { url: 'https://example.com/sujin-home-card.png', origin: 'task_output' as const },
+    }
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'operation-reference',
+            source: 'manual',
+            sourceNodeId: operation.id,
+            relation: 'generic',
+            label: operation.title,
+            order: 0,
+          },
+        ],
+      },
+      [operation],
+      [],
+      undefined,
+      new Map([[operation.id, output]]),
+    )
+
+    expect(
+      mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
+    ).toBe('https://example.com/sujin-home-card.png')
+  })
+
+  it('renders an image prompt reverse reference from its resolved output text', async () => {
+    const operation = {
+      ...textNode(),
+      id: 'image-prompt-reverse-operation',
+      type: 'image_prompt_reverse' as const,
+      title: '图片反推',
+      data: {
+        operation: 'image_prompt_reverse' as const,
+        prompt: '只反推人物动作',
+      },
+    }
+    const output = {
+      ...textNode(),
+      id: 'image-prompt-reverse-output',
+      title: '反推提示词',
+      data: {
+        text: '女武者从远景进入画面，随后完成长枪旋转动作。',
+        origin: 'task_output' as const,
+      },
+    }
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'operation-reference',
+            source: 'connection',
+            sourceNodeId: operation.id,
+            relation: 'generic',
+            label: operation.title,
+            order: 0,
+          },
+        ],
+      },
+      [operation],
+      [],
+      undefined,
+      new Map([[operation.id, output]]),
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')?.textContent).toBe(
+      output.data.text,
+    )
+    expect(window.document.body.textContent).not.toContain(operation.data.prompt)
+  })
+
+  it('renders the referenced image instead of its URL data in the hover card', async () => {
+    const referencedImage = imageNode()
+    referencedImage.data.url = 'safe-file://x/hero.png'
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'hero',
+            relation: 'reference_image',
+            label: '小满',
+            order: 0,
+          },
+        ],
+      },
+      [referencedImage],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(
+      window.document.querySelector<HTMLImageElement>('.canvas-prompt-hover-media img')?.src,
+    ).toBe('safe-file://x/hero.png')
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
+  })
+
+  it('renders only the video cover in the hover card', async () => {
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'clip',
+            relation: 'reference_video',
+            label: '参考视频',
+            order: 0,
+          },
+        ],
+      },
+      [videoNode()],
+      [videoAsset],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(
+      window.document.querySelector<HTMLImageElement>('.canvas-prompt-hover-media img')?.src,
+    ).toBe('https://example.com/clip-cover.png')
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
+  })
+
+  it('renders only text or table content in the hover card', async () => {
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'storyboard',
+            relation: 'storyboard',
+            label: '分镜表',
+            order: 0,
+          },
+        ],
+      },
+      [textNode()],
+      [],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')?.textContent).toBe(
+      '| 镜号 | 画面 |\n| 01 | 女主回头 |',
+    )
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
+  })
+
+  it('renders structured and invalid references as atomic states', async () => {
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'structured',
+            id: 's1',
+            sourceNodeId: 'missing',
+            schema: 'storyboard',
+            summary: '镜头 03–06',
+          },
+        ],
+      },
+      [],
+    )
+    expect(mounted.container.textContent).toContain('镜头 03–06')
+    expect(mounted.container.querySelector('[aria-invalid="true"]')).not.toBeNull()
+  })
+
+  it('keeps long hover content inside a scrolling viewport', () => {
+    expect(CANVAS_PROMPT_HOVER_MAX_HEIGHT).toBe(280)
+  })
+
+  it('accepts arbitrary text in a clean editor', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await replaceEditorText(mounted.getEditor(), '自定义镜头描述')
+    expect(mounted.getDocument().blocks).toEqual([
+      expect.objectContaining({ kind: 'text', text: '自定义镜头描述' }),
+    ])
+  })
+
+  it('inserts text at an arbitrary middle selection without jumping before tags', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text-before-resource', text: '镜头中间文字' },
+        {
+          kind: 'reference',
+          id: 'reference-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'reference_image',
+          label: '小满',
+          order: 0,
+        },
+      ],
+    })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const paragraph = $getRoot().getFirstChild()
+        if (!$isElementNode(paragraph)) throw new Error('Missing prompt paragraph')
+        const textNode = paragraph.getFirstChild()
+        if (!$isTextNode(textNode)) throw new Error('Missing prompt text')
+        textNode.select(2, 2)
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) throw new Error('Missing range selection')
+        selection.insertText('新')
+      })
+    })
+    await flushEditor()
+    expect(mounted.getDocument().blocks[0]).toMatchObject({ text: '镜头新中间文字' })
+    expect(mounted.getDocument().blocks[1]).toMatchObject({ kind: 'reference', label: '小满' })
+  })
+
+  it('creates an editable parameter and focuses its value', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
+    const durationButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-shortcuts button'),
+    ).find((button) => button.textContent?.includes('镜头时长'))!
+    await act(async () => durationButton.click())
+    await flushEditor()
+
+    const input = mounted.container.querySelector<HTMLInputElement>('input[aria-label="设置时长"]')!
+    expect(window.document.activeElement).toBe(input)
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '8')
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, data: '8' }))
+    })
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'parameter', parameter: 'duration', value: '8', unit: '秒' }),
+    )
+  })
+
+  it('adds character and image resources from the insert menu', async () => {
+    const characterNode = {
+      ...imageNode(),
+      data: { ...imageNode().data, pipelineRole: 'character' as const },
+    }
+    const mounted = await mountComposer({ version: 2, blocks: [] }, [characterNode])
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
+    const resourceButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-result'),
+    ).find((button) => button.textContent?.includes('小满'))!
+    await act(async () => resourceButton.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'hero',
+        relation: 'character',
+        label: '小满',
+      }),
+    )
+  })
+
+  it('uploads a local file from the toolbar menu and inserts the created node reference', async () => {
+    const uploadedNode = { ...textNode(), id: 'local-reference', title: 'reference.txt' }
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [],
+      [],
+      undefined,
+      undefined,
+      async () => uploadedNode,
+    )
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
+
+    const file = new File(['local reference'], 'reference.txt', { type: 'text/plain' })
+    const input = document.querySelector<HTMLInputElement>(
+      '[aria-label="选择本地文件上传到画布并引用"]',
+    )!
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'local-reference',
+        label: 'reference.txt',
+      }),
+    )
+  })
+
+  it('replaces an active @ query with the uploaded node reference', async () => {
+    const uploadedNode = { ...imageNode(), id: 'local-image', title: 'local.png' }
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [],
+      [],
+      undefined,
+      undefined,
+      async () => uploadedNode,
+    )
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@本地')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const file = new File(['image'], 'local.png', { type: 'image/png' })
+    const input = document.querySelector<HTMLInputElement>(
+      '[aria-label="选择本地文件上传到画布并引用"]',
+    )!
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'local-image',
+        label: 'local.png',
+      }),
+    )
+    expect(
+      mounted
+        .getDocument()
+        .blocks.some((block) => block.kind === 'text' && block.text.includes('@本地')),
+    ).toBe(false)
+  })
+
+  it('uses the shared searchable menu for the toolbar and @ trigger', async () => {
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [textNode(), imageNode()],
+      [asset],
+    )
+
+    await act(async () => {
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click()
+    })
+    const toolbarMenu = document.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
+    expect(toolbarMenu).not.toBeNull()
+    expect(toolbarMenu?.parentElement).toBe(document.body)
+    expect(toolbarMenu?.style.position).toBe('fixed')
+    expect(document.querySelector<HTMLInputElement>('[aria-label="搜索节点与资源"]')).not.toBeNull()
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
+
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@分镜')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+    const mentionSearch = document.querySelector<HTMLInputElement>(
+      '.canvas-prompt-insert-menu [aria-label="搜索节点与资源"]',
+    )
+    expect(mentionSearch?.value).toBe('分镜')
+    const mentionMenu = document.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
+    expect(mentionMenu?.parentElement).toBe(document.body)
+    expect(mentionMenu?.style.position).toBe('fixed')
+  })
+
+  it('keeps the @ query when canvas picking is cancelled and replaces it after a pick', async () => {
+    let completePick: ((node: CanvasNode) => void) | null = null
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [imageNode()],
+      [asset],
+      (onPick) => {
+        completePick = onPick
+      },
+    )
+
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@小满')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const pickButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('从画布点选节点'),
+    )
+    expect(pickButton).toBeDefined()
+    await act(async () => pickButton?.click())
+    await flushEditor()
+
+    expect(completePick).not.toBeNull()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'text', text: '@小满' }),
+    )
+
+    await act(async () => completePick?.(imageNode()))
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
+    expect(
+      mounted
+        .getDocument()
+        .blocks.some((block) => block.kind === 'text' && block.text.includes('@小满')),
+    ).toBe(false)
+  })
+
+  it('opens @ suggestions without requiring whitespace before the trigger', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('镜头中@小')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const option = document.querySelector<HTMLButtonElement>('.canvas-prompt-insert-result')
+    expect(option?.textContent).toContain('小满')
+    if (!option) throw new Error('Expected the @ mention menu to contain an option')
+    await act(async () => option.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'text', text: '镜头中' }),
+        expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+      ]),
+    )
+  })
+
+  it('closes the toolbar insert menu after an outside pointer down', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click()
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).not.toBeNull()
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
+  })
+
+  it('keeps a resource tag and following text in one Lexical paragraph', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'reference-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'reference_image',
+          label: '小满',
+          order: 0,
+        },
+        { kind: 'text', id: 'text-after-resource', text: '继续输入镜头描述' },
+      ],
+    })
+    const paragraph = mounted.container.querySelector('.canvas-prompt-lexical-paragraph')!
+    expect(paragraph.querySelector('.canvas-prompt-lexical-atomic')).not.toBeNull()
+    expect(paragraph.textContent).toContain('继续输入镜头描述')
+    expect(
+      window.getComputedStyle(
+        paragraph.querySelector<HTMLElement>('.canvas-prompt-lexical-atomic')!,
+      ).display,
+    ).toBe('inline')
+  })
+
+  it('deletes a manually inserted tag as one atomic unit', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'manual-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
+    })
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click(),
+    )
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual([])
+  })
+
+  it('persists deletion of an automatic connection tag as a suppressed input', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'connection-hero',
+          source: 'connection',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          connectionRelation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
+    })
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click(),
+    )
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ id: 'connection-hero', suppressed: true }),
+    )
+    expect(mounted.container.querySelector('[aria-label="删除小满"]')).toBeNull()
+  })
+
+  it('opens @ suggestions and inserts the selected node as a tag', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@小')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+    const option = window.document.querySelector<HTMLButtonElement>('.canvas-prompt-insert-result')
+    expect(option?.textContent).toContain('小满')
+    await act(async () => option!.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
+  })
+
+  it('starts canvas pick mode from @ and inserts the clicked node at the query position', async () => {
+    let pickFromCanvas: ((node: CanvasNode) => void) | null = null
+    const source = textNode()
+    const mounted = await mountComposer({ version: 2, blocks: [] }, [source], [], (onPick) => {
+      pickFromCanvas = onPick
+    })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('引用：@分镜')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const canvasPickButton = document.querySelector<HTMLButtonElement>(
+      '.canvas-prompt-insert-canvas-pick',
+    )
+    expect(canvasPickButton).not.toBeNull()
+    await act(async () => canvasPickButton?.click())
+    await flushEditor()
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
+    expect(pickFromCanvas).not.toBeNull()
+
+    await act(async () => pickFromCanvas?.(source))
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'text', text: '引用：' }),
+        expect.objectContaining({ kind: 'reference', sourceNodeId: 'storyboard', label: '分镜表' }),
+      ]),
+    )
+    expect(mounted.getDocument().blocks).not.toContainEqual(
+      expect.objectContaining({ kind: 'text', text: expect.stringContaining('@分镜') }),
+    )
+  })
+
+  it('replaces an @ query when inserting a shortcut parameter from the shared menu', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const shortcut = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-shortcuts button'),
+    ).find((button) => button.textContent?.includes('镜头时长'))
+    expect(shortcut).toBeDefined()
+    await act(async () => shortcut?.click())
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'parameter', parameter: 'duration' }),
+    )
+    expect(mounted.getDocument().blocks).not.toContainEqual(
+      expect.objectContaining({ kind: 'text', text: '@' }),
+    )
+  })
+})

@@ -1,0 +1,69 @@
+.canvas-acceptance-launcher {
+  .ant-modal-body {
+    max-height: min(72vh, 760px);
+    overflow-y: auto;
+  }
+}
+
+.canvas-acceptance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.canvas-acceptance-section-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.canvas-acceptance-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+}
+
+.canvas-acceptance-runtime-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  > .ant-select,
+  > label .ant-select {
+    width: 100%;
+  }
+
+  > label {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+}
+
+.canvas-acceptance-runtime-row-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.canvas-acceptance-verification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.canvas-acceptance-matrix-section {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+@media (max-width: 760px) {
+  .canvas-acceptance-stage-grid,
+  .canvas-acceptance-runtime-row,
+  .canvas-acceptance-runtime-row-three {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,119 @@
+// 画布视频节点 · 尺寸与压缩弹窗
+// 扁平风格：层级靠分割线与文字明暗区分，不用卡片分块包裹
+
+.canvas-video-sc-modal {
+  .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+    background: var(--canvas-edit-bg);
+  }
+
+  .ant-modal-close {
+    top: 10px;
+    inset-inline-end: 12px;
+    z-index: 2;
+  }
+}
+
+.canvas-video-sc-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-sc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 20px 20px;
+}
+
+.video-sc-source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+
+  .video-sc-source-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .video-sc-source-meta {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--text-secondary, var(--text));
+    opacity: 0.65;
+  }
+}
+
+.video-sc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .video-sc-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    label {
+      font-weight: 500;
+    }
+
+    .video-sc-field-value {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.72;
+    }
+  }
+
+  .video-sc-field-inputs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    .video-sc-hint {
+      flex: 1;
+      text-align: right;
+      font-size: 12px;
+      opacity: 0.6;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+.video-sc-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .video-sc-progress-stage {
+    font-size: 12px;
+    opacity: 0.55;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.video-sc-install {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+
+  .video-sc-install-tip {
+    margin: 0;
+    color: var(--text);
+  }
+}

@@ -1,0 +1,44 @@
+.font-asset-control {
+  width: 100%;
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.font-asset-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.font-asset-progress {
+  margin-top: 8px;
+  max-width: 320px;
+}
+
+.font-asset-progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  overflow: hidden;
+}
+
+.font-asset-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.font-asset-hint,
+.font-asset-error {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.font-asset-error {
+  color: var(--danger);
+}

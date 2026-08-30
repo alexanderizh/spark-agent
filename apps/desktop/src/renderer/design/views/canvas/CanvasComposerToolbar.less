@@ -1,0 +1,72 @@
+.canvas-composer-toolbar {
+  min-width: 0;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
+}
+
+.canvas-composer-toolbar-summaries {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+
+.canvas-composer-toolbar-summaries::-webkit-scrollbar {
+  display: none;
+}
+
+.canvas-composer-summary-button {
+  flex: 0 0 auto;
+  max-width: 240px;
+  gap: 5px;
+  padding-inline: 7px;
+  color: var(--text-muted);
+}
+
+.canvas-composer-summary-button > span:nth-last-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-composer-toolbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-composer-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.canvas-composer-icon-button.is-submit {
+  border-radius: 999px;
+}
+
+@media (max-width: 620px) {
+  .canvas-composer-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .canvas-composer-toolbar-summaries {
+    flex-basis: calc(100% - 116px);
+  }
+
+  .canvas-composer-summary-button {
+    max-width: 170px;
+  }
+}

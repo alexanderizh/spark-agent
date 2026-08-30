@@ -1,0 +1,80 @@
+/**
+ * Spark Agent 统一错误类型定义
+ */
+
+export type ErrorCode =
+  // 通用
+  | 'UNKNOWN'
+  | 'VALIDATION_FAILED'
+  | 'NOT_FOUND'
+  | 'ALREADY_EXISTS'
+  | 'PERMISSION_DENIED'
+  // Provider / Agent
+  | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_AUTH_FAILED'
+  | 'PROVIDER_RATE_LIMITED'
+  | 'PROVIDER_QUOTA_EXCEEDED'
+  // Plugin runtime
+  | 'PLUGIN_DISABLED'
+  | 'RUNTIME_UNAVAILABLE'
+  | 'ACCOUNT_REQUIRED'
+  | 'ACCOUNT_SELECTION_REQUIRED'
+  | 'AUTH_REQUIRED'
+  | 'AUTH_EXPIRED'
+  | 'SCOPE_REQUIRED'
+  | 'CAPABILITY_DISABLED'
+  | 'RESOURCE_OUT_OF_SCOPE'
+  | 'CONFIRMATION_REQUIRED'
+  | 'RATE_LIMITED'
+  | 'CONFLICT'
+  | 'INVALID_PROVIDER_RESPONSE'
+  | 'AGENT_SESSION_NOT_FOUND'
+  | 'AGENT_ALREADY_RUNNING'
+  | 'AGENT_CANCELLED'
+  // Keystore
+  | 'KEYSTORE_UNAVAILABLE'
+  | 'KEYSTORE_KEY_NOT_FOUND'
+  // Workspace
+  | 'WORKSPACE_NOT_FOUND'
+  | 'WORKSPACE_ACCESS_DENIED'
+  | 'WORKSPACE_PATH_OUTSIDE_ROOT'
+  | 'GIT_RUNTIME_UNAVAILABLE'
+  | 'GIT_OPERATION_FAILED'
+  | 'GIT_OPERATION_OUTCOME_UNKNOWN'
+  // IPC
+  | 'IPC_HANDLER_NOT_FOUND'
+  | 'IPC_INVALID_PAYLOAD'
+  // 工具/任务执行
+  | 'EXECUTION_FAILED'
+
+export class SparkError extends Error {
+  readonly code: ErrorCode
+  readonly context?: Record<string, unknown>
+
+  constructor(code: ErrorCode, message: string, context?: Record<string, unknown>) {
+    super(message)
+    this.name = 'SparkError'
+    this.code = code
+    // exactOptionalPropertyTypes: true requires conditional assignment for optional props
+    if (context !== undefined) {
+      this.context = context
+    }
+    // Maintains proper stack trace for where error was thrown
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, SparkError)
+    }
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      code: this.code,
+      message: this.message,
+      context: this.context,
+    }
+  }
+}
+
+export function isSparkError(err: unknown): err is SparkError {
+  return err instanceof SparkError
+}

@@ -1,0 +1,681 @@
+.canvas-projects-view {
+  --canvas-ui-radius-sm: 6px;
+  --canvas-ui-radius-md: 9px;
+  --canvas-ui-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-ui-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-ui-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+
+  background: var(--bg-soft);
+
+  .canvas-projects-header {
+    min-height: var(--window-titlebar-height);
+    padding: 4px 28px;
+    border-bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .canvas-projects-heading {
+    > span {
+      color: var(--text-faint);
+      font-size: 9px;
+      font-weight: 650;
+      letter-spacing: 0.09em;
+    }
+
+    h2 {
+      margin: 2px 0 3px;
+      color: var(--text-strong);
+      font-size: 18px;
+      font-weight: 680;
+      letter-spacing: -0.025em;
+    }
+
+    p {
+      margin: 0;
+      color: var(--text-faint);
+      font-size: 10px;
+    }
+  }
+
+  .canvas-projects-header-actions {
+    gap: 7px;
+
+    .ant-btn {
+      min-height: 34px;
+      border-radius: var(--canvas-ui-radius-sm);
+      box-shadow: none;
+    }
+  }
+
+  .canvas-projects-toolbar {
+    min-height: 54px;
+    padding: 9px 28px;
+    border-top: 1px solid var(--divider);
+    border-bottom: 1px solid var(--divider);
+    background: var(--canvas-ui-surface);
+  }
+
+  .canvas-projects-search {
+    width: min(420px, 42vw);
+
+    input,
+    [class*='input'] {
+      border-color: var(--canvas-ui-border);
+      background: var(--canvas-ui-surface-muted);
+      box-shadow: none;
+    }
+  }
+
+  .canvas-projects-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+
+  .canvas-projects-main {
+    padding: 22px 28px 32px;
+    background: var(--bg);
+  }
+
+  .canvas-project-card {
+    overflow: hidden;
+    border: 1px solid var(--canvas-ui-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface);
+    box-shadow: none;
+    transition:
+      border-color 150ms ease-out,
+      box-shadow 150ms ease-out,
+      transform 150ms ease-out;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--primary) 30%, var(--border-strong));
+      box-shadow: 0 14px 30px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+      transform: translateY(-2px);
+    }
+  }
+
+  .canvas-project-cover,
+  .canvas-project-cover-placeholder {
+    height: 188px;
+    border-radius: 0;
+    background: var(--canvas-ui-surface-muted);
+  }
+
+  .canvas-project-cover-image {
+    transition: transform 300ms cubic-bezier(0, 0, 0.2, 1);
+  }
+
+  .canvas-project-card:hover .canvas-project-cover-image {
+    transform: scale(1.018);
+  }
+
+  .canvas-project-cover-grid {
+    opacity: 0.36;
+  }
+
+  .canvas-project-cover-empty {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    color: var(--text-faint);
+
+    svg {
+      margin-bottom: 3px;
+      color: color-mix(in srgb, var(--text-muted) 82%, var(--primary) 18%);
+      stroke-width: 1.45;
+    }
+
+    strong {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 620;
+    }
+
+    span {
+      font-size: 9px;
+    }
+  }
+
+  .canvas-project-card-body {
+    padding: 14px;
+  }
+
+  .canvas-project-card-top h3 {
+    color: var(--text-strong);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .canvas-project-card-meta {
+    gap: 12px;
+    color: var(--text-faint);
+    font-size: 9px;
+  }
+
+  .canvas-project-card-foot {
+    margin-top: 12px;
+    padding-top: 11px;
+    border-top: 1px solid var(--divider);
+  }
+
+  .canvas-project-card-menu,
+  .canvas-project-pin-button {
+    border-radius: var(--canvas-ui-radius-sm);
+  }
+
+  :where(.ant-btn, button, input, textarea, .ant-input, .ant-modal-content) {
+    border-radius: var(--canvas-ui-radius-sm);
+  }
+
+  // ── 详情模式 main：滚动容器，留更多内边距 ──────────────────────────────
+  .canvas-projects-detail-main {
+    padding: 24px 32px 48px;
+    overflow-y: auto;
+    background: none;
+  }
+
+  // ── 项目详情页 ────────────────────────────────────────────────────────
+  .canvas-project-detail {
+    max-width: 920px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .canvas-detail-cover {
+    position: relative;
+    height: 240px;
+    border-radius: var(--canvas-ui-radius-md);
+    overflow: hidden;
+    background: #111216;
+    border: 1px solid var(--canvas-ui-border);
+  }
+  .canvas-detail-cover-preview-trigger {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    overflow: hidden;
+  }
+  .canvas-detail-cover-preview-trigger:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -3px;
+  }
+  .canvas-detail-cover-ambient {
+    position: absolute;
+    inset: -24px;
+    width: calc(100% + 28px);
+    height: calc(100% + 28px);
+    object-fit: cover;
+    filter: blur(22px) brightness(0.52) saturate(0.82);
+    transform: scale(1.08);
+    opacity: 0.72;
+    pointer-events: none;
+  }
+  .canvas-detail-cover-image {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    display: block;
+    pointer-events: none;
+  }
+  .canvas-detail-cover-toolbar {
+    position: absolute;
+    z-index: 2;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s ease;
+  }
+  .canvas-detail-cover:hover .canvas-detail-cover-toolbar,
+  .canvas-detail-cover:focus-within .canvas-detail-cover-toolbar {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .canvas-detail-cover-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: var(--canvas-ui-radius-sm);
+    background: rgba(18, 18, 22, 0.78);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: background 0.12s ease;
+    &:hover {
+      background: rgba(18, 18, 22, 0.94);
+    }
+  }
+  .canvas-detail-cover-input {
+    display: none;
+  }
+  .canvas-detail-cover-empty {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+  button.canvas-detail-cover-empty {
+    cursor: pointer;
+  }
+  .canvas-detail-pin-btn,
+  .canvas-detail-icon-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--canvas-ui-radius-sm);
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s ease;
+    &:hover {
+      background: color-mix(in srgb, var(--panel) 95%, transparent);
+    }
+  }
+  .canvas-detail-pin-btn.is-pinned {
+    color: var(--primary);
+  }
+
+  .canvas-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .canvas-detail-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0; // 允许标题 ellipsis
+  }
+  .canvas-detail-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0; // 打开按钮不被超长标题挤走
+  }
+  .canvas-detail-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 680;
+    color: var(--text-strong);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .canvas-detail-title-pin {
+    color: var(--primary);
+  }
+  .canvas-detail-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 720px) {
+    .canvas-detail-cover {
+      height: 180px;
+    }
+    .canvas-detail-cover-tool {
+      width: 32px;
+      padding: 0;
+      justify-content: center;
+      span {
+        display: none;
+      }
+    }
+    .canvas-detail-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .canvas-detail-header-right {
+      width: 100%;
+      flex-wrap: wrap;
+      .ant-btn {
+        margin-left: auto;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-detail-cover-toolbar {
+      transition: none;
+    }
+  }
+
+  // ── 项目资源网格（图片/视频卡片，首批 20 个） ──────────────────────────
+  .canvas-detail-assets {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .canvas-detail-assets-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+      color: var(--text-strong);
+    }
+  }
+  .canvas-detail-asset-filters {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--canvas-ui-surface-muted);
+    border-radius: var(--canvas-ui-radius-sm);
+  }
+  .canvas-detail-asset-filter {
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    border-radius: calc(var(--canvas-ui-radius-sm) - 2px);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background 0.12s ease,
+      color 0.12s ease;
+    &:hover:not(.active) {
+      color: var(--text);
+    }
+    &.active {
+      background: var(--panel);
+      color: var(--text-strong);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+  }
+  .canvas-detail-assets-loading,
+  .canvas-detail-assets-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 12px;
+    color: var(--text-faint);
+    font-size: 12px;
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface-muted);
+    border: 1px dashed var(--canvas-ui-border);
+  }
+  // 瀑布流：CSS columns，列宽 140px 自动算列数，图片按原始比例展示不裁剪。
+  // 顺序列优先（从上到下、再左到右），如需行优先 masonry 需要 JS 计算。
+  .canvas-detail-asset-grid {
+    column-width: 210px;
+    column-gap: 12px;
+  }
+  // 批量操作栏：有选中项时出现在筛选 tab 下方、网格上方。
+  // 视觉与 stat 卡片接近：扁平 + 浅边框 + 软背景，避免和资源网格抢视觉。
+  .canvas-detail-asset-batchbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 14px;
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--canvas-ui-border));
+    border-radius: var(--canvas-ui-radius-sm);
+    background: color-mix(in srgb, var(--primary) 7%, var(--canvas-ui-surface));
+  }
+  .canvas-detail-asset-batchbar-count {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 540;
+  }
+  .canvas-detail-asset-batchbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  // 加载更多按钮：瀑布流下方居中，分页累加（每页 20）
+  .canvas-detail-load-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px auto 0;
+    padding: 9px 22px;
+    width: fit-content;
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      border-color 0.12s ease,
+      color 0.12s ease,
+      background 0.12s ease;
+    &:hover {
+      color: var(--text);
+      background: var(--canvas-ui-surface-muted);
+    }
+  }
+  .canvas-detail-asset-tile {
+    position: relative;
+    display: block;
+    break-inside: avoid;
+    margin: 0 0 12px;
+    min-height: 80px; // 兜底：图片未加载/加载失败时保证最小高度，防止瀑布流塌缩
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface-muted);
+    overflow: hidden;
+    cursor: zoom-in; // 点击预览的视觉提示
+    border: 2px solid transparent;
+    transition:
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
+    img,
+    video {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.18s ease;
+      pointer-events: none; // 点击穿透到 tile，避免 video/img 拦截 onClick
+    }
+    &:hover img,
+    &:hover video {
+      transform: scale(1.03);
+    }
+    &.is-selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent);
+    }
+  }
+  // 多选 checkbox：默认半透明，hover 或选中态下完全不透明；与图片 hover 缩放共存。
+  .canvas-detail-asset-tile-checkbox {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    display: flex;
+    padding: 2px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0.55;
+    transition: opacity 0.12s ease;
+    .canvas-detail-asset-tile:hover &,
+    .canvas-detail-asset-tile.is-selected & {
+      opacity: 1;
+    }
+    .ant-checkbox {
+      pointer-events: auto;
+    }
+  }
+  .canvas-detail-asset-tile-empty {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-weight);
+  }
+  .canvas-detail-asset-badge {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+  }
+
+  .canvas-detail-times {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface-muted);
+    border: 1px solid var(--canvas-ui-border);
+  }
+  .canvas-detail-time-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .canvas-detail-time-icon {
+    color: var(--text-faint);
+  }
+  .canvas-detail-time-label {
+    color: var(--text-muted);
+    min-width: 70px;
+  }
+  .canvas-detail-time-value {
+    color: var(--text);
+  }
+
+  // ── 欢迎页样式已拆分至 cinematic/welcome-home.less（CanvasWelcomeHome） ──
+
+  // ── 工作流库弹窗：内边距适配 ──────────────────────────────────────────
+  .canvas-workflow-lib-modal {
+    .ant-modal-body {
+      padding: 16px 20px 24px;
+    }
+  }
+}
+
+/* ─── 项目封面完整预览（Modal portal 到 body，全局样式） ─── */
+.canvas-detail-cover-preview-modal .ant-modal-body {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: calc(92vh - 60px);
+  overflow: auto;
+}
+.canvas-detail-cover-preview-image {
+  max-width: 88vw;
+  max-height: calc(92vh - 100px);
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
+/* ─── 资源预览 lightbox（Modal portal 到 body，全局样式） ─── */
+.canvas-detail-preview-modal .ant-modal-body {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // 窗口高度不足时 body 内部滚动，避免整个 Modal 从底部溢出视口
+  max-height: calc(90vh - 60px); // 减去 Modal header(~40px) + 上下间距
+  overflow: auto;
+}
+.canvas-detail-preview-media {
+  max-width: 86vw;
+  max-height: calc(90vh - 100px); // 减去 header + body padding，保证不溢出
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
+/* 预览翻页按钮：fixed 定位固定在视口左右两侧，不随图片宽度移动 */
+.canvas-detail-preview-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.canvas-detail-preview-nav {
+  position: fixed; // 固定视口，不随 Modal/图片宽度漂移
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1002; // 高于 antd Modal 的 mask(1000)/wrap
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-app-region: no-drag;
+  &:hover {
+    background: rgba(0, 0, 0, 0.66);
+  }
+  &.prev {
+    left: 20px;
+  }
+  &.next {
+    right: 20px;
+  }
+}

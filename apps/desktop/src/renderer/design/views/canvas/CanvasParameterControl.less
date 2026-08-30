@@ -1,0 +1,192 @@
+.canvas-parameter-control {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.canvas-parameter-control-head {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-parameter-control-head > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-parameter-required-mark {
+  margin-left: 3px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.canvas-parameter-control-head small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-aspect-ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.canvas-aspect-ratio-option,
+.canvas-parameter-option {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.canvas-aspect-ratio-option {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  font-size: 10px;
+}
+
+.canvas-aspect-ratio-option:hover,
+.canvas-aspect-ratio-option:focus-visible,
+.canvas-parameter-option:hover,
+.canvas-parameter-option:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 64%, var(--border));
+  color: var(--text-strong);
+  outline: none;
+}
+
+.canvas-aspect-ratio-option.is-selected,
+.canvas-parameter-option.is-selected {
+  border-color: var(--primary);
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary) 13%, var(--canvas-field-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+
+.canvas-aspect-ratio-frame-wrap {
+  width: 38px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-aspect-ratio-frame {
+  display: block;
+  max-width: 32px;
+  max-height: 32px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.86;
+}
+
+.canvas-aspect-ratio-frame.is-adaptive {
+  border-style: dashed;
+}
+
+.canvas-parameter-custom-value {
+  margin-top: 2px;
+}
+
+.canvas-parameter-custom-ratio-preview {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.canvas-parameter-custom-ratio-preview .canvas-aspect-ratio-frame {
+  max-width: 32px;
+  max-height: 32px;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.canvas-parameter-option-rail {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.canvas-parameter-option-rail.is-boolean {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.canvas-parameter-option {
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 9px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-parameter-switch-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-parameter-range-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+
+  .ant-slider {
+    margin: 8px 5px;
+  }
+}
+
+.canvas-parameter-range-value {
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--canvas-field-bg) 92%, var(--panel));
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.canvas-operation-common-parameters .canvas-aspect-ratio-grid {
+  grid-template-columns: repeat(5, minmax(52px, 1fr));
+}
+
+.canvas-parameter-control.is-compact .canvas-parameter-control-head small {
+  display: none;
+}

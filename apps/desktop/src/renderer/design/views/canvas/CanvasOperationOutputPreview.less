@@ -1,0 +1,362 @@
+.canvas-agent-artifact-drag-source {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  > * {
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+.canvas-operation-output-storyboard {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// 详情预览位于 flex 横向舞台内。文本内容的默认高度是内容本身的高度，
+// 在长剧本时会被舞台的 overflow:hidden 裁切；让它沿舞台高度收缩，滚动交给自身。
+.canvas-operation-workbench-preview > .canvas-agent-artifact-drag-source,
+.canvas-operation-workbench-preview > .canvas-operation-output-storyboard.is-detail,
+.canvas-operation-workbench-preview > .canvas-operation-output-json.is-detail,
+.canvas-operation-workbench-preview > .canvas-operation-output-text.is-detail {
+  align-self: stretch;
+  flex: 1 1 auto;
+  max-height: 100%;
+}
+
+.canvas-operation-output-storyboard .canvas-node-shot-table-wrap {
+  height: 100%;
+}
+
+.canvas-operation-output-json {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.canvas-operation-output-json.is-detail {
+  padding: 24px 28px;
+  font-size: 13px;
+}
+
+.canvas-operation-output-media.is-detail {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+  background: var(--canvas-edit-bg, var(--panel));
+}
+
+.canvas-operation-output-image-preview.is-detail {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas-edit-bg, var(--panel));
+}
+
+.canvas-operation-output-image-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.canvas-operation-output-image-stage.is-pannable {
+  cursor: grab;
+}
+
+.canvas-operation-output-image-stage.is-pannable:active {
+  cursor: grabbing;
+}
+
+.canvas-operation-output-image-stage .canvas-operation-output-media.is-detail {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  transform-origin: center;
+  transition: transform 140ms ease-out;
+  user-select: none;
+}
+
+.canvas-operation-output-image-stage.is-pannable .canvas-operation-output-media.is-detail {
+  transition: none;
+}
+
+.canvas-operation-output-image-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--divider) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 20%, transparent);
+  color: var(--text-secondary);
+  backdrop-filter: blur(10px);
+}
+
+.canvas-operation-output-image-zoom button {
+  display: inline-flex;
+  min-width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.canvas-operation-output-image-zoom button:hover:not(:disabled) {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-operation-output-image-zoom button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.canvas-operation-output-image-zoom button.is-fit {
+  min-width: 42px;
+  font-size: 11px;
+}
+
+.canvas-operation-output-image-zoom span {
+  min-width: 42px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.canvas-operation-output-text.is-detail {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 26px 30px;
+  font-size: 14px;
+  line-height: 1.75;
+  text-align: left;
+  white-space: pre-wrap;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.canvas-operation-output-text.is-card {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding-inline: 16px;
+}
+
+.canvas-operation-output-list {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--canvas-v4-surface-muted, var(--bg-sunken));
+  color: var(--text);
+}
+
+.canvas-operation-output-list-heading {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-operation-output-list-heading strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.canvas-operation-output-list-items {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 10px;
+  overscroll-behavior: contain;
+}
+
+.canvas-operation-output-list-item {
+  display: grid;
+  min-height: 96px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--canvas-v4-surface, var(--panel-elev));
+}
+
+.canvas-operation-output-list-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-operation-output-list-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-operation-output-list-copy {
+  min-width: 0;
+}
+
+.canvas-operation-output-list-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-operation-output-list-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-title span {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.canvas-operation-output-list-copy p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.canvas-operation-output-list-expand {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--divider);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-actions {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-operation-output-list-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--color-error, #ff4d4f) 35%, var(--divider));
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-error, #ff4d4f);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-delete:hover {
+  border-color: var(--color-error, #ff4d4f);
+  background: color-mix(in srgb, var(--color-error, #ff4d4f) 10%, transparent);
+}
+
+.canvas-operation-output-list-expand:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-operation-output-audio.is-detail,
+.canvas-operation-output-empty.is-detail {
+  min-height: 320px;
+}
+
+.canvas-operation-output-audio {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.canvas-operation-output-audio .canvas-node-audio-shell {
+  width: 100%;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+}

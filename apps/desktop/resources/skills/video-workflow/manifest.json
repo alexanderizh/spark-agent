@@ -1,0 +1,6 @@
+{
+  "id": "builtin:video-workflow",
+  "category": "utility",
+  "requiredTools": ["Bash"],
+  "parameters": []
+}

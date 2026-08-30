@@ -1,0 +1,64 @@
+// Project creation uses an Ant Modal portal, so its surface is scoped by the
+// business class instead of depending on the project-page ancestor.
+.canvas-project-modal {
+  --canvas-ui-radius-sm: 6px;
+  --canvas-ui-radius-md: 9px;
+  --canvas-ui-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-ui-divider: color-mix(in srgb, var(--divider) 74%, transparent);
+  --canvas-ui-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-ui-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+
+  .ant-modal-content {
+    overflow: hidden;
+    border: 1px solid var(--canvas-ui-border);
+    border-radius: var(--canvas-ui-radius-md);
+    background: var(--canvas-ui-surface);
+    box-shadow: 0 22px 64px color-mix(in srgb, var(--shadow-color, #000) 34%, transparent);
+  }
+
+  .ant-modal-close {
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--canvas-ui-radius-sm);
+    color: var(--text-muted);
+
+    &:hover {
+      background: var(--canvas-ui-surface-muted);
+      color: var(--text);
+    }
+  }
+
+  .ant-modal-header {
+    min-height: 54px;
+    margin: 0;
+    padding: 14px 48px 12px 16px;
+    border-bottom: 1px solid var(--canvas-ui-divider);
+    background: var(--canvas-ui-surface);
+  }
+
+  .ant-modal-body {
+    min-height: 0;
+    padding: 0;
+    background: var(--canvas-ui-surface);
+  }
+
+  .ant-modal-footer {
+    min-height: 50px;
+    margin: 0;
+    padding: 10px 14px;
+    border-top: 1px solid var(--canvas-ui-divider);
+    background: var(--canvas-ui-surface);
+  }
+
+  :where(button, input, textarea, .ant-select-selector) {
+    border-radius: var(--canvas-ui-radius-sm) !important;
+  }
+
+  :where(.ant-input, .ant-input-affix-wrapper, textarea, .ant-select-selector) {
+    border-color: var(--canvas-ui-divider) !important;
+    background: var(--canvas-ui-surface-muted) !important;
+    box-shadow: none !important;
+  }
+}

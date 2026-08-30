@@ -1,0 +1,380 @@
+/**
+ * AccountCenterView — 账号中心样式
+ *
+ * 设计：左右双栏响应式。窄屏（≤760px）单列堆叠。
+ * 沿用 AccountSection 的 .account-* 视觉 token（profile-card / panel / bind-list），
+ * 保持与设置页一致的观感。
+ */
+
+.account-center {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 未登录：AuthGate 撑满整个视图（左右分栏全容器，不再居中卡片） */
+.account-center--gate {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+/* ─── 顶部返回栏 ──────────────────────────────────────────────────────────── */
+
+.account-center-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  flex-shrink: 0;
+}
+
+.account-center-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-1, var(--text-strong, #0f172a));
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--color-fill-2, var(--hover, #f1f5f9));
+  }
+}
+
+.account-center-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-1, var(--text-strong, #0f172a));
+}
+
+/* ─── 主体 ────────────────────────────────────────────────────────────────── */
+
+.account-center-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 40px;
+}
+
+.account-center-grid {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 20px;
+  max-width: 1120px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+/* ─── 左栏：资料卡 ────────────────────────────────────────────────────────── */
+
+.account-center-left {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 22px 18px;
+  background: var(--color-bg-2, var(--panel, #ffffff));
+  border-radius: 12px;
+}
+
+.account-profile-avatar-wrap {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  flex-shrink: 0;
+
+  &:hover .account-profile-avatar-overlay {
+    opacity: 1;
+  }
+
+  &:disabled {
+    cursor: progress;
+  }
+}
+
+.account-profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: inherit;
+}
+
+.account-profile-name-row {
+  width: 100%;
+}
+
+.account-profile-name-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.account-profile-name-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.account-profile-nickname {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-1, var(--text-strong, #0f172a));
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-icon-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--color-text-3, var(--text-faint, #64748b));
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: var(--color-fill-2, var(--hover, #f1f5f9));
+    color: var(--color-text-1, var(--text-strong, #0f172a));
+  }
+
+  &:disabled {
+    cursor: progress;
+    opacity: 0.6;
+  }
+}
+
+.account-profile-account {
+  font-size: 12px;
+  color: var(--color-text-3, var(--text-faint, #64748b));
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-profile-tags {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.account-role {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.account-role {
+  background: var(--color-fill-1, var(--bg-soft, #f8fafc));
+  color: var(--color-text-2, var(--text-muted, #475569));
+}
+
+.account-profile-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.account-profile-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-fill-1, var(--bg-soft, #f8fafc));
+  text-align: left;
+}
+
+.account-profile-meta-label {
+  font-size: 11px;
+  color: var(--color-text-3, var(--text-muted, #64748b));
+}
+
+.account-profile-meta-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-1, var(--text-strong, #0f172a));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── 右栏：设置区块 ──────────────────────────────────────────────────────── */
+
+.account-center-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.account-panel {
+  padding: 16px 18px;
+  background: var(--color-bg-2, var(--panel, #ffffff));
+  border-radius: 12px;
+
+  h4 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-1, var(--text-strong, #0f172a));
+  }
+
+  p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--color-text-3, var(--text-muted, #64748b));
+  }
+}
+
+.account-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-panel--danger h4 {
+  color: var(--color-danger, var(--danger, #ef4444));
+}
+
+.account-bind-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  background: var(--color-fill-1, var(--bg-soft, #f8fafc));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.account-bind-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: transparent;
+  font-size: 13px;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-fill-1, rgba(15, 23, 42, 0.04));
+  }
+}
+
+.account-bind-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-2, var(--text, #475569));
+}
+
+.account-bind-value {
+  color: var(--color-text-3, var(--text-muted, #64748b));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-security-panel .account-bind-item {
+  padding-inline: 12px;
+}
+
+.account-inline-action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--primary, #6366f1);
+  cursor: pointer;
+  font-size: 13px;
+
+  &:hover {
+    color: var(--primary-hover, #4f46e5);
+    text-decoration: underline;
+  }
+}
+
+/* ─── 上传中旋转动画 ──────────────────────────────────────────────────────── */
+
+.account-profile-avatar-overlay .spin,
+.spin {
+  animation: account-spin 0.9s linear infinite;
+}
+
+@keyframes account-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── 响应式：窄屏单列 ────────────────────────────────────────────────────── */
+
+@media (max-width: 760px) {
+  .account-center-body {
+    padding: 16px;
+  }
+
+  .account-center-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-center-left {
+    position: static;
+  }
+
+  .account-profile-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .account-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

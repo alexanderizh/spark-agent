@@ -1,0 +1,2051 @@
+/* ============================================================
+   Spark Agent — Design Tokens & Base Styles
+   ============================================================ */
+
+@import './components.css';
+
+:root {
+  /* Primary color is set on .app element by JS via --primary / --primary-soft */
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-soft: rgba(99, 102, 241, 0.12);
+  --primary-fg: #ffffff;
+
+  /* radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  /* density-driven spacing (overridden by .density-* on .app) */
+  --pad-xs: 6px;
+  --pad-sm: 8px;
+  --pad-md: 12px;
+  --pad-lg: 16px;
+  --pad-xl: 20px;
+  --row-h: 32px;
+  --nav-row-h: 34px;
+  --font-base: 13px;
+  --font-sm: 12px;
+  --font-xs: 11px;
+  --font-lg: 14px;
+
+  /* Settings navigation and its window-titlebar continuation must share one
+     width so the two surfaces stay visually aligned. */
+  --settings-nav-width: 240px;
+
+  /* Inline control height scale: --control-h-sm 对齐 lobehub size="small" / .btn.sm */
+  --control-h-sm: 24px;
+  --control-h: 32px;
+  --control-h-md: var(--control-h);
+  --control-h-form: 36px;
+  --font-sans:
+    'Geist', 'SF Pro Text', 'SF Pro Display', 'HarmonyOS Sans SC', 'MiSans', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei UI', 'Segoe UI Variable', 'Segoe UI', -apple-system,
+    BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    'SFMono-Regular', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono',
+    Menlo, ui-monospace, monospace;
+
+  /* code ligature — overridden by useAppearance */
+  --code-ligature: normal;
+  /* backdrop blur — overridden by useAppearance */
+  --backdrop-blur: none;
+
+  /* Window Controls Overlay geometry. Declared on :root so portals that mount
+     outside .app/.window (e.g. ImagePreviewModal via createPortal(document.body))
+     can still inherit the macOS traffic-light safe area. .window redeclares the
+     same tokens for its own subtree; values stay in sync. */
+  --window-titlebar-height: env(titlebar-area-height, 52px);
+  --window-titlebar-safe-left: env(titlebar-area-x, 90px);
+}
+
+/* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
+html[data-theme='light'],
+.app.theme-light {
+  --bg: rgb(250, 250, 250);
+  --bg-soft: #fff;
+  --bg-sunken: #f2f2f2;
+  --composer-toolbar-bg: #f8f7f5;
+  --panel: #fff;
+  --panel-elev: rgb(250, 250, 250);
+  --canvas-edit-bg: var(--panel-elev);
+  --hover: rgba(36, 32, 27, 0.045);
+  --active: rgba(36, 32, 27, 0.07);
+  --selected: var(--primary-soft);
+  --border: #f6f3ec;
+  --border-strong: #d7d2c9;
+  --divider: #efede8;
+
+  --text: #23231f;
+  --text-strong: #11100e;
+  --text-muted: #b2a997;
+  --text-faint: #9b9489;
+  --text-weight: #8d8a86;
+  --text-inverse: #ffffff;
+
+  --code-bg: #f4f3f0;
+  --code-fg: #24211d;
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.1);
+
+  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 8px 32px rgba(0, 0, 0, 0.12);
+  --window-shadow: 0 0 28px rgba(15, 23, 42, 0.08);
+
+  --diff-add-bg: rgba(16, 185, 129, 0.18);
+  --diff-add-fg: #047857;
+  --diff-add-bar: #10b981;
+  --diff-del-bg: rgba(239, 68, 68, 0.16);
+  --diff-del-fg: #b91c1c;
+  --diff-del-bar: #ef4444;
+
+  --term-bg: #ebe9e3;
+  --term-fg: #24211d;
+}
+
+/* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
+html[data-theme='dark'],
+.app.theme-dark {
+  /* 中性灰梯度（S=0），主背景 #262626 对齐主流暗色应用观感 */
+  --bg: #262626;
+  --bg-soft: #2c2c2c;
+  --bg-sunken: #1a1a1a;
+  --composer-toolbar-bg: #3d3d3d;
+  --panel: #303030;
+  --panel-elev: #383838;
+  --canvas-edit-bg: #3d3d3d;
+  --hover: rgba(255, 255, 255, 0.04);
+  --active: rgba(255, 255, 255, 0.07);
+  --selected: var(--primary-soft);
+  --border: #3d3d3d;
+  --border-strong: #4a4a4a;
+  --divider: #383838;
+
+  --text: #e4e4e7;
+  --text-strong: #fafafa;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --text-weight: #6d6f72;
+  --text-inverse: #09090b;
+  /* 品牌主色按钮在暗色界面始终使用浅色前景，避免组件库暗色算法改成深色文字。 */
+  --primary-fg: #ffffff;
+
+  --code-bg: #303030;
+  --code-fg: #d4d4d8;
+
+  --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.14);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.16);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.14);
+
+  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 8px 32px rgba(0, 0, 0, 0.6);
+  --window-shadow: 0 0 32px rgba(0, 0, 0, 0.44);
+
+  --diff-add-bg: rgba(34, 197, 94, 0.22);
+  --diff-add-fg: #4ade80;
+  --diff-add-bar: #22c55e;
+  --diff-del-bg: rgba(248, 113, 113, 0.22);
+  --diff-del-fg: #fca5a5;
+  --diff-del-bar: #f87171;
+
+  --term-bg: #08080a;
+  --term-fg: #d4d4d8;
+}
+
+/* Ant/Lobe 会在运行时注入按钮主题色；暗色模式统一由产品主题变量接管前景色。 */
+html[data-theme='dark'] .ant-btn-primary:not(:disabled),
+.app.theme-dark .ant-btn-primary:not(:disabled) {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary-fg) !important;
+}
+
+html[data-theme='dark'] .ant-btn-primary:not(:disabled):hover,
+.app.theme-dark .ant-btn-primary:not(:disabled):hover {
+  border-color: var(--primary-hover) !important;
+  background: var(--primary-hover) !important;
+}
+
+html[data-theme='dark'] .ant-btn-primary:not(:disabled):active,
+.app.theme-dark .ant-btn-primary:not(:disabled):active {
+  border-color: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
+  background: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
+}
+
+html[data-theme='dark'] .ant-btn-primary:not(:disabled) :where(svg, span),
+.app.theme-dark .ant-btn-primary:not(:disabled) :where(svg, span) {
+  color: inherit !important;
+  stroke: currentColor;
+}
+
+html[data-theme='dark'] .ant-btn-primary:disabled,
+html[data-theme='dark'] .ant-btn-primary.ant-btn-disabled,
+.app.theme-dark .ant-btn-primary:disabled,
+.app.theme-dark .ant-btn-primary.ant-btn-disabled {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border)) !important;
+  background: color-mix(in srgb, var(--primary) 18%, var(--panel)) !important;
+  color: color-mix(in srgb, var(--primary-fg) 42%, var(--text-muted)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .ant-btn-primary:disabled :where(svg, span),
+html[data-theme='dark'] .ant-btn-primary.ant-btn-disabled :where(svg, span),
+.app.theme-dark .ant-btn-primary:disabled :where(svg, span),
+.app.theme-dark .ant-btn-primary.ant-btn-disabled :where(svg, span) {
+  color: inherit !important;
+  stroke: currentColor;
+}
+
+/* ---------- DENSITY MODES ---------- */
+.app.density-compact,
+html.density-compact {
+  --pad-xs: 4px;
+  --pad-sm: 6px;
+  --pad-md: 10px;
+  --pad-lg: 14px;
+  --pad-xl: 18px;
+  --row-h: 28px;
+  --nav-row-h: 30px;
+  --font-base: 12.5px;
+  --font-sm: 11.5px;
+}
+.app.density-comfy,
+html.density-comfy {
+  --pad-xs: 8px;
+  --pad-sm: 10px;
+  --pad-md: 14px;
+  --pad-lg: 20px;
+  --pad-xl: 26px;
+  --row-h: 36px;
+  --nav-row-h: 38px;
+  --font-base: 14px;
+  --font-sm: 13px;
+  --font-lg: 15px;
+}
+
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+#root > .ant-app:first-child {
+  margin: 0;
+  padding: 0;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+#root > .ant-app:not(:first-child):empty {
+  pointer-events: none;
+}
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-base);
+  font-feature-settings: var(--font-feature-body, 'cv11', 'ss01');
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  background: #fdfdfc;
+  color: #20201d;
+}
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: var(--code-ligature);
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---------- BOOT SPLASH ---------- */
+/* 启动页跟随系统深浅模式，并叠加毛玻璃：透出主进程设置的原生 vibrancy(macOS)/acrylic(Win11)。
+   深浅色用 html[data-theme] 分流（React 挂载后由 AppContext 设置）。 */
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* 默认浅色：半透明白叠加，让原生模糊层透出 */
+  background: rgba(253, 253, 252, 0.55);
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-app-region: drag;
+}
+
+html[data-theme='dark'] .boot-splash,
+.app.theme-dark .boot-splash {
+  /* 深色：半透明深灰叠加 */
+  background: rgba(31, 31, 31, 0.5);
+}
+
+/* 无原生模糊的平台（Linux）或原生模糊未生效时，backdrop-filter 仍提供一层
+   磨砂质感；reduced-motion 下保持背景色但不做动画。 */
+.boot-splash-inner {
+  display: grid;
+  place-items: center;
+  animation: boot-splash-in 420ms ease-out both;
+}
+
+.boot-splash-spinner {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border: 2px solid var(--text-faint);
+  border-radius: 999px;
+  border-top-color: var(--primary);
+  border-right-color: rgba(168, 85, 247, 0.55);
+  animation: boot-spinner-rotate 900ms linear infinite;
+}
+
+.boot-splash-spinner::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  border-top-color: rgba(249, 115, 22, 0.75);
+  animation: boot-spinner-rotate 1400ms linear infinite reverse;
+}
+
+.boot-splash-version {
+  margin-top: 14px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes boot-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes boot-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-splash-inner,
+  .boot-splash-spinner,
+  .boot-splash-spinner::after {
+    animation: none;
+  }
+}
+
+/* ── Global focus reset: remove browser-default yellow/blue outline on click ── */
+button:focus,
+a:focus,
+[tabindex]:focus,
+[role='button']:focus,
+[role='menuitem']:focus,
+[role='tab']:focus,
+[role='option']:focus,
+summary:focus {
+  outline: none;
+}
+
+/* ============================================================
+   WINDOW CHROME (Electron-style)
+   ============================================================ */
+.scene {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.12), transparent 60%),
+    radial-gradient(1000px 700px at 80% 90%, rgba(139, 92, 246, 0.1), transparent 65%), #0e0e12;
+  overflow: hidden;
+}
+.scene-scale {
+  width: 1440px;
+  height: 900px;
+  flex-shrink: 0;
+  transform-origin: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window {
+  /* Window Controls Overlay is the authoritative macOS titlebar geometry.
+     Fallbacks keep browser previews and non-overlay platforms deterministic. */
+  --window-titlebar-height: env(titlebar-area-height, 52px);
+  --window-titlebar-safe-left: env(titlebar-area-x, 90px);
+  --sidebar-frame-inset: 6px;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-soft);
+  color: var(--text);
+  overflow: hidden;
+  font-weight: 500;
+
+  /* border-radius: var(--r-xl); */
+  /* window-shadow 在全屏 .window 外缘会渲染成暗色边框环(尤其 dark 主题 32px/0.44 黑色),
+     与 BrowserWindow 原生 frame 视觉冲突。保持无 shadow。 */
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-base);
+  position: relative;
+}
+
+/* ============================================================
+   FLOATING SIDEBAR PANEL
+   ============================================================ */
+.floating-sidebar {
+  position: absolute;
+  top: var(--sidebar-frame-inset);
+  left: var(--sidebar-frame-inset);
+  bottom: var(--sidebar-frame-inset);
+  width: var(--sidebar-w, 288px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-elev);
+  /* Sidebar nav / session labels — slightly softer than main body text */
+  --sidebar-text: color-mix(in srgb, var(--text) 90%, var(--text-muted));
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* Slide + fade in/out. visibility transition delays taking the element
+     out of the tab order until the slide finishes, so keyboard focus
+     never lands on the hidden sidebar. */
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease,
+    visibility 0s linear 0s;
+  will-change: transform, opacity;
+}
+.floating-sidebar.is-hidden {
+  transform: translateX(calc(-100% - 12px));
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    transform 0.2s cubic-bezier(0.55, 0, 0.7, 0.2),
+    opacity 0.16s ease,
+    visibility 0s linear 0.2s;
+}
+/* Sidebar panel appearance is a user-selectable preference (floating vs flat),
+   independent of the OS. Without backdrop blur it stays opaque for readability;
+   the glass material is enabled only when the appearance preference allows it. */
+.sidebar-style-floating .floating-sidebar {
+  background: var(--panel-elev);
+  transition: background-color 0.2s ease;
+}
+
+html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 80%, transparent);
+  backdrop-filter: blur(18px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+}
+
+html[data-theme='light'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-light
+  .floating-sidebar {
+  background: color-mix(in srgb, #fff 58%, transparent);
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme='dark'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-dark
+  .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 54%, transparent);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+/* 内容区聚焦时（根 .app 挂 .content-focused，仅 floating + 侧栏可见 + 焦点落在
+   main-content-area 时触发），浮动侧栏背景轻微加深，营造"侧栏退后、内容区为
+   焦点"的层次感。比上方原规则多一个 .content-focused 类，特异性更高，无需
+   !important。加深量用 --sidebar-focus-darken 统一控制（默认 9%），嫌过深可在
+   :root 调小；light 主题白底混黑易发灰，已单独压到 6%。transition 由基础
+   .sidebar-style-floating .floating-sidebar 规则提供，进出均平滑。 */
+.sidebar-style-floating.content-focused .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev), #000 var(--sidebar-focus-darken, 5%));
+}
+html[data-backdrop-blur='1'] .sidebar-style-floating.content-focused .floating-sidebar {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--panel-elev) 80%, transparent),
+    #000 var(--sidebar-focus-darken, 6%)
+  );
+}
+html[data-theme='light'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-light.content-focused
+  .floating-sidebar {
+  background: color-mix(in srgb, color-mix(in srgb, #fff 78%, transparent), #000 6%);
+}
+html[data-theme='dark'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-dark.content-focused
+  .floating-sidebar {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--panel-elev) 54%, transparent),
+    #000 var(--sidebar-focus-darken, 6%)
+  );
+}
+/* 'flat' mirrors the Windows look: sidebar is flush to the window edges
+   (no floating design, no rounded corners, no shadow). Its background can
+   still use the shared backdrop-blur preference for a frosted menu surface. */
+.sidebar-style-flat .floating-sidebar {
+  --sidebar-frame-inset: 0px;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Flat + light theme: sidebar panel uses a soft off-white tone.
+   Floating keeps its token-based translucent background; flat dark
+   theme keeps the elevated panel token. */
+.sidebar-style-flat.theme-light .floating-sidebar {
+  background: rgb(242, 242, 242);
+}
+html[data-backdrop-blur='1'] .sidebar-style-flat .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+}
+html[data-theme='light'][data-backdrop-blur='1'] .sidebar-style-flat.theme-light .floating-sidebar {
+  background: color-mix(in srgb, #f5f5f5 84%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
+    background: var(--panel-elev);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+/* Prevent text selection during resize drag */
+body.floating-sidebar-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.floating-sidebar-resizing * {
+  pointer-events: none !important;
+}
+
+/* Invisible drag region at top of panel for window dragging */
+.floating-sidebar-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  -webkit-app-region: drag;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+/* Panel header: hide button + logo */
+.floating-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  height: 52px;
+  padding: 8px 12px 4px;
+  position: relative;
+  z-index: 1;
+  -webkit-app-region: drag;
+}
+.platform-darwin .floating-sidebar-header {
+  /* The floating panel starts below the viewport origin. Pull only its chrome
+     row back into the window coordinate system so native traffic lights and
+     sidebar actions share the same vertical center. The page body still begins
+     at the bottom of the titlebar because the negative margin participates in
+     flex layout. */
+  height: var(--window-titlebar-height);
+  margin-top: calc(0px - var(--sidebar-frame-inset));
+  padding: 0 10px;
+}
+.sidebar-hide-btn {
+  -webkit-app-region: no-drag;
+}
+.sidebar-search-btn {
+  -webkit-app-region: no-drag;
+  color: var(--text-muted);
+  transition:
+    color 0.2s ease,
+    background 0.2s ease;
+}
+.sidebar-search-btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.sidebar-update-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+.sidebar-update-btn.state-checking {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.sidebar-update-btn.state-available {
+  color: var(--warning, #c98900);
+  background: color-mix(in srgb, var(--warning, #c98900) 12%, transparent);
+}
+.sidebar-update-btn.state-downloading {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.sidebar-update-btn.state-downloaded {
+  color: var(--success, #3d9b5b);
+  background: color-mix(in srgb, var(--success, #3d9b5b) 12%, transparent);
+}
+.sidebar-update-btn.state-error {
+  color: var(--danger-6, #d94f4f);
+  background: color-mix(in srgb, #d94f4f 10%, transparent);
+}
+.sidebar-update-progress-ring {
+  position: relative;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-update-progress-ring svg {
+  width: 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+}
+.sidebar-update-progress-track,
+.sidebar-update-progress-value {
+  fill: none;
+  stroke-width: 2;
+}
+.sidebar-update-progress-track {
+  stroke: color-mix(in srgb, currentColor 18%, transparent);
+}
+.sidebar-update-progress-value {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+.sidebar-update-progress-icon {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-update-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--panel-elev);
+}
+.sidebar-update-tooltip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.45;
+}
+.floating-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.floating-sidebar-brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  user-select: none;
+}
+.sidebar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-md);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Resize handle on the right edge */
+.floating-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+/* ─── Sidebar nav sections ─── */
+.sidebar-nav-section {
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  -webkit-app-region: no-drag;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* Divider between nav and session list */
+.sidebar-session-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 4px 12px;
+  flex-shrink: 0;
+}
+
+/* Session list container — fills remaining space */
+.sidebar-session-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-app-region: no-drag;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* Expand button when sidebar is hidden — visually matches .icon-btn / .sidebar-hide-btn */
+.sidebar-expand-btn {
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+/* When sidebar is hidden on macOS, no more view-header padding needed */
+
+/* Nav item buttons */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: var(--nav-row-h);
+  border-radius: var(--r-md);
+  color: var(--sidebar-text, var(--text));
+  font-size: var(--font-base);
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  position: relative;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+  -webkit-app-region: no-drag;
+}
+.nav-item:hover {
+  background: var(--hover);
+  color: var(--sidebar-text, var(--text));
+}
+.nav-item.active {
+  background: var(--selected);
+  color: var(--primary);
+}
+.nav-item.active .nav-icon {
+  color: var(--sidebar-text, var(--text));
+}
+.nav-item .nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--sidebar-text, var(--text));
+}
+
+/* 子应用菜单项：统一渲染受控图标或 Emoji，未知文本由 SubAppIcon 回退为默认图标 */
+.nav-item .nav-app-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.nav-item .nav-app-glyph svg {
+  display: block;
+  flex: none;
+}
+
+.nav-item:hover .nav-icon {
+  color: var(--sidebar-text, var(--text));
+}
+.nav-item .nav-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-base);
+}
+.settings-nav .nav-item .nav-label {
+  font-weight: 400;
+}
+
+/* 测试期功能小标签：紧跟导航文字，代替此前拼在文案里的「 -Beta」文本后缀 */
+.nav-beta-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--primary);
+  background: var(--primary-soft);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+/* "新建任务" was previously styled with a special trigger look; it now uses
+   the standard .nav-item style shared with Workflows/Agents/Skills/Providers. */
+
+.nav-kbd {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ─── Sidebar bottom ─── */
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+.sidebar-bottom-user {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.sidebar-bottom-user .sidebar-user {
+  flex: 1;
+  min-width: 0;
+  padding-right: 10px;
+}
+.sidebar-user-settings {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.sidebar-user-settings:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: var(--pad-xs);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  position: relative;
+}
+.sidebar-user:hover {
+  background: var(--hover);
+}
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  color: var(--primary-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.sidebar-user-avatar {
+  overflow: hidden;
+  padding: 0;
+}
+.sidebar-user-avatar-image,
+.sidebar-user-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  display: block;
+  object-fit: cover;
+}
+.sidebar-user-info {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-user-info .name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--sidebar-text, var(--text));
+}
+.sidebar-user-info .meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* User dropdown menu */
+.user-menu {
+  min-width: 174px;
+  background: var(--panel-elev);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: var(--z-dropdown, 100);
+}
+.user-menu-portal {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+.user-menu button,
+.user-menu [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.user-menu button:hover,
+.user-menu [role='menuitem']:hover {
+  background: var(--hover);
+}
+
+/* Inline appearance switch: keep the three theme modes in the root menu. */
+.ant-dropdown-menu.user-menu .user-menu-appearance-menu-item {
+  height: auto !important;
+  min-height: 40px;
+  padding: 6px 8px !important;
+  cursor: default;
+}
+.ant-dropdown-menu.user-menu .user-menu-inline-menu-item {
+  height: auto !important;
+  min-height: 40px;
+  padding: 6px 8px !important;
+  cursor: default;
+}
+.user-menu-appearance,
+.user-menu-inline-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.user-menu-appearance-label,
+.user-menu-inline-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+}
+.ant-dropdown-menu.user-menu .user-menu-inline-menu-item:hover,
+.ant-dropdown-menu.user-menu .user-menu-appearance-menu-item:hover {
+  background: transparent;
+}
+.user-menu-inline-segmented.ant-segmented {
+  flex: 0 0 auto;
+  min-width: 0;
+  font-size: var(--font-sm) !important;
+}
+
+.user-menu-inline-segmented .ant-segmented-item-label {
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+
+/* Theme submenu inside user menu */
+.user-menu-theme-trigger {
+  justify-content: flex-start;
+}
+.user-menu-theme-trigger.user-menu-theme-nested-trigger {
+  margin-top: 2px;
+}
+.user-menu-theme-trigger:hover {
+  background: var(--hover);
+}
+/* Force the chevron arrow to the far right */
+.user-menu-theme-trigger > svg:last-child {
+  margin-left: auto;
+}
+.user-menu-theme-sub {
+  min-width: 168px;
+  margin-left: -4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.user-menu-theme-radio-group,
+.user-menu-theme-sub > [role='radiogroup']:first-of-type {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.user-menu-theme-sub .user-menu-theme-item,
+.user-menu-theme-sub [role='menuitemradio'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: 32px;
+  padding: 6px 8px 6px 28px !important;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  position: relative;
+}
+.user-menu-theme-sub .user-menu-theme-item:hover,
+.user-menu-theme-sub .user-menu-theme-item:focus,
+.user-menu-theme-sub [role='menuitemradio']:hover,
+.user-menu-theme-sub [role='menuitemradio']:focus {
+  background: var(--hover);
+}
+.user-menu-theme-sub .user-menu-theme-item > span:first-child,
+.user-menu-theme-sub [role='menuitemradio'] > span:first-child {
+  position: absolute;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--primary);
+}
+.user-menu-accent-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 14px;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.user-menu-accent-sub {
+  min-width: 148px;
+}
+.user-menu-accent-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-xs);
+  flex: 0 0 14px;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.user-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--primary);
+}
+.user-menu-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+.user-menu-label > svg,
+.user-menu-label > .user-menu-accent-dot,
+.user-menu-label > .user-menu-accent-swatch {
+  flex: 0 0 auto;
+}
+.user-menu-label-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* App popups render in portals and may overlap titlebar drag regions. Electron
+   hit-tests app-region independently of z-index, so overlay roots must opt out
+   of window dragging themselves. */
+.ant-dropdown,
+.ant-select-dropdown,
+.ant-popover,
+.ant-tooltip,
+.ant-picker-dropdown,
+.ant-cascader-dropdown,
+.composer-dropdown-menu,
+.composer-menu,
+/* lobehub UI Toast: viewport (className wired up in design/components/Toast.tsx)
+   is `position: fixed; top: 16px; right: 16px` and lands right under the custom
+   titlebar (.shell-titlebar / .win-titlebar) which carries
+   `-webkit-app-region: drag`. Without this override the top toast's close
+   button is unreachable — Electron intercepts the mouse for window dragging. */
+.spark-lobe-toast-host,
+.spark-lobe-toast-host * {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 97%, var(--bg-soft, #fefefe));
+  --spark-toast-border: color-mix(in srgb, var(--border-strong, #d7d2c9) 42%, transparent);
+  --spark-toast-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 10px 26px rgba(15, 23, 42, 0.12);
+  --spark-toast-backdrop: none;
+
+  -webkit-app-region: no-drag;
+}
+
+.spark-lobe-toast-host {
+  z-index: 3400 !important;
+}
+
+html[data-theme='dark'] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 96%, var(--bg-soft, #2c2c2c));
+  --spark-toast-border: color-mix(in srgb, var(--border-strong, #4a4a4a) 54%, transparent);
+  --spark-toast-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 12px 28px rgba(0, 0, 0, 0.34);
+}
+
+html[data-backdrop-blur='1'] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #ffffff) 92%, transparent);
+  --spark-toast-backdrop: var(--backdrop-blur);
+}
+
+html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
+  --spark-toast-bg: color-mix(in srgb, var(--panel-elev, #383838) 90%, transparent);
+}
+
+/* Lobe Toast's generated item class reads antd/lobe theme tokens. Keep Spark
+   toasts on our surface/radius/blur system without depending on generated
+   class names. */
+.spark-lobe-toast-host > * {
+  padding: 12px !important;
+  border: 1px solid var(--spark-toast-border) !important;
+  border-radius: var(--r-md, 8px) !important;
+  color: var(--text, #23231f) !important;
+  background: var(--spark-toast-bg) !important;
+  box-shadow: var(--spark-toast-shadow) !important;
+  backdrop-filter: var(--spark-toast-backdrop) !important;
+  -webkit-backdrop-filter: var(--spark-toast-backdrop) !important;
+}
+
+.spark-toast-content {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 24px;
+}
+
+.spark-toast-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.spark-toast-success .spark-toast-status-icon {
+  color: var(--success, #10b981);
+}
+.spark-toast-error .spark-toast-status-icon {
+  color: var(--danger, #ef4444);
+}
+.spark-toast-info .spark-toast-status-icon {
+  color: var(--info, #3b82f6);
+}
+.spark-toast-warning .spark-toast-status-icon {
+  color: var(--warning, #f59e0b);
+}
+
+.spark-toast-message {
+  min-width: 0;
+  color: var(--text, #23231f);
+  font-size: var(--font-sm, 13px);
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.spark-toast-action-button {
+  height: 28px;
+  padding: 0 2px;
+  border: 0 !important;
+  border-radius: var(--r-xs, 4px);
+  color: var(--primary, #6366f1) !important;
+  background: transparent !important;
+  font-family: inherit;
+  font-size: var(--font-sm, 12px);
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.spark-toast-action-button:hover {
+  color: var(--primary-hover, #4f46e5) !important;
+  background: transparent !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spark-lobe-toast-host > * button[aria-label='Close'] {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: var(--r-sm, 6px) !important;
+  color: var(--text-muted, #6f6a61) !important;
+}
+
+.spark-lobe-toast-host > * button[aria-label='Close']:hover {
+  color: var(--text, #23231f) !important;
+  background: var(--hover, rgba(36, 32, 27, 0.045)) !important;
+}
+
+/* Drawer 与 Modal 都通过 Portal 渲染到 document.body。若二者共用同一
+   z-index，从抽屉里唤起的确认弹窗（如设置-记忆详情抽屉里的「永久删除该
+   记忆？」Modal.confirm）会与触发它的 Drawer 同层，叠放顺序不稳定，严重
+   时弹窗被抽屉盖住、无法点击。让 Modal 明确高于 Drawer 一档即可。 */
+.ant-drawer {
+  -webkit-app-region: no-drag;
+  z-index: 500 !important;
+}
+
+.ant-modal-root {
+  -webkit-app-region: no-drag;
+  z-index: 500 !important;
+}
+
+/* antd `message` / `notification` also render to document.body. Since Drawer is
+   elevated to 3200, transient feedback must sit above it or messages fired
+   from inside side panels appear partially hidden behind the panel. */
+.ant-message,
+.ant-notification {
+  -webkit-app-region: no-drag;
+  z-index: 3400 !important;
+}
+
+/* antd renders nested Menu submenus in their own rc-trigger portal as
+   `.ant-dropdown-menu-submenu-popup`, not as `.ant-dropdown`. Keep submenus one
+   layer above the parent dropdown; otherwise the user-menu second level can
+   slide underneath the first-level panel when the parent is elevated. */
+.ant-dropdown-menu-submenu-popup {
+  -webkit-app-region: no-drag;
+  z-index: 3401 !important;
+}
+.ant-dropdown:has(.composer-cli-model-submenu) {
+  -webkit-app-region: no-drag;
+  z-index: 3500 !important;
+}
+/* antd renders each submenu in an independent rc-trigger portal. The popup
+   class scopes the user-menu treatment to that portal without changing its
+   width or applying the root menu's surface twice. */
+.ant-dropdown-menu.user-menu,
+.user-menu-submenu-popup .ant-dropdown-menu {
+  min-width: 200px;
+  padding: 4px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
+  min-width: 200px;
+}
+.ant-dropdown-menu.user-menu {
+  width: 100%;
+  min-width: 0;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title,
+.user-menu-submenu-popup .ant-dropdown-menu-item,
+.user-menu-submenu-popup .ant-dropdown-menu-submenu-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-sm) !important;
+  font-weight: 400;
+  line-height: 1.4 !important;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-title-content,
+.user-menu-submenu-popup .ant-dropdown-menu-title-content {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: visible;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-title-content > svg,
+.user-menu-submenu-popup .ant-dropdown-menu-title-content > svg {
+  flex-shrink: 0;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover,
+.user-menu-submenu-popup .ant-dropdown-menu-item:hover,
+.user-menu-submenu-popup .ant-dropdown-menu-submenu-title:hover {
+  background: var(--hover);
+}
+.user-menu-expand-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+.user-menu-expand-icon svg {
+  display: block;
+}
+.ant-dropdown-menu-submenu-title:hover > .user-menu-expand-icon {
+  color: var(--text);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  transform: translateX(1px);
+}
+
+:where(.css-dev-only-do-not-override-xsuzon).ant-dropdown
+  .ant-dropdown-menu
+  .ant-dropdown-menu-item,
+:where(.css-dev-only-do-not-override-xsuzon).ant-dropdown-menu-submenu
+  .ant-dropdown-menu
+  .ant-dropdown-menu-item,
+:where(.css-dev-only-do-not-override-xsuzon).ant-dropdown
+  .ant-dropdown-menu
+  .ant-dropdown-menu-submenu-title,
+:where(.css-dev-only-do-not-override-xsuzon).ant-dropdown-menu-submenu
+  .ant-dropdown-menu
+  .ant-dropdown-menu-submenu-title {
+  align-items: center;
+}
+
+/* ─── User menu — Contact QQ QR modal ─── */
+/* Theme-aware QQ community scan card: no header, no footer, just the card + close button. */
+.user-contact-qq-modal .ant-modal-content {
+  border-radius: var(--r-xl);
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.user-contact-qq-modal .ant-modal-body {
+  padding: 0;
+}
+.user-contact-qq-modal .ant-modal-close {
+  top: 10px;
+  inset-inline-end: 10px;
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.user-contact-qq-modal .ant-modal-close:hover {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+
+.user-contact-qq-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 36px 28px 32px;
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(
+      120% 80% at 50% 0%,
+      color-mix(in srgb, var(--primary) 14%, var(--panel-elev)) 0%,
+      transparent 60%
+    ),
+    var(--panel-elev);
+  text-align: center;
+}
+.user-contact-qq-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-contact-qq-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  padding: 3px;
+}
+.user-contact-qq-brand-name {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: 0.2px;
+}
+.user-contact-qq-title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.user-contact-qq-qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #fff;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.user-contact-qq-group-no {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.user-contact-qq-hint {
+  font-size: var(--font-sm);
+  color: var(--text-faint);
+}
+
+/* ─── Window Controls (Windows/Linux only) ─── */
+.window-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 0 2px;
+  width: 100%;
+  -webkit-app-region: no-drag;
+}
+.win-ctrl-btn {
+  width: 28px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.win-ctrl-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.win-ctrl-btn.close:hover {
+  background: var(--danger);
+  color: white;
+}
+.win-ctrl-btn svg {
+  width: 10px;
+  height: 10px;
+}
+/* Hide window controls on macOS (uses native traffic lights) */
+.platform-darwin .window-controls {
+  display: none;
+}
+
+/* ─── Windows Custom Title Bar ─── */
+.platform-win32 .win-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 45px;
+  flex-shrink: 0;
+  padding: 0 0 0 8px;
+  -webkit-app-region: drag;
+  background: var(--bg-soft);
+}
+.platform-win32 .win-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+  margin-left: 12px;
+}
+.platform-win32 .win-titlebar button,
+.platform-win32 .win-titlebar [role='button'],
+.platform-win32 .win-titlebar a,
+.platform-win32 .win-titlebar input,
+.platform-win32 .win-titlebar select,
+.platform-win32 .win-titlebar textarea {
+  -webkit-app-region: no-drag;
+}
+.platform-win32 .win-titlebar-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 0;
+  padding-right: 10px;
+  -webkit-app-region: no-drag;
+}
+.platform-win32 .win-titlebar-controls .window-controls {
+  padding: 0;
+  width: auto;
+  height: auto;
+  align-items: center;
+  gap: var(--component-control-gap);
+}
+.platform-win32 .win-titlebar-controls .win-ctrl-btn {
+  width: var(--component-icon-button-size);
+  height: var(--component-icon-button-size);
+  min-height: 0;
+  border-radius: var(--r-sm);
+}
+.titlebar-integrated {
+  --integrated-titlebar-height: 44px;
+  --integrated-titlebar-left-reserve: 0px;
+  --integrated-titlebar-right-reserve: 0px;
+}
+.platform-win32.titlebar-integrated {
+  --integrated-titlebar-height: 45px;
+  --integrated-titlebar-right-reserve: 112px;
+}
+.platform-darwin.titlebar-integrated {
+  --integrated-titlebar-height: var(--window-titlebar-height);
+  --integrated-titlebar-right-reserve: 0px;
+}
+.platform-darwin.sidebar-hidden.titlebar-integrated {
+  --integrated-titlebar-left-reserve: var(--window-titlebar-safe-left);
+}
+
+/* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
+.shell-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--window-titlebar-height);
+  flex-shrink: 0;
+  padding: 0 var(--pad-md) 0 20px;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+.shell-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+}
+.shell-titlebar button,
+.shell-titlebar [role='button'],
+.shell-titlebar a,
+.shell-titlebar input,
+.shell-titlebar select,
+.shell-titlebar textarea {
+  -webkit-app-region: no-drag;
+}
+/* macOS: keep controls inside the usable rectangle published by the overlay. */
+.shell-titlebar-darwin {
+  padding-left: var(--window-titlebar-safe-left);
+}
+
+/* canvas / canvas-workflows view 自带 header 承担窗口拖拽
+   （替代公用 MacWindowDragHeader / shell-titlebar）。
+   header 整体是 drag region，内部交互元素 no-drag。 */
+.canvas-view-titlebar {
+  -webkit-app-region: drag;
+}
+.canvas-view-titlebar button,
+.canvas-view-titlebar [role='button'],
+.canvas-view-titlebar a,
+.canvas-view-titlebar input,
+.canvas-view-titlebar select,
+.canvas-view-titlebar textarea,
+.canvas-view-titlebar .ant-btn,
+.canvas-view-titlebar .ant-dropdown-trigger {
+  -webkit-app-region: no-drag;
+}
+/* macOS 侧栏折叠时，页面自有 Header 消费系统发布的左侧安全区。 */
+.platform-darwin.app.sidebar-hidden .canvas-view-titlebar {
+  padding-left: var(--window-titlebar-safe-left);
+}
+/* canvas-projects-header 用 space-between，侧栏折叠时多出 SidebarExpandButton，
+   让 heading 占满中间，避免标题居中错位、actions 始终靠右。 */
+.canvas-view-titlebar .canvas-projects-heading {
+  flex: 1;
+  min-width: 0;
+}
+/*
+ * Full-bleed pages still use the shared titlebar as their drag target. Give
+ * that target the same surface as the page below it instead of making it
+ * transparent: transparent titlebars expose the native vibrancy/background
+ * and recreate the seam on macOS.
+ */
+.app.titlebar-surface-settings .shell-titlebar,
+.app.titlebar-surface-settings .win-titlebar {
+  background: linear-gradient(
+    to right,
+    var(--bg-sunken) 0 var(--settings-nav-width),
+    var(--bg) var(--settings-nav-width) 100%
+  );
+}
+/* Entering settings replaces the app sidebar with the settings navigation in
+   the same render. Let the content adopt its final offset immediately so the
+   titlebar continuation cannot appear ahead of the navigation surface. */
+.app.titlebar-surface-settings .main-content-area {
+  transition: none;
+}
+@media (max-width: 980px) {
+  .app.titlebar-surface-settings .shell-titlebar,
+  .app.titlebar-surface-settings .win-titlebar {
+    background: var(--bg-sunken);
+  }
+}
+.app.titlebar-surface-auth .shell-titlebar,
+.app.titlebar-surface-auth .mac-window-drag-header,
+.app.titlebar-surface-auth .win-titlebar {
+  /* The 5:6 split matches .auth-flat. The brand-side gradient is deliberately
+     repeated here so the draggable strip reads as part of the login page. */
+  background:
+    radial-gradient(
+        520px 380px at 18% 8%,
+        color-mix(in srgb, var(--primary) 16%, transparent),
+        transparent 65%
+      )
+      left / 50% 100% no-repeat,
+    linear-gradient(to right, var(--bg-soft) 0 50%, var(--bg) 50% 100%);
+}
+/* Sidebar hidden: page-level drag strips are redundant; shell title bar covers it */
+.app.sidebar-hidden.platform-darwin .mac-window-drag-header,
+.app.sidebar-hidden.platform-darwin .settings-drag-header {
+  display: none;
+}
+
+/* Windows: enable sidebar drag region (frameless window) */
+.platform-win32 .floating-sidebar-drag {
+  display: block;
+}
+/* Windows: sidebar header also acts as drag region */
+.platform-win32 .floating-sidebar-header {
+  -webkit-app-region: drag;
+  justify-content: flex-start;
+}
+.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
+  order: -1;
+  -webkit-app-region: no-drag;
+}
+
+/* ─── Main content area — offset to the right of the sidebar ─── */
+.main-content-area {
+  margin-left: var(--sidebar-offset, 210px);
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  /* background: var(--bg); */
+  transition:
+    margin-left 0.18s ease,
+    padding-left 0.18s ease,
+    padding-right 0.18s ease;
+}
+
+/* Sidebar hidden: content takes the full width, edge-to-edge. Individual
+   view bodies manage their own inner gutters. */
+.app.sidebar-hidden .main-content-area {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app.sidebar-hidden .main-content-area.main-content-canvas-workspace {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* ============================================================
+   MAIN CONTENT
+   ============================================================ */
+.main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  /* background: var(--bg-soft); */
+}
+/* Windows + light theme: content area on pure white. macOS and
+   Windows dark theme keep the default --bg token. */
+.platform-win32.theme-light .main-content-area,
+.platform-win32.theme-light .main {
+  background: #ffffff;
+}
+/* .main > * removed — view-body handles its own sizing */
+
+.view-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  height: 100%; /* resolves against .main → .main-content-area → .app.window → #root chain (all definite) */
+}
+
+.main > .view-body {
+  height: auto;
+}
+
+/* 导航栏、会话头部和会话侧面板的交互图标使用统一前景色。 */
+.chat-layout .tabbar-actions .icon-btn,
+.chat-layout .tabbar-actions .git-session-trigger {
+  color: var(--text-muted);
+}
+.chat-layout .tabbar-actions .icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.chat-layout .tabbar-actions .icon-btn:hover,
+.chat-layout .tabbar-actions .git-session-trigger:hover {
+  color: var(--text);
+}
+.chat-layout .tabbar-actions .icon-btn.active,
+.chat-layout .tabbar-actions .git-session-trigger.active {
+  color: var(--text-muted);
+}
+.chat-layout .chat-sidebar-topbar-actions .icon-btn {
+  color: var(--text-muted);
+}
+.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover {
+  color: var(--text);
+}
+.chat-layout .chat-sidebar-topbar-actions .icon-btn.active {
+  color: var(--text-muted);
+}
+.chat-layout
+  :is(
+    .unified-side-panel,
+    .inspector-frame,
+    .config-panel-frame,
+    .side-chat-panel,
+    .git-review-frame
+  )
+  :is(.icon-btn, .unified-side-panel-shortcut, .unified-side-panel-add) {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout
+  :is(
+    .unified-side-panel,
+    .inspector-frame,
+    .config-panel-frame,
+    .side-chat-panel,
+    .git-review-frame
+  )
+  :is(.icon-btn, .unified-side-panel-shortcut, .unified-side-panel-add):is(:hover, .active) {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout
+  .unified-side-panel
+  :is(.unified-side-panel-tab-close, .unified-side-panel-empty-card-icon),
+.chat-layout
+  .unified-side-panel
+  .unified-side-panel-menu.compact
+  .unified-side-panel-menu-item
+  :is(.chat-view-icon, svg) {
+  color: var(--sidebar-text, var(--text));
+}
+
+/* ── Scrollbar — 全局彻底隐藏（Windows 桌面端滚动条过丑，历史多次修改未生效）──
+   【历史根因】之前「圆角细条、hover 才显形」的方案在 Windows 上反复失效，根因有二：
+     1) 局部 `scrollbar-width: thin`（canvas 节点内联面板、终端 tab 栏）会把该元素切到
+        Chromium「标准滚动条」渲染路径，该路径【完全忽略】::-webkit-scrollbar*，
+        全局圆角规则失效 → 方头丑滚动条常驻。
+     2) webkit 经典路径与标准路径互斥，单写一边都会被另一边的残留规则顶掉。
+   【本次解法】彻底隐藏：webkit 与标准【双路径同时】用 !important 压成 0/none。
+     - 经典路径：`*::-webkit-scrollbar*` 全部 width/height:0 + display:none !important；
+     - 标准路径：`* { scrollbar-width: none !important }`（none = 整条隐藏，不会出现
+       「方头 thumb 残留」，与「thin 仍显示方头」有本质区别）。
+     双管齐下，无论 Chromium 走哪条路径都隐藏；!important 压制所有局部覆盖。
+   【滚动能力】不受影响 —— 滚轮 / 触控板 / 键盘（PgUp/PgDn/方向键）照常工作。
+   【平台】macOS 本就是 overlay 滚动条，隐藏后无差异且更统一，故不区分 OS 全局生效。
+   【终端例外】xterm 自带 `.xterm-scrollable-element > .scrollbar` 是 DOM 模拟滚动条
+   （非原生 ::-webkit-scrollbar），不受本规则影响，终端仍保留其 styled 滚动条。 */
+*::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:start,
+*::-webkit-scrollbar-button:end,
+*::-webkit-scrollbar-button:vertical:start,
+*::-webkit-scrollbar-button:vertical:end,
+*::-webkit-scrollbar-button:horizontal:start,
+*::-webkit-scrollbar-button:horizontal:end {
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+/* 标准滚动条路径兜底：scrollbar-width:none 在标准路径下即「整条隐藏」，
+   与上面 webkit 路径双保险，确保任何被局部 scrollbar-width:thin 切到标准路径的元素
+   也不会冒出方头滚动条。 */
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+/* ============================================================
+   SPARK INPUT — 基于 Arco Input 的主题化输入框
+   ============================================================ */
+
+.spark-input-icon {
+  position: absolute;
+  left: 11px;
+  display: inline-flex;
+  color: var(--text-faint);
+  pointer-events: none;
+  z-index: 1;
+}
+/* ============================================================
+   SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
+   ============================================================ */
+/* textarea（非 composer 输入框）滚动条样式由全局规则统一处理（见 styles.css 顶部
+   的 `::-webkit-scrollbar*` 经典路径）。此处不单独覆盖，避免与全局圆头/宽度规则冲突。
+   注意：composer 会话输入框的滚动条单独隐藏（见 views.css .composer textarea）。 */
+/* ============================================================
+   SPARK CHECKBOX — Arco Checkbox 主题覆盖
+   ============================================================ */
+
+/* Checkbox styling (for markdown task lists) */
+input.spark-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+  margin: 2px 0 0;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+input.spark-checkbox:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+input.spark-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* utility */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+}
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.flex1 {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.muted {
+  color: var(--text-muted);
+}
+.faint {
+  color: var(--text-faint);
+}
+.strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.mono-sm {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-sm);
+}
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  position: relative;
+}
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--success);
+  opacity: 0.4;
+  animation: pulse 1.6s ease-out infinite;
+}
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Streaming cursor — removed (no blinking cursor during streaming) */

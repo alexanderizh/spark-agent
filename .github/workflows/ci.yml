@@ -1,0 +1,123 @@
+name: CI
+
+# 质量安全网（工程化还债方案 Phase 0.1；2026-08-15 按单人开发定位调整）：
+# - 阻塞项：typecheck / lint / file-size ratchet —— 快、确定性、跨平台一致，
+#   挡住并行 agent 的低级回归。
+# - 咨询项：全部单测 continue-on-error —— 单测多按 Windows/macOS 行为编写
+#   （shell 探测、路径处理等），ubuntu 上存在平台敏感失败，不构成真实回归
+#   信号；失败在 job 步骤中可见但不阻塞。
+# - 文档类改动不触发 CI（paths-ignore），支持 workflow_dispatch 手动触发。
+# - 原生依赖：CI 环境下 scripts/sqlite-abi.sh 会跳过 vendor 切换（vendor 二进制
+#   为 macOS arm64），Linux 直接使用 prebuild-install 下载的平台预编译。
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  file-size:
+    name: File size ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Check file size ratchet
+        run: node scripts/check-file-size.mjs
+
+  spark-engine:
+    name: Spark engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spark-engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: 'spark-engine/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+  quality:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: protocol
+            package: '@spark/protocol'
+          - label: shared
+            package: '@spark/shared'
+          - label: storage
+            package: '@spark/storage'
+          - label: agent-runtime
+            package: '@spark/agent-runtime'
+          - label: plugin-sdk
+            package: '@spark/plugin-sdk'
+          - label: desktop
+            package: '@spark/desktop'
+          - label: website
+            package: '@spark/website'
+            test-blocking: false
+            skip-lint: true
+            skip-tests: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Cache electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter ${{ matrix.package }} run typecheck
+
+      - name: Codex App Server protocol compatibility
+        if: matrix.package == '@spark/agent-runtime'
+        run: pnpm run check:codex-protocol
+
+      - name: Lint
+        if: matrix.skip-lint != true
+        run: pnpm --filter ${{ matrix.package }} run lint
+
+      - name: Unit tests
+        if: matrix.skip-tests != true
+        run: pnpm --filter ${{ matrix.package }} run test:unit
+        # 单人开发定位：单测为咨询项（失败在步骤内可见，不阻塞 job），见头部注释
+        continue-on-error: true

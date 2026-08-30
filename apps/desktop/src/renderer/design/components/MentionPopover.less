@@ -1,0 +1,11 @@
+// MentionPopover 局部样式
+// 基础容器 .mention-popover-avatar (32x32) 定义在 styles/views.css，但缺少对内部
+// img / .spark-avatar-fallback 的尺寸约束，导致头像不按容器大小显示（图片走原生
+// 尺寸、fallback 塌陷）。这里补齐 fill 规则，与 .team-member-avatar 等保持一致。
+.mention-popover-avatar img,
+.mention-popover-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}

@@ -1,0 +1,53 @@
+name: Commit email policy
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Reject corporate commit emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check author and committer emails
+        env:
+          AFTER_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -eu
+
+          zero_sha=0000000000000000000000000000000000000000
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            revision_range="$BASE_SHA..$AFTER_SHA"
+          elif [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "$zero_sha" ]; then
+            revision_range="$BEFORE_SHA..$AFTER_SHA"
+          else
+            revision_range="$AFTER_SHA"
+          fi
+
+          violations="$({
+            git log "$revision_range" --format='%H%x09%ae%x09%ce' || exit 1
+          } | awk -F '\t' '
+            tolower($2) ~ /@byteplan[.]com$/ || tolower($3) ~ /@byteplan[.]com$/ {
+              print $1
+            }
+          ')"
+
+          if [ -n "$violations" ]; then
+            echo "Corporate email addresses are not allowed in commit metadata."
+            echo "Rejected commits:"
+            echo "$violations"
+            exit 1
+          fi
+
+          echo "Commit email policy passed."

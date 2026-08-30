@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "com.acme.tasks",
+  "version": "1.0.0",
+  "displayName": "Acme Tasks",
+  "description": "让 Agent 在用户授权的 Acme Tasks 工作区内搜索和更新任务。",
+  "author": { "name": "Acme" },
+  "license": "Apache-2.0",
+  "categories": ["productivity"],
+  "tags": ["tasks", "planning"],
+  "permissions": {
+    "required": ["network", "secrets.read", "connector.account"],
+    "optional": []
+  },
+  "activation": "on-demand",
+  "contributions": {
+    "runtimes": [
+      {
+        "id": "acme-tasks",
+        "kind": "connector",
+        "provider": "acme",
+        "execution": {
+          "type": "worker",
+          "entrypoint": "runtime/index.js",
+          "packageSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "toolNamespace": "acme",
+        "accountMode": "multiple",
+        "activation": "on-demand"
+      }
+    ],
+    "skills": [
+      {
+        "id": "acme-task-planning",
+        "path": "skills/acme-task-planning",
+        "name": "Acme 任务规划",
+        "description": "将用户目标拆分为 Acme Tasks 中可执行的任务。"
+      }
+    ],
+    "mcpServers": [],
+    "connectors": []
+  }
+}

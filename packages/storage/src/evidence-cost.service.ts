@@ -1,0 +1,467 @@
+import { randomUUID } from 'node:crypto'
+import type { CostAggregate, CostEvent, EvidenceRecord, EvidenceStatus } from '@spark/protocol'
+import { aggregateCost } from '@spark/protocol'
+import type { SparkDatabase } from './database.js'
+
+export type EvidenceCostCapability = 'agent' | 'system' | 'user'
+export interface EvidenceCostScope {
+  sessionId: string
+  roomId: string
+  discussionId: string
+  actorId: string
+}
+export class EvidenceCostConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EvidenceCostConflictError'
+  }
+}
+
+export class EvidenceCostService {
+  private constructor(
+    private readonly db: SparkDatabase,
+    private readonly scope: EvidenceCostScope,
+    private readonly capability: EvidenceCostCapability,
+  ) {}
+  static forAgent(db: SparkDatabase, scope: EvidenceCostScope) {
+    return new EvidenceCostService(db, scope, 'agent')
+  }
+  static forSystem(db: SparkDatabase, scope: EvidenceCostScope) {
+    return new EvidenceCostService(db, scope, 'system')
+  }
+  static forUser(db: SparkDatabase, scope: EvidenceCostScope) {
+    return new EvidenceCostService(db, scope, 'user')
+  }
+
+  addEvidence(input: {
+    id: string
+    claim: string
+    links?: Array<{ type: EvidenceRecord['links'][number]['type']; id: string }>
+    source: EvidenceRecord['source']
+    version?: string | null
+    summary: string
+    hash?: string | null
+    opId: string
+  }): EvidenceRecord {
+    return this.mutateEvidence('add', input.opId, input.id, input, () => {
+      const now = new Date().toISOString()
+      return {
+        id: input.id,
+        ...this.scope,
+        claim: input.claim,
+        links: input.links ?? [],
+        source: input.source,
+        version: input.version ?? null,
+        summary: input.summary,
+        hash: input.hash ?? null,
+        status: 'unknown' as const,
+        verifiedBy: null,
+        verifiedAt: null,
+        createdBy: this.scope.actorId,
+        createdAt: now,
+        updatedAt: now,
+        versionNumber: 1,
+      }
+    })
+  }
+  verifyEvidence(input: { id: string; expectedVersion: number; opId: string }): EvidenceRecord {
+    this.assertTrusted()
+    return this.mutateEvidence('verify', input.opId, input.id, input, (current) =>
+      this.transition(current, input.expectedVersion, 'verified'),
+    )
+  }
+  invalidateEvidence(input: {
+    id: string
+    expectedVersion: number
+    reason: string
+    opId: string
+  }): EvidenceRecord {
+    this.assertTrusted()
+    return this.mutateEvidence('invalidate', input.opId, input.id, input, (current) => {
+      const transitioned = this.transition(current, input.expectedVersion, 'invalid')
+      return { ...transitioned, summary: `${transitioned.summary} [invalid: ${input.reason}]` }
+    })
+  }
+  listEvidence(limit = 100): EvidenceRecord[] {
+    return (
+      this.db.raw
+        .prepare(
+          'SELECT * FROM evidence_cost_evidence WHERE session_id=? AND room_id=? AND discussion_id=? ORDER BY created_at,id LIMIT ?',
+        )
+        .all(
+          this.scope.sessionId,
+          this.scope.roomId,
+          this.scope.discussionId,
+          Math.min(100, Math.max(1, limit)),
+        ) as EvidenceRow[]
+    ).map(toEvidence)
+  }
+  recordUsage(input: {
+    id: string
+    taskId?: string | null
+    agentId?: string | null
+    dispatchId?: string | null
+    tokens?: number | null
+    amount?: number | null
+    currency?: string | null
+    latencyMs?: number | null
+    status: CostEvent['status']
+    source?: string | null
+    opId: string
+  }): CostEvent {
+    return this.db.raw.transaction(() => {
+      const prior = this.db.raw
+        .prepare('SELECT * FROM evidence_cost_events WHERE op_id=?')
+        .get(input.opId) as CostRow | undefined
+      const request = JSON.stringify({ ...input, scope: this.scope })
+      if (prior) {
+        if (prior.request_json !== request)
+          throw new EvidenceCostConflictError(`opId conflicts: ${input.opId}`)
+        return toCost(prior)
+      }
+      const event = {
+        id: input.id,
+        sessionId: this.scope.sessionId,
+        roomId: this.scope.roomId,
+        discussionId: this.scope.discussionId,
+        actorId: this.scope.actorId,
+        taskId: input.taskId ?? null,
+        agentId: input.agentId ?? null,
+        dispatchId: input.dispatchId ?? null,
+        tokens: input.tokens ?? null,
+        amount: input.amount ?? null,
+        currency: input.currency ?? null,
+        latencyMs: input.latencyMs ?? null,
+        status: input.status,
+        source: input.source ?? null,
+        createdAt: new Date().toISOString(),
+      } as CostEvent & { actorId: string }
+      this.db.raw
+        .prepare(
+          'INSERT INTO evidence_cost_events (id,session_id,room_id,discussion_id,op_id,actor_id,task_id,agent_id,dispatch_id,tokens,amount,currency,latency_ms,status,source,request_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          event.id,
+          this.scope.sessionId,
+          this.scope.roomId,
+          this.scope.discussionId,
+          input.opId,
+          event.actorId,
+          event.taskId,
+          event.agentId,
+          event.dispatchId,
+          event.tokens,
+          event.amount,
+          event.currency,
+          event.latencyMs,
+          event.status,
+          event.source,
+          request,
+          event.createdAt,
+        )
+      return event
+    })()
+  }
+  listCosts(limit = 100, offset = 0): CostEvent[] {
+    return this.listCostsPage(limit, offset).items
+  }
+  listCostsPage(limit = 100, offset = 0): { items: CostEvent[]; total: number; hasMore: boolean } {
+    const boundedLimit = clamp(limit, 1, 1_000)
+    const boundedOffset = Math.max(0, Math.trunc(offset))
+    const params = [this.scope.sessionId, this.scope.roomId, this.scope.discussionId] as const
+    const total = (
+      this.db.raw
+        .prepare(
+          'SELECT COUNT(*) AS count FROM evidence_cost_events WHERE session_id=? AND room_id=? AND discussion_id=?',
+        )
+        .get(...params) as { count: number }
+    ).count
+    const rows = this.db.raw
+      .prepare(
+        'SELECT * FROM evidence_cost_events WHERE session_id=? AND room_id=? AND discussion_id=? ORDER BY created_at,id LIMIT ? OFFSET ?',
+      )
+      .all(...params, boundedLimit, boundedOffset) as CostRow[]
+    return { items: rows.map(toCost), total, hasMore: boundedOffset + rows.length < total }
+  }
+  aggregate(): CostAggregate[] {
+    const rows = this.db.raw
+      .prepare(
+        'SELECT * FROM evidence_cost_events WHERE session_id=? AND room_id=? AND discussion_id=? ORDER BY created_at,id',
+      )
+      .all(this.scope.sessionId, this.scope.roomId, this.scope.discussionId) as CostRow[]
+    return aggregateCost(rows.map(toCost))
+  }
+  setBudget(input: {
+    tokens?: number | null
+    amount?: number | null
+    currency?: string | null
+    expectedVersion: number
+    opId: string
+  }) {
+    this.assertTrusted()
+    return this.db.raw.transaction(() => {
+      const row = this.db.raw
+        .prepare(
+          'SELECT * FROM evidence_cost_budgets WHERE session_id=? AND room_id=? AND discussion_id=?',
+        )
+        .get(this.scope.sessionId, this.scope.roomId, this.scope.discussionId) as
+        | BudgetRow
+        | undefined
+      const request = JSON.stringify({ ...input, scope: this.scope })
+      if (row?.last_op_id === input.opId) {
+        if (row.last_request_json !== request)
+          throw new EvidenceCostConflictError(`opId conflicts: ${input.opId}`)
+        return {
+          tokens: row.tokens,
+          amount: row.amount,
+          currency: row.currency,
+          version: row.version,
+        }
+      }
+      if ((row?.version ?? 0) !== input.expectedVersion)
+        throw new EvidenceCostConflictError(`Expected budget version ${input.expectedVersion}`)
+      const next = (row?.version ?? 0) + 1
+      this.db.raw
+        .prepare(
+          'INSERT INTO evidence_cost_budgets(session_id,room_id,discussion_id,tokens,amount,currency,version,last_op_id,last_request_json,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(session_id,room_id,discussion_id) DO UPDATE SET tokens=excluded.tokens,amount=excluded.amount,currency=excluded.currency,version=excluded.version,last_op_id=excluded.last_op_id,last_request_json=excluded.last_request_json,updated_at=excluded.updated_at',
+        )
+        .run(
+          this.scope.sessionId,
+          this.scope.roomId,
+          this.scope.discussionId,
+          input.tokens ?? null,
+          input.amount ?? null,
+          input.currency ?? null,
+          next,
+          input.opId,
+          request,
+          new Date().toISOString(),
+        )
+      return {
+        tokens: input.tokens ?? null,
+        amount: input.amount ?? null,
+        currency: input.currency ?? null,
+        version: next,
+      }
+    })()
+  }
+  budget(): BudgetRow | undefined {
+    return this.db.raw
+      .prepare(
+        'SELECT tokens,amount,currency,version FROM evidence_cost_budgets WHERE session_id=? AND room_id=? AND discussion_id=?',
+      )
+      .get(this.scope.sessionId, this.scope.roomId, this.scope.discussionId) as
+      | BudgetRow
+      | undefined
+  }
+  static deleteBySession(db: SparkDatabase, sessionId: string): number {
+    return db.raw.transaction(() => {
+      let n = 0
+      for (const table of [
+        'evidence_cost_evidence_events',
+        'evidence_cost_evidence',
+        'evidence_cost_events',
+        'evidence_cost_budgets',
+      ])
+        n += db.raw.prepare(`DELETE FROM ${table} WHERE session_id=?`).run(sessionId).changes
+      return n
+    })()
+  }
+  private assertTrusted() {
+    if (this.capability === 'agent')
+      throw new EvidenceCostConflictError('Agent capability cannot verify evidence or set budget.')
+  }
+  private transition(
+    current: EvidenceRecord | undefined,
+    expected: number,
+    status: EvidenceStatus,
+  ): EvidenceRecord {
+    if (!current) throw new EvidenceCostConflictError('Evidence not found')
+    if (current.versionNumber !== expected)
+      throw new EvidenceCostConflictError(
+        `Expected evidence version ${expected}, current version is ${current.versionNumber}`,
+      )
+    return {
+      ...current,
+      status,
+      verifiedBy: status === 'verified' ? this.scope.actorId : null,
+      verifiedAt: status === 'unknown' ? null : new Date().toISOString(),
+      versionNumber: current.versionNumber + 1,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+  private mutateEvidence(
+    operation: string,
+    opId: string,
+    targetId: string,
+    request: object,
+    build: (current?: EvidenceRecord) => EvidenceRecord,
+  ): EvidenceRecord {
+    return this.db.raw.transaction(() => {
+      const requestJson = JSON.stringify(request)
+      const prior = this.db.raw
+        .prepare('SELECT * FROM evidence_cost_evidence_events WHERE op_id=?')
+        .get(opId) as EventRow | undefined
+      if (prior) {
+        if (
+          prior.target_id !== targetId ||
+          prior.operation !== operation ||
+          prior.request_json !== requestJson
+        )
+          throw new EvidenceCostConflictError(`opId conflicts: ${opId}`)
+        return JSON.parse(prior.record_json) as EvidenceRecord
+      }
+      const currentRow = this.db.raw
+        .prepare(
+          'SELECT * FROM evidence_cost_evidence WHERE id=? AND session_id=? AND room_id=? AND discussion_id=?',
+        )
+        .get(targetId, this.scope.sessionId, this.scope.roomId, this.scope.discussionId) as
+        | EvidenceRow
+        | undefined
+      if (operation === 'add' && currentRow == null) {
+        const count = this.db.raw
+          .prepare(
+            'SELECT COUNT(*) AS count FROM evidence_cost_evidence WHERE session_id=? AND room_id=? AND discussion_id=?',
+          )
+          .get(this.scope.sessionId, this.scope.roomId, this.scope.discussionId) as {
+          count: number
+        }
+        if (count.count >= 100)
+          throw new EvidenceCostConflictError('Evidence quota exceeded (100 per discussion)')
+      }
+      const record = build(currentRow ? toEvidence(currentRow) : undefined)
+      this.db.raw
+        .prepare(
+          'INSERT INTO evidence_cost_evidence(id,session_id,room_id,discussion_id,claim,links_json,source_json,version_label,summary,hash,status,verified_by,verified_at,created_by,version_number,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET claim=excluded.claim,links_json=excluded.links_json,source_json=excluded.source_json,version_label=excluded.version_label,summary=excluded.summary,hash=excluded.hash,status=excluded.status,verified_by=excluded.verified_by,verified_at=excluded.verified_at,version_number=excluded.version_number,updated_at=excluded.updated_at',
+        )
+        .run(
+          record.id,
+          record.sessionId,
+          record.roomId,
+          record.discussionId,
+          record.claim,
+          JSON.stringify(record.links),
+          JSON.stringify(record.source),
+          record.version,
+          record.summary,
+          record.hash,
+          record.status,
+          record.verifiedBy,
+          record.verifiedAt,
+          record.createdBy,
+          record.versionNumber,
+          record.createdAt,
+          record.updatedAt,
+        )
+      this.db.raw
+        .prepare(
+          'INSERT INTO evidence_cost_evidence_events(id,session_id,room_id,discussion_id,op_id,target_id,operation,actor_id,request_json,record_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          randomUUID(),
+          ...[
+            this.scope.sessionId,
+            this.scope.roomId,
+            this.scope.discussionId,
+            opId,
+            targetId,
+            operation,
+            this.scope.actorId,
+            requestJson,
+            JSON.stringify(record),
+            record.updatedAt,
+          ],
+        )
+      return record
+    })()
+  }
+}
+type EvidenceRow = {
+  id: string
+  session_id: string
+  room_id: string
+  discussion_id: string
+  claim: string
+  links_json: string
+  source_json: string
+  version_label: string | null
+  summary: string
+  hash: string | null
+  status: EvidenceStatus
+  verified_by: string | null
+  verified_at: string | null
+  created_by: string
+  version_number: number
+  created_at: string
+  updated_at: string
+}
+type EventRow = { target_id: string; operation: string; request_json: string; record_json: string }
+type CostRow = {
+  id: string
+  session_id: string
+  room_id: string
+  discussion_id: string
+  actor_id: string
+  task_id: string | null
+  agent_id: string | null
+  dispatch_id: string | null
+  tokens: number | null
+  amount: number | null
+  currency: string | null
+  latency_ms: number | null
+  status: CostEvent['status']
+  source: string | null
+  request_json: string
+  created_at: string
+}
+export type BudgetRow = {
+  tokens: number | null
+  amount: number | null
+  currency: string | null
+  version: number
+  last_op_id?: string | null
+  last_request_json?: string | null
+}
+function toEvidence(row: EvidenceRow): EvidenceRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    roomId: row.room_id,
+    discussionId: row.discussion_id,
+    claim: row.claim,
+    links: JSON.parse(row.links_json),
+    source: JSON.parse(row.source_json),
+    version: row.version_label,
+    summary: row.summary,
+    hash: row.hash,
+    status: row.status,
+    verifiedBy: row.verified_by,
+    verifiedAt: row.verified_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    versionNumber: row.version_number,
+  }
+}
+function toCost(row: CostRow): CostEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    roomId: row.room_id,
+    discussionId: row.discussion_id,
+    actorId: row.actor_id,
+    taskId: row.task_id,
+    agentId: row.agent_id,
+    dispatchId: row.dispatch_id,
+    tokens: row.tokens,
+    amount: row.amount,
+    currency: row.currency,
+    latencyMs: row.latency_ms,
+    status: row.status,
+    source: row.source,
+    createdAt: row.created_at,
+  } as CostEvent
+}
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.trunc(value)))
+}

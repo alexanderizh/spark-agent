@@ -1,0 +1,385 @@
+.pv_contract_editor {
+  color: var(--text, #e4e4e7);
+  font-size: 12px;
+  color-scheme: dark;
+}
+
+html[data-theme='light'] .pv_contract_editor,
+.app.theme-light .pv_contract_editor {
+  color-scheme: light;
+}
+
+.pv_adapter_section,
+.pv_adapter_subsection {
+  border: 1px solid var(--border, #3d3d3d);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 0 0 12px;
+  background: var(--panel, #303030);
+}
+
+.pv_adapter_subsection {
+  border-style: dashed;
+  padding: 12px;
+  background: color-mix(in srgb, var(--panel, #303030) 94%, var(--primary, #7c3aed) 6%);
+}
+
+.pv_adapter_section_head,
+.pv_adapter_subhead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.pv_adapter_subhead {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.pv_adapter_subhead span,
+.pv_adapter_hint,
+.pv_adapter_field_label small {
+  color: var(--text-muted, #9ca3af);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.pv_adapter_hint {
+  line-height: 1.55;
+  margin-top: 3px;
+}
+
+.pv_adapter_tags,
+.pv_adapter_cap_tabs,
+.pv_adapter_chip_row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pv_adapter_grid {
+  display: grid;
+  gap: 10px;
+}
+
+.pv_adapter_grid_2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pv_adapter_field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pv_adapter_field_full {
+  margin-top: 10px;
+}
+
+.pv_adapter_field_label {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.pv_adapter_field_label em {
+  color: var(--danger, #f87171);
+  font-style: normal;
+}
+
+.pv_adapter_field_label small {
+  flex: 1;
+}
+
+.pv_adapter_chip {
+  border: 1px solid var(--border-strong, #4a4a4a);
+  background: var(--bg-soft, #2c2c2c);
+  border-radius: 999px;
+  color: var(--text-muted, #9ca3af);
+  cursor: pointer;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.pv_adapter_chip.is-on {
+  background: rgba(22, 119, 255, 0.1);
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.pv_adapter_capability_add {
+  min-height: 28px;
+  border: 1px dashed var(--border-strong, #4a4a4a);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--bg-sunken, #1a1a1a);
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_adapter_id_line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_adapter_preset_row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-sunken, #1a1a1a);
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_adapter_preset_row select {
+  min-width: 260px;
+  height: 30px;
+  border: 1px solid var(--border-strong, #4a4a4a);
+  border-radius: 5px;
+  background: var(--bg-soft, #2c2c2c);
+  color: var(--text, #e4e4e7);
+  padding: 0 8px;
+}
+
+.pv_adapter_id_line code {
+  border-radius: 4px;
+  background: var(--bg-sunken, #1a1a1a);
+  padding: 3px 6px;
+  font-family: var(--font-family-code, monospace);
+}
+
+.pv_adapter_json,
+.pv_adapter_textarea {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--border-strong, #4a4a4a);
+  border-radius: 5px;
+  padding: 7px 8px;
+  resize: vertical;
+  background: var(--bg-sunken, #1a1a1a);
+  color: var(--text, #e4e4e7);
+  font-family: var(--font-family-code, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pv_adapter_textarea {
+  font-family: inherit;
+}
+
+.pv_adapter_json:focus,
+.pv_adapter_textarea:focus {
+  outline: none;
+  border-color: var(--primary, #8b5cf6);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #8b5cf6) 22%, transparent);
+}
+
+.pv_contract_editor :is(input, select, textarea) {
+  color-scheme: dark;
+}
+
+.pv_contract_editor input:not([type='checkbox']),
+.pv_contract_editor select,
+.pv_contract_editor textarea {
+  background-color: var(--bg-sunken, #1a1a1a);
+  border-color: var(--border-strong, #4a4a4a);
+  color: var(--text, #e4e4e7);
+}
+
+/* Lobe UI wraps several fields with Ant Design classes; keep those controls in
+ * the same theme surface instead of inheriting the light default palette. */
+.pv_contract_editor
+  :is(.ant-input, .ant-input-affix-wrapper, .ant-input-number, .ant-select-selector) {
+  background-color: var(--bg-sunken, #1a1a1a) !important;
+  border-color: var(--border-strong, #4a4a4a) !important;
+  color: var(--text, #e4e4e7) !important;
+}
+
+.pv_contract_editor :is(.ant-input, .ant-input-number-input) {
+  color: var(--text, #e4e4e7) !important;
+}
+
+.pv_contract_editor .ant-select-selection-item,
+.pv_contract_editor .ant-select-selection-placeholder,
+.pv_contract_editor .ant-input::placeholder {
+  color: var(--text-muted, #9ca3af) !important;
+}
+
+.pv_contract_editor input::placeholder,
+.pv_contract_editor textarea::placeholder {
+  color: var(--text-faint, #6b7280);
+}
+
+.pv_adapter_json_error {
+  color: var(--danger, #f87171);
+  font-size: 11px;
+}
+
+.pv_parameter_editor {
+  display: grid;
+  gap: 10px;
+}
+
+.pv_parameter_toolbar,
+.pv_parameter_card_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pv_parameter_toolbar {
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_parameter_add,
+.pv_parameter_remove {
+  border: 1px solid var(--border-strong, #4a4a4a);
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: var(--bg-soft, #2c2c2c);
+  color: var(--text, #e4e4e7);
+  cursor: pointer;
+}
+
+.pv_parameter_add {
+  border-color: var(--primary, #8b5cf6);
+  color: var(--primary, #a78bfa);
+}
+
+.pv_parameter_remove {
+  border-color: color-mix(in srgb, var(--danger, #f87171) 45%, var(--border-strong, #4a4a4a));
+  color: var(--danger, #f87171);
+}
+
+.pv_parameter_card {
+  border: 1px solid var(--border, #3d3d3d);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--bg-sunken, #1a1a1a);
+}
+
+.pv_parameter_card_head {
+  margin-bottom: 10px;
+}
+
+.pv_parameter_grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pv_parameter_field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pv_parameter_field > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.pv_parameter_field small {
+  color: var(--text-muted, #9ca3af);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.pv_parameter_required {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.pv_parameter_empty {
+  border: 1px dashed var(--border-strong, #4a4a4a);
+  border-radius: 8px;
+  padding: 18px;
+  text-align: center;
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_parameter_advanced {
+  margin-top: 10px;
+  color: var(--text-muted, #9ca3af);
+}
+
+.pv_parameter_advanced summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.pv_adapter_checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.pv_custom_adapter_entry {
+  grid-column: 1 / -1;
+  align-self: start;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(22, 119, 255, 0.35);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary, #8b5cf6) 10%, var(--panel, #303030));
+}
+
+.pv_custom_adapter_entry > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pv_custom_adapter_entry strong,
+.pv_custom_adapter_entry span {
+  writing-mode: horizontal-tb;
+  word-break: normal;
+  white-space: normal;
+}
+
+.pv_custom_adapter_entry span {
+  color: var(--text-muted, #9ca3af);
+  font-size: 11px;
+}
+
+.pv_custom_adapter_modal_body {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+  overflow: hidden;
+  overflow-y: auto;
+  padding: 2px 12px 24px 12px;
+}
+
+@media (max-width: 860px) {
+  .pv_adapter_grid_2,
+  .pv_parameter_grid {
+    grid-template-columns: 1fr;
+  }
+}

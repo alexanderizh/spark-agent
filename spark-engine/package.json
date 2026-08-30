@@ -1,0 +1,69 @@
+{
+  "name": "@spark/agent",
+  "version": "0.4.0",
+  "description": "Deterministic, event-sourced coding agent SDK, CLI, and TUI",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=22.14.0 <23"
+  },
+  "bin": {
+    "spark": "./dist/cli/main.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "import": "./dist/events/index.js"
+    },
+    "./tui": {
+      "types": "./dist/tui/index.d.ts",
+      "import": "./dist/tui/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "boundary": "node scripts/boundary-check.mjs",
+    "build": "npm run boundary && tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run build:test && vitest run",
+    "build:test": "tsup --silent",
+    "test:watch": "vitest",
+    "golden": "vitest run test/golden.test.ts",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:publish": "node scripts/publish-release-to-minio.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
+    "verify:package": "node scripts/package-smoke.mjs",
+    "verify": "npm run boundary && npm run typecheck && npm run lint && npm test && npm run build && npm run verify:package"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "fast-glob": "3.3.3",
+    "ignore": "7.0.6",
+    "ink": "7.1.1",
+    "react": "19.2.8",
+    "smol-toml": "1.8.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.3.0",
+    "@types/react": "19.2.18",
+    "eslint": "10.4.0",
+    "ink-testing-library": "4.0.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.68.0",
+    "vitest": "3.2.6"
+  }
+}

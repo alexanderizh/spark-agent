@@ -1,0 +1,171 @@
+.computer-use-settings {
+  max-width: 920px;
+}
+
+.computer-use-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.computer-use-heading h2 {
+  margin: 0 0 6px;
+}
+
+.computer-use-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+}
+
+.computer-use-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.computer-use-summary strong {
+  color: var(--text, #1f2328);
+  font-size: 13px;
+}
+
+.computer-use-summary span {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.computer-use-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #d97706;
+}
+
+.computer-use-summary.ready .computer-use-status-dot {
+  background: #16a34a;
+}
+
+.computer-use-error {
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 2px solid #dc2626;
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.computer-use-permission-list {
+  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+}
+
+.computer-use-permission-row,
+.computer-use-diagnostic {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+}
+
+.computer-use-permission-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--primary, #2563eb);
+}
+
+.computer-use-permission-copy,
+.computer-use-diagnostic-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.computer-use-permission-title {
+  color: var(--text, #1f2328);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.computer-use-permission-description {
+  margin-top: 3px;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.computer-use-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: #b45309;
+  font-size: 12px;
+}
+
+.computer-use-state::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
+.computer-use-state.ready {
+  color: #15803d;
+}
+
+.computer-use-diagnostic {
+  align-items: flex-start;
+  padding-block: 14px;
+  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+}
+
+.computer-use-diagnostic-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.computer-use-diagnostic-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 8px;
+  color: var(--muted, #6b7280);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .computer-use-heading,
+  .computer-use-permission-row,
+  .computer-use-diagnostic {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .computer-use-permission-icon {
+    display: none;
+  }
+
+  .computer-use-state {
+    align-self: flex-start;
+  }
+
+  .computer-use-diagnostic-actions {
+    flex-wrap: wrap;
+  }
+}
+
+html[data-spark-theme='dark'] .computer-use-summary strong,
+html[data-spark-theme='dark'] .computer-use-permission-title {
+  color: var(--text, #f3f4f6);
+}

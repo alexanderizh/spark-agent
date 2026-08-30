@@ -1,0 +1,189 @@
+/* SidebarFilterMenu — 会话栏过滤器弹层样式 */
+
+.sidebar-filter-btn {
+  width: 28px;
+  height: 28px;
+  position: relative;
+  flex-shrink: 0;
+  opacity: 1;
+  color: var(--text-muted);
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &.is-active,
+  &.is-open {
+    color: var(--text);
+  }
+
+  .sidebar-filter-btn-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--primary, #2f6cff);
+  }
+}
+
+/* 主菜单容器(与 .action-menu 一致: 不画 border, 由 Dropdown 外层负责 chrome) */
+.sidebar-filter-menu {
+  width: min(220px, calc(100vw - 32px));
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: var(--pad-xs);
+  background: var(--panel);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 100);
+  overflow: hidden;
+}
+
+/* 一级菜单条目 */
+.sidebar-filter-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row-h);
+  padding: 0 var(--pad-sm) 0 var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: default;
+  gap: var(--pad-sm);
+  cursor: pointer;
+
+  &:hover,
+  &.is-open {
+    background: var(--hover);
+    outline: none;
+  }
+}
+
+.sidebar-filter-row-label {
+  flex: 0 0 auto;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.sidebar-filter-row-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.is-highlight {
+    color: var(--primary, #2f6cff);
+  }
+}
+
+.sidebar-filter-row-chev {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.sidebar-filter-divider {
+  margin: var(--pad-xs) var(--pad-xs);
+  height: 1px;
+  background: var(--border);
+}
+
+.sidebar-filter-clear {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 0 var(--pad-sm) 0 var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: default;
+
+  &:hover {
+    background: var(--hover);
+    outline: none;
+  }
+}
+
+/* 二级子菜单容器(不画 border, 由 Dropdown 外层负责 chrome) */
+.sidebar-filter-submenu {
+  width: min(220px, calc(100vw - 32px));
+  min-width: 160px;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--pad-xs);
+  background: var(--panel);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 100);
+}
+
+.sidebar-filter-submenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row-h);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+  gap: var(--pad-sm);
+
+  &:hover {
+    background: var(--hover);
+    outline: none;
+  }
+
+  &.is-active {
+    color: var(--primary, #2f6cff);
+  }
+}
+
+.sidebar-filter-submenu-item-label {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-filter-submenu-item-text {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-filter-submenu-item-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-filter-submenu-check {
+  color: var(--primary, #2f6cff);
+  flex-shrink: 0;
+}

@@ -1,0 +1,188 @@
+import { buildEntityExtractionPrompt, type ExtractEntityKind } from './canvasEntityExtract'
+import {
+  buildAgentPresetPrompt,
+  DEFAULT_MAX_CLIP_SEC,
+  type AgentPresetContext,
+} from './canvasAgentPromptPresets'
+import type { CanvasOperationType, CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
+import { buildChapterToScreenplayInstruction } from './canvasWorkspaceFilm'
+import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
+import { stripCanvasFunctionalPromptInput } from './canvasPromptInitialization'
+
+export type CanvasPipelineOperationDraft = {
+  operation: CanvasOperationType
+  title: string
+  systemPrompt: string
+  message: string
+  taskPipelineRole?: CanvasPipelineRole
+  outputPipelineRole?: CanvasPipelineRole
+  modelParams?: Record<string, unknown>
+  shotScriptConfig?: ShotScriptConfig
+}
+
+export type BuildCanvasPipelineOperationDraftInput = {
+  actionId: string
+  sourceText: string
+  styleBible?: string
+  maxClipSec?: number
+}
+
+const ENTITY_ACTIONS: Partial<Record<string, ExtractEntityKind>> = {
+  'screenplay.extract_characters': 'character',
+  'screenplay.extract_scenes': 'scene',
+  'screenplay.extract_props': 'prop',
+  'screenplay.extract_effects': 'effect',
+}
+
+const ENTITY_LABELS: Record<ExtractEntityKind, string> = {
+  character: '提取角色',
+  scene: '提取场景',
+  prop: '提取道具',
+  effect: '提取特效',
+}
+
+function buildJsonOnlyStoryboardPrompt(context: AgentPresetContext): string {
+  const prompt = buildAgentPresetPrompt('storyboard', context)
+  const withoutTableInstruction = prompt.replace(
+    '【输出格式】先输出一个完整的 JSON 对象（务必完整闭合 ```json 代码块），再输出 Markdown 表格。',
+    '【输出格式】只输出一个完整 JSON 对象，不要输出 Markdown 表格、解释文字或额外代码块。',
+  )
+  const tableStart = withoutTableInstruction.indexOf('随后输出兼容导入器的 Markdown 表格')
+  const qualityStart = withoutTableInstruction.indexOf('【质量要求（务必遵守）】')
+  if (tableStart < 0 || qualityStart < 0 || qualityStart <= tableStart)
+    return withoutTableInstruction
+  return `${withoutTableInstruction.slice(0, tableStart)}${withoutTableInstruction.slice(qualityStart)}`
+}
+
+function entityDraft(
+  kind: ExtractEntityKind,
+  input: BuildCanvasPipelineOperationDraftInput,
+): CanvasPipelineOperationDraft {
+  const title = ENTITY_LABELS[kind]
+  return {
+    operation: 'text_generate',
+    title,
+    systemPrompt: buildEntityExtractionPrompt(kind, input.sourceText, input.styleBible),
+    message: `确认${title} Prompt、Agent 与模型后点击开始任务`,
+    taskPipelineRole: kind,
+    outputPipelineRole: kind,
+    modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
+  }
+}
+
+export function buildCanvasPipelineOperationDraft(
+  input: BuildCanvasPipelineOperationDraftInput,
+): CanvasPipelineOperationDraft {
+  const entityKind = ENTITY_ACTIONS[input.actionId]
+  if (entityKind) return entityDraft(entityKind, input)
+
+  switch (input.actionId) {
+    case 'chapter.to_screenplay':
+      return {
+        operation: 'text_rewrite',
+        title: '转剧本',
+        systemPrompt: buildChapterToScreenplayInstruction(input.sourceText),
+        message: '确认 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'screenplay',
+        outputPipelineRole: 'screenplay',
+      }
+    case 'screenplay.to_shot_script': {
+      const maxClipSec = input.maxClipSec ?? DEFAULT_MAX_CLIP_SEC
+      return {
+        operation: 'text_generate',
+        title: '生成分镜脚本',
+        systemPrompt: stripCanvasFunctionalPromptInput(
+          buildJsonOnlyStoryboardPrompt({
+            upstreamText: input.sourceText,
+            maxClipSec,
+            ...(input.styleBible ? { styleBible: input.styleBible } : {}),
+          }),
+          'screenplay.to_shot_script',
+        ),
+        message: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'shot',
+        outputPipelineRole: 'shot',
+        modelParams: { workflow: 'shot_script', responseFormat: 'json' },
+        shotScriptConfig: { maxClipSec },
+      }
+    }
+    case 'screenplay.split_episodes':
+      return {
+        operation: 'text_generate',
+        title: '按剧情分集',
+        systemPrompt: `【任务】把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集，并以 JSON 数组结构输出。\n\n要求：\n1. 只输出一个 JSON 对象，不要输出 Markdown 表格、解释文字或 JSON 以外的任何内容。\n2. JSON 结构固定为 {"episodes": [...]}；episodes 内每个元素代表一集，按集号升序排列。\n3. 每集对象包含字段：episodeNo（整数集号）、title（本集标题）、openingHook（开场钩子）、mainConflict（主要冲突）、endingSuspense（结尾悬念）、script（本集完整场次剧本正文）。\n4. script 不要只给剧情摘要，必须输出完整场次剧本正文；每场首行使用「第1场｜内景｜地点｜时间」「场1 内景 地点 时间」或「INT. 地点 - 时间」等场次标题，未知字段保留空值，保持场次剧本格式。\n5. script 内换行使用 \\n 转义。\n\n【剧本】\n${input.sourceText}`,
+        message: '确认分集 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'screenplay',
+        outputPipelineRole: 'screenplay',
+        modelParams: { workflow: 'split_episodes', responseFormat: 'json' },
+      }
+    case 'shot.to_keyframes':
+    case 'screenplay.storyboard_grid':
+      return {
+        operation: 'storyboard_grid',
+        title: '生成分镜关键帧图',
+        systemPrompt:
+          '请根据输入内容生成一张分镜关键帧宫格图，保持镜头顺序、人物一致性与场景连续性；输入可以是普通文本、分镜脚本或图片参考。',
+        message: '确认故事板 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'shot',
+        outputPipelineRole: 'keyframe',
+      }
+    case 'character.three_view':
+      return {
+        operation: 'text_to_image',
+        title: '生成角色身份板',
+        systemPrompt: [
+          '请根据以下角色设定生成专业角色身份板，包含头部和全身多视角，保持身份、服装和五官一致。',
+          input.sourceText,
+          input.styleBible ? `视觉总设定：\n${input.styleBible}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        message: '确认 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'design_card',
+        outputPipelineRole: 'design_card',
+        modelParams: { aspect_ratio: '16:9' },
+      }
+    case 'scene.scene_image':
+    case 'prop.prop_image':
+    case 'effect.effect_image':
+      return {
+        operation: 'text_to_image',
+        title:
+          input.actionId === 'scene.scene_image'
+            ? '生成场景图'
+            : input.actionId === 'prop.prop_image'
+              ? '生成道具图'
+              : '生成特效图',
+        systemPrompt:
+          input.actionId === 'scene.scene_image'
+            ? `${SCENE_NO_PEOPLE_PROMPT}\n\n${input.sourceText}`
+            : input.sourceText,
+        message: '确认 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'design_card',
+        outputPipelineRole: 'design_card',
+      }
+    case 'scene.panorama_360':
+      return {
+        operation: 'panorama_360',
+        title: '场景 360 全景图',
+        systemPrompt: `请根据以下场景设定生成 2:1 equirectangular 等距柱状投影全景图。保持水平线稳定、左右边缘无缝衔接，并完整表现前后左右空间关系。\n\n${input.sourceText}`,
+        message: '确认全景图 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: 'scene',
+        outputPipelineRole: 'design_card',
+        modelParams: { aspect_ratio: '2:1' },
+      }
+    case 'shot.to_video':
+    case 'keyframe.to_video':
+      return {
+        operation: input.actionId === 'keyframe.to_video' ? 'image_to_video' : 'text_to_video',
+        title: '生成视频',
+        systemPrompt: input.sourceText,
+        message: '确认视频 Prompt、Agent 与模型后点击开始任务',
+        taskPipelineRole: input.actionId === 'keyframe.to_video' ? 'keyframe' : 'shot',
+        outputPipelineRole: 'clip',
+      }
+    default:
+      throw new Error(`不支持的画布流水线动作：${input.actionId}`)
+  }
+}

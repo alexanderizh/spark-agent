@@ -1,0 +1,731 @@
+.canvas-prompt-composer {
+  position: relative;
+  min-height: 132px;
+
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+.canvas-prompt-composer-body{
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--panel-elev);
+}
+
+.canvas-prompt-composer-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-prompt-composer-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.canvas-prompt-composer-add:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-composer-body {
+  position: relative;
+  min-height: 82px;
+  padding: 8px 12px 14px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 2.25;
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.canvas-prompt-text-block {
+  outline: none;
+  cursor: text;
+}
+
+.canvas-prompt-lexical-input {
+  display: block;
+  min-height: 82px;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 2.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.canvas-prompt-lexical-paragraph {
+  min-height: 1lh;
+  margin: 0;
+  .canvas-prompt-lexical-text{
+    font-size: 12px;
+  }
+}
+
+.canvas-prompt-lexical-placeholder {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.canvas-prompt-lexical-atomic {
+  display: inline;
+  vertical-align: middle;
+}
+
+.canvas-prompt-chip-shell {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 240px);
+  margin: 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  vertical-align: middle;
+}
+
+.canvas-prompt-chip-shell:hover,
+.canvas-prompt-chip-shell:focus-within {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.canvas-prompt-chip-shell.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  background: var(--danger-bg);
+}
+
+.canvas-prompt-chip-shell > .canvas-prompt-chip {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.canvas-prompt-chip-shell > .canvas-prompt-chip-remove {
+  margin-right: 2px;
+}
+
+.canvas-prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 28px;
+  margin: 0 2px;
+  padding: 0px 7px 0px 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+  vertical-align: middle;
+}
+
+
+.canvas-prompt-chip.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.canvas-prompt-chip-thumb,
+.canvas-prompt-chip-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-chip-icon svg {
+  display: block;
+}
+
+.canvas-prompt-chip.is-parameter {
+  padding-right: 4px;
+}
+
+.canvas-prompt-chip.is-parameter input {
+  min-width: 5ch;
+  max-width: 24ch;
+  padding: 0 2px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 22px;
+}
+
+.canvas-prompt-chip.is-parameter input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.canvas-prompt-chip-unit {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-prompt-chip-remove {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-prompt-chip-remove:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.canvas-prompt-chip-thumb img,
+.canvas-prompt-chip-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-chip-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.canvas-prompt-chip-copy strong,
+.canvas-prompt-chip-copy small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+
+}
+
+.canvas-prompt-chip-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-prompt-menu-thumb {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-menu-thumb svg {
+  display: block;
+}
+
+.canvas-prompt-menu-thumb img,
+.canvas-prompt-menu-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-menu-copy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.canvas-prompt-menu-copy strong,
+.canvas-prompt-menu-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-menu-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.canvas-prompt-insert-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 6px);
+  left: 8px;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  width: min(340px, calc(100vw - 48px));
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-prompt-insert-menu.has-primary-actions {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+
+.canvas-prompt-insert-search {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.canvas-prompt-insert-search:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.canvas-prompt-insert-primary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.canvas-prompt-insert-primary-actions > :only-child {
+  grid-column: 1 / -1;
+}
+
+.canvas-prompt-insert-canvas-pick {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border-strong));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary-soft) 70%, var(--panel-elev));
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.canvas-prompt-insert-canvas-pick:hover,
+.canvas-prompt-insert-canvas-pick:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+  background: var(--primary-soft);
+}
+
+.canvas-prompt-insert-canvas-pick-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-contrast, #fff);
+}
+
+.canvas-prompt-insert-canvas-pick > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.canvas-prompt-insert-canvas-pick strong {
+  font-size: 12px;
+}
+
+.canvas-prompt-insert-canvas-pick small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-prompt-insert-local-upload {
+  display: grid;
+  min-width: 86px;
+  min-height: 48px;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.canvas-prompt-insert-local-upload:hover:not(:disabled),
+.canvas-prompt-insert-local-upload:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-insert-local-upload:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.canvas-prompt-insert-local-file-input {
+  display: none;
+}
+
+.canvas-prompt-insert-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.canvas-prompt-insert-shortcuts button {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  place-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.canvas-prompt-insert-shortcuts button:hover,
+.canvas-prompt-insert-shortcuts button.is-active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-insert-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 7px 5px;
+  border-top: 1px solid var(--divider);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.canvas-prompt-insert-section-title > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.canvas-prompt-insert-section-title small {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.canvas-prompt-insert-section-title select {
+  max-width: 96px;
+  padding: 2px 18px 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.canvas-prompt-insert-results {
+  display: grid;
+  min-height: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+// 画布弹层细圆头滚动条：styles.css 用 *::-webkit-scrollbar{width:0!important} 全局隐藏了
+// 所有原生滚动条，这里局部覆盖回来。手法同 chat-stream（global-overrides.css）：scrollbar-width:auto
+// 切回标准路径 + 局部 ::-webkit-scrollbar 声明，8mm 轨道 + 2mm transparent border +
+// background-clip:content-box 让 thumb 视觉收细到约 4mm 且两头圆。切勿改用 scrollbar-width:thin
+// （会把元素切到 Chromium 标准滚动条路径，反而绕过全局隐藏、显示失控）。全部 !important 以压过通配规则。
+.canvas-prompt-insert-results,
+.canvas-prompt-insert-preview-text,
+.canvas-prompt-hover-scroll {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+
+  &::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+  }
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+  }
+  &::-webkit-scrollbar-thumb {
+    min-height: 28px;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background: var(--border-strong) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-button,
+  &::-webkit-scrollbar-corner {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
+.canvas-prompt-insert-result-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  border-radius: 8px;
+
+  // 整行作为单一视觉块：鼠标悬停或键盘高亮主卡片时，背景铺满整行（含置顶按钮列），
+  // 避免主卡片与置顶按钮各自带圆角背景形成“分块”。
+  &:hover,
+  &:has(.canvas-prompt-insert-result.is-highlighted) {
+    background: var(--hover);
+  }
+}
+
+.canvas-prompt-insert-result {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.canvas-prompt-insert-pin {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.canvas-prompt-insert-result-row:hover .canvas-prompt-insert-pin,
+.canvas-prompt-insert-pin:focus-visible,
+.canvas-prompt-insert-pin.is-pinned {
+  opacity: 1;
+}
+
+// 置顶态与悬停态不再用独立色块（会与行背景分成两块），
+// 只把图标变成主题色作为区分；行级统一背景由上面的 row 规则提供。
+.canvas-prompt-insert-pin:hover,
+.canvas-prompt-insert-pin.is-pinned {
+  color: var(--primary);
+}
+
+.canvas-prompt-insert-empty {
+  padding: 24px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.canvas-prompt-insert-preview {
+  position: absolute;
+  top: 48px;
+  left: calc(100% + 8px);
+  display: grid;
+  width: 252px;
+  max-height: 340px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-prompt-insert-preview.is-left {
+  right: calc(100% + 8px);
+  left: auto;
+}
+
+.canvas-prompt-insert-preview-media {
+  display: grid;
+  min-height: 156px;
+  max-height: 220px;
+  place-items: center;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+
+.canvas-prompt-insert-preview-media img,
+.canvas-prompt-insert-preview-media video {
+  width: 100%;
+  height: 100%;
+  max-height: 220px;
+  object-fit: contain;
+}
+
+.canvas-prompt-insert-preview-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.canvas-prompt-insert-preview-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-insert-preview-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-prompt-insert-preview-text {
+  max-height: 280px;
+  margin-top: 5px;
+  overflow-y: auto;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.canvas-prompt-hover-popover,
+.canvas-prompt-hover-card {
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.canvas-prompt-hover-card {
+  width: min(360px, calc(100vw - 48px));
+}
+
+.canvas-prompt-hover-media {
+  width: 100%;
+  max-height: 280px;
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: 9px;
+  background: #050505;
+}
+
+.canvas-prompt-hover-media img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+
+.canvas-prompt-hover-media-empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-prompt-hover-scroll {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 9px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+// 结果列表「跳到底部」浮动按钮：列表可滚动且不在底部时出现，贴在菜单右下角。
+// 与 .scroll-to-bottom-btn（ChatView）同语汇：圆形、半透明 panel 背景、backdrop-blur。
+.canvas-prompt-insert-jump {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 6;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow-color, #000) 16%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.canvas-prompt-insert-jump:hover,
+.canvas-prompt-insert-jump:focus-visible {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 52%, transparent);
+  outline: none;
+}

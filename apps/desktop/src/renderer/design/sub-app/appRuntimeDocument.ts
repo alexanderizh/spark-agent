@@ -1,0 +1,456 @@
+import type { HtmlRenderTheme } from '@spark/shared'
+import {
+  SUB_APP_PROTOCOL_VERSION,
+  SUB_APP_SOURCE_HARD_LIMIT,
+  type SubAppSurface,
+} from '@spark/protocol'
+
+/** 进程间硬安全上限（协议包统一定义，此处再导出便于渲染层引用）。 */
+export { SUB_APP_SOURCE_HARD_LIMIT }
+
+/**
+ * 子应用运行时安全选项（来源：设置「子应用」分类，默认全部放行）。
+ *
+ * 本地优先 + 用户自担风险模型下默认不设防；每项都可由用户在设置里收紧：
+ *   - allowNetworkAccess：false 时 connect-src 'none'，应用只能经 Spark App
+ *     Bridge 与外界交换数据（含防外发约束：应用数据无法直接提交到任意外部地址）；
+ *   - allowUnsafeEval：false 时 CSP 不带 'unsafe-eval'，babel-standalone 等
+ *     运行时编译器会失效；
+ *   - sourceLengthLimit：> 0 时运行文档拒绝超限源码（0 = 不限制）。
+ */
+export interface SubAppRuntimeSecurityOptions {
+  allowNetworkAccess?: boolean
+  allowUnsafeEval?: boolean
+  sourceLengthLimit?: number
+}
+
+/** 与设置 UI 的默认值保持一致：本地应用默认放行全部能力。 */
+export const DEFAULT_SUB_APP_RUNTIME_SECURITY: Required<SubAppRuntimeSecurityOptions> = {
+  allowNetworkAccess: true,
+  allowUnsafeEval: true,
+  sourceLengthLimit: 0,
+}
+
+/**
+ * 功能型子应用运行文档 CSP。
+ *
+ * frame-src / object-src / base-uri / form-action 固定 'none'（无场景需要）；
+ * script / connect 按安全选项拼接，其余指令保持放行外部 HTTPS/HTTP 资源。
+ */
+function buildSubAppRuntimeCsp(security: Required<SubAppRuntimeSecurityOptions>): string {
+  const scriptSrc = [
+    "'unsafe-inline'",
+    ...(security.allowUnsafeEval ? ["'unsafe-eval'"] : []),
+    'https:',
+    'http:',
+  ].join(' ')
+  const connectSrc = security.allowNetworkAccess ? 'https: http:' : "'none'"
+  return [
+    "default-src 'none'",
+    `script-src ${scriptSrc}`,
+    "style-src 'unsafe-inline' https: http:",
+    'img-src data: blob: https: http: safe-file:',
+    'media-src data: blob: https: http: safe-file:',
+    'font-src data: https: http:',
+    `connect-src ${connectSrc}`,
+    'worker-src blob:',
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ')
+}
+
+export interface SubAppBootstrapConfig {
+  appId: string
+  versionId: string
+  instanceId: string
+  mode: 'draft' | 'published'
+  surface: SubAppSurface
+  /** 平台内部应用标记；缺省按可信内部应用运行。 */
+  trusted?: boolean
+}
+
+export interface BuildAppRuntimeDocumentInput {
+  source: string
+  theme: HtmlRenderTheme
+  config: SubAppBootstrapConfig
+  /** 运行时安全选项；缺省按 DEFAULT_SUB_APP_RUNTIME_SECURITY 全放行。 */
+  security?: SubAppRuntimeSecurityOptions
+}
+
+/**
+ * 小窗口 surface（panel / overlay / global-window / desktop-pet）的铺满兜底。
+ *
+ * 应用源码普遍不写「铺满容器」样式（根容器 max-width 居中、body 不设高度），
+ * 在固定尺寸的浮窗/侧板里会出现应用主体比容器小一圈的观感。宿主在应用源码
+ * 之后注入以下带 !important 的样式强制铺满：
+ *   - html 锁定视口高度，body 至少铺满（保留内容超高的文档流滚动）；
+ *   - body 的首个元素级子节点（应用根容器）横向铺满、去 max-width 与外边距、
+ *     最小高度铺满——只兜底「没写铺满」的应用，不锁死固定高度，长内容仍可滚动。
+ * content surface（全屏内容区）不注入：居中窄栏是全屏下的合理排版。
+ */
+const SURFACE_FILL_STYLE =
+  '<style>html{height:100%!important}body{width:100%!important;min-height:100%!important;margin:0!important}body>*:first-child{width:100%!important;max-width:none!important;min-height:100%!important;margin:0!important}</style>'
+
+/**
+ * panel surface 的贴顶补充。
+ *
+ * 统一侧面板顶部已有 44px tab 栏（面板导航，所有面板 tab 共用），应用根容器
+ * 普遍再自带 16px 级别的顶部 padding，两者叠加后 tab 栏与应用首行内容之间
+ * 会出现一条「无主」的空白带（像素级复现确认：宿主链路本身 0 间距，空白全部
+ * 来自应用自身 padding + 标题行高）。侧板场景额外清零 body padding 与根容器
+ * 顶部 padding，让应用内容贴着 tab 栏开始；overlay / global-window /
+ * desktop-pet 维持已认可的独立窗口观感，不做此覆盖。
+ */
+const PANEL_FLUSH_TOP_STYLE =
+  '<style>body{padding:0!important}body>*:first-child{padding-top:0!important}</style>'
+
+/** 在 `</body>` 前追加片段；无 body 闭合标签时追加到文档末尾。 */
+function appendBeforeBodyEnd(doc: string, snippet: string): string {
+  const bodyClose = doc.toLowerCase().lastIndexOf('</body>')
+  if (bodyClose >= 0) return `${doc.slice(0, bodyClose)}${snippet}${doc.slice(bodyClose)}`
+  return `${doc}${snippet}`
+}
+
+/**
+ * 构建功能型子应用的沙箱运行文档。
+ *
+ * 安全边界：
+ *   - 宿主组件必须把返回值放进 `sandbox="allow-scripts"` 的 iframe（opaque origin）；
+ *   - bootstrap SDK 在用户源码之前注入，应用脚本执行时 `window.sparkApp` 已可用；
+ *   - 注入的配置通过 JSON 转义防止 `</script>` 逃逸。
+ */
+export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): string {
+  const { source, theme, config } = input
+  const security = { ...DEFAULT_SUB_APP_RUNTIME_SECURITY, ...input.security }
+  if (source.length > SUB_APP_SOURCE_HARD_LIMIT) {
+    throw new Error(`子应用源码超过 ${SUB_APP_SOURCE_HARD_LIMIT} 字符硬上限，请精简后再运行。`)
+  }
+  if (security.sourceLengthLimit > 0 && source.length > security.sourceLengthLimit) {
+    throw new Error(
+      `子应用源码超过设置的限制（${security.sourceLengthLimit} 字符），请在设置「子应用」中调整或精简源码。`,
+    )
+  }
+
+  const head = [
+    `<meta http-equiv="Content-Security-Policy" content="${buildSubAppRuntimeCsp(security)}">`,
+    `<meta name="color-scheme" content="${theme}">`,
+    `<meta name="spark-app-mode" content="${config.mode}">`,
+    // html 锁定视口高度后 body 的 min-height:100% 才能解析（否则标准模式下按 auto 处理）
+    `<style>html{height:100%}body{min-height:100%;margin:0}html{color-scheme:${theme}}body{box-sizing:border-box;overflow:auto;background:transparent}</style>`,
+    `<script>${buildBootstrapScript(config)}</script>`,
+  ].join('')
+
+  const documentMatch = source.match(/<html(?:\s[^>]*)?>/i)
+  let doc: string
+  if (documentMatch != null) {
+    const documentIndex = documentMatch.index ?? 0
+    const htmlTag = documentMatch[0].includes('data-spark-theme=')
+      ? documentMatch[0]
+      : documentMatch[0].replace(/^<html/i, `<html data-spark-theme="${theme}"`)
+    const themed = `${source.slice(0, documentIndex)}${htmlTag}${source.slice(documentIndex + documentMatch[0].length)}`
+    const headMatch = themed.match(/<head(?:\s[^>]*)?>/i)
+    if (headMatch?.index != null) {
+      const insertAt = headMatch.index + headMatch[0].length
+      doc = `${themed.slice(0, insertAt)}${head}${themed.slice(insertAt)}`
+    } else {
+      const themedTag = themed.match(/<html(?:\s[^>]*)?>/i)
+      const insertAt =
+        themedTag?.index != null ? themedTag.index + themedTag[0].length : documentIndex
+      doc = `${themed.slice(0, insertAt)}<head>${head}</head>${themed.slice(insertAt)}`
+    }
+  } else {
+    doc = `<!doctype html><html data-spark-theme="${theme}"><head>${head}</head><body>${source}</body></html>`
+  }
+  // 小窗口 surface 的铺满兜底放在应用源码之后：!important 需后置于应用声明才能稳定生效
+  if (config.surface === 'content') return doc
+  const fill =
+    config.surface === 'panel' ? SURFACE_FILL_STYLE + PANEL_FLUSH_TOP_STYLE : SURFACE_FILL_STYLE
+  return appendBeforeBodyEnd(doc, fill)
+}
+
+/**
+ * 沙箱内 bootstrap SDK：提供 `window.sparkApp` 客户端。
+ * 约束：
+ *   - 只与 parent 通过 postMessage 通信，不访问任何 DOM 之外的宿主能力；
+ *   - 请求带超时，避免应用端悬挂 Promise 累积；
+ *   - theme 推送缓存最近一次，应用可同步读取。
+ */
+function buildBootstrapScript(config: SubAppBootstrapConfig): string {
+  const injected = escapeScriptJson({
+    protocolVersion: SUB_APP_PROTOCOL_VERSION,
+    appId: config.appId,
+    versionId: config.versionId,
+    instanceId: config.instanceId,
+    trusted: config.trusted !== false,
+  })
+  return `(function () {
+  'use strict'
+  var cfg = ${injected}
+  var seq = 0
+  var pending = {}
+  var ipcListeners = {}
+  var themeListeners = []
+  var latestTheme = null
+  var REQUEST_TIMEOUT_MS = 30000
+
+  function post(message) { parent.postMessage(message, '*') }
+
+  window.addEventListener('message', function (event) {
+    var data = event.data
+    if (!data || typeof data !== 'object' || data.instanceId !== cfg.instanceId) return
+    if (data.type === 'host/theme') {
+      latestTheme = data.theme
+      applyTheme(data.theme)
+      for (var i = 0; i < themeListeners.length; i++) {
+        try { themeListeners[i](data.theme) } catch (e) { /* 应用监听器异常不影响宿主 */ }
+      }
+      return
+    }
+    if (data.type === 'host/response') {
+      var response = data.response
+      if (!response || typeof response !== 'object') return
+      var entry = pending[response.requestId]
+      if (!entry) return
+      delete pending[response.requestId]
+      clearTimeout(entry.timer)
+      if (response.ok) {
+        entry.resolve(response.data === undefined ? null : response.data)
+      } else {
+        var error = new Error((response.error && response.error.message) || 'Spark App Bridge 调用失败')
+        if (response.error && response.error.code) error.code = response.error.code
+        entry.reject(error)
+      }
+      return
+    }
+    if (data.type === 'host/event') {
+      var listener = ipcListeners[data.subscriptionId]
+      if (typeof listener !== 'function') return
+      try { listener(data.payload, data.channel) } catch (e) { /* 应用监听器异常不影响宿主 */ }
+    }
+  })
+
+  // 主题不要求应用先写一套框架适配代码：宿主 token 同步映射到只读的
+  // --spark-* CSS 变量，应用只要使用这些变量即可自动跟随 SparkWork。
+  function toCssVariable(name) {
+    return '--spark-' + name.replace(/[A-Z]/g, function (letter) {
+      return '-' + letter.toLowerCase()
+    })
+  }
+
+  function applyTheme(theme) {
+    if (!theme || typeof theme !== 'object') return
+    var root = document.documentElement
+    if (theme.theme === 'light' || theme.theme === 'dark') {
+      root.setAttribute('data-spark-theme', theme.theme)
+      root.style.colorScheme = theme.theme
+    }
+    if (theme.tokens && typeof theme.tokens === 'object') {
+      Object.keys(theme.tokens).forEach(function (name) {
+        var value = theme.tokens[name]
+        if (typeof value === 'string') root.style.setProperty(toCssVariable(name), value)
+      })
+    }
+    if (typeof theme.primaryColor === 'string') {
+      root.style.setProperty('--spark-primary-color', theme.primaryColor)
+    }
+    if (typeof theme.fontSize === 'number' && isFinite(theme.fontSize)) {
+      root.style.setProperty('--spark-font-size', theme.fontSize + 'px')
+    }
+    root.style.setProperty('--spark-reduced-motion', theme.reducedMotion ? '1' : '0')
+  }
+
+  function call(capability, operation, payload) {
+    return new Promise(function (resolve, reject) {
+      seq += 1
+      var requestId = cfg.instanceId + '-' + seq
+      var timer = setTimeout(function () {
+        delete pending[requestId]
+        reject(new Error('Spark App Bridge 请求超时: ' + capability + '/' + operation))
+      }, REQUEST_TIMEOUT_MS)
+      pending[requestId] = { resolve: resolve, reject: reject, timer: timer }
+      post({
+        type: 'app/request',
+        instanceId: cfg.instanceId,
+        request: {
+          protocolVersion: cfg.protocolVersion,
+          appId: cfg.appId,
+          versionId: cfg.versionId,
+          instanceId: cfg.instanceId,
+          requestId: requestId,
+          capability: capability,
+          operation: operation,
+          payload: payload === undefined ? null : payload,
+        },
+      })
+    })
+  }
+
+  var privilegedIpc = {
+    invoke: function (channel, request) {
+      return call('ipc', 'invoke', {
+        channel: channel,
+        request: request === undefined ? null : request,
+      })
+    },
+    on: function (channel, listener) {
+      if (typeof listener !== 'function') {
+        return Promise.reject(new Error('sparkApp.ipc.on 需要传入监听函数'))
+      }
+      return call('ipc', 'subscribe', { channel: channel }).then(function (result) {
+        var subscriptionId = result && result.subscriptionId
+        if (typeof subscriptionId !== 'string') {
+          throw new Error('Spark App Bridge 未返回有效的 IPC 订阅 ID')
+        }
+        ipcListeners[subscriptionId] = listener
+        var active = true
+        return function () {
+          if (!active) return Promise.resolve({ unsubscribed: false })
+          active = false
+          delete ipcListeners[subscriptionId]
+          return call('ipc', 'unsubscribe', { subscriptionId: subscriptionId })
+        }
+      })
+    },
+  }
+
+  window.sparkApp = {
+    runtime: {
+      getInfo: function () { return call('runtime', 'getInfo', null) },
+    },
+    theme: {
+      get: function () { return call('theme', 'get', null) },
+      current: function () { return latestTheme },
+      onChange: function (listener) {
+        if (typeof listener !== 'function') return function () {}
+        themeListeners.push(listener)
+        return function () {
+          var index = themeListeners.indexOf(listener)
+          if (index >= 0) themeListeners.splice(index, 1)
+        }
+      },
+    },
+    data: {
+      get: function (namespace, key) { return call('data', 'get', { namespace: namespace, key: key }) },
+      list: function (namespace, options) {
+        var payload = { namespace: namespace }
+        if (options && options.prefix !== undefined) payload.prefix = options.prefix
+        if (options && options.limit !== undefined) payload.limit = options.limit
+        if (options && options.offset !== undefined) payload.offset = options.offset
+        return call('data', 'list', payload)
+      },
+      upsert: function (namespace, key, value, expectedRevision) {
+        var payload = { namespace: namespace, key: key, value: value }
+        if (expectedRevision !== undefined) payload.expectedRevision = expectedRevision
+        return call('data', 'upsert', payload)
+      },
+      delete: function (namespace, key, expectedRevision) {
+        return call('data', 'delete', {
+          namespace: namespace,
+          key: key,
+          expectedRevision: expectedRevision,
+        })
+      },
+    },
+    ui: {
+      toast: function (content, type) {
+        var payload = { content: content }
+        if (type !== undefined) payload.type = type
+        return call('ui', 'toast', payload)
+      },
+    },
+    navigation: {
+      openApp: function (appId) { return call('navigation', 'openApp', { appId: appId }) },
+      openView: function (view) { return call('navigation', 'openView', { view: view }) },
+    },
+    files: {
+      read: function (path) { return call('files', 'read', { path: path }) },
+      write: function (path, content) {
+        return call('files', 'write', { path: path, content: content })
+      },
+      list: function (prefix) {
+        var payload = {}
+        if (prefix !== undefined) payload.prefix = prefix
+        return call('files', 'list', payload)
+      },
+      delete: function (path) { return call('files', 'delete', { path: path }) },
+    },
+    agent: {
+      send: function (prompt, options) {
+        var payload = { prompt: prompt }
+        if (options && options.newSession) payload.newSession = true
+        return call('agent', 'send', payload)
+      },
+    },
+    media: {
+      generate: function (options) {
+        var payload = { operation: options.operation, prompt: options.prompt }
+        if (options.negativePrompt !== undefined) payload.negativePrompt = options.negativePrompt
+        if (options.modelId !== undefined) payload.modelId = options.modelId
+        return call('media', 'generate', payload)
+      },
+      get: function (taskId) { return call('media', 'get', { taskId: taskId }) },
+    },
+    canvas: {
+      listProjects: function () { return call('canvas', 'listProjects', {}) },
+      appendText: function (projectId, text, options) {
+        var payload = { projectId: projectId, text: text }
+        if (options && options.boardId !== undefined) payload.boardId = options.boardId
+        return call('canvas', 'appendText', payload)
+      },
+    },
+    browser: {
+      openUrl: function (url) { return call('browser', 'openUrl', { url: url }) },
+      open: function (url, options) {
+        var payload = { url: url }
+        if (options && options.profileId !== undefined) payload.profileId = options.profileId
+        if (options && options.reuse !== undefined) payload.reuse = options.reuse
+        if (options && options.show !== undefined) payload.show = options.show
+        if (options && options.backend !== undefined) payload.backend = options.backend
+        return call('browser', 'open', payload)
+      },
+      inspectMedia: function (windowId) {
+        return call('browser', 'inspectMedia', { windowId: windowId })
+      },
+      download: function (windowId, url, filename) {
+        var payload = { windowId: windowId, url: url }
+        if (filename !== undefined) payload.filename = filename
+        return call('browser', 'download', payload)
+      },
+      close: function (windowId) {
+        return call('browser', 'close', { windowId: windowId })
+      },
+      openDownload: function (filePath) {
+        return call('browser', 'openDownload', { filePath: filePath })
+      },
+      openDownloadFolder: function () {
+        return call('browser', 'openDownloadFolder', {})
+      },
+      revealDownload: function (filePath) {
+        return call('browser', 'revealDownload', { filePath: filePath })
+      },
+      previewDownload: function (filePath) {
+        return call('browser', 'previewDownload', { filePath: filePath })
+      },
+    },
+    // 平台核心子应用的原始 IPC/stream 面：不受 manifest permissions 裁剪。
+    ipc: privilegedIpc,
+    platform: {
+      ipc: privilegedIpc,
+      invoke: privilegedIpc.invoke,
+      on: privilegedIpc.on,
+      trusted: cfg.trusted === true,
+    },
+  }
+
+  post({ type: 'app/ready', instanceId: cfg.instanceId, protocolVersion: cfg.protocolVersion })
+})()`
+}
+
+function escapeScriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026')
+}
