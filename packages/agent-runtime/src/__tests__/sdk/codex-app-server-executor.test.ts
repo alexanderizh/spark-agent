@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -213,11 +213,54 @@ describe('CodexAppServerExecutor', () => {
     expect(initializedIndex).toBeGreaterThan(initializeIndex)
     expect(threadStartIndex).toBeGreaterThan(initializedIndex)
     expect(journal[threadStartIndex]?.params).toMatchObject({
-      config: { tool_output_token_limit: 12_000 },
+      config: {
+        model_reasoning_summary: 'concise',
+        show_raw_agent_reasoning: false,
+        hide_agent_reasoning: false,
+        tool_output_token_limit: 12_000,
+      },
     })
     expect(
       journal.find((entry) => entry.kind === 'request' && entry.method === 'turn/start')?.params,
     ).toMatchObject({ clientUserMessageId: '00000000-0000-4000-8000-000000000123' })
+  })
+
+  it('隔离损坏的原生 Skill，继续完成 turn 并保留明确诊断', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'codex-invalid-skill-turn-'))
+    const skillDir = join(workspace, '.agents', 'skills', 'broken')
+    await mkdir(join(workspace, '.git'))
+    await mkdir(skillDir, { recursive: true })
+    const skillFile = join(skillDir, 'SKILL.md')
+    await writeFile(skillFile, '# Missing frontmatter\n', 'utf8')
+
+    try {
+      const { events, journal, error } = await runScenario(
+        { steps: [agentMessageCompletedStep('still alive')] },
+        { config: { workspaceRootPath: workspace } },
+      )
+
+      expect(error).toBeNull()
+      expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'runtime_signal',
+          code: 'INVALID_SKILL_ISOLATED',
+          level: 'warning',
+        }),
+      )
+      expect(
+        journal.find((entry) => entry.kind === 'request' && entry.method === 'thread/start')
+          ?.params,
+      ).toMatchObject({
+        config: {
+          skills: {
+            config: expect.arrayContaining([{ path: skillFile, enabled: false }]),
+          },
+        },
+      })
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
   })
 
   it('turn/start 显式下发当前审批 reviewer、网络与额外 writable roots', async () => {
@@ -352,7 +395,7 @@ describe('CodexAppServerExecutor', () => {
     expect(new Set(persistentIds).size).toBe(persistentIds.length)
   })
 
-  it('思考流：reasoning/textDelta 映射 agent_thinking，segmentId 按 itemId', async () => {
+  it('只展示推理摘要，并把多个 reasoning item 聚合到同一 turn 段', async () => {
     const { events } = await runScenario({
       steps: [
         {
@@ -362,7 +405,29 @@ describe('CodexAppServerExecutor', () => {
             threadId: THREAD_ID,
             turnId: 'server-turn-1',
             itemId: 'reason-1',
-            delta: '思考中',
+            delta: '不应展示的原始推理',
+          },
+        },
+        {
+          kind: 'notify',
+          method: 'item/reasoning/summaryTextDelta',
+          params: {
+            threadId: THREAD_ID,
+            turnId: 'server-turn-1',
+            itemId: 'reason-1',
+            summaryIndex: 0,
+            delta: '先检查调用链',
+          },
+        },
+        {
+          kind: 'notify',
+          method: 'item/reasoning/summaryTextDelta',
+          params: {
+            threadId: THREAD_ID,
+            turnId: 'server-turn-1',
+            itemId: 'reason-2',
+            summaryIndex: 0,
+            delta: '再验证兼容性',
           },
         },
         agentMessageDeltaStep('答案'),
@@ -370,12 +435,19 @@ describe('CodexAppServerExecutor', () => {
       ],
     })
     const thinking = eventsOf(events, 'agent_thinking')
-    expect(thinking).toHaveLength(1)
-    expect(thinking[0]).toMatchObject({
-      mode: 'delta',
-      content: '思考中',
-      segmentId: 'codex-sdk-thinking-reason-1',
-    })
+    expect(thinking).toHaveLength(2)
+    expect(thinking).toEqual([
+      expect.objectContaining({
+        mode: 'delta',
+        content: '先检查调用链',
+        segmentId: `codex-sdk-thinking-${TURN_ID}`,
+      }),
+      expect.objectContaining({
+        mode: 'delta',
+        content: '\n\n再验证兼容性',
+        segmentId: `codex-sdk-thinking-${TURN_ID}`,
+      }),
+    ])
   })
 
   it('mcpToolCall / fileChange / webSearch 映射', async () => {

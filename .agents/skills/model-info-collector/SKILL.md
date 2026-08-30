@@ -1,3 +1,8 @@
+---
+name: model-info-collector
+description: Collect model parameters and capabilities from official AI platform documentation and update the project's built-in media model manifests. Use when researching, adding, or updating multimedia model definitions.
+---
+
 # Model Info Collector
 
 收集AI平台的模型参数配置信息，生成标准化的模型能力描述文件。
@@ -5,6 +10,7 @@
 ## 用途
 
 当用户需要：
+
 - 收集某个平台的模型参数配置
 - 更新项目中的模型能力定义
 - 批量整理多平台模型信息
@@ -14,6 +20,7 @@
 ### 1. 确定收集范围
 
 明确需要收集的平台和模型列表：
+
 - 平台名称和官网地址
 - 具体模型ID列表
 - 模型能力类型（文生图、文生视频、语音生成等）
@@ -41,6 +48,7 @@
 ```
 
 **注意事项：**
+
 - 如果单独的模型文档不存在，查找平台标准文档（通用参数）
 - 需要登录的页面，先打开浏览器让用户登录，再继续操作
 - 遇到404或权限问题，尝试从模型列表页或API总览页查找
@@ -48,6 +56,7 @@
 ### 3. 按标准格式整理
 
 收集以下字段：
+
 - `provider`: 平台标识
 - `modelId`: 模型ID
 - `displayName`: 显示名称
@@ -69,6 +78,7 @@ packages/protocol/src/media-model-manifest.ts
 ```
 
 要求：
+
 - 每条 manifest 必须符合 `MediaModelManifestSchema`（同文件内 zod schema）
 - `paramSchema` / `defaults` / `aliases` 从官方文档提取，不可臆造
 - 改完后运行 `pnpm --filter @spark/protocol test` 与相关 media 单测
@@ -76,25 +86,26 @@ packages/protocol/src/media-model-manifest.ts
 
 ## 能力标签规范
 
-| 能力 | 标签 |
-|------|------|
-| 文生图 | `image.generate` |
-| 图生图 | `image.edit`, `image.inpaint`, `image.outpaint` |
-| 图编辑 | `image.edit` |
-| 图合成 | `image.compose` |
-| 文生视频 | `video.generate` |
-| 图生视频 | `video.image_to_video` |
-| 首尾帧 | `video.first_last_frame` |
-| 参考图 | `video.reference_image` |
-| 多图编辑 | `image.multi_edit` |
-| 音频开关 | `video.audio_control` |
-| 语音生成 | `audio.speech_generate` |
-| 音乐生成 | `audio.music_generate` |
-| 3D生成 | `3d.generate` |
+| 能力     | 标签                                            |
+| -------- | ----------------------------------------------- |
+| 文生图   | `image.generate`                                |
+| 图生图   | `image.edit`, `image.inpaint`, `image.outpaint` |
+| 图编辑   | `image.edit`                                    |
+| 图合成   | `image.compose`                                 |
+| 文生视频 | `video.generate`                                |
+| 图生视频 | `video.image_to_video`                          |
+| 首尾帧   | `video.first_last_frame`                        |
+| 参考图   | `video.reference_image`                         |
+| 多图编辑 | `image.multi_edit`                              |
+| 音频开关 | `video.audio_control`                           |
+| 语音生成 | `audio.speech_generate`                         |
+| 音乐生成 | `audio.music_generate`                          |
+| 3D生成   | `3d.generate`                                   |
 
 ## 参数收集清单
 
 ### 图像生成模型必查参数：
+
 - [ ] `size` / `resolution`: 分辨率枚举值（如 1024x1024, 768P, 1080P）
 - [ ] `aspect_ratio`: 比例枚举（如 16:9, 9:16, 1:1）
 - [ ] `quality`: 质量选项（如 standard, high）
@@ -104,6 +115,7 @@ packages/protocol/src/media-model-manifest.ts
 - [ ] `seed`: 随机种子支持
 
 ### 视频生成模型必查参数：
+
 - [ ] `duration`: 时长枚举（秒）
 - [ ] `aspect_ratio` / `resolution`: 比例/分辨率
 - [ ] `fps`: 帧率选项
@@ -112,6 +124,7 @@ packages/protocol/src/media-model-manifest.ts
 - [ ] 图生视频参数：`image`, `first_frame`, `last_frame`
 
 ### 语音模型必查参数：
+
 - [ ] `voice` / `voice_id`: 音色选项
 - [ ] `speed`: 语速范围
 - [ ] `pitch`: 音调范围
@@ -198,6 +211,7 @@ packages/protocol/src/media-model-manifest.ts
 ## 团队协作模式
 
 当需要并行收集多平台时：
+
 1. 将平台列表分配给团队成员
 2. 每人负责1-2个平台
 3. 使用 `mcp__spark_team__agent_dispatch_batch` 并行调度

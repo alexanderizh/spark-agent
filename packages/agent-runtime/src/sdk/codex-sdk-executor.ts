@@ -14,9 +14,22 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import {
+  appendCodexReasoningSummaryDelta,
+  createCodexReasoningSummaryState,
+  readCodexReasoningSummaryItemId,
+  readCodexReasoningSummarySourceId,
+  type CodexReasoningSummaryState,
+} from './codex-reasoning-summary.js'
 import { createStreamReconnectSignal } from './codex-stream-reconnect.js'
 import { CODEX_CONTEXT_POLICY_CONFIG } from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
+import {
+  buildCodexSkillConfigOverride,
+  createCodexSkillIsolationWarning,
+  resolveCodexSkillIsolation,
+  type CodexSkillIsolation,
+} from './codex-skill-isolation.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
@@ -43,6 +56,8 @@ type StreamState = {
   completedTextBySegmentId: Map<string, string>
   completedTextOrder: string[]
   thinkingByItemId: Map<string, string>
+  streamedReasoningItemIds: Set<string>
+  reasoningSummary: CodexReasoningSummaryState
   activeCommandOutputById: Map<string, string>
   emittedToolCalls: Set<string>
 }
@@ -124,6 +139,7 @@ export class CodexSdkExecutor implements EngineExecutor {
     const input = buildCodexSdkInput(prompt, config.attachments)
     const controller = new AbortController()
     const streamTerminalizer = new StreamTerminalizer()
+    const skillIsolation = resolveCodexSkillIsolation(config.workspaceRootPath)
     this.abortController = controller
     this.streamTerminalizer = streamTerminalizer
 
@@ -155,10 +171,11 @@ export class CodexSdkExecutor implements EngineExecutor {
       contextWindowTokens: config.contextWindowTokens ?? resolveModelContextWindow(config.model),
       compacted: false,
     })
+    this.emitSkillIsolationWarning(skillIsolation, makeBase)
 
     try {
       const sdk = await loadCodexSdk()
-      const codexOptions = buildCodexOptions(config)
+      const codexOptions = buildCodexOptions(config, skillIsolation)
       const threadOptions = buildThreadOptions(config)
       config.invocationObserver?.({
         transport: 'codex-sdk',
@@ -186,6 +203,8 @@ export class CodexSdkExecutor implements EngineExecutor {
         completedTextBySegmentId: new Map(),
         completedTextOrder: [],
         thinkingByItemId: new Map(),
+        streamedReasoningItemIds: new Set(),
+        reasoningSummary: createCodexReasoningSummaryState(),
         activeCommandOutputById: new Map(),
         emittedToolCalls: new Set(),
       }
@@ -376,15 +395,20 @@ export class CodexSdkExecutor implements EngineExecutor {
         return
       }
       case 'reasoning': {
+        if (state.streamedReasoningItemIds.has(item.id)) {
+          state.thinkingByItemId.set(item.id, item.text)
+          return
+        }
         const previous = state.thinkingByItemId.get(item.id) ?? ''
         const delta = computeDelta(item.text, previous)
         if (delta.length > 0) {
+          const content = appendCodexReasoningSummaryDelta(state.reasoningSummary, item.id, delta)
           this.emit({
             ...makeBase(),
             type: 'agent_thinking',
             mode: 'delta',
-            content: delta,
-            segmentId: `codex-sdk-thinking-${item.id}`,
+            content,
+            segmentId: `codex-sdk-thinking-${makeBase().turnId}`,
           })
         }
         state.thinkingByItemId.set(item.id, item.text)
@@ -495,17 +519,23 @@ export class CodexSdkExecutor implements EngineExecutor {
       return true
     }
 
-    if (
-      type === 'response.reasoning_text.delta' ||
-      type === 'response.reasoning_summary_text.delta'
-    ) {
+    if (type === 'response.reasoning_text.delta') return true
+
+    if (type === 'response.reasoning_summary_text.delta') {
       const delta = typeof event.delta === 'string' ? event.delta : ''
       if (delta.length > 0) {
+        const itemId = readCodexReasoningSummaryItemId(event)
+        if (itemId != null) state.streamedReasoningItemIds.add(itemId)
+        const content = appendCodexReasoningSummaryDelta(
+          state.reasoningSummary,
+          readCodexReasoningSummarySourceId(event, 'response-reasoning-summary'),
+          delta,
+        )
         this.emit({
           ...makeBase(),
           type: 'agent_thinking',
           mode: 'delta',
-          content: delta,
+          content,
           segmentId: `codex-sdk-thinking-${makeBase().turnId}`,
         })
       }
@@ -616,9 +646,20 @@ export class CodexSdkExecutor implements EngineExecutor {
     this.streamTerminalizer?.observe(event)
     for (const listener of this.listeners) listener(event)
   }
+
+  private emitSkillIsolationWarning(
+    isolation: CodexSkillIsolation,
+    makeBase: () => EventBase,
+  ): void {
+    const warning = createCodexSkillIsolationWarning(isolation, makeBase())
+    if (warning != null) this.emit(warning)
+  }
 }
 
-function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
+function buildCodexOptions(
+  config: SDKExecutorConfig,
+  skillIsolation: CodexSkillIsolation,
+): CodexOptions {
   const bundledCodex = resolveBundledCodexCli()
   if (bundledCodex == null && process.env.SPARK_CODEX_REQUIRE_RUNTIME === '1') {
     throw new CodexRuntimeNotInstalledError()
@@ -638,7 +679,7 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
       ? { baseUrl: config.apiEndpoint.trim().replace(/\/+$/, '') }
       : {}),
     ...(bundledCodex != null ? { codexPathOverride: bundledCodex.executablePath } : {}),
-    config: buildCodexConfig(config),
+    config: buildCodexConfig(config, skillIsolation),
     env,
   }
 }
@@ -752,16 +793,21 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
   return options
 }
 
-export function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
+export function buildCodexConfig(
+  config: SDKExecutorConfig,
+  skillIsolation: CodexSkillIsolation = { issues: [], configEntries: [] },
+): CodexConfigObject {
   const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   return {
     model_reasoning_summary: 'concise',
+    show_raw_agent_reasoning: false,
     hide_agent_reasoning: false,
     ...(config.fastMode === true ? { service_tier: 'fast' } : {}),
     ...CODEX_CONTEXT_POLICY_CONFIG,
     ...(policy.approvalsReviewer == null ? {} : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),
+    ...buildCodexSkillConfigOverride(skillIsolation),
   }
 }
 

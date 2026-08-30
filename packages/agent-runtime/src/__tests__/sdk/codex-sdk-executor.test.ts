@@ -1,5 +1,9 @@
-import { delimiter, sep } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { delimiter, join, sep } from 'node:path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { AgentEvent } from '@spark/protocol'
 import {
   CodexRuntimeNotInstalledError,
   CodexSdkExecutor,
@@ -61,6 +65,46 @@ describe('CodexSdkExecutor', () => {
     expect(codexSdkExecutionErrorCode(new CodexRuntimeNotInstalledError(), true)).toBe(
       'CODEX_SDK_CANCELLED',
     )
+  })
+
+  it('isolates a malformed native skill without failing the SDK turn', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'codex-sdk-invalid-skill-'))
+    mkdirSync(join(workspace, '.git'))
+    const skillDir = join(workspace, '.agents', 'skills', 'broken')
+    mkdirSync(skillDir, { recursive: true })
+    const skillFile = join(skillDir, 'SKILL.md')
+    writeFileSync(skillFile, '# Missing frontmatter\n', 'utf8')
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+    const events: AgentEvent[] = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    try {
+      await executor.executeTurn(
+        'session-invalid-skill',
+        'turn-invalid-skill',
+        'continue',
+        makeConfig({ workspaceRootPath: workspace }),
+      )
+
+      expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'runtime_signal',
+          code: 'INVALID_SKILL_ISOLATED',
+          level: 'warning',
+        }),
+      )
+      expect(codexCtor.mock.calls.at(-1)?.[0]).toMatchObject({
+        config: {
+          skills: {
+            config: expect.arrayContaining([{ path: skillFile, enabled: false }]),
+          },
+        },
+      })
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
   })
 
   it('streams Codex SDK reasoning, command, MCP, file, usage, and final text events', async () => {
@@ -200,6 +244,7 @@ describe('CodexSdkExecutor', () => {
       expect.objectContaining({
         apiKey: 'sk-test',
         config: expect.objectContaining({
+          show_raw_agent_reasoning: false,
           hide_agent_reasoning: false,
           tool_output_token_limit: 12_000,
           mcp_servers: expect.objectContaining({
@@ -257,6 +302,54 @@ describe('CodexSdkExecutor', () => {
         },
       ]),
     )
+  })
+
+  it('keeps visible reasoning summaries in one turn segment and ignores raw reasoning', async () => {
+    runStreamed.mockResolvedValue({
+      events: streamFrom([
+        {
+          type: 'response.reasoning_text.delta',
+          item_id: 'reason-raw',
+          delta: 'private reasoning',
+        },
+        {
+          type: 'response.reasoning_summary_text.delta',
+          item_id: 'reason-1',
+          summary_index: 0,
+          delta: 'Inspect',
+        },
+        {
+          type: 'response.reasoning_summary_text.delta',
+          item_id: 'reason-1',
+          summary_index: 0,
+          delta: ' callers',
+        },
+        {
+          type: 'item.completed',
+          item: { id: 'reason-1', type: 'reasoning', text: 'Inspect callers' },
+        },
+        { type: 'item.updated', item: { id: 'reason-2', type: 'reasoning', text: 'Plan tests' } },
+      ]),
+    })
+
+    const thinking: Array<{ content: string; segmentId?: string }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_thinking') {
+        thinking.push({
+          content: event.content,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(thinking).toEqual([
+      { content: 'Inspect', segmentId: 'codex-sdk-thinking-turn-1' },
+      { content: ' callers', segmentId: 'codex-sdk-thinking-turn-1' },
+      { content: '\n\nPlan tests', segmentId: 'codex-sdk-thinking-turn-1' },
+    ])
   })
 
   it('maps Spark max reasoning to Codex SDK xhigh effort', async () => {
@@ -1044,9 +1137,12 @@ describe('CodexSdkExecutor', () => {
       }
       throw new Error(`unexpected resolve: ${specifier}`)
     }
-    const createRequireMock = vi.fn(() => ({
-      resolve: resolveForSpecifier,
-    }))
+    const runtimeRequire = createRequire(import.meta.url)
+    const createRequireMock = vi.fn(() =>
+      Object.assign((specifier: string) => runtimeRequire(specifier), {
+        resolve: resolveForSpecifier,
+      }),
+    )
     const existsSyncMock = vi.fn((filePath: string) => {
       return (
         filePath.includes(`${sep}bin${sep}`) ||

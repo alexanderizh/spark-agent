@@ -6,8 +6,21 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import {
+  appendCodexReasoningSummaryDelta,
+  createCodexReasoningSummaryState,
+  readCodexReasoningSummaryItemId,
+  readCodexReasoningSummarySourceId,
+  type CodexReasoningSummaryState,
+} from './codex-reasoning-summary.js'
 import { CODEX_TOOL_OUTPUT_TOKEN_LIMIT } from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
+import {
+  buildCodexSkillConfigTomlOverride,
+  createCodexSkillIsolationWarning,
+  resolveCodexSkillIsolation,
+  type CodexSkillIsolation,
+} from './codex-skill-isolation.js'
 import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
@@ -37,7 +50,9 @@ type CodexTempProfile = {
 // 每一帧的新增后缀，才能像 SDK 那样逐段流式。参考 teamagentx 的 appendContent/appendThinking。
 type CodexStreamState = {
   content: string
-  thinking: string
+  thinkingByItemId: Map<string, string>
+  streamedReasoningItemIds: Set<string>
+  reasoningSummary: CodexReasoningSummaryState
   currentTextItemId: string | null
   currentTextSegmentId: string | null
   textSegmentCounter: number
@@ -78,6 +93,7 @@ export class CodexCliExecutor implements EngineExecutor {
     config: SDKExecutorConfig,
   ): Promise<void> {
     this.cancelled = false
+    const skillIsolation = resolveCodexSkillIsolation(config.workspaceRootPath)
     const tempDir = await mkdtemp(path.join(tmpdir(), 'spark-codex-'))
     if (this.cancelled) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
@@ -124,9 +140,10 @@ export class CodexCliExecutor implements EngineExecutor {
       contextWindowTokens: resolveModelContextWindow(config.model),
       compacted: false,
     })
+    this.emitSkillIsolationWarning(skillIsolation, makeBase)
 
     try {
-      tempProfile = await writeCodexTempProfile(config)
+      tempProfile = await writeCodexTempProfile(config, skillIsolation)
       if (this.cancelled) return
       const args = buildCodexArgs(config, outputFile, tempProfile?.name)
       config.invocationObserver?.({
@@ -270,7 +287,9 @@ export class CodexCliExecutor implements EngineExecutor {
       const candidates = getCodexCliCandidates()
       const streamState: CodexStreamState = {
         content: '',
-        thinking: '',
+        thinkingByItemId: new Map(),
+        streamedReasoningItemIds: new Set(),
+        reasoningSummary: createCodexReasoningSummaryState(),
         currentTextItemId: null,
         currentTextSegmentId: null,
         textSegmentCounter: 0,
@@ -453,6 +472,14 @@ export class CodexCliExecutor implements EngineExecutor {
     this.streamTerminalizer?.observe(event)
     for (const listener of this.listeners) listener(event)
   }
+
+  private emitSkillIsolationWarning(
+    isolation: CodexSkillIsolation,
+    makeBase: () => EventBase,
+  ): void {
+    const warning = createCodexSkillIsolationWarning(isolation, makeBase())
+    if (warning != null) this.emit(warning)
+  }
 }
 
 function buildCodexArgs(
@@ -486,8 +513,11 @@ function buildCodexArgs(
   return args
 }
 
-async function writeCodexTempProfile(config: SDKExecutorConfig): Promise<CodexTempProfile | null> {
-  const items = buildCodexProfileConfigItems(config)
+async function writeCodexTempProfile(
+  config: SDKExecutorConfig,
+  skillIsolation: CodexSkillIsolation,
+): Promise<CodexTempProfile | null> {
+  const items = buildCodexProfileConfigItems(config, skillIsolation)
   if (items.length === 0) return null
   const codexHome = process.env.CODEX_HOME?.trim() || path.join(homedir(), '.codex')
   await mkdir(codexHome, { recursive: true })
@@ -497,7 +527,10 @@ async function writeCodexTempProfile(config: SDKExecutorConfig): Promise<CodexTe
   return { name, filePath }
 }
 
-function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
+function buildCodexProfileConfigItems(
+  config: SDKExecutorConfig,
+  skillIsolation: CodexSkillIsolation,
+): string[] {
   const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   const items = [
     ...(config.disableCodexNativeSkills === true ? ['features.plugins=false'] : []),
@@ -505,6 +538,8 @@ function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
     ...buildCodexModelProviderConfigArgs(config),
     ...buildCodexMcpConfigArgs(config.mcpServers),
   ]
+  const skillConfigOverride = buildCodexSkillConfigTomlOverride(skillIsolation)
+  if (skillConfigOverride != null) items.push(skillConfigOverride)
   const effort = mapCodexReasoningEffort(config.reasoningEffort)
   if (effort != null) {
     items.push(`model_reasoning_effort=${tomlString(effort)}`)
@@ -513,7 +548,7 @@ function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
     items.push(`service_tier=${tomlString('fast')}`)
   }
   items.push(`model_reasoning_summary='concise'`)
-  items.push('show_raw_agent_reasoning=true')
+  items.push('show_raw_agent_reasoning=false')
   items.push('hide_agent_reasoning=false')
   items.push(`tool_output_token_limit=${CODEX_TOOL_OUTPUT_TOKEN_LIMIT}`)
   items.push(`approval_policy=${tomlString(policy.approvalPolicy)}`)
@@ -988,18 +1023,26 @@ function dispatchCodexEvent(
     return outcome
   }
 
-  if (
-    type === 'response.reasoning_text.delta' ||
-    type === 'response.reasoning_summary_text.delta'
-  ) {
+  if (type === 'response.reasoning_text.delta') {
+    outcome.handled = true
+    return outcome
+  }
+
+  if (type === 'response.reasoning_summary_text.delta') {
     const delta = typeof obj.delta === 'string' ? obj.delta : ''
     if (delta.length > 0) {
-      state.thinking += delta
+      const itemId = readCodexReasoningSummaryItemId(obj)
+      if (itemId != null) state.streamedReasoningItemIds.add(itemId)
+      const content = appendCodexReasoningSummaryDelta(
+        state.reasoningSummary,
+        readCodexReasoningSummarySourceId(obj, 'response-reasoning-summary'),
+        delta,
+      )
       emit({
         ...makeBase(),
         type: 'agent_thinking',
         mode: 'delta',
-        content: delta,
+        content,
         segmentId: `codex-cli-thinking-${makeBase().turnId}`,
       })
     }
@@ -1082,19 +1125,32 @@ function dispatchCodexEvent(
     return outcome
   }
 
-  if (itemType === 'reasoning' || itemType === 'agent_reasoning') {
+  if (itemType === 'agent_reasoning') {
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'reasoning') {
     const text = (findText(record.text) ?? '').replace(/\r?\n$/, '')
-    const delta = computeDelta(text, state.thinking)
+    const itemId = typeof record.id === 'string' ? record.id : 'reasoning'
+    if (state.streamedReasoningItemIds.has(itemId)) {
+      state.thinkingByItemId.set(itemId, text)
+      outcome.handled = true
+      return outcome
+    }
+    const previous = state.thinkingByItemId.get(itemId) ?? ''
+    const delta = computeDelta(text, previous)
     if (delta.length > 0) {
+      const content = appendCodexReasoningSummaryDelta(state.reasoningSummary, itemId, delta)
       emit({
         ...makeBase(),
         type: 'agent_thinking',
         mode: 'delta',
-        content: delta,
-        segmentId: `codex-thinking-${makeBase().turnId}`,
+        content,
+        segmentId: `codex-cli-thinking-${makeBase().turnId}`,
       })
     }
-    state.thinking = text.length > 0 ? text : state.thinking
+    state.thinkingByItemId.set(itemId, text)
     outcome.handled = true
     return outcome
   }

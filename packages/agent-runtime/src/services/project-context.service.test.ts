@@ -22,29 +22,37 @@ describe('ProjectContextService', () => {
     writeFileSync(join(root, '.cursor', 'rules', 'style.mdc'), 'Use strict TypeScript.')
 
     mkdirSync(join(root, '.claude', 'skills', 'review'), { recursive: true })
-    writeFileSync(join(root, '.claude', 'skills', 'review', 'SKILL.md'), [
-      '---',
-      'name: Review Skill',
-      'description: Review project changes',
-      '---',
-      'Check regressions and missing tests.',
-    ].join('\n'))
+    writeFileSync(
+      join(root, '.claude', 'skills', 'review', 'SKILL.md'),
+      [
+        '---',
+        'name: Review Skill',
+        'description: Review project changes',
+        '---',
+        'Check regressions and missing tests.',
+      ].join('\n'),
+    )
 
     mkdirSync(join(root, '.claude', 'agents'), { recursive: true })
-    writeFileSync(join(root, '.claude', 'agents', 'architect.md'), [
-      '---',
-      'name: Architect',
-      'description: Architecture reviewer',
-      '---',
-      'Evaluate design tradeoffs.',
-    ].join('\n'))
+    writeFileSync(
+      join(root, '.claude', 'agents', 'architect.md'),
+      [
+        '---',
+        'name: Architect',
+        'description: Architecture reviewer',
+        '---',
+        'Evaluate design tradeoffs.',
+      ].join('\n'),
+    )
 
     const result = new ProjectContextService().discover(root)
 
-    expect(result.rules).toEqual(expect.arrayContaining([
-      expect.stringContaining('Always run tests.'),
-      expect.stringContaining('Use strict TypeScript.'),
-    ]))
+    expect(result.rules).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Always run tests.'),
+        expect.stringContaining('Use strict TypeScript.'),
+      ]),
+    )
     expect(result.systemPrompt).toContain('[Project Instruction Files]')
     expect(result.systemPrompt).toContain('[Project Agent Definitions]')
     expect(result.systemPrompt).toContain('Architecture reviewer')
@@ -53,11 +61,21 @@ describe('ProjectContextService', () => {
     expect(result.skillSystemPrompt).toContain('project:.claude/skills/review/SKILL.md')
     expect(result.skillSystemPrompt).not.toContain('Source:')
     expect(result.skillSystemPrompt).not.toContain('Check regressions and missing tests.')
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
-      expect.objectContaining({ kind: 'skill', path: '.claude/skills/review/SKILL.md', included: true }),
-      expect.objectContaining({ kind: 'agent', path: '.claude/agents/architect.md', included: true }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+        expect.objectContaining({
+          kind: 'skill',
+          path: '.claude/skills/review/SKILL.md',
+          included: true,
+        }),
+        expect.objectContaining({
+          kind: 'agent',
+          path: '.claude/agents/architect.md',
+          included: true,
+        }),
+      ]),
+    )
     expect(result.budget).toMatchObject({ mode: 'project-smart', truncated: false })
   })
 
@@ -72,11 +90,18 @@ describe('ProjectContextService', () => {
 
     expect(result.systemPrompt?.match(/Always run tests\./g)).toHaveLength(1)
     expect(result.systemPrompt).toContain('Check formatting.')
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
-      expect.objectContaining({ kind: 'rule', path: 'CLAUDE.md', included: false, reason: 'duplicate_of:AGENTS.md' }),
-      expect.objectContaining({ kind: 'rule', path: 'GEMINI.md', included: true }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+        expect.objectContaining({
+          kind: 'rule',
+          path: 'CLAUDE.md',
+          included: false,
+          reason: 'duplicate_of:AGENTS.md',
+        }),
+        expect.objectContaining({ kind: 'rule', path: 'GEMINI.md', included: true }),
+      ]),
+    )
     expect(result.budget).toMatchObject({ truncated: false })
   })
 
@@ -84,7 +109,10 @@ describe('ProjectContextService', () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-project-context-contained-'))
     roots.push(root)
     const shared = '# Shared rules\nAlways run tests.\nKeep strict types.'
-    writeFileSync(join(root, 'AGENTS.md'), `# Repository preface\nUse local tools.\n\n${shared}\n\n# Tail\nVerify changes.`)
+    writeFileSync(
+      join(root, 'AGENTS.md'),
+      `# Repository preface\nUse local tools.\n\n${shared}\n\n# Tail\nVerify changes.`,
+    )
     writeFileSync(join(root, 'CLAUDE.md'), shared)
 
     const result = new ProjectContextService().discover(root)
@@ -92,15 +120,17 @@ describe('ProjectContextService', () => {
     expect(result.systemPrompt?.match(/Always run tests\./g)).toHaveLength(1)
     expect(result.systemPrompt).toContain('Repository preface')
     expect(result.systemPrompt).toContain('Verify changes.')
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
-      expect.objectContaining({
-        kind: 'rule',
-        path: 'CLAUDE.md',
-        included: false,
-        reason: 'contained_in:AGENTS.md',
-      }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+        expect.objectContaining({
+          kind: 'rule',
+          path: 'CLAUDE.md',
+          included: false,
+          reason: 'contained_in:AGENTS.md',
+        }),
+      ]),
+    )
   })
 
   it('does not dedupe a rule that only matches a substring inside a larger token', () => {
@@ -111,10 +141,12 @@ describe('ProjectContextService', () => {
 
     const result = new ProjectContextService().discover(root)
 
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
-      expect.objectContaining({ kind: 'rule', path: 'CLAUDE.md', included: true }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+        expect.objectContaining({ kind: 'rule', path: 'CLAUDE.md', included: true }),
+      ]),
+    )
   })
 
   it('does not claim containment in an earlier rule that was excluded by budget', () => {
@@ -125,13 +157,17 @@ describe('ProjectContextService', () => {
 
     const result = new ProjectContextService().discover(root, { budgetTokens: 0 })
 
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'AGENTS.md', reason: 'excluded_by_context_budget' }),
-      expect.objectContaining({ path: 'CLAUDE.md', reason: 'excluded_by_context_budget' }),
-    ]))
-    expect(result.sources).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'CLAUDE.md', reason: 'contained_in:AGENTS.md' }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'AGENTS.md', reason: 'excluded_by_context_budget' }),
+        expect.objectContaining({ path: 'CLAUDE.md', reason: 'excluded_by_context_budget' }),
+      ]),
+    )
+    expect(result.sources).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'CLAUDE.md', reason: 'contained_in:AGENTS.md' }),
+      ]),
+    )
   })
 
   it('always includes an explicitly pinned rule even when an earlier rule contains it', () => {
@@ -144,10 +180,12 @@ describe('ProjectContextService', () => {
       pinnedPaths: new Set(['CLAUDE.md']),
     })
 
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'AGENTS.md', included: true }),
-      expect.objectContaining({ path: 'CLAUDE.md', included: true, reason: 'pinned' }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'AGENTS.md', included: true }),
+        expect.objectContaining({ path: 'CLAUDE.md', included: true, reason: 'pinned' }),
+      ]),
+    )
     expect(result.systemPrompt?.match(/Pinned rule\./g)).toHaveLength(2)
   })
 
@@ -159,35 +197,83 @@ describe('ProjectContextService', () => {
 
     const result = new ProjectContextService().discover(root)
 
-    expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'AGENTS.md', included: true }),
-      expect.objectContaining({ path: 'CLAUDE.md', included: true }),
-    ]))
+    expect(result.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'AGENTS.md', included: true }),
+        expect.objectContaining({ path: 'CLAUDE.md', included: true }),
+      ]),
+    )
   })
 
   it('loads project-local skill instructions only when explicitly selected', () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-project-skill-load-'))
     roots.push(root)
     mkdirSync(join(root, '.codex', 'skills', 'planner'), { recursive: true })
-    writeFileSync(join(root, '.codex', 'skills', 'planner', 'SKILL.md'), [
-      '---',
-      'name: Planner',
-      'description: Plan project changes',
-      '---',
-      'Full planning workflow.',
-    ].join('\n'))
+    writeFileSync(
+      join(root, '.codex', 'skills', 'planner', 'SKILL.md'),
+      [
+        '---',
+        'name: Planner',
+        'description: Plan project changes',
+        '---',
+        'Full planning workflow.',
+      ].join('\n'),
+    )
 
     const service = new ProjectContextService()
     const summaries = service.listSkillSummaries(root)
     const prompt = service.buildSkillSystemPrompt(root, 'project:.codex/skills/planner/SKILL.md')
 
-    expect(summaries).toContainEqual(expect.objectContaining({
-      id: 'project:.codex/skills/planner/SKILL.md',
-      name: 'Planner',
-      description: 'Plan project changes',
-    }))
+    expect(summaries).toContainEqual(
+      expect.objectContaining({
+        id: 'project:.codex/skills/planner/SKILL.md',
+        name: 'Planner',
+        description: 'Plan project changes',
+      }),
+    )
     expect(prompt).toContain('[Selected Project Skill: Planner]')
     expect(prompt).toContain('Full planning workflow.')
+  })
+
+  it('isolates malformed project skills and exposes an actionable diagnostic', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-invalid-skill-'))
+    roots.push(root)
+    const validDir = join(root, '.agents', 'skills', 'valid')
+    const brokenDir = join(root, '.agents', 'skills', 'broken')
+    mkdirSync(validDir, { recursive: true })
+    mkdirSync(brokenDir, { recursive: true })
+    writeFileSync(
+      join(validDir, 'SKILL.md'),
+      '---\nname: valid\ndescription: Valid project skill\n---\nUse it.\n',
+    )
+    writeFileSync(join(brokenDir, 'SKILL.md'), '# Missing frontmatter\n')
+
+    const service = new ProjectContextService()
+    const result = service.discover(root)
+
+    expect(service.listSkillSummaries(root)).toEqual([
+      expect.objectContaining({ name: 'valid', relativePath: '.agents/skills/valid/SKILL.md' }),
+    ])
+    expect(result.skillSystemPrompt).toContain('Valid project skill')
+    expect(result.skillSystemPrompt).not.toContain('Missing frontmatter')
+    expect(result.skillIssues).toEqual([
+      {
+        path: '.agents/skills/broken/SKILL.md',
+        code: 'missing_frontmatter',
+        message: '缺少以 `---` 开始的 YAML frontmatter',
+      },
+    ])
+    expect(result.sources).toContainEqual(
+      expect.objectContaining({
+        kind: 'skill',
+        path: '.agents/skills/broken/SKILL.md',
+        included: false,
+        reason: 'invalid_skill:missing_frontmatter',
+      }),
+    )
+    expect(
+      service.buildSkillSystemPrompt(root, 'project:.agents/skills/broken/SKILL.md'),
+    ).toBeNull()
   })
 
   it('trims and excludes project context sources when the budget is tight', () => {
@@ -203,8 +289,12 @@ describe('ProjectContextService', () => {
     const result = new ProjectContextService().discover(root, { budgetTokens: 300 })
 
     expect(result.budget).toMatchObject({ budgetTokens: 300, truncated: true })
-    expect(result.sources.some((source) => source.reason === 'trimmed_to_context_budget')).toBe(true)
-    expect(result.sources.some((source) => source.reason === 'excluded_by_context_budget')).toBe(true)
+    expect(result.sources.some((source) => source.reason === 'trimmed_to_context_budget')).toBe(
+      true,
+    )
+    expect(result.sources.some((source) => source.reason === 'excluded_by_context_budget')).toBe(
+      true,
+    )
     // 旧的字符粗暴截断 ≤2500；新的 token+头尾截断 ellipsis 更长（多 2 char），放宽到 2700。
     expect(result.systemPrompt?.length ?? 0).toBeLessThan(2700)
   })
@@ -248,12 +338,12 @@ describe('ProjectContextService', () => {
         excludedPaths: new Set(['CLAUDE.md']),
       })
 
-      expect(result.sources).toEqual(expect.arrayContaining([
-        expect.objectContaining({ path: 'AGENTS.md', included: true }),
-      ]))
-      expect(result.sources).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ path: 'CLAUDE.md' }),
-      ]))
+      expect(result.sources).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'AGENTS.md', included: true })]),
+      )
+      expect(result.sources).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'CLAUDE.md' })]),
+      )
     })
 
     it('pins extra files not auto-discovered', () => {
@@ -267,9 +357,15 @@ describe('ProjectContextService', () => {
         pinnedPaths: new Set(['docs/architecture.md']),
       })
 
-      expect(result.sources).toEqual(expect.arrayContaining([
-        expect.objectContaining({ path: 'docs/architecture.md', included: true, reason: 'pinned' }),
-      ]))
+      expect(result.sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'docs/architecture.md',
+            included: true,
+            reason: 'pinned',
+          }),
+        ]),
+      )
       expect(result.systemPrompt).toContain('Use microservices.')
     })
 
@@ -301,9 +397,9 @@ describe('ProjectContextService', () => {
       })
 
       // excluded wins — the file should not appear
-      expect(result.sources).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ path: 'AGENTS.md' }),
-      ]))
+      expect(result.sources).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'AGENTS.md' })]),
+      )
     })
 
     it('returns empty context with empty overrides', () => {

@@ -1,6 +1,6 @@
 # Codex Runtime 生命周期升级计划
 
-> 状态: 实施中 | 最后核对: 2026-08-25
+> 状态: 实施中 | 最后核对: 2026-08-31
 
 ## 背景
 
@@ -112,6 +112,14 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - Codex Skills 初始目录的描述裁剪属于独立 context budget 告警，不代表模型总上下文耗尽。
   SDK、CLI、App Server 以及 renderer 历史回放均按三个语义锚点过滤该良性 warning；普通
   `CODEX_SDK_ITEM_ERROR` 仍照常展示。
+- Skill 发现边界统一按 Codex 官方格式校验 YAML frontmatter 的 `name` 与 `description`；
+  单个损坏文件从项目目录、宿主导入与原生 Runtime 中逐项隔离，不再让整批扫描或应用进程失败。
+- Codex 三种载具在启动前扫描原生 `.agents/skills`，把无效文件合并进非持久
+  `skills.config` 覆盖并仅对当前运行禁用；用户已有的 path/name 禁用项保持不变。会话展示
+  文件绝对路径与解析原因，修复后重试即可恢复，无需修改用户配置或退出应用。
+- 主进程主动退出入口记录 `tray-menu`、`update-install`、`initialization-failed`、
+  `single-instance-lock-not-owned` 等来源；系统 Dock/快捷键退出标记为 `external-app-event`，
+  便于区分运行时子进程故障与真实应用退出请求。
 
 ### P4：资源治理、诊断与兼容发布闭环（已落地）
 
@@ -172,6 +180,8 @@ Spark 继续拥有产品状态、持久事件、队列和跨引擎一致性；Co
 - Runtime/Skills 修复的聚焦回归已通过：兼容旧 runtime 保持 installed 并提示可选更新，低于
   协议基线的 runtime 仍拒绝；三种 Codex 载具不再把新版 Skills 预算文案映射为执行失败，
   renderer 也会忽略已经持久化的同类假错误。
+- 损坏 Skill 隔离回归覆盖严格 YAML/frontmatter 解析、项目目录与宿主发现跳过、既有
+  `skills.config` 合并、SDK/App Server turn 保活及可见诊断；无效 Skill 不再升级为应用退出。
 - 动态 MCP lease 与 P4 后端诊断聚焦测试覆盖：跨 turn bearer/连接复用、最新 handler 切换、
   schema 轮换、TTL/启动失败/shutdown 资源回收、fingerprint sidecar 转移、诊断脱敏和
   idle-only 手动重启；Team 目录指纹兼容现有 `z.custom()` 工具 schema。

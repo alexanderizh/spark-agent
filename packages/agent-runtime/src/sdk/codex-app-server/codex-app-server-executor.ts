@@ -2,9 +2,21 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from '../codex-compaction-event.js'
+import {
+  appendCodexReasoningSummaryDelta,
+  createCodexReasoningSummaryState,
+  readCodexReasoningSummarySourceId,
+  type CodexReasoningSummaryState,
+} from '../codex-reasoning-summary.js'
 import { createStreamReconnectSignal } from '../codex-stream-reconnect.js'
 import { CODEX_CONTEXT_POLICY_CONFIG } from '../codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from '../codex-permission-policy.js'
+import {
+  buildCodexSkillConfigOverride,
+  createCodexSkillIsolationWarning,
+  resolveCodexSkillIsolation,
+  type CodexSkillIsolation,
+} from '../codex-skill-isolation.js'
 import { toCodexReasoningEffort } from '../reasoning-effort.js'
 import { StreamTerminalizer } from '../stream-terminalizer.js'
 import type {
@@ -59,7 +71,7 @@ import {
  * 思考流、`turn/interrupt` 优雅取消与实时用量。
  *
  * 行为契约（与 CodexSdkExecutor 对齐，renderer / session.service 零改动）：
- * - segmentId 沿用 `codex-sdk-{turnId}-text-{N}` / `codex-sdk-thinking-{itemId}` 约定。
+ * - segmentId 沿用 `codex-sdk-{turnId}-text-{N}`；可见推理摘要按 turn 聚合为一个段。
  * - 终态只经事件流；取消 emit agent_error(CODEX_SDK_CANCELLED) + agent_status(cancelled)。
  * - prepare 阶段（spawn + initialize + thread 建立）失败时静默回退 CodexSdkExecutor，
  *   事件经 raw bridge 转发——最坏情况等于现状，不存在「比 exec 更差」的结局。
@@ -97,6 +109,7 @@ type AppServerStreamState = {
   completedTextOrder: string[]
   toolCalledSinceText: boolean
   emittedToolCalls: Set<string>
+  reasoningSummary: CodexReasoningSummaryState
 }
 
 const INTERRUPT_WATCHDOG_MS = 8_000
@@ -216,6 +229,7 @@ export class CodexAppServerExecutor
     config: SDKExecutorConfig,
   ): Promise<void> {
     this.cancelRequested = false
+    const skillIsolation = resolveCodexSkillIsolation(config.workspaceRootPath)
     // 图片附件走 Sdk 载具：app-server 的 UserInput 图片变体（url）与 exec 的
     // local_image（本地路径）语义不同，Phase 1 不冒险，文本 turn 才走流式新路径。
     if (turnHasImageAttachments(config.attachments)) {
@@ -231,7 +245,7 @@ export class CodexAppServerExecutor
       resumedThread: boolean
     } | null = null
     try {
-      prepared = await this.prepareSession(sessionId, config)
+      prepared = await this.prepareSession(sessionId, config, skillIsolation)
     } catch {
       // turn/start 前的准备错误统一交给 Sdk fallback；fallback 自己负责生成
       // 可操作的 agent_error（包括 CODEX_RUNTIME_NOT_INSTALLED）。
@@ -260,6 +274,7 @@ export class CodexAppServerExecutor
       completedTextOrder: [],
       toolCalledSinceText: false,
       emittedToolCalls: new Set(),
+      reasoningSummary: createCodexReasoningSummaryState(),
     }
     this.currentState = state
     const streamTerminalizer = new StreamTerminalizer()
@@ -305,6 +320,7 @@ export class CodexAppServerExecutor
       contextWindowTokens: config.contextWindowTokens ?? resolveModelContextWindow(config.model),
       compacted: false,
     })
+    this.emitSkillIsolationWarning(skillIsolation, makeBase)
 
     let turnOutcome: TurnOutcome | null = null
     let processFailure: Error | null = null
@@ -488,6 +504,7 @@ export class CodexAppServerExecutor
   private async prepareSession(
     sessionId: string,
     config: SDKExecutorConfig,
+    skillIsolation: CodexSkillIsolation,
   ): Promise<{
     client: CodexAppServerClient
     router: CodexAppServerRouter
@@ -563,7 +580,7 @@ export class CodexAppServerExecutor
         lifecycleMetrics.appServerInitializeMs = lease.runtime.startupMetrics.initializeMs
       }
       const { client, router } = lease.runtime
-      const threadParams = buildAppServerThreadParams(config)
+      const threadParams = buildAppServerThreadParams(config, skillIsolation)
       const threadFingerprint = createCodexAppServerThreadFingerprint(threadParams)
       this.lastThreadParams = threadParams
       const bindingKey =
@@ -744,16 +761,23 @@ export class CodexAppServerExecutor
         if (delta != null && delta.length > 0) this.emitAgentTextDelta(delta)
         return
       }
+      // raw reasoning 属于模型内部推理，不进入用户可见消息；仅展示 concise summary。
       case 'item/reasoning/textDelta':
+        return
       case 'item/reasoning/summaryTextDelta': {
         const delta = readString(record.delta)
         const itemId = readString(record.itemId)
         if (delta != null && delta.length > 0 && itemId != null) {
+          const content = appendCodexReasoningSummaryDelta(
+            this.currentState.reasoningSummary,
+            readCodexReasoningSummarySourceId(record, itemId),
+            delta,
+          )
           this.emit({
             type: 'agent_thinking',
             mode: 'delta',
-            content: delta,
-            segmentId: `codex-sdk-thinking-${itemId}`,
+            content,
+            segmentId: `codex-sdk-thinking-${this.requireTurnId()}`,
             ...this.makeCurrentBase(),
           })
         }
@@ -1186,6 +1210,14 @@ export class CodexAppServerExecutor
     for (const listener of this.listeners) listener(event)
   }
 
+  private emitSkillIsolationWarning(
+    isolation: CodexSkillIsolation,
+    makeBase: () => EventBase,
+  ): void {
+    const warning = createCodexSkillIsolationWarning(isolation, makeBase())
+    if (warning != null) this.emit(warning)
+  }
+
   private makeCurrentBase(): EventBase {
     return {
       id: randomUUID(),
@@ -1220,7 +1252,10 @@ function buildAppServerEnv(config: SDKExecutorConfig, pathDirs: string[]): Recor
   return env
 }
 
-function buildAppServerThreadParams(config: SDKExecutorConfig): AppServerThreadParamsBase {
+function buildAppServerThreadParams(
+  config: SDKExecutorConfig,
+  skillIsolation: CodexSkillIsolation,
+): AppServerThreadParamsBase {
   const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   const sandboxWorkspaceWrite: Record<string, unknown> = {
     network_access: config.networkAccessEnabled ?? false,
@@ -1230,11 +1265,13 @@ function buildAppServerThreadParams(config: SDKExecutorConfig): AppServerThreadP
   }
   const configOverrides: Record<string, unknown> = {
     model_reasoning_summary: 'concise',
+    show_raw_agent_reasoning: false,
     hide_agent_reasoning: false,
     ...CODEX_CONTEXT_POLICY_CONFIG,
     ...(policy.approvalsReviewer == null ? {} : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),
+    ...buildCodexSkillConfigOverride(skillIsolation),
     sandbox_workspace_write: sandboxWorkspaceWrite,
     web_search: config.webSearchMode ?? (config.webSearchEnabled === true ? 'live' : 'disabled'),
     ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0

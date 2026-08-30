@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { detectLocalSkills, importLocalSkillDirectory } from './local-skill-importer.js'
+import {
+  detectLocalSkills,
+  importLocalSkillDirectory,
+  InvalidSkillDocumentError,
+} from './local-skill-importer.js'
 
 let tempDir: string | null = null
 
@@ -25,10 +29,19 @@ describe('local-skill-importer', () => {
     const codexSkill = join(root, '.codex', 'skills', 'planner')
     mkdirSync(claudeSkill, { recursive: true })
     mkdirSync(codexSkill, { recursive: true })
-    writeFileSync(join(claudeSkill, 'SKILL.md'), '---\nname: reviewer\ndescription: Review code\n---\n# Reviewer\n')
-    writeFileSync(join(codexSkill, 'SKILL.md'), '---\nname: planner\ndescription: Plan work\n---\n# Planner\n')
+    writeFileSync(
+      join(claudeSkill, 'SKILL.md'),
+      '---\nname: reviewer\ndescription: Review code\n---\n# Reviewer\n',
+    )
+    writeFileSync(
+      join(codexSkill, 'SKILL.md'),
+      '---\nname: planner\ndescription: Plan work\n---\n# Planner\n',
+    )
 
-    const candidates = detectLocalSkills([join(root, '.claude', 'skills'), join(root, '.codex', 'skills')])
+    const candidates = detectLocalSkills([
+      join(root, '.claude', 'skills'),
+      join(root, '.codex', 'skills'),
+    ])
 
     expect(candidates.map((candidate) => candidate.name).sort()).toEqual(['planner', 'reviewer'])
     expect(candidates.find((candidate) => candidate.name === 'reviewer')?.source).toBe('claude')
@@ -49,10 +62,34 @@ describe('local-skill-importer', () => {
     expect(payload.name).toBe('writer')
     expect(payload.rootPath).toBe(skillDir)
     expect(payload.enabled).toBe(true)
-    const manifest = JSON.parse(payload.manifestJson) as { desc: string; source: string; tags: string[]; systemPrompt: string }
+    const manifest = JSON.parse(payload.manifestJson) as {
+      desc: string
+      source: string
+      tags: string[]
+      systemPrompt: string
+    }
     expect(manifest.desc).toBe('Draft release notes')
     expect(manifest.source).toBe('Codex 本地')
     expect(manifest.tags).toEqual(['writing', 'release'])
     expect(manifest.systemPrompt).toContain('Use concise prose.')
+  })
+
+  it('skips malformed skills during discovery and rejects direct import with the file path', () => {
+    const root = makeTempDir()
+    const validDir = join(root, 'skills', 'valid')
+    const brokenDir = join(root, 'skills', 'broken')
+    mkdirSync(validDir, { recursive: true })
+    mkdirSync(brokenDir, { recursive: true })
+    writeFileSync(
+      join(validDir, 'SKILL.md'),
+      '---\nname: valid\ndescription: Valid skill\n---\nUse it.\n',
+    )
+    writeFileSync(join(brokenDir, 'SKILL.md'), '# Missing frontmatter\n')
+
+    expect(detectLocalSkills([join(root, 'skills')]).map((candidate) => candidate.name)).toEqual([
+      'valid',
+    ])
+    expect(() => importLocalSkillDirectory(brokenDir, 'codex')).toThrow(InvalidSkillDocumentError)
+    expect(() => importLocalSkillDirectory(brokenDir, 'codex')).toThrow(join(brokenDir, 'SKILL.md'))
   })
 })

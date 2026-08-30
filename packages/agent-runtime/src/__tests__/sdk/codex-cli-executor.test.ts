@@ -321,7 +321,7 @@ describe('CodexCliExecutor', () => {
     expect(lastProfileConfig).toContain("service_tier='fast'")
   })
 
-  it('keeps reasoning visible and writes explicit network controls without an effort override', async () => {
+  it('keeps reasoning summaries visible without exposing raw reasoning', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
     await new CodexCliExecutor().executeTurn(
@@ -336,11 +336,44 @@ describe('CodexCliExecutor', () => {
     )
 
     expect(lastProfileConfig).toContain("model_reasoning_summary='concise'")
-    expect(lastProfileConfig).toContain('show_raw_agent_reasoning=true')
+    expect(lastProfileConfig).toContain('show_raw_agent_reasoning=false')
     expect(lastProfileConfig).toContain('hide_agent_reasoning=false')
     expect(lastProfileConfig).toContain('tool_output_token_limit=12000')
     expect(lastProfileConfig).toContain('sandbox_workspace_write.network_access=true')
     expect(lastProfileConfig).toContain("web_search='cached'")
+  })
+
+  it('groups CLI reasoning summaries into one turn segment and ignores raw reasoning', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"response.reasoning_text.delta","item_id":"raw-1","delta":"private reasoning"}',
+          '{"type":"response.reasoning_summary_text.delta","item_id":"summary-1","summary_index":0,"delta":"Inspect callers"}',
+          '{"type":"response.reasoning_summary_text.delta","item_id":"summary-2","summary_index":0,"delta":"Plan tests"}',
+          '{"type":"item.completed","item":{"id":"summary-1","type":"reasoning","text":"Inspect callers"}}',
+          '{"type":"item.completed","item":{"id":"raw-item","type":"agent_reasoning","text":"private item reasoning"}}',
+          '{"type":"item.updated","item":{"id":"summary-3","type":"reasoning","text":"Verify fallback"}}',
+        ]),
+    )
+
+    const thinking: Array<{ content: string; segmentId?: string }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_thinking') {
+        thinking.push({
+          content: event.content,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(thinking).toEqual([
+      { content: 'Inspect callers', segmentId: 'codex-cli-thinking-turn-1' },
+      { content: '\n\nPlan tests', segmentId: 'codex-cli-thinking-turn-1' },
+      { content: '\n\nVerify fallback', segmentId: 'codex-cli-thinking-turn-1' },
+    ])
   })
 
   it('disables native Codex plugin skill discovery when Spark owns progressive disclosure', async () => {

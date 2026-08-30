@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { SkillCreateRequest } from '@spark/protocol'
+import { parseSkillDocument, type SkillDocumentIssue } from '../skills/skill-document.js'
 
 export type LocalSkillSource = 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
 
@@ -13,6 +14,18 @@ export interface LocalSkillCandidate {
   source: LocalSkillSource
   rootPath: string
   skillFilePath: string
+}
+
+export class InvalidSkillDocumentError extends Error {
+  readonly code: SkillDocumentIssue['code']
+  readonly filePath: string
+
+  constructor(filePath: string, issue: SkillDocumentIssue) {
+    super(`Invalid SKILL.md at ${filePath}: ${issue.message}`)
+    this.name = 'InvalidSkillDocumentError'
+    this.code = issue.code
+    this.filePath = filePath
+  }
 }
 
 const SOURCE_LABELS: Record<LocalSkillSource, string> = {
@@ -33,7 +46,9 @@ export function defaultLocalSkillRoots(): string[] {
   ]
 }
 
-export function detectLocalSkills(searchRoots: string[] = defaultLocalSkillRoots()): LocalSkillCandidate[] {
+export function detectLocalSkills(
+  searchRoots: string[] = defaultLocalSkillRoots(),
+): LocalSkillCandidate[] {
   const candidates: LocalSkillCandidate[] = []
   for (const root of searchRoots) {
     if (!existsSync(root)) continue
@@ -42,7 +57,8 @@ export function detectLocalSkills(searchRoots: string[] = defaultLocalSkillRoots
 
     const directSkillFile = join(root, 'SKILL.md')
     if (existsSync(directSkillFile)) {
-      candidates.push(toCandidate(root, inferSource(root)))
+      const candidate = safeCandidate(root, inferSource(root))
+      if (candidate != null) candidates.push(candidate)
       continue
     }
 
@@ -61,7 +77,8 @@ export function detectLocalSkills(searchRoots: string[] = defaultLocalSkillRoots
       const skillFile = join(dir, 'SKILL.md')
       if (!existsSync(skillFile)) continue
       const source = isSymlink(dir) ? 'linked' : inferSource(root)
-      candidates.push(toCandidate(dir, source))
+      const candidate = safeCandidate(dir, source)
+      if (candidate != null) candidates.push(candidate)
     }
   }
   return candidates.sort((a, b) => a.name.localeCompare(b.name))
@@ -84,12 +101,16 @@ export function detectBundledSkills(bundledDir: string): LocalSkillCandidate[] {
     if (!stat?.isDirectory()) continue
     const skillFile = join(dir, 'SKILL.md')
     if (!existsSync(skillFile)) continue
-    candidates.push(toCandidate(dir, 'bundled'))
+    const candidate = safeCandidate(dir, 'bundled')
+    if (candidate != null) candidates.push(candidate)
   }
   return candidates.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function importLocalSkillDirectory(directoryPath: string, source: LocalSkillSource = inferSource(directoryPath)): SkillCreateRequest {
+export function importLocalSkillDirectory(
+  directoryPath: string,
+  source: LocalSkillSource = inferSource(directoryPath),
+): SkillCreateRequest {
   const rootPath = resolve(directoryPath)
   const skillFilePath = join(rootPath, 'SKILL.md')
   if (!existsSync(skillFilePath)) {
@@ -144,7 +165,8 @@ export function importLocalSkillFile(filePath: string): SkillCreateRequest {
   const raw = readFileSync(resolvedPath, 'utf-8')
   const { frontmatter, body } = splitFrontmatter(raw)
   const name = stringField(frontmatter, 'name') || fallbackName
-  const description = stringField(frontmatter, 'description') || firstBodyLine(body) || 'Imported Skill'
+  const description =
+    stringField(frontmatter, 'description') || firstBodyLine(body) || 'Imported Skill'
 
   return {
     id: `local:file:${hashPath(resolvedPath)}`,
@@ -160,7 +182,9 @@ export function importLocalSkillFile(filePath: string): SkillCreateRequest {
       category: stringField(frontmatter, 'category') || 'utility',
       tags: listField(frontmatter, 'tags'),
       systemPrompt: body.trim(),
-      requiredTools: listField(frontmatter, 'requiredTools').concat(listField(frontmatter, 'tools')),
+      requiredTools: listField(frontmatter, 'requiredTools').concat(
+        listField(frontmatter, 'tools'),
+      ),
       parameters: [],
       importedFrom: 'file',
       skillFilePath: resolvedPath,
@@ -222,7 +246,19 @@ function toCandidate(rootPath: string, source: LocalSkillSource): LocalSkillCand
   }
 }
 
-function parseSkillFile(filePath: string, fallbackName: string): {
+function safeCandidate(rootPath: string, source: LocalSkillSource): LocalSkillCandidate | null {
+  try {
+    return toCandidate(rootPath, source)
+  } catch (error) {
+    if (error instanceof InvalidSkillDocumentError) return null
+    throw error
+  }
+}
+
+function parseSkillFile(
+  filePath: string,
+  fallbackName: string,
+): {
   name: string
   description: string
   version: string
@@ -233,18 +269,18 @@ function parseSkillFile(filePath: string, fallbackName: string): {
   body: string
 } {
   const raw = readFileSync(filePath, 'utf-8')
-  const { frontmatter, body } = splitFrontmatter(raw)
-  const name = stringField(frontmatter, 'name') || fallbackName
-  const description = stringField(frontmatter, 'description') || firstBodyLine(body) || '本地 Skill'
+  const parsed = parseSkillDocument(raw)
+  if (!parsed.valid) throw new InvalidSkillDocumentError(filePath, parsed.issue)
+  const frontmatter = parsed.metadata
   return {
-    name,
-    description,
+    name: parsed.name || fallbackName,
+    description: parsed.description,
     version: stringField(frontmatter, 'version') || '0.0.0',
     author: stringField(frontmatter, 'author') || 'Local',
     category: stringField(frontmatter, 'category') || 'utility',
     tags: listField(frontmatter, 'tags'),
     requiredTools: listField(frontmatter, 'requiredTools').concat(listField(frontmatter, 'tools')),
-    body: body.trim(),
+    body: parsed.body,
   }
 }
 
@@ -263,13 +299,21 @@ function splitFrontmatter(raw: string): { frontmatter: Record<string, string>; b
   return { frontmatter, body }
 }
 
-function stringField(frontmatter: Record<string, string>, key: string): string {
-  return frontmatter[key]?.trim() ?? ''
+function stringField(frontmatter: Record<string, unknown>, key: string): string {
+  const value = frontmatter[key]
+  return typeof value === 'string' ? value.trim() : ''
 }
 
-function listField(frontmatter: Record<string, string>, key: string): string[] {
-  const raw = stringField(frontmatter, key)
-  if (!raw) return []
+function listField(frontmatter: Record<string, unknown>, key: string): string[] {
+  const value = frontmatter[key]
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (raw.length === 0) return []
   return raw
     .replace(/^\[/, '')
     .replace(/\]$/, '')
@@ -279,10 +323,12 @@ function listField(frontmatter: Record<string, string>, key: string): string[] {
 }
 
 function firstBodyLine(body: string): string {
-  return body
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(/^#+\s*/, ''))
-    .find((line) => line.length > 0) ?? ''
+  return (
+    body
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^#+\s*/, ''))
+      .find((line) => line.length > 0) ?? ''
+  )
 }
 
 function inferSource(path: string): LocalSkillSource {

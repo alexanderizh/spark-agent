@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { clipTextHeadTail, estimateTokens } from '@spark/shared'
+import { parseSkillDocument, type SkillDocumentIssueCode } from '../skills/skill-document.js'
 
 export interface ProjectContextSource {
   kind: 'rule' | 'skill' | 'agent'
@@ -16,8 +17,15 @@ export interface ProjectContext {
   rules: string[]
   systemPrompt?: string
   skillSystemPrompt?: string
+  skillIssues?: ProjectSkillIssue[]
   sources: ProjectContextSource[]
   budget?: ProjectContextBudget
+}
+
+export interface ProjectSkillIssue {
+  path: string
+  code: SkillDocumentIssueCode
+  message: string
 }
 
 export interface ProjectContextBudget {
@@ -114,7 +122,9 @@ export class ProjectContextService {
     if (!safeStat(root)?.isDirectory()) return emptyContext()
 
     let ruleDocs = discoverRuleDocs(root)
-    let skillDocs = discoverSkillDocs(root)
+    const discoveredSkills = discoverSkillDocs(root)
+    let skillDocs = discoveredSkills.docs
+    let skillIssues = discoveredSkills.issues
     let agentDocs = discoverAgentDocs(root)
 
     // Apply file pin/exclude overrides
@@ -125,6 +135,7 @@ export class ProjectContextService {
     if (excludedPaths.size > 0) {
       ruleDocs = ruleDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
       skillDocs = skillDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
+      skillIssues = skillIssues.filter((issue) => !excludedPaths.has(issue.path))
       agentDocs = agentDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
     }
 
@@ -170,7 +181,17 @@ export class ProjectContextService {
       ...(skillSystemPrompt.length > 0
         ? { skillSystemPrompt: clampPrompt(skillSystemPrompt) }
         : {}),
-      sources: budgeted.sources,
+      ...(skillIssues.length > 0 ? { skillIssues } : {}),
+      sources: [
+        ...budgeted.sources,
+        ...skillIssues.map((issue) => ({
+          kind: 'skill' as const,
+          name: basename(resolve(root, issue.path, '..')),
+          path: issue.path,
+          included: false,
+          reason: `invalid_skill:${issue.code}`,
+        })),
+      ],
       budget: {
         mode,
         budgetTokens,
@@ -186,7 +207,7 @@ export class ProjectContextService {
     if (rootPath == null || rootPath.trim().length === 0) return []
     const root = resolve(rootPath)
     if (!safeStat(root)?.isDirectory()) return []
-    return discoverSkillDocs(root).map((doc) => toProjectSkillSummary(doc))
+    return discoverSkillDocs(root).docs.map((doc) => toProjectSkillSummary(doc))
   }
 
   buildSkillSystemPrompt(rootPath: string | undefined, skillId: string): string | null {
@@ -196,7 +217,8 @@ export class ProjectContextService {
     const skillFilePath = resolve(root, relativePath)
     if (!isInsideRoot(root, skillFilePath) || basename(skillFilePath).toLowerCase() !== 'skill.md')
       return null
-    const doc = toProjectDoc(root, skillFilePath, basename(resolve(skillFilePath, '..')))
+    const parsed = readProjectSkillDoc(root, skillFilePath, basename(resolve(skillFilePath, '..')))
+    const doc = parsed.doc
     if (doc == null) return null
     return [
       `[Selected Project Skill: ${doc.name}]`,
@@ -238,10 +260,18 @@ function discoverRuleDocs(
     .filter((doc): doc is MarkdownDoc & { relativePath: string; content: string } => doc != null)
 }
 
-function discoverSkillDocs(root: string): Array<MarkdownDoc & { relativePath: string }> {
-  return SKILL_DIR_PATHS.flatMap((path) => discoverSkillFiles(join(root, path)))
-    .map((filePath) => toProjectSkillDoc(root, filePath, basename(resolve(filePath, '..'))))
-    .filter((doc): doc is MarkdownDoc & { relativePath: string } => doc != null)
+function discoverSkillDocs(root: string): {
+  docs: Array<MarkdownDoc & { relativePath: string }>
+  issues: ProjectSkillIssue[]
+} {
+  const docs: Array<MarkdownDoc & { relativePath: string }> = []
+  const issues: ProjectSkillIssue[] = []
+  for (const filePath of SKILL_DIR_PATHS.flatMap((path) => discoverSkillFiles(join(root, path)))) {
+    const parsed = readProjectSkillDoc(root, filePath, basename(resolve(filePath, '..')))
+    if (parsed.doc != null) docs.push(parsed.doc)
+    else if (parsed.issue != null) issues.push(parsed.issue)
+  }
+  return { docs, issues }
 }
 
 function discoverAgentDocs(root: string): Array<MarkdownDoc & { relativePath: string }> {
@@ -293,17 +323,39 @@ function toProjectDoc(
   }
 }
 
-function toProjectSkillDoc(
+function readProjectSkillDoc(
   root: string,
   filePath: string,
   fallbackName: string,
-): (MarkdownDoc & { relativePath: string }) | null {
-  const doc = toProjectDoc(root, filePath, fallbackName)
-  if (doc == null) return null
-  const summary = `${doc.name}\n${doc.description}`
+): {
+  doc: (MarkdownDoc & { relativePath: string }) | null
+  issue: ProjectSkillIssue | null
+} {
+  const raw = safeRead(filePath)
+  if (!raw.trim()) return { doc: null, issue: null }
+  const relativePath = toPosix(relative(root, filePath))
+  const parsed = parseSkillDocument(raw)
+  if (!parsed.valid) {
+    return {
+      doc: null,
+      issue: {
+        path: relativePath,
+        code: parsed.issue.code,
+        message: parsed.issue.message,
+      },
+    }
+  }
+  const summary = `${parsed.name}\n${parsed.description}`
   return {
-    ...doc,
-    estimatedTokens: estimateTokens(summary),
+    doc: {
+      name: parsed.name || fallbackName,
+      description: parsed.description,
+      body: parsed.body,
+      relativePath,
+      estimatedTokens: estimateTokens(summary),
+      truncated: raw.includes(FILE_TRUNCATION_MARKER),
+    },
+    issue: null,
   }
 }
 
