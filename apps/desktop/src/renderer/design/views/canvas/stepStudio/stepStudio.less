@@ -39,6 +39,14 @@
     // 在 cinematic/window-theme.less（与 .canvas-workspace-header 同组），两模式顶栏同步变色。
     background: rgba(20, 20, 20, 0.97);
     box-shadow: 0 1px rgba(0, 0, 0, 0.55);
+    // macOS：header 自身作为窗口拖拽区（与 .canvas-workspace-header 一致）。
+    // app-region 不按继承生效：header 内可交互按钮必须显式 no-drag，否则点击被拖拽吞掉。
+    -webkit-app-region: drag;
+  }
+
+  // header 内所有可交互元素恢复为可点击（返回/三步导航/模式切换/主题/窗口控件均为原生 button）
+  .step-studio-header button {
+    -webkit-app-region: no-drag;
   }
 
   // macOS 红绿灯安全区：header 挂在 .step-studio-root 下（与 .canvas-workspace
