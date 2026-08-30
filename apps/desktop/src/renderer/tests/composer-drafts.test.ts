@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  COMPOSER_DRAFT_RESTORE_EVENT,
   COMPOSER_DRAFTS_LEGACY_KEY,
   NEW_SESSION_DRAFT_BUCKET,
+  clearComposerDraftBuckets,
+  clearComposerDraftMapBuckets,
   createComposerDraftWriter,
   gcComposerDraftBuckets,
   isEmptyDraft,
   readComposerDrafts,
+  restoreComposerDraftBucket,
   writeComposerDraftBucket,
+  type ComposerDraftRestoreDetail,
   type ComposerDraftMap,
 } from '../design/views/chat/composer-drafts'
 import type { ComposerDraftSnapshot } from '../design/views/chat/ChatComposerTypes'
@@ -156,6 +161,45 @@ describe('composer draft persistence (per-bucket key)', () => {
       writer.removeBucket('s1')
       // 不推进 timer，删除应已生效
       expect(window.localStorage.getItem(DRAFT_KEY_PREFIX + 's1')).toBeNull()
+    })
+
+    it('clears a new-session draft before unmount so remount cannot restore sent content', () => {
+      vi.useFakeTimers()
+      const writer = createComposerDraftWriter({ debounceMs: 500 })
+      const initialDrafts: ComposerDraftMap = {
+        [NEW_SESSION_DRAFT_BUCKET]: draft('first message'),
+      }
+
+      writer.writeBucket(NEW_SESSION_DRAFT_BUCKET, draft('first message'))
+      vi.advanceTimersByTime(500)
+      writer.writeBucket(NEW_SESSION_DRAFT_BUCKET, draft('pending stale message'))
+
+      const clearedBuckets = clearComposerDraftBuckets(
+        [NEW_SESSION_DRAFT_BUCKET, NEW_SESSION_DRAFT_BUCKET],
+        writer,
+      )
+      const clearedDrafts = clearComposerDraftMapBuckets(initialDrafts, clearedBuckets)
+      writer.dispose() // 模拟 hero → 会话布局导致旧 Composer 卸载
+
+      expect(clearedBuckets).toEqual([NEW_SESSION_DRAFT_BUCKET])
+      expect(clearedDrafts[NEW_SESSION_DRAFT_BUCKET]?.value).toBe('')
+      expect(readComposerDrafts()[NEW_SESSION_DRAFT_BUCKET]).toBeUndefined()
+    })
+
+    it('restores a failed new-session send across remount through storage and an event', () => {
+      const restoredDraft = draft('retry this message')
+      const onRestore = vi.fn((event: Event) => {
+        const detail = (event as CustomEvent<ComposerDraftRestoreDetail>).detail
+        expect(detail.bucket).toBe('session-created-before-failure')
+        expect(detail.draft).toEqual(restoredDraft)
+      })
+      window.addEventListener(COMPOSER_DRAFT_RESTORE_EVENT, onRestore)
+
+      restoreComposerDraftBucket('session-created-before-failure', restoredDraft)
+
+      expect(onRestore).toHaveBeenCalledTimes(1)
+      expect(readComposerDrafts()['session-created-before-failure']).toEqual(restoredDraft)
+      window.removeEventListener(COMPOSER_DRAFT_RESTORE_EVENT, onRestore)
     })
 
     it('reports a persistence failure once instead of failing silently', () => {

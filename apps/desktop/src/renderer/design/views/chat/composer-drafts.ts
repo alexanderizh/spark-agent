@@ -22,6 +22,8 @@ import type { ComposerDraftSnapshot, ComposerSessionReference } from './ChatComp
 export const COMPOSER_DRAFTS_LEGACY_KEY = 'spark-agent:composer-drafts'
 /** 未绑定会话时（hero / 新会话）使用的草稿桶 */
 export const NEW_SESSION_DRAFT_BUCKET = 'draft:new'
+/** 发送失败后跨 Composer 重挂载恢复草稿 */
+export const COMPOSER_DRAFT_RESTORE_EVENT = 'spark:composer:restore-draft'
 
 /** per-bucket key 前缀，bucket = sessionId 或 NEW_SESSION_DRAFT_BUCKET */
 const DRAFT_KEY_PREFIX = 'spark-agent:composer-draft:'
@@ -35,6 +37,18 @@ const WRITE_DEBOUNCE_MS = 500
 const MAX_DRAFT_ENTRIES = 200
 
 export type ComposerDraftMap = Record<string, ComposerDraftSnapshot>
+
+export interface ComposerDraftRestoreDetail {
+  bucket: string
+  draft: ComposerDraftSnapshot
+}
+
+export interface ComposerDraftWriter {
+  writeBucket: (bucket: string, draft: ComposerDraftSnapshot) => void
+  removeBucket: (bucket: string) => void
+  flush: () => void
+  dispose: () => void
+}
 
 export function isEmptyDraft(draft: ComposerDraftSnapshot | undefined): boolean {
   if (draft == null) return true
@@ -68,7 +82,9 @@ function sanitizeDraft(value: unknown): ComposerDraftSnapshot | null {
         }
         return [
           {
-            ...(typeof reference.referenceId === 'string' ? { referenceId: reference.referenceId } : {}),
+            ...(typeof reference.referenceId === 'string'
+              ? { referenceId: reference.referenceId }
+              : {}),
             sourceSessionId: reference.sourceSessionId,
             title: reference.title.slice(0, 200),
             ...(Number.isInteger(reference.snapshotSeq) && reference.snapshotSeq! >= 0
@@ -175,6 +191,21 @@ export function writeComposerDraftBucket(bucket: string, draft: ComposerDraftSna
   }
 }
 
+/**
+ * 发送失败时同步恢复持久化草稿，并通知当前已挂载的 Composer 更新内存 state。
+ * 同步写盘覆盖“事件发出时目标 Composer 尚未挂载”的会话切换窗口。
+ */
+export function restoreComposerDraftBucket(bucket: string, draft: ComposerDraftSnapshot): void {
+  if (bucket.length === 0) return
+  writeComposerDraftBucket(bucket, draft)
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent<ComposerDraftRestoreDetail>(COMPOSER_DRAFT_RESTORE_EVENT, {
+      detail: { bucket, draft },
+    }),
+  )
+}
+
 /** 删一个 bucket（O(1) removeItem） */
 export function removeComposerDraftBucket(bucket: string): void {
   if (typeof window === 'undefined') return
@@ -183,6 +214,49 @@ export function removeComposerDraftBucket(bucket: string): void {
   } catch {
     // ignore
   }
+}
+
+/**
+ * 同步清除一组草稿 bucket，并取消写入器中对应的待落盘内容。
+ *
+ * 该操作必须在 React state updater 之外调用：新会话首发会触发 Composer 卸载，
+ * updater 可能来不及执行；持久化数据若未先删除，重挂载会重新读回已发送内容。
+ * 返回去重后的 bucket，供调用方继续同步内存 state 和关联引用。
+ */
+export function clearComposerDraftBuckets(
+  buckets: ReadonlyArray<string | null | undefined>,
+  writer: Pick<ComposerDraftWriter, 'removeBucket'> | null = null,
+): string[] {
+  const uniqueBuckets = Array.from(
+    new Set(buckets.filter((bucket): bucket is string => bucket != null && bucket.length > 0)),
+  )
+  for (const bucket of uniqueBuckets) {
+    if (writer != null) writer.removeBucket(bucket)
+    else removeComposerDraftBucket(bucket)
+  }
+  return uniqueBuckets
+}
+
+/** 只更新内存草稿快照；持久化删除由 clearComposerDraftBuckets 同步完成。 */
+export function clearComposerDraftMapBuckets(
+  current: ComposerDraftMap,
+  buckets: readonly string[],
+): ComposerDraftMap {
+  let next = current
+  for (const bucket of buckets) {
+    const existing = next[bucket]
+    if (
+      existing == null ||
+      (existing.value === '' &&
+        existing.attachments.length === 0 &&
+        existing.sessionReferences.length === 0)
+    ) {
+      continue
+    }
+    if (next === current) next = { ...current }
+    next[bucket] = { ...existing, value: '', attachments: [], sessionReferences: [] }
+  }
+  return next
 }
 
 /**
@@ -270,12 +344,7 @@ export function gcComposerDraftBuckets(liveSessionIds: ReadonlySet<string> | nul
 export function createComposerDraftWriter(options: {
   onPersistError?: () => void
   debounceMs?: number
-}): {
-  writeBucket: (bucket: string, draft: ComposerDraftSnapshot) => void
-  removeBucket: (bucket: string) => void
-  flush: () => void
-  dispose: () => void
-} {
+}): ComposerDraftWriter {
   const debounceMs = options.debounceMs ?? WRITE_DEBOUNCE_MS
   // pending: bucket → draft（写入）或 null（删除）
   let pending = new Map<string, ComposerDraftSnapshot | null>()

@@ -86,11 +86,16 @@ import {
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
 import { writeAgentRuntimePrefs } from './composerAgentRuntimePrefs'
 import {
+  COMPOSER_DRAFT_RESTORE_EVENT,
+  clearComposerDraftBuckets,
+  clearComposerDraftMapBuckets,
   createComposerDraftWriter,
   gcComposerDraftBuckets,
   readComposerDrafts,
   NEW_SESSION_DRAFT_BUCKET,
+  restoreComposerDraftBucket,
   type ComposerDraftMap,
+  type ComposerDraftRestoreDetail,
 } from './composer-drafts'
 import { ComposerBranchSelect } from './BranchPicker'
 import { CliProviderModelMenu, type CliSparkProviderGroup } from './CliProviderModelMenu'
@@ -1460,29 +1465,12 @@ export function ComposerV2({
 
   const clearDraftBuckets = useCallback(
     (keys: Array<string | null | undefined>) => {
-      const uniqueKeys = Array.from(new Set(keys.filter((key): key is string => !!key)))
+      // 持久化删除必须先于 React state 更新：新会话首发会立即卸载 Composer，
+      // 若把 removeBucket 放进 updater，旧草稿可能在重挂载时被重新读回。
+      const uniqueKeys = clearComposerDraftBuckets(keys, draftWriterRef.current)
       if (uniqueKeys.length === 0) return
       clearCodeReferenceBuckets(uniqueKeys)
-      setDrafts((current) => {
-        let changed = false
-        const next = { ...current }
-        for (const key of uniqueKeys) {
-          const existing = next[key]
-          if (
-            existing != null &&
-            (existing.value !== '' ||
-              existing.attachments.length > 0 ||
-              existing.sessionReferences.length > 0)
-          ) {
-            // 内存里清成空草稿（UI 立即反映），localStorage 里直接删 key（per-bucket O(1)）
-            next[key] = { ...existing, value: '', attachments: [], sessionReferences: [] }
-            draftWriterRef.current?.removeBucket(key)
-            changed = true
-          }
-        }
-        if (!changed) return current
-        return next
-      })
+      setDrafts((current) => clearComposerDraftMapBuckets(current, uniqueKeys))
     },
     [clearCodeReferenceBuckets],
   )
@@ -1738,38 +1726,24 @@ export function ComposerV2({
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ sessionId?: string }>).detail ?? {}
-      const targetId = detail.sessionId
-      setDrafts((current) => {
-        const next: ComposerDraftMap = { ...current }
-        let changed = false
-        if (targetId != null && next[targetId] != null) {
-          next[targetId] = {
-            ...next[targetId],
-            value: '',
-            attachments: [],
-            sessionReferences: [],
-          }
-          draftWriterRef.current?.removeBucket(targetId)
-          changed = true
-        }
-        if (next[NEW_SESSION_DRAFT_BUCKET] != null) {
-          next[NEW_SESSION_DRAFT_BUCKET] = {
-            ...next[NEW_SESSION_DRAFT_BUCKET],
-            value: '',
-            attachments: [],
-            sessionReferences: [],
-          }
-          draftWriterRef.current?.removeBucket(NEW_SESSION_DRAFT_BUCKET)
-          changed = true
-        }
-        clearCodeReferenceBuckets([targetId, NEW_SESSION_DRAFT_BUCKET])
-        if (!changed) return current
-        return next
-      })
+      clearDraftBuckets([detail.sessionId, NEW_SESSION_DRAFT_BUCKET])
     }
     window.addEventListener('spark:composer:reset-draft', handler)
     return () => window.removeEventListener('spark:composer:reset-draft', handler)
-  }, [clearCodeReferenceBuckets])
+  }, [clearDraftBuckets])
+
+  // 新会话首发会因 hero → 会话布局切换卸载旧 Composer。发送失败时由旧实例
+  // 同步写回草稿并派发此事件，让已经挂载的新实例无需再次重挂载即可恢复输入。
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ComposerDraftRestoreDetail>).detail
+      if (detail?.bucket !== draftBucketKey || detail.draft == null) return
+      draftWriterRef.current?.writeBucket(detail.bucket, detail.draft)
+      setDrafts((current) => ({ ...current, [detail.bucket]: detail.draft }))
+    }
+    window.addEventListener(COMPOSER_DRAFT_RESTORE_EVENT, handler)
+    return () => window.removeEventListener(COMPOSER_DRAFT_RESTORE_EVENT, handler)
+  }, [draftBucketKey])
 
   // 浏览器面板 / 独立浏览器窗口「选择元素加入会话」：把拾取到的元素以引用
   // tag（chip）加入输入框——引用按 draft bucket 隔离，发送时才序列化为
@@ -1856,6 +1830,12 @@ export function ComposerV2({
       text: string,
       turnAttachments: ComposerAttachment[],
       replySnapshot?: ReplyToState | null,
+      sentDraft: ComposerDraftSnapshot = {
+        value: text,
+        attachments: turnAttachments,
+        sessionReferences,
+        manualExpanded,
+      },
     ) => {
       // 用户选择快捷回复或自行发送后立即隐藏建议，不等待事件流回写 user_message。
       if (activeQuickReplies != null) setDismissedQuickReplyKey(activeQuickReplies.key)
@@ -1873,7 +1853,7 @@ export function ComposerV2({
           const markdown = getLastAssistantMessageMarkdown(messages)
           if (markdown == null) {
             toast.error('没有可复制的上一条 Assistant 消息。')
-            setValue(text)
+            restoreComposerDraftBucket(draftBucketKey, sentDraft)
             return
           }
           setSending(true)
@@ -1884,7 +1864,7 @@ export function ComposerV2({
           } catch (err) {
             console.error('复制上一条 Assistant 消息失败', err)
             toast.error(err instanceof Error ? err.message : '复制失败')
-            setValue(text)
+            restoreComposerDraftBucket(draftBucketKey, sentDraft)
           } finally {
             setSending(false)
           }
@@ -1892,18 +1872,19 @@ export function ComposerV2({
         }
         setSending(true)
         let optimisticSend: OptimisticUserSendLifecycle | null = null
+        let commandSessionId =
+          createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
         try {
           const requestAttachments = await prepareRequestAttachments()
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
           // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
-          let sessionId = createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
-          if (sessionId == null) {
+          if (commandSessionId == null) {
             if (selectedProvider == null) {
               toast.warning('请先选择 Provider 再执行命令。')
-              setValue(text)
+              restoreComposerDraftBucket(draftBucketKey, sentDraft)
               return
             }
-            sessionId = await onCreateSession({
+            commandSessionId = await onCreateSession({
               ...(selectedProvider?.id !== undefined
                 ? { providerProfileId: selectedProvider.id }
                 : {}),
@@ -1922,14 +1903,14 @@ export function ComposerV2({
                   }
                 : {}),
             })
-            if (sessionId == null) {
+            if (commandSessionId == null) {
               toast.error('创建会话失败，无法执行命令。')
-              setValue(text)
+              restoreComposerDraftBucket(draftBucketKey, sentDraft)
               return
             }
           }
           const res = await window.spark.invoke('command:execute', {
-            sessionId,
+            sessionId: commandSessionId,
             message: text,
             ...runtimePatchSnapshot,
             ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
@@ -1948,7 +1929,7 @@ export function ComposerV2({
             // 转发给 Agent：作为普通消息发送
             optimisticSend = startOptimisticUserSend(
               {
-                sessionId,
+                sessionId: commandSessionId,
                 content: text,
                 attachments: turnAttachments,
                 sessionReferences,
@@ -1967,7 +1948,7 @@ export function ComposerV2({
             await optimisticSend?.waitUntilVisible()
             await flushPendingRuntimePatch()
             const sendRes = await sendTurn({
-              sessionId,
+              sessionId: commandSessionId,
               message: text,
               ...(optimisticSend != null ? { clientMessageId: optimisticSend.clientId } : {}),
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
@@ -1999,10 +1980,10 @@ export function ComposerV2({
             } else if (queuedMessages.length === 0) {
               setQueueVisible(false)
             }
-            onSent(sessionId, sendRes.started)
-            await refreshQueueState(sessionId)
+            onSent(commandSessionId, sendRes.started)
+            await refreshQueueState(commandSessionId)
             await refreshAttachedReferences()
-            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
+            clearDraftBuckets([draftBucketKey, commandSessionId, NEW_SESSION_DRAFT_BUCKET])
             return
           }
           // 命令结果已通过事件流注入到聊天中，无需 Toast
@@ -2011,20 +1992,18 @@ export function ComposerV2({
             // 会话运行中：命令已进入会话队列，等当前 turn 结束后出队执行。
             // 队列面板立即给出可见反馈，草稿也在此刻清掉（消息已被接受）。
             setQueueVisible(true)
-            onSent(sessionId, false)
-            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
+            onSent(commandSessionId, false)
+            clearDraftBuckets([draftBucketKey, commandSessionId, NEW_SESSION_DRAFT_BUCKET])
           } else if (res.started === true) {
-            onSent(sessionId, true)
-            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
+            onSent(commandSessionId, true)
+            clearDraftBuckets([draftBucketKey, commandSessionId, NEW_SESSION_DRAFT_BUCKET])
           }
-          await refreshQueueState(sessionId)
+          await refreshQueueState(commandSessionId)
         } catch (err) {
           optimisticSend?.fail(err instanceof Error ? err.message : String(err))
           console.error('命令执行失败', err)
           toast.error(err instanceof Error ? err.message : '命令执行失败')
-          setValue(text)
-          setAttachments(turnAttachments)
-          setSessionReferences(sessionReferences)
+          restoreComposerDraftBucket(commandSessionId ?? draftBucketKey, sentDraft)
         } finally {
           setSending(false)
         }
@@ -2034,10 +2013,9 @@ export function ComposerV2({
       if (selectedProvider == null) return
       setSending(true)
       let optimisticSend: OptimisticUserSendLifecycle | null = null
+      let targetSessionId = createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
       try {
         // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
-        let targetSessionId =
-          createWorktree || !canReuseCurrentSession ? null : (session?.id ?? null)
         if (targetSessionId == null) {
           targetSessionId = await onCreateSession({
             ...(selectedProvider?.id !== undefined
@@ -2124,9 +2102,7 @@ export function ComposerV2({
         optimisticSend?.fail(err instanceof Error ? err.message : String(err))
         console.error('发送失败', err)
         toast.error(err instanceof Error ? err.message : '发送消息失败')
-        setValue(text)
-        setAttachments(turnAttachments)
-        setSessionReferences(sessionReferences)
+        restoreComposerDraftBucket(targetSessionId ?? draftBucketKey, sentDraft)
       } finally {
         setSending(false)
       }
@@ -2149,6 +2125,7 @@ export function ComposerV2({
       refreshQueueState,
       refreshAttachedReferences,
       sessionReferences,
+      manualExpanded,
       selectedProvider,
       selectedProviderAdapter,
       messages,
@@ -2158,9 +2135,6 @@ export function ComposerV2({
       canReuseCurrentSession,
       createWorktree,
       worktreeBranch,
-      setAttachments,
-      setSessionReferences,
-      setValue,
       teamConfig,
       toast,
       pendingMention,
@@ -2585,16 +2559,13 @@ export function ComposerV2({
     }
     historyIndexRef.current = -1
     historyDraftRef.current = ''
-    setValue('')
-    setAttachments([])
-    setSessionReferences([])
-    setCodeReferences([])
+    clearDraftBuckets([draftBucketKey])
     setBrowserReferences([])
     // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
     setPendingMention(null)
     if (replySnapshot != null) onClearReply?.()
     try {
-      await dispatchMessage(text, turnAttachments, replySnapshot)
+      await dispatchMessage(text, turnAttachments, replySnapshot, draftState)
     } finally {
       submitGateRef.current.leave()
     }
