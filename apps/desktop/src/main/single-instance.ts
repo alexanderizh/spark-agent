@@ -1,6 +1,9 @@
 type SingleInstanceApp = {
   requestSingleInstanceLock: () => boolean
-  on: (eventName: 'second-instance', handler: (event: unknown, commandLine: string[]) => void) => void
+  on: (
+    eventName: 'second-instance',
+    handler: (event: unknown, commandLine: string[]) => void,
+  ) => void
   quit: () => void
 }
 
@@ -9,12 +12,14 @@ export function installSingleInstanceLock(
   revealPrimaryWindow: () => void,
   handleSecondInstanceArguments?: (commandLine: string[]) => void,
   enabled = true,
+  onLockUnavailable?: () => void,
 ): boolean {
   if (!enabled) return true
 
   const ownsLock = app.requestSingleInstanceLock()
   if (!ownsLock) {
-    app.quit()
+    if (onLockUnavailable != null) onLockUnavailable()
+    else app.quit()
     return false
   }
 

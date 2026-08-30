@@ -194,6 +194,7 @@ let computerControlTray: ComputerControlTrayService | null = null
 let unsubscribeComputerControlStatus: (() => void) | null = null
 let computerControlTrayRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let isQuitting = false
+let requestedQuitReason: string | null = null
 let downloadedPromptVersion: string | null = null
 const BROWSER_ZOOM_CHANGED_EVENT = 'spark:browser-zoom-changed'
 const UI_ZOOM_MIN = 80
@@ -201,6 +202,22 @@ const UI_ZOOM_MAX = 150
 const UI_ZOOM_STEP = 5
 
 registerEmergencySessionShutdown(process, disposeSessionServiceForShutdown)
+
+function requestApplicationQuit(reason: string): void {
+  requestedQuitReason = reason
+  isQuitting = true
+  log.warn(`[quit-forensics] request-quit; reason=${reason}; windows=${formatWindowSnapshot()}`)
+  app.quit()
+}
+
+function requestApplicationExit(reason: string, exitCode: number): void {
+  requestedQuitReason = reason
+  isQuitting = true
+  log.warn(
+    `[quit-forensics] request-exit; reason=${reason}; code=${exitCode}; windows=${formatWindowSnapshot()}`,
+  )
+  app.exit(exitCode)
+}
 
 // ─── Quit guard ──────────────────────────────────────────────────────────────
 // 无论从哪里发起退出（macOS Dock 右键"退出" / ⌘Q、托盘菜单"退出"、自动更新
@@ -214,7 +231,9 @@ registerEmergencySessionShutdown(process, disposeSessionServiceForShutdown)
 // preventDefault + hide()，退出被吞，应用无法真正退出。
 app.on('before-quit', () => {
   isQuitting = true
-  log.warn(`[quit-forensics] before-quit; windows=${formatWindowSnapshot()}`)
+  log.warn(
+    `[quit-forensics] before-quit; reason=${requestedQuitReason ?? 'external-app-event'}; windows=${formatWindowSnapshot()}`,
+  )
   unsubscribeComputerControlStatus?.()
   unsubscribeComputerControlStatus = null
   if (computerControlTrayRefreshTimer != null) clearTimeout(computerControlTrayRefreshTimer)
@@ -293,6 +312,7 @@ const ownsSingleInstanceLock = installSingleInstanceLock(
     if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
   },
   shouldEnableSingleInstanceLock(is.dev, process.env),
+  () => requestApplicationQuit('single-instance-lock-not-owned'),
 )
 
 const initialRedeemCode = findPlatformModelRedeemCode(process.argv)
@@ -560,10 +580,7 @@ async function refreshTrayMenu(): Promise<void> {
       { type: 'separator' },
       {
         label: '退出',
-        click: () => {
-          isQuitting = true
-          app.quit()
-        },
+        click: () => requestApplicationQuit('tray-menu'),
       },
     ]),
   )
@@ -879,7 +896,7 @@ async function initializeApp(): Promise<void> {
     if (packagedSmoke.requested) {
       await disposeComputerUseServices()
       closeDatabase()
-      app.exit(packagedSmoke.exitCode)
+      requestApplicationExit('computer-use-packaged-smoke', packagedSmoke.exitCode)
       return
     }
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
@@ -1133,8 +1150,7 @@ async function initializeApp(): Promise<void> {
     onRequestQuit: () => {
       // 安装更新前必须置位退出守卫，否则窗口 close 处理器会 preventDefault，
       // 导致 app.quit() 无法真正退出，旧实例残留使安装无法进行。
-      isQuitting = true
-      app.quit()
+      requestApplicationQuit('update-install')
     },
     handler: (status: UpdateStatus) => {
       // 推送状态变化到渲染进程
@@ -1283,7 +1299,7 @@ if (ownsSingleInstanceLock) {
 
     initializeApp().catch((err) => {
       log.error(`Failed to initialize app: ${String(err)}`)
-      app.quit()
+      requestApplicationQuit('initialization-failed')
     })
 
     // macOS：已有可见窗口时交给系统保持最近使用窗口；仅所有窗口都不可见时，
@@ -1299,7 +1315,7 @@ if (ownsSingleInstanceLock) {
   app.on('window-all-closed', () => {
     log.warn(`[quit-forensics] window-all-closed; isQuitting=${isQuitting}`)
     if (process.platform !== 'darwin' && isQuitting) {
-      app.quit()
+      requestApplicationQuit(requestedQuitReason ?? 'window-all-closed')
     }
   })
 }

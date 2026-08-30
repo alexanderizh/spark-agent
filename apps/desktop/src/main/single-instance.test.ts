@@ -53,6 +53,17 @@ describe('single instance lock', () => {
     expect(revealPrimaryWindow).not.toHaveBeenCalled()
   })
 
+  it('reports the single-instance quit source when a callback is provided', () => {
+    const { app } = createFakeApp(false)
+    const onLockUnavailable = vi.fn()
+
+    const ownsLock = installSingleInstanceLock(app, vi.fn(), undefined, true, onLockUnavailable)
+
+    expect(ownsLock).toBe(false)
+    expect(onLockUnavailable).toHaveBeenCalledOnce()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
   it('reveals the primary window when a second instance is launched', () => {
     const { app, getSecondInstanceHandler } = createFakeApp(true)
     const revealPrimaryWindow = vi.fn()
