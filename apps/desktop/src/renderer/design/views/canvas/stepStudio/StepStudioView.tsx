@@ -1,5 +1,4 @@
 import { Button } from '@lobehub/ui'
-import type { ReactNode } from 'react'
 import type { CanvasSnapshot, StepStudioStageKey } from '../canvas.types'
 import type { CanvasWindowTheme } from '../canvas-window-theme'
 import { Icons } from '../../../Icons'
@@ -16,7 +15,7 @@ import './stepStudio.less'
  * 步骤模式（Step Studio）三步向导骨架（P3 交付）。
  *
  * 结构（设计 §5.0）：顶栏（返回 + 项目名 + 三步导航 + 模式切换器）/
- * 左侧步骤导航 / 主内容区。三步内容分别为 P4（设定）、P5（分镜）、
+ * 主内容区。三步内容分别为 P4（设定）、P5（分镜）、
  * P6（视频）交付，本层只提供骨架与步骤切换持久化（metadata.stepStudio.activeStep）。
  *
  * 渲染在 CanvasWorkspaceView 内部（store/会话等上层上下文保持单例），
@@ -26,12 +25,9 @@ import './stepStudio.less'
 interface StepStageDef {
   index: number
   title: string
-  short: string
-  description: string
-  icon: ReactNode
 }
 
-/** 步骤顺序（顶栏导航 / 左侧导航按此渲染） */
+/** 步骤顺序（顶栏导航按此渲染） */
 const STAGE_ORDER: readonly StepStudioStageKey[] = ['setup', 'storyboard', 'assembly']
 
 /** 按 key 索引的步骤定义（键穷尽，索引取值类型层无 undefined） */
@@ -39,23 +35,14 @@ const STAGE_BY_KEY: Record<StepStudioStageKey, StepStageDef> = {
   setup: {
     index: 1,
     title: '设定',
-    short: '角色 / 场景 / 道具',
-    description: '创建与管理出场资产：AI 即时生成、本地上传或从画布选择归类。',
-    icon: <Icons.Users size={15} />,
   },
   storyboard: {
     index: 2,
     title: '分镜',
-    short: '分段视频生成',
-    description: '按分段组织剧本，@引用资产，批量生成分段视频。',
-    icon: <Icons.Film size={15} />,
   },
   assembly: {
     index: 3,
     title: '视频',
-    short: '组装 · 精剪 · 导出',
-    description: '分段自动组装时间线，进入视频工作台精剪并导出成片。',
-    icon: <Icons.Video size={15} />,
   },
 }
 
@@ -179,35 +166,6 @@ export function StepStudioView({
       </header>
 
       <div className="step-studio-body">
-        <aside className="step-studio-sidebar">
-          {STAGE_ORDER.map((key, i) => {
-            const stage = STAGE_BY_KEY[key]
-            return (
-              <button
-                key={key}
-                type="button"
-                className={[
-                  'step-studio-side-nav',
-                  key === activeStep ? 'is-active' : '',
-                  i < activeIndex ? 'is-visited' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-current={key === activeStep ? 'step' : undefined}
-                onClick={() => onSelectStep(key)}
-              >
-                <span className="step-studio-side-icon">{stage.icon}</span>
-                <span className="step-studio-side-text">
-                  <span className="step-studio-side-title">
-                    {stage.index}. {stage.title}
-                  </span>
-                  <span className="step-studio-side-short">{stage.short}</span>
-                </span>
-              </button>
-            )
-          })}
-        </aside>
-
         <main className="step-studio-main">
           {activeStep === 'setup' ? (
             <StepSetupView

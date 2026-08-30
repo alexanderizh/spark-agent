@@ -19,7 +19,11 @@ import type { CanvasAsset, CanvasTaskStatus } from '../canvas.types'
 import { AssetThumbnail } from '../CanvasAssetThumbnail'
 import { FILM_ASSET_KIND_LABELS, readAssetKind } from '../canvasFilmAssets'
 import { isStructuredFilmAssetPayload, readFilmAssetPayload } from './filmAssetPayload'
-import { isAssetGenerationActive, type AssetGenerationStatus } from './assetGenerationStatus'
+import {
+  formatAssetGenerationProgress,
+  isAssetGenerationActive,
+  type AssetGenerationStatus,
+} from './assetGenerationStatus'
 
 export type AssetDetailAction = {
   key: string
@@ -81,10 +85,7 @@ const STATUS_LABELS: Record<CanvasTaskStatus, string> = {
 function GenerationStatusBanner({ status }: { status: AssetGenerationStatus }) {
   const active = isAssetGenerationActive(status)
   const label = STATUS_LABELS[status.status] ?? status.status
-  const percent =
-    typeof status.progress === 'number' && status.progress > 0
-      ? `${Math.round(status.progress * 100)}%`
-      : ''
+  const percent = formatAssetGenerationProgress(status.progress)
   const detail = status.status === 'failed' || status.status === 'cancelled' ? status.message : ''
   const tone = active ? 'is-running' : status.status === 'failed' ? 'is-failed' : 'is-idle'
   return (

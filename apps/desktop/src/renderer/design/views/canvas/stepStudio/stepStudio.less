@@ -244,92 +244,12 @@
     align-items: center;
   }
 
-  // ── 主体：左侧步骤导航 + 主内容区 ──
+  // ── 主体内容区 ──
 
   .step-studio-body {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
-  }
-
-  .step-studio-sidebar {
-    display: flex;
-    flex: 0 0 auto;
-    width: 208px;
-    flex-direction: column;
-    gap: 2px;
-    padding: 14px 10px;
-    border-right: 1px solid var(--canvas-cinema-border);
-    background: var(--canvas-cinema-surface-1);
-  }
-
-  .step-studio-side-nav {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 0;
-    border-left: 2px solid transparent;
-    border-radius: var(--canvas-cinema-radius-sm);
-    background: transparent;
-    color: var(--canvas-cinema-text-muted);
-    text-align: left;
-    cursor: pointer;
-    transition:
-      background var(--canvas-cinema-motion-fast) ease,
-      color var(--canvas-cinema-motion-fast) ease,
-      border-color var(--canvas-cinema-motion-fast) ease;
-  }
-
-  .step-studio-side-nav:hover {
-    background: var(--canvas-cinema-surface-2);
-    color: var(--canvas-cinema-text);
-  }
-
-  .step-studio-side-nav:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 1px var(--canvas-cinema-accent);
-  }
-
-  .step-studio-side-nav.is-active {
-    border-left-color: var(--canvas-cinema-accent);
-    background: var(--canvas-cinema-surface-2);
-    color: var(--canvas-cinema-text-strong);
-  }
-
-  .step-studio-side-icon {
-    display: grid;
-    flex: 0 0 auto;
-    width: 20px;
-    place-items: center;
-    margin-top: 1px;
-    color: var(--canvas-cinema-text-faint);
-  }
-
-  .step-studio-side-nav.is-active .step-studio-side-icon {
-    color: var(--canvas-cinema-accent-bright);
-  }
-
-  .step-studio-side-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .step-studio-side-title {
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.4;
-  }
-
-  .step-studio-side-short {
-    overflow: hidden;
-    color: var(--canvas-cinema-text-faint);
-    font-size: 11px;
-    line-height: 1.4;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .step-studio-main {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasNode } from '../canvas.types'
-import { collectAssetGenerationStatuses, isAssetGenerationActive } from './assetGenerationStatus'
+import {
+  collectAssetGenerationStatuses,
+  formatAssetGenerationProgress,
+  isAssetGenerationActive,
+} from './assetGenerationStatus'
 
 function taskNode(
   id: string,
@@ -64,11 +68,11 @@ describe('collectAssetGenerationStatuses', () => {
     const nodes = [
       taskNode('n1', 'asset-a', 'running', {
         updatedAt: '2026-08-30T10:00:00Z',
-        data: { progress: 0.4, message: '生成中' },
+        data: { progress: 40, message: '生成中' },
       }),
     ]
     const status = collectAssetGenerationStatuses(nodes).get('asset-a')
-    expect(status?.progress).toBe(0.4)
+    expect(status?.progress).toBe(40)
     expect(status?.message).toBe('生成中')
   })
 
@@ -77,6 +81,20 @@ describe('collectAssetGenerationStatuses', () => {
     const noStatus: CanvasNode = { ...taskNode('n2', 'asset-b', 'completed'), data: {} }
     const map = collectAssetGenerationStatuses([noise, noStatus])
     expect(map.size).toBe(0)
+  })
+})
+
+describe('formatAssetGenerationProgress', () => {
+  it('沿用画布任务的 0..100 口径，不重复乘以 100', () => {
+    expect(formatAssetGenerationProgress(35)).toBe('35%')
+    expect(formatAssetGenerationProgress(100)).toBe('100%')
+  })
+
+  it('限制越界值并忽略无效进度', () => {
+    expect(formatAssetGenerationProgress(3500)).toBe('100%')
+    expect(formatAssetGenerationProgress(0)).toBe('')
+    expect(formatAssetGenerationProgress(Number.NaN)).toBe('')
+    expect(formatAssetGenerationProgress(undefined)).toBe('')
   })
 })
 

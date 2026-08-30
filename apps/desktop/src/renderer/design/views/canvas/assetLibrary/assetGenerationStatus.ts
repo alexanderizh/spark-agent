@@ -15,12 +15,18 @@ export type AssetGenerationStatus = {
   /** 最近一次生成任务的节点 id（可跳画布定位） */
   taskNodeId: string
   status: CanvasTaskStatus
-  /** 0..1，仅 running 阶段有意义 */
+  /** 0..100，与 CanvasTask.progress / CanvasNode.data.progress 的统一口径一致 */
   progress?: number | undefined
   /** 失败/取消时的说明 */
   message?: string | undefined
   /** 任务节点更新时间（ISO），抽屉按时间展示 */
   updatedAt?: string | undefined
+}
+
+/** 把画布任务的 0..100 进度格式化为受控百分比，兼容越界脏数据。 */
+export function formatAssetGenerationProgress(progress: number | undefined): string {
+  if (typeof progress !== 'number' || !Number.isFinite(progress) || progress <= 0) return ''
+  return `${Math.round(Math.min(progress, 100))}%`
 }
 
 function readOutputFilmAssetId(node: CanvasNode): string | null {

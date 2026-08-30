@@ -34,6 +34,7 @@ import { AssetGrid, type AssetCardAction } from '../assetLibrary/AssetGrid'
 import { AssetDetailDrawer, type AssetDetailAction } from '../assetLibrary/AssetDetailDrawer'
 import { useAssetLibrary, type AssetLibrarySort } from '../assetLibrary/useAssetLibrary'
 import { useAssetGenerationConfig } from '../assetLibrary/useAssetGenerationConfig'
+import { useAssetGenerationReconciliation } from '../assetLibrary/useAssetGenerationReconciliation'
 import {
   AssetCreateModal,
   SETUP_ASSET_KINDS,
@@ -123,6 +124,10 @@ export function StepSetupView({
     ? (generationStatuses.get(detailAssetId) ?? undefined)
     : undefined
   const detailGenerating = isAssetGenerationActive(detailGenerationStatus)
+
+  // IPC 完成事件是主路径；活动任务期间再以持久化快照做低频对账，避免事件已落库但
+  // 独立画布窗口仍持有 running 旧快照，导致卡片与抽屉长期保持 loading。
+  useAssetGenerationReconciliation(generatingIds.size > 0, refreshSnapshot)
 
   // 各分类数量（卡片 Tab 角标）
   const kindCounts = useMemo(() => {
