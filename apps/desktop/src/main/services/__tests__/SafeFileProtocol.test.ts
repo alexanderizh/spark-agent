@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { join, resolve } from 'node:path'
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 
 const workspaceRoot = join('G:', 'spark', 'spark-agent')
 
@@ -107,6 +107,21 @@ describe('SafeFileProtocol', () => {
 
   it('exposes workspace roots in the allowlist', () => {
     expect(getSafeFileAllowedRoots()).toContain(resolve(workspaceRoot))
+  })
+
+  it('allows board task attachments persisted outside userData', () => {
+    // persistBoardAttachment 把任务附件复制到 ~/.spark-agent/board-attachments/<taskId>/，
+    // 任务面板缩略图经 safe-file:// 加载；目录不在 userData/temp/workspace 下，须显式放行。
+    const attachmentPath = join(homedir(), '.spark-agent', 'board-attachments', 'task-1', 'img.png')
+    expect(isSafeFilePathAllowed(attachmentPath)).toBe(true)
+  })
+
+  it('still rejects ~/.spark-agent content outside board-attachments', () => {
+    // 只放行 board-attachments 子目录；board-tasks.json / memory / plugins 等仍不可读。
+    expect(isSafeFilePathAllowed(join(homedir(), '.spark-agent', 'board-tasks.json'))).toBe(false)
+    expect(isSafeFilePathAllowed(join(homedir(), '.spark-agent', 'memory', 'profiles.json'))).toBe(
+      false,
+    )
   })
 
   it('serves video range requests with partial content headers', async () => {

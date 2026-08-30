@@ -371,6 +371,7 @@ import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
 import { getDefaultSystemTempRoots, healBoardTasks } from './board-tasks-heal.js'
+import { resolvePastedImageRootDir } from './pastedImageStorage.js'
 import {
   copyFileSync,
   existsSync,
@@ -8950,11 +8951,12 @@ export function registerAllIpcHandlers(): void {
                     ? 'heif'
                     : 'png'
 
-    const rootDir = req.projectRootPath?.trim()
-      ? path.join(path.resolve(req.projectRootPath), 'assets', 'images')
-      : req.storageScope === 'canvas'
-        ? getDefaultCanvasMediaDir()
-        : path.join(app.getPath('temp'), 'spark-agent-pasted-images')
+    // 落盘目录规则集中在 pastedImageStorage：无项目根/非 canvas 时必须落
+    // userData/attachments/pasted-images（消息记录长期引用该路径，不能放 temp 被周期清理）。
+    const rootDir = resolvePastedImageRootDir(req, {
+      userDataPath: app.getPath('userData'),
+      canvasMediaDir: getDefaultCanvasMediaDir(),
+    })
     await fs.mkdir(rootDir, { recursive: true })
     const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(
       /[^a-zA-Z0-9._-]+/g,

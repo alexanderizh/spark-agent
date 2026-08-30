@@ -4740,7 +4740,7 @@ export interface FileSavePastedImageRequest {
   mimeType?: string
   /** 可选建议文件名前缀，不含扩展名 */
   suggestedBaseName?: string
-  /** 默认写临时目录；画布项目使用持久目录。 */
+  /** 画布项目使用画布媒体目录；其余（含缺省/temp）一律写应用级持久目录。 */
   storageScope?: 'temp' | 'canvas'
   /** 画布项目目录；提供时写入该项目的 assets/images。 */
   projectRootPath?: string

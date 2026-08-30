@@ -28,7 +28,8 @@
 import { app, protocol, type CustomScheme } from 'electron'
 import { createLogger } from '@spark/shared'
 import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs'
-import { resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
 import { Readable } from 'node:stream'
 import { getDatabase } from '../db.js'
 
@@ -72,12 +73,28 @@ const MIME_BY_EXT: Record<string, string> = {
  * 渲染进程通过 `safe-file://...` 只能读取以下目录下的文件：
  *   - userData（应用数据目录，包含 no-project 的 .spark-artifacts 等生成图片）
  *   - 系统临时目录（粘贴图片、预览副本等）
+ *   - 看板任务附件目录 ~/.spark-agent/board-attachments（persistBoardAttachment
+ *     复制出的任务附件，任务面板缩略图经此协议加载）
  *   - 已登记 workspace 根目录（项目里的任意文件，供内置文档/图片预览读取；
  *     .spark-artifacts 生成图片作为子目录天然包含在内）
  *   - canvas 项目根目录
  *
  * 任何落在白名单之外的请求都会被拒绝（返回 403）。
  */
+/**
+ * 看板任务附件持久目录（~/.spark-agent/board-attachments）。
+ *
+ * persistBoardAttachment 会把任务附件复制到该目录（不在 userData 下），渲染端
+ * 经 safe-file:// 加载缩略图;不放行会导致文件明明存在却 403、任务图片全部
+ * 显示「图片不可用」。与 ipc/index.ts 的 BOARD_ATTACHMENTS_DIR 保持一致,
+ * 此处独立定义（同 board-tasks-heal.ts 的做法）以避免循环依赖。
+ * 只放行 board-attachments 子目录,~/.spark-agent 其余内容（board-tasks.json、
+ * memory、plugins 等）仍不在白名单内。
+ */
+function getBoardAttachmentsRoot(): string {
+  return resolvePath(join(homedir(), '.spark-agent', 'board-attachments'))
+}
+
 export function getSafeFileAllowedRoots(): string[] {
   const roots: string[] = []
   try {
@@ -90,6 +107,7 @@ export function getSafeFileAllowedRoots(): string[] {
   } catch (err) {
     log.warn(`Failed to resolve temp path: ${String(err)}`)
   }
+  roots.push(getBoardAttachmentsRoot())
   roots.push(...getWorkspaceRoots())
   roots.push(...getCanvasProjectRoots())
   return [...new Set(roots)]
