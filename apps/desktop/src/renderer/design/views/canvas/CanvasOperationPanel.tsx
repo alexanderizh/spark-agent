@@ -114,6 +114,7 @@ import {
   resolveCanvasOperationPanelMode,
   type CanvasDepthModelState,
 } from './canvasOperationPanelMode'
+import { resolveDepthVideoPreserveAudio } from './canvasDepthAudioPreference'
 import { isImageUnderstandingProvider } from './canvasPresetCenterModel'
 import {
   applyCanvasMediaInputModeToBindings,
@@ -847,8 +848,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
-  const [preserveAudio, setPreserveAudio] = useState(
-    (node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio) === true,
+  const [preserveAudio, setPreserveAudio] = useState(() =>
+    resolveDepthVideoPreserveAudio(
+      node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio,
+    ),
   )
   const [audioFormat, setAudioFormat] = useState<'copy' | 'mp3' | 'aac' | 'wav'>(
     (node.data.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav' | undefined) ??
@@ -888,8 +891,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   }, [onRepoll, repolling])
   useEffect(() => {
     if (operation !== 'video_depth_map') return
-    const configuredValue = node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio
-    setPreserveAudio(configuredValue === true)
+    setPreserveAudio(
+      resolveDepthVideoPreserveAudio(
+        node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio,
+      ),
+    )
   }, [node.data.modelParams?.preserveAudio, operation, task?.modelParams?.preserveAudio])
   useEffect(() => {
     if (operation !== 'extract_audio') return
