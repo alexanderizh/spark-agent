@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultVideoWorkbenchProject } from './projectTypes'
-import { backfillVideoWorkbenchProjectResourceMetadata } from './resourceMetadata'
+import {
+  backfillVideoWorkbenchProjectResourceMetadata,
+  repairVideoWorkbenchSourcePlaceholderClips,
+} from './resourceMetadata'
 
 describe('video workbench resource metadata backfill', () => {
   it('expands untouched audio placeholders when the real duration becomes available', () => {
@@ -261,5 +264,80 @@ describe('video workbench resource metadata backfill', () => {
     )
 
     expect(next).toBe(project)
+  })
+})
+
+describe('repairVideoWorkbenchSourcePlaceholderClips', () => {
+  function buildPoisonedProject() {
+    // 旧版本同步提交竞态固化的脏数据：resource 已带真实时长，源 clip 仍停在 8s 占位。
+    const project = createDefaultVideoWorkbenchProject()
+    project.resources = [
+      {
+        id: 'source:node-1',
+        source: 'canvas',
+        kind: 'video',
+        title: '源视频',
+        url: 'safe-file:///source.mp4',
+        originPath: '/source.mp4',
+        importedAt: 1,
+        durationSec: 21.5,
+      },
+    ]
+    project.tracks[0]!.clips = [
+      {
+        id: 'clip:source',
+        resourceId: 'source:node-1',
+        timelineStartSec: 0,
+        sourceInSec: 0,
+        sourceOutSec: 8,
+        durationSec: 8,
+        speed: 1,
+        enabled: true,
+      },
+    ]
+    return project
+  }
+
+  it('expands a persisted source placeholder clip back to the resource duration', () => {
+    const project = buildPoisonedProject()
+    const next = repairVideoWorkbenchSourcePlaceholderClips(project, 'source:node-1')
+    expect(next.tracks[0]!.clips[0]).toEqual(
+      expect.objectContaining({ sourceOutSec: 21.5, durationSec: 21.5 }),
+    )
+  })
+
+  it('keeps the project untouched when the resource has no duration yet', () => {
+    const project = buildPoisonedProject()
+    project.resources[0]!.durationSec = undefined
+    expect(repairVideoWorkbenchSourcePlaceholderClips(project, 'source:node-1')).toBe(project)
+  })
+
+  it('does not touch clips the user already trimmed away from the placeholder value', () => {
+    const project = buildPoisonedProject()
+    project.tracks[0]!.clips = [
+      { ...project.tracks[0]!.clips[0]!, sourceInSec: 1, sourceOutSec: 6, durationSec: 5 },
+    ]
+    expect(repairVideoWorkbenchSourcePlaceholderClips(project, 'source:node-1')).toBe(project)
+  })
+
+  it('does not touch clips whose duration already matches the resource', () => {
+    const project = buildPoisonedProject()
+    project.tracks[0]!.clips = [
+      { ...project.tracks[0]!.clips[0]!, sourceOutSec: 21.5, durationSec: 21.5 },
+    ]
+    expect(repairVideoWorkbenchSourcePlaceholderClips(project, 'source:node-1')).toBe(project)
+  })
+
+  it('repairs duplicated source placeholders and keeps main-track clips adjacent', () => {
+    const project = buildPoisonedProject()
+    project.tracks[0]!.clips = [
+      { ...project.tracks[0]!.clips[0]!, id: 'clip:a', timelineStartSec: 0 },
+      { ...project.tracks[0]!.clips[0]!, id: 'clip:b', timelineStartSec: 8 },
+    ]
+    const next = repairVideoWorkbenchSourcePlaceholderClips(project, 'source:node-1')
+    expect(next.tracks[0]!.clips).toEqual([
+      expect.objectContaining({ id: 'clip:a', timelineStartSec: 0, durationSec: 21.5 }),
+      expect.objectContaining({ id: 'clip:b', timelineStartSec: 21.5, durationSec: 21.5 }),
+    ])
   })
 })

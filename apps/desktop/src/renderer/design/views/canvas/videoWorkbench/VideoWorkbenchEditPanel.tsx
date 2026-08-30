@@ -30,8 +30,12 @@ interface Props {
   ) => Promise<{ success: boolean; result?: unknown; error?: string }>
   /** 在左侧视频预览区开启可视化裁剪框 */
   onStartCrop: () => void
-  /** 转码/裁剪产物生成后的回调（用于刷新产物列表） */
-  onOutput?: (summary: string, outputPath: string, type: WorkbenchOutput['type']) => void
+  /** 转码/裁剪产物生成后的回调（用于刷新产物列表）；一次操作可能产出多个文件（如等分切割） */
+  onOutput?: (entries: {
+    summary: string
+    outputPath: string
+    type: WorkbenchOutput['type']
+  }[]) => void
 }
 
 export function VideoWorkbenchEditPanel({
@@ -114,9 +118,12 @@ export function VideoWorkbenchEditPanel({
         if (res.success && res.result) {
           if (successMsg) message.success(successMsg)
           const paths = extractPath(res.result)
-          for (const path of Array.isArray(paths) ? paths : [paths]) {
-            if (path) onOutput?.(outputSummary, path, outputType)
-          }
+          // 一次操作的多段产物（等分切割）合并成一次批量回调：
+          // 单次提交保证一次持久化，且保持分段的时间顺序。
+          const entries = (Array.isArray(paths) ? paths : [paths])
+            .filter((path): path is string => Boolean(path))
+            .map((path) => ({ summary: outputSummary, outputPath: path, type: outputType }))
+          if (entries.length > 0) onOutput?.(entries)
         } else {
           message.error(res.error ?? `${label}失败`)
         }

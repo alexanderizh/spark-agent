@@ -113,6 +113,11 @@ export function useVideoWorkbenchProjectSession({
   useEffect(() => () => void flushPendingSave(), [flushPendingSave])
 
   const commit = useCallback((next: VideoWorkbenchProjectV2, recordHistory: boolean) => {
+    // 同步推进 presentRef：同一 tick 内连续 updateProject / updateLegacyDraft /
+    // applyCommand（如 probe 后紧随的 draft 回填、等分切割逐段记录产物）若只在
+    // 渲染期同步 ref，后续调用会基于过期快照整体覆盖先前的提交（表现为只保留
+    // 最后一次更新）。这里让连续同步提交按顺序叠加。
+    presentRef.current = next
     setHistory((current) => {
       if (next === current.present) return current
       if (!recordHistory) return { ...current, present: next, future: [] }

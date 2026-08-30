@@ -59,7 +59,10 @@ import {
   resolveVideoWorkbenchTrackAppendTime,
 } from './model/timelineEditing'
 import { findVideoWorkbenchClip } from './model/trackRules'
-import { backfillVideoWorkbenchProjectResourceMetadata } from './model/resourceMetadata'
+import {
+  backfillVideoWorkbenchProjectResourceMetadata,
+  repairVideoWorkbenchSourcePlaceholderClips,
+} from './model/resourceMetadata'
 import { resolveVideoWorkbenchClipTiming } from './model/timelineMath'
 import {
   reconcileVideoWorkbenchResourceMissing,
@@ -1113,7 +1116,17 @@ export function CanvasVideoWorkbenchModal({
     updateProject((current) => {
       const resourceId = `source:${node?.id ?? 'video'}`
       const persistedSource = current.resources.find((resource) => resource.id === resourceId)
-      const sourceMetadata = current.probeInfo ?? persistedSource
+      // probeInfo / persistedSource 描述的是「探测时的源视频」。只有工程没有发生过
+      // 换源、且持久化资源仍指向同一 url 时才可复用其时长/尺寸；换源后旧 probeInfo
+      // 属于上一个视频，带上会把占位 clip 固化成上一个视频的时长，且 resource 一旦
+      // 带正时长，backfill 的 untouched 占位判定就不再扩展它。换源场景应留空时长，
+      // 交给重新 probe / 视频元素元数据回填扩展。
+      const sourceMetadataApplicable =
+        !sourceChanged &&
+        (persistedSource == null || persistedSource.url === sourceVideoUrl)
+      const sourceMetadata = sourceMetadataApplicable
+        ? (current.probeInfo ?? persistedSource)
+        : undefined
       const sourceResource: VideoWorkbenchResourceV2 = {
         id: resourceId,
         source: 'canvas',
@@ -1144,7 +1157,10 @@ export function CanvasVideoWorkbenchModal({
           ],
         }
       }
-      return syncVideoWorkbenchSourceResource(current, sourceResource)
+      const synced = syncVideoWorkbenchSourceResource(current, sourceResource)
+      // 历史版本保存过的工程可能带着「resource 已有时长、源 clip 仍停在 8s 占位」的
+      // 脏数据（backfill 对已有时长的资源不再扩展），打开时修复一次。
+      return repairVideoWorkbenchSourcePlaceholderClips(synced, resourceId)
     })
   }, [node?.id, node?.title, sourceVideoUrl, updateProject])
 
@@ -1997,7 +2013,7 @@ export function CanvasVideoWorkbenchModal({
                 fallbackDuration={videoMetaDuration}
                 onProcess={handleProcess}
                 onStartCrop={handleStartCrop}
-                onOutput={recordOutput}
+                onOutput={recordOutputs}
               />
             )}
 

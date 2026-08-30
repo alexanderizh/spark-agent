@@ -95,6 +95,59 @@ function isPositiveDuration(value: number | undefined): value is number {
   return Number.isFinite(value) && Number(value) > 0
 }
 
+/**
+ * 修复历史版本持久化的源视频占位片段。
+ *
+ * 旧版本存在同步提交竞态：probe 结果把 resource.durationSec 回填后，占位 clip 的
+ * 扩展被同 tick 的 legacy 草稿更新整体覆盖，clip 永远停在默认占位时长；而 resource
+ * 一旦带正时长，backfillVideoWorkbenchProjectResourceMetadata 的 untouched 判定就不再
+ * 扩展它，坏数据随自动保存固化。本函数只在打开工程对源资源做一次修复：
+ * 仅扩展「仍保持占位签名（从 0 开始、原速、时长恰为默认占位值）且与资源真实时长
+ * 不符」的片段，不触碰用户真实裁剪过的片段。
+ */
+export function repairVideoWorkbenchSourcePlaceholderClips(
+  project: VideoWorkbenchProjectV2,
+  resourceId: string,
+): VideoWorkbenchProjectV2 {
+  const resource = project.resources.find((item) => item.id === resourceId)
+  const discoveredDurationSec = resource?.durationSec
+  if (!isPositiveDuration(discoveredDurationSec)) return project
+
+  const fallbackDurationSec = project.project.defaultImageDurationSec
+  let tracksChanged = false
+  const tracks = project.tracks.map((track) => {
+    let clipsChanged = false
+    const repairedClips = track.clips.map((clip) => {
+      if (clip.resourceId !== resourceId) return clip
+      const isUntouchedPlaceholder =
+        clip.sourceInSec === 0 &&
+        clip.speed === 1 &&
+        Math.abs(clip.sourceOutSec - clip.durationSec) <
+          VIDEO_WORKBENCH_TIMELINE_EPSILON_SEC &&
+        Math.abs(clip.durationSec - fallbackDurationSec) < VIDEO_WORKBENCH_TIMELINE_EPSILON_SEC &&
+        Math.abs(clip.durationSec - discoveredDurationSec) > VIDEO_WORKBENCH_TIMELINE_EPSILON_SEC
+      if (!isUntouchedPlaceholder) return clip
+      clipsChanged = true
+      return {
+        ...clip,
+        sourceOutSec: discoveredDurationSec,
+        durationSec: discoveredDurationSec,
+      }
+    })
+    if (!clipsChanged) return track
+    tracksChanged = true
+    return {
+      ...track,
+      clips:
+        track.kind === 'video'
+          ? alignExpandedVideoTrackClips(track.clips, repairedClips)
+          : repairedClips,
+    }
+  })
+  if (!tracksChanged) return project
+  return { ...project, tracks }
+}
+
 /** Preserve appended adjacency and prevent overlap when placeholder durations become real. */
 function alignExpandedVideoTrackClips(
   originalClips: readonly VideoWorkbenchClip[],
