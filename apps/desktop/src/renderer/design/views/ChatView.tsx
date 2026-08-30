@@ -115,6 +115,8 @@ import {
 } from './chat/tool-log-metadata'
 import { getRichImageDisplay, getRichSourceLinks } from './chat/rich-output-parsing'
 import { ToolLogImageThumb, ToolLogSourceList } from './chat/ToolLogRichOutput'
+import { HostProviderVisionActivity } from './chat/HostProviderVisionActivity'
+import { isHostProviderVisionTool } from './chat/host-provider-vision-tool'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
@@ -8521,6 +8523,14 @@ function ToolLogGroup({
     return () => window.cancelAnimationFrame(frame)
   }, [autoCollapseReady, running])
 
+  const hostVisionBlock =
+    blocks.length === 1 &&
+    blocks[0]?.kind === 'tool_call' &&
+    isHostProviderVisionTool(blocks[0].toolName)
+      ? blocks[0]
+      : undefined
+  if (hostVisionBlock != null) return <HostProviderVisionActivity block={hostVisionBlock} />
+
   const kind = getToolLogGroupKind(blocks[0] as UIBlock, surface) ?? 'tool'
   const count = blocks.length
   const label = TOOL_LOG_GROUP_LABELS[kind](count)
@@ -8610,6 +8620,10 @@ function ToolLogEntry({
         </div>
       </div>
     )
+  }
+
+  if (isHostProviderVisionTool(block.toolName)) {
+    return <HostProviderVisionActivity block={block} />
   }
 
   const input = formatToolLogInput(block)

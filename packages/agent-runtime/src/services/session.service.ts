@@ -120,6 +120,9 @@ import {
 import { RuntimeBroker } from './plugin-runtime/runtime-broker.js'
 import { registerBuiltinRuntimeAdapters } from './plugin-runtime/builtin-runtimes.js'
 import { routeProviderVisionAttachments } from './custom-tools/provider-vision-router.js'
+import { createProviderVisionSessionEvents } from './custom-tools/provider-vision-session-events.js'
+import type { CustomToolService } from './custom-tools/custom-tool.service.js'
+import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
 
 /** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
 export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
@@ -885,6 +888,8 @@ export class SessionService {
   private readonly fileChangeKeysByTurn = new Map<string, Set<string>>()
   private readonly platformBridge: PlatformBridgeService
   private pluginManager: PluginManager | null = null
+  private customToolService: CustomToolService | null = null
+  private customToolRuntimeUnsubscribe: (() => void) | null = null
   private pluginManagerInitialization: Promise<void> | null = null
   private pluginRuntimeBroker: RuntimeBroker | null = null
   private pluginRuntimeMcpBridge: PluginRuntimeMcpBridge | null = null
@@ -1123,6 +1128,25 @@ export class SessionService {
   setPluginManager(manager: PluginManager | null): void {
     this.pluginManager = manager
     this.pluginManagerInitialization = null
+  }
+
+  /**
+   * 注入桌面端共享的原生 CustomToolService。管理 UI、Agent authoring、
+   * Runtime Catalog 和执行追踪必须复用同一实例，不创建 MCP 旁路状态。
+   */
+  setCustomToolService(service: CustomToolService | null): void {
+    this.customToolRuntimeUnsubscribe?.()
+    this.customToolRuntimeUnsubscribe = null
+    this.customToolService = service
+    if (service != null) {
+      this.customToolRuntimeUnsubscribe = service.onChange((event) => {
+        if (event.runtimeChanged === false) return
+        // Claude/Codex freeze their tool snapshot for an active query. Marking
+        // the catalog dirty makes the next turn acquire a fresh native catalog
+        // and engine adapter without restarting an MCP registration.
+        this.mcpVersion += 1
+      })
+    }
   }
 
   private revokeComputerUseSession(sessionId: string): void {
@@ -2510,7 +2534,15 @@ export class SessionService {
       message,
       attachments: turnAttachments,
       sessionId,
+      turnId,
     })
+    for (const event of createProviderVisionSessionEvents({
+      route: providerVisionRoute,
+      sessionId,
+      turnId,
+    })) {
+      this.emitAndPersist(sessionId, turnId, event, eventRepo)
+    }
     const executorMessage = providerVisionRoute.message
     const executorTurnAttachments = providerVisionRoute.attachments
     const attachmentDirectories = getAttachmentAdditionalDirectories(
@@ -5488,6 +5520,10 @@ export class SessionService {
     return this.pluginManager
   }
 
+  getCustomToolService(): CustomToolService | null {
+    return this.customToolService
+  }
+
   getUserSkillsDir(): string | null {
     return this.userSkillsDir
   }
@@ -5520,7 +5556,12 @@ export class SessionService {
           this.pluginManager?.isRuntimeEnabled(runtimeId) ?? true,
       })
       registerBuiltinRuntimeAdapters(this.pluginRuntimeBroker)
-      this.pluginRuntimeMcpBridge = new PluginRuntimeMcpBridge(this.pluginRuntimeBroker)
+      this.pluginRuntimeMcpBridge = new PluginRuntimeMcpBridge(
+        this.pluginRuntimeBroker,
+        this.customToolService == null
+          ? undefined
+          : new CustomToolRuntimeCatalog(this.customToolService),
+      )
     }
     try {
       const handle = await this.pluginRuntimeMcpBridge.serve({
@@ -7892,6 +7933,8 @@ export class SessionService {
       }
 
       await this.engineRegistry.dispose()
+      this.customToolRuntimeUnsubscribe?.()
+      this.customToolRuntimeUnsubscribe = null
       await this.platformBridge.stop()
       // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
       for (const turnId of this.teamMcpHandlesByTurn.keys()) {

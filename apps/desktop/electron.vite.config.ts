@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { copyFileSync, mkdirSync, readdirSync } from 'fs'
+import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
@@ -43,9 +43,18 @@ function copyRuntimeToolsPlugin() {
       const toolsSrcDir = resolve(runtimeRoot, 'tools')
       const toolsDestDir = resolve(__dirname, 'out/main/tools')
       mkdirSync(toolsDestDir, { recursive: true })
+      const sourceToolFiles = new Set<string>()
       for (const file of readdirSync(toolsSrcDir)) {
         if (file.endsWith('.mjs')) {
+          sourceToolFiles.add(file)
           copyFileSync(resolve(toolsSrcDir, file), resolve(toolsDestDir, file))
+        }
+      }
+      // 源目录已删除的工具若残留在 out/，会随 extraResources 的 **/*.mjs 打进
+      // 安装包。构建时同步清理，保证产物与源码一致。
+      for (const file of readdirSync(toolsDestDir)) {
+        if (file.endsWith('.mjs') && !sourceToolFiles.has(file)) {
+          rmSync(resolve(toolsDestDir, file))
         }
       }
 

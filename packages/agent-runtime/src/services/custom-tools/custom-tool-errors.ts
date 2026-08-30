@@ -25,6 +25,7 @@ export type CustomToolErrorCode = (typeof CUSTOM_TOOL_ERROR_CODES)[number]
 
 export class CustomToolError extends Error {
   readonly toolCode: CustomToolErrorCode
+  traceId?: number
 
   constructor(toolCode: CustomToolErrorCode, message: string, options?: ErrorOptions) {
     super(message, options)
@@ -36,7 +37,15 @@ export class CustomToolError extends Error {
   }
 
   toSparkError(): SparkError {
-    return new SparkError(this.ipcErrorCode(), this.message, { toolCode: this.toolCode })
+    return new SparkError(this.ipcErrorCode(), this.message, {
+      toolCode: this.toolCode,
+      ...(this.traceId != null ? { traceId: this.traceId } : {}),
+    })
+  }
+
+  attachTraceId(traceId: number | undefined): this {
+    if (traceId != null) this.traceId = traceId
+    return this
   }
 
   private ipcErrorCode(): ErrorCode {

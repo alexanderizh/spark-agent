@@ -63,7 +63,11 @@ export default tseslint.config(
       globals: {
         AbortController: 'readonly',
         Buffer: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+        URL: 'readonly',
         URLSearchParams: 'readonly',
+        structuredClone: 'readonly',
         clearTimeout: 'readonly',
         console: 'readonly',
         fetch: 'readonly',

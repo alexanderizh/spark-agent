@@ -98,6 +98,36 @@ function validProviderVisionDraft() {
   }
 }
 
+function validCodeDraft() {
+  return {
+    id: 'local_calculator',
+    title: '本地计算器',
+    description: '执行用户定义的 TypeScript 计算逻辑并返回结构化结果。',
+    type: 'code' as const,
+    inputSchema: {
+      type: 'object' as const,
+      properties: { value: { type: 'number' as const } },
+      required: ['value'],
+    },
+    risk: 'read' as const,
+    effect: 'read' as const,
+    idempotency: 'safe' as const,
+    timeoutMs: 30_000,
+    spec: {
+      runtime: {
+        kind: 'trusted-worker' as const,
+        language: 'typescript' as const,
+        source:
+          'export default async function(input: { value: number }) { return { doubled: input.value * 2 } }',
+        entryExport: 'default' as const,
+      },
+      permissions: { toolIds: [] as string[] },
+      limits: { memoryMb: 128, maxOutputBytes: 1_048_576 },
+      trust: 'trusted-local' as const,
+    },
+  }
+}
+
 describe('CustomToolDraftSchema', () => {
   it('accepts a valid http draft', () => {
     expect(CustomToolDraftSchema.parse(validHttpDraft())).toMatchObject({ id: 'jira_search' })
@@ -113,6 +143,31 @@ describe('CustomToolDraftSchema', () => {
       type: 'provider-vision',
       spec: { providerProfileId: 'vision-provider', exposeToAgent: false },
     })
+  })
+
+  it('accepts a native TypeScript code tool without an MCP project', () => {
+    expect(CustomToolDraftSchema.parse(validCodeDraft())).toMatchObject({
+      type: 'code',
+      spec: { runtime: { kind: 'trusted-worker' }, trust: 'trusted-local' },
+    })
+  })
+
+  it('rejects self-dependencies, secret slots and literal secrets in code tools', () => {
+    const selfDependent = validCodeDraft()
+    selfDependent.spec.permissions.toolIds = ['local_calculator']
+    expect(() => CustomToolDraftSchema.parse(selfDependent)).toThrow(/自身/)
+
+    expect(() =>
+      CustomToolDraftSchema.parse({
+        ...validCodeDraft(),
+        secretRefs: { api_key: 'custom-tool:local_calculator:api_key' },
+      }),
+    ).toThrow(/不接收 Keychain/)
+
+    const inlineSecret = validCodeDraft()
+    inlineSecret.spec.runtime.source =
+      "export default async function() { return 'sk-abcdefghijklmnopqrstuv' }"
+    expect(() => CustomToolDraftSchema.parse(inlineSecret)).toThrow(/密钥明文/)
   })
 
   it('rejects provider vision drafts without required string[] images', () => {
@@ -183,6 +238,20 @@ describe('CustomToolDraftSchema', () => {
     const draft = validHttpDraft()
     draft.spec.request.headers = [{ name: 'X-Token', valueTemplate: 'sk-abcdefghijklmnopqrst' }]
     expect(() => CustomToolDraftSchema.parse(draft)).toThrow(/密钥/)
+  })
+
+  it('rejects sensitive query parameters until they can use Keychain references', () => {
+    const draft = validHttpDraft()
+    draft.spec.request.urlTemplate =
+      'https://jira.internal/v3/issue/{{issueKey}}?access_token=plain-text-secret'
+    expect(() => CustomToolDraftSchema.parse(draft)).toThrow(/敏感查询参数 access_token/)
+  })
+
+  it('rejects credentials embedded in HTTP URLs at the shared protocol boundary', () => {
+    const draft = validHttpDraft()
+    draft.spec.request.urlTemplate =
+      'https://api-user:plain-text-password@jira.internal/v3/issue/{{issueKey}}'
+    expect(() => CustomToolDraftSchema.parse(draft)).toThrow(/不允许内嵌用户名或密码/)
   })
 
   it('rejects sensitive header with literal valueTemplate', () => {
@@ -479,6 +548,64 @@ describe('CustomToolsIpcSchemaRegistry', () => {
         id: 'jira_search',
         name: 'auth_token',
         value: '',
+      }),
+    ).toThrow()
+  })
+
+  it('validates Tool Studio version, trace and retention requests', () => {
+    expect(
+      CustomToolsIpcSchemaRegistry['custom-tools:draft:save'].parse({
+        id: 'jira_search',
+        spec: validHttpDraft(),
+      }),
+    ).toMatchObject({ id: 'jira_search' })
+    expect(
+      CustomToolsIpcSchemaRegistry['custom-tools:publish'].parse({
+        id: 'jira_search',
+        expectedDraftVersion: 2,
+      }),
+    ).toMatchObject({ expectedDraftVersion: 2 })
+    expect(
+      CustomToolsIpcSchemaRegistry['custom-tools:invocations:list'].parse({
+        toolId: 'jira_search',
+        status: 'timeout',
+        limit: 100,
+      }),
+    ).toMatchObject({ status: 'timeout' })
+    expect(
+      CustomToolsIpcSchemaRegistry['custom-tools:invocations:retention:set'].parse({
+        retentionDays: 30,
+      }),
+    ).toEqual({ retentionDays: 30 })
+    expect(() =>
+      CustomToolsIpcSchemaRegistry['custom-tools:invocations:retention:set'].parse({
+        retentionDays: 0,
+      }),
+    ).toThrow()
+    expect(
+      CustomToolsIpcSchemaRegistry['custom-tools:invocations:clear'].parse({
+        toolId: 'jira_search',
+      }),
+    ).toEqual({ toolId: 'jira_search' })
+    expect(() =>
+      CustomToolsIpcSchemaRegistry['custom-tools:rollback'].parse({
+        id: 'jira_search',
+        version: 0,
+      }),
+    ).toThrow()
+  })
+
+  it('validates host vision route checks without accepting unbounded attachments', () => {
+    const schema = CustomToolsIpcSchemaRegistry['custom-tools:host-vision-route-check']
+    expect(schema.parse({ imagePaths: ['/tmp/a.png'], question: '图片里有什么？' })).toEqual({
+      imagePaths: ['/tmp/a.png'],
+      question: '图片里有什么？',
+    })
+    expect(() => schema.parse({ imagePaths: [], question: '图片里有什么？' })).toThrow()
+    expect(() =>
+      schema.parse({
+        imagePaths: Array.from({ length: 9 }, (_, index) => `/tmp/${index}.png`),
+        question: 'test',
       }),
     ).toThrow()
   })

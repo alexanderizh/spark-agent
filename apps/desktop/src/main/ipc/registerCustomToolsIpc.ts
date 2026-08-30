@@ -7,8 +7,9 @@
  * stream:custom-tools:changed 广播，驱动渲染层刷新与 mcp 工具面失效。
  */
 
-import { CustomToolService } from '@spark/agent-runtime'
+import { CustomToolService, routeProviderVisionAttachments } from '@spark/agent-runtime'
 import { toCustomToolSummary } from '@spark/protocol'
+import { basename } from 'node:path'
 import { getDatabase } from '../db.js'
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 
@@ -61,6 +62,38 @@ export function registerCustomToolsIpc(): void {
     }),
   }))
 
+  typedIpcHandle('custom-tools:host-vision-route-check', async (req) => {
+    const route = await routeProviderVisionAttachments({
+      database: getDatabase(),
+      modelType: 'text',
+      message: req.question,
+      attachments: req.imagePaths.map((filePath) => ({
+        type: 'image' as const,
+        path: filePath,
+        name: basename(filePath),
+      })),
+      sessionId: 'tool-studio-host-route-check',
+      invocationSource: 'direct',
+      recordSession: false,
+      runtime: service,
+    })
+    return {
+      result: {
+        ok: route.status === 'succeeded',
+        finalAnswerVerified: false,
+        reason: 'text-model-with-image-attachments',
+        ...(route.toolId != null ? { selectedToolId: route.toolId } : {}),
+        ...(route.toolTitle != null ? { selectedToolTitle: route.toolTitle } : {}),
+        ...(route.traceId != null ? { traceId: route.traceId } : {}),
+        imageCount: route.imageCount ?? req.imagePaths.length,
+        ...(route.durationMs != null ? { durationMs: route.durationMs } : {}),
+        ...(route.targetOrigin != null ? { targetOrigin: route.targetOrigin } : {}),
+        ...(route.model != null ? { model: route.model } : {}),
+        ...(route.errorCode != null ? { errorCode: route.errorCode } : {}),
+      },
+    }
+  })
+
   typedIpcHandle('custom-tools:write-secret', async (req) => {
     await service.writeSecret(req.id, req.name, req.value)
     return { ok: true }
@@ -81,4 +114,37 @@ export function registerCustomToolsIpc(): void {
       skipped: result.skipped,
     }
   })
+
+  typedIpcHandle('custom-tools:studio:get', async (req) => ({
+    workspace: await service.getWorkspace(req.id),
+  }))
+
+  typedIpcHandle('custom-tools:draft:create', async (req) => ({
+    workspace: await service.createDraft(req.spec),
+  }))
+
+  typedIpcHandle('custom-tools:draft:save', async (req) => ({
+    workspace: await service.saveDraft(req.id, req.spec),
+  }))
+
+  typedIpcHandle('custom-tools:publish', async (req) => ({
+    workspace: await service.publish(req.id, req.expectedDraftVersion),
+  }))
+
+  typedIpcHandle('custom-tools:rollback', async (req) => ({
+    workspace: await service.rollback(req.id, req.version),
+  }))
+
+  typedIpcHandle('custom-tools:invocations:list', async (req) => ({
+    traces: service.listInvocations(req),
+    retentionDays: service.getInvocationRetentionDays(),
+  }))
+
+  typedIpcHandle('custom-tools:invocations:retention:set', async (req) =>
+    service.setInvocationRetentionDays(req.retentionDays),
+  )
+
+  typedIpcHandle('custom-tools:invocations:clear', async (req) => ({
+    deleted: service.clearInvocations(req.toolId),
+  }))
 }

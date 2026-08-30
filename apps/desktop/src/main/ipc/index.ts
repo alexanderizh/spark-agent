@@ -362,7 +362,7 @@ import type {
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { registerSubAppIpc } from './registerSubAppIpc.js'
-import { registerCustomToolsIpc } from './registerCustomToolsIpc.js'
+import { getCustomToolService, registerCustomToolsIpc } from './registerCustomToolsIpc.js'
 import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
@@ -2459,6 +2459,7 @@ function getSessionService(): SessionService {
       log.warn(`Failed to initialize built-in plugins: ${String(error)}`)
     })
     _sessionService.setPluginManager(pluginManager)
+    _sessionService.setCustomToolService(getCustomToolService())
     registerSessionServiceForShutdown(_sessionService)
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())

@@ -883,7 +883,7 @@ async function initializeApp(): Promise<void> {
       return
     }
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
-    customToolsRuntime = new CustomToolsRuntimeService(db, getCustomToolService(), getMcpService())
+    customToolsRuntime = new CustomToolsRuntimeService(db, getMcpService())
     const snapshotVaultMaintenance = startSnapshotVaultMaintenance(db)
     // 临时媒体目录（粘贴/预览副本）周期清理：按 mtime 保留 7 天，6 小时一跑。
     const tempMediaFilesMaintenance = new TempMediaFilesMaintenance()

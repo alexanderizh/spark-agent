@@ -26,6 +26,7 @@ import type { SDKMcpServerConfig } from '../../sdk/index.js'
 import type { McpService, McpOAuthTokenProvider } from '../mcp-server.service.js'
 import type { PlatformBridgeService } from '../platform-bridge.service.js'
 import type { PluginManager } from '../plugins/plugin-manager.service.js'
+import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
 import type {
   CanvasMcpProvider,
   PlatformConfigChangedHandler,
@@ -72,6 +73,7 @@ export interface SessionMcpToolingHost {
   getMcpOAuthProvider(): McpOAuthTokenProvider | undefined
   getPlatformBridge(): PlatformBridgeService
   getPluginManager(): PluginManager | null
+  getCustomToolService(): CustomToolService | null
   getUserSkillsDir(): string | null
   getPlatformConfigChangedHandler(): PlatformConfigChangedHandler | undefined
   /** Platform Bridge deps 需回调会话服务公共方法（引用/运行时切换/记忆桥等）。 */
@@ -145,6 +147,7 @@ export class SessionMcpTooling {
     const { SkillRegistryService } = await import('../skill-registry/index.js')
     const { GitHubConnectorService } = await import('../github-connector.service.js')
     const { PluginManager } = await import('../plugins/plugin-manager.service.js')
+    const { CustomToolService } = await import('../custom-tools/custom-tool.service.js')
     const { SkillRepository, SettingsRepository, TeamDefinitionRepository } =
       await import('@spark/storage')
 
@@ -176,6 +179,10 @@ export class SessionMcpTooling {
       skillRegistryService,
       mcpService: this.host.getMcpService(),
       mcpRepo: new McpServerRepository(this.db),
+      // Desktop production injects the same singleton used by renderer IPC and
+      // CustomToolsRuntimeService. The fallback is limited to standalone tests
+      // and non-desktop embeddings that do not own those listeners.
+      customToolService: this.host.getCustomToolService() ?? new CustomToolService(this.db),
       providerRepo: new ProviderProfileRepository(this.db),
       workflowRepo: new WorkflowRepository(this.db),
       agentRepo: new AgentRepository(this.db),

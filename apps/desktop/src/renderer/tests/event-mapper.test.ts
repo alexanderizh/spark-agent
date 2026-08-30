@@ -465,6 +465,40 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('merges Codex reasoning summaries from one turn into a single thinking block', () => {
+    const builder = new MessageBuilder()
+    const segmentId = 'codex-sdk-thinking-turn-1'
+
+    builder.processEvent({
+      ...baseEvent('agent_thinking'),
+      id: 'reasoning-summary-1',
+      type: 'agent_thinking',
+      mode: 'delta',
+      content: 'Inspect callers',
+      segmentId,
+    })
+    builder.processEvent({
+      ...baseEvent('agent_thinking'),
+      id: 'reasoning-summary-2',
+      type: 'agent_thinking',
+      mode: 'delta',
+      content: '\n\nPlan tests',
+      segmentId,
+    })
+
+    const thinkingBlocks = builder
+      .getAllMessages()[0]
+      ?.blocks.filter((block) => block.kind === 'thinking')
+    expect(thinkingBlocks).toEqual([
+      {
+        kind: 'thinking',
+        content: 'Inspect callers\n\nPlan tests',
+        isStreaming: true,
+        segmentId,
+      },
+    ])
+  })
+
   it('marks unfinished tool calls successful when the turn completes', () => {
     const builder = new MessageBuilder()
 

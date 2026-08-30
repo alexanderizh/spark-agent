@@ -150,6 +150,8 @@ function makeHttpRecord(spec: unknown, overrides: HttpRecordOverrides = {}): Cus
     spec,
     enabled: true,
     origin: 'local',
+    publishedVersion: 1,
+    draftVersion: 1,
     lastTestAt: null,
     createdAt: now,
     updatedAt: now,
@@ -253,6 +255,29 @@ describe('executeHttpTool', () => {
     await expect(executeCustomTool(record, {}, ctx())).rejects.toMatchObject({
       toolCode: 'DENIED',
     })
+  })
+
+  it('blocks legacy URL credentials and sensitive query parameters before sending requests', async () => {
+    const requestCount = seen.length
+    const credentialUrl = new URL(`${baseUrl}/legacy`)
+    credentialUrl.username = 'legacy-user'
+    credentialUrl.password = 'plain-text-password'
+    const credentialRecord = makeHttpRecord({
+      request: { method: 'GET', urlTemplate: credentialUrl.toString() },
+      response: { format: 'json' },
+    })
+    const sensitiveQueryRecord = makeHttpRecord({
+      request: { method: 'GET', urlTemplate: `${baseUrl}/legacy?api_key=plain-text-secret` },
+      response: { format: 'json' },
+    })
+
+    await expect(executeCustomTool(credentialRecord, {}, ctx())).rejects.toMatchObject({
+      toolCode: 'DENIED',
+    })
+    await expect(executeCustomTool(sensitiveQueryRecord, {}, ctx())).rejects.toMatchObject({
+      toolCode: 'DENIED',
+    })
+    expect(seen).toHaveLength(requestCount)
   })
 
   it('sends POST json body with structural injection neutralized', async () => {

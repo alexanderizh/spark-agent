@@ -166,6 +166,13 @@ export async function executeProviderVisionTool(
   if (!config.apiEndpoint?.trim()) {
     throw new CustomToolError('INVALID_INPUT', '图像理解 Provider 未配置 API 地址')
   }
+  const endpoint = chatCompletionsEndpoint(config.apiEndpoint)
+  let targetOrigin: string
+  try {
+    targetOrigin = new URL(endpoint).origin
+  } catch {
+    throw new CustomToolError('INVALID_INPUT', '图像理解 Provider API 地址无效')
+  }
   const apiKey = await resolveProviderApiKey(provider)
   if (!apiKey) throw new CustomToolError('SECRET_MISSING', '图像理解 Provider 缺少可用凭据')
   const model = resolveVisionModel(record.spec, config)
@@ -187,7 +194,7 @@ export async function executeProviderVisionTool(
   let response: Response
   let responseText: string
   try {
-    response = await fetch(chatCompletionsEndpoint(config.apiEndpoint), {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -240,6 +247,8 @@ export async function executeProviderVisionTool(
       durationMs: Date.now() - startedAt,
       bytes: Buffer.byteLength(text, 'utf8'),
       truncated: clipped !== text,
+      targetOrigin,
+      model,
     },
   }
 }

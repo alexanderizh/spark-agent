@@ -56,6 +56,8 @@ function visionRecord(overrides: Partial<VisionRecord> = {}): VisionRecord {
     },
     enabled: true,
     origin: 'local',
+    publishedVersion: 1,
+    draftVersion: 1,
     lastTestAt: null,
     createdAt: now,
     updatedAt: now,
@@ -147,6 +149,10 @@ describe('executeProviderVisionTool', () => {
       },
     )
     expect(result.text).toBe('画面中有一只猫。')
+    expect(result.meta).toMatchObject({
+      targetOrigin: endpoint,
+      model: 'qwen-vl',
+    })
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({
       url: '/v1/chat/completions',

@@ -1,8 +1,8 @@
 /**
  * 低代码自定义工具平台协议（Custom Tools）
  *
- * 用户以「表单 + 声明式模板」创建 Agent 可用的工具。HTTP 工具以受管 MCP
- * 服务（spark_custom_tools）供给双引擎；宿主能力工具可选择更窄的可信路由。
+ * 用户在 Tool Studio 创建 Agent 可用的原生工具。声明式 HTTP、TypeScript Code
+ * 和宿主能力模板共享版本、权限、执行追踪与 Runtime Catalog，不写入 mcp_servers。
  *
  * 安全设计（与 docs/plans/2026-08-16-custom-tools-platform.md §3/§4 对齐）：
  * - 声明式 DSL，无自由脚本；模板占位符 `{{name}}` 只能引用 inputSchema 属性
@@ -23,7 +23,7 @@ export const CUSTOM_TOOLS_PROTOCOL_VERSION = 1
 
 // ─── 基础词法 ────────────────────────────────────────────────────────────
 
-/** slug 同时是 MCP tool name：小写字母开头，仅小写字母/数字/下划线 */
+/** slug 同时是原生 Runtime Catalog 名称：小写字母开头，仅小写字母/数字/下划线 */
 export const CUSTOM_TOOL_ID_REGEX = /^[a-z][a-z0-9_]{2,63}$/
 export const CUSTOM_TOOL_DESCRIPTION_MIN = 10
 export const CUSTOM_TOOL_TIMEOUT_MIN_MS = 1_000
@@ -410,6 +410,25 @@ export function containsLiteralSecret(text: string): boolean {
   return LITERAL_SECRET_PATTERNS.some((pattern) => pattern.test(text))
 }
 
+export function findSensitiveHttpQueryParam(urlTemplate: string): string | undefined {
+  try {
+    return [...new URL(urlTemplate).searchParams.keys()].find((name) =>
+      CUSTOM_TOOL_SENSITIVE_FIELD_REGEX.test(name),
+    )
+  } catch {
+    return undefined
+  }
+}
+
+export function hasHttpUrlCredentials(urlTemplate: string): boolean {
+  try {
+    const url = new URL(urlTemplate)
+    return url.username.length > 0 || url.password.length > 0
+  } catch {
+    return false
+  }
+}
+
 // ─── 类型专属 spec ───────────────────────────────────────────────────────
 
 export const HTTP_TOOL_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
@@ -567,6 +586,43 @@ export const PromptToolSpecSchema = z
 export type PromptToolSpec = z.infer<typeof PromptToolSpecSchema>
 
 /**
+ * SparkWork native code tool.
+ *
+ * Source is persisted as a versioned Tool Studio draft and is executed only by
+ * the standalone worker host. The first production slice deliberately exposes
+ * no ambient filesystem, process, environment or network object. Rich behavior
+ * is composed through an explicit allow-list of other published custom tools.
+ * `trusted-local` is an honest trust label: the process/permission boundary
+ * limits accidental access and blast radius, but is not marketed as a hostile
+ * code sandbox until the platform-specific network boundary is complete.
+ */
+export const CodeToolSpecSchema = z
+  .object({
+    runtime: z
+      .object({
+        kind: z.literal('trusted-worker'),
+        language: z.literal('typescript'),
+        source: z.string().min(1).max(200_000),
+        entryExport: z.literal('default').default('default'),
+      })
+      .strict(),
+    permissions: z
+      .object({
+        toolIds: z.array(CustomToolIdSchema).max(32).default([]),
+      })
+      .strict(),
+    limits: z
+      .object({
+        memoryMb: z.number().int().min(64).max(512).default(128),
+        maxOutputBytes: z.number().int().min(1_024).max(10_485_760).default(1_048_576),
+      })
+      .strict(),
+    trust: z.literal('trusted-local'),
+  })
+  .strict()
+export type CodeToolSpec = z.infer<typeof CodeToolSpecSchema>
+
+/**
  * Provider-backed image understanding tool.
  *
  * The tool references an existing Provider profile so credentials remain in
@@ -616,7 +672,7 @@ export function httpMethodRiskFloor(method: HttpMethod): RuntimeRisk {
   return 'low-write'
 }
 
-export type CustomToolType = 'http' | 'sql' | 'command' | 'prompt' | 'provider-vision'
+export type CustomToolType = 'http' | 'sql' | 'command' | 'prompt' | 'code' | 'provider-vision'
 
 // ─── 工具 DSL（用户提交的完整声明）──────────────────────────────────────
 
@@ -660,6 +716,7 @@ function templateTextsOf(type: CustomToolType, spec: unknown): string[] {
 
 function refineCustomToolDraft(
   draft: {
+    id: string
     type: CustomToolType
     inputSchema: CustomToolInputSchema
     risk: RuntimeRisk
@@ -671,6 +728,25 @@ function refineCustomToolDraft(
   ctx: z.RefinementCtx,
 ): void {
   const { type, inputSchema, risk, effect, idempotency, secretRefs, spec } = draft
+
+  if (type === 'http') {
+    const urlTemplate = (spec as HttpToolSpec).request.urlTemplate
+    if (hasHttpUrlCredentials(urlTemplate)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spec', 'request', 'urlTemplate'],
+        message: 'URL 不允许内嵌用户名或密码，请改用 Keychain 请求头',
+      })
+    }
+    const sensitiveQueryParam = findSensitiveHttpQueryParam(urlTemplate)
+    if (sensitiveQueryParam != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spec', 'request', 'urlTemplate'],
+        message: `敏感查询参数 ${sensitiveQueryParam} 暂不支持安全密钥引用，请改用 Keychain 请求头`,
+      })
+    }
+  }
 
   // 1. risk/effect/idempotency 一致性（对齐 plugin-sdk validateTool）
   if (risk === 'read' && effect !== 'read') {
@@ -754,6 +830,31 @@ function refineCustomToolDraft(
     }
   }
 
+  if (type === 'code') {
+    const code = spec as CodeToolSpec
+    if (code.permissions.toolIds.includes(draft.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spec', 'permissions', 'toolIds'],
+        message: '代码工具不能把自身加入依赖工具白名单',
+      })
+    }
+    if (secretRefs != null && Object.keys(secretRefs).length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['secretRefs'],
+        message: '代码工具不接收 Keychain 明文；请通过受管 HTTP 工具组合外部能力',
+      })
+    }
+    if (containsLiteralSecret(code.runtime.source)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spec', 'runtime', 'source'],
+        message: '代码中检测到疑似密钥明文，请改用受管工具的 Keychain 密钥位',
+      })
+    }
+  }
+
   // 3. 模板占位符必须引用已声明参数
   const templates = templateTextsOf(type, spec)
   for (const [index, template] of templates.entries()) {
@@ -814,6 +915,9 @@ export const CustomToolCommandDraftSchema = z
 export const CustomToolPromptDraftSchema = z
   .object({ ...customToolBaseShape, type: z.literal('prompt'), spec: PromptToolSpecSchema })
   .strict()
+export const CustomToolCodeDraftSchema = z
+  .object({ ...customToolBaseShape, type: z.literal('code'), spec: CodeToolSpecSchema })
+  .strict()
 export const CustomToolProviderVisionDraftSchema = z
   .object({
     ...customToolBaseShape,
@@ -828,6 +932,7 @@ export const CustomToolDraftSchema = z
     CustomToolSqlDraftSchema,
     CustomToolCommandDraftSchema,
     CustomToolPromptDraftSchema,
+    CustomToolCodeDraftSchema,
     CustomToolProviderVisionDraftSchema,
   ])
   .superRefine((draft, ctx) => refineCustomToolDraft(draft, ctx))
@@ -842,6 +947,10 @@ export type CustomToolOrigin = z.infer<typeof CustomToolOriginSchema>
 export type CustomToolRecord = CustomToolDraft & {
   enabled: boolean
   origin: CustomToolOrigin
+  /** 当前 Agent Runtime 使用的稳定版本；null 表示尚未发布。 */
+  publishedVersion: number | null
+  /** 当前工作副本版本；大于 publishedVersion 时存在未发布草稿。 */
+  draftVersion: number
   lastTestAt: string | null
   createdAt: string
   updatedAt: string
@@ -859,6 +968,9 @@ export interface CustomToolSummary {
   timeoutMs: number
   enabled: boolean
   origin: CustomToolOrigin
+  publishedVersion: number | null
+  draftVersion: number
+  hasUnpublishedDraft: boolean
   /** secretRefs 的名称列表（用于状态灯；值永不外出） */
   secretNames: string[]
   lastTestAt: string | null
@@ -883,6 +995,10 @@ export function toCustomToolSummary(record: CustomToolRecord): CustomToolSummary
     timeoutMs: record.timeoutMs,
     enabled: record.enabled,
     origin: record.origin,
+    publishedVersion: record.publishedVersion,
+    draftVersion: record.draftVersion,
+    hasUnpublishedDraft:
+      record.publishedVersion == null || record.draftVersion > record.publishedVersion,
     secretNames: Object.keys(record.secretRefs ?? {}),
     lastTestAt: record.lastTestAt,
     createdAt: record.createdAt,
@@ -896,6 +1012,10 @@ export interface CustomToolExecutionMeta {
   durationMs: number
   bytes: number
   truncated: boolean
+  /** 脱敏后的请求目标，仅包含 scheme / host / port。 */
+  targetOrigin?: string
+  /** 实际使用的模型 ID；不包含 Provider 凭据或请求参数。 */
+  model?: string
 }
 
 export interface CustomToolTestRunResult {
@@ -903,6 +1023,50 @@ export interface CustomToolTestRunResult {
   text: string
   meta: CustomToolExecutionMeta
   errorCode?: string
+  traceId?: number
+}
+
+// ─── Tool Studio 版本与运行记录 ────────────────────────────────────────
+
+export const CUSTOM_TOOL_VERSION_STATUSES = ['draft', 'published', 'archived'] as const
+export type CustomToolVersionStatus = (typeof CUSTOM_TOOL_VERSION_STATUSES)[number]
+
+export interface CustomToolVersionSummary {
+  version: number
+  status: CustomToolVersionStatus
+  sourceVersion: number | null
+  createdAt: string
+  publishedAt: string | null
+}
+
+export interface CustomToolWorkspace {
+  /** 当前工具身份与稳定运行版本；未发布工具承载初始草稿但始终 disabled。 */
+  tool: CustomToolDetails
+  draft: CustomToolDraft
+  published: CustomToolDraft | null
+  versions: CustomToolVersionSummary[]
+}
+
+export const CUSTOM_TOOL_INVOCATION_SOURCES = ['direct', 'model', 'host'] as const
+export type CustomToolInvocationSource = (typeof CUSTOM_TOOL_INVOCATION_SOURCES)[number]
+export const CUSTOM_TOOL_INVOCATION_STATUSES = ['ok', 'error', 'timeout', 'denied'] as const
+export type CustomToolInvocationStatus = (typeof CUSTOM_TOOL_INVOCATION_STATUSES)[number]
+export const CUSTOM_TOOL_INVOCATION_RETENTION_MIN_DAYS = 1
+export const CUSTOM_TOOL_INVOCATION_RETENTION_MAX_DAYS = 365
+export const CUSTOM_TOOL_INVOCATION_RETENTION_DEFAULT_DAYS = 30
+
+export interface CustomToolInvocationTrace {
+  id: number
+  toolId: string
+  toolVersion: number | null
+  sessionId: string | null
+  turnId: string | null
+  source: CustomToolInvocationSource
+  status: CustomToolInvocationStatus
+  durationMs: number
+  errorCode: string | null
+  outputBytes: number | null
+  createdAt: string
 }
 
 // ─── 导入导出 ───────────────────────────────────────────────────────────
@@ -984,6 +1148,27 @@ export interface CustomToolTestRunRequest {
 export interface CustomToolTestRunResponse {
   result: CustomToolTestRunResult
 }
+export interface CustomToolHostVisionRouteCheckRequest {
+  imagePaths: string[]
+  question: string
+}
+export interface CustomToolHostVisionRouteCheckResult {
+  ok: boolean
+  /** 只验证文本模型附图时的宿主确定性路由，不代表聊天模型最终回答质量。 */
+  finalAnswerVerified: false
+  reason: 'text-model-with-image-attachments'
+  selectedToolId?: string
+  selectedToolTitle?: string
+  traceId?: number
+  imageCount: number
+  durationMs?: number
+  targetOrigin?: string
+  model?: string
+  errorCode?: 'NO_TOOL' | 'EXECUTION_FAILED'
+}
+export interface CustomToolHostVisionRouteCheckResponse {
+  result: CustomToolHostVisionRouteCheckResult
+}
 export interface CustomToolWriteSecretRequest {
   id: string
   name: string
@@ -1011,6 +1196,61 @@ export interface CustomToolImportResponse {
   imported: CustomToolSummary[]
   skipped: CustomToolImportSkipped[]
 }
+export interface CustomToolStudioGetRequest {
+  id: string
+}
+export interface CustomToolStudioGetResponse {
+  workspace: CustomToolWorkspace
+}
+export interface CustomToolCreateDraftRequest {
+  spec: CustomToolDraft
+}
+export interface CustomToolCreateDraftResponse {
+  workspace: CustomToolWorkspace
+}
+export interface CustomToolSaveDraftRequest {
+  id: string
+  spec: CustomToolDraft
+}
+export interface CustomToolSaveDraftResponse {
+  workspace: CustomToolWorkspace
+}
+export interface CustomToolPublishRequest {
+  id: string
+  expectedDraftVersion?: number
+}
+export interface CustomToolPublishResponse {
+  workspace: CustomToolWorkspace
+}
+export interface CustomToolRollbackRequest {
+  id: string
+  version: number
+}
+export interface CustomToolRollbackResponse {
+  workspace: CustomToolWorkspace
+}
+export interface CustomToolInvocationListRequest {
+  toolId?: string
+  status?: CustomToolInvocationStatus
+  limit?: number
+}
+export interface CustomToolInvocationListResponse {
+  traces: CustomToolInvocationTrace[]
+  retentionDays: number
+}
+export interface CustomToolInvocationRetentionSetRequest {
+  retentionDays: number
+}
+export interface CustomToolInvocationRetentionSetResponse {
+  retentionDays: number
+  deleted: number
+}
+export interface CustomToolInvocationClearRequest {
+  toolId?: string
+}
+export interface CustomToolInvocationClearResponse {
+  deleted: number
+}
 
 export interface CustomToolsIpcChannelMap {
   'custom-tools:list': [CustomToolListRequest, CustomToolListResponse]
@@ -1020,10 +1260,31 @@ export interface CustomToolsIpcChannelMap {
   'custom-tools:delete': [CustomToolDeleteRequest, CustomToolDeleteResponse]
   'custom-tools:set-enabled': [CustomToolSetEnabledRequest, CustomToolSetEnabledResponse]
   'custom-tools:test-run': [CustomToolTestRunRequest, CustomToolTestRunResponse]
+  'custom-tools:host-vision-route-check': [
+    CustomToolHostVisionRouteCheckRequest,
+    CustomToolHostVisionRouteCheckResponse,
+  ]
   'custom-tools:write-secret': [CustomToolWriteSecretRequest, CustomToolWriteSecretResponse]
   'custom-tools:has-secret': [CustomToolHasSecretRequest, CustomToolHasSecretResponse]
   'custom-tools:export': [CustomToolExportRequest, CustomToolExportResponse]
   'custom-tools:import': [CustomToolImportRequest, CustomToolImportResponse]
+  'custom-tools:studio:get': [CustomToolStudioGetRequest, CustomToolStudioGetResponse]
+  'custom-tools:draft:create': [CustomToolCreateDraftRequest, CustomToolCreateDraftResponse]
+  'custom-tools:draft:save': [CustomToolSaveDraftRequest, CustomToolSaveDraftResponse]
+  'custom-tools:publish': [CustomToolPublishRequest, CustomToolPublishResponse]
+  'custom-tools:rollback': [CustomToolRollbackRequest, CustomToolRollbackResponse]
+  'custom-tools:invocations:list': [
+    CustomToolInvocationListRequest,
+    CustomToolInvocationListResponse,
+  ]
+  'custom-tools:invocations:retention:set': [
+    CustomToolInvocationRetentionSetRequest,
+    CustomToolInvocationRetentionSetResponse,
+  ]
+  'custom-tools:invocations:clear': [
+    CustomToolInvocationClearRequest,
+    CustomToolInvocationClearResponse,
+  ]
 }
 
 // ─── IPC Request zod 校验注册表 ─────────────────────────────────────────
@@ -1066,6 +1327,12 @@ export const CustomToolsIpcSchemaRegistry = {
         })
       }
     }),
+  'custom-tools:host-vision-route-check': z
+    .object({
+      imagePaths: z.array(z.string().min(1).max(4_096)).min(1).max(8),
+      question: z.string().min(1).max(20_000),
+    })
+    .strict(),
   'custom-tools:write-secret': z
     .object({
       id: CustomToolIdSchema,
@@ -1079,4 +1346,36 @@ export const CustomToolsIpcSchemaRegistry = {
     .strict(),
   // payload 来自用户文件，结构在 handler 内用 CustomToolsExportPayloadSchema 深校验
   'custom-tools:import': z.object({ payload: z.unknown() }).strict(),
+  'custom-tools:studio:get': z.object({ id: CustomToolIdSchema }).strict(),
+  'custom-tools:draft:create': z.object({ spec: CustomToolDraftSchema }).strict(),
+  'custom-tools:draft:save': z
+    .object({ id: CustomToolIdSchema, spec: CustomToolDraftSchema })
+    .strict()
+    .refine((request) => request.spec.id === request.id, 'spec.id 与目标工具 ID 不一致'),
+  'custom-tools:publish': z
+    .object({
+      id: CustomToolIdSchema,
+      expectedDraftVersion: z.number().int().positive().optional(),
+    })
+    .strict(),
+  'custom-tools:rollback': z
+    .object({ id: CustomToolIdSchema, version: z.number().int().positive() })
+    .strict(),
+  'custom-tools:invocations:list': z
+    .object({
+      toolId: CustomToolIdSchema.optional(),
+      status: z.enum(CUSTOM_TOOL_INVOCATION_STATUSES).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  'custom-tools:invocations:retention:set': z
+    .object({
+      retentionDays: z
+        .number()
+        .int()
+        .min(CUSTOM_TOOL_INVOCATION_RETENTION_MIN_DAYS)
+        .max(CUSTOM_TOOL_INVOCATION_RETENTION_MAX_DAYS),
+    })
+    .strict(),
+  'custom-tools:invocations:clear': z.object({ toolId: CustomToolIdSchema.optional() }).strict(),
 }

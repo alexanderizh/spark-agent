@@ -394,6 +394,178 @@ function toolDefinitions() {
       },
     },
 
+    // ── Custom Tools ──
+    {
+      name: 'custom_tools_guide',
+      description:
+        '获取原生自定义工具开发指南、运行适配器、安全边界以及 HTTP/TypeScript 定义示例。用户要通过对话创建工具时先调用；任意本地逻辑使用 type=code，MCP 只作为可选外部导入适配器，图像理解只是一份普通模板。',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    {
+      name: 'custom_tools_list',
+      description:
+        '列出 Tool Studio 中的自定义工具及草稿/发布/启用状态。创建前先查询，避免重复或覆盖。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          query: { type: 'string', description: '可选名称、ID 或描述搜索词' },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 100,
+            default: 50,
+            description: '返回数量，默认 50，最大 100；响应同时给出 total/truncated',
+          },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_get',
+      description:
+        '读取一个自定义工具的完整工作区，包含草稿、当前发布版本、版本历史和密钥位是否已配置；永不返回密钥值。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string', description: '工具 ID' } },
+      },
+    },
+    {
+      name: 'custom_tools_validate',
+      description:
+        '只读校验完整自定义工具定义，返回精确字段问题和归一化定义；不会保存、测试、发布或启用。必须据真实 API/协议证据填写，不能猜字段。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['spec'],
+        properties: {
+          spec: {
+            type: 'object',
+            description:
+              '完整 CustomToolDraft；当前 Tool Studio 执行适配器为 http/provider-vision。',
+            additionalProperties: true,
+          },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_create_draft',
+      description:
+        '创建禁用的自定义工具草稿。不会测试、发布或进入 Agent 稳定工具面；密钥只能声明 secretRefs，禁止在参数中传密钥值。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['spec'],
+        properties: {
+          spec: {
+            type: 'object',
+            description: '已通过 validate 的完整定义',
+            additionalProperties: true,
+          },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_save_draft',
+      description:
+        '保存已有工具的草稿，不影响当前发布版本。工具类型与 ID 创建后不可修改；不会写入任何密钥值。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'spec'],
+        properties: {
+          id: { type: 'string', description: '工具 ID' },
+          spec: { type: 'object', description: '完整草稿定义', additionalProperties: true },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_test',
+      description:
+        '使用正式执行器真实测试当前草稿或传入定义，可能访问网络、调用 Provider、产生费用或副作用。必须先向用户说明目标和风险并获得明确同意，再设置 confirmExecute=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['input', 'confirmExecute'],
+        properties: {
+          id: { type: 'string', description: '已有工具 ID；与 spec 至少提供一个' },
+          spec: {
+            type: 'object',
+            description: '可选未保存定义或当前草稿定义',
+            additionalProperties: true,
+          },
+          input: { type: 'object', description: '测试输入', additionalProperties: true },
+          confirmExecute: {
+            type: 'boolean',
+            description: '用户已明确同意本次真实测试时才可为 true',
+          },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_publish',
+      description:
+        '原子发布自定义工具草稿为稳定版本。首次发布会进入 Agent 工具面，后续发布沿用当前启用状态；必须先获得用户明确发布同意并设置 confirmPublish=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'confirmPublish'],
+        properties: {
+          id: { type: 'string', description: '工具 ID' },
+          expectedDraftVersion: {
+            type: 'number',
+            description: '可选草稿 CAS 版本，防止覆盖并行修改',
+          },
+          confirmPublish: { type: 'boolean', description: '用户已明确同意发布时才可为 true' },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_set_enabled',
+      description:
+        '启用或停用已发布工具。启用会让工具进入 Agent 工具面，必须先获得用户明确同意并设置 confirmEnable=true；停用无需该确认。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'enabled'],
+        properties: {
+          id: { type: 'string', description: '工具 ID' },
+          enabled: { type: 'boolean', description: '目标启用状态' },
+          confirmEnable: { type: 'boolean', description: '仅 enabled=true 时要求用户明确确认' },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_rollback',
+      description:
+        '把稳定版本回滚到指定历史版本。必须先获得用户明确同意并设置 confirmRollback=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'version', 'confirmRollback'],
+        properties: {
+          id: { type: 'string', description: '工具 ID' },
+          version: { type: 'number', description: '目标历史版本号' },
+          confirmRollback: { type: 'boolean', description: '用户已明确同意回滚时才可为 true' },
+        },
+      },
+    },
+    {
+      name: 'custom_tools_delete',
+      description:
+        '删除自定义工具、版本与关联密钥引用。这是破坏性操作，必须先获得用户明确同意并设置 confirmDelete=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'confirmDelete'],
+        properties: {
+          id: { type: 'string', description: '工具 ID' },
+          confirmDelete: { type: 'boolean', description: '用户已明确同意删除时才可为 true' },
+        },
+      },
+    },
+
     // ── Providers ──
     {
       name: 'providers_list',
@@ -1842,6 +2014,17 @@ async function handleToolCall(name, args) {
     mcp_update: 'mcp.update',
     mcp_delete: 'mcp.delete',
     mcp_status: 'mcp.status',
+    custom_tools_guide: 'custom_tools.guide',
+    custom_tools_list: 'custom_tools.list',
+    custom_tools_get: 'custom_tools.get',
+    custom_tools_validate: 'custom_tools.validate',
+    custom_tools_create_draft: 'custom_tools.create_draft',
+    custom_tools_save_draft: 'custom_tools.save_draft',
+    custom_tools_test: 'custom_tools.test',
+    custom_tools_publish: 'custom_tools.publish',
+    custom_tools_set_enabled: 'custom_tools.set_enabled',
+    custom_tools_rollback: 'custom_tools.rollback',
+    custom_tools_delete: 'custom_tools.delete',
     providers_list: 'providers.list',
     providers_get: 'providers.get',
     providers_create: 'providers.create',
@@ -1974,7 +2157,7 @@ function main() {
       result(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'spark-platform-management', version: '2.7.0' },
+        serverInfo: { name: 'spark-platform-management', version: '2.8.0' },
       })
       return
     }

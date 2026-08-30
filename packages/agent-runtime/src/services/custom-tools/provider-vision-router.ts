@@ -3,6 +3,7 @@ import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import type { SDKTurnAttachment } from '../../sdk/types.js'
 import type { ExecutorResult } from './custom-tool-executor.js'
+import { isCustomToolError } from './custom-tool-errors.js'
 import { CustomToolService } from './custom-tool.service.js'
 
 type ProviderVisionRecord = Extract<CustomToolRecord, { type: 'provider-vision' }>
@@ -13,6 +14,8 @@ interface ProviderVisionRuntime {
     toolId: string
     input: Record<string, unknown>
     sessionId?: string
+    turnId?: string
+    source?: 'host' | 'direct'
     signal?: AbortSignal
   }): Promise<ExecutorResult>
 }
@@ -23,7 +26,12 @@ export interface ProviderVisionRouteInput {
   message: string
   attachments: SDKTurnAttachment[]
   sessionId: string
+  turnId?: string
   signal?: AbortSignal
+  /** Inspector checks use direct so their Trace cannot masquerade as a real session route. */
+  invocationSource?: 'host' | 'direct'
+  /** Inspector checks do not attach synthetic session/turn IDs to the Trace. */
+  recordSession?: boolean
   /** Test seam. Production callers use the database-backed service. */
   runtime?: ProviderVisionRuntime
 }
@@ -35,6 +43,12 @@ export interface ProviderVisionRouteResult {
   message: string
   attachments: SDKTurnAttachment[]
   toolId?: string
+  toolTitle?: string
+  traceId?: number
+  imageCount?: number
+  durationMs?: number
+  targetOrigin?: string
+  model?: string
   errorCode?: 'NO_TOOL' | 'EXECUTION_FAILED'
 }
 
@@ -68,6 +82,10 @@ function appendHostVisionContext(message: string, payload: Record<string, unknow
 function compactError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error)
   return text.replace(/\s+/gu, ' ').trim().slice(0, 300) || '未知错误'
+}
+
+function traceIdFromError(error: unknown): number | undefined {
+  return isCustomToolError(error) ? error.traceId : undefined
 }
 
 /**
@@ -104,6 +122,7 @@ export async function routeProviderVisionAttachments(
     return {
       status: 'failed',
       errorCode: 'EXECUTION_FAILED',
+      imageCount: images.length,
       message: appendHostVisionContext(input.message, {
         status: 'failed',
         imageNames: images.map((image) => image.name),
@@ -122,6 +141,7 @@ export async function routeProviderVisionAttachments(
     return {
       status: 'failed',
       errorCode: 'NO_TOOL',
+      imageCount: images.length,
       message: appendHostVisionContext(input.message, {
         status: 'unavailable',
         imageNames: images.map((image) => image.name),
@@ -132,6 +152,7 @@ export async function routeProviderVisionAttachments(
     }
   }
 
+  const startedAt = Date.now()
   try {
     const execution = await runtime.executeEnabled({
       toolId: tool.id,
@@ -139,7 +160,9 @@ export async function routeProviderVisionAttachments(
         images: images.map((image) => image.path),
         question: input.message,
       },
-      sessionId: input.sessionId,
+      ...(input.recordSession !== false ? { sessionId: input.sessionId } : {}),
+      ...(input.recordSession !== false && input.turnId != null ? { turnId: input.turnId } : {}),
+      source: input.invocationSource ?? 'host',
       ...(input.signal != null ? { signal: input.signal } : {}),
     })
     log.info('provider vision fallback completed', {
@@ -149,6 +172,12 @@ export async function routeProviderVisionAttachments(
     return {
       status: 'succeeded',
       toolId: tool.id,
+      toolTitle: tool.title,
+      imageCount: images.length,
+      durationMs: execution.meta.durationMs,
+      ...(execution.traceId != null ? { traceId: execution.traceId } : {}),
+      ...(execution.meta.targetOrigin != null ? { targetOrigin: execution.meta.targetOrigin } : {}),
+      ...(execution.meta.model != null ? { model: execution.meta.model } : {}),
       message: appendHostVisionContext(input.message, {
         status: 'ok',
         tool: { id: tool.id, title: tool.title },
@@ -158,6 +187,7 @@ export async function routeProviderVisionAttachments(
       attachments: nonImageAttachments,
     }
   } catch (error) {
+    const traceId = traceIdFromError(error)
     log.warn('provider vision execution failed', {
       sessionId: input.sessionId,
       toolId: tool.id,
@@ -166,6 +196,10 @@ export async function routeProviderVisionAttachments(
     return {
       status: 'failed',
       toolId: tool.id,
+      toolTitle: tool.title,
+      imageCount: images.length,
+      durationMs: Date.now() - startedAt,
+      ...(traceId != null ? { traceId } : {}),
       errorCode: 'EXECUTION_FAILED',
       message: appendHostVisionContext(input.message, {
         status: 'failed',

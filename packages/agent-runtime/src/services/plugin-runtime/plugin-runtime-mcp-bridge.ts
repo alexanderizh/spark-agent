@@ -8,6 +8,7 @@ import type { CodexRuntimeResource, SDKMcpServerConfig } from '../../sdk/types.j
 import { createLogger } from '@spark/shared'
 import type { RuntimeBroker } from './runtime-broker.js'
 import type { RuntimeToolDefinition } from '@spark/protocol'
+import type { CustomToolRuntimeCatalog } from '../custom-tools/custom-tool-runtime-catalog.js'
 
 const log = createLogger('plugin-runtime:mcp-bridge')
 const MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -25,9 +26,12 @@ interface ServedRuntimeSession {
 }
 
 type CollectedRuntimeDefinition = {
-  runtimeId: string
+  runtimeId: string | null
   tool: RuntimeToolDefinition
   qualifiedName: string
+  includeRuntimeControls: boolean
+  autoAllow: boolean
+  invoke: (args: Record<string, unknown>) => Promise<unknown>
 }
 
 export interface PluginRuntimeMcpHandle {
@@ -43,7 +47,10 @@ export class PluginRuntimeMcpBridge {
   private readonly sessions = new Map<string, ServedRuntimeSession>()
   private readonly sessionsByLeaseKey = new Map<string, ServedRuntimeSession>()
 
-  constructor(private readonly broker: RuntimeBroker) {}
+  constructor(
+    private readonly broker: RuntimeBroker,
+    private readonly customTools?: CustomToolRuntimeCatalog,
+  ) {}
 
   async serve(
     options: { runtimeLeaseKey?: string | undefined } = {},
@@ -97,8 +104,12 @@ export class PluginRuntimeMcpBridge {
           description: definition.tool.description,
           inputSchema: z
             .object({
-              accountId: z.string().optional(),
-              confirmationToken: z.string().optional(),
+              ...(definition.includeRuntimeControls
+                ? {
+                    accountId: z.string().optional(),
+                    confirmationToken: z.string().optional(),
+                  }
+                : {}),
               ...shapeFromSchema(definition.tool.inputSchema),
             })
             .passthrough(),
@@ -111,15 +122,8 @@ export class PluginRuntimeMcpBridge {
               isError: true,
             }
           }
-          const { accountId, confirmationToken, ...input } = args ?? {}
           try {
-            const result = await this.broker.invoke({
-              runtimeId: activeDefinition.runtimeId,
-              ...(typeof accountId === 'string' ? { accountId } : {}),
-              toolName: activeDefinition.tool.name,
-              input,
-              ...(typeof confirmationToken === 'string' ? { confirmationToken } : {}),
-            })
+            const result = await activeDefinition.invoke(args ?? {})
             return toMcpResult(result)
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Plugin runtime tool failed'
@@ -168,7 +172,12 @@ export class PluginRuntimeMcpBridge {
         url: `http://127.0.0.1:${this.port}/mcp`,
         headers: { Authorization: `Bearer ${session.token}` },
       },
-      toolNames: definitions.map((definition) => `mcp__spark_plugins__${definition.qualifiedName}`),
+      // Read-only native custom tools may run without another confirmation.
+      // Write/destructive custom tools remain discoverable but deliberately stay
+      // outside the engine auto-allow list, so the normal permission UI gates them.
+      toolNames: definitions
+        .filter((definition) => definition.autoAllow)
+        .map((definition) => `mcp__spark_plugins__${definition.qualifiedName}`),
       close,
       ...(session.runtimeResource != null ? { runtimeResource: session.runtimeResource } : {}),
     }
@@ -217,7 +226,29 @@ export class PluginRuntimeMcpBridge {
           runtimeId: runtime.id,
           tool,
           qualifiedName: `${runtime.toolNamespace}_${tool.name}`,
+          includeRuntimeControls: true,
+          autoAllow: true,
+          invoke: async (args) => {
+            const { accountId, confirmationToken, ...input } = args
+            return this.broker.invoke({
+              runtimeId: runtime.id,
+              ...(typeof accountId === 'string' ? { accountId } : {}),
+              toolName: tool.name,
+              input,
+              ...(typeof confirmationToken === 'string' ? { confirmationToken } : {}),
+            })
+          },
         })
+    }
+    for (const entry of this.customTools?.list() ?? []) {
+      definitions.push({
+        runtimeId: null,
+        tool: entry.tool,
+        qualifiedName: entry.qualifiedName,
+        includeRuntimeControls: false,
+        autoAllow: entry.tool.risk === 'read',
+        invoke: entry.invoke,
+      })
     }
     return definitions
   }

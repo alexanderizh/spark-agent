@@ -11,6 +11,7 @@
 
 import { BlockList } from 'node:net'
 import type { CustomToolRecord, HttpToolSpec } from '@spark/protocol'
+import { findSensitiveHttpQueryParam, hasHttpUrlCredentials } from '@spark/protocol'
 import { clipTextHeadTail } from '@spark/shared'
 import { Agent, Headers, fetch as undiciFetch } from 'undici'
 import { CustomToolError } from './custom-tool-errors.js'
@@ -82,6 +83,16 @@ export async function executeHttpTool(
   validateToolInput(record.inputSchema, input)
 
   const url = renderUrlTemplate(spec.request.urlTemplate, input)
+  if (hasHttpUrlCredentials(url)) {
+    throw new CustomToolError('DENIED', 'URL 不允许内嵌用户名或密码，请改用 Keychain 请求头')
+  }
+  const sensitiveQueryParam = findSensitiveHttpQueryParam(url)
+  if (sensitiveQueryParam != null) {
+    throw new CustomToolError(
+      'DENIED',
+      `敏感查询参数 ${sensitiveQueryParam} 暂不支持安全密钥引用，请改用 Keychain 请求头`,
+    )
+  }
 
   const headers = new Headers()
   for (const header of spec.request.headers ?? []) {

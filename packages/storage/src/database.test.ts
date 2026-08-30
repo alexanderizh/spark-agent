@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from './database.js'
 import { BaseRepository } from './repository.js'
+import { CustomToolRepository } from './repositories/custom-tool.repository.js'
 import { join } from 'path'
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -389,6 +390,110 @@ describe('SparkDatabase', () => {
     expect(prompt).toContain('用户默认只能看到最后一段最终正文')
     expect(prompt).toContain('最终回复块必须携带完整答复')
     expect(prompt.match(/用户默认只能看到最后一段最终正文/g)).toHaveLength(1)
+  })
+
+  it('should preserve v88 custom tools and traces when upgrading to Tool Studio', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+    const createdAt = '2026-08-30T00:00:00.000Z'
+    const draft = {
+      id: 'legacy_http_tool',
+      title: '旧版 HTTP 工具',
+      description: '验证旧版本自定义工具可以无损升级到 Tool Studio',
+      type: 'http' as const,
+      inputSchema: { type: 'object' as const, properties: {} },
+      risk: 'read' as const,
+      effect: 'read' as const,
+      idempotency: 'safe' as const,
+      timeoutMs: 30_000,
+      spec: {
+        request: { method: 'GET' as const, urlTemplate: 'https://api.example.com/items' },
+        response: { format: 'json' as const },
+      },
+    }
+
+    db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 88)
+    db.raw
+      .prepare(
+        `INSERT INTO custom_tools
+           (id, title, description, type, input_schema_json, spec_json,
+            risk, effect, idempotency, timeout_ms, enabled, origin,
+            last_test_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      )
+      .run(
+        draft.id,
+        draft.title,
+        draft.description,
+        draft.type,
+        JSON.stringify(draft.inputSchema),
+        JSON.stringify({ spec: draft.spec }),
+        draft.risk,
+        draft.effect,
+        draft.idempotency,
+        draft.timeoutMs,
+        1,
+        'local',
+        createdAt,
+        createdAt,
+      )
+    db.raw
+      .prepare(
+        `INSERT INTO custom_tool_invocations
+           (tool_id, session_id, turn_id, input_sha256, status, duration_ms,
+            error_code, output_bytes, created_at)
+         VALUES (?, ?, ?, ?, 'ok', 12, NULL, 24, ?)`,
+      )
+      .run(draft.id, 'session-1', 'turn-1', 'a'.repeat(64), createdAt)
+
+    db.runMigrations(migrationsDir)
+    const repository = new CustomToolRepository(db)
+    repository.ensureVersionHistory()
+
+    expect(repository.get(draft.id)).toMatchObject({
+      ...draft,
+      enabled: true,
+      publishedVersion: 1,
+      draftVersion: 1,
+    })
+    expect(repository.listVersions(draft.id)).toEqual([
+      expect.objectContaining({ version: 1, status: 'published' }),
+    ])
+    expect(repository.listInvocations({ toolId: draft.id })).toEqual([
+      expect.objectContaining({ source: 'model', toolVersion: null, status: 'ok' }),
+    ])
+    expect(() =>
+      db.raw
+        .prepare(
+          `INSERT INTO custom_tools
+             (id, title, description, type, input_schema_json, spec_json,
+              risk, effect, idempotency, timeout_ms, enabled, origin,
+              published_version, draft_version, last_test_at, created_at, updated_at)
+           VALUES (?, ?, ?, 'code', '{}', ?, 'read', 'read', 'safe', 5000, 0,
+                   'local', NULL, 1, NULL, ?, ?)`,
+        )
+        .run(
+          'native_code_tool',
+          '原生代码工具',
+          '验证 v89 的 type CHECK 接受 code',
+          JSON.stringify({
+            spec: {
+              runtime: {
+                kind: 'trusted-worker',
+                language: 'typescript',
+                source: 'export default async function(input) { return input }',
+                entryExport: 'default',
+              },
+              permissions: { toolIds: [] },
+              limits: { memoryMb: 64, maxOutputBytes: 65_536 },
+              trust: 'trusted-local',
+            },
+          }),
+          createdAt,
+          createdAt,
+        ),
+    ).not.toThrow()
   })
 
   it('should not re-apply already applied migrations', () => {

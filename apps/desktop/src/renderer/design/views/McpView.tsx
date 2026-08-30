@@ -31,6 +31,10 @@ import './McpView.less'
 import { McpFilterPopover, SCOPES, type StatusFilter } from './McpFilterPopover'
 import { PluginMarketplaceView } from './PluginMarketplaceView'
 import { CustomToolsSection } from './CustomToolsSection'
+import {
+  hasPendingCustomToolTrace,
+  OPEN_CUSTOM_TOOL_TRACE_EVENT,
+} from './customToolTraceNavigation'
 type McpOAuthStatus = 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 type McpTransport = 'stdio' | 'http' | 'sse'
 
@@ -251,7 +255,9 @@ type McpTab = 'mcp' | 'custom-tools' | 'plugins'
 
 export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const { requestConfirm } = useApp()
-  const [activeTab, setActiveTab] = useState<McpTab>(initialTab)
+  const [activeTab, setActiveTab] = useState<McpTab>(() =>
+    hasPendingCustomToolTrace() ? 'custom-tools' : initialTab,
+  )
   const [servers, setServers] = useState<McpServerItem[]>([])
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -271,6 +277,12 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const { invoke: authorizeMcp } = useIpcInvoke('mcp:authorize')
   const { invoke: deauthorizeMcp } = useIpcInvoke('mcp:deauthorize')
   const { invoke: getAuthStatus } = useIpcInvoke('mcp:auth-status')
+
+  useEffect(() => {
+    const openCustomTools = () => setActiveTab('custom-tools')
+    window.addEventListener(OPEN_CUSTOM_TOOL_TRACE_EVENT, openCustomTools)
+    return () => window.removeEventListener(OPEN_CUSTOM_TOOL_TRACE_EVENT, openCustomTools)
+  }, [])
 
   const refresh = useCallback(() => {
     listMcp(scopeFilter === 'all' ? {} : { scope: scopeFilter })

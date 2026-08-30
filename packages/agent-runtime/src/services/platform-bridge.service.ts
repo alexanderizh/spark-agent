@@ -45,6 +45,8 @@ import {
   type ProviderMediaModelRef,
 } from '@spark/protocol'
 import type { McpService } from './mcp-server.service.js'
+import type { CustomToolService } from './custom-tools/custom-tool.service.js'
+import { CustomToolAuthoringService } from './custom-tools/custom-tool-authoring.service.js'
 import type { McpServerRepository } from '@spark/storage'
 import type { ProviderProfileRepository } from '@spark/storage'
 import type { WorkflowRepository } from '@spark/storage'
@@ -388,6 +390,8 @@ export interface PlatformBridgeDeps {
   skillRegistryService: SkillRegistryService
   mcpService: McpService
   mcpRepo: McpServerRepository
+  /** 与桌面 IPC / 热刷新 Runtime 共用的自定义工具服务实例。 */
+  customToolService: CustomToolService
   providerRepo: ProviderProfileRepository
   workflowRepo: WorkflowRepository
   agentRepo: AgentRepository
@@ -648,6 +652,30 @@ export class PlatformBridgeService {
         return this.mcpDelete(d, params)
       case 'mcp.status':
         return await this.mcpStatus(d, params)
+
+      // ── Custom Tools authoring ──
+      case 'custom_tools.guide':
+        return this.customToolGuide(d)
+      case 'custom_tools.list':
+        return this.customToolList(d, params)
+      case 'custom_tools.get':
+        return await this.customToolGet(d, params)
+      case 'custom_tools.validate':
+        return this.customToolValidate(d, params)
+      case 'custom_tools.create_draft':
+        return await this.customToolCreateDraft(d, params)
+      case 'custom_tools.save_draft':
+        return await this.customToolSaveDraft(d, params)
+      case 'custom_tools.test':
+        return await this.customToolTest(d, params)
+      case 'custom_tools.publish':
+        return await this.customToolPublish(d, params)
+      case 'custom_tools.set_enabled':
+        return await this.customToolSetEnabled(d, params)
+      case 'custom_tools.rollback':
+        return await this.customToolRollback(d, params)
+      case 'custom_tools.delete':
+        return await this.customToolDelete(d, params)
 
       // ── Providers ──
       case 'providers.list':
@@ -1128,6 +1156,117 @@ export class PlatformBridgeService {
         status.error != null ? 'error' : status.connected ? 'connected' : 'disconnected'
     }
     return { statuses }
+  }
+
+  // ── Custom Tool authoring handlers ──
+
+  private customToolAuthoring(d: PlatformBridgeDeps): CustomToolAuthoringService {
+    return new CustomToolAuthoringService(d.customToolService)
+  }
+
+  private customToolGuide(d: PlatformBridgeDeps) {
+    return { guide: this.customToolAuthoring(d).guide() }
+  }
+
+  private customToolList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const query = typeof params.query === 'string' ? params.query.trim() : undefined
+    const requestedLimit = params.limit ?? 50
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 100
+    ) {
+      throw new Error('limit must be an integer between 1 and 100')
+    }
+    const allTools = this.customToolAuthoring(d).list(query)
+    return {
+      tools: allTools.slice(0, requestedLimit),
+      total: allTools.length,
+      truncated: allTools.length > requestedLimit,
+    }
+  }
+
+  private async customToolGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return {
+      workspace: await this.customToolAuthoring(d).get(requireText(params, 'id', 64)),
+    }
+  }
+
+  private customToolValidate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return this.customToolAuthoring(d).validate(params.spec)
+  }
+
+  private async customToolCreateDraft(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return { workspace: await this.customToolAuthoring(d).createDraft(params.spec) }
+  }
+
+  private async customToolSaveDraft(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return {
+      workspace: await this.customToolAuthoring(d).saveDraft(
+        requireText(params, 'id', 64),
+        params.spec,
+      ),
+    }
+  }
+
+  private async customToolTest(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = typeof params.id === 'string' && params.id.trim() ? params.id.trim() : undefined
+    return {
+      result: await this.customToolAuthoring(d).test({
+        ...(id != null ? { id } : {}),
+        ...(params.spec != null ? { spec: params.spec } : {}),
+        input: asRecord(params.input),
+        confirmExecute: params.confirmExecute === true,
+      }),
+    }
+  }
+
+  private async customToolPublish(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const expectedDraftVersion =
+      typeof params.expectedDraftVersion === 'number' ? params.expectedDraftVersion : undefined
+    return {
+      workspace: await this.customToolAuthoring(d).publish(
+        requireText(params, 'id', 64),
+        expectedDraftVersion,
+        params.confirmPublish === true,
+      ),
+    }
+  }
+
+  private async customToolSetEnabled(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    if (typeof params.enabled !== 'boolean') throw new Error('enabled must be a boolean')
+    return {
+      tool: await this.customToolAuthoring(d).setEnabled(
+        requireText(params, 'id', 64),
+        params.enabled,
+        params.confirmEnable === true,
+      ),
+    }
+  }
+
+  private async customToolRollback(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    if (
+      typeof params.version !== 'number' ||
+      !Number.isInteger(params.version) ||
+      params.version < 1
+    ) {
+      throw new Error('version must be a positive integer')
+    }
+    return {
+      workspace: await this.customToolAuthoring(d).rollback(
+        requireText(params, 'id', 64),
+        params.version,
+        params.confirmRollback === true,
+      ),
+    }
+  }
+
+  private async customToolDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    return this.customToolAuthoring(d).delete(
+      requireText(params, 'id', 64),
+      params.confirmDelete === true,
+    )
   }
 
   // ── Provider handlers ──

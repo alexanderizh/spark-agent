@@ -3,7 +3,7 @@
 -- 时间戳沿用全仓 TEXT ISO-8601 惯例（与 sub_apps/mcp_servers 一致）。
 
 CREATE TABLE IF NOT EXISTS custom_tools (
-  id TEXT PRIMARY KEY,                      -- slug，同时是 MCP tool name
+  id TEXT PRIMARY KEY,                      -- 原生 Runtime Catalog slug
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('http', 'sql', 'command', 'prompt', 'composite')),

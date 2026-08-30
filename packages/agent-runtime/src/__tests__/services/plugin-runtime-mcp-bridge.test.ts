@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { PluginRuntimeMcpBridge } from '../../services/plugin-runtime/plugin-runtime-mcp-bridge.js'
 import type { RuntimeBroker } from '../../services/plugin-runtime/runtime-broker.js'
+import type { CustomToolRuntimeCatalog } from '../../services/custom-tools/custom-tool-runtime-catalog.js'
 
 function createBroker(): RuntimeBroker {
   return {
@@ -88,5 +89,75 @@ describe('PluginRuntimeMcpBridge runtime lease', () => {
       }),
     })
     expect(response.status).toBe(401)
+  })
+})
+
+describe('PluginRuntimeMcpBridge native custom tool engine adapter', () => {
+  it('adapts the native catalog for the model without requiring an MCP project per tool', async () => {
+    const broker = {
+      listRuntimeStatus: () => [],
+      listRuntimeDescriptors: () => [],
+    } as unknown as RuntimeBroker
+    const invokeRead = vi.fn(async (input: Record<string, unknown>) => ({ echoed: input.text }))
+    const invokeWrite = vi.fn(async () => ({ ok: true }))
+    const customTools = {
+      list: () => [
+        {
+          qualifiedName: 'custom_echo',
+          toolId: 'echo',
+          tool: {
+            name: 'echo',
+            title: 'Echo',
+            description: 'Echo text from a native custom tool',
+            inputSchema: {
+              type: 'object',
+              properties: { text: { type: 'string' } },
+              required: ['text'],
+            },
+            requiredCapabilities: [],
+            risk: 'read',
+            effect: 'read',
+            idempotency: 'safe',
+          },
+          invoke: invokeRead,
+        },
+        {
+          qualifiedName: 'custom_publish',
+          toolId: 'publish',
+          tool: {
+            name: 'publish',
+            title: 'Publish',
+            description: 'Publish through a native custom tool',
+            inputSchema: { type: 'object', properties: {} },
+            requiredCapabilities: [],
+            risk: 'high-write',
+            effect: 'publish',
+            idempotency: 'unsafe',
+          },
+          invoke: invokeWrite,
+        },
+      ],
+    } as unknown as CustomToolRuntimeCatalog
+    const bridge = new PluginRuntimeMcpBridge(broker, customTools)
+
+    try {
+      const handle = await bridge.serve()
+      expect(handle?.toolNames).toEqual(['mcp__spark_plugins__custom_echo'])
+      const client = await connectClient(
+        handle!.config as { url: string; headers?: Record<string, string> },
+      )
+      const tools = await client.listTools()
+      expect(tools.tools.map((tool) => tool.name)).toEqual(['custom_echo', 'custom_publish'])
+      expect(tools.tools.find((tool) => tool.name === 'custom_echo')?.inputSchema).not.toHaveProperty(
+        'properties.accountId',
+      )
+      const result = await client.callTool({ name: 'custom_echo', arguments: { text: 'native' } })
+      expect(result.structuredContent).toEqual({ echoed: 'native' })
+      expect(invokeRead).toHaveBeenCalledWith({ text: 'native' })
+      await client.close()
+      await handle?.close()
+    } finally {
+      await bridge.dispose()
+    }
   })
 })

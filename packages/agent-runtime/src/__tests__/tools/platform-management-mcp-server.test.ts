@@ -57,6 +57,17 @@ describe('spark_platform MCP server', () => {
         'providers_media_configure',
         'providers_media_discover_models',
         'providers_media_diagnose',
+        'custom_tools_guide',
+        'custom_tools_list',
+        'custom_tools_get',
+        'custom_tools_validate',
+        'custom_tools_create_draft',
+        'custom_tools_save_draft',
+        'custom_tools_test',
+        'custom_tools_publish',
+        'custom_tools_set_enabled',
+        'custom_tools_rollback',
+        'custom_tools_delete',
       ]),
     )
     expect(toolNames).toEqual(
@@ -75,10 +86,12 @@ describe('spark_platform MCP server', () => {
     }>
     const validateTool = tools.find((tool) => tool.name === 'providers_media_validate')
     const configureTool = tools.find((tool) => tool.name === 'providers_media_configure')
+    const customToolList = tools.find((tool) => tool.name === 'custom_tools_list')
     expect(validateTool?.inputSchema.properties).not.toHaveProperty('apiKey')
     expect(configureTool?.inputSchema.properties).toHaveProperty('apiKey')
     expect(validateTool?.description).toContain('resolvedModels')
     expect(configureTool?.description).toContain('自动生成、修复或保留渠道唯一 Manifest ID')
+    expect(customToolList?.inputSchema.properties).toHaveProperty('limit')
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {
@@ -174,6 +187,62 @@ describe('spark_platform MCP server', () => {
         memberAgentIds: ['fullstack-coding-agent'],
       },
     })
+  })
+
+  it('routes custom tool draft creation to the production bridge method', async () => {
+    let lastRpc: { method?: string; params?: unknown } | null = null
+    bridge = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      req.on('end', () => {
+        lastRpc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, data: { workspace: { tool: { enabled: false } } } }))
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      bridge?.listen(0, '127.0.0.1', () => {
+        const address = bridge?.address()
+        if (!address || typeof address === 'string') throw new Error('Failed to bind bridge')
+        resolve(address.port)
+      })
+    })
+    const spec = {
+      id: 'weather_lookup',
+      title: '天气查询',
+      description: '根据城市名称查询当前天气，仅在用户询问实时天气时调用。',
+      type: 'http',
+      inputSchema: {
+        type: 'object',
+        properties: { city: { type: 'string' } },
+        required: ['city'],
+      },
+      spec: {
+        request: {
+          method: 'GET',
+          urlTemplate: 'https://api.example.com/weather?city={{city}}',
+        },
+        response: { format: 'text' },
+      },
+      risk: 'read',
+      effect: 'read',
+      idempotency: 'safe',
+      timeoutMs: 30_000,
+    }
+
+    child = start({ SPARK_PLATFORM_BRIDGE_PORT: String(port) })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: {
+        name: 'custom_tools_create_draft',
+        arguments: { spec },
+      },
+    })
+
+    expect(res.error).toBeUndefined()
+    expect(lastRpc).toEqual({ method: 'custom_tools.create_draft', params: { spec } })
   })
 
   it('routes artifact lookup tool calls to the platform bridge', async () => {
