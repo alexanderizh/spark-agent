@@ -69,6 +69,35 @@ function validHttpDraft(): TestHttpDraft {
   }
 }
 
+function validProviderVisionDraft() {
+  return {
+    id: 'vision_fallback',
+    title: '图像理解',
+    description: '使用已有多模态 Provider 分析当前会话选择的图片附件',
+    type: 'provider-vision' as const,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        images: { type: 'array' as const, items: { type: 'string' as const } },
+        question: { type: 'string' as const },
+      },
+      required: ['images'],
+    },
+    risk: 'read' as const,
+    effect: 'read' as const,
+    idempotency: 'safe' as const,
+    timeoutMs: 60_000,
+    spec: {
+      providerProfileId: 'vision-provider',
+      instructions: '请完整、准确地描述图片内容，并回答用户提出的问题。',
+      maxImages: 4,
+      maxTokens: 4_096,
+      autoRoute: { enabled: true, priority: 100 },
+      exposeToAgent: false,
+    },
+  }
+}
+
 describe('CustomToolDraftSchema', () => {
   it('accepts a valid http draft', () => {
     expect(CustomToolDraftSchema.parse(validHttpDraft())).toMatchObject({ id: 'jira_search' })
@@ -77,6 +106,48 @@ describe('CustomToolDraftSchema', () => {
   it('rejects unknown tool type', () => {
     const draft = { ...validHttpDraft(), type: 'graphql' }
     expect(() => CustomToolDraftSchema.parse(draft)).toThrow()
+  })
+
+  it('accepts a provider vision draft with host-only routing defaults', () => {
+    expect(CustomToolDraftSchema.parse(validProviderVisionDraft())).toMatchObject({
+      type: 'provider-vision',
+      spec: { providerProfileId: 'vision-provider', exposeToAgent: false },
+    })
+  })
+
+  it('rejects provider vision drafts without required string[] images', () => {
+    const missingRequired = validProviderVisionDraft()
+    missingRequired.inputSchema.required = []
+    expect(() => CustomToolDraftSchema.parse(missingRequired)).toThrow(/必填参数/)
+
+    const wrongItems = validProviderVisionDraft()
+    wrongItems.inputSchema.properties.images = {
+      type: 'array',
+      items: { type: 'number' },
+    } as never
+    expect(() => CustomToolDraftSchema.parse(wrongItems)).toThrow(/string\[\]/)
+  })
+
+  it('rejects provider vision secrets and write effects', () => {
+    expect(() =>
+      CustomToolDraftSchema.parse({
+        ...validProviderVisionDraft(),
+        secretRefs: { api_key: 'custom-tool:vision_fallback:api_key' },
+      }),
+    ).toThrow(/Provider Keychain/)
+    expect(() =>
+      CustomToolDraftSchema.parse({
+        ...validProviderVisionDraft(),
+        risk: 'low-write',
+        effect: 'create',
+      }),
+    ).toThrow(/固定为 read/)
+    expect(() =>
+      CustomToolDraftSchema.parse({
+        ...validProviderVisionDraft(),
+        spec: { ...validProviderVisionDraft().spec, exposeToAgent: true },
+      }),
+    ).toThrow()
   })
 
   it('rejects invalid slug (uppercase / leading digit / too short)', () => {
@@ -369,15 +440,21 @@ describe('JSON body 模板结构校验', () => {
 })
 
 describe('CustomToolsIpcSchemaRegistry', () => {
-  it('requires exactly one of toolId / draftSpec for test-run', () => {
+  it('supports saved tools, standalone drafts, and saved-secret draft tests', () => {
     const schema = CustomToolsIpcSchemaRegistry['custom-tools:test-run']
     expect(schema.parse({ toolId: 'jira_search', input: {} })).toMatchObject({
       toolId: 'jira_search',
     })
+    expect(schema.parse({ draftSpec: validHttpDraft(), input: {} })).toMatchObject({
+      draftSpec: { id: 'jira_search' },
+    })
+    expect(
+      schema.parse({ toolId: 'jira_search', draftSpec: validHttpDraft(), input: {} }),
+    ).toMatchObject({ toolId: 'jira_search', draftSpec: { id: 'jira_search' } })
     expect(() => schema.parse({ input: {} })).toThrow()
     expect(() =>
-      schema.parse({ toolId: 'jira_search', draftSpec: validHttpDraft(), input: {} }),
-    ).toThrow()
+      schema.parse({ toolId: 'other_tool', draftSpec: validHttpDraft(), input: {} }),
+    ).toThrow(/不一致/)
   })
 
   it('rejects update when spec.id mismatches target id', () => {

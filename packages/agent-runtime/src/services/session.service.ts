@@ -119,6 +119,7 @@ import {
 } from './plugin-runtime/plugin-runtime-mcp-bridge.js'
 import { RuntimeBroker } from './plugin-runtime/runtime-broker.js'
 import { registerBuiltinRuntimeAdapters } from './plugin-runtime/builtin-runtimes.js'
+import { routeProviderVisionAttachments } from './custom-tools/provider-vision-router.js'
 
 /** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
 export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
@@ -2194,6 +2195,7 @@ export class SessionService {
       supportsMillionContext?: boolean
       contextWindow?: number
       modelContextWindows?: Record<string, number>
+      modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -2502,8 +2504,17 @@ export class SessionService {
       }
     }
     const turnAttachments = prepareTurnAttachments(attachments, workspaceRootPath)
+    const providerVisionRoute = await routeProviderVisionAttachments({
+      database: this.db,
+      ...(config.modelType != null ? { modelType: config.modelType } : {}),
+      message,
+      attachments: turnAttachments,
+      sessionId,
+    })
+    const executorMessage = providerVisionRoute.message
+    const executorTurnAttachments = providerVisionRoute.attachments
     const attachmentDirectories = getAttachmentAdditionalDirectories(
-      turnAttachments,
+      executorTurnAttachments,
       workspaceRootPath,
     )
 
@@ -3038,7 +3049,9 @@ export class SessionService {
           turnId,
           timestamp: new Date().toISOString(),
           seq: 0,
-          userMessage: runtimeLogEnabled ? buildUserMessageSnapshot(message, turnAttachments) : '',
+          userMessage: runtimeLogEnabled
+            ? buildUserMessageSnapshot(executorMessage, executorTurnAttachments)
+            : '',
           systemPromptSections: runtimeLogEnabled ? promptSections : [],
           model,
           providerProfileId: effectiveRuntimeProviderProfileId,
@@ -3057,7 +3070,7 @@ export class SessionService {
     // ── Context Ledger ──────────────────────────────────────────────────
     // Emit a detailed token breakdown of all context sections for UI display
     {
-      const attachmentPromptLedger = buildAttachmentPromptLedger(turnAttachments)
+      const attachmentPromptLedger = buildAttachmentPromptLedger(executorTurnAttachments)
       const { sections: ledgerSections, totalEstimatedTokens } = buildContextLedger({
         skillPrompt: composedSkillSystemPrompt,
         systemPrompt: contextLedgerSystemPrompt,
@@ -3074,7 +3087,7 @@ export class SessionService {
             ? 'Continuity Capsule + Recent Exact History'
             : 'Conversation History',
         conversationHistoryPrompt,
-        userMessage: message,
+        userMessage: executorMessage,
         attachmentPrompt: attachmentPromptLedger,
       })
       runtimeMetrics.recordPromptEstimate(totalEstimatedTokens)
@@ -3195,7 +3208,7 @@ export class SessionService {
               ),
             }
           : {}),
-        ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+        ...(executorTurnAttachments.length > 0 ? { attachments: executorTurnAttachments } : {}),
         ...(attachmentDirectories.length > 0
           ? { additionalDirectories: attachmentDirectories }
           : {}),
@@ -3269,7 +3282,7 @@ export class SessionService {
       await this.tryStartSDKTurn(
         sessionId,
         turnId,
-        message,
+        executorMessage,
         eventRepo,
         sessionRepo,
         sdkConfig,
@@ -3366,7 +3379,7 @@ export class SessionService {
         ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
         : {}),
       fastMode: effectiveFastMode,
-      ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+      ...(executorTurnAttachments.length > 0 ? { attachments: executorTurnAttachments } : {}),
       ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
       enableCheckpoints: false,
       sdkSessionId,

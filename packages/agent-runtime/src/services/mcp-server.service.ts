@@ -19,21 +19,25 @@ const log = createLogger('mcp:service')
 
 export interface McpOAuthTokenProvider {
   getAccessToken(serverId: string): Promise<string | null>
-  getAuthStatus?(serverId: string): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'>
+  getAuthStatus?(
+    serverId: string,
+  ): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'>
 }
 
-export type McpChangeAction =
-  | 'create'
-  | 'update'
-  | 'delete'
-  | 'start'
-  | 'stop'
-  | 'tools-changed'
+export type McpChangeAction = 'create' | 'update' | 'delete' | 'start' | 'stop' | 'tools-changed'
 
 export interface McpChangeEvent {
   action: McpChangeAction
   id: string
   serverName?: string
+}
+
+export interface McpMutationOptions {
+  /**
+   * Keep the historical fire-and-forget lifecycle behavior by default.
+   * Managed runtimes can opt out when they need to serialize stop/update/start.
+   */
+  manageLifecycle?: boolean
 }
 
 /**
@@ -81,7 +85,10 @@ export class McpService {
     return rows.map(toMcpServerItem)
   }
 
-  createServer(params: { scope: string; name: string; configJson: string; enabled?: boolean }): McpServerItem {
+  createServer(
+    params: { scope: string; name: string; configJson: string; enabled?: boolean },
+    options: McpMutationOptions = {},
+  ): McpServerItem {
     const configError = validateMcpConfigJson(params.configJson)
     if (configError != null) {
       throw new Error(`MCP 配置无效：${configError}`)
@@ -92,7 +99,11 @@ export class McpService {
     // Auto-start when enabled is not explicitly false. Fire-and-forget so the IPC
     // response isn't blocked on the connection handshake; start failures are logged
     // and surface via getServerStatus without rolling back the DB row.
-    if (params.enabled !== false && !isOAuthMcpConfig(params.configJson)) {
+    if (
+      options.manageLifecycle !== false &&
+      params.enabled !== false &&
+      !isOAuthMcpConfig(params.configJson)
+    ) {
       void this.startServer(row.id).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
         log.warn(`Auto-start failed for newly created MCP server ${row.name}: ${message}`)
@@ -102,7 +113,11 @@ export class McpService {
     return toMcpServerItem(row)
   }
 
-  updateServer(id: string, fields: { name?: string; configJson?: string; enabled?: boolean }): McpServerItem {
+  updateServer(
+    id: string,
+    fields: { name?: string; configJson?: string; enabled?: boolean },
+    options: McpMutationOptions = {},
+  ): McpServerItem {
     const existing = this.repo.get(id)
     if (existing == null) throw new Error(`MCP server not found: ${id}`)
 
@@ -114,7 +129,11 @@ export class McpService {
     }
 
     // Managed servers cannot be renamed (their name is a stable key)
-    if (existing.scope === MANAGED_MCP_SCOPE && fields.name !== undefined && fields.name !== existing.name) {
+    if (
+      existing.scope === MANAGED_MCP_SCOPE &&
+      fields.name !== undefined &&
+      fields.name !== existing.name
+    ) {
       throw new Error(`Cannot rename managed MCP server "${existing.name}"`)
     }
 
@@ -124,6 +143,9 @@ export class McpService {
     this.emitChange('update', id, row.name)
 
     // If the server is currently connected, reconnect it
+    if (options.manageLifecycle === false) {
+      return toMcpServerItem(row)
+    }
     if (this.clients.has(id)) {
       void this.stopServer(id).then(() => {
         if (row.enabled === 1) {
@@ -228,9 +250,7 @@ export class McpService {
    */
   async startAllEnabled(): Promise<void> {
     const servers = this.repo.listAll().filter((row) => row.enabled === 1)
-    const results = await Promise.allSettled(
-      servers.map((row) => this.startServer(row.id)),
-    )
+    const results = await Promise.allSettled(servers.map((row) => this.startServer(row.id)))
 
     let started = 0
     let failed = 0
@@ -260,8 +280,18 @@ export class McpService {
   /**
    * 获取所有已连接 MCP 服务器的工具列表
    */
-  getAllMcpTools(): Array<{ serverId: string; serverName: string; toolName: string; toolDescription: string }> {
-    const result: Array<{ serverId: string; serverName: string; toolName: string; toolDescription: string }> = []
+  getAllMcpTools(): Array<{
+    serverId: string
+    serverName: string
+    toolName: string
+    toolDescription: string
+  }> {
+    const result: Array<{
+      serverId: string
+      serverName: string
+      toolName: string
+      toolDescription: string
+    }> = []
 
     for (const [serverId, client] of this.clients) {
       for (const tool of client.listTools()) {
@@ -318,7 +348,11 @@ export class McpService {
   /**
    * 解析 MCP 服务器配置 JSON 为 TransportConfig
    */
-  private async parseConfig(configJson: string, serverId: string, serverName: string): Promise<McpTransportConfig> {
+  private async parseConfig(
+    configJson: string,
+    serverId: string,
+    serverName: string,
+  ): Promise<McpTransportConfig> {
     let config: Record<string, unknown>
     try {
       config = JSON.parse(configJson) as Record<string, unknown>
@@ -332,18 +366,24 @@ export class McpService {
       throw new Error(`MCP server "${serverName}" 配置缺少有效传输（url 或 command）`)
     }
     if (resolved.type === 'http' || resolved.type === 'sse') {
-      const auth = (config.auth as { type?: string } | undefined)
+      const auth = config.auth as { type?: string } | undefined
       if (auth?.type === 'oauth2') {
         const token = await this.oauthProvider?.getAccessToken(serverId)
-        if (token == null) throw new Error(`MCP server "${serverName}" requires OAuth authorization`)
-        return { ...resolved, headers: { ...(resolved.headers ?? {}), Authorization: `Bearer ${token}` } }
+        if (token == null)
+          throw new Error(`MCP server "${serverName}" requires OAuth authorization`)
+        return {
+          ...resolved,
+          headers: { ...(resolved.headers ?? {}), Authorization: `Bearer ${token}` },
+        }
       }
     }
     return resolved
   }
 
-  async getServerAuthStatus(serverId: string): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'> {
-    return await this.oauthProvider?.getAuthStatus?.(serverId) ?? 'unconfigured'
+  async getServerAuthStatus(
+    serverId: string,
+  ): Promise<'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'> {
+    return (await this.oauthProvider?.getAuthStatus?.(serverId)) ?? 'unconfigured'
   }
 }
 
@@ -358,7 +398,6 @@ function toMcpServerItem(row: McpServerRow): McpServerItem {
     updatedAt: row.updated_at,
   }
 }
-
 
 function isOAuthMcpConfig(configJson: string): boolean {
   try {

@@ -1,6 +1,6 @@
 # 低代码自定义工具平台（Custom Tools）实施方案
 
-> 状态: 实施中 | 最后核对: 2026-08-19
+> 状态: 已落地 | 最后核对: 2026-08-31
 
 母讨论：2026-08-16 关于「自定义 Agent 工具 / UI 插件 / Agent 插件」的平台能力评估（结论：低代码自定义工具为 P0，UI 插件缓行，独立 Agent 插件概念不做）。
 本方案基于 2026-08-16 三路代码级调研（工具注册管道 / plugin-sdk 与权限模型 / 持久化与执行先例）+ 两项关键结论人工复核（PlaywrightMcpRegistration 模式、mcp 配置 env 透传）。所有文件路径为当日实测；`session.service.ts` 行号在 Phase 1 W2 拆分期间会漂移，仅作定位参考。
@@ -9,11 +9,14 @@
 
 ## 0. 定位与目标
 
-**一句话目标**：让非开发用户用「表单 + 声明式模板」创建 Agent 可用的工具。工具形式的完整解空间与逐项裁决见 §3.1——本轮收敛为 **http / sql / command / prompt 四种执行器**（M1-M3 交付），并以官方「工具模板库（preset）」在执行器之上持续扩展高频形态（GraphQL、消息推送、网页抽取等），**类型清单不锁死，新增形态的架构成本已固定**。所有工具以**受管 MCP 服务**形态同时供给 claude 与 codex 双引擎，权限、密钥、审计全部复用既有管道，**不改 session.service**。
+**一句话目标**：在不改变现有内置工具体系的前提下，让用户在安装后的 SparkWork 扩展中心创建、测试、启停和热更新自定义工具。自定义工具不是固定的“最小四类型”产品边界：底层保留可扩展的判别协议、执行器和宿主能力路由；首个落地切片开放 **HTTP 工具**与 **Provider 图像理解工具**，后续按真实场景增加新的内置模板或执行器。HTTP 工具以**受管 MCP 服务**形态同时供给 Claude 与 Codex；Provider Vision 由宿主在文本模型缺少视觉能力时确定性调用，不向模型开放任意本地路径读取。
+
+截至 2026-08-31，协议、迁移、HTTP / Provider Vision 执行器、stdio MCP 热插拔桥、扩展中心 UI 和文本模型视觉回退已完成实现、五轴代码审查、聚焦测试及生产构建验证。`sql / command / prompt / composite` 仍是候选扩展，不构成首版必须同时交付的固定清单。
 
 **用户故事**（覆盖四个能力方向，见 §3.1 的 A/B/C/D 分组）：
 
 - 「帮我加个工具：调公司内部 Jira REST API 查 issue」→ HTTP 模板工具，token 存密钥库
+- 「当前聊天模型不支持图片，但我已经配置了自部署图像理解渠道」→ 宿主调用首选 Provider Vision 工具，把不可信观察结果注入当前用户消息后继续回答
 - 「加个工具：对我们项目的 spark.db 跑只读统计」→ SQL 工具（SQLite）
 - 「加个工具：跑 workspace 里的 build_report.py 出报表」→ 命令模板工具
 - 「让 Agent 能往我们飞书群推消息」→ 模板库「Webhook 推送」preset（M3）
@@ -30,6 +33,7 @@
 - ❌ OpenAPI/Swagger 自动导入（M1-M2 不做；M3+ 仅作为 http 工具的**批量导入器**评估，非独立类型）
 - ❌ UI 插件体系（另案，已决议缓行）
 - ❌ 自造工具协议——工具以 MCP 形态暴露，双引擎天然兼容
+- ❌ 替换或删减现有内置工具——自定义工具是独立扩展域，内置工具继续按原管线演进
 
 ---
 
@@ -45,7 +49,7 @@
 | loopback Streamable-HTTP MCP（url + 每 turn 随机 bearer） | ✅ 双引擎      | `spark_plugins`（`PluginRuntimeMcpBridge`）、`spark_computer`、`spark_team`                                                                |
 | 进程内 SDK MCP（`type:'sdk'`）                            | ⚠️ claude 独占 | `spark_verify`（`filterCliCompatibleMcpServers` 在 codex CLI 路径丢弃）                                                                    |
 
-**决定性事实**：`SessionService.buildMcpServersForSDK()`（session.service.ts:5299）**每 turn 重读 `mcp_servers` 表全部启用行**。因此往表里 upsert 一行受管记录（`scope='managed'`），工具即可同时进入两个引擎，**零改动 session.service**。先例：`apps/desktop/src/main/services/PlaywrightMcpRegistration.ts`（幂等 ensureRegistered、configJson 带 `env` 字段、保留用户 enabled 偏好）；env 透传已验证（`mcp/config-normalize.ts:72`）。
+**决定性事实**：`SessionService.buildMcpServersForSDK()` 每 turn 重读 `mcp_servers` 表全部启用行。HTTP 自定义工具只需维护一行 `scope='managed'` 的受管 MCP 注册即可进入双引擎，不改既有内置工具注册。Provider Vision 属于不同链路：它消费本轮受控图片附件，必须在 `SessionService` 进入聊天执行器前由宿主路由，原生 `multimodal` 模型完全绕过该逻辑。
 
 **热更新**：MCP 清单变化 → `McpService.onChange` → session `mcpVersion` 计数器递增 → 下一 turn `continueSession=false` 重启 MCP 子进程 → 工具 CRUD 后下一 turn 生效，无需重启应用。
 
@@ -65,7 +69,7 @@
 | StandaloneNodeRuntime / Spark 自建 runtime 制品                                                                | `StandaloneNodeRuntime.ts`、artifacts 源                                                                 | 命令工具的 node/python 解释器解析（Python 走 `runtime.python-3.11.9.win32-x64` 制品） |
 | 迁移与仓库模式                                                                                                 | `packages/storage/migrations/`（下一号 083）、`repositories/base.repository.ts`                          | `custom_tools` 表落点                                                                 |
 | IPC 域注册模式                                                                                                 | `registerPluginIpc.ts`（新域独立文件）+ protocol 内 `XxxIpcSchemaRegistry`                               | `registerCustomToolsIpc.ts` 落点                                                      |
-| 视图模式                                                                                                       | `apps/desktop/src/renderer/design/views/`（McpView/AgentsView/PluginMarketplaceView）                    | `CustomToolsView.tsx` 落点                                                            |
+| 视图模式                                                                                                       | `apps/desktop/src/renderer/design/views/`（McpView/AgentsView/PluginMarketplaceView）                    | 扩展中心 `CustomToolsSection.tsx` 落点                                                |
 
 **确认无先例**：全仓不存在用户自定义工具编辑器/HTTP 工具模板功能（`ExternalToolService.ts` 是 IDE/终端启动器，无关）。绿地开发，但以上资产覆盖了 80% 的管道工作。
 
@@ -75,14 +79,14 @@
 
 ```
 ┌─ Renderer ──────────────────────────────────────────────┐
-│  CustomToolsView（列表/编辑器/测试运行/导入导出）          │
+│  CustomToolsSection（列表/编辑器/测试运行）                │
 │     │ window.spark.invoke('custom-tools:*')              │
 └─────┼───────────────────────────────────────────────────┘
       │ IPC（zod 校验，IpcResult 包装）
 ┌─────▼───────────────────────────────────────────────────┐
 │  Main: registerCustomToolsIpc.ts                         │
 │  ├─ CustomToolService（CRUD/校验/变更事件/审计）           │
-│  ├─ CustomToolExecutor[]（http | sql | command | prompt） │
+│  ├─ CustomToolExecutor[]（当前：http | provider-vision）   │
 │  ├─ CustomToolPolicy（risk floor / confirmationToken）    │
 │  └─ CustomToolsBridgeService（localhost JSON-RPC，随机端口+token）
 │         ▲ RPC（SPARK_CUSTOM_TOOLS_BRIDGE_PORT/_TOKEN）    │
@@ -98,6 +102,12 @@
 ┌─────▼─────────────┐   ┌──────────────────────┐
 │ ClaudeSDKExecutor │   │ Codex(SDK/CLI/OpenAI)│
 └───────────────────┘   └──────────────────────┘
+
+文本模型视觉回退（不经过模型可调用的 MCP 工具面）：
+
+图片附件 → Host Capability Router → 首选 provider-vision 工具
+        → Provider Keychain + OpenAI Chat Completions Vision
+        → 不可信观察数据注入当前用户消息 → 文本聊天模型继续回答
 ```
 
 ### 核心决策
@@ -105,11 +115,13 @@
 | #   | 决策                                                                                                    | 理由                                                                                                                                                             |
 | --- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | **独立 stdio 桥**（`custom-tools-mcp-server.mjs` + `CustomToolsBridgeService`），不塞进 `RuntimeBroker` | `PluginRuntimeMcpBridge` 的目录聚合按「已连接账号」过滤，无账号概念的自定义工具源不适合；stdio 桥模式有 `spark_memory`/`spark_canvas` 双实现先例，天然双引擎兼容 |
-| D2  | **受管 `mcp_servers` 行**（照抄 PlaywrightMcpRegistration）                                             | 零改 session.service（避开 Phase 1 W2 拆分战场）；热更新免费；用户可在既有 MCP 管理页看到并启停                                                                  |
+| D2  | **HTTP 工具使用受管 `mcp_servers` 行**（沿用 Playwright 注册模式）                                      | HTTP 热插拔不侵入既有 session MCP 构建逻辑；由独立 Runtime 串行维护连接生命周期                                                                                  |
 | D3  | 权限 = `max(profile 对 mcp_tool 的判定, risk floor)`                                                    | profile 只能收紧不能放宽到工具风险之下；审批卡片复用 `InlineApprovalRequest`                                                                                     |
 | D4  | **声明式 DSL，无自由脚本**；命令工具 = argv 模板 + `execFile`（`shell:false`）                          | 注入在结构上不可能，而非靠转义；对齐自定义多媒体适配器「无任意 JS」先例                                                                                          |
 | D5  | 密钥只存 `KeystoreRef`（`custom-tool:<toolId>:<name>`），spec 内永不出现明文                            | 对齐 provider/connector 全仓惯例                                                                                                                                 |
 | D6  | 协议、存储、IPC、UI 全部按既有域模式新增独立文件                                                        | 多 agent 并行零冲突（仅 4 处 ≤5 行的注册点，见 §10）                                                                                                             |
+| D7  | **Provider Vision 只允许宿主路由，协议强制 `exposeToAgent=false`**                                      | MCP 任意调用无法证明路径属于本轮附件；宿主可用已归一化附件列表建立可信边界                                                                                       |
+| D8  | **现有内置工具保持原样，自定义工具使用独立 `spark_custom_tools` 受管 MCP**                              | 后续新增内置工具与用户热插拔工具互不占用注册和生命周期边界                                                                                                       |
 
 ---
 
@@ -123,7 +135,7 @@ interface CustomToolSpec {
   id: string // slug: ^[a-z][a-z0-9_]{2,63}$，同时是 MCP tool name
   title: string // 展示名
   description: string // 给 LLM 看的工具说明（必填，≥10 字符，编辑器引导写清何时用）
-  type: 'http' | 'sql' | 'command' | 'prompt' // composite 见 §3.6
+  type: 'http' | 'provider-vision' | 'sql' | 'command' | 'prompt' // 开放集合按版本演进
   inputSchema: JsonSchemaObject // 参数 JSON Schema（编辑器从表单生成，非手写）
   risk: RuntimeRisk // 'read'|'low-write'|'high-write'|'destructive'
   effect: RuntimeEffect
@@ -163,6 +175,29 @@ interface HttpToolSpec {
 - 超时、响应大小上限、`clipTextHeadTail` 截断（对齐 `RuntimeHttpClient` 行为）
 - jsonPath 为**自研最小子集**（`$.a.b`、`[*]`、下标），不新增依赖
 - 风险建议值：GET→read；POST/PUT/PATCH→low-write；DELETE→destructive（用户可上调不可下调）
+- `allowPrivateNetwork=false` 时在 Node socket 连接层使用 BlockList 拒绝私网、loopback、链路本地及保留地址；同一策略覆盖 DNS 结果和重定向目标，避免预解析检查产生 DNS rebinding 窗口
+
+### 3.2.1 Provider 图像理解工具（首个宿主能力路由用例）
+
+```ts
+interface ProviderVisionToolSpec {
+  providerProfileId: string // 只引用已有 Provider，不复制凭据
+  model?: string
+  instructions: string
+  maxImages: number // 1..8
+  maxTokens: number
+  temperature?: number
+  autoRoute: { enabled: boolean; priority: number }
+  exposeToAgent: false // 协议常量，导入配置也不能开启
+}
+```
+
+- 仅当当前聊天 Provider 明确声明 `modelType='text'` 且本轮包含图片附件时触发；原生 `multimodal` 完全绕过
+- 多个工具按 `priority` 降序、工具 ID 升序稳定选择，不把选择权交给文本模型
+- Provider API Key 继续由 `provider_profiles.keystore_ref` 指向系统 Keychain；工具自身禁止声明或复制密钥
+- 图片只来自本轮经 `prepareTurnAttachments` 校验的绝对路径；该类型不进入 MCP `tools/list`
+- 首版支持 OpenAI Chat Completions 兼容视觉格式；单图 20MB、单次总计 50MB、Provider 响应 1MB
+- 成功结果以“不可信观察数据”注入当前用户消息；失败时移除文本模型无法消费的图片，并明确注入“未可靠检查、禁止猜测图片内容”
 
 ### 3.3 SQL 工具（M2，SQLite 先行）
 
@@ -225,7 +260,7 @@ interface PromptToolSpec {
 
 ## 4. 数据模型与协议
 
-### 4.1 存储（`packages/storage/migrations/083_custom_tools.sql`，编号以合入时最新为准）
+### 4.1 存储（`084_custom_tools.sql` + `088_custom_tool_provider_vision.sql`）
 
 ```sql
 CREATE TABLE custom_tools (
@@ -272,7 +307,7 @@ CREATE INDEX idx_cti_tool_created ON custom_tool_invocations(tool_id, created_at
 
 ### 4.3 变更事件
 
-`CustomToolService.onChange` → `McpService.onChange` 同一通知路径 bump `mcpVersion` → 下一 turn 生效。工具数为 0 时自动把受管行 `enabled=0`（避免空 server 噪音），≥1 时恢复用户偏好。
+`CustomToolService.onChange` → `CustomToolsRuntimeService` 串行执行 `stop → update → start` → `McpService.onChange` bump `mcpVersion` → 下一 turn 生效。连续保存期间只保留必要的后续刷新，避免并发重连；工具数为 0 时把受管行 `enabled=0`。Provider Vision 变更也复用同一事件源，但执行发生在宿主路由而非 MCP 工具调用。
 
 ---
 
@@ -347,27 +382,28 @@ interface ExecutorResult {
 
 ---
 
-## 7. UI 设计（`apps/desktop/src/renderer/design/views/CustomToolsView.tsx`）
+## 7. UI 设计（扩展中心 `CustomToolsSection.tsx`）
 
-- **入口**：左侧导航「自定义工具」独立视图（与 MCP 管理并列），App.tsx 懒加载路由
-- **列表页**：工具卡片采用应用统一的**扁平化风格**——不用边框（或仅极弱分隔），卡片以 `var(--bg-sunken)` 底色与页面背景拉开层次，hover 用底色加深而非阴影/描边，圆角沿用 `--r-md`；卡片内容（类型图标、risk 徽标配色对齐现有 low/medium/high、启用开关、最近测试状态、来源 local/imported 标记）；空态引导（三个类型模板示例）
+- **入口**：扩展中心内「自定义工具」独立页签，与 MCP、插件并列，不新增顶层导航噪音
+- **列表页**：采用应用统一的**扁平化风格**——工具以分隔线组织，不叠加卡片容器、阴影或描边；hover 只改变底色。行内容包含类型图标、risk、启用开关、最近测试状态及 local/imported 来源标记；空态直接引导创建 Provider Vision 工具
 - **编辑器**（Drawer，窄屏可全屏）：
   - 基本信息区 → 类型选择（选定后不可改）→ 类型专属表单 → 参数 Schema 构建器（照抄 `ProviderManifestParameterEditor` 交互）→ 安全与超时 → 风险声明（编辑器给出类型建议值，只可上调）
   - 密钥字段：掩码输入 + 「写入密钥库」按钮，永不回显；`has-secret` 状态灯
   - 全状态覆盖：loading/校验错误/disabled（无密钥时禁用保存并提示）
 - **测试运行**：右侧面板，参数表单（`CanvasParameterControl` 管线渲染）→ `custom-tools:test-run` → 展示原始响应 + 提取预览 + 耗时/字节数；high-write 以上需再点一次确认
 - **导入导出**：单文件 JSON（`formatVersion` + 工具数组 + 密钥占位符显式标注）；导入后全部 `enabled=0` 且带「待审」徽标，逐个 review 后启用
+- **首版已落地交互**：列表/搜索/刷新/启停/编辑/删除确认、HTTP 与图像理解模板、Provider 优先选择“自部署图像理解”、测试图片选择、Cmd/Ctrl+S 保存；视觉样式采用扁平分隔线，不堆叠卡片容器
 
 ---
 
 ## 8. 分期计划
 
-| 阶段                 | 内容                                                                                                                                                                                        | 工期     | 验收标准                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| **W0**               | §6.3 spike S1-S4；确认/否决路线 A                                                                                                                                                           | 0.5~1 天 | 双引擎调用通；路线定稿                                         |
-| **M1** 框架+HTTP     | protocol 类型与 zod；083 迁移 + repo；CustomToolService；HTTP 执行器；桥（.mjs + BridgeService）；CustomToolsRegistration；CustomToolsView 基础（列表/编辑/测试运行/启用/密钥）；行为锁测试 | ~1.5 周  | 新建 HTTP 工具→双引擎可调用 ≤5 分钟；CRUD 热更新；安全用例全绿 |
-| **M2** SQL+命令+审批 | SQLite 执行器（readonly）；命令执行器（argv/execFile/超时/白名单）；risk floor + 审批卡片联动；审计写入；导入导出                                                                           | ~1 周    | 三类型工具可用；注入/只读/超时攻击用例全绿；审计行完整         |
-| **M3** 扩展（可选）  | prompt 工具；composite 与 workflow 合流评估；per-agent/per-workflow 启用粒度；MySQL/PG（若 Q1 通过）；readwrite SQL（随审批数据评估放行）                                                   | ~1 周    | 按选定项定                                                     |
+| 阶段                    | 内容                                                                                                                                                                                         | 工期     | 验收标准                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------ |
+| **W0**                  | §6.3 spike S1-S4；确认/否决路线 A                                                                                                                                                            | 0.5~1 天 | 双引擎调用通；路线定稿                                             |
+| **M1** 框架+HTTP+Vision | protocol 类型与 zod；084/088 迁移 + repo；CustomToolService；HTTP / Provider Vision 执行器；桥（.mjs + BridgeService）；CustomToolsRuntimeService；扩展中心基础 UI；宿主视觉路由；行为锁测试 | 已落地   | HTTP 工具双引擎可调用；文本模型图像回退；CRUD 热更新；安全用例全绿 |
+| **M2** SQL+命令+审批    | SQLite 执行器（readonly）；命令执行器（argv/execFile/超时/白名单）；risk floor + 审批卡片联动；审计写入；导入导出                                                                            | ~1 周    | 三类型工具可用；注入/只读/超时攻击用例全绿；审计行完整             |
+| **M3** 扩展（可选）     | prompt 工具；composite 与 workflow 合流评估；per-agent/per-workflow 启用粒度；MySQL/PG（若 Q1 通过）；readwrite SQL（随审批数据评估放行）                                                    | ~1 周    | 按选定项定                                                         |
 
 单人串行预估：核心（W0+M1+M2）**约 2.5~3 周**。
 
@@ -377,10 +413,11 @@ interface ExecutorResult {
 
 - **协议**：zod 拒绝分支矩阵（未知 type / 模板坏占位符 / 明文密钥嗅探 / risk 低于类型下限 / slug 冲突）
 - **HTTP 执行器**（本地 mock server）：鉴权头注入、URL 编码、JSON body 结构注入样本（`"}}&c=` 类）必须产出合法 JSON 或校验拒绝、大小上限、超时、secretRef 缺失报错
+- **Provider Vision**：Keychain 凭据、OpenAI vision 消息格式、图片数量/格式/大小、Provider 响应上限、非多模态 Provider 拒绝、原生多模态旁路、优先级稳定选择、失败闭合
 - **SQL 执行器**：readonly 打开下 `INSERT/UPDATE/DELETE/ATTACH` 全拒；参数绑定注入样本（`'; DROP TABLE`）按值传递；maxRows 截断标记；不存在路径报错口径
 - **命令执行器**：参数值含 `; && | $( ) backtick` 时仍是单 argv 元素（无 shell 解释）；超时强杀链路（TERM→grace→KILL）；输出截断；路径白名单外拒绝
 - **Policy**：risk floor 矩阵（profile=allow × risk=high-write ⇒ ask）；审批拒绝路径；审计行落库
-- **桥契约**：list_tools 随 CRUD 刷新；错误码映射；token 失效拒绝
+- **桥契约**：list_tools 随 CRUD 刷新；错误码映射；token 失效拒绝；Provider Vision 永不出现在 `tools/list`；stdio list/call 转发
 - **集成**：`buildMcpServersForSDK` 含受管行（单测）；codex `buildCodexMcpConfig` 转换快照；既有行为锁 100/100 不回退
 - **命令**：`pnpm --filter @spark/agent-runtime test:unit`（注意 sqlite-abi 双跑耗时×2）、desktop `pnpm -C apps/desktop run typecheck`、`verify:migrations`（迁移编号冲突在构建前拦截）
 
@@ -388,7 +425,7 @@ interface ExecutorResult {
 
 ## 10. 与工程化 roadmap 及多 agent 并行的协调
 
-- **零 session.service 改动**（本方案最大排期优势）：Phase 1 W2 正在拆 session.service（turn-registry 工作树未提交），本方案路线 A 完全绕开
+- HTTP 热插拔链路不改既有内置工具注册；Provider Vision 仅在 `session.service` 当前 turn 的附件预处理位置增加一个宿主路由调用，原生多模态和无图 turn 保持原路径
 - **触碰共享文件仅 4 处、均 ≤5 行**：① `ipc/index.ts` 挂 `registerCustomToolsIpc`（1 行，Phase 2 热区——挑安静窗口合入）② `protocol/src/ipc/index.ts` spread schema registry（1 行）③ `App.tsx` 路由+导航（2 行）④ `@spark/storage` 出口导出（2 行）。其余全为新文件；按惯例 worktree 物理隔离开发
 - 与 Phase 2.2/2.3（protocol/ipc 拆分）无文件重叠，可并行；Phase 3 PermissionProfile 上线后，risk floor 语义与其正交叠加，不需要返工
 
@@ -407,10 +444,11 @@ interface ExecutorResult {
 
 ## 12. 风险与缓解
 
-| 风险                                                 | 等级 | 缓解                                                                                                  |
-| ---------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------- |
-| W0 spike 推翻路线 A（env 透传在 codex CLI 路径断链） | 中   | 路线 B 已预置（排 W2 后），架构其余部分（executor/service/UI）不受影响                                |
-| stdio 桥随引擎每 turn 重启的冷启动开销               | 低   | 工具面通常 ≤10 个，list_tools 单次 RPC；实测超 50ms 再考虑常驻 HTTP 桥（`spark_plugins` 模式）        |
-| 用户把危险命令包装成工具并授信                       | 中   | 风险披露卡片 + risk 不可下调 + destructive 每次审批 + 审计表；导入工具默认禁用待审                    |
-| 内网目标 SSRF（工具被 LLM 诱导改打内网其他地址）     | 低   | url 模板是**固定**的，LLM 只能填参数槽且经 schema 校验——攻击面是参数级而非 URL 级；分享功能上线前重审 |
-| better-sqlite3 ABI（electron/node 双跑）             | 低   | 沿用现有 sqlite-abi 测试包装，无新增原生依赖                                                          |
+| 风险                                                 | 等级 | 缓解                                                                                                            |
+| ---------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| W0 spike 推翻路线 A（env 透传在 codex CLI 路径断链） | 中   | 路线 B 已预置（排 W2 后），架构其余部分（executor/service/UI）不受影响                                          |
+| stdio 桥随引擎每 turn 重启的冷启动开销               | 低   | 工具面通常 ≤10 个，list_tools 单次 RPC；实测超 50ms 再考虑常驻 HTTP 桥（`spark_plugins` 模式）                  |
+| 用户把危险命令包装成工具并授信                       | 中   | 风险披露卡片 + risk 不可下调 + destructive 每次审批 + 审计表；导入工具默认禁用待审                              |
+| 内网目标 SSRF（工具被 LLM 诱导改打内网其他地址）     | 中   | URL 参数结构化编码；用户可关闭私网访问，关闭后由 socket BlockList 同时约束 DNS 与重定向连接；分享功能上线前重审 |
+| 图片提示词注入或任意路径读取                         | 中   | Provider Vision 不进入 MCP tools/list；只消费宿主本轮附件；结果标记为不可信观察数据，失败时禁止猜图             |
+| better-sqlite3 ABI（electron/node 双跑）             | 低   | 沿用现有 sqlite-abi 测试包装，无新增原生依赖                                                                    |

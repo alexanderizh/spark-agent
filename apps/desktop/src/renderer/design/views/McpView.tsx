@@ -30,6 +30,7 @@ import { useApp } from '../AppContext'
 import './McpView.less'
 import { McpFilterPopover, SCOPES, type StatusFilter } from './McpFilterPopover'
 import { PluginMarketplaceView } from './PluginMarketplaceView'
+import { CustomToolsSection } from './CustomToolsSection'
 type McpOAuthStatus = 'unconfigured' | 'needs-auth' | 'authorizing' | 'authorized' | 'failed'
 type McpTransport = 'stdio' | 'http' | 'sse'
 
@@ -246,7 +247,7 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
   }
 }
 
-type McpTab = 'mcp' | 'plugins'
+type McpTab = 'mcp' | 'custom-tools' | 'plugins'
 
 export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const { requestConfirm } = useApp()
@@ -491,13 +492,23 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
         <div className="mv_header">
           <div className="mv_header_left">
             <h2>扩展中心</h2>
-            <Tag color={activeTab === 'mcp' ? 'blue' : 'purple'}>
-              {activeTab === 'mcp' ? derived.length : '连接器'}
+            <Tag
+              color={
+                activeTab === 'mcp' ? 'blue' : activeTab === 'custom-tools' ? 'cyan' : 'purple'
+              }
+            >
+              {activeTab === 'mcp'
+                ? derived.length
+                : activeTab === 'custom-tools'
+                  ? '热插拔'
+                  : '连接器'}
             </Tag>
             <span className="mv_header_subtitle">
               {activeTab === 'mcp'
                 ? `· ${totalTools} 个工具 · 配置保存在本地`
-                : '· 账号、权限与运行时统一管理'}
+                : activeTab === 'custom-tools'
+                  ? '· 创建、测试并即时刷新 Agent 工具面'
+                  : '· 账号、权限与运行时统一管理'}
             </span>
           </div>
           {activeTab === 'mcp' && (
@@ -556,6 +567,15 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
           <button
             type="button"
             role="tab"
+            aria-selected={activeTab === 'custom-tools'}
+            className={`mv_tab ${activeTab === 'custom-tools' ? 'mv_tab_active' : ''}`}
+            onClick={() => setActiveTab('custom-tools')}
+          >
+            自定义工具
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'plugins'}
             className={`mv_tab ${activeTab === 'plugins' ? 'mv_tab_active' : ''}`}
             onClick={() => setActiveTab('plugins')}
@@ -566,6 +586,8 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
 
         {activeTab === 'plugins' ? (
           <PluginMarketplaceView embedded />
+        ) : activeTab === 'custom-tools' ? (
+          <CustomToolsSection />
         ) : (
           <>
             {/* ── 卡片网格 ─────────────────────────────────────────────── */}

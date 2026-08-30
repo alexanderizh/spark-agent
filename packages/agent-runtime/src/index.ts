@@ -410,3 +410,15 @@ export type { McpOAuthStore, SparkOAuthTokens } from './mcp/oauth/oauth-store.js
 // Custom Tools（低代码自定义工具）— 桌面端 IPC handler 用
 export { CustomToolService } from './services/custom-tools/custom-tool.service.js'
 export type { CustomToolChangeEvent } from './services/custom-tools/custom-tool.service.js'
+export { CustomToolsBridgeService } from './services/custom-tools/custom-tools-bridge.service.js'
+export type { CustomToolsBridgeInfo } from './services/custom-tools/custom-tools-bridge.service.js'
+export { routeProviderVisionAttachments } from './services/custom-tools/provider-vision-router.js'
+export type {
+  ProviderVisionRouteInput,
+  ProviderVisionRouteResult,
+  ProviderVisionRouteStatus,
+} from './services/custom-tools/provider-vision-router.js'
+export {
+  resolveRuntimeToolPath,
+  resolveMcpNodeRuntimeExecutable,
+} from './services/session-mcp-tooling-helpers.js'

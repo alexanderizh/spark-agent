@@ -6,6 +6,7 @@ import type {
   CustomToolType,
   HttpToolSpec,
   PromptToolSpec,
+  ProviderVisionToolSpec,
   RuntimeEffect,
   RuntimeIdempotency,
   RuntimeRisk,
@@ -35,7 +36,7 @@ export interface CustomToolRow {
 
 /** spec_json 落库信封：类型专属 spec + 密钥引用（仅引用，无明文） */
 export interface CustomToolSpecEnvelope {
-  spec: HttpToolSpec | SqlToolSpec | CommandToolSpec | PromptToolSpec
+  spec: HttpToolSpec | SqlToolSpec | CommandToolSpec | PromptToolSpec | ProviderVisionToolSpec
   secretRefs?: Record<string, string>
 }
 

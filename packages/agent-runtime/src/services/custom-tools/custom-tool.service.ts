@@ -39,8 +39,8 @@ export interface CustomToolChangeEvent {
 
 export type CustomToolSecretStatus = Record<string, boolean>
 
-/** M1 仅开放 http 执行器；sql/command(M2)、prompt(M3) 协议契约先行、创建时拦截 */
-const AVAILABLE_TYPES: ReadonlySet<CustomToolType> = new Set(['http'])
+/** 首版开放 HTTP 与宿主路由的 Provider Vision；其余协议成员仍在创建时拦截。 */
+const AVAILABLE_TYPES: ReadonlySet<CustomToolType> = new Set(['http', 'provider-vision'])
 
 function secretKeystoreRef(toolId: string, name: string): KeystoreRef {
   return `custom-tool:${toolId}:${name}` as KeystoreRef
@@ -62,9 +62,11 @@ function withPersistence<D extends CustomToolDraft>(
 
 export class CustomToolService {
   private readonly repository: CustomToolRepository
+  private readonly db: SparkDatabase
   private readonly listeners = new Set<(event: CustomToolChangeEvent) => void>()
 
   constructor(db: SparkDatabase) {
+    this.db = db
     this.repository = new CustomToolRepository(db)
   }
 
@@ -111,8 +113,12 @@ export class CustomToolService {
       throw new CustomToolError('ALREADY_EXISTS', `工具 ${draft.id} 已存在`)
     }
     const now = new Date().toISOString()
+    const hasToolSecrets = Object.keys(draft.secretRefs ?? {}).length > 0
     const record = withPersistence(draft, {
-      enabled: true,
+      // A tool must not enter the Agent tool surface before every referenced
+      // Keychain value has been written. The renderer enables it after the
+      // create + secret-write sequence completes.
+      enabled: !hasToolSecrets,
       origin: 'local',
       lastTestAt: null,
       createdAt: now,
@@ -136,6 +142,10 @@ export class CustomToolService {
         ? { secretRefs: draft.secretRefs }
         : {}),
     }
+    const existingSecretNames = new Set(Object.keys(existing.secretRefs ?? {}))
+    const introducesSecret = Object.keys(draft.secretRefs ?? {}).some(
+      (name) => !existingSecretNames.has(name),
+    )
     // 单条 UPDATE 原子重写整行（含信封），避免 delete+create 之间的数据丢失窗口；
     // enabled/origin/lastTestAt/createdAt 不在字段内，原样保留
     const updated = this.repository.update(id, {
@@ -147,6 +157,7 @@ export class CustomToolService {
       effect: draft.effect,
       idempotency: draft.idempotency,
       timeoutMs: draft.timeoutMs,
+      ...(existing.enabled && introducesSecret ? { enabled: false } : {}),
     })
     if (updated == null) throw new CustomToolError('NOT_FOUND', `工具 ${id} 不存在`)
     await this.cleanupOrphanSecrets(existing, draft)
@@ -157,16 +168,47 @@ export class CustomToolService {
 
   async delete(id: string): Promise<void> {
     const record = this.requireRecord(id)
-    this.repository.deleteById(id)
-    for (const name of Object.keys(record.secretRefs ?? {})) {
-      await deleteSecret(secretKeystoreRef(id, name))
+    // Disable before crossing the SQLite/Keychain boundary. If Keychain is
+    // temporarily unavailable, the record remains visible and retryable but
+    // can no longer be invoked by an Agent.
+    if (record.enabled) {
+      this.repository.update(id, { enabled: false })
+      this.emit({ change: 'enabled', id })
     }
+    try {
+      for (const name of Object.keys(record.secretRefs ?? {})) {
+        await deleteSecret(secretKeystoreRef(id, name))
+      }
+    } catch (error) {
+      log.warn('custom tool Keychain cleanup failed; tool remains disabled', {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw new CustomToolError(
+        'EXECUTION_FAILED',
+        '工具已停用，但 Keychain 密钥清理失败；请稍后重试删除',
+        { cause: error },
+      )
+    }
+    this.repository.deleteById(id)
     log.info('custom tool deleted', { id })
     this.emit({ change: 'deleted', id })
   }
 
-  setEnabled(id: string, enabled: boolean): CustomToolRecord {
-    this.requireRecord(id)
+  async setEnabled(id: string, enabled: boolean): Promise<CustomToolRecord> {
+    const record = this.requireRecord(id)
+    if (enabled) {
+      const status = await this.secretStatus(id)
+      const missingSecrets = Object.entries(status)
+        .filter(([, available]) => !available)
+        .map(([name]) => name)
+      if (missingSecrets.length > 0) {
+        throw new CustomToolError(
+          'SECRET_MISSING',
+          `工具 ${record.id} 缺少密钥：${missingSecrets.join('、')}`,
+        )
+      }
+    }
     const updated = this.repository.update(id, { enabled })
     if (updated == null) throw new CustomToolError('NOT_FOUND', `工具 ${id} 不存在`)
     this.emit({ change: 'enabled', id })
@@ -219,11 +261,27 @@ export class CustomToolService {
     signal?: AbortSignal
   }): Promise<CustomToolTestRunResult> {
     let record: CustomToolRecord
-    if (params.toolId != null) {
-      record = this.requireRecord(params.toolId)
-    } else if (params.draftSpec != null) {
+    const persistedRecord = params.toolId != null ? this.requireRecord(params.toolId) : null
+    if (params.draftSpec != null) {
       this.assertTypeAvailable(params.draftSpec.type)
-      if (
+      if (persistedRecord != null) {
+        if (params.draftSpec.id !== persistedRecord.id) {
+          throw new CustomToolError('INVALID_INPUT', '测试草稿与密钥来源工具 ID 不一致')
+        }
+        if (params.draftSpec.type !== persistedRecord.type) {
+          throw new CustomToolError('INVALID_INPUT', '测试草稿与已保存工具类型不一致')
+        }
+        const persistedSecretNames = new Set(Object.keys(persistedRecord.secretRefs ?? {}))
+        const undeclaredSecret = Object.keys(params.draftSpec.secretRefs ?? {}).find(
+          (name) => !persistedSecretNames.has(name),
+        )
+        if (undeclaredSecret != null) {
+          throw new CustomToolError(
+            'INVALID_INPUT',
+            `测试草稿引用了未保存的密钥位 ${undeclaredSecret}`,
+          )
+        }
+      } else if (
         params.draftSpec.secretRefs != null &&
         Object.keys(params.draftSpec.secretRefs).length > 0
       ) {
@@ -237,6 +295,8 @@ export class CustomToolService {
         createdAt: now,
         updatedAt: now,
       })
+    } else if (persistedRecord != null) {
+      record = persistedRecord
     } else {
       throw new CustomToolError('INVALID_INPUT', 'testRun 需要 toolId 或 draftSpec')
     }
@@ -255,6 +315,7 @@ export class CustomToolService {
     try {
       const result: ExecutorResult = await executeCustomTool(record, params.input, {
         signal: controller.signal,
+        database: this.db,
         resolveSecret: async (name) => {
           const value = secrets[name]
           if (value == null) {
@@ -280,6 +341,41 @@ export class CustomToolService {
       }
       clearTimeout(timer)
       outerSignal?.removeEventListener('abort', onOuterAbort)
+    }
+  }
+
+  /** Runtime bridge entry: unlike testRun, disabled tools are rejected and the
+   * editor-only lastTestAt field is not mutated. */
+  async executeEnabled(params: {
+    toolId: string
+    input: Record<string, unknown>
+    sessionId?: string
+    signal?: AbortSignal
+  }): Promise<ExecutorResult> {
+    const record = this.requireRecord(params.toolId)
+    if (!record.enabled) throw new CustomToolError('DENIED', `工具 ${record.id} 已停用`)
+    const secrets = await this.resolveSecrets(record)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), record.timeoutMs)
+    const onOuterAbort = () => controller.abort()
+    if (params.signal != null) {
+      if (params.signal.aborted) controller.abort()
+      else params.signal.addEventListener('abort', onOuterAbort, { once: true })
+    }
+    try {
+      return await executeCustomTool(record, params.input, {
+        signal: controller.signal,
+        database: this.db,
+        ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
+        resolveSecret: async (name) => {
+          const value = secrets[name]
+          if (value == null) throw new CustomToolError('SECRET_MISSING', `密钥 ${name} 未解析`)
+          return value
+        },
+      })
+    } finally {
+      clearTimeout(timer)
+      params.signal?.removeEventListener('abort', onOuterAbort)
     }
   }
 
@@ -367,7 +463,7 @@ export class CustomToolService {
     if (!AVAILABLE_TYPES.has(type)) {
       throw new CustomToolError(
         'NOT_IMPLEMENTED',
-        `「${type}」类型工具尚未开放（当前版本支持 http）`,
+        `「${type}」类型工具尚未开放（当前版本支持 http、provider-vision）`,
       )
     }
   }

@@ -1,8 +1,8 @@
 /**
  * 低代码自定义工具平台协议（Custom Tools）
  *
- * 用户以「表单 + 声明式模板」创建 Agent 可用的工具。工具以受管 MCP 服务
- * （spark_custom_tools）形态同时供给 claude 与 codex 双引擎。
+ * 用户以「表单 + 声明式模板」创建 Agent 可用的工具。HTTP 工具以受管 MCP
+ * 服务（spark_custom_tools）供给双引擎；宿主能力工具可选择更窄的可信路由。
  *
  * 安全设计（与 docs/plans/2026-08-16-custom-tools-platform.md §3/§4 对齐）：
  * - 声明式 DSL，无自由脚本；模板占位符 `{{name}}` 只能引用 inputSchema 属性
@@ -566,6 +566,36 @@ export const PromptToolSpecSchema = z
   .strict()
 export type PromptToolSpec = z.infer<typeof PromptToolSpecSchema>
 
+/**
+ * Provider-backed image understanding tool.
+ *
+ * The tool references an existing Provider profile so credentials remain in
+ * Spark's Keychain. It is also a capability-routing declaration: when
+ * autoRoute.enabled is true, the session host may invoke it before a turn sent
+ * to a text-only model. exposeToAgent is fixed to false because arbitrary
+ * MCP calls cannot prove that a local path belongs to the current turn.
+ */
+export const ProviderVisionToolSpecSchema = z
+  .object({
+    providerProfileId: z.string().min(1).max(200),
+    model: z.string().min(1).max(200).optional(),
+    instructions: z.string().min(10).max(8_000),
+    maxImages: z.number().int().min(1).max(8).default(4),
+    maxTokens: z.number().int().min(128).max(16_384).default(4_096),
+    temperature: z.number().min(0).max(2).optional(),
+    autoRoute: z
+      .object({
+        enabled: z.boolean().default(true),
+        priority: z.number().int().min(0).max(1_000).default(100),
+      })
+      .strict(),
+    // Host-only by contract. Arbitrary MCP calls cannot prove that a local
+    // path belongs to the current turn, so imported specs cannot opt in.
+    exposeToAgent: z.literal(false).default(false),
+  })
+  .strict()
+export type ProviderVisionToolSpec = z.infer<typeof ProviderVisionToolSpecSchema>
+
 // ─── risk floor ─────────────────────────────────────────────────────────
 
 export const RISK_ORDER: Record<RuntimeRisk, number> = {
@@ -586,7 +616,7 @@ export function httpMethodRiskFloor(method: HttpMethod): RuntimeRisk {
   return 'low-write'
 }
 
-export type CustomToolType = 'http' | 'sql' | 'command' | 'prompt'
+export type CustomToolType = 'http' | 'sql' | 'command' | 'prompt' | 'provider-vision'
 
 // ─── 工具 DSL（用户提交的完整声明）──────────────────────────────────────
 
@@ -624,7 +654,8 @@ function templateTextsOf(type: CustomToolType, spec: unknown): string[] {
   }
   if (type === 'sql') return [(spec as SqlToolSpec).sqlTemplate]
   if (type === 'command') return [...(spec as CommandToolSpec).exec.argsTemplate]
-  return [(spec as PromptToolSpec).promptTemplate]
+  if (type === 'prompt') return [(spec as PromptToolSpec).promptTemplate]
+  return []
 }
 
 function refineCustomToolDraft(
@@ -681,6 +712,46 @@ function refineCustomToolDraft(
       path: ['risk'],
       message: '提示词工具无副作用，risk/effect 固定为 read',
     })
+  }
+  if (type === 'provider-vision' && (risk !== 'read' || effect !== 'read')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['risk'],
+      message: '图像理解工具无写入副作用，risk/effect 固定为 read',
+    })
+  }
+
+  if (type === 'provider-vision') {
+    const images = inputSchema.properties.images
+    if (images?.type !== 'array' || images.items?.type !== 'string') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['inputSchema', 'properties', 'images'],
+        message: '图像理解工具必须声明 string[] 类型的 images 参数',
+      })
+    }
+    if (!(inputSchema.required ?? []).includes('images')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['inputSchema', 'required'],
+        message: '图像理解工具必须把 images 声明为必填参数',
+      })
+    }
+    const question = inputSchema.properties.question
+    if (question != null && question.type !== 'string') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['inputSchema', 'properties', 'question'],
+        message: '图像理解工具的 question 参数必须为 string',
+      })
+    }
+    if (secretRefs != null && Object.keys(secretRefs).length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['secretRefs'],
+        message: '图像理解工具复用 Provider Keychain 凭据，不允许另存工具密钥',
+      })
+    }
   }
 
   // 3. 模板占位符必须引用已声明参数
@@ -743,6 +814,13 @@ export const CustomToolCommandDraftSchema = z
 export const CustomToolPromptDraftSchema = z
   .object({ ...customToolBaseShape, type: z.literal('prompt'), spec: PromptToolSpecSchema })
   .strict()
+export const CustomToolProviderVisionDraftSchema = z
+  .object({
+    ...customToolBaseShape,
+    type: z.literal('provider-vision'),
+    spec: ProviderVisionToolSpecSchema,
+  })
+  .strict()
 
 export const CustomToolDraftSchema = z
   .discriminatedUnion('type', [
@@ -750,6 +828,7 @@ export const CustomToolDraftSchema = z
     CustomToolSqlDraftSchema,
     CustomToolCommandDraftSchema,
     CustomToolPromptDraftSchema,
+    CustomToolProviderVisionDraftSchema,
   ])
   .superRefine((draft, ctx) => refineCustomToolDraft(draft, ctx))
 export type CustomToolDraft = z.infer<typeof CustomToolDraftSchema>
@@ -894,7 +973,10 @@ export interface CustomToolSetEnabledResponse {
   tool: CustomToolSummary
 }
 export interface CustomToolTestRunRequest {
-  /** 已保存工具 id 与 draftSpec 二选一 */
+  /**
+   * 只传 toolId 时测试已保存配置，只传 draftSpec 时测试无密钥草稿。
+   * 两者同时提供时用 toolId 对应的 Keychain 密钥测试当前草稿。
+   */
   toolId?: string
   draftSpec?: CustomToolDraft
   input: Record<string, unknown>
@@ -965,10 +1047,25 @@ export const CustomToolsIpcSchemaRegistry = {
       input: testInputSchema,
     })
     .strict()
-    .refine(
-      (request) => (request.toolId != null) !== (request.draftSpec != null),
-      'toolId 与 draftSpec 必须且只能提供一个',
-    ),
+    .superRefine((request, ctx) => {
+      if (request.toolId == null && request.draftSpec == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'toolId 与 draftSpec 至少提供一个',
+        })
+      }
+      if (
+        request.toolId != null &&
+        request.draftSpec != null &&
+        request.toolId !== request.draftSpec.id
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['draftSpec', 'id'],
+          message: 'draftSpec.id 与密钥来源工具 ID 不一致',
+        })
+      }
+    }),
   'custom-tools:write-secret': z
     .object({
       id: CustomToolIdSchema,

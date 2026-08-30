@@ -5,11 +5,14 @@
  * - URL 占位符逐段 encodeURIComponent（模板渲染层）
  * - JSON body 走 parse-based 渲染，结构性注入在解析层死亡
  * - 敏感请求头只能来自密钥库（协议层强制 secretRef）
+ * - 可关闭私网访问；Node 连接层 BlockList 同时覆盖 DNS 解析和重定向目标
  * - 超时 / 响应大小上限 / 输出截断，替换后的完整请求永不落日志
  */
 
+import { BlockList } from 'node:net'
 import type { CustomToolRecord, HttpToolSpec } from '@spark/protocol'
 import { clipTextHeadTail } from '@spark/shared'
+import { Agent, Headers, fetch as undiciFetch } from 'undici'
 import { CustomToolError } from './custom-tool-errors.js'
 import type { ExecutorContext, ExecutorResult } from './custom-tool-executor.js'
 import { jsonPathExtract, jsonPathValueToCell } from './custom-tool-json-path.js'
@@ -23,6 +26,47 @@ import { validateToolInput } from './custom-tool-input-validator.js'
 const DEFAULT_MAX_RESPONSE_BYTES = 262_144
 /** 给 LLM 的输出预算（token），超出走 clipTextHeadTail 头尾截断 */
 const OUTPUT_TOKEN_BUDGET = 8_000
+
+/**
+ * Block every address range that is not suitable as a public HTTP destination.
+ * Passing this list to the socket connector, instead of checking DNS before
+ * fetch, prevents a DNS-rebinding window and applies to every redirect hop.
+ */
+const NON_PUBLIC_NETWORKS = new BlockList()
+for (const [network, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.88.99.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+] as const) {
+  NON_PUBLIC_NETWORKS.addSubnet(network, prefix, 'ipv4')
+}
+for (const [network, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['::ffff:0:0', 96],
+  ['64:ff9b:1::', 48],
+  ['100::', 64],
+  ['2001::', 23],
+  ['2001:db8::', 32],
+  ['2002::', 16],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['ff00::', 8],
+] as const) {
+  NON_PUBLIC_NETWORKS.addSubnet(network, prefix, 'ipv6')
+}
 
 export async function executeHttpTool(
   record: CustomToolRecord,
@@ -48,9 +92,11 @@ export async function executeHttpTool(
     headers.set(header.name, value)
   }
 
-  const hasBody =
+  const body =
     spec.request.body != null && spec.request.method !== 'GET' && spec.request.method !== 'DELETE'
-  const body = hasBody ? renderJsonBodyTemplate(spec.request.body!.jsonTemplate, input) : undefined
+      ? renderJsonBodyTemplate(spec.request.body.jsonTemplate, input)
+      : undefined
+  const hasBody = body !== undefined
   if (hasBody && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
@@ -62,16 +108,42 @@ export async function executeHttpTool(
   if (ctx.signal.aborted) controller.abort('caller')
   else ctx.signal.addEventListener('abort', onOuterAbort, { once: true })
 
-  let response: Response
+  const dispatcher =
+    spec.allowPrivateNetwork === false
+      ? new Agent({ connect: { blockList: NON_PUBLIC_NETWORKS } })
+      : null
+
   try {
-    response = await fetch(url, {
+    const response = await undiciFetch(url, {
       method: spec.request.method,
       headers,
       ...(body !== undefined ? { body } : {}),
       signal: controller.signal,
       redirect: 'follow',
+      ...(dispatcher != null ? { dispatcher } : {}),
     })
+
+    const maxSize = spec.response.maxSizeBytes ?? DEFAULT_MAX_RESPONSE_BYTES
+    const { text, truncated } = await readBodyWithCap(response, maxSize)
+    const durationMs = Date.now() - startedAt
+    const bytes = new TextEncoder().encode(text).length
+
+    if (!response.ok) {
+      const excerpt = text.slice(0, 500)
+      throw new CustomToolError(
+        'HTTP_ERROR',
+        `HTTP ${response.status} ${response.statusText}${excerpt.trim() !== '' ? `：${excerpt}` : ''}`,
+      )
+    }
+
+    const rendered = formatResponse(spec, text)
+    const clipped = clipTextHeadTail(rendered, OUTPUT_TOKEN_BUDGET)
+    return {
+      text: clipped,
+      meta: { durationMs, bytes, truncated: truncated || clipped !== rendered },
+    }
   } catch (error) {
+    if (error instanceof CustomToolError) throw error
     if (controller.signal.aborted && controller.signal.reason === 'timeout') {
       throw new CustomToolError(
         'TIMEOUT',
@@ -79,6 +151,9 @@ export async function executeHttpTool(
       )
     }
     if (ctx.signal.aborted) throw new CustomToolError('DENIED', '调用被取消')
+    if (findErrorCode(error) === 'ERR_IP_BLOCKED') {
+      throw new CustomToolError('DENIED', '目标地址属于非公网网络，当前工具已关闭私网访问')
+    }
     throw new CustomToolError(
       'UNREACHABLE',
       `无法访问目标地址：${error instanceof Error ? error.message : String(error)}`,
@@ -86,27 +161,19 @@ export async function executeHttpTool(
   } finally {
     clearTimeout(timer)
     ctx.signal.removeEventListener('abort', onOuterAbort)
+    await dispatcher?.close()
   }
+}
 
-  const maxSize = spec.response.maxSizeBytes ?? DEFAULT_MAX_RESPONSE_BYTES
-  const { text, truncated } = await readBodyWithCap(response, maxSize)
-  const durationMs = Date.now() - startedAt
-  const bytes = new TextEncoder().encode(text).length
-
-  if (!response.ok) {
-    const excerpt = text.slice(0, 500)
-    throw new CustomToolError(
-      'HTTP_ERROR',
-      `HTTP ${response.status} ${response.statusText}${excerpt.trim() !== '' ? `：${excerpt}` : ''}`,
-    )
+function findErrorCode(error: unknown): string | undefined {
+  let current: unknown = error
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (current == null || typeof current !== 'object') return undefined
+    const record = current as { code?: unknown; cause?: unknown }
+    if (typeof record.code === 'string') return record.code
+    current = record.cause
   }
-
-  const rendered = formatResponse(spec, text)
-  const clipped = clipTextHeadTail(rendered, OUTPUT_TOKEN_BUDGET)
-  return {
-    text: clipped,
-    meta: { durationMs, bytes, truncated: truncated || clipped !== rendered },
-  }
+  return undefined
 }
 
 /** 只读日志需要的最小 URL 信息（保留 host+path 骨架，去掉查询参数值） */
@@ -143,6 +210,7 @@ async function readBodyWithCap(
         const overshoot = total - capBytes
         chunks.push(value.slice(0, value.byteLength - overshoot))
         truncated = true
+        await reader.cancel('response size limit reached')
         break
       }
       chunks.push(value)

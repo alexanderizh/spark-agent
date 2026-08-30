@@ -13,6 +13,7 @@ function createTestDb(testDir: string): SparkDatabase {
 }
 
 type HttpToolRecord = Extract<CustomToolRecord, { type: 'http' }>
+type VisionToolRecord = Extract<CustomToolRecord, { type: 'provider-vision' }>
 
 function makeRecord(overrides: Partial<HttpToolRecord> = {}): HttpToolRecord {
   const now = new Date().toISOString()
@@ -48,6 +49,41 @@ function makeRecord(overrides: Partial<HttpToolRecord> = {}): HttpToolRecord {
   }
 }
 
+function makeVisionRecord(): VisionToolRecord {
+  const now = new Date().toISOString()
+  return {
+    id: 'vision_fallback',
+    title: '图像理解',
+    description: '使用已有多模态 Provider 分析当前会话选择的图片附件',
+    type: 'provider-vision',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        images: { type: 'array', items: { type: 'string' } },
+        question: { type: 'string' },
+      },
+      required: ['images'],
+    },
+    risk: 'read',
+    effect: 'read',
+    idempotency: 'safe',
+    timeoutMs: 60_000,
+    spec: {
+      providerProfileId: 'vision-provider',
+      instructions: '请完整、准确地描述图片内容，并回答用户提出的问题。',
+      maxImages: 4,
+      maxTokens: 4_096,
+      autoRoute: { enabled: true, priority: 100 },
+      exposeToAgent: false,
+    },
+    enabled: true,
+    origin: 'local',
+    lastTestAt: null,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 describe('CustomToolRepository', () => {
   let db: SparkDatabase
   let repository: CustomToolRepository
@@ -77,6 +113,15 @@ describe('CustomToolRepository', () => {
       request: { urlTemplate: 'https://jira.internal/v3/issue/{{issueKey}}' },
     })
     expect(loaded?.secretRefs).toEqual({ auth_token: 'custom-tool:jira_search:auth_token' })
+  })
+
+  it('round-trips provider vision specs without copying provider credentials', () => {
+    const record = makeVisionRecord()
+    repository.create(record)
+    const loaded = repository.get('vision_fallback')
+    expect(loaded).toEqual(record)
+    expect(loaded?.secretRefs).toBeUndefined()
+    expect(loaded?.spec).toMatchObject({ providerProfileId: 'vision-provider' })
   })
 
   it('omits secretRefs from the envelope when absent', () => {

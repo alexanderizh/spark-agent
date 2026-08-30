@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -104,9 +106,12 @@ describe('CustomToolService', () => {
   })
 
   it('writes and reports secret status; rejects undeclared secret names', async () => {
-    await service.create(httpDraftWithSecret())
+    const created = await service.create(httpDraftWithSecret())
+    expect(created.enabled).toBe(false)
     expect(await service.secretStatus('jira_search')).toEqual({ auth_token: false })
+    await expect(service.setEnabled('jira_search', true)).rejects.toThrow(/缺少密钥/)
     await service.writeSecret('jira_search', 'auth_token', 'token-value')
+    expect((await service.setEnabled('jira_search', true)).enabled).toBe(true)
     expect(await service.secretStatus('jira_search')).toEqual({ auth_token: true })
     await expect(service.writeSecret('jira_search', 'ghost', 'x')).rejects.toThrow(/未声明/)
     const details = await service.get('jira_search')
@@ -117,6 +122,58 @@ describe('CustomToolService', () => {
     await expect(
       service.testRun({ draftSpec: httpDraftWithSecret(), input: { issueKey: 'X-1' } }),
     ).rejects.toThrow(/先保存/)
+  })
+
+  it('tests the current draft with Keychain secrets from the matching saved tool', async () => {
+    const paths: string[] = []
+    const server = createServer((request, response) => {
+      paths.push(request.url ?? '')
+      expect(request.headers.authorization).toBe('token-value')
+      response.writeHead(200, { 'content-type': 'text/plain' })
+      response.end('draft response')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    try {
+      const saved = {
+        ...httpDraftWithSecret(),
+        spec: {
+          request: {
+            method: 'GET' as const,
+            urlTemplate: `${endpoint}/saved`,
+            headers: [{ name: 'Authorization', secretRef: 'auth_token' }],
+          },
+          response: { format: 'text' as const },
+        },
+      } as CustomToolDraft
+      await service.create(saved)
+      await service.writeSecret('jira_search', 'auth_token', 'token-value')
+
+      const draft = {
+        ...saved,
+        spec: {
+          request: {
+            method: 'GET' as const,
+            urlTemplate: `${endpoint}/draft`,
+            headers: [{ name: 'Authorization', secretRef: 'auth_token' }],
+          },
+          response: { format: 'text' as const },
+        },
+      } as CustomToolDraft
+      const result = await service.testRun({
+        toolId: 'jira_search',
+        draftSpec: draft,
+        input: {},
+      })
+
+      expect(result).toMatchObject({ ok: true, text: 'draft response' })
+      expect(paths).toEqual(['/draft'])
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error != null ? reject(error) : resolve())),
+      )
+    }
   })
 
   it('testRun against unreachable host returns error result (not throw)', async () => {
@@ -147,9 +204,19 @@ describe('CustomToolService', () => {
     expect(service.list()).toEqual([])
   })
 
+  it('keeps a tool disabled and retryable when Keychain cleanup fails', async () => {
+    const keytar = (await import('keytar')).default
+    await service.create(httpDraftWithSecret())
+    await service.writeSecret('jira_search', 'auth_token', 'token-value')
+    vi.mocked(keytar.deletePassword).mockRejectedValueOnce(new Error('keychain unavailable'))
+
+    await expect(service.delete('jira_search')).rejects.toThrow(/工具已停用.*重试删除/)
+    expect(service.list()).toEqual([expect.objectContaining({ id: 'jira_search', enabled: false })])
+  })
+
   it('setEnabled toggles and keeps other fields', async () => {
     await service.create(httpDraft())
-    const disabled = service.setEnabled('jira_search', false)
+    const disabled = await service.setEnabled('jira_search', false)
     expect(disabled.enabled).toBe(false)
     expect(service.listEnabledRecords()).toEqual([])
   })
@@ -187,14 +254,14 @@ describe('CustomToolService', () => {
     const events: Array<{ change: string; id?: string }> = []
     service.onChange((event) => events.push(event))
     await service.create(httpDraft())
-    service.setEnabled('jira_search', false)
+    await service.setEnabled('jira_search', false)
     await service.delete('jira_search')
     expect(events.map((event) => event.change)).toEqual(['created', 'enabled', 'deleted'])
   })
 
   it('update preserves enabled/origin and type is immutable', async () => {
     await service.create(httpDraft())
-    service.setEnabled('jira_search', false)
+    await service.setEnabled('jira_search', false)
     const updated = await service.update('jira_search', httpDraft({ title: '新标题' }))
     expect(updated.title).toBe('新标题')
     expect(updated.enabled).toBe(false)
@@ -202,6 +269,15 @@ describe('CustomToolService', () => {
     await expect(
       service.update('jira_search', httpDraft({ type: 'sql' } as Partial<CustomToolDraft>)),
     ).rejects.toThrow(/类型创建后不可修改/)
+  })
+
+  it('atomically disables an enabled tool before exposing a newly declared secret', async () => {
+    await service.create(httpDraft())
+
+    const updated = await service.update('jira_search', httpDraftWithSecret())
+
+    expect(updated.enabled).toBe(false)
+    await expect(service.setEnabled('jira_search', true)).rejects.toThrow(/缺少密钥/)
   })
 
   it('throws CustomToolError NOT_FOUND for missing tools', async () => {

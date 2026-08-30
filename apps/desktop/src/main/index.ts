@@ -80,7 +80,13 @@ import {
 import { runComputerUsePackagedSmoke } from './services/computer-use/ComputerUsePackagedSmoke.js'
 import { ComputerControlTrayService } from './services/computer-use/ComputerControlTrayService.js'
 import { disposeComputerUseMcpProvider } from './services/computer-use/ComputerUseMcpProvider.js'
-import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
+import {
+  registerAllIpcHandlers,
+  ensureNoProjectDirectoryExists,
+  getMcpService,
+} from './ipc/index.js'
+import { getCustomToolService } from './ipc/registerCustomToolsIpc.js'
+import { CustomToolsRuntimeService } from './services/CustomToolsRuntimeService.js'
 import {
   getMainWindow,
   getPreferredAppWindow,
@@ -838,6 +844,7 @@ async function initializeApp(): Promise<void> {
   // 消息通知轮询服务（auth 初始化完成后赋值启动；提前声明供数据库 try 块内注册的退出清理引用）
   let notificationService: NotificationService | null = null
   let sparkCliBridge: SparkCliBridge | null = null
+  let customToolsRuntime: CustomToolsRuntimeService | null = null
   log.info(`Database path: ${dbPath}`)
   let databaseBackup: Awaited<ReturnType<typeof ensurePreMigrationBackup>>
   try {
@@ -876,6 +883,7 @@ async function initializeApp(): Promise<void> {
       return
     }
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
+    customToolsRuntime = new CustomToolsRuntimeService(db, getCustomToolService(), getMcpService())
     const snapshotVaultMaintenance = startSnapshotVaultMaintenance(db)
     // 临时媒体目录（粘贴/预览副本）周期清理：按 mtime 保留 7 天，6 小时一跑。
     const tempMediaFilesMaintenance = new TempMediaFilesMaintenance()
@@ -948,6 +956,10 @@ async function initializeApp(): Promise<void> {
               {
                 name: 'spark CLI provider bridge',
                 run: () => sparkCliBridge?.stop() ?? Promise.resolve(),
+              },
+              {
+                name: 'custom tools runtime',
+                run: () => customToolsRuntime?.stop() ?? Promise.resolve(),
               },
               {
                 name: 'database',
@@ -1076,6 +1088,12 @@ async function initializeApp(): Promise<void> {
   // Playwright 经常挑错目标导致 agent 无法控制浏览器。现在 Playwright MCP
   // 直接拉起自己的 Chromium；应用内可见窗口由 spark_browser 内置 MCP 提供。
   try {
+    await customToolsRuntime?.start()
+  } catch (err) {
+    log.warn(`Failed to start custom tools runtime: ${String(err)}`)
+  }
+
+  try {
     ensurePlaywrightRegistered(getDatabase(), {
       force: true,
       cdpEndpoint: null,
@@ -1089,7 +1107,6 @@ async function initializeApp(): Promise<void> {
   // ensurePlaywrightRegistered 路径,启动后会被 startAllEnabled 一起拉起)。
   // 必须放在 Playwright 注册之后,否则重启后已启用的 MCP 不会自动恢复连接。
   try {
-    const { getMcpService } = await import('./ipc/index.js')
     await getMcpService().startAllEnabled()
   } catch (err) {
     log.warn(`Failed to start enabled MCP servers: ${String(err)}`)

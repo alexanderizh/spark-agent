@@ -14,7 +14,7 @@ import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 
 let customToolService: CustomToolService | null = null
 
-function getCustomToolService(): CustomToolService {
+export function getCustomToolService(): CustomToolService {
   if (customToolService == null) {
     const service = new CustomToolService(getDatabase())
     service.onChange((event) => {
@@ -50,7 +50,7 @@ export function registerCustomToolsIpc(): void {
   })
 
   typedIpcHandle('custom-tools:set-enabled', async (req) => ({
-    tool: toCustomToolSummary(service.setEnabled(req.id, req.enabled)),
+    tool: toCustomToolSummary(await service.setEnabled(req.id, req.enabled)),
   }))
 
   typedIpcHandle('custom-tools:test-run', async (req) => ({

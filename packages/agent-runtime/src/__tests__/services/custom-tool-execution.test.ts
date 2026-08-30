@@ -243,6 +243,18 @@ describe('executeHttpTool', () => {
     expect(request?.headers.authorization).toBe('secret-token')
   })
 
+  it('blocks private targets when private-network access is disabled', async () => {
+    const record = makeHttpRecord({
+      request: { method: 'GET', urlTemplate: `${baseUrl}/private` },
+      response: { format: 'json' },
+      allowPrivateNetwork: false,
+    })
+
+    await expect(executeCustomTool(record, {}, ctx())).rejects.toMatchObject({
+      toolCode: 'DENIED',
+    })
+  })
+
   it('sends POST json body with structural injection neutralized', async () => {
     const record = makeHttpRecord(
       {

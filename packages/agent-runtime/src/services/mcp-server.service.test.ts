@@ -8,7 +8,7 @@
  * Uses an in-memory mock repository to avoid the native better-sqlite3
  * dependency (which can have NODE_MODULE_VERSION mismatches in dev envs).
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { McpService, MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from './mcp-server.service.js'
 import type { McpServerRepository, McpServerRow } from '@spark/storage'
 
@@ -25,15 +25,24 @@ interface MockStore {
 function makeMockRepo(store: MockStore): McpServerRepository {
   return {
     listAll: () =>
-      Array.from(store.rows.values()).sort((a, b) =>
-        a.created_at.localeCompare(b.created_at),
-      ),
+      Array.from(store.rows.values()).sort((a, b) => a.created_at.localeCompare(b.created_at)),
     get: (id: string) => store.rows.get(id),
     findByScope: (scope: string) =>
       Array.from(store.rows.values())
         .filter((r) => r.scope === scope)
         .sort((a, b) => a.created_at.localeCompare(b.created_at)),
-    create: ({ scope, name, configJson, enabled }: { id?: string; scope: string; name: string; configJson: string; enabled?: boolean }) => {
+    create: ({
+      scope,
+      name,
+      configJson,
+      enabled,
+    }: {
+      id?: string
+      scope: string
+      name: string
+      configJson: string
+      enabled?: boolean
+    }) => {
       const id = `mock-${store.rows.size + 1}-${Date.now()}`
       const now = new Date().toISOString()
       const row: McpServerRow = {
@@ -48,15 +57,17 @@ function makeMockRepo(store: MockStore): McpServerRepository {
       store.rows.set(id, row)
       return row
     },
-    update: (id: string, fields: Partial<{ name: string; configJson: string; enabled: boolean }>) => {
+    update: (
+      id: string,
+      fields: Partial<{ name: string; configJson: string; enabled: boolean }>,
+    ) => {
       const row = store.rows.get(id)
       if (row == null) return undefined
       const next: McpServerRow = {
         ...row,
         name: fields.name ?? row.name,
         config_json: fields.configJson ?? row.config_json,
-        enabled:
-          fields.enabled === undefined ? row.enabled : fields.enabled ? 1 : 0,
+        enabled: fields.enabled === undefined ? row.enabled : fields.enabled ? 1 : 0,
         updated_at: new Date().toISOString(),
       }
       store.rows.set(id, next)
@@ -66,7 +77,9 @@ function makeMockRepo(store: MockStore): McpServerRepository {
   } as unknown as McpServerRepository
 }
 
-function makeRow(overrides: Partial<McpServerRow> & Pick<McpServerRow, 'scope' | 'name'>): McpServerRow {
+function makeRow(
+  overrides: Partial<McpServerRow> & Pick<McpServerRow, 'scope' | 'name'>,
+): McpServerRow {
   return {
     id: overrides.id ?? `row-${Math.random().toString(36).slice(2)}`,
     scope: overrides.scope,
@@ -96,13 +109,14 @@ describe('McpService — managed scope protection', () => {
 
   describe('deleteServer', () => {
     it('allows deleting a user-scope server', () => {
-      const user = store.rows.size > 0
-        ? Array.from(store.rows.values())[0]
-        : (() => {
-            const row = makeRow({ scope: 'user', name: 'custom' })
-            store.rows.set(row.id, row)
-            return row
-          })()
+      const user =
+        store.rows.size > 0
+          ? Array.from(store.rows.values())[0]
+          : (() => {
+              const row = makeRow({ scope: 'user', name: 'custom' })
+              store.rows.set(row.id, row)
+              return row
+            })()
       void user // ensure row exists
 
       const userId = 'user-1'
@@ -167,9 +181,9 @@ describe('McpService — managed scope protection', () => {
         managedId,
         makeRow({ id: managedId, scope: MANAGED_MCP_SCOPE, name: PLAYWRIGHT_MCP_NAME }),
       )
-      expect(() =>
-        service.updateServer(managedId, { name: 'different-name' }),
-      ).toThrow(/Cannot rename managed MCP server/)
+      expect(() => service.updateServer(managedId, { name: 'different-name' })).toThrow(
+        /Cannot rename managed MCP server/,
+      )
     })
 
     it('allows same-name "rename" (idempotent) on managed server', () => {
@@ -178,9 +192,7 @@ describe('McpService — managed scope protection', () => {
         managedId,
         makeRow({ id: managedId, scope: MANAGED_MCP_SCOPE, name: PLAYWRIGHT_MCP_NAME }),
       )
-      expect(() =>
-        service.updateServer(managedId, { name: PLAYWRIGHT_MCP_NAME }),
-      ).not.toThrow()
+      expect(() => service.updateServer(managedId, { name: PLAYWRIGHT_MCP_NAME })).not.toThrow()
     })
 
     it('allows renaming a user-scope server', () => {
@@ -191,9 +203,48 @@ describe('McpService — managed scope protection', () => {
     })
 
     it('throws when updating a non-existent server', () => {
-      expect(() =>
-        service.updateServer('nonexistent-id', { enabled: false }),
-      ).toThrow(/not found/)
+      expect(() => service.updateServer('nonexistent-id', { enabled: false })).toThrow(/not found/)
+    })
+
+    it('lets a managed runtime defer lifecycle work while preserving the update event', () => {
+      const managedId = 'managed-1'
+      store.rows.set(
+        managedId,
+        makeRow({
+          id: managedId,
+          scope: MANAGED_MCP_SCOPE,
+          name: PLAYWRIGHT_MCP_NAME,
+          enabled: 0,
+        }),
+      )
+      const start = vi.spyOn(service, 'startServer')
+      const changes: string[] = []
+      service.onChange((event) => changes.push(event.action))
+
+      const updated = service.updateServer(managedId, { enabled: true }, { manageLifecycle: false })
+
+      expect(updated.enabled).toBe(true)
+      expect(start).not.toHaveBeenCalled()
+      expect(changes).toEqual(['update'])
+    })
+  })
+
+  describe('createServer', () => {
+    it('lets a managed runtime create without an automatic connection attempt', () => {
+      const start = vi.spyOn(service, 'startServer')
+
+      const created = service.createServer(
+        {
+          scope: MANAGED_MCP_SCOPE,
+          name: 'spark_custom_tools',
+          configJson: PLAYWRIGHT_CONFIG,
+          enabled: true,
+        },
+        { manageLifecycle: false },
+      )
+
+      expect(created.enabled).toBe(true)
+      expect(start).not.toHaveBeenCalled()
     })
   })
 
@@ -206,9 +257,7 @@ describe('McpService — managed scope protection', () => {
       store.rows.set('u1', makeRow({ id: 'u1', scope: 'user', name: 'custom' }))
       const all = service.listServers()
       expect(all).toHaveLength(2)
-      expect(all.map((s) => s.scope)).toEqual(
-        expect.arrayContaining(['managed', 'user']),
-      )
+      expect(all.map((s) => s.scope)).toEqual(expect.arrayContaining(['managed', 'user']))
     })
 
     it('filters by managed scope', () => {

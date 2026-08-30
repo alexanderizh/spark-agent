@@ -26,8 +26,8 @@ export type CustomToolErrorCode = (typeof CUSTOM_TOOL_ERROR_CODES)[number]
 export class CustomToolError extends Error {
   readonly toolCode: CustomToolErrorCode
 
-  constructor(toolCode: CustomToolErrorCode, message: string) {
-    super(message)
+  constructor(toolCode: CustomToolErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options)
     this.name = 'CustomToolError'
     this.toolCode = toolCode
     if (Error.captureStackTrace) {
