@@ -3,6 +3,8 @@
  *
  * - 只读 / 可编辑切换（delete 类文件强制只读）。
  * - 语言识别（getMonacoLanguage）、跟随应用主题（vs-dark / vs）。
+ * - path={toMonacoModelUri(filePath)}：模型带真实文件 URI，TS worker 按扩展名判定
+ *   脚本类型（.tsx 才按 JSX 解析），且 tab 切换时按 path 保存/恢复视图状态。
  * - 跳转行：revealLineInCenter + deltaDecorations 高亮（点回答里 file (line N) 时用）。
  * - Cmd/Ctrl+S 保存（遵循项目编辑器快捷键约定）。
  * - 右键：禁用 monaco 原生英文菜单，改弹自建中文浮层（EditorContextMenu）。
@@ -16,6 +18,7 @@ import type { OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import './monacoInit'
 import { getMonacoLanguage } from './codeLanguage'
+import { toMonacoModelUri } from './monacoModelUri'
 import { registerCodeViewerMenuActions } from './editorMenuActions'
 import { EditorContextMenu } from './EditorContextMenu'
 
@@ -113,6 +116,7 @@ export function CodeViewerEditor({
   return (
     <>
       <Editor
+        path={toMonacoModelUri(filePath)}
         language={getMonacoLanguage(filePath)}
         value={content}
         theme={theme === 'dark' ? 'vs-dark' : 'vs'}
