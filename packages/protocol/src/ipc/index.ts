@@ -1400,6 +1400,17 @@ export interface WorkspaceGitPushResponse {
   status: WorkspaceGitStatusResponse
 }
 
+export interface WorkspaceGitSyncRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceGitSyncResponse {
+  synchronized: boolean
+  /** 无 upstream 的新分支直接推送；有 upstream 时先拉取再推送。 */
+  mode: 'push' | 'pull-push'
+  status: WorkspaceGitStatusResponse
+}
+
 export interface WorkspaceGitPullRequest {
   workspaceId: string
 }
@@ -6323,6 +6334,7 @@ export interface IpcChannelMap
   'workspace:git-check-ignore': [WorkspaceGitCheckIgnoreRequest, WorkspaceGitCheckIgnoreResponse]
   'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
   'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]
+  'workspace:git-sync': [WorkspaceGitSyncRequest, WorkspaceGitSyncResponse]
   'workspace:git-pull': [WorkspaceGitPullRequest, WorkspaceGitPullResponse]
   'workspace:git-log': [WorkspaceGitLogRequest, WorkspaceGitLogResponse]
   'workspace:git-stage': [WorkspaceGitStageRequest, WorkspaceGitStageResponse]

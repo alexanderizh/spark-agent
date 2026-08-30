@@ -10,6 +10,8 @@ import {
   getWorkspaceGitLog,
   getWorkspaceGitStatus,
   pullWorkspaceBranch,
+  pushWorkspaceBranch,
+  syncWorkspaceBranch,
 } from './workspace-git-status.js'
 
 const execFileAsync = promisify(execFile)
@@ -232,6 +234,79 @@ describe('workspace Git log', () => {
         expect.objectContaining({ subject: 'add local feature', unpushed: false }),
       ]),
     )
+  })
+})
+
+describe('pushWorkspaceBranch', () => {
+  it('publishes a new local branch to a same-named remote branch', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+
+    await pushWorkspaceBranch(workspacePath)
+
+    await expect(
+      git(workspacePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']),
+    ).resolves.toBe('origin/feature/local-review')
+    await expect(
+      git(workspacePath, ['ls-remote', '--heads', 'origin', 'feature/local-review']),
+    ).resolves.toContain('refs/heads/feature/local-review')
+    await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
+      remoteName: 'origin',
+      remoteBranch: 'feature/local-review',
+      ahead: 0,
+      behind: 0,
+    })
+  })
+
+  it('uses the configured push remote instead of assuming origin', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    const remotePath = path.join(path.dirname(workspacePath), 'remote.git')
+    await git(workspacePath, ['remote', 'add', 'backup', remotePath])
+    await git(workspacePath, ['config', 'remote.pushDefault', 'backup'])
+
+    await pushWorkspaceBranch(workspacePath)
+
+    await expect(
+      git(workspacePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']),
+    ).resolves.toBe('backup/feature/local-review')
+    await expect(
+      git(workspacePath, ['ls-remote', '--heads', 'backup', 'feature/local-review']),
+    ).resolves.toContain('refs/heads/feature/local-review')
+  })
+})
+
+describe('syncWorkspaceBranch', () => {
+  it('pushes a new local branch directly instead of trying to pull first', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+
+    await expect(syncWorkspaceBranch(workspacePath)).resolves.toBe('push')
+
+    await expect(
+      git(workspacePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']),
+    ).resolves.toBe('origin/feature/local-review')
+    await expect(
+      git(workspacePath, ['ls-remote', '--heads', 'origin', 'feature/local-review']),
+    ).resolves.toContain('refs/heads/feature/local-review')
+  })
+
+  it('keeps pull-then-push semantics for a branch that already tracks upstream', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await git(workspacePath, ['switch', 'master'])
+    await fs.writeFile(path.join(workspacePath, 'local-master.txt'), 'local master\n')
+    await git(workspacePath, ['add', 'local-master.txt'])
+    await git(workspacePath, ['commit', '-m', 'local master change'])
+
+    await expect(syncWorkspaceBranch(workspacePath)).resolves.toBe('pull-push')
+    await expect(
+      git(workspacePath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']),
+    ).resolves.toBe('origin/master')
+    await expect(
+      git(workspacePath, ['ls-remote', '--heads', 'origin', 'master']),
+    ).resolves.toContain('refs/heads/master')
+    await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
+      remoteBranch: 'master',
+      ahead: 0,
+      behind: 0,
+    })
   })
 })
 

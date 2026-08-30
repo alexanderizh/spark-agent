@@ -201,15 +201,12 @@ export function useGitPanelActions({
     busyRef.current = 'sync'
     setBusy('sync')
     try {
-      // 先拉后推：与底部同步按钮的语义一致（避免直接 push 被远端拒绝）
-      const pulled = await window.spark.invoke('workspace:git-pull', { workspaceId: id })
-      onStatusApplied(pulled.status)
-      const pushed = await window.spark.invoke('workspace:git-push', { workspaceId: id })
-      onStatusApplied(pushed.status)
-      toast.success('已同步（拉取 + 推送）')
+      // 主进程根据当前分支是否已有 upstream 决定：新分支直接首次推送，其余先拉后推。
+      const res = await window.spark.invoke('workspace:git-sync', { workspaceId: id })
+      onStatusApplied(res.status)
+      toast.success(res.mode === 'push' ? '已推送新分支' : '已同步（拉取 + 推送）')
       return true
     } catch (err) {
-      // pull 失败时也要把已拉到的最新状态回写
       toast.error(extractIpcErrorMessage(err, '同步失败'))
       return false
     } finally {

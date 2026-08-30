@@ -304,6 +304,7 @@ import {
   popWorkspaceStash,
   pullWorkspaceBranch,
   pushWorkspaceBranch,
+  syncWorkspaceBranch,
   stageWorkspacePaths,
   stashWorkspaceChanges,
   unstageWorkspacePaths,
@@ -5983,6 +5984,22 @@ export function registerAllIpcHandlers(): void {
       return { pushed: true, status: await getWorkspaceGitStatus(workspace.root_path) }
     } catch (err) {
       throw asSparkGitError(err, '推送失败')
+    }
+  })
+
+  typedIpcHandle('workspace:git-sync', async (req) => {
+    log.info(`workspace:git-sync requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      assertWorkspaceGitWorktree(await getGitCommandService().probeRepository(workspace.root_path))
+      const mode = await syncWorkspaceBranch(workspace.root_path)
+      return {
+        synchronized: true,
+        mode,
+        status: await getWorkspaceGitStatus(workspace.root_path),
+      }
+    } catch (err) {
+      throw asSparkGitError(err, '同步失败')
     }
   })
 

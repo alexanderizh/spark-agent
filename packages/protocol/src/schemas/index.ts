@@ -759,6 +759,10 @@ export const WorkspaceGitPushRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
 
+export const WorkspaceGitSyncRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
 export const WorkspaceGitPullRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
@@ -1070,6 +1074,7 @@ export const IpcSchemaRegistry = {
   'workspace:git-file-diff': WorkspaceGitFileDiffRequestSchema,
   'workspace:git-commit': WorkspaceGitCommitRequestSchema,
   'workspace:git-push': WorkspaceGitPushRequestSchema,
+  'workspace:git-sync': WorkspaceGitSyncRequestSchema,
   'workspace:git-pull': WorkspaceGitPullRequestSchema,
   'workspace:create-branch': WorkspaceCreateBranchRequestSchema,
   'workspace:watch-start': z.object({

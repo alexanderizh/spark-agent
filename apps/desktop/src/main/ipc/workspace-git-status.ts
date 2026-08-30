@@ -569,19 +569,58 @@ export async function getWorkspaceGitStatus(rootPath: string): Promise<Workspace
 export async function pushWorkspaceBranch(rootPath: string): Promise<void> {
   const currentBranch = (await tryGitStdout(rootPath, ['branch', '--show-current'])) ?? ''
   if (!currentBranch) throw new Error('当前不是可推送的本地分支')
-  const upstream = await tryGitStdout(
-    rootPath,
-    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
-    [0, 128],
-  )
+  const upstream = await getWorkspaceUpstream(rootPath)
   if (upstream != null) {
     await getGitCommandService().execute(['push'], { cwd: rootPath, operation: 'network' })
     return
   }
-  await getGitCommandService().execute(['push', '-u', 'origin', currentBranch], {
+  const remoteName = await resolveGitPushRemote(rootPath, currentBranch)
+  // 显式使用当前分支作为 source/refspec，保证首次推送在线上创建同名分支。
+  await getGitCommandService().execute(['push', '-u', remoteName, currentBranch], {
     cwd: rootPath,
     operation: 'network',
   })
+}
+
+async function getWorkspaceUpstream(rootPath: string): Promise<string | null> {
+  return tryGitStdout(
+    rootPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+    [0, 128],
+  )
+}
+
+async function resolveGitPushRemote(rootPath: string, currentBranch: string): Promise<string> {
+  const remotes = ((await tryGitStdout(rootPath, ['remote'])) ?? '')
+    .split(/\r?\n/)
+    .map((remote) => remote.trim())
+    .filter(Boolean)
+  if (remotes.length === 0) throw new Error('当前仓库没有配置远端，无法推送')
+
+  // 按 Git 的 push remote 优先级选择；`.` 是本地仓库，不是网络远端。
+  const configuredRemoteCandidates = await Promise.all([
+    tryGitStdout(rootPath, ['config', '--get', `branch.${currentBranch}.pushRemote`], [0, 1]),
+    tryGitStdout(rootPath, ['config', '--get', 'remote.pushDefault'], [0, 1]),
+    tryGitStdout(rootPath, ['config', '--get', `branch.${currentBranch}.remote`], [0, 1]),
+  ])
+  for (const candidate of configuredRemoteCandidates) {
+    if (candidate != null && candidate !== '.' && remotes.includes(candidate)) return candidate
+  }
+  const firstRemote = remotes[0]
+  if (firstRemote == null) throw new Error('当前仓库没有配置远端，无法推送')
+  return remotes.includes('origin') ? 'origin' : firstRemote
+}
+
+export async function syncWorkspaceBranch(rootPath: string): Promise<'push' | 'pull-push'> {
+  const currentBranch = (await tryGitStdout(rootPath, ['branch', '--show-current'])) ?? ''
+  if (!currentBranch) throw new Error('当前不是可同步的本地分支')
+  if ((await getWorkspaceUpstream(rootPath)) == null) {
+    await pushWorkspaceBranch(rootPath)
+    return 'push'
+  }
+  await pullWorkspaceBranch(rootPath)
+  await pushWorkspaceBranch(rootPath)
+  return 'pull-push'
 }
 
 /**
@@ -590,11 +629,7 @@ export async function pushWorkspaceBranch(rootPath: string): Promise<void> {
  * 由 git 默认策略决定 fast-forward、merge 还是 rebase。
  */
 export async function pullWorkspaceBranch(rootPath: string): Promise<void> {
-  const upstream = await tryGitStdout(
-    rootPath,
-    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
-    [0, 128],
-  )
+  const upstream = await getWorkspaceUpstream(rootPath)
   if (upstream == null) throw new Error('当前分支没有设置上游分支，无法拉取')
   await getGitCommandService().execute(['pull'], { cwd: rootPath, operation: 'network' })
 }

@@ -2,7 +2,7 @@
  * SidebarGitFooter —— 编辑器左侧栏公用 foot 栏：当前分支 + 待同步数量（↑ahead ↓behind）
  * + 同步按钮。文件树 / 搜索 / Git 三个面板共用同一槽位，因此挂在其父容器
  * （.cv-explorer）底部而不是任何单个面板内部。
- * 点击同步 = 先拉取后推送（与用户终端习惯一致，避免直接 push 被拒）。
+ * 点击同步：已有 upstream 时先拉取后推送；新建本地分支时直接推送同名远端分支。
  */
 
 import type { WorkspaceGitStatusResponse } from '@spark/protocol'
@@ -40,7 +40,7 @@ export function SidebarGitFooter({
       <button
         type="button"
         className={`gp-sync-btn${pending ? ' pending' : ''}`}
-        title={hasRemote ? '同步：先拉取后推送' : '当前仓库没有配置远端'}
+        title={hasRemote ? '同步：已有上游先拉取后推送，新分支直接推送' : '当前仓库没有配置远端'}
         disabled={!hasRemote || busy}
         onClick={onSync}
       >
