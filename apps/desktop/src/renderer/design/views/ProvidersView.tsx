@@ -24,6 +24,7 @@ import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingField
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
 import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
+import { appendCustomMediaModelRef } from './provider/providerCustomMediaModelRefs'
 import {
   MEDIA_CAPABILITY_LABELS,
   MEDIA_PROVIDER_LABELS,
@@ -3103,32 +3104,12 @@ export function ProviderEditPanel({
     const modelId = rawModelId.trim()
     if (!modelId) return
     setForm((prev) => {
-      // 同一 Provider 内的渠道模型 ID 必须唯一；不同 Provider 可以使用同名模型。
-      const exists = prev.mediaModelRefs.some((ref) => ref.modelId?.trim() === modelId)
-      const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
-      if (!exists) {
-        const mode =
-          prev.mediaApiType === 'async' ||
-          (prev.mediaApiType === 'auto' && prev.modelType === 'video')
-            ? 'async_polling'
-            : 'sync'
-        let manifest: MediaModelManifest | undefined
-        if (
-          prev.mediaProvider === 'custom' &&
-          (prev.modelType === 'image' || prev.modelType === 'video')
-        ) {
-          manifest = createBasicCustomMediaManifest({ modelId, modelType: prev.modelType, mode })
-        }
-        const manifestId =
-          manifest?.id ??
-          `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
-        existing.set(manifestId, {
-          manifestId,
-          modelId,
-          enabled: true,
-          ...(manifest ? { manifest } : {}),
-        })
-      }
+      const mediaModelRefs = appendCustomMediaModelRef(prev.mediaModelRefs, {
+        mediaApiType: prev.mediaApiType,
+        mediaProvider: prev.mediaProvider,
+        modelId,
+        modelType: prev.modelType,
+      })
       const capabilitySet = new Set([
         ...prev.mediaCapabilities,
         ...capabilitiesForModelType(prev.modelType),
@@ -3136,7 +3117,7 @@ export function ProviderEditPanel({
       const modelIds = uniqPreserveOrder([modelId, ...prev.modelIds])
       return {
         ...prev,
-        mediaModelRefs: [...existing.values()],
+        mediaModelRefs,
         mediaCapabilities: [...capabilitySet],
         // 确保有可用的实际调用模型：defaultModel 为空时用自定义模型兜底
         defaultModel: prev.defaultModel.trim() ? prev.defaultModel : modelId,
