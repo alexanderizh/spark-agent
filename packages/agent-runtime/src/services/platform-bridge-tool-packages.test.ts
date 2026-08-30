@@ -1,4 +1,8 @@
-import type { ToolPackageDetail } from '@spark/protocol'
+import type {
+  ToolPackageDetail,
+  ToolPackageProjectStepResult,
+  ToolPackageUninstallResult,
+} from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
   handleToolPackageBridgeMethod,
@@ -248,5 +252,133 @@ describe('Tool Package platform bridge', () => {
         confirmEnable: true,
       }),
     ).resolves.toEqual({ package: detail().package })
+  })
+
+  it('gates project development steps behind confirmExecute and validates step', async () => {
+    const runManagedProjectStep = vi.fn(
+      async (): Promise<ToolPackageProjectStepResult> => ({
+        packageId: 'acme.productivity-suite',
+        step: 'install',
+        command: 'npm install',
+        inferred: true,
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 12,
+        stdout: '',
+        stderr: '',
+        truncated: false,
+      }),
+    )
+    const target = service({ runManagedProjectStep })
+
+    await expect(
+      call(target, 'tool_packages.run_project_step', {
+        packageId: 'acme.productivity-suite',
+        step: 'install',
+      }),
+    ).rejects.toThrow(/confirmExecute/)
+    await expect(
+      call(target, 'tool_packages.run_project_step', {
+        packageId: 'acme.productivity-suite',
+        step: 'deploy',
+        confirmExecute: true,
+      }),
+    ).rejects.toThrow(/step must be install or build/)
+    await expect(
+      call(target, 'tool_packages.run_project_step', {
+        packageId: 'acme.productivity-suite',
+        step: 'install',
+        confirmExecute: true,
+      }),
+    ).resolves.toEqual({
+      result: expect.objectContaining({ step: 'install', exitCode: 0 }),
+    })
+    expect(runManagedProjectStep).toHaveBeenCalledWith({
+      packageId: 'acme.productivity-suite',
+      step: 'install',
+    })
+  })
+
+  it('gates uninstall behind confirmUninstall and forwards the managed-project option', async () => {
+    const uninstallResult: ToolPackageUninstallResult = {
+      packageId: 'acme.productivity-suite',
+      removedVersions: ['1.0.0'],
+      removedSecrets: 1,
+      removedManagedProject: false,
+    }
+    const uninstallPackage = vi.fn(async () => uninstallResult)
+    const target = service({ uninstallPackage } as Partial<ToolPackageService>)
+
+    await expect(
+      call(target, 'tool_packages.uninstall', {
+        packageId: 'acme.productivity-suite',
+      }),
+    ).rejects.toThrow(/confirmUninstall/)
+    await expect(
+      call(target, 'tool_packages.uninstall', {
+        packageId: 'acme.productivity-suite',
+        confirmUninstall: 'true',
+      }),
+    ).rejects.toThrow(/confirmUninstall/)
+    expect(uninstallPackage).not.toHaveBeenCalled()
+
+    await expect(
+      call(target, 'tool_packages.uninstall', {
+        packageId: 'acme.productivity-suite',
+        confirmUninstall: true,
+      }),
+    ).resolves.toEqual({ result: uninstallResult })
+    expect(uninstallPackage).toHaveBeenCalledWith({ packageId: 'acme.productivity-suite' })
+
+    await call(target, 'tool_packages.uninstall', {
+      packageId: 'acme.productivity-suite',
+      confirmUninstall: true,
+      removeManagedProject: true,
+    })
+    expect(uninstallPackage).toHaveBeenLastCalledWith({
+      packageId: 'acme.productivity-suite',
+      removeManagedProject: true,
+    })
+    await call(target, 'tool_packages.uninstall', {
+      packageId: 'acme.productivity-suite',
+      confirmUninstall: true,
+      removeManagedProject: false,
+    })
+    expect(uninstallPackage).toHaveBeenLastCalledWith({ packageId: 'acme.productivity-suite' })
+  })
+
+  it('gates version deletion behind confirmUninstall and validates identifiers', async () => {
+    const deleteVersion = vi.fn(async () => ({ removed: true as const, version: '1.0.0' }))
+    const target = service({ deleteVersion } as Partial<ToolPackageService>)
+
+    await expect(
+      call(target, 'tool_packages.delete_version', {
+        packageId: 'acme.productivity-suite',
+        version: '1.0.0',
+      }),
+    ).rejects.toThrow(/confirmUninstall/)
+    await expect(
+      call(target, 'tool_packages.delete_version', {
+        packageId: 'acme.productivity-suite',
+        version: '1.0.0',
+        confirmUninstall: true,
+      }),
+    ).resolves.toEqual({ removed: true, version: '1.0.0' })
+    expect(deleteVersion).toHaveBeenCalledWith({
+      packageId: 'acme.productivity-suite',
+      version: '1.0.0',
+    })
+    await expect(
+      call(target, 'tool_packages.delete_version', {
+        version: '1.0.0',
+        confirmUninstall: true,
+      }),
+    ).rejects.toThrow(/packageId is required/)
+    await expect(
+      call(target, 'tool_packages.delete_version', {
+        packageId: 'acme.productivity-suite',
+        confirmUninstall: true,
+      }),
+    ).rejects.toThrow(/version is required/)
   })
 })

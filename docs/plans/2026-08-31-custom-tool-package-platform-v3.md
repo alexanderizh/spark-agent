@@ -380,6 +380,8 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 - 已实现 Tool Package Runtime Catalog，Claude/Codex 通过现有末端 MCP bridge 获得动态快照；OpenAI Chat Completions 已实现标准 `tools → tool_calls → tool result` 多轮循环，并对写能力复用交互审批；
 - 平台管理 Agent 已能读取指南、检查目录、创建/列出/读取/写入受管工程、安装、配置非敏感变量、发起 secret 请求、核对权限、启停和真实测试；安装、权限变更、启用和执行均要求显式确认；
 - Tool Studio 已增加“工具包”视图，支持版本切换、普通配置、Keychain 安全配置、权限核对和启停；全局安全输入 Host 不把 secret 写入消息记录；
+- 已实现受管工程开发工作流：manifest 可声明 `development.installCommand/buildCommand`，安装命令支持按 lockfile（pnpm/yarn/bun/npm）推断，build 未声明即拒绝；步骤以 trusted-local 在工程目录执行，超时终止进程树、输出限幅保留尾部；UI 提供「安装依赖/构建」按钮与结果展示，Agent 侧通过 `tool_packages_run_project_step` 触发且强制 `confirmExecute`（manifest 命令对 Agent 可写，等价于启用前代码执行，必须显式确认）；工程文件清单跳过 `node_modules`/`.git`/`.DS_Store`；
+- 已实现卸载与版本治理：卸载要求包处于停用态，先停进程、再删除安装目录与数据库级联记录，并尽力清理 Keychain 密钥引用；受管工程源码默认保留，仅在二次确认后删除；删除单个不可变版本设有「启用版本拒删、最后一个版本拒删、安装路径必须位于包根内」三重防护；UI 提供卸载/删版本危险按钮与双重确认，Agent 侧通过 `tool_packages_uninstall` / `tool_packages_delete_version` 触发且强制 `confirmUninstall`；
 - 隔离 Electron 生产构建实例已验证“扩展中心 → 自定义工具 → 工具包”可进入、空状态可见，页面错误和控制台错误均为 0。
 
 ### 14.2 代码审查已修复的确定缺陷
@@ -410,7 +412,7 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 ### 14.3 首版尚未完成或有意限制
 
 - `remote-http`、`mcp-import`、`legacy-custom-tool` 当前只有 manifest/协议描述，实际执行仅支持 `process` adapter；
-- 尚未提供依赖安装、build pipeline、压缩包/registry 导入、卸载/回滚 UI、完整多文件 IDE、运行健康页和工具级启停 UI；
+- 依赖安装与 build 步骤已以受管工程开发工作流形式落地，卸载与单版本删除也已提供 UI 与 Agent 接口；尚未提供压缩包/registry 导入、完整多文件 IDE、运行健康页和工具级启停 UI；开发步骤本身不做依赖审计或锁文件校验，安装结果以进程退出码为准；
 - `models.connection.lease`、`agents.create/update`、`files.read/write`、`workflows.*`、`tools.*`、`settings.read` 尚未进入 Broker；调用级环境覆盖与调用级凭据租约尚未开放；
 - `agents.invoke` 不递归运行完整 Agent loop，不自动挂载该助手的 Skills/MCP/团队/工作流；
 - 首版没有 OS 沙箱、CPU/内存/磁盘/进程树硬配额，也没有恶意代码隔离承诺；trusted-local 仍是当前用户权限进程；
@@ -427,3 +429,17 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 - live `better_sqlite3.node` 与仓库 Electron prebuild 的 SHA-256 一致（`13e0cbee…`）；仓库 Electron 43.2.0 二进制在 `ELECTRON_RUN_AS_NODE` 下自报 `modules-abi=148`，双证据确认原生模块处于 Electron ABI；
 - GitNexus MCP 未挂载，依项目降级规则使用源码调用点、聚焦测试、Git 历史与 `git diff` 完成影响和变更范围复核；
 - 本轮未提交、未推送，构建产物未进入 Git 变更。
+
+第三轮（Phase B-1：受管工程依赖安装与构建工作流）追加门禁：
+
+- Protocol、Agent Runtime、Desktop typecheck 均通过（Storage 无改动）；
+- Protocol 测试 10/10、project runner 测试 8/8、Service+Bridge 聚焦测试 20/20（Node ABI 运行，结束已恢复 Electron ABI）、MCP 契约 7/7 均通过；格式化后 runner/bridge 复跑 14/14；
+- Prettier 全部 11 个改动文件通过；目标 ESLint 0 error；`git diff --check` 通过；
+- Desktop production build exit 0；`out/main/tools/platform-management-mcp-server.mjs` 与源码逐字一致，含 `tool_packages_run_project_step` 定义与路由。
+
+第四轮（Phase B-2：工具包卸载与版本治理）追加门禁：
+
+- Protocol、Agent Runtime、Desktop typecheck 均通过（Storage 仅 Repository 新增方法）；
+- Storage Repository 级联删除测试 8/8、Service 卸载/删版本测试 18/18、Bridge 契约测试 8/8、Protocol 测试 10/10 均通过（SQLite 测试以 Node ABI 运行，结束后恢复 Electron ABI，`better_sqlite3.node` SHA-256 与 vendor Electron prebuild 一致）；
+- 目标 ESLint 0 error（测试文件保留既有 `no-non-null-assertion` 风格 warning，HEAD 基线即存在）；Prettier、`git diff --check` 通过；
+- 卸载期间在途 Agent loop 的行为边界：Agent loop 以不可变闭包绑定版本，卸载/删版本不做引用计数，进行中的调用在下一次访问安装目录/数据库行时收到明确的 not found 错误，不会静默降级。

@@ -4,6 +4,8 @@ import { Empty, Switch, message } from 'antd'
 import type {
   ToolEnvironmentVariable,
   ToolPackageDetail,
+  ToolPackageDevelopmentStep,
+  ToolPackageProjectStepResult,
   ToolPackageSummary,
 } from '@spark/protocol'
 import { useApp } from '../AppContext'
@@ -16,13 +18,19 @@ export function ToolPackagesPanel() {
   const detailRef = useRef<ToolPackageDetail | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draftValues, setDraftValues] = useState<Record<string, string>>({})
+  const [stepResult, setStepResult] = useState<ToolPackageProjectStepResult | null>(null)
+  const [runningStep, setRunningStep] = useState<ToolPackageDevelopmentStep | null>(null)
+  const [removing, setRemoving] = useState(false)
   const [loading, setLoading] = useState(true)
   const { invoke: listPackages } = useIpcInvoke('tool-packages:list')
   const { invoke: getPackage } = useIpcInvoke('tool-packages:get')
+  const { invoke: runProjectStep } = useIpcInvoke('tool-packages:run-project-step')
   const { invoke: configureEnvironment } = useIpcInvoke('tool-packages:configure-environment')
   const { invoke: requestSecret } = useIpcInvoke('tool-packages:request-secret')
   const { invoke: setPermission } = useIpcInvoke('tool-packages:set-permission')
   const { invoke: setEnabled } = useIpcInvoke('tool-packages:set-enabled')
+  const { invoke: uninstallPackage } = useIpcInvoke('tool-packages:uninstall')
+  const { invoke: deleteVersion } = useIpcInvoke('tool-packages:delete-version')
 
   const refresh = useCallback(async () => {
     try {
@@ -186,6 +194,108 @@ export function ToolPackagesPanel() {
     [detail, refresh, requestConfirm, setEnabled],
   )
 
+  const removePackage = useCallback(async () => {
+    if (detail == null) return
+    if (detail.package.enabledVersion != null) {
+      message.warning('请先停用工具包，再执行卸载')
+      return
+    }
+    const confirmed = await requestConfirm({
+      title: `卸载 ${detail.package.name}？`,
+      description: `将永久删除全部 ${detail.package.versions.length} 个不可变版本（${detail.package.versions.join('、')}）与已配置的 Keychain 密钥，数据库记录一并清除，无法恢复。`,
+      confirmText: '卸载工具包',
+    })
+    if (!confirmed) return
+    let removeManagedProject = false
+    if (detail.package.source === 'managed-project') {
+      removeManagedProject = await requestConfirm({
+        title: '同时删除受管工程源码？',
+        description:
+          '保留受管工程源码时可以继续开发并重新安装；删除后源码目录（tool-projects）不可恢复。选择取消则仅卸载已安装版本。',
+        confirmText: '删除源码',
+      })
+    }
+    setRemoving(true)
+    try {
+      const response = await uninstallPackage({
+        packageId: detail.package.id,
+        ...(removeManagedProject ? { removeManagedProject: true } : {}),
+      })
+      message.success(
+        `已卸载 ${response.result.packageId}：移除 ${response.result.removedVersions.length} 个版本、清理 ${response.result.removedSecrets} 个密钥`,
+      )
+      setDraftValues({})
+      setStepResult(null)
+      detailRef.current = null
+      await refresh()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Tool Package 卸载失败')
+    } finally {
+      setRemoving(false)
+    }
+  }, [detail, refresh, requestConfirm, uninstallPackage])
+
+  const removeVersion = useCallback(async () => {
+    if (detail == null) return
+    const { package: pkg, version } = detail
+    if (pkg.enabledVersion === version) {
+      message.warning('请先停用该版本，再删除')
+      return
+    }
+    if (pkg.versions.length <= 1) {
+      message.warning('最后一个版本只能整体卸载')
+      return
+    }
+    const confirmed = await requestConfirm({
+      title: `删除版本 v${version}？`,
+      description: `将永久移除 v${version} 的不可变安装快照与数据库记录，无法恢复；其他版本不受影响。`,
+      confirmText: '删除版本',
+    })
+    if (!confirmed) return
+    setRemoving(true)
+    try {
+      await deleteVersion({ packageId: pkg.id, version })
+      message.success(`已删除版本 ${version}`)
+      detailRef.current = null
+      await refresh()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '版本删除失败')
+    } finally {
+      setRemoving(false)
+    }
+  }, [deleteVersion, detail, refresh, requestConfirm])
+
+  const runDevelopmentStep = useCallback(
+    async (step: ToolPackageDevelopmentStep) => {
+      if (detail == null || detail.package.source !== 'managed-project') return
+      const declared =
+        step === 'install'
+          ? detail.manifest.development?.installCommand
+          : detail.manifest.development?.buildCommand
+      const commandPreview =
+        declared != null && declared.trim().length > 0
+          ? declared
+          : '按工程 lockfile 推断（pnpm / yarn / bun / npm install）'
+      const confirmed = await requestConfirm({
+        title: `在受管工程执行「${step === 'install' ? '安装依赖' : '构建'}」？`,
+        description: `将执行：${commandPreview}。步骤以 trusted-local 权限在工程目录运行；完成后仍需执行「安装」才会生成新的不可变版本。`,
+        confirmText: step === 'install' ? '安装依赖' : '开始构建',
+      })
+      if (!confirmed) return
+      setRunningStep(step)
+      setStepResult(null)
+      try {
+        const response = await runProjectStep({ packageId: detail.package.id, step })
+        setStepResult(response.result)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '开发步骤执行失败')
+      } finally {
+        setRunningStep(null)
+      }
+    },
+    [detail, requestConfirm, runProjectStep],
+  )
+
   if (loading && packages.length === 0) {
     return <div className="ct_loading">正在读取 Tool Packages...</div>
   }
@@ -243,15 +353,81 @@ export function ToolPackagesPanel() {
               />
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>{detail.package.description}</p>
-            <Select
-              value={detail.version}
-              options={detail.package.versions.map((version) => ({
-                label: version,
-                value: version,
-              }))}
-              onChange={(version) => void selectVersion(version)}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Select
+                value={detail.version}
+                options={detail.package.versions.map((version) => ({
+                  label: version,
+                  value: version,
+                }))}
+                onChange={(version) => void selectVersion(version)}
+              />
+              <Button
+                size="small"
+                danger
+                loading={removing}
+                disabled={detail.package.enabledVersion != null}
+                title={
+                  detail.package.enabledVersion != null ? '需先停用工具包' : '删除全部版本与密钥'
+                }
+                onClick={() => void removePackage()}
+              >
+                卸载工具包
+              </Button>
+              <Button
+                size="small"
+                danger
+                disabled={
+                  removing ||
+                  detail.package.enabledVersion === detail.version ||
+                  detail.package.versions.length <= 1
+                }
+                title={
+                  detail.package.enabledVersion === detail.version
+                    ? '需先停用该版本'
+                    : detail.package.versions.length <= 1
+                      ? '最后一个版本只能整体卸载'
+                      : '删除当前查看的版本'
+                }
+                onClick={() => void removeVersion()}
+              >
+                删除此版本
+              </Button>
+            </div>
           </section>
+
+          {detail.package.source === 'managed-project' && (
+            <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+              <strong style={{ fontSize: 13 }}>开发工作流</strong>
+              <p style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                步骤在受管工程目录执行，以工程当前 spark-tool.json
+                为准；完成后仍需执行「安装」生成新的不可变版本。
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  size="small"
+                  disabled={runningStep != null}
+                  onClick={() => void runDevelopmentStep('install')}
+                >
+                  {runningStep === 'install' ? '安装中…' : '安装依赖'}
+                </Button>
+                <Button
+                  size="small"
+                  disabled={
+                    runningStep != null ||
+                    detail.manifest.development?.buildCommand == null ||
+                    detail.manifest.development.buildCommand.trim().length === 0
+                  }
+                  onClick={() => void runDevelopmentStep('build')}
+                >
+                  {runningStep === 'build' ? '构建中…' : '构建'}
+                </Button>
+              </div>
+              {stepResult != null && detail.package.id === stepResult.packageId && (
+                <StepResultView result={stepResult} />
+              )}
+            </section>
+          )}
 
           <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
             <strong style={{ fontSize: 13 }}>环境变量</strong>
@@ -391,6 +567,41 @@ export function ToolPackagesPanel() {
     </div>
   )
 }
+
+function StepResultView({ result }: { result: ToolPackageProjectStepResult }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <strong style={{ fontSize: 12 }}>{result.step === 'install' ? '安装依赖' : '构建'}</strong>
+        <code style={{ fontSize: 11, color: 'var(--text-faint)' }}>{result.command}</code>
+        <Tag color={result.timedOut ? 'gold' : result.exitCode === 0 ? 'green' : 'red'}>
+          {result.timedOut ? '超时终止' : `exit ${result.exitCode ?? '—'}`}
+        </Tag>
+        <Tag>{result.inferred ? '推断命令' : '声明命令'}</Tag>
+        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+          {(result.durationMs / 1000).toFixed(1)}s{result.truncated ? ' · 输出已截断' : ''}
+        </span>
+      </div>
+      {result.stdout.length > 0 && <pre style={stepOutputStyle}>{result.stdout}</pre>}
+      {result.stderr.length > 0 && (
+        <pre style={{ ...stepOutputStyle, color: 'var(--text-muted)' }}>{result.stderr}</pre>
+      )}
+    </div>
+  )
+}
+
+const stepOutputStyle = {
+  maxHeight: 180,
+  overflow: 'auto',
+  margin: '10px 0 0',
+  padding: 10,
+  fontSize: 11,
+  lineHeight: 1.5,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  background: 'var(--hover)',
+  borderRadius: 4,
+} as const
 
 function resolveDraftValue(
   variable: ToolEnvironmentVariable,

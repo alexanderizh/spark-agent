@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -311,6 +312,57 @@ describe('ToolPackageService', () => {
     await expect(readFile(outside, 'utf8')).resolves.toBe('original')
   })
 
+  it('runs install/build steps against the live managed project directory', async () => {
+    const project = await service!.createManagedProject({
+      manifest: manifest('1.0.0', {
+        development: {
+          installCommand:
+            "node -e \"require('fs').writeFileSync('node_modules-marker.txt', 'installed')\"",
+        },
+      }),
+      files: [{ path: 'runner.mjs', content: 'process.stdin.resume()\n' }],
+    })
+    const result = await service!.runManagedProjectStep({
+      packageId: project.packageId,
+      step: 'install',
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.step).toBe('install')
+    expect(result.inferred).toBe(false)
+    expect(result.command).toContain('node_modules-marker.txt')
+    await expect(
+      readFile(join(project.projectPath, 'node_modules-marker.txt'), 'utf8'),
+    ).resolves.toBe('installed')
+
+    await expect(
+      service!.runManagedProjectStep({ packageId: project.packageId, step: 'build' }),
+    ).rejects.toThrow(/development\.buildCommand/)
+
+    await expect(
+      service!.runManagedProjectStep({ packageId: 'missing.package', step: 'install' }),
+    ).rejects.toThrow()
+  })
+
+  it('omits node_modules, .git and .DS_Store from managed project file listings', async () => {
+    const project = await service!.createManagedProject({
+      manifest: manifest(),
+      files: [{ path: 'runner.mjs', content: 'process.stdin.resume()\n' }],
+    })
+    await mkdir(join(project.projectPath, 'node_modules', 'sharp'), { recursive: true })
+    await mkdir(join(project.projectPath, '.git', 'objects'), { recursive: true })
+    await writeFile(join(project.projectPath, '.DS_Store'), 'junk', 'utf8')
+    await writeFile(join(project.projectPath, 'node_modules', 'sharp', 'index.js'), 'x', 'utf8')
+    const listing = await service!.listManagedProjectFiles(project.packageId)
+    expect(listing.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining(['spark-tool.json', 'runner.mjs']),
+    )
+    expect(
+      listing.files.some(
+        (file) => file.path.startsWith('node_modules') || file.path === '.DS_Store',
+      ),
+    ).toBe(false)
+  })
+
   it('adds and removes enabled tools from the catalog and binds calls to the exact version', async () => {
     const firstSource = await createSource(root, manifest('1.0.0'))
     const secondSource = await createSource(root, manifest('2.0.0'))
@@ -609,6 +661,148 @@ describe('ToolPackageService', () => {
     await expect(service.getEnvironmentStatus('acme.productivity-suite', '1.0.0')).resolves.toEqual(
       [expect.objectContaining({ name: 'EXTERNAL_API_TOKEN', configured: true })],
     )
+  })
+
+  it('uninstalls a disabled package with its files, database rows and Keychain secrets', async () => {
+    const secrets = new Map<string, string>()
+    const secretStore: ToolPackageSecretStore = {
+      get: async (ref) => secrets.get(ref) ?? null,
+      set: async (ref, value) => {
+        secrets.set(ref, value)
+      },
+      delete: async (ref) => secrets.delete(ref),
+    }
+    await service!.dispose()
+    service = new ToolPackageService(
+      db!,
+      join(root, 'installed'),
+      capabilities,
+      undefined,
+      secretStore,
+    )
+    const source = await createSource(
+      root,
+      manifest('1.0.0', {
+        environment: [
+          {
+            name: 'EXTERNAL_API_TOKEN',
+            title: 'External API token',
+            type: 'string',
+            required: true,
+            secret: true,
+            agentConfigurable: true,
+          },
+        ],
+      }),
+    )
+    await service.installDirectory({ sourcePath: source, source: 'local-directory' })
+    await service.writeSecretFromSecureInput({
+      packageId: 'acme.productivity-suite',
+      version: '1.0.0',
+      name: 'EXTERNAL_API_TOKEN',
+      value: 'to-be-removed',
+    })
+    expect(secrets.size).toBe(1)
+    const events: string[] = []
+    service.onChange((event) => events.push(event.change))
+    const installedDir = join(root, 'installed', 'acme.productivity-suite')
+    expect(existsSync(installedDir)).toBe(true)
+
+    const result = await service.uninstallPackage({ packageId: 'acme.productivity-suite' })
+
+    expect(result).toEqual({
+      packageId: 'acme.productivity-suite',
+      removedVersions: ['1.0.0'],
+      removedSecrets: 1,
+      removedManagedProject: false,
+    })
+    expect(existsSync(installedDir)).toBe(false)
+    expect(service.listSummaries()).toEqual([])
+    expect([...secrets.entries()]).toEqual([])
+    expect(events).toEqual(['uninstalled'])
+    await expect(
+      service.uninstallPackage({ packageId: 'acme.productivity-suite' }),
+    ).rejects.toThrow(/not found/)
+  })
+
+  it('refuses to uninstall an enabled package until it is disabled', async () => {
+    const source = await createSource(root, manifest('1.0.0'))
+    await service!.installDirectory({ sourcePath: source, source: 'local-directory' })
+    await service!.setEnabled('acme.productivity-suite', '1.0.0')
+
+    await expect(
+      service!.uninstallPackage({ packageId: 'acme.productivity-suite' }),
+    ).rejects.toThrow(/must be disabled before uninstall/)
+    await service!.setEnabled('acme.productivity-suite', null)
+    await expect(
+      service!.uninstallPackage({ packageId: 'acme.productivity-suite' }),
+    ).resolves.toMatchObject({ removedVersions: ['1.0.0'], removedManagedProject: false })
+  })
+
+  it('removes the managed project directory only when uninstall explicitly requests it', async () => {
+    const preserved = await service!.createManagedProject({
+      manifest: manifest('1.0.0'),
+      files: [{ path: 'runner.mjs', content: 'process.stdin.resume()\n' }],
+    })
+    await service!.installDirectory({
+      sourcePath: preserved.projectPath,
+      source: 'managed-project',
+    })
+    const preservedDir = join(root, 'tool-projects', preserved.packageId)
+    expect(existsSync(preservedDir)).toBe(true)
+    await service!.uninstallPackage({ packageId: preserved.packageId })
+    expect(existsSync(preservedDir)).toBe(true)
+
+    const deleted = await service!.createManagedProject({
+      manifest: manifest('1.0.0', { id: 'acme.cleanup-suite' }),
+      files: [{ path: 'runner.mjs', content: 'process.stdin.resume()\n' }],
+    })
+    await service!.installDirectory({
+      sourcePath: deleted.projectPath,
+      source: 'managed-project',
+    })
+    const deletedDir = join(root, 'tool-projects', deleted.packageId)
+    expect(existsSync(deletedDir)).toBe(true)
+    await service!.uninstallPackage({
+      packageId: deleted.packageId,
+      removeManagedProject: true,
+    })
+    expect(existsSync(deletedDir)).toBe(false)
+  })
+
+  it('governs immutable version deletion with enabled and last-version guards', async () => {
+    const firstSource = await createSource(root, manifest('1.0.0'))
+    const secondSource = await createSource(root, manifest('2.0.0'))
+    await service!.installDirectory({ sourcePath: firstSource, source: 'local-directory' })
+    await service!.installDirectory({ sourcePath: secondSource, source: 'local-directory' })
+    await service!.setEnabled('acme.productivity-suite', '2.0.0')
+
+    await expect(
+      service!.deleteVersion({ packageId: 'acme.productivity-suite', version: '2.0.0' }),
+    ).rejects.toThrow(/must be disabled first/)
+    await expect(
+      service!.deleteVersion({ packageId: 'acme.productivity-suite', version: '9.9.9' }),
+    ).rejects.toThrow(/not found/)
+
+    const events: string[] = []
+    service!.onChange((event) => events.push(event.change))
+    const removed = await service!.deleteVersion({
+      packageId: 'acme.productivity-suite',
+      version: '1.0.0',
+    })
+    expect(removed).toEqual({ removed: true, version: '1.0.0' })
+    expect(existsSync(join(root, 'installed', 'acme.productivity-suite', '1.0.0'))).toBe(false)
+    expect(existsSync(join(root, 'installed', 'acme.productivity-suite', '2.0.0'))).toBe(true)
+    expect(service!.listSummaries()[0]).toMatchObject({ enabledVersion: '2.0.0' })
+    expect(events).toEqual(['version-removed'])
+
+    await expect(
+      service!.deleteVersion({ packageId: 'acme.productivity-suite', version: '2.0.0' }),
+    ).rejects.toThrow(/must be disabled first/)
+    await service!.setEnabled('acme.productivity-suite', null)
+    await expect(
+      service!.deleteVersion({ packageId: 'acme.productivity-suite', version: '2.0.0' }),
+    ).rejects.toThrow(/single version/)
   })
 
   it('invalidates a persistent process when its permission state changes', async () => {

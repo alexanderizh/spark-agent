@@ -8,13 +8,16 @@ import {
   type ToolEnvironmentVariable,
   type ToolPackageConfigScope,
   type ToolPackageDetail,
+  type ToolPackageDevelopmentStep,
   type ToolPackageEnvironmentStatus,
   type ToolPackageInspection,
   type ToolPackageManifest,
+  type ToolPackageProjectStepResult,
   type ToolPackageSecureRequest,
   type ToolPackageSource,
   type ToolPackageSummary,
   type ToolPackageTrust,
+  type ToolPackageUninstallResult,
 } from '@spark/protocol'
 import {
   ToolPackageRepository,
@@ -30,11 +33,20 @@ import {
   inspectToolPackageDirectory,
   installToolPackageDirectoryAtomic,
 } from './tool-package-inspector.js'
+import { runManagedProjectDevelopmentStep } from './tool-package-project-runner.js'
 import { ToolHostCapabilityBroker } from './tool-host-capability-broker.js'
 import { ToolProcessHost, type ToolProcessInvocationContext } from './tool-process-host.js'
 
 export interface ToolPackageChangeEvent {
-  change: 'installed' | 'configured' | 'permission' | 'enabled' | 'disabled' | 'secret-requested'
+  change:
+    | 'installed'
+    | 'configured'
+    | 'permission'
+    | 'enabled'
+    | 'disabled'
+    | 'secret-requested'
+    | 'uninstalled'
+    | 'version-removed'
   packageId: string
   runtimeChanged: boolean
 }
@@ -214,6 +226,9 @@ export class ToolPackageService {
       const entries = await readdir(directory, { withFileTypes: true })
       entries.sort((left, right) => left.name.localeCompare(right.name))
       for (const entry of entries) {
+        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.DS_Store') {
+          continue
+        }
         const absolutePath = join(directory, entry.name)
         const info = await lstat(absolutePath)
         const path = relative(projectPath, absolutePath).split(sep).join('/')
@@ -280,6 +295,22 @@ export class ToolPackageService {
       runtimeChanged: false,
     })
     return this.requirePackage(installed.inspection.manifest.id)
+  }
+
+  async runManagedProjectStep(params: {
+    packageId: string
+    step: ToolPackageDevelopmentStep
+    timeoutMs?: number
+  }): Promise<ToolPackageProjectStepResult> {
+    const projectPath = await this.requireManagedProjectPath(params.packageId)
+    const { manifest } = await inspectToolPackageDirectory(projectPath)
+    return runManagedProjectDevelopmentStep({
+      packageId: params.packageId,
+      projectPath,
+      manifest,
+      step: params.step,
+      ...(params.timeoutMs != null ? { timeoutMs: params.timeoutMs } : {}),
+    })
   }
 
   getManifest(packageId: string, version?: string): ToolPackageManifest {
@@ -554,6 +585,85 @@ export class ToolPackageService {
     if (enabled == null) throw new Error(`Tool package not found: ${packageId}`)
     this.emit({ change: 'enabled', packageId, runtimeChanged: true })
     return enabled
+  }
+
+  /**
+   * Uninstall a disabled package: stop its processes, remove every immutable
+   * version snapshot, delete all database rows, and clean up Keychain secrets.
+   * Filesystem removal happens before the database delete so an rm failure
+   * leaves the package installed and the operation retryable.
+   */
+  async uninstallPackage(params: {
+    packageId: string
+    removeManagedProject?: boolean
+  }): Promise<ToolPackageUninstallResult> {
+    const packageId = ToolPackageIdSchema.parse(params.packageId)
+    const packageRow = this.requirePackage(packageId)
+    if (packageRow.enabled_version != null) {
+      throw new Error(`Tool package is enabled and must be disabled before uninstall: ${packageId}`)
+    }
+    const versions = this.repository.listVersions(packageId)
+    const secretRefs = this.repository
+      .listConfig(packageId)
+      .map((config) => config.keystore_ref)
+      .filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+    await this.processHost.invalidatePackage(packageId)
+    await rm(join(this.packageRoot, packageId), { recursive: true, force: true })
+    let removedManagedProject = false
+    if (params.removeManagedProject === true) {
+      await rm(join(this.projectRoot, packageId), { recursive: true, force: true })
+      removedManagedProject = true
+    }
+    if (!this.repository.deletePackage(packageId)) {
+      throw new Error(`Tool package not found: ${packageId}`)
+    }
+    let removedSecrets = 0
+    for (const ref of new Set(secretRefs)) {
+      const deleted = await this.secretStore.delete(ref as KeystoreRef).catch(() => false)
+      if (deleted) removedSecrets += 1
+    }
+    this.emit({ change: 'uninstalled', packageId, runtimeChanged: true })
+    return {
+      packageId,
+      removedVersions: versions.map((version) => version.version),
+      removedSecrets,
+      removedManagedProject,
+    }
+  }
+
+  /**
+   * Delete one immutable version of a package while keeping the package and
+   * every other version installed. The enabled version and the last remaining
+   * version are refused; those callers must disable or uninstall instead.
+   */
+  async deleteVersion(params: {
+    packageId: string
+    version: string
+  }): Promise<{ removed: true; version: string }> {
+    const packageId = ToolPackageIdSchema.parse(params.packageId)
+    const packageRow = this.requirePackage(packageId)
+    if (packageRow.enabled_version === params.version) {
+      throw new Error(
+        `Tool package version is enabled and must be disabled first: ${packageId}@${params.version}`,
+      )
+    }
+    const versionRow = this.repository.getVersion(packageId, params.version)
+    if (versionRow == null) {
+      throw new Error(`Tool package version not found: ${packageId}@${params.version}`)
+    }
+    if (this.repository.listVersions(packageId).length <= 1) {
+      throw new Error(`Tool package has a single version; uninstall the package: ${packageId}`)
+    }
+    const installRoot = resolve(this.packageRoot)
+    if (!resolve(versionRow.install_path).startsWith(`${installRoot}${sep}`)) {
+      throw new Error(`Tool package version install path is outside the package root: ${packageId}`)
+    }
+    await rm(versionRow.install_path, { recursive: true, force: true })
+    if (!this.repository.deleteVersion(packageId, params.version)) {
+      throw new Error(`Tool package version not found: ${packageId}@${params.version}`)
+    }
+    this.emit({ change: 'version-removed', packageId, runtimeChanged: false })
+    return { removed: true, version: params.version }
   }
 
   listEnabledTools(): Array<{

@@ -242,4 +242,80 @@ describe('ToolPackageRepository', () => {
       enabled_version: null,
     })
   })
+
+  it('deletes a package with every version, tool, config, permission and secure request', () => {
+    repository.installVersion({
+      manifest: manifest(),
+      source: 'managed-project',
+      trust: 'trusted-local',
+      installPath: '/managed/acme.productivity-suite/1.0.0',
+      integritySha256: '3'.repeat(64),
+    })
+    repository.installVersion({
+      manifest: { ...manifest(), version: '2.0.0' },
+      source: 'managed-project',
+      trust: 'trusted-local',
+      installPath: '/managed/acme.productivity-suite/2.0.0',
+      integritySha256: '4'.repeat(64),
+    })
+    repository.setConfig({
+      packageId: 'acme.productivity-suite',
+      scope: 'package',
+      name: 'REPORT_MAX_ROWS',
+      value: 5_000,
+    })
+    const request = repository.createSecureRequest({
+      id: 'request-1',
+      packageId: 'acme.productivity-suite',
+      version: '1.0.0',
+      name: 'EXTERNAL_API_TOKEN',
+      scope: 'package',
+      requestedBy: 'agent',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    })
+    expect(request.status).toBe('pending')
+
+    expect(repository.deletePackage('acme.productivity-suite')).toBe(true)
+    expect(repository.get('acme.productivity-suite')).toBeUndefined()
+    expect(repository.listVersions('acme.productivity-suite')).toEqual([])
+    expect(repository.listTools('acme.productivity-suite', '1.0.0')).toEqual([])
+    expect(repository.listConfig('acme.productivity-suite')).toEqual([])
+    expect(repository.listPermissions('acme.productivity-suite', '1.0.0')).toEqual([])
+    expect(repository.getSecureRequest('request-1')).toBeUndefined()
+    expect(repository.deletePackage('acme.productivity-suite')).toBe(false)
+  })
+
+  it('deletes one version while keeping other versions and package-scoped config', () => {
+    repository.installVersion({
+      manifest: manifest(),
+      source: 'local-directory',
+      trust: 'trusted-local',
+      installPath: '/managed/acme.productivity-suite/1.0.0',
+      integritySha256: '5'.repeat(64),
+    })
+    repository.installVersion({
+      manifest: { ...manifest(), version: '2.0.0' },
+      source: 'local-directory',
+      trust: 'trusted-local',
+      installPath: '/managed/acme.productivity-suite/2.0.0',
+      integritySha256: '6'.repeat(64),
+    })
+    repository.setConfig({
+      packageId: 'acme.productivity-suite',
+      scope: 'package',
+      name: 'REPORT_MAX_ROWS',
+      value: 5_000,
+    })
+
+    expect(repository.deleteVersion('acme.productivity-suite', '1.0.0')).toBe(true)
+    expect(repository.getVersion('acme.productivity-suite', '1.0.0')).toBeUndefined()
+    expect(repository.listTools('acme.productivity-suite', '1.0.0')).toEqual([])
+    expect(repository.listPermissions('acme.productivity-suite', '1.0.0')).toEqual([])
+    expect(repository.getVersion('acme.productivity-suite', '2.0.0')).toMatchObject({
+      status: 'installed',
+    })
+    expect(repository.listConfig('acme.productivity-suite')).toHaveLength(1)
+    expect(repository.get('acme.productivity-suite')).toMatchObject({ state: 'installed-disabled' })
+    expect(repository.deleteVersion('acme.productivity-suite', '1.0.0')).toBe(false)
+  })
 })

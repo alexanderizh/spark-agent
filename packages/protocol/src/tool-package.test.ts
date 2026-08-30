@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ToolPackageManifestSchema } from './tool-package.js'
+import { ToolPackageManifestSchema, ToolPackagesIpcSchemaRegistry } from './tool-package.js'
 
 function validManifest(): Record<string, unknown> {
   return {
@@ -146,5 +146,38 @@ describe('ToolPackageManifestSchema', () => {
     expect(result.error?.issues.map((issue) => issue.message)).toContain(
       'Tool inputSchema must describe a JSON object',
     )
+  })
+})
+
+describe('ToolPackageDevelopmentSchema', () => {
+  it('accepts declared install and build commands on a manifest', () => {
+    const manifest = validManifest()
+    manifest.development = {
+      installCommand: 'pnpm install --frozen-lockfile',
+      buildCommand: 'pnpm build',
+    }
+    const parsed = ToolPackageManifestSchema.parse(manifest)
+    expect(parsed.development?.installCommand).toBe('pnpm install --frozen-lockfile')
+    expect(parsed.development?.buildCommand).toBe('pnpm build')
+  })
+
+  it('rejects empty commands and unknown development keys', () => {
+    const manifest = validManifest()
+    manifest.development = { installCommand: '' }
+    expect(ToolPackageManifestSchema.safeParse(manifest).success).toBe(false)
+
+    const strict = validManifest()
+    strict.development = { deployCommand: 'pnpm deploy' } as unknown as Record<string, never>
+    expect(ToolPackageManifestSchema.safeParse(strict).success).toBe(false)
+  })
+
+  it('parses project step results and validates run-project-step requests', () => {
+    const registry = ToolPackagesIpcSchemaRegistry['tool-packages:run-project-step']
+    expect(
+      registry.safeParse({ packageId: 'acme.productivity-suite', step: 'install' }).success,
+    ).toBe(true)
+    expect(
+      registry.safeParse({ packageId: 'acme.productivity-suite', step: 'deploy' }).success,
+    ).toBe(false)
   })
 })

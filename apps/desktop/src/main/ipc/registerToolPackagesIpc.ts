@@ -62,6 +62,13 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
     detail: await service.getDetail(request.packageId, request.version),
   }))
 
+  typedIpcHandle('tool-packages:run-project-step', async (request) => ({
+    result: await service.runManagedProjectStep({
+      packageId: request.packageId,
+      step: request.step,
+    }),
+  }))
+
   typedIpcHandle('tool-packages:configure-environment', async (request) => {
     service.configureValue({
       ...request,
@@ -87,6 +94,14 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
       service,
       await service.setEnabled(request.packageId, request.version),
     ),
+  }))
+
+  typedIpcHandle('tool-packages:uninstall', async (request) => ({
+    result: await service.uninstallPackage(request),
+  }))
+
+  typedIpcHandle('tool-packages:delete-version', async (request) => ({
+    ...(await service.deleteVersion(request)),
   }))
 
   typedIpcHandle('tool-packages:secure-requests:list', async () => ({

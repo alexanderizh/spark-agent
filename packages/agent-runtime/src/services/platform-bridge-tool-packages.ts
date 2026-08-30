@@ -10,12 +10,15 @@ export type ToolPackageBridgeMethod =
   | 'tool_packages.list_project_files'
   | 'tool_packages.read_project_file'
   | 'tool_packages.write_project_file'
+  | 'tool_packages.run_project_step'
   | 'tool_packages.install_directory'
   | 'tool_packages.environment_status'
   | 'tool_packages.configure_environment'
   | 'tool_packages.request_secret'
   | 'tool_packages.set_permission'
   | 'tool_packages.set_enabled'
+  | 'tool_packages.uninstall'
+  | 'tool_packages.delete_version'
   | 'tool_packages.test'
 
 export async function handleToolPackageBridgeMethod(
@@ -50,6 +53,8 @@ export async function handleToolPackageBridgeMethod(
       })
     case 'tool_packages.write_project_file':
       return toolPackageWriteProjectFile(service, params)
+    case 'tool_packages.run_project_step':
+      return toolPackageRunProjectStep(service, params)
     case 'tool_packages.install_directory':
       return toolPackageInstallDirectory(service, params)
     case 'tool_packages.environment_status':
@@ -62,6 +67,10 @@ export async function handleToolPackageBridgeMethod(
       return toolPackageSetPermission(service, params)
     case 'tool_packages.set_enabled':
       return toolPackageSetEnabled(service, params)
+    case 'tool_packages.uninstall':
+      return toolPackageUninstall(service, params)
+    case 'tool_packages.delete_version':
+      return toolPackageDeleteVersion(service, params)
     case 'tool_packages.test':
       return toolPackageTest(service, params)
   }
@@ -80,6 +89,7 @@ function toolPackageGuide() {
       '普通环境变量可由 Agent 配置；secret 只能发起安全输入，禁止把明文传给 Agent。',
       '用户确认 OS 行为与 Spark Capability 授权后才能启用。',
       '启用后下一次 Agent loop 动态获得包内工具并像内置工具一样自主调用。',
+      '卸载会删除全部不可变版本与 Keychain 密钥，必须先停用且由用户确认；删除单个版本同样需要确认，最后一个版本只能整体卸载。',
     ],
     boundaries: {
       toolObject: '完整 Tool Project / immutable Package Version / Installation',
@@ -116,6 +126,29 @@ function toolPackageWriteProjectFile(service: ToolPackageService, params: Record
     path: requireText(params, 'path', 500),
     content: params.content,
   })
+}
+
+async function toolPackageRunProjectStep(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmExecute !== true) {
+    throw new Error(
+      'Running an install/build step executes trusted code and requires confirmExecute=true',
+    )
+  }
+  if (params.step !== 'install' && params.step !== 'build') {
+    throw new Error('step must be install or build')
+  }
+  return {
+    result: await service.runManagedProjectStep({
+      packageId: requireText(params, 'packageId', 96),
+      step: params.step,
+      ...(typeof params.timeoutMs === 'number' && Number.isFinite(params.timeoutMs)
+        ? { timeoutMs: params.timeoutMs }
+        : {}),
+    }),
+  }
 }
 
 async function toolPackageInstallDirectory(
@@ -222,6 +255,35 @@ async function toolPackageSetEnabled(service: ToolPackageService, params: Record
     enabled ? requireText(params, 'version', 160) : null,
   )
   return { package: requirePackageSummary(service, updated.id) }
+}
+
+async function toolPackageUninstall(service: ToolPackageService, params: Record<string, unknown>) {
+  if (params.confirmUninstall !== true) {
+    throw new Error(
+      'Uninstalling a Tool Package permanently deletes every installed version and its Keychain secrets; it requires confirmUninstall=true',
+    )
+  }
+  return {
+    result: await service.uninstallPackage({
+      packageId: requireText(params, 'packageId', 96),
+      ...(params.removeManagedProject === true ? { removeManagedProject: true } : {}),
+    }),
+  }
+}
+
+async function toolPackageDeleteVersion(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmUninstall !== true) {
+    throw new Error(
+      'Deleting a Tool Package version permanently removes its immutable snapshot; it requires confirmUninstall=true',
+    )
+  }
+  return service.deleteVersion({
+    packageId: requireText(params, 'packageId', 96),
+    version: requireText(params, 'version', 160),
+  })
 }
 
 async function toolPackageTest(service: ToolPackageService, params: Record<string, unknown>) {

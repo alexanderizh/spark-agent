@@ -76,6 +76,17 @@ export const ToolPackageRuntimeSchema = z.discriminatedUnion('adapter', [
 ])
 export type ToolPackageRuntime = z.infer<typeof ToolPackageRuntimeSchema>
 
+export const ToolPackageDevelopmentStepSchema = z.enum(['install', 'build'])
+export type ToolPackageDevelopmentStep = z.infer<typeof ToolPackageDevelopmentStepSchema>
+
+export const ToolPackageDevelopmentSchema = z
+  .object({
+    installCommand: z.string().min(1).max(500).optional(),
+    buildCommand: z.string().min(1).max(500).optional(),
+  })
+  .strict()
+export type ToolPackageDevelopment = z.infer<typeof ToolPackageDevelopmentSchema>
+
 export const ToolPackageToolSchema = z
   .object({
     name: ToolNameSchema,
@@ -212,6 +223,7 @@ export const ToolPackageManifestSchema = z
       })
       .optional(),
     runtime: ToolPackageRuntimeSchema,
+    development: ToolPackageDevelopmentSchema.optional(),
     tools: z.array(ToolPackageToolSchema).min(1).max(200),
     environment: z.array(ToolEnvironmentVariableSchema).max(200).default([]),
     permissions: ToolPackagePermissionsSchema.default({
@@ -355,9 +367,33 @@ export interface ToolPackageEnvironmentStatus {
   source: 'configured' | 'default' | 'missing'
 }
 
+export interface ToolPackageProjectStepResult {
+  packageId: string
+  step: ToolPackageDevelopmentStep
+  command: string
+  inferred: boolean
+  exitCode: number | null
+  timedOut: boolean
+  durationMs: number
+  stdout: string
+  stderr: string
+  truncated: boolean
+}
+
+export interface ToolPackageUninstallResult {
+  packageId: string
+  removedVersions: string[]
+  removedSecrets: number
+  removedManagedProject: boolean
+}
+
 export interface ToolPackagesIpcChannelMap {
   'tool-packages:list': [Record<string, never>, { packages: ToolPackageSummary[] }]
   'tool-packages:get': [{ packageId: string; version?: string }, { detail: ToolPackageDetail }]
+  'tool-packages:run-project-step': [
+    { packageId: string; step: ToolPackageDevelopmentStep },
+    { result: ToolPackageProjectStepResult },
+  ]
   'tool-packages:configure-environment': [
     {
       packageId: string
@@ -395,6 +431,14 @@ export interface ToolPackagesIpcChannelMap {
     { packageId: string; version: string | null },
     { package: ToolPackageSummary },
   ]
+  'tool-packages:uninstall': [
+    { packageId: string; removeManagedProject?: boolean },
+    { result: ToolPackageUninstallResult },
+  ]
+  'tool-packages:delete-version': [
+    { packageId: string; version: string },
+    { removed: true; version: string },
+  ]
   'tool-packages:secure-requests:list': [
     Record<string, never>,
     { requests: ToolPackageSecureRequest[] },
@@ -409,6 +453,9 @@ export const ToolPackagesIpcSchemaRegistry = {
   'tool-packages:list': z.object({}).strict(),
   'tool-packages:get': z
     .object({ packageId: ToolPackageIdSchema, version: z.string().max(160).optional() })
+    .strict(),
+  'tool-packages:run-project-step': z
+    .object({ packageId: ToolPackageIdSchema, step: ToolPackageDevelopmentStepSchema })
     .strict(),
   'tool-packages:configure-environment': z
     .object({
@@ -444,6 +491,18 @@ export const ToolPackagesIpcSchemaRegistry = {
     .object({
       packageId: ToolPackageIdSchema,
       version: z.string().max(160).nullable(),
+    })
+    .strict(),
+  'tool-packages:uninstall': z
+    .object({
+      packageId: ToolPackageIdSchema,
+      removeManagedProject: z.boolean().optional(),
+    })
+    .strict(),
+  'tool-packages:delete-version': z
+    .object({
+      packageId: ToolPackageIdSchema,
+      version: z.string().min(1).max(160),
     })
     .strict(),
   'tool-packages:secure-requests:list': z.object({}).strict(),

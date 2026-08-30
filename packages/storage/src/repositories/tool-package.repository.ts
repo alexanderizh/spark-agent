@@ -232,6 +232,20 @@ export class ToolPackageRepository extends BaseRepository {
     return result.changes > 0
   }
 
+  /** Delete a package and every version/tool/config/permission/secure-request row via cascade. */
+  deletePackage(packageId: string): boolean {
+    const result = this.raw.prepare('DELETE FROM tool_packages WHERE id = ?').run(packageId)
+    return result.changes > 0
+  }
+
+  /** Delete one version row; version-scoped tools/permissions/secure requests cascade. */
+  deleteVersion(packageId: string, version: string): boolean {
+    const result = this.raw
+      .prepare('DELETE FROM tool_package_versions WHERE package_id = ? AND version = ?')
+      .run(packageId, version)
+    return result.changes > 0
+  }
+
   listConfig(packageId: string): ToolPackageConfigRow[] {
     return this.raw
       .prepare(

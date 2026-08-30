@@ -638,6 +638,25 @@ function toolDefinitions() {
       },
     },
     {
+      name: 'tool_packages_run_project_step',
+      description:
+        '在受管 Tool Project 目录真实执行开发步骤：install（安装依赖，未声明 installCommand 时按 lockfile 推断 pnpm/yarn/bun/npm install）或 build（需声明 development.buildCommand）。命令拥有 trusted-local 用户权限，必须先向用户展示将执行的命令并获得同意，再设置 confirmExecute=true。返回退出码与有界输出。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'step', 'confirmExecute'],
+        properties: {
+          packageId: { type: 'string' },
+          step: { type: 'string', enum: ['install', 'build'] },
+          timeoutMs: {
+            type: 'number',
+            description: '可选超时毫秒数，默认 10 分钟，最大 30 分钟。',
+          },
+          confirmExecute: { type: 'boolean' },
+        },
+      },
+    },
+    {
       name: 'tool_packages_list_project_files',
       description:
         '列出已有受管 Tool Project 的文件路径和字节大小；只读取目录元数据，不执行工程代码。',
@@ -762,6 +781,39 @@ function toolDefinitions() {
           version: { type: 'string' },
           enabled: { type: 'boolean' },
           confirmEnable: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_uninstall',
+      description:
+        '卸载 Tool Package：终止其进程、删除全部不可变版本、数据库记录与 Keychain 密钥。必须先停用包并设置 confirmUninstall=true；受管工程目录默认保留，除非 removeManagedProject=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'confirmUninstall'],
+        properties: {
+          packageId: { type: 'string' },
+          removeManagedProject: {
+            type: 'boolean',
+            description: '是否连同删除受管工程源码目录；默认保留。',
+          },
+          confirmUninstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_delete_version',
+      description:
+        '删除 Tool Package 的一个不可变版本快照，保留包与其余版本。不能删除启用中的版本或最后一个版本（那需要整体卸载）；需要 confirmUninstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['packageId', 'version', 'confirmUninstall'],
+        properties: {
+          packageId: { type: 'string' },
+          version: { type: 'string' },
+          confirmUninstall: { type: 'boolean' },
         },
       },
     },
@@ -2250,12 +2302,15 @@ async function handleToolCall(name, args) {
     tool_packages_list_project_files: 'tool_packages.list_project_files',
     tool_packages_read_project_file: 'tool_packages.read_project_file',
     tool_packages_write_project_file: 'tool_packages.write_project_file',
+    tool_packages_run_project_step: 'tool_packages.run_project_step',
     tool_packages_install_directory: 'tool_packages.install_directory',
     tool_packages_environment_status: 'tool_packages.environment_status',
     tool_packages_configure_environment: 'tool_packages.configure_environment',
     tool_packages_request_secret: 'tool_packages.request_secret',
     tool_packages_set_permission: 'tool_packages.set_permission',
     tool_packages_set_enabled: 'tool_packages.set_enabled',
+    tool_packages_uninstall: 'tool_packages.uninstall',
+    tool_packages_delete_version: 'tool_packages.delete_version',
     tool_packages_test: 'tool_packages.test',
     providers_list: 'providers.list',
     providers_get: 'providers.get',
