@@ -1,0 +1,70 @@
+.canvas-node-toolbar-surface.canvas-multi-select-toolbar {
+  max-width: min(100%, 760px);
+  min-height: 36px;
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.canvas-multi-select-toolbar-btn.ant-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--canvas-cinema-text, #cccccc);
+}
+
+.canvas-multi-select-toolbar-btn.ant-btn:hover,
+.canvas-multi-select-toolbar-btn.ant-btn:focus-visible {
+  background: var(--canvas-cinema-accent-soft, rgba(145, 137, 255, 0.18));
+  color: var(--canvas-cinema-accent-bright, #9189ff);
+}
+
+.canvas-multi-select-toolbar-btn.canvas-node-toolbar-button-danger {
+  color: var(--danger, #f87171);
+}
+
+.canvas-multi-select-align-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+  width: 196px;
+
+  .canvas-multi-select-align-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .canvas-multi-select-align-label {
+      flex: 0 0 auto;
+      width: 28px;
+      font-size: 11px;
+      color: var(--canvas-cinema-text-muted, #8a8a8a);
+    }
+
+    .canvas-multi-select-align-buttons {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .canvas-multi-select-align-btn.ant-btn {
+      min-width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: var(--canvas-cinema-radius-xs, 6px);
+      background: transparent;
+      color: var(--canvas-cinema-text, #cccccc);
+      transition:
+        background-color var(--canvas-cinema-motion-fast, 160ms) ease,
+        color var(--canvas-cinema-motion-fast, 160ms) ease;
+
+      &:hover {
+        background: var(--canvas-cinema-surface-4, #343434);
+        color: var(--canvas-cinema-accent-bright, #9189ff);
+      }
+    }
+  }
+}

@@ -1,0 +1,122 @@
+// 画布欢迎页样式（CanvasWelcomeHome）。
+// 扁平风格：中性灰 + 单强调色（--primary），无渐变、无阴影、无光晕。
+.canvas-projects-view {
+  .canvas-projects-welcome {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  // 标题行：左标题 + 右新建按钮
+  .canvas-welcome-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .canvas-welcome-title {
+    h3 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      color: var(--text-strong);
+    }
+    p {
+      margin: 6px 0 0;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+  }
+
+  // 最近项目网格
+  .canvas-welcome-recent {
+    h4 {
+      margin: 0 0 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+  }
+  .canvas-welcome-recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 12px;
+  }
+  .canvas-welcome-recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 8px;
+    border: 1px solid var(--canvas-ui-border);
+    border-radius: var(--canvas-ui-radius-sm);
+    background: var(--canvas-ui-surface);
+    cursor: pointer;
+    text-align: left;
+    transition:
+      border-color 0.15s ease,
+      transform 0.15s ease;
+    &:hover {
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+    &:active {
+      transform: translateY(0);
+    }
+    img,
+    .canvas-welcome-recent-placeholder {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      border-radius: 4px;
+      object-fit: cover;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--canvas-ui-surface-muted);
+      color: var(--text-faint);
+    }
+  }
+  .canvas-welcome-recent-name {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .canvas-welcome-recent-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .canvas-welcome-recent-pin {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--primary);
+    i {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+  }
+  .canvas-welcome-recent-dot {
+    color: var(--text-faint);
+  }
+
+  // 窄面板：标题行换行，网格自动降列（auto-fill 自适应，无需额外断点）
+  @media (max-width: 520px) {
+    .canvas-welcome-head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+  }
+}

@@ -1,0 +1,160 @@
+/* SubAppRunView — 子应用运行页样式
+ * 顶栏工具条 + 全幅沙箱运行区；运行区高度铺满剩余空间。
+ */
+
+.sub-app-run-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  /* 52px：整条承担 macOS 窗口拖拽 + 双击最大化（App.tsx 跳过公用拖拽条），
+   * 拖拽热区与内容留白都比原 48px 更从容 */
+  min-height: 52px;
+  border-bottom: 1px solid var(--divider, var(--border));
+}
+
+.sar-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  overflow: hidden;
+
+  svg {
+    display: block;
+  }
+}
+
+/* 标题单行：应用名 + 状态 Badge 同行，不再上下两层 */
+.sar-title-block {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sar-name {
+  max-width: 320px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sar-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sar-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  /* 与窗口底色（.window）及列表等其他管理页统一为 --bg-soft，
+   * 避免透明 iframe 透出一档更暗的 --bg 底色。 */
+  background: var(--bg-soft);
+}
+
+.sar-runner {
+  height: 100%;
+}
+
+.sar-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-muted, var(--text));
+
+  p {
+    margin: 0;
+  }
+}
+
+.sar-error {
+  color: var(--danger, #ef4444);
+}
+
+.sar-empty-source {
+  color: var(--text-muted, var(--color-text-2));
+
+  span {
+    max-width: 420px;
+    line-height: 1.6;
+  }
+}
+
+.sar-error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ─── macOS 窗口拖拽 ───────────────────────────────────────────────────────── */
+
+/* App.tsx 对 sub-app 视图跳过公用 MacWindowDragHeader，由本页头部整条承担
+   系统窗口拖拽与双击最大化，省出一条 30px 的独立拖拽条。
+   app-region 不按继承生效：可交互元素必须显式 no-drag，否则点击被拖拽吞掉。
+   Segmented 内部是 label+radio 而非 button，Switch 是 button.ant-switch，
+   都要单独点名。 */
+.platform-darwin .sub-app-run-view .sar-header {
+  -webkit-app-region: drag;
+
+  button,
+  .ant-segmented,
+  .ant-switch {
+    -webkit-app-region: no-drag;
+  }
+}
+
+.sar-missing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--text-muted, var(--text));
+
+  p {
+    margin: 0;
+  }
+}
+
+@media (width <= 760px) {
+  .sar-name {
+    max-width: 160px;
+  }
+}

@@ -1,0 +1,68 @@
+// ============================================================
+//  SkillAssignHintModal —— 新增技能后「分配给 Agent」提醒
+// ============================================================
+
+.skill-assign-hint-modal {
+  border-radius: 12px;
+  overflow: hidden;
+
+  .ant-modal-header {
+    display: none;
+  }
+
+  .ant-modal-body {
+    padding: 0;
+  }
+
+  .ant-modal-footer {
+    display: none;
+  }
+
+  .ant-modal-content {
+    border-radius: 12px;
+  }
+}
+
+.skill-assign-hint-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 24px 20px;
+  gap: 10px;
+}
+
+.skill-assign-hint-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgb(var(--arcoblue-6));
+  margin-bottom: 4px;
+}
+
+.skill-assign-hint-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-1);
+  line-height: 1.4;
+}
+
+.skill-assign-hint-desc {
+  font-size: 13px;
+  color: var(--color-text-3);
+  line-height: 1.6;
+  max-width: 320px;
+}
+
+.skill-assign-hint-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
+}

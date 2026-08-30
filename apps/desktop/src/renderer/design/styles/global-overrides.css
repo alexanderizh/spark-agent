@@ -1,0 +1,222 @@
+/* ============================================================
+   Spark Agent — Global Overrides
+   ============================================================
+
+   Loaded after legacy global CSS, component Less, and library CSS entrypoints.
+   Keep this file small: only put rules here when they intentionally need to win
+   across the entire renderer.
+   ============================================================ */
+
+:root {
+  --selection-bg: rgba(99, 102, 241, 0.18);
+  --selection-bg: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+::-moz-selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+input::selection,
+textarea::selection,
+[contenteditable='true']::selection,
+.ant-input::selection,
+.ant-input-affix-wrapper input::selection,
+.ant-select-selection-search-input::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+input::-moz-selection,
+textarea::-moz-selection,
+[contenteditable='true']::-moz-selection,
+.ant-input::-moz-selection,
+.ant-input-affix-wrapper input::-moz-selection,
+.ant-select-selection-search-input::-moz-selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+/* Ant Design focus rings are intentionally neutralized globally; pages that
+   need a visible focus treatment add it in their own scoped stylesheet. */
+.ant-select-focused,
+.ant-select-open,
+.ant-input-outlined {
+  box-shadow: none !important;
+}
+
+.ant-input-sm,
+.ant-input-affix-wrapper-sm,
+.ant-input-number-sm,
+.ant-input-number-sm .ant-input-number-input,
+.ant-select.ant-select-sm .ant-select-selector,
+.ant-select-single.ant-select-sm .ant-select-selector {
+  min-height: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+
+.ant-select.ant-select-sm .ant-select-selection-item,
+.ant-select.ant-select-sm .ant-select-selection-placeholder {
+  line-height: calc(var(--control-h-sm) - 2px);
+}
+
+/* Configuration forms use one field rhythm. Toolbar/list buttons may stay small. */
+.form-grid,
+.pv_form_grid,
+.remote-form-grid {
+  --form-control-h: var(--control-h-form);
+}
+
+.form-grid .ant-input,
+.form-grid .ant-input-affix-wrapper,
+.form-grid .ant-input-number,
+.form-grid .ant-select .ant-select-selector,
+.form-grid .ant-btn,
+.pv_form_grid .ant-input,
+.pv_form_grid .ant-input-affix-wrapper,
+.pv_form_grid .ant-input-number,
+.pv_form_grid .ant-select .ant-select-selector,
+.pv_form_grid .ant-btn,
+.remote-form-grid .ant-input,
+.remote-form-grid .ant-input-affix-wrapper,
+.remote-form-grid .ant-input-number,
+.remote-form-grid .ant-select .ant-select-selector,
+.remote-form-grid .ant-btn {
+  height: var(--form-control-h);
+  min-height: var(--form-control-h);
+}
+
+.form-grid .ant-input-affix-wrapper,
+.pv_form_grid .ant-input-affix-wrapper,
+.remote-form-grid .ant-input-affix-wrapper {
+  align-items: center;
+  padding-block: 0;
+}
+
+.form-grid .ant-input-affix-wrapper > input.ant-input,
+.pv_form_grid .ant-input-affix-wrapper > input.ant-input,
+.remote-form-grid .ant-input-affix-wrapper > input.ant-input {
+  height: calc(var(--form-control-h) - 2px);
+  min-height: 0;
+  padding-block: 0;
+  line-height: calc(var(--form-control-h) - 2px);
+}
+
+.form-grid .ant-select .ant-select-selection-item,
+.form-grid .ant-select .ant-select-selection-placeholder,
+.pv_form_grid .ant-select .ant-select-selection-item,
+.pv_form_grid .ant-select .ant-select-selection-placeholder,
+.remote-form-grid .ant-select .ant-select-selection-item,
+.remote-form-grid .ant-select .ant-select-selection-placeholder {
+  line-height: calc(var(--form-control-h) - 2px);
+}
+
+/* Legacy/native chat streams may opt back into the native scrollbar. The main
+   conversation stream uses overlay-scrollbar-enabled and therefore keeps the
+   global native-scrollbar hiding rules so its custom thumb consumes no layout width. */
+.chat-main-active > .chat-stream-viewport > .chat-stream:not(.overlay-scrollbar-enabled) {
+  scrollbar-width: auto !important;
+  scrollbar-color: auto !important;
+}
+
+.canvas-agent-modal .chat-panel-messages {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+}
+
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  max-width: 10px !important;
+  max-height: 10px !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  max-width: 10px !important;
+  max-height: 10px !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-track,
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-track-piece {
+  display: block !important;
+  width: 10px !important;
+  background: transparent !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-track,
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-track-piece {
+  display: block !important;
+  width: 10px !important;
+  background: transparent !important;
+}
+
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-height: 36px;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: var(--border-strong) !important;
+  background-clip: content-box !important;
+  -webkit-appearance: none !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-height: 36px;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: var(--border-strong) !important;
+  background-clip: content-box !important;
+  -webkit-appearance: none !important;
+}
+
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint) !important;
+  background-clip: content-box !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint) !important;
+  background-clip: content-box !important;
+}
+
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-button,
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-button,
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}

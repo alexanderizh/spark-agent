@@ -1,0 +1,650 @@
+.canvas-workspace.canvas-cinematic {
+  .canvas-node-shell {
+    border-radius: var(--canvas-cinema-radius-md);
+  }
+
+  .canvas-node {
+    --canvas-node-meta-height: 32px;
+    overflow: visible;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-md);
+    background: var(--canvas-cinema-surface-2);
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      box-shadow var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node:hover {
+    border-color: var(--canvas-cinema-border-strong);
+    transform: none;
+  }
+
+  .canvas-node.canvas-node-selected {
+    border-color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node.canvas-node-task-running {
+    position: relative;
+    isolation: isolate;
+    border-color: rgba(119, 108, 246, 0.56);
+    box-shadow:
+      0 0 0 2px rgba(119, 108, 246, 0.42),
+      0 0 26px rgba(119, 108, 246, 0.3),
+      var(--canvas-node-shadow);
+    animation: canvas-cinema-running-breathe 1.15s ease-in-out infinite alternate;
+  }
+
+  .canvas-node.canvas-node-task-running::before {
+    position: absolute;
+    z-index: var(--z-canvas-selection);
+    inset: -4px;
+    padding: 3px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--canvas-cinema-running-angle, 0deg),
+      transparent 0deg 42deg,
+      rgba(164, 157, 255, 0.45) 58deg,
+      #b8b3ff 92deg,
+      rgba(112, 101, 239, 0.42) 126deg,
+      transparent 154deg 360deg
+    );
+    content: '';
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: canvas-cinema-running-border 1.15s linear infinite;
+  }
+
+  .canvas-node.canvas-node-task-running::after {
+    position: absolute;
+    z-index: var(--z-canvas-selection);
+    inset: -1px;
+    border: 1px solid rgba(164, 157, 255, 0.46);
+    border-radius: inherit;
+    box-shadow: 0 0 22px rgba(119, 108, 246, 0.3);
+    content: '';
+    pointer-events: none;
+    animation: canvas-cinema-running-breathe 1.2s ease-in-out infinite alternate;
+  }
+
+  // 画布平移/缩放交互期间，暂停运行中节点的无限动画（conic-gradient 旋转边框 + 呼吸），
+  // 把每帧的 paint 预算让给交互合成。conic-gradient + mask-composite 是最贵的 paint 之一，
+  // 多个运行中节点会持续抢占帧预算导致掉帧。交互结束自动恢复。
+  .canvas-stage[data-viewport-moving='true'] .canvas-node-task-running::before,
+  .canvas-stage[data-viewport-moving='true'] .canvas-node-task-running::after {
+    animation-play-state: paused;
+  }
+
+  .canvas-node.canvas-node-task-failed {
+    border-color: rgba(239, 107, 118, 0.62);
+  }
+
+  .canvas-node-meta-bar {
+    height: 32px;
+    min-height: 32px;
+    flex: 0 0 32px;
+    gap: 7px;
+    padding: 0 9px;
+    // border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-meta-title {
+    gap: 6px;
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-node-meta-icon {
+    width: 13px;
+    height: 13px;
+    flex-basis: 13px;
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-node-kind-label {
+    color: var(--canvas-cinema-text);
+    font-size: 10px;
+    font-weight: 610;
+  }
+
+  .canvas-node-meta-chip {
+    min-height: 18px;
+    color: var(--canvas-cinema-text-faint);
+    font-family: 'DIN Alternate', 'Avenir Next', sans-serif;
+    font-size: 8px;
+    line-height: 18px;
+  }
+
+  .canvas-node-meta-chip-status.is-running {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-meta-chip-status.is-completed,
+  .canvas-node-meta-chip-state.is-approved,
+  .canvas-node-meta-chip-state.is-locked {
+    color: var(--canvas-cinema-success);
+  }
+
+  .canvas-node-core,
+  .canvas-node-body {
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-core {
+    overflow: hidden;
+    border-radius: 0 0 10px 10px;
+  }
+
+  // 音频选中工具栏位于节点顶部之外；主题的高优先级 core 裁剪不能覆盖它。
+  .canvas-node-core-audio,
+  .canvas-node-body-audio {
+    overflow: visible !important;
+  }
+
+  // 节点正文必须始终参与绘制。React Flow 节点位于 transform 画布内时，
+  // content-visibility:auto 可能把仍在 DOM 中的正文误判为不可见，最终只剩
+  // 节点外框和占位尺寸；节点数量优化交给 React Flow 的可见节点策略处理。
+
+  .canvas-node.canvas-node-media-full-bleed {
+    // Handle 与 NodeResizer 会跨出节点边界；媒体内容仍由 .canvas-node-core 裁切。
+    overflow: visible;
+    border-color: rgba(255, 255, 255, 0.09);
+    background: #07090b;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-meta-bar {
+    position: absolute;
+    z-index: var(--z-canvas-chrome);
+    top: 0;
+    right: 0;
+    left: 0;
+    border: 0;
+    background: linear-gradient(180deg, rgba(5, 7, 9, 0.82), rgba(5, 7, 9, 0));
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-core {
+    position: relative;
+    height: 100%;
+    flex: 1 1 100%;
+    border-radius: inherit;
+    background: #07090b;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-body {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #07090b;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-wrap,
+  .canvas-node-media-full-bleed .canvas-node-image {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: inherit;
+    padding: 46px 16px 58px;
+    background:
+      radial-gradient(circle at 50% 38%, rgba(119, 108, 246, 0.13), transparent 38%), #101319;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder > svg {
+    color: rgba(145, 137, 255, 0.74);
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder strong {
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder span {
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-node-image,
+  .canvas-operation-output-media :is(img, video) {
+    object-fit: cover;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-body,
+  .canvas-node-media-full-bleed .canvas-node-image-wrap {
+    background: #07090b;
+  }
+
+  .canvas-node-image-overlay-footer {
+    position: absolute;
+    z-index: var(--z-canvas-chrome);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    box-sizing: border-box;
+    min-height: 42px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 8px 9px;
+    border: 0;
+    background: linear-gradient(transparent, rgba(5, 7, 9, 0.84));
+    backdrop-filter: none;
+  }
+
+  .canvas-node-image-overlay-footer button,
+  .canvas-node-quick-footer button {
+    min-height: 24px;
+    padding: 0 7px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--canvas-cinema-radius-xs);
+    background: rgba(9, 11, 14, 0.68);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 8px;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-chips {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+      opacity var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-media-full-bleed:hover .canvas-node-image-chips,
+  .canvas-node-media-full-bleed.canvas-node-selected .canvas-node-image-chips,
+  .canvas-node-media-full-bleed:focus-within .canvas-node-image-chips {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .canvas-node-operation .canvas-node-task-image-actions {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+      opacity var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-operation:hover .canvas-node-task-image-actions,
+  .canvas-node.canvas-node-selected .canvas-node-task-image-actions,
+  .canvas-node-operation:focus-within .canvas-node-task-image-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  // 主操作按钮不能跟随 hover 才出现，否则媒体节点只剩图片占位，用户无法发现入口。
+  .canvas-node-media-full-bleed .canvas-node-image-overlay-footer > button {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .canvas-node-quick-footer {
+    display: flex;
+    height: 34px;
+    min-height: 34px;
+    flex-basis: 34px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 0 9px;
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-quick-footer button {
+    min-height: auto;
+    flex: 0 0 auto;
+    padding: 2px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--canvas-cinema-text-muted);
+    cursor: pointer;
+    font-size: 8px;
+    font-weight: 560;
+    transition: color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-quick-footer button:hover {
+    background: transparent;
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-task-image-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0;
+    background: transparent;
+  }
+
+  .canvas-node-task-image-actions button {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 6px 10px;
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, rgba(10, 14, 24, 0.88) 90%, var(--canvas-node-body-bg));
+    color: #f8fbff;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-task-image-actions button:hover {
+    border-color: color-mix(in srgb, var(--primary) 64%, transparent);
+    background: color-mix(in srgb, rgba(18, 28, 44, 0.94) 92%, var(--canvas-node-body-bg));
+    color: #fff;
+  }
+
+  .canvas-node-task-image-actions button.is-danger {
+    color: var(--canvas-cinema-danger, #ff7875);
+  }
+
+  .canvas-node-task-image-actions button.is-danger:hover {
+    border-color: var(--canvas-cinema-danger, #ff7875);
+    background: rgba(255, 77, 79, 0.12);
+    color: #ffaaa8;
+  }
+
+  .canvas-node.canvas-node-group {
+    border-color: rgba(255, 255, 255, 0.11);
+    background: rgba(15, 18, 22, 0.62);
+  }
+
+  .canvas-node.canvas-node-collapsed-group {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .canvas-node-group .canvas-node-core,
+  .canvas-node-group .canvas-node-body {
+    background: transparent;
+  }
+
+  // 分组的正文只复述“包含 N 个节点”，会与真实子节点叠在一起；结构信息由顶部
+  // 类型/状态和底部组操作承担，中间区域完整留给成员素材。
+  .canvas-node-group .canvas-node-group-body {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .canvas-node-group .canvas-node-quick-footer {
+    background: rgba(13, 16, 20, 0.9);
+  }
+
+  .canvas-node-content-title {
+    height: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+    padding: 8px 10px;
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-content-title strong {
+    color: var(--canvas-cinema-text-strong);
+    font-size: 11px;
+  }
+
+  .canvas-node-content-title span {
+    color: var(--canvas-cinema-text-faint);
+    font-size: 8px;
+  }
+
+  // 媒体节点用满铺突出内容，文本节点则需要稳定的阅读留白。这里由 Cinematic
+  // owner 明确接管正文间距，避免历史样式里被注释的 padding 再次造成贴边。
+  .canvas-node-text {
+    box-sizing: border-box;
+    padding: 14px 16px 18px;
+  }
+
+  .canvas-node-text.canvas-node-text-long {
+    padding: 18px 20px 22px;
+  }
+
+  .canvas-operation-empty-state {
+    gap: 9px;
+    padding: 12px;
+    background: var(--canvas-cinema-surface-2);
+    .canvas-node-task-msg {
+      text-align: center;
+    }
+  }
+
+  .canvas-operation-empty-icon {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-task-msg,
+  .canvas-node-task-meta {
+    color: var(--canvas-cinema-text-muted);
+    font-size: 9px;
+    line-height: 1.6;
+  }
+
+  .canvas-operation-param-summary > span {
+    border-color: var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-xs);
+    background: transparent;
+  }
+
+  .canvas-node-handle {
+    // 直接用真实 Handle 绘制圆点，并让自身中心落在节点边界上。这样不再受
+    // React Flow 默认 min-size 与零尺寸伪元素定位共同计算造成的水平偏移影响。
+    --canvas-node-handle-scale: 1;
+    width: 13px;
+    min-width: 13px;
+    height: 13px;
+    min-height: 13px;
+    box-sizing: border-box;
+    border: 2px solid var(--canvas-cinema-surface-2);
+    background: #69727d;
+    // hover / 牵线吸附的放大与复原都走平滑过渡。
+    transition:
+      transform var(--canvas-cinema-motion-fast) ease,
+      width var(--canvas-cinema-motion-fast) ease,
+      height var(--canvas-cinema-motion-fast) ease,
+      background-color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-handle::after {
+    content: none;
+  }
+
+  .canvas-node-handle::before {
+    right: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .canvas-node-handle.react-flow__handle-left {
+    transform: translate(-50%, -50%) scale(var(--canvas-node-handle-scale));
+  }
+
+  .canvas-node-handle.react-flow__handle-right {
+    transform: translate(50%, -50%) scale(var(--canvas-node-handle-scale));
+  }
+
+  .canvas-node-selected .canvas-node-handle,
+  .canvas-node:hover .canvas-node-handle {
+    width: 18px;
+    height: 18px;
+  }
+  .canvas-node:hover .canvas-node-handle,
+  .canvas-node-selected .canvas-node-handle,
+  .canvas-node-handle:hover,
+  .canvas-node-handle.connectingto.valid {
+    --canvas-node-handle-scale: 1.35;
+    background: var(--canvas-cinema-accent-bright);
+  }
+
+  // 牵线靠近节点：候选节点轻微偏转 + 光晕，锚点同步放大高亮。
+  // 只用 transform / box-shadow 表达，不引发布局位移。
+  .react-flow__node.canvas-connection-candidate {
+    .canvas-node {
+      border-color: var(--canvas-cinema-accent-bright);
+      box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--canvas-cinema-accent-bright) 36%, transparent),
+        0 12px 28px color-mix(in srgb, var(--canvas-cinema-accent-bright) 20%, transparent);
+      animation: canvas-connection-nudge 0.9s ease-in-out infinite;
+    }
+
+    .canvas-node-handle {
+      width: 20px;
+      height: 20px;
+      --canvas-node-handle-scale: 1.8;
+      background: var(--canvas-cinema-accent-bright);
+    }
+  }
+
+  // 无效目标（重复边 / 隐藏节点等）：不偏转、不放大锚点，仅以危险色描边区分，
+  // 松手不会创建连线。
+  .react-flow__node.canvas-connection-invalid {
+    .canvas-node {
+      border-color: var(--canvas-cinema-danger);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--canvas-cinema-danger) 30%, transparent);
+    }
+  }
+
+  .canvas-floating-toolbar-shell {
+    min-height: 36px;
+    padding: 3px;
+    border-color: var(--canvas-cinema-border-strong);
+    border-radius: 9px;
+    backdrop-filter: blur(12px);
+  }
+
+  .canvas-floating-toolbar-shell .ant-btn {
+    height: 28px;
+    min-width: 28px;
+    border-radius: var(--canvas-cinema-radius-xs);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 9px;
+  }
+
+  .canvas-floating-toolbar-shell .ant-btn:hover {
+    background: var(--canvas-cinema-accent-soft);
+    color: #cbc7ff;
+  }
+
+  .canvas-stage[data-zoom-lod='compact'] {
+    .canvas-node-meta-chip-state,
+    .canvas-node-content-title span {
+      display: none;
+    }
+
+    .canvas-node-content-title {
+      height: 32px;
+      min-height: 32px;
+      flex-basis: 32px;
+      justify-content: center;
+      padding-block: 4px;
+    }
+  }
+
+  .canvas-stage[data-zoom-lod='overview'] {
+    .canvas-node-meta-tags,
+    .canvas-node-content-title,
+    .canvas-operation-param-summary,
+    .canvas-node-task-msg {
+      display: none;
+    }
+
+    .canvas-node-meta-bar {
+      height: 26px;
+      min-height: 26px;
+      flex-basis: 26px;
+      padding-inline: 7px;
+    }
+
+    .canvas-node-kind-label {
+      font-size: 9px;
+    }
+
+    .canvas-node-quick-footer {
+      display: flex;
+    }
+
+    .canvas-node-image-overlay-footer button {
+      display: inline-flex;
+    }
+
+    .canvas-node-image-overlay-footer {
+      min-height: 28px;
+      padding: 5px 7px;
+    }
+  }
+}
+
+@property --canvas-cinema-running-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes canvas-cinema-running-border {
+  to {
+    --canvas-cinema-running-angle: 360deg;
+  }
+}
+
+@keyframes canvas-cinema-running-breathe {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+// 牵线候选节点的轻微偏转 + 浮起（幅度很小，仅作"可在此落线"的待链接提示）。
+@keyframes canvas-connection-nudge {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-1.2deg) translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-workspace.canvas-cinematic {
+    .canvas-node.canvas-node-task-running {
+      animation: none;
+    }
+
+    .canvas-node.canvas-node-task-running::before,
+    .canvas-node.canvas-node-task-running::after {
+      animation: none;
+    }
+
+    // 减少动态效果时保留静态高亮（描边 + 放大锚点），不做偏转动画。
+    .react-flow__node.canvas-connection-candidate .canvas-node {
+      animation: none;
+    }
+  }
+}

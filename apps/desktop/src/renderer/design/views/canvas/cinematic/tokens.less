@@ -1,0 +1,62 @@
+.canvas-workspace.canvas-cinematic {
+  color-scheme: dark;
+
+  // 参考创作工作台的中性炭灰：画布保持低干扰，节点与面板仅靠明度建立层级。
+  --canvas-cinema-bg: #141414;
+  --canvas-cinema-stage: #101010;
+  --canvas-cinema-surface-1: #191919;
+  --canvas-cinema-surface-2: #202020;
+  --canvas-cinema-surface-3: #292929;
+  --canvas-cinema-surface-4: #343434;
+  --canvas-cinema-border: rgba(255, 255, 255, 0.08);
+  --canvas-cinema-border-strong: rgba(255, 255, 255, 0.14);
+  --canvas-cinema-text-strong: #f1f1f1;
+  --canvas-cinema-text: #cccccc;
+  --canvas-cinema-text-muted: #8a8a8a;
+  --canvas-cinema-text-faint: #5f5f5f;
+  --canvas-cinema-accent: #776cf6;
+  --canvas-cinema-accent-bright: #9189ff;
+  --canvas-cinema-accent-soft: rgba(119, 108, 246, 0.16);
+  --canvas-cinema-success: #45d09a;
+  --canvas-cinema-warning: #efb85a;
+  --canvas-cinema-danger: #ef6b76;
+  --canvas-cinema-radius-xs: 6px;
+  --canvas-cinema-radius-sm: 8px;
+  --canvas-cinema-radius-md: 11px;
+  --canvas-cinema-radius-lg: 14px;
+  --canvas-cinema-motion-fast: 160ms;
+  --canvas-cinema-motion-standard: 220ms;
+  --z-canvas-content: 0;
+  --z-canvas-selection: 10;
+  --z-canvas-chrome: 20;
+  --z-canvas-context: 30;
+  --z-canvas-panel: 40;
+  --z-canvas-popover: 50;
+  --z-canvas-modal: 60;
+  --z-canvas-toast: 70;
+
+  --bg: var(--canvas-cinema-bg);
+  --bg-soft: var(--canvas-cinema-surface-1);
+  --bg-sunken: var(--canvas-cinema-stage);
+  --panel: var(--canvas-cinema-surface-1);
+  --panel-elev: var(--canvas-cinema-surface-2);
+  // 所有画布右键菜单共用同一根节点表面；Portal 菜单会在 window-theme.less
+  // 中把该变量桥接到 document，避免 Ant Design 的 colorBgElevated 抢回默认灰色。
+  --canvas-context-menu-bg: var(--panel);
+  --canvas-edit-bg: var(--canvas-cinema-surface-2);
+  --border: var(--canvas-cinema-border);
+  --border-strong: var(--canvas-cinema-border-strong);
+  --divider: var(--canvas-cinema-border);
+  --text: var(--canvas-cinema-text);
+  --text-strong: var(--canvas-cinema-text-strong);
+  --text-muted: var(--canvas-cinema-text-muted);
+  --text-faint: var(--canvas-cinema-text-faint);
+  --primary: var(--canvas-cinema-accent);
+  --primary-hover: var(--canvas-cinema-accent-bright);
+  --primary-soft: var(--canvas-cinema-accent-soft);
+
+  background: var(--canvas-cinema-bg);
+  color: var(--canvas-cinema-text);
+  font-family:
+    'Avenir Next', 'HarmonyOS Sans SC', 'MiSans', 'PingFang SC', 'Microsoft YaHei UI', sans-serif;
+}

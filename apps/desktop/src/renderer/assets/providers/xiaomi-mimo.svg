@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="小米 MiMo">
+  <defs>
+    <linearGradient id="mm-mimo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6900"/>
+      <stop offset="100%" stop-color="#ff9c40"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#mm-mimo)"/>
+  <path d="M14 18h36l-6 32H20L14 18Z" fill="#fff" opacity=".95"/>
+  <rect x="22" y="24" width="20" height="20" rx="3" fill="none" stroke="#ff6900" stroke-width="2.5"/>
+  <circle cx="32" cy="34" r="3" fill="#ff6900"/>
+</svg>

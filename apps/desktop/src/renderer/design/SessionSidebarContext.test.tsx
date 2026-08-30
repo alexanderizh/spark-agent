@@ -1,0 +1,1753 @@
+// @vitest-environment jsdom
+
+import React from 'react'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionId } from '@spark/protocol'
+
+const toastMocks = vi.hoisted(() => {
+  const toast = Object.assign(
+    vi.fn(() => 'toast-id'),
+    {
+      success: vi.fn(
+        (
+          _message: string,
+          _options?: { actions?: Array<{ label: string; onClick: () => void }> },
+        ) => 'toast-id',
+      ),
+      error: vi.fn(() => 'toast-id'),
+      info: vi.fn(() => 'toast-id'),
+      warning: vi.fn(() => 'toast-id'),
+    },
+  )
+  return { dismiss: vi.fn(), toast }
+})
+
+const appContextMock = vi.hoisted(() => ({
+  view: 'chat',
+  requestConfirm: vi.fn(),
+  requestPrompt: vi.fn(),
+}))
+
+vi.mock('./AppContext', () => {
+  return {
+    useApp: () => ({
+      t: { view: appContextMock.view },
+      requestConfirm: appContextMock.requestConfirm,
+      requestPrompt: appContextMock.requestPrompt,
+    }),
+  }
+})
+
+vi.mock('./components/Toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
+  useOptionalToast: () => toastMocks,
+}))
+
+import { ToastProvider } from './components/Toast'
+import {
+  filterSessionsByTime,
+  SessionSidebarProvider,
+  useSessionSidebar,
+  type SessionSummary,
+} from './SessionSidebarContext'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+describe('SessionSidebarContext', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  beforeEach(() => {
+    appContextMock.view = 'chat'
+    localStorage.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+
+    class ResizeObserverMock {
+      observe = vi.fn()
+      disconnect = vi.fn()
+    }
+
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  })
+
+  it('loads all session schedules once per refresh and exposes aggregated summaries', async () => {
+    let scheduleListCount = 0
+    let configChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') {
+        scheduleListCount += 1
+        return {
+          tasks: [
+            { id: 'task-1', scope: 'session', sessionId: 'session-1', enabled: true },
+            { id: 'task-2', scope: 'session', sessionId: 'session-1', enabled: false },
+            ...(scheduleListCount > 1
+              ? [{ id: 'task-3', scope: 'session', sessionId: 'session-2', enabled: true }]
+              : []),
+          ],
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:config:changed') configChangedHandler = handler
+        return vi.fn()
+      }),
+    })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
+
+    expect(invoke).toHaveBeenCalledWith('scheduled-task:list', { scope: 'session' })
+    expect(latestCtxRef.current?.sessionScheduleSummaries).toEqual({
+      'session-1': { total: 2, enabled: 1 },
+    })
+
+    await act(async () => {
+      configChangedHandler?.({ scope: 'scheduled-task', action: 'create', id: 'task-3' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(scheduleListCount).toBe(2)
+    expect(latestCtxRef.current?.sessionScheduleSummaries).toEqual({
+      'session-1': { total: 2, enabled: 1 },
+      'session-2': { total: 1, enabled: 1 },
+    })
+  })
+
+  it('reports no actively viewed session while the main app is outside chat', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>{null}</SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('app:set-unread-count', {
+      count: 0,
+      activeSessionId: null,
+    })
+  })
+
+  it('marks a completed active session unread when the user is on another app page', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const session = {
+      id: 'session-1',
+      title: 'Background task',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    const on = vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+      if (channel === 'stream:session:agent-event') onAgentEvent = handler
+      return vi.fn()
+    })
+    vi.stubGlobal('spark', { invoke, on })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    await act(async () => {
+      onAgentEvent?.({ type: 'agent_status', status: 'completed', sessionId: 'session-1' })
+    })
+
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
+  })
+
+  it('reconciles a stale active running session from authoritative queue state', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    localStorage.setItem('spark-agent:last-active-session', 'session-ghost')
+    const session = {
+      id: 'session-ghost',
+      title: 'Stale running session',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-21T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let queueRunning = true
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') return { tasks: [] }
+      if (channel === 'session:get-queue') {
+        return { sessionId: 'session-ghost', running: queueRunning, queuedTurns: [] }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:agent-event') onAgentEvent = handler
+        return vi.fn()
+      }),
+    })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(latestCtxRef.current?.activeSessionId).toBe('session-ghost')
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+    expect(addEventListener).toHaveBeenCalledWith('focus', expect.any(Function))
+
+    await act(async () => {
+      onAgentEvent?.({
+        type: 'agent_status',
+        status: 'waiting_permission',
+        sessionId: 'session-ghost',
+      })
+      queueRunning = false
+      window.dispatchEvent(new Event('focus'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:get-queue', { sessionId: 'session-ghost' })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+    expect(latestCtxRef.current?.sessionAgentStatuses['session-ghost']).toBeUndefined()
+  })
+
+  it('clears unread marks of project sessions when the project is archived', async () => {
+    appContextMock.view = 'settings'
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    appContextMock.requestConfirm.mockResolvedValueOnce(true)
+    const workspace = {
+      id: 'ws-1',
+      name: 'Demo project',
+      rootPath: '/tmp/demo-project',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      worktreeMeta: null,
+    }
+    const session = {
+      id: 'session-1',
+      title: 'Project session',
+      status: 'running',
+      workspaceIds: ['ws-1'],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    } as unknown as SessionSummary
+    let onAgentEvent: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'scheduled-task:list') return { tasks: [] }
+      return {}
+    })
+    const on = vi.fn((channel: string, handler: (event: Record<string, unknown>) => void) => {
+      if (channel === 'stream:session:agent-event') onAgentEvent = handler
+      return vi.fn()
+    })
+    vi.stubGlobal('spark', { invoke, on })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+
+    await act(async () => {
+      onAgentEvent?.({ type: 'agent_status', status: 'completed', sessionId: 'session-1' })
+    })
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(true)
+
+    // 等待初始 session:list 刷新提交，避免 handleArchiveProject 闭包拿到空 sessions
+    // （真实 UI 中归档只能在会话列表渲染后触发，闭包总是新鲜的）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
+    await act(async () => {
+      await latestCtxRef.current?.handleArchiveProject(workspace)
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'workspace:update',
+      expect.objectContaining({ workspaceId: 'ws-1', archived: true }),
+    )
+    expect(latestCtxRef.current?.unreviewedCompletedSessions.has('session-1')).toBe(false)
+  })
+
+  it('does not let a secondary window overwrite main-window activity reporting', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider reportAppActivity={false}>{null}</SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+
+    expect(invoke.mock.calls.some(([channel]) => channel === 'app:set-unread-count')).toBe(false)
+    expect(invoke.mock.calls.some(([channel]) => channel === 'scheduled-task:list')).toBe(false)
+  })
+
+  afterEach(() => {
+    if (root != null) {
+      act(() => root?.unmount())
+      root = null
+    }
+    container.remove()
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  it('adds dropped directories as projects without creating a session', async () => {
+    const existingWorkspace = {
+      id: 'workspace-existing',
+      name: 'Existing',
+      rootPath: '/work/existing',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }
+    const createdWorkspaces: (typeof existingWorkspace)[] = []
+    let currentWorkspace = existingWorkspace
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [existingWorkspace, ...createdWorkspaces],
+          total: 1 + createdWorkspaces.length,
+        }
+      }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: currentWorkspace }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'file:stat-kind') {
+        const path = String(request?.path ?? '')
+        return { kind: path.endsWith('.txt') ? 'file' : 'directory' }
+      }
+      if (channel === 'workspace:open') {
+        const create = request?.create as { name: string; rootPath: string }
+        const workspace = {
+          ...existingWorkspace,
+          id: `workspace-${create.name}`,
+          name: create.name,
+          rootPath: create.rootPath,
+        }
+        createdWorkspaces.push(workspace)
+        currentWorkspace = workspace
+        return { workspace }
+      }
+      return {}
+    })
+
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleAddDroppedProjects([
+        '/work/alpha',
+        '/work/readme.txt',
+        '/work/beta',
+      ])
+    })
+
+    expect(
+      invoke.mock.calls
+        .filter(([channel]) => channel === 'workspace:open')
+        .map(([, request]) => request),
+    ).toEqual([
+      { create: { name: 'alpha', rootPath: '/work/alpha' } },
+      { create: { name: 'beta', rootPath: '/work/beta' } },
+    ])
+    expect(invoke.mock.calls.some(([channel]) => channel === 'session:create')).toBe(false)
+    expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    expect(toastMocks.toast.success).toHaveBeenCalledWith('已添加 2 个项目；忽略 1 个文件')
+  })
+
+  it('keeps the selected workspace after creating a team-mode session', async () => {
+    const workspaceA = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-05-27T00:00:00.000Z',
+      updatedAt: '2026-05-27T00:00:00.000Z',
+    }
+    const workspaceB = {
+      id: 'workspace-2',
+      name: 'Beta',
+      rootPath: '/tmp/beta',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-05-27T00:00:00.000Z',
+      updatedAt: '2026-05-27T00:00:00.000Z',
+    }
+    const providerId = 'provider-1'
+    const agentId = 'platform-manager-agent'
+    const createdSession = {
+      id: 'session-created',
+      title: 'Team session',
+      projectId: 'workspace-1',
+      workspaceIds: ['workspace-1'],
+      providerProfileId: providerId,
+      modelId: null,
+      agentId,
+      agentAdapter: 'claude',
+      permissionMode: 'claude-ask',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-05-27T00:00:00.000Z',
+      updatedAt: '2026-05-27T00:00:00.000Z',
+      messageCount: 0,
+    }
+    let sessionCreated = false
+    let configChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let sessionCreatedHandler: ((event: Record<string, unknown>) => void) | null = null
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return { workspaces: [workspaceA, workspaceB], total: 2 }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: sessionCreated ? [createdSession] : [],
+          total: sessionCreated ? 1 : 0,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: workspaceB }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: null,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        sessionCreated = true
+        window.setTimeout(() => {
+          sessionCreatedHandler?.({ sessionId: 'session-created', session: createdSession })
+        }, 5)
+        return {
+          sessionId: 'session-created',
+          createdAt: '2026-05-27T00:00:00.000Z',
+          session: createdSession,
+        }
+      }
+      if (channel === 'team:update') {
+        window.setTimeout(() => {
+          configChangedHandler?.({ scope: 'team', action: 'update', id: 'session-created' })
+        }, 0)
+        return { config: request?.config }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:config:changed') configChangedHandler = callback
+        if (channel === 'stream:session:created') sessionCreatedHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        modelId: '',
+        agentId: '',
+        providerProfileId: providerId,
+      }),
+    )
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      latestCtxRef.current?.setActiveWorkspace('workspace-1')
+    })
+
+    const refreshCountBeforeCreate = invoke.mock.calls.filter(
+      ([channel]) => channel === 'workspace:list',
+    ).length
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession('workspace-1', {
+        teamConfig: {
+          enabled: true,
+          hostAgentId: agentId,
+          memberAgentIds: [],
+          maxDepth: 1,
+          allowNesting: false,
+          maxDiscussionRounds: 6,
+          enablePeerMessaging: false,
+        },
+      })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-1')
+    expect(latestCtxRef.current?.activeSessionId).toBe('session-created')
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'workspace:list').length -
+        refreshCountBeforeCreate,
+    ).toBe(0)
+  })
+
+  it('keeps a newly created session active when an older refresh resolves late', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    }
+    const providerId = 'provider-1'
+    const agentId = 'platform-manager-agent'
+    const oldSession = {
+      id: 'session-old',
+      title: 'Old session',
+      projectId: workspace.id,
+      workspaceIds: [workspace.id],
+      providerProfileId: providerId,
+      modelId: null,
+      agentId,
+      agentAdapter: 'claude',
+      permissionMode: 'claude-ask',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+      messageCount: 1,
+    }
+    const createdSession = {
+      ...oldSession,
+      id: 'session-created',
+      title: 'New session',
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+      messageCount: 0,
+    }
+    let sessionCreated = false
+    let sessionCreatedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let blockNextRefresh = false
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        if (blockNextRefresh) {
+          blockNextRefresh = false
+          await refreshGate
+        }
+        return { workspaces: [workspace], total: 1 }
+      }
+      if (channel === 'session:list') {
+        const sessions = sessionCreated ? [createdSession, oldSession] : [oldSession]
+        return { sessions, total: sessions.length }
+      }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-07-12T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: null,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        sessionCreated = true
+        sessionCreatedHandler?.({ sessionId: createdSession.id })
+        return { sessionId: createdSession.id, createdAt: createdSession.createdAt }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:created') sessionCreatedHandler = callback
+        return vi.fn()
+      }),
+    })
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({ providerProfileId: providerId }),
+    )
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    blockNextRefresh = true
+    const sessionListCallsBeforeRefresh = invoke.mock.calls.filter(
+      ([channel]) => channel === 'session:list',
+    ).length
+    let staleRefresh: Promise<void> | undefined
+    act(() => {
+      staleRefresh = latestCtxRef.current?.refreshData()
+    })
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.filter(([channel]) => channel === 'session:list')).toHaveLength(
+        sessionListCallsBeforeRefresh + 1,
+      )
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id)
+    })
+    expect(latestCtxRef.current?.activeSessionId).toBe(createdSession.id)
+
+    await act(async () => {
+      releaseRefresh()
+      await staleRefresh
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(latestCtxRef.current?.sessions.some((session) => session.id === createdSession.id)).toBe(
+      true,
+    )
+    expect(latestCtxRef.current?.activeSessionId).toBe(createdSession.id)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    sessionCreated = false
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+    })
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeSessionId).toBeNull()
+    })
+  })
+
+  it('coalesces concurrent refresh requests into one IPC batch', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    }
+    let blockRefresh = false
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const invoke = vi.fn(async (channel: string) => {
+      if (blockRefresh) await refreshGate
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    invoke.mockClear()
+    blockRefresh = true
+    const context = latestCtxRef.current
+    if (context == null) throw new Error('Session sidebar context was not captured')
+    let first!: Promise<void>
+    let second!: Promise<void>
+    act(() => {
+      first = context.refreshData()
+      second = context.refreshData()
+    })
+
+    expect(first).toBe(second)
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.filter(([channel]) => channel === 'workspace:list')).toHaveLength(1)
+    })
+
+    await act(async () => {
+      releaseRefresh()
+      await Promise.all([first, second])
+    })
+  })
+
+  it('syncs the active workspace to the restored active session workspace', async () => {
+    const workspaceAlpha = {
+      id: 'workspace-alpha',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+    }
+    const workspaceBeta = {
+      id: 'workspace-beta',
+      name: 'Beta',
+      rootPath: '/tmp/beta',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+    }
+    const providerId = 'provider-1'
+    const agentId = 'platform-manager-agent'
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return { workspaces: [workspaceAlpha, workspaceBeta], total: 2 }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-beta',
+              title: 'Beta session',
+              projectId: 'workspace-beta',
+              workspaceIds: ['workspace-beta'],
+              providerProfileId: providerId,
+              modelId: null,
+              agentId,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-08T00:00:00.000Z',
+              updatedAt: '2026-07-08T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: workspaceAlpha }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-07-08T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: null,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    localStorage.setItem('spark-agent:last-active-session', 'session-beta')
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeSessionId).toBe('session-beta')
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-beta')
+    })
+
+    await act(async () => {
+      latestCtxRef.current?.setActiveWorkspace('workspace-alpha')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-alpha')
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeWorkspaceId).toBe('workspace-alpha')
+    })
+  })
+
+  it('syncs runtime selection when reusing an unused session', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-09T00:00:00.000Z',
+      updatedAt: '2026-07-09T00:00:00.000Z',
+    }
+    const oldProviderId = 'old-provider'
+    const nextProviderId = 'next-provider'
+    const agentId = 'platform-manager-agent'
+    const updatedSessions: Record<string, unknown>[] = []
+    const updatedTeamConfigs: Record<string, unknown>[] = []
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'unused-session',
+              title: 'Unused session',
+              projectId: workspace.id,
+              workspaceIds: [workspace.id],
+              providerProfileId: oldProviderId,
+              modelId: 'old-model',
+              agentId,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-07-09T00:00:00.000Z',
+              updatedAt: '2026-07-09T00:00:00.000Z',
+              messageCount: 0,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: oldProviderId,
+              name: 'Old Provider',
+              provider: 'anthropic',
+              defaultModel: 'old-model',
+              modelIds: ['old-model'],
+              apiEndpoint: 'https://old.example.com',
+              keystoreRef: oldProviderId,
+              isDefault: false,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+            {
+              id: nextProviderId,
+              name: 'Next Provider',
+              provider: 'anthropic',
+              defaultModel: 'next-model',
+              modelIds: ['next-model'],
+              apiEndpoint: 'https://next.example.com',
+              keystoreRef: nextProviderId,
+              isDefault: true,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: nextProviderId,
+              modelId: 'next-model',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'high',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:update') {
+        updatedSessions.push(request ?? {})
+        return {
+          session: {
+            id: 'unused-session',
+            title: 'Unused session',
+            projectId: workspace.id,
+            workspaceIds: [workspace.id],
+            providerProfileId: request?.providerProfileId,
+            modelId: request?.modelId,
+            agentId: request?.agentId,
+            agentAdapter: request?.agentAdapter,
+            permissionMode: request?.permissionMode,
+            chatMode: 'agent',
+            reasoningEffort: request?.reasoningEffort,
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-07-09T00:00:00.000Z',
+            updatedAt: '2026-07-09T00:00:00.000Z',
+            messageCount: 0,
+          },
+        }
+      }
+      if (channel === 'team:update') {
+        updatedTeamConfigs.push(request ?? {})
+        return { config: request?.config }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({
+        adapter: 'claude',
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+        permissionMode: 'claude-auto-edits',
+        reasoningEffort: 'high',
+        agentId,
+      }),
+    )
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.sessions).toHaveLength(1)
+      expect(latestCtxRef.current?.providers).toHaveLength(2)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id)
+    })
+
+    expect(updatedSessions).toHaveLength(1)
+    expect(updatedSessions[0]).toEqual(
+      expect.objectContaining({
+        sessionId: 'unused-session',
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+        agentId,
+        agentAdapter: 'claude',
+        permissionMode: 'claude-ask',
+        reasoningEffort: 'high',
+      }),
+    )
+    expect(latestCtxRef.current?.activeSessionId).toBe('unused-session')
+    expect(latestCtxRef.current?.selectedProviderId).toBe(nextProviderId)
+    expect(updatedTeamConfigs).toEqual([
+      {
+        sessionId: 'unused-session',
+        config: {
+          enabled: false,
+          hostAgentId: agentId,
+          memberAgentIds: [],
+          maxDepth: 1,
+          allowNesting: false,
+          maxDiscussionRounds: 6,
+          enablePeerMessaging: false,
+        },
+      },
+    ])
+  })
+
+  it('keeps the created session model aligned with the selected provider', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-09T00:00:00.000Z',
+      updatedAt: '2026-07-09T00:00:00.000Z',
+    }
+    const oldProviderId = 'old-provider'
+    const nextProviderId = 'next-provider'
+    const createdSessions: Record<string, unknown>[] = []
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: oldProviderId,
+              name: 'Old Provider',
+              provider: 'anthropic',
+              defaultModel: 'old-model',
+              modelIds: ['old-model'],
+              apiEndpoint: 'https://old.example.com',
+              keystoreRef: oldProviderId,
+              isDefault: false,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+            {
+              id: nextProviderId,
+              name: 'Next Provider',
+              provider: 'anthropic',
+              defaultModel: 'next-model',
+              modelIds: ['next-model'],
+              apiEndpoint: 'https://next.example.com',
+              keystoreRef: nextProviderId,
+              isDefault: true,
+              createdAt: '2026-07-09T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: 'platform-manager-agent',
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: oldProviderId,
+              modelId: 'old-model',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        createdSessions.push(request ?? {})
+        return { sessionId: 'created-session' }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.providers).toHaveLength(2)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id, {
+        providerProfileId: nextProviderId,
+        forceNew: true,
+      })
+    })
+
+    expect(createdSessions).toHaveLength(1)
+    expect(createdSessions[0]).toEqual(
+      expect.objectContaining({
+        providerProfileId: nextProviderId,
+        modelId: 'next-model',
+      }),
+    )
+  })
+
+  it('creates a Codex session from the only imported provider on a fresh install', async () => {
+    const workspace = {
+      id: 'workspace-codex',
+      name: 'Codex Workspace',
+      rootPath: '/tmp/codex-workspace',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    }
+    const providerId = 'imported-codex-provider'
+    const createdSessions: Record<string, unknown>[] = []
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Imported Codex',
+              provider: 'openai',
+              defaultModel: 'gpt-5.6-luna',
+              modelIds: ['gpt-5.6-luna'],
+              apiEndpoint: 'https://example.com/v1',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+            {
+              id: 'codex-auto-router',
+              name: 'Codex Auto Router',
+              provider: 'openai',
+              defaultModel: '',
+              modelIds: [],
+              apiEndpoint: '',
+              keystoreRef: '',
+              isDefault: false,
+              createdAt: '',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: 'platform-manager-agent',
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: 'missing-claude-provider',
+              modelId: 'claude-sonnet',
+              agentAdapter: 'claude-sdk',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        createdSessions.push(request ?? {})
+        return { sessionId: 'created-codex-session' }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.selectedProviderId).toBe(providerId)
+      expect(latestCtxRef.current?.agents).toHaveLength(1)
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id, { forceNew: true })
+    })
+
+    expect(appContextMock.requestConfirm).not.toHaveBeenCalled()
+    expect(createdSessions).toEqual([
+      expect.objectContaining({
+        providerProfileId: providerId,
+        modelId: 'gpt-5.6-luna',
+        agentAdapter: 'codex',
+      }),
+    ])
+  })
+
+  it('refreshes a session activity time when an old session starts running', async () => {
+    const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
+    let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let agentEventHandler: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'old-session',
+              title: 'Old session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: oldUpdatedAt,
+              updatedAt: oldUpdatedAt,
+              messageCount: 1,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:queue-changed') queueChangedHandler = callback
+        if (channel === 'stream:session:agent-event') agentEventHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(latestCtxRef.current?.sessions).toHaveLength(1)
+    expect(latestCtxRef.current?.sessions[0]?.updatedAt).toBe(oldUpdatedAt)
+    const activityStartedAt = Date.now()
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'old-session', running: true, queuedTurns: [] })
+    })
+
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+    expect(
+      new Date(latestCtxRef.current?.sessions[0]?.updatedAt ?? 0).getTime(),
+    ).toBeGreaterThanOrEqual(activityStartedAt)
+    expect(filterSessionsByTime(latestCtxRef.current?.sessions ?? [], '1d')).toHaveLength(1)
+
+    await act(async () => {
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'old-session',
+        status: 'thinking',
+      })
+    })
+    expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBe('thinking')
+
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+    expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBeUndefined()
+  })
+
+  it('does not let a host terminal event override an authoritative running team queue', async () => {
+    let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let agentEventHandler: ((event: Record<string, unknown>) => void) | null = null
+    const session = {
+      id: 'team-session',
+      title: 'Team session',
+      status: 'running',
+      workspaceIds: [],
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    } as unknown as SessionSummary
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:queue-changed') queueChangedHandler = callback
+        if (channel === 'stream:session:agent-event') agentEventHandler = callback
+        return vi.fn()
+      }),
+    })
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+    })
+
+    // 等待初始 session:list 刷新提交，替代固定 30ms 等待（修复竞态 flake）。
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'team-session', running: true, queuedTurns: [] })
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'team-session',
+        status: 'completed',
+      })
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'team-session', running: false, queuedTurns: [] })
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
+  })
+
+  it('archives immediately and restores the session from the toast undo action', async () => {
+    const session: SessionSummary = {
+      id: 'session-archive' as SessionId,
+      title: 'Archive me',
+      projectId: 'workspace-archive',
+      workspaceIds: [],
+      providerProfileId: 'provider-archive',
+      modelId: null,
+      agentId: 'agent-archive',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      messageCount: 1,
+    }
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'session:update') {
+        return {
+          session: {
+            ...session,
+            archivedAt: request?.archived ? '2026-07-29T09:00:00.000Z' : null,
+          },
+        }
+      }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
+    await act(async () => {
+      await latestCtxRef.current?.handleArchiveSession(session)
+    })
+
+    expect(latestCtxRef.current?.sessions).toHaveLength(0)
+    expect(invoke).toHaveBeenCalledWith('session:update', {
+      sessionId: session.id,
+      archived: true,
+    })
+    expect(toastMocks.toast.success).toHaveBeenCalledWith(
+      '已归档',
+      expect.objectContaining({ actions: expect.any(Array) }),
+    )
+
+    const archiveToastOptions = toastMocks.toast.success.mock.calls.at(-1)?.[1]
+    const undoAction = archiveToastOptions?.actions?.[0]
+    expect(undoAction?.label).toBe('撤销')
+
+    await act(async () => {
+      undoAction?.onClick()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(toastMocks.dismiss).toHaveBeenCalledWith('toast-id')
+    expect(invoke).toHaveBeenCalledWith('session:update', {
+      sessionId: session.id,
+      archived: false,
+    })
+    expect(latestCtxRef.current?.sessions).toEqual([expect.objectContaining({ id: session.id })])
+    expect(toastMocks.toast.success).toHaveBeenLastCalledWith('已撤销归档')
+  })
+})

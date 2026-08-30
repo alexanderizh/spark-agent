@@ -1,0 +1,349 @@
+.runtime-diagnostic-card {
+  --diagnostic-accent: var(--text-muted, #8b93a1);
+  --diagnostic-accent-soft: color-mix(in srgb, var(--diagnostic-accent) 10%, transparent);
+  position: relative;
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border, #dfe3e8) 78%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel, #ffffff) 96%, var(--bg, #ffffff));
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  color: var(--text, #20242a);
+}
+
+.runtime-diagnostic-card::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--diagnostic-accent);
+  content: '';
+}
+
+.runtime-diagnostic-card.is-warning {
+  --diagnostic-accent: var(--warning, #d9920b);
+}
+
+.runtime-diagnostic-card.is-error {
+  --diagnostic-accent: var(--danger, #df5965);
+}
+
+.runtime-diagnostic-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 72px;
+  gap: 12px;
+  padding: 14px 16px 14px 28px;
+}
+
+.runtime-diagnostic-icon-shell {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--diagnostic-accent-soft);
+}
+
+.runtime-diagnostic-status-icon {
+  color: var(--diagnostic-accent);
+}
+
+.runtime-diagnostic-heading {
+  min-width: 0;
+}
+
+.runtime-diagnostic-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.runtime-diagnostic-title-row strong {
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-meta {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted, #8b93a1) 9%, transparent);
+  color: var(--text-muted, #747b86);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.runtime-diagnostic-preview {
+  display: block;
+  overflow: hidden;
+  margin-top: 1px;
+  color: var(--text-muted, #777e89);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-diagnostic-header-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.runtime-diagnostic-header-actions button:active {
+  transform: translateY(1px);
+}
+
+.runtime-diagnostic-header-actions button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary, #5876d8) 62%, transparent);
+  outline-offset: 2px;
+}
+
+.runtime-diagnostic-retry {
+  background: color-mix(in srgb, var(--primary, #5876d8) 10%, transparent);
+  color: var(--primary, #5876d8);
+}
+
+.runtime-diagnostic-retry:hover {
+  background: color-mix(in srgb, var(--primary, #5876d8) 16%, transparent);
+}
+
+.runtime-diagnostic-detail-toggle {
+  border-color: color-mix(in srgb, var(--text, #20242a) 12%, transparent) !important;
+  background: var(--text, #22262d);
+  color: var(--bg, #ffffff);
+}
+
+.runtime-diagnostic-detail-toggle:hover {
+  background: color-mix(in srgb, var(--text, #22262d) 88%, var(--bg, #ffffff));
+}
+
+.app.theme-dark .runtime-diagnostic-card {
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+.app.theme-dark .runtime-diagnostic-detail-toggle {
+  border-color: color-mix(in srgb, var(--text, #f3f4f6) 14%, transparent) !important;
+  background: color-mix(in srgb, var(--panel-elev, #383838) 92%, var(--bg, #262626));
+  color: var(--text, #f3f4f6);
+}
+
+.app.theme-dark .runtime-diagnostic-detail-toggle:hover {
+  background: color-mix(in srgb, var(--panel-elev, #383838) 78%, var(--text, #f3f4f6));
+}
+
+.runtime-diagnostic-body {
+  margin: 0 16px 0 28px;
+  padding: 12px 0 16px 50px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #20242a) 8%, transparent);
+}
+
+.runtime-diagnostic-body > p {
+  margin: 10px 0;
+  color: var(--text-muted, #747b86);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.runtime-diagnostic-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--text-faint, #9ba0a9);
+  font-size: 11px;
+}
+
+.runtime-diagnostic-code-row code {
+  max-width: min(100%, 360px);
+  overflow: hidden;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text, #20242a) 6%, transparent);
+  color: var(--text-muted, #616873);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.runtime-diagnostic-details dt {
+  color: var(--text-muted, #8b93a1);
+  font-size: 11px;
+}
+
+.runtime-diagnostic-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted, #747b86);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+.runtime-diagnostic-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-muted, #8b93a1);
+  font-size: 12px;
+}
+
+.codex-runtime-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 16px 14px 28px;
+  padding: 11px 12px 11px 50px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #20242a) 8%, transparent);
+}
+
+.codex-runtime-recovery-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted, #747b86);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.codex-runtime-recovery-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.codex-runtime-recovery-status svg {
+  flex: 0 0 auto;
+}
+
+.codex-runtime-recovery.is-installing .codex-runtime-recovery-status svg,
+.codex-runtime-recovery.is-installing .codex-runtime-install-button svg {
+  animation: codex-runtime-spin 0.9s linear infinite;
+}
+
+.codex-runtime-recovery.is-success .codex-runtime-recovery-status {
+  color: var(--success, #2f9d68);
+}
+
+.codex-runtime-recovery.is-error .codex-runtime-recovery-status {
+  color: var(--danger, #df5965);
+}
+
+.codex-runtime-recovery-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.codex-runtime-recovery-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.codex-runtime-install-button {
+  background: var(--primary, #5876d8);
+  color: #fff;
+}
+
+.codex-runtime-install-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary, #5876d8) 88%, #000);
+}
+
+.codex-runtime-install-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.codex-runtime-settings-button {
+  border-color: color-mix(in srgb, var(--text, #20242a) 12%, transparent) !important;
+  background: transparent;
+  color: var(--text-muted, #747b86);
+}
+
+.codex-runtime-settings-button:hover {
+  background: color-mix(in srgb, var(--text, #20242a) 6%, transparent);
+  color: var(--text, #20242a);
+}
+
+@keyframes codex-runtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .runtime-diagnostic-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .runtime-diagnostic-header-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .runtime-diagnostic-meta:not(:first-of-type) {
+    display: none;
+  }
+
+  .runtime-diagnostic-body {
+    padding-left: 0;
+  }
+
+  .codex-runtime-recovery {
+    align-items: stretch;
+    flex-direction: column;
+    padding-left: 0;
+  }
+
+  .codex-runtime-recovery-actions {
+    flex-wrap: wrap;
+  }
+}

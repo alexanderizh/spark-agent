@@ -1,0 +1,13 @@
+# Prettier 忽略清单（工程化还债方案 Phase 0.5）
+# 构建产物与依赖已由 --ignore-path .gitignore 覆盖，这里补充生成物与第三方内容。
+
+# vendored 原生二进制与说明（不属于格式化范围）
+vendor/
+
+# 运行时产物
+.spark-artifacts/
+coverage/
+
+# 大型生成/数据文件
+pnpm-lock.yaml
+apps/desktop/src/renderer/file-viewer/

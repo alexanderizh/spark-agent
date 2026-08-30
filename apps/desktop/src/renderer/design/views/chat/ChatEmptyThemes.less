@@ -1,0 +1,713 @@
+/*
+ * Empty conversation theme — 星图工作台（唯一空会话主题）
+ *
+ * Kept separate from the already-large ChatView.less. 配色跟随全局「主题色」
+ * （--primary，由 AppContext 注入 documentElement）联动；结构与 composer
+ * 行为保持共享。历史多主题已下线，仅保留星图。
+ */
+
+.single-empty-title-row {
+  display: flex;
+  max-width: 100%;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/*
+ * Empty-session atmosphere belongs to the application shell, not to the chat
+ * pane. Keeping the full backdrop here lets the floating sidebar, its outer
+ * inset and the content gutter all sit over one continuous surface.
+ */
+.app:has(.chat-main-empty[data-empty-theme='celestial']) {
+  --empty-session-backdrop:
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      transparent 28%
+    ),
+    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
+    color-mix(in srgb, var(--primary) 3%, #fbfaff);
+}
+
+.app.theme-dark:has(.chat-main-empty[data-empty-theme='celestial']) {
+  --empty-session-backdrop:
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 22%, transparent),
+      transparent 30%
+    ),
+    radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
+    linear-gradient(150deg, #11111c, #151426 56%, #101522);
+}
+
+.chat-main-empty[data-empty-theme] {
+  /* 星图强调色直接取用户设置的主题色；accent-2 向冷蓝偏移，保留星图渐变气质。 */
+  --eh-accent: var(--primary);
+  --eh-accent-2: color-mix(in srgb, var(--primary) 62%, #2563eb);
+  --eh-ink: #171923;
+  --eh-muted: #686b78;
+  --eh-surface: rgba(255, 255, 255, 0.78);
+  --eh-surface-strong: rgba(255, 255, 255, 0.94);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, #fff);
+  --eh-line: color-mix(in srgb, var(--primary) 18%, transparent);
+  /* 阴影保持中性灰发散，不随主题色染色（快捷卡片与输入区弹层共用）。 */
+  --eh-shadow: rgba(18, 18, 40, 0.12);
+  --text: var(--eh-ink);
+  --text-strong: var(--eh-ink);
+  --text-muted: var(--eh-muted);
+  --text-faint: color-mix(in srgb, var(--eh-muted) 72%, transparent);
+  --border: var(--eh-line);
+  --divider: color-mix(in srgb, var(--eh-line) 74%, transparent);
+  --panel: var(--eh-surface-strong);
+  --panel-elev: var(--eh-surface-strong);
+  --bg-soft: color-mix(in srgb, var(--eh-accent) 5%, var(--eh-surface-strong));
+  --bg-sunken: color-mix(in srgb, var(--eh-accent) 6%, var(--eh-surface-strong));
+  --composer-toolbar-bg: color-mix(in srgb, var(--eh-accent) 3%, var(--eh-surface-strong));
+  --hover: color-mix(in srgb, var(--eh-accent) 9%, transparent);
+  --active: color-mix(in srgb, var(--eh-accent) 13%, transparent);
+  --text-1: var(--eh-ink);
+  --text-2: var(--eh-muted);
+  --fill-2: color-mix(in srgb, var(--eh-accent) 8%, transparent);
+  --fill-3: color-mix(in srgb, var(--eh-accent) 13%, transparent);
+  isolation: isolate;
+  padding: clamp(80px, 10vh, 112px) clamp(18px, 3vw, 44px) clamp(16px, 2.5vh, 24px);
+  transition:
+    background 240ms ease,
+    color 180ms ease;
+}
+
+.chat-main-empty[data-empty-theme] .chat-hero-grid {
+  z-index: 0;
+  opacity: 0.58;
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
+.chat-main-empty[data-empty-theme] .chat-hero-grid::before,
+.chat-main-empty[data-empty-theme] .chat-hero-grid::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-hero {
+  z-index: 1;
+  width: min(880px, 100%);
+  align-items: stretch;
+  gap: 14px;
+  margin-top: 0;
+  text-align: left;
+}
+
+.single-empty-heading {
+  display: grid;
+  min-height: 108px;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: clamp(20px, 4vw, 52px);
+  padding-inline: 0;
+}
+
+/* 热力图互斥模式：hero 只剩 banner（无快捷卡片），去掉 heading 的最小高度预留，
+   让 banner 与下方热力图靠紧（高度不足时内容居中不再上下溢出贴边）。 */
+.chat-main-empty[data-empty-theme] .single-empty-hero--banner .single-empty-heading {
+  min-height: 0;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-copy {
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-title-row {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.single-empty-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--eh-accent);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.19em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.single-empty-eyebrow::before {
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  content: '';
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
+  display: grid;
+  gap: 1px;
+  color: var(--eh-ink);
+  font-family: var(--font-sans);
+  font-size: clamp(28px, 2.75vw, 38px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  text-align: left;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-actions {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 80px;
+  padding: 0;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-actions-layer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 10px;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-actions-layer-out {
+  right: 0;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action {
+  position: relative;
+  width: auto;
+  min-height: 78px;
+  max-width: none;
+  flex: initial;
+  align-items: flex-start;
+  gap: 10px;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--eh-line);
+  border-radius: 12px;
+  background: var(--eh-surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--eh-shadow) 72%, transparent);
+  backdrop-filter: blur(12px) saturate(1.04);
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action::after {
+  position: absolute;
+  inset: auto -24px -32px auto;
+  width: 76px;
+  height: 76px;
+  border: 1px solid color-mix(in srgb, var(--eh-accent) 10%, transparent);
+  border-radius: 50%;
+  content: none;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action:hover,
+.chat-main-empty[data-empty-theme] .single-empty-action:focus-visible {
+  border-color: color-mix(in srgb, var(--eh-accent) 48%, var(--eh-line));
+  background: color-mix(in srgb, var(--eh-accent) 7%, var(--eh-surface-strong));
+  box-shadow:
+    0 10px 28px rgba(18, 18, 40, 0.12),
+    inset 0 1px 0 color-mix(in srgb, #fff 66%, transparent);
+  transform: translateY(-1px);
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--eh-accent) 11%, var(--eh-surface-strong));
+  color: var(--eh-accent);
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action-copy {
+  flex: 1;
+  gap: 4px;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action-copy strong {
+  color: var(--eh-ink);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action-copy span {
+  color: var(--eh-muted);
+  font-size: 10px;
+}
+
+.single-empty-action-arrow {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  color: var(--eh-accent);
+  font-family: var(--font-mono, monospace);
+  font-size: 15px;
+  transition: transform 160ms ease;
+}
+
+.single-empty-action:hover .single-empty-action-arrow {
+  transform: translateX(3px);
+}
+
+/* Composer surface stays functionally shared while the empty theme can tune its material. */
+.chat-main-empty[data-empty-theme] .composer-wrap {
+  position: relative;
+  z-index: 4;
+}
+
+.chat-main-empty[data-empty-theme] .composer.composer-v2 {
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--eh-accent) 19%, var(--eh-line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--eh-surface-strong) 94%, transparent);
+  /* 输入区阴影保持中性灰发散，不随主题色染色（与暗色基线一致）。 */
+  box-shadow:
+    0 14px 42px rgba(18, 18, 40, 0.1),
+    0 2px 8px rgba(18, 18, 40, 0.07),
+    inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent);
+  backdrop-filter: blur(16px) saturate(1.04);
+}
+
+.chat-main-empty[data-empty-theme] .composer-input,
+.chat-main-empty[data-empty-theme] .composer-input-placeholder,
+.chat-main-empty[data-empty-theme] .composer-input-highlights {
+  color: var(--eh-ink);
+}
+
+.chat-main-empty[data-empty-theme] .composer-input-placeholder {
+  color: color-mix(in srgb, var(--eh-muted) 72%, transparent);
+}
+
+.chat-main-empty[data-empty-theme] .composer-param-bar {
+  border-color: color-mix(in srgb, var(--eh-line) 74%, transparent);
+  background: var(--composer-toolbar-bg);
+  color: var(--eh-muted);
+}
+
+.chat-main-empty[data-empty-theme] .composer-param-tail {
+  background: var(--composer-toolbar-bg);
+}
+
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select-trigger,
+.chat-main-empty[data-empty-theme] .composer-param-bar .context-meter,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-actions-trigger {
+  color: var(--eh-muted);
+}
+
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:not(.is-disabled),
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-select:not(.is-disabled)
+  .composer-select-icon,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-actions-trigger:not(:disabled) {
+  color: color-mix(in srgb, var(--eh-ink) 76%, var(--eh-muted));
+}
+
+/* 推理强度 max / fast 的高亮图标在空主题下也要保留各自主题色。
+   上一条通用 .composer-select:not(.is-disabled) .composer-select-icon 规则特异性同为 (0,6,0) 但更靠前，
+   会把这两个高亮态图标压成 eh-ink 灰墨，与同容器内已着色的 "Max"/"Fast" 文字产生不一致。
+   这里后置同特异性规则覆盖回主题色，与非空会话行为一致。 */
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-reasoning-select.is-max
+  .composer-select-icon {
+  color: var(--primary);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-reasoning-select.is-fast-mode
+  .composer-select-icon {
+  color: color-mix(in srgb, var(--primary) 82%, var(--text));
+}
+
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:hover,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select.is-open,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:focus-within,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-actions-trigger:hover,
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-actions-trigger.is-open {
+  color: var(--eh-ink);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger
+  .composer-select-icon,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger
+  .composer-select-trigger {
+  color: var(--danger);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger:hover,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger.is-open,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger:focus-within {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+/* Inline composer menus must form the top interaction layer of the empty page. */
+.chat-main-empty[data-empty-theme] .composer-menu,
+.chat-main-empty[data-empty-theme] .composer-actions-popup,
+.chat-main-empty[data-empty-theme] .composer-actions-sub {
+  z-index: 60;
+  border: 1px solid var(--eh-line);
+  background: var(--eh-popup-surface);
+  box-shadow: 0 14px 42px color-mix(in srgb, var(--eh-shadow) 94%, transparent);
+  color: var(--eh-ink);
+}
+
+/* 模型选择弹窗统一到 --panel-elev + --border，与会话栏其他 antd Select dropdown
+ * 颜色一致：暗色默认空会话主题下 --eh-popup-surface 会带主色调偏色
+ * （color-mix(in srgb, var(--eh-accent) 4%, #15161d)），与其他参数选择弹窗
+ * 颜色明显不同。把 .composer-dropdown-menu 从上方共享规则中拆出来单独覆盖。 */
+.chat-main-empty[data-empty-theme] .composer-dropdown-menu {
+  border-color: var(--border);
+  background: var(--panel-elev);
+}
+
+.chat-main-empty[data-empty-theme] .composer-menu-item,
+.chat-main-empty[data-empty-theme] .composer-menu-item-label,
+.chat-main-empty[data-empty-theme] .composer-actions-item {
+  color: var(--eh-ink);
+}
+
+.chat-main-empty[data-empty-theme] .composer-menu.permission-menu .permission-menu-item.tone-danger,
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger
+  .composer-menu-item-label {
+  color: var(--danger);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger:hover,
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger
+  .composer-menu-check {
+  color: var(--danger);
+}
+
+.chat-main-empty[data-empty-theme] .composer-menu-item-desc,
+.chat-main-empty[data-empty-theme] .composer-menu-group-title,
+.chat-main-empty[data-empty-theme] .composer-actions-item-icon,
+.chat-main-empty[data-empty-theme] .composer-actions-item-chev {
+  color: var(--eh-muted);
+}
+
+.chat-main-empty[data-empty-theme] .composer-send-round {
+  background: linear-gradient(145deg, var(--eh-accent), var(--eh-accent-2));
+  color: #fff;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--eh-accent) 30%, transparent);
+}
+
+/* Celestial workspace — 星图唯一的页面材质：背景光晕与网格随主题色联动。 */
+.chat-main-empty[data-empty-theme='celestial'] {
+  --eh-ink: #171826;
+  --eh-muted: #6b6b7b;
+  background:
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 18%, transparent),
+      transparent 28%
+    ),
+    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%),
+    color-mix(in srgb, var(--primary) 3%, #fbfaff);
+}
+
+/* 星图的提示条融入底部留白，不再额外生成一枚浮动胶囊背景。 */
+.chat-main-empty[data-empty-theme='celestial'] .hero-tips-ticker {
+  background: transparent;
+}
+
+.chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--primary) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--primary) 6%, transparent) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: radial-gradient(ellipse 78% 74% at 52% 51%, #000 15%, transparent 84%);
+  -webkit-mask-image: radial-gradient(ellipse 78% 74% at 52% 51%, #000 15%, transparent 84%);
+}
+
+.chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid::before {
+  inset: 20% 8% auto 12%;
+  height: 42%;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, transparent);
+  border-radius: 50%;
+  transform: rotate(-7deg);
+}
+
+/* 信息层级与应用外壳保持一致的克制层。 */
+.chat-main-empty[data-empty-theme] .single-empty-heading {
+  min-height: 108px;
+  background: transparent;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-actions-layer {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-action:nth-child(n) {
+  min-height: 78px;
+  margin-top: 0;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--eh-shadow) 72%, transparent);
+}
+
+/*
+ * Global dark-mode adaptations.
+ * 星图保留自己的页面性格，基础表面与文字跟随应用暗色外观。
+ */
+.app.theme-dark .chat-main-empty[data-empty-theme] {
+  --eh-ink: #f4f3f8;
+  --eh-muted: #a9a7b3;
+  --eh-surface: rgba(22, 23, 31, 0.78);
+  --eh-surface-strong: rgba(19, 20, 28, 0.94);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 4%, #15161d);
+  --eh-line: rgba(235, 232, 255, 0.15);
+  --eh-shadow: rgba(0, 0, 0, 0.36);
+  --bg-soft: color-mix(in srgb, var(--eh-accent) 9%, #11131a);
+  --hover: color-mix(in srgb, var(--eh-accent) 16%, transparent);
+  color-scheme: dark;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] {
+  /* 暗底下强调色向白提亮，保持星图的通透感；冷蓝副色同源派生。 */
+  --eh-accent: color-mix(in srgb, var(--primary) 72%, #fff);
+  --eh-accent-2: color-mix(in srgb, var(--primary) 55%, #8ab4ff);
+  /* 输入区回到无主题时的通用暗色 token，不再叠加星图材质。 */
+  --eh-surface-strong: #303030;
+  --composer-toolbar-bg: #3d3d3d;
+  background:
+    radial-gradient(
+      circle at 74% 18%,
+      color-mix(in srgb, var(--primary) 22%, transparent),
+      transparent 30%
+    ),
+    radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
+    linear-gradient(150deg, #11111c, #151426 56%, #101522);
+}
+
+/*
+ * 星图页面保留自己的背景，但输入区完全复用无主题的暗色基线。
+ * 这些 token 放在 composer-inner 上，避免把星图页面的 hero 卡片一起改成中性灰。
+ */
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-inner {
+  --bg: #262626;
+  --bg-soft: #2c2c2c;
+  --bg-sunken: #1a1a1a;
+  --composer-toolbar-bg: #3d3d3d;
+  --panel: #303030;
+  --panel-elev: #383838;
+  --hover: rgba(255, 255, 255, 0.04);
+  --active: rgba(255, 255, 255, 0.07);
+  --border: #3d3d3d;
+  --text: #e4e4e7;
+  --text-strong: #fafafa;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --eh-ink: #e4e4e7;
+  --eh-muted: #9ca3af;
+  --eh-line: #3d3d3d;
+  --eh-shadow: rgba(0, 0, 0, 0.32);
+  --eh-popup-surface: #383838;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-wrap {
+  position: static;
+  z-index: 5;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer.composer-v2 {
+  overflow: visible;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow:
+    0 1px 8px rgba(39, 39, 39, 0.01),
+    0 0 0 1px rgba(39, 39, 39, 0.01),
+    var(--shadow-sm);
+  backdrop-filter: none;
+}
+
+/* 无主题基线由外层 composer 绘制底色，input-shell 保持透明，避免圆角处溢出。 */
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-input-shell {
+  background: transparent;
+}
+
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-submit-row {
+  background: var(--panel);
+}
+
+.app.theme-dark
+  .chat-main-empty[data-empty-theme='celestial']
+  .composer.composer-v2
+  .composer-submit-picks {
+  background: transparent;
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-param-bar,
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-param-tail {
+  background: var(--composer-toolbar-bg);
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-input::placeholder {
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .composer-send-round {
+  background: var(--text-strong);
+  color: var(--bg);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+}
+
+.app.theme-dark .chat-main-empty[data-empty-theme='celestial'] .chat-hero-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--eh-accent) 6%, transparent) 1px,
+      transparent 1px
+    );
+}
+
+/*
+ * The shell now paints the theme once for the whole window. Remove the opaque
+ * chat wrappers only while the empty-session theme is mounted, otherwise they
+ * would cut that backdrop off at the content boundary and reveal the gutter.
+ */
+.app:has(.chat-main-empty[data-empty-theme]) .main-content-area,
+.app:has(.chat-main-empty[data-empty-theme]) .main-with-browser,
+.app:has(.chat-main-empty[data-empty-theme]) .main,
+.app:has(.chat-main-empty[data-empty-theme]) .view-body,
+.app:has(.chat-main-empty[data-empty-theme]) .chat-layout,
+.app:has(.chat-main-empty[data-empty-theme]) .chat-main-empty[data-empty-theme] {
+  background: transparent;
+}
+
+/* Responsive layout */
+@media (max-width: 1100px) {
+  .chat-main-empty[data-empty-theme] {
+    padding-top: 104px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-hero {
+    width: min(780px, 100%);
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-actions-layer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-action {
+    min-height: 82px;
+  }
+}
+
+@media (max-width: 720px) {
+  .chat-main-empty[data-empty-theme] {
+    padding: 118px 12px 12px;
+    overflow-y: auto;
+  }
+
+  .chat-main-empty[data-empty-theme] .chat-empty-content {
+    min-height: auto;
+    flex: 1 0 auto;
+    padding-bottom: 14px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-hero {
+    gap: 14px;
+  }
+
+  .single-empty-heading {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    padding: 0 8px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
+    font-size: clamp(27px, 8.5vw, 38px);
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-actions-layer {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-actions {
+    padding-right: 0;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-actions-layer-out {
+    right: 0;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-action {
+    min-height: 70px;
+    padding: 13px;
+  }
+
+  .hero-tips-wrap {
+    display: none;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 721px) {
+  .chat-main-empty[data-empty-theme] {
+    padding-top: 82px;
+    padding-bottom: 12px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-hero {
+    gap: 12px;
+  }
+
+  .single-empty-heading {
+    min-height: 104px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
+    font-size: 31px;
+  }
+
+  .chat-main-empty[data-empty-theme] .single-empty-action {
+    min-height: 72px;
+    padding: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-main-empty[data-empty-theme],
+  .chat-main-empty[data-empty-theme] .single-empty-action,
+  .single-empty-action-arrow {
+    transition: none;
+  }
+}

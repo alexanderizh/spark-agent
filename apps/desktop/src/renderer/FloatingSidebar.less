@@ -1,0 +1,430 @@
+/* FloatingSidebar — collapsible nav styles */
+
+/* ─── Pin button on nav items ───
+   - 默认隐藏；菜单项 hover 时显示
+   - 已固定项 hover 时显示主色（取消固定）
+   - 点击切换固定/取消固定，事件不冒泡到外层 button */
+.nav-pin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: var(--r-sm, 4px);
+  color: var(--sidebar-text, var(--text));
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+.nav-item:hover .nav-pin-btn {
+  opacity: 1;
+}
+.nav-pin-btn:hover {
+  background: var(--hover);
+  color: var(--sidebar-text, var(--text));
+}
+.nav-pin-btn.is-pinned {
+  color: var(--sidebar-text, var(--text));
+}
+.nav-pin-btn.is-pinned:hover {
+  color: var(--sidebar-text, var(--text));
+  background: var(--primary-soft);
+}
+
+/* More menu trigger — match standard nav item colors */
+.nav-more-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: var(--nav-row-h);
+  border-radius: var(--r-md);
+  color: var(--sidebar-text, var(--text));
+  font-size: var(--font-base);
+  font-weight: 400;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+  -webkit-app-region: no-drag;
+}
+.nav-more-trigger:hover,
+.nav-more-trigger.is-open {
+  background: var(--hover);
+  color: var(--sidebar-text, var(--text));
+}
+.nav-more-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+/* Flyout menu — appears to the right-bottom on hover */
+.nav-more-menu {
+  min-width: 168px;
+  padding: 4px;
+  background: var(--panel-elev);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transform-origin: left bottom;
+  animation: nav-more-enter 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes nav-more-enter {
+  from {
+    opacity: 0;
+    transform: translate(-6px, 6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.nav-more-menu .nav-item {
+  width: 100%;
+}
+
+// ─── 未登录时的占位头像（产品 logo，白底） ───────────────────────────────────
+
+.sidebar-user-guest .sidebar-user-avatar {
+  background: #ffffff;
+  border: 1px solid var(--color-border-2, #e5e7eb);
+}
+
+.sidebar-user-avatar-image-guest {
+  object-fit: contain;
+  padding: 3px;
+  background: #ffffff;
+}
+
+// ─── 登录菜单项（顶部带强调色） ─────────────────────────────────────────────
+
+.user-menu-login-item {
+  font-weight: 500;
+  color: #2563eb !important;
+
+  &:hover {
+    background: rgba(37, 99, 235, 0.08) !important;
+  }
+}
+
+.spark-error-details {
+  display: grid;
+  gap: 10px;
+}
+
+.spark-error-details p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.55;
+}
+
+.spark-error-details pre {
+  max-height: min(46vh, 360px);
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+// ─── 开发模式标识 ─────────────────────────────────────────────────────────
+
+.sidebar-dev-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+// ─── 模式切换器（工作台 / 画布）────────────────────────────────────────────
+// 顶部段控件：两大平级主功能的入口。激活态用 panel-elev 浮起 + 自适应 inset
+// 边框（color-mix 让 light/dark 都可见），避免某一种主题下边界消失。
+.sidebar-mode-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0 12px 6px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+// light 下 flat 侧栏底色 rgb(242,242,242) 与 --bg-sunken(#f2f2f2) 同值、
+// floating 侧栏(#fafafa) 也只差 8 个灰阶，切换器会隐没在侧栏里。
+// 浅色主题在 sunken 基础上再压暗一档，让盒子与菜单栏拉开层次；dark 对比充足不覆盖。
+html[data-theme='light'] .sidebar-mode-switcher,
+.app.theme-light .sidebar-mode-switcher {
+  background: #e8e8e8;
+}
+.mode-switcher-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  border-radius: calc(var(--r-md) - 2px);
+  color: var(--sidebar-text, var(--text));
+  font-size: var(--font-base);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.mode-switcher-btn:hover:not(.active) {
+  background: var(--hover);
+  color: var(--sidebar-text, var(--text));
+}
+.mode-switcher-btn.active {
+  background: var(--panel-elev);
+  color: var(--sidebar-text, var(--text));
+  // light 下 shadow 提供浮起感；inset border 用 color-mix 让 dark 下也可见
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+.mode-switcher-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+// ─── L2 / L3 分组小标题 ────────────────────────────────────────────────────
+.sidebar-section-label {
+  padding: 6px 14px 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+// ─── L3 全局共享资源条（常驻底部）──────────────────────────────────────────
+// icon-only 横向条，不随模式切换。智能体/模型/技能/MCP 两边都用，沉到固定位置。
+.sidebar-shared-resources {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 4px 12px 4px 12px;
+  // border-top: 1px solid var(--divider);
+  // 顶部浅阴影：让常驻底部的资源条从侧栏中轻微浮起（负 y 偏移向上投影）
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.shared-resource-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--sidebar-text, var(--text));
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+  .shared-resource-btn-label {
+    color: var(--sidebar-text, var(--text));
+    font-size: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+}
+.shared-resource-btn:hover {
+  background: var(--hover);
+  color: var(--sidebar-text, var(--text));
+}
+.shared-resource-btn.active {
+  background: var(--selected);
+  color: var(--sidebar-text, var(--text));
+}
+.shared-resource-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+// ─── 画布模式侧栏项目列表 ──────────────────────────────────────────────────
+// 与会话列表对称的行式；单击选中、双击在独立窗口打开画布。
+// 视觉权重略大于普通 nav-item（带封面缩略图），让用户在侧栏即可识别项目。
+.canvas-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 8px 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+}
+.canvas-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  height: 46px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-md);
+  color: var(--sidebar-text, var(--text));
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  position: relative;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+  -webkit-app-region: no-drag;
+}
+.canvas-sidebar-item:hover {
+  background: var(--hover);
+}
+// 选中态：左侧主色条 + 柔和高亮，比 hover 更显著
+.canvas-sidebar-item.selected {
+  background: var(--selected);
+  color: var(--primary);
+  .canvas-sidebar-item-title {
+    color: var(--primary);
+  }
+  .canvas-sidebar-item-icon {
+    color: var(--sidebar-text, var(--text));
+  }
+  // 左侧 2px 主色条作为「当前选中」的强标记
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--primary);
+  }
+}
+.canvas-sidebar-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.canvas-sidebar-item-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sunken);
+  color: var(--sidebar-text, var(--text));
+}
+.canvas-sidebar-item-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.canvas-sidebar-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.canvas-sidebar-item-title {
+  font-size: var(--font-base);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.12s ease;
+}
+.canvas-sidebar-item-pin {
+  color: var(--sidebar-text, var(--text));
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.canvas-sidebar-item-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.canvas-sidebar-item-spinner {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  animation: canvas-sidebar-spin 0.9s linear infinite;
+}
+@keyframes canvas-sidebar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.canvas-sidebar-list-loading,
+.canvas-sidebar-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 12px;
+  flex: 1;
+}
+.canvas-sidebar-list-empty .ant-empty-image {
+  margin-bottom: 4px;
+}
+
+// ─── 画布模式下，L1 主动作与 L3 之间的分隔由原有 divider 承担。
+//     画布模式无 L2，divider 仍保留作为视觉切分（主动作 / 项目列表）。 ──────

@@ -1,0 +1,356 @@
+/**
+ * 画布自研视频播放器。
+ *
+ * 一套样式三档自适应（mini / standard / panel），档位由组件按容器宽度打在
+ * data-tier 上。所有颜色走全局 design token，亮暗主题自动适配。
+ * 画布事件守卫：控制区元素带 nodrag/nopan，由组件负责。
+ */
+
+.canvas-video-player {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #080a0e;
+  font-variant-numeric: tabular-nums;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 70%, transparent);
+    outline-offset: -2px;
+  }
+
+  video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}
+
+// 影院模式 full-bleed 节点要求铺满裁切，跟随原 .canvas-node-image 的 cover 语义。
+.canvas-node-media-full-bleed .canvas-video-player video {
+  object-fit: cover;
+}
+
+/* ---------- 悬浮层 ---------- */
+
+.canvas-video-player-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  // 覆盖层整体不接事件，画面区点击/拖拽继续交给画布节点；只有控件自身可交互。
+  pointer-events: none;
+}
+
+// 中央播放键：占位铺满但只有圆钮接收点击，避免挡住节点点选/拖拽。
+.canvas-video-player-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #fff;
+  pointer-events: none;
+
+  .canvas-video-player-center-btn {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 50%;
+    background: rgba(10, 14, 24, 0.5);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+    pointer-events: auto;
+    color: inherit;
+    font: inherit;
+    transition:
+      transform 0.16s ease,
+      background 0.16s ease,
+      border-color 0.16s ease;
+  }
+
+  &:hover .canvas-video-player-center-btn {
+    transform: scale(1.08);
+    border-color: color-mix(in srgb, var(--primary) 72%, transparent);
+    background: color-mix(in srgb, var(--primary) 58%, rgba(10, 14, 24, 0.55));
+  }
+}
+
+// 迷你档常驻进度条（3px）+ 时长角标
+.canvas-video-player[data-tier='mini'] .canvas-video-player-center .canvas-video-player-center-btn {
+  width: 40px;
+  height: 40px;
+}
+
+.canvas-video-player-duration-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(8, 10, 16, 0.66);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.canvas-video-player[data-tier='mini'] .canvas-video-player-duration-badge {
+  display: block;
+}
+
+.canvas-video-player:not([data-tier='mini']) .canvas-video-player-duration-badge {
+  display: none;
+}
+
+/* ---------- 控制条 ---------- */
+
+.canvas-video-player-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 8px;
+  background: linear-gradient(transparent, rgba(5, 7, 11, 0.86));
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.18s ease;
+
+  .canvas-video-player[data-tier='mini'] & {
+    display: none;
+  }
+}
+
+// 播放中且空闲时隐藏，只留迷你进度条
+.canvas-video-player.is-idle:not(:hover):not(:focus-within) .canvas-video-player-controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.canvas-video-player.is-idle:not(:hover):not(:focus-within) .canvas-video-player-center-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+// 迷你档常驻细进度条（贴底，不可交互，仅指示）
+.canvas-video-player-mini-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  pointer-events: none;
+
+  .canvas-video-player:not([data-tier='mini']) & {
+    display: none;
+  }
+}
+
+.canvas-video-player-mini-bar-fill {
+  height: 100%;
+  background: var(--primary);
+}
+
+/* ---------- 进度条 ---------- */
+
+.canvas-video-player-progress {
+  position: relative;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.canvas-video-player-progress-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  transition: height 0.12s ease;
+}
+
+.canvas-video-player-progress:hover .canvas-video-player-progress-track {
+  height: 6px;
+}
+
+.canvas-video-player-progress-buffered {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.canvas-video-player-progress-played {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary);
+}
+
+.canvas-video-player-progress-thumb {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--primary);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.12s ease;
+}
+
+.canvas-video-player-progress:hover .canvas-video-player-progress-thumb,
+.canvas-video-player-progress.is-scrubbing .canvas-video-player-progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ---------- 按钮排 ---------- */
+
+.canvas-video-player-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.canvas-video-player-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  &.is-active {
+    color: color-mix(in srgb, var(--primary) 70%, #ffffff);
+  }
+}
+
+.canvas-video-player-time {
+  margin: 0 4px 0 6px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.canvas-video-player-time-separator {
+  margin: 0 2px;
+  opacity: 0.5;
+}
+
+.canvas-video-player-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---------- 倍速菜单 ---------- */
+
+.canvas-video-player-speed {
+  position: relative;
+}
+
+.canvas-video-player-speed-menu {
+  position: absolute;
+  right: 0;
+  bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(14, 18, 28, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-video-player-speed-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  &.is-active {
+    color: color-mix(in srgb, var(--primary) 70%, #ffffff);
+  }
+}
+
+/* ---------- 音量 ---------- */
+
+.canvas-video-player-volume {
+  display: flex;
+  align-items: center;
+}
+
+.canvas-video-player-volume-slider {
+  width: 0;
+  overflow: hidden;
+  transition: width 0.16s ease;
+
+  input {
+    display: block;
+    width: 64px;
+    height: 3px;
+    margin: 0 6px;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+}
+
+.canvas-video-player-volume:hover .canvas-video-player-volume-slider,
+.canvas-video-player-volume-slider.is-open {
+  width: 76px;
+}
+
+/* ---------- 全屏态 ---------- */
+
+.canvas-video-player.is-fullscreen {
+  border-radius: 0;
+}
+
+.canvas-video-player.is-fullscreen video {
+  object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-video-player * {
+    transition: none !important;
+  }
+}

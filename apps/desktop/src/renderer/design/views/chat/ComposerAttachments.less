@@ -1,0 +1,139 @@
+.composer-v2 .composer-attachment-strip {
+  gap: 7px;
+}
+
+.composer-v2 .composer-attachment-chip {
+  gap: 7px;
+  height: 30px;
+  padding: 0 7px 0 10px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-soft));
+  color: color-mix(in srgb, var(--text) 82%, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 5%, transparent);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+.composer-v2 .composer-attachment-chip:hover {
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg-soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--text);
+}
+
+.composer-v2 .composer-directory-chip {
+  background: color-mix(in srgb, var(--primary) 13%, var(--panel));
+  color: color-mix(in srgb, var(--primary) 78%, var(--text));
+}
+
+.composer-v2 .composer-directory-chip:hover {
+  background: color-mix(in srgb, var(--primary) 17%, var(--panel));
+}
+
+.composer-v2 .composer-attachment-chip button {
+  color: color-mix(in srgb, currentColor 54%, transparent);
+}
+
+.composer-v2 .composer-attachment-chip button:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.composer-v2 .composer-attachment-chip button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 58%, transparent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-v2 .composer-attachment-chip {
+    transition: none;
+  }
+}
+
+/* 代码位置引用 chip：双行（上行文件名 + 图标，下行 路径:行号）。
+   基础布局（inline-flex / align-items:center / gap）继承自 views.css 的 .composer-attachment-chip。 */
+.composer-v2 .composer-code-ref-strip {
+  flex-wrap: wrap;
+}
+
+.composer-v2 .composer-code-ref-chip {
+  height: auto;
+  max-width: 360px;
+  padding: 4px 7px 4px 10px;
+}
+
+.composer-v2 .composer-code-ref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.composer-v2 .composer-code-ref-name {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-v2 .composer-code-ref-loc {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-v2 .composer-session-ref-strip {
+  flex-wrap: wrap;
+}
+
+.composer-v2 .composer-session-ref-chip {
+  height: auto;
+  max-width: 320px;
+  padding: 5px 7px 5px 10px;
+  background: color-mix(in srgb, #b06dff 10%, var(--bg-soft));
+  color: color-mix(in srgb, #7a35c4 78%, var(--text));
+}
+
+.composer-v2 .composer-session-ref-chip.is-unavailable {
+  opacity: 0.66;
+  text-decoration: line-through;
+}
+
+/* 浏览器元素引用 chip：与会话参考同一套主题色 tag 形态 */
+.composer-v2 .composer-browser-ref-strip {
+  flex-wrap: wrap;
+}
+
+.composer-v2 .composer-browser-ref-chip {
+  height: auto;
+  max-width: 320px;
+  padding: 5px 7px 5px 10px;
+  background: color-mix(in srgb, #b06dff 10%, var(--bg-soft));
+  color: color-mix(in srgb, #7a35c4 78%, var(--text));
+}
+
+.composer-v2 .composer-session-ref-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.3;
+}
+
+.composer-v2 .composer-session-ref-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-v2 .composer-session-ref-copy span {
+  font-size: 12px;
+  font-weight: 550;
+}

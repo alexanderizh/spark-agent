@@ -1,0 +1,112 @@
+// 画布图片节点 · 尺寸与压缩弹窗
+// 扁平风格：层级靠分割线与文字明暗区分，不用卡片分块包裹
+// 结构与 videoNode/CanvasVideoScaleCompressModal.less 保持平行（图片无 ffmpeg 安装段）
+
+.canvas-image-sc-modal {
+  .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+    background: var(--canvas-edit-bg);
+  }
+
+  .ant-modal-close {
+    top: 10px;
+    inset-inline-end: 12px;
+    z-index: 2;
+  }
+}
+
+.canvas-image-sc-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-sc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 20px 20px;
+}
+
+.image-sc-source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+
+  .image-sc-source-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .image-sc-source-meta {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--text-secondary, var(--text));
+    opacity: 0.65;
+
+    &.is-warning {
+      color: var(--danger, #ef4444);
+      opacity: 0.9;
+    }
+  }
+}
+
+.image-sc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .image-sc-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    label {
+      font-weight: 500;
+    }
+
+    .image-sc-field-value {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.72;
+    }
+  }
+
+  .image-sc-field-inputs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    .image-sc-hint {
+      flex: 1;
+      text-align: right;
+      font-size: 12px;
+      opacity: 0.6;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+.image-sc-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .image-sc-progress-stage {
+    font-size: 12px;
+    opacity: 0.55;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

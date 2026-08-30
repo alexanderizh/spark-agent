@@ -1,0 +1,158 @@
+/* overlays.tsx command palette surfaces. */
+
+/* ============================================================
+   COMMAND PALETTE
+   ============================================================ */
+.palette-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  padding-top: 12vh;
+  animation: fadeIn 0.15s;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.palette {
+  width: min(640px, 90vw);
+  height: fit-content;
+  max-height: 60vh;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.palette-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.palette-search svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-faint);
+}
+.palette-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--text);
+  font-family: inherit;
+}
+.palette-search input:hover {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--text);
+  font-family: inherit;
+}
+.palette-search input::placeholder {
+  color: var(--text-faint);
+}
+.palette-results {
+  overflow: auto;
+  flex: 1;
+  padding: 6px;
+}
+.palette-group {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 8px 10px 4px;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--font-base);
+  color: var(--text);
+  cursor: pointer;
+}
+.palette-item:hover,
+.palette-item.sel {
+  background: var(--selected);
+}
+.palette-item.sel {
+  color: var(--primary);
+}
+.palette-item .ico {
+  width: 20px;
+  height: 20px;
+  background: var(--bg-soft);
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.palette-item .ico svg {
+  width: 12px;
+  height: 12px;
+}
+.palette-item .body {
+  flex: 1;
+}
+.palette-item .body .title {
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.palette-item .body .hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+.palette-item .kbds {
+  display: flex;
+  gap: 4px;
+}
+
+.palette-foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.palette-foot .seg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.palette-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.palette-empty .muted {
+  color: var(--text-faint);
+}

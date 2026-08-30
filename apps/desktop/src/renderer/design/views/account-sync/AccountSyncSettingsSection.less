@@ -1,0 +1,268 @@
+.account-sync-settings {
+  --account-sync-line: color-mix(in srgb, var(--divider) 82%, transparent);
+}
+
+.account-sync-privacy {
+  margin: 0 0 22px;
+  padding: 12px 0;
+  border-top: 1px solid var(--account-sync-line);
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-privacy p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.account-sync-privacy strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.account-sync-state,
+.account-sync-loading,
+.account-sync-error,
+.account-sync-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-top: 1px solid var(--account-sync-line);
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-state > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.account-sync-state strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.account-sync-error {
+  color: var(--danger);
+}
+
+.account-sync-block,
+.account-sync-history {
+  border-top: 1px solid var(--account-sync-line);
+}
+
+.account-sync-master-row,
+.account-sync-category-row,
+.account-sync-action-row,
+.account-sync-history-heading,
+.account-sync-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.account-sync-master-row {
+  min-height: 72px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-master-row h3,
+.account-sync-history-heading h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.account-sync-master-row p,
+.account-sync-history-heading p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.account-sync-category-row {
+  min-height: 64px;
+  padding: 10px 0 10px 18px;
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-category-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.account-sync-category-row strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.account-sync-category-row span {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.account-sync-action-row {
+  padding: 18px 0 22px;
+}
+
+.account-sync-action-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-sync-action-copy strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.account-sync-action-copy span {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.account-sync-result {
+  margin-bottom: 22px;
+  padding: 13px 0;
+  border-top: 1px solid var(--account-sync-line);
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-result-title,
+.account-sync-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-sync-result-title strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.account-sync-stats {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.account-sync-error-codes {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.account-sync-history-heading {
+  min-height: 70px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.account-sync-history-row {
+  justify-content: flex-start;
+  min-height: 64px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-state-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.account-sync-state-dot.is-success {
+  background: var(--success);
+}
+
+.account-sync-state-dot.is-partial {
+  background: var(--warning);
+}
+
+.account-sync-state-dot.is-pending {
+  background: var(--warning);
+}
+
+.account-sync-state-dot.is-failed {
+  background: var(--danger);
+}
+
+.account-sync-history-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.account-sync-history-main > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.account-sync-history-main strong {
+  color: var(--text-strong);
+  font-size: 12.5px;
+}
+
+.account-sync-history-main span,
+.account-sync-history-main p,
+.account-sync-history-stats {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.account-sync-history-main p {
+  margin: 3px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-sync-history-stats {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.account-sync-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .account-sync-category-row {
+    padding-left: 0;
+  }
+
+  .account-sync-history-stats {
+    display: none;
+  }
+
+  .account-sync-action-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

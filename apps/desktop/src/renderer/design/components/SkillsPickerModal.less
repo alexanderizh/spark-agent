@@ -1,0 +1,329 @@
+// ============================================================
+//  SkillsPickerModal — 精致版（卡片化容器 + 行 hover + 选中态）
+// ============================================================
+
+.skills-picker-modal {
+  width: 720px;
+  max-width: calc(100vw - 32px);
+
+  // 去掉默认 header/footer，改用自定义结构
+  .ant-modal-header,
+  .ant-modal-footer {
+    display: none;
+  }
+
+  // 整窗限高：内容多时只在列表区滚动，header/toolbar/footer 钉死可见
+  .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 48px);
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  .ant-modal-body {
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+// ---------- Header ----------
+.skills-picker-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 20px 12px;
+  flex-shrink: 0;
+}
+
+.skills-picker-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+
+  > span:first-of-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-1);
+    line-height: 1.4;
+  }
+}
+
+.skills-picker-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-3);
+  line-height: 1.4;
+}
+
+.skills-picker-close-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--color-fill-3);
+    color: var(--color-text-1);
+  }
+}
+
+// ---------- Toolbar（搜索 + Tab） ----------
+.skills-picker-toolbar {
+  padding: 0 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.skills-picker-search {
+  width: 100%;
+}
+
+.skills-picker-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-fill-2);
+  border-radius: 8px;
+  align-self: flex-start;
+}
+
+.skills-picker-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--color-text-1);
+  }
+
+  &.is-active {
+    background: var(--color-bg-1);
+    color: var(--color-text-1);
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.skills-picker-tab-count {
+  font-size: 11px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+
+  .is-active & {
+    color: var(--color-text-2);
+  }
+}
+
+.skills-picker-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+
+  &--green {
+    background: rgb(var(--green-6));
+    box-shadow: 0 0 0 2px rgba(var(--green-6), 0.18);
+  }
+
+  &--gray {
+    background: var(--color-text-4);
+  }
+}
+
+// ---------- Table ----------
+.skills-picker-table-wrap {
+  margin: 0 20px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg-1);
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+.skills-picker-table-head,
+.skills-picker-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 120px;
+  align-items: center;
+}
+
+.skills-picker-table-head {
+  height: 32px;
+  background: var(--color-fill-1);
+  border-bottom: 1px solid var(--color-border-2);
+  flex-shrink: 0;
+}
+
+.skills-picker-cell {
+  font-size: 12px;
+  color: var(--color-text-2);
+  padding: 0 12px;
+
+  &--checkbox {
+    padding: 0 0 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  &--name {
+    color: var(--color-text-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &--status {
+    text-align: right;
+    padding-right: 14px;
+  }
+}
+
+.skills-picker-table-head .skills-picker-cell {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-3);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.skills-picker-table-body {
+  overflow-y: auto;
+  flex: 1;
+
+  // 滚动条样式交由全局规则统一处理（styles.css `* { scrollbar-width/color }`），
+  // 不再写 `::-webkit-scrollbar*` 覆盖。
+}
+
+.skills-picker-row {
+  height: 40px;
+  border-bottom: 1px solid var(--color-border-2);
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+  position: relative;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: var(--color-fill-2);
+  }
+
+  &.is-checked {
+    background: rgba(var(--arcoblue-6), 0.06);
+
+    .skills-picker-cell--name {
+      color: rgb(var(--arcoblue-6));
+      font-weight: 500;
+    }
+
+    // 左侧高亮条
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      background: rgb(var(--arcoblue-6));
+      border-radius: 0 2px 2px 0;
+    }
+
+    &:hover {
+      background: rgba(var(--arcoblue-6), 0.1);
+    }
+  }
+}
+
+.skills-picker-name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 状态胶囊（行内小标签，不是 Arco Tag）
+.skills-picker-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  &--enabled {
+    color: rgb(var(--green-6));
+  }
+
+  &--disabled {
+    color: var(--color-text-3);
+  }
+}
+
+// ---------- Empty ----------
+.skills-picker-empty {
+  padding: 32px 16px;
+}
+
+// ---------- Footer ----------
+.skills-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border-2);
+}
+
+.skills-picker-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skills-picker-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skills-picker-footer-hint {
+  font-size: 12px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,291 @@
+/**
+ * VideoWorkbenchFramePanel — 关键帧面板。
+ *
+ * 包含：
+ *   - 提取策略选择（场景突变 / I帧 / 均匀采样）+ 参数调节
+ *   - 「提取关键帧」按钮 + 进度条
+ *   - 关键帧缩略图墙：默认浏览态（点击跳转），「多选」进入批量态
+ *     （勾选 / 全选 / 删除选中 / 导入画布），可退出回到浏览态
+ */
+import { useMemo, useState, type ReactElement } from 'react'
+import { Button, Checkbox, Segmented, Slider, Tooltip } from 'antd'
+import { Icons } from '../../../Icons'
+import {
+  formatTimestamp,
+  MIN_UNIFORM_INTERVAL_SEC,
+  type KeyframeStrategy,
+  type KeyframeExtractConfig,
+  type VideoWorkbenchData,
+  type WorkbenchKeyframe,
+} from './videoWorkbench.types'
+import { selectKeyframesForImport, selectKeyframesForRemoval } from './videoWorkbenchKeyframeImport'
+
+interface Props {
+  draft: VideoWorkbenchData
+  busy: boolean
+  progress: number | null
+  progressStage: string
+  ffmpegReady: boolean | null
+  onExtract: (strategy: KeyframeStrategy) => void
+  onConfigChange: (cfg: KeyframeExtractConfig) => void
+  onSeek: (sec: number) => void
+  onExport: (frames: WorkbenchKeyframe[]) => void | Promise<void>
+  onRemoveKeyframes: (indexes: number[]) => void
+}
+
+const STRATEGY_DESCS: Record<KeyframeStrategy, string> = {
+  scene: '检测画面变化大的瞬间，适合教程/演示类视频',
+  iframe: '提取编码关键帧，速度最快但数量取决于编码',
+  uniform: '固定时间间隔采样，数量可控',
+}
+
+export function VideoWorkbenchFramePanel({
+  draft,
+  busy,
+  progress,
+  progressStage,
+  ffmpegReady,
+  onExtract,
+  onConfigChange,
+  onSeek,
+  onExport,
+  onRemoveKeyframes,
+}: Props): ReactElement {
+  const cfg = draft.extractConfig
+  const isScene = cfg.strategy === 'scene'
+  const isUniform = cfg.strategy === 'uniform'
+  /** 多选模式：默认关闭。关闭时缩略图点击仅跳转，不显示勾选框。 */
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIndexes, setSelectedIndexes] = useState<ReadonlySet<number>>(new Set())
+  /** keyframes 变化（重新提取 / 删除）后，只保留仍存在的选中项，不再回退为全选。 */
+  const liveSelectedIndexes = useMemo(() => {
+    const live = new Set(draft.keyframes.map((kf) => kf.index))
+    const next = new Set<number>()
+    selectedIndexes.forEach((index) => {
+      if (live.has(index)) next.add(index)
+    })
+    return next
+  }, [draft.keyframes, selectedIndexes])
+  const selectedKeyframes = useMemo(
+    () => selectKeyframesForRemoval(draft.keyframes, liveSelectedIndexes),
+    [draft.keyframes, liveSelectedIndexes],
+  )
+  const selectedKeyframesForImport = useMemo(
+    () => selectKeyframesForImport(draft.keyframes, liveSelectedIndexes),
+    [draft.keyframes, liveSelectedIndexes],
+  )
+  const allKeyframesSelected =
+    draft.keyframes.length > 0 && selectedKeyframes.length === draft.keyframes.length
+
+  const toggleKeyframeSelection = (index: number) => {
+    const next = new Set(liveSelectedIndexes)
+    if (next.has(index)) next.delete(index)
+    else next.add(index)
+    setSelectedIndexes(next)
+  }
+
+  const toggleAllKeyframes = () => {
+    setSelectedIndexes(
+      allKeyframesSelected ? new Set() : new Set(draft.keyframes.map((kf) => kf.index)),
+    )
+  }
+
+  /** 进入多选：默认全不选；退出多选：清空选择回到默认浏览态。 */
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIndexes(new Set())
+  }
+
+  return (
+    <div className="vwb-frame-panel">
+      {/* ── 提取配置 ── */}
+      <div className="vwb-section">
+        <div className="vwb-section-title">提取策略</div>
+        <Segmented
+          value={cfg.strategy}
+          onChange={(v) => onConfigChange({ ...cfg, strategy: v as KeyframeStrategy })}
+          options={[
+            { label: '场景突变', value: 'scene' },
+            { label: 'I 帧', value: 'iframe' },
+            { label: '均匀采样', value: 'uniform' },
+          ]}
+          block
+          size="small"
+        />
+        <div className="vwb-strategy-desc">{STRATEGY_DESCS[cfg.strategy]}</div>
+
+        {isScene && (
+          <div className="vwb-param">
+            <label>灵敏度阈值</label>
+            <Slider
+              min={0.05}
+              max={0.8}
+              step={0.05}
+              value={cfg.threshold}
+              onChange={(v) => onConfigChange({ ...cfg, threshold: v })}
+              tooltip={{ formatter: (v) => `${v}（越小越敏感）` }}
+            />
+          </div>
+        )}
+        {isUniform && (
+          <div className="vwb-param">
+            <label>采样间隔（秒）</label>
+            <Slider
+              min={MIN_UNIFORM_INTERVAL_SEC}
+              max={60}
+              step={0.1}
+              value={cfg.intervalSec}
+              onChange={(v) => onConfigChange({ ...cfg, intervalSec: v })}
+              tooltip={{ formatter: (v) => `${v}秒一帧` }}
+            />
+          </div>
+        )}
+        <div className="vwb-param">
+          <label>最大帧数</label>
+          <Slider
+            min={5}
+            max={50}
+            step={1}
+            value={cfg.maxFrames}
+            onChange={(v) => onConfigChange({ ...cfg, maxFrames: v })}
+            tooltip={{ formatter: (v) => `${v} 张` }}
+          />
+        </div>
+
+        <Button
+          type="primary"
+          block
+          onClick={() => onExtract(cfg.strategy)}
+          loading={busy}
+          disabled={ffmpegReady !== true}
+          icon={<Icons.Download size={14} />}
+        >
+          {busy ? (progress != null ? `提取中 ${Math.round(progress)}%` : '提取中…') : '提取关键帧'}
+        </Button>
+        {busy && progress != null && (
+          <div className="vwb-progress">
+            <div className="vwb-progress-track">
+              <div className="vwb-progress-fill" style={{ width: `${progress}%` }} />
+            </div>
+            <span className="vwb-progress-stage">{progressStage}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── 缩略图墙 ── */}
+      <div className="vwb-section vwb-frames-section">
+        <div className="vwb-section-head">
+          <span className="vwb-section-title">
+            关键帧 <em>{draft.keyframes.length}</em>
+          </span>
+          {draft.keyframes.length > 0 && !selectMode && (
+            <div className="vwb-frame-selection-controls">
+              <Tooltip title="勾选关键帧进行批量删除 / 导入画布">
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => {
+                    setSelectMode(true)
+                    setSelectedIndexes(new Set())
+                  }}
+                  icon={<Icons.CheckSquare size={14} />}
+                >
+                  多选
+                </Button>
+              </Tooltip>
+            </div>
+          )}
+          {draft.keyframes.length > 0 && selectMode && (
+            <div className="vwb-frame-selection-controls">
+              <span className="vwb-frame-selection-count">已选 {selectedKeyframes.length}</span>
+              <Button size="small" type="text" onClick={toggleAllKeyframes}>
+                {allKeyframesSelected ? '取消全选' : '全选'}
+              </Button>
+              <Tooltip title="删除选中的关键帧">
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  disabled={selectedKeyframes.length === 0}
+                  onClick={() => onRemoveKeyframes(selectedKeyframes.map((kf) => kf.index))}
+                  icon={<Icons.Trash size={14} />}
+                >
+                  删除选中
+                </Button>
+              </Tooltip>
+              <Tooltip title="把关键帧导出为画布图片节点">
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={selectedKeyframesForImport.length === 0}
+                  onClick={() => void onExport(selectedKeyframesForImport)}
+                  icon={<Icons.Image size={14} />}
+                >
+                  导入画布
+                </Button>
+              </Tooltip>
+              <Button size="small" type="text" onClick={exitSelectMode}>
+                退出多选
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {draft.keyframes.length === 0 ? (
+          <div className="vwb-frames-empty">
+            <Icons.Film size={28} />
+            <span>暂无关键帧</span>
+            <span className="muted">点击上方按钮按当前策略自动提取</span>
+          </div>
+        ) : (
+          <div className="vwb-frame-grid">
+            {draft.keyframes.map((kf) => (
+              <div
+                key={kf.index}
+                className="vwb-frame-card"
+                data-selected={selectMode && liveSelectedIndexes.has(kf.index)}
+              >
+                <div
+                  className="vwb-frame-thumb"
+                  title={selectMode ? '点击勾选该关键帧' : '点击跳转到该时间点'}
+                  onClick={() =>
+                    selectMode ? toggleKeyframeSelection(kf.index) : onSeek(kf.timestampSec)
+                  }
+                >
+                  <img src={kf.previewUrl} alt={`帧 ${kf.index}`} loading="lazy" />
+                  <span className="vwb-frame-time">{formatTimestamp(kf.timestampSec)}</span>
+                  {kf.canvasNodeId && (
+                    <Tooltip title="已导入画布">
+                      <span className="vwb-frame-imported">
+                        <Icons.CheckCircle size={12} />
+                      </span>
+                    </Tooltip>
+                  )}
+                </div>
+                {selectMode && (
+                  <Checkbox
+                    className="vwb-frame-select"
+                    checked={liveSelectedIndexes.has(kf.index)}
+                    aria-label={`选择关键帧 ${kf.index + 1}`}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation()
+                      toggleKeyframeSelection(kf.index)
+                    }}
+                  />
+                )}
+                <button
+                  className="vwb-frame-remove"
+                  onClick={() => onRemoveKeyframes([kf.index])}
+                  title="删除"
+                >
+                  <Icons.X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

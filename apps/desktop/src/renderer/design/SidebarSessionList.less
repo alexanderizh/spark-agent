@@ -1,0 +1,1257 @@
+/* SidebarSessionList — session status badge styles */
+
+/* Leading status dot — absolutely positioned so it never enters the flex
+   flow of `.chat-item-title-compact` (which has `gap: 6px`). The dot sits
+   in the row's 22px left padding zone (x≈8..14); title text always starts
+   at x=22px whether the dot is shown or not. */
+.chat-item.chat-item-compact {
+  position: relative;
+}
+
+.sidebar-sortable-project,
+.sidebar-sortable-session {
+  position: relative;
+  z-index: 0;
+}
+
+.sidebar-sortable-project > .proj-group > .proj-head,
+.sidebar-sortable-session > .chat-item-compact {
+  cursor: pointer;
+  touch-action: none;
+}
+
+.sidebar-sortable-project.is-dragging,
+.sidebar-sortable-session.is-dragging {
+  z-index: 10;
+}
+
+.sidebar-sortable-project.is-dragging > .proj-group > .proj-head,
+.sidebar-sortable-session.is-dragging > .chat-item-compact {
+  position: relative;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, var(--bg-elevated));
+  cursor: grabbing;
+  opacity: 0.92;
+  box-shadow:
+    0 8px 22px color-mix(in srgb, #000 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 38%, transparent);
+}
+
+/* 拖拽进行中，落在另一区（置顶↔普通跨界）的会话项：降低不透明度并提示不可放置，
+   表明跨区边界。仅在拖拽时挂载该 class（dragActivePinned 非 null），非拖拽时不生效。 */
+.sidebar-sortable-session.is-cross-zone > .chat-item-compact {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.session-status-dot {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-item-compact:has(.session-status-dot) .chat-item-row {
+  padding-left: 22px;
+}
+
+/* Completed but user hasn't opened yet — static theme-accent dot */
+.session-status-dot-completed {
+  background: var(--accent, var(--brand, #4f8cff));
+}
+
+/* Waiting permission — yellow/amber, pulsing */
+.session-status-dot-waiting-permission {
+  background: var(--warning);
+  animation: session-dot-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Waiting user input — cyan/info, pulsing */
+.session-status-dot-waiting-user {
+  background: var(--info);
+  animation: session-dot-pulse-info 1.6s ease-in-out infinite;
+}
+
+.session-status-dot-error {
+  left: 5px;
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  color: var(--danger);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--danger) 22%, transparent));
+}
+
+.session-terminal-indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--text-muted) 82%, var(--primary) 18%);
+  opacity: 0.88;
+}
+
+/* 条目内终端图标可点击（打开终端面板）：按钮重置 + hover 提亮 */
+button.session-terminal-indicator-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--primary);
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--primary);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+}
+
+.session-terminal-count {
+  position: absolute;
+  right: -7px;
+  bottom: -6px;
+  min-width: 10px;
+  height: 10px;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: inherit;
+  font-size: 8px;
+  line-height: 10px;
+  text-align: center;
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
+@keyframes session-dot-pulse-warning {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 0%, transparent);
+  }
+}
+
+@keyframes session-dot-pulse-info {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+/* Session status badge base */
+.session-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 999px;
+  line-height: 1;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+
+  .session-status-label {
+    display: none;
+  }
+}
+
+/* Running status (thinking / calling_tool) — info blue pill with pulse */
+.session-badge-running {
+  border: 1px solid var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
+}
+
+.session-running-spinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+/* Waiting permission — warning yellow with pulse */
+.session-badge-waiting-permission {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Waiting user input — warning yellow with pulse */
+.session-badge-waiting-user {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Completed — success green, static */
+.session-badge-completed {
+  border: 1px solid var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+/* Error — danger red, static */
+.session-badge-error {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Cancelled — neutral gray, static */
+.session-badge-cancelled {
+  border: 1px solid var(--text-faint);
+  color: var(--text-faint);
+  background: transparent;
+}
+
+/* Pulse animations */
+@keyframes session-badge-pulse-warning {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 0%, transparent);
+  }
+}
+
+@keyframes session-badge-pulse-info {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+/* Legacy class hooks kept for tests — no styling, the new
+   .session-badge-* classes above provide all visuals. */
+.session-running-badge,
+.session-waiting-badge {
+  /* no-op: retained as test selectors only */
+}
+
+/* Project session status indicators */
+.proj-session.is-running {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-input {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-permission {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-completed {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-error {
+  position: relative;
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-cancelled {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.session-date-marker {
+  height: 11px;
+  margin: 0 10px -1px 8px;
+  color: color-mix(in srgb, var(--sidebar-text, var(--text)) 42%, transparent);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+  text-align: right;
+}
+
+/* ─── Flat group (date / state / none 分组) ─── */
+.flat-group-head {
+  cursor: default;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+.flat-group-head .proj-name {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: var(--font-sm);
+  letter-spacing: 0.04em;
+}
+
+.sidebar-project-toolbar {
+  --sidebar-project-toolbar-icon-size: 15px;
+
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0px 0px 0px 0px;
+  margin: 0 3px 1px 6px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.sidebar-project-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.sidebar-project-toolbar-label svg {
+  color: var(--text-faint);
+}
+
+.sidebar-project-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.sidebar-project-toolbar-btn,
+.sidebar-project-toolbar .sidebar-filter-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-project-toolbar-btn svg,
+.sidebar-project-toolbar .sidebar-filter-btn svg {
+  width: var(--sidebar-project-toolbar-icon-size);
+  height: var(--sidebar-project-toolbar-icon-size);
+}
+
+// Maximize2 / Minimize2 线条外扩更明显，单独收一号，避免比筛选和新建按钮显得更重。
+.sidebar-project-toolbar-collapse-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+// ListFilter 的有效图形高度较窄，略微放大以与两侧操作图标保持相同视觉重量。
+.sidebar-project-toolbar .sidebar-filter-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ─── Context-menu open state (right-click on a session) ─── */
+// .chat-item-compact.is-context-open {
+//   background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
+// }
+
+// .chat-item-compact.is-context-open .item-menu-wrap {
+//   display: flex;
+// }
+
+/* 会话行快捷操作：悬浮时将“归档”提升到“更多”左侧，两者保持同一层级。 */
+.session-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-item-compact:hover .session-item-actions,
+.chat-item-compact:focus-within .session-item-actions,
+.session-item-actions.menu-open {
+  display: flex;
+}
+
+/* views.css 默认仅在 hover 时展示 item-menu-wrap；此处的外层已经统一控制显隐。 */
+.chat-item-compact .session-item-actions .item-menu-wrap {
+  display: flex;
+}
+
+.session-row-action-btn {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  color: var(--text-muted);
+}
+
+.session-row-action-btn:hover,
+.session-row-action-btn:focus-visible {
+  color: var(--text);
+}
+
+.chat-item-compact.is-reference-draggable {
+  touch-action: auto;
+  cursor: pointer;
+}
+
+.session-item-actions .item-menu-btn {
+  opacity: 1;
+}
+
+.session-schedule-indicator {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: var(--hover);
+
+  &.is-enabled {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  &.is-paused {
+    color: var(--text-faint);
+  }
+}
+
+/* ─── Sidebar 空态：更轻、更克制的项目/筛选空态 ─── */
+.sidebar-empty-state {
+  justify-content: center;
+  min-height: 240px;
+  padding: 36px 18px 26px;
+  gap: 0;
+}
+
+.sidebar-empty-state .empty-icon {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-soft) 92%, var(--text-faint) 8%),
+      var(--bg-soft)
+    ),
+    var(--bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 76%, transparent);
+  color: var(--text-faint);
+}
+
+.sidebar-empty-state .empty-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-empty-state .empty-title {
+  margin-top: 15px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.sidebar-empty-state .empty-desc {
+  margin-top: 20px;
+  max-width: 210px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.sidebar-empty-state--projects .empty-desc {
+  max-width: 210px;
+}
+
+.sidebar-empty-state .empty-desc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.sidebar-empty-state .empty-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  color: color-mix(in srgb, var(--text) 86%, var(--text-muted));
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: baseline;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 42%, transparent);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.sidebar-empty-state .empty-inline-action svg {
+  width: 12px;
+  height: 12px;
+  transform: translateY(0.5px);
+}
+
+.sidebar-empty-state .empty-inline-action:hover {
+  color: var(--text-strong);
+  border-bottom-color: color-mix(in srgb, var(--text) 62%, transparent);
+}
+
+.sidebar-empty-state .empty-inline-action-muted {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--text-muted) 92%, var(--text));
+  border-bottom-color: color-mix(in srgb, var(--text-muted) 32%, transparent);
+}
+
+.sidebar-empty-state .empty-inline-separator {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ─── 首次使用项目空态：扁平、清晰的三入口布局 ─── */
+.sidebar-empty-state--projects {
+  --empty-accent: var(--primary);
+  --empty-accent-hover: var(--primary-hover);
+  --empty-surface: var(--panel);
+  --empty-surface-muted: color-mix(in srgb, var(--text) 3%, var(--panel));
+  --empty-line: color-mix(in srgb, var(--text) 17%, var(--panel));
+  --empty-muted: color-mix(in srgb, var(--text) 62%, var(--panel));
+  align-items: stretch;
+  min-height: 280px;
+  padding: 24px 14px 20px;
+  text-align: left;
+}
+
+.sidebar-empty-state--projects .empty-state-mark {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.empty-state-mark__glow {
+  display: none;
+}
+
+.empty-state-mark__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--primary-fg);
+  background: var(--empty-accent);
+}
+
+.sidebar-empty-state--projects .empty-title {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.sidebar-empty-state--projects .empty-desc {
+  align-self: center;
+  margin-top: 4px;
+  max-width: 232px;
+  color: var(--empty-muted);
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.empty-state-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.empty-action-card {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--empty-line);
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  background: var(--empty-surface-muted);
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.empty-action-card:hover {
+  border-color: color-mix(in srgb, var(--empty-accent) 52%, var(--empty-line));
+  background: color-mix(in srgb, var(--empty-accent) 7%, var(--empty-surface));
+}
+
+.empty-action-card:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.empty-action-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.empty-action-card:disabled {
+  cursor: wait;
+  opacity: 0.7;
+  transform: none;
+}
+
+.empty-action-card--primary {
+  border-color: var(--empty-accent);
+  color: var(--primary-fg);
+  background: var(--empty-accent);
+}
+
+.empty-action-card--primary:hover {
+  border-color: var(--empty-accent-hover);
+  background: var(--empty-accent-hover);
+}
+
+.empty-action-card:not(.empty-action-card--primary) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text) 7%, var(--empty-surface));
+}
+
+.empty-action-card:not(.empty-action-card--primary):hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--empty-accent) 7%, var(--empty-surface));
+}
+
+.empty-action-card__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--empty-accent);
+  background: color-mix(in srgb, var(--empty-accent) 11%, var(--empty-surface));
+}
+
+.empty-action-card--primary .empty-action-card__icon {
+  color: currentColor;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.empty-action-card__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.empty-action-card__copy strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-action-card__copy small {
+  overflow: hidden;
+  color: var(--empty-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-action-card__arrow {
+  flex: 0 0 auto;
+  color: var(--empty-muted);
+  transition:
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.empty-action-card:hover .empty-action-card__arrow {
+  color: var(--empty-accent);
+}
+
+.empty-action-card--primary .empty-action-card__copy small,
+.empty-action-card--primary .empty-action-card__arrow {
+  color: rgb(255 255 255 / 0.78);
+}
+
+.empty-action-card--primary:hover .empty-action-card__arrow {
+  color: var(--primary-fg);
+}
+
+.empty-drop-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px dashed var(--empty-line);
+  border-radius: 10px;
+  color: var(--empty-muted);
+  background: transparent;
+}
+
+.empty-drop-hint__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--empty-muted);
+  background: var(--empty-surface-muted);
+}
+
+.empty-drop-hint > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.empty-drop-hint strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 580;
+  line-height: 1.3;
+}
+
+.empty-drop-hint small {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-action-card,
+  .empty-action-card__arrow {
+    transition: none;
+  }
+}
+
+.project-create-modal {
+  color: var(--text);
+
+  .ant-modal-content {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 42%, transparent);
+    border-radius: var(--r-xl);
+    background: var(--panel);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .ant-modal-header {
+    justify-content: flex-start;
+    margin-bottom: 0;
+    padding: var(--pad-xl) var(--pad-xl) var(--pad-lg);
+    background: var(--panel);
+  }
+
+  .ant-modal-title {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-strong);
+    font-size: var(--font-base);
+  }
+
+  .ant-modal-close {
+    top: var(--pad-lg);
+    inset-inline-end: var(--pad-lg);
+    color: var(--text-muted);
+  }
+
+  .ant-modal-close:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+
+  .ant-modal-body {
+    padding: var(--pad-md) var(--pad-xl) var(--pad-xl);
+  }
+
+  .ant-modal-footer {
+    margin-top: 0;
+    padding: var(--pad-md) var(--pad-xl) var(--pad-xl);
+    border-top: 1px solid var(--divider);
+    background: var(--panel);
+  }
+}
+
+.project-create-modal-title {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--pad-md);
+  min-width: 0;
+  padding-inline-end: calc(var(--pad-xl) * 2);
+  text-align: left;
+}
+
+.project-create-modal-title-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-form);
+  height: var(--control-h-form);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--primary-soft) 72%, var(--panel));
+  color: var(--primary);
+}
+
+.project-create-modal-title-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--pad-xs);
+}
+
+.project-create-modal-title-copy strong {
+  color: var(--text-strong);
+  font-size: var(--font-lg);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.project-create-modal-title-copy small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-create-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-lg);
+  padding: 12px 0;
+}
+
+.project-create-modal .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-sm);
+}
+
+.project-create-modal .field > span {
+  color: var(--text-strong);
+  font-size: var(--font-base);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.project-create-modal .field-hint {
+  margin-top: calc(var(--pad-xs) * -1);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.project-create-modal .spark-input {
+  min-height: var(--control-h-form);
+  font-size: var(--font-base);
+}
+
+.project-create-modal .spark-input:focus,
+.project-create-modal .spark-input:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 var(--pad-xs) var(--primary-soft);
+}
+
+.project-create-dropzone {
+  display: flex;
+  min-height: calc(var(--control-h-form) * 4);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pad-lg);
+  padding: calc(var(--pad-xl) * 1.5) var(--pad-lg);
+  border: 1px dashed color-mix(in srgb, var(--primary) 48%, var(--border-strong));
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--primary-soft) 24%, var(--panel));
+  color: var(--text);
+  text-align: center;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.project-create-dropzone:focus-within,
+.project-create-dropzone.is-drag-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary-soft) 48%, var(--panel));
+  box-shadow: 0 0 0 var(--pad-xs) var(--primary-soft);
+}
+
+.project-create-dropzone.is-drag-active {
+  transform: translateY(calc(var(--pad-xs) * -1));
+}
+
+.project-create-dropzone.has-path {
+  background: color-mix(in srgb, var(--primary-soft) 34%, var(--panel));
+}
+
+.project-create-dropzone-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pad-xs);
+}
+
+.project-create-dropzone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--control-h-form) + var(--pad-lg));
+  height: calc(var(--control-h-form) + var(--pad-lg));
+  margin-bottom: var(--pad-xs);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--primary-soft) 80%, var(--panel));
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.project-create-dropzone-copy strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--font-lg);
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-create-dropzone-copy > span:not(.project-create-dropzone-icon) {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-create-dropzone-path {
+  max-width: min(100%, 480px);
+}
+
+.project-create-dropzone > .ant-btn {
+  flex: 0 0 auto;
+  padding-inline: var(--pad-lg);
+}
+
+.project-create-info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-sm);
+  padding: var(--pad-md);
+  border: 1px solid color-mix(in srgb, var(--info) 22%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--info-bg) 78%, var(--panel));
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.project-create-info > svg {
+  flex: 0 0 auto;
+  margin-top: calc(var(--pad-xs) / 2);
+  color: var(--info);
+}
+
+.project-create-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+  width: 100%;
+}
+
+.project-create-modal-footer-spacer {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .project-create-modal .ant-modal-body,
+  .project-create-modal .ant-modal-header,
+  .project-create-modal .ant-modal-footer {
+    padding-inline: var(--pad-lg);
+  }
+
+  .project-create-modal-title-copy small {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-create-dropzone {
+    transition: none;
+  }
+}
+
+/* ─── Project head 右侧操作按钮：默认折叠为 0 宽度 ───
+   之前 `.proj-add-session-btn` 和 `.item-menu-wrap` 一直以 `opacity: 0` 占据 ~22+22+gap 的宽度
+   把左侧项目名挤窄。这里在 .proj-head 默认隐藏整个按钮组，仅在 hover / 焦点 / 菜单打开时显示，
+   让项目名占满可用宽度。基础 `opacity: 0 → 1` 的淡入仍由 views.css 控制。 */
+.proj-head .proj-add-session-btn,
+.proj-head .item-menu-wrap {
+  display: none;
+}
+
+.proj-head:hover .proj-add-session-btn,
+.proj-head:focus-within .proj-add-session-btn,
+.proj-head:hover .item-menu-wrap,
+.proj-head:focus-within .item-menu-wrap,
+.proj-head .item-menu-wrap.menu-open {
+  display: flex;
+}
+
+/* worktree 会话指示符：会话标题前的彩色分支图标 */
+.chat-item-title-compact .worktree-branch-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--color-primary-6, #4a8cff);
+}
+
+.sidebar-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 8px 3px;
+}
+
+.sidebar-search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 5px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-faint);
+  background: var(--bg-elevated);
+}
+
+.sidebar-search-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.sidebar-search-input-wrap input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: var(--font-xs);
+  line-height: 1.3;
+}
+
+.sidebar-search-input-wrap input::placeholder {
+  color: var(--text-faint);
+}
+
+.sidebar-search-close {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar-search-count {
+  padding: 0 4px 1px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* ─── 会话行悬浮信息面板（扁平简约卡片，右侧浮出） ─── */
+.session-hover-card-popover {
+  // antd 6 uses filter: drop-shadow on the Popover root rather than box-shadow.
+  filter: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
+  border-radius: 12px;
+
+  .ant-popover-container {
+    padding: 12px;
+    background: var(--panel-elev, var(--panel, var(--bg-soft)));
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+    filter: none !important;
+    box-shadow: none !important;
+  }
+
+  .ant-popover-content,
+  .ant-popover-inner,
+  .ant-popover-inner-content {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    filter: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 扁平化：隐藏默认箭头 */
+  .ant-popover-arrow {
+    display: none;
+  }
+}
+
+.session-hover-card {
+  min-width: 176px;
+  max-width: 244px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.session-hover-card-title {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.session-hover-card-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  cursor: text; // 暗示双击可改名
+}
+
+// 编辑态：紧凑输入框，继承标题字号字重，聚焦时主色高亮（容器前缀提优先级覆盖 antd 默认）
+.session-hover-card .session-hover-card-title-input {
+  width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--color-primary-5, rgba(74, 140, 255, 0.55));
+  border-radius: 6px;
+  outline: none;
+  box-shadow: none;
+
+  &:focus,
+  &:focus-visible {
+    border-color: var(--color-primary-6, #4a8cff);
+    box-shadow: 0 0 0 2px var(--color-primary-2, rgba(74, 140, 255, 0.18));
+  }
+}
+
+.session-hover-card.is-editing {
+  min-width: 200px;
+}
+
+.session-hover-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.session-hover-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  > svg {
+    flex-shrink: 0;
+    color: var(--text-faint);
+  }
+
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .is-branch {
+    color: var(--color-primary-6, #4a8cff);
+  }
+}
+
+.session-hover-card-time-rel {
+  color: var(--text-faint);
+}

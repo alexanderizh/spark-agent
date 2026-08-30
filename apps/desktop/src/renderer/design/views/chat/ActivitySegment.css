@@ -1,0 +1,102 @@
+.chat-activity-segment {
+  min-width: 0;
+  margin: 8px 0 12px;
+  color: color-mix(in srgb, var(--text-faint) 86%, var(--text) 14%);
+}
+
+.chat-activity-segment-single {
+  min-width: 0;
+}
+
+/* 整轮日志隐藏只控制可见性，不改写单段的 disclosure 状态。 */
+.msg-bubble-agent.tool-logs-hidden .chat-activity-segment,
+.msg-bubble-agent.tool-logs-hidden .chat-activity-segment-single {
+  display: none;
+}
+
+.chat-activity-segment-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-activity-segment-toggle:hover,
+.chat-activity-segment-toggle:focus-visible {
+  color: var(--text);
+}
+
+.chat-activity-segment-toggle:focus-visible {
+  border-radius: var(--r-sm);
+  outline: 2px solid var(--primary-soft);
+  outline-offset: 2px;
+}
+
+.chat-activity-segment-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-activity-segment-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--info);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
+.chat-activity-segment-live svg {
+  animation: chat-activity-segment-spin 0.9s linear infinite;
+}
+
+.chat-activity-segment-chevron {
+  flex: 0 0 auto;
+  color: inherit;
+  transition: transform 0.15s ease;
+}
+
+.chat-activity-segment.is-open .chat-activity-segment-chevron {
+  transform: rotate(90deg);
+}
+
+.chat-activity-segment-body {
+  min-width: 0;
+  margin: 2px 0 2px 10px;
+  padding: 2px 0 2px 8px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.chat-activity-segment-body > :first-child {
+  margin-top: 0;
+}
+
+.chat-activity-segment-body > :last-child {
+  margin-bottom: 0;
+}
+
+@keyframes chat-activity-segment-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-activity-segment-live {
+    font-size: 10px;
+  }
+}

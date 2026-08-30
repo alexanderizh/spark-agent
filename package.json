@@ -1,0 +1,59 @@
+{
+  "name": "spark-agent",
+  "version": "0.1.21",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "description": "Spark Agent — Local-first AI Agent desktop workbench",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=22.14.0 <23",
+    "pnpm": ">=11.13.0 <12"
+  },
+  "scripts": {
+    "dev": "cd apps/desktop && pnpm run dev",
+    "dev:rebuild": "cd apps/desktop && pnpm run dev:rebuild",
+    "build": "pnpm --filter @spark/desktop build",
+    "artifacts:codex": "node scripts/prepare-codex-runtime-artifacts.mjs",
+    "artifacts:depth-model": "node scripts/prepare-depth-model-artifact.mjs",
+    "artifacts:audit": "node scripts/audit-artifact-repository.mjs",
+    "artifacts:publish-codex": "node scripts/publish-codex-runtime-to-minio.mjs",
+    "artifacts:publish-depth-model": "node scripts/publish-depth-model-to-minio.mjs",
+    "test": "pnpm run test:unit",
+    "test:unit": "pnpm -r run test:unit",
+    "test:e2e": "pnpm --filter @spark/desktop test:e2e",
+    "check:file-size": "node scripts/check-file-size.mjs",
+    "check:git-runtime": "node scripts/check-managed-git-runtime.mjs",
+    "check:codex-protocol": "node scripts/check-codex-app-server-protocol.mjs",
+    "validate:skills": "node scripts/validate-builtin-skills.mjs",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
+    "clean": "pnpm -r run clean && rm -rf node_modules",
+    "postinstall": "simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "node scripts/check-commit-time.mjs && pnpm exec lint-staged && node scripts/check-file-size.mjs",
+    "commit-msg": "pnpm exec commitlint --edit $1",
+    "pre-push": "node scripts/check-push-email.mjs"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,less,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "aws4": "1.13.2",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.3.0",
+    "simple-git-hooks": "^2.13.1",
+    "typescript": "^5.5.0"
+  }
+}

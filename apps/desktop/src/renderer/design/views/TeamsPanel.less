@@ -1,0 +1,452 @@
+/**
+ * TeamsPanel 样式：长期团队的列表 + 编辑屏。
+ *
+ * 视觉对齐 AgentsView 编辑屏：sticky toolbar + 卡片化 section。
+ * 列表屏复用 .agents-card-grid（来自 AgentsView.less），仅在卡片元素上微调。
+ */
+
+@accent: var(--accent, var(--primary));
+
+.teams-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  padding-top: 5px;
+  gap: 16px;
+  overflow: auto;
+  background: var(--bg-soft);
+
+  &-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  &-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  &-desc {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    max-width: 640px;
+  }
+  &-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &-empty {
+    margin: 40px auto;
+    text-align: center;
+    max-width: 360px;
+    color: var(--text-muted);
+
+    &-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--r-lg);
+      background: var(--bg-sunken);
+      color: var(--text-faint);
+    }
+    &-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    &-desc {
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    &-cta {
+      margin-top: 12px;
+    }
+  }
+}
+
+/* ── 卡片（列表屏） ───────────────────────────── */
+.teams-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  text-align: left;
+  border: 0;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+
+  &-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: var(--bg-soft);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    flex-shrink: 0;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+
+  &-status {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 999px;
+
+    &.enabled {
+      color: var(--success, #16a34a);
+      background: rgba(22, 163, 74, 0.08);
+    }
+    &.disabled {
+      color: var(--text-faint);
+      background: var(--panel);
+    }
+  }
+
+  &-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  &-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  &-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-faint);
+    flex-wrap: wrap;
+
+    &-dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      opacity: 0.6;
+    }
+  }
+
+  &-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  &-tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: var(--r-sm);
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+  }
+}
+
+/* ── 编辑屏 ───────────────────────────── */
+.teams-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-soft);
+
+  &-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--divider);
+    flex-shrink: 0;
+  }
+
+  &-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+  }
+  &-title-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--r-xs);
+    background: var(--bg-sunken);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  &-spacer {
+    flex: 1;
+  }
+  &-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 20px;
+  }
+
+  &-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    max-width: 920px;
+    margin: 0 auto;
+  }
+}
+
+/* ── Section 卡片 ───────────────────────────── */
+.teams-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-lg);
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  &-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  &-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  &-hint {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  &-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-sunken);
+    padding: 1px 8px;
+    border-radius: 999px;
+  }
+}
+
+.teams-avatar-row {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.teams-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 12px 16px;
+  align-items: start;
+
+  > .wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.teams-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  &-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  &-hint {
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.4;
+  }
+}
+
+/* ── 成员 chip grid ───────────────────────────── */
+.teams-members-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.teams-member-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  min-width: 0;
+  color: var(--text);
+
+  &:hover {
+    background: var(--hover);
+  }
+  &.active {
+    background: var(--primary-soft, rgba(122, 92, 249, 0.08));
+    border-color: transparent;
+    color: var(--primary);
+    font-weight: 500;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    background: var(--panel);
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+  &-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &-check {
+    color: @accent;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Host 选择器 ───────────────────────────── */
+.teams-host-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-soft);
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+
+  &-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--panel);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+  &-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  &-builtin {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: var(--r-xs);
+    background: var(--bg-sunken);
+    color: var(--text-faint);
+  }
+}
+
+/* ── 嵌套调用 inline 配置 ───────────────────────────── */
+.teams-nesting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}

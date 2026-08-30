@@ -1,0 +1,158 @@
+name: Publish Website
+
+# 与桌面端 publish-desktop-release.yml 完全独立：
+# - 桌面端：apps/desktop/package.json 变更 → 多平台 electron 构建
+# - 官网：apps/website/** 变更 → Docker 镜像构建 + 推腾讯云 + SSH 部署
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'apps/website/**'
+      # 工作流自身变更时也跑一遍，便于验证 CI 配置
+      - '.github/workflows/publish-website.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '构建的分支/tag/commit（默认当前分支）'
+        required: false
+        type: string
+        default: ''
+      deploy:
+        description: '是否 SSH 部署到云服务器（关闭则只构建+推镜像）'
+        required: true
+        type: boolean
+        default: true
+      push_image:
+        description: '是否推送到腾讯云镜像仓库（关闭则只本地构建验证）'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-website
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Resolve deploy flags
+        id: flags
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DEPLOY: ${{ github.event.inputs.deploy }}
+          INPUT_PUSH: ${{ github.event.inputs.push_image }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "should_deploy=${INPUT_DEPLOY}" >> "$GITHUB_OUTPUT"
+            echo "should_push=${INPUT_PUSH}" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check required secrets
+        id: config
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHOULD_PUSH: ${{ steps.flags.outputs.should_push }}
+          SHOULD_DEPLOY: ${{ steps.flags.outputs.should_deploy }}
+          DOCKER_USER: ${{ secrets.WEBSITE_DOCKER_USERNAME }}
+          DOCKER_PWD: ${{ secrets.WEBSITE_DOCKER_PASSWORD }}
+          DOCKER_NS: ${{ secrets.WEBSITE_DOCKER_NAMESPACE }}
+          SERVER_HOST: ${{ secrets.WEBSITE_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.WEBSITE_SERVER_USER }}
+          SERVER_PWD: ${{ secrets.WEBSITE_SERVER_PASSWORD }}
+          SSH_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+        run: |
+          missing=()
+          effective_push="${SHOULD_PUSH}"
+          effective_deploy="${SHOULD_DEPLOY}"
+
+          if [ "${SHOULD_PUSH}" = "true" ]; then
+            if [ -z "${DOCKER_USER}" ] || [ -z "${DOCKER_PWD}" ]; then
+              if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+                missing+=("WEBSITE_DOCKER_USERNAME/WEBSITE_DOCKER_PASSWORD")
+              else
+                echo "::warning::未配置 WEBSITE_DOCKER_USERNAME/WEBSITE_DOCKER_PASSWORD，改为仅构建镜像，不推送。"
+                effective_push="false"
+                effective_deploy="false"
+              fi
+            fi
+          fi
+
+          if [ "${SHOULD_DEPLOY}" = "true" ]; then
+            deploy_missing=()
+            [ -z "${SERVER_HOST}" ] && deploy_missing+=("WEBSITE_SERVER_HOST")
+            [ -z "${SERVER_USER}" ] && deploy_missing+=("WEBSITE_SERVER_USER")
+            if [ -z "${SERVER_PWD}" ] && [ -z "${SSH_KEY}" ]; then
+              deploy_missing+=("WEBSITE_SERVER_PASSWORD 或 WEBSITE_SSH_KEY")
+            fi
+
+            if [ ${#deploy_missing[@]} -gt 0 ]; then
+              if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+                missing+=("${deploy_missing[@]}")
+              else
+                echo "::warning::未配置完整的部署 Secrets，跳过远程部署: ${deploy_missing[*]}"
+                effective_deploy="false"
+              fi
+            fi
+          fi
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::缺少 GitHub Secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "namespace=${DOCKER_NS:-spark_ai}" >> "$GITHUB_OUTPUT"
+          echo "should_push=${effective_push}" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=${effective_deploy}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        shell: bash
+        env:
+          workspace: ${{ steps.config.outputs.namespace }}
+          docker_id: ${{ secrets.WEBSITE_DOCKER_USERNAME }}
+          docker_pwd: ${{ secrets.WEBSITE_DOCKER_PASSWORD }}
+          VITE_RELEASES_API_BASE: ${{ secrets.WEBSITE_VITE_RELEASES_API_BASE }}
+          PUSH: ${{ steps.config.outputs.should_push == 'true' && '1' || '0' }}
+        run: bash apps/website/scripts/build-push-image.sh
+
+      - name: Install sshpass (password SSH fallback)
+        if: steps.config.outputs.should_deploy == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: Deploy to cloud server
+        if: steps.config.outputs.should_deploy == 'true'
+        shell: bash
+        env:
+          REGISTRY: ccr.ccs.tencentyun.com
+          WEBSITE_DOCKER_NAMESPACE: ${{ steps.config.outputs.namespace }}
+          WEBSITE_SERVER_HOST: ${{ secrets.WEBSITE_SERVER_HOST }}
+          WEBSITE_SERVER_USER: ${{ secrets.WEBSITE_SERVER_USER }}
+          WEBSITE_SERVER_PASSWORD: ${{ secrets.WEBSITE_SERVER_PASSWORD }}
+          WEBSITE_SSH_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT != '' && vars.WEBSITE_HOST_PORT || '38090' }}
+          IMAGE_TAG: latest
+        run: bash apps/website/scripts/deploy-remote.sh
+
+      - name: Verify public endpoint
+        if: steps.config.outputs.should_deploy == 'true'
+        shell: bash
+        env:
+          WEBSITE_SERVER_HOST: ${{ secrets.WEBSITE_SERVER_HOST }}
+          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT != '' && vars.WEBSITE_HOST_PORT || '38090' }}
+        run: |
+          echo "外网探活 http://${WEBSITE_SERVER_HOST}:${WEBSITE_HOST_PORT}/"
+          curl -sI --connect-timeout 10 "http://${WEBSITE_SERVER_HOST}:${WEBSITE_HOST_PORT}/" | head -6

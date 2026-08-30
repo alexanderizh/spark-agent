@@ -1,0 +1,8811 @@
+/**
+ * ChatView — 真实 IPC 驱动的会话视图
+ *
+ * NOTE: Session sidebar has been moved to the primary FloatingSidebar.
+ * This component only renders the main chat area (hero/composer/stream).
+ * Session/workspace/provider data is read from SessionSidebarContext.
+ */
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  useId,
+  Fragment,
+} from 'react'
+import './ChatView.less'
+import './ToolDropdown.less'
+import './chat/ChatEmptyThemes.less'
+import type { ReactNode, RefObject } from 'react'
+import { Button } from '@lobehub/ui'
+import {
+  AppWindow,
+  CheckCircle,
+  Copy,
+  FilePenLine,
+  FileSearch,
+  Globe,
+  Image as ImageIcon,
+  Lightbulb,
+  SquareTerminal,
+  Trash,
+  Save,
+  Wand as WandIcon,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
+import { ActivityLogSummaryIcon } from './chat/ChatToolbar'
+import { UserQuestionDock } from './chat/UserQuestionDock'
+import type { UserQuestionData } from './chat/UserQuestionUtils'
+import {
+  buildQuestionAnswerSummaries,
+  getQuestionAnswerCacheKey,
+  persistQuestionAnswerSummaries,
+  readPersistedQuestionAnswerSummaries,
+} from './chat/QuestionAnswerCache'
+import { buildAgentCommitMessage, buildDefaultCommitMessage } from './chat/ChatGitUtils'
+import { GitBranchDialog, GitCommitDialog, GitCreateBranchDialog } from './chat/ChatGitDialogs'
+import { GitEnvPanel } from './chat/ChatGitEnv'
+import {
+  getRightGutterWidth,
+  shouldAutoCollapseGitEnvPanelForViewport,
+  shouldAutoCollapseGitEnvPanel,
+} from './chat/git-env-panel-layout'
+import { FileChipIcon } from './chat/ChatFileIcon'
+import { GitReviewPanel } from './chat/ChatGitReview'
+import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
+import { useWorkspaceBranchState } from './chat/useWorkspaceBranchState'
+import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
+import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
+import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
+import { ChatTabbar } from './chat/ChatTabbar'
+import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
+import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
+import {
+  DocumentOutputCard,
+  filterDocumentOutputFiles,
+  getDocumentOutputKey,
+} from './chat/ChatDocumentOutput'
+import { PresentedMediaList, filterMediaPresentedFiles } from './chat/PresentedMedia'
+import { MarkdownText } from './chat/ChatMarkdown'
+import { PlanSidePanel } from './chat/PlanSidePanel'
+import { PlanSummary } from './chat/PlanSummary'
+import { GoalContractCard } from './chat/GoalContractCard'
+import { GoalIterationDivider } from './chat/GoalIterationDivider'
+import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
+import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
+import {
+  ComputerActivityProvider,
+  ComputerActivitySegmentCard,
+  ComputerActivitySegmentsBridge,
+} from '../components/ComputerActivityBlock'
+import {
+  readModelSwitchMarkers,
+  saveModelSwitchMarker,
+  type ModelSwitchMarker,
+} from './chat/ModelSwitchMarkers'
+import { StreamingErrorCard } from './chat/StreamingErrorCard'
+import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { CancellationNotice } from './chat/CancellationNotice'
+import { groupChatMessageTimeline } from './chat/chat-message-timeline'
+import { ActivitySegment } from './chat/ActivitySegment'
+import { SessionTaskPanel } from './chat/SessionTaskPanel'
+import {
+  areSessionTaskTimelineEntriesEqual,
+  buildSessionTaskTimeline,
+  projectSessionTaskTimelineBlocks,
+  shouldReplaceSessionTaskBlock,
+  type SessionTaskTimelineEntry,
+} from './chat/SessionTaskTimeline'
+import {
+  getToolLogGroupKind,
+  isChatActivitySegmentRunning,
+  splitChatActivitySegments,
+  summarizeChatActivitySegment,
+  type ChatActivityBlock,
+  type ToolLogGroupKind,
+} from './chat/ChatActivitySegments'
+import {
+  getToolActionLabel,
+  getToolIconKey,
+  normalizeToolName,
+  type ToolLogIconKey,
+} from './chat/tool-log-metadata'
+import { getRichImageDisplay, getRichSourceLinks } from './chat/rich-output-parsing'
+import { ToolLogImageThumb, ToolLogSourceList } from './chat/ToolLogRichOutput'
+import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
+import { projectVisibleChatMessages } from './chat/internal-turn-message-visibility'
+import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
+import { useAssistantTurnCollapse } from './chat/useAssistantTurnCollapse'
+import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
+import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
+import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
+import { SessionSwitchingOverlay } from './chat/SessionSwitchingOverlay'
+import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
+import { SessionForkDialog } from './chat/SessionForkDialog'
+import { MessageHoverBar } from './chat/MessageHoverBar'
+import {
+  UserMessageSessionReferences,
+  type UserMessageSessionReferenceDisplay,
+} from './chat/UserMessageSessionReferences'
+import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
+import { reorderChatTurnSummaryBlocks } from './chat/chat-turn-summary-order'
+import {
+  persistThenSyncTeamSelection,
+  preserveExplicitEmptySessionTeamConfig,
+  shouldResetEmptySessionTeamTouched,
+} from './chat/emptySessionTeamMode'
+import {
+  getMessageImagePreview,
+  preparedMessageImageRenderState,
+} from './chat/message-image-preview'
+import {
+  cancelOptimisticUserMessage,
+  cancelOptimisticUserMessageByTurnId,
+  clearOptimisticUserMessagesForSession,
+  commitCancelledOptimisticUserMessage,
+  commitOptimisticUserMessage,
+  createOptimisticUserMessage,
+  failOptimisticUserMessage,
+  finalizeCancelledOptimisticUserMessage,
+  mergeOptimisticUserMessages,
+  pruneAcknowledgedOptimisticUserMessages,
+  removeQueuedOptimisticUserMessages,
+  type OptimisticUserSendCallbacks,
+  type OptimisticUserMessage,
+} from './chat/optimistic-user-messages'
+
+export { MarkdownText } from './chat/ChatMarkdown'
+import {
+  appIdOfSubAppPanelKind,
+  defaultUnifiedSidePanelWidth,
+  maxSideChatWidthForViewport,
+  SideChatPanel,
+  type SideChatSessionOption,
+  subAppPanelKind,
+  UnifiedSessionSidePanel,
+  UnifiedSidePanelPicker,
+  type UnifiedSidePanelKind,
+} from './chat/ChatSidePanels'
+import { BrowserChrome } from '../components/browser/BrowserChrome'
+import { panelBrowserTabsStore } from '../components/browser/browserTabsStore'
+import {
+  BROWSER_PANEL_CLOSE_EVENT,
+  BROWSER_PANEL_OPEN_EVENT,
+} from '../components/browser/browserChromeShared'
+import {
+  clearPendingOpenBrowserPanel,
+  consumePendingOpenBrowserPanel,
+  handOffBrowserNavigate,
+} from './chat/browserPanelNavigation'
+import { useSubAppSurfaces } from '../sub-app/SubAppSurfaceHost'
+import { UnifiedSubAppPanel } from '../sub-app/UnifiedSubAppPanel'
+import {
+  HtmlRenderProvider,
+  RenderHtmlBlock,
+  type HtmlActiveRemotePresentation,
+  type HtmlRenderContextValue,
+} from './chat/RenderHtmlBlock'
+import { RenderDiagramBlock } from './chat/RenderDiagramBlock'
+import { CodeViewerPanel } from '../components/code-viewer/CodeViewerPanel'
+import {
+  useCodeExplorerVisible,
+  useCodeExplorerWidth,
+  setCodeExplorerVisible,
+  setCodeExplorerWidth,
+} from '../components/code-viewer/file-explorer/fileExplorerVisibility'
+import {
+  openGitPanel,
+  closeGitPanel,
+  useGitPanelVisible,
+} from '../components/code-viewer/git-panel/gitPanelVisibility'
+import {
+  openSearchPanel,
+  closeSearchPanel,
+} from '../components/code-viewer/search-panel/searchPanelVisibility'
+import {
+  OPEN_PROJECT_CODE_VIEWER_EVENT,
+  consumePendingOpenProjectCodeViewer,
+  clearPendingOpenProjectCodeViewer,
+} from '../components/code-viewer/codeViewerNavigation'
+import {
+  OPEN_TERMINAL_PANEL_EVENT,
+  consumePendingOpenTerminalPanel,
+  clearPendingOpenTerminalPanel,
+} from './chat/terminalPanelNavigation'
+import type { OpenCodeFile, CodeViewMode } from '../components/code-viewer/types'
+import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
+import { insertToComposer } from '../components/code-viewer/composerInsert'
+import { buildComposerAttachmentsFromPaths } from '../services/composer-attachments'
+import {
+  shouldOpenInEditorByDefault,
+  shouldPreviewFirst,
+  type FileOpenModeOpts,
+  type FileOpenHandler,
+} from '../components/fileOpenRouting'
+import type { HtmlOpenMode } from '../services/render-html'
+import {
+  buildUsageDataFromEvents,
+  clamp,
+  computeCacheHitRate,
+  createEmptySessionUsageData,
+  eventsAfterLastHistoryReset,
+  formatRelativeTime,
+  formatTokenCount,
+  getBasename,
+  getLatestInputTokens,
+  getProviderContextInputUpdate,
+} from './chat/ChatViewUtils'
+import {
+  extractInspectorSubagents,
+  extractSessionProgressTasks,
+  isRecord,
+  isSessionProgressToolBlock,
+  parseTodosFromInputOrOutput,
+  type InspectorTask,
+} from './chat/ChatInspectorUtils'
+import type {
+  AgentAdapter,
+  BranchState,
+  ComposerPrefillPayload,
+  ContextMenuItem,
+  MessageAttachment,
+  PermissionModeChoice,
+  ReplyToState,
+  SessionRuntimePatch,
+} from './chat/ChatComposerTypes'
+import type {
+  ContextLedgerSection,
+  ContextLedgerState,
+  ContextUsageState,
+  ProjectContextState,
+  SessionUsageData,
+  UsageSnapshot,
+} from './chat/ChatUsageTypes'
+import {
+  compactQuotePreview,
+  ComposerV2,
+  copyImageFromSrc,
+  getFileNameFromPath,
+  getPreferredProvider,
+  getProviderDefaultModel,
+  isLocalCliProvider,
+  normalizeComposerReasoningEffort,
+  readComposerPrefs,
+  readSelectedTextWithin,
+  resolveComposerImageSrc,
+  useCloseOnOutside,
+  writeComposerPrefs,
+} from './chat/ComposerV2'
+import { NEW_SESSION_DRAFT_BUCKET } from './chat/composer-drafts'
+import {
+  updateComposerReplyReferenceBucket,
+  type ComposerReplyReferenceMap,
+} from './chat/composer-reply-references'
+import { ChatConfigPanel, ChatInspector } from './chat/ChatInspectorPanel'
+import {
+  extractRunningTeamAgentIds,
+  extractRunningTeamMemberIds,
+  hasRunningTeamMemberActivity,
+} from './chat/ChatTeamActivityUtils'
+import { useTeamActivityLogsVisible } from './chat/team-log-visibility'
+import { GitDiffContent, parseUnifiedDiff, type DiffHunk } from './chat/ChatDiffUtils'
+import { useApp } from '../AppContext'
+import { Icons } from '../Icons'
+import { isSessionActive, useSessionSidebar, type SessionSummary } from '../SessionSidebarContext'
+import {
+  ErrorCard,
+  FilePermCard,
+  NetPermCard,
+  MCPPermCard,
+  HunkDiff,
+  renderPlanInline,
+  SubagentCard,
+  Checkpoint,
+  SandboxNote,
+  QuickActions,
+  ToolChooser,
+  TurnFileSummaryCard,
+} from '../ChatInteractions'
+import { ImagePreviewModal } from '../components/ImagePreviewModal'
+import { ClickableFilePath, type PreviewFileType } from '../components/ClickableFilePath'
+import { TurnElapsedTicker } from '../components/TurnElapsedTicker'
+import { formatTurnDuration } from '../utils/turn-duration'
+import { FilePreviewPanel } from '../components/FilePreviewPanel'
+import { FileTypeIcon, getFileTypeBadge, getPreviewFileType } from '../components/FileDisplay'
+import { TeamDispatchCard } from '../components/TeamDispatchCard'
+import { TeamMemberBubble } from '../components/TeamMemberBubble'
+import { TeamInspectorSection } from '../components/TeamInspectorSection'
+import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
+import { WorktreePanel } from '../components/WorktreePanel'
+import { CheckpointTimelinePanel } from '../components/CheckpointTimelinePanel'
+import { BuiltInTerminalPanel } from '../components/BuiltInTerminalPanel'
+import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
+import { AvatarImage } from '../components/AvatarImage'
+import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
+import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from './SkillStoreView'
+import { requestAgentsTargetTab } from '../teamNavigation'
+import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
+import { OPEN_CODE_SEARCH_EVENT } from '../hooks/useKeyboard'
+import { MessageBuilder } from '../services/event-mapper'
+import {
+  LiveAgentEventBuffer,
+  createAgentEventIdSet,
+  mergeAgentEvents,
+} from '../services/live-agent-event-buffer'
+import { sanitizeTurnFileSummaries } from '../services/turn-summary-filter'
+import {
+  isComposerSessionWorking,
+  resolveComposerRunningAgentIds,
+} from '../services/composer-working-state'
+import {
+  PROGRAMMATIC_SCROLL_GUARD_MS,
+  SCROLL_TO_BOTTOM_LOCK_THRESHOLD,
+  shouldShowScrollToBottom,
+} from './chat-scroll'
+import {
+  getLastAssistantMessageMarkdown,
+  isLocalCopySlashCommand,
+  serializeMessagesToMarkdown,
+} from './chat-copy'
+import { hasVisibleAgentBlocks, hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
+import { shouldShowAssistantIdentity } from './chat/chat-message-avatar'
+import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
+import {
+  canReuseComposerSession,
+  canShowComposerWorktreeToggle,
+  resolveComposerGitWorkspace,
+  resolveDisplayedGitBranch,
+} from './chat-session-routing'
+import { useToast } from '../components/Toast'
+import {
+  getPreferredProviderForAdapter,
+  getProviderAdapterKind,
+  isClaudeAdapter,
+  isProviderCompatibleWithAdapter,
+} from '../utils/provider-adapter'
+import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../avatar'
+import type {
+  UIMessage,
+  UIBlock,
+  FileChangeSummary,
+  GoalSnapshot,
+  OrchestrationSnapshot,
+} from '../services/event-mapper'
+import type {
+  AgentEvent,
+  AgentStatusValue,
+  ProviderProfile,
+  ModelProfile,
+  SessionAgentAdapter,
+  SessionChatMode,
+  SessionListResponse,
+  SessionPermissionMode,
+  PermissionApprovalDecision,
+  PermissionApprovalRequest,
+  PromptConfigGetResponse,
+  EnvConfigGetResponse,
+  EnvVarItem,
+  SessionId,
+  SessionLineage,
+  SessionReasoningEffort,
+  TurnId,
+  SessionGetQueueResponse,
+  SessionQueuedTurn,
+  SkillConfigGetResponse,
+  WorkflowProgressNode,
+  WorkspaceInfo,
+  CommandListItem,
+  TurnPromptSnapshotEvent,
+  ManagedAgent,
+  ManagedTeam,
+  SessionAttachment,
+  TeamModeConfig,
+  TeamMemberEventContext,
+} from '@spark/protocol'
+import {
+  LOCAL_CLI_DEFAULT_MODEL,
+  LOCAL_CLI_PROVIDER_ID,
+  LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_PROVIDER_ID,
+  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
+  CODEX_AUTO_ROUTER_PROVIDER_ID,
+  CODEX_AUTO_ROUTER_PROVIDER_NAME,
+  isBuiltInLocalCliProvider,
+  isAutoRouterProvider,
+  isClaudeAutoRouterProvider,
+  isRoutingModelConfig,
+  VENDOR_CATALOG,
+  type VendorMeta,
+} from '@spark/protocol'
+import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
+import { ProviderLogo } from '../components/ProviderLogo'
+
+const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
+const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
+
+/**
+ * resolveTeamHostAgentId — 解析团队模式下要使用的主持 Agent。
+ *
+ * 团队模式启用但主持人未显式选择时（如新会话/首次开启/旧 host 已被删除），
+ * 后端会收到一个无效的 hostAgentId，导致 LLM 因缺少调度工具而报
+ * "无法直接调度其他 Agent 并行开发代码" 的错。这里给出明确的回退链：
+ *   1. teamConfig.hostAgentId 已在 agents 列表里 → 直接用
+ *   2. 团队 memberAgentIds 中第一个在 agents 列表里的 → 用它
+ *   3. agents 列表第一个 → 用它
+ *   4. 保留 teamConfig.hostAgentId（即使不在列表，给后端兜底）
+ *   5. 最终兜底 'platform-manager-agent'
+ */
+function resolveTeamHostAgentId(teamConfig: TeamModeConfig, agents: ManagedAgent[]): string {
+  const isValid = (id: string | undefined): id is string =>
+    typeof id === 'string' && id.length > 0 && agents.some((agent) => agent.id === id)
+  if (isValid(teamConfig.hostAgentId)) return teamConfig.hostAgentId
+  for (const memberId of teamConfig.memberAgentIds) {
+    if (isValid(memberId)) return memberId
+  }
+  const firstAgent = agents[0]
+  if (firstAgent != null) return firstAgent.id
+  return teamConfig.hostAgentId || 'platform-manager-agent'
+}
+
+type ChatViewProps = {
+  approvalRequest?: PermissionApprovalRequest | null
+  onApprovalClose?: (sessionId: string, requestId?: string) => void
+  userQuestion?: UserQuestionData | null
+  onUserQuestionClose?: (sessionId: string, questionId?: string) => void
+  onExpandSidebar?: () => void
+  paletteCommandRequest?: { id: number; commandText: string } | null
+}
+
+const SAFE_FILE_SCHEME = 'safe-file'
+
+const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+const COMPOSER_DRAFTS_KEY = 'spark-agent:composer-drafts'
+const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
+const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
+const CHAT_MESSAGE_ESTIMATED_HEIGHT = 180
+const CHAT_MESSAGE_OVERSCAN = 8
+const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
+const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
+
+/**
+ * 空会话（无活跃 session）下挂载内置终端面板时使用的伪 sessionId。
+ *
+ * 内置终端面板需要一个 string 形态的 sessionId 作为 PTY 生命周期键 + localStorage
+ * 命名空间。空会话没有真实 session，但用户可能希望在选好项目文件夹后直接开终端，
+ * 因此用这个稳定的 app 级占位 id。它的 PTY 仅在 activeWorkspace 存在时创建，
+ * 且会在面板关闭 / 真实会话创建 / 应用关闭时被清理。
+ */
+const EMPTY_HERO_TERMINAL_SESSION_ID = '__empty_hero__'
+
+/**
+ * 单条环境变量编辑行。
+ * 定义在模块作用域（而非组件内），保证每次父级重渲染不会更换组件类型导致 input 重挂载丢焦点。
+ * 明文切换状态 showValue 只属于这一行，独立于父级 vars 数组，无需扰动持久化逻辑。
+ */
+
+export function ChatView({
+  approvalRequest = null,
+  onApprovalClose,
+  userQuestion = null,
+  onUserQuestionClose,
+  onExpandSidebar,
+  paletteCommandRequest = null,
+}: ChatViewProps = {}) {
+  const { t, setTweak } = useApp()
+  const appearance = useAppearanceSettings()
+  const showTeamActivityLogs = useTeamActivityLogsVisible()
+  // ── Shared state from SessionSidebarContext ──
+  const sessionCtx = useSessionSidebar()
+  const active = sessionCtx.activeSessionId
+  const activeWorkspaceId = sessionCtx.activeWorkspaceId
+  const setActiveWorkspaceId = sessionCtx.setActiveWorkspace
+  // Read data lists from context (single source of truth)
+  const sessions = sessionCtx.sessions
+  const workspaces = sessionCtx.workspaces
+  const providers = sessionCtx.providers
+  const agents = sessionCtx.agents
+  const selectedProviderId = sessionCtx.selectedProviderId
+  const setSelectedProviderId = sessionCtx.setSelectedProviderId
+
+  // ── Local UI/runtime state ──
+  const [showInspector, setShowInspector] = useState(false)
+  const [forkDialog, setForkDialog] = useState<{ turnId: TurnId; ordinal?: number } | null>(null)
+  const [activeLineage, setActiveLineage] = useState<SessionLineage | null>(null)
+  const [activeChildLineages, setActiveChildLineages] = useState<SessionLineage[]>([])
+  const [lineageSessionId, setLineageSessionId] = useState<SessionId | null>(null)
+  const [lineageAnchor, setLineageAnchor] = useState<{
+    sessionId: SessionId
+    turnId: TurnId
+  } | null>(null)
+  const [sessionScheduleEnabledCount, setSessionScheduleEnabledCount] = useState(0)
+  const [showConfigPanel, setShowConfigPanel] = useState(false)
+  const [inspectorWidth, setInspectorWidth] = useState(360)
+  // 侧边聊天面板宽度：可拖拽伸缩，默认值按窗口宽度分档（见 defaultUnifiedSidePanelWidth）
+  const [sideChatWidth, setSideChatWidth] = useState(defaultUnifiedSidePanelWidth)
+  // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
+  // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
+  const [showTerminalPanel, setShowTerminalPanel] = useState(false)
+  const [showGitReviewPanel, setShowGitReviewPanel] = useState(false)
+  const [unifiedSideTabs, setUnifiedSideTabs] = useState<UnifiedSidePanelKind[]>([])
+  const [activeUnifiedSideTab, setActiveUnifiedSideTab] = useState<UnifiedSidePanelKind | null>(
+    null,
+  )
+  const [activeHtmlPanelBlockId, setActiveHtmlPanelBlockId] = useState<string | null>(null)
+  const [activeHtmlRemotePresentation, setActiveHtmlRemotePresentation] =
+    useState<HtmlActiveRemotePresentation | null>(null)
+  // 统一面板是否展开（独立于 tabs 数组：tabs 记录"已打开过哪些 tab"，unifiedPanelOpen 只控制容器显隐）
+  // 入口按钮只 toggle 此状态；首次打开 tabs 为空 → 显示空状态，用户在 tabbar 内再选要打开哪个 tab
+  const [unifiedPanelOpen, setUnifiedPanelOpen] = useState(false)
+  // panel 子应用收敛进统一侧面板：目录来自 SubAppSurfaceProvider（已发布+启用）
+  const subAppSurfaces = useSubAppSurfaces()
+  const panelApps = useMemo(
+    () => subAppSurfaces.directory.filter((app) => app.surface === 'panel'),
+    [subAppSurfaces.directory],
+  )
+  const [showGitEnvPanel, setShowGitEnvPanel] = useState(false)
+  // 自动展开 git+任务悬浮面板用：用户手动 toggle/关闭过后，本会话不再自动展开。
+  const gitPanelUserInteractedRef = useRef(false)
+  const showGitEnvPanelRef = useRef(false)
+  const gitEnvPanelSpaceConstrainedRef = useRef(false)
+  // 记录面板是否因空间不足被自动收起；只允许同一轮「变窄→变宽」自动恢复。
+  const gitEnvPanelViewportCollapsedRef = useRef(false)
+  // 自动展开触发检测的上一轮基线；切会话/切仓库时一并重置（见对应 effect）。
+  // 首次采样只记录基线、不触发，避免切到已有变更的老会话时误弹出面板。
+  const autoOpenSampledRef = useRef(false)
+  const prevAutoOpenSessionStatusRef = useRef<SessionSummary['status'] | null>(null)
+  const prevAutoOpenTasksLenRef = useRef(0)
+  const prevAutoOpenGitChangedFilesRef = useRef(0)
+  const prevAutoOpenGoalPresentRef = useRef(false)
+  const [gitCommitModalOpen, setGitCommitModalOpen] = useState(false)
+  const [gitBranchModalOpen, setGitBranchModalOpen] = useState(false)
+  const [gitCreateBranchOpen, setGitCreateBranchOpen] = useState(false)
+  // Codex-like side chat: a second in-project session docked beside the current chat.
+  const [showSideChatPanel, setShowSideChatPanel] = useState(false)
+  const [sideChatSessionId, setSideChatSessionId] = useState<SessionId | null>(null)
+  const [sideChatCreating, setSideChatCreating] = useState(false)
+  const [sideChatAgentStatus, setSideChatAgentStatus] = useState('')
+  const [sideChatMessages, setSideChatMessages] = useState<UIMessage[]>([])
+  const [sideChatContextInputTokens, setSideChatContextInputTokens] = useState(0)
+  const [sideChatContextUsage, setSideChatContextUsage] = useState<ContextUsageState | null>(null)
+  const [sideChatContextLedger, setSideChatContextLedger] = useState<ContextLedgerState | null>(
+    null,
+  )
+  const [sideChatScrollToBottomTrigger, setSideChatScrollToBottomTrigger] = useState(0)
+  const persistedMessagesBySessionRef = useRef(new Map<string, UIMessage[]>())
+  const [optimisticUserMessages, setOptimisticUserMessages] = useState<OptimisticUserMessage[]>([])
+  // starting 窗口被终止的 turnId 集合：cancel 响应可能先于 submit-turn 的 settle 到达，
+  // 此时 onCommit 尚未给 optimistic 气泡绑上 turnId；用它兜底把迟到 commit 落到 cancelled 态。
+  const cancelledOptimisticTurnIdsRef = useRef(new Set<string>())
+  const pruneOptimisticMessagesNextFrame = useCallback(
+    (sessionId: string, messages: UIMessage[]) => {
+      requestAnimationFrame(() => {
+        setOptimisticUserMessages((current) =>
+          pruneAcknowledgedOptimisticUserMessages(current, messages, sessionId),
+        )
+      })
+    },
+    [],
+  )
+  const optimisticUserSendCallbacks = useMemo<OptimisticUserSendCallbacks>(
+    () => ({
+      onBegin: (draft) => {
+        setOptimisticUserMessages((current) => [...current, createOptimisticUserMessage(draft)])
+      },
+      onCommit: (clientId, turnId, started) => {
+        if (cancelledOptimisticTurnIdsRef.current.delete(turnId)) {
+          // 该 turn 已在 commit 到达前被用户终止：置为 cancelled 终态，
+          // 不能标成 accepted（否则永远等不到 user_message 承接而残留）。
+          setOptimisticUserMessages((current) =>
+            commitCancelledOptimisticUserMessage(current, clientId, turnId),
+          )
+          return
+        }
+        setOptimisticUserMessages((current) =>
+          commitOptimisticUserMessage(current, clientId, turnId, started),
+        )
+        for (const [sessionId, messages] of persistedMessagesBySessionRef.current) {
+          if (messages.some((message) => message.role === 'user' && message.turnId === turnId)) {
+            pruneOptimisticMessagesNextFrame(sessionId, messages)
+            break
+          }
+        }
+      },
+      onFail: (clientId, error) => {
+        setOptimisticUserMessages((current) => failOptimisticUserMessage(current, clientId, error))
+      },
+      onCancel: (clientId) => {
+        setOptimisticUserMessages((current) => cancelOptimisticUserMessage(current, clientId))
+      },
+    }),
+    [pruneOptimisticMessagesNextFrame],
+  )
+
+  const handleOptimisticQueueState = useCallback(
+    (sessionId: string, queuedTurnIds: readonly string[]) => {
+      setOptimisticUserMessages((current) =>
+        removeQueuedOptimisticUserMessages(current, sessionId, new Set(queuedTurnIds)),
+      )
+    },
+    [],
+  )
+  const handleDeleteOptimisticUserMessages = useCallback((clientIds: string[]) => {
+    if (clientIds.length === 0) return
+    const remove = new Set(clientIds)
+    setOptimisticUserMessages((current) => current.filter((item) => !remove.has(item.clientId)))
+  }, [])
+  const handleOptimisticQueueTurnCancelled = useCallback((sessionId: string, turnId: string) => {
+    setOptimisticUserMessages((current) =>
+      cancelOptimisticUserMessageByTurnId(current, sessionId, turnId),
+    )
+  }, [])
+  const handleOptimisticSessionReset = useCallback((sessionId: string) => {
+    setOptimisticUserMessages((current) =>
+      clearOptimisticUserMessagesForSession(current, sessionId),
+    )
+  }, [])
+
+  // ── 按会话隔离的侧面板 UI 状态 ──
+  // 切换会话时把当前面板状态存到 prevId 槽位，加载 active 对应快照；
+  // 后端长驻任务（终端 PTY / side-chat session）不受影响，切回自动恢复展开状态。
+  type PanelSnapshot = {
+    unifiedSideTabs: UnifiedSidePanelKind[]
+    activeUnifiedSideTab: UnifiedSidePanelKind | null
+    unifiedPanelOpen: boolean
+    showConfigPanel: boolean
+    showTerminalPanel: boolean
+    showGitReviewPanel: boolean
+    showSideChatPanel: boolean
+    showInspector: boolean
+    filePreview: { filePath: string; fileType: PreviewFileType } | null
+    sideChatSessionId: SessionId | null
+    activeHtmlPanelBlockId: string | null
+    codeFiles: OpenCodeFile[]
+    activeCodePath: string | null
+    codeViewMode: CodeViewMode
+    codeExplorerExpandedDirs: string[]
+  }
+  const emptyPanelSnapshot: PanelSnapshot = {
+    unifiedSideTabs: [],
+    activeUnifiedSideTab: null,
+    unifiedPanelOpen: false,
+    showConfigPanel: false,
+    showTerminalPanel: false,
+    showGitReviewPanel: false,
+    showSideChatPanel: false,
+    showInspector: false,
+    filePreview: null,
+    sideChatSessionId: null,
+    activeHtmlPanelBlockId: null,
+    codeFiles: [],
+    activeCodePath: null,
+    codeViewMode: 'source',
+    codeExplorerExpandedDirs: [],
+  }
+  // 各 session 的面板快照（仅内存）
+  const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
+  // 上一个 active id，用于切换时把旧会话状态存盘
+  const prevActiveRef = useRef<string | null>(active)
+  // 始终镜像当前面板状态；render 写、effect 读，保证 effect 拿到切换前的真实值
+  const latestPanelStateRef = useRef<PanelSnapshot>(emptyPanelSnapshot)
+
+  const clearHtmlPresentation = useCallback(() => {
+    setActiveHtmlPanelBlockId(null)
+    setActiveHtmlRemotePresentation(null)
+  }, [])
+
+  const openUnifiedSidePanel = useCallback(
+    (kind: UnifiedSidePanelKind) => {
+      // 互斥：会话检查器 / 配置面板 / 统一面板 / 文件预览 同一时刻只显示一个
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setFilePreview(null)
+      setUnifiedPanelOpen(true)
+      if (kind !== 'html') clearHtmlPresentation()
+      setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
+      setActiveUnifiedSideTab(kind)
+      if (kind === 'terminal') setShowTerminalPanel(true)
+      if (kind === 'review') setShowGitReviewPanel(true)
+      if (kind === 'side-chat') {
+        setShowSideChatPanel(true)
+        void ensureSideChatSessionRef.current()
+      }
+    },
+    [clearHtmlPresentation],
+  )
+
+  const closeUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
+    setUnifiedSideTabs((tabs) => {
+      const next = tabs.filter((tab) => tab !== kind)
+      setActiveUnifiedSideTab((activeTab) =>
+        activeTab !== kind ? activeTab : (next.at(-1) ?? null),
+      )
+      return next
+    })
+    if (kind === 'terminal') setShowTerminalPanel(false)
+    if (kind === 'review') setShowGitReviewPanel(false)
+    if (kind === 'side-chat') setShowSideChatPanel(false)
+    if (kind === 'html') setActiveHtmlPanelBlockId(null)
+  }, [])
+
+  // panel 子应用宿主转发：胶囊启动器/管理页「打开」panel 应用 → 统一侧面板开 tab。
+  // ChatView 挂载期间注册；卸载（如切画布）后 SubAppSurfaceHost 回落 dock 渲染。
+  // 依赖仅取稳定方法，避免 directory/instances 刷新时反复注册注销。
+  const { setPanelOpenHandler } = subAppSurfaces
+  useEffect(() => {
+    setPanelOpenHandler((appId) => openUnifiedSidePanel(subAppPanelKind(appId)))
+    return () => {
+      setPanelOpenHandler(null)
+    }
+  }, [setPanelOpenHandler, openUnifiedSidePanel])
+
+  // 应用目录变化（禁用/删除）时关闭已失效的 subapp tab，避免残留占位 tab。
+  // 目录首载完成前不清理：会话切换恢复的 subapp tab 不能因目录未就绪被误关。
+  const directoryLoaded = subAppSurfaces.directoryLoaded
+  useEffect(() => {
+    if (!directoryLoaded) return
+    const panelIds = new Set(panelApps.map((app) => app.id))
+    const stale = unifiedSideTabs.filter(
+      (tab) => tab.startsWith('subapp:') && !panelIds.has(appIdOfSubAppPanelKind(tab) ?? ''),
+    )
+    for (const tab of stale) closeUnifiedSidePanel(tab)
+  }, [directoryLoaded, panelApps, unifiedSideTabs, closeUnifiedSidePanel])
+
+  // 头部「配置面板」按钮：打开独立的 ChatConfigPanel 侧栏（不再嵌入统一面板容器）。
+  // 与 inspector / 统一面板 / 文件预览互斥。
+  const toggleConfigPanel = useCallback(() => {
+    setShowConfigPanel((prev) => {
+      const next = !prev
+      if (next) {
+        setShowInspector(false)
+        setUnifiedPanelOpen(false)
+        clearHtmlPresentation()
+        setFilePreview(null)
+      }
+      return next
+    })
+  }, [clearHtmlPresentation])
+
+  // 头部「统一侧边面板」按钮：toggle 整个统一面板（terminal/side-chat/review/plan 容器）。
+  const toggleUnifiedPanel = useCallback(() => {
+    if (unifiedPanelOpen) clearHtmlPresentation()
+    setUnifiedPanelOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setShowInspector(false)
+        setShowConfigPanel(false)
+        setFilePreview(null)
+      }
+      return next
+    })
+  }, [clearHtmlPresentation, unifiedPanelOpen])
+
+  // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，入口在会话检查器内。
+  const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
+  // 代码还原点：会话开关（开/关样式）+ 可用性（仅 git 仓库可用，否则隐藏入口）。
+  const [checkpointEnabled, setCheckpointEnabled] = useState(false)
+  const [checkpointAvailable, setCheckpointAvailable] = useState(false)
+  const { invoke: getCheckpointConfigForButton } = useIpcInvoke('session:get-checkpoint-config')
+  useEffect(() => {
+    if (active == null) {
+      setCheckpointEnabled(false)
+      setCheckpointAvailable(false)
+      return
+    }
+    let cancelled = false
+    getCheckpointConfigForButton({ sessionId: active })
+      .then((r) => {
+        if (!cancelled) {
+          setCheckpointEnabled(r.enabled)
+          setCheckpointAvailable(r.available)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCheckpointEnabled(false)
+          setCheckpointAvailable(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, getCheckpointConfigForButton])
+  // Team Mode 配置。
+  // 双层持久化（设计文档 §5.1）：
+  //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
+  //   - sessions.metadata.team(IPC team:update)：会话级权威来源，Phase 3 运行时读取。
+  const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
+  const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
+  const { invoke: getTeamDef } = useIpcInvoke('team:get-def')
+  // 构建「无会话级 team 配置」时兜底的 TeamModeConfig。
+  // 关键原则（修复跨会话串台）：team 是否启用一律以「会话级 metadata」为唯一真相，
+  // 绝不从全局 composer-prefs 继承 enabled —— 否则在别的会话开过 team 后，回到
+  // 一个从未配置过 team 的单 agent 会话，会被全局 prefs 误判成 team（参数串台 bug）。
+  // 因此 enabled 恒为 false：新会话 / 空白 composer / 无 team 配置的老会话都单 agent 起步，
+  // 需要团队时由用户在该会话内显式开启（onEnableTeamMode 会把 host 设为当前会话 agent）。
+  // host/members 仍保留「上次使用」prefs，仅作为用户显式开启团队时的便捷预填，团队关闭时不影响显示。
+  const defaultTeamConfig = useCallback((): TeamModeConfig => {
+    const prefs = readComposerPrefs()
+    const memberIds = prefs.teamMemberAgentIds ?? []
+    const candidateHost =
+      prefs.teamHostAgentId ??
+      memberIds.find((id) => agents.some((agent) => agent.id === id)) ??
+      agents[0]?.id ??
+      prefs.agentId ??
+      'platform-manager-agent'
+    return {
+      enabled: false,
+      hostAgentId: candidateHost,
+      memberAgentIds: memberIds,
+      maxDepth: 1,
+      allowNesting: false,
+      maxDiscussionRounds: 6,
+      enablePeerMessaging: false,
+    }
+  }, [agents])
+  const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
+  const teamConfigRef = useRef(teamConfig)
+  const teamConfigRevisionRef = useRef(0)
+  const emptySessionTeamTouchedRef = useRef(false)
+  const prevActiveForTeamRef = useRef<string | null>(active)
+  useEffect(() => {
+    teamConfigRef.current = teamConfig
+  }, [teamConfig])
+  useEffect(() => {
+    if (shouldResetEmptySessionTeamTouched(prevActiveForTeamRef.current, active)) {
+      teamConfigRevisionRef.current += 1
+      emptySessionTeamTouchedRef.current = false
+      prevActiveForTeamRef.current = active
+    }
+  }, [active])
+  const updateTeamConfig = useCallback(
+    async (patch: Partial<TeamModeConfig>): Promise<void> => {
+      if (active == null && patch.enabled !== undefined) {
+        emptySessionTeamTouchedRef.current = true
+      }
+      const previous = teamConfigRef.current
+      const next = { ...previous, ...patch }
+      const revision = teamConfigRevisionRef.current + 1
+      teamConfigRevisionRef.current = revision
+      teamConfigRef.current = next
+      // 活跃会话先等待 metadata 落库再更新 UI，保证发送时的可见模式与执行态一致。
+      if (active != null) {
+        try {
+          await persistTeamConfig({ sessionId: active as SessionId, config: next })
+        } catch (error) {
+          if (teamConfigRevisionRef.current === revision) {
+            try {
+              const res = await listTeamMembers({ sessionId: active as SessionId })
+              if (teamConfigRevisionRef.current === revision) {
+                const authoritative = res.config ?? defaultTeamConfig()
+                teamConfigRef.current = authoritative
+                setTeamConfig(authoritative)
+              }
+            } catch {
+              if (teamConfigRevisionRef.current === revision) {
+                teamConfigRef.current = previous
+                setTeamConfig(previous)
+              }
+            }
+          }
+          console.error('Persist team config failed', error)
+          return
+        }
+        if (teamConfigRevisionRef.current !== revision) return
+      }
+      setTeamConfig(next)
+      // 仅缓存 host/members 作为「下次显式开启团队」时的便捷预填；
+      // 不再缓存 enabled —— team 是否启用一律以会话级 metadata 为准（见 defaultTeamConfig）。
+      writeComposerPrefs({
+        teamHostAgentId: next.hostAgentId,
+        teamMemberAgentIds: next.memberAgentIds,
+      })
+    },
+    [active, defaultTeamConfig, listTeamMembers, persistTeamConfig],
+  )
+  // 团队模式下，最终用于指派的主持 Agent（hostAgentId 解析结果）；
+  // hostAgentId 可能因为旧 host 被删除而失效，因此渲染/sendTurn 都用此值。
+  const effectiveHostAgentId = teamConfig.enabled
+    ? resolveTeamHostAgentId(teamConfig, agents)
+    : null
+
+  // 当前会话关联的已保存团队名（临时团队为 null），用于空会话标题「<团队名> 已就绪」。
+  const [activeTeamName, setActiveTeamName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!teamConfig.enabled || teamConfig.teamId == null) {
+      setActiveTeamName(null)
+      return
+    }
+    let cancelled = false
+    void getTeamDef({ id: teamConfig.teamId })
+      .then((res) => {
+        if (!cancelled) setActiveTeamName(res.team?.name ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setActiveTeamName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [teamConfig.enabled, teamConfig.teamId, getTeamDef])
+  // 切换 active session 时从 metadata 拉取会话级 team config 回显；
+  // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
+  const reloadActiveTeamConfig = useCallback(async () => {
+    if (active == null) {
+      setTeamConfig((current) =>
+        preserveExplicitEmptySessionTeamConfig(
+          current,
+          defaultTeamConfig(),
+          emptySessionTeamTouchedRef.current,
+        ),
+      )
+      return
+    }
+    const requestRevision = teamConfigRevisionRef.current
+    const res = await listTeamMembers({ sessionId: active as SessionId })
+    if (teamConfigRevisionRef.current !== requestRevision) return
+    if (res.config != null) setTeamConfig(res.config)
+    else setTeamConfig(defaultTeamConfig())
+  }, [active, defaultTeamConfig, listTeamMembers])
+
+  useEffect(() => {
+    let cancelled = false
+    if (active == null) {
+      setTeamConfig((current) =>
+        preserveExplicitEmptySessionTeamConfig(
+          current,
+          defaultTeamConfig(),
+          emptySessionTeamTouchedRef.current,
+        ),
+      )
+      return () => {
+        cancelled = true
+      }
+    }
+    const requestRevision = teamConfigRevisionRef.current
+    void listTeamMembers({ sessionId: active as SessionId })
+      .then((res) => {
+        if (cancelled) return
+        if (teamConfigRevisionRef.current !== requestRevision) return
+        if (res.config != null) setTeamConfig(res.config)
+        else setTeamConfig(defaultTeamConfig())
+      })
+      .catch(() => {
+        if (!cancelled) setTeamConfig(defaultTeamConfig())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, defaultTeamConfig, listTeamMembers])
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope !== 'team') return
+        if (active == null) {
+          setTeamConfig((current) =>
+            preserveExplicitEmptySessionTeamConfig(
+              current,
+              defaultTeamConfig(),
+              emptySessionTeamTouchedRef.current,
+            ),
+          )
+          return
+        }
+        if (
+          teamConfig.teamId != null &&
+          event.id === teamConfig.teamId &&
+          (event.action === 'update' || event.action === 'delete')
+        ) {
+          if (event.action === 'delete') {
+            updateTeamConfig({ enabled: false, teamId: undefined })
+            return
+          }
+          void getTeamDef({ id: teamConfig.teamId })
+            .then((res) => {
+              if (res.team == null) return
+              updateTeamConfig({
+                enabled: true,
+                hostAgentId: res.team.hostAgentId,
+                memberAgentIds: res.team.memberAgentIds,
+                maxDepth: res.team.maxDepth,
+                allowNesting: res.team.allowNesting,
+                teamId: res.team.id,
+                maxDiscussionRounds: res.team.maxDiscussionRounds ?? 6,
+                enablePeerMessaging: res.team.enablePeerMessaging === true,
+              })
+            })
+            .catch(() => {
+              void reloadActiveTeamConfig().catch(() => {})
+            })
+          return
+        }
+        void reloadActiveTeamConfig().catch(() => {})
+      }) ?? (() => {})
+    )
+  }, [
+    active,
+    defaultTeamConfig,
+    getTeamDef,
+    reloadActiveTeamConfig,
+    teamConfig.teamId,
+    updateTeamConfig,
+  ])
+
+  // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / 统一面板，
+  // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
+  // 切换会话：把当前面板状态存给上一个会话，加载目标会话的快照（无则收起全部）。
+  // 后端长驻任务（终端 PTY / side-chat session）不在此处理 —— 切回时各组件重新挂载/订阅
+  // 即可接回原本在跑的任务（PTY 不杀、side-chat session 在后端继续运行）。
+  useEffect(() => {
+    const prevId = prevActiveRef.current
+    prevActiveRef.current = active
+    if (prevId === active) return
+    // 存盘上一个会话的面板状态
+    if (prevId != null) {
+      panelStateBySessionRef.current.set(prevId, latestPanelStateRef.current)
+    }
+    if (active == null) {
+      // 退到无会话：收起所有参与记忆的面板
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowTerminalPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setUnifiedPanelOpen(false)
+      setUnifiedSideTabs([])
+      setActiveUnifiedSideTab(null)
+      setFilePreview(null)
+      setSideChatSessionId(null)
+      setActiveHtmlPanelBlockId(null)
+      setActiveHtmlRemotePresentation(null)
+      setCodeFiles([])
+      setActiveCodePath(null)
+      setCodeViewMode('source')
+      setCodeExplorerExpandedDirs(new Set())
+      return
+    }
+    const snap = panelStateBySessionRef.current.get(active)
+    if (!snap) {
+      // 首次进入该会话：默认收起所有面板（避免看到上个会话残留的面板）
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowTerminalPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setUnifiedPanelOpen(false)
+      setUnifiedSideTabs([])
+      setActiveUnifiedSideTab(null)
+      setFilePreview(null)
+      setSideChatSessionId(null)
+      setActiveHtmlPanelBlockId(null)
+      setActiveHtmlRemotePresentation(null)
+      setCodeFiles([])
+      setActiveCodePath(null)
+      setCodeViewMode('source')
+      setCodeExplorerExpandedDirs(new Set())
+      return
+    }
+    // 恢复该会话上次的展开状态
+    setShowInspector(snap.showInspector)
+    setShowConfigPanel(snap.showConfigPanel)
+    setShowTerminalPanel(snap.showTerminalPanel)
+    setShowGitReviewPanel(snap.showGitReviewPanel)
+    setShowSideChatPanel(snap.showSideChatPanel)
+    setUnifiedPanelOpen(snap.unifiedPanelOpen)
+    setUnifiedSideTabs(snap.unifiedSideTabs)
+    setActiveUnifiedSideTab(snap.activeUnifiedSideTab)
+    setFilePreview(snap.filePreview)
+    setSideChatSessionId(snap.sideChatSessionId)
+    setActiveHtmlPanelBlockId(snap.activeHtmlPanelBlockId)
+    setActiveHtmlRemotePresentation(null)
+    setCodeFiles(snap.codeFiles)
+    setActiveCodePath(snap.activeCodePath)
+    setCodeViewMode(snap.codeViewMode)
+    setCodeExplorerExpandedDirs(new Set(snap.codeExplorerExpandedDirs ?? []))
+    // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
+    setSideChatMessages([])
+    setSideChatContextInputTokens(0)
+    setSideChatContextUsage(null)
+    setSideChatContextLedger(null)
+    setSideChatAgentStatus('')
+  }, [active])
+  const [agentStatus, setAgentStatus] = useState('')
+  const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
+  // 「打开项目」导航信号：侧栏项目菜单 -> 代码面板。计数器单调递增，
+  // 由下方 effect 消费；用信号而非直接开关，是为了先让会话切换的
+  // 面板快照 effect（收起面板）跑完，再落地展开，避免同帧互相覆盖。
+  const [codeViewerOpenSignal, setCodeViewerOpenSignal] = useState(0)
+  /**
+   * 重发请求：从用户消息上的"重发"按钮触发，把该消息的文本+附件重新塞回输入区。
+   * requestId 单调递增，ComposerV2 内部通过 useEffect 监听其变化执行写入。
+   */
+  const [resendRequest, setResendRequest] = useState<{
+    requestId: number
+    payload: ComposerPrefillPayload
+  } | null>(null)
+  // resendRequest 的 requestId 单调计数器：独立于 resendRequest state 本身。
+  // 必要性：onResendConsumed 在 effect 消费后会清空 resendRequest=null，若 requestId
+  // 仍按 (prev?.requestId ?? 0)+1 生成，prev=null 会导致 requestId 回退到 1，撞上
+  // ComposerV2 的 consumedResendIdRef 去重，使"同一会话内连续重发第二条"失效。
+  // 用独立计数器保证 requestId 在 ChatView 生命周期内严格单调递增。
+  const resendRequestIdRef = useRef(0)
+  const chatLayoutRef = useRef<HTMLDivElement | null>(null)
+  const chatAreaRef = useRef<HTMLDivElement | null>(null)
+  const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const activeVisibleMessages = useMemo(
+    () => projectVisibleChatMessages(activeMessages),
+    [activeMessages],
+  )
+  const sideChatVisibleMessages = useMemo(
+    () => projectVisibleChatMessages(sideChatMessages),
+    [sideChatMessages],
+  )
+  const activeHtmlPanelBlock = useMemo(() => {
+    if (activeHtmlPanelBlockId == null) return null
+    for (const message of activeMessages) {
+      const block = message.blocks.find(
+        (candidate): candidate is Extract<UIBlock, { kind: 'html_block' }> =>
+          candidate.kind === 'html_block' && candidate.toolCallId === activeHtmlPanelBlockId,
+      )
+      if (block != null) return block
+    }
+    return null
+  }, [activeHtmlPanelBlockId, activeMessages])
+  const handleHtmlOpenMode = useCallback(
+    (block: Extract<UIBlock, { kind: 'html_block' }>, mode: HtmlOpenMode) => {
+      if (mode === 'side-panel') {
+        setActiveHtmlRemotePresentation(null)
+        setActiveHtmlPanelBlockId(block.toolCallId)
+        openUnifiedSidePanel('html')
+      } else if (mode === 'inline') {
+        setActiveHtmlRemotePresentation(null)
+        if (activeHtmlPanelBlockId === block.toolCallId) closeUnifiedSidePanel('html')
+      } else {
+        setActiveHtmlRemotePresentation({ blockId: block.toolCallId, mode })
+        if (activeHtmlPanelBlockId === block.toolCallId) {
+          closeUnifiedSidePanel('html')
+          if (activeUnifiedSideTab === 'html' && unifiedSideTabs.length <= 1) {
+            setUnifiedPanelOpen(false)
+          }
+        }
+      }
+    },
+    [
+      activeHtmlPanelBlockId,
+      activeUnifiedSideTab,
+      closeUnifiedSidePanel,
+      openUnifiedSidePanel,
+      unifiedSideTabs.length,
+    ],
+  )
+  const htmlRenderContext = useMemo<HtmlRenderContextValue>(
+    () => ({
+      activeSidePanelBlockId: activeHtmlPanelBlockId,
+      activeRemotePresentation: activeHtmlRemotePresentation,
+      onOpenMode: handleHtmlOpenMode,
+    }),
+    [activeHtmlPanelBlockId, activeHtmlRemotePresentation, handleHtmlOpenMode],
+  )
+  const handleActiveMessagesChange = useCallback(
+    (messages: UIMessage[]) => {
+      setActiveMessages(messages)
+      if (active != null) {
+        persistedMessagesBySessionRef.current.set(active, messages)
+        pruneOptimisticMessagesNextFrame(active, messages)
+      }
+    },
+    [active, pruneOptimisticMessagesNextFrame],
+  )
+  const handleSideChatMessagesChange = useCallback(
+    (messages: UIMessage[]) => {
+      setSideChatMessages(messages)
+      if (sideChatSessionId != null) {
+        persistedMessagesBySessionRef.current.set(sideChatSessionId, messages)
+        pruneOptimisticMessagesNextFrame(sideChatSessionId, messages)
+      }
+    },
+    [pruneOptimisticMessagesNextFrame, sideChatSessionId],
+  )
+  const storedModelSwitchMarkers = useMemo(() => readModelSwitchMarkers(active), [active])
+  const [modelSwitchState, setModelSwitchState] = useState<{
+    sessionId: SessionId | null
+    markers: ModelSwitchMarker[]
+  }>({ sessionId: active, markers: storedModelSwitchMarkers })
+  const modelSwitchMarkers =
+    modelSwitchState.sessionId === active ? modelSwitchState.markers : storedModelSwitchMarkers
+
+  const handleModelSwitch = useCallback(
+    (change: Omit<ModelSwitchMarker, 'createdAt'>) => {
+      if (active == null) return
+      setModelSwitchState({
+        sessionId: active,
+        markers: saveModelSwitchMarker(active, {
+          ...change,
+          createdAt: new Date().toISOString(),
+        }),
+      })
+    },
+    [active],
+  )
+  const [activeSessionGoal, setActiveSessionGoal] = useState<GoalSnapshot | null>(null)
+  const [activeSessionOrchestration, setActiveSessionOrchestration] =
+    useState<OrchestrationSnapshot | null>(null)
+  // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
+  // 从非聊天页（如 Agents）点进一个老会话时，ChatView 重新挂载、activeMessages 还是空，
+  // 若仅凭空数组判定就会误闪「新建会话 hero」，加载完才跳到目标会话。
+  // 初值取 active != null，保证首帧（挂载即带 sessionId）就抑制 hero，无需等副作用。
+  const [activeSessionLoading, setActiveSessionLoading] = useState(active != null)
+  // active 变化（含挂载后切换）时，在历史加载完成前先抑制 hero。
+  // 用 layout effect 在浏览器绘制前同步置位，避免 active 已切到老会话却闪一帧 hero。
+  useLayoutEffect(() => {
+    if (active != null) setActiveSessionLoading(true)
+  }, [active])
+  // ComposerV2 发送中（含 createSession + sendTurn + 命令路径）。
+  // 用于：抑制首条消息发送瞬间的 hero 闪现（覆盖 status 还没切到 running 的窗口）。
+  const [composerDispatching, setComposerDispatching] = useState(false)
+  const [contextInputTokens, setContextInputTokens] = useState(0)
+  const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    cacheHitTokens: 0,
+    cacheWriteTokens: 0,
+    cacheHitRate: null,
+    estimatedCostUsd: 0,
+    contextWindow: 0,
+    turns: [],
+  })
+  const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
+  const [contextLedger, setContextLedger] = useState<ContextLedgerState | null>(null)
+  const [projectContext, setProjectContext] = useState<ProjectContextState | null>(null)
+  // 待审批计划绑定到其所属会话，避免单一全局状态在切换会话时残留 / 把批准发到错误会话。
+  const [proposedPlan, setProposedPlan] = useState<{ sessionId: SessionId; plan: string } | null>(
+    null,
+  )
+  const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
+  const previousDerivedSessionIdRef = useRef<SessionId | null>(active)
+
+  // 会话派生状态属于当前 active session，不能等 ChatStream 的异步历史加载 effect 才清空。
+  // 否则切换到空会话时，首帧仍会把上一个会话的上下文账本传给 Composer，表现为「消息为空但
+  // 对话历史仍有 token」。ChatStream 完成回放后会再次写入目标会话的真实值。
+  useLayoutEffect(() => {
+    if (previousDerivedSessionIdRef.current === active) return
+    previousDerivedSessionIdRef.current = active
+    setAgentStatus('')
+    setContextInputTokens(0)
+    setSessionUsageData(createEmptySessionUsageData())
+    setContextUsage(null)
+    setContextLedger(null)
+    setProjectContext(null)
+    setActiveSessionGoal(null)
+    setActiveSessionOrchestration(null)
+    setProposedPlan(null)
+    setTurnPromptSnapshots([])
+  }, [active])
+
+  // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
+  // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
+  const [branchRefreshTick, setBranchRefreshTick] = useState(0)
+  const [clearTrigger, setClearTrigger] = useState(0)
+  const lastClearedOptimisticTriggerRef = useRef(0)
+  const clearSessionIdRef = useRef<SessionId | null>(null)
+  useEffect(() => {
+    const sessionIdToClear = clearSessionIdRef.current
+    if (sessionIdToClear == null || clearTrigger === 0) return
+    if (lastClearedOptimisticTriggerRef.current === clearTrigger) return
+    lastClearedOptimisticTriggerRef.current = clearTrigger
+    clearSessionIdRef.current = null
+    handleOptimisticSessionReset(sessionIdToClear)
+  }, [clearTrigger, handleOptimisticSessionReset])
+  // 每个会话独立的显式停止触发器：停止请求返回后立即收拢 ChatStream，
+  // 不依赖终止事件必须先抵达 renderer 才能清理气泡中的 streaming 状态。
+  const [sessionStopTriggers, setSessionStopTriggers] = useState<Record<string, number>>({})
+  // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
+  // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
+  const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0)
+  // 未发送的「引用对话」属于当前输入草稿，必须和文本/附件一样按会话隔离。
+  // 只用一个 replyTo state 会让切换已有会话时把旧会话的引用带到新会话。
+  const replyToBucketKey = active ?? NEW_SESSION_DRAFT_BUCKET
+  const [replyToByBucket, setReplyToByBucket] = useState<ComposerReplyReferenceMap>({})
+  const replyTo = replyToByBucket[replyToBucketKey] ?? null
+  const setReplyTo = useCallback(
+    (next: ReplyToState | null) => {
+      setReplyToByBucket((current) =>
+        updateComposerReplyReferenceBucket(current, replyToBucketKey, next),
+      )
+    },
+    [replyToBucketKey],
+  )
+  const { toast } = useToast()
+
+  useEffect(() => {
+    return (
+      window.spark?.on?.('stream:system-notification:navigate', (target) => {
+        if (target.target === 'session') {
+          sessionCtx.setActiveSession(target.sessionId as SessionId)
+          setTweak('view', 'chat')
+          return
+        }
+        if (target.target === 'view') {
+          setTweak('view', target.view as never)
+        }
+      }) ?? (() => {})
+    )
+  }, [sessionCtx, setTweak])
+
+  const handleCopyAllMessages = useCallback(() => {
+    const markdown = serializeMessagesToMarkdown(activeVisibleMessages)
+    if (!markdown) {
+      toast.info('当前会话暂无可复制的聊天记录')
+      return
+    }
+    navigator.clipboard
+      .writeText(markdown)
+      .then(() => toast.success('已复制全部聊天记录'))
+      .catch((err) => toast.error(err instanceof Error ? err.message : '复制失败'))
+  }, [activeVisibleMessages, toast])
+
+  // ── 文件预览状态 ──
+  const [filePreview, setFilePreview] = useState<{
+    filePath: string
+    fileType: PreviewFileType
+  } | null>(null)
+
+  // ── 「代码」tab：应用内代码查看/编辑器（Monaco）──
+  // 受控于 ChatView 以便切会话快照存盘；内容运行时态（读取/脏标/外部变更）在
+  // CodeViewerPanel 内部的 useCodeViewerFiles 管理，与 tabs 增删解耦。
+  const [codeFiles, setCodeFiles] = useState<OpenCodeFile[]>([])
+  const [activeCodePath, setActiveCodePath] = useState<string | null>(null)
+  const [codeViewMode, setCodeViewMode] = useState<CodeViewMode>('source')
+  // 文件树展开目录（per-session：切会话随快照恢复；visible/width 才跨重启走全局 store）
+  const [codeExplorerExpandedDirs, setCodeExplorerExpandedDirs] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const codeExplorerVisible = useCodeExplorerVisible()
+  const codeExplorerWidth = useCodeExplorerWidth()
+  // Git 面板可见性（全局 store；与文件树互斥，切换逻辑在两边的开关回调里互相关闭）
+  const gitPanelVisible = useGitPanelVisible()
+  // workspace root 同步到 ref：resolveAbsCodePath/openInCodeTab 声明在 activeSessionWorkspace
+  // 之前（TDZ），直接引用会报 used-before-declaration；改走 ref，在 activeSessionWorkspace
+  // 声明之后的 render 阶段同步最新值。
+  const workspaceRootRef = useRef<string | null>(null)
+
+  // 镜像当前面板状态供 active 切换 effect 读取（render 阶段写入，先于 effect 执行）
+  latestPanelStateRef.current = {
+    unifiedSideTabs,
+    activeUnifiedSideTab,
+    unifiedPanelOpen,
+    showConfigPanel,
+    showTerminalPanel,
+    showGitReviewPanel,
+    showSideChatPanel,
+    showInspector,
+    filePreview,
+    sideChatSessionId,
+    activeHtmlPanelBlockId,
+    codeFiles,
+    activeCodePath,
+    codeViewMode,
+    codeExplorerExpandedDirs: Array.from(codeExplorerExpandedDirs),
+  }
+
+  // ── IPC hooks (only those NOT duplicated in context) ──
+  const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
+  const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
+  const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
+  const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
+  const { invoke: checkoutTag } = useIpcInvoke('workspace:checkout-tag')
+  const { invoke: fetchBranches } = useIpcInvoke('workspace:fetch-branches')
+  const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
+  const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
+  const { invoke: pullGitChanges } = useIpcInvoke('workspace:git-pull')
+  // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
+  const { invoke: sendTurnToAgent } = useIpcInvoke('session:submit-turn')
+  const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: ensureWindowWidth } = useIpcInvoke('window:ensure-width')
+
+  const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+  const { invoke: controlGoal } = useIpcInvoke('session:goal-control')
+
+  const handleAnswerQuestion = useCallback(
+    async (answers: Record<string, unknown>) => {
+      if (userQuestion == null) return
+      // Build answer summaries from the submitted answers so the
+      // InlineQuestionCard can display them immediately, before the
+      // tool_result event arrives from the CLI.
+      const summaries = buildQuestionAnswerSummaries(userQuestion.questions, answers)
+      if (summaries.length > 0) {
+        const cacheKey = getQuestionAnswerCacheKey(userQuestion.questions, userQuestion.sessionId)
+        persistQuestionAnswerSummaries(cacheKey, summaries)
+      }
+      await answerQuestion({
+        sessionId: userQuestion.sessionId,
+        questionId: userQuestion.questionId,
+        answers,
+      })
+      onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
+    },
+    [answerQuestion, onUserQuestionClose, userQuestion],
+  )
+
+  const handleCancelQuestion = useCallback(() => {
+    if (userQuestion == null) return
+    onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
+    cancelSessionTurn({ sessionId: userQuestion.sessionId as SessionId }).catch(console.error)
+  }, [cancelSessionTurn, onUserQuestionClose, userQuestion])
+
+  // ── Session status updates via context ──
+  const setSessionStatus = useCallback(
+    (sessionId: SessionId, status: SessionSummary['status']) => {
+      sessionCtx.updateSessionInList(sessionId, { status })
+    },
+    [sessionCtx.updateSessionInList],
+  )
+  const handleActiveSessionStatusChange = useCallback(
+    (status: SessionSummary['status']) => {
+      if (active != null) setSessionStatus(active, status)
+    },
+    [active, setSessionStatus],
+  )
+
+  // 用户点了「发送」：立刻贴底 + 维护 session running 状态 + 会话列表计数。
+  // 单独抽出回调，给两个 ComposerV2 分支共用，保证 scrollToBottomTrigger 一定 bump。
+  // 同时清空 resendRequest：发送意味着此前的"重发/预填"已完成其使命，必须清掉脏数据，
+  // 防止 resendRequest 残留 + 后续 ComposerV2 重建导致旧 payload 被重新应用到别的会话。
+  const handleUserSent = useCallback(
+    (sessionId: SessionId, started = true) => {
+      if (started) setSessionStatus(sessionId, 'running')
+      sessionCtx.bumpSessionMessageCount(sessionId)
+      setScrollToBottomTrigger((n) => n + 1)
+      setResendRequest(null)
+    },
+    [setSessionStatus, sessionCtx],
+  )
+
+  // ── Handlers ──
+  // 清空会强制终止运行中的执行器（后端 clearEvents 会 cancel），
+  // 由 ChatTabbar 的内联确认条据此给出更重的提示文案。
+  const clearWillStopRun =
+    active != null && isSessionActive(active, sessionCtx.sessionAgentStatuses)
+
+  const handleClearMessages = useCallback(async () => {
+    if (!active) return
+    try {
+      const sessionIdToClear = active
+      await clearEvents({ sessionId: sessionIdToClear })
+      clearSessionIdRef.current = sessionIdToClear
+      setClearTrigger((prev) => prev + 1)
+      sessionCtx.refreshData().catch(console.error)
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : '清空对话记录失败')
+    }
+  }, [active, clearEvents, sessionCtx, toast])
+
+  // Goal 控制：UI 触发后只调 IPC，goal_* 事件回流时由 onGoalChange 同步更新状态。
+  const handleGoalControl = useCallback(
+    (action: 'pause' | 'resume' | 'clear' | 'complete' | 'confirm' | 'reject') => {
+      if (!active) return
+      controlGoal({ sessionId: active, action }).catch(console.error)
+    },
+    [active, controlGoal],
+  )
+
+  // 把相对/绝对/远程路径解析为本地绝对路径，供 code tab 与 file:read 使用。
+  // 与 FilePreviewPanel.resolvePreviewPath 同策略，避免相对路径打不开。
+  const resolveAbsCodePath = useCallback((filePath: string): string => {
+    if (/^https?:\/\//i.test(filePath) || filePath.startsWith('safe-file://')) return filePath
+    if (filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath)) return filePath
+    const root = workspaceRootRef.current
+    if (root == null) return filePath
+    const sep = root.includes('\\') ? '\\' : '/'
+    const norm = filePath.replace(/^\.\//, '').replace(/^[\\/]+/, '')
+    return `${root.replace(/[\\/]+$/, '')}${sep}${norm}`
+  }, [])
+
+  // 在「代码」tab 打开一个文件（已存在则更新 diff/行号/变更类型并激活）
+  const openInCodeTab = useCallback(
+    (
+      filePath: string,
+      opts?: {
+        lineNumber?: number
+        diff?: string
+        changeType?: OpenCodeFile['changeType']
+      },
+    ) => {
+      const absPath = resolveAbsCodePath(filePath)
+      const root = workspaceRootRef.current
+      const displayPath = (() => {
+        if (root == null) return filePath
+        const norm = (p: string) => p.replace(/\\/g, '/')
+        const nr = norm(root).replace(/\/+$/, '')
+        const np = norm(absPath)
+        return np.startsWith(`${nr}/`) ? np.slice(nr.length + 1) : filePath
+      })()
+      setCodeFiles((prev) =>
+        prev.some((f) => f.absPath === absPath)
+          ? prev.map((f) =>
+              f.absPath === absPath
+                ? {
+                    ...f,
+                    diff: opts?.diff ?? f.diff,
+                    lineNumber: opts?.lineNumber ?? f.lineNumber,
+                    changeType: opts?.changeType ?? f.changeType,
+                  }
+                : f,
+            )
+          : [
+              ...prev,
+              {
+                absPath,
+                displayPath,
+                fileType: 'text' as PreviewFileType,
+                diff: opts?.diff,
+                lineNumber: opts?.lineNumber,
+                changeType: opts?.changeType,
+              },
+            ],
+      )
+      setActiveCodePath(absPath)
+      // 收起其他面板 + 打开统一面板的 code tab
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setShowTerminalPanel(false)
+      setFilePreview(null)
+      clearHtmlPresentation()
+      setShowCheckpointTimeline(false)
+      setUnifiedSideTabs((tabs) => (tabs.includes('code') ? tabs : [...tabs, 'code']))
+      setActiveUnifiedSideTab('code')
+      setUnifiedPanelOpen(true)
+    },
+    [resolveAbsCodePath, clearHtmlPresentation],
+  )
+
+  const closeCodeFile = useCallback(
+    (absPath: string) => {
+      setCodeFiles((prev) => {
+        const next = prev.filter((f) => f.absPath !== absPath)
+        setActiveCodePath((cur) => (cur !== absPath ? cur : (next.at(-1)?.absPath ?? null)))
+        if (next.length === 0) closeUnifiedSidePanel('code')
+        return next
+      })
+    },
+    [closeUnifiedSidePanel],
+  )
+
+  // 批量关闭多个 code tab（右键菜单：关闭右侧/左侧/全部/已保存）。空数组直接返回。
+  const closeCodeFiles = useCallback(
+    (absPaths: string[]) => {
+      if (absPaths.length === 0) return
+      const closing = new Set(absPaths)
+      setCodeFiles((prev) => {
+        const next = prev.filter((f) => !closing.has(f.absPath))
+        setActiveCodePath((cur) =>
+          cur != null && closing.has(cur) ? (next.at(-1)?.absPath ?? null) : cur,
+        )
+        if (next.length === 0) closeUnifiedSidePanel('code')
+        return next
+      })
+    },
+    [closeUnifiedSidePanel],
+  )
+
+  const handleFilePreview = useCallback<FileOpenHandler>(
+    (filePath, fileType, opts) => {
+      if (opts?.mode === 'edit') {
+        openInCodeTab(filePath)
+        return
+      }
+      // 预览优先：md/html/office/图片/音视频等富预览类型进预览面板；
+      // txt/log/csv 等纯文本与代码类仍进「代码」tab（Monaco 查看 + 编辑）。
+      // opts.mode === 'preview' 为右键菜单的显式预览入口。
+      if (opts?.mode !== 'preview' && !shouldPreviewFirst(filePath) && isCodeLikeFile(filePath)) {
+        openInCodeTab(filePath)
+        return
+      }
+      // 预览类型以扩展名判定为准（调用方传入的 fileType 可能是 'text' 兜底值）
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setShowGitReviewPanel(false)
+      setShowSideChatPanel(false)
+      setShowTerminalPanel(false)
+      setUnifiedPanelOpen(false)
+      clearHtmlPresentation()
+      setShowCheckpointTimeline(false)
+      setFilePreview({ filePath, fileType: getPreviewFileType(filePath) ?? fileType })
+    },
+    [clearHtmlPresentation, openInCodeTab],
+  )
+
+  // 打开会话检查器：与配置面板、统一面板、文件预览互斥（同一时刻只显示一个）
+  const openInspector = useCallback(() => {
+    setShowInspector(true)
+    setShowConfigPanel(false)
+    setUnifiedPanelOpen(false)
+    clearHtmlPresentation()
+    setFilePreview(null)
+  }, [clearHtmlPresentation])
+
+  const pickProjectFolder = useCallback(async () => {
+    try {
+      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      if (selected.canceled || selected.filePath == null) return
+      const res = await openWorkspace({ rootPath: selected.filePath })
+      setActiveWorkspaceId(res.workspace.id)
+      await sessionCtx.refreshData()
+    } catch (err) {
+      console.error('选择项目文件夹失败', err)
+      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+    }
+  }, [openDirectoryDialog, openWorkspace, sessionCtx, setActiveWorkspaceId, toast])
+
+  const switchToWorkspace = useCallback(
+    (workspaceId: string) => {
+      setActiveWorkspaceId(workspaceId)
+    },
+    [setActiveWorkspaceId],
+  )
+
+  const handleCancelSession = useCallback(
+    async (sessionId: SessionId) => {
+      try {
+        const res = await cancelSessionTurn({ sessionId })
+        if (res.cancelled && res.turnId != null) {
+          const cancelledTurnId = res.turnId
+          cancelledOptimisticTurnIdsRef.current.add(cancelledTurnId)
+          setOptimisticUserMessages((current) =>
+            finalizeCancelledOptimisticUserMessage(current, sessionId, cancelledTurnId),
+          )
+        }
+        setSessionStopTriggers((prev) => ({
+          ...prev,
+          [sessionId]: (prev[sessionId] ?? 0) + 1,
+        }))
+        setAgentStatus('')
+        setSessionStatus(sessionId, 'idle')
+        await sessionCtx.refreshData()
+        if (res.cancelled) toast.success('已停止会话')
+        else toast.info('该会话当前没有运行中的任务')
+      } catch (err) {
+        console.error('停止会话失败', err)
+        toast.error(err instanceof Error ? err.message : '停止会话失败')
+      }
+    },
+    [cancelSessionTurn, sessionCtx, setSessionStatus, toast],
+  )
+
+  // ── Computed values ──
+  const activeSession = sessions.find((s) => s.id === active) ?? null
+  const { invoke: getSessionLineage } = useIpcInvoke('session:get-lineage')
+  useEffect(() => {
+    if (active == null) {
+      setActiveLineage(null)
+      setActiveChildLineages([])
+      setLineageSessionId(null)
+      return
+    }
+    let cancelled = false
+    void getSessionLineage({ sessionId: active })
+      .then((result) => {
+        if (!cancelled) {
+          setActiveLineage(result.lineage)
+          setActiveChildLineages(result.children ?? [])
+          setLineageSessionId(active)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveLineage(null)
+          setActiveChildLineages([])
+          setLineageSessionId(active)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, getSessionLineage])
+  const lineageSource =
+    activeLineage == null
+      ? null
+      : (sessions.find((session) => session.id === activeLineage.parentSessionId) ?? null)
+  const handleOpenLineageSource = useCallback(() => {
+    if (activeLineage == null || lineageSource == null) return
+    setLineageAnchor(
+      activeLineage.forkAnchorTurnId == null
+        ? null
+        : {
+            sessionId: activeLineage.parentSessionId,
+            turnId: activeLineage.forkAnchorTurnId,
+          },
+    )
+    sessionCtx.setActiveSession(activeLineage.parentSessionId)
+    sessionCtx.setActiveWorkspace(lineageSource.workspaceIds[0] ?? null)
+    setTweak('view', 'chat')
+  }, [activeLineage, lineageSource, sessionCtx, setTweak])
+  const handleOpenLineageChild = useCallback(
+    (childLineage: SessionLineage) => {
+      const childSession = sessions.find((session) => session.id === childLineage.childSessionId)
+      setLineageAnchor(null)
+      sessionCtx.setActiveSession(childLineage.childSessionId)
+      sessionCtx.revealSession(childLineage.childSessionId)
+      if (childSession != null) {
+        sessionCtx.setActiveWorkspace(childSession.workspaceIds[0] ?? null)
+      }
+      setTweak('view', 'chat')
+    },
+    [sessions, sessionCtx, setTweak],
+  )
+  const handleForkDialogConfirm = useCallback(
+    async (title: string) => {
+      if (active == null || forkDialog == null) return false
+      const created = await sessionCtx.handleForkSession(active, forkDialog.turnId, title)
+      if (created == null) return false
+      setForkDialog(null)
+      return true
+    },
+    [active, forkDialog, sessionCtx.handleForkSession],
+  )
+  const showSessionSchedule =
+    active != null && sessionCtx.sessionScheduleTargetId === active && activeSession != null
+
+  useEffect(() => {
+    setSessionScheduleEnabledCount(0)
+    if (
+      sessionCtx.sessionScheduleTargetId != null &&
+      sessionCtx.sessionScheduleTargetId !== active
+    ) {
+      sessionCtx.closeSessionSchedule()
+    }
+  }, [active, sessionCtx])
+  const activeWorkspace =
+    activeWorkspaceId == null
+      ? null
+      : (workspaces.find((item) => item.id === activeWorkspaceId) ?? null)
+  const activeSessionWorkspace = (() => {
+    const sessionWorkspaceId = activeSession?.workspaceIds[0]
+    if (sessionWorkspaceId == null) return activeWorkspace
+    return workspaces.find((item) => item.id === sessionWorkspaceId) ?? activeWorkspace
+  })()
+  const activeSessionWorkspaceId = activeSessionWorkspace?.id ?? null
+  // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
+  workspaceRootRef.current = activeSessionWorkspace?.rootPath ?? activeWorkspace?.rootPath ?? null
+  const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
+  const activeProviderContextWindow = resolveModelContextWindowForProvider(
+    activeSession?.modelId ?? activeProvider?.defaultModel,
+    activeProvider?.supportsMillionContext === true,
+    activeProvider?.contextWindow,
+    activeProvider?.modelContextWindows,
+  )
+  // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
+  // 历史加载中不显示，避免老会话进入时先闪一下空会话。
+  // 三层排除：
+  //  - activeSessionLoading：历史未加载完不显示
+  //  - activeSession?.status === 'running'：sendTurn 已成功但首条流式消息还没到的窗口不显示
+  //  - composerDispatching：发送瞬间到 onSent/status 切换之间的兜底，避免任何时序错位闪现 hero
+  const showEmptyHero =
+    active == null ||
+    (activeMessages.length === 0 &&
+      !activeSessionLoading &&
+      activeSession?.status !== 'running' &&
+      !composerDispatching)
+  // 空会话用量感知：16 周内任意一天（含今天）有用量数据即用使用足迹
+  // 热力图替换快捷卡片，二者互斥；其余情况渲染完整快捷卡片。
+  const heroUsage = useEmptyHeroUsage(showEmptyHero && !teamConfig.enabled)
+  const gitWorkspace = resolveComposerGitWorkspace({
+    showEmptyHero,
+    activeWorkspace,
+    activeSessionWorkspace,
+  })
+  const gitWorkspaceId = gitWorkspace?.id ?? null
+  const { branchState, applyBranchState } = useWorkspaceBranchState(gitWorkspaceId)
+  // 文件树右键「添加到对话」：把文件/目录经 insertToComposer 追加通道送进当前会话输入框。
+  // 构建方式与「添加相关文件或目录」一致（stat 探测目录、图片生成预览），发送时作为
+  // 路径引用传给 Agent（目录还会加入 agent 可访问目录表），与直接从输入框添加语义相同。
+  const { invoke: prepareComposerImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const { invoke: statComposerFileKind } = useIpcInvoke('file:stat-kind')
+  const addExplorerNodeToConversation = useCallback(
+    async (relPath: string) => {
+      const absPath = resolveAbsCodePath(relPath)
+      try {
+        const newAttachments = await buildComposerAttachmentsFromPaths([absPath], {
+          idPrefix: 'filetree',
+          prepareImagePreview: prepareComposerImagePreview,
+          statFileKind: statComposerFileKind,
+        })
+        const applied = await insertToComposer(
+          { attachments: newAttachments },
+          activeSession?.id ?? null,
+        )
+        if (applied) {
+          toast.success(`已添加到对话：${relPath === '' ? '工作区根目录' : relPath}`)
+        } else {
+          toast.error('未找到当前会话的输入框，添加失败')
+        }
+      } catch (err) {
+        console.error('添加到对话失败', err)
+        toast.error(err instanceof Error ? err.message : '添加到对话失败')
+      }
+    },
+    [resolveAbsCodePath, prepareComposerImagePreview, statComposerFileKind, activeSession, toast],
+  )
+  const { gitStatus, applyGitStatus, refreshGitStatus } = useLiveWorkspaceGitStatus({
+    workspaceId: gitWorkspaceId,
+    sessionId: active,
+    refreshSignal: branchRefreshTick,
+    live: showGitEnvPanel || showGitReviewPanel || gitPanelVisible,
+    onBranchStateChange: applyBranchState,
+  })
+  const activeSessionTasks = useMemo(
+    () => (active == null ? [] : extractSessionProgressTasks(activeMessages)),
+    [active, activeMessages],
+  )
+
+  useEffect(() => {
+    if (activeSession?.providerProfileId) {
+      setSelectedProviderId(activeSession.providerProfileId)
+    }
+  }, [activeSession?.providerProfileId, setSelectedProviderId])
+
+  // 拉取当前 workspace 的 git 分支信息。
+  // 重新拉取的时机：
+  //   1. activeSessionWorkspace.id 变化（切换会话/项目）
+  //   2. branchRefreshTick 变化 —— 窗口重新聚焦 / 会话结束（见下方监听），覆盖
+  //      用户在终端或 IDE 内手动 git switch、或 agent 自己切了分支后界面不同步的场景。
+  useEffect(() => {
+    if (gitWorkspaceId == null) return
+    let cancelled = false
+    listBranches({ workspaceId: gitWorkspaceId })
+      .then((res) => {
+        if (!cancelled) applyBranchState(res)
+      })
+      .catch(() => {
+        // Transport failures retain the last trusted branch snapshot.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [applyBranchState, gitWorkspaceId, branchRefreshTick, listBranches])
+
+  const isGitRepo = gitStatus?.isGitRepo === true
+  const isGitWorktree =
+    gitStatus?.state.kind === 'ready' && gitStatus.state.repositoryKind === 'worktree'
+  // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
+  const hasSessionCollaboration =
+    lineageSessionId === active && (activeLineage != null || activeChildLineages.length > 0)
+  const hasEnvPanelContent =
+    isGitRepo ||
+    activeSessionTasks.length > 0 ||
+    activeSessionGoal != null ||
+    hasSessionCollaboration
+
+  const readGitEnvPanelRightGutter = useCallback((): number | null => {
+    const chatArea = chatAreaRef.current
+    if (chatArea == null) return null
+    const contentElements = Array.from(
+      chatArea.querySelectorAll<HTMLElement>('.chat-stream-inner, .composer-inner'),
+    )
+    if (contentElements.length === 0) return null
+    const chatMainRight = chatArea.getBoundingClientRect().right
+    return Math.min(
+      ...contentElements.map((element) =>
+        getRightGutterWidth(chatMainRight, element.getBoundingClientRect().right),
+      ),
+    )
+  }, [])
+
+  useEffect(() => {
+    showGitEnvPanelRef.current = showGitEnvPanel
+  }, [showGitEnvPanel])
+
+  useEffect(() => {
+    const syncGitEnvPanelForViewport = (): void => {
+      const rightGutter = readGitEnvPanelRightGutter()
+      if (rightGutter == null) return
+      const spaceConstrained = shouldAutoCollapseGitEnvPanel(rightGutter)
+      const wasSpaceConstrained = gitEnvPanelSpaceConstrainedRef.current
+
+      if (
+        shouldAutoCollapseGitEnvPanelForViewport({
+          panelOpen: showGitEnvPanelRef.current,
+          spaceConstrained,
+          wasSpaceConstrained,
+        })
+      ) {
+        gitEnvPanelViewportCollapsedRef.current = true
+        showGitEnvPanelRef.current = false
+        setShowGitEnvPanel(false)
+      }
+
+      if (
+        !spaceConstrained &&
+        wasSpaceConstrained &&
+        gitEnvPanelViewportCollapsedRef.current &&
+        !showGitEnvPanelRef.current
+      ) {
+        gitEnvPanelViewportCollapsedRef.current = false
+        showGitEnvPanelRef.current = true
+        setShowGitEnvPanel(true)
+      }
+
+      gitEnvPanelSpaceConstrainedRef.current = spaceConstrained
+    }
+    syncGitEnvPanelForViewport()
+    window.addEventListener('resize', syncGitEnvPanelForViewport)
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncGitEnvPanelForViewport)
+    if (resizeObserver != null) {
+      const chatArea = chatAreaRef.current
+      if (chatArea != null) {
+        resizeObserver.observe(chatArea)
+        chatArea
+          .querySelectorAll<HTMLElement>('.chat-stream-inner, .composer-inner')
+          .forEach((element) => resizeObserver.observe(element))
+      }
+    }
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', syncGitEnvPanelForViewport)
+    }
+  }, [readGitEnvPanelRightGutter, showGitEnvPanel])
+
+  useEffect(() => {
+    // 新会话默认收起右上角 git 悬浮面板，需要时由用户手动展开。
+    setShowGitEnvPanel(false)
+    showGitEnvPanelRef.current = false
+    // 重置自动展开跟踪：新会话/新仓库内，用户尚未手动操作，采样基线也一并清空。
+    gitPanelUserInteractedRef.current = false
+    gitEnvPanelSpaceConstrainedRef.current = shouldAutoCollapseGitEnvPanel(
+      readGitEnvPanelRightGutter(),
+    )
+    gitEnvPanelViewportCollapsedRef.current = false
+    autoOpenSampledRef.current = false
+    prevAutoOpenTasksLenRef.current = 0
+    prevAutoOpenGitChangedFilesRef.current = 0
+    prevAutoOpenGoalPresentRef.current = false
+    prevAutoOpenSessionStatusRef.current = activeSession?.status ?? null
+    // 在仓库/会话切换时重置；不放 activeSession.status，避免 status 变化反复重置基线。
+    // 依赖里同时放 `active`，让「同仓库内从有内容的会话切到空会话」也能命中重置，
+    // 否则仅 workspace 不变时面板状态会一直保留在旧会话上。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gitWorkspaceId, active, readGitEnvPanelRightGutter])
+
+  useEffect(() => {
+    if (isGitWorktree) return
+    setGitCommitModalOpen(false)
+    setGitBranchModalOpen(false)
+    setGitCreateBranchOpen(false)
+  }, [isGitWorktree])
+
+  // 自动展开右上角环境悬浮面板（git / 进程 / 目标）。
+  // 触发条件（须同时满足）：
+  //   1. 三者其一有内容（git 仓库 / 有任务 / 有目标），否则面板不会渲染
+  //   2. 用户未手动 toggle/关闭过面板
+  //   3. 面板当前是收起状态
+  //   4. 任一信号出现上升沿：会话开始(非 running→running)、任务列表出现/更新、
+  //      git 变更文件出现/更新、目标从无到有
+  useEffect(() => {
+    if (!hasEnvPanelContent) return
+    if (gitPanelUserInteractedRef.current) return
+    if (showGitEnvPanel) return
+
+    const currStatus = activeSession?.status ?? null
+    const currTasksLen = activeSessionTasks.length
+    const currChangedFiles = gitStatus?.changedFiles ?? 0
+    const currGoalPresent = activeSessionGoal != null
+
+    if (!autoOpenSampledRef.current) {
+      // 首次只采样基线，避免切到已有变更的老会话时立刻弹出面板。
+      autoOpenSampledRef.current = true
+      prevAutoOpenSessionStatusRef.current = currStatus
+      prevAutoOpenTasksLenRef.current = currTasksLen
+      prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+      prevAutoOpenGoalPresentRef.current = currGoalPresent
+      return
+    }
+
+    let shouldOpen = false
+    if (prevAutoOpenSessionStatusRef.current !== 'running' && currStatus === 'running') {
+      shouldOpen = true
+    }
+    if (currTasksLen > 0 && currTasksLen !== prevAutoOpenTasksLenRef.current) {
+      shouldOpen = true
+    }
+    if (currChangedFiles > 0 && currChangedFiles !== prevAutoOpenGitChangedFilesRef.current) {
+      shouldOpen = true
+    }
+    if (currGoalPresent && !prevAutoOpenGoalPresentRef.current) {
+      shouldOpen = true
+    }
+
+    prevAutoOpenSessionStatusRef.current = currStatus
+    prevAutoOpenTasksLenRef.current = currTasksLen
+    prevAutoOpenGitChangedFilesRef.current = currChangedFiles
+    prevAutoOpenGoalPresentRef.current = currGoalPresent
+
+    if (shouldOpen && shouldAutoCollapseGitEnvPanel(readGitEnvPanelRightGutter())) {
+      gitEnvPanelViewportCollapsedRef.current = true
+      return
+    }
+
+    if (shouldOpen) {
+      setShowGitEnvPanel(true)
+    }
+  }, [
+    hasEnvPanelContent,
+    activeSession?.status,
+    activeSessionTasks.length,
+    gitStatus,
+    activeSessionGoal,
+    showGitEnvPanel,
+    readGitEnvPanelRightGutter,
+  ])
+
+  const handleOpenGitReview = useCallback(() => {
+    openUnifiedSidePanel('review')
+    // review 内容较宽，保底 520；但极窄窗下要受视口上限约束，避免 state 与渲染不一致
+    setSideChatWidth((width) => Math.max(width, Math.min(520, maxSideChatWidthForViewport())))
+    setShowInspector(false)
+  }, [openUnifiedSidePanel])
+
+  // 窗口重新聚焦时刷新分支：用户切到外部终端/IDE 改了分支后回到应用，会话内分支显示
+  // 需要同步。用 document.visibilityState 兜住最小化后还原的情况。
+  useEffect(() => {
+    const onFocus = (): void => {
+      setBranchRefreshTick((n) => n + 1)
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [])
+
+  // 会话从 running 回到 idle 时刷新分支：agent 可能在执行过程中 git switch 了分支，
+  // 任务结束后界面需要同步最新分支状态。仅捕获 running→非 running 的下降沿。
+  const prevSessionStatusRef = useRef<SessionSummary['status'] | null>(null)
+  useEffect(() => {
+    const prev = prevSessionStatusRef.current
+    const curr = activeSession?.status ?? null
+    prevSessionStatusRef.current = curr
+    if (
+      prev === 'running' &&
+      curr != null &&
+      curr !== 'running' &&
+      activeSessionWorkspace != null
+    ) {
+      setBranchRefreshTick((n) => n + 1)
+    }
+  }, [activeSession?.status, activeSessionWorkspace])
+
+  // Listen for Ctrl/Cmd+L focus-composer event from global shortcut handler
+  useEffect(() => {
+    const handler = () => {
+      // Scroll chat area to bottom
+      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream')
+      if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
+      // Trigger composer focus (increment counter → ComposerV2 reacts)
+      setComposerFocusTrigger((n) => n + 1)
+    }
+    window.addEventListener('spark:focus-composer', handler)
+    return () => window.removeEventListener('spark:focus-composer', handler)
+  }, [])
+
+  // Listen for Cmd/Ctrl+P（文件搜索）/ Cmd/Ctrl+Shift+F（内容搜索）from global shortcut handler:
+  // 切到代码面板并打开搜索侧栏（聚焦由 SearchPanel 监听同一事件完成）
+  useEffect(() => {
+    const handler = (e: Event): void => {
+      const detail = (e as CustomEvent<{ mode?: 'files' | 'content' }>).detail
+      openUnifiedSidePanel('code')
+      openSearchPanel(detail?.mode === 'content' ? 'content' : 'files')
+    }
+    window.addEventListener(OPEN_CODE_SEARCH_EVENT, handler)
+    return () => window.removeEventListener(OPEN_CODE_SEARCH_EVENT, handler)
+  }, [openUnifiedSidePanel])
+
+  // 「打开项目」导航（侧栏项目菜单 -> 代码面板）：挂载时消费 localStorage 里的
+  // 待处理请求（派发时 ChatView 尚未挂载、事件落空的场景），运行期监听事件即时
+  // 响应并清掉待处理标记。统一转为信号计数，由下方落地 effect 处理。
+  useEffect(() => {
+    if (consumePendingOpenProjectCodeViewer()) setCodeViewerOpenSignal((n) => n + 1)
+    const handler = (): void => {
+      clearPendingOpenProjectCodeViewer()
+      setCodeViewerOpenSignal((n) => n + 1)
+    }
+    window.addEventListener(OPEN_PROJECT_CODE_VIEWER_EVENT, handler)
+    return () => window.removeEventListener(OPEN_PROJECT_CODE_VIEWER_EVENT, handler)
+  }, [])
+
+  // 「打开项目」信号落地：切到代码面板并显示文件树。文件树与 Git/搜索面板共用
+  // 左槽位（互斥），故先关掉两者再亮文件树。用 lastHandled ref 去重，避免
+  // openUnifiedSidePanel 身份变化导致 effect 重跑而误开面板；声明位置在会话
+  // 切换的面板快照 effect（收起面板）之后，保证同帧先收起、后展开。
+  const lastHandledCodeViewerSignalRef = useRef(0)
+  useEffect(() => {
+    if (codeViewerOpenSignal <= lastHandledCodeViewerSignalRef.current) return
+    lastHandledCodeViewerSignalRef.current = codeViewerOpenSignal
+    closeGitPanel()
+    closeSearchPanel()
+    setCodeExplorerVisible(true)
+    openUnifiedSidePanel('code')
+  }, [codeViewerOpenSignal, openUnifiedSidePanel])
+
+  // 「打开终端面板」导航（侧栏会话条目终端图标）：与代码面板同构 —— 挂载时消费
+  // localStorage 待处理请求（派发瞬间 ChatView 未挂载的场景），运行期监听事件并清标记，
+  // 统一转为信号计数由落地 effect 处理。
+  const [terminalPanelOpenSignal, setTerminalPanelOpenSignal] = useState(0)
+  useEffect(() => {
+    if (consumePendingOpenTerminalPanel()) setTerminalPanelOpenSignal((n) => n + 1)
+    const handler = (): void => {
+      clearPendingOpenTerminalPanel()
+      setTerminalPanelOpenSignal((n) => n + 1)
+    }
+    window.addEventListener(OPEN_TERMINAL_PANEL_EVENT, handler)
+    return () => window.removeEventListener(OPEN_TERMINAL_PANEL_EVENT, handler)
+  }, [])
+  // 落地：展开统一侧栏终端 tab。lastHandled ref 去重；声明位置在会话切换的
+  // 面板快照 effect 之后，保证切会话同帧先恢复快照、再展开终端。
+  const lastHandledTerminalSignalRef = useRef(0)
+  useEffect(() => {
+    if (terminalPanelOpenSignal <= lastHandledTerminalSignalRef.current) return
+    lastHandledTerminalSignalRef.current = terminalPanelOpenSignal
+    openUnifiedSidePanel('terminal')
+  }, [terminalPanelOpenSignal, openUnifiedSidePanel])
+
+  // 浏览器面板：外部打开请求（独立窗口收回面板等入口派发）。挂载时消费
+  // localStorage 待处理请求（派发瞬间 ChatView 未挂载的场景），运行期监听
+  // 事件并清标记；携带 URL 时经 pending 持有器 / NAVIGATE 事件交给浏览器。
+  useEffect(() => {
+    const pending = consumePendingOpenBrowserPanel()
+    if (pending != null) {
+      if (pending.url != null) handOffBrowserNavigate(pending.url)
+      openUnifiedSidePanel('browser')
+    }
+    const handler = (event: Event): void => {
+      clearPendingOpenBrowserPanel()
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url
+      if (url != null && url.trim().length > 0) handOffBrowserNavigate(url)
+      openUnifiedSidePanel('browser')
+    }
+    window.addEventListener(BROWSER_PANEL_OPEN_EVENT, handler)
+    return () => window.removeEventListener(BROWSER_PANEL_OPEN_EVENT, handler)
+  }, [openUnifiedSidePanel])
+
+  // BrowserChrome「在独立窗口中打开」成功后请求收起面板 tab
+  useEffect(() => {
+    const handler = (): void => closeUnifiedSidePanel('browser')
+    window.addEventListener(BROWSER_PANEL_CLOSE_EVENT, handler)
+    return () => window.removeEventListener(BROWSER_PANEL_CLOSE_EVENT, handler)
+  }, [closeUnifiedSidePanel])
+
+  const ensureChatLayoutFitsWindow = useCallback(
+    (allowShrink = false, allowGrow = true) => {
+      const layout = chatLayoutRef.current
+      if (layout == null) return
+      const layoutStyle = window.getComputedStyle(layout)
+      const mainMinWidth = Number.parseFloat(layoutStyle.getPropertyValue('--chat-main-min-width'))
+      const chatMainMinWidth = Number.isFinite(mainMinWidth) ? mainMinWidth : 520
+      // 面板宽度取「期望宽度」(flex-basis)而非 getBoundingClientRect 的「被压缩后实际宽度」。
+      // 旧实现用实际宽度会让 minWidth 自引用：窗口 grow → 面板恢复变宽 → 实际宽度变大 →
+      // minWidth 又变大 → 再 grow，每帧约 +8px 形成"缓慢拉长"。flex-basis 是面板未压缩时的
+      // 目标宽度（.unified-side-panel 为 var(--side-chat-width, min(44vw,620px))，常量），
+      // 一次 grow 即可让窗口到位。取 max(flexBasis, actual)：面板被压缩时用 flexBasis（更大、
+      // 打破循环）；flex-basis 解析失败(auto/NaN)时回退 actual，绝不比旧行为算得更小，向后兼容。
+      const sidePanelsWidth = Array.from(layout.children).reduce((sum, child) => {
+        if (child === chatAreaRef.current) return sum
+        const flexBasisPx = Number.parseFloat(window.getComputedStyle(child).flexBasis)
+        const actualWidth = child.getBoundingClientRect().width
+        const preferredWidth =
+          Number.isFinite(flexBasisPx) && flexBasisPx > 0
+            ? Math.max(flexBasisPx, actualWidth)
+            : actualWidth
+        return sum + preferredWidth
+      }, 0)
+      const desiredLayoutWidth = chatMainMinWidth + sidePanelsWidth
+      // 余量为 0：minWidth 是 CSS 像素下的「放得下」临界值，不再额外加安全冗余。
+      // 旧实现恒加 +8px，而默认窗口宽度（1310）下「侧栏 + chat-main 最小宽 + 统一面板」
+      // 本就按紧贴设计（余量 <1px），+8 会把它判定为放不下 → 窗口被拉宽 150+px；
+      // 此后窗口只要低于目标线，ResizeObserver 回调（恒 allowGrow）就会把它拉回去，
+      // 与用户拖拽打架形成持续抖动。布局真的放不下时 deficit 为正，minWidth 仍会
+      // 高于当前宽度，加宽路径不受影响。CSS↔屏幕像素的换算在主进程按 zoomFactor 做。
+      const minWidth = Math.max(
+        800,
+        Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth),
+      )
+      void ensureWindowWidth({ minWidth, allowShrink, allowGrow }).catch(() => {})
+    },
+    [ensureWindowWidth],
+  )
+
+  useLayoutEffect(() => {
+    const layout = chatLayoutRef.current
+    if (layout == null) return
+    let rafId = 0
+    const isManualPanelResizeActive = () =>
+      document.body.classList.contains('inspector-resizing') ||
+      document.body.classList.contains('side-chat-resizing') ||
+      document.body.classList.contains('browser-panel-resizing') ||
+      document.body.classList.contains('file-preview-resizing')
+    // Width auto-fit 决策：
+    //   - 仅在布局内部状态变化（侧栏开关 / tabs 切换 / sidebarHidden 联动导致主区宽度变化）
+    //     时才允许把窗口拉宽（allowGrow=true）。用户主动拖窗口缩小时不应被拉回去，
+    //     这是修复"调整窗口宽度会缩小一点又弹回来"的关键。
+    //   - 拖动 panel 自身的 resize handle 时彻底跳过（避免和用户拖拽意图冲突）。
+    type EnsureTrigger = 'mount' | 'layout' | 'window' | 'mutation'
+    const scheduleEnsure = (trigger: EnsureTrigger = 'layout') => {
+      window.cancelAnimationFrame(rafId)
+      rafId = window.requestAnimationFrame(() => {
+        if (isManualPanelResizeActive()) return
+        const allowGrow = trigger !== 'window'
+        ensureChatLayoutFitsWindow(true, allowGrow)
+      })
+    }
+
+    scheduleEnsure('mount')
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => scheduleEnsure('layout'))
+    if (resizeObserver != null) {
+      resizeObserver.observe(layout)
+      Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
+    }
+
+    const mutationObserver =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            if (resizeObserver != null) {
+              Array.from(layout.children).forEach((child) => resizeObserver.observe(child))
+            }
+            scheduleEnsure('mutation')
+          })
+    mutationObserver?.observe(layout, { childList: true })
+
+    const handleWindowResize = () => scheduleEnsure('window')
+    window.addEventListener('resize', handleWindowResize)
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      resizeObserver?.disconnect()
+      mutationObserver?.disconnect()
+      window.removeEventListener('resize', handleWindowResize)
+    }
+  }, [
+    ensureChatLayoutFitsWindow,
+    inspectorWidth,
+    showConfigPanel,
+    showInspector,
+    showTerminalPanel,
+    filePreview,
+  ])
+
+  const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
+    if (active == null) return
+    const res = await updateSession({ sessionId: active, ...patch })
+    sessionCtx.updateSessionInList(active, res.session)
+  }
+
+  // 把活跃会话的适配器/供应商/模型/权限/推理强度同步到指定 agent 的配置。
+  // 用于「右侧 Inspector 切换主持人」——与底部输入框切换 agent / 切换主持人保持一致：
+  // 会话用哪个适配器和模型，始终跟随当前活跃 agent（团队模式即主持人）。
+  const syncSessionRuntimeToAgent = useCallback(
+    async (agentId: string) => {
+      const agent = agents.find((a) => a.id === agentId)
+      if (agent == null || active == null) return
+      const provider =
+        providers.find((p) => p.id === agent.providerProfileId) ??
+        getPreferredProvider(
+          providers,
+          { ...readComposerPrefs(), agentId: agent.id },
+          agent.agentAdapter,
+        )
+      const model =
+        provider != null && isLocalCliProvider(provider)
+          ? getProviderDefaultModel(provider)
+          : (agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? '')
+      const reasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'max'
+      if (provider != null) setSelectedProviderId(provider.id)
+      writeComposerPrefs({
+        agentId: agent.id,
+        adapter: agent.agentAdapter,
+        ...(provider?.id !== undefined ? { providerProfileId: provider.id } : {}),
+        modelId: model,
+        permissionMode: agent.permissionMode,
+        reasoningEffort: reasoning,
+      })
+      await handleUpdateActiveSession({
+        agentId: agent.id,
+        ...(provider != null ? { providerProfileId: provider.id } : {}),
+        modelId: model || null,
+        agentAdapter: agent.agentAdapter,
+        permissionMode: agent.permissionMode,
+        reasoningEffort: reasoning,
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agents, providers, active, setSelectedProviderId],
+  )
+
+  // Inspector 改团队配置：主持人变化时一并同步会话运行时（其余 patch 仅更新团队配置）。
+  const handleInspectorChangeConfig = useCallback(
+    (patch: Partial<TeamModeConfig>) => {
+      updateTeamConfig(patch)
+      if (patch.hostAgentId != null && patch.hostAgentId !== teamConfig.hostAgentId) {
+        void syncSessionRuntimeToAgent(patch.hostAgentId)
+      }
+    },
+    [updateTeamConfig, teamConfig.hostAgentId, syncSessionRuntimeToAgent],
+  )
+
+  const handleSwitchBranch = async (branch: string): Promise<boolean> => {
+    if (gitWorkspace == null || !branch || branch === branchState.currentBranch) return false
+    try {
+      const res = await switchBranch({ workspaceId: gitWorkspace.id, branch })
+      applyBranchState(res)
+      await refreshGitStatus()
+      toast.success(`已切换到 ${res.currentBranch}`)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '切换分支失败，请检查是否存在未提交改动')
+      return false
+    }
+  }
+
+  const handleComposerSwitchBranch = async (branch: string): Promise<void> => {
+    await handleSwitchBranch(branch)
+  }
+
+  const handleCreateBranch = async (branch: string) => {
+    if (gitWorkspace == null) return
+    try {
+      const res = await createBranch({ workspaceId: gitWorkspace.id, branch })
+      applyBranchState({
+        gitState: res.state,
+        currentBranch: res.currentBranch,
+        branches: res.branches,
+        branchDetails: res.branchDetails,
+      })
+      applyGitStatus(res.status)
+      toast.success(`已创建并切换到 ${res.currentBranch}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建并检出分支失败')
+      throw err
+    }
+  }
+
+  // 检出标签：detached HEAD，适合查看历史代码；toast 明确提示提交不归属分支
+  const handleCheckoutTag = async (tag: string): Promise<boolean> => {
+    if (gitWorkspace == null || !tag) return false
+    try {
+      const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag })
+      applyBranchState(res)
+      await refreshGitStatus()
+      toast.success(`已检出标签 ${tag}（分离头指针）`)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '检出标签失败')
+      return false
+    }
+  }
+
+  // 从标签创建并检出新分支：安全主路径，后续提交归属新分支
+  const handleCreateBranchFromTag = async (tag: string, branch: string): Promise<boolean> => {
+    if (gitWorkspace == null || !tag || !branch) return false
+    try {
+      const res = await checkoutTag({ workspaceId: gitWorkspace.id, tag, createBranch: branch })
+      applyBranchState(res)
+      await refreshGitStatus()
+      toast.success(`已从标签 ${tag} 创建并切换到 ${res.currentBranch}`)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '从标签创建分支失败')
+      return false
+    }
+  }
+
+  // 分支选择器每次展开时调用：主动重新拉取一次最新分支列表，避免用户在终端手动切分支
+  // 后界面缓存不同步（常规刷新只在切换项目/窗口聚焦/会话结束时触发，见上方 effect）。
+  const refreshBranches = async () => {
+    if (gitWorkspaceId == null) return
+    try {
+      const res = await listBranches({ workspaceId: gitWorkspaceId })
+      applyBranchState(res)
+    } catch {
+      // 静默失败，保留上一次已知分支列表
+    }
+  }
+
+  const handleFetchBranches = async () => {
+    if (gitWorkspaceId == null) return
+    try {
+      const res = await fetchBranches({ workspaceId: gitWorkspaceId })
+      applyBranchState(res)
+      toast.success('Fetch 完成')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Fetch 失败')
+    }
+  }
+
+  const handleCommitGitChanges = async (options: {
+    message: string
+    includeUnstaged: boolean
+    push: boolean
+    paths?: string[]
+  }) => {
+    if (gitWorkspace == null) return
+    let commitOptions = options
+    // 留空提交信息：交给当前会话的 agent 分析 diff 并提交（携带暂存/推送开关与文件范围）。
+    // 没有活跃会话时回退到模板生成，保证提交按钮始终可用。
+    if (options.message.trim() === '') {
+      const sessionId = activeSession?.id
+      if (sessionId != null) {
+        try {
+          await sendTurnToAgent({
+            sessionId,
+            message: buildAgentCommitMessage(options.includeUnstaged, options.push, options.paths),
+          })
+          toast.success('已交给助手处理，请在对话中查看进度')
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '提交失败')
+          throw err
+        }
+        return
+      }
+      commitOptions = {
+        ...options,
+        message: buildDefaultCommitMessage(gitStatus, options.paths),
+      }
+    }
+    try {
+      const res = await commitGitChanges({
+        workspaceId: gitWorkspace.id,
+        message: commitOptions.message,
+        includeUnstaged: commitOptions.includeUnstaged,
+        push: commitOptions.push,
+        ...(commitOptions.paths != null ? { paths: commitOptions.paths } : {}),
+      })
+      applyGitStatus(res.status)
+      toast.success(commitOptions.push ? '已提交并推送' : '已提交变更')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '提交失败')
+      throw err
+    }
+  }
+
+  const handlePushGitChanges = async () => {
+    if (gitWorkspace == null) return
+    try {
+      const res = await pushGitChanges({ workspaceId: gitWorkspace.id })
+      applyGitStatus(res.status)
+      toast.success('已推送到远端')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '推送失败')
+      throw err
+    }
+  }
+
+  const handlePullGitChanges = async () => {
+    if (gitWorkspace == null) return
+    try {
+      const res = await pullGitChanges({ workspaceId: gitWorkspace.id })
+      applyGitStatus(res.status)
+      toast.success('已拉取远端更新')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '拉取失败')
+      throw err
+    }
+  }
+
+  const handleReplyTo = useCallback(
+    (msg: UIMessage, agentId?: string, agentName?: string, selectedText?: string) => {
+      const source = selectedText?.trim() || extractTextFromBlocks(msg.blocks)
+      const preview = compactQuotePreview(source)
+      setReplyTo({
+        messageId: msg.id,
+        role: msg.role,
+        ...(agentId != null ? { agentId } : {}),
+        ...(agentName != null ? { agentName } : {}),
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [setReplyTo],
+  )
+
+  // 团队模式：引用成员消息气泡。messageId 取 host message（成员输出是其内部 block），
+  // agentId/agentName 取成员，contentPreview 用所选文本或成员气泡内容。
+  const handleReplyToMember = useCallback(
+    (args: {
+      messageId: string
+      memberAgentId: string
+      memberName: string
+      content: string
+      selectedText?: string
+    }) => {
+      const source = args.selectedText?.trim() || args.content
+      const preview = compactQuotePreview(source)
+      setReplyTo({
+        messageId: args.messageId,
+        role: 'assistant',
+        agentId: args.memberAgentId,
+        agentName: args.memberName,
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [setReplyTo],
+  )
+
+  const handleQuoteSelection = useCallback(
+    (text: string, label = '引用') => {
+      const preview = compactQuotePreview(text)
+      if (preview.length === 0) return
+      setReplyTo({
+        messageId: `selection-${Date.now()}`,
+        role: 'selection',
+        agentName: label,
+        contentPreview: preview,
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [setReplyTo],
+  )
+
+  /**
+   * 处理用户消息"重发"动作：把文本和附件打包成 resendRequest，
+   * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
+   */
+  const handleResendMessage = useCallback((payload: ComposerPrefillPayload) => {
+    resendRequestIdRef.current += 1
+    setResendRequest({
+      requestId: resendRequestIdRef.current,
+      payload,
+    })
+    // 顺手让输入区获得焦点
+    setComposerFocusTrigger((n) => n + 1)
+  }, [])
+
+  // ComposerV2 的 resend effect 消费完 resendRequest 后回调此函数，立即清空 resendRequest。
+  // 否则 resendRequest 会一直残留 in state，一旦 ComposerV2 因 showEmptyHero 翻转而卸载
+  // 重建（consumedResendIdRef 重置为 null），旧 payload 会被重新应用到切进来的会话草稿，
+  // 表现为"重发内容跨会话残留、清空后切换又出现"。详见 ComposerV2 onResendConsumed 注释。
+  const handleResendConsumed = useCallback(() => {
+    setResendRequest(null)
+  }, [])
+
+  const handleHeroPromptSelect = useCallback((text: string) => {
+    resendRequestIdRef.current += 1
+    setResendRequest({
+      requestId: resendRequestIdRef.current,
+      payload: {
+        text,
+        attachments: [],
+        agentId: 'platform-manager-agent',
+      },
+    })
+    setComposerFocusTrigger((n) => n + 1)
+  }, [])
+
+  const runningTeamAgentIds = useMemo(
+    () =>
+      teamConfig.enabled
+        ? extractRunningTeamAgentIds(
+            activeMessages,
+            effectiveHostAgentId ?? teamConfig.hostAgentId,
+            activeSession?.status === 'running',
+            getBlockTeamMemberContext,
+            splitAssistantMessageBlocks,
+            isHostActivityRunning,
+          )
+        : [],
+    [
+      activeMessages,
+      activeSession?.status,
+      effectiveHostAgentId,
+      teamConfig.enabled,
+      teamConfig.hostAgentId,
+    ],
+  )
+  const composerIsWorking = isComposerSessionWorking(activeSession?.status)
+  const sideChatSession = useMemo(
+    () => sessions.find((session) => session.id === sideChatSessionId) ?? null,
+    [sessions, sideChatSessionId],
+  )
+  const activeSideChatWorkspaceId =
+    activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId ?? null
+  const sideChatSessionWorkspaceId = sideChatSession?.workspaceIds[0] ?? null
+  const sideChatMatchesActiveWorkspace =
+    sideChatSession != null && sideChatSessionWorkspaceId === activeSideChatWorkspaceId
+  const sideChatWorkspace = useMemo(() => {
+    const workspaceId = sideChatSessionWorkspaceId ?? activeSideChatWorkspaceId
+    if (workspaceId == null) return activeSessionWorkspace ?? activeWorkspace
+    return (
+      workspaces.find((workspace) => workspace.id === workspaceId) ??
+      activeSessionWorkspace ??
+      activeWorkspace
+    )
+  }, [
+    activeSessionWorkspace,
+    activeSideChatWorkspaceId,
+    activeWorkspace,
+    sideChatSessionWorkspaceId,
+    workspaces,
+  ])
+
+  // 侧边聊天头部下拉候选：当前 workspace 下的全部会话。
+  // 复用 sideChatMatchesActiveWorkspace 的同款 workspace 判定，保证切过去一定 matches、
+  // 不会落入「跨 workspace」未覆盖的渲染路径。投影成最小 SideChatSessionOption，避免
+  // SideChatPanel 反向依赖完整 Session 类型。
+  const sideChatSessionCandidates = useMemo<SideChatSessionOption[]>(
+    () =>
+      sessions
+        .filter((session) => {
+          const wsId = session.workspaceIds[0]
+          return wsId != null && wsId === activeSideChatWorkspaceId
+        })
+        .map((session) => ({
+          id: session.id,
+          title: session.title,
+          status: session.status,
+          messageCount: session.messageCount,
+          pinned: session.pinnedAt != null,
+        })),
+    [sessions, activeSideChatWorkspaceId],
+  )
+  // 主区当前会话在下拉里禁选：主、侧两个 ChatStream 订阅同一 sessionId 会产生
+  // 双份消息流订阅与状态竞争（侧边发消息会串到主区）。下拉项标灰 + "主区当前"，这里再做一道兜底。
+  const disabledSideChatSessionId = activeSession?.id ?? null
+  // 纯切换既有侧边会话：只改 id，让 SessionStream 的 key（随 sideChatSessionId 变化）自动重订阅目标会话历史，
+  // 绝不走 ensureSideChatSession 的清空+新建路径。显式清一遍运行时展示态，避免新会话首帧残留旧会话消息
+  // （与 snap restore 的处理同思路）。
+  const switchSideChatSession = useCallback(
+    (targetId: string) => {
+      if (targetId === disabledSideChatSessionId) return
+      setSideChatSessionId(targetId as SessionId)
+      setSideChatMessages([])
+      setSideChatContextInputTokens(0)
+      setSideChatContextUsage(null)
+      setSideChatContextLedger(null)
+      setSideChatAgentStatus('')
+      setSideChatScrollToBottomTrigger((trigger) => trigger + 1)
+    },
+    [disabledSideChatSessionId],
+  )
+
+  const createSideChatSession = useCallback(
+    async (overrides: Record<string, unknown> = {}) => {
+      const workspaceId = activeSessionWorkspace?.id ?? activeWorkspace?.id ?? activeWorkspaceId
+      const createdId = await sessionCtx.handleNewSession(workspaceId, {
+        activate: false,
+        forceNew: true,
+        ...(activeSession != null
+          ? {
+              providerProfileId: activeSession.providerProfileId,
+              ...(activeSession.modelId != null ? { modelId: activeSession.modelId } : {}),
+              agentId: activeSession.agentId,
+              agentAdapter: activeSession.agentAdapter,
+              permissionMode: activeSession.permissionMode,
+              chatMode: activeSession.chatMode,
+              reasoningEffort: activeSession.reasoningEffort,
+              ...(teamConfig.enabled ? { teamConfig } : {}),
+            }
+          : {}),
+        ...overrides,
+      })
+      if (createdId != null) setSideChatSessionId(createdId)
+      return createdId
+    },
+    [
+      activeSession,
+      activeSessionWorkspace?.id,
+      activeWorkspace?.id,
+      activeWorkspaceId,
+      sessionCtx,
+      teamConfig,
+    ],
+  )
+
+  // 抽出"创建/替换侧边会话"的核心逻辑，供两条入口共享：
+  //   1) openUnifiedSidePanel('side-chat') —— 快捷卡片 / Picker / Plus 菜单
+  //   2) openSideChatPanel —— 顶栏按钮 / 面板内"新建侧边会话"
+  // 任一入口都能保证面板打开后自动有一条可用的侧边会话，避免落到空状态文案。
+  const ensureSideChatSession = useCallback(
+    async (options: { replace?: boolean } = {}) => {
+      if (sideChatSessionId != null && options.replace !== true && sideChatMatchesActiveWorkspace) {
+        return
+      }
+      setSideChatCreating(true)
+      if (options.replace === true || !sideChatMatchesActiveWorkspace) {
+        setSideChatSessionId(null)
+        setSideChatMessages([])
+        setSideChatContextInputTokens(0)
+        setSideChatContextUsage(null)
+        setSideChatAgentStatus('')
+      }
+      try {
+        await createSideChatSession()
+      } finally {
+        setSideChatCreating(false)
+      }
+    },
+    [createSideChatSession, sideChatMatchesActiveWorkspace, sideChatSessionId],
+  )
+  // 通过 ref 暴露最新的 ensureSideChatSession，避免 openUnifiedSidePanel（声明在前）
+  // 与 ensureSideChatSession（声明在后）之间产生 const TDZ。
+  const ensureSideChatSessionRef = useRef(ensureSideChatSession)
+  ensureSideChatSessionRef.current = ensureSideChatSession
+  const openSideChatPanel = useCallback(
+    async (options: { replace?: boolean } = {}) => {
+      setShowInspector(false)
+      setShowConfigPanel(false)
+      setFilePreview(null)
+      setUnifiedPanelOpen(true)
+      setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
+      setActiveUnifiedSideTab('side-chat')
+      setShowSideChatPanel(true)
+      await ensureSideChatSession(options)
+    },
+    [ensureSideChatSession],
+  )
+  const handleSideChatSent = useCallback(
+    (sessionId: SessionId, started = true) => {
+      if (started) setSessionStatus(sessionId, 'running')
+      sessionCtx.bumpSessionMessageCount(sessionId)
+      setSideChatScrollToBottomTrigger((n) => n + 1)
+    },
+    [sessionCtx, setSessionStatus],
+  )
+  const openSkillStore = useCallback(
+    (tab: 'installed' | 'create') => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY, tab)
+        window.dispatchEvent(new CustomEvent(SKILL_STORE_TARGET_TAB_EVENT, { detail: { tab } }))
+      }
+      setTweak('view', 'skill-store')
+    },
+    [setTweak],
+  )
+  const openTeamManager = useCallback(() => {
+    requestAgentsTargetTab('teams')
+    setTweak('view', 'agents')
+  }, [setTweak])
+
+  const useSoloModeForEmptySession = useCallback(() => {
+    const soloAgentId =
+      agents.find((agent) => agent.id === effectiveHostAgentId)?.id ??
+      agents.find((agent) => agent.id === teamConfig.hostAgentId)?.id ??
+      agents[0]?.id ??
+      teamConfig.hostAgentId
+    updateTeamConfig({ enabled: false, teamId: undefined, hostAgentId: soloAgentId })
+    if (active != null) void syncSessionRuntimeToAgent(soloAgentId)
+  }, [
+    active,
+    agents,
+    effectiveHostAgentId,
+    syncSessionRuntimeToAgent,
+    teamConfig.hostAgentId,
+    updateTeamConfig,
+  ])
+
+  const useEmptyTeamModeForEmptySession = useCallback(() => {
+    const hostAgentId =
+      agents.find((agent) => agent.id === teamConfig.hostAgentId)?.id ??
+      agents[0]?.id ??
+      teamConfig.hostAgentId
+    updateTeamConfig({ enabled: true, teamId: undefined, hostAgentId })
+  }, [agents, teamConfig.hostAgentId, updateTeamConfig])
+
+  const applyTeamForEmptySession = useCallback(
+    (team: ManagedTeam) => {
+      void persistThenSyncTeamSelection(
+        () =>
+          updateTeamConfig({
+            enabled: true,
+            hostAgentId: team.hostAgentId,
+            memberAgentIds: team.memberAgentIds,
+            maxDepth: team.maxDepth,
+            allowNesting: team.allowNesting,
+            maxDiscussionRounds: team.maxDiscussionRounds ?? 6,
+            enablePeerMessaging: team.enablePeerMessaging === true,
+            teamId: team.id,
+          }),
+        async () => {
+          if (active != null) await syncSessionRuntimeToAgent(team.hostAgentId)
+        },
+      )
+    },
+    [active, syncSessionRuntimeToAgent, updateTeamConfig],
+  )
+
+  const hideComposerBranchSelect = active != null && !showEmptyHero && isGitRepo
+  const composerNode =
+    active == null ? (
+      <ComposerV2
+        session={activeSession}
+        workspace={activeWorkspace}
+        providers={providers}
+        agents={agents}
+        selectedProviderId={selectedProviderId}
+        setSelectedProviderId={setSelectedProviderId}
+        branchState={branchState}
+        contextInputTokens={contextInputTokens}
+        contextUsage={contextUsage}
+        contextLedger={contextLedger}
+        isWorking={composerIsWorking}
+        messages={activeVisibleMessages}
+        approvalRequest={approvalRequest}
+        {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+        onCreateSession={(options) =>
+          sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)
+        }
+        onUpdateSession={handleUpdateActiveSession}
+        onCommandComplete={(summary) => {
+          sessionCtx.updateSessionInList(summary.id, summary)
+        }}
+        onSwitchBranch={handleComposerSwitchBranch}
+        onRefreshBranches={refreshBranches}
+        onFetchBranches={handleFetchBranches}
+        onCreateBranch={handleCreateBranch}
+        onCheckoutBranchTag={handleCheckoutTag}
+        onCreateBranchFromTag={handleCreateBranchFromTag}
+        onCancelSession={handleCancelSession}
+        onSent={handleUserSent}
+        showProjectPicker
+        preferSelectedWorkspace
+        focusTrigger={composerFocusTrigger}
+        resendRequest={resendRequest}
+        onResendConsumed={handleResendConsumed}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onPickProject={pickProjectFolder}
+        onUseNoProject={() =>
+          void sessionCtx.ensureNoProjectWorkspace().then((id) => {
+            if (id) setActiveWorkspaceId(id)
+          })
+        }
+        onSwitchWorkspace={switchToWorkspace}
+        teamConfig={teamConfig}
+        activeTeamName={activeTeamName}
+        effectiveHostAgentId={effectiveHostAgentId}
+        onChangeTeamConfig={updateTeamConfig}
+        onOpenTeamInspector={openInspector}
+        runningTeamAgentIds={runningTeamAgentIds}
+        onOpenSkillStore={openSkillStore}
+        replyTo={null}
+        dispatching={composerDispatching}
+        onDispatchStateChange={setComposerDispatching}
+        optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+        onOptimisticQueueStateChange={handleOptimisticQueueState}
+        onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
+        onModelSwitch={handleModelSwitch}
+        paletteCommandRequest={paletteCommandRequest}
+      />
+    ) : (
+      <ComposerV2
+        session={activeSession}
+        workspace={activeWorkspace}
+        providers={providers}
+        agents={agents}
+        selectedProviderId={selectedProviderId}
+        setSelectedProviderId={setSelectedProviderId}
+        branchState={branchState}
+        contextInputTokens={contextInputTokens}
+        contextUsage={contextUsage}
+        contextLedger={contextLedger}
+        isWorking={composerIsWorking}
+        messages={activeVisibleMessages}
+        approvalRequest={approvalRequest}
+        {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+        onCreateSession={(options) =>
+          sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)
+        }
+        onUpdateSession={handleUpdateActiveSession}
+        onCommandComplete={(summary) => {
+          sessionCtx.updateSessionInList(summary.id, summary)
+        }}
+        onSwitchBranch={handleComposerSwitchBranch}
+        onRefreshBranches={refreshBranches}
+        onFetchBranches={handleFetchBranches}
+        onCreateBranch={handleCreateBranch}
+        onCheckoutBranchTag={handleCheckoutTag}
+        onCreateBranchFromTag={handleCreateBranchFromTag}
+        onCancelSession={handleCancelSession}
+        onSent={handleUserSent}
+        showProjectPicker={showEmptyHero}
+        preferSelectedWorkspace={showEmptyHero}
+        focusTrigger={composerFocusTrigger}
+        resendRequest={resendRequest}
+        onResendConsumed={handleResendConsumed}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onPickProject={pickProjectFolder}
+        onUseNoProject={() =>
+          void sessionCtx.ensureNoProjectWorkspace().then((id) => {
+            if (id) setActiveWorkspaceId(id)
+          })
+        }
+        onSwitchWorkspace={switchToWorkspace}
+        teamConfig={teamConfig}
+        activeTeamName={activeTeamName}
+        effectiveHostAgentId={effectiveHostAgentId}
+        onChangeTeamConfig={updateTeamConfig}
+        onOpenTeamInspector={openInspector}
+        runningTeamAgentIds={runningTeamAgentIds}
+        onOpenSkillStore={openSkillStore}
+        hideBranchSelect={hideComposerBranchSelect}
+        replyTo={showEmptyHero ? null : replyTo}
+        onClearReply={() => setReplyTo(null)}
+        dispatching={composerDispatching}
+        onDispatchStateChange={setComposerDispatching}
+        optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+        onOptimisticQueueStateChange={handleOptimisticQueueState}
+        onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
+        onModelSwitch={handleModelSwitch}
+        paletteCommandRequest={paletteCommandRequest}
+      />
+    )
+
+  return (
+    <div
+      className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}${teamConfig.enabled && showTeamActivityLogs ? ' team-logs-visible' : ''}`}
+      ref={chatLayoutRef}
+    >
+      <SelectionQuoteContextMenu onQuote={handleQuoteSelection} />
+      <div
+        className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
+          !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
+        }`}
+        data-empty-theme={showEmptyHero ? t.emptyHeroTheme : undefined}
+        ref={chatAreaRef}
+      >
+        {showEmptyHero && (
+          <EmptySessionTopbar
+            activeSessionId={active}
+            activeWorkspaceId={activeWorkspaceId}
+            activeWorkspace={activeWorkspace}
+            showGitEnvPanel={showGitEnvPanel}
+            showInspector={showInspector}
+            showConfigPanel={showConfigPanel}
+            showUnifiedPanel={unifiedPanelOpen}
+            showSessionSchedule={showSessionSchedule}
+            sessionScheduleEnabledCount={sessionScheduleEnabledCount}
+            onToggleGitEnvPanel={() => {
+              // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+              gitPanelUserInteractedRef.current = true
+              gitEnvPanelViewportCollapsedRef.current = false
+              setShowGitEnvPanel((prev) => {
+                const next = !prev
+                if (next) void refreshGitStatus()
+                return next
+              })
+            }}
+            onToggleInspector={() => {
+              setShowInspector(!showInspector)
+              if (!showInspector) {
+                setUnifiedPanelOpen(false)
+                clearHtmlPresentation()
+                setShowConfigPanel(false)
+                setFilePreview(null)
+              }
+            }}
+            onToggleConfig={toggleConfigPanel}
+            onToggleUnifiedPanel={toggleUnifiedPanel}
+            onOpenInEditor={() => openUnifiedSidePanel('code')}
+            onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
+            {...(onExpandSidebar ? { onExpandSidebar } : {})}
+            createSession={sessionCtx.handleNewSession}
+            openSessionSchedule={sessionCtx.openSessionSchedule}
+            closeSessionSchedule={sessionCtx.closeSessionSchedule}
+          />
+        )}
+        {/* {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />} */}
+        {showEmptyHero && (
+          <EmptySessionModeLauncher
+            agents={agents}
+            config={teamConfig}
+            activeTeamName={activeTeamName}
+            onUseSolo={useSoloModeForEmptySession}
+            onUseEmptyTeamMode={useEmptyTeamModeForEmptySession}
+            onApplyTeam={applyTeamForEmptySession}
+            onManageTeams={openTeamManager}
+          />
+        )}
+        {showEmptyHero && (
+          <div className="chat-empty-content">
+            {teamConfig.enabled ? (
+              <TeamModeEmptyHero
+                agents={agents}
+                hostAgentId={effectiveHostAgentId ?? teamConfig.hostAgentId}
+                memberAgentIds={teamConfig.memberAgentIds}
+                runningAgentIds={runningTeamAgentIds}
+                teamName={activeTeamName}
+                onOpenTeamInspector={openInspector}
+              />
+            ) : (
+              <div className="chat-empty-hero-stack">
+                <SingleAgentEmptyHero
+                  themeId={t.emptyHeroTheme}
+                  hideActions={heroUsage.mode === 'heatmap'}
+                  onSelectPrompt={handleHeroPromptSelect}
+                />
+                {/* 活跃天数达标的老用户：热力图替换快捷卡片（互斥展示，点击跳设置页）。 */}
+                {heroUsage.mode === 'heatmap' ? (
+                  <HeroUsageHeatmap
+                    dailyGroups={heroUsage.dailyGroups}
+                    onOpenStats={() => setTweak('view', 'settings')}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
+        {active != null && (
+          <Fragment key="active-session-content">
+            {!showEmptyHero && (
+              <ChatTabbar
+                key="chat-tabbar"
+                session={activeSession}
+                workspace={activeWorkspace}
+                onOpenInEditor={() => openUnifiedSidePanel('code')}
+                onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
+                agentStatus={agentStatus}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
+                branchState={branchState}
+                gitStatus={gitStatus}
+                runtimeWorktree={activeSession?.runtimeWorktree ?? null}
+                isGitRepo={isGitRepo}
+                taskCount={activeSessionTasks.length}
+                taskCompletedCount={
+                  activeSessionTasks.filter((task) => task.status === 'completed').length
+                }
+                hasGoal={activeSessionGoal != null}
+                showGitEnvPanel={showGitEnvPanel}
+                onToggleGitEnvPanel={() => {
+                  // 用户手动 toggle 后标记一次，本会话内自动展开机制让位于用户意图。
+                  gitPanelUserInteractedRef.current = true
+                  gitEnvPanelViewportCollapsedRef.current = false
+                  setShowGitEnvPanel((prev) => {
+                    const next = !prev
+                    if (next) void refreshGitStatus()
+                    return next
+                  })
+                }}
+                showInspector={showInspector}
+                setShowInspector={(v: boolean) => {
+                  setShowInspector(v)
+                  if (v) {
+                    setUnifiedPanelOpen(false)
+                    clearHtmlPresentation()
+                    setShowConfigPanel(false)
+                    setFilePreview(null)
+                  }
+                  if (v) setShowGitReviewPanel(false)
+                }}
+                showConfigPanel={showConfigPanel}
+                onToggleConfig={toggleConfigPanel}
+                showUnifiedPanel={unifiedPanelOpen}
+                onToggleUnifiedPanel={toggleUnifiedPanel}
+                showSessionSchedule={showSessionSchedule}
+                sessionScheduleEnabledCount={sessionScheduleEnabledCount}
+                onToggleSessionSchedule={() => {
+                  if (active == null) return
+                  if (showSessionSchedule) sessionCtx.closeSessionSchedule()
+                  else sessionCtx.openSessionSchedule(active)
+                }}
+                showTerminalPanel={showTerminalPanel}
+                setShowTerminalPanel={(v) =>
+                  v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
+                }
+                showSideChatPanel={showSideChatPanel}
+                onToggleSideChat={() => {
+                  if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
+                  else void openSideChatPanel()
+                }}
+                teamConfig={teamConfig}
+                orchestration={activeSessionOrchestration}
+                effectiveHostAgentId={effectiveHostAgentId}
+                agents={agents}
+                {...(active ? { onClearMessages: handleClearMessages, clearWillStopRun } : {})}
+                {...(onExpandSidebar ? { onExpandSidebar } : {})}
+              />
+            )}
+            <HtmlRenderProvider value={htmlRenderContext}>
+              <ChatStream
+                key="chat-stream"
+                sessionId={active}
+                optimisticMessages={optimisticUserMessages}
+                onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
+                workspaceId={activeSessionWorkspaceId}
+                workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
+                onStatusChange={setAgentStatus}
+                onUsageChange={setContextInputTokens}
+                onUsageDataChange={setSessionUsageData}
+                onMessagesChange={handleActiveMessagesChange}
+                onOptimisticSessionReset={handleOptimisticSessionReset}
+                onSessionStatusChange={handleActiveSessionStatusChange}
+                persistedSessionStatus={activeSession?.status ?? null}
+                onContextUsageChange={setContextUsage}
+                onContextLedgerChange={setContextLedger}
+                onProjectContextChange={setProjectContext}
+                onPlanProposed={(plan) => {
+                  setProposedPlan(
+                    plan == null || active == null ? null : { sessionId: active, plan },
+                  )
+                  if (plan != null) openUnifiedSidePanel('plan')
+                }}
+                onGoalChange={setActiveSessionGoal}
+                onOrchestrationChange={setActiveSessionOrchestration}
+                onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
+                clearTrigger={clearTrigger}
+                stopTrigger={active != null ? (sessionStopTriggers[active] ?? 0) : 0}
+                scrollToBottomTrigger={scrollToBottomTrigger}
+                teamConfig={teamConfig}
+                onFilePreview={handleFilePreview}
+                onReplyTo={handleReplyTo}
+                onReplyToMember={handleReplyToMember}
+                onResendMessage={handleResendMessage}
+                onLoadingChange={setActiveSessionLoading}
+                emptyStateVariant="loading"
+                modelSwitchMarkers={modelSwitchMarkers}
+                showTurnNavigator
+                scrollToTurnId={
+                  lineageAnchor != null && active === lineageAnchor.sessionId
+                    ? lineageAnchor.turnId
+                    : null
+                }
+                onTurnScrolled={() => setLineageAnchor(null)}
+                onRequestFork={(turnId, ordinal) => {
+                  setForkDialog({ turnId, ...(ordinal != null ? { ordinal } : {}) })
+                }}
+              />
+            </HtmlRenderProvider>
+            {userQuestion != null && (
+              <UserQuestionDock
+                key={`${userQuestion.sessionId}:${userQuestion.questionId}`}
+                data={userQuestion}
+                onAnswer={handleAnswerQuestion}
+                onCancel={handleCancelQuestion}
+              />
+            )}
+          </Fragment>
+        )}
+
+        {forkDialog != null && activeSession != null && (
+          <SessionForkDialog
+            key={`${activeSession.id}:${forkDialog.turnId}`}
+            open
+            sourceTitle={activeSession.title}
+            {...(forkDialog.ordinal != null ? { turnOrdinal: forkDialog.ordinal } : {})}
+            onCancel={() => setForkDialog(null)}
+            onConfirm={handleForkDialogConfirm}
+          />
+        )}
+
+        {showSessionSchedule && activeSession != null && (
+          <SessionSchedulePanel
+            open
+            session={activeSession}
+            onClose={sessionCtx.closeSessionSchedule}
+            onEnabledCountChange={setSessionScheduleEnabledCount}
+            onTasksChange={() => void sessionCtx.refreshSessionScheduleSummaries()}
+          />
+        )}
+
+        {showGitEnvPanel && (
+          <GitEnvPanel
+            status={gitStatus}
+            branchState={branchState}
+            runtimeWorktree={activeSession?.runtimeWorktree ?? null}
+            onClose={() => {
+              // 用户手动关闭面板，本会话内不再自动展开。
+              gitPanelUserInteractedRef.current = true
+              gitEnvPanelViewportCollapsedRef.current = false
+              setShowGitEnvPanel(false)
+            }}
+            onOpenCreateBranch={() => setGitCreateBranchOpen(true)}
+            onOpenCommit={() => setGitCommitModalOpen(true)}
+            onOpenBranches={() => setGitBranchModalOpen(true)}
+            onOpenReview={handleOpenGitReview}
+            onOpenTerminal={() => openUnifiedSidePanel('terminal')}
+            terminalRunningCount={
+              active != null ? (sessionCtx.sessionTerminalActivity[active]?.running ?? 0) : 0
+            }
+            tasks={activeSessionTasks}
+            goal={activeSessionGoal}
+            onGoalControl={handleGoalControl}
+            collaboration={
+              hasSessionCollaboration
+                ? {
+                    lineage: activeLineage,
+                    sourceTitle: lineageSource?.title ?? activeLineage?.sourceTitleSnapshot ?? null,
+                    sourceAvailable: lineageSource != null,
+                    childLineages: activeChildLineages,
+                    ...(lineageSource != null ? { onOpenSource: handleOpenLineageSource } : {}),
+                    onOpenChild: handleOpenLineageChild,
+                  }
+                : null
+            }
+          />
+        )}
+
+        {showEmptyHero ? (
+          <div className="chat-empty-composer-dock">
+            {/* 团队模式与热力图形态显示快捷提示轮播；快捷卡片形态由卡片自身承担引导。 */}
+            {teamConfig.enabled || heroUsage.mode === 'heatmap' ? <HeroTipsTicker /> : null}
+            {composerNode}
+          </div>
+        ) : (
+          composerNode
+        )}
+      </div>
+
+      {showInspector && (
+        <ChatInspector
+          session={activeSession}
+          workspace={activeSessionWorkspace ?? activeWorkspace}
+          messages={active == null ? [] : activeVisibleMessages}
+          usageData={sessionUsageData}
+          projectContext={projectContext}
+          contextUsage={contextUsage}
+          contextLedger={contextLedger}
+          contextInputTokens={contextInputTokens}
+          providerContextWindow={activeProviderContextWindow}
+          providerId={activeProvider?.provider}
+          turnPromptSnapshots={turnPromptSnapshots}
+          runningTeamAgentIds={extractRunningTeamMemberIds(
+            activeMessages,
+            getBlockTeamMemberContext,
+          )}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+          teamConfig={teamConfig}
+          agents={agents}
+          onChangeTeamConfig={handleInspectorChangeConfig}
+          onOpenProjectFolder={() => {
+            const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
+            if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
+          }}
+          checkpointAvailable={checkpointAvailable}
+          checkpointEnabled={checkpointEnabled}
+          onOpenCheckpointTimeline={() => setShowCheckpointTimeline(true)}
+        />
+      )}
+
+      {gitCommitModalOpen && isGitWorktree && (
+        <GitCommitDialog
+          status={gitStatus}
+          branchState={branchState}
+          onClose={() => setGitCommitModalOpen(false)}
+          onCommit={handleCommitGitChanges}
+          onPush={handlePushGitChanges}
+          onPull={handlePullGitChanges}
+          onRefresh={refreshGitStatus}
+        />
+      )}
+
+      {gitBranchModalOpen && isGitWorktree && (
+        <GitBranchDialog
+          status={gitStatus}
+          branchState={branchState}
+          onClose={() => setGitBranchModalOpen(false)}
+          onSwitchBranch={handleSwitchBranch}
+          onCheckoutTag={handleCheckoutTag}
+          onCreateBranchFromTag={handleCreateBranchFromTag}
+          onFetch={handleFetchBranches}
+          onOpenCreateBranch={() => {
+            setGitBranchModalOpen(false)
+            setGitCreateBranchOpen(true)
+          }}
+        />
+      )}
+
+      {gitCreateBranchOpen && isGitWorktree && (
+        <GitCreateBranchDialog
+          onClose={() => setGitCreateBranchOpen(false)}
+          onCreateBranch={async (branch) => {
+            await handleCreateBranch(branch)
+            setGitCreateBranchOpen(false)
+            await refreshGitStatus()
+          }}
+        />
+      )}
+
+      {showConfigPanel && (active != null || activeWorkspace != null) && (
+        <ChatConfigPanel
+          session={activeSession}
+          workspace={activeWorkspace}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+          {...(() => {
+            const aid = teamConfig.enabled
+              ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
+              : (activeSession?.agentId ?? undefined)
+            return aid != null ? { agentId: aid } : {}
+          })()}
+        />
+      )}
+
+      {/* 空会话（无活动会话且未选项目）时终端/审查等 tab 缺少工作区上下文不渲染；
+          subapp tab 不依赖工作区——胶囊启动器在空会话也要能打开侧板应用 */}
+      {unifiedPanelOpen &&
+        (active != null ||
+          activeWorkspace != null ||
+          (activeUnifiedSideTab ?? unifiedSideTabs[0] ?? '').startsWith('subapp:')) && (
+          <UnifiedSessionSidePanel
+            tabs={unifiedSideTabs}
+            activeTab={
+              activeUnifiedSideTab != null ? activeUnifiedSideTab : (unifiedSideTabs[0] ?? null)
+            }
+            width={sideChatWidth}
+            panelApps={panelApps}
+            onWidthChange={setSideChatWidth}
+            onSelect={setActiveUnifiedSideTab}
+            onOpen={openUnifiedSidePanel}
+            onCloseTab={closeUnifiedSidePanel}
+          >
+            {activeUnifiedSideTab === 'code' ? (
+              <CodeViewerPanel
+                files={codeFiles}
+                activeAbsPath={activeCodePath}
+                viewMode={codeViewMode}
+                onSelectActive={setActiveCodePath}
+                onCloseFile={closeCodeFile}
+                onCloseFiles={closeCodeFiles}
+                onViewModeChange={setCodeViewMode}
+                workspaceId={gitWorkspaceId ?? null}
+                explorerVisible={codeExplorerVisible}
+                explorerWidth={codeExplorerWidth}
+                explorerExpandedDirs={codeExplorerExpandedDirs}
+                workspaceRootPath={gitWorkspace?.rootPath ?? null}
+                onExplorerVisibleChange={setCodeExplorerVisible}
+                onExplorerWidthChange={setCodeExplorerWidth}
+                onExplorerExpandedChange={setCodeExplorerExpandedDirs}
+                onOpenFileFromExplorer={(rel) =>
+                  shouldOpenInEditorByDefault(rel)
+                    ? openInCodeTab(rel)
+                    : handleFilePreview(rel, 'text')
+                }
+                onPreviewFileFromExplorer={(rel) =>
+                  handleFilePreview(rel, 'text', { mode: 'preview' })
+                }
+                onEditFileFromExplorer={(rel) => openInCodeTab(rel)}
+                onAddToChatFromExplorer={(rel) => void addExplorerNodeToConversation(rel)}
+                gitStatus={gitStatus}
+                onGitStatusApplied={applyGitStatus}
+                onRefreshGitStatus={() => void refreshGitStatus()}
+                onOpenFileFromGit={(rel) => {
+                  setCodeViewMode('diff')
+                  openInCodeTab(rel)
+                }}
+                onOpenFileFromSearch={(rel, line) => {
+                  // 搜索结果命中必为文本文件：编辑器打开并定位到匹配行
+                  setCodeViewMode('source')
+                  openInCodeTab(rel, line != null ? { lineNumber: line } : undefined)
+                }}
+              />
+            ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+              <GitReviewPanel
+                workspaceId={gitWorkspaceId}
+                workspaceRootPath={gitWorkspace?.rootPath ?? null}
+                status={gitStatus}
+                width={sideChatWidth}
+                onWidthChange={setSideChatWidth}
+                onRefresh={refreshGitStatus}
+                onClose={() => closeUnifiedSidePanel('review')}
+                onOpenInEditor={(path) => {
+                  // 三连跳：切代码面板 → 展示 Git 面板 → 打开该文件 diff 视图可直接编辑
+                  setCodeViewMode('diff')
+                  openInCodeTab(path)
+                  openGitPanel()
+                }}
+              />
+            ) : activeUnifiedSideTab === 'html' && activeHtmlPanelBlock != null ? (
+              <HtmlRenderProvider value={htmlRenderContext}>
+                <RenderHtmlBlock block={activeHtmlPanelBlock} variant="side-panel" />
+              </HtmlRenderProvider>
+            ) : activeUnifiedSideTab === 'plan' ? (
+              <PlanSidePanel
+                session={activeSession}
+                messages={activeVisibleMessages}
+                proposedPlan={
+                  proposedPlan != null && active != null && proposedPlan.sessionId === active
+                    ? proposedPlan
+                    : null
+                }
+                onClose={() => closeUnifiedSidePanel('plan')}
+                onClearProposedPlan={() => setProposedPlan(null)}
+                onPlanApproved={(sessionId) => {
+                  sessionCtx.updateSessionInList(sessionId, { permissionMode: 'claude-auto-edits' })
+                }}
+              />
+            ) : activeUnifiedSideTab === 'terminal' && showTerminalPanel ? (
+              (() => {
+                const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
+                return (
+                  <BuiltInTerminalPanel
+                    sessionId={terminalSessionId}
+                    workspace={activeSessionWorkspace ?? activeWorkspace}
+                    onClose={() => closeUnifiedSidePanel('terminal')}
+                  />
+                )
+              })()
+            ) : activeUnifiedSideTab === 'browser' ? (
+              <BrowserChrome variant="panel" store={panelBrowserTabsStore} />
+            ) : activeUnifiedSideTab === 'side-chat' && showSideChatPanel ? (
+              <SideChatPanel
+                workspaceName={sideChatWorkspace?.name ?? activeWorkspace?.name ?? '当前项目'}
+                agentStatus={sideChatAgentStatus}
+                creating={sideChatCreating}
+                width={sideChatWidth}
+                onWidthChange={setSideChatWidth}
+                onClose={() => closeUnifiedSidePanel('side-chat')}
+                onNew={() => {
+                  void openSideChatPanel({ replace: true })
+                }}
+                sessions={sideChatSessionCandidates}
+                currentSessionId={sideChatSessionId}
+                disabledSessionId={disabledSideChatSessionId}
+                onSelectSession={switchSideChatSession}
+                embedded
+              >
+                {sideChatSessionId != null &&
+                sideChatSession != null &&
+                sideChatMatchesActiveWorkspace ? (
+                  <>
+                    <HtmlRenderProvider value={htmlRenderContext}>
+                      <ChatStream
+                        key={`side-chat-stream-${sideChatSessionId}`}
+                        sessionId={sideChatSessionId}
+                        optimisticMessages={optimisticUserMessages}
+                        onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
+                        workspaceId={sideChatWorkspace?.id ?? null}
+                        workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
+                        onStatusChange={setSideChatAgentStatus}
+                        onUsageChange={setSideChatContextInputTokens}
+                        onUsageDataChange={() => {}}
+                        onMessagesChange={handleSideChatMessagesChange}
+                        onOptimisticSessionReset={handleOptimisticSessionReset}
+                        onSessionStatusChange={(status) =>
+                          setSessionStatus(sideChatSessionId, status)
+                        }
+                        persistedSessionStatus={sideChatSession?.status ?? null}
+                        onContextUsageChange={setSideChatContextUsage}
+                        onContextLedgerChange={setSideChatContextLedger}
+                        onProjectContextChange={() => {}}
+                        onPlanProposed={() => {}}
+                        onTurnPromptSnapshotsChange={() => {}}
+                        stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
+                        scrollToBottomTrigger={sideChatScrollToBottomTrigger}
+                        teamConfig={teamConfig}
+                        onFilePreview={handleFilePreview}
+                        onLoadingChange={() => {}}
+                        onReplyTo={handleReplyTo}
+                        onReplyToMember={handleReplyToMember}
+                      />
+                    </HtmlRenderProvider>
+                    <ComposerV2
+                      session={sideChatSession}
+                      workspace={sideChatWorkspace}
+                      providers={providers}
+                      agents={agents}
+                      selectedProviderId={selectedProviderId}
+                      setSelectedProviderId={setSelectedProviderId}
+                      branchState={branchState}
+                      contextInputTokens={sideChatContextInputTokens}
+                      contextUsage={sideChatContextUsage}
+                      contextLedger={sideChatContextLedger}
+                      isWorking={isComposerSessionWorking(sideChatSession.status)}
+                      messages={sideChatVisibleMessages}
+                      approvalRequest={null}
+                      onCreateSession={(options) =>
+                        createSideChatSession(options as Record<string, unknown>)
+                      }
+                      onUpdateSession={async (patch) => {
+                        await updateSession({ sessionId: sideChatSessionId, ...patch })
+                        await sessionCtx.refreshData()
+                      }}
+                      onCommandComplete={(summary) => {
+                        sessionCtx.updateSessionInList(summary.id, summary)
+                      }}
+                      onSwitchBranch={handleComposerSwitchBranch}
+                      onRefreshBranches={refreshBranches}
+                      onFetchBranches={handleFetchBranches}
+                      onCreateBranch={handleCreateBranch}
+                      onCheckoutBranchTag={handleCheckoutTag}
+                      onCreateBranchFromTag={handleCreateBranchFromTag}
+                      onCancelSession={handleCancelSession}
+                      onSent={handleSideChatSent}
+                      showProjectPicker={false}
+                      workspaces={workspaces}
+                      activeWorkspaceId={sideChatWorkspace?.id ?? activeWorkspaceId}
+                      onPickProject={pickProjectFolder}
+                      onUseNoProject={() => {}}
+                      onSwitchWorkspace={switchToWorkspace}
+                      teamConfig={teamConfig}
+                      activeTeamName={activeTeamName}
+                      effectiveHostAgentId={effectiveHostAgentId}
+                      onChangeTeamConfig={updateTeamConfig}
+                      onOpenTeamInspector={openInspector}
+                      runningTeamAgentIds={[]}
+                      onOpenSkillStore={openSkillStore}
+                      hideBranchSelect={hideComposerBranchSelect}
+                      replyTo={null}
+                      optimisticUserSendCallbacks={optimisticUserSendCallbacks}
+                      onOptimisticQueueStateChange={handleOptimisticQueueState}
+                      onOptimisticQueueTurnCancelled={handleOptimisticQueueTurnCancelled}
+                    />
+                  </>
+                ) : (
+                  <div className="side-chat-panel-loading">
+                    <Icons.Spinner size={22} className="side-chat-panel-loading-spin" />
+                  </div>
+                )}
+              </SideChatPanel>
+            ) : activeUnifiedSideTab != null &&
+              activeUnifiedSideTab.startsWith('subapp:') &&
+              appIdOfSubAppPanelKind(activeUnifiedSideTab) != null ? (
+              <UnifiedSubAppPanel appId={appIdOfSubAppPanelKind(activeUnifiedSideTab)!} />
+            ) : (
+              <UnifiedSidePanelPicker onOpen={openUnifiedSidePanel} panelApps={panelApps} />
+            )}
+          </UnifiedSessionSidePanel>
+        )}
+
+      {filePreview != null && (
+        <FilePreviewPanel
+          filePath={filePreview.filePath}
+          fileType={filePreview.fileType}
+          {...((activeSessionWorkspace ?? activeWorkspace)?.rootPath != null
+            ? { workspaceRootPath: (activeSessionWorkspace ?? activeWorkspace)!.rootPath }
+            : {})}
+          onClose={() => setFilePreview(null)}
+        />
+      )}
+
+      <CheckpointTimelinePanel
+        sessionId={active}
+        open={showCheckpointTimeline}
+        onClose={() => setShowCheckpointTimeline(false)}
+        onRestore={(checkpointId) =>
+          active != null ? executeCheckpointRestore(active, checkpointId) : Promise.resolve()
+        }
+        onEnabledChange={setCheckpointEnabled}
+      />
+    </div>
+  )
+}
+
+/** optimistic 用户气泡是否可单独删除：尚未落库（无 eventIds）且不在等待 SDK 承接的
+ *  accepted 态（accepted 很快会被持久化 user_message 替换，届时走正常事件删除路径）。 */
+function isDeletableOptimisticUserMessage(message: UIMessage): boolean {
+  return (
+    message.clientId != null &&
+    message.deliveryState != null &&
+    message.deliveryState !== 'accepted'
+  )
+}
+
+function ChatStream({
+  sessionId,
+  optimisticMessages,
+  onDeleteOptimisticMessages,
+  workspaceId,
+  workspaceRootPath,
+  onStatusChange,
+  onUsageChange,
+  onUsageDataChange,
+  onMessagesChange,
+  onOptimisticSessionReset,
+  onSessionStatusChange,
+  persistedSessionStatus,
+  onContextUsageChange,
+  onContextLedgerChange,
+  onProjectContextChange,
+  onPlanProposed,
+  onGoalChange,
+  onOrchestrationChange,
+  onTurnPromptSnapshotsChange,
+  clearTrigger,
+  stopTrigger,
+  scrollToBottomTrigger,
+  teamConfig,
+  onReplyTo,
+  onReplyToMember,
+  onFilePreview,
+  onResendMessage,
+  onLoadingChange,
+  emptyStateVariant = 'hint',
+  modelSwitchMarkers = [],
+  showTurnNavigator = false,
+  scrollToTurnId = null,
+  onTurnScrolled,
+  onRequestFork,
+}: {
+  sessionId: SessionId
+  optimisticMessages?: OptimisticUserMessage[]
+  /** 删除尚未落库的 optimistic 用户气泡（starting 窗口被取消/发送失败等）：按 clientId 摘除本地 state。 */
+  onDeleteOptimisticMessages?: (clientIds: string[]) => void
+  /** 当前会话工作区 ID。 */
+  workspaceId: string | null
+  /** 当前会话工作区根目录，用于路径展示与旧汇总中的嵌套 worktree 清理。 */
+  workspaceRootPath: string | null
+  onStatusChange: (s: string) => void
+  onUsageChange: (tokens: number) => void
+  onUsageDataChange: (data: SessionUsageData) => void
+  onMessagesChange: (messages: UIMessage[]) => void
+  onOptimisticSessionReset?: (sessionId: SessionId) => void
+  onSessionStatusChange: (status: SessionSummary['status']) => void
+  /** 会话持久化摘要状态（来自 sessionCtx.sessions）。重放历史事件时用于抑制
+   *  「瞬态状态 + 空会话」被误判为执行中（见 chat-session-status.getLatestAgentStatus）。 */
+  persistedSessionStatus?: SessionSummary['status'] | null
+  onContextUsageChange: (snapshot: ContextUsageState | null) => void
+  onContextLedgerChange: (snapshot: ContextLedgerState | null) => void
+  onProjectContextChange: (snapshot: ProjectContextState | null) => void
+  /** 上报当前会话「待审批计划」状态：有则传 plan 文本，无则传 null（清空，避免切换会话后残留） */
+  onPlanProposed: (plan: string | null) => void
+  /** 上报当前会话「活跃 Goal」状态：有则传 GoalSnapshot，无则传 null。 */
+  onGoalChange?: (goal: GoalSnapshot | null) => void
+  /** 上报当前会话「宿主是否处于编排模式」：一旦某轮触发过就一直是非 null，直到会话被清空/切换。 */
+  onOrchestrationChange?: (status: OrchestrationSnapshot | null) => void
+  onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
+  /** 递增时清空 ChatStream 内部消息状态 */
+  clearTrigger?: number
+  /** 递增时立即结束当前会话的 renderer streaming 状态（用户显式停止兜底） */
+  stopTrigger?: number
+  /** 递增时立即把会话内容区滚到底部（用户发送消息瞬间触发，无需等 user_message 事件回流） */
+  scrollToBottomTrigger?: number
+  /** 当前会话历史的加载状态变化（用于父级抑制「空会话 hero」误闪） */
+  onLoadingChange?: (loading: boolean) => void
+  teamConfig: TeamModeConfig
+  onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string, selectedText?: string) => void
+  onReplyToMember?: (args: {
+    messageId: string
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
+  onFilePreview?: FileOpenHandler
+  /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
+  onResendMessage?: (payload: ComposerPrefillPayload) => void
+  /**
+   * 消息为空且非历史加载时的占位形态：
+   *  - 'hint'（默认）：静态「开始对话」提示，用于侧边 ChatStream 这类真正可能长期为空的场景；
+   *  - 'loading'：圆环 loading 动画，用于主会话流——发送后到首条消息/Agent 运行之间的过渡窗口，
+   *    此时 hero 已隐藏、stream 已显形但 messages 仍为空，用 loading 取代静态空态避免「空会话」闪现。
+   */
+  emptyStateVariant?: 'hint' | 'loading'
+  modelSwitchMarkers?: ModelSwitchMarker[]
+  /** 仅主会话启用；侧聊和窄内容区保持原布局。 */
+  showTurnNavigator?: boolean
+  /** 从来源条跳转时，定位到对应的分叉锚点轮次。 */
+  scrollToTurnId?: TurnId | null
+  onTurnScrolled?: () => void
+  /** 在一个已完成轮次尾部打开物化分叉流程。 */
+  onRequestFork?: (turnId: TurnId, ordinal?: number) => void
+}) {
+  const streamRef = useRef<HTMLDivElement | null>(null)
+  const streamId = useId()
+  const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
+  const [messages, setMessages] = useState<UIMessage[]>([])
+  const displayMessages = useMemo(
+    () =>
+      projectVisibleChatMessages(
+        mergeOptimisticUserMessages(messages, optimisticMessages ?? [], sessionId),
+      ),
+    [messages, optimisticMessages, sessionId],
+  )
+  const turnNavItems = useMemo(() => buildChatTurnNavItems(displayMessages), [displayMessages])
+  const sessionTaskTimeline = useMemo(
+    () => buildSessionTaskTimeline(displayMessages),
+    [displayMessages],
+  )
+  const messagesRef = useRef<UIMessage[]>([])
+  const [agentIsRunning, setAgentIsRunning] = useState(false)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [multiSelectMode, setMultiSelectMode] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
+  // 窗口化加载：是否还有更早历史 + 是否正在加载更早一页（顶部 loading 指示）
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false)
+  const builderRef = useRef(new MessageBuilder())
+  const isStreamingRef = useRef(false)
+  const persistedSessionStatusRef = useRef(persistedSessionStatus)
+  persistedSessionStatusRef.current = persistedSessionStatus
+  const userScrolledRef = useRef(false)
+  const hydratingRef = useRef(false)
+  const bufferedEventsRef = useRef<AgentEvent[]>([])
+  const liveEventBufferRef = useRef<LiveAgentEventBuffer | null>(null)
+  const previousStopTriggerRef = useRef(stopTrigger ?? 0)
+  const processLiveEventBatchRef = useRef<(events: AgentEvent[]) => void>(() => {})
+  const historyLoadIdRef = useRef(0)
+  // 死循环护栏/探针：切换会话时历史加载 effect 正常只应跑 1 次。若同一会话 1s 内高频
+  // 重跑，说明该 effect 的依赖数组又混入了不稳定引用（历史回归见 commit 870de386b：
+  // drainBufferedLiveEvents→processLiveEvent→内联 onPlanProposed 导致 session:get-history
+  // 无限重发）。DEV 下越过阈值立即报警，便于第一时间定位。
+  const historyReloadProbeRef = useRef({ windowStart: 0, count: 0 })
+  // 过滤 .gitignore 忽略路径用：workspaceId 用 ref 跟踪最新值，
+  // 避免 commitEventsToView / useIpcStream 的 callback 因 deps 变化而重建。
+  const workspaceIdRef = useRef<string | null>(workspaceId)
+  workspaceIdRef.current = workspaceId
+  // 切换/初始加载后需要把视图强制贴到底部（展示最新消息）；置位后由自动滚动 effect 处理。
+  const scrollToBottomPendingRef = useRef(false)
+  // 发送成功后父级会先乐观地把 session 摘要设为 running；在 user_message 事件回流前，
+  // 这个 trigger 仍未被确认，不能让摘要状态单独驱动「执行任务中」占位。
+  const scrollToBottomTriggerRef = useRef(scrollToBottomTrigger ?? 0)
+  scrollToBottomTriggerRef.current = scrollToBottomTrigger ?? 0
+  const acknowledgedScrollToBottomTriggerRef = useRef(scrollToBottomTrigger ?? 0)
+  // 初始贴底完成前，禁止「滚动到顶懒加载更早」触发——否则初次加载 scrollTop≈0 会立刻
+  // 触发翻页 + 锚定，把视图一路拉到最早的消息（用户报告的「从最早开始 / 卡住」根因）。
+  const initialScrollDoneRef = useRef(false)
+  // 程序性贴底（流式跟随 / 发送 / 切会话 pin）最近一次的时间戳。配合 pinToBottom 与
+  // handleScroll 的「程序滚动守卫」：程序写 scrollTop 会派生 scroll 事件，若不区分，handleScroll
+  // 会按 distance 重算 userScrolledRef，把用户由 wheel/touchstart 设定的「已上滚」状态冲掉——
+  // 这是「流式输出与用户上滚冲突、滚不上去被弹回」的根因。
+  const programmaticScrollAtRef = useRef(0)
+  // 统一程序性贴底入口：先记录时间戳（供 handleScroll 守卫忽略其派生的 scroll 事件），再写 scrollTop。
+  const pinToBottom = (el: HTMLElement) => {
+    programmaticScrollAtRef.current =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+    el.scrollTop = el.scrollHeight
+  }
+  const usageRef = useRef<SessionUsageData>({
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    cacheHitTokens: 0,
+    cacheWriteTokens: 0,
+    cacheHitRate: null,
+    estimatedCostUsd: 0,
+    contextWindow: 0,
+    turns: [],
+  })
+  const { invoke: getHistory } = useIpcInvoke('session:get-history')
+  const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
+  const { sessions, agents } = useSessionSidebar()
+  const session = sessions.find((item) => item.id === sessionId)
+  const assistantAgentId = teamConfig.enabled
+    ? teamConfig.hostAgentId
+    : (session?.agentId ?? 'platform-manager-agent')
+  const assistantAgent = agents.find((item) => item.id === assistantAgentId)
+  const assistantName = assistantAgent?.name ?? 'SparkWork'
+  const assistantAvatar = getAgentAvatarConfig(
+    assistantAgent?.metadata,
+    assistantAgentId,
+    assistantName,
+  )
+  const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  // ── 历史加载状态 ──
+  // loadedEventsRef：当前已加载到内存的历史 + 实时 event；既用于删除消息时同步剔除，
+  // 也作为「加载更早」时增量重建消息的唯一数据源。
+  const loadedEventsRef = useRef<AgentEvent[]>([])
+  const loadedEventIdsRef = useRef<Set<string>>(new Set())
+  // 窗口化：当前已加载最旧 event 的 seq（向上翻页 beforeSeq）、是否还有更早、是否正在翻页
+  const oldestSeqRef = useRef<number | undefined>(undefined)
+  const hasMoreHistoryRef = useRef(false)
+  const loadingOlderRef = useRef(false)
+  const loadOlderRef = useRef<() => void>(() => {})
+  const viewCallbacksRef = useRef({
+    onMessagesChange,
+    onOptimisticSessionReset,
+    onUsageChange,
+    onUsageDataChange,
+    onStatusChange,
+    onSessionStatusChange,
+    onContextUsageChange,
+    onContextLedgerChange,
+    onProjectContextChange,
+    onTurnPromptSnapshotsChange,
+    onPlanProposed,
+    onGoalChange,
+    onOrchestrationChange,
+    onLoadingChange,
+  })
+  viewCallbacksRef.current = {
+    onMessagesChange,
+    onOptimisticSessionReset,
+    onUsageChange,
+    onUsageDataChange,
+    onStatusChange,
+    onSessionStatusChange,
+    onContextUsageChange,
+    onContextLedgerChange,
+    onProjectContextChange,
+    onTurnPromptSnapshotsChange,
+    onPlanProposed,
+    onGoalChange,
+    onOrchestrationChange,
+    onLoadingChange,
+  }
+
+  const flushMessages = useCallback(() => {
+    const nextMessages = [...builderRef.current.getAllMessages()]
+    setMessages(nextMessages)
+    viewCallbacksRef.current.onMessagesChange(nextMessages)
+  }, [])
+
+  const processLiveEvent = useCallback(
+    (event: AgentEvent): boolean => {
+      if (event.sessionId !== sessionId) return false
+      if (loadedEventIdsRef.current.has(event.id)) return false
+      const callbacks = viewCallbacksRef.current
+      const hadRunningTeamMemberActivity =
+        event.type === 'agent_status' &&
+        hasRunningTeamMemberActivity(builderRef.current.getAllMessages(), getBlockTeamMemberContext)
+      // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
+      // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
+      // 让随后的 user/assistant/completed 在干净的画布上重新渲染。
+      if (event.type === 'session_history_reset') {
+        callbacks.onOptimisticSessionReset?.(sessionId)
+        builderRef.current.processEvent(event) // 内部已调用 clearAll
+        loadedEventsRef.current = [event]
+        loadedEventIdsRef.current = new Set([event.id])
+        usageRef.current = {
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          cacheHitTokens: 0,
+          cacheWriteTokens: 0,
+          cacheHitRate: null,
+          estimatedCostUsd: 0,
+          contextWindow: 0,
+          turns: [],
+        }
+        setMessages([])
+        callbacks.onMessagesChange([])
+        callbacks.onUsageDataChange(usageRef.current)
+        callbacks.onContextUsageChange(null)
+        callbacks.onContextLedgerChange(null)
+        callbacks.onProjectContextChange(null)
+        callbacks.onTurnPromptSnapshotsChange([])
+        callbacks.onStatusChange('')
+        setAgentIsRunning(false)
+        isStreamingRef.current = false
+        return false
+      }
+      builderRef.current.processEvent(event)
+      loadedEventsRef.current.push(event)
+      loadedEventIdsRef.current.add(event.id)
+
+      const providerContextInputUpdate = getProviderContextInputUpdate(event)
+      if (providerContextInputUpdate != null) callbacks.onUsageChange(providerContextInputUpdate)
+
+      if (event.type === 'agent_status') {
+        const keepTeamSessionRunning =
+          hadRunningTeamMemberActivity ||
+          hasRunningTeamMemberActivity(
+            builderRef.current.getAllMessages(),
+            getBlockTeamMemberContext,
+          )
+        setAgentIsRunning(isRunningAgentStatus(event.status))
+        applyAgentStatus(
+          event.status,
+          callbacks.onStatusChange,
+          callbacks.onSessionStatusChange,
+          isStreamingRef,
+          keepTeamSessionRunning,
+        )
+        if (
+          event.status === 'completed' ||
+          event.status === 'error' ||
+          event.status === 'cancelled' ||
+          event.status === 'idle'
+        ) {
+          const snapshot = builderRef.current.getAllMessages()
+          if (snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+            void sanitizeTurnFileSummaries(snapshot, workspaceRootPath).then((filtered) => {
+              if (filtered === snapshot) return
+              setMessages(filtered)
+              callbacks.onMessagesChange(filtered)
+            })
+          }
+        }
+      }
+      if (event.type === 'usage_update') {
+        const snapshot: UsageSnapshot = {
+          turnId: event.turnId,
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          reasoningOutputTokens: event.reasoningOutputTokens ?? 0,
+          cacheHitTokens: event.cacheHitTokens ?? 0,
+          cacheWriteTokens: event.cacheWriteTokens ?? 0,
+          estimatedCostUsd: event.estimatedCostUsd ?? 0,
+          timestamp: event.timestamp,
+        }
+        const prev = usageRef.current
+        // 计数字段沿用既有粘滞语义（最近已知值，供 token 面板展示）；命中率绝不
+        // 能拿粘滞分子配当前轮分母——provider 切换后会捏造出 >100% 的假命中，
+        // 只从「同一事件」的完整元组计算，事件未上报缓存字段时沿用上一次已度量值。
+        const cacheHitTokens = event.cacheHitTokens ?? prev.cacheHitTokens
+        const cacheWriteTokens = event.cacheWriteTokens ?? prev.cacheWriteTokens
+        const next: SessionUsageData = {
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          reasoningOutputTokens: event.reasoningOutputTokens ?? prev.reasoningOutputTokens,
+          cacheHitTokens,
+          cacheWriteTokens,
+          cacheHitRate:
+            event.cacheHitTokens != null || event.cacheWriteTokens != null
+              ? computeCacheHitRate({
+                  provider: event.provider,
+                  inputTokens: event.inputTokens,
+                  cacheHitTokens: event.cacheHitTokens,
+                  cacheWriteTokens: event.cacheWriteTokens,
+                })
+              : prev.cacheHitRate,
+          estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
+          contextWindow: prev.contextWindow,
+          turns: [...prev.turns, snapshot],
+        }
+        usageRef.current = next
+        callbacks.onUsageDataChange(next)
+      }
+      if (event.type === 'user_message') {
+        acknowledgedScrollToBottomTriggerRef.current = scrollToBottomTriggerRef.current
+        userScrolledRef.current = false
+        setShowScrollToBottom(false)
+        isStreamingRef.current = true
+        setAgentIsRunning(true)
+      }
+
+      if (event.type === 'context_usage') {
+        callbacks.onContextUsageChange({
+          estimatedTokens: event.estimatedTokens,
+          softLimitTokens: event.softLimitTokens,
+          contextWindowTokens: event.contextWindowTokens,
+          compactedThisTurn: event.compacted,
+        })
+      }
+
+      if (event.type === 'context_ledger') {
+        callbacks.onContextLedgerChange(toContextLedgerState(event))
+      }
+
+      if (event.type === 'project_context_loaded') {
+        callbacks.onProjectContextChange(event)
+      }
+
+      if (event.type === 'plan_proposed') {
+        callbacks.onPlanProposed(event.plan)
+      }
+
+      if (event.type === 'plan_rejected') {
+        callbacks.onPlanProposed(null)
+      }
+
+      if (
+        event.type === 'goal_started' ||
+        event.type === 'goal_progress' ||
+        event.type === 'goal_resumed' ||
+        event.type === 'goal_paused' ||
+        event.type === 'goal_completed' ||
+        event.type === 'goal_failed' ||
+        event.type === 'goal_cleared' ||
+        event.type === 'goal_budget_stopped' ||
+        event.type === 'goal_contract_drafting' ||
+        event.type === 'goal_contract_proposed'
+      ) {
+        callbacks.onGoalChange?.(builderRef.current.getActiveGoal())
+      }
+
+      if (event.type === 'orchestration_status') {
+        callbacks.onOrchestrationChange?.(builderRef.current.getOrchestrationStatus())
+      }
+
+      if (event.type === 'user_message') {
+        callbacks.onPlanProposed(null)
+      }
+
+      if (event.type === 'turn_prompt_snapshot' || event.type === 'turn_runtime_metrics') {
+        callbacks.onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+      }
+
+      return true
+    },
+    [sessionId],
+  )
+
+  const processLiveEventBatch = useCallback(
+    (events: AgentEvent[]) => {
+      let shouldFlushMessages = false
+      for (const event of events) {
+        if (processLiveEvent(event)) shouldFlushMessages = true
+      }
+      if (shouldFlushMessages) flushMessages()
+    },
+    [flushMessages, processLiveEvent],
+  )
+  useLayoutEffect(() => {
+    processLiveEventBatchRef.current = processLiveEventBatch
+  }, [processLiveEventBatch])
+
+  useEffect(() => {
+    const buffer = new LiveAgentEventBuffer({
+      onFlush: (events) => processLiveEventBatchRef.current(events),
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+    })
+    liveEventBufferRef.current = buffer
+    return () => {
+      buffer.dispose()
+      if (liveEventBufferRef.current === buffer) liveEventBufferRef.current = null
+    }
+  }, [])
+
+  const enqueueLiveEvent = useCallback((event: AgentEvent) => {
+    const buffer = liveEventBufferRef.current
+    if (buffer == null) {
+      processLiveEventBatchRef.current([event])
+      return
+    }
+    buffer.enqueue(event)
+  }, [])
+
+  const drainBufferedLiveEvents = useCallback(
+    (loadId: number) => {
+      if (historyLoadIdRef.current !== loadId) return
+      const buffered = bufferedEventsRef.current
+      bufferedEventsRef.current = []
+      for (const event of buffered) enqueueLiveEvent(event)
+    },
+    [enqueueLiveEvent],
+  )
+
+  /**
+   * commitEventsToView — 把一段已加载的 event 窗口构建成消息并渲染。
+   * 初始加载 / 加载更早 共用。
+   * deriveMeta=true 时同时从 events 派生 usage/status/context/plan（初始加载）；
+   * deriveMeta=false 时只重建消息列表，保留实时事件维护的 usage/status（加载更早，
+   * 避免把 live 累积的用量/状态覆盖回历史快照）。
+   */
+  const commitEventsToView = useCallback(
+    async (
+      events: AgentEvent[],
+      deriveMeta: boolean,
+      opts: { shouldContinue?: () => boolean } = {},
+    ) => {
+      const callbacks = viewCallbacksRef.current
+      const builder = new MessageBuilder()
+      for (let i = 0; i < events.length; i++) {
+        if (opts.shouldContinue?.() === false) return []
+        const event = events[i]
+        if (event != null) builder.processEvent(event)
+        if (events.length > 200 && (i + 1) % 200 === 0) {
+          await yieldToBrowser()
+        }
+      }
+      if (opts.shouldContinue?.() === false) return []
+      builderRef.current = builder
+      const nextMessages = builder.getAllMessages()
+      setMessages(nextMessages)
+      callbacks.onMessagesChange(nextMessages)
+      // 历史加载后清理旧采集逻辑误收集的嵌套 Agent worktree。
+      // fire-and-forget：无变化时 sanitizer 返回原引用，setMessages 不会被触发。
+      if (nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+        void sanitizeTurnFileSummaries(nextMessages, workspaceRootPath).then((filtered) => {
+          if (filtered === nextMessages) return
+          setMessages(filtered)
+          callbacks.onMessagesChange(filtered)
+        })
+      }
+      if (!deriveMeta) return nextMessages
+
+      // 上下文/用量派生与消息回放使用同一窗口：session_history_reset 标记之后的事件。
+      // 否则清空后未发新轮次的会话重进时，最新 ledger/usage 会取到标记之前的旧值。
+      const eventsSinceReset = eventsAfterLastHistoryReset(events)
+
+      callbacks.onUsageChange(getLatestInputTokens(eventsSinceReset))
+      const historyUsage = buildUsageDataFromEvents(eventsSinceReset)
+      usageRef.current = historyUsage
+      callbacks.onUsageDataChange(historyUsage)
+      const latestStatus = getLatestAgentStatus(
+        events,
+        persistedSessionStatusRef.current ?? undefined,
+      )
+      setAgentIsRunning(isRunningAgentStatus(latestStatus))
+      if (latestStatus != null) {
+        applyAgentStatus(
+          latestStatus,
+          callbacks.onStatusChange,
+          callbacks.onSessionStatusChange,
+          isStreamingRef,
+          hasRunningTeamMemberActivity(nextMessages, getBlockTeamMemberContext),
+        )
+      }
+      const latestContext = getLatestContextUsageEvent(eventsSinceReset)
+      callbacks.onContextUsageChange(
+        latestContext != null
+          ? {
+              estimatedTokens: latestContext.estimatedTokens,
+              softLimitTokens: latestContext.softLimitTokens,
+              contextWindowTokens: latestContext.contextWindowTokens,
+              compactedThisTurn: latestContext.compacted,
+            }
+          : null,
+      )
+      const latestLedger = getLatestContextLedgerEvent(eventsSinceReset)
+      callbacks.onContextLedgerChange(
+        latestLedger != null ? toContextLedgerState(latestLedger) : null,
+      )
+      callbacks.onProjectContextChange(getLatestProjectContextEvent(eventsSinceReset))
+      callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
+      // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
+      // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
+      // 始终上报（无 pending 时传 null）：这样切换到「无待审批计划」的会话时能清空
+      // 上一个会话残留的审批弹窗，避免弹窗跨会话泄漏。
+      callbacks.onPlanProposed(builder.getPendingPlan())
+      // 历史回放后同步当前活跃 Goal（无则传 null，避免切换会话残留）。
+      callbacks.onGoalChange?.(builder.getActiveGoal())
+      // 历史回放后同步「宿主是否处于编排模式」，避免切换到未触发过编排的会话时残留上一个会话的状态。
+      callbacks.onOrchestrationChange?.(builder.getOrchestrationStatus())
+      return nextMessages
+    },
+    [],
+  )
+
+  // 切换会话时加载历史：窗口化——只取最新一页，立即展示最近消息并滚到底部（IM 体感），
+  // 更早历史在用户向上滚动时按需懒加载。
+  useEffect(() => {
+    const loadId = historyLoadIdRef.current + 1
+    historyLoadIdRef.current = loadId
+    // —— 死循环探针 ——（详见 historyReloadProbeRef 声明处）
+    if (import.meta.env.DEV) {
+      const probe = historyReloadProbeRef.current
+      const now = performance.now()
+      if (now - probe.windowStart > 1000) {
+        probe.windowStart = now
+        probe.count = 0
+      }
+      probe.count += 1
+      if (probe.count === 30) {
+        console.error(
+          `[chatview-probe] 历史加载 effect 在 1s 内重跑 ${probe.count}+ 次（sessionId=${sessionId}）——` +
+            '疑似 effect 依赖回归导致 session:get-history 死循环，请检查该 effect 依赖数组是否混入不稳定引用',
+        )
+      }
+    }
+    hydratingRef.current = true
+    liveEventBufferRef.current?.clear()
+    bufferedEventsRef.current = []
+    loadedEventsRef.current = []
+    loadedEventIdsRef.current.clear()
+    oldestSeqRef.current = undefined
+    hasMoreHistoryRef.current = false
+    loadingOlderRef.current = false
+    initialScrollDoneRef.current = false
+    setHasMoreHistory(false)
+    setIsLoadingOlder(false)
+    let cancelled = false
+
+    // 不清空旧消息（保留当前内容 + 遮罩 loading，避免空白闪屏）；交由 onLoadingChange 抑制 hero。
+    setIsLoadingHistory(true)
+    viewCallbacksRef.current.onLoadingChange?.(true)
+
+    isStreamingRef.current = false
+    userScrolledRef.current = false
+    viewCallbacksRef.current.onContextUsageChange(null)
+    viewCallbacksRef.current.onContextLedgerChange(null)
+    viewCallbacksRef.current.onProjectContextChange(null)
+    viewCallbacksRef.current.onTurnPromptSnapshotsChange([])
+
+    loadSessionHistoryPage(getHistory, sessionId)
+      .then(async ({ events: pageEvents, hasMore }) => {
+        if (cancelled || historyLoadIdRef.current !== loadId) return
+        const bufferedAtStart = bufferedEventsRef.current
+        bufferedEventsRef.current = []
+        const events = mergeAgentEvents(pageEvents, bufferedAtStart)
+        loadedEventsRef.current = events
+        loadedEventIdsRef.current = createAgentEventIdSet(events)
+        oldestSeqRef.current = events[0]?.seq
+        hasMoreHistoryRef.current = hasMore
+        setHasMoreHistory(hasMore)
+        // 进入会话先展示最新消息：提交后强制贴底（IM 体感）
+        scrollToBottomPendingRef.current = true
+        await commitEventsToView(events, true, {
+          shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
+        })
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          hydratingRef.current = false
+          drainBufferedLiveEvents(loadId)
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load session history:', err)
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          // 历史加载失败，使用缓冲的 live 事件回退
+          const bufferedEvents = bufferedEventsRef.current
+          bufferedEventsRef.current = []
+          if (bufferedEvents.length > 0) {
+            const fallbackEvents = mergeAgentEvents([], bufferedEvents)
+            loadedEventsRef.current = fallbackEvents
+            loadedEventIdsRef.current = createAgentEventIdSet(fallbackEvents)
+            scrollToBottomPendingRef.current = true
+            return commitEventsToView(fallbackEvents, true, {
+              shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
+            }).then(() => {
+              if (!cancelled && historyLoadIdRef.current === loadId) {
+                hydratingRef.current = false
+                drainBufferedLiveEvents(loadId)
+              }
+            })
+          }
+        }
+        return undefined
+      })
+      .finally(() => {
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          hydratingRef.current = false
+          drainBufferedLiveEvents(loadId)
+          setIsLoadingHistory(false)
+          viewCallbacksRef.current.onLoadingChange?.(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+      if (historyLoadIdRef.current === loadId) {
+        hydratingRef.current = false
+        bufferedEventsRef.current = []
+        liveEventBufferRef.current?.clear()
+      }
+    }
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
+
+  // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
+  const loadOlderHistory = useCallback(() => {
+    if (loadingOlderRef.current || !hasMoreHistoryRef.current) return
+    const beforeSeq = oldestSeqRef.current
+    if (beforeSeq === undefined) return
+    const loadIdAtRequest = historyLoadIdRef.current
+    loadingOlderRef.current = true
+    setIsLoadingOlder(true)
+    const el = streamRef.current
+    const prevScrollHeight = el?.scrollHeight ?? 0
+    const prevScrollTop = el?.scrollTop ?? 0
+    loadSessionHistoryPage(getHistory, sessionId, beforeSeq)
+      .then(({ events: olderEvents, hasMore }) => {
+        // 会话已切走（historyLoadIdRef 被切换 effect 递增）则丢弃
+        if (historyLoadIdRef.current !== loadIdAtRequest) return
+        let commitPromise: Promise<unknown> = Promise.resolve()
+        if (olderEvents.length > 0) {
+          const merged = mergeAgentEvents(olderEvents, loadedEventsRef.current)
+          loadedEventsRef.current = merged
+          loadedEventIdsRef.current = createAgentEventIdSet(merged)
+          oldestSeqRef.current = merged[0]?.seq ?? oldestSeqRef.current
+          // 只重建消息，保留 live 维护的 usage/status
+          const pendingLiveEvents = liveEventBufferRef.current?.drainNow() ?? []
+          hydratingRef.current = true
+          bufferedEventsRef.current = pendingLiveEvents
+          commitPromise = commitEventsToView(merged, false, {
+            shouldContinue: () => historyLoadIdRef.current === loadIdAtRequest,
+          }).then(() => {
+            if (historyLoadIdRef.current !== loadIdAtRequest) return
+            hydratingRef.current = false
+            drainBufferedLiveEvents(loadIdAtRequest)
+            // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
+            requestAnimationFrame(() => {
+              const el2 = streamRef.current
+              if (el2 != null) {
+                el2.scrollTop = prevScrollTop + (el2.scrollHeight - prevScrollHeight)
+              }
+            })
+          })
+        }
+        hasMoreHistoryRef.current = hasMore
+        setHasMoreHistory(hasMore)
+        return commitPromise
+      })
+      .catch((err) => console.error('Failed to load older history:', err))
+      .finally(() => {
+        if (historyLoadIdRef.current !== loadIdAtRequest) return
+        hydratingRef.current = false
+        drainBufferedLiveEvents(loadIdAtRequest)
+        loadingOlderRef.current = false
+        setIsLoadingOlder(false)
+      })
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
+  // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
+  useEffect(() => {
+    loadOlderRef.current = loadOlderHistory
+  }, [loadOlderHistory])
+
+  // 视口未满兜底：当容器内容不足以撑满视口（scrollHeight ≤ clientHeight，不可滚动，
+  // 浏览器不派发 scroll 事件）时，主动补载更早一页，直到内容溢出变为可滚动、或 hasMore 耗尽。
+  // 与 handleScroll 的 distanceFromBottom>0 分支互补，修复「切到不足一屏的会话时上翻加载无入口」。
+  // 仅读取 ref（[] deps 闭包固定亦可拿到最新值），与 handleScroll 同一模式。
+  const maybeFillViewport = useCallback(() => {
+    if (!initialScrollDoneRef.current) return
+    if (!hasMoreHistoryRef.current) return
+    if (loadingOlderRef.current || userScrolledRef.current) return
+    const el = streamRef.current
+    if (el && el.scrollHeight <= el.clientHeight) {
+      loadOlderRef.current()
+    }
+  }, [])
+
+  // 外部触发清空消息
+  useEffect(() => {
+    if (clearTrigger === undefined || clearTrigger === 0) return
+    liveEventBufferRef.current?.clear()
+    builderRef.current.clearAll()
+    loadedEventsRef.current = []
+    loadedEventIdsRef.current.clear()
+    setMessages([])
+    onMessagesChange([])
+    onStatusChange('')
+    onUsageDataChange({
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+      cacheHitTokens: 0,
+      cacheWriteTokens: 0,
+      cacheHitRate: null,
+      estimatedCostUsd: 0,
+      contextWindow: 0,
+      turns: [],
+    })
+    onContextUsageChange(null)
+    onContextLedgerChange(null)
+    onProjectContextChange(null)
+    setAgentIsRunning(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearTrigger])
+
+  // 用户显式停止后立即收尾 renderer 状态。后端终止事件仍会正常回流并被去重；
+  // 这个触发器只负责在终止事件晚到/丢失时先消除气泡上的 streaming 标记。
+  useEffect(() => {
+    const previous = previousStopTriggerRef.current
+    previousStopTriggerRef.current = stopTrigger ?? 0
+    if (stopTrigger == null || stopTrigger === 0 || stopTrigger === previous) return
+    liveEventBufferRef.current?.clear()
+    bufferedEventsRef.current = []
+    const changed = builderRef.current.finalizeRunningMessages('cancelled')
+    if (changed) {
+      const nextMessages = builderRef.current.getAllMessages()
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+    }
+    setAgentIsRunning(false)
+    isStreamingRef.current = false
+    onStatusChange('')
+  }, [onMessagesChange, onStatusChange, stopTrigger])
+
+  // 用户点了「发送」时立即贴底（IM 即时反馈）。
+  // 不等 user_message 事件从后端回来——bump 后立刻 scrollTop = scrollHeight，并清掉
+  // 用户上滚状态/「回到最新」按钮，保证发送瞬间体感「自己的消息立刻出现在底部」。
+  // 跨多帧 + 短延后兜底，兼容随后异步内容（user_message + 即将到来的 agent_thinking）撑高。
+  useEffect(() => {
+    if (scrollToBottomTrigger === undefined || scrollToBottomTrigger === 0) return
+    const el = streamRef.current
+    if (!el) return
+    userScrolledRef.current = false
+    setShowScrollToBottom(false)
+    const pin = () => {
+      pinToBottom(el)
+    }
+    pin()
+    requestAnimationFrame(() => {
+      pin()
+      requestAnimationFrame(pin)
+    })
+    const t = window.setTimeout(pin, 120)
+    return () => window.clearTimeout(t)
+  }, [scrollToBottomTrigger])
+
+  // Track user scroll position to avoid auto-scrolling when user scrolls up
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowScrollToBottom(shouldShowScrollToBottom(distanceFromBottom))
+      // 程序性贴底（pinToBottom）会派生 scroll 事件；在其后 PROGRAMMATIC_SCROLL_GUARD_MS 窗口内
+      // 跳过 userScrolledRef 重算，避免把用户由 wheel/touchstart 设定的「已上滚」状态按 distance
+      // 冲掉（流式反弹根因）。同时采用滞后阈值：仅 distance<=LOCK 才解锁跟随、>VISIBILITY 才锁定，
+      // 中间区间保持原状，避免 0~50px 区间状态抖动被流式 pin 反复吃掉。
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now()
+      if (now - programmaticScrollAtRef.current >= PROGRAMMATIC_SCROLL_GUARD_MS) {
+        if (distanceFromBottom <= SCROLL_TO_BOTTOM_LOCK_THRESHOLD) {
+          userScrolledRef.current = false
+        } else if (shouldShowScrollToBottom(distanceFromBottom)) {
+          userScrolledRef.current = true
+        }
+      }
+      // 接近顶部时懒加载更早一页（窗口化）。
+      // 必须等初始贴底完成（initialScrollDoneRef），且当前确实有可向下滚动的内容
+      // （distanceFromBottom>0，排除内容不溢出时的误触发），否则会从最早开始狂翻页。
+      if (
+        initialScrollDoneRef.current &&
+        el.scrollTop < 200 &&
+        distanceFromBottom > 0 &&
+        hasMoreHistoryRef.current &&
+        !loadingOlderRef.current
+      ) {
+        loadOlderRef.current()
+      }
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // 用户主动上滚的「源事件」闸门：流式 pin（层2 effect 与 MutationObserver）都以 userScrolledRef
+  // 为闸门，但仅靠 scroll 事件的 distance 重算存在阈值延迟与程序 pin 干扰——用户第一帧小幅上滚时
+  // distance 仍 <50，会被当成「未上滚」，pin 随即把视图拉回，形成「滚不上去被弹回」的死锁。
+  // 这里直接监听 wheel(向上) / touchstart：用户一有上滚意图就立即锁定 userScrolledRef，让后续每帧
+  // 的程序 pin 在闸门处跳过，从根本上打破竞速（治本）。
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    const markUserScrolled = () => {
+      // 初始贴底进行中不拦截（切会话首次贴底必须完成）
+      if (scrollToBottomPendingRef.current) return
+      userScrolledRef.current = true
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) markUserScrolled() // 仅向上滚
+    }
+    const onTouchStart = () => {
+      markUserScrolled() // 触摸即视为用户接管
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+    }
+  }, [])
+
+  // 实时监听新事件 — useIpcStream 内部通过 ref 持有 callback，不会因 deps 变化重订阅
+  // 这里直接用闭包中的 sessionId 过滤即可
+  useIpcStream(
+    'stream:session:agent-event',
+    (event) => {
+      if (event.sessionId !== sessionId) return
+      if (hydratingRef.current) {
+        bufferedEventsRef.current.push(event)
+        return
+      }
+      enqueueLiveEvent(event)
+    },
+    [enqueueLiveEvent, sessionId],
+  )
+
+  // 智能自动滚动：
+  //  - 初始/切换加载：强制贴底展示最新消息，跨多帧重试以兼容异步内容（markdown/代码块/图片）
+  //    撑高后才到真正底部；贴底完成后才解锁「滚动到顶懒加载」。
+  //  - 新用户消息：强制贴底。
+  //  - Agent 流式：仅在用户未主动上滚时跟随。
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+
+    if (scrollToBottomPendingRef.current) {
+      scrollToBottomPendingRef.current = false
+      userScrolledRef.current = false
+      const pin = () => {
+        pinToBottom(el)
+      }
+      pin()
+      // 连续多帧 + 一次延后兜底，确保异步内容撑高后仍贴底
+      requestAnimationFrame(() => {
+        pin()
+        requestAnimationFrame(() => {
+          pin()
+          window.setTimeout(() => {
+            pin()
+            // 解锁懒加载（略延后，避免贴底过程中的 scroll 事件误触发翻页）
+            initialScrollDoneRef.current = true
+            // 种子触发：贴底刚解锁，若首屏历史不足一屏（不可滚动、scroll 事件永不派发），
+            // 立即补载一页更早历史，由 MutationObserver 串行接力直到可滚动。
+            maybeFillViewport()
+          }, 120)
+        })
+      })
+      return
+    }
+
+    // 检测最新消息是否为用户消息（表示用户刚发送了新消息）
+    const latestMsg = displayMessages[displayMessages.length - 1]
+    const isNewUserMessage = latestMsg?.role === 'user'
+
+    if (isNewUserMessage) {
+      userScrolledRef.current = false
+      setShowScrollToBottom(false)
+      requestAnimationFrame(() => {
+        pinToBottom(el)
+      })
+    } else if (!userScrolledRef.current) {
+      requestAnimationFrame(() => {
+        pinToBottom(el)
+      })
+    } else {
+      setShowScrollToBottom(true)
+    }
+  }, [displayMessages, agentIsRunning])
+
+  // 「贴底跟随」兜底（IM 标准行为）：
+  // 流式文本、思考区展开/折叠、代码块/图片撑高等很多高度变化并不会触发 ChatStream 重渲染，
+  // 仅靠 messages 变化的 effect 跟不住。这里用 MutationObserver 监听内容区任意 DOM 变化，
+  // 每帧节流地在「跟随中」时贴底；用户上滚（userScrolledRef=true）即暂停，滚回底部即恢复
+  // （滚动处理按 distanceFromBottom 维护 userScrolledRef）。
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    let rafId: number | null = null
+    const observer = new MutationObserver(() => {
+      if (rafId != null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        // 初始贴底进行中、或用户已上滚，则不跟随
+        if (scrollToBottomPendingRef.current || userScrolledRef.current) return
+        pinToBottom(el)
+        // 视口未满兜底：内容不足以撑满视口时 scroll 事件不会派发，这里接力补载更早历史。
+        maybeFillViewport()
+      })
+    })
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      // 不监听 characterData：流式 token 的文本增量会高频触发（每个 flush 都触发），而层2 effect
+      // （deps displayMessages）每个 flush 已能跟随文本增长，去掉可显著降低 rAF 调度频次。
+      // 保留 attributes(style/class) 以捕获代码高亮完成、折叠态切换等重排后继续贴底跟随。
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    })
+    return () => {
+      observer.disconnect()
+      if (rafId != null) cancelAnimationFrame(rafId)
+    }
+  }, [])
+
+  // 是否有正在流式传输的消息
+  const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
+  const hasPendingUserMessage =
+    scrollToBottomTriggerRef.current !== acknowledgedScrollToBottomTriggerRef.current
+  const hasOptimisticTurnAwaitingExecution = displayMessages.some(
+    (message) =>
+      message.role === 'user' &&
+      (message.deliveryState === 'submitting' || message.deliveryState === 'accepted'),
+  )
+  const showWaitingAgent =
+    // `persistedSessionStatus` 在发送后会先被父组件乐观更新为 running，
+    // 但 user_message 事件可能还没回到这里；乐观用户消息期间由本地 deliveryState
+    // 驱动占位，排队状态则明确隐藏占位，避免把“排队中”误报成“执行中”。
+    (hasOptimisticTurnAwaitingExecution ||
+      agentIsRunning ||
+      (persistedSessionStatus === 'running' && !hasPendingUserMessage)) &&
+    !hasStreamingMsg
+
+  // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
+  // 「等待中」占位用最近一条用户消息的 @ 指定成员，避免「先显示主持人、流式开始后又切回成员」的视差。
+  const placeholderIdentity = useMemo(() => {
+    const lastUserMsg = [...displayMessages].reverse().find((m) => m.role === 'user')
+    const mentionId = lastUserMsg?.mentionAgentId
+    if (mentionId != null && mentionId !== assistantAgentId) {
+      const mentionAgent = agents.find((a) => a.id === mentionId)
+      if (mentionAgent != null) {
+        const avatar = getAgentAvatarConfig(mentionAgent.metadata, mentionId, mentionAgent.name)
+        return { id: mentionId, name: mentionAgent.name, avatarSrc: resolveAvatarSrc(avatar) }
+      }
+    }
+    return { id: assistantAgentId, name: assistantName, avatarSrc: assistantAvatarSrc }
+  }, [displayMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
+
+  const selectedMessages = useMemo(
+    () => displayMessages.filter((msg) => selectedMessageIds.has(msg.id)),
+    [displayMessages, selectedMessageIds],
+  )
+  const expandedAssistantMessageIds = useMemo(
+    () => getRecentAssistantMessageIds(displayMessages, 2),
+    [displayMessages],
+  )
+
+  const toggleMessageSelected = useCallback((messageId: string) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(messageId)) next.delete(messageId)
+      else next.add(messageId)
+      return next
+    })
+  }, [])
+
+  const enterMultiSelectMode = useCallback((messageId?: string) => {
+    setMultiSelectMode(true)
+    if (messageId != null) setSelectedMessageIds(new Set([messageId]))
+  }, [])
+
+  const exitMultiSelectMode = useCallback(() => {
+    setMultiSelectMode(false)
+    setSelectedMessageIds(new Set())
+    setCopied(false)
+  }, [])
+
+  const selectAllMessages = useCallback(() => {
+    // streaming 消息不渲染勾选框、无法取消，不纳入选中集
+    setSelectedMessageIds(
+      new Set(displayMessages.filter((msg) => msg.status !== 'streaming').map((msg) => msg.id)),
+    )
+  }, [displayMessages])
+
+  const clearSelection = useCallback(() => {
+    setSelectedMessageIds(new Set())
+  }, [])
+
+  // 切换会话或离开视图时自动退出多选，避免残留选择态导致样式错乱
+  useEffect(() => {
+    return () => {
+      setMultiSelectMode(false)
+      setSelectedMessageIds(new Set())
+      setCopied(false)
+    }
+  }, [sessionId])
+
+  // 复制成功反馈：点亮「已复制」勾，2s 后自动复位
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const copySelectedMessages = useCallback(() => {
+    if (selectedMessages.length === 0) return
+    // 只复制正文（text block），格式：`发言对象：内容`，条目间空行分隔。
+    const lines: string[] = []
+    for (const msg of selectedMessages) {
+      const body = extractTextFromBlocks(msg.blocks)
+      if (body.length === 0) continue
+      const name =
+        msg.role === 'user'
+          ? '用户'
+          : resolveAssistantIdentity(
+              msg,
+              agents,
+              assistantAgentId,
+              assistantName,
+              assistantAvatarSrc,
+            ).name
+      lines.push(`${name}：${body}`)
+    }
+    if (lines.length === 0) return
+    void navigator.clipboard
+      .writeText(lines.join('\n\n'))
+      .then(() => setCopied(true))
+      .catch(() => {})
+  }, [selectedMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
+
+  const deleteSelectedMessages = useCallback(() => {
+    const selected = new Set(selectedMessages.map((msg) => msg.id))
+    // optimistic 气泡（尚未落库，无 eventIds）：只能从本地 state 摘除，没有持久化事件可删。
+    const optimisticClientIds = selectedMessages
+      .filter((msg) => msg.eventIds.length === 0 && isDeletableOptimisticUserMessage(msg))
+      .map((msg) => msg.clientId as string)
+    const eventIds = selectedMessages.flatMap((msg) => msg.eventIds)
+    if (eventIds.length === 0 && optimisticClientIds.length === 0) return
+    const finishLocalState = () => {
+      if (optimisticClientIds.length > 0) onDeleteOptimisticMessages?.(optimisticClientIds)
+      const nextMessages = builderRef.current
+        .getAllMessages()
+        .filter((msg) => !selected.has(msg.id))
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+      exitMultiSelectMode()
+    }
+    if (eventIds.length === 0) {
+      finishLocalState()
+      return
+    }
+    deleteMessageEvents({ sessionId, eventIds })
+      .then(() => {
+        const removed = new Set(eventIds)
+        for (const msg of selectedMessages) builderRef.current.removeMessage(msg.id)
+        loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+        for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
+        finishLocalState()
+      })
+      .catch(console.error)
+  }, [
+    deleteMessageEvents,
+    exitMultiSelectMode,
+    onDeleteOptimisticMessages,
+    onMessagesChange,
+    selectedMessages,
+    sessionId,
+  ])
+
+  const handleDeleteMessage = useCallback(
+    (msgId: string, eventIds: string[], clientId?: string) => {
+      // 纯 optimistic 气泡（如 starting 窗口被终止的 turn）：user_message 从未落库，
+      // 直接摘除本地 state 即可，不要走事件删除 IPC（空 eventIds 会被静默忽略）。
+      if (eventIds.length === 0) {
+        if (clientId != null) onDeleteOptimisticMessages?.([clientId])
+        return
+      }
+      deleteMessageEvents({ sessionId, eventIds })
+        .then(() => {
+          builderRef.current.removeMessage(msgId)
+          // 同步从窗口事件源剔除被删除的 event，避免向上翻页时被重建回来
+          const removed = new Set(eventIds)
+          loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+          for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
+          const nextMessages = builderRef.current.getAllMessages()
+          setMessages(nextMessages)
+          onMessagesChange(nextMessages)
+        })
+        .catch(console.error)
+    },
+    [deleteMessageEvents, sessionId, onMessagesChange, onDeleteOptimisticMessages],
+  )
+
+  // 团队模式：只删这条成员消息气泡对应的 event（保留 host message 与其他成员）。
+  const handleDeleteMemberMessage = useCallback(
+    (msgId: string, eventIds: string[]) => {
+      if (eventIds.length === 0) return
+      deleteMessageEvents({ sessionId, eventIds })
+        .then(() => {
+          builderRef.current.removeEventsFromMessage(msgId, eventIds)
+          const removed = new Set(eventIds)
+          loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+          for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
+          const nextMessages = builderRef.current.getAllMessages()
+          setMessages(nextMessages)
+          onMessagesChange(nextMessages)
+        })
+        .catch(console.error)
+    },
+    [deleteMessageEvents, sessionId, onMessagesChange],
+  )
+
+  const handleScrollToBottom = useCallback(() => {
+    const el = streamRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    userScrolledRef.current = false
+    setShowScrollToBottom(false)
+  }, [])
+
+  const handleNavigateToTurn = useCallback((item: ChatTurnNavItem, behavior: ScrollBehavior) => {
+    userScrolledRef.current = true
+    setShowScrollToBottom(true)
+    virtualMessageListRef.current?.scrollToIndex(item.startMessageIndex, 'start', behavior)
+  }, [])
+
+  const pendingLineageScrollRef = useRef<TurnId | null>(null)
+  useEffect(() => {
+    if (scrollToTurnId == null) {
+      pendingLineageScrollRef.current = null
+      return
+    }
+    pendingLineageScrollRef.current = scrollToTurnId
+  }, [scrollToTurnId])
+
+  // A lineage anchor may be outside the initial history window. Keep loading
+  // older pages until the anchor is materialized, then use the same virtual
+  // list navigation path as the turn navigator.
+  useEffect(() => {
+    const turnId = pendingLineageScrollRef.current
+    if (turnId == null) return
+    const item = turnNavItems.find((candidate) => candidate.turnId === turnId)
+    if (item != null) {
+      pendingLineageScrollRef.current = null
+      handleNavigateToTurn(item, 'smooth')
+      onTurnScrolled?.()
+      return
+    }
+    if (hasMoreHistoryRef.current && !loadingOlderRef.current) {
+      loadOlderRef.current()
+      return
+    }
+    if (!isLoadingHistory && !loadingOlderRef.current && !hasMoreHistoryRef.current) {
+      pendingLineageScrollRef.current = null
+      onTurnScrolled?.()
+    }
+  }, [displayMessages, handleNavigateToTurn, isLoadingHistory, onTurnScrolled, turnNavItems])
+
+  useEffect(() => {
+    const handleScrollToRunningAgent = (event: Event) => {
+      const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId
+      const root = streamRef.current
+      if (!root || !agentId) return
+      const escapedAgentId =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(agentId)
+          : agentId.replace(/["\\]/g, '\\$&')
+      const runningMatches = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          `[data-running-agent-id="${escapedAgentId}"][data-running="true"]`,
+        ),
+      )
+      const allMatches = Array.from(
+        root.querySelectorAll<HTMLElement>(`[data-running-agent-id="${escapedAgentId}"]`),
+      )
+      const target = runningMatches.at(-1) ?? allMatches.at(-1)
+      userScrolledRef.current = true
+      setShowScrollToBottom(true)
+      if (target != null) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      const messageIndex = findLastAgentMessageIndex(messagesRef.current, agentId)
+      if (messageIndex < 0) return
+      virtualMessageListRef.current?.scrollToIndex(messageIndex, 'center')
+      requestAnimationFrame(() => {
+        const match = root.querySelector<HTMLElement>(`[data-running-agent-id="${escapedAgentId}"]`)
+        match?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+    window.addEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
+    return () => {
+      window.removeEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
+    }
+  }, [])
+
+  return (
+    <div className="chat-stream-viewport">
+      <div id={streamId} className="chat-stream overlay-scrollbar-enabled" ref={streamRef}>
+        <div className={`chat-stream-inner${multiSelectMode ? ' has-multiselect' : ''}`}>
+          {multiSelectMode && (
+            <div className="chat-message-selectbar">
+              <span className="selectbar-count">已选 {selectedMessageIds.size} 条</span>
+              <span className="selectbar-divider" />
+              <button type="button" onClick={selectAllMessages}>
+                全选
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={selectedMessageIds.size === 0}
+              >
+                全不选
+              </button>
+              <span className="selectbar-divider" />
+              <button
+                type="button"
+                className={`primary${copied ? ' is-done' : ''}`}
+                onClick={copySelectedMessages}
+                disabled={selectedMessageIds.size === 0}
+              >
+                {copied ? <Icons.Check size={12} /> : null}
+                {copied ? '已复制' : '复制'}
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={deleteSelectedMessages}
+                disabled={selectedMessageIds.size === 0}
+              >
+                删除
+              </button>
+              <span className="selectbar-divider" />
+              <button type="button" className="cancel" onClick={exitMultiSelectMode}>
+                取消
+              </button>
+            </div>
+          )}
+          {isLoadingOlder && (
+            <div className="chat-load-older" aria-hidden="true">
+              <span className="chat-loading-spinner" />
+            </div>
+          )}
+          <ComputerActivityProvider sessionId={sessionId}>
+            <ComputerActivitySegmentsBridge messages={displayMessages}>
+              {(segmentsFor) => (
+                <VirtualMessageList
+                  ref={virtualMessageListRef}
+                  items={displayMessages}
+                  scrollElementRef={streamRef}
+                  getItemKey={(msg) => msg.id}
+                  estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
+                  renderAfterItem={(msg) => {
+                    const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
+                    const segments = segmentsFor(msg.id)
+                    if (marker == null && segments.length === 0) return null
+                    return (
+                      <>
+                        {marker != null && <ModelSwitchNotice marker={marker} />}
+                        {segments.map((view) => (
+                          <ComputerActivitySegmentCard key={view.key} view={view} />
+                        ))}
+                      </>
+                    )
+                  }}
+                  renderItem={(msg, index) => {
+                    const nextMessage = displayMessages[index + 1]
+                    const isTurnEnd = msg.turnId != null && nextMessage?.turnId !== msg.turnId
+                    const turnNavItem =
+                      msg.turnId == null
+                        ? undefined
+                        : turnNavItems.find((item) => item.turnId === msg.turnId)
+                    const onFork =
+                      onRequestFork != null &&
+                      isTurnEnd &&
+                      turnNavItem != null &&
+                      turnNavItem.status !== 'streaming'
+                        ? () => onRequestFork(msg.turnId as TurnId, turnNavItem.ordinal)
+                        : undefined
+
+                    return msg.role === 'user' ? (
+                      <UserMsg
+                        key={msg.id}
+                        timestamp={msg.timestamp}
+                        blocks={msg.blocks}
+                        {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                        {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                          ? {
+                              sessionReferences: msg.sessionReferences.map((reference) => ({
+                                sourceSessionId: reference.sourceSessionId,
+                                title:
+                                  reference.title ??
+                                  sessions.find((item) => item.id === reference.sourceSessionId)
+                                    ?.title ??
+                                  '未命名会话',
+                              })),
+                            }
+                          : {})}
+                        {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                          ? {
+                              mentionAgentName:
+                                agents.find((a) => a.id === msg.mentionAgentId)?.name ??
+                                msg.mentionAgentId,
+                            }
+                          : {})}
+                        {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
+                        {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
+                        {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
+                          ? {
+                              onDelete: () =>
+                                handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
+                            }
+                          : {})}
+                        selectionMode={multiSelectMode}
+                        selected={selectedMessageIds.has(msg.id)}
+                        onToggleSelected={() => toggleMessageSelected(msg.id)}
+                        onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
+                        {...(onReplyTo != null
+                          ? {
+                              onReply: (selectedText?: string) =>
+                                onReplyTo(msg, undefined, undefined, selectedText),
+                            }
+                          : {})}
+                        {...(onResendMessage != null
+                          ? {
+                              onResend: () =>
+                                onResendMessage({
+                                  text: extractTextFromBlocks(msg.blocks),
+                                  attachments: msg.attachments ?? [],
+                                  ...(msg.sessionReferences != null &&
+                                  msg.sessionReferences.length > 0
+                                    ? {
+                                        sessionReferences: msg.sessionReferences.map(
+                                          (reference) => ({
+                                            sourceSessionId: reference.sourceSessionId,
+                                            title:
+                                              reference.title ??
+                                              sessions.find(
+                                                (item) => item.id === reference.sourceSessionId,
+                                              )?.title ??
+                                              '未命名会话',
+                                            ...(reference.snapshotSeq !== undefined
+                                              ? { snapshotSeq: reference.snapshotSeq }
+                                              : {}),
+                                            status: 'active',
+                                          }),
+                                        ),
+                                      }
+                                    : {}),
+                                }),
+                            }
+                          : {})}
+                      >
+                        {renderBlocks(msg.blocks, {
+                          detectDocumentOutput: false,
+                          ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+                          ...(onFilePreview != null ? { onFilePreview } : {}),
+                        })}
+                      </UserMsg>
+                    ) : (
+                      (() => {
+                        const identity = resolveAssistantIdentity(
+                          msg,
+                          agents,
+                          assistantAgentId,
+                          assistantName,
+                          assistantAvatarSrc,
+                        )
+                        const retryPayload = buildErrorRetryPayload(displayMessages, index)
+                        const sessionTaskEntry = sessionTaskTimeline.get(msg.id)
+                        return (
+                          <AssistantMessageRows
+                            key={msg.id}
+                            sessionId={sessionId}
+                            workspaceRootPath={workspaceRootPath}
+                            messageId={msg.id}
+                            blocks={msg.blocks}
+                            {...(sessionTaskEntry != null ? { sessionTaskEntry } : {})}
+                            messageStatus={msg.status}
+                            isLatest={expandedAssistantMessageIds.has(msg.id)}
+                            sessionRunning={agentIsRunning || persistedSessionStatus === 'running'}
+                            assistantId={identity.id}
+                            assistantName={identity.name}
+                            assistantAvatarSrc={identity.avatarSrc}
+                            showIdentity={shouldShowAssistantIdentity(
+                              teamConfig.enabled,
+                              identity.id,
+                              assistantAgentId,
+                            )}
+                            teamModeActive={teamConfig.enabled}
+                            {...(onFilePreview != null ? { onFilePreview } : {})}
+                            {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                            {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                            {...(msg.durationMs != null ? { turnDurationMs: msg.durationMs } : {})}
+                            {...(msg.status !== 'streaming'
+                              ? {
+                                  onDelete: () => handleDeleteMessage(msg.id, msg.eventIds),
+                                  selectionMode: multiSelectMode,
+                                  selected: selectedMessageIds.has(msg.id),
+                                  onToggleSelected: () => toggleMessageSelected(msg.id),
+                                  onStartMultiSelect: () => enterMultiSelectMode(msg.id),
+                                }
+                              : {})}
+                            {...(onFork != null ? { onFork } : {})}
+                            {...(onReplyTo != null && msg.status !== 'streaming'
+                              ? {
+                                  onReply: (selectedText?: string) =>
+                                    onReplyTo(msg, identity.id, identity.name, selectedText),
+                                }
+                              : {})}
+                            {...(retryPayload != null && onResendMessage != null
+                              ? { onRetry: () => onResendMessage(retryPayload) }
+                              : {})}
+                            {...(msg.status !== 'streaming' && onReplyToMember != null
+                              ? {
+                                  onReplyToMember,
+                                  onDeleteMemberMessage: handleDeleteMemberMessage,
+                                }
+                              : {})}
+                          />
+                        )
+                      })()
+                    )
+                  }}
+                />
+              )}
+            </ComputerActivitySegmentsBridge>
+          </ComputerActivityProvider>
+          {showWaitingAgent && (
+            <AgentMsg
+              key="agent-running-placeholder"
+              sessionId={sessionId}
+              workspaceRootPath={workspaceRootPath}
+              status="running"
+              blocks={[]}
+              messageStatus="streaming"
+              isLatest
+              assistantId={placeholderIdentity.id}
+              assistantName={placeholderIdentity.name}
+              assistantAvatarSrc={placeholderIdentity.avatarSrc}
+              showIdentity={shouldShowAssistantIdentity(
+                teamConfig.enabled,
+                placeholderIdentity.id,
+                assistantAgentId,
+              )}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
+            />
+          )}
+          {displayMessages.length === 0 && !showWaitingAgent && (
+            <div className="chat-stream-empty-state">
+              <div className="empty-state">
+                {isLoadingHistory ? (
+                  <div className="chat-loading">
+                    <span className="chat-loading-spinner" aria-hidden="true" />
+                    <div className="chat-loading-text">加载中…</div>
+                  </div>
+                ) : emptyStateVariant === 'loading' ? (
+                  // 发送后过渡窗口：hero 已隐藏、首条消息/Agent 运行尚未到达，用 loading 占位
+                  <div className="chat-loading">
+                    <span className="chat-loading-spinner" aria-hidden="true" />
+                    <div className="chat-loading-text">正在创建会话…</div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="empty-icon">
+                      <Icons.Chat size={24} />
+                    </div>
+                    <div className="empty-title">开始对话</div>
+                    <div className="empty-desc">发送消息开始与 AI 交互</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      {isLoadingHistory && messages.length > 0 && (
+        <SessionSwitchingOverlay
+          host={streamRef.current?.closest<HTMLElement>('.chat-main, .side-chat-panel') ?? null}
+        />
+      )}
+      {showScrollToBottom && (
+        <button
+          className="scroll-to-bottom-btn"
+          onClick={handleScrollToBottom}
+          title="滚动到底部"
+          aria-label="滚动到底部"
+        >
+          <Icons.ArrowDown size={16} />
+        </button>
+      )}
+      {showTurnNavigator && (
+        <ChatTurnNavigator
+          items={turnNavItems}
+          scrollRef={streamRef}
+          hasMoreHistory={hasMoreHistory}
+          isLoadingOlder={isLoadingOlder}
+          onLoadOlder={() => loadOlderRef.current()}
+          onNavigate={handleNavigateToTurn}
+        />
+      )}
+      <ChatOverlayScrollbar scrollRef={streamRef} controlsId={streamId} />
+    </div>
+  )
+}
+
+type GetSessionHistory = (request: {
+  sessionId: SessionId
+  full?: boolean
+  limit?: number
+  turnLimit?: number
+  eventLimit?: number
+  beforeSeq?: number
+}) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
+
+/**
+ * 窗口化加载的单页大小：按「轮次」分页（而非事件数）。
+ * Agentic 会话里一个轮次可能有上千条事件，按事件数会把单个轮次切碎成「一条消息」；
+ * 按轮次分页则每页都是完整对话。后端已排除流式 delta 行，单页载荷大幅缩小。
+ */
+const SESSION_HISTORY_TURN_PAGE = 12
+const SESSION_HISTORY_EVENT_PAGE = 1200
+
+/**
+ * loadSessionHistoryPage — 加载会话历史的「一页」（最近 N 个完整轮次）。
+ * 不带 beforeSeq → 最新一页（进会话先看到的最近轮次）；带 beforeSeq → 更早的轮次（向上翻页）。
+ */
+async function loadSessionHistoryPage(
+  getHistory: GetSessionHistory,
+  sessionId: SessionId,
+  beforeSeq?: number,
+): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
+  const res = await getHistory({
+    sessionId,
+    turnLimit: SESSION_HISTORY_TURN_PAGE,
+    eventLimit: SESSION_HISTORY_EVENT_PAGE,
+    ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+  })
+  return { events: res.events, hasMore: res.hasMore }
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof MessageChannel !== 'undefined') {
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => {
+        channel.port1.close()
+        channel.port2.close()
+        resolve()
+      }
+      channel.port2.postMessage(undefined)
+      return
+    }
+    window.setTimeout(resolve, 0)
+  })
+}
+
+function getLatestContextUsageEvent(
+  events: AgentEvent[],
+): Extract<AgentEvent, { type: 'context_usage' }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'context_usage') return event
+  }
+  return null
+}
+
+function getLatestContextLedgerEvent(
+  events: AgentEvent[],
+): Extract<AgentEvent, { type: 'context_ledger' }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'context_ledger') return event
+  }
+  return null
+}
+
+function toContextLedgerState(
+  event: Extract<AgentEvent, { type: 'context_ledger' }>,
+): ContextLedgerState {
+  return {
+    sections: event.sections,
+    totalEstimatedTokens: event.totalEstimatedTokens,
+    softLimitTokens: event.softLimitTokens,
+    contextWindowTokens: event.contextWindowTokens,
+    usagePercent: event.usagePercent,
+  }
+}
+
+function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'project_context_loaded') return event
+  }
+  return null
+}
+
+function applyAgentStatus(
+  status: AgentStatusValue,
+  onStatusChange: (s: string) => void,
+  onSessionStatusChange: (status: SessionSummary['status']) => void,
+  isStreamingRef: { current: boolean },
+  keepSessionRunning = false,
+): void {
+  const labels: Record<AgentStatusValue, string> = {
+    idle: '',
+    thinking: '思考中',
+    calling_tool: '调用工具',
+    waiting_permission: '等待授权',
+    waiting_user: '等待用户',
+    completed: '',
+    error: '',
+    cancelled: '',
+  }
+  onStatusChange(labels[status] ?? '')
+  if (
+    status === 'thinking' ||
+    status === 'calling_tool' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user'
+  ) {
+    onSessionStatusChange('running')
+    isStreamingRef.current = true
+  }
+  if (status === 'idle' || status === 'completed' || status === 'cancelled') {
+    onSessionStatusChange(keepSessionRunning ? 'running' : 'idle')
+    isStreamingRef.current = keepSessionRunning
+    // 不在此处重置 userScrolledRef：agent 结束瞬间若用户正在上滚浏览，无条件清零会把视图弹回底部
+    // （与「流式中反弹」独立的另一条反弹路径）。跟随状态交给下一次用户滚动 / 发送消息时按实际位置重算。
+  }
+  if (status === 'error') {
+    onSessionStatusChange(keepSessionRunning ? 'running' : 'error')
+    isStreamingRef.current = keepSessionRunning
+  }
+}
+
+function findLastAgentMessageIndex(messages: UIMessage[], agentId: string): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.agentId === agentId) return index
+    if (
+      message?.blocks.some((block) => 'memberAgentId' in block && block.memberAgentId === agentId)
+    ) {
+      return index
+    }
+  }
+  return -1
+}
+
+function joinPath(root: string, rel: string): string {
+  if (/^[\\/]/.test(rel) || /^[A-Za-z]:[\\/]/.test(rel)) return rel
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const trimRoot = root.replace(/[\\/]+$/, '')
+  const trimRel = rel.replace(/^[\\/]+/, '')
+  return `${trimRoot}${sep}${trimRel}`
+}
+
+function renderBlocks(
+  blocks: UIBlock[],
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    workspaceRootPath?: string | null
+    autoCollapseTools?: boolean
+    onFilePreview?: FileOpenHandler
+    detectDocumentOutput?: boolean
+    sessionTaskEntry?: SessionTaskTimelineEntry
+  } = {},
+): ReactNode {
+  const surface = options.surface ?? 'main'
+  return blocks.map((block, i) => {
+    switch (block.kind) {
+      case 'text':
+        return (
+          <div key={i} className="md-surface">
+            <MarkdownText
+              content={block.content}
+              isStreaming={block.isStreaming}
+              detectDocumentOutput={options.detectDocumentOutput ?? true}
+              workspaceRootPath={options.workspaceRootPath}
+              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+            />
+          </div>
+        )
+      case 'thinking':
+        // 穿插在工具调用之间的阶段性思考，复用顶部思考模块样式，作为会话内的「思考过程」日志。
+        // 非首段思考，不重复显示绿色对勾。
+        return (
+          <ThinkingSection
+            key={i}
+            blocks={[block]}
+            streaming={block.isStreaming}
+            showDoneBadge={false}
+          />
+        )
+
+      case 'tool_call': {
+        if (isHiddenTimelineBlock(block)) {
+          return null
+        }
+        if (
+          options.sessionTaskEntry != null &&
+          shouldReplaceSessionTaskBlock(block, options.sessionTaskEntry)
+        ) {
+          return block.toolCallId === options.sessionTaskEntry.anchorToolCallId ? (
+            <SessionTaskPanel key={i} tasks={options.sessionTaskEntry.tasks} />
+          ) : null
+        }
+        const toolStatus =
+          block.status === 'success'
+            ? ('ok' as const)
+            : block.status === 'error'
+              ? ('error' as const)
+              : null
+        // 对于 Bash 相关工具，优先显示 command 字段作为完整内容
+        const isBashLike =
+          block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+        const commandValue =
+          isBashLike && typeof block.toolInput.command === 'string' ? block.toolInput.command : null
+        const toolArg = commandValue
+          ? commandValue.slice(0, surface === 'main' ? 48 : 80)
+          : JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
+        const fullToolArg = commandValue || JSON.stringify(block.toolInput)
+        const isPending = block.status === 'pending' || block.status === 'running'
+        const isTodoWrite = block.toolName === 'todo_write'
+        // 把 todo_write 的输入直接作为预览，避免折叠后还要展开看（todos 数组本身就是状态）
+        const todoListBody = isTodoWrite ? (
+          <TodoListInline input={block.toolInput} output={block.output} />
+        ) : null
+        return toolStatus ? (
+          <ToolCall
+            key={i}
+            name={block.toolName}
+            arg={isTodoWrite ? '' : toolArg}
+            fullArg={isTodoWrite ? '' : fullToolArg}
+            status={toolStatus}
+            durationMs={block.durationMs}
+            autoCollapseReady={options.autoCollapseTools !== false}
+          >
+            {todoListBody}
+            {!isTodoWrite && block.output && (
+              <GitDiffContent content={block.output} renderMarkdown={MarkdownText} />
+            )}
+            {block.error && <span className="tool-error-span">{block.error}</span>}
+          </ToolCall>
+        ) : (
+          <ToolCall
+            key={i}
+            name={block.toolName}
+            arg={isTodoWrite ? '' : toolArg}
+            fullArg={isTodoWrite ? '' : fullToolArg}
+            pending={isPending}
+            durationMs={block.durationMs}
+            autoCollapseReady={options.autoCollapseTools !== false}
+          >
+            {todoListBody}
+            {!isTodoWrite && block.output && (
+              <GitDiffContent content={block.output} renderMarkdown={MarkdownText} />
+            )}
+            {block.error && <span className="tool-error-span">{block.error}</span>}
+          </ToolCall>
+        )
+      }
+      case 'error':
+        // 错误卡由 AgentMsg 单独渲染（可获得 sessionId 上下文以支持调高迭代上限按钮），
+        // 这里跳过避免重复渲染。
+        return null
+      case 'cancelled':
+        return <CancellationNotice key={i} message={block.message} />
+      case 'terminal':
+        if (surface === 'main') return null
+        return (
+          <TerminalBlock key={i}>
+            {block.stdout && <span>{block.stdout}</span>}
+            {block.stderr && <span className="block-stderr">{block.stderr}</span>}
+            {block.isStreaming && <span className="dim"> …</span>}
+          </TerminalBlock>
+        )
+      case 'file_change': {
+        if (block.diff) {
+          const hunks = parseUnifiedDiff(block.diff)
+          if (hunks.length > 0) {
+            return (
+              <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+                <HunkDiff path={block.path} hunks={hunks} />
+              </div>
+            )
+          }
+        }
+        return null
+      }
+      case 'checkpoint': {
+        return (
+          <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
+            <Checkpoint
+              checkpointId={block.checkpointId}
+              {...(options.sessionId != null
+                ? {
+                    onRestore: () =>
+                      void executeCheckpointRestore(
+                        options.sessionId as SessionId,
+                        block.checkpointId,
+                      ),
+                  }
+                : {})}
+            />
+          </div>
+        )
+      }
+      case 'validation_suggestion':
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ValidationSuggestionCard
+              block={block}
+              {...(options.sessionId != null ? { sessionId: options.sessionId } : {})}
+            />
+          </div>
+        )
+      case 'plan_proposed': {
+        return (
+          <div key={i} className="tool-logs-collapsible" style={{ marginTop: 4, marginBottom: 4 }}>
+            <PlanSummary
+              plan={{
+                id: `inline-plan-proposal-${i}`,
+                kind: 'proposal',
+                title: '执行方案',
+                rawPlan: block.plan,
+              }}
+              renderMarkdown={MarkdownText}
+            />
+          </div>
+        )
+      }
+      case 'goal_contract': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <GoalContractCard block={block} sessionId={options.sessionId ?? null} />
+          </div>
+        )
+      }
+      case 'goal_iteration_divider': {
+        return <GoalIterationDivider key={i} block={block} />
+      }
+      case 'permission_request': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <InlinePermissionCard block={block} />
+          </div>
+        )
+      }
+      case 'subagent': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <SubagentCard {...block} />
+          </div>
+        )
+      }
+      case 'turn_file_summary': {
+        const sid = options.sessionId
+        const cpId = block.latestCheckpointId
+        const canUndo = sid != null && cpId != null
+        const filesWithDiff = block.files.filter(
+          (f): f is FileChangeSummary & { diff: string } =>
+            typeof f.diff === 'string' && f.diff.length > 0,
+        )
+        const canReapply = filesWithDiff.length > 0
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <TurnFileSummaryCard
+              files={block.files}
+              totalAdds={block.totalAdds}
+              totalDels={block.totalDels}
+              {...(options.workspaceRootPath != null
+                ? { workspaceRootPath: options.workspaceRootPath }
+                : {})}
+              {...(block.generatedGroups != null ? { generatedGroups: block.generatedGroups } : {})}
+              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+              {...(canUndo
+                ? {
+                    onUndo: () => executeCheckpointRestore(sid as SessionId, cpId as string),
+                  }
+                : {})}
+              {...(canReapply ? { onReapply: () => reapplyTurnFiles(filesWithDiff) } : {})}
+            />
+          </div>
+        )
+      }
+      case 'presented_files': {
+        const documentFiles = filterDocumentOutputFiles(block.files)
+        const mediaFiles = filterMediaPresentedFiles(block.files)
+        if (documentFiles.length === 0 && mediaFiles.length === 0) return null
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            {documentFiles.length > 0 && (
+              <div className="document-output-card-list">
+                {documentFiles.map((file) => (
+                  <DocumentOutputCard
+                    key={getDocumentOutputKey(file.path)}
+                    filePath={file.path}
+                    {...(file.title != null ? { label: file.title } : {})}
+                    {...(options.onFilePreview != null
+                      ? { onFilePreview: options.onFilePreview }
+                      : {})}
+                  />
+                ))}
+              </div>
+            )}
+            {mediaFiles.length > 0 && <PresentedMediaList files={mediaFiles} />}
+          </div>
+        )
+      }
+      case 'application_snapshot': {
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8, maxWidth: 920 }}>
+            <ApplicationSnapshotPreviewCard {...block} />
+          </div>
+        )
+      }
+      case 'user_question': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <InlineQuestionCard
+              block={block}
+              {...(options.sessionId != null ? { sessionId: options.sessionId } : {})}
+            />
+          </div>
+        )
+      }
+      case 'quick_replies': {
+        // 快捷回复只在 Composer 上方渲染，时间线中不重复展示工具卡。
+        return null
+      }
+      case 'html_block':
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <RenderHtmlBlock block={block} />
+          </div>
+        )
+      case 'diagram_block':
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <RenderDiagramBlock block={block} />
+          </div>
+        )
+      case 'context_ledger': {
+        // Context Ledger 不在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示
+        return null
+      }
+      case 'context_summarized': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ContextSummarizedCard block={block} />
+          </div>
+        )
+      }
+      case 'context_compaction': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ContextCompactionCard block={block} />
+          </div>
+        )
+      }
+      case 'retry_trail': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <RetryTrailCard block={block} />
+          </div>
+        )
+      }
+      case 'team_dispatch': {
+        return (
+          <div key={i} className="tool-logs-collapsible">
+            <TeamDispatchBlockView block={block} />
+          </div>
+        )
+      }
+      case 'team_member_message': {
+        return (
+          <TeamMemberMessageBlockView
+            key={i}
+            block={block}
+            {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+          />
+        )
+      }
+      case 'team_peer_message': {
+        return <TeamPeerMessageBlockView key={i} block={block} />
+      }
+      case 'team_round_divider': {
+        return <TeamRoundDividerBlockView key={i} block={block} />
+      }
+      case 'team_discussion_status': {
+        return (
+          <div key={i} className="tool-logs-collapsible">
+            <TeamDiscussionStatusBlockView block={block} />
+          </div>
+        )
+      }
+      case 'workflow_progress': {
+        return <WorkflowProgressBlockView key={i} block={block} />
+      }
+      default:
+        return null
+    }
+  })
+}
+
+function renderBlocksGrouped(
+  blocks: UIBlock[],
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    workspaceRootPath?: string | null
+    autoCollapseTools?: boolean
+    onFilePreview?: FileOpenHandler
+    sessionTaskEntry?: SessionTaskTimelineEntry
+  } = {},
+): ReactNode {
+  const autoCollapseEnabled = readAppearance().autoCollapseTools
+  return splitChatActivitySegments(blocks).map((item) => {
+    if (item.kind === 'content') {
+      return <Fragment key={item.key}>{renderBlocks([item.block], options)}</Fragment>
+    }
+
+    return (
+      <ActivitySegment
+        key={item.key}
+        summary={summarizeChatActivitySegment(item.blocks)}
+        running={isChatActivitySegmentRunning(item.blocks)}
+        sealed={item.sealed}
+        autoCollapseEnabled={autoCollapseEnabled}
+      >
+        {renderActivityBlocks(item.blocks, options)}
+      </ActivitySegment>
+    )
+  })
+}
+
+function renderActivityBlocks(
+  blocks: ChatActivityBlock[],
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    workspaceRootPath?: string | null
+    autoCollapseTools?: boolean
+    onFilePreview?: FileOpenHandler
+    sessionTaskEntry?: SessionTaskTimelineEntry
+  },
+): ReactNode {
+  const surface = options.surface ?? 'main'
+  const nodes: ReactNode[] = []
+  let batch: Array<
+    Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>
+  > = []
+  let batchKind: ToolLogGroupKind | null = null
+
+  const flush = (key: string) => {
+    if (batch.length === 0) return
+    nodes.push(
+      <ToolLogGroup
+        key={key}
+        blocks={batch}
+        surface={surface}
+        autoCollapseReady={options.autoCollapseTools !== false}
+        {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+      />,
+    )
+    batch = []
+    batchKind = null
+  }
+
+  blocks.forEach((block, index) => {
+    // 会话任务面板替换逻辑与 renderBlocks 的 tool_call 分支同源：任务类工具块
+    // （task_create / task_update / todo_write / todo_read）不进入 ToolLogGroup 批处理，
+    // 否则会绕过 renderBlocks 内的 SessionTaskPanel 替换（anchor 渲染面板、其余吞掉）。
+    // 必须放在 getToolLogGroupKind 分桶之前：task_* / todo_read 会被 classifyToolLog
+    // 兜底归入通用 'tool' 桶。
+    if (shouldReplaceSessionTaskBlock(block, options.sessionTaskEntry)) {
+      flush(`tool-log-${index}`)
+      nodes.push(<Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>)
+      return
+    }
+
+    const kind = getToolLogGroupKind(block, surface)
+    if (kind != null && (block.kind === 'tool_call' || block.kind === 'terminal')) {
+      if (batchKind != null && batchKind !== kind) flush(`tool-log-${index}`)
+      batchKind = kind
+      batch.push(block)
+      return
+    }
+
+    flush(`tool-log-${index}`)
+    nodes.push(<Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>)
+  })
+
+  flush('tool-log-end')
+  return nodes
+}
+
+/**
+ * 把会话结束时的汇总尾块按固定优先级稳定重排，让顺序不依赖事件到达先后：
+ *   普通内容(0) → 本次修改完成(1) → 显式交付文件(2) → 建议验证(3，最后)。
+ * 普通内容（正文、带 diff 的 HunkDiff、工具日志组）保持原相对顺序，分组逻辑不受影响。
+ */
+function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
+  return reorderChatTurnSummaryBlocks(blocks)
+}
+
+/** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
+function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
+  const { agents } = useSessionSidebar()
+  const member = agents.find((a) => a.id === block.memberAgentId)
+  const memberName = member?.name ?? block.memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  return (
+    <TeamDispatchCard
+      task={block.task}
+      memberName={memberName}
+      avatarSrc={resolveAvatarSrc(avatar)}
+      state={block.state}
+      {...(block.reply != null ? { reply: block.reply } : {})}
+    />
+  )
+}
+
+function WorkflowProgressBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'workflow_progress' }>
+}) {
+  const completed = block.nodes.filter((node) => node.status === 'completed').length
+  const skipped = block.nodes.filter((node) => node.status === 'skipped').length
+  const total = block.nodes.length
+  const failed = block.nodes.some((node) => node.status === 'failed')
+  return (
+    <div className="workflow-progress-card">
+      <div className="workflow-progress-head">
+        <Icons.Workflow size={13} />
+        <span>工作流进度</span>
+        <span
+          className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}
+          title={skipped > 0 ? `已完成 ${completed} 个，条件跳过 ${skipped} 个` : undefined}
+        >
+          {completed + skipped}/{total}
+        </span>
+      </div>
+      <div className="workflow-progress-list">
+        {block.nodes.map((node) => (
+          <WorkflowProgressItem key={node.nodeId} node={node} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WorkflowProgressItem({ node }: { node: WorkflowProgressNode }) {
+  const icon =
+    node.status === 'completed' ? (
+      <Icons.Check size={13} style={{ color: 'var(--c-ok, #22c55e)' }} />
+    ) : node.status === 'running' ? (
+      <Icons.Spinner size={13} />
+    ) : node.status === 'failed' ? (
+      <Icons.X size={13} style={{ color: 'var(--c-err, #ef4444)' }} />
+    ) : node.status === 'skipped' ? (
+      <Icons.Minus size={13} style={{ color: 'var(--text-faint)' }} />
+    ) : (
+      <span className="workflow-progress-dot" />
+    )
+  return (
+    <div className={`workflow-progress-item ${node.status}`}>
+      <span className="workflow-progress-icon">{icon}</span>
+      <span className="workflow-progress-text">{node.title}</span>
+      {(node.agentName != null || node.modelId != null) && (
+        <span className="workflow-progress-agent">
+          {node.agentName}
+          {node.modelId != null ? ` · ${node.modelId}` : ''}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function TeamMemberMessageBlockView({
+  block,
+  onFilePreview,
+}: {
+  block: Extract<UIBlock, { kind: 'team_member_message' }>
+  onFilePreview?: FileOpenHandler
+}) {
+  const { agents } = useSessionSidebar()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null)
+  const member = agents.find((a) => a.id === block.memberAgentId)
+  const memberName = member?.name ?? block.memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  const running = block.isStreaming
+  const empty = block.content.trim().length === 0
+
+  // 空内容且不再流式（被终止/未产出文本）：整条气泡（含外壳与 drawer）一律不渲染，
+  // 避免 A1 修复之前残留的「永久空气泡」。
+  if (empty && !block.isStreaming) {
+    return null
+  }
+
+  return (
+    <>
+      <TeamMemberBubble
+        memberAgentId={block.memberAgentId}
+        memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
+        textContent={block.content}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        {empty && block.isStreaming ? (
+          <div className="team-member-typing-dots" aria-label="成员思考中">
+            <span className="team-member-typing-dot" />
+            <span className="team-member-typing-dot" />
+            <span className="team-member-typing-dot" />
+          </div>
+        ) : (
+          <MarkdownText
+            content={block.content}
+            isStreaming={block.isStreaming}
+            agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+            onMentionClick={(agentId) => {
+              setDrawerAgentId(agentId)
+              setDrawerOpen(true)
+            }}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+          />
+        )}
+      </TeamMemberBubble>
+      {drawerOpen &&
+        drawerAgentId &&
+        (() => {
+          const mentionedAgent = agents.find((a) => a.id === drawerAgentId)
+          const mentionedName = mentionedAgent?.name ?? drawerAgentId
+          const mentionedAvatar = getAgentAvatarConfig(
+            mentionedAgent?.metadata,
+            drawerAgentId,
+            mentionedName,
+          )
+          return (
+            <TeamMemberDrawer
+              member={{
+                agentId: drawerAgentId,
+                name: mentionedName,
+                description: mentionedAgent?.description ?? '',
+                providerProfileId: mentionedAgent?.providerProfileId ?? null,
+                modelId: mentionedAgent?.modelId ?? null,
+                skillCount: mentionedAgent?.skillIds.length ?? 0,
+                mcpCount: mentionedAgent?.mcpServerIds.length ?? 0,
+                avatarSrc: resolveAvatarSrc(mentionedAvatar),
+              }}
+              onClose={() => {
+                setDrawerOpen(false)
+                setDrawerAgentId(null)
+              }}
+            />
+          )
+        })()}
+    </>
+  )
+}
+
+function TeamPeerMessageBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_peer_message' }>
+}) {
+  const { agents } = useSessionSidebar()
+  const sender = agents.find((a) => a.id === block.memberAgentId)
+  const senderName = sender?.name ?? block.memberAgentId
+  const senderAvatar = getAgentAvatarConfig(sender?.metadata, block.memberAgentId, senderName)
+  const targetName =
+    block.targetAgentId != null
+      ? (agents.find((a) => a.id === block.targetAgentId)?.name ?? block.targetAgentId)
+      : null
+  const metaLabel =
+    block.delivery === 'note'
+      ? targetName != null
+        ? `留言 → ${targetName}`
+        : '留言 → 全员'
+      : targetName != null
+        ? `${senderName} → ${targetName}`
+        : `${senderName} → 全员`
+
+  // 正文 @ 自动转发：content 是发送者刚说完的回复原文副本，正文气泡已完整渲染过，
+  // 这里降级为一条轻量转发提示，避免同一段内容出现两遍。
+  if (block.autoForwarded === true) {
+    return (
+      <div className="team-peer-forward-hint">
+        <Icons.ArrowRight size={12} />
+        <span>
+          {targetName != null
+            ? `${senderName} 的回复已自动转发给 @${targetName}`
+            : `${senderName} 的回复已自动转发`}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <TeamMemberBubble
+      memberAgentId={block.memberAgentId}
+      memberName={senderName}
+      avatarSrc={resolveAvatarSrc(senderAvatar)}
+      origin="peer"
+      metaLabel={metaLabel}
+      textContent={block.content}
+    >
+      <div className="md-surface">
+        <MarkdownText
+          content={block.content}
+          isStreaming={false}
+          agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+        />
+      </div>
+    </TeamMemberBubble>
+  )
+}
+
+function TeamRoundDividerBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_round_divider' }>
+}) {
+  return (
+    <div className="team-round-divider" role="separator" aria-label={`第 ${block.round + 1} 轮`}>
+      <span className="team-round-divider-line" />
+      <span className="team-round-divider-label">{`第 ${block.round + 1} 轮 / 共 ${block.maxRounds} 轮`}</span>
+      <span className="team-round-divider-line" />
+    </div>
+  )
+}
+
+function TeamDiscussionStatusBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_discussion_status' }>
+}) {
+  const label =
+    block.reason === 'concluded'
+      ? '讨论已结束'
+      : block.reason === 'max_rounds'
+        ? '达到轮次上限，讨论已结束'
+        : '讨论已取消'
+  return (
+    <div className={`team-discussion-status ${block.reason}`}>
+      <Icons.Activity size={12} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function TeamMemberActivityBlockView({
+  memberAgentId,
+  blocks,
+  running,
+  sessionId,
+  onFilePreview,
+  onReplyToMember,
+  onDeleteMemberMessage,
+}: {
+  memberAgentId: string
+  blocks: UIBlock[]
+  running: boolean
+  sessionId: SessionId
+  onFilePreview?: FileOpenHandler
+  onReplyToMember?: (args: {
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
+  onDeleteMemberMessage?: (eventIds: string[]) => void
+}) {
+  const { agents } = useSessionSidebar()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const member = agents.find((a) => a.id === memberAgentId)
+  const memberName = member?.name ?? memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+  const showActivityLogs = useTeamActivityLogsVisible()
+
+  // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
+  const memberTextBlocks = useMemo(
+    () =>
+      blocks.filter(
+        (b): b is Extract<UIBlock, { kind: 'team_member_message' }> =>
+          b.kind === 'team_member_message',
+      ),
+    [blocks],
+  )
+  const textContent = useMemo(
+    () =>
+      memberTextBlocks
+        .map((b) => b.content)
+        .join('\n')
+        .trim(),
+    [memberTextBlocks],
+  )
+  const memberEventIds = useMemo(
+    () => memberTextBlocks.flatMap((b) => b.eventIds ?? []),
+    [memberTextBlocks],
+  )
+
+  if (!hasVisibleTeamMemberActivityBlocks(blocks, showActivityLogs)) return null
+
+  return (
+    <>
+      <TeamMemberBubble
+        memberAgentId={memberAgentId}
+        memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
+        textContent={textContent}
+        {...(onReplyToMember != null
+          ? {
+              onReply: (selectedText?: string) =>
+                onReplyToMember({
+                  memberAgentId,
+                  memberName,
+                  content: textContent,
+                  ...(selectedText != null ? { selectedText } : {}),
+                }),
+            }
+          : {})}
+        {...(onDeleteMemberMessage != null && memberEventIds.length > 0
+          ? { onDelete: () => onDeleteMemberMessage(memberEventIds) }
+          : {})}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        {renderTeamMemberActivityBlocks(
+          blocks,
+          onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+          showActivityLogs,
+        )}
+      </TeamMemberBubble>
+      {drawerOpen && (
+        <TeamMemberDrawer
+          member={{
+            agentId: memberAgentId,
+            name: memberName,
+            description: member?.description ?? '',
+            providerProfileId: member?.providerProfileId ?? null,
+            modelId: member?.modelId ?? null,
+            skillCount: member?.skillIds.length ?? 0,
+            mcpCount: member?.mcpServerIds.length ?? 0,
+            avatarSrc: resolveAvatarSrc(avatar),
+          }}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function renderTeamMemberActivityBlocks(
+  blocks: UIBlock[],
+  options: {
+    sessionId: SessionId
+    onFilePreview?: FileOpenHandler
+  },
+  showActivityLogs: boolean,
+): ReactNode {
+  // 默认保持结果优先；用户在团队检查器显式打开后，再复用标准活动日志组件。
+  const resultBlocks = showActivityLogs
+    ? blocks
+    : blocks.filter((block) => !isTeamMemberLogBlock(block))
+
+  if (showActivityLogs) {
+    const nodes: ReactNode[] = []
+    let activityBlocks: UIBlock[] = []
+    const flushActivity = (key: string) => {
+      if (activityBlocks.length === 0) return
+      nodes.push(
+        <Fragment key={key}>
+          {renderBlocksGrouped(activityBlocks, { ...options, surface: 'inspector' })}
+        </Fragment>,
+      )
+      activityBlocks = []
+    }
+    resultBlocks.forEach((block, index) => {
+      if (block.kind !== 'team_member_message') {
+        activityBlocks.push(block)
+        return
+      }
+      flushActivity(`member-activity-${index}`)
+      if (block.content.trim().length === 0) return
+      nodes.push(
+        <div key={`member-message-${index}`} className="md-surface">
+          <MarkdownText
+            content={block.content}
+            isStreaming={block.isStreaming}
+            {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+          />
+        </div>,
+      )
+    })
+    flushActivity('member-activity-end')
+    return <>{nodes}</>
+  }
+
+  return (
+    <>
+      {resultBlocks.map((block, index) => {
+        if (block.kind === 'team_member_message') {
+          if (block.content.trim().length === 0) return null
+          return (
+            <div key={index} className="md-surface">
+              <MarkdownText
+                content={block.content}
+                isStreaming={block.isStreaming}
+                {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+              />
+            </div>
+          )
+        }
+        return renderBlocks([block], options)
+      })}
+    </>
+  )
+}
+
+function isTeamMemberLogBlock(block: UIBlock): boolean {
+  return (
+    block.kind === 'thinking' ||
+    block.kind === 'tool_call' ||
+    block.kind === 'terminal' ||
+    block.kind === 'file_change'
+  )
+}
+
+function isTeamMemberActivityRunning(blocks: UIBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.kind === 'team_member_message') return block.isStreaming
+    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
+    if (block.kind === 'terminal') return block.isStreaming
+    return false
+  })
+}
+
+function ValidationSuggestionCard({
+  block,
+  sessionId,
+}: {
+  block: Extract<UIBlock, { kind: 'validation_suggestion' }>
+  sessionId?: SessionId
+}) {
+  const { toast } = useToast()
+  const [runningCommand, setRunningCommand] = useState<string | null>(null)
+
+  const runValidationCommand = async (command: string, repair: boolean) => {
+    if (sessionId == null) {
+      toast.warning('请先选中会话再运行验证命令。')
+      return
+    }
+    const runKey = repair ? `${command}:repair` : command
+    setRunningCommand(runKey)
+    try {
+      const quotedCommand = quoteSlashCommandArg(command)
+      const res = await window.spark.invoke('command:execute', {
+        sessionId,
+        message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}`,
+      })
+      if (res.queued === true) {
+        toast.info('会话运行中，验证命令已加入队列，将在当前任务完成后执行。')
+      } else {
+        toast.info(
+          repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。',
+        )
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '验证命令执行失败')
+    } finally {
+      setRunningCommand(null)
+    }
+  }
+
+  return (
+    <div className="chat-card validation-card">
+      <div className="chat-card-h info">
+        <span className="ico">
+          <Icons.CheckCircle />
+        </span>
+        <span>建议验证</span>
+      </div>
+      <div className="chat-card-body">
+        <div className="validation-summary">{block.summary}</div>
+        <div className="validation-files">
+          {block.changedFiles.slice(0, 6).map((file) => (
+            <code key={file} className="validation-file">
+              {file}
+            </code>
+          ))}
+          {block.changedFiles.length > 6 && (
+            <span className="validation-more">+{block.changedFiles.length - 6}</span>
+          )}
+        </div>
+        <div className="validation-command-list">
+          {block.commands.map((item) => (
+            <div className="validation-command-row" key={item.id}>
+              <div className="validation-command-main min-w-0">
+                <div className="validation-command-title">
+                  <span>{item.label}</span>
+                  <code>{item.command}</code>
+                </div>
+                <div className="validation-command-reason">{item.reason}</div>
+              </div>
+              <button
+                className="btn ghost sm"
+                disabled={runningCommand != null}
+                onClick={() => void runValidationCommand(item.command, false)}
+                title="运行验证命令"
+              >
+                {runningCommand === item.command ? (
+                  <Icons.Spinner size={12} />
+                ) : (
+                  <Icons.Play size={12} />
+                )}
+                运行
+              </button>
+              <button
+                className="btn ghost sm"
+                disabled={runningCommand != null}
+                onClick={() => void runValidationCommand(item.command, true)}
+                title="验证失败后交给 Agent 继续修复"
+              >
+                {runningCommand === `${item.command}:repair` ? (
+                  <Icons.Spinner size={12} />
+                ) : (
+                  <Icons.Refresh size={12} />
+                )}
+                修复
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function quoteSlashCommandArg(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+// ─── Diff / Plan / Permission helper utilities ──────────────────────────────────
+
+async function executeCheckpointRestore(sessionId: SessionId, checkpointId: string): Promise<void> {
+  await window.spark.invoke('command:execute', {
+    sessionId,
+    message: `/checkpoint restore ${quoteSlashCommandArg(checkpointId)}`,
+  })
+}
+
+function InlinePermissionCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'permission_request' }>
+}) {
+  const { toast } = useToast()
+  const { action, riskLevel, description, paths, command, domains } = block
+
+  const handleAllow = () => {
+    toast.success(`已允许: ${description}`)
+  }
+
+  const handleDeny = () => {
+    toast.info(`已拒绝: ${description}`)
+  }
+
+  // Route to the appropriate card based on action type
+  if (action === 'file_read' || action === 'file_write') {
+    return (
+      <FilePermCard
+        path={paths?.[0] ?? description}
+        scope={riskLevel}
+        lines={{ add: 0, del: 0 }}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
+      />
+    )
+  }
+
+  if (action === 'network') {
+    return (
+      <NetPermCard
+        url={domains?.[0] ?? description}
+        method="GET"
+        reason={description}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
+      />
+    )
+  }
+
+  if (action === 'mcp') {
+    return (
+      <MCPPermCard
+        server="MCP Server"
+        tool={description}
+        params={{ paths, command, domains }}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
+      />
+    )
+  }
+
+  // Generic fallback for command_exec, git, etc.
+  return (
+    <div className="chat-card">
+      <div className="chat-card-h warn">
+        <span className="ico">
+          <Icons.Shield size={14} />
+        </span>
+        <span>权限请求 · {action}</span>
+        <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>
+          {riskLevel}
+        </span>
+      </div>
+      <div className="chat-card-body">
+        <div className="spec-grid">
+          <span className="k">描述</span>
+          <span className="v">{description}</span>
+          {command && (
+            <>
+              <span className="k">命令</span>
+              <span className="v">
+                <code>{command}</code>
+              </span>
+            </>
+          )}
+          {paths && paths.length > 0 && (
+            <>
+              <span className="k">路径</span>
+              <span className="v">
+                <code>{paths.join(', ')}</code>
+              </span>
+            </>
+          )}
+          {domains && domains.length > 0 && (
+            <>
+              <span className="k">域名</span>
+              <span className="v">
+                <code>{domains.join(', ')}</code>
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="chat-card-foot">
+        <span className="spacer" />
+        <button className="btn sm" onClick={handleDeny}>
+          拒绝
+        </button>
+        <button className="btn sm primary" onClick={handleAllow}>
+          <Icons.Check size={11} /> 允许
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Inline card for AskUserQuestion tool calls in the timeline */
+function InlineQuestionCard({
+  block,
+  sessionId,
+}: {
+  block: Extract<UIBlock, { kind: 'user_question' }>
+  sessionId?: SessionId
+}) {
+  if (block.questions.length === 0) return null
+
+  const total = block.questions.length
+  const answerByQuestion = new Map<string, { answer: string; skipped?: boolean }>()
+  if (block.answerSummary != null && block.answerSummary.length > 0) {
+    for (const item of block.answerSummary) {
+      answerByQuestion.set(item.question, {
+        answer: item.answer,
+        ...(item.skipped != null ? { skipped: item.skipped } : {}),
+      })
+    }
+  } else if (block.answered) {
+    // Fallback: try the module-level cache populated when the user
+    // submitted answers via the dock.  The CLI tool_result output may
+    // not be in a parseable format, so the builder's answerSummary
+    // can be empty even though the user did answer.
+    const cacheKey = getQuestionAnswerCacheKey(block.questions, sessionId)
+    const cached = readPersistedQuestionAnswerSummaries(cacheKey)
+    if (cached != null) {
+      for (const item of cached) {
+        answerByQuestion.set(item.question, {
+          answer: item.answer,
+          ...(item.skipped != null ? { skipped: item.skipped } : {}),
+        })
+      }
+    }
+  }
+
+  return (
+    <div className="chat-card">
+      <div className="chat-card-h info">
+        <span className="ico">
+          <Icons.HelpCircle size={14} />
+        </span>
+        <span>Agent 提问</span>
+        {block.answered && (
+          <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-ok)' }}>
+            已回答
+          </span>
+        )}
+        {block.error != null && (
+          <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-err)' }}>
+            提问失败
+          </span>
+        )}
+      </div>
+      <div className="chat-card-body" style={{ gap: 10 }}>
+        <div className="inline-question-answers">
+          {block.questions.map((question, index) => {
+            const summary =
+              answerByQuestion.get(question.question) ??
+              (block.answerSummary != null ? block.answerSummary[index] : undefined)
+            return (
+              <div className="inline-question-answer" key={`${question.question}-${index}`}>
+                {question.header && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'var(--c-dim)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {question.header}
+                  </div>
+                )}
+                <div className="inline-question-answer-q">
+                  {index + 1}. {question.question}
+                </div>
+                {block.answered && (
+                  <div className="inline-question-answer-a">
+                    {summary?.skipped
+                      ? '已跳过'
+                      : summary?.answer && summary.answer.length > 0
+                        ? summary.answer
+                        : '未填写'}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontSize: 12,
+              color: 'var(--c-dim)',
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: 'var(--c-bg-soft)',
+            }}
+          >
+            共 {total} 题
+          </span>
+          {!block.answered && (
+            <span
+              style={{ fontSize: 12, color: block.error != null ? 'var(--c-err)' : 'var(--c-dim)' }}
+            >
+              {block.error ?? '请在底部问答面板中逐题作答'}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Inline card showing Context Ledger token breakdown */
+function ContextLedgerCard({ block }: { block: Extract<UIBlock, { kind: 'context_ledger' }> }) {
+  const barMaxWidth = 180
+  const usageColor =
+    block.usagePercent > 90
+      ? 'var(--c-err, #ef4444)'
+      : block.usagePercent > 70
+        ? 'var(--c-warn, #f59e0b)'
+        : 'var(--c-ok, #22c55e)'
+
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        border: '1px solid var(--c-border)',
+        fontSize: 12,
+        background: 'var(--c-surface, #fff)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Icons.Activity size={13} style={{ opacity: 0.6 }} />
+        <span style={{ fontWeight: 600 }}>Context Ledger</span>
+        <span style={{ marginLeft: 'auto', color: usageColor, fontWeight: 600 }}>
+          {block.usagePercent}%
+        </span>
+      </div>
+      {/* Usage bar */}
+      <div
+        style={{
+          height: 4,
+          borderRadius: 2,
+          background: 'var(--c-border)',
+          marginBottom: 8,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            height: '100%',
+            width: `${Math.min(100, block.usagePercent)}%`,
+            background: usageColor,
+            borderRadius: 2,
+            transition: 'width 0.3s ease',
+          }}
+        />
+      </div>
+      {/* Per-section breakdown */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {block.sections.map((section, si) => {
+          const maxTokens = block.softLimitTokens || 1
+          const sectionPercent = Math.round((section.estimatedTokens / maxTokens) * 100)
+          return (
+            <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 130, flexShrink: 0, color: 'var(--c-dim)' }}>
+                {section.label}
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 3,
+                  borderRadius: 1.5,
+                  background: 'var(--c-border)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.min(100, sectionPercent * (barMaxWidth / 100))}%`,
+                    background: 'var(--c-text, #888)',
+                    borderRadius: 1.5,
+                  }}
+                />
+              </div>
+              <span style={{ width: 60, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {section.estimatedTokens.toLocaleString()} t
+              </span>
+              {section.truncated && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--c-warn, #f59e0b)',
+                    border: '1px solid var(--c-warn)',
+                    borderRadius: 3,
+                    padding: '0 3px',
+                  }}
+                >
+                  truncated
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: 6,
+          paddingTop: 4,
+          borderTop: '1px solid var(--c-border)',
+          color: 'var(--c-dim)',
+        }}
+      >
+        <span>Total: {block.totalEstimatedTokens.toLocaleString()} tokens</span>
+        <span>Window: {block.contextWindowTokens.toLocaleString()}</span>
+      </div>
+    </div>
+  )
+}
+
+/** Inline card showing context summarization stats */
+function ContextSummarizedCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'context_summarized' }>
+}) {
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
+      <Icons.File size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+      <span style={{ opacity: 0.7 }}>
+        Context Governor summarized {block.summarizedEntryCount} older exchanges (saved ~
+        {block.tokensSaved.toLocaleString()} tokens)
+      </span>
+    </div>
+  )
+}
+
+/** Inline card showing provider-reported context compaction output */
+function ContextCompactionCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'context_compaction' }>
+}) {
+  const sourceLabel =
+    block.source === 'claude_code'
+      ? 'Claude Code'
+      : block.source === 'codex_cli'
+        ? 'Codex CLI'
+        : 'Codex SDK'
+  const phaseLabel =
+    block.phase === 'started'
+      ? 'started compacting'
+      : block.phase === 'completed'
+        ? 'completed compaction'
+        : block.phase === 'failed'
+          ? 'failed compaction'
+          : 'reported compact boundary'
+  const tokenText =
+    block.preTokens != null || block.postTokens != null
+      ? [
+          block.preTokens != null ? `${block.preTokens.toLocaleString()} t` : null,
+          block.postTokens != null ? `${block.postTokens.toLocaleString()} t` : null,
+        ]
+          .filter(Boolean)
+          .join(' -> ')
+      : null
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+        display: 'grid',
+        gap: 4,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icons.Layers size={14} style={{ opacity: 0.65, flexShrink: 0 }} />
+        <span style={{ opacity: 0.78 }}>
+          {sourceLabel} {phaseLabel}
+          {block.trigger != null ? ` (${block.trigger})` : ''}
+          {tokenText != null ? ` · ${tokenText}` : ''}
+          {block.durationMs != null ? ` · ${block.durationMs}ms` : ''}
+        </span>
+      </div>
+      {block.summary != null && (
+        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{block.summary}</div>
+      )}
+      {block.message != null && (
+        <div style={{ color: 'var(--c-warn, #f59e0b)', whiteSpace: 'pre-wrap' }}>
+          {block.message}
+        </div>
+      )}
+      {block.rawType != null && (
+        <div style={{ color: 'var(--c-dim, #8a8f98)', fontSize: 11 }}>raw: {block.rawType}</div>
+      )}
+    </div>
+  )
+}
+
+/** Inline card showing a self-correction retry trail */
+function RetryTrailCard({ block }: { block: Extract<UIBlock, { kind: 'retry_trail' }> }) {
+  const outcomeColor =
+    block.finalOutcome === 'success'
+      ? 'var(--c-ok, #22c55e)'
+      : block.finalOutcome === 'failure'
+        ? 'var(--c-err, #ef4444)'
+        : 'var(--c-warn, #f59e0b)'
+
+  return (
+    <div
+      style={{
+        padding: '10px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Icons.Refresh size={14} style={{ opacity: 0.6 }} />
+        <span style={{ fontWeight: 600 }}>Self-correction: {block.target}</span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            padding: '2px 8px',
+            borderRadius: 4,
+            background: outcomeColor,
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          {block.finalOutcome.toUpperCase()}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {block.attempts.map((attempt, idx) => {
+          const icon =
+            attempt.result === 'success' ? (
+              <Icons.Check size={11} style={{ color: 'var(--c-ok, #22c55e)' }} />
+            ) : attempt.result === 'failure' ? (
+              <Icons.X size={11} style={{ color: 'var(--c-err, #ef4444)' }} />
+            ) : (
+              <Icons.AlertTriangle size={11} style={{ color: 'var(--c-warn, #f59e0b)' }} />
+            )
+
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 8px',
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <span
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                {attempt.attempt}
+              </span>
+              {icon}
+              <span
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {attempt.action}
+              </span>
+              {attempt.durationMs != null && (
+                <span style={{ opacity: 0.5, fontSize: 10 }}>{attempt.durationMs}ms</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {block.attempts.some((a) => a.failureSummary) && (
+        <div
+          style={{
+            marginTop: 6,
+            padding: '6px 8px',
+            borderRadius: 4,
+            background: 'rgba(239,68,68,0.08)',
+            fontSize: 11,
+          }}
+        >
+          {block.attempts
+            .filter((a) => a.failureSummary)
+            .map((a, idx) => (
+              <div key={idx} style={{ opacity: 0.7 }}>
+                Attempt {a.attempt}: {a.failureSummary}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 重新正向应用一组文件的 unified diff（每个文件可包含多个 hunk）。
+ * 用于 TurnFileSummaryCard 在「撤销」后的「重新应用」。
+ */
+async function reapplyTurnFiles(files: Array<FileChangeSummary & { diff: string }>): Promise<void> {
+  const wsRes = await window.spark.invoke('workspace:get-current', {})
+  const workspaceRootPath = wsRes?.workspace?.rootPath
+  if (workspaceRootPath == null) throw new Error('无法确定工作区路径')
+
+  for (const file of files) {
+    const hunks = parseUnifiedDiff(file.diff)
+    for (const hunk of hunks) {
+      const hunkDiff = reconstructHunkDiff(hunk)
+      const result = await window.spark.invoke('file:apply-hunk-patch', {
+        workspaceRootPath,
+        filePath: file.path,
+        hunkDiff,
+        direction: 'forward',
+      })
+      if (!result?.applied) {
+        throw new Error(`${file.path}: ${result?.error ?? '未知错误'}`)
+      }
+    }
+  }
+}
+
+/** Reconstruct unified diff text from a parsed DiffHunk object */
+function reconstructHunkDiff(hunk: DiffHunk): string {
+  const header = `@@ ${hunk.range} @@${hunk.note ? ` ${hunk.note}` : ''}`
+  const lines = hunk.lines.map((line) => {
+    if (line.t === 'add') return `+${line.s}`
+    if (line.t === 'del') return `-${line.s}`
+    if (line.t === 'ctx') return ` ${line.s}`
+    return line.s
+  })
+  return [header, ...lines].join('\n')
+}
+
+function InlineContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number
+  y: number
+  items: ContextMenuItem[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      className="action-menu context-action-menu"
+      style={{ position: 'fixed', left: x, top: y, zIndex: 10000 }}
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={`action-menu-item${item.danger ? ' danger' : ''}`}
+          disabled={item.disabled}
+          onClick={() => {
+            if (item.disabled) return
+            onClose()
+            item.onClick?.()
+          }}
+        >
+          {item.icon ?? <span className="action-menu-item-spacer" />}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SelectionQuoteContextMenu({
+  onQuote,
+}: {
+  onQuote: (text: string, label?: string) => void
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.composer, .context-action-menu, .action-menu, .msg-bubble') != null)
+        return
+      const selection = window.getSelection?.()
+      const text = selection?.toString().trim() ?? ''
+      if (text.length === 0 || selection?.isCollapsed) return
+      event.preventDefault()
+      setMenu({ x: event.clientX, y: event.clientY, text })
+    }
+    window.addEventListener('contextmenu', handleContextMenu)
+    return () => window.removeEventListener('contextmenu', handleContextMenu)
+  }, [])
+
+  if (menu == null) return null
+  return (
+    <InlineContextMenu
+      x={menu.x}
+      y={menu.y}
+      onClose={() => setMenu(null)}
+      items={[
+        {
+          key: 'quote-selection',
+          label: '引用对话',
+          icon: <Icons.CornerUpLeft size={14} />,
+          onClick: () => onQuote(menu.text, '选中内容'),
+        },
+      ]}
+    />
+  )
+}
+
+async function editTextSelection(
+  target: HTMLTextAreaElement | HTMLInputElement,
+  action: 'cut' | 'copy' | 'paste',
+): Promise<void> {
+  target.focus()
+  if (action === 'paste') {
+    try {
+      const text = await navigator.clipboard.readText()
+      insertTextIntoControl(target, text)
+    } catch {
+      document.execCommand('paste')
+    }
+    return
+  }
+  document.execCommand(action)
+}
+
+function insertTextIntoControl(target: HTMLTextAreaElement | HTMLInputElement, text: string): void {
+  const start = target.selectionStart ?? target.value.length
+  const end = target.selectionEnd ?? start
+  target.setRangeText(text, start, end, 'end')
+  target.dispatchEvent(
+    new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
+  )
+}
+
+/** 从 blocks 中提取纯文本内容（用于复制） */
+function extractTextFromBlocks(blocks: UIBlock[]): string {
+  return blocks
+    .filter((b) => b.kind === 'text')
+    .map((b) => (b as Extract<UIBlock, { kind: 'text' }>).content)
+    .join('\n')
+    .trim()
+}
+
+const UserMsg = React.memo(
+  function UserMsg({
+    children,
+    timestamp,
+    blocks,
+    attachments = [],
+    sessionReferences = [],
+    deliveryState,
+    deliveryError,
+    onDelete,
+    mentionAgentName,
+    onReply,
+    onResend,
+    selectionMode = false,
+    selected = false,
+    onToggleSelected,
+    onStartMultiSelect,
+  }: {
+    children: ReactNode
+    timestamp?: string | undefined
+    blocks: UIBlock[]
+    attachments?: MessageAttachment[]
+    sessionReferences?: UserMessageSessionReferenceDisplay[]
+    deliveryState?: UIMessage['deliveryState']
+    deliveryError?: string
+    onDelete?: () => void
+    /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
+    mentionAgentName?: string | undefined
+    onReply?: (selectedText?: string) => void
+    /** 重发：把这条消息的文本+附件重新塞回输入区 */
+    onResend?: () => void
+    selectionMode?: boolean
+    selected?: boolean
+    onToggleSelected?: () => void
+    onStartMultiSelect?: () => void
+  }) {
+    const textContent = extractTextFromBlocks(blocks)
+    const [contextMenu, setContextMenu] = useState<{
+      x: number
+      y: number
+      imageSrc?: string
+      selectedText?: string
+    } | null>(null)
+
+    const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const target = event.target as HTMLElement | null
+      const image = target?.closest('img') as HTMLImageElement | null
+      const selectedText = readSelectedTextWithin(event.currentTarget)
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+        ...(selectedText.length > 0 ? { selectedText } : {}),
+      })
+    }, [])
+
+    const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
+      if (contextMenu == null) return []
+      const items: ContextMenuItem[] = []
+      if (contextMenu.imageSrc != null) {
+        items.push({
+          key: 'copy-image',
+          label: '复制图片',
+          icon: <Icons.Image size={14} />,
+          onClick: () => {
+            if (contextMenu.imageSrc != null)
+              void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+          },
+        })
+      } else if (textContent.length > 0 || contextMenu.selectedText != null) {
+        const selectedText = contextMenu.selectedText
+        items.push({
+          key: 'copy-text',
+          label: selectedText != null ? '复制选中' : '复制内容',
+          icon: <Icons.Copy size={14} />,
+          onClick: () => {
+            void navigator.clipboard.writeText(selectedText ?? textContent)
+          },
+        })
+      }
+      if (onReply != null) {
+        // 合并原「引用对话」与「回复」：选中文字时引用选中片段，否则引用整条消息
+        const replySelectedText = contextMenu.selectedText
+        items.push({
+          key: 'reply',
+          label: replySelectedText != null ? '引用选中' : '回复',
+          icon: <Icons.CornerUpLeft size={14} />,
+          onClick: () => onReply(replySelectedText),
+        })
+      }
+      if (onStartMultiSelect != null) {
+        items.push({
+          key: 'multi-select',
+          label: '多选',
+          icon: <Icons.CheckSquare size={14} />,
+          onClick: onStartMultiSelect,
+        })
+      }
+      if (onDelete != null) {
+        items.push({
+          key: 'delete',
+          label: '删除',
+          icon: <Icons.Trash size={14} />,
+          danger: true,
+          onClick: onDelete,
+        })
+      }
+      return items
+    }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
+
+    const handleRowClick = selectionMode
+      ? (event: React.MouseEvent<HTMLDivElement>) => {
+          const target = event.target as HTMLElement | null
+          if (target?.closest('a,button,input,textarea,select,[contenteditable="true"]')) return
+          onToggleSelected?.()
+        }
+      : undefined
+
+    return (
+      <div
+        className={`msg msg-user${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
+        onClick={handleRowClick}
+        role={selectionMode ? 'button' : undefined}
+        tabIndex={selectionMode ? 0 : undefined}
+      >
+        {selectionMode && (
+          <label className="msg-select-check" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelected}
+              aria-label="选择该消息"
+            />
+            <Icons.Check className="msg-select-checkmark" size={14} />
+          </label>
+        )}
+        {sessionReferences.length > 0 && (
+          <UserMessageSessionReferences references={sessionReferences} />
+        )}
+        {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
+        <div className="msg-user-line">
+          <CollapsibleContent>
+            <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+              <div className="msg-content">{children}</div>
+            </div>
+          </CollapsibleContent>
+        </div>
+        {deliveryState != null && deliveryState !== 'accepted' && (
+          <div className={`msg-user-delivery msg-user-delivery-${deliveryState}`}>
+            <span>
+              {deliveryState === 'submitting'
+                ? '正在提交…'
+                : deliveryState === 'queued'
+                  ? '已加入队列'
+                  : deliveryState === 'failed'
+                    ? '发送失败'
+                    : '已取消'}
+            </span>
+            {deliveryError != null && deliveryError.length > 0 && (
+              <span className="msg-user-delivery-error" title={deliveryError}>
+                · {deliveryError}
+              </span>
+            )}
+            {deliveryState === 'failed' && onResend != null && (
+              <button type="button" className="msg-user-delivery-retry" onClick={onResend}>
+                重试
+              </button>
+            )}
+          </div>
+        )}
+        {mentionAgentName != null && mentionAgentName.length > 0 && (
+          <div className="msg-user-mention-hint">
+            → {deliveryState != null && deliveryState !== 'accepted' ? '将由' : '已直接由'}{' '}
+            <strong>@{mentionAgentName}</strong> 处理
+          </div>
+        )}
+        <MessageHoverBar
+          timestamp={timestamp}
+          textContent={textContent}
+          position="right"
+          {...(onDelete ? { onDelete } : {})}
+          {...(onResend ? { onResend } : {})}
+        />
+        {contextMenu != null && contextMenuItems.length > 0 && (
+          <InlineContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            items={contextMenuItems}
+          />
+        )}
+      </div>
+    )
+  },
+  (prev, next) => {
+    // 用户消息创建后不再变化：blocks 引用稳定即可跳过重渲染（忽略 children/回调标识）。
+    // 但 selectionMode/selected 必须比较，否则进入多选时 memo 判定 props 未变 → 勾选框不挂载。
+    return (
+      prev.blocks === next.blocks &&
+      prev.attachments === next.attachments &&
+      prev.sessionReferences === next.sessionReferences &&
+      prev.mentionAgentName === next.mentionAgentName &&
+      prev.deliveryState === next.deliveryState &&
+      prev.deliveryError === next.deliveryError &&
+      prev.timestamp === next.timestamp &&
+      prev.selectionMode === next.selectionMode &&
+      prev.selected === next.selected
+    )
+  },
+)
+
+function resolveAssistantIdentity(
+  msg: UIMessage,
+  agents: ManagedAgent[],
+  fallbackId: string,
+  fallbackName: string,
+  fallbackAvatarSrc: string,
+): { id: string; name: string; avatarSrc: string } {
+  const id = msg.agentId ?? fallbackId
+  const agent = agents.find((item) => item.id === id)
+  const name = msg.agentName ?? agent?.name ?? fallbackName
+  if (msg.agentId == null) {
+    return { id: fallbackId, name: fallbackName, avatarSrc: fallbackAvatarSrc }
+  }
+  const avatar = getAgentAvatarConfig(agent?.metadata, id, name)
+  return { id, name, avatarSrc: resolveAvatarSrc(avatar) }
+}
+
+function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
+  const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
+  const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
+  const directoryAttachments = attachments.filter((attachment) => attachment.type === 'directory')
+
+  return (
+    <div className="msg-user-attachments">
+      {imageAttachments.length > 0 && (
+        <div className="msg-user-image-row">
+          {imageAttachments.map((attachment) => (
+            <UserMessageImageAttachment
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              attachment={attachment}
+            />
+          ))}
+        </div>
+      )}
+      {directoryAttachments.length > 0 && (
+        <div className="msg-user-file-row">
+          {directoryAttachments.map((attachment) => (
+            <div
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              className="composer-file-chip msg-user-file-chip msg-user-directory-chip"
+              title={attachment.name ?? getFileNameFromPath(attachment.path)}
+            >
+              <Icons.Folder size={14} />
+              <span>{attachment.name ?? getFileNameFromPath(attachment.path)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {fileAttachments.length > 0 && (
+        <div className="msg-user-file-row">
+          {fileAttachments.map((attachment) => (
+            <div
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              className="composer-file-chip msg-user-file-chip"
+              title={attachment.name ?? getFileNameFromPath(attachment.path)}
+            >
+              <FileChipIcon path={attachment.path} size={14} />
+              <span>{attachment.name ?? getFileNameFromPath(attachment.path)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachment }) {
+  const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const [resolvedSrc, setResolvedSrc] = useState(
+    () => getMessageImagePreview(attachment, resolveComposerImageSrc).initialSrc ?? '',
+  )
+  const [imgError, setImgError] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const preview = getMessageImagePreview(attachment, resolveComposerImageSrc)
+    if (preview.initialSrc != null) setResolvedSrc(preview.initialSrc)
+    setImgError(false)
+
+    if (!preview.needsPreparedPreview)
+      return () => {
+        cancelled = true
+      }
+
+    void prepareImagePreview({ sourcePath: preview.sourcePath })
+      .then((preview) => {
+        if (!cancelled) {
+          const next = preparedMessageImageRenderState(preview.fileUrl)
+          setResolvedSrc(next.resolvedSrc)
+          setImgError(next.imgError)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [attachment.path, attachment.previewPath, attachment.previewUrl, prepareImagePreview])
+
+  const fileName = attachment.name ?? getFileNameFromPath(attachment.path)
+
+  return (
+    <>
+      <div
+        className="msg-user-image-card"
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setMenu({ x: event.clientX, y: event.clientY })
+        }}
+      >
+        <button
+          type="button"
+          className="msg-user-image-button"
+          onClick={() => {
+            if (!imgError && resolvedSrc.length > 0) setPreviewOpen(true)
+          }}
+          title={fileName}
+        >
+          {imgError || resolvedSrc.length === 0 ? (
+            <div className="msg-user-image-fallback" aria-hidden="true">
+              <Icons.Image size={18} />
+            </div>
+          ) : (
+            <img
+              src={resolvedSrc}
+              alt={fileName}
+              className="msg-user-image-thumb"
+              onError={() => setImgError(true)}
+              draggable={false}
+            />
+          )}
+        </button>
+      </div>
+      {previewOpen && !imgError && resolvedSrc.length > 0 && (
+        <ImagePreviewModal
+          src={resolvedSrc}
+          alt={fileName}
+          fileName={fileName}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+      {menu != null && !imgError && resolvedSrc.length > 0 && (
+        <InlineContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              key: 'preview',
+              label: '预览图片',
+              icon: <Icons.Maximize size={14} />,
+              onClick: () => setPreviewOpen(true),
+            },
+            {
+              key: 'copy',
+              label: '复制图片',
+              icon: <Icons.Copy size={14} />,
+              onClick: () => {
+                void copyImageFromSrc(resolvedSrc).catch(() => {})
+              },
+            },
+          ]}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * assistantRowsPropsAreEqual — AssistantMessageRows / AgentMsg 的 memo 比较器。
+ *
+ * MessageBuilder 对消息对象/blocks 数组是「就地 mutate」的：流式中 blocks 引用不变、
+ * 内容在变，因此对正在流式（isLatest 或 status==='running'）的行必须始终重渲染。
+ * 已完成且非最新的行不会再被 mutate（blocks 引用永久稳定），可安全跳过——这正是
+ * 长会话流式时大量历史行被无谓重渲染（重跑 markdown 解析）的根因。
+ * 故意忽略 onDelete/onReply/onFilePreview 等回调标识：它们每次 render 都是新函数，
+ * 但其「是否存在」对给定消息是稳定的，不应触发重渲染；onFork 例外，因为轮次边界
+ * 变化会改变它是否应该出现在当前消息上。
+ */
+type AssistantRowCompareProps = {
+  sessionId: SessionId
+  workspaceRootPath: string | null
+  status?: 'running'
+  blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  turnDurationMs?: number | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  showIdentity?: boolean
+  running?: boolean
+  selectionMode?: boolean
+  selected?: boolean
+  teamModeActive?: boolean
+  onRetry?: () => void
+  onFork?: () => void
+}
+
+function assistantRowsPropsAreEqual(
+  prev: Readonly<AssistantRowCompareProps>,
+  next: Readonly<AssistantRowCompareProps>,
+): boolean {
+  if (prev.isLatest || next.isLatest || prev.status === 'running' || next.status === 'running') {
+    return false
+  }
+  return (
+    prev.blocks === next.blocks &&
+    areSessionTaskTimelineEntriesEqual(prev.sessionTaskEntry, next.sessionTaskEntry) &&
+    prev.messageStatus === next.messageStatus &&
+    prev.sessionId === next.sessionId &&
+    prev.workspaceRootPath === next.workspaceRootPath &&
+    prev.assistantId === next.assistantId &&
+    prev.assistantName === next.assistantName &&
+    prev.assistantAvatarSrc === next.assistantAvatarSrc &&
+    prev.showIdentity === next.showIdentity &&
+    prev.timestamp === next.timestamp &&
+    prev.turnDurationMs === next.turnDurationMs &&
+    prev.selectionMode === next.selectionMode &&
+    prev.selected === next.selected &&
+    prev.teamModeActive === next.teamModeActive &&
+    (prev.onRetry != null) === (next.onRetry != null) &&
+    (prev.onFork != null) === (next.onFork != null)
+  )
+}
+
+const AssistantMessageRows = React.memo(function AssistantMessageRows({
+  sessionId,
+  sessionRunning,
+  workspaceRootPath,
+  status,
+  blocks,
+  sessionTaskEntry,
+  messageStatus,
+  isLatest,
+  timestamp,
+  turnDurationMs,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
+  showIdentity,
+  onDelete,
+  onFork,
+  onReply,
+  onFilePreview,
+  messageId,
+  onReplyToMember,
+  onDeleteMemberMessage,
+  selectionMode,
+  selected,
+  onToggleSelected,
+  onStartMultiSelect,
+  onRetry,
+  teamModeActive = false,
+}: {
+  sessionId: SessionId
+  workspaceRootPath: string | null
+  status?: 'running'
+  blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  /** 整轮耗时（毫秒）；终态才有，供折叠条显示「耗时 34s」 */
+  turnDurationMs?: number | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  showIdentity: boolean
+  onDelete?: () => void
+  onFork?: () => void
+  onReply?: (selectedText?: string) => void
+  onFilePreview?: FileOpenHandler
+  sessionRunning?: boolean
+  messageId: string
+  onReplyToMember?: (args: {
+    messageId: string
+    memberAgentId: string
+    memberName: string
+    content: string
+    selectedText?: string
+  }) => void
+  onDeleteMemberMessage?: (msgId: string, eventIds: string[]) => void
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelected?: () => void
+  onStartMultiSelect?: () => void
+  onRetry?: () => void
+  // 团队模式开关：关闭「显示思考与执行日志」时配合 CSS 在 React 侧剔除 host 的纯过程段，
+  // 避免气泡内内容全被隐藏后只剩下头像+名称的空气泡。
+  teamModeActive?: boolean
+}) {
+  const turnCollapse = useAssistantTurnCollapse(messageStatus, blocks)
+
+  const showTeamActivityLogs = useTeamActivityLogsVisible()
+  const hideTeamHostProcessLogs = teamModeActive && !showTeamActivityLogs
+  const segments = splitAssistantMessageBlocks(turnCollapse.visibleBlocks)
+  if (segments.length === 0) return null
+  const lastRenderableSegmentIndex = segments.reduce((lastIndex, segment, index) => {
+    if (segment.kind !== 'agent') return index
+    const projectedBlocks =
+      sessionTaskEntry == null
+        ? segment.blocks
+        : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+    return projectedBlocks.length > 0 ? index : lastIndex
+  }, -1)
+  const lastAgentSegmentIndex = segments.reduce((lastIndex, segment, index) => {
+    if (segment.kind !== 'agent') return lastIndex
+    const projectedBlocks =
+      sessionTaskEntry == null
+        ? segment.blocks
+        : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+    return projectedBlocks.length > 0 ? index : lastIndex
+  }, -1)
+
+  return (
+    <>
+      {turnCollapse.canCollapse && (
+        <div
+          className={`assistant-turn-collapse-control${showIdentity ? '' : ' without-avatar'}`}
+          data-assistant-turn-collapse={turnCollapse.expanded ? 'expanded' : 'collapsed'}
+        >
+          <ToolLogsMasterToggle
+            open={turnCollapse.expanded}
+            onToggle={turnCollapse.toggleExpanded}
+            {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
+          />
+        </div>
+      )}
+      {segments.map((segment, index) => {
+        const segmentIsLatest = isLatest === true && index === lastRenderableSegmentIndex
+        if (segment.kind === 'team') {
+          return (
+            <div key={`team-${index}`} className="team-timeline-segment">
+              {renderBlocks(
+                segment.blocks,
+                onFilePreview != null
+                  ? { sessionId, workspaceRootPath, onFilePreview }
+                  : { sessionId, workspaceRootPath },
+              )}
+            </div>
+          )
+        }
+        if (segment.kind === 'team_member_activity') {
+          if (!hasVisibleTeamMemberActivityBlocks(segment.blocks, showTeamActivityLogs)) return null
+          return (
+            <div
+              key={`team-member-activity-${index}`}
+              className="team-timeline-segment"
+              data-running-agent-id={segment.memberContext.memberAgentId}
+              data-running={segment.running ? 'true' : 'false'}
+            >
+              <TeamMemberActivityBlockView
+                memberAgentId={segment.memberContext.memberAgentId}
+                blocks={segment.blocks}
+                running={segment.running}
+                sessionId={sessionId}
+                {...(onFilePreview != null ? { onFilePreview } : {})}
+                {...(onReplyToMember != null
+                  ? {
+                      onReplyToMember: (memberArgs: {
+                        memberAgentId: string
+                        memberName: string
+                        content: string
+                        selectedText?: string
+                      }) => onReplyToMember({ ...memberArgs, messageId }),
+                    }
+                  : {})}
+                {...(onDeleteMemberMessage != null
+                  ? {
+                      onDeleteMemberMessage: (eventIds: string[]) =>
+                        onDeleteMemberMessage(messageId, eventIds),
+                    }
+                  : {})}
+              />
+            </div>
+          )
+        }
+        if (segment.kind === 'team_peer') {
+          return (
+            <div key={`team-peer-${index}`} className="team-timeline-segment">
+              <TeamPeerMessageBlockView block={segment.block} />
+            </div>
+          )
+        }
+        if (segment.kind === 'team_round_divider') {
+          return <TeamRoundDividerBlockView key={`team-round-${index}`} block={segment.block} />
+        }
+        if (segment.kind === 'team_discussion_status') {
+          return (
+            <TeamDiscussionStatusBlockView key={`team-status-${index}`} block={segment.block} />
+          )
+        }
+        const segmentBlocks =
+          sessionTaskEntry == null
+            ? segment.blocks
+            : projectSessionTaskTimelineBlocks(segment.blocks, sessionTaskEntry.anchorToolCallId)
+        if (segmentBlocks.length === 0) return null
+        const segmentStreaming = segmentIsLatest && status === 'running'
+        const segmentTaskEntry =
+          sessionTaskEntry != null &&
+          segmentBlocks.some(
+            (block) =>
+              isSessionProgressToolBlock(block) &&
+              block.toolCallId === sessionTaskEntry.anchorToolCallId,
+          )
+            ? sessionTaskEntry
+            : undefined
+        // 团队模式关闭过程日志时，host 的纯过程段（只有思考/工具调用等，会被 CSS 整体隐藏）
+        // 不再渲染；流式段保留，让「执行任务中」运行标识可见。有正文/错误/结果卡片的段不受影响。
+        if (
+          hideTeamHostProcessLogs &&
+          segmentTaskEntry == null &&
+          !segmentStreaming &&
+          !hasVisibleAgentBlocks(segmentBlocks)
+        )
+          return null
+        return (
+          <AgentMsg
+            key={`agent-${index}`}
+            sessionId={sessionId}
+            workspaceRootPath={workspaceRootPath}
+            blocks={segmentBlocks}
+            {...(segmentTaskEntry != null ? { sessionTaskEntry: segmentTaskEntry } : {})}
+            isLatest={segmentIsLatest}
+            {...(sessionRunning !== undefined ? { sessionRunning } : {})}
+            assistantId={assistantId}
+            assistantName={assistantName}
+            assistantAvatarSrc={assistantAvatarSrc}
+            showIdentity={showIdentity}
+            running={segmentStreaming}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+            {...(segmentStreaming ? { status: 'running' as const } : {})}
+            {...(messageStatus != null ? { messageStatus } : {})}
+            {...(timestamp != null ? { timestamp } : {})}
+            {...(turnDurationMs != null ? { turnDurationMs } : {})}
+            turnCollapseManaged={turnCollapse.canCollapse}
+            {...(onDelete != null ? { onDelete } : {})}
+            {...(onFork != null && index === lastAgentSegmentIndex ? { onFork } : {})}
+            {...(onReply != null ? { onReply } : {})}
+            {...(selectionMode !== undefined ? { selectionMode } : {})}
+            {...(selected !== undefined ? { selected } : {})}
+            {...(onToggleSelected != null ? { onToggleSelected } : {})}
+            {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
+            {...(onRetry != null ? { onRetry } : {})}
+          />
+        )
+      })}
+    </>
+  )
+}, assistantRowsPropsAreEqual)
+
+type AssistantMessageSegment =
+  | { kind: 'agent'; blocks: UIBlock[] }
+  | { kind: 'team'; blocks: UIBlock[] }
+  | { kind: 'team_peer'; block: Extract<UIBlock, { kind: 'team_peer_message' }> }
+  | { kind: 'team_round_divider'; block: Extract<UIBlock, { kind: 'team_round_divider' }> }
+  | { kind: 'team_discussion_status'; block: Extract<UIBlock, { kind: 'team_discussion_status' }> }
+  | {
+      kind: 'team_member_activity'
+      memberContext: TeamMemberEventContext
+      blocks: UIBlock[]
+      running: boolean
+    }
+
+function splitAssistantMessageBlocks(blocks: readonly UIBlock[]): AssistantMessageSegment[] {
+  const segments: AssistantMessageSegment[] = []
+  const latestTeamMemberSegments = new Map<
+    string,
+    Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
+  >()
+  const runningDispatches = new Set<string>()
+  const terminalDispatches = new Set<string>()
+  // Preserve timeline order: host/member blocks only merge while they remain contiguous.
+  // This keeps host follow-up after member output visible as a new bubble at the bottom.
+  const ensureAgentSegment = () => {
+    const previous = segments.at(-1)
+    if (previous?.kind === 'agent') {
+      return previous
+    }
+    const segment: Extract<AssistantMessageSegment, { kind: 'agent' }> = {
+      kind: 'agent',
+      blocks: [],
+    }
+    segments.push(segment)
+    return segment
+  }
+
+  for (const block of blocks) {
+    if (isHiddenTimelineBlock(block)) continue
+    if (block.kind === 'team_dispatch') {
+      const key = teamMemberContextKey({
+        dispatchId: block.dispatchId,
+        memberAgentId: block.memberAgentId,
+      })
+      const isRunning = block.state === 'pending' || block.state === 'working'
+      if (isRunning) {
+        runningDispatches.add(key)
+        terminalDispatches.delete(key)
+      } else {
+        runningDispatches.delete(key)
+        terminalDispatches.add(key)
+      }
+      const segment = latestTeamMemberSegments.get(key)
+      if (segment != null)
+        segment.running =
+          isRunning || (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
+      segments.push({ kind: 'team', blocks: [block] })
+      continue
+    }
+    if (block.kind === 'team_peer_message') {
+      segments.push({ kind: 'team_peer', block })
+      continue
+    }
+    if (block.kind === 'team_round_divider') {
+      segments.push({ kind: 'team_round_divider', block })
+      continue
+    }
+    if (block.kind === 'team_discussion_status') {
+      segments.push({ kind: 'team_discussion_status', block })
+      continue
+    }
+    const memberContext = getBlockTeamMemberContext(block)
+    if (memberContext != null) {
+      const key = teamMemberContextKey(memberContext)
+      const previous = segments.at(-1)
+      let segment =
+        previous?.kind === 'team_member_activity' &&
+        teamMemberContextKey(previous.memberContext) === key
+          ? previous
+          : null
+      if (segment == null) {
+        segment = {
+          kind: 'team_member_activity',
+          memberContext,
+          blocks: [],
+          running: runningDispatches.has(key),
+        }
+        segments.push(segment)
+      }
+      latestTeamMemberSegments.set(key, segment)
+      segment.blocks.push(block)
+      segment.running =
+        runningDispatches.has(key) ||
+        (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
+      continue
+    }
+    ensureAgentSegment().blocks.push(block)
+  }
+  return segments
+}
+
+function teamMemberContextKey(context: TeamMemberEventContext): string {
+  return `${context.dispatchId}:${context.memberAgentId}`
+}
+
+function isHiddenTimelineBlock(block: UIBlock): boolean {
+  return (
+    block.kind === 'tool_call' &&
+    (block.toolName === 'mcp__spark_team__agent_dispatch' ||
+      block.toolName.toLowerCase().endsWith('present_files'))
+  )
+}
+
+function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {
+  if (block.kind === 'team_member_message') {
+    return { dispatchId: block.dispatchId, memberAgentId: block.memberAgentId }
+  }
+  if (
+    block.kind === 'thinking' ||
+    block.kind === 'tool_call' ||
+    block.kind === 'terminal' ||
+    block.kind === 'file_change'
+  ) {
+    return block.teamMemberContext
+  }
+  return undefined
+}
+
+function isHostActivityRunning(blocks: UIBlock[]): boolean {
+  return blocks.some((block) => {
+    if (getBlockTeamMemberContext(block) != null) return false
+    if (block.kind === 'text' || block.kind === 'thinking') return block.isStreaming
+    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
+    if (block.kind === 'terminal') return block.isStreaming
+    if (block.kind === 'subagent') return block.status === 'running'
+    return false
+  })
+}
+
+const AgentMsg = React.memo(function AgentMsg({
+  sessionId,
+  sessionRunning,
+  workspaceRootPath,
+  status,
+  blocks,
+  sessionTaskEntry,
+  messageStatus,
+  isLatest,
+  timestamp,
+  turnDurationMs,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
+  showIdentity = true,
+  running,
+  onDelete,
+  onFork,
+  onReply,
+  onFilePreview,
+  selectionMode = false,
+  selected = false,
+  onToggleSelected,
+  onStartMultiSelect,
+  onRetry,
+  turnCollapseManaged = false,
+}: {
+  sessionId: SessionId
+  workspaceRootPath: string | null
+  status?: 'running'
+  blocks: UIBlock[]
+  sessionTaskEntry?: SessionTaskTimelineEntry
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  /** 整轮耗时（毫秒）；终态才有，供折叠条显示「耗时 34s」 */
+  turnDurationMs?: number | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  showIdentity?: boolean
+  running?: boolean
+  sessionRunning?: boolean
+  onDelete?: () => void
+  onFork?: () => void
+  onReply?: (selectedText?: string) => void
+  onFilePreview?: FileOpenHandler
+  selectionMode?: boolean
+  selected?: boolean
+  onToggleSelected?: () => void
+  onStartMultiSelect?: () => void
+  onRetry?: () => void
+  /** The parent turn owns the single collapse control for completed output. */
+  turnCollapseManaged?: boolean
+}) {
+  // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
+  // 就地渲染（表现为类似工具日志的「思考过程」模块），避免把一个 turn 内多段思考全部堆到开头。
+  const firstContentIdx = blocks.findIndex(
+    (b) =>
+      b.kind !== 'thinking' &&
+      b.kind !== 'error' &&
+      b.kind !== 'runtime_signal' &&
+      b.kind !== 'terminal' &&
+      !isHiddenTimelineBlock(b),
+  )
+  const isLeadingThinking = (b: UIBlock, i: number): boolean =>
+    b.kind === 'thinking' && (firstContentIdx === -1 || i < firstContentIdx)
+  const leadingThinkingBlocks = blocks.filter((b, i): b is Extract<UIBlock, { kind: 'thinking' }> =>
+    isLeadingThinking(b, i),
+  )
+  const timelineBlocks = reorderTurnSummaryBlocks(
+    blocks.filter(
+      (b, i) => !isLeadingThinking(b, i) && b.kind !== 'terminal' && !isHiddenTimelineBlock(b),
+    ),
+  )
+  const timelineGroups = groupChatMessageTimeline(timelineBlocks)
+  const timelineContentCollapsibleOnly =
+    timelineGroups.length > 0 &&
+    timelineGroups.every((group) => group.kind === 'content' && group.collapsibleOnly)
+  const contentBlocks = timelineBlocks.filter(
+    (block) => block.kind !== 'error' && block.kind !== 'runtime_signal',
+  )
+  const toolCallBlocks = blocks.filter(
+    (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
+      b.kind === 'tool_call' &&
+      !isHiddenTimelineBlock(b) &&
+      !(sessionTaskEntry != null && isSessionProgressToolBlock(b)),
+  )
+  const errorBlocks = blocks.filter((b) => b.kind === 'error')
+  const isStreaming = status === 'running'
+  const hasContent = leadingThinkingBlocks.length > 0 || contentBlocks.length > 0
+  const isCancelled = messageStatus === 'cancelled' && !isStreaming
+  // Pure error: no content, only error blocks
+  const isPureError =
+    messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
+  // 是否已完成（非流式中）— 只有完成的消息才显示 hover bar
+  const isFinished = !isStreaming
+  // 会话仍在连续运行（如 codex CLI 多 turn）时，最近的消息即便已完成也保持思考/工具日志展开，
+  // 避免长会话里每个 turn 完成瞬间把过程日志全折掉、用户看不到 agent 正在做什么。
+  // isLatest = 最近 2 条 assistant 消息（见外层 expandedAssistantMessageIds）。
+  const suppressAutoCollapse = !!sessionRunning && !!isLatest
+
+  // 思考与工具日志总开关：输出完毕后默认保持展开，避免轮次结束时自动隐藏过程日志；
+  // 用户仍可通过顶部「思考和工具日志」切换条手动收起（流式中不生效，保留思考进度反馈）。
+  const [toolLogsOpen, setToolLogsOpen] = useState(true)
+  const thinkingBlocksCount = blocks.filter(
+    (b) => b.kind === 'thinking' && !isHiddenTimelineBlock(b),
+  ).length
+  // 同样纳入折叠的附属块：checkpoint / plan_proposed / team_dispatch / team_discussion_status。
+  // terminal 在 main surface 不渲染（已由 tool-log-group 覆盖），不计入。
+  const extraCollapsibleBlocksCount = blocks.filter(
+    (b) =>
+      b.kind === 'checkpoint' ||
+      b.kind === 'plan_proposed' ||
+      b.kind === 'team_dispatch' ||
+      b.kind === 'team_discussion_status',
+  ).length
+  // 正文里独立的文件 diff 板块（file_change 带 diff）同样纳入总开关控制。
+  // 嵌在工具输出里的 GitDiffContent 已被 tool-log-group 覆盖，无需另计。
+  const fileChangeDiffBlocksCount = blocks.filter(
+    (b) => b.kind === 'file_change' && typeof b.diff === 'string' && b.diff.length > 0,
+  ).length
+  const showToolLogsToggle =
+    !turnCollapseManaged &&
+    isFinished &&
+    !suppressAutoCollapse &&
+    (toolCallBlocks.length > 0 ||
+      thinkingBlocksCount > 0 ||
+      extraCollapsibleBlocksCount > 0 ||
+      fileChangeDiffBlocksCount > 0)
+  const hideToolLogs = showToolLogsToggle && !toolLogsOpen
+
+  // 提取纯文本用于复制
+  const textContent = extractTextFromBlocks(blocks)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    imageSrc?: string
+    selectedText?: string
+  } | null>(null)
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const target = event.target as HTMLElement | null
+    const image = target?.closest('img') as HTMLImageElement | null
+    const selectedText = readSelectedTextWithin(event.currentTarget)
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+      ...(selectedText.length > 0 ? { selectedText } : {}),
+    })
+  }, [])
+
+  const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (contextMenu == null) return []
+    const items: ContextMenuItem[] = []
+    if (contextMenu.imageSrc != null) {
+      items.push({
+        key: 'copy-image',
+        label: '复制图片',
+        icon: <Icons.Image size={14} />,
+        onClick: () => {
+          if (contextMenu.imageSrc != null)
+            void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+        },
+      })
+    } else if (textContent.length > 0 || contextMenu.selectedText != null) {
+      const selectedText = contextMenu.selectedText
+      items.push({
+        key: 'copy-text',
+        label: selectedText != null ? '复制选中' : '复制内容',
+        icon: <Icons.Copy size={14} />,
+        onClick: () => {
+          void navigator.clipboard.writeText(selectedText ?? textContent)
+        },
+      })
+    }
+    if (onReply != null) {
+      // 合并原「引用对话」与「回复」：选中文字时引用选中片段，否则引用整条消息
+      const replySelectedText = contextMenu.selectedText
+      items.push({
+        key: 'reply',
+        label: replySelectedText != null ? '引用选中' : '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: () => onReply(replySelectedText),
+      })
+    }
+    if (onStartMultiSelect != null) {
+      items.push({
+        key: 'multi-select',
+        label: '多选',
+        icon: <Icons.CheckSquare size={14} />,
+        onClick: onStartMultiSelect,
+      })
+    }
+    if (onDelete != null) {
+      items.push({
+        key: 'delete',
+        label: '删除',
+        icon: <Icons.Trash size={14} />,
+        danger: true,
+        onClick: onDelete,
+      })
+    }
+    return items
+  }, [contextMenu, onDelete, onReply, onStartMultiSelect, textContent])
+
+  const handleRowClick = selectionMode
+    ? (event: React.MouseEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement | null
+        if (target?.closest('a,button,input,textarea,select,[contenteditable="true"]')) return
+        onToggleSelected?.()
+      }
+    : undefined
+
+  const timelineContent = timelineGroups.map((group) => {
+    if (group.kind === 'content') {
+      return (
+        <div className="msg-content-run" key={group.key}>
+          {renderBlocksGrouped(
+            group.blocks,
+            onFilePreview != null
+              ? {
+                  sessionId,
+                  workspaceRootPath,
+                  onFilePreview,
+                  autoCollapseTools: !(isStreaming || suppressAutoCollapse),
+                  ...(sessionTaskEntry != null ? { sessionTaskEntry } : {}),
+                }
+              : {
+                  sessionId,
+                  workspaceRootPath,
+                  autoCollapseTools: !(isStreaming || suppressAutoCollapse),
+                  ...(sessionTaskEntry != null ? { sessionTaskEntry } : {}),
+                },
+          )}
+        </div>
+      )
+    }
+    if (group.kind === 'error') {
+      const block = group.block
+      return (
+        <StreamingErrorCard
+          key={group.key}
+          message={block.message}
+          code={block.code}
+          title={block.title ?? 'Agent 执行失败'}
+          level="error"
+          retryable={block.retryable}
+          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+          {...(block.details != null ? { details: block.details } : {})}
+          {...(block.origin != null ? { origin: block.origin } : {})}
+          {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
+          {...(block.retryable && onRetry != null ? { onRetry } : {})}
+        />
+      )
+    }
+    return (
+      <RuntimeSignalCard
+        key={group.key}
+        block={group.block}
+        {...(group.block.retryable && onRetry != null ? { onRetry } : {})}
+      />
+    )
+  })
+
+  return (
+    <div
+      className={`msg msg-agent${showIdentity ? '' : ' without-avatar'} ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
+      data-running-agent-id={assistantId}
+      data-running={running === true ? 'true' : 'false'}
+      onClick={handleRowClick}
+      role={selectionMode ? 'button' : undefined}
+      tabIndex={selectionMode ? 0 : undefined}
+    >
+      {selectionMode && (
+        <label className="msg-select-check" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelected}
+            aria-label="选择该消息"
+          />
+          <Icons.Check className="msg-select-checkmark" size={14} />
+        </label>
+      )}
+      {showIdentity && (
+        <div className="msg-agent-avatar">
+          <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
+        </div>
+      )}
+      <div className="msg-agent-main">
+        {showIdentity && (
+          <div className="msg-agent-head">
+            <span className="msg-agent-name">{assistantName}</span>
+          </div>
+        )}
+        <div
+          className={`msg-bubble msg-bubble-agent${hideToolLogs ? ' tool-logs-hidden' : ''}`}
+          onContextMenu={handleContextMenu}
+        >
+          {showToolLogsToggle && (
+            <ToolLogsMasterToggle
+              open={toolLogsOpen}
+              onToggle={() => setToolLogsOpen((v) => !v)}
+              {...(turnDurationMs != null ? { durationMs: turnDurationMs } : {})}
+            />
+          )}
+          {leadingThinkingBlocks.length > 0 && (
+            <ThinkingSection blocks={leadingThinkingBlocks} streaming={isStreaming} />
+          )}
+          {timelineGroups.length > 0 && (
+            <div
+              className={`msg-content${timelineContentCollapsibleOnly ? ' is-tool-logs-only' : ''}`}
+            >
+              {timelineContent}
+            </div>
+          )}
+          {isCancelled && <StoppedMarker />}
+          {isFinished && (textContent || onFork != null) && (
+            <MessageHoverBar
+              timestamp={timestamp}
+              textContent={textContent}
+              position="left"
+              {...(onDelete ? { onDelete } : {})}
+              {...(onFork ? { onFork } : {})}
+            />
+          )}
+        </div>
+        {isStreaming && (
+          <div className="agent-task-running-tag">
+            <span>执行中</span>
+            {/* 运行中实时耗时：与结束后折叠条的「耗时 Xs」同源同格式；isStreaming 翻 false 后本标签整体卸载 */}
+            {timestamp != null && <TurnElapsedTicker startedAt={timestamp} />}
+            <span className="agent-task-running-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        )}
+      </div>
+      {contextMenu != null && contextMenuItems.length > 0 && (
+        <InlineContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={contextMenuItems}
+        />
+      )}
+    </div>
+  )
+}, assistantRowsPropsAreEqual)
+
+function ThinkingSection({
+  blocks,
+  streaming,
+  showDoneBadge = true,
+}: {
+  blocks: Array<Extract<UIBlock, { kind: 'thinking' }>>
+  streaming: boolean
+  // 绿色对勾只在首个（顶部）思考模块上显示，后续穿插的阶段性思考不重复显示。
+  showDoneBadge?: boolean
+}) {
+  // 默认折叠：不在思考开始时自动展开，由用户主动点开查看。
+  const [open, setOpen] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  // —— 「思考开始时自动展开一次」逻辑已禁用（改为默认折叠）。恢复方法：取消下方 4 处行首注释。
+  //    (a) 下面 2 个 ref 声明；(b) 下面的 useEffect；(c) handleToggleOpen 内的一行。
+  // 每个 section 至多自动展开一次；用户手动折叠/展开后，后续思考不再自动展开（尊重用户）。
+  // const autoExpandedRef = useRef(false)
+  // const userToggledRef = useRef(false)
+
+  const isThinkingActive = streaming && blocks.some((b) => b.isStreaming)
+
+  // 仅首次开始思考时自动展开一次；之后（含多段思考）不再反复自动展开/折叠。
+  // useEffect(() => {
+  //   if (isThinkingActive && !autoExpandedRef.current && !userToggledRef.current) {
+  //     autoExpandedRef.current = true
+  //     setOpen(true)
+  //   }
+  // }, [isThinkingActive])
+
+  // 稳定计算是否需要截断：恒按内容高度判断，不再随「思考活跃/结束」在 全高 ↔ 200px 间来回切换，
+  // 避免一段一段思考时外层高度反复抖动、内容区跟着跳动。
+  useEffect(() => {
+    if (!open) return
+    const el = contentRef.current
+    if (el) setNeedsCollapse(el.scrollHeight > 240)
+  }, [blocks, open])
+
+  const isCollapsed = needsCollapse && !expanded
+
+  // 截断态下，流式思考时把内层滚到底，露出最新思考（外层高度仍稳定，不抖动）。
+  useEffect(() => {
+    if (!isThinkingActive || !isCollapsed) return
+    const el = contentRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [blocks, isThinkingActive, isCollapsed])
+
+  const handleToggleOpen = () => {
+    // userToggledRef.current = true  // 已禁用（与上方自动展开 effect 配套，恢复时一并取消注释）
+    setOpen((v) => !v)
+  }
+
+  return (
+    <div
+      className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}
+    >
+      <button className="thinking-toggle" onClick={handleToggleOpen}>
+        <ActivityLogSummaryIcon icon={Lightbulb} className="thinking-icon" />
+        <span className="thinking-label">思考过程</span>
+        {isThinkingActive && <Icons.Spinner size={11} className="thinking-spinner" />}
+        {!isThinkingActive &&
+          showDoneBadge &&
+          blocks.length > 0 &&
+          blocks.every((b) => !b.isStreaming) && (
+            <span className="thinking-done-badge">
+              <Icons.Check size={10} />
+            </span>
+          )}
+        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
+      </button>
+      {open && (
+        <div className="thinking-body">
+          <div
+            ref={contentRef}
+            className={`thinking-content md-surface ${isCollapsed ? 'is-collapsed' : ''}`}
+            style={isCollapsed ? { maxHeight: '240px', overflowY: 'auto' } : undefined}
+          >
+            {blocks.map((block, i) => (
+              <MarkdownText key={i} content={block.content} />
+            ))}
+          </div>
+          {isCollapsed && (
+            <button className="collapse-toggle" onClick={() => setExpanded(true)}>
+              展开全部
+            </button>
+          )}
+          {needsCollapse && expanded && (
+            <button className="collapse-toggle" onClick={() => setExpanded(false)}>
+              收起
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolLogsMasterToggle({
+  open,
+  onToggle,
+  durationMs,
+}: {
+  open: boolean
+  onToggle: () => void
+  /** 整轮耗时（毫秒）；缺失（旧消息/时间戳异常）时回退到默认文案 */
+  durationMs?: number | undefined
+}) {
+  // 复用「思考过程」切换条样式（thinking-section / thinking-toggle），
+  // 同时控制本气泡内所有思考过程与工具日志组的显隐；
+  // 两种状态都只展示整轮耗时（Claude.ai「Thought for 12s」风格）；无耗时数据
+  // （旧消息/时间戳异常）时回退默认文案；
+  // 不带绿色对勾（thinking-done-badge）与 spinner，保留 chevron 箭头按展开状态旋转。
+  // 自身也挂 thinking-section，故隐藏规则须用 :not(.tool-logs-master) 排除自身。
+  const durationSuffix = durationMs != null ? formatTurnDuration(durationMs) : null
+  const label = durationSuffix == null ? '思考和工具日志' : `耗时 ${durationSuffix}`
+  return (
+    <div className={`thinking-section tool-logs-master ${open ? 'open' : ''}`}>
+      <button className="thinking-toggle" onClick={onToggle} aria-expanded={open}>
+        <ActivityLogSummaryIcon icon={Wrench} className="thinking-icon" />
+        <span className="thinking-label">{label}</span>
+        <Icons.ChevronRight size={13} className={`chev ${open ? 'chev-open' : ''}`} />
+      </button>
+    </div>
+  )
+}
+
+function CollapsibleContent({
+  maxHeight = 500,
+  streaming = false,
+  children,
+}: {
+  maxHeight?: number
+  streaming?: boolean
+  children: ReactNode
+}) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    if (streaming) {
+      setNeedsCollapse(false)
+      setExpanded(false)
+      return
+    }
+    setNeedsCollapse(el.scrollHeight > maxHeight)
+  }, [children, maxHeight, streaming])
+
+  const isCollapsed = needsCollapse && !expanded
+
+  return (
+    <div className="collapsible-wrap">
+      <div
+        ref={contentRef}
+        className={`collapsible-content ${isCollapsed ? 'is-collapsed' : ''}`}
+        style={isCollapsed ? { maxHeight: `${maxHeight}px` } : undefined}
+      >
+        {children}
+      </div>
+      {isCollapsed && (
+        <div className="collapse-overlay">
+          <button className="collapse-toggle" onClick={() => setExpanded(true)}>
+            展开全部
+          </button>
+        </div>
+      )}
+      {needsCollapse && expanded && !streaming && (
+        <button className="collapse-toggle collapse-less" onClick={() => setExpanded(false)}>
+          收起
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ToolCall({
+  name,
+  arg,
+  fullArg,
+  status,
+  pending,
+  durationMs,
+  autoCollapseReady = true,
+  children,
+}: {
+  name: string
+  arg: string
+  fullArg?: string
+  status?: 'ok' | 'error'
+  pending?: boolean
+  durationMs?: number | undefined
+  autoCollapseReady?: boolean
+  children?: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const startTimeRef = useRef<number | null>(null)
+  const iconMap: Record<string, ReactNode> = {
+    Read: <Icons.File className="tool-icon" />,
+    Grep: <Icons.Search className="tool-icon" />,
+    Bash: <Icons.BashCommand className="tool-icon" />,
+    bash: <Icons.BashCommand className="tool-icon" />,
+    run_command: <Icons.BashCommand className="tool-icon" />,
+    Edit: <Icons.Edit className="tool-icon" />,
+    Write: <Icons.File className="tool-icon" />,
+  }
+
+  // Auto-collapse on completion — controlled by autoCollapseTools setting
+  useEffect(() => {
+    if (
+      autoCollapseReady &&
+      (status === 'ok' || status === 'error') &&
+      readAppearance().autoCollapseTools
+    ) {
+      setOpen(false)
+    }
+  }, [autoCollapseReady, status])
+
+  // Live elapsed timer for pending tool calls
+  useEffect(() => {
+    if (!pending) return
+    startTimeRef.current = Date.now()
+    setElapsedMs(0)
+    const timer = window.setInterval(() => {
+      if (startTimeRef.current != null) {
+        setElapsedMs(Date.now() - startTimeRef.current)
+      }
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [pending])
+
+  const displayDuration = pending ? elapsedMs : durationMs
+
+  return (
+    <div
+      className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''} ${status === 'ok' ? 'is-success' : ''} ${status === 'error' ? 'is-error' : ''}`}
+    >
+      <div className="tool-call-head" onClick={() => setOpen(!open)}>
+        {iconMap[name] || <Icons.Wrench className="tool-icon" />}
+        <span className="tool-name">{name}</span>
+        <span className="tool-arg" title={fullArg || arg}>
+          {arg}
+        </span>
+        <span className="tool-call-actions">
+          {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
+          {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
+          {status === 'error' && <Icons.X size={12} className="tool-status err" />}
+          {displayDuration != null && (
+            <span className="tool-duration">{formatDuration(displayDuration)}</span>
+          )}
+          <Icons.ChevronRight size={12} className="chev" />
+        </span>
+      </div>
+      {pending && (
+        <div className="tool-call-progress-bar">
+          <div className="tool-call-progress-fill" />
+        </div>
+      )}
+      {open && children && <div className="tool-call-body">{children}</div>}
+    </div>
+  )
+}
+
+/** 折叠头文案：按分组类别生成「动词 + 数量」摘要 */
+const TOOL_LOG_GROUP_LABELS: Record<ToolLogGroupKind, (count: number) => string> = {
+  command: (n) => `执行 ${n} 条命令`,
+  read: (n) => `查看 ${n} 个文件`,
+  image: (n) => `查看 ${n} 张图片`,
+  web: (n) => `联网检索 ${n} 次`,
+  browser: (n) => `操作浏览器 ${n} 次`,
+  media: (n) => `生成 ${n} 个媒体`,
+  write: (n) => `修改 ${n} 个文件`,
+  tool: (n) => `调用 ${n} 个工具`,
+}
+
+/** 折叠头图标：按分组类别取 lucide 图标（ActivityLogSummaryIcon 契约） */
+const TOOL_LOG_GROUP_ICONS: Record<ToolLogGroupKind, LucideIcon> = {
+  command: SquareTerminal,
+  read: FileSearch,
+  image: ImageIcon,
+  web: Globe,
+  browser: AppWindow,
+  media: WandIcon,
+  write: FilePenLine,
+  tool: Wrench,
+}
+
+function ToolLogGroup({
+  blocks,
+  surface,
+  autoCollapseReady = true,
+  onFilePreview,
+}: {
+  blocks: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>>
+  surface: 'main' | 'inspector'
+  autoCollapseReady?: boolean
+  onFilePreview?: FileOpenHandler
+}) {
+  const running = blocks.some((block) => {
+    if (block.kind === 'terminal') return block.isStreaming
+    return block.status === 'pending' || block.status === 'running'
+  })
+  const hasError = blocks.some((block) => {
+    if (block.kind === 'terminal')
+      return (block.exitCode ?? 0) !== 0 || block.stderr.trim().length > 0
+    return block.status === 'error' || Boolean(block.error)
+  })
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (autoCollapseReady && !running && readAppearance().autoCollapseTools) setOpen(false)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [autoCollapseReady, running])
+
+  const kind = getToolLogGroupKind(blocks[0] as UIBlock, surface) ?? 'tool'
+  const count = blocks.length
+  const label = TOOL_LOG_GROUP_LABELS[kind](count)
+  const summaryIcon = TOOL_LOG_GROUP_ICONS[kind]
+
+  return (
+    <div
+      className={`tool-log-group ${open ? 'is-open' : ''} ${running ? 'is-running' : ''} ${hasError ? 'is-error' : 'is-success'}`}
+    >
+      <Button
+        className="tool-log-summary"
+        type="text"
+        size="small"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ActivityLogSummaryIcon
+          icon={summaryIcon}
+          className={`tool-log-summary-icon tool-log-summary-icon--${kind}`}
+        />
+        <span>{label}</span>
+        {running && <Icons.Spinner size={12} className="tool-status spinner" />}
+        {!running && hasError && <Icons.X size={12} className="tool-status err" />}
+        {!running && !hasError && <Icons.Check size={12} className="tool-status ok" />}
+        <Icons.ChevronRight size={13} className="chev" />
+      </Button>
+      {open && (
+        <div className="tool-log-body">
+          {blocks.map((block, index) => (
+            <ToolLogEntry
+              key={`${block.kind}-${index}`}
+              block={block}
+              index={index}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 明细行图标：图标 key → 项目 Icons 组件（size 13 与旧实现一致） */
+const TOOL_LOG_ENTRY_ICONS: Record<ToolLogIconKey, ReactNode> = {
+  terminal: <Icons.BashCommand size={13} />,
+  search: <Icons.Search size={13} />,
+  edit: <Icons.Edit size={13} />,
+  file: <Icons.File size={13} />,
+  image: <Icons.Image size={13} />,
+  globe: <Icons.Globe size={13} />,
+  browser: <Icons.AppWindow size={13} />,
+  wand: <Icons.Wand size={13} />,
+  wrench: <Icons.Wrench size={13} />,
+}
+
+function ToolLogEntry({
+  block,
+  index,
+  onFilePreview,
+}: {
+  block: Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>
+  index: number
+  onFilePreview?: FileOpenHandler
+}) {
+  if (block.kind === 'terminal') {
+    return (
+      <div className="tool-log-entry">
+        <ToolLogEntryHead
+          icon={<Icons.Terminal size={13} />}
+          title="终端"
+          subtitle={`#${index + 1}`}
+        />
+        <div className="tool-log-card">
+          {block.stdout && (
+            <ToolLogSection label="输出" content={block.stdout} kind="terminal" stream="stdout" />
+          )}
+          {block.stderr && (
+            <ToolLogSection
+              label="错误"
+              content={block.stderr}
+              tone="error"
+              kind="terminal"
+              stream="stderr"
+            />
+          )}
+          {block.isStreaming && <span className="tool-log-streaming">运行中...</span>}
+        </div>
+      </div>
+    )
+  }
+
+  const input = formatToolLogInput(block)
+  const output = block.output
+  const error = block.error
+  const icon = TOOL_LOG_ENTRY_ICONS[getToolIconKey(block.toolName, block.toolInput)]
+  const isCommand = isCommandLikeTool(block.toolName)
+  // 明细行显示友好动作名，hover 显示完整工具名（区分 MCP server 来源）
+  const actionLabel = getToolActionLabel(block.toolName, block.toolInput)
+  // exactOptionalPropertyTypes 下可选 prop 不显式传 undefined，有值时才展开
+  const nativeTitle = actionLabel === block.toolName ? undefined : block.toolName
+  // 富输出：图片缩略图（插入卡片顶部）/ 搜索来源列表（替换输出文本）
+  const richImage = getRichImageDisplay(block.toolName, block.toolInput, output)
+  const richLinks = getRichSourceLinks(block.toolName, output)
+
+  return (
+    <div className={`tool-log-entry ${block.status === 'error' ? 'is-error' : ''}`}>
+      <ToolLogEntryHead
+        icon={icon}
+        title={actionLabel}
+        {...(nativeTitle != null ? { nativeTitle } : {})}
+        subtitle={block.durationMs != null ? formatDuration(block.durationMs) : `#${index + 1}`}
+      />
+      <div className="tool-log-card">
+        {richImage != null && (
+          <ToolLogImageThumb
+            key={richImage.src}
+            image={richImage}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+          />
+        )}
+        {input && (
+          <ToolLogSection label="输入" content={input} kind={isCommand ? 'terminal' : 'auto'} />
+        )}
+        {output &&
+          (richLinks != null ? (
+            <ToolLogSourceList links={richLinks} />
+          ) : (
+            <ToolLogSection label="输出" content={output} kind={isCommand ? 'terminal' : 'auto'} />
+          ))}
+        {error && (
+          <ToolLogSection
+            label="错误"
+            content={error}
+            tone="error"
+            kind={isCommand ? 'terminal' : 'auto'}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function isCommandLikeTool(name: string): boolean {
+  const normalized = normalizeToolName(name)
+  return normalized === 'bash' || normalized === 'run_command' || normalized === 'shell'
+}
+
+function ToolLogEntryHead({
+  icon,
+  title,
+  subtitle,
+  nativeTitle,
+}: {
+  icon: ReactNode
+  title: string
+  subtitle: string
+  /** 原生 tooltip：与 title 相同时省略，避免冗余悬停 */
+  nativeTitle?: string
+}) {
+  return (
+    <div className="tool-log-entry-head" title={nativeTitle}>
+      <span className="tool-log-entry-icon">{icon}</span>
+      <span className="tool-log-entry-title">{title}</span>
+      <span className="tool-log-entry-subtitle">{subtitle}</span>
+    </div>
+  )
+}
+
+function ToolLogSection({
+  label,
+  content,
+  tone,
+  kind = 'auto',
+  stream,
+}: {
+  label: string
+  content: string
+  tone?: 'error'
+  kind?: 'auto' | 'terminal'
+  stream?: 'stdout' | 'stderr'
+}) {
+  // 命令类工具：终端形态 — 等宽字体、--term-bg/--term-fg 主题色、bash 输入加 $ prompt、
+  // stdout 保留原文，stderr 上色。
+  if (kind === 'terminal') {
+    const isInput = label === '输入'
+    const lines = content.replace(/\r\n/g, '\n').split('\n')
+    return (
+      <div
+        className={`tool-log-section tool-log-section--terminal ${tone === 'error' ? 'is-error' : ''}`}
+      >
+        <div className="tool-log-section-label">{label}</div>
+        <div className="tool-log-terminal" data-stream={stream}>
+          {lines.map((line, i) => (
+            <div key={i} className="tool-log-terminal-line">
+              {isInput ? <span className="tool-log-prompt">$</span> : null}
+              <span className="tool-log-terminal-text">{line || ' '}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // 其它工具：先按 markdown 渲染；非 markdown 文本（纯 JSON / 列表）会自然显示成段落。
+  return (
+    <div className={`tool-log-section ${tone === 'error' ? 'is-error' : ''}`}>
+      <div className="tool-log-section-label">{label}</div>
+      <div className="tool-log-section-md md-surface">
+        <MarkdownText content={content} />
+      </div>
+    </div>
+  )
+}
+
+function formatToolLogInput(block: Extract<UIBlock, { kind: 'tool_call' }>): string {
+  const isBashLike =
+    block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+  if (isBashLike && typeof block.toolInput.command === 'string') return block.toolInput.command
+  try {
+    return JSON.stringify(block.toolInput, null, 2)
+  } catch {
+    return String(block.toolInput)
+  }
+}
+
+function TerminalBlock({ children }: { children: ReactNode }) {
+  return <div className="terminal mono-sm">{children}</div>
+}
+
+/**
+ * Inline todo list renderer for tool_call.toolName === 'todo_write'.
+ * Source of truth: the tool's input (always the FULL list per todo_write contract).
+ * If output is available (post-execution), prefer the parsed list from there.
+ */
+function TodoListInline({
+  input,
+  output,
+}: {
+  input: Record<string, unknown>
+  output: string | undefined
+}) {
+  const todos = parseTodosFromInputOrOutput(input, output)
+  if (todos.length === 0) return null
+  const done = todos.filter((t) => t.status === 'completed').length
+  const inProg = todos.find((t) => t.status === 'in_progress')
+  const inProgLabel = inProg?.activeForm ?? inProg?.content
+  return (
+    <div className="tool-todo-list">
+      <div className="tool-todo-summary">
+        {done}/{todos.length} 完成
+        {inProgLabel ? ` · 进行中：${inProgLabel}` : ''}
+      </div>
+      {todos.map((t, idx) => (
+        <div key={idx} className={`tool-todo-item is-${t.status.replace('_', '-')}`}>
+          <span className={`tool-todo-marker is-${t.status.replace('_', '-')}`}>
+            {t.status === 'completed' && <Icons.Check size={12} />}
+            {t.status === 'in_progress' && <Icons.Spinner size={11} />}
+            {/* pending: pure circle from CSS */}
+          </span>
+          <span>{t.status === 'in_progress' ? (t.activeForm ?? t.content) : t.content}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StoppedMarker() {
+  return (
+    <div className="stopped-marker">
+      <span className="stopped-marker-line" />
+      <span className="stopped-marker-label">
+        <Icons.Stop size={10} />
+        已停止生成
+      </span>
+      <span className="stopped-marker-line" />
+    </div>
+  )
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const min = Math.floor(ms / 60_000)
+  const sec = Math.round((ms % 60_000) / 1000)
+  return `${min}m ${sec}s`
+}
+
+/** Extract a file path from one `diff --git` segment, preferring the new-file header. */

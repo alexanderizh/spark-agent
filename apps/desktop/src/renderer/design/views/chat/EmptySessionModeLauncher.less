@@ -1,0 +1,143 @@
+.empty-session-mode-launcher {
+  position: absolute;
+  top: 68px;
+  left: clamp(20px, 3vw, 48px);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.empty-session-mode-segmented {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.empty-session-mode-segmented button {
+  min-width: 82px;
+  height: 27px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.empty-session-mode-segmented button.is-active {
+  background: color-mix(in srgb, var(--primary) 18%, var(--panel));
+  color: color-mix(in srgb, var(--primary) 76%, var(--text));
+  box-shadow: var(--shadow-xs);
+}
+
+.empty-session-team-trigger,
+.empty-session-team-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: min(200px, 26vw);
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+.empty-session-team-create {
+  width: auto;
+  border-style: dashed;
+  color: var(--primary);
+}
+
+.empty-session-team-trigger-icon {
+  display: inline-flex;
+  color: var(--primary);
+}
+
+.empty-session-team-trigger-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.empty-session-team-menu {
+  width: min(280px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 72px));
+  overflow: auto;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.empty-session-team-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.empty-session-team-menu button:hover,
+.empty-session-team-menu button.is-active {
+  background: var(--hover);
+}
+
+.empty-session-team-menu button > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-session-team-menu-icon {
+  display: inline-flex;
+  color: var(--primary);
+}
+
+.empty-session-team-menu-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--divider);
+}
+
+@media (max-width: 720px) {
+  .empty-session-mode-launcher {
+    left: 16px;
+  }
+
+  .empty-session-mode-segmented button {
+    min-width: 70px;
+    padding-inline: 7px;
+  }
+
+  .empty-session-team-trigger {
+    width: min(160px, 34vw);
+  }
+}

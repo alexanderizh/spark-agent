@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="腾讯云 Coding Plan">
+  <rect width="64" height="64" rx="14" fill="#006eff"/>
+  <path d="M32 14a18 18 0 0 0-31 11 14 14 0 0 0 5 25h26a14 14 0 0 0 0-25 18 18 0 0 0 0-11Z" fill="#fff" opacity=".95"/>
+  <path d="M20 30c-3 0-5 2-5 5s2 5 5 5h4v-10h-4Zm24 0h-4v10h4c3 0 5-2 5-5s-2-5-5-5Zm-12 0h-4v10h4v-10Z" fill="#006eff"/>
+</svg>

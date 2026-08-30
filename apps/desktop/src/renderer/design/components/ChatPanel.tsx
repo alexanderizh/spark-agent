@@ -1,0 +1,2400 @@
+/**
+ * 通用 ChatPanel：消息流 + 工具调用卡片 + 输入区
+ *
+ * 复用 MessageBuilder（services/event-mapper）做事件→UIMessage 转换；
+ * 渲染 text / thinking / tool_call / error / cancelled 等会话 block（其他类型对
+ * 弹窗/模态场景不重要，跳过）。
+ *
+ * 给画布 Agent 弹窗 / Board 内嵌等场景使用；ChatView 仍是主聊天页，
+ * 这里只承担"嵌入式会话面板"职责。
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Popover, Spin } from 'antd'
+import type {
+  AgentEvent,
+  ManagedAgent,
+  PermissionApprovalRequest,
+  SessionAttachment,
+  SessionId,
+} from '@spark/protocol'
+import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
+import { Icons } from '../Icons'
+import {
+  MessageBuilder,
+  type UIMessage,
+  type UIBlock,
+  type UserQuestionAnswerSummary,
+} from '../services/event-mapper'
+import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
+import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
+import { GoalContractCard } from '../views/chat/GoalContractCard'
+import { projectVisibleChatMessages } from '../views/chat/internal-turn-message-visibility'
+import { CancellationNotice } from '../views/chat/CancellationNotice'
+import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
+import { AvatarImage } from './AvatarImage'
+import { InlinePermissionApproval } from './InlinePermissionApproval'
+import { ComposerActionsMenu } from './ComposerActionsMenu'
+import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
+import { ChatPanelToolActivity } from './ChatPanelToolActivity'
+import { isCanvasMutationTool } from './chat-panel-tool-activity'
+import { buildChatPanelRenderItems, getChatPanelTextGroupContent } from './chat-panel-render-items'
+import {
+  getChatPanelUserNodeReferences,
+  getChatPanelUserText,
+  groupChatPanelMessagesByTurn,
+  sanitizeCanvasUserMessage,
+  type ChatPanelMessageNodeReference,
+} from './chat-panel-turns'
+import { useIpcInvoke } from '../hooks/useIpc'
+import { useToast } from '../components/Toast'
+import { MarkdownText } from '../views/ChatView'
+import { resolveComposerImageSrc } from '../views/chat/ComposerV2'
+import { COMPOSER_ATTACHMENT_LIMIT } from '../views/chat/ChatComposerTypes'
+import {
+  buildPastedTextAttachment,
+  shouldConvertPastedTextToResource,
+} from '../views/chat/composer-pasted-text'
+import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
+import { isOptionalUserQuestion } from '../utils/user-question-readiness'
+import {
+  getDataTransferFilePaths,
+  hasFileDataTransfer,
+  isUnresolvableFileDrop,
+} from '../services/composer-attachments'
+import './ChatPanel.less'
+
+export interface ChatPanelProps {
+  /** 已创建的 session id；null 表示尚未就绪（显示 spinner） */
+  sessionId: string | null
+  /** 会话持久化摘要状态；重放历史时用于抑制「瞬态状态 + 空会话」被误判为执行中
+   *  （见 chat-session-status.getLatestAgentStatus）。画布场景暂无现成数据源，
+   *  可不传——退化为旧行为。 */
+  persistedSessionStatus?: 'idle' | 'running' | 'error' | null
+  /** 初始化中（覆盖在面板上） */
+  loading?: boolean
+  /** 致命错误（无法发送）；置空则正常显示输入区 */
+  error?: string | null
+  /** 顶部上下文徽章（如「已接入画布：xxx」） */
+  contextBadge?: React.ReactNode
+  /** 空消息列表时的占位 */
+  emptyState?: React.ReactNode
+  /** 输入框 placeholder */
+  placeholder?: string
+  /** 用户消息发送后回调（用于业务统计） */
+  onAfterSend?: (text: string) => void
+  /** 可选：限制工具卡片的标签前缀（如只显示 mcp__spark_canvas__） */
+  toolNamePrefixFilter?: string
+  /** 可选：隐藏整块工具调用日志 */
+  hideToolCalls?: boolean
+  /** 可选：隐藏工具调用中的参数/结果块，仅保留标题与错误信息 */
+  hideToolInputOutput?: boolean
+  /** 工具调用展示方式；summary 用于画布侧栏的紧凑执行记录。 */
+  toolCallDisplay?: 'hidden' | 'summary' | 'full'
+  /**
+   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:submit-turn，
+   * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
+   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:submit-turn。
+   */
+  onSend?: (text: string, attachments: SessionAttachment[]) => Promise<void>
+  /** 可选：输入草稿初始值（父组件持久化未发送的输入，关闭重开可恢复） */
+  initialInput?: string
+  /** 可选：输入文本变化通知（父组件据此持久化草稿） */
+  onDraftChange?: (text: string) => void
+  /** 可选：宿主提供的一次性发送请求，复用本输入区的建会、乐观消息和错误恢复流程。 */
+  externalSubmitRequest?: { id: number; text: string } | null
+  /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
+  composer?: React.ReactNode
+  /** 可选：输入框下方的参数行（会话/Agent/模型/技能选择器 + 附件按钮） */
+  composerBelow?: React.ReactNode
+  /** 可选：输入框上方展示的「已引用节点」chip 列表（如画布右键"添加到 Agent 对话"） */
+  nodeReferences?: ChatPanelNodeReference[]
+  /** 当前嵌入式会话的待处理权限审批。 */
+  approvalRequest?: PermissionApprovalRequest | null
+  /** 权限审批完成或失效后由宿主移除请求。 */
+  onApprovalClose?: (requestId: string) => void
+  /** 宿主自定义拖拽载荷是否可作为会话附件。普通本地文件由 ChatPanel 自行处理。 */
+  canResolveDroppedAttachments?: (dataTransfer: DataTransfer) => boolean
+  /** 把宿主自定义拖拽载荷解析为会话附件。 */
+  resolveDroppedAttachments?: (
+    dataTransfer: DataTransfer,
+  ) => SessionAttachment[] | Promise<SessionAttachment[]>
+  /** 可选：移除某个引用节点 */
+  onRemoveNodeReference?: (id: string) => void
+  /** 可选：清空全部引用节点 */
+  onClearNodeReferences?: () => void
+  /** 点击引用节点或工具执行结果时，在宿主画布中定位。 */
+  onFocusNodeReference?: (id: string) => void
+  /** 指定 turn 是否存在可恢复的画布快照。 */
+  canUndoTurn?: (turnId: string) => boolean
+  /** 恢复到指定 turn 开始前。 */
+  onUndoTurn?: (turnId: string) => Promise<void>
+  /** 可选：当前可用 agent 列表，用于解析 assistant 头像 */
+  agents?: ManagedAgent[]
+  /** 可选：assistant 回退身份（用于首条 loading / 无 agent snapshot 的气泡） */
+  fallbackAssistant?: { agentId: string; agentName: string }
+  /** 真实的用户头像节点；未提供时不渲染用户头像区域。 */
+  userAvatar?: React.ReactNode
+  /** 可选：隐藏 assistant 消息头像，让内容占满整行（画布等窄面板场景）。
+   *  用户消息头像不受影响；开启后 DOM 不渲染 assistant 头像，且不再受主题 CSS
+   *  「.canvas-agent-modal .chat-panel-message-avatar { display:none }」选择器是否命中的影响。 */
+  hideAssistantAvatar?: boolean
+}
+
+type AssistantStatus = 'idle' | 'sending' | 'streaming'
+type ChatPanelDisplayAttachment = SessionAttachment & { name?: string }
+type ChatPanelAttachment = SessionAttachment & { id: string; name: string }
+/** 输入框上方引用的画布节点 chip */
+export type ChatPanelNodeReference = ChatPanelMessageNodeReference
+type UserQuestionDraft = {
+  skipped?: boolean
+  selectedLabel?: string
+  selectedValue?: string
+  selectedLabels?: string[]
+  selectedValues?: string[]
+  otherText?: string
+  text?: string
+}
+
+const CHAT_PANEL_HISTORY_TURN_PAGE = 12
+const CHAT_PANEL_HISTORY_EVENT_PAGE = 2_000
+const CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT = 3
+
+export function ChatPanel({
+  sessionId,
+  loading,
+  error,
+  contextBadge,
+  emptyState,
+  placeholder,
+  onAfterSend,
+  toolNamePrefixFilter,
+  hideToolCalls,
+  hideToolInputOutput,
+  toolCallDisplay,
+  onSend,
+  initialInput,
+  onDraftChange,
+  externalSubmitRequest,
+  composer,
+  composerBelow,
+  nodeReferences,
+  approvalRequest,
+  onApprovalClose,
+  canResolveDroppedAttachments,
+  resolveDroppedAttachments,
+  onRemoveNodeReference,
+  onClearNodeReferences,
+  onFocusNodeReference,
+  canUndoTurn,
+  onUndoTurn,
+  agents = [],
+  fallbackAssistant,
+  userAvatar,
+  hideAssistantAvatar = false,
+  persistedSessionStatus,
+}: ChatPanelProps): React.ReactElement {
+  const resolvedToolCallDisplay =
+    toolCallDisplay ?? (hideToolCalls ? 'hidden' : hideToolInputOutput ? 'summary' : 'full')
+  const [messages, setMessages] = useState<UIMessage[]>([])
+  const [input, setInput] = useState(initialInput ?? '')
+  const applyInput = useCallback(
+    (next: string) => {
+      setInput(next)
+      onDraftChange?.(next)
+    },
+    [onDraftChange],
+  )
+  // 父组件草稿变化时同步回输入框；用户主动输入时 prev===initialInput，不会被覆盖
+  useEffect(() => {
+    if (initialInput == null) return
+    setInput((prev) => (prev === initialInput ? prev : initialInput))
+  }, [initialInput])
+  const [attachments, setAttachments] = useState<ChatPanelAttachment[]>([])
+  const attachmentsRef = useRef<ChatPanelAttachment[]>(attachments)
+  const updateAttachments = useCallback(
+    (
+      update: ChatPanelAttachment[] | ((current: ChatPanelAttachment[]) => ChatPanelAttachment[]),
+    ) => {
+      const next = typeof update === 'function' ? update(attachmentsRef.current) : update
+      attachmentsRef.current = next
+      setAttachments(next)
+    },
+    [],
+  )
+  const [dropActive, setDropActive] = useState(false)
+  const [status, setStatus] = useState<AssistantStatus>('idle')
+  const [cancelling, setCancelling] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null)
+  const [pendingUserAttachments, setPendingUserAttachments] = useState<
+    ChatPanelDisplayAttachment[]
+  >([])
+  const [pendingUserNodeReferences, setPendingUserNodeReferences] = useState<
+    ChatPanelNodeReference[]
+  >([])
+  const [showAssistantPending, setShowAssistantPending] = useState(false)
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyReloadKey, setHistoryReloadKey] = useState(0)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [unseenMessageCount, setUnseenMessageCount] = useState(0)
+
+  const builderRef = useRef<MessageBuilder>(new MessageBuilder())
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dropDepthRef = useRef(0)
+
+  // textarea 自适应高度：输入时自动撑高，上限 160px 后滚动
+  const autoResizeTextarea = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [])
+
+  // 输入值变化、初始值同步时都触发自适应
+  useEffect(() => {
+    autoResizeTextarea()
+  }, [input, autoResizeTextarea])
+  const isAtBottomRef = useRef(true)
+  const preservePendingOnSessionBindRef = useRef(false)
+  const preservePendingHistoryLoadRef = useRef(false)
+  const liveEventsRef = useRef<AgentEvent[]>([])
+  const loadedEventsRef = useRef<AgentEvent[]>([])
+  const unseenActivityKeysRef = useRef<Set<string>>(new Set())
+  const historyLoadedRef = useRef(false)
+  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
+  const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
+  const { invoke: savePastedText } = useIpcInvoke('file:save-pasted-text')
+  const { invoke: getHistory } = useIpcInvoke('session:get-history')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
+  const { toast } = useToast()
+
+  // 切换 session 时重置 builder
+  useEffect(() => {
+    builderRef.current = new MessageBuilder()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessages([])
+    updateAttachments([])
+    liveEventsRef.current = []
+    loadedEventsRef.current = []
+    unseenActivityKeysRef.current.clear()
+    historyLoadedRef.current = false
+    setHasMoreHistory(false)
+    setLoadingOlderHistory(false)
+    setHistoryError(null)
+    setShowScrollToBottom(false)
+    setUnseenMessageCount(0)
+    isAtBottomRef.current = true
+    setCancelling(false)
+    if (!preservePendingOnSessionBindRef.current) {
+      setStatus('idle')
+      setPendingUserText(null)
+      setPendingUserAttachments([])
+      setPendingUserNodeReferences([])
+      setShowAssistantPending(false)
+      preservePendingHistoryLoadRef.current = false
+    } else {
+      preservePendingHistoryLoadRef.current = true
+    }
+    setSendError(null)
+    preservePendingOnSessionBindRef.current = false
+  }, [sessionId, updateAttachments])
+
+  useEffect(() => {
+    if (sessionId == null) return
+    let cancelled = false
+    void getHistory({
+      sessionId: sessionId as never,
+      turnLimit: CHAT_PANEL_HISTORY_TURN_PAGE,
+      eventLimit: CHAT_PANEL_HISTORY_EVENT_PAGE,
+    })
+      .then((historyRes) => {
+        if (cancelled) return
+        const builder = new MessageBuilder()
+        const mergedEvents = mergeAgentEvents(historyRes.events, liveEventsRef.current)
+        loadedEventsRef.current = mergedEvents
+        for (const event of mergedEvents) {
+          builder.processEvent(event)
+        }
+        builderRef.current = builder
+        historyLoadedRef.current = true
+        setHasMoreHistory(historyRes.hasMore)
+        setHistoryError(null)
+        setMessages(builder.getAllMessages())
+        const latestStatus = getLatestAgentStatus(mergedEvents, persistedSessionStatus ?? undefined)
+        if (isRunningAgentStatus(latestStatus)) {
+          setStatus('streaming')
+          preservePendingHistoryLoadRef.current = false
+        } else if (
+          latestStatus === 'completed' ||
+          latestStatus === 'cancelled' ||
+          latestStatus === 'error'
+        ) {
+          setStatus('idle')
+          preservePendingHistoryLoadRef.current = false
+        } else if (!preservePendingHistoryLoadRef.current) {
+          setStatus('idle')
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('加载会话历史失败', err)
+        const fallbackEvents = mergeAgentEvents([], liveEventsRef.current)
+        loadedEventsRef.current = fallbackEvents
+        const builder = new MessageBuilder()
+        for (const event of fallbackEvents) builder.processEvent(event)
+        builderRef.current = builder
+        historyLoadedRef.current = true
+        setMessages(builder.getAllMessages())
+        setHistoryError(err instanceof Error ? err.message : '加载会话历史失败')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getHistory, historyReloadKey, persistedSessionStatus, sessionId])
+
+  // 订阅 agent 事件流
+  useEffect(() => {
+    if (sessionId == null) return
+    const unsubscribe = window.spark.on('stream:session:agent-event', (event: AgentEvent) => {
+      const evt = event as { sessionId?: string; type?: string }
+      if (evt.sessionId !== sessionId) return
+      liveEventsRef.current = mergeAgentEvents(liveEventsRef.current, [event])
+      builderRef.current.processEvent(event)
+      if (historyLoadedRef.current) {
+        loadedEventsRef.current = mergeAgentEvents(loadedEventsRef.current, [event])
+        setMessages([...builderRef.current.getAllMessages()])
+        if (
+          !isAtBottomRef.current &&
+          (event.type === 'assistant_message' ||
+            event.type === 'agent_thinking' ||
+            event.type === 'tool_call' ||
+            event.type === 'tool_result')
+        ) {
+          const activityKey = getAgentEventActivityKey(event)
+          if (!unseenActivityKeysRef.current.has(activityKey)) {
+            unseenActivityKeysRef.current.add(activityKey)
+            setUnseenMessageCount(Math.min(99, unseenActivityKeysRef.current.size))
+          }
+        }
+      }
+      if (evt.type === 'user_message') {
+        setPendingUserText(null)
+        setPendingUserAttachments([])
+        setPendingUserNodeReferences([])
+        preservePendingHistoryLoadRef.current = false
+      }
+      if (
+        evt.type === 'assistant_message' ||
+        evt.type === 'agent_thinking' ||
+        evt.type === 'tool_call' ||
+        evt.type === 'tool_result' ||
+        evt.type === 'tool_call_update'
+      ) {
+        setShowAssistantPending(false)
+      }
+      if (event.type === 'agent_status') {
+        const s = event.status
+        if (s === 'completed' || s === 'cancelled' || s === 'error') {
+          setStatus('idle')
+          setCancelling(false)
+          setShowAssistantPending(false)
+          preservePendingHistoryLoadRef.current = false
+        } else if (isRunningAgentStatus(s)) {
+          setStatus('streaming')
+          setShowAssistantPending(false)
+          preservePendingHistoryLoadRef.current = false
+        }
+      }
+    })
+    return unsubscribe
+  }, [sessionId])
+
+  // 智能滚动：仅在用户已处于底部附近时自动跟随，上滑查看历史时不强制拉回
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      const frame = window.requestAnimationFrame(() => {
+        const el = messagesContainerRef.current
+        if (el != null) el.scrollTop = el.scrollHeight
+      })
+      return () => window.cancelAnimationFrame(frame)
+    }
+  }, [
+    messages,
+    pendingUserAttachments,
+    pendingUserNodeReferences,
+    pendingUserText,
+    showAssistantPending,
+  ])
+
+  const loadOlderHistory = useCallback(async () => {
+    if (
+      sessionId == null ||
+      loadingOlderHistory ||
+      !hasMoreHistory ||
+      loadedEventsRef.current.length === 0
+    ) {
+      return
+    }
+    const beforeSeq = loadedEventsRef.current[0]?.seq
+    if (beforeSeq == null) return
+    const el = messagesContainerRef.current
+    const previousHeight = el?.scrollHeight ?? 0
+    const previousTop = el?.scrollTop ?? 0
+    setLoadingOlderHistory(true)
+    setHistoryError(null)
+    try {
+      const historyRes = await getHistory({
+        sessionId: sessionId as never,
+        turnLimit: CHAT_PANEL_HISTORY_TURN_PAGE,
+        eventLimit: CHAT_PANEL_HISTORY_EVENT_PAGE,
+        beforeSeq,
+      })
+      const mergedEvents = mergeAgentEvents(historyRes.events, loadedEventsRef.current)
+      loadedEventsRef.current = mergedEvents
+      const builder = new MessageBuilder()
+      for (const event of mergedEvents) builder.processEvent(event)
+      builderRef.current = builder
+      setMessages(builder.getAllMessages())
+      setHasMoreHistory(historyRes.hasMore)
+      window.requestAnimationFrame(() => {
+        const next = messagesContainerRef.current
+        if (next != null) next.scrollTop = previousTop + (next.scrollHeight - previousHeight)
+      })
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : '加载更早消息失败')
+    } finally {
+      setLoadingOlderHistory(false)
+    }
+  }, [getHistory, hasMoreHistory, loadingOlderHistory, sessionId])
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    isAtBottomRef.current = atBottom
+    setShowScrollToBottom(!atBottom)
+    if (atBottom) {
+      unseenActivityKeysRef.current.clear()
+      setUnseenMessageCount(0)
+    }
+    if (el.scrollTop < 48 && hasMoreHistory && !loadingOlderHistory) {
+      void loadOlderHistory()
+    }
+  }, [hasMoreHistory, loadOlderHistory, loadingOlderHistory])
+
+  const handleScrollToBottom = useCallback(() => {
+    isAtBottomRef.current = true
+    unseenActivityKeysRef.current.clear()
+    setShowScrollToBottom(false)
+    setUnseenMessageCount(0)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [])
+
+  const appendAttachments = useCallback(
+    (nextAttachments: ChatPanelAttachment[]) => {
+      let truncated = false
+      let added = 0
+      updateAttachments((current) => {
+        const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
+        for (const attachment of nextAttachments) {
+          if (byPath.size >= COMPOSER_ATTACHMENT_LIMIT) {
+            truncated = true
+            break
+          }
+          if (byPath.has(attachment.path)) continue
+          byPath.set(attachment.path, attachment)
+          added += 1
+        }
+        return Array.from(byPath.values())
+      })
+      if (truncated) toast.info('单轮最多添加 20 个文件或目录引用。')
+      return added
+    },
+    [toast, updateAttachments],
+  )
+
+  const buildContextAttachment = useCallback(
+    async (filePath: string, idPrefix: string, index: number): Promise<ChatPanelAttachment> => {
+      let type: ChatPanelAttachment['type'] = isImageAttachmentPath(filePath) ? 'image' : 'file'
+      try {
+        const { kind } = await statFileKind({ path: filePath })
+        if (kind === 'directory') type = 'directory'
+      } catch {
+        // 探测失败时按文件/图片处理即可
+      }
+      return {
+        id: `${Date.now()}-${idPrefix}-${index}-${filePath}`,
+        type,
+        path: filePath,
+        name: getFileNameFromPath(filePath),
+      }
+    },
+    [statFileKind],
+  )
+
+  const handleAddImages = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        title: '添加图片',
+        multiple: true,
+        filters: [
+          {
+            name: '图片',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'heic', 'heif'],
+          },
+        ],
+      })
+      const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+      const nextAttachments = await Promise.all(
+        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'image', index)),
+      )
+      appendAttachments(nextAttachments)
+    } catch (err) {
+      console.error('添加图片失败', err)
+      toast.error(err instanceof Error ? err.message : '添加图片失败')
+    }
+  }, [appendAttachments, buildContextAttachment, openFileDialog, toast])
+
+  const handleAddContextFiles = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        title: '添加文件或文件夹',
+        multiple: true,
+        allowDirectories: true,
+      })
+      const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+      const nextAttachments = await Promise.all(
+        filePaths.map((filePath, index) => buildContextAttachment(filePath, 'ctx', index)),
+      )
+      appendAttachments(nextAttachments)
+    } catch (err) {
+      console.error('添加文件或文件夹失败', err)
+      toast.error(err instanceof Error ? err.message : '添加文件或文件夹失败')
+    }
+  }, [appendAttachments, buildContextAttachment, openFileDialog, toast])
+
+  const handleInsertSlashCommand = useCallback(() => {
+    const textarea = textareaRef.current
+    const selectionStart = textarea?.selectionStart ?? input.length
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart
+    applyInput(`${input.slice(0, selectionStart)}/${input.slice(selectionEnd)}`)
+    requestAnimationFrame(() => {
+      const nextTextarea = textareaRef.current
+      if (nextTextarea == null) return
+      const nextCaret = selectionStart + 1
+      nextTextarea.focus()
+      nextTextarea.setSelectionRange(nextCaret, nextCaret)
+    })
+  }, [applyInput, input])
+
+  const canHandleDrop = useCallback(
+    (dataTransfer: DataTransfer) =>
+      hasFileDataTransfer(dataTransfer) || canResolveDroppedAttachments?.(dataTransfer) === true,
+    [canResolveDroppedAttachments],
+  )
+
+  const handleDrop = useCallback(
+    async (dataTransfer: DataTransfer) => {
+      const customDrop = canResolveDroppedAttachments?.(dataTransfer) === true
+      const filePaths = customDrop ? [] : getDataTransferFilePaths(dataTransfer)
+      if (!customDrop && isUnresolvableFileDrop(dataTransfer, filePaths)) {
+        throw new Error('无法读取拖入文件的本地路径，请更新应用后重试。')
+      }
+      const nextAttachments = customDrop
+        ? await resolveDroppedAttachments?.(dataTransfer)
+        : await Promise.all(
+            filePaths.map((filePath, index) => buildContextAttachment(filePath, 'drop', index)),
+          )
+      if (nextAttachments == null || nextAttachments.length === 0) {
+        throw new Error(
+          customDrop ? '该产物没有可读取的本地文件，请先下载或物化产物。' : '未发现可添加的文件。',
+        )
+      }
+      const composerAttachments = nextAttachments.map((attachment, index) => ({
+        ...attachment,
+        id: `${Date.now()}-drop-${index}-${attachment.path}`,
+        name: getFileNameFromPath(attachment.path),
+      }))
+      const added = appendAttachments(composerAttachments)
+      if (added > 0) toast.success(`已添加 ${added} 个附件`)
+    },
+    [
+      appendAttachments,
+      buildContextAttachment,
+      canResolveDroppedAttachments,
+      resolveDroppedAttachments,
+      toast,
+    ],
+  )
+
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      updateAttachments((current) => current.filter((attachment) => attachment.id !== id))
+    },
+    [updateAttachments],
+  )
+
+  // 粘贴图片：把剪贴板里的图片存到本地，作为 image 附件引用（与主聊天 ComposerV2 行为一致）。
+  // 粘贴纯文本超长时与 ComposerV2 一致：落盘为 .txt 引用附件，不铺平进输入框。
+  const handlePaste = useCallback(
+    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = Array.from(event.clipboardData?.items ?? [])
+      const imageItems = items.filter((item) => item.type.startsWith('image/'))
+      if (imageItems.length === 0) {
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!shouldConvertPastedTextToResource(text)) return
+        event.preventDefault()
+        if (attachments.length >= COMPOSER_ATTACHMENT_LIMIT) {
+          toast.info(`单轮最多添加 ${COMPOSER_ATTACHMENT_LIMIT} 个文件或目录引用。`)
+          return
+        }
+        try {
+          const attachment = await buildPastedTextAttachment(text, { savePastedText })
+          const added = appendAttachments([attachment])
+          if (added > 0) toast.info('长文本已转为引用资源')
+        } catch (err) {
+          console.error('粘贴长文本失败', err)
+          toast.error(err instanceof Error ? err.message : '粘贴长文本失败')
+        }
+        return
+      }
+
+      event.preventDefault()
+      try {
+        const pastedAttachmentsRaw = await Promise.all(
+          imageItems.map(async (item, index) => {
+            const file = item.getAsFile()
+            if (file == null) return null
+            const dataUrl = await readBlobAsDataUrl(file)
+            const result = await savePastedImage({
+              dataUrl,
+              suggestedBaseName: `pasted-image-${index + 1}`,
+              ...(file.type ? { mimeType: file.type } : {}),
+            })
+            const attachment: ChatPanelAttachment = {
+              id: `${Date.now()}-${index}-${result.filePath}`,
+              type: 'image',
+              path: result.filePath,
+              name: result.fileName,
+            }
+            return attachment
+          }),
+        )
+        const pastedAttachments = pastedAttachmentsRaw.filter(
+          (attachment): attachment is ChatPanelAttachment => attachment != null,
+        )
+        const added = appendAttachments(pastedAttachments)
+        if (added > 0) toast.success(`已粘贴 ${added} 张图片`)
+      } catch (err) {
+        console.error('粘贴图片失败', err)
+        toast.error(err instanceof Error ? err.message : '粘贴图片失败')
+      }
+    },
+    [appendAttachments, attachments.length, savePastedImage, savePastedText, toast],
+  )
+
+  const submitTurn = useCallback(
+    async (
+      rawText: string,
+      turnAttachments: ChatPanelDisplayAttachment[],
+      restoreText: string,
+      preserveComposer = false,
+    ) => {
+      if ((rawText.length === 0 && turnAttachments.length === 0) || status !== 'idle') return
+      if (onSend == null && sessionId == null) return
+      if (!preserveComposer) {
+        applyInput('')
+        updateAttachments([])
+      }
+      setStatus('sending')
+      setSendError(null)
+      setPendingUserText(rawText)
+      setPendingUserAttachments(turnAttachments)
+      setPendingUserNodeReferences(nodeReferences?.map((reference) => ({ ...reference })) ?? [])
+      setShowAssistantPending(true)
+      preservePendingOnSessionBindRef.current = onSend != null && sessionId == null
+      try {
+        if (onSend != null) {
+          // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
+          await onSend(rawText, turnAttachments)
+        } else {
+          await window.spark.invoke('session:submit-turn', {
+            sessionId: sessionId as never,
+            message: rawText,
+            ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+          })
+        }
+        onAfterSend?.(rawText)
+      } catch (err) {
+        if (!preserveComposer) {
+          applyInput(restoreText)
+          updateAttachments((current) =>
+            pendingAttachmentsToComposer(turnAttachments).concat(
+              current.filter(
+                (attachment) =>
+                  !turnAttachments.some(
+                    (pendingAttachment) => pendingAttachment.path === attachment.path,
+                  ),
+              ),
+            ),
+          )
+        }
+        setStatus('idle')
+        setCancelling(false)
+        setSendError(err instanceof Error ? err.message : '发送失败')
+        setPendingUserText(null)
+        setPendingUserAttachments([])
+        setPendingUserNodeReferences([])
+        setShowAssistantPending(false)
+      }
+    },
+    [applyInput, nodeReferences, onAfterSend, onSend, sessionId, status, updateAttachments],
+  )
+
+  const lastExternalSubmitIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (
+      externalSubmitRequest == null ||
+      externalSubmitRequest.id === lastExternalSubmitIdRef.current ||
+      loading ||
+      error ||
+      status !== 'idle'
+    ) {
+      return
+    }
+    const text = externalSubmitRequest.text.trim()
+    if (!text) return
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      lastExternalSubmitIdRef.current = externalSubmitRequest.id
+      void submitTurn(text, [], text)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [error, externalSubmitRequest, loading, status, submitTurn])
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    const turnAttachments = toSessionAttachments(attachments)
+    const rawText = text || '请查看附件。'
+    await submitTurn(rawText, turnAttachments, text)
+  }, [attachments, input, submitTurn])
+
+  const handleRetryTurn = useCallback(
+    async (userMessage: UIMessage) => {
+      const text = getChatPanelUserText(userMessage).trim()
+      const turnAttachments = userMessage.attachments ?? []
+      if (text.length === 0 && turnAttachments.length === 0) return
+      await submitTurn(text || '请查看附件。', turnAttachments, text, true)
+    },
+    [submitTurn],
+  )
+
+  const handleCopyAssistant = useCallback(
+    async (assistantMessage: UIMessage) => {
+      const text = assistantMessage.blocks
+        .filter((block): block is Extract<UIBlock, { kind: 'text' }> => block.kind === 'text')
+        .map((block) => block.content)
+        .join('\n\n')
+        .trim()
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+        toast.success('回复已复制')
+      } catch {
+        toast.error('复制失败')
+      }
+    },
+    [toast],
+  )
+
+  const handleCancel = useCallback(async () => {
+    if (sessionId == null || status === 'idle' || cancelling) return
+    setCancelling(true)
+    setSendError(null)
+    try {
+      await cancelTurn({ sessionId: sessionId as never })
+    } catch (err) {
+      setCancelling(false)
+      setSendError(err instanceof Error ? err.message : '终止失败')
+    }
+  }, [cancelTurn, cancelling, sessionId, status])
+
+  // onSend 模式下允许 sessionId 为空（父组件建会）；默认模式必须已有 sessionId
+  const disabled = (onSend == null && sessionId == null) || status !== 'idle' || !!error
+  const canSubmit = (input.trim().length > 0 || attachments.length > 0) && !disabled
+  const isWorking = status === 'sending' || status === 'streaming'
+  const canCancel = sessionId != null && isWorking
+
+  const handleQuestionAnswered = useCallback(
+    (questions: UserQuestionPrompt[], summaries: UserQuestionAnswerSummary[]) => {
+      const updated = builderRef.current.setQuestionAnswerSummary(questions, summaries)
+      if (updated) {
+        setMessages([...builderRef.current.getAllMessages()])
+      }
+    },
+    [],
+  )
+
+  const inputPlaceholder = useMemo(() => {
+    if (error) return error
+    if (loading) return '正在初始化...'
+    if (cancelling) return '正在终止...'
+    if (status === 'sending') return '发送中...'
+    if (status === 'streaming') return 'agent 正在回复...'
+    return placeholder ?? '输入消息（Enter 发送，Shift+Enter 换行）'
+  }, [cancelling, error, loading, status, placeholder])
+  const visibleMessages = useMemo(() => projectVisibleChatMessages(messages), [messages])
+  const turns = useMemo(() => groupChatPanelMessagesByTurn(visibleMessages), [visibleMessages])
+
+  return (
+    <div
+      className={`chat-panel${dropActive ? ' is-drop-active' : ''}`}
+      onDragEnter={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current += 1
+        setDropActive(true)
+      }}
+      onDragOver={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!dropActive) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current = Math.max(0, dropDepthRef.current - 1)
+        if (dropDepthRef.current === 0) setDropActive(false)
+      }}
+      onDrop={(event) => {
+        if (!canHandleDrop(event.dataTransfer)) return
+        event.preventDefault()
+        event.stopPropagation()
+        dropDepthRef.current = 0
+        setDropActive(false)
+        void handleDrop(event.dataTransfer).catch((dropError) => {
+          toast.error(dropError instanceof Error ? dropError.message : '添加拖拽附件失败')
+        })
+      }}
+    >
+      {dropActive && (
+        <div className="chat-panel-drop-overlay" aria-hidden="true">
+          <Icons.Upload size={24} />
+          <strong>放开以加入会话</strong>
+          <span>画布产物或本地文件将作为本轮附件</span>
+        </div>
+      )}
+      {loading && (
+        <div className="chat-panel-loading">
+          <Spin tip="正在准备会话..." />
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="chat-panel-error">
+          <Icons.X size={14} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!loading && contextBadge && <div className="chat-panel-context">{contextBadge}</div>}
+      <div
+        className="chat-panel-messages"
+        ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
+      >
+        {(hasMoreHistory || loadingOlderHistory) && (
+          <button
+            type="button"
+            className="chat-panel-load-older"
+            disabled={loadingOlderHistory}
+            onClick={() => void loadOlderHistory()}
+          >
+            {loadingOlderHistory ? <Spin size="small" /> : <Icons.ChevronUp size={12} />}
+            {loadingOlderHistory ? '正在加载更早消息' : '加载更早消息'}
+          </button>
+        )}
+        {historyError && (
+          <div className="chat-panel-history-error" role="alert">
+            <Icons.X size={12} />
+            <span title={historyError}>会话记录加载失败</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (hasMoreHistory) void loadOlderHistory()
+                else setHistoryReloadKey((key) => key + 1)
+              }}
+            >
+              重试
+            </button>
+          </div>
+        )}
+        {visibleMessages.length === 0 &&
+          pendingUserText == null &&
+          !showAssistantPending &&
+          emptyState && <div className="chat-panel-empty">{emptyState}</div>}
+        {turns.map((turn) => {
+          const userMessage = turn.messages.find((message) => message.role === 'user')
+          const assistantMessage = turn.messages.find((message) => message.role === 'assistant')
+          const turnStatus =
+            assistantMessage?.status ?? (status === 'idle' ? 'completed' : 'streaming')
+          const canRetry =
+            userMessage != null &&
+            assistantMessage != null &&
+            (assistantMessage.status === 'error' || assistantMessage.status === 'cancelled')
+          return (
+            <section
+              key={turn.key}
+              className={`chat-panel-turn is-${turnStatus}`}
+              data-turn-id={turn.turnId}
+            >
+              <div className="chat-panel-turn-head">
+                <span>
+                  {formatChatPanelTurnTime(userMessage?.timestamp ?? assistantMessage?.timestamp)}
+                </span>
+                <span className="chat-panel-turn-status">
+                  {chatPanelTurnStatusLabel(turnStatus)}
+                </span>
+              </div>
+              {turn.messages.map((msg) => (
+                <MessageView
+                  key={msg.id}
+                  message={msg}
+                  sessionId={sessionId}
+                  agents={agents}
+                  onQuestionAnswered={handleQuestionAnswered}
+                  {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
+                  {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+                  toolCallDisplay={resolvedToolCallDisplay}
+                  userAvatar={userAvatar}
+                  {...(hideAssistantAvatar ? { hideAssistantAvatar } : {})}
+                  {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
+                  {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
+                />
+              ))}
+              {assistantMessage != null && assistantMessage.status !== 'streaming' && (
+                <div className="chat-panel-turn-actions">
+                  {assistantMessage.blocks.some((block) => block.kind === 'text') && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyAssistant(assistantMessage)}
+                    >
+                      <Icons.Copy size={11} />
+                      复制
+                    </button>
+                  )}
+                  {canRetry && userMessage != null && (
+                    <button
+                      type="button"
+                      disabled={status !== 'idle'}
+                      onClick={() => void handleRetryTurn(userMessage)}
+                    >
+                      <Icons.Refresh size={11} />
+                      重试本轮
+                    </button>
+                  )}
+                  {turn.turnId != null &&
+                    assistantMessage.blocks.some(
+                      (block) =>
+                        block.kind === 'tool_call' &&
+                        block.status === 'success' &&
+                        isCanvasMutationTool(block.toolName),
+                    ) &&
+                    canUndoTurn?.(turn.turnId) &&
+                    onUndoTurn != null && (
+                      <button type="button" onClick={() => void onUndoTurn(turn.turnId as string)}>
+                        <Icons.Undo2 size={11} />
+                        撤销本轮画布修改
+                      </button>
+                    )}
+                </div>
+              )}
+            </section>
+          )
+        })}
+        {pendingUserText != null && (
+          <PendingUserMessageView
+            text={pendingUserText}
+            attachments={pendingUserAttachments}
+            nodeReferences={pendingUserNodeReferences}
+            userAvatar={userAvatar}
+            {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
+          />
+        )}
+        {showAssistantPending && (
+          <PendingAssistantMessageView
+            agents={agents}
+            {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
+            {...(hideAssistantAvatar ? { hideAssistantAvatar } : {})}
+          />
+        )}
+        {showScrollToBottom && (
+          <button
+            type="button"
+            className="chat-panel-scroll-to-bottom"
+            onClick={handleScrollToBottom}
+            aria-label="滚动到最新消息"
+          >
+            <Icons.ArrowDown size={13} />
+            {unseenMessageCount > 0 ? `${unseenMessageCount} 条新动态` : '回到最新'}
+          </button>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="chat-panel-input-area">
+        {composer && <div className="chat-panel-composer-bar">{composer}</div>}
+        {approvalRequest && (
+          <InlinePermissionApproval
+            request={approvalRequest}
+            onClose={() => onApprovalClose?.(approvalRequest.requestId)}
+          />
+        )}
+        {sendError && (
+          <div className="chat-panel-send-error">
+            <Icons.X size={12} />
+            <span>{sendError}</span>
+          </div>
+        )}
+        {/* 圆角浮岛输入框：chip 区 + textarea + 内嵌发送按钮 */}
+        <div className="chat-panel-input-box">
+          {nodeReferences && nodeReferences.length > 0 && (
+            <ComposerNodeRefsStrip
+              refs={nodeReferences}
+              {...(onRemoveNodeReference ? { onRemove: onRemoveNodeReference } : {})}
+              {...(onClearNodeReferences ? { onClear: onClearNodeReferences } : {})}
+              {...(onFocusNodeReference ? { onFocus: onFocusNodeReference } : {})}
+            />
+          )}
+          {attachments.length > 0 && (
+            <ComposerAttachmentsStrip attachments={attachments} onRemove={handleRemoveAttachment} />
+          )}
+          <div className="chat-panel-input-row">
+            <textarea
+              ref={textareaRef}
+              className="chat-panel-input"
+              value={input}
+              placeholder={inputPlaceholder}
+              disabled={disabled}
+              onChange={(e) => applyInput(e.target.value)}
+              onPaste={(e) => {
+                void handlePaste(e)
+              }}
+              onKeyDown={(e) => {
+                const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+                if (nativeEvent.isComposing || e.keyCode === 229) return
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleSend()
+                }
+              }}
+              rows={1}
+            />
+            <button
+              type="button"
+              className={`chat-panel-send-btn${isWorking ? ' is-stop' : ''}`}
+              disabled={isWorking ? !canCancel || cancelling : !canSubmit}
+              aria-label={isWorking ? '终止' : '发送'}
+              title={isWorking ? '终止' : '发送 (Enter)'}
+              onClick={() => {
+                if (isWorking) {
+                  void handleCancel()
+                  return
+                }
+                void handleSend()
+              }}
+            >
+              {isWorking ? (
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              ) : (
+                <Icons.Send size={15} />
+              )}
+            </button>
+          </div>
+        </div>
+        {/* 底部附件按钮行（始终渲染，composerBelow 可选追加更多参数项） */}
+        <div className="chat-panel-composer-below">
+          <ComposerActionsMenu
+            onAddAttachments={() => void handleAddImages()}
+            attachmentLabel="添加图片"
+            onAddContextFiles={() => void handleAddContextFiles()}
+            contextFilesLabel="添加文件或文件夹"
+            onInsertSlashCommand={handleInsertSlashCommand}
+            disabled={disabled}
+            triggerTitle="添加图片、文件或文件夹"
+          />
+          {composerBelow && <div className="chat-panel-composer-below-scroll">{composerBelow}</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MessageView({
+  message,
+  sessionId,
+  agents,
+  fallbackAssistant,
+  toolNamePrefixFilter,
+  toolCallDisplay,
+  hideToolInputOutput,
+  userAvatar,
+  hideAssistantAvatar = false,
+  onFocusNode,
+  onQuestionAnswered,
+}: {
+  message: UIMessage
+  sessionId: string | null
+  agents: ManagedAgent[]
+  fallbackAssistant?: { agentId: string; agentName: string }
+  toolNamePrefixFilter?: string
+  toolCallDisplay: 'hidden' | 'summary' | 'full'
+  hideToolInputOutput?: boolean
+  userAvatar?: React.ReactNode
+  hideAssistantAvatar?: boolean
+  onFocusNode?: (nodeId: string) => void
+  onQuestionAnswered: (
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ) => void
+}): React.ReactElement {
+  const assistantIdentity = resolveAssistantIdentity(message, agents, fallbackAssistant)
+  const attachments = message.role === 'user' ? (message.attachments ?? []) : []
+  const nodeReferences = getChatPanelUserNodeReferences(message)
+  const renderItems = buildChatPanelRenderItems(message.blocks, {
+    toolCallDisplay,
+    ...(toolNamePrefixFilter != null ? { toolNamePrefix: toolNamePrefixFilter } : {}),
+  })
+  return (
+    <div
+      className={`chat-panel-message chat-panel-message-${message.role}${
+        message.role === 'assistant' && hideAssistantAvatar
+          ? ' chat-panel-message-assistant-no-avatar'
+          : ''
+      }`}
+    >
+      {message.role === 'user' ? (
+        userAvatar != null ? (
+          <div className="chat-panel-message-avatar">{userAvatar}</div>
+        ) : null
+      ) : hideAssistantAvatar ? null : (
+        <div className="chat-panel-message-avatar">
+          <AssistantAvatar
+            agentId={assistantIdentity.id}
+            agentName={assistantIdentity.name}
+            avatarSrc={assistantIdentity.avatarSrc}
+          />
+        </div>
+      )}
+      <div className="chat-panel-message-body">
+        {nodeReferences.length > 0 && (
+          <MessageNodeReferencesView
+            references={nodeReferences}
+            {...(onFocusNode ? { onFocus: onFocusNode } : {})}
+          />
+        )}
+        {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
+        {renderItems.map((item) => {
+          if (item.kind === 'thinking_group') {
+            return <ChatPanelThinkingGroup key={item.key} blocks={item.blocks} />
+          }
+          if (item.kind === 'tool_activity') {
+            return (
+              <ChatPanelToolActivity
+                key={item.key}
+                blocks={item.blocks}
+                {...(onFocusNode ? { onFocusNode } : {})}
+              />
+            )
+          }
+          if (item.kind === 'text_group') {
+            const content = getChatPanelTextGroupContent(item.blocks)
+            if (content.length === 0) return null
+            return (
+              <div
+                key={item.key}
+                className={`chat-panel-text chat-panel-text-group md-surface${
+                  item.blocks.length > 1 ? ' is-multi-segment' : ''
+                }`}
+                data-segment-count={item.blocks.length}
+              >
+                <MarkdownText
+                  content={message.role === 'user' ? sanitizeUserDisplayText(content) : content}
+                  isStreaming={item.blocks.some((block) => block.isStreaming)}
+                  detectDocumentOutput={message.role !== 'user'}
+                />
+                {item.blocks.some((block) => block.isStreaming) && (
+                  <span className="chat-panel-cursor">▋</span>
+                )}
+              </div>
+            )
+          }
+          return (
+            <BlockView
+              key={item.key}
+              block={item.block}
+              role={message.role}
+              sessionId={sessionId}
+              onQuestionAnswered={onQuestionAnswered}
+              {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+              {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BlockView({
+  block,
+  role,
+  sessionId,
+  toolNamePrefixFilter,
+  hideToolInputOutput,
+  onQuestionAnswered,
+}: {
+  block: UIBlock
+  role: 'user' | 'assistant'
+  sessionId: string | null
+  toolNamePrefixFilter?: string
+  hideToolInputOutput?: boolean
+  onQuestionAnswered: (
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ) => void
+}): React.ReactElement | null {
+  switch (block.kind) {
+    case 'text':
+      return (
+        <div className="chat-panel-text md-surface">
+          <MarkdownText
+            content={role === 'user' ? sanitizeUserDisplayText(block.content) : block.content}
+            detectDocumentOutput={role !== 'user'}
+          />
+          {block.isStreaming && <span className="chat-panel-cursor">▋</span>}
+        </div>
+      )
+    case 'thinking':
+      return null
+    case 'tool_call': {
+      const displayName = block.toolName.replace(/^mcp__[^_]+__/, '')
+      const isCanvas = block.toolName.startsWith('mcp__spark_canvas__')
+      // 设了前缀过滤时，匹配的工具(画布操作)优先展示；
+      // 若 hideToolInputOutput 开启，则仅保留工具标题与错误信息。
+      // 其他工具(内部读取/思考等)折叠为"详情"，默认收起、可展开
+      const matchesFilter = !toolNamePrefixFilter || block.toolName.startsWith(toolNamePrefixFilter)
+      const statusClass = `chat-panel-tool-${block.status}`
+      const inputDetails =
+        !hideToolInputOutput && Object.keys(block.toolInput).length > 0 ? (
+          <details className="chat-panel-tool-input">
+            <summary>参数</summary>
+            <pre>{JSON.stringify(block.toolInput, null, 2)}</pre>
+          </details>
+        ) : null
+      const errorBlock = block.error ? (
+        <div className="chat-panel-tool-error">{block.error}</div>
+      ) : null
+      const outputDetails =
+        !hideToolInputOutput && block.output && block.status === 'success' ? (
+          <details className="chat-panel-tool-output">
+            <summary>结果</summary>
+            <pre>{block.output}</pre>
+          </details>
+        ) : null
+      const hasDetail = inputDetails != null || errorBlock != null || outputDetails != null
+      return (
+        <div
+          className={`chat-panel-tool ${statusClass} ${isCanvas ? 'chat-panel-tool-canvas' : ''}`}
+        >
+          <div className="chat-panel-tool-head">
+            <span className="chat-panel-tool-icon">
+              {block.status === 'running' || block.status === 'pending' ? (
+                <Spin size="middle" />
+              ) : block.status === 'error' ? (
+                <Icons.X size={12} />
+              ) : (
+                <Icons.Sparkles size={12} />
+              )}
+            </span>
+            <span className="chat-panel-tool-name">
+              {isCanvas ? '画布操作' : '工具调用'} · {displayName}
+            </span>
+            {block.durationMs != null && (
+              <span className="chat-panel-tool-duration">{block.durationMs}ms</span>
+            )}
+          </div>
+          {matchesFilter ? (
+            <>
+              {inputDetails}
+              {errorBlock}
+              {outputDetails}
+            </>
+          ) : hasDetail ? (
+            <details className="chat-panel-tool-secondary">
+              <summary>详情</summary>
+              {inputDetails}
+              {errorBlock}
+              {outputDetails}
+            </details>
+          ) : null}
+        </div>
+      )
+    }
+    case 'user_question':
+      return (
+        <InlineUserQuestionCard
+          key={block.toolCallId}
+          block={block}
+          sessionId={sessionId}
+          onAnswered={onQuestionAnswered}
+        />
+      )
+    case 'error':
+      return (
+        <StreamingErrorCard
+          code={block.code}
+          title={block.title ?? 'Agent 执行失败'}
+          message={block.message}
+          level="error"
+          retryable={block.retryable}
+          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+          {...(block.details != null ? { details: block.details } : {})}
+          {...(block.origin != null ? { origin: block.origin } : {})}
+          {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
+        />
+      )
+    case 'runtime_signal':
+      return <RuntimeSignalCard block={block} />
+    case 'goal_contract':
+      // 契约确认是关键决策点，modal（画布 Agent）场景同样要能直接确认/拒绝。
+      return <GoalContractCard block={block} sessionId={sessionId} />
+    case 'cancelled':
+      return <CancellationNotice message={block.message} />
+    default:
+      // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开
+      return null
+  }
+}
+
+function InlineUserQuestionCard({
+  block,
+  sessionId,
+  onAnswered,
+}: {
+  block: Extract<UIBlock, { kind: 'user_question' }>
+  sessionId: string | null
+  onAnswered: (questions: UserQuestionPrompt[], summaries: UserQuestionAnswerSummary[]) => void
+}): React.ReactElement | null {
+  const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
+  const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (block.questions.length === 0) return null
+
+  const total = block.questions.length
+  const currentQuestion = block.questions[Math.min(currentIndex, total - 1)]
+  const currentDraft = drafts[currentIndex] ?? {}
+  const answeredCount = block.questions.filter((question, index) =>
+    isQuestionAnswered(question, drafts[index]),
+  ).length
+  const canGoBack = currentIndex > 0
+  const canGoNext = currentIndex < total - 1
+  const canSubmit =
+    !block.answered &&
+    block.error == null &&
+    block.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
+  const answerByQuestion = new Map<string, UserQuestionAnswerSummary>()
+  for (const summary of block.answerSummary ?? []) {
+    answerByQuestion.set(summary.question, summary)
+  }
+
+  const updateDraft = (patch: Partial<UserQuestionDraft>) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [currentIndex]: {
+        ...prev[currentIndex],
+        ...patch,
+      },
+    }))
+  }
+
+  const handleSelectOption = (option: UserQuestionOption) => {
+    if (currentQuestion == null || block.answered || block.error != null || submitting) return
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      const prevLabels = currentDraft.selectedLabels ?? []
+      const prevValues = currentDraft.selectedValues ?? []
+      const alreadySelected = prevLabels.includes(option.label)
+      updateDraft({
+        skipped: false,
+        selectedLabels: alreadySelected
+          ? prevLabels.filter((label) => label !== option.label)
+          : [...prevLabels, option.label],
+        selectedValues: alreadySelected
+          ? prevValues.filter((value) => value !== (option.value ?? option.label))
+          : [...prevValues, option.value ?? option.label],
+        text: '',
+      })
+      return
+    }
+
+    updateDraft({
+      skipped: false,
+      selectedLabel: option.label,
+      selectedValue: option.value ?? option.label,
+      ...(option.allowsFreeText ? {} : { otherText: '' }),
+      text: '',
+    })
+    if (!option.allowsFreeText && canGoNext) {
+      setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
+    }
+  }
+
+  const handleOtherTextChange = (value: string) => {
+    if (currentQuestion == null) return
+    if (isMultiChoiceQuestion(currentQuestion)) {
+      updateDraft({ skipped: false, otherText: value, text: '' })
+      return
+    }
+    const otherLabel = getOtherOptionLabel(currentQuestion)
+    updateDraft({
+      skipped: false,
+      selectedLabel: otherLabel,
+      selectedValue: otherLabel,
+      otherText: value,
+      text: '',
+    })
+  }
+
+  const submitAnswers = async (answers: Record<string, unknown>) => {
+    if (submitting || block.answered || block.error != null) return
+    if (sessionId == null) {
+      setError('会话尚未就绪，暂时无法提交答案')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      await answerQuestion({ sessionId, questionId: block.toolCallId, answers })
+      const summaries = buildQuestionAnswerSummaries(block.questions, answers)
+      if (summaries.length > 0) {
+        onAnswered(block.questions, summaries)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交答案失败')
+      setSubmitting(false)
+    }
+  }
+
+  const handleSubmit = () => {
+    if (!canSubmit) return
+    void submitAnswers({
+      answers: block.questions.map((question, index) =>
+        buildQuestionAnswer(question, drafts[index], index),
+      ),
+      questionCount: total,
+      answeredCount,
+    })
+  }
+
+  const handleCancel = () => {
+    if (sessionId == null || submitting || block.answered || block.error != null) return
+    setSubmitting(true)
+    setError(null)
+    cancelTurn({ sessionId: sessionId as SessionId }).catch((err) => {
+      setError(err instanceof Error ? err.message : '终止失败')
+      setSubmitting(false)
+    })
+  }
+
+  const handleSkip = () => {
+    if (currentQuestion == null || submitting || currentQuestion.allowSkip === false) return
+    const answerList = block.questions.map((question, index) => {
+      const draft = drafts[index]
+      const submissionDraft =
+        index < currentIndex && isQuestionAnswered(question, draft)
+          ? draft
+          : {
+              skipped: true,
+              selectedLabel: '',
+              selectedValue: '',
+              selectedLabels: [],
+              selectedValues: [],
+              otherText: '',
+              text: '',
+            }
+      return buildQuestionAnswer(question, submissionDraft, index)
+    })
+    void submitAnswers({
+      skipped: true,
+      reason: '用户选择跳过这些问题。',
+      answers: answerList,
+      questionCount: total,
+      answeredCount: answerList.filter((answer) => answer.skipped !== true).length,
+    })
+  }
+
+  return (
+    <div className="chat-panel-question-card">
+      <div className="chat-panel-question-head">
+        <span className="chat-panel-question-icon">
+          <Icons.HelpCircle size={14} />
+        </span>
+        <div>
+          <div className="chat-panel-question-title">Agent 正在等您回复</div>
+          <div className="chat-panel-question-subtitle">
+            {block.error != null
+              ? '提问工具未能完成'
+              : block.answered
+                ? '已提交答案'
+                : '可在画布对话框内直接作答'}
+          </div>
+        </div>
+        <span className={`chat-panel-question-badge${block.answered ? ' is-done' : ''}`}>
+          {block.error != null
+            ? '失败'
+            : block.answered
+              ? '已回答'
+              : `${Math.min(currentIndex + 1, total)} / ${total}`}
+        </span>
+      </div>
+
+      {block.error != null ? (
+        <div className="chat-panel-question-error">
+          <Icons.X size={12} />
+          <span>{block.error}</span>
+        </div>
+      ) : block.answered ? (
+        <div className="chat-panel-question-summary-list">
+          {block.questions.map((question, index) => {
+            const summary =
+              answerByQuestion.get(question.question) ??
+              (block.answerSummary != null ? block.answerSummary[index] : undefined)
+            return (
+              <div className="chat-panel-question-summary" key={`${question.question}-${index}`}>
+                {question.header && (
+                  <div className="chat-panel-question-summary-header">{question.header}</div>
+                )}
+                <div className="chat-panel-question-summary-q">
+                  {index + 1}. {question.question}
+                </div>
+                <div className="chat-panel-question-summary-a">
+                  {summary?.skipped
+                    ? '已跳过'
+                    : summary?.answer && summary.answer.length > 0
+                      ? summary.answer
+                      : '未填写'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : currentQuestion != null ? (
+        <>
+          <div className="chat-panel-question-body">
+            {currentQuestion.header && (
+              <div className="chat-panel-question-section">{currentQuestion.header}</div>
+            )}
+            <div className="chat-panel-question-text">{currentQuestion.question}</div>
+            <div className="chat-panel-question-meta">
+              <span>{getQuestionTypeLabel(currentQuestion)}</span>
+              <span>
+                已答 {answeredCount} / {total}
+              </span>
+            </div>
+
+            {isChoiceQuestion(currentQuestion) ? (
+              <>
+                <div className="chat-panel-question-options">
+                  {getChoiceOptions(currentQuestion).map((option, optionIndex) => {
+                    const selected = isMultiChoiceQuestion(currentQuestion)
+                      ? (currentDraft.selectedLabels ?? []).includes(option.label)
+                      : currentDraft.selectedLabel === option.label
+                    return (
+                      <button
+                        key={`${option.label}-${optionIndex}`}
+                        type="button"
+                        className={`chat-panel-question-option${selected ? ' is-selected' : ''}`}
+                        disabled={submitting}
+                        onClick={() => handleSelectOption(option)}
+                        title={option.description ?? option.label}
+                      >
+                        <span>{option.label}</span>
+                        {option.description && <small>{option.description}</small>}
+                        {selected && <Icons.Check size={12} />}
+                      </button>
+                    )
+                  })}
+                </div>
+                <label className="chat-panel-question-other">
+                  <span>{getOtherOptionLabel(currentQuestion)}</span>
+                  <input
+                    value={currentDraft.otherText ?? ''}
+                    placeholder={getOtherPlaceholder(currentQuestion)}
+                    disabled={submitting}
+                    onChange={(event) => handleOtherTextChange(event.target.value)}
+                  />
+                </label>
+              </>
+            ) : currentQuestion.multiline ? (
+              <textarea
+                className="chat-panel-question-answer"
+                value={currentDraft.text ?? ''}
+                placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                disabled={submitting}
+                rows={4}
+                onChange={(event) => updateDraft({ skipped: false, text: event.target.value })}
+              />
+            ) : (
+              <input
+                className="chat-panel-question-answer"
+                value={currentDraft.text ?? ''}
+                placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                disabled={submitting}
+                onChange={(event) => updateDraft({ skipped: false, text: event.target.value })}
+              />
+            )}
+
+            {currentDraft.skipped && (
+              <div className="chat-panel-question-skip-note">
+                这一题已标记为跳过，您仍可返回修改。
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="chat-panel-question-error">
+              <Icons.X size={12} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="chat-panel-question-footer">
+            <div className="chat-panel-question-dots">
+              {block.questions.map((question, index) => (
+                <button
+                  key={question.id ?? `${question.question}-${index}`}
+                  type="button"
+                  className={`chat-panel-question-dot${index === currentIndex ? ' is-active' : ''}${isQuestionAnswered(question, drafts[index]) ? ' is-done' : ''}`}
+                  disabled={submitting}
+                  onClick={() => setCurrentIndex(index)}
+                  title={`第 ${index + 1} 题`}
+                >
+                  {index + 1}
+                </button>
+              ))}
+            </div>
+            <div className="chat-panel-question-actions">
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting || currentQuestion.allowSkip === false}
+                onClick={handleSkip}
+              >
+                跳过
+              </button>
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting}
+                onClick={handleCancel}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="chat-panel-question-btn"
+                disabled={submitting || !canGoBack}
+                onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
+              >
+                上一题
+              </button>
+              {canGoNext ? (
+                <button
+                  type="button"
+                  className="chat-panel-question-btn is-primary"
+                  disabled={submitting}
+                  onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, total - 1))}
+                >
+                  下一题
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="chat-panel-question-btn is-primary"
+                  disabled={submitting || !canSubmit}
+                  onClick={handleSubmit}
+                >
+                  {submitting ? '提交中...' : '提交答案'}
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function PendingUserMessageView({
+  text,
+  attachments,
+  nodeReferences,
+  userAvatar,
+  onFocusNode,
+}: {
+  text: string
+  attachments: ChatPanelDisplayAttachment[]
+  nodeReferences: ChatPanelNodeReference[]
+  userAvatar?: React.ReactNode
+  onFocusNode?: (nodeId: string) => void
+}) {
+  return (
+    <div className="chat-panel-message chat-panel-message-user chat-panel-message-pending">
+      {userAvatar != null && <div className="chat-panel-message-avatar">{userAvatar}</div>}
+      <div className="chat-panel-message-body">
+        {nodeReferences.length > 0 && (
+          <MessageNodeReferencesView
+            references={nodeReferences}
+            {...(onFocusNode ? { onFocus: onFocusNode } : {})}
+          />
+        )}
+        {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
+        <div className="chat-panel-text md-surface">
+          <MarkdownText content={text} detectDocumentOutput={false} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PendingAssistantMessageView({
+  agents,
+  fallbackAssistant,
+  hideAssistantAvatar = false,
+}: {
+  agents: ManagedAgent[]
+  fallbackAssistant?: { agentId: string; agentName: string }
+  hideAssistantAvatar?: boolean
+}) {
+  const identity = resolveAssistantIdentity(null, agents, fallbackAssistant)
+  return (
+    <div
+      className={`chat-panel-message chat-panel-message-assistant chat-panel-message-pending${
+        hideAssistantAvatar ? ' chat-panel-message-assistant-no-avatar' : ''
+      }`}
+    >
+      {hideAssistantAvatar ? null : (
+        <div className="chat-panel-message-avatar">
+          <AssistantAvatar
+            agentId={identity.id}
+            agentName={identity.name}
+            avatarSrc={identity.avatarSrc}
+            pending
+          />
+        </div>
+      )}
+      <div className="chat-panel-message-body">
+        <div className="chat-panel-assistant-loading">
+          <Spin size="small" />
+          <span>{identity.name} 正在执行...</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssistantAvatar({
+  agentId,
+  agentName,
+  avatarSrc,
+  pending = false,
+}: {
+  agentId: string
+  agentName: string
+  avatarSrc: string
+  pending?: boolean
+}) {
+  return (
+    <span className={`chat-panel-avatar-image-wrap${pending ? ' is-pending' : ''}`}>
+      <AvatarImage src={avatarSrc} seed={agentId} name={agentName} alt={`${agentName} 头像`} />
+      {pending && <span className="chat-panel-avatar-pulse" aria-hidden="true" />}
+    </span>
+  )
+}
+
+function resolveAssistantIdentity(
+  message: UIMessage | null,
+  agents: ManagedAgent[],
+  fallbackAssistant?: { agentId: string; agentName: string },
+): { id: string; name: string; avatarSrc: string } {
+  const fallbackId = fallbackAssistant?.agentId ?? 'platform-manager-agent'
+  const fallbackName = fallbackAssistant?.agentName ?? 'Agent'
+  const fallbackAvatar = getAgentAvatarConfig(undefined, fallbackId, fallbackName)
+  const fallbackAvatarSrc = resolveAvatarSrc(fallbackAvatar)
+  if (message == null) {
+    return { id: fallbackId, name: fallbackName, avatarSrc: fallbackAvatarSrc }
+  }
+  const id = message.agentId ?? fallbackId
+  const agent = agents.find((item) => item.id === id)
+  const name = message.agentName ?? agent?.name ?? fallbackName
+  if (message.agentId == null) {
+    return { id: fallbackId, name, avatarSrc: fallbackAvatarSrc }
+  }
+  const avatar = getAgentAvatarConfig(agent?.metadata, id, name)
+  return { id, name, avatarSrc: resolveAvatarSrc(avatar) }
+}
+
+function sanitizeUserDisplayText(content: string): string {
+  return sanitizeCanvasUserMessage(content)
+}
+
+function chatPanelTurnStatusLabel(status: UIMessage['status']): string {
+  if (status === 'streaming') return '进行中'
+  if (status === 'error') return '失败'
+  if (status === 'cancelled') return '已取消'
+  return '已完成'
+}
+
+function formatChatPanelTurnTime(timestamp: string | undefined): string {
+  if (!timestamp) return '当前轮次'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '当前轮次'
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** 图片附件悬浮预览：鼠标悬停在 image chip 上时弹出大图浮窗。
+ *  复用 resolveComposerImageSrc + file:prepare-image-preview 的预览链路
+ *  （与 ChatView.UserMessageImageAttachment 一致），覆盖 temp 粘贴图等需 prepare 的场景。 */
+function AttachmentImageHoverPreview({
+  path,
+  name,
+  children,
+}: {
+  path: string
+  name: string
+  children: React.ReactNode
+}) {
+  const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const [resolvedSrc, setResolvedSrc] = useState(() => resolveComposerImageSrc(path))
+  const [imgError, setImgError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setResolvedSrc(resolveComposerImageSrc(path))
+    setImgError(false)
+    void prepareImagePreview({ sourcePath: path })
+      .then((preview) => {
+        if (!cancelled) setResolvedSrc(preview.fileUrl)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [path, prepareImagePreview])
+
+  return (
+    <Popover
+      trigger="hover"
+      mouseEnterDelay={0.2}
+      mouseLeaveDelay={0.1}
+      placement="top"
+      arrow={false}
+      overlayClassName="chat-panel-attachment-preview-popover"
+      getPopupContainer={() => document.body}
+      content={
+        <div className="chat-panel-attachment-preview">
+          {imgError ? (
+            <div className="chat-panel-attachment-preview-fallback">预览不可用</div>
+          ) : (
+            <img src={resolvedSrc} alt={name} onError={() => setImgError(true)} />
+          )}
+          <div className="chat-panel-attachment-preview-name">{name}</div>
+        </div>
+      }
+    >
+      {children}
+    </Popover>
+  )
+}
+
+function ComposerAttachmentsStrip({
+  attachments,
+  onRemove,
+}: {
+  attachments: ChatPanelAttachment[]
+  onRemove: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const hiddenCount = Math.max(0, attachments.length - CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const visibleAttachments =
+    expanded || hiddenCount === 0
+      ? attachments
+      : attachments.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const renderChip = (attachment: ChatPanelAttachment) => (
+    <div
+      className={`chat-panel-attachment-chip${attachment.type === 'directory' ? ' is-directory' : ''}`}
+      title={attachment.path}
+    >
+      {attachment.type === 'directory' ? (
+        <Icons.Folder size={13} />
+      ) : attachment.type === 'image' ? (
+        <Icons.Image size={13} />
+      ) : (
+        <Icons.File size={13} />
+      )}
+      <span>{attachment.name}</span>
+      <button
+        type="button"
+        className="chat-panel-attachment-remove"
+        aria-label={`移除 ${attachment.name}`}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onRemove(attachment.id)
+        }}
+      >
+        <Icons.X size={12} />
+      </button>
+    </div>
+  )
+  return (
+    <div className="chat-panel-composer-attachments">
+      {visibleAttachments.map((attachment) => {
+        const chip = renderChip(attachment)
+        if (attachment.type === 'image') {
+          return (
+            <AttachmentImageHoverPreview
+              key={attachment.id}
+              path={attachment.path}
+              name={attachment.name}
+            >
+              {chip}
+            </AttachmentImageHoverPreview>
+          )
+        }
+        return <React.Fragment key={attachment.id}>{chip}</React.Fragment>
+      })}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          className="chat-panel-attachment-chip chat-panel-attachment-more"
+          title={
+            expanded
+              ? '折叠附件'
+              : attachments
+                  .slice(CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+                  .map((item) => item.path)
+                  .join('\n')
+          }
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收起' : `还有 ${hiddenCount} 个`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function nodeRefIcon(type: string) {
+  switch (type) {
+    case 'image':
+      return <Icons.Image size={13} />
+    case 'prompt':
+      return <Icons.Edit size={13} />
+    case 'task':
+      return <Icons.Workflow size={13} />
+    case 'group':
+      return <Icons.Layers size={13} />
+    case 'text':
+    default:
+      return <Icons.FileText size={13} />
+  }
+}
+
+function nodeRefLabel(ref: ChatPanelNodeReference) {
+  const label = ref.title?.trim()
+  if (label) return label
+  const fallback: Record<string, string> = {
+    text: '文本节点',
+    image: '图片节点',
+    prompt: 'Prompt 节点',
+    task: '任务节点',
+    group: '组节点',
+  }
+  return fallback[ref.type] ?? '节点'
+}
+
+function ComposerNodeRefsStrip({
+  refs,
+  onRemove,
+  onClear,
+  onFocus,
+}: {
+  refs: ChatPanelNodeReference[]
+  onRemove?: (id: string) => void
+  onClear?: () => void
+  onFocus?: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const hiddenCount = Math.max(0, refs.length - CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const visibleRefs =
+    expanded || hiddenCount === 0 ? refs : refs.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  return (
+    <div className="chat-panel-node-refs">
+      <div className="chat-panel-node-refs-chips">
+        {visibleRefs.map((ref) => (
+          <div key={ref.id} className="chat-panel-node-ref-chip" title={nodeRefLabel(ref)}>
+            {onFocus ? (
+              <button
+                type="button"
+                className="chat-panel-node-ref-focus"
+                onClick={() => onFocus(ref.id)}
+              >
+                {nodeRefIcon(ref.type)}
+                <span>{nodeRefLabel(ref)}</span>
+              </button>
+            ) : (
+              <>
+                {nodeRefIcon(ref.type)}
+                <span>{nodeRefLabel(ref)}</span>
+              </>
+            )}
+            {onRemove && (
+              <button
+                type="button"
+                className="chat-panel-attachment-remove"
+                aria-label={`移除 ${nodeRefLabel(ref)}`}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onRemove(ref.id)
+                }}
+              >
+                <Icons.X size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            className="chat-panel-node-ref-chip chat-panel-attachment-more"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? '收起' : `还有 ${hiddenCount} 个`}
+          </button>
+        )}
+      </div>
+      {onClear && refs.length > 1 && (
+        <button
+          type="button"
+          className="chat-panel-node-refs-clear"
+          onClick={() => {
+            setExpanded(false)
+            onClear()
+          }}
+        >
+          清空
+        </button>
+      )}
+    </div>
+  )
+}
+
+function MessageAttachmentsView({ attachments }: { attachments: ChatPanelDisplayAttachment[] }) {
+  return (
+    <div className="chat-panel-message-attachments">
+      {attachments.map((attachment) => {
+        const name = attachment.name ?? getFileNameFromPath(attachment.path)
+        return (
+          <div
+            key={`${attachment.type}:${attachment.path}`}
+            className={`chat-panel-attachment-chip is-readonly${attachment.type === 'directory' ? ' is-directory' : ''}`}
+            title={attachment.path}
+          >
+            {attachment.type === 'directory' ? (
+              <Icons.Folder size={13} />
+            ) : attachment.type === 'image' ? (
+              <Icons.Image size={13} />
+            ) : (
+              <Icons.File size={13} />
+            )}
+            <span>{name}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MessageNodeReferencesView({
+  references,
+  onFocus,
+}: {
+  references: ChatPanelNodeReference[]
+  onFocus?: (id: string) => void
+}) {
+  return (
+    <div className="chat-panel-message-node-refs">
+      {references.map((reference) => (
+        <div
+          key={reference.id}
+          className="chat-panel-node-ref-chip is-readonly"
+          title={nodeRefLabel(reference)}
+        >
+          {onFocus ? (
+            <button
+              type="button"
+              className="chat-panel-node-ref-focus"
+              onClick={() => onFocus(reference.id)}
+            >
+              {nodeRefIcon(reference.type)}
+              <span>{nodeRefLabel(reference)}</span>
+            </button>
+          ) : (
+            <>
+              {nodeRefIcon(reference.type)}
+              <span>{nodeRefLabel(reference)}</span>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function getFileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath
+}
+
+function isImageAttachmentPath(filePath: string): boolean {
+  const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
+  return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read pasted image'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read pasted image'))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+function toSessionAttachments(attachments: ChatPanelAttachment[]): SessionAttachment[] {
+  return attachments.map((attachment) => ({
+    type: attachment.type,
+    path: attachment.path,
+  }))
+}
+
+function pendingAttachmentsToComposer(attachments: SessionAttachment[]): ChatPanelAttachment[] {
+  return attachments.map((attachment, index) => ({
+    id: `restore-${index}-${attachment.path}`,
+    type: attachment.type,
+    path: attachment.path,
+    name: getFileNameFromPath(attachment.path),
+  }))
+}
+
+function isChoiceQuestion(question: UserQuestionPrompt): boolean {
+  const type = question.type ?? 'single_choice'
+  return type === 'single_choice' || type === 'multi_choice'
+}
+
+function isMultiChoiceQuestion(question: UserQuestionPrompt): boolean {
+  const type = question.type ?? (question.multiSelect === true ? 'multi_choice' : 'single_choice')
+  return type === 'multi_choice'
+}
+
+function getQuestionTypeLabel(question: UserQuestionPrompt): string {
+  if (isMultiChoiceQuestion(question)) return '多选题'
+  return isChoiceQuestion(question) ? '选择题' : question.multiline ? '长文本输入' : '输入题'
+}
+
+function getOtherOptionLabel(question: UserQuestionPrompt): string {
+  return question.otherOptionLabel?.trim() || '其他'
+}
+
+function getOtherPlaceholder(question: UserQuestionPrompt): string {
+  return question.otherPlaceholder?.trim() || '请输入其他内容'
+}
+
+function getChoiceOptions(question: UserQuestionPrompt): UserQuestionOption[] {
+  return question.options ?? []
+}
+
+function isQuestionAnswered(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
+  if (draft?.skipped) return true
+  if (draft == null) return false
+  if (isChoiceQuestion(question)) {
+    if (isMultiChoiceQuestion(question)) {
+      return (draft.selectedLabels?.length ?? 0) > 0 || (draft.otherText?.trim().length ?? 0) > 0
+    }
+    if (draft.selectedLabel === getOtherOptionLabel(question)) {
+      return (draft.otherText?.trim().length ?? 0) > 0
+    }
+    return !!draft.selectedLabel || (draft.otherText?.trim().length ?? 0) > 0
+  }
+  return (draft.text?.trim().length ?? 0) > 0
+}
+
+function isQuestionReadyForSubmit(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
+  if (draft?.skipped) return true
+  if (isOptionalUserQuestion(question)) return true
+  return isQuestionAnswered(question, draft)
+}
+
+function buildQuestionAnswer(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+  index: number,
+) {
+  const isSkipped = draft?.skipped === true
+  const otherText = draft?.otherText?.trim() ?? ''
+  const text = draft?.text?.trim() ?? ''
+  const answerValue = isChoiceQuestion(question)
+    ? isMultiChoiceQuestion(question)
+      ? (() => {
+          const labels = draft?.selectedLabels ?? []
+          const parts = [...labels]
+          if (otherText) parts.push(otherText)
+          return parts.filter(Boolean).join(' | ')
+        })()
+      : (() => {
+          const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
+          if (selected === getOtherOptionLabel(question)) return otherText
+          if (otherText && selected) return `${selected} | ${otherText}`
+          return otherText || selected
+        })()
+    : text
+
+  const resolvedType =
+    question.type ??
+    (isMultiChoiceQuestion(question)
+      ? 'multi_choice'
+      : isChoiceQuestion(question)
+        ? 'single_choice'
+        : 'text')
+
+  return {
+    index,
+    id: question.id ?? `question-${index + 1}`,
+    header: question.header,
+    question: question.question,
+    type: resolvedType,
+    skipped: isSkipped,
+    answer: isSkipped ? '用户选择跳过' : answerValue,
+    ...(isMultiChoiceQuestion(question)
+      ? {
+          ...(draft?.selectedLabels && draft.selectedLabels.length > 0
+            ? { optionLabel: draft.selectedLabels.join(' | ') }
+            : {}),
+          ...(draft?.selectedValues && draft.selectedValues.length > 0
+            ? { optionValue: draft.selectedValues.join(' | ') }
+            : {}),
+        }
+      : {
+          ...(draft?.selectedLabel ? { optionLabel: draft.selectedLabel } : {}),
+          ...(draft?.selectedValue ? { optionValue: draft.selectedValue } : {}),
+        }),
+    ...(otherText ? { otherText } : {}),
+    ...(text ? { text } : {}),
+  }
+}
+
+function buildQuestionAnswerSummaries(
+  questions: UserQuestionPrompt[],
+  answers: Record<string, unknown>,
+): UserQuestionAnswerSummary[] {
+  const rawList = Array.isArray(answers.answers) ? answers.answers : []
+  return questions
+    .map((question, index) => {
+      const raw = rawList[index] as Record<string, unknown> | undefined
+      if (raw == null || typeof raw !== 'object') return null
+      const answer =
+        typeof raw.answer === 'string' ? raw.answer : typeof raw.text === 'string' ? raw.text : ''
+      if (!answer && raw.skipped !== true) return null
+      return {
+        question: question.question,
+        answer,
+        ...(raw.skipped === true ? { skipped: true } : {}),
+      }
+    })
+    .filter((item): item is UserQuestionAnswerSummary => item != null)
+}
+
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'avif',
+  'ico',
+  'tif',
+  'tiff',
+  'heic',
+  'heif',
+])
+
+function mergeAgentEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
+  const byIdentity = new Map<string, AgentEvent>()
+  for (const event of [...historyEvents, ...liveEvents]) {
+    byIdentity.set(event.id, event)
+  }
+  return [...byIdentity.values()].sort(compareAgentEvents)
+}
+
+function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
+  if (a.seq !== b.seq) return a.seq - b.seq
+  const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  if (timeDiff !== 0) return timeDiff
+  return a.id.localeCompare(b.id)
+}
+
+function getAgentEventActivityKey(event: AgentEvent): string {
+  if (event.type === 'assistant_message' || event.type === 'agent_thinking') {
+    return `${event.turnId}:${event.type}:${event.segmentId ?? 'default'}`
+  }
+  if (event.type === 'tool_call' || event.type === 'tool_result') {
+    return `${event.turnId}:tool:${event.toolCallId}`
+  }
+  return event.id
+}

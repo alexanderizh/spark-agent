@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="华为云盘古">
+  <defs>
+    <linearGradient id="hw" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c7000b"/>
+      <stop offset="100%" stop-color="#ff4d57"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#hw)"/>
+  <path d="M14 22c4-2 9-2 12 0 3-2 8-2 12 0 4 2 6 6 6 10s-2 8-6 10c-2 1-5 1-8 0 1 2 3 4 6 4v4c-6 0-10-4-12-8-2 4-6 8-12 8v-4c3 0 5-2 6-4-3 1-6 1-8 0-4-2-6-6-6-10s2-8 6-10Z" fill="#fff" opacity=".95"/>
+  <circle cx="26" cy="32" r="2" fill="#c7000b"/>
+  <circle cx="38" cy="32" r="2" fill="#c7000b"/>
+</svg>

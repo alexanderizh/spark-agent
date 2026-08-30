@@ -1,0 +1,280 @@
+.chat-turn-navigator {
+  --chat-turn-line: color-mix(in srgb, var(--text) 31%, transparent);
+  --chat-turn-line-hover: color-mix(in srgb, var(--text) 62%, transparent);
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  z-index: 11;
+  width: 32px;
+  max-height: min(220px, 36vh);
+  transform: translateY(-50%);
+  opacity: 1;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  animation: chat-turn-navigator-enter 160ms ease-out both;
+}
+
+.chat-main-active:has(.chat-stream-viewport > .chat-turn-navigator) {
+  /* 12px 左偏移 + 32px 标记宽度 + 8px 间隔 = 52px；
+     从消息区与 Composer 的共同祖先下发，保证两者左侧基线一致。 */
+  --chat-turn-nav-content-inset: 52px;
+}
+
+.chat-turn-navigator-track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 32px;
+  max-height: min(220px, 36vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.chat-turn-marker {
+  position: relative;
+  flex: 0 0 11px;
+  width: 32px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+
+  &:focus-visible::after {
+    content: '';
+    position: absolute;
+    inset: -2px 0;
+    border: 1px solid color-mix(in srgb, var(--primary) 72%, transparent);
+    border-radius: 5px;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent);
+  }
+
+  &.is-active .chat-turn-marker-line {
+    opacity: 0;
+  }
+
+  &.is-streaming:not(.is-active) .chat-turn-marker-line::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: var(--primary);
+  }
+}
+
+.chat-turn-marker-line,
+.chat-turn-marker-active-line {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  display: block;
+  height: 2px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  transform-origin: left center;
+}
+
+.chat-turn-marker-line {
+  width: 6px;
+  background: var(--chat-turn-line);
+  transition:
+    width 160ms ease-out,
+    background-color 160ms ease-out,
+    opacity 120ms ease-out;
+}
+
+.chat-turn-marker-active-line {
+  width: 6px;
+  height: 2px;
+  background: color-mix(in srgb, var(--text) 94%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
+  transition:
+    width 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+/* 悬浮时按距离展开相邻轮次，形成参考产品里的紧凑“扇形”反馈。
+   直接过渡绝对定位线条的宽度，既不改变按钮布局，也能保持两端为真实半圆。 */
+.chat-turn-marker:hover
+  + .chat-turn-marker
+  + .chat-turn-marker
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:focus-visible
+  + .chat-turn-marker
+  + .chat-turn-marker
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker + .chat-turn-marker:hover)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker + .chat-turn-marker:focus-visible)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
+  width: 10px;
+}
+
+.chat-turn-marker:hover
+  + .chat-turn-marker
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:focus-visible
+  + .chat-turn-marker
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker:hover)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker:focus-visible)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
+  width: 14px;
+}
+
+.chat-turn-marker:hover
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:focus-visible
+  + .chat-turn-marker
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker:hover)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:has(+ .chat-turn-marker:focus-visible)
+  :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
+  width: 20px;
+}
+
+.chat-turn-marker:hover :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
+.chat-turn-marker:focus-visible :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
+  background: color-mix(in srgb, var(--text) 94%, transparent);
+  width: 28px;
+}
+
+.chat-turn-marker.is-pulsing .chat-turn-marker-active-line {
+  animation: chat-turn-marker-pulse 280ms ease-out;
+}
+
+.chat-turn-marker-more:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.chat-turn-more-dots {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transform: translateY(-50%);
+
+  i {
+    display: block;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: var(--chat-turn-line);
+    transition: background-color 120ms ease;
+  }
+}
+
+.chat-turn-marker-more:hover .chat-turn-more-dots i,
+.chat-turn-marker-more:focus-visible .chat-turn-more-dots i {
+  background: var(--chat-turn-line-hover);
+}
+
+.chat-turn-preview {
+  position: fixed;
+  z-index: calc(var(--z-dropdown, 100) + 8);
+  width: min(360px, calc(100vw - 20px));
+  box-sizing: border-box;
+  padding: 12px 14px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-elev) 96%, transparent);
+  box-shadow:
+    0 14px 34px color-mix(in srgb, #000 20%, transparent),
+    0 2px 8px color-mix(in srgb, #000 14%, transparent);
+  backdrop-filter: blur(14px) saturate(1.06);
+  transform-origin: left center;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.chat-turn-preview-user,
+.chat-turn-preview-assistant {
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.chat-turn-preview-user {
+  -webkit-line-clamp: 2;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.chat-turn-preview-assistant {
+  margin-top: 5px;
+  -webkit-line-clamp: 3;
+  color: color-mix(in srgb, var(--text) 62%, var(--panel-elev));
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.chat-turn-preview-status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+@keyframes chat-turn-navigator-enter {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
+@keyframes chat-turn-marker-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  48% {
+    filter: brightness(1.8);
+    box-shadow: 0 0 15px color-mix(in srgb, var(--text) 28%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-turn-navigator,
+  .chat-turn-marker.is-pulsing .chat-turn-marker-active-line {
+    animation: none;
+  }
+
+  .chat-turn-marker-line,
+  .chat-turn-marker-active-line,
+  .chat-turn-more-dots i {
+    transition-duration: 0.06s;
+  }
+}

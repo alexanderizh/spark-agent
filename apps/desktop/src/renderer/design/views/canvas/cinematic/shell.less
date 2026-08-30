@@ -1,0 +1,549 @@
+.canvas-workspace.canvas-cinematic {
+  .canvas-workspace-header {
+    display: flex;
+    min-height: var(--window-titlebar-height);
+    height: var(--window-titlebar-height);
+    align-items: center;
+    gap: 16px;
+    padding: 0 14px 0 16px;
+    border-bottom: 1px solid var(--canvas-cinema-border);
+    background: rgba(20, 20, 20, 0.97);
+    box-shadow: 0 1px rgba(0, 0, 0, 0.55);
+  }
+
+  // 独立画布仍保留自己的业务 Header，只消费系统发布的标题栏安全区；
+  // 本层的 16px 基础 padding 不应覆盖该安全区。
+  .app.sidebar-hidden.platform-darwin & > .canvas-workspace-header {
+    padding-left: var(--window-titlebar-safe-left);
+  }
+
+  .canvas-workspace-header-row {
+    min-width: 240px;
+    flex: 1 1 auto;
+  }
+
+  .canvas-workspace-title {
+    gap: 8px;
+  }
+
+  .canvas-workspace-title > .ant-btn {
+    height: 30px;
+    padding-inline: 7px 9px;
+    border-radius: var(--canvas-cinema-radius-sm);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 11px;
+  }
+
+  .canvas-workspace-title > .ant-btn:hover {
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-workspace-heading {
+    gap: 9px;
+  }
+
+  .canvas-workspace-title h2 {
+    max-width: min(28vw, 360px);
+    color: var(--canvas-cinema-text-strong);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+  }
+
+  .canvas-workspace-meta {
+    color: var(--canvas-cinema-text-faint);
+    font-family: 'DIN Alternate', 'Avenir Next', sans-serif;
+    font-size: 9px;
+  }
+
+  .canvas-toolbar {
+    // 工具栏不应建立高于内容区的独立层叠层；否则内容区内的全屏工作台
+    // （3D 导演台、视频工作台）会被工具栏穿透覆盖。
+    z-index: auto;
+    overflow: visible;
+  }
+
+  .canvas-toolbar-save {
+    gap: 3px;
+    padding: 2px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .canvas-toolbar-savetag {
+    position: relative;
+    box-sizing: border-box;
+    min-width: 74px;
+    height: 27px;
+    margin: 0 4px 0 0;
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 0 7px 0 15px;
+    border: 0;
+    border-radius: var(--canvas-cinema-radius-sm);
+    background: transparent;
+    color: var(--canvas-cinema-success);
+    font-size: 9px;
+    white-space: nowrap;
+  }
+
+  .canvas-toolbar-savetag::before {
+    position: absolute;
+    left: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+    content: '';
+  }
+
+  .canvas-toolbar-autosave {
+    height: 28px;
+    gap: 5px;
+    padding: 0 6px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-sm);
+    background: var(--canvas-cinema-surface-1);
+  }
+
+  .canvas-toolbar-autosave-label {
+    color: var(--canvas-cinema-text-faint);
+    font-size: 9px;
+  }
+
+  .canvas-toolbar .ant-switch {
+    transform: scale(0.82);
+  }
+
+  .canvas-toolbar .ant-btn {
+    min-width: 30px;
+    height: 30px;
+    padding-inline: 8px;
+    border-color: transparent;
+    border-radius: var(--canvas-cinema-radius-sm);
+    background: transparent;
+    box-shadow: none;
+    color: var(--canvas-cinema-text-muted);
+    font-size: 10px;
+  }
+
+  .canvas-toolbar .ant-btn:hover:not(:disabled) {
+    border-color: var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-toolbar .canvas-toolbar-agent-button {
+    padding-inline: 8px;
+    border-color: rgba(119, 108, 246, 0.38);
+    background: var(--canvas-cinema-accent-soft);
+    color: #cecaff;
+  }
+
+  .canvas-toolbar .canvas-toolbar-agent-button:hover:not(:disabled) {
+    border-color: rgba(145, 137, 255, 0.56);
+    background: rgba(119, 108, 246, 0.24);
+    color: #f1efff;
+  }
+
+  .canvas-workspace-body {
+    grid-template-columns:
+      minmax(0, 1fr) var(--canvas-agent-panel-width)
+      var(--canvas-side-panel-width);
+    background: var(--canvas-cinema-stage);
+    isolation: isolate;
+  }
+
+  .canvas-stage-area {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .canvas-stage {
+    --canvas-dot-grid-size: 18px;
+    --canvas-dot-grid-offset: 9px;
+    background:
+      radial-gradient(circle at 58% 42%, rgba(255, 255, 255, 0.018), transparent 36%),
+      var(--canvas-cinema-stage);
+  }
+
+  .canvas-stage::before {
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0 0.7px, transparent 0.8px);
+  }
+
+  .canvas-stage-quick-actions {
+    top: 14px;
+    right: 14px;
+    z-index: var(--z-canvas-chrome);
+  }
+
+  .canvas-bottom-dock {
+    position: absolute;
+    z-index: var(--z-canvas-chrome);
+    top: 50%;
+    bottom: auto;
+    left: 12px;
+    display: flex;
+    width: 44px;
+    max-height: calc(100% - 72px);
+    flex-direction: column;
+    gap: 4px;
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    background: rgba(25, 25, 25, 0.72);
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.34),
+      inset 0 1px rgba(255, 255, 255, 0.08);
+    overflow-x: hidden;
+    overflow-y: auto;
+    transform: translateY(-50%);
+    scrollbar-width: none;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  }
+
+  .canvas-bottom-dock::-webkit-scrollbar {
+    display: none;
+  }
+
+  .canvas-bottom-dock-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .canvas-bottom-dock .ant-btn {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-bottom-dock .ant-btn:hover:not(:disabled) {
+    background: var(--canvas-cinema-surface-3);
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-bottom-dock .canvas-dock-tool-active {
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+    box-shadow: inset 0 0 0 1px rgba(119, 108, 246, 0.28);
+  }
+
+  .canvas-bottom-dock-divider {
+    width: 28px;
+    height: 1px;
+    margin: 4px auto;
+    background: var(--canvas-cinema-border);
+  }
+
+  .canvas-bottom-dock-spacer {
+    display: none;
+  }
+
+  .canvas-minimap {
+    border-color: var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-sm);
+    background: rgba(20, 20, 20, 0.92);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(12px);
+  }
+
+  .canvas-controls {
+    // 与创作工作台一致：控制项聚合悬浮，但不再使用包裹整组的盒状底板。
+    left: auto !important;
+    right: 14px !important;
+    bottom: 10px !important;
+    margin: 0 !important;
+    gap: 3px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 0 10px;
+    border-radius: 8px;
+  }
+
+  .canvas-controls .canvas-controls-button {
+    display: inline-grid;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    outline: none;
+    background: transparent;
+    color: var(--canvas-cinema-text-muted);
+    box-shadow: none;
+    cursor: pointer;
+    transition:
+      color var(--canvas-cinema-motion-fast) ease,
+      background var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-controls .canvas-controls-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-controls .canvas-controls-button:focus-visible {
+    outline: 1px solid var(--canvas-cinema-accent-bright);
+    outline-offset: -1px;
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-controls .canvas-controls-button:disabled {
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    cursor: not-allowed;
+    opacity: 0.42;
+  }
+
+  .canvas-controls .canvas-controls-button svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.8;
+  }
+
+  .canvas-controls .canvas-controls-interactive.is-locked {
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-controls-divider {
+    width: 1px;
+    height: 18px;
+    margin: 7px 3px;
+    background: var(--canvas-cinema-border-strong);
+  }
+
+  .canvas-controls .canvas-controls-minimap.is-open {
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-controls-zoom-label {
+    min-width: 42px;
+    height: 32px;
+    padding: 0 4px;
+    color: var(--canvas-cinema-text);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 32px;
+    letter-spacing: 0.01em;
+  }
+
+  .canvas-minimap {
+    right: 14px;
+    bottom: 52px;
+  }
+
+  .canvas-cinematic-empty {
+    position: absolute;
+    z-index: var(--z-canvas-context);
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 80px 80px;
+    pointer-events: none;
+  }
+
+  .canvas-cinematic-empty-inner {
+    width: min(650px, 78%);
+    text-align: center;
+    pointer-events: auto;
+  }
+
+  .canvas-cinematic-empty-kicker {
+    display: inline-flex;
+    height: 24px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 9px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: 999px;
+    background: rgba(20, 24, 29, 0.72);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 9px;
+  }
+
+  .canvas-cinematic-empty h1 {
+    margin: 18px 0 8px;
+    color: var(--canvas-cinema-text-strong);
+    font-family: 'Songti SC', 'STSong', serif;
+    font-size: clamp(28px, 3vw, 38px);
+    font-weight: 600;
+    letter-spacing: 0.015em;
+  }
+
+  .canvas-cinematic-empty p {
+    margin: 0 auto 21px;
+    color: var(--canvas-cinema-text-muted);
+    font-size: 11px;
+    line-height: 1.8;
+  }
+
+  .canvas-cinematic-command {
+    display: flex;
+    width: 100%;
+    min-height: 72px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 13px 12px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 16px;
+    background: rgba(21, 25, 30, 0.94);
+    color: var(--canvas-cinema-accent-bright);
+    cursor: pointer;
+    text-align: left;
+    box-shadow:
+      0 26px 72px rgba(0, 0, 0, 0.38),
+      inset 0 1px rgba(255, 255, 255, 0.035);
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-cinematic-command:hover {
+    border-color: rgba(145, 137, 255, 0.38);
+    transform: translateY(-1px);
+  }
+
+  .canvas-cinematic-command-hint {
+    margin: 9px 0 0;
+    color: var(--canvas-cinema-text-faint);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  .canvas-cinematic-command > textarea {
+    flex: 1;
+    min-width: 0;
+    min-height: 18px;
+    max-height: 44px;
+    field-sizing: content;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    cursor: text;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .canvas-cinematic-command > textarea::placeholder {
+    color: var(--canvas-cinema-text-faint);
+    opacity: 1;
+  }
+
+  .canvas-cinematic-command:focus-within {
+    border-color: rgba(145, 137, 255, 0.58);
+    box-shadow:
+      0 26px 72px rgba(0, 0, 0, 0.38),
+      0 0 0 3px rgba(119, 108, 246, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.035);
+  }
+
+  .canvas-cinematic-command-send {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 10px;
+    background: #f1f2f5;
+    color: #111318;
+    cursor: pointer;
+  }
+
+  .canvas-cinematic-command-send:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  .canvas-cinematic-starters {
+    display: grid;
+    margin-top: 10px;
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .canvas-cinematic-starters button {
+    display: flex;
+    min-width: 0;
+    min-height: 74px;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 12px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-md);
+    background: rgba(16, 19, 23, 0.74);
+    color: var(--canvas-cinema-text-faint);
+    cursor: pointer;
+    text-align: left;
+    transition:
+      background var(--canvas-cinema-motion-fast) ease,
+      border-color var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-cinematic-starters button:hover {
+    border-color: var(--canvas-cinema-border-strong);
+    background: var(--canvas-cinema-surface-2);
+    transform: translateY(-2px);
+  }
+
+  .canvas-cinematic-starters button > span {
+    min-width: 0;
+  }
+
+  .canvas-cinematic-starters strong,
+  .canvas-cinematic-starters small {
+    display: block;
+  }
+
+  .canvas-cinematic-starters strong {
+    margin-bottom: 5px;
+    color: var(--canvas-cinema-text);
+    font-size: 10px;
+    font-weight: 620;
+  }
+
+  .canvas-cinematic-starters small {
+    color: var(--canvas-cinema-text-faint);
+    font-size: 8.5px;
+    line-height: 1.55;
+  }
+}
+
+@media (max-width: 1280px) {
+  .canvas-workspace.canvas-cinematic {
+    .canvas-toolbar-autosave,
+    .canvas-toolbar-upload-button,
+    .canvas-toolbar-refresh-button {
+      display: none;
+    }
+
+    .canvas-cinematic-empty {
+      padding-inline: 56px;
+    }
+  }
+}

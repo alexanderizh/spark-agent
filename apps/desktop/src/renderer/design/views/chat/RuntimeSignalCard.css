@@ -1,0 +1,142 @@
+.background-tasks-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+
+.background-tasks-card.clickable {
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.background-tasks-card.clickable:hover {
+  border-color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.background-tasks-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-radius: var(--r-sm);
+  outline: none;
+}
+
+.background-tasks-card-header.clickable {
+  cursor: pointer;
+}
+
+.background-tasks-card-header.clickable:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--primary-soft),
+    0 0 0 3px var(--primary);
+}
+
+.background-tasks-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.background-tasks-card-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.background-tasks-card-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.background-tasks-card-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  opacity: 0.5;
+}
+
+.background-tasks-card-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.background-tasks-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
+.background-tasks-card-status.running {
+  color: var(--info);
+}
+
+.background-tasks-card-status.done {
+  color: var(--success);
+}
+
+.background-tasks-card-status.running svg {
+  animation: background-tasks-spin 0.9s linear infinite;
+}
+
+.background-tasks-card-detail {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.background-tasks-card-task {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.background-tasks-card-task > span:first-child {
+  width: 5px;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--info);
+}
+
+@keyframes background-tasks-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .background-tasks-card {
+    padding: 9px 10px;
+  }
+
+  .background-tasks-card-status {
+    max-width: 84px;
+  }
+}

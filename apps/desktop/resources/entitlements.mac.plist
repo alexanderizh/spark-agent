@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Electron (V8) 需要 JIT 执行权限 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Electron 在部分场景需要未签名可执行内存 -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!--
+        The voice runtime is downloaded after installation into userData and is
+        therefore ad-hoc signed rather than signed with the application's Team ID.
+        It is accepted only after the manifest SHA-256 check in VoiceIntegrityService.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Hardened Runtime 下请求麦克风权限必须声明音频输入能力，否则 TCC 不会展示应用或弹出授权框 -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

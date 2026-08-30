@@ -1,0 +1,9 @@
+# Line endings
+#
+# `core.autocrlf=true` (common on Windows) rewrites LF -> CRLF on checkout,
+# which breaks bash scripts under Git Bash / MSYS — e.g.
+#   build-win-release.sh: line 19: set: pipefail: invalid option name
+# The rules below override autocrlf so Unix scripts always check out as LF.
+*.sh            text eol=lf
+*.bash          text eol=lf
+.gitattributes  text eol=lf

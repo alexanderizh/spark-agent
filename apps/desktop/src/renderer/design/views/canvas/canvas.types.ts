@@ -1,0 +1,671 @@
+import type {
+  MediaRequestCall,
+  CanvasInputBinding,
+  CanvasPromptDocument,
+  CanvasPromptResponseFields,
+  CanvasPromptTaskFields,
+  SessionReasoningEffort,
+} from '@spark/protocol'
+import type { FilmReferenceKind } from './canvasFilmTypes'
+
+export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
+
+export type CanvasProjectSettings = {
+  prompt?: string
+  negativePrompt?: string
+}
+
+export type CanvasNodeType =
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'text'
+  | 'prompt'
+  | 'group'
+  // 类型化 AI 操作节点（node.type === node.data.operation，一一对应）
+  | 'text_to_image'
+  | 'image_to_image'
+  | 'image_edit'
+  | 'image_compose'
+  | 'storyboard_grid'
+  | 'panorama_360'
+  | 'text_generate'
+  | 'text_rewrite'
+  | 'prompt_optimize'
+  | 'image_prompt_reverse'
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'video_edit'
+  | 'video_extend'
+  | 'video_depth_map'
+  | 'extract_audio'
+  | 'extract_first_last_frames'
+  | 'text_to_audio'
+  | 'audio_transcribe'
+  /** @deprecated 旧通用任务节点，保留读取兼容，新代码不再创建 */
+  | 'task'
+export type CanvasAssetType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
+export type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual'
+
+export type CanvasOperationType =
+  | 'text_to_image'
+  | 'image_to_image'
+  | 'image_edit'
+  | 'image_compose'
+  | 'storyboard_grid'
+  | 'panorama_360'
+  | 'text_generate'
+  | 'text_rewrite'
+  | 'prompt_optimize'
+  | 'image_prompt_reverse'
+  | 'text_to_audio'
+  | 'audio_transcribe'
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'video_edit'
+  | 'video_extend'
+  | 'video_depth_map'
+  | 'extract_audio'
+  | 'extract_first_last_frames'
+
+export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
+export type CanvasTaskInputPayloadField = 'url' | 'dataUrl' | 'path' | 'unknown'
+export type CanvasTaskInputTransportKind =
+  | 'remote_url'
+  | 'safe_file_url'
+  | 'base64_data_url'
+  | 'local_path'
+  | 'unknown'
+
+export type CanvasTaskInputDiagnostic = {
+  type: 'image' | 'audio' | 'video' | 'file'
+  role?: 'input' | 'first_frame' | 'last_frame' | 'reference' | 'mask'
+  payloadField: CanvasTaskInputPayloadField
+  transport: CanvasTaskInputTransportKind
+  mimeType?: string | null
+  format?: string | null
+  valuePreview?: string | null
+}
+
+/** 操作步骤的产物组织语义；UI 合一，但运行历史与产物集合仍保留明确结构。 */
+export type CanvasOperationOutputMode = 'single' | 'candidates' | 'collection' | 'bundle'
+export type CanvasOperationOutputSelectionPolicy = 'auto_latest' | 'manual'
+
+/**
+ * 流水线语义角色（设计 §6 节点模型）。
+ * 与底层 CanvasNodeType 解耦：用 data.pipelineRole 标记节点在
+ * 「文稿→剧本→资源→图卡→分镜→关键帧→视频」流水线中的位置，不新增底层 type。
+ */
+export type CanvasPipelineRole =
+  | 'style_bible' // 视觉总设定
+  | 'chapter' // 章节
+  | 'screenplay' // 场次剧本
+  | 'character' // 角色设计
+  | 'scene' // 场景设计
+  | 'prop' // 道具设计
+  | 'effect' // 特效设计
+  | 'camera' // 运镜风格预设
+  | 'frame' // 画面风格预设
+  | 'action' // 动作风格预设
+  | 'design_card' // 设定图卡
+  | 'shot' // 分镜
+  | 'keyframe' // 关键帧
+  | 'clip' // 视频片段
+
+/**
+ * 节点生产状态机（设计 §9.2 人机协作 / 过期契约）。
+ * empty → drafting(agent) → draft → editing(human) → confirmed → (上游变) stale。
+ * 下游正式生成默认只读上游 confirmed 内容。
+ */
+export type CanvasProductionState = 'empty' | 'drafting' | 'draft' | 'confirmed' | 'stale'
+
+export type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export type CanvasTaskRuntimeEvent = {
+  at: string
+  kind:
+    | 'created'
+    | 'dispatched'
+    | 'submitted'
+    | 'provider_response'
+    | 'validation'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+  label: string
+  detail?: string
+}
+export type CanvasEdgeType =
+  | 'derived_from'
+  | 'used_as_input'
+  | 'generated'
+  | 'group_contains'
+  | 'references'
+
+export type CanvasProject = {
+  id: string
+  userId: number
+  title: string
+  description?: string | null
+  coverAssetId?: string | null
+  /** 项目封面图 URL（safe-file:// 指向项目目录内文件，或 http(s):// 外链） */
+  coverUrl?: string | null
+  rootPath?: string | null
+  status: CanvasProjectStatus
+  /** 是否置顶（项目管理页优先展示） */
+  pinned?: boolean
+  /** 置顶时间（置顶内部排序） */
+  pinnedAt?: string | null
+  settings?: CanvasProjectSettings
+  /**
+   * 项目级扩展元数据（与 asset.metadata 一致的策略：先挂 JSON，后续再结构化）。
+   * 承载行业模式数据，如影视开发的 CanvasFilmProjectMetadata（文档 §7.10）。
+   */
+  metadata?: Record<string, unknown>
+  nodeCount: number
+  assetCount: number
+  taskCount: number
+  lastOpenedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasBoardSettings = {
+  grid?: boolean
+  snap?: boolean
+  background?: string
+  /** 封面资产 id，用于 board 列表缩略图 */
+  coverAssetId?: string | null
+  /** 是否为项目默认打开的 board */
+  isDefault?: boolean
+  /** board 排序权重 */
+  sortOrder?: number
+  /** 来源模板 id（从模板创建时记录） */
+  templateId?: string | null
+  /** board 主题/配色（预留扩展位） */
+  theme?: string
+}
+
+export type CanvasBoard = {
+  id: string
+  projectId: string
+  userId: number
+  name: string
+  viewport: { x: number; y: number; zoom: number }
+  settings: CanvasBoardSettings
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasImageAnnotationPadding = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/** 图片标注的可编辑侧车文档。Fabric 场景被封装在自有版本协议内，避免成为公共存储协议。 */
+export type CanvasImageAnnotationDocument = {
+  schemaVersion: 1
+  source: {
+    nodeId: string
+    assetId?: string
+    url: string
+    width: number
+    height: number
+  }
+  artboard: {
+    width: number
+    height: number
+    contentWidth: number
+    contentHeight: number
+    background: '#ffffff' | null
+    padding: CanvasImageAnnotationPadding
+  }
+  scene: {
+    engine: 'fabric'
+    engineVersion: string
+    json: unknown
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasImageAnnotationRef = {
+  schemaVersion: 1
+  documentPath: string
+  sourceNodeId: string
+  sourceAssetId?: string
+  artboard: {
+    width: number
+    height: number
+    background: '#ffffff' | null
+    padding: CanvasImageAnnotationPadding
+  }
+  updatedAt: string
+}
+
+export type CanvasNodeData = {
+  /** 当前画板内的稳定节点编号；新节点按现存节点最大编号 + 1 分配。 */
+  nodeSequence?: number
+  /** 编组是否以紧凑封面卡展示；缺省为展开。 */
+  collapsed?: boolean
+  /** 折叠编组的预设文件夹颜色；缺省为 blue。 */
+  groupColor?: CanvasGroupColorPreset
+  text?: string
+  format?: 'plain' | 'markdown' | 'prompt'
+  url?: string
+  thumbnailUrl?: string
+  /** 媒体在磁盘上的本地路径（本地产物/上传资源）；本地媒体任务（如 ffmpeg 分离音频）优先直读，避免 URL 编解码。 */
+  filePath?: string
+  /** 浏览器从媒体元数据读取的原始视频宽高；用于修复旧资产和缺失 provider 元数据。 */
+  mediaWidth?: number
+  mediaHeight?: number
+  /** 可继续编辑的图片标注侧车文档；实际场景不直接写入项目节点快照。 */
+  imageAnnotation?: CanvasImageAnnotationRef
+  mimeType?: string
+  /**
+   * Provider 文件 id（如 MiniMax Files 的 file_id）。来自「素材中心 → Files」
+   * 上传的文件节点：无本地 url，仅持有 provider 侧 file_id。提交任务时透传到
+   * CanvasMediaTaskInputFile.fileId，命中 adapter 上传短路（H3 用 mm_file://{id}）。
+   */
+  fileId?: string
+  operation?: CanvasOperationType
+  /** 单产物 / 候选 / 集合 / 角色包；缺省时由工作流和最近一次运行自动推断。 */
+  outputMode?: CanvasOperationOutputMode
+  /** 默认资源操作与候选型下游传参所使用的主产物。可匹配 output/node/asset id。 */
+  primaryOutputId?: string
+  /** 主产物选择策略；手动选择可切换历史项，新任务成功产出后恢复为最新项。 */
+  primaryOutputSelection?: CanvasOperationOutputSelectionPolicy
+  /** 从操作节点展开出的资产引用节点；同一 outputId 重复展开时复用现有引用。 */
+  materializedOutput?: {
+    operationNodeId: string
+    outputId: string
+    taskId?: string
+    materializedAt: string
+  }
+  /** 画布工作流产物血缘，用于从节点和资产中心追溯到固定运行版本。 */
+  workflowProvenance?: {
+    definitionId: string
+    version: number
+    runId: string
+    stepNodeId: string
+  }
+  status?: CanvasTaskStatus
+  progress?: number
+  message?: string
+  prompt?: string
+  /** Versioned user-authored prompt blocks. `prompt` remains the legacy fallback. */
+  promptDocument?: CanvasPromptDocument
+  /** Canonical task input bindings shared by prompt tags, media strip and submission. */
+  inputBindings?: CanvasInputBinding[]
+  /** Explicit media input mode selected against the target model manifest. */
+  mediaInputMode?: import('@spark/protocol').CanvasMediaInputMode
+  /** Capability locked during canvas preflight. */
+  capabilityId?: import('@spark/protocol').MediaCapabilityId
+  /** 功能节点的隐藏内置指令；不进入用户可见 Prompt Document。 */
+  systemPrompt?: string
+  /** 继承/暂存的反向提示词；任务持久化仍以 CanvasTask.negativePrompt 为准 */
+  negativePrompt?: string
+  modelParams?: Record<string, unknown>
+  /** 上次保存/运行时选择的媒体模型 Provider，用于同类操作节点复用配置 */
+  providerProfileId?: string
+  /** 上次保存/运行时选择的媒体模型 manifest，用于同类操作节点复用配置 */
+  manifestId?: string
+  /** 上次保存/运行时选择的模型 id，用于同类操作节点复用配置 */
+  modelId?: string
+  /** 上次保存/运行时选择的文本 Agent，用于同类操作节点复用配置 */
+  agentId?: string
+  /** 上次保存/运行时选择的文本 Skills，仅文本节点任务使用 */
+  skillIds?: string[]
+  /** 与关联 CanvasTask 同步的统一推理强度。 */
+  reasoningEffort?: SessionReasoningEffort
+  /** UI 表现层子类型（如 'script'），不改变底层 node type */
+  subtype?: string
+  /** 节点展示分类，用于添加节点菜单分组：内容 / 任务 / 资源 */
+  displayCategory?: 'content' | 'task' | 'resource'
+  /** 来源模板 id */
+  presetId?: string | null
+  /** 节点来源：手动 / 资产 / 历史 / 模板 / 任务输出 */
+  origin?: 'manual' | 'asset' | 'history' | 'template' | 'task_output'
+  /** 流水线语义角色（设计 §6），不改变底层 type */
+  pipelineRole?: CanvasPipelineRole
+  /** 生产状态机（设计 §9.2），驱动闸门与过期提示 */
+  productionState?: CanvasProductionState
+  /** 是否被人工编辑过（区分 ai_generated / ai_edited 续作语义） */
+  editedByHuman?: boolean
+  /** 确认时间（confirmed 闸门），下游正式生成只读已确认内容 */
+  confirmedAt?: string
+  /** 版本号（agent 重生成产新版本而非覆盖） */
+  version?: number
+  /** 导致本节点过期（stale）的上游节点 id 列表 */
+  staleFrom?: string[]
+  /** 分镜节点化（设计 §S6 节点化）：回链到分镜分组/片段 */
+  shotGroupId?: string
+  shotSegmentId?: string
+  /** 专用流水线任务节点上暂存的「产物节点角色」，供任务完成回写产物节点时读取 */
+  outputPipelineRole?: CanvasPipelineRole
+  /** 专用流水线任务节点上暂存的「产物节点标题」，供任务完成回写产物节点时读取 */
+  outputTitle?: string
+  /** 生成产物应自动归档到的影视资产；用于角色板、场景图等回挂项目资产中心。 */
+  outputFilmAssetId?: string
+  /** 自动回挂项目资产中心时使用的参考图分类。 */
+  outputFilmReferenceKind?: FilmReferenceKind
+  /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
+  droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+  /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+  modelParamWarnings?: Array<{ code: string; message: string }>
+  /** 3D 导演台节点数据（subtype 'director_stage_3d'）：人偶/道具/背景/取景相机。 */
+  stage3d?: Record<string, unknown>
+  /** 视频工作台节点数据（subtype 'video_workbench'）：关键帧/剪辑/转码配置与产物。 */
+  videoWorkbench?: Record<string, unknown>
+  /** 360 全景图产物标记：基于 equirectangular panorama 渲染全屏 3D 预览。 */
+  panorama360?: {
+    projection: 'equirectangular'
+    sourceOperation?: 'panorama_360'
+    capturedFromNodeId?: string
+  }
+  /** 分镜脚本任务的结构化时长配置（UI 可调，运行时替换 prompt 占位槽 {maxClip}） */
+  shotScriptConfig?: ShotScriptConfig
+  /** 音频节点时长（秒）。由 IPC audio-probe 或上传时 ffmpeg 探测回填；waveform / trim / 进度都依赖它。 */
+  audioDurationSec?: number
+  /** 音频波形下采样后的峰值数组（0..1 归一化），用于自绘波形条；240 桶左右。 */
+  audioWaveformPeaks?: number[]
+  /** 音频节点生效的播放速率；缺省 1.0。截取/变速后由子节点回填。 */
+  audioSpeed?: number
+}
+
+export type CanvasGroupColorPreset =
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'pink'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'cyan'
+  | 'gray'
+
+/** 分镜脚本任务的时长配置：每镜最长时间上限（秒），约束 LLM 生成的每镜 durationSec */
+export type ShotScriptConfig = {
+  maxClipSec: number
+}
+
+export type CanvasNode = {
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  type: CanvasNodeType
+  title?: string | null
+  assetId?: string | null
+  taskId?: string | null
+  parentNodeId?: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  locked: boolean
+  hidden: boolean
+  data: CanvasNodeData
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasAsset = {
+  id: string
+  projectId: string
+  userId: number
+  type: CanvasAssetType
+  source: CanvasAssetSource
+  title?: string | null
+  mimeType?: string | null
+  storageKey?: string | null
+  url?: string | null
+  thumbnailKey?: string | null
+  thumbnailUrl?: string | null
+  contentText?: string | null
+  width?: number | null
+  height?: number | null
+  durationMs?: number | null
+  sizeBytes?: number | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * 资产治理字段（第一阶段挂在 CanvasAsset.metadata 上，后续 migration 稳定再结构化）。
+ * 面板读写时通过 readAssetMeta / writeAssetMeta helper 访问，避免散落字符串 key。
+ */
+export type CanvasAssetMeta = {
+  folderId?: string | null
+  tags?: string[]
+  favorite?: boolean
+  archived?: boolean
+  /** 由哪个任务生成（资产血缘） */
+  originTaskId?: string | null
+  /** 由哪个节点引用创建 */
+  originNodeId?: string | null
+  lastUsedAt?: string | null
+  usageCount?: number
+}
+
+export type CanvasTask = {
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  operation: CanvasOperationType
+  status: CanvasTaskStatus
+  progress: number
+  title?: string | null
+  /** Stable owner operation node. Unlike node.taskId, this survives later retries. */
+  operationNodeId?: string | null
+  prompt?: string | null
+  negativePrompt?: string | null
+  inputNodeIds: string[]
+  inputAssetIds: string[]
+  outputNodeIds: string[]
+  outputAssetIds: string[]
+  providerProfileId?: string | null
+  manifestId?: string | null
+  modelId?: string | null
+  /** provider adapter 种类（apimart/xai/...），用于资产抽屉展示 */
+  provider?: string | null
+  /** 异步任务的 request/task id（用于血缘追溯） */
+  requestId?: string | null
+  /** 本地媒体 runtime 任务 ID；与 Provider 的 request/task ID 分开保存。 */
+  runtimeTaskId?: string | null
+  /** Provider 返回、用于后续查询的渠道任务 ID。 */
+  providerTaskId?: string | null
+  /** Whether the main process has a durable protocol-specific resume contract. */
+  pollingAvailable?: boolean
+  pollingUnavailableReason?: string | null
+  /** provider 原始响应摘要（不含敏感信息） */
+  rawResponse?: unknown
+  /** Agent/model 原始文本；即使业务解析失败也必须保留。 */
+  modelOutputText?: string | null
+  /** 轮询任务提交接口响应摘要，拿到渠道任务 ID 后立即写入。 */
+  submitResponse?: unknown
+  /** 提交时输入文件的诊断摘要，便于任务详情排查 url/base64/path 等传参方式。 */
+  inputFileDiagnostics?: CanvasTaskInputDiagnostic[]
+  /** 实际模型调用摘要：HTTP 请求，或 SDK/CLI 的最终地址与调用参数。 */
+  requestCall?: MediaRequestCall | null
+  agentId?: string | null
+  skillIds?: string[]
+  agentMode?: 'local' | 'cloud' | null
+  agentUrl?: string | null
+  /** Spark 统一推理强度；主进程会按目标 adapter 映射为 provider 合法枚举。 */
+  reasoningEffort?: SessionReasoningEffort | null
+  modelParams: Record<string, unknown>
+  taskPipelineRole?: CanvasPipelineRole | null
+  outputPipelineRole?: CanvasPipelineRole | null
+  /** Storyboard timing configuration captured when this task was submitted. */
+  shotScriptConfig?: ShotScriptConfig | null
+  /** Persisted lifecycle events with their actual write timestamps. */
+  runtimeEvents?: CanvasTaskRuntimeEvent[]
+  errorMsg?: string | null
+  errorDetail?: string | null
+  createdAt: string
+  updatedAt: string
+  completedAt?: string | null
+} & CanvasPromptTaskFields &
+  CanvasPromptResponseFields
+
+export type CanvasEdge = {
+  id: string
+  projectId: string
+  boardId: string
+  userId: number
+  sourceNodeId: string
+  targetNodeId: string
+  type: CanvasEdgeType
+  taskId?: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
+/** 右侧信息区 tab */
+export type CanvasRightPanelTab = 'inspector' | 'tasks' | 'project'
+
+/** 画布 UI 会话状态（可选，用于跨会话恢复布局） */
+export type CanvasUiState = {
+  rightPanelTab?: CanvasRightPanelTab
+}
+
+// ── 步骤模式（Step Studio）数据模型（todo/步骤模式与资产库全面改造设计.md §4）──
+
+/** 项目创作模式：画布 / 步骤（项目级并存，可随时切换） */
+export type CanvasProjectMode = 'canvas' | 'step'
+
+/** 步骤模式三步：设定 → 分镜 → 视频 */
+export type StepStudioStageKey = 'setup' | 'storyboard' | 'assembly'
+
+/** 分段生成状态 */
+export type StepSegmentStatus = 'draft' | 'generating' | 'done' | 'failed'
+
+/**
+ * 步骤模式内容状态（分段序列等）。
+ * 存储位置：`project.metadata.stepStudioState`（project 对象在快照序列化链路中
+ * 整体往返，且 metadata 是项目级扩展状态的既有存放惯例；CanvasSnapshot 不再
+ * 单列字段，避免双数据源）。
+ */
+export type StepStudioState = {
+  schemaVersion: 1
+  /** 分段序列（分镜步骤的核心数据） */
+  sequences: StepShotSequence[]
+  /** 组装产物：最终工作台节点 ID（物化后存在） */
+  assemblyNodeId?: string | null
+  /** AI 拆分剧本任务（二期）：终态后自动解析产物并追加分段草稿到目标序列 */
+  breakdown?: { taskId: string; sequenceId: string } | null
+}
+
+/** 分段序列（一集/一组分镜） */
+export type StepShotSequence = {
+  id: string
+  projectId: string
+  /** 如「第一集 / 正片」 */
+  title: string
+  order: number
+  segments: StepShotSegment[]
+}
+
+/** 单个分镜分段 */
+export type StepShotSegment = {
+  id: string
+  sequenceId: string
+  /** 拖拽排序 */
+  order: number
+  /** 本段剧本/描述（支持 @引用标记） */
+  script: string
+  /** 显式允许 undefined：分段卡片「清空时长」的 patch 需要可赋 undefined */
+  durationSec?: number | undefined
+  /** 出镜资产引用（设定步骤产出） */
+  characterAssetIds: string[]
+  sceneAssetId?: string | null
+  propAssetIds: string[]
+  /** 参考图（全能参考模式，挂在 segment 下的图片资产 ID） */
+  referenceAssetIds: string[]
+  /** 首尾帧模式 */
+  firstFrameAssetId?: string | null
+  lastFrameAssetId?: string | null
+  /** 生成模式：全能参考（多参考图）/ 首尾帧 */
+  genMode: 'reference' | 'first_last_frame'
+  /** 生成参数（透传 CanvasTask 模型参数） */
+  modelParams?: Record<string, unknown>
+  providerProfileId?: string
+  modelId?: string
+  /** 历次生成的分段视频资产（最新在末尾） */
+  outputVideoAssetIds: string[]
+  /** 最近一次任务 */
+  taskId?: string | null
+  status: StepSegmentStatus
+}
+
+export type CanvasSnapshot = {
+  project: CanvasProject
+  /** 当前激活的 board（向下兼容：旧快照仅有此字段） */
+  board: CanvasBoard
+  /** 项目内全部 board（多 board 演进；旧快照读取时归一化为 [board]） */
+  boards?: CanvasBoard[]
+  /** 当前激活 board id（多 board 演进） */
+  activeBoardId?: string
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+  assets: CanvasAsset[]
+  tasks: CanvasTask[]
+  /** UI 会话状态（可选） */
+  uiState?: CanvasUiState
+}
+
+export type CreateCanvasTaskRequest = {
+  boardId: string
+  operation: CanvasOperationType
+  prompt?: string
+  negativePrompt?: string
+  inputNodeIds?: string[]
+  inputAssetIds?: string[]
+  outputPlacement?: {
+    x?: number
+    y?: number
+    strategy?: 'near_selection' | 'viewport_center' | 'right_of_selection'
+  }
+  modelParams?: Record<string, unknown>
+  /** User-confirmed opt-out from renderer-side parameter preflight. */
+  skipParameterValidation?: boolean
+  agentId?: string
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
+  /** Spark 统一推理强度；主进程会按目标 adapter 映射为 provider 合法枚举。 */
+  reasoningEffort?: SessionReasoningEffort
+  skillIds?: string[]
+  /** 专用流水线节点：覆盖任务节点标题（如「生成分镜脚本」「提取角色」） */
+  taskTitle?: string
+  /** 专用流水线节点：覆盖生成产物节点/资产标题（如角色身份板产物 = 角色名） */
+  outputTitle?: string
+  /** 专用流水线节点：任务节点的流水线角色（驱动着色/语义） */
+  taskPipelineRole?: CanvasPipelineRole
+  /** 专用流水线节点：产物节点的流水线角色（如分镜脚本产物 = shot） */
+  outputPipelineRole?: CanvasPipelineRole
+  /** 分镜任务提交时的时长配置快照。 */
+  shotScriptConfig?: ShotScriptConfig
+  /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
+  droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
+  /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
+  modelParamWarnings?: Array<{ code: string; message: string }>
+} & CanvasPromptTaskFields
+
+export type CanvasCapability = {
+  id: string
+  label: string
+  operation: CanvasOperationType
+  inputTypes: CanvasNodeType[]
+  outputTypes: CanvasAssetType[]
+  enabled: boolean
+  paramsSchema: Record<string, unknown>
+}

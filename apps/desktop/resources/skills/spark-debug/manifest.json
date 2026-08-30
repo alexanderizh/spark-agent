@@ -1,0 +1,36 @@
+{
+  "id": "builtin:spark-debug",
+  "category": "debugging",
+  "requiredTools": [
+    "Read",
+    "Edit",
+    "Grep",
+    "Bash",
+    "mcp__spark_debug__begin",
+    "mcp__spark_debug__read",
+    "mcp__spark_debug__next_round",
+    "mcp__spark_debug__status",
+    "mcp__spark_debug__finish"
+  ],
+  "parameters": [
+    {
+      "name": "bugDescription",
+      "type": "string",
+      "label": "Bug 描述",
+      "description": "现象 + 复现步骤 + 期望 vs 实际，越具体越好",
+      "required": true
+    },
+    {
+      "name": "targetRuntime",
+      "type": "select",
+      "label": "运行环境",
+      "description": "决定插桩上报器用哪种语言模板",
+      "defaultValue": "browser",
+      "options": [
+        { "label": "浏览器 / 前端", "value": "browser" },
+        { "label": "Node / 后端", "value": "node" },
+        { "label": "其他", "value": "other" }
+      ]
+    }
+  ]
+}

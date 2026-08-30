@@ -1,0 +1,143 @@
+/* ClickableFilePath / ClickableUrl 样式
+ * 注意：这里必须用 --md-accent / --primary 等真实存在的 token。
+ * 早期版本引用过未定义的 --color-primary-6/-5，导致颜色继承正文、
+ * color-mix 背景整体失效，链接退化成无任何可点击态的纯文本。 */
+
+.clickable-file-path,
+.clickable-url {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 1px 5px;
+  margin: 0 1px;
+  border-radius: var(--r-xs);
+  color: var(--md-accent, var(--primary));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+
+  &:active {
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+}
+
+/* 链接（URL/mailto）保持普通 <a> 行为：不阻止默认导航 */
+.clickable-url {
+  font-size: var(--font-lg);
+  font-weight: 400;
+
+  // <a> 默认有 visited 颜色，统一覆盖为主题色
+  &:visited {
+    color: var(--md-accent, var(--primary));
+  }
+}
+
+// Markdown 的通用链接规则会给所有 .md-surface a 添加下划线；裸链接已有药丸样式表达可点击态，不重复加下划线。
+// 链接卡片是中性样式（正文色 + favicon），hover 时补下划线提示可点击。
+.md-surface .clickable-url,
+.md-surface .clickable-url:visited,
+.md-surface .clickable-url-card,
+.md-surface .clickable-url-card:visited {
+  text-decoration: none;
+}
+.md-surface .clickable-url-card:hover,
+.md-surface .clickable-url-card:visited:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.clickable-url-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: min(100%, 420px);
+  padding: 2px 0;
+  margin: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  vertical-align: middle;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  box-sizing: border-box;
+  box-shadow: none;
+
+  &:hover,
+  &:visited:hover {
+    color: var(--text);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+  }
+}
+
+.clickable-url-card-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+  background: transparent;
+  box-shadow: none;
+}
+
+// 覆盖 .md-surface img 的通用图片样式，避免 favicon 被加上边框、圆角和外边距。
+.md-surface .clickable-url-card-icon {
+  display: block;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.clickable-url-card-body {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.clickable-url-card-title,
+.clickable-url-card-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clickable-url-card-title {
+  font-size: var(--font-lg);
+  font-weight: 400;
+}
+
+.clickable-url-context-menu {
+  min-width: 176px;
+}
+
+/* 右键菜单项内的图标 + 文字对齐 */
+.clickable-file-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

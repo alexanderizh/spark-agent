@@ -1,0 +1,389 @@
+// Project listing primitives share the cinematic canvas ownership boundary.
+// The visual refinement layer lives in project-surface.less and is loaded immediately after this file.
+.canvas-projects-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--bg-soft);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.canvas-projects-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 5px 28px 4px;
+  flex-shrink: 0;
+}
+
+.canvas-projects-header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.canvas-projects-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.canvas-projects-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.canvas-projects-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 28px;
+  flex-shrink: 0;
+}
+
+.canvas-projects-toolbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.canvas-projects-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-projects-sort-label {
+  white-space: nowrap;
+}
+
+.canvas-projects-sort-icon-placeholder {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+}
+
+.canvas-projects-search {
+  width: min(420px, 48vw);
+}
+
+.canvas-projects-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.canvas-projects-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 28px 30px;
+}
+
+.canvas-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.canvas-project-card {
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.canvas-project-card:hover {
+  background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.canvas-project-card:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 68%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  outline-offset: 2px;
+}
+
+.canvas-project-card.is-opening {
+  border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.canvas-project-card-pinned {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+
+.canvas-project-card-pinned:hover {
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-sunken));
+}
+
+.canvas-project-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm, 4px);
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.canvas-project-card:hover .canvas-project-pin-btn,
+.canvas-project-pin-btn:focus-visible,
+.canvas-project-pin-btn.is-pinned {
+  opacity: 1;
+}
+.canvas-project-pin-btn.is-pinned {
+  color: var(--primary);
+}
+.canvas-project-pin-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.canvas-project-pin-btn.is-pinned:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover, var(--primary));
+}
+
+.canvas-project-cover {
+  position: relative;
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, transparent), transparent 55%),
+    color-mix(in srgb, var(--panel) 88%, var(--bg-sunken));
+  border-bottom: 1px solid var(--divider);
+  overflow: hidden;
+}
+
+.canvas-project-cover-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text-muted) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--text-muted) 12%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+}
+
+.canvas-project-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
+.canvas-project-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.canvas-project-card-top,
+.canvas-project-card-foot,
+.canvas-project-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-project-card-top {
+  justify-content: space-between;
+}
+
+.canvas-project-card h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-project-card p {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.canvas-project-card-meta {
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.canvas-project-card-meta span {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: var(--panel);
+  font-size: 11px;
+}
+
+.canvas-project-card-foot {
+  justify-content: space-between;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.canvas-project-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.canvas-projects-empty {
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.canvas-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.canvas-create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.canvas-create-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.canvas-create-cover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.canvas-create-cover-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 112px;
+  padding: 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.canvas-create-cover-dropzone:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-soft));
+}
+
+.canvas-create-cover-dropzone img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-create-cover-placeholder {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.canvas-create-cover-placeholder svg {
+  color: var(--primary);
+}
+
+@media (max-width: 860px) {
+  .canvas-projects-header,
+  .canvas-projects-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .canvas-projects-header-actions {
+    justify-content: flex-start;
+  }
+
+  .canvas-projects-search {
+    width: 100%;
+  }
+
+  .canvas-projects-stats {
+    justify-content: flex-start;
+  }
+
+  .canvas-create-location {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Keep the project route on one public style entry while preserving the visual refinement owner.
+@import (less) './project-surface.less';

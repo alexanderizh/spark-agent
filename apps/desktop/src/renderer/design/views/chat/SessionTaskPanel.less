@@ -1,0 +1,114 @@
+.session-task-panel {
+  --session-task-bg: var(--panel, #fff);
+  --session-task-border: var(--border, #e8e5df);
+  width: 100%;
+  margin: 8px 0 10px;
+  overflow: hidden;
+  color: var(--text);
+  border: 1px solid var(--session-task-border);
+  border-radius: 8px;
+  background: var(--session-task-bg);
+}
+
+.session-task-panel-summary {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-task-panel-list {
+  display: flex;
+  margin: 0;
+  padding: 8px 10px 9px;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+}
+
+.session-task-panel-item {
+  display: flex;
+  min-width: 0;
+  padding: 5px 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+}
+
+.session-task-panel-status {
+  display: inline-flex;
+  width: 17px;
+  height: 20px;
+  flex: 0 0 17px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.session-task-panel-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.session-task-panel-text,
+.session-task-panel-description {
+  overflow-wrap: anywhere;
+}
+
+.session-task-panel-description {
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+}
+
+.session-task-panel-item.is-in_progress {
+  color: var(--text-strong);
+  font-weight: 550;
+}
+
+.session-task-panel-item.is-in_progress .session-task-panel-status {
+  color: var(--primary);
+}
+
+.session-task-panel-item.is-completed .session-task-panel-status {
+  color: var(--success);
+}
+
+.session-task-panel-item.is-completed .session-task-panel-text {
+  color: var(--text-muted);
+}
+
+.session-task-panel-item.is-interrupted .session-task-panel-status {
+  color: var(--danger);
+}
+
+.session-task-panel-item.is-interrupted .session-task-panel-text {
+  color: var(--text-faint);
+}
+
+.session-task-panel-spinner {
+  animation: session-task-panel-spin 0.9s linear infinite;
+}
+
+@keyframes session-task-panel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-task-panel-spinner {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .session-task-panel {
+    margin-block: 6px 8px;
+  }
+}

@@ -1,0 +1,36 @@
+.msg-user-session-references {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  width: min(86%, 100%);
+  margin-bottom: 6px;
+}
+
+.msg-user-session-reference-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: min(360px, 100%);
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-soft) 88%, var(--panel));
+  color: var(--primary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.msg-user-session-reference-chip svg {
+  flex: 0 0 auto;
+}
+
+.msg-user-session-reference-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

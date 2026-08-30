@@ -1,0 +1,224 @@
+/* 设置-通用页「模型用量趋势」卡片：TOP 5 模型按日堆叠柱状图。
+   独立组件级 LESS（与 HeroUsageHeatmap.less 同模式），由 ModelUsageTrendCard.tsx 直接 import。
+   序列色为固定数据可视化用色（不跟随 --primary，保证多系列可区分）。 */
+.usage-trend-card {
+  box-sizing: border-box;
+  margin-bottom: var(--pad-lg);
+  width: 100%;
+  padding: 16px;
+}
+
+.usage-trend-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.usage-trend-title {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.usage-trend-summary {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  margin-top: 3px;
+}
+
+.usage-trend-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.usage-trend-link {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--primary) 78%, var(--text-muted));
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+  transition: color 120ms ease;
+}
+
+.usage-trend-link:hover,
+.usage-trend-link:focus-visible {
+  color: var(--primary);
+  outline: none;
+}
+
+/* 图例：消耗总量 + 各模型色块与区间总量 */
+.usage-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 14px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.usage-trend-legend-total strong {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.usage-trend-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usage-trend-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+/* 数据可视化固定序列色：蓝 / 绿 / 红 / 橙 / 紫，明暗模式都可读 */
+.usage-trend-swatch--c0 {
+  background: #4d80f0;
+}
+
+.usage-trend-swatch--c1 {
+  background: #34c77b;
+}
+
+.usage-trend-swatch--c2 {
+  background: #f0524d;
+}
+
+.usage-trend-swatch--c3 {
+  background: #eda23f;
+}
+
+.usage-trend-swatch--c4 {
+  background: #9b6df0;
+}
+
+/* 分组柱状图：每列（一天）= 柱区 + 刻度槽；柱区内是该天各模型并排的独立细柱。
+   柱高 = 当日该模型 token / 峰值日总量，直接相对柱区百分比，底部对齐。 */
+.usage-trend-chart {
+  display: flex;
+  align-items: stretch;
+  height: 180px;
+}
+
+.usage-trend-col {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.usage-trend-bar-area {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.usage-trend-col:hover .usage-trend-bar {
+  filter: brightness(1.12);
+}
+
+.usage-trend-bar {
+  display: block;
+  flex: 0 0 auto;
+  width: 6px;
+  min-height: 1.5px;
+  border-radius: 1.5px 1.5px 0 0;
+}
+
+.usage-trend-tick {
+  display: block;
+  flex: 0 0 18px;
+  overflow: visible;
+  padding-top: 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 加载骨架：与 usage-heatmap-pulse 同节奏的呼吸占位 */
+.usage-trend-loading {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 178px;
+}
+
+.usage-trend-loading span {
+  flex: 1 1 0;
+  height: 44%;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--bg-soft) 78%, var(--primary));
+  animation: usage-trend-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.usage-trend-loading span:nth-child(3n) {
+  height: 62%;
+  animation-delay: 160ms;
+}
+
+.usage-trend-loading span:nth-child(5n) {
+  height: 84%;
+  animation-delay: 320ms;
+}
+
+@keyframes usage-trend-pulse {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+.usage-trend-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 178px;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+}
+
+.usage-trend-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 65px;
+  color: var(--danger);
+  font-size: var(--font-xs);
+}
+
+.usage-trend-error button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--r-xs);
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  cursor: pointer;
+  font-size: var(--font-xs);
+}
+
+.usage-trend-error button:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}

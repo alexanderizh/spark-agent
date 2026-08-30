@@ -1,0 +1,1195 @@
+// 步骤模式（Step Studio）样式（P3 骨架）。
+//
+// 渲染在 .canvas-workspace.canvas-cinematic 作用域内，直接消费 cinema token，
+// 明暗主题由既有 token 覆盖链路自动适配。视觉遵循扁平偏好：无渐变光晕，
+// 层级靠分割线 / 明度 / 色点（prj_9263e734 / prj_e5112b80）。
+//
+// P4：设定页内嵌 assetLibrary 的 AssetGrid 等组件（消费 --ast-* token），
+// 经 (reference) 引入 token mixin，在 .step-setup-view 上建立作用域。
+
+@import (reference) '../assetLibrary/assetLibrary.less';
+
+.canvas-workspace.canvas-cinematic {
+  // ── 骨架容器 ──
+
+  .step-studio-root {
+    position: relative;
+    z-index: var(--z-canvas-content);
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--canvas-cinema-bg);
+    color: var(--canvas-cinema-text);
+  }
+
+  // ── 顶栏：返回 + 项目名 + 三步导航 + 模式切换 ──
+
+  .step-studio-header {
+    position: relative; // 三步导航绝对定位居中的锚点
+    display: flex;
+    flex: 0 0 auto;
+    height: var(--window-titlebar-height);
+    align-items: center;
+    gap: 16px;
+    padding: 0 14px 0 16px;
+    border-bottom: 1px solid var(--canvas-cinema-border);
+    // 暗色默认值与画布顶栏一致（cinematic/shell.less）；浅色窗口主题的覆盖
+    // 在 cinematic/window-theme.less（与 .canvas-workspace-header 同组），两模式顶栏同步变色。
+    background: rgba(20, 20, 20, 0.97);
+    box-shadow: 0 1px rgba(0, 0, 0, 0.55);
+  }
+
+  // macOS 红绿灯安全区：header 挂在 .step-studio-root 下（与 .canvas-workspace
+  // 隔一层），不能用 shell.less 的 `>` 直接子元素写法，否则永不匹配。
+  .app.sidebar-hidden.platform-darwin & .step-studio-header {
+    padding-left: var(--window-titlebar-safe-left);
+  }
+
+  .step-studio-title {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 200px;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-studio-title > .ant-btn {
+    height: 30px;
+    padding-inline: 7px 9px;
+    border-radius: var(--canvas-cinema-radius-sm);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 11px;
+  }
+
+  .step-studio-title > .ant-btn:hover {
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .step-studio-heading {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+
+  .step-studio-heading h2 {
+    max-width: min(22vw, 280px);
+    overflow: hidden;
+    margin: 0;
+    color: var(--canvas-cinema-text-strong);
+    font-size: 13px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .step-studio-mode-tag {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: 999px;
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  // ── 三步导航（顶栏视觉中心）──
+
+  // 绝对定位真居中：脱离 flex 流后不随左右区域宽度差偏移（对齐参考产品形态）。
+  // 极窄窗口下可能与左侧标题重叠，由标题 ellipsis 兜底，导航保持可点击。
+  .step-studio-stage-nav {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transform: translate(-50%, -50%);
+  }
+
+  .step-studio-stage-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .step-studio-stage-connector {
+    width: 26px;
+    height: 1px;
+    background: var(--canvas-cinema-border-strong);
+  }
+
+  .step-studio-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    font-size: 12px;
+    cursor: pointer;
+    transition:
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease,
+      border-color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .step-studio-stage:hover {
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text);
+  }
+
+  .step-studio-stage:focus-visible {
+    outline: none;
+    border-color: var(--canvas-cinema-accent);
+  }
+
+  .step-studio-stage-index {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--canvas-cinema-surface-3);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .step-studio-stage.is-visited .step-studio-stage-index {
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .step-studio-stage.is-visited {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .step-studio-stage.is-active {
+    border-color: var(--canvas-cinema-border-strong);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .step-studio-stage.is-active .step-studio-stage-index {
+    background: var(--canvas-cinema-accent);
+    color: #ffffff;
+  }
+
+  // ── 顶栏右侧：模式切换器 + 主题 + 窗口控件 ──
+
+  .step-studio-header-side {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .step-mode-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: 10px;
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .step-mode-switcher-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    font-size: 11px;
+    cursor: pointer;
+    transition:
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .step-mode-switcher-option:hover:not(:disabled) {
+    color: var(--canvas-cinema-text);
+  }
+
+  .step-mode-switcher-option:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--canvas-cinema-accent);
+  }
+
+  .step-mode-switcher-option:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .step-mode-switcher-option.is-active {
+    background: var(--canvas-cinema-surface-4);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .step-studio-window-controls {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  // ── 主体：左侧步骤导航 + 主内容区 ──
+
+  .step-studio-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .step-studio-sidebar {
+    display: flex;
+    flex: 0 0 auto;
+    width: 208px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 14px 10px;
+    border-right: 1px solid var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-1);
+  }
+
+  .step-studio-side-nav {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: var(--canvas-cinema-radius-sm);
+    background: transparent;
+    color: var(--canvas-cinema-text-muted);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background var(--canvas-cinema-motion-fast) ease,
+      color var(--canvas-cinema-motion-fast) ease,
+      border-color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .step-studio-side-nav:hover {
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text);
+  }
+
+  .step-studio-side-nav:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--canvas-cinema-accent);
+  }
+
+  .step-studio-side-nav.is-active {
+    border-left-color: var(--canvas-cinema-accent);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .step-studio-side-icon {
+    display: grid;
+    flex: 0 0 auto;
+    width: 20px;
+    place-items: center;
+    margin-top: 1px;
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .step-studio-side-nav.is-active .step-studio-side-icon {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .step-studio-side-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .step-studio-side-title {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .step-studio-side-short {
+    overflow: hidden;
+    color: var(--canvas-cinema-text-faint);
+    font-size: 11px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .step-studio-main {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  // ── 步骤占位（P4/P5/P6 逐步替换为真实内容）──
+
+  .step-studio-placeholder {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 48px 24px;
+    color: var(--canvas-cinema-text-muted);
+    text-align: center;
+  }
+
+  .step-studio-placeholder-icon {
+    display: grid;
+    width: 52px;
+    height: 52px;
+    place-items: center;
+    margin-bottom: 6px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-lg);
+    background: var(--canvas-cinema-surface-2);
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .step-studio-placeholder h3 {
+    margin: 0;
+    color: var(--canvas-cinema-text-strong);
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  .step-studio-placeholder p {
+    max-width: 420px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .step-studio-placeholder-tag {
+    margin-top: 10px;
+    padding: 2px 9px;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: 999px;
+    color: var(--canvas-cinema-text-faint);
+    font-size: 10px;
+    line-height: 1.6;
+  }
+
+  // ── 第一步「设定」（P4）：内嵌 assetLibrary 组件需 --ast-* token 作用域 ──
+
+  .step-setup-view {
+    .ast-token-scope();
+
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .step-setup-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ast-border);
+  }
+
+  .step-setup-kinds {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .step-setup-kind-tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ast-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background 0.14s ease,
+      color 0.14s ease;
+
+    &:hover {
+      background: var(--ast-surface-hover);
+      color: var(--ast-text);
+    }
+
+    &.is-active {
+      background: var(--ast-accent-soft);
+      color: var(--ast-text-strong);
+    }
+  }
+
+  .step-setup-kind-count {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--ast-surface-3);
+    color: var(--ast-text-faint);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+
+  .step-setup-kind-tab.is-active .step-setup-kind-count {
+    background: var(--ast-accent);
+    color: #ffffff;
+  }
+
+  .step-setup-toolbar-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-setup-search {
+    width: 200px;
+
+    .ant-input,
+    .ant-input-affix-wrapper {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text);
+
+      &::placeholder {
+        color: var(--ast-text-faint);
+      }
+    }
+  }
+
+  .step-setup-toolbar-actions .ant-select .ant-select-selector {
+    background: var(--ast-surface-2);
+    border-color: var(--ast-border);
+    color: var(--ast-text);
+    font-size: 12px;
+  }
+
+  .step-setup-grid {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  // ── 第二步「分镜」（P5）：序列侧栏 + 分段卡片列表 ──
+
+  .step-storyboard-view {
+    .ast-token-scope();
+
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .step-sequence-rail {
+    display: flex;
+    flex: 0 0 auto;
+    width: 176px;
+    flex-direction: column;
+    border-right: 1px solid var(--ast-border);
+  }
+
+  .step-sequence-rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 10px 10px 14px;
+    color: var(--ast-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .step-sequence-list {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 8px 10px;
+    overflow-y: auto;
+  }
+
+  .step-sequence-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ast-text-muted);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background 0.14s ease,
+      color 0.14s ease;
+
+    &:hover {
+      background: var(--ast-surface-hover);
+      color: var(--ast-text);
+    }
+
+    &.is-active {
+      background: var(--ast-accent-soft);
+      color: var(--ast-text-strong);
+      font-weight: 600;
+    }
+  }
+
+  .step-sequence-item-title {
+    overflow: hidden;
+    min-width: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .step-sequence-item-count {
+    flex: 0 0 auto;
+    color: var(--ast-text-faint);
+    font-size: 10px;
+  }
+
+  .step-storyboard-main {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .step-storyboard-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ast-border);
+
+    .ant-input,
+    .ant-input-affix-wrapper,
+    .ant-select-selector,
+    .ant-select-single.ant-select-sm .ant-select-selector {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text);
+      font-size: 12px;
+    }
+  }
+
+  .step-sequence-title-input {
+    width: 160px;
+  }
+
+  .step-storyboard-toolbar-spacer {
+    flex: 1 1 auto;
+  }
+
+  .step-concurrency-select {
+    width: 86px;
+  }
+
+  .step-segment-list {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 24px;
+    overflow-y: auto;
+
+    > .ant-spin-nested-loading {
+      display: flex;
+      min-height: 0;
+      flex: 1 1 auto;
+      flex-direction: column;
+      gap: 12px;
+
+      > .ant-spin-container {
+        display: flex;
+        min-height: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 12px;
+      }
+    }
+  }
+
+  .step-storyboard-empty {
+    padding: 48px 24px;
+    color: var(--ast-text-faint);
+    font-size: 12px;
+    text-align: center;
+
+    p {
+      margin: 12px 0 0;
+    }
+  }
+
+  .step-segment-card {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    border: 1px solid var(--ast-border);
+    border-radius: 10px;
+    background: var(--ast-surface-1);
+
+    &.is-generating {
+      border-color: rgba(119, 108, 246, 0.4);
+    }
+
+    // 拖拽中（二期 dnd-kit）：浮起半透明，避免遮挡目标位判断
+    &.is-dragging {
+      z-index: 10;
+      opacity: 0.72;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+    }
+  }
+
+  .step-segment-drag-handle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ast-text-faint);
+    cursor: grab;
+    touch-action: none;
+
+    &:hover {
+      background: var(--ast-surface-3);
+      color: var(--ast-accent-bright);
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    &:focus-visible {
+      outline: 1px solid var(--ast-accent);
+      outline-offset: 1px;
+    }
+  }
+
+  .step-segment-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ast-border);
+  }
+
+  .step-segment-card-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: var(--ast-surface-3);
+    color: var(--ast-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .step-segment-status {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.7;
+
+    &.is-draft {
+      background: var(--ast-surface-3);
+      color: var(--ast-text-faint);
+    }
+
+    &.is-generating {
+      background: var(--ast-accent-soft);
+      color: var(--ast-accent-bright);
+    }
+
+    &.is-done {
+      background: rgba(74, 222, 128, 0.14);
+      color: var(--ast-success);
+    }
+
+    &.is-failed {
+      background: rgba(239, 107, 118, 0.14);
+      color: var(--ast-danger);
+    }
+  }
+
+  .step-segment-card-actions {
+    display: flex;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    gap: 2px;
+  }
+
+  .step-segment-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .step-segment-script {
+    .ant-input,
+    textarea {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text);
+      font-size: 12px;
+      line-height: 1.7;
+
+      &::placeholder {
+        color: var(--ast-text-faint);
+      }
+    }
+  }
+
+  // ── @ 提及选择面板（二期）──
+
+  .segment-mention-field {
+    position: relative;
+  }
+
+  .segment-mention-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 30;
+    display: flex;
+    min-width: 224px;
+    max-width: 300px;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px;
+    border: 1px solid var(--ast-border-strong);
+    border-radius: var(--ast-radius-sm);
+    background: var(--ast-surface-2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  }
+
+  .segment-mention-option {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ast-text);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover,
+    &.is-active {
+      background: var(--ast-surface-3);
+    }
+
+    &.is-active {
+      color: var(--ast-text-strong);
+    }
+  }
+
+  .segment-mention-dot {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+
+    &.kind-character {
+      background: var(--ast-kind-character);
+    }
+    &.kind-scene {
+      background: var(--ast-kind-scene);
+    }
+    &.kind-prop {
+      background: var(--ast-kind-prop);
+    }
+  }
+
+  .segment-mention-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .segment-mention-kind {
+    flex: 0 0 auto;
+    color: var(--ast-text-faint);
+    font-size: 10px;
+  }
+
+  .segment-mention-empty {
+    padding: 6px 8px;
+    color: var(--ast-text-faint);
+    font-size: 11px;
+  }
+
+  .segment-mention-hint {
+    margin-top: 2px;
+    padding: 4px 8px 2px;
+    border-top: 1px solid var(--ast-border);
+    color: var(--ast-text-faint);
+    font-size: 10px;
+  }
+
+  .step-segment-cast-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .step-segment-cast-select {
+    flex: 1 1 160px;
+    min-width: 140px;
+
+    .ant-select-selector {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text);
+      font-size: 12px;
+    }
+  }
+
+  .step-segment-gen-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .step-segment-gen-mode {
+    .ant-radio-button-wrapper {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text-muted);
+      font-size: 12px;
+
+      &::before {
+        background: var(--ast-border);
+      }
+
+      &.ant-radio-button-wrapper-checked {
+        background: var(--ast-accent-soft);
+        border-color: var(--ast-accent);
+        color: var(--ast-text-strong);
+      }
+    }
+  }
+
+  .step-segment-duration {
+    width: 84px;
+
+    .ant-input-number-input {
+      background: transparent;
+      color: var(--ast-text);
+    }
+
+    &.ant-input-number {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+    }
+  }
+
+  .step-segment-frames {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-segment-frames-arrow {
+    flex: 0 0 auto;
+    color: var(--ast-text-faint);
+    font-size: 12px;
+  }
+
+  .step-segment-frame-select {
+    flex: 1 1 200px;
+
+    .ant-select-selector {
+      background: var(--ast-surface-2);
+      border-color: var(--ast-border);
+      color: var(--ast-text);
+      font-size: 12px;
+    }
+  }
+
+  .step-segment-error {
+    margin: 0;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(239, 107, 118, 0.1);
+    color: var(--ast-danger);
+    font-size: 11px;
+    line-height: 1.6;
+    word-break: break-all;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .step-segment-output {
+    video {
+      display: block;
+      width: 100%;
+      max-width: 460px;
+      border-radius: 8px;
+      background: #000000;
+    }
+  }
+
+  // ── 第三步「视频」（P6）：组装总览 + 分段轨 + 顺序预览 ──
+
+  .step-assembly-view {
+    .ast-token-scope();
+
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .step-assembly-summary {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ast-border);
+  }
+
+  .step-assembly-summary-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .step-assembly-stat {
+    font-size: 12px;
+    color: var(--ast-text-muted);
+
+    b {
+      margin-left: 2px;
+      color: var(--ast-text);
+      font-weight: 600;
+    }
+  }
+
+  .step-assembly-summary-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .step-assembly-empty {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--ast-text-muted);
+
+    p {
+      margin: 0;
+      font-size: 13px;
+    }
+
+    .is-muted {
+      font-size: 11px;
+      opacity: 0.75;
+    }
+  }
+
+  .step-assembly-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .step-assembly-track-panel {
+    display: flex;
+    flex: 0 0 264px;
+    min-width: 0;
+    flex-direction: column;
+    border-right: 1px solid var(--ast-border);
+
+    h4 {
+      margin: 0;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--ast-text-muted);
+    }
+  }
+
+  .step-assembly-track {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0 8px 10px;
+    list-style: none;
+    overflow-y: auto;
+  }
+
+  .step-assembly-track-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--ast-text);
+    font-size: 12px;
+
+    &:hover {
+      background: var(--ast-surface-hover);
+    }
+
+    &.is-playing {
+      background: var(--ast-accent-soft);
+      color: var(--ast-accent-bright);
+    }
+  }
+
+  .step-assembly-track-index {
+    flex: 0 0 auto;
+    min-width: 18px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ast-text-muted);
+
+    .is-playing & {
+      color: inherit;
+    }
+  }
+
+  .step-assembly-track-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .step-assembly-track-duration {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--ast-text-muted);
+  }
+
+  .step-assembly-preview-panel {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px;
+  }
+
+  .step-assembly-preview-video {
+    display: block;
+    width: 100%;
+    max-width: 720px;
+    max-height: 100%;
+    border-radius: 10px;
+    background: #000000;
+  }
+
+  .step-assembly-preview-caption {
+    margin: 0;
+    font-size: 11px;
+    color: var(--ast-text-muted);
+  }
+}
+
+// 亮色主题：全局 [data-theme='light'] 标记（与资产库面板同一链路）
+[data-theme='light'] {
+  .canvas-workspace.canvas-cinematic {
+    .step-setup-view {
+      .ast-token-scope-light();
+    }
+
+    .step-storyboard-view {
+      .ast-token-scope-light();
+    }
+
+    .step-assembly-view {
+      .ast-token-scope-light();
+    }
+  }
+}
+
+// AI 拆分剧本弹窗（二期 R2-2）：antd Modal portal 到 body，
+// rootClassName 挂 --ast-* token 作用域（AssetCreateModal 同一模式）
+.step-breakdown-modal {
+  .ast-token-scope();
+
+  .step-breakdown-hint {
+    margin: 0 0 10px;
+    color: var(--ast-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+[data-theme='light'] .step-breakdown-modal {
+  .ast-token-scope-light();
+}

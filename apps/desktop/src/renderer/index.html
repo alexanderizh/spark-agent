@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content Security Policy：
+      - default-src 'self'：只允许来自当前 origin 的资源
+      - script-src 'self'：禁止 inline scripts，防止 XSS
+      - style-src 'self' 'unsafe-inline'：允许内联样式（React 组件库需要）
+      - img-src 'self' data: safe-file: spark-snapshot: https: http: blob:：允许本地图片、受权应用快照、头像与封面图预览
+      - media-src 'self' data: safe-file: https: http: blob:：允许画布音频/视频播放本地产物
+      - font-src 'self' data: safe-file:：允许系统字体与下载到 userData 的托管字体
+      - connect-src 'self' safe-file:：IPC 通过 contextBridge + safe-file 协议读取
+      - frame-src safe-file:：lightbox 中显示 safe-file 图片
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' capability-asset:; style-src 'self' 'unsafe-inline' capability-asset:; font-src 'self' data: safe-file: capability-asset:; img-src 'self' data: safe-file: capability-asset: spark-snapshot: https: http: blob:; media-src 'self' data: safe-file: https: http: blob:; connect-src 'self' safe-file: capability-asset:; worker-src 'self' blob: capability-asset:; frame-src 'self' safe-file: capability-asset:"
+    />
+    <title>SparkWork</title>
+    <!--
+      首帧防白闪：
+      macOS 启动窗口为 transparent（vibrancy 毛玻璃所需），React 挂载前 html/data-theme
+      尚未设置，此时 html/body 无底色会透出桌面或呈现透明空帧。这里用 prefers-color-scheme
+      媒体查询给 html/body 兜底底色（style-src 允许 'unsafe-inline'），与主进程 nativeTheme
+      检测结果一致，保证深色模式下首帧即深色、浅色模式即浅色。
+      React 挂载后由 AppContext 设置 html[data-theme]，主题变量接管，此规则被覆盖。
+    -->
+    <style>
+      html, body { margin: 0; padding: 0; background: #fdfdfc; }
+      @media (prefers-color-scheme: dark) {
+        html, body { background: #1f1f1f; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

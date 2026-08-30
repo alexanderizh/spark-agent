@@ -1,0 +1,441 @@
+import { describe, expect, it } from 'vitest'
+import { MessageBuilder, type UIBlock, type UIMessage } from '../../services/event-mapper'
+import {
+  extractPlans,
+  extractInspectorTasks,
+  extractSessionProgressTasks,
+  parseTodosFromInputOrOutput,
+} from './ChatInspectorUtils'
+
+function toolBlock(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  options: {
+    toolCallId?: string
+    output?: string
+    teamMember?: boolean
+    status?: Extract<UIBlock, { kind: 'tool_call' }>['status']
+  } = {},
+): Extract<UIBlock, { kind: 'tool_call' }> {
+  return {
+    kind: 'tool_call',
+    toolCallId: options.toolCallId ?? `${toolName}-1`,
+    toolName,
+    toolInput,
+    status: options.status ?? 'success',
+    output: options.output,
+    error: undefined,
+    durationMs: undefined,
+    ...(options.teamMember
+      ? {
+          teamMemberContext: {
+            dispatchId: 'dispatch-test-expert',
+            memberAgentId: 'agent-test-expert',
+          },
+        }
+      : {}),
+  }
+}
+
+function assistantMessage(
+  status: UIMessage['status'],
+  blocks: UIBlock[],
+  id = 'assistant-1',
+): UIMessage {
+  return {
+    id,
+    role: 'assistant',
+    status,
+    blocks,
+    usage: null,
+    eventIds: [],
+  }
+}
+
+describe('chat inspector task progress', () => {
+  it('normalizes Claude and Codex todo payloads and prefers the latest output snapshot', () => {
+    expect(
+      parseTodosFromInputOrOutput(
+        {
+          todos: [{ content: '定位问题', status: 'in_progress', activeForm: '正在定位问题' }],
+        },
+        undefined,
+      ),
+    ).toEqual([{ content: '定位问题', status: 'in_progress', activeForm: '正在定位问题' }])
+
+    expect(
+      parseTodosFromInputOrOutput(
+        { todos: [{ text: '定位问题', completed: false }] },
+        JSON.stringify({
+          todos: [
+            { text: '定位问题', completed: true },
+            { text: '验证修复', completed: false },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { content: '定位问题', status: 'completed' },
+      { content: '验证修复', status: 'pending' },
+    ])
+  })
+
+  it('uses the completed host todo snapshot instead of a timed-out member task list', () => {
+    const hostTodo = toolBlock(
+      'todo_write',
+      {
+        todos: [
+          { text: '定位链路', completed: false },
+          { text: '完成修复', completed: false },
+        ],
+      },
+      {
+        toolCallId: 'host-todo',
+        output: JSON.stringify({
+          todos: [
+            { text: '定位链路', completed: true },
+            { text: '完成修复', completed: true },
+          ],
+        }),
+      },
+    )
+    const memberTask = toolBlock(
+      'task_create',
+      { subject: '验证兜底路径', activeForm: '正在验证兜底路径' },
+      {
+        toolCallId: 'member-task',
+        output: 'Task #1 created successfully: 验证兜底路径',
+        teamMember: true,
+      },
+    )
+
+    const tasks = extractSessionProgressTasks([
+      assistantMessage('completed', [hostTodo, memberTask]),
+    ])
+
+    expect(tasks.map((task) => [task.subject, task.status])).toEqual([
+      ['定位链路', 'completed'],
+      ['完成修复', 'completed'],
+    ])
+  })
+
+  it('treats an empty todo_write snapshot as an explicit clear operation', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '旧任务', status: 'completed', activeForm: '正在处理旧任务' }],
+    })
+    const clear = toolBlock('todo_write', { todos: [] }, { toolCallId: 'clear-todos' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('completed', [clear], 'assistant-2'),
+      ]),
+    ).toEqual([])
+  })
+
+  it('uses a successful empty todo_read snapshot to clear stale progress', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '旧任务', status: 'completed', activeForm: '正在处理旧任务' }],
+    })
+    const read = toolBlock('todo_read', {}, { toolCallId: 'read-todos', output: '' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('completed', [read], 'assistant-2'),
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not clear stale progress for an unfinished todo_read call', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '保留任务', status: 'completed', activeForm: '正在处理保留任务' }],
+    })
+    const pendingRead = toolBlock('todo_read', {}, { status: 'pending' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('streaming', [pendingRead], 'assistant-2'),
+      ]),
+    ).toEqual([expect.objectContaining({ subject: '保留任务', status: 'completed' })])
+  })
+
+  it('reads Claude TodoWrite newTodos as the final snapshot', () => {
+    expect(
+      parseTodosFromInputOrOutput(
+        { todos: [{ content: '旧状态', status: 'pending', activeForm: '正在处理旧状态' }] },
+        JSON.stringify({
+          oldTodos: [{ content: '旧状态', status: 'pending', activeForm: '正在处理旧状态' }],
+          newTodos: [],
+        }),
+      ),
+    ).toEqual([])
+  })
+
+  it('replays the final Codex todo result into a completed session progress snapshot', () => {
+    const builder = new MessageBuilder()
+    const base = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      timestamp: '2026-07-14T08:41:30.000Z',
+    }
+
+    builder.processEvent({
+      ...base,
+      id: 'todo-call',
+      seq: 1,
+      type: 'tool_call',
+      toolCallId: 'item-3',
+      toolName: 'todo_write',
+      toolInput: {
+        todos: [
+          { text: '定位交叉表标题导出链路', completed: false },
+          { text: '修复反馈并完成交付', completed: false },
+        ],
+      },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...base,
+      id: 'todo-result',
+      seq: 2,
+      type: 'tool_result',
+      toolCallId: 'item-3',
+      toolName: 'todo_write',
+      status: 'success',
+      output: {
+        todos: [
+          { text: '定位交叉表标题导出链路', completed: true },
+          { text: '修复反馈并完成交付', completed: true },
+        ],
+      },
+    })
+    builder.processEvent({
+      ...base,
+      id: 'turn-completed',
+      seq: 3,
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    expect(extractSessionProgressTasks(builder.getAllMessages())).toEqual([
+      expect.objectContaining({ subject: '定位交叉表标题导出链路', status: 'completed' }),
+      expect.objectContaining({ subject: '修复反馈并完成交付', status: 'completed' }),
+    ])
+  })
+
+  it('preserves unfinished host task states after a normal message completion', () => {
+    const create = toolBlock(
+      'task_create',
+      { subject: '运行页面验收', activeForm: '正在运行页面验收' },
+      { output: 'Task #1 created successfully: 运行页面验收' },
+    )
+    const update = toolBlock('task_update', { taskId: '1', status: 'in_progress' })
+    const pendingTask = toolBlock(
+      'task_create',
+      { subject: '尚未开始的验收任务' },
+      {
+        toolCallId: 'pending-task',
+        output: 'Task #2 created successfully: 尚未开始的验收任务',
+      },
+    )
+    const memberTask = toolBlock(
+      'task_create',
+      { subject: '成员内部检查' },
+      {
+        toolCallId: 'member-task',
+        output: 'Task #3 created successfully: 成员内部检查',
+        teamMember: true,
+      },
+    )
+    const messages = [assistantMessage('completed', [create, update, pendingTask, memberTask])]
+
+    expect(extractSessionProgressTasks(messages)).toEqual([
+      expect.objectContaining({ id: '#1', subject: '运行页面验收', status: 'in_progress' }),
+      expect.objectContaining({ id: '#2', subject: '尚未开始的验收任务', status: 'pending' }),
+    ])
+    expect(extractInspectorTasks(messages).map((task) => task.subject)).toEqual([
+      '运行页面验收',
+      '尚未开始的验收任务',
+      '成员内部检查',
+    ])
+  })
+
+  it('replaces the host task snapshot when a later turn restarts numbering from #1', () => {
+    const firstTurnCreateA = toolBlock(
+      'task_create',
+      { subject: '旧轮任务一' },
+      { toolCallId: 'turn1-create-a', output: 'Task #1 created successfully: 旧轮任务一' },
+    )
+    const firstTurnCreateB = toolBlock(
+      'task_create',
+      { subject: '旧轮任务二' },
+      { toolCallId: 'turn1-create-b', output: 'Task #2 created successfully: 旧轮任务二' },
+    )
+    const firstTurnComplete = toolBlock(
+      'task_update',
+      { taskId: '1', status: 'completed' },
+      {
+        toolCallId: 'turn1-complete',
+      },
+    )
+    const secondTurnCreateA = toolBlock(
+      'task_create',
+      { subject: '新轮任务一' },
+      { toolCallId: 'turn2-create-a', output: 'Task #1 created successfully: 新轮任务一' },
+    )
+    const secondTurnCreateB = toolBlock(
+      'task_create',
+      { subject: '新轮任务二' },
+      { toolCallId: 'turn2-create-b', output: 'Task #2 created successfully: 新轮任务二' },
+    )
+    const secondTurnStart = toolBlock(
+      'task_update',
+      { taskId: '2', status: 'in_progress' },
+      {
+        toolCallId: 'turn2-start',
+      },
+    )
+    const memberTask = toolBlock(
+      'task_create',
+      { subject: '成员内部任务' },
+      {
+        toolCallId: 'member-task',
+        output: 'Task #1 created successfully: 成员内部任务',
+        teamMember: true,
+      },
+    )
+    const messages = [
+      assistantMessage(
+        'completed',
+        [firstTurnCreateA, firstTurnCreateB, firstTurnComplete, memberTask],
+        'assistant-turn-1',
+      ),
+      assistantMessage(
+        'streaming',
+        [secondTurnCreateA, secondTurnCreateB, secondTurnStart],
+        'assistant-turn-2',
+      ),
+    ]
+
+    expect(extractSessionProgressTasks(messages).map((task) => task.subject)).toEqual([
+      '新轮任务一',
+      '新轮任务二',
+    ])
+    expect(extractSessionProgressTasks(messages)).toEqual([
+      expect.objectContaining({ id: '#1', subject: '新轮任务一', status: 'pending' }),
+      expect.objectContaining({ id: '#2', subject: '新轮任务二', status: 'in_progress' }),
+    ])
+    expect(extractInspectorTasks(messages).map((task) => task.subject)).toEqual([
+      '成员内部任务',
+      '新轮任务一',
+      '新轮任务二',
+    ])
+  })
+
+  it.each(['error', 'cancelled'] as const)(
+    'marks only an active host task as interrupted when its message ends with %s',
+    (messageStatus) => {
+      const running = toolBlock(
+        'task_create',
+        { subject: '正在执行的任务' },
+        {
+          toolCallId: 'create-running',
+          output: 'Task #1 created successfully: 正在执行的任务',
+        },
+      )
+      const pending = toolBlock(
+        'task_create',
+        { subject: '尚未执行的任务' },
+        {
+          toolCallId: 'create-pending',
+          output: 'Task #2 created successfully: 尚未执行的任务',
+        },
+      )
+      const update = toolBlock(
+        'task_update',
+        { taskId: '1', status: 'in_progress' },
+        { toolCallId: 'update-running' },
+      )
+
+      expect(
+        extractSessionProgressTasks([
+          assistantMessage(messageStatus, [running, pending, update]),
+        ]).map((task) => [task.subject, task.status]),
+      ).toEqual([
+        ['正在执行的任务', 'interrupted'],
+        ['尚未执行的任务', 'pending'],
+      ])
+    },
+  )
+
+  it('keeps a host task running while its owning message is still streaming', () => {
+    const create = toolBlock(
+      'task_create',
+      { subject: '执行验证', activeForm: '正在执行验证' },
+      { output: 'Task #1 created successfully: 执行验证' },
+    )
+    const update = toolBlock('task_update', { taskId: '1', status: 'in_progress' })
+
+    expect(extractSessionProgressTasks([assistantMessage('streaming', [create, update])])).toEqual([
+      expect.objectContaining({ id: '#1', status: 'in_progress' }),
+    ])
+  })
+})
+
+describe('chat inspector plans', () => {
+  it('keeps plan proposals as immutable markdown instead of fake progress items', () => {
+    const rawPlan = [
+      '# 修复方案',
+      '',
+      '## 背景',
+      '- 这是一条背景说明，不是待办',
+      '',
+      '## 实施步骤',
+      '1. 修改展示职责',
+    ].join('\n')
+
+    expect(
+      extractPlans([assistantMessage('completed', [{ kind: 'plan_proposed', plan: rawPlan }])]),
+    ).toEqual([
+      {
+        id: 'assistant-1:plan_proposed',
+        kind: 'proposal',
+        title: 'Agent 方案',
+        rawPlan,
+      },
+    ])
+  })
+
+  it('keeps todo and update_plan tool snapshots as mutable progress', () => {
+    const todo = toolBlock('todo_write', {
+      todos: [{ content: '实现修复', status: 'in_progress', activeForm: '正在实现修复' }],
+    })
+    const updatePlan = toolBlock(
+      'update_plan',
+      {
+        title: '交付计划',
+        explanation: '按阶段推进',
+        plan: [{ step: '运行验证', status: 'pending' }],
+      },
+      { toolCallId: 'update-plan-1' },
+    )
+
+    expect(extractPlans([assistantMessage('streaming', [todo, updatePlan])])).toEqual([
+      {
+        id: 'update-plan-1',
+        kind: 'progress',
+        title: '交付计划',
+        explanation: '按阶段推进',
+        items: [{ text: '运行验证', status: 'pending' }],
+      },
+      {
+        id: 'todo_write-1',
+        kind: 'progress',
+        title: 'Todo 计划',
+        explanation: undefined,
+        items: [{ text: '正在实现修复', status: 'running' }],
+      },
+    ])
+  })
+})

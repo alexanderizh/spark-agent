@@ -1,0 +1,238 @@
+import { useState } from 'react'
+import { Button, Segmented, Tag, Tooltip } from '@lobehub/ui'
+import { Popover, Switch } from 'antd'
+import { Icons } from '../../Icons'
+import { CanvasGridArrangePanel } from './CanvasGridArrangePanel'
+import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
+
+export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
+
+function autoColumnCount(count: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(Math.max(1, count))))
+}
+
+/**
+ * 顶部基础工具栏（文档 §7.5）。
+ *
+ * 已收缩为「项目级操作栏」：保存状态/导出。
+ * 选择/平移工具切换、创作类动作已迁到底部悬浮栏（CanvasBottomDock）、
+ * 左侧工作台和节点右键菜单。activeTool 保留在 props 以备将来，
+ * 但工具切换按钮已不在顶部渲染。
+ */
+export function CanvasToolbar({
+  saveState,
+  onSave,
+  onRefresh,
+  refreshing = false,
+  onAutoSaveChange,
+  onExport,
+  onUploadFiles,
+  onOpenAgent,
+  nodeCount = 0,
+  selectedCount = 0,
+  arranging = false,
+  onArrange,
+}: {
+  activeTool?: CanvasTool
+  onToolChange?: (tool: CanvasTool) => void
+  onAddText?: () => void
+  onUploadImage?: () => void
+  onCreateGroup?: () => void
+  onAddToGroup?: () => void
+  onRemoveFromGroup?: () => void
+  onDissolveGroup?: () => void
+  onOpenAiComposer?: () => void
+  onDeleteSelected?: () => void
+  nodeCount?: number
+  selectedCount?: number
+  canCreateGroup?: boolean
+  canAddToGroup?: boolean
+  canRemoveFromGroup?: boolean
+  canDissolveGroup?: boolean
+  saveState: {
+    dirty: boolean
+    saving: boolean
+    autoSaving: boolean
+    autoSaveEnabled: boolean
+  }
+  onSave: () => void
+  onRefresh: () => void
+  refreshing?: boolean
+  onAutoSaveChange: (enabled: boolean) => void
+  onExport: () => void
+  onUploadFiles?: () => void
+  onOpenAgent?: () => void
+  arranging?: boolean
+  onArrange: (options: {
+    mode: CanvasAutoLayoutMode
+    spacing: CanvasAutoLayoutSpacing
+    columns?: number
+  }) => Promise<void>
+}) {
+  const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [layoutMode, setLayoutMode] = useState<CanvasAutoLayoutMode>('grid')
+  const [layoutSpacing, setLayoutSpacing] = useState<CanvasAutoLayoutSpacing>('medium')
+  const partialLayout = selectedCount > 1
+  const arrangeNodeCount = Math.max(1, partialLayout ? selectedCount : nodeCount)
+  const [gridColumns, setGridColumns] = useState<number | null>(null)
+  const effectiveGridColumns = Math.min(
+    arrangeNodeCount,
+    Math.max(1, gridColumns ?? autoColumnCount(arrangeNodeCount)),
+  )
+  const arrangeScopeLabel = partialLayout
+    ? `仅整理所选 ${selectedCount} 个节点`
+    : '整理全画布（单选仍按全画布处理）'
+
+  const handleArrange = (columns?: number) => {
+    void onArrange({
+      mode: layoutMode,
+      spacing: layoutSpacing,
+      ...(typeof columns === 'number' ? { columns } : {}),
+    }).then(() => setArrangeOpen(false))
+  }
+
+  return (
+    <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
+      <div className="canvas-toolbar-group canvas-toolbar-save">
+        <Tag
+          color={saveState.saving ? 'blue' : saveState.dirty ? 'orange' : 'green'}
+          className="canvas-toolbar-savetag"
+        >
+          {saveState.autoSaving
+            ? '自动保存中'
+            : saveState.saving
+              ? '保存中'
+              : saveState.dirty
+                ? '未保存'
+                : '已保存'}
+        </Tag>
+        <div className="canvas-toolbar-autosave">
+          <span className="canvas-toolbar-autosave-label">自动保存</span>
+          <Tooltip title="开启后，画布变更会在用户停手后自动落库，并限制为最多每 30 秒一次。">
+            <Switch size="middle" checked={saveState.autoSaveEnabled} onChange={onAutoSaveChange} />
+          </Tooltip>
+        </div>
+        <Tooltip title="从已保存数据重新加载画布">
+          <Button
+            size="small"
+            type="text"
+            className="canvas-toolbar-refresh-button"
+            icon={<Icons.Refresh size={15} />}
+            aria-label="刷新画布"
+            loading={refreshing}
+            disabled={saveState.saving || saveState.autoSaving}
+            onClick={onRefresh}
+          />
+        </Tooltip>
+        <Button
+          size="small"
+          className="canvas-toolbar-save-button"
+          icon={<Icons.Check size={15} />}
+          disabled={saveState.saving || !saveState.dirty}
+          onClick={onSave}
+        >
+          保存
+        </Button>
+        <Button
+          size="small"
+          className="canvas-toolbar-export-button"
+          icon={<Icons.Download size={15} />}
+          onClick={onExport}
+        >
+          导出
+        </Button>
+        <Tooltip title="从本地选择文件（图片 / 视频 / 音频 / 文本 / 代码 / CSV 等）导入画布，可多选">
+          <Button
+            size="small"
+            className="canvas-toolbar-upload-button"
+            icon={<Icons.Upload size={15} />}
+            disabled={!onUploadFiles}
+            onClick={onUploadFiles}
+          >
+            上传文件
+          </Button>
+        </Tooltip>
+        <Popover
+          trigger="click"
+          placement="bottomRight"
+          open={arrangeOpen}
+          onOpenChange={(open) => !arranging && setArrangeOpen(open)}
+          content={
+            <div className="canvas-auto-layout-popover">
+              <div className="canvas-auto-layout-title">自动整理画布</div>
+              <div className="canvas-auto-layout-scope">{arrangeScopeLabel}</div>
+              <label>
+                <span>排列方式</span>
+                <Segmented
+                  value={layoutMode}
+                  onChange={(value) => setLayoutMode(value as CanvasAutoLayoutMode)}
+                  options={[
+                    { label: '横向', value: 'horizontal' },
+                    { label: '纵向', value: 'vertical' },
+                    { label: '宫格', value: 'grid' },
+                  ]}
+                />
+              </label>
+              <label>
+                <span>节点间距</span>
+                <Segmented
+                  value={layoutSpacing}
+                  onChange={(value) => setLayoutSpacing(value as CanvasAutoLayoutSpacing)}
+                  options={[
+                    { label: '小', value: 'small' },
+                    { label: '中', value: 'medium' },
+                    { label: '大', value: 'large' },
+                    { label: '超大', value: 'extra-large' },
+                  ]}
+                />
+              </label>
+              {layoutMode === 'grid' ? (
+                <CanvasGridArrangePanel
+                  nodeCount={arrangeNodeCount}
+                  columns={effectiveGridColumns}
+                  title="网格规格"
+                  applyLabel="开始整理"
+                  fullWidth
+                  onColumnsChange={setGridColumns}
+                  onApply={() => handleArrange(effectiveGridColumns)}
+                  applying={arranging}
+                />
+              ) : (
+                <Button
+                  type="primary"
+                  size="small"
+                  block
+                  loading={arranging}
+                  icon={<Icons.Grid size={15} />}
+                  onClick={() => handleArrange()}
+                >
+                  开始整理
+                </Button>
+              )}
+            </div>
+          }
+        >
+          <Button
+            size="small"
+            className="canvas-toolbar-arrange-button"
+            loading={arranging}
+            icon={<Icons.Grid size={15} />}
+            aria-label="自动整理画布"
+          >
+            自动整理
+          </Button>
+        </Popover>
+        <Button
+          size="small"
+          type="primary"
+          className="canvas-toolbar-agent-button"
+          icon={<Icons.Agent size={15} />}
+          disabled={!onOpenAgent}
+          onClick={onOpenAgent}
+        >
+          Agent模式
+        </Button>
+      </div>
+    </div>
+  )
+}

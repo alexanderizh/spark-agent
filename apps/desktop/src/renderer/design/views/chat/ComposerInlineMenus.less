@@ -1,0 +1,22 @@
+/* 会话参数区菜单内联在触发器中；画布菜单由 antd portal 承载，不匹配此父子关系。 */
+.composer-select > .composer-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  max-height: min(320px, calc(100vh - 72px));
+}
+
+.composer-select > .composer-menu.right {
+  right: 0;
+  left: auto;
+}
+
+.composer-agent-menu .composer-menu-avatar,
+.composer-agent-menu .spark-avatar-fallback.composer-menu-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}

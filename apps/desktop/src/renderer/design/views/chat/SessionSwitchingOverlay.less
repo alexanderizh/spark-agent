@@ -1,0 +1,28 @@
+/* 由 portal 挂到最近的 .chat-main / .side-chat-panel，覆盖头部、消息流和输入区。 */
+.chat-switching-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  /* 不用 backdrop-filter: blur —— 它会让合成器每帧重采样整块背景，
+     主线程正忙于加载历史时尤其拖累，spinner 也跟着卡。用纯半透明底即可。 */
+  animation: chat-switching-fade-in 0.12s ease;
+  pointer-events: none;
+
+  svg {
+    color: var(--text-muted);
+    animation: spin 0.9s linear infinite;
+  }
+}
+
+@keyframes chat-switching-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

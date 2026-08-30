@@ -1,0 +1,148 @@
+/* 空会话「使用足迹」热力图（UsageHeatmap 精简变体）。
+   共享格子样式来自 usageHeatmap.base.less，这里只做 hero 场景的尺寸与面板化包装。
+   强度色默认跟随全局 --primary；空会话主题（celestial/studio/midnight/geometry）
+   已在 .chat-main-empty[data-empty-theme] 上覆盖 --primary 等变量，明暗模式同理自动适配。 */
+@import '../usageHeatmap.base.less';
+
+/* 空会话内容区：hero 卡片 + 使用足迹热力图 垂直堆叠。
+   经典主题：hero 是 720px 居中构图，stack 同宽居中，热力图随之居中。
+   主题模式：hero 是 880px 左对齐构图（见 ChatEmptyThemes.less），stack 跟随同宽，
+   热力图贴左，与标题/卡片/输入框共用同一条左边缘。
+   gap 仅在热力图互斥形态（hero banner + 热力图两个子元素）生效，收紧让两者靠近。 */
+.chat-empty-hero-stack {
+  display: flex;
+  width: min(720px, 100%);
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 主题模式 hero 列宽 min(880px, 100%)（≤1100px 时 780px，更窄时被 min() 钳为 100%），
+   stack 与其同宽即可保证左边缘与底部 880px 输入框对齐；stretch 让子元素统一贴左。 */
+.chat-main-empty[data-empty-theme] .chat-empty-hero-stack {
+  width: min(880px, 100%);
+  align-items: stretch;
+}
+
+.chat-main-empty[data-empty-theme] .hero-usage-heatmap {
+  align-self: flex-start;
+}
+
+.hero-usage-heatmap {
+  --uh-cell: 17px;
+  --uh-gap: 5px;
+  --uh-months-h: 16px;
+  --uh-empty-bg: color-mix(in srgb, var(--bg-soft) 72%, transparent);
+
+  position: relative;
+  z-index: 1;
+  display: flex;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: min(320px, 100%);
+  max-width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+  border-radius: var(--r-lg);
+  /* 面板底色掺入少量 ink（--eh-ink 浅色为深墨 #171923、暗色为近白 #f4f3f8）：
+   浅色模式下比近白星图背景深一档、暗色模式下比深底亮一档，两个方向都与背景拉开。
+   先混出实色再统一降到半透明，保留轻微通透的卡片质感。 */
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--panel) 98%, var(--eh-ink, var(--text-strong))) 68%,
+    transparent
+  );
+  backdrop-filter: blur(6px);
+}
+
+.hero-usage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hero-usage-caption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hero-usage-title {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.hero-usage-summary {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-usage-link {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--primary) 78%, var(--text-muted));
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.5;
+  transition: color 120ms ease;
+}
+
+.hero-usage-link:hover,
+.hero-usage-link:focus-visible {
+  color: var(--primary);
+  outline: none;
+}
+
+.hero-usage-layout {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.hero-usage-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-usage-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+/* 图例格子跟随放大，避免与 17px 主格子比例失衡（base 固定 11px） */
+.hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
+  width: 13px;
+  height: 13px;
+}
+
+@media (max-width: 720px) {
+  /* 放大后网格最小宽度 ~380px，窄容器回落原尺寸避免横向溢出 */
+  .hero-usage-heatmap {
+    --uh-cell: 14px;
+    --uh-gap: 4px;
+    padding: 8px 10px;
+  }
+  .hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
+    width: 11px;
+    height: 11px;
+  }
+  .hero-usage-summary {
+    white-space: normal;
+  }
+}

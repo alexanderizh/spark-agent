@@ -1,0 +1,6 @@
+{
+  "id": "builtin:claude-api",
+  "category": "utility",
+  "requiredTools": [],
+  "parameters": []
+}
