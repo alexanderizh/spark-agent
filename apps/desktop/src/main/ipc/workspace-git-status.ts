@@ -692,9 +692,10 @@ export async function getWorkspaceGitLog(
         authorName: authorName ?? '',
         date: date ?? '',
         subject: tailParts[0] ?? '',
-        authorEmail: authorEmail || undefined,
-        refs: refs || undefined,
-        body: body || undefined,
+        // exactOptionalPropertyTypes：可选字段有值才带属性，空值保持文档约定的缺省
+        ...(authorEmail ? { authorEmail } : {}),
+        ...(refs ? { refs } : {}),
+        ...(body ? { body } : {}),
         // upstream == null 时 rev-list 也为空，unpushed 自然全为 false
         unpushed: upstream != null && unpushedHashes.has(hash),
       }
