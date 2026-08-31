@@ -62,6 +62,39 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
     detail: await service.getDetail(request.packageId, request.version),
   }))
 
+  typedIpcHandle('tool-packages:install-directory', async (request) => {
+    const installed = await service.installLocalDirectory({ sourcePath: request.sourcePath })
+    return { package: toPackageSummary(service, installed.package), version: installed.version }
+  })
+
+  typedIpcHandle('tool-packages:install-archive', async (request) => {
+    const installed = await service.installArchive({ archivePath: request.archivePath })
+    return { package: toPackageSummary(service, installed.package), version: installed.version }
+  })
+
+  typedIpcHandle('tool-packages:install-git', async (request) => {
+    const installed = await service.installGitRepository({
+      url: request.url,
+      ...(request.ref != null ? { ref: request.ref } : {}),
+      ...(request.subdirectory != null ? { subdirectory: request.subdirectory } : {}),
+    })
+    return { package: toPackageSummary(service, installed.package), version: installed.version }
+  })
+
+  typedIpcHandle('tool-packages:install-mcp-import', async (request) => {
+    const installed = await service.installMcpImport({
+      serverId: request.serverId,
+      ...(request.name != null ? { name: request.name } : {}),
+      ...(request.tools != null ? { tools: request.tools } : {}),
+    })
+    return {
+      package: toPackageSummary(service, installed.package),
+      version: installed.version,
+      importedTools: installed.importedTools,
+      skippedTools: installed.skippedTools,
+    }
+  })
+
   typedIpcHandle('tool-packages:run-project-step', async (request) => ({
     result: await service.runManagedProjectStep({
       packageId: request.packageId,

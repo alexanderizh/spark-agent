@@ -1090,7 +1090,15 @@ export class SessionService {
     this.commandController = new SessionCommandController(this.db, this)
     this.usageLedger = new SessionUsageLedger(this.db)
     this.platformBridge = new PlatformBridgeService()
-    this.toolPackageService = new ToolPackageService(db)
+    // mcpBridge 让 mcp-import 适配器经由宿主 McpService 代理调用工具。
+    this.toolPackageService = new ToolPackageService(
+      db,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.mcpService,
+    )
     this.toolPackageRuntimeUnsubscribe = this.toolPackageService.onChange((event) => {
       if (!event.runtimeChanged) return
       this.mcpVersion += 1

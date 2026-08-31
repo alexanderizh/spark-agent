@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { ToolPackageManifestSchema, ToolPackagesIpcSchemaRegistry } from './tool-package.js'
 
 function validManifest(): Record<string, unknown> {
@@ -181,3 +182,105 @@ describe('ToolPackageDevelopmentSchema', () => {
     ).toBe(false)
   })
 })
+
+describe('ToolPackageRemoteHttpRuntimeSchema', () => {
+  function remoteManifest(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      id: 'acme.remote-suite',
+      version: '1.0.0',
+      name: 'Remote Suite',
+      description: 'A remote tool service speaking spark-tool-process-v1 over HTTP',
+      runtime: {
+        adapter: 'remote-http',
+        protocol: 'spark-tool-process-v1',
+        baseUrl: 'https://tools.acme.example/v1',
+        headers: { Authorization: 'Bearer ${ACME_API_TOKEN}' },
+        timeoutMs: 30_000,
+      },
+      tools: [
+        {
+          name: 'lookup_price',
+          title: 'Lookup price',
+          description: 'Look up a price',
+          inputSchema: { type: 'object', properties: {} },
+          risk: 'read',
+          effect: 'read',
+          idempotency: 'safe',
+        },
+      ],
+      environment: [
+        {
+          name: 'ACME_API_TOKEN',
+          title: 'API token',
+          type: 'string',
+          required: true,
+          secret: true,
+          agentConfigurable: false,
+        },
+      ],
+      permissions: { declaredOsEffects: ['network'], requiredSparkCapabilities: [] },
+    }
+  }
+
+  it('accepts header templates, a timeout and stays optional-free for legacy manifests', () => {
+    const parsed = ToolPackageManifestSchema.parse(remoteManifest())
+    expect(parsed.runtime).toMatchObject({
+      adapter: 'remote-http',
+      baseUrl: 'https://tools.acme.example/v1',
+      headers: { Authorization: 'Bearer ${ACME_API_TOKEN}' },
+      timeoutMs: 30_000,
+    })
+
+    const legacy = remoteManifest()
+    delete (legacy.runtime as Record<string, unknown>).headers
+    delete (legacy.runtime as Record<string, unknown>).timeoutMs
+    expect(ToolPackageManifestSchema.safeParse(legacy).success).toBe(true)
+  })
+
+  it('rejects managed header names, malformed templates and out-of-range timeouts', () => {
+    const forbidden = remoteManifest()
+    ;(forbidden.runtime as Record<string, unknown>).headers = { Host: 'tools.acme.example' }
+    const forbiddenResult = ToolPackageManifestSchema.safeParse(forbidden)
+    expect(forbiddenResult.success).toBe(false)
+    // zod v4 会把 record key 校验问题包一层 "Invalid key in record"，需递归到内层 message。
+    expect(
+      collectIssueMessages(forbiddenResult.error).some((message) =>
+        message.includes('cannot be declared'),
+      ),
+    ).toBe(true)
+
+    const malformed = remoteManifest()
+    ;(malformed.runtime as Record<string, unknown>).headers = {
+      Authorization: 'Bearer ${ACME_API_TOKEN',
+    }
+    expect(ToolPackageManifestSchema.safeParse(malformed).success).toBe(false)
+
+    const brokenTemplate = remoteManifest()
+    ;(brokenTemplate.runtime as Record<string, unknown>).headers = {
+      Authorization: 'Bearer }${ACME_API_TOKEN}',
+    }
+    expect(ToolPackageManifestSchema.safeParse(brokenTemplate).success).toBe(false)
+
+    const tooFast = remoteManifest()
+    ;(tooFast.runtime as Record<string, unknown>).timeoutMs = 100
+    expect(ToolPackageManifestSchema.safeParse(tooFast).success).toBe(false)
+
+    const tooSlow = remoteManifest()
+    ;(tooSlow.runtime as Record<string, unknown>).timeoutMs = 300_001
+    expect(ToolPackageManifestSchema.safeParse(tooSlow).success).toBe(false)
+  })
+})
+
+/** zod v4 的 record/嵌套问题会分层，递归收集全部 message 便于断言。 */
+function collectIssueMessages(error: z.ZodError | undefined): string[] {
+  if (error == null) return []
+  const messages: string[] = []
+  const walk = (issue: z.core.$ZodIssue | { issues?: unknown[]; message?: string }): void => {
+    if (typeof issue.message === 'string') messages.push(issue.message)
+    const nested = (issue as { issues?: Array<{ message?: string }> }).issues
+    if (Array.isArray(nested)) nested.forEach((child) => walk(child))
+  }
+  error.issues.forEach((issue) => walk(issue as z.core.$ZodIssue))
+  return messages
+}

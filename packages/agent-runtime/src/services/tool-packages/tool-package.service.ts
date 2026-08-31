@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import {
   ToolPackageIdSchema,
+  ToolNameSchema,
   ToolPackageManifestSchema,
   validateToolEnvironmentValue,
   type ToolEnvironmentVariable,
@@ -33,7 +34,19 @@ import {
   inspectToolPackageDirectory,
   installToolPackageDirectoryAtomic,
 } from './tool-package-inspector.js'
+import {
+  cloneGitRepository,
+  extractToolPackageArchive,
+  resolveGitImportSource,
+  validateGitRef,
+  validateGitSubdirectory,
+} from './tool-package-import.js'
 import { runManagedProjectDevelopmentStep } from './tool-package-project-runner.js'
+import {
+  invokeMcpImportTool,
+  invokeRemoteHttpTool,
+  type McpToolInvoker,
+} from './tool-package-remote-executors.js'
 import { ToolHostCapabilityBroker } from './tool-host-capability-broker.js'
 import { ToolProcessHost, type ToolProcessInvocationContext } from './tool-process-host.js'
 
@@ -66,6 +79,31 @@ export interface ToolPackageSecretStore {
   delete(ref: KeystoreRef): Promise<boolean>
 }
 
+/**
+ * mcp-import 工具包需要的 MCP 服务面。McpService 结构上满足此接口，
+ * 聚焦测试注入 fake；缺省（未注入）时 mcp-import 包不可安装与调用。
+ */
+export interface ToolPackageMcpBridge extends McpToolInvoker {
+  serverExists(serverId: string): boolean
+  listServerTools(
+    serverId: string,
+    options?: { startIfNeeded?: boolean },
+  ): Promise<Array<{ name: string; description: string; inputSchema?: unknown }>>
+}
+
+/** 当前服务层能实际执行的运行时适配器；legacy-custom-tool 仍被拒绝。 */
+const EXECUTABLE_RUNTIME_ADAPTERS: ReadonlySet<string> = new Set([
+  'process',
+  'remote-http',
+  'mcp-import',
+])
+
+function assertExecutableAdapter(manifest: ToolPackageManifest): void {
+  if (!EXECUTABLE_RUNTIME_ADAPTERS.has(manifest.runtime.adapter)) {
+    throw new Error(`Tool package runtime adapter is not executable: ${manifest.runtime.adapter}`)
+  }
+}
+
 const defaultSecretStore: ToolPackageSecretStore = {
   get: getSecret,
   set: setSecret,
@@ -90,6 +128,7 @@ export class ToolPackageService {
     capabilities = new ToolHostCapabilityBroker(),
     processHost?: ToolProcessHost,
     private readonly secretStore: ToolPackageSecretStore = defaultSecretStore,
+    private readonly mcpBridge?: ToolPackageMcpBridge,
   ) {
     this.packageRootOverride = packageRoot
     this.databasePath = typeof db.path === 'string' && db.path.length > 0 ? db.path : undefined
@@ -117,6 +156,11 @@ export class ToolPackageService {
     return join(dirname(this.packageRoot), 'tool-projects')
   }
 
+  /** 压缩包 / Git 克隆的临时物化目录；安装为不可变版本后即清理。 */
+  private get importRoot(): string {
+    return join(dirname(this.packageRoot), 'tool-imports')
+  }
+
   onChange(listener: (event: ToolPackageChangeEvent) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -133,6 +177,7 @@ export class ToolPackageService {
   async getDetail(packageId: string, version?: string): Promise<ToolPackageDetail> {
     const resolvedVersion = this.resolveInstalledVersion(packageId, version)
     const manifest = this.getManifest(packageId, resolvedVersion)
+    const versionRow = this.repository.getVersion(packageId, resolvedVersion)
     return {
       package: this.toSummary(this.requirePackage(packageId)),
       version: resolvedVersion,
@@ -146,6 +191,9 @@ export class ToolPackageService {
           required: permission.required === 1,
           state: permission.state,
         })),
+      sourceUrl: versionRow?.source_url ?? null,
+      sourceRef: versionRow?.source_ref ?? null,
+      sourceSubdirectory: versionRow?.source_subdirectory ?? null,
     }
   }
 
@@ -277,8 +325,14 @@ export class ToolPackageService {
 
   async installDirectory(params: {
     sourcePath: string
-    source: Extract<ToolPackageSource, 'managed-project' | 'local-directory'>
+    source: Extract<
+      ToolPackageSource,
+      'managed-project' | 'local-directory' | 'local-archive' | 'registry'
+    >
     trust?: ToolPackageTrust
+    sourceUrl?: string
+    sourceRef?: string
+    sourceSubdirectory?: string
   }): Promise<ToolPackageRow> {
     const installed = await installToolPackageDirectoryAtomic(params.sourcePath, this.packageRoot)
     this.repository.installVersion({
@@ -287,6 +341,11 @@ export class ToolPackageService {
       trust: params.trust ?? 'trusted-local',
       installPath: installed.installPath,
       sourcePath: installed.inspection.sourcePath,
+      ...(params.sourceUrl != null ? { sourceUrl: params.sourceUrl } : {}),
+      ...(params.sourceRef != null ? { sourceRef: params.sourceRef } : {}),
+      ...(params.sourceSubdirectory != null
+        ? { sourceSubdirectory: params.sourceSubdirectory }
+        : {}),
       integritySha256: installed.inspection.integritySha256,
     })
     this.emit({
@@ -295,6 +354,287 @@ export class ToolPackageService {
       runtimeChanged: false,
     })
     return this.requirePackage(installed.inspection.manifest.id)
+  }
+
+  /**
+   * 从本地完整工程目录安装：inspector 只读校验 + 原子不可变安装。
+   * 与 installArchive/installGitRepository 保持同一返回形状，供 UI 与 Agent 面复用。
+   */
+  async installLocalDirectory(params: {
+    sourcePath: string
+    trust?: ToolPackageTrust
+  }): Promise<{ package: ToolPackageRow; version: string }> {
+    const row = await this.installDirectory({
+      sourcePath: params.sourcePath,
+      source: 'local-directory',
+      ...(params.trust != null ? { trust: params.trust } : {}),
+    })
+    return { package: row, version: this.resolveInstalledVersion(row.id) }
+  }
+
+  /**
+   * 从 zip 压缩包导入：解压到临时物化目录 → 走与本地目录完全一致的
+   * inspector 安全校验 + 原子安装 → 清理临时目录。
+   */
+  async installArchive(params: {
+    archivePath: string
+    trust?: ToolPackageTrust
+  }): Promise<{ package: ToolPackageRow; version: string }> {
+    await mkdir(this.importRoot, { recursive: true })
+    const materialized = await extractToolPackageArchive({
+      archivePath: params.archivePath,
+      extractRoot: this.importRoot,
+    })
+    try {
+      const row = await this.installDirectory({
+        sourcePath: materialized.root,
+        source: 'local-archive',
+        ...(params.trust != null ? { trust: params.trust } : {}),
+      })
+      return { package: row, version: this.resolveInstalledVersion(row.id) }
+    } finally {
+      await materialized.cleanup()
+    }
+  }
+
+  /**
+   * 从 Git 仓库导入：owner/repo 简写 / 完整 URL / 本地仓库路径 →
+   * 浅克隆到临时目录（支持 monorepo 子目录）→ inspector 校验 + 原子安装 → 清理克隆目录。
+   */
+  async installGitRepository(params: {
+    url: string
+    ref?: string
+    subdirectory?: string
+    trust?: ToolPackageTrust
+    timeoutMs?: number
+  }): Promise<{ package: ToolPackageRow; version: string }> {
+    const source = resolveGitImportSource(params.url)
+    const subdirectory =
+      params.subdirectory == null ? null : validateGitSubdirectory(params.subdirectory)
+    const ref = params.ref == null ? null : validateGitRef(params.ref)
+    await mkdir(this.importRoot, { recursive: true })
+    const cloneDir = join(this.importRoot, `git-${randomUUID()}`)
+    await cloneGitRepository({
+      source,
+      ...(ref != null ? { ref } : {}),
+      targetDir: cloneDir,
+      ...(params.timeoutMs != null ? { timeoutMs: params.timeoutMs } : {}),
+    })
+    const packageRoot = subdirectory == null ? cloneDir : join(cloneDir, subdirectory)
+    try {
+      const row = await this.installDirectory({
+        sourcePath: packageRoot,
+        source: 'registry',
+        ...(params.trust != null ? { trust: params.trust } : {}),
+        sourceUrl: source.url,
+        ...(ref != null ? { sourceRef: ref } : {}),
+        ...(subdirectory != null ? { sourceSubdirectory: subdirectory } : {}),
+      })
+      return { package: row, version: this.resolveInstalledVersion(row.id) }
+    } finally {
+      await rm(cloneDir, { recursive: true, force: true })
+    }
+  }
+
+  /**
+   * 安装 remote-http 适配器工具包：远端本身就是工具包服务，本地没有代码快照，
+   * 只落一份 manifest 快照目录以维持 install_path 不变量（卸载/删版本的目录
+   * 守卫要求 installPath 位于 packageRoot 内）。完整性 = manifest JSON 的 SHA-256。
+   */
+  async installRemoteManifest(params: {
+    manifest: unknown
+    trust?: ToolPackageTrust
+  }): Promise<{ package: ToolPackageRow; version: string }> {
+    const manifest = ToolPackageManifestSchema.parse(params.manifest)
+    if (manifest.runtime.adapter !== 'remote-http') {
+      throw new Error(
+        `installRemoteManifest only accepts remote-http manifests, got ${manifest.runtime.adapter}`,
+      )
+    }
+    const { installPath, integritySha256 } = await this.writeManifestSnapshot(manifest)
+    this.repository.installVersion({
+      manifest,
+      source: 'remote',
+      trust: params.trust ?? 'trusted-local',
+      installPath,
+      sourceUrl: manifest.runtime.baseUrl,
+      integritySha256,
+    })
+    this.emit({ change: 'installed', packageId: manifest.id, runtimeChanged: false })
+    return {
+      package: this.requirePackage(manifest.id),
+      version: this.resolveInstalledVersion(manifest.id),
+    }
+  }
+
+  /**
+   * 从已配置的 MCP 服务器导入工具：一次性拉取 tools/list 生成 manifest.tools。
+   * MCP 工具名与 manifest 引擎名约束不一致时自动归一化并记录 toolNameOverrides；
+   * 无法归一化或冲突的工具跳过并在结果中说明，不静默丢弃。
+   * 未知语义的工具按保守默认（low-write/update/unsafe）声明，不进入自动允许面。
+   */
+  async installMcpImport(params: {
+    serverId: string
+    packageId?: string
+    version?: string
+    name?: string
+    tools?: string[]
+    trust?: ToolPackageTrust
+  }): Promise<{
+    package: ToolPackageRow
+    version: string
+    importedTools: string[]
+    skippedTools: Array<{ name: string; reason: string }>
+  }> {
+    if (this.mcpBridge == null) {
+      throw new Error('MCP-import tool packages require an MCP bridge in this host')
+    }
+    if (!this.mcpBridge.serverExists(params.serverId)) {
+      throw new Error(`MCP server not found: ${params.serverId}`)
+    }
+    const serverTools = await this.mcpBridge.listServerTools(params.serverId, {
+      startIfNeeded: true,
+    })
+
+    const requestedTools = params.tools
+    const requested = requestedTools == null ? null : new Set(requestedTools)
+    if (requestedTools != null) {
+      const available = new Set(serverTools.map((tool) => tool.name))
+      const missing = requestedTools.filter((name) => !available.has(name))
+      if (missing.length > 0) {
+        throw new Error(
+          `MCP server ${params.serverId} does not expose tools: ${missing.join(', ')}`,
+        )
+      }
+    }
+
+    const imported: Array<{
+      manifestName: string
+      mcpName: string
+      title: string
+      description: string
+      inputSchema: Record<string, unknown>
+    }> = []
+    const skipped: Array<{ name: string; reason: string }> = []
+    const seenManifestNames = new Set<string>()
+    const overrides: Record<string, string> = {}
+
+    for (const tool of serverTools) {
+      if (requested != null && !requested.has(tool.name)) continue
+      const manifestName = normalizeMcpToolName(tool.name)
+      if (manifestName == null) {
+        skipped.push({
+          name: tool.name,
+          reason: 'name cannot be normalized to an engine-safe tool name',
+        })
+        continue
+      }
+      if (seenManifestNames.has(manifestName)) {
+        skipped.push({
+          name: tool.name,
+          reason: `normalized name collides with another tool: ${manifestName}`,
+        })
+        continue
+      }
+      const schemaSize = Buffer.byteLength(JSON.stringify(tool.inputSchema ?? {}), 'utf8')
+      if (schemaSize > 100 * 1024) {
+        skipped.push({ name: tool.name, reason: 'inputSchema exceeds the 100 KB manifest limit' })
+        continue
+      }
+      seenManifestNames.add(manifestName)
+      if (manifestName !== tool.name) overrides[manifestName] = tool.name
+      const rawSchema: unknown = tool.inputSchema
+      const schemaIsObject =
+        rawSchema != null &&
+        typeof rawSchema === 'object' &&
+        (rawSchema as { type?: unknown }).type === 'object'
+      imported.push({
+        manifestName,
+        mcpName: tool.name,
+        title: tool.name.slice(0, 160),
+        description: (tool.description.trim() !== ''
+          ? tool.description
+          : `Imported MCP tool: ${tool.name}`
+        ).slice(0, 4000),
+        inputSchema: schemaIsObject
+          ? (rawSchema as Record<string, unknown>)
+          : { type: 'object', properties: {} },
+      })
+    }
+
+    if (imported.length === 0) {
+      throw new Error(`MCP server ${params.serverId} exposes no importable tools`)
+    }
+
+    const manifest = ToolPackageManifestSchema.parse({
+      schemaVersion: 1,
+      id: params.packageId ?? defaultMcpImportPackageId(params.serverId),
+      version: params.version ?? '1.0.0',
+      name: params.name ?? `MCP import: ${params.serverId}`,
+      description: `Tools imported from MCP server ${params.serverId}. Semantics are unknown to Spark; every tool is declared with conservative risk defaults and requires normal approval.`,
+      runtime: {
+        adapter: 'mcp-import',
+        serverId: params.serverId,
+        ...(Object.keys(overrides).length > 0 ? { toolNameOverrides: overrides } : {}),
+      },
+      tools: imported.map((tool) => ({
+        name: tool.manifestName,
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        risk: 'low-write',
+        effect: 'update',
+        idempotency: 'unsafe',
+      })),
+      environment: [],
+      permissions: {
+        declaredOsEffects: [],
+        requiredSparkCapabilities: [],
+        optionalSparkCapabilities: [],
+      },
+    })
+
+    const { installPath, integritySha256 } = await this.writeManifestSnapshot(manifest)
+    this.repository.installVersion({
+      manifest,
+      source: 'mcp-import',
+      trust: params.trust ?? 'trusted-local',
+      installPath,
+      integritySha256,
+    })
+    this.emit({ change: 'installed', packageId: manifest.id, runtimeChanged: false })
+    return {
+      package: this.requirePackage(manifest.id),
+      version: this.resolveInstalledVersion(manifest.id),
+      importedTools: imported.map((tool) => tool.manifestName),
+      skippedTools: skipped,
+    }
+  }
+
+  /**
+   * 写入 manifest-only 快照目录：`.staging-<uuid>/spark-tool.json` → rename 到
+   * `<packageRoot>/<id>/<version>`。版本目录已存在时保持不动——不可变版本语义
+   * 下，同版本同 manifest 的内容必然一致，仓库层会做同 manifest 幂等校验。
+   */
+  private async writeManifestSnapshot(manifest: ToolPackageManifest): Promise<{
+    installPath: string
+    integritySha256: string
+  }> {
+    const manifestJson = JSON.stringify(manifest, null, 2)
+    const integritySha256 = createHash('sha256').update(manifestJson, 'utf8').digest('hex')
+    const packageDir = join(this.packageRoot, manifest.id)
+    const versionDir = join(packageDir, manifest.version)
+    if (await fileExists(versionDir)) return { installPath: versionDir, integritySha256 }
+    const staging = join(packageDir, `.staging-${randomUUID()}`)
+    try {
+      await mkdir(staging, { recursive: true })
+      await writeFile(join(staging, 'spark-tool.json'), manifestJson, 'utf8')
+      await rename(staging, versionDir)
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true })
+      throw error instanceof Error ? error : new Error(String(error))
+    }
+    return { installPath: versionDir, integritySha256 }
   }
 
   async runManagedProjectStep(params: {
@@ -550,10 +890,14 @@ export class ToolPackageService {
       throw new Error(`Tool package is blocked and cannot be enabled: ${packageId}`)
     }
     const manifest = this.getManifest(packageId, version)
-    if (manifest.runtime.adapter !== 'process') {
-      throw new Error(
-        `Tool package runtime adapter is not executable yet: ${manifest.runtime.adapter}`,
-      )
+    assertExecutableAdapter(manifest)
+    if (manifest.runtime.adapter === 'mcp-import') {
+      if (this.mcpBridge == null) {
+        throw new Error('MCP-import tool packages require an MCP bridge in this host')
+      }
+      if (!this.mcpBridge.serverExists(manifest.runtime.serverId)) {
+        throw new Error(`Tool package imports a missing MCP server: ${manifest.runtime.serverId}`)
+      }
     }
     const availableCapabilities = new Set(this.capabilities.list())
     const unavailableCapabilities = manifest.permissions.requiredSparkCapabilities.filter(
@@ -724,11 +1068,7 @@ export class ToolPackageService {
       )
     }
     const manifest = ToolPackageManifestSchema.parse(JSON.parse(version.manifest_json) as unknown)
-    if (manifest.runtime.adapter !== 'process') {
-      throw new Error(
-        `Tool package runtime adapter is not executable yet: ${manifest.runtime.adapter}`,
-      )
-    }
+    assertExecutableAdapter(manifest)
     const environment = await this.resolveEnvironment(
       request.packageId,
       manifest,
@@ -743,6 +1083,27 @@ export class ToolPackageService {
         )
         .map((permission) => permission.permission),
     )
+
+    if (manifest.runtime.adapter === 'remote-http') {
+      return invokeRemoteHttpTool({
+        manifest,
+        toolName: request.toolName,
+        input: request.input,
+        environment,
+        ...(request.timeoutMs != null ? { timeoutMs: request.timeoutMs } : {}),
+      })
+    }
+    if (manifest.runtime.adapter === 'mcp-import') {
+      if (this.mcpBridge == null) {
+        throw new Error('MCP-import tool packages require an MCP bridge in this host')
+      }
+      return invokeMcpImportTool({
+        manifest,
+        toolName: request.toolName,
+        input: request.input,
+        invoker: this.mcpBridge,
+      })
+    }
     return this.processHost.invoke({
       manifest,
       installPath: version.install_path,
@@ -1000,4 +1361,35 @@ async function assertNoSymlinkParents(projectRoot: string, target: string): Prom
     if (info != null && !info.isDirectory())
       throw new Error(`Managed tool project path is not a directory: ${directory}`)
   }
+}
+
+async function fileExists(target: string): Promise<boolean> {
+  const info = await lstat(target).catch(() => null)
+  return info != null
+}
+
+/**
+ * MCP 工具名 → manifest 引擎名：小写化并把非法字符折叠为 `-`，
+ * 结果必须满足 ToolNameSchema（小写字母开头、2-96 位）。不满足返回 null（跳过并说明原因）。
+ */
+function normalizeMcpToolName(name: string): string | null {
+  const candidate = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+  return ToolNameSchema.safeParse(candidate).success ? candidate : null
+}
+
+/** mcp-import 包默认 id：serverId 归一化到包 id 约束（小写、folder-safe、≥3 位）。 */
+function defaultMcpImportPackageId(serverId: string): string {
+  const normalized = `mcp-${serverId}`
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .slice(0, 96)
+  return ToolPackageIdSchema.safeParse(normalized).success
+    ? normalized
+    : `mcp-import-${randomUUID().slice(0, 8)}`
 }

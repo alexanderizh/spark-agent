@@ -170,7 +170,7 @@ function formatBounded(buffer: BoundedBuffer): string {
   return `[前 ${buffer.data.length - OUTPUT_TAIL_BYTES} 字节已截断]\n${tail.toString('utf8')}`
 }
 
-function terminateProcessTree(child: { pid?: number | undefined }): void {
+export function terminateProcessTree(child: { pid?: number | undefined }): void {
   const pid = child.pid
   if (pid == null) return
   if (process.platform === 'win32') {
@@ -192,7 +192,7 @@ function terminateProcessTree(child: { pid?: number | undefined }): void {
   }
 }
 
-async function waitForExit(
+export async function waitForExit(
   child: { exitCode: number | null; signalCode: string | null },
   timeoutMs: number,
 ): Promise<boolean> {

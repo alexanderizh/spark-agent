@@ -12,7 +12,7 @@ export const ToolPackageIdSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]{2,95}$/, 'Tool package id must be lowercase and folder-safe')
 
-const ToolNameSchema = z
+export const ToolNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_-]{1,95}$/, 'Tool name must be lowercase and engine-safe')
 
@@ -52,15 +52,74 @@ export const ToolPackageProcessRuntimeSchema = z.object({
   workingDirectory: ToolPackageRelativePathSchema.optional(),
 })
 
+const HTTP_HEADER_NAME_PATTERN = /^[A-Za-z0-9!#$%&'*+.^_|~-]+$/
+/** fetch 会自行管理这些头，允许声明只会造成“看起来配置了”的假象。 */
+const HTTP_FORBIDDEN_HEADER_NAMES = new Set([
+  'host',
+  'content-length',
+  'connection',
+  'transfer-encoding',
+  'keep-alive',
+  'upgrade',
+])
+
+const ToolPackageHttpHeaderNameSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(HTTP_HEADER_NAME_PATTERN, 'HTTP header name must be an RFC 7230 token')
+  .refine((name) => !HTTP_FORBIDDEN_HEADER_NAMES.has(name.toLowerCase()), {
+    message: 'HTTP header is managed by the HTTP client and cannot be declared',
+  })
+
+/** 与 ToolEnvironmentVariableSchema 的变量名约束保持一致。 */
+const HTTP_HEADER_PLACEHOLDER_PATTERN = /\$\{[A-Z_][A-Z0-9_]{0,127}\}/g
+
+/**
+ * Header 值支持 `${ENV_NAME}` 模板：调用时用已解析的环境变量（含 Keychain 密钥）替换，
+ * 未解析的占位符视为配置缺失并拒绝调用，避免把字面 `${...}` 发给远端。
+ * 校验层要求每个 `${` 都闭合且内部是合法环境变量名，孤立 `}` 同样视为畸形模板。
+ */
+const ToolPackageHttpHeaderValueSchema = z
+  .string()
+  .min(1)
+  .max(2_000)
+  .refine(
+    (value) => {
+      const stripped = value.replace(HTTP_HEADER_PLACEHOLDER_PATTERN, '')
+      return !stripped.includes('${') && !stripped.includes('}')
+    },
+    {
+      message: 'HTTP header value template is malformed',
+    },
+  )
+
 export const ToolPackageRemoteHttpRuntimeSchema = z.object({
   adapter: z.literal('remote-http'),
   protocol: z.literal(TOOL_PROCESS_PROTOCOL_VERSION),
   baseUrl: z.string().url().max(2_000),
+  headers: z
+    .record(ToolPackageHttpHeaderNameSchema, ToolPackageHttpHeaderValueSchema)
+    .refine((headers) => Object.keys(headers).length <= 32, {
+      message: 'Tool package HTTP headers are limited to 32 entries',
+    })
+    .optional(),
+  timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
 })
 
 export const ToolPackageMcpImportRuntimeSchema = z.object({
   adapter: z.literal('mcp-import'),
   serverId: z.string().min(1).max(160),
+  /**
+   * manifest 工具名 → MCP 服务器真实工具名。MCP 工具名可以任意大小写/点号，
+   * manifest 名必须满足引擎目录约束；导入时自动归一化并在此记录映射。
+   */
+  toolNameOverrides: z
+    .record(ToolNameSchema, z.string().min(1).max(200))
+    .refine((overrides) => Object.keys(overrides).length <= 200, {
+      message: 'Tool name overrides are limited to 200 entries',
+    })
+    .optional(),
 })
 
 export const ToolPackageLegacyRuntimeSchema = z.object({
@@ -354,6 +413,12 @@ export interface ToolPackageDetail {
   manifest: ToolPackageManifest
   environment: ToolPackageEnvironmentStatus[]
   permissions: ToolPackagePermissionStatus[]
+  /** Git 导入来源地址；本地目录 / 压缩包 / 受管工程导入时为 null。 */
+  sourceUrl: string | null
+  /** Git 导入时使用的分支或标签；未指定时为 null。 */
+  sourceRef: string | null
+  /** 包位于仓库（或压缩包）内的子目录；位于根时为 null。 */
+  sourceSubdirectory: string | null
 }
 
 export interface ToolPackageEnvironmentStatus {
@@ -390,6 +455,27 @@ export interface ToolPackageUninstallResult {
 export interface ToolPackagesIpcChannelMap {
   'tool-packages:list': [Record<string, never>, { packages: ToolPackageSummary[] }]
   'tool-packages:get': [{ packageId: string; version?: string }, { detail: ToolPackageDetail }]
+  'tool-packages:install-directory': [
+    { sourcePath: string },
+    { package: ToolPackageSummary; version: string },
+  ]
+  'tool-packages:install-archive': [
+    { archivePath: string },
+    { package: ToolPackageSummary; version: string },
+  ]
+  'tool-packages:install-git': [
+    { url: string; ref?: string; subdirectory?: string },
+    { package: ToolPackageSummary; version: string },
+  ]
+  'tool-packages:install-mcp-import': [
+    { serverId: string; name?: string; tools?: string[] },
+    {
+      package: ToolPackageSummary
+      version: string
+      importedTools: string[]
+      skippedTools: Array<{ name: string; reason: string }>
+    },
+  ]
   'tool-packages:run-project-step': [
     { packageId: string; step: ToolPackageDevelopmentStep },
     { result: ToolPackageProjectStepResult },
@@ -453,6 +539,45 @@ export const ToolPackagesIpcSchemaRegistry = {
   'tool-packages:list': z.object({}).strict(),
   'tool-packages:get': z
     .object({ packageId: ToolPackageIdSchema, version: z.string().max(160).optional() })
+    .strict(),
+  'tool-packages:install-directory': z
+    .object({
+      sourcePath: z
+        .string()
+        .min(1)
+        .max(1_000)
+        .refine((value) => value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value), {
+          message: 'Source path must be absolute',
+        }),
+    })
+    .strict(),
+  'tool-packages:install-archive': z
+    .object({
+      archivePath: z
+        .string()
+        .min(1)
+        .max(1_000)
+        .refine((value) => value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value), {
+          message: 'Archive path must be absolute',
+        })
+        .refine((value) => /\.zip$/i.test(value), {
+          message: 'Only .zip tool package archives are supported',
+        }),
+    })
+    .strict(),
+  'tool-packages:install-git': z
+    .object({
+      url: z.string().min(1).max(2_000),
+      ref: z.string().min(1).max(200).optional(),
+      subdirectory: z.string().min(1).max(300).optional(),
+    })
+    .strict(),
+  'tool-packages:install-mcp-import': z
+    .object({
+      serverId: z.string().min(1).max(160),
+      name: z.string().min(1).max(200).optional(),
+      tools: z.array(z.string().min(1).max(200)).max(500).optional(),
+    })
     .strict(),
   'tool-packages:run-project-step': z
     .object({ packageId: ToolPackageIdSchema, step: ToolPackageDevelopmentStepSchema })

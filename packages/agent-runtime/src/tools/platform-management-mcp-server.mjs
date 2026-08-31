@@ -697,6 +697,75 @@ function toolDefinitions() {
       },
     },
     {
+      name: 'tool_packages_install_archive',
+      description:
+        '从本地 .zip 压缩包解压并安装为不可变版本（支持单层包裹目录，自动跳过 .git 等杂项）。保持禁用且不执行代码。必须先获得用户同意并设置 confirmInstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['archivePath', 'confirmInstall'],
+        properties: {
+          archivePath: { type: 'string', description: 'zip 压缩包的本地绝对路径' },
+          confirmInstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_install_git',
+      description:
+        '从 Git 仓库浅克隆并安装为不可变版本（支持 owner/repo 简写、分支/标签 ref 与子目录）。保持禁用且不执行代码。必须先获得用户同意并设置 confirmInstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['url', 'confirmInstall'],
+        properties: {
+          url: { type: 'string', description: 'Git 仓库 URL 或 owner/repo 简写' },
+          ref: { type: 'string', description: '分支或标签，默认使用默认分支' },
+          subdirectory: { type: 'string', description: '包在仓库内的子目录（可选）' },
+          confirmInstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_install_remote',
+      description:
+        '安装 remote-http 远端工具包 manifest（adapter=remote-http，baseUrl + 可选 header 模板）。只登记 manifest 为不可变版本、保持禁用且不发起任何请求。必须先获得用户同意并设置 confirmInstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['manifest', 'confirmInstall'],
+        properties: {
+          manifest: {
+            type: 'object',
+            description: 'remote-http 工具包的完整 spark-tool.json manifest 对象',
+          },
+          confirmInstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'tool_packages_install_mcp_import',
+      description:
+        '把已配置 MCP 服务器的工具导入为 Tool Package（adapter=mcp-import，调用时经宿主代理到原服务器）。工具名自动规范化并保持保守风险默认值（low-write/update/unsafe，不自动放行）。必须先获得用户同意并设置 confirmInstall=true。',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['serverId', 'confirmInstall'],
+        properties: {
+          serverId: { type: 'string', description: '宿主已配置的 MCP 服务器 ID' },
+          packageId: { type: 'string', description: '自定义包 ID（可选，缺省自动生成）' },
+          version: { type: 'string' },
+          name: { type: 'string', description: '包显示名（可选）' },
+          tools: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '只导入指定的 MCP 工具名列表（可选，缺省导入全部可导入工具）',
+          },
+          confirmInstall: { type: 'boolean' },
+        },
+      },
+    },
+    {
       name: 'tool_packages_environment_status',
       description:
         '查看 Tool Package 环境变量 Schema 与是否已配置；secret 只返回状态，绝不返回明文。',
@@ -2304,6 +2373,10 @@ async function handleToolCall(name, args) {
     tool_packages_write_project_file: 'tool_packages.write_project_file',
     tool_packages_run_project_step: 'tool_packages.run_project_step',
     tool_packages_install_directory: 'tool_packages.install_directory',
+    tool_packages_install_archive: 'tool_packages.install_archive',
+    tool_packages_install_git: 'tool_packages.install_git',
+    tool_packages_install_remote: 'tool_packages.install_remote',
+    tool_packages_install_mcp_import: 'tool_packages.install_mcp_import',
     tool_packages_environment_status: 'tool_packages.environment_status',
     tool_packages_configure_environment: 'tool_packages.configure_environment',
     tool_packages_request_secret: 'tool_packages.request_secret',

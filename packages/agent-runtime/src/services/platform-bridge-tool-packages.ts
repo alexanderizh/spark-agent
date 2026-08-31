@@ -12,6 +12,10 @@ export type ToolPackageBridgeMethod =
   | 'tool_packages.write_project_file'
   | 'tool_packages.run_project_step'
   | 'tool_packages.install_directory'
+  | 'tool_packages.install_archive'
+  | 'tool_packages.install_git'
+  | 'tool_packages.install_remote'
+  | 'tool_packages.install_mcp_import'
   | 'tool_packages.environment_status'
   | 'tool_packages.configure_environment'
   | 'tool_packages.request_secret'
@@ -57,6 +61,14 @@ export async function handleToolPackageBridgeMethod(
       return toolPackageRunProjectStep(service, params)
     case 'tool_packages.install_directory':
       return toolPackageInstallDirectory(service, params)
+    case 'tool_packages.install_archive':
+      return toolPackageInstallArchive(service, params)
+    case 'tool_packages.install_git':
+      return toolPackageInstallGitRepository(service, params)
+    case 'tool_packages.install_remote':
+      return toolPackageInstallRemoteManifest(service, params)
+    case 'tool_packages.install_mcp_import':
+      return toolPackageInstallMcpImport(service, params)
     case 'tool_packages.environment_status':
       return toolPackageEnvironmentStatus(service, params)
     case 'tool_packages.configure_environment':
@@ -85,7 +97,7 @@ function toolPackageGuide() {
       '先创建受管工程或只读检查外部目录；inspection 不执行包代码。',
       '读取已安装包详情，核对准确版本的 manifest、配置声明、脱敏状态和权限。',
       '先列出并读取现有受管工程文件，再补齐多文件工程、manifest、环境变量声明与 Spark Capabilities。',
-      '安装只复制不可变版本且保持禁用；安装、构建和首次启动是不同操作。',
+      '安装只复制不可变版本且保持禁用；安装、构建和首次启动是不同操作。导入来源支持本地目录、.zip 压缩包、Git 仓库（浅克隆）、remote-http 远端 manifest 与导入既有 MCP 服务器的工具。',
       '普通环境变量可由 Agent 配置；secret 只能发起安全输入，禁止把明文传给 Agent。',
       '用户确认 OS 行为与 Spark Capability 授权后才能启用。',
       '启用后下一次 Agent loop 动态获得包内工具并像内置工具一样自主调用。',
@@ -166,6 +178,93 @@ async function toolPackageInstallDirectory(
     source: params.source,
   })
   return { package: requirePackageSummary(service, installed.id) }
+}
+
+async function toolPackageInstallArchive(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmInstall !== true) {
+    throw new Error('Installing a Tool Package archive requires confirmInstall=true')
+  }
+  const installed = await service.installArchive({
+    archivePath: requireText(params, 'archivePath', 2_000),
+  })
+  return {
+    package: requirePackageSummary(service, installed.package.id),
+    version: installed.version,
+  }
+}
+
+async function toolPackageInstallGitRepository(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmInstall !== true) {
+    throw new Error('Installing a Tool Package from git requires confirmInstall=true')
+  }
+  const ref = optionalText(params, 'ref', 200)
+  const subdirectory = optionalText(params, 'subdirectory', 300)
+  const installed = await service.installGitRepository({
+    url: requireText(params, 'url', 2_000),
+    ...(ref != null ? { ref } : {}),
+    ...(subdirectory != null ? { subdirectory } : {}),
+  })
+  return {
+    package: requirePackageSummary(service, installed.package.id),
+    version: installed.version,
+  }
+}
+
+async function toolPackageInstallRemoteManifest(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmInstall !== true) {
+    throw new Error('Installing a remote Tool Package manifest requires confirmInstall=true')
+  }
+  if (typeof params.manifest !== 'object' || params.manifest == null) {
+    throw new Error('manifest must be the remote-http tool package manifest object')
+  }
+  const installed = await service.installRemoteManifest({ manifest: params.manifest })
+  return {
+    package: requirePackageSummary(service, installed.package.id),
+    version: installed.version,
+  }
+}
+
+async function toolPackageInstallMcpImport(
+  service: ToolPackageService,
+  params: Record<string, unknown>,
+) {
+  if (params.confirmInstall !== true) {
+    throw new Error('Importing an MCP server as a Tool Package requires confirmInstall=true')
+  }
+  if (Array.isArray(params.tools)) {
+    for (const name of params.tools) {
+      if (typeof name !== 'string' || name.length === 0 || name.length > 200) {
+        throw new Error('tools must be an array of MCP tool name strings')
+      }
+    }
+  } else if (params.tools !== undefined) {
+    throw new Error('tools must be an array of MCP tool name strings when provided')
+  }
+  const packageId = optionalText(params, 'packageId', 96)
+  const version = optionalText(params, 'version', 160)
+  const name = optionalText(params, 'name', 200)
+  const installed = await service.installMcpImport({
+    serverId: requireText(params, 'serverId', 160),
+    ...(packageId != null ? { packageId } : {}),
+    ...(version != null ? { version } : {}),
+    ...(name != null ? { name } : {}),
+    ...(Array.isArray(params.tools) ? { tools: params.tools as string[] } : {}),
+  })
+  return {
+    package: requirePackageSummary(service, installed.package.id),
+    version: installed.version,
+    importedTools: installed.importedTools,
+    ...(installed.skippedTools.length > 0 ? { skippedTools: installed.skippedTools } : {}),
+  }
 }
 
 async function toolPackageEnvironmentStatus(

@@ -1,8 +1,13 @@
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { zipSync } from 'fflate'
 import type { ToolPackageManifest } from '@spark/protocol'
 import { SparkDatabase, ToolPackageRepository } from '@spark/storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +17,81 @@ import { ToolPackageService, type ToolPackageSecretStore } from './tool-package.
 
 const migrationsDir = fileURLToPath(new URL('../../../../storage/migrations/', import.meta.url))
 const roots: string[] = []
+const servers: Server[] = []
+const services: ToolPackageService[] = []
+
+interface FakeMcpServerTool {
+  name: string
+  description: string
+  inputSchema?: unknown
+}
+
+/** 满足 ToolPackageMcpBridge 的最小 fake：记录调用并返回可编程结果。 */
+class FakeMcpBridge {
+  readonly existingServerIds = new Set(['srv-docs', 'srv-broken', 'srv-gone', 'srv-proxy'])
+  readonly calls: Array<{ serverId: string; toolName: string; args: Record<string, unknown> }> = []
+  nextResult: { content: Array<{ type: 'text'; text: string }>; isError?: boolean } = {
+    content: [],
+  }
+
+  constructor(readonly tools: FakeMcpServerTool[]) {}
+
+  serverExists(serverId: string): boolean {
+    return this.existingServerIds.has(serverId)
+  }
+
+  async listServerTools(serverId: string): Promise<FakeMcpServerTool[]> {
+    if (!this.serverExists(serverId)) throw new Error(`MCP server not found: ${serverId}`)
+    return this.tools
+  }
+
+  async callTool(
+    serverId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+    this.calls.push({ serverId, toolName, args })
+    return this.nextResult
+  }
+}
+
+/** 本地帧协议服务器：接收 invoke 帧并回传 handler 构造的响应帧。 */
+async function startFrameServer(
+  respond: (
+    frame: Record<string, unknown>,
+    authorization: string | undefined,
+  ) => Record<string, unknown>,
+): Promise<{ baseUrl: string; close(): Promise<void> }> {
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString('utf8')
+    })
+    req.on('end', () => {
+      let frame: Record<string, unknown>
+      try {
+        frame = JSON.parse(body) as Record<string, unknown>
+      } catch {
+        res.writeHead(400).end('bad json')
+        return
+      }
+      try {
+        const payload = respond(frame, req.headers.authorization)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(payload))
+      } catch (error) {
+        res.writeHead(500).end(error instanceof Error ? error.message : 'server error')
+      }
+    })
+  })
+  servers.push(server)
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
+  return {
+    baseUrl: `http://127.0.0.1:${String(port)}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  }
+}
 
 function manifest(
   version = '1.0.0',
@@ -100,6 +180,16 @@ describe('ToolPackageService', () => {
   afterEach(async () => {
     vi.restoreAllMocks()
     await service?.dispose()
+    await Promise.all(services.splice(0).map((extra) => extra.dispose().catch(() => undefined)))
+    await Promise.all(
+      servers.splice(0).map(
+        (entry) =>
+          new Promise<void>((resolve) => {
+            if (entry.listening) entry.close(() => resolve())
+            else resolve()
+          }),
+      ),
+    )
     db?.close()
     await Promise.all(roots.splice(0).map((entry) => rm(entry, { recursive: true, force: true })))
   })
@@ -503,20 +593,21 @@ describe('ToolPackageService', () => {
       }),
     ).rejects.toThrow(/blocked and cannot execute/)
 
-    const remoteSource = await createSource(
+    // remote-http / mcp-import 已在 V3 B-4 转为可执行适配器；
+    // 仍拒绝启用的是 legacy-custom-tool 占位类型。
+    const legacySource = await createSource(
       root,
       manifest('2.0.0', {
-        id: 'acme.remote-suite',
+        id: 'acme.legacy-suite',
         runtime: {
-          adapter: 'remote-http',
-          protocol: 'spark-tool-process-v1',
-          baseUrl: 'https://example.invalid/tools',
+          adapter: 'legacy-custom-tool',
+          toolId: 'legacy-http-tool',
         },
       }),
     )
-    await service!.installDirectory({ sourcePath: remoteSource, source: 'local-directory' })
-    await expect(service!.setEnabled('acme.remote-suite', '2.0.0')).rejects.toThrow(
-      /runtime adapter is not executable yet: remote-http/,
+    await service!.installDirectory({ sourcePath: legacySource, source: 'local-directory' })
+    await expect(service!.setEnabled('acme.legacy-suite', '2.0.0')).rejects.toThrow(
+      /runtime adapter is not executable: legacy-custom-tool/,
     )
   })
 
@@ -847,5 +938,350 @@ describe('ToolPackageService', () => {
     })) as { pid: number }
 
     expect(second.pid).not.toBe(first.pid)
+  })
+
+  it('installs a zip archive as an immutable local-archive version and cleans up staging', async () => {
+    const archiveDir = await mkdtemp(join(root, 'archive-'))
+    const archivePath = join(archiveDir, 'suite.zip')
+    const archive = zipSync({
+      'spark-tool.json': [
+        new TextEncoder().encode(JSON.stringify(manifest('1.0.0'))),
+        {
+          level: 0,
+        },
+      ],
+      'runner.mjs': [new TextEncoder().encode('process.stdin.resume()\n'), { level: 0 }],
+    })
+    await writeFile(archivePath, archive)
+
+    const installed = await service!.installArchive({ archivePath })
+
+    expect(installed.package.id).toBe('acme.productivity-suite')
+    expect(installed.package.source).toBe('local-archive')
+    expect(installed.version).toBe('1.0.0')
+    expect(
+      existsSync(join(root, 'installed', 'acme.productivity-suite', '1.0.0', 'runner.mjs')),
+    ).toBe(true)
+
+    const detail = await service!.getDetail('acme.productivity-suite', '1.0.0')
+    expect(detail.sourceUrl).toBeNull()
+    expect(detail.sourceRef).toBeNull()
+    expect(detail.sourceSubdirectory).toBeNull()
+
+    const importStaging = join(root, 'tool-imports')
+    const leftovers = existsSync(importStaging) ? await readdir(importStaging) : []
+    expect(leftovers.filter((entry) => entry.startsWith('archive-'))).toEqual([])
+  })
+
+  it('installs a git repository with provenance and subdirectory support', async () => {
+    const originDir = await mkdtemp(join(root, 'git-origin-'))
+    const suiteDir = join(originDir, 'packages', 'suite')
+    await mkdir(suiteDir, { recursive: true })
+    await writeFile(join(suiteDir, 'spark-tool.json'), JSON.stringify(manifest('1.0.0')), 'utf8')
+    await writeFile(join(suiteDir, 'runner.mjs'), 'process.stdin.resume()\n', 'utf8')
+    const execFileAsync = promisify(execFile)
+    const git = async (...args: string[]): Promise<void> => {
+      await execFileAsync('git', args, { cwd: originDir })
+    }
+    await git('init', '--initial-branch=main')
+    await git('add', '.')
+    await execFileAsync(
+      'git',
+      ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'init'],
+      { cwd: originDir },
+    )
+
+    const installed = await service!.installGitRepository({
+      url: originDir,
+      subdirectory: 'packages/suite',
+    })
+
+    expect(installed.package.source).toBe('registry')
+    expect(installed.version).toBe('1.0.0')
+    expect(
+      existsSync(join(root, 'installed', 'acme.productivity-suite', '1.0.0', 'runner.mjs')),
+    ).toBe(true)
+
+    const detail = await service!.getDetail('acme.productivity-suite', '1.0.0')
+    expect(detail.sourceUrl).toBe(originDir)
+    expect(detail.sourceRef).toBeNull()
+    expect(detail.sourceSubdirectory).toBe('packages/suite')
+
+    const importStaging = join(root, 'tool-imports')
+    const leftovers = existsSync(importStaging) ? await readdir(importStaging) : []
+    expect(leftovers.filter((entry) => entry.startsWith('git-'))).toEqual([])
+  })
+
+  it('rejects a git archive provenance mismatch when reinstalling the same version', async () => {
+    const originDir = await mkdtemp(join(root, 'git-origin-'))
+    const suiteDir = join(originDir, 'packages', 'suite')
+    await mkdir(suiteDir, { recursive: true })
+    await writeFile(join(suiteDir, 'spark-tool.json'), JSON.stringify(manifest('1.0.0')), 'utf8')
+    await writeFile(join(suiteDir, 'runner.mjs'), 'process.stdin.resume()\n', 'utf8')
+    const execFileAsync = promisify(execFile)
+    await execFileAsync('git', ['init', '--initial-branch=main'], { cwd: originDir })
+    await execFileAsync('git', ['add', '.'], { cwd: originDir })
+    await execFileAsync(
+      'git',
+      ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'init'],
+      { cwd: originDir },
+    )
+
+    await service!.installGitRepository({ url: originDir, subdirectory: 'packages/suite' })
+    // 同一版本重新导入必须幂等命中同一记录，而不是报不可变冲突。
+    const again = await service!.installGitRepository({
+      url: originDir,
+      subdirectory: 'packages/suite',
+    })
+    expect(again.version).toBe('1.0.0')
+  })
+
+  it('installs a remote-http manifest as a manifest-only immutable version', async () => {
+    const remote = manifest('2.0.0', {
+      runtime: {
+        adapter: 'remote-http',
+        protocol: 'spark-tool-process-v1',
+        baseUrl: 'https://tools.acme.example/v1/invoke',
+      },
+    })
+    const installed = await service!.installRemoteManifest({ manifest: remote })
+
+    expect(installed.package.source).toBe('remote')
+    expect(installed.version).toBe('2.0.0')
+    const versionDir = join(root, 'installed', 'acme.productivity-suite', '2.0.0')
+    expect(existsSync(join(versionDir, 'spark-tool.json'))).toBe(true)
+    const snapshotFiles = await readdir(versionDir)
+    expect(snapshotFiles).toEqual(['spark-tool.json'])
+
+    const detail = await service!.getDetail('acme.productivity-suite', '2.0.0')
+    expect(detail.sourceUrl).toBe('https://tools.acme.example/v1/invoke')
+
+    // 非 remote-http manifest 不能走远端安装入口。
+    await expect(service!.installRemoteManifest({ manifest: manifest('3.0.0') })).rejects.toThrow(
+      /only accepts remote-http manifests/,
+    )
+  })
+
+  it('dispatches enabled remote-http tools through the frame protocol', async () => {
+    let lastAuth: string | undefined
+    let lastBody: Record<string, unknown> = {}
+    const server = await startFrameServer((frame, authorization) => {
+      lastAuth = authorization
+      lastBody = frame
+      return {
+        type: 'result',
+        protocolVersion: 'spark-tool-process-v1',
+        requestId: frame.requestId,
+        sequence: 0,
+        invocationId: frame.invocationId,
+        result: { ok: true, sku: (frame.input as { sku?: string }).sku },
+      }
+    })
+
+    const remote = manifest('2.0.0', {
+      runtime: {
+        adapter: 'remote-http',
+        protocol: 'spark-tool-process-v1',
+        baseUrl: server.baseUrl,
+        headers: { Authorization: 'Bearer ${ACME_API_TOKEN}' },
+        timeoutMs: 5_000,
+      },
+      environment: [
+        {
+          name: 'ACME_API_TOKEN',
+          title: 'Acme API token',
+          type: 'string',
+          required: true,
+          secret: true,
+          agentConfigurable: false,
+        },
+      ],
+    })
+    await service!.installRemoteManifest({ manifest: remote })
+    await service!.writeSecretFromSecureInput({
+      packageId: 'acme.productivity-suite',
+      name: 'ACME_API_TOKEN',
+      value: 'frame-token',
+    })
+    await service!.setEnabled('acme.productivity-suite', '2.0.0')
+
+    const catalog = new ToolPackageRuntimeCatalog(service!)
+    const entry = catalog.list()[0]
+    const result = await entry!.invoke({ sku: 'A-7' })
+
+    expect(result).toMatchObject({ ok: true, sku: 'A-7' })
+    expect(lastBody).toMatchObject({ type: 'invoke', toolName: 'generate_report' })
+    expect(lastAuth).toBe('Bearer frame-token')
+    await server.close()
+  })
+
+  it('imports MCP server tools with conservative defaults and name normalization', async () => {
+    const bridge = new FakeMcpBridge([
+      {
+        name: 'searchDocs',
+        description: 'Search docs',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'docs.search',
+        description: 'Dot tool',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'fetch-page',
+        description: 'Fetch a page',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ])
+    const withBridge = new ToolPackageService(
+      db!,
+      join(root, 'installed-mcp'),
+      capabilities,
+      undefined,
+      undefined,
+      bridge,
+    )
+    services.push(withBridge)
+
+    const result = await withBridge.installMcpImport({ serverId: 'srv-docs' })
+
+    expect(result.importedTools.sort()).toEqual(['docs-search', 'fetch-page', 'searchdocs'])
+    expect(result.skippedTools).toEqual([])
+
+    const manifestJson = await readFile(
+      join(root, 'installed-mcp', result.package.id, '1.0.0', 'spark-tool.json'),
+      'utf8',
+    )
+    const installed = JSON.parse(manifestJson) as ToolPackageManifest
+    expect(installed.runtime).toMatchObject({ adapter: 'mcp-import', serverId: 'srv-docs' })
+    if (installed.runtime.adapter !== 'mcp-import') throw new Error('expected mcp-import runtime')
+    expect(installed.runtime.toolNameOverrides).toEqual({
+      'docs-search': 'docs.search',
+      searchdocs: 'searchDocs',
+    })
+    for (const tool of installed.tools) {
+      expect(tool.risk).toBe('low-write')
+      expect(tool.effect).toBe('update')
+      expect(tool.idempotency).toBe('unsafe')
+    }
+
+    // 指定不存在的工具名必须整体失败并列出缺失项。
+    await expect(
+      withBridge.installMcpImport({
+        serverId: 'srv-docs',
+        version: '1.1.0',
+        tools: ['searchDocs', 'nope'],
+      }),
+    ).rejects.toThrow(/does not expose tools: nope/)
+  })
+
+  it('skips unimportable MCP tools with explicit reasons and rejects empty imports', async () => {
+    const bridge = new FakeMcpBridge([
+      // 归一化后只剩空串 → 不可导入。
+      { name: '...', description: 'Dots only', inputSchema: { type: 'object', properties: {} } },
+      // 超大 schema → 不可导入。
+      {
+        name: 'huge-tool',
+        description: 'Huge',
+        inputSchema: {
+          type: 'object',
+          properties: { blob: { type: 'string', description: 'x'.repeat(110_000) } },
+        },
+      },
+    ])
+    const withBridge = new ToolPackageService(
+      db!,
+      join(root, 'installed-mcp2'),
+      capabilities,
+      undefined,
+      undefined,
+      bridge,
+    )
+    services.push(withBridge)
+
+    await expect(withBridge.installMcpImport({ serverId: 'srv-broken' })).rejects.toThrow(
+      /exposes no importable tools/,
+    )
+
+    const partial = new FakeMcpBridge([
+      { name: 'good.tool', description: 'Good', inputSchema: { type: 'object', properties: {} } },
+      ...bridge.tools,
+    ])
+    const partialService = new ToolPackageService(
+      db!,
+      join(root, 'installed-mcp3'),
+      capabilities,
+      undefined,
+      undefined,
+      partial,
+    )
+    services.push(partialService)
+    const result = await partialService.installMcpImport({ serverId: 'srv-broken' })
+    expect(result.importedTools).toEqual(['good-tool'])
+    expect(result.skippedTools.map((skip) => skip.name)).toEqual(['...', 'huge-tool'])
+  })
+
+  it('gates mcp-import enablement on the bridge and the configured server', async () => {
+    // 无 bridge 的服务实例：导入必须明确失败。
+    await expect(service!.installMcpImport({ serverId: 'srv-1' })).rejects.toThrow(/MCP bridge/)
+
+    const goneServer = new FakeMcpBridge([
+      { name: 'a-tool', description: 'A', inputSchema: { type: 'object', properties: {} } },
+    ])
+    const bridgeService = new ToolPackageService(
+      db!,
+      join(root, 'installed-gate'),
+      capabilities,
+      undefined,
+      undefined,
+      goneServer,
+    )
+    services.push(bridgeService)
+    const installed = await bridgeService.installMcpImport({ serverId: 'srv-gone' })
+    goneServer.existingServerIds.clear()
+    await expect(bridgeService.setEnabled(installed.package.id, '1.0.0')).rejects.toThrow(
+      /missing MCP server/,
+    )
+  })
+
+  it('proxies mcp-import invocations through the bridge with overridden tool names', async () => {
+    const bridge = new FakeMcpBridge([
+      {
+        name: 'searchDocs',
+        description: 'Search docs',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ])
+    bridge.nextResult = { content: [{ type: 'text', text: '3 hits' }] }
+    const bridgeService = new ToolPackageService(
+      db!,
+      join(root, 'installed-proxy'),
+      capabilities,
+      undefined,
+      undefined,
+      bridge,
+    )
+    services.push(bridgeService)
+    const installed = await bridgeService.installMcpImport({ serverId: 'srv-proxy' })
+    await bridgeService.setEnabled(installed.package.id, '1.0.0')
+
+    const result = await bridgeService.invokeInstalledVersion({
+      packageId: installed.package.id,
+      version: '1.0.0',
+      toolName: 'searchdocs',
+      input: {},
+    })
+    expect(result).toEqual({ content: [{ type: 'text', text: '3 hits' }] })
+    expect(bridge.calls).toEqual([{ serverId: 'srv-proxy', toolName: 'searchDocs', args: {} }])
+
+    bridge.nextResult = { content: [{ type: 'text', text: 'index down' }], isError: true }
+    await expect(
+      bridgeService.invokeInstalledVersion({
+        packageId: installed.package.id,
+        version: '1.0.0',
+        toolName: 'searchdocs',
+        input: {},
+      }),
+    ).rejects.toThrow(/searchDocs failed: index down/)
   })
 })

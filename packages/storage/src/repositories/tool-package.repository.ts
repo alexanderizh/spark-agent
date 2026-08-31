@@ -38,6 +38,9 @@ export interface ToolPackageVersionRow {
   manifest_json: string
   install_path: string
   source_path: string | null
+  source_url: string | null
+  source_ref: string | null
+  source_subdirectory: string | null
   integrity_sha256: string
   status: ToolPackageVersionStatus
   installed_at: string
@@ -95,6 +98,12 @@ export interface InstallToolPackageVersionParams {
   trust: ToolPackageTrust
   installPath: string
   sourcePath?: string
+  /** Git 导入来源（registry 枚举下的克隆地址 / 本地仓库路径）。 */
+  sourceUrl?: string
+  /** Git 导入使用的分支或标签。 */
+  sourceRef?: string
+  /** 包位于来源仓库内的子目录。 */
+  sourceSubdirectory?: string
   integritySha256: string
 }
 
@@ -185,8 +194,9 @@ export class ToolPackageRepository extends BaseRepository {
           `
           INSERT INTO tool_package_versions (
             package_id, version, manifest_json, install_path, source_path,
+            source_url, source_ref, source_subdirectory,
             integrity_sha256, status, installed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 'installed', ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'installed', ?)
         `,
         )
         .run(
@@ -195,6 +205,9 @@ export class ToolPackageRepository extends BaseRepository {
           JSON.stringify(params.manifest),
           params.installPath,
           params.sourcePath ?? null,
+          params.sourceUrl ?? null,
+          params.sourceRef ?? null,
+          params.sourceSubdirectory ?? null,
           params.integritySha256,
           now,
         )

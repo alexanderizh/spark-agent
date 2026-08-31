@@ -24,6 +24,9 @@ function detail(): ToolPackageDetail {
       updatedAt: '2026-08-31T00:00:00.000Z',
     },
     version: '1.0.0',
+    sourceUrl: null,
+    sourceRef: null,
+    sourceSubdirectory: null,
     manifest: {
       schemaVersion: 1,
       id: 'acme.productivity-suite',
@@ -252,6 +255,208 @@ describe('Tool Package platform bridge', () => {
         confirmEnable: true,
       }),
     ).resolves.toEqual({ package: detail().package })
+  })
+
+  it('gates archive and git imports behind confirmInstall and validates params', async () => {
+    const rawRow = {
+      id: 'acme.productivity-suite',
+      display_name: 'raw database name',
+      description: 'raw database description',
+      source: 'local-archive',
+      trust: 'trusted-local',
+      state: 'installed-disabled',
+      enabled_version: null,
+      created_at: '2026-08-31T00:00:00.000Z',
+      updated_at: '2026-08-31T00:00:00.000Z',
+    }
+    const installArchive = vi.fn(async () => ({ package: rawRow, version: '1.0.0' }))
+    const installGitRepository = vi.fn(async () => ({ package: rawRow, version: '1.0.0' }))
+    const target = service({
+      installArchive,
+      installGitRepository,
+    } as Partial<ToolPackageService>)
+
+    // 确认门：缺少或伪造 confirmInstall 都必须拒绝且不触发安装。
+    await expect(
+      call(target, 'tool_packages.install_archive', { archivePath: '/tmp/suite.zip' }),
+    ).rejects.toThrow(/confirmInstall/)
+    await expect(
+      call(target, 'tool_packages.install_git', { url: 'https://github.com/acme/suite.git' }),
+    ).rejects.toThrow(/confirmInstall/)
+    expect(installArchive).not.toHaveBeenCalled()
+    expect(installGitRepository).not.toHaveBeenCalled()
+
+    // 参数校验：缺少 archivePath / url 直接拒绝。
+    await expect(
+      call(target, 'tool_packages.install_archive', { confirmInstall: true }),
+    ).rejects.toThrow(/archivePath is required/)
+    await expect(
+      call(target, 'tool_packages.install_git', { confirmInstall: true }),
+    ).rejects.toThrow(/url is required/)
+
+    // 成功路径：返回稳定摘要 + 版本号。
+    await expect(
+      call(target, 'tool_packages.install_archive', {
+        archivePath: '/tmp/suite.zip',
+        confirmInstall: true,
+      }),
+    ).resolves.toEqual({ package: detail().package, version: '1.0.0' })
+    expect(installArchive).toHaveBeenCalledWith({ archivePath: '/tmp/suite.zip' })
+
+    await expect(
+      call(target, 'tool_packages.install_git', {
+        url: 'https://github.com/acme/suite.git',
+        ref: 'v1.0.0',
+        subdirectory: 'packages/suite',
+        confirmInstall: true,
+      }),
+    ).resolves.toEqual({ package: detail().package, version: '1.0.0' })
+    expect(installGitRepository).toHaveBeenCalledWith({
+      url: 'https://github.com/acme/suite.git',
+      ref: 'v1.0.0',
+      subdirectory: 'packages/suite',
+    })
+
+    // 不传可选参数时不得透传 undefined 键。
+    await call(target, 'tool_packages.install_git', {
+      url: 'https://github.com/acme/suite.git',
+      confirmInstall: true,
+    })
+    expect(installGitRepository).toHaveBeenLastCalledWith({
+      url: 'https://github.com/acme/suite.git',
+    })
+  })
+
+  it('gates remote manifest install behind confirmInstall and validates the manifest object', async () => {
+    const rawRow = {
+      id: 'acme.remote-suite',
+      display_name: 'raw database name',
+      description: 'raw database description',
+      source: 'registry',
+      trust: 'trusted-local',
+      state: 'installed-disabled',
+      enabled_version: null,
+      created_at: '2026-08-31T00:00:00.000Z',
+      updated_at: '2026-08-31T00:00:00.000Z',
+    }
+    const installRemoteManifest = vi.fn(async () => ({ package: rawRow, version: '1.0.0' }))
+    const summaries = [{ ...detail().package, id: 'acme.remote-suite' }]
+    const target = service({
+      installRemoteManifest,
+      listSummaries: vi.fn(() => summaries),
+    } as Partial<ToolPackageService>)
+
+    const manifest = {
+      schemaVersion: 1,
+      id: 'acme.remote-suite',
+      version: '1.0.0',
+      name: 'Remote Suite',
+      runtime: {
+        adapter: 'remote-http',
+        protocol: 'spark-tool-process-v1',
+        endpoint: 'https://tools.acme.dev/invoke',
+      },
+      tools: [
+        {
+          name: 'fetch_report',
+          title: 'Fetch report',
+          description: 'Fetch a remote report',
+          inputSchema: { type: 'object', properties: {} },
+          risk: 'read',
+          effect: 'read',
+          idempotency: 'safe',
+        },
+      ],
+    }
+
+    // 确认门与 manifest 形态校验。
+    await expect(call(target, 'tool_packages.install_remote', { manifest })).rejects.toThrow(
+      /confirmInstall/,
+    )
+    await expect(
+      call(target, 'tool_packages.install_remote', { confirmInstall: true }),
+    ).rejects.toThrow(/manifest must be/)
+    await expect(
+      call(target, 'tool_packages.install_remote', {
+        manifest: 'https://acme.dev',
+        confirmInstall: true,
+      }),
+    ).rejects.toThrow(/manifest must be/)
+    expect(installRemoteManifest).not.toHaveBeenCalled()
+
+    // 成功路径：透传 manifest 对象并返回稳定摘要 + 版本。
+    await expect(
+      call(target, 'tool_packages.install_remote', { manifest, confirmInstall: true }),
+    ).resolves.toEqual({ package: summaries[0], version: '1.0.0' })
+    expect(installRemoteManifest).toHaveBeenCalledWith({ manifest })
+  })
+
+  it('gates mcp import behind confirmInstall, validates tools and reports skipped tools', async () => {
+    const rawRow = {
+      id: 'mcp.acme-server',
+      display_name: 'raw database name',
+      description: 'raw database description',
+      source: 'mcp-import',
+      trust: 'trusted-local',
+      state: 'installed-disabled',
+      enabled_version: null,
+      created_at: '2026-08-31T00:00:00.000Z',
+      updated_at: '2026-08-31T00:00:00.000Z',
+    }
+    const installMcpImport = vi.fn(async () => ({
+      package: rawRow,
+      version: '1.0.0',
+      importedTools: ['search_docs'],
+      skippedTools: [{ name: 'bad__name', reason: 'tool name cannot be normalized' }],
+    }))
+    const summaries = [{ ...detail().package, id: 'mcp.acme-server' }]
+    const target = service({
+      installMcpImport,
+      listSummaries: vi.fn(() => summaries),
+    } as Partial<ToolPackageService>)
+
+    // 确认门与 serverId 校验。
+    await expect(
+      call(target, 'tool_packages.install_mcp_import', { serverId: 'server-1' }),
+    ).rejects.toThrow(/confirmInstall/)
+    await expect(
+      call(target, 'tool_packages.install_mcp_import', {
+        serverId: 'server-1',
+        confirmInstall: true,
+      }),
+    ).resolves.toBeDefined()
+    expect(installMcpImport).toHaveBeenCalledWith({ serverId: 'server-1' })
+
+    // tools 必须是字符串数组。
+    await expect(
+      call(target, 'tool_packages.install_mcp_import', {
+        serverId: 'server-1',
+        tools: ['ok_tool', 42],
+        confirmInstall: true,
+      }),
+    ).rejects.toThrow(/tools must be an array/)
+
+    // 成功路径：返回导入/跳过清单，skippedTools 非空时保留。
+    await expect(
+      call(target, 'tool_packages.install_mcp_import', {
+        serverId: 'server-1',
+        packageId: 'mcp.acme-server',
+        name: 'Acme MCP tools',
+        tools: ['search_docs'],
+        confirmInstall: true,
+      }),
+    ).resolves.toEqual({
+      package: summaries[0],
+      version: '1.0.0',
+      importedTools: ['search_docs'],
+      skippedTools: [{ name: 'bad__name', reason: 'tool name cannot be normalized' }],
+    })
+    expect(installMcpImport).toHaveBeenLastCalledWith({
+      serverId: 'server-1',
+      packageId: 'mcp.acme-server',
+      name: 'Acme MCP tools',
+      tools: ['search_docs'],
+    })
   })
 
   it('gates project development steps behind confirmExecute and validates step', async () => {

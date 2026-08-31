@@ -30,6 +30,7 @@ import {
 } from './custom-tools-ui'
 import { CustomToolStudio } from './CustomToolStudio'
 import { ToolPackagesPanel } from './ToolPackagesPanel'
+import { ToolPackageImportModal } from './ToolPackageImportModal'
 import { CustomToolCurlImportModal } from './CustomToolCurlImportModal'
 import {
   consumePendingCustomToolTrace,
@@ -48,6 +49,7 @@ export function CustomToolsSection() {
   const [createOpen, setCreateOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [curlImportOpen, setCurlImportOpen] = useState(false)
+  const [packageImportOpen, setPackageImportOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -557,6 +559,11 @@ export function CustomToolsSection() {
               导入
             </Button>
           )}
+          {activeView === 'packages' && (
+            <Button icon={<Icons.Upload size={14} />} onClick={() => setPackageImportOpen(true)}>
+              导入工具包
+            </Button>
+          )}
           {activeView !== 'packages' && (
             <Button icon={<Icons.Download size={14} />} onClick={() => void exportToolFile()}>
               导出
@@ -620,7 +627,7 @@ export function CustomToolsSection() {
 
       <div className="ct_list">
         {activeView === 'packages' ? (
-          <ToolPackagesPanel />
+          <ToolPackagesPanel onImport={() => setPackageImportOpen(true)} />
         ) : activeView === 'runs' ? (
           traces.length === 0 ? (
             <Empty description="还没有本地运行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -786,6 +793,14 @@ export function CustomToolsSection() {
           open
           onCancel={() => setCurlImportOpen(false)}
           onImport={openImportedEditor}
+        />
+      )}
+
+      {packageImportOpen && (
+        <ToolPackageImportModal
+          open
+          onCancel={() => setPackageImportOpen(false)}
+          onImported={() => setActiveView('packages')}
         />
       )}
 

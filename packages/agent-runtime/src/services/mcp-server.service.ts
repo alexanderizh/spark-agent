@@ -12,7 +12,7 @@ import type { McpServerRepository, McpServerRow } from '@spark/storage'
 import type { McpServerItem } from '@spark/protocol'
 import { EventEmitter } from 'node:events'
 import { McpClient, resolveMcpConfig, validateMcpConfigJson } from '../mcp/index.js'
-import type { McpToolDefinition, McpTransportConfig } from '../mcp/index.js'
+import type { McpToolDefinition, McpToolResult, McpTransportConfig } from '../mcp/index.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
@@ -341,6 +341,68 @@ export class McpService {
       return []
     }
     return client.listTools().map((t) => ({ name: t.name, description: t.description }))
+  }
+
+  /**
+   * 指定 serverId 是否存在（无论启用/连接与否）。
+   * 供 mcp-import 工具包启用门禁做尽早失败。
+   */
+  serverExists(serverId: string): boolean {
+    return this.repo.get(serverId) != null
+  }
+
+  /**
+   * 列出指定服务器的完整工具定义（含 inputSchema），供 mcp-import 包生成 manifest.tools。
+   * 默认只读已连接客户端；`startIfNeeded` 允许对已启用但未连接的服务器做一次性启动。
+   */
+  async listServerTools(
+    serverId: string,
+    options: { startIfNeeded?: boolean } = {},
+  ): Promise<McpToolDefinition[]> {
+    let client = this.clients.get(serverId)
+    if (client == null) {
+      const row = this.repo.get(serverId)
+      if (row == null) {
+        throw new Error(`MCP server not found: ${serverId}`)
+      }
+      if (!options.startIfNeeded || row.enabled === 0) {
+        throw new Error(`MCP server is not connected: ${row.name} (${serverId})`)
+      }
+      await this.startServer(serverId)
+      client = this.clients.get(serverId)
+      if (client == null) {
+        throw new Error(`MCP server failed to start: ${serverId}`)
+      }
+    }
+    return client.listTools()
+  }
+
+  /**
+   * 调用指定服务器上的 MCP 工具，供 mcp-import 工具包适配器复用。
+   * 已连接直接调用；已启用未连接做一次性启动；禁用的服务器明确拒绝，
+   * 不静默绕过用户停用的状态。
+   */
+  async callTool(
+    serverId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<McpToolResult> {
+    let client = this.clients.get(serverId)
+    if (client == null) {
+      const row = this.repo.get(serverId)
+      if (row == null) {
+        throw new Error(`MCP server not found: ${serverId}`)
+      }
+      if (row.enabled === 0) {
+        throw new Error(`MCP server is disabled: ${row.name} (${serverId})`)
+      }
+      await this.startServer(serverId)
+      client = this.clients.get(serverId)
+      if (client == null) {
+        throw new Error(`MCP server failed to start: ${serverId}`)
+      }
+    }
+    return client.callTool(toolName, args)
   }
 
   // ─── Private Helpers ─────────────────────────────────────────────────────

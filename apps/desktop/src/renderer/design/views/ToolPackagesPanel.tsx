@@ -11,7 +11,12 @@ import type {
 import { useApp } from '../AppContext'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 
-export function ToolPackagesPanel() {
+interface ToolPackagesPanelProps {
+  /** 打开统一导入入口（本地目录 / 压缩包 / Git 仓库）。 */
+  onImport?: () => void
+}
+
+export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
   const { requestConfirm } = useApp()
   const [packages, setPackages] = useState<ToolPackageSummary[]>([])
   const [detail, setDetail] = useState<ToolPackageDetail | null>(null)
@@ -302,9 +307,15 @@ export function ToolPackagesPanel() {
   if (packages.length === 0) {
     return (
       <Empty
-        description="还没有安装 Tool Package；可让 Agent 创建或检查本地完整工程后安装"
+        description="还没有安装 Tool Package；可从本地目录、压缩包或 Git 仓库导入，也可让 Agent 创建"
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-      />
+      >
+        {onImport != null && (
+          <Button type="primary" onClick={onImport}>
+            导入工具包
+          </Button>
+        )}
+      </Empty>
     )
   }
 
@@ -394,6 +405,20 @@ export function ToolPackagesPanel() {
                 删除此版本
               </Button>
             </div>
+            {detail.sourceUrl != null && (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  color: 'var(--text-faint)',
+                  wordBreak: 'break-all',
+                }}
+              >
+                来源：{detail.sourceUrl}
+                {detail.sourceRef != null ? ` @ ${detail.sourceRef}` : ''}
+                {detail.sourceSubdirectory != null ? ` /${detail.sourceSubdirectory}` : ''}
+              </p>
+            )}
           </section>
 
           {detail.package.source === 'managed-project' && (

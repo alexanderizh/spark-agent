@@ -382,6 +382,8 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 - Tool Studio 已增加“工具包”视图，支持版本切换、普通配置、Keychain 安全配置、权限核对和启停；全局安全输入 Host 不把 secret 写入消息记录；
 - 已实现受管工程开发工作流：manifest 可声明 `development.installCommand/buildCommand`，安装命令支持按 lockfile（pnpm/yarn/bun/npm）推断，build 未声明即拒绝；步骤以 trusted-local 在工程目录执行，超时终止进程树、输出限幅保留尾部；UI 提供「安装依赖/构建」按钮与结果展示，Agent 侧通过 `tool_packages_run_project_step` 触发且强制 `confirmExecute`（manifest 命令对 Agent 可写，等价于启用前代码执行，必须显式确认）；工程文件清单跳过 `node_modules`/`.git`/`.DS_Store`；
 - 已实现卸载与版本治理：卸载要求包处于停用态，先停进程、再删除安装目录与数据库级联记录，并尽力清理 Keychain 密钥引用；受管工程源码默认保留，仅在二次确认后删除；删除单个不可变版本设有「启用版本拒删、最后一个版本拒删、安装路径必须位于包根内」三重防护；UI 提供卸载/删版本危险按钮与双重确认，Agent 侧通过 `tool_packages_uninstall` / `tool_packages_delete_version` 触发且强制 `confirmUninstall`；
+- 已实现压缩包与 Git 仓库导入：`.zip` 经 `fflate` 解压到一次性 `tool-imports/` 物化目录（防 zip-slip、跳过 `.git`/`__MACOSX`/`.DS_Store`、单层包裹目录自动识别、256 MB 包体/5 万条目/2 GB 解压上限），Git 仓库以参数数组浅克隆（无 shell、`--` 分隔、ref 字符集白名单、`GIT_TERMINAL_PROMPT=0`、代理环境透传、超时杀进程树），`owner/repo` 简写自动规范化为 GitHub HTTPS；安装记录 `source_url/source_ref/source_subdirectory` 溯源（092 迁移）并在详情中展示；Tool Studio 提供统一「导入工具包」弹窗（本地目录/压缩包/Git 三种方式 + trusted-local 安装确认），Agent 侧通过 `tool_packages_install_archive` / `tool_packages_install_git` 触发且强制 `confirmInstall`；本地目录安装补齐 `installLocalDirectory` 统一返回形状供 UI 复用；
+- 已实现非 process 适配器实际执行：`remote-http` 把 schema 合法的 `spark-tool-process-v1` invoke 协议帧 POST 给远端工具包服务，校验响应必须是 requestId/invocationId 回显一致的 result/error 子帧，响应体 4 MB 上限（超限截断即拒绝，不把残缺 JSON 交给模型），header 支持 `${ENV}` 模板渲染（值来自已解析环境含 Keychain 密钥，引用未配置变量直接拒绝，密钥不落错误文本，错误 URL 只保留协议/主机/路径骨架），超时经 AbortController 中止并保留原始异常 cause；`mcp-import` 经宿主 MCP 桥代理调用（manifest 工具名经 `toolNameOverrides` 映射到服务器真实工具名），输入先按 manifest schema 预校验再代理，结果保留 MCP content 结构，isError 抛为失败；导入工具默认按保守权限处理（risk `low-write`/effect `update`/idempotency `unsafe`）；新增 `installRemoteManifest`（注册远端 manifest，无本地代码）与 `installMcpImport`（读取 MCP 服务器工具清单并登记为不可变版本，跳过无法规范化的工具名并报告原因）两个安装入口，UI「导入工具包」弹窗增加第四种方式「MCP 服务器」（下拉来自 `mcp:list`，懒加载），Agent 侧通过 `tool_packages_install_remote` / `tool_packages_install_mcp_import` 触发且强制 `confirmInstall`；`legacy-custom-tool` 有意保持不可执行；
 - 隔离 Electron 生产构建实例已验证“扩展中心 → 自定义工具 → 工具包”可进入、空状态可见，页面错误和控制台错误均为 0。
 
 ### 14.2 代码审查已修复的确定缺陷
@@ -411,8 +413,8 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 
 ### 14.3 首版尚未完成或有意限制
 
-- `remote-http`、`mcp-import`、`legacy-custom-tool` 当前只有 manifest/协议描述，实际执行仅支持 `process` adapter；
-- 依赖安装与 build 步骤已以受管工程开发工作流形式落地，卸载与单版本删除也已提供 UI 与 Agent 接口；尚未提供压缩包/registry 导入、完整多文件 IDE、运行健康页和工具级启停 UI；开发步骤本身不做依赖审计或锁文件校验，安装结果以进程退出码为准；
+- `remote-http` 与 `mcp-import` 已可实际执行（帧协议远端调用 / 宿主 MCP 桥代理），仅 `legacy-custom-tool` 有意保持不可执行；
+- 依赖安装与 build 步骤已以受管工程开发工作流形式落地，卸载与单版本删除也已提供 UI 与 Agent 接口，压缩包与 Git 仓库导入（浅克隆）也已落地；尚未提供 npm-style registry 远程 URL 导入（`installRemoteManifest` 需通过 Agent 对话传入 manifest 对象）、完整多文件 IDE、运行健康页和工具级启停 UI；开发步骤本身不做依赖审计或锁文件校验，安装结果以进程退出码为准；Git 导入不校验仓库签名，浅克隆不携带完整历史，溯源以克隆时 URL/ref 为准；
 - `models.connection.lease`、`agents.create/update`、`files.read/write`、`workflows.*`、`tools.*`、`settings.read` 尚未进入 Broker；调用级环境覆盖与调用级凭据租约尚未开放；
 - `agents.invoke` 不递归运行完整 Agent loop，不自动挂载该助手的 Skills/MCP/团队/工作流；
 - 首版没有 OS 沙箱、CPU/内存/磁盘/进程树硬配额，也没有恶意代码隔离承诺；trusted-local 仍是当前用户权限进程；
@@ -443,3 +445,19 @@ Agent 不得把“已创建工程”“测试通过”“已发布”和“已�
 - Storage Repository 级联删除测试 8/8、Service 卸载/删版本测试 18/18、Bridge 契约测试 8/8、Protocol 测试 10/10 均通过（SQLite 测试以 Node ABI 运行，结束后恢复 Electron ABI，`better_sqlite3.node` SHA-256 与 vendor Electron prebuild 一致）；
 - 目标 ESLint 0 error（测试文件保留既有 `no-non-null-assertion` 风格 warning，HEAD 基线即存在）；Prettier、`git diff --check` 通过；
 - 卸载期间在途 Agent loop 的行为边界：Agent loop 以不可变闭包绑定版本，卸载/删版本不做引用计数，进行中的调用在下一次访问安装目录/数据库行时收到明确的 not found 错误，不会静默降级。
+
+第五轮（Phase B-3：压缩包与 Git 仓库导入）追加门禁：
+
+- Protocol、Storage、Agent Runtime 与 Desktop（node + renderer 双 tsconfig）typecheck 均通过；
+- Import 纯逻辑测试 27/27（解压/包裹目录/跳过杂项/zip-slip/上限/无 manifest/Git 源规范化矩阵/ref 与子目录校验/离线本地仓库克隆）、Service 安装测试 21/21（zip 安装、Git 安装含溯源、同版本幂等重装）、Storage Repository 测试 8/8、Bridge 契约测试 9/9（确认门/参数校验/可选参数不透传 undefined）、MCP 契约 7/7 均通过；SQLite 测试以 Node ABI 运行，结束后恢复 Electron ABI；
+- 92 个迁移全新库内存干跑通过（含 092 溯源列）；
+- 目标 ESLint 0 error（105 个 warning 均为 HEAD 既有测试文件 `no-non-null-assertion` 风格）；Prettier 格式化后全过；`git diff --check` 通过；
+- Desktop production build exit 0；`out/main/tools/platform-management-mcp-server.mjs` 与源码逐字一致，含 2 个新导入工具定义与路由；
+- 新增依赖仅 `fflate@0.8.2+`（纯 JS zip 解压，无 native 编译、无子依赖）。
+
+第六轮（Phase B-4：非 process 适配器实际执行）追加门禁：
+
+- Protocol、Storage、Agent Runtime 与 Desktop（node + renderer 双 tsconfig）typecheck 均通过（Desktop 仅剩并行会话 git-panel 文件的 1 个既有错误，本功能文件零错误）；
+- remote/mcp-import 执行器测试 12/12（帧协议回显、header 环境模板、未配置变量拒绝、HTTP 错误摘录、非协议帧拒绝、requestId/invocationId 回显校验、远端 error 帧、输入预校验、超时、MCP content 结构保留、isError 抛错、未声明工具/适配器错配拒绝）、Service+Import+Bridge 聚焦测试 77/77（含 `installRemoteManifest` / `installMcpImport` 安装、确认门、参数校验、skippedTools 报告）、Storage Repository 8/8、Protocol 12/12、MCP 契约 7/7 均通过；SQLite 测试以 Node ABI 运行，结束后恢复 Electron ABI（`better_sqlite3.node` SHA-256 与 vendor Electron prebuild 一致）；
+- 目标 ESLint 0 error（1 个既有风格 warning 为 B-3 遗留的 `react-hooks/set-state-in-effect`，非本轮引入）；Prettier、`git diff --check` 通过；
+- Desktop production build exit 0（两次构建确认）；`out/main/tools/platform-management-mcp-server.mjs` 与源码逐字一致，含 `tool_packages_install_remote` / `tool_packages_install_mcp_import` 定义与路由。
