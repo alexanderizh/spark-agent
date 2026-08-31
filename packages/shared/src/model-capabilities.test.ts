@@ -34,12 +34,12 @@ describe('ModelCapabilityRegistry', () => {
 
   it('provides provider-level context window defaults', () => {
     expect(resolveProviderContextWindow(true)).toBe(1_000_000)
-    expect(resolveProviderContextWindow(false)).toBe(200_000)
-    expect(resolveProviderContextWindow()).toBe(200_000)
+    expect(resolveProviderContextWindow(false)).toBe(256_000)
+    expect(resolveProviderContextWindow()).toBe(256_000)
     expect(resolveProviderContextWindow(false, 256_000)).toBe(256_000)
     expect(resolveProviderContextWindow(true, 50_000)).toBe(50_000)
-    expect(resolveProviderContextWindow(false, 0)).toBe(200_000)
-    expect(resolveProviderContextWindow(false, -1)).toBe(200_000)
+    expect(resolveProviderContextWindow(false, 0)).toBe(256_000)
+    expect(resolveProviderContextWindow(false, -1)).toBe(256_000)
     expect(resolveSoftContextLimitForWindow(1_000_000)).toBe(700_000)
   })
 

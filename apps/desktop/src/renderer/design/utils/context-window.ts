@@ -1,10 +1,10 @@
 /**
  * 上下文窗口下拉预设。
- * - 0：默认（未配置，运行时回落 200K 或 supportsMillionContext=true 时 1M）
+ * - 0：默认（未配置，运行时回落 256K 或 supportsMillionContext=true 时 1M）
  * - -1：自定义（显示数字输入框）
  */
 export const CONTEXT_WINDOW_PRESETS: Array<{ value: number; label: string }> = [
-  { value: 0, label: '默认 (200K)' },
+  { value: 0, label: '默认 (256K)' },
   { value: 200_000, label: '200K' },
   { value: 256_000, label: '256K' },
   { value: 400_000, label: '400K' },
