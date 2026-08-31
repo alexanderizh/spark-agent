@@ -663,7 +663,16 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
     // 引擎对未知第三方模型按默认窗口（~200k）计算 auto-compact 阈值；把
     // Provider 声明的真实上下文窗口透传给引擎，1M 模型不再在 ~170k 被提前压缩。
     // 未配置窗口时不设置，保持引擎默认行为。
+    // 双通道配合（对应引擎侧窗口解析逻辑 N8/jCd）：
+    // - settings.autoCompactWindow 声明目标窗口，但会被引擎按「模型认知上限」
+    //   Math.min 封顶 —— 第三方模型认知上限默认 200k，仅靠 settings 时 1M 声明
+    //   会被压回 200k（实测压缩仍发生在 ~167k）；
+    // - CLAUDE_CODE_MAX_CONTEXT_TOKENS 才能真正抬高引擎对非 claude-* 第三方模型
+    //   的认知上限（官方 claude-* 模型不受该变量影响，仍走内置模型表）。
     const autoCompactWindow = normalizeAutoCompactWindow(config.contextWindowTokens)
+    if (autoCompactWindow != null) {
+      runtimeEnv.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(autoCompactWindow)
+    }
     const settings: SDKSettings = {
       model: effectiveModel,
       env: runtimeEnv,
