@@ -54,6 +54,20 @@ export const COMMAND_FOLLOW_UP_TURN_PRESENTATION = {
   userMessageVisibility: 'hidden',
 } as const satisfies UserMessagePresentation
 
+/**
+ * Claude Code 引擎压缩完成后注入的承接摘要固定以该前缀开头
+ * （"This session is being continued from a previous conversation..."）。
+ * 该消息面向模型上下文承接，不面向用户时间线；runtime 映射与 renderer
+ * 旧数据回放共用此签名识别，避免把摘要渲染成 agent 正文。
+ */
+export const ENGINE_COMPACT_SUMMARY_PREFIX =
+  'This session is being continued from a previous conversation'
+
+/** 判断文本是否为引擎注入的压缩承接摘要。 */
+export function isEngineCompactSummaryText(text: string): boolean {
+  return text.trimStart().startsWith(ENGINE_COMPACT_SUMMARY_PREFIX)
+}
+
 /** Prevents runtime-only turn options from leaking into persisted user_message events. */
 export function pickUserMessagePresentation(
   value: UserMessagePresentation,

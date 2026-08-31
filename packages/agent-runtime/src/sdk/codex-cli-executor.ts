@@ -4,7 +4,12 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
-import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import {
+  estimateTokens,
+  resolveModelContextWindow,
+  resolveSoftContextLimit,
+  resolveSoftContextLimitForWindow,
+} from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import {
   appendCodexReasoningSummaryDelta,
@@ -13,7 +18,10 @@ import {
   readCodexReasoningSummarySourceId,
   type CodexReasoningSummaryState,
 } from './codex-reasoning-summary.js'
-import { CODEX_TOOL_OUTPUT_TOKEN_LIMIT } from './codex-context-policy.js'
+import {
+  CODEX_TOOL_OUTPUT_TOKEN_LIMIT,
+  buildCodexContextWindowConfig,
+} from './codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import {
   buildCodexSkillConfigTomlOverride,
@@ -136,8 +144,11 @@ export class CodexCliExecutor implements EngineExecutor {
       ...makeBase(),
       type: 'context_usage',
       estimatedTokens: estimateTokens(prompt),
-      softLimitTokens: resolveSoftContextLimit(config.model),
-      contextWindowTokens: resolveModelContextWindow(config.model),
+      softLimitTokens:
+        config.contextWindowTokens != null && config.contextWindowTokens > 0
+          ? resolveSoftContextLimitForWindow(config.contextWindowTokens)
+          : resolveSoftContextLimit(config.model),
+      contextWindowTokens: config.contextWindowTokens ?? resolveModelContextWindow(config.model),
       compacted: false,
     })
     this.emitSkillIsolationWarning(skillIsolation, makeBase)
@@ -551,6 +562,10 @@ function buildCodexProfileConfigItems(
   items.push('show_raw_agent_reasoning=false')
   items.push('hide_agent_reasoning=false')
   items.push(`tool_output_token_limit=${CODEX_TOOL_OUTPUT_TOKEN_LIMIT}`)
+  const contextWindowConfig = buildCodexContextWindowConfig(config.contextWindowTokens)
+  if (contextWindowConfig.model_context_window != null) {
+    items.push(`model_context_window=${contextWindowConfig.model_context_window}`)
+  }
   items.push(`approval_policy=${tomlString(policy.approvalPolicy)}`)
   if (policy.approvalsReviewer != null) {
     items.push(`approvals_reviewer=${tomlString(policy.approvalsReviewer)}`)

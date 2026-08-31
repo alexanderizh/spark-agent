@@ -660,9 +660,14 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
       config.useLocalConfig === true
         ? (runtimeEnv.ANTHROPIC_MODEL ?? runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL ?? config.model)
         : config.model
+    // 引擎对未知第三方模型按默认窗口（~200k）计算 auto-compact 阈值；把
+    // Provider 声明的真实上下文窗口透传给引擎，1M 模型不再在 ~170k 被提前压缩。
+    // 未配置窗口时不设置，保持引擎默认行为。
+    const autoCompactWindow = normalizeAutoCompactWindow(config.contextWindowTokens)
     const settings: SDKSettings = {
       model: effectiveModel,
       env: runtimeEnv,
+      ...(autoCompactWindow != null ? { autoCompactWindow } : {}),
       permissions: {
         defaultMode: mergedPerms.permissionMode,
         ...(sdkAllowedTools.length > 0 ? { allow: sdkAllowedTools } : {}),
@@ -1889,6 +1894,13 @@ function softContextLimit(model: string, configuredContextWindow?: number): numb
   return configuredContextWindow !== undefined
     ? resolveSoftContextLimitForWindow(configuredContextWindow)
     : resolveSoftContextLimit(model)
+}
+
+/** 规范化 auto-compact 窗口：仅接受正的有限数，非法值返回 undefined（不透传）。 */
+function normalizeAutoCompactWindow(contextWindowTokens: number | undefined): number | undefined {
+  if (contextWindowTokens == null || !Number.isFinite(contextWindowTokens)) return undefined
+  const window = Math.floor(contextWindowTokens)
+  return window > 0 ? window : undefined
 }
 
 function resolveClaudeCodeExecutable(): string | undefined {

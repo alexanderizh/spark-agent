@@ -61,6 +61,7 @@ import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/
 import { HeroUsageHeatmap } from './chat/HeroUsageHeatmap'
 import { useEmptyHeroUsage } from './chat/useEmptyHeroUsage'
 import { ChatTabbar } from './chat/ChatTabbar'
+import { ContextCompactionCard } from './chat/ContextCompactionCard'
 import { EmptySessionTopbar } from './chat/EmptySessionTopbar'
 import { SessionSchedulePanel } from './chat/SessionSchedulePanel'
 import {
@@ -6685,72 +6686,6 @@ function ContextSummarizedCard({
         Context Governor summarized {block.summarizedEntryCount} older exchanges (saved ~
         {block.tokensSaved.toLocaleString()} tokens)
       </span>
-    </div>
-  )
-}
-
-/** Inline card showing provider-reported context compaction output */
-function ContextCompactionCard({
-  block,
-}: {
-  block: Extract<UIBlock, { kind: 'context_compaction' }>
-}) {
-  const sourceLabel =
-    block.source === 'claude_code'
-      ? 'Claude Code'
-      : block.source === 'codex_cli'
-        ? 'Codex CLI'
-        : 'Codex SDK'
-  const phaseLabel =
-    block.phase === 'started'
-      ? 'started compacting'
-      : block.phase === 'completed'
-        ? 'completed compaction'
-        : block.phase === 'failed'
-          ? 'failed compaction'
-          : 'reported compact boundary'
-  const tokenText =
-    block.preTokens != null || block.postTokens != null
-      ? [
-          block.preTokens != null ? `${block.preTokens.toLocaleString()} t` : null,
-          block.postTokens != null ? `${block.postTokens.toLocaleString()} t` : null,
-        ]
-          .filter(Boolean)
-          .join(' -> ')
-      : null
-  return (
-    <div
-      style={{
-        padding: '8px 12px',
-        borderRadius: 8,
-        background: 'var(--c-surface, #1e1e2e)',
-        border: '1px solid var(--c-border, #333)',
-        fontSize: 12,
-        color: 'var(--c-text, #ccc)',
-        display: 'grid',
-        gap: 4,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Icons.Layers size={14} style={{ opacity: 0.65, flexShrink: 0 }} />
-        <span style={{ opacity: 0.78 }}>
-          {sourceLabel} {phaseLabel}
-          {block.trigger != null ? ` (${block.trigger})` : ''}
-          {tokenText != null ? ` · ${tokenText}` : ''}
-          {block.durationMs != null ? ` · ${block.durationMs}ms` : ''}
-        </span>
-      </div>
-      {block.summary != null && (
-        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{block.summary}</div>
-      )}
-      {block.message != null && (
-        <div style={{ color: 'var(--c-warn, #f59e0b)', whiteSpace: 'pre-wrap' }}>
-          {block.message}
-        </div>
-      )}
-      {block.rawType != null && (
-        <div style={{ color: 'var(--c-dim, #8a8f98)', fontSize: 11 }}>raw: {block.rawType}</div>
-      )}
     </div>
   )
 }

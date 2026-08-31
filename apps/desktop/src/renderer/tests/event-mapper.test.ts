@@ -444,6 +444,117 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('merges the compaction lifecycle and summary into a single card', () => {
+    const builder = new MessageBuilder()
+
+    const phases: Array<Partial<AgentEvent> & { phase: string; id: string }> = [
+      { id: 'c-start', phase: 'started', rawType: 'system/compact_started' },
+      {
+        id: 'c-done',
+        phase: 'completed',
+        durationMs: 1200,
+        rawType: 'system/compact_completed',
+      },
+      {
+        id: 'c-boundary',
+        phase: 'boundary',
+        trigger: 'auto',
+        preTokens: 169576,
+        postTokens: 12598,
+        rawType: 'system/compact_boundary',
+      },
+      {
+        id: 'c-summary',
+        phase: 'boundary',
+        summary: 'This session is being continued from a previous conversation. Summary: …',
+        rawType: 'user/compact_summary',
+      },
+    ]
+    for (const phaseEvent of phases) {
+      builder.processEvent({
+        ...baseEvent('context_compaction'),
+        ...phaseEvent,
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+      } as AgentEvent)
+    }
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toHaveLength(1)
+    expect(message?.blocks[0]).toMatchObject({
+      kind: 'context_compaction',
+      phase: 'boundary',
+      trigger: 'auto',
+      preTokens: 169576,
+      postTokens: 12598,
+      durationMs: 1200,
+      summary: 'This session is being continued from a previous conversation. Summary: …',
+      rawType: 'user/compact_summary',
+    })
+  })
+
+  it('opens a new compaction card when the next compaction starts', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('context_compaction'),
+      id: 'first-boundary',
+      type: 'context_compaction',
+      provider: 'claude',
+      source: 'claude_code',
+      phase: 'boundary',
+      preTokens: 100000,
+      postTokens: 20000,
+    } as AgentEvent)
+    builder.processEvent({
+      ...baseEvent('context_compaction'),
+      id: 'second-start',
+      type: 'context_compaction',
+      provider: 'claude',
+      source: 'claude_code',
+      phase: 'started',
+    } as AgentEvent)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks.filter((block) => block.kind === 'context_compaction')).toHaveLength(2)
+  })
+
+  it('routes legacy compact-summary assistant text to the compaction card on replay', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('context_compaction'),
+      id: 'legacy-boundary',
+      type: 'context_compaction',
+      provider: 'claude',
+      source: 'claude_code',
+      phase: 'boundary',
+      trigger: 'auto',
+      preTokens: 169576,
+      postTokens: 12598,
+    } as AgentEvent)
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'legacy-summary',
+      type: 'assistant_message',
+      mode: 'complete',
+      isFinal: false,
+      provider: 'claude',
+      content:
+        'This session is being continued from a previous conversation that ran out of context. The summary is the model-facing handoff text.',
+    } as AgentEvent)
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.blocks).toHaveLength(1)
+    expect(message?.blocks[0]).toMatchObject({
+      kind: 'context_compaction',
+      summary: expect.stringContaining('This session is being continued'),
+      rawType: 'assistant_message/compact_summary',
+    })
+    expect(message?.blocks.some((block) => block.kind === 'text')).toBe(false)
+  })
+
   it('stops thinking block streaming when the turn completes without a thinking complete event', () => {
     const builder = new MessageBuilder()
 

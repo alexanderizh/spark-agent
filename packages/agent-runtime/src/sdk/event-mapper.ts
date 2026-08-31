@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, RuntimeEventOrigin } from '@spark/protocol'
+import { isEngineCompactSummaryText } from '@spark/protocol'
 import type {
   SDKMessage,
   SDKAssistantMessage,
@@ -1112,6 +1113,23 @@ function summarizeSubagentOutput(output: string): string {
   return output.length > 200 ? `${output.slice(0, 197)}...` : output
 }
 
+/**
+ * 提取引擎注入的压缩承接摘要正文；非该类消息返回 null。
+ * 仅识别「纯文本、单块」且命中固定前缀的 user 消息（字符串或单 text 块），
+ * 不依赖 isSynthetic 标记（旧版本引擎可能不携带），其他合成内容不受影响。
+ */
+function extractEngineCompactSummary(msg: SDKUserMessage): string | null {
+  const content = msg.message.content
+  const text =
+    typeof content === 'string'
+      ? content
+      : content.length === 1 && content[0]?.type === 'text'
+        ? content[0].text
+        : null
+  if (text == null || !isEngineCompactSummaryText(text)) return null
+  return text
+}
+
 function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
   const parentToolUseId =
     msg.parent_tool_use_id != null
@@ -1124,6 +1142,26 @@ function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
   )
     return []
   const structuredAgentResult = extractStructuredAgentResult(msg.tool_use_result)
+  // 引擎压缩完成后注入的承接摘要（"This session is being continued..."）面向模型
+  // 上下文承接而非用户时间线：不再映射为 assistant_message 正文，改挂到压缩卡片的
+  // summary 字段，由渲染端折叠展示。
+  if (parentToolUseId == null) {
+    const compactSummary = extractEngineCompactSummary(msg)
+    if (compactSummary != null) {
+      closeSegments(ctx)
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'context_compaction',
+          provider: 'claude',
+          source: 'claude_code',
+          phase: 'boundary',
+          summary: compactSummary,
+          rawType: 'user/compact_summary',
+        },
+      ]
+    }
+  }
   if (typeof msg.message.content === 'string') {
     if (parentToolUseId == null || msg.message.content.length === 0) return []
     const event: AgentEvent = {

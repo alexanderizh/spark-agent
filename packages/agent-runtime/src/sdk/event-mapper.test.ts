@@ -1246,4 +1246,74 @@ describe('mapSDKMessageToEvents', () => {
       }),
     ])
   })
+
+  it('maps the engine-injected compact summary to a context_compaction event, not agent text', () => {
+    const summaryText =
+      'This session is being continued from a previous conversation that ran out of context. Summary:\n- 用户报告了压缩问题'
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'user',
+        uuid: 'compact-summary',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        isSynthetic: true,
+        message: { role: 'user', content: [{ type: 'text', text: summaryText }] },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'context_compaction',
+        provider: 'claude',
+        source: 'claude_code',
+        phase: 'boundary',
+        summary: summaryText,
+        rawType: 'user/compact_summary',
+      }),
+    ])
+    expect(events.some((event) => event.type === 'assistant_message')).toBe(false)
+  })
+
+  it('also detects a string-content compact summary message', () => {
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'user',
+        uuid: 'compact-summary-string',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation. Summary: …',
+        },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'context_compaction',
+        summary: expect.stringContaining('This session is being continued'),
+      }),
+    ])
+  })
+
+  it('keeps mapping unrelated synthetic user text unchanged', () => {
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'user',
+        uuid: 'other-synthetic',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        isSynthetic: true,
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: '<command-name>/init</command-name>' }],
+        },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events.some((event) => event.type === 'context_compaction')).toBe(false)
+  })
 })

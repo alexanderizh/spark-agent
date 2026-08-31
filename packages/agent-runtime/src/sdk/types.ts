@@ -492,6 +492,12 @@ export interface SDKToolConfig {
 export interface SDKSettings {
   model?: string | undefined
   env?: Record<string, string> | undefined
+  /**
+   * Auto-compact 窗口大小（tokens）。引擎对不认识的第三方模型按默认窗口
+   * （约 200k）计算自动压缩阈值；Provider 声明的真实窗口必须显式透传，
+   * 否则 1M 模型也会在 ~170k 被提前压缩。
+   */
+  autoCompactWindow?: number | undefined
   permissions?:
     | {
         defaultMode?: SDKPermissionMode | undefined

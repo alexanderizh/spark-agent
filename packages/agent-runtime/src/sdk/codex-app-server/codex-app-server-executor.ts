@@ -9,7 +9,10 @@ import {
   type CodexReasoningSummaryState,
 } from '../codex-reasoning-summary.js'
 import { createStreamReconnectSignal } from '../codex-stream-reconnect.js'
-import { CODEX_CONTEXT_POLICY_CONFIG } from '../codex-context-policy.js'
+import {
+  CODEX_CONTEXT_POLICY_CONFIG,
+  buildCodexContextWindowConfig,
+} from '../codex-context-policy.js'
 import { resolveCodexPermissionPolicy } from '../codex-permission-policy.js'
 import {
   buildCodexSkillConfigOverride,
@@ -1268,6 +1271,7 @@ function buildAppServerThreadParams(
     show_raw_agent_reasoning: false,
     hide_agent_reasoning: false,
     ...CODEX_CONTEXT_POLICY_CONFIG,
+    ...buildCodexContextWindowConfig(config.contextWindowTokens),
     ...(policy.approvalsReviewer == null ? {} : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),

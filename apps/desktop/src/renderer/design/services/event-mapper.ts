@@ -16,6 +16,7 @@ import type {
   UserQuestionPrompt,
   WorkflowProgressNode,
 } from '@spark/protocol'
+import { isEngineCompactSummaryText } from '@spark/protocol'
 import {
   prepareTurnFileSummary,
   type TurnFileChangeCollectionSource,
@@ -548,6 +549,20 @@ function mergeToolSchemaObservation(
   return { ...current, ...patch }
 }
 
+/** 压缩卡片的可合并字段；context_compaction 事件与旧版摘要分流共用此形状。 */
+type CompactionCardFields = {
+  provider: 'claude' | 'codex'
+  source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+  phase: 'started' | 'completed' | 'failed' | 'boundary'
+  trigger?: string
+  preTokens?: number
+  postTokens?: number
+  durationMs?: number
+  summary?: string
+  message?: string
+  rawType?: string
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private processedEventIds = new Set<string>()
@@ -716,6 +731,18 @@ export class MessageBuilder {
               // spark provider 以最终 assistant_message 收尾，不再有 agent_status 终态事件。
               this.markTurnDuration(msg, event)
             }
+            break
+          }
+          if (isEngineCompactSummaryText(event.content)) {
+            // 旧版本把引擎注入的压缩承接摘要持久化为 assistant_message 正文；回放时
+            // 改挂到压缩卡片的 summary（与 runtime 新链路的 context_compaction 事件同构）。
+            this.upsertCompactionBlock(msg, {
+              provider: 'claude',
+              source: 'claude_code',
+              phase: 'boundary',
+              summary: event.content,
+              rawType: 'assistant_message/compact_summary',
+            })
             break
           }
           this.applySegmentComplete(msg.blocks, 'text', event.content, event.segmentId)
@@ -1263,19 +1290,7 @@ export class MessageBuilder {
         const compactMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
           turnId: event.turnId,
         })
-        compactMsg.blocks.push({
-          kind: 'context_compaction',
-          provider: event.provider,
-          source: event.source,
-          phase: event.phase,
-          ...(event.trigger != null ? { trigger: event.trigger } : {}),
-          ...(event.preTokens != null ? { preTokens: event.preTokens } : {}),
-          ...(event.postTokens != null ? { postTokens: event.postTokens } : {}),
-          ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
-          ...(event.summary != null ? { summary: event.summary } : {}),
-          ...(event.message != null ? { message: event.message } : {}),
-          ...(event.rawType != null ? { rawType: event.rawType } : {}),
-        })
+        this.upsertCompactionBlock(compactMsg, event)
         break
       }
 
@@ -2092,6 +2107,53 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  /**
+   * 追加或合并压缩卡片。同一次压缩的连续阶段事件（started → completed →
+   * boundary → 摘要）会合并进同一张卡，避免一次压缩在时间线上出现三、四张
+   * 重复卡片。合并判据：目标消息的最后一个 block 仍是压缩卡（中间没有其他
+   * 内容插入），且新事件不是新一轮压缩的 started、preTokens 不冲突。
+   */
+  private upsertCompactionBlock(msg: UIMessage, compaction: CompactionCardFields): void {
+    const lastBlock = msg.blocks[msg.blocks.length - 1]
+    if (
+      lastBlock != null &&
+      lastBlock.kind === 'context_compaction' &&
+      compaction.phase !== 'started' &&
+      (compaction.preTokens == null ||
+        lastBlock.preTokens == null ||
+        lastBlock.preTokens === compaction.preTokens)
+    ) {
+      lastBlock.phase = compaction.phase
+      if (compaction.trigger != null && lastBlock.trigger == null)
+        lastBlock.trigger = compaction.trigger
+      if (compaction.preTokens != null && lastBlock.preTokens == null)
+        lastBlock.preTokens = compaction.preTokens
+      if (compaction.postTokens != null && lastBlock.postTokens == null)
+        lastBlock.postTokens = compaction.postTokens
+      if (compaction.durationMs != null && lastBlock.durationMs == null)
+        lastBlock.durationMs = compaction.durationMs
+      // 摘要取最新；message/rawType 同名补齐
+      if (compaction.summary != null) lastBlock.summary = compaction.summary
+      if (compaction.message != null && lastBlock.message == null)
+        lastBlock.message = compaction.message
+      if (compaction.rawType != null) lastBlock.rawType = compaction.rawType
+      return
+    }
+    msg.blocks.push({
+      kind: 'context_compaction',
+      provider: compaction.provider,
+      source: compaction.source,
+      phase: compaction.phase,
+      ...(compaction.trigger != null ? { trigger: compaction.trigger } : {}),
+      ...(compaction.preTokens != null ? { preTokens: compaction.preTokens } : {}),
+      ...(compaction.postTokens != null ? { postTokens: compaction.postTokens } : {}),
+      ...(compaction.durationMs != null ? { durationMs: compaction.durationMs } : {}),
+      ...(compaction.summary != null ? { summary: compaction.summary } : {}),
+      ...(compaction.message != null ? { message: compaction.message } : {}),
+      ...(compaction.rawType != null ? { rawType: compaction.rawType } : {}),
+    })
   }
 
   private findAssistantForEvent(event?: { turnId?: string }): UIMessage | undefined {
