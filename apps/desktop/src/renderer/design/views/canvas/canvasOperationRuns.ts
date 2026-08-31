@@ -1,3 +1,4 @@
+import { resolveStorageKeyToAbsolutePath } from './assetLibrary/storageKey'
 import { isOperationNode } from './canvas.capabilities'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTaskStatus } from './canvas.types'
 
@@ -100,11 +101,32 @@ function outputPipelineRole(
   return undefined
 }
 
+/**
+ * 解析任务产物 asset 的本地绝对路径。
+ *
+ * storageKey 自「assetLibrary 缺陷 3」归一化后对项目目录内文件存的是相对 key
+ * （相对 project.rootPath），不能直接当 filePath 使用——本地处理链路
+ * （image:probe / ffmpeg 等）一律要求绝对路径，readMediaLocalFilePath 对
+ * node.data.filePath 也是原样返回。因此优先取 metadata.filePath（落库时的
+ * 权威绝对路径，与 storageKey 指向同一份文件），缺失时再把 storageKey
+ * 解析回绝对路径（历史绝对路径原样返回）。
+ */
+export function resolveOperationOutputLocalFilePath(
+  asset: CanvasAsset | undefined,
+  projectRootPath: string | null | undefined,
+): string | undefined {
+  if (!asset) return undefined
+  const metaFilePath = (asset.metadata as { filePath?: unknown } | undefined)?.filePath
+  if (typeof metaFilePath === 'string' && metaFilePath.trim()) return metaFilePath
+  return resolveStorageKeyToAbsolutePath(asset.storageKey, projectRootPath) ?? undefined
+}
+
 function operationOutputView(
   node: CanvasNode | undefined,
   asset: CanvasAsset | undefined,
   fallbackId: string,
   taskId: string,
+  projectRootPath: string | null | undefined,
 ): CanvasOperationOutputView {
   const url = node?.data.url ?? asset?.url ?? undefined
   const thumbnailUrl = node?.data.thumbnailUrl ?? asset?.thumbnailUrl ?? undefined
@@ -116,10 +138,8 @@ function operationOutputView(
   const width = node?.data.mediaWidth ?? asset?.width ?? undefined
   const height = node?.data.mediaHeight ?? asset?.height ?? undefined
   const pipelineRole = outputPipelineRole(node, asset)
-  const filePath =
-    node?.data.filePath ??
-    asset?.storageKey ??
-    (typeof asset?.metadata.filePath === 'string' ? asset.metadata.filePath : undefined)
+  // storageKey 可能是相对 key，须经 resolveOperationOutputLocalFilePath 归一为绝对路径
+  const filePath = node?.data.filePath ?? resolveOperationOutputLocalFilePath(asset, projectRootPath)
   return {
     id: node?.id ?? asset?.id ?? fallbackId,
     taskId,
@@ -188,7 +208,7 @@ export function buildCanvasOperationRunViews(
       const node = nodesById.get(nodeId)
       const asset = node?.assetId ? assetsById.get(node.assetId) : undefined
       if (!node && !asset) continue
-      const view = operationOutputView(node, asset, nodeId, taskId)
+      const view = operationOutputView(node, asset, nodeId, taskId, snapshot.project.rootPath)
       if (seen.has(view.id)) continue
       seen.add(view.id)
       if (view.assetId) nodeOutputAssetIds.add(view.assetId)
@@ -201,7 +221,7 @@ export function buildCanvasOperationRunViews(
       // Asset-only outputs have no owned output node. Do not borrow an
       // independent materialized/reference node that happens to share the
       // asset, otherwise the output identity changes after expansion.
-      const view = operationOutputView(undefined, asset, assetId, taskId)
+      const view = operationOutputView(undefined, asset, assetId, taskId, snapshot.project.rootPath)
       if (seen.has(view.id)) continue
       seen.add(view.id)
       outputs.push(view)

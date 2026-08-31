@@ -384,3 +384,73 @@ describe('canvas operation output model', () => {
     expect(collectCanvasOperationImageAssets(imageNode, snapshot)).toEqual([])
   })
 })
+
+describe('operation output local file path（storageKey 相对 key 归一）', () => {
+  function assetOnlySnapshot(): CanvasSnapshot {
+    const snapshot = snapshotFixture()
+    const node = snapshot.nodes[0]!
+    snapshot.nodes = [node]
+    snapshot.edges = []
+    snapshot.tasks = [task('task-2', [], ['asset-a'])]
+    snapshot.assets = [asset('asset-a', '方案 A')]
+    return snapshot
+  }
+
+  it('优先用 metadata.filePath 作为绝对路径，不把相对 storageKey 当 filePath', () => {
+    const snapshot = assetOnlySnapshot()
+    snapshot.project.rootPath = '/tmp/project-1'
+    snapshot.assets = [
+      {
+        ...asset('asset-a', '方案 A'),
+        storageKey: 'assets/images/a.png',
+        metadata: { filePath: '/tmp/project-1/assets/images/a.png' },
+      },
+    ]
+
+    // 回归：修复前虚拟节点 data.filePath 会拿到相对 key「assets/images/a.png」，
+    // 主进程 image:probe 以 Path must be absolute 拒绝，弹窗报「读取图片信息失败」。
+    expect(resolveCanvasOperationResourceNode(snapshot.nodes[0]!, snapshot)).toMatchObject({
+      data: { filePath: '/tmp/project-1/assets/images/a.png' },
+    })
+  })
+
+  it('metadata.filePath 缺失时按 project.rootPath 解析相对 storageKey', () => {
+    const snapshot = assetOnlySnapshot()
+    snapshot.project.rootPath = '/tmp/project-1'
+    snapshot.assets = [
+      { ...asset('asset-a', '方案 A'), storageKey: 'assets/images/a.png', metadata: {} },
+    ]
+
+    expect(resolveCanvasOperationResourceNode(snapshot.nodes[0]!, snapshot)).toMatchObject({
+      data: { filePath: '/tmp/project-1/assets/images/a.png' },
+    })
+  })
+
+  it('历史绝对路径 storageKey 原样返回，无 rootPath 也能解析', () => {
+    const snapshot = assetOnlySnapshot()
+    snapshot.assets = [
+      { ...asset('asset-a', '方案 A'), storageKey: '/tmp/elsewhere/a.png', metadata: {} },
+    ]
+
+    expect(resolveCanvasOperationResourceNode(snapshot.nodes[0]!, snapshot)).toMatchObject({
+      data: { filePath: '/tmp/elsewhere/a.png' },
+    })
+  })
+
+  it('run view 的 output.filePath 同样归一为绝对路径', () => {
+    const snapshot = assetOnlySnapshot()
+    snapshot.project.rootPath = '/tmp/project-1'
+    snapshot.assets = [
+      {
+        ...asset('asset-a', '方案 A'),
+        storageKey: 'assets/images/a.png',
+        metadata: { filePath: '/tmp/project-1/assets/images/a.png' },
+      },
+    ]
+
+    const runs = buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot)
+    expect(runs[0]?.outputs[0]).toMatchObject({
+      filePath: '/tmp/project-1/assets/images/a.png',
+    })
+  })
+})

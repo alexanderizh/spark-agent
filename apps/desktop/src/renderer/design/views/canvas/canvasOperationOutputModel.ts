@@ -1,6 +1,7 @@
 import { isOperationNode } from './canvas.capabilities'
 import {
   buildCanvasOperationRunViews,
+  resolveOperationOutputLocalFilePath,
   type CanvasOperationOutputView,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
@@ -137,10 +138,11 @@ function outputToInputNode(
   const panorama360 =
     output.panorama360 ??
     (asset.metadata.panorama360 as CanvasNode['data']['panorama360'] | undefined)
+  // storageKey 可能是相对 key（assetLibrary 缺陷 3 归一化），须经
+  // resolveOperationOutputLocalFilePath 归一为绝对路径，否则下游
+  // readMediaLocalFilePath 原样返回相对路径，image:probe / ffmpeg 链路直接失败。
   const filePath =
-    output.filePath ??
-    asset.storageKey ??
-    (typeof asset.metadata.filePath === 'string' ? asset.metadata.filePath : undefined)
+    output.filePath ?? resolveOperationOutputLocalFilePath(asset, snapshot.project.rootPath)
   return {
     id: `operation-output:${outputIdentity(output)}`,
     projectId: operationNode.projectId,
