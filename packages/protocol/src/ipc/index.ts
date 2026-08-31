@@ -1443,6 +1443,12 @@ export interface WorkspaceGitCommitEntry {
   date: string
   /** 尚未推送到上游（无上游分支时恒为 false） */
   unpushed: boolean
+  /** 提交信息正文（subject 之后的部分，无正文时缺省） */
+  body?: string
+  /** 作者邮箱（缺失时缺省） */
+  authorEmail?: string
+  /** git 装饰引用（%D，如 `HEAD -> master, origin/master, tag: v1.0`，无装饰时缺省） */
+  refs?: string
 }
 
 export interface WorkspaceGitLogRequest {

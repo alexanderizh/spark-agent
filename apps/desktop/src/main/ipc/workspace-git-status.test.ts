@@ -235,6 +235,41 @@ describe('workspace Git log', () => {
       ]),
     )
   })
+
+  it('exposes body, author email and refs for the detail popover', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    // 多段提交信息（subject + body 两段）+ 打 tag 制造 %D 装饰引用
+    await git(workspacePath, [
+      'commit',
+      '--allow-empty',
+      '-m',
+      'feat(detail): add popover',
+      '-m',
+      '第一段正文\n\n第二段正文',
+    ])
+    await git(workspacePath, ['tag', 'v9.9.9'])
+
+    const result = await getWorkspaceGitLog(workspacePath)
+
+    expect(result.commits[0]).toEqual(
+      expect.objectContaining({
+        subject: 'feat(detail): add popover',
+        body: '第一段正文\n\n第二段正文',
+        authorName: 'Spark Test',
+        authorEmail: 'spark@example.com',
+        refs: expect.stringContaining('HEAD -> feature/local-review'),
+      }),
+    )
+    expect(result.commits[0]?.refs).toContain('tag: v9.9.9')
+    // 无正文 / 无 tag 的历史提交：可选字段缺省，不影响原有字段
+    expect(result.commits[1]).toEqual(
+      expect.objectContaining({
+        subject: 'add local feature',
+        body: undefined,
+        refs: undefined,
+      }),
+    )
+  })
 })
 
 describe('pushWorkspaceBranch', () => {

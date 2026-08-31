@@ -4,6 +4,8 @@ import {
   buildGitPanelChangeTree,
   buildGitPanelFileLabels,
   buildGitPanelLogRefreshKey,
+  computeGitCommitPopoverPosition,
+  formatGitCommitAbsoluteTime,
   formatGitRelativeTime,
   splitPendingGitChanges,
 } from './gitPanelViewUtils'
@@ -210,5 +212,73 @@ describe('buildGitPanelChangeTree', () => {
 
   it('空数组返回空树', () => {
     expect(buildGitPanelChangeTree([])).toEqual([])
+  })
+})
+
+describe('computeGitCommitPopoverPosition', () => {
+  const VIEWPORT = { width: 1200, height: 800 }
+  const POPOVER = { width: 320, height: 200 }
+
+  it('常态放在锚点行右侧、与行顶对齐（编辑区一侧）', () => {
+    const pos = computeGitCommitPopoverPosition(
+      { left: 0, right: 240, top: 300 },
+      POPOVER,
+      VIEWPORT,
+    )
+    expect(pos).toEqual({ left: 248, top: 300, side: 'right' })
+  })
+
+  it('右侧放不下时翻到锚点左侧', () => {
+    const pos = computeGitCommitPopoverPosition(
+      { left: 1000, right: 1180, top: 300 },
+      POPOVER,
+      VIEWPORT,
+    )
+    expect(pos.side).toBe('left')
+    expect(pos.left).toBe(1000 - 8 - 320)
+    expect(pos.top).toBe(300)
+  })
+
+  it('垂直方向超出视口时向下收进视口', () => {
+    const pos = computeGitCommitPopoverPosition(
+      { left: 0, right: 240, top: 700 },
+      POPOVER,
+      VIEWPORT,
+    )
+    expect(pos.top).toBe(800 - 8 - 200)
+    expect(pos.side).toBe('right')
+  })
+
+  it('顶部越界时贴上边缘', () => {
+    const pos = computeGitCommitPopoverPosition(
+      { left: 0, right: 240, top: 2 },
+      POPOVER,
+      VIEWPORT,
+    )
+    expect(pos.top).toBe(8)
+  })
+
+  it('两侧都放不下时取空间更大的一侧并整体 clamp 进视口', () => {
+    // 锚点几乎横跨视口：右侧剩 40px、左侧剩 60px → 取左侧，clamp 后贴边
+    const pos = computeGitCommitPopoverPosition(
+      { left: 60, right: 1160, top: 300 },
+      { width: 320, height: 200 },
+      VIEWPORT,
+    )
+    expect(pos.side).toBe('left')
+    expect(pos.left).toBe(8)
+  })
+})
+
+describe('formatGitCommitAbsoluteTime', () => {
+  it('格式化为本地时区 YYYY-MM-DD HH:mm', () => {
+    const d = new Date(2026, 8, 1, 9, 5)
+    expect(formatGitCommitAbsoluteTime(d.toISOString())).toBe('2026-09-01 09:05')
+  })
+
+  it('空值返回空串、非法输入回退原文', () => {
+    expect(formatGitCommitAbsoluteTime(null)).toBe('')
+    expect(formatGitCommitAbsoluteTime('')).toBe('')
+    expect(formatGitCommitAbsoluteTime('not-a-date')).toBe('not-a-date')
   })
 })

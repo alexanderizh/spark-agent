@@ -666,7 +666,9 @@ export async function getWorkspaceGitLog(
         '-n',
         String(bounded),
         '--date=iso-strict',
-        '--format=%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1e',
+        // 字段序：hash/shortHash/作者/邮箱/时间/装饰引用 固定段，
+        // subject 与 body 为尾段（多行 body 含 \n 但不含分隔符，slice+join 防御式还原）
+        '--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1f%b%x1e',
       ],
       [0, 128],
     ),
@@ -679,14 +681,20 @@ export async function getWorkspaceGitLog(
     .map((record): WorkspaceGitCommitEntry | null => {
       const trimmed = record.trim()
       if (!trimmed) return null
-      const [hash, shortHash, authorName, date, ...subjectParts] = trimmed.split('\x1f')
+      const [hash, shortHash, authorName, authorEmail, date, refs, ...tailParts] =
+        trimmed.split('\x1f')
       if (hash == null || shortHash == null) return null
+      // tailParts[0] 为 subject，其余为 body（多行 body 的内部 \n 不受影响）
+      const body = tailParts.slice(1).join('\x1f').trim()
       return {
         hash,
         shortHash,
         authorName: authorName ?? '',
         date: date ?? '',
-        subject: subjectParts.join('\x1f'),
+        subject: tailParts[0] ?? '',
+        authorEmail: authorEmail || undefined,
+        refs: refs || undefined,
+        body: body || undefined,
         // upstream == null 时 rev-list 也为空，unpushed 自然全为 false
         unpushed: upstream != null && unpushedHashes.has(hash),
       }
