@@ -1,9 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, truncate, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexOpenAIExecutor } from '../../sdk/codex-openai-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
 const openAIConstructor = vi.hoisted(() => vi.fn())
 const chatCreate = vi.hoisted(() => vi.fn())
+const temporaryDirectories = new Set<string>()
+
+const PNG_BYTES = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x73, 0x70, 0x61, 0x72, 0x6b,
+])
+const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x73, 0x70, 0x61, 0x72, 0x6b])
+const GIF_BYTES = Buffer.from('GIF89aspark', 'ascii')
+const WEBP_BYTES = Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
 
 vi.mock('openai', () => ({
   default: openAIConstructor.mockImplementation(() => ({
@@ -29,10 +40,32 @@ function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConf
   }
 }
 
+async function createTemporaryFile(name: string, data: Uint8Array): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'spark-openai-chat-image-'))
+  temporaryDirectories.add(directory)
+  const filePath = path.join(directory, name)
+  await writeFile(filePath, data)
+  return filePath
+}
+
+async function createSparseTemporaryFile(name: string, bytes: number): Promise<string> {
+  const filePath = await createTemporaryFile(name, PNG_BYTES)
+  await truncate(filePath, bytes)
+  return filePath
+}
+
 describe('CodexOpenAIExecutor', () => {
   beforeEach(() => {
     openAIConstructor.mockClear()
     chatCreate.mockReset()
+  })
+
+  afterEach(async () => {
+    const directories = [...temporaryDirectories]
+    temporaryDirectories.clear()
+    await Promise.all(
+      directories.map((directory) => rm(directory, { recursive: true, force: true })),
+    )
   })
 
   it('streams Chat Completions directly without starting the Codex SDK', async () => {
@@ -71,6 +104,235 @@ describe('CodexOpenAIExecutor', () => {
       { type: 'assistant_message', mode: 'delta', content: 'B' },
       { type: 'assistant_message', mode: 'complete', content: 'AB' },
     ])
+  })
+
+  it('sends image attachments as Base64 image_url parts without exposing local paths', async () => {
+    const imagePath = await createTemporaryFile('selected.png', PNG_BYTES)
+    const invocationObserver = vi.fn()
+    chatCreate.mockResolvedValue(streamFrom([{ choices: [{ delta: { content: 'I see it' } }] }]))
+    const localAttachmentPaths: string[] = []
+    const executor = new CodexOpenAIExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'user_message') {
+        localAttachmentPaths.push(...(event.attachments ?? []).map((attachment) => attachment.path))
+      }
+    })
+
+    await executor.executeTurn(
+      'session-1',
+      'turn-image',
+      'Describe this image',
+      makeConfig({
+        attachments: [
+          { type: 'image', path: imagePath, name: 'selected.png', sizeBytes: PNG_BYTES.length },
+        ],
+        invocationObserver,
+      }),
+    )
+
+    const request = chatCreate.mock.calls[0]?.[0] as
+      | { messages: Array<{ content: unknown }> }
+      | undefined
+    const content = request?.messages[0]?.content as
+      | Array<{ type: string; text?: string; image_url?: { url: string } }>
+      | undefined
+    expect(content).toEqual([
+      { type: 'text', text: expect.stringContaining('Describe this image') },
+      {
+        type: 'image_url',
+        image_url: { url: expect.stringMatching(/^data:image\/png;base64,/) },
+      },
+    ])
+    expect(content?.[0]?.text).not.toContain(imagePath)
+    const dataUrl = content?.[1]?.image_url?.url ?? ''
+    expect(Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')).toEqual(PNG_BYTES)
+
+    const observedInvocation = JSON.stringify(invocationObserver.mock.calls)
+    expect(observedInvocation).toContain('data:image/png;base64,[redacted]')
+    expect(observedInvocation).not.toContain(imagePath)
+    expect(observedInvocation).not.toContain(PNG_BYTES.toString('base64'))
+    expect(localAttachmentPaths).toEqual([imagePath])
+  })
+
+  it('preserves image order while keeping ordinary file attachments in the text ledger', async () => {
+    const firstImagePath = await createTemporaryFile('first.png', PNG_BYTES)
+    const secondImagePath = await createTemporaryFile('second.jpg', JPEG_BYTES)
+    const thirdImagePath = await createTemporaryFile('third.webp', WEBP_BYTES)
+    const fourthImagePath = await createTemporaryFile('fourth.gif', GIF_BYTES)
+    const filePath = '/tmp/notes.txt'
+    chatCreate.mockResolvedValue(streamFrom([{ choices: [{ delta: { content: 'OK' } }] }]))
+
+    await new CodexOpenAIExecutor().executeTurn(
+      'session-1',
+      'turn-mixed',
+      'Compare the images with the notes',
+      makeConfig({
+        attachments: [
+          { type: 'image', path: firstImagePath, name: 'first.png' },
+          { type: 'file', path: filePath, name: 'notes.txt' },
+          { type: 'image', path: secondImagePath, name: 'second.jpg' },
+          { type: 'image', path: thirdImagePath, name: 'third.webp' },
+          { type: 'image', path: fourthImagePath, name: 'fourth.gif' },
+        ],
+      }),
+    )
+
+    const content = (
+      chatCreate.mock.calls[0]?.[0] as {
+        messages: Array<{
+          content: Array<{ type: string; text?: string; image_url?: { url: string } }>
+        }>
+      }
+    ).messages[0]?.content
+    expect(content?.[0]?.text).toContain(filePath)
+    expect(content?.[0]?.text).not.toContain(firstImagePath)
+    expect(content?.[0]?.text).not.toContain(secondImagePath)
+    expect(content?.[0]?.text).not.toContain(thirdImagePath)
+    expect(content?.[0]?.text).not.toContain(fourthImagePath)
+    expect(content?.slice(1).map((part) => part.image_url?.url.split(';', 1)[0])).toEqual([
+      'data:image/png',
+      'data:image/jpeg',
+      'data:image/webp',
+      'data:image/gif',
+    ])
+  })
+
+  it('keeps multimodal user content intact across Chat tool-call rounds', async () => {
+    const imagePath = await createTemporaryFile('tool-input.png', PNG_BYTES)
+    const invoke = vi.fn(async () => ({ ok: true }))
+    chatCreate
+      .mockResolvedValueOnce(
+        streamFrom([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'call-image',
+                      function: { name: 'package_acme_inspect', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(streamFrom([{ choices: [{ delta: { content: 'Done' } }] }]))
+
+    await new CodexOpenAIExecutor().executeTurn(
+      'session-1',
+      'turn-image-tool',
+      'Inspect this image',
+      makeConfig({
+        attachments: [{ type: 'image', path: imagePath, name: 'tool-input.png' }],
+        openAIChatTools: [
+          {
+            name: 'package_acme_inspect',
+            description: 'Inspect metadata',
+            inputSchema: { type: 'object' },
+            risk: 'read',
+            invoke,
+          },
+        ],
+      }),
+    )
+
+    expect(chatCreate).toHaveBeenCalledTimes(2)
+    const secondRequest = chatCreate.mock.calls[1]?.[0] as
+      | { messages: Array<{ role: string; content: unknown }> }
+      | undefined
+    expect(secondRequest?.messages[0]?.content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'image_url' })]),
+    )
+    expect(secondRequest?.messages.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+    ])
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects unreadable, unsupported, empty, malformed, and oversized images before the API call', async () => {
+    const emptyImagePath = await createTemporaryFile('empty.png', new Uint8Array())
+    const malformedImagePath = await createTemporaryFile('malformed.png', Buffer.from('not-png'))
+    const oversizedImagePath = await createSparseTemporaryFile(
+      'oversized.png',
+      20 * 1024 * 1024 + 1,
+    )
+    const cases = [
+      {
+        attachment: { type: 'image' as const, path: '/tmp/missing.png', name: 'missing.png' },
+        message: 'could not be read',
+      },
+      {
+        attachment: {
+          type: 'image' as const,
+          path: '/tmp/unsupported.bmp',
+          name: 'unsupported.bmp',
+        },
+        message: 'unsupported format',
+      },
+      {
+        attachment: { type: 'image' as const, path: emptyImagePath, name: 'empty.png' },
+        message: 'between 1 byte and 20MB',
+      },
+      {
+        attachment: { type: 'image' as const, path: malformedImagePath, name: 'malformed.png' },
+        message: 'does not match',
+      },
+      {
+        attachment: { type: 'image' as const, path: oversizedImagePath, name: 'oversized.png' },
+        message: 'between 1 byte and 20MB',
+      },
+    ]
+
+    for (const testCase of cases) {
+      chatCreate.mockClear()
+      const invocationObserver = vi.fn()
+      const errors: string[] = []
+      const executor = new CodexOpenAIExecutor()
+      executor.onEvent((event) => {
+        if (event.type === 'agent_error') errors.push(event.message)
+      })
+      await expect(
+        executor.executeTurn(
+          'session-1',
+          'turn-invalid-image',
+          'Read this',
+          makeConfig({ attachments: [testCase.attachment], invocationObserver }),
+        ),
+      ).rejects.toThrow(testCase.message)
+      expect(chatCreate).not.toHaveBeenCalled()
+      expect(invocationObserver).not.toHaveBeenCalled()
+      expect(errors).toEqual([expect.stringContaining(testCase.message)])
+    }
+  })
+
+  it('rejects image attachments over the combined 50MB limit before reading them', async () => {
+    const imagePaths = await Promise.all([
+      createSparseTemporaryFile('one.png', 18 * 1024 * 1024),
+      createSparseTemporaryFile('two.png', 18 * 1024 * 1024),
+      createSparseTemporaryFile('three.png', 18 * 1024 * 1024),
+    ])
+
+    await expect(
+      new CodexOpenAIExecutor().executeTurn(
+        'session-1',
+        'turn-total-limit',
+        'Read these',
+        makeConfig({
+          attachments: imagePaths.map((imagePath) => ({
+            type: 'image' as const,
+            path: imagePath,
+            name: path.basename(imagePath),
+          })),
+        }),
+      ),
+    ).rejects.toThrow('50MB combined size limit')
+    expect(chatCreate).not.toHaveBeenCalled()
   })
 
   it('executes standard Chat Completions tools and returns tool results to the model', async () => {

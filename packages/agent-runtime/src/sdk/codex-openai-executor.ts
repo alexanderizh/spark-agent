@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import type { AgentEvent } from '@spark/protocol'
 import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import type { EngineExecutor } from './engine-executor.js'
+import { buildOpenAIChatUserContent, redactOpenAIChatImages } from './openai-chat-image-input.js'
 import type { OpenAIChatToolDefinition, SDKExecutorConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -101,36 +102,42 @@ export class CodexOpenAIExecutor implements EngineExecutor {
       compacted: false,
     })
 
-    const messages: ChatMessage[] = [{ role: 'user', content: prompt }]
-    const requestBody: ChatRequest = {
-      model: config.model,
-      stream: true as const,
-      stream_options: { include_usage: true },
-      messages,
-      ...(config.openAIChatTools != null && config.openAIChatTools.length > 0
-        ? {
-            tools: config.openAIChatTools.map((tool) => ({
-              type: 'function' as const,
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.inputSchema,
-              },
-            })),
-          }
-        : {}),
-      ...(config.fastMode === true ? { service_tier: 'fast' as const } : {}),
-    }
-    config.invocationObserver?.({
-      transport: 'openai-chat',
-      request: {
-        endpoint: resolveChatCompletionsEndpoint(config.apiEndpoint),
-        body: requestBody,
-        credentials: '[redacted]',
-      },
-    })
-
     try {
+      const hasImageAttachments = config.attachments?.some(
+        (attachment) => attachment.type === 'image',
+      )
+      const userContent = hasImageAttachments
+        ? await buildOpenAIChatUserContent(prompt, config.attachments)
+        : prompt
+      controller.signal.throwIfAborted()
+      const messages: ChatMessage[] = [{ role: 'user', content: userContent }]
+      const requestBody: ChatRequest = {
+        model: config.model,
+        stream: true as const,
+        stream_options: { include_usage: true },
+        messages,
+        ...(config.openAIChatTools != null && config.openAIChatTools.length > 0
+          ? {
+              tools: config.openAIChatTools.map((tool) => ({
+                type: 'function' as const,
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema,
+                },
+              })),
+            }
+          : {}),
+        ...(config.fastMode === true ? { service_tier: 'fast' as const } : {}),
+      }
+      config.invocationObserver?.({
+        transport: 'openai-chat',
+        request: {
+          endpoint: resolveChatCompletionsEndpoint(config.apiEndpoint),
+          body: { ...requestBody, messages: redactOpenAIChatImages(requestBody.messages) },
+          credentials: '[redacted]',
+        },
+      })
       await this.runChatToolLoop(client, requestBody, config, makeBase, controller)
       this.emit({
         ...makeBase(),
@@ -494,7 +501,10 @@ function buildCodexChatPrompt(userMessage: string, config: SDKExecutorConfig): s
       ? `# Spark Skills\n${config.skillSystemPrompt}`
       : '',
     buildMcpNotice(config.mcpServers),
-    buildPromptWithAttachments(userMessage, config.attachments),
+    buildPromptWithAttachments(
+      userMessage,
+      config.attachments?.filter((attachment) => attachment.type !== 'image'),
+    ),
   ].filter((section) => section.trim().length > 0)
   return sections.join('\n\n')
 }
