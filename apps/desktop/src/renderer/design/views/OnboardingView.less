@@ -166,7 +166,7 @@
 .onboarding-step {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   width: 100%;
@@ -183,18 +183,20 @@
   transition: color 0.18s ease;
 }
 
-/* 连接线只画在两个 step 之间的空隙里（不贯穿整行），一小截、离 dot 有呼吸距离，
-   比之前贴着文字的通栏竖线干净。已完成路径用 success 色，強调"已经走过这一段"。 */
+/* 连接线从本行 dot 下缘画到下一行 dot 上缘（top:26px → 46px），首列 20px 与 dot 同宽，
+   left:17px + 2px 线宽正好落在 dot 圆心竖轴（8px padding + 10px 半径 = 18px）上，串成连续链路。
+   26/20 两个值依赖 32px 行高 + 8px 列表 gap，改动行距时需同步。
+   z-index 高于选中态 pill，保证线穿过 pill 区域时不断开；已完成段用 success 色。 */
 .onboarding-step:not(:last-child)::after {
   content: '';
   position: absolute;
-  left: 18px;
-  top: 100%;
+  left: 17px;
+  top: 26px;
   width: 2px;
-  height: 8px;
+  height: 20px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--border-strong) 55%, transparent);
-  z-index: 0;
+  z-index: 2;
 }
 
 .onboarding-step.done:not(:last-child)::after {
@@ -1347,7 +1349,7 @@ html[data-theme='dark'] .onboarding-shell,
 
 @media (max-width: 1120px) {
   .onboarding-shell {
-    grid-template-columns: 188px minmax(0, 1fr);
+    grid-template-columns: 180px minmax(0, 1fr);
   }
 
   .onboarding-steps {
