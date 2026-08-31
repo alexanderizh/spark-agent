@@ -156,7 +156,7 @@ export interface ThreadTokenUsageUpdatedNotification {
   tokenUsage: {
     last: TokenUsageBreakdown
     total: TokenUsageBreakdown
-    modelContextWindow?: number | null
+    modelContextWindow: number | null
   }
 }
 

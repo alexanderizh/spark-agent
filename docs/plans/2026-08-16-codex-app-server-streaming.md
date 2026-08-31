@@ -1,6 +1,6 @@
 # Codex 引擎流式输出修复：app-server 传输替换方案
 
-> 状态: 已落地 | 最后核对: 2026-08-21
+> 状态: 已落地 | 最后核对: 2026-09-01
 
 ## 一、现象
 
@@ -93,7 +93,7 @@ session.service ─→ EngineRegistry(codex descriptor)
 | `item/commandExecution/outputDelta`                                            | `terminal_output`                           | 命令输出实时流                   |
 | `item/started` / `item/completed`（command/mcp/fileChange/webSearch/todoList） | `tool_call` / `tool_result` / `file_change` | 复用现有 dispatchItemEvent 逻辑  |
 | `turn/started` / `turn/completed`                                              | `agent_status` / `usage_update`             |                                  |
-| `thread/tokenUsage/updated`                                                    | `usage_update`                              | 实时用量                         |
+| `thread/tokenUsage/updated`                                                    | `usage_update` + `runtime_context_snapshot` | 累计用量与单次请求上下文分流     |
 | `turn/completed`（status=interrupted/failed）                                  | 终态事件                                    | 对齐现有终态语义                 |
 
 segmentId 沿用 `codex-sdk-{turnId}-text-{N}` 约定（renderer 累加逻辑零改动）。

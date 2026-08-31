@@ -1727,9 +1727,10 @@ export function isGoalControlCommand(message: string): boolean {
  * undefined，调用方按「无数据」处理。
  *
  * 各执行器 usage_update 的口径差异（取值必须区分，勿当同一种快照）：
- *   - codex 常驻 app-server：thread/tokenUsage/updated 的 `last` 字段 = 最近一次
- *     请求的 input（已含 cached）——反推的理想口径。
- *   - codex-openai：每请求 prompt_tokens（已含 cached）。
+ *   - codex：一律不从 usage_update 反推。旧 SDK 是整轮累计；app-server 虽来自
+ *     `last`，也必须通过独立 runtime_context_snapshot 证明来源，避免载具切换后误用。
+ *   - codex-openai：虽然当前实现是每请求 prompt_tokens，但历史 usage_update 没有可靠
+ *     载具来源标记，同样不由这个通用选择器读取，避免与 SDK 累计事件混淆。
  *   - claude：轮内 per-call 变体（assistant 消息，无 estimatedCostUsd）与单次请求
  *     一一对应；result 变体带 estimatedCostUsd（total_cost_usd），是本轮主循环所有
  *     模型调用的**合计**（实测一轮 input 132K + cacheRead 5.3M，远超任何单窗口），
@@ -1750,6 +1751,58 @@ export function getLastRealPromptTokens(
   return undefined
 }
 
+export interface CodexRuntimeContextSnapshot {
+  usedTokens: number
+  contextWindowTokens?: number
+}
+
+/**
+ * 读取 Codex app-server 最近一次真实请求上下文。
+ *
+ * 只接受独立的 runtime_context_snapshot；绝不从 provider=codex 的 usage_update
+ * 猜测，因为旧 Codex SDK 的 turn.completed.usage 是整轮多次请求累计消耗。
+ */
+export function getLastCodexRuntimeContextSnapshot(
+  eventRepo: EventRepository,
+  sessionId: string,
+): CodexRuntimeContextSnapshot | undefined {
+  // 必须把 codex usage_update 一并作为载具降级屏障：app-server 会同步先发 usage、
+  // 再发 snapshot；旧 SDK / CLI 只发 usage。若倒序先遇到无配套 snapshot 的 usage，
+  // 说明最新一轮不是可证明的 app-server 单次请求，不能复用更早的精确快照。
+  const rows = eventRepo.queryBySession({ sessionId, limit: 64 }).events
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    let event: AgentEvent
+    try {
+      event = JSON.parse(rows[index]?.event_json ?? '') as AgentEvent
+    } catch {
+      continue
+    }
+    if (event.type === 'session_history_reset') return undefined
+    if (event.type === 'usage_update' && event.provider === 'codex') {
+      return undefined
+    }
+    if (event.type !== 'runtime_context_snapshot') continue
+    if (
+      event.provider !== 'codex' ||
+      event.source !== 'codex_app_server' ||
+      !Number.isFinite(event.usedTokens) ||
+      event.usedTokens <= 0
+    )
+      continue
+    const contextWindowTokens =
+      typeof event.contextWindowTokens === 'number' &&
+      Number.isFinite(event.contextWindowTokens) &&
+      event.contextWindowTokens > 0
+        ? Math.trunc(event.contextWindowTokens)
+        : undefined
+    return {
+      usedTokens: Math.trunc(event.usedTokens),
+      ...(contextWindowTokens != null ? { contextWindowTokens } : {}),
+    }
+  }
+  return undefined
+}
+
 function readPromptWindowTokens(eventJson: string): number | undefined {
   let event: AgentEvent
   try {
@@ -1759,6 +1812,7 @@ function readPromptWindowTokens(eventJson: string): number | undefined {
   }
   if (event.type !== 'usage_update') return undefined
   if (event.inputTokens == null || event.inputTokens <= 0) return undefined
+  if (event.provider === 'codex') return undefined
   // claude result 变体的轮内合计（estimatedCostUsd 是 result 独有标记，见上方矩阵）。
   if (event.provider === 'claude' && event.estimatedCostUsd != null) return undefined
   return providerPromptWindowTokens({

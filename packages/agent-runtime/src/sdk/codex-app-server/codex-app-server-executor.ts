@@ -860,6 +860,7 @@ export class CodexAppServerExecutor
                 cachedInputTokens?: number
                 reasoningOutputTokens?: number
               }
+              modelContextWindow?: number | null
             }
           | undefined
         // `total` 是 native thread 跨 turn 的累计值；usage_update 的既有契约是本轮
@@ -883,6 +884,32 @@ export class CodexAppServerExecutor
             typeof last.reasoningOutputTokens === 'number' ? last.reasoningOutputTokens : 0,
           ...this.makeCurrentBase(),
         })
+        // app-server 的 `last` 来自 TokenUsageInfo.last_token_usage：每次 Responses API
+        // 完成后用最新单次请求 usage 覆盖；`total` 才是 native thread 累计消耗。
+        // 独立事件让上下文仪表不再猜测 usage_update 到底是单次请求还是整轮累计。
+        if (Number.isFinite(last.inputTokens) && last.inputTokens > 0) {
+          const modelContextWindow =
+            typeof usage?.modelContextWindow === 'number' &&
+            Number.isFinite(usage.modelContextWindow) &&
+            usage.modelContextWindow > 0
+              ? Math.trunc(usage.modelContextWindow)
+              : null
+          this.emit({
+            type: 'runtime_context_snapshot',
+            provider: 'codex',
+            model: this.activeConfig?.model ?? '',
+            source: 'codex_app_server',
+            usedTokens: Math.trunc(last.inputTokens),
+            cachedInputTokens:
+              typeof last.cachedInputTokens === 'number' &&
+              Number.isFinite(last.cachedInputTokens) &&
+              last.cachedInputTokens > 0
+                ? Math.trunc(last.cachedInputTokens)
+                : 0,
+            contextWindowTokens: modelContextWindow,
+            ...this.makeCurrentBase(),
+          })
+        }
         return
       }
       case 'thread/compacted': {

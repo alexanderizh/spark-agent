@@ -2,6 +2,15 @@ import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
 import { providerPromptWindowTokens } from '@spark/shared'
 import type { SessionUsageData, TurnUsageRow, UsageSnapshot } from './ChatUsageTypes'
 
+export type RuntimeContextSnapshotState = {
+  provider: 'codex'
+  model: string
+  source: 'codex_app_server'
+  usedTokens: number
+  cachedInputTokens: number
+  contextWindowTokens: number | null
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -10,7 +19,13 @@ export function getLatestInputTokens(events: AgentEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event?.type === 'user_message') return 0
+    if (event?.type === 'runtime_context_snapshot' && event.usedTokens > 0) {
+      return event.usedTokens
+    }
     if (event?.type === 'usage_update' && event.inputTokens > 0) {
+      // Codex SDK 的 usage_update 可能是整轮多请求累计消耗；Codex 上下文只接受
+      // runtime_context_snapshot。Claude / 其他 provider 保持既有回退口径。
+      if (event.provider === 'codex') continue
       return providerContextWindowTokens(event)
     }
   }
@@ -20,9 +35,50 @@ export function getLatestInputTokens(events: AgentEvent[]): number {
 export function getProviderContextInputUpdate(event: AgentEvent): number | null {
   if (event.type === 'user_message') return 0
   if (event.type === 'usage_update' && event.inputTokens > 0) {
+    if (event.provider === 'codex') return null
     return providerContextWindowTokens(event)
   }
   return null
+}
+
+export function getRuntimeContextSnapshotUpdate(
+  event: AgentEvent,
+): RuntimeContextSnapshotState | null | undefined {
+  if (event.type === 'user_message') return null
+  if (event.type === 'usage_update' && event.provider === 'codex') {
+    return null
+  }
+  if (event.type !== 'runtime_context_snapshot' || event.usedTokens <= 0) return undefined
+  return {
+    provider: event.provider,
+    model: event.model,
+    source: event.source,
+    usedTokens: event.usedTokens,
+    cachedInputTokens: event.cachedInputTokens,
+    contextWindowTokens: event.contextWindowTokens,
+  }
+}
+
+export function getLatestRuntimeContextSnapshot(
+  events: AgentEvent[],
+): RuntimeContextSnapshotState | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event == null) continue
+    const update = getRuntimeContextSnapshotUpdate(event)
+    if (update !== undefined) return update
+  }
+  return null
+}
+
+/** 只允许快照回流到产生它的 Codex 模型；切到 Claude / 其他模型立即失效。 */
+export function resolveMatchingRuntimeContextSnapshot(
+  snapshot: RuntimeContextSnapshotState | null | undefined,
+  adapter: string | null | undefined,
+  model: string | null | undefined,
+): RuntimeContextSnapshotState | null {
+  if (adapter !== 'codex' || snapshot == null || model == null) return null
+  return snapshot.model === model ? snapshot : null
 }
 
 /**
@@ -56,13 +112,25 @@ export function resolveContextUsedTokens(params: {
   ledgerEstimatedTokens?: number | null | undefined
   turnEstimatedTokens?: number | null | undefined
   providerInputTokens: number
+  runtimeContextTokens?: number | null | undefined
 }): number {
+  if (params.runtimeContextTokens != null && params.runtimeContextTokens > 0) {
+    return params.runtimeContextTokens
+  }
   if (params.provider === 'claude' && params.providerInputTokens > 0) {
     return params.providerInputTokens
   }
   const estimated = params.ledgerEstimatedTokens ?? params.turnEstimatedTokens
   if (estimated != null) return Math.max(0, estimated)
   return Math.max(0, params.providerInputTokens)
+}
+
+export function resolveDisplayedContextWindow(
+  configuredContextWindow: number,
+  runtimeSnapshot?: RuntimeContextSnapshotState | null,
+): number {
+  const runtimeWindow = runtimeSnapshot?.contextWindowTokens
+  return runtimeWindow != null && runtimeWindow > 0 ? runtimeWindow : configuredContextWindow
 }
 
 export function createEmptySessionUsageData(): SessionUsageData {

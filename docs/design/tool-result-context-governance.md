@@ -1,6 +1,6 @@
 # 工具结果上下文治理与子应用源码引用
 
-> 状态: 已落地 | 最后核对: 2026-08-22
+> 状态: 已落地 | 最后核对: 2026-09-01
 
 ## 背景
 
@@ -27,7 +27,7 @@ Codex native runtime 在一个用户轮次内可能执行多次模型调用。Pr
 
 | 边界                 | 负责的语义                       | 实现                                                         |
 | -------------------- | -------------------------------- | ------------------------------------------------------------ |
-| UI 用量              | 当前请求的有效上下文             | Context Ledger → Context Governor 估算 → Provider 输入兜底   |
+| UI 用量              | 当前请求的有效上下文             | Codex Runtime 快照 / Claude 单次请求 → Spark 请求边界估算    |
 | Spark stdio MCP      | 工具结果进入模型前的统一治理     | 保持命名空间的透明 JSON-RPC 代理 + `ToolResultEnvelope`      |
 | Codex native history | 原生 Bash/MCP 进入后续请求的上限 | 三种 native transport 统一 `tool_output_token_limit = 12000` |
 | Spark 事件持久化     | UI、审计与后续按需读取           | 原始结构化消费者先处理，超长 `tool_result` 再归档            |
@@ -35,16 +35,23 @@ Codex native runtime 在一个用户轮次内可能执行多次模型调用。Pr
 
 ## UI 用量语义
 
-`resolveContextUsedTokens` 按以下顺序选取一个来源，不再取最大值：
+`resolveContextUsedTokens` 按运行时隔离选择来源，不再取最大值：
 
-1. Context Ledger 的 `totalEstimatedTokens`；
-2. Context Governor 的 `estimatedTokens`；
-3. 两者都缺失时，才使用 Provider 的 `inputTokens` 兼容 native resume。
+1. Codex app-server 收到 `thread/tokenUsage/updated` 时，把 `last.inputTokens` 和
+   `modelContextWindow` 映射为独立 `runtime_context_snapshot`。二者分别作为已用量和窗口；
+   快照还必须与当前 Codex adapter、模型一致，切换模型或 Claude 时不能复用。
+2. Claude 保持原有单次请求口径：`input + cache_read + cache_creation` 优先于本地估算。
+3. 无对应 Runtime 实测时，使用 Context Ledger 的 `totalEstimatedTokens`，再回退 Context
+   Governor 的 `estimatedTokens`。
+4. 旧 Codex SDK / CLI 的 `turn.completed.usage` 是整轮多次模型请求累计消耗，只用于成本与
+   用量统计，禁止回填上下文占用；历史事件没有独立 Runtime 快照时宁可显示 Spark 估算。
 
 Provider 上报的整轮累计输入、缓存读取和输出 token 继续进入用量统计，不被删除或改写。这样
 成本面板仍能看到真实消耗，而上下文进度不会把 17 次内部调用累计出的 129 万 token 显示为
-一次请求已经超过 100 万窗口。新的 `user_message` 到达时只清零界面上的 Provider fallback，
-避免下一轮 Ledger / Governor 事件到达前短暂沿用上一轮累计值；原始 usage 事件和成本统计不清零。
+一次请求已经超过 100 万窗口。新的 `user_message` 到达时清除上一请求的 Runtime / Provider
+展示快照，先使用本轮请求边界 Ledger，等 Runtime 发出新快照后切换为实测值；原始 usage 事件
+和成本统计不清零。弹窗会明确标注“Codex Runtime · 最近一次请求”或“Spark 估算”，避免把
+请求边界实测误解为持续实时采样。
 
 ## Codex 工具输出预算
 

@@ -216,6 +216,7 @@ import {
   getDebugModeFromMetadata,
   getFastModeFromMetadata,
   getLatestMatchingTurnPromptSnapshot,
+  getLastCodexRuntimeContextSnapshot,
   getLastRealPromptTokens,
   getLatestTurnIdFromEvents,
   getLocalCliDefaultModel,
@@ -3132,9 +3133,17 @@ export class SessionService {
       // prompt，若账本缺历史段，「上下文用量」会恒等于静态 prompt 规模冻结不动。
       // 用上一轮最后一次真实请求的 prompt 规模反推展示用历史段（clamp 到窗口）。
       const runtimeManagedHistory = canResumeSdkSession || usePersistentCodexAppServer
-      const lastRealPromptTokens = runtimeManagedHistory
-        ? getLastRealPromptTokens(eventRepo, sessionId)
+      const codexRuntimeContext = usePersistentCodexAppServer
+        ? getLastCodexRuntimeContextSnapshot(eventRepo, sessionId)
         : undefined
+      // Codex SDK 的 turn.completed.usage 是整轮多请求累计消耗，不能回填窗口。
+      // 只有 app-server 的独立快照可作为 Codex native history；Claude resume 保持
+      // 原有 per-call usage 选择逻辑，不进入 Codex 分支。
+      const lastRealPromptTokens = usePersistentCodexAppServer
+        ? codexRuntimeContext?.usedTokens
+        : canResumeSdkSession && adapterKind !== 'codex'
+          ? getLastRealPromptTokens(eventRepo, sessionId)
+          : undefined
       const { sections: ledgerSections, totalEstimatedTokens } = buildContextLedger({
         skillPrompt: composedSkillSystemPrompt,
         systemPrompt: contextLedgerSystemPrompt,

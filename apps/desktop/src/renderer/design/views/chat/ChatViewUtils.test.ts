@@ -10,8 +10,12 @@ import {
   ensureSessionScheduleSession,
   eventsAfterLastHistoryReset,
   getLatestInputTokens,
+  getLatestRuntimeContextSnapshot,
   getProviderContextInputUpdate,
+  getRuntimeContextSnapshotUpdate,
   resolveContextUsedTokens,
+  resolveDisplayedContextWindow,
+  resolveMatchingRuntimeContextSnapshot,
 } from './ChatViewUtils'
 
 function event(type: AgentEvent['type'], seq: number): AgentEvent {
@@ -124,6 +128,66 @@ describe('ChatViewUtils', () => {
     ).toBeNull()
   })
 
+  it('uses only the dedicated Codex runtime snapshot for Codex context occupancy', () => {
+    const cumulativeSdkUsage = {
+      ...event('usage_update', 1),
+      provider: 'codex',
+      inputTokens: 5_063_372,
+      cacheHitTokens: 4_852_736,
+      outputTokens: 14_215,
+    } as AgentEvent
+    const runtimeSnapshot = {
+      ...event('runtime_context_snapshot', 2),
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      source: 'codex_app_server',
+      usedTokens: 40_855,
+      cachedInputTokens: 7_936,
+      contextWindowTokens: 1_000_000,
+    } as AgentEvent
+
+    expect(getProviderContextInputUpdate(cumulativeSdkUsage)).toBeNull()
+    expect(getLatestInputTokens([cumulativeSdkUsage])).toBe(0)
+    expect(getLatestInputTokens([cumulativeSdkUsage, runtimeSnapshot])).toBe(40_855)
+    expect(getRuntimeContextSnapshotUpdate(runtimeSnapshot)).toEqual({
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      source: 'codex_app_server',
+      usedTokens: 40_855,
+      cachedInputTokens: 7_936,
+      contextWindowTokens: 1_000_000,
+    })
+    expect(getLatestRuntimeContextSnapshot([cumulativeSdkUsage, runtimeSnapshot])).toMatchObject({
+      usedTokens: 40_855,
+    })
+    expect(getRuntimeContextSnapshotUpdate(cumulativeSdkUsage)).toBeNull()
+    expect(getLatestRuntimeContextSnapshot([runtimeSnapshot, cumulativeSdkUsage])).toBeNull()
+  })
+
+  it('prefers the Codex runtime request and window while keeping configured fallbacks', () => {
+    const snapshot = {
+      provider: 'codex' as const,
+      model: 'gpt-5.6-sol',
+      source: 'codex_app_server' as const,
+      usedTokens: 40_855,
+      cachedInputTokens: 7_936,
+      contextWindowTokens: 1_000_000,
+    }
+    expect(
+      resolveContextUsedTokens({
+        provider: 'codex',
+        ledgerEstimatedTokens: 1_000_000,
+        providerInputTokens: 5_063_372,
+        runtimeContextTokens: 40_855,
+      }),
+    ).toBe(40_855)
+    expect(resolveDisplayedContextWindow(200_000, snapshot)).toBe(1_000_000)
+    expect(resolveDisplayedContextWindow(200_000, null)).toBe(200_000)
+    expect(resolveMatchingRuntimeContextSnapshot(snapshot, 'codex', 'gpt-5.6-sol')).toBe(snapshot)
+    expect(resolveMatchingRuntimeContextSnapshot(snapshot, 'claude-sdk', 'gpt-5.6-sol')).toBeNull()
+    expect(resolveMatchingRuntimeContextSnapshot(snapshot, 'codex', 'gpt-5.6-luna')).toBeNull()
+  })
+
   it('counts claude cache tokens as real context usage in provider updates', () => {
     // 复现多图会话的实况：inputTokens 只是未命中余量，大头在 cache_read 里
     expect(
@@ -143,7 +207,7 @@ describe('ChatViewUtils', () => {
         cacheHitTokens: 30_000,
         outputTokens: 10,
       } as AgentEvent),
-    ).toBe(42_000)
+    ).toBeNull()
     expect(
       getLatestInputTokens([
         {

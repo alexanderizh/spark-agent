@@ -1,9 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { EventRepository, SessionRepository, SparkDatabase } from '@spark/storage'
-import { getLastRealPromptTokens } from '../../../services/session/session-pure-utils.js'
+import { beforeEach, describe, expect, it } from 'vitest'
+import type {
+  AgentEventRow,
+  EventRepository,
+  InsertEventParams,
+  QueryEventsParams,
+} from '@spark/storage'
+import {
+  getLastCodexRuntimeContextSnapshot,
+  getLastRealPromptTokens,
+} from '../../../services/session/session-pure-utils.js'
 
 interface UsageFixture {
   id: string
@@ -51,38 +56,81 @@ function insertUsages(
 }
 
 describe('getLastRealPromptTokens 适配器口径', () => {
-  let db: SparkDatabase
-  let directory: string
   let eventRepo: EventRepository
+  let rows: AgentEventRow[]
   const sessionId = 'session-last-real-prompt'
 
   beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'spark-last-prompt-'))
-    db = new SparkDatabase(join(directory, 'test.db'))
-    db.runMigrations(resolve(process.cwd(), '../storage/migrations'))
-    new SessionRepository(db).create({
-      id: sessionId,
-      kind: 'chat',
-      title: 'Usage metering',
-      status: 'idle',
-      projectId: '',
-      providerProfileId: 'provider-test',
-      modelId: 'test-model',
-      agentAdapter: 'claude',
-    })
-    eventRepo = new EventRepository(db)
+    rows = []
+    eventRepo = {
+      insert: (params: InsertEventParams) => {
+        rows.push({
+          id: params.id,
+          session_id: params.sessionId,
+          run_id: null,
+          turn_id: params.turnId ?? null,
+          event_type: params.eventType,
+          event_json: params.eventJson,
+          created_at: '2026-09-01T00:00:00.000Z',
+          seq: (JSON.parse(params.eventJson) as { seq?: number }).seq ?? null,
+        })
+      },
+      queryBySession: (params: QueryEventsParams) => {
+        const matching = rows.filter(
+          (row) =>
+            row.session_id === params.sessionId &&
+            (params.eventType == null || row.event_type === params.eventType),
+        )
+        const limit = params.limit ?? matching.length
+        return {
+          events: matching.slice(Math.max(0, matching.length - limit)),
+          hasMore: matching.length > limit,
+        }
+      },
+    } as unknown as EventRepository
   })
 
-  afterEach(() => {
-    db.close()
-    rmSync(directory, { recursive: true, force: true })
-  })
-
-  it('codex 快照直用 input（已含 cached，不重复累加）', () => {
+  it('codex usage_update 即使带 cached 也不再冒充单次请求快照', () => {
     insertUsages(eventRepo, sessionId, [
       { id: 'u1', seq: 1, provider: 'codex', inputTokens: 84_213, cacheHitTokens: 50_000 },
     ])
-    expect(getLastRealPromptTokens(eventRepo, sessionId)).toBe(84_213)
+    expect(getLastRealPromptTokens(eventRepo, sessionId)).toBeUndefined()
+  })
+
+  it('只从 Codex app-server 独立事件读取最近请求和 runtime 窗口', () => {
+    insertUsages(eventRepo, sessionId, [
+      { id: 'paired-usage', seq: 1, provider: 'codex', inputTokens: 84_213 },
+    ])
+    eventRepo.insert({
+      id: 'runtime-context-1',
+      sessionId,
+      turnId: 'turn-1',
+      eventType: 'runtime_context_snapshot',
+      eventJson: JSON.stringify({
+        id: 'runtime-context-1',
+        sessionId,
+        turnId: 'turn-1',
+        timestamp: '2026-09-01T00:00:00.000Z',
+        seq: 2,
+        type: 'runtime_context_snapshot',
+        provider: 'codex',
+        model: 'gpt-test',
+        source: 'codex_app_server',
+        usedTokens: 84_213,
+        cachedInputTokens: 50_000,
+        contextWindowTokens: 1_000_000,
+      }),
+    })
+
+    expect(getLastCodexRuntimeContextSnapshot(eventRepo, sessionId)).toEqual({
+      usedTokens: 84_213,
+      contextWindowTokens: 1_000_000,
+    })
+
+    insertUsages(eventRepo, sessionId, [
+      { id: 'fallback-sdk-usage', seq: 3, provider: 'codex', inputTokens: 5_063_372 },
+    ])
+    expect(getLastCodexRuntimeContextSnapshot(eventRepo, sessionId)).toBeUndefined()
   })
 
   it('claude per-call 变体按窗口口径回加缓存', () => {
@@ -138,7 +186,7 @@ describe('getLastRealPromptTokens 适配器口径', () => {
 
   it('零值占位不可用，取更早的可用快照', () => {
     insertUsages(eventRepo, sessionId, [
-      { id: 'u1', seq: 1, provider: 'codex', inputTokens: 84_213 },
+      { id: 'u1', seq: 1, provider: 'claude', inputTokens: 84_213 },
       { id: 'u2', seq: 2, provider: 'claude', inputTokens: 0 },
     ])
     expect(getLastRealPromptTokens(eventRepo, sessionId)).toBe(84_213)

@@ -18,6 +18,9 @@ import {
   computeCacheHitRate,
   formatTokenCount,
   resolveContextUsedTokens,
+  resolveDisplayedContextWindow,
+  resolveMatchingRuntimeContextSnapshot,
+  type RuntimeContextSnapshotState,
 } from './ChatViewUtils'
 import { extractInspectorSubagents, isRecord, type InspectorTask } from './ChatInspectorUtils'
 import type {
@@ -511,6 +514,7 @@ export function ChatInspector({
   contextUsage,
   contextLedger,
   contextInputTokens,
+  runtimeContext,
   providerId,
   providerContextWindow,
   turnPromptSnapshots,
@@ -533,6 +537,7 @@ export function ChatInspector({
   contextUsage: ContextUsageState | null
   contextLedger: ContextLedgerState | null
   contextInputTokens: number
+  runtimeContext: RuntimeContextSnapshotState | null
   /** 当前 Provider 的引擎标识（'claude' / 'codex' / 自定义串），决定上下文占用口径 */
   providerId?: string | undefined
   providerContextWindow: number
@@ -556,6 +561,11 @@ export function ChatInspector({
   const ledgerUsage = useSessionLedgerUsage(session?.id, usageData.turns.length)
   // 轮次用量图表：一轮一行、剔除全程无用量轮次，只展示有用量的最近 20 轮
   const turnUsage = useMemo(() => buildTurnUsageRows(usageData.turns), [usageData.turns])
+  const matchingRuntimeContext = resolveMatchingRuntimeContextSnapshot(
+    runtimeContext,
+    session?.agentAdapter,
+    session?.modelId,
+  )
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -580,21 +590,26 @@ export function ChatInspector({
     ledgerEstimatedTokens: contextLedger?.totalEstimatedTokens,
     turnEstimatedTokens: contextUsage?.estimatedTokens,
     providerInputTokens: contextInputTokens,
+    runtimeContextTokens: matchingRuntimeContext?.usedTokens,
   })
   // 窗口大小由 Provider 显式配置决定；历史 context_usage 里可能还带旧的模型名推断值。
-  const contextWindow = providerContextWindow
+  // Codex app-server 有运行时实测窗口时优先使用；Claude 与无快照路径保持 Provider 配置。
+  const contextWindow = resolveDisplayedContextWindow(providerContextWindow, matchingRuntimeContext)
   // 「X% 已用」始终按硬窗口显示，对齐弹窗顶部「X% 已用 / 200K」。
   const contextRatio =
     contextWindow > 0
       ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10)
       : 0
-  // 预警阈值以「软上限」（自动压缩触发线，约窗口 70%）为基准，而非硬窗口，
-  // 这样 80% / 100% 的徽标分别对应「接近 / 已达压缩线」，与弹窗口径一致。
+  // Codex Runtime 快照不包含实际压缩阈值，只按硬窗口表达一般压力；非 Runtime
+  // 估算路径继续沿用现有软线。二者都不能当作“压缩已经/即将发生”的运行时事件。
   const softLimitTokens = contextLedger?.softLimitTokens ?? contextUsage?.softLimitTokens ?? 0
   const softLimit = softLimitTokens > 0 ? softLimitTokens : Math.floor(contextWindow * 0.7)
   const softUsedRatio = softLimit > 0 ? currentContextTokens / softLimit : 0
-  const isContextWarning = softUsedRatio >= 0.8
-  const isContextCritical = softUsedRatio >= 1
+  const hardUsedRatio = contextWindow > 0 ? currentContextTokens / contextWindow : 0
+  const pressureRatio = matchingRuntimeContext != null ? hardUsedRatio : softUsedRatio
+  const isContextWarning = pressureRatio >= 0.8
+  const isContextCritical =
+    matchingRuntimeContext != null ? pressureRatio >= 0.95 : pressureRatio >= 1
 
   return (
     <div
@@ -769,6 +784,7 @@ export function ChatInspector({
               ratio={contextRatio}
               isWarning={isContextWarning}
               isCritical={isContextCritical}
+              runtimeMeasured={matchingRuntimeContext != null}
             />
           </div>
         )}
@@ -1366,18 +1382,19 @@ function ContextWindowVisualization({
   ratio,
   isWarning,
   isCritical,
+  runtimeMeasured,
 }: {
   usedTokens: number
   totalTokens: number
   ratio: number
   isWarning: boolean
   isCritical: boolean
+  runtimeMeasured: boolean
 }) {
-  // Estimated breakdown percentages (approximate visual representation)
-  // In a real implementation, these would come from actual API response data
+  // Spark 估算路径保留原有占位分布；Codex Runtime 实测只知道请求总输入，不能
+  // 伪造 system/tools/history 分类，因此以单一实测段展示。
   const systemPct = 5
   const toolsPct = 10
-  const historyPct = Math.max(0, ratio - systemPct - toolsPct)
 
   const barClass = isCritical
     ? 'context-bar-critical'
@@ -1404,18 +1421,39 @@ function ContextWindowVisualization({
           className={`context-usage-fill ${barClass}`}
           style={{ width: `${Math.min(100, ratio)}%` }} /* dynamic */
         >
-          <div className="context-fill-system" style={{ width: `${systemPct}%` }} /* dynamic */ />
-          <div className="context-fill-tools" style={{ width: `${toolsPct}%` }} /* dynamic */ />
-          <div className="context-fill-history" />
+          {runtimeMeasured ? (
+            <div className="context-fill-history" />
+          ) : (
+            <>
+              <div
+                className="context-fill-system"
+                style={{ width: `${systemPct}%` }} /* dynamic */
+              />
+              <div className="context-fill-tools" style={{ width: `${toolsPct}%` }} /* dynamic */ />
+              <div className="context-fill-history" />
+            </>
+          )}
         </div>
       </div>
       <div className="context-usage-labels">
-        <span className="context-label context-label-system">系统提示</span>
-        <span className="context-label context-label-tools">工具定义</span>
-        <span className="context-label context-label-history">对话历史</span>
+        {runtimeMeasured ? (
+          <span className="context-label context-label-history">最近请求上下文</span>
+        ) : (
+          <>
+            <span className="context-label context-label-system">系统提示</span>
+            <span className="context-label context-label-tools">工具定义</span>
+            <span className="context-label context-label-history">对话历史</span>
+          </>
+        )}
         <span className="context-label context-label-remaining">剩余</span>
       </div>
       <div className="context-usage-detail">
+        <div className="kv-row">
+          <span className="k">来源</span>
+          <span className="v">
+            {runtimeMeasured ? 'Codex Runtime · 最近一次请求' : 'Spark 估算'}
+          </span>
+        </div>
         <div className="kv-row">
           <span className="k">已用</span>
           <span className="v">{formatTokenCount(usedTokens)}</span>

@@ -1256,6 +1256,11 @@ export class MessageBuilder {
         break
       }
 
+      case 'runtime_context_snapshot': {
+        // 仅供 Composer / Inspector 的上下文仪表消费，不创建时间线消息或气泡。
+        break
+      }
+
       case 'context_usage': {
         this.latestContextUsage = {
           estimatedTokens: event.estimatedTokens,

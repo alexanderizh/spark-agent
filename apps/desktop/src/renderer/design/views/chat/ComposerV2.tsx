@@ -148,7 +148,13 @@ import {
   type SessionSummary,
 } from '../../SessionSidebarContext'
 import type { UIMessage } from '../../services/event-mapper'
-import { formatTokenCount, resolveContextUsedTokens } from './ChatViewUtils'
+import {
+  formatTokenCount,
+  resolveContextUsedTokens,
+  resolveDisplayedContextWindow,
+  resolveMatchingRuntimeContextSnapshot,
+  type RuntimeContextSnapshotState,
+} from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import {
   buildQuickReplyMessage,
@@ -419,6 +425,7 @@ function ContextMeterWithPopup({
   contextRatio,
   contextUsedTokens,
   contextWindow,
+  runtimeMeasured,
   ledger,
   softLimitTokens,
   compactedThisTurn,
@@ -433,6 +440,7 @@ function ContextMeterWithPopup({
   contextRatio: number
   contextUsedTokens: number
   contextWindow: number
+  runtimeMeasured: boolean
   ledger: ContextLedgerState | null
   softLimitTokens: number
   compactedThisTurn: boolean
@@ -534,12 +542,14 @@ function ContextMeterWithPopup({
     toast,
   ])
 
-  // 预警阈值以「软上限」（自动压缩触发线，约窗口的 70%）为基准，而非硬窗口，
-  // 这样 80% / 100% 的提示能对应「即将 / 已达压缩线」，而非显示给用户的「X% 已用」。
+  // Codex Runtime 未公开实际自动压缩阈值：实测快照只按硬窗口表达一般压力，
+  // 不再拿 Spark 的 70% 软线冒充 Runtime 压缩状态。估算路径维持既有提醒语义。
   const softLimit = softLimitTokens > 0 ? softLimitTokens : Math.floor(contextWindow * 0.7)
   const softUsedRatio = softLimit > 0 ? contextUsedTokens / softLimit : 0
-  const isWarning = softUsedRatio >= 0.8
-  const isCritical = softUsedRatio >= 1
+  const hardUsedRatio = contextWindow > 0 ? contextUsedTokens / contextWindow : 0
+  const pressureRatio = runtimeMeasured ? hardUsedRatio : softUsedRatio
+  const isWarning = pressureRatio >= 0.8
+  const isCritical = runtimeMeasured ? pressureRatio >= 0.95 : pressureRatio >= 1
 
   // 分段明细：按 token 倒序，过滤空段，附带中文标签 + 配色。
   const ledgerSections = (ledger?.sections ?? [])
@@ -594,6 +604,19 @@ function ContextMeterWithPopup({
               / {formatTokenCount(contextWindow)} Tokens
             </span>
           </div>
+
+          <div className="context-popup-row">
+            <span className="row-label">数据来源</span>
+            <span className="row-value">
+              {runtimeMeasured ? 'Codex Runtime · 最近一次请求' : 'Spark 估算'}
+            </span>
+          </div>
+          {runtimeMeasured && ledgerSections.length > 0 && (
+            <div className="context-popup-row">
+              <span className="row-label">分类明细</span>
+              <span className="row-value">Spark 估算</span>
+            </div>
+          )}
 
           {isCritical && (
             <div className="context-popup-alert alert-critical">
@@ -680,6 +703,7 @@ export function ComposerV2({
   setSelectedProviderId,
   branchState,
   contextInputTokens,
+  runtimeContext,
   contextUsage,
   contextLedger,
   isWorking,
@@ -744,6 +768,7 @@ export function ComposerV2({
   hideBranchSelect?: boolean
   branchState: BranchState
   contextInputTokens: number
+  runtimeContext: RuntimeContextSnapshotState | null
   contextUsage: ContextUsageState | null
   contextLedger: ContextLedgerState | null
   isWorking: boolean
@@ -1094,11 +1119,20 @@ export function ComposerV2({
     }
     cliSparkCacheHydratedSessionRef.current = hydrationKey
   }, [cliSparkProviders, selectedProvider, session?.cliSparkOverride, session?.id])
-  const contextWindow = resolveModelContextWindowForProvider(
+  const configuredContextWindow = resolveModelContextWindowForProvider(
     sessionModelId || draftModelId || selectedProvider?.defaultModel,
     selectedProvider?.supportsMillionContext === true,
     selectedProvider?.contextWindow,
     selectedProvider?.modelContextWindows,
+  )
+  const matchingRuntimeContext = resolveMatchingRuntimeContextSnapshot(
+    runtimeContext,
+    adapter,
+    effectiveModelId,
+  )
+  const contextWindow = resolveDisplayedContextWindow(
+    configuredContextWindow,
+    matchingRuntimeContext,
   )
   const draftBucketKey = session?.id ?? NEW_SESSION_DRAFT_BUCKET
   const sessionWorkspaceId = session?.workspaceIds[0] ?? null
@@ -1156,6 +1190,7 @@ export function ComposerV2({
     ledgerEstimatedTokens: contextLedger?.totalEstimatedTokens,
     turnEstimatedTokens: contextUsage?.estimatedTokens,
     providerInputTokens: contextInputTokens,
+    runtimeContextTokens: matchingRuntimeContext?.usedTokens,
   })
   const contextRatio =
     contextWindow > 0
@@ -4590,6 +4625,7 @@ export function ComposerV2({
               contextRatio={contextRatio}
               contextUsedTokens={contextUsedTokens}
               contextWindow={contextWindow}
+              runtimeMeasured={matchingRuntimeContext != null}
               ledger={contextLedger}
               softLimitTokens={contextLedger?.softLimitTokens ?? contextUsage?.softLimitTokens ?? 0}
               compactedThisTurn={contextUsage?.compactedThisTurn ?? false}

@@ -672,6 +672,26 @@ export interface UsageUpdateEvent extends BaseEvent {
 }
 
 /**
+ * Codex native runtime 对「最近一次真实模型请求」的上下文快照。
+ *
+ * 与 UsageUpdateEvent 严格分离：usage_update 继续承载成本/累计消耗语义；本事件只
+ * 描述一个请求边界上的实际输入规模和 Runtime 实际窗口，不能跨请求累加。
+ * 当前仅 Codex app-server 的 thread/tokenUsage/updated 能提供这组数据。
+ */
+export interface RuntimeContextSnapshotEvent extends BaseEvent {
+  type: 'runtime_context_snapshot'
+  provider: 'codex'
+  model: string
+  source: 'codex_app_server'
+  /** 最近一次 Responses API 请求的完整输入 token；已包含 cached input。 */
+  usedTokens: number
+  /** usedTokens 中由 Runtime 报告的缓存命中子集，仅用于解释数据来源。 */
+  cachedInputTokens: number
+  /** Runtime 实际模型窗口；旧版本或未知模型可能返回 null。 */
+  contextWindowTokens: number | null
+}
+
+/**
  * 当前 turn 内 SDK prompt / messages 上下文占用估算。
  * 与 UsageUpdateEvent 的区别：
  *   - UsageUpdateEvent 由 adapter 发出，反映"刚发生的一次 LLM 调用的 token"
@@ -1056,6 +1076,7 @@ export type AgentEvent =
   | SessionHistoryResetEvent
   | GoalEvent
   | UsageUpdateEvent
+  | RuntimeContextSnapshotEvent
   | AgentErrorEvent
   | RuntimeSignalEvent
   | TranscriptRetractionEvent

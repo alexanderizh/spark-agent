@@ -770,6 +770,7 @@ describe('CodexAppServerExecutor', () => {
                 reasoningOutputTokens: 10,
                 totalTokens: 150,
               },
+              modelContextWindow: 1_000_000,
             },
           },
         },
@@ -784,6 +785,14 @@ describe('CodexAppServerExecutor', () => {
       outputTokens: 5,
       cacheHitTokens: 2,
       reasoningOutputTokens: 1,
+    })
+    expect(eventsOf(events, 'runtime_context_snapshot')[0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-test',
+      source: 'codex_app_server',
+      usedTokens: 10,
+      cachedInputTokens: 2,
+      contextWindowTokens: 1_000_000,
     })
   })
 

@@ -239,7 +239,10 @@ import {
   formatTokenCount,
   getBasename,
   getLatestInputTokens,
+  getLatestRuntimeContextSnapshot,
   getProviderContextInputUpdate,
+  getRuntimeContextSnapshotUpdate,
+  type RuntimeContextSnapshotState,
 } from './chat/ChatViewUtils'
 import {
   extractInspectorSubagents,
@@ -574,6 +577,8 @@ export function ChatView({
   const [sideChatAgentStatus, setSideChatAgentStatus] = useState('')
   const [sideChatMessages, setSideChatMessages] = useState<UIMessage[]>([])
   const [sideChatContextInputTokens, setSideChatContextInputTokens] = useState(0)
+  const [sideChatRuntimeContext, setSideChatRuntimeContext] =
+    useState<RuntimeContextSnapshotState | null>(null)
   const [sideChatContextUsage, setSideChatContextUsage] = useState<ContextUsageState | null>(null)
   const [sideChatContextLedger, setSideChatContextLedger] = useState<ContextLedgerState | null>(
     null,
@@ -1113,6 +1118,7 @@ export function ChatView({
     // side-chat 运行时 state 清空，交给 SessionStream（key 随 sideChatSessionId 变化）重新订阅填充
     setSideChatMessages([])
     setSideChatContextInputTokens(0)
+    setSideChatRuntimeContext(null)
     setSideChatContextUsage(null)
     setSideChatContextLedger(null)
     setSideChatAgentStatus('')
@@ -1252,6 +1258,7 @@ export function ChatView({
   // 用于：抑制首条消息发送瞬间的 hero 闪现（覆盖 status 还没切到 running 的窗口）。
   const [composerDispatching, setComposerDispatching] = useState(false)
   const [contextInputTokens, setContextInputTokens] = useState(0)
+  const [runtimeContext, setRuntimeContext] = useState<RuntimeContextSnapshotState | null>(null)
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
     inputTokens: 0,
     outputTokens: 0,
@@ -1281,6 +1288,7 @@ export function ChatView({
     previousDerivedSessionIdRef.current = active
     setAgentStatus('')
     setContextInputTokens(0)
+    setRuntimeContext(null)
     setSessionUsageData(createEmptySessionUsageData())
     setContextUsage(null)
     setContextLedger(null)
@@ -2678,6 +2686,7 @@ export function ChatView({
       setSideChatSessionId(targetId as SessionId)
       setSideChatMessages([])
       setSideChatContextInputTokens(0)
+      setSideChatRuntimeContext(null)
       setSideChatContextUsage(null)
       setSideChatContextLedger(null)
       setSideChatAgentStatus('')
@@ -2733,6 +2742,7 @@ export function ChatView({
         setSideChatSessionId(null)
         setSideChatMessages([])
         setSideChatContextInputTokens(0)
+        setSideChatRuntimeContext(null)
         setSideChatContextUsage(null)
         setSideChatAgentStatus('')
       }
@@ -2843,6 +2853,7 @@ export function ChatView({
         setSelectedProviderId={setSelectedProviderId}
         branchState={branchState}
         contextInputTokens={contextInputTokens}
+        runtimeContext={runtimeContext}
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
@@ -2904,6 +2915,7 @@ export function ChatView({
         setSelectedProviderId={setSelectedProviderId}
         branchState={branchState}
         contextInputTokens={contextInputTokens}
+        runtimeContext={runtimeContext}
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
@@ -3133,6 +3145,7 @@ export function ChatView({
                 workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
                 onStatusChange={setAgentStatus}
                 onUsageChange={setContextInputTokens}
+                onRuntimeContextChange={setRuntimeContext}
                 onUsageDataChange={setSessionUsageData}
                 onMessagesChange={handleActiveMessagesChange}
                 onOptimisticSessionReset={handleOptimisticSessionReset}
@@ -3263,6 +3276,7 @@ export function ChatView({
           contextUsage={contextUsage}
           contextLedger={contextLedger}
           contextInputTokens={contextInputTokens}
+          runtimeContext={runtimeContext}
           providerContextWindow={activeProviderContextWindow}
           providerId={activeProvider?.provider}
           turnPromptSnapshots={turnPromptSnapshots}
@@ -3476,6 +3490,7 @@ export function ChatView({
                         workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
                         onStatusChange={setSideChatAgentStatus}
                         onUsageChange={setSideChatContextInputTokens}
+                        onRuntimeContextChange={setSideChatRuntimeContext}
                         onUsageDataChange={() => {}}
                         onMessagesChange={handleSideChatMessagesChange}
                         onOptimisticSessionReset={handleOptimisticSessionReset}
@@ -3506,6 +3521,7 @@ export function ChatView({
                       setSelectedProviderId={setSelectedProviderId}
                       branchState={branchState}
                       contextInputTokens={sideChatContextInputTokens}
+                      runtimeContext={sideChatRuntimeContext}
                       contextUsage={sideChatContextUsage}
                       contextLedger={sideChatContextLedger}
                       isWorking={isComposerSessionWorking(sideChatSession.status)}
@@ -3607,6 +3623,7 @@ function ChatStream({
   workspaceRootPath,
   onStatusChange,
   onUsageChange,
+  onRuntimeContextChange,
   onUsageDataChange,
   onMessagesChange,
   onOptimisticSessionReset,
@@ -3645,6 +3662,7 @@ function ChatStream({
   workspaceRootPath: string | null
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
+  onRuntimeContextChange: (snapshot: RuntimeContextSnapshotState | null) => void
   onUsageDataChange: (data: SessionUsageData) => void
   onMessagesChange: (messages: UIMessage[]) => void
   onOptimisticSessionReset?: (sessionId: SessionId) => void
@@ -3811,6 +3829,7 @@ function ChatStream({
     onMessagesChange,
     onOptimisticSessionReset,
     onUsageChange,
+    onRuntimeContextChange,
     onUsageDataChange,
     onStatusChange,
     onSessionStatusChange,
@@ -3827,6 +3846,7 @@ function ChatStream({
     onMessagesChange,
     onOptimisticSessionReset,
     onUsageChange,
+    onRuntimeContextChange,
     onUsageDataChange,
     onStatusChange,
     onSessionStatusChange,
@@ -3875,6 +3895,8 @@ function ChatStream({
         }
         setMessages([])
         callbacks.onMessagesChange([])
+        callbacks.onUsageChange(0)
+        callbacks.onRuntimeContextChange(null)
         callbacks.onUsageDataChange(usageRef.current)
         callbacks.onContextUsageChange(null)
         callbacks.onContextLedgerChange(null)
@@ -3891,6 +3913,10 @@ function ChatStream({
 
       const providerContextInputUpdate = getProviderContextInputUpdate(event)
       if (providerContextInputUpdate != null) callbacks.onUsageChange(providerContextInputUpdate)
+      const runtimeContextUpdate = getRuntimeContextSnapshotUpdate(event)
+      if (runtimeContextUpdate !== undefined) {
+        callbacks.onRuntimeContextChange(runtimeContextUpdate)
+      }
 
       if (event.type === 'agent_status') {
         const keepTeamSessionRunning =
@@ -4117,6 +4143,7 @@ function ChatStream({
       const eventsSinceReset = eventsAfterLastHistoryReset(events)
 
       callbacks.onUsageChange(getLatestInputTokens(eventsSinceReset))
+      callbacks.onRuntimeContextChange(getLatestRuntimeContextSnapshot(eventsSinceReset))
       const historyUsage = buildUsageDataFromEvents(eventsSinceReset)
       usageRef.current = historyUsage
       callbacks.onUsageDataChange(historyUsage)
