@@ -53,6 +53,36 @@ describe('EduNotificationItemSchema', () => {
       }),
     ).toThrow()
   })
+
+  it('接受 bigint 序列化为字符串的 id 并 coerce 为 number（线上 edu-server 实际形状）', () => {
+    const parsed = EduNotificationItemSchema.parse({
+      id: '42',
+      notificationId: '7',
+      title: '任务完成',
+      content: '<p>done</p>',
+      metadata: null,
+      isRead: false,
+      readAt: null,
+      createdAt: '2026-08-20T10:00:00.000Z',
+    })
+    expect(parsed.id).toBe(42)
+    expect(parsed.notificationId).toBe(7)
+  })
+
+  it('拒绝无法转为整数的 id', () => {
+    expect(() =>
+      EduNotificationItemSchema.parse({
+        id: 'abc',
+        notificationId: 7,
+        title: 'x',
+        content: 'y',
+        metadata: null,
+        isRead: false,
+        readAt: null,
+        createdAt: '2026-08-20T10:00:00.000Z',
+      }),
+    ).toThrow()
+  })
 })
 
 describe('EduNotificationListSchema', () => {
@@ -67,6 +97,22 @@ describe('EduNotificationListSchema', () => {
 })
 
 describe('EduAnnouncementItemSchema', () => {
+  it('接受 bigint 序列化为字符串的 id 并 coerce 为 number（2026-09-01 线上抓包形状）', () => {
+    const parsed = EduAnnouncementItemSchema.parse({
+      id: '2',
+      content: '111',
+      status: 'active',
+      startTime: '2026-08-31T05:00:18.000Z',
+      endTime: '2026-09-03T05:00:18.000Z',
+      createdBy: '14',
+      createdAt: '2026-09-01T05:00:22.774Z',
+      updatedAt: '2026-09-01T05:00:22.774Z',
+    })
+    expect(parsed.id).toBe(2)
+    // 服务端多余字段（createdBy 等）剥离
+    expect(parsed).not.toHaveProperty('createdBy')
+  })
+
   it('拒绝非枚举 status', () => {
     expect(() =>
       EduAnnouncementItemSchema.parse({

@@ -19,14 +19,20 @@ import { z } from 'zod'
 // ─── 服务端数据模型（edu-server 响应项）──────────────────────────────────────
 
 /**
+ * edu-server bigint 主键经 JSON 序列化为字符串（如 "2"），
+ * 统一 coerce 成 number（id 均在安全整数范围内），兼容新旧服务端。
+ */
+const eduId = z.coerce.number().int()
+
+/**
  * edu-server 站内信条目（GET /notifications 的 list 元素）。
  * content 为服务端构造的富文本 HTML，渲染前必须做 XSS 净化。
  */
 export const EduNotificationItemSchema = z.object({
   /** notification_recipients.id（收件记录 id，标记已读用它）*/
-  id: z.number().int(),
+  id: eduId,
   /** notifications.id（通知本体 id，仅展示用途）*/
-  notificationId: z.number().int(),
+  notificationId: eduId,
   title: z.string(),
   content: z.string(),
   metadata: z.unknown().nullable(),
@@ -39,7 +45,7 @@ export type EduNotificationItem = z.infer<typeof EduNotificationItemSchema>
 
 /** edu-server 平台公告条目（GET /platform-announcements/active 的数组元素）*/
 export const EduAnnouncementItemSchema = z.object({
-  id: z.number().int(),
+  id: eduId,
   /** 纯文本（≤500 字），无标题 */
   content: z.string(),
   status: z.enum(['active', 'inactive']),
