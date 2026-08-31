@@ -2852,7 +2852,9 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   left: 50%;
   bottom: 10px;
   transform: translateX(-50%);
-  z-index: 20;
+  // 消息区普通内容之上、底部 Composer（层级 5）之下：避免按钮穿透
+  // 上下文用量及其他从 Composer 向上展开的弹窗并抢占点击。
+  z-index: 4;
   width: 30px;
   height: 30px;
   padding: 0;

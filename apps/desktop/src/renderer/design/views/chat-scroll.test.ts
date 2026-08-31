@@ -177,4 +177,21 @@ describe('chat scroll controls', () => {
       expect(block).not.toContain('transition')
     }
   })
+
+  it('keeps the scroll-to-bottom button below composer popups', () => {
+    const componentStyles = readFileSync(
+      fileURLToPath(new URL('./ChatView.less', import.meta.url)),
+      'utf8',
+    )
+    const globalStyles = readFileSync(
+      fileURLToPath(new URL('../styles/views.css', import.meta.url)),
+      'utf8',
+    )
+    const buttonBlock = componentStyles.match(/\.scroll-to-bottom-btn\s*\{[^}]*\}/)?.[0] ?? ''
+    const composerBlock = globalStyles.match(/\.composer-wrap\s*\{[^}]*\}/)?.[0] ?? ''
+    const buttonZIndex = Number(buttonBlock.match(/^\s*z-index:\s*(\d+)/m)?.[1])
+    const composerZIndex = Number(composerBlock.match(/^\s*z-index:\s*(\d+)/m)?.[1])
+
+    expect(buttonZIndex).toBeLessThan(composerZIndex)
+  })
 })
