@@ -6,6 +6,11 @@ import {
   type ProviderMediaDefaults,
 } from './media-config.js'
 import type { ProviderMediaModelRef } from './media-model-manifest.js'
+import { getProviderPromoByVendor } from './provider-promo.js'
+
+/** OrcaRouter 推广位（免费模型 / 推荐链接单一数据源见 provider-promo.ts）；配置移除时相关模板与外链自动消失 */
+const orcaPromo = getProviderPromoByVendor('orcarouter')
+const orcaDefaultModel = orcaPromo?.freeModels[0]
 
 export type ProviderPresetKind = 'anthropic' | 'openai'
 
@@ -56,10 +61,26 @@ export interface VendorMeta {
    * 调起系统默认浏览器。无 URL（如本地 / 自建网关）则不渲染按钮。
    */
   purchaseUrl?: string
+  /**
+   * 该渠道 API Key 控制台地址（与 purchaseUrl 的充值/购买语义区分）。
+   * 密钥表单 label 右侧的「获取密钥」快捷链接据此条件渲染：
+   * 只有确认已知地址的渠道才配置，未知的留空即不显示链接。
+   */
+  apiKeyUrl?: string
 }
 
 export const VENDOR_CATALOG: VendorMeta[] = [
   /* ─── 现有 13 个 ─── */
+  /* OrcaRouter 推广位：注册链接与免费模型集中在 provider-promo.ts，便于替换 */
+  {
+    id: 'orcarouter',
+    name: 'OrcaRouter',
+    emoji: 'OR',
+    color: '#0ea5e9',
+    desc: 'Qwen / Hunyuan 等免费模型聚合网关',
+    logoPath: 'providers/orcarouter.png',
+    ...(orcaPromo ? { purchaseUrl: orcaPromo.registerUrl, apiKeyUrl: orcaPromo.apiKeyUrl } : {}),
+  },
   {
     id: 'openai',
     name: 'OpenAI',
@@ -68,6 +89,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'GPT-5.5 / GPT-5.4 / GPT-Image',
     logoPath: 'providers/openai.svg',
     purchaseUrl: 'https://platform.openai.com/settings/organization/billing',
+    apiKeyUrl: 'https://platform.openai.com/api-keys',
   },
   {
     id: 'anthropic',
@@ -77,6 +99,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Claude Sonnet 4 / Opus 4 / Haiku',
     logoPath: 'providers/anthropic.svg',
     purchaseUrl: 'https://console.anthropic.com/settings/billing',
+    apiKeyUrl: 'https://console.anthropic.com/settings/keys',
   },
   {
     id: 'google-gemini',
@@ -86,6 +109,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Gemini 2.5 Pro / Flash',
     logoPath: 'providers/google-gemini.svg',
     purchaseUrl: 'https://aistudio.google.com/apikey',
+    apiKeyUrl: 'https://aistudio.google.com/apikey',
   },
   {
     id: 'tencent-coding-plan',
@@ -104,6 +128,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合',
     logoPath: 'providers/aliyun-bailian-coding-plan.svg',
     purchaseUrl: 'https://bailian.console.aliyun.com/',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1#/api-key',
   },
   {
     id: 'bailian',
@@ -113,6 +138,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Wan / HappyHorse / Qwen3 TTS / 多媒体聚合',
     logoPath: 'providers/aliyun-bailian-coding-plan.svg',
     purchaseUrl: 'https://bailian.console.aliyun.com/',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1#/api-key',
   },
   {
     id: 'zhipu-glm-coding-plan',
@@ -122,6 +148,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air',
     logoPath: 'providers/zhipu-glm-coding-plan.png',
     purchaseUrl: 'https://bigmodel.cn/claude-code',
+    apiKeyUrl: 'https://bigmodel.cn/apikey/platform',
   },
   {
     id: 'qwen-standard',
@@ -131,6 +158,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Qwen3 / Qwen3-Coder 系列模型',
     logoPath: 'providers/qwen-standard.png',
     purchaseUrl: 'https://bailian.console.aliyun.com/',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1#/api-key',
   },
   {
     id: 'deepseek-api',
@@ -140,6 +168,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'DeepSeek-V4 Flash / Pro',
     logoPath: 'providers/deepseek-api.svg',
     purchaseUrl: 'https://platform.deepseek.com/topup',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
   },
   {
     id: 'minimax',
@@ -149,6 +178,8 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'MiniMax-M2.7 / M2.5 系列',
     logoPath: 'providers/minimax.png',
     purchaseUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
+    apiKeyUrl:
+      'https://platform.minimaxi.com/user-center/basic-information/interface-key',
   },
   {
     id: 'kimi',
@@ -158,6 +189,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Kimi-K2.6 / K2.5 / K2-Thinking',
     logoPath: 'providers/kimi.png',
     purchaseUrl: 'https://platform.moonshot.cn/console/account',
+    apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys',
   },
   {
     id: 'siliconflow',
@@ -167,6 +199,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'DeepSeek / Qwen / Kimi 聚合',
     logoPath: 'providers/siliconflow.svg',
     purchaseUrl: 'https://cloud.siliconflow.cn/',
+    apiKeyUrl: 'https://cloud.siliconflow.cn/account/ak',
   },
   {
     id: 'openrouter',
@@ -176,6 +209,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'GPT-4.1 / Claude / Gemini 聚合',
     logoPath: 'providers/openrouter.svg',
     purchaseUrl: 'https://openrouter.ai/keys',
+    apiKeyUrl: 'https://openrouter.ai/keys',
   },
   {
     id: 'ollama',
@@ -312,6 +346,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder',
     logoPath: 'providers/qwen-tongyi.png',
     purchaseUrl: 'https://bailian.console.aliyun.com/',
+    apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1#/api-key',
   },
 
   /* ─── 新增（2026-06）：海外 / 自建网关 ─── */
@@ -323,6 +358,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'GitHub Models · GPT-4o / o3 / Llama / Phi',
     logoPath: 'providers/github.svg',
     purchaseUrl: 'https://github.com/marketplace/models',
+    apiKeyUrl: 'https://github.com/settings/tokens',
   },
   {
     id: 'new-api',
@@ -360,6 +396,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'Grok Imagine 图片 / 视频 / 语音合成',
     logoPath: 'providers/xai.svg',
     purchaseUrl: 'https://console.x.ai/',
+    apiKeyUrl: 'https://console.x.ai/',
   },
   {
     id: 'midjourney',
@@ -378,10 +415,40 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: '混元/优图图片视频 + Kling + Vidu',
     logoPath: 'providers/tencent-coding-plan.png',
     purchaseUrl: 'https://console.cloud.tencent.com/tokenhub/apikey',
+    apiKeyUrl: 'https://console.cloud.tencent.com/tokenhub/apikey',
   },
 ]
 
+/* ─── OrcaRouter 模板：由推广配置派生（promo 移除或免费列表清空时自动消失，不留悬空预设） ─── */
+const orcarouterPresets: ProviderPreset[] =
+  orcaPromo && orcaDefaultModel
+    ? [
+        {
+          id: 'orcarouter-anthropic',
+          vendorId: 'orcarouter',
+          name: 'OrcaRouter',
+          provider: 'anthropic',
+          // Anthropic 协议裸域名，SDK 自行拼接 /v1/messages
+          apiEndpoint: 'https://api.orcarouter.ai',
+          defaultModel: orcaDefaultModel,
+          modelIds: [...orcaPromo.freeModels],
+          sourceUrls: [orcaPromo.docsUrl],
+        },
+        {
+          id: 'orcarouter-openai',
+          vendorId: 'orcarouter',
+          name: 'OrcaRouter',
+          provider: 'openai',
+          apiEndpoint: 'https://api.orcarouter.ai/v1',
+          defaultModel: orcaDefaultModel,
+          modelIds: [...orcaPromo.freeModels],
+          sourceUrls: [orcaPromo.docsUrl],
+        },
+      ]
+    : []
+
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  ...orcarouterPresets,
   /* ─── OpenAI 官方 ─── */
   {
     id: 'openai-official',

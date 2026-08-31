@@ -1,0 +1,58 @@
+// Provider 推广小横幅：刻意保持小体积（单行 12px 薄条），只做简短提示
+.ppb_group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ppb_banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.ppb_text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppb_cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  color: var(--primary);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+// 「一键使用」按钮形态：与外链入口并列，实底小按钮强调切换动作
+.ppb_cta_button {
+  padding: 2px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--primary);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 500;
+
+  &:hover {
+    opacity: 0.85;
+  }
+}

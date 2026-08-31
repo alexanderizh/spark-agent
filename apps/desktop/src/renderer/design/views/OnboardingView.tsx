@@ -18,6 +18,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { ProviderLogo } from '../components/ProviderLogo'
+import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { RemoteAssetImage } from '../components/RemoteAssetImage'
 import { Icons } from '../Icons'
 import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
@@ -1226,10 +1227,13 @@ function ProviderStep(props: {
       <p className="lead">
         “密钥”就是模型服务商给你的使用凭证。SparkWork 会把它安全保存在你的电脑里。
       </p>
+      <ProviderPromoBanner
+        className="onboarding-promo-banner"
+        onSelectPreset={props.setProviderPresetId}
+      />
       <label>
         服务商
         <LobeSelect
-          showSearch
           value={props.providerPresetId}
           onChange={(value) => props.setProviderPresetId(String(value))}
           options={providerPresets.map((p) => ({
@@ -1251,7 +1255,26 @@ function ProviderStep(props: {
         />
       </label>
       <label>
-        密钥
+        <span className="onboarding-field-head">
+          密钥
+          {(() => {
+            // 仅已知渠道（VendorMeta.apiKeyUrl）显示「获取密钥」快捷入口，未知渠道不渲染
+            const preset = providerPresets.find((p) => p.id === props.providerPresetId)
+            const apiKeyUrl = preset ? getVendorMeta(preset.vendorId)?.apiKeyUrl : undefined
+            return apiKeyUrl ? (
+              <a
+                className="onboarding-apikey-link"
+                href={apiKeyUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={`前往 ${apiKeyUrl} 获取密钥`}
+              >
+                获取密钥
+                <Icons.ExternalLink size={11} />
+              </a>
+            ) : null
+          })()}
+        </span>
         <InputPassword
           value={props.apiKey}
           onChange={(e) => props.setApiKey(e.target.value)}

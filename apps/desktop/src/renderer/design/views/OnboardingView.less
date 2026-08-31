@@ -5,7 +5,7 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
+  grid-template-columns: 248px minmax(0, 1fr);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
@@ -382,6 +382,12 @@
   line-height: 1.7;
   animation: riseIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 0.04s;
+}
+
+/* Provider 推广小横幅：与 lead 文案对齐（720px），微微收拢与下文的间距 */
+.onboarding-promo-banner {
+  max-width: 720px;
+  margin: -6px 0 18px;
 }
 
 .choice-grid {
@@ -977,6 +983,30 @@
   margin-bottom: 12px;
   font-weight: 700;
   color: var(--text-strong);
+}
+
+// label 文字行：右侧可挂「获取密钥」快捷链接（仅已知渠道渲染）
+.onboarding-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.onboarding-apikey-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  white-space: nowrap;
+  text-decoration: none;
+
+  &:hover {
+    opacity: 0.8;
+  }
 }
 
 .provider-model-row {
