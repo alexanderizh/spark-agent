@@ -187,8 +187,26 @@ vi.mock('../components/ProviderLogo', () => ({
     icon ? { id: icon.id, style: icon.style === 'mono' ? 'mono' : 'avatar' } : null,
 }))
 
-vi.mock('../components/ChipList', () => ({
-  ChipList: () => <div data-testid="chip-list" />,
+// ProviderModelCatalog 的可交互 stub：按候选目录渲染 toggle 按钮，
+// 让测试能驱动「勾选启用 / 取消启用」的父级状态联动（组件内部交互不在本测试范围）。
+vi.mock('../components/ProviderModelCatalog', () => ({
+  ProviderModelCatalog: ({
+    catalogModelIds,
+    modelIds,
+    onToggleCatalogModel,
+  }: {
+    catalogModelIds: string[]
+    modelIds: string[]
+    onToggleCatalogModel: (modelId: string, checked: boolean) => void
+  }) => (
+    <div data-testid="provider-model-catalog">
+      {catalogModelIds.map((id) => (
+        <button key={id} onClick={() => onToggleCatalogModel(id, !modelIds.includes(id))}>
+          {id}
+        </button>
+      ))}
+    </div>
+  ),
 }))
 
 vi.mock('../components/Toast', () => ({
@@ -224,18 +242,6 @@ vi.mock('../hooks/useIpc', () => ({
 describe('ProviderEditPanel progressive configuration', () => {
   let container: HTMLDivElement
   let root: Root | null = null
-
-  // 高级设置自 44adec68 起默认展开；仅当仍处于折叠态时才点击展开，
-  // 避免把已展开的面板点折叠。
-  const expandAdvancedSettings = () => {
-    const toggle = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('高级设置'),
-    )
-    expect(toggle).toBeDefined()
-    if (toggle && toggle.getAttribute('aria-expanded') === 'false') {
-      act(() => toggle.click())
-    }
-  }
 
   beforeEach(() => {
     mocks.invokers.clear()
@@ -544,12 +550,9 @@ describe('ProviderEditPanel progressive configuration', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
 
-    expect(container.textContent).toContain('高级设置')
-    expect(container.textContent).toContain('模板已自动配置')
+    expect(container.textContent).toContain('跟随供应商模板自动切换')
     expect(container.textContent).not.toContain('平台适配器')
     expect(container.textContent).not.toContain('生图接口来源')
-
-    expandAdvancedSettings()
 
     expect(container.textContent).toContain('媒体调用配置')
     expect(container.textContent).toContain('APIMart · auto 自动兼容')
@@ -629,8 +632,6 @@ describe('ProviderEditPanel progressive configuration', () => {
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
-
-    expandAdvancedSettings()
 
     expect(container.textContent).toContain('自定义模型 / 适配器')
     expect(container.textContent).toContain('点击「编辑协议」配置请求模板')
@@ -1190,8 +1191,6 @@ describe('ProviderEditPanel progressive configuration', () => {
       fetchButton?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 10))
     })
-
-    expandAdvancedSettings()
 
     // 默认模型选择器已合并成 Input + chevron 触发器：先点开下拉，再点候选列表里的 model-b。
     const modelPickerTrigger = Array.from(container.querySelectorAll('button')).find(

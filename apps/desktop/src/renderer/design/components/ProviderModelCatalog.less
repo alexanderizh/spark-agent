@@ -1,0 +1,370 @@
+/**
+ * ProviderModelCatalog — 候选模型目录（多选下拉）+ 已启用模型（行式列表）
+ *
+ * 视觉沿用 ProvidersView 的扁平风 design token：
+ * --text-strong / --text-muted / --text-secondary / --border / --bg-soft / --panel / --primary
+ */
+
+.pmc_catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pmc_block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pmc_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 标题 + 提示左侧成组，为「只选默认」操作按钮留出右侧空间 */
+.pmc_head_main {
+  display: flex;
+  flex-direction: column;
+  /* 标题与提示行留出呼吸空间（2px 太挤，+4px） */
+  gap: 6px;
+  min-width: 0;
+}
+
+.pmc_title {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.pmc_hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.pmc_section_action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+
+  &:not(:disabled):hover {
+    color: var(--text);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+}
+
+/* ─── 候选目录下拉选项：模型 ID 为主，默认模型带徽标 ─── */
+.pmc_option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pmc_option_label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pmc_option_badge,
+.pmc_default_badge {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  /* 实心主色徽标：14% 透明底在暗色主题下几乎不可感知，改为主色底 + 反色字保证状态可读 */
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+/* ─── 已启用模型：扁平行列表 ───
+   不加外框盒子（bg-soft 与 panel 几乎同色反而层级不清），
+   行间用细分隔线、默认态靠色点/徽标/文字明暗区分，对齐全局扁平基调。 */
+.pmc_model_list {
+  display: flex;
+  flex-direction: column;
+  /* 已启用模型过多时限制高度内部滚动 */
+  max-height: 240px;
+  overflow-y: auto;
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
+}
+
+.pmc_model_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 4px 8px 2px;
+  border-radius: var(--r-sm);
+
+  // & + .pmc_model_row {
+  //   border-top: 1px solid var(--divider);
+  // }
+
+  &:not(.is-default):hover {
+    background: var(--hover);
+  }
+
+  &.is-default {
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+  }
+}
+
+.pmc_default_radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:not(:disabled):hover .pmc_radio_dot {
+    border-color: var(--primary);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+.pmc_radio_dot {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  /* 防御窄面板 / 长模型 ID 时 flex 压宽变形 */
+  flex-shrink: 0;
+  /* 未选态用 border-strong：暗色下 --border(#3d3d3d) 在 panel(#303030) 上几乎不可见 */
+  border: 1.5px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  transition: border-color 0.15s ease;
+
+  /* 选中中心点用独立实心圆（整数 6px + 百分比居中，无亚像素），
+     替代 inset box-shadow 粗环：两图层抗锯齿在小尺寸 + 非整数缩放下
+     各方向不均，会产生「椭圆 / 不圆润」观感。 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--primary);
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  /* 选中态：主色细环 + 中心实心圆点（标准 radio 观感，真圆点） */
+  .pmc_model_row.is-default & {
+    border-color: var(--primary);
+
+    &::after {
+      opacity: 1;
+    }
+  }
+}
+
+.pmc_model_id {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+
+  .pmc_model_row.is-default & {
+    color: var(--text-strong);
+  }
+}
+
+.pmc_model_remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  opacity: 0.7;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
+
+  .pmc_model_row:hover &,
+  &:focus-visible {
+    opacity: 1;
+  }
+
+  &:not(:disabled):hover {
+    color: var(--danger);
+    background: var(--danger-bg);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+.pmc_empty {
+  padding: 12px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ─── 底部添加自定义模型：单一控件容器 ───
+   输入框与按钮合并到一个边框容器内（左侧 ＋ 图标 / 中间无边框输入 / 右侧幽灵按钮），
+   避免两个灰盒子零间距糊成一条的观感。 */
+.pmc_add_row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--form-control-h, 32px);
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  transition: border-color 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--primary);
+  }
+
+  &:has(.pmc_add_input:disabled) {
+    opacity: 0.6;
+  }
+}
+
+.pmc_add_icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.pmc_add_input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+  outline: none;
+
+  &::placeholder {
+    color: var(--text-faint);
+    font-family: var(--font-sans);
+  }
+}
+
+.pmc_add_button {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:not(:disabled):hover {
+    background: var(--selected);
+  }
+
+  &:disabled {
+    color: var(--text-faint);
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+/* ─── antd 多选 tag 覆盖：与应用扁平风对齐 ───
+   默认灰底胶囊在暗色下像「飘在空槽上的 tag」，改为 selected 底色 + 主色细描边；
+   移除 × 提升到可点中的尺寸并在 hover 时给出明确反馈。 */
+.pmc_catalog .ant-select .ant-select-selection-item {
+  background: var(--selected);
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
+  border-radius: var(--r-sm);
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+/* 表单网格把 selector 高度强制为 --form-control-h，多选 tag 默认顶格 —— 垂直居中对齐 */
+.pmc_catalog .ant-select-multiple .ant-select-selector {
+  display: flex;
+  align-items: center;
+  padding-block: 0;
+}
+
+.pmc_catalog .ant-select .ant-select-selection-item-remove {
+  color: var(--text-muted);
+
+  &:hover {
+    color: var(--danger);
+  }
+}

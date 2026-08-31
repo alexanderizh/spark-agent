@@ -408,8 +408,15 @@
   }
 }
 
+/* Provider 推广小横幅：位于 header 分隔线下方，与筛选栏保持同等呼吸感 */
+.pv_promo_banner {
+  margin: 10px 0 0;
+  flex-shrink: 0;
+}
+
 /* Vendor preset card */
 .pv_vendor_card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -425,6 +432,23 @@
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
+}
+
+/* 推广位小标签（如 free），来源 provider-promo.ts badge 字段 */
+.pv_vendor_badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs, 4px);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--success, #52c41a);
+  background: color-mix(in srgb, var(--success, #52c41a) 14%, transparent);
+  pointer-events: none;
 }
 
 .pv_vendor_info {
@@ -871,6 +895,32 @@
     font-weight: 400;
     line-height: 1.4;
   }
+
+  /* label 主文字行：允许右侧挂「获取密钥」快捷链接 */
+  .pv_form_label_row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* 「获取密钥」快捷链接：与主文字同排右移（仅已知渠道渲染） */
+  .pv_form_label_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 1px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--primary);
+    white-space: nowrap;
+    text-decoration: none;
+
+    &:hover {
+      opacity: 0.8;
+    }
+  }
 }
 
 .pv_form_control_inline {
@@ -935,71 +985,6 @@
   font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
 }
 
-.pv_advanced_toggle {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 38px;
-  padding: 7px 6px;
-  border: none;
-  border-bottom: 1px solid var(--divider, var(--border));
-  color: var(--text-muted);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s ease;
-
-  &:hover {
-    background: var(--hover);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-  }
-}
-
-/* 与 pv_section_icon 同规格：22px 主题色软底小方块 */
-.pv_advanced_toggle_icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  border-radius: var(--r-sm);
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-
-/* 与 pv_section_title 同风格：小号加粗字距标题 */
-.pv_advanced_toggle_title {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* 摘要靠右展示，超长截断；与 pv_section_hint 同层级 */
-.pv_advanced_toggle_summary {
-  overflow: hidden;
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pv_advanced_fields {
-  grid-column: 1 / -1;
-  padding-top: 12px;
-}
-
 .pv_connection_actions {
   display: flex;
   flex-direction: column;
@@ -1007,109 +992,11 @@
   gap: 8px;
 }
 
-.pv_model_picker_block {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ─── 候选模型目录（多选下拉）/ 已启用模型（行式列表）：组件样式见 components/ProviderModelCatalog.less ─── */
 
-  & + .pv_model_picker_block {
-    margin-top: 16px;
-  }
-}
-
-.pv_model_picker_head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pv_model_picker_title {
-  color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.pv_model_picker_hint {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.pv_model_toggle_grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.pv_model_toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  max-width: 100%;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-soft);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease,
-    transform 0.12s ease;
-
-  &:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, transparent);
-    background: color-mix(in srgb, var(--primary) 6%, var(--bg-soft));
-    color: var(--text-strong);
-    transform: translateY(-1px);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-  }
-
-  &.is-selected {
-    border-color: color-mix(in srgb, var(--primary) 42%, transparent);
-    background: color-mix(in srgb, var(--primary) 12%, var(--panel));
-    color: var(--text-strong);
-  }
-
-  &.is-default {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent) inset;
-  }
-}
-
-.pv_model_toggle_check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--primary);
-}
-
-.pv_model_toggle_label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pv_model_toggle_badge {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 600;
+/* 平铺进 pv_form_grid（默认模型 / 上下文窗口下方）时占满整行 */
+.pv_form_grid > .pmc_catalog {
+  grid-column: 1 / -1;
 }
 
 .pv_form_hint {

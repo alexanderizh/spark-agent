@@ -17,7 +17,7 @@ import {
 // TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
 import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
-import { ChipList } from '../components/ChipList'
+import { ProviderModelCatalog } from '../components/ProviderModelCatalog'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotice'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
@@ -48,6 +48,7 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useDebouncedCallback } from '../hooks/useDebounce'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
+import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { usePlatformModelCatalogRefresh } from './platform-model/usePlatformModelCatalogRefresh'
 import { AUTO_ROUTER_UI_VISIBLE, filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import {
@@ -56,6 +57,7 @@ import {
   getVendorMeta,
   getPresetsByVendor,
   getUniqueVendorIds,
+  getProviderPromoByVendor,
   isBuiltInLocalCliProvider,
   isAutoRouterProvider,
   isClaudeAutoRouterProvider,
@@ -150,7 +152,7 @@ type ProviderForm = {
   endpoint: string
   codexApiKind: 'chat' | 'responses' | 'embedding'
   supportsMillionContext: boolean
-  /** 自定义上下文窗口 (tokens)；0 / undefined 表示按 200k 默认（或 supportsMillionContext=true 则 1M） */
+  /** 自定义上下文窗口 (tokens)；0 / undefined 表示按 256k 默认（或 supportsMillionContext=true 则 1M） */
   contextWindow: number
   apiKey: string
   isDefault: boolean
@@ -1378,6 +1380,9 @@ function ProvidersView() {
           </div>
         </div>
 
+        {/* ─── Provider 推广提示（免费模型注册入口，配置见 provider-promo.ts） ─── */}
+        <ProviderPromoBanner className="pv_promo_banner" />
+
         {/* ─── 多选模式工具栏 ─── */}
         {multiSelect && (
           <MultiSelectToolbar
@@ -1779,6 +1784,7 @@ function VendorPresetCard({
   vendor: VendorMeta
   onSelectVendor: (vendorId: string) => void
 }) {
+  const promoBadge = getProviderPromoByVendor(vendor.id)?.badge
   return (
     <div
       className="pv_vendor_card"
@@ -1811,6 +1817,7 @@ function VendorPresetCard({
           <Icons.ExternalLink size={14} />
         </a>
       ) : null}
+      {promoBadge ? <span className="pv_vendor_badge">{promoBadge}</span> : null}
     </div>
   )
 }
@@ -2634,7 +2641,6 @@ export function ProviderEditPanel({
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionFeedback | null>(null)
-  const [advancedOpen, setAdvancedOpen] = useState(true)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [modelPickerSearch, setModelPickerSearch] = useState('')
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
@@ -2728,7 +2734,6 @@ export function ProviderEditPanel({
     // 新规则 react-hooks/set-state-in-effect 会误报，这里显式豁免。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionFeedback(null)
-    setAdvancedOpen(true)
     setModelPickerOpen(false)
     setModelPickerSearch('')
     setIconPickerOpen(false)
@@ -3032,29 +3037,6 @@ export function ProviderEditPanel({
     () => form.mediaModelRefs.filter(isCustomModelRef),
     [form.mediaModelRefs],
   )
-  const advancedSummary = useMemo(() => {
-    if (
-      hasConfiguredMediaStack(
-        form.modelType,
-        form.mediaProvider,
-        form.mediaCapabilities,
-        form.mediaModelRefs,
-      )
-    ) {
-      const adapter =
-        MEDIA_PROVIDER_LABELS[
-          (form.mediaProvider ||
-            mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
-        ]
-      const enabledModels = form.mediaModelRefs.filter((ref) => ref.enabled !== false).length
-      const details = [adapter, enabledModels > 0 ? `${enabledModels} 个模型` : '使用默认模型']
-      return `${templateConfigured ? '模板已自动配置' : '当前配置'} · ${details.join(' · ')}`
-    }
-    const routingLabel = usesClaudeTierMapping(form) ? 'Claude 档位映射' : '模型列表与上下文'
-    return templateConfigured
-      ? '模板已自动配置 · 可按需调整模型与上下文'
-      : `可选：协议、${routingLabel}`
-  }, [form, templateConfigured])
   const requestEndpointPreview = useMemo(() => buildRequestEndpointPreview(form), [form])
 
   const toggleMediaModelRef = (model: CanvasMediaModelSummary, checked: boolean) => {
@@ -3758,7 +3740,6 @@ export function ProviderEditPanel({
                 onChange={(v) => {
                   const modelType = v as ProviderModelType
                   const isDedicatedMedia = isMediaProviderModelType(modelType)
-                  if (isDedicatedMedia) setAdvancedOpen(true)
                   setFetchedModels([])
                   setForm((prev) => {
                     const supportsMediaConfig =
@@ -3955,7 +3936,29 @@ export function ProviderEditPanel({
                 />
               )}
 
-              <label className="pv_form_label">API Key</label>
+              <label className="pv_form_label">
+                <span className="pv_form_label_row">
+                  API Key
+                  {(() => {
+                    // 仅已知渠道（VendorMeta.apiKeyUrl）显示「获取密钥」快捷入口，未知/自定义不渲染
+                    const preset =
+                      form.presetId !== 'custom' ? getProviderPresetById(form.presetId) : undefined
+                    const apiKeyUrl = preset ? getVendorMeta(preset.vendorId)?.apiKeyUrl : undefined
+                    return apiKeyUrl ? (
+                      <a
+                        className="pv_form_label_link"
+                        href={apiKeyUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`前往 ${apiKeyUrl} 获取密钥`}
+                      >
+                        获取密钥
+                        <Icons.ExternalLink size={11} />
+                      </a>
+                    ) : null
+                  })()}
+                </span>
+              </label>
               <InputPassword
                 value={form.apiKey}
                 onChange={(e) => {
@@ -4126,522 +4129,515 @@ export function ProviderEditPanel({
                     {fetchingModels
                       ? '正在获取模型列表…'
                       : fetchedModelIds.length > 0
-                        ? `已从渠道 /models 获取 ${fetchedModelIds.length} 个模型；可在下方模型清单中添加`
+                        ? `已从渠道 /models 获取 ${fetchedModelIds.length} 个模型${isChatModel ? '；可在下方候选模型目录中勾选启用' : '；可在下方模型清单中添加'}`
                         : '支持手动输入模型 ID，或点击右侧按钮调用渠道 /models'}
                   </span>
                 )}
               </div>
 
-              <button
-                type="button"
-                className="pv_advanced_toggle"
-                aria-expanded={advancedOpen}
-                aria-controls="provider-advanced-settings"
-                onClick={() => setAdvancedOpen((open) => !open)}
-              >
-                <span className="pv_advanced_toggle_icon">
-                  <Icons.Settings size={12} />
-                </span>
-                <span className="pv_advanced_toggle_title">高级设置</span>
-                <span className="pv_advanced_toggle_summary">{advancedSummary}</span>
-                {advancedOpen ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
-              </button>
-
-              {advancedOpen && (
-                <div id="provider-advanced-settings" className="pv_advanced_fields">
-                  <div className="pv_form_grid">
-                    {isChatModel && (
-                      <>
-                        <label className="pv_form_label">附加生成能力</label>
-                        <div className="pv_form_control_inline">
-                          <Switch
-                            size="middle"
-                            checked={form.mediaGenerationEnabled}
-                            onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
-                          />
-                        </div>
-                      </>
-                    )}
-
-                    {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
-                    {mediaPanelVisible && (
-                      <>
-                        <ProviderMediaRoutingFields
-                          templateConfigured={templateConfigured}
-                          mediaProvider={effectiveMediaProvider}
-                          mediaApiType={form.mediaApiType}
-                          providerOptions={mediaProviderOptionsForModelType(form.modelType).map(
-                            (kind) => ({
-                              label: MEDIA_PROVIDER_LABELS[kind],
-                              value: kind,
-                            }),
-                          )}
-                          onConvertToCustom={() => set('presetId', 'custom')}
-                          onMediaProviderChange={changeMediaProvider}
-                          onMediaApiTypeChange={(mediaApiType) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              mediaApiType,
-                              imageApiType:
-                                prev.modelType === 'image'
-                                  ? normalizeImageApiType(mediaApiType)
-                                  : prev.imageApiType,
-                            }))
+              {isChatModel && (
+                <>
+                  <label className="pv_form_label">上下文窗口</label>
+                  <div className="pv_form_control_inline">
+                    <Select
+                      size="middle"
+                      style={{ width: 160 }}
+                      value={
+                        isCustomContextWindow
+                          ? -1
+                          : resolveContextWindowSelectValue(form.contextWindow)
+                      }
+                      onChange={(value: number) => {
+                        if (value === -1) {
+                          // 切到自定义：保留当前值或回落 256k；isCustomContextWindow 独立标记意图
+                          setIsCustomContextWindow(true)
+                          const next = form.contextWindow > 0 ? form.contextWindow : 256_000
+                          setForm((prev) => ({
+                            ...prev,
+                            contextWindow: next,
+                            supportsMillionContext: next === 1_000_000,
+                          }))
+                        } else {
+                          setIsCustomContextWindow(false)
+                          setForm((prev) => ({
+                            ...prev,
+                            contextWindow: value,
+                            supportsMillionContext: value === 1_000_000,
+                          }))
+                        }
+                      }}
+                      options={CONTEXT_WINDOW_PRESETS}
+                    />
+                    {isCustomContextWindow && (
+                      <Input
+                        size="middle"
+                        style={{ width: 140, marginInlineStart: 8 }}
+                        type="number"
+                        min={1024}
+                        max={10_000_000}
+                        step={1024}
+                        value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
+                        placeholder="tokens"
+                        onChange={(e) => {
+                          const raw = Number((e.target as HTMLInputElement).value)
+                          // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
+                          // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
+                          let next = 0
+                          if (Number.isFinite(raw) && raw > 0) {
+                            next = Math.min(Math.floor(raw), 10_000_000)
                           }
-                        />
-                        {isCustomMediaChannel && (
-                          <div className="pv_custom_adapter_entry">
-                            <div>
-                              <strong>自定义渠道适配器</strong>
-                              <span>配置提交、鉴权、Body、上传、轮询、参数和错误契约</span>
-                            </div>
-                            <Button
-                              type="primary"
-                              icon={<Icons.Settings size={13} />}
-                              onClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                openNewCustomManifestEditor()
-                              }}
-                            >
-                              配置自定义适配器
-                            </Button>
-                          </div>
-                        )}
-
-                        <label className="pv_form_label">模型清单</label>
-                        <div className="pv_media_model_refs">
-                          <ProviderMediaModelCatalog
-                            models={mediaCatalogForForm}
-                            loading={mediaCatalogLoading}
-                            isChatModel={isChatModel}
-                            selectedManifestIds={selectedManifestIds}
-                            defaultModel={form.defaultModel}
-                            onToggleModel={toggleMediaModelRef}
-                            onSetDefaultModel={setMediaDefaultModel}
-                          />
-
-                          {isCustomMediaChannel && fetchedModels.length > 0 && (
-                            <div className="pv_media_manifest_list">
-                              <div className="pv_form_hint" style={{ marginBottom: 6 }}>
-                                渠道 /models 返回的模型（添加后可编辑协议）
-                              </div>
-                              {fetchedModels.map((model) => {
-                                const added = customModelRefs.some(
-                                  (ref) => ref.modelId?.trim() === model.id.trim(),
-                                )
-                                return (
-                                  <div
-                                    key={`fetched-${model.id}`}
-                                    className="pv_media_manifest_item pv_media_manifest_item_static"
-                                  >
-                                    <div className="pv_media_manifest_main">
-                                      <div className="pv_media_manifest_title">
-                                        <span>{model.id}</span>
-                                        <Tag size="small" color="blue">
-                                          渠道返回
-                                        </Tag>
-                                      </div>
-                                      {model.ownedBy && (
-                                        <div className="pv_media_manifest_meta">
-                                          owned_by: {model.ownedBy}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <Button
-                                      size="middle"
-                                      type={added ? 'text' : 'primary'}
-                                      disabled={added}
-                                      onClick={() => addCustomMediaModel(model.id)}
-                                    >
-                                      {added ? '已添加' : '添加'}
-                                    </Button>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-
-                          {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
-                          {customModelRefs.length > 0 && (
-                            <div className="pv_media_manifest_list">
-                              {customModelRefs.map((ref) => (
-                                <div
-                                  key={ref.manifestId}
-                                  className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static"
-                                >
-                                  <div className="pv_media_manifest_main">
-                                    <div className="pv_media_manifest_title">
-                                      <span>{ref.modelId}</span>
-                                      <Tag size="small" color="purple">
-                                        自定义
-                                      </Tag>
-                                      {ref.manifest && (
-                                        <Tag size="small" color="green">
-                                          协议已配置
-                                        </Tag>
-                                      )}
-                                      <Tag size="small" color="gray">
-                                        {form.mediaProvider || form.imageProvider}
-                                      </Tag>
-                                    </div>
-                                    <div className="pv_media_manifest_meta">
-                                      {form.defaultModel.trim() === ref.modelId?.trim()
-                                        ? `${ref.modelId} · 当前默认`
-                                        : ref.modelId}
-                                    </div>
-                                  </div>
-                                  <div className="pv_media_manifest_actions">
-                                    {(form.modelType === 'image' || form.modelType === 'video') && (
-                                      <Button
-                                        size="small"
-                                        type="text"
-                                        icon={<Icons.Settings size={12} />}
-                                        onClick={() => openCustomManifestEditor(ref)}
-                                      >
-                                        编辑协议
-                                      </Button>
-                                    )}
-                                    {form.defaultModel.trim() === ref.modelId?.trim() ? (
-                                      <Tag size="small" color="green">
-                                        默认
-                                      </Tag>
-                                    ) : (
-                                      <Button
-                                        size="small"
-                                        type="text"
-                                        icon={<Icons.Star size={12} />}
-                                        onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
-                                        title="设为默认调用模型"
-                                        aria-label={`将 ${ref.modelId} 设为默认`}
-                                      >
-                                        设为默认
-                                      </Button>
-                                    )}
-                                    <Button
-                                      size="small"
-                                      type="text"
-                                      danger
-                                      icon={<Icons.X />}
-                                      onClick={() => removeMediaModelRef(ref.manifestId)}
-                                      title="移除自定义模型"
-                                      aria-label={`移除自定义模型 ${ref.modelId}`}
-                                    />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {showCustomMediaModelInput && (
-                          <>
-                            <label className="pv_form_label">
-                              自定义模型 / 适配器
-                              <span className="pv_form_sub">
-                                输入模型 ID 添加后，点击「编辑协议」配置请求模板
-                              </span>
-                            </label>
-                            <div className="pv_custom_model_add">
-                              <Input
-                                value={customModelInput}
-                                onChange={(e) => setCustomModelInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault()
-                                    if (customModelInput.trim()) {
-                                      addCustomMediaModel(customModelInput)
-                                      setCustomModelInput('')
-                                    }
-                                  }
-                                }}
-                                placeholder="输入模型 ID 后按 Enter 添加"
-                              />
-                              <Button
-                                type="primary"
-                                icon={<Icons.Plus />}
-                                disabled={!customModelInput.trim()}
-                                onClick={() => {
-                                  if (customModelInput.trim()) {
-                                    addCustomMediaModel(customModelInput)
-                                    setCustomModelInput('')
-                                  }
-                                }}
-                              >
-                                添加
-                              </Button>
-                            </div>
-                          </>
-                        )}
-
-                        {mediaCapabilityOptions.length > 0 && (
-                          <>
-                            <label className="pv_form_label">支持能力</label>
-                            <div className="pv_media_capabilities">
-                              {mediaCapabilityOptions.map((capability) => (
-                                <Checkbox
-                                  key={capability}
-                                  checked={form.mediaCapabilities.includes(capability)}
-                                  onChange={(checked: boolean) => {
-                                    setForm((prev) => {
-                                      const set = new Set(prev.mediaCapabilities)
-                                      if (checked) set.add(capability)
-                                      else set.delete(capability)
-                                      return { ...prev, mediaCapabilities: [...set] }
-                                    })
-                                  }}
-                                >
-                                  {MEDIA_CAPABILITY_LABELS[capability]}
-                                </Checkbox>
-                              ))}
-                            </div>
-                          </>
-                        )}
-
-                        {showMediaDefaults && (
-                          <>
-                            <label className="pv_form_label">参数默认值</label>
-                            <div className="pv_media_defaults">
-                              {form.modelType === 'image' && (
-                                <>
-                                  {(mediaDefaultOptionSets.imageSize.length > 0 ||
-                                    form.mediaImageSize) &&
-                                    (mediaDefaultOptionSets.imageSize.length > 0 ? (
-                                      <Select
-                                        value={form.mediaImageSize || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set('mediaImageSize', value == null ? '' : String(value))
-                                        }
-                                        placeholder="图片尺寸 / 比例"
-                                        options={mediaDefaultOptionSets.imageSize}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaImageSize}
-                                        onChange={(e) => set('mediaImageSize', e.target.value)}
-                                        placeholder="图片尺寸 (1024x1024 / 16:9)"
-                                      />
-                                    ))}
-                                  {(mediaDefaultOptionSets.imageSize.length > 0 ||
-                                    form.mediaImageN) && (
-                                    <Input
-                                      value={form.mediaImageN}
-                                      onChange={(e) => set('mediaImageN', e.target.value)}
-                                      placeholder="图片数量 n"
-                                    />
-                                  )}
-                                  {(mediaDefaultOptionSets.imageQuality.length > 0 ||
-                                    form.mediaImageQuality) &&
-                                    (mediaDefaultOptionSets.imageQuality.length > 0 ? (
-                                      <Select
-                                        value={form.mediaImageQuality || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set(
-                                            'mediaImageQuality',
-                                            value == null ? '' : String(value),
-                                          )
-                                        }
-                                        placeholder="图片质量"
-                                        options={mediaDefaultOptionSets.imageQuality}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaImageQuality}
-                                        onChange={(e) => set('mediaImageQuality', e.target.value)}
-                                        placeholder="图片质量 (hd / standard)"
-                                      />
-                                    ))}
-                                </>
-                              )}
-                              {form.modelType === 'voice' && (
-                                <>
-                                  <Input
-                                    value={form.mediaAudioVoice}
-                                    onChange={(e) => set('mediaAudioVoice', e.target.value)}
-                                    placeholder="语音 voice (alloy / nova)"
-                                  />
-                                  {(mediaDefaultOptionSets.audioFormat.length > 0 ||
-                                    form.mediaAudioFormat) &&
-                                    (mediaDefaultOptionSets.audioFormat.length > 0 ? (
-                                      <Select
-                                        value={form.mediaAudioFormat || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set(
-                                            'mediaAudioFormat',
-                                            value == null ? '' : String(value),
-                                          )
-                                        }
-                                        placeholder="语音格式 / 输出格式"
-                                        options={mediaDefaultOptionSets.audioFormat}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaAudioFormat}
-                                        onChange={(e) => set('mediaAudioFormat', e.target.value)}
-                                        placeholder="语音格式 (mp3 / wav)"
-                                      />
-                                    ))}
-                                </>
-                              )}
-                              {form.modelType === 'video' && (
-                                <>
-                                  {(mediaDefaultOptionSets.videoAspectRatio.length > 0 ||
-                                    form.mediaVideoAspectRatio) &&
-                                    (mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
-                                      <Select
-                                        value={form.mediaVideoAspectRatio || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set(
-                                            'mediaVideoAspectRatio',
-                                            value == null ? '' : String(value),
-                                          )
-                                        }
-                                        placeholder="视频比例"
-                                        options={mediaDefaultOptionSets.videoAspectRatio}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaVideoAspectRatio}
-                                        onChange={(e) =>
-                                          set('mediaVideoAspectRatio', e.target.value)
-                                        }
-                                        placeholder="视频比例 (16:9)"
-                                      />
-                                    ))}
-                                  {(mediaDefaultOptionSets.videoDuration.length > 0 ||
-                                    form.mediaVideoDuration) &&
-                                    (mediaDefaultOptionSets.videoDuration.length > 0 ? (
-                                      <Select
-                                        value={form.mediaVideoDuration || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set(
-                                            'mediaVideoDuration',
-                                            value == null ? '' : String(value),
-                                          )
-                                        }
-                                        placeholder="视频时长 (秒)"
-                                        options={mediaDefaultOptionSets.videoDuration}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaVideoDuration}
-                                        onChange={(e) => set('mediaVideoDuration', e.target.value)}
-                                        placeholder="视频时长 (秒)"
-                                      />
-                                    ))}
-                                  {(mediaDefaultOptionSets.videoQuality.length > 0 ||
-                                    form.mediaVideoQuality) &&
-                                    (mediaDefaultOptionSets.videoQuality.length > 0 ? (
-                                      <Select
-                                        value={form.mediaVideoQuality || undefined}
-                                        allowClear
-                                        onChange={(value) =>
-                                          set(
-                                            'mediaVideoQuality',
-                                            value == null ? '' : String(value),
-                                          )
-                                        }
-                                        placeholder="视频质量 / 分辨率"
-                                        options={mediaDefaultOptionSets.videoQuality}
-                                      />
-                                    ) : (
-                                      <Input
-                                        value={form.mediaVideoQuality}
-                                        onChange={(e) => set('mediaVideoQuality', e.target.value)}
-                                        placeholder="视频质量 (hd)"
-                                      />
-                                    ))}
-                                </>
-                              )}
-                              {(form.modelType === 'image' || form.modelType === 'video') && (
-                                <Input
-                                  value={form.mediaPollInterval}
-                                  onChange={(e) => set('mediaPollInterval', e.target.value)}
-                                  placeholder="轮询间隔 ms"
-                                />
-                              )}
-                              {(isDedicatedMediaType || form.mediaGenerationEnabled) && (
-                                <Input
-                                  value={form.mediaTimeout}
-                                  onChange={(e) => set('mediaTimeout', e.target.value)}
-                                  placeholder="接口超时 ms"
-                                />
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-
-                    {isChatModel && (
-                      <>
-                        <label className="pv_form_label">上下文窗口</label>
-                        <div className="pv_form_control_inline">
-                          <Select
-                            size="middle"
-                            style={{ width: 160 }}
-                            value={
-                              isCustomContextWindow
-                                ? -1
-                                : resolveContextWindowSelectValue(form.contextWindow)
-                            }
-                            onChange={(value: number) => {
-                              if (value === -1) {
-                                // 切到自定义：保留当前值或回落 200k；isCustomContextWindow 独立标记意图
-                                setIsCustomContextWindow(true)
-                                const next = form.contextWindow > 0 ? form.contextWindow : 200_000
-                                setForm((prev) => ({
-                                  ...prev,
-                                  contextWindow: next,
-                                  supportsMillionContext: next === 1_000_000,
-                                }))
-                              } else {
-                                setIsCustomContextWindow(false)
-                                setForm((prev) => ({
-                                  ...prev,
-                                  contextWindow: value,
-                                  supportsMillionContext: value === 1_000_000,
-                                }))
-                              }
-                            }}
-                            options={CONTEXT_WINDOW_PRESETS}
-                          />
-                          {isCustomContextWindow && (
-                            <Input
-                              size="middle"
-                              style={{ width: 140, marginInlineStart: 8 }}
-                              type="number"
-                              min={1024}
-                              max={10_000_000}
-                              step={1024}
-                              value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
-                              placeholder="tokens"
-                              onChange={(e) => {
-                                const raw = Number((e.target as HTMLInputElement).value)
-                                // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
-                                // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
-                                let next = 0
-                                if (Number.isFinite(raw) && raw > 0) {
-                                  next = Math.min(Math.floor(raw), 10_000_000)
-                                }
-                                setForm((prev) => ({
-                                  ...prev,
-                                  contextWindow: next,
-                                  supportsMillionContext: next === 1_000_000,
-                                }))
-                              }}
-                            />
-                          )}
-                        </div>
-                      </>
+                          setForm((prev) => ({
+                            ...prev,
+                            contextWindow: next,
+                            supportsMillionContext: next === 1_000_000,
+                          }))
+                        }}
+                      />
                     )}
                   </div>
-                </div>
+                </>
+              )}
+
+              {/* ─── 候选模型目录（多选下拉）/ 已启用模型（行式列表）：默认模型与上下文窗口下方平铺 ─── */}
+              {isChatModel && (
+                <ProviderModelCatalog
+                  catalogModelIds={fetchedModelIds}
+                  modelIds={form.modelIds}
+                  defaultModel={form.defaultModel}
+                  scheduledBlockedCount={scheduledBlockedModelIds(form.modelSchedules).size}
+                  disabled={saving || testingConnection}
+                  onToggleCatalogModel={toggleFetchedModelSelection}
+                  onChangeModelIds={(ids) => {
+                    // 联动清理：模型被移除 / 只选默认时同步清理其定时禁用时段，避免残留配置继续生效
+                    setForm((prev) => ({
+                      ...prev,
+                      modelIds: ids,
+                      modelSchedules: prev.modelSchedules.filter((s) => ids.includes(s.modelId)),
+                    }))
+                  }}
+                  onSelectDefault={(id) => {
+                    // 把 id 设为默认模型：从 modelIds 里把它放到最前
+                    setForm((prev) => {
+                      const trimmed = id.trim()
+                      if (!trimmed) return prev
+                      const rest = prev.modelIds.filter((m) => m !== trimmed)
+                      return {
+                        ...prev,
+                        defaultModel: trimmed,
+                        modelIds: uniqPreserveOrder([trimmed, ...rest]),
+                      }
+                    })
+                  }}
+                />
+              )}
+
+              {isChatModel && (
+                <>
+                  <label className="pv_form_label">附加生成能力</label>
+                  <div className="pv_form_control_inline">
+                    <Switch
+                      size="middle"
+                      checked={form.mediaGenerationEnabled}
+                      onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
+              {mediaPanelVisible && (
+                <>
+                  <ProviderMediaRoutingFields
+                    templateConfigured={templateConfigured}
+                    mediaProvider={effectiveMediaProvider}
+                    mediaApiType={form.mediaApiType}
+                    providerOptions={mediaProviderOptionsForModelType(form.modelType).map(
+                      (kind) => ({
+                        label: MEDIA_PROVIDER_LABELS[kind],
+                        value: kind,
+                      }),
+                    )}
+                    onConvertToCustom={() => set('presetId', 'custom')}
+                    onMediaProviderChange={changeMediaProvider}
+                    onMediaApiTypeChange={(mediaApiType) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        mediaApiType,
+                        imageApiType:
+                          prev.modelType === 'image'
+                            ? normalizeImageApiType(mediaApiType)
+                            : prev.imageApiType,
+                      }))
+                    }
+                  />
+                  {isCustomMediaChannel && (
+                    <div className="pv_custom_adapter_entry">
+                      <div>
+                        <strong>自定义渠道适配器</strong>
+                        <span>配置提交、鉴权、Body、上传、轮询、参数和错误契约</span>
+                      </div>
+                      <Button
+                        type="primary"
+                        icon={<Icons.Settings size={13} />}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          openNewCustomManifestEditor()
+                        }}
+                      >
+                        配置自定义适配器
+                      </Button>
+                    </div>
+                  )}
+
+                  <label className="pv_form_label">模型清单</label>
+                  <div className="pv_media_model_refs">
+                    <ProviderMediaModelCatalog
+                      models={mediaCatalogForForm}
+                      loading={mediaCatalogLoading}
+                      isChatModel={isChatModel}
+                      selectedManifestIds={selectedManifestIds}
+                      defaultModel={form.defaultModel}
+                      onToggleModel={toggleMediaModelRef}
+                      onSetDefaultModel={setMediaDefaultModel}
+                    />
+
+                    {isCustomMediaChannel && fetchedModels.length > 0 && (
+                      <div className="pv_media_manifest_list">
+                        <div className="pv_form_hint" style={{ marginBottom: 6 }}>
+                          渠道 /models 返回的模型（添加后可编辑协议）
+                        </div>
+                        {fetchedModels.map((model) => {
+                          const added = customModelRefs.some(
+                            (ref) => ref.modelId?.trim() === model.id.trim(),
+                          )
+                          return (
+                            <div
+                              key={`fetched-${model.id}`}
+                              className="pv_media_manifest_item pv_media_manifest_item_static"
+                            >
+                              <div className="pv_media_manifest_main">
+                                <div className="pv_media_manifest_title">
+                                  <span>{model.id}</span>
+                                  <Tag size="small" color="blue">
+                                    渠道返回
+                                  </Tag>
+                                </div>
+                                {model.ownedBy && (
+                                  <div className="pv_media_manifest_meta">
+                                    owned_by: {model.ownedBy}
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                size="middle"
+                                type={added ? 'text' : 'primary'}
+                                disabled={added}
+                                onClick={() => addCustomMediaModel(model.id)}
+                              >
+                                {added ? '已添加' : '添加'}
+                              </Button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
+                    {customModelRefs.length > 0 && (
+                      <div className="pv_media_manifest_list">
+                        {customModelRefs.map((ref) => (
+                          <div
+                            key={ref.manifestId}
+                            className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static"
+                          >
+                            <div className="pv_media_manifest_main">
+                              <div className="pv_media_manifest_title">
+                                <span>{ref.modelId}</span>
+                                <Tag size="small" color="purple">
+                                  自定义
+                                </Tag>
+                                {ref.manifest && (
+                                  <Tag size="small" color="green">
+                                    协议已配置
+                                  </Tag>
+                                )}
+                                <Tag size="small" color="gray">
+                                  {form.mediaProvider || form.imageProvider}
+                                </Tag>
+                              </div>
+                              <div className="pv_media_manifest_meta">
+                                {form.defaultModel.trim() === ref.modelId?.trim()
+                                  ? `${ref.modelId} · 当前默认`
+                                  : ref.modelId}
+                              </div>
+                            </div>
+                            <div className="pv_media_manifest_actions">
+                              {(form.modelType === 'image' || form.modelType === 'video') && (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<Icons.Settings size={12} />}
+                                  onClick={() => openCustomManifestEditor(ref)}
+                                >
+                                  编辑协议
+                                </Button>
+                              )}
+                              {form.defaultModel.trim() === ref.modelId?.trim() ? (
+                                <Tag size="small" color="green">
+                                  默认
+                                </Tag>
+                              ) : (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  icon={<Icons.Star size={12} />}
+                                  onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
+                                  title="设为默认调用模型"
+                                  aria-label={`将 ${ref.modelId} 设为默认`}
+                                >
+                                  设为默认
+                                </Button>
+                              )}
+                              <Button
+                                size="small"
+                                type="text"
+                                danger
+                                icon={<Icons.X />}
+                                onClick={() => removeMediaModelRef(ref.manifestId)}
+                                title="移除自定义模型"
+                                aria-label={`移除自定义模型 ${ref.modelId}`}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {showCustomMediaModelInput && (
+                    <>
+                      <label className="pv_form_label">
+                        自定义模型 / 适配器
+                        <span className="pv_form_sub">
+                          输入模型 ID 添加后，点击「编辑协议」配置请求模板
+                        </span>
+                      </label>
+                      <div className="pv_custom_model_add">
+                        <Input
+                          value={customModelInput}
+                          onChange={(e) => setCustomModelInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (customModelInput.trim()) {
+                                addCustomMediaModel(customModelInput)
+                                setCustomModelInput('')
+                              }
+                            }
+                          }}
+                          placeholder="输入模型 ID 后按 Enter 添加"
+                        />
+                        <Button
+                          type="primary"
+                          icon={<Icons.Plus />}
+                          disabled={!customModelInput.trim()}
+                          onClick={() => {
+                            if (customModelInput.trim()) {
+                              addCustomMediaModel(customModelInput)
+                              setCustomModelInput('')
+                            }
+                          }}
+                        >
+                          添加
+                        </Button>
+                      </div>
+                    </>
+                  )}
+
+                  {mediaCapabilityOptions.length > 0 && (
+                    <>
+                      <label className="pv_form_label">支持能力</label>
+                      <div className="pv_media_capabilities">
+                        {mediaCapabilityOptions.map((capability) => (
+                          <Checkbox
+                            key={capability}
+                            checked={form.mediaCapabilities.includes(capability)}
+                            onChange={(checked: boolean) => {
+                              setForm((prev) => {
+                                const set = new Set(prev.mediaCapabilities)
+                                if (checked) set.add(capability)
+                                else set.delete(capability)
+                                return { ...prev, mediaCapabilities: [...set] }
+                              })
+                            }}
+                          >
+                            {MEDIA_CAPABILITY_LABELS[capability]}
+                          </Checkbox>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {showMediaDefaults && (
+                    <>
+                      <label className="pv_form_label">参数默认值</label>
+                      <div className="pv_media_defaults">
+                        {form.modelType === 'image' && (
+                          <>
+                            {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageSize) &&
+                              (mediaDefaultOptionSets.imageSize.length > 0 ? (
+                                <Select
+                                  value={form.mediaImageSize || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaImageSize', value == null ? '' : String(value))
+                                  }
+                                  placeholder="图片尺寸 / 比例"
+                                  options={mediaDefaultOptionSets.imageSize}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaImageSize}
+                                  onChange={(e) => set('mediaImageSize', e.target.value)}
+                                  placeholder="图片尺寸 (1024x1024 / 16:9)"
+                                />
+                              ))}
+                            {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageN) && (
+                              <Input
+                                value={form.mediaImageN}
+                                onChange={(e) => set('mediaImageN', e.target.value)}
+                                placeholder="图片数量 n"
+                              />
+                            )}
+                            {(mediaDefaultOptionSets.imageQuality.length > 0 ||
+                              form.mediaImageQuality) &&
+                              (mediaDefaultOptionSets.imageQuality.length > 0 ? (
+                                <Select
+                                  value={form.mediaImageQuality || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaImageQuality', value == null ? '' : String(value))
+                                  }
+                                  placeholder="图片质量"
+                                  options={mediaDefaultOptionSets.imageQuality}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaImageQuality}
+                                  onChange={(e) => set('mediaImageQuality', e.target.value)}
+                                  placeholder="图片质量 (hd / standard)"
+                                />
+                              ))}
+                          </>
+                        )}
+                        {form.modelType === 'voice' && (
+                          <>
+                            <Input
+                              value={form.mediaAudioVoice}
+                              onChange={(e) => set('mediaAudioVoice', e.target.value)}
+                              placeholder="语音 voice (alloy / nova)"
+                            />
+                            {(mediaDefaultOptionSets.audioFormat.length > 0 ||
+                              form.mediaAudioFormat) &&
+                              (mediaDefaultOptionSets.audioFormat.length > 0 ? (
+                                <Select
+                                  value={form.mediaAudioFormat || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaAudioFormat', value == null ? '' : String(value))
+                                  }
+                                  placeholder="语音格式 / 输出格式"
+                                  options={mediaDefaultOptionSets.audioFormat}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaAudioFormat}
+                                  onChange={(e) => set('mediaAudioFormat', e.target.value)}
+                                  placeholder="语音格式 (mp3 / wav)"
+                                />
+                              ))}
+                          </>
+                        )}
+                        {form.modelType === 'video' && (
+                          <>
+                            {(mediaDefaultOptionSets.videoAspectRatio.length > 0 ||
+                              form.mediaVideoAspectRatio) &&
+                              (mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
+                                <Select
+                                  value={form.mediaVideoAspectRatio || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaVideoAspectRatio', value == null ? '' : String(value))
+                                  }
+                                  placeholder="视频比例"
+                                  options={mediaDefaultOptionSets.videoAspectRatio}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaVideoAspectRatio}
+                                  onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
+                                  placeholder="视频比例 (16:9)"
+                                />
+                              ))}
+                            {(mediaDefaultOptionSets.videoDuration.length > 0 ||
+                              form.mediaVideoDuration) &&
+                              (mediaDefaultOptionSets.videoDuration.length > 0 ? (
+                                <Select
+                                  value={form.mediaVideoDuration || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaVideoDuration', value == null ? '' : String(value))
+                                  }
+                                  placeholder="视频时长 (秒)"
+                                  options={mediaDefaultOptionSets.videoDuration}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaVideoDuration}
+                                  onChange={(e) => set('mediaVideoDuration', e.target.value)}
+                                  placeholder="视频时长 (秒)"
+                                />
+                              ))}
+                            {(mediaDefaultOptionSets.videoQuality.length > 0 ||
+                              form.mediaVideoQuality) &&
+                              (mediaDefaultOptionSets.videoQuality.length > 0 ? (
+                                <Select
+                                  value={form.mediaVideoQuality || undefined}
+                                  allowClear
+                                  onChange={(value) =>
+                                    set('mediaVideoQuality', value == null ? '' : String(value))
+                                  }
+                                  placeholder="视频质量 / 分辨率"
+                                  options={mediaDefaultOptionSets.videoQuality}
+                                />
+                              ) : (
+                                <Input
+                                  value={form.mediaVideoQuality}
+                                  onChange={(e) => set('mediaVideoQuality', e.target.value)}
+                                  placeholder="视频质量 (hd)"
+                                />
+                              ))}
+                          </>
+                        )}
+                        {(form.modelType === 'image' || form.modelType === 'video') && (
+                          <Input
+                            value={form.mediaPollInterval}
+                            onChange={(e) => set('mediaPollInterval', e.target.value)}
+                            placeholder="轮询间隔 ms"
+                          />
+                        )}
+                        {(isDedicatedMediaType || form.mediaGenerationEnabled) && (
+                          <Input
+                            value={form.mediaTimeout}
+                            onChange={(e) => set('mediaTimeout', e.target.value)}
+                            placeholder="接口超时 ms"
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -4650,128 +4646,8 @@ export function ProviderEditPanel({
         {/* ─── 鉴权（API Key）已上移到「服务商配置信息」section 里紧贴 BaseURL， ─── */}
         {/* 让测试连接 / 获取模型能直接看到 Key 是否已填。 */}
 
-        {advancedOpen && isChatModel && (
+        {isChatModel && (
           <>
-            {/* ─── 可用模型 ─── */}
-            <div className="pv_section">
-              <div className="pv_section_head">
-                <span className="pv_section_icon">
-                  <Icons.Archive size={11} />
-                </span>
-                <span className="pv_section_title">可用模型</span>
-                <span className="pv_section_hint">
-                  {fetchedModelIds.length > 0
-                    ? `候选模型 ${fetchedModelIds.length} 个；只有点选启用的模型才会在全局可用`
-                    : '仅已启用模型会在全局出现；默认模型会自动保留为可用'}
-                </span>
-                {(() => {
-                  const defaultModel = form.defaultModel.trim()
-                  const othersCount = form.modelIds.filter((m) => m !== defaultModel).length
-                  const canReset = !!defaultModel && othersCount > 0
-                  const disabledHint = !defaultModel
-                    ? '请先点击某个 chip 设为默认模型'
-                    : '当前没有其他已启用模型'
-                  return (
-                    <button
-                      type="button"
-                      className="pv_section_action"
-                      disabled={!canReset}
-                      title={
-                        canReset
-                          ? `取消其余 ${othersCount} 个模型的启用状态，仅保留默认模型「${defaultModel}」`
-                          : disabledHint
-                      }
-                      onClick={() => {
-                        setForm((prev) => {
-                          const d = prev.defaultModel.trim()
-                          if (!d) return prev
-                          // 联动清理：仅保留默认模型时，其余模型的定时禁用时段一并移除
-                          return {
-                            ...prev,
-                            modelIds: [d],
-                            modelSchedules: prev.modelSchedules.filter((s) => s.modelId === d),
-                          }
-                        })
-                      }}
-                    >
-                      <Icons.Check size={11} />
-                      <span>只选默认</span>
-                    </button>
-                  )
-                })()}
-              </div>
-              <div className="pv_section_body">
-                {fetchedModelIds.length > 0 && (
-                  <div className="pv_model_picker_block">
-                    <div className="pv_model_picker_head">
-                      <span className="pv_model_picker_title">候选模型目录</span>
-                      <span className="pv_model_picker_hint">点选后才会进入全局可用模型列表</span>
-                    </div>
-                    <div className="pv_model_toggle_grid">
-                      {fetchedModelIds.map((id) => {
-                        const isSelected = form.modelIds.includes(id)
-                        const isDefault = form.defaultModel.trim() === id
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            className={`pv_model_toggle${isSelected ? ' is-selected' : ''}${isDefault ? ' is-default' : ''}`}
-                            onClick={() => toggleFetchedModelSelection(id, !isSelected)}
-                            title={isDefault ? `${id}（默认模型，需先切换默认后才能取消启用）` : id}
-                          >
-                            <span className="pv_model_toggle_check" aria-hidden>
-                              {isSelected ? <Icons.Check size={12} /> : null}
-                            </span>
-                            <span className="pv_model_toggle_label">{id}</span>
-                            {isDefault && <span className="pv_model_toggle_badge">默认</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="pv_model_picker_block">
-                  <div className="pv_model_picker_head">
-                    <span className="pv_model_picker_title">已启用模型（全局可用）</span>
-                    <span className="pv_model_picker_hint">
-                      {scheduledBlockedModelIds(form.modelSchedules).size > 0
-                        ? `点击 chip 可切换默认；也支持手动补充自定义模型 ID；${scheduledBlockedModelIds(form.modelSchedules).size} 个模型处于定时禁用时段内（见下方「定时禁用」）`
-                        : '点击 chip 可切换默认；也支持手动补充自定义模型 ID'}
-                    </span>
-                  </div>
-                  <ChipList
-                    value={form.modelIds}
-                    onChange={(ids) => {
-                      // 联动清理：chip 删除模型时同步移除其定时禁用时段，避免残留配置继续生效
-                      setForm((prev) => ({
-                        ...prev,
-                        modelIds: ids,
-                        modelSchedules: prev.modelSchedules.filter((s) => ids.includes(s.modelId)),
-                      }))
-                    }}
-                    onSelectDefault={(id) => {
-                      // 把 id 设为默认模型：从 modelIds 里把它放到最前
-                      setForm((prev) => {
-                        const trimmed = id.trim()
-                        if (!trimmed) return prev
-                        const rest = prev.modelIds.filter((m) => m !== trimmed)
-                        return {
-                          ...prev,
-                          defaultModel: trimmed,
-                          modelIds: uniqPreserveOrder([trimmed, ...rest]),
-                        }
-                      })
-                    }}
-                    locked={form.defaultModel.trim() ? [form.defaultModel.trim()] : []}
-                    placeholder="输入模型 ID 后按 Enter 添加…"
-                    emptyText="尚未添加任何模型（默认模型会自动加入）"
-                    addLabel="添加"
-                    removeLabel="移除"
-                  />
-                </div>
-              </div>
-            </div>
-
             {/* ─── 定时禁用（峰谷定价规避）：时段内模型全局不可见/不可选/不可用 ─── */}
             <ProviderModelScheduleSection
               modelIds={form.modelIds}
