@@ -114,7 +114,7 @@ export type Tweaks = {
 export const DEFAULT_TWEAKS: Tweaks = {
   theme: 'system',
   emptyHeroTheme: DEFAULT_EMPTY_HERO_THEME,
-  primary: '#6366f1',
+  primary: '#3b82f6',
   density: 'regular',
   sidebar: 'collapsed',
   view: 'chat',
@@ -478,7 +478,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const info = PRIMARIES[primary]
     root.style.setProperty('--primary', primary)
     root.style.setProperty('--primary-hover', info?.hover ?? primary)
-    root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
+    root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(59,130,246,0.12)')
     const applyResolvedTheme = (resolved: ResolvedTheme) => {
       root.dataset.theme = resolved
       applyArcoTheme(resolved, primary)

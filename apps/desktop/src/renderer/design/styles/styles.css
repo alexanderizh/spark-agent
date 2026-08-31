@@ -6,9 +6,9 @@
 
 :root {
   /* Primary color is set on .app element by JS via --primary / --primary-soft */
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --primary-soft: rgba(99, 102, 241, 0.12);
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-soft: rgba(59, 130, 246, 0.12);
   --primary-fg: #ffffff;
 
   /* radii */
