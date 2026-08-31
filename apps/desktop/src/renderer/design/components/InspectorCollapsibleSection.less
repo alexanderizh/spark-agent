@@ -1,0 +1,61 @@
+.inspector-collapsible-section {
+  &__header {
+    gap: 6px;
+    margin-bottom: 0 !important;
+
+    &.is-expanded {
+      margin-bottom: 10px !important;
+    }
+  }
+
+  &__toggle {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      color: var(--text-muted);
+    }
+
+    &:focus-visible {
+      border-radius: var(--r-sm);
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+    }
+
+    .inspector-count {
+      margin-left: auto;
+    }
+
+    .chev {
+      flex-shrink: 0;
+      margin-left: 6px;
+      color: var(--text-faint);
+      transition: transform 0.15s;
+    }
+
+    .chev-open {
+      transform: rotate(90deg);
+    }
+  }
+
+  &__title {
+    min-width: 0;
+  }
+
+  &__action {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+  }
+}

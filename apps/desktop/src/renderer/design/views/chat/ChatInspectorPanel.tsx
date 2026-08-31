@@ -7,6 +7,7 @@ import { Icons } from '../../Icons'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
 import { ChatInspectorPerf } from './ChatInspectorPerf'
 import { OutcomeRoomContainer } from '../../outcome-room/OutcomeRoomContainer'
+import { InspectorCollapsibleSection } from '../../components/InspectorCollapsibleSection'
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -717,96 +718,6 @@ export function ChatInspector({
           isSessionRunning={session?.status === 'running'}
         />
 
-        {workspace && (
-          <div className="inspector-section">
-            <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
-          </div>
-        )}
-
-        {session != null && projectContext != null && (
-          <div className="inspector-section">
-            <h4>
-              项目上下文
-              <span className="inspector-count">{projectContextSources.length}</span>
-            </h4>
-            <div className="kv-row">
-              <span className="k">规则</span>
-              <span className="v">{projectContext.counts.rules}</span>
-            </div>
-            <div className="kv-row">
-              <span className="k">Skills</span>
-              <span className="v">{projectContext.counts.skills}</span>
-            </div>
-            <div className="kv-row">
-              <span className="k">Agents</span>
-              <span className="v">{projectContext.counts.agents}</span>
-            </div>
-            {projectContext.budget != null && (
-              <>
-                <div className="kv-row">
-                  <span className="k">模式</span>
-                  <span className="v">{projectContext.budget.mode}</span>
-                </div>
-                <div className="kv-row">
-                  <span className="k">预算</span>
-                  <span className="v">
-                    {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
-                    {formatTokenCount(projectContext.budget.budgetTokens)}
-                  </span>
-                </div>
-              </>
-            )}
-            {projectContextSources.length > 0 ? (
-              <div className="runtime-skill-list">
-                {projectContextSources.map((source) => (
-                  <div
-                    className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`}
-                    key={`${source.kind}:${source.path}`}
-                  >
-                    <div className="runtime-skill-main min-w-0">
-                      <div className="runtime-skill-name truncate">{source.name}</div>
-                      <div className="runtime-skill-desc truncate">
-                        {source.kind} · {source.path}
-                        {source.estimatedTokens != null
-                          ? ` · ${formatTokenCount(source.estimatedTokens)}`
-                          : ''}
-                        {source.included === false ? ' · excluded' : ''}
-                        {source.truncated ? ' · truncated' : ''}
-                        {source.reason != null ? ` · ${source.reason}` : ''}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
-            )}
-          </div>
-        )}
-
-        {checkpointAvailable && (
-          <div className="inspector-section">
-            <h4>
-              代码还原点
-              {checkpointEnabled && <span className="badge success dot">已开启</span>}
-            </h4>
-            <div className="checkpoint-card">
-              <p className="checkpoint-desc">
-                {checkpointEnabled
-                  ? '已按轮记录已跟踪文件状态，可在时间线中回溯还原。'
-                  : '本轮未开启记录；打开时间线后可手动开启。'}
-              </p>
-              <button
-                type="button"
-                className="btn primary sm checkpoint-open-btn"
-                onClick={onOpenCheckpointTimeline}
-              >
-                打开时间线
-              </button>
-            </div>
-          </div>
-        )}
-
         {subagents.length > 0 && (
           <div className="inspector-section">
             <h4>
@@ -871,6 +782,93 @@ export function ChatInspector({
             </h4>
             <TurnUsageChart rows={turnUsage.rows} />
           </div>
+        )}
+
+        {/* 工程信息统一置底，并保持各自独立、默认折叠。 */}
+        {workspace && <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />}
+
+        {session != null && projectContext != null && (
+          <InspectorCollapsibleSection
+            title="项目上下文"
+            summary={<span className="inspector-count">{projectContextSources.length}</span>}
+          >
+            <div className="kv-row">
+              <span className="k">规则</span>
+              <span className="v">{projectContext.counts.rules}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">Skills</span>
+              <span className="v">{projectContext.counts.skills}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">Agents</span>
+              <span className="v">{projectContext.counts.agents}</span>
+            </div>
+            {projectContext.budget != null && (
+              <>
+                <div className="kv-row">
+                  <span className="k">模式</span>
+                  <span className="v">{projectContext.budget.mode}</span>
+                </div>
+                <div className="kv-row">
+                  <span className="k">预算</span>
+                  <span className="v">
+                    {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
+                    {formatTokenCount(projectContext.budget.budgetTokens)}
+                  </span>
+                </div>
+              </>
+            )}
+            {projectContextSources.length > 0 ? (
+              <div className="runtime-skill-list">
+                {projectContextSources.map((source) => (
+                  <div
+                    className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`}
+                    key={`${source.kind}:${source.path}`}
+                  >
+                    <div className="runtime-skill-main min-w-0">
+                      <div className="runtime-skill-name truncate">{source.name}</div>
+                      <div className="runtime-skill-desc truncate">
+                        {source.kind} · {source.path}
+                        {source.estimatedTokens != null
+                          ? ` · ${formatTokenCount(source.estimatedTokens)}`
+                          : ''}
+                        {source.included === false ? ' · excluded' : ''}
+                        {source.truncated ? ' · truncated' : ''}
+                        {source.reason != null ? ` · ${source.reason}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
+            )}
+          </InspectorCollapsibleSection>
+        )}
+
+        {checkpointAvailable && (
+          <InspectorCollapsibleSection
+            title="代码还原点"
+            summary={
+              checkpointEnabled ? <span className="badge success dot">已开启</span> : undefined
+            }
+          >
+            <div className="checkpoint-card">
+              <p className="checkpoint-desc">
+                {checkpointEnabled
+                  ? '已按轮记录已跟踪文件状态，可在时间线中回溯还原。'
+                  : '本轮未开启记录；打开时间线后可手动开启。'}
+              </p>
+              <button
+                type="button"
+                className="btn primary sm checkpoint-open-btn"
+                onClick={onOpenCheckpointTimeline}
+              >
+                打开时间线
+              </button>
+            </div>
+          </InspectorCollapsibleSection>
         )}
 
         {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
@@ -957,17 +955,18 @@ function useRuntimeLogEnabled(): {
 function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEvent[] }) {
   const { enabled: runtimeLogEnabled, toggle: setRuntimeLogEnabled } = useRuntimeLogEnabled()
   return (
-    <div className="inspector-section">
-      <h4>
-        <span>运行时日志</span>
+    <InspectorCollapsibleSection
+      title="运行时日志"
+      summary={<span className="inspector-count">{snapshots.length} 轮</span>}
+      headerAction={
         <Switch
           size="small"
           checked={runtimeLogEnabled}
           onChange={(v) => void setRuntimeLogEnabled(v)}
-          style={{ marginLeft: 'auto' }}
+          aria-label="启用运行时日志"
         />
-        <span className="inspector-count">{snapshots.length} 轮</span>
-      </h4>
+      }
+    >
       {!runtimeLogEnabled && (
         <div
           style={{
@@ -990,7 +989,7 @@ function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEv
           />
         ))}
       </div>
-    </div>
+    </InspectorCollapsibleSection>
   )
 }
 
