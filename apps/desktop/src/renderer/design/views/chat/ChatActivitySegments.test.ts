@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { UIBlock } from '../../services/event-mapper'
 import {
   getToolLogGroupKind,
+  isChatActivityBlock,
   isChatActivitySegmentRunning,
   splitChatActivitySegments,
   summarizeChatActivitySegment,
 } from './ChatActivitySegments'
+import type { SessionTaskTimelineEntry } from './SessionTaskTimeline'
 
 function text(content: string, segmentId: string): Extract<UIBlock, { kind: 'text' }> {
   return { kind: 'text', content, isStreaming: false, segmentId }
@@ -142,6 +144,51 @@ describe('ChatActivitySegments', () => {
     expect(items[0]).toMatchObject({ key: 'activity:file:src/repeated.ts' })
     expect(items[2]).toMatchObject({ key: 'activity:file:src/repeated.ts:2' })
     expect(withUnrelatedPrefix[1]).toMatchObject({ key: 'activity:file:src/repeated.ts' })
+  })
+
+  it('keeps host task tool blocks in content when a session task entry is present', () => {
+    const entry: SessionTaskTimelineEntry = { anchorToolCallId: 'task-1', tasks: [] }
+    const items = splitChatActivitySegments(
+      [
+        thinking('think-1', false),
+        tool('task-1', 'TaskCreate', 'success'),
+        tool('task-2', 'TaskUpdate', 'success'),
+        tool('read-1', 'Read', 'success'),
+      ],
+      { sessionTaskEntry: entry },
+    )
+
+    expect(items.map((item) => item.kind)).toEqual(['activity', 'content', 'content', 'activity'])
+    expect(items[0]).toMatchObject({
+      kind: 'activity',
+      sealed: true,
+      blocks: [{ kind: 'thinking' }],
+    })
+    expect(items[1]).toMatchObject({ kind: 'content', key: 'content:tool:task-1' })
+    expect(items[2]).toMatchObject({ kind: 'content', key: 'content:tool:task-2' })
+    expect(items[3]).toMatchObject({
+      kind: 'activity',
+      sealed: false,
+      blocks: [{ kind: 'tool_call', toolCallId: 'read-1' }],
+    })
+    expect(
+      isChatActivityBlock(tool('task-3', 'TaskUpdate', 'running'), { sessionTaskEntry: entry }),
+    ).toBe(false)
+  })
+
+  it('still folds host task tool blocks into activity without a session task entry', () => {
+    const items = splitChatActivitySegments([
+      tool('task-1', 'TaskCreate', 'success'),
+      tool('read-1', 'Read', 'success'),
+    ])
+
+    expect(items).toMatchObject([
+      {
+        kind: 'activity',
+        sealed: false,
+        blocks: [{ toolCallId: 'task-1' }, { toolCallId: 'read-1' }],
+      },
+    ])
   })
 
   it('ignores invisible metadata instead of sealing visible activity', () => {

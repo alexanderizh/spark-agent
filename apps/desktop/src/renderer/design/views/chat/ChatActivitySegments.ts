@@ -1,6 +1,7 @@
 import type { UIBlock } from '../../services/event-mapper'
 import { filterDocumentOutputFiles } from './ChatDocumentOutput'
 import { filterMediaPresentedFiles } from './PresentedMedia'
+import { shouldReplaceSessionTaskBlock, type SessionTaskTimelineEntry } from './SessionTaskTimeline'
 import { classifyToolLog, TOOL_LOG_GROUP_KINDS, type ToolLogGroupKind } from './tool-log-metadata'
 
 export type { ToolLogGroupKind } from './tool-log-metadata'
@@ -32,7 +33,20 @@ export function getToolLogGroupKind(
   return classifyToolLog(block.toolName, block.toolInput)
 }
 
-export function isChatActivityBlock(block: UIBlock): block is ChatActivityBlock {
+export type ChatActivitySegmentOptions = {
+  /**
+   * Host 会话任务面板快照。存在时，会被 SessionTaskPanel 替换的任务工具块
+   * （task_create / task_update / todo_write / todo_read）不算活动块——它们留在
+   * 正文位置渲染任务面板，而不是被折叠进行为日志段（与旧 todo_write 时代一致）。
+   */
+  sessionTaskEntry?: SessionTaskTimelineEntry | null | undefined
+}
+
+export function isChatActivityBlock(
+  block: UIBlock,
+  options?: ChatActivitySegmentOptions,
+): block is ChatActivityBlock {
+  if (shouldReplaceSessionTaskBlock(block, options?.sessionTaskEntry)) return false
   if (block.kind === 'thinking' || block.kind === 'terminal' || block.kind === 'checkpoint') {
     return true
   }
@@ -60,7 +74,10 @@ function uniqueTimelineKey(baseKey: string, occurrences: Map<string, number>): s
   return occurrence === 1 ? baseKey : `${baseKey}:${occurrence}`
 }
 
-export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimelineItem[] {
+export function splitChatActivitySegments(
+  blocks: UIBlock[],
+  options?: ChatActivitySegmentOptions,
+): ChatActivityTimelineItem[] {
   const items: ChatActivityTimelineItem[] = []
   const keyOccurrences = new Map<string, number>()
   let activity: Extract<ChatActivityTimelineItem, { kind: 'activity' }> | null = null
@@ -78,7 +95,7 @@ export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimeli
       return
     }
 
-    if (isChatActivityBlock(block)) {
+    if (isChatActivityBlock(block, options)) {
       if (activity == null) {
         activityOrdinal += 1
         activity = {

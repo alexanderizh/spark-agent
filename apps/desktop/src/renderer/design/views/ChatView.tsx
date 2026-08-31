@@ -5688,23 +5688,27 @@ function renderBlocksGrouped(
   } = {},
 ): ReactNode {
   const autoCollapseEnabled = readAppearance().autoCollapseTools
-  return splitChatActivitySegments(blocks).map((item) => {
-    if (item.kind === 'content') {
-      return <Fragment key={item.key}>{renderBlocks([item.block], options)}</Fragment>
-    }
+  // 持有任务面板快照的 host 任务块不算活动块：anchor 留在正文渲染 SessionTaskPanel
+  // （与旧 todo_write 一致），而不是折叠进行为日志段再由 renderActivityBlocks 补救。
+  return splitChatActivitySegments(blocks, { sessionTaskEntry: options.sessionTaskEntry }).map(
+    (item) => {
+      if (item.kind === 'content') {
+        return <Fragment key={item.key}>{renderBlocks([item.block], options)}</Fragment>
+      }
 
-    return (
-      <ActivitySegment
-        key={item.key}
-        summary={summarizeChatActivitySegment(item.blocks)}
-        running={isChatActivitySegmentRunning(item.blocks)}
-        sealed={item.sealed}
-        autoCollapseEnabled={autoCollapseEnabled}
-      >
-        {renderActivityBlocks(item.blocks, options)}
-      </ActivitySegment>
-    )
-  })
+      return (
+        <ActivitySegment
+          key={item.key}
+          summary={summarizeChatActivitySegment(item.blocks)}
+          running={isChatActivitySegmentRunning(item.blocks)}
+          sealed={item.sealed}
+          autoCollapseEnabled={autoCollapseEnabled}
+        >
+          {renderActivityBlocks(item.blocks, options)}
+        </ActivitySegment>
+      )
+    },
+  )
 }
 
 function renderActivityBlocks(
@@ -7858,7 +7862,7 @@ const AgentMsg = React.memo(function AgentMsg({
       (b, i) => !isLeadingThinking(b, i) && b.kind !== 'terminal' && !isHiddenTimelineBlock(b),
     ),
   )
-  const timelineGroups = groupChatMessageTimeline(timelineBlocks)
+  const timelineGroups = groupChatMessageTimeline(timelineBlocks, sessionTaskEntry)
   const timelineContentCollapsibleOnly =
     timelineGroups.length > 0 &&
     timelineGroups.every((group) => group.kind === 'content' && group.collapsibleOnly)
