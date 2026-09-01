@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Button, Checkbox, Input, Modal, Select } from '@lobehub/ui'
+import { ActionIcon, Button, Checkbox, Input, Modal, Select } from '@lobehub/ui'
 import type { ProviderProfile } from '@spark/protocol'
 import { PLATFORM_MANAGED_DEFAULT_CONTEXT_WINDOW } from '@spark/shared'
 import { useToast } from '../../components/Toast'
+import { Icons } from '../../Icons'
 import {
   CONTEXT_WINDOW_PRESETS,
   isCustomContextWindowValue,
@@ -49,6 +50,7 @@ export function ManagedModelPreferencesModal({
   onSaved: () => void
 }): React.ReactElement | null {
   const { toast } = useToast()
+  const [activeProfile, setActiveProfile] = useState(profile)
   const [selected, setSelected] = useState<string[]>(() => profile.modelIds)
   const [defaultModel, setDefaultModel] = useState(() => profile.defaultModel)
   const [modelContextWindows, setModelContextWindows] = useState<Record<string, number>>(() =>
@@ -58,16 +60,41 @@ export function ManagedModelPreferencesModal({
     buildInitialCustomModels(profile),
   )
   const [saving, setSaving] = useState(false)
-  const available = useMemo(() => getAvailableModelIds(profile), [profile])
+  const [refreshing, setRefreshing] = useState(false)
+  const available = useMemo(() => getAvailableModelIds(activeProfile), [activeProfile])
   const imageModels = useMemo(
     () =>
-      (profile.mediaModelRefs ?? []).map((ref) => ({
+      (activeProfile.mediaModelRefs ?? []).map((ref) => ({
         id: ref.manifestId,
         name: ref.displayName ?? ref.modelId ?? ref.manifestId,
         enabled: ref.enabled !== false,
       })),
-    [profile.mediaModelRefs],
+    [activeProfile.mediaModelRefs],
   )
+
+  const applyProfile = (nextProfile: ProviderProfile): void => {
+    setActiveProfile(nextProfile)
+    setSelected(nextProfile.modelIds)
+    setDefaultModel(nextProfile.defaultModel)
+    setModelContextWindows(buildInitialModelContextWindows(nextProfile))
+    setCustomModels(buildInitialCustomModels(nextProfile))
+  }
+
+  const refreshCatalog = async (): Promise<void> => {
+    setRefreshing(true)
+    try {
+      await window.spark.invoke('platform-model:refresh-catalog', { force: true })
+      const { profiles } = await window.spark.invoke('provider:list', { includeDisabled: true })
+      const latestProfile = profiles.find((item) => item.id === activeProfile.id)
+      if (!latestProfile) throw new Error('刷新成功，但未找到平台官方模型配置')
+      applyProfile(latestProfile)
+      toast.success('平台模型列表已更新')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '平台模型目录刷新失败')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const toggleModel = (model: string, enabled: boolean): void => {
     setSelected((current) => {
@@ -133,7 +160,7 @@ export function ManagedModelPreferencesModal({
       footer={
         <div className="managed-model-preferences__footer">
           <Button onClick={onClose}>取消</Button>
-          <Button type="primary" loading={saving} onClick={() => void save()}>
+          <Button type="primary" loading={saving} disabled={refreshing} onClick={() => void save()}>
             保存
           </Button>
         </div>
@@ -149,7 +176,18 @@ export function ManagedModelPreferencesModal({
           />
         </div>
         <section className="managed-model-preferences__section">
-          <div className="managed-model-preferences__section-title">对话模型</div>
+          <div className="managed-model-preferences__section-title">
+            <span>对话模型</span>
+            <ActionIcon
+              icon={refreshing ? Icons.Spinner : Icons.Refresh}
+              size="small"
+              variant="borderless"
+              title={refreshing ? '正在刷新模型列表' : '刷新模型列表'}
+              aria-label={refreshing ? '正在刷新模型列表' : '刷新模型列表'}
+              disabled={refreshing || saving}
+              onClick={() => void refreshCatalog()}
+            />
+          </div>
           <div className="managed-model-preferences__table">
             <div className="managed-model-preferences__table-header">
               <span>启用</span>

@@ -20,47 +20,21 @@
 
 // ── 顶部 Header ────────────────────────────────────────────────────────────
 
-.mv_header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 5px 0 12px;
-  // border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.mv_header_left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.mv_extension_tabs {
   min-width: 0;
-
-  h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-strong);
-  }
-}
-
-.mv_header_subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-left: 6px;
-  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .mv_header_right {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .mv_search_wrap {
-  width: 240px;
+  width: clamp(180px, 30vw, 400px);
+  min-width: 0;
 }
 
 // ── 筛选弹窗选择器（McpFilterPopover） ────────────────────────────────────
@@ -234,7 +208,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
-  padding: 8px;
+  padding: 8px 0;
 }
 
 // ── MCP 卡片 ──────────────────────────────────────────────────────────────
@@ -246,7 +220,9 @@
   padding: 14px 16px;
   border-radius: var(--r-lg, 12px);
   background: var(--bg-sunken);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
   cursor: pointer;
   &:hover {
     background: color-mix(in srgb, var(--bg-sunken) 90%, var(--text) 10%);
@@ -592,40 +568,6 @@
 }
 
 // ── 连接器 Tab / GitHub connector ────────────────────────────────────────
-
-.mv_tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-  padding: 0px;
-  width: fit-content;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg, 12px);
-}
-
-.mv_tab {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  padding: 4px 12px;
-  border-radius: var(--r-md, 8px);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-
-  &:hover {
-    color: var(--text);
-    background: var(--hover);
-  }
-
-  &.mv_tab_active {
-    color: var(--primary);
-    background: var(--primary-soft);
-  }
-}
 
 .mv_connectors {
   flex: 1;

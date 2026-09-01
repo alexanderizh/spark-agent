@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { SessionId, WorktreeInfo, WorkspaceGitState } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { InspectorCollapsibleSection } from './InspectorCollapsibleSection'
 import { useToast } from './Toast'
 import './WorktreePanel.less'
 
@@ -33,7 +34,6 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
   const [baseRepoRoot, setBaseRepoRoot] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [loading, setLoading] = useState(false)
-  const [collapsed, setCollapsed] = useState(true)
 
   const refresh = useCallback(() => {
     if (workspaceId == null) return
@@ -118,74 +118,71 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
         : null
 
   return (
-    <section className="worktree-panel">
-      <h4
-        className="config-panel-header worktree-panel__header"
-        onClick={() => setCollapsed((v) => !v)}
-        title={collapsed ? '展开' : '折叠'}
-      >
-        Worktree
-        {visibleCount > 0 && <span className="inspector-count">{visibleCount}</span>}
+    <InspectorCollapsibleSection
+      className="worktree-panel"
+      title="Worktree"
+      summary={
+        visibleCount > 0 ? <span className="inspector-count">{visibleCount}</span> : undefined
+      }
+      headerAction={
         <button
+          type="button"
           className="worktree-panel__refresh"
-          onClick={(e) => {
-            e.stopPropagation()
-            refresh()
-          }}
+          onClick={refresh}
           disabled={loading}
           title="刷新"
+          aria-label="刷新 Worktree"
         >
           <Icons.Refresh size={11} />
         </button>
-        <Icons.ChevronRight size={10} className={`chev ${collapsed ? '' : 'chev-open'}`} />
-      </h4>
-      {!collapsed &&
-        (gitUnavailableMessage != null ? (
-          <p className="worktree-panel__empty">{gitUnavailableMessage}</p>
-        ) : worktrees.length === 0 ? (
-          <p className="worktree-panel__empty">暂无 worktree</p>
-        ) : (
-          <ul className="worktree-panel__list">
-            {worktrees.map((wt) => (
-              <li key={wt.path} className={`worktree-item ${wt.isCurrent ? 'is-current' : ''}`}>
-                <div className="worktree-item__main">
-                  <Icons.GitBranch size={11} />
-                  <span className="worktree-item__branch">{wt.branch ?? '(detached)'}</span>
-                  {wt.isMain && <span className="badge badge--main">main</span>}
-                  {!wt.isMain && (
-                    <span className={`badge ${wt.isMerged ? 'badge--merged' : 'badge--unmerged'}`}>
-                      {wt.isMerged ? '已合并' : '未合并'}
-                    </span>
-                  )}
-                  {wt.isCurrent && <span className="badge badge--current">当前</span>}
-                </div>
-                <div className="worktree-item__meta">
-                  <code>{wt.head}</code>
-                  {wt.sessionTitle && (
-                    <span className="worktree-item__session">{wt.sessionTitle}</span>
-                  )}
-                </div>
+      }
+    >
+      {gitUnavailableMessage != null ? (
+        <p className="worktree-panel__empty">{gitUnavailableMessage}</p>
+      ) : worktrees.length === 0 ? (
+        <p className="worktree-panel__empty">暂无 worktree</p>
+      ) : (
+        <ul className="worktree-panel__list">
+          {worktrees.map((wt) => (
+            <li key={wt.path} className={`worktree-item ${wt.isCurrent ? 'is-current' : ''}`}>
+              <div className="worktree-item__main">
+                <Icons.GitBranch size={11} />
+                <span className="worktree-item__branch">{wt.branch ?? '(detached)'}</span>
+                {wt.isMain && <span className="badge badge--main">main</span>}
                 {!wt.isMain && (
-                  <div className="worktree-item__actions">
-                    {wt.isCurrent && (
-                      <button onClick={() => handleMerge(wt)} disabled={sessionId == null}>
-                        合并
-                      </button>
-                    )}
-                    <button onClick={() => handleReveal(wt)}>打开</button>
-                    <button
-                      className="danger"
-                      onClick={() => handleRemove(wt)}
-                      disabled={wt.workspaceId == null}
-                    >
-                      删除
-                    </button>
-                  </div>
+                  <span className={`badge ${wt.isMerged ? 'badge--merged' : 'badge--unmerged'}`}>
+                    {wt.isMerged ? '已合并' : '未合并'}
+                  </span>
                 )}
-              </li>
-            ))}
-          </ul>
-        ))}
-    </section>
+                {wt.isCurrent && <span className="badge badge--current">当前</span>}
+              </div>
+              <div className="worktree-item__meta">
+                <code>{wt.head}</code>
+                {wt.sessionTitle && (
+                  <span className="worktree-item__session">{wt.sessionTitle}</span>
+                )}
+              </div>
+              {!wt.isMain && (
+                <div className="worktree-item__actions">
+                  {wt.isCurrent && (
+                    <button onClick={() => handleMerge(wt)} disabled={sessionId == null}>
+                      合并
+                    </button>
+                  )}
+                  <button onClick={() => handleReveal(wt)}>打开</button>
+                  <button
+                    className="danger"
+                    onClick={() => handleRemove(wt)}
+                    disabled={wt.workspaceId == null}
+                  >
+                    删除
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </InspectorCollapsibleSection>
   )
 }

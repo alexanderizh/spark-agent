@@ -73,7 +73,8 @@ export function McpFilterPopover({
             return (
               <Button
                 key={option.value}
-                type="text" size="small"
+                type="text"
+                size="small"
                 className={`mv_filter_option ${active ? 'mv_filter_option_active' : ''}`}
                 onClick={() => onStatusChange(option.value)}
               >
@@ -90,7 +91,8 @@ export function McpFilterPopover({
         <div className="mv_filter_section_title">作用域</div>
         <div className="mv_filter_options">
           <Button
-            type="text" size="small"
+            type="text"
+            size="small"
             className={`mv_filter_option ${scopeFilter === 'all' ? 'mv_filter_option_active' : ''}`}
             onClick={() => onScopeChange('all')}
           >
@@ -101,7 +103,8 @@ export function McpFilterPopover({
             return (
               <Button
                 key={scope}
-                type="text" size="small"
+                type="text"
+                size="small"
                 className={`mv_filter_option ${active ? 'mv_filter_option_active' : ''}`}
                 onClick={() => onScopeChange(scope)}
               >
@@ -129,7 +132,7 @@ export function McpFilterPopover({
       onOpenChange={setOpen}
     >
       <Button
-        size="small"
+        size="middle"
         icon={<Icons.Filter size={12} />}
         className={`mv_filter_btn ${activeCount > 0 ? 'mv_filter_btn_active' : ''}`}
       >

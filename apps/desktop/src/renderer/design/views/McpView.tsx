@@ -11,9 +11,8 @@
  * - 样式落在 `McpView.less`（mv_ 前缀），不再依赖 views.css 的旧全局类。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Tag, Tooltip, Drawer, Empty } from '@lobehub/ui'
-import { Switch } from 'antd'
-import { message } from 'antd'
+import { Button, Tag, Tooltip, Drawer, Empty, Tabs } from '@lobehub/ui'
+import { Input, message, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { GITHUB_CONNECTOR_MANIFEST } from '@spark/protocol'
 import type {
@@ -23,7 +22,7 @@ import type {
   GitHubConnectorConnection,
   McpServerItem,
 } from '@spark/protocol'
-import { Input as LobeInput, Select as LobeSelect } from '@lobehub/ui'
+import { Select as LobeSelect } from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useApp } from '../AppContext'
@@ -253,6 +252,12 @@ function draftFromItem(item: McpServerItem | null): DraftBase {
 
 type McpTab = 'mcp' | 'custom-tools' | 'plugins'
 
+const MCP_TAB_ITEMS: Array<{ key: McpTab; label: string }> = [
+  { key: 'mcp', label: 'MCP' },
+  { key: 'custom-tools', label: '自定义工具' },
+  { key: 'plugins', label: '连接器' },
+]
+
 export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   const { requestConfirm } = useApp()
   const [activeTab, setActiveTab] = useState<McpTab>(() =>
@@ -330,11 +335,6 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
       off: derived.filter((s) => s.status === 'off').length,
     }
   }, [derived])
-
-  const totalTools = useMemo(
-    () => derived.reduce((sum, server) => sum + server.tools, 0),
-    [derived],
-  )
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -500,101 +500,59 @@ export function McpView({ initialTab = 'mcp' }: { initialTab?: McpTab } = {}) {
   return (
     <>
       <div className="mv_root">
-        {/* ── Header ─────────────────────────────────────────────────── */}
-        <div className="mv_header">
-          <div className="mv_header_left">
-            <h2>扩展中心</h2>
-            <Tag
-              color={
-                activeTab === 'mcp' ? 'blue' : activeTab === 'custom-tools' ? 'cyan' : 'purple'
-              }
-            >
-              {activeTab === 'mcp'
-                ? derived.length
-                : activeTab === 'custom-tools'
-                  ? '热插拔'
-                  : '连接器'}
-            </Tag>
-            <span className="mv_header_subtitle">
-              {activeTab === 'mcp'
-                ? `· ${totalTools} 个工具 · 配置保存在本地`
-                : activeTab === 'custom-tools'
-                  ? '· 创建、测试并即时刷新 Agent 工具面'
-                  : '· 账号、权限与运行时统一管理'}
-            </span>
-          </div>
-          {activeTab === 'mcp' && (
-            <div className="mv_header_right">
-              <McpFilterPopover
-                statusFilter={statusFilter}
-                scopeFilter={scopeFilter}
-                statusCounts={statusCounts}
-                onStatusChange={setStatusFilter}
-                onScopeChange={setScopeFilter}
-                onReset={() => {
-                  setStatusFilter('all')
-                  setScopeFilter('all')
-                }}
-              />
-              <div className="mv_search_wrap">
-                <LobeInput
-                  size="small"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索服务器名称、传输、端点..."
-                  prefix={<Icons.Search size={14} />}
+        <Tabs
+          activeKey={activeTab}
+          className="mv_extension_tabs"
+          items={MCP_TAB_ITEMS}
+          size="small"
+          tabBarExtraContent={
+            activeTab === 'mcp' ? (
+              <div className="mv_header_right">
+                <McpFilterPopover
+                  statusFilter={statusFilter}
+                  scopeFilter={scopeFilter}
+                  statusCounts={statusCounts}
+                  onStatusChange={setStatusFilter}
+                  onScopeChange={setScopeFilter}
+                  onReset={() => {
+                    setStatusFilter('all')
+                    setScopeFilter('all')
+                  }}
                 />
-              </div>
-              <Tooltip title="刷新 (Ctrl+R)">
+                <div className="mv_search_wrap">
+                  <Input
+                    size="middle"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索服务器名称、传输、端点..."
+                    prefix={<Icons.Search size={14} />}
+                  />
+                </div>
+                <Tooltip title="刷新 (Ctrl+R)">
+                  <Button
+                    size="middle"
+                    shape="circle"
+                    type="text"
+                    icon={<Icons.Refresh size={12} />}
+                    onClick={refresh}
+                  />
+                </Tooltip>
                 <Button
-                  size="small"
-                  shape="circle"
-                  type="text"
-                  icon={<Icons.Refresh size={12} />}
-                  onClick={refresh}
-                />
-              </Tooltip>
-              <Button
-                type="primary"
-                size="small"
-                icon={<Icons.Plus size={12} />}
-                onClick={openCreate}
-              >
-                添加 MCP
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="mv_tabs" role="tablist" aria-label="扩展中心">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'mcp'}
-            className={`mv_tab ${activeTab === 'mcp' ? 'mv_tab_active' : ''}`}
-            onClick={() => setActiveTab('mcp')}
-          >
-            MCP
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'custom-tools'}
-            className={`mv_tab ${activeTab === 'custom-tools' ? 'mv_tab_active' : ''}`}
-            onClick={() => setActiveTab('custom-tools')}
-          >
-            自定义工具
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'plugins'}
-            className={`mv_tab ${activeTab === 'plugins' ? 'mv_tab_active' : ''}`}
-            onClick={() => setActiveTab('plugins')}
-          >
-            连接器
-          </button>
-        </div>
+                  type="primary"
+                  size="middle"
+                  icon={<Icons.Plus size={12} />}
+                  onClick={openCreate}
+                >
+                  添加 MCP
+                </Button>
+              </div>
+            ) : null
+          }
+          onChange={(key) => {
+            const nextTab = MCP_TAB_ITEMS.find((item) => item.key === key)?.key
+            if (nextTab) setActiveTab(nextTab)
+          }}
+        />
 
         {activeTab === 'plugins' ? (
           <PluginMarketplaceView embedded />
@@ -874,7 +832,7 @@ function McpForm({
               <span className="mv_form_sub">用于在工具与列表中标识</span>
             </label>
             <div className="mv_form_field">
-              <LobeInput
+              <Input
                 value={draft.name}
                 style={{
                   minWidth: 200,
@@ -902,7 +860,7 @@ function McpForm({
 
             <label className="mv_form_label">描述</label>
             <div className="mv_form_field">
-              <LobeInput
+              <Input
                 style={{
                   minWidth: 200,
                 }}
@@ -960,7 +918,7 @@ function McpForm({
                   <span className="mv_form_sub">在用户目录执行的二进制</span>
                 </label>
                 <div className="mv_form_field">
-                  <LobeInput
+                  <Input
                     value={draft.command}
                     onChange={(event) => update('command', event.target.value)}
                     placeholder="npx"
@@ -972,7 +930,7 @@ function McpForm({
                   <span className="mv_form_sub">空格分隔</span>
                 </label>
                 <div className="mv_form_field">
-                  <LobeInput
+                  <Input
                     value={draft.args}
                     onChange={(event) => update('args', event.target.value)}
                     placeholder="-y @modelcontextprotocol/server-filesystem ."
@@ -987,7 +945,7 @@ function McpForm({
             )}
             {!isStdio && (
               <div className="mv_form_field">
-                <LobeInput
+                <Input
                   value={draft.url}
                   onChange={(event) => update('url', event.target.value)}
                   placeholder="https://mcp.example.com/sse"
@@ -1026,7 +984,7 @@ function McpForm({
                 <>
                   <label className="mv_form_label">Scope</label>
                   <div className="mv_form_field">
-                    <LobeInput
+                    <Input
                       value={draft.authScope}
                       onChange={(event) => update('authScope', event.target.value)}
                       placeholder="可选 OAuth scope"
@@ -1045,7 +1003,7 @@ function McpForm({
                     <>
                       <label className="mv_form_label">Client ID</label>
                       <div className="mv_form_field">
-                        <LobeInput
+                        <Input
                           value={draft.authClientId}
                           onChange={(event) => update('authClientId', event.target.value)}
                           placeholder="静态 client_id"
@@ -1053,7 +1011,7 @@ function McpForm({
                       </div>
                       <label className="mv_form_label">Client Secret</label>
                       <div className="mv_form_field">
-                        <LobeInput
+                        <Input
                           type="password"
                           value={draft.authClientSecret}
                           onChange={(event) => update('authClientSecret', event.target.value)}
@@ -1084,14 +1042,14 @@ function McpForm({
               draft.env.map((row, idx) => (
                 <div key={idx} className="mv_env_row">
                   <div className="mv_env_key">
-                    <LobeInput
+                    <Input
                       value={row.key}
                       onChange={(event) => updateEnvRow(idx, { key: event.target.value })}
                       placeholder="KEY"
                     />
                   </div>
                   <div className="mv_env_val">
-                    <LobeInput
+                    <Input
                       value={row.value}
                       onChange={(event) => updateEnvRow(idx, { value: event.target.value })}
                       placeholder="value"
@@ -1508,7 +1466,7 @@ function ConnectorsPanel() {
             <>
               <label className="mv_form_label">PAT</label>
               <div className="mv_form_field">
-                <LobeInput
+                <Input
                   type="password"
                   value={patToken}
                   onChange={(event) => setPatToken(event.target.value)}
@@ -1523,7 +1481,7 @@ function ConnectorsPanel() {
 
           <label className="mv_form_label">仓库范围</label>
           <div className="mv_form_field">
-            <LobeInput
+            <Input
               value={state.repos}
               onChange={(event) => setState({ ...state, repos: event.target.value })}
               placeholder="owner/repo, org/backend"

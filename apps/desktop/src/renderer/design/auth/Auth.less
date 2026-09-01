@@ -55,7 +55,11 @@
   padding: calc(var(--pad-xl) + var(--pad-lg)) var(--pad-xl) var(--pad-lg);
   overflow: hidden;
   background:
-    radial-gradient(520px 380px at 18% 8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%),
+    radial-gradient(
+      520px 380px at 18% 8%,
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      transparent 65%
+    ),
     var(--bg-soft);
   color: var(--text);
   border-right: 1px solid var(--border);
@@ -131,7 +135,11 @@
 }
 
 .auth-brand-accent {
-  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 50%, var(--info)));
+  background: linear-gradient(
+    135deg,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 50%, var(--info))
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -257,7 +265,9 @@
   color: var(--text-muted);
   border-radius: 9999px;
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
 
 .auth-mode-switch button:hover {
@@ -356,7 +366,9 @@
   color: var(--text-muted);
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
 
 .auth-method:hover:not(.active) {
@@ -467,7 +479,14 @@
 }
 
 // 让 antd Input / AutoComplete / Input.Password 透明融入底线容器
-.auth-input--flat :where(.ant-input, .ant-input-affix-wrapper, .ant-select, .ant-input-password, .ant-select .ant-select-selector) {
+.auth-input--flat
+  :where(
+    .ant-input,
+    .ant-input-affix-wrapper,
+    .ant-select,
+    .ant-input-password,
+    .ant-select .ant-select-selector
+  ) {
   flex: 1;
   min-width: 0;
   border: 0 !important;
@@ -512,7 +531,9 @@
   font-weight: 600;
   padding: var(--pad-xs) var(--pad-sm);
   border-radius: var(--r-sm);
-  transition: color 120ms ease, background 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
   flex-shrink: 0;
 }
 
@@ -567,7 +588,9 @@
   font-size: var(--font-base) !important;
   font-weight: 600 !important;
   box-shadow: var(--shadow-sm) !important;
-  transition: background 120ms ease, transform 120ms ease !important;
+  transition:
+    background 120ms ease,
+    transform 120ms ease !important;
 }
 
 .auth-submit-btn:not(:disabled):hover {
@@ -746,8 +769,8 @@
   justify-content: center;
   overflow: hidden;
   padding: 0 !important;
-  min-width: 80px;
-  height: 28px;
+  min-width: 100px;
+  height: 34px;
   border-radius: var(--r-sm);
   border: 1px solid var(--divider);
 }

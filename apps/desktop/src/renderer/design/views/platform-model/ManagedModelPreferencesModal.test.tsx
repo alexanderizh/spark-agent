@@ -8,8 +8,25 @@ import { ManagedModelPreferencesModal } from './ManagedModelPreferencesModal'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@lobehub/ui', () => ({
-  Button: ({ children, onClick }: { children?: React.ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  ActionIcon: ({
+    title,
+    disabled,
+    onClick,
+  }: {
+    title?: string
+    disabled?: boolean
+    onClick?: () => void
+  }) => <button type="button" title={title} disabled={disabled} onClick={onClick} />,
+  Button: ({
+    children,
+    disabled,
+    onClick,
+  }: {
+    children?: React.ReactNode
+    disabled?: boolean
+    onClick?: () => void
+  }) => (
+    <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   ),
@@ -38,8 +55,21 @@ vi.mock('@lobehub/ui', () => ({
     placeholder?: string
     onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void
   }) => <input value={value} placeholder={placeholder} onChange={onChange} />,
-  Modal: ({ children, open }: { children?: React.ReactNode; open?: boolean }) =>
-    open ? <div>{children}</div> : null,
+  Modal: ({
+    children,
+    footer,
+    open,
+  }: {
+    children?: React.ReactNode
+    footer?: React.ReactNode
+    open?: boolean
+  }) =>
+    open ? (
+      <div>
+        {children}
+        {footer}
+      </div>
+    ) : null,
   Select: ({
     value,
     options = [],
@@ -60,14 +90,31 @@ vi.mock('@lobehub/ui', () => ({
 }))
 
 vi.mock('../../components/Toast', () => ({
-  useToast: () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }),
+  useToast: () => ({ toast: toastMocks }),
 }))
+
+vi.mock('../../Icons', () => ({
+  Icons: { Refresh: () => null, Spinner: () => null },
+}))
+
+const toastMocks = {
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+}
+
+const invoke = vi.fn()
 
 describe('ManagedModelPreferencesModal', () => {
   let container: HTMLDivElement
   let root: Root
 
   beforeEach(() => {
+    vi.clearAllMocks()
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke },
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -155,5 +202,103 @@ describe('ManagedModelPreferencesModal', () => {
     expect(selects[2]?.value).toBe('256000')
     expect(container.textContent).toContain('glm-5')
     expect(container.textContent).toContain('deepseek-v4')
+  })
+
+  it('force refreshes and replaces the form with the latest provider catalog', async () => {
+    const profile = {
+      id: 'spark-platform-newapi',
+      name: 'Spark 平台模型',
+      provider: 'anthropic',
+      defaultModel: 'glm-5',
+      modelIds: ['glm-5'],
+      availableModelIds: ['glm-5'],
+      maxTokens: 128_000,
+      modelType: 'text',
+      supportsMillionContext: false,
+      isDefault: false,
+      keystoreRef: 'newapi-spark-user-1-api-key',
+      managed: true,
+      managedType: 'newapi',
+      createdAt: '',
+    } satisfies ProviderProfile
+    const refreshedProfile = {
+      ...profile,
+      defaultModel: 'deepseek-v4',
+      modelIds: ['deepseek-v4'],
+      availableModelIds: ['deepseek-v4'],
+      modelContextWindows: { 'deepseek-v4': 256_000 },
+    } satisfies ProviderProfile
+    let resolveRefresh!: () => void
+    const refreshPending = new Promise<void>((resolve) => {
+      resolveRefresh = resolve
+    })
+    invoke
+      .mockReturnValueOnce(refreshPending)
+      .mockResolvedValueOnce({ profiles: [refreshedProfile] })
+
+    await act(async () =>
+      root.render(
+        <ManagedModelPreferencesModal profile={profile} onClose={vi.fn()} onSaved={vi.fn()} />,
+      ),
+    )
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('button[title="刷新模型列表"]')?.click()
+    })
+
+    const refreshingButton = container.querySelector<HTMLButtonElement>(
+      'button[title="正在刷新模型列表"]',
+    )
+    expect(refreshingButton?.disabled).toBe(true)
+    expect(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent === '保存',
+      )?.disabled,
+    ).toBe(true)
+
+    await act(async () => {
+      resolveRefresh()
+      await refreshPending
+    })
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'platform-model:refresh-catalog', { force: true })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'provider:list', { includeDisabled: true })
+    expect(container.textContent).not.toContain('glm-5')
+    expect(container.textContent).toContain('deepseek-v4')
+    expect(container.querySelectorAll<HTMLSelectElement>('select')[1]?.value).toBe('256000')
+    expect(toastMocks.success).toHaveBeenCalledWith('平台模型列表已更新')
+  })
+
+  it('keeps the current catalog when refresh fails', async () => {
+    const profile = {
+      id: 'spark-platform-newapi',
+      name: 'Spark 平台模型',
+      provider: 'anthropic',
+      defaultModel: 'glm-5',
+      modelIds: ['glm-5'],
+      availableModelIds: ['glm-5'],
+      maxTokens: 128_000,
+      modelType: 'text',
+      supportsMillionContext: false,
+      isDefault: false,
+      keystoreRef: 'newapi-spark-user-1-api-key',
+      managed: true,
+      managedType: 'newapi',
+      createdAt: '',
+    } satisfies ProviderProfile
+    invoke.mockRejectedValueOnce(new Error('目录服务不可用'))
+
+    await act(async () =>
+      root.render(
+        <ManagedModelPreferencesModal profile={profile} onClose={vi.fn()} onSaved={vi.fn()} />,
+      ),
+    )
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[title="刷新模型列表"]')?.click()
+    })
+
+    expect(container.textContent).toContain('glm-5')
+    expect(toastMocks.error).toHaveBeenCalledWith('目录服务不可用')
   })
 })

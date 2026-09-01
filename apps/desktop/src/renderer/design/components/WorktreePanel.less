@@ -1,20 +1,7 @@
 .worktree-panel {
-  // 容器 padding 由父级 .inspector-section 提供，这里不再叠加。
-  &__header {
-    margin-bottom: 0; // 折叠态下不需要底部间距
-    text-transform: none;
+  .inspector-collapsible-section__toggle {
     letter-spacing: 0;
-
-    &:not(.config-panel-header) {
-      // 兜底：万一父级样式未生效，保留可读外观
-      font-size: 11px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      user-select: none;
-    }
+    text-transform: none;
   }
 
   &__refresh {
