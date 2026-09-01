@@ -107,6 +107,13 @@ describe('spark_platform MCP server', () => {
     expect(validateTool?.description).toContain('resolvedModels')
     expect(configureTool?.description).toContain('自动生成、修复或保留渠道唯一 Manifest ID')
     expect(customToolList?.inputSchema.properties).toHaveProperty('limit')
+    // input 必须显式声明 type: 'object'：无类型属性会让模型侧把嵌套对象
+    // 序列化成字符串，平台校验层报 "expected object, received string"。
+    const testTool = tools.find((tool) => tool.name === 'tool_packages_test')
+    expect(testTool?.inputSchema.properties?.input).toMatchObject({
+      type: 'object',
+      additionalProperties: true,
+    })
   })
 
   it('responds to optional MCP resource and prompt list methods without hanging', async () => {

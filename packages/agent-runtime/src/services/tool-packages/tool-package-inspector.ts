@@ -1,7 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join, relative, resolve, sep } from 'node:path'
+import { createReadStream, type Stats } from 'node:fs'
+import {
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   ToolPackageManifestSchema,
   type ToolPackageInspection,
@@ -83,6 +94,9 @@ export async function installToolPackageDirectoryAtomic(
       recursive: true,
       errorOnExist: true,
       force: false,
+      // 包内符号链接（npm 的 node_modules/.bin、pnpm 的包布局）在安装副本中物化为真实文件，
+      // 与 walkPackageFiles 的解引用检查保持一致，staging 复检才能得到相同的完整性摘要。
+      dereference: true,
       filter: (source) =>
         source === inspection.sourcePath ||
         !isIgnoredPackageEntry(relative(inspection.sourcePath, source)),
@@ -114,9 +128,21 @@ export async function installToolPackageDirectoryAtomic(
 
 async function walkPackageFiles(root: string): Promise<InspectedFile[]> {
   const output: InspectedFile[] = []
+  // 真实目录路径 → 首次被访问时的包内相对路径。仅当同一真实目录以「自身祖先路径」
+  // 再次出现时才是链接环（复制会无限递归）；兄弟位置再次出现只是别名，
+  // 内容复制两份是有界的，允许通过。
+  const firstSeenRealPaths = new Map<string, string>()
+  const realRoot = await realpath(root)
   let totalBytes = 0
 
   async function visit(directory: string): Promise<void> {
+    const relativePath = normalizeRelativePath(relative(root, directory))
+    const realDirectory = await realpath(directory)
+    const firstSeen = firstSeenRealPaths.get(realDirectory)
+    if (firstSeen != null && (relativePath === firstSeen || relativePath.startsWith(`${firstSeen}/`))) {
+      throw new Error(`Tool package contains a symlink loop: ${relativePath}`)
+    }
+    if (firstSeen == null) firstSeenRealPaths.set(realDirectory, relativePath)
     const entries = await readdir(directory, { withFileTypes: true })
     for (const entry of entries) {
       const absolutePath = join(directory, entry.name)
@@ -125,20 +151,22 @@ async function walkPackageFiles(root: string): Promise<InspectedFile[]> {
       assertSafeRelativePath(relativePath)
 
       const info = await lstat(absolutePath)
-      if (info.isSymbolicLink()) {
-        throw new Error(`Tool packages cannot contain symbolic links: ${relativePath}`)
-      }
-      if (info.isDirectory()) {
+      // 包内符号链接按目标内容物化（安装副本中为真实文件）；指向包外或断链仍拒绝，
+      // 杜绝包外内容借道链接进入不可变版本。
+      const effectiveInfo = info.isSymbolicLink()
+        ? await resolveSymlinkWithinPackage(realRoot, absolutePath, relativePath)
+        : info
+      if (effectiveInfo.isDirectory()) {
         await visit(absolutePath)
         continue
       }
-      if (!info.isFile()) throw new Error(`Unsupported tool package entry: ${relativePath}`)
+      if (!effectiveInfo.isFile()) throw new Error(`Unsupported tool package entry: ${relativePath}`)
 
-      totalBytes += info.size
+      totalBytes += effectiveInfo.size
       if (totalBytes > MAX_PACKAGE_BYTES) {
         throw new Error('Tool package exceeds the 2 GB inspection limit')
       }
-      output.push({ relativePath, absolutePath, size: info.size })
+      output.push({ relativePath, absolutePath, size: effectiveInfo.size })
       if (output.length > MAX_PACKAGE_FILES) {
         throw new Error(`Tool package exceeds the ${MAX_PACKAGE_FILES} file inspection limit`)
       }
@@ -147,6 +175,22 @@ async function walkPackageFiles(root: string): Promise<InspectedFile[]> {
 
   await visit(root)
   return output.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+}
+
+/** 解析包内符号链接的目标 stat；越界与断链抛出明确错误。 */
+async function resolveSymlinkWithinPackage(
+  realRoot: string,
+  linkPath: string,
+  relativePath: string,
+): Promise<Stats> {
+  const resolved = await realpath(linkPath).catch(() => {
+    throw new Error(`Tool package contains a broken symbolic link: ${relativePath}`)
+  })
+  const prefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`
+  if (resolved !== realRoot && !resolved.startsWith(prefix)) {
+    throw new Error(`Tool package symbolic link escapes the package root: ${relativePath}`)
+  }
+  return stat(resolved)
 }
 
 async function assertRuntimePaths(
@@ -164,11 +208,26 @@ async function assertRuntimePaths(
       )
     }
   }
-  if (manifest.runtime.command.startsWith('./')) {
-    const relativeCommand = manifest.runtime.command.slice(2)
+  const command = manifest.runtime.command
+  if (command.startsWith('./')) {
+    const relativeCommand = command.slice(2)
     assertSafeRelativePath(relativeCommand)
     if (!files.some((file) => file.relativePath === relativeCommand)) {
-      throw new Error(`Tool package command does not exist: ${manifest.runtime.command}`)
+      throw new Error(`Tool package command does not exist: ${command}`)
+    }
+    return
+  }
+  // 进程不经 shell 拉起：command 必须是单个可执行文件，参数放 runtime.args。
+  // "node index.js" 这类写法要等 spawn ENOENT 才暴露，这里提前拦截；
+  // 真实路径里含空格的文件（绝对路径或包内相对路径）只要存在就放行。
+  if (/\s/.test(command)) {
+    const commandInfo = isAbsolute(command)
+      ? await stat(command).catch(() => null)
+      : null
+    if (commandInfo == null || !commandInfo.isFile()) {
+      throw new Error(
+        `Tool package runtime.command must be a single executable; pass arguments via runtime.args: ${command}`,
+      )
     }
   }
 }

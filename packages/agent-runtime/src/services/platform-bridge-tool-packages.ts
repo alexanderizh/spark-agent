@@ -109,6 +109,42 @@ function toolPackageGuide() {
       trustedLocal: '进程具有当前用户权限；declaredOsEffects 是告知与启用确认，不是细粒度 OS 沙箱',
       secrets: 'Agent 只能读取是否已配置；明文必须经应用内安全输入进入 Keychain',
     },
+    processRuntime: {
+      spawn: 'command 必须是单个可执行文件（PATH 查找，或包内 "./相对路径"），参数一律放 runtime.args；进程不经 shell 拉起，"node index.js" 这类写法会在启动时 ENOENT。',
+      cwd: '包安装目录（可加 runtime.workingDirectory 相对子目录）。',
+      environment:
+        'manifest.environment 声明的变量（含 Keychain 密钥）+ PATH/TEMP 等基础变量 + SPARK_TOOL_PACKAGE_ID / SPARK_TOOL_PACKAGE_VERSION / SPARK_TOOL_PROCESS_PROTOCOL。',
+      lifecycle:
+        'per-call（默认）：每次调用起一个新进程，initialize→invoke→shutdown 后退出；persistent：按 包+版本+环境 复用进程，配置或权限变更后失效重建。',
+    },
+    processProtocol: {
+      transport:
+        'stdin/stdout 上换行分隔的 JSON 帧（每行一帧，UTF-8，单帧上限 4 MB）。stdout 只允许输出协议帧，任何杂散输出都会破坏帧解析；日志写 stderr（宿主仅记录，上限 1 MB，不参与协议）。',
+      frameBase:
+        '所有帧都带 protocolVersion:"spark-tool-process-v1"、requestId（必须原样回传主机帧的 requestId）、sequence（非负递增整数）。result 帧还须回带对应 invoke 的 invocationId。',
+      hostFrames: {
+        initialize:
+          '{type:"initialize", packageId, packageVersion, capabilityProtocolVersion:1} → 子进程须回 ready 帧。',
+        invoke:
+          '{type:"invoke", invocationId, toolName, input, context} → 子进程回 result 或 error 帧；input 已按 manifest 的 inputSchema 校验过。',
+        cancel: '{type:"cancel", invocationId}：宿主放弃该次调用，子进程应尽快停止并回 error。',
+        'capability.result':
+          '{type:"capability.result", invocationId, result}：宿主对 capability.request 的成功应答。',
+        'capability.error': '{type:"capability.error", invocationId, code, message}：宿主能力调用失败的应答。',
+        shutdown: '{type:"shutdown"}：要求子进程退出；1 秒内未退出会被强杀进程树。',
+      },
+      childFrames: {
+        ready: '{type:"ready"}：initialize 的应答；15 秒超时。',
+        result: '{type:"result", invocationId, result}：invoke 的成功应答，result 为任意 JSON；默认 120 秒超时。',
+        error: '{type:"error", invocationId?, code, message}：invoke 或 initialize 的失败应答。',
+        log: '{type:"log", level:"debug|info|warn|error", message}：可选，替代写 stdout 的调试输出。',
+        progress: '{type:"progress", invocationId, progress?, message?}：可选进度上报。',
+        'capability.request':
+          '{type:"capability.request", invocationId, capability, input}：子进程请求宿主 Spark Capability（须在 manifest.permissions 声明），宿主回 capability.result / capability.error。',
+      },
+      reference:
+        '帧的权威 schema 在 @spark/protocol 的 tool-process-protocol.ts（ToolProcessHostFrameSchema / ToolProcessChildFrameSchema）；Node.js 入口按 readline 逐行解析 stdin、异步处理 invoke 并等待在途调用完成后再退出即可。',
+    },
   }
 }
 

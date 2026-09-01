@@ -116,6 +116,33 @@ function call(
 }
 
 describe('Tool Package platform bridge', () => {
+  it('guide 完整文档化 spark-tool-process-v1 协议帧与进程运行时约束', async () => {
+    const guide = (await call(service(), 'tool_packages.guide')) as {
+      processProtocol?: Record<string, unknown>
+      processRuntime?: Record<string, unknown>
+    }
+
+    // Agent 只依赖 guide 就能写出合规入口，不再需要从应用二进制逆向协议。
+    const hostFrames = guide.processProtocol?.hostFrames as Record<string, unknown> | undefined
+    const childFrames = guide.processProtocol?.childFrames as Record<string, unknown> | undefined
+    expect(Object.keys(hostFrames ?? {})).toEqual(
+      expect.arrayContaining([
+        'initialize',
+        'invoke',
+        'cancel',
+        'capability.result',
+        'capability.error',
+        'shutdown',
+      ]),
+    )
+    expect(Object.keys(childFrames ?? {})).toEqual(
+      expect.arrayContaining(['ready', 'result', 'error', 'log', 'progress', 'capability.request']),
+    )
+    expect(String(guide.processProtocol?.transport)).toContain('换行分隔')
+    expect(String(guide.processProtocol?.frameBase)).toContain('requestId')
+    expect(String(guide.processRuntime?.spawn)).toContain('runtime.args')
+  })
+
   it('returns stable summaries and full installed package details', async () => {
     const target = service()
     await expect(call(target, 'tool_packages.list')).resolves.toEqual({

@@ -898,7 +898,11 @@ function toolDefinitions() {
           packageId: { type: 'string' },
           version: { type: 'string' },
           toolName: { type: 'string' },
-          input: {},
+          input: {
+            type: 'object',
+            description: '工具输入对象，按该工具 manifest 的 inputSchema 传值',
+            additionalProperties: true,
+          },
           confirmExecute: { type: 'boolean' },
         },
       },

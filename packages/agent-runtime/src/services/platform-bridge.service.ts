@@ -685,6 +685,9 @@ export class PlatformBridgeService {
         return await this.customToolDelete(d, params)
 
       // ── Generic Tool Packages ──
+      // 与 ToolPackageBridgeMethod 联合类型及 MCP methodMap 保持一一对应，
+      // 缺一个 case 就会出现「工具已 advertised 但调用报 Unknown method」，
+      // 迫使 Agent 绕过平台受控路径执行（曾导致 run_project_step 失效）。
       case 'tool_packages.guide':
       case 'tool_packages.list':
       case 'tool_packages.get':
@@ -693,12 +696,19 @@ export class PlatformBridgeService {
       case 'tool_packages.list_project_files':
       case 'tool_packages.read_project_file':
       case 'tool_packages.write_project_file':
+      case 'tool_packages.run_project_step':
       case 'tool_packages.install_directory':
+      case 'tool_packages.install_archive':
+      case 'tool_packages.install_git':
+      case 'tool_packages.install_remote':
+      case 'tool_packages.install_mcp_import':
       case 'tool_packages.environment_status':
       case 'tool_packages.configure_environment':
       case 'tool_packages.request_secret':
       case 'tool_packages.set_permission':
       case 'tool_packages.set_enabled':
+      case 'tool_packages.uninstall':
+      case 'tool_packages.delete_version':
       case 'tool_packages.test':
         return handleToolPackageBridgeMethod(
           d.toolPackageService,

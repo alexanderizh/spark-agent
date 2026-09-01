@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request as httpRequest } from 'node:http'
 import { join } from 'node:path'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -253,6 +253,90 @@ describe('PlatformBridgeService.agentDelete 联动清理 agent_teams 残留', ()
         args: { includeNodes: true },
       },
     ])
+  })
+})
+
+describe('PlatformBridgeService tool_packages 分发完整性', () => {
+  /**
+   * 回归防护：MCP server 已 advertised 且 methodMap 已映射的每个 tool_packages.* 方法，
+   * 主进程 dispatch 必须放行。曾经 run_project_step 等 7 个方法缺失 case，
+   * Agent 调用报 Unknown method 后被迫绕过平台受控路径直接 Bash 执行安装命令。
+   *
+   * 方法清单直接从 platform-management-mcp-server.mjs 的 methodMap 提取，
+   * 未来新增 MCP 工具若忘记补 dispatch 会立刻在此失败。
+   */
+  let service: PlatformBridgeService
+  let port = 0
+
+  afterEach(async () => {
+    await service.stop()
+  })
+
+  function callRpc(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+    const body = JSON.stringify({ method, params })
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/rpc',
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (c) => chunks.push(c))
+          res.on('end', () => {
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+            } catch (err) {
+              reject(err)
+            }
+          })
+        },
+      )
+      req.on('error', reject)
+      req.write(body)
+      req.end()
+    })
+  }
+
+  it('methodMap 中每个 tool_packages.* 方法都能通过 dispatch（不返回 Unknown method）', async () => {
+    const mjsSource = readFileSync(
+      join(process.cwd(), 'src', 'tools', 'platform-management-mcp-server.mjs'),
+      'utf8',
+    )
+    const methods = [...mjsSource.matchAll(/tool_packages_\w+:\s*'(tool_packages\.\w+)'/g)].map(
+      (match) => match[1]!,
+    )
+    expect(methods.length).toBeGreaterThanOrEqual(22)
+
+    const serviceCalls: string[] = []
+    const toolPackageService = new Proxy({} as Record<string, unknown>, {
+      get: (_target, prop: string) =>
+        (..._args: unknown[]) => {
+          serviceCalls.push(prop)
+          if (prop === 'listSummaries') return []
+          return undefined
+        },
+    })
+    service = new PlatformBridgeService()
+    port = await service.start({ toolPackageService } as unknown as PlatformBridgeDeps)
+
+    for (const method of methods) {
+      const res = await callRpc(method, {})
+      // 空 params 下允许参数校验/confirm 门控失败，但不允许 Unknown method——
+      // 后者说明 dispatch 缺 case，工具在 Agent 侧永远调不通。
+      expect(res.ok === true || (res.error != null && !/Unknown method/.test(res.error))).toBe(true)
+    }
+    // 至少一个方法真正触达了 service 层，证明链路完整而非全部被门控挡回。
+    expect(serviceCalls.length).toBeGreaterThan(0)
   })
 })
 
