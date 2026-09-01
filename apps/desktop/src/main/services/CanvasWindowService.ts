@@ -149,6 +149,12 @@ export class CanvasWindowService {
       this.deps.openExternal(details.url)
       return { action: 'deny' }
     })
+    // 渲染端 index.html 固定 <title>SparkWork</title>，页面加载后会把构造时
+    // 设置的窗口名覆盖回 "SparkWork"，导致 Dock 右键窗口列表里主窗口与画布
+    // 窗口同名无法区分。拦截 page-title-updated，锁定画布窗口标题。
+    win.on('page-title-updated', (event: unknown) => {
+      if (hasPreventDefault(event)) event.preventDefault()
+    })
     win.on('close', (event: unknown) => {
       if (this.allowCloseOnce) {
         this.allowCloseOnce = false
@@ -211,7 +217,7 @@ function createCanvasBrowserWindow(): CanvasBrowserWindow {
     minWidth: 980,
     minHeight: 680,
     show: false,
-    title: 'SparkWork · Canvas',
+    title: 'SparkWork 画布',
     autoHideMenuBar: true,
     backgroundColor: '#111113',
     hasShadow: true,

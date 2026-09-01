@@ -762,6 +762,13 @@ function createWindow(): BrowserWindow {
     }
   })
 
+  // 渲染端 index.html 固定 <title>SparkWork</title>，页面加载后触发
+  // page-title-updated 会重写窗口标题。拦截之，主窗口恒为构造时的
+  // "SparkWork"，与画布窗口（"SparkWork 画布"）在 Dock 窗口列表可区分。
+  mainWindow.on('page-title-updated', (event) => {
+    event.preventDefault()
+  })
+
   // 在系统默认浏览器中打开外部链接，不在 Electron 窗口内导航
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void openExternalUrlSafely(details.url, (url) => shell.openExternal(url))
@@ -1302,11 +1309,18 @@ if (ownsSingleInstanceLock) {
       requestApplicationQuit('initialization-failed')
     })
 
-    // macOS：已有可见窗口时交给系统保持最近使用窗口；仅所有窗口都不可见时，
-    // 恢复应用内最后聚焦的窗口，并在没有可用窗口时回退到主窗口。
+    // macOS：点击 Dock 图标 / Cmd-Tab 等激活应用。
+    // - 所有窗口都不可见：恢复应用内最后聚焦的窗口，没有可用窗口时回退到主窗口。
+    // - 仍有可见窗口（如画布窗口）：主窗口"关闭"实为 hide()（见 createWindow 的
+    //   close 处理器），若主窗口此时处于隐藏状态，需在此恢复显示，否则在画布
+    //   窗口关闭前点击 Dock 图标无法再打开主窗口。
     app.on('activate', (_event, hasVisibleWindows) => {
-      if (hasVisibleWindows) return
-      showPreferredAppWindow()
+      if (!hasVisibleWindows) {
+        showPreferredAppWindow()
+        return
+      }
+      const main = getMainWindow()
+      if (main != null && !main.isVisible()) showMainWindow()
     })
   })
 

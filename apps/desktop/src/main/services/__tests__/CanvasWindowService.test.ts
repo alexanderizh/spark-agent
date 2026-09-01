@@ -147,6 +147,27 @@ describe('CanvasWindowService', () => {
     expect(created[0]?.focus).toHaveBeenCalledTimes(2)
   })
 
+  it('locks the window title against page <title> overrides', async () => {
+    const created: FakeWindow[] = []
+    const service = new CanvasWindowService({
+      createWindow: () => {
+        const win = createFakeWindow(created.length + 1)
+        created.push(win)
+        return win as never
+      },
+      getRendererUrl: () => 'http://127.0.0.1:5173',
+      getRendererFile: () => '/app/out/renderer/index.html',
+      isDev: true,
+      openExternal: vi.fn(),
+    })
+
+    await service.open({ projectId: 'canvas_project_1' })
+    const preventDefault = vi.fn()
+    getWindowListener(created[0]!, 'page-title-updated')({ preventDefault })
+
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
   it('routes native close through the renderer guard before closing', async () => {
     const created: FakeWindow[] = []
     const service = new CanvasWindowService({

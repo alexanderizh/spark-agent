@@ -110,6 +110,19 @@ describe('BrowserPanelWindowService', () => {
     })
   })
 
+  it('锁定窗口标题：拦截 page-title-updated 防止被页面 <title> 覆盖', async () => {
+    const created: FakeWindow[] = []
+    const service = createService(created)
+
+    await service.open({})
+
+    const preventDefault = vi.fn()
+    const listener = created[0]?.on.mock.calls.find(([event]) => event === 'page-title-updated')
+      ?.[1] as ((event: unknown) => void) | undefined
+    listener?.({ preventDefault })
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
   it('窗口 closed 事件后清空引用，下次 open 重新创建', async () => {
     const created: FakeWindow[] = []
     const service = createService(created)
