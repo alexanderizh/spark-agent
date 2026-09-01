@@ -5,8 +5,10 @@
 # 用法（在仓库根目录或任意目录执行均可）:
 #   bash apps/website/scripts/build-push-image.sh
 #
+# 必需环境变量:
+#   workspace              腾讯云镜像仓库命名空间（内部信息，不入库，由 GitHub Secrets/本地环境提供）
+#
 # 可选环境变量:
-#   workspace              腾讯云镜像仓库命名空间（默认 spark_ai）
 #   docker_id / docker_pwd 镜像仓库凭据（未登录时用于 docker login）
 #   REGISTRY               默认 ccr.ccs.tencentyun.com
 #   REPO                   默认 spark-website
@@ -16,7 +18,6 @@
 set -euo pipefail
 
 REGISTRY="${REGISTRY:-ccr.ccs.tencentyun.com}"
-NAMESPACE="${workspace:-spark_ai}"
 REPO="${REPO:-spark-website}"
 PUSH="${PUSH:-1}"
 VITE_RELEASES_API_BASE="${VITE_RELEASES_API_BASE:-}"
@@ -27,6 +28,9 @@ REPO_ROOT="$(cd "$WEBSITE_DIR/../.." && pwd)"
 
 log(){ printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 die(){ printf '\033[1;31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+
+[ -n "${workspace:-}" ] || die "缺少 workspace 环境变量（镜像仓库命名空间）"
+NAMESPACE="${workspace}"
 
 cd "$REPO_ROOT" || die "无法进入仓库根目录: $REPO_ROOT"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"

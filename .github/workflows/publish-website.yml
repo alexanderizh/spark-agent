@@ -76,6 +76,7 @@ jobs:
           SERVER_USER: ${{ secrets.WEBSITE_SERVER_USER }}
           SERVER_PWD: ${{ secrets.WEBSITE_SERVER_PASSWORD }}
           SSH_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+          HOST_PORT: ${{ vars.WEBSITE_HOST_PORT }}
         run: |
           missing=()
           effective_push="${SHOULD_PUSH}"
@@ -91,6 +92,15 @@ jobs:
                 effective_deploy="false"
               fi
             fi
+            if [ -z "${DOCKER_NS}" ]; then
+              if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+                missing+=("WEBSITE_DOCKER_NAMESPACE")
+              else
+                echo "::warning::未配置 WEBSITE_DOCKER_NAMESPACE，改为仅构建镜像，不推送。"
+                effective_push="false"
+                effective_deploy="false"
+              fi
+            fi
           fi
 
           if [ "${SHOULD_DEPLOY}" = "true" ]; then
@@ -100,6 +110,7 @@ jobs:
             if [ -z "${SERVER_PWD}" ] && [ -z "${SSH_KEY}" ]; then
               deploy_missing+=("WEBSITE_SERVER_PASSWORD 或 WEBSITE_SSH_KEY")
             fi
+            [ -z "${HOST_PORT}" ] && deploy_missing+=("vars.WEBSITE_HOST_PORT")
 
             if [ ${#deploy_missing[@]} -gt 0 ]; then
               if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
@@ -115,7 +126,7 @@ jobs:
             echo "::error::缺少 GitHub Secrets: ${missing[*]}"
             exit 1
           fi
-          echo "namespace=${DOCKER_NS:-spark_ai}" >> "$GITHUB_OUTPUT"
+          echo "namespace=${DOCKER_NS}" >> "$GITHUB_OUTPUT"
           echo "should_push=${effective_push}" >> "$GITHUB_OUTPUT"
           echo "should_deploy=${effective_deploy}" >> "$GITHUB_OUTPUT"
 
@@ -143,7 +154,7 @@ jobs:
           WEBSITE_SERVER_USER: ${{ secrets.WEBSITE_SERVER_USER }}
           WEBSITE_SERVER_PASSWORD: ${{ secrets.WEBSITE_SERVER_PASSWORD }}
           WEBSITE_SSH_KEY: ${{ secrets.WEBSITE_SSH_KEY }}
-          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT != '' && vars.WEBSITE_HOST_PORT || '38090' }}
+          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT }}
           IMAGE_TAG: latest
         run: bash apps/website/scripts/deploy-remote.sh
 
@@ -152,7 +163,7 @@ jobs:
         shell: bash
         env:
           WEBSITE_SERVER_HOST: ${{ secrets.WEBSITE_SERVER_HOST }}
-          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT != '' && vars.WEBSITE_HOST_PORT || '38090' }}
+          WEBSITE_HOST_PORT: ${{ vars.WEBSITE_HOST_PORT }}
         run: |
           echo "外网探活 http://${WEBSITE_SERVER_HOST}:${WEBSITE_HOST_PORT}/"
           curl -sI --connect-timeout 10 "http://${WEBSITE_SERVER_HOST}:${WEBSITE_HOST_PORT}/" | head -6

@@ -6,24 +6,21 @@
 # 必需环境变量:
 #   WEBSITE_SERVER_HOST / WEBSITE_SERVER_USER
 #   WEBSITE_SERVER_PASSWORD  或  WEBSITE_SSH_KEY（私钥 PEM 内容）
+#   WEBSITE_DOCKER_NAMESPACE 镜像仓库命名空间（内部信息，不入库，由 GitHub Secrets/本地环境提供）
+#   WEBSITE_HOST_PORT        宿主机映射端口（内部信息，不入库）
 #
 # 可选:
 #   REGISTRY                 默认 ccr.ccs.tencentyun.com
-#   WEBSITE_DOCKER_NAMESPACE 默认 spark_ai
 #   REPO                     默认 spark-website
-#   WEBSITE_HOST_PORT        默认 38090
 #   CONTAINER                默认 spark-website
 #   IMAGE_TAG                默认 latest
 #==============================================================
 set -euo pipefail
 
 REGISTRY="${REGISTRY:-ccr.ccs.tencentyun.com}"
-NAMESPACE="${WEBSITE_DOCKER_NAMESPACE:-spark_ai}"
 REPO="${REPO:-spark-website}"
-HOST_PORT="${WEBSITE_HOST_PORT:-38090}"
 CONTAINER="${CONTAINER:-spark-website}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-IMAGE="${REGISTRY}/${NAMESPACE}/${REPO}:${IMAGE_TAG}"
 
 log(){ printf '[deploy-remote] %s\n' "$*"; }
 die(){ printf '[deploy-remote][ERROR] %s\n' "$*" >&2; exit 1; }
@@ -31,6 +28,11 @@ die(){ printf '[deploy-remote][ERROR] %s\n' "$*" >&2; exit 1; }
 [ -n "${WEBSITE_SERVER_HOST:-}" ] || die "缺少 WEBSITE_SERVER_HOST"
 [ -n "${WEBSITE_SERVER_USER:-}" ] || die "缺少 WEBSITE_SERVER_USER"
 [ -n "${WEBSITE_SERVER_PASSWORD:-}${WEBSITE_SSH_KEY:-}" ] || die "缺少 WEBSITE_SERVER_PASSWORD 或 WEBSITE_SSH_KEY"
+[ -n "${WEBSITE_DOCKER_NAMESPACE:-}" ] || die "缺少 WEBSITE_DOCKER_NAMESPACE"
+[ -n "${WEBSITE_HOST_PORT:-}" ] || die "缺少 WEBSITE_HOST_PORT"
+NAMESPACE="${WEBSITE_DOCKER_NAMESPACE}"
+HOST_PORT="${WEBSITE_HOST_PORT}"
+IMAGE="${REGISTRY}/${NAMESPACE}/${REPO}:${IMAGE_TAG}"
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 REMOTE_SCRIPT="$(cat <<'REMOTE'
