@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCanvasInputBindingsForRoles,
   buildPipelineSourceText,
+  filterExistingCanvasInputNodeIds,
+  resolveCanvasPersistableInputNodeIds,
   resolveCanvasPipelineTextSource,
 } from './canvasWorkspaceTaskInput'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTask } from './canvas.types'
@@ -218,5 +220,102 @@ describe('resolveCanvasPipelineTextSource', () => {
     expect(result).toContain('场景：狭窄出租房')
     expect(result).not.toContain('| 镜号 |')
     expect(result).not.toContain('"shots"')
+  })
+})
+
+describe('resolveCanvasPersistableInputNodeIds', () => {
+  it('maps an unmaterialized upstream product view id back to its physical owner node', () => {
+    const upstream = operationNode()
+    const snapshot = snapshotWith([upstream], screenplayTask([]))
+
+    expect(
+      resolveCanvasPersistableInputNodeIds(
+        ['operation-output:asset-screenplay'],
+        [upstream],
+        snapshot,
+      ),
+    ).toEqual(['operation-screenplay'])
+  })
+
+  it('keeps materialized product node ids and passes physical ids through in order', () => {
+    const operation = operationNode()
+    const output: CanvasNode = {
+      ...operation,
+      id: 'node-screenplay-output',
+      type: 'text',
+      taskId: null,
+      assetId: 'asset-screenplay',
+      title: '转剧本结果',
+      x: 500,
+      data: {
+        text: '场 1：雨夜车站\n林岚走入候车厅。',
+        format: 'markdown',
+        origin: 'task_output',
+        pipelineRole: 'screenplay',
+      },
+    }
+    const image: CanvasNode = {
+      ...operation,
+      id: 'node-image-1',
+      type: 'image',
+      taskId: null,
+      data: { url: '1.png' },
+    }
+    const snapshot = snapshotWith([operation, output, image], screenplayTask([output.id]))
+
+    expect(
+      resolveCanvasPersistableInputNodeIds(
+        ['node-image-1', 'node-screenplay-output'],
+        [operation, image],
+        snapshot,
+      ),
+    ).toEqual(['node-image-1', 'node-screenplay-output'])
+  })
+
+  it('dedupes ids that remap to the same physical owner node', () => {
+    const upstream = operationNode()
+    const image: CanvasNode = {
+      ...upstream,
+      id: 'node-image-1',
+      type: 'image',
+      taskId: null,
+      data: { url: '1.png' },
+    }
+    const snapshot = snapshotWith([upstream, image], screenplayTask([]))
+
+    expect(
+      resolveCanvasPersistableInputNodeIds(
+        ['operation-output:asset-screenplay', 'node-image-1', 'operation-output:asset-screenplay'],
+        [upstream, image],
+        snapshot,
+      ),
+    ).toEqual(['operation-screenplay', 'node-image-1'])
+  })
+})
+
+describe('filterExistingCanvasInputNodeIds', () => {
+  it('drops source ids that do not exist in the project while preserving order', () => {
+    const nodeA: CanvasNode = { ...operationNode(), id: 'node-a' }
+    const nodeB: CanvasNode = { ...operationNode(), id: 'node-b' }
+
+    expect(
+      filterExistingCanvasInputNodeIds(
+        ['node-a', 'operation-output:asset-ghost', 'node-b'],
+        [nodeA, nodeB],
+        'project-1',
+      ),
+    ).toEqual(['node-a', 'node-b'])
+  })
+
+  it('keeps nodes from other boards of the same project, matching createOperationNode semantics', () => {
+    const otherBoardNode: CanvasNode = {
+      ...operationNode(),
+      id: 'node-other-board',
+      boardId: 'board-2',
+    }
+
+    expect(
+      filterExistingCanvasInputNodeIds(['node-other-board'], [otherBoardNode], 'project-1'),
+    ).toEqual(['node-other-board'])
   })
 })

@@ -118,7 +118,10 @@ import {
   syncCanvasTaskPrimaryOutputToNode,
   syncCanvasTaskRuntimeToNode,
 } from './canvasTaskLifecycle'
-import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
+import {
+  filterExistingCanvasInputNodeIds,
+  materializeCanvasTaskInputFiles,
+} from './canvasWorkspaceTaskInput'
 import {
   buildCanvasVisiblePromptDocument,
   normalizeCanvasFunctionalSystemPrompt,
@@ -5170,6 +5173,8 @@ export const canvasApi = {
       createdAt: at,
       updatedAt: at,
     }
+    // 兜底：过滤项目内不存在的 source（如历史悬空的产物视图 id），避免重建出画布不渲染的连线
+    task.inputNodeIds = filterExistingCanvasInputNodeIds(task.inputNodeIds, db.nodes, projectId)
     const inputEdges = task.inputNodeIds.map(
       (sourceNodeId): CanvasEdge => ({
         id: uid('canvas_edge'),
@@ -5331,6 +5336,8 @@ export const canvasApi = {
       createdAt: at,
       updatedAt: at,
     }
+    // 兜底：过滤项目内不存在的 source（如历史悬空的产物视图 id），避免重建出画布不渲染的连线
+    task.inputNodeIds = filterExistingCanvasInputNodeIds(task.inputNodeIds, db.nodes, projectId)
     const inputEdges = task.inputNodeIds.map(
       (sourceNodeId): CanvasEdge => ({
         id: uid('canvas_edge'),
@@ -6627,6 +6634,8 @@ export const canvasApi = {
       createdAt: at,
       updatedAt: at,
     }
+    // 兜底：过滤项目内不存在的 source（如历史悬空的产物视图 id），避免重建出画布不渲染的连线
+    task.inputNodeIds = filterExistingCanvasInputNodeIds(task.inputNodeIds, db.nodes, projectId)
     const inputEdges = task.inputNodeIds.map(
       (sourceNodeId): CanvasEdge => ({
         id: uid('canvas_edge'),
@@ -6875,6 +6884,8 @@ export const canvasApi = {
       createdAt: at,
       updatedAt: at,
     }
+    // 兜底：过滤项目内不存在的 source（如历史悬空的产物视图 id），避免重建出画布不渲染的连线
+    task.inputNodeIds = filterExistingCanvasInputNodeIds(task.inputNodeIds, db.nodes, projectId)
     const inputEdges = task.inputNodeIds.map(
       (sourceNodeId): CanvasEdge => ({
         id: uid('canvas_edge'),

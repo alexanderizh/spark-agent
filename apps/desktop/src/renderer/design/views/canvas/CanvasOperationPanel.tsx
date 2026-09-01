@@ -43,7 +43,10 @@ import {
 } from './canvasPromptInitialization'
 import { selectCanvasMediaCapability } from './canvasMediaCapabilitySelection'
 import { canvasApi } from './canvas.api'
-import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
+import {
+  expandCanvasInputNodes,
+  resolveCanvasPersistableInputNodeIds,
+} from './canvasWorkspaceTaskInput'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import { useCanvasInputBindings } from './useCanvasInputBindings'
@@ -1789,7 +1792,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       return item?.type === 'text' || item?.type === 'prompt'
     })
     const mediaNodeIds = new Set(mediaInputOptions.map((option) => String(option.value)))
-    const runInputNodeIds = usesExplicitMediaMode
+    const selectedRunInputNodeIds = usesExplicitMediaMode
       ? Array.from(
           new Set([
             ...executionInputBindings
@@ -1814,6 +1817,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             ...materializedPromptNodeIds,
           ]),
         )
+    // 上游任务节点的产物未物化为画布节点时，输入展开链路给出 operation-output:* 虚拟视图 id；
+    // 持久化连线与任务血缘必须指向真实物理节点，否则 runOperationNode 删边重建后
+    // 产生悬空边、画布连线丢失。执行输入编译仍按产物视图（bindings / prompt 文档引用）进行。
+    const runInputNodeIds = resolveCanvasPersistableInputNodeIds(
+      selectedRunInputNodeIds,
+      sourceInputNodes,
+      snapshot,
+    )
     if (isVideoSubmissionOperation(operation)) {
       const proceed = await confirmVideoSubmission({
         prompt: prompt.trim(),
@@ -1904,6 +1915,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     submitting,
     selectedSkillIds,
     snapshot,
+    sourceInputNodes,
     expandedSourceInputNodes,
     explicitFrameNodeIds,
     firstFrameNodeId,

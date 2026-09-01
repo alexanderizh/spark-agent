@@ -301,6 +301,57 @@ export function resolveCanvasInputNodes(
   return expandCanvasInputNodes(orderedNodes, snapshot)
 }
 
+/**
+ * 把提交用输入节点 id 归一为「可持久化」的物理节点 id。
+ *
+ * 上游任务节点的产物未物化为画布节点时，输入展开链路（expandCanvasInputNodes）
+ * 产出 `operation-output:*` 虚拟视图 id。这类 id 只用于编译执行输入；若原样写进
+ * task.inputNodeIds / used_as_input 边，重建连线会因 source 节点不存在成为悬空边，
+ * 画布上表现为「连线丢失」。这里把虚拟视图 id 回退映射到产生它的物理 owner 节点
+ * （sourceNodes 的成员）；执行输入编译仍按产物视图（bindings / prompt 文档引用）进行。
+ */
+export function resolveCanvasPersistableInputNodeIds(
+  nodeIds: readonly string[],
+  sourceNodes: readonly CanvasNode[],
+  snapshot: CanvasSnapshot,
+): string[] {
+  const physicalNodeIds = new Set(snapshot.nodes.map((node) => node.id))
+  const ownerNodeIdsByViewId = new Map<string, string>()
+  for (const sourceNode of sourceNodes) {
+    for (const viewNode of expandCanvasInputNodes([sourceNode], snapshot)) {
+      if (viewNode.id === sourceNode.id || physicalNodeIds.has(viewNode.id)) continue
+      ownerNodeIdsByViewId.set(viewNode.id, sourceNode.id)
+    }
+  }
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const nodeId of nodeIds) {
+    const targetNodeId = physicalNodeIds.has(nodeId)
+      ? nodeId
+      : (ownerNodeIdsByViewId.get(nodeId) ?? nodeId)
+    if (seen.has(targetNodeId)) continue
+    seen.add(targetNodeId)
+    result.push(targetNodeId)
+  }
+  return result
+}
+
+/**
+ * 过滤掉项目内不存在的 source 节点 id，避免重建 used_as_input 边时产生悬空边。
+ * 与 createOperationNode 建边前的存在性校验同口径（仅校验 projectId，不限 board）。
+ */
+export function filterExistingCanvasInputNodeIds(
+  nodeIds: readonly string[],
+  nodes: readonly CanvasNode[],
+  projectId: string,
+): string[] {
+  if (nodeIds.length === 0) return []
+  const existingNodeIds = new Set(
+    nodes.filter((node) => node.projectId === projectId).map((node) => node.id),
+  )
+  return nodeIds.filter((nodeId) => existingNodeIds.has(nodeId))
+}
+
 export function fallbackPromptForOperation(operation: CanvasOperationType): string {
   return readBuiltinCanvasOperationPreset(operation).prompt
 }
