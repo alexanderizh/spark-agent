@@ -1539,6 +1539,14 @@ describe('buildMediaGenerationSystemPrompt', () => {
     expect(prompt).toContain('ask which inputs to keep')
     expect(prompt).toContain('mcp__spark_files__present_files')
     expect(prompt).toContain('not complete')
+    expect(prompt).toContain('model, SDK, CLI, or executor')
+    expect(prompt).toContain('routing guidelines rather than hard restrictions')
+    expect(prompt).toContain('ask the user only when the choice materially affects')
+    expect(prompt).toContain('without blocking the task')
+    expect(prompt).toContain(
+      "consider the active model or executor's native image capability first",
+    )
+    expect(prompt).not.toContain('ask the user which route to use before generating')
   })
 })
 
