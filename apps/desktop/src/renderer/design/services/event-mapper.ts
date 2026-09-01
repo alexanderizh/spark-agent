@@ -2316,6 +2316,39 @@ export class MessageBuilder {
 
   /** 最终 result 文本：与最后一段正文按内容去重，并按 Provider 语义标记最终答复 */
   private reconcileFinalText(msg: UIMessage, content: string, provider: string): void {
+    this.applyFinalTextReconcile(msg, content, provider)
+    if (provider === 'claude') this.extendClaudeFinalAnswerRun(msg)
+  }
+
+  /**
+   * Claude 权威 final（result 事件）只携带最后一条 assistant message 的文本。
+   * 当正文主体位于 UI 附着工具（如 suggest_replies）调用之前——该类工具在时间线
+   * 上不产生可见块，正文视觉连续——把 isFinalAnswer 向前扩展到仅被附着块分隔的
+   * 连续正文段，折叠态才能保留完整的最终答复而不是只剩最后一句。
+   */
+  private extendClaudeFinalAnswerRun(msg: UIMessage): void {
+    const blocks = msg.blocks
+    let anchorIndex = -1
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const block = blocks[index]
+      if (block?.kind === 'text' && block.isFinalAnswer === true) {
+        anchorIndex = index
+        break
+      }
+    }
+    if (anchorIndex < 0) return
+    for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+      const block = blocks[index]
+      if (block?.kind === 'quick_replies') continue
+      if (block?.kind === 'text' && block.content.trim().length > 0) {
+        block.isFinalAnswer = true
+        continue
+      }
+      break
+    }
+  }
+
+  private applyFinalTextReconcile(msg: UIMessage, content: string, provider: string): void {
     type TextBlock = Extract<UIBlock, { kind: 'text' }>
     const textBlocks = msg.blocks.filter((b): b is TextBlock => b.kind === 'text')
     for (const block of textBlocks) delete block.isFinalAnswer

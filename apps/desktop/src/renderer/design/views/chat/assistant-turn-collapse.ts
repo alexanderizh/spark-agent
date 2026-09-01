@@ -82,7 +82,7 @@ function findFinalSummaryBlocks(blocks: readonly UIBlock[]): UIBlock[] {
   // independent presentation and do not split the summary body.
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index]
-    if (block == null || isDeliveryPresentationKind(block)) continue
+    if (block == null || skipsBodyContinuity(block)) continue
     if (block.kind === 'text' && block.content.trim().length > 0) {
       return collectTrailingBodyRun(blocks, index, 'text')
     }
@@ -110,7 +110,7 @@ function collectTrailingBodyRun(
 
   for (let index = endIndex; index >= 0; index -= 1) {
     const block = blocks[index]
-    if (block == null || isDeliveryPresentationKind(block)) continue
+    if (block == null || skipsBodyContinuity(block)) continue
     if (block.kind !== 'text' && block.kind !== 'team_member_message') {
       foundProcessBoundary = true
       break
@@ -147,6 +147,21 @@ function isDeliveryPresentationKind(block: UIBlock): boolean {
     default:
       return false
   }
+}
+
+/**
+ * 时间线不可见块：渲染层不为它们产生任何可见内容（快捷回复仅在输入框上方展示、
+ * present_files 工具调用被时间线隐藏，见 ChatView 的 renderBlocks 与 isHiddenTimelineBlock）。
+ * 它们既不是过程日志也不占正文位置，不应切断最终正文的连续性。
+ */
+function isTimelineInvisibleBlock(block: UIBlock): boolean {
+  if (block.kind === 'quick_replies') return true
+  return block.kind === 'tool_call' && block.toolName.toLowerCase().endsWith('present_files')
+}
+
+/** 不参与正文连续性判定的块：独立交付展示卡 + 时间线不可见块。 */
+function skipsBodyContinuity(block: UIBlock): boolean {
+  return isDeliveryPresentationKind(block) || isTimelineInvisibleBlock(block)
 }
 
 function findLastIndex(blocks: readonly UIBlock[], predicate: (block: UIBlock) => boolean): number {

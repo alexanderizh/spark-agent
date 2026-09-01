@@ -970,6 +970,102 @@ describe('MessageBuilder', () => {
     expect(textBlocks?.every((block) => block.isFinalAnswer === true)).toBe(true)
   })
 
+  it('extends a Claude final run across timeline-invisible quick reply tools', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'body-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '好呀！我想到几个适合测试自定义工具功能的点子。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'quick-call',
+      type: 'tool_call',
+      toolCallId: 'quick-1',
+      toolName: 'mcp__spark_ui__suggest_replies',
+      toolInput: { replies: ['就做二维码生成器吧'] },
+      source: 'mcp',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'closing-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '你选一个方向，我就按流程帮你落地。',
+      provider: 'claude',
+      isFinal: false,
+      segmentId: 'seg-2',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-final',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '你选一个方向，我就按流程帮你落地。',
+      provider: 'claude',
+      isFinal: true,
+    })
+
+    const textBlocks = builder.getAllMessages()[0]?.blocks.filter((block) => block.kind === 'text')
+    expect(textBlocks).toHaveLength(2)
+    // Claude result 只带最后一个 segment；正文主体在快捷回复工具之前，视觉连续，应一并标记。
+    expect(textBlocks?.every((block) => block.isFinalAnswer === true)).toBe(true)
+  })
+
+  it('does not extend non-Claude finals across quick reply tools', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'body-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '过程叙述：我先分析调用链。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-1',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      id: 'quick-call',
+      type: 'tool_call',
+      toolCallId: 'quick-1',
+      toolName: 'mcp__spark_ui__suggest_replies',
+      toolInput: { replies: ['继续'] },
+      source: 'mcp',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'closing-complete',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '最终总结。',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'seg-2',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-final',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '最终总结。',
+      provider: 'codex',
+      isFinal: true,
+    })
+
+    const textBlocks = builder.getAllMessages()[0]?.blocks.filter((block) => block.kind === 'text')
+    expect(textBlocks).toHaveLength(2)
+    expect(textBlocks?.[0]?.isFinalAnswer).toBeUndefined()
+    expect(textBlocks?.[1]?.isFinalAnswer).toBe(true)
+  })
+
   it('extends a single completed segment with authoritative final text without duplicating it', () => {
     const builder = new MessageBuilder()
 

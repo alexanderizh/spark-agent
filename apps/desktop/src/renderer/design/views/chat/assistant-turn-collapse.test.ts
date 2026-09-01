@@ -81,6 +81,70 @@ describe('projectAssistantTurnCollapse', () => {
     ])
   })
 
+  it('keeps the full body split only by timeline-invisible quick replies as one summary', () => {
+    // 真实 Claude 序列：正文主体 → suggest_replies（时间线不可见）→ 补充正文（result 只带最后一句）。
+    const bodyPartOne = text(
+      '好呀！结合你的技术背景，我想到几个适合测试自定义工具功能的点子。\n\n## 我的建议\n\n先做 HTTP 再做 Code。',
+      { final: true },
+    )
+    const bodyPartTwo = text('你选一个方向，我就按流程帮你落地。', { final: true })
+    const blocks: UIBlock[] = [
+      { kind: 'thinking', content: '想想哪些工具适合测试。', isStreaming: false },
+      bodyPartOne,
+      { kind: 'quick_replies', toolCallId: 'quick-1', replies: ['就做二维码生成器吧'] },
+      bodyPartTwo,
+    ]
+
+    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([
+      bodyPartOne,
+      bodyPartTwo,
+    ])
+  })
+
+  it('keeps the invisible present_files tool call from splitting the trailing body', () => {
+    const final = text('文件已交付。', { final: true })
+    const presentedFiles: Extract<UIBlock, { kind: 'presented_files' }> = {
+      kind: 'presented_files',
+      files: [{ path: '/workspace/output/demo.mp4' }],
+    }
+    const blocks: UIBlock[] = [
+      text('我先定位调用链。'),
+      {
+        kind: 'tool_call',
+        toolCallId: 'tool-1',
+        toolName: 'mcp__spark_files__present_files',
+        toolInput: {},
+        status: 'success',
+        output: 'ok',
+        error: undefined,
+        durationMs: 10,
+      },
+      presentedFiles,
+      final,
+    ]
+
+    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([
+      final,
+      presentedFiles,
+    ])
+  })
+
+  it('keeps the whole marked run when only invisible quick replies sit between segments', () => {
+    // 无过程边界的纯正文 + 快捷回复：mapper 已为 Claude 补齐 final 标记，filter 后应完整保留。
+    const bodyPartOne = text('完整答复主体。', { final: true })
+    const bodyPartTwo = text('选好方向我就开工。', { final: true })
+    const blocks: UIBlock[] = [
+      bodyPartOne,
+      { kind: 'quick_replies', toolCallId: 'quick-1', replies: ['开工'] },
+      bodyPartTwo,
+    ]
+
+    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([
+      bodyPartOne,
+      bodyPartTwo,
+    ])
+  })
+
   it('falls back to the trailing host summary after the last process block', () => {
     const process = text('旧历史过程正文')
     const summaryPartOne = text('旧历史总结第一段')
