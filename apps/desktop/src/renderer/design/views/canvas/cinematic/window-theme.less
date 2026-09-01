@@ -436,6 +436,38 @@ html[data-theme='light']:has(.canvas-window-standalone.theme-light) {
     background: var(--canvas-cinema-surface-2);
   }
 
+  // 操作节点（反推/生成等）的制作台容器沿用旧版工作台的深色卡片底；
+  // 浅色窗口若不重置，上方正文颜色规则换成深色文字后会在深底上不可读。
+  .canvas-node-task.canvas-node-operation {
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  // 制作台内的 slate 灰文案与图标是为深底设计的，浅色窗口同步换成主题色阶。
+  .canvas-operation-output-stage-label {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-operation-output-stage-label > span:last-child {
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-operation-output-text > svg,
+  .canvas-operation-empty-icon {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-operation-param-summary {
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-operation-param-summary > span > span {
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-operation-param-summary strong {
+    color: var(--canvas-cinema-text);
+  }
+
   .canvas-node-content-title-text {
     color: var(--canvas-cinema-text-strong);
     background: var(--canvas-cinema-surface-2);
