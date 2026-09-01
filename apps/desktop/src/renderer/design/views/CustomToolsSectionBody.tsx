@@ -121,6 +121,24 @@ export function CustomToolsSection() {
     void refresh()
   })
 
+  const [packageCount, setPackageCount] = useState<number | null>(null)
+  const { invoke: listToolPackages } = useIpcInvoke('tool-packages:list')
+  const refreshPackageCount = useCallback(async () => {
+    try {
+      const result = await listToolPackages({})
+      setPackageCount(result.packages.length)
+    } catch {
+      // 计数加载失败时保持无数字展示，不影响主流程
+    }
+  }, [listToolPackages])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshPackageCount(), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshPackageCount])
+  useIpcStream('stream:tool-packages:changed', () => {
+    void refreshPackageCount()
+  })
+
   const visibleTools = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     const scoped =
@@ -604,7 +622,7 @@ export function CustomToolsSection() {
         {(
           [
             ['tools', `工具 ${tools.length}`],
-            ['packages', '工具包'],
+            ['packages', packageCount == null ? '工具包' : `工具包 ${packageCount}`],
             ['drafts', `开发中 ${tools.filter((tool) => tool.hasUnpublishedDraft).length}`],
             ['runs', '运行记录'],
           ] as const
