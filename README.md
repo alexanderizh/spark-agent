@@ -294,7 +294,6 @@ graph LR
 │   ├── protocol/         # IPC、事件协议、Zod schemas（含 BUILTIN_MEDIA_MODEL_MANIFESTS）
 │   ├── shared/           # 通用工具、日志、错误、KeyStore
 │   └── storage/          # SQLite 存储、迁移、Repository
-└── docs/                 # 架构、设计、发布和开发文档
 ```
 
 ## 技术栈

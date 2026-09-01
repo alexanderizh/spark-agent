@@ -58,6 +58,11 @@ playwright-report/
 api-keys.json
 secrets.json
 
+# ---- 内部设计文档（仅本地保留，严禁提交到公开仓库） ----
+/_private/
+/docs/
+/todo/
+
 # ---- CI 证书导出目录（本地暂存 .p12 / base64，严禁提交） ----
 .secrets/
 *.certSigningRequest
