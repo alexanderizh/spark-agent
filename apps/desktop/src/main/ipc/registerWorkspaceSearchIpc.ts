@@ -7,9 +7,8 @@
  * - workspace-search:cancel  → 取消进行中的内容搜索
  */
 
-import { WorkspaceRepository } from '@spark/storage'
-import { getDatabase } from '../db.js'
 import { WorkspaceSearchService } from '../services/WorkspaceSearchService.js'
+import { resolveSessionScopedWorkspaceRoot } from './sessionWorkspaceRoot.js'
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 
 export const WORKSPACE_SEARCH_CONTENT_STREAM = 'stream:workspace-search:content'
@@ -26,21 +25,16 @@ export function setWorkspaceSearchServiceForTest(next: WorkspaceSearchService | 
   service = next
 }
 
-function resolveWorkspaceRootPath(workspaceId: string): string {
-  const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(workspaceId)
-  return workspace.root_path
-}
-
 export function registerWorkspaceSearchIpc(): void {
   typedIpcHandle('workspace-search:files', async (req) => {
-    const rootPath = resolveWorkspaceRootPath(req.workspaceId)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
     return getWorkspaceSearchService().searchFiles(rootPath, req.query, req.limit ?? 100, {
       refresh: req.refresh === true,
     })
   })
 
   typedIpcHandle('workspace-search:content', async (req) => {
-    const rootPath = resolveWorkspaceRootPath(req.workspaceId)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
     const searchService = getWorkspaceSearchService()
     const { requestId, done } = searchService.runContentSearch(rootPath, {
       requestId: req.requestId,

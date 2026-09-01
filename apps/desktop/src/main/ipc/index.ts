@@ -16,6 +16,7 @@ import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
 import { registerTeamP1Ipc } from './registerTeamP1Ipc.js'
 import { registerTeamOutcomeIpc } from './registerTeamOutcomeIpc.js'
 import { createWorkspaceInfoMapper } from './workspace-info.js'
+import { resolveSessionScopedWorkspaceRoot } from './sessionWorkspaceRoot.js'
 import { readTextFileForRenderer } from './file-read.js'
 import {
   buildCanvasMediaProviderPrompt,
@@ -164,6 +165,8 @@ import {
   MemoryStoreService,
   MemoryWriterService,
   EmbeddingService,
+  ensureSessionWorkspaceRootPath,
+  NO_PROJECT_WORKSPACE_NAME,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -389,7 +392,6 @@ const canvasSnapshotWriteCoordinator = new CanvasSnapshotWriteCoordinator()
 const AUTO_WINDOW_WIDTH_TOLERANCE = 12
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
-const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 const skillInstallStatusByKey = new Map<string, SkillInstallStatusItem>()
 
 function skillInstallStatusKey(source: SkillInstallJobSource, slug: string): string {
@@ -1543,7 +1545,13 @@ async function ensureSessionWorkspacePaths(sessionId: string): Promise<void> {
   const session = sessionRepo.get(sessionId)
   if (session == null) return
   const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
-  await Promise.all(workspaceIds.map((workspaceId) => ensureNoProjectWorkspacePath(workspaceId)))
+  await Promise.all(
+    workspaceIds.map(async (workspaceId) => {
+      await ensureNoProjectWorkspacePath(workspaceId)
+      const workspace = new WorkspaceRepository(getDatabase()).get(workspaceId)
+      if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, sessionId)
+    }),
+  )
 }
 
 /**
@@ -5737,8 +5745,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:open-folder', async (req) => {
     log.info(`workspace:open-folder requested, workspaceId=${req.workspaceId}`)
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    shell.showItemInFolder(workspace.root_path)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    shell.showItemInFolder(rootPath)
     return { opened: true }
   })
 
@@ -5752,7 +5760,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:list-directory', async (req) => {
     log.info(`workspace:list-directory requested, workspaceId=${req.workspaceId}`)
-    const entries = await getWorkspaceService().listDirectoryTree(req.workspaceId, req)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    const entries = await getWorkspaceService().listDirectoryTreeAtRoot(rootPath, req)
     return { entries }
   })
 
@@ -6234,9 +6243,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:watch-start', async (req) => {
     log.info(`workspace:watch-start requested, workspaceId=${req.workspaceId}`)
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
     const watcherService = getFileWatcherService()
-    watcherService.start(req.workspaceId, workspace.root_path, req.ignorePatterns)
+    watcherService.start(req.workspaceId, rootPath, req.ignorePatterns)
     return { watching: true }
   })
 

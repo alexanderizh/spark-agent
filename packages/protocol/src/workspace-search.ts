@@ -29,6 +29,8 @@ export interface WorkspaceSearchFileHit {
 
 export const WorkspaceSearchFilesRequestSchema = z.object({
   workspaceId: z.string().min(1),
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId: z.string().uuid().optional(),
   query: z.string().max(300),
   /** 返回条数上限，默认 100，硬上限 500 */
   limit: z.number().int().min(1).max(500).optional(),
@@ -76,6 +78,8 @@ export interface WorkspaceSearchContentStats {
 
 export const WorkspaceSearchContentRequestSchema = z.object({
   workspaceId: z.string().min(1),
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId: z.string().uuid().optional(),
   /** 渲染端预先生成，确保首个流事件到达前即可建立过滤令牌。 */
   requestId: z.string().uuid(),
   query: z.string().min(1).max(500),

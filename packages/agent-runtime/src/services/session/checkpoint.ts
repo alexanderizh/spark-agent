@@ -12,6 +12,7 @@ import type { AgentEvent } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import type { CheckpointRestoreResult, CheckpointSnapshot } from '../../core/index.js'
 import { CheckpointGitService } from '../checkpoint-git.service.js'
+import { ensureSessionWorkspaceRootPathSync } from '../session-workspace-root.js'
 import { listSessionCheckpointsFromEvents } from './session-pure-utils.js'
 
 const log = createLogger('session.checkpoint')
@@ -208,7 +209,7 @@ export class SessionCheckpointManager {
     const workspaceIds = new SessionRepository(this.db).getWorkspaceIds(sessionId)
     if (workspaceIds.length === 0) return null
     const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
-    return ws?.root_path ?? null
+    return ws == null ? null : ensureSessionWorkspaceRootPathSync(ws, sessionId)
   }
 
   /** 读会话 checkpoint 开关（metadata.checkpointEnabled，默认关）。 */

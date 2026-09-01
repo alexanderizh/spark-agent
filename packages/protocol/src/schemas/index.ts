@@ -379,22 +379,26 @@ const explorerPathSchema = z.string().min(1).max(2000)
 
 export const FileTrashRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   path: explorerPathSchema,
 })
 
 export const FileCreateFileRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   path: explorerPathSchema,
   content: z.string().max(10_000_000).optional(),
 })
 
 export const FileCreateDirectoryRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   path: explorerPathSchema,
 })
 
 export const FileMoveRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   fromPath: explorerPathSchema,
   toPath: explorerPathSchema,
   ifExists: FileConflictPolicySchema.optional(),
@@ -402,6 +406,7 @@ export const FileMoveRequestSchema = z.object({
 
 export const FileCopyRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   fromPath: explorerPathSchema,
   toPath: explorerPathSchema,
   ifExists: FileConflictPolicySchema.optional(),
@@ -721,6 +726,7 @@ export const WorkspaceOpenRequestSchema = z.object({
 
 export const WorkspaceListDirectoryRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
   path: z.string().max(500).optional().default(''),
   maxDepth: z.number().int().min(0).max(5).optional().default(3),
   includeIgnoredDirectories: z.boolean().optional().default(false),
@@ -798,6 +804,7 @@ export const WorkspaceDeleteRequestSchema = z.object({
 
 export const WorkspaceOpenFolderRequestSchema = z.object({
   workspaceId: z.string().uuid(),
+  sessionId: SessionIdSchema.optional(),
 })
 
 // ─── Rules Schema ────────────────────────────────────────────────────────────
@@ -1081,10 +1088,12 @@ export const IpcSchemaRegistry = {
   'workspace:create-branch': WorkspaceCreateBranchRequestSchema,
   'workspace:watch-start': z.object({
     workspaceId: z.string().min(1),
+    sessionId: SessionIdSchema.optional(),
     ignorePatterns: z.array(z.string()).optional(),
   }),
   'workspace:watch-stop': z.object({
     workspaceId: z.string().min(1),
+    sessionId: SessionIdSchema.optional(),
   }),
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'dialog:open-file': DialogOpenFileRequestSchema,

@@ -32,6 +32,7 @@ import type {
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import { ensureSessionWorkspaceRootPath } from './session-workspace-root.js'
 import {
   SessionWorktreeStateService,
   type SessionRuntimeWorktreeState,
@@ -1415,7 +1416,11 @@ export class SessionService {
         const workspaceId = workspaceIds[0]
         if (workspaceId != null && workspaceId.length > 0) {
           const wsRepo = new WorkspaceRepository(this.db)
-          workspaceRootPath = wsRepo.get(workspaceId)?.root_path ?? undefined
+          const workspace = wsRepo.get(workspaceId)
+          workspaceRootPath =
+            workspace == null
+              ? undefined
+              : await ensureSessionWorkspaceRootPath(workspace, params.sessionId)
         }
       }
     } catch {
@@ -1589,6 +1594,10 @@ export class SessionService {
   }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = crypto.randomUUID()
+    if (params.workspaceId != null) {
+      const workspace = new WorkspaceRepository(this.db).get(params.workspaceId)
+      if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, id)
+    }
     const agent = this.resolveAgent(params.agentId)
     const row = sessionRepo.create({
       id,
@@ -2524,21 +2533,21 @@ export class SessionService {
       const wsRepo = new WorkspaceRepository(this.db)
       const ws = wsRepo.get(primaryWorkspaceId ?? '')
       if (ws != null) {
-        workspaceRootPath = ws.root_path
+        workspaceRootPath = await ensureSessionWorkspaceRootPath(ws, sessionId)
         const worktreeMeta =
           typeof ws.worktree_meta_json === 'string' && ws.worktree_meta_json.trim().length > 0
             ? parseWorktreePromptMeta(ws.worktree_meta_json)
             : undefined
         workspaceInfo = {
           name: ws.name,
-          rootPath: ws.root_path,
+          rootPath: workspaceRootPath,
           projectKind: ws.project_kind,
           ...(worktreeMeta ? { worktreeMeta } : {}),
         }
         // Load Context Governor pin/exclude overrides for this workspace
         const ctxPrefRepo = new ContextPreferenceRepository(this.db)
         const { pinnedPaths, excludedPaths } = ctxPrefRepo.getOverrides(primaryWorkspaceId ?? '')
-        projectContext = projectContextService.discover(ws.root_path, {
+        projectContext = projectContextService.discover(workspaceRootPath, {
           mode: 'project-smart',
           budgetTokens: projectContextBudgetTokens,
           pinnedPaths,
@@ -9567,7 +9576,14 @@ export class SessionService {
     anchorTurnId?: string
     title?: string
   }): Promise<import('@spark/protocol').SessionForkResponse> {
-    return this.getCrudController().forkSession(params)
+    const result = await this.getCrudController().forkSession(params)
+    const sessionRepo = new SessionRepository(this.db)
+    const workspaceId = sessionRepo.getWorkspaceIds(result.sessionId)[0]
+    if (workspaceId != null) {
+      const workspace = new WorkspaceRepository(this.db).get(workspaceId)
+      if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, result.sessionId)
+    }
+    return result
   }
 
   async getSessionLineage(

@@ -3,6 +3,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionId } from '@spark/protocol'
 
 import { useFileExplorerTree, type UseFileExplorerTreeResult } from './useFileExplorerTree'
 
@@ -13,13 +14,16 @@ vi.mock('../../../hooks/useIpc', () => ({
 
 function Harness({
   expandedDirs = new Set(),
+  sessionId = null,
   onState,
 }: {
   expandedDirs?: Set<string>
+  sessionId?: SessionId | null
   onState: (state: UseFileExplorerTreeResult) => void
 }): React.ReactElement {
   const state = useFileExplorerTree({
     workspaceId: 'workspace-1',
+    sessionId,
     enabled: true,
     expandedDirs,
     onExpandedChange: vi.fn(),
@@ -128,5 +132,23 @@ describe('useFileExplorerTree', () => {
     })
     expect(state.current?.nodes.has('node_modules/package-a')).toBe(true)
     expect(state.current?.visiblePaths).toContain('node_modules/package-a')
+  })
+
+  it('scopes list and watch requests to the active session', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001' as SessionId
+    await act(async () => {
+      root?.render(<Harness sessionId={sessionId} onState={() => {}} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'workspace:list-directory',
+      expect.objectContaining({ workspaceId: 'workspace-1', sessionId }),
+    )
+    expect(invoke).toHaveBeenCalledWith('workspace:watch-start', {
+      workspaceId: 'workspace-1',
+      sessionId,
+    })
   })
 })

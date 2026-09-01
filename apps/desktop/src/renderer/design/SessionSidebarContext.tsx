@@ -50,6 +50,7 @@ import {
   type SessionScheduleSummaries,
 } from './session-schedule-summary'
 import { readAgentRuntimePrefs } from './views/chat/composerAgentRuntimePrefs'
+import { NO_PROJECT_WORKSPACE_NAME } from './session-workspace-root'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -78,7 +79,7 @@ export type SessionGroupActionCopy = {
 // 会让 buildProjectGroups 过滤失败 → noProject workspace 没被剔除 → sidebar 直接用
 // workspace.name 显示成 '不使用项目'，让 i18n 中的 'sidebar.noProjectChats' = '临时会话'
 // 完全失效。
-export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+export { NO_PROJECT_WORKSPACE_NAME } from './session-workspace-root'
 const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 
 function getNoProjectRootPath(tempDir: string): string {
@@ -1883,7 +1884,7 @@ export function SessionSidebarProvider({
         return // no workspace associated
       }
       try {
-        await openWorkspaceFolder({ workspaceId })
+        await openWorkspaceFolder({ workspaceId, sessionId: session.id })
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t('project.openFolderFailed'))
       }

@@ -430,6 +430,11 @@ import {
 } from '@spark/protocol'
 import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { ProviderLogo } from '../components/ProviderLogo'
+import {
+  resolvePathAgainstWorkspaceRoot,
+  resolveSessionWorkspaceForDisplay,
+  resolveSessionWorkspaceRootPathForDisplay,
+} from '../session-workspace-root'
 
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
@@ -1788,8 +1793,18 @@ export function ChatView({
     return workspaces.find((item) => item.id === sessionWorkspaceId) ?? activeWorkspace
   })()
   const activeSessionWorkspaceId = activeSessionWorkspace?.id ?? null
+  const activeSessionWorkspaceRootPath = useMemo(
+    () => resolveSessionWorkspaceRootPathForDisplay(activeSessionWorkspace, activeSession?.id),
+    [activeSession?.id, activeSessionWorkspace],
+  )
+  const activeSessionWorkspaceForDisplay = useMemo(
+    () => resolveSessionWorkspaceForDisplay(activeSessionWorkspace, activeSession?.id),
+    [activeSession?.id, activeSessionWorkspace],
+  )
+  const activeFilePreviewRootPath =
+    activeSessionWorkspaceRootPath ?? activeWorkspace?.rootPath ?? null
   // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
-  workspaceRootRef.current = activeSessionWorkspace?.rootPath ?? activeWorkspace?.rootPath ?? null
+  workspaceRootRef.current = activeSessionWorkspaceRootPath ?? activeWorkspace?.rootPath ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
   const activeProviderContextWindow = resolveModelContextWindowForProvider(
     activeSession?.modelId ?? activeProvider?.defaultModel,
@@ -2653,6 +2668,23 @@ export function ChatView({
     sideChatSessionWorkspaceId,
     workspaces,
   ])
+  const sideChatWorkspaceRootPath = useMemo(
+    () => resolveSessionWorkspaceRootPathForDisplay(sideChatWorkspace, sideChatSession?.id),
+    [sideChatSession?.id, sideChatWorkspace],
+  )
+  const sideChatWorkspaceForDisplay = useMemo(
+    () => resolveSessionWorkspaceForDisplay(sideChatWorkspace, sideChatSession?.id),
+    [sideChatSession?.id, sideChatWorkspace],
+  )
+  const handleSideChatFilePreview = useCallback<FileOpenHandler>(
+    (filePath, fileType, options) =>
+      handleFilePreview(
+        resolvePathAgainstWorkspaceRoot(filePath, sideChatWorkspaceRootPath),
+        fileType,
+        options,
+      ),
+    [handleFilePreview, sideChatWorkspaceRootPath],
+  )
 
   // 侧边聊天头部下拉候选：当前 workspace 下的全部会话。
   // 复用 sideChatMatchesActiveWorkspace 的同款 workspace 判定，保证切过去一定 matches、
@@ -3071,7 +3103,7 @@ export function ChatView({
               <ChatTabbar
                 key="chat-tabbar"
                 session={activeSession}
-                workspace={activeWorkspace}
+                workspace={activeSessionWorkspaceForDisplay ?? activeWorkspace}
                 onOpenInEditor={() => openUnifiedSidePanel('code')}
                 onOpenInTerminal={() => openUnifiedSidePanel('terminal')}
                 agentStatus={agentStatus}
@@ -3142,7 +3174,7 @@ export function ChatView({
                 optimisticMessages={optimisticUserMessages}
                 onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
                 workspaceId={activeSessionWorkspaceId}
-                workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
+                workspaceRootPath={activeSessionWorkspaceRootPath}
                 onStatusChange={setAgentStatus}
                 onUsageChange={setContextInputTokens}
                 onRuntimeContextChange={setRuntimeContext}
@@ -3269,7 +3301,7 @@ export function ChatView({
       {showInspector && (
         <ChatInspector
           session={activeSession}
-          workspace={activeSessionWorkspace ?? activeWorkspace}
+          workspace={activeSessionWorkspaceForDisplay ?? activeWorkspace}
           messages={active == null ? [] : activeVisibleMessages}
           usageData={sessionUsageData}
           projectContext={projectContext}
@@ -3290,8 +3322,11 @@ export function ChatView({
           agents={agents}
           onChangeTeamConfig={handleInspectorChangeConfig}
           onOpenProjectFolder={() => {
-            const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
-            if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
+            if (activeSession != null) {
+              void sessionCtx.handleOpenSessionFolder(activeSession)
+              return
+            }
+            if (activeWorkspace != null) void sessionCtx.handleOpenProjectFolder(activeWorkspace)
           }}
           checkpointAvailable={checkpointAvailable}
           checkpointEnabled={checkpointEnabled}
@@ -3381,10 +3416,11 @@ export function ChatView({
                 onCloseFiles={closeCodeFiles}
                 onViewModeChange={setCodeViewMode}
                 workspaceId={gitWorkspaceId ?? null}
+                sessionId={activeSession?.id ?? null}
                 explorerVisible={codeExplorerVisible}
                 explorerWidth={codeExplorerWidth}
                 explorerExpandedDirs={codeExplorerExpandedDirs}
-                workspaceRootPath={gitWorkspace?.rootPath ?? null}
+                workspaceRootPath={activeSessionWorkspaceRootPath ?? gitWorkspace?.rootPath ?? null}
                 onExplorerVisibleChange={setCodeExplorerVisible}
                 onExplorerWidthChange={setCodeExplorerWidth}
                 onExplorerExpandedChange={setCodeExplorerExpandedDirs}
@@ -3452,7 +3488,7 @@ export function ChatView({
                 return (
                   <BuiltInTerminalPanel
                     sessionId={terminalSessionId}
-                    workspace={activeSessionWorkspace ?? activeWorkspace}
+                    workspace={activeSessionWorkspaceForDisplay ?? activeWorkspace}
                     onClose={() => closeUnifiedSidePanel('terminal')}
                   />
                 )
@@ -3487,7 +3523,7 @@ export function ChatView({
                         optimisticMessages={optimisticUserMessages}
                         onDeleteOptimisticMessages={handleDeleteOptimisticUserMessages}
                         workspaceId={sideChatWorkspace?.id ?? null}
-                        workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
+                        workspaceRootPath={sideChatWorkspaceRootPath}
                         onStatusChange={setSideChatAgentStatus}
                         onUsageChange={setSideChatContextInputTokens}
                         onRuntimeContextChange={setSideChatRuntimeContext}
@@ -3506,7 +3542,7 @@ export function ChatView({
                         stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
                         scrollToBottomTrigger={sideChatScrollToBottomTrigger}
                         teamConfig={teamConfig}
-                        onFilePreview={handleFilePreview}
+                        onFilePreview={handleSideChatFilePreview}
                         onLoadingChange={() => {}}
                         onReplyTo={handleReplyTo}
                         onReplyToMember={handleReplyToMember}
@@ -3514,7 +3550,7 @@ export function ChatView({
                     </HtmlRenderProvider>
                     <ComposerV2
                       session={sideChatSession}
-                      workspace={sideChatWorkspace}
+                      workspace={sideChatWorkspaceForDisplay}
                       providers={providers}
                       agents={agents}
                       selectedProviderId={selectedProviderId}
@@ -3585,8 +3621,8 @@ export function ChatView({
         <FilePreviewPanel
           filePath={filePreview.filePath}
           fileType={filePreview.fileType}
-          {...((activeSessionWorkspace ?? activeWorkspace)?.rootPath != null
-            ? { workspaceRootPath: (activeSessionWorkspace ?? activeWorkspace)!.rootPath }
+          {...(activeFilePreviewRootPath != null
+            ? { workspaceRootPath: activeFilePreviewRootPath }
             : {})}
           onClose={() => setFilePreview(null)}
         />

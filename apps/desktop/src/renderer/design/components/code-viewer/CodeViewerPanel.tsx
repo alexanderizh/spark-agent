@@ -13,7 +13,7 @@
 import { Dropdown } from '@lobehub/ui'
 import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { WorkspaceGitStatusResponse } from '@spark/protocol'
+import type { SessionId, WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { OPEN_CODE_SEARCH_EVENT } from '../../hooks/useKeyboard'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
@@ -68,6 +68,7 @@ export interface CodeViewerPanelProps {
   onCloseFiles: (absPaths: string[]) => void
   onViewModeChange: (mode: CodeViewMode) => void
   workspaceId?: string | null
+  sessionId?: SessionId | null
   // 文件树（受控：visible/width 走全局 store，expandedDirs 走 per-session 快照）
   explorerVisible: boolean
   explorerWidth: number
@@ -106,6 +107,7 @@ export function CodeViewerPanel({
   onCloseFiles,
   onViewModeChange,
   workspaceId,
+  sessionId,
   explorerVisible,
   explorerWidth,
   explorerExpandedDirs,
@@ -411,7 +413,9 @@ export function CodeViewerPanel({
               <div className="cv-explorer-body">
                 {explorerVisible ? (
                   <FileExplorerPanel
+                    key={`${workspaceId}:${sessionId ?? ''}`}
                     workspaceId={workspaceId}
+                    sessionId={sessionId ?? null}
                     workspaceRootPath={workspaceRootPath ?? null}
                     expandedDirs={explorerExpandedDirs}
                     onExpandedChange={onExplorerExpandedChange}
@@ -423,8 +427,9 @@ export function CodeViewerPanel({
                   />
                 ) : searchPanelVisible ? (
                   <SearchPanel
-                    key={workspaceId}
+                    key={`${workspaceId}:${sessionId ?? ''}`}
                     workspaceId={workspaceId}
+                    sessionId={sessionId ?? null}
                     onOpenFile={onOpenFileFromSearch}
                   />
                 ) : (

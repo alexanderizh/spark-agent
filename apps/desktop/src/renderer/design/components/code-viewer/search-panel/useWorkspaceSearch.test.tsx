@@ -3,18 +3,20 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WorkspaceSearchContentStreamPayload } from '@spark/protocol'
+import type { SessionId, WorkspaceSearchContentStreamPayload } from '@spark/protocol'
 import { useWorkspaceSearch } from './useWorkspaceSearch'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const workspaceId = '00000000-0000-4000-8000-000000000001'
 const requestId = '00000000-0000-4000-8000-000000000002'
+const sessionId = '00000000-0000-4000-8000-000000000003' as SessionId
 
 type SearchState = ReturnType<typeof useWorkspaceSearch>
 
 function Harness({ onState }: { onState: (state: SearchState) => void }): React.ReactElement {
   const state = useWorkspaceSearch({
     workspaceId,
+    sessionId,
     mode: 'content',
     query: 'needle',
     caseSensitive: false,
@@ -81,6 +83,10 @@ describe('useWorkspaceSearch', () => {
     expect(
       invoke.mock.calls.filter(([channel]) => channel === 'workspace-search:content'),
     ).toHaveLength(1)
+    expect(invoke).toHaveBeenCalledWith(
+      'workspace-search:content',
+      expect.objectContaining({ workspaceId, sessionId, requestId }),
+    )
 
     await act(async () => vi.advanceTimersByTimeAsync(400))
     expect(

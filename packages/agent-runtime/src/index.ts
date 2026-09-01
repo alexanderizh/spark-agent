@@ -213,6 +213,14 @@ export type {
 } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
 export {
+  ensureSessionWorkspaceRootPath,
+  ensureSessionWorkspaceRootPathSync,
+  isNoProjectWorkspace,
+  NO_PROJECT_WORKSPACE_NAME,
+  resolveSessionWorkspaceRootPath,
+  type SessionWorkspaceRootSource,
+} from './services/session-workspace-root.js'
+export {
   isPersistentCodexRuntimeEnabled,
   persistentCodexRuntimePolicy,
 } from './sdk/codex-app-server/codex-app-server-runtime.js'

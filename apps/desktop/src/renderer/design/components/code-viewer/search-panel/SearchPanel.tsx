@@ -13,7 +13,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { WorkspaceSearchContentMatch, WorkspaceSearchFileHit } from '@spark/protocol'
+import type {
+  SessionId,
+  WorkspaceSearchContentMatch,
+  WorkspaceSearchFileHit,
+} from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import { FileTypeIcon } from '../../FileDisplay'
 import { OPEN_CODE_SEARCH_EVENT } from '../../../hooks/useKeyboard'
@@ -35,13 +39,20 @@ import './SearchPanel.less'
 
 export interface SearchPanelProps {
   workspaceId: string | null
+  sessionId?: SessionId | null
   onOpenFile: (relativePath: string, lineNumber?: number) => void
 }
 
-export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): React.ReactNode {
+export function SearchPanel({
+  workspaceId,
+  sessionId = null,
+  onOpenFile,
+}: SearchPanelProps): React.ReactNode {
   const mode = useSearchPanelMode()
+  const workspaceScopeId =
+    workspaceId == null ? null : `${workspaceId}${sessionId == null ? '' : `:${sessionId}`}`
   const [workspaceState, setWorkspaceState] = useState<SearchPanelWorkspaceState>(() =>
-    readSearchPanelWorkspaceState(workspaceId),
+    readSearchPanelWorkspaceState(workspaceScopeId),
   )
   const [refreshTick, setRefreshTick] = useState(0)
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set())
@@ -75,11 +86,12 @@ export function SearchPanel({ workspaceId, onOpenFile }: SearchPanelProps): Reac
   )
 
   useEffect(() => {
-    writeSearchPanelWorkspaceState(workspaceId, workspaceState)
-  }, [workspaceId, workspaceState])
+    writeSearchPanelWorkspaceState(workspaceScopeId, workspaceState)
+  }, [workspaceScopeId, workspaceState])
 
   const search = useWorkspaceSearch({
     workspaceId,
+    sessionId,
     mode,
     query,
     caseSensitive,

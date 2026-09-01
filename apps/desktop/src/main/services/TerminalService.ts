@@ -20,6 +20,11 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { createLogger } from '@spark/shared'
+import {
+  ensureSessionWorkspaceRootPathSync,
+  isNoProjectWorkspace,
+  NO_PROJECT_WORKSPACE_NAME,
+} from '@spark/agent-runtime'
 import type {
   TerminalCreateRequest,
   TerminalCreateResponse,
@@ -152,13 +157,13 @@ class TerminalService {
       throw new Error('TerminalService has been disposed')
     }
     const sessionId = req.sessionId
-    const { cwd, rootPath } = this.resolveCwd(req)
+    const { cwd, rootPath, defaultTitle } = this.resolveCwd(req)
     const shell = pickShell()
     const cols = clampInt(req.cols ?? 80, 10, 500)
     const rows = clampInt(req.rows ?? 24, 3, 200)
     const id = makeTerminalId()
     const now = new Date().toISOString()
-    const title = (req.title?.trim() || deriveTitle(rootPath)).slice(0, 80)
+    const title = (req.title?.trim() || defaultTitle || deriveTitle(rootPath)).slice(0, 80)
 
     const env: NodeJS.ProcessEnv = {
       ...getGitCommandService().buildChildEnvironment(process.env),
@@ -358,7 +363,11 @@ class TerminalService {
 
   // ─── cwd / workspace 解析 ───────────────────────────────────────────────
 
-  private resolveCwd(req: TerminalCreateRequest): { cwd: string; rootPath: string } {
+  private resolveCwd(req: TerminalCreateRequest): {
+    cwd: string
+    rootPath: string
+    defaultTitle?: string
+  } {
     // 1. 取该 session 关联的 workspaces
     const repo = new WorkspaceRepository(getDatabase())
     const workspaces: { id: string; name: string; root_path: string }[] = []
@@ -374,11 +383,30 @@ class TerminalService {
       if (noProject != null) workspaces.push(noProject)
     }
     const primary = workspaces[0]
-    const rootPath = primary != null ? path.resolve(primary.root_path) : homedir()
+    const workspaceRootPath = primary != null ? path.resolve(primary.root_path) : homedir()
+    const configuredRootPath =
+      primary != null
+        ? ensureSessionWorkspaceRootPathSync(primary, req.sessionId)
+        : workspaceRootPath
+    let rootPath: string
+    try {
+      rootPath = realpathSync(configuredRootPath)
+    } catch {
+      rootPath = path.resolve(configuredRootPath)
+    }
     const fallbackCwd = primary != null ? rootPath : homedir()
 
     // 2. 解析并校验 req.cwd
-    const requested = req.cwd?.trim() || fallbackCwd
+    const requestedCwd = req.cwd?.trim()
+    // Older renderers send the shared no-project root as cwd. Treat that value
+    // as an implicit default so it cannot bypass the per-session directory.
+    const requested =
+      primary != null &&
+      isNoProjectWorkspace(primary) &&
+      requestedCwd != null &&
+      path.resolve(requestedCwd) === workspaceRootPath
+        ? fallbackCwd
+        : requestedCwd || fallbackCwd
     let resolved: string
     try {
       resolved = realpathSync(requested)
@@ -391,11 +419,11 @@ class TerminalService {
     if (!isWithinOrEqual(resolved, rootPath)) {
       // no-project 兜底：允许 homedir 之下（app 管理的持久 no-project 目录本身就在 userData 下）
       if (workspaces.length === 0 && isWithinOrEqual(resolved, homedir())) {
-        return { cwd: resolved, rootPath }
+        return { cwd: resolved, rootPath, ...(primary ? { defaultTitle: primary.name } : {}) }
       }
       throw new Error(`终端工作目录不可用：${resolved} 不在 workspace 内`)
     }
-    return { cwd: resolved, rootPath }
+    return { cwd: resolved, rootPath, ...(primary ? { defaultTitle: primary.name } : {}) }
   }
 }
 
@@ -438,8 +466,6 @@ function deriveTitle(rootPath: string): string {
   const base = path.basename(rootPath) || rootPath
   return base.replace(/[\r\n\t]/g, ' ').slice(0, 80) || 'Terminal'
 }
-
-const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
 // ─── 单例 ────────────────────────────────────────────────────────────────────
 

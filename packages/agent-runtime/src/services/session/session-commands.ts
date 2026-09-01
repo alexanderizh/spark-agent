@@ -58,6 +58,7 @@ import {
 } from './session-command-title-refinement.js'
 import { getAgentAdapterFromSession, getPermissionModeFromSession } from './engine-kinds.js'
 import { createCodexNativeThreadClearPatch } from './codex-native-thread-binding.js'
+import { ensureSessionWorkspaceRootPathSync } from '../session-workspace-root.js'
 
 const log = createLogger('session.commands')
 
@@ -206,7 +207,7 @@ export class SessionCommandController {
       if (workspaceId) {
         const wsRepo = new WorkspaceRepository(this.db)
         const ws = wsRepo.get(workspaceId)
-        workspacePath = ws?.root_path ?? null
+        workspacePath = ws == null ? null : ensureSessionWorkspaceRootPathSync(ws, params.sessionId)
       }
     } catch {
       // ignore parse errors
@@ -258,7 +259,7 @@ export class SessionCommandController {
       if (workspaceId) {
         const wsRepo = new WorkspaceRepository(this.db)
         const ws = wsRepo.get(workspaceId)
-        workspacePath = ws?.root_path ?? null
+        workspacePath = ws == null ? null : ensureSessionWorkspaceRootPathSync(ws, params.sessionId)
       }
     } catch {
       /* ignore */
@@ -465,7 +466,7 @@ export class SessionCommandController {
       const workspaceId = workspaceIds[0]
       if (workspaceId) {
         const ws = new WorkspaceRepository(this.db).get(workspaceId)
-        return ws?.root_path ?? null
+        return ws == null ? null : ensureSessionWorkspaceRootPathSync(ws, sessionId)
       }
     } catch {
       // ignore parse errors

@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  SessionId,
   WorkspaceSearchContentMatch,
   WorkspaceSearchContentStats,
   WorkspaceSearchFileHit,
@@ -39,6 +40,7 @@ const CONTENT_MIN_QUERY = 2
 
 export interface WorkspaceSearchParams {
   workspaceId: string | null
+  sessionId?: SessionId | null
   mode: SearchMode
   query: string
   caseSensitive: boolean
@@ -48,6 +50,7 @@ export interface WorkspaceSearchParams {
 
 export function useWorkspaceSearch({
   workspaceId,
+  sessionId = null,
   mode,
   query,
   caseSensitive,
@@ -126,7 +129,7 @@ export function useWorkspaceSearch({
       totalFiles: 0,
       fromCache: true,
     })
-  }, [workspaceId, cancelActive])
+  }, [workspaceId, sessionId, cancelActive])
 
   // 面板关闭 / 组件卸载时停止主进程扫描，避免隐藏后继续消耗 IO。
   useEffect(
@@ -156,6 +159,7 @@ export function useWorkspaceSearch({
       try {
         const res = await window.spark.invoke('workspace-search:content', {
           workspaceId,
+          ...(sessionId != null ? { sessionId } : {}),
           requestId,
           query: q,
           caseSensitive,
@@ -172,7 +176,7 @@ export function useWorkspaceSearch({
         }))
       }
     },
-    [workspaceId, caseSensitive, cancelActive],
+    [workspaceId, sessionId, caseSensitive, cancelActive],
   )
 
   const runContentNow = useCallback((): void => {
@@ -216,6 +220,7 @@ export function useWorkspaceSearch({
         try {
           const res = await window.spark.invoke('workspace-search:files', {
             workspaceId,
+            ...(sessionId != null ? { sessionId } : {}),
             query: q,
             limit: 200,
             ...(wantsRefresh ? { refresh: true } : {}),
@@ -260,7 +265,16 @@ export function useWorkspaceSearch({
       window.clearTimeout(timer)
       if (contentDebounceTimerRef.current === timer) contentDebounceTimerRef.current = null
     }
-  }, [workspaceId, mode, query, caseSensitive, refreshToken, runContentSearch, cancelActive])
+  }, [
+    workspaceId,
+    sessionId,
+    mode,
+    query,
+    caseSensitive,
+    refreshToken,
+    runContentSearch,
+    cancelActive,
+  ])
 
   return { ...state, runContentNow }
 }

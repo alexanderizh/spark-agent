@@ -178,7 +178,14 @@ export class WorkspaceService {
     params: ListDirectoryTreeParams = {},
   ): Promise<WorkspaceTreeEntry[]> {
     const workspace = this.repo.findByIdOrFail(workspaceId)
-    const rootPath = path.resolve(workspace.root_path)
+    return this.listDirectoryTreeAtRoot(workspace.root_path, params)
+  }
+
+  async listDirectoryTreeAtRoot(
+    workspaceRootPath: string,
+    params: ListDirectoryTreeParams = {},
+  ): Promise<WorkspaceTreeEntry[]> {
+    const rootPath = path.resolve(workspaceRootPath)
     const startRelativePath = normalizeRelativePath(params.path ?? '')
     const startPath = resolveInsideRoot(rootPath, startRelativePath)
     await assertDirectory(startPath)

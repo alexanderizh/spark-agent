@@ -16,10 +16,9 @@ import { shell } from 'electron'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { createLogger } from '@spark/shared'
-import { WorkspaceRepository } from '@spark/storage'
-import { getDatabase } from '../db.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
 import { isPathNestedIn, resolveInsideRoot } from './pathGuard.js'
+import { resolveSessionScopedWorkspaceRoot } from './sessionWorkspaceRoot.js'
 import { typedIpcHandle } from './typed-ipc.js'
 
 const log = createLogger('file-operations-ipc')
@@ -81,7 +80,11 @@ function resolvePair(rootPath: string, fromPath: string, toPath: string): [strin
  * - overwrite：删除目标后继续
  * - merge：目录对目录交由调用方逐项合并；文件视为 overwrite
  */
-async function resolveConflict(toAbs: string, ifExists: ConflictPolicy, isDirectory: boolean): Promise<void> {
+async function resolveConflict(
+  toAbs: string,
+  ifExists: ConflictPolicy,
+  isDirectory: boolean,
+): Promise<void> {
   if (!(await pathExists(toAbs))) return
   if (ifExists === 'error') {
     throw new Error('目标已存在')
@@ -281,27 +284,27 @@ export async function copyPath(
 
 export function registerFileOperationsIpc(): void {
   typedIpcHandle('file:trash', async (req) => {
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return trashPath(workspace.root_path, req.path)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    return trashPath(rootPath, req.path)
   })
 
   typedIpcHandle('file:create-file', async (req) => {
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return createFile(workspace.root_path, req.path, req.content)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    return createFile(rootPath, req.path, req.content)
   })
 
   typedIpcHandle('file:create-directory', async (req) => {
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return createDirectory(workspace.root_path, req.path)
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    return createDirectory(rootPath, req.path)
   })
 
   typedIpcHandle('file:move', async (req) => {
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return movePath(workspace.root_path, req.fromPath, req.toPath, req.ifExists ?? 'error')
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    return movePath(rootPath, req.fromPath, req.toPath, req.ifExists ?? 'error')
   })
 
   typedIpcHandle('file:copy', async (req) => {
-    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
-    return copyPath(workspace.root_path, req.fromPath, req.toPath, req.ifExists ?? 'error')
+    const rootPath = await resolveSessionScopedWorkspaceRoot(req.workspaceId, req.sessionId)
+    return copyPath(rootPath, req.fromPath, req.toPath, req.ifExists ?? 'error')
   })
 }

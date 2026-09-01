@@ -12,6 +12,7 @@
 import { useState, type DragEvent } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from '@lobehub/ui'
+import type { SessionId } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import { ConfirmDialog } from '../../ConfirmDialog'
 import { useToast } from '../../Toast'
@@ -45,6 +46,7 @@ import {
 
 export interface FileExplorerPanelProps {
   workspaceId: string | null
+  sessionId?: SessionId | null
   workspaceRootPath: string | null
   expandedDirs: Set<string>
   onExpandedChange: (next: Set<string>) => void
@@ -60,6 +62,7 @@ export interface FileExplorerPanelProps {
 
 export function FileExplorerPanel({
   workspaceId,
+  sessionId = null,
   workspaceRootPath,
   expandedDirs,
   onExpandedChange,
@@ -79,6 +82,7 @@ export function FileExplorerPanel({
 
   const tree = useFileExplorerTree({
     workspaceId,
+    sessionId,
     enabled: workspaceId != null,
     expandedDirs,
     onExpandedChange,
@@ -139,7 +143,13 @@ export function FileExplorerPanel({
       return
     }
     // 'error' 策略：目标已存在即报错，绝不静默覆盖
-    const res = await movePath(workspaceId, payload.relPath, target, 'error')
+    const res = await movePath(
+      workspaceId,
+      payload.relPath,
+      target,
+      'error',
+      sessionId ?? undefined,
+    )
     if (res.ok) {
       toast.success(`已移动到 ${targetDir === ROOT_PATH ? '根目录' : baseName(targetDir)}`)
       setSelectedPath(target)
@@ -206,7 +216,7 @@ export function FileExplorerPanel({
           toast.info('源与目标相同')
           return
         }
-        const res = await movePath(workspaceId, cb.path, target, 'error')
+        const res = await movePath(workspaceId, cb.path, target, 'error', sessionId ?? undefined)
         if (res.ok) {
           toast.success('已移动')
           setFileClipboard(null)
@@ -216,7 +226,7 @@ export function FileExplorerPanel({
         return
       }
       // 复制：rename 策略 → 目标已存在或同源时后端自动改名 _copy / _copy1 / _copy2 …
-      const res = await copyPath(workspaceId, cb.path, target, 'rename')
+      const res = await copyPath(workspaceId, cb.path, target, 'rename', sessionId ?? undefined)
       if (res.ok) {
         if (res.finalPath != null && res.finalPath !== target) {
           toast.success(`已复制为 ${baseName(res.finalPath)}`)
@@ -247,7 +257,7 @@ export function FileExplorerPanel({
         const parent = parentPath(rt.path)
         const newPath = parent === '' ? value : `${parent}/${value}`
         if (newPath === rt.path) return
-        const res = await movePath(workspaceId, rt.path, newPath, 'error')
+        const res = await movePath(workspaceId, rt.path, newPath, 'error', sessionId ?? undefined)
         if (res.ok) {
           toast.success('已重命名')
           setSelectedPath(newPath)
@@ -259,8 +269,8 @@ export function FileExplorerPanel({
         const newPath = parent === '' ? value : `${parent}/${value}`
         const res =
           rt.kind === 'create-file'
-            ? await createFilePath(workspaceId, newPath)
-            : await createDirectoryPath(workspaceId, newPath)
+            ? await createFilePath(workspaceId, newPath, undefined, sessionId ?? undefined)
+            : await createDirectoryPath(workspaceId, newPath, sessionId ?? undefined)
         if (res.ok) {
           toast.success('已创建')
           if (rt.kind === 'create-file') openAndSelect(newPath)
@@ -277,7 +287,7 @@ export function FileExplorerPanel({
     const p = confirmDeletePath
     setConfirmDeletePath(null)
     if (p == null || workspaceId == null) return
-    const res = await trashPath(workspaceId, p)
+    const res = await trashPath(workspaceId, p, sessionId ?? undefined)
     if (res.ok) toast.success('已删除到回收站')
     else toast.error(res.error ?? '删除失败')
   }

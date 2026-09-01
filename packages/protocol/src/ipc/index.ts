@@ -1209,6 +1209,8 @@ export interface WorkspaceDeleteResponse {
 
 export interface WorkspaceOpenFolderRequest {
   workspaceId: string
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId?: SessionId
 }
 
 export interface WorkspaceOpenFolderResponse {
@@ -1234,6 +1236,8 @@ export interface WorkspaceTreeEntry {
 
 export interface WorkspaceListDirectoryRequest {
   workspaceId: string
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId?: SessionId
   path?: string
   maxDepth?: number
   /** Include commonly excluded dependency/build directories. `.git` remains hidden. */
@@ -3783,6 +3787,8 @@ export interface UpdateSettingsResponse {
 
 export interface WorkspaceWatchStartRequest {
   workspaceId: string
+  /** Resolve a no-project workspace to this session's isolated child directory. */
+  sessionId?: SessionId
   /** 需要忽略的 glob 模式（默认包含 node_modules, .git 等） */
   ignorePatterns?: string[]
 }
@@ -3793,6 +3799,7 @@ export interface WorkspaceWatchStartResponse {
 
 export interface WorkspaceWatchStopRequest {
   workspaceId: string
+  sessionId?: SessionId
 }
 
 export interface WorkspaceWatchStopResponse {
@@ -4887,12 +4894,14 @@ export interface FileOperationResult {
 
 export interface FileTrashRequest {
   workspaceId: string
+  sessionId?: SessionId
   /** 相对 workspace root 的 posix 路径 */
   path: string
 }
 
 export interface FileCreateFileRequest {
   workspaceId: string
+  sessionId?: SessionId
   /** 相对 workspace root 的 posix 路径；父目录不存在时自动 mkdir -p */
   path: string
   /** 初始内容（可选，默认创建空文件） */
@@ -4901,12 +4910,14 @@ export interface FileCreateFileRequest {
 
 export interface FileCreateDirectoryRequest {
   workspaceId: string
+  sessionId?: SessionId
   /** 相对 workspace root 的 posix 路径；支持递归创建多层 */
   path: string
 }
 
 export interface FileMoveRequest {
   workspaceId: string
+  sessionId?: SessionId
   fromPath: string
   toPath: string
   /** 目标已存在时的处理策略（默认 error） */
@@ -4915,6 +4926,7 @@ export interface FileMoveRequest {
 
 export interface FileCopyRequest {
   workspaceId: string
+  sessionId?: SessionId
   fromPath: string
   toPath: string
   /** 目标已存在时的处理策略（默认 error） */

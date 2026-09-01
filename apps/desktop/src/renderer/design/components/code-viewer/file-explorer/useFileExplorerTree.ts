@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { WorkspaceFileChangePayload, WorkspaceTreeEntry } from '@spark/protocol'
+import type { SessionId, WorkspaceFileChangePayload, WorkspaceTreeEntry } from '@spark/protocol'
 import { useIpcStream } from '../../../hooks/useIpc'
 import {
   ROOT_PATH,
@@ -26,6 +26,7 @@ const RELOAD_DEBOUNCE_MS = 250
 
 export interface UseFileExplorerTreeOptions {
   workspaceId: string | null
+  sessionId?: SessionId | null
   enabled: boolean
   expandedDirs: Set<string>
   onExpandedChange: (next: Set<string>) => void
@@ -48,10 +49,12 @@ function makeRootNode(): FileExplorerNode {
 
 async function listDirectChildren(
   workspaceId: string,
+  sessionId: SessionId | null,
   dirPath: string,
 ): Promise<WorkspaceTreeEntry[]> {
   const res = (await window.spark.invoke('workspace:list-directory', {
     workspaceId,
+    ...(sessionId != null ? { sessionId } : {}),
     ...(dirPath === ROOT_PATH ? {} : { path: dirPath }),
     maxDepth: 0,
     includeIgnoredDirectories: true,
@@ -78,6 +81,7 @@ function deleteSubtree(
 
 export function useFileExplorerTree({
   workspaceId,
+  sessionId = null,
   enabled,
   expandedDirs,
   onExpandedChange,
@@ -106,7 +110,7 @@ export function useFileExplorerTree({
     try {
       const next = new Map<string, FileExplorerNode>()
       next.set(ROOT_PATH, makeRootNode())
-      for (const entry of await listDirectChildren(wid, ROOT_PATH)) {
+      for (const entry of await listDirectChildren(wid, sessionId, ROOT_PATH)) {
         const node = toExplorerNode(entry)
         next.set(node.path, node)
       }
@@ -117,7 +121,7 @@ export function useFileExplorerTree({
       for (const dirPath of restoredDirs) {
         if (next.get(dirPath)?.type !== 'directory') continue
         try {
-          for (const entry of await listDirectChildren(wid, dirPath)) {
+          for (const entry of await listDirectChildren(wid, sessionId, dirPath)) {
             const node = toExplorerNode(entry)
             next.set(node.path, node)
           }
@@ -135,51 +139,54 @@ export function useFileExplorerTree({
         setLoading(false)
       }
     }
-  }, [])
+  }, [sessionId])
 
   /**
    * 重拉某目录的直接子项（maxDepth:0）。
    * 清掉该目录下所有已加载子孙（避免孤立陈旧节点），再套入权威一级子项；
    * 更深的孙层会在用户展开时由 toggleDir 重新 lazy load。
    */
-  const reloadDir = useCallback(async (dirPath: string) => {
-    const wid = workspaceIdRef.current
-    if (wid == null) return
-    try {
-      const entries = await listDirectChildren(wid, dirPath)
-      if (workspaceIdRef.current !== wid) return
-      setNodes((prev) => {
-        const next = new Map(prev)
-        const prefix = dirPath === ROOT_PATH ? '' : dirPath + '/'
-        for (const key of Array.from(next.keys())) {
-          if (prefix === '') {
-            if (key !== ROOT_PATH) next.delete(key)
-          } else if (key.startsWith(prefix)) {
-            next.delete(key)
-          }
-        }
-        for (const entry of entries) {
-          const node = toExplorerNode(entry)
-          next.set(node.path, node)
-        }
-        // 修正 dir 的 hasChildren
-        const dirNode = next.get(dirPath)
-        if (dirNode != null && dirNode.type === 'directory') {
-          let hasChild = false
-          for (const key of next.keys()) {
-            if (key !== dirPath && parentPath(key) === dirPath) {
-              hasChild = true
-              break
+  const reloadDir = useCallback(
+    async (dirPath: string) => {
+      const wid = workspaceIdRef.current
+      if (wid == null) return
+      try {
+        const entries = await listDirectChildren(wid, sessionId, dirPath)
+        if (workspaceIdRef.current !== wid) return
+        setNodes((prev) => {
+          const next = new Map(prev)
+          const prefix = dirPath === ROOT_PATH ? '' : dirPath + '/'
+          for (const key of Array.from(next.keys())) {
+            if (prefix === '') {
+              if (key !== ROOT_PATH) next.delete(key)
+            } else if (key.startsWith(prefix)) {
+              next.delete(key)
             }
           }
-          next.set(dirPath, { ...dirNode, hasChildren: hasChild })
-        }
-        return next
-      })
-    } catch {
-      /* 单目录 reload 失败不致命，下次 refresh 兜底 */
-    }
-  }, [])
+          for (const entry of entries) {
+            const node = toExplorerNode(entry)
+            next.set(node.path, node)
+          }
+          // 修正 dir 的 hasChildren
+          const dirNode = next.get(dirPath)
+          if (dirNode != null && dirNode.type === 'directory') {
+            let hasChild = false
+            for (const key of next.keys()) {
+              if (key !== dirPath && parentPath(key) === dirPath) {
+                hasChild = true
+                break
+              }
+            }
+            next.set(dirPath, { ...dirNode, hasChildren: hasChild })
+          }
+          return next
+        })
+      } catch {
+        /* 单目录 reload 失败不致命，下次 refresh 兜底 */
+      }
+    },
+    [sessionId],
+  )
 
   const flushPendingReloads = useCallback(() => {
     reloadTimerRef.current = null
@@ -208,18 +215,28 @@ export function useFileExplorerTree({
       return
     }
     void loadRoot()
-    void window.spark.invoke('workspace:watch-start', { workspaceId }).catch(() => {
-      /* watch 启动失败不阻断浏览，仅失去实时性 */
-    })
+    void window.spark
+      .invoke('workspace:watch-start', {
+        workspaceId,
+        ...(sessionId != null ? { sessionId } : {}),
+      })
+      .catch(() => {
+        /* watch 启动失败不阻断浏览，仅失去实时性 */
+      })
     return () => {
       rootLoadGenerationRef.current += 1
       if (reloadTimerRef.current != null) clearTimeout(reloadTimerRef.current)
       pendingReloadRef.current.clear()
-      void window.spark.invoke('workspace:watch-stop', { workspaceId }).catch(() => {
-        /* 忽略 */
-      })
+      void window.spark
+        .invoke('workspace:watch-stop', {
+          workspaceId,
+          ...(sessionId != null ? { sessionId } : {}),
+        })
+        .catch(() => {
+          /* 忽略 */
+        })
     }
-  }, [enabled, workspaceId, loadRoot])
+  }, [enabled, workspaceId, sessionId, loadRoot])
 
   // 监听文件变更：delete 本地级联删 + reload 父；create/modify/rename reload 父
   useIpcStream('stream:workspace:file-change', (payload: WorkspaceFileChangePayload) => {
