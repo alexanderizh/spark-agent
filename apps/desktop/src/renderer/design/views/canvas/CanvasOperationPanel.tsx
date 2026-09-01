@@ -125,7 +125,6 @@ import {
   canvasMediaInputModeOptions,
   capabilityIdForCanvasMediaInputMode,
   executionCanvasInputBindings,
-  moveCanvasMediaInputBinding,
   resolveCanvasMediaInputMode,
 } from './canvasMediaInputMode'
 import {
@@ -796,7 +795,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     document: promptDocument,
     setDocument: setPromptDocument,
     bindings: inputBindings,
-    setBindings: setInputBindings,
     selectedInputNodeIds,
     setSelectedInputNodeIds,
     firstFrameNodeId,
@@ -806,6 +804,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     referenceFrameNodeIds,
     setReferenceFrameNodeIds,
     removeNode: removeInputNode,
+    moveMediaInput,
   } = useCanvasInputBindings({
     resetKey: node.id,
     initialDocument: initialPromptDocument,
@@ -1296,9 +1295,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const handleMediaInputMove = useCallback(
     (sourceNodeId: string, direction: -1 | 1) => {
       markConfigurationTouched()
-      setInputBindings((current) => moveCanvasMediaInputBinding(current, sourceNodeId, direction))
+      moveMediaInput(sourceNodeId, direction)
     },
-    [markConfigurationTouched, setInputBindings],
+    [markConfigurationTouched, moveMediaInput],
   )
   const handleMediaInputRemove = useCallback(
     (sourceNodeId: string) => {

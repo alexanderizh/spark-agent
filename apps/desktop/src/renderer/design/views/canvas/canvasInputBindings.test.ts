@@ -6,6 +6,7 @@ import {
   addCanvasInputBinding,
   createCanvasInputBinding,
   materializeCanvasInputBindingReferences,
+  moveCanvasMediaInput,
   removeCanvasInputBinding,
   replaceCanvasInputBindingRoles,
   reconcileCanvasInputBindings,
@@ -386,6 +387,188 @@ describe('canvasInputBindings', () => {
     ])
     expect(removeCanvasInputNodeFromPromptDocument(document, 'image-2').blocks).toEqual([
       document.blocks[0],
+    ])
+  })
+})
+
+describe('canvasInputBindings order normalization', () => {
+  it('renumbers stale media binding orders to follow the prompt document block order', () => {
+    // 复现任务面板顺序脱节：夜景先插入（order 小）、人物立绘后插入（order 为时间戳），
+    // 用户随后在输入区把人物立绘的引用块挪到夜景前面（文档块顺序已变）。
+    const character = canvasNode('image-character', 'image')
+    const scene = canvasNode('image-scene', 'image')
+    const staleTime = 1750000000000
+    const result = reconcileCanvasInputBindings({
+      bindings: [
+        binding({
+          id: 'manual:image-scene:reference',
+          sourceNodeId: 'image-scene',
+          order: 0,
+          promptBlockId: 'block-scene',
+        }),
+        binding({
+          id: 'manual:image-character:reference',
+          sourceNodeId: 'image-character',
+          order: staleTime,
+          promptBlockId: 'block-character',
+        }),
+      ],
+      nodes: [character, scene],
+      connectionNodeIds: [],
+      document: {
+        version: 2,
+        blocks: [
+          { kind: 'text', id: 'text-1', text: '使用<Picture 1>的人物和<Picture 2>的场景' },
+          {
+            kind: 'reference',
+            id: 'block-character',
+            source: 'manual',
+            sourceNodeId: 'image-character',
+            relation: 'reference_image',
+            label: '人物立绘',
+            order: staleTime,
+          },
+          {
+            kind: 'reference',
+            id: 'block-scene',
+            source: 'manual',
+            sourceNodeId: 'image-scene',
+            relation: 'reference_image',
+            label: '夜景',
+            order: 0,
+          },
+        ],
+      },
+    })
+
+    // 归一化后：人物立绘（文档块在前）排在夜景之前 —— 编排区序号 = 发送顺序。
+    const orderByNode = new Map(result.map((item) => [item.sourceNodeId, item.order]))
+    expect(orderByNode.get('image-character')).toBeLessThan(orderByNode.get('image-scene')!)
+    expect(activeCanvasInputNodeIds(result)).toEqual(['image-character', 'image-scene'])
+  })
+
+  it('moves a media input and reorders both prompt blocks and binding orders', () => {
+    const character = canvasNode('image-character', 'image')
+    const scene = canvasNode('image-scene', 'image')
+    const video = canvasNode('video-source', 'video')
+    const document = {
+      version: 2 as const,
+      blocks: [
+        { kind: 'text' as const, id: 'text-1', text: '提示词正文' },
+        {
+          kind: 'reference' as const,
+          id: 'block-character',
+          source: 'manual' as const,
+          sourceNodeId: 'image-character',
+          relation: 'reference_image' as const,
+          label: '人物立绘',
+          order: 0,
+        },
+        {
+          kind: 'reference' as const,
+          id: 'block-scene',
+          source: 'manual' as const,
+          sourceNodeId: 'image-scene',
+          relation: 'reference_image' as const,
+          label: '夜景',
+          order: 1,
+        },
+        {
+          kind: 'reference' as const,
+          id: 'block-video',
+          source: 'manual' as const,
+          sourceNodeId: 'video-source',
+          relation: 'reference_video' as const,
+          label: '参考视频',
+          order: 2,
+        },
+      ],
+    }
+    const bindings = [
+      binding({
+        id: 'manual:image-character:reference',
+        sourceNodeId: 'image-character',
+        order: 0,
+        promptBlockId: 'block-character',
+      }),
+      binding({
+        id: 'manual:image-scene:reference',
+        sourceNodeId: 'image-scene',
+        order: 1,
+        promptBlockId: 'block-scene',
+      }),
+      binding({
+        id: 'manual:video-source:input',
+        sourceNodeId: 'video-source',
+        kind: 'video',
+        relation: 'reference_video',
+        role: 'input',
+        order: 2,
+        promptBlockId: 'block-video',
+      }),
+    ]
+
+    // 夜景前移一位：输入区 chips、绑定顺序都应变为 人物 → 夜景 → 视频 之前的 夜景 → 人物 → 视频。
+    const moved = moveCanvasMediaInput({ bindings, document }, 'image-scene', -1)
+
+    expect(moved.document.blocks.map((block) => block.id)).toEqual([
+      'text-1',
+      'block-scene',
+      'block-character',
+      'block-video',
+    ])
+    expect(activeCanvasInputNodeIds(moved.bindings)).toEqual([
+      'image-scene',
+      'image-character',
+      'video-source',
+    ])
+
+    // 再前移一次越界：保持不变。
+    const boundary = moveCanvasMediaInput(moved, 'image-scene', -1)
+    expect(boundary.document.blocks.map((block) => block.id)).toEqual(
+      moved.document.blocks.map((block) => block.id),
+    )
+    expect(activeCanvasInputNodeIds(boundary.bindings)).toEqual(
+      activeCanvasInputNodeIds(moved.bindings),
+    )
+  })
+
+  it('keeps binding-only media appended after document-referenced media when moving', () => {
+    const document = {
+      version: 2 as const,
+      blocks: [
+        {
+          kind: 'reference' as const,
+          id: 'block-referenced',
+          source: 'manual' as const,
+          sourceNodeId: 'image-referenced',
+          relation: 'reference_image' as const,
+          label: '文档内引用',
+          order: 0,
+        },
+      ],
+    }
+    const bindings = [
+      binding({
+        id: 'manual:image-referenced:reference',
+        sourceNodeId: 'image-referenced',
+        order: 0,
+        promptBlockId: 'block-referenced',
+      }),
+      binding({
+        id: 'picker:image-loose:reference',
+        sourceNodeId: 'image-loose',
+        origin: 'picker',
+        order: 1,
+      }),
+    ]
+
+    // 无文档块的素材（如历史 picker 引用）尝试越过文档内引用时保持追加在后：
+    // 文档顺序是唯一权威，归一化会把它收敛回文档内引用之后。
+    const unchanged = moveCanvasMediaInput({ bindings, document }, 'image-loose', -1)
+    expect(activeCanvasInputNodeIds(unchanged.bindings)).toEqual([
+      'image-referenced',
+      'image-loose',
     ])
   })
 })

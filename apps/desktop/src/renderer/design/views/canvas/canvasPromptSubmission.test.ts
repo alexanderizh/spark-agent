@@ -1,11 +1,68 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { CanvasPromptDocument } from '@spark/protocol'
+import type {
+  CanvasInputBinding,
+  CanvasPromptDocument,
+  CanvasPromptRelation,
+} from '@spark/protocol'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
 import {
   buildCanvasPromptDocumentForInputs,
   buildCanvasPromptSubmission,
 } from './canvasPromptSubmission'
 import { encodeToSafeFileUrl } from './canvas-safe-file'
+
+function mediaNode(id: string, url: string, type: 'image' | 'video' = 'image'): CanvasNode {
+  return {
+    ...imageNode(),
+    id,
+    type,
+    title: id,
+    assetId: null,
+    data: {
+      url,
+      mimeType: type === 'video' ? 'video/mp4' : 'image/png',
+    },
+  }
+}
+
+function referenceBlock(
+  id: string,
+  sourceNodeId: string,
+  relation: CanvasPromptRelation,
+  label: string,
+  order: number,
+): CanvasPromptDocument['blocks'][number] {
+  return {
+    kind: 'reference',
+    id,
+    source: 'manual',
+    sourceNodeId,
+    relation,
+    label,
+    order,
+  }
+}
+
+function mediaBinding(
+  sourceNodeId: string,
+  kind: 'image' | 'video',
+  relation: CanvasPromptRelation,
+  role: NonNullable<CanvasInputBinding['role']>,
+  order: number,
+  promptBlockId?: string,
+): CanvasInputBinding {
+  return {
+    id: `manual:${sourceNodeId}:${role}`,
+    sourceNodeId,
+    origin: 'manual',
+    kind,
+    relation,
+    role,
+    enabled: true,
+    order,
+    ...(promptBlockId ? { promptBlockId } : {}),
+  }
+}
 
 function imageNode(): CanvasNode {
   return {
@@ -475,6 +532,85 @@ describe('canvasPromptSubmission', () => {
     expect(result.inputFiles).toBeUndefined()
     expect(result.compiledUserText).toBe('保持主体一致')
     expect(result.relationManifest).toEqual([])
+  })
+
+  it('sends media files in the prompt document order regardless of stale binding orders', async () => {
+    // 复现任务面板顺序脱节：夜景先 @ 引用（order 为小时间戳）、人物立绘后引用
+    // （order 为大时间戳），用户随后在输入区把人物立绘挪到最前。模型收到的资源
+    // 顺序必须跟随文档块顺序（人物 → 夜景 → 视频），而不是过期的绑定 order。
+    const staleTime = 1750000000000
+    const character = mediaNode('character', 'data:image/png;base64,QQ==')
+    const scene = mediaNode('scene', 'data:image/png;base64,Qg==')
+    const sourceVideo = mediaNode('source-video', 'https://cdn.example.com/source.mp4', 'video')
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text', text: '使用<Picture 1>的人物和<Picture 2>中的场景' },
+        referenceBlock('block-character', character.id, 'reference_image', '人物立绘', 0),
+        referenceBlock('block-scene', scene.id, 'reference_image', '夜景', staleTime),
+        referenceBlock('block-video', sourceVideo.id, 'reference_video', '参考视频', staleTime + 1),
+      ],
+    }
+    const result = await buildCanvasPromptSubmission({
+      document,
+      snapshot: { ...snapshot(), nodes: [scene, character, sourceVideo] },
+      operation: 'text_to_video',
+      inputBindings: [
+        mediaBinding('scene', 'image', 'reference_image', 'reference', 0, 'block-scene'),
+        mediaBinding(
+          'character',
+          'image',
+          'reference_image',
+          'reference',
+          staleTime,
+          'block-character',
+        ),
+        mediaBinding(
+          'source-video',
+          'video',
+          'reference_video',
+          'input',
+          staleTime + 1,
+          'block-video',
+        ),
+      ],
+    })
+
+    expect(result.inputFiles?.map((file) => file.url ?? file.dataUrl)).toEqual([
+      'data:image/png;base64,QQ==',
+      'data:image/png;base64,Qg==',
+      'https://cdn.example.com/source.mp4',
+    ])
+  })
+
+  it('appends binding-only inputs in binding order rather than snapshot node order', async () => {
+    const hero = imageNode()
+    const looseA = mediaNode('loose-a', 'data:image/png;base64,Qw==')
+    const looseB = mediaNode('loose-b', 'data:image/png;base64,QA==')
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text', text: '参考以下素材' },
+        referenceBlock('block-hero', hero.id, 'reference_image', '小满', 0),
+      ],
+    }
+    const result = await buildCanvasPromptSubmission({
+      document,
+      // snapshot 中 loose-a 在 loose-b 之前，与绑定顺序（b 在前）故意相反。
+      snapshot: { ...snapshot(), nodes: [hero, looseA, looseB] },
+      operation: 'text_to_image',
+      inputBindings: [
+        mediaBinding('hero', 'image', 'reference_image', 'reference', 0, 'block-hero'),
+        mediaBinding('loose-b', 'image', 'reference_image', 'reference', 1),
+        mediaBinding('loose-a', 'image', 'reference_image', 'reference', 2),
+      ],
+    })
+
+    expect(result.inputFiles?.map((file) => file.url ?? file.dataUrl)).toEqual([
+      'data:image/png;base64,AA==',
+      'data:image/png;base64,QA==',
+      'data:image/png;base64,Qw==',
+    ])
   })
 })
 

@@ -278,30 +278,6 @@ export function canvasMediaInputAssignments(input: {
   return assignMediaInventory(canonicalMediaInventory(input.bindings), input.mode, input.option)
 }
 
-export function moveCanvasMediaInputBinding(
-  bindings: readonly CanvasInputBinding[],
-  sourceNodeId: string,
-  direction: -1 | 1,
-): CanvasInputBinding[] {
-  const sourceIds = canonicalMediaInventory(bindings).map((binding) => binding.sourceNodeId)
-  const index = sourceIds.indexOf(sourceNodeId)
-  const target = index + direction
-  if (index < 0 || target < 0 || target >= sourceIds.length)
-    return bindings.map((item) => ({ ...item }))
-  ;[sourceIds[index], sourceIds[target]] = [sourceIds[target]!, sourceIds[index]!]
-  const rank = new Map(sourceIds.map((id, order) => [id, order]))
-  const firstMediaOrder = bindings.reduce(
-    (current, binding) =>
-      binding.enabled && MEDIA_KINDS.has(binding.kind) ? Math.min(current, binding.order) : current,
-    Number.POSITIVE_INFINITY,
-  )
-  const base = Number.isFinite(firstMediaOrder) ? firstMediaOrder : 0
-  return bindings.map((binding) => {
-    const order = rank.get(binding.sourceNodeId)
-    return order == null ? { ...binding } : { ...binding, order: base + order }
-  })
-}
-
 export function canvasInputRolesFromBindings(
   bindings: readonly CanvasInputBinding[],
 ): Record<string, CanvasInputBindingRole | CanvasInputBindingRole[]> | undefined {

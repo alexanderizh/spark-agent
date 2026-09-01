@@ -249,7 +249,159 @@ export function reconcileCanvasInputBindings(input: {
     )
     next = addCanvasInputBinding(next, candidate)
   }
-  return next
+  return normalizeCanvasInputBindingOrders(next, input.document)
+}
+
+const MEDIA_BINDING_KINDS = new Set<CanvasInputBinding['kind']>(['image', 'video', 'audio', 'file'])
+
+/**
+ * 媒体绑定提交顺序归一化：以提示词文档为唯一权威顺序。
+ *
+ * Why: binding.order 历史上取自 block.order（手动 @ 引用为 Date.now()、连线引用为
+ * 创建时的引用块计数），用户在编辑器中重排引用块后，既有绑定的 order 不会跟随更新；
+ * 而编译器（canvasPromptCompiler）按文档块数组顺序产出 inputFiles，最终发给上游
+ * 模型的资源顺序——即提示词中 <Picture N> / <Video N> 的语义——完全由文档顺序决定。
+ * 不归一化的话，素材编排区按 binding.order 展示的序号会与实际发送顺序脱节。
+ *
+ * 规则（与 applyCanvasMediaInputModeToBindings 的「非媒体在前、媒体在后」惯例一致）：
+ * - 非媒体绑定保持原相对顺序在前；
+ * - 文档中已引用的启用媒体绑定按 promptBlockId 对应块在文档中的位置排序；
+ * - 未在文档中引用的媒体绑定按原相对顺序追加在后。
+ *
+ * 仅重写 order 值、不改变绑定数组位置——数组位置本身无语义（展示与提交均按 order
+ * 排序），保持位置稳定可避免破坏既有消费方与测试对数组结构的假设。
+ */
+function normalizeCanvasInputBindingOrders(
+  bindings: readonly CanvasInputBinding[],
+  document: CanvasPromptDocument,
+): CanvasInputBinding[] {
+  const blockIndexById = new Map<string, number>()
+  for (const [index, block] of document.blocks.entries()) blockIndexById.set(block.id, index)
+
+  const nonMediaIndexes: number[] = []
+  const referenced: Array<{ index: number; blockIndex: number }> = []
+  const unreferencedIndexes: number[] = []
+  for (const [index, binding] of bindings.entries()) {
+    if (!MEDIA_BINDING_KINDS.has(binding.kind)) {
+      nonMediaIndexes.push(index)
+      continue
+    }
+    const blockIndex =
+      binding.enabled && binding.promptBlockId
+        ? blockIndexById.get(binding.promptBlockId)
+        : undefined
+    if (blockIndex != null) referenced.push({ index, blockIndex })
+    else unreferencedIndexes.push(index)
+  }
+  const byOrder = (left: number, right: number) =>
+    bindings[left]!.order - bindings[right]!.order ||
+    bindings[left]!.id.localeCompare(bindings[right]!.id)
+  nonMediaIndexes.sort(byOrder)
+  unreferencedIndexes.sort(byOrder)
+  referenced.sort(
+    (left, right) => left.blockIndex - right.blockIndex || byOrder(left.index, right.index),
+  )
+
+  const nextOrderByIndex = new Map<number, number>()
+  let order = 0
+  for (const index of nonMediaIndexes) nextOrderByIndex.set(index, order++)
+  for (const entry of referenced) nextOrderByIndex.set(entry.index, order++)
+  for (const index of unreferencedIndexes) nextOrderByIndex.set(index, order++)
+
+  return bindings.map((binding, index) => {
+    const nextOrder = nextOrderByIndex.get(index)
+    return nextOrder != null && nextOrder !== binding.order
+      ? { ...binding, order: nextOrder }
+      : binding
+  })
+}
+
+/**
+ * 素材编排区的「前移 / 后移」：媒体素材的展示与提交顺序都以提示词文档为权威，
+ * 因此移动必须同时重排文档中的引用块（输入区 chips 跟随换位）与绑定 order，
+ * 保证编排区序号、输入区引用顺序、最终发给模型的资源顺序三者一致。
+ */
+export function moveCanvasMediaInput(
+  state: { bindings: readonly CanvasInputBinding[]; document: CanvasPromptDocument },
+  sourceNodeId: string,
+  direction: -1 | 1,
+): { bindings: CanvasInputBinding[]; document: CanvasPromptDocument } {
+  const groupOrder = new Map<string, number>()
+  for (const binding of state.bindings) {
+    if (!binding.enabled || !MEDIA_BINDING_KINDS.has(binding.kind)) continue
+    const current = groupOrder.get(binding.sourceNodeId)
+    if (current == null || binding.order < current) {
+      groupOrder.set(binding.sourceNodeId, binding.order)
+    }
+  }
+  const sequence = Array.from(groupOrder.keys()).sort(
+    (left, right) =>
+      (groupOrder.get(left) ?? 0) - (groupOrder.get(right) ?? 0) || left.localeCompare(right),
+  )
+  const index = sequence.indexOf(sourceNodeId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= sequence.length) {
+    return {
+      bindings: state.bindings.map((binding) => ({ ...binding })),
+      document: { version: 2, blocks: state.document.blocks.map((block) => ({ ...block })) },
+    }
+  }
+  ;[sequence[index], sequence[target]] = [sequence[target]!, sequence[index]!]
+
+  const document = reorderMediaPromptBlocks(state.document, state.bindings, sequence)
+  // 先按新序列打临时序号，再走归一化：文档内引用收敛到块位置，无块项保持新序列相对顺序。
+  const rankByNode = new Map(sequence.map((nodeId, rank) => [nodeId, rank]))
+  const bindings = state.bindings.map((binding) => {
+    const rank = rankByNode.get(binding.sourceNodeId)
+    return rank == null ? { ...binding } : { ...binding, order: rank }
+  })
+  return {
+    bindings: normalizeCanvasInputBindingOrders(bindings, document),
+    document,
+  }
+}
+
+/** 把媒体绑定对应的引用/结构化块，按新序列置换到它们原本占据的文档槽位上。 */
+function reorderMediaPromptBlocks(
+  document: CanvasPromptDocument,
+  bindings: readonly CanvasInputBinding[],
+  sequence: readonly string[],
+): CanvasPromptDocument {
+  const blockIndexById = new Map(document.blocks.map((block, index) => [block.id, index]))
+  const blockIdsByNode = new Map<string, string[]>()
+  for (const binding of bindings) {
+    if (!binding.enabled || !MEDIA_BINDING_KINDS.has(binding.kind) || !binding.promptBlockId) {
+      continue
+    }
+    if (!blockIndexById.has(binding.promptBlockId)) continue
+    const ids = blockIdsByNode.get(binding.sourceNodeId) ?? []
+    if (!ids.includes(binding.promptBlockId)) ids.push(binding.promptBlockId)
+    blockIdsByNode.set(binding.sourceNodeId, ids)
+  }
+  const movedBlockIds: string[] = []
+  const movedIdSet = new Set<string>()
+  for (const nodeId of sequence) {
+    const ids = (blockIdsByNode.get(nodeId) ?? [])
+      .slice()
+      .sort((left, right) => (blockIndexById.get(left) ?? 0) - (blockIndexById.get(right) ?? 0))
+    for (const id of ids) {
+      if (movedIdSet.has(id)) continue
+      movedIdSet.add(id)
+      movedBlockIds.push(id)
+    }
+  }
+  const blocks = document.blocks.map((block) => ({ ...block }))
+  if (movedBlockIds.length > 0) {
+    const blockById = new Map(document.blocks.map((block) => [block.id, block]))
+    const slots = document.blocks.flatMap((block, index) =>
+      movedIdSet.has(block.id) ? [index] : [],
+    )
+    slots.forEach((slot, position) => {
+      const block = blockById.get(movedBlockIds[position] ?? '')
+      if (block) blocks[slot] = { ...block }
+    })
+  }
+  return { version: 2, blocks }
 }
 
 /**

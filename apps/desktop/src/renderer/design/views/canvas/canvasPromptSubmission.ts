@@ -57,11 +57,13 @@ export async function buildCanvasPromptSubmission(input: {
   inputBindings?: CanvasPromptTaskFields['inputBindings']
 }): Promise<CanvasPromptSubmission> {
   const resolved = resolveExecutableReferences(input.document, input.snapshot)
-  const inputNodeIds = new Set(
-    input.inputBindings
-      ? activeCanvasInputNodeIds(input.inputBindings)
-      : (input.inputNodeIds ?? []),
-  )
+  // 追加素材（未在文档中引用、仅存在于绑定的连线素材等）必须按绑定顺序进入提交文档，
+  // 与素材编排区展示顺序一致；binding.order 已在 reconcile 时归一化为「文档块位置优先」。
+  const orderedInputNodeIds = input.inputBindings
+    ? activeCanvasInputNodeIds(input.inputBindings)
+    : (input.inputNodeIds ?? [])
+  const inputNodeIds = new Set(orderedInputNodeIds)
+  const inputNodeRank = new Map(orderedInputNodeIds.map((id, index) => [id, index]))
   const selectableNodes = Array.from(
     new Map(
       [...resolveCanvasMediaInputs(input.snapshot).bindingNodes, ...resolved.nodes].map((node) => [
@@ -70,7 +72,13 @@ export async function buildCanvasPromptSubmission(input: {
       ]),
     ).values(),
   )
-  const selectedSourceNodes = selectableNodes.filter((node) => inputNodeIds.has(node.id))
+  const selectedSourceNodes = selectableNodes
+    .filter((node) => inputNodeIds.has(node.id))
+    .sort(
+      (left, right) =>
+        (inputNodeRank.get(left.id) ?? 0) - (inputNodeRank.get(right.id) ?? 0) ||
+        left.id.localeCompare(right.id),
+    )
   const inputNodes = expandCanvasInputNodes(selectedSourceNodes, input.snapshot)
   const executableInputRoles = expandInputRolesToResolvedNodes(
     input.inputRoles,

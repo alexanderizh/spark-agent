@@ -19,6 +19,7 @@ import {
   activeCanvasInputBindings,
   addCanvasInputBinding,
   createCanvasInputBinding,
+  moveCanvasMediaInput,
   reconcileCanvasInputBindings,
   removeCanvasInputBinding,
   removeCanvasInputBindingFromPromptDocument,
@@ -233,6 +234,32 @@ export function useCanvasInputBindings(input: {
     ],
   )
 
+  /** 素材编排区「前移 / 后移」：同步重排提示词文档引用块与绑定 order，保持三处顺序一致。 */
+  const moveMediaInput = useCallback(
+    (sourceNodeId: string, direction: -1 | 1) => {
+      setState((current) => {
+        const moved = moveCanvasMediaInput(current, sourceNodeId, direction)
+        return {
+          document: moved.document,
+          bindings: reconcileCanvasInputBindings({
+            bindings: moved.bindings,
+            document: moved.document,
+            nodes: input.nodes,
+            connectionNodeIds: input.connectionNodeIds,
+            promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+            outputMediaKindByNodeId: input.outputMediaKindByNodeId,
+          }),
+        }
+      })
+    },
+    [
+      input.connectionNodeIds,
+      input.nodes,
+      input.outputMediaKindByNodeId,
+      input.promptOwnerNodeIdsBySourceNodeId,
+    ],
+  )
+
   return {
     document: state.document,
     setDocument,
@@ -247,6 +274,7 @@ export function useCanvasInputBindings(input: {
     referenceFrameNodeIds,
     setReferenceFrameNodeIds,
     removeNode,
+    moveMediaInput,
   }
 }
 
