@@ -2,7 +2,7 @@
  * HistoryImportModal — 检测并导入宿主机 Claude Code / Codex 对话历史。
  *
  * 交互阶段：
- *   1. 扫描中    —— 并行扫描两个来源，展示来源状态与实时发现数量
+ *   1. 扫描中    —— 并行扫描各来源（codex / claude-code / zcode），展示来源状态与实时发现数量
  *   2. 选择      —— 虚拟列表 + 搜索/项目/时间筛选 + 完整对话预览
  *   3. 导入/完成 —— 进度反馈 + 完成汇总
  */
@@ -248,10 +248,10 @@ export function HistoryImportModal() {
       if (remaining > 0) await wait(remaining)
       if (requestId !== scanRequestRef.current) return
       setItems(nextItems)
-      // 默认落在有条目的来源上（优先 zcode > codex > claude-code，均无则保持 codex）
-      const zcodeCount = nextItems.filter((item) => item.source === 'zcode').length
+      // 默认落在有条目的来源上（与 Tab 顺序一致：codex > claude-code > zcode）
       const codexCount = nextItems.filter((item) => item.source === 'codex').length
-      setSourceTab(zcodeCount > 0 ? 'zcode' : codexCount > 0 ? 'codex' : 'claude-code')
+      const claudeCount = nextItems.filter((item) => item.source === 'claude-code').length
+      setSourceTab(codexCount > 0 ? 'codex' : claudeCount > 0 ? 'claude-code' : 'zcode')
       setPhase('select')
     } catch (error) {
       if (requestId !== scanRequestRef.current) return
@@ -301,9 +301,9 @@ export function HistoryImportModal() {
 
   const sourceOptions = useMemo(
     () => [
-      { label: `ZCode ${counts.zcode.toLocaleString()}`, value: 'zcode' },
       { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
       { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
+      { label: `ZCode ${counts.zcode.toLocaleString()}`, value: 'zcode' },
     ],
     [counts],
   )
@@ -345,8 +345,7 @@ export function HistoryImportModal() {
   )
   const allSelected =
     selectableVisible.length > 0 && selectableVisible.every((item) => selected.has(itemKey(item)))
-  const someSelected =
-    selectableVisible.some((item) => selected.has(itemKey(item))) && !allSelected
+  const someSelected = selectableVisible.some((item) => selected.has(itemKey(item))) && !allSelected
 
   const selectedStats = useMemo(
     () =>
@@ -417,6 +416,7 @@ export function HistoryImportModal() {
           source: item.source,
           filePath: item.filePath,
           sourceSessionId: item.sourceSessionId,
+          ...(item.origin != null ? { origin: item.origin } : {}),
           limit: previewLimit,
         })
         if (requestId !== previewRequestRef.current) return
@@ -462,6 +462,13 @@ export function HistoryImportModal() {
   const selectedCount = selected.size
   const discoveredCount =
     scanSources['claude-code'].count + scanSources.codex.count + scanSources.zcode.count
+  const scanningSource = (['codex', 'zcode', 'claude-code'] as HistoryImportSource[]).find(
+    (key) => scanSources[key].status === 'scanning',
+  )
+  const scanPathText =
+    scanningSource != null
+      ? `正在读取 ${scanSources[scanningSource].rootPath}/…`
+      : `正在整理 ${scanSources['claude-code'].rootPath}/…`
   const importingPercent =
     progress != null && progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -505,12 +512,18 @@ export function HistoryImportModal() {
         <div className="hi-scan-state" aria-live="polite">
           <div className="hi-scan-heading">
             <h2>正在检索本机会话</h2>
-            <p>并行扫描 Claude Code 与 Codex，本地解析后生成可预览列表</p>
+            <p>并行扫描 Codex、Claude Code 与 ZCode，本地解析后生成可预览列表</p>
           </div>
           <div className="hi-scan-flow" aria-hidden="true">
-            <ScanSourceCard source="claude-code" state={scanSources['claude-code']} />
             <ScanSourceCard source="codex" state={scanSources.codex} />
+            <ScanSourceCard source="claude-code" state={scanSources['claude-code']} />
+            <ScanSourceCard source="zcode" state={scanSources.zcode} />
             <div className="hi-scan-lines hi-scan-lines-top">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="hi-scan-lines hi-scan-lines-middle">
               <i />
               <i />
               <i />
@@ -536,17 +549,14 @@ export function HistoryImportModal() {
             <strong>{discoveredCount.toLocaleString()}</strong>
             <span>个会话已发现</span>
           </div>
-          <div className="hi-scan-path">
-            {scanSources.codex.status === 'scanning'
-              ? `正在读取 ${scanSources.codex.rootPath}/…`
-              : `正在整理 ${scanSources['claude-code'].rootPath}/…`}
-          </div>
+          <div className="hi-scan-path">{scanPathText}</div>
           <div className="hi-scan-progress">
             <span />
           </div>
           <div className="hi-scan-statuses">
-            <ScanStatusLabel source="claude-code" state={scanSources['claude-code']} />
             <ScanStatusLabel source="codex" state={scanSources.codex} />
+            <ScanStatusLabel source="claude-code" state={scanSources['claude-code']} />
+            <ScanStatusLabel source="zcode" state={scanSources.zcode} />
             <span>完成后自动进入选择页面</span>
           </div>
           <p className="hi-scan-hint">可随时关闭，已扫描结果不会自动导入</p>
@@ -635,8 +645,7 @@ export function HistoryImportModal() {
                       const item = filtered[virtualRow.index]
                       if (item == null) return null
                       const checked = selected.has(itemKey(item))
-                      const isActive =
-                        previewItem != null && itemKey(previewItem) === itemKey(item)
+                      const isActive = previewItem != null && itemKey(previewItem) === itemKey(item)
                       return (
                         <div
                           key={itemKey(item)}

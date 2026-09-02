@@ -167,11 +167,17 @@
   box-shadow: var(--shadow-sm);
 }
 
-.hi-scan-source-claude-code {
-  top: 23px;
-}
+// 三卡纵向排布（与 Tab 顺序一致：codex → claude-code → zcode），槽位 103px。
+// 连线起点对齐各卡纵向中心（卡高约 78px → center ≈ top + 39），
+// 终点汇聚到 collector 中心（top:77 + 83 ≈ y160）。
 .hi-scan-source-codex {
-  top: 176px;
+  top: 9px;
+}
+.hi-scan-source-claude-code {
+  top: 112px;
+}
+.hi-scan-source-zcode {
+  top: 215px;
 }
 
 .hi-scan-source-head {
@@ -277,12 +283,16 @@
 }
 
 .hi-scan-lines-top {
-  top: 81px;
-  transform: rotate(17deg);
+  top: 48px;
+  transform: rotate(22deg);
+}
+.hi-scan-lines-middle {
+  top: 151px;
+  transform: rotate(2deg);
 }
 .hi-scan-lines-bottom {
-  top: 234px;
-  transform: rotate(-17deg);
+  top: 254px;
+  transform: rotate(-18deg);
 }
 
 .hi-scan-collector {

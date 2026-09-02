@@ -3,7 +3,7 @@
  *
  * 检测 + 导入宿主机 Claude Code / Codex 对话历史。
  *
- *   scan()    —— 枚举两个来源的 transcript，提取轻量元数据 + 去重标记
+ *   scan()    —— 枚举各来源的 transcript，提取轻量元数据 + 去重标记
  *   preview() —— 解析单个 transcript 返回前若干条消息
  *   import()  —— 全量解析所选 transcript → AgentEvent → 建会话 + 批量写事件
  *
@@ -75,7 +75,10 @@ export interface HistoryImportDeps {
    * 按来源解析使用的 Provider/adapter（claude→claude provider，codex→codex provider）。
    * providerHint：zcode 专属的后端引擎提示（glm/claude/codex），用于映射续聊 adapter。
    */
-  resolveProvider: (source: HistoryImportSource, providerHint?: string) => Promise<ImportProviderResolution>
+  resolveProvider: (
+    source: HistoryImportSource,
+    providerHint?: string,
+  ) => Promise<ImportProviderResolution>
   /** 建会话（包装 SessionService.createSession） */
   createSession: (params: CreateImportedSessionParams) => Promise<{ sessionId: string }>
   /** 进度推送 */
@@ -261,7 +264,11 @@ export class HistoryImportService {
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         await this.walkCodex(full, out)
-      } else if (entry.isFile() && entry.name.startsWith('rollout-') && entry.name.endsWith('.jsonl')) {
+      } else if (
+        entry.isFile() &&
+        entry.name.startsWith('rollout-') &&
+        entry.name.endsWith('.jsonl')
+      ) {
         try {
           const st = await stat(full)
           out.push({ source: 'codex', filePath: full, sizeBytes: st.size, mtime: st.mtime })
@@ -321,7 +328,15 @@ export class HistoryImportService {
               const fallbackId = path.basename(entry.name, '.json')
               const meta = extractZcodeV2Meta(text, fallbackId)
               if (meta == null || meta.messageCount === 0) continue
-              out.push(this.toItem('zcode', { source: 'zcode', filePath, sizeBytes: st.size, mtime: st.mtime }, meta, importedIds, 'desktop'))
+              out.push(
+                this.toItem(
+                  'zcode',
+                  { source: 'zcode', filePath, sizeBytes: st.size, mtime: st.mtime },
+                  meta,
+                  importedIds,
+                  'desktop',
+                ),
+              )
               count++
             } catch (err) {
               log.warn(`scan zcode v2 file failed: ${filePath}: ${errMsg(err)}`)
@@ -366,12 +381,29 @@ export class HistoryImportService {
       }
     }
 
-    if (count > 0) return { source: 'zcode', available: true, count, rootPath: rootPath || path.join(this.home, '.zcode') }
+    if (count > 0)
+      return {
+        source: 'zcode',
+        available: true,
+        count,
+        rootPath: rootPath || path.join(this.home, '.zcode'),
+      }
     if (errors.length > 0) {
-      return { source: 'zcode', available: false, count, rootPath: rootPath, error: errors.join('; ') }
+      return {
+        source: 'zcode',
+        available: false,
+        count,
+        rootPath: rootPath,
+        error: errors.join('; '),
+      }
     }
     // 两侧数据都为空（未安装/未使用）：不显示为错误，标记不可用即可
-    return { source: 'zcode', available: false, count, rootPath: rootPath || path.join(this.home, '.zcode') }
+    return {
+      source: 'zcode',
+      available: false,
+      count,
+      rootPath: rootPath || path.join(this.home, '.zcode'),
+    }
   }
 
   private toItem(
@@ -404,10 +436,12 @@ export class HistoryImportService {
     filePath: string,
     limit = 20,
     sourceSessionId?: string,
+    origin?: ZcodeImportOrigin,
   ): Promise<HistoryImportPreviewResponse> {
-    const text = await this.loadRaw(source, filePath, sourceSessionId)
+    const text = await this.loadRaw(source, filePath, sourceSessionId, origin)
     const parsed = this.parse(source, text, filePath, 'preview', {
       ...(sourceSessionId != null ? { sourceSessionId } : {}),
+      ...(origin != null ? { origin } : {}),
     })
     const messages: HistoryImportPreviewMessage[] = []
     for (const event of parsed.events) {
@@ -441,7 +475,13 @@ export class HistoryImportService {
 
     for (let i = 0; i < selections.length; i++) {
       const sel = selections[i]!
-      this.emitProgress({ phase: 'parsing', current: i, total, currentTitle: sel.title, sourceSessionId: sel.sourceSessionId })
+      this.emitProgress({
+        phase: 'parsing',
+        current: i,
+        total,
+        currentTitle: sel.title,
+        sourceSessionId: sel.sourceSessionId,
+      })
 
       if (importedIds.has(sel.sourceSessionId)) {
         skipped++
@@ -459,7 +499,13 @@ export class HistoryImportService {
         log.error(`import failed for ${sel.sourceSessionId}: ${errMsg(err)}`)
         results.push({ sourceSessionId: sel.sourceSessionId, status: 'failed', error: errMsg(err) })
       }
-      this.emitProgress({ phase: 'writing', current: i + 1, total, currentTitle: sel.title, sourceSessionId: sel.sourceSessionId })
+      this.emitProgress({
+        phase: 'writing',
+        current: i + 1,
+        total,
+        currentTitle: sel.title,
+        sourceSessionId: sel.sourceSessionId,
+      })
     }
 
     this.emitProgress({ phase: 'done', current: total, total })
@@ -523,7 +569,9 @@ export class HistoryImportService {
     const updated = parsed.meta.lastTimestamp
     if (created != null || updated != null) {
       this.deps.db.raw
-        .prepare('UPDATE sessions SET created_at = COALESCE(?, created_at), updated_at = COALESCE(?, updated_at) WHERE id = ?')
+        .prepare(
+          'UPDATE sessions SET created_at = COALESCE(?, created_at), updated_at = COALESCE(?, updated_at) WHERE id = ?',
+        )
         .run(toIso(created), toIso(updated), sessionId)
     }
 
@@ -573,7 +621,12 @@ export class HistoryImportService {
       return parseZcodeV2Transcript(text, { sessionId, sourceSessionId, fallbackTimestamp })
     }
     const sourceSessionId = codexIdFromFilename(filePath)
-    return parseCodexRollout(text, { sessionId, sourceSessionId, threadName: null, fallbackTimestamp })
+    return parseCodexRollout(text, {
+      sessionId,
+      sourceSessionId,
+      threadName: null,
+      fallbackTimestamp,
+    })
   }
 
   /**
@@ -634,7 +687,9 @@ export class HistoryImportService {
         .all() as Array<{ metadata_json: string }>
       for (const row of rows) {
         try {
-          const meta = JSON.parse(row.metadata_json) as { importHistory?: { sourceSessionId?: string } }
+          const meta = JSON.parse(row.metadata_json) as {
+            importHistory?: { sourceSessionId?: string }
+          }
           const id = meta.importHistory?.sourceSessionId
           if (typeof id === 'string') set.add(id)
         } catch {
@@ -656,7 +711,11 @@ export class HistoryImportService {
         if (line.length === 0) continue
         try {
           const obj = JSON.parse(line) as { id?: string; thread_name?: string }
-          if (typeof obj.id === 'string' && typeof obj.thread_name === 'string' && obj.thread_name.length > 0) {
+          if (
+            typeof obj.id === 'string' &&
+            typeof obj.thread_name === 'string' &&
+            obj.thread_name.length > 0
+          ) {
             map.set(obj.id, obj.thread_name)
           }
         } catch {

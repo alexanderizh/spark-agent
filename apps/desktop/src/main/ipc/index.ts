@@ -5667,7 +5667,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('history-import:preview', async (req) => {
     log.info(`history-import:preview requested, source=${req.source}`)
     const svc = createHistoryImportService()
-    return svc.preview(req.source, req.filePath, req.limit ?? 20, req.sourceSessionId)
+    return svc.preview(req.source, req.filePath, req.limit ?? 20, req.sourceSessionId, req.origin)
   })
 
   typedIpcHandle('history-import:import', async (req) => {

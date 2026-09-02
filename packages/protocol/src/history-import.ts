@@ -12,7 +12,7 @@
  *     C:\Users\<user>\.zcode；另支持 HOME 环境变量覆盖，扫描时做候选探测）
  *
  * 流程：
- *   1. scan   —— 轻量扫描两个来源，返回可导入条目列表（只读文件头/尾 + stat，不全量解析）
+ *   1. scan   —— 轻量扫描各来源，返回可导入条目列表（只读文件头/尾 + stat，不全量解析）
  *   2. preview —— 解析单个文件返回前若干轮对话，供右侧预览
  *   3. import —— 全量解析所选条目，映射为 AgentEvent 写入 agent_events 表
  *
@@ -69,7 +69,7 @@ export interface HistoryImportItem {
   alreadyImported: boolean
 }
 
-/** scan 请求：可限定来源；不传则两个来源都扫 */
+/** scan 请求：可限定来源；不传则全部来源都扫 */
 export interface HistoryImportScanRequest {
   sources?: HistoryImportSource[]
 }
@@ -97,6 +97,11 @@ export interface HistoryImportPreviewRequest {
    * sqlite 库文件，单文件含多个会话，需按 sessionId 定位。
    */
   sourceSessionId?: string
+  /**
+   * zcode 专属：桌面 App / CLI 存储通道。缺省时按 desktop 处理（直接读文件）；
+   * CLI 通道必须传 cli，否则会把 sqlite 库文件当 JSON 文本解析导致预览为空。
+   */
+  origin?: ZcodeImportOrigin
   /** 最多返回多少条消息，默认 20 */
   limit?: number
 }
