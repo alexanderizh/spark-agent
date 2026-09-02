@@ -2488,9 +2488,12 @@ function getSessionService(): SessionService {
  * 按来源解析导入会话使用的 Provider / adapter：
  *   claude-code → 本地 Claude CLI provider（不可用则任一 anthropic / 默认 provider）
  *   codex       → 本地 Codex CLI provider（不可用则任一 openai / 默认 provider）
+ *   zcode       → 按会话后端引擎（providerHint）：claude→claude 分支、codex→codex 分支、
+ *                 glm / 未知→claude-sdk + anthropic fallback（GLM coding plan 兼容 anthropic 协议）
  */
 async function resolveImportProvider(
   source: HistoryImportSource,
+  providerHint?: string,
 ): Promise<ImportProviderResolution> {
   const svc = getProviderService()
   const profiles = await svc.listProviders()
@@ -2499,7 +2502,7 @@ async function resolveImportProvider(
     profiles.find((p) => p.isDefault) ??
     profiles[0]
 
-  if (source === 'claude-code') {
+  if (source === 'claude-code' || (source === 'zcode' && providerHint === 'claude')) {
     let profileId: string | undefined
     if (await svc.isLocalCliAvailable()) {
       profileId = (await svc.ensureLocalCliProvider()).id
@@ -2514,14 +2517,23 @@ async function resolveImportProvider(
     }
   }
 
-  let profileId: string | undefined
-  if (await svc.isLocalCodexCliAvailable()) {
-    profileId = (await svc.ensureLocalCodexCliProvider()).id
-  } else {
-    profileId = pickFallback('openai')?.id
+  if (source === 'codex' || (source === 'zcode' && providerHint === 'codex')) {
+    let profileId: string | undefined
+    if (await svc.isLocalCodexCliAvailable()) {
+      profileId = (await svc.ensureLocalCodexCliProvider()).id
+    } else {
+      profileId = pickFallback('openai')?.id
+    }
+    if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
+    return { providerProfileId: profileId, agentAdapter: 'codex', permissionMode: 'codex-default' }
   }
+
+  // zcode 的 glm / 未知后端：续聊走 claude-sdk + anthropic 协议 fallback
+  // （GLM coding plan 的 anthropic 兼容端点是 zcode 的默认后端形态）。
+  // 不复用本地 Claude CLI provider——其登录态与 zcode 会话并不同源。
+  const profileId = pickFallback('anthropic')?.id
   if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
-  return { providerProfileId: profileId, agentAdapter: 'codex', permissionMode: 'codex-default' }
+  return { providerProfileId: profileId, agentAdapter: 'claude-sdk', permissionMode: 'claude-ask' }
 }
 
 /** 构造一次性 HistoryImportService（可选进度回调） */
@@ -5655,7 +5667,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('history-import:preview', async (req) => {
     log.info(`history-import:preview requested, source=${req.source}`)
     const svc = createHistoryImportService()
-    return svc.preview(req.source, req.filePath, req.limit ?? 20)
+    return svc.preview(req.source, req.filePath, req.limit ?? 20, req.sourceSessionId)
   })
 
   typedIpcHandle('history-import:import', async (req) => {

@@ -28,6 +28,11 @@ export interface TranscriptMeta {
   lastTimestamp: string | null
   /** user + assistant 文本消息数 */
   messageCount: number
+  /**
+   * 来源会话的后端引擎提示（zcode 专属：glm / claude / codex）。
+   * 导入时传给 resolveProvider 映射续聊 adapter；其余来源不填。
+   */
+  providerHint?: string
 }
 
 /** 完整解析结果 */

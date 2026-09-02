@@ -8,6 +8,8 @@
 import { describe, it, expect } from 'vitest'
 import { parseClaudeCodeTranscript, extractClaudeCodeMeta } from './claudeCodeParser.js'
 import { parseCodexRollout, extractCodexMeta } from './codexParser.js'
+import { parseZcodeV2Transcript, extractZcodeV2Meta } from './zcodeV2Parser.js'
+import { parseZcodeCliTranscript } from './zcodeCliParser.js'
 
 const FALLBACK_TS = '2026-06-14T00:00:00.000Z'
 
@@ -409,5 +411,249 @@ describe('codexParser', () => {
     const metaOnly = extractCodexMeta(injectedJsonl, null, 'fallback')
     expect(metaOnly.messageCount).toBe(2)
     expect(metaOnly.title).toBe('请帮我重构这段代码')
+  })
+})
+
+// ─── zcode 桌面 App（v2 JSON） ───────────────────────────────────────────────
+
+describe('zcodeV2Parser', () => {
+  const v2File = {
+    meta: {
+      taskId: 'task-v2-1',
+      title: '',
+      workspacePath: '/Users/me/zproj',
+      createdAt: 1778000000000,
+      updatedAt: 1778000600000,
+      model: 'glm-5.1',
+      provider: 'glm',
+    },
+    messages: [
+      { role: 'user', content: '帮我优化构建速度', timestamp: 1778000001000, turnIndex: 0 },
+      {
+        role: 'assistant',
+        content: '我先分析构建配置',
+        thought: '需要先查看 vite 配置',
+        timestamp: 1778000010000,
+        model: 'glm-5.1',
+        durationMs: 9000,
+        tools: [
+          {
+            title: 'Read',
+            kind: 'read',
+            status: 'completed',
+            input: { file_path: '/Users/me/zproj/vite.config.ts' },
+            output: { success: true, content: "1: import { defineConfig } from 'vite'" },
+          },
+          {
+            title: 'Bash',
+            kind: 'execute',
+            status: 'failed',
+            input: { command: 'pnpm build' },
+            output: 'error: out of memory',
+          },
+        ],
+        parts: [
+          { type: 'thought', content: '需要先查看 vite 配置' },
+          { type: 'tool-call', toolIndex: 0 },
+          { type: 'content', content: '我先分析构建配置' },
+          { type: 'tool-call', toolIndex: 1 },
+        ],
+        turnIndex: 0,
+      },
+      { role: 'user', content: '好的，继续', timestamp: 1778000300000, turnIndex: 1 },
+      // 无 parts 的旧版消息：回落顶层 content
+      { role: 'assistant', content: '已完成优化', timestamp: 1778000400000, turnIndex: 1 },
+    ],
+  }
+  const text = JSON.stringify(v2File)
+
+  it('映射事件序列：user → thinking → tool → text → tool → user → text', () => {
+    const { events } = parseZcodeV2Transcript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'task-v2-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const types = events.filter((e) => e.type !== 'agent_status').map((e) => e.type)
+    expect(types).toEqual([
+      'user_message',
+      'agent_thinking',
+      'tool_call',
+      'tool_result',
+      'assistant_message',
+      'tool_call',
+      'tool_result',
+      'user_message',
+      'assistant_message',
+    ])
+  })
+
+  it('tool_call/tool_result 成对且 failed 工具映射为 error', () => {
+    const { events } = parseZcodeV2Transcript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'task-v2-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const results = events.filter((e) => e.type === 'tool_result')
+    expect(results[0]).toMatchObject({ toolName: 'Read', status: 'success', output: "1: import { defineConfig } from 'vite'" })
+    expect(results[1]).toMatchObject({ toolName: 'Bash', status: 'error', output: 'error: out of memory' })
+    const calls = events.filter((e) => e.type === 'tool_call')
+    expect(calls[0]).toMatchObject({ toolName: 'Read', toolInput: { file_path: '/Users/me/zproj/vite.config.ts' } })
+    // call 与 result 的 toolCallId 一致
+    expect(results[0]?.toolCallId).toBe(calls[0]?.toolCallId)
+  })
+
+  it('turn 分组、seq 单调、isFinal=false + segmentId 唯一', () => {
+    const { events } = parseZcodeV2Transcript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'task-v2-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const userTurnIds = new Set(
+      events.filter((e) => e.type === 'user_message').map((e) => e.turnId),
+    )
+    expect(userTurnIds.size).toBe(2)
+    const seqs = events.map((e) => e.seq)
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+    const texts = events.filter((e) => e.type === 'assistant_message')
+    expect(texts.every((e) => (e as { isFinal?: boolean }).isFinal === false)).toBe(true)
+    const segIds = new Set(texts.map((e) => (e as { segmentId?: string }).segmentId))
+    expect(segIds.size).toBe(texts.length)
+  })
+
+  it('meta：taskId/cwd/providerHint/标题兜底/时间', () => {
+    const { meta } = parseZcodeV2Transcript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'task-v2-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(meta.sourceSessionId).toBe('task-v2-1')
+    expect(meta.cwd).toBe('/Users/me/zproj')
+    expect(meta.providerHint).toBe('glm')
+    // title 为空 → 首条用户消息兜底
+    expect(meta.title).toBe('帮我优化构建速度')
+    expect(meta.firstTimestamp).toBe('2026-05-05T16:53:21.000Z')
+    expect(meta.messageCount).toBe(4)
+
+    const metaOnly = extractZcodeV2Meta(text, 'fallback')
+    expect(metaOnly?.messageCount).toBe(4)
+    // 损坏 JSON → null
+    expect(extractZcodeV2Meta('{broken', 'fallback')).toBeNull()
+  })
+})
+
+// ─── zcode CLI（store 重组后的 payload） ─────────────────────────────────────
+
+describe('zcodeCliParser', () => {
+  const payload = {
+    meta: {
+      sessionId: 'sess_cli_1',
+      title: '修复筛选报错',
+      cwd: '/Users/me/cli-proj',
+      createdAt: 1778100000000,
+      updatedAt: 1778100060000,
+      modelId: 'GLM-5.3',
+      providerId: 'builtin:bigmodel-coding-plan',
+    },
+    messages: [
+      {
+        data: { role: 'user', time: { created: 1778100001000 } },
+        parts: [{ type: 'text', text: '查询任务列表为什么为空' }],
+      },
+      // hidden 内部提醒：过滤
+      {
+        data: { role: 'user', time: { created: 1778100002000 }, semantics: { uiVisibility: 'hidden' } },
+        parts: [{ type: 'text', text: 'todo reminder' }],
+      },
+      // 合成的后台任务通知：过滤
+      {
+        data: { role: 'user', time: { created: 1778100003000 }, synthetic: true, visibility: 'model-only' },
+        parts: [{ type: 'text', text: '<task-notification>exec done</task-notification>' }],
+      },
+      {
+        data: { role: 'assistant', time: { created: 1778100010000, completed: 1778100020000 } },
+        parts: [
+          { type: 'step-start' },
+          { type: 'reasoning', text: '先查数据库查询条件' },
+          {
+            type: 'tool',
+            callID: 'call_a1',
+            tool: 'Bash',
+            state: { status: 'completed', input: { command: 'ls tasks' }, output: 'task1\ntask2' },
+          },
+          { type: 'step-finish', reason: 'stop' },
+          { type: 'text', text: '查询条件缺少默认状态，补上即可' },
+        ],
+      },
+      // 文本级兜底：未打 synthetic 标记的注入式消息也过滤
+      {
+        data: { role: 'user', time: { created: 1778100030000 } },
+        parts: [{ type: 'text', text: '<task-notification>exec_9 done</task-notification>' }],
+      },
+      // 仅 file part 的 assistant：忽略后无事件
+      {
+        data: { role: 'assistant', time: { created: 1778100040000 } },
+        parts: [{ type: 'file', mime: 'image/png', url: 'zcode-artifact://sess_cli_1/tool-result-x' }],
+      },
+    ],
+  }
+  const text = JSON.stringify(payload)
+
+  it('过滤 hidden / synthetic / 注入式 user 消息，仅保留真实输入', () => {
+    const { events } = parseZcodeCliTranscript(text, {
+      sessionId: 's2',
+      sourceSessionId: 'sess_cli_1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const userMsgs = events.filter((e) => e.type === 'user_message')
+    expect(userMsgs).toHaveLength(1)
+    expect(userMsgs[0]).toMatchObject({ content: '查询任务列表为什么为空' })
+  })
+
+  it('assistant parts：reasoning→thinking、tool→call+result、text→assistant_message', () => {
+    const { events } = parseZcodeCliTranscript(text, {
+      sessionId: 's2',
+      sourceSessionId: 'sess_cli_1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const types = events.filter((e) => e.type !== 'agent_status').map((e) => e.type)
+    expect(types).toEqual([
+      'user_message',
+      'agent_thinking',
+      'tool_call',
+      'tool_result',
+      'assistant_message',
+    ])
+    const call = events.find((e) => e.type === 'tool_call')
+    expect(call).toMatchObject({ toolName: 'Bash', toolInput: { command: 'ls tasks' } })
+    const result = events.find((e) => e.type === 'tool_result')
+    expect(result).toMatchObject({ toolCallId: 'call_a1', status: 'success', output: 'task1\ntask2' })
+    const msg = events.find((e) => e.type === 'assistant_message')
+    expect(msg).toMatchObject({ content: '查询条件缺少默认状态，补上即可', isFinal: false })
+  })
+
+  it('meta：sessionId/cwd/providerHint（GLM→glm）/标题来自 session.title', () => {
+    const { meta } = parseZcodeCliTranscript(text, {
+      sessionId: 's2',
+      sourceSessionId: 'sess_cli_1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(meta.sourceSessionId).toBe('sess_cli_1')
+    expect(meta.cwd).toBe('/Users/me/cli-proj')
+    expect(meta.providerHint).toBe('glm')
+    expect(meta.title).toBe('修复筛选报错')
+    expect(meta.messageCount).toBe(2)
+  })
+
+  it('codex 后端 hint 推导', () => {
+    const codexPayload = JSON.stringify({
+      meta: { sessionId: 's3', title: null, cwd: null, createdAt: null, updatedAt: null, modelId: 'gpt-5', providerId: 'openai-codex' },
+      messages: [],
+    })
+    const { meta } = parseZcodeCliTranscript(codexPayload, {
+      sessionId: 's3',
+      sourceSessionId: 's3',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(meta.providerHint).toBe('codex')
   })
 })

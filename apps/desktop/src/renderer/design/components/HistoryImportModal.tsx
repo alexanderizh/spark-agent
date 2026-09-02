@@ -50,7 +50,15 @@ type ScanSourceState = {
 const SOURCE_LABEL: Record<HistoryImportSource, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
+  zcode: 'ZCode',
 }
+
+/**
+ * 条目唯一键：source + sourceSessionId。
+ * 不能用 filePath——zcode CLI 多个会话共享同一个 sqlite 库文件路径。
+ */
+const itemKey = (item: { source: HistoryImportSource; sourceSessionId: string }): string =>
+  `${item.source}:${item.sourceSessionId}`
 
 const TIME_FILTER_OPTIONS = [
   { label: '全部时间', value: 'all' },
@@ -62,12 +70,14 @@ const TIME_FILTER_OPTIONS = [
 const EMPTY_SCAN_STATE: Record<HistoryImportSource, ScanSourceState> = {
   'claude-code': { status: 'scanning', count: 0, rootPath: '~/.claude/projects' },
   codex: { status: 'scanning', count: 0, rootPath: '~/.codex/sessions' },
+  zcode: { status: 'scanning', count: 0, rootPath: '~/.zcode' },
 }
 
 function freshScanState(): Record<HistoryImportSource, ScanSourceState> {
   return {
     'claude-code': { ...EMPTY_SCAN_STATE['claude-code'] },
     codex: { ...EMPTY_SCAN_STATE.codex },
+    zcode: { ...EMPTY_SCAN_STATE.zcode },
   }
 }
 
@@ -217,7 +227,11 @@ export function HistoryImportModal() {
     }
 
     try {
-      const settled = await Promise.allSettled([scanOne('claude-code'), scanOne('codex')])
+      const settled = await Promise.allSettled([
+        scanOne('claude-code'),
+        scanOne('codex'),
+        scanOne('zcode'),
+      ])
       const responses = settled.flatMap((result) =>
         result.status === 'fulfilled' ? [result.value] : [],
       )
@@ -234,7 +248,10 @@ export function HistoryImportModal() {
       if (remaining > 0) await wait(remaining)
       if (requestId !== scanRequestRef.current) return
       setItems(nextItems)
-      setSourceTab('codex')
+      // 默认落在有条目的来源上（优先 zcode > codex > claude-code，均无则保持 codex）
+      const zcodeCount = nextItems.filter((item) => item.source === 'zcode').length
+      const codexCount = nextItems.filter((item) => item.source === 'codex').length
+      setSourceTab(zcodeCount > 0 ? 'zcode' : codexCount > 0 ? 'codex' : 'claude-code')
       setPhase('select')
     } catch (error) {
       if (requestId !== scanRequestRef.current) return
@@ -259,7 +276,7 @@ export function HistoryImportModal() {
   })
 
   const counts = useMemo(() => {
-    const result = { 'claude-code': 0, codex: 0 }
+    const result: Record<HistoryImportSource, number> = { 'claude-code': 0, codex: 0, zcode: 0 }
     for (const item of items) result[item.source]++
     return result
   }, [items])
@@ -284,6 +301,7 @@ export function HistoryImportModal() {
 
   const sourceOptions = useMemo(
     () => [
+      { label: `ZCode ${counts.zcode.toLocaleString()}`, value: 'zcode' },
       { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
       { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
     ],
@@ -326,14 +344,15 @@ export function HistoryImportModal() {
     [filtered],
   )
   const allSelected =
-    selectableVisible.length > 0 && selectableVisible.every((item) => selected.has(item.filePath))
-  const someSelected = selectableVisible.some((item) => selected.has(item.filePath)) && !allSelected
+    selectableVisible.length > 0 && selectableVisible.every((item) => selected.has(itemKey(item)))
+  const someSelected =
+    selectableVisible.some((item) => selected.has(itemKey(item))) && !allSelected
 
   const selectedStats = useMemo(
     () =>
       items.reduce(
         (result, item) =>
-          selected.has(item.filePath)
+          selected.has(itemKey(item))
             ? {
                 messages: result.messages + item.messageCount,
                 bytes: result.bytes + item.sizeBytes,
@@ -360,11 +379,11 @@ export function HistoryImportModal() {
     listScrollRef.current?.scrollTo({ top: 0 })
   }, [projectFilter, search, showImported, sourceTab, timeFilter])
 
-  const toggle = useCallback((filePath: string, checked: boolean) => {
+  const toggle = useCallback((key: string, checked: boolean) => {
     setSelected((current) => {
       const next = new Set(current)
-      if (checked) next.add(filePath)
-      else next.delete(filePath)
+      if (checked) next.add(key)
+      else next.delete(key)
       return next
     })
   }, [])
@@ -374,8 +393,8 @@ export function HistoryImportModal() {
       setSelected((current) => {
         const next = new Set(current)
         for (const item of selectableVisible) {
-          if (checked) next.add(item.filePath)
-          else next.delete(item.filePath)
+          if (checked) next.add(itemKey(item))
+          else next.delete(itemKey(item))
         }
         return next
       })
@@ -397,6 +416,7 @@ export function HistoryImportModal() {
         const response = await preview({
           source: item.source,
           filePath: item.filePath,
+          sourceSessionId: item.sourceSessionId,
           limit: previewLimit,
         })
         if (requestId !== previewRequestRef.current) return
@@ -414,11 +434,12 @@ export function HistoryImportModal() {
 
   const doImport = useCallback(async () => {
     const selections: HistoryImportSelection[] = items
-      .filter((item) => selected.has(item.filePath) && !item.alreadyImported)
+      .filter((item) => selected.has(itemKey(item)) && !item.alreadyImported)
       .map((item) => ({
         source: item.source,
         filePath: item.filePath,
         sourceSessionId: item.sourceSessionId,
+        ...(item.origin != null ? { origin: item.origin } : {}),
         cwd: item.cwd,
         title: item.title,
       }))
@@ -439,7 +460,8 @@ export function HistoryImportModal() {
 
   const close = useCallback(() => ctx.setHistoryImportOpen(false), [ctx])
   const selectedCount = selected.size
-  const discoveredCount = scanSources['claude-code'].count + scanSources.codex.count
+  const discoveredCount =
+    scanSources['claude-code'].count + scanSources.codex.count + scanSources.zcode.count
   const importingPercent =
     progress != null && progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -612,11 +634,12 @@ export function HistoryImportModal() {
                     {listVirtualizer.getVirtualItems().map((virtualRow) => {
                       const item = filtered[virtualRow.index]
                       if (item == null) return null
-                      const checked = selected.has(item.filePath)
-                      const isActive = previewItem?.filePath === item.filePath
+                      const checked = selected.has(itemKey(item))
+                      const isActive =
+                        previewItem != null && itemKey(previewItem) === itemKey(item)
                       return (
                         <div
-                          key={item.filePath}
+                          key={itemKey(item)}
                           ref={listVirtualizer.measureElement}
                           data-index={virtualRow.index}
                           className="hi-row-shell"
@@ -633,7 +656,7 @@ export function HistoryImportModal() {
                               <Checkbox
                                 checked={checked}
                                 disabled={item.alreadyImported}
-                                onChange={(value) => toggle(item.filePath, Boolean(value))}
+                                onChange={(value) => toggle(itemKey(item), Boolean(value))}
                               />
                             </div>
                             <button

@@ -95,7 +95,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.dropProjects.title': '松开以添加项目',
     'sidebar.dropProjects.hint': '仅添加顶层文件夹',
     'sidebar.dropProjects.unresolvable': '无法读取拖入文件夹的路径，请改用“添加项目”按钮',
-    'sidebar.importHistory': '「从Claude、Codex」导入继续会话',
+    'sidebar.importHistory': '「从Claude、Codex、ZCode」导入继续会话',
     'sidebar.empty.noMatches': '没有匹配的会话',
     'sidebar.empty.noMatchesDesc': '试试调整筛选条件或清空过滤器',
     'sidebar.search.placeholder': '搜索会话...',
@@ -531,7 +531,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.dropProjects.hint': 'Top-level folders only',
     'sidebar.dropProjects.unresolvable':
       'Unable to read the dropped folder paths. Use the Add project button instead.',
-    'sidebar.importHistory': 'Import and continue conversations from Claude or Codex',
+    'sidebar.importHistory': 'Import and continue conversations from Claude, Codex, or ZCode',
     'sidebar.empty.noMatches': 'No matching sessions',
     'sidebar.empty.noMatchesDesc': 'Try adjusting filters or clearing them',
     'sidebar.search.placeholder': 'Search sessions...',

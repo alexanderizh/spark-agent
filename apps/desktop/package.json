@@ -32,7 +32,7 @@
     "native:verify:packaged:win": "node scripts/verify-packaged-native-host-windows.js",
     "verify:packaged:onnx": "node scripts/verify-packaged-onnx-runtime.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "test:unit": "vitest run",
+    "test:unit": "../../scripts/sqlite-abi.sh node && vitest run; s=$?; ../../scripts/sqlite-abi.sh electron; exit $s",
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.tsx",
     "i18n:scan": "node scripts/scan-client-i18n.mjs",

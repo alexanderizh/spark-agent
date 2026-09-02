@@ -6,6 +6,10 @@
  * 支持检测并导入宿主机上已有的 Agent CLI 对话历史：
  *   - Claude Code：~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
  *   - Codex：~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+ *   - ZCode（桌面 App）：~/.zcode/v2/sessions/<workspace-hash>/<taskId>.json
+ *   - ZCode（zcode CLI）：~/.zcode/cli/db/db.sqlite（session/message/part 三表）
+ *     路径三平台统一（zcode 自身逻辑为 join(homedir(), ".zcode")，Windows 即
+ *     C:\Users\<user>\.zcode；另支持 HOME 环境变量覆盖，扫描时做候选探测）
  *
  * 流程：
  *   1. scan   —— 轻量扫描两个来源，返回可导入条目列表（只读文件头/尾 + stat，不全量解析）
@@ -17,7 +21,14 @@
  */
 
 /** 对话历史来源 */
-export type HistoryImportSource = 'claude-code' | 'codex'
+export type HistoryImportSource = 'claude-code' | 'codex' | 'zcode'
+
+/**
+ * zcode 内部存储通道：
+ *   - desktop —— 桌面 App：~/.zcode/v2/sessions/<workspace-hash>/<taskId>.json
+ *   - cli     —— zcode CLI：~/.zcode/cli/db/db.sqlite（单文件多会话，按 sessionId 定位）
+ */
+export type ZcodeImportOrigin = 'desktop' | 'cli'
 
 /** 写入 sessions.metadata_json 的导入溯源信息（也用于去重） */
 export interface HistoryImportMetadata {
@@ -36,6 +47,8 @@ export interface HistoryImportItem {
   source: HistoryImportSource
   /** 来源会话 ID */
   sourceSessionId: string
+  /** zcode 专属：桌面 App / CLI 存储通道（claude-code、codex 恒为 undefined） */
+  origin?: ZcodeImportOrigin
   /** 推断出的标题 */
   title: string
   /** 对话记录的工作目录（原始字符串，可能是另一台机器 / WSL 路径） */
@@ -79,6 +92,11 @@ export interface HistoryImportScanResponse {
 export interface HistoryImportPreviewRequest {
   source: HistoryImportSource
   filePath: string
+  /**
+   * 来源会话 ID。zcode CLI 来源（origin=cli）时必传——其 filePath 指向
+   * sqlite 库文件，单文件含多个会话，需按 sessionId 定位。
+   */
+  sourceSessionId?: string
   /** 最多返回多少条消息，默认 20 */
   limit?: number
 }
@@ -102,6 +120,8 @@ export interface HistoryImportSelection {
   source: HistoryImportSource
   filePath: string
   sourceSessionId: string
+  /** zcode 专属：桌面 App / CLI 存储通道 */
+  origin?: ZcodeImportOrigin
   cwd: string | null
   title: string
 }

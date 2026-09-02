@@ -15,6 +15,7 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, readdir, stat, open } from 'node:fs/promises'
+import type { Dirent } from 'node:fs'
 import { EventRepository, SessionRepository, WorkspaceRepository } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
@@ -34,7 +35,11 @@ import type {
 } from '@spark/protocol'
 import { extractClaudeCodeMeta, parseClaudeCodeTranscript } from './claudeCodeParser.js'
 import { extractCodexMeta, parseCodexRollout } from './codexParser.js'
-import type { ParsedTranscript, TranscriptMeta } from './types.js'
+import { extractZcodeV2Meta, parseZcodeV2Transcript } from './zcodeV2Parser.js'
+import { parseZcodeCliTranscript } from './zcodeCliParser.js'
+import { listZcodeCliSessions, loadZcodeCliSessionText } from './zcodeCliStore.js'
+import { deriveTitle, type ParsedTranscript, type TranscriptMeta } from './types.js'
+import type { ZcodeImportOrigin } from '@spark/protocol'
 
 const log = createLogger('history-import')
 
@@ -42,6 +47,8 @@ const log = createLogger('history-import')
 const LARGE_FILE_BYTES = 8 * 1024 * 1024
 const HEAD_BYTES = 512 * 1024
 const TAIL_BYTES = 128 * 1024
+/** zcode 桌面会话是单个完整 JSON（不可截断读取），超此大小直接跳过（防 OOM） */
+const ZCODE_V2_MAX_BYTES = 64 * 1024 * 1024
 /** 同名 sentinel：cwd 不可用时归入的「导入历史」工作区 root_path */
 const IMPORTED_WORKSPACE_ROOT = '<imported-history>'
 
@@ -64,8 +71,11 @@ export interface ImportProviderResolution {
 
 export interface HistoryImportDeps {
   db: SparkDatabase
-  /** 按来源解析使用的 Provider/adapter（claude→claude provider，codex→codex provider） */
-  resolveProvider: (source: HistoryImportSource) => Promise<ImportProviderResolution>
+  /**
+   * 按来源解析使用的 Provider/adapter（claude→claude provider，codex→codex provider）。
+   * providerHint：zcode 专属的后端引擎提示（glm/claude/codex），用于映射续聊 adapter。
+   */
+  resolveProvider: (source: HistoryImportSource, providerHint?: string) => Promise<ImportProviderResolution>
   /** 建会话（包装 SessionService.createSession） */
   createSession: (params: CreateImportedSessionParams) => Promise<{ sessionId: string }>
   /** 进度推送 */
@@ -111,10 +121,25 @@ export class HistoryImportService {
     return path.join(this.home, '.codex', 'session_index.jsonl')
   }
 
+  /**
+   * zcode 数据根目录候选。zcode 自身逻辑为 join(homedir(), ".zcode")，
+   * 但支持 HOME 环境变量覆盖（resolveZcodeHome 优先读 HOME），故两处都探测。
+   * 三平台（macOS/Linux/Windows）目录结构一致，无需平台分支。
+   */
+  private get zcodeRootCandidates(): string[] {
+    const candidates = [path.join(this.home, '.zcode')]
+    const homeEnv = process.env.HOME?.trim()
+    if (homeEnv != null && homeEnv.length > 0) {
+      const alt = path.join(homeEnv, '.zcode')
+      if (!candidates.includes(alt)) candidates.push(alt)
+    }
+    return candidates
+  }
+
   // ─── scan ──────────────────────────────────────────────────────────────
 
   async scan(sources?: HistoryImportSource[]): Promise<HistoryImportScanResponse> {
-    const want = new Set<HistoryImportSource>(sources ?? ['claude-code', 'codex'])
+    const want = new Set<HistoryImportSource>(sources ?? ['claude-code', 'codex', 'zcode'])
     const importedIds = this.loadImportedSourceIds()
     const items: HistoryImportItem[] = []
     const sourceSummaries: HistoryImportScanResponse['sources'] = []
@@ -125,6 +150,10 @@ export class HistoryImportService {
     }
     if (want.has('codex')) {
       const summary = await this.scanCodex(importedIds, items)
+      sourceSummaries.push(summary)
+    }
+    if (want.has('zcode')) {
+      const summary = await this.scanZcode(importedIds, items)
       sourceSummaries.push(summary)
     }
 
@@ -243,14 +272,118 @@ export class HistoryImportService {
     }
   }
 
+  // ─── zcode（桌面 App v2 JSON + zcode CLI sqlite） ─────────────────────────
+
+  /**
+   * zcode 聚合扫描：桌面通道遍历 v2/sessions/<hash>/<taskId>.json，
+   * CLI 通道从 cli/db/db.sqlite 枚举会话摘要。两通道独立容错，
+   * 至少一个产出条目即视为可用。
+   */
+  private async scanZcode(
+    importedIds: Set<string>,
+    out: HistoryImportItem[],
+  ): Promise<HistoryImportScanResponse['sources'][number]> {
+    let count = 0
+    const errors: string[] = []
+    let rootPath = ''
+
+    for (const root of this.zcodeRootCandidates) {
+      rootPath = rootPath || root
+      // ── 桌面 App：v2/sessions/<workspace-hash>/<taskId>.json ──
+      const v2Root = path.join(root, 'v2', 'sessions')
+      let v2Dirs: Dirent[] | null = null
+      try {
+        v2Dirs = await readdir(v2Root, { withFileTypes: true })
+      } catch {
+        // 目录不存在：该机器未用过桌面通道
+      }
+      if (v2Dirs != null) {
+        for (const dir of v2Dirs) {
+          if (!dir.isDirectory()) continue
+          const dirPath = path.join(v2Root, dir.name)
+          let entries
+          try {
+            entries = await readdir(dirPath, { withFileTypes: true })
+          } catch {
+            continue
+          }
+          for (const entry of entries) {
+            if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+            const filePath = path.join(dirPath, entry.name)
+            try {
+              const st = await stat(filePath)
+              // v2 是单个完整 JSON（非 JSONL，不能截断头尾），超硬上限直接跳过防 OOM
+              if (st.size > ZCODE_V2_MAX_BYTES) {
+                log.warn(`skip oversized zcode v2 session: ${filePath} (${st.size} bytes)`)
+                continue
+              }
+              const text = await readFile(filePath, 'utf-8')
+              const fallbackId = path.basename(entry.name, '.json')
+              const meta = extractZcodeV2Meta(text, fallbackId)
+              if (meta == null || meta.messageCount === 0) continue
+              out.push(this.toItem('zcode', { source: 'zcode', filePath, sizeBytes: st.size, mtime: st.mtime }, meta, importedIds, 'desktop'))
+              count++
+            } catch (err) {
+              log.warn(`scan zcode v2 file failed: ${filePath}: ${errMsg(err)}`)
+            }
+          }
+        }
+      }
+
+      // ── zcode CLI：cli/db/db.sqlite（单文件多会话） ──
+      const dbPath = path.join(root, 'cli', 'db', 'db.sqlite')
+      try {
+        const st = await stat(dbPath)
+        const sessions = listZcodeCliSessions(dbPath)
+        if (sessions != null) {
+          for (const session of sessions) {
+            if (session.messageCount === 0) continue
+            const firstTs = msToIsoOrNull(session.createdAt)
+            const lastTs = msToIsoOrNull(session.updatedAt) ?? st.mtime.toISOString()
+            out.push({
+              source: 'zcode',
+              origin: 'cli',
+              sourceSessionId: session.sessionId,
+              title: deriveTitle(session.title, `zcode-cli-${session.sessionId.slice(0, 12)}`),
+              cwd: session.cwd,
+              project: projectName(session.cwd),
+              messageCount: session.messageCount,
+              firstTimestamp: firstTs,
+              lastTimestamp: lastTs,
+              sizeBytes: st.size,
+              filePath: dbPath,
+              alreadyImported: importedIds.has(session.sessionId),
+            })
+            count++
+          }
+        }
+      } catch (err) {
+        // 库文件不存在（未装/未用 CLI）静默跳过；打开/查询失败记录为通道错误
+        const msg = errMsg(err)
+        if (!msg.includes('does not exist') && !msg.includes('ENOENT')) {
+          errors.push(`cli: ${msg}`)
+        }
+      }
+    }
+
+    if (count > 0) return { source: 'zcode', available: true, count, rootPath: rootPath || path.join(this.home, '.zcode') }
+    if (errors.length > 0) {
+      return { source: 'zcode', available: false, count, rootPath: rootPath, error: errors.join('; ') }
+    }
+    // 两侧数据都为空（未安装/未使用）：不显示为错误，标记不可用即可
+    return { source: 'zcode', available: false, count, rootPath: rootPath || path.join(this.home, '.zcode') }
+  }
+
   private toItem(
     source: HistoryImportSource,
     file: ScannedFile,
     meta: TranscriptMeta,
     importedIds: Set<string>,
+    origin?: ZcodeImportOrigin,
   ): HistoryImportItem {
     return {
       source,
+      ...(origin != null ? { origin } : {}),
       sourceSessionId: meta.sourceSessionId,
       title: meta.title,
       cwd: meta.cwd,
@@ -270,9 +403,12 @@ export class HistoryImportService {
     source: HistoryImportSource,
     filePath: string,
     limit = 20,
+    sourceSessionId?: string,
   ): Promise<HistoryImportPreviewResponse> {
-    const text = await readFile(filePath, 'utf-8')
-    const parsed = this.parse(source, text, filePath)
+    const text = await this.loadRaw(source, filePath, sourceSessionId)
+    const parsed = this.parse(source, text, filePath, 'preview', {
+      ...(sourceSessionId != null ? { sourceSessionId } : {}),
+    })
     const messages: HistoryImportPreviewMessage[] = []
     for (const event of parsed.events) {
       let msg: HistoryImportPreviewMessage | null = null
@@ -334,15 +470,19 @@ export class HistoryImportService {
     sel: HistoryImportSelection,
     workspaceCache: Map<string, string>,
   ): Promise<string> {
-    const text = await readFile(sel.filePath, 'utf-8')
+    const text = await this.loadRaw(sel.source, sel.filePath, sel.sourceSessionId, sel.origin)
     const tempSessionId = 'pending'
+    const parseOpts = {
+      sourceSessionId: sel.sourceSessionId,
+      ...(sel.origin != null ? { origin: sel.origin } : {}),
+    }
     // 先解析拿到 meta（cwd / 时间），用于 workspace 归属与时间回填
-    const probe = this.parse(sel.source, text, sel.filePath, tempSessionId)
+    const probe = this.parse(sel.source, text, sel.filePath, tempSessionId, parseOpts)
     if (probe.events.length === 0) {
       throw new Error('transcript 解析为空（无可导入消息）')
     }
 
-    const provider = await this.deps.resolveProvider(sel.source)
+    const provider = await this.deps.resolveProvider(sel.source, probe.meta.providerHint)
     const cwd = sel.cwd ?? probe.meta.cwd
     const workspaceId = await this.resolveWorkspaceId(cwd, workspaceCache)
 
@@ -356,7 +496,7 @@ export class HistoryImportService {
     })
 
     // 用真实 sessionId 重新解析（事件需绑定 sessionId）
-    const parsed = this.parse(sel.source, text, sel.filePath, sessionId)
+    const parsed = this.parse(sel.source, text, sel.filePath, sessionId, parseOpts)
     const eventRepo = new EventRepository(this.deps.db)
     eventRepo.insertBatch(
       parsed.events.map((e) => ({
@@ -392,16 +532,45 @@ export class HistoryImportService {
 
   // ─── helpers ─────────────────────────────────────────────────────────────
 
+  /**
+   * 读取原始 transcript 文本。zcode CLI 来源的 filePath 指向 sqlite 库文件，
+   * 需按 sourceSessionId 从库中重组会话载荷；其余来源直接读文件。
+   */
+  private async loadRaw(
+    source: HistoryImportSource,
+    filePath: string,
+    sourceSessionId?: string,
+    origin?: ZcodeImportOrigin,
+  ): Promise<string> {
+    if (source === 'zcode' && origin === 'cli') {
+      if (sourceSessionId == null || sourceSessionId.length === 0) {
+        throw new Error('zcode CLI 来源缺少 sourceSessionId，无法定位会话')
+      }
+      const text = loadZcodeCliSessionText(filePath, sourceSessionId)
+      if (text == null) throw new Error(`zcode CLI 会话不存在：${sourceSessionId}`)
+      return text
+    }
+    return readFile(filePath, 'utf-8')
+  }
+
   private parse(
     source: HistoryImportSource,
     text: string,
     filePath: string,
     sessionId = 'preview',
+    opts?: { sourceSessionId?: string; origin?: ZcodeImportOrigin },
   ): ParsedTranscript {
     const fallbackTimestamp = new Date().toISOString()
     if (source === 'claude-code') {
       const sourceSessionId = path.basename(filePath, '.jsonl')
       return parseClaudeCodeTranscript(text, { sessionId, sourceSessionId, fallbackTimestamp })
+    }
+    if (source === 'zcode') {
+      const sourceSessionId = opts?.sourceSessionId ?? path.basename(filePath, '.json')
+      if (opts?.origin === 'cli') {
+        return parseZcodeCliTranscript(text, { sessionId, sourceSessionId, fallbackTimestamp })
+      }
+      return parseZcodeV2Transcript(text, { sessionId, sourceSessionId, fallbackTimestamp })
     }
     const sourceSessionId = codexIdFromFilename(filePath)
     return parseCodexRollout(text, { sessionId, sourceSessionId, threadName: null, fallbackTimestamp })
@@ -531,6 +700,13 @@ function errMsg(err: unknown): string {
 function toIso(ts: string | null | undefined): string | null {
   if (ts == null || ts === '') return null
   const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+/** ms epoch → ISO 8601；非法/缺失返回 null */
+function msToIsoOrNull(ms: number | null | undefined): string | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return null
+  const d = new Date(ms)
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
 
