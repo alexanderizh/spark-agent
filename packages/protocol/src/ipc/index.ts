@@ -3253,6 +3253,32 @@ export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
 }
 
+// ─── Data（dev 实例继承安装版数据库） ─────────────────────────────────────────
+
+export interface DataGetInheritInfoRequest {}
+
+export interface DataGetInheritInfoResponse {
+  /** 当前实例处于 dev 沙箱（userData 为 -dev 后缀）且安装版数据库存在时为 true */
+  available: boolean
+  /** 当前是否运行在 dev 沙箱目录 */
+  currentIsDev: boolean
+  /** 安装版 spark.db 绝对路径（存在时返回） */
+  productionDbPath?: string
+  /** 安装版 spark.db 大小（字节，存在时返回） */
+  productionDbSizeBytes?: number
+  /** available=false 时的原因说明（用于 UI 提示） */
+  reason?: string
+}
+
+export interface DataInheritProductionDbRequest {}
+
+export interface DataInheritProductionDbResponse {
+  /** 快照已暂存，应用即将 relaunch 重启生效 */
+  restarting: boolean
+  /** 快照文件大小（字节） */
+  incomingBytes?: number
+}
+
 // ─── Prompt Library Package（无限画布 · 全局提示词库文件夹包） ────────────────
 
 export interface PromptLibraryExportPackageRequest {
@@ -6537,6 +6563,10 @@ export interface IpcChannelMap
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // dev 实例继承安装版数据库（快照导入 + 重启生效）
+  'data:get-inherit-info': [DataGetInheritInfoRequest, DataGetInheritInfoResponse]
+  'data:inherit-production-db': [DataInheritProductionDbRequest, DataInheritProductionDbResponse]
 
   // 无限画布 · 全局提示词库文件夹包导入导出（prompt-library.json + covers/）
   'prompt-library:export-package': [

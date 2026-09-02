@@ -1028,7 +1028,11 @@ export function getImportedFromMetadata(
   if (metadataJson == null || metadataJson === '') return null
   try {
     const meta = JSON.parse(metadataJson) as { importedFrom?: unknown }
-    if (meta.importedFrom === 'claude-code' || meta.importedFrom === 'codex')
+    if (
+      meta.importedFrom === 'claude-code' ||
+      meta.importedFrom === 'codex' ||
+      meta.importedFrom === 'zcode'
+    )
       return meta.importedFrom
   } catch {
     // 忽略损坏的 metadata

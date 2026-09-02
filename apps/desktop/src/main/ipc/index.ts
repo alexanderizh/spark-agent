@@ -265,6 +265,7 @@ import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
+import { registerDataIpc } from './registerDataIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
 import { registerVideoChannelTaskIpc } from './registerVideoChannelTaskIpc.js'
 import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
@@ -2480,6 +2481,8 @@ function getSessionService(): SessionService {
  * 按来源解析导入会话使用的 Provider / adapter：
  *   claude-code → 本地 Claude CLI provider（不可用则任一 anthropic / 默认 provider）
  *   codex       → 本地 Codex CLI provider（不可用则任一 openai / 默认 provider）
+ *   zcode       → 回落用户默认 Provider（SparkWork 无 zcode 执行器，续聊走默认引擎；
+ *                 anthropic 型默认给 claude 内核，否则 codex 内核）
  */
 async function resolveImportProvider(
   source: HistoryImportSource,
@@ -2504,6 +2507,22 @@ async function resolveImportProvider(
       agentAdapter: 'claude-sdk',
       permissionMode: 'claude-ask',
     }
+  }
+
+  if (source === 'zcode') {
+    const profile = profiles.find((p) => p.isDefault) ?? profiles[0]
+    if (profile == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
+    return profile.provider === 'anthropic'
+      ? {
+          providerProfileId: profile.id,
+          agentAdapter: 'claude-sdk',
+          permissionMode: 'claude-ask',
+        }
+      : {
+          providerProfileId: profile.id,
+          agentAdapter: 'codex',
+          permissionMode: 'codex-default',
+        }
   }
 
   let profileId: string | undefined
@@ -5647,7 +5666,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('history-import:preview', async (req) => {
     log.info(`history-import:preview requested, source=${req.source}`)
     const svc = createHistoryImportService()
-    return svc.preview(req.source, req.filePath, req.limit ?? 20)
+    return svc.preview(req.source, req.filePath, req.limit ?? 20, req.sourceSessionId)
   })
 
   typedIpcHandle('history-import:import', async (req) => {
@@ -9555,6 +9574,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Built-in Terminal Panel (session-scoped PTY dock) ───────────────────────
   registerTerminalIpc()
+
+  // ─── Data（dev 实例继承安装版数据库） ────────────────────────────────────────
+  registerDataIpc()
 
   registerProviderFilesIpc({
     getProfile: async (id) =>

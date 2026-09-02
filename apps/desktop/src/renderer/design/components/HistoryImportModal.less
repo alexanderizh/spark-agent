@@ -171,7 +171,10 @@
   top: 23px;
 }
 .hi-scan-source-codex {
-  top: 176px;
+  top: 120px;
+}
+.hi-scan-source-zcode {
+  top: 217px;
 }
 
 .hi-scan-source-head {
@@ -281,7 +284,7 @@
   transform: rotate(17deg);
 }
 .hi-scan-lines-bottom {
-  top: 234px;
+  top: 250px;
   transform: rotate(-17deg);
 }
 
@@ -750,6 +753,11 @@
   &.is-imported {
     opacity: 0.58;
   }
+
+  // zcode 回退分支条目：弱化边框提示这是 rewind 产生的旧线路
+  &.is-branch {
+    border-style: dashed;
+  }
 }
 
 .hi-row-check {
@@ -824,6 +832,10 @@
 }
 
 .hi-tag-imported {
+  flex: 0 0 auto;
+}
+
+.hi-tag-branch {
   flex: 0 0 auto;
 }
 

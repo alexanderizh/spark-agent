@@ -1,20 +1,24 @@
 /**
  * @module HistoryImport/HistoryImportService
  *
- * 检测 + 导入宿主机 Claude Code / Codex 对话历史。
+ * 检测 + 导入宿主机 Claude Code / Codex / ZCode 对话历史。
  *
- *   scan()    —— 枚举两个来源的 transcript，提取轻量元数据 + 去重标记
+ *   scan()    —— 枚举各来源的 transcript，提取轻量元数据 + 去重标记
  *   preview() —— 解析单个 transcript 返回前若干条消息
  *   import()  —— 全量解析所选 transcript → AgentEvent → 建会话 + 批量写事件
  *
  * 导入后的会话写入标准 agent_events，运行时在 sendTurn 时从事件重建对话历史，
  * 因此天然支持「继续对话」。来源/去重信息写入 sessions.metadata_json。
+ *
+ * ZCode 特有：会话存于中央 SQLite（所有条目共享 db 文件路径，按 sourceSessionId
+ * 定位会话）；含 rewind 分支的会话会额外生成「回退分支」独立条目（默认不勾选）。
  */
 
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, readdir, stat, open } from 'node:fs/promises'
+import { statSync } from 'node:fs'
 import { EventRepository, SessionRepository, WorkspaceRepository } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
@@ -34,6 +38,16 @@ import type {
 } from '@spark/protocol'
 import { extractClaudeCodeMeta, parseClaudeCodeTranscript } from './claudeCodeParser.js'
 import { extractCodexMeta, parseCodexRollout } from './codexParser.js'
+import { deriveTitle } from './types.js'
+import { parseZcodeTranscript, splitZcodeRoutes, type ZcodeMessageRow } from './zcodeParser.js'
+import {
+  assertZcodeSchema,
+  getZcodeSessionInfo,
+  listZcodeSessions,
+  loadZcodeMessages,
+  lookupZcodeMessageMeta,
+  openZcodeDb,
+} from './zcodeStore.js'
 import type { ParsedTranscript, TranscriptMeta } from './types.js'
 
 const log = createLogger('history-import')
@@ -111,10 +125,14 @@ export class HistoryImportService {
     return path.join(this.home, '.codex', 'session_index.jsonl')
   }
 
+  private get zcodeDbPath(): string {
+    return path.join(this.home, '.zcode', 'cli', 'db', 'db.sqlite')
+  }
+
   // ─── scan ──────────────────────────────────────────────────────────────
 
   async scan(sources?: HistoryImportSource[]): Promise<HistoryImportScanResponse> {
-    const want = new Set<HistoryImportSource>(sources ?? ['claude-code', 'codex'])
+    const want = new Set<HistoryImportSource>(sources ?? ['claude-code', 'codex', 'zcode'])
     const importedIds = this.loadImportedSourceIds()
     const items: HistoryImportItem[] = []
     const sourceSummaries: HistoryImportScanResponse['sources'] = []
@@ -125,6 +143,10 @@ export class HistoryImportService {
     }
     if (want.has('codex')) {
       const summary = await this.scanCodex(importedIds, items)
+      sourceSummaries.push(summary)
+    }
+    if (want.has('zcode')) {
+      const summary = this.scanZcode(importedIds, items)
       sourceSummaries.push(summary)
     }
 
@@ -232,7 +254,11 @@ export class HistoryImportService {
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         await this.walkCodex(full, out)
-      } else if (entry.isFile() && entry.name.startsWith('rollout-') && entry.name.endsWith('.jsonl')) {
+      } else if (
+        entry.isFile() &&
+        entry.name.startsWith('rollout-') &&
+        entry.name.endsWith('.jsonl')
+      ) {
         try {
           const st = await stat(full)
           out.push({ source: 'codex', filePath: full, sizeBytes: st.size, mtime: st.mtime })
@@ -240,6 +266,126 @@ export class HistoryImportService {
           // ignore
         }
       }
+    }
+  }
+
+  /**
+   * 扫描 ZCode 中央库：主线程会话各生成一条 item；含 rewind 回退记录的会话
+   * 额外生成「回退分支」独立 item（branchOf 指回主线路，去重键独立）。
+   * 打不开库 / schema 不兼容时仅置本来源 available:false。
+   */
+  private scanZcode(
+    importedIds: Set<string>,
+    out: HistoryImportItem[],
+  ): HistoryImportScanResponse['sources'][number] {
+    const dbPath = this.zcodeDbPath
+    let db: ReturnType<typeof openZcodeDb> | null = null
+    let count = 0
+    try {
+      db = openZcodeDb(dbPath)
+      assertZcodeSchema(db)
+      const sessions = listZcodeSessions(db)
+      let sizeBytes = 0
+      try {
+        sizeBytes = statSync(dbPath).size
+      } catch {
+        // ignore
+      }
+
+      for (const s of sessions) {
+        if (s.messageCount === 0) continue
+        const title = deriveTitle(s.title, `Zcode 会话 ${s.id.slice(0, 16)}`)
+        const base = {
+          source: 'zcode' as const,
+          cwd: s.directory,
+          project: projectName(s.directory),
+          sizeBytes,
+          filePath: dbPath,
+          firstTimestamp: s.timeCreated > 0 ? new Date(s.timeCreated).toISOString() : null,
+          lastTimestamp: s.timeUpdated > 0 ? new Date(s.timeUpdated).toISOString() : null,
+        }
+        out.push({
+          ...base,
+          sourceSessionId: s.id,
+          title,
+          messageCount: s.messageCount,
+          alreadyImported: importedIds.has(s.id),
+        })
+        count++
+
+        const branchItem = this.buildZcodeBranchItem(db, s, title, sizeBytes, dbPath, importedIds)
+        if (branchItem != null) {
+          out.push(branchItem)
+          count++
+        }
+      }
+      return { source: 'zcode', available: true, count, rootPath: dbPath }
+    } catch (err) {
+      return { source: 'zcode', available: false, count, rootPath: dbPath, error: errMsg(err) }
+    } finally {
+      db?.close()
+    }
+  }
+
+  /**
+   * 由 revert 记录推导「回退分支」条目：点查边界消息的 sequence/时间计算分支
+   * 消息数与时间范围，不载入全会话。messageCount 为近似值（含会被过滤的合成消息）。
+   */
+  private buildZcodeBranchItem(
+    db: ReturnType<typeof openZcodeDb>,
+    session: ReturnType<typeof listZcodeSessions>[number],
+    mainTitle: string,
+    sizeBytes: number,
+    dbPath: string,
+    importedIds: Set<string>,
+  ): HistoryImportItem | null {
+    const revert = session.revert
+    const targetId = revert?.targetMessageID
+    if (revert == null || typeof targetId !== 'string') return null
+
+    const ids = [targetId]
+    if (typeof revert.createdMessageID === 'string') ids.push(revert.createdMessageID)
+    if (typeof revert.branchCutAfterMessageID === 'string') ids.push(revert.branchCutAfterMessageID)
+    const metas = lookupZcodeMessageMeta(db, session.id, ids)
+    const target = metas.get(targetId)
+    if (target == null) return null
+
+    // 被回退段 = [target.sequence, 边界]：旧格式边界 = rewind 合成消息前一序号；
+    // 新格式边界 = branchCutAfter 消息序号本身（见 zcodeParser.splitZcodeRoutes）
+    let endSeq: number | undefined
+    let endTime: number | undefined
+    if (typeof revert.createdMessageID === 'string') {
+      const rew = metas.get(revert.createdMessageID)
+      if (rew != null && rew.sequence > target.sequence) {
+        endSeq = rew.sequence - 1
+        endTime = rew.timeCreated
+      }
+    } else if (typeof revert.branchCutAfterMessageID === 'string') {
+      const cut = metas.get(revert.branchCutAfterMessageID)
+      if (cut != null && cut.sequence >= target.sequence) {
+        endSeq = cut.sequence
+        endTime = cut.timeCreated
+      }
+    }
+    if (endSeq == null || endSeq < target.sequence) return null
+
+    const branchCount = endSeq - target.sequence + 1
+    if (branchCount <= 0) return null
+    const branchKey = zcodeBranchKey(session.id, 1)
+    return {
+      source: 'zcode',
+      sourceSessionId: branchKey,
+      title: `${mainTitle}（回退分支）`,
+      cwd: session.directory,
+      project: projectName(session.directory),
+      messageCount: branchCount,
+      firstTimestamp: target.timeCreated > 0 ? new Date(target.timeCreated).toISOString() : null,
+      lastTimestamp: endTime != null && endTime > 0 ? new Date(endTime).toISOString() : null,
+      sizeBytes,
+      filePath: dbPath,
+      alreadyImported: importedIds.has(branchKey),
+      branchOf: session.id,
+      branchIndex: 1,
     }
   }
 
@@ -270,9 +416,15 @@ export class HistoryImportService {
     source: HistoryImportSource,
     filePath: string,
     limit = 20,
+    sourceSessionId?: string,
   ): Promise<HistoryImportPreviewResponse> {
-    const text = await readFile(filePath, 'utf-8')
-    const parsed = this.parse(source, text, filePath)
+    const parsed =
+      source === 'zcode'
+        ? this.parseZcodeSelection(
+            { source, filePath, sourceSessionId: sourceSessionId ?? '', cwd: null, title: '' },
+            'preview',
+          )
+        : this.parse(source, await readFile(filePath, 'utf-8'), filePath)
     const messages: HistoryImportPreviewMessage[] = []
     for (const event of parsed.events) {
       let msg: HistoryImportPreviewMessage | null = null
@@ -305,7 +457,13 @@ export class HistoryImportService {
 
     for (let i = 0; i < selections.length; i++) {
       const sel = selections[i]!
-      this.emitProgress({ phase: 'parsing', current: i, total, currentTitle: sel.title, sourceSessionId: sel.sourceSessionId })
+      this.emitProgress({
+        phase: 'parsing',
+        current: i,
+        total,
+        currentTitle: sel.title,
+        sourceSessionId: sel.sourceSessionId,
+      })
 
       if (importedIds.has(sel.sourceSessionId)) {
         skipped++
@@ -323,7 +481,13 @@ export class HistoryImportService {
         log.error(`import failed for ${sel.sourceSessionId}: ${errMsg(err)}`)
         results.push({ sourceSessionId: sel.sourceSessionId, status: 'failed', error: errMsg(err) })
       }
-      this.emitProgress({ phase: 'writing', current: i + 1, total, currentTitle: sel.title, sourceSessionId: sel.sourceSessionId })
+      this.emitProgress({
+        phase: 'writing',
+        current: i + 1,
+        total,
+        currentTitle: sel.title,
+        sourceSessionId: sel.sourceSessionId,
+      })
     }
 
     this.emitProgress({ phase: 'done', current: total, total })
@@ -334,10 +498,8 @@ export class HistoryImportService {
     sel: HistoryImportSelection,
     workspaceCache: Map<string, string>,
   ): Promise<string> {
-    const text = await readFile(sel.filePath, 'utf-8')
-    const tempSessionId = 'pending'
     // 先解析拿到 meta（cwd / 时间），用于 workspace 归属与时间回填
-    const probe = this.parse(sel.source, text, sel.filePath, tempSessionId)
+    const probe = await this.loadParsedTranscript(sel, 'pending')
     if (probe.events.length === 0) {
       throw new Error('transcript 解析为空（无可导入消息）')
     }
@@ -356,7 +518,7 @@ export class HistoryImportService {
     })
 
     // 用真实 sessionId 重新解析（事件需绑定 sessionId）
-    const parsed = this.parse(sel.source, text, sel.filePath, sessionId)
+    const parsed = await this.loadParsedTranscript(sel, sessionId)
     const eventRepo = new EventRepository(this.deps.db)
     eventRepo.insertBatch(
       parsed.events.map((e) => ({
@@ -374,6 +536,7 @@ export class HistoryImportService {
       sourceSessionId: sel.sourceSessionId,
       sourceFile: sel.filePath,
       importedAt: new Date().toISOString(),
+      ...(sel.branchOf != null ? { branchOf: sel.branchOf } : {}),
     }
     const sessionRepo = new SessionRepository(this.deps.db)
     sessionRepo.patchMetadata(sessionId, { importedFrom: meta.importedFrom, importHistory: meta })
@@ -383,7 +546,9 @@ export class HistoryImportService {
     const updated = parsed.meta.lastTimestamp
     if (created != null || updated != null) {
       this.deps.db.raw
-        .prepare('UPDATE sessions SET created_at = COALESCE(?, created_at), updated_at = COALESCE(?, updated_at) WHERE id = ?')
+        .prepare(
+          'UPDATE sessions SET created_at = COALESCE(?, created_at), updated_at = COALESCE(?, updated_at) WHERE id = ?',
+        )
         .run(toIso(created), toIso(updated), sessionId)
     }
 
@@ -391,6 +556,46 @@ export class HistoryImportService {
   }
 
   // ─── helpers ─────────────────────────────────────────────────────────────
+
+  /** 按来源解析所选条目（文件型读文本；zcode 查询 SQLite 并切分线路） */
+  private async loadParsedTranscript(
+    sel: HistoryImportSelection,
+    sessionId: string,
+  ): Promise<ParsedTranscript> {
+    if (sel.source === 'zcode') {
+      return this.parseZcodeSelection(sel, sessionId)
+    }
+    const text = await readFile(sel.filePath, 'utf-8')
+    return this.parse(sel.source, text, sel.filePath, sessionId)
+  }
+
+  /**
+   * 解析 ZCode 条目：sourceSessionId 形如 `sess_xxx`（主线路）或
+   * `sess_xxx#branch-n`（回退分支）。每次打开只读连接，用后即关。
+   */
+  private parseZcodeSelection(sel: HistoryImportSelection, sessionId: string): ParsedTranscript {
+    const { sessionId: zcodeSessionId, route } = parseZcodeSourceId(sel.sourceSessionId)
+    const db = openZcodeDb(sel.filePath)
+    try {
+      const info = getZcodeSessionInfo(db, zcodeSessionId)
+      if (info == null) {
+        throw new Error(`ZCode 会话不存在: ${zcodeSessionId}`)
+      }
+      const messages = loadZcodeMessages(db, zcodeSessionId)
+      const routes = splitZcodeRoutes(messages, info.revert)
+      const rows: ZcodeMessageRow[] =
+        route === 'main' ? routes.main : (routes.branches[route.branch - 1]?.rows ?? [])
+      return parseZcodeTranscript(rows, {
+        sessionId,
+        sourceSessionId: sel.sourceSessionId,
+        fallbackTimestamp: new Date().toISOString(),
+        title: info.title,
+        cwd: info.directory ?? sel.cwd,
+      })
+    } finally {
+      db.close()
+    }
+  }
 
   private parse(
     source: HistoryImportSource,
@@ -404,7 +609,12 @@ export class HistoryImportService {
       return parseClaudeCodeTranscript(text, { sessionId, sourceSessionId, fallbackTimestamp })
     }
     const sourceSessionId = codexIdFromFilename(filePath)
-    return parseCodexRollout(text, { sessionId, sourceSessionId, threadName: null, fallbackTimestamp })
+    return parseCodexRollout(text, {
+      sessionId,
+      sourceSessionId,
+      threadName: null,
+      fallbackTimestamp,
+    })
   }
 
   /**
@@ -465,7 +675,9 @@ export class HistoryImportService {
         .all() as Array<{ metadata_json: string }>
       for (const row of rows) {
         try {
-          const meta = JSON.parse(row.metadata_json) as { importHistory?: { sourceSessionId?: string } }
+          const meta = JSON.parse(row.metadata_json) as {
+            importHistory?: { sourceSessionId?: string }
+          }
           const id = meta.importHistory?.sourceSessionId
           if (typeof id === 'string') set.add(id)
         } catch {
@@ -487,7 +699,11 @@ export class HistoryImportService {
         if (line.length === 0) continue
         try {
           const obj = JSON.parse(line) as { id?: string; thread_name?: string }
-          if (typeof obj.id === 'string' && typeof obj.thread_name === 'string' && obj.thread_name.length > 0) {
+          if (
+            typeof obj.id === 'string' &&
+            typeof obj.thread_name === 'string' &&
+            obj.thread_name.length > 0
+          ) {
             map.set(obj.id, obj.thread_name)
           }
         } catch {
@@ -547,4 +763,20 @@ function codexIdFromFilename(filePath: string): string {
   const base = path.basename(filePath, '.jsonl')
   const match = base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
   return match?.[1] ?? base
+}
+
+/** ZCode 分支条目去重键：`sess_xxx#branch-n` */
+function zcodeBranchKey(sessionId: string, branch: number): string {
+  return `${sessionId}#branch-${branch}`
+}
+
+function parseZcodeSourceId(id: string): { sessionId: string; route: 'main' | { branch: number } } {
+  const marker = '#branch-'
+  const idx = id.indexOf(marker)
+  if (idx === -1) return { sessionId: id, route: 'main' }
+  const n = Number(id.slice(idx + marker.length))
+  return {
+    sessionId: id.slice(0, idx),
+    route: { branch: Number.isInteger(n) && n >= 1 ? n : 1 },
+  }
 }

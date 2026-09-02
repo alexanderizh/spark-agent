@@ -1,10 +1,14 @@
 /**
- * HistoryImportModal — 检测并导入宿主机 Claude Code / Codex 对话历史。
+ * HistoryImportModal — 检测并导入宿主机 Claude Code / Codex / ZCode 对话历史。
  *
  * 交互阶段：
- *   1. 扫描中    —— 并行扫描两个来源，展示来源状态与实时发现数量
+ *   1. 扫描中    —— 并行扫描各来源，展示来源状态与实时发现数量
  *   2. 选择      —— 虚拟列表 + 搜索/项目/时间筛选 + 完整对话预览
  *   3. 导入/完成 —— 进度反馈 + 完成汇总
+ *
+ * ZCode 来源的会话存于中央 SQLite；含 rewind 回退记录的会话会额外列出
+ * 「回退分支」独立条目（可单独预览/导入，默认不勾选）。
+ * 选择键使用 sourceSessionId（zcode 所有条目共享同一 db 文件路径，filePath 不唯一）。
  */
 
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
@@ -50,6 +54,7 @@ type ScanSourceState = {
 const SOURCE_LABEL: Record<HistoryImportSource, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
+  zcode: 'ZCode',
 }
 
 const TIME_FILTER_OPTIONS = [
@@ -62,12 +67,14 @@ const TIME_FILTER_OPTIONS = [
 const EMPTY_SCAN_STATE: Record<HistoryImportSource, ScanSourceState> = {
   'claude-code': { status: 'scanning', count: 0, rootPath: '~/.claude/projects' },
   codex: { status: 'scanning', count: 0, rootPath: '~/.codex/sessions' },
+  zcode: { status: 'scanning', count: 0, rootPath: '~/.zcode/cli/db/db.sqlite' },
 }
 
 function freshScanState(): Record<HistoryImportSource, ScanSourceState> {
   return {
     'claude-code': { ...EMPTY_SCAN_STATE['claude-code'] },
     codex: { ...EMPTY_SCAN_STATE.codex },
+    zcode: { ...EMPTY_SCAN_STATE.zcode },
   }
 }
 
@@ -217,7 +224,11 @@ export function HistoryImportModal() {
     }
 
     try {
-      const settled = await Promise.allSettled([scanOne('claude-code'), scanOne('codex')])
+      const settled = await Promise.allSettled([
+        scanOne('claude-code'),
+        scanOne('codex'),
+        scanOne('zcode'),
+      ])
       const responses = settled.flatMap((result) =>
         result.status === 'fulfilled' ? [result.value] : [],
       )
@@ -259,7 +270,7 @@ export function HistoryImportModal() {
   })
 
   const counts = useMemo(() => {
-    const result = { 'claude-code': 0, codex: 0 }
+    const result: Record<HistoryImportSource, number> = { 'claude-code': 0, codex: 0, zcode: 0 }
     for (const item of items) result[item.source]++
     return result
   }, [items])
@@ -284,6 +295,7 @@ export function HistoryImportModal() {
 
   const sourceOptions = useMemo(
     () => [
+      { label: `ZCode ${counts.zcode.toLocaleString()}`, value: 'zcode' },
       { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
       { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
     ],
@@ -326,14 +338,16 @@ export function HistoryImportModal() {
     [filtered],
   )
   const allSelected =
-    selectableVisible.length > 0 && selectableVisible.every((item) => selected.has(item.filePath))
-  const someSelected = selectableVisible.some((item) => selected.has(item.filePath)) && !allSelected
+    selectableVisible.length > 0 &&
+    selectableVisible.every((item) => selected.has(item.sourceSessionId))
+  const someSelected =
+    selectableVisible.some((item) => selected.has(item.sourceSessionId)) && !allSelected
 
   const selectedStats = useMemo(
     () =>
       items.reduce(
         (result, item) =>
-          selected.has(item.filePath)
+          selected.has(item.sourceSessionId)
             ? {
                 messages: result.messages + item.messageCount,
                 bytes: result.bytes + item.sizeBytes,
@@ -360,11 +374,11 @@ export function HistoryImportModal() {
     listScrollRef.current?.scrollTo({ top: 0 })
   }, [projectFilter, search, showImported, sourceTab, timeFilter])
 
-  const toggle = useCallback((filePath: string, checked: boolean) => {
+  const toggle = useCallback((key: string, checked: boolean) => {
     setSelected((current) => {
       const next = new Set(current)
-      if (checked) next.add(filePath)
-      else next.delete(filePath)
+      if (checked) next.add(key)
+      else next.delete(key)
       return next
     })
   }, [])
@@ -374,8 +388,8 @@ export function HistoryImportModal() {
       setSelected((current) => {
         const next = new Set(current)
         for (const item of selectableVisible) {
-          if (checked) next.add(item.filePath)
-          else next.delete(item.filePath)
+          if (checked) next.add(item.sourceSessionId)
+          else next.delete(item.sourceSessionId)
         }
         return next
       })
@@ -398,6 +412,8 @@ export function HistoryImportModal() {
           source: item.source,
           filePath: item.filePath,
           limit: previewLimit,
+          // zcode 所有条目共享同一 db 路径，必须带 sourceSessionId 定位会话
+          sourceSessionId: item.sourceSessionId,
         })
         if (requestId !== previewRequestRef.current) return
         setPreviewMsgs(response.messages)
@@ -414,13 +430,14 @@ export function HistoryImportModal() {
 
   const doImport = useCallback(async () => {
     const selections: HistoryImportSelection[] = items
-      .filter((item) => selected.has(item.filePath) && !item.alreadyImported)
+      .filter((item) => selected.has(item.sourceSessionId) && !item.alreadyImported)
       .map((item) => ({
         source: item.source,
         filePath: item.filePath,
         sourceSessionId: item.sourceSessionId,
         cwd: item.cwd,
         title: item.title,
+        ...(item.branchOf != null ? { branchOf: item.branchOf } : {}),
       }))
     if (selections.length === 0) return
     setPhase('importing')
@@ -439,7 +456,8 @@ export function HistoryImportModal() {
 
   const close = useCallback(() => ctx.setHistoryImportOpen(false), [ctx])
   const selectedCount = selected.size
-  const discoveredCount = scanSources['claude-code'].count + scanSources.codex.count
+  const discoveredCount =
+    scanSources['claude-code'].count + scanSources.codex.count + scanSources.zcode.count
   const importingPercent =
     progress != null && progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -483,11 +501,12 @@ export function HistoryImportModal() {
         <div className="hi-scan-state" aria-live="polite">
           <div className="hi-scan-heading">
             <h2>正在检索本机会话</h2>
-            <p>并行扫描 Claude Code 与 Codex，本地解析后生成可预览列表</p>
+            <p>并行扫描 Claude Code、Codex 与 ZCode，本地解析后生成可预览列表</p>
           </div>
           <div className="hi-scan-flow" aria-hidden="true">
             <ScanSourceCard source="claude-code" state={scanSources['claude-code']} />
             <ScanSourceCard source="codex" state={scanSources.codex} />
+            <ScanSourceCard source="zcode" state={scanSources.zcode} />
             <div className="hi-scan-lines hi-scan-lines-top">
               <i />
               <i />
@@ -525,6 +544,7 @@ export function HistoryImportModal() {
           <div className="hi-scan-statuses">
             <ScanStatusLabel source="claude-code" state={scanSources['claude-code']} />
             <ScanStatusLabel source="codex" state={scanSources.codex} />
+            <ScanStatusLabel source="zcode" state={scanSources.zcode} />
             <span>完成后自动进入选择页面</span>
           </div>
           <p className="hi-scan-hint">可随时关闭，已扫描结果不会自动导入</p>
@@ -612,11 +632,11 @@ export function HistoryImportModal() {
                     {listVirtualizer.getVirtualItems().map((virtualRow) => {
                       const item = filtered[virtualRow.index]
                       if (item == null) return null
-                      const checked = selected.has(item.filePath)
-                      const isActive = previewItem?.filePath === item.filePath
+                      const checked = selected.has(item.sourceSessionId)
+                      const isActive = previewItem?.sourceSessionId === item.sourceSessionId
                       return (
                         <div
-                          key={item.filePath}
+                          key={item.sourceSessionId}
                           ref={listVirtualizer.measureElement}
                           data-index={virtualRow.index}
                           className="hi-row-shell"
@@ -627,13 +647,14 @@ export function HistoryImportModal() {
                               'hi-row',
                               isActive && 'is-active',
                               item.alreadyImported && 'is-imported',
+                              item.branchOf != null && 'is-branch',
                             )}
                           >
                             <div className="hi-row-check">
                               <Checkbox
                                 checked={checked}
                                 disabled={item.alreadyImported}
-                                onChange={(value) => toggle(item.filePath, Boolean(value))}
+                                onChange={(value) => toggle(item.sourceSessionId, Boolean(value))}
                               />
                             </div>
                             <button
@@ -645,6 +666,9 @@ export function HistoryImportModal() {
                               <div className="hi-row-main">
                                 <div className="hi-row-title">
                                   <span>{item.title || '未命名会话'}</span>
+                                  {item.branchOf != null && (
+                                    <Tag className="hi-tag-branch">回退分支</Tag>
+                                  )}
                                   {item.alreadyImported && (
                                     <Tag className="hi-tag-imported">已导入</Tag>
                                   )}

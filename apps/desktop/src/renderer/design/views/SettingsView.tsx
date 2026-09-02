@@ -4053,6 +4053,50 @@ function StorageSection() {
   const { invoke: openDataDir } = useIpcInvoke('app:open-data-dir')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const { invoke: setSetting } = useIpcInvoke('settings:set')
+  const { invoke: getInheritInfo } = useIpcInvoke('data:get-inherit-info')
+  const { invoke: inheritProductionDb } = useIpcInvoke('data:inherit-production-db')
+  const [inheritInfo, setInheritInfo] = useState<
+    Awaited<ReturnType<typeof getInheritInfo>> | null
+  >(null)
+  const [inheriting, setInheriting] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void getInheritInfo({})
+      .then((info) => {
+        if (!cancelled) setInheritInfo(info)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInheritInfo({ available: false, currentIsDev: false, reason: '查询失败' })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getInheritInfo])
+
+  const handleInheritProductionDb = useCallback(async () => {
+    const confirmed = await requestConfirm({
+      title: '继承安装版数据？',
+      description:
+        '将把安装版 SparkWork 的数据库快照导入当前开发实例（会话 / Provider / 设置），当前开发数据会先自动备份，导入后应用自动重启。安装版数据不受影响；云端登录态需重新登录。',
+      confirmText: '继承并重启',
+      danger: true,
+    })
+    if (!confirmed) return
+    setInheriting(true)
+    try {
+      const res = await inheritProductionDb({})
+      toast.success(
+        `已继承安装版数据（快照 ${formatBytes(res.incomingBytes ?? 0)}），应用即将重启…`,
+      )
+      // 不复位 loading：应用马上重启
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '继承安装版数据失败')
+      setInheriting(false)
+    }
+  }, [inheritProductionDb, requestConfirm, toast])
 
   const refreshWorkspace = useCallback(async () => {
     const res = await getCurrentWorkspace({})
@@ -4414,6 +4458,26 @@ function StorageSection() {
             </Button>
           }
         />
+        {inheritInfo?.available && (
+          <SettingsRow
+            title="继承安装版数据"
+            desc={`把安装版 SparkWork 的数据库快照导入当前开发实例（会话 / Provider / 设置），当前开发数据会先自动备份，导入后自动重启。安装版运行中也可执行。${
+              inheritInfo.productionDbPath ? `来源：${inheritInfo.productionDbPath}` : ''
+            }`}
+            right={
+              <Button
+                size="middle"
+                type="text"
+                danger
+                loading={inheriting}
+                disabled={inheriting}
+                onClick={() => void handleInheritProductionDb()}
+              >
+                继承并重启
+              </Button>
+            }
+          />
+        )}
       </div>
 
       <div className="subsec-h">清理</div>

@@ -6,6 +6,10 @@
  * 支持检测并导入宿主机上已有的 Agent CLI 对话历史：
  *   - Claude Code：~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
  *   - Codex：~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+ *   - ZCode：~/.zcode/cli/db/db.sqlite（中央 SQLite，session/message/part 三级表）
+ *
+ * ZCode 会话可能包含 rewind（回退）产生的分支线路：主线路条目之外，被回退的旧分支
+ * 以独立条目形态并列（branchOf 指回主线路 sourceSessionId），默认不勾选。
  *
  * 流程：
  *   1. scan   —— 轻量扫描两个来源，返回可导入条目列表（只读文件头/尾 + stat，不全量解析）
@@ -17,7 +21,7 @@
  */
 
 /** 对话历史来源 */
-export type HistoryImportSource = 'claude-code' | 'codex'
+export type HistoryImportSource = 'claude-code' | 'codex' | 'zcode'
 
 /** 写入 sessions.metadata_json 的导入溯源信息（也用于去重） */
 export interface HistoryImportMetadata {
@@ -29,6 +33,8 @@ export interface HistoryImportMetadata {
   sourceFile: string
   /** 导入时间（ISO 8601） */
   importedAt: string
+  /** 分支条目（zcode rewind 回退线路）：所属主线路的 sourceSessionId */
+  branchOf?: string
 }
 
 /** 扫描得到的单个可导入条目（轻量元数据） */
@@ -54,6 +60,13 @@ export interface HistoryImportItem {
   filePath: string
   /** 是否已导入过（按 sourceSessionId 去重） */
   alreadyImported: boolean
+  /**
+   * 分支条目（仅 zcode rewind 回退线路）：指向所属主线路条目的 sourceSessionId。
+   * 非分支条目无此字段。
+   */
+  branchOf?: string
+  /** 分支条目在其来源会话内的序号（1 起） */
+  branchIndex?: number
 }
 
 /** scan 请求：可限定来源；不传则两个来源都扫 */
@@ -81,6 +94,11 @@ export interface HistoryImportPreviewRequest {
   filePath: string
   /** 最多返回多少条消息，默认 20 */
   limit?: number
+  /**
+   * 来源会话标识。文件型来源（claude-code/codex）可从 filePath 推导，可不传；
+   * zcode 所有条目共享同一个 db 文件路径，必须传（分支条目为 `sessId#branch-n`）。
+   */
+  sourceSessionId?: string
 }
 
 /** preview 中的一条消息（已扁平化，仅用于展示） */
@@ -104,6 +122,8 @@ export interface HistoryImportSelection {
   sourceSessionId: string
   cwd: string | null
   title: string
+  /** 分支条目（zcode）：所属主线路的 sourceSessionId */
+  branchOf?: string
 }
 
 /** import 请求 */

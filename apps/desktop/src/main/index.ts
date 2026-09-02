@@ -133,6 +133,10 @@ import {
   ensurePreMigrationBackup,
   restoreDatabaseBackup,
 } from './services/DatabaseBackupService.js'
+import {
+  applyPendingProductionDbInheritance,
+  setProductionDbInheritQuitRequester,
+} from './services/ProductionDbInheritService.js'
 import { installSingleInstanceLock } from './single-instance.js'
 import { getDatabase } from './db.js'
 import { getRecentSessionsForTray } from './ipc/index.js'
@@ -209,6 +213,9 @@ function requestApplicationQuit(reason: string): void {
   log.warn(`[quit-forensics] request-quit; reason=${reason}; windows=${formatWindowSnapshot()}`)
   app.quit()
 }
+
+// 继承安装版数据：stage 完成后由 IPC 层触发 relaunch + 完整关闭链退出
+setProductionDbInheritQuitRequester(() => requestApplicationQuit('inherit-production-db'))
 
 function requestApplicationExit(reason: string, exitCode: number): void {
   requestedQuitReason = reason
@@ -863,6 +870,20 @@ async function initializeApp(): Promise<void> {
   let sparkCliBridge: SparkCliBridge | null = null
   let customToolsRuntime: CustomToolsRuntimeService | null = null
   log.info(`Database path: ${dbPath}`)
+  // 「继承安装版数据」：设置页 stage 的快照在此次启动、建库之前替换当前库。
+  // 失败仅告警并清除 marker，用现有数据库继续启动，绝不阻塞。
+  try {
+    const inherited = await applyPendingProductionDbInheritance({
+      databasePath: dbPath,
+      userDataDir: app.getPath('userData'),
+      appVersion: app.getVersion(),
+    })
+    if (inherited.applied) {
+      log.warn(`Inherited production db applied; previous db at ${inherited.backupDirectory ?? '?'}`)
+    }
+  } catch (err) {
+    log.warn(`Apply pending inherited db failed (non-fatal): ${String(err)}`)
+  }
   let databaseBackup: Awaited<ReturnType<typeof ensurePreMigrationBackup>>
   try {
     databaseBackup = await ensurePreMigrationBackup({
