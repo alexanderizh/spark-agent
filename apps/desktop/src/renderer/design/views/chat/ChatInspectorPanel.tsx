@@ -52,6 +52,7 @@ import type {
 } from './ChatUsageTypes'
 import type { UIMessage } from '../../services/event-mapper'
 import { getVisibleTurnPromptSnapshotUserMessage } from './internal-turn-message-visibility'
+import { parseEnvVarsJson, serializeEnvVarsJson } from './chat-config-env-json'
 
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 const EMPTY_ENV_LAYER: EnvConfigGetResponse['project'] = { enabled: true, vars: [] }
@@ -69,6 +70,7 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
   return (
     <div className="runtime-env-row">
       <input
+        aria-label="环境变量键名"
         className="form-input runtime-env-key"
         placeholder="KEY"
         value={item.key}
@@ -76,6 +78,7 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         onBlur={onBlurPersist}
       />
       <input
+        aria-label={`${item.key.trim() || '环境变量'}的值`}
         className="form-input runtime-env-value"
         placeholder="VALUE"
         value={item.value}
@@ -83,6 +86,7 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         onBlur={onBlurPersist}
       />
       <input
+        aria-label={`${item.key.trim() || '环境变量'}的说明`}
         className="form-input runtime-env-description"
         placeholder="说明（可选）"
         value={item.description ?? ''}
@@ -93,6 +97,7 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         type="button"
         className="btn ghost sm runtime-env-remove"
         onClick={onRemove}
+        aria-label={`删除${item.key.trim() || '该环境变量'}`}
         title="删除"
       >
         <Icons.Trash size={12} />
@@ -225,11 +230,14 @@ export function ChatConfigPanel({
           value: { enabled: content.trim().length > 0, content },
         })
         await loadRuntimeConfig()
+        toast.success(`${scope === 'project' ? '项目' : '会话'}提示词已保存`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '提示词保存失败')
       } finally {
         setSavingRuntime(false)
       }
     },
-    [loadRuntimeConfig, updatePromptConfig],
+    [loadRuntimeConfig, updatePromptConfig, toast],
   )
 
   const saveEnvLayer = useCallback(
@@ -237,7 +245,7 @@ export function ChatConfigPanel({
       scope: 'project' | 'session',
       scopeRef: string,
       vars: EnvVarItem[],
-      options?: { silent?: boolean },
+      options?: { silent?: boolean; successMessage?: string },
     ) => {
       // 仅保留键名非空的条目；键名两端空白去除。
       const cleaned = vars
@@ -258,7 +266,13 @@ export function ChatConfigPanel({
           scopeRef,
           value: { enabled: true, vars: cleaned },
         })
-        if (!options?.silent) await loadRuntimeConfig()
+        if (!options?.silent) {
+          await loadRuntimeConfig()
+          toast.success(
+            options?.successMessage ?? `${scope === 'project' ? '项目' : '会话'}环境变量已保存`,
+          )
+        }
+        return true
       } catch (err) {
         // 失败必须可见，否则用户以为「失焦已保存」实际丢了。
         // silent 路径触发频率高，用 console.warn 记录即可；显式保存失败弹 toast。
@@ -267,11 +281,62 @@ export function ChatConfigPanel({
         } else {
           toast.error(err instanceof Error ? err.message : '环境变量保存失败')
         }
+        return false
       } finally {
         if (!options?.silent) setSavingRuntime(false)
       }
     },
     [loadRuntimeConfig, updateEnvConfig, toast],
+  )
+
+  const copyEnvJson = useCallback(
+    async (scope: 'project' | 'session', vars: EnvVarItem[]) => {
+      try {
+        const json = serializeEnvVarsJson(vars)
+        await navigator.clipboard.writeText(json)
+        const count = parseEnvVarsJson(json).length
+        toast.success(`已复制 ${count} 个${scope === 'project' ? '项目' : '会话'}环境变量`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '复制环境变量失败')
+      }
+    },
+    [toast],
+  )
+
+  const pasteEnvJson = useCallback(
+    async (
+      scope: 'project' | 'session',
+      scopeRef: string,
+      setVars: React.Dispatch<React.SetStateAction<EnvVarItem[]>>,
+    ) => {
+      let text: string
+      try {
+        text = await navigator.clipboard.readText()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '读取剪贴板失败')
+        return
+      }
+
+      if (text.trim().length === 0) {
+        toast.warning('剪贴板为空')
+        return
+      }
+
+      let imported: EnvVarItem[]
+      try {
+        imported = parseEnvVarsJson(text)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '环境变量 JSON 导入失败')
+        return
+      }
+
+      const scopeLabel = scope === 'project' ? '项目' : '会话'
+      const saved = await saveEnvLayer(scope, scopeRef, imported, {
+        successMessage: `已导入并保存 ${imported.length} 个${scopeLabel}环境变量`,
+      })
+      if (saved) setVars(imported)
+    },
+    [saveEnvLayer, toast],
   )
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -331,17 +396,39 @@ export function ChatConfigPanel({
           />
         ))}
         <div className="runtime-env-actions">
-          <button className="btn ghost sm runtime-env-add" onClick={addVar}>
+          <button type="button" className="btn ghost sm runtime-env-add" onClick={addVar}>
             <Icons.Plus size={12} /> 添加变量
           </button>
-          <button
-            className="btn primary sm runtime-save-btn"
-            disabled={savingRuntime}
-            onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
-          >
-            <Save size={12} />
-            {scope === 'project' ? '保存项目' : '保存会话'}
-          </button>
+          <div className="runtime-env-transfer-actions">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`复制${label} JSON`}
+              title={`复制${label}明文 JSON`}
+              onClick={() => void copyEnvJson(scope, vars)}
+            >
+              <Icons.Copy size={12} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`粘贴${label} JSON`}
+              disabled={savingRuntime}
+              title={`从剪贴板导入并保存${label}`}
+              onClick={() => void pasteEnvJson(scope, scopeRef, setVars)}
+            >
+              <Icons.Clipboard size={12} />
+            </button>
+            <button
+              type="button"
+              className="btn primary sm runtime-save-btn"
+              disabled={savingRuntime}
+              onClick={() => void saveEnvLayer(scope, scopeRef, vars)}
+            >
+              <Save size={12} />
+              {scope === 'project' ? '保存项目' : '保存会话'}
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -380,6 +467,7 @@ export function ChatConfigPanel({
               <>
                 <div className="runtime-env-hint">
                   键值仅保存在本机并注入运行环境，提示词中只暴露脱敏后的键名与描述，避免敏感信息泄露。修改后失焦或删除即自动保存，无需手动点保存。
+                  复制 JSON 会将当前层级的明文值写入系统剪贴板，请妥善保管。
                 </div>
                 {workspaceId != null &&
                   renderEnvBlock(
@@ -431,12 +519,14 @@ export function ChatConfigPanel({
                       placeholder="当前项目会话通用提示词..."
                     />
                     <button
+                      type="button"
                       className="btn ghost sm runtime-save-btn"
                       disabled={savingRuntime}
                       onClick={() =>
                         void savePromptLayer('project', workspaceId, projectPromptDraft)
                       }
                     >
+                      <Save size={12} />
                       保存项目
                     </button>
                   </div>
@@ -451,10 +541,12 @@ export function ChatConfigPanel({
                       placeholder="仅对当前会话生效..."
                     />
                     <button
+                      type="button"
                       className="btn ghost sm runtime-save-btn"
                       disabled={savingRuntime}
                       onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
                     >
+                      <Save size={12} />
                       保存会话
                     </button>
                   </div>
