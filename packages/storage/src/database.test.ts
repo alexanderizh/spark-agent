@@ -156,7 +156,7 @@ describe('SparkDatabase', () => {
     )
     expect(sparkAssistant?.prompt).toContain('平台管理与全栈开发能力')
     expect(sparkAssistant?.prompt).toContain('用户默认只能看到最后一段最终正文')
-    expect(sparkAssistant?.prompt).toContain('最终回复块必须携带完整答复')
+    expect(sparkAssistant?.prompt).toContain('该回复块必须携带完整答复')
 
     const removedFullstackAgent = db.raw
       .prepare('SELECT id FROM agents WHERE id = ?')
@@ -388,7 +388,7 @@ describe('SparkDatabase', () => {
       .get('platform-manager-agent') as { prompt: string }
     expect(prompt).toContain('用户自定义补充')
     expect(prompt).toContain('用户默认只能看到最后一段最终正文')
-    expect(prompt).toContain('最终回复块必须携带完整答复')
+    expect(prompt).toContain('该回复块必须携带完整答复')
     expect(prompt.match(/用户默认只能看到最后一段最终正文/g)).toHaveLength(1)
   })
 
