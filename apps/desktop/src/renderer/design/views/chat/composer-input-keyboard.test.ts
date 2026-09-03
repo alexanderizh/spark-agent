@@ -15,6 +15,11 @@ describe('composer input keyboard helpers', () => {
     expect(getSlashCommandContext('/goal 继续处理', 6)).toBeNull()
   })
 
+  it('does not treat an at-sign prefix as a slash command', () => {
+    const value = '@commit-laster-morning-date'
+    expect(getSlashCommandContext(value, value.length)).toBeNull()
+  })
+
   it('uses Enter without Shift and Tab to select a command', () => {
     expect(isComposerCommandSelectionKey('Enter', false)).toBe(true)
     expect(isComposerCommandSelectionKey('Enter', true)).toBe(false)

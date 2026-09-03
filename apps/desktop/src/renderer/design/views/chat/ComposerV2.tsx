@@ -3079,17 +3079,12 @@ export function ComposerV2({
       setValue(next)
       // Reset history browsing when user types manually
       historyIndexRef.current = -1
-      // 团队模式：`@` 留给 Agent mention；斜杠命令则按光标前最近的片段触发。
+      // 命令弹窗仅由斜杠触发；团队模式下的 `@` 由下方 Agent mention 独立处理。
       const caret = textareaRef.current?.getSelection().start ?? next.length
       const slashContext = getSlashCommandContext(next, caret)
-      const hasAtLead = next.startsWith('@')
       if (slashContext != null) {
         slashContextRef.current = slashContext
         setSlashFilter(slashContext.query)
-        void openSlashPopup()
-      } else if (hasAtLead && !teamConfig.enabled) {
-        slashContextRef.current = null
-        setSlashFilter(next.slice(1))
         void openSlashPopup()
       } else {
         slashContextRef.current = null
