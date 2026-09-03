@@ -5,9 +5,12 @@ import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { searchDocs, splitByTokens, tokenize, type DocsSearchHit } from '../lib/docs-search'
 import { APP_NAVIGATE_EVENT, readSearchParams, useNavigate } from '../lib/router'
+import { absoluteUrl } from '../lib/seo'
 
 export function DocsSearchPage() {
-  const [query, setQuery] = useState(() => readSearchParams().get('q') ?? '')
+  // 静态预渲染拿不到请求 query，服务端与客户端首帧统一为空；挂载后由下方
+  // URL 同步逻辑读入真实 ?q=，避免直接访问搜索 URL 时 hydration mismatch。
+  const [query, setQuery] = useState('')
   const [hits, setHits] = useState<DocsSearchHit[]>([])
   const [tokens, setTokens] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -81,21 +84,23 @@ export function DocsSearchPage() {
           keywords: query
             ? ['Spark Work 文档搜索', `Spark Work ${query}`, query]
             : ['Spark Work 文档搜索'],
+          robots: 'noindex, follow',
         }}
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'SearchResultsPage',
           name: seoTitle,
           query: query || undefined,
-          url: `https://spark-agent.dev/docs/search${query ? `?q=${encodeURIComponent(query)}` : ''}`,
+          url: absoluteUrl(`/docs/search${query ? `?q=${encodeURIComponent(query)}` : ''}`),
         }}
       />
       <Section
+        headingLevel={1}
         eyebrow="文档搜索"
         title={query ? `搜索结果：${query}` : '搜索文档'}
         intro="全文检索标题、描述、章节、FAQ 和正文摘要 —— 输入关键词后按回车。"
       >
-        <DocsSearch initialQuery={query} />
+        <DocsSearch key={query} initialQuery={query} />
       </Section>
 
       {!query.trim() ? (

@@ -12,16 +12,22 @@ import { FeaturesPage } from './routes/FeaturesPage'
 import { HomePage } from './routes/HomePage'
 import { OpenSourcePage } from './routes/OpenSourcePage'
 import { RoadmapPage } from './routes/RoadmapPage'
+import { NotFoundPage } from './routes/NotFoundPage'
 import { APP_NAVIGATE_EVENT } from './lib/router'
 import { OPEN_SOURCE_ENABLED } from './lib/links'
 import { docsTopics } from './content/docs'
 
-interface RouteMatch {
-  /** 实际渲染的页面组件 */
-  Page: React.ComponentType<any>
-  /** 透传给页面组件的 props（动态路由专用） */
-  props?: Record<string, string>
-}
+export type RouteMatch =
+  | {
+      /** 实际渲染的静态页面组件 */
+      Page: React.ComponentType
+      props?: undefined
+    }
+  | {
+      /** 文档动态路由及其已收窄的 slug */
+      Page: typeof DocsTopicPage
+      props: { slug: string }
+    }
 
 /**
  * 解析当前 pathname → 路由 + 透传 props。
@@ -29,7 +35,7 @@ interface RouteMatch {
  * 静态路由优先；动态路由 /docs/:slug 在最后匹配。
  * 这样 /docs 和 /docs/search 不会被 /docs/:slug 抢走。
  */
-function matchRoute(pathname: string): RouteMatch {
+export function matchRoute(pathname: string): RouteMatch {
   const path = pathname.replace(/\/$/, '') || '/'
 
   // 静态路由
@@ -67,16 +73,16 @@ function matchRoute(pathname: string): RouteMatch {
     }
   }
 
-  // 未知路径 → 退回首页
-  return { Page: HomePage }
+  return { Page: NotFoundPage }
 }
 
 function readPath() {
+  if (typeof window === 'undefined') return '/'
   return window.location.pathname.replace(/\/$/, '') || '/'
 }
 
-export function App() {
-  const [path, setPath] = useState(readPath)
+export function App({ initialPath }: { initialPath?: string }) {
+  const [path, setPath] = useState(() => initialPath ?? readPath())
   // 路由变化后重新观察新页面的滚动入场元素，否则切页会让内容停留在隐藏态。
   useReveal(path)
 
@@ -130,12 +136,15 @@ export function App() {
     }
   }, [])
 
-  const { Page, props } = useMemo(() => matchRoute(path), [path])
-  const pageElement = useMemo(() => <Page {...(props ?? {})} />, [Page, props])
+  const route = useMemo(() => matchRoute(path), [path])
+  const pageElement = useMemo(() => {
+    if (route.props) {
+      const Page = route.Page
+      return <Page {...route.props} />
+    }
+    const Page = route.Page
+    return <Page />
+  }, [route])
 
-  return (
-    <Layout currentPath={path}>
-      {pageElement}
-    </Layout>
-  )
+  return <Layout currentPath={path}>{pageElement}</Layout>
 }

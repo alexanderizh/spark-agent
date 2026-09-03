@@ -9,6 +9,7 @@ import { ProviderMarquee } from '../components/ProviderMarquee'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { codeEvidence, featureGroups } from '../content/features'
+import { organizationJsonLd, softwareJsonLd, websiteJsonLd } from '../lib/seo'
 
 const showcase = [
   {
@@ -88,13 +89,14 @@ const canvasCreationFeatures = featureGroups.filter((g) => !taskExecutionFeature
 export function HomePage() {
   return (
     <>
-      <Seo jsonLd={faqJsonLd()} />
+      <Seo jsonLd={[websiteJsonLd(), organizationJsonLd(), softwareJsonLd(), faqJsonLd()]} />
       <div className="hero-fold">
         <section className="hero enhanced-hero">
           <div className="hero-text">
             <h1>Spark Work</h1>
             <p className="hero-subtitle">
-              本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
+              本地优先的桌面端 AI Agent
+              工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
             </p>
             <div className="cta">
               <HeroDownloadButton />

@@ -24,13 +24,17 @@ export function ArchitecturePage() {
         }}
       />
       <Section
+        headingLevel={1}
         eyebrow="架构设计"
         title="为可信 AI 工作流设计的本地架构"
         intro="Spark Work 把桌面端、Agent Runtime、MCP、Provider、Skills、本地数据和权限治理组合在一起，让自动化过程可见、可控、可扩展。"
       >
         <ArchitectureMap />
       </Section>
-      <Section title="核心能力模块" intro="这些模块共同支撑代码开发、团队调度、权限治理、媒体生成和画布任务。">
+      <Section
+        title="核心能力模块"
+        intro="这些模块共同支撑代码开发、团队调度、权限治理、媒体生成和画布任务。"
+      >
         <div className="module-cloud large">
           {runtimeModules.map((m) => (
             <span key={m}>{m}</span>

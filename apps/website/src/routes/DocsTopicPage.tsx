@@ -1,46 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link } from '../components/Link'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { DocsBreadcrumbs, DocsSidebar } from '../components/DocsSidebar'
 import { findDocsTopic, relatedDocsTopics } from '../content/docs'
+import { getDocsPageContent } from '../content/docs-page-registry'
 import { OPEN_SOURCE_ENABLED } from '../lib/links'
+import { absoluteUrl } from '../lib/seo'
 import type { DocsPageContent } from '../content/docs-pages/_shared'
-
-/**
- * slug → 动态 import 的映射表。
- * 这里集中维护，每个主题一个独立 chunk —— 按需加载。
- */
-const docPageLoaders: Record<string, () => Promise<{ default: DocsPageContent }>> = {
-  'quick-start': () => import('../content/docs-pages/quick-start'),
-  'code-development': () => import('../content/docs-pages/code-development'),
-  'agents-workflows': () => import('../content/docs-pages/agents-workflows'),
-  'team-mode': () => import('../content/docs-pages/team-mode'),
-  'canvas-mvp': () => import('../content/docs-pages/canvas-mvp'),
-  'media-providers': () => import('../content/docs-pages/media-providers'),
-  'image-providers': () => import('../content/docs-pages/image-providers'),
-  'web-search': () => import('../content/docs-pages/web-search'),
-  'browser-automation': () => import('../content/docs-pages/browser-automation'),
-  'remote-connections': () => import('../content/docs-pages/remote-connections'),
-  'auto-update': () => import('../content/docs-pages/auto-update'),
-  'mcp-skills': () => import('../content/docs-pages/mcp-skills'),
-  governance: () => import('../content/docs-pages/governance'),
-  'desktop-guide': () => import('../content/docs-pages/desktop-guide'),
-  'builtin-tools': () => import('../content/docs-pages/builtin-tools'),
-  'workflow-usage': () => import('../content/docs-pages/workflow-usage'),
-  'board-view': () => import('../content/docs-pages/board-view'),
-  'long-term-memory': () => import('../content/docs-pages/long-term-memory'),
-  'session-scheduled-tasks': () => import('../content/docs-pages/session-scheduled-tasks'),
-  'canvas-video-workbench': () => import('../content/docs-pages/canvas-video-workbench'),
-}
-
-function DocsPageFallback() {
-  return (
-    <Section title="加载中…">
-      <p className="docs-fallback">正在加载主题正文（按需懒加载）。</p>
-    </Section>
-  )
-}
 
 function DocsTopicNotFound({ slug }: { slug: string }) {
   return (
@@ -95,7 +62,7 @@ function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
       </header>
 
       <div className="docs-topic-grid">
-        <main className="docs-topic-main">
+        <div className="docs-topic-main">
           <div className="docs-topic-body">
             <Body />
           </div>
@@ -156,7 +123,7 @@ function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
               </a>
             ) : null}
           </nav>
-        </main>
+        </div>
 
         <aside className="docs-topic-aside">
           <div className="docs-topic-toc" aria-label="本页目录">
@@ -179,17 +146,17 @@ function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
 /**
  * /docs/:slug 文档主题详情页。
  *
- * - docPageLoaders 维护 slug → chunk loader 的映射（每主题独立 chunk，按需加载）
+ * - docsPageRegistry 维护 slug → 正文的同步映射，支持构建期完整预渲染
  * - 找不到 slug 时回退到 NotFound
  * - slug 有效时把 loader 交给 DocsTopicBodyLazy 在 useEffect 内手动触发，
  *   自己管 loading / error 状态（避免 React.lazy 在「loader 返回数据对象」场景下的反模式）
  */
 export function DocsTopicPage({ slug }: { slug: string }) {
   const meta = findDocsTopic(slug)
-  const hasLoader = Boolean(docPageLoaders[slug])
+  const content = getDocsPageContent(slug)
 
   // slug 无效时直接渲染 NotFound（不渲染 SEO）
-  if (!meta || !hasLoader) {
+  if (!meta || !content) {
     return (
       <>
         <Seo
@@ -198,6 +165,7 @@ export function DocsTopicPage({ slug }: { slug: string }) {
             description: '该主题不存在或已被移除。',
             path: `/docs/${slug}`,
             keywords: ['Spark Work 文档'],
+            robots: 'noindex, follow',
           }}
         />
         <DocsTopicNotFound slug={slug} />
@@ -208,7 +176,7 @@ export function DocsTopicPage({ slug }: { slug: string }) {
   // 文档详情页的 SEO：title / description / canonical / JSON-LD
   const seoTitle = `${meta.title} - Spark Work 文档`
   const seoDescription = meta.description
-  const jsonLd = buildDocsJsonLd(meta)
+  const jsonLd = buildDocsJsonLd(meta, content)
 
   return (
     <>
@@ -217,59 +185,18 @@ export function DocsTopicPage({ slug }: { slug: string }) {
           title: seoTitle,
           description: seoDescription,
           path: `/docs/${slug}`,
-          keywords: [
-            meta.title,
-            ...meta.keywords,
-            'Spark Work 文档',
-            'AI Agent 教程',
-          ],
+          keywords: [meta.title, ...meta.keywords, 'Spark Work 文档', 'AI Agent 教程'],
         }}
         jsonLd={jsonLd}
       />
-      <DocsTopicBodyLazy slug={slug} />
+      <DocsTopicBody content={content} slug={slug} />
     </>
   )
 }
 
-function DocsTopicBodyLazy({ slug }: { slug: string }) {
-  const [content, setContent] = useState<DocsPageContent | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setContent(null)
-    setError(null)
-    const loader = docPageLoaders[slug]
-    if (!loader) {
-      setError('未找到主题')
-      return () => {
-        cancelled = true
-      }
-    }
-    loader()
-      .then((mod) => {
-        if (cancelled) return
-        const c: DocsPageContent = mod.default ?? (mod as Record<string, DocsPageContent>)[Object.keys(mod)[0]]
-        setContent(c)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.error('[docs] failed to load', slug, err)
-        setError(err?.message ?? '加载失败')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [slug])
-
-  if (error) return <DocsTopicNotFound slug={slug} />
-  if (!content) return <DocsPageFallback />
-  return <DocsTopicBody content={content} slug={slug} />
-}
-
-function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>) {
+function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>, content: DocsPageContent) {
   if (!meta) return undefined
-  const url = `https://spark-agent.dev/docs/${meta.slug}`
+  const url = absoluteUrl(`/docs/${meta.slug}`)
   const article = {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
@@ -284,7 +211,7 @@ function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>) {
     publisher: {
       '@type': 'Organization',
       name: 'Spark Work',
-      logo: { '@type': 'ImageObject', url: 'https://spark-agent.dev/icon.png' },
+      logo: { '@type': 'ImageObject', url: absoluteUrl('/icon.png') },
     },
     about: { '@type': 'SoftwareApplication', name: 'Spark Work' },
     proficiencyLevel: meta.level,
@@ -299,13 +226,13 @@ function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>) {
         '@type': 'ListItem',
         position: 1,
         name: '首页',
-        item: 'https://spark-agent.dev/',
+        item: absoluteUrl('/'),
       },
       {
         '@type': 'ListItem',
         position: 2,
         name: '文档',
-        item: 'https://spark-agent.dev/docs',
+        item: absoluteUrl('/docs'),
       },
       {
         '@type': 'ListItem',
@@ -316,5 +243,33 @@ function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>) {
     ],
   }
 
-  return [article, breadcrumbs]
+  const faq = content.faq.length
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: content.faq.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: { '@type': 'Answer', text: item.answer },
+        })),
+      }
+    : undefined
+
+  const howTo = content.howTo
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'HowTo',
+        name: content.howTo.name,
+        description: content.howTo.description,
+        totalTime: content.howTo.totalTime,
+        step: content.howTo.steps.map((text, index) => ({
+          '@type': 'HowToStep',
+          position: index + 1,
+          name: `步骤 ${index + 1}`,
+          text,
+        })),
+      }
+    : undefined
+
+  return [article, breadcrumbs, faq, howTo].filter(Boolean)
 }

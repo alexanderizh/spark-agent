@@ -2,12 +2,12 @@
  * 文档主题索引 —— 所有文档主题的元信息集中在这里。
  *
  * 主题正文（真正可读的内容）按主题拆到 `docs-pages/<slug>.tsx`，
- * 每个文件一个独立 chunk 通过 React.lazy 按需加载。
+ * 由 docs-page-registry.ts 统一注册，以便构建期预渲染完整正文。
  *
  * 改主题时只需：
  *   1) 在 docs.ts 的 `docsTopics` 加/删一条
  *   2) 在 docs-pages/ 下新增/删除对应 .tsx 文件
- *   3) 在 App.tsx 的 `docPageLoaders` 加/删对应的 lazy import
+ *   3) 在 docs-page-registry.ts 加/删对应的同步注册项
  */
 
 export type DocCategory =
@@ -397,7 +397,16 @@ export const docsTopics: DocsTopicMeta[] = [
       'Spark Work 会话内定时任务：在单个会话作用域创建持久化任务，到点自动用本会话当时的 Agent/模型/权限/工作区续接一轮对话。支持 interval（固定间隔）/ cron（5 字段表达式）/ once（单次定时），用户工具栏和 Agent MCP 工具两个入口，调度引擎托管重试、并发与下次执行。',
     category: 'governance',
     level: 'intermediate',
-    keywords: ['定时任务', 'session_schedule', 'cron', 'interval', '轮询', '无人值守', '计划任务', 'scheduled task'],
+    keywords: [
+      '定时任务',
+      'session_schedule',
+      'cron',
+      'interval',
+      '轮询',
+      '无人值守',
+      '计划任务',
+      'scheduled task',
+    ],
     readTime: 6,
     updatedAt: '2026-08-10',
     icon: 'RefreshCw',
@@ -411,7 +420,16 @@ export const docsTopics: DocsTopicMeta[] = [
       'Spark Work 画布视频工作台：视频节点的全屏一站式处理台，覆盖深度视频转换（本地 Depth Anything V2，离线不上云）、关键帧提取（scene / iframe / uniform 三策略，超限自动退化，可回填画布）、剪辑处理（转码、切割、音频分离、变速、倒放、画面裁剪）和多段时间线轨道拼接。',
     category: 'canvas',
     level: 'intermediate',
-    keywords: ['视频工作台', '深度视频转换', 'Depth Anything', '关键帧', 'keyframe', '视频剪辑', 'video workbench', 'video_depth_map'],
+    keywords: [
+      '视频工作台',
+      '深度视频转换',
+      'Depth Anything',
+      '关键帧',
+      'keyframe',
+      '视频剪辑',
+      'video workbench',
+      'video_depth_map',
+    ],
     readTime: 7,
     updatedAt: '2026-08-10',
     icon: 'LayoutGrid',

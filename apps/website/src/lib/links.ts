@@ -17,7 +17,7 @@ export const RELEASES_API_BASE = (
 ).replace(/\/$/, '')
 export const ISSUES_URL = `${GITHUB_URL}/issues`
 export const DISCUSSIONS_URL = `${GITHUB_URL}/discussions`
-export const SITE_URL = 'https://spark-agent.dev'
+export const SITE_URL = 'https://spark.yiqibyte.com'
 /** 联系邮箱（与桌面端「联系我们」一致） */
 export const CONTACT_EMAIL = 'zhangyangupup@163.com'
 /** QQ 开发讨论群加群链接（也是二维码扫码值） */

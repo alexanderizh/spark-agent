@@ -1,7 +1,14 @@
 import { DownloadPanel } from '../components/DownloadPanel'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
+import { buildDownloadItems } from '../content/downloads'
+import { getBakedSnapshot } from '../lib/releases'
+import { absoluteUrl, softwareJsonLd } from '../lib/seo'
 export function DownloadPage() {
+  const downloads = buildDownloadItems(getBakedSnapshot().releases)
+  const released = downloads.filter((item) => item.hasRelease)
+  const latestVersion = released.find((item) => item.version)?.version
+
   return (
     <>
       <Seo
@@ -18,8 +25,26 @@ export function DownloadPage() {
             'Windows AI',
           ],
         }}
+        jsonLd={{
+          ...softwareJsonLd(),
+          url: absoluteUrl('/download'),
+          ...(latestVersion ? { softwareVersion: latestVersion } : {}),
+          ...(released.length
+            ? {
+                downloadUrl: released.map((item) => item.href),
+                offers: released.map((item) => ({
+                  '@type': 'Offer',
+                  price: '0',
+                  priceCurrency: 'CNY',
+                  url: item.href,
+                  category: `${item.label} ${item.arch}`,
+                })),
+              }
+            : {}),
+        }}
       />
       <Section
+        headingLevel={1}
         eyebrow="桌面客户端下载"
         title="下载适合你设备的 Spark Work"
         intro="支持 macOS 与 Windows。页面会自动识别当前系统，并高亮推荐对应版本。"

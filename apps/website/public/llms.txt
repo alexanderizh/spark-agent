@@ -1,50 +1,46 @@
 # Spark Work
 
-Spark Work is a local-first AI Agent workbench for people who want AI to work inside real projects. It combines code development, debugging, review, multi-agent collaboration, model and tool governance, and infinite-canvas creative production in one desktop app.
+> 本地优先的桌面端 AI Agent 工作台，覆盖代码开发、办公内容、团队协作、多媒体生成与无限画布。
 
-## Key pages
-- Homepage: /
-- Features: /features
-- Infinite Canvas: /canvas
-- Architecture: /architecture
-- Download: /download
-- Docs index: /docs
-- Docs search: /docs/search
-- Roadmap: /roadmap
-- Contact: /contact
+## 官方入口
 
-## Documentation topics (按主题)
-Each topic page is self-contained with TOC, FAQ, HowTo structured data, and JSON-LD TechArticle metadata. Pages lazy-load their content as a separate chunk.
+- [官网](https://spark.yiqibyte.com)
+- [下载](https://spark.yiqibyte.com/download)
+- [使用文档](https://spark.yiqibyte.com/docs)
 
-- Quick start: /docs/quick-start
-- Code development: /docs/code-development
-- Agent workflows: /docs/agents-workflows
-- Team mode (Agent-to-Agent): /docs/team-mode
-- Workflow editor (visual orchestration): /docs/workflow-usage
-- Infinite canvas: /docs/canvas-mvp
-- Multimedia providers (image/voice/video): /docs/media-providers
-- Image generation providers: /docs/image-providers
-- Built-in web search (spark_search MCP): /docs/web-search
-- Browser automation (Playwright MCP): /docs/browser-automation
-- Remote connections (Telegram/Feishu/QQ/WeChat Claw): /docs/remote-connections
-- Auto update (electron-builder + GitHub Release): /docs/auto-update
-- MCP and Skills (installable catalog): /docs/mcp-skills
-- Built-in Skills (14 bundled skills): /docs/builtin-tools
-- Governance (permissions/rules/hooks/audit): /docs/governance
-- Board view (kanban task tracker): /docs/board-view
-- Desktop architecture (Electron + local-first): /docs/desktop-guide
-- Long-term memory (3-scope recall + hybrid retrieval): /docs/long-term-memory
-- Session scheduled tasks (interval/cron/once, session-scoped): /docs/session-scheduled-tasks
-- Canvas video workbench (depth map / keyframes / editing): /docs/canvas-video-workbench
+## 可引用页面
 
-## Core capabilities
-- Local-first desktop workbench that keeps project context, workspace files, assets, credentials, and audit records visible to the user
-- Code workflow with chat, terminal, file context, browser automation, checkpoints, isolated branches, and reviewable AI-generated changes
-- Multi-agent team mode where a lead agent can delegate implementation, research, review, and validation to specialized members
-- Visual workflow editor with 11 node types (input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact) wired through ReactFlow
-- 14 built-in Skills: claude-api, commit, react, frontend-design, skill-creator, multi-search-engine, browser-use, canvas-studio, spark-web-tool, echarts, ui-ux-pro-max, spark-debug, find-skills, platform-manager
-- Kanban-style board view (6 status columns, drag-and-drop, soft-delete recycle, MCP-driven automation)
-- Choice of Claude Agent SDK or Codex execution paths for coding and text tasks
-- Unified governance for model providers, MCP servers, Skills, permissions, usage records, rules, hooks, and audit events
-- Infinite canvas for scripts, storyboards, prompts, reference assets, AI generation tasks, lineage, and multimedia production planning
-- Media runtime for image, video, audio, and compatible provider adapters, depending on the user's configured services
+- [Spark Work - 本地优先的 AI 内容创作工作台](https://spark.yiqibyte.com): Spark Work 是一个本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。
+- [功能 - Spark Work AI 内容创作工作台](https://spark.yiqibyte.com/features): 了解 Spark Work 如何把可执行工作流、代码开发、团队 Agent、权限治理、无限画布、多媒体生成、MCP 和 Skills 放进一个本地优先工作台。
+- [无限画布 - Spark Work AI 影视创作工作台](https://spark.yiqibyte.com/canvas): Spark Work 无限画布帮助团队组织剧本、角色、场景、镜头、分镜、Prompt、生成任务和多媒体资产。
+- [架构 - Spark Work Agent Runtime 与本地优先设计](https://spark.yiqibyte.com/architecture): 了解 Spark Work 如何用本地优先架构、Agent Runtime、MCP、Provider、权限治理和 SQLite 数据层支撑可信 AI 工作流。
+- [下载 Spark Work - 跨平台 AI 桌面应用](https://spark.yiqibyte.com/download): 下载 Spark Work macOS、Windows 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。
+- [使用文档 - Spark Work 教程](https://spark.yiqibyte.com/docs): Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。支持站内搜索，并提供无需 JavaScript 的完整首屏正文。
+- [开发计划 - Spark Work Roadmap](https://spark.yiqibyte.com/roadmap): 了解 Spark Work 的产品路线：桌面工作台、创作工作流模板、生态扩展和团队协作能力。
+- [联系我们 - Spark Work](https://spark.yiqibyte.com/contact): 通过邮箱和 QQ 开发讨论群反馈 Spark Work 的产品问题、使用建议和安全问题。
+- [快速开始 - Spark Work 文档](https://spark.yiqibyte.com/docs/quick-start): Spark Work 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。
+- [代码开发 - Spark Work 文档](https://spark.yiqibyte.com/docs/code-development): 在 Spark Work 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。
+- [Agent 工作流 - Spark Work 文档](https://spark.yiqibyte.com/docs/agents-workflows): Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、全局已启用 MCP 自动挂载、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。
+- [团队模式 - Spark Work 文档](https://spark.yiqibyte.com/docs/team-mode): Spark Work 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。
+- [无限画布 - Spark Work 文档](https://spark.yiqibyte.com/docs/canvas-mvp): Spark Work 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。
+- [多媒体 Provider - Spark Work 文档](https://spark.yiqibyte.com/docs/media-providers): Spark Work 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。
+- [图片生成 Provider - Spark Work 文档](https://spark.yiqibyte.com/docs/image-providers): Spark Work 图片生成 Provider：imageProvider / imageApiType 字段、内置预设（OpenAI、APIMart、OpenRouter、Gemini、Seedream 等）、spark_image MCP 工具、.spark-artifacts/images 输出目录、与 spark_media 统一栈的关系。
+- [联网搜索 - Spark Work 文档](https://spark.yiqibyte.com/docs/web-search): Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / DuckDuckGo / 百度）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。
+- [浏览器自动化 - Spark Work 文档](https://spark.yiqibyte.com/docs/browser-automation): Spark Work 浏览器自动化：Playwright managed MCP 负责网页流程，spark_browser 内置 MCP 提供应用内可见窗口、本地 HTML 调试、console/network 和 profile 登录态。
+- [远程连接 - Spark Work 文档](https://spark.yiqibyte.com/docs/remote-connections): Spark Work 远程连接（Telegram / 飞书）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。
+- [自动更新 - Spark Work 文档](https://spark.yiqibyte.com/docs/auto-update): Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。
+- [MCP 与 Skills - Spark Work 文档](https://spark.yiqibyte.com/docs/mcp-skills): Spark Work MCP / Skills 体系：内置技能（apps/desktop/resources/skills）、可安装技能目录（INSTALLABLE_SKILL_CATALOG）、tarball 与 GitHub 两种安装路径、按需加载与运行时上下文注入。
+- [权限与治理 - Spark Work 文档](https://spark.yiqibyte.com/docs/governance): Spark Work 权限治理：高风险操作审批（删除 / 联网 / 写文件）、Rules 约束 Agent 行为、Hooks 在工具调用前后插入自定义逻辑、用量账本、审计面板与事件流。
+- [桌面端架构 - Spark Work 文档](https://spark.yiqibyte.com/docs/desktop-guide): Spark Work 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload / IPC 桥、Agent Runtime 服务层（Provider / Session / Skill / MCP / Permission）、SQLite 与本地文件存储、Keychain 凭据存储。
+- [内置工具 - Spark Work 文档](https://spark.yiqibyte.com/docs/builtin-tools): Spark Work 应用内置的全部 15 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / multimedia-use / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。
+- [长期记忆 - Spark Work 文档](https://spark.yiqibyte.com/docs/long-term-memory): Spark Work 三层长期记忆系统：User / Project / Agent 作用域隔离不串味，后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话，FTS5+sqlite-vec 混合检索，自动整合进化，search_memory / recall_memory 工具按需深挖。
+- [工作流编排 - Spark Work 文档](https://spark.yiqibyte.com/docs/workflow-usage): Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环体子图可视化编辑、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。
+- [任务面板 - Spark Work 文档](https://spark.yiqibyte.com/docs/board-view): Spark Work 任务面板（BoardView）使用教程：6 个状态列（todo / in-progress / bug-fix / done / accepted / closed）、TaskCard 完整字段（id / title / description / status / priority / assignee / project / tags / dueDate / processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder）、内联创建 / 编辑、拖拽改变状态、右键菜单、回收站软删除、多维筛选、通过 platform-manager Skill 让 Agent 自动操作。
+- [会话定时任务 - Spark Work 文档](https://spark.yiqibyte.com/docs/session-scheduled-tasks): Spark Work 会话内定时任务：在单个会话作用域创建持久化任务，到点自动用本会话当时的 Agent/模型/权限/工作区续接一轮对话。支持 interval（固定间隔）/ cron（5 字段表达式）/ once（单次定时），用户工具栏和 Agent MCP 工具两个入口，调度引擎托管重试、并发与下次执行。
+- [视频工作台 - Spark Work 文档](https://spark.yiqibyte.com/docs/canvas-video-workbench): Spark Work 画布视频工作台：视频节点的全屏一站式处理台，覆盖深度视频转换（本地 Depth Anything V2，离线不上云）、关键帧提取（scene / iframe / uniform 三策略，超限自动退化，可回填画布）、剪辑处理（转码、切割、音频分离、变速、倒放、画面裁剪）和多段时间线轨道拼接。
+
+## 抓取说明
+
+- 页面在构建期预渲染，无需执行 JavaScript 即可读取正文。
+- `/docs/search` 是交互式站内搜索，不作为独立检索结果收录。
+- 下载版本与平台信息来自官网构建时的发行快照，并在客户端后台刷新。

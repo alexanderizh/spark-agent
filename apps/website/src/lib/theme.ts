@@ -46,6 +46,7 @@ export function resolveTheme(): ThemeName {
 
 /** 当前 <html> 上实际生效的主题（防闪脚本已设好） */
 export function getActiveTheme(): ThemeName {
+  if (typeof document === 'undefined') return DARK
   const t = document.documentElement.dataset.theme
   return isValidTheme(t) ? t : DARK
 }

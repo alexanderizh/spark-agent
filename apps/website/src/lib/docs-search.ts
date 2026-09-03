@@ -1,10 +1,10 @@
 /**
  * 客户端全文检索：标题 / 描述 / 关键词 / 摘要 / 快速参考 / FAQ / TOC 标题。
- * 索引在运行时构建（首次调用时 lazy 加载所有主题正文），
- * 不引外部依赖，避免污染包体。
+ * 索引在首次调用时由预渲染共用的正文注册表构建并缓存，不引外部依赖。
  */
 
-import type { DocsTopicMeta } from '../content/docs'
+import { docsTopics, type DocsTopicMeta } from '../content/docs'
+import { docsPageRegistry } from '../content/docs-page-registry'
 
 export interface DocsSearchHit {
   topic: DocsTopicMeta
@@ -33,46 +33,42 @@ export interface DocsSearchIndexEntry {
 let indexPromise: Promise<DocsSearchIndexEntry[]> | null = null
 
 /**
- * 懒加载构建检索索引：
- *   - 顶层元数据来自 docs.ts（同步可用）
- *   - 完整正文通过 import('../content/docs-pages/<slug>') 按需拉取
+ * 构建检索索引：
+ *   - 顶层元数据来自 docs.ts
+ *   - 完整正文来自 docs-page-registry（与预渲染共用单一来源）
  *   - 一旦构建过就缓存
  */
 export async function buildDocsIndex(): Promise<DocsSearchIndexEntry[]> {
   if (indexPromise) return indexPromise
   indexPromise = (async () => {
-    const { docsTopics } = await import('../content/docs')
     const entries: DocsSearchIndexEntry[] = []
     for (const topic of docsTopics) {
-      try {
-        const mod = await import(`../content/docs-pages/${topic.slug}.tsx`)
-        const content = mod.default ?? mod[Object.keys(mod)[0]]
-        if (!content) continue
-        const fields: DocsSearchIndexEntry['fields'] = {
-          title: topic.title,
-          description: topic.description,
-          keywords: topic.keywords,
-          aiSummary: content.aiSummary ?? '',
-          tocTitles: (content.toc ?? []).map((t: { title: string }) => t.title),
-          quickReference: content.quickReference ?? [],
-          faq: content.faq ?? [],
-        }
-        const haystack = [
-          fields.title,
-          fields.description,
-          fields.keywords.join(' '),
-          fields.aiSummary,
-          fields.tocTitles.join(' '),
-          fields.quickReference.map((qr) => `${qr.key} ${qr.value}`).join(' '),
-          fields.faq.map((f) => `${f.question} ${f.answer}`).join(' '),
-        ]
-          .join(' \n ')
-          .toLowerCase()
-        entries.push({ topic, haystack, fields })
-      } catch (err) {
-        // 主题正文缺失时仍然保留元数据，方便在 DocsPage 看到导航
-        console.warn(`[docs-search] missing content for topic: ${topic.slug}`, err)
+      const content = docsPageRegistry[topic.slug]
+      if (!content) {
+        console.warn(`[docs-search] missing content for topic: ${topic.slug}`)
+        continue
       }
+      const fields: DocsSearchIndexEntry['fields'] = {
+        title: topic.title,
+        description: topic.description,
+        keywords: topic.keywords,
+        aiSummary: content.aiSummary ?? '',
+        tocTitles: (content.toc ?? []).map((t: { title: string }) => t.title),
+        quickReference: content.quickReference ?? [],
+        faq: content.faq ?? [],
+      }
+      const haystack = [
+        fields.title,
+        fields.description,
+        fields.keywords.join(' '),
+        fields.aiSummary,
+        fields.tocTitles.join(' '),
+        fields.quickReference.map((qr) => `${qr.key} ${qr.value}`).join(' '),
+        fields.faq.map((f) => `${f.question} ${f.answer}`).join(' '),
+      ]
+        .join(' \n ')
+        .toLowerCase()
+      entries.push({ topic, haystack, fields })
     }
     return entries
   })()
@@ -83,10 +79,7 @@ export async function buildDocsIndex(): Promise<DocsSearchIndexEntry[]> {
  * 同步（轻量）检索 —— 只在元数据上搜索。
  * 用于 DocsPage 主题列表的快速过滤（无需加载正文）。
  */
-export function searchTopicMetaSync(
-  topics: DocsTopicMeta[],
-  query: string,
-): DocsTopicMeta[] {
+export function searchTopicMetaSync(topics: DocsTopicMeta[], query: string): DocsTopicMeta[] {
   const q = query.trim().toLowerCase()
   if (!q) return topics
   return topics.filter((t) => {
@@ -96,11 +89,7 @@ export function searchTopicMetaSync(
 }
 
 function tokenize(q: string): string[] {
-  return q
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
+  return q.trim().toLowerCase().split(/\s+/).filter(Boolean)
 }
 export { tokenize }
 
@@ -118,8 +107,7 @@ function scoreEntry(entry: DocsSearchIndexEntry, tokens: string[]): number {
     if (fields.aiSummary.toLowerCase().includes(tok)) local += 1.5
     if (
       fields.quickReference.some(
-        (qr) =>
-          qr.key.toLowerCase().includes(tok) || qr.value.toLowerCase().includes(tok),
+        (qr) => qr.key.toLowerCase().includes(tok) || qr.value.toLowerCase().includes(tok),
       )
     )
       local += 1
@@ -198,10 +186,7 @@ export function splitByTokens(
   return segments
 }
 
-export async function searchDocs(
-  query: string,
-  limit = 12,
-): Promise<DocsSearchHit[]> {
+export async function searchDocs(query: string, limit = 12): Promise<DocsSearchHit[]> {
   const tokens = tokenize(query)
   if (!tokens.length) return []
   const index = await buildDocsIndex()
@@ -214,7 +199,10 @@ export async function searchDocs(
     if (entry.fields.description)
       highlights.push({ field: '摘要', snippet: makeSnippet(entry.fields.description, tokens) })
     if (entry.fields.aiSummary)
-      highlights.push({ field: '正文摘要', snippet: makeSnippet(entry.fields.aiSummary, tokens, 200) })
+      highlights.push({
+        field: '正文摘要',
+        snippet: makeSnippet(entry.fields.aiSummary, tokens, 200),
+      })
     const matchedToc = entry.fields.tocTitles.find((t) =>
       tokens.some((tok) => t.toLowerCase().includes(tok)),
     )

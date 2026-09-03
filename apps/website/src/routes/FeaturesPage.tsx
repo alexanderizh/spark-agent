@@ -4,6 +4,7 @@ import { FeatureCard } from '../components/FeatureCard'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { codeEvidence, featureGroups } from '../content/features'
+import { softwareJsonLd } from '../lib/seo'
 
 const featureFlow = [
   ['组织任务', '把一次需求拆成单 Agent、工作流或团队模式。'],
@@ -24,9 +25,10 @@ export function FeaturesPage() {
           path: '/features',
           keywords: ['AI 工作流', 'AI 内容创作', 'AI 办公', 'AI 写代码', 'AI 文档工具', '多 Agent'],
         }}
-        jsonLd={faqJsonLd()}
+        jsonLd={[softwareJsonLd(), faqJsonLd()]}
       />
       <Section
+        headingLevel={1}
         eyebrow="功能总览"
         title="覆盖工作流、开发、协作和创作的完整工作台"
         intro="从修复代码到生成视觉资产，Spark Work 把常用 AI 流程做成可执行、可审查、可复用的桌面工作流。"

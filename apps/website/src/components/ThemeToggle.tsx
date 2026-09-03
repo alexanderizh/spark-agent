@@ -1,5 +1,5 @@
 import { Moon, Sun } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DARK, getActiveTheme, toggleTheme, type ThemeName } from '../lib/theme'
 
 /**
@@ -7,7 +7,9 @@ import { DARK, getActiveTheme, toggleTheme, type ThemeName } from '../lib/theme'
  * 初始值取 <html data-theme>（index.html 防闪脚本已设好），点击即时翻转并持久化。
  */
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeName>(() => getActiveTheme())
+  // 服务端与 hydration 首帧固定使用 dark，挂载后再同步防闪脚本确定的真实主题。
+  const [theme, setTheme] = useState<ThemeName>(DARK)
+  useEffect(() => setTheme(getActiveTheme()), [])
   const isDark = theme === DARK
 
   return (

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174",
     "prebuild": "node scripts/fetch-downloads.mjs",
-    "build": "node scripts/fetch-downloads.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/build.mjs",
+    "check:geo": "node scripts/check-geo.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "fetch-downloads": "node scripts/fetch-downloads.mjs",
     "typecheck": "tsc --noEmit"

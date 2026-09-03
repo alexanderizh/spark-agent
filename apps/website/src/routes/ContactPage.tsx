@@ -23,12 +23,20 @@ export function ContactPage() {
         }}
       />
       {OPEN_SOURCE_ENABLED && (
-        <Section eyebrow="联系我们" title="反馈与支持" intro="选择最合适的渠道，让问题、建议或安全报告更快到达维护者。">
+        <Section
+          eyebrow="联系我们"
+          headingLevel={1}
+          title="反馈与支持"
+          intro="选择最合适的渠道，让问题、建议或安全报告更快到达维护者。"
+        >
           <div className="grid cards">
             <article className="card">
               <span className="soon-tag">推荐</span>
               <h3>产品反馈 / Bug</h3>
-              <p>功能建议、Bug、兼容性问题和安装问题，请优先提交 GitHub Issue，并附上系统版本、截图和复现步骤。</p>
+              <p>
+                功能建议、Bug、兼容性问题和安装问题，请优先提交 GitHub
+                Issue，并附上系统版本、截图和复现步骤。
+              </p>
               <a className="button primary" href={ISSUES_URL} target="_blank" rel="noreferrer">
                 提交 GitHub Issue
               </a>
@@ -36,7 +44,9 @@ export function ContactPage() {
             <article className="card">
               <span className="soon-tag">社区</span>
               <h3>社区讨论</h3>
-              <p>工作流、模板、Provider、Skills 和创作经验，欢迎在 Discussions 中分享、提问和讨论。</p>
+              <p>
+                工作流、模板、Provider、Skills 和创作经验，欢迎在 Discussions 中分享、提问和讨论。
+              </p>
               <a className="button primary" href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">
                 加入 GitHub Discussions
               </a>
@@ -52,7 +62,12 @@ export function ContactPage() {
           </div>
         </Section>
       )}
-      <Section eyebrow="直接联系" title="邮箱与社区群" intro="通过邮件和 QQ 开发讨论群直接联系维护者。">
+      <Section
+        eyebrow="直接联系"
+        headingLevel={OPEN_SOURCE_ENABLED ? 2 : 1}
+        title="邮箱与社区群"
+        intro="通过邮件和 QQ 开发讨论群直接联系维护者。"
+      >
         <div className="grid cards">
           <article className="card">
             <h3>QQ 开发讨论群</h3>
@@ -61,7 +76,13 @@ export function ContactPage() {
               alt="SparkWork QQ 开发讨论群二维码"
               loading="lazy"
               decoding="async"
-              style={{ width: 180, height: 'auto', borderRadius: 12, display: 'block', margin: '0 auto' }}
+              style={{
+                width: 180,
+                height: 'auto',
+                borderRadius: 12,
+                display: 'block',
+                margin: '0 auto',
+              }}
             />
             <p>
               群号：<strong>{QQ_GROUP_NO}</strong>

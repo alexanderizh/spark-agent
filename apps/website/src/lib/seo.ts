@@ -5,6 +5,8 @@ export interface PageSeo {
   description: string
   path: string
   keywords: string[]
+  /** 对搜索引擎的页面级抓取指令；公开内容默认 index, follow。 */
+  robots?: 'index, follow' | 'noindex, follow' | 'noindex, nofollow'
 }
 
 export const defaultSeo: PageSeo = {
@@ -38,9 +40,35 @@ export function softwareJsonLd() {
     applicationCategory: 'ProductivityApplication',
     operatingSystem: 'macOS, Windows',
     description: defaultSeo.description,
+    url: absoluteUrl('/'),
     // 闭源期间不对外暴露源码仓库地址
     ...(OPEN_SOURCE_ENABLED ? { codeRepository: GITHUB_URL } : {}),
     softwareHelp: absoluteUrl('/docs'),
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  }
+}
+
+export function organizationJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': `${absoluteUrl('/')}#organization`,
+    name: 'Spark Work',
+    url: absoluteUrl('/'),
+    logo: absoluteUrl('/icon.png'),
+    email: 'zhangyangupup@163.com',
+  }
+}
+
+export function websiteJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${absoluteUrl('/')}#website`,
+    name: 'Spark Work',
+    url: absoluteUrl('/'),
+    inLanguage: 'zh-CN',
+    description: defaultSeo.description,
+    publisher: { '@id': `${absoluteUrl('/')}#organization` },
   }
 }

@@ -27,6 +27,7 @@ import {
   type DocsTopicMeta,
 } from '../content/docs'
 import { searchTopicMetaSync } from '../lib/docs-search'
+import { absoluteUrl } from '../lib/seo'
 
 const ICONS: Record<DocsTopicMeta['icon'], LucideIcon> = {
   Sparkles,
@@ -53,16 +54,13 @@ const LEVEL_LABEL: Record<DocsTopicMeta['level'], string> = {
 
 export function DocsPage() {
   const [filter, setFilter] = useState<DocCategory | 'all'>('all')
-  const [q, setQ] = useState('')
-  const recommendedPath = docsTopics.filter((topic) =>
-    ['quick-start', 'code-development', 'agents-workflows', 'browser-automation', 'desktop-guide'].includes(topic.slug),
-  )
+  const q = ''
 
   const visible = useMemo(() => {
     let arr = filter === 'all' ? docsTopics : docsTopics.filter((t) => t.category === filter)
     arr = searchTopicMetaSync(arr, q)
     return arr
-  }, [filter, q])
+  }, [filter])
 
   const grouped = useMemo(() => {
     const map: Record<string, DocsTopicMeta[]> = {}
@@ -81,7 +79,7 @@ export function DocsPage() {
         seo={{
           title: '使用文档 - Spark Work 教程',
           description:
-            'Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。可搜索、按需加载。',
+            'Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。支持站内搜索，并提供无需 JavaScript 的完整首屏正文。',
           path: '/docs',
           keywords: [
             'Spark Work 文档',
@@ -97,9 +95,10 @@ export function DocsPage() {
         jsonLd={buildDocsIndexJsonLd()}
       />
       <Section
+        headingLevel={1}
         eyebrow="使用文档"
         title="从安装到完成第一个真实任务"
-        intro="文档按实际使用路径组织：先完成模型和 Agent 配置，再进入代码开发、团队协作或画布创作工作流。每个主题都可以独立搜索、按需加载。"
+        intro="文档按实际使用路径组织：先完成模型和 Agent 配置，再进入代码开发、团队协作或画布创作工作流。每个主题都有独立地址和可直接抓取的完整正文。"
       >
         <div className="docs-toolbar">
           <DocsSearch />
@@ -181,13 +180,14 @@ export function DocsPage() {
         <div className="doc-long">
           <h3>模型服务</h3>
           <p>
-            支持 OpenAI、Anthropic、OpenRouter、Ollama、火山方舟、阿里百炼以及任何兼容 OpenAI 协议的供应商；
-            图片、视频和语音能力取决于你接入的 Provider 配置。
+            支持 OpenAI、Anthropic、OpenRouter、Ollama、火山方舟、阿里百炼以及任何兼容 OpenAI
+            协议的供应商； 图片、视频和语音能力取决于你接入的 Provider 配置。
           </p>
           <h3>MCP / Skills</h3>
           <p>
-            可以添加 MCP Server、安装或导入本地 Skill（包括内置「精选技能」目录中的 ppt-master、playwright 等），
-            并使用内置搜索、媒体、调试、平台管理，以及 <code>playwright + spark_browser</code> 浏览器能力。
+            可以添加 MCP Server、安装或导入本地 Skill（包括内置「精选技能」目录中的
+            ppt-master、playwright 等）， 并使用内置搜索、媒体、调试、平台管理，以及{' '}
+            <code>playwright + spark_browser</code> 浏览器能力。
           </p>
           <h3>数据与权限</h3>
           <p>
@@ -204,11 +204,21 @@ function buildDocsIndexJsonLd() {
   const items = docsTopics.map((t, i) => ({
     '@type': 'ListItem',
     position: i + 1,
-    url: `https://spark-agent.dev/docs/${t.slug}`,
+    url: absoluteUrl(`/docs/${t.slug}`),
     name: t.title,
     description: t.description,
   }))
   return [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: 'Spark Work 使用文档',
+      description:
+        'Spark Work 官方文档：覆盖安装、代码开发、团队 Agent、无限画布、多媒体 Provider、MCP、Skills 与权限治理。',
+      url: absoluteUrl('/docs'),
+      inLanguage: 'zh-CN',
+      mainEntity: { '@type': 'ItemList', numberOfItems: docsTopics.length },
+    },
     {
       '@context': 'https://schema.org',
       '@type': 'ItemList',
@@ -227,13 +237,13 @@ function buildDocsIndexJsonLd() {
           '@type': 'ListItem',
           position: 1,
           name: '首页',
-          item: 'https://spark-agent.dev/',
+          item: absoluteUrl('/'),
         },
         {
           '@type': 'ListItem',
           position: 2,
           name: '文档',
-          item: 'https://spark-agent.dev/docs',
+          item: absoluteUrl('/docs'),
         },
       ],
     },

@@ -2,10 +2,10 @@
 # Spark Work 官网镜像 —— 多阶段构建（自包含，任何机器 clone 后即可 build）
 # 用法: docker build -t <tag> -f apps/website/Dockerfile apps/website
 #
-# 说明: 官网 @spark/website 是纯静态 Vite SPA，无 workspace 依赖，
+# 说明: 官网 @spark/website 是 Vite + React 预渲染静态站，无 workspace 依赖，
 #       所以 build stage 只装 website 自身依赖即可，不碰 monorepo 其它包。
 
-# ============ Stage 1: build 静态产物 ============
+# ============ Stage 1: build 预渲染静态产物 ============
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV CI=true
