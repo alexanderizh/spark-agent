@@ -81,6 +81,7 @@ export type {
 export {
   SessionRepository,
   SessionCollaborationRepository,
+  SessionHistoryRepository,
   WorkspaceRepository,
   EventRepository,
   TurnRequestRepository,

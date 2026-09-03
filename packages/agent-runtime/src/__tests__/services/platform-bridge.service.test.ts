@@ -423,6 +423,123 @@ describe('PlatformBridgeService referenced sessions payload privacy', () => {
   })
 })
 
+describe('PlatformBridgeService session history retrieval', () => {
+  let service: PlatformBridgeService
+  let port = 0
+
+  afterEach(async () => {
+    await service.stop()
+  })
+
+  it('dispatches list/read/search to sessionHistoryTools with the injected session id', async () => {
+    const sessionHistoryTools = {
+      list: vi.fn(() => ({ turns: [], nextCursor: null, hasMore: false })),
+      read: vi.fn((_sessionId: string, params: { mode: 'turns' | 'event' }) =>
+        params.mode === 'event'
+          ? {
+              mode: 'event' as const,
+              event: {
+                turnId: 'turn-1',
+                seq: 2,
+                eventType: 'tool_result',
+                role: 'tool' as const,
+                toolName: 'Bash',
+                content: 'output',
+                truncated: false,
+              },
+            }
+          : {
+              mode: 'turns' as const,
+              turns: [
+                {
+                  turnId: 'turn-1',
+                  firstSeq: 0,
+                  lastSeq: 3,
+                  partial: false,
+                  events: [
+                    {
+                      seq: 0,
+                      eventType: 'tool_call',
+                      role: 'tool',
+                      toolName: 'Bash',
+                      content: 'input: {"command":"ls"}',
+                      truncated: false,
+                    },
+                  ],
+                },
+              ],
+              nextCursor: null,
+              hasMore: false,
+            },
+      ),
+      search: vi.fn(() => ({
+        hits: [{ turnId: 'turn-1', seq: 0, eventType: 'tool_call', role: 'tool', snippet: 'ls' }],
+      })),
+    }
+
+    service = new PlatformBridgeService()
+    port = await service.start({ sessionHistoryTools } as unknown as PlatformBridgeDeps)
+
+    const list = await callBridgeRpc(port, 'session_history.list', { sessionId: 'session-a' })
+    const read = await callBridgeRpc(port, 'session_history.read', {
+      sessionId: 'session-a',
+      mode: 'turns',
+      turnLimit: 4,
+      order: 'desc',
+    })
+    const readEvent = await callBridgeRpc(port, 'session_history.read', {
+      sessionId: 'session-a',
+      mode: 'event',
+      turnId: 'turn-1',
+      seq: 2,
+    })
+    const search = await callBridgeRpc(port, 'session_history.search', {
+      sessionId: 'session-a',
+      query: 'ls',
+      limit: 10,
+    })
+
+    expect(list).toMatchObject({ ok: true, data: { turns: [] } })
+    expect(read).toMatchObject({ ok: true, data: { mode: 'turns' } })
+    expect(readEvent).toMatchObject({ ok: true, data: { mode: 'event', event: { seq: 2 } } })
+    expect(search).toMatchObject({ ok: true, data: { hits: [{ seq: 0 }] } })
+    expect(sessionHistoryTools.list).toHaveBeenCalledWith('session-a', {})
+    expect(sessionHistoryTools.read).toHaveBeenCalledWith('session-a', {
+      mode: 'turns',
+      turnLimit: 4,
+      order: 'desc',
+    })
+    expect(sessionHistoryTools.read).toHaveBeenCalledWith('session-a', {
+      mode: 'event',
+      turnId: 'turn-1',
+      seq: 2,
+    })
+    expect(sessionHistoryTools.search).toHaveBeenCalledWith('session-a', { query: 'ls', limit: 10 })
+  })
+
+  it('rejects calls without a session id or search query', async () => {
+    const sessionHistoryTools = {
+      list: vi.fn(),
+      read: vi.fn(),
+      search: vi.fn(),
+    }
+    service = new PlatformBridgeService()
+    port = await service.start({ sessionHistoryTools } as unknown as PlatformBridgeDeps)
+
+    const noSession = await callBridgeRpc(port, 'session_history.list', {})
+    expect(noSession.ok).toBe(false)
+    expect(noSession.error).toContain('sessionId')
+
+    const noQuery = await callBridgeRpc(port, 'session_history.search', { sessionId: 's' })
+    expect(noQuery.ok).toBe(false)
+    expect(noQuery.error).toContain('query')
+
+    expect(sessionHistoryTools.list).not.toHaveBeenCalled()
+    expect(sessionHistoryTools.read).not.toHaveBeenCalled()
+    expect(sessionHistoryTools.search).not.toHaveBeenCalled()
+  })
+})
+
 describe('PlatformBridgeService Codex runtime control', () => {
   let service: PlatformBridgeService
 

@@ -304,6 +304,7 @@ import {
   RENDER_DIAGRAM_SYSTEM_PROMPT,
   TOOL_RESULT_SYSTEM_PROMPT,
   TOOL_RESULT_TOOL_NAMES,
+  SESSION_HISTORY_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
@@ -2977,6 +2978,7 @@ export class SessionService {
       mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       platformMcpServer != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
+      platformMcpServer != null ? SESSION_HISTORY_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       toolResultReaderAvailable ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
@@ -7568,6 +7570,7 @@ export class SessionService {
         memberMcpServers.spark_tool_results != null ? TOOL_RESULT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_platform != null ? SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_platform != null ? SESSION_HISTORY_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
         // 记忆三段后置到段尾（与 host 路径同构，内容不变仅段序）：member 记忆在
         // dispatch 完成后可能被抽取更新，放中段会让 member system 从中部开始前缀

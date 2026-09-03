@@ -60,6 +60,7 @@ export type {
 } from './application-snapshot.repository.js'
 export { SessionRepository } from './session.repository.js'
 export { SessionCollaborationRepository } from './session-collaboration.repository.js'
+export { SessionHistoryRepository, HISTORY_EVENT_TYPES } from './session-history.repository.js'
 export type {
   SessionReferenceStatus,
   SessionReferenceAuditAction,

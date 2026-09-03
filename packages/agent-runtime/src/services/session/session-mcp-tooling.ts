@@ -16,6 +16,7 @@ import {
   ProviderProfileRepository,
   SubAppRepository,
   ScheduledTaskRepository,
+  SessionHistoryRepository,
   SettingsRepository,
   TaskExecutionRepository,
   WorkflowRepository,
@@ -38,6 +39,7 @@ import { getDebugLogServer } from '../debug-log-server.service.js'
 import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import { ScheduledTaskService } from '../scheduled-task.service.js'
 import { SessionScheduleAgentTools } from '../session-schedule-agent-tools.js'
+import { SessionHistoryRetrievalTools } from './session-history-retrieval-tools.js'
 import {
   resolveMediaMcpProviderRoutes,
   writeMediaMcpRuntimeConfig,
@@ -201,6 +203,8 @@ export class SessionMcpTooling {
         ),
         (action, id) => this.host.getPlatformConfigChangedHandler()?.('scheduled-task', action, id),
       ),
+      // 会话全量历史检索（session_history.* RPC）：直读 append-only 的 agent_events
+      sessionHistoryTools: new SessionHistoryRetrievalTools(new SessionHistoryRepository(this.db)),
       githubConnectorService: new GitHubConnectorService(
         new ConnectorConnectionRepository(this.db),
         () => pluginManager.isRuntimeEnabled('github'),

@@ -483,6 +483,10 @@ export const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__session_schedule_create',
   'mcp__spark_platform__session_schedule_update',
   'mcp__spark_platform__session_schedule_delete',
+  // Current-session full history retrieval (read-only, append-only archive)
+  'mcp__spark_platform__session_history_list',
+  'mcp__spark_platform__session_history_read',
+  'mcp__spark_platform__session_history_search',
   // Board Tasks
   'mcp__spark_platform__board_list',
   'mcp__spark_platform__board_get',
@@ -681,6 +685,20 @@ export const TOOL_RESULT_SYSTEM_PROMPT = [
   'Use `mcp__spark_tool_results__search` to find exact text before reading nearby ranges; use `list` only when an artifact id is not already available.',
   'Do not infer that omitted preview text was absent from the original result. The archived artifact is the complete source for follow-up inspection.',
   'Tool-result artifacts are internal working context, not user-facing deliverables; do not present them as files unless the user explicitly asks for the raw output.',
+].join('\n')
+
+/**
+ * System prompt section injected when the platform management MCP server is
+ * available. 上下文压缩后的逃生门：指引 agent 在摘要丢失细节时按需检索全量存档，
+ * 常规轮次不要调用（增量工具，不改变压缩行为）。
+ */
+export const SESSION_HISTORY_SYSTEM_PROMPT = [
+  '## Session History Retrieval (current session, full-fidelity archive)',
+  'When context compaction has dropped details you still need — file paths, command output, earlier tool call inputs/outputs, past decisions — retrieve them from the append-only session archive instead of guessing or asking the user to repeat themselves:',
+  '- `mcp__spark_platform__session_history_search` locates turns by keyword across messages, tool inputs/outputs, file paths, and compaction summaries.',
+  '- `mcp__spark_platform__session_history_read` returns the full-fidelity content page by page (`mode:"event"` with turnId+seq reads one event in full).',
+  '- `mcp__spark_platform__session_history_list` gives a per-turn overview for orientation.',
+  'The archive is the pre-compaction record and is unaffected by compaction. Use these tools on demand only; ordinary turns that miss no context should not call them.',
 ].join('\n')
 
 export const QUICK_REPLIES_SYSTEM_PROMPT = [

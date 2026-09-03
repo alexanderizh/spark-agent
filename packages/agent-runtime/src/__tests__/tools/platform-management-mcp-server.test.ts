@@ -92,6 +92,9 @@ describe('spark_platform MCP server', () => {
         'session_schedule_create',
         'session_schedule_update',
         'session_schedule_delete',
+        'session_history_list',
+        'session_history_read',
+        'session_history_search',
       ]),
     )
     const tools = res.result.tools as Array<{
@@ -419,6 +422,79 @@ describe('spark_platform MCP server', () => {
         sessionId: 'trusted-session',
         name: 'Check third-party job',
         triggerType: 'interval',
+      },
+    })
+  })
+
+  it('routes session history retrieval with the trusted current session id', async () => {
+    const rpcCalls: Array<{ method?: string; params?: Record<string, unknown> }> = []
+    bridge = createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      req.on('end', () => {
+        const rpc = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          method?: string
+          params?: Record<string, unknown>
+        }
+        rpcCalls.push(rpc)
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, data: { hits: [] } }))
+      })
+    })
+    const port = await new Promise<number>((resolve) => {
+      bridge?.listen(0, '127.0.0.1', () => {
+        const address = bridge?.address()
+        if (!address || typeof address === 'string') throw new Error('Failed to bind bridge')
+        resolve(address.port)
+      })
+    })
+
+    child = start({
+      SPARK_PLATFORM_BRIDGE_PORT: String(port),
+      SPARK_SESSION_ID: 'trusted-history-session',
+    })
+    const search = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'session_history_search',
+        arguments: {
+          sessionId: 'model-supplied-session',
+          query: 'Router.tsx',
+          limit: 10,
+        },
+      },
+    })
+    const read = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'session_history_read',
+        arguments: {
+          sessionId: 'model-supplied-session',
+          mode: 'event',
+          turnId: 'turn-1',
+          seq: 3,
+        },
+      },
+    })
+
+    expect(search.error).toBeUndefined()
+    expect(read.error).toBeUndefined()
+    expect(rpcCalls).toHaveLength(2)
+    expect(rpcCalls[0]).toMatchObject({
+      method: 'session_history.search',
+      params: { sessionId: 'trusted-history-session', query: 'Router.tsx', limit: 10 },
+    })
+    expect(rpcCalls[1]).toMatchObject({
+      method: 'session_history.read',
+      params: {
+        sessionId: 'trusted-history-session',
+        mode: 'event',
+        turnId: 'turn-1',
+        seq: 3,
       },
     })
   })

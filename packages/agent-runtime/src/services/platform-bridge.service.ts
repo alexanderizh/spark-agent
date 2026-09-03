@@ -84,6 +84,7 @@ import type {
   SessionScheduleCreateInput,
   SessionScheduleUpdateInput,
 } from './session-schedule-agent-tools.js'
+import type { SessionHistoryRetrievalTools } from './session/session-history-retrieval-tools.js'
 import {
   normalizeSparkReasoningEffort,
   type SparkReasoningEffort,
@@ -409,6 +410,8 @@ export interface PlatformBridgeDeps {
   pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
+  /** 会话全量历史检索门面（session_history.* RPC，仅当前会话） */
+  sessionHistoryTools: SessionHistoryRetrievalTools
   sessionService: {
     updateSession(params: {
       sessionId: string
@@ -847,6 +850,26 @@ export class PlatformBridgeService {
             actor: 'agent',
           }),
         )
+
+      // ── Current-session full history retrieval（上下文压缩后的全量存档逃生门）──
+      // 会话身份由子进程 env 注入后经 requireSessionId 回传校验；仓库层所有查询
+      // 都强制以该 sessionId 为条件，模型无法越权读取其他会话。
+      case 'session_history.list':
+        return d.sessionHistoryTools.list(requireSessionId(params), {
+          ...(typeof params.cursor === 'number' ? { cursor: params.cursor } : {}),
+          ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+          ...(params.order === 'desc' ? { order: 'desc' as const } : {}),
+        })
+      case 'session_history.read':
+        return this.sessionHistoryRead(d, params)
+      case 'session_history.search':
+        return d.sessionHistoryTools.search(requireSessionId(params), {
+          query: requireText(params, 'query', 200),
+          ...(Array.isArray(params.eventTypes)
+            ? { eventTypes: params.eventTypes.filter((t): t is string => typeof t === 'string') }
+            : {}),
+          ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+        })
 
       // ── Current-session scheduled tasks ──
       case 'session_schedule.list':
@@ -1925,6 +1948,25 @@ export class PlatformBridgeService {
     const taskId = String(params.id ?? '').trim()
     if (!taskId) throw new Error('Missing parameter: id')
     return d.sessionScheduleTools.delete(requireSessionId(params), taskId)
+  }
+
+  // ── Current-session history retrieval handlers ──
+
+  private sessionHistoryRead(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const { sessionId: _sessionId, ...input } = params
+    if (input.mode === 'event') {
+      return d.sessionHistoryTools.read(requireSessionId(params), {
+        mode: 'event',
+        turnId: String(input.turnId ?? ''),
+        seq: typeof input.seq === 'number' ? input.seq : -1,
+      })
+    }
+    return d.sessionHistoryTools.read(requireSessionId(params), {
+      mode: 'turns',
+      ...(typeof input.cursor === 'number' ? { cursor: input.cursor } : {}),
+      ...(typeof input.turnLimit === 'number' ? { turnLimit: input.turnLimit } : {}),
+      ...(input.order === 'desc' ? { order: 'desc' as const } : {}),
+    })
   }
 
   // ── Memory handlers（codex CLI / claude CLI 的 stdio spark_memory 子进程桥接）──

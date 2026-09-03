@@ -2335,6 +2335,84 @@ function toolDefinitions() {
         },
       },
     },
+
+    // ── Current-session full history retrieval ──
+    {
+      name: 'session_history_list',
+      description:
+        '列出当前会话的历史轮次时间线（目录概览，不含正文）：每轮的 seq 范围、用户消息开头、消息/工具计数、工具名列表。上下文被压缩后需要重新定位早期轮次时，先用它浏览结构，再用 session_history_read 读取正文。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          cursor: {
+            type: 'integer',
+            description: '上一次返回的 nextCursor（轮次窗口游标）',
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: '每页轮次数，默认 20' },
+          order: {
+            type: 'string',
+            enum: ['asc', 'desc'],
+            description: '翻页方向，默认 asc（时间正序）；desc 从最新轮次往回翻',
+          },
+        },
+      },
+    },
+    {
+      name: 'session_history_read',
+      description:
+        '按轮分页读取当前会话的全量历史（含用户/助手消息、工具调用入参、工具结果输出、文件变更、压缩摘要），数据来自压缩前的 append-only 完整存档，不受上下文压缩影响。单条内容超 8000 字符会截断并标记 truncated，可用 mode:"event" 按 turnId+seq 定点读取全文（上限 32000）。超长工具结果以 spark.tool_result_envelope 形式返回（含 artifactId），可用 mcp__spark_tool_results__read 读取归档全文。页预算触底时轮次可能被截断（partial 标记），把 nextCursor 传回即可无缝续读。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mode: {
+            type: 'string',
+            enum: ['turns', 'event'],
+            default: 'turns',
+            description: 'turns=按轮分页读取；event=定点读取单个事件全文',
+          },
+          cursor: { type: 'integer', description: '上一次返回的 nextCursor（事件 seq 游标）' },
+          turnLimit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 8,
+            description: '每页最大轮数，默认 4',
+          },
+          order: {
+            type: 'string',
+            enum: ['asc', 'desc'],
+            description: '翻页方向，默认 asc（时间正序）；desc 从最新事件往回读',
+          },
+          turnId: {
+            type: 'string',
+            description: 'mode:"event" 必填：目标事件所在轮次 ID（来自 list/read/search 结果）',
+          },
+          seq: {
+            type: 'integer',
+            minimum: 0,
+            description: 'mode:"event" 必填：目标事件的 seq',
+          },
+        },
+      },
+    },
+    {
+      name: 'session_history_search',
+      description:
+        '在当前会话的全量历史中做关键词检索（子串匹配），覆盖消息正文、工具调用入参、工具结果输出、文件变更路径和压缩摘要。上下文被压缩后需要找回早期细节（文件路径、命令输出、工具参数、历史决策）时先用它定位（返回 turnId+seq），再用 session_history_read 读取上下文。数据是压缩前的完整存档，压缩不影响检索结果。',
+      inputSchema: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: { type: 'string', minLength: 1, maxLength: 200, description: '检索关键词' },
+          eventTypes: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '限定事件类型，可选：user_message / assistant_message / team_member_message / tool_call / tool_result / file_change / context_compaction / context_summarized / agent_status',
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: '命中数上限，默认 20' },
+        },
+      },
+    },
   ]
 }
 
@@ -2454,6 +2532,9 @@ async function handleToolCall(name, args) {
     session_schedule_create: 'session_schedule.create',
     session_schedule_update: 'session_schedule.update',
     session_schedule_delete: 'session_schedule.delete',
+    session_history_list: 'session_history.list',
+    session_history_read: 'session_history.read',
+    session_history_search: 'session_history.search',
     board_list: 'board.list',
     board_get: 'board.get',
     board_create: 'board.create',
@@ -2480,6 +2561,7 @@ async function handleToolCall(name, args) {
   if (
     name.startsWith('sessions_') ||
     name.startsWith('session_schedule_') ||
+    name.startsWith('session_history_') ||
     name.startsWith('referenced_session')
   ) {
     if (!SESSION_ID) {
