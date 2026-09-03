@@ -6,6 +6,11 @@ import { once } from 'node:events'
 import { probeVideo, type VideoProbeInfo } from '../FfmpegRunner.js'
 import { resolveFfmpegBin } from '../FfmpegIntegrityService.js'
 import { DepthInferenceWorker } from './DepthInferenceWorker.js'
+import {
+  depthEncoderInputPixelFormat,
+  resolveDepthVideoRenderOptions,
+  type DepthVideoRenderOptions,
+} from './depthRenderOptions.js'
 
 type SpawnedProcess = Pick<
   ChildProcessWithoutNullStreams,
@@ -32,6 +37,7 @@ export type DepthVideoRunRequest = {
   modelDir: string
   runtimeEntryPath: string
   preserveAudio?: boolean
+  renderOptions?: Partial<DepthVideoRenderOptions>
   signal?: AbortSignal
   onProgress?: (progress: DepthVideoProgress) => void
 }
@@ -49,7 +55,11 @@ type DepthVideoRunnerDependencies = {
   probe: typeof probeVideo
   resolveBins: typeof resolveFfmpegBin
   spawnProcess: (executable: string, args: string[]) => SpawnedProcess
-  createFrameProcessor: (modelDir: string, runtimeEntryPath: string) => FrameProcessor
+  createFrameProcessor: (
+    modelDir: string,
+    runtimeEntryPath: string,
+    renderOptions: DepthVideoRenderOptions,
+  ) => FrameProcessor
   ensureOutputDir: (directory: string) => Promise<void>
   finalizeOutput: (temporaryPath: string, outputPath: string) => Promise<void>
   removeOutput: (filePath: string) => Promise<void>
@@ -64,8 +74,8 @@ const DEFAULT_DEPENDENCIES: DepthVideoRunnerDependencies = {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }),
-  createFrameProcessor: (modelDir, runtimeEntryPath) =>
-    new DepthInferenceWorker({ modelDir, runtimeEntryPath }),
+  createFrameProcessor: (modelDir, runtimeEntryPath, renderOptions) =>
+    new DepthInferenceWorker({ modelDir, runtimeEntryPath, renderOptions }),
   ensureOutputDir: async (directory) => {
     await mkdir(directory, { recursive: true })
   },
@@ -85,6 +95,7 @@ export class DepthVideoRunner {
     validateProbe(probe)
     const dimensions = resolveDepthVideoDimensions(probe)
     const processingFps = probe.averageFps && probe.averageFps > 0 ? probe.averageFps : probe.fps
+    const renderOptions = resolveDepthVideoRenderOptions(request.renderOptions)
     await this.dependencies.ensureOutputDir(dirname(request.outputPath))
     const { ffmpeg } = await this.dependencies.resolveBins()
     const temporaryPath = temporaryOutputPath(request.outputPath)
@@ -102,6 +113,7 @@ export class DepthVideoRunner {
         durationSec: probe.durationSec,
         outputPath: temporaryPath,
         preserveAudio: request.preserveAudio === true,
+        sourcePixelFormat: depthEncoderInputPixelFormat(renderOptions),
       }),
     )
     const decoderExit = waitForProcess(decoder, '视频解码')
@@ -130,6 +142,7 @@ export class DepthVideoRunner {
       frameProcessor = this.dependencies.createFrameProcessor(
         request.modelDir,
         request.runtimeEntryPath,
+        renderOptions,
       )
       const frameBytes = dimensions.width * dimensions.height * 3
       const totalFrames = Math.max(1, Math.round(probe.durationSec * processingFps))
@@ -237,13 +250,15 @@ export function buildDepthVideoEncoderArgs(input: {
   durationSec?: number
   outputPath: string
   preserveAudio?: boolean
+  /** 编码进程 stdin 上深度帧的像素格式：灰度（默认）或伪彩色 RGB。 */
+  sourcePixelFormat?: 'gray' | 'rgb24'
 }): string[] {
   const pixelFormat = input.width % 2 === 0 && input.height % 2 === 0 ? 'yuv420p' : 'yuv444p'
   const args = [
     '-f',
     'rawvideo',
     '-pixel_format',
-    'gray',
+    input.sourcePixelFormat ?? 'gray',
     '-video_size',
     `${input.width}x${input.height}`,
     '-framerate',

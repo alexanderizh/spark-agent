@@ -154,6 +154,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
           modelDir: resources.modelDir,
           runtimeEntryPath: resources.runtimeEntryPath,
           preserveAudio: request.preserveAudio === true,
+          ...(request.renderOptions ? { renderOptions: request.renderOptions } : {}),
           signal: controller.signal,
           onProgress: (progress: DepthVideoProgress) => {
             const mappedProgress = 20 + Math.round(progress.percent * 0.8)

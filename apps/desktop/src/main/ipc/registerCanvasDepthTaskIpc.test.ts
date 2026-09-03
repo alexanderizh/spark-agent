@@ -111,6 +111,7 @@ describe('registerCanvasDepthTaskIpc', () => {
       clientTaskId: 'canvas-task-1',
       inputPath: '/canvas/input.mp4',
       preserveAudio: true,
+      renderOptions: { invert: true, colormap: 'viridis', smoothStrength: 0.6, contrast: 5 },
     })
 
     expect(response).toMatchObject({ status: 'running', runtimeTaskId: 'depth-runtime-1' })
@@ -144,16 +145,16 @@ describe('registerCanvasDepthTaskIpc', () => {
       expect.objectContaining({
         inputPath: '/canvas/input.mp4',
         preserveAudio: true,
+        renderOptions: { invert: true, colormap: 'viridis', smoothStrength: 0.6, contrast: 5 },
         modelDir: '/managed/model',
-        runtimeEntryPath:
-          join(
-            '/managed/runtime',
-            'node_modules',
-            '@huggingface',
-            'transformers',
-            'src',
-            'transformers.js',
-          ),
+        runtimeEntryPath: join(
+          '/managed/runtime',
+          'node_modules',
+          '@huggingface',
+          'transformers',
+          'src',
+          'transformers.js',
+        ),
       }),
     )
     const success = harness.events.find((event) => event.payload.response.status === 'succeeded')!

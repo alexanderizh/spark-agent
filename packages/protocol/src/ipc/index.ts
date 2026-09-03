@@ -5809,11 +5809,22 @@ export interface CanvasDepthModelStatusResponse {
 }
 export interface CanvasDepthModelInstallRequest {}
 export type CanvasDepthModelInstallResponse = CanvasDepthModelStatusResponse
+export interface CanvasDepthVideoRenderOptions {
+  /** 反相：255-v，得到「近暗远亮」的经典 depth map 观感（默认 false） */
+  invert?: boolean
+  /** 伪彩色映射；非 none 时输出 RGB 视频（默认 'none' 灰度） */
+  colormap?: 'none' | 'turbo' | 'viridis'
+  /** 时序平滑强度 0-1，0=逐帧原始深度，越大越平滑（默认 0.25） */
+  smoothStrength?: number
+  /** 对比度增强 0-10（归一化分位裁剪百分比），越大明暗对比越强（默认 2） */
+  contrast?: number
+}
 export interface CanvasDepthVideoTaskCreateRequest {
   projectId: string
   clientTaskId: string
   inputPath: string
   preserveAudio?: boolean
+  renderOptions?: CanvasDepthVideoRenderOptions
 }
 export interface CanvasDepthVideoTaskCancelRequest {
   runtimeTaskId: string

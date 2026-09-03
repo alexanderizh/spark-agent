@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import type { DepthVideoRenderOptions } from './depthRenderOptions.js'
 
 type WorkerRequest = {
   id: number
@@ -16,6 +17,7 @@ type WorkerLike = Pick<Worker, 'on' | 'postMessage' | 'terminate'>
 export type DepthInferenceWorkerOptions = {
   modelDir: string
   runtimeEntryPath: string
+  renderOptions?: DepthVideoRenderOptions
   createWorker?: (modelDir: string, runtimeEntryPath: string) => WorkerLike
 }
 
@@ -38,6 +40,7 @@ export class DepthInferenceWorker {
         workerData: {
           modelDir: options.modelDir,
           runtimeEntryPath: options.runtimeEntryPath,
+          renderOptions: options.renderOptions,
         },
       })
     this.worker.on('message', (message: WorkerResponse) => this.handleMessage(message))

@@ -91,6 +91,16 @@ describe('DepthVideoRunner', () => {
     expect(args).toContain('yuv444p')
   })
 
+  it('reads grayscale frames by default and RGB frames when a colormap is active', () => {
+    const base = { width: 640, height: 360, fps: 24, outputPath: '/tmp/depth.mp4' }
+    expect(buildDepthVideoEncoderArgs(base)).toContain('gray')
+    expect(buildDepthVideoEncoderArgs(base)).not.toContain('rgb24')
+    const rgbArgs = buildDepthVideoEncoderArgs({ ...base, sourcePixelFormat: 'rgb24' })
+    expect(rgbArgs).toContain('rgb24')
+    // rgb24 出现在 rawvideo 输入格式位，编码输出像素格式仍由尺寸决定。
+    expect(rgbArgs.indexOf('rgb24')).toBeLessThan(rgbArgs.indexOf('libx264'))
+  })
+
   it('uses display geometry for auto-rotated portrait videos', () => {
     expect(resolveDepthVideoDimensions({ width: 1920, height: 1080, rotation: 90 })).toEqual({
       width: 1080,
@@ -159,9 +169,67 @@ describe('DepthVideoRunner', () => {
     expect(createFrameProcessor).toHaveBeenCalledWith(
       '/managed/depth-model',
       '/managed/depth-runtime/transformers.js',
+      {
+        invert: false,
+        colormap: 'none',
+        smoothStrength: 0.25,
+        contrast: 2,
+      },
     )
     expect(frameProcessor.dispose).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ width: 2, height: 1, fps: 1, durationSec: 1 })
+  })
+
+  it('passes normalized render options to the frame processor and switches the encoder input format', async () => {
+    const decoder = new FakeProcess()
+    const encoder = new FakeProcess()
+    const spawnProcess = vi.fn().mockReturnValueOnce(decoder).mockReturnValueOnce(encoder)
+    const frameProcessor = {
+      process: vi.fn(async () => new Uint8Array(6)),
+      dispose: vi.fn(async () => undefined),
+    }
+    const createFrameProcessor = vi.fn(() => frameProcessor)
+    const runner = new DepthVideoRunner({
+      probe: async () => ({
+        durationSec: 1,
+        width: 2,
+        height: 1,
+        fps: 1,
+        videoCodec: 'h264',
+        audioCodec: null,
+        bitrate: 1000,
+        hasAudio: false,
+        fileSize: 6,
+      }),
+      resolveBins: async () => ({ ffmpeg: '/managed/ffmpeg', ffprobe: '/managed/ffprobe' }),
+      spawnProcess,
+      createFrameProcessor,
+      finalizeOutput: vi.fn(async () => undefined),
+      removeOutput: vi.fn(async () => undefined),
+      ensureOutputDir: vi.fn(async () => undefined),
+    })
+    encoder.stdin.on('finish', () => encoder.emit('close', 0))
+    const pending = runner.run({
+      inputPath: '/canvas/source.mp4',
+      outputPath: '/canvas/depth.mp4',
+      modelDir: '/managed/depth-model',
+      runtimeEntryPath: '/managed/depth-runtime/transformers.js',
+      renderOptions: { invert: true, colormap: 'turbo', smoothStrength: 0.8, contrast: 6 },
+    })
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2))
+    expect(spawnProcess.mock.calls[1]![1]).toContain('rgb24')
+    expect(spawnProcess.mock.calls[1]![1]).not.toContain('gray')
+    decoder.stdout.write(Buffer.alloc(6))
+    decoder.stdout.end()
+    decoder.emit('close', 0)
+
+    await pending
+
+    expect(createFrameProcessor).toHaveBeenCalledWith(
+      '/managed/depth-model',
+      '/managed/depth-runtime/transformers.js',
+      { invert: true, colormap: 'turbo', smoothStrength: 0.8, contrast: 6 },
+    )
   })
 
   it('kills decoder and encoder when cancelled', async () => {

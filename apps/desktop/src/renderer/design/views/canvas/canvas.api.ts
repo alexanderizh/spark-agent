@@ -16,6 +16,7 @@ import type {
   ShotScriptConfig,
 } from './canvas.types'
 import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
+import { resolveDepthRenderPreference } from './canvasDepthRenderPreference'
 import { inferCanvasConnectionType } from './canvasConnectionSemantics'
 import {
   decodeCanvasSafeFileUrl,
@@ -6202,6 +6203,7 @@ export const canvasApi = {
         clientTaskId: started.taskId,
         inputPath,
         preserveAudio: request.modelParams?.preserveAudio === true,
+        renderOptions: resolveDepthRenderPreference(request.modelParams?.depthRender),
       })
     } catch (error) {
       response = {

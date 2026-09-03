@@ -1443,6 +1443,14 @@ export const IpcSchemaRegistry = {
     clientTaskId: z.string().min(1).max(200),
     inputPath: z.string().min(1).max(4096),
     preserveAudio: z.boolean().optional(),
+    renderOptions: z
+      .object({
+        invert: z.boolean().optional(),
+        colormap: z.enum(['none', 'turbo', 'viridis']).optional(),
+        smoothStrength: z.number().min(0).max(1).optional(),
+        contrast: z.number().min(0).max(10).optional(),
+      })
+      .optional(),
   }),
   'canvas:task:cancel-depth-video': z.object({
     runtimeTaskId: z.string().min(1).max(200),

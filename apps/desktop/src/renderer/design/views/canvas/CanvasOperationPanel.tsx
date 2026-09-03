@@ -118,6 +118,8 @@ import {
   type CanvasDepthModelState,
 } from './canvasOperationPanelMode'
 import { resolveDepthVideoPreserveAudio } from './canvasDepthAudioPreference'
+import { resolveDepthRenderPreference } from './canvasDepthRenderPreference'
+import { CanvasDepthRenderOptions } from './CanvasDepthRenderOptions'
 import { isImageUnderstandingProvider } from './canvasPresetCenterModel'
 import {
   applyCanvasMediaInputModeToBindings,
@@ -855,6 +857,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       node.data.modelParams?.preserveAudio ?? task?.modelParams?.preserveAudio,
     ),
   )
+  const [depthRender, setDepthRender] = useState(() =>
+    resolveDepthRenderPreference(
+      node.data.modelParams?.depthRender ?? task?.modelParams?.depthRender,
+    ),
+  )
   const [audioFormat, setAudioFormat] = useState<'copy' | 'mp3' | 'aac' | 'wav'>(
     (node.data.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav' | undefined) ??
       (task?.modelParams?.audioFormat as 'copy' | 'mp3' | 'aac' | 'wav' | undefined) ??
@@ -899,6 +906,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       ),
     )
   }, [node.data.modelParams?.preserveAudio, operation, task?.modelParams?.preserveAudio])
+  useEffect(() => {
+    if (operation !== 'video_depth_map') return
+    setDepthRender(
+      resolveDepthRenderPreference(
+        node.data.modelParams?.depthRender ?? task?.modelParams?.depthRender,
+      ),
+    )
+  }, [node.data.modelParams?.depthRender, operation, task?.modelParams?.depthRender])
   useEffect(() => {
     if (operation !== 'extract_audio') return
     const configuredValue = (node.data.modelParams?.audioFormat ??
@@ -1530,7 +1545,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     return mergeCanvasPresetTargetModelParams(
       presetTargetId,
       operation === 'video_depth_map'
-        ? { ...modelParams, preserveAudio }
+        ? { ...modelParams, preserveAudio, depthRender }
         : operation === 'extract_audio'
           ? { ...modelParams, audioFormat }
           : modelParams,
@@ -1538,6 +1553,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   }, [
     audioFormat,
     customParams,
+    depthRender,
     modelParamDraft,
     operation,
     parameterFields,
@@ -2393,6 +2409,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     }}
                   />
                 </div>
+                <CanvasDepthRenderOptions
+                  value={depthRender}
+                  disabled={running}
+                  compact
+                  onChange={(next) => {
+                    markConfigurationTouched()
+                    setDepthRender(next)
+                  }}
+                />
               </>
             )}
             {operation === 'extract_audio' && (
@@ -2858,6 +2883,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 开启后会将原视频音轨保留到转换结果中。
               </div>
             </div>
+            <CanvasDepthRenderOptions
+              value={depthRender}
+              disabled={running}
+              onChange={(next) => {
+                markConfigurationTouched()
+                setDepthRender(next)
+              }}
+            />
           </>
         )}
 
