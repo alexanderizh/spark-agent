@@ -64,6 +64,7 @@ import { Button, Dropdown, Modal, type MenuProps } from 'antd'
 import { Segmented, Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
+import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
 import sparkLogo from './assets/spark-logo.png'
 import {
@@ -515,7 +516,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     )
   }
 
-  const VISIBLE_COUNT = 3 // L2 nav items visible before fold
   // L2 工作台上下文工具（canvas 模式下为空，整个 L2 section 不渲染）。
   // pin 偏好仍对其生效：固定项始终排前且优先显示。
   const l2SourceItems = isCanvasMode ? [] : pickNavItems(WORKBENCH_TOOL_IDS)
@@ -539,12 +539,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     ...menuAppItems,
     ...otherWorkbenchItems.map((item) => ({ ...item, label: tr(item.labelKey) })),
   ]
-  // 已固定的菜单项始终排在最前，且始终显示在可见区域
-  const pinnedItems = resolvedNavItems.filter((item) => pinnedNavIds.includes(item.id))
-  const unpinnedItems = resolvedNavItems.filter((item) => !pinnedNavIds.includes(item.id))
-  const remainingVisibleSlots = Math.max(0, VISIBLE_COUNT - pinnedItems.length)
-  const visibleItems = [...pinnedItems, ...unpinnedItems.slice(0, remainingVisibleSlots)]
-  const collapsedItems = unpinnedItems.slice(remainingVisibleSlots)
+  // “新建任务”计入默认四项；其余菜单默认展示三项，所有置顶项始终直接可见。
+  const { visibleItems, collapsedItems } = resolveSidebarNavVisibility(
+    resolvedNavItems,
+    pinnedNavIds,
+  )
   const hasCollapsed = collapsedItems.length > 0
 
   // Resize handlers
