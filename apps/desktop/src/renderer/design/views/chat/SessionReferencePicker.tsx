@@ -156,7 +156,7 @@ export function SessionReferencePicker({
   return (
     <Modal
       open={open}
-      title="添加会话作为参考"
+      title="添加会话参考"
       onCancel={handleClose}
       footer={null}
       width={520}

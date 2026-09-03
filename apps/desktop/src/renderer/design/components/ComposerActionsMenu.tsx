@@ -43,9 +43,9 @@ type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-lef
 
 export function ComposerActionsMenu({
   onAddAttachments,
-  attachmentLabel = '添加文件或图片',
+  attachmentLabel = '添加文件图片',
   onAddContextFiles,
-  contextFilesLabel = '添加相关文件或目录',
+  contextFilesLabel = '添加目录',
   onAddSessionReference,
   onInsertSkillMention,
   onInsertSlashCommand,
@@ -260,20 +260,7 @@ export function ComposerActionsMenu({
               <span className="composer-actions-item-icon">
                 <Icons.MessageSquare size={14} />
               </span>
-              <span className="composer-actions-item-label">添加会话作为参考</span>
-            </button>
-          )}
-          {onInsertSlashCommand && (
-            <button
-              type="button"
-              className="composer-actions-item"
-              onClick={handleCommandClick}
-              onMouseEnter={() => setSkillSubOpen(false)}
-            >
-              <span className="composer-actions-item-icon">
-                <Icons.Command size={14} />
-              </span>
-              <span className="composer-actions-item-label">命令</span>
+              <span className="composer-actions-item-label">添加会话参考</span>
             </button>
           )}
           {onInsertSkillMention && (
@@ -406,6 +393,20 @@ export function ComposerActionsMenu({
               )}
             </div>
           )}
+          {onInsertSlashCommand && (
+            <button
+              type="button"
+              className="composer-actions-item"
+              onClick={handleCommandClick}
+              onMouseEnter={() => setSkillSubOpen(false)}
+            >
+              <span className="composer-actions-item-icon">
+                <Icons.Command size={14} />
+              </span>
+              <span className="composer-actions-item-label">命令</span>
+            </button>
+          )}
+          
         </div>
       )}
     </div>
