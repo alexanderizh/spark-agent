@@ -2519,6 +2519,8 @@ function RuleEditPanel({
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入要注入到 Agent prompt 的规则内容"
               className="rule-textarea"
+              rows={8}
+              resize
             />
           </div>
         </div>

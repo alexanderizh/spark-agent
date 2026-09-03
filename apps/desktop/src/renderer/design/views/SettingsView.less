@@ -983,10 +983,11 @@
 }
 .rule-textarea {
   min-height: 150px;
+}
+.rule-textarea textarea {
+  min-height: 150px;
   resize: vertical;
 }
-
-
 
 /* Settings-only utility classes. Keep these out of the global view layer. */
 .range-value {
@@ -1338,7 +1339,7 @@
 .keymap .km-action {
   flex-direction: column;
   align-items: flex-start;
-  .km-action-desc{
+  .km-action-desc {
     font-size: var(--font-xs);
     color: var(--text-muted);
   }
