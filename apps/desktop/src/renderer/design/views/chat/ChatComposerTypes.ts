@@ -6,6 +6,7 @@ import type {
   CliSparkOverride,
   SessionPermissionMode,
   SessionReasoningEffort,
+  SessionQueueRuntimeSelection,
   WorkspaceGitBranch,
   WorkspaceGitState,
 } from '@spark/protocol'
@@ -65,6 +66,7 @@ export type QueuedMessage = {
   sessionReferences: ComposerSessionReference[]
   /** Internal queued prompts stay controllable but cannot be copied into the user composer. */
   editable: boolean
+  runtime?: SessionQueueRuntimeSelection
 }
 
 export type ComposerAttachment = SessionAttachment & {

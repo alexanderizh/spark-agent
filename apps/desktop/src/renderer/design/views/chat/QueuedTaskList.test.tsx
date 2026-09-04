@@ -16,6 +16,7 @@ function queuedMessage(turnId: string): QueuedMessage {
     attachments: [],
     sessionReferences: [],
     editable: true,
+    runtime: { providerProfileId: 'provider-1', modelId: 'model-1' },
   }
 }
 
@@ -41,7 +42,12 @@ describe('QueuedTaskList', () => {
           messages={[queuedMessage('turn-1')]}
           clearing={false}
           reordering={false}
+          paused={null}
+          recovering={null}
+          canRetry={false}
           onClear={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
           onEdit={vi.fn()}
           onSendNow={vi.fn()}
           onRemove={vi.fn()}
@@ -62,7 +68,12 @@ describe('QueuedTaskList', () => {
           messages={[queuedMessage('turn-1'), queuedMessage('turn-2')]}
           clearing={false}
           reordering={false}
+          paused={null}
+          recovering={null}
+          canRetry={false}
           onClear={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
           onEdit={vi.fn()}
           onSendNow={vi.fn()}
           onRemove={vi.fn()}
@@ -75,5 +86,74 @@ describe('QueuedTaskList', () => {
     expect(container.querySelector('.composer-queue-hint')?.textContent).toBe('拖动调整执行顺序')
     expect(container.textContent).toContain('清空队列')
     expect(container.querySelectorAll('.composer-queue-drag-handle')).toHaveLength(2)
+    expect(container.querySelectorAll('.composer-queue-model')).toHaveLength(2)
+  })
+
+  it('shows the error pause actions and invokes retry or skip explicitly', () => {
+    const onRetry = vi.fn()
+    const onResume = vi.fn()
+    act(() => {
+      root.render(
+        <QueuedTaskList
+          messages={[queuedMessage('turn-1')]}
+          clearing={false}
+          reordering={false}
+          paused={{
+            reason: 'turn_error',
+            failedTurnId: 'turn-failed',
+            pausedAt: '2026-09-05T00:00:00.000Z',
+          }}
+          recovering={null}
+          canRetry
+          onClear={vi.fn()}
+          onRetry={onRetry}
+          onResume={onResume}
+          onEdit={vi.fn()}
+          onSendNow={vi.fn()}
+          onRemove={vi.fn()}
+          onReorder={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('当前回复出错，队列已暂停（内容未丢失）')
+    const actions = container.querySelectorAll<HTMLButtonElement>('.composer-queue-pause-action')
+    act(() => actions[0]?.click())
+    act(() => actions[1]?.click())
+    expect(onRetry).toHaveBeenCalledOnce()
+    expect(onResume).toHaveBeenCalledOnce()
+  })
+
+  it('shows the effective Spark model for local CLI queued turns', () => {
+    const message = queuedMessage('turn-cli')
+    message.runtime = {
+      providerProfileId: 'local-cli',
+      modelId: 'host-model',
+      cliSparkOverride: { providerProfileId: 'spark-provider', modelId: 'spark-model' },
+    }
+    act(() => {
+      root.render(
+        <QueuedTaskList
+          messages={[message]}
+          clearing={false}
+          reordering={false}
+          paused={null}
+          recovering={null}
+          canRetry={false}
+          onClear={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+          onEdit={vi.fn()}
+          onSendNow={vi.fn()}
+          onRemove={vi.fn()}
+          onReorder={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.composer-queue-model')?.textContent).toBe('spark-model')
+    expect(container.querySelector('.composer-queue-model')?.getAttribute('title')).toBe(
+      'Provider：spark-provider · 模型：spark-model',
+    )
   })
 })

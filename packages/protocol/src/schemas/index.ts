@@ -314,6 +314,7 @@ export const SessionSendTurnRequestSchema = z.object({
     .optional(),
   teamConfig: TeamModeConfigSchema.optional(),
   mentionAgentId: z.string().min(1).max(160).optional(),
+  resumePausedQueue: z.boolean().optional(),
 })
 
 export const DialogOpenDirectoryRequestSchema = z.object({
@@ -451,6 +452,25 @@ export const SessionClearQueuedTurnsRequestSchema = z.object({
 export const SessionReorderQueuedTurnsRequestSchema = z.object({
   sessionId: SessionIdSchema,
   turnIds: z.array(z.string().uuid()).min(1).max(1000),
+})
+
+const SessionQueueRuntimeSelectionSchema = z
+  .object({
+    providerProfileId: ProfileIdSchema.optional(),
+    modelId: z.string().min(1).max(200).nullable().optional(),
+    cliSparkOverride: CliSparkOverrideSchema.nullable().optional(),
+  })
+  .strict()
+
+export const SessionSendQueuedTurnNowRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  turnId: TurnIdSchema,
+  runtimePatch: SessionQueueRuntimeSelectionSchema.optional(),
+})
+
+export const SessionResumeQueueRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  runtimePatch: SessionQueueRuntimeSelectionSchema.optional(),
 })
 
 export const SessionGetHistoryRequestSchema = z.object({
@@ -993,6 +1013,8 @@ export const IpcSchemaRegistry = {
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:clear-queued-turns': SessionClearQueuedTurnsRequestSchema,
   'session:reorder-queued-turns': SessionReorderQueuedTurnsRequestSchema,
+  'session:send-queued-turn-now': SessionSendQueuedTurnNowRequestSchema,
+  'session:resume-queue': SessionResumeQueueRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:reject-plan': SessionRejectPlanRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,

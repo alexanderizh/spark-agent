@@ -64,6 +64,20 @@ export class TurnRequestRepository extends BaseRepository {
     return this.updateStatus(id, 'accepted', ['running'])
   }
 
+  /** Persist a queue-only payload rewrite while the request is still safe to re-snapshot. */
+  updateAcceptedPayload(id: string, payloadJson: string): boolean {
+    const result = this.raw
+      .prepare(
+        `
+      UPDATE turn_requests
+      SET payload_json = ?, updated_at = ?
+      WHERE id = ? AND status = 'accepted'
+    `,
+      )
+      .run(payloadJson, new Date().toISOString(), id)
+    return result.changes > 0
+  }
+
   markCompleted(id: string): boolean {
     return this.updateStatus(id, 'completed', ['accepted', 'running'])
   }

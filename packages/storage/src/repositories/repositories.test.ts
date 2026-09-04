@@ -678,6 +678,31 @@ describe('TurnRequestRepository', () => {
     expect(repo.listRecoverable()).toHaveLength(0)
   })
 
+  it('rewrites only accepted payloads when a paused queue changes model', () => {
+    repo.create({
+      id: 'turn-accepted',
+      sessionId: 'session-1',
+      payloadJson: JSON.stringify({ modelId: 'model-old' }),
+      createdAt: '2026-07-13T00:00:00.000Z',
+    })
+    repo.create({
+      id: 'turn-running',
+      sessionId: 'session-1',
+      payloadJson: JSON.stringify({ modelId: 'model-old' }),
+      createdAt: '2026-07-13T00:01:00.000Z',
+    })
+    expect(repo.markRunning('turn-running')).toBe(true)
+
+    expect(
+      repo.updateAcceptedPayload('turn-accepted', JSON.stringify({ modelId: 'model-new' })),
+    ).toBe(true)
+    expect(
+      repo.updateAcceptedPayload('turn-running', JSON.stringify({ modelId: 'model-new' })),
+    ).toBe(false)
+    expect(repo.get('turn-accepted')?.payload_json).toBe('{"modelId":"model-new"}')
+    expect(repo.get('turn-running')?.payload_json).toBe('{"modelId":"model-old"}')
+  })
+
   it('clears terminal payloads and prunes expired terminal requests in batches', () => {
     for (const id of ['completed', 'failed', 'cancelled']) {
       repo.create({

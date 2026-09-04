@@ -348,6 +348,11 @@ export interface SessionSendTurnRequest {
    * 时显式中断并立即起跑新 turn，而不是入队等待。用于 Plan Approval Modal 的"批准并执行"。
    */
   interruptActive?: boolean
+  /**
+   * 仅用于错误暂停条的「重试」：确认该 turn 应解除错误暂停并排到剩余队列最前。
+   * 服务端只会在当前队列确实因 turn error 暂停时采用该提示，普通发送路径不受影响。
+   */
+  resumePausedQueue?: boolean
 }
 
 export interface SessionSendTurnResponse {
@@ -372,6 +377,22 @@ export interface SessionQueuedTurn extends UserMessagePresentation {
     sourceSessionId: SessionId
     snapshotSeq?: number
   }>
+  /** 该排队 turn 真正起跑时将使用的 provider/model 快照。 */
+  runtime?: SessionQueueRuntimeSelection
+}
+
+export interface SessionQueueRuntimeSelection {
+  providerProfileId?: string
+  modelId?: string | null
+  /** 本地 CLI 通过 Spark Provider 执行时，实际生效的二级 provider/model 选择。 */
+  cliSparkOverride?: CliSparkOverride | null
+}
+
+export interface SessionQueuePauseState {
+  reason: 'turn_error'
+  failedTurnId?: string
+  errorMessage?: string
+  pausedAt: string
 }
 
 export interface SessionGetQueueRequest {
@@ -382,6 +403,8 @@ export interface SessionGetQueueResponse {
   sessionId: SessionId
   running: boolean
   queuedTurns: SessionQueuedTurn[]
+  /** 可选字段保证旧主进程/渲染端仍可互通；新主进程会显式返回 null。 */
+  paused?: SessionQueuePauseState | null
 }
 
 export interface SessionCancelQueuedTurnRequest {
@@ -418,10 +441,23 @@ export interface SessionReorderQueuedTurnsResponse {
 export interface SessionSendQueuedTurnNowRequest {
   sessionId: SessionId
   turnId: string
+  /** 仅在队列正因错误暂停时，用当前模型路由选择重快照其余排队 turn。 */
+  runtimePatch?: SessionQueueRuntimeSelection
 }
 
 export interface SessionSendQueuedTurnNowResponse {
   started: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
+export interface SessionResumeQueueRequest {
+  sessionId: SessionId
+  /** 恢复时用当前模型路由选择重快照剩余排队 turn。 */
+  runtimePatch?: SessionQueueRuntimeSelection
+}
+
+export interface SessionResumeQueueResponse {
+  resumed: boolean
   queuedTurns: SessionQueuedTurn[]
 }
 
@@ -6309,6 +6345,7 @@ export interface IpcChannelMap
     SessionSendQueuedTurnNowRequest,
     SessionSendQueuedTurnNowResponse,
   ]
+  'session:resume-queue': [SessionResumeQueueRequest, SessionResumeQueueResponse]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:reject-plan': [SessionRejectPlanRequest, SessionRejectPlanResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]

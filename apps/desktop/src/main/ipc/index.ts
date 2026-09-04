@@ -3497,6 +3497,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
       ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
       ...(req.interruptActive === true ? { interruptActive: true } : {}),
+      ...(req.resumePausedQueue === true ? { resumePausedQueue: true } : {}),
     })
   })
 
@@ -3538,6 +3539,7 @@ export function registerAllIpcHandlers(): void {
         ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
         ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
         ...(req.interruptActive === true ? { interruptActive: true } : {}),
+        ...(req.resumePausedQueue === true ? { resumePausedQueue: true } : {}),
       },
       { startAfter: workspaceReady },
     )
@@ -3570,6 +3572,11 @@ export function registerAllIpcHandlers(): void {
       `session:send-queued-turn-now requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
     )
     return getSessionService().sendQueuedTurnNow(req)
+  })
+
+  typedIpcHandle('session:resume-queue', async (req) => {
+    log.info(`session:resume-queue requested, sessionId=${req.sessionId}`)
+    return getSessionService().resumeQueue(req)
   })
 
   typedIpcHandle('session:cancel', async (req) => {

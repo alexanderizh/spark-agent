@@ -52,6 +52,8 @@ import type {
   SessionChatMode,
   SessionClearQueuedTurnsResponse,
   SessionReorderQueuedTurnsResponse,
+  SessionResumeQueueResponse,
+  SessionQueueRuntimeSelection,
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
@@ -164,6 +166,12 @@ export { createCodexExecutorForConfig } from './session/engine-registry.js'
 
 // ─── P1-W2-D1 turn 所有权注册表（迁出至 ./session/turn-registry.ts）───
 import { TurnRegistry } from './session/turn-registry.js'
+import {
+  applyQueueRuntimeSelection,
+  pickQueueRuntimeSelection,
+  QueueErrorPauseGate,
+  recoverQueueErrorPause,
+} from './session/queue-error-pause-gate.js'
 
 // ─── P1-W3-S2 命令系统（迁出至 ./session/session-commands.ts）───
 import { SessionCommandController } from './session/session-commands.js'
@@ -580,6 +588,8 @@ type SendTurnParams = UserMessagePresentation & {
   teamConfig?: TeamModeConfig
   mentionAgentId?: string
   interruptActive?: boolean
+  /** 错误暂停条重试：恢复暂停并让本 turn 排到剩余队列最前。 */
+  resumePausedQueue?: boolean
   /** 仅供同进程诊断调用；不会进入持久化 turn 队列。 */
   invocationObserver?: (snapshot: SDKInvocationSnapshot) => void
 }
@@ -858,6 +868,8 @@ export class SessionService {
   private readonly maxConcurrentSessions: number = DEFAULT_MAX_CONCURRENT_SESSIONS
   /** 结构化问答独立闸门：SDK 流提前结束时仍保持，直到用户回答或明确关闭。 */
   private readonly pendingUserQuestionGate = new SessionQuestionGate()
+  /** turn error 后的 session 级队列暂停状态；会话状态负责重启恢复，本对象负责热路径。 */
+  private queueErrorPauseGate?: QueueErrorPauseGate = new QueueErrorPauseGate()
   private readonly eventSequencer = new SessionEventSequencer()
   /**
    * 当前 turn 该会话实际生效的对话模型 — 含 @mention agent 切换。
@@ -1071,6 +1083,11 @@ export class SessionService {
       this.worktreeStateService = new SessionWorktreeStateService(this.db)
     }
     return this.worktreeStateService
+  }
+
+  private getQueueErrorPauseGate(): QueueErrorPauseGate {
+    this.queueErrorPauseGate ??= new QueueErrorPauseGate()
+    return this.queueErrorPauseGate
   }
 
   constructor(
@@ -1559,6 +1576,8 @@ export class SessionService {
 
   private recoverAcceptedTurnRequests(): void {
     const repo = new TurnRequestRepository(this.db)
+    const sessionRepo = new SessionRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
     const sessionsToStart = new Set<string>()
     for (const row of repo.listRecoverable()) {
       if (row.status === 'running') {
@@ -1579,6 +1598,18 @@ export class SessionService {
       }
     }
     for (const sessionId of sessionsToStart) {
+      const session = sessionRepo.get(sessionId)
+      if (session?.status === 'error') {
+        const rows = eventRepo.queryBySession({
+          sessionId,
+          eventType: 'agent_status',
+          limit: 32,
+        }).events
+        this.getQueueErrorPauseGate().pause(
+          sessionId,
+          recoverQueueErrorPause(rows, session.updated_at),
+        )
+      }
       setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
     }
   }
@@ -1788,7 +1819,14 @@ export class SessionService {
     const runtimePatch = getRuntimePatch(params)
     const sessionReferences = params.sessionReferences?.slice(0, 10) ?? []
     const turnId = crypto.randomUUID()
-    if (userMessagePresentation.userMessageVisibility !== 'hidden') {
+    const isVisibleUserTurn = userMessagePresentation.userMessageVisibility !== 'hidden'
+    const pausedQueue = isVisibleUserTurn
+      ? this.getQueueErrorPauseGate().getPause(
+          sessionId,
+          this.pendingTurns.get(sessionId)?.length ?? 0,
+        )
+      : null
+    if (isVisibleUserTurn) {
       // A new visible user turn supersedes any pending internal continuation.
       this.resetTeamDispatchAutoContinuation(sessionId)
       this.removeQueuedTeamDispatchAutoContinuations(sessionId)
@@ -1820,6 +1858,12 @@ export class SessionService {
     const collaboration =
       sessionReferences.length > 0 ? new SessionCollaborationRepository(this.db) : null
     const turnRequestRepository = durable ? new TurnRequestRepository(this.db) : null
+    const resumedErrorQueue = pausedQueue != null
+    if (resumedErrorQueue) {
+      // Re-snapshot the already accepted queue before accepting the new user turn. If this write
+      // fails, the pause remains in place and no orphaned retry request is created.
+      this.rebaseQueuedRuntimeSelection(sessionId, runtimePatch)
+    }
     // Reference attachment and durable acceptance form one database boundary.
     // A bad reference or a failed turn-request insert therefore leaves neither
     // a partial authorization nor an orphaned accepted turn behind.
@@ -1858,13 +1902,25 @@ export class SessionService {
       if (typeof database.raw?.transaction === 'function') database.raw.transaction(persistTurn)()
       else persistTurn()
     }
+    if (resumedErrorQueue) {
+      this.getQueueErrorPauseGate().resolve(sessionId)
+      new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+      this.emitQueueChanged(sessionId)
+    }
+    const enqueueDispatchedTurn = (): void => {
+      this.enqueueTurn(
+        sessionId,
+        pendingTurn,
+        resumedErrorQueue && params.resumePausedQueue === true ? 'front' : 'back',
+      )
+    }
     const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
     // spark-loop 目标活跃时用户消息入队，由下一轮迭代排空注入（drainQueuedUserTurnsForGoalIteration）。
     // codex-native 目标由 codex 侧自驱循环，Spark 不泵迭代——用户消息按普通流程执行
     // （若恰有 turn 在跑会落入下方 hasActiveSessionExecution 的常规排队，turn 结束即排空）。
     const goalOwnsDispatch = currentGoal?.status === 'active' && currentGoal.mode === 'spark-loop'
     if (goalOwnsDispatch || this.pendingUserQuestionGate.isBlocked(sessionId)) {
-      this.enqueueTurn(sessionId, pendingTurn)
+      enqueueDispatchedTurn()
       // goal 仍 active 但会话已无任何执行在跑（中断/异常释放后）：迭代 turn 这个
       // 排水泵已不存在，入队消息会永久滞留（表现为中断后发"继续"无响应）。
       // 入队后补一次泵：spark-loop 由 startGoalLoop 把刚入队的消息注入下一轮迭代；
@@ -1904,13 +1960,13 @@ export class SessionService {
         )
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
       } else {
-        this.enqueueTurn(sessionId, pendingTurn)
+        enqueueDispatchedTurn()
         return { turnId, started: false }
       }
     }
 
     if (durable) {
-      this.enqueueTurn(sessionId, pendingTurn)
+      enqueueDispatchedTurn()
       const scheduleStart = () => setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
       if (startAfter == null) {
         scheduleStart()
@@ -8060,6 +8116,7 @@ export class SessionService {
     // 触发 hook：检测 agent_status 事件的关键状态变化
     if (event.type === 'agent_status') {
       const status = event.status
+      this.updateQueueErrorPauseFromStatus(sessionId, turnId, event)
       const turnRequests = new TurnRequestRepository(this.db)
       if (status === 'completed' || status === 'idle') {
         turnRequests.markCompleted(turnId)
@@ -8088,6 +8145,23 @@ export class SessionService {
       if (TERMINAL_AGENT_STATUSES.has(status)) {
         this.usageLedger.clearTurnState(sessionId, turnId)
       }
+    }
+  }
+
+  private updateQueueErrorPauseFromStatus(
+    sessionId: string,
+    turnId: string,
+    event: AgentStatusEvent,
+  ): void {
+    if (event.status === 'error' && (this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
+      this.getQueueErrorPauseGate().pause(sessionId, {
+        reason: 'turn_error',
+        failedTurnId: turnId,
+        ...(event.message != null ? { errorMessage: event.message } : {}),
+        pausedAt: event.timestamp,
+      })
+    } else if (event.status === 'completed' || event.status === 'cancelled') {
+      this.getQueueErrorPauseGate().resolve(sessionId)
     }
   }
 
@@ -8150,6 +8224,7 @@ export class SessionService {
       this.pendingTurns.clear()
       this.pendingPlanApprovals.clear()
       this.pendingUserQuestionGate.clear()
+      this.getQueueErrorPauseGate().clear()
 
       const pending = [
         ...trackedExecutions.map((tracked) => tracked.promise),
@@ -8303,6 +8378,26 @@ export class SessionService {
     return { changed, running: snapshot.running, queuedTurns: snapshot.queuedTurns }
   }
 
+  resumeQueue(params: {
+    sessionId: string
+    runtimePatch?: SessionQueueRuntimeSelection
+  }): SessionResumeQueueResponse {
+    const queue = this.pendingTurns.get(params.sessionId) ?? []
+    if (this.getQueueErrorPauseGate().getPause(params.sessionId, queue.length) == null) {
+      return { resumed: false, queuedTurns: this.toQueuedTurns(queue) }
+    }
+
+    this.rebaseQueuedRuntimeSelection(params.sessionId, params.runtimePatch)
+    this.getQueueErrorPauseGate().resolve(params.sessionId)
+    new SessionRepository(this.db).updateStatus(params.sessionId, 'idle')
+    this.emitQueueChanged(params.sessionId)
+    setTimeout(() => void this.continueGoalOrQueue(params.sessionId), 0)
+    return {
+      resumed: true,
+      queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
+    }
+  }
+
   /**
    * 立即执行队列中的某个 turn：中断当前任务，将该 turn 提到最前面执行，其余排队保持原序。
    * 上下文（会话历史事件）天然保留在 DB 中，新 turn 的 startTurn 会正常读取。
@@ -8310,8 +8405,13 @@ export class SessionService {
   async sendQueuedTurnNow(params: {
     sessionId: string
     turnId: string
+    runtimePatch?: SessionQueueRuntimeSelection
   }): Promise<SessionSendQueuedTurnNowResponse> {
     const { sessionId, turnId } = params
+    const wasErrorPaused = this.getQueueErrorPauseGate().isBlocked(
+      sessionId,
+      this.pendingTurns.get(sessionId)?.length ?? 0,
+    )
     this.resetTeamDispatchAutoContinuation(sessionId)
     let queue = this.pendingTurns.get(sessionId) ?? []
     let targetIdx = queue.findIndex((t) => t.turnId === turnId)
@@ -8329,6 +8429,13 @@ export class SessionService {
       }
     }
     const targetTurn = queue.splice(targetIdx, 1)[0]!
+    if (wasErrorPaused) {
+      this.pendingTurns.set(sessionId, queue)
+      this.rebaseQueuedRuntimeSelection(sessionId, params.runtimePatch)
+      queue = this.pendingTurns.get(sessionId) ?? []
+      this.getQueueErrorPauseGate().resolve(sessionId)
+      new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+    }
 
     // 没有正在执行的任务 → 直接启动
     if (!this.turnRegistry.hasActiveSession(sessionId)) {
@@ -8375,9 +8482,37 @@ export class SessionService {
     return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
   }
 
-  private enqueueTurn(sessionId: string, turn: PendingTurn): void {
+  private rebaseQueuedRuntimeSelection(
+    sessionId: string,
+    runtimePatch: SessionRuntimePatch | undefined,
+  ): boolean {
+    const selection = pickQueueRuntimeSelection(runtimePatch)
+    const queue = this.pendingTurns.get(sessionId)
+    if (selection == null || queue == null || queue.length === 0) return false
+    const nextQueue = queue.map((turn) => applyQueueRuntimeSelection(turn, selection))
+    const requestRepo = new TurnRequestRepository(this.db)
+    const persist = () => {
+      for (const turn of nextQueue) {
+        requestRepo.updateAcceptedPayload(turn.turnId, JSON.stringify(turn))
+      }
+    }
+    const database = this.db as unknown as {
+      raw?: { transaction?: (work: () => void) => () => void }
+    }
+    if (typeof database.raw?.transaction === 'function') database.raw.transaction(persist)()
+    else persist()
+    this.pendingTurns.set(sessionId, nextQueue)
+    return true
+  }
+
+  private enqueueTurn(
+    sessionId: string,
+    turn: PendingTurn,
+    placement: 'front' | 'back' = 'back',
+  ): void {
     const queue = this.pendingTurns.get(sessionId) ?? []
-    queue.push(turn)
+    if (placement === 'front') queue.unshift(turn)
+    else queue.push(turn)
     this.pendingTurns.set(sessionId, queue)
     this.emitQueueChanged(sessionId)
   }
@@ -8430,6 +8565,15 @@ export class SessionService {
       return
     }
     if (this.pendingUserQuestionGate.isBlocked(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
+    if (
+      this.getQueueErrorPauseGate().isBlocked(
+        sessionId,
+        this.pendingTurns.get(sessionId)?.length ?? 0,
+      )
+    ) {
       this.emitQueueChanged(sessionId)
       return
     }
@@ -8678,13 +8822,16 @@ export class SessionService {
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
+    const queue = this.pendingTurns.get(sessionId) ?? []
+    const running =
+      this.turnRegistry.hasActiveSession(sessionId) ||
+      this.turnRegistry.isSessionStarting(sessionId) ||
+      this.teamDispatchService?.hasActiveDispatches(sessionId) === true
     return {
       sessionId: sessionId as SessionId,
-      running:
-        this.turnRegistry.hasActiveSession(sessionId) ||
-        this.turnRegistry.isSessionStarting(sessionId) ||
-        this.teamDispatchService?.hasActiveDispatches(sessionId) === true,
-      queuedTurns: this.toQueuedTurns(this.pendingTurns.get(sessionId) ?? []),
+      running,
+      queuedTurns: this.toQueuedTurns(queue),
+      paused: running ? null : this.getQueueErrorPauseGate().getPause(sessionId, queue.length),
     }
   }
 
@@ -8750,6 +8897,10 @@ export class SessionService {
             })),
           }
         : {}),
+      ...(() => {
+        const runtime = pickQueueRuntimeSelection(turn.runtimePatch)
+        return runtime == null ? {} : { runtime }
+      })(),
       ...pickUserMessagePresentation(turn),
     }))
   }
@@ -8783,6 +8934,16 @@ export class SessionService {
 
   private async continueGoalOrQueue(sessionId: string): Promise<void> {
     if (this.disposing) return
+    if (
+      this.getQueueErrorPauseGate().isBlocked(
+        sessionId,
+        this.pendingTurns.get(sessionId)?.length ?? 0,
+      )
+    ) {
+      this.emitQueueChanged(sessionId)
+      this.schedulePendingQueuesGlobally()
+      return
+    }
     const goal = new GoalRepository(this.db).getCurrent(sessionId)
     if (goal?.status === 'active') {
       // 仅 spark-loop 由 Spark 泵迭代。codex-native 的目标循环由 codex 侧自驱
@@ -8816,6 +8977,7 @@ export class SessionService {
       const candidates: Array<{ sessionId: string; enqueuedAt: number }> = []
       for (const [sid, queue] of this.pendingTurns.entries()) {
         if (queue.length === 0) continue
+        if (this.getQueueErrorPauseGate().isBlocked(sid, queue.length)) continue
         const first = queue[0]
         if (first == null) continue
         candidates.push({ sessionId: sid, enqueuedAt: Date.parse(first.enqueuedAt) || 0 })
@@ -9696,6 +9858,7 @@ export class SessionService {
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     this.pendingUserQuestionGate.releaseSession(sessionId)
+    this.getQueueErrorPauseGate().resolve(sessionId)
     this.eventSequencer.clear(sessionId)
     this.iterationOverrides.delete(sessionId)
     this.pendingTitleRefinements.delete(sessionId)

@@ -238,6 +238,42 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('validates queue recovery requests with a provider/model-only runtime patch', () => {
+    const sessionId = '00000000-0000-4000-8000-000000000002'
+    const providerProfileId = '00000000-0000-4000-8000-000000000001'
+    expect(
+      SessionSendTurnRequestSchema.parse({
+        sessionId,
+        message: 'retry failed turn',
+        resumePausedQueue: true,
+      }).resumePausedQueue,
+    ).toBe(true)
+    expect(
+      IpcSchemaRegistry['session:resume-queue'].parse({
+        sessionId,
+        runtimePatch: {
+          providerProfileId,
+          modelId: 'model-new',
+          cliSparkOverride: { providerProfileId, modelId: 'spark-model-new' },
+        },
+      }),
+    ).toEqual({
+      sessionId,
+      runtimePatch: {
+        providerProfileId,
+        modelId: 'model-new',
+        cliSparkOverride: { providerProfileId, modelId: 'spark-model-new' },
+      },
+    })
+    expect(
+      IpcSchemaRegistry['session:send-queued-turn-now'].safeParse({
+        sessionId,
+        turnId: '00000000-0000-4000-8000-000000000003',
+        runtimePatch: { providerProfileId, modelId: 'model-new', agentId: 'not-allowed' },
+      }).success,
+    ).toBe(false)
+  })
+
   it('preserves the local CLI Spark override across session requests', () => {
     const cliSparkOverride = {
       providerProfileId: '00000000-0000-4000-8000-000000000003',

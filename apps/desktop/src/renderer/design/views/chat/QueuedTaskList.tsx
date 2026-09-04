@@ -16,14 +16,21 @@ import {
 } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
+import type { SessionQueuePauseState } from '@spark/protocol'
 import type { QueuedMessage } from './ChatComposerTypes'
 import { Icons } from '../../Icons'
+import './QueuedTaskList.less'
 
 type QueuedTaskListProps = {
   messages: readonly QueuedMessage[]
   clearing: boolean
   reordering: boolean
+  paused: SessionQueuePauseState | null
+  recovering: 'retry' | 'resume' | null
+  canRetry: boolean
   onClear: () => void
+  onRetry: () => void
+  onResume: () => void
   onEdit: (message: QueuedMessage) => void
   onSendNow: (message: QueuedMessage) => void
   onRemove: (message: QueuedMessage) => void
@@ -47,6 +54,9 @@ function SortableQueuedTask({
 }: SortableQueuedTaskProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
     useSortable({ id: message.turnId, disabled })
+  const effectiveProviderProfileId =
+    message.runtime?.cliSparkOverride?.providerProfileId ?? message.runtime?.providerProfileId
+  const effectiveModelId = message.runtime?.cliSparkOverride?.modelId ?? message.runtime?.modelId
 
   return (
     <div
@@ -69,6 +79,18 @@ function SortableQueuedTask({
       </button>
       <div className="composer-queue-copy">
         <span className="composer-queue-text">{message.content}</span>
+        {effectiveModelId != null && effectiveModelId.length > 0 && (
+          <span
+            className="composer-queue-model"
+            title={
+              effectiveProviderProfileId == null
+                ? `模型：${effectiveModelId}`
+                : `Provider：${effectiveProviderProfileId} · 模型：${effectiveModelId}`
+            }
+          >
+            {effectiveModelId}
+          </span>
+        )}
       </div>
       <div className="composer-queue-actions">
         {message.editable && (
@@ -112,12 +134,18 @@ export function QueuedTaskList({
   messages,
   clearing,
   reordering,
+  paused,
+  recovering,
+  canRetry,
   onClear,
+  onRetry,
+  onResume,
   onEdit,
   onSendNow,
   onRemove,
   onReorder,
 }: QueuedTaskListProps) {
+  const disabled = clearing || reordering || recovering != null
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -133,6 +161,32 @@ export function QueuedTaskList({
 
   return (
     <div className="composer-queue-panel">
+      {paused != null && (
+        <div className="composer-queue-pause" role="status" aria-live="polite">
+          <Icons.AlertTriangle className="composer-queue-pause-icon" size={15} />
+          <span className="composer-queue-pause-copy">当前回复出错，队列已暂停（内容未丢失）</span>
+          <span className="composer-queue-pause-actions">
+            <button
+              type="button"
+              className="composer-queue-pause-action"
+              disabled={disabled || !canRetry}
+              title={canRetry ? '使用当前模型重试失败消息' : '失败消息无法安全还原'}
+              onClick={onRetry}
+            >
+              {recovering === 'retry' ? '重试中…' : '重试'}
+            </button>
+            <button
+              type="button"
+              className="composer-queue-pause-action"
+              disabled={disabled}
+              title="跳过失败消息，并使用当前模型继续剩余队列"
+              onClick={onResume}
+            >
+              {recovering === 'resume' ? '继续中…' : '跳过继续'}
+            </button>
+          </span>
+        </div>
+      )}
       {messages.length > 1 && (
         <div className="composer-queue-header">
           <span className="composer-queue-hint">拖动调整执行顺序</span>
@@ -141,7 +195,7 @@ export function QueuedTaskList({
             className="composer-queue-clear-btn"
             title="取消全部排队消息，不影响当前正在执行的任务"
             aria-label="清空队列"
-            disabled={clearing || reordering}
+            disabled={disabled}
             onClick={onClear}
           >
             <Icons.Trash size={13} />
@@ -164,7 +218,7 @@ export function QueuedTaskList({
               <SortableQueuedTask
                 key={message.turnId}
                 message={message}
-                disabled={clearing || reordering}
+                disabled={disabled}
                 onEdit={onEdit}
                 onSendNow={onSendNow}
                 onRemove={onRemove}

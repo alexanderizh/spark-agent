@@ -26,6 +26,7 @@ import {
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { TurnRegistry } from '../../services/session/turn-registry.js'
+import { QueueErrorPauseGate } from '../../services/session/queue-error-pause-gate.js'
 import { CodexAppServerExecutor, CodexCliExecutor, CodexOpenAIExecutor } from '../../sdk/index.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
@@ -932,6 +933,7 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
     pendingUserQuestionGate: SessionQuestionGate
     startNextQueuedTurn: (sessionId: string) => void
     emitQueueChanged: (sessionId: string) => void
+    queueErrorPauseGate?: QueueErrorPauseGate
   }
 
   function makeService(maxConcurrent: number, activeCount: number): ConcurrencyInternals {
@@ -961,6 +963,25 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
     // 队列没被消费——turn 留在里面等槽位释放
     expect(service.pendingTurns.get('session-new')).toHaveLength(1)
     expect(service.turnRegistry.hasActiveSession('session-new')).toBe(false)
+  })
+
+  it('turn error 后保留队列，直到用户显式恢复', () => {
+    const service = makeService(6, 0)
+    service.pendingTurns.set('session-error', [
+      { turnId: 'turn-queued', message: 'keep me', enqueuedAt: '2026-09-05T00:00:00.000Z' },
+    ])
+    service.queueErrorPauseGate = new QueueErrorPauseGate()
+    service.queueErrorPauseGate.pause('session-error', {
+      reason: 'turn_error',
+      failedTurnId: 'turn-failed',
+      pausedAt: '2026-09-05T00:01:00.000Z',
+    })
+
+    service.startNextQueuedTurn('session-error')
+
+    expect(service.pendingTurns.get('session-error')).toHaveLength(1)
+    expect(service.turnRegistry.isSessionStarting('session-error')).toBe(false)
+    expect(service.emitQueueChanged).toHaveBeenCalledWith('session-error')
   })
 
   it('同一 session 已在跑时即使全局未满也不重复起跑', () => {
@@ -1009,6 +1030,42 @@ describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
 
     // 被上限挡住，队列保留
     expect(service.pendingTurns.get('session-new')).toHaveLength(1)
+  })
+})
+
+describe('SessionService queue error pause lifecycle', () => {
+  it('creates a pause for turn errors with queued work, but not for user cancellation', () => {
+    const service = Object.create(SessionService.prototype) as {
+      pendingTurns: Map<string, Array<{ turnId: string }>>
+      queueErrorPauseGate?: QueueErrorPauseGate
+      updateQueueErrorPauseFromStatus: (
+        sessionId: string,
+        turnId: string,
+        event: AgentEvent,
+      ) => void
+    }
+    service.pendingTurns = new Map([['session-1', [{ turnId: 'turn-queued' }]]])
+    service.queueErrorPauseGate = new QueueErrorPauseGate()
+
+    service.updateQueueErrorPauseFromStatus('session-1', 'turn-failed', {
+      ...baseEvent('session-1', 'turn-failed', 1),
+      type: 'agent_status',
+      status: 'error',
+      message: 'provider unavailable',
+    })
+    expect(service.queueErrorPauseGate.getPause('session-1', 1)).toEqual({
+      reason: 'turn_error',
+      failedTurnId: 'turn-failed',
+      errorMessage: 'provider unavailable',
+      pausedAt: '2026-05-28T00:00:00.000Z',
+    })
+
+    service.updateQueueErrorPauseFromStatus('session-1', 'turn-failed', {
+      ...baseEvent('session-1', 'turn-failed', 2),
+      type: 'agent_status',
+      status: 'cancelled',
+    })
+    expect(service.queueErrorPauseGate.getPause('session-1', 1)).toBeNull()
   })
 })
 
@@ -1127,6 +1184,111 @@ describe('SessionService.startTurn (入口全局上限兜底)', () => {
   })
 })
 
+describe('SessionService.resumeQueue (错误暂停恢复)', () => {
+  it('只重快照模型路由，保留排队 turn 的其余运行时字段', () => {
+    const run = vi.fn(() => ({ changes: 1 }))
+    const prepare = vi.fn(() => ({ run }))
+    const service = Object.create(SessionService.prototype) as {
+      db: {
+        raw: {
+          prepare: typeof prepare
+          transaction: (work: () => void) => () => void
+        }
+      }
+      turnRegistry: TurnRegistry
+      pendingTurns: Map<
+        string,
+        Array<{
+          turnId: string
+          message: string
+          enqueuedAt: string
+          runtimePatch?: Record<string, unknown>
+        }>
+      >
+      queueErrorPauseGate?: QueueErrorPauseGate
+      startNextQueuedTurn: (sessionId: string) => void
+      continueGoalOrQueue: (sessionId: string) => Promise<void>
+      resumeQueue: (params: {
+        sessionId: string
+        runtimePatch: {
+          providerProfileId: string
+          modelId: string
+          cliSparkOverride: { providerProfileId: string; modelId: string }
+        }
+      }) => { resumed: boolean; queuedTurns: Array<{ runtime?: Record<string, unknown> }> }
+    }
+    service.db = {
+      raw: {
+        prepare,
+        transaction: (work) => () => work(),
+      },
+    }
+    service.turnRegistry = new TurnRegistry()
+    service.pendingTurns = new Map([
+      [
+        'session-error',
+        [
+          {
+            turnId: 'turn-queued',
+            message: 'continue later',
+            enqueuedAt: '2026-09-05T00:00:00.000Z',
+            runtimePatch: {
+              providerProfileId: 'provider-old',
+              modelId: 'model-old',
+              cliSparkOverride: {
+                providerProfileId: 'spark-provider-old',
+                modelId: 'spark-model-old',
+              },
+              agentId: 'agent-keep',
+              permissionMode: 'codex-full-access',
+            },
+          },
+        ],
+      ],
+    ])
+    service.queueErrorPauseGate = new QueueErrorPauseGate()
+    service.queueErrorPauseGate.pause('session-error', {
+      reason: 'turn_error',
+      pausedAt: '2026-09-05T00:01:00.000Z',
+    })
+    service.startNextQueuedTurn = vi.fn()
+    service.continueGoalOrQueue = vi.fn(async () => undefined)
+
+    const result = service.resumeQueue({
+      sessionId: 'session-error',
+      runtimePatch: {
+        providerProfileId: 'provider-new',
+        modelId: 'model-new',
+        cliSparkOverride: {
+          providerProfileId: 'spark-provider-new',
+          modelId: 'spark-model-new',
+        },
+      },
+    })
+
+    expect(result.resumed).toBe(true)
+    expect(result.queuedTurns[0]?.runtime).toEqual({
+      providerProfileId: 'provider-new',
+      modelId: 'model-new',
+      cliSparkOverride: {
+        providerProfileId: 'spark-provider-new',
+        modelId: 'spark-model-new',
+      },
+    })
+    expect(service.pendingTurns.get('session-error')?.[0]?.runtimePatch).toEqual({
+      providerProfileId: 'provider-new',
+      modelId: 'model-new',
+      cliSparkOverride: {
+        providerProfileId: 'spark-provider-new',
+        modelId: 'spark-model-new',
+      },
+      agentId: 'agent-keep',
+      permissionMode: 'codex-full-access',
+    })
+    expect(prepare).toHaveBeenCalled()
+  })
+})
+
 describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
   it('给 Renderer 队列保留 hidden 展示元数据', () => {
     const service = Object.create(SessionService.prototype) as {
@@ -1165,6 +1327,40 @@ describe('SessionService.queueSnapshot (内部 Turn 展示隔离)', () => {
       }),
       expect.objectContaining({ turnId: 'user-turn', message: 'visible prompt' }),
     ])
+  })
+
+  it('向 Renderer 暴露模型路由快照，不泄漏 agent 或权限字段', () => {
+    const service = Object.create(SessionService.prototype) as {
+      toQueuedTurns: (
+        turns: Array<{
+          turnId: string
+          message: string
+          enqueuedAt: string
+          runtimePatch: Record<string, unknown>
+        }>,
+      ) => Array<{ runtime?: Record<string, unknown> }>
+    }
+
+    const [turn] = service.toQueuedTurns([
+      {
+        turnId: 'queued-runtime',
+        message: 'run later',
+        enqueuedAt: '2026-09-05T00:00:00.000Z',
+        runtimePatch: {
+          providerProfileId: 'provider-1',
+          modelId: 'model-1',
+          cliSparkOverride: { providerProfileId: 'spark-provider', modelId: 'spark-model' },
+          agentId: 'private-agent',
+          permissionMode: 'codex-full-access',
+        },
+      },
+    ])
+
+    expect(turn?.runtime).toEqual({
+      providerProfileId: 'provider-1',
+      modelId: 'model-1',
+      cliSparkOverride: { providerProfileId: 'spark-provider', modelId: 'spark-model' },
+    })
   })
 })
 
