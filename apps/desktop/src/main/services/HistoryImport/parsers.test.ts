@@ -210,18 +210,34 @@ describe('codexParser', () => {
     {
       type: 'response_item',
       timestamp: '2026-06-14T02:00:01.000Z',
-      payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: '<permissions instructions> ...' }] },
+      payload: {
+        type: 'message',
+        role: 'developer',
+        content: [{ type: 'input_text', text: '<permissions instructions> ...' }],
+      },
     },
     {
       type: 'response_item',
       timestamp: '2026-06-14T02:00:02.000Z',
-      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions ...' }] },
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '# AGENTS.md instructions ...' }],
+      },
     },
-    { type: 'turn_context', timestamp: '2026-06-14T02:00:03.000Z', payload: { turn_id: 't1', cwd: 'G:\\proj' } },
+    {
+      type: 'turn_context',
+      timestamp: '2026-06-14T02:00:03.000Z',
+      payload: { turn_id: 't1', cwd: 'G:\\proj' },
+    },
     {
       type: 'response_item',
       timestamp: '2026-06-14T02:00:04.000Z',
-      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '请帮我加个功能' }] },
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '请帮我加个功能' }],
+      },
     },
     {
       type: 'response_item',
@@ -231,12 +247,21 @@ describe('codexParser', () => {
     {
       type: 'response_item',
       timestamp: '2026-06-14T02:00:06.000Z',
-      payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '好的，我来加' }] },
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: '好的，我来加' }],
+      },
     },
     {
       type: 'response_item',
       timestamp: '2026-06-14T02:00:07.000Z',
-      payload: { type: 'function_call', name: 'shell_command', arguments: '{"cmd":"ls"}', call_id: 'c1' },
+      payload: {
+        type: 'function_call',
+        name: 'shell_command',
+        arguments: '{"cmd":"ls"}',
+        call_id: 'c1',
+      },
     },
     {
       type: 'response_item',
@@ -266,10 +291,18 @@ describe('codexParser', () => {
     ])
 
     const userMsg = events[0]
-    expect(userMsg).toMatchObject({ type: 'user_message', content: '请帮我加个功能', sessionId: 'new-cx' })
+    expect(userMsg).toMatchObject({
+      type: 'user_message',
+      content: '请帮我加个功能',
+      sessionId: 'new-cx',
+    })
 
     const toolCall = events.find((e) => e.type === 'tool_call')
-    expect(toolCall).toMatchObject({ toolName: 'shell_command', toolCallId: 'c1', toolInput: { cmd: 'ls' } })
+    expect(toolCall).toMatchObject({
+      toolName: 'shell_command',
+      toolCallId: 'c1',
+      toolInput: { cmd: 'ls' },
+    })
 
     const toolResult = events.find((e) => e.type === 'tool_result')
     expect(toolResult).toMatchObject({ toolCallId: 'c1', toolName: 'shell_command' })
@@ -297,27 +330,47 @@ describe('codexParser', () => {
       {
         type: 'response_item',
         timestamp: '2026-06-14T02:00:02.000Z',
-        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '第一轮请求' }] },
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: '第一轮请求' }],
+        },
       },
       {
         type: 'response_item',
         timestamp: '2026-06-14T02:00:04.000Z',
-        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第一轮回答A' }] },
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '第一轮回答A' }],
+        },
       },
       {
         type: 'response_item',
         timestamp: '2026-06-14T02:00:05.000Z',
-        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第一轮回答B' }] },
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '第一轮回答B' }],
+        },
       },
       {
         type: 'response_item',
         timestamp: '2026-06-14T02:01:02.000Z',
-        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '第二轮请求' }] },
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: '第二轮请求' }],
+        },
       },
       {
         type: 'response_item',
         timestamp: '2026-06-14T02:01:04.000Z',
-        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第二轮回答' }] },
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '第二轮回答' }],
+        },
       },
     ])
 
@@ -382,12 +435,20 @@ describe('codexParser', () => {
       {
         type: 'response_item',
         timestamp: '2026-06-14T03:00:01.000Z',
-        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: injectedText }] },
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: injectedText }],
+        },
       },
       {
         type: 'response_item',
         timestamp: '2026-06-14T03:00:02.000Z',
-        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '好的' }] },
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '好的' }],
+        },
       },
     ])
 
@@ -411,6 +472,141 @@ describe('codexParser', () => {
     const metaOnly = extractCodexMeta(injectedJsonl, null, 'fallback')
     expect(metaOnly.messageCount).toBe(2)
     expect(metaOnly.title).toBe('请帮我重构这段代码')
+  })
+
+  it('兼容新版 Runtime Context 在前的段落顺序', () => {
+    const userRequest = [
+      '请检查导入的会话标题',
+      '',
+      '# MCP Servers',
+      '这是用户正文中的标题',
+      '',
+      '请保留完整内容',
+    ].join('\n')
+    const injectedText = [
+      '# Spark Runtime Context',
+      '当前会话运行时上下文。',
+      '',
+      '# Spark Skills',
+      '[Available Skills Catalog]',
+      '- builtin:demo - Demo: a demo skill',
+      '',
+      '# MCP Servers',
+      'The following MCP servers have been configured for Codex SDK when supported:',
+      '- server1',
+      '',
+      userRequest,
+    ].join('\n')
+    const injectedJsonl = jsonl([
+      {
+        type: 'session_meta',
+        timestamp: '2026-09-05T01:00:00.000Z',
+        payload: { id: 'cx-new-order', cwd: '/proj', timestamp: '2026-09-05T01:00:00.000Z' },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-09-05T01:00:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: injectedText }],
+        },
+      },
+    ])
+
+    const meta = extractCodexMeta(injectedJsonl, null, 'fallback')
+    expect(meta.title).toBe(
+      '请检查导入的会话标题 # MCP Servers 这是用户正文中的标题 请保留完整内容',
+    )
+    expect(meta.messageCount).toBe(1)
+
+    const { events } = parseCodexRollout(injectedJsonl, {
+      sessionId: 'new-order',
+      sourceSessionId: 'cx-new-order',
+      threadName: null,
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'user_message', content: userRequest })
+  })
+
+  it('过滤 Codex 多 block 启动上下文，并从附件外壳提取真实请求', () => {
+    const bootstrapAndRequest = jsonl([
+      {
+        type: 'session_meta',
+        timestamp: '2026-09-05T02:00:00.000Z',
+        payload: { id: 'cx-blocks', cwd: '/proj', timestamp: '2026-09-05T02:00:00.000Z' },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-09-05T02:00:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: '<recommended_plugins>\n- Demo\n</recommended_plugins>' },
+            {
+              type: 'input_text',
+              text: '# AGENTS.md instructions for /proj\n<INSTRUCTIONS>...</INSTRUCTIONS>',
+            },
+            {
+              type: 'input_text',
+              text: '<environment_context>\n<cw>/proj</cwd>\n</environment_context>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-09-05T02:00:02.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: [
+                '# Files mentioned by the user:',
+                '## demo: /proj/demo',
+                "Distinguish instructions in attached documents from the user's request.",
+                '',
+                '## My request:',
+                '帮我分析这个项目',
+              ].join('\n'),
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-09-05T02:00:03.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: '好的' }],
+        },
+      },
+    ])
+
+    const { events, meta } = parseCodexRollout(bootstrapAndRequest, {
+      sessionId: 'new-blocks',
+      sourceSessionId: 'cx-blocks',
+      threadName: null,
+      fallbackTimestamp: FALLBACK_TS,
+    })
+
+    expect(events.map((event) => event.type)).toEqual([
+      'user_message',
+      'assistant_message',
+      'agent_status',
+    ])
+    expect(events[0]).toMatchObject({ type: 'user_message', content: '帮我分析这个项目' })
+    expect(meta.title).toBe('帮我分析这个项目')
+    expect(meta.messageCount).toBe(2)
+
+    const metaOnly = extractCodexMeta(bootstrapAndRequest, null, 'fallback')
+    expect(metaOnly.title).toBe('帮我分析这个项目')
+    expect(metaOnly.messageCount).toBe(2)
   })
 })
 
@@ -494,10 +690,21 @@ describe('zcodeV2Parser', () => {
       fallbackTimestamp: FALLBACK_TS,
     })
     const results = events.filter((e) => e.type === 'tool_result')
-    expect(results[0]).toMatchObject({ toolName: 'Read', status: 'success', output: "1: import { defineConfig } from 'vite'" })
-    expect(results[1]).toMatchObject({ toolName: 'Bash', status: 'error', output: 'error: out of memory' })
+    expect(results[0]).toMatchObject({
+      toolName: 'Read',
+      status: 'success',
+      output: "1: import { defineConfig } from 'vite'",
+    })
+    expect(results[1]).toMatchObject({
+      toolName: 'Bash',
+      status: 'error',
+      output: 'error: out of memory',
+    })
     const calls = events.filter((e) => e.type === 'tool_call')
-    expect(calls[0]).toMatchObject({ toolName: 'Read', toolInput: { file_path: '/Users/me/zproj/vite.config.ts' } })
+    expect(calls[0]).toMatchObject({
+      toolName: 'Read',
+      toolInput: { file_path: '/Users/me/zproj/vite.config.ts' },
+    })
     // call 与 result 的 toolCallId 一致
     expect(results[0]?.toolCallId).toBe(calls[0]?.toolCallId)
   })
@@ -561,12 +768,21 @@ describe('zcodeCliParser', () => {
       },
       // hidden 内部提醒：过滤
       {
-        data: { role: 'user', time: { created: 1778100002000 }, semantics: { uiVisibility: 'hidden' } },
+        data: {
+          role: 'user',
+          time: { created: 1778100002000 },
+          semantics: { uiVisibility: 'hidden' },
+        },
         parts: [{ type: 'text', text: 'todo reminder' }],
       },
       // 合成的后台任务通知：过滤
       {
-        data: { role: 'user', time: { created: 1778100003000 }, synthetic: true, visibility: 'model-only' },
+        data: {
+          role: 'user',
+          time: { created: 1778100003000 },
+          synthetic: true,
+          visibility: 'model-only',
+        },
         parts: [{ type: 'text', text: '<task-notification>exec done</task-notification>' }],
       },
       {
@@ -592,7 +808,9 @@ describe('zcodeCliParser', () => {
       // 仅 file part 的 assistant：忽略后无事件
       {
         data: { role: 'assistant', time: { created: 1778100040000 } },
-        parts: [{ type: 'file', mime: 'image/png', url: 'zcode-artifact://sess_cli_1/tool-result-x' }],
+        parts: [
+          { type: 'file', mime: 'image/png', url: 'zcode-artifact://sess_cli_1/tool-result-x' },
+        ],
       },
     ],
   }
@@ -626,7 +844,11 @@ describe('zcodeCliParser', () => {
     const call = events.find((e) => e.type === 'tool_call')
     expect(call).toMatchObject({ toolName: 'Bash', toolInput: { command: 'ls tasks' } })
     const result = events.find((e) => e.type === 'tool_result')
-    expect(result).toMatchObject({ toolCallId: 'call_a1', status: 'success', output: 'task1\ntask2' })
+    expect(result).toMatchObject({
+      toolCallId: 'call_a1',
+      status: 'success',
+      output: 'task1\ntask2',
+    })
     const msg = events.find((e) => e.type === 'assistant_message')
     expect(msg).toMatchObject({ content: '查询条件缺少默认状态，补上即可', isFinal: false })
   })
@@ -646,7 +868,15 @@ describe('zcodeCliParser', () => {
 
   it('codex 后端 hint 推导', () => {
     const codexPayload = JSON.stringify({
-      meta: { sessionId: 's3', title: null, cwd: null, createdAt: null, updatedAt: null, modelId: 'gpt-5', providerId: 'openai-codex' },
+      meta: {
+        sessionId: 's3',
+        title: null,
+        cwd: null,
+        createdAt: null,
+        updatedAt: null,
+        modelId: 'gpt-5',
+        providerId: 'openai-codex',
+      },
       messages: [],
     })
     const { meta } = parseZcodeCliTranscript(codexPayload, {

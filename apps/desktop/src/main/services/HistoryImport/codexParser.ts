@@ -52,27 +52,38 @@ interface CodexLine {
   payload?: CodexPayload
 }
 
+const SPARK_MCP_SECTION_RE = new RegExp(
+  '^# MCP Servers\\r?\\n' +
+    '(?:The following MCP servers have been configured for Codex (?:CLI|SDK) when supported:' +
+    '|These MCP servers are configured in Spark:)\\r?$',
+  'm',
+)
+
 /** 注入式上下文（环境说明 / 指令），不算真实用户输入 */
 function isInjectedContext(text: string): boolean {
   const t = text.trimStart()
   const lower = t.toLowerCase()
   return (
+    lower.startsWith('<recommended_plugins') ||
     lower.startsWith('<permissions') ||
     lower.startsWith('<environment_context') ||
     lower.startsWith('<user_instructions') ||
     lower.startsWith('<instructions') ||
     lower.startsWith('<system') ||
     lower.startsWith('<files') ||
-    t.startsWith('# AGENTS.md')
+    t.startsWith('# AGENTS.md') ||
+    t.startsWith('# Spark Runtime Context') ||
+    t.startsWith('# Spark Skills')
   )
 }
 
 /**
  * 剥离 SparkWork 注入到 codex user message 开头的运行时上下文段，保留真实用户消息。
  *
- * SparkWork 调用 codex 时会把「技能目录 / 运行时上下文 / MCP 清单」与真实用户输入
- * 拼接成同一条 user message（见 codex-cli-executor.buildCodexPrompt），结构为：
- *   # Spark Skills\n[Available Skills Catalog]\n...\n\n# Spark Runtime Context\n...\n\n# MCP Servers\n...\n\n<真实用户消息>
+ * SparkWork 调用 codex 时会把「运行时上下文 / 技能目录 / MCP 清单」与真实用户输入
+ * 拼接成同一条 user message（见 codex-*-executor 的 prompt builder）。历史上
+ * Runtime Context 和 Spark Skills 的顺序曾调整，因此不依赖首个段落，而是以执行器
+ * 生成的 `# MCP Servers` 说明行作为稳定边界，提取其后的真实用户消息。
  * 这些注入段（含 [Available Skills Catalog] 等）不是真实用户输入，预览/导入时应剥离。
  *
  * 实测所有含 `# Spark Skills` 的消息均同时含 `# MCP Servers`（最后一个注入段），
@@ -80,14 +91,28 @@ function isInjectedContext(text: string): boolean {
  * 不符合该结构时原样返回，避免误删真实内容。
  */
 function stripSparkInjectedSections(text: string): string {
-  if (!text.startsWith('# Spark Skills')) return text
-  const marker = '\n# MCP Servers\n'
-  const markerIdx = text.lastIndexOf(marker)
-  if (markerIdx === -1) return text
-  const sep = text.indexOf('\n\n', markerIdx + marker.length)
-  if (sep === -1) return text
-  const userMessage = text.slice(sep + 2)
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith('# Spark Runtime Context') && !trimmed.startsWith('# Spark Skills')) {
+    return text
+  }
+  const markerMatch = SPARK_MCP_SECTION_RE.exec(trimmed)
+  if (markerMatch?.index == null) return text
+  const markerEnd = markerMatch.index + markerMatch[0].length
+  const sepMatch = /\r?\n\r?\n/.exec(trimmed.slice(markerEnd))
+  if (sepMatch?.index == null) return text
+  const sep = markerEnd + sepMatch.index + sepMatch[0].length
+  const userMessage = trimmed.slice(sep)
   return userMessage.trim().length > 0 ? userMessage.trimStart() : text
+}
+
+/** Codex 附件输入会将真实请求包在 `## My request:` 之后。 */
+function stripCodexUserEnvelope(text: string): string {
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith('# Files mentioned by the user:')) return text
+  const match = /^## My request:\r?$/m.exec(trimmed)
+  if (match?.index == null) return text
+  const request = trimmed.slice(match.index + match[0].length).trimStart()
+  return request.length > 0 ? request : text
 }
 
 function messageText(content: CodexContentBlock[] | undefined): string {
@@ -96,6 +121,24 @@ function messageText(content: CodexContentBlock[] | undefined): string {
     .filter((b) => typeof b.text === 'string')
     .map((b) => b.text)
     .join('\n')
+}
+
+/**
+ * user message 可由多个 content block 组成：Codex 会将插件清单、AGENTS.md
+ * 和环境上下文分别写入同一条消息的独立 block。必须逐 block 清洗，不能先拼接再
+ * 只看整体首个前缀，否则任意一个注入 block 都可能被误当成标题。
+ */
+function userMessageText(content: CodexContentBlock[] | undefined): string {
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    if (typeof block.text !== 'string') continue
+    const withoutSparkContext = stripSparkInjectedSections(block.text)
+    if (isInjectedContext(withoutSparkContext)) continue
+    const cleaned = stripCodexUserEnvelope(withoutSparkContext)
+    if (cleaned.trim().length > 0) parts.push(cleaned)
+  }
+  return parts.join('\n')
 }
 
 function parseLines(text: string): CodexLine[] {
@@ -117,11 +160,8 @@ function firstUserText(lines: CodexLine[]): string | null {
     if (l.type !== 'response_item') continue
     const p = l.payload
     if (p?.type === 'message' && p.role === 'user') {
-      const text = messageText(p.content)
-      if (text.trim().length === 0) continue
-      if (isInjectedContext(text)) continue
-      const cleaned = stripSparkInjectedSections(text)
-      if (cleaned.trim().length > 0) return cleaned
+      const text = userMessageText(p.content)
+      if (text.trim().length > 0) return text
     }
   }
   return null
@@ -140,7 +180,11 @@ function parseToolInput(raw: string | undefined): Record<string, unknown> {
   }
 }
 
-function collectMeta(lines: CodexLine[], threadName: string | null, fallbackId: string): TranscriptMeta {
+function collectMeta(
+  lines: CodexLine[],
+  threadName: string | null,
+  fallbackId: string,
+): TranscriptMeta {
   let id: string | null = null
   let cwd: string | null = null
   let firstTs: string | null = null
@@ -162,11 +206,8 @@ function collectMeta(lines: CodexLine[], threadName: string | null, fallbackId: 
     if (l.type === 'response_item' && p?.type === 'message') {
       if (p.role === 'assistant') messageCount++
       else if (p.role === 'user') {
-        const text = messageText(p.content)
-        if (text.trim().length === 0) continue
-        if (isInjectedContext(text)) continue
-        const cleaned = stripSparkInjectedSections(text)
-        if (cleaned.trim().length > 0) messageCount++
+        const text = userMessageText(p.content)
+        if (text.trim().length > 0) messageCount++
       }
     }
   }
@@ -182,14 +223,23 @@ function collectMeta(lines: CodexLine[], threadName: string | null, fallbackId: 
 }
 
 /** 轻量提取元数据（scan 用） */
-export function extractCodexMeta(text: string, threadName: string | null, fallbackId: string): TranscriptMeta {
+export function extractCodexMeta(
+  text: string,
+  threadName: string | null,
+  fallbackId: string,
+): TranscriptMeta {
   return collectMeta(parseLines(text), threadName, fallbackId)
 }
 
 /** 全量解析为 AgentEvent 序列 */
 export function parseCodexRollout(
   text: string,
-  params: { sessionId: string; sourceSessionId: string; threadName: string | null; fallbackTimestamp: string },
+  params: {
+    sessionId: string
+    sourceSessionId: string
+    threadName: string | null
+    fallbackTimestamp: string
+  },
 ): ParsedTranscript {
   const lines = parseLines(text)
   const builder = new EventSeqBuilder(params.sessionId, params.fallbackTimestamp)
@@ -205,18 +255,16 @@ export function parseCodexRollout(
     const ts = l.timestamp ?? null
 
     if (p.type === 'message') {
-      const text2 = messageText(p.content)
-      if (text2.trim().length === 0) continue
-
       if (p.role === 'user') {
-        if (isInjectedContext(text2)) continue
-        const cleaned = stripSparkInjectedSections(text2)
+        const cleaned = userMessageText(p.content)
         if (cleaned.trim().length === 0) continue
         builder.newTurn()
         segIndex = 0
         sawFirstUserTurn = true
         builder.push({ type: 'user_message', content: cleaned, timestamp: ts })
       } else if (p.role === 'assistant') {
+        const text2 = messageText(p.content)
+        if (text2.trim().length === 0) continue
         if (!sawFirstUserTurn) {
           builder.newTurn()
           segIndex = 0
@@ -239,7 +287,11 @@ export function parseCodexRollout(
       continue
     }
 
-    if (p.type === 'function_call' || p.type === 'custom_tool_call' || p.type === 'local_shell_call') {
+    if (
+      p.type === 'function_call' ||
+      p.type === 'custom_tool_call' ||
+      p.type === 'local_shell_call'
+    ) {
       if (!sawFirstUserTurn) {
         builder.newTurn()
         segIndex = 0
