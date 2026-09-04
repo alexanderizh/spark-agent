@@ -4590,6 +4590,38 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   font-weight: 600;
 }
 
+.workflow-progress-state {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--text-faint) 12%, transparent);
+
+  &.working {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+  }
+
+  &.completed {
+    color: var(--c-ok, #22c55e);
+    background: color-mix(in srgb, var(--c-ok, #22c55e) 12%, transparent);
+  }
+
+  &.failed {
+    color: var(--c-err, #ef4444);
+    background: color-mix(in srgb, var(--c-err, #ef4444) 12%, transparent);
+  }
+}
+
+.workflow-progress-total {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
 .workflow-progress-count {
   margin-left: auto;
   color: var(--text-faint);
@@ -4605,15 +4637,82 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   gap: 2px;
 }
 
+// 行 + 行下详情（错误/输出预览）的外层容器
+.workflow-progress-item-wrap {
+  min-width: 0;
+}
+
 .workflow-progress-item {
   display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
-  padding: 3px 2px;
+  padding: 3px 4px;
+  margin: 0 -2px;
+  border-radius: var(--r-sm);
   font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1.4;
+
+  &.expandable {
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+      outline: none;
+    }
+  }
+
+  .chev {
+    flex: 0 0 auto;
+    color: var(--text-faint);
+    transition: transform 0.15s ease;
+  }
+
+  .chev.chev-open {
+    transform: rotate(90deg);
+  }
+}
+
+.workflow-progress-duration {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+// 失败/重试失败的错误详情：行下直接展示，限高滚动，红色左界条区分
+.workflow-progress-error {
+  margin: 1px 0 3px 22px;
+  padding: 4px 8px;
+  max-height: 84px;
+  overflow-y: auto;
+  border-left: 2px solid color-mix(in srgb, var(--c-err, #ef4444) 55%, transparent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: color-mix(in srgb, var(--c-err, #ef4444) 6%, transparent);
+  color: var(--c-err, #ef4444);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+// 节点输出预览：等宽、沉底背景、限高滚动
+.workflow-progress-output {
+  margin: 1px 0 3px 22px;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken, var(--bg));
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .workflow-progress-icon {

@@ -12204,6 +12204,84 @@ body.canvas-agent-panel-resizing {
   color: var(--text-muted);
 }
 
+// 深度视频转换参数：内联工作台占满整行时，不要把所有控件推到最右侧。
+// 默认两列保证普通浮动面板有足够的控件宽度；宽工作台切成四列，减少纵向堆叠。
+.canvas-depth-render-options {
+  min-width: 0;
+}
+
+.canvas-depth-render-options.is-compact {
+  margin-top: 12px;
+}
+
+.canvas-depth-render-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 28px;
+}
+
+.canvas-depth-render-option-row {
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.canvas-depth-render-option-row > span:first-child {
+  min-width: 0;
+}
+
+.canvas-depth-render-option-row .ant-select {
+  flex: 0 1 160px;
+  min-width: 132px;
+}
+
+.canvas-depth-render-slider {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-depth-render-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.canvas-depth-render-slider-label {
+  color: var(--text-secondary, var(--text));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.canvas-depth-render-slider-value {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.canvas-depth-render-slider .ant-slider {
+  margin: 8px 7px 4px;
+}
+
+.canvas-depth-render-slider-hint {
+  min-height: 16px;
+}
+
+@container canvas-operation-workbench (min-width: 1200px) {
+  .canvas-depth-render-option-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .canvas-operation-panel-frame-roles {
   display: flex;
   flex-direction: column;

@@ -3317,6 +3317,54 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
+  it('passes image attachments through unchanged when provider modelType is text', async () => {
+    const attachmentPath = fileURLToPath(new URL('../../../package.json', import.meta.url))
+    seedProvider({
+      id: 'legacy-text-provider',
+      provider_type: 'anthropic',
+      name: 'Legacy text provider',
+      config_json: JSON.stringify({
+        defaultModel: 'vision-capable-model',
+        modelIds: ['vision-capable-model'],
+        apiEndpoint: 'https://api.example.test/anthropic',
+        modelType: 'text',
+      }),
+      keystore_ref: 'key-legacy-text',
+      is_default: 0,
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'legacy-text-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Native image input session',
+    })
+
+    await service.sendTurn({
+      sessionId,
+      message: 'describe the selected image',
+      attachments: [{ type: 'image', path: attachmentPath }],
+    })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          type: 'image',
+          path: attachmentPath,
+        }),
+      ],
+    })
+    expect(mockState.sdkTurns[0]?.message).toBe('describe the selected image')
+    expect(
+      events.some(
+        (event) => event.type === 'tool_call' && event.toolName === 'spark_host_provider_vision',
+      ),
+    ).toBe(false)
+  })
+
   it('marks scheduled automation turns as unattended in the SDK config', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({

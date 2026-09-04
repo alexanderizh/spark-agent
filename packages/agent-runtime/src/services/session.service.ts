@@ -120,8 +120,6 @@ import {
 } from './plugin-runtime/plugin-runtime-mcp-bridge.js'
 import { RuntimeBroker } from './plugin-runtime/runtime-broker.js'
 import { registerBuiltinRuntimeAdapters } from './plugin-runtime/builtin-runtimes.js'
-import { routeProviderVisionAttachments } from './custom-tools/provider-vision-router.js'
-import { createProviderVisionSessionEvents } from './custom-tools/provider-vision-session-events.js'
 import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
 import { ToolPackageService } from './tool-packages/tool-package.service.js'
@@ -344,6 +342,11 @@ import {
   getDefaultWorkflowAtomicContent,
   memberDisallowedToolsFromConfig,
   runWorkflowVerifyNode,
+  buildWorkflowToolInvocationInstruction,
+  buildWorkflowProgressNodes,
+  formatWorkflowMcpToolResult,
+  formatWorkflowPlatformToolResult,
+  getWorkflowToolInvocationSpec,
 } from './session-workflow-helpers.js'
 import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {
@@ -391,6 +394,7 @@ import {
   normalizeWorkflowGraph,
   type NormalizedWorkflowGraph,
   type WorkflowDispatchAttachment,
+  type WorkflowRunSnapshot,
 } from './workflow-executor.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import type {
@@ -2248,7 +2252,6 @@ export class SessionService {
       supportsMillionContext?: boolean
       contextWindow?: number
       modelContextWindows?: Record<string, number>
-      modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -2556,26 +2559,11 @@ export class SessionService {
         })
       }
     }
+    // Keep the user's turn authoritative. Image capability is decided by the selected model;
+    // the session host must not replace image attachments with a synthetic vision-tool result.
     const turnAttachments = prepareTurnAttachments(attachments, workspaceRootPath)
-    const providerVisionRoute = await routeProviderVisionAttachments({
-      database: this.db,
-      ...(config.modelType != null ? { modelType: config.modelType } : {}),
-      message,
-      attachments: turnAttachments,
-      sessionId,
-      turnId,
-    })
-    for (const event of createProviderVisionSessionEvents({
-      route: providerVisionRoute,
-      sessionId,
-      turnId,
-    })) {
-      this.emitAndPersist(sessionId, turnId, event, eventRepo)
-    }
-    const executorMessage = providerVisionRoute.message
-    const executorTurnAttachments = providerVisionRoute.attachments
     const attachmentDirectories = getAttachmentAdditionalDirectories(
-      executorTurnAttachments,
+      turnAttachments,
       workspaceRootPath,
     )
 
@@ -3118,9 +3106,7 @@ export class SessionService {
           turnId,
           timestamp: new Date().toISOString(),
           seq: 0,
-          userMessage: runtimeLogEnabled
-            ? buildUserMessageSnapshot(executorMessage, executorTurnAttachments)
-            : '',
+          userMessage: runtimeLogEnabled ? buildUserMessageSnapshot(message, turnAttachments) : '',
           systemPromptSections: runtimeLogEnabled ? promptSections : [],
           model,
           providerProfileId: effectiveRuntimeProviderProfileId,
@@ -3139,7 +3125,7 @@ export class SessionService {
     // ── Context Ledger ──────────────────────────────────────────────────
     // Emit a detailed token breakdown of all context sections for UI display
     {
-      const attachmentPromptLedger = buildAttachmentPromptLedger(executorTurnAttachments)
+      const attachmentPromptLedger = buildAttachmentPromptLedger(turnAttachments)
       // 原生 resume / 常驻 app-server 路径：历史由 runtime 内部维护、不注入 Spark
       // prompt，若账本缺历史段，「上下文用量」会恒等于静态 prompt 规模冻结不动。
       // 用上一轮最后一次真实请求的 prompt 规模反推展示用历史段（clamp 到窗口）。
@@ -3176,7 +3162,7 @@ export class SessionService {
               conversationHistoryUsedTokens: Math.min(lastRealPromptTokens, contextWindowTokens),
             }
           : {}),
-        userMessage: executorMessage,
+        userMessage: message,
         attachmentPrompt: attachmentPromptLedger,
       })
       runtimeMetrics.recordPromptEstimate(totalEstimatedTokens)
@@ -3297,7 +3283,7 @@ export class SessionService {
               ),
             }
           : {}),
-        ...(executorTurnAttachments.length > 0 ? { attachments: executorTurnAttachments } : {}),
+        ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
         ...(attachmentDirectories.length > 0
           ? { additionalDirectories: attachmentDirectories }
           : {}),
@@ -3371,7 +3357,7 @@ export class SessionService {
       await this.tryStartSDKTurn(
         sessionId,
         turnId,
-        executorMessage,
+        message,
         eventRepo,
         sessionRepo,
         sdkConfig,
@@ -3487,7 +3473,7 @@ export class SessionService {
         ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
         : {}),
       fastMode: effectiveFastMode,
-      ...(executorTurnAttachments.length > 0 ? { attachments: executorTurnAttachments } : {}),
+      ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
       ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
       enableCheckpoints: false,
       sdkSessionId,
@@ -6496,7 +6482,7 @@ export class SessionService {
         ? {
             name: 'workflow_run',
             description:
-              'Execute the managed workflow agent nodes sequentially for the current objective.',
+              'Execute the managed workflow graph for the current objective: nodes run in dependency order, independent agent/subagent nodes in the same wave run in parallel, conditional edges route branches, and node prompts/tool arguments support {{outputKey}} interpolation of upstream results.',
             schema: { objective: z.string().max(8000) },
             handler: async (args: Record<string, unknown>) => {
               const objective = String(args.objective ?? '')
@@ -6536,34 +6522,31 @@ export class SessionService {
                   ...(modelId != null ? { modelId } : {}),
                 })
               }
-              const emitWorkflowProgress = (
-                runStatus: 'working' | 'completed' | 'failed' | 'canceled',
-                runningNodeIds: ReadonlySet<string>,
-                completedNodeIds: ReadonlySet<string>,
-                skippedNodeIds: ReadonlySet<string>,
-                failedNodeId?: string,
-              ): void => {
-                const nodes = ctx.workflowGraph!.nodes.map((node) => {
-                  const meta = nodeMeta.get(node.id)
-                  const status: import('@spark/protocol').WorkflowProgressNodeStatus =
-                    node.id === failedNodeId
-                      ? 'failed'
-                      : completedNodeIds.has(node.id)
-                        ? 'completed'
-                        : skippedNodeIds.has(node.id)
-                          ? 'skipped'
-                          : runningNodeIds.has(node.id)
-                            ? 'running'
-                            : 'pending'
-                  return {
-                    nodeId: node.id,
-                    title: meta?.title ?? node.id,
-                    kind: meta?.kind ?? node.kind,
-                    status,
-                    ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
-                    ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
-                    ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
-                  }
+              const emitWorkflowProgress = (snap: WorkflowRunSnapshot): void => {
+                const nodes = buildWorkflowProgressNodes({
+                  metas: ctx.workflowGraph!.nodes.map((node) => {
+                    const meta = nodeMeta.get(node.id)
+                    return {
+                      nodeId: node.id,
+                      title: meta?.title ?? node.id,
+                      kind: meta?.kind ?? node.kind,
+                      ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
+                      ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
+                      ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
+                    }
+                  }),
+                  executions: snap.executions,
+                  atomicExecutions: snap.atomicExecutions,
+                  runningNodeIds: new Set(snap.runningNodeIds),
+                  completedNodeIds: new Set(snap.completedNodeIds),
+                  skippedNodeIds: new Set(snap.skippedNodeIds),
+                  ...(snap.failedNode?.nodeId != null
+                    ? { failedNodeId: snap.failedNode.nodeId }
+                    : {}),
+                  ...(snap.failedNode?.error != null
+                    ? { failedNodeError: snap.failedNode.error }
+                    : {}),
+                  terminal: snap.status !== 'working',
                 })
                 this.emitAndPersist(
                   ctx.sessionId,
@@ -6576,7 +6559,7 @@ export class SessionService {
                     timestamp: new Date().toISOString(),
                     seq: 0,
                     workflowId: ctx.workflowId ?? '',
-                    runStatus,
+                    runStatus: snap.status,
                     nodes,
                   },
                   ctx.eventRepo,
@@ -6659,13 +6642,7 @@ export class SessionService {
                       ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
                     })
                   }
-                  emitWorkflowProgress(
-                    snap.status,
-                    new Set(snap.runningNodeIds),
-                    new Set(snap.completedNodeIds),
-                    new Set(snap.skippedNodeIds),
-                    snap.failedNode?.nodeId,
-                  )
+                  emitWorkflowProgress(snap)
                 },
                 executeAtomicNode: async (request) => {
                   // 原子节点按 kind 显式自执行：
@@ -6678,6 +6655,32 @@ export class SessionService {
                   //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds；MCP 使用
                   //   全局已启用集合；input/plan/review 使用只读工具集）；artifact 另外支持 exportPath 写盘。
                   //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
+                  // - tool/mcp 节点配了 toolSource/toolName 时走确定性调用：mcp 源经 McpService
+                  //   原生直调（不经 LLM，tool 与 mcp 节点语义等价，mcp 节点仅多一个专属配置入口）；
+                  //   platform 源直调平台自定义工具/工具包工具（不经 LLM，仅 tool 节点可选该源）；
+                  //   builtin 源经锁定单工具 + 预渲染参数的强约束派发（仅 tool 节点可选该源）。
+                  //   与其它 LLM 原子节点一致，execution:'static' 时回落静态回显不走直调。
+                  const executionMode =
+                    typeof request.config.execution === 'string'
+                      ? request.config.execution.trim()
+                      : ''
+                  const toolInvocation =
+                    executionMode === 'static' ||
+                    (request.kind !== 'tool' && request.kind !== 'mcp')
+                      ? null
+                      : getWorkflowToolInvocationSpec(request.config, request.kind)
+                  if (toolInvocation != null) {
+                    return this.runWorkflowToolInvocationNode(
+                      request,
+                      toolInvocation,
+                      runSingleDispatch,
+                      {
+                        sessionId: ctx.sessionId,
+                        ...(ctx.turnId != null ? { turnId: ctx.turnId } : {}),
+                        ...(ctx.workflowId != null ? { workflowId: ctx.workflowId } : {}),
+                      },
+                    )
+                  }
                   switch (request.kind) {
                     case 'verify':
                       return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
@@ -7018,6 +7021,146 @@ export class SessionService {
       log.warn('workflow artifact: export failed', { node: request.nodeId, error: message })
       return { content: `${content}\n\n[artifact 导出失败：${message}]` }
     }
+  }
+
+  /**
+   * 工具节点确定性调用（config.toolSource + config.toolName 齐备时）：
+   * - mcp 源：经 McpService 原生直调目标服务器上的工具（不经 LLM，参数即配置+插值结果）；
+   * - platform 源：直调平台自定义工具 / 工具包工具（两个运行时目录的 invoke，不经 LLM；
+   *   名字含 `/` 的按 `packageId/toolName` 查工具包目录，否则按 id 查自定义工具目录）；
+   * - builtin 源：派发给已锁定单工具的临时 worker（metadata.toolIds=[toolName]，其余可限制
+   *   工具全被禁用），指令携带预渲染参数，LLM 自由度被压到「怎么呈现结果」。
+   * 失败（服务器不可用 / 工具报错 / isError / 平台工具不存在）返回 workflow_tool_invoke_failed，
+   * 可按 retryCount 重试。
+   */
+  private async runWorkflowToolInvocationNode(
+    request: {
+      nodeId: string
+      title: string
+      objective: string
+      inputs: Record<string, unknown>
+      config: Record<string, unknown>
+    },
+    spec: import('./session-workflow-helpers.js').WorkflowToolInvocationSpec,
+    runSingleDispatch: (
+      args: Record<string, unknown>,
+      parallel?: boolean,
+    ) => Promise<import('@spark/protocol').TeamA2AReply>,
+    invocationContext: {
+      sessionId: string
+      turnId?: string
+      workflowId?: string
+    },
+  ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
+    if (spec.source === 'platform') {
+      try {
+        const entry = this.findWorkflowPlatformToolEntry(spec.toolName, invocationContext)
+        if (entry == null) {
+          return {
+            state: 'failed',
+            content: `未找到已启用的平台工具 ${spec.toolName}（工具可能已被禁用或卸载，重新启用后可重试）`,
+            error: {
+              code: 'workflow_tool_invoke_failed',
+              message: `平台工具 ${spec.toolName} 不在已启用目录中（自定义工具需已发布并启用；工具包需已安装并启用）`,
+            },
+          }
+        }
+        const result = await entry.invoke(spec.args)
+        return { content: formatWorkflowPlatformToolResult(result) }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn('workflow tool: platform invocation failed', {
+          node: request.nodeId,
+          tool: spec.toolName,
+          error: message,
+        })
+        return {
+          state: 'failed',
+          content: message,
+          error: { code: 'workflow_tool_invoke_failed', message: `平台工具调用失败：${message}` },
+        }
+      }
+    }
+    if (spec.source === 'mcp') {
+      try {
+        const result = await this.mcpService.callTool(spec.serverId ?? '', spec.toolName, spec.args)
+        const content = formatWorkflowMcpToolResult(result)
+        if (result.isError === true) {
+          return {
+            state: 'failed',
+            content,
+            error: {
+              code: 'workflow_tool_invoke_failed',
+              message: `MCP 工具 ${spec.toolName} 返回错误：${content}`,
+            },
+          }
+        }
+        return { content }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn('workflow tool: mcp invocation failed', {
+          node: request.nodeId,
+          serverId: spec.serverId,
+          tool: spec.toolName,
+          error: message,
+        })
+        return {
+          state: 'failed',
+          content: message,
+          error: { code: 'workflow_tool_invoke_failed', message: `MCP 工具调用失败：${message}` },
+        }
+      }
+    }
+    const instruction = buildWorkflowToolInvocationInstruction(request, spec)
+    const reply = await runSingleDispatch({
+      targetAgentId: workflowAtomicMemberId(request.nodeId),
+      instruction,
+      inputs: request.inputs,
+    })
+    if (reply.state !== 'completed') {
+      return {
+        state: reply.state,
+        content: reply.content,
+        error: {
+          ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+          message:
+            reply.error?.message ??
+            `Workflow tool node ${request.nodeId} (${spec.toolName}) did not complete successfully.`,
+        },
+      }
+    }
+    return { content: reply.content }
+  }
+
+  /**
+   * 在平台工具运行时目录中按标识查找已启用的工具，供工作流 platform 源确定性直调。
+   * 标识含 `/` → 按 `packageId/toolName` 查工具包目录；否则按 id 查自定义工具目录
+   * （自定义工具 id 是 slug 正则，不含 `/`，两类标识天然无歧义）。
+   * 每次调用即时读取目录：工作流节点执行频率低，工具启用/禁用状态变化即时生效更安全。
+   */
+  private findWorkflowPlatformToolEntry(
+    toolName: string,
+    invocationContext: { sessionId: string; turnId?: string; workflowId?: string },
+  ): { invoke: (input: Record<string, unknown>) => Promise<unknown> } | null {
+    if (toolName.includes('/')) {
+      const entry = new ToolPackageRuntimeCatalog(this.toolPackageService)
+        .list({
+          sessionId: invocationContext.sessionId,
+          ...(invocationContext.turnId != null ? { turnId: invocationContext.turnId } : {}),
+          ...(invocationContext.workflowId != null
+            ? { workflowId: invocationContext.workflowId }
+            : {}),
+        })
+        .find((candidate) => candidate.tool.name === toolName)
+      return entry ?? null
+    }
+    const entry =
+      this.customToolService == null
+        ? undefined
+        : new CustomToolRuntimeCatalog(this.customToolService)
+            .list()
+            .find((candidate) => candidate.tool.name === toolName)
+    return entry ?? null
   }
 
   /**

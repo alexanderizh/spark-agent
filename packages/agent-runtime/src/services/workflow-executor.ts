@@ -45,6 +45,9 @@ export type WorkflowAgentExecutionRecord = WorkflowAgentDispatchRequest & {
   state: 'completed' | 'failed' | 'canceled'
   content: string
   error?: { code?: string; message: string }
+  /** 本条记录（单次 attempt / 分支）的执行起止时间，ISO 8601，供运行详情展示耗时。 */
+  startedAt?: string
+  endedAt?: string
 }
 
 export type WorkflowAtomicNodeExecutionRecord = {
@@ -54,6 +57,9 @@ export type WorkflowAtomicNodeExecutionRecord = {
   outputKey: string
   content: string
   error?: { code?: string; message: string }
+  /** 本条记录的执行起止时间，ISO 8601，供运行详情展示耗时。 */
+  startedAt?: string
+  endedAt?: string
 }
 
 export type WorkflowAgentPlanResult = {
@@ -124,7 +130,9 @@ const WORKFLOW_LOOP_DEFAULT_MAX_ITERATIONS = 5
 const WORKFLOW_LOOP_HARD_CAP = 50
 const WORKFLOW_LOOP_VAR_DEFAULT = '__loop_index'
 
-export function normalizeWorkflowGraph(graph: WorkflowGraph | Record<string, unknown>): NormalizedWorkflowGraph {
+export function normalizeWorkflowGraph(
+  graph: WorkflowGraph | Record<string, unknown>,
+): NormalizedWorkflowGraph {
   const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : []
   const nodes = rawNodes.flatMap((node): NormalizedWorkflowNode[] => {
     if (node == null || typeof node !== 'object') return []
@@ -132,13 +140,19 @@ export function normalizeWorkflowGraph(graph: WorkflowGraph | Record<string, unk
     const id = typeof record.id === 'string' ? record.id.trim() : ''
     if (id.length === 0) return []
     const rawKind = typeof record.kind === 'string' ? record.kind : 'agent'
-    const kind = WORKFLOW_NODE_KINDS.has(rawKind as WorkflowNodeKind) ? (rawKind as WorkflowNodeKind) : 'agent'
+    const kind = WORKFLOW_NODE_KINDS.has(rawKind as WorkflowNodeKind)
+      ? (rawKind as WorkflowNodeKind)
+      : 'agent'
     return [
       {
         id,
         kind,
-        title: typeof record.title === 'string' && record.title.trim().length > 0 ? record.title : id,
-        config: record.config != null && typeof record.config === 'object' ? (record.config as Record<string, unknown>) : {},
+        title:
+          typeof record.title === 'string' && record.title.trim().length > 0 ? record.title : id,
+        config:
+          record.config != null && typeof record.config === 'object'
+            ? (record.config as Record<string, unknown>)
+            : {},
       },
     ]
   })
@@ -151,14 +165,19 @@ export function normalizeWorkflowGraph(graph: WorkflowGraph | Record<string, unk
     const from = typeof record.from === 'string' ? record.from.trim() : ''
     const to = typeof record.to === 'string' ? record.to.trim() : ''
     if (!nodeIds.has(from) || !nodeIds.has(to)) return []
-    const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id : `${from}->${to}:${index}`
+    const id =
+      typeof record.id === 'string' && record.id.trim().length > 0
+        ? record.id
+        : `${from}->${to}:${index}`
     const condition = normalizeWorkflowEdgeCondition(record.condition)
-    return [{
-      id,
-      from,
-      to,
-      ...(condition != null ? { condition } : {}),
-    }]
+    return [
+      {
+        id,
+        from,
+        to,
+        ...(condition != null ? { condition } : {}),
+      },
+    ]
   })
 
   return { nodes, edges }
@@ -248,11 +267,87 @@ export function buildWorkflowNodeInputs(
     if (skippedNodeIds.has(edge.from)) continue
     if (!evaluateWorkflowEdgeCondition(edge.condition, state)) continue
     const upstream = byId.get(edge.from)
-    const outputKey = typeof upstream?.config.outputKey === 'string' ? upstream.config.outputKey.trim() : ''
+    const outputKey =
+      typeof upstream?.config.outputKey === 'string' ? upstream.config.outputKey.trim() : ''
     if (outputKey.length === 0 || !(outputKey in state)) continue
     inputs[outputKey] = state[outputKey]
   }
   return inputs
+}
+
+// ─── {{key}} 模板插值 ───────────────────────────────────────────────────────
+
+const WORKFLOW_TEMPLATE_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g
+
+/**
+ * 工作流模板插值：把 `{{key}}` 替换为 context 里的同名值（字符串原样、其余 JSON 序列化）。
+ * key 未命中或值为 undefined 时保持字面量原样返回——半成品配置不会静默变成空串。
+ * context 通常为 `{ ...state, ...inputs }`（inputs 为活跃上游 outputKey 的子集，优先级更高）。
+ */
+export function interpolateWorkflowTemplate(
+  value: string,
+  context: Record<string, unknown>,
+): string {
+  if (!value.includes('{{')) return value
+  return value.replace(WORKFLOW_TEMPLATE_PATTERN, (raw, key: string) => {
+    if (!Object.prototype.hasOwnProperty.call(context, key)) return raw
+    const resolved = context[key]
+    if (resolved === undefined) return raw
+    return typeof resolved === 'string' ? resolved : JSON.stringify(resolved)
+  })
+}
+
+function interpolateWorkflowTemplateDeep(
+  value: unknown,
+  context: Record<string, unknown>,
+): unknown {
+  if (typeof value === 'string') return interpolateWorkflowTemplate(value, context)
+  if (Array.isArray(value))
+    return value.map((item) => interpolateWorkflowTemplateDeep(item, context))
+  if (value != null && typeof value === 'object') {
+    const interpolated: Record<string, unknown> = {}
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      interpolated[entryKey] = interpolateWorkflowTemplateDeep(entryValue, context)
+    }
+    return interpolated
+  }
+  return value
+}
+
+function workflowNodeConfigHasTemplate(config: Record<string, unknown>): boolean {
+  if (typeof config.prompt === 'string' && config.prompt.includes('{{')) return true
+  const toolArgs = config.toolArgs
+  if (toolArgs == null || typeof toolArgs !== 'object') return false
+  return workflowValueHasTemplate(toolArgs)
+}
+
+function workflowValueHasTemplate(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes('{{')
+  if (Array.isArray(value)) return value.some((item) => workflowValueHasTemplate(item))
+  if (value != null && typeof value === 'object') {
+    return Object.values(value).some((item) => workflowValueHasTemplate(item))
+  }
+  return false
+}
+
+/**
+ * 节点配置插值：只插值 `prompt` 与 `toolArgs`（含嵌套字符串叶子）——exportPath、routeOptions、
+ * execution 等其余字段保持原样，避免导出路径和分支枚举被上游数据污染。
+ * 配置里没有任何 `{{` 时返回同一引用，避免无谓的对象拷贝。
+ */
+export function interpolateWorkflowNodeConfig(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!workflowNodeConfigHasTemplate(config)) return config
+  const interpolated: Record<string, unknown> = { ...config }
+  if (typeof config.prompt === 'string') {
+    interpolated.prompt = interpolateWorkflowTemplate(config.prompt, context)
+  }
+  if (config.toolArgs != null && typeof config.toolArgs === 'object') {
+    interpolated.toolArgs = interpolateWorkflowTemplateDeep(config.toolArgs, context)
+  }
+  return interpolated
 }
 
 export function evaluateWorkflowEdgeCondition(
@@ -342,12 +437,17 @@ function buildWorkflowFailedNode(
   error: { code?: string; message: string },
 ): NonNullable<WorkflowAgentPlanResult['failedNode']> {
   const node = graph.nodes.find((item) => item.id === nodeId)
-  const agentId = getWorkflowNodeWorkerId(node ?? {
-    id: nodeId,
-    kind: 'agent',
-    title: nodeId,
-    config: {},
-  }) ?? node?.kind ?? 'workflow'
+  const agentId =
+    getWorkflowNodeWorkerId(
+      node ?? {
+        id: nodeId,
+        kind: 'agent',
+        title: nodeId,
+        config: {},
+      },
+    ) ??
+    node?.kind ??
+    'workflow'
   return {
     nodeId,
     agentId,
@@ -370,7 +470,9 @@ export async function executeWorkflowAgentPlan(input: {
     request: WorkflowAgentDispatchRequest,
     options?: WorkflowAgentDispatchOptions,
   ) => Promise<WorkflowAgentDispatchReply>
-  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+  executeAtomicNode?: (
+    request: WorkflowAtomicNodeExecutionRequest,
+  ) => Promise<WorkflowAtomicNodeExecutionReply>
   /** 续跑：预置为已完成的节点 id，执行器跳过它们（断点续跑）。 */
   initialCompletedNodeIds?: Iterable<string>
   /** 续跑：预置为已因条件未命中而跳过的节点 id。 */
@@ -412,9 +514,21 @@ export async function executeWorkflowAgentPlan(input: {
     })
   }
 
+  // 节点级实时上报后，同波多个节点可能相继完成并触发快照；串行链保证 onSnapshot
+  // 观察到的集合按完成顺序单调演进，避免乱序快照让持久化与前端进度状态回退。
+  let snapshotChain: Promise<void> = Promise.resolve()
+  const enqueueSnapshot = (
+    status: WorkflowRunSnapshotStatus,
+    failedNode?: WorkflowAgentPlanResult['failedNode'],
+  ): Promise<void> => {
+    snapshotChain = snapshotChain.then(() => emitSnapshot(status, failedNode))
+    return snapshotChain
+  }
+
   while (pendingNodes.size > 0) {
-    const readyNodes = orderedNodes.filter((node) =>
-      pendingNodes.has(node.id) &&
+    const readyNodes = orderedNodes.filter(
+      (node) =>
+        pendingNodes.has(node.id) &&
         isWorkflowNodeReady(node.id, input.graph, state, completedNodeIds, skippedNodeIds),
     )
     if (readyNodes.length === 0) {
@@ -430,7 +544,7 @@ export async function executeWorkflowAgentPlan(input: {
           pendingNodes.delete(nodeId)
           skippedNodeIds.add(nodeId)
         }
-        await emitSnapshot('working')
+        await enqueueSnapshot('working')
         continue
       }
       const [firstPendingNodeId] = pendingNodes.keys()
@@ -439,7 +553,7 @@ export async function executeWorkflowAgentPlan(input: {
         code: 'workflow_deadlock',
         message: `Workflow blocked with unresolved nodes: ${unresolvedNodeIds.join(', ')}`,
       })
-      await emitSnapshot('failed', failedNode)
+      await enqueueSnapshot('failed', failedNode)
       return {
         status: 'failed',
         state,
@@ -454,18 +568,24 @@ export async function executeWorkflowAgentPlan(input: {
     if (readyAtomicNodes.length > 0) {
       for (const node of readyAtomicNodes) {
         runningNodeIds.add(node.id)
-        await emitSnapshot('working')
+        await enqueueSnapshot('working')
         const result = await executeWorkflowAtomicNode({
           graph: input.graph,
           node,
           objective: input.objective,
-          ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+          ...(input.attachments != null && input.attachments.length > 0
+            ? { attachments: input.attachments }
+            : {}),
           state,
           skippedNodeIds,
           dispatch: input.dispatch,
           ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
-          ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
-          ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
+          ...(input.availableWorkerIds != null
+            ? { availableWorkerIds: input.availableWorkerIds }
+            : {}),
+          ...(input.executeAtomicNode != null
+            ? { executeAtomicNode: input.executeAtomicNode }
+            : {}),
         })
         runningNodeIds.delete(node.id)
         atomicExecutions.push(result.record)
@@ -473,10 +593,10 @@ export async function executeWorkflowAgentPlan(input: {
         if (result.status === 'completed') {
           if (result.outputKey.length > 0) state[result.outputKey] = result.content
           completedNodeIds.add(result.nodeId)
-          await emitSnapshot('working')
+          await enqueueSnapshot('working')
           continue
         }
-        await emitSnapshot(result.status, result.failedNode)
+        await enqueueSnapshot(result.status, result.failedNode)
         return {
           status: result.status,
           state,
@@ -492,39 +612,46 @@ export async function executeWorkflowAgentPlan(input: {
     const stateSnapshot = { ...state }
     const readyWorkerNodes = readyNodes.filter((node) => isWorkflowDispatchableNode(node))
     for (const node of readyWorkerNodes) runningNodeIds.add(node.id)
-    await emitSnapshot('working')
-    const waveResults = await Promise.all(readyWorkerNodes.map((node) =>
-      executeWorkflowAgentNode({
-        graph: input.graph,
-        node,
-        objective: input.objective,
-        ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
-        state: stateSnapshot,
-        skippedNodeIds,
-        dispatch: input.dispatch,
-        parallel: readyNodes.length > 1,
-        ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
-        ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
+    await enqueueSnapshot('working')
+    // 节点级实时上报：单个节点完成即落 executions、更新集合并发快照，不再等整波结束——
+    // 同波快慢节点并存时，快节点的完成状态立即可见。节点输入仍取波开始时的 state
+    // 快照（stateSnapshot），state 写入按完成顺序串行（outputKey 互不冲突），语义不变。
+    let failedResult:
+      | Extract<WorkflowAgentNodeResult, { status: 'failed' | 'canceled' }>
+      | undefined
+    await Promise.all(
+      readyWorkerNodes.map(async (node) => {
+        const result = await executeWorkflowAgentNode({
+          graph: input.graph,
+          node,
+          objective: input.objective,
+          ...(input.attachments != null && input.attachments.length > 0
+            ? { attachments: input.attachments }
+            : {}),
+          state: stateSnapshot,
+          skippedNodeIds,
+          dispatch: input.dispatch,
+          parallel: readyNodes.length > 1,
+          ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+          ...(input.availableWorkerIds != null
+            ? { availableWorkerIds: input.availableWorkerIds }
+            : {}),
+        })
+        runningNodeIds.delete(node.id)
+        executions.push(...result.executions)
+        pendingNodes.delete(result.nodeId)
+        if (result.status === 'completed') {
+          if (result.outputKey.length > 0) state[result.outputKey] = result.content
+          completedNodeIds.add(result.nodeId)
+        } else if (failedResult == null) {
+          failedResult = result
+        }
+        await enqueueSnapshot('working')
       }),
-    ))
-    for (const node of readyWorkerNodes) runningNodeIds.delete(node.id)
-
-    let failedResult: Extract<WorkflowAgentNodeResult, { status: 'failed' | 'canceled' }> | undefined
-    for (const result of waveResults) {
-      executions.push(...result.executions)
-      pendingNodes.delete(result.nodeId)
-      if (result.status === 'completed') {
-        if (result.outputKey.length > 0) state[result.outputKey] = result.content
-        completedNodeIds.add(result.nodeId)
-      } else if (failedResult == null) {
-        failedResult = result
-      }
-    }
-
-    await emitSnapshot('working')
+    )
 
     if (failedResult != null) {
-      await emitSnapshot(failedResult.status, failedResult.failedNode)
+      await enqueueSnapshot(failedResult.status, failedResult.failedNode)
       return {
         status: failedResult.status,
         state,
@@ -536,8 +663,14 @@ export async function executeWorkflowAgentPlan(input: {
     }
   }
 
-  await emitSnapshot('completed')
-  return { status: 'completed', state, executions, atomicExecutions, skippedNodeIds: [...skippedNodeIds] }
+  await enqueueSnapshot('completed')
+  return {
+    status: 'completed',
+    state,
+    executions,
+    atomicExecutions,
+    skippedNodeIds: [...skippedNodeIds],
+  }
 }
 
 type WorkflowAgentNodeResult =
@@ -589,34 +722,44 @@ async function executeWorkflowAtomicNode(input: {
   ) => Promise<WorkflowAgentDispatchReply>
   fallbackAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
-  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+  executeAtomicNode?: (
+    request: WorkflowAtomicNodeExecutionRequest,
+  ) => Promise<WorkflowAtomicNodeExecutionReply>
 }): Promise<WorkflowAtomicNodeResult> {
-  const outputKey = typeof input.node.config.outputKey === 'string' ? input.node.config.outputKey.trim() : ''
+  const outputKey =
+    typeof input.node.config.outputKey === 'string' ? input.node.config.outputKey.trim() : ''
   const request = buildWorkflowAtomicNodeExecutionRequest(input)
   // approval 节点的 "failed" 代表用户明确拒绝（或问询通道故障），重试等于无视用户决定去
   // 重新弹一次审批（或者在无人值守场景下重新自动放行）——两种都不对，所以不重试。
   // loop 内部可能包含完整 LLM 派发链路，失败后自动重跑整个循环成本不可控，v1 也固定不重试。
   // 其余原子节点（目前只有 verify 真正会失败）的 "failed" 是技术性故障（比如测试命令因为
   // 网络抖动跑挂），配了 retryCount 就按同样规则重试，跟 agent/subagent 节点保持一致。
-  const maxAttempts = input.node.kind === 'approval' || input.node.kind === 'loop'
-    ? 1
-    : 1 + getWorkflowNodeRetryCount(input.node)
-  let reply: WorkflowAtomicNodeExecutionReply = { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+  const maxAttempts =
+    input.node.kind === 'approval' || input.node.kind === 'loop'
+      ? 1
+      : 1 + getWorkflowNodeRetryCount(input.node)
+  let reply: WorkflowAtomicNodeExecutionReply = {
+    content: getDefaultAtomicNodeContent(input.node, input.objective),
+  }
+  const startedAt = new Date().toISOString()
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    reply = input.node.kind === 'loop'
-      ? await executeWorkflowLoopNode(input)
-      : input.executeAtomicNode != null
-        ? await input.executeAtomicNode(request)
-        : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
+    reply =
+      input.node.kind === 'loop'
+        ? await executeWorkflowLoopNode(input)
+        : input.executeAtomicNode != null
+          ? await input.executeAtomicNode(request)
+          : { content: getDefaultAtomicNodeContent(input.node, input.objective) }
     if ((reply.state ?? 'completed') === 'completed' || attempt === maxAttempts) break
   }
+  const endedAt = new Date().toISOString()
   const replyState = reply.state ?? 'completed'
-  const error = replyState === 'completed'
-    ? undefined
-    : normalizeWorkflowReplyError(
-        'error' in reply ? reply.error : undefined,
-        `Workflow node ${input.node.id} did not complete successfully.`,
-      )
+  const error =
+    replyState === 'completed'
+      ? undefined
+      : normalizeWorkflowReplyError(
+          'error' in reply ? reply.error : undefined,
+          `Workflow node ${input.node.id} did not complete successfully.`,
+        )
   const record: WorkflowAtomicNodeExecutionRecord = {
     nodeId: input.node.id,
     kind: input.node.kind,
@@ -624,6 +767,8 @@ async function executeWorkflowAtomicNode(input: {
     outputKey,
     content: reply.content,
     ...(error != null ? { error } : {}),
+    startedAt,
+    endedAt,
   }
   if (replyState === 'completed') {
     return {
@@ -656,14 +801,21 @@ function buildWorkflowAtomicNodeExecutionRequest(input: {
   state: WorkflowState
   skippedNodeIds: ReadonlySet<string>
 }): WorkflowAtomicNodeExecutionRequest {
+  const inputs = buildWorkflowNodeInputs(
+    input.node.id,
+    input.graph,
+    input.state,
+    input.skippedNodeIds,
+  )
   return {
     nodeId: input.node.id,
     kind: input.node.kind,
     title: input.node.title,
     objective: input.objective,
-    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state, input.skippedNodeIds),
+    inputs,
     skippedNodeIds: [...input.skippedNodeIds],
-    config: input.node.config,
+    // prompt / toolArgs 里的 {{key}} 占位符在此统一替换为 state + 活跃上游输入。
+    config: interpolateWorkflowNodeConfig(input.node.config, { ...input.state, ...inputs }),
   }
 }
 
@@ -680,7 +832,9 @@ async function executeWorkflowLoopNode(input: {
   ) => Promise<WorkflowAgentDispatchReply>
   fallbackAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
-  executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
+  executeAtomicNode?: (
+    request: WorkflowAtomicNodeExecutionRequest,
+  ) => Promise<WorkflowAtomicNodeExecutionReply>
 }): Promise<WorkflowAtomicNodeExecutionReply> {
   const bodyGraph = getWorkflowLoopBodyGraph(input.node)
   if (bodyGraph == null || bodyGraph.nodes.length === 0) {
@@ -714,7 +868,9 @@ async function executeWorkflowLoopNode(input: {
     const result = await executeWorkflowAgentPlan({
       graph: bodyGraph,
       objective: input.objective,
-      ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+      ...(input.attachments != null && input.attachments.length > 0
+        ? { attachments: input.attachments }
+        : {}),
       ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
       ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
       initialState: iterationState,
@@ -795,13 +951,20 @@ function getWorkflowLoopVar(node: NormalizedWorkflowNode): string {
   return raw.length > 0 ? raw : WORKFLOW_LOOP_VAR_DEFAULT
 }
 
-function getWorkflowLoopResultKey(node: NormalizedWorkflowNode, bodyGraph: NormalizedWorkflowGraph): string {
+function getWorkflowLoopResultKey(
+  node: NormalizedWorkflowNode,
+  bodyGraph: NormalizedWorkflowGraph,
+): string {
   const configured = typeof node.config.resultKey === 'string' ? node.config.resultKey.trim() : ''
   if (configured.length > 0) return configured
-  return [...orderWorkflowNodes(bodyGraph.nodes, bodyGraph.edges)]
-    .reverse()
-    .map((item) => (typeof item.config.outputKey === 'string' ? item.config.outputKey.trim() : ''))
-    .find((key) => key.length > 0) ?? ''
+  return (
+    [...orderWorkflowNodes(bodyGraph.nodes, bodyGraph.edges)]
+      .reverse()
+      .map((item) =>
+        typeof item.config.outputKey === 'string' ? item.config.outputKey.trim() : '',
+      )
+      .find((key) => key.length > 0) ?? ''
+  )
 }
 
 function workflowStateValueToContent(value: unknown): string {
@@ -827,10 +990,11 @@ async function executeWorkflowAgentNode(input: {
   availableWorkerIds?: ReadonlySet<string>
 }): Promise<WorkflowAgentNodeResult> {
   const node = input.node
-  const agentId = getWorkflowNodeEffectiveWorkerId(node, {
-    ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
-    ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
-  }) ?? ''
+  const agentId =
+    getWorkflowNodeEffectiveWorkerId(node, {
+      ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+      ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
+    }) ?? ''
   const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
   const executions: WorkflowAgentExecutionRecord[] = []
 
@@ -841,6 +1005,7 @@ async function executeWorkflowAgentNode(input: {
       code: 'missing_agent_id',
       message: `agent 节点「${node.title}」未绑定 Agent（config.agentId 为空），无法派发。`,
     }
+    const missingAt = new Date().toISOString()
     const missingExecution: WorkflowAgentExecutionRecord = {
       nodeId: node.id,
       agentId,
@@ -850,6 +1015,8 @@ async function executeWorkflowAgentNode(input: {
       state: 'failed',
       content: '',
       error: missingError,
+      startedAt: missingAt,
+      endedAt: missingAt,
     }
     executions.push(missingExecution)
     return {
@@ -868,7 +1035,10 @@ async function executeWorkflowAgentNode(input: {
     }
   }
 
-  const prompt = typeof node.config.prompt === 'string' ? node.config.prompt : ''
+  const inputs = buildWorkflowNodeInputs(node.id, input.graph, input.state, input.skippedNodeIds)
+  const promptRaw = typeof node.config.prompt === 'string' ? node.config.prompt : ''
+  // prompt 里的 {{key}} 占位符替换为 state + 活跃上游输入后再生效指令。
+  const prompt = interpolateWorkflowTemplate(promptRaw, { ...input.state, ...inputs })
   const instructionBase = prompt.trim().length > 0 ? prompt : node.title
   const instruction =
     input.objective.trim().length > 0
@@ -878,27 +1048,33 @@ async function executeWorkflowAgentNode(input: {
     nodeId: node.id,
     agentId,
     instruction,
-    inputs: buildWorkflowNodeInputs(node.id, input.graph, input.state, input.skippedNodeIds),
-    ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+    inputs,
+    ...(input.attachments != null && input.attachments.length > 0
+      ? { attachments: input.attachments }
+      : {}),
   }
   // 任务 1：subagent.parallelism 真实 fan-out。仅 subagent 节点读取，agent 节点忽略（恒为 1）。
   // fan-out 是「同一 workerId 在单次 attempt 内并发 N 路独立 dispatch」，不是 N 个 worker。
   const parallelism = node.kind === 'subagent' ? getWorkflowNodeParallelism(node) : 1
   const maxAttempts = 1 + getWorkflowNodeRetryCount(node)
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const branches = parallelism > 1
-      ? await Promise.all(
-          Array.from({ length: parallelism }, () => input.dispatch(request, { parallel: true })),
-        )
-      : [await input.dispatch(request, { parallel: input.parallel })]
+    const attemptStartedAt = new Date().toISOString()
+    const branches =
+      parallelism > 1
+        ? await Promise.all(
+            Array.from({ length: parallelism }, () => input.dispatch(request, { parallel: true })),
+          )
+        : [await input.dispatch(request, { parallel: input.parallel })]
+    const attemptEndedAt = new Date().toISOString()
     const branchRecords = branches.map((reply) => {
       const replyState = reply.state ?? 'completed'
-      const error = replyState === 'completed'
-        ? undefined
-        : normalizeWorkflowReplyError(
-            'error' in reply ? reply.error : undefined,
-            `Workflow node ${node.id} did not complete successfully.`,
-          )
+      const error =
+        replyState === 'completed'
+          ? undefined
+          : normalizeWorkflowReplyError(
+              'error' in reply ? reply.error : undefined,
+              `Workflow node ${node.id} did not complete successfully.`,
+            )
       return { reply, replyState, error }
     })
     for (const { reply, replyState, error } of branchRecords) {
@@ -908,16 +1084,19 @@ async function executeWorkflowAgentNode(input: {
         state: replyState,
         content: reply.content,
         ...(error != null ? { error } : {}),
+        startedAt: attemptStartedAt,
+        endedAt: attemptEndedAt,
       })
     }
     const firstFailed = branchRecords.find((record) => record.replyState !== 'completed')
     if (firstFailed == null) {
       // 全部分支成功：聚合 content。
-      const aggregated = parallelism > 1
-        ? branchRecords
-            .map((record, index) => `--- branch ${index + 1} ---\n${record.reply.content}`)
-            .join('\n\n')
-        : branchRecords[0]!.reply.content
+      const aggregated =
+        parallelism > 1
+          ? branchRecords
+              .map((record, index) => `--- branch ${index + 1} ---\n${record.reply.content}`)
+              .join('\n\n')
+          : branchRecords[0]!.reply.content
       return {
         status: 'completed',
         nodeId: node.id,
@@ -940,7 +1119,9 @@ async function executeWorkflowAgentNode(input: {
           nodeId: node.id,
           agentId,
           attempt,
-          error: firstFailed.error ?? { message: `Workflow node ${node.id} did not complete successfully.` },
+          error: firstFailed.error ?? {
+            message: `Workflow node ${node.id} did not complete successfully.`,
+          },
         },
       }
     }
@@ -980,7 +1161,10 @@ export function getWorkflowNodeEffectiveWorkerId(
 ): string | undefined {
   const configured = getWorkflowNodeWorkerId(node)
   if (node.kind !== 'agent') return configured
-  if (configured != null && (options.availableWorkerIds == null || options.availableWorkerIds.has(configured))) {
+  if (
+    configured != null &&
+    (options.availableWorkerIds == null || options.availableWorkerIds.has(configured))
+  ) {
     return configured
   }
   const fallback = typeof options.fallbackAgentId === 'string' ? options.fallbackAgentId.trim() : ''
@@ -1002,12 +1186,12 @@ function normalizeWorkflowReplyError(
   error: { code?: string; message: string } | undefined,
   fallbackMessage: string,
 ): { code?: string; message: string } {
-  const message = typeof error?.message === 'string' && error.message.trim().length > 0
-    ? error.message
-    : fallbackMessage
-  const code = typeof error?.code === 'string' && error.code.trim().length > 0
-    ? error.code
-    : undefined
+  const message =
+    typeof error?.message === 'string' && error.message.trim().length > 0
+      ? error.message
+      : fallbackMessage
+  const code =
+    typeof error?.code === 'string' && error.code.trim().length > 0 ? error.code : undefined
   return {
     ...(code != null ? { code } : {}),
     message,

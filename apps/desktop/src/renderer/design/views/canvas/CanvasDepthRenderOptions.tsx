@@ -35,10 +35,7 @@ export function CanvasDepthRenderOptions({
   const isDisabled = disabled === true
 
   const invertRow = (
-    <div
-      className="canvas-operation-panel-hint"
-      style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}
-    >
+    <div className="canvas-depth-render-option-row">
       <span>反相深度</span>
       <Switch
         size={controlSize}
@@ -51,10 +48,7 @@ export function CanvasDepthRenderOptions({
   )
 
   const colormapRow = (
-    <div
-      className="canvas-operation-panel-hint"
-      style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}
-    >
+    <div className="canvas-depth-render-option-row">
       <span>伪彩色</span>
       <Select
         size={controlSize}
@@ -69,17 +63,18 @@ export function CanvasDepthRenderOptions({
   )
 
   const smoothSlider = (
-    <div style={{ paddingTop: 6 }}>
-      <div
-        className="canvas-operation-panel-hint"
-        style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}
-      >
-        <span>时序平滑</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+    <div className="canvas-depth-render-slider">
+      <div className="canvas-depth-render-slider-header">
+        <span className="canvas-depth-render-slider-label">时序平滑</span>
+        <span
+          className="canvas-depth-render-slider-value"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
+        >
           {Math.round(value.smoothStrength * 100)}%
         </span>
       </div>
       <Slider
+        aria-label="时序平滑"
         min={0}
         max={1}
         step={0.05}
@@ -88,20 +83,25 @@ export function CanvasDepthRenderOptions({
         tooltip={{ formatter: (raw) => `${Math.round(Number(raw ?? 0) * 100)}%` }}
         onChange={(next) => update('smoothStrength', next)}
       />
-      <div className="canvas-operation-panel-hint">越大画面越稳定；过高会产生运动拖影。</div>
+      <div className="canvas-depth-render-slider-hint canvas-operation-panel-hint">
+        越大画面越稳定；过高会产生运动拖影。
+      </div>
     </div>
   )
 
   const contrastSlider = (
-    <div style={{ paddingTop: 6 }}>
-      <div
-        className="canvas-operation-panel-hint"
-        style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}
-      >
-        <span>对比度</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{value.contrast}</span>
+    <div className="canvas-depth-render-slider">
+      <div className="canvas-depth-render-slider-header">
+        <span className="canvas-depth-render-slider-label">对比度</span>
+        <span
+          className="canvas-depth-render-slider-value"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
+        >
+          {value.contrast}
+        </span>
       </div>
       <Slider
+        aria-label="对比度"
         min={0}
         max={10}
         step={0.5}
@@ -110,19 +110,23 @@ export function CanvasDepthRenderOptions({
         tooltip={{ formatter: (raw) => String(raw ?? '') }}
         onChange={(next) => update('contrast', next)}
       />
-      <div className="canvas-operation-panel-hint">越大明暗对比越强，低值呈雾状层次。</div>
+      <div className="canvas-depth-render-slider-hint canvas-operation-panel-hint">
+        越大明暗对比越强，低值呈雾状层次。
+      </div>
+    </div>
+  )
+
+  const optionsGrid = (
+    <div className="canvas-depth-render-option-grid">
+      {invertRow}
+      {colormapRow}
+      {smoothSlider}
+      {contrastSlider}
     </div>
   )
 
   if (compact) {
-    return (
-      <div style={{ marginTop: 10 }}>
-        {invertRow}
-        {colormapRow}
-        {smoothSlider}
-        {contrastSlider}
-      </div>
-    )
+    return <div className="canvas-depth-render-options is-compact">{optionsGrid}</div>
   }
 
   return (
@@ -131,10 +135,7 @@ export function CanvasDepthRenderOptions({
       style={{ paddingTop: 0 }}
     >
       <div className="canvas-operation-panel-section-label">深度渲染</div>
-      {invertRow}
-      {colormapRow}
-      {smoothSlider}
-      {contrastSlider}
+      <div className="canvas-depth-render-options">{optionsGrid}</div>
     </div>
   )
 }

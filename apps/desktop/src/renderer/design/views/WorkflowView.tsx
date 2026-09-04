@@ -67,6 +67,8 @@ import {
   type WorkflowEditorScope,
 } from './workflow/loop-body-editor'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
+import { InspectorField, TagPicker, asStringArray } from './workflow/inspector-fields'
+import { WorkflowToolConfigPanel } from './workflow/WorkflowToolConfigPanel'
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
 import {
@@ -1291,6 +1293,20 @@ function WorkflowViewInner() {
           agents={agents}
           currentWorkflowId={draft.id}
           editingLoopBody={editingLoopBody}
+          upstreamOutputKeys={Array.from(
+            new Set(
+              edges
+                .filter((edge) => edge.target === selectedNodeId)
+                .flatMap((edge) => {
+                  const upstream = nodes.find((node) => node.id === edge.source)
+                  const key =
+                    typeof upstream?.data.config.outputKey === 'string'
+                      ? upstream.data.config.outputKey.trim()
+                      : ''
+                  return key.length > 0 ? [key] : []
+                }),
+            ),
+          )}
           onOpenLoopBody={openLoopBodyEditor}
           onResetLoopBody={(loopNodeId) => void resetLoopBody(loopNodeId)}
           onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
@@ -1472,6 +1488,8 @@ type InspectorProps = {
   agents: ManagedAgent[]
   currentWorkflowId: string
   editingLoopBody: boolean
+  /** 指向当前节点的活跃上游连线的 outputKey 集合：提示词与工具参数里可用 {{key}} 引用。 */
+  upstreamOutputKeys: string[]
   onOpenLoopBody: (loopNodeId: string) => void
   onResetLoopBody: (loopNodeId: string) => void
   onPatch: (patch: Partial<SparkFlowNode['data']>) => void
@@ -1490,6 +1508,7 @@ function WorkflowInspector(props: InspectorProps) {
     agents,
     currentWorkflowId,
     editingLoopBody,
+    upstreamOutputKeys,
   } = props
   const [loopBodyDraft, setLoopBodyDraft] = useState('')
   const [loopBodyError, setLoopBodyError] = useState('')
@@ -1523,6 +1542,18 @@ function WorkflowInspector(props: InspectorProps) {
   const isVerify = node.data.kind === 'verify'
   const isLoop = node.data.kind === 'loop'
   const isRoute = node.data.kind === 'route'
+  const isTool = node.data.kind === 'tool'
+  const isMcp = node.data.kind === 'mcp'
+  const isArtifact = node.data.kind === 'artifact'
+  const isInput = node.data.kind === 'input'
+  // 执行模式下拉只对 LLM 原子节点显示：tool/mcp 的调用方式面板已覆盖其执行语义，
+  // route 由「固定分支」下拉隐式管理 execution，approval/verify/agent/subagent/loop 不适用。
+  const isExecutionModeKind =
+    isInput ||
+    node.data.kind === 'plan' ||
+    node.data.kind === 'skill' ||
+    node.data.kind === 'review' ||
+    isArtifact
   const routeOptions = asRouteOptions(config.routeOptions)
   const loopBody = isLoop && isWorkflowGraph(config.body) ? config.body : defaultLoopBodyGraph()
   const loopBodySummary = summarizeLoopBodyGraph(loopBody)
@@ -1646,6 +1677,12 @@ function WorkflowInspector(props: InspectorProps) {
             value={String(config.prompt ?? '')}
             onChange={(event) => props.onPatchConfig({ prompt: event.target.value })}
           />
+          {upstreamOutputKeys.length > 0 && (
+            <div className="wf-field-help">
+              可用上游变量：{upstreamOutputKeys.join('、')}（写 {'{{键名}}'}{' '}
+              引用，运行时替换为该输出）
+            </div>
+          )}
         </InspectorField>
         <InspectorField label="输出键 outputKey">
           <LobeInput
@@ -1658,6 +1695,65 @@ function WorkflowInspector(props: InspectorProps) {
           />
           <div className="wf-field-help">下游节点的输入与连线条件都按此键读取本节点的输出。</div>
         </InspectorField>
+        {isInput && (
+          <InspectorField label="静态值 value">
+            <LobeTextArea
+              rows={3}
+              placeholder="可选：固定输入内容（JSON 或纯文本），静态回显模式下原样写入输出键"
+              value={String(config.value ?? '')}
+              onChange={(event) => props.onPatchConfig({ value: event.target.value })}
+            />
+            <div className="wf-field-help">
+              配合「执行模式=静态回显」时原样透传；真实执行模式下该值会连同提示词一起交给模型拆解。
+            </div>
+          </InspectorField>
+        )}
+        {isExecutionModeKind && (
+          <InspectorField label="执行模式">
+            <LobeSelect
+              value={String(config.execution ?? 'auto')}
+              onChange={(value) =>
+                props.onPatchConfig({ execution: String(value) === 'static' ? 'static' : 'auto' })
+              }
+              options={[
+                { label: '真实执行（派发模型/工具）', value: 'auto' },
+                { label: '静态回显（不派发，占位/省成本）', value: 'static' },
+              ]}
+            />
+            <div className="wf-field-help">
+              静态回显：跳过真实执行，把节点内容（input 的静态值，否则提示词/标题）直接写入输出键。
+            </div>
+          </InspectorField>
+        )}
+        {isTool && (
+          <WorkflowToolConfigPanel
+            config={config}
+            onPatchConfig={props.onPatchConfig}
+            mcpServers={mcpServers}
+            upstreamOutputKeys={upstreamOutputKeys}
+          />
+        )}
+        {isMcp && (
+          <WorkflowToolConfigPanel
+            config={config}
+            onPatchConfig={props.onPatchConfig}
+            mcpServers={mcpServers}
+            upstreamOutputKeys={upstreamOutputKeys}
+            variant="mcp"
+          />
+        )}
+        {isArtifact && (
+          <InspectorField label="导出路径 exportPath">
+            <LobeInput
+              placeholder="如 output/report.md（工作区相对路径）"
+              value={String(config.exportPath ?? '')}
+              onChange={(event) => props.onPatchConfig({ exportPath: event.target.value })}
+            />
+            <div className="wf-field-help">
+              配置后节点产出会写入该文件；须位于工作区内（防路径穿越），不配则只写输出键。
+            </div>
+          </InspectorField>
+        )}
         {isRoute && (
           <InspectorField label="路由分支">
             <LobeTextArea
@@ -1672,6 +1768,33 @@ function WorkflowInspector(props: InspectorProps) {
             />
             <div className="wf-field-help">
               每行一个分支：value | label | description。运行时只接受 value，并写入 outputKey。
+            </div>
+          </InspectorField>
+        )}
+        {isRoute && (
+          <InspectorField label="固定分支">
+            <LobeSelect
+              value={String(config.value ?? '')}
+              onChange={(value) => {
+                const branch = String(value ?? '')
+                // 选中分支 = 固定路由（静态回显直接写 value，不再派发模型决策）；
+                // 选回「LLM 决策」= 清除 value 并恢复真实执行。
+                props.onPatchConfig(
+                  branch.length > 0
+                    ? { value: branch, execution: 'static' }
+                    : { value: undefined, execution: 'auto' },
+                )
+              }}
+              options={[
+                { label: 'LLM 决策（按上下文选择分支）', value: '' },
+                ...routeOptions.map((option) => ({
+                  label: `固定：${option.value}${option.label ? `（${option.label}）` : ''}`,
+                  value: option.value,
+                })),
+              ]}
+            />
+            <div className="wf-field-help">
+              固定分支后运行时直接输出该值（不经模型），适用于确定性的静态路由。
             </div>
           </InspectorField>
         )}
@@ -1865,25 +1988,28 @@ function WorkflowInspector(props: InspectorProps) {
             onChange={(ruleIds) => props.onPatchConfig({ ruleIds })}
           />
         </InspectorField>
-        <InspectorField label="MCP">
-          <div className="wf-field-help">
-            所有已启用的 MCP 会自动挂载到该节点，无需逐节点绑定。
-            {mcpServers.some((server) => server.enabled)
-              ? ` 当前启用：${mcpServers
-                  .filter((server) => server.enabled)
-                  .map((server) => server.name)
-                  .join('、')}`
-              : ' 当前没有已启用的 MCP。'}
-          </div>
-        </InspectorField>
+        {!isMcp && (
+          <InspectorField label="MCP">
+            <div className="wf-field-help">
+              所有已启用的 MCP 会自动挂载到该节点，无需逐节点绑定。
+              {mcpServers.some((server) => server.enabled)
+                ? ` 当前启用：${mcpServers
+                    .filter((server) => server.enabled)
+                    .map((server) => server.name)
+                    .join('、')}`
+                : ' 当前没有已启用的 MCP。'}
+            </div>
+          </InspectorField>
+        )}
         <InspectorField label="重试次数">
           <LobeInput
             type="number"
             min={0}
-            max={10}
+            max={3}
             value={Number(config.retryCount ?? 1)}
             onChange={(event) => props.onPatchConfig({ retryCount: Number(event.target.value) })}
           />
+          <div className="wf-field-help">运行时上限 3 次（0-3），超出按 3 处理。</div>
         </InspectorField>
       </div>
     </div>
@@ -2108,52 +2234,5 @@ function WorkflowEdgeInspector({
   )
 }
 
-function InspectorField({ label, children }: { label: string; children: ReactNode }) {
-  // 不用 <label> 包 children：label 元素会拦截内部 click，
-  // 在 select / popover 等控件里会导致下拉"点不出来"。
-  // 复用 AgentsView 的 .agent-field 写法 —— lobe-ui (antd-based) 控件
-  // 自带 variant 样式，宽度由 .agent-field .ant-* 规则兜底为 100%。
-  return (
-    <div className="agent-field">
-      <span className="agent-field-label">{label}</span>
-      {children}
-    </div>
-  )
-}
-
-function TagPicker({
-  items,
-  selected,
-  onChange,
-}: {
-  items: Array<{ id: string; label: string }>
-  selected: string[]
-  onChange: (ids: string[]) => void
-}) {
-  const selectedSet = new Set(selected)
-  if (items.length === 0) return <div className="agents-empty-mini">暂无可选项</div>
-  return (
-    <div className="wf-tools-row">
-      {items.map((item) => {
-        const active = selectedSet.has(item.id)
-        return (
-          <button
-            key={item.id}
-            className={`tool-chip ${active ? 'active' : ''}`}
-            onClick={() =>
-              onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])
-            }
-          >
-            {active && <Icons.Check size={11} />} {item.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
-}
+// InspectorField / TagPicker / asStringArray 已拆分至 ./workflow/inspector-fields.tsx
+//（WorkflowToolConfigPanel 也要用，留在本文件会形成循环引用）。

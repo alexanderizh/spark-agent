@@ -32,7 +32,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '拆解任务，给出可执行步骤。',
     hint: 'EnterPlanMode：先规划再动手',
     runtimeLabel: '只读派发',
-    runtimeHint: '会用只读工具集（禁写/执行）派发单轮 LLM 产出计划文本；execution=static 时回落静态回显。',
+    runtimeHint:
+      '会用只读工具集（禁写/执行）派发单轮 LLM 产出计划文本；execution=static 时回落静态回显。',
   },
   route: {
     kind: 'route',
@@ -42,7 +43,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '根据目标和上游输入选择一个后续路由，只输出分支值。',
     hint: '条件路由：输出分支值',
     runtimeLabel: '条件路由',
-    runtimeHint: '会用只读 LLM 临时 worker 选择 routeOptions 中的一个 value，并写入 outputKey 供条件边分流。',
+    runtimeHint:
+      '会用只读 LLM 临时 worker 选择 routeOptions 中的一个 value，并写入 outputKey 供条件边分流。',
   },
   agent: {
     kind: 'agent',
@@ -52,7 +54,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '按计划完成实现，并记录关键决策。',
     hint: '主 Agent 执行阶段',
     runtimeLabel: '真实派发',
-    runtimeHint: '绑定真实 Agent 后进入实际 worker 执行链路；未绑定或绑定不可用时回退宿主 Agent（当前会话）。',
+    runtimeHint:
+      '绑定真实 Agent 后进入实际 worker 执行链路；未绑定或绑定不可用时回退宿主 Agent（当前会话）。',
   },
   subagent: {
     kind: 'subagent',
@@ -62,7 +65,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '并行/串行派发子代理处理独立子任务。',
     hint: 'Task / 并行子代理',
     runtimeLabel: '真实派发',
-    runtimeHint: '生成临时 workflow worker 复用派发引擎执行；parallelism>=2 时同节点 N 路并发派发，结果按分支拼接。',
+    runtimeHint:
+      '生成临时 workflow worker 复用派发引擎执行；parallelism>=2 时同节点 N 路并发派发，结果按分支拼接。',
   },
   skill: {
     kind: 'skill',
@@ -72,7 +76,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '加载并应用所选 Skill 的方法与约束。',
     hint: '调用 Skill 提供的方法',
     runtimeLabel: '真实执行',
-    runtimeHint: '会生成只挂所选 Skill 的临时 worker 派发单轮执行；execution=static 时回落静态回显。',
+    runtimeHint:
+      '会生成只挂所选 Skill 的临时 worker 派发单轮执行；execution=static 时回落静态回显。',
   },
   tool: {
     kind: 'tool',
@@ -82,7 +87,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '调用所需工具，记录输入、输出和异常。',
     hint: '调用内置工具',
     runtimeLabel: '真实执行',
-    runtimeHint: '会生成临时 worker 并把能力收窄到所选工具（toolIds 白名单）派发执行；execution=static 时回落静态回显。',
+    runtimeHint:
+      '缺省会生成临时 worker 并把能力收窄到所选工具（toolIds 白名单）派发执行；配置「内置 / MCP / 平台工具直调」后按指定工具+参数原生调用，不经 LLM；execution=static 时回落静态回显。',
   },
   mcp: {
     kind: 'mcp',
@@ -92,7 +98,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '使用已启用的 MCP 服务完成外部能力调用。',
     hint: '外部 MCP 服务',
     runtimeLabel: '真实执行',
-    runtimeHint: '会生成临时 worker，并自动挂载所有已启用 MCP；execution=static 时回落静态回显。',
+    runtimeHint:
+      '缺省派发临时 worker（自动挂载所有已启用 MCP）；配置「MCP 工具直调」后按服务器+工具+参数原生调用，不经 LLM。',
   },
   approval: {
     kind: 'approval',
@@ -102,7 +109,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '在继续前等待用户确认关键计划或高风险动作。',
     hint: '人在回路：用户确认',
     runtimeLabel: '审批节点',
-    runtimeHint: '运行时暂停并向用户请求批准或拒绝；批准时可附带修改意见，随审批结果经 outputKey 流向下游节点。',
+    runtimeHint:
+      '运行时暂停并向用户请求批准或拒绝；批准时可附带修改意见，随审批结果经 outputKey 流向下游节点。',
   },
   verify: {
     kind: 'verify',
@@ -122,7 +130,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '复核上一阶段结果，总结风险和结果。',
     hint: '复核 / 测试结果分析',
     runtimeLabel: '只读派发',
-    runtimeHint: '会用只读工具集（禁写/执行）派发单轮 LLM 产出复核文本；execution=static 时回落静态回显。',
+    runtimeHint:
+      '会用只读工具集（禁写/执行）派发单轮 LLM 产出复核文本；execution=static 时回落静态回显。',
   },
   artifact: {
     kind: 'artifact',
@@ -132,7 +141,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '整理最终交付物、变更摘要和后续建议。',
     hint: '终点：交付制品',
     runtimeLabel: '真实执行',
-    runtimeHint: '会派发单轮产出最终文本；配了 exportPath（工作区相对路径）时写入该文件；execution=static 时回落静态回显。',
+    runtimeHint:
+      '会派发单轮产出最终文本；配了 exportPath（工作区相对路径）时写入该文件；execution=static 时回落静态回显。',
   },
   loop: {
     kind: 'loop',
@@ -142,7 +152,8 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultPrompt: '重复执行循环体，直到满足退出条件或达到最大迭代次数。',
     hint: '迭代子图：重复优化',
     runtimeLabel: '递归执行',
-    runtimeHint: '作为原子节点递归执行 config.body 子图；默认最多 5 轮，硬上限 50，v1 不支持嵌套 loop。',
+    runtimeHint:
+      '作为原子节点递归执行 config.body 子图；默认最多 5 轮，硬上限 50，v1 不支持嵌套 loop。',
   },
 }
 

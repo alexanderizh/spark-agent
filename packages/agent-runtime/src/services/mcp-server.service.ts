@@ -335,12 +335,20 @@ export class McpService {
   /**
    * 获取指定服务器的工具列表
    */
-  getServerTools(serverId: string): Array<{ name: string; description: string }> {
+  getServerTools(serverId: string): Array<{
+    name: string
+    description: string
+    inputSchema?: McpToolDefinition['inputSchema']
+  }> {
     const client = this.clients.get(serverId)
     if (client == null) {
       return []
     }
-    return client.listTools().map((t) => ({ name: t.name, description: t.description }))
+    return client.listTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    }))
   }
 
   /**

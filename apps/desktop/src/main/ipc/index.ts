@@ -167,6 +167,8 @@ import {
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
+  CustomToolRuntimeCatalog,
+  ToolPackageRuntimeCatalog,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -233,6 +235,7 @@ import type {
   SessionAttachment,
   SessionListResponse,
   SystemNotificationNavigateRequest,
+  WorkflowPlatformToolsResponse,
 } from '@spark/protocol'
 import {
   MediaModelManifestSchema,
@@ -6810,6 +6813,61 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('mcp:server-tools', async (req) => {
     log.info(`mcp:server-tools requested, serverId=${req.serverId}`)
     const tools = getMcpService().getServerTools(req.serverId)
+    return { tools }
+  })
+
+  // 工作流工具节点「平台工具直调」候选清单：两个运行时目录即时快照（与执行期同一目录，
+  // 所见即所得），按工具包显示名分组标注；schema 收窄到面板渲染所需的最小结构。
+  typedIpcHandle('workflow:platform-tools', async () => {
+    const toolPackageService = getSessionService().getToolPackageService()
+    const packageNames = new Map(toolPackageService.list().map((row) => [row.id, row.display_name]))
+    const toInputSchema = (
+      raw: Record<string, unknown> | undefined,
+    ): WorkflowPlatformToolsResponse['tools'][number]['inputSchema'] | undefined => {
+      if (raw == null || raw.type !== 'object') return undefined
+      if (
+        raw.properties == null ||
+        typeof raw.properties !== 'object' ||
+        Array.isArray(raw.properties)
+      ) {
+        return undefined
+      }
+      return {
+        type: 'object',
+        properties: raw.properties as Record<string, unknown>,
+        ...(Array.isArray(raw.required)
+          ? { required: raw.required.filter((item): item is string => typeof item === 'string') }
+          : {}),
+      }
+    }
+    const packageTools = new ToolPackageRuntimeCatalog(toolPackageService)
+      .list({})
+      .map((entry): WorkflowPlatformToolsResponse['tools'][number] => {
+        const packageName = packageNames.get(entry.packageId)
+        const inputSchema = toInputSchema(entry.tool.inputSchema)
+        return {
+          name: entry.tool.name,
+          title: entry.tool.title.length > 0 ? entry.tool.title : entry.tool.name,
+          description: entry.tool.description,
+          source: 'package',
+          ...(packageName != null ? { packageName } : {}),
+          ...(inputSchema != null ? { inputSchema } : {}),
+        }
+      })
+    const customTools = new CustomToolRuntimeCatalog(getCustomToolService())
+      .list()
+      .map((entry): WorkflowPlatformToolsResponse['tools'][number] => {
+        const inputSchema = toInputSchema(entry.tool.inputSchema)
+        return {
+          name: entry.tool.name,
+          title: entry.tool.title.length > 0 ? entry.tool.title : entry.tool.name,
+          description: entry.tool.description,
+          source: 'custom',
+          ...(inputSchema != null ? { inputSchema } : {}),
+        }
+      })
+    const tools: WorkflowPlatformToolsResponse['tools'] = [...packageTools, ...customTools]
+    log.info(`workflow:platform-tools requested, tools=${tools.length}`)
     return { tools }
   })
 

@@ -32,13 +32,25 @@ import {
   isWorkflowApprovalApprovedImpl,
   extractWorkflowApprovalCommentImpl,
 } from './session.service.js'
-import { createWorkflowAtomicMember } from './session-workflow-helpers.js'
+import {
+  createWorkflowAtomicMember,
+  buildWorkflowToolInvocationInstruction,
+  formatWorkflowMcpToolResult,
+  formatWorkflowPlatformToolResult,
+  getDefaultWorkflowAtomicContent,
+  getWorkflowToolInvocationSpec,
+  buildWorkflowProgressNodes,
+  WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS,
+} from './session-workflow-helpers.js'
 import type { AgentItem } from '@spark/storage'
 import type { NormalizedWorkflowNode } from './workflow-executor.js'
 import type { UserQuestionPrompt } from '@spark/protocol'
 import path from 'node:path'
 
-function node(kind: NormalizedWorkflowNode['kind'], config: Record<string, unknown> = {}): NormalizedWorkflowNode {
+function node(
+  kind: NormalizedWorkflowNode['kind'],
+  config: Record<string, unknown> = {},
+): NormalizedWorkflowNode {
   return { id: `n-${kind}`, kind, title: `节点-${kind}`, config }
 }
 
@@ -110,8 +122,9 @@ describe('createWorkflowAtomicMember capability policy', () => {
       })
     }
     for (const kind of ['tool', 'mcp', 'skill', 'artifact'] as const) {
-      expect(createWorkflowAtomicMember(node(kind, { toolIds: ['Read'] }), hostAgent).metadata)
-        .not.toHaveProperty('workflowCapability')
+      expect(
+        createWorkflowAtomicMember(node(kind, { toolIds: ['Read'] }), hostAgent).metadata,
+      ).not.toHaveProperty('workflowCapability')
     }
   })
 
@@ -138,7 +151,12 @@ describe('buildWorkflowAtomicInstruction', () => {
   })
 
   it('无 prompt 时回落标题；无目标/inputs 时不加多余段', () => {
-    const text = buildWorkflowAtomicInstruction({ title: '标题', objective: '', inputs: {}, config: {} })
+    const text = buildWorkflowAtomicInstruction({
+      title: '标题',
+      objective: '',
+      inputs: {},
+      config: {},
+    })
     expect(text).toBe('标题')
   })
 
@@ -232,7 +250,9 @@ describe('validateWorkflowInputStructuredContent', () => {
   it('非法 JSON：回落透传 fallback + 追加 [input 结构化解析失败，已回落透传] 提示，ok:false', () => {
     const r = validateWorkflowInputStructuredContent('这不是 JSON', '原始透传内容')
     expect(r.ok).toBe(false)
-    expect((r as { content: string }).content).toBe('原始透传内容\n\n[input 结构化解析失败，已回落透传]')
+    expect((r as { content: string }).content).toBe(
+      '原始透传内容\n\n[input 结构化解析失败，已回落透传]',
+    )
   })
 
   it('空串：视为非法、回落透传', () => {
@@ -244,6 +264,72 @@ describe('validateWorkflowInputStructuredContent', () => {
   it('半截 JSON：视为非法、回落透传', () => {
     const r = validateWorkflowInputStructuredContent('{"objective":"x"', 'fb')
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('getDefaultWorkflowAtomicContent 静态值契约（input 静态值 / route 固定分支 UI 的运行时依赖）', () => {
+  it('input：配了 value 时优先于 prompt/objective 透传（静态回显即固定输入）', () => {
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'input',
+        title: '需求输入',
+        objective: '工作流目标',
+        config: { prompt: '解析需求', value: '{"objective":"固定输入"}' },
+      }),
+    ).toBe('{"objective":"固定输入"}')
+  })
+
+  it('input：value 为 number/boolean 时转字符串，对象 JSON 序列化', () => {
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'input',
+        title: 't',
+        objective: '',
+        config: { value: 42 },
+      }),
+    ).toBe('42')
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'input',
+        title: 't',
+        objective: '',
+        config: { value: { a: 1 } },
+      }),
+    ).toBe('{"a":1}')
+  })
+
+  it('route：value 命中 routeOptions 时直接输出该分支（固定路由，不经 LLM）', () => {
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'route',
+        title: '决策路由',
+        objective: '',
+        config: {
+          value: 'quick',
+          routeOptions: [{ value: 'deep' }, { value: 'quick' }],
+        },
+      }),
+    ).toBe('quick')
+  })
+
+  it('route：value 不在 routeOptions 内时回落首个分支，未配 value 时也回落首个分支', () => {
+    const routeOptions = [{ value: 'deep' }, { value: 'quick' }]
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'route',
+        title: 't',
+        objective: '',
+        config: { value: 'stale', routeOptions },
+      }),
+    ).toBe('deep')
+    expect(
+      getDefaultWorkflowAtomicContent({
+        kind: 'route',
+        title: 't',
+        objective: '',
+        config: { routeOptions },
+      }),
+    ).toBe('deep')
   })
 })
 
@@ -364,7 +450,10 @@ describe('审批 decision 解析（isWorkflowApprovalApprovedImpl）', () => {
   })
 
   it('cancelled → 未批准', () => {
-    const answers = { cancelled: true, answers: [{ id: 'workflow-approval-decision', optionValue: 'approve' }] }
+    const answers = {
+      cancelled: true,
+      answers: [{ id: 'workflow-approval-decision', optionValue: 'approve' }],
+    }
     expect(isWorkflowApprovalApprovedImpl(answers, decisionQuestion, 0)).toBe(false)
   })
 
@@ -513,14 +602,18 @@ describe('input 节点 executeAtomicNode 端到端契约（任务 3）', () => {
     isRegistered: boolean
     mockDispatchReply: MockDispatchReply | (() => MockDispatchReply)
     fallback: string
-  }): Promise<{ state?: 'completed'; content: string } | { state: 'failed'; content: string; error?: { code?: string; message: string } }> {
+  }): Promise<
+    | { state?: 'completed'; content: string }
+    | { state: 'failed'; content: string; error?: { code?: string; message: string } }
+  > {
     // execution:'static' 或未注册 → 回落透传（不读 mockDispatchReply，故 thunk 形态不会触发副作用）
     if (args.execution === 'static' || !args.isRegistered) {
       return { content: args.fallback }
     }
-    const reply = typeof args.mockDispatchReply === 'function'
-      ? args.mockDispatchReply()
-      : args.mockDispatchReply
+    const reply =
+      typeof args.mockDispatchReply === 'function'
+        ? args.mockDispatchReply()
+        : args.mockDispatchReply
     if (reply.state !== 'completed') {
       return {
         state: 'failed' as const,
@@ -560,7 +653,10 @@ describe('input 节点 executeAtomicNode 端到端契约（任务 3）', () => {
     const result = await runInputAtomic({
       execution: 'static',
       isRegistered: true,
-      mockDispatchReply: () => { dispatchCalled = true; return { state: 'completed', content: '{}' } },
+      mockDispatchReply: () => {
+        dispatchCalled = true
+        return { state: 'completed', content: '{}' }
+      },
       fallback: '静态值',
     })
     expect(dispatchCalled).toBe(false)
@@ -584,16 +680,381 @@ describe('input 节点 executeAtomicNode 端到端契约（任务 3）', () => {
       mockDispatchReply: { state: 'completed', content: '这不是 JSON 啊' },
       fallback: '裸输入',
     })
-    expect((result as { content: string }).content).toBe('裸输入\n\n[input 结构化解析失败，已回落透传]')
+    expect((result as { content: string }).content).toBe(
+      '裸输入\n\n[input 结构化解析失败，已回落透传]',
+    )
   })
 
   it("execution:'auto' + 派发失败 → 沿用 reply.state=failed（不消化错误）", async () => {
     const result = await runInputAtomic({
       execution: 'auto',
       isRegistered: true,
-      mockDispatchReply: { state: 'failed', content: '', error: { code: 'timeout', message: '派发超时' } },
+      mockDispatchReply: {
+        state: 'failed',
+        content: '',
+        error: { code: 'timeout', message: '派发超时' },
+      },
       fallback: '裸输入',
     })
     expect(result.state).toBe('failed')
+  })
+})
+
+// ─── 工具节点确定性调用 ──────────────────────────────────────────────────────
+
+describe('getWorkflowToolInvocationSpec', () => {
+  it('mcp 源：toolSource+toolServerId+toolName 齐备才生效，toolArgs 原样带出', () => {
+    const spec = getWorkflowToolInvocationSpec({
+      toolSource: 'mcp',
+      toolServerId: ' srv-1 ',
+      toolName: ' search ',
+      toolArgs: { query: '{{brief}}' },
+    })
+    expect(spec).toEqual({
+      source: 'mcp',
+      serverId: 'srv-1',
+      toolName: 'search',
+      args: { query: '{{brief}}' },
+    })
+  })
+
+  it('mcp 源缺 serverId → null（回落受限 worker 模式）', () => {
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'mcp', toolName: 'search' })).toBeNull()
+  })
+
+  it('builtin 源：工具名须在可限制目录内', () => {
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: 'Bash' })).toEqual({
+      source: 'builtin',
+      toolName: 'Bash',
+      args: {},
+    })
+    expect(
+      getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: 'NotARealTool' }),
+    ).toBeNull()
+  })
+
+  it('未配 toolSource / toolName、null 值 → 一律 null（向后兼容）', () => {
+    expect(getWorkflowToolInvocationSpec({})).toBeNull()
+    expect(getWorkflowToolInvocationSpec({ toolName: 'Bash' })).toBeNull()
+    expect(getWorkflowToolInvocationSpec({ toolSource: null, toolName: 'Bash' })).toBeNull()
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: null })).toBeNull()
+  })
+
+  it('toolArgs 非对象（数组/字符串）按空参数处理', () => {
+    expect(
+      getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: 'Grep', toolArgs: 'oops' }),
+    ).toEqual({
+      source: 'builtin',
+      toolName: 'Grep',
+      args: {},
+    })
+  })
+
+  it('kind=mcp：mcp 源照常生效，builtin 源视为无效配置回落 worker 模式', () => {
+    expect(
+      getWorkflowToolInvocationSpec(
+        {
+          toolSource: 'mcp',
+          toolServerId: 'srv-9',
+          toolName: 'fetch',
+          toolArgs: { url: '{{source}}' },
+        },
+        'mcp',
+      ),
+    ).toEqual({
+      source: 'mcp',
+      serverId: 'srv-9',
+      toolName: 'fetch',
+      args: { url: '{{source}}' },
+    })
+    // mcp 节点 UI 不提供 builtin 入口；手改 JSON 配了也按无效处理，
+    // 避免锁定派发落在一个工具面未收窄的 worker 上（createWorkflowAtomicMember 只锁 tool kind）。
+    expect(
+      getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: 'Bash' }, 'mcp'),
+    ).toBeNull()
+    // 未传 kind 的旧调用保持三态兼容（tool 节点路径）。
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'builtin', toolName: 'Bash' })?.source).toBe(
+      'builtin',
+    )
+  })
+
+  it('platform 源：tool 节点生效（无需 serverId，名字不校验存在性），mcp 节点不认', () => {
+    // 工具包工具标识 `packageId/toolName` 与自定义工具 id（slug）都合法；
+    // 存在性在执行期查目录（目录动态，解析期校验无意义）。
+    expect(
+      getWorkflowToolInvocationSpec({
+        toolSource: 'platform',
+        toolName: ' qr-generator/generate_qr ',
+        toolArgs: { text: '{{url}}' },
+      }),
+    ).toEqual({
+      source: 'platform',
+      toolName: 'qr-generator/generate_qr',
+      args: { text: '{{url}}' },
+    })
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'platform', toolName: 'my_tool' })).toEqual({
+      source: 'platform',
+      toolName: 'my_tool',
+      args: {},
+    })
+    // mcp 节点 UI 不提供 platform 入口；手改 JSON 配了同样按无效回落。
+    expect(
+      getWorkflowToolInvocationSpec({ toolSource: 'platform', toolName: 'my_tool' }, 'mcp'),
+    ).toBeNull()
+    expect(getWorkflowToolInvocationSpec({ toolSource: 'platform', toolName: '   ' })).toBeNull()
+  })
+})
+
+describe('formatWorkflowPlatformToolResult', () => {
+  it('string 原样；空串/空值归一为占位提示', () => {
+    expect(formatWorkflowPlatformToolResult('纯文本结果')).toBe('纯文本结果')
+    expect(formatWorkflowPlatformToolResult('')).toBe('(平台工具未返回内容)')
+    expect(formatWorkflowPlatformToolResult(null)).toBe('(平台工具未返回内容)')
+    expect(formatWorkflowPlatformToolResult(undefined)).toBe('(平台工具未返回内容)')
+  })
+
+  it('{ text } 形态（自定义工具目录）取 text', () => {
+    expect(formatWorkflowPlatformToolResult({ text: 'custom tool output', meta: { ms: 12 } })).toBe(
+      'custom tool output',
+    )
+    // text 为空时继续走后续归一分支（meta 序列化兜底），不返回空串。
+    expect(formatWorkflowPlatformToolResult({ text: '', meta: { ms: 12 } })).toContain('"ms": 12')
+  })
+
+  it('{ content: [...] } 形态（工具包 mcp-import）复用 MCP 拼接', () => {
+    const result = formatWorkflowPlatformToolResult({
+      content: [
+        { type: 'text', text: '第一段' },
+        { type: 'text', text: '第二段' },
+      ],
+    })
+    expect(result).toBe('第一段\n第二段')
+  })
+
+  it('其余对象 JSON 序列化兜底（工具包 remote-http/process 的任意返回）', () => {
+    expect(formatWorkflowPlatformToolResult({ rows: [1, 2], ok: true })).toBe(
+      JSON.stringify({ rows: [1, 2], ok: true }, null, 2),
+    )
+  })
+})
+
+describe('createWorkflowAtomicMember 工具锁定（确定性调用）', () => {
+  const hostAgent = {
+    id: 'host',
+    name: 'Host',
+    description: '',
+    builtIn: false,
+    enabled: true,
+    isDefault: false,
+    providerProfileId: 'provider',
+    modelId: 'model',
+    agentAdapter: 'claude-sdk',
+    permissionMode: 'claude-plan',
+    reasoningEffort: 'high',
+    prompt: '',
+    ruleIds: [],
+    skillIds: [],
+    disabledSkillIds: [],
+    mcpServerIds: [],
+    hookConfig: {},
+    workflowId: null,
+    metadata: {},
+    createdAt: '2026-07-26T00:00:00.000Z',
+    updatedAt: '2026-07-26T00:00:00.000Z',
+  } satisfies AgentItem
+
+  it('builtin 源强制 metadata.toolIds=[toolName]，覆盖残留的旧 toolIds', () => {
+    const member = createWorkflowAtomicMember(
+      node('tool', { toolSource: 'builtin', toolName: 'Bash', toolIds: ['Read', 'Grep'] }),
+      hostAgent,
+    )
+    expect(member.metadata).toMatchObject({ toolIds: ['Bash'] })
+    expect(member.metadata).not.toHaveProperty('workflowCapability')
+  })
+
+  it('mcp 源不强制锁定 toolIds（原生直调不经 worker 工具面）', () => {
+    const member = createWorkflowAtomicMember(
+      node('tool', { toolSource: 'mcp', toolServerId: 's1', toolName: 'search' }),
+      hostAgent,
+    )
+    expect(member.metadata).not.toHaveProperty('toolIds')
+  })
+
+  it('未配确定性调用的 tool 节点保持旧行为（toolIds 原样透传）', () => {
+    const member = createWorkflowAtomicMember(node('tool', { toolIds: ['Read'] }), hostAgent)
+    expect(member.metadata).toMatchObject({ toolIds: ['Read'] })
+  })
+})
+
+describe('buildWorkflowToolInvocationInstruction', () => {
+  it('包含工具名、参数 JSON、节点指令、目标与上游输入', () => {
+    const instruction = buildWorkflowToolInvocationInstruction(
+      {
+        title: '跑测试',
+        objective: '验证改动',
+        inputs: { plan_result: '步骤1' },
+        config: { prompt: '只跑受影响的包' },
+      },
+      { source: 'builtin', toolName: 'Bash', args: { command: 'pnpm test {{pkg}}' } },
+    )
+    expect(instruction).toContain('`Bash`')
+    expect(instruction).toContain('"command":"pnpm test {{pkg}}"')
+    expect(instruction).toContain('[Node directive]\n只跑受影响的包')
+    expect(instruction).toContain('[Workflow objective]\n验证改动')
+    expect(instruction).toContain('[Upstream inputs]')
+    expect(instruction).toContain('plan_result')
+  })
+})
+
+describe('formatWorkflowMcpToolResult', () => {
+  it('text 内容按行拼接，非文本块降级为可读摘要', () => {
+    const content = formatWorkflowMcpToolResult({
+      content: [
+        { type: 'text', text: '第一段' },
+        { type: 'image', mimeType: 'image/png', data: 'abcd' },
+        { type: 'text', text: '第二段' },
+      ],
+    })
+    expect(content).toContain('第一段')
+    expect(content).toContain('第二段')
+    expect(content).toContain('[image: image/png')
+  })
+
+  it('空结果给出占位提示', () => {
+    expect(formatWorkflowMcpToolResult({ content: [] })).toBe('(MCP 工具未返回内容)')
+  })
+})
+
+describe('buildWorkflowProgressNodes', () => {
+  const metas = [
+    { nodeId: 'research', title: 'Research', kind: 'agent' },
+    { nodeId: 'verify', title: 'Verify', kind: 'verify' },
+    { nodeId: 'publish', title: 'Publish', kind: 'agent', agentId: 'writer', agentName: 'Writer' },
+  ]
+
+  it('终态快照携带 error/outputPreview/时间戳，failedNode 的 error 优先', () => {
+    const nodes = buildWorkflowProgressNodes({
+      metas,
+      executions: [
+        {
+          nodeId: 'research',
+          agentId: 'researcher',
+          instruction: '',
+          inputs: {},
+          attempt: 1,
+          state: 'completed',
+          content: 'facts',
+          startedAt: '2026-09-04T10:00:00.000Z',
+          endedAt: '2026-09-04T10:00:05.000Z',
+        },
+        {
+          nodeId: 'research',
+          agentId: 'researcher',
+          instruction: '',
+          inputs: {},
+          attempt: 2,
+          state: 'completed',
+          content: 'facts v2',
+          startedAt: '2026-09-04T10:00:06.000Z',
+          endedAt: '2026-09-04T10:00:09.000Z',
+        },
+      ],
+      atomicExecutions: [
+        {
+          nodeId: 'verify',
+          kind: 'verify',
+          state: 'failed',
+          outputKey: 'v',
+          content: 'pnpm test exited 1',
+          error: { code: 'verify_failed', message: 'record level error' },
+          startedAt: '2026-09-04T10:00:10.000Z',
+          endedAt: '2026-09-04T10:00:12.000Z',
+        },
+      ],
+      runningNodeIds: new Set<string>(),
+      completedNodeIds: new Set(['research']),
+      skippedNodeIds: new Set(['publish']),
+      failedNodeId: 'verify',
+      failedNodeError: { code: 'workflow_failed', message: 'failedNode level error' },
+      terminal: true,
+    })
+
+    expect(nodes).toHaveLength(3)
+    const research = nodes[0]!
+    expect(research.status).toBe('completed')
+    // 重试两条记录：startedAt 取首条、endedAt 取末条，输出预览取末条 content。
+    expect(research.startedAt).toBe('2026-09-04T10:00:00.000Z')
+    expect(research.endedAt).toBe('2026-09-04T10:00:09.000Z')
+    expect(research.outputPreview).toBe('facts v2')
+    expect(research.error).toBeUndefined()
+
+    const verify = nodes[1]!
+    expect(verify.status).toBe('failed')
+    // failedNode 的 error 优先于执行记录的 error。
+    expect(verify.error).toEqual({ code: 'workflow_failed', message: 'failedNode level error' })
+    // 失败节点的 content 也作为输出预览携带（常含诊断信息）。
+    expect(verify.outputPreview).toBe('pnpm test exited 1')
+
+    const publish = nodes[2]!
+    expect(publish.status).toBe('skipped')
+    expect(publish.agentName).toBe('Writer')
+    expect(publish.outputPreview).toBeUndefined()
+    expect(publish.startedAt).toBeUndefined()
+  })
+
+  it('运行中快照不带 outputPreview，重试失败记录的 error 也透出', () => {
+    const nodes = buildWorkflowProgressNodes({
+      metas,
+      executions: [
+        {
+          nodeId: 'research',
+          agentId: 'researcher',
+          instruction: '',
+          inputs: {},
+          attempt: 1,
+          state: 'failed',
+          content: 'partial output',
+          error: { message: 'attempt 1 failed' },
+          startedAt: '2026-09-04T10:00:00.000Z',
+          endedAt: '2026-09-04T10:00:02.000Z',
+        },
+      ],
+      atomicExecutions: [],
+      runningNodeIds: new Set(['research']),
+      completedNodeIds: new Set<string>(),
+      skippedNodeIds: new Set<string>(),
+      terminal: false,
+    })
+
+    const research = nodes[0]!
+    expect(research.status).toBe('running')
+    expect(research.outputPreview).toBeUndefined()
+    expect(research.error).toEqual({ message: 'attempt 1 failed' })
+  })
+
+  it('超长输出按上限截断并追加省略号', () => {
+    const longContent = 'x'.repeat(WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS + 100)
+    const nodes = buildWorkflowProgressNodes({
+      metas: [{ nodeId: 'n1', title: 'N1', kind: 'agent' }],
+      executions: [
+        {
+          nodeId: 'n1',
+          agentId: 'w',
+          instruction: '',
+          inputs: {},
+          attempt: 1,
+          state: 'completed',
+          content: longContent,
+          startedAt: '2026-09-04T10:00:00.000Z',
+          endedAt: '2026-09-04T10:00:01.000Z',
+        },
+      ],
+      atomicExecutions: [],
+      runningNodeIds: new Set<string>(),
+      completedNodeIds: new Set(['n1']),
+      skippedNodeIds: new Set<string>(),
+      terminal: true,
+    })
+    expect(nodes[0]!.outputPreview).toBe(`${'x'.repeat(WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS)}…`)
   })
 })

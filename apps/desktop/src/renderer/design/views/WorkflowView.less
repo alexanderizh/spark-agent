@@ -858,6 +858,19 @@
 .wf-field-help.wf-field-warn {
   color: var(--warning);
 }
+/* 工具节点确定性调用：参数表单的每个字段块（字段名 + 说明 + 控件） */
+.wf-tool-arg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  &:last-child {
+    margin-bottom: 0;
+  }
+  .agent-field-label {
+    display: block;
+  }
+}
 .wf-condition-key-chip {
   margin-top: 6px;
 }

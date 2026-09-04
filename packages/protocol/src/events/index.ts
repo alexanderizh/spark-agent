@@ -407,11 +407,20 @@ export interface WorkflowProgressNode {
   agentId?: string
   agentName?: string
   modelId?: string
+  /** 失败/取消原因：节点命中 failedNode 或其最后一条执行记录携带 error 时填充。 */
+  error?: { code?: string; message: string }
+  /** 节点输出预览（截断文本）。仅在终态快照（runStatus !== 'working'）时填充，控制事件体积。 */
+  outputPreview?: string
+  /** 节点首条执行记录的开始时间（ISO 8601）；未开始执行的节点缺省。 */
+  startedAt?: string
+  /** 节点末条执行记录的结束时间（ISO 8601）；仍在执行的节点缺省。 */
+  endedAt?: string
 }
 
 /**
- * workflow_run 单次调用期间的实时节点进度快照——每个节点开始/完成/失败时都会重新
- * 发一份完整列表（不是增量），UI 据此渲染类似任务面板的实时清单。
+ * workflow_run 单次调用期间的实时节点进度快照——节点状态发生变化（开始执行、单个节点
+ * 完成/失败/跳过、运行终态）时重新发一份完整列表（不是增量），UI 据此渲染实时清单。
+ * 终态快照额外携带每个节点的 outputPreview 与 error 供展开查看。
  */
 export interface WorkflowProgressEvent extends BaseEvent {
   type: 'workflow_progress'

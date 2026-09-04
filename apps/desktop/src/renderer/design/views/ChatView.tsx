@@ -5866,15 +5866,40 @@ function WorkflowProgressBlockView({
 }: {
   block: Extract<UIBlock, { kind: 'workflow_progress' }>
 }) {
+  const [expandedNodeIds, setExpandedNodeIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  )
   const completed = block.nodes.filter((node) => node.status === 'completed').length
   const skipped = block.nodes.filter((node) => node.status === 'skipped').length
   const total = block.nodes.length
   const failed = block.nodes.some((node) => node.status === 'failed')
+  const terminal = block.runStatus !== 'working'
+  const totalTimeMs = terminal ? workflowTotalDurationMs(block.nodes) : null
+  const stateLabel =
+    block.runStatus === 'working'
+      ? '运行中'
+      : block.runStatus === 'completed'
+        ? '已完成'
+        : block.runStatus === 'failed'
+          ? '失败'
+          : '已取消'
+  const toggleExpanded = (nodeId: string): void => {
+    setExpandedNodeIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  }
   return (
     <div className="workflow-progress-card">
       <div className="workflow-progress-head">
         <Icons.Workflow size={13} />
         <span>工作流进度</span>
+        <span className={`workflow-progress-state ${block.runStatus}`}>{stateLabel}</span>
+        {totalTimeMs != null && (
+          <span className="workflow-progress-total">{formatWorkflowDuration(totalTimeMs)}</span>
+        )}
         <span
           className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}
           title={skipped > 0 ? `已完成 ${completed} 个，条件跳过 ${skipped} 个` : undefined}
@@ -5884,14 +5909,59 @@ function WorkflowProgressBlockView({
       </div>
       <div className="workflow-progress-list">
         {block.nodes.map((node) => (
-          <WorkflowProgressItem key={node.nodeId} node={node} />
+          <WorkflowProgressItem
+            key={node.nodeId}
+            node={node}
+            expanded={expandedNodeIds.has(node.nodeId)}
+            {...(node.outputPreview != null ? { onToggle: () => toggleExpanded(node.nodeId) } : {})}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function WorkflowProgressItem({ node }: { node: WorkflowProgressNode }) {
+/** 汇总耗时：所有已执行节点里最早 startedAt 到最晚 endedAt 的跨度。 */
+function workflowTotalDurationMs(nodes: WorkflowProgressNode[]): number | null {
+  let start: number | null = null
+  let end: number | null = null
+  for (const node of nodes) {
+    if (node.startedAt == null) continue
+    const startedAt = Date.parse(node.startedAt)
+    if (!Number.isFinite(startedAt)) continue
+    if (start == null || startedAt < start) start = startedAt
+    const endedAt = node.endedAt != null ? Date.parse(node.endedAt) : Number.NaN
+    if (Number.isFinite(endedAt) && (end == null || endedAt > end)) end = endedAt
+  }
+  if (start == null || end == null || end < start) return null
+  return end - start
+}
+
+function formatWorkflowDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m${String(Math.round(seconds % 60)).padStart(2, '0')}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h${String(minutes % 60).padStart(2, '0')}m`
+}
+
+function WorkflowProgressItem({
+  node,
+  expanded,
+  onToggle,
+}: {
+  node: WorkflowProgressNode
+  expanded: boolean
+  onToggle?: () => void
+}) {
+  const durationMs =
+    node.startedAt != null && node.endedAt != null
+      ? Date.parse(node.endedAt) - Date.parse(node.startedAt)
+      : Number.NaN
+  const duration = Number.isFinite(durationMs) ? formatWorkflowDuration(durationMs) : ''
   const icon =
     node.status === 'completed' ? (
       <Icons.Check size={13} style={{ color: 'var(--c-ok, #22c55e)' }} />
@@ -5905,14 +5975,45 @@ function WorkflowProgressItem({ node }: { node: WorkflowProgressNode }) {
       <span className="workflow-progress-dot" />
     )
   return (
-    <div className={`workflow-progress-item ${node.status}`}>
-      <span className="workflow-progress-icon">{icon}</span>
-      <span className="workflow-progress-text">{node.title}</span>
-      {(node.agentName != null || node.modelId != null) && (
-        <span className="workflow-progress-agent">
-          {node.agentName}
-          {node.modelId != null ? ` · ${node.modelId}` : ''}
-        </span>
+    <div className={`workflow-progress-item-wrap ${node.status}`}>
+      <div
+        className={`workflow-progress-item ${node.status} ${onToggle != null ? 'expandable' : ''}`}
+        role={onToggle != null ? 'button' : undefined}
+        tabIndex={onToggle != null ? 0 : undefined}
+        aria-expanded={onToggle != null ? expanded : undefined}
+        onClick={onToggle}
+        onKeyDown={
+          onToggle != null
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onToggle()
+                }
+              }
+            : undefined
+        }
+      >
+        <span className="workflow-progress-icon">{icon}</span>
+        <span className="workflow-progress-text">{node.title}</span>
+        {duration.length > 0 && <span className="workflow-progress-duration">{duration}</span>}
+        {(node.agentName != null || node.modelId != null) && (
+          <span className="workflow-progress-agent">
+            {node.agentName}
+            {node.modelId != null ? ` · ${node.modelId}` : ''}
+          </span>
+        )}
+        {onToggle != null && (
+          <Icons.ChevronRight size={11} className={`chev ${expanded ? 'chev-open' : ''}`} />
+        )}
+      </div>
+      {node.error != null && (
+        <div className="workflow-progress-error">
+          {node.error.code != null && node.error.code.length > 0 ? `[${node.error.code}] ` : ''}
+          {node.error.message}
+        </div>
+      )}
+      {expanded && node.outputPreview != null && (
+        <pre className="workflow-progress-output">{node.outputPreview}</pre>
       )}
     </div>
   )

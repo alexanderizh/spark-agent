@@ -2058,6 +2058,32 @@ export interface McpServerToolsResponse {
   tools: Array<{
     name: string
     description: string
+    /** 工具入参 JSON Schema（已连接服务器才有）；工作流工具节点据此渲染参数表单。 */
+    inputSchema?: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required?: string[]
+    }
+  }>
+}
+
+export interface WorkflowPlatformToolsRequest {}
+
+export interface WorkflowPlatformToolsResponse {
+  tools: Array<{
+    /** 运行时标识：工具包工具为 `packageId/toolName`，自定义工具为其 id。 */
+    name: string
+    title: string
+    description: string
+    source: 'package' | 'custom'
+    /** package 源：所属工具包显示名（前端下拉分组展示用）。 */
+    packageName?: string
+    /** 工具入参 JSON Schema；工作流工具节点据此渲染参数表单。 */
+    inputSchema?: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required?: string[]
+    }
   }>
 }
 
@@ -2927,6 +2953,22 @@ export interface WorkflowNodeConfig {
   providerProfileId?: string | null
   skillIds?: string[]
   toolIds?: string[]
+  /**
+   * 工具/MCP 节点确定性调用：'mcp' = 直接调用指定 MCP 服务器上的工具（原生直调，不经 LLM）；
+   * 'builtin' = 锁定单个 SDK 内置工具 + 预渲染参数的强约束派发（仅 tool 节点）；
+   * 'platform' = 直接调用平台自定义工具 / 工具包工具（原生直调，不经 LLM，仅 tool 节点）。
+   * 缺省/null 时不启用确定性调用，走旧的受限临时 worker 模式（toolIds 白名单 + LLM 自主决定）。
+   */
+  toolSource?: 'mcp' | 'builtin' | 'platform' | null
+  /** 确定性调用（toolSource='mcp'）：目标 MCP 服务器 id。 */
+  toolServerId?: string | null
+  /**
+   * 确定性调用：目标工具名（mcp 源为该服务器上的工具名；builtin 源须为 SDK 内置工具名；
+   * platform 源为平台工具运行时标识——工具包工具为 `packageId/toolName`，自定义工具为其 id）。
+   */
+  toolName?: string | null
+  /** 确定性调用：结构化参数；字符串值支持 {{key}} 插值（key = 上游 outputKey / state 键）。 */
+  toolArgs?: Record<string, unknown>
   mcpServerIds?: string[]
   ruleIds?: string[]
   retryCount?: number
@@ -6501,6 +6543,8 @@ export interface IpcChannelMap
   'workflow:create': [WorkflowCreateRequest, WorkflowCreateResponse]
   'workflow:update': [WorkflowUpdateRequest, WorkflowUpdateResponse]
   'workflow:delete': [WorkflowDeleteRequest, WorkflowDeleteResponse]
+  /** 工作流工具节点「平台工具直调」候选清单（已启用的工具包工具 + 自定义工具，含 inputSchema）。 */
+  'workflow:platform-tools': [WorkflowPlatformToolsRequest, WorkflowPlatformToolsResponse]
 
   // Skill Registry (Skill Store)
   'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]
