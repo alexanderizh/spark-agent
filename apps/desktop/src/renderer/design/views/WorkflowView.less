@@ -1139,3 +1139,342 @@
     width: 210px;
   }
 }
+
+/* ─── 运行历史面板（右侧抽屉，覆盖在 1fr|360px 网格之上） ─────────────────── */
+
+.workflow-builder-v2 {
+  position: relative;
+}
+.workflow-builder-v2 .wf-run-history {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, 88vw);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.14);
+}
+.workflow-builder-v2 .wf-run-history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.workflow-builder-v2 .wf-run-history-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.workflow-builder-v2 .wf-run-history-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.workflow-builder-v2 .wf-run-history-close {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.workflow-builder-v2 .wf-run-history-close:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+.workflow-builder-v2 .wf-run-history-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 12px;
+}
+.workflow-builder-v2 .wf-run-history-empty {
+  padding: 18px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* 运行条目：扁平行，分割线分层，不做卡片盒子 */
+.workflow-builder-v2 .wf-run-item {
+  border-bottom: 1px solid var(--border);
+}
+.workflow-builder-v2 .wf-run-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.workflow-builder-v2 .wf-run-item-head:hover {
+  background: var(--bg-soft);
+}
+.workflow-builder-v2 .wf-run-status-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.workflow-builder-v2 .wf-run-status-dot.is-completed {
+  background: var(--c-ok, #22c55e);
+}
+.workflow-builder-v2 .wf-run-status-dot.is-failed {
+  background: var(--c-err, #ef4444);
+}
+.workflow-builder-v2 .wf-run-status-dot.is-working {
+  background: var(--primary);
+}
+.workflow-builder-v2 .wf-run-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.workflow-builder-v2 .wf-run-item-objective {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-builder-v2 .wf-run-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.workflow-builder-v2 .wf-run-status-text.is-completed {
+  color: var(--c-ok, #22c55e);
+}
+.workflow-builder-v2 .wf-run-status-text.is-failed {
+  color: var(--c-err, #ef4444);
+}
+.workflow-builder-v2 .wf-run-status-text.is-working {
+  color: var(--primary);
+}
+.workflow-builder-v2 .wf-run-chevron {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+.workflow-builder-v2 .wf-run-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* 节点明细：左侧细界条缩进，展开输出用 pre 保留格式 */
+.workflow-builder-v2 .wf-run-item-detail {
+  border-top: 1px dashed var(--border);
+  background: var(--bg-soft);
+  padding: 6px 12px 10px 14px;
+}
+.workflow-builder-v2 .wf-run-node {
+  border-left: 2px solid var(--border);
+  margin: 4px 0 4px 6px;
+  padding-left: 8px;
+}
+.workflow-builder-v2 .wf-run-node.completed {
+  border-left-color: var(--c-ok, #22c55e);
+}
+.workflow-builder-v2 .wf-run-node.failed {
+  border-left-color: var(--c-err, #ef4444);
+}
+.workflow-builder-v2 .wf-run-node.skipped {
+  border-left-color: var(--text-faint);
+}
+.workflow-builder-v2 .wf-run-node-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+.workflow-builder-v2 .wf-run-node-head.is-expandable {
+  cursor: pointer;
+}
+.workflow-builder-v2 .wf-run-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.workflow-builder-v2 .wf-run-node.completed .wf-run-node-icon {
+  color: var(--c-ok, #22c55e);
+}
+.workflow-builder-v2 .wf-run-node.failed .wf-run-node-icon {
+  color: var(--c-err, #ef4444);
+}
+.workflow-builder-v2 .wf-run-node-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: wf-run-node-pulse 1.2s ease-in-out infinite;
+}
+@keyframes wf-run-node-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.workflow-builder-v2 .wf-run-node-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-builder-v2 .wf-run-node-agent {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.workflow-builder-v2 .wf-run-node-duration {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.workflow-builder-v2 .wf-run-node-error {
+  margin: 2px 0 4px 21px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-err, #ef4444);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 96px;
+  overflow: auto;
+}
+.workflow-builder-v2 .wf-run-node-output {
+  margin: 4px 0 6px 21px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+
+/* ── 试跑面板（wf-test-run）：与运行历史同一抽屉骨架，另加表单与实时区 ── */
+.workflow-builder-v2 .wf-test-run-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.workflow-builder-v2 .wf-test-run-objective {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 140px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.workflow-builder-v2 .wf-test-run-objective:focus-visible {
+  outline: 1px solid var(--accent);
+}
+.workflow-builder-v2 .wf-test-run-objective:disabled {
+  opacity: 0.6;
+}
+.workflow-builder-v2 .wf-test-run-form-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workflow-builder-v2 .wf-test-run-error {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-err, #ef4444);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.workflow-builder-v2 .wf-test-run-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-inverse, #fff);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.workflow-builder-v2 .wf-test-run-start:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.workflow-builder-v2 .wf-test-run-start:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.workflow-builder-v2 .wf-test-run-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.workflow-builder-v2 .wf-test-run-live {
+  padding: 10px 12px;
+}
+.workflow-builder-v2 .wf-test-run-live-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.workflow-builder-v2 .wf-test-run-live-duration {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.workflow-builder-v2 .wf-test-run-open-session {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workflow-builder-v2 .wf-test-run-open-session:hover {
+  background: var(--accent);
+  color: var(--text-inverse, #fff);
+}

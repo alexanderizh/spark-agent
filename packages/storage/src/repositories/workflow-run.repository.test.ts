@@ -21,12 +21,21 @@ describe('WorkflowRunRepository', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `spark-test-workflow-run-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-test-workflow-run-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     db = createTestDb(testDir)
     sessions = new SessionRepository(db)
     repo = new WorkflowRunRepository(db)
-    sessions.create({ id: 'sess-1', kind: 'chat', title: 'Workflow Session', status: 'idle', projectId: 'proj-1' })
+    sessions.create({
+      id: 'sess-1',
+      kind: 'chat',
+      title: 'Workflow Session',
+      status: 'idle',
+      projectId: 'proj-1',
+    })
   })
 
   afterEach(() => {
@@ -63,15 +72,17 @@ describe('WorkflowRunRepository', () => {
     const working = repo.updateSnapshot('run-1', {
       status: 'working',
       state: { plan: 'ready' },
-      executions: [{
-        nodeId: 'plan',
-        agentId: 'planner',
-        instruction: 'plan',
-        inputs: {},
-        attempt: 1,
-        state: 'completed',
-        content: 'ready',
-      }],
+      executions: [
+        {
+          nodeId: 'plan',
+          agentId: 'planner',
+          instruction: 'plan',
+          inputs: {},
+          attempt: 1,
+          state: 'completed',
+          content: 'ready',
+        },
+      ],
       atomicExecutions: [],
       completedNodeIds: ['plan'],
       skippedNodeIds: ['quick-path'],
@@ -93,5 +104,48 @@ describe('WorkflowRunRepository', () => {
     expect(completed?.status).toBe('completed')
     expect(completed?.ended_at).toBe('2026-06-30T00:00:00.000Z')
     expect(repo.findLatestResumable('sess-1', 'workflow-1')).toBeNull()
+  })
+
+  it('lists run summaries by workflow, newest first, without heavy JSON columns', () => {
+    for (const id of ['run-old', 'run-new', 'run-other-workflow']) {
+      const workflowId = id === 'run-other-workflow' ? 'workflow-2' : 'workflow-1'
+      repo.create({
+        id,
+        sessionId: 'sess-1',
+        turnId: `turn-${id}`,
+        workflowId,
+        objective: `objective ${id}`,
+        graph: { nodes: [{ id: 'n1', kind: 'agent', title: 'n1', config: {} }], edges: [] },
+      })
+    }
+    repo.updateSnapshot('run-new', {
+      status: 'failed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: ['n1'],
+      failedNode: {
+        nodeId: 'n2',
+        agentId: 'worker',
+        attempt: 2,
+        error: { code: 'boom', message: 'exploded' },
+      },
+    })
+
+    const rows = repo.listByWorkflow('workflow-1')
+    expect(rows.map((row) => row.id)).toEqual(['run-new', 'run-old'])
+    const newest = rows[0]!
+    expect(newest.status).toBe('failed')
+    expect(newest.failed_node_json).toContain('n2')
+    // 轻量行不含四个重负载 JSON 列（graph/state/executions/atomic）。
+    expect(newest).not.toHaveProperty('graph_json')
+    expect(newest).not.toHaveProperty('state_json')
+    expect(newest).not.toHaveProperty('executions_json')
+    expect(newest).not.toHaveProperty('atomic_executions_json')
+    // limit 生效：只取最新 1 条。
+    expect(repo.listByWorkflow('workflow-1', 1).map((row) => row.id)).toEqual(['run-new'])
+    // 其他工作流隔离。
+    expect(repo.listByWorkflow('workflow-2').map((row) => row.id)).toEqual(['run-other-workflow'])
+    expect(repo.listByWorkflow('workflow-unknown')).toEqual([])
   })
 })

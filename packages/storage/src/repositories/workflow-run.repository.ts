@@ -32,6 +32,22 @@ export interface CreateWorkflowRunParams {
   graph: Record<string, unknown>
 }
 
+/** listByWorkflow 的轻量行：不含 graph_json/state_json/executions_json/atomic_executions_json。 */
+export interface WorkflowRunSummaryRow {
+  id: string
+  session_id: string
+  turn_id: string
+  workflow_id: string
+  status: WorkflowRunStatus
+  objective: string
+  completed_node_ids_json: string
+  skipped_node_ids_json: string
+  failed_node_json: string | null
+  started_at: string
+  updated_at: string
+  ended_at: string | null
+}
+
 export interface UpdateWorkflowRunSnapshotParams {
   status: WorkflowRunStatus
   state: Record<string, unknown>
@@ -136,6 +152,27 @@ export class WorkflowRunRepository extends BaseRepository {
   }
 
   /**
+   * 按工作流查历史运行（工作流编辑器「运行历史」入口）。
+   *
+   * 只取轻量列：graph/state/executions/atomic_executions 四个大 JSON 不进列表查询，
+   * 详情按 runId 单查 get()。completed/skipped/failed 三个小 JSON 保留用于列表计数。
+   * rowid 决胜：同毫秒创建的多条运行按插入顺序倒排，排序稳定。
+   */
+  listByWorkflow(workflowId: string, limit = 30): WorkflowRunSummaryRow[] {
+    return this.raw
+      .prepare(
+        `SELECT id, session_id, turn_id, workflow_id, status, objective,
+                completed_node_ids_json, skipped_node_ids_json, failed_node_json,
+                started_at, updated_at, ended_at
+         FROM workflow_runs
+         WHERE workflow_id = ?
+         ORDER BY started_at DESC, rowid DESC
+         LIMIT ?`,
+      )
+      .all(workflowId, limit) as WorkflowRunSummaryRow[]
+  }
+
+  /**
    * Delete all workflow runs for a given session.
    *
    * 三轮功能逻辑审查修复：deleteSession 时清理 workflow_runs（之前漏清）。
@@ -161,7 +198,12 @@ export class WorkflowRunRepository extends BaseRepository {
       .run(
         now,
         now,
-        this.toJson({ nodeId: 'workflow', agentId: 'workflow', attempt: 1, error: { code: 'stale_run', message: 'Workflow run abandoned before completion.' } }),
+        this.toJson({
+          nodeId: 'workflow',
+          agentId: 'workflow',
+          attempt: 1,
+          error: { code: 'stale_run', message: 'Workflow run abandoned before completion.' },
+        }),
         olderThanIso,
       )
     return result.changes

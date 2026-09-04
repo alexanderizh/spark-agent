@@ -167,6 +167,9 @@ import {
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
+  detectWorkflowGraphCycles,
+  formatWorkflowCycleError,
+  normalizeWorkflowGraph,
   CustomToolRuntimeCatalog,
   ToolPackageRuntimeCatalog,
 } from '@spark/agent-runtime'
@@ -277,6 +280,8 @@ import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
+import { registerWorkflowRunIpc } from './registerWorkflowRunIpc.js'
+import { registerWorkflowTestRunIpc } from './registerWorkflowTestRunIpc.js'
 import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
 import { registerCanvasAudioExtractIpc } from './registerCanvasAudioExtractIpc.js'
 import { registerCanvasFrameExtractIpc } from './registerCanvasFrameExtractIpc.js'
@@ -3334,6 +3339,11 @@ export function registerAllIpcHandlers(): void {
   registerFontAssetIpc()
   registerVoiceIpc()
   registerCanvasWorkflowIpc()
+  registerWorkflowRunIpc()
+  registerWorkflowTestRunIpc({
+    providerService: getProviderService(),
+    sessionService: getSessionService(),
+  })
   registerCanvasDepthTaskIpc()
   registerCanvasAudioExtractIpc()
   registerCanvasFrameExtractIpc()
@@ -7357,8 +7367,19 @@ export function registerAllIpcHandlers(): void {
     return { workflow: workflow != null ? toWorkflowItem(workflow) : null }
   })
 
+  // 保存前环校验：环图在运行时只能以 workflow_deadlock 失败（英文裸 node id 报错），
+  // 这里在持久化前用拓扑排序即时拦截，报错带节点标题便于用户定位。
+  const assertWorkflowGraphAcyclic = (graph: unknown): void => {
+    if (graph == null) return
+    const reports = detectWorkflowGraphCycles(
+      normalizeWorkflowGraph(graph as Parameters<typeof normalizeWorkflowGraph>[0]),
+    )
+    if (reports.length > 0) throw new Error(formatWorkflowCycleError(reports))
+  }
+
   typedIpcHandle('workflow:create', async (req) => {
     const { graph, ...fields } = req
+    assertWorkflowGraphAcyclic(graph)
     const workflow = getWorkflowRepository().create({
       ...fields,
       ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),
@@ -7368,6 +7389,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workflow:update', async (req) => {
     const { id, graph, ...fields } = req
+    assertWorkflowGraphAcyclic(graph)
     const workflow = getWorkflowRepository().update(id, {
       ...fields,
       ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),

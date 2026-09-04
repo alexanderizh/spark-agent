@@ -466,3 +466,18 @@ export {
   resolveRuntimeToolPath,
   resolveMcpNodeRuntimeExecutable,
 } from './services/session-mcp-tooling-helpers.js'
+
+// 工作流运行进度组装：主进程「历史运行回看」IPC 复用同一纯函数，保证历史明细与实时进度渲染一致。
+export { buildWorkflowProgressNodes } from './services/session-workflow-helpers.js'
+export type { WorkflowProgressNodeMetaInput } from './services/session-workflow-helpers.js'
+export { normalizeWorkflowGraph } from './services/workflow-executor.js'
+// 环检测：保存/试跑前的编译期校验（运行时遇环只能以 workflow_deadlock 失败，报错为裸 id）。
+export {
+  detectWorkflowGraphCycles,
+  formatWorkflowCycleError,
+} from './services/workflow-executor.js'
+export type { WorkflowGraphCycleReport } from './services/workflow-executor.js'
+export type {
+  WorkflowAgentExecutionRecord,
+  WorkflowAtomicNodeExecutionRecord,
+} from './services/workflow-executor.js'

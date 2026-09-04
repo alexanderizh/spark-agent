@@ -26,7 +26,9 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
+import type { SessionId } from '@spark/protocol'
 import type {
   ManagedAgent,
   McpServerItem,
@@ -53,6 +55,8 @@ import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { WorkflowLoopBodySummary } from './workflow/WorkflowLoopBodySummary'
 import { WorkflowLoopBodyToolbar } from './workflow/WorkflowLoopBodyToolbar'
+import { WorkflowRunHistory } from './workflow/WorkflowRunHistory'
+import { WorkflowTestRunPanel } from './workflow/WorkflowTestRunPanel'
 import {
   collectWorkflowNodeIds,
   commitLoopBodyGraph,
@@ -183,7 +187,8 @@ export function WorkflowView() {
 
 function WorkflowViewInner() {
   const { toast } = useToast()
-  const { registerNavGuard, requestConfirm, setHasUnsavedChanges } = useApp()
+  const { registerNavGuard, requestConfirm, setHasUnsavedChanges, setTweak } = useApp()
+  const { setActiveSession } = useSessionSidebar()
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -217,6 +222,10 @@ function WorkflowViewInner() {
   const flowWrapRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<SparkFlowNode, Edge> | null>(null)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  // 运行历史面板（按当前工作流查 workflow_runs 持久化快照）。
+  const [runHistoryOpen, setRunHistoryOpen] = useState(false)
+  // 试跑面板（workflow:test-run：真实会话执行 + 轮询 run-detail 展示节点级进度）。
+  const [testRunOpen, setTestRunOpen] = useState(false)
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -542,16 +551,23 @@ function WorkflowViewInner() {
       return
     }
     const graph = completeRootGraph
-    const saved = (
-      await updateWorkflow({
-        id: draft.id,
-        name: draft.name,
-        description: draft.description,
-        status: draft.status,
-        tags: draft.tags,
-        graph,
-      })
-    ).workflow
+    let saved: WorkflowItem
+    try {
+      saved = (
+        await updateWorkflow({
+          id: draft.id,
+          name: draft.name,
+          description: draft.description,
+          status: draft.status,
+          tags: draft.tags,
+          graph,
+        })
+      ).workflow
+    } catch (err) {
+      // 保存被主进程环校验等拒绝：展示带节点标题的具体原因，不中断编辑。
+      toast.error(err instanceof Error ? err.message : '工作流保存失败。')
+      return
+    }
     toast.success('工作流已保存')
     activeIdRef.current = saved.id
     setWorkflows((prev) => prev.map((item) => (item.id === saved.id ? saved : item)))
@@ -1178,6 +1194,34 @@ function WorkflowViewInner() {
           >
             {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
           </Button>
+          {!editingLoopBody && workflows.some((item) => item.id === draft.id) && (
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Play size={12} />}
+              onClick={() => {
+                setRunHistoryOpen(false)
+                setTestRunOpen((open) => !open)
+              }}
+              title="在编辑器内试跑这个工作流（执行已保存版本，真实会话运行，节点级进度与失败原因）"
+            >
+              试跑
+            </Button>
+          )}
+          {!editingLoopBody && workflows.some((item) => item.id === draft.id) && (
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.History size={12} />}
+              onClick={() => {
+                setTestRunOpen(false)
+                setRunHistoryOpen((open) => !open)
+              }}
+              title="查看这个工作流的历史运行（含节点输出、失败原因与耗时）"
+            >
+              历史
+            </Button>
+          )}
           {!editingLoopBody && (
             <Button
               size="middle"
@@ -1319,6 +1363,20 @@ function WorkflowViewInner() {
               data: { ...node.data, config: { ...node.data.config, ...patch } },
             }))
           }
+        />
+      )}
+      {runHistoryOpen && (
+        <WorkflowRunHistory workflowId={draft.id} onClose={() => setRunHistoryOpen(false)} />
+      )}
+      {testRunOpen && (
+        <WorkflowTestRunPanel
+          workflowId={draft.id}
+          workflowDescription={draft.description ?? ''}
+          onClose={() => setTestRunOpen(false)}
+          onOpenSession={(sessionId) => {
+            setTweak('view', 'chat')
+            setActiveSession(sessionId as SessionId)
+          }}
         />
       )}
     </div>

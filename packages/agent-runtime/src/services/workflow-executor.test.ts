@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildWorkflowNodeInputs,
+  detectWorkflowGraphCycles,
   executeWorkflowAgentPlan,
   getWorkflowAgentWorkerIds,
   interpolateWorkflowNodeConfig,
@@ -1403,6 +1404,85 @@ describe('executeWorkflowAgentPlan', () => {
 })
 
 // ─── {{key}} 模板插值 ───────────────────────────────────────────────────────
+
+describe('detectWorkflowGraphCycles', () => {
+  it('returns empty for a DAG', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'a', kind: 'input', title: 'A', config: {} },
+        { id: 'b', kind: 'agent', title: 'B', config: {} },
+        { id: 'c', kind: 'agent', title: 'C', config: {} },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'a', to: 'c' },
+        { from: 'b', to: 'c' },
+      ],
+    })
+    expect(detectWorkflowGraphCycles(graph)).toEqual([])
+  })
+
+  it('reports cycle nodes with titles on the main graph', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'a', kind: 'agent', title: '起点', config: {} },
+        { id: 'b', kind: 'agent', title: '环一', config: {} },
+        { id: 'c', kind: 'agent', title: '环二', config: {} },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'c' },
+        { from: 'c', to: 'b' },
+      ],
+    })
+    const reports = detectWorkflowGraphCycles(graph)
+    expect(reports).toHaveLength(1)
+    const report = reports[0]
+    expect(report?.scope).toBe('主图')
+    const ids = (report?.cycleNodes ?? []).map((node) => node.id).sort()
+    expect(ids).toEqual(['b', 'c'])
+    const titles = (report?.cycleNodes ?? []).map((node) => node.title).sort()
+    expect(titles).toEqual(['环一', '环二'])
+  })
+
+  it('detects cycles inside a loop body subgraph with scoped label', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'loop',
+          kind: 'loop',
+          title: '迭代',
+          config: {
+            body: {
+              nodes: [
+                { id: 'x', kind: 'agent', title: '体内X', config: {} },
+                { id: 'y', kind: 'agent', title: '体内Y', config: {} },
+              ],
+              edges: [
+                { from: 'x', to: 'y' },
+                { from: 'y', to: 'x' },
+              ],
+            },
+          },
+        },
+      ],
+      edges: [],
+    })
+    const reports = detectWorkflowGraphCycles(graph)
+    expect(reports).toHaveLength(1)
+    const report = reports[0]
+    expect(report?.scope).toBe('主图 › 迭代 循环体')
+    expect((report?.cycleNodes ?? []).map((node) => node.id).sort()).toEqual(['x', 'y'])
+  })
+
+  it('ignores edges pointing at removed nodes', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [{ id: 'a', kind: 'agent', title: 'A', config: {} }],
+      edges: [{ from: 'a', to: 'ghost' }],
+    })
+    expect(detectWorkflowGraphCycles(graph)).toEqual([])
+  })
+})
 
 describe('interpolateWorkflowTemplate', () => {
   const context = { brief: '上线说明', count: 3, ok: true, list: [1, 2] }

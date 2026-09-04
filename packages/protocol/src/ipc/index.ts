@@ -16,7 +16,14 @@
  * 注：P0-07 中旭阳-高级开发将基于此类型实现 typesafe invoke/handle 封装
  */
 
-import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
+import type {
+  AgentEvent,
+  SessionId,
+  TurnId,
+  TeamA2ATask,
+  TeamA2AReply,
+  WorkflowProgressNode,
+} from '../events/index.js'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
 import type {
   ImageProcessProgress,
@@ -2121,6 +2128,68 @@ export interface WorkflowPlatformToolsResponse {
       required?: string[]
     }
   }>
+}
+
+// ─── Workflow Run History（历史运行回看） ────────────────────────────────────
+
+export interface WorkflowRunsRequest {
+  workflowId: string
+  limit?: number
+}
+
+/** 运行列表摘要项：不含 graph/执行记录等重负载，计数由 IPC 层解析后给出。 */
+export interface WorkflowRunSummaryItem {
+  id: string
+  sessionId: string
+  status: 'working' | 'completed' | 'failed' | 'canceled'
+  objective: string
+  startedAt: string
+  endedAt: string | null
+  updatedAt: string
+  completedCount: number
+  skippedCount: number
+  failedNodeId: string | null
+}
+
+export interface WorkflowRunsResponse {
+  runs: WorkflowRunSummaryItem[]
+}
+
+export interface WorkflowRunDetailRequest {
+  runId: string
+}
+
+/** 单次运行详情：节点明细复用 workflow_progress 的 WorkflowProgressNode，历史回看与实时进度渲染一致。 */
+export interface WorkflowRunDetail {
+  id: string
+  sessionId: string
+  workflowId: string
+  status: 'working' | 'completed' | 'failed' | 'canceled'
+  objective: string
+  startedAt: string
+  endedAt: string | null
+  nodes: WorkflowProgressNode[]
+}
+
+export interface WorkflowRunDetailResponse {
+  run: WorkflowRunDetail | null
+}
+
+// ─── Workflow Test Run（编辑器内试跑） ──────────────────────────────────────
+
+export interface WorkflowTestRunRequest {
+  workflowId: string
+  /** 试跑目标，会作为触发 turn 的用户消息（workflow_run 模式下即工具的 objective）。 */
+  objective?: string
+}
+
+export interface WorkflowTestRunResponse {
+  sessionId: string
+  /** 本次试跑实际使用的 agent（已绑定该工作流则复用，否则为试跑新建）。 */
+  agentId: string
+  agentName: string
+  /** 是否为本次试跑新建的临时 agent（复用已有绑定时为 false）。 */
+  createdAgent: boolean
 }
 
 // ─── Skill Channels ─────────────────────────────────────────────────────────
@@ -6582,6 +6651,12 @@ export interface IpcChannelMap
   'workflow:delete': [WorkflowDeleteRequest, WorkflowDeleteResponse]
   /** 工作流工具节点「平台工具直调」候选清单（已启用的工具包工具 + 自定义工具，含 inputSchema）。 */
   'workflow:platform-tools': [WorkflowPlatformToolsRequest, WorkflowPlatformToolsResponse]
+  /** 工作流历史运行列表（按 workflowId 查询，轻量摘要，不含执行明细）。 */
+  'workflow:runs': [WorkflowRunsRequest, WorkflowRunsResponse]
+  /** 单次历史运行详情：含逐节点状态/错误/输出预览/耗时，从持久化快照还原。 */
+  'workflow:run-detail': [WorkflowRunDetailRequest, WorkflowRunDetailResponse]
+  /** 编辑器内试跑：复用/新建绑定该工作流的 agent，创建试跑会话并提交触发 turn（真实运行时，会话留档）。 */
+  'workflow:test-run': [WorkflowTestRunRequest, WorkflowTestRunResponse]
 
   // Skill Registry (Skill Store)
   'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]

@@ -233,6 +233,7 @@ export type {
   CreateWorkflowRunParams,
   UpdateWorkflowRunSnapshotParams,
   WorkflowRunRow,
+  WorkflowRunSummaryRow,
   WorkflowRunStatus,
 } from './workflow-run.repository.js'
 export { TeamDispatchRepository } from './team-dispatch.repository.js'

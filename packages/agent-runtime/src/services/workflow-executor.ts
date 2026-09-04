@@ -204,6 +204,70 @@ function normalizeWorkflowEdgeCondition(condition: unknown): WorkflowEdgeConditi
   return undefined
 }
 
+/** 图环检测结果：scope 定位子图（主图或某 loop 体），cycleNodes 为环上（或环下游）无法拓扑排序的节点。 */
+export type WorkflowGraphCycleReport = {
+  scope: string
+  cycleNodes: { id: string; title: string }[]
+}
+
+/**
+ * 编译期环检测：对主图与所有 loop 体子图做 Kahn 拓扑排序，返回存在环的子图报告。
+ * 运行时 executor 遇到环只能以 workflow_deadlock 失败（英文裸 node id 报错），本函数
+ * 供保存/试跑前的即时校验使用，报告携带节点标题便于用户定位。
+ */
+export function detectWorkflowGraphCycles(
+  graph: NormalizedWorkflowGraph,
+): WorkflowGraphCycleReport[] {
+  const reports: WorkflowGraphCycleReport[] = []
+
+  const visit = (target: NormalizedWorkflowGraph, scope: string): void => {
+    // Kahn：逐步移除入度为 0 的节点；剩余节点即环上或环下游节点。
+    const remaining = new Map(target.nodes.map((node) => [node.id, 0]))
+    for (const edge of target.edges) {
+      if (!remaining.has(edge.from) || !remaining.has(edge.to)) continue
+      remaining.set(edge.to, (remaining.get(edge.to) ?? 0) + 1)
+    }
+    const queue = [...remaining.entries()].filter(([, degree]) => degree === 0).map(([id]) => id)
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!
+      remaining.delete(nodeId)
+      for (const edge of target.edges) {
+        if (edge.from !== nodeId || !remaining.has(edge.to)) continue
+        const next = (remaining.get(edge.to) ?? 0) - 1
+        remaining.set(edge.to, next)
+        if (next === 0) queue.push(edge.to)
+      }
+    }
+    if (remaining.size > 0) {
+      const byId = new Map(target.nodes.map((node) => [node.id, node]))
+      reports.push({
+        scope,
+        cycleNodes: [...remaining.keys()].map((id) => ({
+          id,
+          title: byId.get(id)?.title ?? id,
+        })),
+      })
+    }
+    // 递归检查 loop 体子图：loop 体内部成环同样会在循环执行时死锁。
+    for (const node of target.nodes) {
+      const bodyGraph = getWorkflowLoopBodyGraph(node)
+      if (bodyGraph != null) visit(bodyGraph, `${scope} › ${node.title} 循环体`)
+    }
+  }
+
+  visit(graph, '主图')
+  return reports
+}
+
+/** 把环检测报告格式化为面向用户的一条错误消息（带节点标题，不暴露裸 id 报错）。 */
+export function formatWorkflowCycleError(reports: WorkflowGraphCycleReport[]): string {
+  const parts = reports.map(
+    (report) =>
+      `${report.scope}存在环：${report.cycleNodes.map((node) => `「${node.title}」`).join('、')}`,
+  )
+  return `工作流不允许出现循环依赖（${parts.join('；')}）。请调整连线后再保存。`
+}
+
 export function orderWorkflowNodes(
   nodes: NormalizedWorkflowNode[],
   edges: NormalizedWorkflowEdge[],

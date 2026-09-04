@@ -227,6 +227,7 @@ export type {
   CreateWorkflowRunParams,
   UpdateWorkflowRunSnapshotParams,
   WorkflowRunRow,
+  WorkflowRunSummaryRow,
   WorkflowRunStatus,
   TeamDispatchRow,
   TeamDispatchState,
