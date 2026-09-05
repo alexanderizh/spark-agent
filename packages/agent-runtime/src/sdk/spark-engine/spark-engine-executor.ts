@@ -1,22 +1,50 @@
 import { randomUUID } from 'node:crypto'
 
+import { Agent, ModelRegistry, createDefaultEnv } from '@spark/agent'
+import type { LlmService } from '@spark/agent'
 import type { AgentEvent } from '@spark/protocol'
 
 import type { EngineExecutor } from '../engine-executor.js'
 import type { SDKExecutorConfig } from '../types.js'
+import { SparkEventMapper } from './event-mapper.js'
+import { resolveSparkModelRoute, toSparkEnginePermissionMode } from './model-route.js'
+
+/**
+ * 测试注入口：替换「渠道配置 → LlmService」的默认构造（registerHttp 路径），
+ * 供单测注入 FakeModel 驱动完整 turn。仅测试代码调用，生产路径恒为 null。
+ */
+let sparkLlmFactoryForTests: ((config: SDKExecutorConfig) => LlmService) | null = null
+
+export function setSparkLlmFactoryForTests(
+  factory: ((config: SDKExecutorConfig) => LlmService) | null,
+): void {
+  sparkLlmFactoryForTests = factory
+}
 
 /**
  * Spark 引擎执行器（自研 spark-engine，进程内 @spark/agent SDK）。
  *
- * M1 阶段为契约合规的占位实现：executeTurn 发出 agent_error + error 终态
- * 状态事件后正常 resolve（终态只经事件流表达，见 EngineExecutor 契约），
- * 保证类型层登记完 'spark' 后任何提前触达该引擎的路径都失败可见、不悬挂。
- * M2 落地真实实现（Agent.open → session.turn → 事件映射）时整体替换本类。
+ * 每 turn 新建实例（契约）；turn 生命周期：
+ * 1. resolveSparkModelRoute 校验并归一渠道配置 → ModelRegistry.registerHttp
+ *    注入模型（完全绕过 config.toml）。
+ * 2. Agent.open({cwd, env}) → 首轮 newSession，续轮 openSession（事件账本重放，
+ *    崩溃恢复由引擎侧 findInterruptedTurn 完成）。
+ * 3. session.turn(input, {signal, onEvent, onDelta})；spark 事件/增量经
+ *    SparkEventMapper 映射为 protocol AgentEvent 后上抛。
+ * 4. 终态只经事件流表达：turn.completed/cancelled/failed 由映射器产出终态
+ *    agent_status；cancel() 经 AbortSignal 触发引擎的 turn.cancelled 路径。
+ *
+ * 数据根：默认 ~/.spark（与 SparkCliBridgeService / spark CLI 共用，跨端一致）；
+ * config.sparkDataRoot 可覆盖（测试隔离用）。构造参数经 config 传入（契约）。
+ *
+ * M3 待接：审批桥（当前 FakeApprover 全 deny，仅 bypass/acceptEdits 模式可完整
+ * 跑工具循环）；自定义系统提示词注入（DefaultPromptComposer 接缝在引擎侧扩展）。
  */
 export class SparkEngineExecutor implements EngineExecutor {
   readonly engine = 'spark' as const
 
   readonly #listeners = new Set<(event: AgentEvent) => void>()
+  #abortController: AbortController | null = null
 
   onEvent(listener: (event: AgentEvent) => void): void {
     this.#listeners.add(listener)
@@ -27,35 +55,127 @@ export class SparkEngineExecutor implements EngineExecutor {
   }
 
   cancel(): void {
-    // 占位实现：无进行中的 turn，取消无事可做。
+    this.#abortController?.abort()
   }
 
   async executeTurn(
     sessionId: string,
     turnId: string,
-    _userMessage: string,
-    _config: SDKExecutorConfig,
+    userMessage: string,
+    config: SDKExecutorConfig,
   ): Promise<void> {
-    const base = {
-      id: randomUUID(),
-      sessionId,
-      turnId,
-      timestamp: new Date().toISOString(),
-      seq: 0,
+    const mapper = new SparkEventMapper({ sessionId, turnId, model: config.model })
+    const emitFrom = (events: readonly AgentEvent[]): void => {
+      for (const event of events) this.#emit(event)
     }
-    this.#emit({
-      ...base,
-      type: 'agent_error',
-      code: 'spark_executor_not_implemented',
-      title: 'Spark 执行器尚未实现',
-      message:
-        'Spark 引擎执行器处于 M1 占位阶段，真实实现随 M2 落地（见 todo/2026-09-05-spark-engine-adapter-plan.md）。',
-      retryable: false,
+    const fail = (code: string, message: string): void => {
+      this.#emit({
+        id: randomUUID(),
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        type: 'agent_error',
+        code,
+        title: 'Spark 引擎错误',
+        message,
+        retryable: false,
+      })
+      this.#emit({
+        id: randomUUID(),
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        type: 'agent_status',
+        status: 'error',
+      })
+    }
+
+    const route = resolveSparkModelRoute(config)
+    if (!route.ok) {
+      fail('spark_route_unresolvable', route.reason)
+      return
+    }
+
+    const llm =
+      sparkLlmFactoryForTests != null
+        ? sparkLlmFactoryForTests(config)
+        : (() => {
+            const registry = new ModelRegistry()
+            registry.registerHttp({
+              id: route.modelId,
+              providerId: 'sparkwork',
+              protocol: route.protocol,
+              model: config.model,
+              ...(route.baseUrl != null ? { baseUrl: route.baseUrl } : {}),
+              apiKey: route.apiKey,
+            })
+            return registry.createRoute([route.modelId])
+          })()
+
+    const workspaceRoot = config.workspaceRootPath
+    const env = createDefaultEnv({
+      cwd: workspaceRoot,
+      ...(config.sparkDataRoot != null ? { dataRoot: config.sparkDataRoot } : {}),
+      llm,
     })
-    this.#emit({ ...base, type: 'agent_status', status: 'error' })
+    const agent = Agent.open({ cwd: workspaceRoot, env })
+
+    // 续跑：resume gate 持久化的 sdkSessionId 存在且可重放时走 openSession；
+    // 会话账本缺失（数据根被清）时降级新会话，不阻断本轮。
+    let session
+    const resumeCandidate = config.continueSession === true ? config.sdkSessionId : undefined
+    if (resumeCandidate != null && resumeCandidate.length > 0) {
+      try {
+        session = await agent.openSession(resumeCandidate)
+      } catch {
+        session = undefined
+      }
+    }
+    if (session == null) {
+      session = await agent.newSession({
+        permissionMode: toSparkEnginePermissionMode(config.permissionMode),
+      })
+    }
+    try {
+      await config.sparkSessionIdObserver?.(session.sessionId)
+    } catch {
+      // 观察者异常不影响 turn 执行。
+    }
+
+    this.#abortController = new AbortController()
+    try {
+      await session.turn(userMessage, {
+        signal: this.#abortController.signal,
+        onEvent: (sparkEvent) => emitFrom(mapper.mapSparkEvent(sparkEvent)),
+        onDelta: (delta) => emitFrom(mapper.mapDelta(delta)),
+      })
+    } catch (error) {
+      // 引擎异常上抛（如 fake script 耗尽、内部 invariant）：映射器可能已发过
+      // turn.failed 终态，此处兜底补发（fail 内部不判重，最坏双 error 事件，
+      // session 层按终态 agent_status 幂等收敛）。
+      const message = error instanceof Error ? error.message : String(error)
+      if (!this.#terminalEmitted) fail('spark_turn_exception', message)
+    } finally {
+      this.#abortController = null
+    }
   }
 
+  /** mapper 已产出终态（completed/cancelled/error 的 agent_status）即视为兜底豁免。 */
+  get #terminalEmitted(): boolean {
+    return this.#sawTerminalStatus
+  }
+
+  #sawTerminalStatus = false
+
   #emit(event: AgentEvent): void {
+    if (
+      event.type === 'agent_status' &&
+      ['completed', 'cancelled', 'error'].includes(event.status)
+    ) {
+      this.#sawTerminalStatus = true
+    }
     for (const listener of this.#listeners) {
       try {
         listener(event)

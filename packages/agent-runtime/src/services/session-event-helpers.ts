@@ -6,6 +6,7 @@
  * - createInterruptedTurnEvents：app 重启时合成中断 + 取消事件
  * - shouldRunTurnPostProcessing：判断是否需要跑 turn 后处理
  * - collectCompleteAssistantTurnText：从 assistant_message 事件序列中聚合完整正文
+ * - makeEventBase：构造事件公共底座（id/sessionId/turnId/timestamp/seq）
  *
  * session.service.ts 顶部 re-export 本文件，保持向后兼容。
  */
@@ -76,6 +77,20 @@ export function createInterruptedTurnEvents(
 
 export function shouldRunTurnPostProcessing(status: AgentStatusEvent['status'] | null): boolean {
   return status === 'completed'
+}
+
+/** 事件公共底座：seq 由 emitAndPersist 落库时统一重编，此处恒 0（与各 runner 内联口径一致）。 */
+export function makeEventBase(
+  sessionId: string,
+  turnId: string,
+): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    turnId,
+    timestamp: new Date().toISOString(),
+    seq: 0,
+  }
 }
 
 export function collectCompleteAssistantTurnText(events: AssistantMessageEvent[]): string {

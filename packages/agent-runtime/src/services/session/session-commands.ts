@@ -59,6 +59,7 @@ import {
 } from './session-command-title-refinement.js'
 import { getAgentAdapterFromSession, getPermissionModeFromSession } from './engine-kinds.js'
 import { createCodexNativeThreadClearPatch } from './codex-native-thread-binding.js'
+import { createSparkLedgerClearPatch } from './spark-ledger-binding.js'
 import { ensureSessionWorkspaceRootPathSync } from '../session-workspace-root.js'
 
 const log = createLogger('session.commands')
@@ -533,6 +534,8 @@ export class SessionCommandController {
           id,
           createCodexNativeThreadClearPatch(sessionRepo.getMetadata(id)),
         )
+        // spark ledger 绑定同源清理：下一轮 spark turn 创建全新引擎会话。
+        sessionRepo.patchMetadata(id, createSparkLedgerClearPatch(sessionRepo.getMetadata(id)))
         eventRepo.deleteBySession(id)
         this.host.clearSessionEventSequencer(id)
         this.host.clearUsageLedgerTurnState(id)
