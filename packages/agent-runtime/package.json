@@ -18,6 +18,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@openai/codex-sdk": "0.149.0",
+    "@spark/agent": "workspace:*",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",

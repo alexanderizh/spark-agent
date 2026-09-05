@@ -5,7 +5,7 @@
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "engines": {
-    "node": ">=22.14.0 <23"
+    "node": ">=22.14.0"
   },
   "bin": {
     "spark": "./dist/cli/main.js"

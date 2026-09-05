@@ -8,9 +8,17 @@ nodeLinker: hoisted
 packages:
   - 'apps/*'
   - 'packages/*'
+  # 自研 agent 引擎：进程内 SDK（@spark/agent）作为第三执行器载具。
+  # 独立于 packages/* 命名空间（有自己的 tsup/vitest 工具链与 engines pin）。
+  - 'spark-engine'
 # Release-security pins for vulnerable transitive runtime/build dependencies.
 # Keep these at patched, API-compatible versions until their parents catch up.
 overrides:
+  # react 全仓统一到 spark-engine 的精确 pin（19.2.8）：hoisted 布局下若根副本
+  # (19.2.6) 与 spark-engine 嵌套副本 (19.2.8) 并存，ink (根) 与 TUI 测试 (嵌套)
+  # 会形成双 react 实例 → hooks 上下文断裂、渲染空帧。渲染端 ^19.0.0 兼容此补丁级。
+  react: 19.2.8
+  react-dom: 19.2.8
   '@fast-csv/parse': 4.3.6
   '@hono/node-server': 2.0.12
   '@xmldom/xmldom@0.7.13': 0.8.13
