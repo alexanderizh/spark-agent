@@ -527,6 +527,25 @@ importers:
         specifier: 3.2.6
         version: 3.2.6(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@2.2.0)(canvas@3.2.3))(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0)(yaml@2.9.0)
 
+  packages/tool-sdk:
+    dependencies:
+      '@spark/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.19
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.6
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@22.19.19)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@2.2.0)(canvas@3.2.3))(less@4.6.4)(lightningcss@1.32.0)(sass@1.51.0)(yaml@2.9.0)
+
 packages:
 
   '@ant-design/colors@8.0.1':

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "spark.example-python-echo",
+  "version": "1.0.0",
+  "name": "Python Echo",
+  "description": "Dependency-free Python Tool Package example.",
+  "runtime": {
+    "adapter": "process",
+    "protocol": "spark-tool-process-v1",
+    "command": "python3",
+    "args": ["runner.py"],
+    "lifecycle": "persistent"
+  },
+  "tools": [
+    {
+      "name": "echo",
+      "title": "Echo text",
+      "description": "Return the supplied text.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "text": { "type": "string" } },
+        "required": ["text"]
+      },
+      "risk": "read",
+      "effect": "read",
+      "idempotency": "safe"
+    }
+  ],
+  "environment": [],
+  "permissions": {
+    "declaredOsEffects": [],
+    "requiredSparkCapabilities": [],
+    "optionalSparkCapabilities": []
+  }
+}
