@@ -140,6 +140,44 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 | Windows | `.exe` / NSIS 安装包 |
 | Linux   | `.AppImage` / `.deb` |
 
+> 桌面应用已内置 spark-engine（SDK 进程内运行），日常使用无需额外安装 CLI。
+
+### Spark CLI（可选）
+
+仅当需要在终端里使用 `spark` 命令 / TUI 时才单独安装；CLI 与桌面应用共用 `~/.spark` 数据根，可复用桌面端已配置的渠道凭据。
+
+**macOS / Linux**（要求 Node.js `>=22.14 <23`）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.sh | sh
+```
+
+**Windows**（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/alexanderizh/spark-agent/spark-cli-releases/install.ps1 | iex
+```
+
+安装脚本会下载对应版本的 npm tarball 并对照 `latest.json` 校验 sha256，支持指定版本与离线安装：
+
+```sh
+sh install.sh --version 0.4.0            # 安装固定版本
+sh install.sh --tarball ./spark-agent-0.4.0.tgz   # 本地 tarball 离线安装
+```
+
+**更新**（事务式自更新，失败自动回滚）：
+
+```sh
+spark update                     # 检查并更新到最新版
+spark update --check             # 仅检查是否有新版本
+spark update --target 0.4.0      # 安装 / 回退到指定版本
+spark update --allow-prerelease  # 允许预发布版本
+```
+
+安装或更新后运行 `spark --version` 与 `spark doctor` 验证环境。
+
+首次启动会在选择器里选一次模型，之后选择会写入 `~/.spark/config.toml`（`[agent].model`）自动复用，不再每次询问；切换用 `/model` 或 `spark --model <route-id>`（仅当次生效）。
+
 ## 快速开始
 
 1. 安装应用，配置一种 Provider（OpenAI 兼容 / Anthropic 协议），或启用本地 Claude / Codex CLI
