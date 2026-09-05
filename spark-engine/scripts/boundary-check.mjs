@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { relative, resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const sourceRoot = resolve(packageRoot, 'src')
@@ -33,7 +33,9 @@ for (const file of await walk(sourceRoot)) {
     const specifier = match[1]
     if (!specifier?.startsWith('.')) continue
     const target = resolve(file, '..', specifier)
-    if (target !== sourceRoot && !target.startsWith(`${sourceRoot}/`)) {
+    // 用平台分隔符（win32 下 resolve 产出反斜杠路径，硬编码 '/' 会把
+    // src 内部的相对 import 全部误判为逃逸，导致 Windows CI 必挂）。
+    if (target !== sourceRoot && !target.startsWith(`${sourceRoot}${sep}`)) {
       violations.push(`${relative(packageRoot, file)}: import escapes src (${specifier})`)
     }
   }
