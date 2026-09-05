@@ -88,6 +88,7 @@ export function SettingsLogViewer() {
           onChange={(value) => setScope(value as LogViewerScope)}
           options={[
             { label: '画布任务', value: 'canvas' },
+            { label: '工具运行', value: 'tools' },
             { label: '全部日志', value: 'all' },
           ]}
         />
@@ -103,7 +104,13 @@ export function SettingsLogViewer() {
           ]}
         />
         <Input
-          placeholder={scope === 'canvas' ? '任务 ID / 项目 / 模型…' : '关键词过滤…'}
+          placeholder={
+            scope === 'canvas'
+              ? '任务 ID / 项目 / 模型…'
+              : scope === 'tools'
+                ? '包 ID / correlationId / 日志内容…'
+                : '关键词过滤…'
+          }
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           allowClear
@@ -140,23 +147,20 @@ export function SettingsLogViewer() {
               ? '加载中…'
               : scope === 'canvas'
                 ? '暂无画布任务日志。运行节点后点击"刷新"。'
-                : '暂无日志记录。'}
+                : scope === 'tools'
+                  ? '暂无工具运行日志。调用或测试工具后点击“刷新”。'
+                  : '暂无日志记录。'}
           </div>
         ) : (
           renderedEntries.map((entry, index) =>
             entry.kind === 'divider' ? (
-              <div
-                key={`d${index}`}
-                className={`log-divider log-divider-${entry.dividerVariant}`}
-              >
+              <div key={`d${index}`} className={`log-divider log-divider-${entry.dividerVariant}`}>
                 <span className="log-divider-label">{entry.label}</span>
               </div>
             ) : (
               <div key={`l${index}`} className={`log-line log-${entry.level}`}>
                 {entry.event && (
-                  <span className={`log-event log-event-${entry.eventVariant}`}>
-                    {entry.event}
-                  </span>
+                  <span className={`log-event log-event-${entry.eventVariant}`}>{entry.event}</span>
                 )}
                 <span className="log-line-meta">{entry.meta}</span>
                 <span className="log-line-message">{entry.message}</span>
@@ -190,7 +194,9 @@ function renderLogEntries(rawLines: string[]): LogEntry[] {
   const entries: LogEntry[] = []
   for (const raw of rawLines) {
     const cleaned = raw.replace(ANSI_PATTERN, '')
-    const headerMatch = cleaned.match(/^\[([^\]]+)\]\s*\[(DEBUG|INFO|WARN|ERROR)\]\s*\[([^\]]+)\]\s*(.*)$/)
+    const headerMatch = cleaned.match(
+      /^\[([^\]]+)\]\s*\[(DEBUG|INFO|WARN|ERROR)\]\s*\[([^\]]+)\]\s*(.*)$/,
+    )
     if (!headerMatch) {
       entries.push({
         kind: 'line',
@@ -241,7 +247,9 @@ function renderLogEntries(rawLines: string[]): LogEntry[] {
 
 function formatBlockLabel(namespace: string, rest: string, timestamp: string): string {
   const labelMatch = rest.match(/label=("(?:[^"\\]|\\.)*"|\S+)/)
-  const label = labelMatch ? unquoteLabel(labelMatch[1] ?? '') : rest.replace(/^event=[a-zA-Z0-9-]+\s*/, '')
+  const label = labelMatch
+    ? unquoteLabel(labelMatch[1] ?? '')
+    : rest.replace(/^event=[a-zA-Z0-9-]+\s*/, '')
   return `${formatTimestamp(timestamp)} · ${namespace} · ${label}`
 }
 

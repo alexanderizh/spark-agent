@@ -10,6 +10,9 @@ import type {
 } from '@spark/protocol'
 import { useApp } from '../AppContext'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { ToolPackageDiagnostics } from './ToolPackageDiagnostics'
+import { ToolPackageToolList } from './ToolPackageToolList'
+import { ToolPackageProjectEditor } from './ToolPackageProjectEditor'
 
 interface ToolPackagesPanelProps {
   /** 打开统一导入入口（本地目录 / 压缩包 / Git 仓库）。 */
@@ -25,11 +28,16 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
   const [draftValues, setDraftValues] = useState<Record<string, string>>({})
   const [stepResult, setStepResult] = useState<ToolPackageProjectStepResult | null>(null)
   const [runningStep, setRunningStep] = useState<ToolPackageDevelopmentStep | null>(null)
+  const [developmentOperationId, setDevelopmentOperationId] = useState<string | null>(null)
   const [removing, setRemoving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled' | 'error'>('all')
   const { invoke: listPackages } = useIpcInvoke('tool-packages:list')
   const { invoke: getPackage } = useIpcInvoke('tool-packages:get')
   const { invoke: runProjectStep } = useIpcInvoke('tool-packages:run-project-step')
+  const { invoke: cancelProjectStep } = useIpcInvoke('tool-packages:run-project-step:cancel')
   const { invoke: configureEnvironment } = useIpcInvoke('tool-packages:configure-environment')
   const { invoke: requestSecret } = useIpcInvoke('tool-packages:request-secret')
   const { invoke: setPermission } = useIpcInvoke('tool-packages:set-permission')
@@ -39,6 +47,7 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
 
   const refresh = useCallback(async () => {
     try {
+      setLoadError(null)
       const response = await listPackages({})
       setPackages(response.packages)
       const nextId =
@@ -59,7 +68,9 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
         setDetail(null)
       }
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Tool Package 加载失败')
+      const errorMessage = error instanceof Error ? error.message : 'Tool Package 加载失败'
+      setLoadError(errorMessage)
+      message.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -72,6 +83,41 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
 
   useIpcStream('stream:tool-packages:changed', () => void refresh())
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (Object.keys(draftValues).length === 0) return
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [draftValues])
+
+  const visiblePackages = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return packages.filter((item) => {
+      const matchesQuery =
+        needle.length === 0 ||
+        item.name.toLowerCase().includes(needle) ||
+        item.id.toLowerCase().includes(needle) ||
+        item.description.toLowerCase().includes(needle)
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'enabled' && item.enabledVersion != null) ||
+        (statusFilter === 'disabled' && item.enabledVersion == null && item.state !== 'error') ||
+        (statusFilter === 'error' && item.state === 'error')
+      return matchesQuery && matchesStatus
+    })
+  }, [packages, query, statusFilter])
+
+  const confirmDiscardDrafts = useCallback(async (): Promise<boolean> => {
+    if (Object.keys(draftValues).length === 0) return true
+    return requestConfirm({
+      title: '放弃未保存的环境变量？',
+      description: '切换工具包或版本会丢弃当前尚未保存的环境变量修改。',
+      confirmText: '放弃修改',
+    })
+  }, [draftValues, requestConfirm])
+
   const variables = useMemo(
     () =>
       detail?.manifest.environment.map((variable) => ({
@@ -83,6 +129,7 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
 
   const selectPackage = useCallback(
     async (packageId: string) => {
+      if (!(await confirmDiscardDrafts())) return
       setDraftValues({})
       try {
         const result = await getPackage({ packageId })
@@ -93,7 +140,7 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
         message.error(error instanceof Error ? error.message : 'Tool Package 详情加载失败')
       }
     },
-    [getPackage],
+    [confirmDiscardDrafts, getPackage],
   )
 
   const saveVariable = useCallback(
@@ -143,6 +190,7 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
   const selectVersion = useCallback(
     async (version: string) => {
       if (detail == null) return
+      if (!(await confirmDiscardDrafts())) return
       setDraftValues({})
       try {
         const result = await getPackage({ packageId: detail.package.id, version })
@@ -152,7 +200,7 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
         message.error(error instanceof Error ? error.message : 'Tool Package 版本加载失败')
       }
     },
-    [detail, getPackage],
+    [confirmDiscardDrafts, detail, getPackage],
   )
 
   const changePermission = useCallback(
@@ -288,13 +336,20 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
       })
       if (!confirmed) return
       setRunningStep(step)
+      const operationId = crypto.randomUUID()
+      setDevelopmentOperationId(operationId)
       setStepResult(null)
       try {
-        const response = await runProjectStep({ packageId: detail.package.id, step })
+        const response = await runProjectStep({
+          packageId: detail.package.id,
+          step,
+          operationId,
+        })
         setStepResult(response.result)
       } catch (error) {
         message.error(error instanceof Error ? error.message : '开发步骤执行失败')
       } finally {
+        setDevelopmentOperationId(null)
         setRunningStep(null)
       }
     },
@@ -303,6 +358,15 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
 
   if (loading && packages.length === 0) {
     return <div className="ct_loading">正在读取 Tool Packages...</div>
+  }
+  if (loadError != null && packages.length === 0) {
+    return (
+      <div className="tp_errorState" role="alert">
+        <strong>工具包加载失败</strong>
+        <span>{loadError}</span>
+        <Button onClick={() => void refresh()}>重试</Button>
+      </div>
+    )
   }
   if (packages.length === 0) {
     return (
@@ -320,38 +384,63 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
   }
 
   return (
-    <div style={{ display: 'grid', minHeight: 0, gridTemplateColumns: '260px minmax(0, 1fr)' }}>
-      <div style={{ overflow: 'auto', borderRight: '1px solid var(--border)' }}>
-        {packages.map((item) => (
+    <div className="tp_layout">
+      <div className="tp_sidebar">
+        <div className="tp_filters">
+          <Input
+            value={query}
+            placeholder="搜索名称、ID 或说明"
+            allowClear
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Select
+            value={statusFilter}
+            options={[
+              { label: '全部状态', value: 'all' },
+              { label: '已启用', value: 'enabled' },
+              { label: '未启用', value: 'disabled' },
+              { label: '错误', value: 'error' },
+            ]}
+            onChange={(value) => setStatusFilter(value)}
+          />
+        </div>
+        {loadError != null && (
+          <div className="tp_inlineError" role="alert">
+            <span>{loadError}</span>
+            <Button size="small" onClick={() => void refresh()}>
+              重试
+            </Button>
+          </div>
+        )}
+        {visiblePackages.length === 0 && <div className="tp_noResults">没有匹配的工具包</div>}
+        {visiblePackages.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => void selectPackage(item.id)}
-            style={{
-              display: 'flex',
-              width: '100%',
-              flexDirection: 'column',
-              gap: 5,
-              padding: '14px 12px',
-              textAlign: 'left',
-              color: 'inherit',
-              background: item.id === selectedId ? 'var(--hover)' : 'transparent',
-              border: 0,
-              borderBottom: '1px solid var(--border)',
-              cursor: 'pointer',
-            }}
+            className={`tp_packageRow${item.id === selectedId ? ' is-selected' : ''}`}
           >
             <strong style={{ fontSize: 13 }}>{item.name}</strong>
             <code style={{ color: 'var(--text-faint)', fontSize: 11 }}>{item.id}</code>
-            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-              {item.enabledVersion == null ? '已安装 · 未启用' : `已启用 v${item.enabledVersion}`}
+            <span
+              className={item.state === 'error' ? 'tp_errorText' : undefined}
+              style={{
+                color: item.state === 'error' ? undefined : 'var(--text-muted)',
+                fontSize: 11,
+              }}
+            >
+              {item.state === 'error'
+                ? '错误 · 查看诊断'
+                : item.enabledVersion == null
+                  ? '已安装 · 未启用'
+                  : `已启用 v${item.enabledVersion}`}
             </span>
           </button>
         ))}
       </div>
 
       {detail != null && (
-        <div style={{ minHeight: 0, overflow: 'auto', padding: '4px 20px 24px' }}>
+        <div className="tp_detail">
           <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <strong>{detail.package.name}</strong>
@@ -421,37 +510,65 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
             )}
           </section>
 
+          <ToolPackageToolList detail={detail} />
+
           {detail.package.source === 'managed-project' && (
-            <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
-              <strong style={{ fontSize: 13 }}>开发工作流</strong>
-              <p style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                步骤在受管工程目录执行，以工程当前 spark-tool.json
-                为准；完成后仍需执行「安装」生成新的不可变版本。
-              </p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  size="small"
-                  disabled={runningStep != null}
-                  onClick={() => void runDevelopmentStep('install')}
-                >
-                  {runningStep === 'install' ? '安装中…' : '安装依赖'}
-                </Button>
-                <Button
-                  size="small"
-                  disabled={
-                    runningStep != null ||
-                    detail.manifest.development?.buildCommand == null ||
-                    detail.manifest.development.buildCommand.trim().length === 0
-                  }
-                  onClick={() => void runDevelopmentStep('build')}
-                >
-                  {runningStep === 'build' ? '构建中…' : '构建'}
-                </Button>
-              </div>
-              {stepResult != null && detail.package.id === stepResult.packageId && (
-                <StepResultView result={stepResult} />
-              )}
-            </section>
+            <>
+              <ToolPackageProjectEditor
+                detail={detail}
+                requestConfirm={requestConfirm}
+                onInstalled={refresh}
+              />
+              <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                <strong style={{ fontSize: 13 }}>开发工作流</strong>
+                <p style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                  步骤在受管工程目录执行，以工程当前 spark-tool.json
+                  为准；完成后仍需执行「安装」生成新的不可变版本。
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {runningStep != null && developmentOperationId != null && (
+                    <Button
+                      size="small"
+                      danger
+                      onClick={() => {
+                        void cancelProjectStep({ operationId: developmentOperationId })
+                          .then((response) => {
+                            if (!response.cancelled) message.info('开发步骤已结束，无需取消。')
+                          })
+                          .catch((error: unknown) =>
+                            message.error(
+                              error instanceof Error ? error.message : '取消开发步骤失败',
+                            ),
+                          )
+                      }}
+                    >
+                      取消{runningStep === 'install' ? '安装' : '构建'}
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    disabled={runningStep != null}
+                    onClick={() => void runDevelopmentStep('install')}
+                  >
+                    {runningStep === 'install' ? '安装中…' : '安装依赖'}
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={
+                      runningStep != null ||
+                      detail.manifest.development?.buildCommand == null ||
+                      detail.manifest.development.buildCommand.trim().length === 0
+                    }
+                    onClick={() => void runDevelopmentStep('build')}
+                  >
+                    {runningStep === 'build' ? '构建中…' : '构建'}
+                  </Button>
+                </div>
+                {stepResult != null && detail.package.id === stepResult.packageId && (
+                  <StepResultView result={stepResult} />
+                )}
+              </section>
+            </>
           )}
 
           <section style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
@@ -542,51 +659,69 @@ export function ToolPackagesPanel({ onImport }: ToolPackagesPanelProps) {
             {detail.permissions.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>没有声明额外权限</p>
             ) : (
-              detail.permissions.map((permission) => (
-                <div
-                  key={`${permission.kind}:${permission.permission}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '11px 0',
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  <code style={{ flex: 1, fontSize: 11 }}>{permission.permission}</code>
-                  <Tag>{permission.kind === 'os-effect' ? 'OS 行为告知' : 'Spark 强制授权'}</Tag>
-                  <Tag
-                    color={
-                      permission.state === 'granted'
-                        ? 'green'
-                        : permission.state === 'denied'
-                          ? 'red'
-                          : 'gold'
-                    }
-                  >
-                    {permission.state}
-                  </Tag>
-                  <Button
-                    size="small"
-                    onClick={async () => {
-                      await changePermission(permission, 'granted')
+              detail.permissions.map((permission) => {
+                const capability = detail.hostCapabilities?.find(
+                  (candidate) => candidate.name === permission.permission,
+                )
+                return (
+                  <div
+                    key={`${permission.kind}:${permission.permission}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '11px 0',
+                      borderBottom: '1px solid var(--border)',
                     }}
                   >
-                    允许
-                  </Button>
-                  <Button
-                    size="small"
-                    danger
-                    onClick={async () => {
-                      await changePermission(permission, 'denied')
-                    }}
-                  >
-                    拒绝
-                  </Button>
-                </div>
-              ))
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <code style={{ fontSize: 11 }}>{permission.permission}</code>
+                      {capability?.description != null && (
+                        <div className="tp_muted" style={{ marginTop: 4 }}>
+                          {capability.description}
+                        </div>
+                      )}
+                    </div>
+                    <Tag>{permission.kind === 'os-effect' ? 'OS 行为告知' : 'Spark 强制授权'}</Tag>
+                    {capability?.risk != null && <Tag>风险：{capability.risk}</Tag>}
+                    <Tag
+                      color={
+                        permission.state === 'granted'
+                          ? 'green'
+                          : permission.state === 'denied'
+                            ? 'red'
+                            : 'gold'
+                      }
+                    >
+                      {permission.state}
+                    </Tag>
+                    <Button
+                      size="small"
+                      onClick={async () => {
+                        await changePermission(permission, 'granted')
+                      }}
+                    >
+                      允许
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      onClick={async () => {
+                        await changePermission(permission, 'denied')
+                      }}
+                    >
+                      拒绝
+                    </Button>
+                  </div>
+                )
+              })
             )}
           </section>
+          <ToolPackageDiagnostics
+            key={`${detail.package.id}:${detail.version}`}
+            detail={detail}
+            requestConfirm={requestConfirm}
+          />
         </div>
       )}
     </div>
@@ -599,8 +734,22 @@ function StepResultView({ result }: { result: ToolPackageProjectStepResult }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 12 }}>{result.step === 'install' ? '安装依赖' : '构建'}</strong>
         <code style={{ fontSize: 11, color: 'var(--text-faint)' }}>{result.command}</code>
-        <Tag color={result.timedOut ? 'gold' : result.exitCode === 0 ? 'green' : 'red'}>
-          {result.timedOut ? '超时终止' : `exit ${result.exitCode ?? '—'}`}
+        <Tag
+          color={
+            result.cancelled
+              ? 'gold'
+              : result.timedOut
+                ? 'gold'
+                : result.exitCode === 0
+                  ? 'green'
+                  : 'red'
+          }
+        >
+          {result.cancelled
+            ? '已取消'
+            : result.timedOut
+              ? '超时终止'
+              : `exit ${result.exitCode ?? '—'}`}
         </Tag>
         <Tag>{result.inferred ? '推断命令' : '声明命令'}</Tag>
         <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>

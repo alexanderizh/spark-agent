@@ -170,8 +170,6 @@ import {
   detectWorkflowGraphCycles,
   formatWorkflowCycleError,
   normalizeWorkflowGraph,
-  CustomToolRuntimeCatalog,
-  ToolPackageRuntimeCatalog,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -6857,10 +6855,11 @@ export function registerAllIpcHandlers(): void {
           : {}),
       }
     }
-    const packageTools = new ToolPackageRuntimeCatalog(toolPackageService)
-      .list({})
+    const unifiedTools = await getSessionService().listUnifiedTools()
+    const packageTools = unifiedTools
+      .filter((entry) => entry.sourceKind === 'tool-package')
       .map((entry): WorkflowPlatformToolsResponse['tools'][number] => {
-        const packageName = packageNames.get(entry.packageId)
+        const packageName = packageNames.get(entry.sourceId)
         const inputSchema = toInputSchema(entry.tool.inputSchema)
         return {
           name: entry.tool.name,
@@ -6871,8 +6870,8 @@ export function registerAllIpcHandlers(): void {
           ...(inputSchema != null ? { inputSchema } : {}),
         }
       })
-    const customTools = new CustomToolRuntimeCatalog(getCustomToolService())
-      .list()
+    const customTools = unifiedTools
+      .filter((entry) => entry.sourceKind === 'custom-tool')
       .map((entry): WorkflowPlatformToolsResponse['tools'][number] => {
         const inputSchema = toInputSchema(entry.tool.inputSchema)
         return {
@@ -7946,13 +7945,26 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('log:read', async (req) => {
     const maxLines = req.maxLines ?? 500
     const levels = req.levels
-    const lines = readLogTail(
+    const namespacePrefixes =
+      req.scope === 'canvas'
+        ? [...CANVAS_TASK_LOG_NAMESPACE_PREFIXES]
+        : req.scope === 'tools'
+          ? ['tools:', 'tool-package:', 'custom-tools', 'plugin-runtime:']
+          : undefined
+    const scopedLines = readLogTail(
       maxLines,
       levels,
-      req.scope === 'canvas'
-        ? { namespacePrefixes: [...CANVAS_TASK_LOG_NAMESPACE_PREFIXES] }
-        : undefined,
+      namespacePrefixes != null ? { namespacePrefixes } : undefined,
     )
+    const namespaceNeedle = req.namespace?.trim().toLowerCase()
+    const keywordNeedle = req.keyword?.trim().toLowerCase()
+    const lines = scopedLines.filter((line) => {
+      const normalized = line.toLowerCase()
+      return (
+        (namespaceNeedle == null || normalized.includes(`[${namespaceNeedle}`)) &&
+        (keywordNeedle == null || normalized.includes(keywordNeedle))
+      )
+    })
     const info = getLogInfo()
     return {
       lines,

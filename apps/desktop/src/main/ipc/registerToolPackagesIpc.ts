@@ -6,12 +6,27 @@ import { EventRepository } from '@spark/storage'
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
+import { clipboard, dialog, Notification, shell } from 'electron'
 import { getDatabase } from '../db.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
+import { openExternalUrlSafely } from '../services/ExternalUrlPolicy.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
 export function registerToolPackagesIpc(service: ToolPackageService): void {
+  service.capabilities.setInvocationAuthorizer(async ({ definition, context, input }) => {
+    const result = await dialog.showMessageBox({
+      type: definition.risk === 'destructive' ? 'warning' : 'question',
+      title: '确认工具宿主能力调用',
+      message: `${context.packageId}/${context.toolName} 请求调用 ${definition.name}`,
+      detail: buildCapabilityConfirmationDetail(definition, input),
+      buttons: ['允许本次调用', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return result.response === 0
+  })
   registerToolPackageBuiltInCapabilities(service.capabilities, {
     db: getDatabase(),
     uploadFile: async (_context, input) => {
@@ -48,10 +63,50 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
       pushStreamEvent('stream:session:agent-event', event)
       return { files: input.files }
     },
+    trashFile: async (_context, input) => {
+      await shell.trashItem(input.path)
+      return { trashed: true, path: input.path }
+    },
+    readClipboardText: () => clipboard.readText(),
+    writeClipboardText: (_context, input) => {
+      clipboard.writeText(input.text)
+      return { written: true, characters: input.text.length }
+    },
+    showNotification: (_context, input) => {
+      if (!Notification.isSupported()) throw new Error('System notifications are unavailable')
+      new Notification({ title: input.title, body: input.body ?? '', silent: true }).show()
+      return { shown: true }
+    },
+    openExternal: async (_context, input) => {
+      const opened = await openExternalUrlSafely(input.url, (url) => shell.openExternal(url))
+      if (!opened) throw new Error('External URL was rejected or could not be opened')
+      return { opened: true, url: input.url }
+    },
+    openDialog: async (_context, input) => {
+      const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = []
+      if (input.mode === 'file' || input.mode === 'any') properties.push('openFile')
+      if (input.mode === 'directory' || input.mode === 'any') properties.push('openDirectory')
+      if (input.allowMultiple === true) properties.push('multiSelections')
+      return dialog.showOpenDialog({
+        properties,
+        ...(input.title != null ? { title: input.title } : {}),
+        ...(input.defaultPath != null ? { defaultPath: input.defaultPath } : {}),
+        ...(input.filters != null ? { filters: input.filters } : {}),
+      })
+    },
+    saveDialog: async (_context, input) =>
+      dialog.showSaveDialog({
+        ...(input.title != null ? { title: input.title } : {}),
+        ...(input.defaultPath != null ? { defaultPath: input.defaultPath } : {}),
+        ...(input.filters != null ? { filters: input.filters } : {}),
+      }),
   })
 
   service.onChange((event) => {
     pushStreamEvent('stream:tool-packages:changed', event)
+  })
+  service.onRuntimeEvent((event) => {
+    pushStreamEvent('stream:tool-packages:runtime', event)
   })
 
   typedIpcHandle('tool-packages:list', async () => ({
@@ -99,8 +154,81 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
     result: await service.runManagedProjectStep({
       packageId: request.packageId,
       step: request.step,
+      ...(request.operationId != null ? { operationId: request.operationId } : {}),
     }),
   }))
+
+  typedIpcHandle('tool-packages:run-project-step:cancel', async (request) => ({
+    cancelled: service.cancelManagedProjectStep(request.operationId),
+  }))
+
+  typedIpcHandle('tool-packages:project-files:list', async (request) =>
+    service.listManagedProjectFiles(request.packageId),
+  )
+
+  typedIpcHandle('tool-packages:project-file:read', async (request) =>
+    service.readManagedProjectFile(request),
+  )
+
+  typedIpcHandle('tool-packages:project-file:write', async (request) =>
+    service.writeManagedProjectFile(request),
+  )
+
+  typedIpcHandle('tool-packages:project:install', async (request) => {
+    const installed = await service.installManagedProject(request.packageId)
+    return { package: toPackageSummary(service, installed.package), version: installed.version }
+  })
+
+  typedIpcHandle('tool-packages:test', async (request) => ({
+    test: await service.testInstalledVersion(request),
+  }))
+
+  typedIpcHandle('tool-packages:test:cancel', async (request) => ({
+    cancelled: service.cancelTest(request.correlationId),
+  }))
+
+  typedIpcHandle('tool-packages:invocations:list', async (request) => {
+    const result = service.listInvocations({
+      sourceKind: request.sourceKind ?? 'tool-package',
+      ...(request.packageId != null ? { packageId: request.packageId } : {}),
+      ...(request.toolName != null ? { toolName: request.toolName } : {}),
+      ...(request.status != null ? { status: request.status } : {}),
+      ...(request.correlationId != null ? { correlationId: request.correlationId } : {}),
+      ...(request.from != null ? { from: request.from } : {}),
+      ...(request.to != null ? { to: request.to } : {}),
+      ...(request.limit != null ? { limit: request.limit } : {}),
+      ...(request.offset != null ? { offset: request.offset } : {}),
+    })
+    return {
+      invocations: result.items.map((row) => ({
+        id: row.id,
+        correlationId: row.correlation_id,
+        sourceKind: row.source_kind,
+        sourceId: row.source_id,
+        packageId: row.package_id,
+        toolId: row.tool_id,
+        toolName: row.tool_name,
+        version: row.version,
+        adapter: row.adapter,
+        sessionId: row.session_id,
+        turnId: row.turn_id,
+        projectId: row.project_id,
+        agentId: row.agent_id,
+        workflowId: row.workflow_id,
+        invocationSource: row.invocation_source,
+        status: row.status,
+        startedAt: row.started_at,
+        finishedAt: row.finished_at,
+        durationMs: row.duration_ms,
+        errorCode: row.error_code,
+        outputBytes: row.output_bytes,
+        resultArchived: row.result_archived === 1,
+        resultTruncated: row.result_truncated === 1,
+        retryCount: row.retry_count,
+      })),
+      total: result.total,
+    }
+  })
 
   typedIpcHandle('tool-packages:configure-environment', async (request) => {
     service.configureValue({
@@ -167,4 +295,44 @@ async function assertPresentableFile(filePath: string): Promise<void> {
   }
   const info = await stat(filePath)
   if (!info.isFile()) throw new Error('Tool Package file path is not a regular file')
+}
+
+/** Confirmation dialogs must show what will actually run, not just capability names. */
+function buildCapabilityConfirmationDetail(
+  definition: { description?: string; name: string },
+  input: unknown,
+): string {
+  const description = definition.description ?? '该能力会由 SparkWork 桌面宿主执行。'
+  const preview = previewCapabilityInput(definition.name, input)
+  return preview == null ? description : `${description}\n\n${preview}`
+}
+
+function previewCapabilityInput(capability: string, input: unknown): string | undefined {
+  if (input == null || typeof input !== 'object') return undefined
+  if (capability === 'process.exec') {
+    const record = input as { command?: unknown; cwd?: unknown; env?: unknown }
+    const command = Array.isArray(record.command)
+      ? record.command.map((part) => String(part)).join(' ')
+      : undefined
+    if (command == null) return undefined
+    const lines = [`将执行命令: ${boundText(command, 2_000)}`]
+    if (typeof record.cwd === 'string' && record.cwd.length > 0) {
+      lines.push(`工作目录: ${boundText(record.cwd, 1_000)}`)
+    }
+    if (record.env != null && typeof record.env === 'object') {
+      const keys = Object.keys(record.env as Record<string, unknown>)
+      if (keys.length > 0) lines.push(`附加环境变量: ${keys.join(', ')}`)
+    }
+    return lines.join('\n')
+  }
+  try {
+    const json = JSON.stringify(input)
+    return json == null ? undefined : `调用参数: ${boundText(json, 2_000)}`
+  } catch {
+    return undefined
+  }
+}
+
+function boundText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value
 }

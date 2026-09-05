@@ -10,6 +10,14 @@ describe('buildLogReadRequest', () => {
     })
   })
 
+  it('builds the tool runtime scope', () => {
+    expect(buildLogReadRequest('tools', 'warn')).toEqual({
+      maxLines: 500,
+      scope: 'tools',
+      levels: ['warn'],
+    })
+  })
+
   it('omits optional filters for the all-logs view', () => {
     expect(buildLogReadRequest('all', 'all')).toEqual({ maxLines: 500 })
   })
