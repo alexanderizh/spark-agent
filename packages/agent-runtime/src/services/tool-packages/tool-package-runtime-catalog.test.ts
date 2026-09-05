@@ -39,6 +39,14 @@ function packageManifest(packageId: string, toolName: string): ToolPackageManife
         risk: 'read',
         effect: 'read',
         idempotency: 'safe',
+        outputSchema: {
+          type: 'object',
+          properties: { accepted: { type: 'boolean' } },
+        },
+        guidance: {
+          whenToUse: ['Nested values need validation'],
+          resultSemantics: 'accepted confirms the input was processed.',
+        },
       },
     ],
     environment: [],
@@ -75,6 +83,8 @@ describe('ToolPackageRuntimeCatalog', () => {
     expect(first?.qualifiedName).toBe(second?.qualifiedName)
     expect(first?.qualifiedName).toMatch(/^[a-z0-9_-]+$/)
     expect(first?.qualifiedName.length).toBeLessThanOrEqual(64)
+    expect(first?.tool.description).toContain('Use when:')
+    expect(first?.tool.outputSchema).toEqual(manifest.tools[0]?.outputSchema)
     await expect(first?.invoke({ options: { retries: 2 }, values: [1, 2, 3] })).resolves.toEqual({
       options: { retries: 2 },
       values: [1, 2, 3],

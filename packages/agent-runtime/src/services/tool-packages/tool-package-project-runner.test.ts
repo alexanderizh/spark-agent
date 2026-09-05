@@ -92,6 +92,23 @@ describe('runManagedProjectDevelopmentStep', () => {
     expect(result.durationMs).toBeLessThan(15_000)
   }, 30_000)
 
+  it('terminates the process tree when the caller cancels', async () => {
+    const projectPath = await createProject()
+    const controller = new AbortController()
+    const pending = runManagedProjectDevelopmentStep({
+      packageId: 'acme.productivity-suite',
+      projectPath,
+      manifest: manifest({ installCommand: 'node -e "setTimeout(() => {}, 60000)"' }),
+      step: 'install',
+      signal: controller.signal,
+    })
+    setTimeout(() => controller.abort(), 50)
+    await expect(pending).resolves.toMatchObject({
+      cancelled: true,
+      timedOut: false,
+    })
+  }, 30_000)
+
   it('bounds captured output to the tail slice', async () => {
     const projectPath = await createProject()
     const result = await runManagedProjectDevelopmentStep({

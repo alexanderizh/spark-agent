@@ -11,6 +11,7 @@ import type { RuntimeToolDefinition } from '@spark/protocol'
 import type { CustomToolRuntimeCatalog } from '../custom-tools/custom-tool-runtime-catalog.js'
 import type { ToolPackageRuntimeCatalog } from '../tool-packages/tool-package-runtime-catalog.js'
 import type { ToolProcessInvocationContext } from '../tool-packages/tool-process-host.js'
+import { UnifiedToolCatalog } from '../unified-tools/unified-tool-catalog.js'
 
 const log = createLogger('plugin-runtime:mcp-bridge')
 const MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -219,58 +220,19 @@ export class PluginRuntimeMcpBridge {
   private async collectDefinitions(
     invocationContext: Omit<ToolProcessInvocationContext, 'environment'> = {},
   ): Promise<CollectedRuntimeDefinition[]> {
-    const definitions: CollectedRuntimeDefinition[] = []
-    const enabled = new Set(
-      this.broker
-        .listRuntimeStatus()
-        .filter((item) => item.enabled)
-        .map((item) => item.runtime.id),
-    )
-    for (const runtime of this.broker.listRuntimeDescriptors()) {
-      if (!enabled.has(runtime.id)) continue
-      const accounts = this.broker.listAccounts(runtime.id)
-      if (accounts.length === 0) continue
-      const tools = await this.broker.listAvailableTools(runtime.id)
-      for (const tool of tools)
-        definitions.push({
-          runtimeId: runtime.id,
-          tool,
-          qualifiedName: `${runtime.toolNamespace}_${tool.name}`,
-          includeRuntimeControls: true,
-          autoAllow: true,
-          invoke: async (args) => {
-            const { accountId, confirmationToken, ...input } = args
-            return this.broker.invoke({
-              runtimeId: runtime.id,
-              ...(typeof accountId === 'string' ? { accountId } : {}),
-              toolName: tool.name,
-              input,
-              ...(typeof confirmationToken === 'string' ? { confirmationToken } : {}),
-            })
-          },
-        })
-    }
-    for (const entry of this.customTools?.list() ?? []) {
-      definitions.push({
-        runtimeId: null,
-        tool: entry.tool,
-        qualifiedName: entry.qualifiedName,
-        includeRuntimeControls: false,
-        autoAllow: entry.tool.risk === 'read',
-        invoke: entry.invoke,
-      })
-    }
-    for (const entry of this.toolPackages?.list(invocationContext) ?? []) {
-      definitions.push({
-        runtimeId: null,
-        tool: entry.tool,
-        qualifiedName: entry.qualifiedName,
-        includeRuntimeControls: false,
-        autoAllow: entry.tool.risk === 'read',
-        invoke: entry.invoke,
-      })
-    }
-    return definitions
+    const entries = await new UnifiedToolCatalog(
+      this.broker,
+      this.customTools,
+      this.toolPackages,
+    ).list(invocationContext)
+    return entries.map((entry) => ({
+      runtimeId: entry.sourceKind === 'connector' ? entry.sourceId : null,
+      tool: entry.tool,
+      qualifiedName: entry.qualifiedName,
+      includeRuntimeControls: entry.includeRuntimeControls,
+      autoAllow: entry.autoAllow,
+      invoke: entry.invoke,
+    }))
   }
 
   private async ensureServer(): Promise<void> {

@@ -37,6 +37,7 @@ export interface RemoteHttpInvokeRequest {
   environment: Record<string, string>
   /** 调用级超时覆盖；缺省用 manifest runtime.timeoutMs 或默认值。 */
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export interface McpImportInvokeRequest {
@@ -158,6 +159,9 @@ export async function invokeRemoteHttpTool(request: RemoteHttpInvokeRequest): Pr
 
   const timeoutMs = request.timeoutMs ?? runtime.timeoutMs ?? DEFAULT_REMOTE_INVOKE_TIMEOUT_MS
   const controller = new AbortController()
+  const onAbort = () => controller.abort('cancelled')
+  request.signal?.addEventListener('abort', onAbort, { once: true })
+  if (request.signal?.aborted === true) controller.abort('cancelled')
   const timer = setTimeout(() => controller.abort('timeout'), timeoutMs)
 
   try {
@@ -220,9 +224,13 @@ export async function invokeRemoteHttpTool(request: RemoteHttpInvokeRequest): Pr
         { cause: error },
       )
     }
+    if (controller.signal.aborted && controller.signal.reason === 'cancelled') {
+      throw new DOMException('Remote tool package request was cancelled', 'AbortError')
+    }
     throw error instanceof Error ? error : new Error(String(error))
   } finally {
     clearTimeout(timer)
+    request.signal?.removeEventListener('abort', onAbort)
   }
 }
 

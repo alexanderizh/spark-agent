@@ -142,12 +142,19 @@ describe('PluginRuntimeMcpBridge native custom tool engine adapter', () => {
 
     try {
       const handle = await bridge.serve()
-      expect(handle?.toolNames).toEqual(['mcp__spark_plugins__custom_echo'])
+      expect(handle?.toolNames).toEqual([
+        'mcp__spark_plugins__custom_echo',
+        'mcp__spark_plugins__spark_tool_help',
+      ])
       const client = await connectClient(
         handle!.config as { url: string; headers?: Record<string, string> },
       )
       const tools = await client.listTools()
-      expect(tools.tools.map((tool) => tool.name)).toEqual(['custom_echo', 'custom_publish'])
+      expect(tools.tools.map((tool) => tool.name)).toEqual([
+        'custom_echo',
+        'custom_publish',
+        'spark_tool_help',
+      ])
       expect(
         tools.tools.find((tool) => tool.name === 'custom_echo')?.inputSchema,
       ).not.toHaveProperty('properties.accountId')

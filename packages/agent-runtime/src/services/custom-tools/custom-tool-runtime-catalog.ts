@@ -1,6 +1,16 @@
 import type { RuntimeToolDefinition } from '@spark/protocol'
 import type { CustomToolService } from './custom-tool.service.js'
 
+export interface CustomToolInvocationContext {
+  sessionId?: string
+  turnId?: string
+  projectId?: string
+  agentId?: string
+  workflowId?: string
+  correlationId?: string
+  invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+}
+
 export interface NativeCustomToolCatalogEntry {
   qualifiedName: string
   toolId: string
@@ -19,7 +29,7 @@ export interface NativeCustomToolCatalogEntry {
 export class CustomToolRuntimeCatalog {
   constructor(private readonly service: CustomToolService) {}
 
-  list(): NativeCustomToolCatalogEntry[] {
+  list(context: CustomToolInvocationContext = {}): NativeCustomToolCatalogEntry[] {
     return this.service
       .listEnabledRecords()
       .filter((record) => record.publishedVersion != null && record.type !== 'provider-vision')
@@ -41,6 +51,15 @@ export class CustomToolRuntimeCatalog {
             toolId: record.id,
             input,
             source: 'model',
+            ...(context.sessionId != null ? { sessionId: context.sessionId } : {}),
+            ...(context.turnId != null ? { turnId: context.turnId } : {}),
+            ...(context.projectId != null ? { projectId: context.projectId } : {}),
+            ...(context.agentId != null ? { agentId: context.agentId } : {}),
+            ...(context.workflowId != null ? { workflowId: context.workflowId } : {}),
+            ...(context.correlationId != null ? { correlationId: context.correlationId } : {}),
+            ...(context.invocationSource != null
+              ? { invocationSource: context.invocationSource }
+              : {}),
           })
           return {
             text: result.text,

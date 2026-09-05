@@ -94,7 +94,13 @@ describe('CustomToolRuntimeCatalog', () => {
     } as unknown as CustomToolService
     const catalog = new CustomToolRuntimeCatalog(service)
 
-    const entries = catalog.list()
+    const entries = catalog.list({
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      projectId: 'project-1',
+      agentId: 'agent-1',
+      workflowId: 'workflow-1',
+    })
     expect(entries.map((entry) => entry.qualifiedName)).toEqual([
       'custom_code_score',
       'custom_http_search',
@@ -105,6 +111,11 @@ describe('CustomToolRuntimeCatalog', () => {
       toolId: 'code_score',
       input: { value: 'x' },
       source: 'model',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      projectId: 'project-1',
+      agentId: 'agent-1',
+      workflowId: 'workflow-1',
     })
   })
 })

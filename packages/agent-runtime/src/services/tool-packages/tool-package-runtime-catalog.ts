@@ -3,6 +3,7 @@ import type { RuntimeToolDefinition } from '@spark/protocol'
 import { z } from 'zod'
 import type { ToolPackageService } from './tool-package.service.js'
 import type { ToolProcessInvocationContext } from './tool-process-host.js'
+import { projectToolModelDescription } from './tool-model-description-projector.js'
 
 export interface ToolPackageCatalogEntry {
   qualifiedName: string
@@ -33,8 +34,10 @@ export class ToolPackageRuntimeCatalog {
             tool: {
               name: `${entry.packageId}/${entry.toolName}`,
               title: definition.title,
-              description: definition.description,
+              description: projectToolModelDescription(entry.manifest, definition),
               inputSchema: definition.inputSchema,
+              ...(definition.outputSchema != null ? { outputSchema: definition.outputSchema } : {}),
+              ...(definition.guidance != null ? { guidance: definition.guidance } : {}),
               requiredCapabilities: [],
               risk: definition.risk,
               effect: definition.effect,

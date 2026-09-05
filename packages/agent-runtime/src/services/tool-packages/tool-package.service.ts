@@ -17,12 +17,15 @@ import {
   type ToolPackageSecureRequest,
   type ToolPackageSource,
   type ToolPackageSummary,
+  type ToolPackageTestResult,
   type ToolPackageTrust,
   type ToolPackageUninstallResult,
 } from '@spark/protocol'
 import {
   ToolPackageRepository,
+  ToolInvocationRepository,
   type SparkDatabase,
+  type ListToolInvocationsParams,
   type ToolPackageConfigRow,
   type ToolPackagePermissionKind,
   type ToolPackagePermissionState,
@@ -48,7 +51,14 @@ import {
   type McpToolInvoker,
 } from './tool-package-remote-executors.js'
 import { ToolHostCapabilityBroker } from './tool-host-capability-broker.js'
-import { ToolProcessHost, type ToolProcessInvocationContext } from './tool-process-host.js'
+import {
+  ToolProcessHost,
+  type ToolProcessInvocationContext,
+  type ToolProcessRuntimeEventSink,
+} from './tool-process-host.js'
+import { z } from 'zod'
+import { executeHttpTool } from '../custom-tools/http-executor.js'
+import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
 
 export interface ToolPackageChangeEvent {
   change:
@@ -71,6 +81,7 @@ export interface ToolPackageInvocationRequest {
   input: unknown
   context?: Omit<ToolProcessInvocationContext, 'environment'>
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export interface ToolPackageSecretStore {
@@ -91,11 +102,13 @@ export interface ToolPackageMcpBridge extends McpToolInvoker {
   ): Promise<Array<{ name: string; description: string; inputSchema?: unknown }>>
 }
 
-/** 当前服务层能实际执行的运行时适配器；legacy-custom-tool 仍被拒绝。 */
+/** 当前服务层能实际执行的运行时适配器。 */
 const EXECUTABLE_RUNTIME_ADAPTERS: ReadonlySet<string> = new Set([
   'process',
   'remote-http',
+  'declarative-http',
   'mcp-import',
+  'legacy-custom-tool',
 ])
 
 function assertExecutableAdapter(manifest: ToolPackageManifest): void {
@@ -115,12 +128,16 @@ const MAX_MANAGED_PROJECT_FILES = 50_000
 
 export class ToolPackageService {
   private readonly repositoryInstance: ToolPackageRepository | null
+  private readonly invocationRepositoryInstance: ToolInvocationRepository | null
   private readonly listeners = new Set<(event: ToolPackageChangeEvent) => void>()
   private readonly fulfillingSecureRequests = new Set<string>()
+  private readonly activeTestControllers = new Map<string, AbortController>()
+  private readonly activeDevelopmentControllers = new Map<string, AbortController>()
   private readonly packageRootOverride: string | undefined
   private readonly databasePath: string | undefined
   readonly capabilities: ToolHostCapabilityBroker
   readonly processHost: ToolProcessHost
+  private legacyCustomTools: Pick<CustomToolService, 'executeEnabled'> | undefined
 
   constructor(
     db: SparkDatabase,
@@ -133,6 +150,8 @@ export class ToolPackageService {
     this.packageRootOverride = packageRoot
     this.databasePath = typeof db.path === 'string' && db.path.length > 0 ? db.path : undefined
     this.repositoryInstance = this.databasePath == null ? null : new ToolPackageRepository(db)
+    this.invocationRepositoryInstance =
+      this.databasePath == null ? null : new ToolInvocationRepository(db)
     this.capabilities = capabilities
     this.processHost = processHost ?? new ToolProcessHost(capabilities)
   }
@@ -166,12 +185,71 @@ export class ToolPackageService {
     return () => this.listeners.delete(listener)
   }
 
+  onRuntimeEvent(listener: ToolProcessRuntimeEventSink): () => void {
+    return this.processHost.onRuntimeEvent(listener)
+  }
+
+  setLegacyCustomToolService(service: Pick<CustomToolService, 'executeEnabled'> | null): void {
+    this.legacyCustomTools = service ?? undefined
+  }
+
   list(): ToolPackageRow[] {
     return this.repository.list()
   }
 
   listSummaries(): ToolPackageSummary[] {
     return this.repository.list().map((row) => this.toSummary(row))
+  }
+
+  listInvocations(params: ListToolInvocationsParams = {}) {
+    return this.invocationRepositoryInstance?.list(params) ?? { items: [], total: 0 }
+  }
+
+  async testInstalledVersion(params: {
+    packageId: string
+    version?: string
+    toolName: string
+    input: Record<string, unknown>
+    correlationId?: string
+  }): Promise<ToolPackageTestResult> {
+    const version = this.resolveInstalledVersion(params.packageId, params.version)
+    const correlationId = params.correlationId ?? randomUUID()
+    if (this.activeTestControllers.has(correlationId)) {
+      throw new Error(`Tool Package test correlationId is already active: ${correlationId}`)
+    }
+    const controller = new AbortController()
+    this.activeTestControllers.set(correlationId, controller)
+    const startedAt = Date.now()
+    try {
+      const result = await this.invokeInstalledVersion({
+        packageId: params.packageId,
+        version,
+        toolName: params.toolName,
+        input: params.input,
+        context: { correlationId, invocationSource: 'test' },
+        signal: controller.signal,
+      })
+      return { ok: true, result, durationMs: Date.now() - startedAt, correlationId }
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: toolPackageErrorCode(error),
+          message: error instanceof Error ? error.message : String(error),
+        },
+        durationMs: Date.now() - startedAt,
+        correlationId,
+      }
+    } finally {
+      this.activeTestControllers.delete(correlationId)
+    }
+  }
+
+  cancelTest(correlationId: string): boolean {
+    const controller = this.activeTestControllers.get(correlationId)
+    if (controller == null) return false
+    controller.abort()
+    return true
   }
 
   async getDetail(packageId: string, version?: string): Promise<ToolPackageDetail> {
@@ -191,6 +269,14 @@ export class ToolPackageService {
           required: permission.required === 1,
           state: permission.state,
         })),
+      hostCapabilities: this.capabilities
+        .describe()
+        .filter((capability) =>
+          [
+            ...manifest.permissions.requiredSparkCapabilities,
+            ...manifest.permissions.optionalSparkCapabilities,
+          ].includes(capability.name),
+        ),
       sourceUrl: versionRow?.source_url ?? null,
       sourceRef: versionRow?.source_ref ?? null,
       sourceSubdirectory: versionRow?.source_subdirectory ?? null,
@@ -321,6 +407,23 @@ export class ToolPackageService {
       throw new Error('Managed tool project file exceeds the 2 MB read limit')
     }
     return { projectPath, path: params.path, content }
+  }
+
+  async installManagedProject(
+    packageId: string,
+  ): Promise<{ package: ToolPackageRow; version: string }> {
+    const projectPath = await this.requireManagedProjectPath(packageId)
+    const inspection = await inspectToolPackageDirectory(projectPath)
+    if (inspection.manifest.id !== packageId) {
+      throw new Error(
+        `Managed project manifest id does not match its project: ${inspection.manifest.id}`,
+      )
+    }
+    const row = await this.installDirectory({
+      sourcePath: projectPath,
+      source: 'managed-project',
+    })
+    return { package: row, version: inspection.manifest.version }
   }
 
   async installDirectory(params: {
@@ -641,16 +744,35 @@ export class ToolPackageService {
     packageId: string
     step: ToolPackageDevelopmentStep
     timeoutMs?: number
+    operationId?: string
   }): Promise<ToolPackageProjectStepResult> {
-    const projectPath = await this.requireManagedProjectPath(params.packageId)
-    const { manifest } = await inspectToolPackageDirectory(projectPath)
-    return runManagedProjectDevelopmentStep({
-      packageId: params.packageId,
-      projectPath,
-      manifest,
-      step: params.step,
-      ...(params.timeoutMs != null ? { timeoutMs: params.timeoutMs } : {}),
-    })
+    const operationId = params.operationId ?? randomUUID()
+    if (this.activeDevelopmentControllers.has(operationId)) {
+      throw new Error(`Tool Package development operation is already active: ${operationId}`)
+    }
+    const controller = new AbortController()
+    this.activeDevelopmentControllers.set(operationId, controller)
+    try {
+      const projectPath = await this.requireManagedProjectPath(params.packageId)
+      const { manifest } = await inspectToolPackageDirectory(projectPath)
+      return await runManagedProjectDevelopmentStep({
+        packageId: params.packageId,
+        projectPath,
+        manifest,
+        step: params.step,
+        signal: controller.signal,
+        ...(params.timeoutMs != null ? { timeoutMs: params.timeoutMs } : {}),
+      })
+    } finally {
+      this.activeDevelopmentControllers.delete(operationId)
+    }
+  }
+
+  cancelManagedProjectStep(operationId: string): boolean {
+    const controller = this.activeDevelopmentControllers.get(operationId)
+    if (controller == null) return false
+    controller.abort()
+    return true
   }
 
   getManifest(packageId: string, version?: string): ToolPackageManifest {
@@ -1069,50 +1191,154 @@ export class ToolPackageService {
     }
     const manifest = ToolPackageManifestSchema.parse(JSON.parse(version.manifest_json) as unknown)
     assertExecutableAdapter(manifest)
-    const environment = await this.resolveEnvironment(
-      request.packageId,
-      manifest,
-      request.toolName,
-      request.context ?? {},
-    )
-    const grantedCapabilities = new Set(
-      this.repository
-        .listPermissions(request.packageId, request.version)
-        .filter(
-          (permission) => permission.kind === 'spark-capability' && permission.state === 'granted',
-        )
-        .map((permission) => permission.permission),
-    )
-
-    if (manifest.runtime.adapter === 'remote-http') {
-      return invokeRemoteHttpTool({
-        manifest,
-        toolName: request.toolName,
-        input: request.input,
-        environment,
-        ...(request.timeoutMs != null ? { timeoutMs: request.timeoutMs } : {}),
-      })
-    }
-    if (manifest.runtime.adapter === 'mcp-import') {
-      if (this.mcpBridge == null) {
-        throw new Error('MCP-import tool packages require an MCP bridge in this host')
-      }
-      return invokeMcpImportTool({
-        manifest,
-        toolName: request.toolName,
-        input: request.input,
-        invoker: this.mcpBridge,
-      })
-    }
-    return this.processHost.invoke({
-      manifest,
-      installPath: version.install_path,
+    const traceId = randomUUID()
+    const correlationId = request.context?.correlationId ?? randomUUID()
+    this.invocationRepositoryInstance?.start({
+      id: traceId,
+      correlationId,
+      sourceKind: 'tool-package',
+      sourceId: request.packageId,
+      packageId: request.packageId,
       toolName: request.toolName,
-      input: request.input,
-      context: { ...(request.context ?? {}), environment },
-      grantedCapabilities,
-      ...(request.timeoutMs != null ? { timeoutMs: request.timeoutMs } : {}),
+      version: request.version,
+      adapter: manifest.runtime.adapter,
+      ...(request.context?.sessionId != null ? { sessionId: request.context.sessionId } : {}),
+      ...(request.context?.turnId != null ? { turnId: request.context.turnId } : {}),
+      ...(request.context?.projectId != null ? { projectId: request.context.projectId } : {}),
+      ...(request.context?.agentId != null ? { agentId: request.context.agentId } : {}),
+      ...(request.context?.workflowId != null ? { workflowId: request.context.workflowId } : {}),
+      invocationSource:
+        request.context?.invocationSource ??
+        (request.context?.workflowId != null ? 'workflow' : 'model'),
+      inputSha256: hashJson(request.input),
     })
+    try {
+      const environment = await this.resolveEnvironment(
+        request.packageId,
+        manifest,
+        request.toolName,
+        request.context ?? {},
+      )
+      request.signal?.throwIfAborted()
+      const grantedCapabilities = new Set(
+        this.repository
+          .listPermissions(request.packageId, request.version)
+          .filter(
+            (permission) =>
+              permission.kind === 'spark-capability' && permission.state === 'granted',
+          )
+          .map((permission) => permission.permission),
+      )
+
+      let result: unknown
+      if (manifest.runtime.adapter === 'remote-http') {
+        result = await invokeRemoteHttpTool({
+          manifest,
+          toolName: request.toolName,
+          input: request.input,
+          environment,
+          ...(request.timeoutMs != null ? { timeoutMs: request.timeoutMs } : {}),
+          ...(request.signal != null ? { signal: request.signal } : {}),
+        })
+      } else if (manifest.runtime.adapter === 'declarative-http') {
+        const spec = manifest.runtime.tools[request.toolName]
+        if (spec == null) {
+          throw new Error(`Declarative HTTP spec not found for tool: ${request.toolName}`)
+        }
+        const tool = manifest.tools.find((candidate) => candidate.name === request.toolName)
+        if (tool == null) throw new Error(`Tool package tool not found: ${request.toolName}`)
+        const now = new Date().toISOString()
+        const httpResult = await executeHttpTool(
+          {
+            id: `${manifest.id}.${request.toolName}`,
+            title: tool.title,
+            description: tool.description,
+            type: 'http',
+            inputSchema: tool.inputSchema as never,
+            spec,
+            risk: tool.risk,
+            effect: tool.effect,
+            idempotency: tool.idempotency,
+            timeoutMs: request.timeoutMs ?? manifest.runtime.timeoutMs ?? 30_000,
+            enabled: true,
+            origin: 'local',
+            publishedVersion: 1,
+            draftVersion: 1,
+            lastTestAt: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+          request.input as Record<string, unknown>,
+          {
+            signal: request.signal ?? new AbortController().signal,
+            resolveSecret: async (name) => {
+              const value = environment[name]
+              if (value == null) throw new Error(`Tool package configuration is missing: ${name}`)
+              return value
+            },
+          },
+        )
+        result = { text: httpResult.text, meta: httpResult.meta }
+      } else if (manifest.runtime.adapter === 'mcp-import') {
+        if (this.mcpBridge == null) {
+          throw new Error('MCP-import tool packages require an MCP bridge in this host')
+        }
+        result = await invokeMcpImportTool({
+          manifest,
+          toolName: request.toolName,
+          input: request.input,
+          invoker: this.mcpBridge,
+        })
+      } else if (manifest.runtime.adapter === 'legacy-custom-tool') {
+        if (this.legacyCustomTools == null) {
+          throw new Error('Legacy Custom Tool service is unavailable in this host')
+        }
+        const legacyResult = await this.legacyCustomTools.executeEnabled({
+          toolId: manifest.runtime.toolId,
+          input: request.input as Record<string, unknown>,
+          ...(request.context?.sessionId != null ? { sessionId: request.context.sessionId } : {}),
+          ...(request.context?.turnId != null ? { turnId: request.context.turnId } : {}),
+          ...(request.context?.projectId != null ? { projectId: request.context.projectId } : {}),
+          ...(request.context?.agentId != null ? { agentId: request.context.agentId } : {}),
+          ...(request.context?.workflowId != null
+            ? { workflowId: request.context.workflowId }
+            : {}),
+          correlationId,
+          source: 'model',
+          invocationSource: 'nested',
+          ...(request.signal != null ? { signal: request.signal } : {}),
+        })
+        result = {
+          text: legacyResult.text,
+          meta: legacyResult.meta,
+          ...(legacyResult.traceId != null ? { legacyTraceId: legacyResult.traceId } : {}),
+        }
+      } else {
+        result = await this.processHost.invoke({
+          manifest,
+          installPath: version.install_path,
+          toolName: request.toolName,
+          input: request.input,
+          context: { ...(request.context ?? {}), correlationId, environment },
+          grantedCapabilities,
+          ...(request.timeoutMs != null ? { timeoutMs: request.timeoutMs } : {}),
+          ...(request.signal != null ? { signal: request.signal } : {}),
+        })
+      }
+      request.signal?.throwIfAborted()
+      validateToolPackageOutput(manifest, request.toolName, result)
+      this.invocationRepositoryInstance?.finish(traceId, {
+        status: 'ok',
+        outputBytes: jsonBytes(result),
+      })
+      return result
+    } catch (error) {
+      this.invocationRepositoryInstance?.finish(traceId, {
+        status: classifyInvocationFailure(error),
+        errorCode: toolPackageErrorCode(error),
+      })
+      throw error
+    }
   }
 
   dispose(): Promise<void> {
@@ -1274,6 +1500,54 @@ export class ToolPackageService {
     if (event.runtimeChanged) void this.processHost.invalidatePackage(event.packageId)
     for (const listener of this.listeners) listener(event)
   }
+}
+
+function validateToolPackageOutput(
+  manifest: ToolPackageManifest,
+  toolName: string,
+  result: unknown,
+): void {
+  const tool = manifest.tools.find((candidate) => candidate.name === toolName)
+  if (tool == null) throw new Error(`Tool package tool not found: ${toolName}`)
+  if (tool.outputSchema == null) return
+  const schema = z.fromJSONSchema(tool.outputSchema)
+  const parsed = schema.safeParse(result)
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid output from Tool Package ${manifest.id}/${toolName}: ${z.prettifyError(parsed.error)}`,
+    )
+  }
+}
+
+function hashJson(value: unknown): string {
+  return createHash('sha256').update(safeJson(value)).digest('hex')
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(safeJson(value), 'utf8')
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? 'null'
+  } catch {
+    return '[unserializable]'
+  }
+}
+
+function classifyInvocationFailure(error: unknown): 'error' | 'timeout' | 'denied' | 'cancelled' {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/abort|cancel/i.test(message)) return 'cancelled'
+  if (/timed? out|timeout/i.test(message)) return 'timeout'
+  if (/blocked|denied|not authorized|not enabled/i.test(message)) return 'denied'
+  return 'error'
+}
+
+function toolPackageErrorCode(error: unknown): string {
+  if (error instanceof Error && error.name && error.name !== 'Error') return error.name
+  const message = error instanceof Error ? error.message : String(error)
+  const explicit = /^([A-Z][A-Z0-9_]{2,80}):/.exec(message)?.[1]
+  return explicit ?? 'TOOL_PACKAGE_EXECUTION_FAILED'
 }
 
 function environmentKeystoreRef(params: {

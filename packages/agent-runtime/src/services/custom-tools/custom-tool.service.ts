@@ -6,7 +6,7 @@
  * 2. 原生 Runtime Catalog 版本刷新 → 下一 turn 获取新的工具快照
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type {
   CustomToolDraft,
@@ -28,7 +28,7 @@ import {
   RISK_ORDER,
   toCustomToolSummary,
 } from '@spark/protocol'
-import { CustomToolRepository } from '@spark/storage'
+import { CustomToolRepository, ToolInvocationRepository } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { KeystoreRef } from '@spark/shared/keystore'
 import { deleteSecret, getSecret, hasSecret, setSecret } from '@spark/shared/keystore'
@@ -91,6 +91,7 @@ function withPersistence<D extends CustomToolDraft>(
 
 export class CustomToolService {
   private readonly repository: CustomToolRepository
+  private readonly unifiedInvocations: ToolInvocationRepository
   private readonly db: SparkDatabase
   private readonly listeners = new Set<(event: CustomToolChangeEvent) => void>()
   private lastTracePruneAt = 0
@@ -98,6 +99,7 @@ export class CustomToolService {
   constructor(db: SparkDatabase) {
     this.db = db
     this.repository = new CustomToolRepository(db)
+    this.unifiedInvocations = new ToolInvocationRepository(db)
     this.repository.ensureVersionHistory()
   }
 
@@ -512,6 +514,7 @@ export class CustomToolService {
         status: 'ok',
         durationMs: result.meta.durationMs,
         outputBytes: result.meta.bytes,
+        invocationSource: 'test',
       })
       return {
         ok: true,
@@ -531,6 +534,7 @@ export class CustomToolService {
         status: controller.signal.aborted ? 'timeout' : 'error',
         durationMs,
         errorCode: toolCode,
+        invocationSource: 'test',
       })
       return {
         ok: false,
@@ -556,12 +560,19 @@ export class CustomToolService {
     input: Record<string, unknown>
     sessionId?: string
     turnId?: string
+    projectId?: string
+    agentId?: string
+    workflowId?: string
+    correlationId?: string
+    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
     source?: CustomToolInvocationSource
     signal?: AbortSignal
     /** Internal recursion guard for native code-tool composition. */
     callStack?: string[]
   }): Promise<ExecutorResult> {
     const callStack = params.callStack ?? []
+    const invocationSource =
+      params.invocationSource ?? (params.workflowId != null ? 'workflow' : undefined)
     if (callStack.includes(params.toolId)) {
       throw new CustomToolError(
         'DENIED',
@@ -582,6 +593,11 @@ export class CustomToolService {
         errorCode: 'DENIED',
         ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
         ...(params.turnId != null ? { turnId: params.turnId } : {}),
+        ...(params.projectId != null ? { projectId: params.projectId } : {}),
+        ...(params.agentId != null ? { agentId: params.agentId } : {}),
+        ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
+        ...(params.correlationId != null ? { correlationId: params.correlationId } : {}),
+        ...(invocationSource != null ? { invocationSource } : {}),
       })
       throw new CustomToolError('DENIED', `工具 ${record.id} 已停用`).attachTraceId(traceId)
     }
@@ -610,6 +626,11 @@ export class CustomToolService {
             input,
             ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
             ...(params.turnId != null ? { turnId: params.turnId } : {}),
+            ...(params.projectId != null ? { projectId: params.projectId } : {}),
+            ...(params.agentId != null ? { agentId: params.agentId } : {}),
+            ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
+            ...(params.correlationId != null ? { correlationId: params.correlationId } : {}),
+            invocationSource: 'nested',
             source: params.source ?? 'model',
             signal: controller.signal,
             callStack: [...callStack, record.id],
@@ -626,6 +647,15 @@ export class CustomToolService {
         outputBytes: result.meta.bytes,
         ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
         ...(params.turnId != null ? { turnId: params.turnId } : {}),
+        ...(params.projectId != null ? { projectId: params.projectId } : {}),
+        ...(params.agentId != null ? { agentId: params.agentId } : {}),
+        ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
+        ...(params.correlationId != null ? { correlationId: params.correlationId } : {}),
+        ...(callStack.length > 0
+          ? { invocationSource: 'nested' as const }
+          : invocationSource != null
+            ? { invocationSource }
+            : {}),
       })
       return { ...result, ...(traceId != null ? { traceId } : {}) }
     } catch (error) {
@@ -639,6 +669,15 @@ export class CustomToolService {
         errorCode,
         ...(params.sessionId != null ? { sessionId: params.sessionId } : {}),
         ...(params.turnId != null ? { turnId: params.turnId } : {}),
+        ...(params.projectId != null ? { projectId: params.projectId } : {}),
+        ...(params.agentId != null ? { agentId: params.agentId } : {}),
+        ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
+        ...(params.correlationId != null ? { correlationId: params.correlationId } : {}),
+        ...(callStack.length > 0
+          ? { invocationSource: 'nested' as const }
+          : invocationSource != null
+            ? { invocationSource }
+            : {}),
       })
       if (isCustomToolError(error)) throw error.attachTraceId(traceId)
       throw new CustomToolError(
@@ -878,14 +917,22 @@ export class CustomToolService {
     errorCode?: string
     sessionId?: string
     turnId?: string
+    projectId?: string
+    agentId?: string
+    workflowId?: string
+    correlationId?: string
+    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
   }): number | undefined {
+    const inputSha256 = createHash('sha256').update(JSON.stringify(input.input)).digest('hex')
+    const effectiveToolVersion =
+      input.toolVersion === undefined ? input.record.publishedVersion : input.toolVersion
+    let legacyTraceId: number
     try {
       this.pruneInvocationHistoryIfDue()
-      return this.repository.recordInvocation({
+      legacyTraceId = this.repository.recordInvocation({
         toolId: input.record.id,
-        toolVersion:
-          input.toolVersion === undefined ? input.record.publishedVersion : input.toolVersion,
-        inputSha256: createHash('sha256').update(JSON.stringify(input.input)).digest('hex'),
+        toolVersion: effectiveToolVersion,
+        inputSha256,
         source: input.source,
         status: input.status,
         durationMs: Math.max(0, Math.round(input.durationMs)),
@@ -895,12 +942,50 @@ export class CustomToolService {
         ...(input.turnId != null ? { turnId: input.turnId } : {}),
       })
     } catch (error) {
-      log.warn('custom tool trace write failed', {
+      log.warn('custom tool legacy trace write failed', {
         toolId: input.record.id,
         error: error instanceof Error ? error.message : String(error),
       })
       return undefined
     }
+    try {
+      const unifiedTraceId = randomUUID()
+      const finishedAt = new Date()
+      const startedAt = new Date(
+        finishedAt.getTime() - Math.max(0, Math.round(input.durationMs)),
+      ).toISOString()
+      this.unifiedInvocations.start({
+        id: unifiedTraceId,
+        correlationId: input.correlationId ?? unifiedTraceId,
+        sourceKind: 'custom-tool',
+        sourceId: input.record.id,
+        toolId: input.record.id,
+        toolName: input.record.id,
+        ...(effectiveToolVersion != null ? { version: String(effectiveToolVersion) } : {}),
+        adapter: input.record.type,
+        ...(input.sessionId != null ? { sessionId: input.sessionId } : {}),
+        ...(input.turnId != null ? { turnId: input.turnId } : {}),
+        ...(input.projectId != null ? { projectId: input.projectId } : {}),
+        ...(input.agentId != null ? { agentId: input.agentId } : {}),
+        ...(input.workflowId != null ? { workflowId: input.workflowId } : {}),
+        invocationSource:
+          input.invocationSource ?? (input.source === 'model' ? 'model' : 'platform'),
+        inputSha256,
+        startedAt,
+      })
+      this.unifiedInvocations.finish(unifiedTraceId, {
+        status: input.status,
+        ...(input.errorCode != null ? { errorCode: input.errorCode } : {}),
+        ...(input.outputBytes != null ? { outputBytes: input.outputBytes } : {}),
+        finishedAt: finishedAt.toISOString(),
+      })
+    } catch (error) {
+      log.warn('custom tool unified trace write failed', {
+        toolId: input.record.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    return legacyTraceId
   }
 
   private pruneInvocationHistoryIfDue(force = false): number {

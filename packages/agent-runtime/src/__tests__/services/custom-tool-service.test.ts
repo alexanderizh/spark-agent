@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { CustomToolDraft } from '@spark/protocol'
 import type { KeystoreRef } from '@spark/shared/keystore'
-import { SparkDatabase } from '@spark/storage'
+import { SparkDatabase, ToolInvocationRepository } from '@spark/storage'
 import { CustomToolService } from '../../services/custom-tools/custom-tool.service.js'
 import { CustomToolError } from '../../services/custom-tools/custom-tool-errors.js'
 
@@ -493,6 +493,17 @@ describe('CustomToolService', () => {
         errorCode: 'HTTP_ERROR',
         sessionId: 'session-1',
         turnId: 'turn-1',
+      })
+      expect(
+        new ToolInvocationRepository(db).list({ sourceKind: 'custom-tool' }).items[0],
+      ).toMatchObject({
+        source_id: 'jira_search',
+        tool_id: 'jira_search',
+        session_id: 'session-1',
+        turn_id: 'turn-1',
+        invocation_source: 'platform',
+        status: 'error',
+        error_code: 'HTTP_ERROR',
       })
     } finally {
       await new Promise<void>((resolve, reject) =>

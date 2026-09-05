@@ -126,6 +126,8 @@ import type { CustomToolService } from './custom-tools/custom-tool.service.js'
 import { CustomToolRuntimeCatalog } from './custom-tools/custom-tool-runtime-catalog.js'
 import { ToolPackageService } from './tool-packages/tool-package.service.js'
 import { ToolPackageRuntimeCatalog } from './tool-packages/tool-package-runtime-catalog.js'
+import { UnifiedToolCatalog } from './unified-tools/unified-tool-catalog.js'
+import { TOOL_GUIDANCE_SYSTEM_PROMPT } from './unified-tools/tool-guidance-system-prompt.js'
 
 /** Read the runtime-log toggle from the telemetry settings object shared with the renderer. */
 export function readRuntimeLogEnabled(settings: Pick<SettingsRepository, 'get'>): boolean {
@@ -1180,6 +1182,7 @@ export class SessionService {
     this.customToolRuntimeUnsubscribe?.()
     this.customToolRuntimeUnsubscribe = null
     this.customToolService = service
+    this.toolPackageService.setLegacyCustomToolService(service)
     if (service != null) {
       this.customToolRuntimeUnsubscribe = service.onChange((event) => {
         if (event.runtimeChanged === false) return
@@ -2965,6 +2968,7 @@ export class SessionService {
 
     const systemPromptSections = [
       APPLICATION_FOUNDATION_SYSTEM_PROMPT,
+      TOOL_GUIDANCE_SYSTEM_PROMPT,
       managedAgentPrompt,
       teamMemberContextPrompt,
       orchestrationModePrompt,
@@ -3428,21 +3432,21 @@ export class SessionService {
     }
     const openAIChatTools =
       config.codexApiKind === 'chat'
-        ? new ToolPackageRuntimeCatalog(this.toolPackageService)
-            .list({
+        ? (
+            await this.listUnifiedTools({
               sessionId,
               turnId,
               ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
               agentId: runtimeAgent.id,
               ...(runtimeAgent.workflowId != null ? { workflowId: runtimeAgent.workflowId } : {}),
             })
-            .map((entry) => ({
-              name: entry.qualifiedName,
-              description: entry.tool.description,
-              inputSchema: entry.tool.inputSchema,
-              risk: entry.tool.risk,
-              invoke: entry.invoke,
-            }))
+          ).map((entry) => ({
+            name: entry.qualifiedName,
+            description: entry.tool.description,
+            inputSchema: entry.tool.inputSchema,
+            risk: entry.tool.risk,
+            invoke: entry.invoke,
+          }))
         : []
     const codexConfig: SDKExecutorConfig = {
       apiKey,
@@ -5646,6 +5650,26 @@ export class SessionService {
     return this.toolPackageService
   }
 
+  listUnifiedTools(
+    context: {
+      sessionId?: string
+      turnId?: string
+      projectId?: string
+      agentId?: string
+      workflowId?: string
+      correlationId?: string
+      invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+    } = {},
+  ) {
+    return new UnifiedToolCatalog(
+      this.pluginRuntimeBroker ?? undefined,
+      this.customToolService == null
+        ? undefined
+        : new CustomToolRuntimeCatalog(this.customToolService),
+      new ToolPackageRuntimeCatalog(this.toolPackageService),
+    ).list(context)
+  }
+
   getUserSkillsDir(): string | null {
     return this.userSkillsDir
   }
@@ -7110,7 +7134,7 @@ export class SessionService {
   ): Promise<import('./workflow-executor.js').WorkflowAtomicNodeExecutionReply> {
     if (spec.source === 'platform') {
       try {
-        const entry = this.findWorkflowPlatformToolEntry(spec.toolName, invocationContext)
+        const entry = await this.findWorkflowPlatformToolEntry(spec.toolName, invocationContext)
         if (entry == null) {
           return {
             state: 'failed',
@@ -7194,28 +7218,19 @@ export class SessionService {
    * （自定义工具 id 是 slug 正则，不含 `/`，两类标识天然无歧义）。
    * 每次调用即时读取目录：工作流节点执行频率低，工具启用/禁用状态变化即时生效更安全。
    */
-  private findWorkflowPlatformToolEntry(
+  private async findWorkflowPlatformToolEntry(
     toolName: string,
     invocationContext: { sessionId: string; turnId?: string; workflowId?: string },
-  ): { invoke: (input: Record<string, unknown>) => Promise<unknown> } | null {
-    if (toolName.includes('/')) {
-      const entry = new ToolPackageRuntimeCatalog(this.toolPackageService)
-        .list({
-          sessionId: invocationContext.sessionId,
-          ...(invocationContext.turnId != null ? { turnId: invocationContext.turnId } : {}),
-          ...(invocationContext.workflowId != null
-            ? { workflowId: invocationContext.workflowId }
-            : {}),
-        })
-        .find((candidate) => candidate.tool.name === toolName)
-      return entry ?? null
-    }
-    const entry =
-      this.customToolService == null
-        ? undefined
-        : new CustomToolRuntimeCatalog(this.customToolService)
-            .list()
-            .find((candidate) => candidate.tool.name === toolName)
+  ): Promise<{ invoke: (input: Record<string, unknown>) => Promise<unknown> } | null> {
+    const entries = await this.listUnifiedTools({
+      ...invocationContext,
+      invocationSource: 'workflow',
+    })
+    const entry = entries.find(
+      (candidate) =>
+        candidate.sourceKind !== 'builtin' &&
+        (candidate.tool.name === toolName || candidate.qualifiedName === toolName),
+    )
     return entry ?? null
   }
 

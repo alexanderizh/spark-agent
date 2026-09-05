@@ -39,6 +39,16 @@ rl.on('line', (line) => {
     return
   }
   if (frame.type === 'invoke') {
+    if (frame.input?.events) {
+      send({
+        type: 'log', requestId: frame.requestId, invocationId: frame.invocationId,
+        level: 'info', message: 'processing secret-value',
+      })
+      send({
+        type: 'progress', requestId: frame.requestId, invocationId: frame.invocationId,
+        progress: 0.5, message: 'halfway secret-value',
+      })
+    }
     if (frame.input?.oversize) {
       process.stdout.write('x'.repeat(4 * 1024 * 1024 + 1))
       return
@@ -162,6 +172,46 @@ describe('ToolProcessHost', () => {
     const first = (await host.invoke({ ...request, input: { call: 1 } })) as { pid: number }
     const second = (await host.invoke({ ...request, input: { call: 2 } })) as { pid: number }
     expect(second.pid).toBe(first.pid)
+    await host.dispose()
+  })
+
+  it('emits redacted log and progress events instead of dropping child frames', async () => {
+    const root = await fixture()
+    const events: Array<Record<string, unknown>> = []
+    const host = new ToolProcessHost()
+    const unsubscribe = host.onRuntimeEvent((event) => events.push(event))
+    const packageManifest = manifest('per-call')
+    packageManifest.environment = [
+      {
+        name: 'SECRET_VALUE',
+        title: 'Secret value',
+        type: 'string',
+        required: true,
+        secret: true,
+        agentConfigurable: false,
+      },
+    ]
+    await host.invoke({
+      manifest: packageManifest,
+      installPath: root,
+      toolName: 'echo_value',
+      input: { events: true },
+      context: { environment: { SECRET_VALUE: 'secret-value' } },
+    })
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'log',
+        packageId: 'acme.process-fixture',
+        toolName: 'echo_value',
+        message: 'processing [REDACTED]',
+      }),
+      expect.objectContaining({
+        type: 'progress',
+        progress: 0.5,
+        message: 'halfway [REDACTED]',
+      }),
+    ])
+    unsubscribe()
     await host.dispose()
   })
 

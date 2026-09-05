@@ -5,6 +5,7 @@ import type { ToolPackageManifest } from '@spark/protocol'
 import {
   TOOL_PROCESS_PROTOCOL_VERSION,
   ToolProcessChildFrameSchema,
+  type ToolPackageRuntimeEvent,
   type ToolProcessChildFrame,
   type ToolProcessHostFrame,
 } from '@spark/protocol'
@@ -30,9 +31,15 @@ export interface ToolProcessInvocationContext {
   projectId?: string
   agentId?: string
   workflowId?: string
+  correlationId?: string
+  invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
   environment?: Record<string, string>
   values?: Record<string, unknown>
 }
+
+export type ToolProcessRuntimeEvent = ToolPackageRuntimeEvent
+
+export type ToolProcessRuntimeEventSink = (event: ToolProcessRuntimeEvent) => void
 
 export interface ToolProcessInvokeRequest {
   manifest: ToolPackageManifest
@@ -42,6 +49,7 @@ export interface ToolProcessInvokeRequest {
   context?: ToolProcessInvocationContext
   grantedCapabilities?: ReadonlySet<string>
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 interface PendingRequest {
@@ -50,6 +58,7 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
   expectedType: 'ready' | 'result'
   invocationId?: string
+  removeAbortListener?: () => void
 }
 
 interface ActiveInvocation {
@@ -65,6 +74,7 @@ type HostFramePayload = ToolProcessHostFrame extends infer Frame
 
 export class ToolProcessHost {
   private readonly sessions = new Map<string, ToolProcessSession>()
+  private readonly runtimeEventListeners = new Set<ToolProcessRuntimeEventSink>()
   private readonly startingSessions = new Map<
     string,
     { session: ToolProcessSession; promise: Promise<ToolProcessSession> }
@@ -75,7 +85,15 @@ export class ToolProcessHost {
     private readonly resolveExecutable: (command: string) => Promise<string> = async (command) =>
       command,
     private readonly initializeTimeoutMs = INITIALIZE_TIMEOUT_MS,
-  ) {}
+    eventSink?: ToolProcessRuntimeEventSink,
+  ) {
+    if (eventSink != null) this.runtimeEventListeners.add(eventSink)
+  }
+
+  onRuntimeEvent(listener: ToolProcessRuntimeEventSink): () => void {
+    this.runtimeEventListeners.add(listener)
+    return () => this.runtimeEventListeners.delete(listener)
+  }
 
   async invoke(request: ToolProcessInvokeRequest): Promise<unknown> {
     if (request.manifest.runtime.adapter !== 'process') {
@@ -96,6 +114,7 @@ export class ToolProcessHost {
         capabilities: this.capabilities,
         initializeTimeoutMs: this.initializeTimeoutMs,
         resolveExecutable: this.resolveExecutable,
+        eventSink: (event) => this.emitRuntimeEvent(event),
         onClosed: () => {
           if (this.sessions.get(key) === session) this.sessions.delete(key)
         },
@@ -110,6 +129,7 @@ export class ToolProcessHost {
         request.context ?? {},
         request.grantedCapabilities ?? new Set(),
         request.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS,
+        request.signal,
       )
     } finally {
       if (!persistent) await session.stop()
@@ -159,6 +179,7 @@ export class ToolProcessHost {
       capabilities: this.capabilities,
       initializeTimeoutMs: this.initializeTimeoutMs,
       resolveExecutable: this.resolveExecutable,
+      eventSink: (event) => this.emitRuntimeEvent(event),
       onClosed: () => {
         if (this.sessions.get(key) === session) this.sessions.delete(key)
         if (this.startingSessions.get(key)?.session === session) {
@@ -181,6 +202,19 @@ export class ToolProcessHost {
       }
     }
   }
+
+  private emitRuntimeEvent(event: ToolProcessRuntimeEvent): void {
+    for (const listener of this.runtimeEventListeners) {
+      try {
+        listener(event)
+      } catch (error) {
+        log.warn('tool process runtime event listener failed', {
+          packageId: event.packageId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  }
 }
 
 class ToolProcessSession {
@@ -191,6 +225,8 @@ class ToolProcessSession {
   private readonly invocations = new Map<string, ActiveInvocation>()
   private stderrBytes = 0
   private stderrLimitReported = false
+  private readonly processLog: ReturnType<typeof createLogger>
+  private readonly lastProgressLogAt = new Map<string, number>()
   private stopping = false
   private stopPromise: Promise<void> | null = null
   closed = false
@@ -203,9 +239,12 @@ class ToolProcessSession {
       capabilities: ToolHostCapabilityBroker
       initializeTimeoutMs: number
       resolveExecutable(command: string): Promise<string>
+      eventSink?: ToolProcessRuntimeEventSink
       onClosed(): void
     },
-  ) {}
+  ) {
+    this.processLog = createLogger(`tools:process:${options.manifest.id}`)
+  }
 
   belongsToPackage(packageId: string): boolean {
     return this.options.manifest.id === packageId
@@ -289,6 +328,7 @@ class ToolProcessSession {
     context: ToolProcessInvocationContext,
     grantedCapabilities: ReadonlySet<string>,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const tool = this.options.manifest.tools.find((candidate) => candidate.name === toolName)
     if (tool == null) throw new Error(`Tool package does not define tool: ${toolName}`)
@@ -317,6 +357,8 @@ class ToolProcessSession {
         ...(context.projectId != null ? { projectId: context.projectId } : {}),
         ...(context.agentId != null ? { agentId: context.agentId } : {}),
         ...(context.workflowId != null ? { workflowId: context.workflowId } : {}),
+        ...(context.correlationId != null ? { correlationId: context.correlationId } : {}),
+        ...(signal != null ? { signal } : {}),
       },
       grantedCapabilities: new Set(grantedCapabilities),
     })
@@ -330,6 +372,7 @@ class ToolProcessSession {
           context: context.values ?? {},
         },
         timeoutMs,
+        signal,
       )
     } catch (error) {
       try {
@@ -374,7 +417,11 @@ class ToolProcessSession {
     if (!this.closed) this.handleClosed()
   }
 
-  private request(frame: HostFramePayload, timeoutMs: number): Promise<unknown> {
+  private request(
+    frame: HostFramePayload,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     if (this.pending.size >= MAX_PENDING_REQUESTS) {
       return Promise.reject(
         new Error(`Tool process has too many concurrent requests (max ${MAX_PENDING_REQUESTS})`),
@@ -382,10 +429,25 @@ class ToolProcessSession {
     }
     const requestId = randomUUID()
     return new Promise((resolveRequest, rejectRequest) => {
+      if (signal?.aborted === true) {
+        rejectRequest(new ToolProcessRequestCancelledError())
+        return
+      }
+      const onAbort = (): void => {
+        const pending = this.pending.get(requestId)
+        if (pending == null) return
+        clearTimeout(pending.timer)
+        pending.removeAbortListener?.()
+        this.pending.delete(requestId)
+        rejectRequest(new ToolProcessRequestCancelledError())
+      }
       const timer = setTimeout(() => {
+        const pending = this.pending.get(requestId)
+        pending?.removeAbortListener?.()
         this.pending.delete(requestId)
         rejectRequest(new ToolProcessRequestTimeoutError(frame.type))
       }, timeoutMs)
+      signal?.addEventListener('abort', onAbort, { once: true })
       this.pending.set(requestId, {
         resolve: resolveRequest,
         reject: rejectRequest,
@@ -394,11 +456,15 @@ class ToolProcessSession {
         ...('invocationId' in frame && typeof frame.invocationId === 'string'
           ? { invocationId: frame.invocationId }
           : {}),
+        ...(signal != null
+          ? { removeAbortListener: () => signal.removeEventListener('abort', onAbort) }
+          : {}),
       })
       try {
         this.send(frame, requestId)
       } catch (error) {
         clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
         this.pending.delete(requestId)
         rejectRequest(error instanceof Error ? error : new Error(String(error)))
       }
@@ -455,7 +521,14 @@ class ToolProcessSession {
       )
       return
     }
-    if (frame.type === 'log' || frame.type === 'progress') return
+    if (frame.type === 'log') {
+      this.handleLogFrame(frame)
+      return
+    }
+    if (frame.type === 'progress') {
+      this.handleProgressFrame(frame)
+      return
+    }
     if (frame.type === 'capability.request') {
       await this.handleCapabilityRequest(frame)
       return
@@ -480,10 +553,78 @@ class ToolProcessSession {
       return
     }
     clearTimeout(pending.timer)
+    pending.removeAbortListener?.()
     this.pending.delete(frame.requestId)
     if (frame.type === 'error') pending.reject(new Error(`${frame.code}: ${frame.message}`))
     else if (frame.type === 'result') pending.resolve(frame.result)
     else pending.resolve(undefined)
+  }
+
+  private handleLogFrame(frame: Extract<ToolProcessChildFrame, { type: 'log' }>): void {
+    const invocation =
+      frame.invocationId == null ? undefined : this.invocations.get(frame.invocationId)
+    const message = redactConfiguredSecrets(
+      frame.message,
+      this.options.manifest,
+      this.options.environment,
+    )
+    this.processLog[frame.level]('tool process log', {
+      packageVersion: this.options.manifest.version,
+      ...(frame.invocationId != null ? { invocationId: frame.invocationId } : {}),
+      ...(invocation?.context.correlationId != null
+        ? { correlationId: invocation.context.correlationId }
+        : {}),
+      ...(invocation != null ? { toolName: invocation.context.toolName } : {}),
+      message,
+    })
+    this.options.eventSink?.({
+      type: 'log',
+      packageId: this.options.manifest.id,
+      packageVersion: this.options.manifest.version,
+      ...(frame.invocationId != null ? { invocationId: frame.invocationId } : {}),
+      ...(invocation?.context.correlationId != null
+        ? { correlationId: invocation.context.correlationId }
+        : {}),
+      ...(invocation != null ? { toolName: invocation.context.toolName } : {}),
+      level: frame.level,
+      message,
+    })
+  }
+
+  private handleProgressFrame(frame: Extract<ToolProcessChildFrame, { type: 'progress' }>): void {
+    const invocation = this.invocations.get(frame.invocationId)
+    const message =
+      frame.message == null
+        ? undefined
+        : redactConfiguredSecrets(frame.message, this.options.manifest, this.options.environment)
+    const now = Date.now()
+    const lastLoggedAt = this.lastProgressLogAt.get(frame.invocationId) ?? 0
+    const terminal = frame.progress === 0 || frame.progress === 1
+    if (terminal || now - lastLoggedAt >= 500) {
+      this.lastProgressLogAt.set(frame.invocationId, now)
+      this.processLog.info('tool process progress', {
+        packageVersion: this.options.manifest.version,
+        invocationId: frame.invocationId,
+        ...(invocation?.context.correlationId != null
+          ? { correlationId: invocation.context.correlationId }
+          : {}),
+        ...(invocation != null ? { toolName: invocation.context.toolName } : {}),
+        ...(frame.progress != null ? { progress: frame.progress } : {}),
+        ...(message != null ? { message } : {}),
+      })
+    }
+    this.options.eventSink?.({
+      type: 'progress',
+      packageId: this.options.manifest.id,
+      packageVersion: this.options.manifest.version,
+      invocationId: frame.invocationId,
+      ...(invocation?.context.correlationId != null
+        ? { correlationId: invocation.context.correlationId }
+        : {}),
+      ...(invocation != null ? { toolName: invocation.context.toolName } : {}),
+      ...(frame.progress != null ? { progress: frame.progress } : {}),
+      ...(message != null ? { message } : {}),
+    })
   }
 
   private async handleCapabilityRequest(
@@ -540,10 +681,12 @@ class ToolProcessSession {
     const failure = error ?? new Error('Tool process closed')
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer)
+      pending.removeAbortListener?.()
       pending.reject(failure)
     }
     this.pending.clear()
     this.invocations.clear()
+    this.lastProgressLogAt.clear()
     this.options.onClosed()
   }
 
@@ -558,6 +701,13 @@ class ToolProcessRequestTimeoutError extends Error {
   constructor(frameType: string) {
     super(`Tool process request timed out: ${frameType}`)
     this.name = 'ToolProcessRequestTimeoutError'
+  }
+}
+
+class ToolProcessRequestCancelledError extends Error {
+  constructor() {
+    super('Tool process request was cancelled')
+    this.name = 'AbortError'
   }
 }
 

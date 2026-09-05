@@ -462,11 +462,19 @@ export type {
 } from './services/tool-packages/tool-package.service.js'
 export { ToolPackageRuntimeCatalog } from './services/tool-packages/tool-package-runtime-catalog.js'
 export type { ToolPackageCatalogEntry } from './services/tool-packages/tool-package-runtime-catalog.js'
+export { UnifiedToolCatalog } from './services/unified-tools/unified-tool-catalog.js'
+export type {
+  UnifiedToolCatalogEntry,
+  UnifiedToolSourceKind,
+} from './services/unified-tools/unified-tool-catalog.js'
+export type {
+  ToolProcessRuntimeEvent,
+  ToolProcessRuntimeEventSink,
+} from './services/tool-packages/tool-process-host.js'
 export {
   resolveRuntimeToolPath,
   resolveMcpNodeRuntimeExecutable,
 } from './services/session-mcp-tooling-helpers.js'
-
 // 工作流运行进度组装：主进程「历史运行回看」IPC 复用同一纯函数，保证历史明细与实时进度渲染一致。
 export { buildWorkflowProgressNodes } from './services/session-workflow-helpers.js'
 export type { WorkflowProgressNodeMetaInput } from './services/session-workflow-helpers.js'

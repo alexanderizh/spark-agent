@@ -23,6 +23,7 @@ export async function runManagedProjectDevelopmentStep(params: {
   manifest: ToolPackageManifest
   step: ToolPackageDevelopmentStep
   timeoutMs?: number
+  signal?: AbortSignal
 }): Promise<ToolPackageProjectStepResult> {
   const { command, inferred } = await resolveStepCommand(
     params.projectPath,
@@ -45,24 +46,28 @@ export async function runManagedProjectDevelopmentStep(params: {
   child.stdout.on('data', (chunk: Buffer) => appendBounded(stdout, chunk))
   child.stderr.on('data', (chunk: Buffer) => appendBounded(stderr, chunk))
 
-  const exitedBeforeTimeout = await new Promise<boolean>((resolveExited) => {
+  const outcome = await new Promise<'exited' | 'timeout' | 'cancelled'>((resolveOutcome) => {
     let settled = false
-    const finish = (exited: boolean): void => {
+    const finish = (next: 'exited' | 'timeout' | 'cancelled'): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       child.off('exit', onExit)
       child.off('error', onError)
-      resolveExited(exited)
+      params.signal?.removeEventListener('abort', onAbort)
+      resolveOutcome(next)
     }
-    const onExit = (): void => finish(true)
-    const onError = (): void => finish(true)
-    const timer = setTimeout(() => finish(false), timeoutMs)
+    const onExit = (): void => finish('exited')
+    const onError = (): void => finish('exited')
+    const onAbort = (): void => finish('cancelled')
+    const timer = setTimeout(() => finish('timeout'), timeoutMs)
     child.once('exit', onExit)
     child.once('error', onError)
+    params.signal?.addEventListener('abort', onAbort, { once: true })
+    if (params.signal?.aborted === true) onAbort()
   })
 
-  if (!exitedBeforeTimeout) {
+  if (outcome !== 'exited') {
     terminateProcessTree(child)
     await waitForExit(child, 15_000)
   }
@@ -73,7 +78,8 @@ export async function runManagedProjectDevelopmentStep(params: {
     command,
     inferred,
     exitCode: child.exitCode,
-    timedOut: !exitedBeforeTimeout,
+    timedOut: outcome === 'timeout',
+    ...(outcome === 'cancelled' ? { cancelled: true } : {}),
     durationMs: Date.now() - startedAt,
     stdout: formatBounded(stdout),
     stderr: formatBounded(stderr),

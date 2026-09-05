@@ -146,6 +146,7 @@ const send = (frame) => process.stdout.write(JSON.stringify({
 rl.on('line', (line) => {
   const frame = JSON.parse(line)
   if (frame.type === 'initialize') send({ type: 'ready', requestId: frame.requestId })
+  if (frame.type === 'invoke' && frame.input?.hang === true) return
   if (frame.type === 'invoke') send({
     type: 'result', requestId: frame.requestId, invocationId: frame.invocationId,
     result: {
@@ -248,6 +249,29 @@ describe('ToolPackageService', () => {
     await expect(service!.setEnabled('acme.productivity-suite', '1.0.0')).resolves.toMatchObject({
       state: 'enabled',
       enabled_version: '1.0.0',
+    })
+  })
+
+  it('cancels an active renderer test by correlation id and records cancellation', async () => {
+    const source = await createSource(root, manifest())
+    await service!.installDirectory({ sourcePath: source, source: 'local-directory' })
+    const correlationId = '1d344830-d85c-4ddb-a732-df4258c59172'
+    const pending = service!.testInstalledVersion({
+      packageId: 'acme.productivity-suite',
+      version: '1.0.0',
+      toolName: 'generate_report',
+      input: { hang: true },
+      correlationId,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(service!.cancelTest(correlationId)).toBe(true)
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      correlationId,
+      error: { code: 'AbortError' },
+    })
+    expect(service!.listInvocations({ correlationId }).items[0]).toMatchObject({
+      status: 'cancelled',
     })
   })
 
@@ -574,7 +598,7 @@ describe('ToolPackageService', () => {
     ])
   })
 
-  it('rejects blocked packages and runtime adapters that are not executable yet', async () => {
+  it('rejects blocked packages and reports unavailable legacy bridge hosts precisely', async () => {
     const blockedSource = await createSource(root, manifest())
     await service!.installDirectory({
       sourcePath: blockedSource,
@@ -593,8 +617,6 @@ describe('ToolPackageService', () => {
       }),
     ).rejects.toThrow(/blocked and cannot execute/)
 
-    // remote-http / mcp-import 已在 V3 B-4 转为可执行适配器；
-    // 仍拒绝启用的是 legacy-custom-tool 占位类型。
     const legacySource = await createSource(
       root,
       manifest('2.0.0', {
@@ -606,9 +628,17 @@ describe('ToolPackageService', () => {
       }),
     )
     await service!.installDirectory({ sourcePath: legacySource, source: 'local-directory' })
-    await expect(service!.setEnabled('acme.legacy-suite', '2.0.0')).rejects.toThrow(
-      /runtime adapter is not executable: legacy-custom-tool/,
-    )
+    await expect(service!.setEnabled('acme.legacy-suite', '2.0.0')).resolves.toMatchObject({
+      state: 'enabled',
+    })
+    await expect(
+      service!.invokeInstalledVersion({
+        packageId: 'acme.legacy-suite',
+        version: '2.0.0',
+        toolName: 'generate_report',
+        input: {},
+      }),
+    ).rejects.toThrow(/Legacy Custom Tool service is unavailable/)
   })
 
   it('rejects enablement when a required Spark capability is not registered by the host', async () => {
@@ -1113,6 +1143,95 @@ describe('ToolPackageService', () => {
     expect(lastBody).toMatchObject({ type: 'invoke', toolName: 'generate_report' })
     expect(lastAuth).toBe('Bearer frame-token')
     await server.close()
+  })
+
+  it('executes declarative HTTP tools over HTTP without blocking local or private endpoints', async () => {
+    const server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ path: req.url, ok: true }))
+    })
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    const packageManifest = manifest('3.0.0', {
+      runtime: {
+        adapter: 'declarative-http',
+        tools: {
+          generate_report: {
+            request: {
+              method: 'GET',
+              urlTemplate: `http://127.0.0.1:${String(port)}/reports/{{reportId}}`,
+            },
+            response: { format: 'json' },
+          },
+        },
+      },
+      tools: [
+        {
+          name: 'generate_report',
+          title: 'Generate report',
+          description: 'Generate a report over a declarative HTTP endpoint',
+          inputSchema: {
+            type: 'object',
+            properties: { reportId: { type: 'string' } },
+            required: ['reportId'],
+          },
+          risk: 'read',
+          effect: 'read',
+          idempotency: 'safe',
+        },
+      ],
+    })
+    const source = await createSource(root, packageManifest)
+    await service!.installDirectory({ sourcePath: source, source: 'local-directory' })
+    await service!.setEnabled(packageManifest.id, packageManifest.version)
+
+    await expect(
+      service!.invokeInstalledVersion({
+        packageId: packageManifest.id,
+        version: packageManifest.version,
+        toolName: 'generate_report',
+        input: { reportId: 'weekly report' },
+      }),
+    ).resolves.toMatchObject({
+      text: expect.stringContaining('/reports/weekly%20report'),
+      meta: expect.objectContaining({ truncated: false }),
+    })
+  })
+
+  it('executes legacy-custom-tool bridge packages with session attribution', async () => {
+    const packageManifest = manifest('2.0.0', {
+      id: 'acme.legacy-suite',
+      runtime: { adapter: 'legacy-custom-tool', toolId: 'legacy-http-tool' },
+    })
+    const source = await createSource(root, packageManifest)
+    await service!.installDirectory({ sourcePath: source, source: 'local-directory' })
+    const executeEnabled = vi.fn(async () => ({
+      text: 'legacy result',
+      meta: { durationMs: 1, bytes: 13, truncated: false },
+      traceId: 7,
+    }))
+    service!.setLegacyCustomToolService({ executeEnabled } as never)
+    await service!.setEnabled(packageManifest.id, packageManifest.version)
+    await expect(
+      service!.invokeInstalledVersion({
+        packageId: packageManifest.id,
+        version: packageManifest.version,
+        toolName: 'generate_report',
+        input: { period: 'weekly' },
+        context: { sessionId: 'session-1', turnId: 'turn-1' },
+      }),
+    ).resolves.toMatchObject({ text: 'legacy result', legacyTraceId: 7 })
+    expect(executeEnabled).toHaveBeenCalledWith({
+      toolId: 'legacy-http-tool',
+      input: { period: 'weekly' },
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      source: 'model',
+      // The bridge links the nested legacy execution into the unified trace.
+      correlationId: expect.any(String),
+      invocationSource: 'nested',
+    })
   })
 
   it('imports MCP server tools with conservative defaults and name normalization', async () => {
