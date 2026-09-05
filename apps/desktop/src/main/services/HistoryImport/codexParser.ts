@@ -180,6 +180,14 @@ function parseToolInput(raw: string | undefined): Record<string, unknown> {
   }
 }
 
+/**
+ * sourceSessionId 取「最后一条 session_meta 的 id」而非首条，这是刻意的：
+ * Codex resume/续聊 fork 出的新 rollout 文件首行是自己的新 session id，
+ * 但末尾会回写被续聊原 thread 的 session_meta（内容归属标记）。取最后一条
+ * 即可让同一 thread 的所有快照（原始文件 + 各代 fork 文件）解析出同一个 id，
+ * HistoryImportService.scanCodex 按它归并为一个导入条目。勿改为只取首条——
+ * 那会把 fork 快照当独立会话重复展示。
+ */
 function collectMeta(
   lines: CodexLine[],
   threadName: string | null,
@@ -200,7 +208,10 @@ function collectMeta(
     }
     if (l.type === 'turn_context' && p?.cwd != null && cwd == null) cwd = p.cwd
     if (l.timestamp != null) {
-      if (firstTs == null) firstTs = l.timestamp
+      // firstTs 取全行最早而非首行：resume/fork 文件可能复制了更早的历史行
+      // （首行自己的 meta 时间晚于被复制内容），取全行 min 才能让
+      // HistoryImportService 的主线拼接正确识别文件间的内容重叠。
+      if (firstTs == null || l.timestamp.localeCompare(firstTs) < 0) firstTs = l.timestamp
       lastTs = l.timestamp
     }
     if (l.type === 'response_item' && p?.type === 'message') {

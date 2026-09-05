@@ -20,6 +20,7 @@ import { EventRepository, SessionRepository, WorkspaceRepository } from '@spark/
 import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import type {
+  AgentEvent,
   HistoryImportSource,
   HistoryImportItem,
   HistoryImportScanResponse,
@@ -38,7 +39,12 @@ import { extractCodexMeta, parseCodexRollout } from './codexParser.js'
 import { extractZcodeV2Meta, parseZcodeV2Transcript } from './zcodeV2Parser.js'
 import { parseZcodeCliTranscript } from './zcodeCliParser.js'
 import { listZcodeCliSessions, loadZcodeCliSessionText } from './zcodeCliStore.js'
-import { deriveTitle, type ParsedTranscript, type TranscriptMeta } from './types.js'
+import {
+  completeImportedTurns,
+  deriveTitle,
+  type ParsedTranscript,
+  type TranscriptMeta,
+} from './types.js'
 import type { ZcodeImportOrigin } from '@spark/protocol'
 
 const log = createLogger('history-import')
@@ -100,6 +106,12 @@ interface ScannedFile {
   mtime: Date
 }
 
+/** scanCodex 中同一 thread 的一个 rollout 快照（文件 + 解析出的轻量元数据） */
+interface CodexRolloutCandidate {
+  file: ScannedFile
+  meta: TranscriptMeta
+}
+
 export class HistoryImportService {
   private readonly home: string
   /**
@@ -107,6 +119,11 @@ export class HistoryImportService {
    * 重复 spawn git 进程做归一化。在一次 import 批次内有效。
    */
   private readonly mainRootCache = new Map<string, string | null>()
+  /**
+   * threadId → 主线（时间衔接链）rollout 文件路径列表。scan/import 入口失效重建；
+   * 供 codex 导入/预览的拼接解析复用，避免对每个选中条目重复枚举 sessions 目录。
+   */
+  private codexMainlineCache: Map<string, string[]> | null = null
 
   constructor(private readonly deps: HistoryImportDeps) {
     this.home = deps.homeDir ?? homedir()
@@ -233,24 +250,71 @@ export class HistoryImportService {
       const threadNames = await this.loadCodexThreadNames()
       const files: ScannedFile[] = []
       await this.walkCodex(root, files)
+      // 先按 thread id（最后一条 session_meta 的 id，见 codexParser.collectMeta）
+      // 分组：同一会话 resume 出的各代 rollout 快照必须归并为一个条目，
+      // 否则同 thread 会在列表里重复出现且 sourceSessionId 全部撞车（勾选联动 +
+      // 导入去重静默丢弃其余快照）。
+      const byThread = new Map<string, CodexRolloutCandidate[]>()
       for (const file of files) {
         try {
           const text = await this.readForMeta(file.filePath, file.sizeBytes)
           const fallbackId = codexIdFromFilename(file.filePath)
-          const provisional = extractCodexMeta(text, null, fallbackId)
-          const threadName = threadNames.get(provisional.sourceSessionId) ?? null
-          const meta = threadName != null ? { ...provisional, title: threadName } : provisional
+          const meta = extractCodexMeta(text, null, fallbackId)
           if (meta.messageCount === 0) continue
-          out.push(this.toItem('codex', file, meta, importedIds))
-          count++
+          const list = byThread.get(meta.sourceSessionId)
+          if (list != null) list.push({ file, meta })
+          else byThread.set(meta.sourceSessionId, [{ file, meta }])
         } catch (err) {
           log.warn(`scan codex file failed: ${file.filePath}: ${errMsg(err)}`)
         }
       }
+      // 主线（时间衔接链）写入实例缓存：preview 直接复用 scan 的枚举结果；
+      // 每次扫描重建新 Map（而非复用旧实例），避免残留已删除 thread 的失效路径；
+      // import 入口失效重建，保证与磁盘最新一致
+      const mainlineCache = new Map<string, string[]>()
+      for (const [threadId, candidates] of byThread) {
+        const mainline = pickCodexMainline(candidates)
+        out.push(this.buildCodexThreadItem(mainline, candidates, threadNames, importedIds))
+        mainlineCache.set(
+          threadId,
+          mainline.map((c) => c.file.filePath),
+        )
+        count++
+      }
+      this.codexMainlineCache = mainlineCache
       return { source: 'codex', available: true, count, rootPath: root }
     } catch (err) {
       return { source: 'codex', available: false, count, rootPath: root, error: errMsg(err) }
     }
+  }
+
+  /**
+   * 把同一 thread 的多个 rollout 文件归并为一个导入条目。
+   *
+   * Codex 的 resume 机制让同一 thread 在磁盘上以多个 rollout 文件存在，实测两种形态：
+   *   1. 增量衔接——resume 后的新文件只记录新增内容，与前一文件时间精确衔接
+   *      （thread 的连续历史分布在多个文件里）；
+   *   2. 并行重叠——多个进程同时 resume 同一 thread，各自文件的时间窗互相重叠
+   *      （内容是并行的两条工作线，拼接会重复）。
+   * 条目的 messageCount 用主线（形态 1 贪心衔接链）文件计数之和；firstTimestamp /
+   * lastTimestamp 聚合为组内完整跨度；filePath 指向最全文件（单文件兜底导入源）。
+   */
+  private buildCodexThreadItem(
+    mainline: CodexRolloutCandidate[],
+    candidates: CodexRolloutCandidate[],
+    threadNames: Map<string, string>,
+    importedIds: Set<string>,
+  ): HistoryImportItem {
+    const best = pickMostCompleteRollout(candidates)
+    const threadName = threadNames.get(best.meta.sourceSessionId) ?? null
+    const meta: TranscriptMeta = {
+      ...best.meta,
+      ...(threadName != null ? { title: threadName } : {}),
+      messageCount: mainline.reduce((sum, c) => sum + c.meta.messageCount, 0),
+      firstTimestamp: earliestTs(candidates.map((c) => c.meta.firstTimestamp)),
+      lastTimestamp: latestTs(candidates.map((c) => c.meta.lastTimestamp)),
+    }
+    return this.toItem('codex', best.file, meta, importedIds)
   }
 
   private async walkCodex(dir: string, out: ScannedFile[]): Promise<void> {
@@ -438,33 +502,27 @@ export class HistoryImportService {
     sourceSessionId?: string,
     origin?: ZcodeImportOrigin,
   ): Promise<HistoryImportPreviewResponse> {
-    const text = await this.loadRaw(source, filePath, sourceSessionId, origin)
-    const parsed = this.parse(source, text, filePath, 'preview', {
-      ...(sourceSessionId != null ? { sourceSessionId } : {}),
-      ...(origin != null ? { origin } : {}),
-    })
-    const messages: HistoryImportPreviewMessage[] = []
-    for (const event of parsed.events) {
-      let msg: HistoryImportPreviewMessage | null = null
-      if (event.type === 'user_message') {
-        msg = { role: 'user', text: event.content, timestamp: event.timestamp }
-      } else if (event.type === 'assistant_message') {
-        msg = { role: 'assistant', text: event.content, timestamp: event.timestamp }
-      } else if (event.type === 'agent_thinking') {
-        msg = { role: 'thinking', text: event.content, timestamp: event.timestamp }
-      } else if (event.type === 'tool_call') {
-        msg = { role: 'tool', text: event.toolName, timestamp: event.timestamp }
-      }
-      if (msg != null) messages.push(msg)
-      if (messages.length >= limit + 1) break
-    }
-    const truncated = messages.length > limit
-    return { messages: messages.slice(0, limit), truncated }
+    const parsed =
+      source === 'codex' && sourceSessionId != null && sourceSessionId.length > 0
+        ? await this.parseCodexThread(sourceSessionId, filePath, 'preview')
+        : this.parse(
+            source,
+            await this.loadRaw(source, filePath, sourceSessionId, origin),
+            filePath,
+            'preview',
+            {
+              ...(sourceSessionId != null ? { sourceSessionId } : {}),
+              ...(origin != null ? { origin } : {}),
+            },
+          )
+    return toPreviewResponse(parsed, limit)
   }
 
   // ─── import ──────────────────────────────────────────────────────────────
 
   async import(selections: HistoryImportSelection[]): Promise<HistoryImportResponse> {
+    // codex 主线缓存按 import 批次失效，保证拼接用到的文件列表与磁盘最新一致
+    this.codexMainlineCache = null
     const results: HistoryImportResultEntry[] = []
     const importedIds = this.loadImportedSourceIds()
     const workspaceCache = new Map<string, string>()
@@ -516,24 +574,19 @@ export class HistoryImportService {
     sel: HistoryImportSelection,
     workspaceCache: Map<string, string>,
   ): Promise<string> {
-    const text = await this.loadRaw(sel.source, sel.filePath, sel.sourceSessionId, sel.origin)
-    const tempSessionId = 'pending'
-    const parseOpts = {
-      sourceSessionId: sel.sourceSessionId,
-      ...(sel.origin != null ? { origin: sel.origin } : {}),
-    }
-    // 先解析拿到 meta（cwd / 时间），用于 workspace 归属与时间回填
-    const probe = this.parse(sel.source, text, sel.filePath, tempSessionId, parseOpts)
-    if (probe.events.length === 0) {
+    // 单次解析（codex 走 thread 主线拼接）：meta 决定 workspace / 标题，
+    // 建会话后仅重绑 sessionId 落库，避免对大 transcript 二次全量解析
+    const parsed = await this.parseForImport(sel)
+    if (parsed.events.length === 0) {
       throw new Error('transcript 解析为空（无可导入消息）')
     }
 
-    const provider = await this.deps.resolveProvider(sel.source, probe.meta.providerHint)
-    const cwd = sel.cwd ?? probe.meta.cwd
+    const provider = await this.deps.resolveProvider(sel.source, parsed.meta.providerHint)
+    const cwd = sel.cwd ?? parsed.meta.cwd
     const workspaceId = await this.resolveWorkspaceId(cwd, workspaceCache)
 
     const { sessionId } = await this.deps.createSession({
-      title: sel.title || probe.meta.title,
+      title: sel.title || parsed.meta.title,
       workspaceId,
       providerProfileId: provider.providerProfileId,
       agentAdapter: provider.agentAdapter,
@@ -541,11 +594,10 @@ export class HistoryImportService {
       ...(provider.modelId != null ? { modelId: provider.modelId } : {}),
     })
 
-    // 用真实 sessionId 重新解析（事件需绑定 sessionId）
-    const parsed = this.parse(sel.source, text, sel.filePath, sessionId, parseOpts)
+    const events = parsed.events.map((e) => ({ ...e, sessionId }) as AgentEvent)
     const eventRepo = new EventRepository(this.deps.db)
     eventRepo.insertBatch(
-      parsed.events.map((e) => ({
+      events.map((e) => ({
         id: e.id,
         sessionId: e.sessionId,
         turnId: e.turnId,
@@ -581,6 +633,21 @@ export class HistoryImportService {
   // ─── helpers ─────────────────────────────────────────────────────────────
 
   /**
+   * 导入/预览前的统一解析入口：codex 走 thread 主线拼接（连续历史分布在
+   * 多个 rollout 文件），其余来源单文件解析。
+   */
+  private async parseForImport(sel: HistoryImportSelection): Promise<ParsedTranscript> {
+    if (sel.source === 'codex' && sel.sourceSessionId.length > 0) {
+      return this.parseCodexThread(sel.sourceSessionId, sel.filePath, 'pending')
+    }
+    const text = await this.loadRaw(sel.source, sel.filePath, sel.sourceSessionId, sel.origin)
+    return this.parse(sel.source, text, sel.filePath, 'pending', {
+      sourceSessionId: sel.sourceSessionId,
+      ...(sel.origin != null ? { origin: sel.origin } : {}),
+    })
+  }
+
+  /**
    * 读取原始 transcript 文本。zcode CLI 来源的 filePath 指向 sqlite 库文件，
    * 需按 sourceSessionId 从库中重组会话载荷；其余来源直接读文件。
    */
@@ -599,6 +666,121 @@ export class HistoryImportService {
       return text
     }
     return readFile(filePath, 'utf-8')
+  }
+
+  /**
+   * 解析 codex thread 的完整对话：主线 rollout 文件逐个全量解析后按序拼接事件。
+   *
+   * thread 的连续历史可能分布在多个 rollout 文件（每次 resume 一个新文件），
+   * 单读条目 filePath（最全文件）会丢失它之前的衔接段，因此按与 scanCodex
+   * 相同的分组规则重新枚举主线并逐文件解析拼接。拼接时做一处跨文件去重：
+   * Codex resume 会把 thread 最后一条 user message 重放进新 rollout 开头
+   * （作为续聊请求记录，时间戳为衔接时刻），后继文件首个 user_message 与已
+   * 拼接部分最后一条 user_message 文本相同时丢弃，避免「继续」这类续聊指令
+   * 在衔接处重复。meta 取首文件（cwd / 标题），时间聚合为主线跨度，
+   * messageCount 按拼接后事件实数统计（全量解析，无截断低估）。
+   */
+  private async parseCodexThread(
+    threadId: string,
+    fallbackFilePath: string,
+    sessionId: string,
+  ): Promise<ParsedTranscript> {
+    let paths: string[]
+    try {
+      paths = await this.listCodexMainlinePaths(threadId)
+    } catch (err) {
+      log.warn(`list codex mainline failed: ${threadId}: ${errMsg(err)}`)
+      paths = []
+    }
+    if (paths.length === 0) {
+      const text = await readFile(fallbackFilePath, 'utf-8')
+      return parseCodexRollout(text, {
+        sessionId,
+        sourceSessionId: threadId,
+        threadName: null,
+        fallbackTimestamp: new Date().toISOString(),
+      })
+    }
+    const fallbackTimestamp = new Date().toISOString()
+    const events: AgentEvent[] = []
+    const firsts: Array<string | null> = []
+    const lasts: Array<string | null> = []
+    let headMeta: TranscriptMeta | null = null
+    let lastUserText: string | null = null
+    for (const p of paths) {
+      const text = await readFile(p, 'utf-8')
+      const parsed = parseCodexRollout(text, {
+        sessionId,
+        sourceSessionId: threadId,
+        threadName: null,
+        fallbackTimestamp,
+      })
+      if (headMeta == null) headMeta = parsed.meta
+      firsts.push(parsed.meta.firstTimestamp)
+      lasts.push(parsed.meta.lastTimestamp)
+      let firstUserSeen = false
+      for (const event of parsed.events) {
+        if (event.type === 'user_message') {
+          // 比较用 trim 后文本：重放消息与源消息可能仅差尾换行
+          const content = event.content.trim()
+          if (!firstUserSeen) {
+            firstUserSeen = true
+            // 首文件无前置，直接保留；后继文件首条与已拼接末条相同 → resume 重放，丢弃
+            if (headMeta !== parsed.meta && content.length > 0 && content === lastUserText) {
+              continue
+            }
+          }
+          lastUserText = content
+        }
+        events.push(event)
+      }
+    }
+    const messageCount = events.filter(
+      (e) => e.type === 'user_message' || e.type === 'assistant_message',
+    ).length
+    return {
+      // 单文件解析各自从 0 编 seq，拼接后统一经 completeImportedTurns 重排
+      events: completeImportedTurns(events),
+      meta: {
+        sourceSessionId: threadId,
+        title: headMeta?.title ?? deriveTitle(null, '未命名 Codex 会话'),
+        cwd: headMeta?.cwd ?? null,
+        firstTimestamp: earliestTs(firsts),
+        lastTimestamp: latestTs(lasts),
+        messageCount,
+      },
+    }
+  }
+
+  /** threadId → 主线文件路径（枚举 sessions 目录一次并缓存；scan/import 入口失效） */
+  private async listCodexMainlinePaths(threadId: string): Promise<string[]> {
+    let cache = this.codexMainlineCache
+    if (cache == null) {
+      cache = new Map<string, string[]>()
+      const files: ScannedFile[] = []
+      await this.walkCodex(this.codexRoot, files)
+      const byThread = new Map<string, CodexRolloutCandidate[]>()
+      for (const file of files) {
+        try {
+          const text = await this.readForMeta(file.filePath, file.sizeBytes)
+          const meta = extractCodexMeta(text, null, codexIdFromFilename(file.filePath))
+          if (meta.messageCount === 0) continue
+          const list = byThread.get(meta.sourceSessionId)
+          if (list != null) list.push({ file, meta })
+          else byThread.set(meta.sourceSessionId, [{ file, meta }])
+        } catch (err) {
+          log.warn(`scan codex file failed: ${file.filePath}: ${errMsg(err)}`)
+        }
+      }
+      for (const [id, candidates] of byThread) {
+        cache.set(
+          id,
+          pickCodexMainline(candidates).map((c) => c.file.filePath),
+        )
+      }
+      this.codexMainlineCache = cache
+    }
+    return cache.get(threadId) ?? []
   }
 
   private parse(
@@ -775,6 +957,112 @@ function projectName(cwd: string | null): string {
   const norm = cwd.replace(/[\\/]+$/, '')
   const seg = norm.split(/[\\/]/).pop()
   return seg != null && seg.length > 0 ? seg : '导入历史'
+}
+
+/**
+ * 同一 thread 的快照中选导入代表：sizeBytes ↓，lastTimestamp ↓，messageCount ↓。
+ *
+ * sizeBytes 优先而不是 messageCount：组内快照是 Codex resume 的复制叠加产物，
+ * 字节数单调反映完整度（新快照 ⊇ 被复制历史 + 追加内容）；而超过 8MB 的快照
+ * scan 阶段只读首尾块（readForMeta），messageCount 是严重低估的下界——按消息数
+ * 选代表会把最全的大快照输给完整读取的小快照。lastTimestamp / messageCount
+ * 仅在字节完全相等时兜底裁决。
+ */
+function pickMostCompleteRollout(candidates: CodexRolloutCandidate[]): CodexRolloutCandidate {
+  return candidates.reduce((best, cur) => {
+    const bySize = cur.file.sizeBytes - best.file.sizeBytes
+    if (bySize !== 0) return bySize > 0 ? cur : best
+    const byTime = (cur.meta.lastTimestamp ?? '').localeCompare(best.meta.lastTimestamp ?? '')
+    if (byTime !== 0) return byTime > 0 ? cur : best
+    return cur.meta.messageCount > best.meta.messageCount ? cur : best
+  })
+}
+
+/**
+ * 主线衔接容差：resume 可能重写上一段尾部少量内容使新文件起点略早于当前
+ * 覆盖末尾，衔接判定允许该重叠；远小于并行 resume 文件的重叠深度（分钟级），
+ * 不会误纳入。
+ */
+const CODEX_MAINLINE_OVERLAP_TOLERANCE_MS = 60_000
+
+/**
+ * 从同 thread 的 rollout 文件中贪心选出时间衔接的主线（增量链）。
+ *
+ * 文件按内容时间窗 [firstTimestamp, lastTimestamp] 排序，从内容最早的文件
+ * （thread 创建文件）出发，每步在「起点不早于当前覆盖末尾（含容差）」的候选
+ * 中选终点最远者——标准区间覆盖贪心。时间窗互相重叠的并行 resume 文件因终点
+ * 更近而被自然淘汰：拼接它们会重复记录同一段 thread 历史。
+ */
+function pickCodexMainline(candidates: CodexRolloutCandidate[]): CodexRolloutCandidate[] {
+  if (candidates.length === 0) return []
+  const keyed = candidates
+    .map((cand) => ({
+      cand,
+      start: cand.meta.firstTimestamp ?? cand.file.mtime.toISOString(),
+      end: cand.meta.lastTimestamp ?? cand.file.mtime.toISOString(),
+    }))
+    .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))
+  const first = keyed[0]!
+  const mainline: CodexRolloutCandidate[] = [first.cand]
+  const used = new Set([first])
+  let curEnd = first.end
+  for (;;) {
+    const floor = new Date(
+      new Date(curEnd).getTime() + CODEX_MAINLINE_OVERLAP_TOLERANCE_MS,
+    ).toISOString()
+    let pick: (typeof keyed)[number] | null = null
+    for (const k of keyed) {
+      if (used.has(k) || k.start > floor) continue
+      if (pick == null || k.end > pick.end) pick = k
+    }
+    // 无可衔接候选，或最佳候选整体落在已覆盖区间内（拼接只会重复）→ 结束
+    if (pick == null || pick.end <= curEnd) break
+    mainline.push(pick.cand)
+    used.add(pick)
+    curEnd = pick.end
+  }
+  return mainline
+}
+
+/** 解析结果 → 预览消息列表（多取 1 条用于 truncated 判定） */
+function toPreviewResponse(parsed: ParsedTranscript, limit: number): HistoryImportPreviewResponse {
+  const messages: HistoryImportPreviewMessage[] = []
+  for (const event of parsed.events) {
+    let msg: HistoryImportPreviewMessage | null = null
+    if (event.type === 'user_message') {
+      msg = { role: 'user', text: event.content, timestamp: event.timestamp }
+    } else if (event.type === 'assistant_message') {
+      msg = { role: 'assistant', text: event.content, timestamp: event.timestamp }
+    } else if (event.type === 'agent_thinking') {
+      msg = { role: 'thinking', text: event.content, timestamp: event.timestamp }
+    } else if (event.type === 'tool_call') {
+      msg = { role: 'tool', text: event.toolName, timestamp: event.timestamp }
+    }
+    if (msg != null) messages.push(msg)
+    if (messages.length >= limit + 1) break
+  }
+  const truncated = messages.length > limit
+  return { messages: messages.slice(0, limit), truncated }
+}
+
+/** ISO 时间戳取最早（全部缺失返回 null），用于聚合 thread 的起始时间 */
+function earliestTs(values: Array<string | null>): string | null {
+  let min: string | null = null
+  for (const v of values) {
+    if (v == null) continue
+    if (min == null || v.localeCompare(min) < 0) min = v
+  }
+  return min
+}
+
+/** ISO 时间戳取最新（全部缺失返回 null），用于聚合 thread 的最后活动时间 */
+function latestTs(values: Array<string | null>): string | null {
+  let max: string | null = null
+  for (const v of values) {
+    if (v == null) continue
+    if (max == null || v.localeCompare(max) > 0) max = v
+  }
+  return max
 }
 
 /** rollout-<ts>-<uuid>.jsonl → uuid */
