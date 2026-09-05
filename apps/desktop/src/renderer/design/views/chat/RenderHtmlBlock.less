@@ -202,6 +202,59 @@
   font-weight: 600;
 }
 
+.render-html-gate {
+  display: grid;
+  gap: 12px;
+  min-height: 140px;
+  align-content: center;
+  justify-items: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.render-html-gate-message {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 560px;
+  color: var(--render-html-warning);
+  font-size: 12px;
+}
+
+.render-html-gate-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.render-html-gate-actions button {
+  border: 1px solid var(--render-html-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--render-html-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 14px;
+}
+
+.render-html-gate-actions button:hover {
+  background: var(--hover, rgba(36, 32, 27, 0.045));
+}
+
+.render-html-gate-actions .render-html-gate-allow {
+  border-color: var(--primary, #6366f1);
+  background: var(--primary, #6366f1);
+  color: #fff;
+  font-weight: 600;
+}
+
+.render-html-gate-actions .render-html-gate-allow:hover {
+  background: var(--primary, #6366f1);
+  opacity: 0.88;
+}
+
 .render-html-error details {
   max-width: 100%;
 }

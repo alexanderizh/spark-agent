@@ -98,6 +98,59 @@ describe('RenderHtmlBlock', () => {
     expect(src).toMatch(/\?v=2$/)
   })
 
+  it('gates external-resource HTML behind an explicit allow action', async () => {
+    const externalBlock = {
+      ...block,
+      toolCallId: 'html-ext-1',
+      html: '<script src="https://cdn.example.com/mindmap.js"></script>',
+      title: '外链思维导图',
+      warnings: ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'],
+    }
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<RenderHtmlBlock block={externalBlock} />)
+    })
+    await act(async () => {})
+
+    // 门控态：警告 + 按钮可见，但不挂载 iframe。
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.textContent).toContain('允许渲染')
+
+    const allowButton = [...container.querySelectorAll('button')].find(
+      (item) => item.textContent === '允许渲染',
+    )
+    expect(allowButton).toBeDefined()
+    await act(async () => {
+      allowButton?.click()
+    })
+    await act(async () => {})
+
+    // 点击后立即渲染。
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(iframe?.src).toMatch(/^capability-asset:\/\/html-render\/hr-/)
+  })
+
+  it('remembers the external-resource allowance across remounts', async () => {
+    // 上一用例已允许 html-ext-1：重挂载（滚动重建/主题切换）后不再阻拦。
+    const externalBlock = {
+      ...block,
+      toolCallId: 'html-ext-1',
+      html: '<script src="https://cdn.example.com/mindmap.js"></script>',
+      warnings: ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'],
+    }
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<RenderHtmlBlock block={externalBlock} />)
+    })
+    await act(async () => {})
+
+    expect(container.textContent).not.toContain('允许渲染')
+    expect(container.querySelector('iframe')).not.toBeNull()
+    // 外部资源警告已在确认时呈现过，不再常驻底部提示条。
+    expect(container.querySelector('.render-html-warning')).toBeNull()
+  })
+
   it('shows a structured error state without executing failed content', () => {
     const markup = renderToStaticMarkup(
       <RenderHtmlBlock block={{ ...block, status: 'error', error: '非法标签' }} />,
