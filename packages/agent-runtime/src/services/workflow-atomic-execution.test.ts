@@ -29,18 +29,23 @@ import {
   resolveWorkflowArtifactExportPath,
   validateWorkflowInputStructuredContent,
   validateWorkflowRouteDecisionContent,
+  isWorkflowApprovalCancelledImpl,
   isWorkflowApprovalApprovedImpl,
   extractWorkflowApprovalCommentImpl,
 } from './session.service.js'
 import {
+  createWorkflowSubagentMember,
   createWorkflowAtomicMember,
   buildWorkflowToolInvocationInstruction,
   formatWorkflowMcpToolResult,
   formatWorkflowPlatformToolResult,
+  formatWorkflowVerifyCommandOutput,
   getDefaultWorkflowAtomicContent,
   getWorkflowToolInvocationSpec,
+  memberDisallowedToolsFromConfig,
   buildWorkflowProgressNodes,
   WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS,
+  shouldAttachWorkflowSessionMcp,
 } from './session-workflow-helpers.js'
 import type { AgentItem } from '@spark/storage'
 import type { NormalizedWorkflowNode } from './workflow-executor.js'
@@ -90,6 +95,142 @@ describe('workflowAtomicMemberId', () => {
   })
 })
 
+describe('createWorkflowSubagentMember binding inheritance', () => {
+  it('inherits a bound Agent profile and preserves fields without node overrides', () => {
+    const boundAgent = {
+      id: 'specialist',
+      name: 'Specialist',
+      description: 'Bound specialist',
+      builtIn: false,
+      enabled: true,
+      isDefault: false,
+      providerProfileId: 'provider-specialist',
+      modelId: 'model-specialist',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-ask',
+      reasoningEffort: 'high',
+      prompt: 'SPECIALIST_SENTINEL',
+      ruleIds: ['rule-specialist'],
+      skillIds: ['skill-specialist'],
+      disabledSkillIds: ['skill-disabled'],
+      mcpServerIds: ['mcp-specialist'],
+      hookConfig: { hooks: [] },
+      workflowId: null,
+      metadata: { reasoningBudgetTokens: 4096 },
+      createdAt: '2026-07-26T00:00:00.000Z',
+      updatedAt: '2026-07-26T00:00:00.000Z',
+    } satisfies AgentItem
+
+    const member = createWorkflowSubagentMember(
+      { id: 'research', kind: 'subagent', title: 'Research', config: {} },
+      boundAgent,
+      boundAgent.id,
+    )
+
+    expect(member).toMatchObject({
+      id: 'specialist',
+      providerProfileId: 'provider-specialist',
+      modelId: 'model-specialist',
+      prompt: 'SPECIALIST_SENTINEL',
+      ruleIds: ['rule-specialist'],
+      skillIds: ['skill-specialist'],
+      disabledSkillIds: ['skill-disabled'],
+      mcpServerIds: ['mcp-specialist'],
+    })
+    expect(member.metadata).toMatchObject({
+      workflowNodeId: 'research',
+      temporaryWorkflowSubagent: true,
+      reasoningBudgetTokens: 4096,
+    })
+  })
+
+  it('isolates two nodes bound to the same Agent and applies each node override', () => {
+    const boundAgent = {
+      id: 'specialist',
+      name: 'Specialist',
+      description: '',
+      builtIn: false,
+      enabled: true,
+      isDefault: false,
+      providerProfileId: 'provider-base',
+      modelId: 'model-base',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-ask',
+      reasoningEffort: 'high',
+      prompt: 'base prompt',
+      ruleIds: ['base-rule'],
+      skillIds: ['base-skill'],
+      disabledSkillIds: [],
+      mcpServerIds: [],
+      hookConfig: {},
+      workflowId: null,
+      metadata: {},
+      createdAt: '2026-07-26T00:00:00.000Z',
+      updatedAt: '2026-07-26T00:00:00.000Z',
+    } satisfies AgentItem
+
+    const first = createWorkflowSubagentMember(
+      node('subagent', { prompt: 'first prompt', modelId: 'model-first' }),
+      boundAgent,
+      'workflow-subagent:first',
+      true,
+    )
+    const second = createWorkflowSubagentMember(
+      { ...node('subagent', { prompt: 'second prompt', modelId: 'model-second' }), id: 'second' },
+      boundAgent,
+      'workflow-subagent:second',
+      true,
+    )
+
+    expect(first).toMatchObject({
+      id: 'workflow-subagent:first',
+      prompt: 'first prompt',
+      modelId: 'model-first',
+    })
+    expect(second).toMatchObject({
+      id: 'workflow-subagent:second',
+      prompt: 'second prompt',
+      modelId: 'model-second',
+    })
+  })
+
+  it('lets an explicit empty toolIds override clear the bound Agent tool profile', () => {
+    const boundAgent = {
+      id: 'restricted',
+      name: 'Restricted',
+      description: '',
+      builtIn: false,
+      enabled: true,
+      isDefault: false,
+      providerProfileId: null,
+      modelId: null,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-ask',
+      reasoningEffort: 'high',
+      prompt: '',
+      ruleIds: [],
+      skillIds: [],
+      disabledSkillIds: [],
+      mcpServerIds: [],
+      hookConfig: {},
+      workflowId: null,
+      metadata: { toolIds: ['Read'] },
+      createdAt: '2026-07-26T00:00:00.000Z',
+      updatedAt: '2026-07-26T00:00:00.000Z',
+    } satisfies AgentItem
+
+    const member = createWorkflowSubagentMember(
+      node('subagent', { toolIds: [] }),
+      boundAgent,
+      'workflow-subagent:clear-tools',
+      true,
+    )
+
+    expect(member.metadata).not.toHaveProperty('toolIds')
+    expect(memberDisallowedToolsFromConfig(member)).toEqual([])
+  })
+})
+
 describe('createWorkflowAtomicMember capability policy', () => {
   const hostAgent = {
     id: 'host',
@@ -115,13 +256,13 @@ describe('createWorkflowAtomicMember capability policy', () => {
     updatedAt: '2026-07-26T00:00:00.000Z',
   } satisfies AgentItem
 
-  it('marks only input/route/plan/review workers as explicitly readonly', () => {
-    for (const kind of ['input', 'route', 'plan', 'review'] as const) {
+  it('marks input/route/plan/review/artifact workers as explicitly readonly', () => {
+    for (const kind of ['input', 'route', 'plan', 'review', 'artifact'] as const) {
       expect(createWorkflowAtomicMember(node(kind), hostAgent).metadata).toMatchObject({
         workflowCapability: 'readonly',
       })
     }
-    for (const kind of ['tool', 'mcp', 'skill', 'artifact'] as const) {
+    for (const kind of ['tool', 'mcp', 'skill'] as const) {
       expect(
         createWorkflowAtomicMember(node(kind, { toolIds: ['Read'] }), hostAgent).metadata,
       ).not.toHaveProperty('workflowCapability')
@@ -132,6 +273,35 @@ describe('createWorkflowAtomicMember capability policy', () => {
     expect(createWorkflowAtomicMember(node('review'), hostAgent).metadata).toMatchObject({
       reasoningBudgetTokens: 8192,
     })
+  })
+
+  it('does not attach the session mutation MCP to readonly atomic workers', () => {
+    expect(
+      shouldAttachWorkflowSessionMcp(createWorkflowAtomicMember(node('plan'), hostAgent)),
+    ).toBe(false)
+    expect(
+      shouldAttachWorkflowSessionMcp(createWorkflowAtomicMember(node('review'), hostAgent)),
+    ).toBe(false)
+    expect(
+      shouldAttachWorkflowSessionMcp(createWorkflowAtomicMember(node('artifact'), hostAgent)),
+    ).toBe(false)
+    expect(
+      shouldAttachWorkflowSessionMcp(createWorkflowAtomicMember(node('tool'), hostAgent)),
+    ).toBe(true)
+  })
+})
+
+describe('formatWorkflowVerifyCommandOutput', () => {
+  it('keeps an explicit zero exit code when a successful command has no output', () => {
+    expect(formatWorkflowVerifyCommandOutput('git diff --check', '', '', 0)).toBe(
+      '$ git diff --check\n[exit code: 0]',
+    )
+  })
+
+  it('keeps stderr and an unknown exit code for non-numeric failures', () => {
+    expect(formatWorkflowVerifyCommandOutput('pnpm test', '', 'timed out', null)).toBe(
+      '$ pnpm test\n[exit code: unknown]\ntimed out',
+    )
   })
 })
 
@@ -342,6 +512,24 @@ describe('validateWorkflowRouteDecisionContent', () => {
     expect((r as { content: string }).content).toBe('deep')
   })
 
+  it('Provider 聚合过程文本时接受末尾独占一行的合法分支值', () => {
+    const r = validateWorkflowRouteDecisionContent(
+      '先核对上游证据。\n\n验证完成，准备给出路由结果：\n\npass',
+      {
+        routeOptions: [{ value: 'pass' }, { value: 'follow_up' }],
+      },
+    )
+    expect(r.ok).toBe(true)
+    expect((r as { content: string }).content).toBe('pass')
+  })
+
+  it('不从普通说明文字中截取分支词', () => {
+    const r = validateWorkflowRouteDecisionContent('证据里提到了 pass，但没有给出最终分支。', {
+      routeOptions: [{ value: 'pass' }, { value: 'follow_up' }],
+    })
+    expect(r.ok).toBe(false)
+  })
+
   it('JSON 字符串或对象也可解析为分支值', () => {
     const stringResult = validateWorkflowRouteDecisionContent('"quick"', {
       routeOptions: [{ value: 'deep' }, { value: 'quick' }],
@@ -480,6 +668,20 @@ describe('审批 decision 解析（isWorkflowApprovalApprovedImpl）', () => {
       },
     }
     expect(isWorkflowApprovalApprovedImpl(answers, decisionQuestion, 0)).toBe(true)
+  })
+})
+
+describe('审批中断识别（isWorkflowApprovalCancelledImpl）', () => {
+  it('会话或应用退出导致的 cancelled 应视为中断', () => {
+    expect(isWorkflowApprovalCancelledImpl({ cancelled: true })).toBe(true)
+  })
+
+  it('用户明确选择 reject 不是系统中断', () => {
+    expect(
+      isWorkflowApprovalCancelledImpl({
+        answers: [{ id: 'workflow-approval-decision', optionValue: 'reject' }],
+      }),
+    ).toBe(false)
   })
 })
 

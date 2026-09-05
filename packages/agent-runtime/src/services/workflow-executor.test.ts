@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildWorkflowNodeInputs,
+  detectWorkflowConditionReferenceErrors,
   detectWorkflowGraphCycles,
+  formatWorkflowConditionReferenceError,
   executeWorkflowAgentPlan,
   getWorkflowAgentWorkerIds,
   interpolateWorkflowNodeConfig,
@@ -118,7 +120,7 @@ describe('workflow-executor graph helpers', () => {
     expect(getWorkflowAgentWorkerIds(graph.nodes)).toEqual(
       new Set([
         'agent-1',
-        'temp-agent',
+        'workflow-subagent:s',
         'workflow-subagent:generated',
         'loop-worker',
         'workflow-subagent:loop-subagent',
@@ -1174,6 +1176,39 @@ describe('executeWorkflowAgentPlan', () => {
     expect(result.state).toEqual({})
   })
 
+  it('fails a subagent with missing_agent_id when its explicit Agent binding is unavailable', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'review',
+          kind: 'subagent',
+          title: 'Review',
+          config: { agentId: 'deleted-reviewer', outputKey: 'review' },
+        },
+      ],
+      edges: [],
+    })
+    let dispatchCount = 0
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Fail before dispatch',
+      availableWorkerIds: new Set(),
+      dispatch: async () => {
+        dispatchCount += 1
+        return { content: 'unexpected' }
+      },
+    })
+
+    expect(dispatchCount).toBe(0)
+    expect(result.status).toBe('failed')
+    expect(result.failedNode?.error).toEqual({
+      code: 'missing_agent_id',
+      message:
+        'subagent 节点「Review」绑定的 Agent「deleted-reviewer」不存在、已禁用或未加入本次运行花名册，无法派发。',
+    })
+  })
+
   it('falls back to the host agent when an agent node is unbound or points at an unavailable worker', async () => {
     const graph = normalizeWorkflowGraph({
       nodes: [
@@ -1481,6 +1516,64 @@ describe('detectWorkflowGraphCycles', () => {
       edges: [{ from: 'a', to: 'ghost' }],
     })
     expect(detectWorkflowGraphCycles(graph)).toEqual([])
+  })
+})
+
+describe('detectWorkflowConditionReferenceErrors', () => {
+  it('reports an edge condition whose key is not declared by any node', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'route', kind: 'route', title: 'Route', config: { outputKey: 'route_mode' } },
+        { id: 'done', kind: 'artifact', title: 'Done', config: {} },
+      ],
+      edges: [
+        {
+          id: 'route-done',
+          from: 'route',
+          to: 'done',
+          condition: { op: 'equals', key: 'audit_mode', value: 'full' },
+        },
+      ],
+    })
+
+    const reports = detectWorkflowConditionReferenceErrors(graph)
+    expect(reports).toEqual([{ scope: '主图', owner: '连线 route-done', key: 'audit_mode' }])
+    expect(formatWorkflowConditionReferenceError(reports)).toContain('audit_mode')
+    expect(formatWorkflowConditionReferenceError(reports)).toContain('outputKey')
+  })
+
+  it('accepts declared keys across the main graph and loop body', () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        { id: 'route', kind: 'route', title: 'Route', config: { outputKey: 'route_mode' } },
+        {
+          id: 'loop',
+          kind: 'loop',
+          title: 'Refine',
+          config: {
+            outputKey: 'final',
+            loopVar: 'iteration',
+            breakCondition: { op: 'equals', key: 'verdict', value: 'pass' },
+            body: {
+              nodes: [
+                { id: 'judge', kind: 'review', title: 'Judge', config: { outputKey: 'verdict' } },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: 'route-loop',
+          from: 'route',
+          to: 'loop',
+          condition: { op: 'equals', key: 'route_mode', value: 'full' },
+        },
+      ],
+    })
+
+    expect(detectWorkflowConditionReferenceErrors(graph)).toEqual([])
   })
 })
 

@@ -481,10 +481,15 @@ export type { WorkflowProgressNodeMetaInput } from './services/session-workflow-
 export { normalizeWorkflowGraph } from './services/workflow-executor.js'
 // 环检测：保存/试跑前的编译期校验（运行时遇环只能以 workflow_deadlock 失败，报错为裸 id）。
 export {
+  detectWorkflowConditionReferenceErrors,
   detectWorkflowGraphCycles,
+  formatWorkflowConditionReferenceError,
   formatWorkflowCycleError,
 } from './services/workflow-executor.js'
-export type { WorkflowGraphCycleReport } from './services/workflow-executor.js'
+export type {
+  WorkflowConditionReferenceReport,
+  WorkflowGraphCycleReport,
+} from './services/workflow-executor.js'
 export type {
   WorkflowAgentExecutionRecord,
   WorkflowAtomicNodeExecutionRecord,

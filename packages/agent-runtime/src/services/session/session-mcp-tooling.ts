@@ -90,12 +90,15 @@ export class SessionMcpTooling {
     private readonly host: SessionMcpToolingHost,
   ) {}
 
-  async buildMcpServersForSDK(): Promise<Record<string, SDKMcpServerConfig>> {
+  async buildMcpServersForSDK(
+    allowedServerIds?: ReadonlySet<string>,
+  ): Promise<Record<string, SDKMcpServerConfig>> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.host.getMcpService().listServers()
 
     for (const server of servers) {
       if (!server.enabled) continue
+      if (allowedServerIds != null && !allowedServerIds.has(server.id)) continue
       try {
         const cfg = JSON.parse(server.configJson) as Record<string, unknown>
         // 归一化：兼容 `transport`/`type` 字段名，支持 http(Streamable HTTP)/sse/stdio。

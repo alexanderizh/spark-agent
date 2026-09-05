@@ -345,6 +345,7 @@ import {
   extractWorkflowApprovalCommentImpl,
   extractWorkflowApprovalTextImpl,
   findWorkflowApprovalAnswerImpl,
+  isWorkflowApprovalCancelledImpl,
   isWorkflowApprovalApprovedImpl,
   hasWorkflowExecutableNodes,
   resolveWorkflowArtifactExportPath,
@@ -358,6 +359,7 @@ import {
   createWorkflowAtomicMember,
   getDefaultWorkflowAtomicContent,
   memberDisallowedToolsFromConfig,
+  shouldAttachWorkflowSessionMcp,
   runWorkflowVerifyNode,
   buildWorkflowToolInvocationInstruction,
   buildWorkflowProgressNodes,
@@ -369,6 +371,7 @@ import { MediaPresentationCollector } from './media/media-presentation-collector
 export {
   buildWorkflowAtomicInstruction,
   extractWorkflowApprovalCommentImpl,
+  isWorkflowApprovalCancelledImpl,
   isWorkflowApprovalApprovedImpl,
   hasWorkflowExecutableNodes,
   resolveWorkflowArtifactExportPath,
@@ -6199,16 +6202,31 @@ export class SessionService {
       if (node.kind !== 'agent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       const configuredMember = workerId != null ? repo.get(workerId) : null
-      const effectiveMember =
-        configuredMember != null && configuredMember.enabled ? configuredMember : hostAgent
-      if (membersById.has(effectiveMember.id)) continue
-      membersById.set(effectiveMember.id, applyWorkflowNodeOverrides(effectiveMember, node))
+      if (configuredMember == null || !configuredMember.enabled) continue
+      if (membersById.has(configuredMember.id)) continue
+      membersById.set(configuredMember.id, applyWorkflowNodeOverrides(configuredMember, node))
     }
     for (const node of nodes) {
       if (node.kind !== 'subagent') continue
       const workerId = getWorkflowNodeWorkerId(node)
       if (workerId == null || workerId === hostAgent.id || membersById.has(workerId)) continue
-      membersById.set(workerId, createWorkflowSubagentMember(node, hostAgent, workerId))
+      const configuredAgentId =
+        typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
+      const configuredMember = configuredAgentId.length > 0 ? repo.get(configuredAgentId) : null
+      // 显式绑定失效时不再静默继承宿主；不注册该 worker，让执行器以
+      // missing_agent_id 明确失败。未绑定 subagent 仍按设计继承宿主生成临时 worker。
+      if (configuredAgentId.length > 0 && (configuredMember == null || !configuredMember.enabled)) {
+        continue
+      }
+      membersById.set(
+        workerId,
+        createWorkflowSubagentMember(
+          node,
+          configuredMember ?? hostAgent,
+          workerId,
+          configuredMember != null || Array.isArray(node.config.mcpServerIds),
+        ),
+      )
     }
     // 原子节点（skill/tool/mcp/plan/review/artifact）走真实执行时，也要有对应的临时 worker
     // 注册进花名册——TeamDispatchService 只放行 allowedWorkerIds（= 花名册 id 集）内的目标，
@@ -7109,7 +7127,6 @@ export class SessionService {
                 ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
                   ? { attachments: ctx.workflowAttachments }
                   : {}),
-                fallbackAgentId: ctx.hostAgent.id,
                 availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
                 ...(initialState != null ? { initialState } : {}),
                 ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
@@ -7419,6 +7436,20 @@ export class SessionService {
     }
     try {
       const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion], {})
+      if (isWorkflowApprovalCancelledImpl(answers)) {
+        log.info('workflow approval: canceled by session interruption', {
+          sessionId,
+          node: request.title,
+        })
+        return {
+          state: 'canceled',
+          content,
+          error: {
+            code: 'cancelled',
+            message: `审批节点「${request.title}」因会话取消或应用退出而中断。`,
+          },
+        }
+      }
       // 决策按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
       // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
       // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
@@ -7884,6 +7915,18 @@ export class SessionService {
     let memberCustomEnv: Record<string, string> | undefined
     let memberEnvPrompt = ''
     let memberSkillSystemPrompt: string | undefined
+    let memberRulesPrompt: string | undefined
+    try {
+      memberRulesPrompt = buildRuntimeRulesPrompt(
+        collectManagedRuleContents(new RulesRepository(this.db), member, null),
+      )
+    } catch (err) {
+      log.warn(
+        `Member rule injection failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
     try {
       // 三轮联合场景审查修复（Skill + Team）：member 也走 composeRuntimeContext 加载
       // 自己的 skillIds 对应的 skill system prompt，否则 member 看不到自己 agent 配置内
@@ -8036,9 +8079,13 @@ export class SessionService {
         : null
     // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
     // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
+    const workflowMcpSelection =
+      member.metadata?.workflowMcpSelectionConfigured === true
+        ? new Set(member.mcpServerIds)
+        : undefined
     let memberMcpServers = isReadonlyAtomicMember
       ? {}
-      : await this.getMcpTooling().buildMcpServersForSDK()
+      : await this.getMcpTooling().buildMcpServersForSDK(workflowMcpSelection)
     try {
       if (!isReadonlyAtomicMember) {
         const memberWebSearchServer =
@@ -8111,9 +8158,9 @@ export class SessionService {
         memberMcpServers,
       )
     }
-    // 成员同样可以进入 worktree 开发：挂载 worktree 状态上报工具
-    // （Codex/CLI 走 stdio，Claude SDK 走 in-process）。
-    if (isCodexMember) {
+    // 普通成员可以进入 worktree 开发；只读 workflow 原子节点不能获得会改变
+    // 会话/worktree 状态的 spark_session MCP，否则 Plan/Review 的只读语义会失效。
+    if (shouldAttachWorkflowSessionMcp(member) && isCodexMember) {
       try {
         const memberSessionServer = await this.resolveSparkSessionMcpServer(sessionId)
         if (memberSessionServer != null) memberMcpServers.spark_session = memberSessionServer
@@ -8124,7 +8171,7 @@ export class SessionService {
           }`,
         )
       }
-    } else {
+    } else if (shouldAttachWorkflowSessionMcp(member)) {
       await this.attachSparkSessionMcpServer(sessionId, memberMcpServers)
     }
     // 成员的 spark_team 工具面，三个独立触发条件（满足其一即注入 server）：
@@ -8184,6 +8231,7 @@ export class SessionService {
       joinPromptSections(
         APPLICATION_FOUNDATION_SYSTEM_PROMPT,
         buildManagedAgentSystemPrompt(member, null),
+        memberRulesPrompt,
         memberTeamPrompt,
         memberEnvPrompt || undefined,
         memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,

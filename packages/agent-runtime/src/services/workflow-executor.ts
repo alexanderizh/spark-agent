@@ -210,6 +210,70 @@ export type WorkflowGraphCycleReport = {
   cycleNodes: { id: string; title: string }[]
 }
 
+export type WorkflowConditionReferenceReport = {
+  scope: string
+  owner: string
+  key: string
+}
+
+/** 检查条件引用是否对应图中节点声明过的 outputKey 或 loopVar。 */
+export function detectWorkflowConditionReferenceErrors(
+  graph: NormalizedWorkflowGraph,
+): WorkflowConditionReferenceReport[] {
+  const declaredKeys = new Set<string>()
+  const readKey = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  const collectKeys = (target: NormalizedWorkflowGraph): void => {
+    for (const node of target.nodes) {
+      const outputKey = readKey(node.config.outputKey)
+      if (outputKey != null) declaredKeys.add(outputKey)
+      const loopVar = readKey(node.config.loopVar)
+      if (loopVar != null) declaredKeys.add(loopVar)
+      const body = getWorkflowLoopBodyGraph(node)
+      if (body != null) collectKeys(body)
+    }
+  }
+  collectKeys(graph)
+
+  const reports: WorkflowConditionReferenceReport[] = []
+  const visit = (target: NormalizedWorkflowGraph, scope: string): void => {
+    for (const edge of target.edges) {
+      const key = edge.condition?.key
+      if (key != null && !declaredKeys.has(key)) {
+        reports.push({
+          scope,
+          owner: `连线 ${edge.id || `${edge.from} → ${edge.to}`}`,
+          key,
+        })
+      }
+    }
+    for (const node of target.nodes) {
+      const body = getWorkflowLoopBodyGraph(node)
+      if (body == null) continue
+      const loopScope = `${scope} › ${node.title} 循环体`
+      const breakCondition = normalizeWorkflowEdgeCondition(node.config.breakCondition)
+      if (breakCondition != null && !declaredKeys.has(breakCondition.key)) {
+        reports.push({ scope: loopScope, owner: '退出条件', key: breakCondition.key })
+      }
+      visit(body, loopScope)
+    }
+  }
+  visit(graph, '主图')
+  return reports
+}
+
+export function formatWorkflowConditionReferenceError(
+  reports: WorkflowConditionReferenceReport[],
+): string {
+  const details = reports.map(
+    (report) => `${report.scope}的${report.owner}引用了未声明的状态键「${report.key}」`,
+  )
+  return `工作流条件引用无效（${details.join('；')}）。请检查上游节点的 outputKey。`
+}
+
 /**
  * 编译期环检测：对主图与所有 loop 体子图做 Kahn 拓扑排序，返回存在环的子图报告。
  * 运行时 executor 遇到环只能以 workflow_deadlock 失败（英文裸 node id 报错），本函数
@@ -1062,12 +1126,18 @@ async function executeWorkflowAgentNode(input: {
   const outputKey = typeof node.config.outputKey === 'string' ? node.config.outputKey.trim() : ''
   const executions: WorkflowAgentExecutionRecord[] = []
 
-  // 没有提供宿主 fallback 的低层调用仍保持显式失败，避免纯执行器被误用时静默跳过节点。
-  // SessionService 的 workflow_run 路径会传入 fallbackAgentId，将空绑定/失效绑定派给宿主。
+  // 没有有效运行身份时保持显式失败，避免空绑定或失效绑定被静默跳过。
+  // fallbackAgentId 仅供显式选择兼容语义的低层调用；托管 workflow_run 不使用宿主回退。
   if (agentId === '') {
+    const configuredAgentId =
+      typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
+    const bindingDetail =
+      configuredAgentId.length > 0
+        ? `绑定的 Agent「${configuredAgentId}」不存在、已禁用或未加入本次运行花名册`
+        : '未绑定 Agent（config.agentId 为空）'
     const missingError: { code: string; message: string } = {
       code: 'missing_agent_id',
-      message: `agent 节点「${node.title}」未绑定 Agent（config.agentId 为空），无法派发。`,
+      message: `${node.kind} 节点「${node.title}」${bindingDetail}，无法派发。`,
     }
     const missingAt = new Date().toISOString()
     const missingExecution: WorkflowAgentExecutionRecord = {
@@ -1213,9 +1283,11 @@ function getDefaultAtomicNodeContent(node: NormalizedWorkflowNode, objective: st
 
 export function getWorkflowNodeWorkerId(node: NormalizedWorkflowNode): string | undefined {
   if (node.kind !== 'agent' && node.kind !== 'subagent') return undefined
+  // Subagent 的 config.agentId 是配置基底，不是运行期身份。每个节点使用独立 worker id，
+  // 避免多个 Subagent 绑定同一 Agent 时共享成员记录、吞掉后续节点覆盖配置。
+  if (node.kind === 'subagent') return `workflow-subagent:${node.id}`
   const configured = typeof node.config.agentId === 'string' ? node.config.agentId.trim() : ''
   if (configured.length > 0) return configured
-  if (node.kind === 'subagent') return `workflow-subagent:${node.id}`
   return undefined
 }
 
@@ -1224,7 +1296,6 @@ export function getWorkflowNodeEffectiveWorkerId(
   options: WorkflowWorkerResolutionOptions = {},
 ): string | undefined {
   const configured = getWorkflowNodeWorkerId(node)
-  if (node.kind !== 'agent') return configured
   if (
     configured != null &&
     (options.availableWorkerIds == null || options.availableWorkerIds.has(configured))
@@ -1232,8 +1303,11 @@ export function getWorkflowNodeEffectiveWorkerId(
     return configured
   }
   const fallback = typeof options.fallbackAgentId === 'string' ? options.fallbackAgentId.trim() : ''
-  if (fallback.length > 0) return fallback
-  return configured
+  if (node.kind === 'agent' && fallback.length > 0) return fallback
+  // Session workflow_run 会传 availableWorkerIds。显式绑定已删除/禁用时，不把一个
+  // 未注册 id 继续交给 TeamDispatchService 产生 member_disabled，而是在执行器稳定
+  // 收敛为 missing_agent_id。低层调用没传花名册时仍兼容直接使用配置 id。
+  return options.availableWorkerIds == null ? configured : undefined
 }
 
 function isWorkflowDispatchableNode(node: NormalizedWorkflowNode): boolean {

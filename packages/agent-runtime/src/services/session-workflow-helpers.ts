@@ -25,6 +25,7 @@
  * ## 审批节点答案解析
  * - findWorkflowApprovalAnswerImpl: 在 answers.answers（中按 question/数组下标定位）
  * - extractWorkflowApprovalTextImpl: 从单条答案里取出可读文本
+ * - isWorkflowApprovalCancelledImpl: 区分会话/进程取消与用户明确拒绝
  * - isWorkflowApprovalApprovedImpl: 判断审批是否被"明确批准"
  * - extractWorkflowApprovalCommentImpl: 提取审批修改意见
  *
@@ -118,56 +119,38 @@ export function hasWorkflowExecutableNodes(
 
 export function createWorkflowSubagentMember(
   node: NormalizedWorkflowNode,
-  hostAgent: AgentItem,
+  baseAgent: AgentItem,
   workerId: string,
+  mcpSelectionConfigured = false,
 ): AgentItem {
   const now = new Date(0).toISOString()
   const reasoningBudgetTokens = normalizeReasoningBudgetTokens(
-    hostAgent.metadata.reasoningBudgetTokens,
+    baseAgent.metadata.reasoningBudgetTokens,
   )
-  const prompt =
-    typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
-      ? node.config.prompt.trim()
-      : node.title
+  const overridden = applyWorkflowNodeOverrides(baseAgent, node)
   const role =
     typeof node.config.role === 'string' && node.config.role.trim().length > 0
       ? node.config.role.trim()
-      : ''
+      : overridden.description
   return {
+    ...overridden,
     id: workerId,
     name: node.title,
     description: role,
     builtIn: false,
     enabled: true,
     isDefault: false,
-    providerProfileId:
-      typeof node.config.providerProfileId === 'string'
-        ? node.config.providerProfileId
-        : (hostAgent.providerProfileId ?? null),
-    modelId:
-      typeof node.config.modelId === 'string' ? node.config.modelId : (hostAgent.modelId ?? null),
-    agentAdapter:
-      typeof node.config.agentAdapter === 'string'
-        ? node.config.agentAdapter
-        : hostAgent.agentAdapter,
     // 节点级 permissionMode 覆盖已下线：executeMemberTurn 里成员权限统一走 claude-auto
     // （避免并行 dispatch 时多个审批框互相打断），节点上配这个字段从来不会真正生效，
     // 干脆不再提供这个"看起来能配但没用"的入口。
-    permissionMode: hostAgent.permissionMode,
-    reasoningEffort:
-      typeof node.config.reasoningEffort === 'string'
-        ? node.config.reasoningEffort
-        : hostAgent.reasoningEffort,
-    prompt,
-    ruleIds: stringArrayConfig(node.config.ruleIds),
-    skillIds: stringArrayConfig(node.config.skillIds),
-    disabledSkillIds: stringArrayConfig(node.config.disabledSkillIds),
-    mcpServerIds: stringArrayConfig(node.config.mcpServerIds),
+    permissionMode: baseAgent.permissionMode,
     hookConfig: {},
     workflowId: null,
     metadata: {
+      ...overridden.metadata,
       workflowNodeId: node.id,
       temporaryWorkflowSubagent: true,
+      ...(mcpSelectionConfigured ? { workflowMcpSelectionConfigured: true } : {}),
       ...(reasoningBudgetTokens != null ? { reasoningBudgetTokens } : {}),
       ...workflowNodeToolIdsMeta(node),
     },
@@ -188,6 +171,16 @@ export function applyWorkflowNodeOverrides(
     typeof node.config.role === 'string' && node.config.role.trim().length > 0
       ? node.config.role.trim()
       : member.description
+  const metadata: Record<string, unknown> = {
+    ...member.metadata,
+    workflowNodeId: node.id,
+    workflowNodeOverrides: true,
+  }
+  if (Array.isArray(node.config.toolIds)) {
+    const toolIds = stringArrayConfig(node.config.toolIds)
+    if (toolIds.length > 0) metadata.toolIds = toolIds
+    else delete metadata.toolIds
+  }
   return {
     ...member,
     description,
@@ -211,12 +204,7 @@ export function applyWorkflowNodeOverrides(
     mcpServerIds: Array.isArray(node.config.mcpServerIds)
       ? stringArrayConfig(node.config.mcpServerIds)
       : member.mcpServerIds,
-    metadata: {
-      ...member.metadata,
-      workflowNodeId: node.id,
-      workflowNodeOverrides: true,
-      ...workflowNodeToolIdsMeta(node),
-    },
+    metadata,
   }
 }
 
@@ -236,6 +224,11 @@ export function memberDisallowedToolsFromConfig(member: AgentItem): string[] {
   if (toolIds.length === 0) return []
   const allowed = new Set(toolIds)
   return WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter((name) => !allowed.has(name))
+}
+
+/** 只读原子节点不得挂载可改变会话/worktree 状态的 spark_session MCP。 */
+export function shouldAttachWorkflowSessionMcp(member: AgentItem): boolean {
+  return member.metadata?.workflowCapability !== 'readonly'
 }
 
 export function nullableStringConfig(
@@ -294,7 +287,7 @@ export async function runWorkflowVerifyNode(
         // 只是输出太长"误报成 verify 失败。放宽到 20MB，给复杂项目留够余量。
         maxBuffer: 20 * 1024 * 1024,
       })
-      outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
+      outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr, 0))
     } catch (error) {
       const stdout =
         typeof (error as { stdout?: unknown }).stdout === 'string'
@@ -305,7 +298,9 @@ export async function runWorkflowVerifyNode(
           ? (error as { stderr: string }).stderr
           : ''
       const message = error instanceof Error ? error.message : String(error)
-      const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr)
+      const rawExitCode = (error as { code?: unknown }).code
+      const exitCode = typeof rawExitCode === 'number' ? rawExitCode : null
+      const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr, exitCode)
       return {
         state: 'failed',
         content,
@@ -323,9 +318,11 @@ export function formatWorkflowVerifyCommandOutput(
   command: string,
   stdout: string,
   stderr: string,
+  exitCode: number | null,
 ): string {
   return [
     `$ ${command}`,
+    `[exit code: ${exitCode ?? 'unknown'}]`,
     stdout.trim().length > 0 ? stdout.trim() : '',
     stderr.trim().length > 0 ? stderr.trim() : '',
   ]
@@ -451,7 +448,20 @@ export function validateWorkflowRouteDecisionContent(
 ):
   | { ok: true; content: string; decision: string }
   | { ok: false; content: string; decision: string; message: string } {
-  const decision = extractWorkflowRouteDecision(rawContent)
+  const extractedDecision = extractWorkflowRouteDecision(rawContent)
+  const options = normalizeWorkflowRouteOptions(config)
+  // 部分 Provider 会把工具调用前后的过程文本一并聚合进 reply.content，尽管指令要求
+  // 只输出 value。保留首行/JSON 的既有解析；仅当它不命中已配置分支时，才接受末尾
+  // 独占一行的合法 value，避免从普通说明句里误抓分支词。
+  const trailingDecision =
+    options.length > 0 && !options.some((option) => option.value === extractedDecision)
+      ? rawContent
+          .split(/\r?\n/)
+          .map((line) => line.trim().replace(/^[`"']|[`"']$/g, ''))
+          .reverse()
+          .find((line) => options.some((option) => option.value === line))
+      : undefined
+  const decision = trailingDecision ?? extractedDecision
   if (decision.length === 0) {
     return {
       ok: false,
@@ -460,7 +470,6 @@ export function validateWorkflowRouteDecisionContent(
       message: '路由节点没有输出分支值。',
     }
   }
-  const options = normalizeWorkflowRouteOptions(config)
   if (options.length === 0) {
     return { ok: true, content: decision, decision }
   }
@@ -517,6 +526,16 @@ export function extractWorkflowApprovalTextImpl(raw: unknown): string {
   return ''
 }
 
+/**
+ * 判断审批问询是否因会话取消、应用退出等系统中断而结束。
+ *
+ * PendingUserQuestionStore.cancelSession 会以 `{ cancelled: true }` 解析挂起的
+ * Promise。这不代表用户选择了“拒绝”，调用方应将节点标记为 canceled。
+ */
+export function isWorkflowApprovalCancelledImpl(answers: Record<string, unknown>): boolean {
+  return answers.cancelled === true
+}
+
 /** 判断审批 decision 问题是否被「明确批准」（cancelled/declined/skipped/无明确 approve 视为未批准）。 */
 export function isWorkflowApprovalApprovedImpl(
   answers: Record<string, unknown>,
@@ -567,7 +586,8 @@ export const WORKFLOW_LLM_ATOMIC_KINDS = new Set<WorkflowNodeKind>([
 ])
 
 /**
- * plan / review 节点限制为「只读」工具集：禁掉写与执行类工具（Write/Edit/MultiEdit/NotebookEdit/Bash），
+ * input / route / plan / review / artifact 节点限制为「只读」工具集：
+ * 禁掉写与执行类工具（Write/Edit/MultiEdit/NotebookEdit/Bash），
  * 只保留探索（Read/Grep/Glob/Web*）与协作类，产出计划/复核文本而不去改动工作区。
  * 用禁用名单而不是白名单，是为了与 memberDisallowedToolsFromConfig 的 disallowedTools 语义一致
  * （allowedTools 在 SDK 里只是免审批名单，挡不住其它工具）。
@@ -580,7 +600,7 @@ export const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = [
   'Bash',
 ]
 
-/** 供 plan/review 节点用的「只读」toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */
+/** 供只读原子节点用的 toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */
 export const WORKFLOW_READONLY_ALLOWED_TOOL_IDS: string[] = WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter(
   (name) => !WORKFLOW_READONLY_DISALLOWED_TOOLS.includes(name),
 )
@@ -610,8 +630,9 @@ export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode)
  * 再按节点类型收窄能力面：
  * - skill：只挂节点所选 skillIds；tool：把 toolIds 交给 metadata（executeMemberTurn 换算 disallowedTools）。
  *   MCP 不再按 Agent 或节点收窄，所有已启用的应用 MCP 都由运行时统一挂载。
- * - input / plan / review：纯 LLM 任务（结构化解析 / 计划 / 复核），不需要外部写与执行类工具——
- *   额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
+ * - input / route / plan / review / artifact：纯 LLM 任务（结构化解析 / 路由 / 计划 / 复核 /
+ *   整理产物），不需要外部写与执行类工具——额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
+ *   artifact 的 exportPath 仍由运行时收尾逻辑负责写盘，不依赖 worker 的写入权限。
  */
 export function createWorkflowAtomicMember(
   node: NormalizedWorkflowNode,
@@ -637,11 +658,12 @@ export function createWorkflowAtomicMember(
     node.kind !== 'input' &&
     node.kind !== 'route' &&
     node.kind !== 'plan' &&
-    node.kind !== 'review'
+    node.kind !== 'review' &&
+    node.kind !== 'artifact'
   ) {
     return base
   }
-  // input/route/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
+  // 只读原子节点：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
   const configured = stringArrayConfig(node.config.toolIds)
   const readonlyIds =
     configured.length > 0
