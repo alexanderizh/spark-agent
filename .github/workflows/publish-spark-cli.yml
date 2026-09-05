@@ -81,10 +81,8 @@ jobs:
 
           git config user.name 'spark-release-bot'
           git config user.email 'actions@github.com'
-          # runner 的 git 默认走 HTTP/2，向 GitHub 推 pack 时会稳定复现
-          # "RPC failed; HTTP 408 + send-pack: unexpected disconnect"
-          # （v0.4.0 发布连 3 次、跨 25 分钟均同款失败，排除瞬态网络）。
-          # 强制 HTTP/1.1 是社区验证的标准修复；postBuffer 兜底大包分片。
+          # 传输层加固（HTTP/1.1 + 大 postBuffer）。注意：HTTP 408 的真正根因
+          # 不在传输层，见下方 .gitignore 白名单处的复盘说明。
           git config http.version HTTP/1.1
           git config http.postBuffer 524288000
           if git ls-remote --exit-code --heads origin spark-cli-releases >/dev/null 2>&1; then
@@ -94,6 +92,26 @@ jobs:
             git checkout --orphan spark-cli-releases
             git rm -rfq . || true
           fi
+
+          # 408 根因修复（2026-09-05 连续 6 次发布失败复盘）：
+          # orphan 路径的 `git rm -rfq .` 会把受控的 .gitignore 一并从磁盘删除，
+          # pnpm install 留下的 node_modules 与构建产物随即失去忽略规则，
+          # `git add -A` 把数十万文件打进发布提交（日志特征：add 耗时 60s），
+          # 巨型 pack 推送必超时（HTTP 408，~2 分钟稳定复现）——与协议无关，
+          # 制品本身仅 ~260KB。此前发布能成功，是因为旧 releases 分支树上带着
+          # 整库 .gitignore（5296 个文件）隐性挡住了 node_modules；2026-08-30
+          # 分支被删后首次走 orphan 路径即暴露本缺陷。
+          # 白名单式 .gitignore 会随分支提交，后续 fetch 路径同样受它保护。
+          cat > .gitignore <<'EOF'
+          /*
+          !/.gitignore
+          !/latest.json
+          !/install.sh
+          !/install.ps1
+          !/install.cmd
+          !/spark-agent-*.tgz
+          !/spark-agent-*.tgz.sha256
+          EOF
 
           # 远端是否已有该版本：必须在 cp 覆盖工作区之前判定，否则全新版本的
           # 制品一落地就会误命中"同版本重跑"分支（v0.3.0 曾因此把 latest.json
@@ -134,6 +152,15 @@ jobs:
           fi
 
           git add -A
+          # 纯度断言：发布分支索引里只允许发布产物与白名单 .gitignore。
+          # 未来若再出现"整库/依赖混入分支"类回归，这里以明确报错快速拦截，
+          # 而不是重演 HTTP 408 传输超时这种误导性远端症状。
+          unexpected="$(git ls-files | grep -vE '^(\.gitignore|latest\.json|install\.(sh|ps1|cmd)|spark-agent-[^/]+\.tgz(\.sha256)?)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::发布分支混入非发布文件（前 10 个）："
+            echo "$unexpected" | head -10
+            exit 1
+          fi
           if git diff --cached --quiet; then
             echo '::notice::发布分支已是目标状态，无内容需要提交。'
           else
