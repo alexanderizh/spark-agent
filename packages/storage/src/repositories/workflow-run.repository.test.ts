@@ -148,4 +148,39 @@ describe('WorkflowRunRepository', () => {
     expect(repo.listByWorkflow('workflow-2').map((row) => row.id)).toEqual(['run-other-workflow'])
     expect(repo.listByWorkflow('workflow-unknown')).toEqual([])
   })
+
+  it('finds a working run without depending on the bounded history list', () => {
+    repo.create({
+      id: 'run-working-old',
+      sessionId: 'sess-1',
+      turnId: 'turn-working-old',
+      workflowId: 'workflow-crowded',
+      objective: 'still running',
+      graph: { nodes: [], edges: [] },
+    })
+    for (let index = 0; index < 31; index += 1) {
+      const id = `run-completed-${index}`
+      repo.create({
+        id,
+        sessionId: 'sess-1',
+        turnId: `turn-completed-${index}`,
+        workflowId: 'workflow-crowded',
+        objective: `completed ${index}`,
+        graph: { nodes: [], edges: [] },
+      })
+      repo.updateSnapshot(id, {
+        status: 'completed',
+        state: {},
+        executions: [],
+        atomicExecutions: [],
+        completedNodeIds: [],
+      })
+    }
+
+    expect(repo.listByWorkflow('workflow-crowded', 30)).not.toContainEqual(
+      expect.objectContaining({ id: 'run-working-old' }),
+    )
+    expect(repo.findWorkingByWorkflow('workflow-crowded')?.id).toBe('run-working-old')
+    expect(repo.findWorkingByWorkflow('workflow-unknown')).toBeNull()
+  })
 })

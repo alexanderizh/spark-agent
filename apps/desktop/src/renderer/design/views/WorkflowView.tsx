@@ -28,7 +28,6 @@ import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
-import type { SessionId } from '@spark/protocol'
 import type {
   ManagedAgent,
   McpServerItem,
@@ -73,6 +72,7 @@ import {
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { InspectorField, TagPicker, asStringArray } from './workflow/inspector-fields'
 import { WorkflowToolConfigPanel } from './workflow/WorkflowToolConfigPanel'
+import { openWorkflowTestRunSession } from './workflow/open-test-run-session'
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
 import {
@@ -188,7 +188,7 @@ export function WorkflowView() {
 function WorkflowViewInner() {
   const { toast } = useToast()
   const { registerNavGuard, requestConfirm, setHasUnsavedChanges, setTweak } = useApp()
-  const { setActiveSession } = useSessionSidebar()
+  const { refreshData: refreshSessionData, setActiveSession } = useSessionSidebar()
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -1374,8 +1374,14 @@ function WorkflowViewInner() {
           workflowDescription={draft.description ?? ''}
           onClose={() => setTestRunOpen(false)}
           onOpenSession={(sessionId) => {
-            setTweak('view', 'chat')
-            setActiveSession(sessionId as SessionId)
+            void openWorkflowTestRunSession({
+              sessionId,
+              refreshSessionData,
+              showChatView: () => setTweak('view', 'chat'),
+              setActiveSession,
+            }).catch((error) => {
+              toast.error(error instanceof Error ? error.message : '试跑会话打开失败。')
+            })
           }}
         />
       )}

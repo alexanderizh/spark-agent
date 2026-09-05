@@ -173,6 +173,27 @@ export class WorkflowRunRepository extends BaseRepository {
   }
 
   /**
+   * 查找指定工作流当前仍在运行的记录。
+   *
+   * 不能通过 listByWorkflow 的历史分页间接判断：大量较新的终态记录可能把一条较早的
+   * working 记录挤出 limit，导致调用方误以为可以重复启动。
+   */
+  findWorkingByWorkflow(workflowId: string): WorkflowRunSummaryRow | null {
+    const row = this.raw
+      .prepare(
+        `SELECT id, session_id, turn_id, workflow_id, status, objective,
+                completed_node_ids_json, skipped_node_ids_json, failed_node_json,
+                started_at, updated_at, ended_at
+         FROM workflow_runs
+         WHERE workflow_id = ? AND status = 'working'
+         ORDER BY started_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(workflowId) as WorkflowRunSummaryRow | undefined
+    return row ?? null
+  }
+
+  /**
    * Delete all workflow runs for a given session.
    *
    * 三轮功能逻辑审查修复：deleteSession 时清理 workflow_runs（之前漏清）。

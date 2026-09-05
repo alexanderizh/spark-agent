@@ -167,7 +167,9 @@ import {
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
+  detectWorkflowConditionReferenceErrors,
   detectWorkflowGraphCycles,
+  formatWorkflowConditionReferenceError,
   formatWorkflowCycleError,
   normalizeWorkflowGraph,
 } from '@spark/agent-runtime'
@@ -7402,17 +7404,20 @@ export function registerAllIpcHandlers(): void {
 
   // 保存前环校验：环图在运行时只能以 workflow_deadlock 失败（英文裸 node id 报错），
   // 这里在持久化前用拓扑排序即时拦截，报错带节点标题便于用户定位。
-  const assertWorkflowGraphAcyclic = (graph: unknown): void => {
+  const assertWorkflowGraphValid = (graph: unknown): void => {
     if (graph == null) return
-    const reports = detectWorkflowGraphCycles(
-      normalizeWorkflowGraph(graph as Parameters<typeof normalizeWorkflowGraph>[0]),
-    )
-    if (reports.length > 0) throw new Error(formatWorkflowCycleError(reports))
+    const normalized = normalizeWorkflowGraph(graph as Parameters<typeof normalizeWorkflowGraph>[0])
+    const cycleReports = detectWorkflowGraphCycles(normalized)
+    if (cycleReports.length > 0) throw new Error(formatWorkflowCycleError(cycleReports))
+    const referenceReports = detectWorkflowConditionReferenceErrors(normalized)
+    if (referenceReports.length > 0) {
+      throw new Error(formatWorkflowConditionReferenceError(referenceReports))
+    }
   }
 
   typedIpcHandle('workflow:create', async (req) => {
     const { graph, ...fields } = req
-    assertWorkflowGraphAcyclic(graph)
+    assertWorkflowGraphValid(graph)
     const workflow = getWorkflowRepository().create({
       ...fields,
       ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),
@@ -7422,7 +7427,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workflow:update', async (req) => {
     const { id, graph, ...fields } = req
-    assertWorkflowGraphAcyclic(graph)
+    assertWorkflowGraphValid(graph)
     const workflow = getWorkflowRepository().update(id, {
       ...fields,
       ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),

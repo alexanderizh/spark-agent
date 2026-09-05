@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentRepository, WorkflowRepository } from '@spark/storage'
+import type {
+  AgentRepository,
+  TurnRequestRepository,
+  WorkflowRepository,
+  WorkflowRunRepository,
+} from '@spark/storage'
 import type { ProviderService, SessionService } from '@spark/agent-runtime'
 
 const harness = vi.hoisted(() => ({
@@ -37,14 +42,41 @@ const cyclicGraph = {
   ],
 }
 
+const invalidConditionReferenceGraph = {
+  nodes: [
+    {
+      id: 'route-scope',
+      kind: 'route',
+      title: '判断核对深度',
+      config: { outputKey: 'audit_mode' },
+    },
+    { id: 'full-audit', kind: 'agent', title: '完整核对', config: {} },
+  ],
+  edges: [
+    {
+      id: 'route-full',
+      from: 'route-scope',
+      to: 'full-audit',
+      condition: { op: 'equals', key: 'route_mode', value: 'full' },
+    },
+  ],
+}
+
 interface RegisterOptions {
   workflowGraph?: Record<string, unknown>
   boundAgents?: Array<{ id: string; name: string; workflowId: string | null; enabled?: boolean }>
+  activeRun?: boolean
+  listProviders?: () => Promise<Array<{ id: string; isDefault: boolean }>>
+  findWorkingByWorkflow?: () => { id: string; status: 'working' } | null
+  turnRequestStatus?: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled'
 }
 
 function register(options: RegisterOptions = {}): {
   agentRepo: { create: ReturnType<typeof vi.fn> }
   sessionService: { createSession: ReturnType<typeof vi.fn>; submitTurn: ReturnType<typeof vi.fn> }
+  workflowRunRepo: {
+    findWorkingByWorkflow: ReturnType<typeof vi.fn>
+  }
 } {
   const workflowRepo = {
     get: vi.fn(() => ({
@@ -54,6 +86,21 @@ function register(options: RegisterOptions = {}): {
       graph: options.workflowGraph ?? acyclicGraph,
     })),
   } as unknown as WorkflowRepository
+  let workingLookupCount = 0
+  const findWorkingByWorkflow = vi.fn(() => {
+    workingLookupCount += 1
+    if (options.findWorkingByWorkflow != null) return options.findWorkingByWorkflow()
+    if (options.activeRun === true || workingLookupCount > 1) {
+      return { id: 'run-active', status: 'working' as const }
+    }
+    return null
+  })
+  const workflowRunRepo = {
+    findWorkingByWorkflow,
+  } as unknown as WorkflowRunRepository
+  const turnRequestRepo = {
+    get: vi.fn(() => ({ id: 'turn-1', status: options.turnRequestStatus ?? 'accepted' })),
+  } as unknown as TurnRequestRepository
 
   const create = vi.fn(() => ({
     id: 'agent-tmp',
@@ -73,10 +120,13 @@ function register(options: RegisterOptions = {}): {
   } as unknown as AgentRepository & { create: ReturnType<typeof vi.fn> }
 
   const providerService = {
-    listProviders: vi.fn(async () => [
-      { id: 'p-default', isDefault: true },
-      { id: 'p-other', isDefault: false },
-    ]),
+    listProviders: vi.fn(
+      options.listProviders ??
+        (async () => [
+          { id: 'p-default', isDefault: true },
+          { id: 'p-other', isDefault: false },
+        ]),
+    ),
   } as unknown as ProviderService
 
   const createSession = vi.fn(async () => ({ sessionId: 'sess-1', session: {} }))
@@ -84,15 +134,23 @@ function register(options: RegisterOptions = {}): {
   const sessionService = {
     createSession,
     submitTurn,
+    hasActiveTurnLoop: vi.fn(() => false),
   } as unknown as SessionService
 
   registerWorkflowTestRunIpc({
     workflowRepo,
+    workflowRunRepo,
+    turnRequestRepo,
     agentRepo: agentRepo as AgentRepository,
     providerService,
     sessionService,
+    launchingWorkflowIds: new Set<string>(),
   })
-  return { agentRepo: { create }, sessionService: { createSession, submitTurn } }
+  return {
+    agentRepo: { create },
+    sessionService: { createSession, submitTurn },
+    workflowRunRepo: { findWorkingByWorkflow },
+  }
 }
 
 beforeEach(() => {
@@ -148,7 +206,85 @@ describe('registerWorkflowTestRunIpc', () => {
     const { agentRepo, sessionService } = register({ workflowGraph: cyclicGraph })
     await expect(
       harness.handlers.get('workflow:test-run')!({ workflowId: 'wf-1' }),
-    ).rejects.toThrow('循环依赖')
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: expect.stringContaining('循环依赖'),
+    })
+    expect(agentRepo.create).not.toHaveBeenCalled()
+    expect(sessionService.createSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects a duplicate test run while the workflow already has a working run', async () => {
+    const { agentRepo, sessionService } = register({ activeRun: true })
+
+    await expect(
+      harness.handlers.get('workflow:test-run')!({ workflowId: 'wf-1' }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('已有运行中的工作流'),
+    })
+    expect(agentRepo.create).not.toHaveBeenCalled()
+    expect(sessionService.createSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects a concurrent launch before either call can create a workflow run', async () => {
+    let resolveProviders:
+      | ((profiles: Array<{ id: string; isDefault: boolean }>) => void)
+      | undefined
+    const providersPending = new Promise<Array<{ id: string; isDefault: boolean }>>((resolve) => {
+      resolveProviders = resolve
+    })
+    const { sessionService } = register({
+      listProviders: () => providersPending,
+    })
+    const handler = harness.handlers.get('workflow:test-run')!
+
+    const first = handler({ workflowId: 'wf-1' })
+    await Promise.resolve()
+    await expect(handler({ workflowId: 'wf-1' })).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('已有运行中的工作流'),
+    })
+    expect(sessionService.createSession).not.toHaveBeenCalled()
+
+    resolveProviders?.([{ id: 'p-default', isDefault: true }])
+    await expect(first).resolves.toMatchObject({ sessionId: 'sess-1' })
+    expect(sessionService.createSession).toHaveBeenCalledOnce()
+  })
+
+  it('releases the launch lock when submitting the turn fails', async () => {
+    const { sessionService } = register({ findWorkingByWorkflow: () => null })
+    const handler = harness.handlers.get('workflow:test-run')!
+    sessionService.submitTurn.mockRejectedValueOnce(new Error('turn submission failed'))
+
+    await expect(handler({ workflowId: 'wf-1' })).rejects.toThrow('turn submission failed')
+
+    await expect(handler({ workflowId: 'wf-1' })).resolves.toMatchObject({ sessionId: 'sess-1' })
+  })
+
+  it('releases the launch lock when the accepted turn terminates before workflow_run starts', async () => {
+    const { sessionService } = register({
+      findWorkingByWorkflow: () => null,
+      turnRequestStatus: 'failed',
+    })
+    const handler = harness.handlers.get('workflow:test-run')!
+
+    await expect(handler({ workflowId: 'wf-1' })).resolves.toMatchObject({ sessionId: 'sess-1' })
+    await expect(handler({ workflowId: 'wf-1' })).resolves.toMatchObject({ sessionId: 'sess-1' })
+    expect(sessionService.submitTurn).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns actionable condition-reference details as a safe business error', async () => {
+    const { agentRepo, sessionService } = register({
+      workflowGraph: invalidConditionReferenceGraph,
+    })
+
+    await expect(
+      harness.handlers.get('workflow:test-run')!({ workflowId: 'wf-1' }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: expect.stringMatching(/route_mode.*outputKey/),
+    })
     expect(agentRepo.create).not.toHaveBeenCalled()
     expect(sessionService.createSession).not.toHaveBeenCalled()
   })
@@ -169,17 +305,29 @@ describe('registerWorkflowTestRunIpc', () => {
       createSession: vi.fn(),
       submitTurn: vi.fn(),
     } as unknown as SessionService
+    const workflowRunRepo = {
+      findWorkingByWorkflow: vi.fn(() => null),
+    } as unknown as WorkflowRunRepository
+    const turnRequestRepo = {
+      get: vi.fn(() => null),
+    } as unknown as TurnRequestRepository
 
     registerWorkflowTestRunIpc({
       workflowRepo,
+      workflowRunRepo,
+      turnRequestRepo,
       agentRepo,
       providerService,
       sessionService: sessionService as SessionService,
+      launchingWorkflowIds: new Set<string>(),
     })
 
     await expect(
       harness.handlers.get('workflow:test-run')!({ workflowId: 'wf-1' }),
-    ).rejects.toThrow('Provider')
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_UNAVAILABLE',
+      message: expect.stringContaining('Provider'),
+    })
     expect(sessionService.createSession).not.toHaveBeenCalled()
   })
 })

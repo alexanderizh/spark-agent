@@ -52,8 +52,22 @@ describe('workflow-templates', () => {
     expect(ids.length).toBe(new Set(ids).size)
   })
 
-  it('至少提供 8 个模板，覆盖各类编排能力', () => {
-    expect(WORKFLOW_TEMPLATES.length).toBeGreaterThanOrEqual(8)
+  it('模板清单与对外文档声明的 13 个可配置模板保持一致', () => {
+    expect(WORKFLOW_TEMPLATES.map((template) => template.id)).toEqual([
+      'standard-dev',
+      'approval-gate',
+      'parallel-drafts',
+      'readonly-research',
+      'skill-application',
+      'tool-invocation',
+      'mcp-integration',
+      'conditional-routing',
+      'review-gate',
+      'research-to-decision',
+      'team-collaboration',
+      'host-dispatch-parallel',
+      'iterative-polish-loop',
+    ])
   })
 
   it('全部 13 类节点至少在一个模板里出现', () => {
@@ -89,7 +103,9 @@ describe('workflow-templates', () => {
         const edgeIds = template.graph.edges.map((e) => e.id)
         expect(edgeIds.length).toBe(new Set(edgeIds).size)
         for (const edge of template.graph.edges) {
-          expect(nodeIds.has(edge.from), `边 ${edge.id} from 指向不存在的节点: ${edge.from}`).toBe(true)
+          expect(nodeIds.has(edge.from), `边 ${edge.id} from 指向不存在的节点: ${edge.from}`).toBe(
+            true,
+          )
           expect(nodeIds.has(edge.to), `边 ${edge.id} to 指向不存在的节点: ${edge.to}`).toBe(true)
           expect(edge.from === edge.to, `边 ${edge.id} 是自环`).toBe(false)
         }
