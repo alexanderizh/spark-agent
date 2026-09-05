@@ -131,7 +131,10 @@ jobs:
           if git diff --cached --quiet; then
             echo '::notice::发布分支已是目标状态，无内容需要提交。'
           else
-            git commit -q -m "release(spark-cli): v${VERSION}"
+            # --no-verify：此提交发生在 orphan 分支清空工作区之后，本地开发者的
+            # pre-commit/commit-msg 钩子（simple-git-hooks 安装于 .git/hooks，
+            # 其引用的 scripts/ 已被 git rm 清掉）必然 MODULE_NOT_FOUND。
+            git commit -q --no-verify -m "release(spark-cli): v${VERSION}"
             git push origin HEAD:spark-cli-releases
           fi
 
