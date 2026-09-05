@@ -1,4 +1,4 @@
-name: CI
+name: 代码质量检查（CI）
 
 # 质量安全网（工程化还债方案 Phase 0.1；2026-08-15 按单人开发定位调整）：
 # - 阻塞项：typecheck / lint / file-size ratchet —— 快、确定性、跨平台一致，

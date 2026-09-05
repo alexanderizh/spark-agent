@@ -1,4 +1,4 @@
-name: Commit email policy
+name: 提交邮箱校验
 
 on:
   pull_request:

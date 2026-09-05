@@ -1,4 +1,4 @@
-name: Publish Website
+name: 官网构建部署
 
 # 与桌面端 publish-desktop-release.yml 完全独立：
 # - 桌面端：apps/desktop/package.json 变更 → 多平台 electron 构建

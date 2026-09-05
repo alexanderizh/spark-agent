@@ -1,4 +1,4 @@
-name: Publish Desktop Release
+name: 桌面端版本发布
 
 on:
   push:

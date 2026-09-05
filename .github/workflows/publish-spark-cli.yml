@@ -1,4 +1,4 @@
-name: Publish Spark CLI Release
+name: Spark CLI 版本发布
 
 # Spark CLI（spark-engine）发布闭环，全程 GitHub 原生、零外部凭据：
 #
