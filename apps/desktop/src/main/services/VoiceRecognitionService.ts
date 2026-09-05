@@ -479,7 +479,6 @@ export function stopVoiceSession(
   const session = sessions.get(sessionId)
   if (!session) return false
   if (ownerId != null && session.ownerId !== ownerId) return false
-  let tailText = ''
   try {
     // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final
     const tail = new Float32Array(Math.floor(session.sampleRate * STOP_TAIL_PADDING_SECONDS))
@@ -492,7 +491,7 @@ export function stopVoiceSession(
       session.recognizer.decode(session.stream)
     }
     const result = session.recognizer.getResult(session.stream)
-    tailText = (result.text ?? '').trim()
+    const tailText = (result.text ?? '').trim()
     if (tailText) {
       session.finals.push(tailText)
       emitPending({ type: 'final', sessionId, text: tailText }, session.ownerId)

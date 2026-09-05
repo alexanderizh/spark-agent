@@ -58,9 +58,9 @@ export function registerWorkflowTestRunIpc(deps?: Partial<WorkflowTestRunDeps>):
     workflowRepo: deps?.workflowRepo ?? new WorkflowRepository(getDatabase()),
     agentRepo: deps?.agentRepo ?? new AgentRepository(getDatabase()),
     // ProviderService / SessionService 无独立 getter 导出，由 index.ts 接线时注入
-    // （两个服务都有进程级单例语义，测试时全部注入即可）。
-    providerService: deps?.providerService!,
-    sessionService: deps?.sessionService!,
+    // （两个服务都有进程级单例语义，测试时全部注入即可）；断言仅收窄类型，运行时行为不变。
+    providerService: deps?.providerService as ProviderService,
+    sessionService: deps?.sessionService as SessionService,
   }
 
   typedIpcHandle(
