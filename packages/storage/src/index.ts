@@ -143,6 +143,8 @@ export {
   SubAppStateError,
   CustomToolRepository,
   ToolPackageRepository,
+  ToolInvocationRepository,
+  ToolPackageStorageRepository,
 } from './repositories/index.js'
 
 export type {
@@ -323,4 +325,12 @@ export type {
   ToolPackageConfigRow,
   ToolPackagePermissionRow,
   InstallToolPackageVersionParams,
+  FinishToolInvocationParams,
+  ListToolInvocationsParams,
+  StartToolInvocationParams,
+  ToolInvocationRow,
+  ToolInvocationSource,
+  ToolInvocationSourceKind,
+  ToolInvocationStatus,
+  ToolPackageStorageEntry,
 } from './repositories/index.js'

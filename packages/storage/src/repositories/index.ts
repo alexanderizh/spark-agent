@@ -8,6 +8,18 @@
 
 export { BaseRepository } from './base.repository.js'
 export { ToolPackageRepository } from './tool-package.repository.js'
+export { ToolInvocationRepository } from './tool-invocation.repository.js'
+export { ToolPackageStorageRepository } from './tool-package-storage.repository.js'
+export type { ToolPackageStorageEntry } from './tool-package-storage.repository.js'
+export type {
+  FinishToolInvocationParams,
+  ListToolInvocationsParams,
+  StartToolInvocationParams,
+  ToolInvocationRow,
+  ToolInvocationSource,
+  ToolInvocationSourceKind,
+  ToolInvocationStatus,
+} from './tool-invocation.repository.js'
 export type {
   ToolPackageState,
   ToolPackageVersionStatus,
