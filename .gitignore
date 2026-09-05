@@ -149,3 +149,5 @@ minio/
 .spark-agent/
 .playwright-mcp/
 docs/marketing/
+plan/
+articles/
