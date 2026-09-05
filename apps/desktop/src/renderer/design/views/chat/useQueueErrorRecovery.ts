@@ -70,7 +70,8 @@ export function useQueueErrorRecovery({
 }: QueueErrorRecoveryParams) {
   const { invoke: resumeQueue } = useIpcInvoke('session:resume-queue')
   const [recoveryTask, setRecoveryTask] = useState<RecoveryTask | null>(null)
-  const recovering = recoveryTask?.sessionId === sessionId ? recoveryTask.action : null
+  const recovering =
+    recoveryTask != null && recoveryTask.sessionId === sessionId ? recoveryTask.action : null
   const retryPayload = useMemo(
     () => buildTurnRetryPayload(messages, pause?.failedTurnId),
     [messages, pause?.failedTurnId],
