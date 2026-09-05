@@ -181,6 +181,21 @@
   font-size: 13px;
 }
 
+.ct_empty_actions {
+  display: flex;
+  max-width: 430px;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+
+  p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
 // Tool Packages — flat, responsive management workspace.
 .tp_layout {
   display: grid;
@@ -1203,6 +1218,101 @@
     color: var(--text-muted);
     font-size: 12px;
     line-height: 1.6;
+  }
+}
+
+.ct_openapi_import {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ct_openapi_intro,
+.ct_openapi_summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+.ct_openapi_summary {
+  padding: 0 2px 8px;
+  border-bottom: 1px solid var(--border);
+
+  span {
+    margin-right: auto;
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+
+  button {
+    color: var(--primary);
+    font: inherit;
+    font-size: 11px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+}
+
+.ct_openapi_operations {
+  display: flex;
+  max-height: 380px;
+  flex-direction: column;
+  gap: 0;
+  overflow: auto;
+
+  > label {
+    display: grid;
+    grid-template-columns: auto 52px minmax(0, 1fr);
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 2px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+    cursor: pointer;
+
+    &.is-disabled {
+      cursor: default;
+      opacity: 0.72;
+    }
+
+    > code {
+      color: var(--primary);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    > span {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    strong {
+      color: var(--text-strong);
+      font-size: 12px;
+    }
+
+    small {
+      color: var(--text-faint);
+      font-size: 10px;
+
+      &.is-error {
+        color: var(--danger, #d14343);
+      }
+
+      &.is-warning {
+        color: var(--warning, #b8860b);
+      }
+    }
   }
 }
 

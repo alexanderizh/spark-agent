@@ -32,6 +32,7 @@ import { CustomToolStudio } from './CustomToolStudio'
 import { ToolPackagesPanel } from './ToolPackagesPanel'
 import { ToolPackageImportModal } from './ToolPackageImportModal'
 import { CustomToolCurlImportModal } from './CustomToolCurlImportModal'
+import { CustomToolOpenApiImportModal } from './CustomToolOpenApiImportModal'
 import {
   consumePendingCustomToolTrace,
   OPEN_CUSTOM_TOOL_TRACE_EVENT,
@@ -49,6 +50,7 @@ export function CustomToolsSection() {
   const [createOpen, setCreateOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [curlImportOpen, setCurlImportOpen] = useState(false)
+  const [openApiImportOpen, setOpenApiImportOpen] = useState(false)
   const [packageImportOpen, setPackageImportOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -219,6 +221,42 @@ export function CustomToolsSection() {
     setTestResult(null)
     setRouteCheckResult(null)
     setEditor(nextEditor)
+  }
+
+  const importOpenApiDrafts = async (editors: CustomToolEditorDraft[]) => {
+    const reservedIds = new Set(tools.map((tool) => tool.id))
+    const uniqueId = (source: string): string => {
+      if (!reservedIds.has(source)) {
+        reservedIds.add(source)
+        return source
+      }
+      let suffix = 2
+      let candidate: string
+      do {
+        candidate = `${source.slice(0, Math.max(3, 63 - String(suffix).length))}_${suffix}`
+        suffix += 1
+      } while (reservedIds.has(candidate))
+      reservedIds.add(candidate)
+      return candidate
+    }
+    let imported = 0
+    try {
+      for (const editorDraft of editors) {
+        const editorWithUniqueId = { ...editorDraft, id: uniqueId(editorDraft.id) }
+        await createDraft({ spec: buildCustomToolDraft(editorWithUniqueId) })
+        imported += 1
+      }
+    } catch (error) {
+      throw new Error(
+        `已导入 ${imported}/${editors.length} 个草稿；后续导入失败：${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    } finally {
+      await refresh()
+    }
+    setOpenApiImportOpen(false)
+    setActiveView('drafts')
+    message.success(`已导入 ${imported} 个 OpenAPI operation，等待审查和发布`)
   }
 
   const openEdit = async (id: string) => {
@@ -697,9 +735,12 @@ export function CustomToolsSection() {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           >
             {!query && activeView === 'tools' && (
-              <Button type="primary" onClick={() => setCreateOpen(true)}>
-                创建第一个工具
-              </Button>
+              <div className="ct_empty_actions">
+                <p>也可以在 Agent 对话中直接描述工具需求，由 Agent 帮你创建并保存工具草稿。</p>
+                <Button type="primary" onClick={() => setCreateOpen(true)}>
+                  创建第一个工具
+                </Button>
+              </div>
             )}
           </Empty>
         ) : (
@@ -779,12 +820,16 @@ export function CustomToolsSection() {
         onCancel={() => setCreateOpen(false)}
       >
         <CustomToolCreateSources
-          onBlank={() => openCreate('code')}
+          onBlank={() => openCreate('http')}
           onCurl={() => {
             setCreateOpen(false)
             setCurlImportOpen(true)
           }}
-          onCode={() => openCreate('code')}
+          onOpenApi={() => {
+            setCreateOpen(false)
+            setOpenApiImportOpen(true)
+          }}
+          onTypeScript={() => openCreate('code')}
           onOpenTemplates={() => {
             setCreateOpen(false)
             setTemplateOpen(true)
@@ -811,6 +856,14 @@ export function CustomToolsSection() {
           open
           onCancel={() => setCurlImportOpen(false)}
           onImport={openImportedEditor}
+        />
+      )}
+
+      {openApiImportOpen && (
+        <CustomToolOpenApiImportModal
+          open
+          onCancel={() => setOpenApiImportOpen(false)}
+          onImport={importOpenApiDrafts}
         />
       )}
 

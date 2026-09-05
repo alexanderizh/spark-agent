@@ -8,7 +8,8 @@ describe('CustomToolCreateSources', () => {
       <CustomToolCreateSources
         onBlank={vi.fn()}
         onCurl={vi.fn()}
-        onCode={vi.fn()}
+        onOpenApi={vi.fn()}
+        onTypeScript={vi.fn()}
         onOpenTemplates={vi.fn()}
         onImportPackage={vi.fn()}
       />,
@@ -16,6 +17,8 @@ describe('CustomToolCreateSources', () => {
 
     expect(markup).toContain('从空白创建')
     expect(markup).toContain('编写 TypeScript')
+    expect(markup).not.toContain('开发中')
+    expect(markup).not.toContain('disabled')
     expect(markup).toContain('使用模板')
     expect(markup).not.toContain('图像理解')
   })

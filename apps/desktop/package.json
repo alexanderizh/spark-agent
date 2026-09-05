@@ -93,6 +93,7 @@
     "@spark/storage": "workspace:*",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-virtual": "^3.14.5",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

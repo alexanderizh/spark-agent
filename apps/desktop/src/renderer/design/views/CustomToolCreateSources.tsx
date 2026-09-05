@@ -3,7 +3,8 @@ import { Icons } from '../Icons'
 interface CustomToolCreateSourcesProps {
   onBlank: () => void
   onCurl: () => void
-  onCode: () => void
+  onOpenApi: () => void
+  onTypeScript: () => void
   onOpenTemplates: () => void
   onImportPackage: () => void
 }
@@ -15,7 +16,8 @@ interface CustomToolCreateSourcesProps {
 export function CustomToolCreateSources({
   onBlank,
   onCurl,
-  onCode,
+  onOpenApi,
+  onTypeScript,
   onOpenTemplates,
   onImportPackage,
 }: CustomToolCreateSourcesProps) {
@@ -35,14 +37,14 @@ export function CustomToolCreateSources({
           <small>自动拆解方法、Header、Body 与密钥引用。</small>
         </span>
       </button>
-      <button type="button" onClick={onCode}>
+      <button type="button" onClick={onOpenApi}>
         <Icons.ChevronRight size={18} />
         <span>
           <strong>导入 OpenAPI</strong>
-          <small>选择 operation 后批量生成待审草稿 · 开发中</small>
+          <small>解析 JSON / YAML 规范，选择 operation 后批量生成待审草稿。</small>
         </span>
       </button>
-      <button type="button" disabled>
+      <button type="button" onClick={onTypeScript}>
         <Icons.ChevronRight size={18} />
         <span>
           <strong>编写 TypeScript</strong>
