@@ -147,6 +147,7 @@ const CANVAS_AGENT_ADAPTER_LABELS: Record<SessionAgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
   codex: 'Codex',
+  spark: 'Spark',
 }
 
 function normalizeCanvasAdapter(

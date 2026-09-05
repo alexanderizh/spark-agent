@@ -14,6 +14,10 @@ import type { SDKExecutorConfig } from '../../sdk/index.js'
 import type { EngineExecutor, EngineKind } from '../../sdk/engine-executor.js'
 import { CodexAppServerRuntimeSupervisor } from '../../sdk/codex-app-server/codex-runtime-supervisor.js'
 import { isPersistentCodexRuntimeEnabled } from '../../sdk/codex-app-server/codex-app-server-runtime.js'
+import {
+  SparkEngineExecutor,
+  isSparkEngineAvailable,
+} from '../../sdk/spark-engine/spark-engine-executor.js'
 import { resolveEngineKind } from './engine-kinds.js'
 
 /**
@@ -165,6 +169,22 @@ function createCodexEngineDescriptor(
   }
 }
 
+const sparkEngineDescriptor: EngineDescriptor = {
+  kind: 'spark',
+  createExecutor: () => new SparkEngineExecutor(),
+  capabilities: {
+    // spark-engine openSession 原生支持事件重放续跑；setPermissionMode 支持会话内热切换。
+    nativeResume: true,
+    permissionHotSwitch: true,
+    checkpointRewind: false,
+    subagentTool: false,
+  },
+  checkAvailability: async () =>
+    (await isSparkEngineAvailable())
+      ? { available: true }
+      : { available: false, reason: 'Spark engine SDK (@spark/agent) is not loadable' },
+}
+
 export interface DefaultEngineRegistryOptions {
   persistentCodexRuntime?: boolean | undefined
   runtimeSupervisor?: CodexAppServerRuntimeSupervisor | undefined
@@ -180,6 +200,7 @@ export function createDefaultEngineRegistry(
     : undefined
   registry.register(claudeEngineDescriptor)
   registry.register(createCodexEngineDescriptor(runtimeSupervisor))
+  registry.register(sparkEngineDescriptor)
   if (runtimeSupervisor != null) {
     registry.registerCodexRuntimeSupervisor(runtimeSupervisor)
   }

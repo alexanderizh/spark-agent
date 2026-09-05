@@ -487,9 +487,11 @@ export function TeamInspectorSection({
                     <span className="team-roster-detail-v">
                       {agent.agentAdapter === 'codex'
                         ? 'Codex'
-                        : agent.agentAdapter === 'claude'
-                          ? 'Claude CLI'
-                          : 'Claude SDK'}
+                        : agent.agentAdapter === 'spark'
+                          ? 'Spark'
+                          : agent.agentAdapter === 'claude'
+                            ? 'Claude CLI'
+                            : 'Claude SDK'}
                     </span>
                   </div>
                   <div className="team-roster-detail-row">

@@ -1,3 +1,4 @@
+import type { EngineKind } from '../../sdk/engine-executor.js'
 import type { CodexNativeThreadBinding, SDKExecutorConfig } from '../../sdk/types.js'
 
 const CODEX_APP_SERVER_METADATA_KEY = 'codexAppServer'
@@ -10,7 +11,8 @@ type StoredCodexNativeThreadBinding = CodexNativeThreadBinding & {
 
 export interface PersistentCodexAppServerEligibility {
   enabled: boolean
-  adapterKind: 'claude-sdk' | 'codex'
+  /** 引擎口径；非 codex 引擎（claude-sdk / spark）天然不满足持久 App Server 条件。 */
+  adapterKind: EngineKind
   useLocalConfig: boolean
   codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
   hasImageAttachments: boolean

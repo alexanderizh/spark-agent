@@ -28,7 +28,9 @@ import type {
   SkillItem,
   ProviderIconConfig,
   ProviderProfile,
+  SessionAgentAdapter,
   SessionChatMode,
+  SessionPermissionMode,
 } from '@spark/protocol'
 import { SUB_APP_SOURCE_HARD_LIMIT, SUB_APP_SURFACES, type SubAppSurface } from '@spark/protocol'
 import type { SubAppDraftPatch, SubAppListRequest } from '@spark/protocol'
@@ -421,8 +423,8 @@ export interface PlatformBridgeDeps {
       providerProfileId?: string
       modelId?: string | null
       agentId?: string
-      agentAdapter?: 'claude' | 'claude-sdk' | 'codex'
-      permissionMode?: string
+      agentAdapter?: SessionAgentAdapter
+      permissionMode?: SessionPermissionMode
       chatMode?: SessionChatMode
       reasoningEffort?: SparkReasoningEffort
     }): Promise<{ session: Record<string, unknown> }>

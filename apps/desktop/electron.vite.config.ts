@@ -113,7 +113,16 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'],
+        exclude: [
+          '@spark/protocol',
+          '@spark/storage',
+          '@spark/shared',
+          '@spark/agent-runtime',
+          // spark-engine SDK 随 main bundle 打包（M0 决策）：产物闭包只有 node 内置与
+          // 少量纯 JS 依赖（fast-glob/ignore/smol-toml/zod/ajv），ink/react 不在其中，
+          // 无需 electron-builder 收集 node_modules。
+          '@spark/agent',
+        ],
       }),
       copyMigrationsPlugin(),
       copyRuntimeToolsPlugin(),

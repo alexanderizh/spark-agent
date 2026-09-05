@@ -56,9 +56,36 @@ export const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   },
 ]
 
+export const SPARK_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
+  {
+    value: 'spark-default',
+    label: '按需批准',
+    description: 'default；安全工具自动执行，敏感操作请求批准',
+  },
+  {
+    value: 'spark-accept-edits',
+    label: '自动编辑',
+    description: 'acceptEdits；自动批准文件编辑',
+    tone: 'auto',
+  },
+  {
+    value: 'spark-plan',
+    label: '计划模式',
+    description: 'plan；先产出计划，批准后再执行',
+  },
+  {
+    value: 'spark-bypass',
+    label: '完全访问',
+    description: 'bypass；完全由 agent 执行',
+    tone: 'danger',
+  },
+]
+
 /** 按 adapter 返回可选的权限模式（codex 与 claude 系列互斥） */
 export function getPermissionModeOptions(adapter: SessionAgentAdapter): Array<ComposerMenuOption> {
-  return adapter === 'codex' ? CODEX_PERMISSION_MODE_OPTIONS : CLAUDE_PERMISSION_MODE_OPTIONS
+  if (adapter === 'codex') return CODEX_PERMISSION_MODE_OPTIONS
+  if (adapter === 'spark') return SPARK_PERMISSION_MODE_OPTIONS
+  return CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
 /** 校验权限模式是否适配当前 adapter，不适配则回退到该 adapter 的默认值 */

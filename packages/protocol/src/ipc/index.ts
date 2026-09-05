@@ -163,7 +163,7 @@ import type {
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
+export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex' | 'spark'
 export type SessionPermissionMode =
   | 'claude-ask'
   | 'claude-auto-edits'
@@ -173,6 +173,10 @@ export type SessionPermissionMode =
   | 'codex-default'
   | 'codex-auto-review'
   | 'codex-full-access'
+  | 'spark-default'
+  | 'spark-accept-edits'
+  | 'spark-plan'
+  | 'spark-bypass'
 
 export interface SessionAttachment {
   type: 'image' | 'file' | 'directory'
@@ -783,6 +787,13 @@ export interface ProviderProfile {
   mediaApiEndpoint?: string
   /** OpenAI/Codex provider API style. */
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /**
+   * 使用 Spark 执行器（自研 spark-engine，进程内 SDK）作为该渠道会话的默认引擎。
+   * 渠道协议仍是 openai/anthropic 二选一，执行时按协议映射 spark 引擎的上游
+   * wire 协议（anthropic → anthropic-messages；openai+responses → openai-responses；
+   * openai+chat 暂不支持，UI 置灰）。会话内仍可手动切回 claude/codex 适配器。
+   */
+  useSparkExecutor?: boolean
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 / undefined 视为未配置。 */
@@ -980,6 +991,8 @@ export interface ProviderCreateRequest {
   model?: string
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /** 使用 Spark 执行器作为该渠道会话默认引擎；协议无法映射的渠道由表单层置灰不下发。 */
+  useSparkExecutor?: boolean
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。<=0 / undefined 视为未配置；优先级高于 supportsMillionContext。 */
   contextWindow?: number
@@ -1032,6 +1045,8 @@ export interface ProviderUpdateRequest {
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /** 使用 Spark 执行器；显式传 false 清除（协议无法映射的渠道由表单层强制下发 false）。 */
+  useSparkExecutor?: boolean
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。传 0 清除自定义；undefined 不修改；优先级高于 supportsMillionContext。 */
   contextWindow?: number

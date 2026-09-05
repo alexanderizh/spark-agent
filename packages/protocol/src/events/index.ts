@@ -847,8 +847,8 @@ export interface ContextSummarizedEvent extends BaseEvent {
 /** Emitted only when a provider/CLI reports a real context compaction event. */
 export interface ContextCompactionEvent extends BaseEvent {
   type: 'context_compaction'
-  provider: 'claude' | 'codex'
-  source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+  provider: 'claude' | 'codex' | 'spark'
+  source: 'claude_code' | 'codex_cli' | 'codex_sdk' | 'spark_engine'
   phase: 'started' | 'completed' | 'failed' | 'boundary'
   /** Provider-reported trigger, when present. */
   trigger?: 'manual' | 'auto' | string
@@ -1036,8 +1036,8 @@ export interface TurnPromptSnapshotEvent extends BaseEvent, UserMessagePresentat
   model: string
   /** Provider 配置 Profile ID */
   providerProfileId?: string
-  /** 执行适配器类型 */
-  adapterKind: 'claude-sdk' | 'codex'
+  /** 执行适配器类型（'spark' 为自研引擎渠道开关启用后的持久化值） */
+  adapterKind: 'claude-sdk' | 'codex' | 'spark'
   /** 权限模式 */
   permissionMode: string
   /** 可用工具数量 */

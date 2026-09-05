@@ -6,12 +6,13 @@ import type { SDKExecutorConfig } from './types.js'
  *
  * 值域与 `TurnPromptSnapshotEvent.adapterKind` 的持久化现值域对齐：
  * - `'claude-sdk'` 为历史持久化值，涵盖 `'claude'` / `'claude-sdk'` 两种 adapter；
- * - `'codex'` 涵盖 codex 三种载具（cli / sdk / openai-chat），载具是引擎内部观测口径，不上升为本层概念。
+ * - `'codex'` 涵盖 codex 三种载具（cli / sdk / openai-chat），载具是引擎内部观测口径，不上升为本层概念；
+ * - `'spark'` 为自研引擎（进程内 @spark/agent SDK），渠道开启 useSparkExecutor 时成为默认引擎。
  *
  * 注意：改名属 schema 迁移，不在 P1 范围（resume 侧 `getLatestMatchingTurnPromptSnapshot`
  * 对 adapterKind 做精确匹配）。
  */
-export type EngineKind = 'claude-sdk' | 'codex'
+export type EngineKind = 'claude-sdk' | 'codex' | 'spark'
 
 /**
  * 引擎执行器统一契约。每个 turn 新建实例、构造无参、依赖经 config 传入。

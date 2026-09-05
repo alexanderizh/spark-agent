@@ -710,6 +710,20 @@ export interface SDKExecutorConfig {
   opusModel?: string | undefined
   apiEndpoint?: string | undefined
   codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
+  /**
+   * Spark 引擎（adapter 'spark'）：上游 wire 协议。由 session.service 按渠道协议
+   * 推导（anthropic → anthropic-messages；openai+responses → openai-responses；
+   * openai+chat 不支持，组装期即报错），见 spark-engine/model-route.ts。
+   */
+  sparkUpstreamProtocol?: 'anthropic-messages' | 'openai-responses' | undefined
+  /** Spark 引擎：事件账本数据根；缺省 ~/.spark（与 spark CLI 跨端共用）。 */
+  sparkDataRoot?: string | undefined
+  /**
+   * Spark 引擎：引擎侧 sessionId 上报回调。spark 的会话 id 由引擎 newSession 生成
+   * （host 无法预置），首轮创建/续轮重放后回调，供 resume gate 持久化（对照
+   * codexNativeThreadBindingObserver 先例）。
+   */
+  sparkSessionIdObserver?: ((sparkSessionId: string) => void | Promise<void>) | undefined
   codexCliProvider?: CodexCliModelProviderConfig | undefined
   systemPrompt?: string | undefined
   /**

@@ -34,6 +34,23 @@ export { CodexOpenAIExecutor } from './codex-openai-executor.js'
 export { CodexAppServerExecutor } from './codex-app-server/codex-app-server-executor.js'
 export type { CodexAppServerExecutorOptions } from './codex-app-server/codex-app-server-executor.js'
 export {
+  SparkEngineExecutor,
+  isSparkEngineAvailable,
+  setSparkLlmFactoryForTests,
+} from './spark-engine/spark-engine-executor.js'
+export { SparkEventMapper } from './spark-engine/event-mapper.js'
+export type { SparkEventMapperOptions } from './spark-engine/event-mapper.js'
+export { HostBridgeApprover, toEngineDecision } from './spark-engine/approver-bridge.js'
+export {
+  resolveSparkUpstreamProtocol,
+  resolveSparkModelRoute,
+  toSparkEnginePermissionMode,
+} from './spark-engine/model-route.js'
+export type {
+  SparkUpstreamProtocol,
+  SparkModelRouteResolution,
+} from './spark-engine/model-route.js'
+export {
   CodexAppServerClient,
   CodexAppServerProcessExitedError,
 } from './codex-app-server/codex-app-server-client.js'

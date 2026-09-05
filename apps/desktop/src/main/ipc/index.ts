@@ -1877,12 +1877,24 @@ function mapTaskPermissionMode(
     mode === 'claude-bypass' ||
     mode === 'codex-default' ||
     mode === 'codex-auto-review' ||
-    mode === 'codex-full-access'
+    mode === 'codex-full-access' ||
+    mode === 'spark-default' ||
+    mode === 'spark-accept-edits' ||
+    mode === 'spark-plan' ||
+    mode === 'spark-bypass'
   ) {
     return mode
   }
-  if (mode === 'bypass') return adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
-  if (mode === 'auto') return adapter === 'codex' ? 'codex-auto-review' : 'claude-auto'
+  if (mode === 'bypass') {
+    if (adapter === 'codex') return 'codex-full-access'
+    if (adapter === 'spark') return 'spark-bypass'
+    return 'claude-bypass'
+  }
+  if (mode === 'auto') {
+    if (adapter === 'codex') return 'codex-auto-review'
+    if (adapter === 'spark') return 'spark-accept-edits'
+    return 'claude-auto'
+  }
   return undefined
 }
 
@@ -2131,7 +2143,14 @@ function getRuntimePermissionDefaults(): {
 function readRuntimeAgentAdapter(value: unknown): SessionAgentAdapter {
   if (value != null && typeof value === 'object' && 'adapter' in value) {
     const adapter = (value as { adapter?: unknown }).adapter
-    if (adapter === 'claude' || adapter === 'claude-sdk' || adapter === 'codex') return adapter
+    if (
+      adapter === 'claude' ||
+      adapter === 'claude-sdk' ||
+      adapter === 'codex' ||
+      adapter === 'spark'
+    ) {
+      return adapter
+    }
   }
   return 'claude-sdk'
 }
@@ -2144,7 +2163,9 @@ function readRuntimePermissionMode(
     const mode = (value as { permissionMode?: unknown }).permissionMode
     if (typeof mode === 'string' && isPermissionModeForAdapter(mode, adapter)) return mode
   }
-  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+  if (adapter === 'codex') return 'codex-default'
+  if (adapter === 'spark') return 'spark-default'
+  return 'claude-ask'
 }
 
 function isPermissionModeForAdapter(
@@ -2154,6 +2175,14 @@ function isPermissionModeForAdapter(
   if (adapter === 'codex') {
     return (
       value === 'codex-default' || value === 'codex-auto-review' || value === 'codex-full-access'
+    )
+  }
+  if (adapter === 'spark') {
+    return (
+      value === 'spark-default' ||
+      value === 'spark-accept-edits' ||
+      value === 'spark-plan' ||
+      value === 'spark-bypass'
     )
   }
   return (
@@ -4378,7 +4407,11 @@ export function registerAllIpcHandlers(): void {
       requestTimeoutMs: number,
     ): Promise<CanvasTextTaskCreateResponse> => {
       const permissionMode: SessionPermissionMode =
-        adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
+        adapter === 'codex'
+          ? 'codex-full-access'
+          : adapter === 'spark'
+            ? 'spark-bypass'
+            : 'claude-bypass'
       const selectedSkillIds = Array.isArray(req.skillIds)
         ? req.skillIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
         : []

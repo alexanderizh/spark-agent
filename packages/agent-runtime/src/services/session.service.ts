@@ -163,6 +163,11 @@ import {
   scopeCodexNativeThreadBindingKey,
   shouldUsePersistentCodexAppServer,
 } from './session/codex-native-thread-binding.js'
+import {
+  createSparkLedgerBindingPatch,
+  readSparkLedgerSessionId,
+} from './session/spark-ledger-binding.js'
+import { resolveSparkUpstreamProtocol } from '../sdk/index.js'
 // 原 codex 载具工厂整体迁入 codex descriptor；re-export 保持既有 import 面。
 export { createCodexExecutorForConfig } from './session/engine-registry.js'
 
@@ -245,6 +250,7 @@ import {
   parseWorktreePromptMeta,
   pickGoalDrainableRuntimeSelection,
   prepareTurnAttachments,
+  getProviderUseSparkExecutor,
   providerRowsForModelRouter,
   assertModelNotScheduledBlocked,
   readSessionTeamConfig,
@@ -281,6 +287,7 @@ import {
   createInterruptedTurnEvents,
   shouldRunTurnPostProcessing,
   collectCompleteAssistantTurnText,
+  makeEventBase,
 } from './session-event-helpers.js'
 export {
   createUserCancelledTurnEvent,
@@ -2455,6 +2462,7 @@ export class SessionService {
           : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
+      getProviderUseSparkExecutor(provider.config_json),
     )
     const adapterKind = resolveEngineKind(agentAdapter)
     const resumeProviderProfileId =
@@ -2518,6 +2526,14 @@ export class SessionService {
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
         )
+    // Spark 引擎续跑：bindingKey 复用 stableSdkSessionId（含 provider/model/adapter 与
+    // mention 身份）；ledger binding 存在即允许 resume——引擎原生 openSession 重放，
+    // 账本缺失时执行器自动降级新会话并回写，不走 claude 口径的 sdkResumeSafe 白名单。
+    const sparkLedgerBindingKey = stableSdkSessionId
+    const sparkLedgerSessionId =
+      adapterKind === 'spark'
+        ? readSparkLedgerSessionId(session.metadata_json, sparkLedgerBindingKey)
+        : null
     const contextWindowTokens = resolveModelContextWindowForProvider(
       model,
       config.supportsMillionContext === true,
@@ -2540,7 +2556,9 @@ export class SessionService {
             },
           }
         : {}),
-      ...(canResumeSdkSession || usePersistentCodexAppServer ? { deferForSdkResume: true } : {}),
+      ...(canResumeSdkSession || usePersistentCodexAppServer || sparkLedgerSessionId != null
+        ? { deferForSdkResume: true }
+        : {}),
     })
     const conversationHistoryPrompt = conversationContext.prompt
     const resumeRecoveryHistoryPrompt = conversationContext.recoveryPrompt
@@ -3429,6 +3447,128 @@ export class SessionService {
     const observedInvocation = (snapshot: SDKInvocationSnapshot): void => {
       runtimeMetrics.markRequestSent()
       invocationObserver?.(snapshot)
+    }
+    // ---- Spark 引擎分支（adapter 'spark'）----
+    // M2 能力面：无 host MCP 注入（引擎自带内置工具集，host MCP 桥接为后续里程碑）、
+    // 无自定义系统提示词注入（DefaultPromptComposer 接缝在引擎侧扩展后接入）。
+    if (adapterKind === 'spark') {
+      const sparkRoute = resolveSparkUpstreamProtocol(provider.provider_type, config.codexApiKind)
+      const persistUserMessage = (): void => {
+        if (userMessageAlreadyPersisted) return
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeEventBase(sessionId, turnId),
+            type: 'user_message',
+            content: message,
+            ...userMessagePresentation,
+            ...(sessionReferences != null && sessionReferences.length > 0
+              ? { sessionReferences }
+              : {}),
+          },
+          eventRepo,
+        )
+      }
+      if (!sparkRoute.ok) {
+        // 组装期协议不可映射（如 chat/completions 渠道）：以明确错误终态收束本轮。
+        persistUserMessage()
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeEventBase(sessionId, turnId),
+            type: 'agent_error',
+            code: 'SPARK_PROTOCOL_UNMAPPABLE',
+            message: sparkRoute.reason,
+            retryable: false,
+          },
+          eventRepo,
+        )
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeEventBase(sessionId, turnId),
+            type: 'agent_status',
+            status: 'error',
+            message: 'Spark 引擎无法使用该渠道',
+          },
+          eventRepo,
+        )
+        sessionRepo.updateStatus(sessionId, 'error')
+        return
+      }
+      const sparkConfig: SDKExecutorConfig = {
+        apiKey,
+        model,
+        workspaceRootPath,
+        permissionMode,
+        contextWindowTokens,
+        ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        sparkUpstreamProtocol: sparkRoute.protocol,
+        ...(sparkLedgerSessionId != null
+          ? { sdkSessionId: sparkLedgerSessionId, continueSession: true }
+          : {}),
+        sparkSessionIdObserver: (sparkSessionId) => {
+          sessionRepo.patchMetadata(
+            sessionId,
+            createSparkLedgerBindingPatch(sessionRepo.getMetadata(sessionId), {
+              bindingKey: sparkLedgerBindingKey,
+              sparkSessionId,
+            }),
+          )
+        },
+        ...(this.onApproval != null
+          ? {
+              // 审批桥（M3）：与 claude 分支同构——弹卡等待前后切换 waiting_permission
+              // 状态；卡片/规则/超时由 desktop 侧 permission service 统一处理。
+              approvalCallback: async (
+                sid: string,
+                toolName: string,
+                toolInput: Record<string, unknown>,
+                context: SDKPermissionRequestContext,
+              ) => {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+                try {
+                  return await this.onApproval!(sid, toolName, toolInput, context)
+                } finally {
+                  this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                }
+              },
+            }
+          : {}),
+        invocationObserver: observedInvocation,
+      }
+      const sparkTurnOptions: TryStartSDKTurnOptions = {
+        ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
+        primaryWorkspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+        workspaceRootPath,
+        ...userMessagePresentation,
+        runtimeMetrics,
+        ...(userMessageAlreadyPersisted ? { userMessageAlreadyPersisted: true } : {}),
+        ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
+      }
+      if (shouldGenerateSessionTitle && !isMentionTurn) {
+        sparkTurnOptions.firstTurnTitleContext = {
+          providerType: provider.provider_type,
+          apiKey,
+          model,
+          ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+          userMessage: message,
+        }
+      }
+      await this.tryStartSparkEngineTurn(
+        sessionId,
+        turnId,
+        message,
+        eventRepo,
+        sessionRepo,
+        sparkConfig,
+        sparkTurnOptions,
+      )
+      return
     }
     const openAIChatTools =
       config.codexApiKind === 'chat'
@@ -5032,6 +5172,271 @@ export class SessionService {
           sessionRepo,
           eventRepo,
           emitUnpresentedMedia,
+          settleTerminalStatus: settlePendingTerminalStatus,
+        })
+      })
+      .finally(() => {
+        this.settleTurnFinally({ sessionId, turnId, executor })
+      })
+  }
+
+  /**
+   * Spark 引擎 turn 启动（对照 tryStartCodexCliTurn 骨架，裁剪至 spark 引擎 M2 能力面）。
+   *
+   * 差异点：
+   * - 无 host MCP 注入：引擎自带内置工具集，host MCP 桥接为后续里程碑；
+   * - 无媒体产物即时展示（mediaPresentationCollector）：spark 引擎 M2 事件流不产生
+   *   file_change / 媒体类事件，待引擎侧工具产物上抛通道打通后接入；
+   * - 终态语义与 codex 路径一致：completed 即时广播、无 result 标记的 error 扣留到
+   *   收尾补发（spark mapper 的事件均无 terminalSource，error 走扣留路径）。
+   */
+  private async tryStartSparkEngineTurn(
+    sessionId: string,
+    turnId: string,
+    message: string,
+    eventRepo: EventRepository,
+    sessionRepo: SessionRepository,
+    config: SDKExecutorConfig,
+    options: TryStartSDKTurnOptions = {},
+  ): Promise<void> {
+    const userMessagePresentation = pickUserMessagePresentation(options)
+    const sessionReferences = options.sessionReferences
+    const makeBase = () => makeEventBase(sessionId, turnId)
+    const persistUserMessage = (): void => {
+      if (options.userMessageAlreadyPersisted === true) return
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'user_message',
+          content: message,
+          ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
+        },
+        eventRepo,
+      )
+    }
+    const failTurn = (code: string, errorMessage: string, statusMessage: string): void => {
+      persistUserMessage()
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'agent_error', code, message: errorMessage, retryable: false },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'agent_status', status: 'error', message: statusMessage },
+        eventRepo,
+      )
+      sessionRepo.updateStatus(sessionId, 'error')
+    }
+
+    const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
+    if (workspaceIssue != null) {
+      failTurn(
+        'WORKSPACE_UNAVAILABLE',
+        `Workspace path is not available: ${config.workspaceRootPath}. ` +
+          'Reopen the workspace or update the session workspace before running the Spark engine.',
+        'Workspace path is not available',
+      )
+      return
+    }
+
+    try {
+      const { isSparkEngineAvailable } = await import('../sdk/index.js')
+      if (!(await isSparkEngineAvailable())) {
+        failTurn(
+          'SPARK_ENGINE_UNAVAILABLE',
+          'Spark engine SDK (@spark/agent) is not loadable in this runtime.',
+          'Spark 引擎不可用',
+        )
+        return
+      }
+    } catch (err) {
+      failTurn(
+        'SPARK_ENGINE_UNAVAILABLE',
+        `Spark engine SDK failed to load: ${
+          err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+        }`,
+        'Spark 引擎不可用',
+      )
+      return
+    }
+
+    const executor = this.engineRegistry.resolveExecutor('spark', config)
+    let pendingTerminalStatus: AgentStatusEvent | null = null
+    let pendingTerminalBroadcast = false
+    let completedBroadcast = false
+    const settlePendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
+      if (pendingTerminalStatus == null) return null
+      const status = pendingTerminalStatus.status
+      if (!pendingTerminalBroadcast) {
+        this.emitAndPersist(sessionId, turnId, pendingTerminalStatus, eventRepo)
+      }
+      this.updateStatusAfterHostTerminal(sessionRepo, sessionId, status)
+      pendingTerminalStatus = null
+      return status
+    }
+    const mentionAgentId = options.mentionAgentId
+    const mentionMemberContext =
+      mentionAgentId != null
+        ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
+        : undefined
+    const turnAgent = this.resolveAgent(options.agentId)
+    const observedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
+    const completeAssistantEvents: AssistantMessageEvent[] = []
+    executor.onEvent((event) => {
+      if (options.userMessageAlreadyPersisted === true && event.type === 'user_message') return
+      if (
+        !shouldAcceptSessionExecutorEvent({
+          activeLoops: this.turnRegistry.activeLoops,
+          cancelledTurnIds: this.turnRegistry.cancelledTurns,
+          sessionId,
+          turnId,
+          executor,
+        })
+      ) {
+        return
+      }
+      options.runtimeMetrics?.observe(event)
+      if (
+        event.type === 'agent_status' &&
+        (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
+      ) {
+        if (event.status === 'completed' && completedBroadcast) return
+        if (event.status === 'completed') completedBroadcast = true
+        const terminalEvent = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
+        pendingTerminalStatus = terminalEvent
+        const broadcastNow = event.status !== 'error' || event.terminalSource === 'result'
+        pendingTerminalBroadcast = broadcastNow
+        if (broadcastNow) {
+          this.emitAndPersist(sessionId, turnId, terminalEvent, eventRepo)
+        }
+        return
+      }
+      if (event.type === 'file_change') {
+        const key = workspaceRelativeChangeKey(config.workspaceRootPath, event.path)
+        if (key != null) observedFileChangeKeys.add(key)
+      }
+      let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
+      if (event.type === 'user_message') {
+        outgoing = {
+          ...outgoing,
+          ...userMessagePresentation,
+          ...(sessionReferences != null && sessionReferences.length > 0
+            ? { sessionReferences }
+            : {}),
+        } as UserMessageEvent
+      }
+      if (mentionAgentId != null) {
+        if (event.type === 'assistant_message' && typeof event.content === 'string') {
+          outgoing = {
+            id: event.id,
+            type: 'team_member_message',
+            sessionId: event.sessionId,
+            turnId: event.turnId,
+            timestamp: event.timestamp,
+            seq: event.seq,
+            dispatchId: `mention:${turnId}`,
+            memberAgentId: mentionAgentId,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+            ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+          }
+        } else if (event.type === 'user_message') {
+          outgoing = { ...(outgoing as UserMessageEvent), mentionAgentId }
+        } else if (
+          mentionMemberContext != null &&
+          (event.type === 'tool_call' ||
+            event.type === 'tool_result' ||
+            event.type === 'file_change' ||
+            event.type === 'terminal_output')
+        ) {
+          outgoing = { ...event, teamMemberContext: mentionMemberContext }
+        }
+      }
+      outgoing = governAgentToolResultEvent(outgoing, config.workspaceRootPath)
+      this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      if (
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string'
+      ) {
+        completeAssistantEvents.push(event)
+      }
+    })
+
+    this.turnRegistry.registerExecutor(sessionId, turnId, executor)
+    sessionRepo.updateStatus(sessionId, 'running')
+    this.emitQueueChanged(sessionId)
+
+    // Checkpoint（会话开启时）：与 codex 路径一致，在 executor 改动文件前捕获起始状态。
+    if (config.workspaceRootPath != null && config.workspaceRootPath.length > 0) {
+      await this.maybeCaptureCheckpoint(
+        sessionId,
+        turnId,
+        config.workspaceRootPath,
+        eventRepo,
+        message,
+      )
+    }
+
+    if (this.disposing || !this.turnRegistry.isActiveExecutor(sessionId, executor)) {
+      if (this.turnRegistry.isActiveExecutor(sessionId, executor)) {
+        this.turnRegistry.releaseExecutorIfOwned(sessionId, turnId, executor)
+        sessionRepo.updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+      }
+      this.teamDispatchService?.clearTurn(turnId)
+      this.closeTeamMcpHandlesForTurn(turnId)
+      this.clearTurnFileChangeKeys(sessionId, turnId)
+      return
+    }
+
+    const executionPromise = executor.executeTurn(sessionId, turnId, message, config)
+    this.turnRegistry.trackExecution(executor, { sessionId, promise: executionPromise })
+    executionPromise
+      .then(async () => {
+        if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
+          this.settleTurnWithoutPostProcessing({
+            sessionId,
+            turnId,
+            executor,
+            sessionRepo,
+            eventRepo,
+            emitUnpresentedMedia: () => {},
+            settleTerminalStatus: settlePendingTerminalStatus,
+          })
+          return
+        }
+        this.runTurnPostProcessing({
+          sessionId,
+          turnId,
+          executor,
+          sessionRepo,
+          eventRepo,
+          config,
+          options,
+          message,
+          completeAssistantEvents,
+          emitUnpresentedMedia: () => {},
+          settleTerminalStatus: settlePendingTerminalStatus,
+        })
+      })
+      .catch(() => {
+        this.settleTurnFailure({
+          sessionId,
+          turnId,
+          executor,
+          sessionRepo,
+          eventRepo,
+          emitUnpresentedMedia: () => {},
           settleTerminalStatus: settlePendingTerminalStatus,
         })
       })
@@ -7441,6 +7846,7 @@ export class SessionService {
       member.agentAdapter ?? runtimeSelectionSnapshot.agentAdapter,
       runtimeSelectionSnapshot.chatMode,
       provider.provider_type,
+      getProviderUseSparkExecutor(provider.config_json),
     )
     // FR-0a：按 adapter 解析执行器档位 + codex sdkConfig 扩展字段（抽纯函数
     // resolveCodexMemberExecutionProfile 便于单测、防 Host/member 漂移）。

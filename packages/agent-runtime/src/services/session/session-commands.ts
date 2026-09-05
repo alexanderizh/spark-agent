@@ -45,6 +45,7 @@ import {
   checkOpenAISdkAvailable,
   checkWorkspaceShellAvailable,
   getProviderModelIds,
+  getProviderUseSparkExecutor,
   listSessionCheckpointsFromEvents,
   listSkillSummaries,
   normalizeCustomCommandConfig,
@@ -58,6 +59,7 @@ import {
 } from './session-command-title-refinement.js'
 import { getAgentAdapterFromSession, getPermissionModeFromSession } from './engine-kinds.js'
 import { createCodexNativeThreadClearPatch } from './codex-native-thread-binding.js'
+import { createSparkLedgerClearPatch } from './spark-ledger-binding.js'
 import { ensureSessionWorkspaceRootPathSync } from '../session-workspace-root.js'
 
 const log = createLogger('session.commands')
@@ -499,6 +501,7 @@ export class SessionCommandController {
       getSession: (id) => {
         const s = sessionRepo.get(id)
         if (s == null) return null
+        const providerRow = providerRepo.get(s.provider_profile_id ?? '')
         return {
           title: s.title,
           status: s.status,
@@ -507,14 +510,16 @@ export class SessionCommandController {
           agentAdapter: getAgentAdapterFromSession(
             s.agent_adapter,
             s.chat_mode,
-            providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+            providerRow?.provider_type ?? null,
+            getProviderUseSparkExecutor(providerRow?.config_json),
           ),
           permissionMode: getPermissionModeFromSession(
             s.permission_mode,
             getAgentAdapterFromSession(
               s.agent_adapter,
               s.chat_mode,
-              providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null,
+              providerRow?.provider_type ?? null,
+              getProviderUseSparkExecutor(providerRow?.config_json),
             ),
           ),
           agentId: s.agent_id ?? null,
@@ -529,6 +534,8 @@ export class SessionCommandController {
           id,
           createCodexNativeThreadClearPatch(sessionRepo.getMetadata(id)),
         )
+        // spark ledger 绑定同源清理：下一轮 spark turn 创建全新引擎会话。
+        sessionRepo.patchMetadata(id, createSparkLedgerClearPatch(sessionRepo.getMetadata(id)))
         eventRepo.deleteBySession(id)
         this.host.clearSessionEventSequencer(id)
         this.host.clearUsageLedgerTurnState(id)
@@ -583,6 +590,7 @@ export class SessionCommandController {
           s.agent_adapter,
           s.chat_mode,
           provider?.provider_type ?? null,
+          getProviderUseSparkExecutor(provider?.config_json),
         )
         return {
           providerProfileId: s.provider_profile_id ?? null,

@@ -170,6 +170,7 @@ import {
 } from '../../components/code-viewer/composerInsert'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
+import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 import { sortByManualOrderWithinPinnedSections } from '../../sidebar-manual-order'
 import {
@@ -6027,6 +6028,7 @@ function ModelIcon() {
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
   { value: 'claude-sdk', label: 'Claude SDK' },
   { value: 'codex', label: 'Codex' },
+  { value: 'spark', label: 'Spark' },
 ]
 
 const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
@@ -6035,6 +6037,7 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
   codex: 'Codex',
+  spark: 'Spark',
 }
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
@@ -6081,6 +6084,21 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permiss
         <Icons.Hand size={18} />
       ) : option.value === 'codex-auto-review' ? (
         <Icons.Shield size={18} />
+      ) : (
+        <Icons.AlertTriangle size={18} />
+      ),
+  }))
+
+const SPARK_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
+  SHARED_SPARK_PERMISSION_MODE_OPTIONS.map((option) => ({
+    ...option,
+    icon:
+      option.value === 'spark-default' ? (
+        <Icons.Hand size={18} />
+      ) : option.value === 'spark-accept-edits' ? (
+        <Icons.Wand size={18} />
+      ) : option.value === 'spark-plan' ? (
+        <Icons.FileText size={18} />
       ) : (
         <Icons.AlertTriangle size={18} />
       ),
@@ -6265,7 +6283,9 @@ function codeRefKey(ref: CodeReference): string {
 function getPermissionModeOptions(
   adapter: AgentAdapter,
 ): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
-  return adapter === 'codex' ? CODEX_PERMISSION_MODE_OPTIONS : CLAUDE_PERMISSION_MODE_OPTIONS
+  if (adapter === 'codex') return CODEX_PERMISSION_MODE_OPTIONS
+  if (adapter === 'spark') return SPARK_PERMISSION_MODE_OPTIONS
+  return CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
 function getValidPermissionMode(

@@ -5,9 +5,14 @@ import {
   isLocalClaudeCliProvider,
   isLocalCodexCliProvider,
 } from '@spark/protocol'
+import { sparkExecutorAvailability } from './sparkExecutorAvailability'
 
 export function isClaudeAdapter(adapter: SessionAgentAdapter): boolean {
   return adapter === 'claude' || adapter === 'claude-sdk'
+}
+
+export function isSparkAdapter(adapter: SessionAgentAdapter): boolean {
+  return adapter === 'spark'
 }
 
 export function isProviderCompatibleWithAdapter(
@@ -16,6 +21,21 @@ export function isProviderCompatibleWithAdapter(
 ): boolean {
   if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
   if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
+  if (isSparkAdapter(adapter)) {
+    // spark 引擎不接管本地 CLI 内置渠道与自动路由元渠道；远程对话渠道按协议可映射性判定
+    if (isAutoRouterProvider(provider)) return false
+    if (
+      provider.modelType === 'image' ||
+      provider.modelType === 'voice' ||
+      provider.modelType === 'video'
+    ) {
+      return false
+    }
+    return sparkExecutorAvailability(
+      provider.provider === 'anthropic' ? 'anthropic' : 'openai',
+      provider.codexApiKind ?? null,
+    ).available
+  }
   return isClaudeAdapter(adapter)
     ? provider.provider === 'anthropic'
     : provider.provider !== 'anthropic'
