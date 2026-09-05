@@ -81,6 +81,12 @@ jobs:
 
           git config user.name 'spark-release-bot'
           git config user.email 'actions@github.com'
+          # runner 的 git 默认走 HTTP/2，向 GitHub 推 pack 时会稳定复现
+          # "RPC failed; HTTP 408 + send-pack: unexpected disconnect"
+          # （v0.4.0 发布连 3 次、跨 25 分钟均同款失败，排除瞬态网络）。
+          # 强制 HTTP/1.1 是社区验证的标准修复；postBuffer 兜底大包分片。
+          git config http.version HTTP/1.1
+          git config http.postBuffer 524288000
           if git ls-remote --exit-code --heads origin spark-cli-releases >/dev/null 2>&1; then
             git fetch origin spark-cli-releases
             git checkout -B spark-cli-releases origin/spark-cli-releases
@@ -135,9 +141,9 @@ jobs:
             # pre-commit/commit-msg/pre-push 钩子（simple-git-hooks 安装于 .git/hooks，
             # 其引用的 scripts/ 已被 git rm 清掉）必然 MODULE_NOT_FOUND。
             git commit -q --no-verify -m "release(spark-cli): v${VERSION}"
-            # 推送重试：runner 到远端偶发 HTTP 408/断连（v0.4.0 发布曾因瞬态
-            # 408 红灯）；ref 推送幂等，若首次实际已生效，重试只会报
-            # Everything up-to-date，安全。
+            # 推送重试：传输层已强制 HTTP/1.1（见上方 git config），此处仅
+            # 兜底残余的偶发断连；ref 推送幂等，若首次实际已生效，重试
+            # 只会报 Everything up-to-date，安全。
             pushed=0
             for attempt in 1 2 3; do
               if git push --no-verify origin HEAD:spark-cli-releases; then
