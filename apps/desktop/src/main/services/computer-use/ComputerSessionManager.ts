@@ -387,15 +387,17 @@ export class ComputerSessionManager {
     const updated = this.sessions.updateStatus(computerSessionId, 'completed', now, now)
     if (updated == null) throw sessionCanceled()
     const completed = toComputerSession(updated)
-    if (verificationIds.length > 0) {
-      this.timeline?.record({
-        type: 'computer_session_completed',
-        sessionId: completed.sessionId,
-        turnId: completed.turnId,
-        computerSessionId: completed.id,
-        verificationIds,
-      })
-    }
+    // Always emit the terminal event: downstream consumers (activity card,
+    // PIP panel, native capture lifecycle) rely on it to close the session.
+    // Gating it on verificationIds left every verification-less completion
+    // stuck on "in progress" forever.
+    this.timeline?.record({
+      type: 'computer_session_completed',
+      sessionId: completed.sessionId,
+      turnId: completed.turnId,
+      computerSessionId: completed.id,
+      verificationIds,
+    })
     return this.publishStatus(completed)
   }
 

@@ -98,7 +98,7 @@ describe('ComputerUseAgentBridge', () => {
     const unknown = await fetch(`http://127.0.0.1:${binding.port}/invoke`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ toolName: 'click', args: {} }),
+      body: JSON.stringify({ toolName: 'definitely_not_a_tool', args: {} }),
     })
     expect(unknown.status).toBe(400)
 

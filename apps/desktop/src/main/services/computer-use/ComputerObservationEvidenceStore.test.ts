@@ -86,7 +86,12 @@ describe('ComputerObservationEvidenceStore', () => {
       }),
       blobs: [expect.objectContaining({ kind: 'image' })],
     })
-    await expect(store.readLatestImage('computer-1', 'snapshot-1')).resolves.toEqual(preview)
+    await expect(store.readLatestImage('computer-1', 'snapshot-1')).resolves.toEqual({
+      bytes: preview,
+      width: OBSERVATION.screenshot.width,
+      height: OBSERVATION.screenshot.height,
+      mimeType: 'image/png',
+    })
   })
 
   it('persists only a redacted thumbnail with TTL after execution', async () => {
@@ -238,9 +243,10 @@ describe('ComputerObservationEvidenceStore', () => {
     await expect(store.readLatestImage('computer-1', 'snapshot-1')).rejects.toMatchObject({
       code: 'stale_frame',
     })
-    await expect(store.readLatestImage('computer-2', 'snapshot-2')).resolves.toEqual(
-      Buffer.from('preview'),
-    )
+    await expect(store.readLatestImage('computer-2', 'snapshot-2')).resolves.toMatchObject({
+      bytes: Buffer.from('preview'),
+      mimeType: 'image/png',
+    })
   })
 })
 import { createHash } from 'node:crypto'

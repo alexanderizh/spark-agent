@@ -10,7 +10,7 @@ import type {
   NativeHostResponse,
   NativeWindowDescriptor,
 } from '@spark/protocol'
-import { ComputerObservationSchema } from '@spark/protocol'
+import { ComputerObservationSchema, computerExecutionLaneForAction } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import type {
   ComputerExecutorBackend,
@@ -72,7 +72,10 @@ export interface NativeHostConnection {
   executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
-  ): Promise<Extract<NativeHostResponse, { type: 'action_result' }>>
+  ): Promise<{
+    response: Extract<NativeHostResponse, { type: 'action_result' }>
+    bytes: Buffer | null
+  }>
   cancelSession(computerSessionId: string): Promise<void>
   close(): Promise<void>
 }
@@ -385,10 +388,24 @@ export class NativeHostComputerUseBackend
     }
     return this.measure('action_ms', () =>
       this.runControlOperation('execution', input.envelope.action, async (connection) => {
+        // Skyshot (protocol v2): ask the Host to attach the settled post-action
+        // observation (fresh tree + screenshot) to the action response so the
+        // execute→observe feedback loop collapses into ONE round trip. Rolled
+        // back transparently when the flag is off or the Host cannot produce it.
+        const requestSkyshot =
+          getComputerUseV2FlagStore().isEnabled('actionSkyshot') &&
+          computerExecutionLaneForAction(input.envelope.action) !== 'passive'
+        const envelope: ComputerActionEnvelope = requestSkyshot
+          ? { ...input.envelope, includeSkyshot: true }
+          : input.envelope
         let actionResult: Extract<NativeHostResponse, { type: 'action_result' }>
+        let actionBytes: Buffer | null = null
         try {
           actionResult = await this.measure('action_execute_ms', () =>
-            connection.executeAction(input.envelope, input.signal),
+            connection.executeAction(envelope, input.signal).then((result) => {
+              actionBytes = result.bytes
+              return result.response
+            }),
           )
         } catch (error) {
           // The channel is unknown when the Host failed before choosing one (or on an
@@ -410,8 +427,41 @@ export class NativeHostComputerUseBackend
         // the post-action capture back onto the pre-action window. Explicitly bound sessions
         // keep their single-window contract and therefore retain the old target.
         const followsForeground =
-          !this.targetBindings.has(input.envelope.computerSessionId) &&
-          actionMayChangeFocusedWindow(input.envelope.action)
+          !this.targetBindings.has(envelope.computerSessionId) &&
+          actionMayChangeFocusedWindow(envelope.action)
+        if (
+          actionResult.skyshot != null &&
+          actionResult.payload != null &&
+          actionBytes != null &&
+          !followsForeground
+        ) {
+          // The skyshot already IS the settled post-action observation of the
+          // same window — persist evidence, update the session binding, and
+          // skip the separate observe round trip entirely.
+          const observation = ComputerObservationSchema.parse(actionResult.skyshot)
+          await this.evidenceSink?.persist({
+            computerSessionId: envelope.computerSessionId,
+            kind: 'execution_after',
+            observation,
+            payload: actionResult.payload,
+            bytes: actionBytes,
+          })
+          this.observationSessions.set(envelope.computerSessionId, {
+            appId: observation.foreground.app.id,
+            windowId: observation.foreground.window.id,
+            frameId: observation.frameId,
+            treeVersion: observation.treeVersion,
+          })
+          return {
+            observation,
+            // The Host knows whether it actually emitted an input/semantic action. Visual
+            // similarity is deliberately not used as a hard interruption signal because
+            // video and animated applications change without the action, while successful
+            // focus/caret actions may make only a tiny pixel-level change.
+            noop: actionResult.status === 'noop',
+            executionChannel: actionResult.executionChannel ?? null,
+          }
+        }
         // A bound or focus-stable action already has a validated target in the current
         // observation. Re-listing every desktop window here adds a Native Host round-trip to
         // every click/type step without improving target safety; captureObservation still
@@ -423,7 +473,7 @@ export class NativeHostComputerUseBackend
         const observation = await this.measure('action_post_observation_ms', () =>
           this.captureObservation({
             connection,
-            computerSessionId: input.envelope.computerSessionId,
+            computerSessionId: envelope.computerSessionId,
             appId: target.app.id,
             windowId: target.window.id,
             ...(target.app.processId == null ? {} : { targetProcessId: target.app.processId }),
@@ -435,10 +485,6 @@ export class NativeHostComputerUseBackend
         )
         return {
           observation,
-          // The Host knows whether it actually emitted an input/semantic action. Visual
-          // similarity is deliberately not used as a hard interruption signal because
-          // video and animated applications change without the action, while successful
-          // focus/caret actions may make only a tiny pixel-level change.
           noop: actionResult.status === 'noop',
           executionChannel: actionResult.executionChannel ?? null,
         }

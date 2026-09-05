@@ -3,13 +3,30 @@ import type { SnapshotImageProcessor } from './NativeApplicationSnapshotCaptureS
 
 const MAX_IMAGE_DIMENSION = 16_384
 const MAX_PREVIEW_WIDTH = 1_200
+/**
+ * Model-facing frame budget: vision models internally downscale beyond ~2 MP,
+ * so shipping a full Retina capture only inflates upload + time-to-first-token
+ * (a 5120x2880 PNG base64-encodes to 7-14 MB per step). A 1600px long-edge
+ * JPEG keeps small controls legible while cutting payload ~20x.
+ */
+const MAX_MODEL_IMAGE_LONG_EDGE = 1_600
+const MODEL_IMAGE_JPEG_QUALITY = 85
 
 export interface ElectronNativeImageLike {
   isEmpty(): boolean
   getSize(): { width: number; height: number }
   resize(options: { width: number; quality: 'best' }): ElectronNativeImageLike
   toPNG(): Buffer
+  toJPEG?(quality: number): Buffer
   toBitmap(): Buffer
+}
+
+/** A model-facing frame plus the geometry/mime the model actually saw. */
+export interface ModelFacingImage {
+  bytes: Buffer
+  width: number
+  height: number
+  mimeType: 'image/png' | 'image/jpeg'
 }
 
 export class ElectronSnapshotImageProcessor implements SnapshotImageProcessor {
@@ -64,6 +81,7 @@ export class ElectronSnapshotImageProcessor implements SnapshotImageProcessor {
       foreground: { window: { bounds: { x: number; y: number; width: number; height: number } } }
       sensitiveRegions: Array<{ x: number; y: number; width: number; height: number }>
     },
+    options?: { maxWidth?: number },
   ): { bytes: Buffer; perceptualHash: string } {
     if (this.createFromBitmap == null) throw invalidImage()
     const image = this.createImage(imageBytes)
@@ -75,10 +93,12 @@ export class ElectronSnapshotImageProcessor implements SnapshotImageProcessor {
     ) {
       throw invalidImage()
     }
+    // Decision input passes maxWidth = original width (full resolution): small
+    // buttons keep their pixels and coordinate precision is limited only by
+    // the capture itself. Durable audit keeps the bounded 1200px preview.
+    const maxWidth = options?.maxWidth ?? MAX_PREVIEW_WIDTH
     const preview =
-      originalSize.width > MAX_PREVIEW_WIDTH
-        ? image.resize({ width: MAX_PREVIEW_WIDTH, quality: 'best' })
-        : image
+      originalSize.width > maxWidth ? image.resize({ width: maxWidth, quality: 'best' }) : image
     const size = preview.getSize()
     const bitmap = Buffer.from(preview.toBitmap())
     if (bitmap.length !== size.width * size.height * 4) throw invalidImage()
@@ -100,6 +120,38 @@ export class ElectronSnapshotImageProcessor implements SnapshotImageProcessor {
     const bytes = redacted.toPNG()
     if (bytes.length < 1) throw invalidImage()
     return { bytes, perceptualHash: averageHash(bitmap, size) }
+  }
+
+  /**
+   * Builds the frame the decision/atomic-tool model consumes: sensitive regions
+   * redacted, long edge capped, JPEG-encoded. Returns the geometry of the
+   * produced image so consumers can map model coordinates back to the window.
+   */
+  createModelFacingImage(
+    imageBytes: Buffer,
+    observation: {
+      screenshot: { width: number; height: number }
+      foreground: { window: { bounds: { x: number; y: number; width: number; height: number } } }
+      sensitiveRegions: Array<{ x: number; y: number; width: number; height: number }>
+    },
+  ): ModelFacingImage {
+    const { width, height } = observation.screenshot
+    // Long edge capped at MAX_MODEL_IMAGE_LONG_EDGE; never upscale.
+    const targetWidth =
+      width >= height
+        ? Math.min(MAX_MODEL_IMAGE_LONG_EDGE, width)
+        : Math.min(Math.round((MAX_MODEL_IMAGE_LONG_EDGE * width) / height) || 1, width)
+    const evidence = this.createRedactedEvidence(imageBytes, observation, {
+      maxWidth: targetWidth,
+    })
+    const image = this.createImage(evidence.bytes)
+    if (image.isEmpty()) throw invalidImage()
+    const size = image.getSize()
+    const jpeg = image.toJPEG?.(MODEL_IMAGE_JPEG_QUALITY)
+    if (jpeg != null && jpeg.length > 0) {
+      return { bytes: jpeg, width: size.width, height: size.height, mimeType: 'image/jpeg' }
+    }
+    return { bytes: evidence.bytes, width: size.width, height: size.height, mimeType: 'image/png' }
   }
 }
 

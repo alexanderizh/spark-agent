@@ -7,6 +7,8 @@ export const COMPUTER_USE_V2_FLAGS = [
   'backgroundSemanticLane',
   'activityTimeline',
   'visibleControlIndicator',
+  'actionSkyshot',
+  'pipPanel',
 ] as const
 
 export type ComputerUseV2FlagName = (typeof COMPUTER_USE_V2_FLAGS)[number]
@@ -27,6 +29,8 @@ const ENVIRONMENT_KEYS: Record<ComputerUseV2FlagName, string> = {
   backgroundSemanticLane: 'SPARK_COMPUTER_USE_V2_BACKGROUND_SEMANTIC_LANE',
   activityTimeline: 'SPARK_COMPUTER_USE_V2_ACTIVITY_TIMELINE',
   visibleControlIndicator: 'SPARK_COMPUTER_USE_V2_VISIBLE_CONTROL_INDICATOR',
+  actionSkyshot: 'SPARK_COMPUTER_USE_V2_ACTION_SKYSHOT',
+  pipPanel: 'SPARK_COMPUTER_USE_V2_PIP_PANEL',
 }
 
 // V2 is the shipped product path. Every optimization can still be disabled explicitly
@@ -40,6 +44,8 @@ const DEFAULTS: Record<ComputerUseV2FlagName, boolean> = {
   backgroundSemanticLane: true,
   activityTimeline: true,
   visibleControlIndicator: true,
+  actionSkyshot: true,
+  pipPanel: true,
 }
 
 export class ComputerUseV2FlagStore {

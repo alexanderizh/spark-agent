@@ -425,11 +425,99 @@ describe('NativeHostClient', () => {
         actionId: 'action-1',
         status: 'executed',
       })
-      await expect(executing).resolves.toMatchObject({ status: 'executed' })
+      await expect(executing).resolves.toMatchObject({
+        response: { status: 'executed' },
+        bytes: null,
+      })
       await client.close()
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('keeps a skyshot action response adjacent to its binary frame and verifies the digest', async () => {
+    const process = new FakeNativeHostProcess()
+    const requests = observeRequests(process)
+    const connecting = NativeHostClient.connect({ artifact: ARTIFACT, spawnProcess: () => process })
+    await completeHandshake(process, requests)
+    const client = await connecting
+    const envelope = {
+      computerSessionId: 'computer-1',
+      actionId: 'action-1',
+      actuatorLeaseId: 'computer-1',
+      observedFrameId: 'frame-1',
+      observedTreeVersion: 'tree-1',
+      targetAppId: 'app-1',
+      targetWindowId: 'window-1',
+      action: { type: 'click', point: { x: 0.5, y: 0.5 } },
+      policyContext: {
+        effect: 'reversible_local',
+        target: { kind: 'window', id: 'window-1' },
+        dataClasses: [],
+      },
+      intent: 'Click the button',
+      includeSkyshot: true,
+    } as const
+    const executing = client.executeAction(envelope as never)
+    const request = requireRequest(await requests.next())
+    const payload = Buffer.from('skyshot-png')
+    const skyshot = {
+      frameId: 'frame-2',
+      treeVersion: 'tree-2',
+      capturedAt: '2026-09-05T00:00:00.000Z',
+      display: { id: 'display-1', width: 3000, height: 2000, scaleFactor: 2 },
+      foreground: {
+        app: {
+          id: 'app-1',
+          name: 'Notes',
+          processId: 42,
+        },
+        window: {
+          id: 'window-1',
+          title: 'Notes',
+          bounds: { x: 0, y: 0, width: 1000, height: 600 },
+        },
+      },
+      screenshot: { snapshotId: 'action-1', width: 2000, height: 1200 },
+      tree: { mode: 'full', text: '- window "Notes" [1]', elementCount: 1 },
+      elements: [
+        {
+          id: '1',
+          treeVersion: 'tree-2',
+          role: 'AXWindow',
+          name: 'Notes',
+          bounds: { x: 0, y: 0, width: 1000, height: 600 },
+          enabled: true,
+          focused: false,
+          actions: ['focus'],
+        },
+      ],
+      loading: false,
+      sensitiveRegions: [],
+    }
+    process.send(
+      {
+        protocolVersion: 1,
+        requestId: request.requestId,
+        type: 'action_result',
+        actionId: 'action-1',
+        status: 'executed',
+        executionChannel: 'background_pid',
+        skyshot,
+        payload: {
+          kind: 'image_png',
+          byteLength: payload.length,
+          sha256: createHash('sha256').update(payload).digest('hex'),
+        },
+      } as never,
+      payload,
+    )
+
+    await expect(executing).resolves.toMatchObject({
+      response: { status: 'executed', executionChannel: 'background_pid' },
+      bytes: payload,
+    })
+    await client.close()
   })
 
   it('bounds the in-flight request map before writing more work to the host pipe', async () => {

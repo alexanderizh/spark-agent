@@ -14,6 +14,13 @@ const BaseComputerUseEventShape = {
   seq: z.number().int().nonnegative(),
 }
 
+/**
+ * Human-readable one-line description of the action (e.g. `点击 [12] button "搜索"`,
+ * `输入 "comfyui"`). Optional: timeline consumers render it verbatim when present
+ * and fall back to the generic per-type label otherwise.
+ */
+const ActionSummarySchema = z.string().max(400)
+
 export const ComputerUseEventSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -36,6 +43,7 @@ export const ComputerUseEventSchema = z.discriminatedUnion('type', [
       type: z.literal('computer_action_requested'),
       actionId: ComputerUseIdentifierSchema,
       riskLevel: ComputerRiskLevelSchema,
+      summary: ActionSummarySchema.optional(),
     })
     .strict(),
   z
@@ -44,6 +52,7 @@ export const ComputerUseEventSchema = z.discriminatedUnion('type', [
       type: z.literal('computer_action_blocked'),
       actionId: ComputerUseIdentifierSchema,
       errorCode: ComputerUseErrorCodeSchema,
+      summary: ActionSummarySchema.optional(),
     })
     .strict(),
   z
@@ -53,6 +62,7 @@ export const ComputerUseEventSchema = z.discriminatedUnion('type', [
       actionId: ComputerUseIdentifierSchema,
       beforeFrameId: ComputerUseIdentifierSchema,
       afterFrameId: ComputerUseIdentifierSchema,
+      summary: ActionSummarySchema.optional(),
     })
     .strict(),
   z
@@ -61,6 +71,7 @@ export const ComputerUseEventSchema = z.discriminatedUnion('type', [
       type: z.literal('computer_action_failed'),
       actionId: ComputerUseIdentifierSchema,
       errorCode: ComputerUseErrorCodeSchema,
+      summary: ActionSummarySchema.optional(),
     })
     .strict(),
   z
@@ -107,7 +118,11 @@ export const ComputerUseEventSchema = z.discriminatedUnion('type', [
     .object({
       ...BaseComputerUseEventShape,
       type: z.literal('computer_session_completed'),
-      verificationIds: z.array(ComputerUseIdentifierSchema).min(1).max(100),
+      // Empty when the task completed without persisted verification records —
+      // the terminal event itself must always be emitted so downstream UI
+      // (activity card, PIP panel) can close the session instead of hanging
+      // on "in progress" forever.
+      verificationIds: z.array(ComputerUseIdentifierSchema).max(100),
     })
     .strict(),
   z

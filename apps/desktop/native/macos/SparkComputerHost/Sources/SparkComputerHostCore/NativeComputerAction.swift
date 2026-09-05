@@ -87,6 +87,11 @@ public struct NativeComputerActionEnvelope: Equatable, Sendable {
   public let policyContext: NativePolicyContext
   public let intent: String
   public let hasExpectedPostcondition: Bool
+  /// When true the Host appends a skyshot to the action response: the settled
+  /// post-action observation (fresh tree + screenshot) in the SAME round
+  /// trip, so the caller skips its separate re-observe. Optional wire field —
+  /// older brokers omit it and keep the two-step behaviour.
+  public let includeSkyshot: Bool
 }
 
 func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionEnvelope {
@@ -95,7 +100,7 @@ func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionE
     "computerSessionId", "actionId", "actuatorLeaseId", "observedFrameId",
     "observedTreeVersion", "targetAppId", "targetWindowId", "action", "policyContext", "intent",
   ]
-  let optional: Set<String> = ["expectedPostcondition", "executionLane"]
+  let optional: Set<String> = ["expectedPostcondition", "executionLane", "includeSkyshot"]
   guard required.isSubset(of: Set(object.keys)), Set(object.keys).isSubset(of: required.union(optional))
   else { throw invalidFields }
   let intent = try string(object["intent"], min: 1, max: 4_000, trimmed: true)
@@ -113,6 +118,14 @@ func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionE
   } else {
     lane = expectedLane
   }
+  let includeSkyshot: Bool
+  if object["includeSkyshot"] == nil {
+    includeSkyshot = false
+  } else if let parsed = strictBool(object["includeSkyshot"]) {
+    includeSkyshot = parsed
+  } else {
+    throw invalidFields
+  }
   return NativeComputerActionEnvelope(
     computerSessionID: try identifier(object["computerSessionId"]),
     actionID: try identifier(object["actionId"]),
@@ -125,7 +138,8 @@ func decodeComputerActionEnvelope(_ value: Any?) throws -> NativeComputerActionE
     executionLane: lane,
     policyContext: try decodePolicyContext(object["policyContext"]),
     intent: intent,
-    hasExpectedPostcondition: object["expectedPostcondition"] != nil
+    hasExpectedPostcondition: object["expectedPostcondition"] != nil,
+    includeSkyshot: includeSkyshot
   )
 }
 

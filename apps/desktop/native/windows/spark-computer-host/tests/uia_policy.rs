@@ -77,15 +77,18 @@ fn password_and_provider_secure_nodes_never_publish_values() {
 }
 
 #[test]
-fn emits_full_baseline_then_version_bound_diff() {
+fn renders_markdown_outline_with_stable_content_hash_version() {
     let mut state = UiaTreeState::new();
     let baseline = state.observe(
         vec![button("root/ok", "OK"), button("root/cancel", "Cancel")],
         None,
         true,
     );
+    // Diff mode is retired: every observation is the full Markdown outline.
     assert_eq!(baseline.mode, TreeMode::Full);
     assert_eq!(baseline.elements.len(), 2);
+    assert!(baseline.text.contains("- text \"OK\" [1]"));
+    assert!(baseline.text.contains("- text \"Cancel\" [2]"));
 
     let changed = state.observe(
         vec![
@@ -95,22 +98,22 @@ fn emits_full_baseline_then_version_bound_diff() {
         Some(&baseline.tree_version),
         false,
     );
-    assert_eq!(changed.mode, TreeMode::Diff);
-    assert_eq!(
-        changed.elements.len(),
-        2,
-        "diff observations still publish fresh refs for the complete current tree"
-    );
+    assert_eq!(changed.mode, TreeMode::Full);
     assert!(changed.text.contains("Approved"));
-    assert!(!changed.text.contains("Cancel"));
+    assert!(changed.text.contains("Cancel"));
     assert_ne!(changed.tree_version, baseline.tree_version);
 
-    let wrong_baseline = state.observe(
-        vec![button("root/ok", "Approved")],
-        Some("tree-does-not-exist"),
+    // An unchanged UI re-renders to the identical content-hash version, so
+    // "nothing moved" is detectable by comparing versions alone.
+    let again = state.observe(
+        vec![
+            button("root/ok", "Approved"),
+            button("root/cancel", "Cancel"),
+        ],
+        Some(&changed.tree_version),
         false,
     );
-    assert_eq!(wrong_baseline.mode, TreeMode::Full);
+    assert_eq!(again.tree_version, changed.tree_version);
 }
 
 #[test]

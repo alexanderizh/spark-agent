@@ -15,6 +15,12 @@ import { getComputerUseServices, type ComputerUseServices } from './ComputerUseS
 import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 import { ComputerApplicationTargetResolver } from './ComputerApplicationTargetResolver.js'
 import { ComputerDesktopStateService } from './ComputerDesktopStateService.js'
+import { ComputerAtomicActionService } from './ComputerAtomicActionService.js'
+import {
+  ATOMIC_TOOL_NAMES,
+  ComputerAtomicToolHandlers,
+  type AtomicToolName,
+} from './ComputerAtomicToolHandlers.js'
 
 const log = createLogger('computer-use-agent-controller')
 
@@ -104,6 +110,26 @@ export class ComputerUseAgentController {
       ((backend) => new ComputerDesktopStateService(backend, this.appTargetResolver))
   }
 
+  private readonly atomicBundles = new Map<
+    ComputerUseServices,
+    { service: ComputerAtomicActionService; handlers: ComputerAtomicToolHandlers }
+  >()
+
+  /** One atomic bundle (service + tool handlers) per services instance. */
+  private atomicBundleFor(services: ComputerUseServices) {
+    const cached = this.atomicBundles.get(services)
+    if (cached != null) return cached
+    const service = new ComputerAtomicActionService(services, {
+      resolveModel: async (sessionId) => {
+        const model = await this.resolveDecisionModel(sessionId)
+        return { providerProfileId: model.providerProfileId, model: model.model }
+      },
+    })
+    const bundle = { service, handlers: new ComputerAtomicToolHandlers(service, services) }
+    this.atomicBundles.set(services, bundle)
+    return bundle
+  }
+
   bindSessionContext(sessionId: string, context: BoundAgentRuntime): void {
     this.sessionContexts.set(sessionId, { ...context })
   }
@@ -124,6 +150,9 @@ export class ComputerUseAgentController {
       }),
     )
     this.sessionContexts.delete(sessionId)
+    // Implicit atomic-control sessions of this agent session go too.
+    const bundle = this.atomicBundles.get(this.getServices())
+    void bundle?.service.releaseAgentSession(sessionId)
     const failures = results.filter((result) => result.status === 'rejected')
     if (failures.length > 0) {
       log.warn('Failed to stop one or more Computer Use sessions while revoking Agent control', {
@@ -158,6 +187,9 @@ export class ComputerUseAgentController {
 
   async invoke(sessionId: string, toolName: string, args: unknown): Promise<unknown> {
     const services = this.getServices()
+    if ((ATOMIC_TOOL_NAMES as readonly string[]).includes(toolName)) {
+      return this.invokeAtomicTool(services, toolName as AtomicToolName, sessionId, args)
+    }
     switch (toolName) {
       case 'get_capabilities': {
         const capabilities = await services.backend.getCapabilities()
@@ -185,6 +217,7 @@ export class ComputerUseAgentController {
             'takeover',
             'bind_target',
           ],
+          atomicTools: [...ATOMIC_TOOL_NAMES],
         }
       }
       case 'diagnose_native_host':
@@ -436,6 +469,26 @@ export class ComputerUseAgentController {
       default:
         throw new ComputerUseBrokerError('action_not_allowed', 'Unknown Computer Use task tool')
     }
+  }
+
+  /**
+   * Atomic agent-directed control: one governed action per call, each response
+   * carrying the fresh Markdown tree + full-resolution screenshot (skyshot).
+   */
+  private async invokeAtomicTool(
+    services: ComputerUseServices,
+    toolName: AtomicToolName,
+    sessionId: string,
+    args: unknown,
+  ): Promise<unknown> {
+    const capabilities = await services.backend.getCapabilities()
+    if (!supportsExecution(capabilities)) {
+      throw executionUnavailable(capabilities)
+    }
+    const context = this.sessionContexts.get(sessionId)
+    if (context == null) throw unavailable('Agent turn context is unavailable')
+    const bundle = this.atomicBundleFor(services)
+    return bundle.handlers.handle(toolName, sessionId, context.turnId, args)
   }
 
   private launchOperator(

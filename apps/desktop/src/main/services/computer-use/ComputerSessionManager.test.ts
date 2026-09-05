@@ -282,6 +282,24 @@ describe('ComputerSessionManager', () => {
       }),
     )
   })
+
+  it('always emits the completed terminal event, including without verification records', () => {
+    const record = vi.fn()
+    const { manager } = createHarness({ record })
+    const session = createSession(manager, 'computer-session-1')
+
+    manager.setPhase(session.id, 'verifying')
+    manager.completeVerified(session.id)
+
+    // Without this event the activity card and PIP panel hang on
+    // "in progress" forever after a verification-less task completion.
+    expect(record).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'computer_session_completed',
+        verificationIds: [],
+      }),
+    )
+  })
   it('enforces one active operator lease per environment', () => {
     const { manager, sessions } = createHarness()
     createSession(manager, 'computer-session-1')

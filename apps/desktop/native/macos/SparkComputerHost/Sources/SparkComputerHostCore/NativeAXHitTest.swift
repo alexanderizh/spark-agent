@@ -69,6 +69,20 @@ public enum NativeBackgroundActionPolicy {
     }
   }
 
+  /// Actions the CGEventPostToPid channel can deliver straight to the target
+  /// process without focus: the full mouse class (click with any button,
+  /// move, drag, pixel-precise scroll) plus keyboard chords and unicode text.
+  /// This is strictly wider than the AX channel because synthesized events do
+  /// not need the element to expose an AX action.
+  public static func isPidEligible(_ action: NativeComputerAction) -> Bool {
+    switch action {
+    case .click, .move, .drag, .scroll, .keypress, .typeText:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Errors that must propagate: falling back to the foreground HID path would bypass
   /// the protection the error represents (session authority, secure-input guard).
   public static func mustAbort(_ error: NativeHostPlatformError) -> Bool {

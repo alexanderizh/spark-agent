@@ -1,5 +1,6 @@
 import type {
   ComputerActionEnvelope,
+  ComputerExecutionChannel,
   ComputerObservation,
   ComputerUseCapabilitySummary,
   NativeHostCapabilityManifest,
@@ -33,7 +34,7 @@ export interface ComputerExecutorBackend {
     observation: ComputerObservation
     noop: boolean
     /** Which transport executed the action, when the backend can tell (native host). */
-    executionChannel?: 'background_ax' | 'foreground_cg' | null
+    executionChannel?: ComputerExecutionChannel | null
   }>
   cancelSession(computerSessionId: string): Promise<void>
 }

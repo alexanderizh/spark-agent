@@ -18,11 +18,16 @@ export interface ComputerUseMetricDimensions {
 
 /**
  * Execution transport outcome counters, complementing the duration buckets: the share
- * of actions the native host executed in the background over AX vs the foreground HID
- * path, and each channel's success rate. 'unset' covers hosts that predate channel
- * reporting and failures that happen before a channel is chosen.
+ * of actions the native host executed in the background over AX / the targeted
+ * per-process event path vs the foreground HID path, and each channel's success
+ * rate. 'unset' covers hosts that predate channel reporting and failures that
+ * happen before a channel is chosen.
  */
-export type ComputerUseExecutionChannel = 'background_ax' | 'foreground_cg' | 'unset'
+export type ComputerUseExecutionChannel =
+  | 'background_ax'
+  | 'background_pid'
+  | 'foreground_cg'
+  | 'unset'
 
 export interface ComputerUseChannelOutcomeSnapshot {
   readonly channel: ComputerUseExecutionChannel
@@ -107,10 +112,12 @@ export class ComputerUseMetricsCollector {
     let backgroundCount = 0
     for (const [channel, outcome] of this.channelOutcomes) {
       total += outcome.count
-      if (channel === 'background_ax') backgroundCount = outcome.count
+      if (channel === 'background_ax' || channel === 'background_pid') {
+        backgroundCount += outcome.count
+      }
     }
     const channels: ComputerUseChannelOutcomeSnapshot[] = []
-    for (const channel of ['background_ax', 'foreground_cg', 'unset'] as const) {
+    for (const channel of ['background_ax', 'background_pid', 'foreground_cg', 'unset'] as const) {
       const outcome = this.channelOutcomes.get(channel)
       if (outcome == null) continue
       channels.push({

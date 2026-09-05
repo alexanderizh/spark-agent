@@ -41,6 +41,9 @@ import { AppControlBridge } from './AppControlBridge.js'
 import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
 import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 import { ComputerDesktopExecutionCoordinator } from './ComputerDesktopExecutionCoordinator.js'
+import { ComputerUsePipService } from './ComputerUsePipService.js'
+import { ComputerUsePipProjection } from './ComputerUsePipProjection.js'
+import { getComputerUseV2FlagStore } from './computerUseV2Flags.js'
 
 export type TrustedComputerUseBackend = ComputerObserverBackend &
   ComputerExecutorBackend &
@@ -60,8 +63,18 @@ export interface ComputerUseServices {
   readonly killSwitch: ComputerKillSwitchService
   readonly appControlBridge: AppControlBridge
   readonly coordinator: ComputerDesktopExecutionCoordinator
+  /** Optional live PIP panel; present only when the pipPanel flag is enabled. */
+  readonly pip?: ComputerUsePipService
   readonly evidence?: NativeObservationEvidenceSink & {
-    readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer>
+    readLatestImage(
+      computerSessionId: string,
+      snapshotId: string,
+    ): Promise<{
+      bytes: Buffer
+      width: number
+      height: number
+      mimeType: 'image/png' | 'image/jpeg'
+    }>
     clearSession(computerSessionId: string): void
     flushPendingWritesOrThrow?(computerSessionId: string): Promise<void>
   }
@@ -169,6 +182,28 @@ export function createComputerUseServices(
     options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
     options.onKillSwitchError,
   )
+  const pip = getComputerUseV2FlagStore().isEnabled('pipPanel')
+    ? new ComputerUsePipService({
+        timeline,
+        projection: new ComputerUsePipProjection({
+          sessions: {
+            listLabeled: () =>
+              sessions.listActiveSessionIds().map((computerSessionId) => {
+                const session = sessions.getSession(computerSessionId)
+                return {
+                  computerSessionId,
+                  label:
+                    session?.environment === 'my_desktop'
+                      ? '我的桌面'
+                      : session != null
+                        ? '桌面'
+                        : '电脑操作',
+                }
+              }),
+          },
+        }),
+      })
+    : null
   const snapshotCapture = options.snapshotCapture ?? createDefaultSnapshotCapture(database, backend)
   return {
     sessions,
@@ -183,20 +218,19 @@ export function createComputerUseServices(
     killSwitch,
     appControlBridge,
     coordinator,
+    ...(pip == null ? {} : { pip }),
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>
       killSwitch.arm(accelerator, async () => {
         const results = await Promise.allSettled(
-          sessions
-            .listActiveSessionIds()
-            .map(async (computerSessionId) => {
-              try {
-                await broker.killSwitch(computerSessionId)
-              } finally {
-                coordinator.release(computerSessionId)
-              }
-            }),
+          sessions.listActiveSessionIds().map(async (computerSessionId) => {
+            try {
+              await broker.killSwitch(computerSessionId)
+            } finally {
+              coordinator.release(computerSessionId)
+            }
+          }),
         )
         const failures = results
           .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -206,6 +240,7 @@ export function createComputerUseServices(
         }
       }),
     dispose: async () => {
+      pip?.dispose()
       killSwitch.dispose()
       await coordinator.dispose()
       await Promise.allSettled(
@@ -262,6 +297,11 @@ function createDefaultEvidenceSink(database: SparkDatabase): NativeObservationEv
       keyProvider: new SnapshotVaultKeyProvider(),
     }),
     imageProcessor: imageProcessor.createRedactedEvidence.bind(imageProcessor),
+    // Decision input is the capped JPEG model frame (fast upload — vision
+    // models downscale internally anyway); durable audit keeps the bounded
+    // 1200px redacted preview.
+    decisionImageProcessor: (bytes, observation) =>
+      imageProcessor.createModelFacingImage(bytes, observation),
   })
 }
 

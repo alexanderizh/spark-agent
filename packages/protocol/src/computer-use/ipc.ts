@@ -196,7 +196,7 @@ export interface ComputerUseExecutionChannelReport {
   total: number
   backgroundShare: number
   channels: Array<{
-    channel: 'background_ax' | 'foreground_cg' | 'unset'
+    channel: 'background_ax' | 'background_pid' | 'foreground_cg' | 'unset'
     count: number
     failures: number
     successRate: number

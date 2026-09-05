@@ -20,6 +20,19 @@ export const COMPUTER_USE_AGENT_TOOL_NAMES = [
   'mcp__spark_computer__stop',
   'mcp__spark_computer__takeover',
   'mcp__spark_computer__bind_target',
+  // Atomic agent-directed control — the session model operates the desktop
+  // directly, one governed action per call, each response carrying the fresh
+  // Markdown tree + full-resolution screenshot.
+  'mcp__spark_computer__click',
+  'mcp__spark_computer__type_text',
+  'mcp__spark_computer__set_value',
+  'mcp__spark_computer__invoke_element',
+  'mcp__spark_computer__press_key',
+  'mcp__spark_computer__scroll',
+  'mcp__spark_computer__drag',
+  'mcp__spark_computer__select_text',
+  'mcp__spark_computer__perform_secondary_action',
+  'mcp__spark_computer__screenshot',
 ] as const
 
 let bridge: ComputerUseAgentBridge | null = null

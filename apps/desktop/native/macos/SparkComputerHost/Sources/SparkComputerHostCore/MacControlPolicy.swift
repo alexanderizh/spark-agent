@@ -139,10 +139,26 @@ public struct NativeAXRawElement: Equatable, Sendable {
   public let focused: Bool
   public let actions: [String]
   public let secure: Bool
+  /// Tree depth of the element (0 = window). The collector emits elements in
+  /// pre-order, so `depth` is what turns the flat list back into an outline.
+  public let depth: Int
+  /// AXRoleDescription when the app provides one ("push button", "search field").
+  /// Human wording beats the raw AXRole for the model-facing outline.
+  public let roleDescription: String?
+  /// AXPlaceholderValue for empty text fields, collected only for text-ish roles.
+  public let placeholder: String?
+  /// AXSelected for roles that expose selection state (rows, tabs, menu items).
+  public let selected: Bool
+  /// Total number of AX children the container reported. When the collector
+  /// capped recursion (`maxChildrenPerContainer`), this exceeds the number of
+  /// children actually visited and the renderer notes the truncation.
+  public let childCount: Int
 
   public init(
     runtimeID: String, role: String, name: String, value: String?, bounds: NativeRect,
-    enabled: Bool, focused: Bool, actions: [String], secure: Bool
+    enabled: Bool, focused: Bool, actions: [String], secure: Bool, depth: Int = 0,
+    roleDescription: String? = nil, placeholder: String? = nil, selected: Bool = false,
+    childCount: Int = 0
   ) {
     self.runtimeID = runtimeID
     self.role = role
@@ -153,6 +169,11 @@ public struct NativeAXRawElement: Equatable, Sendable {
     self.focused = focused
     self.actions = actions
     self.secure = secure
+    self.depth = depth
+    self.roleDescription = roleDescription
+    self.placeholder = placeholder
+    self.selected = selected
+    self.childCount = childCount
   }
 }
 
@@ -196,7 +217,6 @@ public struct NativeAXTreeSnapshot: Equatable, Sendable {
 }
 
 public struct NativeAXTreeState: Sendable {
-  private var generation = 0
   private var currentVersion: String?
   private var elementsByID: [String: NativeAXElementRef] = [:]
   private var runtimeByID: [String: String] = [:]
@@ -204,50 +224,60 @@ public struct NativeAXTreeState: Sendable {
 
   public init() {}
 
+  /// Publishes a traversal as the model-facing Markdown outline.
+  ///
+  /// Key differences from the previous JSON publisher:
+  ///  - `treeVersion` is a pure content hash (no publish counter), so an
+  ///    unchanged UI yields an identical version across frames. Callers can
+  ///    detect "nothing changed" by version equality instead of diffing.
+  ///  - Element ids are dense render-line indexes ("1", "2", …) — the same
+  ///    ids the model sees as `[n]` markers in the outline. Short, readable,
+  ///    and always in sync with the rendered text.
+  ///  - The wire diff mode is gone: it was keyed on index-derived ids that
+  ///    churned on any sibling insertion, so the diff was effectively always
+  ///    "everything changed" while still paying reconciliation complexity.
+  ///    The TS reconciler only acts on `diff` mode, so hosts that still emit
+  ///    it (Windows) keep working unchanged.
   public mutating func publish(
     elements rawElements: [NativeAXRawElement], previousTreeVersion: String?, fullTree: Bool
   ) -> NativeAXTreeSnapshot {
-    generation &+= 1
     let bounded = rawElements.prefix(maxNativeTreeElements).map(sanitize)
-    let fingerprint = bounded.map {
-      "\($0.runtimeID)|\($0.role)|\($0.name)|\($0.value ?? "")|\($0.bounds)|\($0.enabled)|\($0.focused)|\($0.actions)"
-    }.joined(separator: "\n")
-    let digest = SHA256.hash(data: Data("\(generation)|\(fingerprint)".utf8))
-    let version = "tree-" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
-    let published = bounded.enumerated().map { index, element -> NativeAXElementRef in
-      let idDigest = SHA256.hash(data: Data("\(element.runtimeID)|\(index)".utf8))
-      let id = "element-" + idDigest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    let rendered = NativeAXTreeRenderer.render(bounded)
+    var versionHasher = SHA256()
+    versionHasher.update(data: Data(rendered.text.utf8))
+    versionHasher.update(data: Data("\(bounded.count)".utf8))
+    let version = "tree-"
+      + versionHasher.finalize().prefix(16).map { String(format: "%02x", $0) }.joined()
+    var rawByRuntime: [String: NativeAXRawElement] = [:]
+    rawByRuntime.reserveCapacity(bounded.count)
+    for element in bounded {
+      if rawByRuntime[element.runtimeID] == nil {
+        rawByRuntime[element.runtimeID] = element
+      }
+    }
+    let published: [NativeAXElementRef] = rendered.lines.map { line in
+      // Lines are rendered from `bounded`; a missing mapping would be a
+      // renderer bug, so fall back to an unknown element rather than crash.
+      let element = rawByRuntime[line.runtimeID] ?? bounded.first ?? NativeAXRawElement(
+        runtimeID: line.runtimeID, role: "AXUnknown", name: "", value: nil,
+        bounds: NativeRect(x: 0, y: 0, width: 1, height: 1), enabled: false, focused: false,
+        actions: [], secure: false)
       return NativeAXElementRef(
-        id: id, treeVersion: version, role: element.role, name: element.name,
+        id: line.elementID, treeVersion: version, role: element.role, name: element.name,
         value: element.secure ? nil : element.value, bounds: element.bounds,
         enabled: element.enabled, focused: element.focused,
         actions: Array(element.actions.prefix(20))
       )
     }
-    let canDiff = !fullTree && previousTreeVersion != nil && previousTreeVersion == currentVersion
-    let mode: NativeAXTreeMode = canDiff ? .diff : .full
-    let previous = elementsByID
-    let current = Dictionary(uniqueKeysWithValues: published.map { ($0.id, $0) })
-    let text: String
-    if canDiff {
-      let changed = published.filter { element in
-        guard let old = previous[element.id] else { return true }
-        return old.role != element.role || old.name != element.name || old.value != element.value
-          || old.bounds != element.bounds || old.enabled != element.enabled
-          || old.focused != element.focused || old.actions != element.actions
-      }
-      let removed = previous.keys.filter { current[$0] == nil }.sorted()
-      text = Self.jsonString(["changed": changed.map(Self.jsonObject), "removed": removed])
-    } else {
-      text = Self.jsonString(published.map(Self.jsonObject))
-    }
     currentVersion = version
-    elementsByID = current
+    elementsByID = Dictionary(uniqueKeysWithValues: published.map { ($0.id, $0) })
     runtimeByID = Dictionary(
-      uniqueKeysWithValues: zip(published, bounded).map { ($0.id, $1.runtimeID) })
-    secureIDs = Set(zip(published, bounded).compactMap { $1.secure ? $0.id : nil })
+      uniqueKeysWithValues: zip(published, rendered.lines).map { ($0.id, $1.runtimeID) })
+    secureIDs = Set(
+      zip(published, rendered.lines)
+        .compactMap { rawByRuntime[$1.runtimeID]?.secure == true ? $0.id : nil })
     return NativeAXTreeSnapshot(
-      treeVersion: version, mode: mode, text: text, elements: published,
+      treeVersion: version, mode: .full, text: rendered.text, elements: published,
       sensitiveRegions: bounded.filter(\.secure).map(\.bounds)
     )
   }
@@ -281,35 +311,18 @@ public struct NativeAXTreeState: Sendable {
         ? nil : element.value.map { boundedString($0, max: maxNativeTextUTF16Units) },
       bounds: sanitizedRect(element.bounds), enabled: element.enabled, focused: element.focused,
       actions: Array(element.actions.filter(Self.allowedActions.contains).prefix(20)),
-      secure: element.secure
+      secure: element.secure,
+      depth: min(max(element.depth, 0), 64),
+      roleDescription: element.roleDescription.map { boundedString($0, max: 60) },
+      placeholder: element.placeholder.map { boundedString($0, max: 160) },
+      selected: element.selected,
+      childCount: min(max(element.childCount, 0), 1_000_000)
     )
   }
 
   private static let allowedActions: Set<String> = [
     "invoke", "set_value", "select", "scroll", "focus", "expand", "collapse",
   ]
-
-  private static func jsonObject(_ element: NativeAXElementRef) -> [String: Any] {
-    var result: [String: Any] = [
-      "id": element.id, "treeVersion": element.treeVersion, "role": element.role,
-      "name": element.name,
-      "bounds": [
-        "x": element.bounds.x, "y": element.bounds.y, "width": element.bounds.width,
-        "height": element.bounds.height,
-      ],
-      "enabled": element.enabled, "focused": element.focused, "actions": element.actions,
-    ]
-    if let value = element.value { result["value"] = value }
-    return result
-  }
-
-  private static func jsonString(_ value: Any) -> String {
-    guard JSONSerialization.isValidJSONObject(value),
-      let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
-      data.count <= 2_000_000
-    else { return "[]" }
-    return String(decoding: data, as: UTF8.self)
-  }
 }
 
 private func boundedString(_ value: String, max: Int, fallback: String = "") -> String {

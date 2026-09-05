@@ -225,10 +225,16 @@ export type NativeWindowDescriptor = z.infer<typeof NativeWindowDescriptorSchema
 
 /**
  * The concrete transport a native action used. `background_ax` = AX semantic operation
- * on the cached tree (no focus steal); `foreground_cg` = legacy global HID injection.
+ * on the cached tree (no focus steal); `background_pid` = synthesized CGEvents posted
+ * directly to the target process (CGEventPostToPid — background control incl. occluded
+ * windows and custom-drawn UI); `foreground_cg` = legacy global HID injection.
  * Optional on `action_result` so older hosts stay parseable.
  */
-export const ComputerExecutionChannelSchema = z.enum(['background_ax', 'foreground_cg'])
+export const ComputerExecutionChannelSchema = z.enum([
+  'background_ax',
+  'background_pid',
+  'foreground_cg',
+])
 export type ComputerExecutionChannel = z.infer<typeof ComputerExecutionChannelSchema>
 
 const NativeResponseBase = {
@@ -276,6 +282,14 @@ export const NativeHostResponseSchema = z.discriminatedUnion('type', [
       actionId: ComputerUseIdentifierSchema,
       status: z.enum(['executed', 'noop']),
       executionChannel: ComputerExecutionChannelSchema.nullish(),
+      /**
+       * Skyshot (protocol v2): the settled post-action observation attached in
+       * the same round trip when the request envelope set `includeSkyshot`.
+       * Optional so older hosts (and passive lanes) stay parseable.
+       */
+      skyshot: ComputerObservationSchema.nullish(),
+      /** Descriptor of the binary PNG frame that follows when a skyshot exists. */
+      payload: NativeBinaryPayloadDescriptorSchema.nullish(),
     })
     .strict(),
   z.object({ ...NativeResponseBase, type: z.literal('ack') }).strict(),

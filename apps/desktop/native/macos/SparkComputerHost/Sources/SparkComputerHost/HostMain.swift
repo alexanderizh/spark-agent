@@ -1,10 +1,11 @@
+import AppKit
 import Darwin
 import Foundation
 import SparkComputerHostCore
 
 @main
 struct SparkComputerHostMain {
-  static func main() async {
+  static func main() {
     do {
       try ParentProcessAuthorizer.authorize()
     } catch {
@@ -13,12 +14,23 @@ struct SparkComputerHostMain {
     }
 
     signal(SIGPIPE, SIG_IGN)
-    do {
-      try await run()
-    } catch {
-      writeDiagnostic("fatal native host protocol failure")
-      exit(EX_PROTOCOL)
+
+    // AppKit must own the main thread and its run loop for the virtual-cursor
+    // overlay windows. The stdio protocol loop therefore runs detached; when
+    // stdin closes (parent went away) it terminates the whole process, which
+    // also stops the run loop — identical lifecycle to the pre-AppKit host.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    Task.detached(priority: .userInitiated) {
+      do {
+        try await run()
+      } catch {
+        writeDiagnostic("fatal native host protocol failure")
+        exit(EX_PROTOCOL)
+      }
+      exit(0)
     }
+    app.run()
   }
 
   private static func run() async throws {

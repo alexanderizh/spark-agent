@@ -325,7 +325,7 @@ describe('GenericComputerDecisionAdapter', () => {
     expect(generate.mock.calls[0]?.[0].prompt).toContain('"textLength":8')
   })
 
-  it('prioritizes actionable elements and bounds large desktop prompts', async () => {
+  it('bounds large desktop prompts to the tree budget', async () => {
     const generate = vi.fn<TestGenerate>(async () => ({
       text: JSON.stringify({
         type: 'action',
@@ -382,7 +382,11 @@ describe('GenericComputerDecisionAdapter', () => {
     })
 
     const prompt = generate.mock.calls[0]?.[0].prompt ?? ''
-    expect(prompt).toContain('priority-control')
+    // The Markdown outline in tree.text is the single tree source in the
+    // prompt; a crowded tree is truncated to the bounded budget.
+    expect(prompt).toContain('Accessibility tree')
+    expect(prompt).toContain('tree tree tree')
+    expect(prompt).not.toContain('Element references')
     expect(prompt.length).toBeLessThan(90_000)
   })
 

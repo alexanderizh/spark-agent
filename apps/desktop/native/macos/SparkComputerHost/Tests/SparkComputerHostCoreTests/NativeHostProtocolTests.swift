@@ -253,3 +253,74 @@ final class NativeHostProtocolTests: XCTestCase {
     Data(value.utf8)
   }
 }
+
+final class NativeSkyshotProtocolTests: XCTestCase {
+  private func json(_ value: String) -> Data {
+    Data(value.utf8)
+  }
+
+  func testDecodesIncludeSkyshotEnvelopeField() throws {
+    let decoder = NativeHostRequestDecoder()
+    let request = try decoder.decode(
+      json(
+        #"{"protocolVersion":1,"requestId":"r1","type":"execute_action","envelope":{"computerSessionId":"cs","actionId":"a1","actuatorLeaseId":"lease","observedFrameId":"f1","observedTreeVersion":"t1","targetAppId":"app","targetWindowId":"win","action":{"type":"click","point":{"x":0.5,"y":0.5}},"policyContext":{"effect":"reversible_local","target":{"kind":"window","id":"win"},"dataClasses":["public"]},"intent":"click the button","includeSkyshot":true}}"#
+      ))
+    guard case .executeAction(_, let envelope) = request else {
+      return XCTFail("expected execute_action request")
+    }
+    XCTAssertTrue(envelope.includeSkyshot)
+  }
+
+  func testEncodesActionResultWithSkyshotFields() throws {
+    let observed = NativeObservedWindow(
+      frameID: "frame-x",
+      treeVersion: "tree-x",
+      capturedAt: "2026-09-05T00:00:00Z",
+      display: NativeDisplayGeometry(id: "d", width: 1, height: 1, scaleFactor: 2),
+      app: NativeAppIdentity(
+        id: "app", name: "App", processId: 42, bundleId: nil, executableIdentity: nil,
+        signingIdentity: nil),
+      window: NativeWindowIdentity(
+        id: "win", title: "Window",
+        bounds: NativeRect(x: 0, y: 0, width: 100, height: 100)),
+      snapshotID: "snap",
+      capture: NativeCapturedWindow(bytes: Data([1, 2, 3]), width: 4, height: 4),
+      treeMode: .full,
+      treeText: "- window \"W\" [1]",
+      elements: [
+        NativeAXElementRef(
+          id: "1", treeVersion: "tree-x", role: "AXWindow", name: "W", value: nil,
+          bounds: NativeRect(x: 0, y: 0, width: 100, height: 100), enabled: true, focused: false,
+          actions: ["focus"])
+      ],
+      loading: false,
+      sensitiveRegions: []
+    )
+    let data = try NativeHostResponseEncoder.actionResult(
+      requestID: "r1",
+      actionID: "a1",
+      execution: NativeActionExecution(
+        status: .executed, executionChannel: .backgroundPID, skyshot: observed)
+    )
+    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    XCTAssertEqual(object?["skyshot"] as? [String: Any] != nil, true)
+    let skyshot = object?["skyshot"] as? [String: Any]
+    XCTAssertEqual(skyshot?["frameId"] as? String, "frame-x")
+    XCTAssertEqual((skyshot?["elements"] as? [Any])?.count, 1)
+    XCTAssertEqual(object?["executionChannel"] as? String, "background_pid")
+    let payload = object?["payload"] as? [String: Any]
+    XCTAssertEqual(payload?["kind"] as? String, "image_png")
+    XCTAssertEqual(payload?["byteLength"] as? Int, 3)
+  }
+
+  func testEncodesActionResultWithoutSkyshotOmitsFields() throws {
+    let data = try NativeHostResponseEncoder.actionResult(
+      requestID: "r1",
+      actionID: "a1",
+      execution: NativeActionExecution(status: .executed, executionChannel: .foregroundCG)
+    )
+    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    XCTAssertNil(object?["skyshot"])
+    XCTAssertNil(object?["payload"])
+  }
+}

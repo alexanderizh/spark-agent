@@ -28,9 +28,27 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     bytes: Buffer,
     observation: ComputerObservation,
   ) => { bytes: Buffer; perceptualHash: string }
+  /**
+   * Produces the frame the DECISION model sees: redacted, long-edge capped,
+   * JPEG-encoded for fast upload. Returns the geometry/mime of the produced
+   * image so consumers can map model coordinates back to the window.
+   */
+  private readonly decisionImageProcessor: (
+    bytes: Buffer,
+    observation: ComputerObservation,
+  ) => { bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' }
   private readonly now: () => Date
   private readonly maxCachedBytes: number
-  private readonly latestImages = new Map<string, { snapshotId: string; bytes: Buffer }>()
+  private readonly latestImages = new Map<
+    string,
+    {
+      snapshotId: string
+      bytes: Buffer
+      width: number
+      height: number
+      mimeType: 'image/png' | 'image/jpeg'
+    }
+  >()
   private cachedBytes = 0
   /**
    * Per-session serialized durable-write chains. The expensive encrypted-vault + SQLite
@@ -48,6 +66,10 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
       bytes: Buffer,
       observation: ComputerObservation,
     ) => { bytes: Buffer; perceptualHash: string }
+    decisionImageProcessor?: (
+      bytes: Buffer,
+      observation: ComputerObservation,
+    ) => { bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' }
     createId?: () => string
     now?: () => Date
     maxCachedBytes?: number
@@ -56,6 +78,8 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     this.sessions = options.sessions
     this.vault = options.vault
     this.imageProcessor = options.imageProcessor
+    this.decisionImageProcessor =
+      options.decisionImageProcessor ?? wrapAsDecision(options.imageProcessor)
     this.createId = options.createId ?? randomUUID
     this.now = options.now ?? (() => new Date())
     this.maxCachedBytes = options.maxCachedBytes ?? MAX_CACHED_EVIDENCE_BYTES
@@ -73,14 +97,25 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     if (processed.bytes.length < 1 || !/^[a-f0-9]{16,128}$/iu.test(processed.perceptualHash)) {
       throw incompatibleEvidence()
     }
-    // The decision model uses the same bounded, redacted 1200px evidence as durable audit.
-    // Sending the raw Retina/4K PNG every step adds large upload and vision-encoding latency
-    // without improving target selection, and can expose regions already classified sensitive.
-    this.cacheLatest(
-      input.computerSessionId,
-      input.observation.screenshot.snapshotId,
-      processed.bytes,
-    )
+    // The decision model reads the capped JPEG frame (fast upload + vision
+    // models downscale internally anyway), while durable audit keeps the
+    // bounded 1200px redacted preview. When the model variant fails to build
+    // we degrade to the audit frame rather than failing the observation.
+    let decision = wrapAsDecisionResult(processed, input.observation)
+    try {
+      const built = this.decisionImageProcessor(input.bytes, input.observation)
+      if (built.bytes.length >= 1) {
+        decision = {
+          bytes: built.bytes,
+          width: built.width,
+          height: built.height,
+          mimeType: built.mimeType,
+        }
+      }
+    } catch {
+      // Fall back to the bounded frame — same behaviour as before the split.
+    }
+    this.cacheLatest(input.computerSessionId, input.observation.screenshot.snapshotId, decision)
     const imageBlobId = this.createId()
     const imageSha256 = sha256(processed.bytes)
     const expiresAt = new Date(this.now().getTime() + EXECUTION_EVIDENCE_TTL_MS).toISOString()
@@ -230,12 +265,22 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     )
   }
 
-  private cacheLatest(computerSessionId: string, snapshotId: string, bytes: Buffer): void {
+  private cacheLatest(
+    computerSessionId: string,
+    snapshotId: string,
+    image: { bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' },
+  ): void {
     const existing = this.latestImages.get(computerSessionId)
     if (existing != null) this.cachedBytes -= existing.bytes.length
     this.latestImages.delete(computerSessionId)
-    const copy = Buffer.from(bytes)
-    this.latestImages.set(computerSessionId, { snapshotId, bytes: copy })
+    const copy = Buffer.from(image.bytes)
+    this.latestImages.set(computerSessionId, {
+      snapshotId,
+      bytes: copy,
+      width: image.width,
+      height: image.height,
+      mimeType: image.mimeType,
+    })
     this.cachedBytes += copy.length
     while (
       this.latestImages.size > MAX_CACHED_COMPUTER_SESSIONS ||
@@ -248,7 +293,15 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     }
   }
 
-  async readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer> {
+  async readLatestImage(
+    computerSessionId: string,
+    snapshotId: string,
+  ): Promise<{
+    bytes: Buffer
+    width: number
+    height: number
+    mimeType: 'image/png' | 'image/jpeg'
+  }> {
     const image = this.latestImages.get(computerSessionId)
     if (image == null || image.snapshotId !== snapshotId) {
       throw new ComputerUseBrokerError(
@@ -256,7 +309,12 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
         'Computer observation image is no longer the latest persisted frame',
       )
     }
-    return Buffer.from(image.bytes)
+    return {
+      bytes: Buffer.from(image.bytes),
+      width: image.width,
+      height: image.height,
+      mimeType: image.mimeType,
+    }
   }
 
   clearSession(computerSessionId: string): void {
@@ -311,6 +369,31 @@ function toCreateBlob(record: SnapshotVaultBlobRecord, createdAt: string) {
 
 function sha256(value: Uint8Array): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+/** Adapts a plain audit processor to the decision-image contract (audit dims, PNG). */
+function wrapAsDecision(
+  processor: (
+    bytes: Buffer,
+    observation: ComputerObservation,
+  ) => { bytes: Buffer; perceptualHash: string },
+): (
+  bytes: Buffer,
+  observation: ComputerObservation,
+) => { bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' } {
+  return (bytes, observation) => wrapAsDecisionResult(processor(bytes, observation), observation)
+}
+
+function wrapAsDecisionResult(
+  processed: { bytes: Buffer },
+  observation: ComputerObservation,
+): { bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' } {
+  return {
+    bytes: processed.bytes,
+    width: observation.screenshot.width,
+    height: observation.screenshot.height,
+    mimeType: 'image/png',
+  }
 }
 
 function incompatibleEvidence(): ComputerUseBrokerError {

@@ -81,7 +81,10 @@ type NativeHostRequestInput = NativeHostRequest extends infer TRequest
   : never
 
 interface AwaitingBinary {
-  response: Extract<NativeHostResponse, { type: 'capture_result' | 'observation' }>
+  response: Extract<
+    NativeHostResponse,
+    { type: 'capture_result' | 'observation' | 'action_result' }
+  >
   descriptor: NativeBinaryPayloadDescriptor
   pending: PendingRequest
 }
@@ -269,18 +272,26 @@ export class NativeHostClient {
   async executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
-  ): Promise<Extract<NativeHostResponse, { type: 'action_result' }>> {
+  ): Promise<{
+    response: Extract<NativeHostResponse, { type: 'action_result' }>
+    bytes: Buffer | null
+  }> {
     return this.runExclusive(async () => {
       const result = await this.sendTypedRequest(
         { type: 'execute_action', envelope },
         'action_result',
         signal,
-        actionRequestTimeoutMs(envelope, this.requestTimeoutMs),
+        // Skyshot requests carry settle + capture + tree traversal inside the
+        // same round trip; budget for it beyond the raw action duration.
+        actionRequestTimeoutMs(envelope, this.requestTimeoutMs, envelope.includeSkyshot === true),
       )
       if (result.response.actionId !== envelope.actionId) {
         throw this.protocolFailure('Native Host action response does not match its request')
       }
-      return result.response
+      if (result.response.skyshot != null && result.bytes == null) {
+        throw this.protocolFailure('Native Host skyshot action omitted its image')
+      }
+      return { response: result.response, bytes: result.bytes ?? null }
     })
   }
 
@@ -514,6 +525,17 @@ export class NativeHostClient {
     if (response.type !== pending.expectedType) {
       throw new Error('Native Host response type does not match its request')
     }
+    if (response.type === 'action_result') {
+      // A skyshot action_result carries its follow-up screenshot as an adjacent
+      // binary frame; without one it resolves immediately.
+      if (response.payload == null) {
+        this.finishPending(response.requestId, pending)
+        pending.resolve({ response })
+        return
+      }
+      this.awaitingBinary = { response, descriptor: response.payload, pending }
+      return
+    }
     if (response.type === 'capture_result' || response.type === 'observation') {
       this.awaitingBinary = { response, descriptor: response.payload, pending }
       return
@@ -614,6 +636,7 @@ export class NativeHostClient {
 function actionRequestTimeoutMs(
   envelope: ComputerActionEnvelope,
   defaultTimeoutMs: number,
+  includeSkyshot = false,
 ): number {
   const actionDurationMs =
     envelope.action.type === 'drag'
@@ -621,9 +644,11 @@ function actionRequestTimeoutMs(
       : envelope.action.type === 'wait_for'
         ? envelope.action.timeoutMs
         : 0
+  // Skyshot adds settle (≤1.5s) + capture (≤2s) + a full tree traversal.
+  const skyshotBudgetMs = includeSkyshot ? 6_000 : 0
   return Math.min(
     MAX_REQUEST_TIMEOUT_MS,
-    Math.max(defaultTimeoutMs, actionDurationMs + ACTION_TIMEOUT_GRACE_MS),
+    Math.max(defaultTimeoutMs, actionDurationMs + ACTION_TIMEOUT_GRACE_MS + skyshotBudgetMs),
   )
 }
 

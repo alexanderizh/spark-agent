@@ -6,7 +6,6 @@ import type {
   ComputerApprovalTicket,
   ComputerExecutionChannel,
   ComputerObservation,
-  ComputerPolicyContext,
   ComputerSession,
   ComputerUseErrorCode,
   NativeWindowDescriptor,
@@ -21,6 +20,7 @@ import type {
   ComputerVerificationFailureContext,
   GenericComputerDecisionAdapter,
 } from './ComputerDecisionAdapter.js'
+import { policyContextFor } from './ComputerActionPolicyContext.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
 import { isActionBatchEnabled, isIncrementalTreeEnabled } from './computerUseV2Flags.js'
@@ -62,7 +62,10 @@ interface OperatorBroker {
 }
 
 interface OperatorEvidence {
-  readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer>
+  readLatestImage(
+    computerSessionId: string,
+    snapshotId: string,
+  ): Promise<{ bytes: Buffer; width: number; height: number; mimeType: 'image/png' | 'image/jpeg' }>
 }
 
 interface OperatorVerifications {
@@ -198,6 +201,7 @@ export class ComputerTaskOperator {
             successCriteria: input.session.taskContract.successCriteria,
             observation,
             screenshot,
+            screenshotMime: decisionEvidence.screenshotMime,
             stepIndex,
             allowBatch: isActionBatchEnabled(),
             ...(previousActionFailure == null ? {} : { previousActionFailure }),
@@ -581,29 +585,31 @@ export class ComputerTaskOperator {
   private async readDecisionEvidence(
     computerSessionId: string,
     initialObservation: ComputerObservation,
-  ): Promise<{ observation: ComputerObservation; screenshot: Buffer }> {
+  ): Promise<{
+    observation: ComputerObservation
+    screenshot: Buffer
+    screenshotMime: 'image/png' | 'image/jpeg'
+  }> {
     let observation = initialObservation
     for (let attempt = 0; attempt <= MAX_DECISION_RECOVERIES; attempt += 1) {
       try {
-        return {
-          observation,
-          screenshot: await this.evidence.readLatestImage(
-            computerSessionId,
-            observation.screenshot.snapshotId,
-          ),
-        }
+        const image = await this.evidence.readLatestImage(
+          computerSessionId,
+          observation.screenshot.snapshotId,
+        )
+        return { observation, screenshot: image.bytes, screenshotMime: image.mimeType }
       } catch (error) {
         if (attempt === MAX_DECISION_RECOVERIES) {
           log.warn('Computer screenshot evidence unavailable; continuing with AX state', {
             computerSessionId,
             error: error instanceof Error ? error.message : String(error),
           })
-          return { observation, screenshot: Buffer.alloc(0) }
+          return { observation, screenshot: Buffer.alloc(0), screenshotMime: 'image/png' }
         }
         observation = await this.observeWithRecovery(computerSessionId, true)
       }
     }
-    return { observation, screenshot: Buffer.alloc(0) }
+    return { observation, screenshot: Buffer.alloc(0), screenshotMime: 'image/png' }
   }
 
   private async dispatchDirectly(envelope: ComputerActionEnvelope): Promise<{
@@ -790,53 +796,5 @@ function createEnvelope(
     executionLane: computerExecutionLaneForAction(decision.action),
     policyContext: policyContextFor(decision.action, observation, decision.intent),
     intent: decision.intent,
-  }
-}
-
-function policyContextFor(
-  action: ComputerAction,
-  observation: ComputerObservation,
-  intent: string,
-): ComputerPolicyContext {
-  const elementId =
-    'elementId' in action && typeof action.elementId === 'string' ? action.elementId : null
-  const readOnly =
-    action.type === 'observe' ||
-    action.type === 'move' ||
-    action.type === 'scroll' ||
-    action.type === 'wait_for'
-  const appPrefill = action.type === 'app_command' && action.command.name === 'prefill_composer'
-  const localWrite = action.type === 'type_text' || action.type === 'set_value' || appPrefill
-  const committingIntent =
-    /\b(send|submit|publish|post|purchase|buy|pay|delete|remove|confirm|book|order)\b|发送|提交|发布|购买|支付|删除|确认|预订|下单/iu.test(
-      intent,
-    )
-  const reversibleLocal =
-    localWrite ||
-    action.type === 'app_command' ||
-    action.type === 'focus_window' ||
-    action.type === 'select_text' ||
-    action.type === 'click' ||
-    action.type === 'drag' ||
-    action.type === 'keypress' ||
-    (action.type === 'invoke_element' && action.action != null && action.action !== 'invoke')
-  const sensitive =
-    action.type === 'type_text' || action.type === 'set_value'
-      ? action.sensitive === true
-      : action.type === 'app_command' &&
-        action.command.name === 'prefill_composer' &&
-        action.command.sensitive === true
-  return {
-    effect: readOnly
-      ? 'read_only'
-      : committingIntent
-        ? 'external_write'
-        : reversibleLocal
-          ? 'reversible_local'
-          : 'external_write',
-    target: elementId
-      ? { kind: 'element', id: elementId }
-      : { kind: 'window', id: observation.foreground.window.id },
-    dataClasses: localWrite ? (sensitive ? ['credential'] : ['public']) : [],
   }
 }

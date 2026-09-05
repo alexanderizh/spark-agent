@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+
+use crate::tree_render::render_markdown;
 use thiserror::Error;
 
 const MAX_NAME_UTF16_UNITS: usize = 2_000;
@@ -47,12 +49,15 @@ pub struct RawUiaNode {
     pub is_password: bool,
     pub provider_secure: bool,
     pub redacted: bool,
+    /// Pre-order tree depth (0 = window root). Feeds the Markdown renderer.
+    pub depth: u32,
 }
 
 impl RawUiaNode {
     pub fn text(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
             runtime_key: String::new(),
+            depth: 0,
             role: "text".into(),
             name: name.into(),
             value: Some(value.into()),
@@ -137,70 +142,51 @@ impl UiaTreeState {
         Self::default()
     }
 
+    /// Renders the sanitized tree into the hierarchical Markdown outline and
+    /// publishes it. Element ids are the renderer's dense line indexes —
+    /// exactly the ids the model sees in the outline text. Diff mode is gone
+    /// (the macOS host removed it after the inverted-gate defect; the same
+    /// reasoning applies here): every observation is full-rendered with a
+    /// content-hash version, so an unchanged UI yields the identical version.
     pub fn observe(
         &mut self,
         nodes: Vec<RawUiaNode>,
-        previous_tree_version: Option<&str>,
-        full_tree: bool,
+        _previous_tree_version: Option<&str>,
+        _full_tree: bool,
     ) -> UiaTreeSnapshot {
         let sanitized = sanitize_uia_tree(nodes);
-        let tree_version = tree_version(&sanitized);
-        let published = sanitized
+        let rendered = render_markdown(&sanitized.iter().collect::<Vec<_>>());
+        let tree_version = format!(
+            "tree-{}",
+            &hex::encode(Sha256::digest(rendered.text.as_bytes()))[..32]
+        );
+        let published = rendered
+            .lines
             .iter()
-            .map(|node| publish_node(node, &tree_version))
+            .map(|line| publish_node(&sanitized[line.node_index], &line.element_id, &tree_version))
             .collect::<Vec<_>>();
         let next_nodes = published
             .iter()
             .cloned()
             .map(|node| (node.id.clone(), node))
             .collect::<HashMap<_, _>>();
-        let can_diff = !full_tree
-            && previous_tree_version.is_some()
-            && previous_tree_version == self.current_version.as_deref();
-        let (mode, elements, text) = if can_diff {
-            let changed = published
-                .iter()
-                .filter(|node| {
-                    self.current_nodes
-                        .get(&node.id)
-                        .map(|previous| comparable(previous) != comparable(node))
-                        .unwrap_or(true)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let removed = self
-                .current_nodes
-                .keys()
-                .filter(|id| !next_nodes.contains_key(*id))
-                .cloned()
-                .collect::<Vec<_>>();
-            let text = serde_json::to_string(&serde_json::json!({
-                "changed": changed,
-                "removed": removed,
-            }))
-            .unwrap_or_else(|_| "{\"changed\":[],\"removed\":[]}".into());
-            (TreeMode::Diff, published.clone(), text)
-        } else {
-            let text = serde_json::to_string(&published).unwrap_or_else(|_| "[]".into());
-            (TreeMode::Full, published.clone(), text)
-        };
         let sensitive_regions = sanitized
             .iter()
             .filter(|node| node.redacted)
             .map(|node| node.bounds)
             .collect();
-        self.current_runtime_keys = sanitized
+        self.current_runtime_keys = rendered
+            .lines
             .iter()
-            .zip(published.iter())
-            .map(|(raw, node)| (node.id.clone(), raw.runtime_key.clone()))
+            .map(|line| (line.element_id.clone(), line.runtime_key.clone()))
             .collect();
         self.current_nodes = next_nodes;
         self.current_version = Some(tree_version.clone());
         UiaTreeSnapshot {
             tree_version,
-            mode,
-            text,
-            elements,
+            mode: TreeMode::Full,
+            text: rendered.text,
+            elements: published,
             sensitive_regions,
         }
     }
@@ -266,13 +252,9 @@ fn positive_finite_or_one(value: f64) -> f64 {
     }
 }
 
-fn publish_node(node: &RawUiaNode, tree_version: &str) -> PublishedUiaNode {
-    let id = format!(
-        "element-{}",
-        &hex::encode(Sha256::digest(node.runtime_key.as_bytes()))[..32]
-    );
+fn publish_node(node: &RawUiaNode, element_id: &str, tree_version: &str) -> PublishedUiaNode {
     PublishedUiaNode {
-        id,
+        id: element_id.into(),
         tree_version: tree_version.into(),
         role: if node.role.is_empty() {
             "unknown".into()

@@ -461,6 +461,8 @@ describe('NativeHostComputerUseBackend', () => {
     const evidenceSink = { persist: vi.fn(async () => undefined) }
     const ids = ['snapshot-1', 'snapshot-2']
     const backend = new NativeHostComputerUseBackend({
+      // Windows hosts have not learned the skyshot envelope field yet — the
+      // legacy two-step execute→observe path stays authoritative there.
       platform: 'windows',
       connect: async () => connection,
       evidenceSink,
@@ -481,7 +483,12 @@ describe('NativeHostComputerUseBackend', () => {
       noop: false,
       executionChannel: null,
     })
-    expect(connection.executeAction).toHaveBeenCalledWith(envelope, signal)
+    // Skyshot (v2) is requested on every platform: the macOS and Windows
+    // hosts both learned the optional envelope field.
+    expect(connection.executeAction).toHaveBeenCalledWith(
+      { ...envelope, includeSkyshot: true },
+      signal,
+    )
     expect(connection.observe).toHaveBeenLastCalledWith({
       snapshotId: 'snapshot-2',
       appId: 'app-1',
@@ -496,6 +503,70 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('uses the skyshot as the post-action observation without a second observe round trip', async () => {
+    const skyshot: ComputerObservation = {
+      ...OBSERVATION,
+      frameId: 'frame-sky',
+      treeVersion: 'tree-sky',
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'action-1' },
+      tree: { ...OBSERVATION.tree, text: '- window "Saved" [1]' },
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.executeAction).mockResolvedValueOnce({
+      response: {
+        protocolVersion: 1 as const,
+        requestId: 'request-2',
+        type: 'action_result' as const,
+        actionId: 'action-1',
+        status: 'executed' as const,
+        executionChannel: 'background_pid' as const,
+        skyshot,
+        payload: { kind: 'image_png' as const, byteLength: 3, sha256: 'c'.repeat(64) },
+      },
+      bytes: Buffer.from('png'),
+    })
+    const evidenceSink = { persist: vi.fn(async () => undefined) }
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+      evidenceSink,
+      createId: () => 'snapshot-1',
+    })
+    const signal = new AbortController().signal
+    // Bound sessions keep their single-window contract, so the skyshot of the
+    // same window is authoritative — no foreground-follow re-observe needed.
+    backend.bindSessionTarget({
+      computerSessionId: 'computer-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+    })
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+    const envelope = {
+      computerSessionId: 'computer-1',
+      actionId: 'action-1',
+      targetAppId: 'app-1',
+      targetWindowId: 'window-1',
+      action: { type: 'click', point: { x: 0.5, y: 0.5 } },
+    } as ComputerActionEnvelope
+
+    const result = await backend.execute({ envelope, observation: OBSERVATION, signal })
+
+    expect(result).toEqual({
+      observation: skyshot,
+      noop: false,
+      executionChannel: 'background_pid',
+    })
+    // No second observe request: the skyshot already IS the post-action state.
+    expect(connection.observe).toHaveBeenCalledTimes(1)
+    expect(evidenceSink.persist).toHaveBeenLastCalledWith({
+      computerSessionId: 'computer-1',
+      kind: 'execution_after',
+      observation: skyshot,
+      payload: { kind: 'image_png', byteLength: 3, sha256: 'c'.repeat(64) },
+      bytes: Buffer.from('png'),
+    })
+  })
+
   it('surfaces the host-reported execution channel and records its outcome', async () => {
     const after = {
       ...OBSERVATION,
@@ -505,12 +576,15 @@ describe('NativeHostComputerUseBackend', () => {
     }
     const connection = createControlConnection([OBSERVATION, after])
     vi.mocked(connection.executeAction).mockResolvedValueOnce({
-      protocolVersion: 1 as const,
-      requestId: 'request-2',
-      type: 'action_result' as const,
-      actionId: 'action-1',
-      status: 'executed' as const,
-      executionChannel: 'background_ax' as const,
+      response: {
+        protocolVersion: 1 as const,
+        requestId: 'request-2',
+        type: 'action_result' as const,
+        actionId: 'action-1',
+        status: 'executed' as const,
+        executionChannel: 'background_ax' as const,
+      },
+      bytes: null,
     })
     const metrics = new ComputerUseMetricsCollector()
     const evidenceSink = { persist: vi.fn(async () => undefined) }
@@ -1098,11 +1172,14 @@ function createControlConnection(
       bytes: Buffer.from('png'),
     })),
     executeAction: vi.fn(async () => ({
-      protocolVersion: 1 as const,
-      requestId: 'request-2',
-      type: 'action_result' as const,
-      actionId: 'action-1',
-      status: 'executed' as const,
+      response: {
+        protocolVersion: 1 as const,
+        requestId: 'request-2',
+        type: 'action_result' as const,
+        actionId: 'action-1',
+        status: 'executed' as const,
+      },
+      bytes: null,
     })),
   } as NativeHostConnection & {
     observe: ReturnType<typeof vi.fn>

@@ -212,7 +212,9 @@ function ComputerActivityCard({
   const latest = view.sessionEvents.at(-1)
   const terminal = isTerminalComputerActivityEvent(latest)
   const status = activityStatus(latest, t)
-  const visibleEvents = view.events.filter((event) => event.type !== 'computer_observation_created')
+  const visibleEvents = collapseActionEvents(
+    view.events.filter((event) => event.type !== 'computer_observation_created'),
+  )
   const elapsed = isSessionLatest ? elapsedLabel(view.sessionEvents, t) : null
   const [controlStatus, setControlStatus] = useState(session?.status ?? null)
   const [windows, setWindows] = useState<NativeWindowDescriptor[] | null>(null)
@@ -393,6 +395,27 @@ function activityStatus(
   return { kind: 'running', label: t('computerActivity.status.running') }
 }
 
+/**
+ * 每个动作只显示一行：requested 事件在出现同 actionId 的终态（executed/failed/blocked）
+ * 后折叠掉，避免“准备执行操作 + 操作已执行”双行模板噪音。仍在执行中的动作保留
+ * requested 行，作为“正在做什么”的实时提示。
+ */
+function collapseActionEvents(events: ComputerUseEvent[]): ComputerUseEvent[] {
+  const settled = new Set<string>()
+  for (const event of events) {
+    if (
+      event.type === 'computer_action_executed' ||
+      event.type === 'computer_action_failed' ||
+      event.type === 'computer_action_blocked'
+    ) {
+      settled.add(event.actionId)
+    }
+  }
+  return events.filter(
+    (event) => !(event.type === 'computer_action_requested' && settled.has(event.actionId)),
+  )
+}
+
 function eventClassName(event: ComputerUseEvent): string {
   return event.type.includes('failed') || event.type === 'computer_action_blocked'
     ? 'is-error'
@@ -408,13 +431,25 @@ function eventLabel(event: ComputerUseEvent, t: Translate): string {
         environment: environmentLabel(event.environment, t),
       })
     case 'computer_action_requested':
-      return t('computerActivity.event.actionRequested', { riskLevel: event.riskLevel })
+      return event.summary != null
+        ? t('computerActivity.event.actionPending', { summary: event.summary })
+        : t('computerActivity.event.actionRequested', { riskLevel: event.riskLevel })
     case 'computer_action_blocked':
-      return t('computerActivity.event.actionBlocked', { reason: repairLabel(event.errorCode, t) })
+      return event.summary != null
+        ? t('computerActivity.event.actionBlockedSummary', {
+            summary: event.summary,
+            reason: repairLabel(event.errorCode, t),
+          })
+        : t('computerActivity.event.actionBlocked', { reason: repairLabel(event.errorCode, t) })
     case 'computer_action_executed':
-      return t('computerActivity.event.actionExecuted')
+      return event.summary ?? t('computerActivity.event.actionExecuted')
     case 'computer_action_failed':
-      return t('computerActivity.event.actionFailed', { reason: repairLabel(event.errorCode, t) })
+      return event.summary != null
+        ? t('computerActivity.event.actionFailedSummary', {
+            summary: event.summary,
+            reason: repairLabel(event.errorCode, t),
+          })
+        : t('computerActivity.event.actionFailed', { reason: repairLabel(event.errorCode, t) })
     case 'computer_approval_requested':
       return t('computerActivity.event.approvalRequested', { riskLevel: event.riskLevel })
     case 'computer_approval_resolved':

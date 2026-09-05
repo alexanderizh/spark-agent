@@ -207,6 +207,11 @@ pub struct ComputerActionEnvelope {
     pub action: ComputerAction,
     #[serde(rename = "executionLane", default)]
     pub execution_lane: Option<ExecutionLane>,
+    /// Protocol v2: attach the settled post-action observation (fresh tree +
+    /// screenshot) to the action response, collapsing the execute→observe
+    /// feedback loop into one round trip. Absent on v1 envelopes.
+    #[serde(rename = "includeSkyshot", default)]
+    pub include_skyshot: Option<bool>,
     #[serde(rename = "policyContext")]
     pub policy_context: PolicyContext,
     pub intent: String,

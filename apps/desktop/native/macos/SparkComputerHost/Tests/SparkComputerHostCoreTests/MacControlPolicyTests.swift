@@ -83,7 +83,7 @@ final class MacControlPolicyTests: XCTestCase {
       try state.assertWritable(elementID: first.elements[0].id, treeVersion: first.treeVersion))
   }
 
-  func testDiffIncludesCompleteCurrentReferencesAndInvalidatesOldElements() throws {
+  func testPublishesFullMarkdownOutlineWithStableContentVersion() throws {
     var state = NativeAXTreeState()
     let first = state.publish(
       elements: [element(runtimeID: "one", name: "Before")], previousTreeVersion: nil,
@@ -94,20 +94,27 @@ final class MacControlPolicyTests: XCTestCase {
       fullTree: false
     )
 
-    XCTAssertEqual(second.mode, .diff)
+    // The wire diff mode is gone: every publish renders the full outline and
+    // the version is a pure content hash (unchanged content ⇒ same version).
+    XCTAssertEqual(first.mode, .full)
+    XCTAssertEqual(second.mode, .full)
     XCTAssertEqual(second.elements.count, 2)
     XCTAssertTrue(second.elements.allSatisfy { $0.treeVersion == second.treeVersion })
+    XCTAssertTrue(second.text.contains("\"After\""))
+    XCTAssertTrue(second.text.contains("\"New\""))
     XCTAssertNoThrow(
       try state.resolve(elementID: second.elements[0].id, treeVersion: second.treeVersion))
     XCTAssertThrowsError(
       try state.resolve(elementID: first.elements[0].id, treeVersion: first.treeVersion))
 
-    let forcedFull = state.publish(
-      elements: [element(runtimeID: "one", name: "After")],
-      previousTreeVersion: "unknown-tree",
-      fullTree: false
+    let republished = state.publish(
+      elements: [element(runtimeID: "one", name: "After"), element(runtimeID: "two", name: "New")],
+      previousTreeVersion: second.treeVersion,
+      fullTree: true
     )
-    XCTAssertEqual(forcedFull.mode, .full)
+    XCTAssertEqual(republished.treeVersion, second.treeVersion)
+    XCTAssertEqual(republished.text, second.text)
+    XCTAssertEqual(republished.elements.map(\.id), second.elements.map(\.id))
   }
 
   func testDuplicateRuntimeIdentifiersCannotCrashOrAliasElementReferences() {

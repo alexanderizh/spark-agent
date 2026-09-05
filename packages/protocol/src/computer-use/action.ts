@@ -262,6 +262,8 @@ export const ComputerActionEnvelopeSchema = z
     policyContext: ComputerPolicyContextSchema,
     intent: z.string().trim().min(1).max(4_000),
     expectedPostcondition: VerificationSpecSchema.optional(),
+    /** Ask the Host to attach the settled post-action observation (skyshot). */
+    includeSkyshot: z.boolean().optional(),
   })
   .strict()
   .superRefine((value, context) => {

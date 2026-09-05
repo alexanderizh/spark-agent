@@ -14,7 +14,7 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationEventHandler,
     IUIAutomationEventHandler_Impl, IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
-    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern,
+    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern, IUIAutomationTreeWalker,
     IUIAutomationStructureChangedEventHandler, IUIAutomationStructureChangedEventHandler_Impl,
     IUIAutomationValuePattern, ScrollAmount_LargeDecrement, ScrollAmount_LargeIncrement,
     ScrollAmount_NoAmount, ScrollAmount_SmallDecrement, ScrollAmount_SmallIncrement,
@@ -33,6 +33,8 @@ use crate::uia_policy::{
 };
 
 const MAX_TREE_ELEMENTS: usize = 100_000;
+/// TreeWalker recursion cap: deeper UI is flattened to this depth in the outline.
+const MAX_WALK_DEPTH: u32 = 30;
 const MAX_TREE_TEXT_BYTES: usize = 2_000_000;
 const MAX_CACHE_AGE: Duration = Duration::from_secs(1);
 const CACHE_INVALIDATION_EVENTS: [UIA_EVENT_ID; 5] = [
@@ -171,40 +173,29 @@ impl UiaRuntime {
         if can_reuse {
             return self.publish_nodes(self.cached_nodes.clone(), previous_tree_version, full_tree);
         }
-        let condition =
-            unsafe { self.automation.CreateTrueCondition() }.map_err(|_| UiaError::Unavailable)?;
-        let descendants = unsafe { root.FindAll(TreeScope_Descendants, &condition) }
-            .map_err(|_| UiaError::OperationFailed)?;
-        let length = unsafe { descendants.Length() }
-            .map_err(|_| UiaError::OperationFailed)?
-            .max(0) as usize;
-        if length >= MAX_TREE_ELEMENTS {
-            return Err(UiaError::OperationFailed);
-        }
-
-        let mut raw_nodes = Vec::with_capacity(length.saturating_add(1));
-        let mut elements = HashMap::with_capacity(length.saturating_add(1));
+        // Depth-tracking pre-order walk (ControlView). The old flat FindAll
+        // produced no hierarchy, so the tree could only be rendered as a JSON
+        // list; the walker gives every element a depth for the Markdown
+        // outline the decision model reads. Element/depth caps bound the COM
+        // call count on huge trees.
+        let walker = unsafe { self.automation.ControlViewWalker() }
+            .map_err(|_| UiaError::Unavailable)?;
+        let mut raw_nodes = Vec::new();
+        let mut elements = HashMap::new();
         let mut secure_runtime_keys = HashSet::new();
-        self.collect_element(
+        let mut counter = 0usize;
+        self.walk_element(
+            &walker,
             hwnd,
+            &root,
             0,
-            root,
+            &mut counter,
             &mut raw_nodes,
             &mut elements,
             &mut secure_runtime_keys,
         );
-        for index in 0..length {
-            let Ok(element) = (unsafe { descendants.GetElement(index as i32) }) else {
-                continue;
-            };
-            self.collect_element(
-                hwnd,
-                index.saturating_add(1),
-                element,
-                &mut raw_nodes,
-                &mut elements,
-                &mut secure_runtime_keys,
-            );
+        if raw_nodes.is_empty() {
+            return Err(UiaError::OperationFailed);
         }
         let snapshot = self.publish_nodes(raw_nodes.clone(), previous_tree_version, full_tree)?;
         self.elements = elements;
@@ -335,11 +326,65 @@ impl UiaRuntime {
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn walk_element(
+        &self,
+        walker: &IUIAutomationTreeWalker,
+        hwnd: isize,
+        element: &IUIAutomationElement,
+        depth: u32,
+        counter: &mut usize,
+        nodes: &mut Vec<RawUiaNode>,
+        elements: &mut HashMap<String, IUIAutomationElement>,
+        secure_runtime_keys: &mut HashSet<String>,
+    ) {
+        if *counter >= MAX_TREE_ELEMENTS {
+            return;
+        }
+        *counter += 1;
+        self.collect_element(
+            hwnd,
+            *counter,
+            element.clone(),
+            depth,
+            nodes,
+            elements,
+            secure_runtime_keys,
+        );
+        if depth < MAX_WALK_DEPTH {
+            if let Ok(child) = (unsafe { walker.GetFirstChildElement(element) }) {
+                self.walk_element(
+                    walker,
+                    hwnd,
+                    &child,
+                    depth + 1,
+                    counter,
+                    nodes,
+                    elements,
+                    secure_runtime_keys,
+                );
+            }
+        }
+        if let Ok(sibling) = (unsafe { walker.GetNextSiblingElement(element) }) {
+            self.walk_element(
+                walker,
+                hwnd,
+                &sibling,
+                depth,
+                counter,
+                nodes,
+                elements,
+                secure_runtime_keys,
+            );
+        }
+    }
+
     fn collect_element(
         &self,
         hwnd: isize,
         index: usize,
         element: IUIAutomationElement,
+        depth: u32,
         nodes: &mut Vec<RawUiaNode>,
         elements: &mut HashMap<String, IUIAutomationElement>,
         secure_runtime_keys: &mut HashSet<String>,
@@ -419,6 +464,7 @@ impl UiaRuntime {
         };
         let mut node = RawUiaNode::text(name, value.as_deref().unwrap_or_default())
             .with_runtime_key(&runtime_key);
+        node.depth = depth;
         node.role = role;
         node.value = value;
         node.bounds = bounds;

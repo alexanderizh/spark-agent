@@ -436,14 +436,22 @@ public enum NativeHostResponseEncoder {
     actionID: String,
     execution: NativeActionExecution
   ) throws -> Data {
-    try encode(
+    var skyshot: ObservationBody?
+    var payload: NativeBinaryPayloadDescriptor?
+    if let observed = execution.skyshot {
+      skyshot = ObservationBody(observed)
+      payload = .png(observed.capture.bytes)
+    }
+    return try encode(
       ActionResponse(
         protocolVersion: nativeHostProtocolVersion,
         requestId: requestID,
         type: "action_result",
         actionId: actionID,
         status: execution.status.rawValue,
-        executionChannel: execution.executionChannel?.rawValue
+        executionChannel: execution.executionChannel?.rawValue,
+        skyshot: skyshot,
+        payload: payload
       )
     )
   }
@@ -527,7 +535,7 @@ private struct ObservationResponse: Encodable {
   let payload: NativeBinaryPayloadDescriptor
 }
 
-private struct ObservationBody: Encodable {
+struct ObservationBody: Encodable {
   struct Foreground: Encodable {
     let app: NativeAppIdentity
     let window: NativeWindowIdentity
@@ -579,9 +587,31 @@ private struct ActionResponse: Encodable {
   let actionId: String
   let status: String
   let executionChannel: String?
+  let skyshot: ObservationBody?
+  let payload: NativeBinaryPayloadDescriptor?
 
   private enum CodingKeys: String, CodingKey {
-    case protocolVersion, requestId, type, actionId, status, executionChannel
+    case protocolVersion, requestId, type, actionId, status, executionChannel, skyshot, payload
+  }
+
+  init(
+    protocolVersion: Int,
+    requestId: String,
+    type: String,
+    actionId: String,
+    status: String,
+    executionChannel: String?,
+    skyshot: ObservationBody?,
+    payload: NativeBinaryPayloadDescriptor?
+  ) {
+    self.protocolVersion = protocolVersion
+    self.requestId = requestId
+    self.type = type
+    self.actionId = actionId
+    self.status = status
+    self.executionChannel = executionChannel
+    self.skyshot = skyshot
+    self.payload = payload
   }
 
   func encode(to encoder: Encoder) throws {
@@ -593,6 +623,8 @@ private struct ActionResponse: Encodable {
     try container.encode(status, forKey: .status)
     // Omitted entirely when absent so older brokers that validate strictly keep parsing.
     try container.encodeIfPresent(executionChannel, forKey: .executionChannel)
+    try container.encodeIfPresent(skyshot, forKey: .skyshot)
+    try container.encodeIfPresent(payload, forKey: .payload)
   }
 }
 

@@ -175,7 +175,7 @@ describe('computer approval governance', () => {
 })
 
 describe('computer events and stable errors', () => {
-  it('requires verification IDs before a session can emit completed', () => {
+  it('always allows emitting the completed terminal event, with or without verification IDs', () => {
     const schema = exportedSchema('ComputerUseEventSchema')
     const event = {
       id: 'event-1',
@@ -189,7 +189,12 @@ describe('computer events and stable errors', () => {
     }
 
     expect(schema.parse(event)).toEqual(event)
-    expect(schema.safeParse({ ...event, verificationIds: [] }).success).toBe(false)
+    // A verification-less completion must still be able to emit its terminal
+    // event, otherwise downstream UI hangs on "in progress" forever.
+    expect(schema.parse({ ...event, verificationIds: [] })).toEqual({
+      ...event,
+      verificationIds: [],
+    })
   })
 
   it('fails closed on unknown error codes and unknown event types', () => {

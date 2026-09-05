@@ -730,17 +730,119 @@ fn execute_action(
             return write_input_policy_error(output, request_id, error);
         }
     }
-    state.observation = None;
-    write_value(
-        output,
-        &json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "type": "action_result",
-            "requestId": request_id,
-            "actionId": envelope.action_id,
-            "status": "executed",
-        }),
+    // Skyshot (protocol v2): settle briefly, then capture + re-walk the tree
+    // and attach the fresh observation to the action response. Best-effort —
+    // any failure omits the field and the caller falls back to a regular
+    // observe request, exactly like a v1 host. (build_skyshot rebinds
+    // state.observation itself; it must run before the assignment below.)
+    let (skyshot_app, skyshot_window, skyshot_hwnd) =
+        (binding.app_id.clone(), binding.window_id.clone(), binding.target.hwnd);
+    let skyshot = if envelope.include_skyshot == Some(true) {
+        build_skyshot(state, &skyshot_app, &skyshot_window, skyshot_hwnd)
+    } else {
+        state.observation = None;
+        None
+    };
+    let mut reply = json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "type": "action_result",
+        "requestId": request_id,
+        "actionId": envelope.action_id,
+        "status": "executed",
+    });
+    if let Some((observation, png)) = skyshot.as_ref() {
+        reply["skyshot"] = observation.clone();
+        reply["payload"] = json!({
+            "kind": "image_png",
+            "byteLength": png.len(),
+            "sha256": hex::encode(Sha256::digest(png.as_slice())),
+        });
+    }
+    write_value(output, &reply)?;
+    if let Some((_, png)) = skyshot {
+        let binary = encode_frame(FrameKind::Binary, &png).map_err(|_| ())?;
+        output.write_all(&binary).map_err(|_| ())?;
+    }
+    output.flush().map_err(|_| ())
+}
+
+/// Builds the settled post-action observation for a skyshot response:
+/// `(observation_json, png)`. Every failure returns None so the action
+/// result is still delivered without the skyshot.
+fn build_skyshot(
+    state: &mut HostState,
+    binding_app_id: &str,
+    binding_window_id: &str,
+    binding_hwnd: isize,
+) -> Option<(Value, Vec<u8>)> {
+    // Settle: fixed short quiescence window (UIA has no busy notification
+    // equivalent; 250ms covers most post-click layout work).
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let descriptor =
+        inventory::window_descriptor(binding_app_id, binding_window_id).ok()?;
+    let before = input::target_window(binding_window_id).ok()?;
+    if before.secure_desktop {
+        return None;
+    }
+    let captured = capture::capture_window_with_session(
+        &mut state.persistent_capture,
+        binding_window_id,
+        &before,
+        false,
+        false,
     )
+    .ok()?;
+    if captured.width == 0
+        || captured.height == 0
+        || captured.width > MAX_SCREENSHOT_DIMENSION
+        || captured.height > MAX_SCREENSHOT_DIMENSION
+        || captured.png.is_empty()
+        || captured.png.len() > MAX_FRAME_PAYLOAD_BYTES
+    {
+        return None;
+    }
+    let tree = state.uia.as_mut()?.observe(binding_hwnd, None, true).ok()?;
+    let captured_at = format_system_time(SystemTime::now());
+    let mut frame_digest = Sha256::new();
+    frame_digest.update(&captured.png);
+    frame_digest.update(tree.tree_version.as_bytes());
+    frame_digest.update(captured_at.as_bytes());
+    let frame_id = format!("frame-{}", &hex::encode(frame_digest.finalize())[..32]);
+    let snapshot_id = format!("snap-{}", &frame_id[6..19]);
+    let observation = json!({
+        "frameId": frame_id,
+        "treeVersion": tree.tree_version,
+        "capturedAt": captured_at,
+        "display": descriptor.get("display").cloned().unwrap_or(Value::Null),
+        "foreground": {
+            "app": descriptor.get("app").cloned().unwrap_or(Value::Null),
+            "window": descriptor.get("window").cloned().unwrap_or(Value::Null),
+        },
+        "screenshot": {
+            "snapshotId": snapshot_id,
+            "width": captured.width,
+            "height": captured.height,
+        },
+        "tree": {
+            "mode": "full",
+            "text": tree.text,
+            "elementCount": tree.elements.len(),
+        },
+        "elements": tree.elements,
+        "loading": false,
+        "sensitiveRegions": tree.sensitive_regions,
+    });
+    // Rebind the session observation to the skyshot frame so the NEXT action
+    // can chain on it without another observe request.
+    state.observation = Some(ObservationBinding {
+        frame_id,
+        tree_version: tree.tree_version,
+        app_id: binding_app_id.to_owned(),
+        window_id: binding_window_id.to_owned(),
+        target: before,
+        observed_at: std::time::Instant::now(),
+    });
+    Some((observation, captured.png))
 }
 
 fn action_may_change_focused_window(action: &ComputerAction) -> bool {
