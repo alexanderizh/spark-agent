@@ -38,10 +38,12 @@ import type {
   SubAppRuntimeDocPutRequest,
   SubAppRuntimeDocAck,
   SubAppRuntimeDocReleaseRequest,
+  SubAppShareExportRequest,
   SubAppUpdateDraftRequest,
   SubAppUpdateDraftResponse,
 } from '@spark/protocol'
 import { SparkError } from '@spark/shared'
+import path from 'node:path'
 import {
   SubAppConflictError,
   SubAppDataConflictError,
@@ -54,14 +56,36 @@ import {
 import type { SparkDatabase } from '@spark/storage'
 import { putSubAppRuntimeDoc, releaseSubAppRuntimeDoc } from '../services/SubAppRuntimeDocs.js'
 import { SubAppFileStore } from '../services/SubAppFileStore.js'
+import { SubAppShareService } from '../services/SubAppShareService.js'
+import type {
+  SubAppShareApplyResult,
+  SubAppShareExportResult,
+  SubAppSharePreviewResult,
+} from '../services/SubAppShareService.js'
+
+export interface SubAppBackendOptions {
+  /** 当前平台版本（app.getVersion()），分享包导出时写入包内。 */
+  platformVersion?: string
+  /** 覆盖导入前自动备份的目录；缺省为 fileStoreRoot 同级的 sub-app-backups。 */
+  backupsDir?: string
+}
 
 export class SubAppBackend {
   private readonly repository: SubAppRepository
   private readonly fileStore: SubAppFileStore
+  private readonly share: SubAppShareService
 
-  constructor(database: SparkDatabase, fileStoreRootDir: string) {
+  constructor(database: SparkDatabase, fileStoreRootDir: string, options: SubAppBackendOptions = {}) {
     this.repository = new SubAppRepository(database)
     this.fileStore = new SubAppFileStore(fileStoreRootDir)
+    this.share = new SubAppShareService({
+      repository: this.repository,
+      fileStore: this.fileStore,
+      fileStoreRoot: fileStoreRootDir,
+      backupsDir:
+        options.backupsDir ?? path.join(path.dirname(fileStoreRootDir), 'sub-app-backups'),
+      platformVersion: options.platformVersion ?? '0.0.0',
+    })
   }
 
   list(request: SubAppListRequest): SubAppListResponse {
@@ -272,6 +296,57 @@ export class SubAppBackend {
   releaseRuntimeDoc(request: SubAppRuntimeDocReleaseRequest): SubAppRuntimeDocAck {
     try {
       return releaseSubAppRuntimeDoc(request)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  // ─── 分享 / 导入（.sparkapp）───────────────────────────────────────────────
+  // 对话框与导入 token 缓存在 registerSubAppIpc（electron 层）；这里只做
+  // 打包 / 解析 / 应用。body 全程留在主进程内存，renderer 只接触摘要。
+
+  /** 打包应用的完整分享包并序列化；调用方拿 text 写盘。 */
+  async shareExportPackage(request: SubAppShareExportRequest): Promise<{
+    name: string
+    text: string
+    counts: { releases: number; dataEntries: number; files: number }
+    capabilities: SubAppShareExportResult['capabilities']
+    secretWarnings: string[]
+  }> {
+    try {
+      const result = await this.share.buildPackage(request.appId, {
+        ...(request.includeData != null ? { includeData: request.includeData } : {}),
+        ...(request.includeFiles != null ? { includeFiles: request.includeFiles } : {}),
+      })
+      return {
+        name: result.body.manifest.name,
+        text: result.text,
+        counts: result.counts,
+        capabilities: result.capabilities,
+        secretWarnings: result.secretWarnings,
+      }
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  /** 解析分享包文件并产出预览（能力检查 + 本机冲突识别）。 */
+  async sharePreviewFromFile(filePath: string, fileName?: string): Promise<SubAppSharePreviewResult> {
+    try {
+      return await this.share.previewFromFile(filePath, fileName)
+    } catch (error) {
+      throw this.mapError(error)
+    }
+  }
+
+  /** 应用导入（overwrite=整体替换同 id 应用 / new-app=作为新应用导入）。 */
+  async shareApply(
+    body: SubAppSharePreviewResult['body'],
+    mode: 'overwrite' | 'new-app',
+    expectedSha256?: string,
+  ): Promise<SubAppShareApplyResult> {
+    try {
+      return await this.share.applyImport(body, mode, expectedSha256)
     } catch (error) {
       throw this.mapError(error)
     }

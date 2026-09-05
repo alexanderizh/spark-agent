@@ -87,7 +87,26 @@ vi.mock('@lobehub/ui', async () => {
         : null,
     )
   }
-  return { Button, Input, Empty, Tooltip, Modal, Dropdown }
+  const Checkbox = ({
+    checked,
+    children,
+    onChange,
+  }: {
+    checked?: boolean
+    children?: React.ReactNode
+    onChange?: (checked: boolean) => void
+  }) =>
+    ReactActual.createElement(
+      'label',
+      null,
+      ReactActual.createElement('input', {
+        type: 'checkbox',
+        checked: checked ?? false,
+        onChange: (e) => onChange?.(e.target.checked),
+      }),
+      children,
+    )
+  return { Button, Input, Empty, Tooltip, Modal, Dropdown, Checkbox }
 })
 
 vi.mock('antd', async () => {
@@ -114,7 +133,28 @@ vi.mock('antd', async () => {
     })
   const message = { success: vi.fn(), error: vi.fn() }
   const Modal = { confirm: vi.fn() }
-  return { Badge, Drawer, Modal, Popconfirm, Spin, Switch, message }
+  const Typography = {
+    Text: ({ children }: { children?: React.ReactNode }) =>
+      ReactActual.createElement('span', null, children),
+  }
+  const Alert = ({
+    message: alertMessage,
+    description,
+  }: {
+    message?: React.ReactNode
+    description?: React.ReactNode
+  }) =>
+    ReactActual.createElement(
+      'div',
+      { 'data-testid': 'alert', role: 'alert' },
+      alertMessage,
+      description,
+    )
+  const Space = ({ children }: { children?: React.ReactNode }) =>
+    ReactActual.createElement('div', null, children)
+  const Tag = ({ children }: { children?: React.ReactNode }) =>
+    ReactActual.createElement('span', { 'data-testid': 'tag' }, children)
+  return { Badge, Drawer, Modal, Popconfirm, Spin, Switch, message, Typography, Alert, Space, Tag }
 })
 
 vi.mock('../sub-app/subAppClient', () => ({
@@ -127,6 +167,9 @@ vi.mock('../sub-app/subAppClient', () => ({
     delete: (...args: unknown[]) => mocks.deleteApp(...args),
     listReleases: (...args: unknown[]) => mocks.listReleases(...args),
     rollback: vi.fn(),
+    shareExport: vi.fn(),
+    shareImportPreview: vi.fn(),
+    shareImportApply: vi.fn(),
   },
 }))
 

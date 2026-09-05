@@ -244,6 +244,173 @@ export interface SubAppFileDeleteResponse {
   deleted: true
 }
 
+// ---------------------------------------------------------------------------
+// 分享 / 导入：单文件 .sparkapp 分享包（JSON，UTF-8）。
+//
+// 设计要点：
+//   - 全量语义：manifest + 草稿 + 全部发布版本（保留原版本号与发布时间）+
+//     全命名空间 data + 文件空间，导入即可用；不做差量/选择性导入。
+//   - 任何密钥不进包：Provider API Key 存系统 Keychain，不在导出范围；
+//     源码 / data 值里疑似明文密钥只做启发式提示，包内保留原文以保证可用性。
+//   - 完整性：integrity.sha256 是对「不含 integrity 字段的包体 JSON」的哈希，
+//     用于拦截截断/误改的文件；不是对抗性签名。
+//   - 包内 platformVersion 仅供兼容性提示；formatVersion 不识别时导入拦截。
+// ---------------------------------------------------------------------------
+
+export const SUB_APP_SHARE_FORMAT_VERSION = 1
+
+/** 分享包内单条应用数据（跨全部命名空间快照；导入后 revision 从 1 重建）。 */
+export interface SubAppShareDataEntry {
+  namespace: string
+  key: string
+  value: unknown
+}
+
+/** 分享包内单条文件空间记录（正斜杠相对路径 + UTF-8 文本内容）。 */
+export interface SubAppShareFileEntry {
+  path: string
+  content: string
+}
+
+/** 发布版本快照：保留原版本号与发布时间；release id 在导入时重建。 */
+export interface SubAppShareRelease {
+  version: number
+  source: string
+  config: Record<string, unknown>
+  manifest: SubAppManifest
+  publishedAt: string
+}
+
+/** 静态能力依赖清单（导出时扫描源码/data，导入时对照本机平台检查）。 */
+export interface SubAppShareCapabilityReport {
+  /** 源码里引用的宿主 IPC 通道（sparkApp.ipc.invoke/on 的静态可解析字面量）。 */
+  ipcChannels: string[]
+  /** AI 渠道相关引用（provider:* 通道 / providerProfileId 字面量）——仅提示，导入后使用导入方自己的渠道。 */
+  providerRefs: string[]
+  /** 疑似明文密钥的位置（不含密钥内容本身）。 */
+  secretHints: Array<{ scope: 'source' | 'data'; location: string }>
+}
+
+export interface SubAppSharePackage {
+  formatVersion: number
+  /** 原应用 id：用于导入时识别「本机同一应用」以支持覆盖导入。 */
+  appId: string
+  exportedAt: string
+  /** 导出平台版本（app.getVersion()），仅用于导入时降级警告。 */
+  platformVersion: string
+  manifest: SubAppManifest
+  draft: {
+    source: string
+    config: Record<string, unknown>
+  }
+  releases: SubAppShareRelease[]
+  /** 导出时的当前生效版本；null 表示从未发布（导入后保持草稿态）。 */
+  publishedVersion: number | null
+  data: SubAppShareDataEntry[]
+  files: SubAppShareFileEntry[]
+  capabilities: SubAppShareCapabilityReport
+  /** 包体完整性：sha256/byteSize 均针对「不含本字段的包体 JSON 文本」。 */
+  integrity: { sha256: string; byteSize: number }
+}
+
+/** 分享包包体 = 完整包去掉 integrity（完整性计算的对象）。 */
+export type SubAppSharePackageBody = Omit<SubAppSharePackage, 'integrity'>
+
+export interface SubAppShareExportRequest {
+  appId: string
+  /** 是否包含应用数据（默认 true）。 */
+  includeData?: boolean
+  /** 是否包含文件空间（默认 true）。 */
+  includeFiles?: boolean
+}
+
+export interface SubAppShareExportResponse {
+  saved: boolean
+  savedPath?: string
+  canceled?: boolean
+  error?: string
+  counts: { releases: number; dataEntries: number; files: number }
+  capabilities: SubAppShareCapabilityReport
+  /** 导出侧发现的疑似密钥警告（源码 + data 值）。 */
+  secretWarnings: string[]
+}
+
+export interface SubAppShareImportCheck {
+  level: 'ok' | 'warning' | 'error'
+  code:
+    | 'FORMAT_VERSION'
+    | 'PLATFORM_VERSION'
+    | 'INTEGRITY'
+    | 'IPC_CHANNELS'
+    | 'SOURCE_RUNTIME_LIMIT'
+    | 'SECRET_HINT'
+    | 'DATA_LIMIT'
+    | 'FILE_LIMIT'
+    | 'DRAFT_EMPTY'
+  message: string
+  detail?: string[]
+}
+
+export interface SubAppShareConflictInfo {
+  /** same-id：包内 appId 在本机已存在（可覆盖）；same-name：仅同名不同 id。 */
+  kind: 'none' | 'same-id' | 'same-name'
+  appId?: string
+  current?: {
+    name: string
+    publicationStatus: SubAppPublicationStatus
+    publishedVersion: number | null
+    releaseCount: number
+    dataEntries: number
+    files: number
+  }
+}
+
+export interface SubAppShareImportPreviewRequest {
+  // 文件选择对话框在主进程弹出；本通道无参数。
+}
+
+export interface SubAppShareImportPreviewResponse {
+  started: boolean
+  canceled?: boolean
+  error?: string
+  /** 主进程内存中的包句柄（有 TTL 与数量上限），后续 apply 凭它取包。 */
+  importToken?: string
+  fileName?: string
+  /** 分享包文件总字节数。 */
+  byteSize?: number
+  packageSummary?: {
+    formatVersion: number
+    appId: string
+    exportedAt: string
+    platformVersion: string
+    manifest: SubAppManifest
+    counts: { releases: number; dataEntries: number; files: number; draftChars: number }
+    capabilities: SubAppShareCapabilityReport
+  }
+  integrityOk?: boolean
+  checks: SubAppShareImportCheck[]
+  conflict: SubAppShareConflictInfo
+}
+
+export interface SubAppShareImportApplyRequest {
+  importToken: string
+  /** overwrite：整体替换本机同 id 应用；new-app：作为新应用导入。 */
+  mode: 'overwrite' | 'new-app'
+}
+
+export interface SubAppShareImportApplyResponse {
+  appId: string
+  name: string
+  publicationStatus: SubAppPublicationStatus
+  publishedVersion: number | null
+  importedReleases: number
+  importedDataEntries: number
+  importedFiles: number
+  /** 覆盖导入前自动生成的本机应用备份（.sparkapp）路径；新建导入为 null。 */
+  backupPath: string | null
+  warnings: string[]
+}
+
 export interface SubAppReleaseSummary {
   id: string
   version: number
@@ -338,6 +505,9 @@ export interface SubAppIpcChannelMap {
   'sub-app:file:delete': [SubAppFileDeleteRequest, SubAppFileDeleteResponse]
   'sub-app:runtime:put-doc': [SubAppRuntimeDocPutRequest, SubAppRuntimeDocAck]
   'sub-app:runtime:release-doc': [SubAppRuntimeDocReleaseRequest, SubAppRuntimeDocAck]
+  'sub-app:share:export': [SubAppShareExportRequest, SubAppShareExportResponse]
+  'sub-app:share:import-preview': [SubAppShareImportPreviewRequest, SubAppShareImportPreviewResponse]
+  'sub-app:share:import-apply': [SubAppShareImportApplyRequest, SubAppShareImportApplyResponse]
 }
 
 export interface SparkAppBridgeRequest {
@@ -619,5 +789,19 @@ export const SubAppIpcSchemaRegistry = {
     .strict(),
   'sub-app:runtime:release-doc': z
     .object({ token: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/) })
+    .strict(),
+  'sub-app:share:export': z
+    .object({
+      appId,
+      includeData: z.boolean().optional(),
+      includeFiles: z.boolean().optional(),
+    })
+    .strict(),
+  'sub-app:share:import-preview': z.object({}).strict(),
+  'sub-app:share:import-apply': z
+    .object({
+      importToken: z.string().regex(/^[A-Za-z0-9-]{8,80}$/),
+      mode: z.enum(['overwrite', 'new-app']),
+    })
     .strict(),
 } as const

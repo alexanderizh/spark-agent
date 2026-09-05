@@ -29,6 +29,11 @@ import type {
   SubAppRuntimeDocAck,
   SubAppRuntimeDocPutRequest,
   SubAppRuntimeDocReleaseRequest,
+  SubAppShareExportRequest,
+  SubAppShareExportResponse,
+  SubAppShareImportApplyRequest,
+  SubAppShareImportApplyResponse,
+  SubAppShareImportPreviewResponse,
   SubAppSetEnabledRequest,
   SubAppSetEnabledResponse,
   SubAppUpdateDraftRequest,
@@ -93,6 +98,19 @@ export const subAppClient = {
 
   releaseRuntimeDoc: (request: SubAppRuntimeDocReleaseRequest): Promise<SubAppRuntimeDocAck> =>
     window.spark.invoke('sub-app:runtime:release-doc', request),
+
+  // ─── 分享 / 导入（.sparkapp）──────────────────────────────────────────────
+  // 大包在主进程打包/解析：export 返回保存结果摘要，import-preview 返回
+  // 预览报告并持有主进程侧 token，import-apply 凭 token 应用导入。
+
+  shareExport: (request: SubAppShareExportRequest): Promise<SubAppShareExportResponse> =>
+    window.spark.invoke('sub-app:share:export', request),
+
+  shareImportPreview: (): Promise<SubAppShareImportPreviewResponse> =>
+    window.spark.invoke('sub-app:share:import-preview', {}),
+
+  shareImportApply: (request: SubAppShareImportApplyRequest): Promise<SubAppShareImportApplyResponse> =>
+    window.spark.invoke('sub-app:share:import-apply', request),
 } as const
 
 export type SubAppDetailsLike = SubAppDetails

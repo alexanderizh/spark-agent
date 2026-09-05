@@ -124,6 +124,30 @@ export class SubAppDataValidationError extends Error {
   }
 }
 
+export interface ImportSubAppReleaseInput {
+  version: number
+  source: string
+  config: Record<string, unknown>
+  manifest: SubAppManifest
+  publishedAt: string
+}
+
+export interface ImportSubAppDataInput {
+  namespace: string
+  key: string
+  value: unknown
+}
+
+export interface ImportSubAppParams {
+  id: string
+  manifest: SubAppManifest
+  draft: { source: string; config: Record<string, unknown> }
+  releases: ImportSubAppReleaseInput[]
+  /** 包内记录的当前生效版本；null = 从未发布（导入后保持草稿态）。 */
+  publishedVersion: number | null
+  data: ImportSubAppDataInput[]
+}
+
 export class SubAppRepository extends BaseRepository {
   constructor(db: SparkDatabase) {
     super(db, 'sub_apps')
@@ -553,6 +577,151 @@ export class SubAppRepository extends BaseRepository {
       if (saved == null) throw new SubAppDataValidationError('子应用数据写入后无法读取。')
       return saved
     })()
+  }
+
+  /**
+   * 分享包导入（覆盖语义）：同 id 应用整体替换——草稿 / 全部发布版本 /
+   * 应用数据 / 发布指针；不存在则新建。单事务保证 DB 侧导入原子性；
+   * 文件空间的替换由调用方在事务外做原子目录交换（见 SubAppShareService）。
+   *
+   * 版本号保留包内原值（UNIQUE(app_id, version) 拦重复）；发布指针优先指向
+   * 包内记录的 publishedVersion，未命中时回退最高版本；从未发布的包导入后
+   * 保持草稿态。导入即启用（与 publish 行为一致），草稿 revision 从 1 重建。
+   */
+  importApp(params: ImportSubAppParams): SubAppDetails {
+    return this.raw.transaction(() => {
+      const versions = params.releases.map((release) => release.version)
+      if (versions.some((version) => !Number.isInteger(version) || version <= 0)) {
+        throw new SubAppStateError('分享包内的发布版本号必须是正整数。')
+      }
+      if (new Set(versions).size !== versions.length) {
+        throw new SubAppStateError('分享包内的发布版本号重复，无法导入。')
+      }
+
+      const now = new Date().toISOString()
+      // 覆盖语义：先清空同 id 应用的全部关联行；releases/data 有 FK 指向
+      // sub_apps，必须先删子表再删主表（显式删除兜底旧库 pragma 缺失）。
+      this.raw.prepare('DELETE FROM sub_app_releases WHERE app_id = ?').run(params.id)
+      this.raw.prepare('DELETE FROM sub_app_data WHERE app_id = ?').run(params.id)
+      this.raw.prepare('DELETE FROM sub_apps WHERE id = ?').run(params.id)
+
+      const hasReleases = params.releases.length > 0
+      this.raw
+        .prepare(
+          `INSERT INTO sub_apps (
+            id, name, description, icon, entry, surface, publication_status, enabled,
+            draft_source, draft_config_json, draft_permissions_json, draft_revision,
+            published_release_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1, NULL, ?, ?)`,
+        )
+        .run(
+          params.id,
+          params.manifest.name,
+          params.manifest.description ?? '',
+          params.manifest.icon ?? null,
+          params.manifest.entry || 'index.html',
+          params.manifest.surface,
+          hasReleases ? 'published' : 'draft',
+          params.draft.source,
+          this.toJson(params.draft.config ?? {}),
+          this.toJson(params.manifest.permissions ?? []),
+          now,
+          now,
+        )
+
+      let publishedReleaseId: string | null = null
+      let maxVersion = 0
+      let maxVersionReleaseId: string | null = null
+      for (const release of params.releases) {
+        const releaseId = randomUUID()
+        if (release.version > maxVersion) {
+          maxVersion = release.version
+          maxVersionReleaseId = releaseId
+        }
+        if (params.publishedVersion != null && release.version === params.publishedVersion) {
+          publishedReleaseId = releaseId
+        }
+        this.raw
+          .prepare(
+            `INSERT INTO sub_app_releases (
+              id, app_id, version, source, config_json, permissions_json,
+              entry, surface, name, description, icon, published_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            releaseId,
+            params.id,
+            release.version,
+            release.source,
+            this.toJson(release.config ?? {}),
+            this.toJson(release.manifest.permissions ?? []),
+            release.manifest.entry || params.manifest.entry || 'index.html',
+            release.manifest.surface,
+            release.manifest.name,
+            release.manifest.description,
+            release.manifest.icon,
+            release.publishedAt,
+          )
+      }
+      // 指针回退：包内 publishedVersion 缺失/未命中时指向最高版本，避免
+      // 已发布应用导入后没有可运行版本。
+      const resolvedPublishedId = publishedReleaseId ?? (hasReleases ? maxVersionReleaseId : null)
+      if (resolvedPublishedId != null) {
+        this.raw
+          .prepare('UPDATE sub_apps SET published_release_id = ?, updated_at = ? WHERE id = ?')
+          .run(resolvedPublishedId, now, params.id)
+      }
+
+      for (const entry of params.data) {
+        let serialized: string
+        try {
+          serialized = JSON.stringify(entry.value)
+          if (serialized === undefined || serialized.length > 512_000) throw new Error('size')
+        } catch {
+          throw new SubAppDataValidationError(
+            `应用数据 ${entry.namespace}/${entry.key} 不是可持久化且不超过 512 KB 的 JSON 值，无法导入。`,
+          )
+        }
+        this.raw
+          .prepare(
+            `INSERT INTO sub_app_data
+              (app_id, namespace, key, value_json, revision, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 1, ?, ?)`,
+          )
+          .run(params.id, entry.namespace, entry.key, serialized, now, now)
+      }
+
+      const imported = this.get(params.id)
+      if (imported == null) throw new SubAppStateError('子应用导入后无法读取。')
+      return imported
+    })()
+  }
+
+  /** 导出打包用：读取应用的全部发布版本（含源码），按版本号升序。 */
+  listAllReleasesFull(id: string): SubAppRelease[] {
+    const rows = this.raw
+      .prepare('SELECT * FROM sub_app_releases WHERE app_id = ? ORDER BY version ASC')
+      .all(id) as SubAppReleaseRow[]
+    return rows.map((row) => this.toRelease(row))
+  }
+
+  /**
+   * 导出打包用：跨全部命名空间读取应用数据。
+   * 返回 total 供调用方判断是否被 maxEntries 截断（导出不静默截断）。
+   */
+  listAllData(appId: string, maxEntries = 2000): { entries: SubAppDataRecord[]; total: number } {
+    this.assertAppExists(appId)
+    const totalRow = this.raw
+      .prepare('SELECT COUNT(*) AS count FROM sub_app_data WHERE app_id = ?')
+      .get(appId) as { count: number }
+    const rows = this.raw
+      .prepare(
+        `SELECT * FROM sub_app_data WHERE app_id = ?
+         ORDER BY namespace COLLATE NOCASE ASC, key COLLATE NOCASE ASC
+         LIMIT ?`,
+      )
+      .all(appId, maxEntries) as SubAppDataRow[]
+    return { entries: rows.map((row) => this.toDataRecord(row)), total: totalRow.count }
   }
 
   private getRow(id: string): SubAppRow | null {

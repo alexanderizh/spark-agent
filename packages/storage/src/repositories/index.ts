@@ -194,6 +194,9 @@ export {
 } from './sub-app.repository.js'
 export type {
   CreateSubAppParams,
+  ImportSubAppDataInput,
+  ImportSubAppParams,
+  ImportSubAppReleaseInput,
   SubAppDataRow,
   SubAppListPage,
   SubAppReleaseRow,

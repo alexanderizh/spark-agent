@@ -148,6 +148,12 @@ export {
 } from './repositories/index.js'
 
 export type {
+  ImportSubAppDataInput,
+  ImportSubAppParams,
+  ImportSubAppReleaseInput,
+} from './repositories/index.js'
+
+export type {
   SessionRow,
   SessionLineageRow,
   SessionReferenceRow,

@@ -32,6 +32,7 @@ import {
 } from '../sub-app/subAppEvents'
 import { SubAppIcon } from '../sub-app/SubAppIcon'
 import { SUB_APP_ICON_OPTIONS } from '../sub-app/subAppIconOptions'
+import { SubAppExportModal, SubAppImportModal } from '../sub-app/SubAppShareModals'
 import { useApp } from '../AppContext'
 import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
@@ -109,6 +110,10 @@ export function SubAppsView(): React.ReactElement {
   const [guideOpen, setGuideOpen] = useState(false)
   const [iconEditorFor, setIconEditorFor] = useState<SubAppSummary | null>(null)
   const [iconSaving, setIconSaving] = useState(false)
+
+  // 分享 / 导入
+  const [exportFor, setExportFor] = useState<SubAppSummary | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -382,6 +387,12 @@ export function SubAppsView(): React.ReactElement {
             </Button>
           </Tooltip>
           <Button
+            icon={<Icons.Upload size={15} />}
+            onClick={() => setImportOpen(true)}
+          >
+            导入
+          </Button>
+          <Button
             type="primary"
             icon={<Icons.MessageSquare size={15} />}
             onClick={() => setGuideOpen(true)}
@@ -466,6 +477,15 @@ export function SubAppsView(): React.ReactElement {
                         },
                       ]
                     : []),
+                  {
+                    key: 'share',
+                    label: (
+                      <span className="sa-card-menu-item">
+                        <Icons.Download size={14} /> 分享导出
+                      </span>
+                    ),
+                    onClick: () => setExportFor(app),
+                  },
                   { type: 'divider' as const },
                   ...(app.publicationStatus === 'archived'
                     ? []
@@ -655,6 +675,22 @@ export function SubAppsView(): React.ReactElement {
           </ul>
         </div>
       </Modal>
+
+      {/* key 随目标应用变化：切换应用时弹窗重挂载，勾选与结果状态自然复位。 */}
+      <SubAppExportModal
+        key={exportFor?.id ?? 'closed'}
+        app={exportFor}
+        onClose={() => setExportFor(null)}
+      />
+
+      <SubAppImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          notifySubAppDirectoryChanged()
+          void reload()
+        }}
+      />
 
       <Modal
         title={iconEditorFor == null ? '设置应用图标' : `设置「${iconEditorFor.name}」图标`}
