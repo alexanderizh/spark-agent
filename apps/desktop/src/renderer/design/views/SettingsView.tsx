@@ -3551,6 +3551,7 @@ export function PermissionsSection() {
                 options={[
                   { label: 'Claude SDK', value: 'claude-sdk' },
                   { label: 'Codex', value: 'codex' },
+                  { label: 'Spark', value: 'spark' },
                 ]}
               />
             </div>

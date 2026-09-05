@@ -154,7 +154,25 @@ vi.mock('antd', () => ({
       ))}
     </select>
   ),
-  Switch: () => <button type="button" role="switch" />,
+  Switch: ({
+    checked,
+    disabled,
+    onChange,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    checked?: boolean
+    disabled?: boolean
+    onChange?: (checked: boolean) => void
+  }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked === true ? 'true' : 'false'}
+      disabled={disabled === true}
+      onClick={() => onChange?.(!checked)}
+      {...props}
+    />
+  ),
 }))
 
 vi.mock('../components/ProviderLogo', () => ({
@@ -1632,5 +1650,127 @@ describe('getMediaRequestPreviewUrl', () => {
 
   it('回归：midjourney 图片仍走 /imagine', () => {
     expect(preview('image', 'midjourney')).toBe(`${BASE}/imagine`)
+  })
+})
+
+describe('ProviderEditPanel spark executor switch', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  beforeEach(() => {
+    mocks.invokers.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    if (root) act(() => root?.unmount())
+    root = null
+    container.remove()
+  })
+
+  const renderEditPanel = async (profile: Record<string, unknown>) => {
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-test' })),
+    )
+    const updateProvider = vi.fn(async () => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible profileId={String(profile.id)} onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    return { updateProvider, saveButton }
+  }
+
+  const findSparkSwitch = () => {
+    const switches = Array.from(container.querySelectorAll('button[role="switch"]'))
+    // 执行引擎开关是表单中唯一「执行引擎」标签后的 Switch；按相邻标签文本定位
+    const labels = Array.from(container.querySelectorAll('label.pv_form_label'))
+    const executorLabel = labels.find((label) => label.textContent?.includes('执行引擎'))
+    if (executorLabel == null) return null
+    return (
+      switches.find((button) => button.closest('div')?.previousElementSibling === executorLabel) ??
+      null
+    )
+  }
+
+  it('disables the switch with a reason for chat-only openai providers', async () => {
+    const { updateProvider, saveButton } = await renderEditPanel({
+      id: 'provider-spark-chat',
+      name: 'Chat Only Provider',
+      provider: 'openai',
+      defaultModel: 'gpt-5',
+      modelIds: ['gpt-5'],
+      codexApiKind: 'chat',
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: '',
+      createdAt: '',
+    })
+
+    const sparkSwitch = findSparkSwitch()
+    expect(sparkSwitch).not.toBeNull()
+    expect(sparkSwitch?.hasAttribute('disabled')).toBe(true)
+    expect(container.textContent).toContain('Spark 执行器暂不支持 Chat Completions API 渠道')
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    // 置灰态保存时强制下发 false，保持落库数据一致
+    expect(updateProvider).toHaveBeenCalled()
+    expect(updateProvider.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ useSparkExecutor: false }),
+    )
+  })
+
+  it('saves useSparkExecutor=true after enabling on an anthropic provider', async () => {
+    const profile = {
+      id: 'provider-spark-anthropic',
+      name: 'Anthropic Provider',
+      provider: 'anthropic',
+      defaultModel: 'claude-sonnet-5',
+      modelIds: ['claude-sonnet-5'],
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: '',
+      createdAt: '',
+    }
+    const { updateProvider, saveButton } = await renderEditPanel(profile)
+
+    const sparkSwitch = findSparkSwitch()
+    expect(sparkSwitch).not.toBeNull()
+    expect(sparkSwitch?.hasAttribute('disabled')).toBe(false)
+    expect(sparkSwitch?.getAttribute('aria-checked')).toBe('false')
+
+    await act(async () => {
+      sparkSwitch?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+    expect(sparkSwitch?.getAttribute('aria-checked')).toBe('true')
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    expect(updateProvider).toHaveBeenCalled()
+    expect(updateProvider.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ useSparkExecutor: true }),
+    )
   })
 })

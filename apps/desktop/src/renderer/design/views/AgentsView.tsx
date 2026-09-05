@@ -30,6 +30,7 @@ import {
 } from '../teamNavigation'
 import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
@@ -102,6 +103,7 @@ const SORT_OPTIONS: Array<{ value: AgentSortKey; label: string }> = [
 const adapterOptions = [
   { label: 'Claude SDK', value: 'claude-sdk' },
   { label: 'Codex', value: 'codex' },
+  { label: 'Spark', value: 'spark' },
 ]
 
 const reasoningOptions = [
@@ -1485,10 +1487,7 @@ function AgentsTabContent({
               />
             </Field>
             <div className="agent-form-grid-wide">
-              <PromptEditor
-                value={draft.prompt}
-                onChange={(next) => updateDraft('prompt', next)}
-              />
+              <PromptEditor value={draft.prompt} onChange={(next) => updateDraft('prompt', next)} />
             </div>
           </div>
         </section>
@@ -1802,7 +1801,7 @@ function AgentCard({
     agent.modelId?.trim() ||
     provider?.defaultModel ||
     provider?.modelIds[0] ||
-    (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
+    (agent.agentAdapter === 'codex' ? 'Codex' : agent.agentAdapter === 'spark' ? 'Spark' : 'Claude')
   const skillCount = countExistingRefs(agent.skillIds, skills)
   const ruleCount = countExistingRefs(agent.ruleIds, rules)
   const hasMetaTags = agent.isDefault || skillCount > 0 || workflow != null || ruleCount > 0
@@ -2054,13 +2053,7 @@ function SectionHeader({ title, desc }: { title: string; desc?: string }) {
  *  - 主体：行号 + textarea，monospace，code 主题
  *  - 全屏：toggle 一个 className，CSS 用 fixed 定位撑满屏幕
  */
-function PromptEditor({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (next: string) => void
-}) {
+function PromptEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   const [fullscreen, setFullscreen] = useState(false)
   const lineCount = Math.max(1, value.split('\n').length)
   const lines = useMemo(() => Array.from({ length: lineCount }, (_, i) => i + 1), [lineCount])
@@ -2387,14 +2380,21 @@ const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }>
 const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> =
   SHARED_CODEX_PERMISSION_MODE_OPTIONS.map(({ value, label }) => ({ value, label }))
 
+const SPARK_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> =
+  SHARED_SPARK_PERMISSION_MODE_OPTIONS.map(({ value, label }) => ({ value, label }))
+
 function getPermissionOptions(
   adapter: SessionAgentAdapter,
 ): Array<{ value: SessionPermissionMode; label: string }> {
-  return adapter === 'codex' ? CODEX_PERMISSION_OPTIONS : PERMISSION_OPTIONS
+  if (adapter === 'codex') return CODEX_PERMISSION_OPTIONS
+  if (adapter === 'spark') return SPARK_PERMISSION_OPTIONS
+  return PERMISSION_OPTIONS
 }
 
 function getDefaultPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
-  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+  if (adapter === 'codex') return 'codex-default'
+  if (adapter === 'spark') return 'spark-default'
+  return 'claude-ask'
 }
 
 function isPermissionModeAllowedForAdapter(

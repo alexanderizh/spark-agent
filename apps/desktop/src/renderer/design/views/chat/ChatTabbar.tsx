@@ -187,9 +187,11 @@ export function ChatTabbar({
   const hostAdapter =
     hostAgent?.agentAdapter === 'codex'
       ? 'Codex'
-      : hostAgent?.agentAdapter === 'claude'
-        ? 'Claude CLI'
-        : 'Claude SDK'
+      : hostAgent?.agentAdapter === 'spark'
+        ? 'Spark'
+        : hostAgent?.agentAdapter === 'claude'
+          ? 'Claude CLI'
+          : 'Claude SDK'
 
   return (
     <div

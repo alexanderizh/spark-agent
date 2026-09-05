@@ -109,3 +109,87 @@ describe('provider adapter selection', () => {
     expect(getProviderAdapterKind(sparkManagedProvider)).toBe('claude-sdk')
   })
 })
+
+describe('spark adapter compatibility', () => {
+  const anthropicRemote = profile({
+    id: 'remote-anthropic',
+    name: 'Remote Anthropic',
+    provider: 'anthropic',
+    defaultModel: 'claude-sonnet-5',
+    modelIds: ['claude-sonnet-5'],
+  })
+  const localCliClaude = profile({
+    id: 'local-cli',
+    name: '本地 Claude CLI',
+    provider: 'anthropic',
+    defaultModel: 'claude cli',
+    modelIds: ['claude cli'],
+  })
+  const localCliCodex = profile({
+    id: 'local-codex-cli',
+    name: '本地 Codex CLI',
+    provider: 'openai',
+    defaultModel: 'codex cli',
+    modelIds: ['codex cli'],
+  })
+
+  it('anthropic 渠道与 openai+responses 渠道可与 spark 适配器配对', () => {
+    expect(isProviderCompatibleWithAdapter(anthropicRemote, 'spark')).toBe(true)
+    expect(
+      isProviderCompatibleWithAdapter(
+        profile({
+          id: 'openai-responses',
+          name: 'OpenAI',
+          provider: 'openai',
+          codexApiKind: 'responses',
+        }),
+        'spark',
+      ),
+    ).toBe(true)
+  })
+
+  it('openai 渠道未写 codexApiKind 时按 responses 口径可与 spark 配对', () => {
+    expect(
+      isProviderCompatibleWithAdapter(
+        profile({ id: 'openai-legacy', name: 'Legacy OpenAI', provider: 'openai' }),
+        'spark',
+      ),
+    ).toBe(true)
+  })
+
+  it('仅 chat/completions 的 openai 渠道不可与 spark 适配器配对', () => {
+    expect(
+      isProviderCompatibleWithAdapter(
+        profile({
+          id: 'openai-chat',
+          name: 'Chat Only',
+          provider: 'openai',
+          codexApiKind: 'chat',
+        }),
+        'spark',
+      ),
+    ).toBe(false)
+  })
+
+  it('本地 CLI 渠道不参与 spark 适配器', () => {
+    expect(isProviderCompatibleWithAdapter(localCliClaude, 'spark')).toBe(false)
+    expect(isProviderCompatibleWithAdapter(localCliCodex, 'spark')).toBe(false)
+  })
+
+  it('媒体类渠道不参与 spark 适配器', () => {
+    expect(
+      isProviderCompatibleWithAdapter(
+        profile({ id: 'img', name: 'Image', provider: 'openai', modelType: 'image' }),
+        'spark',
+      ),
+    ).toBe(false)
+  })
+
+  it('spark 适配器无可用渠道时回退到 Claude 渠道', () => {
+    // 仅本地 CLI（spark 不接管）时，回退链落到 claude-sdk 的本地 CLI 渠道
+    expect(
+      getPreferredProviderWithAdapterFallback([localCliClaude, localCliCodex], undefined, 'spark')
+        ?.id,
+    ).toBe(localCliClaude.id)
+  })
+})

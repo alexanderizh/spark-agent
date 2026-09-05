@@ -991,6 +991,8 @@ export interface ProviderCreateRequest {
   model?: string
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /** 使用 Spark 执行器作为该渠道会话默认引擎；协议无法映射的渠道由表单层置灰不下发。 */
+  useSparkExecutor?: boolean
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。<=0 / undefined 视为未配置；优先级高于 supportsMillionContext。 */
   contextWindow?: number
@@ -1043,6 +1045,8 @@ export interface ProviderUpdateRequest {
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /** 使用 Spark 执行器；显式传 false 清除（协议无法映射的渠道由表单层强制下发 false）。 */
+  useSparkExecutor?: boolean
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。传 0 清除自定义；undefined 不修改；优先级高于 supportsMillionContext。 */
   contextWindow?: number

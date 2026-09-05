@@ -20,6 +20,8 @@ import { Icons } from '../Icons'
 import { ProviderModelCatalog } from '../components/ProviderModelCatalog'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotice'
+import { SparkExecutorSwitch } from './provider/SparkExecutorSwitch'
+import { sparkExecutorAvailability } from '../utils/sparkExecutorAvailability'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
@@ -151,6 +153,8 @@ type ProviderForm = {
   modelSchedules: ProviderModelSchedule[]
   endpoint: string
   codexApiKind: 'chat' | 'responses' | 'embedding'
+  /** 该渠道会话默认走 spark 引擎；协议无法映射时提交层强制 false */
+  useSparkExecutor: boolean
   supportsMillionContext: boolean
   /** 自定义上下文窗口 (tokens)；0 / undefined 表示按 256k 默认（或 supportsMillionContext=true 则 1M） */
   contextWindow: number
@@ -2606,6 +2610,7 @@ export function ProviderEditPanel({
     modelSchedules: [],
     endpoint: '',
     codexApiKind: 'chat',
+    useSparkExecutor: false,
     supportsMillionContext: false,
     contextWindow: 0,
     apiKey: '',
@@ -2771,6 +2776,7 @@ export function ProviderEditPanel({
                 preset.apiEndpoint,
                 preset.codexApiKind,
               ),
+              useSparkExecutor: false,
               supportsMillionContext: false,
               contextWindow: 0,
               apiKey: '',
@@ -2801,6 +2807,7 @@ export function ProviderEditPanel({
           modelSchedules: [],
           endpoint: '',
           codexApiKind: 'chat',
+          useSparkExecutor: false,
           supportsMillionContext: false,
           contextWindow: 0,
           apiKey: '',
@@ -2850,6 +2857,7 @@ export function ProviderEditPanel({
               p.apiEndpoint,
               p.codexApiKind,
             ),
+            useSparkExecutor: p.useSparkExecutor === true,
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
             apiKey,
@@ -3410,6 +3418,11 @@ export function ProviderEditPanel({
       const haiku = form.haikuModel.trim()
       const sonnet = form.sonnetModel.trim()
       const opus = form.opusModel.trim()
+      // 协议无法映射到 spark 引擎上游（仅 Chat Completions 渠道）或非对话模型时强制关闭，
+      // 开关置灰态下提交保持落库数据一致
+      const sparkExecutorEligible =
+        isChatModel && sparkExecutorAvailability(form.provider, form.codexApiKind).available
+      const effectiveUseSparkExecutor = sparkExecutorEligible && form.useSparkExecutor
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
@@ -3434,6 +3447,8 @@ export function ProviderEditPanel({
           modelSchedules,
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
+        // 始终显式下发：不可用渠道借此清除历史遗留的开启状态
+        req.useSparkExecutor = effectiveUseSparkExecutor
         Object.assign(req, editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty))
         await updateProvider(req)
       } else {
@@ -3447,6 +3462,7 @@ export function ProviderEditPanel({
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
+          ...(effectiveUseSparkExecutor && { useSparkExecutor: true }),
           supportsMillionContext: form.supportsMillionContext,
           ...(form.contextWindow > 0 && { contextWindow: form.contextWindow }),
           ...(haiku.length > 0 && { haikuModel: haiku }),
@@ -3933,6 +3949,15 @@ export function ProviderEditPanel({
                   value={form.codexApiKind}
                   apiEndpoint={form.endpoint}
                   onChange={(value) => set('codexApiKind', value)}
+                />
+              )}
+
+              {isChatModel && (
+                <SparkExecutorSwitch
+                  checked={form.useSparkExecutor}
+                  provider={form.provider}
+                  codexApiKind={form.codexApiKind}
+                  onChange={(checked) => set('useSparkExecutor', checked)}
                 />
               )}
 
