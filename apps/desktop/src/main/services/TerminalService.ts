@@ -83,6 +83,15 @@ class TerminalService {
     return runtime?.buffer ?? ''
   }
 
+  /** 清空输出 ring buffer（配合渲染端 term.clear() 做「清屏」；PTY 不受影响） */
+  clearBuffer(terminalId: string): boolean {
+    const runtime = this.terminals.get(terminalId)
+    if (runtime == null) return false
+    runtime.buffer = ''
+    runtime.bufferBytes = 0
+    return true
+  }
+
   input(terminalId: string, data: string): boolean {
     const runtime = this.terminals.get(terminalId)
     if (runtime == null || runtime.info.status !== 'running') return false

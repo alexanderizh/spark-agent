@@ -1675,6 +1675,9 @@ export const IpcSchemaRegistry = {
   'terminal:get-buffer': z.object({
     terminalId: z.string().min(1).max(200),
   }),
+  'terminal:clear': z.object({
+    terminalId: z.string().min(1).max(200),
+  }),
 
   // Usage Ledger
   'usage:record': z.object({

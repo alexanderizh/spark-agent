@@ -4148,6 +4148,14 @@ export interface TerminalGetBufferResponse {
   output: string
 }
 
+export interface TerminalClearRequest {
+  terminalId: TerminalId
+}
+
+export interface TerminalClearResponse {
+  cleared: boolean
+}
+
 /**
  * Streamed events for the built-in terminal panel. Main → renderer fan-out.
  *
@@ -6715,6 +6723,7 @@ export interface IpcChannelMap
   'terminal:kill': [TerminalKillRequest, TerminalKillResponse]
   'terminal:rename': [TerminalRenameRequest, TerminalRenameResponse]
   'terminal:get-buffer': [TerminalGetBufferRequest, TerminalGetBufferResponse]
+  'terminal:clear': [TerminalClearRequest, TerminalClearResponse]
 
   // Command
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]
@@ -7386,6 +7395,9 @@ export interface IpcStreamChannelMap {
   'stream:tray:new-session': Record<string, never>
   /** 用户从系统托盘菜单点击某个最近会话（主进程展示主窗口后推送，渲染端切换到该会话）*/
   'stream:tray:open-session': { sessionId: string }
+  /** 应用菜单编辑命令（macOS ⌘C/⌘A 走菜单 accelerator，主进程执行原生复制后
+   *  推送给渲染端；内置终端若持有选区/焦点则用 xterm 选区接管剪贴板）*/
+  'stream:app-menu:action': { action: 'app-copy' | 'app-select-all' }
   /** Built-in terminal panel events: data / exit / removed / etc. */
   'stream:terminal:event': TerminalStreamEvent
   /** 内置浏览器面板恢复为右侧面板（主进程 → 主窗口渲染端，携带需打开的 URL）*/

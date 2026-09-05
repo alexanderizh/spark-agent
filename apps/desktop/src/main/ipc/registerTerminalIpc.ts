@@ -61,4 +61,8 @@ export function registerTerminalIpc(): void {
   typedIpcHandle('terminal:get-buffer', async (req) => ({
     output: svc.getBuffer(req.terminalId),
   }))
+
+  typedIpcHandle('terminal:clear', async (req) => ({
+    cleared: svc.clearBuffer(req.terminalId),
+  }))
 }

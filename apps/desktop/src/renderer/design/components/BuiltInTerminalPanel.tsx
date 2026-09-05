@@ -9,7 +9,7 @@
  *   - 左侧 4px resize 竖条（参考 ChatInspector）
  *   - 关最后一个 tab → 整个面板关闭 + 后端 PTY kill
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -27,12 +27,20 @@ import {
   useTerminalSessions,
   type TerminalTabViewState,
 } from '../hooks/useTerminalSessions'
+import {
+  BuiltInTerminalContextMenu,
+  type TerminalContextMenuActions,
+  type TerminalContextMenuState,
+} from './terminal/BuiltInTerminalContextMenu'
+import { findLinkAtCell, pickTerminalCell } from './terminal/terminalLinkProbe'
 import type {
   TerminalId,
   TerminalStreamEvent,
   WorkspaceInfo,
 } from '@spark/protocol'
 import './BuiltInTerminalPanel.less'
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
 
 interface BuiltInTerminalPanelProps {
   sessionId: string
@@ -58,6 +66,99 @@ export function BuiltInTerminalPanel({
   const [renameTarget, setRenameTarget] = useState<TerminalId | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const widthRef = useRef(width)
+
+  // ─── xterm 实例注册表 + 应用菜单编辑命令联动 ────────────────────────────────
+  // macOS ⌘C/⌘A 走应用菜单 accelerator（主进程 dispatchEditAction），先执行原生
+  // 复制/全选，再推送 stream:app-menu:action；若焦点在终端内，这里用 xterm 选区接管。
+  const terminalsRef = useRef<Map<TerminalId, Terminal>>(new Map())
+  const registerTerm = useCallback(
+    (id: TerminalId, term: Terminal | null) => {
+      if (term == null) terminalsRef.current.delete(id)
+      else terminalsRef.current.set(id, term)
+    },
+    [],
+  )
+
+  const { invoke: openExternal } = useIpcInvoke('browser:open-external')
+  const { invoke: clearTerminalBuffer } = useIpcInvoke('terminal:clear')
+
+  useIpcStream('stream:app-menu:action', (event) => {
+    const active = document.activeElement
+    const host =
+      active instanceof Element
+        ? active.closest<HTMLElement>('.terminal-xterm[data-terminal-id]')
+        : null
+    if (host == null) return
+    const id = host.dataset.terminalId
+    if (id == null) return
+    const term = terminalsRef.current.get(id)
+    if (term == null) return
+    // 终端接管前先清掉主进程 copy/selectAll 留下的原生页面选区（xterm 选区不是
+    // 原生选区，不清会把侧栏/消息等 DOM 文本残留成蓝色 ::selection 高亮）
+    window.getSelection()?.removeAllRanges()
+    if (event.action === 'app-copy') {
+      if (term.hasSelection()) {
+        void navigator.clipboard.writeText(term.getSelection()).catch(() => {})
+      }
+      return
+    }
+    term.selectAll()
+  })
+
+  // ─── 右键菜单 ───────────────────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(null)
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const contextActions = useMemo<TerminalContextMenuActions>(() => {
+    const getTerm = (): Terminal | null => {
+      if (contextMenu == null) return null
+      return terminalsRef.current.get(contextMenu.terminalId) ?? null
+    }
+    const focusBack = (term: Terminal | null) => term?.focus()
+    return {
+      onCopy: () => {
+        const term = getTerm()
+        const text = term?.getSelection() ?? ''
+        if (term != null && text.length > 0) {
+          void navigator.clipboard.writeText(text).catch(() => {})
+        }
+        focusBack(term)
+      },
+      onPaste: () => {
+        const term = getTerm()
+        if (term == null) return
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text.length > 0) term.paste(text)
+          })
+          .catch(() => {})
+          .finally(() => focusBack(term))
+      },
+      onSelectAll: () => {
+        const term = getTerm()
+        term?.selectAll()
+        focusBack(term)
+      },
+      onClear: () => {
+        const term = getTerm()
+        // 视图清屏 + 清主进程 ring buffer，避免切 tab 补屏时旧内容复活
+        term?.clear()
+        if (contextMenu != null) {
+          void clearTerminalBuffer({ terminalId: contextMenu.terminalId }).catch(() => {})
+        }
+        focusBack(term)
+      },
+      onOpenLink: (url) => {
+        void openExternal({ url }).catch((err: unknown) => {
+          console.warn('[terminal] open link failed:', err)
+        })
+      },
+      onCopyLink: (url) => {
+        void navigator.clipboard.writeText(url).catch(() => {})
+      },
+    }
+  }, [contextMenu, clearTerminalBuffer, openExternal])
 
   // ─── resize handle (左侧竖条，水平拖动改宽度) ─────────────────────────────
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -206,9 +307,18 @@ export function BuiltInTerminalPanel({
             sessionId={sessionId}
             isActive={tab.id === activeTabId}
             workspace={workspace}
+            registerTerm={registerTerm}
+            onContextMenuRequest={setContextMenu}
           />
         ))}
       </div>
+      {contextMenu != null && (
+        <BuiltInTerminalContextMenu
+          state={contextMenu}
+          actions={contextActions}
+          onClose={closeContextMenu}
+        />
+      )}
       </div>
     </div>
   )
@@ -260,6 +370,10 @@ interface TerminalBodyProps {
   sessionId: string
   isActive: boolean
   workspace: WorkspaceInfo | null
+  /** 把 xterm 实例注册到面板级 registry（⌘C/⌘A 菜单联动、右键菜单用） */
+  registerTerm: (id: TerminalId, term: Terminal | null) => void
+  /** 右键菜单请求（坐标、选区、链接上下文），由面板统一渲染 */
+  onContextMenuRequest: (state: TerminalContextMenuState) => void
 }
 
 const TERMINAL_THEME_DARK = {
@@ -342,7 +456,14 @@ const TERMINAL_FONT_SIZE = 14
 const TERMINAL_LETTER_SPACING = -1
 const TERMINAL_LINE_HEIGHT = 1.2
 
-function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: TerminalBodyProps) {
+function TerminalBody({
+  tab,
+  sessionId,
+  isActive,
+  workspace: _workspace,
+  registerTerm,
+  onContextMenuRequest,
+}: TerminalBodyProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -374,12 +495,80 @@ function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: Termi
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    const webLinks = new WebLinksAddon()
+    // 链接点击：默认 handler 用无参 window.open() 造 about:blank 再跳转，会被主进程
+    // ExternalUrlPolicy 拦掉（表现为点了没反应）。改成直接带 URL 打开，由
+    // setWindowOpenHandler → browser:open-external 同款安全策略在系统浏览器打开。
+    const webLinks = new WebLinksAddon((_event, url) => {
+      window.open(url, '_blank')
+    })
     term.loadAddon(webLinks)
     term.open(container)
     termRef.current = term
     fitRef.current = fit
     webLinksRef.current = webLinks
+    registerTerm(tab.id, term)
+
+    // 把 PTY 尺寸同步给主进程（cols/rows 变化才发）
+    const syncPtySize = () => {
+      const { cols, rows } = term
+      if (cols <= 0 || rows <= 0) return
+      if (
+        lastColsRowsRef.current?.cols === cols &&
+        lastColsRowsRef.current?.rows === rows
+      ) {
+        return
+      }
+      lastColsRowsRef.current = { cols, rows }
+      void resizeIpc({ terminalId: tab.id, cols, rows }).catch(() => {})
+    }
+
+    // webfont 可能晚于首 fit 就绪，行高度量失真会让最后一行被裁掉（表现为
+    // “内容最后一节看不到”）；字体就绪后重 fit 一次修正。
+    if (typeof document !== 'undefined' && document.fonts?.ready != null) {
+      void document.fonts.ready.then(() => {
+        if (termRef.current !== term) return
+        requestAnimationFrame(() => {
+          try {
+            fit.fit()
+            syncPtySize()
+          } catch {
+            // ignore
+          }
+        })
+      })
+    }
+
+    // 剪贴板快捷键。macOS 上 ⌘C/⌘A/⌘V 通常已被应用菜单 accelerator 消费（主进程
+    // 走 stream:app-menu:action 联动）；这里覆盖 Windows/Linux 及按键直达渲染端的
+    // 场景。注意：Ctrl+C 无选区时必须放行，^C 才能继续作为 SIGINT 发给 PTY；
+    // Ctrl+A 是 readline「跳行首」，只拦 ⌘A 不拦 Ctrl+A。
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+      const mod = isMac ? event.metaKey : event.ctrlKey
+      if (!mod || event.altKey) return true
+      const key = event.key.toLowerCase()
+      if (key === 'c' && term.hasSelection()) {
+        event.preventDefault()
+        void navigator.clipboard.writeText(term.getSelection()).catch(() => {})
+        return false
+      }
+      if (key === 'v') {
+        event.preventDefault()
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text.length > 0) term.paste(text)
+          })
+          .catch(() => {})
+        return false
+      }
+      if (key === 'a' && isMac) {
+        event.preventDefault()
+        term.selectAll()
+        return false
+      }
+      return true
+    })
 
     // 输入
     term.onData((data) => {
@@ -400,9 +589,10 @@ function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: Termi
       termRef.current = null
       fitRef.current = null
       webLinksRef.current = null
+      registerTerm(tab.id, null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab.id])
+  }, [tab.id, registerTerm])
 
   // 主题切换：实时更新 xterm theme（不重建实例，保留 ring buffer）
   useEffect(() => {
@@ -515,11 +705,29 @@ function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: Termi
     }
   })
 
+  // 右键菜单：定位点击 cell 所在逻辑行的 URL，连同选区状态交给面板渲染
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const term = termRef.current
+    if (term == null) return
+    const rowsEl = containerRef.current?.querySelector<HTMLElement>('.xterm-rows') ?? null
+    const cell = rowsEl != null ? pickTerminalCell(term, e.clientX, e.clientY, rowsEl) : null
+    const linkUrl = cell != null ? findLinkAtCell(term, cell) : null
+    onContextMenuRequest({
+      x: e.clientX,
+      y: e.clientY,
+      terminalId: tab.id,
+      hasSelection: term.hasSelection(),
+      linkUrl,
+    })
+  }
+
   return (
     <div
       ref={containerRef}
       className={`terminal-xterm ${isActive ? 'active' : ''}`}
       data-terminal-id={tab.id}
+      onContextMenu={handleContextMenu}
     />
   )
 }

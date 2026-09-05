@@ -265,6 +265,13 @@ body.terminal-resizing {
   background: color-mix(in srgb, var(--text) 30%, transparent);
 }
 
+/* 终端右键菜单分隔线（复用 .action-menu / .context-action-menu 全局样式） */
+.terminal-context-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
 /* empty state */
 .builtin-terminal-panel .terminal-empty {
   position: absolute;

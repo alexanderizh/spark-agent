@@ -1270,20 +1270,69 @@ async function initializeApp(): Promise<void> {
 /**
  * 设置应用菜单。
  *
- * macOS 自带默认菜单（已含 ⌘⌥I 切换 DevTools），无需覆盖；
+ * macOS 覆盖默认菜单：默认 Edit 菜单的 ⌘C 走 role: 'copy'（webContents.copy），
+ * 只认原生 DOM 选区；xterm 的选区不是原生选区，⌘C 会复制不到任何内容。这里把
+ * Copy / Select All 换成自定义项——先执行原生操作（普通输入框/网页文本不受影响），
+ * 再推送 stream:app-menu:action，让内置终端在持有焦点+选区时用 xterm 选区接管。
  * Windows / Linux 在无边框窗口 + 未设置菜单的情况下，F12 / Ctrl+R 等开发者
  * 快捷键不可用（Chromium 的默认 DevTools 快捷键依赖应用菜单 role）。这里
  * 补一个最小菜单：F12 切换 DevTools、Ctrl+R 刷新，同时附带缩放/全屏。
  * `autoHideMenuBar: true` 让菜单栏默认隐藏，按 Alt 才显示，accelerator 始终生效。
  */
 function setupApplicationMenu(): void {
-  if (process.platform === 'darwin') return
-
   const zoomFocusedWindow = (action: 'in' | 'out' | 'reset') => {
     const win = BrowserWindow.getFocusedWindow() ?? getPreferredAppWindow()
     if (win != null) setBrowserZoom(win, action)
   }
 
+  /** 原生复制/全选后通知渲染端，终端在持有焦点时接管（见 BuiltInTerminalPanel） */
+  const dispatchEditAction = (action: 'app-copy' | 'app-select-all'): void => {
+    const win = BrowserWindow.getFocusedWindow() ?? getPreferredAppWindow()
+    if (win == null || win.isDestroyed()) return
+    if (action === 'app-copy') win.webContents.copy()
+    else win.webContents.selectAll()
+    win.webContents.send('stream:app-menu:action', { action })
+  }
+
+  const editMenu: Electron.MenuItemConstructorOptions = {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      {
+        label: 'Copy',
+        accelerator: 'Cmd+C',
+        click: () => dispatchEditAction('app-copy'),
+      },
+      { role: 'paste' },
+      { role: 'pasteAndMatchStyle' },
+      { role: 'delete' },
+      {
+        label: 'Select All',
+        accelerator: 'Cmd+A',
+        click: () => dispatchEditAction('app-select-all'),
+      },
+    ],
+  }
+
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        { role: 'appMenu' },
+        { label: 'File', submenu: [{ role: 'close' }] },
+        editMenu,
+        { role: 'viewMenu' },
+        { role: 'windowMenu' },
+      ]),
+    )
+    return
+  }
+
+  // Windows / Linux 不加 Edit 菜单：Ctrl+C/A/V 等必须原样到达渲染端，
+  // 否则终端内 Ctrl+C（SIGINT）会被菜单 accelerator 吞掉。终端复制粘贴
+  // 由 xterm attachCustomKeyEventHandler 处理（见 BuiltInTerminalPanel）。
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: '视图',
