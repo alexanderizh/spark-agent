@@ -5,10 +5,7 @@ import {
   VOICE_WORKLET_PROCESSOR_NAME,
   type VoiceWorkletChunk,
 } from './voiceCaptureWorklet'
-import {
-  createVoiceAudioLevelStore,
-  type VoiceAudioLevelStore,
-} from './voiceAudioLevel'
+import { createVoiceAudioLevelStore, type VoiceAudioLevelStore } from './voiceAudioLevel'
 import {
   acquireVoiceMediaStream,
   detectAudioInputDevices,
@@ -16,11 +13,27 @@ import {
   voiceCaptureErrorMessage,
 } from './voiceCapture'
 
-export type VoiceInputStatus = 'idle' | 'starting' | 'recording' | 'stopping' | 'error'
+export type VoiceInputStatus =
+  | 'idle'
+  | 'starting'
+  | 'recording'
+  | 'stopping'
+  /** 流式已结束，主进程正在用离线模型对整段音频重新识别 */
+  | 'refining'
+  | 'error'
+
+export interface VoiceRefinedPayload {
+  /** 本次会话流式识别已写入输入框的文本（精修后将被替换） */
+  previous: string
+  /** 离线精修后的整段文本 */
+  text: string
+}
 
 export interface UseVoiceInputOptions {
   /** 句尾锁定的最终文本（UI 应追加到已确认区/草稿） */
   onFinal?: (text: string) => void
+  /** 离线精修完成：UI 应把 previous 替换为 text（仅当 previous 仍是草稿后缀时替换才安全） */
+  onRefined?: (payload: VoiceRefinedPayload) => void
   /** 识别错误回调 */
   onError?: (message: string) => void
 }
@@ -49,8 +62,22 @@ interface ActiveSession {
   unsubscribe: () => void
 }
 
+/** 精修是流式结束后的异步过程；超时兜底强制收尾，避免状态卡死（正常 1-5s）。 */
+const REFINE_WAIT_TIMEOUT_MS = 90_000
+
+/** 与 ComposerV2 onFinal 追加规则一致的文本拼接（保证精修替换时后缀可精确匹配） */
+function appendSegment(prev: string, text: string): string {
+  if (!text) return prev
+  const needSpace = prev.length > 0 && !/\s$/.test(prev)
+  return prev + (needSpace ? ' ' : '') + text
+}
+
 /**
  * 语音识别管线 hook：开麦 → AudioWorklet 采 16k PCM → 推主进程 → 收 partial/final。
+ *
+ * 混合识别（方案A）：录音期间流式 partial/final 实时预览；停止后主进程对缓存音频
+ * 做离线精修，refined 事件携带整段文本，由 onRefined 回调整体替换流式结果。
+ * 精修模型未安装时主进程直接结束，行为与纯流式一致。
  *
  * 前置条件：语音包已就绪（native + model）。本 hook 不负责完整性检测与按需下载，
  * 由调用方（麦克风按钮）通过 useVoiceIntegrity 确认 ready 后再调用 start()。
@@ -63,13 +90,19 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   // 用 ref 持有最新回调，避免 start/stop 闭包持有过期引用
   const onFinalRef = useRef(options.onFinal)
+  const onRefinedRef = useRef(options.onRefined)
   const onErrorRef = useRef(options.onError)
   onFinalRef.current = options.onFinal
+  onRefinedRef.current = options.onRefined
   onErrorRef.current = options.onError
 
   const activeRef = useRef<ActiveSession | null>(null)
   const startingRef = useRef(false)
   const cancelStartRef = useRef(false)
+  /** 本次会话流式 final 累积文本；精修完成时作为 previous 提供给 onRefined */
+  const sessionWrittenRef = useRef('')
+  /** 精修等待态：保留事件订阅直到 refined/session-stopped，或超时强制收尾 */
+  const refiningRef = useRef<{ session: ActiveSession; timer: number } | null>(null)
 
   const releaseCapture = useCallback((session: ActiveSession) => {
     try {
@@ -87,10 +120,26 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
   }, [])
 
-  const teardownSession = useCallback((session: ActiveSession) => {
-    releaseCapture(session)
+  const teardownSession = useCallback(
+    (session: ActiveSession) => {
+      releaseCapture(session)
+      session.unsubscribe()
+    },
+    [releaseCapture],
+  )
+
+  /** 精修结束（收到 session-stopped 或超时）：退订事件并复位状态 */
+  const finishRefining = useCallback((session: ActiveSession) => {
+    const pending = refiningRef.current
+    if (!pending || pending.session !== session) return
+    refiningRef.current = null
+    window.clearTimeout(pending.timer)
     session.unsubscribe()
-  }, [releaseCapture])
+    sessionWrittenRef.current = ''
+    setPartialText('')
+    audioLevelStoreRef.current.reset()
+    setStatus('idle')
+  }, [])
 
   const stop = useCallback(async () => {
     const session = activeRef.current
@@ -112,24 +161,41 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     setStatus('stopping')
     // 先停止本地采集，但保留识别事件订阅，确保主进程 stop 时刷出的最后一句 final 不丢。
     releaseCapture(session)
+    let refining = false
     try {
-      await window.spark.invoke('voice:stop', { sessionId: session.sessionId })
+      const res = await window.spark.invoke('voice:stop', { sessionId: session.sessionId })
+      refining = res?.refining === true
     } catch {
       // 停止失败不阻塞 UI
-    } finally {
-      session.unsubscribe()
     }
+    if (refining) {
+      // 主进程正在离线精修：保持订阅等待 refined + session-stopped 再收尾
+      setPartialText('')
+      audioLevelStoreRef.current.reset()
+      const timer = window.setTimeout(() => {
+        console.warn('[voice-input] voice refine wait timeout, force cleanup')
+        finishRefining(session)
+      }, REFINE_WAIT_TIMEOUT_MS)
+      refiningRef.current = { session, timer }
+      setStatus('refining')
+      return
+    }
+    session.unsubscribe()
+    sessionWrittenRef.current = ''
     setPartialText('')
     audioLevelStoreRef.current.reset()
     setStatus('idle')
-  }, [releaseCapture])
+  }, [releaseCapture, finishRefining])
 
   const start = useCallback(async () => {
     if (activeRef.current || startingRef.current) return
+    // 上一段精修尚未收尾（通常 1-5s）：忽略本次开启，避免两段会话的替换逻辑交叉
+    if (refiningRef.current) return
     startingRef.current = true
     cancelStartRef.current = false
     setError(null)
     setPartialText('')
+    sessionWrittenRef.current = ''
     setStatus('starting')
 
     let sessionId: string | null = null
@@ -196,15 +262,28 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           setPartialText(event.text ?? '')
         } else if (event.type === 'final') {
           const text = (event.text ?? '').trim()
-          if (text) onFinalRef.current?.(text)
+          if (text) {
+            sessionWrittenRef.current = appendSegment(sessionWrittenRef.current, text)
+            onFinalRef.current?.(text)
+          }
           setPartialText('')
+        } else if (event.type === 'refined') {
+          const text = (event.text ?? '').trim()
+          const previous = sessionWrittenRef.current
+          sessionWrittenRef.current = ''
+          if (text) onRefinedRef.current?.({ previous, text })
         } else if (event.type === 'error') {
           const msg = event.message ?? '语音识别错误'
           setError(msg)
           onErrorRef.current?.(msg)
           void stop()
         } else if (event.type === 'session-stopped') {
-          void stop()
+          const pending = refiningRef.current
+          if (pending && pending.session.sessionId === sessionId) {
+            finishRefining(pending.session)
+          } else {
+            void stop()
+          }
         }
       })
 
@@ -260,9 +339,9 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           ? err.message
           : err instanceof DOMException
             ? voiceCaptureErrorMessage(err)
-          : err instanceof Error
-            ? err.message
-            : String(err)
+            : err instanceof Error
+              ? err.message
+              : String(err)
       if (!cancelled && !(err instanceof VoiceCaptureError)) {
         console.error(`[voice-input] ${startStage}失败`, err)
       }
@@ -280,6 +359,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
         void window.spark.invoke('voice:stop', { sessionId }).catch(() => {})
       }
       setPartialText('')
+      sessionWrittenRef.current = ''
       audioLevelStoreRef.current.reset()
       if (cancelled) {
         setStatus('idle')
@@ -305,10 +385,16 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
   }, [start, stop])
 
-  // 卸载时确保释放麦克风与音频上下文
+  // 卸载时确保释放麦克风与音频上下文，并清理可能残留的精修等待态
   useEffect(() => {
     return () => {
       cancelStartRef.current = true
+      const pending = refiningRef.current
+      if (pending) {
+        refiningRef.current = null
+        window.clearTimeout(pending.timer)
+        pending.session.unsubscribe()
+      }
       const session = activeRef.current
       if (!session) return
       activeRef.current = null

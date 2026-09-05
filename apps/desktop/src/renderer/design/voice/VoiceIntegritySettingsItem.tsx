@@ -1,9 +1,10 @@
 /**
  * VoiceIntegritySettingsItem — 设置 → 完整性 面板中的「语音输入 (ASR)」检测与安装卡片。
  *
- * 展示两个独立组件的就绪状态：
+ * 展示各组件的就绪状态：
  *   - native: sherpa-onnx native 推理模块（按平台 prebuilt）
  *   - model:  paraformer 流式 ASR 模型 + silero VAD
+ *   - refine: SenseVoice 离线精修模型（可选，说完后整段重识别替换流式结果）
  *
  * 视觉风格对齐 IntegritySection 中已有的 SDK / FFmpeg / Playwright 完整性项：
  *   - 复用 `.integrity-sdk-card`、`.integrity-sdk-row`、`.badge .dot` 等现有类与 design token
@@ -23,16 +24,20 @@ import { Icons } from '../Icons'
 import { useVoiceIntegrity } from './useVoiceIntegrity'
 import './voice.less'
 
-const COMPONENT_ORDER: readonly VoicePackComponent[] = ['native', 'model'] as const
+const COMPONENT_ORDER: readonly VoicePackComponent[] = ['native', 'model', 'refine'] as const
 
 const COMPONENT_LABEL: Record<VoicePackComponent, string> = {
   native: '推理引擎 (native)',
   model: '识别模型 (model)',
+  refine: '精修模型 (refine)',
 }
 
 const COMPONENT_DESC: Record<VoicePackComponent, string> = {
-  native: 'sherpa-onnx native 模块，提供 OnnxRecognizer 流式推理调用。',
+  native:
+    'sherpa-onnx native 模块，提供 OnlineRecognizer 流式推理与 OfflineRecognizer 整段识别调用。',
   model: 'Paraformer 流式中文 ASR 模型 + silero VAD，约 219 MB。',
+  refine:
+    'SenseVoice 离线整段识别模型（可选，约 230 MB），说完后重识别整段音频以提升准确率并补齐标点。',
 }
 
 const PROGRESS_STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {
@@ -71,7 +76,7 @@ function describeLatest(c: VoiceComponentStatus | null): string | null {
   return `最新 v${c.latestVersion}`
 }
 
-function renderComponentBadge(c: VoiceComponentStatus | null): ReactElement {
+function renderComponentBadge(c: VoiceComponentStatus | null, optional = false): ReactElement {
   if (!c) return <span className="badge dot">未知</span>
   switch (c.state) {
     case 'ready':
@@ -79,7 +84,12 @@ function renderComponentBadge(c: VoiceComponentStatus | null): ReactElement {
     case 'downloading':
       return <span className="badge warning dot">下载中</span>
     case 'missing':
-      return <span className="badge error dot">未安装</span>
+      // 可选组件缺失属于正常状态，不渲染成红色告警
+      return optional ? (
+        <span className="badge dot">未安装</span>
+      ) : (
+        <span className="badge error dot">未安装</span>
+      )
     case 'error':
       return <span className="badge error dot">失败</span>
     default:
@@ -89,8 +99,7 @@ function renderComponentBadge(c: VoiceComponentStatus | null): ReactElement {
 
 function VoiceProgressView({ progress }: { progress: VoiceInstallProgress }): ReactElement {
   const rawPercent = progress.percent
-  const percent =
-    rawPercent == null ? null : Math.max(0, Math.min(100, Math.round(rawPercent)))
+  const percent = rawPercent == null ? null : Math.max(0, Math.min(100, Math.round(rawPercent)))
   const label = percent == null ? '准备中' : `${percent}%`
   const active = progress.state !== 'done' && progress.state !== 'error'
   return (
@@ -118,6 +127,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
 
   const native = findComponent(status.components, 'native')
   const model = findComponent(status.components, 'model')
+  const refine = findComponent(status.components, 'refine')
 
   const isUnsupported = !status.supported
   const isInstalling = status.downloading
@@ -175,8 +185,9 @@ export function VoiceIntegritySettingsItem(): ReactElement {
         <div className="voice-integrity-heading">
           <h2>语音输入 (ASR)</h2>
           <div className="lede">
-            离线语音输入依赖跨平台 native 推理引擎与中文识别模型，首次使用时按需下载
-            （约 230 MB，视平台而定），不打进安装包。
+            离线语音输入依赖跨平台 native 推理引擎与中文识别模型，首次使用时按需下载 （约 230
+            MB，视平台而定），不打进安装包。安装可选的精修模型后，说完话会
+            自动整段重新识别，替换实时预览文本以获得更高准确率与标点。
           </div>
         </div>
         <div className="voice-integrity-header-actions">
@@ -205,14 +216,20 @@ export function VoiceIntegritySettingsItem(): ReactElement {
       {!isUnsupported && (
         <div className="settings-card integrity-sdk-card voice-integrity-card">
           {COMPONENT_ORDER.map((key, idx) => {
-            const comp = key === 'native' ? native : model
+            const comp = key === 'native' ? native : key === 'model' ? model : refine
             const latest = describeLatest(comp)
             const versionText = describeVersion(comp)
             const versionRow = latest ? `${versionText} · ${latest}` : versionText
             return (
               <div key={key} className={`integrity-sdk-row ${idx > 0 ? 'bordered' : ''}`}>
                 <div className="integrity-tool-icon">
-                  {key === 'native' ? <Icons.Cpu size={14} /> : <Icons.Package size={14} />}
+                  {key === 'native' ? (
+                    <Icons.Cpu size={14} />
+                  ) : key === 'refine' ? (
+                    <Icons.Wand size={14} />
+                  ) : (
+                    <Icons.Package size={14} />
+                  )}
                 </div>
                 <div className="integrity-sdk-info">
                   <div className="integrity-sdk-name">{COMPONENT_LABEL[key]}</div>
@@ -223,7 +240,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
                   <div className="voice-integrity-desc">{COMPONENT_DESC[key]}</div>
                 </div>
                 <div className="integrity-sdk-right">
-                  {renderComponentBadge(comp)}
+                  {renderComponentBadge(comp, key === 'refine')}
                   {activeProgress?.component === key && (
                     <span className="badge warning dot">
                       {PROGRESS_STATE_LABEL[activeProgress.state]}
@@ -240,9 +257,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
             </div>
           )}
 
-          {status.lastError && (
-            <div className="integrity-sdk-error">{status.lastError}</div>
-          )}
+          {status.lastError && <div className="integrity-sdk-error">{status.lastError}</div>}
         </div>
       )}
 

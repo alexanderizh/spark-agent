@@ -6,12 +6,19 @@
  * OnlineRecognizer 增量解码 -> partial(整体替换)/final(追加) 文本回填到输入框。
  *
  * native 模块与模型文件均通过 MinIO 自建源按需下载到 userData，不打进 asar。
+ *
+ * 混合识别（方案A）：录音期间流式 partial/final 实时预览，主进程同时缓存整段 PCM；
+ * 停止后若已安装离线精修模型（SenseVoice），对整段音频重新识别并以 refined 事件
+ * 推送整段文本，由 UI 替换流式结果，显著提升准确率并补齐标点。
  */
 
 // ─── 完整性 ─────────────────────────────────────────────────────────────────
 
-/** 语音包由两个独立组件构成：跨平台 native 推理模块 + 跨平台模型文件 */
-export type VoicePackComponent = 'native' | 'model'
+/**
+ * 语音包组件：跨平台 native 推理模块 + 流式识别模型 + 可选离线精修模型。
+ * refine 为可选增强（说完后整段重识别替换流式结果），缺失时语音输入回退纯流式，不影响 ready。
+ */
+export type VoicePackComponent = 'native' | 'model' | 'refine'
 
 export type VoicePackState = 'missing' | 'downloading' | 'ready' | 'error'
 
@@ -125,12 +132,18 @@ export interface VoiceStopRequest {
 export interface VoiceStopResponse {
   success: boolean
   message: string
+  /**
+   * true 表示主进程在停止流式识别后，正在用离线模型对整段音频重新识别。
+   * 渲染端应保持事件订阅等待 refined + session-stopped，再完成收尾。
+   */
+  refining?: boolean
 }
 
 export type VoiceRecognitionEventType =
   | 'session-started'
   | 'partial'
   | 'final'
+  | 'refined'
   | 'session-stopped'
   | 'error'
 
@@ -140,6 +153,7 @@ export interface VoiceRecognitionEvent {
   /**
    * partial: 当前句的实时识别结果（整体替换上一帧 partial，非追加）
    * final: VAD 句尾锁定后的完整句（由 UI 追加到已确认区）
+   * refined: 离线精修后的整段文本（由 UI 整体替换本次会话流式写入的内容）
    * session-started / session-stopped / error: 空字符串
    */
   text?: string

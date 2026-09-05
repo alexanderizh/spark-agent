@@ -3,7 +3,7 @@
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useVoiceInput, type UseVoiceInputResult } from './useVoiceInput'
+import { useVoiceInput, type UseVoiceInputOptions, type UseVoiceInputResult } from './useVoiceInput'
 
 vi.mock('./voiceCaptureWorklet', () => ({
   getVoiceWorkletUrl: () => 'blob:voice-worklet',
@@ -71,8 +71,8 @@ class MockAudioWorkletNode {
   disconnect = nodeDisconnect
 }
 
-function Harness(): null {
-  const current = useVoiceInput()
+function Harness({ options }: { options?: UseVoiceInputOptions } = {}): null {
+  const current = useVoiceInput(options)
   useEffect(() => {
     latest = current
   }, [current])
@@ -86,8 +86,9 @@ function voice(): UseVoiceInputResult {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
-    .IS_REACT_ACT_ENVIRONMENT = true
+  ;(
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
   latest = null
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -228,9 +229,7 @@ describe('useVoiceInput', () => {
     await act(async () => voice().start())
 
     expect(voice().status).toBe('error')
-    expect(voice().error).toBe(
-      '麦克风启动被系统中止。请确认设备已连接且未被其他应用占用后重试。',
-    )
+    expect(voice().error).toBe('麦克风启动被系统中止。请确认设备已连接且未被其他应用占用后重试。')
     expect(voice().error).not.toContain('The user aborted')
     expect(invoke).not.toHaveBeenCalledWith('voice:start', expect.anything())
     expect(consoleError).toHaveBeenCalledWith(
@@ -255,5 +254,65 @@ describe('useVoiceInput', () => {
     expect(voice().status).toBe('idle')
     expect(voice().error).toBe('麦克风已断开或停止工作，请检查输入设备后重试。')
     expect(invoke).toHaveBeenCalledWith('voice:stop', { sessionId: 'voice-123-1' })
+  })
+
+  it('waits in refining state and forwards the offline refined replacement after stop', async () => {
+    const onFinal = vi.fn()
+    const onRefined = vi.fn()
+    await act(async () => {
+      root?.render(<Harness options={{ onFinal, onRefined }} />)
+    })
+    await act(async () => voice().start())
+    expect(voice().status).toBe('recording')
+
+    const onMock = (window.spark as unknown as { on: ReturnType<typeof vi.fn> }).on
+    const handler = onMock.mock.calls.at(-1)?.[1] as (event: {
+      sessionId: string
+      type: string
+      text?: string
+    }) => void
+
+    await act(async () => {
+      handler({ sessionId: 'voice-123-1', type: 'final', text: '你好世界' })
+    })
+    expect(onFinal).toHaveBeenCalledWith('你好世界')
+
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'voice:stop') return { success: true, message: 'ok', refining: true }
+      return { success: true, message: 'ok' }
+    })
+
+    await act(async () => voice().stop())
+    expect(voice().status).toBe('refining')
+
+    await act(async () => {
+      handler({ sessionId: 'voice-123-1', type: 'refined', text: '你好，世界。' })
+    })
+    expect(onRefined).toHaveBeenCalledWith({ previous: '你好世界', text: '你好，世界。' })
+
+    await act(async () => {
+      handler({ sessionId: 'voice-123-1', type: 'session-stopped' })
+    })
+    expect(voice().status).toBe('idle')
+    expect(offRecognition).toHaveBeenCalled()
+  })
+
+  it('finishes immediately when the main process reports no offline refining', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'voice:request-microphone-permission') {
+        return { granted: true, status: 'granted', message: null }
+      }
+      if (channel === 'voice:start') {
+        return { success: true, message: 'ok', sessionId: 'voice-123-1' }
+      }
+      if (channel === 'voice:stop') return { success: true, message: 'ok', refining: false }
+      return { success: true, message: 'ok' }
+    })
+
+    await act(async () => voice().start())
+    await act(async () => voice().stop())
+
+    expect(voice().status).toBe('idle')
+    expect(offRecognition).toHaveBeenCalled()
   })
 })

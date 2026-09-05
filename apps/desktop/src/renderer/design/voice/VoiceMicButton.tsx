@@ -1,14 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Icons } from '../Icons'
 import type { VoiceInputStatus } from './useVoiceInput'
-import {
-  EMPTY_VOICE_WAVEFORM,
-  type VoiceAudioLevelStore,
-} from './voiceAudioLevel'
-import {
-  VOICE_INPUT_ARIA_SHORTCUT,
-  VOICE_INPUT_SHORTCUT_LABEL,
-} from './useVoiceInputShortcut'
+import { EMPTY_VOICE_WAVEFORM, type VoiceAudioLevelStore } from './voiceAudioLevel'
+import { VOICE_INPUT_ARIA_SHORTCUT, VOICE_INPUT_SHORTCUT_LABEL } from './useVoiceInputShortcut'
 import './voice.less'
 
 export interface VoiceMicButtonProps {
@@ -32,6 +26,7 @@ export interface VoiceMicButtonProps {
  * 输入框麦克风按钮（纯展示）：
  *   - 就绪空闲：麦克风图标
  *   - 录音中/启动中：红色脉冲
+ *   - 停止后精修中：spinner + “优化中”（离线重识别整段音频，通常几秒）
  *   - 未就绪：保持麦克风图标，点击后由确认弹窗说明下载要求
  *   - 下载中 / 平台不支持：禁用
  *
@@ -50,64 +45,73 @@ export function VoiceMicButton({
   const starting = status === 'starting'
   const recording = status === 'recording'
   const stopping = status === 'stopping'
+  const refining = status === 'refining'
   const title = unsupported
     ? '当前平台不支持语音输入'
     : starting || recording
       ? '停止语音输入'
       : stopping
         ? '正在停止语音输入…'
-        : status === 'error'
-          ? '语音输入启动失败，点击重试'
-      : checking
-        ? '正在检查语音包…'
-        : downloading
-          ? '语音包下载中…'
-          : ready
-            ? '语音输入'
-            : '首次使用需下载语音包'
+        : refining
+          ? '正在优化识别结果…'
+          : status === 'error'
+            ? '语音输入启动失败，点击重试'
+            : checking
+              ? '正在检查语音包…'
+              : downloading
+                ? '语音包下载中…'
+                : ready
+                  ? '语音输入'
+                  : '首次使用需下载语音包'
 
   const busy = checking || downloading
-  const isDisabled = Boolean(disabled) || unsupported || busy || status === 'stopping'
+  const isDisabled = Boolean(disabled) || unsupported || busy || status === 'stopping' || refining
 
   return (
     <span className="composer-voice-control">
       <button
-      type="button"
-      className={[
-        'composer-voice-btn',
-        starting ? 'is-starting' : '',
-        recording ? 'is-recording' : '',
-        stopping ? 'is-stopping' : '',
-        status === 'error' ? 'is-error' : '',
-        downloading ? 'is-downloading' : '',
-        !ready && !unsupported ? 'is-pending' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      aria-label={title}
-      aria-keyshortcuts={VOICE_INPUT_ARIA_SHORTCUT}
-      aria-describedby="composer-voice-shortcut-hint"
-      disabled={isDisabled}
-      onClick={onClick}
+        type="button"
+        className={[
+          'composer-voice-btn',
+          starting ? 'is-starting' : '',
+          recording ? 'is-recording' : '',
+          stopping ? 'is-stopping' : '',
+          refining ? 'is-refining' : '',
+          status === 'error' ? 'is-error' : '',
+          downloading ? 'is-downloading' : '',
+          !ready && !unsupported ? 'is-pending' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        aria-label={title}
+        aria-keyshortcuts={VOICE_INPUT_ARIA_SHORTCUT}
+        aria-describedby="composer-voice-shortcut-hint"
+        disabled={isDisabled}
+        onClick={onClick}
       >
-      {starting ? (
-        <>
-          <Icons.Spinner size={13} className="composer-voice-state-spinner" />
-          <span className="composer-voice-state-label">启动中</span>
-        </>
-      ) : recording ? (
-        <VoiceRecordingState audioLevelStore={audioLevelStore} />
-      ) : stopping ? (
-        <>
-          <Icons.Spinner size={13} className="composer-voice-state-spinner" />
-          <span className="composer-voice-state-label">结束中</span>
-        </>
-      ) : (
-        <>
-          <Icons.Mic size={16} />
-          {busy ? <Icons.Spinner size={10} className="composer-voice-spinner" /> : null}
-        </>
-      )}
+        {starting ? (
+          <>
+            <Icons.Spinner size={13} className="composer-voice-state-spinner" />
+            <span className="composer-voice-state-label">启动中</span>
+          </>
+        ) : recording ? (
+          <VoiceRecordingState audioLevelStore={audioLevelStore} />
+        ) : stopping ? (
+          <>
+            <Icons.Spinner size={13} className="composer-voice-state-spinner" />
+            <span className="composer-voice-state-label">结束中</span>
+          </>
+        ) : refining ? (
+          <>
+            <Icons.Spinner size={13} className="composer-voice-state-spinner" />
+            <span className="composer-voice-state-label">优化中</span>
+          </>
+        ) : (
+          <>
+            <Icons.Mic size={16} />
+            {busy ? <Icons.Spinner size={10} className="composer-voice-spinner" /> : null}
+          </>
+        )}
       </button>
       <span
         id="composer-voice-shortcut-hint"
@@ -161,7 +165,9 @@ function VoiceRecordingState({
       <span className="composer-voice-stop" aria-hidden="true">
         <i />
       </span>
-      <span className="composer-voice-visually-hidden" aria-live="polite">录入中</span>
+      <span className="composer-voice-visually-hidden" aria-live="polite">
+        录入中
+      </span>
     </>
   )
 }

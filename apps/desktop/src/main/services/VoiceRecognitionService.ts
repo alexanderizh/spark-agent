@@ -2,8 +2,8 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { createLogger } from '@spark/shared'
-import type { VoiceRecognitionEvent, VoiceStartRequest } from '@spark/protocol'
-import { resolveVoiceModelPaths } from './VoiceIntegrityService.js'
+import type { VoiceLanguage, VoiceRecognitionEvent, VoiceStartRequest } from '@spark/protocol'
+import { resolveVoiceModelPaths, resolveVoiceRefinePaths } from './VoiceIntegrityService.js'
 
 const log = createLogger('voice-recognition')
 
@@ -49,8 +49,42 @@ interface SherpaOnlineRecognizerConfig {
   blankPenalty?: number
 }
 
+interface SherpaOfflineStream {
+  acceptWaveform(obj: { samples: Float32Array; sampleRate: number }): void
+}
+
+interface SherpaOfflineRecognizerResult {
+  text: string
+  tokens?: string[]
+  timestamps?: number[]
+}
+
+interface SherpaOfflineRecognizer {
+  createStream(): SherpaOfflineStream
+  decode(stream: SherpaOfflineStream): void
+  getResult(stream: SherpaOfflineStream): SherpaOfflineRecognizerResult
+}
+
+interface SherpaOfflineRecognizerConfig {
+  featConfig?: { sampleRate: number; featureDim: number }
+  modelConfig: {
+    senseVoice?: {
+      model: string
+      language?: string
+      useInverseTextNormalization?: number | boolean
+    }
+    tokens: string
+    numThreads?: number
+    debug?: boolean
+    provider?: string
+  }
+  decodingMethod?: string
+}
+
 interface SherpaModule {
   OnlineRecognizer: new (config: SherpaOnlineRecognizerConfig) => SherpaOnlineRecognizer
+  /** 离线识别器：用于说话结束后整段精修；旧 native 包缺失时精修自动降级。 */
+  OfflineRecognizer?: new (config: SherpaOfflineRecognizerConfig) => SherpaOfflineRecognizer
 }
 
 interface VoiceModelDescriptor {
@@ -68,12 +102,20 @@ interface VoiceSession {
   sampleRate: number
   /** 上一帧 partial 文本，用于判断是否需要推送（整体替换） */
   lastPartial: string
+  /** 语种提示，离线精修时映射到 SenseVoice language 参数 */
+  language: VoiceLanguage
+  /** 会话内已锁定的分段 final（endpoint 句 + 停止 flush 句），精修失败时由 UI 保留这些文本 */
+  finals: string[]
+  /** 录音期间缓存的原始 PCM chunk（IPC 结构化克隆产物，可安全持有），供停止后整段精修 */
+  pcmChunks: Int16Array[]
+  totalSamples: number
 }
 
 type VoiceEventEmitter = (event: VoiceRecognitionEvent, ownerId: number) => void
 
 let cachedModule: SherpaModule | null = null
 let cachedRecognizer: { recognizer: SherpaOnlineRecognizer; configKey: string } | null = null
+let cachedRefineRecognizer: { recognizer: SherpaOfflineRecognizer; configKey: string } | null = null
 let sessionCounter = 0
 const sessions = new Map<string, VoiceSession>()
 
@@ -198,6 +240,110 @@ function int16ToFloat32(samples: Int16Array): Float32Array {
   return out
 }
 
+// ─── 离线精修（方案A：流式预览 + 停止后整段重识别替换）─────────────────────────
+//
+// 录音期间 feedVoiceAudio 同步缓存 PCM；停止后若已安装 SenseVoice 离线精修模型，
+// 对整段音频用 OfflineRecognizer 重新解码并以 refined 事件推送整段文本。
+// 精修是可选增强：模型缺失、加载失败或音频异常时静默回退流式结果。
+
+/** 短于该时长（约 5 帧）没有精修价值，直接保留流式结果 */
+const MIN_REFINE_AUDIO_SECONDS = 0.3
+/** 超长音频不做精修：避免离线解码长时间占用主进程与过大内存 */
+const MAX_REFINE_AUDIO_SECONDS = 600
+/** 分段解码粒度：段间让出事件循环，避免长音频一次 decode 阻塞主进程数秒 */
+const REFINE_SEGMENT_SECONDS = 30
+
+function senseVoiceLanguage(language: VoiceLanguage): string {
+  return language === 'auto' ? '' : language
+}
+
+function getOrCreateRefineRecognizer(
+  mod: SherpaModule,
+  language: VoiceLanguage,
+): SherpaOfflineRecognizer | null {
+  if (typeof mod.OfflineRecognizer !== 'function') return null
+  const paths = resolveVoiceRefinePaths()
+  if (!paths) return null
+  const lang = senseVoiceLanguage(language)
+  const key = `${paths.version}|${lang}`
+  if (cachedRefineRecognizer && cachedRefineRecognizer.configKey === key) {
+    return cachedRefineRecognizer.recognizer
+  }
+  const recognizer = new mod.OfflineRecognizer({
+    featConfig: { sampleRate: 16000, featureDim: 80 },
+    modelConfig: {
+      senseVoice: {
+        model: paths.modelPath,
+        language: lang,
+        useInverseTextNormalization: 1,
+      },
+      tokens: paths.tokensPath,
+      numThreads: 2,
+      debug: false,
+      provider: 'cpu',
+    },
+    decodingMethod: 'greedy_search',
+  })
+  cachedRefineRecognizer = { recognizer, configKey: key }
+  log.info(`Voice refine recognizer created (model ${paths.version}, language '${lang}')`)
+  return recognizer
+}
+
+/** ASCII 词字符之间拼接时补空格，保持英文可读；中文直接连接。 */
+function needsJoinSpace(left: string, right: string): boolean {
+  const tail = left[left.length - 1] ?? ''
+  const head = right[0] ?? ''
+  return /[A-Za-z0-9]/.test(tail) && /[A-Za-z0-9]/.test(head)
+}
+
+function smartJoinSegments(segments: string[]): string {
+  let out = ''
+  for (const segment of segments) {
+    if (!segment) continue
+    out = out ? out + (needsJoinSpace(out, segment) ? ' ' : '') + segment : segment
+  }
+  return out
+}
+
+function mergePcmChunks(chunks: Int16Array[], totalSamples: number): Int16Array {
+  const out = new Int16Array(totalSamples)
+  let offset = 0
+  for (const chunk of chunks) {
+    if (offset + chunk.length > out.length) break
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out
+}
+
+/**
+ * 整段离线识别：按 30s 分段 decode（SenseVoice 的原生窗口粒度），段间让出事件循环。
+ * 返回 null 表示精修不可用（native 包过旧 / 模型未安装），调用方回退流式结果。
+ */
+async function refineTranscript(
+  samples: Int16Array,
+  sampleRate: number,
+  language: VoiceLanguage,
+): Promise<string | null> {
+  const mod = loadSherpaModule()
+  const recognizer = getOrCreateRefineRecognizer(mod, language)
+  if (!recognizer) return null
+  const float32 = int16ToFloat32(samples)
+  const segmentSamples = Math.max(1, Math.floor(sampleRate * REFINE_SEGMENT_SECONDS))
+  const segments: string[] = []
+  for (let offset = 0; offset < float32.length; offset += segmentSamples) {
+    const slice = float32.subarray(offset, Math.min(offset + segmentSamples, float32.length))
+    if (slice.length === 0) break
+    const stream = recognizer.createStream()
+    stream.acceptWaveform({ sampleRate, samples: slice })
+    recognizer.decode(stream)
+    const text = (recognizer.getResult(stream).text ?? '').trim()
+    if (text) segments.push(text)
+    await new Promise<void>((resolveSegment) => setImmediate(resolveSegment))
+  }
+  return smartJoinSegments(segments)
+}
+
 /**
  * endpoint 触发时补一段静音并再解码一轮，把在线模型滞留的尾部 token 逼出来。
  * 必须在 reset 之前调用，否则句尾字丢失。
@@ -240,6 +386,10 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
       stream,
       sampleRate: params.sampleRate ?? 16000,
       lastPartial: '',
+      language: params.language ?? 'auto',
+      finals: [],
+      pcmChunks: [],
+      totalSamples: 0,
     }
     sessions.set(sessionId, session)
     emitPending({ type: 'session-started', sessionId, text: '' }, ownerId)
@@ -256,6 +406,9 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
 export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: number): void {
   const session = sessions.get(sessionId)
   if (!session || session.ownerId !== ownerId) return
+  // PCM 缓存优先于流式解码：即使解码抛错也保留整段音频供停止后精修
+  session.pcmChunks.push(samples)
+  session.totalSamples += samples.length
   try {
     const float32 = int16ToFloat32(samples)
     session.stream.acceptWaveform({ samples: float32, sampleRate: session.sampleRate })
@@ -273,6 +426,7 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: 
     if (session.recognizer.isEndpoint(session.stream)) {
       const finalText = flushTailTokens(session)
       if (finalText) {
+        session.finals.push(finalText)
         emitPending({ type: 'final', sessionId, text: finalText }, session.ownerId)
       }
       session.recognizer.reset(session.stream)
@@ -300,17 +454,32 @@ function emitPending(event: VoiceRecognitionEvent, ownerId: number): void {
   }
 }
 
-export function stopVoiceSession(sessionId?: string, ownerId?: number): void {
+/**
+ * 停止识别会话。
+ *
+ * mode='flush'（默认）：仅流式收尾（补尾部静音锁定最后一句 final）后立即结束。
+ * mode='refine'：流式收尾后，若精修条件满足（模型已安装、音频时长合理），
+ *   保留音频数据异步离线重识别，事件顺序为 final -> refined -> session-stopped；
+ *   精修不可用或失败时退化为 flush 行为（final -> session-stopped）。
+ *
+ * 返回是否进入离线精修（供 IPC 响应告知渲染端进入"优化中"状态）。
+ */
+export function stopVoiceSession(
+  sessionId?: string,
+  ownerId?: number,
+  mode: 'flush' | 'refine' = 'flush',
+): boolean {
   if (!sessionId) {
     // ownerId 存在时只停止该 renderer 的会话；内部维护调用可省略 ownerId 停止全部。
     for (const [id, session] of sessions) {
       if (ownerId == null || session.ownerId === ownerId) stopVoiceSession(id, ownerId)
     }
-    return
+    return false
   }
   const session = sessions.get(sessionId)
-  if (!session) return
-  if (ownerId != null && session.ownerId !== ownerId) return
+  if (!session) return false
+  if (ownerId != null && session.ownerId !== ownerId) return false
+  let tailText = ''
   try {
     // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final
     const tail = new Float32Array(Math.floor(session.sampleRate * STOP_TAIL_PADDING_SECONDS))
@@ -323,16 +492,56 @@ export function stopVoiceSession(sessionId?: string, ownerId?: number): void {
       session.recognizer.decode(session.stream)
     }
     const result = session.recognizer.getResult(session.stream)
-    const text = (result.text ?? '').trim()
-    if (text) emitPending({ type: 'final', sessionId, text }, session.ownerId)
+    tailText = (result.text ?? '').trim()
+    if (tailText) {
+      session.finals.push(tailText)
+      emitPending({ type: 'final', sessionId, text: tailText }, session.ownerId)
+    }
   } catch (err) {
     log.warn(
       `Voice stop cleanup error (${sessionId}): ${err instanceof Error ? err.message : String(err)}`,
     )
   }
+  // 会话先出表：精修期间允许开启新会话，互不影响（精修数据由下方闭包持有）
   sessions.delete(sessionId)
-  emitPending({ type: 'session-stopped', sessionId, text: '' }, session.ownerId)
-  log.info(`Voice session stopped: ${sessionId}`)
+
+  const durationSeconds = session.totalSamples / session.sampleRate
+  const shouldRefine =
+    mode === 'refine' &&
+    session.finals.length > 0 &&
+    durationSeconds >= MIN_REFINE_AUDIO_SECONDS &&
+    durationSeconds <= MAX_REFINE_AUDIO_SECONDS &&
+    // 同步确认精修模型可用，保证返回值与实际行为一致（渲染端据此决定是否等待 refined）
+    resolveVoiceRefinePaths() != null
+  if (!shouldRefine) {
+    emitPending({ type: 'session-stopped', sessionId, text: '' }, session.ownerId)
+    log.info(`Voice session stopped: ${sessionId}`)
+    return false
+  }
+
+  const pcm = mergePcmChunks(session.pcmChunks, session.totalSamples)
+  const { language, ownerId: sessionOwner, sampleRate } = session
+  // 精修结束后才推送 session-stopped，渲染端据此保持"优化中"状态
+  void refineTranscript(pcm, sampleRate, language)
+    .then((refinedText) => {
+      // 精修结果必须优于流式拼接才有替换意义：空结果直接保留流式文本
+      if (refinedText) {
+        emitPending({ type: 'refined', sessionId, text: refinedText }, sessionOwner)
+      } else {
+        log.info(`Voice refine returned empty text, keeping streaming result (${sessionId})`)
+      }
+    })
+    .catch((err) => {
+      // 精修失败静默回退流式结果，不打扰用户
+      log.warn(
+        `Voice refine failed (${sessionId}): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    })
+    .finally(() => {
+      emitPending({ type: 'session-stopped', sessionId, text: '' }, sessionOwner)
+      log.info(`Voice session stopped (refined): ${sessionId}`)
+    })
+  return true
 }
 
 /** 供测试与诊断使用 */
@@ -344,5 +553,6 @@ export function getActiveVoiceSessionCount(): number {
 export function resetVoiceEngineCache(): void {
   stopVoiceSession()
   cachedRecognizer = null
+  cachedRefineRecognizer = null
   cachedModule = null
 }

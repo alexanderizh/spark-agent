@@ -143,4 +143,103 @@ describe('VoiceIntegrityService', () => {
     })
     expect(result.status.ready).toBe(true)
   })
+
+  it('installs only the optional refine model when the core pack is already ready', async () => {
+    const platformKey = voicePlatformKey()
+    if (!platformKey) return
+    seedNativeRuntime(platformKey)
+    const modelDir = join(tempRoot, 'voice', 'model', '1.0.0')
+    mkdirSync(modelDir, { recursive: true })
+    writeFileSync(join(modelDir, 'model-package.json'), '{}')
+    writeFileSync(
+      join(tempRoot, 'voice', 'voice-state.json'),
+      JSON.stringify({
+        native: { version: '1.0.0', platformKey, artifactId: `voice.native.${platformKey}` },
+        model: { version: '1.0.0', artifactId: 'voice.model.paraformer' },
+      }),
+    )
+    // 核心包就绪 + manifest 提供 refine artifact → 非强制安装也应补装精修模型
+    serviceMocks.fetchManifest.mockResolvedValue({
+      schemaVersion: 1,
+      artifacts: [
+        {
+          id: `voice.native.${process.platform}-${process.arch}`,
+          type: 'voice',
+          name: 'Voice native',
+          version: '1.0.0',
+          url: 'https://example.test/native.tar.gz',
+          sha256: 'a'.repeat(64),
+          size: 10,
+          platform: process.platform,
+          arch: process.arch,
+          archive: { format: 'tar.gz' },
+        },
+        {
+          id: 'voice.model.paraformer',
+          type: 'voice',
+          name: 'Voice model',
+          version: '1.0.0',
+          url: 'https://example.test/model.tar.gz',
+          sha256: 'b'.repeat(64),
+          size: 20,
+          archive: { format: 'tar.gz' },
+        },
+        {
+          id: 'voice.refine.sense-voice',
+          type: 'voice',
+          name: 'Voice refine',
+          version: '1.0.0',
+          url: 'https://example.test/refine.tar.gz',
+          sha256: 'c'.repeat(64),
+          size: 30,
+          archive: { format: 'tar.gz' },
+        },
+      ],
+    })
+    serviceMocks.installBinaryArchive.mockImplementation(async (params: { destDir: string }) => {
+      mkdirSync(params.destDir, { recursive: true })
+      writeFileSync(
+        join(params.destDir, 'refine-package.json'),
+        JSON.stringify({
+          version: '1.0.0',
+          kind: 'sense-voice',
+          model: 'model.int8.onnx',
+          tokens: 'tokens.txt',
+        }),
+      )
+      return { destPath: params.destDir, fileCount: 1, entries: [] }
+    })
+
+    const result = await installVoicePack(false)
+
+    expect(result.success).toBe(true)
+    // 只下载精修模型，不重装已就绪的 native/model
+    expect(serviceMocks.installBinaryArchive).toHaveBeenCalledTimes(1)
+    expect(result.status.ready).toBe(true)
+    expect(result.status.components.find((item) => item.component === 'refine')?.state).toBe(
+      'ready',
+    )
+    // 精修模型缺失不参与 ready：卸掉目录后核心仍然 ready
+  })
+
+  it('keeps the pack ready when the optional refine component is missing', async () => {
+    const platformKey = voicePlatformKey()
+    if (!platformKey) return
+    seedNativeRuntime(platformKey)
+    const modelDir = join(tempRoot, 'voice', 'model', '1.0.0')
+    mkdirSync(modelDir, { recursive: true })
+    writeFileSync(join(modelDir, 'model-package.json'), '{}')
+    writeFileSync(
+      join(tempRoot, 'voice', 'voice-state.json'),
+      JSON.stringify({
+        native: { version: '1.0.0', platformKey, artifactId: `voice.native.${platformKey}` },
+        model: { version: '1.0.0', artifactId: 'voice.model.paraformer' },
+      }),
+    )
+
+    const status = await checkVoiceIntegrity(false)
+
+    expect(status.ready).toBe(true)
+    expect(status.components.find((item) => item.component === 'refine')?.state).toBe('missing')
+  })
 })

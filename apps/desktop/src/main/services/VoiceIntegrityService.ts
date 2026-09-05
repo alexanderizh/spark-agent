@@ -23,6 +23,7 @@ const log = createLogger('voice-integrity')
 /** manifest 中语音包 artifact id 前缀约定 */
 const VOICE_NATIVE_ID_PREFIX = 'voice.native.'
 const VOICE_MODEL_ID_PREFIX = 'voice.model.'
+const VOICE_REFINE_ID_PREFIX = 'voice.refine.'
 /** 识别模型约 219MB，弱网下不能沿用通用归档的 2 分钟超时。 */
 const VOICE_ARCHIVE_DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -57,6 +58,10 @@ export function getVoiceModelDir(): string {
   return join(getVoiceRootPath(), 'model')
 }
 
+export function getVoiceRefineDir(): string {
+  return join(getVoiceRootPath(), 'refine')
+}
+
 interface VoiceStateNative {
   version: string
   platformKey: string
@@ -66,9 +71,14 @@ interface VoiceStateModel {
   version: string
   artifactId: string
 }
+interface VoiceStateRefine {
+  version: string
+  artifactId: string
+}
 interface VoiceState {
   native?: VoiceStateNative
   model?: VoiceStateModel
+  refine?: VoiceStateRefine
   updatedAt?: string
 }
 
@@ -141,6 +151,46 @@ export function resolveVoiceModelPaths(): VoiceModelPaths | null {
   return { nativeDir: native.nativeDir, modelDir, nativeMain: native.nativeMain }
 }
 
+/** 已安装的离线精修模型（可选组件）解析结果 */
+export interface VoiceRefinePaths {
+  version: string
+  /** SenseVoice 离线模型 onnx 文件绝对路径 */
+  modelPath: string
+  /** tokens.txt 绝对路径 */
+  tokensPath: string
+}
+
+/**
+ * 解析已安装的离线精修模型；未安装或描述无效时返回 null（调用方回退纯流式识别）。
+ * refine-package.json 结构：{ version, kind: 'sense-voice', model, tokens }
+ */
+export function resolveVoiceRefinePaths(): VoiceRefinePaths | null {
+  const state = readVoiceState()
+  if (!state.refine || !isRefineInstalled(state)) return null
+  const dir = join(getVoiceRefineDir(), state.refine.version)
+  try {
+    const pkgPath = join(dir, 'refine-package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+      version?: unknown
+      kind?: unknown
+      model?: unknown
+      tokens?: unknown
+    }
+    if (pkg.kind !== 'sense-voice') return null
+    if (typeof pkg.model !== 'string' || typeof pkg.tokens !== 'string') return null
+    const modelPath = resolveContainedPath(dir, pkg.model)
+    const tokensPath = resolveContainedPath(dir, pkg.tokens)
+    if (!modelPath || !tokensPath || !existsSync(modelPath) || !existsSync(tokensPath)) return null
+    return {
+      version: typeof pkg.version === 'string' ? pkg.version : state.refine.version,
+      modelPath,
+      tokensPath,
+    }
+  } catch {
+    return null
+  }
+}
+
 function isNativeInstalled(state: VoiceState, platformKey: VoicePlatformKey | null): boolean {
   return resolveInstalledNative(state, platformKey) != null
 }
@@ -153,15 +203,25 @@ function isModelInstalled(state: VoiceState): boolean {
   return existsSync(join(dir, 'model-package.json'))
 }
 
+function isRefineInstalled(state: VoiceState): boolean {
+  if (!state.refine) return false
+  if (typeof state.refine.version !== 'string' || !isSafeVersion(state.refine.version)) return false
+  const dir = join(getVoiceRefineDir(), state.refine.version)
+  if (!existsSync(dir)) return false
+  return existsSync(join(dir, 'refine-package.json'))
+}
+
+function isVoiceRefineVersionInstalled(version: string): boolean {
+  if (!isSafeVersion(version)) return false
+  return existsSync(join(getVoiceRefineDir(), version, 'refine-package.json'))
+}
+
 function isVoiceModelVersionInstalled(version: string): boolean {
   if (!isSafeVersion(version)) return false
   return existsSync(join(getVoiceModelDir(), version, 'model-package.json'))
 }
 
-function isVoiceNativeVersionInstalled(
-  version: string,
-  platformKey: VoicePlatformKey,
-): boolean {
+function isVoiceNativeVersionInstalled(version: string, platformKey: VoicePlatformKey): boolean {
   if (!isSafeVersion(version)) return false
   const syntheticState: VoiceState = {
     native: { version, platformKey, artifactId: 'recovered-from-disk' },
@@ -197,13 +257,25 @@ export function selectVoiceModelArtifact(
   return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
 }
 
-export async function checkVoiceIntegrity(
-  checkLatest: boolean,
-): Promise<VoiceIntegrityStatus> {
+/** 离线精修模型为可选组件，manifest 未提供时允许静默缺失 */
+export function selectVoiceRefineArtifact(
+  artifacts: SparkInstallArtifact[],
+): SparkInstallArtifact | undefined {
+  const candidates = artifacts.filter((a) => {
+    if (a.type !== 'voice') return false
+    if (!a.id.startsWith(VOICE_REFINE_ID_PREFIX)) return false
+    if (!isSafeVersion(a.version)) return false
+    return true
+  })
+  return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
+}
+
+export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIntegrityStatus> {
   const platformKey = voicePlatformKey()
   const state = readVoiceState()
   const nativeInstalled = isNativeInstalled(state, platformKey)
   const modelInstalled = isModelInstalled(state)
+  const refineInstalled = isRefineInstalled(state)
 
   const components: VoiceComponentStatus[] = [
     {
@@ -224,6 +296,15 @@ export async function checkVoiceIntegrity(
       percent: null,
       message: modelInstalled ? null : '未安装语音识别模型',
     },
+    {
+      component: 'refine',
+      state: refineInstalled ? 'ready' : 'missing',
+      installedVersion: state.refine?.version ?? null,
+      latestVersion: null,
+      artifactId: state.refine?.artifactId ?? null,
+      percent: null,
+      message: refineInstalled ? null : '未安装离线精修模型（可选，用于说完后整段优化）',
+    },
   ]
 
   const status: VoiceIntegrityStatus = {
@@ -231,9 +312,7 @@ export async function checkVoiceIntegrity(
     downloading: false,
     supported: platformKey != null,
     unsupportedReason:
-      platformKey == null
-        ? `当前平台不支持语音输入 (${process.platform}/${process.arch})`
-        : null,
+      platformKey == null ? `当前平台不支持语音输入 (${process.platform}/${process.arch})` : null,
     components,
     lastError: null,
   }
@@ -244,8 +323,10 @@ export async function checkVoiceIntegrity(
     const manifest = await fetchSparkInstallManifest()
     const nativeArtifact = selectVoiceNativeArtifact(manifest.artifacts)
     const modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
+    const refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
     const nativeComp = components.find((c) => c.component === 'native')
     const modelComp = components.find((c) => c.component === 'model')
+    const refineComp = components.find((c) => c.component === 'refine')
     if (nativeArtifact && nativeComp) {
       nativeComp.latestVersion = nativeArtifact.version
       nativeComp.artifactId = nativeArtifact.id
@@ -253,6 +334,10 @@ export async function checkVoiceIntegrity(
     if (modelArtifact && modelComp) {
       modelComp.latestVersion = modelArtifact.version
       modelComp.artifactId = modelArtifact.id
+    }
+    if (refineArtifact && refineComp) {
+      refineComp.latestVersion = refineArtifact.version
+      refineComp.artifactId = refineArtifact.id
     }
   } catch (err) {
     status.lastError = err instanceof Error ? err.message : String(err)
@@ -280,7 +365,7 @@ async function installComponent(params: InstallComponentParams): Promise<void> {
   const { component, artifact, destFinal, stagingRoot, manifest, report } = params
   const manifestTotal = artifact.size ?? 0
   const stagingDir = join(stagingRoot, component)
-  const label = component === 'native' ? '运行时' : '模型'
+  const label = component === 'native' ? '运行时' : component === 'refine' ? '精修模型' : '模型'
   const progressBase = { component, artifactId: artifact.id, version: artifact.version }
 
   const sha256 = artifact.sha256
@@ -372,19 +457,12 @@ export async function installVoicePack(
     return { success: false, message, status: await checkVoiceIntegrity(false) }
   }
 
-  // 非强制且已就绪：直接返回
-  if (!force) {
-    const current = await checkVoiceIntegrity(false)
-    if (current.ready) {
-      return { success: true, message: '语音包已就绪', status: current }
-    }
-  }
-
   installInFlight = true
   const root = getVoiceRootPath()
   const stagingRoot = join(root, `.staging-${process.pid}-${Date.now()}`)
   let modelArtifact: SparkInstallArtifact | undefined
   let nativeArtifact: SparkInstallArtifact | undefined
+  let refineArtifact: SparkInstallArtifact | undefined
   let activeComponent: VoicePackComponent = 'model'
 
   try {
@@ -399,12 +477,10 @@ export async function installVoicePack(
     const manifest = await fetchSparkInstallManifest()
     nativeArtifact = selectVoiceNativeArtifact(manifest.artifacts)
     modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
+    refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
 
     if (!nativeArtifact || !modelArtifact) {
-      const missing = [
-        !nativeArtifact && '运行时',
-        !modelArtifact && '模型',
-      ]
+      const missing = [!nativeArtifact && '运行时', !modelArtifact && '模型']
         .filter(Boolean)
         .join('与')
       const message = `云端暂未提供语音${missing}安装包 (${platformKey})`
@@ -422,8 +498,21 @@ export async function installVoicePack(
     const installedState = readVoiceState()
     const modelIsCurrent = isVoiceModelVersionInstalled(modelArtifact.version)
     const nativeIsCurrent = isVoiceNativeVersionInstalled(nativeArtifact.version, platformKey)
+    const refineIsCurrent =
+      refineArtifact != null && isVoiceRefineVersionInstalled(refineArtifact.version)
     const installModel = force || !modelIsCurrent
     const installNative = force || !nativeIsCurrent
+    const installRefine = refineArtifact != null && (force || !refineIsCurrent)
+
+    // 非强制且核心组件已就绪、精修模型也无需补装：直接返回。
+    // 精修模型是可选增强，云端未提供（refineArtifact 为空）时不算缺失。
+    if (!force) {
+      const current = await checkVoiceIntegrity(false)
+      if (current.ready && !installRefine) {
+        return { success: true, message: '语音包已就绪', status: current }
+      }
+    }
+
     const nextState: VoiceState = { ...installedState }
 
     // 模型体积最大，先完成并原子激活；已安装同版本时不重复下载。
@@ -460,7 +549,22 @@ export async function installVoicePack(
     }
     await writeVoiceState(nextState)
 
-    const message = '语音包安装成功'
+    if (refineArtifact && installRefine) {
+      activeComponent = 'refine'
+      await installComponent({
+        component: 'refine',
+        artifact: refineArtifact,
+        destFinal: join(getVoiceRefineDir(), refineArtifact.version),
+        stagingRoot,
+        manifest,
+        report,
+      })
+      nextState.refine = { version: refineArtifact.version, artifactId: refineArtifact.id }
+      await writeVoiceState(nextState)
+    }
+
+    const refineOnly = !installModel && !installNative && installRefine
+    const message = refineOnly ? '语音精修模型安装成功' : '语音包安装成功'
     report({
       component: activeComponent,
       state: 'done',
@@ -470,7 +574,8 @@ export async function installVoicePack(
       message,
     })
     log.info(
-      `Voice pack installed: native ${nativeArtifact.version}, model ${modelArtifact.version}`,
+      `Voice pack installed: native ${nativeArtifact.version}, model ${modelArtifact.version}` +
+        (refineArtifact && installRefine ? `, refine ${refineArtifact.version}` : ''),
     )
     return { success: true, message, status: await checkVoiceIntegrity(false) }
   } catch (err) {

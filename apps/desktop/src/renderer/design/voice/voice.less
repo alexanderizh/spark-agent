@@ -25,8 +25,12 @@
   overflow: hidden;
   white-space: nowrap;
   cursor: pointer;
-  transition: width 0.18s ease, background 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    width 0.18s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover:not(:disabled) {
     background: color-mix(in srgb, var(--text) 9%, transparent);
@@ -39,7 +43,8 @@
   }
 
   &.is-starting,
-  &.is-stopping {
+  &.is-stopping,
+  &.is-refining {
     width: 68px;
     gap: 5px;
     border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
@@ -110,7 +115,9 @@
     border-radius: 999px;
     background: currentColor;
     box-shadow: 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
-    transition: height 90ms linear, opacity 90ms linear;
+    transition:
+      height 90ms linear,
+      opacity 90ms linear;
   }
 }
 
@@ -134,7 +141,9 @@
   pointer-events: none;
   opacity: 0;
   transform: translateY(3px);
-  transition: opacity 0.14s ease, transform 0.14s ease;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
 
   kbd {
     padding: 3px 5px;
@@ -171,7 +180,9 @@
   flex: 0 0 auto;
   border-radius: 50%;
   background: color-mix(in srgb, var(--danger) 16%, var(--bg-hover));
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
 
   i {
     width: 7px;

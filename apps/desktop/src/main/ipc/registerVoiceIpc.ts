@@ -1,9 +1,6 @@
 import { ipcMain, webContents } from 'electron'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
-import {
-  checkVoiceIntegrity,
-  installVoicePack,
-} from '../services/VoiceIntegrityService.js'
+import { checkVoiceIntegrity, installVoicePack } from '../services/VoiceIntegrityService.js'
 import {
   feedVoiceAudio,
   setVoiceEventEmitter,
@@ -12,10 +9,7 @@ import {
   resetVoiceEngineCache,
 } from '../services/VoiceRecognitionService.js'
 import { requestVoiceMicrophonePermission } from '../services/VoiceCapturePermissionService.js'
-import {
-  VOICE_AUDIO_CHUNK_CHANNEL,
-  isVoiceAudioChunkPayload,
-} from '@spark/protocol/voice'
+import { VOICE_AUDIO_CHUNK_CHANNEL, isVoiceAudioChunkPayload } from '@spark/protocol/voice'
 
 let emitterInstalled = false
 
@@ -67,7 +61,12 @@ export function registerVoiceIpc(): void {
   })
 
   typedIpcHandle('voice:stop', async (request, event) => {
-    stopVoiceSession(request.sessionId, event.sender.id)
-    return { success: true, message: '语音识别已停止' }
+    // 用户主动停止：流式收尾后尝试离线精修（模型未安装时自动回退纯流式）
+    const refining = stopVoiceSession(request.sessionId, event.sender.id, 'refine')
+    return {
+      success: true,
+      message: refining ? '正在优化识别结果' : '语音识别已停止',
+      refining,
+    }
   })
 }
