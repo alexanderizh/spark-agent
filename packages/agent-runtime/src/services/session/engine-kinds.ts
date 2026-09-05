@@ -37,12 +37,15 @@ const CODEX_PERMISSION_MODES: readonly SessionPermissionMode[] = [
   'codex-full-access',
 ]
 
-/** spark 侧权限模式字面量（对齐 spark-engine 的 default/acceptEdits/plan/bypass 四模式）。 */
+/** spark 侧权限模式字面量（三档：手动审批/自动审批/完全访问；旧两值为存量会话保留）。 */
 const SPARK_PERMISSION_MODES: readonly SessionPermissionMode[] = [
   'spark-default',
+  'spark-auto',
+  'spark-bypass',
+  // 旧版四档残留（spark-accept-edits / spark-plan）：不再出现在 UI，
+  // 但已存储会话仍带这些值，识别后由 toSparkEnginePermissionMode 回落 manual。
   'spark-accept-edits',
   'spark-plan',
-  'spark-bypass',
 ]
 
 export function isSparkPermissionMode(value: string | null | undefined): boolean {
@@ -92,6 +95,7 @@ export function getPermissionModeFromSession(
     value === 'codex-auto-review' ||
     value === 'codex-full-access' ||
     value === 'spark-default' ||
+    value === 'spark-auto' ||
     value === 'spark-accept-edits' ||
     value === 'spark-plan' ||
     value === 'spark-bypass'

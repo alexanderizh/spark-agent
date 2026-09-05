@@ -124,11 +124,17 @@ const TOOL_ACTION_MAP: Record<string, string> = {
   search_files: 'file_read',
   grep_files: 'file_read',
   grep: 'file_read',
+  read: 'file_read',
+  glob: 'file_read',
   // 文件写
   write_file: 'file_write',
   edit_file: 'file_write',
   multi_edit: 'file_write',
   apply_patch: 'file_write',
+  // spark-engine 内置工具（write/edit 不登记会被兜底成 command_exec，
+  // 导致「文件写入」规则对 spark 会话永不命中、审批卡分类错误）
+  write: 'file_write',
+  edit: 'file_write',
   // 命令执行
   run_command: 'command_exec',
   bash: 'command_exec',

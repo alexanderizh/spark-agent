@@ -30,18 +30,20 @@ describe('Codex permission copy', () => {
 })
 
 describe('spark permission options', () => {
-  it('registers the four spark engine modes', () => {
+  it('registers exactly three spark engine modes', () => {
     expect(SPARK_PERMISSION_MODE_OPTIONS.map((option) => option.value)).toEqual([
       'spark-default',
-      'spark-accept-edits',
-      'spark-plan',
+      'spark-auto',
       'spark-bypass',
     ])
   })
 
-  it('dispatches spark adapter to spark options and falls back to spark-default', () => {
+  it('dispatches spark adapter to spark options; legacy values fall back to spark-default', () => {
     expect(getPermissionModeOptions('spark')).toBe(SPARK_PERMISSION_MODE_OPTIONS)
     expect(getValidPermissionMode('claude-ask', 'spark')).toBe('spark-default')
-    expect(getValidPermissionMode('spark-plan', 'spark')).toBe('spark-plan')
+    expect(getValidPermissionMode('spark-auto', 'spark')).toBe('spark-auto')
+    // 存量会话的旧档位不再出现在选项里，回退到手动审批。
+    expect(getValidPermissionMode('spark-accept-edits', 'spark')).toBe('spark-default')
+    expect(getValidPermissionMode('spark-plan', 'spark')).toBe('spark-default')
   })
 })

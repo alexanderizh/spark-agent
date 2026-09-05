@@ -75,17 +75,17 @@ describe('resolveSparkModelRoute', () => {
 })
 
 describe('toSparkEnginePermissionMode', () => {
-  it('spark-* 字面量映射引擎四模式', () => {
-    expect(toSparkEnginePermissionMode('spark-default')).toBe('default')
-    expect(toSparkEnginePermissionMode('spark-accept-edits')).toBe('acceptEdits')
-    expect(toSparkEnginePermissionMode('spark-plan')).toBe('plan')
+  it('spark-* 三档字面量映射引擎三模式', () => {
+    expect(toSparkEnginePermissionMode('spark-default')).toBe('manual')
+    expect(toSparkEnginePermissionMode('spark-auto')).toBe('auto')
     expect(toSparkEnginePermissionMode('spark-bypass')).toBe('bypass')
   })
 
-  it('非 spark 值（含 claude/codex 侧模式）回落 default', () => {
-    expect(toSparkEnginePermissionMode('default')).toBe('default')
-    expect(toSparkEnginePermissionMode('claude-accept-edits')).toBe('default')
-    expect(toSparkEnginePermissionMode(null)).toBe('default')
-    expect(toSparkEnginePermissionMode(undefined)).toBe('default')
+  it('旧版四档残留与未知值统一回落 manual（最保守档）', () => {
+    expect(toSparkEnginePermissionMode('spark-accept-edits')).toBe('manual')
+    expect(toSparkEnginePermissionMode('spark-plan')).toBe('manual')
+    expect(toSparkEnginePermissionMode('claude-accept-edits')).toBe('manual')
+    expect(toSparkEnginePermissionMode(null)).toBe('manual')
+    expect(toSparkEnginePermissionMode(undefined)).toBe('manual')
   })
 })

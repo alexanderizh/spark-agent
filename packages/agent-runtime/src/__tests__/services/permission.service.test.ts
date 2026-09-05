@@ -224,6 +224,24 @@ describe('PermissionService', () => {
       expect(push).not.toHaveBeenCalled()
     })
 
+    it('spark 引擎工具名 write/edit 归类为 file_write，命中文件写入规则', async () => {
+      // 回归：spark 的 write/edit 未登记时兜底成 command_exec，
+      // 设置页「文件写入」规则对 spark 会话永不命中。
+      const repo = makeMockRepo([{ action: 'file_write', mode: 'allow' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      await expect(
+        svc.requestApproval('sess-1', 'write', { path: 'a.ts', content: 'x' }, push),
+      ).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+
+      await expect(
+        svc.requestApproval('sess-1', 'edit', { path: 'a.ts', old: 'a', new: 'b' }, push),
+      ).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+    })
+
     it('bash 工具被识别为 command_exec，命中 ask 而不是默认 allow', async () => {
       // command_exec 默认规则 mode = 'ask'
       const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])

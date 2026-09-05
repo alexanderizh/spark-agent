@@ -99,6 +99,9 @@ export const SessionPermissionModeSchema = z.enum([
   'spark-accept-edits',
   'spark-plan',
   'spark-bypass',
+  // 三档收敛后新增：spark-default=手动审批、spark-auto=自动审批、
+  // spark-bypass=完全访问；旧两值仅为已存储会话保留，UI 不再提供。
+  'spark-auto',
 ])
 export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])

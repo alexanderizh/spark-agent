@@ -69,18 +69,21 @@ export function resolveSparkModelRoute(
   }
 }
 
-/** spark-* 权限模式 → spark-engine PermissionMode（非 spark 侧值回落 default）。 */
+/**
+ * spark-* 权限模式 → spark-engine PermissionMode（manual/auto/bypass 三档）。
+ * 三档字面量：spark-default（手动审批）、spark-auto（自动审批）、spark-bypass
+ * （完全访问）；旧版 spark-accept-edits / spark-plan 与未知值统一回落
+ * manual——旧会话继续可跑，但严格度取三档中最保守的一档。
+ */
 export function toSparkEnginePermissionMode(
   value: string | null | undefined,
-): 'default' | 'acceptEdits' | 'plan' | 'bypass' {
+): 'manual' | 'auto' | 'bypass' {
   switch (value) {
-    case 'spark-accept-edits':
-      return 'acceptEdits'
-    case 'spark-plan':
-      return 'plan'
+    case 'spark-auto':
+      return 'auto'
     case 'spark-bypass':
       return 'bypass'
     default:
-      return 'default'
+      return 'manual'
   }
 }

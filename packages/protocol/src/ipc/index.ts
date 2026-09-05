@@ -177,6 +177,7 @@ export type SessionPermissionMode =
   | 'spark-accept-edits'
   | 'spark-plan'
   | 'spark-bypass'
+  | 'spark-auto'
 
 export interface SessionAttachment {
   type: 'image' | 'file' | 'directory'

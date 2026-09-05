@@ -44,9 +44,13 @@ describe('isCodexPermissionMode', () => {
 })
 
 describe('isSparkPermissionMode', () => {
-  it('spark 侧 4 个合法模式为 true，其他侧为 false', () => {
-    for (const mode of ['spark-default', 'spark-accept-edits', 'spark-plan', 'spark-bypass']) {
+  it('spark 侧三档与存量旧值为 true，其他侧为 false', () => {
+    for (const mode of ['spark-default', 'spark-auto', 'spark-bypass']) {
       expect(isSparkPermissionMode(mode)).toBe(true)
+    }
+    // 存量会话兼容：旧档位仍被识别，引擎映射回落 manual。
+    for (const legacy of ['spark-accept-edits', 'spark-plan']) {
+      expect(isSparkPermissionMode(legacy)).toBe(true)
     }
     expect(isSparkPermissionMode('claude-ask')).toBe(false)
     expect(isSparkPermissionMode('codex-default')).toBe(false)
@@ -56,7 +60,7 @@ describe('isSparkPermissionMode', () => {
 })
 
 describe('normalizePermissionMode', () => {
-  it('12 个合法模式原样返回', () => {
+  it('13 个合法模式原样返回', () => {
     const modes: SessionPermissionMode[] = [
       'claude-ask',
       'claude-auto-edits',
@@ -67,6 +71,7 @@ describe('normalizePermissionMode', () => {
       'codex-auto-review',
       'codex-full-access',
       'spark-default',
+      'spark-auto',
       'spark-accept-edits',
       'spark-plan',
       'spark-bypass',

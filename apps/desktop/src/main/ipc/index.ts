@@ -1884,7 +1884,8 @@ function mapTaskPermissionMode(
     mode === 'spark-default' ||
     mode === 'spark-accept-edits' ||
     mode === 'spark-plan' ||
-    mode === 'spark-bypass'
+    mode === 'spark-bypass' ||
+    mode === 'spark-auto'
   ) {
     return mode
   }
@@ -1895,7 +1896,7 @@ function mapTaskPermissionMode(
   }
   if (mode === 'auto') {
     if (adapter === 'codex') return 'codex-auto-review'
-    if (adapter === 'spark') return 'spark-accept-edits'
+    if (adapter === 'spark') return 'spark-auto'
     return 'claude-auto'
   }
   return undefined
@@ -2183,9 +2184,11 @@ function isPermissionModeForAdapter(
   if (adapter === 'spark') {
     return (
       value === 'spark-default' ||
+      value === 'spark-auto' ||
+      value === 'spark-bypass' ||
+      // 存量会话兼容：旧档位仍被识别，UI/引擎映射会回落到手动审批。
       value === 'spark-accept-edits' ||
-      value === 'spark-plan' ||
-      value === 'spark-bypass'
+      value === 'spark-plan'
     )
   }
   return (

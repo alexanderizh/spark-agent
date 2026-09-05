@@ -59,24 +59,19 @@ export const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
 export const SPARK_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
   {
     value: 'spark-default',
-    label: '按需批准',
-    description: 'default；安全工具自动执行，敏感操作请求批准',
+    label: '手动审批',
+    description: '只读工具直接执行；写入与命令逐次确认',
   },
   {
-    value: 'spark-accept-edits',
-    label: '自动编辑',
-    description: 'acceptEdits；自动批准文件编辑',
+    value: 'spark-auto',
+    label: '自动审批',
+    description: '所有工具自动执行（显式 deny 规则仍生效）',
     tone: 'auto',
-  },
-  {
-    value: 'spark-plan',
-    label: '计划模式',
-    description: 'plan；先产出计划，批准后再执行',
   },
   {
     value: 'spark-bypass',
     label: '完全访问',
-    description: 'bypass；完全由 agent 执行',
+    description: '跳过全部审批与规则，完全由 agent 执行',
     tone: 'danger',
   },
 ]
