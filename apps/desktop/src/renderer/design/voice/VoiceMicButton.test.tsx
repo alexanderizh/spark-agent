@@ -26,7 +26,8 @@ describe('VoiceMicButton', () => {
 
   it('describes the one-time package download before confirmation', () => {
     expect(VOICE_DOWNLOAD_CONFIRM_OPTIONS.title).toBe('下载语音包？')
-    expect(VOICE_DOWNLOAD_CONFIRM_OPTIONS.description).toContain('一次性下载约 230 MB')
+    expect(VOICE_DOWNLOAD_CONFIRM_OPTIONS.description).toContain('一次性下载约 380 MB')
+    expect(VOICE_DOWNLOAD_CONFIRM_OPTIONS.description).toContain('含离线精修模型')
     expect(VOICE_DOWNLOAD_CONFIRM_OPTIONS.description).toContain('后续无需重复下载')
   })
 

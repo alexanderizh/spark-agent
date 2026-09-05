@@ -35,9 +35,9 @@ const COMPONENT_LABEL: Record<VoicePackComponent, string> = {
 const COMPONENT_DESC: Record<VoicePackComponent, string> = {
   native:
     'sherpa-onnx native 模块，提供 OnlineRecognizer 流式推理与 OfflineRecognizer 整段识别调用。',
-  model: 'Paraformer 流式中文 ASR 模型 + silero VAD，约 219 MB。',
+  model: 'Paraformer 流式中文 ASR 模型 + silero VAD，下载包约 210 MB。',
   refine:
-    'SenseVoice 离线整段识别模型（可选，约 230 MB），说完后重识别整段音频以提升准确率并补齐标点。',
+    'SenseVoice 离线整段识别模型（可选，下载包约 150 MB），说完后重识别整段音频以提升准确率并补齐标点。',
 }
 
 const PROGRESS_STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {
@@ -190,8 +190,8 @@ export function VoiceIntegritySettingsItem(): ReactElement {
         <div className="voice-integrity-heading">
           <h2>语音输入 (ASR)</h2>
           <div className="lede">
-            离线语音输入依赖跨平台 native 推理引擎与中文识别模型，首次使用时按需下载 （约 230
-            MB，视平台而定），不打进安装包。安装可选的精修模型后，说完话会
+            离线语音输入依赖跨平台 native 推理引擎与中文识别模型，首次使用时按需下载 （约 380
+            MB，视平台而定，含可选的离线精修模型），不打进安装包。安装精修模型后，说完话会
             自动整段重新识别，替换实时预览文本以获得更高准确率与标点。
           </div>
         </div>

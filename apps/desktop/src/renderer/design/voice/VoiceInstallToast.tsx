@@ -19,6 +19,12 @@ const STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {
   error: '安装失败',
 }
 
+const COMPONENT_NAME: Record<VoiceInstallProgress['component'], string> = {
+  native: '推理引擎',
+  model: '识别模型',
+  refine: '精修模型',
+}
+
 /**
  * 语音包按需下载进度卡片（右上角，非阻塞）。
  *
@@ -59,7 +65,7 @@ export function VoiceInstallToast({ progress, status, onRetry }: VoiceInstallToa
   const isError = progress.state === 'error'
   const isDone = progress.state === 'done'
   const percent = Math.max(0, Math.min(100, progress.percent ?? 0))
-  const componentName = progress.component === 'native' ? '推理引擎' : '识别模型'
+  const componentName = COMPONENT_NAME[progress.component]
 
   return createPortal(
     <div
