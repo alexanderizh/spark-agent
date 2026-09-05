@@ -16,6 +16,22 @@ import type {
 } from './tool-host-capability-broker.js'
 import { ToolHostCapabilityBroker } from './tool-host-capability-broker.js'
 import { terminateProcessTree } from './tool-package-project-runner.js'
+import {
+  createToolPackageWorkflowCapabilities,
+  type ToolPackageWorkflowCapabilityDeps,
+} from './tool-package-workflow-capabilities.js'
+import {
+  createToolPackageBrowserCapabilities,
+  type ToolPackageBrowserCapabilityDeps,
+} from './tool-package-browser-capabilities.js'
+import {
+  createToolPackageComputerCapabilities,
+  type ToolPackageComputerCapabilityDeps,
+} from './tool-package-computer-capabilities.js'
+import {
+  createToolPackageMediaCapabilities,
+  type ToolPackageMediaCapabilityDeps,
+} from './tool-package-media-capabilities.js'
 
 export interface ToolPackageFileUploadInput {
   path: string
@@ -42,7 +58,12 @@ export interface ToolPackageDialogSaveInput {
   filters?: Array<{ name: string; extensions: string[] }> | undefined
 }
 
-export interface ToolPackageBuiltInCapabilityDeps {
+export interface ToolPackageBuiltInCapabilityDeps
+  extends
+    ToolPackageWorkflowCapabilityDeps,
+    ToolPackageBrowserCapabilityDeps,
+    ToolPackageComputerCapabilityDeps,
+    ToolPackageMediaCapabilityDeps {
   db: SparkDatabase
   uploadFile?: (
     context: ToolHostCapabilityContext,
@@ -476,6 +497,12 @@ export function registerToolPackageBuiltInCapabilities(
       },
     },
   ]
+  definitions.push(
+    ...createToolPackageWorkflowCapabilities(deps),
+    ...createToolPackageBrowserCapabilities(deps),
+    ...createToolPackageComputerCapabilities(deps),
+    ...createToolPackageMediaCapabilities(deps),
+  )
   const uploadFile = deps.uploadFile
   if (uploadFile != null) {
     definitions.push({

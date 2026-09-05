@@ -64,6 +64,23 @@ describe('Tool Package built-in capabilities', () => {
       openExternal: vi.fn(async (_context, input) => ({ opened: input.url })),
       openDialog: vi.fn(async () => ({ canceled: false, filePaths: ['/tmp/example.txt'] })),
       saveDialog: vi.fn(async () => ({ canceled: false, filePath: '/tmp/example.txt' })),
+      listWorkflows: vi.fn(async () => ({ workflows: [{ id: 'workflow-1' }] })),
+      runWorkflow: vi.fn(async (_context, input) => ({ started: true, ...input })),
+      getWorkflowStatus: vi.fn(async (_context, input) => ({ sessionId: input.sessionId })),
+      browserListWindows: vi.fn(async () => ({ windows: [] })),
+      browserOpen: vi.fn(async (_context, input) => ({ opened: input.url })),
+      browserNavigate: vi.fn(async (_context, input) => ({ navigated: input.url })),
+      browserScreenshot: vi.fn(async () => ({ dataUrl: 'data:image/png;base64,AA==' })),
+      browserInspect: vi.fn(async () => ({ url: 'https://example.com', title: 'Example' })),
+      browserEvaluate: vi.fn(async () => ({ result: 2 })),
+      browserClose: vi.fn(async () => ({ closed: true })),
+      computerCapabilities: vi.fn(async () => ({ available: true })),
+      computerInvoke: vi.fn(async (_context, action, args) => ({ action, args })),
+      listMediaModels: vi.fn(async () => ({ providers: [] })),
+      generateMedia: vi.fn(async (_context, input) => ({
+        status: 'succeeded',
+        operation: input.operation,
+      })),
     })
   })
 
@@ -98,9 +115,19 @@ describe('Tool Package built-in capabilities', () => {
       'agents.invoke',
       'agents.list',
       'artifacts.present',
+      'browser.automation.close',
+      'browser.automation.evaluate',
+      'browser.automation.inspect',
+      'browser.automation.navigate',
+      'browser.automation.open',
+      'browser.automation.screenshot',
+      'browser.automation.windows',
       'browser.open',
       'clipboard.read',
       'clipboard.write',
+      'computer.capabilities',
+      'computer.execute',
+      'computer.inspect',
       'dialogs.open',
       'dialogs.save',
       'files.copy',
@@ -113,6 +140,8 @@ describe('Tool Package built-in capabilities', () => {
       'files.upload',
       'files.write',
       'http.fetch',
+      'media.generate',
+      'media.models',
       'models.get',
       'models.invoke',
       'models.list',
@@ -122,6 +151,9 @@ describe('Tool Package built-in capabilities', () => {
       'storage.kv.get',
       'storage.kv.list',
       'storage.kv.set',
+      'workflows.list',
+      'workflows.run',
+      'workflows.status',
     ])
     expect(broker.describe().find((item) => item.name === 'http.fetch')).toMatchObject({
       risk: 'high-write',
@@ -138,6 +170,37 @@ describe('Tool Package built-in capabilities', () => {
             item.risk != null,
         ),
     ).toBe(true)
+  })
+
+  it('governs workflow, browser, Computer Use, and media capability families', async () => {
+    await expect(invoke('workflows.list')).resolves.toEqual({ workflows: [{ id: 'workflow-1' }] })
+    await expect(invoke('browser.automation.windows')).resolves.toEqual({ windows: [] })
+    await expect(
+      invoke('computer.inspect', { action: 'list_windows', arguments: { includeMinimized: true } }),
+    ).resolves.toEqual({ action: 'list_windows', args: { includeMinimized: true } })
+    await expect(invoke('media.models')).resolves.toEqual({ providers: [] })
+
+    await expect(
+      invoke('workflows.run', { workflowId: 'workflow-1', objective: 'Ship the fix' }),
+    ).rejects.toMatchObject({ code: 'CAPABILITY_NOT_AUTHORIZED' })
+    const authorize = vi.fn(async () => true)
+    broker.setInvocationAuthorizer(authorize)
+    await expect(
+      invoke('workflows.run', { workflowId: 'workflow-1', objective: 'Ship the fix' }),
+    ).resolves.toMatchObject({ started: true, workflowId: 'workflow-1' })
+    await expect(
+      invoke('browser.automation.open', { url: 'https://example.com' }),
+    ).resolves.toEqual({ opened: 'https://example.com' })
+    await expect(
+      invoke('computer.execute', {
+        action: 'start_task',
+        arguments: { objective: 'Open settings' },
+      }),
+    ).resolves.toMatchObject({ action: 'start_task' })
+    await expect(
+      invoke('media.generate', { operation: 'text_to_image', prompt: 'A test image' }),
+    ).resolves.toMatchObject({ status: 'succeeded', operation: 'text_to_image' })
+    expect(authorize).toHaveBeenCalledTimes(4)
   })
 
   it('routes desktop integrations through validated optional host callbacks', async () => {
