@@ -374,6 +374,7 @@ import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPlug
 import { registerSubAppIpc } from './registerSubAppIpc.js'
 import { getCustomToolService, registerCustomToolsIpc } from './registerCustomToolsIpc.js'
 import { registerToolPackagesIpc } from './registerToolPackagesIpc.js'
+import { createDesktopToolPackageCapabilities } from './toolPackageExtendedCapabilities.js'
 import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
@@ -460,11 +461,11 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
   }
 }
 
+const computerUseAgentController = new ComputerUseAgentController({
+  resolveDecisionModel: (sessionId) => getSessionService().resolveComputerDecisionModel(sessionId),
+})
 const computerUseMcpProvider: ComputerUseMcpProvider = createComputerUseMcpProvider({
-  controller: new ComputerUseAgentController({
-    resolveDecisionModel: (sessionId) =>
-      getSessionService().resolveComputerDecisionModel(sessionId),
-  }),
+  controller: computerUseAgentController,
 })
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
@@ -9745,7 +9746,22 @@ export function registerAllIpcHandlers(): void {
   registerPluginIpc()
   registerSubAppIpc()
   registerCustomToolsIpc()
-  registerToolPackagesIpc(getSessionService().getToolPackageService())
+  registerToolPackagesIpc(
+    getSessionService().getToolPackageService(),
+    createDesktopToolPackageCapabilities({
+      db: getDatabase(),
+      sessionService: getSessionService(),
+      computerController: computerUseAgentController,
+      resolveMediaProviders: resolveCanvasMediaProviders,
+      mediaTaskRuntime: getMediaTaskRuntimeService(),
+      defaultMediaOutputDir: getDefaultCanvasMediaDir(),
+      assertMediaInputPath: (filePath) => {
+        if (!isSafeFilePathAllowed(filePath)) {
+          throw new Error('媒体输入文件不在允许读取的项目或应用目录内')
+        }
+      },
+    }),
+  )
 
   log.info('All IPC handlers registered')
 }

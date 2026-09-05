@@ -1,9 +1,10 @@
 import {
   registerToolPackageBuiltInCapabilities,
+  type ToolPackageBuiltInCapabilityDeps,
   type ToolPackageService,
 } from '@spark/agent-runtime'
 import { EventRepository } from '@spark/storage'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { clipboard, dialog, Notification, shell } from 'electron'
@@ -11,9 +12,44 @@ import { getDatabase } from '../db.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
 import { openExternalUrlSafely } from '../services/ExternalUrlPolicy.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
+import { getInternalBrowserService } from '../services/InternalBrowserService.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
-export function registerToolPackagesIpc(service: ToolPackageService): void {
+type ExtendedCapabilityDeps = Omit<
+  Partial<ToolPackageBuiltInCapabilityDeps>,
+  | 'db'
+  | 'uploadFile'
+  | 'presentFiles'
+  | 'trashFile'
+  | 'readClipboardText'
+  | 'writeClipboardText'
+  | 'showNotification'
+  | 'openExternal'
+  | 'openDialog'
+  | 'saveDialog'
+>
+
+export function registerToolPackagesIpc(
+  service: ToolPackageService,
+  extendedCapabilities: ExtendedCapabilityDeps = {},
+): void {
+  const browserWindowsByPackageVersion = new Map<string, Set<string>>()
+  const packageVersionScope = (context: { packageId: string; packageVersion: string }): string =>
+    `${context.packageId}@${context.packageVersion}`
+  const browserProfile = (context: { packageId: string; packageVersion: string }): string =>
+    `toolpkg-${createHash('sha256')
+      .update(packageVersionScope(context))
+      .digest('hex')
+      .slice(0, 24)}`
+  const ownedBrowserWindow = (
+    context: { packageId: string; packageVersion: string },
+    windowId: string,
+  ): string => {
+    if (!browserWindowsByPackageVersion.get(packageVersionScope(context))?.has(windowId)) {
+      throw new Error('Tool Package cannot access a browser window it did not open')
+    }
+    return windowId
+  }
   service.capabilities.setInvocationAuthorizer(async ({ definition, context, input }) => {
     const result = await dialog.showMessageBox({
       type: definition.risk === 'destructive' ? 'warning' : 'question',
@@ -28,7 +64,50 @@ export function registerToolPackagesIpc(service: ToolPackageService): void {
     return result.response === 0
   })
   registerToolPackageBuiltInCapabilities(service.capabilities, {
+    ...extendedCapabilities,
     db: getDatabase(),
+    browserListWindows: async (context) => {
+      const scope = packageVersionScope(context)
+      const owned = browserWindowsByPackageVersion.get(scope) ?? new Set<string>()
+      const windows = getInternalBrowserService()
+        .listWindows()
+        .filter((window) => owned.has(window.windowId))
+      browserWindowsByPackageVersion.set(scope, new Set(windows.map((window) => window.windowId)))
+      return { windows }
+    },
+    browserOpen: async (context, input) => {
+      const opened = await getInternalBrowserService().openWindow({
+        url: input.url,
+        show: input.show,
+        reuse: input.reuse,
+        profileId: browserProfile(context),
+      })
+      const scope = packageVersionScope(context)
+      const owned = browserWindowsByPackageVersion.get(scope) ?? new Set<string>()
+      owned.add(opened.windowId)
+      browserWindowsByPackageVersion.set(scope, owned)
+      return opened
+    },
+    browserNavigate: async (context, input) =>
+      getInternalBrowserService().navigate(ownedBrowserWindow(context, input.windowId), input.url),
+    browserScreenshot: async (context, input) =>
+      getInternalBrowserService().screenshot(ownedBrowserWindow(context, input.windowId)),
+    browserInspect: async (context, input) => ({
+      ...getInternalBrowserService().getUrl(ownedBrowserWindow(context, input.windowId)),
+      ...getInternalBrowserService().getTitle(ownedBrowserWindow(context, input.windowId)),
+    }),
+    browserEvaluate: async (context, input) => ({
+      result: await getInternalBrowserService().evalJs(
+        ownedBrowserWindow(context, input.windowId),
+        input.code,
+      ),
+    }),
+    browserClose: async (context, input) => {
+      const windowId = ownedBrowserWindow(context, input.windowId)
+      const closed = getInternalBrowserService().closeWindow(windowId)
+      browserWindowsByPackageVersion.get(packageVersionScope(context))?.delete(windowId)
+      return closed
+    },
     uploadFile: async (_context, input) => {
       await assertPresentableFile(input.path)
       return getAuthService().uploadFile({
