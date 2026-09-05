@@ -1,4 +1,9 @@
-import type { ModelProfileRepository, ModelProfileRow, ProviderProfileRepository, ProviderProfileRow } from '@spark/storage'
+import type {
+  ModelProfileRepository,
+  ModelProfileRow,
+  ProviderProfileRepository,
+  ProviderProfileRow,
+} from '@spark/storage'
 import type { ModelProfile } from '@spark/protocol'
 import { createLogger, fetchJson, HttpError } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
@@ -94,7 +99,12 @@ export class ModelService {
 
       const providerId = this.settingsGet('memory', 'embeddingProviderId')
       const model = this.settingsGet('memory', 'embeddingModel')
-      if (typeof providerId !== 'string' || providerId.length === 0 || typeof model !== 'string' || model.length === 0) {
+      if (
+        typeof providerId !== 'string' ||
+        providerId.length === 0 ||
+        typeof model !== 'string' ||
+        model.length === 0
+      ) {
         return { available: false, reason: 'no embedding model configured' }
       }
 
@@ -155,7 +165,10 @@ export class ModelService {
         const sorted = [...json.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
         for (const item of sorted) {
           if (!Array.isArray(item.embedding) || item.embedding.length === 0) {
-            return { available: false, reason: 'malformed embedding vector in response (OpenAI data[].embedding)' }
+            return {
+              available: false,
+              reason: 'malformed embedding vector in response (OpenAI data[].embedding)',
+            }
           }
           vectors.push(item.embedding)
         }
@@ -163,7 +176,10 @@ export class ModelService {
         // 智谱原生格式：vectors 是 number[][]，顺序天然对应输入，无 index 字段
         for (const v of json.vectors) {
           if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === 'number')) {
-            return { available: false, reason: 'malformed embedding vector in response (zhipu vectors[])' }
+            return {
+              available: false,
+              reason: 'malformed embedding vector in response (zhipu vectors[])',
+            }
           }
           vectors.push(v as number[])
         }
@@ -177,7 +193,8 @@ export class ModelService {
         }
       } else {
         // 既不是 OpenAI 也不是智谱格式 —— 把响应摘要透到 reason 方便定位
-        const topKeys = typeof json === 'object' && json != null ? Object.keys(json).join(',') : typeof json
+        const topKeys =
+          typeof json === 'object' && json != null ? Object.keys(json).join(',') : typeof json
         return {
           available: false,
           reason: `malformed embeddings response (expected data[] or vectors[], topKeys=[${topKeys}])`,
@@ -243,16 +260,28 @@ export class ModelService {
         (modelRaw == null || modelRaw === undefined)
       if (settingsAbsent && this.getActiveChatModel != null) {
         const active = this.getActiveChatModel()
-        if (active != null && typeof active.providerId === 'string' && active.providerId.length > 0
-            && typeof active.model === 'string' && active.model.length > 0) {
+        if (
+          active != null &&
+          typeof active.providerId === 'string' &&
+          active.providerId.length > 0 &&
+          typeof active.model === 'string' &&
+          active.model.length > 0
+        ) {
           providerId = active.providerId
           model = active.model
           source = 'fallback(会话对话模型)'
         }
       }
 
-      if (typeof providerId !== 'string' || providerId.length === 0 || typeof model !== 'string' || model.length === 0) {
-        log.info(`【抽取LLM调用】跳过：未配置抽取模型（settings 未配且无回退）。providerId="${providerId}" model="${model}"`)
+      if (
+        typeof providerId !== 'string' ||
+        providerId.length === 0 ||
+        typeof model !== 'string' ||
+        model.length === 0
+      ) {
+        log.info(
+          `【抽取LLM调用】跳过：未配置抽取模型（settings 未配且无回退）。providerId="${providerId}" model="${model}"`,
+        )
         return { available: false, reason: 'no extraction model configured' }
       }
 
@@ -279,16 +308,21 @@ export class ModelService {
       const isAnthropic = provider.provider_type === 'anthropic'
       const maxTokens = opts?.maxTokens ?? 1024
       // URL 提前算（让"开始"日志就含接口地址，测试时一眼能看到请求打到哪里）
-      const url = isAnthropic ? getAnthropicMessagesEndpoint(apiEndpoint) : getChatEndpoint(apiEndpoint)
-      // 【入口日志】让"用谁、调哪个接口、有没有 key"全可见。脱敏 key 只显示前 4 位 + 长度。
-      const keyDesc = apiKey.length > 0 ? `key=${apiKey.slice(0, 4)}***(${apiKey.length}字符)` : 'key=(空，本地CLI/免key)'
+      const url = isAnthropic
+        ? getAnthropicMessagesEndpoint(apiEndpoint)
+        : getChatEndpoint(apiEndpoint)
+      // 【入口日志】记录使用的模型与接口，但绝不把凭据内容或片段写进日志。
+      const keyDesc = apiKey.length > 0 ? 'credential=configured' : 'credential=empty'
       log.info(
         `【抽取LLM调用】开始：source=${source} provider=${provider.name}(${providerId}) ` +
-        `model=${model} 接口=${url} ${keyDesc} ` +
-        `provider_type=${provider.provider_type} isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
+          `model=${model} 接口=${url} ${keyDesc} ` +
+          `provider_type=${provider.provider_type} isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
       )
+      const disableGlmThinking = isAnthropic && isGlmModel(model)
       const json = await fetchJson<{
-        content?: Array<{ type?: string; text?: string }>
+        content?: Array<{ type?: string; text?: string; thinking?: string }>
+        stop_reason?: string
+        usage?: { input_tokens?: number; output_tokens?: number }
         choices?: Array<{ message?: { content?: string } }>
       }>(url, {
         method: 'POST',
@@ -307,6 +341,7 @@ export class ModelService {
             ? {
                 model,
                 max_tokens: maxTokens,
+                ...(disableGlmThinking ? { thinking: { type: 'disabled' } } : {}),
                 messages: [{ role: 'user', content: prompt }],
               }
             : {
@@ -340,10 +375,17 @@ export class ModelService {
       // 【响应日志】让"真调了 + 返回什么 + 多快"全可见，打消"接口没真调"的怀疑。
       log.info(
         `【抽取LLM调用】成功：HTTP 2xx 耗时=${elapsedMs}ms ` +
-        `返回 text=${text?.length ?? 0}字符 预览=${(text ?? '(空)').slice(0, 150).replace(/\s+/g, ' ')}`,
+          `返回 text=${text?.length ?? 0}字符 预览=${(text ?? '(空)').slice(0, 150).replace(/\s+/g, ' ')}`,
       )
       if (typeof text !== 'string' || text.length === 0) {
-        log.warn(`【抽取LLM调用】响应解析为空：HTTP 200 但无 text 字段。原始响应=${JSON.stringify(json).slice(0, 300)}`)
+        const blockTypes = Array.isArray(json.content)
+          ? json.content.map((block) => block.type ?? 'unknown').join(',')
+          : 'none'
+        log.warn(
+          `【抽取LLM调用】响应解析为空：HTTP 200 但无 text 字段。` +
+            `blockTypes=[${blockTypes}] stopReason=${json.stop_reason ?? 'unknown'} ` +
+            `outputTokens=${json.usage?.output_tokens ?? 'unknown'}`,
+        )
         return { available: false, reason: 'malformed completion response' }
       }
       return { available: true, text }
@@ -364,7 +406,10 @@ export class ModelService {
     return toModelProfile(row)
   }
 
-  update(id: string, fields: { name?: string; configJson?: string; enabled?: boolean }): ModelProfile {
+  update(
+    id: string,
+    fields: { name?: string; configJson?: string; enabled?: boolean },
+  ): ModelProfile {
     const row = this.repo.update(id, fields)
     if (!row) throw new Error(`Model not found: ${id}`)
     return toModelProfile(row)
@@ -387,6 +432,10 @@ export class ModelService {
     }
     return seeded
   }
+}
+
+function isGlmModel(model: string): boolean {
+  return /^glm(?:[-_.]|$)/i.test(model.trim())
 }
 
 /**

@@ -7,7 +7,11 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { ModelService } from './model.service.js'
-import type { ProviderProfileRepository, ModelProfileRepository, ProviderProfileRow } from '@spark/storage'
+import type {
+  ProviderProfileRepository,
+  ModelProfileRepository,
+  ProviderProfileRow,
+} from '@spark/storage'
 
 vi.mock('@spark/shared/keystore', () => ({
   getSecret: vi.fn(async () => 'test-key'),
@@ -17,10 +21,18 @@ vi.mock('@spark/shared/keystore', () => ({
 function makeService(
   settings: Record<string, unknown> = {},
   fetchMock: ReturnType<typeof vi.fn> = vi.fn(),
-  opts: { providers?: Record<string, Partial<ProviderProfileRow>>; getActiveChatModel?: () => { providerId: string; model: string } | null } = {},
+  opts: {
+    providers?: Record<string, Partial<ProviderProfileRow>>
+    getActiveChatModel?: () => { providerId: string; model: string } | null
+  } = {},
 ): { svc: ModelService; fetchMock: ReturnType<typeof vi.fn> } {
   const providers = opts.providers ?? {
-    'prov-1': { id: 'prov-1', keystore_ref: 'ks-1', provider_type: 'openai-compatible', config_json: JSON.stringify({ apiEndpoint: 'https://ex.example.com/v1' }) },
+    'prov-1': {
+      id: 'prov-1',
+      keystore_ref: 'ks-1',
+      provider_type: 'openai-compatible',
+      config_json: JSON.stringify({ apiEndpoint: 'https://ex.example.com/v1' }),
+    },
   }
   const providerRepo = {
     get: (id: string) => (providers[id] ?? null) as ProviderProfileRow | null,
@@ -34,7 +46,7 @@ function makeService(
   const svc = new ModelService(
     repo,
     providerRepo,
-    (cat, key) => (cat === 'memory' ? defaults[key] ?? null : null),
+    (cat, key) => (cat === 'memory' ? (defaults[key] ?? null) : null),
     opts.getActiveChatModel,
   )
   return { svc, fetchMock }
@@ -76,11 +88,9 @@ describe('ModelService.complete', () => {
     const fetchMock = vi.fn()
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
     // 即便 resolver 给值，settings 给的是字符串空值，按"显式禁用"语义不回退
-    const { svc } = makeService(
-      { extractionProviderId: '', extractionModel: '' },
-      fetchMock,
-      { getActiveChatModel: () => ({ providerId: 'prov-1', model: 'should-not-be-used' }) },
-    )
+    const { svc } = makeService({ extractionProviderId: '', extractionModel: '' }, fetchMock, {
+      getActiveChatModel: () => ({ providerId: 'prov-1', model: 'should-not-be-used' }),
+    })
     const r = await svc.complete('prompt')
     expect(r.available).toBe(false)
     if (!r.available) expect(r.reason).toMatch(/no extraction model configured/)
@@ -130,7 +140,9 @@ describe('ModelService.complete', () => {
   })
 
   it('unavailable on network error (caught, never throws)', async () => {
-    const fetchMock = vi.fn(async () => { throw new Error('connection refused') })
+    const fetchMock = vi.fn(async () => {
+      throw new Error('connection refused')
+    })
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
     const { svc } = makeService()
     const r = await svc.complete('prompt')
@@ -159,7 +171,8 @@ describe('ModelService.complete', () => {
 
   it('unavailable on malformed response (empty content)', async () => {
     globalThis.fetch = vi.fn(
-      async () => new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 }),
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 }),
     ) as unknown as typeof globalThis.fetch
     const { svc } = makeService()
     const r = await svc.complete('prompt')
@@ -189,10 +202,9 @@ describe('ModelService.complete — agent chat model fallback', () => {
   it('falls back to OpenAI-compatible chat model when settings absent', async () => {
     const fetchMock = vi.fn(
       async () =>
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: '["from-fallback"]' } }] }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ choices: [{ message: { content: '["from-fallback"]' } }] }), {
+          status: 200,
+        }),
     )
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
     const { svc } = makeService(
@@ -248,7 +260,10 @@ describe('ModelService.complete — agent chat model fallback', () => {
             config_json: JSON.stringify({ apiEndpoint: 'https://api.anthropic.com' }),
           },
         },
-        getActiveChatModel: () => ({ providerId: 'claude-prov', model: 'claude-3-5-haiku-20241022' }),
+        getActiveChatModel: () => ({
+          providerId: 'claude-prov',
+          model: 'claude-3-5-haiku-20241022',
+        }),
       },
     )
     const r = await svc.complete('extract')
@@ -265,6 +280,69 @@ describe('ModelService.complete — agent chat model fallback', () => {
     expect(body.model).toBe('claude-3-5-haiku-20241022')
     expect(body.max_tokens).toBe(1024)
     expect(body.messages).toEqual([{ role: 'user', content: 'extract' }])
+    expect(body.thinking).toBeUndefined()
+  })
+
+  it('disables GLM thinking for short Anthropic-compatible extraction requests', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: 'text', text: '[]' }],
+          }),
+          { status: 200 },
+        ),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService(
+      { extractionProviderId: undefined, extractionModel: undefined },
+      fetchMock,
+      {
+        providers: {
+          'glm-prov': {
+            id: 'glm-prov',
+            keystore_ref: null,
+            provider_type: 'anthropic',
+            config_json: JSON.stringify({ apiEndpoint: 'https://glm.example.com' }),
+          },
+        },
+        getActiveChatModel: () => ({ providerId: 'glm-prov', model: 'glm-5.3-flash' }),
+      },
+    )
+
+    const result = await svc.complete('extract')
+
+    expect(result).toEqual({ available: true, text: '[]' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).thinking).toEqual({ type: 'disabled' })
+  })
+
+  it('does not treat an Anthropic thinking block as completion text', async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: 'thinking', thinking: 'internal analysis, not the requested JSON' }],
+            stop_reason: 'max_tokens',
+            usage: { output_tokens: 1024 },
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof globalThis.fetch
+    const { svc } = makeService({}, vi.fn(), {
+      providers: {
+        'prov-1': {
+          id: 'prov-1',
+          keystore_ref: null,
+          provider_type: 'anthropic',
+          config_json: JSON.stringify({ apiEndpoint: 'https://anthropic.example.com' }),
+        },
+      },
+    })
+
+    const result = await svc.complete('extract')
+
+    expect(result).toEqual({ available: false, reason: 'malformed completion response' })
   })
 
   it('unavailable when settings absent AND resolver returns null', async () => {
