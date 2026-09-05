@@ -132,6 +132,9 @@ export function VoiceIntegritySettingsItem(): ReactElement {
   const isUnsupported = !status.supported
   const isInstalling = status.downloading
   const isReady = status.ready
+  // 核心就绪但可选组件（如精修模型）缺失时不算"全部就绪"，安装按钮走按需补装而非强制重装
+  const allComponentsReady =
+    native?.state === 'ready' && model?.state === 'ready' && refine?.state === 'ready'
 
   const activeProgress =
     progress != null && progress.state !== 'done' && progress.state !== 'error' ? progress : null
@@ -141,8 +144,8 @@ export function VoiceIntegritySettingsItem(): ReactElement {
     progressPercent != null ? `${Math.round(progressPercent)}%` : isInstalling ? '准备中' : null
 
   const handleInstall = async (): Promise<void> => {
-    // 已就绪 → 强制重装;未就绪 → 按需安装(缺啥补啥)
-    await install(isReady)
+    // 全部组件就绪 → 强制重装(修复用);有缺失(含可选精修模型) → 按需安装,缺啥补啥
+    await install(allComponentsReady)
   }
 
   const handleRefresh = async (): Promise<void> => {
@@ -157,7 +160,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
   ) : isReady ? (
     <div className="integrity-status-badge ok">
       <Icons.CheckCircle size={14} />
-      <span>语音包已就绪</span>
+      <span>{allComponentsReady ? '语音包已就绪' : '语音包已就绪 · 精修模型未安装'}</span>
     </div>
   ) : isInstalling ? (
     <div className="integrity-status-badge warn">
@@ -175,9 +178,11 @@ export function VoiceIntegritySettingsItem(): ReactElement {
     ? '不支持'
     : isInstalling
       ? (progressLabel ?? '下载中')
-      : isReady
-        ? '重新安装'
-        : '安装语音包'
+      : !isReady
+        ? '安装语音包'
+        : allComponentsReady
+          ? '重新安装'
+          : '安装精修模型'
 
   return (
     <div className="settings-section voice-integrity-settings">
@@ -264,7 +269,7 @@ export function VoiceIntegritySettingsItem(): ReactElement {
       <div className="voice-integrity-actions">
         <Button
           size="middle"
-          type={isReady ? 'default' : 'primary'}
+          type={!isReady || !allComponentsReady ? 'primary' : 'default'}
           onClick={() => void handleInstall()}
           disabled={isUnsupported || isInstalling}
           loading={isInstalling}
