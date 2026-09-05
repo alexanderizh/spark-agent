@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent as SparkAgentEvent } from '@spark/agent'
 import type { LlmDelta } from '@spark/agent'
 import type { AgentEvent } from '@spark/protocol'
+import { resolveSoftContextLimitForWindow } from '@spark/shared'
 
 /**
  * spark-engine 事件/流式 delta → protocol AgentEvent 的逐 turn 映射器。
@@ -16,8 +17,7 @@ import type { AgentEvent } from '@spark/protocol'
  * - usage：以 assistant.completed 携带的 usage 累计发 UsageUpdateEvent。
  * - 终态：turn.completed/cancelled/failed → agent_status 终态；failed 前置
  *   agent_error。契约要求终态必须出现在事件流上（EngineExecutor 契约第 1 条）。
- * - M3 待接：permission.requested/decided → PermissionRequest/ResponseEvent；
- *   context.compacted → ContextCompactionEvent（首版不发）。
+ * - 压缩：context.compacted → ContextCompactionEvent（phase=completed，M5 接入）。
  */
 
 export interface SparkEventMapperOptions {
@@ -26,6 +26,8 @@ export interface SparkEventMapperOptions {
   readonly model: string
   /** AssistantMessageEvent.provider / UsageUpdateEvent.provider 用；固定 'spark'。 */
   readonly providerId?: string
+  /** 渠道解析出的上下文窗口；用于 context_usage 进度（缺省按 256k 兜底展示）。 */
+  readonly contextWindowTokens?: number
 }
 
 export class SparkEventMapper {
@@ -66,6 +68,7 @@ export class SparkEventMapper {
         }
         this.#accumulateUsage(event.usage)
         out.push(this.#usageUpdate())
+        out.push(this.#contextUsage(event.usage))
         return out
       }
       case 'tool.call':
@@ -117,9 +120,10 @@ export class SparkEventMapper {
       case 'permission.evaluated':
       case 'permission.decided':
         return []
-      // 首版不映射（引擎侧压缩通知，M5 评估接 ContextCompactionEvent）。
-      // CLI/TUI 侧事件（log.rewind 等）进程内 SDK 不产生或无需上抛。
+      // 引擎压缩完成后发账本事件（携带被折叠区间）；映射为压缩卡片（phase=completed）。
       case 'context.compacted':
+        return [this.#contextCompacted(event.droppedRanges ?? [])]
+      // CLI/TUI 侧事件（log.rewind 等）进程内 SDK 不产生或无需上抛。
       case 'log.rewind':
       case 'plugin.activated':
       case 'plugin.deactivated':
@@ -183,6 +187,25 @@ export class SparkEventMapper {
     return { ...this.#base(), type: 'agent_status', status }
   }
 
+  #contextCompacted(droppedRanges: ReadonlyArray<readonly [number, number]>): AgentEvent {
+    return {
+      ...this.#base(),
+      type: 'context_compaction',
+      provider: 'spark',
+      source: 'spark_engine',
+      phase: 'completed',
+      trigger: 'auto',
+      // 引擎未上报压缩前后 token 数；用被折叠的事件区间描述压缩范围供 UI 展示。
+      message:
+        droppedRanges.length > 0
+          ? `已折叠 ${droppedRanges.length} 段历史（${droppedRanges
+              .map(([from, to]) => `#${from}-#${to}`)
+              .join('、')}）`
+          : '已压缩上下文',
+      rawType: 'context.compacted',
+    }
+  }
+
   #usageUpdate(): AgentEvent {
     return {
       ...this.#base(),
@@ -193,6 +216,33 @@ export class SparkEventMapper {
       outputTokens: this.#usage.outputTokens,
       cacheHitTokens: this.#usage.cacheHitTokens,
       cacheWriteTokens: this.#usage.cacheWriteTokens,
+    }
+  }
+
+  /**
+   * 步级真实上下文规模：该次 LLM 调用的 inputTokens（含 cache 读写）就是模型
+   * 实际看到的 prompt 大小——比 claude 路径的事前字符估算更准，代价是首步
+   * 响应到达后才更新进度。引擎自动压缩落地前 compacted 恒为 false。
+   */
+  #contextUsage(stepUsage: {
+    inputTokens: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }): AgentEvent {
+    const contextWindowTokens =
+      this.#options.contextWindowTokens != null && this.#options.contextWindowTokens > 0
+        ? this.#options.contextWindowTokens
+        : 256_000
+    return {
+      ...this.#base(),
+      type: 'context_usage',
+      estimatedTokens:
+        stepUsage.inputTokens +
+        (stepUsage.cacheReadTokens ?? 0) +
+        (stepUsage.cacheWriteTokens ?? 0),
+      softLimitTokens: resolveSoftContextLimitForWindow(contextWindowTokens),
+      contextWindowTokens,
+      compacted: false,
     }
   }
 

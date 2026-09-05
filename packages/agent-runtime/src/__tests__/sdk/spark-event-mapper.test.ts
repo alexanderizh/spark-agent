@@ -139,13 +139,12 @@ describe('SparkEventMapper', () => {
     expect(failed[1]).toMatchObject({ type: 'agent_status', status: 'error' })
   })
 
-  it('M3 待接事件与噪音事件返回空数组', () => {
+  it('内部消化事件与噪音事件返回空数组', () => {
     const mapper = makeMapper()
     for (const event of [
       { type: 'permission.requested' },
       { type: 'permission.evaluated' },
       { type: 'permission.decided' },
-      { type: 'context.compacted' },
       { type: 'log.rewind' },
       { type: 'session.started' },
       { type: 'turn.queued' },
@@ -162,5 +161,78 @@ describe('SparkEventMapper', () => {
     ] as unknown as LlmDelta[]) {
       expect(mapper.mapDelta(delta)).toEqual([])
     }
+  })
+})
+
+describe('SparkEventMapper M5：压缩与上下文计量', () => {
+  it('context.compacted → context_compaction 压缩卡片事件', () => {
+    const mapper = makeMapper()
+    const events = mapper.mapSparkEvent({
+      type: 'context.compacted',
+      droppedRanges: [
+        [1, 8],
+        [20, 30],
+      ],
+    } as unknown as SparkAgentEvent)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      type: 'context_compaction',
+      provider: 'spark',
+      source: 'spark_engine',
+      phase: 'completed',
+      rawType: 'context.compacted',
+    })
+  })
+
+  it('空 droppedRanges 的压缩事件仍有可读文案', () => {
+    const mapper = makeMapper()
+    const events = mapper.mapSparkEvent({
+      type: 'context.compacted',
+      droppedRanges: [],
+    } as unknown as SparkAgentEvent)
+    expect(events[0]).toMatchObject({
+      type: 'context_compaction',
+      message: '已压缩上下文',
+    })
+  })
+
+  it('assistant.completed 附带步级 context_usage（input+cache 为真实上下文规模）', () => {
+    const mapper = new SparkEventMapper({ ...OPTS, contextWindowTokens: 200_000 })
+    mapper.mapSparkEvent({
+      type: 'assistant.completed',
+      message: { text: 'hi', thinking: '' },
+      usage: { inputTokens: 1_000, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 100 },
+    } as unknown as SparkAgentEvent)
+
+    const contextUsage = mapper
+      .mapSparkEvent({
+        type: 'assistant.completed',
+        message: { text: '', thinking: '' },
+        usage: { inputTokens: 2_000, outputTokens: 10 },
+      } as unknown as SparkAgentEvent)
+      .filter((event) => event.type === 'context_usage')
+    expect(contextUsage).toHaveLength(1)
+    expect(contextUsage[0]).toMatchObject({
+      type: 'context_usage',
+      estimatedTokens: 2_000,
+      contextWindowTokens: 200_000,
+      compacted: false,
+    })
+    // softLimit 与共享窗口策略一致（70%）
+    if (contextUsage[0]?.type === 'context_usage') {
+      expect(contextUsage[0].softLimitTokens).toBe(140_000)
+    }
+  })
+
+  it('未配置窗口时按 256k 兜底展示', () => {
+    const mapper = makeMapper()
+    const events = mapper.mapSparkEvent({
+      type: 'assistant.completed',
+      message: { text: '', thinking: '' },
+      usage: { inputTokens: 5, outputTokens: 1 },
+    } as unknown as SparkAgentEvent)
+    const contextUsage = events.find((event) => event.type === 'context_usage')
+    expect(contextUsage).toMatchObject({ contextWindowTokens: 256_000 })
   })
 })

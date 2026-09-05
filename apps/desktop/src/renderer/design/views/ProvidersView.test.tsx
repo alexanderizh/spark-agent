@@ -1678,7 +1678,7 @@ describe('ProviderEditPanel spark executor switch', () => {
       'provider:get-api-key',
       vi.fn(async () => ({ apiKey: 'sk-test' })),
     )
-    const updateProvider = vi.fn(async () => ({ profile }))
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
     mocks.invokers.set('provider:update', updateProvider)
     await act(async () => {
       root = createRoot(container)

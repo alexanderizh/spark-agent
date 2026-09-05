@@ -16,7 +16,9 @@ export function ContextCompactionCard({ block }: { block: ContextCompactionBlock
       ? 'Claude Code'
       : block.source === 'codex_cli'
         ? 'Codex CLI'
-        : 'Codex SDK'
+        : block.source === 'spark_engine'
+          ? 'Spark 引擎'
+          : 'Codex SDK'
   const phaseLabel =
     block.phase === 'started'
       ? '压缩中…'

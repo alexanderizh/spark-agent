@@ -318,8 +318,8 @@ export type UIBlock =
     }
   | {
       kind: 'context_compaction'
-      provider: 'claude' | 'codex'
-      source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+      provider: 'claude' | 'codex' | 'spark'
+      source: 'claude_code' | 'codex_cli' | 'codex_sdk' | 'spark_engine'
       phase: 'started' | 'completed' | 'failed' | 'boundary'
       trigger?: string
       preTokens?: number
@@ -551,8 +551,8 @@ function mergeToolSchemaObservation(
 
 /** 压缩卡片的可合并字段；context_compaction 事件与旧版摘要分流共用此形状。 */
 type CompactionCardFields = {
-  provider: 'claude' | 'codex'
-  source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+  provider: 'claude' | 'codex' | 'spark'
+  source: 'claude_code' | 'codex_cli' | 'codex_sdk' | 'spark_engine'
   phase: 'started' | 'completed' | 'failed' | 'boundary'
   trigger?: string
   preTokens?: number

@@ -3504,6 +3504,7 @@ export class SessionService {
         model,
         workspaceRootPath,
         permissionMode,
+        contextWindowTokens,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         sparkUpstreamProtocol: sparkRoute.protocol,
         ...(sparkLedgerSessionId != null

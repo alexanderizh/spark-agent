@@ -847,8 +847,8 @@ export interface ContextSummarizedEvent extends BaseEvent {
 /** Emitted only when a provider/CLI reports a real context compaction event. */
 export interface ContextCompactionEvent extends BaseEvent {
   type: 'context_compaction'
-  provider: 'claude' | 'codex'
-  source: 'claude_code' | 'codex_cli' | 'codex_sdk'
+  provider: 'claude' | 'codex' | 'spark'
+  source: 'claude_code' | 'codex_cli' | 'codex_sdk' | 'spark_engine'
   phase: 'started' | 'completed' | 'failed' | 'boundary'
   /** Provider-reported trigger, when present. */
   trigger?: 'manual' | 'auto' | string

@@ -77,7 +77,14 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
     userMessage: string,
     config: SDKExecutorConfig,
   ): Promise<void> {
-    const mapper = new SparkEventMapper({ sessionId, turnId, model: config.model })
+    const mapper = new SparkEventMapper({
+      sessionId,
+      turnId,
+      model: config.model,
+      ...(config.contextWindowTokens != null
+        ? { contextWindowTokens: config.contextWindowTokens }
+        : {}),
+    })
     const emitFrom = (events: readonly AgentEvent[]): void => {
       for (const event of events) this.#emit(event)
     }
