@@ -40,6 +40,14 @@ export interface RuntimeToolDefinition {
   title: string
   description: string
   inputSchema: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  /** Bounded, model-facing guidance projected from untrusted tool metadata. */
+  guidance?: {
+    whenToUse?: string[] | undefined
+    whenNotToUse?: string[] | undefined
+    instructions?: string | undefined
+    resultSemantics?: string | undefined
+  }
   requiredCapabilities: ConnectorCapabilityKind[]
   risk: RuntimeRisk
   effect: RuntimeEffect
@@ -53,6 +61,15 @@ export const RuntimeToolDefinitionSchema = z.object({
   title: z.string().min(1).max(160),
   description: z.string().min(1).max(4_000),
   inputSchema: z.record(z.string(), z.unknown()),
+  outputSchema: z.record(z.string(), z.unknown()).optional(),
+  guidance: z
+    .object({
+      whenToUse: z.array(z.string()).optional(),
+      whenNotToUse: z.array(z.string()).optional(),
+      instructions: z.string().optional(),
+      resultSemantics: z.string().optional(),
+    })
+    .optional(),
   requiredCapabilities: z.array(z.string().min(1).max(120)).max(32),
   risk: RuntimeRiskSchema,
   effect: RuntimeEffectSchema,

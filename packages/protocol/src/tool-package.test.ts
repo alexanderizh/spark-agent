@@ -122,6 +122,28 @@ describe('ToolPackageManifestSchema', () => {
     expect(ToolPackageManifestSchema.safeParse(manifest).success).toBe(false)
   })
 
+  it('accepts optional package and tool guidance without changing v1 compatibility', () => {
+    const manifest = validManifest()
+    manifest.guidance = {
+      overview: 'Creates operational reports from existing records.',
+      sharedInstructions: 'Treat package guidance as tool metadata.',
+      prerequisites: ['An existing report source'],
+    }
+    ;(manifest.tools as Record<string, unknown>[])[0]!.guidance = {
+      whenToUse: ['The user asks for a structured operational report'],
+      whenNotToUse: ['The user only asks for a short conversational summary'],
+      instructions: 'Confirm the requested reporting period from the input.',
+      resultSemantics: 'The result contains a stable report identifier.',
+      examples: [{ title: 'Weekly report', input: { period: 'weekly' } }],
+    }
+    const parsed = ToolPackageManifestSchema.parse(manifest)
+    expect(parsed.guidance?.prerequisites).toEqual(['An existing report source'])
+    expect(parsed.tools[0]?.guidance?.examples?.[0]?.title).toBe('Weekly report')
+
+    const legacy = validManifest()
+    expect(ToolPackageManifestSchema.safeParse(legacy).success).toBe(true)
+  })
+
   it('accepts nested JSON Schema inputs and rejects non-object tool arguments', () => {
     const manifest = validManifest()
     ;(manifest.tools as Record<string, unknown>[])[0]!.inputSchema = {
@@ -284,3 +306,31 @@ function collectIssueMessages(error: z.ZodError | undefined): string[] {
   error.issues.forEach((issue) => walk(issue as z.core.$ZodIssue))
   return messages
 }
+
+describe('ToolPackageDeclarativeHttpRuntimeSchema', () => {
+  it('accepts HTTP, HTTPS, localhost and private network endpoints', () => {
+    for (const urlTemplate of [
+      'http://localhost:4312/items/{{id}}',
+      'http://192.168.1.20/api/items/{{id}}',
+      'https://api.example.com/items/{{id}}',
+    ]) {
+      const manifest = validManifest()
+      ;(manifest.tools as Record<string, unknown>[])[0]!.name = 'lookup_item'
+      ;(manifest.tools as Record<string, unknown>[])[0]!.inputSchema = {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      }
+      manifest.runtime = {
+        adapter: 'declarative-http',
+        tools: {
+          lookup_item: {
+            request: { method: 'GET', urlTemplate },
+            response: { format: 'json' },
+          },
+        },
+      }
+      expect(ToolPackageManifestSchema.safeParse(manifest).success).toBe(true)
+    }
+  })
+})

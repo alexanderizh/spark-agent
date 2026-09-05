@@ -96,6 +96,12 @@ describe('IPC schemas', () => {
 
   it('accepts the canvas log scope and rejects unknown log scopes', () => {
     expect(IpcSchemaRegistry['log:read'].parse({ scope: 'canvas' })).toEqual({ scope: 'canvas' })
+    expect(IpcSchemaRegistry['log:read'].parse({ scope: 'tools', keyword: 'correlation' })).toEqual(
+      {
+        scope: 'tools',
+        keyword: 'correlation',
+      },
+    )
     expect(() => IpcSchemaRegistry['log:read'].parse({ scope: 'tasks' })).toThrow()
   })
 

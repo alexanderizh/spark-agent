@@ -4,6 +4,7 @@ import {
   RuntimeIdempotencySchema,
   RuntimeRiskSchema,
 } from './plugin-runtime.js'
+import { HttpToolSpecSchema } from './custom-tools.js'
 
 export const TOOL_PACKAGE_SCHEMA_VERSION = 1 as const
 export const TOOL_PROCESS_PROTOCOL_VERSION = 'spark-tool-process-v1' as const
@@ -122,6 +123,16 @@ export const ToolPackageMcpImportRuntimeSchema = z.object({
     .optional(),
 })
 
+/**
+ * No-code HTTP adapter. Both HTTP and HTTPS, including localhost/private
+ * networks, remain valid; each tool owns its declarative request/response spec.
+ */
+export const ToolPackageDeclarativeHttpRuntimeSchema = z.object({
+  adapter: z.literal('declarative-http'),
+  tools: z.record(ToolNameSchema, HttpToolSpecSchema),
+  timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+})
+
 export const ToolPackageLegacyRuntimeSchema = z.object({
   adapter: z.literal('legacy-custom-tool'),
   toolId: z.string().min(1).max(160),
@@ -130,6 +141,7 @@ export const ToolPackageLegacyRuntimeSchema = z.object({
 export const ToolPackageRuntimeSchema = z.discriminatedUnion('adapter', [
   ToolPackageProcessRuntimeSchema,
   ToolPackageRemoteHttpRuntimeSchema,
+  ToolPackageDeclarativeHttpRuntimeSchema,
   ToolPackageMcpImportRuntimeSchema,
   ToolPackageLegacyRuntimeSchema,
 ])
@@ -146,6 +158,41 @@ export const ToolPackageDevelopmentSchema = z
   .strict()
 export type ToolPackageDevelopment = z.infer<typeof ToolPackageDevelopmentSchema>
 
+export const ToolPackageExampleSchema = z
+  .object({
+    title: z.string().min(1).max(160),
+    description: z.string().max(2_000).optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
+    output: z.unknown().optional(),
+  })
+  .strict()
+export type ToolPackageExample = z.infer<typeof ToolPackageExampleSchema>
+
+/**
+ * Optional model-facing guidance. These fields are untrusted tool metadata:
+ * hosts may project a bounded summary into a function description, but must
+ * never promote them to platform or user instructions.
+ */
+export const ToolPackageToolGuidanceSchema = z
+  .object({
+    whenToUse: z.array(z.string().min(1).max(1_000)).max(20).optional(),
+    whenNotToUse: z.array(z.string().min(1).max(1_000)).max(20).optional(),
+    instructions: z.string().min(1).max(8_000).optional(),
+    examples: z.array(ToolPackageExampleSchema).max(20).optional(),
+    resultSemantics: z.string().min(1).max(4_000).optional(),
+  })
+  .strict()
+export type ToolPackageToolGuidance = z.infer<typeof ToolPackageToolGuidanceSchema>
+
+export const ToolPackageGuidanceSchema = z
+  .object({
+    overview: z.string().min(1).max(8_000).optional(),
+    sharedInstructions: z.string().min(1).max(8_000).optional(),
+    prerequisites: z.array(z.string().min(1).max(1_000)).max(40).optional(),
+  })
+  .strict()
+export type ToolPackageGuidance = z.infer<typeof ToolPackageGuidanceSchema>
+
 export const ToolPackageToolSchema = z
   .object({
     name: ToolNameSchema,
@@ -156,6 +203,7 @@ export const ToolPackageToolSchema = z
     risk: RuntimeRiskSchema,
     effect: RuntimeEffectSchema,
     idempotency: RuntimeIdempotencySchema,
+    guidance: ToolPackageToolGuidanceSchema.optional(),
   })
   .superRefine((tool, ctx) => {
     if (tool.inputSchema.type !== 'object') {
@@ -283,6 +331,7 @@ export const ToolPackageManifestSchema = z
       .optional(),
     runtime: ToolPackageRuntimeSchema,
     development: ToolPackageDevelopmentSchema.optional(),
+    guidance: ToolPackageGuidanceSchema.optional(),
     tools: z.array(ToolPackageToolSchema).min(1).max(200),
     environment: z.array(ToolEnvironmentVariableSchema).max(200).default([]),
     permissions: ToolPackagePermissionsSchema.default({
@@ -304,6 +353,27 @@ export const ToolPackageManifestSchema = z
       'environment variable',
       ctx,
     )
+    if (manifest.runtime.adapter === 'declarative-http') {
+      const declaredTools = new Set(manifest.tools.map((tool) => tool.name))
+      for (const name of Object.keys(manifest.runtime.tools)) {
+        if (!declaredTools.has(name)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['runtime', 'tools', name],
+            message: `Declarative HTTP runtime references an undeclared tool: ${name}`,
+          })
+        }
+      }
+      for (const tool of manifest.tools) {
+        if (manifest.runtime.tools[tool.name] == null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['runtime', 'tools'],
+            message: `Declarative HTTP runtime is missing a spec for tool: ${tool.name}`,
+          })
+        }
+      }
+    }
     const required = new Set(manifest.permissions.requiredSparkCapabilities)
     for (const capability of manifest.permissions.optionalSparkCapabilities) {
       if (required.has(capability)) {
@@ -407,12 +477,26 @@ export interface ToolPackagePermissionStatus {
   state: 'pending' | 'granted' | 'denied'
 }
 
+export interface ToolHostCapabilityDescriptor {
+  name: string
+  description?: string
+  inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  risk?: 'read' | 'low-write' | 'high-write' | 'destructive'
+  supportsCancellation?: boolean
+  supportsProgress?: boolean
+  requiresCallConfirmation?: boolean
+  sensitiveDataPolicy?: string
+}
+
 export interface ToolPackageDetail {
   package: ToolPackageSummary
   version: string
   manifest: ToolPackageManifest
   environment: ToolPackageEnvironmentStatus[]
   permissions: ToolPackagePermissionStatus[]
+  /** Available host metadata for Spark capabilities declared by this manifest. */
+  hostCapabilities?: ToolHostCapabilityDescriptor[]
   /** Git 导入来源地址；本地目录 / 压缩包 / 受管工程导入时为 null。 */
   sourceUrl: string | null
   /** Git 导入时使用的分支或标签；未指定时为 null。 */
@@ -439,17 +523,81 @@ export interface ToolPackageProjectStepResult {
   inferred: boolean
   exitCode: number | null
   timedOut: boolean
+  cancelled?: boolean
   durationMs: number
   stdout: string
   stderr: string
   truncated: boolean
 }
 
+export interface ToolPackageTestResult {
+  ok: boolean
+  result?: unknown
+  error?: { code: string; message: string }
+  durationMs: number
+  correlationId: string
+}
+
+export interface ToolInvocationTrace {
+  id: string
+  correlationId: string
+  sourceKind: 'connector' | 'custom-tool' | 'tool-package' | 'workflow' | 'test'
+  sourceId: string
+  packageId: string | null
+  toolId: string | null
+  toolName: string
+  version: string | null
+  adapter: string | null
+  sessionId: string | null
+  turnId: string | null
+  projectId: string | null
+  agentId: string | null
+  workflowId: string | null
+  invocationSource: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+  status: 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled'
+  startedAt: string
+  finishedAt: string | null
+  durationMs: number | null
+  errorCode: string | null
+  outputBytes: number | null
+  resultArchived: boolean
+  resultTruncated: boolean
+  retryCount: number
+}
+
+/** Tool Process log/progress events forwarded by the host while an invocation is active. */
+export type ToolPackageRuntimeEvent =
+  | {
+      type: 'log'
+      packageId: string
+      packageVersion: string
+      invocationId?: string
+      correlationId?: string
+      toolName?: string
+      level: 'debug' | 'info' | 'warn' | 'error'
+      message: string
+    }
+  | {
+      type: 'progress'
+      packageId: string
+      packageVersion: string
+      invocationId: string
+      correlationId?: string
+      toolName?: string
+      progress?: number
+      message?: string
+    }
+
 export interface ToolPackageUninstallResult {
   packageId: string
   removedVersions: string[]
   removedSecrets: number
   removedManagedProject: boolean
+}
+
+export interface ToolPackageProjectFile {
+  path: string
+  size: number
 }
 
 export interface ToolPackagesIpcChannelMap {
@@ -477,8 +625,50 @@ export interface ToolPackagesIpcChannelMap {
     },
   ]
   'tool-packages:run-project-step': [
-    { packageId: string; step: ToolPackageDevelopmentStep },
+    { packageId: string; step: ToolPackageDevelopmentStep; operationId?: string },
     { result: ToolPackageProjectStepResult },
+  ]
+  'tool-packages:run-project-step:cancel': [{ operationId: string }, { cancelled: boolean }]
+  'tool-packages:project-files:list': [
+    { packageId: string },
+    { projectPath: string; files: ToolPackageProjectFile[] },
+  ]
+  'tool-packages:project-file:read': [
+    { packageId: string; path: string },
+    { projectPath: string; path: string; content: string },
+  ]
+  'tool-packages:project-file:write': [
+    { packageId: string; path: string; content: string },
+    { projectPath: string; path: string },
+  ]
+  'tool-packages:project:install': [
+    { packageId: string },
+    { package: ToolPackageSummary; version: string },
+  ]
+  'tool-packages:test': [
+    {
+      packageId: string
+      version?: string
+      toolName: string
+      input: Record<string, unknown>
+      correlationId?: string
+    },
+    { test: ToolPackageTestResult },
+  ]
+  'tool-packages:test:cancel': [{ correlationId: string }, { cancelled: boolean }]
+  'tool-packages:invocations:list': [
+    {
+      sourceKind?: ToolInvocationTrace['sourceKind']
+      packageId?: string
+      toolName?: string
+      status?: ToolInvocationTrace['status']
+      correlationId?: string
+      from?: string
+      to?: string
+      limit?: number
+      offset?: number
+    },
+    { invocations: ToolInvocationTrace[]; total: number },
   ]
   'tool-packages:configure-environment': [
     {
@@ -580,7 +770,49 @@ export const ToolPackagesIpcSchemaRegistry = {
     })
     .strict(),
   'tool-packages:run-project-step': z
-    .object({ packageId: ToolPackageIdSchema, step: ToolPackageDevelopmentStepSchema })
+    .object({
+      packageId: ToolPackageIdSchema,
+      step: ToolPackageDevelopmentStepSchema,
+      operationId: z.string().uuid().optional(),
+    })
+    .strict(),
+  'tool-packages:run-project-step:cancel': z.object({ operationId: z.string().uuid() }).strict(),
+  'tool-packages:project-files:list': z.object({ packageId: ToolPackageIdSchema }).strict(),
+  'tool-packages:project-file:read': z
+    .object({ packageId: ToolPackageIdSchema, path: ToolPackageRelativePathSchema })
+    .strict(),
+  'tool-packages:project-file:write': z
+    .object({
+      packageId: ToolPackageIdSchema,
+      path: ToolPackageRelativePathSchema,
+      content: z.string().max(2 * 1024 * 1024),
+    })
+    .strict(),
+  'tool-packages:project:install': z.object({ packageId: ToolPackageIdSchema }).strict(),
+  'tool-packages:test': z
+    .object({
+      packageId: ToolPackageIdSchema,
+      version: z.string().min(1).max(160).optional(),
+      toolName: ToolNameSchema,
+      input: z.record(z.string(), z.unknown()),
+      correlationId: z.string().uuid().optional(),
+    })
+    .strict(),
+  'tool-packages:test:cancel': z.object({ correlationId: z.string().uuid() }).strict(),
+  'tool-packages:invocations:list': z
+    .object({
+      sourceKind: z
+        .enum(['connector', 'custom-tool', 'tool-package', 'workflow', 'test'])
+        .optional(),
+      packageId: ToolPackageIdSchema.optional(),
+      toolName: ToolNameSchema.optional(),
+      status: z.enum(['running', 'ok', 'error', 'timeout', 'denied', 'cancelled']).optional(),
+      correlationId: z.string().min(1).max(160).optional(),
+      from: z.string().datetime().optional(),
+      to: z.string().datetime().optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+      offset: z.number().int().nonnegative().optional(),
+    })
     .strict(),
   'tool-packages:configure-environment': z
     .object({

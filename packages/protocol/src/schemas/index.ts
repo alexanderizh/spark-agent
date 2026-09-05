@@ -1345,7 +1345,9 @@ export const IpcSchemaRegistry = {
   'log:read': z.object({
     maxLines: z.number().int().min(1).max(5000).optional(),
     levels: z.array(z.enum(['debug', 'info', 'warn', 'error'])).optional(),
-    scope: z.enum(['all', 'canvas']).optional(),
+    scope: z.enum(['all', 'canvas', 'tools']).optional(),
+    namespace: z.string().min(1).max(200).optional(),
+    keyword: z.string().min(1).max(500).optional(),
   }),
   'log:clear': z.object({}),
   'log:reveal': z.object({}),

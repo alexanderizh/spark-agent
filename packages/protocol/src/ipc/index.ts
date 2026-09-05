@@ -115,7 +115,7 @@ import type {
 } from '../computer-use/ipc.js'
 import type { SubAppIpcChannelMap } from '../sub-app.js'
 import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
-import type { ToolPackagesIpcChannelMap } from '../tool-package.js'
+import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool-package.js'
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
 import type { NotificationChangedEvent } from '../notifications.js'
@@ -3446,7 +3446,11 @@ export interface LogReadRequest {
   /** 仅返回这些级别的行；为空/缺省表示不过滤。 */
   levels?: LogLevel[]
   /** 日志范围；canvas 会聚合画布生命周期、媒体 adapter 与轮询诊断。 */
-  scope?: 'all' | 'canvas'
+  scope?: 'all' | 'canvas' | 'tools'
+  /** Optional namespace prefix, applied after the selected scope. */
+  namespace?: string
+  /** Optional case-insensitive text filter. */
+  keyword?: string
 }
 
 export interface LogReadResponse {
@@ -7225,10 +7229,20 @@ export interface IpcStreamChannelMap {
   }
   /** Tool Package 安装、配置、权限、启停或安全输入请求变化。 */
   'stream:tool-packages:changed': {
-    change: 'installed' | 'configured' | 'permission' | 'enabled' | 'disabled' | 'secret-requested'
+    change:
+      | 'installed'
+      | 'configured'
+      | 'permission'
+      | 'enabled'
+      | 'disabled'
+      | 'secret-requested'
+      | 'uninstalled'
+      | 'version-removed'
     packageId: string
     runtimeChanged: boolean
   }
+  /** Tool Process invocation logs and throttled progress updates. */
+  'stream:tool-packages:runtime': ToolPackageRuntimeEvent
   /** 消息通知变化（主进程轮询 edu-server 后广播）：渲染层据此更新铃铛角标、
    * 快捷面板缓存；newNotifications/newAnnouncements 非空时弹即时 toast。 */
   'stream:notification:changed': NotificationChangedEvent
