@@ -20,10 +20,8 @@ import { join } from 'node:path'
 import { renameSync } from 'node:fs'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
-import type {
-  CanvasMediaTaskCreateResponse,
-  CanvasMediaTaskStreamPayload,
-} from '@spark/protocol'
+import type { CanvasMediaTaskCreateResponse, CanvasMediaTaskStreamPayload } from '@spark/protocol'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import { probeVideo, extractFramesAtTimes } from '../services/FfmpegRunner.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
@@ -51,7 +49,7 @@ export function registerCanvasFrameExtractIpc(
     ((runtimeTaskId: string) =>
       join(app.getPath('userData'), '.spark-artifacts', 'media', 'canvas-frames', runtimeTaskId))
   const runningTasks = new Map<string, AbortController>()
-  app.once('before-quit', () => {
+  registerAppShutdownCleanup('canvas frame extraction tasks', () => {
     for (const controller of runningTasks.values()) controller.abort()
     runningTasks.clear()
   })
@@ -95,10 +93,15 @@ export function registerCanvasFrameExtractIpc(
         )
         const firstSec = 0
         const lastSec = Math.max(0, probe.durationSec - TAIL_FRAME_EPSILON_SEC)
-        const frames = await extractFramesAtTimes(request.inputPath, [firstSec, lastSec], outputDir, {
-          format: 'jpg',
-          quality: 2,
-        })
+        const frames = await extractFramesAtTimes(
+          request.inputPath,
+          [firstSec, lastSec],
+          outputDir,
+          {
+            format: 'jpg',
+            quality: 2,
+          },
+        )
         if (controller.signal.aborted) throw new Error('cancelled')
         if (frames.length === 0) throw new Error('未能从视频中提取出任何帧')
 

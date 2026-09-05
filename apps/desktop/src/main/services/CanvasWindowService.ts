@@ -2,6 +2,7 @@ import electron from 'electron'
 import type { BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { createLogger, SparkError } from '@spark/shared'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import { registerAppWindow } from '../windows/index.js'
 import { buildWindowChromeOptions } from '../window-chrome.js'
 import { openExternalUrlSafely } from './ExternalUrlPolicy.js'
@@ -251,7 +252,7 @@ export function getCanvasWindowService(): CanvasWindowService {
         void openExternalUrlSafely(url, (target) => shell.openExternal(target))
       },
     })
-    app.on('before-quit', () => {
+    registerAppShutdownCleanup('canvas window', () => {
       singleton?.close()
     })
   }

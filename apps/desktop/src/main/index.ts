@@ -149,7 +149,9 @@ import {
 } from './services/PlatformModel/PlatformModelDeepLink.js'
 import {
   createAppShutdownCoordinator,
+  registerAppShutdownCleanup,
   registerEmergencySessionShutdown,
+  runRegisteredAppShutdownCleanup,
   runShutdownCleanupSteps,
 } from './app-shutdown.js'
 import { disposeSessionServiceForShutdown } from './session-service-shutdown.js'
@@ -912,7 +914,7 @@ async function initializeApp(): Promise<void> {
     // 临时媒体目录（粘贴/预览副本）周期清理：按 mtime 保留 7 天，6 小时一跑。
     const tempMediaFilesMaintenance = new TempMediaFilesMaintenance()
     tempMediaFilesMaintenance.start()
-    app.on('before-quit', () => {
+    registerAppShutdownCleanup('temporary media files maintenance', () => {
       tempMediaFilesMaintenance.stop()
     })
     log.info('Database initialized successfully')
@@ -984,6 +986,13 @@ async function initializeApp(): Promise<void> {
               {
                 name: 'custom tools runtime',
                 run: () => customToolsRuntime?.stop() ?? Promise.resolve(),
+              },
+              {
+                name: 'registered app lifecycle cleanup',
+                run: () =>
+                  runRegisteredAppShutdownCleanup((stepName, err) => {
+                    log.warn(`Failed to clean up ${stepName} on quit: ${String(err)}`)
+                  }),
               },
               {
                 name: 'database',
@@ -1088,7 +1097,7 @@ async function initializeApp(): Promise<void> {
     const taskService = getScheduledTaskService()
     taskService.startScheduler()
     log.info('Scheduled task scheduler started')
-    app.on('before-quit', () => {
+    registerAppShutdownCleanup('scheduled task scheduler', () => {
       taskService.stopScheduler()
     })
   } catch (err) {

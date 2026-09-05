@@ -13,6 +13,7 @@ import electron from 'electron'
 import type { BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { createLogger } from '@spark/shared'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import { getMainWindow, registerAppWindow } from '../windows/index.js'
 
 const log = createLogger('browser-panel-window')
@@ -190,7 +191,7 @@ export function getBrowserPanelWindowService(): BrowserPanelWindowService {
         return win != null && !win.isDestroyed() ? win.webContents : null
       },
     })
-    app.on('before-quit', () => {
+    registerAppShutdownCleanup('browser panel window', () => {
       singleton?.close()
     })
   }

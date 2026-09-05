@@ -6,6 +6,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import type { BrowserContext, Page } from 'playwright'
 import { createLogger } from '@spark/shared'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import type {
   InternalBrowserDownloadResult,
   InternalBrowserMediaCandidate,
@@ -197,9 +198,7 @@ export class SystemBrowserService {
   }
 
   bindLifecycle(): void {
-    app.on('before-quit', () => {
-      void this.closeAll()
-    })
+    registerAppShutdownCleanup('system browser windows', () => this.closeAll())
   }
 
   async openWindow(opts: {

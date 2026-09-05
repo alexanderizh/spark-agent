@@ -3,6 +3,7 @@ import type { Cookie, DownloadItem, Event, Session, WebContents } from 'electron
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { createLogger } from '@spark/shared'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import { buildInternalBrowserShellUrl } from './internal-browser-shell.js'
 
 const log = createLogger('internal-browser')
@@ -334,7 +335,7 @@ export class InternalBrowserService {
     // which never passes through openWindow — install its cookie bridge
     // eagerly so sidebar logins persist too.
     this.installSessionCookieBridge(partitionForProfile('default'))
-    app.on('before-quit', () => {
+    registerAppShutdownCleanup('internal browser windows', () => {
       this.closeAll()
     })
   }

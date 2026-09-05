@@ -16,10 +16,8 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
-import type {
-  CanvasMediaTaskCreateResponse,
-  CanvasMediaTaskStreamPayload,
-} from '@spark/protocol'
+import type { CanvasMediaTaskCreateResponse, CanvasMediaTaskStreamPayload } from '@spark/protocol'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import {
   extractAudio,
   probeVideo,
@@ -59,7 +57,7 @@ export function registerCanvasAudioExtractIpc(
       )
     })
   const runningTasks = new Map<string, AbortController>()
-  app.once('before-quit', () => {
+  registerAppShutdownCleanup('canvas audio extraction tasks', () => {
     for (const controller of runningTasks.values()) controller.abort()
     runningTasks.clear()
   })
@@ -95,7 +93,11 @@ export function registerCanvasAudioExtractIpc(
           const probe = await probeVideo(request.inputPath)
           if (controller.signal.aborted) throw new Error('cancelled')
           if (!probe.hasAudio) throw new Error('该视频没有音轨，无法分离音频')
-          outputPath = createOutputPath(runtimeTaskId, audioExtForCodec(probe.audioCodec), sourceBaseName)
+          outputPath = createOutputPath(
+            runtimeTaskId,
+            audioExtForCodec(probe.audioCodec),
+            sourceBaseName,
+          )
         } else {
           const ext = format === 'wav' ? 'wav' : format === 'mp3' ? 'mp3' : 'm4a'
           outputPath = createOutputPath(runtimeTaskId, ext, sourceBaseName)
@@ -134,7 +136,9 @@ export function registerCanvasAudioExtractIpc(
             },
           ],
         })
-        log.info(`event=canvas_audio_extract task=${runtimeTaskId} stage=completed status=succeeded`)
+        log.info(
+          `event=canvas_audio_extract task=${runtimeTaskId} stage=completed status=succeeded`,
+        )
       } catch (error) {
         const cancelled =
           controller.signal.aborted || (error instanceof Error && error.message === 'cancelled')

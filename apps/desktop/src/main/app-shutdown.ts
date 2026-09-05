@@ -23,6 +23,34 @@ export interface ShutdownCleanupStep {
   run: () => void | Promise<void>
 }
 
+const registeredShutdownCleanup = new Map<string, () => void | Promise<void>>()
+
+/**
+ * Register process-lifetime cleanup without adding another Electron
+ * `before-quit` listener. Stable names make repeated lifecycle binding
+ * idempotent and keep the app below EventEmitter's listener warning limit.
+ */
+export function registerAppShutdownCleanup(
+  name: string,
+  cleanup: () => void | Promise<void>,
+): () => void {
+  registeredShutdownCleanup.set(name, cleanup)
+  return () => {
+    if (registeredShutdownCleanup.get(name) === cleanup) {
+      registeredShutdownCleanup.delete(name)
+    }
+  }
+}
+
+export async function runRegisteredAppShutdownCleanup(
+  onError?: (stepName: string, error: unknown) => void,
+): Promise<void> {
+  await runShutdownCleanupSteps(
+    [...registeredShutdownCleanup].map(([name, run]) => ({ name, run })),
+    onError,
+  )
+}
+
 export async function runShutdownCleanupSteps(
   steps: ShutdownCleanupStep[],
   onError?: (stepName: string, error: unknown) => void,

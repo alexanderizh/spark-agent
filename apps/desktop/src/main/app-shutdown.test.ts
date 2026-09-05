@@ -1,19 +1,46 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createAppShutdownCoordinator,
+  registerAppShutdownCleanup,
   registerEmergencySessionShutdown,
+  runRegisteredAppShutdownCleanup,
   runShutdownCleanupSteps,
 } from './app-shutdown.js'
 
 describe('app shutdown coordination', () => {
+  it('keeps process-lifetime cleanup idempotent without Electron listeners', async () => {
+    const first = vi.fn()
+    const replacement = vi.fn()
+
+    const unregisterFirst = registerAppShutdownCleanup('test lifecycle cleanup', first)
+    registerAppShutdownCleanup('test lifecycle cleanup', replacement)
+    unregisterFirst()
+
+    await runRegisteredAppShutdownCleanup()
+
+    expect(first).not.toHaveBeenCalled()
+    expect(replacement).toHaveBeenCalledOnce()
+  })
+
   it('continues local cleanup after an earlier step fails', async () => {
     const order: string[] = []
     const onError = vi.fn()
 
     await runShutdownCleanupSteps(
       [
-        { name: 'watchers', run: () => { order.push('watchers'); throw new Error('failed') } },
-        { name: 'database', run: () => { order.push('database') } },
+        {
+          name: 'watchers',
+          run: () => {
+            order.push('watchers')
+            throw new Error('failed')
+          },
+        },
+        {
+          name: 'database',
+          run: () => {
+            order.push('database')
+          },
+        },
       ],
       onError,
     )

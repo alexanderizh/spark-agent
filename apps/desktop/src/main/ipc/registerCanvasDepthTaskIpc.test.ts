@@ -190,7 +190,7 @@ describe('registerCanvasDepthTaskIpc', () => {
     ).rejects.toThrow('不在允许的画布或工作区目录内')
   })
 
-  it('registers cleanup for application shutdown', () => {
+  it('does not add a dedicated Electron shutdown listener', () => {
     registerCanvasDepthTaskIpc({
       capabilityManager: {
         list: vi.fn(),
@@ -200,7 +200,7 @@ describe('registerCanvasDepthTaskIpc', () => {
       } as never,
     })
 
-    expect(harness.beforeQuit).toBeTypeOf('function')
+    expect(harness.beforeQuit).toBeUndefined()
   })
 
   it('reports an integrity error when install succeeds without an installed version', async () => {

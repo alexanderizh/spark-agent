@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
 import { getBrowserPanelDevtoolsService } from '../services/BrowserPanelDevtoolsService.js'
 import { typedIpcHandle } from './typed-ipc.js'
 
@@ -19,5 +19,5 @@ export function registerBrowserPanelDevtoolsIpc(): void {
     success: service.close(event.sender),
   }))
 
-  app.on('before-quit', () => service.closeAll())
+  registerAppShutdownCleanup('browser panel devtools', () => service.closeAll())
 }
