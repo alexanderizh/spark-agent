@@ -6035,6 +6035,7 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
   codex: 'Codex',
+  spark: 'Spark',
 }
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =

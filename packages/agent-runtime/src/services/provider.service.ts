@@ -358,6 +358,7 @@ function rowToProfile(row: {
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.mediaApiEndpoint !== undefined && { mediaApiEndpoint: config.mediaApiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
+    ...(config.useSparkExecutor === true && { useSparkExecutor: true }),
     supportsMillionContext: isManagedPlatformProvider || config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' &&
       config.contextWindow > 0 && { contextWindow: config.contextWindow }),
@@ -640,6 +641,8 @@ export class ProviderService {
     model?: string
     apiEndpoint?: string
     codexApiKind?: 'chat' | 'responses' | 'embedding'
+    /** 使用 Spark 执行器作为该渠道会话的默认引擎。 */
+    useSparkExecutor?: boolean
     supportsMillionContext?: boolean
     contextWindow?: number
     maxTokens?: number
@@ -695,6 +698,7 @@ export class ProviderService {
         ...(params.providerIcon !== undefined && { providerIcon: params.providerIcon }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
+        ...(params.useSparkExecutor !== undefined && { useSparkExecutor: params.useSparkExecutor }),
         ...(params.supportsMillionContext !== undefined && {
           supportsMillionContext: params.supportsMillionContext,
         }),
@@ -744,6 +748,8 @@ export class ProviderService {
     model?: string
     apiEndpoint?: string | null
     codexApiKind?: 'chat' | 'responses' | 'embedding'
+    /** 使用 Spark 执行器开关；undefined 不修改。 */
+    useSparkExecutor?: boolean
     supportsMillionContext?: boolean
     /** 0 清除自定义窗口；正整数设置；undefined 不修改 */
     contextWindow?: number
@@ -812,6 +818,7 @@ export class ProviderService {
       params.providerIcon !== undefined ||
       params.apiEndpoint !== undefined ||
       params.codexApiKind !== undefined ||
+      params.useSparkExecutor !== undefined ||
       params.supportsMillionContext !== undefined ||
       params.contextWindow !== undefined ||
       params.maxTokens !== undefined ||
@@ -863,6 +870,10 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.codexApiKind !== undefined) {
       newConfig.codexApiKind = params.codexApiKind
+    }
+    if (newConfig !== undefined && params.useSparkExecutor !== undefined) {
+      if (params.useSparkExecutor) newConfig.useSparkExecutor = true
+      else delete newConfig.useSparkExecutor
     }
     if (newConfig !== undefined && params.supportsMillionContext !== undefined) {
       newConfig.supportsMillionContext = params.supportsMillionContext
@@ -1627,6 +1638,8 @@ interface ProviderConfig {
   apiEndpoint?: string
   mediaApiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
+  /** 使用 Spark 执行器（自研 spark-engine）作为该渠道会话的默认引擎。 */
+  useSparkExecutor?: boolean
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens），优先级高于 supportsMillionContext。 */
   contextWindow?: number

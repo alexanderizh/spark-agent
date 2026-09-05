@@ -1197,6 +1197,17 @@ export function supportsOpenAIFastMode(params: {
   )
 }
 
+/** 读取渠道 config_json 的「使用 Spark 执行器」开关；缺省/脏数据一律视为关闭。 */
+export function getProviderUseSparkExecutor(configJson: string | null | undefined): boolean {
+  if (configJson == null) return false
+  try {
+    const config = JSON.parse(configJson) as { useSparkExecutor?: unknown }
+    return config.useSparkExecutor === true
+  } catch {
+    return false
+  }
+}
+
 export function getProviderModelIds(configJson: string | null | undefined): string[] {
   if (configJson == null) return []
   try {
@@ -1405,13 +1416,13 @@ export function getLatestMatchingTurnPromptSnapshot(
   expected: {
     model: string
     providerProfileId: string
-    adapterKind: 'claude-sdk' | 'codex'
+    adapterKind: 'claude-sdk' | 'codex' | 'spark'
     sdkSessionId: string
   },
 ): {
   model: string
   providerProfileId?: string
-  adapterKind: 'claude-sdk' | 'codex'
+  adapterKind: 'claude-sdk' | 'codex' | 'spark'
   sdkSessionId?: string
 } | null {
   const row = eventRepo.getLatestByTypeAndJsonValue(

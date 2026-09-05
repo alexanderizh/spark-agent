@@ -245,6 +245,7 @@ import {
   parseWorktreePromptMeta,
   pickGoalDrainableRuntimeSelection,
   prepareTurnAttachments,
+  getProviderUseSparkExecutor,
   providerRowsForModelRouter,
   assertModelNotScheduledBlocked,
   readSessionTeamConfig,
@@ -2455,6 +2456,7 @@ export class SessionService {
           : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
+      getProviderUseSparkExecutor(provider.config_json),
     )
     const adapterKind = resolveEngineKind(agentAdapter)
     const resumeProviderProfileId =
@@ -7441,6 +7443,7 @@ export class SessionService {
       member.agentAdapter ?? runtimeSelectionSnapshot.agentAdapter,
       runtimeSelectionSnapshot.chatMode,
       provider.provider_type,
+      getProviderUseSparkExecutor(provider.config_json),
     )
     // FR-0a：按 adapter 解析执行器档位 + codex sdkConfig 扩展字段（抽纯函数
     // resolveCodexMemberExecutionProfile 便于单测、防 Host/member 漂移）。

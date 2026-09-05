@@ -85,7 +85,7 @@ export const SessionReasoningEffortSchema = z.enum([
   'xhigh',
   'max',
 ])
-export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex'])
+export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex', 'spark'])
 export const SessionPermissionModeSchema = z.enum([
   'claude-ask',
   'claude-auto-edits',
@@ -95,6 +95,10 @@ export const SessionPermissionModeSchema = z.enum([
   'codex-default',
   'codex-auto-review',
   'codex-full-access',
+  'spark-default',
+  'spark-accept-edits',
+  'spark-plan',
+  'spark-bypass',
 ])
 export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])
@@ -592,6 +596,7 @@ export const ProviderCreateRequestSchema = z
     model: z.string().min(1).max(200).optional(),
     apiEndpoint: z.string().min(1).max(500).optional(),
     codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
+    useSparkExecutor: z.boolean().optional(),
     apiKey: z.string().min(1).max(500),
     isDefault: z.boolean().optional().default(false),
     supportsMillionContext: z.boolean().optional().default(false),
@@ -646,6 +651,7 @@ export const ProviderUpdateRequestSchema = z.object({
   model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
+  useSparkExecutor: z.boolean().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   supportsMillionContext: z.boolean().optional(),
@@ -691,6 +697,7 @@ export const ProviderConnectionTestRequestSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   defaultModel: z.string().min(1).max(200),
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
+  useSparkExecutor: z.boolean().optional(),
   apiKey: z.string().max(500).optional(),
 })
 

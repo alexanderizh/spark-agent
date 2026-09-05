@@ -15,7 +15,7 @@ import type { EngineKind } from '../../sdk/engine-executor.js'
 export type AgentAdapterKind = SessionAgentAdapter
 
 /**
- * adapter 口径（3 值，含历史值 'claude'）→ 引擎口径（2 值）。
+ * adapter 口径（4 值，含历史值 'claude'）→ 引擎口径（3 值）。
  * 穷尽 switch：新增 adapter 值漏配即编译错。
  */
 export function resolveEngineKind(adapter: AgentAdapterKind): EngineKind {
@@ -25,6 +25,8 @@ export function resolveEngineKind(adapter: AgentAdapterKind): EngineKind {
       return 'claude-sdk'
     case 'codex':
       return 'codex'
+    case 'spark':
+      return 'spark'
   }
 }
 
@@ -34,6 +36,18 @@ const CODEX_PERMISSION_MODES: readonly SessionPermissionMode[] = [
   'codex-auto-review',
   'codex-full-access',
 ]
+
+/** spark 侧权限模式字面量（对齐 spark-engine 的 default/acceptEdits/plan/bypass 四模式）。 */
+const SPARK_PERMISSION_MODES: readonly SessionPermissionMode[] = [
+  'spark-default',
+  'spark-accept-edits',
+  'spark-plan',
+  'spark-bypass',
+]
+
+export function isSparkPermissionMode(value: string | null | undefined): boolean {
+  return SPARK_PERMISSION_MODES.includes(value as SessionPermissionMode)
+}
 
 /**
  * 判断权限模式值是否属于 codex 侧。
@@ -49,11 +63,16 @@ export function getAgentAdapterFromSession(
   value: string | null | undefined,
   legacyChatMode: string | null | undefined,
   providerType: string | null,
+  useSparkExecutor?: boolean | null,
 ): AgentAdapterKind {
-  if (value === 'claude-sdk' || value === 'codex') return value
+  if (value === 'claude-sdk' || value === 'codex' || value === 'spark') return value
   if (value === 'claude') return 'claude-sdk'
-  if (legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
+  if (legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex' || legacyChatMode === 'spark') {
+    return legacyChatMode
+  }
   if (legacyChatMode === 'claude') return 'claude-sdk'
+  // 渠道级开关：开启 Spark 执行器的渠道，会话默认走 spark 引擎（用户仍可显式切换）。
+  if (useSparkExecutor === true) return 'spark'
   // Default: Anthropic providers use claude-sdk. Direct Anthropic API is not a
   // supported execution path for the core code agent.
   return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
@@ -71,21 +90,32 @@ export function getPermissionModeFromSession(
     value === 'claude-bypass' ||
     value === 'codex-default' ||
     value === 'codex-auto-review' ||
-    value === 'codex-full-access'
+    value === 'codex-full-access' ||
+    value === 'spark-default' ||
+    value === 'spark-accept-edits' ||
+    value === 'spark-plan' ||
+    value === 'spark-bypass'
   ) {
     return value
   }
-  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+  if (adapter === 'codex') return 'codex-default'
+  if (adapter === 'spark') return 'spark-default'
+  return 'claude-ask'
 }
 
 function normalizeAgentAdapter(value: string | null | undefined): AgentAdapterKind {
   if (value === 'claude' || value === 'claude-sdk') return 'claude-sdk'
   if (value === 'codex') return 'codex'
+  if (value === 'spark') return 'spark'
   return 'claude-sdk'
 }
 
 function normalizePermissionMode(value: string | null | undefined): SessionPermissionMode {
-  const adapter: AgentAdapterKind = isCodexPermissionMode(value) ? 'codex' : 'claude-sdk'
+  const adapter: AgentAdapterKind = isCodexPermissionMode(value)
+    ? 'codex'
+    : isSparkPermissionMode(value)
+      ? 'spark'
+      : 'claude-sdk'
   return getPermissionModeFromSession(value, adapter)
 }
 

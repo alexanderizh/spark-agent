@@ -34,6 +34,10 @@ export { CodexOpenAIExecutor } from './codex-openai-executor.js'
 export { CodexAppServerExecutor } from './codex-app-server/codex-app-server-executor.js'
 export type { CodexAppServerExecutorOptions } from './codex-app-server/codex-app-server-executor.js'
 export {
+  SparkEngineExecutor,
+  isSparkEngineAvailable,
+} from './spark-engine/spark-engine-executor.js'
+export {
   CodexAppServerClient,
   CodexAppServerProcessExitedError,
 } from './codex-app-server/codex-app-server-client.js'

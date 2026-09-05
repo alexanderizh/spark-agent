@@ -1036,8 +1036,8 @@ export interface TurnPromptSnapshotEvent extends BaseEvent, UserMessagePresentat
   model: string
   /** Provider 配置 Profile ID */
   providerProfileId?: string
-  /** 执行适配器类型 */
-  adapterKind: 'claude-sdk' | 'codex'
+  /** 执行适配器类型（'spark' 为自研引擎渠道开关启用后的持久化值） */
+  adapterKind: 'claude-sdk' | 'codex' | 'spark'
   /** 权限模式 */
   permissionMode: string
   /** 可用工具数量 */
