@@ -1,0 +1,8 @@
+/*
+!/.gitignore
+!/latest.json
+!/install.sh
+!/install.ps1
+!/install.cmd
+!/spark-agent-*.tgz
+!/spark-agent-*.tgz.sha256
