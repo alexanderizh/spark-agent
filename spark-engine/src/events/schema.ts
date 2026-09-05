@@ -156,7 +156,10 @@ const PermissionEvaluatedEventSchema = z.object({
   ...envelope,
   type: z.literal('permission.evaluated'),
   callId: z.string().min(1),
-  mode: z.enum(['default', 'acceptEdits', 'plan', 'bypass']),
+  // New three-mode values plus pre-consolidation values kept replayable:
+  // decodeLine re-parses every stored event, so dropping the legacy enum would
+  // break openSession() on existing ledgers.
+  mode: z.enum(['manual', 'auto', 'bypass', 'default', 'acceptEdits', 'plan']),
   decision: z.enum(['allow', 'deny', 'ask']),
   reason: z.string().optional(),
   rule: z

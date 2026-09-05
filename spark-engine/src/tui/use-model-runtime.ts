@@ -4,6 +4,7 @@ import {
   configureLocalProvider,
   createConfiguredRuntime,
   inspectConfiguredModels,
+  persistSelectedModel,
   type ConfiguredModelCatalog,
   type ConfiguredModelRuntime,
   type LocalProviderInput,
@@ -22,6 +23,8 @@ export interface ModelRuntimeSeams {
   inspect(options: { cwd: string }): Promise<ConfiguredModelCatalog>
   createRuntime(options: { cwd: string; model: string }): Promise<ConfiguredModelRuntime>
   configure(input: LocalProviderInput): Promise<{ configPath: string; modelEntryId: string }>
+  /** Persists the selection as [agent].model so the next launch skips the picker. */
+  persist(input: { sparkHome: string; model: string }): Promise<void>
 }
 
 export interface ModelRuntimeController {
@@ -91,7 +94,16 @@ export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeCo
     async (modelId: string) => {
       setBusy(true)
       try {
-        applyModel(await seams.createRuntime({ cwd: seams.cwd, model: modelId }))
+        const runtime = await seams.createRuntime({ cwd: seams.cwd, model: modelId })
+        const persistFailure = await persistSelection(seams, modelId)
+        applyModel(runtime)
+        if (persistFailure !== undefined) {
+          // The model works for this session; reopen the picker so the reason
+          // is visible and esc keeps using it while a re-pick retries the write.
+          setOpen(true)
+          setNotice('模型已切换，但写入默认配置失败（esc 可继续使用）')
+          setError(`写入默认模型配置失败：${persistFailure}`)
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
@@ -107,7 +119,14 @@ export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeCo
       try {
         const result = await seams.configure({ ...input, sparkHome: seams.sparkHome })
         await refresh()
-        applyModel(await seams.createRuntime({ cwd: seams.cwd, model: result.modelEntryId }))
+        const runtime = await seams.createRuntime({ cwd: seams.cwd, model: result.modelEntryId })
+        const persistFailure = await persistSelection(seams, result.modelEntryId)
+        applyModel(runtime)
+        if (persistFailure !== undefined) {
+          setOpen(true)
+          setNotice('模型已切换，但写入默认配置失败（esc 可继续使用）')
+          setError(`写入默认模型配置失败：${persistFailure}`)
+        }
         return true
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -152,5 +171,26 @@ function defaultSeams(): ModelRuntimeSeams {
     inspect: (options) => inspectConfiguredModels(options),
     createRuntime: (options) => createConfiguredRuntime(options),
     configure: (input) => configureLocalProvider(input),
+    persist: async (input) => {
+      await persistSelectedModel(input)
+    },
+  }
+}
+
+/**
+ * Best-effort persistence of a user-driven model switch. Returns the failure
+ * message on error instead of throwing: the selection already applies to the
+ * live session, so a config write problem must not undo it — the caller shows
+ * the reason and the next launch simply falls back to the picker again.
+ */
+async function persistSelection(
+  seams: ModelRuntimeSeams,
+  modelId: string,
+): Promise<string | undefined> {
+  try {
+    await seams.persist({ sparkHome: seams.sparkHome, model: modelId })
+    return undefined
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause)
   }
 }

@@ -6,6 +6,7 @@ import type {
   SessionFacts,
 } from '../seams.js';
 import type { IrMessage, SystemSection } from '../llm/types.js';
+import type { InstructionProvider } from '../memory/instructions.js';
 import type { AgentEvent } from './schema.js';
 
 export class EventContextProjector implements ContextProjector {
@@ -58,8 +59,19 @@ export class EventContextProjector implements ContextProjector {
   }
 }
 
+export interface DefaultPromptComposerOptions {
+  /** Layered instruction files (SPARK.md / AGENTS.md / CLAUDE.md) injected as a stable section. */
+  readonly instructions?: InstructionProvider;
+}
+
 export class DefaultPromptComposer implements PromptComposer {
-  compose(facts: SessionFacts, config: ProjectorConfig): readonly SystemSection[] {
+  readonly #instructions: InstructionProvider | undefined;
+
+  constructor(options: DefaultPromptComposerOptions = {}) {
+    this.#instructions = options.instructions;
+  }
+
+  async compose(facts: SessionFacts, config: ProjectorConfig): Promise<readonly SystemSection[]> {
     const sections: SystemSection[] = [
       {
         id: 'spark-kernel-contract',
@@ -70,9 +82,21 @@ export class DefaultPromptComposer implements PromptComposer {
       {
         id: 'runtime',
         stability: 'volatile',
-        content: `Session: ${facts.sessionId}\nWorking directory: ${config.cwd}\nPermission mode: ${facts.permissionMode ?? 'default'}${facts.permissionMode === 'plan' ? '\nPlan mode is read-only. Do not request tools with side effects.' : ''}`,
+        content: `Session: ${facts.sessionId}\nWorking directory: ${config.cwd}\nPermission mode: ${facts.permissionMode ?? 'manual'}`,
       },
     ];
+    if (this.#instructions) {
+      const snapshot = await this.#instructions.snapshot();
+      if (snapshot.sections.length > 0) {
+        const content = snapshot.sections
+          .map(
+            (section) =>
+              `<instructions source="${section.sourcePath}" scope="${section.scope}">\n${section.content.trimEnd()}\n</instructions>`,
+          )
+          .join('\n\n');
+        sections.splice(1, 0, { id: 'project-instructions', stability: 'stable', content });
+      }
+    }
     if (facts.warning) {
       sections.push({ id: 'budget-warning', stability: 'volatile', content: facts.warning });
     }

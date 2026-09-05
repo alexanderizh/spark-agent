@@ -5,16 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { EffortPicker } from '../../src/tui/components/effort-picker.js'
 import { PermissionPicker } from '../../src/tui/components/permission-picker.js'
-import { PlanApprovalCard } from '../../src/tui/components/plan-card.js'
 import { defaultTheme } from '../../src/tui/theme.js'
 
 describe('PermissionPicker', () => {
-  it('renders codex-style modes with the current one highlighted and applies a safe pick directly', async () => {
+  it('renders exactly three modes with the current one highlighted and applies a safe pick directly', async () => {
     const onPick = vi.fn()
     const app = render(
       <PermissionPicker
         theme={defaultTheme}
-        current="default"
+        current="manual"
         onPick={onPick}
         onClose={vi.fn()}
         onNotice={vi.fn()}
@@ -22,14 +21,15 @@ describe('PermissionPicker', () => {
     )
     const text = app.lastFrame() ?? ''
     expect(text).toContain('权限策略切换')
-    expect(text).toContain('请求批准')
-    expect(text).toContain('自动权限')
+    expect(text).toContain('手动审批')
+    expect(text).toContain('自动审批')
     expect(text).toContain('完全访问')
+    expect(text).not.toContain('计划模式')
     expect(text).toContain('✓当前')
 
-    app.stdin.write('3') // plan
+    app.stdin.write('2') // auto
     await new Promise<void>((resolveTick) => setImmediate(resolveTick))
-    expect(onPick).toHaveBeenCalledWith('plan')
+    expect(onPick).toHaveBeenCalledWith('auto')
     app.unmount()
   })
 
@@ -39,13 +39,13 @@ describe('PermissionPicker', () => {
     const app = render(
       <PermissionPicker
         theme={defaultTheme}
-        current="acceptEdits"
+        current="manual"
         onPick={onPick}
         onClose={onClose}
         onNotice={vi.fn()}
       />,
     )
-    app.stdin.write('\u001b[B') // down to plan
+    app.stdin.write('\u001b[B') // down to auto
     await tick()
     app.stdin.write('\u001b[B') // down to bypass
     await tick()
@@ -65,7 +65,7 @@ describe('PermissionPicker', () => {
     const app = render(
       <PermissionPicker
         theme={defaultTheme}
-        current="plan"
+        current="auto"
         onPick={onPick}
         onClose={onClose}
         onNotice={vi.fn()}
@@ -79,61 +79,24 @@ describe('PermissionPicker', () => {
   })
 })
 
-describe('PlanApprovalCard', () => {
-  it('submits on enter and iterates on escape with a bounded preview', async () => {
-    const longPlan = Array.from({ length: 40 }, (_, index) => `step ${index + 1}`).join('\n')
-    const onApprove = vi.fn()
-    const onDismiss = vi.fn()
-    const app = render(
-      <PlanApprovalCard
-        proposal={longPlan}
-        theme={defaultTheme}
-        onApprove={onApprove}
-        onDismiss={onDismiss}
-      />,
-    )
-    const shown = app.lastFrame() ?? ''
-    expect(shown).toContain('step 1')
-    expect(shown).toContain('共 40 行')
-    expect(shown).not.toContain('step 20')
-
-    app.stdin.write('\r')
-    await tick()
-    expect(onApprove).toHaveBeenCalledTimes(1)
-    app.unmount()
-
-    const second = render(
-      <PlanApprovalCard
-        proposal="short plan"
-        theme={defaultTheme}
-        onApprove={vi.fn()}
-        onDismiss={onDismiss}
-      />,
-    )
-    second.stdin.write('\u001b')
-    await escapeTick()
-    expect(onDismiss).toHaveBeenCalledTimes(1)
-    second.unmount()
-  })
-})
-
 describe('EffortPicker', () => {
-  it('lists auto/low/medium/high/max/off, marks the current level, and picks via enter', async () => {
+  it('lists low/medium/high/max/off without auto, marks the current level, and picks via enter', async () => {
     const onPick = vi.fn()
     const app = render(
-      <EffortPicker theme={defaultTheme} current="low" onPick={onPick} onClose={vi.fn()} />,
+      <EffortPicker theme={defaultTheme} current="high" onPick={onPick} onClose={vi.fn()} />,
     )
     const text = app.lastFrame() ?? ''
-    for (const label of ['auto', 'low', 'medium', 'high', 'max', 'off']) {
+    for (const label of ['low', 'medium', 'high', 'max', 'off']) {
       expect(text).toContain(label)
     }
+    expect(text).not.toContain('auto')
     expect(text).toContain('✓当前')
 
-    app.stdin.write('\u001b[A') // up: low -> auto? down order is auto..off, up from low(index1) -> auto(index0)
+    app.stdin.write('\u001b[B') // down: high(index2) -> max(index3)
     await tick()
     app.stdin.write('\r')
     await tick()
-    expect(onPick).toHaveBeenCalledWith(undefined)
+    expect(onPick).toHaveBeenCalledWith('max')
     app.unmount()
   })
 
@@ -141,9 +104,9 @@ describe('EffortPicker', () => {
     const onPick = vi.fn()
     const onClose = vi.fn()
     const app = render(
-      <EffortPicker theme={defaultTheme} current={undefined} onPick={onPick} onClose={onClose} />,
+      <EffortPicker theme={defaultTheme} current="low" onPick={onPick} onClose={onClose} />,
     )
-    app.stdin.write('5') // max
+    app.stdin.write('4') // max (low, medium, high, max, off)
     await tick()
     expect(onPick).toHaveBeenCalledWith('max')
 

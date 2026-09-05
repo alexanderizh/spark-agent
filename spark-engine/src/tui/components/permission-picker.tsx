@@ -4,18 +4,17 @@ import { useEffect, useState, type ReactElement } from 'react'
 import type { PermissionMode } from '../../permission/types.js'
 import type { TuiTheme } from '../theme.js'
 
-// Codex-style naming: 请求批准 (ask every time) / 自动权限 (auto) / 完全访问
-// (full access); 计划模式 stays because the engine's plan-approval flow is a
-// first-class feature that codex exposes as a separate toggle.
+// Exactly three approval levels, mirroring the engine's PermissionMode union:
+// manual asks per call, auto approves everything short of explicit deny rules,
+// bypass skips the policy entirely.
 export const PERMISSION_MODES: readonly {
   readonly mode: PermissionMode
   readonly label: string
   readonly hint: string
 }[] = [
-  { mode: 'default', label: '请求批准', hint: '写入/命令逐次审批' },
-  { mode: 'acceptEdits', label: '自动权限', hint: '文件编辑免审批,命令仍需确认' },
-  { mode: 'plan', label: '计划模式', hint: '只读探索并产出计划,批准后转执行' },
-  { mode: 'bypass', label: '完全访问', hint: '危险:所有工具不经审批直接执行' },
+  { mode: 'manual', label: '手动审批', hint: '写入/命令逐次确认,只读工具直接执行' },
+  { mode: 'auto', label: '自动审批', hint: '所有工具自动执行(显式 deny 规则仍生效)' },
+  { mode: 'bypass', label: '完全访问', hint: '危险:跳过全部审批与规则' },
 ]
 
 export interface PermissionPickerProps {
@@ -97,13 +96,13 @@ export function PermissionPicker(props: PermissionPickerProps): ReactElement {
 }
 
 /**
- * Cycles through the non-destructive modes only (default → acceptEdits → plan
- * → default), so a single stray keypress can never arm permission bypass.
- * Switching to `bypass` must go through PermissionPicker's double confirm.
+ * Cycles between the non-destructive modes only (manual ↔ auto), so a single
+ * stray keypress can never arm permission bypass. Switching to `bypass` must
+ * go through PermissionPicker's double confirm.
  */
 export function nextPermissionMode(current: PermissionMode): PermissionMode {
-  const safeModes: readonly PermissionMode[] = ['default', 'acceptEdits', 'plan']
-  if (current === 'bypass') return 'default'
+  const safeModes: readonly PermissionMode[] = ['manual', 'auto']
+  if (current === 'bypass') return 'manual'
   const index = safeModes.indexOf(current)
-  return safeModes[(index + 1) % safeModes.length] ?? 'default'
+  return safeModes[(index + 1) % safeModes.length] ?? 'manual'
 }

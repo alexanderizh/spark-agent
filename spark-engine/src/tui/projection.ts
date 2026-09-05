@@ -6,13 +6,22 @@ import { glyphs } from './theme.js'
 export type RowTone = 'normal' | 'dim' | 'accent' | 'ok' | 'warn' | 'error'
 
 /** Visual block kind; the renderer applies per-kind chrome (background, gaps). */
-export type RowKind = 'user' | 'thinking' | 'plain'
+export type RowKind = 'user' | 'thinking' | 'plain' | 'assistant'
+
+/** Structured view of a settled tool line, colored per-part by the renderer. */
+export interface ToolLineParts {
+  readonly tool: string
+  readonly args: string
+  readonly ok: boolean
+  readonly durationMs: string
+}
 
 export interface TranscriptRow {
   readonly key: string
   readonly text: string
   readonly tone: RowTone
   readonly kind?: RowKind
+  readonly toolLine?: ToolLineParts
 }
 
 export interface ActiveToolProjection {
@@ -73,7 +82,12 @@ export function projectTranscript(
           })
         }
         if (event.message.text) {
-          settled.push({ key: `event-${event.seq}`, text: event.message.text, tone: 'normal' })
+          settled.push({
+            key: `event-${event.seq}`,
+            text: event.message.text,
+            tone: 'normal',
+            kind: 'assistant',
+          })
         }
         break
       case 'tool.call':
@@ -86,10 +100,17 @@ export function projectTranscript(
         results.add(event.callId)
         const call = calls.get(event.callId)
         const mark = event.ok ? symbols.success : symbols.failure
+        const argsPreview = call ? preview(call.args) : ''
         settled.push({
           key: `tool-${event.callId}`,
-          text: `${symbols.tool} ${call?.tool ?? 'unknown'}${call ? `(${preview(call.args)})` : ''} ${mark} ${event.durationMs}ms`,
+          text: `${symbols.tool} ${call?.tool ?? 'unknown'}${call ? `(${argsPreview})` : ''} ${mark} ${event.durationMs}ms`,
           tone: event.ok ? 'dim' : 'error',
+          toolLine: {
+            tool: call?.tool ?? 'unknown',
+            args: argsPreview,
+            ok: event.ok,
+            durationMs: `${event.durationMs}ms`,
+          },
         })
         break
       }
@@ -108,16 +129,13 @@ export function projectTranscript(
       case 'permission.evaluated':
         break
       case 'turn.completed':
-        settled.push({
-          key: `event-${event.seq}`,
-          text: `· 完成 · ${event.stats.steps} steps · ${event.stats.usage.inputTokens + event.stats.usage.outputTokens} tok`,
-          tone: 'dim',
-        })
+        // Settles silently: the transcript already shows the answer and tool
+        // results; a trailing stats line is noise.
         break
       case 'turn.cancelled':
         settled.push({
           key: `event-${event.seq}`,
-          text: `${symbols.failure} 已中断 · 已完成 ${event.partial.length} step · 已产出内容保留`,
+          text: `${symbols.failure} 已中断 · 已产出内容保留`,
           tone: 'warn',
         })
         break

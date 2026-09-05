@@ -147,16 +147,16 @@ describe('SparkTuiApp shortcut wiring', () => {
         await flush(2)
       }
     }
-    await shiftTab(1) // default -> acceptEdits
+    await shiftTab(1) // manual -> auto
     expect(stripAnsi(app.lastFrame() ?? '')).toContain(
-      '权限策略已切换为 自动权限（本会话生效）。',
+      '已切换到自动审批：工具自动执行（显式 deny 规则仍生效）。',
     )
 
-    await shiftTab(3) // -> plan -> default -> acceptEdits
+    await shiftTab(3) // -> manual -> auto -> manual
     const frame = stripAnsi(app.lastFrame() ?? '')
     // The picker never opened: no mode list is rendered, only status notices.
     expect(frame).not.toContain('权限策略切换(本会话生效)')
-    expect(frame).toContain('权限策略已切换为 自动权限（本会话生效）。')
+    expect(frame).toContain('权限策略已切换为 手动审批（本会话生效）。')
     app.unmount()
   })
 })

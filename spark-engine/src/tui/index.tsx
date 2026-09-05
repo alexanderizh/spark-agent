@@ -1,10 +1,12 @@
 import { render, type RenderOptions } from 'ink'
 import React from 'react'
 
+import { loadCustomCommands, type CustomCommand } from '../commands/custom-commands.js'
 import { createDefaultEnv } from '../env.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { LlmService } from '../seams.js'
 import { InteractiveApprover } from '../permission/interactive.js'
+import { SLASH_COMMANDS } from './slash-commands.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import type { AgentEvent } from '../events/schema.js'
 import { SwitchableLlmService } from '../llm/switchable.js'
@@ -47,7 +49,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     ...(options.dataRoot === undefined ? {} : { dataRoot: options.dataRoot }),
   })
   const agent = Agent.open({ cwd, env })
-  const permissionMode = options.permissionMode ?? 'default'
+  const permissionMode = options.permissionMode ?? 'manual'
   let currentModel = options.model
   const createSession = async (): Promise<AgentSession> =>
     agent.newSession({
@@ -56,6 +58,11 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     })
   const session = await createSession()
   const initialEvents = await collect(session)
+  const customCommands = await loadCustomCommands({
+    cwd,
+    ...(options.dataRoot === undefined ? {} : { userDir: options.dataRoot }),
+    reservedNames: SLASH_COMMANDS.map((command) => command.name),
+  }).catch(() => [])
   const stdout = options.stdout ?? process.stdout
   const renderOptions: RenderOptions = {
     stdout,
@@ -80,6 +87,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       {...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort })}
+      {...(customCommands.length === 0 ? {} : { customCommands })}
       onModelChanged={(model) => {
         currentModel = model
       }}
@@ -102,6 +110,7 @@ interface SparkTuiRootProps {
   readonly permissionMode: PermissionMode
   readonly updateRunner?: SparkUpdateRunner | undefined
   readonly reasoningEffort?: ReasoningEffort | undefined
+  readonly customCommands?: readonly CustomCommand[] | undefined
   readonly onModelChanged: (model: string | undefined) => void
   readonly stdout: NodeJS.WriteStream
 }
@@ -123,6 +132,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       {...(props.updateRunner === undefined ? {} : { updateRunner: props.updateRunner })}
       {...(props.version === undefined ? {} : { version: props.version })}
       {...(props.reasoningEffort === undefined ? {} : { reasoningEffort: props.reasoningEffort })}
+      {...(props.customCommands === undefined ? {} : { customCommands: props.customCommands })}
       modelRuntime={modelRuntime}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />
@@ -145,6 +155,7 @@ export * from './update-runner.js'
 export * from './display-name.js'
 export * from './components/input-editor.js'
 export * from './components/effort-picker.js'
+export * from './components/markdown.js'
 export * from './components/permission-card.js'
 export * from './components/rows.js'
 export * from './components/spinner.js'

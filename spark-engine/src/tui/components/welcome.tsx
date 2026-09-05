@@ -6,7 +6,6 @@ import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
 export interface WelcomeBoxProps {
   readonly version: string
   readonly model: string | undefined
-  readonly cwd: string
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
 }
@@ -34,9 +33,7 @@ export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
         </Text>
         <Text color={props.theme.dim}> v{props.version} · 确定性编码 Agent</Text>
       </Text>
-      <Text color={props.theme.dim}>
-        模型 {props.model ?? '未选择'} · {props.cwd}
-      </Text>
+      <Text color={props.theme.dim}>{props.model ?? '未选择模型'}</Text>
       <Text> </Text>
       <Text color={props.theme.dim}>· 输入任务开始，/help 查看全部命令</Text>
       <Text color={props.theme.dim}>· ↑↓ 历史 · Shift+Enter 换行 · esc 中断 · Ctrl+C 两次退出</Text>

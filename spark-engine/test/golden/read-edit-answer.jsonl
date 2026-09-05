@@ -3,13 +3,13 @@
 {"schemaVersion":1,"sessionId":"session1","seq":2,"ts":1700000000002,"type":"step.started","stepId":"step1","turnId":"turn1"}
 {"schemaVersion":1,"sessionId":"session1","seq":3,"ts":1700000000003,"type":"assistant.completed","stepId":"step1","turnId":"turn1","message":{"toolCalls":[{"callId":"read-1","name":"read","args":{"path":"a.ts"}}]},"usage":{"inputTokens":100,"outputTokens":20,"cacheReadTokens":0,"cacheWriteTokens":0}}
 {"schemaVersion":1,"sessionId":"session1","seq":4,"ts":1700000000004,"type":"tool.call","callId":"read-1","stepId":"step1","tool":"read","args":{"path":"a.ts"}}
-{"schemaVersion":1,"sessionId":"session1","seq":5,"ts":1700000000005,"type":"permission.evaluated","callId":"read-1","mode":"default","decision":"allow"}
+{"schemaVersion":1,"sessionId":"session1","seq":5,"ts":1700000000005,"type":"permission.evaluated","callId":"read-1","mode":"manual","decision":"allow"}
 {"schemaVersion":1,"sessionId":"session1","seq":6,"ts":1700000000006,"type":"tool.intent","callId":"read-1"}
 {"schemaVersion":1,"sessionId":"session1","seq":7,"ts":1700000000007,"type":"tool.result","callId":"read-1","durationMs":1,"ok":true,"content":"one"}
 {"schemaVersion":1,"sessionId":"session1","seq":8,"ts":1700000000008,"type":"step.started","stepId":"step2","turnId":"turn1"}
 {"schemaVersion":1,"sessionId":"session1","seq":9,"ts":1700000000009,"type":"assistant.completed","stepId":"step2","turnId":"turn1","message":{"toolCalls":[{"callId":"edit-1","name":"edit","args":{"path":"a.ts","old":"one","new":"two"}}]},"usage":{"inputTokens":100,"outputTokens":20,"cacheReadTokens":0,"cacheWriteTokens":0}}
 {"schemaVersion":1,"sessionId":"session1","seq":10,"ts":1700000000010,"type":"tool.call","callId":"edit-1","stepId":"step2","tool":"edit","args":{"path":"a.ts","old":"one","new":"two"}}
-{"schemaVersion":1,"sessionId":"session1","seq":11,"ts":1700000000011,"type":"permission.evaluated","callId":"edit-1","mode":"default","decision":"ask","reason":"Tool approval policy: session","allowedGrantScopes":["once","session"]}
+{"schemaVersion":1,"sessionId":"session1","seq":11,"ts":1700000000011,"type":"permission.evaluated","callId":"edit-1","mode":"manual","decision":"ask","reason":"Tool approval policy: session","allowedGrantScopes":["once","session"]}
 {"schemaVersion":1,"sessionId":"session1","seq":12,"ts":1700000000012,"type":"permission.requested","requestId":"p1","callId":"edit-1","risk":{"tool":"edit","argsPreview":"{\"new\":\"two\",\"old\":\"one\",\"path\":\"a.ts\"}"}}
 {"schemaVersion":1,"sessionId":"session1","seq":13,"ts":1700000000013,"type":"permission.decided","requestId":"p1","decision":"allow","grantScope":"once"}
 {"schemaVersion":1,"sessionId":"session1","seq":14,"ts":1700000000014,"type":"tool.intent","callId":"edit-1"}

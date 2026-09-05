@@ -88,6 +88,42 @@ export class TurnMachine {
         ...(options.parentId === undefined ? {} : { parentId: options.parentId }),
       })
 
+      const hooks = this.env.hooks
+      if (hooks) {
+        const hookContext = {
+          sessionId: options.sessionId,
+          cwd: options.cwd,
+          permissionMode: options.permissionMode,
+        }
+        const submitted = await hooks.run(
+          'UserPromptSubmit',
+          { turnId: options.turnId, prompt: options.input },
+          hookContext,
+          cancellation.signal,
+        )
+        if (submitted.blocked) {
+          const terminal = await gate.finalize(async () =>
+            asTerminal(
+              await append({
+                type: 'turn.failed',
+                schemaVersion: 1,
+                turnId: options.turnId,
+                error: {
+                  code: 'hook.blocked',
+                  message:
+                    submitted.reason ?? 'Prompt rejected by a UserPromptSubmit hook.',
+                  retryable: false,
+                },
+                recoveryHint:
+                  'Adjust or remove the blocking UserPromptSubmit hook, then resubmit the prompt.',
+              }),
+            ),
+          )
+          if (!terminal) throw new Error('Turn terminal event was unexpectedly swallowed')
+          return { turnId: options.turnId, terminal }
+        }
+      }
+
       while (true) {
         throwIfAborted(cancellation.signal)
         const stepId = this.env.ids.next('step')
@@ -97,7 +133,7 @@ export class TurnMachine {
           permissionMode: options.permissionMode,
           ...(budgetWarning === undefined ? {} : { warning: budgetWarning }),
         })
-        const system = this.env.prompt.compose(
+        const system = await this.env.prompt.compose(
           {
             sessionId: options.sessionId,
             cwd: options.cwd,
@@ -122,7 +158,6 @@ export class TurnMachine {
           messages: projected.messages,
           tools: this.env.tools.registry
             .list()
-            .filter((tool) => options.permissionMode !== 'plan' || tool.permissionClass === 'read')
             .map((tool) => ({
               name: tool.name,
               description: tool.description,
@@ -170,6 +205,7 @@ export class TurnMachine {
             ledger,
             stepId,
             sessionId: options.sessionId,
+            turnId: options.turnId,
             cwd: options.cwd,
             permissionMode: options.permissionMode,
             signal: cancellation.signal,
@@ -196,6 +232,7 @@ export class TurnMachine {
             ),
           )
           if (!terminal) throw new Error('Turn terminal event was unexpectedly swallowed')
+          await this.#runStopHook(options, 'final', cancellation.signal)
           return { turnId: options.turnId, terminal }
         }
         if (action.kind === 'stop') {
@@ -211,6 +248,7 @@ export class TurnMachine {
             ),
           )
           if (!terminal) throw new Error('Turn terminal event was unexpectedly swallowed')
+          await this.#runStopHook(options, 'budget', cancellation.signal)
           return { turnId: options.turnId, terminal }
         }
         budgetWarning = action.kind === 'warn' ? action.message : undefined
@@ -242,6 +280,33 @@ export class TurnMachine {
       return { turnId: options.turnId, terminal }
     } finally {
       cancellation.dispose()
+    }
+  }
+
+  /**
+   * Stop hooks run after a completed terminal event; they are notifications
+   * only — a failing or blocking Stop hook can no longer alter the turn.
+   */
+  async #runStopHook(
+    options: RunTurnOptions,
+    reason: 'final' | 'budget',
+    signal: AbortSignal,
+  ): Promise<void> {
+    const hooks = this.env.hooks
+    if (!hooks) return
+    try {
+      await hooks.run(
+        'Stop',
+        { turnId: options.turnId, stopReason: reason },
+        {
+          sessionId: options.sessionId,
+          cwd: options.cwd,
+          permissionMode: options.permissionMode,
+        },
+        signal,
+      )
+    } catch {
+      this.env.telemetry.counter('hook.run.failed', { event: 'Stop' })
     }
   }
 }

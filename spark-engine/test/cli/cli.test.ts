@@ -116,7 +116,7 @@ describe('built CLI contract', () => {
     const unknown = await runCli(['--permission-mode', 'unsafe', 'hello'])
     const conflicting = await runCli([
       '--permission-mode',
-      'plan',
+      'auto',
       '--dangerously-skip-permissions',
       'hello',
     ])

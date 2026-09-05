@@ -9,7 +9,7 @@ import {
   type LlmRequest,
 } from '../../src/llm/types.js'
 import { helpDetail, helpLine, SLASH_COMMANDS, TUI_SHORTCUTS } from '../../src/tui/slash-commands.js'
-import { EFFORT_OPTIONS } from '../../src/tui/components/effort-picker.js'
+import { DEFAULT_REASONING_EFFORT, EFFORT_OPTIONS } from '../../src/tui/components/effort-picker.js'
 import { nextPermissionMode } from '../../src/tui/components/permission-picker.js'
 
 function baseRequest(): LlmRequest {
@@ -132,15 +132,15 @@ describe('slash command surface', () => {
 
   it('exposes the effort picker levels as the /effort option set', () => {
     const labels = EFFORT_OPTIONS.map((option) => option.label)
-    expect(labels).toEqual(['auto', 'low', 'medium', 'high', 'max', 'off'])
-    expect(EFFORT_OPTIONS[0]?.value).toBeUndefined()
+    expect(labels).toEqual(['low', 'medium', 'high', 'max', 'off'])
+    expect(EFFORT_OPTIONS.map((option) => option.value)).not.toContain(undefined)
+    expect(DEFAULT_REASONING_EFFORT).toBe('high')
   })
 
   it('keeps one-key permission cycling inside non-destructive modes only', () => {
-    expect(nextPermissionMode('default')).toBe('acceptEdits')
-    expect(nextPermissionMode('acceptEdits')).toBe('plan')
-    expect(nextPermissionMode('plan')).toBe('default')
+    expect(nextPermissionMode('manual')).toBe('auto')
+    expect(nextPermissionMode('auto')).toBe('manual')
     // Bypass can never be reached with a single keypress.
-    expect(nextPermissionMode('bypass')).toBe('default')
+    expect(nextPermissionMode('bypass')).toBe('manual')
   })
 })

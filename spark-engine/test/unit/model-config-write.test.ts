@@ -8,12 +8,82 @@ import {
   configureLocalProvider,
   createConfiguredRuntime,
   loadConfiguredModel,
+  persistSelectedModel,
 } from '../../src/config/model-config.js'
 
 const roots: string[] = []
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
+
+describe('persistSelectedModel', () => {
+  it('remembers the picker selection so the next launch resolves it without options', async () => {
+    const home = await tempHome()
+    await configureLocalProvider({
+      sparkHome: home,
+      alias: 'main',
+      protocol: 'openai-responses',
+      apiKeyEnv: 'MY_KEY',
+      modelId: 'gpt-test',
+    })
+
+    await persistSelectedModel({ sparkHome: home, model: 'main' })
+
+    const content = await readFile(join(home, 'config.toml'), 'utf8')
+    expect(content).toContain('model = "main"')
+    if (process.platform !== 'win32') {
+      expect((await stat(join(home, 'config.toml'))).mode & 0o077).toBe(0)
+    }
+
+    // Next launch: no --model, no SPARK_MODEL, no host bridge — the persisted
+    // selection is the model.
+    const runtime = await loadConfiguredModel({
+      cwd: home,
+      globalConfigPath: join(home, 'config.toml'),
+      projectConfigPath: join(home, 'project', '.spark', 'config.toml'),
+      env: { MY_KEY: 'secret-value', SPARK_HOME: home },
+    })
+    expect(runtime.modelId).toBe('main')
+  })
+
+  it('overwrites a previous selection without dropping other entries', async () => {
+    const home = await tempHome()
+    const configPath = join(home, 'config.toml')
+    await writeFile(
+      configPath,
+      '[agent]\nmodel = "previous"\nfailover = ["backup"]\n\n[providers.old]\nprotocol = "anthropic-messages"\napi_key_env = "OLD_KEY"\n\n[models.old]\nprovider = "old"\nmodel = "claude-old"\n\n[models.backup]\nprovider = "old"\nmodel = "claude-backup"\n',
+      'utf8',
+    )
+
+    await persistSelectedModel({ sparkHome: home, model: 'old' })
+
+    const content = await readFile(configPath, 'utf8')
+    expect(content).toContain('model = "old"')
+    expect(content).not.toContain('"previous"')
+    expect(content).toContain('failover')
+    expect(content).toContain('"backup"')
+    expect(content).toContain('api_key_env = "OLD_KEY"')
+    const runtime = await createConfiguredRuntime({
+      cwd: home,
+      globalConfigPath: configPath,
+      projectConfigPath: join(home, 'project', '.spark', 'config.toml'),
+      env: { OLD_KEY: 'x', SPARK_HOME: home },
+      model: 'old',
+    })
+    expect(runtime.route).toEqual(['old', 'backup'])
+  })
+
+  it('refuses an empty model id without touching an existing config', async () => {
+    const home = await tempHome()
+    const configPath = join(home, 'config.toml')
+    await writeFile(configPath, '[agent]\nmodel = "kept"\n', 'utf8')
+
+    await expect(persistSelectedModel({ sparkHome: home, model: '  ' })).rejects.toThrow(
+      /model id/u,
+    )
+    expect(await readFile(configPath, 'utf8')).toBe('[agent]\nmodel = "kept"\n')
+  })
 })
 
 describe('configureLocalProvider', () => {

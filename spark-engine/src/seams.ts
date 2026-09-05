@@ -1,4 +1,5 @@
 import type { AgentEvent, ArtifactRef } from './events/schema.js';
+import type { HookRunner } from './hooks/runner.js';
 import type { LlmDelta, LlmRequest, SystemSection } from './llm/types.js';
 import type {
   PermissionDecision,
@@ -103,7 +104,7 @@ export interface SessionFacts {
 }
 
 export interface PromptComposer {
-  compose(facts: SessionFacts, config: ProjectorConfig): readonly SystemSection[];
+  compose(facts: SessionFacts, config: ProjectorConfig): Promise<readonly SystemSection[]>;
 }
 
 export interface BudgetLimits {
@@ -171,6 +172,8 @@ export interface AgentEnv {
   };
   readonly projector: ContextProjector;
   readonly prompt: PromptComposer;
+  /** Lifecycle hooks (settings-driven); absent when no settings file exists. */
+  readonly hooks?: HookRunner;
   readonly budgets: BudgetFactory;
   readonly telemetry: Telemetry;
 }

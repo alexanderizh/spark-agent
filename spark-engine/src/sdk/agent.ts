@@ -9,7 +9,7 @@ import { stableStringify } from '../kernel/stable-json.js'
 import { TurnMachine, type RunTurnOptions, type TurnResult } from '../kernel/turn-machine.js'
 import type { AgentEnv, BudgetLimits } from '../seams.js'
 import type { LlmService } from '../seams.js'
-import { isPermissionMode, type PermissionMode } from '../permission/types.js'
+import { normalizeLegacyPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { ReasoningEffort } from '../llm/types.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
 
@@ -227,22 +227,27 @@ async function collect(ledger: SessionLedger): Promise<AgentEvent[]> {
   return events
 }
 
+const DEFAULT_PERMISSION_MODE: PermissionMode = 'manual'
+
 function permissionModeFromConfig(config: Readonly<Record<string, unknown>>): PermissionMode {
   const value = config.permissionMode
-  if (value === undefined) return 'default'
-  if (!isPermissionMode(value)) throw new Error('Invalid permission mode in session config')
-  return value
+  if (value === undefined) return DEFAULT_PERMISSION_MODE
+  const normalized = normalizeLegacyPermissionMode(value)
+  if (!normalized) throw new Error('Invalid permission mode in session config')
+  return normalized
 }
 
 function permissionModeFromEvents(events: readonly AgentEvent[]): PermissionMode {
   const started = events.find((event) => event.type === 'session.started')
-  if (started?.type !== 'session.started') return 'default'
+  if (started?.type !== 'session.started') return DEFAULT_PERMISSION_MODE
   try {
     const config: unknown = JSON.parse(started.configSnapshot)
-    if (typeof config !== 'object' || config === null || Array.isArray(config)) return 'default'
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      return DEFAULT_PERMISSION_MODE
+    }
     const value = (config as Record<string, unknown>).permissionMode
-    return isPermissionMode(value) ? value : 'default'
+    return normalizeLegacyPermissionMode(value) ?? DEFAULT_PERMISSION_MODE
   } catch {
-    return 'default'
+    return DEFAULT_PERMISSION_MODE
   }
 }

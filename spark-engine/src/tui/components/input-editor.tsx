@@ -1,9 +1,18 @@
 import { Box, Text, useInput } from 'ink'
-import { useMemo, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
 
 import { shouldSwallowImeKeypress } from '../ime-guard.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
 import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
+
+/** One row of the slash-command completion menu. */
+export interface CompletionEntry {
+  readonly name: string
+  readonly summary?: string
+}
+
+/** Menu rows stay on screen before the list starts scrolling. */
+const COMPLETION_MAX_VISIBLE = 8
 
 export interface InputEditorProps {
   readonly active: boolean
@@ -12,6 +21,8 @@ export interface InputEditorProps {
   readonly running?: boolean
   readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
+  /** Custom slash commands (full names, `/name`) offered alongside builtins. */
+  readonly extraCommands?: readonly CompletionEntry[]
   readonly onSubmit: (value: string) => void
   readonly onEscape: () => void
   readonly onControlC: () => void
@@ -26,7 +37,29 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   const [cursor, setCursor] = useState(0)
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [completionIndex, setCompletionIndex] = useState(0)
   const characters = useMemo(() => Array.from(value), [value])
+  const symbols = glyphs(props.capabilities)
+
+  const commandEntries = useMemo<readonly CompletionEntry[]>(
+    () => [
+      ...SLASH_COMMANDS.map((command) => ({ name: command.name, summary: command.summary })),
+      ...(props.extraCommands ?? []),
+    ],
+    [props.extraCommands],
+  )
+  const completions = useMemo(
+    () =>
+      value.startsWith('/')
+        ? commandEntries.filter((entry) => entry.name.startsWith(value))
+        : [],
+    [commandEntries, value],
+  )
+  // Typing reshapes the candidate list; the highlight restarts from the top.
+  useEffect(() => {
+    setCompletionIndex(0)
+  }, [value])
+  const selectedCompletion = Math.min(completionIndex, completions.length - 1)
 
   useInput(
     (input, key) => {
@@ -71,21 +104,32 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       ) {
         return
       }
+      if (key.upArrow && completions.length > 0) {
+        setCompletionIndex(
+          (index) => (Math.min(index, completions.length - 1) + completions.length - 1) % completions.length,
+        )
+        return
+      }
+      if (key.downArrow && completions.length > 0) {
+        setCompletionIndex((index) => (Math.min(index, completions.length - 1) + 1) % completions.length)
+        return
+      }
+      if (key.tab && completions.length > 0) {
+        adoptCompletion(completions[selectedCompletion]?.name)
+        return
+      }
       if (key.return) {
         if (key.shift || key.meta) insert('\n')
         else if (characters[cursor - 1] === '\\') {
           // A trailing backslash turns Enter into a hard newline instead of
           // submitting; the backslash itself is consumed.
           setValue([...characters.slice(0, cursor - 1), '\n', ...characters.slice(cursor)].join(''))
+        } else if (completions.length > 0 && selectedCompletion >= 0) {
+          // Menu open: Enter runs the highlighted command instead of the raw
+          // partial text (which the dispatcher would reject as unknown).
+          const adopted = completions[selectedCompletion]?.name
+          if (adopted) submitValue(adopted)
         } else submit()
-        return
-      }
-      if (key.tab && completions.length > 0) {
-        // Tab adopts the first completion; typing further disambiguates.
-        const adopted = completions[0] ?? ''
-        if (!adopted) return
-        setValue(`${adopted} `)
-        setCursor(Array.from(adopted).length + 1)
         return
       }
       if (key.leftArrow) setCursor((position) => Math.max(0, position - 1))
@@ -128,13 +172,23 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   }
 
   const submit = (): void => {
-    const trimmed = value.trim()
-    if (!trimmed) return
-    setHistory((items) => [...items, value])
+    submitValue(value)
+  }
+
+  const submitValue = (raw: string): void => {
+    if (!raw.trim()) return
+    setHistory((items) => [...items, raw])
     setHistoryIndex(-1)
     setValue('')
     setCursor(0)
-    props.onSubmit(value)
+    props.onSubmit(raw)
+  }
+
+  /** Puts a menu entry into the input with a trailing space for arguments. */
+  const adoptCompletion = (name: string | undefined): void => {
+    if (!name) return
+    setValue(`${name} `)
+    setCursor(Array.from(name).length + 1)
   }
 
   const navigateHistory = (direction: number): void => {
@@ -156,19 +210,45 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   const after = visibleCharacters
     .slice(Math.min(cursor, visibleCharacters.length) + (current ? 1 : 0))
     .join('')
-  const completions = value.startsWith('/')
-    ? SLASH_COMMANDS.map((command) => command.name).filter((command) => command.startsWith(value))
-    : []
+
+  // Sliding window so long custom-command lists never push the input away.
+  const windowStart = Math.max(
+    0,
+    Math.min(selectedCompletion - (COMPLETION_MAX_VISIBLE - 1), completions.length - COMPLETION_MAX_VISIBLE),
+  )
+  const visibleCompletions = completions.slice(windowStart, windowStart + COMPLETION_MAX_VISIBLE)
 
   return (
     <Box flexDirection="column">
+      {completions.length > 0 && (
+        <Box flexDirection="column" paddingX={1}>
+          {visibleCompletions.map((entry, offset) => {
+            const index = windowStart + offset
+            const highlighted = index === selectedCompletion
+            return (
+              <Text key={entry.name}>
+                <Text color={highlighted ? props.theme.accent : props.theme.dim}>
+                  {highlighted ? `${symbols.user} ` : '  '}
+                  {entry.name}
+                </Text>
+                {entry.summary ? <Text color={props.theme.dim}>  {entry.summary}</Text> : null}
+              </Text>
+            )
+          })}
+          {completions.length > COMPLETION_MAX_VISIBLE && (
+            <Text color={props.theme.dim}>
+              {'  '}… 共 {completions.length} 条 · ↑↓ 翻看
+            </Text>
+          )}
+        </Box>
+      )}
       <Box
         borderStyle="round"
         borderColor={props.locked ? props.theme.dim : props.theme.accent}
         paddingX={1}
       >
         <Text color={props.locked ? props.theme.dim : props.theme.accent}>
-          {glyphs(props.capabilities).user}{' '}
+          {symbols.user}{' '}
         </Text>
         <Text>
           {props.locked ? '(输入已锁定)' : before}
@@ -176,7 +256,6 @@ export function InputEditor(props: InputEditorProps): ReactElement {
           {!props.locked && after}
         </Text>
       </Box>
-      {completions.length > 0 && <Text color={props.theme.dim}> {completions.join('  ')}</Text>}
     </Box>
   )
 }

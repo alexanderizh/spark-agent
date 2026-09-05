@@ -5,22 +5,24 @@ import type { ReasoningEffort } from '../../llm/types.js'
 import type { TuiTheme } from '../theme.js'
 
 export const EFFORT_OPTIONS: readonly {
-  readonly value: ReasoningEffort | undefined
+  readonly value: ReasoningEffort
   readonly label: string
   readonly hint: string
 }[] = [
-  { value: undefined, label: 'auto', hint: '协议默认强度' },
   { value: 'low', label: 'low', hint: '轻量思考' },
   { value: 'medium', label: 'medium', hint: '均衡思考' },
-  { value: 'high', label: 'high', hint: '深入思考' },
+  { value: 'high', label: 'high', hint: '深入思考 · 默认' },
   { value: 'max', label: 'max', hint: '最大思考预算' },
   { value: 'off', label: 'off', hint: '关闭思考' },
 ]
 
+/** The engine-wide default: explicit high instead of channel-dependent defaults. */
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high'
+
 export interface EffortPickerProps {
   readonly theme: TuiTheme
-  readonly current: ReasoningEffort | undefined
-  onPick(effort: ReasoningEffort | undefined): void
+  readonly current: ReasoningEffort
+  onPick(effort: ReasoningEffort): void
   onClose(): void
 }
 
@@ -50,10 +52,14 @@ export function EffortPicker(props: EffortPickerProps): ReactElement {
     }
     if (/^[1-9]$/.test(input)) {
       const index = Number(input) - 1
-      if (index < EFFORT_OPTIONS.length) props.onPick(EFFORT_OPTIONS[index]?.value)
+      const option = EFFORT_OPTIONS[index]
+      if (index < EFFORT_OPTIONS.length && option) props.onPick(option.value)
       return
     }
-    if (key.return) props.onPick(EFFORT_OPTIONS[selected]?.value)
+    if (key.return) {
+      const option = EFFORT_OPTIONS[selected]
+      if (option) props.onPick(option.value)
+    }
   })
 
   return (

@@ -13,6 +13,7 @@ import type {
   PermissionMode,
   PolicyDecision,
 } from '../permission/types.js';
+import type { HookRunContext } from '../hooks/types.js';
 import type { ResolvedToolCall } from '../tools/contract.js';
 import { processToolOutput, type ProcessedToolOutput } from '../tools/output.js';
 import { ToolArgumentValidator } from '../tools/validation.js';
@@ -39,6 +40,8 @@ export interface ToolRunnerOptions {
   readonly ledger: SessionLedger;
   readonly stepId: string;
   readonly sessionId: string;
+  /** Owning turn id; only consumed by hook payloads. */
+  readonly turnId?: string;
   readonly cwd: string;
   readonly permissionMode: PermissionMode;
   readonly signal: AbortSignal;
@@ -89,6 +92,7 @@ export class ToolRunner {
         });
         executed += 1;
       }
+      await this.#postToolUse(records);
       if (records.some((record) => record.aborted)) throwIfAborted(this.options.signal);
     }
     return { attempted: calls.length, executed };
@@ -111,12 +115,6 @@ export class ToolRunner {
       await this.#deny(modelCall.callId, `Unknown tool: ${modelCall.name}`);
       return undefined;
     }
-    const call: ResolvedToolCall = {
-      callId: modelCall.callId,
-      name: modelCall.name,
-      args: modelCall.args,
-      definition,
-    };
     let validation;
     try {
       validation = this.#validator.validate(definition, modelCall.args);
@@ -127,6 +125,43 @@ export class ToolRunner {
     if (!validation.valid) {
       await this.#deny(modelCall.callId, `Invalid tool arguments: ${validation.message ?? 'unknown error'}`);
       return undefined;
+    }
+
+    const call: ResolvedToolCall = {
+      callId: modelCall.callId,
+      name: modelCall.name,
+      args: modelCall.args,
+      definition,
+    };
+
+    // PreToolUse hooks run before the permission policy: a `block` decision
+    // denies the call outright, an `approve` decision short-circuits the ask.
+    const hooks = this.options.env.hooks;
+    if (hooks) {
+      const outcome = await hooks.run(
+        'PreToolUse',
+        {
+          ...(this.options.turnId === undefined ? {} : { turnId: this.options.turnId }),
+          toolName: call.name,
+          toolInput: call.args,
+        },
+        this.#hookContext(),
+        this.options.signal,
+      );
+      if (outcome.blocked) {
+        await this.#deny(
+          call.callId,
+          `Blocked by PreToolUse hook: ${outcome.reason ?? 'no reason provided'}`,
+        );
+        return undefined;
+      }
+      if (outcome.approved) {
+        await this.#appendPermissionEvaluation(call.callId, {
+          decision: 'allow',
+          reason: 'PreToolUse hook approved',
+        });
+        return { call };
+      }
     }
 
     let policyDecision;
@@ -232,6 +267,43 @@ export class ToolRunner {
       cwd: this.options.cwd,
       mode: this.options.permissionMode,
     };
+  }
+
+  #hookContext(): HookRunContext {
+    return {
+      sessionId: this.options.sessionId,
+      cwd: this.options.cwd,
+      permissionMode: this.options.permissionMode,
+    };
+  }
+
+  /**
+   * PostToolUse hooks observe the settled result of every executed call.
+   * They are notifications only: outcomes never rewrite the recorded
+   * tool.result, and failures surface through telemetry.
+   */
+  async #postToolUse(records: readonly ExecutionRecord[]): Promise<void> {
+    const hooks = this.options.env.hooks;
+    if (!hooks) return;
+    for (const record of records) {
+      if (this.options.signal.aborted) return;
+      try {
+        await hooks.run(
+          'PostToolUse',
+          {
+            ...(this.options.turnId === undefined ? {} : { turnId: this.options.turnId }),
+            toolName: record.call.name,
+            toolInput: record.call.args,
+            toolOk: record.ok,
+            toolOutputPreview: previewArgs(record.output.content),
+          },
+          this.#hookContext(),
+          this.options.signal,
+        );
+      } catch {
+        this.options.env.telemetry.counter('hook.run.failed', { event: 'PostToolUse' });
+      }
+    }
   }
 
   async #appendPermissionEvaluation(

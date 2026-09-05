@@ -86,23 +86,23 @@ describe('invariant: permission and tool boundaries fail closed', () => {
     });
   });
 
-  it('hides side-effect tools in plan mode and denies hallucinated calls', async () => {
+  it('auto mode executes side-effecting tools without permission prompts', async () => {
     const env = createDeterministicEnv([
-      toolCall('write-1', 'write', { path: 'a.ts', content: 'must not write' }),
-      text('I can only provide a plan.'),
+      toolCall('write-1', 'write', { path: 'a.ts', content: 'auto approved' }),
+      text('Written without asking.'),
     ]);
     const session = await Agent.open({ cwd: '/workspace', env }).newSession({
-      permissionMode: 'plan',
+      permissionMode: 'auto',
     });
 
-    await session.turn('Plan the change');
+    await session.turn('Write a.ts');
 
-    expect(env.fixtures.model.requests[0]?.tools.map((tool) => tool.name)).toEqual(['read']);
-    expect(env.fixtures.fs.exists('a.ts')).toBe(false);
+    expect(env.fixtures.fs.exists('a.ts')).toBe(true);
     const events = await collectEvents(session);
-    expect(events.find((event) => event.type === 'tool.result')).toMatchObject({
-      ok: false,
-      content: expect.stringContaining('Plan mode blocks'),
+    expect(events.find((event) => event.type === 'permission.requested')).toBeUndefined();
+    expect(events.find((event) => event.type === 'permission.evaluated')).toMatchObject({
+      mode: 'auto',
+      decision: 'allow',
     });
   });
 });

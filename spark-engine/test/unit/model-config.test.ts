@@ -186,6 +186,65 @@ describe('model configuration', () => {
 
     expect(runtime.modelId).toBe('local')
   })
+
+  it('keeps a persisted CLI selection above the SparkWork default route', async () => {
+    const root = await createRoot()
+    const globalPath = join(root, 'home', 'config.toml')
+    await writeFile(globalPath, '[agent]\nmodel = "sparkwork:provider-1:picked-model"\n')
+    const descriptorPath = join(root, 'bridge.json')
+    await writeFile(
+      descriptorPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        host: 'sparkwork',
+        instanceId: 'instance-1234567890',
+        endpoint: 'http://127.0.0.1:39876',
+        token: 'bridge-token-that-is-long-enough-to-be-private',
+        pid: 1234,
+        startedAt: '2026-08-26T12:00:00.000Z',
+      }),
+      { mode: 0o600 },
+    )
+    if (process.platform !== 'win32') await chmod(descriptorPath, 0o600)
+    const runtime = await loadConfiguredModel({
+      cwd: join(root, 'project'),
+      globalConfigPath: globalPath,
+      projectConfigPath: join(root, 'project', '.spark', 'config.toml'),
+      sparkWorkBridgePath: descriptorPath,
+      env: {},
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            schemaVersion: 1,
+            host: 'sparkwork',
+            revision: 'c'.repeat(64),
+            generatedAt: '2026-08-26T12:00:00.000Z',
+            defaultRoute: 'sparkwork:provider-1:host-model',
+            routes: [
+              {
+                routeId: 'sparkwork:provider-1:host-model',
+                providerId: 'provider-1',
+                providerName: 'Provider One',
+                protocol: 'openai-responses',
+                model: 'host-model',
+              },
+              {
+                routeId: 'sparkwork:provider-1:picked-model',
+                providerId: 'provider-1',
+                providerName: 'Provider One',
+                protocol: 'openai-responses',
+                model: 'picked-model',
+              },
+            ],
+          }),
+        ),
+    })
+
+    expect(runtime.modelId).toBe('sparkwork:provider-1:picked-model')
+    expect(runtime.configSnapshot).toMatchObject({
+      sparkwork: { selectedRoute: 'sparkwork:provider-1:picked-model' },
+    })
+  })
 })
 
 async function createRoot(): Promise<string> {

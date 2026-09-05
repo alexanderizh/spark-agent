@@ -4,6 +4,7 @@ import type { ReactElement } from 'react'
 import type { ActiveToolProjection, RowTone, TranscriptRow } from '../projection.js'
 import type { TerminalCapabilities, TuiTheme } from '../theme.js'
 import { glyphs } from '../theme.js'
+import { MarkdownText } from './markdown.js'
 
 export interface TranscriptProps {
   readonly rows: readonly TranscriptRow[]
@@ -30,6 +31,33 @@ export function Transcript({ rows, theme, capabilities }: TranscriptProps): Reac
             >
               <Text bold>{row.text}</Text>
             </Box>
+          )
+        }
+        if (row.kind === 'assistant') {
+          // Markdown rendering with breathing room around each answer block.
+          return (
+            <Box key={row.key} flexDirection="column" marginY={1} width={capabilities.width}>
+              <MarkdownText text={row.text} theme={theme} capabilities={capabilities} />
+            </Box>
+          )
+        }
+        if (row.toolLine) {
+          const symbols = glyphs(capabilities)
+          const argColor = row.toolLine.ok ? theme.dim : theme.error
+          return (
+            <Text key={row.key}>
+              <Text color={theme.accent}>
+                {symbols.tool} {row.toolLine.tool}
+              </Text>
+              {row.toolLine.args === '' ? undefined : (
+                <Text color={argColor}>({row.toolLine.args})</Text>
+              )}
+              <Text color={row.toolLine.ok ? theme.ok : theme.error}>
+                {' '}
+                {row.toolLine.ok ? symbols.success : symbols.failure}
+              </Text>
+              <Text color={theme.dim}> {row.toolLine.durationMs}</Text>
+            </Text>
           )
         }
         const color = toneColor(row.tone, theme)

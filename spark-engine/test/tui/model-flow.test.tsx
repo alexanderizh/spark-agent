@@ -158,6 +158,11 @@ describe('unconfigured TUI onboarding', () => {
       cwd: expect.any(String),
       model: 'sparkwork:p1:gpt-host',
     })
+    // The selection is remembered in the global config for the next launch.
+    expect(harness.seams.persist).toHaveBeenCalledWith({
+      sparkHome: '/tmp/spark-test-home',
+      model: 'sparkwork:p1:gpt-host',
+    })
     expect(harness.app.lastFrame() ?? '').toContain('gpt-host')
 
     harness.app.stdin.write('hi')
@@ -166,6 +171,21 @@ describe('unconfigured TUI onboarding', () => {
     await flush(40)
     const frame2 = harness.app.lastFrame() ?? ''
     expect(frame2).toContain('host done')
+    harness.app.unmount()
+  })
+
+  it('keeps the picker open with the reason when persisting the selection fails', async () => {
+    const harness = await createHarness()
+    harness.seams.persist.mockRejectedValueOnce(new Error('EACCES: config.toml not writable'))
+    harness.app.stdin.write('\r') // select the first SparkWork route
+    await flush(20)
+    const frame = harness.app.lastFrame() ?? ''
+    expect(frame).toContain('写入默认模型配置失败')
+    expect(frame).toContain('EACCES: config.toml not writable')
+    // The runtime still applied, so esc returns to a usable session.
+    harness.app.stdin.write('')
+    await flush(10)
+    expect(harness.app.lastFrame() ?? '').not.toContain('选择模型')
     harness.app.unmount()
   })
 
@@ -188,6 +208,10 @@ describe('unconfigured TUI onboarding', () => {
         modelId: 'gpt-5.6',
       }),
     )
+    expect(harness.seams.persist).toHaveBeenCalledWith({
+      sparkHome: '/tmp/spark-test-home',
+      model: 'gpt-5-6',
+    })
     const frame = harness.app.lastFrame() ?? ''
     expect(frame).not.toContain('配置本地模型渠道')
     expect(frame).not.toContain('选择模型')
@@ -205,6 +229,7 @@ interface FakeSeams extends ModelRuntimeSeams {
   readonly createRuntime: ReturnType<typeof vi.fn>
   readonly configure: ReturnType<typeof vi.fn>
   readonly inspect: ReturnType<typeof vi.fn>
+  readonly persist: ReturnType<typeof vi.fn>
 }
 
 async function createHarness(): Promise<Harness> {
@@ -223,6 +248,7 @@ async function createHarness(): Promise<Harness> {
       configPath: '/tmp/spark-test-home/config.toml',
       modelEntryId: input.alias,
     })),
+    persist: vi.fn(async () => undefined),
   }
   // The second runtime (after configureLocal) reuses the same fake service.
   seams.createRuntime.mockImplementation(async (options: { model: string }) => ({

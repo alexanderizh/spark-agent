@@ -1,7 +1,14 @@
 import type { ResolvedToolCall } from '../tools/contract.js';
 
 export type GrantScope = 'once' | 'session';
-export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypass';
+/**
+ * Three approval levels only:
+ * - `manual`: read-only tools run free; write/edit and shell commands ask.
+ * - `auto`: everything auto-approved, but explicit `deny` rules still bite.
+ * - `bypass`: policy skipped entirely (deny rules included).
+ * Legacy ledger values (`default`/`acceptEdits`/`plan`) are normalized on replay.
+ */
+export type PermissionMode = 'manual' | 'auto' | 'bypass';
 export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'cli' | 'host';
 
 export interface PermissionCheckContext {
@@ -40,5 +47,17 @@ export interface PermissionRequest {
 }
 
 export function isPermissionMode(value: unknown): value is PermissionMode {
-  return value === 'default' || value === 'acceptEdits' || value === 'plan' || value === 'bypass';
+  return value === 'manual' || value === 'auto' || value === 'bypass';
+}
+
+/**
+ * Ledger replay compatibility: old sessions persisted `default`/`acceptEdits`/
+ * `plan`. All of them collapse to `manual` — the most conservative of the three
+ * current modes — because `acceptEdits`' auto-edit behavior now lives in `auto`
+ * (which would also silence shell approval) and `plan` no longer exists.
+ */
+export function normalizeLegacyPermissionMode(value: unknown): PermissionMode | undefined {
+  if (isPermissionMode(value)) return value;
+  if (value === 'default' || value === 'acceptEdits' || value === 'plan') return 'manual';
+  return undefined;
 }

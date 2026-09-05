@@ -6,7 +6,6 @@ import type { ResolvedToolCall } from '../tools/contract.js';
 import type {
   PermissionCheckContext,
   PermissionDecision,
-  PermissionMode,
   PermissionRuleReference,
   PermissionRuleSource,
   PolicyDecision,
@@ -34,7 +33,6 @@ export interface PermissionRuleLayer {
 }
 
 export interface RulePermissionPolicyOptions {
-  readonly mode?: PermissionMode;
   readonly layers?: readonly PermissionRuleLayer[];
 }
 
@@ -44,7 +42,6 @@ interface SelectedRule {
 }
 
 export class RulePermissionPolicy implements PermissionPolicy {
-  readonly #mode: PermissionMode;
   readonly #rules: readonly SelectedRule[];
   readonly #sessionGrants = new Map<string, Set<string>>();
 
@@ -52,7 +49,6 @@ export class RulePermissionPolicy implements PermissionPolicy {
     const normalized: RulePermissionPolicyOptions = Array.isArray(options)
       ? { layers: [{ source: 'host', rules: options as readonly PermissionRule[] }] }
       : (options as RulePermissionPolicyOptions);
-    this.#mode = normalized.mode ?? 'default';
     this.#rules = (normalized.layers ?? []).flatMap((layer) =>
       layer.rules.map((rule) => {
         validateRule(rule);
@@ -62,16 +58,21 @@ export class RulePermissionPolicy implements PermissionPolicy {
   }
 
   async check(call: ResolvedToolCall, context: PermissionCheckContext): Promise<PolicyDecision> {
-    const mode = context.mode === 'default' ? this.#mode : context.mode;
+    // Session mode is the single source of truth: the tool runner always
+    // forwards the session's current mode, so the policy never second-guesses it.
+    const mode = context.mode;
     if (mode === 'bypass') return { decision: 'allow', reason: 'Permission bypass mode' };
-    if (mode === 'plan' && call.definition.permissionClass !== 'read') {
-      return { decision: 'deny', reason: 'Plan mode blocks tools with side effects' };
-    }
     let selected: SelectedRule | undefined;
     for (const rule of this.#rules) {
       if (wildcardMatches(rule.rule.tool, call.name) && matchesArguments(rule.rule, call.args)) {
         selected = rule;
       }
+    }
+    // Explicit deny rules stay enforceable in auto mode; auto only removes the
+    // interactive asks. Bypass (handled above) skips even these.
+    if (selected?.rule.action === 'deny') return ruleDecision(selected);
+    if (mode === 'auto') {
+      return { decision: 'allow', reason: 'Auto approval mode' };
     }
     if (selected) {
       if (selected.rule.action !== 'ask') return ruleDecision(selected);
@@ -87,13 +88,6 @@ export class RulePermissionPolicy implements PermissionPolicy {
     const grant = grantDetails(call, call.definition.approval === 'session');
     if (this.#hasGrant(context.sessionId, grant.key)) {
       return { decision: 'allow', reason: `Session grant: ${grant.label}` };
-    }
-    if (
-      mode === 'acceptEdits' &&
-      (call.definition.permissionClass === 'read' ||
-        call.definition.permissionClass === 'workspace-write')
-    ) {
-      return { decision: 'allow', reason: 'acceptEdits mode' };
     }
     if (call.definition.approval === 'never') return { decision: 'allow' };
     return askDecision(call, undefined, grant);
@@ -200,7 +194,8 @@ function resolvePointer(value: unknown, pointer: string): unknown {
   return current;
 }
 
-function wildcardMatches(pattern: string, value: string): boolean {
+/** Glob match with `*` wildcards; shared with hook matchers and permission rules. */
+export function wildcardMatches(pattern: string, value: string): boolean {
   let patternIndex = 0;
   let valueIndex = 0;
   let starIndex = -1;

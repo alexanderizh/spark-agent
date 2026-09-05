@@ -9,6 +9,8 @@ import { SteppingClock, SystemClock } from './kernel/clock.js';
 import { SequentialIdGen, UuidIdGen } from './kernel/ids.js';
 import { FakeModel } from './llm/fake/model.js';
 import type { FakeScriptItem } from './llm/fake/reply-dsl.js';
+import { loadHookRunner } from './hooks/settings.js';
+import { FileInstructionLoader } from './memory/instructions.js';
 import type { LlmService } from './seams.js';
 import type { AgentEnv, Approver } from './seams.js';
 import { FakeApprover } from './permission/approver.js';
@@ -39,6 +41,7 @@ export function createDefaultEnv(options: DefaultEnvOptions): AgentEnv {
   const dataRoot = resolve(options.dataRoot ?? defaultSparkHome());
   const registry = new OrderedToolRegistry(workspaceToolDefinitions);
   const executor = new WorkspaceToolExecutor(options.cwd);
+  const hooks = loadHookRunner({ cwd: options.cwd, userSettingsDir: dataRoot });
   return {
     clock,
     ids: new UuidIdGen(),
@@ -51,7 +54,10 @@ export function createDefaultEnv(options: DefaultEnvOptions): AgentEnv {
       approver: options.approver ?? new FakeApprover(),
     },
     projector: new EventContextProjector(),
-    prompt: new DefaultPromptComposer(),
+    prompt: new DefaultPromptComposer({
+      instructions: new FileInstructionLoader({ cwd: options.cwd }),
+    }),
+    ...(hooks === undefined ? {} : { hooks }),
     budgets: new DefaultBudgetFactory(clock),
     telemetry: new NullTelemetry(),
   };

@@ -118,7 +118,10 @@ export async function loadConfiguredModel(
     projectExists,
   } = await loadModelContext(options)
   const localSelected = options.model ?? environment.SPARK_MODEL ?? selectedModel(projectLayer)
-  const modelId = localSelected ?? host.catalog?.defaultRoute ?? config.agent.model
+  // A persisted CLI selection ([agent].model, written by the TUI picker) is an
+  // explicit choice and stays sticky above the SparkWork default route; the
+  // host default only applies while the CLI has picked nothing itself.
+  const modelId = localSelected ?? config.agent.model ?? host.catalog?.defaultRoute
   if (!modelId) {
     throw noModelSelectedError({ host, globalPath, projectPath, globalExists, projectExists })
   }
@@ -196,8 +199,8 @@ export async function inspectConfiguredModels(
     options.model ??
     environment.SPARK_MODEL ??
     selectedModel(projectLayer) ??
-    host.catalog?.defaultRoute ??
-    config.agent.model
+    config.agent.model ??
+    host.catalog?.defaultRoute
   const selectedHostRoute =
     selected && host.catalog && !config.models[selected]
       ? resolveSparkWorkRoute(host.catalog, selected)
@@ -299,37 +302,77 @@ export async function configureLocalProvider(
     }
   }
 
-  const configPath = resolve(input.sparkHome, 'config.toml')
+  const configPath = await writeGlobalConfig(input.sparkHome, (layer) => {
+    const providers = asRecord(layer.providers) ?? {}
+    const models = asRecord(layer.models) ?? {}
+    layer.providers = {
+      ...providers,
+      [alias]: {
+        protocol: input.protocol,
+        ...(baseUrl === '' ? {} : { base_url: baseUrl }),
+        api_key_env: apiKeyEnv,
+      },
+    }
+    layer.models = {
+      ...models,
+      [alias]: { provider: alias, model: modelId },
+    }
+  })
+  return { configPath, modelEntryId: alias }
+}
+
+export interface PersistSelectedModelInput {
+  readonly sparkHome: string
+  readonly model: string
+}
+
+/**
+ * Remembers the interactive model selection as [agent].model in the global
+ * layer (~/.spark/config.toml) so the next launch reuses it instead of
+ * reopening the picker (docs 016 §4). Only the model id is persisted —
+ * credentials stay in environment variables — and the merge is validated
+ * against the config schema before an atomic rename, so a hand-edited config
+ * is never silently corrupted.
+ */
+export async function persistSelectedModel(input: PersistSelectedModelInput): Promise<string> {
+  const model = input.model.trim()
+  if (!model || model.length > 2_000) {
+    throw new ModelConfigError('A non-empty model id (at most 2000 chars) is required')
+  }
+  return writeGlobalConfig(input.sparkHome, (layer) => {
+    const agent = asRecord(layer.agent) ?? {}
+    layer.agent = { ...agent, model }
+  })
+}
+
+/**
+ * Read-merge-validate-atomically-write helper shared by every global config
+ * mutation: the temp file lives in the same directory as the target so the
+ * rename never crosses filesystems, and the merged result must still satisfy
+ * the config schema or nothing is written.
+ */
+async function writeGlobalConfig(
+  sparkHome: string,
+  mutate: (layer: Record<string, unknown>) => void,
+): Promise<string> {
+  const configPath = resolve(sparkHome, 'config.toml')
   const existing = await readLayer(configPath)
-  const providers = asRecord(existing.layer.providers) ?? {}
-  const models = asRecord(existing.layer.models) ?? {}
   const mutated: Record<string, unknown> = structuredClone(existing.layer)
-  mutated.providers = {
-    ...providers,
-    [alias]: {
-      protocol: input.protocol,
-      ...(baseUrl === '' ? {} : { base_url: baseUrl }),
-      api_key_env: apiKeyEnv,
-    },
-  }
-  mutated.models = {
-    ...models,
-    [alias]: { provider: alias, model: modelId },
-  }
+  mutate(mutated)
   try {
     ModelConfigSchema.parse(mutated)
   } catch (error) {
     throw new ModelConfigError(
-      `Merging provider "${alias}" would produce an invalid config: ${formatZodError(error)}`,
+      `Updating ${configPath} would produce an invalid config: ${formatZodError(error)}`,
       { cause: error },
     )
   }
 
-  await mkdir(input.sparkHome, { recursive: true, mode: 0o700 })
-  const temporary = resolve(input.sparkHome, `.config.toml.${process.pid}.tmp`)
+  await mkdir(sparkHome, { recursive: true, mode: 0o700 })
+  const temporary = resolve(sparkHome, `.config.toml.${process.pid}.tmp`)
   await writeFile(temporary, `${stringify(mutated)}\n`, { encoding: 'utf8', mode: 0o600 })
   await rename(temporary, configPath)
-  return { configPath, modelEntryId: alias }
+  return configPath
 }
 
 interface LoadedModelContext {

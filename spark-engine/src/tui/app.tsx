@@ -1,6 +1,7 @@
 import { Box, Text, useApp, useStdout } from 'ink'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
+import { expandCustomCommand, matchCustomCommand, type CustomCommand } from '../commands/custom-commands.js'
 import type { AgentEvent } from '../events/schema.js'
 import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
@@ -9,15 +10,14 @@ import type { AgentSession } from '../sdk/agent.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
 import { PermissionCard } from './components/permission-card.js'
 import { PERMISSION_MODES, PermissionPicker, nextPermissionMode } from './components/permission-picker.js'
-import { EffortPicker } from './components/effort-picker.js'
+import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { InputEditor } from './components/input-editor.js'
-import { PlanApprovalCard } from './components/plan-card.js'
 import { WorkingLine } from './components/spinner.js'
 import { WelcomeBox } from './components/welcome.js'
 import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
-import { effortLabel, helpDetail } from './slash-commands.js'
+import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
 import { projectTranscript } from './projection.js'
 import {
@@ -47,6 +47,8 @@ export interface SparkTuiAppProps {
   readonly permissionMode?: PermissionMode
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
   readonly reasoningEffort?: ReasoningEffort
+  /** Prompt files from `.spark/commands/**`; expanded and sent as the turn input. */
+  readonly customCommands?: readonly CustomCommand[]
 }
 
 interface NoticeState {
@@ -91,16 +93,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [configFormOpen, setConfigFormOpen] = useState(false)
   const [permPickerOpen, setPermPickerOpen] = useState(false)
   const [effortPickerOpen, setEffortPickerOpen] = useState(false)
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(
-    props.reasoningEffort,
+  // Always explicit: the engine never sends a channel-dependent "auto" effort.
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    props.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   )
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
     props.permissionMode ?? props.initialSession.permissionMode,
   )
   const [updateRunning, setUpdateRunning] = useState(false)
   const [updateCheckOnly, setUpdateCheckOnly] = useState(false)
-  /** Non-empty after a plan-mode turn produced a plan awaiting approval. */
-  const [planProposal, setPlanProposal] = useState<string | undefined>(undefined)
   const controllers = useRef<AbortController[]>([])
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -168,12 +169,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     else if (delta.type === 'thinking') setLiveThinking((current) => current + delta.text)
   }, [])
 
-  const submit = useCallback(
-    (value: string) => {
-      if (value.startsWith('/')) {
-        void handleCommand(value)
-        return
-      }
+  const startTurn = useCallback(
+    (prompt: string) => {
       if (effectiveModel === undefined) {
         modelRuntime?.openPicker('先选择或配置一个模型，再开始任务')
         return
@@ -182,11 +179,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       controllers.current.push(controller)
       setActiveTurns((count) => count + 1)
       setNoticeFull(undefined)
-      setPlanProposal(undefined)
       void session
-        .turn(value, {
+        .turn(prompt, {
           signal: controller.signal,
-          ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+          reasoningEffort,
           onEvent: appendEvent,
           onDelta: handleDelta,
         })
@@ -196,6 +192,30 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         })
     },
     [appendEvent, effectiveModel, handleDelta, modelRuntime, reasoningEffort, session],
+  )
+
+  const submit = useCallback(
+    (value: string) => {
+      if (value.startsWith('/')) {
+        const custom =
+          props.customCommands === undefined
+            ? undefined
+            : matchCustomCommand(value, props.customCommands)
+        if (custom) {
+          const expanded = expandCustomCommand(custom.command, custom.args)
+          setNoticeFull({
+            text: `已展开自定义命令 /${custom.command.name}，作为任务发送…`,
+            tone: 'info',
+          })
+          startTurn(expanded)
+          return
+        }
+        void handleCommand(value)
+        return
+      }
+      startTurn(value)
+    },
+    [props.customCommands, startTurn],
   )
 
   const runUpdate = useCallback(
@@ -239,13 +259,19 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const handleCommand = async (raw: string): Promise<void> => {
     const [command] = raw.trim().split(/\s+/, 1)
     switch (command) {
-      case '/help':
-        setNoticeFull({ text: helpDetail(), tone: 'info' })
+      case '/help': {
+        const custom = props.customCommands ?? []
+        const customText =
+          custom.length === 0
+            ? ''
+            : `\n自定义命令：${custom.map((command) => `/${command.name}${command.description === '' ? '' : ` ${command.description}`}`).join(' · ')}`
+        setNoticeFull({ text: helpDetail() + customText, tone: 'info' })
         break
+      }
       case '/status':
         setNotice(
           `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}` +
-            ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${effortLabel(reasoningEffort)}`,
+            ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${reasoningEffort}`,
         )
         break
       case '/model':
@@ -335,42 +361,20 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
 
   const projection = useMemo(() => projectTranscript(events, capabilities), [capabilities, events])
-  const metrics = useMemo(() => deriveMetrics(events), [events])
   const action = deriveAction(events, liveText, liveThinking, pending)
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
-  const lastAssistantText = useMemo(() => {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index]
-      if (event?.type === 'assistant.completed' && (event.message.text ?? '').trim()) {
-        return event.message.text ?? ''
-      }
-    }
-    return undefined
-  }, [events])
-
-  // Plan-mode approval flow: when a plan turn settles while still in plan
-  // mode, surface its proposal for approve/iterate instead of silently ending.
-  const prevActiveTurns = useRef(0)
-  useEffect(() => {
-    const wasRunning = prevActiveTurns.current > 0
-    prevActiveTurns.current = activeTurns
-    if (wasRunning && activeTurns === 0 && permissionMode === 'plan' && lastAssistantText) {
-      setPlanProposal(lastAssistantText)
-    }
-  }, [activeTurns, lastAssistantText, permissionMode])
 
   const applyPermissionMode = useCallback(
     (mode: PermissionMode) => {
       session.setPermissionMode(mode)
       setPermissionModeState(mode)
       setPermPickerOpen(false)
-      setPlanProposal(undefined)
       setNoticeFull({
         text:
-          mode === 'plan'
-            ? '已切换到计划模式：只读探索，产出计划后会询问是否执行。'
-            : mode === 'bypass'
-              ? '危险：权限绕过已启用（仅本会话），工具将不经审批执行。'
+          mode === 'bypass'
+            ? '危险：完全访问已启用（仅本会话），审批与规则全部跳过。'
+            : mode === 'auto'
+              ? '已切换到自动审批：工具自动执行（显式 deny 规则仍生效）。'
               : `权限策略已切换为 ${permissionLabel(mode)}（本会话生效）。`,
         tone: mode === 'bypass' ? 'warn' : 'info',
       })
@@ -388,21 +392,12 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     applyPermissionMode(nextPermissionMode(permissionMode))
   }, [activeTurns, applyPermissionMode, permissionMode, setNotice])
 
-  const approvePlan = useCallback(() => {
-    setPlanProposal(undefined)
-    applyPermissionMode('acceptEdits')
-    submit('请严格按照上面的计划开始执行；逐步使用可用工具完成任务。')
-    // submit depends on this callback through the editor only; calling it here
-    // re-enters the same stable closure captured for the card's lifetime.
-  }, [applyPermissionMode, submit])
-
   return (
     <Box flexDirection="column">
       {empty && !pickerOpen && (
         <WelcomeBox
           version={props.version ?? SPARK_ENGINE_VERSION}
           model={visibleModelName}
-          cwd={session.cwd}
           capabilities={capabilities}
           theme={theme}
         />
@@ -414,7 +409,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {activeTurns > 0 && (
         <WorkingLine
           label={action}
-          detail={`step ${metrics.steps} · ${metrics.tokens} tok${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''} · esc 中断`}
+          detail={`esc 中断${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
           capabilities={capabilities}
           theme={theme}
         />
@@ -449,21 +444,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           onPick={(effort) => {
             setReasoningEffort(effort)
             setEffortPickerOpen(false)
-            setNotice(`推理强度: ${effortLabel(effort)}（对下一个 turn 生效）`)
+            setNotice(`推理强度: ${effort}（对下一个 turn 生效）`)
           }}
           onClose={() => {
             setEffortPickerOpen(false)
-          }}
-        />
-      )}
-      {planProposal !== undefined && !permPickerOpen && !pending && (
-        <PlanApprovalCard
-          proposal={planProposal}
-          theme={theme}
-          onApprove={approvePlan}
-          onDismiss={() => {
-            setPlanProposal(undefined)
-            setNotice('已留在计划模式；继续讨论或输入 /perm 切换策略。')
           }}
         />
       )}
@@ -520,16 +504,14 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       )}
       <InputEditor
         active={!pickerOpen}
-        locked={
-          pending !== undefined ||
-          pickerOpen ||
-          permPickerOpen ||
-          effortPickerOpen ||
-          planProposal !== undefined
-        }
+        locked={pending !== undefined || pickerOpen || permPickerOpen || effortPickerOpen}
         running={activeTurns > 0}
         capabilities={capabilities}
         theme={theme}
+        extraCommands={(props.customCommands ?? []).map((command) => ({
+          name: `/${command.name}`,
+          ...(command.description === '' ? {} : { summary: command.description }),
+        }))}
         onSubmit={submit}
         onEscape={interrupt}
         onControlC={controlC}
@@ -538,33 +520,17 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setShowThinking((visible) => !visible)
         }}
       />
+      {/* Status bar: bare values only — model, permission mode, effort. */}
       <Box gap={2} flexWrap="wrap">
         <Text color={theme.accent}>{visibleModelName ?? '未选择模型'}</Text>
-        <Text color={permissionMode === 'plan' ? theme.ok : theme.dim}>
-          权限:{permissionLabel(permissionMode)}
+        <Text color={permissionMode === 'bypass' ? theme.warn : theme.dim}>
+          {permissionMode}
         </Text>
-        <Text color={reasoningEffort === undefined ? theme.dim : theme.ok}>
-          推理:{effortLabel(reasoningEffort)}
-        </Text>
-        <Text color={theme.dim}>{metrics.tokens} tok · /help</Text>
+        <Text color={theme.ok}>{reasoningEffort}</Text>
+        <Text color={theme.dim}>/help</Text>
       </Box>
     </Box>
   )
-}
-
-function deriveMetrics(events: readonly AgentEvent[]): {
-  readonly steps: number
-  readonly tokens: number
-} {
-  let steps = 0
-  let tokens = 0
-  for (const event of events) {
-    if (event.type === 'step.started') steps += 1
-    else if (event.type === 'assistant.completed') {
-      tokens += event.usage.inputTokens + event.usage.outputTokens
-    }
-  }
-  return { steps, tokens }
 }
 
 function deriveAction(
