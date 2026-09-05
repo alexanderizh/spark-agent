@@ -156,4 +156,100 @@ describe('SparkEngineExecutor', () => {
     const statuses = events.filter((e) => e.type === 'agent_status')
     expect(statuses.at(-1)).toMatchObject({ status: 'error' })
   })
+
+  it('审批桥 allow：default 模式 write 工具经 approvalCallback 放行', async () => {
+    const script = [
+      toolCall('w-1', 'write', { path: 'b.ts', content: 'export const b = 1;\n' }),
+      text('已写入 b.ts。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    const approvals: Array<{ tool: string; input: Record<string, unknown> }> = []
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-1',
+      '写 b.ts',
+      makeConfig({
+        permissionMode: 'spark-default',
+        approvalCallback: async (_sid, tool, input) => {
+          approvals.push({ tool, input })
+          return { allowed: true, scope: 'once' }
+        },
+      }),
+    )
+
+    expect(approvals).toEqual([
+      { tool: 'write', input: { path: 'b.ts', content: 'export const b = 1;\n' } },
+    ])
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'success' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('审批桥 deny：工具失败但 turn 正常完成', async () => {
+    const script = [
+      toolCall('w-1', 'write', { path: 'b.ts', content: 'x' }),
+      text('写入被拒绝，我不再尝试。'),
+    ]
+    setSparkLlmFactoryForTests(scriptFactory(script))
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+    await executor.executeTurn(
+      'sess-1',
+      'turn-1',
+      '写 b.ts',
+      makeConfig({
+        permissionMode: 'spark-default',
+        approvalCallback: async () => false,
+      }),
+    )
+
+    const toolResults = events.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'error' })
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('openSession 模式对齐：续轮 bypass 免审批直写（账本 default 不残留）', async () => {
+    // turn 1：default + 审批放行 write，账本记录 default 模式
+    setSparkLlmFactoryForTests(
+      scriptFactory([toolCall('w-1', 'write', { path: 'c.ts', content: '1' }), text('已写入。')]),
+    )
+    let ledgerSessionId = ''
+    const executor1 = new SparkEngineExecutor()
+    collectEvents(executor1)
+    await executor1.executeTurn(
+      'sess-1',
+      'turn-1',
+      '写',
+      makeConfig({
+        permissionMode: 'spark-default',
+        approvalCallback: async () => true,
+        sparkSessionIdObserver: (id) => {
+          ledgerSessionId = id
+        },
+      }),
+    )
+
+    // turn 2：续跑 + 切 bypass + 无审批回调——若模式未对齐，FakeApprover 会 deny
+    setSparkLlmFactoryForTests(
+      scriptFactory([toolCall('w-2', 'write', { path: 'd.ts', content: '2' }), text('已写入。')]),
+    )
+    const executor2 = new SparkEngineExecutor()
+    const events2 = collectEvents(executor2)
+    await executor2.executeTurn(
+      'sess-1',
+      'turn-2',
+      '再写',
+      makeConfig({
+        permissionMode: 'spark-bypass',
+        sdkSessionId: ledgerSessionId,
+        continueSession: true,
+      }),
+    )
+
+    const toolResults = events2.filter((e) => e.type === 'tool_result')
+    expect(toolResults[0]).toMatchObject({ status: 'success' })
+    expect(events2.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
 })

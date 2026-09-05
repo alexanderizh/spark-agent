@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 
 import { Agent, ModelRegistry, createDefaultEnv } from '@spark/agent'
-import type { LlmService } from '@spark/agent'
+import type { AgentSession, LlmService } from '@spark/agent'
 import type { AgentEvent } from '@spark/protocol'
 
-import type { EngineExecutor } from '../engine-executor.js'
+import type { EngineExecutor, PermissionModeAwareExecutor } from '../engine-executor.js'
 import type { SDKExecutorConfig } from '../types.js'
+import { HostBridgeApprover } from './approver-bridge.js'
 import { SparkEventMapper } from './event-mapper.js'
 import { resolveSparkModelRoute, toSparkEnginePermissionMode } from './model-route.js'
 
@@ -37,14 +38,21 @@ export function setSparkLlmFactoryForTests(
  * 数据根：默认 ~/.spark（与 SparkCliBridgeService / spark CLI 共用，跨端一致）；
  * config.sparkDataRoot 可覆盖（测试隔离用）。构造参数经 config 传入（契约）。
  *
- * M3 待接：审批桥（当前 FakeApprover 全 deny，仅 bypass/acceptEdits 模式可完整
- * 跑工具循环）；自定义系统提示词注入（DefaultPromptComposer 接缝在引擎侧扩展）。
+ * 审批（M3）：config.approvalCallback 存在时注入 HostBridgeApprover——引擎 default
+ * 模式下 approval !== 'never' 的工具（write/edit/bash…）经 host permission service
+ * 走与 claude 相同的用户审批链路；无回调时回落引擎默认 FakeApprover（全 deny）。
+ * 权限热切换（M3）：实现 PermissionModeAwareExecutor，turn 进行中透传引擎
+ * session.setPermissionMode；turn 间切换由 host 持久化的 permission_mode 在下一轮
+ * newSession/openSession 时生效（openSession 后按 host 最新值对齐账本恢复值）。
+ *
+ * 待接：自定义系统提示词注入（DefaultPromptComposer 接缝在引擎侧扩展）。
  */
-export class SparkEngineExecutor implements EngineExecutor {
+export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareExecutor {
   readonly engine = 'spark' as const
 
   readonly #listeners = new Set<(event: AgentEvent) => void>()
   #abortController: AbortController | null = null
+  #currentSession: AgentSession | null = null
 
   onEvent(listener: (event: AgentEvent) => void): void {
     this.#listeners.add(listener)
@@ -56,6 +64,11 @@ export class SparkEngineExecutor implements EngineExecutor {
 
   cancel(): void {
     this.#abortController?.abort()
+  }
+
+  /** 权限热切换：turn 进行中透传引擎 session（applyPermissionModeChange 经能力接口调用）。 */
+  async setPermissionMode(mode: SDKExecutorConfig['permissionMode']): Promise<void> {
+    this.#currentSession?.setPermissionMode(toSparkEnginePermissionMode(mode))
   }
 
   async executeTurn(
@@ -119,12 +132,16 @@ export class SparkEngineExecutor implements EngineExecutor {
       cwd: workspaceRoot,
       ...(config.sparkDataRoot != null ? { dataRoot: config.sparkDataRoot } : {}),
       llm,
+      ...(config.approvalCallback != null
+        ? { approver: new HostBridgeApprover(sessionId, config.approvalCallback) }
+        : {}),
     })
     const agent = Agent.open({ cwd: workspaceRoot, env })
 
     // 续跑：resume gate 持久化的 sdkSessionId 存在且可重放时走 openSession；
     // 会话账本缺失（数据根被清）时降级新会话，不阻断本轮。
-    let session
+    const engineMode = toSparkEnginePermissionMode(config.permissionMode)
+    let session: AgentSession | undefined
     const resumeCandidate = config.continueSession === true ? config.sdkSessionId : undefined
     if (resumeCandidate != null && resumeCandidate.length > 0) {
       try {
@@ -134,9 +151,10 @@ export class SparkEngineExecutor implements EngineExecutor {
       }
     }
     if (session == null) {
-      session = await agent.newSession({
-        permissionMode: toSparkEnginePermissionMode(config.permissionMode),
-      })
+      session = await agent.newSession({ permissionMode: engineMode })
+    } else if (session.permissionMode !== engineMode) {
+      // 账本恢复的是旧模式；host 本轮组装的是用户最新选择，以 host 为准。
+      session.setPermissionMode(engineMode)
     }
     try {
       await config.sparkSessionIdObserver?.(session.sessionId)
@@ -144,6 +162,7 @@ export class SparkEngineExecutor implements EngineExecutor {
       // 观察者异常不影响 turn 执行。
     }
 
+    this.#currentSession = session
     this.#abortController = new AbortController()
     try {
       await session.turn(userMessage, {
@@ -159,6 +178,7 @@ export class SparkEngineExecutor implements EngineExecutor {
       if (!this.#terminalEmitted) fail('spark_turn_exception', message)
     } finally {
       this.#abortController = null
+      this.#currentSession = null
     }
   }
 

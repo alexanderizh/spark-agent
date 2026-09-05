@@ -40,6 +40,7 @@ export {
 } from './spark-engine/spark-engine-executor.js'
 export { SparkEventMapper } from './spark-engine/event-mapper.js'
 export type { SparkEventMapperOptions } from './spark-engine/event-mapper.js'
+export { HostBridgeApprover, toEngineDecision } from './spark-engine/approver-bridge.js'
 export {
   resolveSparkUpstreamProtocol,
   resolveSparkModelRoute,

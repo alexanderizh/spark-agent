@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AgentEvent, AgentEvent as SparkAgentEvent, LlmDelta } from '@spark/agent'
+import type { AgentEvent as SparkAgentEvent, LlmDelta } from '@spark/agent'
+import type { AgentEvent } from '@spark/protocol'
 
 import { SparkEventMapper } from '../../sdk/spark-engine/event-mapper.js'
 

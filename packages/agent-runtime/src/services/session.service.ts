@@ -3518,6 +3518,25 @@ export class SessionService {
             }),
           )
         },
+        ...(this.onApproval != null
+          ? {
+              // 审批桥（M3）：与 claude 分支同构——弹卡等待前后切换 waiting_permission
+              // 状态；卡片/规则/超时由 desktop 侧 permission service 统一处理。
+              approvalCallback: async (
+                sid: string,
+                toolName: string,
+                toolInput: Record<string, unknown>,
+                context: SDKPermissionRequestContext,
+              ) => {
+                this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+                try {
+                  return await this.onApproval!(sid, toolName, toolInput, context)
+                } finally {
+                  this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                }
+              },
+            }
+          : {}),
         invocationObserver: observedInvocation,
       }
       const sparkTurnOptions: TryStartSDKTurnOptions = {
