@@ -1,62 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { CanvasNode } from './canvas.types'
+import { useCallback, useRef } from 'react'
 import type { CanvasStageViewport } from './CanvasStage'
 
-type FloatingEditorGeometry = {
-  toolbar: CSSProperties
-  panel: CSSProperties
-} | null
-
-export function useFloatingViewportGeometry(
-  node: CanvasNode | null,
-  getGeometry: (
-    node: CanvasNode,
-    viewport: CanvasStageViewport | null,
-  ) => FloatingEditorGeometry,
-): {
-  geometry: FloatingEditorGeometry
+/**
+ * 维护画布视口的最新快照（供节点放置、任务视口捕获等命令式读取）。
+ *
+ * 历史：这里曾为「浮动编辑面板跟随视口」维护 tick state，视口每帧变化都会
+ * setTick 并触发宿主 CanvasWorkspaceView 全量重渲染；面板几何实际未被消费，
+ * 纯属每帧白付的渲染成本，已移除。需要跟随视口的 UI 请改为命令式读取
+ * viewportRef.current，不要回到 state 驱动。
+ */
+export function useFloatingViewportGeometry(): {
   viewportRef: React.MutableRefObject<CanvasStageViewport | null>
   onViewportChange: (viewport: CanvasStageViewport) => void
 } {
   const viewportRef = useRef<CanvasStageViewport | null>(null)
-  const nodeRef = useRef(node)
-  nodeRef.current = node
-  const rafRef = useRef<number | null>(null)
-  const [tick, setTick] = useState(0)
 
-  const scheduleGeometryUpdate = useCallback(() => {
-    if (!nodeRef.current) return
-    if (rafRef.current != null) return
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null
-      setTick((value) => value + 1)
-    })
+  const onViewportChange = useCallback((viewport: CanvasStageViewport) => {
+    viewportRef.current = viewport
   }, [])
 
-  const onViewportChange = useCallback(
-    (viewport: CanvasStageViewport) => {
-      viewportRef.current = viewport
-      if (nodeRef.current) scheduleGeometryUpdate()
-    },
-    [scheduleGeometryUpdate],
-  )
-
-  useEffect(() => {
-    if (node) setTick((value) => value + 1)
-  }, [node?.id])
-
-  useEffect(
-    () => () => {
-      if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current)
-    },
-    [],
-  )
-
-  const geometry = useMemo(() => {
-    void tick
-    if (!node) return null
-    return getGeometry(node, viewportRef.current)
-  }, [getGeometry, node, tick])
-
-  return { geometry, viewportRef, onViewportChange }
+  return { viewportRef, onViewportChange }
 }

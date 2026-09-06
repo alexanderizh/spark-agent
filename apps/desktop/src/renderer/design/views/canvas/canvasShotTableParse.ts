@@ -222,6 +222,11 @@ function tryParseJsonObject(text: string): unknown | null {
   return parseCanvasJson(text)
 }
 
+/** 判断一个 shot/segment 对象是否含可解析的分镜内容（截断抢救的可信度判定）。 */
+export function hasShotObjectContent(item: Record<string, unknown>): boolean {
+  return mapShotItem(item, 1, false) != null
+}
+
 /**
  * 容错地从可能损坏/截断的 JSON 文本里逐个提取顶层 shot/segment 对象。
  *
@@ -230,7 +235,7 @@ function tryParseJsonObject(text: string): unknown | null {
  * 逐个切出完整的 {...} 子对象并各自 JSON.parse（哪怕末尾对象损坏，前面完整的也能救回来）。
  * 正确处理字符串内的转义引号与括号，不依赖完整 JSON.parse。
  */
-function recoverShotObjects(text: string): Record<string, unknown>[] {
+export function recoverShotObjects(text: string): Record<string, unknown>[] {
   // 定位数组开始：找 "shots"/"segments" 后第一个 '['（用 exec 以拿到可靠的 index）
   const keyRe = /["'“]?(?:shots|segments)["'”]?\s*[：:]\s*\[/i
   let arrayStart = -1

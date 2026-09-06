@@ -122,7 +122,11 @@ export function resolveCanvasTextTokenBudget(input: {
   }
   const constraints: Array<{ value: number; source: CanvasTextMaxTokensSource }> = [
     { value: desiredMaxTokens, source: requested != null ? 'request' : 'task_default' },
-    ...(learnedMaxTokens != null
+    // learned cap 是按 provider+model 共享、只减不增的保守值：一次小输出任务降级
+    // 学到的上限会连带压死后续长输出任务（剧本/分镜的大 JSON 必然截断）。
+    // 长输出档位（> standard）不参与 learned cap 约束；真实上限仍由 provider 的
+    // 4xx 报错触发自适应降档重试兜底，截断结果由前端校验层做部分恢复。
+    ...(learnedMaxTokens != null && desiredMaxTokens <= CANVAS_TEXT_OUTPUT_TIERS.standard
       ? [{ value: learnedMaxTokens, source: 'learned_model_cap' as const }]
       : []),
     ...(providerMaxTokens != null

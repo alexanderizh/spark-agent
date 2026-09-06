@@ -99,10 +99,9 @@ describe('canvasTextTaskDiagnostics', () => {
     expect(
       resolveCanvasTextTokenBudget({
         operation: 'text_generate',
-        taskPipelineRole: 'screenplay',
         learnedMaxTokens: 8_192,
         providerMaxTokens: 128_000,
-        prompt: '剧本',
+        prompt: '普通文本',
       }),
     ).toMatchObject({
       maxTokens: 8_192,
@@ -118,6 +117,37 @@ describe('canvasTextTaskDiagnostics', () => {
     ).toMatchObject({
       maxTokens: 4_096,
       source: 'provider_profile',
+    })
+  })
+
+  it('exempts long-output roles from the shared learned cap', () => {
+    // learned cap 是跨任务共享、只减不增的保守值；剧本/分镜这类长输出任务若被
+    // 小任务降级学到的上限压死，大 JSON 必然截断。真实上限交给 provider 4xx
+    // 触发的自适应降档重试兜底。
+    expect(
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        taskPipelineRole: 'shot',
+        learnedMaxTokens: 8_192,
+        providerMaxTokens: 128_000,
+        prompt: '分镜',
+      }),
+    ).toMatchObject({
+      maxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      source: 'task_default',
+    })
+
+    expect(
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        taskPipelineRole: 'screenplay',
+        learnedMaxTokens: 8_192,
+        providerMaxTokens: 128_000,
+        prompt: '剧本',
+      }),
+    ).toMatchObject({
+      maxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      source: 'task_default',
     })
   })
 

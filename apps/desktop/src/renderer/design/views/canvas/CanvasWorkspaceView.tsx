@@ -121,7 +121,6 @@ import {
   GROUP_IMAGE_HEADER_HEIGHT,
   GROUP_IMAGE_PADDING_BOTTOM,
   GROUP_IMAGE_PADDING_X,
-  getFloatingEditorGeometry,
   getImageGridMetrics,
   layoutGroupedImages,
   mergeWorkspaceBounds as mergeBounds,
@@ -1435,7 +1434,7 @@ export function CanvasWorkspaceView({
   }, [inlineOperationFullscreen])
 
   const { viewportRef: canvasViewportRef, onViewportChange: handleCanvasViewportChange } =
-    useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
+    useFloatingViewportGeometry()
 
   useEffect(() => {
     const tasks = snapshot?.tasks ?? []

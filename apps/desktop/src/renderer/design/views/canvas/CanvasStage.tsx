@@ -131,6 +131,8 @@ const CANVAS_FIT_MIN_ZOOM = 0.25
 const CANVAS_FIT_MAX_ZOOM = 1.8
 const CANVAS_WHEEL_PAN_SPEED = 1
 const CANVAS_WHEEL_ZOOM_SENSITIVITY = 0.00075
+/** 停止滚动后延迟释放 data-viewport-moving（will-change）的窗口，单位毫秒。 */
+const CANVAS_VIEWPORT_MOVING_LINGER_MS = 200
 const CANVAS_KEYBOARD_PAN_STEP = 96
 const CANVAS_KEYBOARD_PAN_FAST_STEP = 260
 const CANVAS_DOT_GRID_SPACING = 28
@@ -1159,6 +1161,14 @@ function CanvasStageInner({
   const onPointerFlowPositionChangeRef = useRef(onPointerFlowPositionChange)
   onPointerFlowPositionChangeRef.current = onPointerFlowPositionChange
   const viewportInteractingRef = useRef(false)
+  // data-viewport-moving 的延迟释放计时器：滚轮滚动期间保持视口合成层稳定，
+  // 停止滚动一小段时间后才撤销 will-change（见 handleViewportMoveEnd）。
+  const viewportMovingLingerRef = useRef<number | null>(null)
+  const clearViewportMovingLinger = useCallback(() => {
+    if (viewportMovingLingerRef.current == null) return
+    window.clearTimeout(viewportMovingLingerRef.current)
+    viewportMovingLingerRef.current = null
+  }, [])
   const pendingConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const suppressNextPaneClickRef = useRef(false)
   // 连线吸附辅助：接近反馈与卡片级投放预检共用的最新规则快照（节点索引 + 现有边）。
@@ -1591,6 +1601,10 @@ function CanvasStageInner({
       }
       if (wheelPanFrameRef.current != null) window.cancelAnimationFrame(wheelPanFrameRef.current)
       if (wheelZoomFrameRef.current != null) window.cancelAnimationFrame(wheelZoomFrameRef.current)
+      if (viewportMovingLingerRef.current != null) {
+        window.clearTimeout(viewportMovingLingerRef.current)
+        viewportMovingLingerRef.current = null
+      }
       if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
       if (pointerAuraFrameRef.current != null) {
         window.cancelAnimationFrame(pointerAuraFrameRef.current)
@@ -1618,18 +1632,27 @@ function CanvasStageInner({
     setPaneContextMenu(null)
     setEdgeContextMenu(null)
     viewportInteractingRef.current = true
+    clearViewportMovingLinger()
     stageRef.current?.setAttribute('data-viewport-moving', 'true')
     cancelScheduledSync()
-  }, [cancelScheduledSync])
+  }, [cancelScheduledSync, clearViewportMovingLinger])
 
   const handleViewportMoveEnd = useCallback(
     (_event?: MouseEvent | TouchEvent | null, viewport?: Viewport) => {
       viewportInteractingRef.current = false
-      stageRef.current?.removeAttribute('data-viewport-moving')
+      // 滚轮路径的程序化 setViewport 每帧派发一次 start/zoom/end：若在这里立即移除
+      // data-viewport-moving，will-change:transform 会每帧切换，视口合成层被反复
+      // 提升再降级（每轮都整层重新栅格化）——节点多时表现为滚动整屏闪烁。
+      // 延迟释放让层在连续滚动期间保持稳定；下一帧的 start 会重置该计时器。
+      clearViewportMovingLinger()
+      viewportMovingLingerRef.current = window.setTimeout(() => {
+        viewportMovingLingerRef.current = null
+        stageRef.current?.removeAttribute('data-viewport-moving')
+      }, CANVAS_VIEWPORT_MOVING_LINGER_MS)
       flushPendingNodesSync()
       if (viewport) notifyViewportChange(viewport)
     },
-    [flushPendingNodesSync, notifyViewportChange],
+    [clearViewportMovingLinger, flushPendingNodesSync, notifyViewportChange],
   )
 
   const handleViewportMove = useCallback(

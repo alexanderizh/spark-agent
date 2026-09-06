@@ -589,6 +589,11 @@
   -webkit-backdrop-filter: blur(18px) saturate(1.04);
   margin-right: 0;
   margin-bottom: 0;
+  /* 视口移动（滚轮/拖拽/缩放）期间跳过小地图绘制与 backdrop 模糊重合成；
+     小地图内容随视口每帧变化，重绘它只抢主画布的帧预算（节点多时引发掉帧/闪烁）。 */
+  .canvas-stage[data-viewport-moving='true'] & {
+    visibility: hidden;
+  }
 }
 
 .canvas-minimap .react-flow__minimap-svg {

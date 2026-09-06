@@ -250,16 +250,57 @@ describe('canvas semantic text output validation', () => {
     expect(validateCanvasSemanticTextOutput('shot', serialized)).toMatchObject({ ok: true })
   })
 
-  it('rejects truncated JSON even when complete shot prefixes can be recovered', () => {
+  it('recovers complete shot prefixes from truncated JSON and marks the result partial', () => {
     const first = JSON.stringify(cinematicShot({ index: 1 }))
     const second = JSON.stringify(cinematicShot({ index: 2 }))
     const truncated = `{"shots":[${first},${second},{"index":3,"title":"未完成"`
+
+    const result = validateCanvasSemanticTextOutput('shot', truncated)
+    expect(result).toMatchObject({
+      ok: true,
+      partial: { recoveredShotCount: 2 },
+    })
+    if (result.ok) {
+      expect(result.storyboardRows).toHaveLength(2)
+      expect(result.storyboardRows?.[1]).toMatchObject({ index: 2 })
+    }
+  })
+
+  it('still rejects truncated JSON when not even one complete shot can be recovered', () => {
+    const truncated = '{"shots":[{"index":1,"title":"未完成'
 
     expect(validateCanvasSemanticTextOutput('shot', truncated)).toMatchObject({
       ok: false,
       code: 'invalid_storyboard_output',
       message: expect.stringContaining('截断'),
     })
+  })
+
+  it('ignores a string summary instead of rejecting complete shots', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'shot',
+      JSON.stringify({
+        shots: [cinematicShot()],
+        summary: '共12镜，总时长52秒',
+      }),
+    )
+
+    expect(result).toMatchObject({ ok: true })
+  })
+
+  it('drops non-object shot entries instead of rejecting the whole envelope', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'shot',
+      JSON.stringify({
+        shots: [cinematicShot(), null, '占位', []],
+        summary: { shotCount: 1, totalDurationSec: 1 },
+      }),
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.storyboardRows).toHaveLength(1)
+    }
   })
 
   it('does not reject editable storyboard rows for quality-only issues', () => {

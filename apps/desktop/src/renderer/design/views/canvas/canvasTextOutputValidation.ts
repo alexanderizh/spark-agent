@@ -1,6 +1,11 @@
 import type { CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
 import { parseCanvasJsonCandidates } from './canvasJsonRepair'
-import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import {
+  hasShotObjectContent,
+  parseShotTable,
+  recoverShotObjects,
+  type ParsedShotRow,
+} from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
 import {
   extractEntityKindLabel,
@@ -20,6 +25,11 @@ export type CanvasSemanticTextValidation =
       storyboardRows?: ParsedShotRow[]
       /** 分集任务（workflow=split_episodes）按集拆分出的数组；解析失败时不携带。 */
       episodes?: ParsedSplitEpisode[]
+      /**
+       * 分镜输出被截断但抢救回了完整镜头时的标注。结果仍是可用内容，
+       * 调用方须把截断信息透出到任务/节点，让用户知道这不是完整分镜。
+       */
+      partial?: { recoveredShotCount: number }
     }
   | {
       ok: false
@@ -79,15 +89,24 @@ export function validateCanvasSemanticTextOutput(
     return { ok: true, text: normalizeScreenplayText(value) }
   }
   if (role === 'shot') {
-    const envelope = parseCompleteStoryboardEnvelope(value)
+    let envelope = parseCompleteStoryboardEnvelope(value)
+    let partial: { recoveredShotCount: number } | undefined
     if (!envelope) {
-      const jsonShape = inspectJsonShape(value)
-      const message = storyboardValidationMessage(jsonShape, value)
-      return {
-        ok: false,
-        code: 'invalid_storyboard_output',
-        message,
+      // 整体 JSON 不可解析（最常见：输出被 maxTokens/网络截断）。此时不再直接
+      // 判失败，而是把已完整闭合的镜头对象逐个抢救回来：拿到前 N 镜的部分结果
+      // 远优于全盘丢弃。截断事实通过 partial 字段显式透出，不冒充完整分镜。
+      const recovered = recoverTruncatedStoryboardEnvelope(value)
+      if (!recovered) {
+        const jsonShape = inspectJsonShape(value)
+        const message = storyboardValidationMessage(jsonShape, value)
+        return {
+          ok: false,
+          code: 'invalid_storyboard_output',
+          message,
+        }
       }
+      envelope = recovered.envelope
+      partial = { recoveredShotCount: recovered.recoveredShotCount }
     }
     const storyboardRows = normalizeStoryboardRows(
       normalizeRecoverableStoryboardRows(
@@ -112,6 +131,7 @@ export function validateCanvasSemanticTextOutput(
       ok: true,
       text: formatStoryboardRowsAsMarkdown(storyboardRows),
       storyboardRows,
+      ...(partial ? { partial } : {}),
     }
   }
   const entityKind = pipelineRoleToEntityKind(role)
@@ -230,8 +250,14 @@ function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | nul
       string,
       unknown
     >
-    const summary = sourceRoot.summary
-    if (summary && (typeof summary !== 'object' || Array.isArray(summary))) continue
+    // summary 只是截断探测的辅助信号；模型偶尔写成字符串（如 "共12镜"），
+    // 忽略它即可，不应让完整的 shots 一起报废。
+    const summary =
+      sourceRoot.summary != null &&
+      typeof sourceRoot.summary === 'object' &&
+      !Array.isArray(sourceRoot.summary)
+        ? (sourceRoot.summary as Record<string, unknown>)
+        : undefined
 
     const rawShots: unknown[] = Array.isArray(sourceRoot.shots)
       ? sourceRoot.shots
@@ -265,11 +291,13 @@ function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | nul
           : []
     if (rawShots.length === 0 && !Array.isArray(sourceRoot.shots)) continue
 
+    // shots 数组里混入 null / 嵌套数组等非对象项时直接丢弃，保留其余合法镜头；
+    // 只有全部不可用时才继续尝试下一个 JSON 候选。
     const shots = rawShots.filter(
       (shot): shot is Record<string, unknown> =>
         shot != null && typeof shot === 'object' && !Array.isArray(shot),
     )
-    if (shots.length !== rawShots.length) continue
+    if (shots.length === 0) continue
     const root: Record<string, unknown> = {
       shots,
       ...(summary ? { summary } : {}),
@@ -277,10 +305,30 @@ function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | nul
     return {
       root,
       shots,
-      ...(summary ? { summary: summary as Record<string, unknown> } : {}),
+      ...(summary ? { summary } : {}),
     }
   }
   return null
+}
+
+/**
+ * 抢救被截断的分镜输出：整体 JSON.parse 失败（缺闭合括号/引号）时，用括号
+ * 匹配从 shots/segments 数组区域逐个切出完整闭合的镜头对象。
+ *
+ * 仅在文本确实呈现分镜 JSON 形态（含 "shots":）且至少救回一个有实质内容的
+ * 镜头时返回；救回数量与截断事实由调用方作为 partial 结果显式标注。
+ */
+function recoverTruncatedStoryboardEnvelope(text: string): {
+  envelope: StoryboardEnvelope
+  recoveredShotCount: number
+} | null {
+  if (!/"shots"\s*:/.test(text)) return null
+  const meaningful = recoverShotObjects(text).filter(hasShotObjectContent)
+  if (meaningful.length === 0) return null
+  return {
+    envelope: { root: { shots: meaningful }, shots: meaningful },
+    recoveredShotCount: meaningful.length,
+  }
 }
 
 function validateStoryboardContract(input: {
@@ -326,14 +374,14 @@ function storyboardValidationMessage(shape: JsonShape, sourceText: string): stri
     return '分镜结果包含 shots，但镜头数组为空，未加载为分镜节点。请检查模型输出或任务输入。'
   }
   if (shape?.shotsLength != null) {
-    return `分镜结果包含 ${shape.shotsLength} 个 shots，但缺少完整 summary（shotCount / totalDurationSec），无法确认是否截断，已拒绝加载。`
+    return `分镜结果包含 ${shape.shotsLength} 个 shots，但 JSON 无法完整解析且未能抢救出可用的镜头内容，疑似模型输出异常，已拒绝加载。`
   }
   if (shape && shape.keys.length > 0) {
     const keys = shape.keys.slice(0, 8).join('、')
     return `分镜结果 JSON 顶层字段为 ${keys}；期望 shots（或可解析的分镜表）。该输出可能来自错误的节点功能提示词，未加载为分镜节点。`
   }
   if (/"shots"\s*:/.test(sourceText)) {
-    return '分镜结果包含 shots，但 JSON 未完整闭合或缺少完整 summary，疑似模型输出被截断，已拒绝加载以避免保存残缺分镜。'
+    return '分镜结果包含 shots，但 JSON 严重损坏（连一个完整镜头都无法抢救），疑似模型输出被截断，未加载为分镜节点。可尝试减少剧本长度、降低每镜字段详尽程度或更换输出上限更高的模型。'
   }
   return '分镜结果不包含可解析的 shots JSON 或分镜表，未加载为分镜节点。'
 }

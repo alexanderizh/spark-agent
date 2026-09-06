@@ -7081,6 +7081,9 @@ export const canvasApi = {
     }
 
     const outputText = semanticValidation.text
+    const storyboardPartialNotice = semanticValidation.partial
+      ? `模型输出被截断，已抢救恢复前 ${semanticValidation.partial.recoveredShotCount} 镜；建议缩短剧本或分批生成分镜`
+      : null
     let materializedShotGroups: ShotGroup[] = []
     if (outputRole === 'shot' && semanticValidation.storyboardRows?.length) {
       const project = db.projects.find((item) => item.id === projectId)
@@ -7230,7 +7233,10 @@ export const canvasApi = {
     appendCanvasTaskRuntimeEvent(task, {
       at,
       kind: 'completed',
-      label: '文本生成与业务解析完成',
+      label: storyboardPartialNotice
+        ? `文本生成与业务解析完成（${storyboardPartialNotice}）`
+        : '文本生成与业务解析完成',
+      ...(storyboardPartialNotice ? { detail: storyboardPartialNotice } : {}),
     })
     task.outputAssetIds.push(asset.id)
     task.outputNodeIds.push(resultNode.id)
@@ -7239,7 +7245,7 @@ export const canvasApi = {
         ...taskNode.data,
         status: 'completed',
         progress: 100,
-        message: '文本已生成',
+        message: storyboardPartialNotice ?? '文本已生成',
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
       syncCanvasTaskPrimaryOutputToNode(task, taskNode.data)

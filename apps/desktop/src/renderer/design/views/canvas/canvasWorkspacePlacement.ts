@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react'
 import type { CanvasStageViewport } from './CanvasStage'
 import { fitMediaNodeSize, fitTextNodeSize, readAssetTextForNode } from './canvas.api'
 import { fitCanvasGroupedImageNodeSize, fitCanvasImageNodeSize } from './canvasNodeSize'
@@ -128,50 +127,6 @@ export function resolveAssetInsertSize(asset: CanvasAsset): { width: number; hei
     return fitTextNodeSize(readAssetTextForNode(asset))
   }
   return fitMediaNodeSize(asset.type, asset.width, asset.height)
-}
-
-export function getFloatingEditorGeometry(
-  node: CanvasNode,
-  viewport: CanvasStageViewport | null,
-): { toolbar: CSSProperties; panel: CSSProperties } | null {
-  const effectiveViewport: CanvasStageViewport =
-    viewport && viewport.width > 0 && viewport.height > 0 && viewport.zoom > 0
-      ? viewport
-      : {
-          x: viewport?.x ?? 0,
-          y: viewport?.y ?? 0,
-          zoom: viewport?.zoom && viewport.zoom > 0 ? viewport.zoom : 1,
-          width: typeof window === 'undefined' ? 1024 : Math.max(640, window.innerWidth || 1024),
-          height: typeof window === 'undefined' ? 720 : Math.max(480, window.innerHeight || 720),
-        }
-
-  const nodeLeft = effectiveViewport.x + node.x * effectiveViewport.zoom
-  const nodeTop = effectiveViewport.y + node.y * effectiveViewport.zoom
-  const nodeRight = effectiveViewport.x + (node.x + node.width) * effectiveViewport.zoom
-  const nodeBottom = effectiveViewport.y + (node.y + node.height) * effectiveViewport.zoom
-  const nodeCenterX = nodeLeft + (nodeRight - nodeLeft) / 2
-  const floatingWidth = Math.min(920, Math.max(480, effectiveViewport.width - 96))
-  const toolbarLeft = clampPosition(nodeCenterX, 180, effectiveViewport.width - 180)
-  const panelLeft = clampPosition(
-    nodeCenterX,
-    floatingWidth / 2 + 16,
-    effectiveViewport.width - floatingWidth / 2 - 16,
-  )
-  const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, effectiveViewport.height - 160))
-  const panelTop = clampPosition(
-    nodeBottom + 18,
-    112,
-    Math.max(112, effectiveViewport.height - 250),
-  )
-
-  return {
-    toolbar: { left: toolbarLeft, top: toolbarTop },
-    panel: {
-      left: panelLeft,
-      top: panelTop,
-      width: floatingWidth,
-    },
-  }
 }
 
 export function placeNodeRightOfNodes(
