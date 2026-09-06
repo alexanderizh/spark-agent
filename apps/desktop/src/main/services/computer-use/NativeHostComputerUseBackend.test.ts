@@ -449,6 +449,44 @@ describe('NativeHostComputerUseBackend', () => {
     })
   })
 
+  it('sticks to the controlled app when the user focuses another application', async () => {
+    // Parallel-use regression: the user must be able to keep working in their
+    // own apps mid-task. The old focused-first selection silently retargeted
+    // the session onto whatever the user clicked; the sticky model keeps
+    // observing the session's own application.
+    const userApp = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'user-app', name: 'UserApp' },
+      window: { ...FOCUSED_WINDOW.window, id: 'user-window', title: 'User window' },
+    }
+    const demoted = { ...FOCUSED_WINDOW, focused: false }
+    const secondObservation = {
+      ...OBSERVATION,
+      frameId: 'frame-sticky',
+      treeVersion: 'tree-sticky',
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const connection = createControlConnection([OBSERVATION, secondObservation])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValueOnce([userApp, demoted])
+    const ids = ['snapshot-1', 'snapshot-2']
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => ids.shift() ?? 'unexpected',
+    })
+    const signal = new AbortController().signal
+
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: false, signal })
+
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
+    )
+  })
+
   it('executes through the native host and captures a post-action diff observation', async () => {
     const after = {
       ...OBSERVATION,

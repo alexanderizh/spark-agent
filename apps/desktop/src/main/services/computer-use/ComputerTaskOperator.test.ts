@@ -92,7 +92,8 @@ describe('ComputerTaskOperator', () => {
         observedFrameId: 'frame-1',
         observedTreeVersion: 'tree-1',
         actuatorLeaseId: SESSION.id,
-        executionLane: 'background_semantic',
+        // Production no longer sends executionLane — each native host infers
+        // its own channel per platform (macOS postToPid / Windows PostMessage).
         policyContext: expect.objectContaining({ target: { kind: 'element', id: 'save-button' } }),
       }),
     )

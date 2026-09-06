@@ -178,7 +178,7 @@ fn invalid_coordinate(x: i32, y: i32) -> bool {
 
 pub fn secure_field_allows(action: &ComputerAction) -> bool {
     match action {
-        ComputerAction::TypeText { .. } => false,
+        ComputerAction::TypeText { .. } | ComputerAction::PasteText { .. } => false,
         ComputerAction::Keypress { keys } => keys.iter().all(|key| {
             matches!(
                 key.as_str(),

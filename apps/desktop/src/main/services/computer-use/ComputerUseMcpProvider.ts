@@ -25,6 +25,7 @@ export const COMPUTER_USE_AGENT_TOOL_NAMES = [
   // Markdown tree + full-resolution screenshot.
   'mcp__spark_computer__click',
   'mcp__spark_computer__type_text',
+  'mcp__spark_computer__paste',
   'mcp__spark_computer__set_value',
   'mcp__spark_computer__invoke_element',
   'mcp__spark_computer__press_key',

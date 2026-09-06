@@ -28,6 +28,7 @@ public enum NativeHostPlatformError: Error, Equatable, Sendable {
   case actionNoop
   case sessionCanceled
   case userTakeover
+  case screenLocked
 }
 
 public enum NativeActionStatus: String, Equatable, Sendable {
@@ -214,8 +215,13 @@ public actor NativeHostRequestHandler {
           previousTreeVersion: previousTreeVersion, fullTree: fullTree,
           persistentCapture: persistentCapture
         )
-        guard observed.snapshotID == snapshotID, observed.app.id == appID,
-          observed.window.id == windowID
+        // App-level contract: the provider self-heals onto the app's live
+        // window when the requested one died (Electron window churn), and the
+        // observation reports the window it actually captured — requiring the
+        // dead window's id back would turn every window change into a
+        // focus_mismatch death loop. A snapshotID or app mismatch is still
+        // a hard protocol violation.
+        guard observed.snapshotID == snapshotID, observed.app.id == appID
         else { throw NativeHostPlatformError.focusMismatch }
         try validateObservation(observed)
         return NativeHostReply(
@@ -314,6 +320,12 @@ public actor NativeHostRequestHandler {
       return try NativeHostResponseEncoder.error(
         requestID: requestID, code: "handoff_required",
         message: "The user took control of the target window", retryable: false)
+    case .screenLocked:
+      return try NativeHostResponseEncoder.error(
+        requestID: requestID, code: "screen_locked",
+        message:
+          "The display is locked. Actions and observations are impossible until the user unlocks the screen; report this and wait instead of retrying.",
+        retryable: true)
     }
   }
 

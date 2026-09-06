@@ -55,7 +55,20 @@ describe('parseKeyChord', () => {
   it('normalizes chord strings through the alias table', () => {
     expect(parseKeyChord('cmd+shift+t')).toEqual(['Meta', 'Shift', 't'])
     expect(parseKeyChord('ctrl+alt+del')).toEqual(['Control', 'Alt', 'Delete'])
-    expect(parseKeyChord('option+equal')).toEqual(['Alt', 'equal'])
+    expect(parseKeyChord('option+left')).toEqual(['Alt', 'ArrowLeft'])
+  })
+
+  it('normalizes natural key names and arrow glyphs', () => {
+    expect(parseKeyChord('left')).toEqual(['ArrowLeft'])
+    expect(parseKeyChord('Right')).toEqual(['ArrowRight'])
+    expect(parseKeyChord('↑')).toEqual(['ArrowUp'])
+    expect(parseKeyChord('cmd+↓')).toEqual(['Meta', 'ArrowDown'])
+    expect(parseKeyChord('super+c')).toEqual(['Meta', 'c'])
+  })
+
+  it('rejects unknown key names with the valid-name guidance', () => {
+    expect(() => parseKeyChord('option+equal')).toThrow(ComputerUseBrokerError)
+    expect(() => parseKeyChord('以')).toThrow(/Valid names/)
   })
 
   it('normalizes arrays, function keys, and arrows', () => {
@@ -121,13 +134,13 @@ describe('ComputerAtomicToolHandlers', () => {
     return new ComputerAtomicToolHandlers(atomic, services)
   }
 
-  it('clicks an element at its bounds center in window-relative coordinates', async () => {
+  it('dispatches element clicks as semantic invoke_element actions', async () => {
     const result = (await handlers().handle('click', 'agent-1', 'turn-1', {
       at: { elementId: '7' },
     })) as Record<string, unknown>
-    // Element center: x = 500+100 = 600 screen → (600-100)/1000 = 0.5;
-    // y = 600+20 = 620 → (620-100)/600 ≈ 0.8667.
-    expect(dispatched[0]?.action).toEqual({ type: 'click', point: { x: 0.5, y: 520 / 600 } })
+    // Element-targeted left single clicks run as AX semantic invocations:
+    // zero events, zero focus steal, background-safe (Codex's preferred path).
+    expect(dispatched[0]?.action).toEqual({ type: 'invoke_element', elementId: '7' })
     expect(result['status']).toBe('executed')
     expect(result['tree']).toBe(OBSERVATION.tree.text)
     expect(result['executionChannel']).toBe('background_ax')
@@ -158,18 +171,32 @@ describe('ComputerAtomicToolHandlers', () => {
     expect(dispatched[1]?.action).toMatchObject({ button: 'right' })
   })
 
-  it('type_text with into + submit runs focus → type → enter in order', async () => {
+  it('type_text with into + submit runs ax-focus → type → enter in order', async () => {
     const result = (await handlers().handle('type_text', 'agent-1', 'turn-1', {
       text: 'milk',
       into: { elementId: '7' },
       submit: true,
     })) as Record<string, unknown>
     expect(dispatched.map((entry) => (entry.action as { type: string }).type)).toEqual([
-      'click',
+      'invoke_element',
       'type_text',
       'keypress',
     ])
+    expect(dispatched[0]?.action).toMatchObject({ elementId: '7', action: 'focus' })
     expect(dispatched[1]?.action).toMatchObject({ text: 'milk' })
+    expect(result['status']).toBe('executed')
+  })
+
+  it('paste dispatches paste_text with optional focus and submit', async () => {
+    const result = (await handlers().handle('paste', 'agent-1', 'turn-1', {
+      text: 'a long paragraph of text',
+      into: { elementId: '7' },
+    })) as Record<string, unknown>
+    expect(dispatched.map((entry) => (entry.action as { type: string }).type)).toEqual([
+      'invoke_element',
+      'paste_text',
+    ])
+    expect(dispatched[1]?.action).toMatchObject({ text: 'a long paragraph of text' })
     expect(result['status']).toBe('executed')
   })
 
@@ -229,6 +256,47 @@ describe('ComputerAtomicActionService stale recovery', () => {
       'retry me',
     )
     expect(result.executionChannel).toBeNull()
+    expect(services.broker.observe).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers focus_mismatch (window churn) with one re-observe + retry', async () => {
+    // Regression for the focus_mismatch death loop: the old code excluded
+    // focus_mismatch from the retry set, so a window that died (Electron apps
+    // recreating windows) wedged every subsequent click until the model gave
+    // up — screenshot succeeded, click failed, forever.
+    let calls = 0
+    const services = {
+      sessions: {
+        createSession: vi.fn(() => ({ id: 'computer-1' })),
+        activate: vi.fn((id: string) => ({ id })),
+        getSession: vi.fn(() => ({ status: 'observing' })),
+      },
+      broker: {
+        observe: vi.fn(async () => OBSERVATION),
+        dispatch: vi.fn(async () => {
+          calls += 1
+          if (calls === 1) {
+            throw new ComputerUseBrokerError(
+              'focus_mismatch',
+              'The requested window is no longer available',
+            )
+          }
+          return { observation: OBSERVATION, noop: false, executionChannel: 'background_ax' }
+        }),
+        stop: vi.fn(async () => undefined),
+      },
+      coordinator: { release: vi.fn(), claim: vi.fn(async () => undefined) },
+      evidence: null,
+    } as unknown as ComputerUseServices
+    const service = new ComputerAtomicActionService(services)
+    const result = await service.dispatch(
+      'agent-1',
+      'turn-1',
+      () => ({ type: 'invoke_element', elementId: '7' }),
+      'click after churn',
+    )
+    expect(result.executionChannel).toBe('background_ax')
+    expect(calls).toBe(2)
     expect(services.broker.observe).toHaveBeenCalledTimes(2)
   })
 })
@@ -323,6 +391,6 @@ describe('ComputerAtomicActionService lifecycle', () => {
       () => ({ type: 'keypress', keys: ['Enter'] }) as never,
       'go',
     )
-    expect(services.coordinator.claim).toHaveBeenCalledWith('computer-1')
+    expect(services.coordinator.claim).toHaveBeenCalledWith('computer-1', 'agent-1')
   })
 })

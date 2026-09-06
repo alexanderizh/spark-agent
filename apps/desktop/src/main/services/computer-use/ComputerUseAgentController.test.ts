@@ -474,7 +474,7 @@ describe('ComputerUseAgentController', () => {
       appId: 'app-bilibili',
       windowId: 'window-bilibili',
     })
-    expect(services.coordinator.claim).toHaveBeenCalledWith(computerSession.id)
+    expect(services.coordinator.claim).toHaveBeenCalledWith(computerSession.id, 'session-1')
     expect(services.sessions.activate).toHaveBeenCalledWith(computerSession.id)
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -761,7 +761,7 @@ describe('ComputerUseAgentController', () => {
     })
     expect(resolveDecisionModel).toHaveBeenCalledWith('session-1')
     expect(services.broker.resume).toHaveBeenCalledWith(paused.id)
-    expect(services.coordinator.claim).toHaveBeenCalledWith(paused.id)
+    expect(services.coordinator.claim).toHaveBeenCalledWith(paused.id, 'session-1')
     expect(services.evidence.clearSession).toHaveBeenCalledWith(paused.id)
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed }))
     expect(run.mock.calls[0]?.[0]).not.toHaveProperty('lease')

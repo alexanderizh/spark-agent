@@ -196,7 +196,13 @@ export interface ComputerUseExecutionChannelReport {
   total: number
   backgroundShare: number
   channels: Array<{
-    channel: 'background_ax' | 'background_pid' | 'foreground_cg' | 'unset'
+    channel:
+      | 'background_ax'
+      | 'background_pid'
+      | 'background_post'
+      | 'foreground_cg'
+      | 'foreground_input'
+      | 'unset'
     count: number
     failures: number
     successRate: number
@@ -302,6 +308,13 @@ export const ApplicationSnapshotCaptureRequestSchema = z
     sessionId: ComputerUseIdentifierSchema.nullable(),
     turnId: ComputerUseIdentifierSchema.nullable(),
     accessibleTextMode: AccessibleTextModeSchema,
+    /**
+     * Capture a specific application's window instead of the focused one —
+     * background apps are capturable (WGC / ScreenCaptureKit both support
+     * occluded windows), so agent observation never requires stealing focus.
+     * Selection prefers the app's focused window, else its largest visible one.
+     */
+    targetAppId: z.string().min(1).optional(),
   })
   .strict()
   .superRefine((value, context) => {

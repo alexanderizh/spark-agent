@@ -32,6 +32,7 @@ const ACTION_BASELINE_RISK: Record<ComputerActionEnvelope['action']['type'], Com
   select_text: 'L1',
   set_value: 'L1',
   type_text: 'L1',
+  paste_text: 'L1',
   invoke_element: 'L1',
   click: 'L1',
   drag: 'L1',
@@ -84,13 +85,15 @@ export class ComputerPolicyService {
 function isLocalTextWrite(action: ComputerActionEnvelope['action']): boolean {
   return (
     action.type === 'type_text' ||
+    action.type === 'paste_text' ||
     action.type === 'set_value' ||
     (action.type === 'app_command' && action.command.name === 'prefill_composer')
   )
 }
 
 function isSensitiveTextWrite(action: ComputerActionEnvelope['action']): boolean {
-  if (action.type === 'type_text' || action.type === 'set_value') return action.sensitive === true
+  if (action.type === 'type_text' || action.type === 'paste_text' || action.type === 'set_value')
+    return action.sensitive === true
   return (
     action.type === 'app_command' &&
     action.command.name === 'prefill_composer' &&

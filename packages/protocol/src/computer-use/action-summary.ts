@@ -15,6 +15,10 @@ export function describeComputerAction(action: ComputerAction): string {
       const text = truncate(action.text, 60)
       return `输入 “${text}”`
     }
+    case 'paste_text': {
+      const text = truncate(action.text, 60)
+      return `粘贴 “${text}”`
+    }
     case 'set_value':
       return `设置 [${action.elementId}] 的值为 “${truncate(action.value, 60)}”`
     case 'invoke_element':

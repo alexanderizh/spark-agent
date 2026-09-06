@@ -17,7 +17,9 @@ import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 
 // A desktop model needs both the screenshot and the useful AX controls, not a near-raw dump of
 // every node. Keeping this bounded materially lowers first-token latency on large Electron apps.
-const MAX_TREE_PROMPT_CHARS = 32_000
+// MUST stay in sync with the native renderer's `maxTotalUTF16` (48k): a smaller value here
+// sliced well-formed trees mid-way and discarded the trailing `[n]` element ids.
+const MAX_TREE_PROMPT_CHARS = 48_000
 const log = createLogger('computer-use-decision')
 export const MIN_BATCH_ACTIONS = 2
 export const MAX_BATCH_ACTIONS = 8
@@ -31,6 +33,7 @@ const SUPPORTED_ACTIONS = new Set<ComputerAction['type']>([
   'scroll',
   'keypress',
   'type_text',
+  'paste_text',
   'focus_window',
   'wait_for',
   'app_command',
@@ -73,7 +76,12 @@ export interface ComputerRecentAction {
    * Which transport executed it (background AX, targeted per-process events, or
    * foreground HID), when reported.
    */
-  executionChannel?: 'background_ax' | 'background_pid' | 'foreground_cg'
+  executionChannel?:
+    | 'background_ax'
+    | 'background_pid'
+    | 'background_post'
+    | 'foreground_cg'
+    | 'foreground_input'
 }
 
 export interface ComputerDecisionInput {
@@ -277,7 +285,7 @@ The accessibility tree is a Markdown outline: one element per line, indented und
 Return exactly one JSON object. Choose either:
 {"type":"action","intent":"short reason","action":<one supported action>}
 {"type":"ready_for_verification","reason":"why the criteria now appear satisfied"}
-Supported actions are invoke_element, set_value, select_text, click, move, drag, scroll, keypress, type_text, focus_window, wait_for, and app_command. My Desktop tasks may move freely between normal desktop applications; the current foreground application is only the current observation, never an application allowlist. To open or switch to another application, use the operating-system launcher and ordinary keyboard/pointer navigation instead of handing off. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so audit metadata remains accurate without interrupting execution. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.
+Supported actions are invoke_element, set_value, select_text, click, move, drag, scroll, keypress, type_text, paste_text, focus_window, wait_for, and app_command. My Desktop tasks may move freely between normal desktop applications; the current foreground application is only the current observation, never an application allowlist. To open or switch to another application, use the operating-system launcher and ordinary keyboard/pointer navigation instead of handing off. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme, navigate, or prefill_composer; never invent another command. prefill_composer only fills an empty chat draft and never sends it; set sensitive=true for credentials or other sensitive text so audit metadata remains accurate without interrupting execution. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.
 
 If Previous action failure is present, do not repeat the identical failed action. When requiredAlternative is true, choose a different interaction strategy from failedStrategies whenever one is available: accessibility elements, screenshot-relative pointer actions, keyboard navigation/shortcuts, window focus, native app commands, or a bounded wait. For action_noop from invoke_element or set_value in Electron/custom-rendered UI, immediately use the visible screenshot and a coordinate click followed by normal typing instead of retrying the same accessibility element. For focus_mismatch, re-focus the known window before continuing. For loading/timeouts, refresh state or use one bounded wait; never loop on the unchanged action.
 
@@ -291,6 +299,7 @@ Action JSON shapes (all coordinates are normalized from 0 to 1):
 - scroll: {"type":"scroll","deltaX":0,"deltaY":600,"point":{"x":0.5,"y":0.5}}
 - keypress: {"type":"keypress","keys":["Meta","Space"]}
 - type_text: {"type":"type_text","text":"text"}
+- paste_text: {"type":"paste_text","text":"long text"} (clipboard delivery; prefer for multi-line or long text)
 - focus_window: {"type":"focus_window","windowId":"<id>"}
 - wait_for: {"type":"wait_for","condition":{"kind":"loading_stopped"},"timeoutMs":5000}
 Valid named keys: Alt, Backspace, Control, Delete, End, Enter, Escape, Home, Meta, PageDown, PageUp, Shift, Space, Tab, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, and F1-F24. Use Meta for both macOS Command and the Windows key; never emit CMD, COMMAND, WIN, WINDOWS, RETURN, ESC, or SPACEBAR.`

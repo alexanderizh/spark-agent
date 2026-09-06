@@ -188,21 +188,7 @@ export class NativeApplicationSnapshotCaptureService {
       )
     }
 
-    const focusedWindows = (await this.backend.listWindows()).filter(
-      (window) => window.focused && !window.minimized,
-    )
-    if (focusedWindows.length === 0) {
-      throw new ComputerUseBrokerError('focus_mismatch', 'No focused capturable window was found')
-    }
-    if (focusedWindows.length !== 1) {
-      throw new ComputerUseBrokerError(
-        'native_host_incompatible',
-        'Native Host returned more than one focused window',
-      )
-    }
-    const target = focusedWindows[0]
-    if (target == null)
-      throw new ComputerUseBrokerError('focus_mismatch', 'Focused window disappeared')
+    const target = selectSnapshotTarget(await this.backend.listWindows(), request.targetAppId)
     assertSnapshotTargetAllowed(target)
 
     const snapshotId = this.createId()
@@ -213,7 +199,11 @@ export class NativeApplicationSnapshotCaptureService {
       windowId: target.window.id,
     })
     this.assertCapture(capture, snapshotId)
-    assertFocusStable(target, await this.backend.listWindows())
+    if (request.targetAppId != null) {
+      assertTargetWindowAlive(target, await this.backend.listWindows())
+    } else {
+      assertFocusStable(target, await this.backend.listWindows())
+    }
     const processed = this.imageProcessor.inspectAndCreatePreview(capture.bytes)
     if (
       processed.width !== capture.width ||
@@ -346,6 +336,68 @@ function assertFocusStable(
     throw new ComputerUseBrokerError(
       'focus_mismatch',
       'The focused application or process changed while the snapshot was captured',
+    )
+  }
+}
+
+/**
+ * Picks the window to snapshot. Without a target app this keeps the historical
+ * frontmost-only contract (used for user-context captures). With a target app
+ * it captures that app even while the user works elsewhere — its focused
+ * window when it has one, else its largest visible window. Both capture
+ * backends capture occluded windows, so no focus steal is needed.
+ */
+function selectSnapshotTarget(
+  windows: NativeWindowDescriptor[],
+  targetAppId: string | undefined,
+): NativeWindowDescriptor {
+  if (targetAppId == null) {
+    const focusedWindows = windows.filter((window) => window.focused && !window.minimized)
+    if (focusedWindows.length === 0) {
+      throw new ComputerUseBrokerError('focus_mismatch', 'No focused capturable window was found')
+    }
+    if (focusedWindows.length !== 1) {
+      throw new ComputerUseBrokerError(
+        'native_host_incompatible',
+        'Native Host returned more than one focused window',
+      )
+    }
+    const frontmost = focusedWindows[0]
+    if (frontmost == null)
+      throw new ComputerUseBrokerError('focus_mismatch', 'Focused window disappeared')
+    return frontmost
+  }
+  const appWindows = windows.filter((window) => !window.minimized && window.app.id === targetAppId)
+  if (appWindows.length === 0) {
+    throw new ComputerUseBrokerError(
+      'focus_mismatch',
+      'The application being captured is no longer available',
+    )
+  }
+  const focusedAppWindow = appWindows.find((window) => window.focused)
+  if (focusedAppWindow != null) return focusedAppWindow
+  return largestVisibleWindow(appWindows)
+}
+
+function largestVisibleWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
+  return windows.reduce((best, window) =>
+    window.window.bounds.width * window.window.bounds.height >
+    best.window.bounds.width * best.window.bounds.height
+      ? window
+      : best,
+  )
+}
+
+/** Targeted capture does not care about focus — only that the window survived. */
+function assertTargetWindowAlive(
+  target: NativeWindowDescriptor,
+  windows: NativeWindowDescriptor[],
+): void {
+  const alive = windows.some((window) => window.window.id === target.window.id)
+  if (!alive) {
+    throw new ComputerUseBrokerError(
+      'focus_mismatch',
+      'The captured window disappeared while the snapshot was being taken',
     )
   }
 }

@@ -9,7 +9,10 @@ fn valid_envelope(action: Value) -> Value {
     let execution_lane = match action.get("type").and_then(Value::as_str) {
         Some("invoke_element" | "set_value" | "select_text") => "background_semantic",
         Some("observe" | "wait_for") => "passive",
-        _ => "foreground_input",
+        // Drag needs real mouse capture; focus_window is an explicit
+        // foreground request — everything else posts background.
+        Some("drag" | "focus_window") => "foreground_input",
+        _ => "background_post",
     };
     json!({
         "computerSessionId": "session-1",
@@ -97,7 +100,7 @@ fn infers_execution_lane_for_legacy_envelopes() {
     assert!(matches!(
         parsed,
         HostRequest::ExecuteAction { envelope, .. }
-            if envelope.effective_execution_lane() == spark_computer_host::protocol::ExecutionLane::ForegroundInput
+            if envelope.effective_execution_lane() == spark_computer_host::protocol::ExecutionLane::BackgroundPost
     ));
 }
 

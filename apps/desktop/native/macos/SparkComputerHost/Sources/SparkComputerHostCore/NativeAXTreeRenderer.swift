@@ -53,10 +53,13 @@ public enum NativeAXTreeRenderer {
   /// Per-line budgets in UTF-16 units.
   public static let maxNameUTF16 = 160
   public static let maxValueUTF16 = 240
-  /// Total rendered-text budget. Comfortably below the 2 MB wire cap and the
-  /// 32k-char decision-prompt budget so the TS side never re-truncates a
-  /// well-formed tree.
-  public static let maxTotalUTF16 = 90_000
+  /// Total rendered-text budget. MUST stay at or below the TS-side
+  /// `MAX_TREE_PROMPT_CHARS` (ComputerDecisionAdapter): a larger budget here
+  /// made the decision path slice the tree mid-way and discard the trailing
+  /// `[n]` element ids, while the atomic path shipped up to 90k chars per
+  /// tool response. Both sides now share one 48k budget — the renderer
+  /// guarantees a well-formed tree never needs re-truncation.
+  public static let maxTotalUTF16 = 48_000
   /// Containers report all children but the collector only recurses into the
   /// first `maxChildrenPerContainer`; the renderer notes the truncation so the
   /// model knows a long list was cut (matching Codex's "N of M items" line).
@@ -120,7 +123,7 @@ public enum NativeAXTreeRenderer {
   private static func renderLine(_ element: NativeAXRawElement, elementID: String) -> String {
     let indent = String(repeating: "  ", count: min(element.depth, maxIndentDepth))
     var parts: [String] = ["- \(roleWord(element))"]
-    let name = inline(element.name, limit: maxNameUTF16)
+    let name = inline(shortenedURL(element.name), limit: maxNameUTF16)
     if !name.isEmpty {
       parts.append("\"\(name)\"")
     }
@@ -128,7 +131,7 @@ public enum NativeAXTreeRenderer {
     if let marker {
       parts.append(marker)
     }
-    let value = inline(element.value ?? "", limit: maxValueUTF16)
+    let value = inline(shortenedURL(element.value ?? ""), limit: maxValueUTF16)
     // When the state marker already expresses the value (checked/unchecked),
     // repeating the raw "1"/"0" only adds noise.
     if marker == nil, !value.isEmpty {
@@ -152,6 +155,19 @@ public enum NativeAXTreeRenderer {
     }
     parts.append("[\(elementID)]")
     return indent + parts.joined(separator: " ")
+  }
+
+  /// Long URLs are decision noise: the model needs the origin and the tail to
+  /// recognize a link, not a 200-character query string (Codex shortens URLs
+  /// in rendered output too). Non-URL text passes through untouched.
+  static func shortenedURL(_ text: String, maxTotalUTF16: Int = 48, tailUTF16: Int = 12)
+    -> String
+  {
+    guard text.utf16.count > maxTotalUTF16 else { return text }
+    guard let origin = text.range(of: #"^https?://[^/\s]+"#, options: .regularExpression)
+    else { return text }
+    let tail = String(text.suffix(tailUTF16))
+    return "\(text[origin])/…\(tail)"
   }
 
   /// Prefer the app's own human wording (AXRoleDescription, e.g. "push

@@ -59,15 +59,17 @@ export function buildComputerActionApprovalDetails(
   riskLevel: 'L2' | 'L3',
 ): Record<string, unknown> {
   const action =
-    (envelope.action.type === 'type_text' || envelope.action.type === 'set_value') &&
+    (envelope.action.type === 'type_text' ||
+      envelope.action.type === 'paste_text' ||
+      envelope.action.type === 'set_value') &&
     envelope.action.sensitive === true
       ? {
           type: envelope.action.type,
           sensitive: true,
           textLength:
-            envelope.action.type === 'type_text'
-              ? envelope.action.text.length
-              : envelope.action.value.length,
+            envelope.action.type === 'set_value'
+              ? envelope.action.value.length
+              : envelope.action.text.length,
         }
       : envelope.action
   return {

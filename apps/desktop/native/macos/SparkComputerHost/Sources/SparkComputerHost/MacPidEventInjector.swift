@@ -34,13 +34,17 @@ enum MacPidEventInjector {
     pid: pid_t,
     at point: CGPoint,
     button: String?,
-    count: Int
+    count: Int,
+    modifiers: [String] = []
   ) async throws {
     let mouseButton = cgButton(button)
     let types = mouseTypes(button)
+    let chordFlags = NativeMouseChord.flags(for: modifiers)
     for index in 0..<max(1, min(3, count)) {
       let down = try makeMouseEvent(type: types.0, at: point, button: mouseButton)
       let up = try makeMouseEvent(type: types.1, at: point, button: mouseButton)
+      down.flags = chordFlags
+      up.flags = chordFlags
       down.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
       up.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
       tag(down)
@@ -60,13 +64,18 @@ enum MacPidEventInjector {
     pid: pid_t,
     at point: CGPoint,
     button: String?,
-    count: Int
+    count: Int,
+    modifiers: [String] = []
   ) async throws {
     let mouseButton = cgButton(button)
     let types = mouseTypes(button)
+    let chordFlags = NativeMouseChord.flags(for: modifiers)
     for index in 0..<max(1, min(3, count)) {
+      try NativeInterruptionToken.shared.check()
       let down = try makeMouseEvent(type: types.0, at: point, button: mouseButton)
       let up = try makeMouseEvent(type: types.1, at: point, button: mouseButton)
+      down.flags = chordFlags
+      up.flags = chordFlags
       down.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
       up.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
       tag(down)
@@ -123,9 +132,19 @@ enum MacPidEventInjector {
     let down = try makeMouseEvent(type: .leftMouseDown, at: start, button: .left)
     tag(down)
     down.postToPid(pid)
+    // Esc mid-drag must still release the held button, or the target app
+    // stays stuck in drag state after the action unwinds.
+    var released = false
+    defer {
+      if !released, let up = try? makeMouseEvent(type: .leftMouseUp, at: end, button: .left) {
+        tag(up)
+        up.postToPid(pid)
+      }
+    }
     let duration = durationMs
     let steps = max(1, min(120, duration / Int(dragStepMs)))
     for step in 1...steps {
+      try NativeInterruptionToken.shared.check()
       let ratio = Double(step) / Double(steps)
       let point = CGPoint(x: start.x + (end.x - start.x) * ratio, y: start.y + (end.y - start.y) * ratio)
       let dragged = try makeMouseEvent(type: .leftMouseDragged, at: point, button: .left)
@@ -137,10 +156,15 @@ enum MacPidEventInjector {
     let up = try makeMouseEvent(type: .leftMouseUp, at: end, button: .left)
     tag(up)
     up.postToPid(pid)
+    released = true
   }
 
   static func typeUnicode(pid: pid_t, text: String) async throws {
-    for chunk in chunked(text, limit: 32) {
+    // CGEventKeyboardSetUnicodeString accepts at most 20 UTF-16 units per
+    // event; larger chunks are silently truncated by the system (Chinese
+    // sentences lost every character past the 20th).
+    for chunk in chunked(text, limit: 20) {
+      try NativeInterruptionToken.shared.check()
       let units = Array(chunk.utf16)
       guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
         let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
@@ -171,6 +195,7 @@ enum MacPidEventInjector {
     let nonModifiers = keys.filter { !["Meta", "Control", "Alt", "Shift"].contains($0) }
     guard !nonModifiers.isEmpty else { throw NativeHostPlatformError.actionNotAllowed }
     for key in nonModifiers {
+      try NativeInterruptionToken.shared.check()
       guard let code = keyCode(key) else { throw NativeHostPlatformError.actionNotAllowed }
       guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
         let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)

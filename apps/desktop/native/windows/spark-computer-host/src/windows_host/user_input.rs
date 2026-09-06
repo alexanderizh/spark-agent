@@ -7,7 +7,8 @@ use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, GetMessageW, KBDLLHOOKSTRUCT,
     LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, SetWindowsHookExW, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN, WindowFromPoint,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN,
+    WindowFromPoint,
 };
 
 const IDLE_WINDOW: Duration = Duration::from_millis(300);
@@ -23,6 +24,11 @@ struct UserInputState {
     takeover: HashSet<String>,
     recent_clicks: VecDeque<(Instant, isize)>,
     last_real_input: Option<Instant>,
+    /// Wall time of the last physical Esc press (any app). Codex semantics:
+    /// Esc anywhere while an action is mid-flight cancels THAT action; the
+    /// executor compares this against its action-start instant so a stale
+    /// press can never cancel the NEXT action.
+    esc_cancel_at: Option<Instant>,
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +73,14 @@ impl WindowsUserInputMonitor {
 
     pub fn takeover_detected(&self, session_id: &str) -> bool {
         lock_state().takeover.contains(session_id)
+    }
+
+    /// True when a physical Esc arrived after `started` — i.e. during the
+    /// current action. The executor builds its `should_stop` closure with the
+    /// action-start instant so only in-flight presses interrupt it.
+    pub fn esc_cancel_pending(&self, started: Instant) -> bool {
+        let at = lock_state().esc_cancel_at;
+        at.is_some_and(|at| at >= started)
     }
 
     pub fn wait_for_idle(&self, session_id: &str) -> Result<(), UserInputError> {
@@ -151,6 +165,19 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
     if code >= 0 {
         let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         if event.flags.0 & LLKHF_INJECTED.0 == 0 {
+            // VK_ESCAPE (0x1B) keyDown cancels the in-flight action globally —
+            // the same "Esc anywhere stops the current action" contract as the
+            // macOS host. Injection never reaches this hook: injected events
+            // carry LLKHF_INJECTED and are filtered above.
+            let key_down = (wparam.0 as u32) == WM_KEYDOWN;
+            if key_down && event.vkCode == 0x1B {
+                if let Some(state) = STATE.get() {
+                    let mut state = state
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    state.esc_cancel_at = Some(Instant::now());
+                }
+            }
             record_real_input(Some(unsafe { GetForegroundWindow().0 as isize }));
         }
     }

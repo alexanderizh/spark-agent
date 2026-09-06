@@ -14,6 +14,7 @@ export const ComputerActionKindSchema = z.enum([
   'scroll',
   'keypress',
   'type_text',
+  'paste_text',
   'wait_for',
   'focus_window',
   'app_command',
@@ -173,6 +174,10 @@ const ComputerActionBaseSchema = z.discriminatedUnion('type', [
       point: NormalizedPointSchema,
       button: z.enum(['left', 'right', 'middle']).optional(),
       count: z.number().int().min(1).max(3).optional(),
+      modifiers: z
+        .array(z.enum(['Meta', 'Control', 'Alt', 'Shift']))
+        .max(3)
+        .optional(),
     })
     .strict(),
   z.object({ type: z.literal('move'), point: NormalizedPointSchema }).strict(),
@@ -208,6 +213,13 @@ const ComputerActionBaseSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('paste_text'),
+      text: z.string().min(1).max(100_000),
+      sensitive: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('wait_for'),
       condition: WaitConditionSchema,
       timeoutMs: z.number().int().min(50).max(120_000),
@@ -230,11 +242,19 @@ export type ComputerAction = z.infer<typeof ComputerActionSchema>
 
 export const ComputerExecutionLaneSchema = z.enum([
   'background_semantic',
+  'background_post',
   'foreground_input',
   'passive',
 ])
 export type ComputerExecutionLane = z.infer<typeof ComputerExecutionLaneSchema>
 
+/**
+ * Legacy shared inference, kept for envelope validation when a lane IS
+ * explicitly provided. Production callers no longer set `executionLane` —
+ * the native host infers it (macOS defaults to `foreground_input` and picks
+ * the real channel in-provider; Windows defaults to the PostMessage
+ * `background_post` lane for everything except drag/focus_window).
+ */
 export function computerExecutionLaneForAction(action: ComputerAction): ComputerExecutionLane {
   if (
     action.type === 'invoke_element' ||

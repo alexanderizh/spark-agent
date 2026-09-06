@@ -4,7 +4,10 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('computer-use-agent-bridge')
 const DEFAULT_MAX_BODY_BYTES = 256 * 1024
-const SESSION_TOKEN_TTL_MS = 15 * 60 * 1_000
+// Absolute ceiling well above the operator's 20-minute task runtime budget; the
+// authorize() path renews the window on every authenticated call, so a token
+// only expires after 30 minutes of complete silence (an abandoned turn).
+const SESSION_TOKEN_TTL_MS = 30 * 60 * 1_000
 
 const ALLOWED_TOOLS = new Set([
   'get_capabilities',
@@ -26,6 +29,7 @@ const ALLOWED_TOOLS = new Set([
   // Atomic agent-directed control (one governed action per call).
   'click',
   'type_text',
+  'paste',
   'set_value',
   'invoke_element',
   'press_key',
@@ -206,7 +210,7 @@ const MCP_TOOLS = [
   {
     name: 'get_app_state',
     description:
-      'Get one application state directly by exact display name, bundle id, stable app id, or window id. App selectors launch or raise the app by default. Returns native window metadata plus an accessibility/visual observation when available. A chat snapshot is optional and its failure does not discard state.',
+      "Get one application state directly by exact display name, bundle id, stable app id, or window id. App selectors launch or raise the app by default. Returns native window metadata plus an accessibility/visual observation when available. With includeSnapshot the screenshot follows the REQUESTED app, not the user's focus — background apps are captured without stealing focus. A chat snapshot is optional and its failure does not discard state.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -234,11 +238,16 @@ const MCP_TOOLS = [
   },
   {
     name: 'capture_app_snapshot',
-    description: 'Capture the focused application through the governed snapshot service.',
+    description:
+      'Capture an application screenshot through the governed snapshot service. Without `app` it captures the focused application; with `app` (exact display name, bundle id, or stable app id) it captures THAT application, including when it is in the background — no focus steal.',
     inputSchema: {
       type: 'object',
       properties: {
         accessibleTextMode: { type: 'string', enum: ['visible_only', 'app_exposed'] },
+        app: {
+          type: 'string',
+          description: 'Application display name, bundle id, or stable app id',
+        },
       },
       additionalProperties: false,
     },
@@ -261,6 +270,13 @@ const MCP_TOOLS = [
           description: '1 = click, 2 = double-click.',
         },
         button: { type: 'string', enum: ['left', 'right', 'middle'] },
+        modifiers: {
+          type: 'array',
+          items: { type: 'string', enum: ['Meta', 'Control', 'Alt', 'Shift'] },
+          maxItems: 3,
+          description:
+            'Modifier chord held during the click: Meta=cmd (open link in new tab), Control=ctrl (context menu), Alt=option, Shift.',
+        },
       },
       required: ['at'],
       additionalProperties: false,
@@ -274,6 +290,26 @@ const MCP_TOOLS = [
       type: 'object',
       properties: {
         text: { type: 'string', minLength: 1, maxLength: 20_000 },
+        into: {
+          type: 'object',
+          properties: { elementId: { type: 'string', minLength: 1, maxLength: 200 } },
+          required: ['elementId'],
+          additionalProperties: false,
+        },
+        submit: { type: 'boolean' },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'paste',
+    description:
+      'Deliver text via the clipboard with a cmd+V (or the field given via `into`, which is focused first). Preferred for LONG text (paragraphs, code blocks) — one chord instead of per-chunk keystrokes — and for custom-drawn editors that ignore typed input. Replaces the system clipboard contents. Pass submit:true to press Enter afterwards.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', minLength: 1, maxLength: 100_000 },
         into: {
           type: 'object',
           properties: { elementId: { type: 'string', minLength: 1, maxLength: 200 } },
@@ -317,7 +353,7 @@ const MCP_TOOLS = [
   {
     name: 'press_key',
     description:
-      'Press a key or chord. Accepts a chord string like "cmd+shift+t" or an array like ["Meta","t"]. Modifiers: cmd/command→Meta, ctrl→Control, alt/option→Alt, shift→Shift; named keys Enter, Escape, Tab, Space, Backspace, Delete, Home, End, PageUp, PageDown, ArrowUp/Down/Left/Right, F1-F24.',
+      'Press a key or chord. Accepts a chord string like "cmd+shift+t" or an array like ["Meta","t"]. Modifiers: cmd/command/meta→Meta, ctrl→Control, alt/option→Alt, shift→Shift; named keys Enter, Escape, Tab, Space, Backspace, Delete, Home, End, PageUp, PageDown, ArrowUp/Down/Left/Right (aliases left/right/up/down and arrow glyphs also accepted), F1-F24; single letters/digits as-is.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -679,6 +715,9 @@ export class ComputerUseAgentBridge {
       this.grants.delete(token)
       return null
     }
+    // Sliding window: an active turn (operator loop polling tools for up to 20
+    // minutes) must never 401 mid-flight; silence is what expires a grant.
+    grant.expiresAt = Date.now() + SESSION_TOKEN_TTL_MS
     return grant
   }
 

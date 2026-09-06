@@ -142,7 +142,16 @@ export class ComputerControlBroker {
   }> {
     const parsedEnvelope = ComputerActionEnvelopeSchema.safeParse(envelopeInput)
     if (!parsedEnvelope.success) {
-      throw new ComputerUseBrokerError('action_not_allowed', 'Computer action payload is invalid')
+      // Surface the first concrete schema issue so the caller (and the model
+      // behind it) can self-correct — a bare "payload is invalid" forced whole
+      // tasks to die on a single unrecognized key name.
+      const issue = parsedEnvelope.error.issues[0]
+      const path =
+        issue?.path.length != null && issue.path.length > 0 ? `${issue.path.join('.')}: ` : ''
+      throw new ComputerUseBrokerError(
+        'action_not_allowed',
+        `Computer action payload is invalid — ${path}${issue?.message ?? 'unknown issue'}`,
+      )
     }
     const envelope = parsedEnvelope.data
     if (this.activeDispatches.has(envelope.computerSessionId)) {

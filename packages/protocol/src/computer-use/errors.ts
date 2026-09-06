@@ -22,6 +22,7 @@ export const ComputerUseErrorCodeSchema = z.enum([
   'privilege_mismatch',
   'action_noop',
   'action_timeout',
+  'screen_locked',
   'sensitive_input_blocked',
   'approval_required',
   'approval_expired',

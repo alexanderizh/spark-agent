@@ -22,12 +22,24 @@ export const AtomicClickSchema = z
     at: AtSchema,
     clickCount: z.number().int().min(1).max(3).optional(),
     button: z.enum(['left', 'right', 'middle']).optional(),
+    modifiers: z
+      .array(z.enum(['Meta', 'Control', 'Alt', 'Shift']))
+      .max(3)
+      .optional(),
   })
   .strict()
 
 export const AtomicTypeTextSchema = z
   .object({
     text: z.string().min(1).max(20_000),
+    into: ElementRefSchema.optional(),
+    submit: z.boolean().optional(),
+  })
+  .strict()
+
+export const AtomicPasteSchema = z
+  .object({
+    text: z.string().min(1).max(100_000),
     into: ElementRefSchema.optional(),
     submit: z.boolean().optional(),
   })
@@ -87,6 +99,7 @@ export const AtomicSecondaryActionSchema = z.object({ at: AtSchema }).strict()
 export const ATOMIC_TOOL_NAMES = [
   'click',
   'type_text',
+  'paste',
   'set_value',
   'invoke_element',
   'press_key',
@@ -103,7 +116,9 @@ const KEY_ALIASES: Record<string, string> = {
   cmd: 'Meta',
   command: 'Meta',
   meta: 'Meta',
+  super: 'Meta',
   win: 'Meta',
+  windows: 'Meta',
   ctrl: 'Control',
   control: 'Control',
   alt: 'Alt',
@@ -124,10 +139,39 @@ const KEY_ALIASES: Record<string, string> = {
   pageup: 'PageUp',
   pagedown: 'PageDown',
   arrowup: 'ArrowUp',
+  up: 'ArrowUp',
+  '↑': 'ArrowUp',
   arrowdown: 'ArrowDown',
+  down: 'ArrowDown',
+  '↓': 'ArrowDown',
   arrowleft: 'ArrowLeft',
+  left: 'ArrowLeft',
+  '←': 'ArrowLeft',
   arrowright: 'ArrowRight',
+  right: 'ArrowRight',
+  '→': 'ArrowRight',
 }
+
+const NAMED_KEYS = new Set([
+  'Alt',
+  'Backspace',
+  'Control',
+  'Delete',
+  'End',
+  'Enter',
+  'Escape',
+  'Home',
+  'Meta',
+  'PageDown',
+  'PageUp',
+  'Shift',
+  'Space',
+  'Tab',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+])
 
 /** Parses "cmd+shift+t" / ["Meta","shift","t"] into normalized key names. */
 export function parseKeyChord(input: string | string[]): string[] {
@@ -138,12 +182,24 @@ export function parseKeyChord(input: string | string[]): string[] {
     .map((part) => {
       const lowered = part.toLowerCase()
       if (KEY_ALIASES[lowered] != null) return KEY_ALIASES[lowered] as string
+      if (KEY_ALIASES[part] != null) return KEY_ALIASES[part] as string
       const fn = /^f([1-9]|1[0-9]|2[0-4])$/i.exec(part)
       if (fn != null) return `F${Number(fn[1])}`
       return part
     })
   if (normalized.length === 0 || normalized.length > 8) {
     throw invalidArguments('press_key needs 1-8 keys')
+  }
+  for (const key of normalized) {
+    if (NAMED_KEYS.has(key) || /^[A-Za-z0-9]$/.test(key) || /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {
+      continue
+    }
+    throw invalidArguments(
+      `Unknown key name "${key}". Valid names: single letters/digits (a, 7), F1-F24, ` +
+        'ArrowLeft/ArrowRight/ArrowUp/ArrowDown, Enter, Escape, Space, Tab, Backspace, Delete, ' +
+        'Home, End, PageUp, PageDown, and modifiers Meta/Control/Alt/Shift (aliases like ' +
+        'cmd, ctrl, option, left, right, up, down are accepted).',
+    )
   }
   return normalized
 }
@@ -186,6 +242,31 @@ export class ComputerAtomicToolHandlers {
       }
       case 'click': {
         const request = parse(AtomicClickSchema, args)
+        // Element-targeted left single clicks run as semantic AX invocations —
+        // zero synthesized events, zero focus steal, fully background-safe.
+        // This is Codex's preferred path ("element clicks resolve through the
+        // accessibility tree and run in the background"). Coordinate clicks and
+        // right/middle/double clicks keep the event channel.
+        if (
+          'elementId' in request.at &&
+          (request.button ?? 'left') === 'left' &&
+          (request.clickCount ?? 1) === 1
+        ) {
+          const elementId = request.at.elementId
+          return this.dispatchAndSummarize(
+            'click',
+            sessionId,
+            turnId,
+            (observation) => {
+              // Upfront existence check keeps the stale-id error message (with
+              // recovery guidance) in the tool layer instead of burning a
+              // host round trip + auto-retry on a known-dead reference.
+              requireElement(observation, elementId)
+              return { type: 'invoke_element', elementId } as ComputerAction
+            },
+            `Click element ${elementId}`,
+          )
+        }
         return this.dispatchAndSummarize(
           'click',
           sessionId,
@@ -197,6 +278,7 @@ export class ComputerAtomicToolHandlers {
               observation,
               request.button ?? 'left',
               request.clickCount,
+              request.modifiers,
             ),
           'Click',
         )
@@ -207,13 +289,18 @@ export class ComputerAtomicToolHandlers {
           'perform_secondary_action',
           sessionId,
           turnId,
-          (observation) => this.clickAction(sessionId, request.at, observation, 'right', 1),
+          (observation) =>
+            this.clickAction(sessionId, request.at, observation, 'right', 1, undefined),
           'Secondary action',
         )
       }
       case 'type_text': {
         const request = parse(AtomicTypeTextSchema, args)
         return this.typeText(sessionId, turnId, request)
+      }
+      case 'paste': {
+        const request = parse(AtomicPasteSchema, args)
+        return this.pasteText(sessionId, turnId, request)
       }
       case 'set_value': {
         const request = parse(AtomicSetValueSchema, args)
@@ -327,13 +414,14 @@ export class ComputerAtomicToolHandlers {
     request: z.infer<typeof AtomicTypeTextSchema>,
   ): Promise<Record<string, unknown>> {
     // Focus the field first when `into` is given — background typing targets
-    // the app's focused element, so an explicit focus click makes it deterministic.
+    // the app's focused element, so an explicit AX focus (no click, no events)
+    // makes it deterministic.
     if (request.into != null) {
-      const into = request.into
+      const elementId = request.into.elementId
       await this.atomic.dispatch(
         sessionId,
         turnId,
-        (observation) => this.clickAction(sessionId, into, observation, 'left', 1),
+        () => ({ type: 'invoke_element', elementId, action: 'focus' }) as ComputerAction,
         'Focus field for typing',
       )
     }
@@ -354,6 +442,40 @@ export class ComputerAtomicToolHandlers {
     return this.result('type_text', sessionId, last)
   }
 
+  private async pasteText(
+    sessionId: string,
+    turnId: string,
+    request: z.infer<typeof AtomicPasteSchema>,
+  ): Promise<Record<string, unknown>> {
+    // Clipboard delivery (Codex `paste`): the reliable channel for long text
+    // and custom-drawn editors that ignore synthesized keyboard input. Same
+    // focus precondition as typing — paste lands in the app's focused field.
+    if (request.into != null) {
+      const elementId = request.into.elementId
+      await this.atomic.dispatch(
+        sessionId,
+        turnId,
+        () => ({ type: 'invoke_element', elementId, action: 'focus' }) as ComputerAction,
+        'Focus field for paste',
+      )
+    }
+    let last = await this.atomic.dispatch(
+      sessionId,
+      turnId,
+      () => ({ type: 'paste_text', text: request.text }) as ComputerAction,
+      'Paste text',
+    )
+    if (request.submit === true) {
+      last = await this.atomic.dispatch(
+        sessionId,
+        turnId,
+        () => ({ type: 'keypress', keys: ['Enter'] }) as ComputerAction,
+        'Submit pasted text',
+      )
+    }
+    return this.result('paste', sessionId, last)
+  }
+
   private async dispatchAndSummarize(
     toolName: string,
     sessionId: string,
@@ -372,6 +494,7 @@ export class ComputerAtomicToolHandlers {
     observation: ComputerObservation,
     button: 'left' | 'right' | 'middle',
     clickCount: number | undefined,
+    modifiers: ('Meta' | 'Control' | 'Alt' | 'Shift')[] | undefined,
   ): ComputerAction {
     const point = this.atToPoint(sessionId, at, observation)
     return {
@@ -379,6 +502,7 @@ export class ComputerAtomicToolHandlers {
       point,
       ...(button === 'left' ? {} : { button }),
       ...(clickCount == null || clickCount === 1 ? {} : { count: clickCount }),
+      ...(modifiers == null || modifiers.length === 0 ? {} : { modifiers }),
     }
   }
 

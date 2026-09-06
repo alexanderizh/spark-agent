@@ -26,7 +26,9 @@ export interface ComputerUseMetricDimensions {
 export type ComputerUseExecutionChannel =
   | 'background_ax'
   | 'background_pid'
+  | 'background_post'
   | 'foreground_cg'
+  | 'foreground_input'
   | 'unset'
 
 export interface ComputerUseChannelOutcomeSnapshot {
@@ -112,12 +114,23 @@ export class ComputerUseMetricsCollector {
     let backgroundCount = 0
     for (const [channel, outcome] of this.channelOutcomes) {
       total += outcome.count
-      if (channel === 'background_ax' || channel === 'background_pid') {
+      if (
+        channel === 'background_ax' ||
+        channel === 'background_pid' ||
+        channel === 'background_post'
+      ) {
         backgroundCount += outcome.count
       }
     }
     const channels: ComputerUseChannelOutcomeSnapshot[] = []
-    for (const channel of ['background_ax', 'background_pid', 'foreground_cg', 'unset'] as const) {
+    for (const channel of [
+      'background_ax',
+      'background_pid',
+      'background_post',
+      'foreground_cg',
+      'foreground_input',
+      'unset',
+    ] as const) {
       const outcome = this.channelOutcomes.get(channel)
       if (outcome == null) continue
       channels.push({

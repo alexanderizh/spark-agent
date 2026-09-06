@@ -227,4 +227,17 @@ final class NativeAXTreeRendererFieldTests: XCTestCase {
       childCount: childCount
     )
   }
+
+  func testLongURLsShortenToOriginAndTail() {
+    let long =
+      "https://example.com/very/long/path/segment?query=abcdefghijklmnopqrstuvwxyz1234567890"
+    let shortened = NativeAXTreeRenderer.shortenedURL(long)
+    XCTAssertTrue(shortened.hasPrefix("https://example.com/\u{2026}"))
+    XCTAssertLessThan(shortened.utf16.count, long.utf16.count)
+
+    XCTAssertEqual(
+      NativeAXTreeRenderer.shortenedURL("https://example.com"), "https://example.com")
+    let plain = "just a long plain sentence that goes on and on and on for a while"
+    XCTAssertEqual(NativeAXTreeRenderer.shortenedURL(plain), plain)
+  }
 }

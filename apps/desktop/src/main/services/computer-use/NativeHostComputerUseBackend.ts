@@ -681,10 +681,15 @@ export class NativeHostComputerUseBackend
       signal: input.signal,
     })
     const observation = ComputerObservationSchema.parse(result.response.observation)
+    // App-level contract: the host self-heals onto the application's live
+    // window when the requested one died (window churn), so the observation
+    // may legitimately report a different window of the SAME app — accept it
+    // and rebind the session state to the window that was actually captured.
+    // A snapshotId/app mismatch (or a short-changed full tree) stays a hard
+    // protocol violation.
     if (
       observation.screenshot.snapshotId !== snapshotId ||
       observation.foreground.app.id !== input.appId ||
-      observation.foreground.window.id !== input.windowId ||
       (input.fullTree && observation.tree.mode !== 'full')
     ) {
       throw new ComputerUseBrokerError(
@@ -878,22 +883,33 @@ function selectControllableWindow(
   previous?: { appId: string; windowId: string },
   requireExactTarget = false,
 ): NativeWindowDescriptor {
+  // Sticky app binding (Codex model): an established session keeps observing
+  // ITS application even when the user focuses a different app mid-task —
+  // following the foreground here would silently retarget the session onto
+  // whatever the user happened to click. The previously observed window is
+  // preferred; when it died (window churn), any live window of the same app
+  // continues the session. Only sessions with no history acquire the focused
+  // window; explicitly bound sessions keep their exact-window contract.
+  const controllable = windows.filter((window) => !window.minimized)
+  if (previous != null) {
+    const previousWindow = controllable.find(
+      (window) => window.app.id === previous.appId && window.window.id === previous.windowId,
+    )
+    if (previousWindow != null) return previousWindow
+    const appWindows = controllable.filter((window) => window.app.id === previous.appId)
+    const focusedAppWindow = appWindows.find((window) => window.focused)
+    if (focusedAppWindow != null) return focusedAppWindow
+    if (appWindows.length > 0) return largestWindow(appWindows)
+    throw new ComputerUseBrokerError(
+      'focus_mismatch',
+      'The application being controlled is no longer available',
+    )
+  }
   if (!requireExactTarget) {
-    const focused = windows.filter((window) => window.focused && !window.minimized)
+    const focused = controllable.filter((window) => window.focused)
     if (focused.length > 0) return largestWindow(focused)
   }
-  const previousWindow = windows.find(
-    (window) =>
-      !window.minimized &&
-      window.app.id === previous?.appId &&
-      window.window.id === previous.windowId,
-  )
-  if (previousWindow != null) return previousWindow
-  if (previous != null && requireExactTarget) {
-    throw new ComputerUseBrokerError('focus_mismatch', 'The bound target window is unavailable')
-  }
-  const visible = windows.filter((window) => !window.minimized)
-  if (visible.length > 0) return largestWindow(visible)
+  if (controllable.length > 0) return largestWindow(controllable)
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
 }
 

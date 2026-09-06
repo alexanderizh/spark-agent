@@ -11,7 +11,10 @@ final class MacUserInputMonitor: @unchecked Sendable {
   private let lock = NSLock()
   private var bindings: [String: UserInputBinding] = [:]
   private var takeoverSessions: Set<String> = []
-  private var lastUserInputAt = Date.distantPast.timeIntervalSinceReferenceDate
+  /// Timestamp of the last physical input that actually targets a bound
+  /// process/window. User activity in OTHER applications must not stall the
+  /// agent (Codex semantics): only target-directed input resets the idle wait.
+  private var lastTargetInputAt = Date.distantPast.timeIntervalSinceReferenceDate
   private var eventTap: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
   private var thread: Thread?
@@ -34,6 +37,11 @@ final class MacUserInputMonitor: @unchecked Sendable {
   }
 
   func bind(sessionID: String, processID: pid_t, bounds: NativeRect) {
+    // Every action binds its target here — the natural moment to retry a tap
+    // that failed to start (TCC race at launch) or was lost entirely. Without
+    // it, a monitor that missed its startup window stays dead for the whole
+    // process lifetime and takeover/Esc detection silently never fires.
+    ensureStarted()
     lock.withLock {
       let isNewBinding = bindings[sessionID] == nil
       bindings[sessionID] = UserInputBinding(processID: processID, bounds: bounds)
@@ -64,7 +72,7 @@ final class MacUserInputMonitor: @unchecked Sendable {
     let idleSeconds = durationSeconds(idleFor)
     while clock.now < deadline {
       if takeoverDetected(sessionID: sessionID) { throw NativeHostPlatformError.userTakeover }
-      let lastInput = lock.withLock { lastUserInputAt }
+      let lastInput = lock.withLock { lastTargetInputAt }
       if Date.timeIntervalSinceReferenceDate - lastInput >= idleSeconds { return }
       try await Task.sleep(for: .milliseconds(25))
     }
@@ -88,6 +96,10 @@ final class MacUserInputMonitor: @unchecked Sendable {
         callback: { _, type, event, userInfo in
           guard let userInfo else { return Unmanaged.passUnretained(event) }
           let monitor = Unmanaged<MacUserInputMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+          if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            monitor.reenableTap()
+            return Unmanaged.passUnretained(event)
+          }
           monitor.receive(type: type, event: event)
           return Unmanaged.passUnretained(event)
         },
@@ -117,6 +129,15 @@ final class MacUserInputMonitor: @unchecked Sendable {
     CFRunLoopRun()
   }
 
+  /// The system can disable a listen-only tap (hung callback, user input at
+  /// secure fields). Re-arming on the spot keeps takeover/Esc detection alive;
+  /// a listen-only tap re-enabled here needs no new permissions.
+  func reenableTap() {
+    lock.withLock {
+      if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+    }
+  }
+
   private func stop() {
     let state = lock.withLock { () -> (CFMachPort?, CFRunLoopSource?) in
       defer {
@@ -137,16 +158,34 @@ final class MacUserInputMonitor: @unchecked Sendable {
     let point = event.location
     let keyboardProcessID =
       type == .keyDown ? NSWorkspace.shared.frontmostApplication?.processIdentifier : nil
+    // Global Esc cancel (Codex semantics): Esc anywhere while an action is
+    // mid-flight cancels THAT action — regardless of which app is frontmost.
+    // The injection loops poll the token between events; a drag releases the
+    // held button, a typing burst stops at the current chunk. Injected events
+    // never reach this point (tagged and filtered above), and the action's
+    // `begin()` guarantees an Esc pressed BEFORE the action cannot cancel it.
+    if type == .keyDown,
+      event.getIntegerValueField(.keyboardEventKeycode) == 53  // kVK_Escape
+    {
+      NativeInterruptionToken.shared.request()
+    }
     let pointerProcessID =
       type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown
       ? topmostWindowProcessID(at: point) : nil
     lock.withLock {
-      lastUserInputAt = now
+      var targetsBoundProcess = false
       if let keyboardProcessID {
         for (sessionID, binding) in bindings where binding.processID == keyboardProcessID {
           takeoverSessions.insert(sessionID)
+          targetsBoundProcess = true
         }
       }
+      // Pointer hover inside a bound window rectangle means the user's hand is on the
+      // controlled surface — worth yielding to even before a click lands. Bounds-only
+      // test: enumerating the window list on every mouseMoved would burn CPU.
+      let pointerInBounds = bindings.values.contains { contains(point, in: $0.bounds) }
+      if pointerInBounds { targetsBoundProcess = true }
+      if targetsBoundProcess { lastTargetInputAt = now }
       guard type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else {
         return
       }

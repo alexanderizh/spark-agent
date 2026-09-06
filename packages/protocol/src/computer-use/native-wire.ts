@@ -228,12 +228,16 @@ export type NativeWindowDescriptor = z.infer<typeof NativeWindowDescriptorSchema
  * on the cached tree (no focus steal); `background_pid` = synthesized CGEvents posted
  * directly to the target process (CGEventPostToPid — background control incl. occluded
  * windows and custom-drawn UI); `foreground_cg` = legacy global HID injection.
- * Optional on `action_result` so older hosts stay parseable.
+ * Windows reports `background_post` (PostMessageW delivery, no focus steal) and
+ * `foreground_input` (SendInput after an explicit focus), or `background_ax` for its
+ * UIA semantic actions. Optional on `action_result` so older hosts stay parseable.
  */
 export const ComputerExecutionChannelSchema = z.enum([
   'background_ax',
   'background_pid',
+  'background_post',
   'foreground_cg',
+  'foreground_input',
 ])
 export type ComputerExecutionChannel = z.infer<typeof ComputerExecutionChannelSchema>
 

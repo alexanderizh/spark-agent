@@ -95,6 +95,15 @@ final class MacAccessibilityController: @unchecked Sendable {
         if raw.count > 3 { break }
       }
     }
+    // Open menus / native dropdown lists are owned by the APPLICATION, not the
+    // window, so a window-rooted traversal never sees them — after the agent
+    // opens a menu the model would face a tree with zero menu items. Codex
+    // merges open menus into its state; we do the same by walking the app's
+    // focused element up to its root and, when that root is an AXMenu,
+    // appending the whole menu tree BEFORE publishing (so ids, hit-testing and
+    // semantic actions all cover the menu items). Defensive by design: any
+    // miss simply leaves the tree unchanged.
+    mergeOpenMenus(application: application, raw: &raw, elements: &elements)
     let snapshot = try publishCached(
       raw,
       previousTreeVersion: previousTreeVersion,
@@ -110,6 +119,29 @@ final class MacAccessibilityController: @unchecked Sendable {
     lastTraversalUptime = ProcessInfo.processInfo.systemUptime
     cachedGeneration = generation
     return snapshot
+  }
+
+  /// Collects the app's currently open menu (menu-bar menus and native
+  /// dropdown lists) into the shared buffers, bypassing offscreen pruning —
+  /// menus render outside the window frame by design. See observe().
+  private func mergeOpenMenus(
+    application: AXUIElement,
+    raw: inout [NativeAXRawElement],
+    elements: inout [String: AXUIElement]
+  ) {
+    guard
+      let focused: AXUIElement = copyAttribute(
+        application, kAXFocusedUIElementAttribute)
+    else { return }
+    var node = focused
+    for _ in 0..<32 {
+      guard let parent: AXUIElement = copyAttribute(node, kAXParentAttribute) else { break }
+      node = parent
+    }
+    let rootRole = copyAttribute(node, kAXRoleAttribute) ?? ""
+    guard rootRole == "AXMenu" else { return }
+    try? collect(
+      node, path: "menu", depth: 0, windowFrame: nil, output: &raw, elements: &elements)
   }
 
   private func recordPublishedSnapshot(_ snapshot: NativeAXTreeSnapshot) {
@@ -345,8 +377,11 @@ final class MacAccessibilityController: @unchecked Sendable {
 
   func loadingStopped(processID: pid_t) -> Bool {
     let application = AXUIElementCreateApplication(processID)
+    // No focused window means no loader exists to watch — that is "not busy",
+    // not "still loading". Treating it as busy pinned every background action
+    // (the primary non-frontmost control path) to the full settle hard cap.
     guard let window: AXUIElement = copyAttribute(application, kAXFocusedWindowAttribute)
-    else { return false }
+    else { return true }
     return !((copyAttribute(window, "AXElementBusy") as NSNumber?)?.boolValue ?? false)
   }
 
@@ -753,10 +788,11 @@ enum MacCGEventController {
   ) async throws -> NativeActionStatus {
     guard isAvailable else { throw NativeHostPlatformError.accessibilityPermissionDenied }
     switch action {
-    case .click(let normalized, let button, let count):
+    case .click(let normalized, let button, let count, let modifiers):
       let point = try map(normalized, bounds: windowBounds)
       let mouseButton = cgButton(button)
       let types = mouseTypes(button)
+      let chordFlags = NativeMouseChord.flags(for: modifiers)
       let total = max(1, min(3, count ?? 1))
       for index in 0..<total {
         try await validateTarget()
@@ -768,6 +804,8 @@ enum MacCGEventController {
             mouseEventSource: nil, mouseType: types.1, mouseCursorPosition: point,
             mouseButton: mouseButton)
         else { throw NativeHostPlatformError.actionNoop }
+        down.flags = chordFlags
+        up.flags = chordFlags
         down.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
         up.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
         postTagged(down)

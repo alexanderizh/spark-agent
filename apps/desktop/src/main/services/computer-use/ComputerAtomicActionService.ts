@@ -7,7 +7,7 @@ import type {
   ComputerSession,
   ComputerSessionStatus,
 } from '@spark/protocol'
-import { ComputerTaskContractSchema, computerExecutionLaneForAction } from '@spark/protocol'
+import { ComputerTaskContractSchema } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import { policyContextFor } from './ComputerActionPolicyContext.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
@@ -40,8 +40,14 @@ const REUSABLE_STATUSES: ReadonlySet<ComputerSessionStatus> = new Set([
  * capture stream alive and the PIP panel shows "observing" until it is
  * stopped. Releasing on idle closes both; the next tool call transparently
  * re-arms a fresh session.
+ *
+ * Generous on purpose: reasoning models routinely think for minutes between
+ * tool calls, and a short timer visibly tears the task card down and up
+ * mid-task ("断断续续") while forcing a stream restart on every call. The
+ * macOS capture stream has its own 90s frame-idle park that clears the screen
+ * sharing indicator without disturbing session continuity.
  */
-const IDLE_RELEASE_MS = 60_000
+const IDLE_RELEASE_MS = 300_000
 
 const ATOMIC_TASK_CONTRACT = ComputerTaskContractSchema.parse({
   objective: 'Agent-directed atomic desktop control',
@@ -134,6 +140,11 @@ export class ComputerAtomicActionService {
 
   /** Observes the bound/frontmost window and refreshes the cached observation. */
   async observe(sessionId: string, turnId: string): Promise<ComputerObservation> {
+    // Disarm on entry: a timer armed by the previous call must never abort an
+    // in-flight observe/dispatch (slow reasoning models routinely think longer
+    // than the idle window — the timer fired mid-action surfaced as a bogus
+    // session_canceled).
+    this.clearIdleTimer(sessionId)
     const state = await this.ensureSession(sessionId, turnId)
     const observation = await this.services.broker.observe(state.computerSessionId, true)
     state.lastObservation = observation
@@ -152,26 +163,31 @@ export class ComputerAtomicActionService {
     buildAction: (observation: ComputerObservation) => ComputerAction,
     intent: string,
   ): Promise<AtomicDispatchResult> {
-    const state = await this.ensureSession(sessionId, turnId)
-    if (state.lastObservation == null) {
-      state.lastObservation = await this.services.broker.observe(state.computerSessionId, true)
-    }
+    // See observe(): disarm while an action is in flight.
+    this.clearIdleTimer(sessionId)
     try {
-      const result = await this.dispatchOnce(state, buildAction, intent)
-      this.armIdleTimer(sessionId)
-      return result
-    } catch (error) {
-      if (
-        error instanceof ComputerUseBrokerError &&
-        STALE_ERROR_CODES.has(error.code) &&
-        error.code !== 'focus_mismatch'
-      ) {
+      const state = await this.ensureSession(sessionId, turnId)
+      if (state.lastObservation == null) {
         state.lastObservation = await this.services.broker.observe(state.computerSessionId, true)
-        const result = await this.dispatchOnce(state, buildAction, intent)
-        this.armIdleTimer(sessionId)
-        return result
       }
-      throw error
+      try {
+        return await this.dispatchOnce(state, buildAction, intent)
+      } catch (error) {
+        // Stale frame/tree AND focus_mismatch are all "the world moved under the
+        // action" conditions: observe now self-heals onto the app's live window,
+        // so one transparent re-observe + rebuild + retry recovers window churn
+        // (Electron apps recreating windows) without burning a model round trip.
+        if (error instanceof ComputerUseBrokerError && STALE_ERROR_CODES.has(error.code)) {
+          state.lastObservation = await this.services.broker.observe(state.computerSessionId, true)
+          return await this.dispatchOnce(state, buildAction, intent)
+        }
+        throw error
+      }
+    } finally {
+      // Re-arm on BOTH success and failure: an abandoned-after-error task must
+      // still release its session (and the capture stream behind it) once the
+      // idle window lapses, instead of hanging "observing" forever.
+      this.armIdleTimer(sessionId)
     }
   }
 
@@ -192,7 +208,9 @@ export class ComputerAtomicActionService {
       targetAppId: observation.foreground.app.id,
       targetWindowId: observation.foreground.window.id,
       action,
-      executionLane: computerExecutionLaneForAction(action),
+      // The native host infers the lane itself (macOS and Windows differ —
+      // Windows rides the PostMessage background lane); sending a lane would
+      // pin one platform's inference onto the other.
       policyContext: policyContextFor(action, observation, intent),
       intent,
     }
@@ -216,10 +234,11 @@ export class ComputerAtomicActionService {
       taskContract: ATOMIC_TASK_CONTRACT,
     })
     this.services.sessions.activate(created.id)
-    // Join the single desktop input lane: claiming evicts any previous owner
-    // (another agent's task) exactly like start_task does, and release on
-    // teardown/idle keeps the lane coherent with the kill switch.
-    await this.services.coordinator.claim(created.id)
+    // Join the single desktop input lane. The agent-session lineage lets the
+    // coordinator tell "my own start_task is running" (lane transfers, task
+    // survives) from "another agent owns the desktop" (eviction), and release
+    // on teardown/idle keeps the lane coherent with the kill switch.
+    await this.services.coordinator.claim(created.id, sessionId)
     const state: AtomicSessionState = { computerSessionId: created.id, lastObservation: null }
     this.states.set(sessionId, state)
     return state

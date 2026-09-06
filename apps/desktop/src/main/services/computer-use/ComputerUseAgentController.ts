@@ -260,18 +260,15 @@ export class ComputerUseAgentController {
           }
         }
         try {
+          // Targeted capture: the snapshot follows the requested application,
+          // not the user's focus — get_app_state observes background apps the
+          // same way Codex does, without stealing focus from the user.
           const snapshot = await services.snapshots.captureFrontmost({
             sessionId,
             turnId: context.turnId,
             accessibleTextMode: 'visible_only',
+            targetAppId: result.target.app.id,
           })
-          if (snapshot.app.id !== result.target.app.id) {
-            return {
-              ...result,
-              snapshot: null,
-              snapshotUnavailableReason: 'target_not_frontmost',
-            }
-          }
           return {
             ...result,
             snapshot,
@@ -356,7 +353,7 @@ export class ComputerUseAgentController {
         const adapter = this.createAdapter(model)
         this.invalidateRun(services, computerSession.id)
         try {
-          await services.coordinator.claim(computerSession.id)
+          await services.coordinator.claim(computerSession.id, sessionId)
           const resumed = services.broker.resume(computerSession.id)
           this.launchOperator(services, resumed, operator, adapter)
           return { computerSession: resumed, operatorStatus: 'running' }
@@ -376,10 +373,22 @@ export class ComputerUseAgentController {
           throw unavailable('Trusted application snapshot capture is unavailable')
         }
         const request = parseSnapshotCapture(args)
+        let targetAppId: string | undefined
+        if (request.app != null) {
+          // Resolve the named application (id, bundle id, or display name) the
+          // same way get_app_state does, then capture ITS window — works for
+          // background apps without stealing the user's focus.
+          const resolved = await this.createDesktopState(services.backend).getAppState({
+            app: request.app,
+            launchIfNeeded: false,
+          })
+          targetAppId = resolved.target.app.id
+        }
         const snapshot = await services.snapshots.captureFrontmost({
           sessionId,
           turnId: context.turnId,
           accessibleTextMode: request.accessibleTextMode,
+          ...(targetAppId == null ? {} : { targetAppId }),
         })
         if (snapshot.previewUrl == null) {
           throw unavailable('The application snapshot did not receive a preview capability')
@@ -447,7 +456,7 @@ export class ComputerUseAgentController {
           })
         }
         try {
-          await services.coordinator.claim(computerSession.id)
+          await services.coordinator.claim(computerSession.id, sessionId)
           const activeSession = services.sessions.activate(computerSession.id)
           const operator = this.createOperator(services)
           const adapter = this.createAdapter(model)
@@ -691,6 +700,7 @@ const OpenAppSchema = z.object({ app: z.string().trim().min(1).max(300) }).stric
 const SnapshotCaptureSchema = z
   .object({
     accessibleTextMode: z.enum(['visible_only', 'app_exposed']).default('visible_only'),
+    app: z.string().trim().min(1).max(300).optional(),
   })
   .strict()
 

@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -15,6 +15,7 @@ use crate::protocol::{HostRequest, PROTOCOL_VERSION, encode_error};
 mod capture;
 mod input;
 mod inventory;
+mod postmsg;
 mod runtime_auth;
 mod uia;
 mod user_input;
@@ -163,9 +164,13 @@ fn handle_request(
             window_id,
             ..
         } => {
+            // Windows Graphics Capture captures occluded/background windows per
+            // hwnd — requiring foreground here broke every snapshot the moment
+            // the user focused another app (Codex parity: capture any window).
+            // Only the secure desktop stays off limits.
             let target = match input::target_window(&window_id) {
-                Ok(target) if target.foreground && !target.secure_desktop => target,
-                Ok(target) if target.secure_desktop => {
+                Ok(target) if !target.secure_desktop => target,
+                Ok(_) => {
                     return write_platform_error(
                         output,
                         &request_id,
@@ -184,7 +189,7 @@ fn handle_request(
                     );
                 }
             };
-            match capture::capture_window(&window_id, &target, true) {
+            match capture::capture_window(&window_id, &target, false) {
                 Ok(captured) => {
                     if captured.width == 0
                         || captured.height == 0
@@ -658,7 +663,9 @@ fn execute_action(
     }
     if matches!(
         envelope.action,
-        ComputerAction::TypeText { .. } | ComputerAction::Keypress { .. }
+        ComputerAction::TypeText { .. }
+            | ComputerAction::PasteText { .. }
+            | ComputerAction::Keypress { .. }
     ) {
         let focused_secure = state
             .uia
@@ -683,22 +690,46 @@ fn execute_action(
                 ..
             }
     );
+    // Codex-parity cancellation: a physical Esc (any app) or a target-window
+    // takeover aborts the in-flight action; started bounds the check so a
+    // stale press can never cancel the NEXT action.
+    let action_started = Instant::now();
+    let should_stop = || {
+        user_input.takeover_detected(session_id) || user_input.esc_cancel_pending(action_started)
+    };
+    let mut channel = "foreground_input";
     let result = if semantic {
+        channel = "background_ax";
         state
             .uia
             .as_mut()
             .ok_or(uia::UiaError::Unavailable)
             .and_then(|uia| uia.execute(&envelope.action, &envelope.observed_tree_version))
             .map_err(ActionExecutionError::Uia)
-    } else {
-        if !state.input_available {
-            Err(ActionExecutionError::Input(input::InputError::Unsupported))
-        } else {
-            input::execute(&envelope.action, &expected, || {
-                user_input.takeover_detected(session_id)
-            })
-            .map_err(ActionExecutionError::Input)
+    } else if !state.input_available {
+        Err(ActionExecutionError::Input(input::InputError::Unsupported))
+    } else if postmsg::supports(&envelope.action) {
+        // Background-first (Codex parity): PostMessage delivers mouse/keyboard
+        // to the target window without stealing focus, so the user keeps
+        // working in another app. Only an unrecognised key (no message-level
+        // equivalent) degrades to the foreground SendInput lane, which takes
+        // focus first.
+        match postmsg::execute(&envelope.action, &expected, should_stop) {
+            Ok(()) => {
+                channel = "background_post";
+                Ok(())
+            }
+            Err(postmsg::PostError::Unsupported) => execute_foreground_sendinput(
+                &envelope.action,
+                &binding.window_id,
+                &expected,
+                should_stop,
+            ),
+            Err(error) => Err(ActionExecutionError::Post(error)),
         }
+    } else {
+        input::execute(&envelope.action, &expected, should_stop)
+            .map_err(ActionExecutionError::Input)
     };
     if let Err(error) = result {
         return write_action_error(output, request_id, error);
@@ -726,8 +757,20 @@ fn execute_action(
                 );
             }
         };
-        if let Err(error) = InputPolicy::validate_identity(&expected, &after, false) {
-            return write_input_policy_error(output, request_id, error);
+        // App-level contract (mirrors the macOS host): Electron apps open new
+        // windows for dialogs/tabs mid-task; requiring the exact hwnd back
+        // turned every window change into a focus_mismatch death loop. The
+        // owning process must still be the same.
+        if after.process_id != expected.process_id
+            || after.executable_identity != expected.executable_identity
+        {
+            return write_platform_error(
+                output,
+                request_id,
+                "focus_mismatch",
+                "The target application identity changed",
+                true,
+            );
         }
     }
     // Skyshot (protocol v2): settle briefly, then capture + re-walk the tree
@@ -735,8 +778,11 @@ fn execute_action(
     // any failure omits the field and the caller falls back to a regular
     // observe request, exactly like a v1 host. (build_skyshot rebinds
     // state.observation itself; it must run before the assignment below.)
-    let (skyshot_app, skyshot_window, skyshot_hwnd) =
-        (binding.app_id.clone(), binding.window_id.clone(), binding.target.hwnd);
+    let (skyshot_app, skyshot_window, skyshot_hwnd) = (
+        binding.app_id.clone(),
+        binding.window_id.clone(),
+        binding.target.hwnd,
+    );
     let skyshot = if envelope.include_skyshot == Some(true) {
         build_skyshot(state, &skyshot_app, &skyshot_window, skyshot_hwnd)
     } else {
@@ -749,6 +795,7 @@ fn execute_action(
         "requestId": request_id,
         "actionId": envelope.action_id,
         "status": "executed",
+        "executionChannel": channel,
     });
     if let Some((observation, png)) = skyshot.as_ref() {
         reply["skyshot"] = observation.clone();
@@ -778,8 +825,7 @@ fn build_skyshot(
     // Settle: fixed short quiescence window (UIA has no busy notification
     // equivalent; 250ms covers most post-click layout work).
     std::thread::sleep(std::time::Duration::from_millis(250));
-    let descriptor =
-        inventory::window_descriptor(binding_app_id, binding_window_id).ok()?;
+    let descriptor = inventory::window_descriptor(binding_app_id, binding_window_id).ok()?;
     let before = input::target_window(binding_window_id).ok()?;
     if before.secure_desktop {
         return None;
@@ -856,7 +902,25 @@ fn action_may_change_focused_window(action: &ComputerAction) -> bool {
 
 enum ActionExecutionError {
     Input(input::InputError),
+    Post(postmsg::PostError),
     Uia(uia::UiaError),
+}
+
+/// Foreground SendInput fallback for actions the background PostMessage
+/// channel cannot deliver (an unrecognised key name has no message-level
+/// equivalent). Takes focus first — the same sequence the legacy
+/// ForegroundInput lane uses — so the action still lands.
+fn execute_foreground_sendinput(
+    action: &ComputerAction,
+    window_id: &str,
+    expected: &TargetWindow,
+    should_stop: impl Fn() -> bool,
+) -> Result<(), ActionExecutionError> {
+    input::focus_window(window_id).map_err(ActionExecutionError::Input)?;
+    let focused = input::target_window(window_id).map_err(ActionExecutionError::Input)?;
+    InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, expected, &focused)
+        .map_err(|error| ActionExecutionError::Input(input::InputError::Policy(error)))?;
+    input::execute(action, &focused, should_stop).map_err(ActionExecutionError::Input)
 }
 
 fn write_action_error(
@@ -875,6 +939,13 @@ fn write_action_error(
             "action_not_allowed",
             "The requested action is not supported by this Native Host",
             false,
+        ),
+        ActionExecutionError::Input(input::InputError::ClipboardFailed) => write_platform_error(
+            output,
+            request_id,
+            "action_noop",
+            "The system clipboard could not be written for the paste action",
+            true,
         ),
         ActionExecutionError::Uia(uia::UiaError::StaleTree) => write_platform_error(
             output,
@@ -914,6 +985,28 @@ fn write_action_error(
         ActionExecutionError::Input(input::InputError::InjectionFailed)
         | ActionExecutionError::Uia(uia::UiaError::Unavailable)
         | ActionExecutionError::Uia(uia::UiaError::OperationFailed) => write_platform_error(
+            output,
+            request_id,
+            "action_noop",
+            "Windows did not confirm the requested action",
+            true,
+        ),
+        ActionExecutionError::Post(postmsg::PostError::Cancelled) => write_platform_error(
+            output,
+            request_id,
+            "handoff_required",
+            "The user cancelled the in-flight action",
+            false,
+        ),
+        ActionExecutionError::Post(postmsg::PostError::WindowUnavailable) => write_platform_error(
+            output,
+            request_id,
+            "focus_mismatch",
+            "The target window is unavailable",
+            true,
+        ),
+        ActionExecutionError::Post(postmsg::PostError::PostFailed)
+        | ActionExecutionError::Post(postmsg::PostError::Unsupported) => write_platform_error(
             output,
             request_id,
             "action_noop",

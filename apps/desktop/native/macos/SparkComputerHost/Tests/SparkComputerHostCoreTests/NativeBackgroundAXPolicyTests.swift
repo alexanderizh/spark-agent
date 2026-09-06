@@ -48,9 +48,15 @@ final class NativeBackgroundAXPolicyTests: XCTestCase {
         NativeAXHitTest.target(at: point, in: elements, capability: .pressable)?.id,
         "edge", "closed containment should hit element edges")
     }
+    // One point past the edge snaps back (CloseEnough)…
+    XCTAssertEqual(
+      NativeAXHitTest.target(
+        at: NativeScreenPoint(x: 111, y: 50), in: elements, capability: .pressable)?.id,
+      "edge")
+    // …but a miss beyond the threshold is still a miss.
     XCTAssertNil(
       NativeAXHitTest.target(
-        at: NativeScreenPoint(x: 111, y: 50), in: elements, capability: .pressable))
+        at: NativeScreenPoint(x: 130, y: 50), in: elements, capability: .pressable))
   }
 
   func testHitTestCapabilityMatrix() {
@@ -159,5 +165,74 @@ final class NativeBackgroundAXPolicyTests: XCTestCase {
       """
     let object = try JSONSerialization.jsonObject(with: Data(envelopeJSON.utf8), options: [])
     return try decodeComputerActionEnvelope(object).action
+  }
+
+  // MARK: - CloseEnough snapping
+
+  func testHitTestSnapsToNearbyCapableElementWithinCloseEnough() {
+    let button = element(
+      id: "btn", bounds: NativeRect(x: 100, y: 100, width: 40, height: 20),
+      actions: ["invoke"])
+    let snapped = NativeAXHitTest.target(
+      at: NativeScreenPoint(x: 146, y: 110), in: [button], capability: .pressable)
+    XCTAssertEqual(snapped?.id, "btn")
+
+    let far = NativeAXHitTest.target(
+      at: NativeScreenPoint(x: 160, y: 110), in: [button], capability: .pressable)
+    XCTAssertNil(far)
+  }
+
+  func testHitTestDistanceRejectsInvalidBounds() {
+    XCTAssertNil(NativeAXHitTest.distance(
+      from: NativeScreenPoint(x: 0, y: 0),
+      to: NativeRect(x: 0, y: 0, width: .infinity, height: 10)))
+    XCTAssertEqual(
+      NativeAXHitTest.distance(
+        from: NativeScreenPoint(x: 5, y: 5),
+        to: NativeRect(x: 0, y: 0, width: 10, height: 10)), 0)
+    XCTAssertEqual(
+      NativeAXHitTest.distance(
+        from: NativeScreenPoint(x: 15, y: 0),
+        to: NativeRect(x: 0, y: 0, width: 10, height: 10)), 5)
+  }
+
+  // MARK: - Modifier chords
+
+  func testMouseChordFlagsMapTheSharedVocabulary() {
+    XCTAssertTrue(NativeMouseChord.flags(for: []).isEmpty)
+    XCTAssertTrue(NativeMouseChord.flags(for: ["Meta"]).contains(.maskCommand))
+    let chord = NativeMouseChord.flags(for: ["Control", "Shift"])
+    XCTAssertTrue(chord.contains(.maskControl))
+    XCTAssertTrue(chord.contains(.maskShift))
+    XCTAssertTrue(NativeMouseChord.flags(for: ["Alt"]).contains(.maskAlternate))
+    XCTAssertTrue(NativeMouseChord.flags(for: ["Hyper"]).isEmpty)
+  }
+
+  func testClickWireDecodesModifierChord() throws {
+    let action = try decodeActionForTest(
+      #"{"type":"click","point":{"x":0.5,"y":0.5},"modifiers":["Meta","Shift"]}"#)
+    guard case .click(_, _, _, let modifiers) = action else {
+      return XCTFail("expected click")
+    }
+    XCTAssertEqual(modifiers, ["Meta", "Shift"])
+
+    let plain = try decodeActionForTest(#"{"type":"click","point":{"x":0.5,"y":0.5}}"#)
+    guard case .click(_, _, _, let none) = plain else {
+      return XCTFail("expected click")
+    }
+    XCTAssertTrue(none.isEmpty)
+  }
+
+  // MARK: - Lock screen
+
+  func testLockScreenDetectorReadsConsoleSessionKey() {
+    let locked: CFDictionary =
+      ["CGSSessionScreenIsLocked": true, "kCGSSessionOnConsoleKey": true] as CFDictionary
+    XCTAssertTrue(NativeLockScreen.isLocked(session: locked))
+
+    let unlocked: CFDictionary = ["kCGSSessionOnConsoleKey": true] as CFDictionary
+    XCTAssertFalse(NativeLockScreen.isLocked(session: unlocked))
+
+    XCTAssertFalse(NativeLockScreen.isLocked(session: nil))
   }
 }

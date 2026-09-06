@@ -42,6 +42,8 @@ pub enum InputError {
     InjectionFailed,
     #[error("the user took over the target window")]
     UserTakeover,
+    #[error("the system clipboard could not be written")]
+    ClipboardFailed,
 }
 
 pub fn is_available() -> bool {
@@ -250,6 +252,26 @@ pub fn execute(
                 releases.release_all()?;
             }
         }
+        ComputerAction::PasteText { text, .. } => {
+            // Clipboard delivery (Codex `paste` parity): one Ctrl+V chord instead
+            // of per-unit unicode injection — the reliable channel for long text
+            // and editors that ignore synthesized keyboard input.
+            let policy_action = InputAction::TypeText(text.clone());
+            InputPolicy::validate(&policy_action, expected, &current)?;
+            stop_if_requested(&should_stop)?;
+            write_clipboard(text)?;
+            let control = virtual_key("Control").ok_or(InputError::Unsupported)?;
+            let v = virtual_key("v").ok_or(InputError::Unsupported)?;
+            let mut releases = InputReleaseGuard::default();
+            validate_live_foreground(expected, true)?;
+            send_one(key_event(control, KEYBD_EVENT_FLAGS(0)))?;
+            releases.arm(key_event(control, KEYEVENTF_KEYUP));
+            validate_live_foreground(expected, false)?;
+            send_one(key_event(v, KEYBD_EVENT_FLAGS(0)))?;
+            releases.arm(key_event(v, KEYEVENTF_KEYUP));
+            releases.release_all()?;
+            thread::sleep(Duration::from_millis(40));
+        }
         _ => return Err(InputError::Unsupported),
     }
     stop_if_requested(&should_stop)?;
@@ -335,6 +357,46 @@ fn mouse_event(dx: i32, dy: i32, data: u32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
                 dwExtraInfo: 0,
             },
         },
+    }
+}
+
+/// Writes UTF-16 text to the system clipboard for the paste action. The
+/// clipboard is a user-global resource; an explicit paste action accepts that
+/// it replaces the previous contents (same contract as the macOS host).
+/// Shared with the background PostMessage channel (its paste delivers
+/// WM_PASTE after refilling the clipboard).
+pub(crate) fn write_clipboard(text: &str) -> Result<(), InputError> {
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+    use windows::Win32::System::Ole::CF_UNICODETEXT;
+
+    let mut units: Vec<u16> = text.encode_utf16().collect();
+    units.push(0);
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return Err(InputError::ClipboardFailed);
+        }
+        let result = (|| -> Result<(), InputError> {
+            EmptyClipboard().map_err(|_| InputError::ClipboardFailed)?;
+            let handle = GlobalAlloc(GMEM_MOVEABLE, units.len() * std::mem::size_of::<u16>())
+                .map_err(|_| InputError::ClipboardFailed)?;
+            let destination = GlobalLock(handle);
+            if destination.is_null() {
+                return Err(InputError::ClipboardFailed);
+            }
+            std::ptr::copy_nonoverlapping(units.as_ptr(), destination as *mut u16, units.len());
+            let _ = GlobalUnlock(handle);
+            SetClipboardData(
+                CF_UNICODETEXT.0 as u32,
+                Some(windows::Win32::Foundation::HANDLE(handle.0)),
+            )
+            .map_err(|_| InputError::ClipboardFailed)?;
+            Ok(())
+        })();
+        let _ = CloseClipboard();
+        result
     }
 }
 

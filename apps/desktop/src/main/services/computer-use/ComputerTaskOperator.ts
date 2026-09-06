@@ -10,7 +10,6 @@ import type {
   ComputerUseErrorCode,
   NativeWindowDescriptor,
 } from '@spark/protocol'
-import { computerExecutionLaneForAction } from '@spark/protocol'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type {
   ComputerActionFailureContext,
@@ -713,6 +712,7 @@ function interactionStrategyFor(action: ComputerAction): ComputerInteractionStra
       return 'pointer'
     case 'keypress':
     case 'type_text':
+    case 'paste_text':
       return 'keyboard'
     case 'focus_window':
       return 'window_focus'
@@ -755,6 +755,7 @@ function rememberRecentAction(
 function summarizeAction(action: ComputerAction): Readonly<Record<string, unknown>> {
   switch (action.type) {
     case 'type_text':
+    case 'paste_text':
       return { type: action.type, textLength: action.text.length }
     case 'set_value':
       return { type: action.type, elementId: action.elementId, valueLength: action.value.length }
@@ -793,7 +794,7 @@ function createEnvelope(
     targetAppId: observation.foreground.app.id,
     targetWindowId: observation.foreground.window.id,
     action: decision.action,
-    executionLane: computerExecutionLaneForAction(decision.action),
+    // Lane is inferred by the native host (see ComputerAtomicActionService).
     policyContext: policyContextFor(decision.action, observation, decision.intent),
     intent: decision.intent,
   }
