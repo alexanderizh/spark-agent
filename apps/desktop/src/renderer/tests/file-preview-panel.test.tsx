@@ -11,7 +11,13 @@ import { ToastProvider } from '../design/components/Toast'
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../design/views/ChatView', () => ({
-  MarkdownText: ({ content }: { content: string }) => <div>{content}</div>,
+  MarkdownText: ({
+    content,
+    imageBasePath,
+  }: {
+    content: string
+    imageBasePath?: string | null
+  }) => <div data-image-base-path={imageBasePath ?? ''}>{content}</div>,
 }))
 
 vi.mock('../design/components/MarkdownImage', () => ({
@@ -69,6 +75,10 @@ describe('FilePreviewPanel', () => {
     await vi.waitFor(() => {
       expect(container.querySelector('.file-preview-markdown')).not.toBeNull()
     })
+
+    // markdown 预览须把文件所在目录传给渲染层，文内相对路径图片才能解析加载
+    const markdownBody = container.querySelector('.file-preview-markdown > div')
+    expect(markdownBody?.getAttribute('data-image-base-path')).toBe('/tmp')
   })
 
   it('previews html files in a sandboxed iframe', async () => {

@@ -29,6 +29,12 @@ type Props = {
   src: string
   /** alt 文本，失败占位时也用作文件名 fallback */
   alt: string
+  /**
+   * 相对路径 src 的解析基准目录（例如被预览 markdown 文件所在目录）。
+   * 提供后 `./images/a.png`、`images/a.png`、`../assets/a.png` 会先解析成绝对路径
+   * 再走 safe-file:// 转换；缺省时保持旧行为（相对路径原样透传，由失败占位兜底）。
+   */
+  basePath?: string | null
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
@@ -38,11 +44,12 @@ const SAFE_FILE_SCHEME = 'safe-file'
  *   - 已经是 http(s) / data: / safe-file: 的，原样返回
  *   - file:// URL 提取出路径，转 safe-file://
  *   - 绝对路径：base64url 编码后转 safe-file://
- *   - 相对路径：原样返回（加载会失败，由错误占位兜底）
+ *   - 相对路径：提供 basePath 时解析为绝对路径再转 safe-file://，
+ *     否则原样返回（加载会失败，由错误占位兜底）
  *
  * 导出供行为日志缩略图（ToolLogRichOutput）等渲染侧复用同一转换策略。
  */
-export function resolveImageSrc(src: string): string {
+export function resolveImageSrc(src: string, basePath?: string | null): string {
   if (!src) return src
 
   const trimmed = src.trim()
@@ -74,8 +81,51 @@ export function resolveImageSrc(src: string): string {
     return encodeToSafeFileUrl(trimmed)
   }
 
-  // 相对路径 / 其它，原样交给浏览器，加载失败时由 Error 占位兜底
+  // 相对路径（./images/a.png、images/a.png、../assets/a.png）：以 basePath 为基准
+  // 解析成绝对路径，再走统一的 safe-file:// 转换。
+  if (basePath) {
+    const resolved = joinRelativePath(basePath, trimmed)
+    if (resolved) return encodeToSafeFileUrl(resolved)
+  }
+
+  // 无基准目录 / 其它，原样交给浏览器，加载失败时由 Error 占位兜底
   return trimmed
+}
+
+/** 相对 URL 里的 %XX 转义还原为文件名字面量；非法转义（如 `100%.png`）原样返回。 */
+function decodeRelativePath(path: string): string {
+  if (!path.includes('%')) return path
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return path
+  }
+}
+
+/**
+ * 渲染进程侧没有 node:path，这里按平台分隔符做一次受控的 join + 规范化：
+ * 处理 `./`、`../` 与混用分隔符；`..` 会逐级弹出基准目录段（Windows 盘符段为下限），
+ * 越过根目录或结果为空时返回 null，交回调用方走原样透传分支。
+ */
+function joinRelativePath(baseDir: string, relativePath: string): string | null {
+  const base = baseDir.replace(/[\\/]+$/, '')
+  if (!base) return null
+  const separator = base.includes('\\') ? '\\' : '/'
+  const segments = base.split(/[\\/]+/).filter(Boolean)
+  // 根目录下限：Windows 盘符段（如 C:）不可被 .. 弹出
+  const floor = /^[A-Za-z]:$/.test(segments[0] ?? '') ? 1 : 0
+  for (const segment of decodeRelativePath(relativePath).split(/[\\/]+/)) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      if (segments.length > floor) segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  if (segments.length === 0) return null
+  const joined = segments.join(separator)
+  // POSIX 绝对基准补回根斜杠；Windows 盘符与防御性相对基准直接拼接
+  return base.startsWith('/') ? `/${joined}` : joined
 }
 
 function encodeToSafeFileUrl(absolutePath: string): string {
@@ -98,14 +148,14 @@ function deriveFileName(src: string, alt: string): string {
   return last
 }
 
-export function MarkdownImage({ src, alt }: Props): ReactNode {
+export function MarkdownImage({ src, alt, basePath }: Props): ReactNode {
   const { toast } = useToast()
   const [error, setError] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
-  const resolvedSrc = useMemo(() => resolveImageSrc(src), [src])
+  const resolvedSrc = useMemo(() => resolveImageSrc(src, basePath), [src, basePath])
   const fileName = useMemo(() => deriveFileName(src, alt), [src, alt])
   const isLocal = useMemo(() => resolvedSrc.startsWith(`${SAFE_FILE_SCHEME}:`), [resolvedSrc])
 

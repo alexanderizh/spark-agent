@@ -30,6 +30,7 @@ export const MarkdownText = React.memo(function MarkdownText({
   onMentionClick,
   onFilePreview,
   workspaceRootPath,
+  imageBasePath,
 }: {
   content: string
   isStreaming?: boolean
@@ -38,6 +39,8 @@ export const MarkdownText = React.memo(function MarkdownText({
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
   workspaceRootPath?: string | null | undefined
+  /** 文内相对路径图片（![alt](./a.png)）的解析基准目录，如被预览 md 文件所在目录 */
+  imageBasePath?: string | null | undefined
 }) {
   const { stableBlocks, tailBlocks } = useMemo(() => {
     if (!isStreaming) {
@@ -76,6 +79,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
+        imageBasePath={imageBasePath}
         detectDocumentOutput={detectDocumentOutput}
       />
       <MarkdownBlocks
@@ -86,6 +90,7 @@ export const MarkdownText = React.memo(function MarkdownText({
         onMentionClick={onMentionClick}
         onFilePreview={onFilePreview}
         workspaceRootPath={workspaceRootPath}
+        imageBasePath={imageBasePath}
         detectDocumentOutput={detectDocumentOutput}
         initialDocumentKeys={stableDocumentKeys}
       />
@@ -114,6 +119,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onMentionClick,
   onFilePreview,
   workspaceRootPath,
+  imageBasePath,
   detectDocumentOutput,
   initialDocumentKeys = [],
 }: {
@@ -124,6 +130,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
   onMentionClick?: ((agentId: string) => void) | undefined
   onFilePreview?: FileOpenHandler | undefined
   workspaceRootPath?: string | null | undefined
+  imageBasePath?: string | null | undefined
   detectDocumentOutput: boolean
   initialDocumentKeys?: string[]
 }) {
@@ -145,6 +152,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                 onMentionClick,
                 onFilePreview,
                 workspaceRootPath,
+                imageBasePath,
               ),
             )
           }
@@ -166,6 +174,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   onMentionClick,
                   onFilePreview,
                   workspaceRootPath,
+                  imageBasePath,
                 )}
               </p>
             )
@@ -198,6 +207,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   onMentionClick,
                   onFilePreview,
                   workspaceRootPath,
+                  imageBasePath,
                 )}
               </blockquote>
             )
@@ -221,6 +231,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                       onMentionClick,
                       onFilePreview,
                       workspaceRootPath,
+                      imageBasePath,
                     )}
                   </span>
                 </li>
@@ -241,6 +252,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                             onMentionClick,
                             onFilePreview,
                             workspaceRootPath,
+                            imageBasePath,
                           )}
                         </th>
                       ))}
@@ -257,6 +269,7 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                               onMentionClick,
                               onFilePreview,
                               workspaceRootPath,
+                              imageBasePath,
                             )}
                           </td>
                         ))}
@@ -404,6 +417,7 @@ function renderInlineMarkdown(
   onMentionClick?: (agentId: string) => void,
   onFilePreview?: FileOpenHandler | undefined,
   workspaceRootPath?: string | null,
+  imageBasePath?: string | null,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -428,9 +442,17 @@ function renderInlineMarkdown(
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
     if (link) {
       // 图片走 MarkdownImage 组件：自动把本地路径转 safe-file:// 协议，
-      // 并支持点击预览 / 复制 / 下载 / 失败占位
+      // 并支持点击预览 / 复制 / 下载 / 失败占位；
+      // 提供 imageBasePath 时相对路径图片先按基准目录解析成绝对路径（文档预览场景）
       if (link[1] === '!') {
-        nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
+        nodes.push(
+          <MarkdownImage
+            key={key}
+            src={link[3] ?? ''}
+            alt={link[2] ?? ''}
+            {...(imageBasePath != null ? { basePath: imageBasePath } : {})}
+          />,
+        )
       } else {
         const href = link[3] ?? ''
         const normalizedHref = normalizeFileReference(href)

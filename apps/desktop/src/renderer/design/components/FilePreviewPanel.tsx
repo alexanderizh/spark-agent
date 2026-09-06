@@ -99,6 +99,18 @@ function resolvePreviewPath(filePath: string, workspaceRootPath?: string): strin
 }
 
 /**
+ * 取文件所在目录，作为 markdown 文内相对路径图片（`![alt](./a.png)`）的解析基准。
+ * 渲染进程没有 node:path，这里按分隔符截断；无目录段（裸文件名）或远程 URL 返回 null。
+ */
+function dirnameOf(filePath: string): string | null {
+  if (isRemoteUrl(filePath)) return null
+  const trimmed = filePath.replace(/[\\/]+$/, '')
+  const separatorIndex = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (separatorIndex <= 0) return null
+  return trimmed.slice(0, separatorIndex)
+}
+
+/**
  * base64url 编码绝对路径为 `safe-file://x/<encoded>`。
  * 编码方式与主进程 SafeFileProtocol.toSafeFileUrl、MarkdownImage.encodeToSafeFileUrl 一致。
  */
@@ -223,6 +235,9 @@ export function FilePreviewPanel({
   const previewError = fileType === 'universal' ? (activeViewerLoadState?.error ?? null) : error
   const previewLoading =
     fileType === 'universal' ? viewerSource === null && previewError === null : loading
+  // markdown 预览时把文件所在目录传给渲染层，文内 `![alt](./images/a.png)` 等
+  // 相对路径图片才能解析成绝对路径并经 safe-file:// 加载。
+  const markdownImageBasePath = fileType === 'markdown' ? dirnameOf(resolvedFilePath) : null
 
   // 读取文件内容
   useEffect(() => {
@@ -535,7 +550,10 @@ export function FilePreviewPanel({
         )}
         {!previewLoading && !previewError && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
-            <MarkdownText content={content} />
+            <MarkdownText
+              content={content}
+              {...(markdownImageBasePath != null ? { imageBasePath: markdownImageBasePath } : {})}
+            />
           </div>
         )}
         {!previewLoading && !previewError && fileType === 'text' && content !== null && (
