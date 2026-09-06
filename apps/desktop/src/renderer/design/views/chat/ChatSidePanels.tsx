@@ -4,6 +4,7 @@ import { Dropdown } from 'antd'
 import type { SubAppSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { SubAppIcon } from '../../sub-app/SubAppIcon'
+import { FileTypeIcon } from '../../components/FileDisplay'
 
 // 侧边聊天头部下拉用的最小会话投影：解耦 SideChatPanel 与完整 Session 类型，
 // 由 ChatView 把 sessions 投影成该结构后注入。id 用 string 而非 SessionId brand，
@@ -28,9 +29,14 @@ export type UnifiedSidePanelKind =
   | 'browser'
   // 已发布+启用的 panel 子应用：kind 编码 appId，随应用目录动态增减
   | `subapp:${string}`
+  // 文件预览：kind 编码原始路径（相对/绝对均可，渲染时再解析），多文件可并存多个 tab
+  | `preview:${string}`
 
 /** `subapp:${appId}` 前缀，供宿主视图构造/解析动态 tab kind。 */
 export const SUBAPP_PANEL_KIND_PREFIX = 'subapp:'
+
+/** `preview:${filePath}` 前缀，供宿主视图构造/解析动态文件预览 tab kind。 */
+export const FILE_PREVIEW_PANEL_KIND_PREFIX = 'preview:'
 
 export function subAppPanelKind(appId: string): UnifiedSidePanelKind {
   return `subapp:${appId}`
@@ -40,6 +46,18 @@ export function appIdOfSubAppPanelKind(kind: UnifiedSidePanelKind): string | nul
   if (!kind.startsWith(SUBAPP_PANEL_KIND_PREFIX)) return null
   const appId = kind.slice(SUBAPP_PANEL_KIND_PREFIX.length)
   return appId.length > 0 ? appId : null
+}
+
+/** 由文件路径构造预览 tab kind；同一路径重复打开会聚焦既有 tab（去重键即完整 kind）。 */
+export function filePreviewPanelKind(filePath: string): UnifiedSidePanelKind {
+  return `preview:${filePath}`
+}
+
+/** 从预览 tab kind 还原原始文件路径；非预览 kind 返回 null。 */
+export function filePathOfPreviewPanelKind(kind: UnifiedSidePanelKind): string | null {
+  if (!kind.startsWith(FILE_PREVIEW_PANEL_KIND_PREFIX)) return null
+  const filePath = kind.slice(FILE_PREVIEW_PANEL_KIND_PREFIX.length)
+  return filePath.length > 0 ? filePath : null
 }
 
 // 统一面板快捷项：终端/侧聊/审查/代码/计划 + 内置浏览器。
@@ -118,10 +136,20 @@ const getUnifiedSidePanelMeta = (kind: UnifiedSidePanelKind): UnifiedSidePanelIt
 }
 
 // 动态项 meta：subapp tab 从应用目录取名/图标；目录尚未刷新到（或刚被移除）时给占位。
+// preview tab 以文件名展示（完整路径放 title），图标按扩展名取文件类型图标。
 const getUnifiedSidePanelItemMeta = (
   kind: UnifiedSidePanelKind,
   panelApps: SubAppSummary[],
 ): UnifiedSidePanelItemMeta => {
+  const previewPath = filePathOfPreviewPanelKind(kind)
+  if (previewPath != null) {
+    return {
+      label: previewPath.split(/[\\/]/).pop() ?? previewPath,
+      title: previewPath,
+      shortcutLabel: '打开文件预览',
+      icon: <FileTypeIcon filePath={previewPath} size={14} />,
+    }
+  }
   if (kind.startsWith(SUBAPP_PANEL_KIND_PREFIX)) {
     const appId = kind.slice(SUBAPP_PANEL_KIND_PREFIX.length)
     const app = panelApps.find((item) => item.id === appId)

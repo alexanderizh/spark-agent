@@ -29,6 +29,16 @@
   }
 }
 
+/* 统一侧面板 tab 内嵌模式：宽度交给统一面板托管，填满内容区且不带独立边框/动画 */
+.file-preview-panel.is-tab {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  border-left: none;
+  animation: none;
+}
+
 .file-preview-resize-handle {
   position: absolute;
   top: 0;

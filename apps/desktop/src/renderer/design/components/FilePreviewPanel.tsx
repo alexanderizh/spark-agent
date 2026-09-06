@@ -29,6 +29,7 @@ import {
   resolveViewerLoadSource,
   type ViewerLoadSource,
 } from './filePreviewSource'
+import { canOpenInEditor } from './fileOpenRouting'
 
 const FlyfishFileViewer = lazy(() => import('./OfficeFileViewer'))
 
@@ -41,6 +42,13 @@ type Props = {
   fileType: FileType
   /** 当前会话工作区根目录；用于解析相对路径 */
   workspaceRootPath?: string
+  /**
+   * 展示形态：'panel' = 独立右侧面板（自带宽度与拖拽把手）；
+   * 'tab' = 内嵌统一侧面板 tab（填满宿主容器，宽度由统一面板托管）。
+   */
+  variant?: 'panel' | 'tab'
+  /** 在代码编辑器中打开（可选：仅可编辑文件显示「编辑」入口） */
+  onEdit?: (() => void) | undefined
   /** 关闭面板回调 */
   onClose: () => void
 }
@@ -190,6 +198,8 @@ export function FilePreviewPanel({
   filePath,
   fileType,
   workspaceRootPath,
+  variant = 'panel',
+  onEdit,
   onClose,
 }: Props): ReactNode {
   const [content, setContent] = useState<string | null>(null)
@@ -401,23 +411,25 @@ export function FilePreviewPanel({
 
   return (
     <div
-      className="file-preview-panel"
+      className={`file-preview-panel${variant === 'tab' ? ' is-tab' : ''}`}
       style={{ '--file-preview-width': `${panelWidth}px` } as CSSProperties}
     >
-      <div
-        aria-label="调整预览面板宽度"
-        aria-orientation="vertical"
-        aria-valuemax={FILE_PREVIEW_MAX_WIDTH}
-        aria-valuemin={FILE_PREVIEW_MIN_WIDTH}
-        aria-valuenow={panelWidth}
-        className="file-preview-resize-handle"
-        onDoubleClick={() => updatePanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)}
-        onKeyDown={handleResizeKeyDown}
-        onPointerDown={handleResizeStart}
-        role="separator"
-        tabIndex={0}
-        title="拖拽调整预览宽度"
-      />
+      {variant === 'panel' && (
+        <div
+          aria-label="调整预览面板宽度"
+          aria-orientation="vertical"
+          aria-valuemax={FILE_PREVIEW_MAX_WIDTH}
+          aria-valuemin={FILE_PREVIEW_MIN_WIDTH}
+          aria-valuenow={panelWidth}
+          className="file-preview-resize-handle"
+          onDoubleClick={() => updatePanelWidth(FILE_PREVIEW_DEFAULT_WIDTH)}
+          onKeyDown={handleResizeKeyDown}
+          onPointerDown={handleResizeStart}
+          role="separator"
+          tabIndex={0}
+          title="拖拽调整预览宽度"
+        />
+      )}
       <div
         className="file-preview-header"
         onDoubleClick={(event) => {
@@ -436,6 +448,16 @@ export function FilePreviewPanel({
           </span>
         </div>
         <div className="file-preview-actions">
+          {onEdit != null && canOpenInEditor(filePath) && (
+            <button
+              aria-label="在代码编辑器中打开"
+              className="file-preview-action"
+              title="在代码编辑器中打开"
+              onClick={onEdit}
+            >
+              <Icons.Code size={14} />
+            </button>
+          )}
           <button
             aria-label="使用默认应用打开"
             className="file-preview-action"

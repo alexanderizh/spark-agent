@@ -18,6 +18,7 @@ import { Icons } from '../../Icons'
 import { OPEN_CODE_SEARCH_EVENT } from '../../hooks/useKeyboard'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { FileTypeIcon } from '../FileDisplay'
+import type { PreviewFileType } from '../FileDisplay'
 import { useToast } from '../Toast'
 import { CodeViewerEditor } from './CodeViewerEditor'
 import { CodeViewerDiff } from './CodeViewerDiff'
@@ -88,6 +89,8 @@ export interface CodeViewerPanelProps {
   onGitStatusApplied?: ((status: WorkspaceGitStatusResponse | null) => void) | undefined
   onRefreshGitStatus?: (() => void) | undefined
   onOpenFileFromGit?: ((relativePath: string) => void) | undefined
+  // 工具栏「打开方式」的应用内预览入口（可选：不传则主按钮回落为用默认应用打开）
+  onPreviewFileFromToolbar?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
   // 工作区搜索面板（与文件树 / Git 面板互斥共用同一左侧栏槽位）
   onOpenFileFromSearch: (relativePath: string, lineNumber?: number) => void
 }
@@ -123,6 +126,7 @@ export function CodeViewerPanel({
   onGitStatusApplied,
   onRefreshGitStatus,
   onOpenFileFromGit,
+  onPreviewFileFromToolbar,
   onOpenFileFromSearch,
 }: CodeViewerPanelProps) {
   const resolvedTheme = useResolvedTheme()
@@ -486,6 +490,7 @@ export function CodeViewerPanel({
         minimapEnabled={minimapEnabled}
         onToggleMinimap={() => setMinimapEnabled((v) => !v)}
         onSave={() => void handleSave()}
+        onPreview={onPreviewFileFromToolbar}
       />
 
       {externalChanged && (

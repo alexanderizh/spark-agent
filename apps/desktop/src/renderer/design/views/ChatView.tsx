@@ -164,6 +164,8 @@ export { MarkdownText } from './chat/ChatMarkdown'
 import {
   appIdOfSubAppPanelKind,
   defaultUnifiedSidePanelWidth,
+  filePathOfPreviewPanelKind,
+  filePreviewPanelKind,
   maxSideChatWidthForViewport,
   SideChatPanel,
   type SideChatSessionOption,
@@ -223,6 +225,7 @@ import { isCodeLikeFile } from '../components/code-viewer/codeLanguage'
 import { insertToComposer } from '../components/code-viewer/composerInsert'
 import { buildComposerAttachmentsFromPaths } from '../services/composer-attachments'
 import {
+  canOpenInEditor,
   shouldOpenInEditorByDefault,
   shouldPreviewFirst,
   type FileOpenModeOpts,
@@ -674,7 +677,6 @@ export function ChatView({
     showGitReviewPanel: boolean
     showSideChatPanel: boolean
     showInspector: boolean
-    filePreview: { filePath: string; fileType: PreviewFileType } | null
     sideChatSessionId: SessionId | null
     activeHtmlPanelBlockId: string | null
     codeFiles: OpenCodeFile[]
@@ -691,7 +693,6 @@ export function ChatView({
     showGitReviewPanel: false,
     showSideChatPanel: false,
     showInspector: false,
-    filePreview: null,
     sideChatSessionId: null,
     activeHtmlPanelBlockId: null,
     codeFiles: [],
@@ -713,10 +714,11 @@ export function ChatView({
 
   const openUnifiedSidePanel = useCallback(
     (kind: UnifiedSidePanelKind) => {
-      // 互斥：会话检查器 / 配置面板 / 统一面板 / 文件预览 同一时刻只显示一个
+      // 互斥：会话检查器 / 配置面板 / 统一面板 同一时刻只显示一个。
+      // 文件预览是统一面板的动态 tab（preview:<path>），打开时不关闭其他 tab，
+      // 编辑器等既有 tab 原样保留，切回即可继续。
       setShowInspector(false)
       setShowConfigPanel(false)
-      setFilePreview(null)
       setUnifiedPanelOpen(true)
       if (kind !== 'html') clearHtmlPresentation()
       setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
@@ -769,7 +771,7 @@ export function ChatView({
   }, [directoryLoaded, panelApps, unifiedSideTabs, closeUnifiedSidePanel])
 
   // 头部「配置面板」按钮：打开独立的 ChatConfigPanel 侧栏（不再嵌入统一面板容器）。
-  // 与 inspector / 统一面板 / 文件预览互斥。
+  // 与 inspector / 统一面板互斥。
   const toggleConfigPanel = useCallback(() => {
     setShowConfigPanel((prev) => {
       const next = !prev
@@ -777,13 +779,13 @@ export function ChatView({
         setShowInspector(false)
         setUnifiedPanelOpen(false)
         clearHtmlPresentation()
-        setFilePreview(null)
       }
       return next
     })
   }, [clearHtmlPresentation])
 
   // 头部「统一侧边面板」按钮：toggle 整个统一面板（terminal/side-chat/review/plan 容器）。
+  // 仅隐藏容器，不动 unifiedSideTabs —— 重新展开后 tab（含文件预览）原样恢复。
   const toggleUnifiedPanel = useCallback(() => {
     if (unifiedPanelOpen) clearHtmlPresentation()
     setUnifiedPanelOpen((prev) => {
@@ -791,7 +793,6 @@ export function ChatView({
       if (next) {
         setShowInspector(false)
         setShowConfigPanel(false)
-        setFilePreview(null)
       }
       return next
     })
@@ -1072,7 +1073,6 @@ export function ChatView({
       setUnifiedPanelOpen(false)
       setUnifiedSideTabs([])
       setActiveUnifiedSideTab(null)
-      setFilePreview(null)
       setSideChatSessionId(null)
       setActiveHtmlPanelBlockId(null)
       setActiveHtmlRemotePresentation(null)
@@ -1093,7 +1093,6 @@ export function ChatView({
       setUnifiedPanelOpen(false)
       setUnifiedSideTabs([])
       setActiveUnifiedSideTab(null)
-      setFilePreview(null)
       setSideChatSessionId(null)
       setActiveHtmlPanelBlockId(null)
       setActiveHtmlRemotePresentation(null)
@@ -1112,7 +1111,6 @@ export function ChatView({
     setUnifiedPanelOpen(snap.unifiedPanelOpen)
     setUnifiedSideTabs(snap.unifiedSideTabs)
     setActiveUnifiedSideTab(snap.activeUnifiedSideTab)
-    setFilePreview(snap.filePreview)
     setSideChatSessionId(snap.sideChatSessionId)
     setActiveHtmlPanelBlockId(snap.activeHtmlPanelBlockId)
     setActiveHtmlRemotePresentation(null)
@@ -1367,11 +1365,6 @@ export function ChatView({
   }, [activeVisibleMessages, toast])
 
   // ── 文件预览状态 ──
-  const [filePreview, setFilePreview] = useState<{
-    filePath: string
-    fileType: PreviewFileType
-  } | null>(null)
-
   // ── 「代码」tab：应用内代码查看/编辑器（Monaco）──
   // 受控于 ChatView 以便切会话快照存盘；内容运行时态（读取/脏标/外部变更）在
   // CodeViewerPanel 内部的 useCodeViewerFiles 管理，与 tabs 增删解耦。
@@ -1401,7 +1394,6 @@ export function ChatView({
     showGitReviewPanel,
     showSideChatPanel,
     showInspector,
-    filePreview,
     sideChatSessionId,
     activeHtmlPanelBlockId,
     codeFiles,
@@ -1527,7 +1519,9 @@ export function ChatView({
     return `${root.replace(/[\\/]+$/, '')}${sep}${norm}`
   }, [])
 
-  // 在「代码」tab 打开一个文件（已存在则更新 diff/行号/变更类型并激活）
+  // 在「代码」tab 打开一个文件（已存在则更新 diff/行号/变更类型并激活）。
+  // 打开即重置视图模式：默认源码面板，仅 Git 面板/审查面板等明确「看改动」的入口传 'diff'，
+  // 避免上一次的 diff 模式粘住，让后续从文件树/聊天卡片等入口打开文件也停在 git 改动视图。
   const openInCodeTab = useCallback(
     (
       filePath: string,
@@ -1535,6 +1529,7 @@ export function ChatView({
         lineNumber?: number
         diff?: string
         changeType?: OpenCodeFile['changeType']
+        viewMode?: CodeViewMode
       },
     ) => {
       const absPath = resolveAbsCodePath(filePath)
@@ -1571,13 +1566,13 @@ export function ChatView({
             ],
       )
       setActiveCodePath(absPath)
-      // 收起其他面板 + 打开统一面板的 code tab
+      setCodeViewMode(opts?.viewMode ?? 'source')
+      // 收起独立面板 + 打开统一面板的 code tab；其余统一面板 tab（含文件预览）原样保留
       setShowInspector(false)
       setShowConfigPanel(false)
       setShowGitReviewPanel(false)
       setShowSideChatPanel(false)
       setShowTerminalPanel(false)
-      setFilePreview(null)
       clearHtmlPresentation()
       setShowCheckpointTimeline(false)
       setUnifiedSideTabs((tabs) => (tabs.includes('code') ? tabs : [...tabs, 'code']))
@@ -1629,27 +1624,24 @@ export function ChatView({
         openInCodeTab(filePath)
         return
       }
-      // 预览类型以扩展名判定为准（调用方传入的 fileType 可能是 'text' 兜底值）
-      setShowInspector(false)
-      setShowConfigPanel(false)
-      setShowGitReviewPanel(false)
-      setShowSideChatPanel(false)
-      setShowTerminalPanel(false)
-      setUnifiedPanelOpen(false)
-      clearHtmlPresentation()
+      // 预览是统一面板的动态 tab（每个文件一个 tab，可多层并存）：打开时不再收起统一面板，
+      // 编辑器/终端等既有 tab 原样保留；关闭预览 tab 会自动回落到上一个 tab。
+      // 预览类型以扩展名判定为准（调用方传入的 fileType 可能是 'text' 兜底值），tab 自描述
+      // 只编码路径，渲染时再按扩展名推导 fileType。
       setShowCheckpointTimeline(false)
-      setFilePreview({ filePath, fileType: getPreviewFileType(filePath) ?? fileType })
+      // tab 去重键统一为绝对路径：资源管理器传相对路径、工具栏/侧聊传绝对路径、聊天卡片
+      // 传工具输出的原始路径——同一文件从不同入口打开时聚焦同一个 tab，而非开出两个同名 tab。
+      openUnifiedSidePanel(filePreviewPanelKind(resolveAbsCodePath(filePath)))
     },
-    [clearHtmlPresentation, openInCodeTab],
+    [openInCodeTab, openUnifiedSidePanel, resolveAbsCodePath],
   )
 
-  // 打开会话检查器：与配置面板、统一面板、文件预览互斥（同一时刻只显示一个）
+  // 打开会话检查器：与配置面板、统一面板互斥（同一时刻只显示一个）
   const openInspector = useCallback(() => {
     setShowInspector(true)
     setShowConfigPanel(false)
     setUnifiedPanelOpen(false)
     clearHtmlPresentation()
-    setFilePreview(null)
   }, [clearHtmlPresentation])
 
   const pickProjectFolder = useCallback(async () => {
@@ -1803,6 +1795,9 @@ export function ChatView({
   )
   const activeFilePreviewRootPath =
     activeSessionWorkspaceRootPath ?? activeWorkspace?.rootPath ?? null
+  // 当前激活 tab 若是文件预览（preview:<path>），解析出文件路径供渲染分支使用
+  const previewTabPath =
+    activeUnifiedSideTab != null ? filePathOfPreviewPanelKind(activeUnifiedSideTab) : null
   // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
   workspaceRootRef.current = activeSessionWorkspaceRootPath ?? activeWorkspace?.rootPath ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
@@ -2313,7 +2308,6 @@ export function ChatView({
     showConfigPanel,
     showInspector,
     showTerminalPanel,
-    filePreview,
   ])
 
   const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
@@ -2794,7 +2788,6 @@ export function ChatView({
     async (options: { replace?: boolean } = {}) => {
       setShowInspector(false)
       setShowConfigPanel(false)
-      setFilePreview(null)
       setUnifiedPanelOpen(true)
       setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
       setActiveUnifiedSideTab('side-chat')
@@ -3043,7 +3036,6 @@ export function ChatView({
                 setUnifiedPanelOpen(false)
                 clearHtmlPresentation()
                 setShowConfigPanel(false)
-                setFilePreview(null)
               }
             }}
             onToggleConfig={toggleConfigPanel}
@@ -3135,7 +3127,6 @@ export function ChatView({
                     setUnifiedPanelOpen(false)
                     clearHtmlPresentation()
                     setShowConfigPanel(false)
-                    setFilePreview(null)
                   }
                   if (v) setShowGitReviewPanel(false)
                 }}
@@ -3437,13 +3428,12 @@ export function ChatView({
                 gitStatus={gitStatus}
                 onGitStatusApplied={applyGitStatus}
                 onRefreshGitStatus={() => void refreshGitStatus()}
-                onOpenFileFromGit={(rel) => {
-                  setCodeViewMode('diff')
-                  openInCodeTab(rel)
-                }}
+                onOpenFileFromGit={(rel) => openInCodeTab(rel, { viewMode: 'diff' })}
+                onPreviewFileFromToolbar={(path, type) =>
+                  handleFilePreview(path, type, { mode: 'preview' })
+                }
                 onOpenFileFromSearch={(rel, line) => {
-                  // 搜索结果命中必为文本文件：编辑器打开并定位到匹配行
-                  setCodeViewMode('source')
+                  // 搜索结果命中必为文本文件：编辑器打开并定位到匹配行（视图模式由 openInCodeTab 回落为源码）
                   openInCodeTab(rel, line != null ? { lineNumber: line } : undefined)
                 }}
               />
@@ -3458,8 +3448,7 @@ export function ChatView({
                 onClose={() => closeUnifiedSidePanel('review')}
                 onOpenInEditor={(path) => {
                   // 三连跳：切代码面板 → 展示 Git 面板 → 打开该文件 diff 视图可直接编辑
-                  setCodeViewMode('diff')
-                  openInCodeTab(path)
+                  openInCodeTab(path, { viewMode: 'diff' })
                   openGitPanel()
                 }}
               />
@@ -3607,6 +3596,26 @@ export function ChatView({
                   </div>
                 )}
               </SideChatPanel>
+            ) : previewTabPath != null ? (
+              // 文件预览 tab：每个文件一个独立 tab（可多层并存），关闭后自动回落上一个 tab。
+              // key 取路径：切换不同预览文件时重建组件，避免上一个文件的内容/加载态串扰。
+              <FilePreviewPanel
+                key={previewTabPath}
+                variant="tab"
+                filePath={previewTabPath}
+                fileType={getPreviewFileType(previewTabPath) ?? 'text'}
+                {...(activeFilePreviewRootPath != null
+                  ? { workspaceRootPath: activeFilePreviewRootPath }
+                  : {})}
+                onEdit={
+                  canOpenInEditor(previewTabPath)
+                    ? () => openInCodeTab(previewTabPath)
+                    : undefined
+                }
+                onClose={() => {
+                  if (activeUnifiedSideTab != null) closeUnifiedSidePanel(activeUnifiedSideTab)
+                }}
+              />
             ) : activeUnifiedSideTab != null &&
               activeUnifiedSideTab.startsWith('subapp:') &&
               appIdOfSubAppPanelKind(activeUnifiedSideTab) != null ? (
@@ -3616,17 +3625,6 @@ export function ChatView({
             )}
           </UnifiedSessionSidePanel>
         )}
-
-      {filePreview != null && (
-        <FilePreviewPanel
-          filePath={filePreview.filePath}
-          fileType={filePreview.fileType}
-          {...(activeFilePreviewRootPath != null
-            ? { workspaceRootPath: activeFilePreviewRootPath }
-            : {})}
-          onClose={() => setFilePreview(null)}
-        />
-      )}
 
       <CheckpointTimelinePanel
         sessionId={active}
