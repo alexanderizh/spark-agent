@@ -112,6 +112,7 @@ function errorMessage(err: unknown): string {
 function toInsertParams(event: AgentEvent): {
   id: string
   sessionId: string
+  runId?: string
   turnId?: string
   eventType: string
   eventJson: string
@@ -119,6 +120,7 @@ function toInsertParams(event: AgentEvent): {
   return {
     id: event.id,
     sessionId: event.sessionId,
+    ...(event.type === 'workflow_progress' && event.runId != null ? { runId: event.runId } : {}),
     ...(event.turnId != null ? { turnId: event.turnId } : {}),
     eventType: event.type,
     eventJson: JSON.stringify(event),

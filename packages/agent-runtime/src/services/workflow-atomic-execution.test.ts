@@ -44,6 +44,7 @@ import {
   getWorkflowToolInvocationSpec,
   memberDisallowedToolsFromConfig,
   buildWorkflowProgressNodes,
+  buildWorkflowProgressNodeMetas,
   WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS,
   shouldAttachWorkflowSessionMcp,
 } from './session-workflow-helpers.js'
@@ -1258,5 +1259,37 @@ describe('buildWorkflowProgressNodes', () => {
       terminal: true,
     })
     expect(nodes[0]!.outputPreview).toBe(`${'x'.repeat(WORKFLOW_PROGRESS_PREVIEW_MAX_CHARS)}…`)
+  })
+})
+
+describe('buildWorkflowProgressNodeMetas', () => {
+  it('不把空绑定或失效绑定的 Agent 节点展示为宿主身份', () => {
+    const metas = buildWorkflowProgressNodeMetas(
+      [
+        node('agent'),
+        { ...node('agent', { agentId: 'deleted-agent' }), id: 'stale-agent' },
+        {
+          ...node('agent', { agentId: 'writer', modelId: 'node-model' }),
+          id: 'valid-agent',
+        },
+      ],
+      [
+        { id: 'host-agent', name: 'Host', modelId: 'host-model' },
+        { id: 'writer', name: 'Writer', modelId: 'writer-model' },
+      ],
+    )
+
+    expect(metas).toEqual([
+      { nodeId: 'n-agent', title: '节点-agent', kind: 'agent' },
+      { nodeId: 'stale-agent', title: '节点-agent', kind: 'agent' },
+      {
+        nodeId: 'valid-agent',
+        title: '节点-agent',
+        kind: 'agent',
+        agentId: 'writer',
+        agentName: 'Writer',
+        modelId: 'node-model',
+      },
+    ])
   })
 })

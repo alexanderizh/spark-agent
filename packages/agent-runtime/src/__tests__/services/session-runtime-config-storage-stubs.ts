@@ -9,3 +9,15 @@ export class SessionRuntimeConfigSubAppRepositoryStub {}
 export class SessionRuntimeConfigTurnPerfRepositoryStub {
   recordFinal(): void {}
 }
+
+export class SessionRuntimeConfigCustomToolRepositoryStub {
+  ensureVersionHistory(): void {}
+
+  listEnabled(): never[] {
+    return []
+  }
+}
+
+export class SessionRuntimeConfigToolInvocationRepositoryStub {}
+
+export class SessionRuntimeConfigSessionHistoryRepositoryStub {}

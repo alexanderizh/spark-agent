@@ -425,6 +425,11 @@ export interface WorkflowProgressNode {
 export interface WorkflowProgressEvent extends BaseEvent {
   type: 'workflow_progress'
   workflowId: string
+  /**
+   * 稳定运行标识。同一 workflow run 可能在失败或中断后跨 turn 续跑，renderer 必须用
+   * runId 归并实时快照，不能只依赖 turnId。可选是为了兼容升级前已持久化的历史事件。
+   */
+  runId?: string
   runStatus: 'working' | 'completed' | 'failed' | 'canceled'
   nodes: WorkflowProgressNode[]
 }

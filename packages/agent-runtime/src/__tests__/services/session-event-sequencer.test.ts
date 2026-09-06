@@ -44,6 +44,31 @@ describe('SessionEventSequencer', () => {
     expect(order).toEqual(['persist', 'publish'])
   })
 
+  it('persists workflow progress with its stable run id', () => {
+    const event: AgentEvent = {
+      id: 'workflow-progress-1',
+      type: 'workflow_progress',
+      sessionId: 'session-1',
+      turnId: 'turn-2',
+      timestamp: '2026-09-06T00:00:00.000Z',
+      seq: 9,
+      workflowId: 'workflow-1',
+      runId: 'run-1',
+      runStatus: 'working',
+      nodes: [],
+    }
+    const repo = { insert: vi.fn() }
+
+    persistAndPublishAgentEvent(repo, event, vi.fn())
+
+    expect(repo.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'run-1',
+        eventJson: expect.stringContaining('"runId":"run-1"'),
+      }),
+    )
+  })
+
   it('does not publish an event when persistence fails', () => {
     const event = makeEvent('event-1', 7)
     const publish = vi.fn()

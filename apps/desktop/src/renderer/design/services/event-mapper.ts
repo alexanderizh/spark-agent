@@ -389,9 +389,11 @@ export type UIBlock =
       reason: 'concluded' | 'canceled' | 'max_rounds'
     }
   | {
-      /** workflow_run 一次调用期间的实时节点进度清单（workflow_progress 事件驱动，原地更新）。 */
+      /** workflow_run 的实时节点进度清单（workflow_progress 事件驱动，按 runId 更新）。 */
       kind: 'workflow_progress'
       workflowId: string
+      /** 稳定运行标识；可选以兼容未持久化 runId 的旧 workflow_progress 事件。 */
+      runId?: string
       runStatus: 'working' | 'completed' | 'failed' | 'canceled'
       nodes: WorkflowProgressNode[]
     }
@@ -547,6 +549,25 @@ function mergeToolSchemaObservation(
   if (current == null) return patch
   if (patch == null) return current
   return { ...current, ...patch }
+}
+
+function canContinueLegacyWorkflowProgress(
+  previous: readonly WorkflowProgressNode[],
+  next: readonly WorkflowProgressNode[],
+): boolean {
+  const settledNodeIds = new Set(
+    previous
+      .filter((node) => node.status === 'completed' || node.status === 'skipped')
+      .map((node) => node.nodeId),
+  )
+  if (settledNodeIds.size === 0) return false
+
+  const nextSettledNodeIds = new Set(
+    next
+      .filter((node) => node.status === 'completed' || node.status === 'skipped')
+      .map((node) => node.nodeId),
+  )
+  return [...settledNodeIds].every((nodeId) => nextSettledNodeIds.has(nodeId))
 }
 
 /** 压缩卡片的可合并字段；context_compaction 事件与旧版摘要分流共用此形状。 */
@@ -1467,23 +1488,36 @@ export class MessageBuilder {
 
       case 'workflow_progress': {
         // workflow_run 每次节点开始/完成/失败都重发一份完整节点列表（见 session.service.ts
-        // 的 emitWorkflowProgress），不是增量——直接整块替换即可，不需要合并。一个 turn 内
-        // 只会有一次 workflow_run，所以按 turnId 找现有 block、没有就新建一个。
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
-        const existing = msg.blocks.find(
-          (b): b is Extract<UIBlock, { kind: 'workflow_progress' }> =>
-            b.kind === 'workflow_progress',
-        )
+        // 的 emitWorkflowProgress），不是增量。Run 可能在中断后跨 turn 续跑，因此优先按
+        // runId 跨消息定位；旧事件没有 runId 时，只保守复用最近的同 workflowId working 卡。
+        const existing = this.findWorkflowProgressBlock(event)
         if (existing != null) {
-          existing.runStatus = event.runStatus
-          existing.nodes = event.nodes
-        } else {
-          msg.blocks.push({
-            kind: 'workflow_progress',
-            workflowId: event.workflowId,
+          const nextBlock: Extract<UIBlock, { kind: 'workflow_progress' }> = {
+            ...existing.block,
+            ...(event.runId != null ? { runId: event.runId } : {}),
             runStatus: event.runStatus,
             nodes: event.nodes,
-          })
+          }
+          // MessageBuilder 的消息/blocks 通常原地维护，但跨 turn 命中的卡可能已不在最近消息中；
+          // 必须替换 blocks 引用，才能穿过 ChatView 的 React.memo 比较器刷新旧消息行。
+          existing.message.blocks = existing.message.blocks.map((block, index) =>
+            index === existing.blockIndex ? nextBlock : block,
+          )
+          if (!existing.message.eventIds.includes(event.id)) {
+            existing.message.eventIds = [...existing.message.eventIds, event.id]
+          }
+        } else {
+          const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+          msg.blocks = [
+            ...msg.blocks,
+            {
+              kind: 'workflow_progress',
+              workflowId: event.workflowId,
+              ...(event.runId != null ? { runId: event.runId } : {}),
+              runStatus: event.runStatus,
+              nodes: event.nodes,
+            },
+          ]
         }
         break
       }
@@ -2173,6 +2207,60 @@ export class MessageBuilder {
     }
     if (event?.turnId == null) return undefined
     return this.messages.find((m) => m.role === 'assistant' && m.turnId === event.turnId)
+  }
+
+  private findWorkflowProgressBlock(event: {
+    turnId: string
+    workflowId: string
+    runId?: string
+    nodes: WorkflowProgressNode[]
+  }): {
+    message: UIMessage
+    block: Extract<UIBlock, { kind: 'workflow_progress' }>
+    blockIndex: number
+  } | null {
+    const findLatest = (
+      predicate: (
+        block: Extract<UIBlock, { kind: 'workflow_progress' }>,
+        message: UIMessage,
+      ) => boolean,
+    ) => {
+      for (let messageIndex = this.messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+        const message = this.messages[messageIndex]
+        if (message == null || message.role !== 'assistant') continue
+        for (let blockIndex = message.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+          const block = message.blocks[blockIndex]
+          if (block?.kind === 'workflow_progress' && predicate(block, message)) {
+            return { message, block, blockIndex }
+          }
+        }
+      }
+      return null
+    }
+
+    if (event.runId != null) {
+      const exact = findLatest((block) => block.runId === event.runId)
+      if (exact != null) return exact
+    }
+
+    // 同一 turn 内仍按 workflowId 更新，兼容旧事件及尚未携带 runId 的发送端。
+    const sameTurn = findLatest(
+      (block, message) =>
+        message.turnId === event.turnId &&
+        block.workflowId === event.workflowId &&
+        (event.runId == null || block.runId == null || block.runId === event.runId),
+    )
+    if (sameTurn != null) return sameTurn
+
+    // 历史兼容仅触碰没有 runId 的 working 卡，并要求新快照保留全部已完成/跳过节点。
+    // 新 Run 通常从空快照开始，不会误覆盖已有进度；零进度旧卡则宁可保留两张也不猜测。
+    return findLatest(
+      (block) =>
+        block.runId == null &&
+        block.workflowId === event.workflowId &&
+        block.runStatus === 'working' &&
+        canContinueLegacyWorkflowProgress(block.nodes, event.nodes),
+    )
   }
 
   private applyAgentSnapshot(

@@ -363,6 +363,7 @@ import {
   runWorkflowVerifyNode,
   buildWorkflowToolInvocationInstruction,
   buildWorkflowProgressNodes,
+  buildWorkflowProgressNodeMetas,
   formatWorkflowMcpToolResult,
   formatWorkflowPlatformToolResult,
   getWorkflowToolInvocationSpec,
@@ -409,7 +410,6 @@ import { SessionQuestionGate } from './session-question-gate.js'
 import {
   executeWorkflowAgentPlan,
   getWorkflowNodesDeep,
-  getWorkflowNodeEffectiveWorkerId,
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
   type NormalizedWorkflowGraph,
@@ -6992,52 +6992,15 @@ export class SessionService {
               const runRepo = new WorkflowRunRepository(this.db)
               const graphNodeIds = new Set(ctx.workflowGraph!.nodes.map((n) => n.id))
               // 每个节点实际会用到的派发目标 + 生效模型（节点自己的 config.modelId 优先，
-              // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件
-              // 渲染实时进度面板时，展示的模型跟本次实际执行一致，而不是这个 agent 的静态默认值。
-              const membersById = new Map(ctx.members.map((m) => [m.id, m]))
-              const nodeMeta = new Map<
-                string,
-                {
-                  title: string
-                  kind: string
-                  agentId?: string
-                  agentName?: string
-                  modelId?: string
-                }
-              >()
-              const availableWorkerIds = new Set(ctx.members.map((m) => m.id))
-              for (const node of ctx.workflowGraph!.nodes) {
-                const agentId =
-                  getWorkflowNodeEffectiveWorkerId(node, {
-                    fallbackAgentId: ctx.hostAgent.id,
-                    availableWorkerIds,
-                  }) ?? undefined
-                const member = agentId != null ? membersById.get(agentId) : undefined
-                const modelId =
-                  typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
-                    ? node.config.modelId.trim()
-                    : (member?.modelId ?? undefined)
-                nodeMeta.set(node.id, {
-                  title: node.title,
-                  kind: node.kind,
-                  ...(agentId != null ? { agentId } : {}),
-                  ...(member?.name != null ? { agentName: member.name } : {}),
-                  ...(modelId != null ? { modelId } : {}),
-                })
-              }
+              // 否则回落到该 agentId 在花名册里的默认值）——供下面的 workflow_progress 事件。
+              // 空绑定或失效绑定不回落宿主，须与执行器的 missing_agent_id 语义保持一致。
+              const progressNodeMetas = buildWorkflowProgressNodeMetas(
+                ctx.workflowGraph!.nodes,
+                ctx.members,
+              )
               const emitWorkflowProgress = (snap: WorkflowRunSnapshot): void => {
                 const nodes = buildWorkflowProgressNodes({
-                  metas: ctx.workflowGraph!.nodes.map((node) => {
-                    const meta = nodeMeta.get(node.id)
-                    return {
-                      nodeId: node.id,
-                      title: meta?.title ?? node.id,
-                      kind: meta?.kind ?? node.kind,
-                      ...(meta?.agentId != null ? { agentId: meta.agentId } : {}),
-                      ...(meta?.agentName != null ? { agentName: meta.agentName } : {}),
-                      ...(meta?.modelId != null ? { modelId: meta.modelId } : {}),
-                    }
-                  }),
+                  metas: progressNodeMetas,
                   executions: snap.executions,
                   atomicExecutions: snap.atomicExecutions,
                   runningNodeIds: new Set(snap.runningNodeIds),
@@ -7062,6 +7025,7 @@ export class SessionService {
                     timestamp: new Date().toISOString(),
                     seq: 0,
                     workflowId: ctx.workflowId ?? '',
+                    ...(runId != null ? { runId } : {}),
                     runStatus: snap.status,
                     nodes,
                   },

@@ -69,7 +69,7 @@ import type {
   WorkflowAgentExecutionRecord,
   WorkflowAtomicNodeExecutionRecord,
 } from './workflow-executor.js'
-import { getWorkflowNodeWorkerId } from './workflow-executor.js'
+import { getWorkflowNodeEffectiveWorkerId, getWorkflowNodeWorkerId } from './workflow-executor.js'
 import { buildWorkflowSystemPrompt } from './workflow-system-prompt.js'
 import type { WorkflowExecutionMode } from './workflow-system-prompt.js'
 
@@ -963,6 +963,37 @@ export interface WorkflowProgressNodeMetaInput {
   agentId?: string
   agentName?: string
   modelId?: string
+}
+
+/**
+ * 解析 workflow_progress 使用的静态节点身份。
+ *
+ * 托管 workflow_run 不允许空绑定或失效绑定回落到宿主 Agent；这里必须与执行器使用
+ * 相同的 availableWorkerIds 语义，否则进度面板会把最终以 missing_agent_id 失败的节点
+ * 错误展示成由宿主 Agent 执行。
+ */
+export function buildWorkflowProgressNodeMetas(
+  nodes: Iterable<NormalizedWorkflowNode>,
+  members: Iterable<Pick<AgentItem, 'id' | 'name' | 'modelId'>>,
+): WorkflowProgressNodeMetaInput[] {
+  const membersById = new Map([...members].map((member) => [member.id, member]))
+  const availableWorkerIds = new Set(membersById.keys())
+  return [...nodes].map((node) => {
+    const agentId = getWorkflowNodeEffectiveWorkerId(node, { availableWorkerIds })
+    const member = agentId != null ? membersById.get(agentId) : undefined
+    const modelId =
+      typeof node.config.modelId === 'string' && node.config.modelId.trim().length > 0
+        ? node.config.modelId.trim()
+        : (member?.modelId ?? undefined)
+    return {
+      nodeId: node.id,
+      title: node.title,
+      kind: node.kind,
+      ...(agentId != null ? { agentId } : {}),
+      ...(member?.name != null ? { agentName: member.name } : {}),
+      ...(modelId != null ? { modelId } : {}),
+    }
+  })
 }
 
 /** 终态快照每节点输出预览的截断上限（控制事件体积）。 */

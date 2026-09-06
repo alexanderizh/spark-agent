@@ -6,7 +6,10 @@ import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
 import * as keystore from '@spark/shared/keystore'
 import {
+  SessionRuntimeConfigCustomToolRepositoryStub,
+  SessionRuntimeConfigSessionHistoryRepositoryStub,
   SessionRuntimeConfigSubAppRepositoryStub,
+  SessionRuntimeConfigToolInvocationRepositoryStub,
   SessionRuntimeConfigTurnPerfRepositoryStub,
 } from './session-runtime-config-storage-stubs.js'
 import {
@@ -1365,6 +1368,9 @@ vi.mock('@spark/storage', () => {
   }
 
   return {
+    CustomToolRepository: SessionRuntimeConfigCustomToolRepositoryStub,
+    SessionHistoryRepository: SessionRuntimeConfigSessionHistoryRepositoryStub,
+    ToolInvocationRepository: SessionRuntimeConfigToolInvocationRepositoryStub,
     SubAppRepository: SessionRuntimeConfigSubAppRepositoryStub,
     TurnPerfRepository: SessionRuntimeConfigTurnPerfRepositoryStub,
     SessionRepository,
