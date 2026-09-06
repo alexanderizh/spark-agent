@@ -213,6 +213,12 @@ export type {
 } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
 export {
+  SCHEDULED_TASK_SESSION_TITLE_PREFIX,
+  deriveScheduledTaskSessionTitle,
+  isScheduledTaskSyntheticTitle,
+  shouldDeriveSessionTitleFromScheduledTurn,
+} from './services/session/session-pure-utils.js'
+export {
   ensureSessionWorkspaceRootPath,
   ensureSessionWorkspaceRootPathSync,
   isNoProjectWorkspace,

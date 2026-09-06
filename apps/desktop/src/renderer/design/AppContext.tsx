@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { useGlobalDialogEnterConfirm } from './hooks/useAppDialogKeyboard'
 import { PromptDialog } from './components/PromptDialog'
+import type { PromptDialogExtraAction } from './components/PromptDialog'
 import { applyArcoTheme } from './arcoTheme'
 import {
   DEFAULT_EMPTY_HERO_THEME,
@@ -75,6 +76,8 @@ export type PromptOptions = {
   placeholder?: string
   confirmText?: string
   cancelText?: string
+  /** 输入框下方的附加动作（如重命名弹窗的「提取标题」），点击后把结果回填输入框。 */
+  extraAction?: PromptDialogExtraAction
 }
 
 export type Tweaks = {
@@ -604,6 +607,7 @@ function DialogHost({
         placeholder={promptRequest?.placeholder}
         confirmText={promptRequest?.confirmText}
         cancelText={promptRequest?.cancelText}
+        extraAction={promptRequest?.extraAction}
         onOpenChange={(open) => {
           if (open || promptRequest == null) return
           onPromptCancel()

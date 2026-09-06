@@ -56,6 +56,7 @@ import type {
   SessionQueueRuntimeSelection,
   SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
+  SessionExtractTitleResponse,
   SessionGetQueueResponse,
   SessionGoalResponse,
   SessionId,
@@ -10448,6 +10449,10 @@ export class SessionService {
     cliSparkOverride?: CliSparkOverride | null
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     return this.getCrudController().updateSession(params)
+  }
+
+  async extractSessionTitle(sessionId: string): Promise<SessionExtractTitleResponse> {
+    return this.getCrudController().extractSessionTitle(sessionId)
   }
 
   async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {

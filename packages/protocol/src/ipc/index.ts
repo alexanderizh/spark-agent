@@ -549,6 +549,24 @@ export interface SessionUpdateResponse {
   session: SessionListResponse['sessions'][number]
 }
 
+/** 重命名弹窗「提取标题」：按会话模型（缺省回退 Provider 默认模型）从会话内容提取标题。 */
+export interface SessionExtractTitleRequest {
+  sessionId: SessionId
+}
+
+/** 失败原因稳定码：渲染端按码本地化提示，不把内部英文串直接抛给用户。 */
+export type SessionExtractTitleFailureCode =
+  | 'session_not_found'
+  | 'provider_missing'
+  | 'provider_no_api_key'
+  | 'model_missing'
+  | 'dialogue_empty'
+  | 'title_empty'
+
+export type SessionExtractTitleResponse =
+  | { ok: true; title: string }
+  | { ok: false; code: SessionExtractTitleFailureCode }
+
 export interface SessionDeleteRequest {
   sessionId: SessionId
 }
@@ -6449,6 +6467,7 @@ export interface IpcChannelMap
   'session:list': [SessionListRequest, SessionListResponse]
   'session:search': [SessionSearchRequest, SessionSearchResponse]
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
+  'session:extract-title': [SessionExtractTitleRequest, SessionExtractTitleResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
   'session:set-goal': [SessionSetGoalRequest, SessionGoalResponse]

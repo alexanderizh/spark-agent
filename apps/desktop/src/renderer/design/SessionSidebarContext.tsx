@@ -22,6 +22,7 @@ import type {
   ManagedAgent,
   SessionAgentAdapter,
   SessionChatMode,
+  SessionExtractTitleFailureCode,
   SessionPermissionMode,
   SessionReasoningEffort,
   TurnId,
@@ -88,6 +89,16 @@ function getNoProjectRootPath(tempDir: string): string {
 }
 
 const DEFAULT_AGENT_ADAPTER: SessionAgentAdapter = 'claude-sdk'
+
+/** 「提取标题」失败码 → i18n key 映射（码由主进程 session:extract-title 返回）。 */
+const EXTRACT_TITLE_FAILURE_MESSAGE: Record<SessionExtractTitleFailureCode, string> = {
+  session_not_found: 'session.extractTitleFailed.sessionNotFound',
+  provider_missing: 'session.extractTitleFailed.providerMissing',
+  provider_no_api_key: 'session.extractTitleFailed.providerNoApiKey',
+  model_missing: 'session.extractTitleFailed.modelMissing',
+  dialogue_empty: 'session.extractTitleFailed.dialogueEmpty',
+  title_empty: 'session.extractTitleFailed.titleEmpty',
+}
 
 function getValidPermissionMode(
   mode: SessionPermissionMode | undefined,
@@ -554,6 +565,7 @@ export function SessionSidebarProvider({
   const { invoke: listActiveTerminals } = useIpcInvoke('terminal:list-active')
   const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: extractSessionTitle } = useIpcInvoke('session:extract-title')
   const { invoke: forkSession } = useIpcInvoke('session:fork')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
   const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
@@ -1700,12 +1712,30 @@ export function SessionSidebarProvider({
           value: session.title ?? '',
           placeholder: t('session.titlePlaceholder'),
           confirmText: t('common.rename'),
+          // 「提取标题」：调会话模型（缺省回退 Provider 默认模型）从会话内容提取，
+          // 结果只回填输入框，由用户确认「重命名」后才落库。
+          extraAction: {
+            label: t('session.extractTitle'),
+            run: async () => {
+              try {
+                const result = await extractSessionTitle({ sessionId: session.id })
+                if (result.ok) return result.title
+                toast.error(t(EXTRACT_TITLE_FAILURE_MESSAGE[result.code]))
+                return null
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : t('session.extractTitleFailed.titleEmpty'),
+                )
+                return null
+              }
+            },
+          },
         })
       )?.trim()
       if (!title) return
       await commitSessionTitle(session, title)
     },
-    [commitSessionTitle, requestPrompt, t],
+    [commitSessionTitle, extractSessionTitle, requestPrompt, t, toast],
   )
 
   const handleDeleteSession = useCallback(

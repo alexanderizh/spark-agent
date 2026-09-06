@@ -527,6 +527,10 @@ export const SessionDeleteRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
 
+export const SessionExtractTitleRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
 export const SessionSetMaxIterationsRequestSchema = z.object({
   sessionId: SessionIdSchema,
   maxIterations: z.number().int().min(1).max(1000).nullable(),
@@ -1032,6 +1036,7 @@ export const IpcSchemaRegistry = {
   'session:list': SessionListRequestSchema,
   'session:search': SessionSearchRequestSchema,
   'session:update': SessionUpdateRequestSchema,
+  'session:extract-title': SessionExtractTitleRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
   'session:set-goal': SessionSetGoalRequestSchema,

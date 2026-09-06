@@ -172,6 +172,7 @@ import {
   formatWorkflowConditionReferenceError,
   formatWorkflowCycleError,
   normalizeWorkflowGraph,
+  SCHEDULED_TASK_SESSION_TITLE_PREFIX,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -1988,6 +1989,10 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
       {
         getSession: (sessionId) => sessionRepo.get(sessionId),
         submitTurn: (turn) => sessionService.submitTurn(turn),
+        renameSessionTitle: (sessionId, title) => {
+          sessionRepo.updateTitle(sessionId, title)
+          pushStreamEvent('stream:session:renamed', { sessionId, title })
+        },
       },
     )
   }
@@ -2018,7 +2023,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     ...(workspaceId != null ? { workspaceId } : {}),
     ...(explicitAgentAdapter != null ? { agentAdapter: explicitAgentAdapter } : {}),
     ...(explicitPermissionMode != null ? { permissionMode: explicitPermissionMode } : {}),
-    title: `[⏰] ${params.taskName}`,
+    title: `${SCHEDULED_TASK_SESSION_TITLE_PREFIX}${params.taskName}`,
   })
 
   // Notify renderer to refresh session list (same as session:create IPC handler)
@@ -3654,6 +3659,11 @@ export function registerAllIpcHandlers(): void {
       getScheduledTaskService().setSessionArchived(req.sessionId, req.archived)
     }
     return result
+  })
+
+  typedIpcHandle('session:extract-title', async (req) => {
+    log.info(`session:extract-title requested, sessionId=${req.sessionId}`)
+    return getSessionService().extractSessionTitle(req.sessionId)
   })
 
   typedIpcHandle('session:delete', async (req) => {

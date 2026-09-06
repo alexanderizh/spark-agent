@@ -98,6 +98,35 @@ export function shouldDeriveSessionTitle(title: string | null | undefined): bool
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
 }
 
+/** 定时任务执行器为自动创建的会话写入的合成标题前缀（`[⏰] 任务名`）。 */
+export const SCHEDULED_TASK_SESSION_TITLE_PREFIX = '[⏰] '
+
+/** 标题是否为定时任务链路写入的合成标题（该前缀由执行器生成，用户不会手动输入）。 */
+export function isScheduledTaskSyntheticTitle(title: string | null | undefined): boolean {
+  return title?.trim().startsWith(SCHEDULED_TASK_SESSION_TITLE_PREFIX) === true
+}
+
+/**
+ * 定时任务 turn 是否允许用任务正文改写会话标题。
+ * 仅占位标题可覆盖：默认标题（新会话等）或此前定时任务留下的合成标题
+ * （例如父定时任务新建的会话内再触发会话定时任务）；用户手动命名的标题不受影响。
+ */
+export function shouldDeriveSessionTitleFromScheduledTurn(
+  title: string | null | undefined,
+): boolean {
+  return shouldDeriveSessionTitle(title) || isScheduledTaskSyntheticTitle(title)
+}
+
+/**
+ * 从定时任务正文提取会话标题（保留 [⏰] 前缀，标记自动化会话）。
+ * 正文提取不出有效标题（空或退化为默认标题）时返回 null，调用方应保持原标题。
+ */
+export function deriveScheduledTaskSessionTitle(prompt: string): string | null {
+  const derived = deriveSessionTitle(prompt)
+  if (derived.length === 0 || DEFAULT_SESSION_TITLES.has(derived)) return null
+  return `${SCHEDULED_TASK_SESSION_TITLE_PREFIX}${derived}`
+}
+
 /**
  * 标题是否为首条消息的前缀截断（视为派生态，允许精炼覆盖）。
  * 覆盖 dispatchTurn 派生之外的命名来源：renderer 对 /goal 等命令会话用

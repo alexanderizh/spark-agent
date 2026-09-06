@@ -190,6 +190,13 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.renameTitle': '重命名会话',
     'session.titlePlaceholder': '输入会话标题',
     'session.renameFailed': '重命名会话失败',
+    'session.extractTitle': '提取标题',
+    'session.extractTitleFailed.sessionNotFound': '会话不存在或已删除',
+    'session.extractTitleFailed.providerMissing': '会话未配置模型 Provider，无法提取标题',
+    'session.extractTitleFailed.providerNoApiKey': '当前会话使用本地引擎，无法远程提取标题',
+    'session.extractTitleFailed.modelMissing': '会话未配置可用模型，无法提取标题',
+    'session.extractTitleFailed.dialogueEmpty': '会话还没有可提取的对话内容',
+    'session.extractTitleFailed.titleEmpty': '模型未返回有效标题，请稍后重试',
     'session.untitled': '未命名',
     'session.deleteDesc': '是否确定删除会话「{{title}}」？',
     'session.deleteRunningDesc':
@@ -632,6 +639,15 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.renameTitle': 'Rename session',
     'session.titlePlaceholder': 'Enter session title',
     'session.renameFailed': 'Failed to rename session',
+    'session.extractTitle': 'Extract title',
+    'session.extractTitleFailed.sessionNotFound': 'Session not found or already deleted',
+    'session.extractTitleFailed.providerMissing': 'No model provider configured for this session',
+    'session.extractTitleFailed.providerNoApiKey':
+      'This session runs on a local engine; title cannot be extracted remotely',
+    'session.extractTitleFailed.modelMissing': 'No usable model configured for this session',
+    'session.extractTitleFailed.dialogueEmpty':
+      'This session has no dialogue to extract a title from',
+    'session.extractTitleFailed.titleEmpty': 'The model returned no usable title, try again later',
     'session.untitled': 'Untitled',
     'session.deleteDesc': 'Delete session “{{title}}”?',
     'session.deleteRunningDesc':
