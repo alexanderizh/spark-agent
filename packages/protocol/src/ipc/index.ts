@@ -3183,6 +3183,8 @@ export interface WorkflowItem {
   tags: string[]
   enabled: boolean
   graph: WorkflowGraph
+  /** 所属工作流包 id;未导入包的用户工作流为空。 */
+  bundleId?: string | null
   createdAt: string
   updatedAt: string
 }

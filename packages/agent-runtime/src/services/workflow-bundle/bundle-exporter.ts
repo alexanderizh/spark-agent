@@ -104,7 +104,7 @@ export class WorkflowBundleExporter {
 
     targets.forEach((workflow, index) => {
       const graph = workflow.graph as unknown as WorkflowGraph
-      if (graph == null || !Array.isArray(graph.nodes)) {
+      if (graph == null || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
         throw new Error(`工作流「${workflow.name}」的流程图结构无效,无法导出`)
       }
       const deps = collectGraphDependencies(graph)
@@ -147,10 +147,16 @@ export class WorkflowBundleExporter {
       try {
         const entries = await collectDirectory(row.root_path)
         // 随包携带 DB manifest_json(SkillLoader 定义来源),导入时原样落库
-        entries.set(
-          '.spark-skill-manifest.json',
-          new TextEncoder().encode(row.manifest_json || '{}'),
-        )
+        const skillManifestJson = row.manifest_json || '{}'
+        const skillManifest = JSON.parse(skillManifestJson) as unknown
+        if (
+          skillManifest == null ||
+          typeof skillManifest !== 'object' ||
+          Array.isArray(skillManifest)
+        ) {
+          throw new Error('技能 manifest 必须是 JSON 对象')
+        }
+        entries.set('.spark-skill-manifest.json', new TextEncoder().encode(skillManifestJson))
         const slug = uniqueSlug(
           slugify(row.name || basename(row.root_path), 'skill'),
           takenSkillSlugs,
@@ -189,7 +195,38 @@ export class WorkflowBundleExporter {
         })
         continue
       }
-      const { config, secrets } = redactMcpConfig(row.config_json)
+      let parsedConfig: unknown
+      try {
+        parsedConfig = JSON.parse(row.config_json) as unknown
+      } catch {
+        unresolved.push({
+          type: 'mcp',
+          name: serverId,
+          hint: 'MCP 配置不是有效 JSON,未随包导出',
+        })
+        checks.push({
+          id: `mcp:${serverId}`,
+          ok: false,
+          level: 'warn',
+          message: 'MCP 配置 JSON 无效',
+        })
+        continue
+      }
+      if (parsedConfig == null || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) {
+        unresolved.push({
+          type: 'mcp',
+          name: serverId,
+          hint: 'MCP 配置必须是 JSON 对象,未随包导出',
+        })
+        checks.push({
+          id: `mcp:${serverId}`,
+          ok: false,
+          level: 'warn',
+          message: 'MCP 配置结构无效',
+        })
+        continue
+      }
+      const { config, secrets } = redactMcpConfig(JSON.stringify(parsedConfig))
       const refId = uniqueSlug(slugify(row.name, 'mcp'), takenMcpRefIds)
       const file = `mcp/${refId}.json`
       const transport =
@@ -242,7 +279,7 @@ export class WorkflowBundleExporter {
       mcpServers: mcpEntries,
       unresolved,
       verification: {
-        status: resolveExportStatus(checks),
+        status: resolveExportStatus(checks, unresolved),
         checks,
       },
     }
@@ -268,8 +305,9 @@ export class WorkflowBundleExporter {
 
 function resolveExportStatus(
   checks: WorkflowBundleVerificationCheck[],
+  unresolved: WorkflowBundleUnresolvedDependency[],
 ): WorkflowBundleVerificationStatus {
   if (checks.some((c) => !c.ok && c.level === 'error')) return 'failed'
-  if (checks.some((c) => !c.ok)) return 'warned'
+  if (checks.some((c) => !c.ok) || unresolved.length > 0) return 'warned'
   return 'passed'
 }

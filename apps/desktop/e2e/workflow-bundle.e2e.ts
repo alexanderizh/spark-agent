@@ -54,7 +54,7 @@ async function openWorkflowsView(page: Page): Promise<void> {
 
 async function listWorkflowCount(page: Page): Promise<number> {
   return page.evaluate(async () => {
-    const spark = (window as SparkWindow).spark
+    const spark = (window as unknown as SparkWindow).spark
     const result = (await spark.invoke('workflow:list', {})) as {
       workflows: { id: string; name: string }[]
     }
@@ -104,7 +104,7 @@ test.describe.serial('Workflow bundle (.sparkflow) import/export', () => {
 
     // 0) 预置两个自建工作流(经真实 IPC 落库)
     await page.evaluate(async () => {
-      const spark = (window as SparkWindow).spark
+      const spark = (window as unknown as SparkWindow).spark
       for (const name of ['包内工作流甲', '包内工作流乙']) {
         await spark.invoke('workflow:create', {
           name,

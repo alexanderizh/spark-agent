@@ -32,10 +32,11 @@ export function WorkflowExportModal({
   const [format, setFormat] = useState<WorkflowExportFormat>('bundle')
   const [exporting, setExporting] = useState(false)
 
+  const exportableWorkflows = workflows.filter((workflow) => workflow.bundleId == null)
   const targets =
     workflowIds.length > 0
-      ? workflows.filter((workflow) => workflowIds.includes(workflow.id))
-      : workflows
+      ? exportableWorkflows.filter((workflow) => workflowIds.includes(workflow.id))
+      : exportableWorkflows
 
   const handleExport = async () => {
     if (targets.length === 0) {

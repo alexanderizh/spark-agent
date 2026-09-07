@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { join } from 'path'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import {
   SparkDatabase,
@@ -15,7 +15,7 @@ import {
   WorkflowRepository,
 } from '@spark/storage'
 import { WorkflowBundleService } from './workflow-bundle.service.js'
-import { unzipBundle } from './bundle-fs.js'
+import { sha256Hex, unzipBundle, zipEntries } from './bundle-fs.js'
 
 let testDir: string
 let db: SparkDatabase
@@ -170,6 +170,7 @@ describe('WorkflowBundleService end-to-end', () => {
     // 工作流挂 bundle_id,skillIds 已改写为 bundle: 前缀,agentId 保留待重绑
     const imported = workflowRepo.get(result.workflowIds[0]!)!
     expect(imported.bundleId).toMatch(/^wfb-/)
+    expect(imported.scope).toBe('user')
     const nodeConfig = (imported.graph as { nodes: Array<{ config: Record<string, unknown> }> })
       .nodes[0]!.config
     expect(nodeConfig.skillIds).toEqual([result.installedSkillIds[0]])
@@ -216,6 +217,84 @@ describe('WorkflowBundleService end-to-end', () => {
     expect(result.status).toBe('passed')
     expect(result.checks.every((c) => c.ok)).toBe(true)
     expect(bundleRepo.get(bundles[0]!.id)?.verification_status).toBe('passed')
+  })
+
+  it('导入落地失败时回滚已写入的技能、MCP 和工作流', async () => {
+    const beforeWorkflows = workflowRepo.list({ includeArchived: true }).map((item) => item.id)
+    const beforeSkills = skillRepo.list().map((item) => item.id)
+    const beforeMcpServers = mcpRepo.listAll().map((item) => item.id)
+    const beforeBundles = bundleRepo.list().map((item) => item.id)
+    const bundleRoot = join(userSkillsDir, '_bundles')
+    const beforeBundleDirectories = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : []
+    const originalCreate = bundleRepo.create
+    bundleRepo.create = (() => {
+      throw new Error('simulated bundle registration failure')
+    }) as typeof bundleRepo.create
+
+    try {
+      await expect(service.importBundle(archivePath())).rejects.toThrow(
+        'simulated bundle registration failure',
+      )
+    } finally {
+      bundleRepo.create = originalCreate
+    }
+
+    expect(workflowRepo.list({ includeArchived: true }).map((item) => item.id)).toEqual(
+      beforeWorkflows,
+    )
+    expect(skillRepo.list().map((item) => item.id)).toEqual(beforeSkills)
+    expect(mcpRepo.listAll().map((item) => item.id)).toEqual(beforeMcpServers)
+    expect(bundleRepo.list().map((item) => item.id)).toEqual(beforeBundles)
+    const afterBundleDirectories = existsSync(bundleRoot) ? readdirSync(bundleRoot).sort() : []
+    expect(afterBundleDirectories).toEqual(beforeBundleDirectories)
+  })
+
+  it('拒绝有环工作流且不写入任何资源', async () => {
+    const cyclePath = join(testDir, 'out', 'cycle.sparkflow')
+    const workflowBytes = new TextEncoder().encode(
+      JSON.stringify({
+        name: '有环流程',
+        graph: {
+          nodes: [
+            { id: 'a', kind: 'agent', title: '节点 A', x: 0, y: 0, config: {} },
+            { id: 'b', kind: 'agent', title: '节点 B', x: 0, y: 0, config: {} },
+          ],
+          edges: [
+            { id: 'a-b', from: 'a', to: 'b' },
+            { id: 'b-a', from: 'b', to: 'a' },
+          ],
+        },
+      }),
+    )
+    const manifestBytes = new TextEncoder().encode(
+      JSON.stringify({
+        schemaVersion: 1,
+        name: '有环包',
+        exportedAt: new Date().toISOString(),
+        workflows: [{ file: 'workflows/0.json', name: '有环流程' }],
+        skills: [],
+        mcpServers: [],
+        unresolved: [],
+        verification: { status: 'passed', checks: [] },
+      }),
+    )
+    const files = { 'manifest.json': manifestBytes, 'workflows/0.json': workflowBytes }
+    const checksums = new TextEncoder().encode(
+      JSON.stringify({
+        algorithm: 'sha256',
+        files: Object.fromEntries(
+          Object.entries(files).map(([path, content]) => [path, sha256Hex(content)]),
+        ),
+      }),
+    )
+    writeFileSync(cyclePath, zipEntries({ ...files, 'checksums.json': checksums }))
+
+    const beforeWorkflowIds = workflowRepo.list({ includeArchived: true }).map((item) => item.id)
+    await expect(service.importBundle(cyclePath)).rejects.toThrow('循环依赖')
+    expect(workflowRepo.list({ includeArchived: true }).map((item) => item.id)).toEqual(
+      beforeWorkflowIds,
+    )
+    expect(bundleRepo.list()).toHaveLength(1)
   })
 
   it('卸载整包:工作流/技能/MCP/目录/登记全部清除', async () => {

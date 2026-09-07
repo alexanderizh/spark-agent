@@ -1,6 +1,6 @@
 # 工作流包(Workflow Bundle)导入导出与隔离空间
 
-> 状态: [已落地] | 最后核对: 2026-09-06
+> 状态: [实施中] | 最后核对: 2026-09-07
 
 ## 1. 背景与目标
 
@@ -82,7 +82,7 @@ manifest 核心结构:
 ## 6. 实施步骤
 
 1. ✅ 分支与隔离 worktree(本分支)。
-2. 协议层:`packages/protocol/src/workflow-bundle.ts`(zod schema)+ `packages/desktop-db`(或对应 db 包)迁移:新表 + 2 列。
+2. 协议层:`packages/protocol/src/workflow-bundle.ts`(zod schema)+ `packages/desktop-db`(或对应 db 包)迁移 096:新表 + 2 列。
 3. 导出服务(main 进程 service)+ IPC `workflow-bundle:export`。
 4. 导入服务 + IPC `workflow-bundle:preview` / `workflow-bundle:import`。
 5. 验证服务 + `runtime-composition` 回落排除 + 验证状态回写。
@@ -97,7 +97,10 @@ manifest 核心结构:
 ## 8. 进度记录
 
 - 2026-09-05:方案确认,创建分支与 worktree,本文档建立,依赖安装中。
-- 2026-09-05:全部落地。协议层(zod schema + IPC 通道)、迁移 093(workflow_bundles 表 + workflows/mcp_servers.bundle_id)、导出/导入/验证服务(agent-runtime services/workflow-bundle/)、防污染回落(bundle: 前缀排除)、UI(导入下拉 + 导出格式二选一 + 包管理抽屉)。
+- 2026-09-05:全部落地。协议层(zod schema + IPC 通道)、迁移 096(workflow_bundles 表 + workflows/mcp_servers.bundle_id)、导出/导入/验证服务(agent-runtime services/workflow-bundle/)、防污染回落(bundle: 前缀排除)、UI(导入下拉 + 导出格式二选一 + 包管理抽屉)。
 - 验证:protocol/agent-runtime/storage/desktop 四包 tsc 通过;lint 0 error;单测 protocol 337、storage 287、agent-runtime 相关 33(含全流程 6 例与回落隔离 2 例)全部通过;文件尺寸门禁 WorkflowView.tsx 净减 87 行(2159→2072)。
-- 2026-09-06:Electron e2e 真机走查通过(`apps/desktop/e2e/workflow-bundle.e2e.ts`,连跑 2 次):预置工作流 → 导出 .sparkflow(zip manifest 解包断言)→ 导入预览 → 隔离导入(基线翻倍)→ 包面板「验证此包」徽章回写 → 卸载零残留(回到基线)。环境备注:worktree 原生模块为 Electron-ABI(与主仓共享二进制,marker `electron-43.2.0-x64`);e2e 首启流程会清空 `apps/desktop/resources/skills/**`(测试后需 `git checkout --` 恢复)。
+- 2026-09-06:Electron e2e 真机走查通过(`apps/desktop/e2e/workflow-bundle.e2e.ts`,连跑 2 次):预置工作流 → 导出 .sparkflow(zip manifest 解包断言)→ 导入预览 → 隔离导入(基线翻倍)→ 包面板「验证此包」徽章回写 → 卸载零残留(回到基线)。环境备注:worktree 原生模块为 Electron-ABI(与主仓共享二进制,marker `electron-43.2.0-x64`)。
+- 2026-09-07:真实技能随包验证(`apps/desktop/e2e/workflow-bundle-real-skill.e2e.ts`,夹具=仓库内置 spark-web-tool 真实 33 文件,经 `skill:import-directory` 真实 IPC 安装)。导出方全过:33 个真实文件+随包 manifest 字节级进入 .sparkflow,checksums 逐一核对,builtin 技能按设计不入包且无 unresolved。导入方 DB 层全过:bundle: 前缀 ID、user scope、manifest_json 逐字节保留、流程图 skillIds 改写、MCP 默认停用。**本机残留问题**:导入落盘的技能文件在写入后数秒内被本机终端安全代理删除(同机 `apps/desktop/resources/skills/**` 也被同类删除,见下),主进程 net.fetch 读回全部 FILE_NOT_FOUND,故该 e2e 的落盘字节断言在本机失败——代码链路(vitest 全流程 6 例在干净临时目录下含落盘断言全过)无缺陷,需在无终端加密的机器/CI 上复跑验证。
+- 环境备注(2026-09-07 修正):`apps/desktop/resources/skills/**` 被清空并非「e2e 首启流程」所致——探针走完首启引导+可选能力流程 30s 无删除,普通启动 50s 无删除;删除特征为「只删文件、保留目录、延迟数秒」,与应用退出窗口相关,判定为本机终端加密/防泄漏代理行为,非应用代码。测试后恢复:`git checkout -- apps/desktop/resources/skills`。
 - 已知限制(v1):宿主链接技能(\_links)仅顶层 realpath 跟随;试运行(testRun)报告未做;MCP oauth 授权凭据不随包(需导入方重新授权)。
+- 2026-09-07:合并前代码复核修正导入预解析与失败回滚、工作流图循环/条件引用校验、技能目录校验和、顶层链接目录路径计算、危险 zip 路径拒绝、MCP 无效配置告警、包工作流默认 user scope，以及导出全部时排除已导入包工作流。修复验证待在当前 master 整合分支完成。

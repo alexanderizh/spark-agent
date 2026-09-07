@@ -3,6 +3,7 @@
  */
 
 import { access } from 'fs/promises'
+import { join } from 'path'
 import {
   BUNDLE_SKILL_ID_PREFIX,
   type WorkflowBundleManifest,
@@ -88,7 +89,7 @@ export class WorkflowBundleValidator {
             message: '技能记录缺失',
           }
         }
-        const dirOk = await access(skillRow.root_path)
+        const dirOk = await access(join(skillRow.root_path, 'SKILL.md'))
           .then(() => true)
           .catch(() => false)
         if (!dirOk) {
@@ -96,7 +97,7 @@ export class WorkflowBundleValidator {
             id: `skill:${entry.slug}`,
             ok: false,
             level: 'error' as const,
-            message: `技能目录不存在: ${skillRow.root_path}`,
+            message: `技能目录或 SKILL.md 不存在: ${skillRow.root_path}`,
           }
         }
         return {
@@ -172,7 +173,7 @@ export class WorkflowBundleValidator {
     for (const workflow of this.workflowRepo.list({ includeArchived: true })) {
       if (workflow.bundleId !== bundleId) continue
       const graph = workflow.graph as unknown as WorkflowGraph
-      if (graph == null || !Array.isArray(graph.nodes)) {
+      if (graph == null || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
         checks.push({
           id: `workflow:${workflow.id}`,
           ok: false,

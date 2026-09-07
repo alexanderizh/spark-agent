@@ -8,7 +8,8 @@ import {
   type WorkflowBundleSecretSpec,
 } from '@spark/protocol'
 
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|apikey|api_key|authorization)/i
+const SENSITIVE_KEY_PATTERN =
+  /(token|secret|password|credential|authorization|(?:api|access|private)[_.-]?key)/i
 
 export interface RedactResult {
   /** 脱敏后的 config(深拷贝;原对象不动) */
@@ -36,8 +37,15 @@ function redactValue(
   secretPaths: Set<string>,
 ): unknown {
   if (typeof value === 'string') {
-    // 已是占位符(重复导出)则原样保留,避免重复登记
-    if (workflowBundleSecretPathFromPlaceholder(value) != null) return value
+    // 已是占位符(重复导出)则原样保留,但仍登记到当前 manifest
+    const existingSecretPath = workflowBundleSecretPathFromPlaceholder(value)
+    if (existingSecretPath != null) {
+      if (!secretPaths.has(existingSecretPath)) {
+        secretPaths.add(existingSecretPath)
+        secrets.push({ path: existingSecretPath, label: existingSecretPath, required: true })
+      }
+      return value
+    }
     const treatSensitive =
       path?.startsWith('headers.') === true ||
       path?.startsWith('env.') === true ||

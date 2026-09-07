@@ -98,14 +98,16 @@ export function WorkflowBundlePanelButton() {
         // 读取当前 config(含占位符),把占位符替换为用户输入后保存
         const { servers } = await listMcpServers({})
         const row = servers.find((s) => s.id === activating.serverId)
-        let configText = row?.configJson ?? '{}'
+        if (row == null) throw new Error('MCP 配置不存在,请刷新工作流包列表后重试')
+        let configText = row.configJson
         for (const path of activating.secretPaths) {
           const value = secretValues[path]
           if (value == null || value.trim().length === 0) {
             toast.warning(`请填写密钥:${path}`)
             return
           }
-          configText = configText.replaceAll(`{{secret:${path}}}`, escapeReplacement(value.trim()))
+          const placeholder = `{{secret:${path}}}`
+          configText = configText.replaceAll(placeholder, () => value.trim())
         }
         await updateMcp({ id: activating.serverId, configJson: configText })
       }
@@ -273,9 +275,4 @@ export function WorkflowBundlePanelButton() {
       </Modal>
     </>
   )
-}
-
-/** 替换 JSON 字符串中的占位符时转义 $ 等替换模式特殊字符。 */
-function escapeReplacement(value: string): string {
-  return value.replace(/\$/g, '$$$$')
 }

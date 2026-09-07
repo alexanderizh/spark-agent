@@ -78,7 +78,7 @@ export async function collectDirectory(absDir: string): Promise<Map<string, Uint
       out.set(toZipPath(relative(resolvedRoot, full)), await readFile(full))
     }
   }
-  await walk(absDir)
+  await walk(resolvedRoot)
   return out
 }
 
@@ -110,12 +110,14 @@ export function unzipBundle(data: Uint8Array): Map<string, Uint8Array> {
     decoded = unzipSync(data, {
       filter: (file) => {
         const name = file.name
-        if (name.startsWith('/') || name.includes('\\')) return false
-        if (name.split('/').includes('..')) return false
+        if (name.startsWith('/') || name.includes('\\') || name.split('/').includes('..')) {
+          throw new BundleLimitError(`非法包内路径: ${name}`)
+        }
         return true
       },
     })
   } catch (err) {
+    if (err instanceof BundleLimitError) throw err
     throw new Error(
       `无法解析 .sparkflow 压缩包: ${err instanceof Error ? err.message : String(err)}`,
       {
