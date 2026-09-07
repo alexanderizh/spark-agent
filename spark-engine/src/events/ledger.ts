@@ -134,17 +134,19 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async list(projectDir: string | null): Promise<SessionMeta[]> {
-    return [...this.#sessions].map(([sessionId, events]) => {
-      const preview = previewFromEvents(events);
-      return {
-        sessionId,
-        projectDir,
-        createdAt: events[0]?.ts ?? 0,
-        updatedAt: events.at(-1)?.ts ?? 0,
-        latestSeq: events.at(-1)?.seq ?? -1,
-        ...(preview === undefined ? {} : { preview }),
-      };
-    });
+    return [...this.#sessions]
+      .map(([sessionId, events]) => {
+        const preview = previewFromEvents(events);
+        return {
+          sessionId,
+          projectDir,
+          createdAt: events[0]?.ts ?? 0,
+          updatedAt: events.at(-1)?.ts ?? 0,
+          latestSeq: events.at(-1)?.seq ?? -1,
+          ...(preview === undefined ? {} : { preview }),
+        };
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt);
   }
 }
 

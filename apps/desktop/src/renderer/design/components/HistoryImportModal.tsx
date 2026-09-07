@@ -541,11 +541,7 @@ export function HistoryImportModal() {
           </span>
           <span>
             <strong>{t('app.sidebar.importHistory')}</strong>
-            <small>
-              {phase === 'scanning'
-                ? '正在读取本地索引，不会上传任何会话内容'
-                : '选择需要导入的本地会话，可在右侧完整预览'}
-            </small>
+            <small>选择需要导入的本地会话，可在右侧完整预览</small>
           </span>
         </div>
       ),

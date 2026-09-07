@@ -208,7 +208,7 @@ describe('TUI deterministic interaction', () => {
     expect(frame).toContain('beta question');
     expect(frame).toContain('✓当前'); // current session marked
 
-    app.stdin.write('2'); // pick the second row (beta)
+    app.stdin.write('1'); // beta is the most recently updated row
     await settle();
     frame = stripAnsi(app.lastFrame() ?? '');
     expect(frame).toContain('已切换到会话');

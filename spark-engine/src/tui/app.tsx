@@ -644,7 +644,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       )}
       <InputEditor
         active={!pickerOpen}
-        locked={pending !== undefined || pickerOpen || permPickerOpen || effortPickerOpen}
+        locked={pending !== undefined || pickerOpen || permPickerOpen || effortPickerOpen || sessionPickerOpen}
         running={activeTurns > 0}
         capabilities={capabilities}
         theme={theme}

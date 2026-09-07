@@ -6,14 +6,20 @@ import { Agent } from '../../src/sdk/agent.js'
 
 describe('Agent.listSessions', () => {
   it('lists recorded sessions most recently updated first with input previews', async () => {
-    const env = createDeterministicEnv([text('alpha reply.'), text('beta reply.')])
+    const env = createDeterministicEnv([
+      text('alpha reply.'),
+      text('beta reply.'),
+      text('alpha follow-up reply.'),
+    ])
     const agent = Agent.open({ cwd: '/workspace', env })
     const alpha = await agent.newSession()
     await alpha.turn('alpha question')
     const beta = await agent.newSession()
     await beta.turn('beta question')
+    await alpha.turn('alpha follow-up')
 
     const sessions = await agent.listSessions()
+    expect(sessions[0]?.sessionId).toBe(alpha.sessionId)
     expect(sessions.map((session) => session.sessionId)).toContain(alpha.sessionId)
     expect(sessions.map((session) => session.sessionId)).toContain(beta.sessionId)
     // Deterministic clock stamps both turns equally, but both rows carry previews.

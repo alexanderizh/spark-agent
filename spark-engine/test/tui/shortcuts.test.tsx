@@ -69,6 +69,15 @@ describe('InputEditor shortcuts', () => {
     app.unmount()
   })
 
+  it('ignores draft input while locked', async () => {
+    const app = editor({ locked: true })
+    app.stdin.write('picker choice')
+    await tick()
+    expect(app.lastFrame() ?? '').toContain('(输入已锁定)')
+    expect(app.lastFrame() ?? '').not.toContain('picker choice')
+    app.unmount()
+  })
+
   it('Ctrl+U clears the whole line and Ctrl+W deletes one word back', async () => {
     const onSubmit = vi.fn()
     const app = editor({ onSubmit })
