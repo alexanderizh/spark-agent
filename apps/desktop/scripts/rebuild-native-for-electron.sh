@@ -64,7 +64,10 @@ ensure_python_for_node_gyp() {
     return 0
   fi
 
-  fail "Could not prepare Python for node-gyp. Use Python 3.11 or run: python3 -m pip install --user --break-system-packages setuptools"
+  # node-gyp >= 10 no longer imports distutils, so a missing distutils is not
+  # necessarily fatal (Python 3.12+ with the bundled node-gyp 10 builds fine).
+  # Let the real build surface the actual error instead of failing here.
+  warn "Could not install setuptools; continuing (node-gyp >= 10 does not need distutils)"
 }
 
 step "Electron native module rebuild"
@@ -137,11 +140,23 @@ cleanup_staged() {
   for m in "${_STAGED[@]}"; do
     [ -n "${m:-}" ] && rm -rf "$APP_NM/$m"
   done
+  # Drop the node_modules dir itself if this script created it, so the
+  # workspace is left exactly as it was (pnpm 11 treats stray module dirs
+  # as dependency-state drift and may try to purge node_modules).
+  # Non-fatal: the dir normally holds real project deps. With set -e active
+  # inside the EXIT trap, a plain failure here would poison the exit code.
+  rmdir "$APP_NM" 2>/dev/null || true
   return 0
 }
 trap cleanup_staged EXIT
 
-pnpm exec electron-rebuild -f --arch "$TARGET_ARCH" --only "$NATIVE_MODULES" --version "$ELECTRON_VERSION"
+# The staged module dirs above are intentional, but pnpm >= 10's
+# verify-deps-before-run check sees them as dependency-state drift and tries to
+# purge + reinstall node_modules before running electron-rebuild — which would
+# destroy locally built binaries and fail in non-TTY shells. Disable the check
+# via --config (the npm_config_ env form is not honored by pnpm's launcher).
+pnpm --config.verify-deps-before-run=false \
+  exec electron-rebuild -f --arch "$TARGET_ARCH" --only "$NATIVE_MODULES" --version "$ELECTRON_VERSION"
 
 # Copy staged rebuild outputs back to the canonical module directories.
 if [ "${#_STAGED[@]}" -gt 0 ]; then
@@ -157,7 +172,8 @@ ok "Native modules rebuilt for Electron ($TARGET_ARCH)"
 
 if [ "$TARGET_ARCH" = "$HOST_ARCH" ]; then
   step "Electron native module ABI verification"
-  pnpm run native:verify
+  # Same verify-deps-before-run hazard as above: staged dirs still exist here.
+  pnpm --config.verify-deps-before-run=false run native:verify
   ok "Native modules load under Electron"
 else
   warn "Skipping runtime ABI verification because host arch ($HOST_ARCH) differs from target arch ($TARGET_ARCH)"
