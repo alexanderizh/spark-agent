@@ -137,11 +137,33 @@
 .render-html-loading {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 6px;
   color: var(--render-html-muted);
   font-size: 12px;
   pointer-events: none;
+}
+
+.render-html-loading-hint {
+  font-size: 11px;
+}
+
+.render-html-loading-retry {
+  padding: 4px 8px;
+  border: 1px solid var(--render-html-border);
+  border-radius: 5px;
+  background: var(--render-html-bg);
+  color: var(--render-html-text);
+  cursor: pointer;
+  font: inherit;
+  pointer-events: auto;
+}
+
+.render-html-loading-retry:hover {
+  background: var(--hover, rgba(36, 32, 27, 0.045));
 }
 
 .render-html-source-wrap {

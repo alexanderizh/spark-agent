@@ -145,29 +145,35 @@ function normalizeHtml(input) {
       reason: `HTML title must not exceed ${MAX_HTML_TITLE_LENGTH} characters`,
     }
   }
-  if (
-    typeof input.height !== 'undefined' &&
-    (!Number.isInteger(input.height) ||
-      input.height < MIN_HTML_HEIGHT ||
-      input.height > MAX_HTML_HEIGHT)
-  ) {
+  if (typeof input.height !== 'undefined' && !Number.isInteger(input.height)) {
     return {
       accepted: false,
       reason: `HTML height must be an integer between ${MIN_HTML_HEIGHT} and ${MAX_HTML_HEIGHT}`,
     }
   }
+  const height =
+    typeof input.height === 'number'
+      ? Math.min(MAX_HTML_HEIGHT, Math.max(MIN_HTML_HEIGHT, input.height))
+      : DEFAULT_HTML_HEIGHT
+  const heightWarning =
+    typeof input.height === 'number' && input.height !== height
+      ? `展示高度已调整为 ${height}px（允许范围 ${MIN_HTML_HEIGHT}–${MAX_HTML_HEIGHT}px）`
+      : null
   const forbidden = html.match(/<(iframe|form|object|embed|base)\b/i)
   if (forbidden != null) {
     return { accepted: false, reason: `HTML content cannot contain ${forbidden[1]} tags` }
   }
-  const warnings = /(?:src|href)\s*=\s*["']\s*https?:\/\//i.test(html)
-    ? ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信']
-    : []
+  const warnings = [
+    ...(heightWarning != null ? [heightWarning] : []),
+    ...(/(?:src|href)\s*=\s*["']\s*https?:\/\//i.test(html)
+      ? ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信']
+      : []),
+  ]
   return {
     accepted: true,
     html,
     title: typeof input.title === 'string' && input.title.trim() ? input.title.trim() : 'HTML 内容',
-    height: input.height ?? DEFAULT_HTML_HEIGHT,
+    height,
     warnings,
   }
 }

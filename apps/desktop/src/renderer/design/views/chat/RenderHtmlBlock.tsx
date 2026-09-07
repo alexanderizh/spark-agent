@@ -17,6 +17,9 @@ import type { UIBlock } from '../../services/event-mapper'
 import './RenderHtmlBlock.less'
 
 type HtmlBlock = Extract<UIBlock, { kind: 'html_block' }>
+type HtmlFrame = { src: string; version: number }
+
+const HTML_FRAME_SLOW_LOAD_DELAY_MS = 5_000
 
 export type HtmlRemoteOpenMode = Exclude<HtmlOpenMode, 'inline' | 'side-panel'>
 
@@ -69,9 +72,11 @@ export function RenderHtmlBlock({
     useContext(HtmlRenderContext)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [frame, setFrame] = useState<{ src: string; version: number } | null>(null)
+  const [frame, setFrame] = useState<HtmlFrame | null>(null)
   const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
   const [frameError, setFrameError] = useState<string | null>(null)
+  const [frameSlow, setFrameSlow] = useState(false)
+  const [reloadRequest, setReloadRequest] = useState(0)
   const [actionError, setActionError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const isSidePanel = variant === 'side-panel'
@@ -83,18 +88,21 @@ export function RenderHtmlBlock({
   const docToken = useMemo(() => buildHtmlRenderToken(block.toolCallId), [block.toolCallId])
 
   // 合成文档 → 主进程登记 → capability-asset 导航地址（机制同子应用，见
-  // main/services/RuntimeDocRegistry.ts）。srcDoc 变化时复用 token 覆盖登记，
-  // 递增 version 强制 iframe 重新加载。卸载时 release：同 token 的其他展示
-  // 入口（侧面板/全屏）若仍挂载，已加载内容不受影响，其下次重建会重新 put。
+  // main/services/RuntimeDocRegistry.ts）。srcDoc 变化或用户重试时复用 token 覆盖登记，
+  // 递增 version 强制 iframe 重新加载。仅在组件卸载时 release，避免重试或主题
+  // 切换的 effect cleanup 过早回收同 token 文档；同 token 的其他展示入口仍可共享它。
   const docVersionRef = useRef(0)
   useEffect(() => {
     let cancelled = false
     docVersionRef.current += 1
     const version = docVersionRef.current
+    setFrame(null)
+    setLoadedVersion(null)
+    setFrameError(null)
+    setFrameSlow(false)
     putHtmlRuntimeDoc(docToken, srcDoc)
       .then(() => {
         if (cancelled) return
-        setFrameError(null)
         setFrame({ src: htmlRenderDocUrl(docToken, version), version })
       })
       .catch(() => {
@@ -102,11 +110,25 @@ export function RenderHtmlBlock({
       })
     return () => {
       cancelled = true
-      releaseHtmlRuntimeDoc(docToken)
     }
-  }, [docToken, srcDoc])
+  }, [docToken, reloadRequest, srcDoc])
+
+  useEffect(() => {
+    return () => releaseHtmlRuntimeDoc(docToken)
+  }, [docToken])
 
   const frameLoaded = frame != null && loadedVersion === frame.version
+
+  useEffect(() => {
+    if (frame == null || frameLoaded || frameError != null) return
+    const timeout = window.setTimeout(() => setFrameSlow(true), HTML_FRAME_SLOW_LOAD_DELAY_MS)
+    return () => window.clearTimeout(timeout)
+  }, [frame, frameError, frameLoaded])
+
+  const reloadFrame = () => {
+    setFrameSlow(false)
+    setReloadRequest((request) => request + 1)
+  }
 
   useEffect(() => {
     if (!fullscreen) return
@@ -241,7 +263,21 @@ export function RenderHtmlBlock({
         </div>
       ) : (
         <div className="render-html-frame-wrap" style={{ height: `${block.height}px` }}>
-          {!frameLoaded && <div className="render-html-loading">正在渲染 HTML…</div>}
+          {!frameLoaded && (
+            <div className="render-html-loading" role="status" aria-live="polite">
+              {frameSlow ? (
+                <>
+                  <span>HTML 加载时间较长</span>
+                  <span className="render-html-loading-hint">可重新加载；也可手动选择独立窗口查看</span>
+                  <button type="button" className="render-html-loading-retry" onClick={reloadFrame}>
+                    重新加载
+                  </button>
+                </>
+              ) : (
+                '正在渲染 HTML…'
+              )}
+            </div>
+          )}
           {frame != null && (
             <iframe
               title={block.title}
@@ -251,8 +287,12 @@ export function RenderHtmlBlock({
               onLoad={() => {
                 setLoadedVersion(frame.version)
                 setFrameError(null)
+                setFrameSlow(false)
               }}
-              onError={() => setFrameError('隔离文档加载失败')}
+              onError={() => {
+                setFrameError('隔离文档加载失败')
+                setFrameSlow(false)
+              }}
             />
           )}
         </div>

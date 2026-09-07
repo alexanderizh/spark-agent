@@ -134,6 +134,16 @@ describe('quick-replies MCP server', () => {
       warnings: [expect.stringContaining('允许网络加载')],
     })
 
+    const clampedHeight = await rpc.call('tools/call', {
+      name: 'render_html',
+      arguments: { html: '<section>高度调整</section>', height: 641 },
+    })
+    expect(JSON.parse(clampedHeight.content[0].text)).toMatchObject({
+      accepted: true,
+      height: 640,
+      warnings: [expect.stringContaining('展示高度已调整为 640px')],
+    })
+
     const unsafe = await rpc.call('tools/call', {
       name: 'render_html',
       arguments: { html: '<iframe src="https://example.com"></iframe>' },

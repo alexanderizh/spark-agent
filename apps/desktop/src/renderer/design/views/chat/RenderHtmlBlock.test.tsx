@@ -41,6 +41,7 @@ describe('RenderHtmlBlock', () => {
     root?.unmount()
     root = null
     container.remove()
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -96,6 +97,54 @@ describe('RenderHtmlBlock', () => {
 
     const src = container.querySelector('iframe')?.src ?? ''
     expect(src).toMatch(/\?v=2$/)
+  })
+
+  it('shows an actionable slow-load state and re-registers the current document on retry', async () => {
+    vi.useFakeTimers()
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<RenderHtmlBlock block={block} />)
+    })
+    await act(async () => {})
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000)
+    })
+
+    expect(container.textContent).toContain('HTML 加载时间较长')
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '重新加载',
+    )
+    expect(retry).toBeDefined()
+
+    await act(async () => {
+      retry?.click()
+    })
+    await act(async () => {})
+
+    expect(container.querySelector('iframe')?.src).toMatch(/\?v=2$/)
+    expect(invoke.mock.calls.filter(([channel]) => channel === 'html:put-runtime-doc')).toHaveLength(2)
+  })
+
+  it('clears the slow-load state when the current iframe finishes loading', async () => {
+    vi.useFakeTimers()
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<RenderHtmlBlock block={block} />)
+    })
+    await act(async () => {})
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000)
+    })
+    expect(container.textContent).toContain('HTML 加载时间较长')
+
+    await act(async () => {
+      container.querySelector('iframe')?.dispatchEvent(new Event('load'))
+    })
+
+    expect(container.textContent).not.toContain('HTML 加载时间较长')
+    expect(container.textContent).not.toContain('正在渲染 HTML…')
   })
 
   it('shows a structured error state without executing failed content', () => {
