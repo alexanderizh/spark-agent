@@ -5332,6 +5332,9 @@ body.side-chat-resizing {
 }
 .composer-queue-panel .composer-queue-text {
   display: block;
+  /* 列向 flex + flex-start 下，nowrap 文本的交叉轴宽度是 max-content，
+     必须显式封顶到容器宽度，否则省略号失效、文字会盖住右侧操作按钮组 */
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
