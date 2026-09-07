@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { readReleaseNotes } from '../../../scripts/release-notes.mjs'
 
 const tag = '[register-release]'
-const INSTALLER_EXTS = ['.dmg', '.exe', '.AppImage', '.zip', '.deb', '.rpm']
+const INSTALLER_EXTS = ['.dmg', '.exe', '.appimage', '.zip', '.deb', '.rpm']
 
 function required(env, name) {
   const value = env[name]
@@ -48,7 +48,10 @@ export function pickInstallersFor(platform, arch, names) {
   const tagSubstring = `-${platform}-${arch}.`.toLowerCase()
   return names.flatMap((fileName) => {
     const lower = fileName.toLowerCase()
-    if (!lower.includes(tagSubstring) || !INSTALLER_EXTS.some((extension) => lower.endsWith(extension))) {
+    if (
+      !lower.includes(tagSubstring) ||
+      !INSTALLER_EXTS.some((extension) => lower.endsWith(extension))
+    ) {
       return []
     }
     const blockmap = `${fileName}.blockmap`
@@ -112,7 +115,8 @@ async function postRegister(config, body) {
     body: JSON.stringify(body),
   })
   const text = await response.text()
-  if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}: ${text.slice(0, 500)}`)
+  if (!response.ok)
+    throw new Error(`HTTP ${response.status} ${response.statusText}: ${text.slice(0, 500)}`)
   let json
   try {
     json = JSON.parse(text)
@@ -130,7 +134,9 @@ async function withRetry(fn, attempts = 3) {
       return await fn()
     } catch (error) {
       lastError = error
-      console.warn(`${tag} attempt ${attempt}/${attempts} failed: ${error instanceof Error ? error.message : error}`)
+      console.warn(
+        `${tag} attempt ${attempt}/${attempts} failed: ${error instanceof Error ? error.message : error}`,
+      )
       if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 2_000))
     }
   }

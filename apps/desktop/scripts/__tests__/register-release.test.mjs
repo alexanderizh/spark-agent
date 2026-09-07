@@ -17,6 +17,22 @@ test('selects only matching platform and architecture installers', () => {
   )
 })
 
+test('selects Linux AppImage installers case-insensitively', () => {
+  assert.deepEqual(
+    pickInstallersFor('linux', 'x64', [
+      'SparkWork-1.2.0-linux-x64.AppImage',
+      'SparkWork-1.2.0-linux-x64.AppImage.blockmap',
+      'SparkWork-1.2.0-linux-arm64.AppImage',
+    ]),
+    [
+      {
+        fileName: 'SparkWork-1.2.0-linux-x64.AppImage',
+        blockmap: 'SparkWork-1.2.0-linux-x64.AppImage.blockmap',
+      },
+    ],
+  )
+})
+
 test('includes the matching changelog entry in the registration payload', async () => {
   const root = await mkdtemp(join(tmpdir(), 'spark-register-release-'))
   const distDir = join(root, 'dist')
@@ -27,15 +43,18 @@ test('includes the matching changelog entry in the registration payload', async 
     writeFile(changelogPath, '## [1.2.0] - 2026-09-07\n\n- 新增版本更新说明。\n'),
   ])
   try {
-    const payload = await buildRegistrationPayload({
-      version: '1.2.0',
-      platform: 'win',
-      arch: 'x64',
-      channel: 'stable',
-      distDir,
-      objectPrefix: 'stable/1.2.0',
-      autoPublish: true,
-    }, changelogPath)
+    const payload = await buildRegistrationPayload(
+      {
+        version: '1.2.0',
+        platform: 'win',
+        arch: 'x64',
+        channel: 'stable',
+        distDir,
+        objectPrefix: 'stable/1.2.0',
+        autoPublish: true,
+      },
+      changelogPath,
+    )
     assert.equal(payload.releaseNotes, '- 新增版本更新说明。')
     assert.equal(payload.files[0]?.objectKey, 'stable/1.2.0/SparkWork-1.2.0-win-x64.exe')
   } finally {
