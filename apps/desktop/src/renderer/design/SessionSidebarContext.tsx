@@ -819,7 +819,19 @@ export function SessionSidebarProvider({
             if (item.id !== sessionId) return item
             if (terminal) {
               if (queueRunningRef.current[sessionId] === true) return item
-              return item.status === 'running' ? { ...item, status: 'idle' } : item
+              const next: SessionSummary = {
+                ...item,
+                ...(item.status === 'running' ? { status: 'idle' } : {}),
+              }
+              // 终态（completed/cancelled/error）实时落定运行结果，与持久化 outcome 保持一致，
+              // 让「已完成/中止」状态筛选无需等待刷新立即生效。
+              if (status === 'completed' || status === 'cancelled' || status === 'error') {
+                next.lastRunOutcome = status
+              }
+              // 无实质变化则复用原引用，避免无谓重渲染。
+              return next.status === item.status && next.lastRunOutcome === item.lastRunOutcome
+                ? item
+                : next
             }
             return item.status === 'running'
               ? item

@@ -14,7 +14,13 @@ import { useI18n } from './i18n'
 import { getCanvasWorkspaceIds } from './workspace-visibility'
 import type { WorkspaceInfo } from '@spark/protocol'
 
-export type SidebarStatusFilter = 'active' | 'archived' | 'all'
+export type SidebarStatusFilter =
+  | 'active'
+  | 'running'
+  | 'completed'
+  | 'cancelled'
+  | 'archived'
+  | 'all'
 export type SidebarLastActivityFilter = 'today' | '1d' | '3d' | '7d' | '30d' | 'all'
 export type SidebarGroupBy = 'date' | 'project' | 'state' | 'none'
 export type SidebarScheduledTasksFilter = 'all' | 'attached' | 'none'
@@ -76,6 +82,9 @@ export function canReorderSidebarSessions(
 
 const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; labelKey: string }> = [
   { value: 'active', labelKey: 'sidebar.filter.status.active' },
+  { value: 'running', labelKey: 'sidebar.filter.status.running' },
+  { value: 'completed', labelKey: 'sidebar.filter.status.completed' },
+  { value: 'cancelled', labelKey: 'sidebar.filter.status.cancelled' },
   { value: 'archived', labelKey: 'sidebar.filter.status.archived' },
   { value: 'all', labelKey: 'sidebar.filter.all' },
 ]

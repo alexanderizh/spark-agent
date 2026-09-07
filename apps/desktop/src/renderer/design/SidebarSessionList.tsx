@@ -287,6 +287,16 @@ function writeSidebarFilter(state: SidebarFilterState): void {
 function filterByStatus(sessions: SessionSummary[], status: SidebarStatusFilter): SessionSummary[] {
   if (status === 'all') return sessions
   if (status === 'archived') return sessions.filter((s) => s.archivedAt != null)
+  if (status === 'running') {
+    return sessions.filter((s) => s.archivedAt == null && s.status === 'running')
+  }
+  if (status === 'completed') {
+    return sessions.filter((s) => s.archivedAt == null && s.lastRunOutcome === 'completed')
+  }
+  if (status === 'cancelled') {
+    return sessions.filter((s) => s.archivedAt == null && s.lastRunOutcome === 'cancelled')
+  }
+  // active = 未归档的会话（含运行中/已完成/中止）。
   return sessions.filter((s) => s.archivedAt == null)
 }
 
