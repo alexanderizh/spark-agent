@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lockedSdkVersion": "0.149.0",
+  "lockedSdkVersion": "0.153.4",
   "minimumRuntimeVersion": "0.144.5",
   "testedRuntimeVersions": [
     {
@@ -10,8 +10,13 @@
     },
     {
       "version": "0.149.0",
+      "support": "tested",
+      "evidence": "Former packaged SDK/runtime version; two-turn App Server smoke passed and protocol drift is checked in CI."
+    },
+    {
+      "version": "0.153.4",
       "support": "locked",
-      "evidence": "Current packaged SDK/runtime version; two-turn App Server smoke passed and protocol drift is checked in CI."
+      "evidence": "2026-09-07 generate-ts schema keeps every required request/notification/field/sandbox variant; drift versus 0.149.0 is additive only (new functionCallOutput item, externalSandbox sandbox variant, granular approval policy, optional turn fields)."
     }
   ],
   "requiredRequests": [

@@ -1,7 +1,7 @@
 /**
  * codex app-server v2 协议类型（Spark 消费面子集）。
  *
- * 来源：`codex app-server generate-ts --out <dir>`（0.149.0 实测），
+ * 来源：`codex app-server generate-ts --out <dir>`（0.153.4 实测），
  * 本文件只收敛 CodexAppServerExecutor 实际读写的请求/通知/条目形状；
  * 未消费的字段一律不声明，避免与上游 experimental 协议过度耦合。
  * 升级 codex 运行时版本时重新生成 schema 并核对本文件。
@@ -96,7 +96,7 @@ export interface AppServerTurnStartParams {
   threadId: string
   clientUserMessageId?: string | null | undefined
   input: AppServerUserInput[]
-  /** 0.149.0 官方 turn 级覆盖；同时作用于当前 turn 与后续 turn。 */
+  /** 官方 turn 级覆盖（0.153.4 文档确认 sticky）；同时作用于当前 turn 与后续 turn。 */
   approvalPolicy?: AppServerApprovalPolicy | null | undefined
   approvalsReviewer?: AppServerApprovalsReviewer | null | undefined
   sandboxPolicy?: AppServerSandboxPolicy | null | undefined

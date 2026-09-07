@@ -6,7 +6,7 @@
  * When the SDK is not installed the runtime fails fast with SDK_REQUIRED.
  *
  * Source: https://code.claude.com/docs/en/agent-sdk/typescript
- * Package: @anthropic-ai/claude-agent-sdk ^0.3.152
+ * Package: @anthropic-ai/claude-agent-sdk 0.3.263
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'

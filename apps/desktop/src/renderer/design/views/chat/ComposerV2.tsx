@@ -6095,10 +6095,8 @@ const SPARK_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permiss
     icon:
       option.value === 'spark-default' ? (
         <Icons.Hand size={18} />
-      ) : option.value === 'spark-accept-edits' ? (
+      ) : option.value === 'spark-auto' ? (
         <Icons.Wand size={18} />
-      ) : option.value === 'spark-plan' ? (
-        <Icons.FileText size={18} />
       ) : (
         <Icons.AlertTriangle size={18} />
       ),

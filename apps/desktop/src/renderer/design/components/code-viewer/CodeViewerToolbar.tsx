@@ -6,6 +6,7 @@
  */
 
 import { Fragment } from 'react'
+import type { PreviewFileType } from '../FileDisplay'
 import { Icons } from '../../Icons'
 import { SessionFileOpenPicker } from '../SessionFileOpenPicker'
 import type { CodeViewMode } from './types'
@@ -23,6 +24,8 @@ export interface CodeViewerToolbarProps {
   minimapEnabled: boolean
   onToggleMinimap: () => void
   onSave: () => void
+  /** 应用内预览入口（可选：不传时「打开方式」主按钮回落为用默认应用打开） */
+  onPreview?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
 }
 
 export function CodeViewerToolbar({
@@ -38,6 +41,7 @@ export function CodeViewerToolbar({
   minimapEnabled,
   onToggleMinimap,
   onSave,
+  onPreview,
 }: CodeViewerToolbarProps) {
   const crumbs = displayPath.replace(/\\/g, '/').split('/').filter(Boolean)
   return (
@@ -108,7 +112,11 @@ export function CodeViewerToolbar({
             {saving ? '保存中' : '保存'}
           </button>
         )}
-        <SessionFileOpenPicker filePath={absPath} compact />
+        <SessionFileOpenPicker
+          filePath={absPath}
+          compact
+          {...(onPreview != null ? { onPreview } : {})}
+        />
       </div>
     </div>
   )

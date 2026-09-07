@@ -14,12 +14,12 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationEventHandler,
     IUIAutomationEventHandler_Impl, IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
-    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern, IUIAutomationTreeWalker,
+    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern,
     IUIAutomationStructureChangedEventHandler, IUIAutomationStructureChangedEventHandler_Impl,
-    IUIAutomationValuePattern, ScrollAmount_LargeDecrement, ScrollAmount_LargeIncrement,
-    ScrollAmount_NoAmount, ScrollAmount_SmallDecrement, ScrollAmount_SmallIncrement,
-    StructureChangeType, TreeScope_Descendants, TreeScope_Subtree, UIA_EVENT_ID,
-    UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_LayoutInvalidatedEventId,
+    IUIAutomationTreeWalker, IUIAutomationValuePattern, ScrollAmount_LargeDecrement,
+    ScrollAmount_LargeIncrement, ScrollAmount_NoAmount, ScrollAmount_SmallDecrement,
+    ScrollAmount_SmallIncrement, StructureChangeType, TreeScope_Descendants, TreeScope_Subtree,
+    UIA_EVENT_ID, UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_LayoutInvalidatedEventId,
     UIA_ScrollPatternId, UIA_SelectionItemPatternId, UIA_Text_TextChangedEventId,
     UIA_Text_TextSelectionChangedEventId, UIA_ValuePatternId, UIA_Window_WindowClosedEventId,
     UIA_Window_WindowOpenedEventId,
@@ -178,8 +178,8 @@ impl UiaRuntime {
         // list; the walker gives every element a depth for the Markdown
         // outline the decision model reads. Element/depth caps bound the COM
         // call count on huge trees.
-        let walker = unsafe { self.automation.ControlViewWalker() }
-            .map_err(|_| UiaError::Unavailable)?;
+        let walker =
+            unsafe { self.automation.ControlViewWalker() }.map_err(|_| UiaError::Unavailable)?;
         let mut raw_nodes = Vec::new();
         let mut elements = HashMap::new();
         let mut secure_runtime_keys = HashSet::new();

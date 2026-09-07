@@ -118,7 +118,7 @@ export function createCodexAppServerRuntimeFingerprint(input: {
 
 /**
  * thread 级 fingerprint：只包含无法由 `turn/start` 安全覆盖的 thread 配置。
- * 权限、sandbox roots 与网络策略是 0.149.0 官方 sticky turn 配置，切换时不应强制
+ * 权限、sandbox roots 与网络策略是官方 sticky turn 配置（0.153.4 文档确认），切换时不应强制
  * 新建 native thread；每轮由 executor 显式覆盖。原始 MCP/env/header 仍只参与摘要。
  */
 export function createCodexAppServerThreadFingerprint(params: AppServerThreadParamsBase): string {
