@@ -9,6 +9,7 @@ import {
   SessionRepository,
   SparkDatabase,
 } from '@spark/storage'
+import { getLastRunOutcomeFromMetadata } from '../../services/session/session-pure-utils.js'
 
 /**
  * Turn 管道贯穿基线（W1-D2）—— P1 引擎接口化的行为锁。
@@ -285,6 +286,10 @@ describe.each(ENGINES)('turn 管道贯穿基线（$adapter 引擎）', (engine) 
 
     // 取消后会话回到 idle，且所有权已回收：新的 turn 可以立即启动并完整跑通。
     expect(new SessionRepository(db).get(sessionId)?.status).toBe('idle')
+    // 最近一次运行结果按 cancelled 收口（供「中止」状态筛选持久化消费，重启后仍有效）。
+    expect(
+      getLastRunOutcomeFromMetadata(new SessionRepository(db).get(sessionId)?.metadata_json ?? null),
+    ).toBe('cancelled')
 
     queueFakeEngineScript({
       events: [{ type: 'assistant_message', content: 'fresh after cancel', isFinal: true }],

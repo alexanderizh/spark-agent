@@ -258,6 +258,7 @@ import {
   resolveCodexMemberExecutionProfile,
   shouldDeriveSessionTitle,
   supportsOpenAIFastMode,
+  toLastRunOutcome,
   withAgentSnapshot,
 } from './session/session-pure-utils.js'
 import type { SessionRuntimePatch, WorktreePromptMeta } from './session/session-pure-utils.js'
@@ -1536,6 +1537,8 @@ export class SessionService {
       appendInterruptedTurnEventsForSession(eventRepo, session.id)
 
       sessionRepo.updateStatus(session.id, 'idle')
+      // 中断恢复按 cancelled 收口（与补写的 agent_status cancelled 事件一致）。
+      sessionRepo.patchMetadata(session.id, { lastRunOutcome: 'cancelled' })
       this.pendingTurns.delete(session.id)
       this.onApprovalCancel?.(session.id)
       this.emitQueueChanged(session.id)
@@ -1572,6 +1575,8 @@ export class SessionService {
       const eventRepo = new EventRepository(this.db)
       const appended = appendInterruptedTurnEventsForSession(eventRepo, sessionId)
       sessionRepo.updateStatus(sessionId, 'idle')
+      // 僵尸会话回收按 cancelled 收口（与补写的 agent_status cancelled 事件一致）。
+      sessionRepo.patchMetadata(sessionId, { lastRunOutcome: 'cancelled' })
       this.deferredHostTerminalStatus.delete(sessionId)
       this.emitQueueChanged(sessionId)
       log.info('reconciled zombie running session', {
@@ -1973,7 +1978,10 @@ export class SessionService {
           createUserCancelledTurnEvent(sessionId, interruptedTurnId),
           eventRepo,
         )
-        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        const interruptRepo = new SessionRepository(this.db)
+        interruptRepo.updateStatus(sessionId, 'idle')
+        // 显式中断（插队/停止）按 cancelled 收口（与补发的 cancelled 事件一致）。
+        interruptRepo.patchMetadata(sessionId, { lastRunOutcome: 'cancelled' })
       } else {
         enqueueDispatchedTurn()
         return { turnId, started: false }
@@ -9325,6 +9333,9 @@ export class SessionService {
       } else if (sessionRepo.get(sessionId)?.status === 'running') {
         sessionRepo.updateStatus(sessionId, 'idle')
       }
+      // 延迟落定的终态在此收口：把运行结果写入 metadata，供侧栏状态筛选消费。
+      const outcome = toLastRunOutcome(deferredTerminalStatus)
+      if (outcome != null) sessionRepo.patchMetadata(sessionId, { lastRunOutcome: outcome })
     }
     this.onQueueChanged?.(snapshot)
   }
@@ -9341,6 +9352,10 @@ export class SessionService {
     }
     this.deferredHostTerminalStatus.delete(sessionId)
     sessionRepo.updateStatus(sessionId, status === 'error' ? 'error' : 'idle')
+    // 运行结果落定到 metadata（completed/cancelled/error；idle 等瞬态保持原值），
+    // 供侧栏状态筛选「运行中/已完成/中止」真实生效。
+    const outcome = toLastRunOutcome(status)
+    if (outcome != null) sessionRepo.patchMetadata(sessionId, { lastRunOutcome: outcome })
   }
 
   private toQueuedTurns(turns: PendingTurn[]): SessionQueuedTurn[] {
@@ -10156,12 +10171,18 @@ export class SessionService {
             eventRepo,
           )
         }
-        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        const startingRepo = new SessionRepository(this.db)
+        startingRepo.updateStatus(sessionId, 'idle')
+        // 尚未起跑的 turn 被取消同样按 cancelled 收口（与补发的 cancelled 事件一致）。
+        startingRepo.patchMetadata(sessionId, { lastRunOutcome: 'cancelled' })
         this.emitQueueChanged(sessionId)
         return { cancelled: true, turnId: startingTurnId }
       }
       if (cancelledTeamDispatches > 0) {
-        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+        const dispatchRepo = new SessionRepository(this.db)
+        dispatchRepo.updateStatus(sessionId, 'idle')
+        // 团队派发被取消按 cancelled 收口（与补发的 cancelled 事件一致）。
+        dispatchRepo.patchMetadata(sessionId, { lastRunOutcome: 'cancelled' })
         this.emitQueueChanged(sessionId)
         return { cancelled: true }
       }
@@ -10189,6 +10210,9 @@ export class SessionService {
       eventRepo,
     )
     sessionRepo.updateStatus(sessionId, 'idle')
+    // 用户停止按 cancelled 收口（与补发的 cancelled 事件一致），
+    // 否则重启后「中止」筛选读不到该会话的终态。
+    sessionRepo.patchMetadata(sessionId, { lastRunOutcome: 'cancelled' })
     // 终止当前任务后，自动执行队列中的下一个任务
     this.startNextQueuedTurn(sessionId)
     return { cancelled: true, turnId }

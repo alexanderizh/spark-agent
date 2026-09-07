@@ -759,6 +759,8 @@ export interface SessionListResponse {
     /** Session-level preference; only compatible OpenAI-protocol runtimes send it upstream. */
     fastMode?: boolean
     status: 'idle' | 'running' | 'error'
+    /** 最近一次运行的结果（存 session metadata）：completed=正常完成，cancelled=被中止，error=出错；null=尚无已落定的运行 */
+    lastRunOutcome?: 'completed' | 'cancelled' | 'error' | null
     pinnedAt: string | null
     archivedAt: string | null
     createdAt: string

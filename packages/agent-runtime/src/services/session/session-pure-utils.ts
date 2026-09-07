@@ -1069,6 +1069,29 @@ export function getImportedFromMetadata(
   return null
 }
 
+/** 最近一次运行的结果（会话终态收口时写入 metadata，供侧栏状态筛选等消费）。 */
+export type SessionLastRunOutcome = 'completed' | 'cancelled' | 'error'
+
+/** 把流终态映射为可持久化的运行结果；'idle' 等非结果终态返回 null（保持原值）。 */
+export function toLastRunOutcome(status: string | null | undefined): SessionLastRunOutcome | null {
+  if (status === 'completed' || status === 'cancelled' || status === 'error') return status
+  return null
+}
+
+/** 从 session.metadata_json 解析最近一次运行结果；无记录或值非法返回 null。 */
+export function getLastRunOutcomeFromMetadata(
+  metadataJson: string | null | undefined,
+): SessionLastRunOutcome | null {
+  if (metadataJson == null || metadataJson === '') return null
+  try {
+    const meta = JSON.parse(metadataJson) as { lastRunOutcome?: unknown }
+    return toLastRunOutcome(typeof meta.lastRunOutcome === 'string' ? meta.lastRunOutcome : null)
+  } catch {
+    // 忽略损坏的 metadata
+  }
+  return null
+}
+
 /** 从 session.metadata_json 解析调试模式开关（per-session 能力开关，缺省 false）。 */
 export function getDebugModeFromMetadata(metadataJson: string | null | undefined): boolean {
   if (metadataJson == null || metadataJson === '') return false
