@@ -21,6 +21,12 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### 联网查询可靠性（2026-09-07）
+
+- **有界恢复与降级**：内置 `spark_search` 的 `web_search`、`fetch_url` 现在会对网络中断、请求超时、429 和 5xx 进行有界重试（默认一次，最多三次）；429 会在 2 秒上限内尊重 `Retry-After`，401/403/404 等确定性 4xx 不重试。
+- **全链路时间预算**：搜索后端降级和网页抓取均采用总时限（默认 20 秒）与单次请求上限（默认 15 秒），避免 Bing、DuckDuckGo、百度分别完整等待导致长尾堆叠。
+- **可诊断且不泄密的错误**：错误输出标记 timeout、network、rate_limited、server_error、http_4xx、invalid_response 或 budget_exhausted，同时隐藏 URL 查询参数、响应正文和 API Key。
+
 ### 行为调整 — MCP 全局可用（2026-07-16）
 
 - **无需逐 Agent 绑定**：应用中所有已启用 MCP 默认挂载到单 Agent、团队 Host、团队 Member 和工作流节点；旧版 `mcpServerIds` 字段仅保留数据/API 兼容。
@@ -129,15 +135,15 @@
 
 #### 团队贡献
 
-| 成员 | 贡献 |
-|------|------|
-| 子涵-架构师 | 项目基础架构、Monorepo 初始化、Protocol 设计 |
+| 成员          | 贡献                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| 子涵-架构师   | 项目基础架构、Monorepo 初始化、Protocol 设计                                                         |
 | 浩轩-特级开发 | Sidebar 折叠、HomeView 空状态、WorkflowView DAG 精修、ChatView 精修、user_message Bug 修复、代码审查 |
-| 旭阳-高级开发 | SQLite Storage、Typed IPC、ChatListItem 紧凑化、Composer 悬浮化 |
-| 普通开发-小林 | Design Tokens、ESLint/Vitest/Playwright 配置、HomeView、Settings 页面、Composer 悬浮化优化 |
-| codex/claude | Provider/Session/Workspace 全栈、AgentLoop 核心、Adapter 工厂、MCP/Skills/Permission 全栈 |
-| Agent产品经理 | 需求分析、PRD 编写、迭代管理、测试协调 |
-| Agent测试 | 静态代码分析测试、数据链路验证、验收标准检查 |
+| 旭阳-高级开发 | SQLite Storage、Typed IPC、ChatListItem 紧凑化、Composer 悬浮化                                      |
+| 普通开发-小林 | Design Tokens、ESLint/Vitest/Playwright 配置、HomeView、Settings 页面、Composer 悬浮化优化           |
+| codex/claude  | Provider/Session/Workspace 全栈、AgentLoop 核心、Adapter 工厂、MCP/Skills/Permission 全栈            |
+| Agent产品经理 | 需求分析、PRD 编写、迭代管理、测试协调                                                               |
+| Agent测试     | 静态代码分析测试、数据链路验证、验收标准检查                                                         |
 
 #### 已知差距（下一版本规划）
 

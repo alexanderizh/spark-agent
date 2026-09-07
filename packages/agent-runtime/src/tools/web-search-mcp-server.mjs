@@ -21,19 +21,37 @@
  *   SPARK_SEARCH_PROVIDER   auto | bocha | tavily | serper | bing | baidu | duckduckgo（默认 auto）
  *   SPARK_SEARCH_API_KEY    keyed provider 的 API key（仅 bocha/tavily/serper 需要）
  *   SPARK_SEARCH_BASE_URL   keyed provider 的 base url 覆盖（可选）
- *   SPARK_SEARCH_TIMEOUT_MS 单次请求超时，默认 15000
+ *   SPARK_SEARCH_TIMEOUT_MS 单次请求超时，默认 15000（1000–60000）
+ *   SPARK_SEARCH_TOTAL_TIMEOUT_MS 单次搜索总时限，默认 20000（1000–90000）
+ *   SPARK_SEARCH_MAX_RETRIES 可重试瞬时错误的最大重试次数，默认 1（0–3）
+ *   SPARK_SEARCH_RETRY_BACKOFF_MS 退避基数，默认 250（1–2000）
  *   SPARK_SEARCH_FETCH_MAX_CHARS fetch_url 默认正文上限，默认 8000
  */
 import readline from 'node:readline'
 import { URL } from 'node:url'
+import {
+  createDeadline,
+  formatSearchError,
+  parseBoundedInt,
+  resilientFetch,
+  SearchRequestError,
+} from './web-search-http.mjs'
 
 const env = process.env
 
 const PROVIDER = (env.SPARK_SEARCH_PROVIDER || 'auto').trim().toLowerCase()
 const API_KEY = (env.SPARK_SEARCH_API_KEY || '').trim()
 const BASE_URL = (env.SPARK_SEARCH_BASE_URL || '').trim()
-const TIMEOUT_MS = Number.parseInt(env.SPARK_SEARCH_TIMEOUT_MS || '', 10) || 15000
-const FETCH_MAX_CHARS = Number.parseInt(env.SPARK_SEARCH_FETCH_MAX_CHARS || '', 10) || 8000
+const TIMEOUT_MS = parseBoundedInt(env.SPARK_SEARCH_TIMEOUT_MS, 15_000, 1_000, 60_000)
+const SEARCH_TOTAL_TIMEOUT_MS = parseBoundedInt(
+  env.SPARK_SEARCH_TOTAL_TIMEOUT_MS,
+  20_000,
+  1_000,
+  90_000,
+)
+const MAX_RETRIES = parseBoundedInt(env.SPARK_SEARCH_MAX_RETRIES, 1, 0, 3)
+const RETRY_BACKOFF_MS = parseBoundedInt(env.SPARK_SEARCH_RETRY_BACKOFF_MS, 250, 1, 2_000)
+const FETCH_MAX_CHARS = parseBoundedInt(env.SPARK_SEARCH_FETCH_MAX_CHARS, 8_000, 500, 50_000)
 const BING_SEARCH_URL = (env.SPARK_SEARCH_BING_URL || 'https://www.bing.com/search').trim()
 const BAIDU_SEARCH_URL = (env.SPARK_SEARCH_BAIDU_URL || 'https://www.baidu.com/s').trim()
 const DUCKDUCKGO_SEARCH_URL = (
@@ -59,38 +77,36 @@ function error(id, code, message) {
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────
 async function httpFetch(url, options = {}) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? TIMEOUT_MS)
-  try {
-    return await fetch(url, {
-      redirect: 'follow',
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'User-Agent': DESKTOP_UA,
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        ...(options.headers || {}),
-      },
-    })
-  } finally {
-    clearTimeout(timer)
-  }
+  const { deadline, headers, ...request } = options
+  return resilientFetch(url, {
+    ...request,
+    deadline: deadline ?? createDeadline(SEARCH_TOTAL_TIMEOUT_MS),
+    timeoutMs: SEARCH_TOTAL_TIMEOUT_MS,
+    perAttemptTimeoutMs: TIMEOUT_MS,
+    maxRetries: MAX_RETRIES,
+    retryBackoffMs: RETRY_BACKOFF_MS,
+    headers: {
+      'User-Agent': DESKTOP_UA,
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      ...(headers || {}),
+    },
+  })
 }
 
 async function httpText(url, options) {
-  const res = await httpFetch(url, options)
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
-  return await res.text()
+  const { body } = await httpFetch(url, { ...options, consumeBody: true })
+  return body
 }
 
 async function httpJson(url, options) {
-  const res = await httpFetch(url, options)
-  const text = await res.text()
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}: ${text.slice(0, 300)}`)
+  const { body: text } = await httpFetch(url, { ...options, consumeBody: true })
   try {
     return JSON.parse(text)
   } catch {
-    throw new Error(`Non-JSON response from ${url}: ${text.slice(0, 300)}`)
+    throw new SearchRequestError(
+      'invalid_response',
+      `Non-JSON response from ${new URL(url).origin} [invalid_response]`,
+    )
   }
 }
 
@@ -160,10 +176,10 @@ function buildQuery(query, site) {
 }
 
 // ── 免密引擎：HTML 抓取 ─────────────────────────────────────────────────────
-async function searchBing(query, count, site) {
+async function searchBing(query, count, site, deadline) {
   const q = encodeURIComponent(buildQuery(query, site))
   const separator = BING_SEARCH_URL.includes('?') ? '&' : '?'
-  const html = await httpText(`${BING_SEARCH_URL}${separator}q=${q}&setlang=zh-CN`)
+  const html = await httpText(`${BING_SEARCH_URL}${separator}q=${q}&setlang=zh-CN`, { deadline })
   const out = []
   const blocks = html.split(/<li class="b_algo"/i).slice(1)
   for (const block of blocks) {
@@ -195,12 +211,13 @@ function decodeBingResultUrl(rawUrl) {
   }
 }
 
-async function searchBaidu(query, count, site) {
+async function searchBaidu(query, count, site, deadline) {
   const q = encodeURIComponent(buildQuery(query, site))
   const separator = BAIDU_SEARCH_URL.includes('?') ? '&' : '?'
   const html = await httpText(
     `${BAIDU_SEARCH_URL}${separator}wd=${q}&rn=${Math.min(count * 2, 50)}`,
     {
+      deadline,
       headers: { Referer: 'https://www.baidu.com/' },
     },
   )
@@ -225,10 +242,10 @@ async function searchBaidu(query, count, site) {
   return out
 }
 
-async function searchDuckDuckGo(query, count, site) {
+async function searchDuckDuckGo(query, count, site, deadline) {
   const q = encodeURIComponent(buildQuery(query, site))
   const separator = DUCKDUCKGO_SEARCH_URL.includes('?') ? '&' : '?'
-  const html = await httpText(`${DUCKDUCKGO_SEARCH_URL}${separator}q=${q}&kl=wt-wt`)
+  const html = await httpText(`${DUCKDUCKGO_SEARCH_URL}${separator}q=${q}&kl=wt-wt`, { deadline })
   const decodeUddg = (href) => {
     let url = decodeEntities(href)
     const uddg = url.match(/[?&]uddg=([^&]+)/) // DDG 跳转链接：//duckduckgo.com/l/?uddg=<encoded>
@@ -271,10 +288,11 @@ function bochaFreshness(timeRange) {
       return 'noLimit'
   }
 }
-async function searchBocha(query, count, site, timeRange) {
+async function searchBocha(query, count, site, timeRange, deadline) {
   if (!API_KEY) throw new Error('bocha provider requires SPARK_SEARCH_API_KEY')
   const base = BASE_URL || 'https://api.bochaai.com'
   const data = await httpJson(`${base.replace(/\/+$/, '')}/v1/web-search`, {
+    deadline,
     method: 'POST',
     headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -294,12 +312,13 @@ async function searchBocha(query, count, site, timeRange) {
   }))
 }
 
-async function searchTavily(query, count, site, timeRange) {
+async function searchTavily(query, count, site, timeRange, deadline) {
   if (!API_KEY) throw new Error('tavily provider requires SPARK_SEARCH_API_KEY')
   const base = BASE_URL || 'https://api.tavily.com'
   const days =
     timeRange === 'day' ? 1 : timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : undefined
   const data = await httpJson(`${base.replace(/\/+$/, '')}/search`, {
+    deadline,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -320,7 +339,7 @@ async function searchTavily(query, count, site, timeRange) {
   return { results, ...(data?.answer ? { answer: data.answer } : {}) }
 }
 
-async function searchSerper(query, count, site, timeRange) {
+async function searchSerper(query, count, site, timeRange, deadline) {
   if (!API_KEY) throw new Error('serper provider requires SPARK_SEARCH_API_KEY')
   const base = BASE_URL || 'https://google.serper.dev'
   const tbs =
@@ -334,6 +353,7 @@ async function searchSerper(query, count, site, timeRange) {
             ? 'qdr:y'
             : undefined
   const data = await httpJson(`${base.replace(/\/+$/, '')}/search`, {
+    deadline,
     method: 'POST',
     headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -354,7 +374,7 @@ async function searchSerper(query, count, site, timeRange) {
 }
 
 // ── 后端选择 + 免密链降级 ───────────────────────────────────────────────────
-async function runKeylessChain(query, count, site, initialErrors = []) {
+async function runKeylessChain(query, count, site, deadline, initialErrors = []) {
   const chain = [
     ['bing', searchBing],
     ['duckduckgo', searchDuckDuckGo],
@@ -363,11 +383,11 @@ async function runKeylessChain(query, count, site, initialErrors = []) {
   const errors = [...initialErrors]
   for (const [name, fn] of chain) {
     try {
-      const results = await fn(query, count, site)
+      const results = await fn(query, count, site, deadline)
       if (results.length > 0) return { provider: name, results, warnings: errors }
       errors.push(`${name}: 0 results`)
     } catch (err) {
-      errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
+      errors.push(`${name}: ${formatSearchError(err)}`)
     }
   }
   throw new Error(`All keyless engines failed. ${errors.join(' | ')}`)
@@ -379,6 +399,7 @@ async function webSearch(args) {
   const count = Math.max(1, Math.min(Number(args.count) || 8, 20))
   const site = typeof args.site === 'string' ? args.site : ''
   const timeRange = typeof args.time_range === 'string' ? args.time_range : 'all'
+  const deadline = createDeadline(SEARCH_TOTAL_TIMEOUT_MS)
 
   // 显式 keyed provider，或 auto 且配了 key → 走 keyed
   const wantsKeyed = KEYED.has(PROVIDER) || (PROVIDER === 'auto' && API_KEY)
@@ -387,10 +408,10 @@ async function webSearch(args) {
     try {
       let payload
       if (keyedProvider === 'bocha')
-        payload = { results: await searchBocha(query, count, site, timeRange) }
+        payload = { results: await searchBocha(query, count, site, timeRange, deadline) }
       else if (keyedProvider === 'tavily')
-        payload = await searchTavily(query, count, site, timeRange)
-      else payload = await searchSerper(query, count, site, timeRange)
+        payload = await searchTavily(query, count, site, timeRange, deadline)
+      else payload = await searchSerper(query, count, site, timeRange, deadline)
       const results = Array.isArray(payload) ? payload : payload.results
       if (results && results.length > 0) {
         return {
@@ -400,7 +421,9 @@ async function webSearch(args) {
           ...(payload.answer ? { answer: payload.answer } : {}),
         }
       }
-      const fallback = await runKeylessChain(query, count, site, [`${keyedProvider}: 0 results`])
+      const fallback = await runKeylessChain(query, count, site, deadline, [
+        `${keyedProvider}: 0 results`,
+      ])
       return {
         provider: fallback.provider,
         query,
@@ -408,8 +431,9 @@ async function webSearch(args) {
         warnings: fallback.warnings,
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const fallback = await runKeylessChain(query, count, site, [`${keyedProvider}: ${message}`])
+      const fallback = await runKeylessChain(query, count, site, deadline, [
+        `${keyedProvider}: ${formatSearchError(err)}`,
+      ])
       return {
         provider: fallback.provider,
         query,
@@ -423,11 +447,11 @@ async function webSearch(args) {
   if (KEYLESS.has(PROVIDER)) {
     const fn =
       PROVIDER === 'bing' ? searchBing : PROVIDER === 'baidu' ? searchBaidu : searchDuckDuckGo
-    const results = await fn(query, count, site)
+    const results = await fn(query, count, site, deadline)
     return { provider: PROVIDER, query, results }
   }
 
-  const { provider, results, warnings } = await runKeylessChain(query, count, site)
+  const { provider, results, warnings } = await runKeylessChain(query, count, site, deadline)
   return { provider, query, results, ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
@@ -435,11 +459,9 @@ async function fetchUrl(args) {
   const url = String(args.url ?? '').trim()
   if (!/^https?:\/\//i.test(url)) throw new Error('A valid http(s) url is required')
   const maxChars = Math.max(500, Math.min(Number(args.max_chars) || FETCH_MAX_CHARS, 50000))
-  const res = await httpFetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
+  const { response: res, body: raw } = await httpFetch(url, { consumeBody: true })
   const finalUrl = res.url || url
   const contentType = res.headers.get('content-type') || ''
-  const raw = await res.text()
   let title = ''
   let text
   if (/json/i.test(contentType)) {
