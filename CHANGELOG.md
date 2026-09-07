@@ -2,6 +2,14 @@
 
 所有重要变更均记录在此文件中。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+> 发布约定：升级 `apps/desktop/package.json` 的版本号时，必须在同一提交中把已验证、面向用户的变更从 `Unreleased` 移入精确的 `## [x.y.z] - YYYY-MM-DD` 条目。发布流水线会拒绝缺少或为空的版本说明。
+
+## [Unreleased]
+
+### Changed
+
+- 发布流程会把当前版本的更新说明同步到 GitHub Release、官网版本中心和应用内更新页。
+
 ---
 
 ## [0.7.5] - 2026-07-23

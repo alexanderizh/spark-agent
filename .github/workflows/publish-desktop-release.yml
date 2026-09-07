@@ -112,6 +112,11 @@ jobs:
             fi
           fi
 
+          # 先校验并生成与版本精确对应的更新说明；缺失时不创建 tag 或 Release，
+          # 防止发布无用户可见变更说明的安装包。
+          RELEASE_NOTES_PATH="${RUNNER_TEMP}/release-notes-${VERSION}.md"
+          node scripts/release-notes.mjs --version "${VERSION}" --output "${RELEASE_NOTES_PATH}"
+
           # 并行 matrix 任务会向该版本对应的 GitHub Release 上传产物，
           # 因而 tag 必须在构建前存在。绝不能复用指向旧提交的同名 tag。
           HEAD_SHA=$(git rev-parse HEAD)
@@ -131,17 +136,13 @@ jobs:
           # Release 必须由单一 prepare job 预先创建。如果交给各个
           # electron-builder matrix job 自行创建，它们会并发 POST 同一
           # tag，只有一个成功，其余任务会收到 422 already_exists。
-          # 已存在时仍继续构建，以便失败后重跑能补传/覆盖产物。
+          # 重跑时同步覆盖 Release body，确保说明与当前 CHANGELOG 保持一致。
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "[release] 复用已有 GitHub Release: ${TAG}"
+            gh release edit "${TAG}" --title "${VERSION}" --notes-file "${RELEASE_NOTES_PATH}"
           else
             echo "[release] 创建 GitHub Release: ${TAG}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
-              -f tag_name="${TAG}" \
-              -f name="${VERSION}" \
-              -F draft=false \
-              -F prerelease=false \
-              >/dev/null
+            gh release create "${TAG}" --title "${VERSION}" --notes-file "${RELEASE_NOTES_PATH}" --latest
           fi
           echo "should_publish=true" >> "$GITHUB_OUTPUT"
 
