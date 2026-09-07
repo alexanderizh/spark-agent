@@ -21,9 +21,7 @@ function normalizeVersion(version) {
 function findVersionSection(changelog, version) {
   const headings = [...changelog.matchAll(/^## \[([^\]]+)\](?:\s+-\s+.+)?\s*$/gmu)]
   const targetIndex = headings.findIndex((match) => match[1].trim() === version)
-  if (targetIndex < 0) {
-    throw new Error(`CHANGELOG.md 中缺少版本 ${version} 的 ## [${version}] 条目。`)
-  }
+  if (targetIndex < 0) return null
 
   const target = headings[targetIndex]
   const contentStart = (target.index ?? 0) + target[0].length
@@ -41,8 +39,23 @@ function findVersionSection(changelog, version) {
 
 export async function readReleaseNotes({ version, changelogPath = DEFAULT_CHANGELOG_PATH }) {
   const normalizedVersion = normalizeVersion(version)
-  const changelog = await readFile(changelogPath, 'utf8')
-  return findVersionSection(changelog, normalizedVersion)
+  let changelog
+  try {
+    changelog = await readFile(changelogPath, 'utf8')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    console.warn(`[release-notes] 未找到 ${changelogPath}，继续发布且不附带更新说明。`)
+    return ''
+  }
+
+  const notes = findVersionSection(changelog, normalizedVersion)
+  if (notes == null) {
+    console.warn(
+      `[release-notes] CHANGELOG.md 中缺少版本 ${normalizedVersion} 的条目，继续发布且不附带更新说明。`,
+    )
+    return ''
+  }
+  return notes
 }
 
 function parseArgs(argv) {
@@ -66,7 +79,8 @@ export async function runReleaseNotesCli(argv = process.argv.slice(2), env = pro
   const options = parseArgs(argv)
   const notes = await readReleaseNotes({
     version: options.version ?? env.VERSION,
-    changelogPath: options.changelogPath == null ? DEFAULT_CHANGELOG_PATH : resolve(options.changelogPath),
+    changelogPath:
+      options.changelogPath == null ? DEFAULT_CHANGELOG_PATH : resolve(options.changelogPath),
   })
   if (options.outputPath != null) {
     const outputPath = resolve(options.outputPath)

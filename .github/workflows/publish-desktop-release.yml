@@ -112,8 +112,8 @@ jobs:
             fi
           fi
 
-          # 先校验并生成与版本精确对应的更新说明；缺失时不创建 tag 或 Release，
-          # 防止发布无用户可见变更说明的安装包。
+          # 生成与版本对应的更新说明。CHANGELOG.md 不要求每次版本发布都更新；
+          # 缺少条目时脚本会生成空说明，发布流程仍继续。
           RELEASE_NOTES_PATH="${RUNNER_TEMP}/release-notes-${VERSION}.md"
           node scripts/release-notes.mjs --version "${VERSION}" --output "${RELEASE_NOTES_PATH}"
 

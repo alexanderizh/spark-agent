@@ -61,3 +61,32 @@ test('includes the matching changelog entry in the registration payload', async 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('allows registering a release without a matching changelog entry', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'spark-register-release-'))
+  const distDir = join(root, 'dist')
+  const changelogPath = join(root, 'CHANGELOG.md')
+  await mkdir(distDir)
+  await Promise.all([
+    writeFile(join(distDir, 'SparkWork-1.2.0-win-x64.exe'), 'installer'),
+    writeFile(changelogPath, '# Changelog\n\n## [Unreleased]\n\n- 尚未发布。\n'),
+  ])
+  try {
+    const payload = await buildRegistrationPayload(
+      {
+        version: '1.2.0',
+        platform: 'win',
+        arch: 'x64',
+        channel: 'stable',
+        distDir,
+        objectPrefix: 'stable/1.2.0',
+        autoPublish: true,
+      },
+      changelogPath,
+    )
+    assert.equal(payload.releaseNotes, '')
+    assert.equal(payload.files[0]?.objectKey, 'stable/1.2.0/SparkWork-1.2.0-win-x64.exe')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

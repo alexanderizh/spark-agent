@@ -2,7 +2,7 @@
 
 所有重要变更均记录在此文件中。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-> 发布约定：升级 `apps/desktop/package.json` 的版本号时，必须在同一提交中把已验证、面向用户的变更从 `Unreleased` 移入精确的 `## [x.y.z] - YYYY-MM-DD` 条目。发布流水线会拒绝缺少或为空的版本说明。
+> 发布约定：如需提供面向用户的更新说明，可在升级 `apps/desktop/package.json` 时把变更从 `Unreleased` 移入精确的 `## [x.y.z] - YYYY-MM-DD` 条目。发布流水线允许版本没有对应条目。
 
 ## [0.11.47] - 2026-09-08
 

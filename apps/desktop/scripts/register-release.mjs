@@ -7,8 +7,8 @@
  *   2. aws s3 cp apps/desktop/dist/ s3://...     → 上传到 MinIO 公网桶
  *   3. node apps/desktop/scripts/register-release.mjs  ← 本脚本
  *
- * `CHANGELOG.md` 是更新说明唯一来源。正式版本缺少精确版本条目时，本脚本会失败，
- * 防止官网优先更新路径发布无说明的版本。
+ * `CHANGELOG.md` 是更新说明来源；缺少精确版本条目时允许为空，
+ * 官网优先更新路径仍可发布无说明的版本。
  */
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'

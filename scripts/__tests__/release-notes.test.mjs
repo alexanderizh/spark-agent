@@ -43,12 +43,9 @@ test('extracts only the matching version section', async () => {
   })
 })
 
-test('rejects missing, unreleased, and empty version sections', async () => {
+test('allows missing version sections but rejects unreleased and empty sections', async () => {
   await withChangelog(CHANGELOG, async (changelogPath) => {
-    await assert.rejects(
-      () => readReleaseNotes({ version: '1.3.0', changelogPath }),
-      /缺少版本 1\.3\.0/,
-    )
+    assert.equal(await readReleaseNotes({ version: '1.3.0', changelogPath }), '')
     await assert.rejects(
       () => readReleaseNotes({ version: 'Unreleased', changelogPath }),
       /Unreleased 不能作为正式发布版本/,
@@ -62,11 +59,28 @@ test('rejects missing, unreleased, and empty version sections', async () => {
   })
 })
 
+test('allows the changelog file itself to be absent', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'spark-release-notes-'))
+  try {
+    assert.equal(
+      await readReleaseNotes({ version: '1.2.0', changelogPath: join(directory, 'CHANGELOG.md') }),
+      '',
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('writes the exact release notes to the requested output file', async () => {
   await withChangelog(CHANGELOG, async (changelogPath, directory) => {
     const outputPath = join(directory, 'release-notes.md')
     const notes = await runReleaseNotesCli([
-      '--version', '1.2.0', '--changelog', changelogPath, '--output', outputPath,
+      '--version',
+      '1.2.0',
+      '--changelog',
+      changelogPath,
+      '--output',
+      outputPath,
     ])
     assert.equal(notes, '### Added\n\n- 新增同步更新说明。')
     assert.equal(await readFile(outputPath, 'utf8'), '### Added\n\n- 新增同步更新说明。\n')
