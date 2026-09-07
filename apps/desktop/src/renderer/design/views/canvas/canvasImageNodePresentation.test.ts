@@ -36,10 +36,10 @@ describe('canvas image node presentation', () => {
     expect(isFullBleedCanvasImageNode(createNode({ type: 'text' }))).toBe(false)
   })
 
-  it('uses source dimensions to correct an existing loaded image node height', () => {
+  it('uses source dimensions without reserving height for the overlay title bar', () => {
     expect(
       resolveCanvasImageNodePresentationSize(createNode(), { width: 1536, height: 1024 }),
-    ).toEqual({ width: 540, height: 398 })
+    ).toEqual({ width: 540, height: 360 })
   })
 
   it('preserves the current node size when source dimensions are unavailable', () => {

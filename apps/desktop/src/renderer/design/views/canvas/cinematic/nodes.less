@@ -215,6 +215,12 @@
     object-fit: cover;
   }
 
+  // 任务节点的媒体预览可以使用 cover，但独立图片资源必须保留原图完整宽高。
+  // 资源节点的容器尺寸可能来自旧快照或缺少资产元数据，不能依赖比例始终匹配。
+  .canvas-node.canvas-node-image-full-bleed .canvas-node-image {
+    object-fit: contain;
+  }
+
   .canvas-node-media-full-bleed .canvas-node-body,
   .canvas-node-media-full-bleed .canvas-node-image-wrap {
     background: #07090b;

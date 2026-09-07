@@ -9,6 +9,7 @@ describe('canvas minimap interaction', () => {
   it('lets users click or drag the minimap to move the canvas viewport', () => {
     const stage = readCanvasSource('./CanvasStage.tsx')
     const styles = readCanvasSource('./CanvasWorkspaceView.less')
+    const minimapStyles = styles.match(/\.canvas-minimap\s*\{([^}]*)\}/)?.[1] ?? ''
 
     expect(stage).toMatch(/<MiniMap[\s\S]*?\bpannable\b[\s\S]*?\/>/)
     expect(stage).toContain('onClick={handleMinimapClick}')
@@ -18,5 +19,7 @@ describe('canvas minimap interaction', () => {
     expect(styles).toContain('cursor: grab;')
     expect(styles).toContain('.canvas-minimap:active .react-flow__minimap-svg')
     expect(styles).toContain('cursor: grabbing;')
+    expect(minimapStyles).not.toContain('visibility: hidden')
+    expect(minimapStyles).not.toContain('backdrop-filter:')
   })
 })

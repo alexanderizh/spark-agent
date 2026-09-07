@@ -368,15 +368,15 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
  * flag into an empty-string value before parsing — '' is the picker sentinel.
  */
 function normalizeResumeArgv(argv: readonly string[]): string[] {
-  const out = [...argv];
+  const out = [...argv]
   for (let index = 0; index < out.length; index += 1) {
-    const token = out[index];
+    const token = out[index]
     if (token === '--resume' || token === '-r') {
-      const next = out[index + 1];
-      if (next === undefined || next.startsWith('-')) out.splice(index + 1, 0, '');
+      const next = out[index + 1]
+      if (next === undefined || next.startsWith('-')) out.splice(index + 1, 0, '')
     }
   }
-  return out;
+  return out
 }
 
 function parseCli(argv: readonly string[]): CliOptions {
@@ -465,7 +465,10 @@ function openProjectSessionStore(): JsonlSessionStore {
 async function resolveResumeTarget(options: CliOptions): Promise<string | undefined> {
   if (!options.continueSession && options.resume === undefined) return undefined
   if (options.resume === '') return undefined // picker sentinel; TUI handles it
-  const sessions = await openProjectSessionStore().list(null)
+  const sessions = await openProjectSessionStore().list(
+    null,
+    options.continueSession ? {} : { includeSubagents: true },
+  )
   if (options.continueSession) {
     const latest = sessions[0]
     if (latest === undefined) {
@@ -479,7 +482,9 @@ async function resolveResumeTarget(options: CliOptions): Promise<string | undefi
   if (found === undefined) {
     const recent = sessions
       .slice(0, 5)
-      .map((session) => `  ${shortSessionId(session.sessionId)}  ${session.preview ?? ''}`.trimEnd())
+      .map((session) =>
+        `  ${shortSessionId(session.sessionId)}  ${session.preview ?? ''}`.trimEnd(),
+      )
       .join('\n')
     throw new Error(
       `Session not found: ${requested}${recent === '' ? '' : `\nRecent sessions:\n${recent}`}`,
@@ -532,13 +537,18 @@ async function runOnce(
 ): Promise<number> {
   const agent = createConfiguredAgent(runtime)
   warnPermissionBypass(options.permissionMode)
-  const session = await openOrCreateSession(agent, {
-    output: options.json ? 'json' : 'text',
-    model: runtime.modelId,
-    route: runtime.route,
-    config: runtime.configSnapshot,
-    permissionMode: options.permissionMode,
-  }, resumeSessionId, options.permissionModeExplicit ? options.permissionMode : undefined)
+  const session = await openOrCreateSession(
+    agent,
+    {
+      output: options.json ? 'json' : 'text',
+      model: runtime.modelId,
+      route: runtime.route,
+      config: runtime.configSnapshot,
+      permissionMode: options.permissionMode,
+    },
+    resumeSessionId,
+    options.permissionModeExplicit ? options.permissionMode : undefined,
+  )
   if (options.json) {
     for await (const event of session.events()) {
       process.stdout.write(`${JSON.stringify(event)}\n`)
@@ -588,13 +598,18 @@ async function runPlainRepl(
 ): Promise<number> {
   const agent = createConfiguredAgent(runtime)
   warnPermissionBypass(options.permissionMode)
-  const session = await openOrCreateSession(agent, {
-    output: 'plain-repl',
-    model: runtime.modelId,
-    route: runtime.route,
-    config: runtime.configSnapshot,
-    permissionMode: options.permissionMode,
-  }, resumeSessionId, options.permissionModeExplicit ? options.permissionMode : undefined)
+  const session = await openOrCreateSession(
+    agent,
+    {
+      output: 'plain-repl',
+      model: runtime.modelId,
+      route: runtime.route,
+      config: runtime.configSnapshot,
+      permissionMode: options.permissionMode,
+    },
+    resumeSessionId,
+    options.permissionModeExplicit ? options.permissionMode : undefined,
+  )
   const reasoningEffort = options.reasoningEffort
   const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
   process.stdout.write('spark plain REPL · /exit 退出\n> ')

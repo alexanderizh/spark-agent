@@ -1,5 +1,4 @@
 import type { CanvasNode } from './canvas.types'
-import { CANVAS_NODE_META_BAR_HEIGHT } from './canvasNodeSize'
 
 export type CanvasImageSourceDimensions = {
   width?: number | null
@@ -24,8 +23,8 @@ export function resolveCanvasImageNodePresentationSize(
 
   return {
     width: node.width,
-    height:
-      Math.max(1, Math.round((node.width * sourceHeight) / sourceWidth)) +
-      CANVAS_NODE_META_BAR_HEIGHT,
+    // Full-bleed 图片的标题栏是覆盖层，不占用节点高度；节点外框必须严格匹配图片比例，
+    // 否则 object-fit: contain 会在图片上下留下空白。
+    height: Math.max(1, Math.round((node.width * sourceHeight) / sourceWidth)),
   }
 }

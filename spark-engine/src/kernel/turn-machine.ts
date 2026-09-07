@@ -9,7 +9,7 @@ import { consumeLlmStream } from '../llm/consume.js'
 import type { LlmDelta, LlmRequest, ReasoningEffort } from '../llm/types.js'
 import { thinkingConfigFor } from '../llm/types.js'
 import type { PermissionMode } from '../permission/types.js'
-import type { AgentEnv, BudgetLimits } from '../seams.js'
+import type { AgentEnv, BudgetLimits, SubagentRunner } from '../seams.js'
 import { CancellationTree, isAbortError, throwIfAborted } from './cancellation.js'
 import { toErrorInfo } from './errors.js'
 import { ToolRunner } from './tool-runner.js'
@@ -30,6 +30,8 @@ export interface RunTurnOptions {
   readonly signal?: AbortSignal
   readonly budget?: Partial<BudgetLimits>
   readonly maxTokens?: number
+  /** Optional orchestration seam used by the built-in task tool. */
+  readonly subagent?: SubagentRunner
   /** User-selected reasoning effort; omitted keeps the protocol default. */
   readonly reasoningEffort?: ReasoningEffort
   readonly onEvent?: (event: AgentEvent) => Promise<void> | void
@@ -116,8 +118,7 @@ export class TurnMachine {
                 turnId: options.turnId,
                 error: {
                   code: 'hook.blocked',
-                  message:
-                    submitted.reason ?? 'Prompt rejected by a UserPromptSubmit hook.',
+                  message: submitted.reason ?? 'Prompt rejected by a UserPromptSubmit hook.',
                   retryable: false,
                 },
                 recoveryHint:
@@ -162,13 +163,11 @@ export class TurnMachine {
         const request: LlmRequest = {
           system,
           messages: projected.messages,
-          tools: this.env.tools.registry
-            .list()
-            .map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              inputSchema: tool.inputSchema,
-            })),
+          tools: this.env.tools.registry.list().map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
           ...(options.reasoningEffort === undefined
             ? {}
             : { thinking: thinkingConfigFor(options.reasoningEffort) }),
@@ -219,7 +218,11 @@ export class TurnMachine {
             turnId: options.turnId,
             cwd: options.cwd,
             permissionMode: options.permissionMode,
+            ...(options.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: options.reasoningEffort }),
             signal: cancellation.signal,
+            ...(options.subagent === undefined ? {} : { subagent: options.subagent }),
             ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
           })
           await runner.run(response.message.toolCalls)

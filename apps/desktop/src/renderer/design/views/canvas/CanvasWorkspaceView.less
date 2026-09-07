@@ -431,12 +431,6 @@
   background: var(--bg-sunken);
 }
 
-// 平移只更新 React Flow 视口容器的 transform。交互期间临时建立合成层，避免媒体节点
-// 较多时 Chromium 反复栅格化整个节点层；结束后释放，避免超大画布长期占用合成内存。
-.canvas-stage[data-viewport-moving='true'] .react-flow__viewport {
-  will-change: transform;
-}
-
 .canvas-stage::before {
   position: absolute;
   inset: 0;
@@ -585,15 +579,8 @@
   border-radius: var(--r-xs);
   background: var(--canvas-float-bg-solid) !important;
   box-shadow: var(--canvas-float-shadow);
-  backdrop-filter: blur(18px) saturate(1.04);
-  -webkit-backdrop-filter: blur(18px) saturate(1.04);
   margin-right: 0;
   margin-bottom: 0;
-  /* 视口移动（滚轮/拖拽/缩放）期间跳过小地图绘制与 backdrop 模糊重合成；
-     小地图内容随视口每帧变化，重绘它只抢主画布的帧预算（节点多时引发掉帧/闪烁）。 */
-  .canvas-stage[data-viewport-moving='true'] & {
-    visibility: hidden;
-  }
 }
 
 .canvas-minimap .react-flow__minimap-svg {

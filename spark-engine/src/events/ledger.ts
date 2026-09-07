@@ -1,23 +1,23 @@
-import { createHash } from 'node:crypto';
-import { mkdir, open, readdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { createInterface } from 'node:readline';
+import { createHash } from 'node:crypto'
+import { mkdir, open, readdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { createInterface } from 'node:readline'
 
-import type { Clock, SessionMeta, SessionStore } from '../seams.js';
-import { decodeLine } from './migrations.js';
-import { AgentEventSchema, type AgentEvent, type BoundEventDraft } from './schema.js';
+import type { Clock, SessionListOptions, SessionMeta, SessionStore } from '../seams.js'
+import { decodeLine } from './migrations.js'
+import { AgentEventSchema, type AgentEvent, type BoundEventDraft } from './schema.js'
 
-export type FsyncPolicy = 'always' | 'step-boundary';
+export type FsyncPolicy = 'always' | 'step-boundary'
 
-const storeTails = new WeakMap<SessionStore, Map<string, Promise<void>>>();
+const storeTails = new WeakMap<SessionStore, Map<string, Promise<void>>>()
 
 function tailsFor(store: SessionStore): Map<string, Promise<void>> {
-  let tails = storeTails.get(store);
+  let tails = storeTails.get(store)
   if (!tails) {
-    tails = new Map();
-    storeTails.set(store, tails);
+    tails = new Map()
+    storeTails.set(store, tails)
   }
-  return tails;
+  return tails
 }
 
 function isBoundary(event: AgentEvent): boolean {
@@ -28,10 +28,10 @@ function isBoundary(event: AgentEvent): boolean {
     event.type === 'turn.completed' ||
     event.type === 'turn.cancelled' ||
     event.type === 'turn.failed'
-  );
+  )
 }
 
-const PREVIEW_MAX_CHARS = 80;
+const PREVIEW_MAX_CHARS = 80
 
 /**
  * First user input of a session, whitespace-collapsed and truncated — the
@@ -41,295 +41,348 @@ const PREVIEW_MAX_CHARS = 80;
 function previewFromEvents(events: readonly AgentEvent[]): string | undefined {
   for (const event of events) {
     if (event.type === 'turn.started') {
-      const collapsed = event.input.text.replaceAll(/\s+/g, ' ').trim();
-      if (collapsed.length === 0) continue;
+      const collapsed = event.input.text.replaceAll(/\s+/g, ' ').trim()
+      if (collapsed.length === 0) continue
       return collapsed.length > PREVIEW_MAX_CHARS
         ? `${collapsed.slice(0, PREVIEW_MAX_CHARS)}…`
-        : collapsed;
+        : collapsed
     }
   }
-  return undefined;
+  return undefined
+}
+
+interface SessionClassification {
+  readonly kind: 'main' | 'subagent'
+  readonly parentSessionId?: string
+}
+
+function classifySession(events: readonly AgentEvent[]): SessionClassification {
+  const started = events.find((event) => event.type === 'session.started')
+  if (started?.type !== 'session.started') return { kind: 'main' }
+  try {
+    const config: unknown = JSON.parse(started.configSnapshot)
+    if (!isRecord(config) || config.kind !== 'subagent') return { kind: 'main' }
+    return {
+      kind: 'subagent',
+      ...(typeof config.parentSessionId === 'string'
+        ? { parentSessionId: config.parentSessionId }
+        : {}),
+    }
+  } catch {
+    return { kind: 'main' }
+  }
+}
+
+function sessionMeta(
+  sessionId: string,
+  projectDir: string | null,
+  events: readonly AgentEvent[],
+): SessionMeta {
+  const classification = classifySession(events)
+  const preview = previewFromEvents(events)
+  return {
+    sessionId,
+    projectDir,
+    createdAt: events[0]?.ts ?? 0,
+    updatedAt: events.at(-1)?.ts ?? 0,
+    latestSeq: events.at(-1)?.seq ?? -1,
+    kind: classification.kind,
+    ...(classification.parentSessionId === undefined
+      ? {}
+      : { parentSessionId: classification.parentSessionId }),
+    ...(preview === undefined ? {} : { preview }),
+  }
+}
+
+function includeSession(meta: SessionMeta, options?: SessionListOptions): boolean {
+  return options?.includeSubagents === true || meta.kind !== 'subagent'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export class SessionLedger {
-  readonly #sessionId: string;
-  readonly #store: SessionStore;
-  readonly #clock: Clock;
+  readonly #sessionId: string
+  readonly #store: SessionStore
+  readonly #clock: Clock
 
   constructor(sessionId: string, store: SessionStore, clock: Clock) {
-    this.#sessionId = sessionId;
-    this.#store = store;
-    this.#clock = clock;
+    this.#sessionId = sessionId
+    this.#store = store
+    this.#clock = clock
   }
 
   append(draft: BoundEventDraft): Promise<AgentEvent> {
-    const tails = tailsFor(this.#store);
-    const previous = tails.get(this.#sessionId) ?? Promise.resolve();
+    const tails = tailsFor(this.#store)
+    const previous = tails.get(this.#sessionId) ?? Promise.resolve()
     const operation = previous.then(async () => {
-      const latest = await this.#store.latestSeq(this.#sessionId);
+      const latest = await this.#store.latestSeq(this.#sessionId)
       const event = AgentEventSchema.parse({
         ...draft,
         sessionId: this.#sessionId,
         seq: latest + 1,
         ts: this.#clock.now(),
-      });
-      await this.#store.append(this.#sessionId, event);
-      return event;
-    });
+      })
+      await this.#store.append(this.#sessionId, event)
+      return event
+    })
     tails.set(
       this.#sessionId,
       operation.then(
         () => undefined,
         () => undefined,
       ),
-    );
-    return operation;
+    )
+    return operation
   }
 
   async *read(fromSeq = 0): AsyncIterable<AgentEvent> {
-    await (tailsFor(this.#store).get(this.#sessionId) ?? Promise.resolve());
-    for await (const event of this.#store.read(this.#sessionId, fromSeq)) yield event;
+    await (tailsFor(this.#store).get(this.#sessionId) ?? Promise.resolve())
+    for await (const event of this.#store.read(this.#sessionId, fromSeq)) yield event
   }
 
   async latestSeq(): Promise<number> {
-    await (tailsFor(this.#store).get(this.#sessionId) ?? Promise.resolve());
-    return this.#store.latestSeq(this.#sessionId);
+    await (tailsFor(this.#store).get(this.#sessionId) ?? Promise.resolve())
+    return this.#store.latestSeq(this.#sessionId)
   }
 }
 
 export class MemorySessionStore implements SessionStore {
-  readonly #sessions = new Map<string, AgentEvent[]>();
-  #forkCounter = 0;
+  readonly #sessions = new Map<string, AgentEvent[]>()
+  #forkCounter = 0
 
   async append(sessionId: string, event: AgentEvent): Promise<void> {
-    const events = this.#sessions.get(sessionId) ?? [];
-    const expectedSeq = events.length === 0 ? 0 : (events.at(-1)?.seq ?? -1) + 1;
+    const events = this.#sessions.get(sessionId) ?? []
+    const expectedSeq = events.length === 0 ? 0 : (events.at(-1)?.seq ?? -1) + 1
     if (event.seq !== expectedSeq) {
-      throw new Error(`Non-contiguous event sequence for ${sessionId}: expected ${expectedSeq}, got ${event.seq}`);
+      throw new Error(
+        `Non-contiguous event sequence for ${sessionId}: expected ${expectedSeq}, got ${event.seq}`,
+      )
     }
-    events.push(structuredClone(event));
-    this.#sessions.set(sessionId, events);
+    events.push(structuredClone(event))
+    this.#sessions.set(sessionId, events)
   }
 
   async *read(sessionId: string, fromSeq = 0): AsyncIterable<AgentEvent> {
     for (const event of this.#sessions.get(sessionId) ?? []) {
-      if (event.seq >= fromSeq) yield structuredClone(event);
+      if (event.seq >= fromSeq) yield structuredClone(event)
     }
   }
 
   async latestSeq(sessionId: string): Promise<number> {
-    return this.#sessions.get(sessionId)?.at(-1)?.seq ?? -1;
+    return this.#sessions.get(sessionId)?.at(-1)?.seq ?? -1
   }
 
   async fork(sessionId: string, uptoSeq: number): Promise<string> {
-    const events = this.#sessions.get(sessionId);
-    if (!events) throw new Error(`Session not found: ${sessionId}`);
-    this.#forkCounter += 1;
-    const forkId = `${sessionId}-fork-${this.#forkCounter}`;
+    const events = this.#sessions.get(sessionId)
+    if (!events) throw new Error(`Session not found: ${sessionId}`)
+    this.#forkCounter += 1
+    const forkId = `${sessionId}-fork-${this.#forkCounter}`
     this.#sessions.set(
       forkId,
       events.filter((event) => event.seq <= uptoSeq).map((event) => structuredClone(event)),
-    );
-    return forkId;
+    )
+    return forkId
   }
 
-  async list(projectDir: string | null): Promise<SessionMeta[]> {
+  async list(projectDir: string | null, options?: SessionListOptions): Promise<SessionMeta[]> {
     return [...this.#sessions]
       .map(([sessionId, events]) => {
-        const preview = previewFromEvents(events);
-        return {
-          sessionId,
-          projectDir,
-          createdAt: events[0]?.ts ?? 0,
-          updatedAt: events.at(-1)?.ts ?? 0,
-          latestSeq: events.at(-1)?.seq ?? -1,
-          ...(preview === undefined ? {} : { preview }),
-        };
+        return sessionMeta(sessionId, projectDir, events)
       })
-      .sort((left, right) => right.updatedAt - left.updatedAt);
+      .filter((meta) => includeSession(meta, options))
+      .sort((left, right) => right.updatedAt - left.updatedAt)
   }
 }
 
 export interface JsonlSessionStoreOptions {
-  readonly dataRoot: string;
-  readonly projectDir: string;
-  readonly fsync?: FsyncPolicy;
+  readonly dataRoot: string
+  readonly projectDir: string
+  readonly fsync?: FsyncPolicy
 }
 
 export class JsonlSessionStore implements SessionStore {
-  readonly #projectRoot: string;
-  readonly #projectDir: string;
-  readonly #fsync: FsyncPolicy;
-  readonly #tails = new Map<string, Promise<void>>();
-  readonly #latestSeqs = new Map<string, number>();
-  #forkCounter = 0;
+  readonly #projectRoot: string
+  readonly #projectDir: string
+  readonly #fsync: FsyncPolicy
+  readonly #tails = new Map<string, Promise<void>>()
+  readonly #latestSeqs = new Map<string, number>()
+  #forkCounter = 0
 
   constructor(options: JsonlSessionStoreOptions) {
-    this.#projectDir = resolve(options.projectDir);
-    this.#projectRoot = resolve(options.dataRoot, 'projects', encodeProjectDir(this.#projectDir));
-    this.#fsync = options.fsync ?? 'step-boundary';
+    this.#projectDir = resolve(options.projectDir)
+    this.#projectRoot = resolve(options.dataRoot, 'projects', encodeProjectDir(this.#projectDir))
+    this.#fsync = options.fsync ?? 'step-boundary'
   }
 
   async append(sessionId: string, event: AgentEvent): Promise<void> {
-    assertSessionId(sessionId);
-    const previous = this.#tails.get(sessionId) ?? Promise.resolve();
+    assertSessionId(sessionId)
+    const previous = this.#tails.get(sessionId) ?? Promise.resolve()
     const operation = previous.then(async () => {
-      const current = this.#latestSeqs.get(sessionId) ?? (await this.#scanLatestSeq(sessionId));
-      const expected = current + 1;
+      const current = this.#latestSeqs.get(sessionId) ?? (await this.#scanLatestSeq(sessionId))
+      const expected = current + 1
       if (event.seq !== expected) {
         throw new Error(
           `Non-contiguous event sequence for ${sessionId}: expected ${expected}, got ${event.seq}`,
-        );
+        )
       }
-      const directory = this.#sessionDirectory(sessionId);
-      await mkdir(directory, { recursive: true });
-      const handle = await open(resolve(directory, 'events.jsonl'), 'a');
+      const directory = this.#sessionDirectory(sessionId)
+      await mkdir(directory, { recursive: true })
+      const handle = await open(resolve(directory, 'events.jsonl'), 'a')
       try {
-        await handle.writeFile(`${JSON.stringify(event)}\n`, 'utf8');
-        if (this.#fsync === 'always' || isBoundary(event)) await handle.sync();
+        await handle.writeFile(`${JSON.stringify(event)}\n`, 'utf8')
+        if (this.#fsync === 'always' || isBoundary(event)) await handle.sync()
       } finally {
-        await handle.close();
+        await handle.close()
       }
-      this.#latestSeqs.set(sessionId, event.seq);
-    });
+      this.#latestSeqs.set(sessionId, event.seq)
+    })
     this.#tails.set(
       sessionId,
       operation.then(
         () => undefined,
         () => undefined,
       ),
-    );
-    return operation;
+    )
+    return operation
   }
 
   async *read(sessionId: string, fromSeq = 0): AsyncIterable<AgentEvent> {
-    assertSessionId(sessionId);
-    await this.#tails.get(sessionId);
-    yield* this.#readFileEvents(sessionId, fromSeq);
+    assertSessionId(sessionId)
+    await this.#tails.get(sessionId)
+    yield* this.#readFileEvents(sessionId, fromSeq)
   }
 
   async latestSeq(sessionId: string): Promise<number> {
-    assertSessionId(sessionId);
-    await this.#tails.get(sessionId);
-    const cached = this.#latestSeqs.get(sessionId);
-    if (cached !== undefined) return cached;
-    return this.#scanLatestSeq(sessionId);
+    assertSessionId(sessionId)
+    await this.#tails.get(sessionId)
+    const cached = this.#latestSeqs.get(sessionId)
+    if (cached !== undefined) return cached
+    return this.#scanLatestSeq(sessionId)
   }
 
   async fork(sessionId: string, uptoSeq: number): Promise<string> {
-    const lines = [];
+    const lines = []
     for await (const event of this.read(sessionId)) {
-      if (event.seq <= uptoSeq) lines.push(JSON.stringify(event));
+      if (event.seq <= uptoSeq) lines.push(JSON.stringify(event))
     }
-    if (lines.length === 0) throw new Error(`Session not found or empty: ${sessionId}`);
+    if (lines.length === 0) throw new Error(`Session not found or empty: ${sessionId}`)
     while (true) {
-      this.#forkCounter += 1;
-      const forkId = `${sessionId}-fork-${this.#forkCounter}`;
-      await mkdir(this.#sessionDirectory(forkId), { recursive: true });
+      this.#forkCounter += 1
+      const forkId = `${sessionId}-fork-${this.#forkCounter}`
+      await mkdir(this.#sessionDirectory(forkId), { recursive: true })
       try {
-        await writeFile(this.#eventPath(forkId), `${lines.join('\n')}\n`, { flag: 'wx' });
-        this.#latestSeqs.set(forkId, uptoSeq);
-        return forkId;
+        await writeFile(this.#eventPath(forkId), `${lines.join('\n')}\n`, { flag: 'wx' })
+        this.#latestSeqs.set(forkId, uptoSeq)
+        return forkId
       } catch (error) {
-        if (!isNodeError(error, 'EEXIST')) throw error;
+        if (!isNodeError(error, 'EEXIST')) throw error
       }
     }
   }
 
-  async list(projectDir: string | null): Promise<SessionMeta[]> {
-    if (projectDir !== null && resolve(projectDir) !== this.#projectDir) return [];
-    let entries;
+  async list(projectDir: string | null, options?: SessionListOptions): Promise<SessionMeta[]> {
+    if (projectDir !== null && resolve(projectDir) !== this.#projectDir) return []
+    let entries
     try {
-      entries = await readdir(this.#projectRoot, { withFileTypes: true });
+      entries = await readdir(this.#projectRoot, { withFileTypes: true })
     } catch (error) {
-      if (isNodeError(error, 'ENOENT')) return [];
-      throw error;
+      if (isNodeError(error, 'ENOENT')) return []
+      throw error
     }
-    const sessions: SessionMeta[] = [];
+    const sessions: SessionMeta[] = []
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const events: AgentEvent[] = [];
-      for await (const event of this.read(entry.name)) events.push(event);
-      if (events.length === 0) continue;
-      const preview = previewFromEvents(events);
-      sessions.push({
-        sessionId: entry.name,
-        projectDir: this.#projectDir,
-        createdAt: events[0]?.ts ?? 0,
-        updatedAt: events.at(-1)?.ts ?? 0,
-        latestSeq: events.at(-1)?.seq ?? -1,
-        ...(preview === undefined ? {} : { preview }),
-      });
+      if (!entry.isDirectory()) continue
+      const events: AgentEvent[] = []
+      let hiddenSubagent = false
+      for await (const event of this.read(entry.name)) {
+        events.push(event)
+        if (
+          events.length === 1 &&
+          options?.includeSubagents !== true &&
+          classifySession(events).kind === 'subagent'
+        ) {
+          hiddenSubagent = true
+          break
+        }
+      }
+      if (events.length === 0) continue
+      if (hiddenSubagent) continue
+      const meta = sessionMeta(entry.name, this.#projectDir, events)
+      if (includeSession(meta, options)) sessions.push(meta)
     }
-    return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+    return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   #sessionDirectory(sessionId: string): string {
-    return resolve(this.#projectRoot, sessionId);
+    return resolve(this.#projectRoot, sessionId)
   }
 
   #eventPath(sessionId: string): string {
-    return resolve(this.#sessionDirectory(sessionId), 'events.jsonl');
+    return resolve(this.#sessionDirectory(sessionId), 'events.jsonl')
   }
 
   async #scanLatestSeq(sessionId: string): Promise<number> {
-    let latest = -1;
-    for await (const event of this.#readFileEvents(sessionId)) latest = event.seq;
-    this.#latestSeqs.set(sessionId, latest);
-    return latest;
+    let latest = -1
+    for await (const event of this.#readFileEvents(sessionId)) latest = event.seq
+    this.#latestSeqs.set(sessionId, latest)
+    return latest
   }
 
   async *#readFileEvents(sessionId: string, fromSeq = 0): AsyncIterable<AgentEvent> {
-    let handle;
+    let handle
     try {
-      handle = await open(this.#eventPath(sessionId), 'r');
+      handle = await open(this.#eventPath(sessionId), 'r')
     } catch (error) {
-      if (isNodeError(error, 'ENOENT')) return;
-      throw error;
+      if (isNodeError(error, 'ENOENT')) return
+      throw error
     }
-    const input = handle.createReadStream({ autoClose: false, encoding: 'utf8' });
-    const lines = createInterface({ input, crlfDelay: Infinity });
-    let lineNumber = 0;
+    const input = handle.createReadStream({ autoClose: false, encoding: 'utf8' })
+    const lines = createInterface({ input, crlfDelay: Infinity })
+    let lineNumber = 0
     try {
       for await (const line of lines) {
-        lineNumber += 1;
-        if (!line) continue;
+        lineNumber += 1
+        if (!line) continue
         try {
-          const event = decodeLine(line);
-          if (event.seq >= fromSeq) yield event;
+          const event = decodeLine(line)
+          if (event.seq >= fromSeq) yield event
         } catch (error) {
           throw new Error(`Failed to decode ${this.#eventPath(sessionId)}:${lineNumber}`, {
             cause: error,
-          });
+          })
         }
       }
     } finally {
-      lines.close();
-      input.destroy();
-      await handle.close();
+      lines.close()
+      input.destroy()
+      await handle.close()
     }
   }
 }
 
 export function encodeProjectDir(projectDir: string): string {
-  const absolute = resolve(projectDir);
-  const readable = absolute.replaceAll(/[^a-zA-Z0-9._-]+/g, '-').replaceAll(/^-+|-+$/g, '');
-  const digest = createHash('sha256').update(absolute).digest('hex').slice(0, 12);
-  return `${readable.slice(-96) || 'root'}-${digest}`;
+  const absolute = resolve(projectDir)
+  const readable = absolute.replaceAll(/[^a-zA-Z0-9._-]+/g, '-').replaceAll(/^-+|-+$/g, '')
+  const digest = createHash('sha256').update(absolute).digest('hex').slice(0, 12)
+  return `${readable.slice(-96) || 'root'}-${digest}`
 }
 
 /** Compact display form of a session id for pickers and lists (`session_<uuid>` → first 8 hex). */
 export function shortSessionId(sessionId: string): string {
-  const withoutPrefix = sessionId.startsWith('session_') ? sessionId.slice('session_'.length) : sessionId;
-  return withoutPrefix.slice(0, 8);
+  const withoutPrefix = sessionId.startsWith('session_')
+    ? sessionId.slice('session_'.length)
+    : sessionId
+  return withoutPrefix.slice(0, 8)
 }
 
 function assertSessionId(sessionId: string): void {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(sessionId)) {
-    throw new Error(`Unsafe session id: ${sessionId}`);
+    throw new Error(`Unsafe session id: ${sessionId}`)
   }
 }
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && error.code === code;
+  return error instanceof Error && 'code' in error && error.code === code
 }

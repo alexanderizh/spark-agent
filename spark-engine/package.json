@@ -34,6 +34,7 @@
   "scripts": {
     "boundary": "node scripts/boundary-check.mjs",
     "build": "npm run boundary && tsup",
+    "dev-cli": "tsup --watch --onSuccess \"node dist/cli/main.js\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run build:test && vitest run",

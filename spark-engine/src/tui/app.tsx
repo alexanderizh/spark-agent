@@ -3,7 +3,11 @@ import { homedir } from 'node:os'
 import { sep } from 'node:path'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
-import { expandCustomCommand, matchCustomCommand, type CustomCommand } from '../commands/custom-commands.js'
+import {
+  expandCustomCommand,
+  matchCustomCommand,
+  type CustomCommand,
+} from '../commands/custom-commands.js'
 import type { AgentEvent } from '../events/schema.js'
 import { shortSessionId } from '../events/ledger.js'
 import type { SessionMeta } from '../seams.js'
@@ -13,7 +17,11 @@ import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { AgentSession } from '../sdk/agent.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
 import { PermissionCard } from './components/permission-card.js'
-import { PERMISSION_MODES, PermissionPicker, nextPermissionMode } from './components/permission-picker.js'
+import {
+  PERMISSION_MODES,
+  PermissionPicker,
+  nextPermissionMode,
+} from './components/permission-picker.js'
 import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { SessionPicker } from './components/session-picker.js'
@@ -110,7 +118,9 @@ function formatPerf(perf: StepPerf): string {
   const segments: string[] = []
   if (perf.tokensPerSec > 0) {
     const rate =
-      perf.tokensPerSec >= 100 ? Math.round(perf.tokensPerSec).toString() : perf.tokensPerSec.toFixed(1)
+      perf.tokensPerSec >= 100
+        ? Math.round(perf.tokensPerSec).toString()
+        : perf.tokensPerSec.toFixed(1)
     segments.push(`${rate} tok/s`)
   }
   if (perf.ttftMs > 0) {
@@ -138,10 +148,9 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const theme = props.theme ?? defaultTheme
   // Capabilities re-detect on terminal resize so wrapping reflows; the
   // initial value honors the injected prop (tests pin width/color mode).
-  const [capabilities, setCapabilities] = useState(() => props.capabilities ?? detectTerminalCapabilities())
-  // Bumped after a resize repaint: remounts <Static> so already-written rows
-  // are re-emitted at the new width instead of staying at the old one.
-  const [resizeVersion, setResizeVersion] = useState(0)
+  const [capabilities, setCapabilities] = useState(
+    () => props.capabilities ?? detectTerminalCapabilities(),
+  )
   const [session, setSession] = useState(props.initialSession)
   const [events, setEvents] = useState<AgentEvent[]>([...props.initialEvents])
   const [liveText, setLiveText] = useState('')
@@ -193,29 +202,26 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     }
   }, [sessionPickerOpen, props.listSessions])
 
-  // Terminal-resize repaint: <Static> content is written once and never
-  // reflows, so after the width settles we clear the screen, refresh the
-  // detected capabilities, and remount the transcript (key change) to re-emit
-  // every settled row at the new width. Debounced because drag-resize fires
-  // a burst of events and each repaint rewrites the whole log; height-only
-  // changes reflow natively and are skipped.
+  // Static transcript rows already live in terminal history. Replaying them
+  // on resize appends duplicate history because clearing the viewport does not
+  // clear scrollback. Let the terminal reflow committed rows and only refresh
+  // capabilities for subsequent/dynamic layout after the width settles.
   useEffect(() => {
-    let repaint: ReturnType<typeof setTimeout> | undefined
+    let refresh: ReturnType<typeof setTimeout> | undefined
     let lastWidth = stdout.columns
     const onResize = (): void => {
-      if (stdout.columns === lastWidth) return
-      if (repaint !== undefined) clearTimeout(repaint)
-      repaint = setTimeout(() => {
+      const width = stdout.columns
+      if (width === undefined || width === lastWidth) return
+      if (refresh !== undefined) clearTimeout(refresh)
+      refresh = setTimeout(() => {
         lastWidth = stdout.columns
-        stdout.write('\x1b[2J\x1b[H')
         setCapabilities(detectTerminalCapabilities(stdout))
-        setResizeVersion((version) => version + 1)
       }, 150)
     }
     stdout.on('resize', onResize)
     return () => {
       stdout.off('resize', onResize)
-      if (repaint !== undefined) clearTimeout(repaint)
+      if (refresh !== undefined) clearTimeout(refresh)
     }
   }, [stdout])
 
@@ -527,10 +533,14 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      {/* Remount on resize (reflow) and session switch: ink <Static> counts
-          flushed rows by position, so a swapped row list would otherwise be
-          silently skipped when the new session has a shorter/equal transcript. */}
-      <Transcript key={`${resizeVersion}-${session.sessionId}`} rows={projection.settled} theme={theme} capabilities={capabilities} />
+      {/* Remount only on session switch: ink <Static> counts flushed rows by
+          position, so a shorter/equal replacement transcript needs a reset. */}
+      <Transcript
+        key={session.sessionId}
+        rows={projection.settled}
+        theme={theme}
+        capabilities={capabilities}
+      />
       {showThinking && liveThinking && <Text color={theme.dim}>▍ {liveThinking}</Text>}
       {liveText && <Text>{liveText}</Text>}
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
@@ -646,12 +656,16 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      {notice && (
-        <Text color={noticeColor(theme, notice.tone)}>{notice.text}</Text>
-      )}
+      {notice && <Text color={noticeColor(theme, notice.tone)}>{notice.text}</Text>}
       <InputEditor
         active={!pickerOpen}
-        locked={pending !== undefined || pickerOpen || permPickerOpen || effortPickerOpen || sessionPickerOpen}
+        locked={
+          pending !== undefined ||
+          pickerOpen ||
+          permPickerOpen ||
+          effortPickerOpen ||
+          sessionPickerOpen
+        }
         running={activeTurns > 0}
         capabilities={capabilities}
         theme={theme}

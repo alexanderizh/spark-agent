@@ -1,181 +1,207 @@
-import type { AgentEvent, ArtifactRef } from './events/schema.js';
-import type { HookRunner } from './hooks/runner.js';
-import type { LlmDelta, LlmRequest, SystemSection } from './llm/types.js';
+import type { AgentEvent, ArtifactRef } from './events/schema.js'
+import type { HookRunner } from './hooks/runner.js'
+import type { LlmDelta, LlmRequest, ReasoningEffort, SystemSection } from './llm/types.js'
 import type {
   PermissionDecision,
   PermissionCheckContext,
   PermissionMode,
   PermissionRequest,
   PolicyDecision,
-} from './permission/types.js';
-import type {
-  ResolvedToolCall,
-  ToolDefinition,
-  ToolOutcome,
-} from './tools/contract.js';
+} from './permission/types.js'
+import type { ResolvedToolCall, ToolDefinition, ToolOutcome } from './tools/contract.js'
 
 export interface Clock {
-  now(): number;
-  monotonicMs(): number;
+  now(): number
+  monotonicMs(): number
 }
 
 export interface IdGen {
-  next(prefix?: string): string;
+  next(prefix?: string): string
 }
 
 export interface SessionMeta {
-  readonly sessionId: string;
-  readonly projectDir: string | null;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly latestSeq: number;
+  readonly sessionId: string
+  readonly projectDir: string | null
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly latestSeq: number
+  /** Main sessions are user-facing; subagent sessions are internal task ledgers. */
+  readonly kind?: 'main' | 'subagent'
+  /** Present for a subagent session created by the task tool. */
+  readonly parentSessionId?: string
   /** First user input of the session, whitespace-collapsed and truncated for pickers. */
-  readonly preview?: string;
+  readonly preview?: string
+}
+
+export interface SessionListOptions {
+  /** Include internal task ledgers in addition to user-facing sessions. */
+  readonly includeSubagents?: boolean
 }
 
 export interface SessionStore {
-  append(sessionId: string, event: AgentEvent): Promise<void>;
-  read(sessionId: string, fromSeq?: number): AsyncIterable<AgentEvent>;
-  latestSeq(sessionId: string): Promise<number>;
-  fork(sessionId: string, uptoSeq: number): Promise<string>;
-  list(projectDir: string | null): Promise<SessionMeta[]>;
+  append(sessionId: string, event: AgentEvent): Promise<void>
+  read(sessionId: string, fromSeq?: number): AsyncIterable<AgentEvent>
+  latestSeq(sessionId: string): Promise<number>
+  fork(sessionId: string, uptoSeq: number): Promise<string>
+  /** Lists user sessions by default; pass includeSubagents for internal task ledgers. */
+  list(projectDir: string | null, options?: SessionListOptions): Promise<SessionMeta[]>
 }
 
 export interface ArtifactStore {
-  put(content: string | Uint8Array, mediaType: string): Promise<ArtifactRef>;
-  get(ref: ArtifactRef): Promise<string | Uint8Array>;
+  put(content: string | Uint8Array, mediaType: string): Promise<ArtifactRef>
+  get(ref: ArtifactRef): Promise<string | Uint8Array>
 }
 
 export interface LlmCallContext {
-  readonly signal: AbortSignal;
-  readonly turnId: string;
-  readonly stepId: string;
+  readonly signal: AbortSignal
+  readonly turnId: string
+  readonly stepId: string
 }
 
 export interface LlmService {
-  stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta>;
+  stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta>
 }
 
 export interface ToolRegistry {
-  get(name: string): ToolDefinition | undefined;
-  list(): readonly ToolDefinition[];
+  get(name: string): ToolDefinition | undefined
+  list(): readonly ToolDefinition[]
 }
 
 export interface ToolCallContext {
-  readonly signal: AbortSignal;
-  readonly timeoutMs: number;
+  readonly signal: AbortSignal
+  readonly timeoutMs: number
 }
 
 export interface ToolExecutor {
-  execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome>;
+  execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome>
+}
+
+export interface SubagentRunRequest {
+  readonly parentSessionId: string
+  readonly parentTurnId: string
+  readonly cwd: string
+  readonly permissionMode: PermissionMode
+  readonly prompt: string
+  readonly description: string
+  readonly allowedTools?: readonly string[]
+  readonly maxSteps?: number
+  readonly maxToolCalls?: number
+  readonly maxTokens?: number
+  /** Inherited from the owning turn unless a future agent profile overrides it. */
+  readonly reasoningEffort?: ReasoningEffort
+  readonly signal: AbortSignal
+}
+
+export interface SubagentRunResult extends ToolOutcome {
+  readonly sessionId?: string
+}
+
+export interface SubagentRunner {
+  run(request: SubagentRunRequest): Promise<SubagentRunResult>
 }
 
 export interface PermissionPolicy {
-  check(call: ResolvedToolCall, context: PermissionCheckContext): Promise<PolicyDecision>;
+  check(call: ResolvedToolCall, context: PermissionCheckContext): Promise<PolicyDecision>
   recordDecision?(
     call: ResolvedToolCall,
     decision: PermissionDecision,
     context: PermissionCheckContext,
-  ): Promise<void> | void;
+  ): Promise<void> | void
 }
 
 export interface Approver {
-  ask(request: PermissionRequest, signal: AbortSignal): Promise<PermissionDecision>;
+  ask(request: PermissionRequest, signal: AbortSignal): Promise<PermissionDecision>
 }
 
 export interface ProjectorConfig {
-  readonly cwd: string;
-  readonly warning?: string;
-  readonly permissionMode?: PermissionMode;
+  readonly cwd: string
+  readonly warning?: string
+  readonly permissionMode?: PermissionMode
 }
 
 export interface ProjectedContext {
-  readonly messages: LlmRequest['messages'];
-  readonly sourceSeqs: readonly number[];
+  readonly messages: LlmRequest['messages']
+  readonly sourceSeqs: readonly number[]
 }
 
 export interface ContextProjector {
-  project(events: readonly AgentEvent[], config: ProjectorConfig): ProjectedContext;
+  project(events: readonly AgentEvent[], config: ProjectorConfig): ProjectedContext
 }
 
 export interface SessionFacts {
-  readonly sessionId: string;
-  readonly cwd: string;
-  readonly warning?: string;
-  readonly permissionMode?: PermissionMode;
+  readonly sessionId: string
+  readonly cwd: string
+  readonly warning?: string
+  readonly permissionMode?: PermissionMode
 }
 
 export interface PromptComposer {
-  compose(facts: SessionFacts, config: ProjectorConfig): Promise<readonly SystemSection[]>;
+  compose(facts: SessionFacts, config: ProjectorConfig): Promise<readonly SystemSection[]>
 }
 
 export interface BudgetLimits {
-  readonly maxInputTokens: number;
-  readonly maxCostUsd: number;
-  readonly maxWallMs: number;
-  readonly maxSteps: number;
-  readonly maxToolCalls: number;
+  readonly maxInputTokens: number
+  readonly maxCostUsd: number
+  readonly maxWallMs: number
+  readonly maxSteps: number
+  readonly maxToolCalls: number
 }
 
 export interface BudgetSnapshot {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly costUsd: number;
-  readonly wallMs: number;
-  readonly steps: number;
-  readonly toolCalls: number;
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly costUsd: number
+  readonly wallMs: number
+  readonly steps: number
+  readonly toolCalls: number
 }
 
 export type BudgetAction =
   | { readonly kind: 'continue' }
   | { readonly kind: 'warn'; readonly message: string }
-  | { readonly kind: 'stop'; readonly reason: string };
+  | { readonly kind: 'stop'; readonly reason: string }
 
 export interface StepLedgerEntry {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly cacheReadTokens: number;
-  readonly cacheWriteTokens: number;
-  readonly costUsd: number;
-  readonly toolCalls: number;
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly cacheReadTokens: number
+  readonly cacheWriteTokens: number
+  readonly costUsd: number
+  readonly toolCalls: number
 }
 
 export interface BudgetKeeper {
-  onStep(step: StepLedgerEntry): BudgetAction;
-  snapshot(): BudgetSnapshot;
+  onStep(step: StepLedgerEntry): BudgetAction
+  snapshot(): BudgetSnapshot
 }
 
 export interface BudgetFactory {
-  create(overrides?: Partial<BudgetLimits>): BudgetKeeper;
+  create(overrides?: Partial<BudgetLimits>): BudgetKeeper
 }
 
 export interface Telemetry {
-  counter(name: string, attributes?: Readonly<Record<string, string | number>>): void;
-  hist(
-    name: string,
-    value: number,
-    attributes?: Readonly<Record<string, string | number>>,
-  ): void;
+  counter(name: string, attributes?: Readonly<Record<string, string | number>>): void
+  hist(name: string, value: number, attributes?: Readonly<Record<string, string | number>>): void
 }
 
 export interface AgentEnv {
-  readonly clock: Clock;
-  readonly ids: IdGen;
-  readonly store: SessionStore;
-  readonly artifacts: ArtifactStore;
-  readonly llm: LlmService;
+  readonly clock: Clock
+  readonly ids: IdGen
+  readonly store: SessionStore
+  readonly artifacts: ArtifactStore
+  readonly llm: LlmService
   readonly tools: {
-    readonly registry: ToolRegistry;
-    readonly executor: ToolExecutor;
-  };
+    readonly registry: ToolRegistry
+    readonly executor: ToolExecutor
+  }
   readonly permission: {
-    readonly policy: PermissionPolicy;
-    readonly approver: Approver;
-  };
-  readonly projector: ContextProjector;
-  readonly prompt: PromptComposer;
+    readonly policy: PermissionPolicy
+    readonly approver: Approver
+  }
+  readonly projector: ContextProjector
+  readonly prompt: PromptComposer
   /** Lifecycle hooks (settings-driven); absent when no settings file exists. */
-  readonly hooks?: HookRunner;
-  readonly budgets: BudgetFactory;
-  readonly telemetry: Telemetry;
+  readonly hooks?: HookRunner
+  readonly budgets: BudgetFactory
+  readonly telemetry: Telemetry
 }

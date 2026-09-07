@@ -265,6 +265,9 @@ describe('canvas cinematic integration', () => {
       /\.canvas-node-image-overlay-footer\s*\{[\s\S]*?justify-content:\s*flex-end;/,
     )
     expect(nodeStyles).toContain('background: linear-gradient(transparent, rgba(5, 7, 9, 0.84))')
+    expect(nodeStyles).toMatch(
+      /\.canvas-node\.canvas-node-image-full-bleed \.canvas-node-image\s*\{[\s\S]*?object-fit:\s*contain;/,
+    )
   })
 
   it('keeps loaded image action chips clickable above the resize handle', () => {
