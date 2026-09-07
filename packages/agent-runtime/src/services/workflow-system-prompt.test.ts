@@ -15,6 +15,7 @@ function makeWorkflow(): WorkflowItem {
     status: 'active',
     tags: [],
     enabled: true,
+    bundleId: null,
     graph: {
       nodes: [
         {

@@ -49,6 +49,7 @@ import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
 import { ToolPackagesIpcSchemaRegistry } from '../tool-package.js'
 import { NotificationsIpcSchemaRegistry } from '../notifications.js'
 import { AccountSyncIpcSchemaRegistry } from '../account-sync.js'
+import { WorkflowBundleIpcSchemaRegistry } from '../workflow-bundle-ipc.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -1071,6 +1072,7 @@ export const IpcSchemaRegistry = {
   ...ToolPackagesIpcSchemaRegistry,
   ...NotificationsIpcSchemaRegistry,
   ...AccountSyncIpcSchemaRegistry,
+  ...WorkflowBundleIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

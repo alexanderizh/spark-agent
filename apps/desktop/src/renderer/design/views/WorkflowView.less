@@ -1478,3 +1478,90 @@
   background: var(--accent);
   color: var(--text-inverse, #fff);
 }
+
+/* ─── 工作流包(.sparkflow)导入预览与管理面板 ─── */
+.wf-bundle-preview {
+  .wf-bundle-preview-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .wf-bundle-preview-desc {
+    margin: 8px 0;
+    color: var(--text-secondary, #888);
+    font-size: 12px;
+  }
+  .wf-bundle-preview-list {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+    .wf-bundle-preview-sub {
+      display: block;
+      color: var(--text-tertiary, #999);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+  }
+}
+
+.wf-bundle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  .wf-bundle-card {
+    border: 1px solid var(--border-color, #e5e5e5);
+    border-radius: 8px;
+    padding: 12px;
+    .wf-bundle-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .wf-bundle-card-desc {
+      margin-top: 6px;
+      color: var(--text-secondary, #888);
+      font-size: 12px;
+    }
+    .wf-bundle-card-meta {
+      margin-top: 6px;
+      color: var(--text-tertiary, #999);
+      font-size: 12px;
+    }
+    .wf-bundle-card-mcp {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      .wf-bundle-card-mcp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 13px;
+      }
+    }
+    .wf-bundle-card-actions {
+      margin-top: 10px;
+    }
+    .wf-bundle-card-checks {
+      margin-top: 10px;
+      border-top: 1px dashed var(--border-color, #e5e5e5);
+      padding-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      .wf-bundle-card-check {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        font-size: 12px;
+        word-break: break-all;
+      }
+    }
+  }
+}

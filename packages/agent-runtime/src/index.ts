@@ -500,3 +500,5 @@ export type {
   WorkflowAgentExecutionRecord,
   WorkflowAtomicNodeExecutionRecord,
 } from './services/workflow-executor.js'
+export { WorkflowBundleService } from './services/workflow-bundle/index.js'
+export type { ActivateMcpResult } from './services/workflow-bundle/index.js'

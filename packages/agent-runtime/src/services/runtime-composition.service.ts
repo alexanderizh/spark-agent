@@ -1,4 +1,4 @@
-import type { SkillItem } from '@spark/protocol'
+import { BUNDLE_SKILL_ID_PREFIX, type SkillItem } from '@spark/protocol'
 import type { SettingsRepository, SkillRepository } from '@spark/storage'
 import { SkillLoader, type SkillInfo } from '../skills/skill-loader.js'
 
@@ -100,21 +100,31 @@ export class RuntimeCompositionService {
   ): RuntimeSkillConfig {
     const allInfos = this.loader.listAll()
     const enabledInfos = this.loader.listEnabled()
-    const enabledIds = new Set(enabledInfos.map((info) => info.definition?.id ?? info.dbRecord?.id).filter(isString))
+    const enabledIds = new Set(
+      enabledInfos.map((info) => info.definition?.id ?? info.dbRecord?.id).filter(isString),
+    )
 
     const agentSkillIds = uniqueStrings([
       ...this.getLayerSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID),
       ...(overrides.agentSkillIds ?? []),
     ])
-    const projectSkillIds = refs.workspaceId != null ? this.getLayerSkillIds('project', refs.workspaceId) : []
-    const sessionSkillIds = refs.sessionId != null ? this.getLayerSkillIds('session', refs.sessionId) : []
+    const projectSkillIds =
+      refs.workspaceId != null ? this.getLayerSkillIds('project', refs.workspaceId) : []
+    const sessionSkillIds =
+      refs.sessionId != null ? this.getLayerSkillIds('session', refs.sessionId) : []
     const agentDisabledSkillIds = uniqueStrings([
       ...this.getDisabledSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID),
       ...(overrides.agentDisabledSkillIds ?? []),
     ])
-    const projectDisabledSkillIds = refs.workspaceId != null ? this.getDisabledSkillIds('project', refs.workspaceId) : []
-    const sessionDisabledSkillIds = refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
-    const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
+    const projectDisabledSkillIds =
+      refs.workspaceId != null ? this.getDisabledSkillIds('project', refs.workspaceId) : []
+    const sessionDisabledSkillIds =
+      refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
+    const disabledIds = new Set([
+      ...agentDisabledSkillIds,
+      ...projectDisabledSkillIds,
+      ...sessionDisabledSkillIds,
+    ])
 
     // 内置技能（builtin:*）对所有 agent 默认可用，无需显式绑定；
     // 但一次性运行时若传入 replaceAgentSkills，则完全以显式 allow-list 为准。
@@ -124,14 +134,16 @@ export class RuntimeCompositionService {
     // If the agent has no skillIds configured, fall back to all
     // system-enabled skills for backward compatibility. Project and session layers are
     // always additive on top. Built-in skills are always included on top.
-    const hasAgentSkillConfig =
-      overrides.replaceAgentSkills === true || agentSkillIds.length > 0
+    // Bundle skills (`bundle:*`, installed by workflow bundles) are excluded from the
+    // fallback so an imported bundle never leaks into unrelated agents; they remain
+    // usable when explicitly configured.
+    const hasAgentSkillConfig = overrides.replaceAgentSkills === true || agentSkillIds.length > 0
     const base = hasAgentSkillConfig
       ? uniqueStrings([
           ...(overrides.replaceAgentSkills === true ? [] : builtinIds),
           ...agentSkillIds,
         ])
-      : Array.from(enabledIds)
+      : Array.from(enabledIds).filter((id) => !id.startsWith(BUNDLE_SKILL_ID_PREFIX))
     const ordered = uniqueStrings([
       ...base,
       ...(overrides.replaceAgentSkills === true ? [] : projectSkillIds),
@@ -139,7 +151,9 @@ export class RuntimeCompositionService {
     ]).filter((id) => enabledIds.has(id) && !disabledIds.has(id))
 
     return {
-      skills: allInfos.map((info) => this.toSkillItem(info)).filter((item): item is SkillItem => item != null),
+      skills: allInfos
+        .map((info) => this.toSkillItem(info))
+        .filter((item): item is SkillItem => item != null),
       systemSkillIds: Array.from(enabledIds),
       agentSkillIds,
       projectSkillIds,
@@ -159,7 +173,11 @@ export class RuntimeCompositionService {
   ): RuntimeSkillConfig {
     this.settingsRepo.set(SKILLS_CATEGORY, layerKey(scope, scopeRef), uniqueStrings(skillIds))
     if (disabledSkillIds !== undefined) {
-      this.settingsRepo.set(DISABLED_SKILLS_CATEGORY, layerKey(scope, scopeRef), uniqueStrings(disabledSkillIds))
+      this.settingsRepo.set(
+        DISABLED_SKILLS_CATEGORY,
+        layerKey(scope, scopeRef),
+        uniqueStrings(disabledSkillIds),
+      )
     }
     const refs: RuntimeScopeRefs = {}
     if (scope === 'agent') refs.agentId = scopeRef
@@ -171,8 +189,12 @@ export class RuntimeCompositionService {
   getPromptConfig(refs: RuntimeScopeRefs = {}): RuntimePromptConfig {
     const system = this.getPromptLayer('system')
     const agent = this.getPromptLayer('agent', refs.agentId ?? DEFAULT_AGENT_ID)
-    const project = refs.workspaceId != null ? this.getPromptLayer('project', refs.workspaceId) : emptyPromptLayer()
-    const session = refs.sessionId != null ? this.getPromptLayer('session', refs.sessionId) : emptyPromptLayer()
+    const project =
+      refs.workspaceId != null
+        ? this.getPromptLayer('project', refs.workspaceId)
+        : emptyPromptLayer()
+    const session =
+      refs.sessionId != null ? this.getPromptLayer('session', refs.sessionId) : emptyPromptLayer()
 
     const sections: string[] = []
     addPromptSection(sections, 'System Prompt', system)
@@ -189,7 +211,11 @@ export class RuntimeCompositionService {
     }
   }
 
-  updatePromptConfig(scope: RuntimeLayerScope, scopeRef: string | undefined, value: PromptLayerValue): RuntimePromptConfig {
+  updatePromptConfig(
+    scope: RuntimeLayerScope,
+    scopeRef: string | undefined,
+    value: PromptLayerValue,
+  ): RuntimePromptConfig {
     const key = scope === 'system' ? 'system' : layerKey(scope, scopeRef ?? '')
     this.settingsRepo.set(PROMPTS_CATEGORY, key, normalizePromptLayer(value))
     const refs: RuntimeScopeRefs = {}
@@ -200,8 +226,10 @@ export class RuntimeCompositionService {
   }
 
   getEnvConfig(refs: RuntimeScopeRefs = {}): RuntimeEnvConfig {
-    const project = refs.workspaceId != null ? this.getEnvLayer('project', refs.workspaceId) : emptyEnvLayer()
-    const session = refs.sessionId != null ? this.getEnvLayer('session', refs.sessionId) : emptyEnvLayer()
+    const project =
+      refs.workspaceId != null ? this.getEnvLayer('project', refs.workspaceId) : emptyEnvLayer()
+    const session =
+      refs.sessionId != null ? this.getEnvLayer('session', refs.sessionId) : emptyEnvLayer()
 
     // 会话级覆盖项目级：先铺项目层，再用会话层同名键覆盖。
     const merged = new Map<string, EnvVarItem>()
@@ -245,7 +273,9 @@ export class RuntimeCompositionService {
     const promptConfig = this.getPromptConfig(refs)
     const envConfig = this.getEnvConfig(refs)
     const availableSkillsPrompt = this.buildAvailableSkillsPrompt(skillConfig.effectiveSkillIds)
-    const skillSections = [explicitSkillPrompt, availableSkillsPrompt].filter((section): section is string => Boolean(section?.trim()))
+    const skillSections = [explicitSkillPrompt, availableSkillsPrompt].filter(
+      (section): section is string => Boolean(section?.trim()),
+    )
 
     const result: RuntimeCompositionResult = {
       skillConfig,
@@ -265,12 +295,20 @@ export class RuntimeCompositionService {
     return result
   }
 
-  private getLayerSkillIds(scope: Exclude<RuntimeLayerScope, 'system'>, scopeRef: string): string[] {
+  private getLayerSkillIds(
+    scope: Exclude<RuntimeLayerScope, 'system'>,
+    scopeRef: string,
+  ): string[] {
     return normalizeSkillIds(this.settingsRepo.get(SKILLS_CATEGORY, layerKey(scope, scopeRef)))
   }
 
-  private getDisabledSkillIds(scope: Exclude<RuntimeLayerScope, 'system'>, scopeRef: string): string[] {
-    return normalizeSkillIds(this.settingsRepo.get(DISABLED_SKILLS_CATEGORY, layerKey(scope, scopeRef)))
+  private getDisabledSkillIds(
+    scope: Exclude<RuntimeLayerScope, 'system'>,
+    scopeRef: string,
+  ): string[] {
+    return normalizeSkillIds(
+      this.settingsRepo.get(DISABLED_SKILLS_CATEGORY, layerKey(scope, scopeRef)),
+    )
   }
 
   private getPromptLayer(scope: RuntimeLayerScope, scopeRef?: string): PromptLayerValue {
@@ -278,7 +316,10 @@ export class RuntimeCompositionService {
     return normalizePromptLayer(this.settingsRepo.get(PROMPTS_CATEGORY, key))
   }
 
-  private getEnvLayer(scope: Exclude<RuntimeLayerScope, 'system'>, scopeRef: string): EnvVarLayerValue {
+  private getEnvLayer(
+    scope: Exclude<RuntimeLayerScope, 'system'>,
+    scopeRef: string,
+  ): EnvVarLayerValue {
     return normalizeEnvLayer(this.settingsRepo.get(ENV_CATEGORY, layerKey(scope, scopeRef)))
   }
 
@@ -288,7 +329,9 @@ export class RuntimeCompositionService {
       const info = this.loader.getSkill(skillId)
       if (!info?.definition) continue
       const def = info.definition
-      sections.push(`- ${def.id} — ${def.name}: ${truncateInline(def.description, MAX_SKILL_DESCRIPTION_CHARS)}`)
+      sections.push(
+        `- ${def.id} — ${def.name}: ${truncateInline(def.description, MAX_SKILL_DESCRIPTION_CHARS)}`,
+      )
     }
 
     if (sections.length === 0) return ''
@@ -405,7 +448,8 @@ function buildEnvSystemPrompt(items: EnvVarItem[]): string {
   if (items.length === 0) return ''
 
   const lines = items.map((item) => {
-    const desc = item.description != null && item.description.length > 0 ? ` — ${item.description}` : ''
+    const desc =
+      item.description != null && item.description.length > 0 ? ` — ${item.description}` : ''
     return `- ${item.key}${desc}（值已脱敏: ${maskSecret(item.value)}）`
   })
 

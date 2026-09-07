@@ -51,6 +51,7 @@ function makeMockRepo(store: MockStore): McpServerRepository {
         name,
         config_json: configJson,
         enabled: enabled === false ? 0 : 1,
+        bundle_id: null,
         created_at: now,
         updated_at: now,
       }
@@ -86,6 +87,7 @@ function makeRow(
     name: overrides.name,
     config_json: overrides.config_json ?? PLAYWRIGHT_CONFIG,
     enabled: overrides.enabled ?? 1,
+    bundle_id: overrides.bundle_id ?? null,
     created_at: overrides.created_at ?? new Date().toISOString(),
     updated_at: overrides.updated_at ?? new Date().toISOString(),
   }

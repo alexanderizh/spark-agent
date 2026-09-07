@@ -145,6 +145,7 @@ export {
   ToolPackageRepository,
   ToolInvocationRepository,
   ToolPackageStorageRepository,
+  WorkflowBundleRepository,
 } from './repositories/index.js'
 
 export type {

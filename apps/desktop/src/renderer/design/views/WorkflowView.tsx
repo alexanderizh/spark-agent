@@ -75,6 +75,9 @@ import { WorkflowToolConfigPanel } from './workflow/WorkflowToolConfigPanel'
 import { openWorkflowTestRunSession } from './workflow/open-test-run-session'
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
+import { WorkflowBundleImportButton } from './workflow/WorkflowBundleImportButton'
+import { WorkflowBundlePanelButton } from './workflow/WorkflowBundlePanelButton'
+import { WorkflowExportModal } from './workflow/WorkflowExportModal'
 import {
   Button,
   Dropdown,
@@ -86,16 +89,6 @@ import { Modal as AntdModal, Switch } from 'antd'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
-type WorkflowExportPayload = {
-  version: 1
-  exportedAt: string
-  workflows: Array<
-    Pick<
-      WorkflowItem,
-      'name' | 'description' | 'status' | 'tags' | 'enabled' | 'graph' | 'scope' | 'version'
-    >
-  >
-}
 let workflowNodeSequence = 0
 
 function deferEffect(task: () => void | Promise<void>): () => void {
@@ -236,10 +229,9 @@ function WorkflowViewInner() {
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
-  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
-  const { invoke: saveFileDialog } = useIpcInvoke('dialog:save-file')
-  const { invoke: writeTextFile } = useIpcInvoke('file:write-text')
-  const { invoke: readTextFile } = useIpcInvoke('file:read-text')
+
+  // 工作流导出弹窗(格式二选一:完整包 .sparkflow / 兼容 JSON),null = 关闭
+  const [exportModal, setExportModal] = useState<{ ids: string[] } | null>(null)
 
   const loadGraphIntoCanvas = useCallback(
     (graph: WorkflowGraph, selectedNodeId?: string | null) => {
@@ -626,96 +618,17 @@ function WorkflowViewInner() {
     setSelectedIds(new Set())
   }, [])
 
-  const exportWorkflowIds = useCallback(
-    async (ids: string[]) => {
-      const targets =
-        ids.length > 0 ? workflows.filter((workflow) => ids.includes(workflow.id)) : workflows
-      if (targets.length === 0) {
-        toast.warning('没有可导出的工作流')
-        return
-      }
-      const payload: WorkflowExportPayload = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        workflows: targets.map((workflow) => ({
-          scope: workflow.scope,
-          version: workflow.version,
-          name: workflow.name,
-          description: workflow.description,
-          status: workflow.status,
-          tags: workflow.tags,
-          enabled: workflow.enabled,
-          graph: workflow.graph,
-        })),
-      }
-      const result = await saveFileDialog({
-        title: '导出工作流',
-        defaultPath: `workflows-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (result.canceled || !result.filePath) return
-      await writeTextFile({
-        path: result.filePath,
-        content: JSON.stringify(payload, null, 2),
-      })
-      toast.success(`已导出 ${targets.length} 个工作流`)
-    },
-    [saveFileDialog, toast, workflows, writeTextFile],
-  )
+  const exportWorkflowIds = useCallback((ids: string[]) => {
+    setExportModal({ ids })
+  }, [])
 
-  const handleImport = useCallback(async () => {
-    try {
-      const result = await openFileDialog({
-        title: '导入工作流',
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      const filePath = result.filePaths?.[0] ?? result.filePath
-      if (result.canceled || !filePath) return
-      const file = await readTextFile({ path: filePath })
-      const parsed = JSON.parse(file.content) as Partial<WorkflowExportPayload>
-      const records = Array.isArray(parsed.workflows) ? parsed.workflows : []
-      if (records.length === 0) {
-        toast.warning('未找到可导入的工作流')
-        return
-      }
-      for (const workflow of records) {
-        await createWorkflow({
-          ...(typeof workflow.scope === 'string' && workflow.scope.trim().length > 0
-            ? { scope: workflow.scope }
-            : {}),
-          ...(typeof workflow.version === 'string' && workflow.version.trim().length > 0
-            ? { version: workflow.version }
-            : {}),
-          name:
-            typeof workflow.name === 'string' && workflow.name.trim().length > 0
-              ? workflow.name
-              : '导入的工作流',
-          description: typeof workflow.description === 'string' ? workflow.description : '',
-          status:
-            workflow.status === 'active' || workflow.status === 'archived'
-              ? workflow.status
-              : 'draft',
-          tags: Array.isArray(workflow.tags)
-            ? workflow.tags.filter((tag): tag is string => typeof tag === 'string')
-            : [],
-          enabled: typeof workflow.enabled === 'boolean' ? workflow.enabled : true,
-          graph: workflow.graph,
-        })
-      }
-      toast.success(`已导入 ${records.length} 个工作流`)
-      void refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入工作流失败')
-    }
-  }, [createWorkflow, openFileDialog, readTextFile, refresh, toast])
-
-  const handleExportSelected = useCallback(async () => {
+  const handleExportSelected = useCallback(() => {
     const ids = Array.from(visibleSelectedIds)
     if (ids.length === 0) {
       toast.warning('请先选择要导出的工作流')
       return
     }
-    await exportWorkflowIds(ids)
+    exportWorkflowIds(ids)
     setSelectionMode(false)
     clearSelection()
   }, [clearSelection, exportWorkflowIds, toast, visibleSelectedIds])
@@ -1008,19 +921,13 @@ function WorkflowViewInner() {
                 {selectionMode ? '退出选择' : '选择'}
               </Button>
             )}
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.Upload size={12} />}
-              onClick={() => void handleImport()}
-            >
-              导入
-            </Button>
+            <WorkflowBundleImportButton onImported={() => void refresh()} />
+            <WorkflowBundlePanelButton />
             <Button
               size="middle"
               type="text"
               icon={<Icons.Download size={12} />}
-              onClick={() => void exportWorkflowIds([])}
+              onClick={() => exportWorkflowIds([])}
             >
               导出全部
             </Button>
@@ -1084,7 +991,7 @@ function WorkflowViewInner() {
                   selectionMode={selectionMode}
                   onToggleSelect={() => toggleSelect(workflow.id)}
                   onOpen={() => openWorkflow(workflow)}
-                  onExport={() => void exportWorkflowIds([workflow.id])}
+                  onExport={() => exportWorkflowIds([workflow.id])}
                   onDelete={() =>
                     confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))
                   }
@@ -1126,6 +1033,12 @@ function WorkflowViewInner() {
             setTemplatePickerOpen(false)
             void createWorkflowFromTemplate(template)
           }}
+        />
+        <WorkflowExportModal
+          open={exportModal != null}
+          workflowIds={exportModal?.ids ?? []}
+          workflows={workflows}
+          onClose={() => setExportModal(null)}
         />
       </div>
     )

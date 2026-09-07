@@ -300,6 +300,7 @@ import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { registerFileOperationsIpc } from './registerFileOperationsIpc.js'
 import { registerPromptLibraryPackageIpc } from './registerPromptLibraryPackageIpc.js'
+import { registerWorkflowBundleIpc } from './registerWorkflowBundleIpc.js'
 import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
@@ -3372,6 +3373,7 @@ export function registerAllIpcHandlers(): void {
   registerFilePreviewIpc()
   registerFileOperationsIpc()
   registerPromptLibraryPackageIpc()
+  registerWorkflowBundleIpc({ getMcpService })
   registerPastedTextIpc()
   registerSessionImageOptimizerIpc()
   registerFontAssetIpc()

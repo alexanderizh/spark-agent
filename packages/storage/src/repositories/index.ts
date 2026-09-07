@@ -244,6 +244,13 @@ export type {
   WorkflowStatus,
 } from './workflow.repository.js'
 export { WorkflowRunRepository } from './workflow-run.repository.js'
+export { WorkflowBundleRepository } from './workflow-bundle.repository.js'
+export type {
+  CreateWorkflowBundleParams,
+  UpdateWorkflowBundleParams,
+  WorkflowBundleRow,
+  WorkflowBundleVerificationStatus,
+} from './workflow-bundle.repository.js'
 export type {
   CreateWorkflowRunParams,
   UpdateWorkflowRunSnapshotParams,

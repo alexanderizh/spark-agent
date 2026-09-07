@@ -118,6 +118,7 @@ import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
 import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool-package.js'
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
+import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
 import type { NotificationChangedEvent } from '../notifications.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
 import type { AppControlCommandRequest } from '../computer-use/action.js'
@@ -6444,7 +6445,8 @@ export interface IpcChannelMap
     CustomToolsIpcChannelMap,
     ToolPackagesIpcChannelMap,
     NotificationsIpcChannelMap,
-    AccountSyncIpcChannelMap {
+    AccountSyncIpcChannelMap,
+    WorkflowBundleIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

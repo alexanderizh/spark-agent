@@ -14,6 +14,7 @@ export interface WorkflowRow {
   status: WorkflowStatus
   tags_json: string
   enabled: number
+  bundle_id: string | null
   created_at: string
   updated_at: string
 }
@@ -28,6 +29,8 @@ export interface WorkflowItem {
   tags: string[]
   enabled: boolean
   graph: Record<string, unknown>
+  /** 所属工作流包 id;null = 用户自建 */
+  bundleId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -42,6 +45,7 @@ export interface CreateWorkflowParams {
   tags?: string[]
   enabled?: boolean
   graph?: Record<string, unknown>
+  bundleId?: string
 }
 
 export interface UpdateWorkflowParams extends Partial<CreateWorkflowParams> {}
@@ -78,8 +82,8 @@ export class WorkflowRepository extends BaseRepository {
       .prepare(
         `INSERT INTO workflows (
           id, scope, name, version, graph_json, description, status, tags_json,
-          enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          enabled, bundle_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -91,6 +95,7 @@ export class WorkflowRepository extends BaseRepository {
         params.status ?? 'draft',
         this.toJson(params.tags ?? []),
         params.enabled === false ? 0 : 1,
+        params.bundleId ?? null,
         now,
         now,
       )
@@ -113,6 +118,7 @@ export class WorkflowRepository extends BaseRepository {
     if (fields.tags !== undefined) add('tags_json', this.toJson(fields.tags))
     if (fields.enabled !== undefined) add('enabled', fields.enabled ? 1 : 0)
     if (fields.graph !== undefined) add('graph_json', this.toJson(fields.graph))
+    if (fields.bundleId !== undefined) add('bundle_id', fields.bundleId)
 
     if (sets.length === 0) return this.get(id)
     sets.push('updated_at = ?')
@@ -136,6 +142,7 @@ export class WorkflowRepository extends BaseRepository {
       tags: this.fromJson<string[]>(row.tags_json, []),
       enabled: row.enabled === 1,
       graph: this.fromJson<Record<string, unknown>>(row.graph_json, defaultWorkflowGraph()),
+      bundleId: row.bundle_id ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }

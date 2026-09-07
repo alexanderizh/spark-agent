@@ -8,6 +8,8 @@ export interface McpServerRow {
   name: string
   config_json: string
   enabled: number
+  /** 所属工作流包 id;null = 用户自建 */
+  bundle_id: string | null
   created_at: string
   updated_at: string
 }
@@ -18,7 +20,9 @@ export class McpServerRepository extends BaseRepository {
   }
 
   listAll(): McpServerRow[] {
-    return this.raw.prepare('SELECT * FROM mcp_servers ORDER BY created_at ASC').all() as McpServerRow[]
+    return this.raw
+      .prepare('SELECT * FROM mcp_servers ORDER BY created_at ASC')
+      .all() as McpServerRow[]
   }
 
   get(id: string): McpServerRow | undefined {
@@ -26,20 +30,51 @@ export class McpServerRepository extends BaseRepository {
   }
 
   findByScope(scope: string): McpServerRow[] {
-    return this.raw.prepare('SELECT * FROM mcp_servers WHERE scope = ? ORDER BY created_at ASC').all(scope) as McpServerRow[]
+    return this.raw
+      .prepare('SELECT * FROM mcp_servers WHERE scope = ? ORDER BY created_at ASC')
+      .all(scope) as McpServerRow[]
   }
 
-  create(params: { id?: string; scope: string; name: string; configJson: string; enabled?: boolean }): McpServerRow {
+  findByBundleId(bundleId: string): McpServerRow[] {
+    return this.raw
+      .prepare('SELECT * FROM mcp_servers WHERE bundle_id = ? ORDER BY created_at ASC')
+      .all(bundleId) as McpServerRow[]
+  }
+
+  create(params: {
+    id?: string
+    scope: string
+    name: string
+    configJson: string
+    enabled?: boolean
+    bundleId?: string
+  }): McpServerRow {
     const id = params.id ?? randomUUID()
     const now = new Date().toISOString()
-    this.raw.prepare(`
-      INSERT INTO mcp_servers (id, scope, name, config_json, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, params.scope, params.name, params.configJson, params.enabled === false ? 0 : 1, now, now)
+    this.raw
+      .prepare(
+        `
+      INSERT INTO mcp_servers (id, scope, name, config_json, enabled, bundle_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run(
+        id,
+        params.scope,
+        params.name,
+        params.configJson,
+        params.enabled === false ? 0 : 1,
+        params.bundleId ?? null,
+        now,
+        now,
+      )
     return this.get(id)!
   }
 
-  update(id: string, fields: Partial<{ name: string; configJson: string; enabled: boolean }>): McpServerRow | undefined {
+  update(
+    id: string,
+    fields: Partial<{ name: string; configJson: string; enabled: boolean }>,
+  ): McpServerRow | undefined {
     const sets: string[] = []
     const vals: unknown[] = []
 

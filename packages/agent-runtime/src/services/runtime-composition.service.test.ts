@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import type { SkillRow } from '@spark/storage'
 
-function skillRow(overrides: Partial<SkillRow> & Pick<SkillRow, 'id' | 'name' | 'enabled'>): SkillRow {
+function skillRow(
+  overrides: Partial<SkillRow> & Pick<SkillRow, 'id' | 'name' | 'enabled'>,
+): SkillRow {
   return {
     id: overrides.id,
     scope: 'user',
@@ -98,9 +100,15 @@ describe('RuntimeCompositionService', () => {
     expect(result.effectivePrompt).toContain('[Agent Prompt]\nAgent prompt')
     expect(result.effectivePrompt).toContain('[Project Prompt]\nProject prompt')
     expect(result.effectivePrompt).toContain('[Session Prompt]\nSession prompt')
-    expect(result.effectivePrompt.indexOf('System prompt')).toBeLessThan(result.effectivePrompt.indexOf('Agent prompt'))
-    expect(result.effectivePrompt.indexOf('Agent prompt')).toBeLessThan(result.effectivePrompt.indexOf('Project prompt'))
-    expect(result.effectivePrompt.indexOf('Project prompt')).toBeLessThan(result.effectivePrompt.indexOf('Session prompt'))
+    expect(result.effectivePrompt.indexOf('System prompt')).toBeLessThan(
+      result.effectivePrompt.indexOf('Agent prompt'),
+    )
+    expect(result.effectivePrompt.indexOf('Agent prompt')).toBeLessThan(
+      result.effectivePrompt.indexOf('Project prompt'),
+    )
+    expect(result.effectivePrompt.indexOf('Project prompt')).toBeLessThan(
+      result.effectivePrompt.indexOf('Session prompt'),
+    )
   })
 
   it('merges env vars with session overriding project and masks values in the prompt', () => {
@@ -220,5 +228,40 @@ describe('RuntimeCompositionService', () => {
 
     expect(result.skillConfig.effectiveSkillIds).toEqual([])
     expect(result.skillSystemPrompt).toBeUndefined()
+  })
+})
+
+describe('RuntimeCompositionService bundle-skill isolation', () => {
+  const bundleSkillId = 'bundle:wfb-test:web-search'
+
+  it('excludes bundle:* skills from the fallback-to-all base', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([
+        skillRow({ id: 'skill:regular', name: 'Regular', enabled: 1 }),
+        skillRow({ id: bundleSkillId, name: 'web-search', enabled: 1 }),
+      ]),
+      makeSettingsRepo({}),
+    )
+
+    const config = service.getSkillConfig({})
+    expect(config.effectiveSkillIds).toContain('skill:regular')
+    expect(config.effectiveSkillIds).not.toContain(bundleSkillId)
+  })
+
+  it('keeps bundle:* skills usable when explicitly configured', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([
+        skillRow({ id: 'skill:regular', name: 'Regular', enabled: 1 }),
+        skillRow({ id: bundleSkillId, name: 'web-search', enabled: 1 }),
+      ]),
+      makeSettingsRepo({
+        'runtime.skills:agent:platform-manager-agent': [bundleSkillId],
+      }),
+    )
+
+    const config = service.getSkillConfig({ agentId: 'platform-manager-agent' })
+    // 显式配置后本就不回落全量(bundle 或其他),但显式引用的 bundle 技能必须生效
+    expect(config.effectiveSkillIds).toContain(bundleSkillId)
+    expect(config.effectiveSkillIds).not.toContain('skill:regular')
   })
 })
