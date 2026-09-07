@@ -46,6 +46,78 @@ describe('built CLI contract', () => {
     expect(events.map((event) => event.seq)).toEqual([0, 1, 2, 3, 4])
   })
 
+  it('lists sessions and resumes the latest one with --continue', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-resume-'))
+    roots.push(root)
+    const server = await startResponsesServer()
+    await mkdir(join(root, '.spark'))
+    await writeFile(
+      join(root, '.spark', 'config.toml'),
+      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+    )
+    const env = { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' }
+
+    const emptyListing = await runCli(['sessions'], env, root)
+    expect(emptyListing.code).toBe(0)
+    expect(emptyListing.stdout).toContain('No sessions recorded')
+
+    const first = await runCli(['--json', 'hello'], env, root)
+    expect(first.code).toBe(0)
+
+    const listing = await runCli(['sessions'], env, root)
+    expect(listing.code).toBe(0)
+    expect(listing.stdout).toContain('hello')
+
+    const jsonListing = await runCli(['sessions', '--json'], env, root)
+    expect(jsonListing.code).toBe(0)
+    const metas = jsonListing.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { sessionId: string; preview?: string })
+    expect(metas).toHaveLength(1)
+    expect(metas[0]?.preview).toBe('hello')
+
+    // --continue re-opens the same ledger: the NDJSON stream replays the first
+    // turn's persisted events before appending the new turn's live events.
+    const second = await runCli(['--continue', '--json', 'again'], env, root)
+    await server.close()
+    expect(second.code).toBe(0)
+    const events = second.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string; seq: number })
+    expect(events.filter((event) => event.type === 'session.started')).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'turn.started')).toHaveLength(2)
+    expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(2)
+    expect(events.map((event) => event.seq)).toEqual([...Array(events.length).keys()])
+  })
+
+  it('rejects an unknown --resume id with recent-session hints', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-resume-miss-'))
+    roots.push(root)
+    await mkdir(join(root, '.spark'))
+    await writeFile(join(root, '.spark', 'config.toml'), '[agent]\nmodel = "local"\n')
+    const result = await runCli(
+      ['--resume', 'session_deadbeef', 'hello'],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' },
+      root,
+    )
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('Session not found: session_deadbeef')
+  })
+
+  it('rejects conflicting --continue and --resume flags', async () => {
+    const result = await runCli(['--continue', '--resume', 'session_x', 'hello'])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('mutually exclusive')
+  })
+
+  it('explains that the bare --resume picker needs a TTY', async () => {
+    const result = await runCli(['--resume'])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('picker')
+  })
+
   it('returns usage error 2 for an invalid output format', async () => {
     const result = await runCli(['--output-format', 'xml', 'hello'])
     expect(result.code).toBe(2)

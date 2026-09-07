@@ -5,6 +5,10 @@ import type { LlmDelta } from './types.js';
 export interface ConsumedLlmResponse {
   readonly message: AssistantMessage;
   readonly usage: Usage;
+  /** Wall-clock ms of this LLM call (request send → stream end); 0 when unreported. */
+  readonly llmMs: number;
+  /** Time to first content token of this call; 0 when unreported. */
+  readonly ttftMs: number;
 }
 
 export async function consumeLlmStream(
@@ -22,7 +26,10 @@ export async function consumeLlmStream(
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
+    reasoningTokens: 0,
   };
+  let llmMs = 0;
+  let ttftMs = 0;
 
   for await (const delta of stream) {
     await onDelta?.(delta);
@@ -46,7 +53,10 @@ export async function consumeLlmStream(
           outputTokens: delta.outputTokens,
           cacheReadTokens: delta.cacheReadTokens ?? 0,
           cacheWriteTokens: delta.cacheWriteTokens ?? 0,
+          reasoningTokens: delta.reasoningTokens ?? 0,
         };
+        llmMs = delta.callDurationMs ?? 0;
+        ttftMs = delta.ttftMs ?? 0;
         break;
       case 'continuation':
         if (continuation) {
@@ -77,5 +87,7 @@ export async function consumeLlmStream(
       toolCalls,
     },
     usage,
+    llmMs,
+    ttftMs,
   };
 }

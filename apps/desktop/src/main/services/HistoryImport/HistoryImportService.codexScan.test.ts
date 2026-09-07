@@ -19,10 +19,15 @@ import type { SparkDatabase } from '@spark/storage'
 import { HistoryImportService, type HistoryImportDeps } from './HistoryImportService.js'
 
 /** rollout 行构造 helper */
-const sessionMeta = (id: string, ts: string) => ({
+const sessionMeta = (id: string, ts: string, originator?: string) => ({
   type: 'session_meta',
   timestamp: ts,
-  payload: { id, cwd: '/Users/me/proj-x', timestamp: ts },
+  payload: {
+    id,
+    cwd: '/Users/me/proj-x',
+    timestamp: ts,
+    ...(originator != null ? { originator } : {}),
+  },
 })
 const userMsg = (text: string, ts: string) => ({
   type: 'response_item',
@@ -184,5 +189,111 @@ describe('HistoryImportService.scanCodex（thread 归并 + 主线拼接）', () 
     expect(texts.filter((t) => t === '任务开始，帮我加个功能')).toHaveLength(1)
     // 并行重叠文件被排除
     expect(texts).not.toContain('并行任务')
+  })
+})
+
+describe('HistoryImportService.scanCodex（Spark 会话归并）', () => {
+  let home: string
+
+  afterAll(() => {
+    if (home != null) rmSync(home, { recursive: true, force: true })
+  })
+
+  it('按本地 native thread 绑定归并 Spark 会话，但不合并独立外部会话', async () => {
+    home = mkdtempSync(path.join(tmpdir(), 'history-import-codex-spark-session-'))
+    const dayDir = path.join(home, '.codex', 'sessions', '2026', '09', '08')
+    mkdirSync(dayDir, { recursive: true })
+
+    const firstFile = path.join(dayDir, 'rollout-first.jsonl')
+    writeFileSync(
+      firstFile,
+      jsonl([
+        sessionMeta('native-a', '2026-09-08T01:00:00.000Z', 'spark-agent'),
+        userMsg('重复输入也要保留', '2026-09-08T01:00:01.000Z'),
+        assistantMsg('第一轮结果', '2026-09-08T01:00:02.000Z'),
+      ]),
+      'utf-8',
+    )
+
+    const secondFile = path.join(dayDir, 'rollout-second.jsonl')
+    writeFileSync(
+      secondFile,
+      jsonl([
+        sessionMeta('native-b', '2026-09-08T02:00:00.000Z', 'spark-agent'),
+        userMsg('重复输入也要保留', '2026-09-08T02:00:01.000Z'),
+        assistantMsg('第二轮结果', '2026-09-08T02:00:02.000Z'),
+      ]),
+      'utf-8',
+    )
+
+    const externalFile = path.join(dayDir, 'rollout-external.jsonl')
+    writeFileSync(
+      externalFile,
+      jsonl([
+        sessionMeta('external-c', '2026-09-08T03:00:00.000Z', 'codex_sdk_ts'),
+        userMsg('独立外部会话', '2026-09-08T03:00:01.000Z'),
+        assistantMsg('外部结果', '2026-09-08T03:00:02.000Z'),
+      ]),
+      'utf-8',
+    )
+
+    const deps: HistoryImportDeps = {
+      db: {
+        raw: {
+          prepare: (sql: string) => ({
+            all: () =>
+              sql.includes('nativeThreadBindings')
+                ? [
+                    {
+                      id: 'spark-1',
+                      title: '原始 Spark 会话',
+                      metadata_json: JSON.stringify({
+                        codexAppServer: {
+                          nativeThreadBindings: [
+                            { threadId: 'native-a' },
+                            { threadId: 'native-b' },
+                          ],
+                        },
+                      }),
+                    },
+                  ]
+                : [],
+          }),
+        },
+      } as unknown as SparkDatabase,
+      resolveProvider: async () => ({
+        providerProfileId: 'p1',
+        agentAdapter: 'codex' as const,
+        permissionMode: 'codex-default' as const,
+      }),
+      createSession: async () => ({ sessionId: 's1' }),
+      homeDir: home,
+    }
+    const service = new HistoryImportService(deps)
+
+    const response = await service.scan(['codex'])
+    const codexItems = response.items.filter((item) => item.source === 'codex')
+    expect(codexItems).toHaveLength(2)
+
+    const sparkItem = codexItems.find((item) => item.title === '原始 Spark 会话')
+    if (sparkItem == null) throw new Error('Spark session import candidate was not found')
+    expect(sparkItem).toMatchObject({
+      sourceSessionId: 'spark-session:spark-1',
+      messageCount: 4,
+      firstTimestamp: '2026-09-08T01:00:00.000Z',
+      lastTimestamp: '2026-09-08T02:00:02.000Z',
+    })
+    expect(codexItems.find((item) => item.sourceSessionId === 'external-c')).toBeDefined()
+
+    const preview = await service.preview(
+      'codex',
+      sparkItem.filePath,
+      100,
+      sparkItem.sourceSessionId,
+    )
+    const texts = preview.messages.map((message) => message.text)
+    expect(texts.filter((text) => text === '重复输入也要保留')).toHaveLength(2)
+    expect(texts).toContain('第一轮结果')
+    expect(texts).toContain('第二轮结果')
   })
 })

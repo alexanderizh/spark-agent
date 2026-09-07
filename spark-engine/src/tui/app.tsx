@@ -1,8 +1,12 @@
 import { Box, Text, useApp, useStdout } from 'ink'
+import { homedir } from 'node:os'
+import { sep } from 'node:path'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
 import { expandCustomCommand, matchCustomCommand, type CustomCommand } from '../commands/custom-commands.js'
 import type { AgentEvent } from '../events/schema.js'
+import { shortSessionId } from '../events/ledger.js'
+import type { SessionMeta } from '../seams.js'
 import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
@@ -12,6 +16,7 @@ import { PermissionCard } from './components/permission-card.js'
 import { PERMISSION_MODES, PermissionPicker, nextPermissionMode } from './components/permission-picker.js'
 import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
+import { SessionPicker } from './components/session-picker.js'
 import { InputEditor } from './components/input-editor.js'
 import { WorkingLine } from './components/spinner.js'
 import { WelcomeBox } from './components/welcome.js'
@@ -49,6 +54,14 @@ export interface SparkTuiAppProps {
   readonly reasoningEffort?: ReasoningEffort
   /** Prompt files from `.spark/commands/**`; expanded and sent as the turn input. */
   readonly customCommands?: readonly CustomCommand[]
+  /** Working directory shown in the status bar; defaults to blank when unknown. */
+  readonly cwd?: string
+  /** Reopen a recorded session by id; absent disables /sessions switching. */
+  readonly openSession?: (sessionId: string) => Promise<AgentSession>
+  /** Resumable sessions for the /sessions picker (most recent first). */
+  readonly listSessions?: () => Promise<readonly SessionMeta[]>
+  /** Open the session picker at startup (bare `spark --resume`). */
+  readonly resumePicker?: boolean
 }
 
 interface NoticeState {
@@ -58,6 +71,57 @@ interface NoticeState {
 
 function permissionLabel(mode: PermissionMode): string {
   return PERMISSION_MODES.find((entry) => entry.mode === mode)?.label ?? mode
+}
+
+/** Collapse the home prefix to `~` so the status bar path stays short. */
+function formatCwd(cwd: string | undefined): string | undefined {
+  if (cwd === undefined || cwd === '') return undefined
+  const home = homedir()
+  if (cwd === home) return '~'
+  if (cwd.startsWith(home + sep)) return '~' + cwd.slice(home.length)
+  return cwd
+}
+
+interface StepPerf {
+  readonly tokensPerSec: number
+  readonly ttftMs: number
+}
+
+/**
+ * Throughput and time-to-first-token of the most recent model call, derived
+ * from the latest assistant event that carries adapter timing.
+ */
+function lastStepPerf(events: readonly AgentEvent[]): StepPerf | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'assistant.completed') continue
+    if (event.llmMs <= 0 && event.ttftMs <= 0) continue
+    return {
+      tokensPerSec: event.llmMs > 0 ? (event.usage.outputTokens / event.llmMs) * 1_000 : 0,
+      ttftMs: event.ttftMs,
+    }
+  }
+  return undefined
+}
+
+/** Compact bar segment, e.g. `38.5 tok/s · ttft 0.8s`; empty parts dropped. */
+function formatPerf(perf: StepPerf): string {
+  const segments: string[] = []
+  if (perf.tokensPerSec > 0) {
+    const rate =
+      perf.tokensPerSec >= 100 ? Math.round(perf.tokensPerSec).toString() : perf.tokensPerSec.toFixed(1)
+    segments.push(`${rate} tok/s`)
+  }
+  if (perf.ttftMs > 0) {
+    const ttft =
+      perf.ttftMs >= 10_000
+        ? `${Math.round(perf.ttftMs / 1_000)}s`
+        : perf.ttftMs >= 1_000
+          ? `${(perf.ttftMs / 1_000).toFixed(1)}s`
+          : `${Math.round(perf.ttftMs)}ms`
+    segments.push(`ttft ${ttft}`)
+  }
+  return segments.join(' · ')
 }
 
 function noticeColor(theme: TuiTheme, tone: NoticeState['tone']): string {
@@ -93,6 +157,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [configFormOpen, setConfigFormOpen] = useState(false)
   const [permPickerOpen, setPermPickerOpen] = useState(false)
   const [effortPickerOpen, setEffortPickerOpen] = useState(false)
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(props.resumePicker === true)
+  const [sessions, setSessions] = useState<readonly SessionMeta[]>([])
   // Always explicit: the engine never sends a channel-dependent "auto" effort.
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
     props.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
@@ -106,6 +172,25 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => props.approver.subscribe(setPending), [props.approver])
+
+  // Load the session list whenever the picker becomes visible (the startup
+  // picker and /sessions share it); a failed read leaves the picker usable
+  // but empty instead of crashing the render.
+  useEffect(() => {
+    if (!sessionPickerOpen || props.listSessions === undefined) return
+    let cancelled = false
+    props
+      .listSessions()
+      .then((found) => {
+        if (!cancelled) setSessions(found)
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionPickerOpen, props.listSessions])
 
   // Terminal-resize repaint: <Static> content is written once and never
   // reflows, so after the width settles we clear the screen, refresh the
@@ -322,6 +407,24 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         setNotice(`已开启新会话 ${next.sessionId}`)
         break
       }
+      case '/sessions': {
+        if (props.openSession === undefined || props.listSessions === undefined) {
+          setNotice('当前环境未启用会话切换。')
+          break
+        }
+        if (activeTurns > 0) {
+          setNotice('当前仍有 turn 运行；请先中断或等待完成，再切换会话。')
+          break
+        }
+        const found = await props.listSessions().catch(() => undefined)
+        if (found === undefined) {
+          setNotice('读取会话列表失败。')
+          break
+        }
+        setSessions(found)
+        setSessionPickerOpen(true)
+        break
+      }
       case '/exit':
       case '/quit':
         exit()
@@ -335,6 +438,26 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     const controller = controllers.current[0]
     if (controller) controller.abort('User interrupted')
   }, [])
+
+  /** Switch the live session to a recorded one and replay its transcript. */
+  const pickSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      if (props.openSession === undefined) return
+      try {
+        const next = await props.openSession(sessionId)
+        const initial: AgentEvent[] = []
+        for await (const event of next.events()) initial.push(event)
+        setSessionPickerOpen(false)
+        setSession(next)
+        setEvents(initial)
+        setNotice(`已切换到会话 ${shortSessionId(sessionId)}`)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        setNotice(`切换会话失败: ${detail}`)
+      }
+    },
+    [props.openSession, setNotice],
+  )
 
   const controlC = useCallback(() => {
     if (activeTurns > 0) {
@@ -362,6 +485,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
   const projection = useMemo(() => projectTranscript(events, capabilities), [capabilities, events])
   const action = deriveAction(events, liveText, liveThinking, pending)
+  const perfText = formatPerf(lastStepPerf(events) ?? { tokensPerSec: 0, ttftMs: 0 })
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
 
   const applyPermissionMode = useCallback(
@@ -402,7 +526,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      <Transcript key={resizeVersion} rows={projection.settled} theme={theme} capabilities={capabilities} />
+      {/* Remount on resize (reflow) and session switch: ink <Static> counts
+          flushed rows by position, so a swapped row list would otherwise be
+          silently skipped when the new session has a shorter/equal transcript. */}
+      <Transcript key={`${resizeVersion}-${session.sessionId}`} rows={projection.settled} theme={theme} capabilities={capabilities} />
       {showThinking && liveThinking && <Text color={theme.dim}>▍ {liveThinking}</Text>}
       {liveText && <Text>{liveText}</Text>}
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
@@ -448,6 +575,19 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           }}
           onClose={() => {
             setEffortPickerOpen(false)
+          }}
+        />
+      )}
+      {sessionPickerOpen && !pending && !permPickerOpen && (
+        <SessionPicker
+          theme={theme}
+          sessions={sessions}
+          currentSessionId={session.sessionId}
+          onPick={(sessionId) => {
+            void pickSession(sessionId)
+          }}
+          onClose={() => {
+            setSessionPickerOpen(false)
           }}
         />
       )}
@@ -520,13 +660,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setShowThinking((visible) => !visible)
         }}
       />
-      {/* Status bar: bare values only — model, permission mode, effort. */}
+      {/* Status bar: bare values only — model, permission, effort, perf, cwd. */}
       <Box gap={2} flexWrap="wrap">
         <Text color={theme.accent}>{visibleModelName ?? '未选择模型'}</Text>
         <Text color={permissionMode === 'bypass' ? theme.warn : theme.dim}>
           {permissionMode}
         </Text>
         <Text color={theme.ok}>{reasoningEffort}</Text>
+        {perfText && <Text color={theme.dim}>{perfText}</Text>}
+        {formatCwd(props.cwd) && <Text color={theme.dim}>{formatCwd(props.cwd)}</Text>}
         <Text color={theme.dim}>/help</Text>
       </Box>
     </Box>

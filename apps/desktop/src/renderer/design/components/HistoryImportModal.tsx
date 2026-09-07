@@ -26,6 +26,7 @@ import type {
   HistoryImportPreviewMessage,
   HistoryImportProgress,
   HistoryImportResponse,
+  HistoryImportScanResponse,
   HistoryImportSelection,
   HistoryImportSource,
 } from '@spark/protocol'
@@ -66,6 +67,12 @@ const TIME_FILTER_OPTIONS = [
   { label: '最近 30 天', value: '30' },
   { label: '最近 90 天', value: '90' },
 ]
+
+/**
+ * 上一次完整扫描的结果缓存（模块级，跨弹窗打开保留；renderer 重载后失效）。
+ * 再次打开弹窗时直接展示缓存结果，由「重新检索」按钮手动触发全量扫描刷新。
+ */
+let scanCache: HistoryImportScanResponse | null = null
 
 const EMPTY_SCAN_STATE: Record<HistoryImportSource, ScanSourceState> = {
   'claude-code': { status: 'scanning', count: 0, rootPath: '~/.claude/projects' },
@@ -138,6 +145,13 @@ function classNames(...values: Array<string | false | null | undefined>): string
   return values.filter(Boolean).join(' ')
 }
 
+/** 默认落在有条目的来源上（与 Tab 顺序一致：codex > claude-code > zcode） */
+function defaultSourceTab(items: HistoryImportItem[]): HistoryImportSource {
+  const codexCount = items.filter((item) => item.source === 'codex').length
+  const claudeCount = items.filter((item) => item.source === 'claude-code').length
+  return codexCount > 0 ? 'codex' : claudeCount > 0 ? 'claude-code' : 'zcode'
+}
+
 export function HistoryImportModal() {
   const ctx = useSessionSidebar()
   const open = ctx.historyImportOpen
@@ -159,6 +173,7 @@ export function HistoryImportModal() {
   const [summary, setSummary] = useState<HistoryImportResponse | null>(null)
   const [scanSources, setScanSources] =
     useState<Record<HistoryImportSource, ScanSourceState>>(freshScanState)
+  const [scannedAt, setScannedAt] = useState<string | null>(null)
   const [previewItem, setPreviewItem] = useState<HistoryImportItem | null>(null)
   const [previewMsgs, setPreviewMsgs] = useState<HistoryImportPreviewMessage[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -181,12 +196,25 @@ export function HistoryImportModal() {
     setProgress(null)
     setSummary(null)
     setScanSources(freshScanState())
+    setScannedAt(null)
     setPreviewItem(null)
     setPreviewMsgs([])
     setPreviewTruncated(false)
     setUserOnly(false)
     setPreviewExpanded(false)
   }, [])
+
+  /** 直接用缓存结果进入选择页（重置筛选/选择，但不再触发扫描动画） */
+  const applyCache = useCallback(
+    (cache: HistoryImportScanResponse) => {
+      reset()
+      setItems(cache.items)
+      setSourceTab(defaultSourceTab(cache.items))
+      setScannedAt(cache.scannedAt)
+      setPhase('select')
+    },
+    [reset],
+  )
 
   const doScan = useCallback(async () => {
     const requestId = ++scanRequestRef.current
@@ -247,11 +275,14 @@ export function HistoryImportModal() {
       const remaining = minimumDuration - (Date.now() - startedAt)
       if (remaining > 0) await wait(remaining)
       if (requestId !== scanRequestRef.current) return
+      scanCache = {
+        items: nextItems,
+        scannedAt: new Date().toISOString(),
+        sources: responses.flatMap((response) => response.sources),
+      }
       setItems(nextItems)
-      // 默认落在有条目的来源上（与 Tab 顺序一致：codex > claude-code > zcode）
-      const codexCount = nextItems.filter((item) => item.source === 'codex').length
-      const claudeCount = nextItems.filter((item) => item.source === 'claude-code').length
-      setSourceTab(codexCount > 0 ? 'codex' : claudeCount > 0 ? 'claude-code' : 'zcode')
+      setSourceTab(defaultSourceTab(nextItems))
+      setScannedAt(scanCache.scannedAt)
       setPhase('select')
     } catch (error) {
       if (requestId !== scanRequestRef.current) return
@@ -262,8 +293,13 @@ export function HistoryImportModal() {
 
   useEffect(() => {
     if (open) {
-      reset()
-      void doScan()
+      // 有缓存直接进入选择页（条目过多时全量扫描可达数秒），重新检索走按钮
+      const cache = scanCache
+      if (cache != null) applyCache(cache)
+      else {
+        reset()
+        void doScan()
+      }
     } else {
       scanRequestRef.current++
       previewRequestRef.current++
@@ -450,6 +486,22 @@ export function HistoryImportModal() {
       const response = await runImport({ selections })
       setSummary(response)
       setPhase('done')
+      // 同步缓存：已导入条目标记 alreadyImported，「继续导入」回到选择页时无需重新扫描
+      if (response.imported > 0 && scanCache != null) {
+        const importedIds = new Set(
+          response.results
+            .filter((entry) => entry.status === 'imported')
+            .map((entry) => entry.sourceSessionId),
+        )
+        if (importedIds.size > 0) {
+          scanCache = {
+            ...scanCache,
+            items: scanCache.items.map((item) =>
+              importedIds.has(item.sourceSessionId) ? { ...item, alreadyImported: true } : item,
+            ),
+          }
+        }
+      }
       await ctx.refreshData()
       if (response.imported > 0) toast.success(`成功导入 ${response.imported} 个会话`)
     } catch (error) {
@@ -457,6 +509,13 @@ export function HistoryImportModal() {
       setPhase('select')
     }
   }, [ctx, items, runImport, selected, toast])
+
+  /** 完成页「继续导入」：缓存（已同步导入状态）可用则直接回选择页，否则重新扫描 */
+  const resumeImport = useCallback(() => {
+    const cache = scanCache
+    if (cache != null) applyCache(cache)
+    else void doScan()
+  }, [applyCache, doScan])
 
   const close = useCallback(() => ctx.setHistoryImportOpen(false), [ctx])
   const selectedCount = selected.size
@@ -474,21 +533,22 @@ export function HistoryImportModal() {
       ? Math.round((progress.current / progress.total) * 100)
       : 0
   const modalTitle = useMemo(
-    () => (
-      <div className="hi-modal-title">
-        <span className="hi-modal-title-icon">
-          <Icons.ListFilter size={19} />
-        </span>
-        <span>
-          <strong>{t('app.sidebar.importHistory')}</strong>
-          <small>
-            {phase === 'scanning'
-              ? '正在读取本地索引，不会上传任何会话内容'
-              : '选择需要导入的本地会话，可在右侧完整预览'}
-          </small>
-        </span>
-      </div>
-    ),
+    () =>
+      phase === 'scanning' ? null : (
+        <div className="hi-modal-title">
+          <span className="hi-modal-title-icon">
+            <Icons.ListFilter size={19} />
+          </span>
+          <span>
+            <strong>{t('app.sidebar.importHistory')}</strong>
+            <small>
+              {phase === 'scanning'
+                ? '正在读取本地索引，不会上传任何会话内容'
+                : '选择需要导入的本地会话，可在右侧完整预览'}
+            </small>
+          </span>
+        </div>
+      ),
     [phase, t],
   )
 
@@ -559,7 +619,6 @@ export function HistoryImportModal() {
             <ScanStatusLabel source="zcode" state={scanSources.zcode} />
             <span>完成后自动进入选择页面</span>
           </div>
-          <p className="hi-scan-hint">可随时关闭，已扫描结果不会自动导入</p>
         </div>
       )}
 
@@ -571,10 +630,6 @@ export function HistoryImportModal() {
                 <strong>{items.length.toLocaleString()}</strong>
               </div>
               <i />
-              <div className="hi-overview-detail">
-                <strong>{importableCount.toLocaleString()} 个可导入</strong>
-                <span>{importedCount.toLocaleString()} 个已存在 · 默认隐藏</span>
-              </div>
             </div>
             <div className="hi-toolbar">
               <Segmented
@@ -598,7 +653,7 @@ export function HistoryImportModal() {
               <Select
                 aria-label="项目筛选"
                 className="hi-filter-select hi-project-filter"
-                size="small"
+                size="middle"
                 value={projectFilter}
                 onChange={(value) => setProjectFilter(value as string)}
                 options={projectOptions}
@@ -606,7 +661,7 @@ export function HistoryImportModal() {
               <Select
                 aria-label="时间筛选"
                 className="hi-filter-select hi-time-filter"
-                size="small"
+                size="middle"
                 value={timeFilter}
                 onChange={(value) => setTimeFilter(value as TimeFilter)}
                 options={TIME_FILTER_OPTIONS}
@@ -618,6 +673,18 @@ export function HistoryImportModal() {
                 />
                 <span>显示已导入</span>
               </label>
+              <div className="hi-rescan">
+                {scannedAt != null && <span>扫描于 {formatRowTime(scannedAt)}</span>}
+                <button
+                  type="button"
+                  className="hi-rescan-btn"
+                  title="重新检索本机会话"
+                  aria-label="重新检索本机会话"
+                  onClick={() => void doScan()}
+                >
+                  <Icons.Refresh size={13} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -882,7 +949,7 @@ export function HistoryImportModal() {
             )}
           </Block>
           <div className="hi-state-actions">
-            <Button onClick={() => void doScan()}>继续导入</Button>
+            <Button onClick={resumeImport}>继续导入</Button>
             <Button type="primary" onClick={close}>
               完成
             </Button>

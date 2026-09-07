@@ -49,4 +49,47 @@ describe('ledger durability and schema migration boundaries', () => {
     expect(encodeProjectDir('/a/b')).not.toBe(encodeProjectDir('/a-b'));
     expect(encodeProjectDir('/a/b')).toMatch(/-[a-f0-9]{12}$/);
   });
+
+  it('extracts a first-input preview for session listings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-ledger-'));
+    temporaryDirectories.push(root);
+    const store = new JsonlSessionStore({ dataRoot: root, projectDir: '/workspace', fsync: 'always' });
+    const ledger = new SessionLedger('sessionA', store, new SteppingClock());
+    await ledger.append({
+      type: 'turn.started',
+      schemaVersion: 1,
+      turnId: 'turn1',
+      input: { kind: 'text', text: '  hello   world  ' },
+    });
+    await ledger.append({
+      type: 'turn.started',
+      schemaVersion: 1,
+      turnId: 'turn2',
+      input: { kind: 'text', text: 'second turn' },
+    });
+    const sessions = await store.list(null);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.preview).toBe('hello world');
+  });
+
+  it('truncates long previews and omits sessions without user input', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-ledger-'));
+    temporaryDirectories.push(root);
+    const store = new JsonlSessionStore({ dataRoot: root, projectDir: '/workspace', fsync: 'always' });
+    const longInput = 'x'.repeat(120);
+    const withLongTurn = new SessionLedger('sessionLong', store, new SteppingClock());
+    await withLongTurn.append({
+      type: 'turn.started',
+      schemaVersion: 1,
+      turnId: 'turn1',
+      input: { kind: 'text', text: longInput },
+    });
+    const withoutTurn = new SessionLedger('sessionEmpty', store, new SteppingClock());
+    await withoutTurn.append({ type: 'turn.queued', schemaVersion: 1, turnId: 'turnX' });
+    const sessions = await store.list(null);
+    const long = sessions.find((session) => session.sessionId === 'sessionLong');
+    const empty = sessions.find((session) => session.sessionId === 'sessionEmpty');
+    expect(long?.preview).toBe(`${'x'.repeat(80)}…`);
+    expect(empty?.preview).toBeUndefined();
+  });
 });

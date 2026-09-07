@@ -49,6 +49,66 @@ describe('parseMarkdown', () => {
     ])
   })
 
+  it('recognizes compact double-backtick code emitted on one line', () => {
+    expect(parseMarkdown('``json {"year":["2025"],"period":["P09"]} ``')).toEqual([
+      { kind: 'code', lang: 'json', code: '{"year":["2025"],"period":["P09"]}' },
+    ])
+  })
+
+  it.each([
+    ['json', '{"ok":true}'],
+    ['js', 'const value = 1'],
+    ['ts', 'const value: number = 1'],
+    ['css', '.card { display: grid; }'],
+    ['bash', 'echo "$HOME"'],
+    ['html', '<main>内容</main>'],
+  ])('recognizes compact code for %s without a language-specific branch', (lang, code) => {
+    expect(parseMarkdown(' ``' + lang + ' ' + code + '`` ')).toEqual([{ kind: 'code', lang, code }])
+  })
+
+  it('recognizes a compact fence when the language and code touch', () => {
+    expect(parseMarkdown('``json{"ok":true}``')).toEqual([
+      { kind: 'code', lang: 'json', code: '{"ok":true}' },
+    ])
+  })
+
+  it('recognizes an unlabeled compact code line without promoting ordinary inline code', () => {
+    expect(parseMarkdown(' `` {"ok":true} `` ')).toEqual([
+      { kind: 'code', lang: '', code: '{"ok":true}' },
+    ])
+    expect(parseMarkdown('返回值为 ``2025``。')).toEqual([
+      { kind: 'paragraph', text: '返回值为 ``2025``。' },
+    ])
+  })
+
+  it('accepts longer standard fences and optional fence metadata', () => {
+    expect(parseMarkdown('````json title=payload\n{"ok":true}\n`````')).toEqual([
+      { kind: 'code', lang: 'json', code: '{"ok":true}' },
+    ])
+  })
+
+  it('recognizes compact fences with list-style indentation', () => {
+    expect(
+      parseMarkdown(
+        '3. 前端处理 listcols 时，用年份维度结果作为白名单：\n\n  ```js (column[key] || []).filter(Boolean)```',
+      ),
+    ).toEqual([
+      {
+        kind: 'list',
+        ordered: true,
+        start: 3,
+        items: [{ text: '前端处理 listcols 时，用年份维度结果作为白名单：' }],
+      },
+      { kind: 'code', lang: 'js', code: '(column[key] || []).filter(Boolean)' },
+    ])
+  })
+
+  it('recognizes double-backtick fences across multiple lines', () => {
+    expect(parseMarkdown('  ``json\n  {"year":["2025"]}\n  ``')).toEqual([
+      { kind: 'code', lang: 'json', code: '  {"year":["2025"]}' },
+    ])
+  })
+
   it('keeps blank-separated ordered items in one list and preserves its start', () => {
     expect(parseMarkdown('3. 第三项\n\n4. 第四项')).toEqual([
       {
@@ -76,6 +136,14 @@ describe('parseMarkdown', () => {
 
     expect(content.slice(0, stableEnd)).toBe('第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n')
     expect(content.slice(stableEnd)).toBe('正在生成')
+  })
+
+  it('does not close a longer streaming fence with a shorter fence', () => {
+    const content = '```ts\nconst pair = "``"\n\n仍在生成'
+    const stableEnd = findStableMarkdownPrefixEnd(content)
+
+    expect(content.slice(0, stableEnd)).toBe('')
+    expect(content.slice(stableEnd)).toBe(content)
   })
 
   it('does not split a streaming list at blank lines between items', () => {

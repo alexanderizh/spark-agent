@@ -17,6 +17,7 @@ import {
 } from '../../components/FileDisplay'
 import { collectDocumentOutputKeys, renderDocumentOutputParagraph } from './ChatDocumentOutput'
 import { findStableMarkdownPrefixEnd, parseMarkdown, type MarkdownBlock } from './ChatMarkdownUtils'
+import { RenderDiagramBlock } from './RenderDiagramBlock'
 
 const EMPTY_MARKDOWN_BLOCKS: MarkdownBlock[] = []
 const STREAMING_STABLE_BLOCK_CACHE_LIMIT = 64
@@ -180,6 +181,24 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
             )
           }
           case 'code':
+            if (isMermaidLanguage(block.lang) && block.code.trim().length > 0) {
+              return (
+                <RenderDiagramBlock
+                  key={index}
+                  block={{
+                    kind: 'diagram_block',
+                    toolCallId: `markdown-diagram-${index}`,
+                    diagramType: 'mermaid',
+                    source: block.code,
+                    title: 'Mermaid 图表',
+                    height: 360,
+                    status: 'rendered',
+                    error: undefined,
+                    warnings: [],
+                  }}
+                />
+              )
+            }
             return (
               <MarkdownCodeBlock
                 key={index}
@@ -288,6 +307,11 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
     </>
   )
 })
+
+function isMermaidLanguage(lang: string): boolean {
+  const normalized = lang.trim().toLowerCase()
+  return normalized === 'mermaid' || normalized === 'mmd'
+}
 
 function StreamingCursor() {
   // 光标闪烁效果已移除 — 流式消息不再显示闪烁光标

@@ -119,6 +119,12 @@ export type LlmDelta =
       readonly outputTokens: number
       readonly cacheReadTokens?: number
       readonly cacheWriteTokens?: number
+      /** Wall-clock ms from request send to stream completion for this call. */
+      readonly callDurationMs?: number
+      /** Wall-clock ms from request send to the first content delta. */
+      readonly ttftMs?: number
+      /** Reasoning tokens when the provider reports them apart from output. */
+      readonly reasoningTokens?: number
     }
   | { readonly type: 'continuation'; readonly continuation: ProviderContinuation }
   | { readonly type: 'heartbeat' }

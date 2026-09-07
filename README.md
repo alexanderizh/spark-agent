@@ -178,6 +178,15 @@ spark update --allow-prerelease  # 允许预发布版本
 
 首次启动会在选择器里选一次模型，之后选择会写入 `~/.spark/config.toml`（`[agent].model`）自动复用，不再每次询问；切换用 `/model` 或 `spark --model <route-id>`（仅当次生效）。
 
+**会话管理**：会话按目录持久化在 `~/.spark/projects/` 下，可随时恢复：
+
+```sh
+spark --continue            # 继续当前目录最近一次会话（-c）
+spark --resume              # 打开会话选择器（TUI 内也可用 /sessions 切换）
+spark --resume <session-id> # 恢复指定会话
+spark sessions              # 列出当前目录的历史会话
+```
+
 ## 快速开始
 
 1. 安装应用，配置一种 Provider（OpenAI 兼容 / Anthropic 协议），或启用本地 Claude / Codex CLI

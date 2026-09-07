@@ -14,6 +14,11 @@ export type MarkdownBlock =
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
+type MarkdownFence = {
+  delimiter: string
+  lang: string
+}
+
 export function parseMarkdown(content: string): MarkdownBlock[] {
   const lines = content.replace(/\r\n/g, '\n').split('\n')
   const blocks: MarkdownBlock[] = []
@@ -26,21 +31,32 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
       continue
     }
 
-    const fence = line.match(/^```([A-Za-z0-9_-]*)\s*$/)
+    const compactFence = parseCompactFence(line)
+    if (compactFence) {
+      blocks.push({
+        kind: 'code',
+        lang: compactFence.lang,
+        code: compactFence.code,
+      })
+      index += 1
+      continue
+    }
+
+    const fence = parseFenceOpening(line)
     if (fence) {
       const codeLines: string[] = []
       index += 1
-      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? '')) {
+      while (index < lines.length && !isFenceClosing(lines[index] ?? '', fence.delimiter)) {
         codeLines.push(lines[index] ?? '')
         index += 1
       }
       if (index < lines.length) {
-        // Found closing ```
+        // Found closing fence
         index += 1
-        blocks.push({ kind: 'code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+        blocks.push({ kind: 'code', lang: fence.lang, code: codeLines.join('\n') })
       } else {
-        // No closing ``` found — incomplete code block (streaming)
-        blocks.push({ kind: 'incomplete_code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+        // No closing fence found — incomplete code block (streaming)
+        blocks.push({ kind: 'incomplete_code', lang: fence.lang, code: codeLines.join('\n') })
       }
       continue
     }
@@ -133,7 +149,7 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
       const current = lines[index] ?? ''
       if (
         !current.trim() ||
-        /^```/.test(current) ||
+        isFenceLine(current) ||
         /^(#{1,6})\s+/.test(current) ||
         /^(\s*)([-*+]|\d+[.)])\s+/.test(current) ||
         /^>\s?/.test(current) ||
@@ -163,7 +179,7 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
  * 同时确保代码块中的空行不会被错误切开。
  */
 export function findStableMarkdownPrefixEnd(content: string): number {
-  let inFence = false
+  let activeFenceDelimiter: string | null = null
   let stableEnd = 0
   let previousNonBlankLine = ''
   // 空行可能只是宽松列表的条目分隔；等下一条完整内容出现后再决定是否稳定该边界。
@@ -186,9 +202,19 @@ export function findStableMarkdownPrefixEnd(content: string): number {
       }
       pendingListBoundary = null
     }
-    if (/^```(?:[A-Za-z0-9_-]*)\s*$/.test(normalizedLine)) {
-      inFence = !inFence
-    } else if (!inFence && normalizedLine.trim().length === 0 && rawLine.endsWith('\n')) {
+    const fence = parseFenceOpening(normalizedLine)
+    if (activeFenceDelimiter == null && fence != null) {
+      activeFenceDelimiter = fence.delimiter
+    } else if (
+      activeFenceDelimiter != null &&
+      isFenceClosing(normalizedLine, activeFenceDelimiter)
+    ) {
+      activeFenceDelimiter = null
+    } else if (
+      activeFenceDelimiter == null &&
+      normalizedLine.trim().length === 0 &&
+      rawLine.endsWith('\n')
+    ) {
       const boundary = match.index + rawLine.length
       const previousListKind = getListKind(previousNonBlankLine)
       if (previousListKind == null) {
@@ -201,6 +227,63 @@ export function findStableMarkdownPrefixEnd(content: string): number {
   }
 
   return stableEnd
+}
+
+function parseFenceOpening(line: string): MarkdownFence | null {
+  const match = line.trim().match(/^(`{2,})([A-Za-z0-9_-]*)(?:[ \t]+[^`\r\n]*)?$/)
+  if (!match) return null
+  return {
+    delimiter: match[1] ?? '``',
+    lang: match[2] ?? '',
+  }
+}
+
+function parseCompactFence(line: string): { lang: string; code: string } | null {
+  const match = line.trim().match(/^(`{2,})([\s\S]*?)(`{2,})[ \t]*$/)
+  if (!match) return null
+
+  const openingDelimiter = match[1] ?? ''
+  const closingDelimiter = match[3] ?? ''
+  if (closingDelimiter.length < openingDelimiter.length) return null
+
+  const body = match[2] ?? ''
+  const labeledCode = body.match(/^\s*([A-Za-z0-9_-]+)[ \t]+([\s\S]*?)[ \t]*$/)
+  if (labeledCode) {
+    return {
+      lang: labeledCode[1] ?? '',
+      code: labeledCode[2] ?? '',
+    }
+  }
+
+  // 语言标签和代码之间偶尔会缺少空格（例如 ``json{"ok":true}``）。
+  // 仅对常见语言名放宽，避免把普通的 ``2025`` 误升级成代码块。
+  const knownLanguageCode = body.match(
+    /^(jsonc?|javascript|js|jsx|typescript|ts|tsx|html|xml|css|bash|sh|shell|yaml|yml|python|py|sql|go|rust|java|cpp|c)([\s\S]+)$/i,
+  )
+  if (knownLanguageCode) {
+    return {
+      lang: knownLanguageCode[1] ?? '',
+      code: knownLanguageCode[2]?.trim() ?? '',
+    }
+  }
+
+  // 无语言标签时，只接受围栏内明确存在的前导空格作为代码边界信号。
+  // 这样可以兼容 `` {"ok":true} ``，同时保留普通 ``2025`` 的行内语义。
+  const unlabeledCode = body.match(/^[ \t]+([\s\S]*?)[ \t]*$/)
+  if (!unlabeledCode) return null
+  return {
+    lang: '',
+    code: unlabeledCode[1] ?? '',
+  }
+}
+
+function isFenceLine(line: string): boolean {
+  return parseCompactFence(line) != null || parseFenceOpening(line) != null
+}
+
+function isFenceClosing(line: string, delimiter: MarkdownFence['delimiter']): boolean {
+  const trimmed = line.trim()
+  return /^`+$/.test(trimmed) && trimmed.length >= delimiter.length
 }
 
 function getListKind(line: string): 'ordered' | 'unordered' | null {

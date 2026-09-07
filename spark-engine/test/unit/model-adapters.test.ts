@@ -40,7 +40,11 @@ describe('real model protocol adapters', () => {
       outputTokens: 9,
       cacheReadTokens: 5,
       cacheWriteTokens: 7,
+      reasoningTokens: 0,
     });
+    // Streaming adapters timestamp the call; both must be present and sane.
+    expect(response.llmMs).toBeGreaterThanOrEqual(0);
+    expect(response.ttftMs).toBeGreaterThanOrEqual(0);
     const followup = toAnthropicRequest(
       {
         ...baseRequest(),
@@ -111,7 +115,10 @@ describe('real model protocol adapters', () => {
       outputTokens: 8,
       cacheReadTokens: 4,
       cacheWriteTokens: 0,
+      reasoningTokens: 0,
     });
+    expect(response.llmMs).toBeGreaterThanOrEqual(0);
+    expect(response.ttftMs).toBeGreaterThanOrEqual(0);
     const followup = toOpenAiRequest(
       {
         ...baseRequest(),
@@ -141,6 +148,36 @@ describe('real model protocol adapters', () => {
       'gpt-test',
     );
     expect(JSON.stringify(followup)).toContain('opaque-reasoning');
+  });
+
+  it('reports Responses reasoning tokens and call timing from the completed response', async () => {
+    const sse = [
+      'event: response.created',
+      'data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}',
+      '',
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","delta":"hello"}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"r1","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":30,"input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":21}}}}',
+      '',
+    ].join('\n');
+    const service = new OpenAiResponsesService({
+      apiKey: 'secret',
+      model: 'gpt-test',
+      fetch: async () => sseResponse(sse),
+    });
+    const response = await consumeLlmStream(service.stream(baseRequest(), context));
+
+    expect(response.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 30,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 0,
+      reasoningTokens: 21,
+    });
+    expect(response.llmMs).toBeGreaterThanOrEqual(0);
+    expect(response.ttftMs).toBeGreaterThanOrEqual(0);
   });
 
   it('classifies an HTTP 429 as retryable without exposing credentials', async () => {

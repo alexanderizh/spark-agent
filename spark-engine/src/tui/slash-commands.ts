@@ -10,9 +10,10 @@ export const SLASH_COMMANDS: readonly {
   { name: '/help', summary: '显示命令与快捷键' },
   { name: '/status', summary: '会话 id、排队 turn、事件数' },
   { name: '/model', summary: '切换模型或配置本地渠道' },
-  { name: '/perm', summary: '选择权限策略(请求批准/自动权限/计划/完全访问)' },
+  { name: '/perm', summary: '选择权限策略(手动审批/自动审批/完全访问)' },
   { name: '/effort', summary: '选择推理强度(low/medium/high/max/off，默认 high)' },
   { name: '/update', summary: '检查并安装新版本(--check 仅检查)' },
+  { name: '/sessions', summary: '选择并切换到历史会话' },
   { name: '/clear', summary: '开启全新会话' },
   { name: '/exit', summary: '退出(Ctrl+C 两次同效)' },
 ]

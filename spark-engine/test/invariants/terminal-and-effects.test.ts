@@ -16,8 +16,16 @@ const terminal = (seq: number): Extract<AgentEvent, { type: 'turn.completed' }> 
   stats: {
     steps: 1,
     toolCalls: 0,
-    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    usage: {
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+    },
     wallMs: 1,
+    llmMs: 0,
+    ttftMs: 0,
     costUsd: 0,
   },
 });

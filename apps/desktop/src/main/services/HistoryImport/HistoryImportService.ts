@@ -35,7 +35,7 @@ import type {
   SessionPermissionMode,
 } from '@spark/protocol'
 import { extractClaudeCodeMeta, parseClaudeCodeTranscript } from './claudeCodeParser.js'
-import { extractCodexMeta, parseCodexRollout } from './codexParser.js'
+import { extractCodexMeta, parseCodexRollout, type CodexTranscriptMeta } from './codexParser.js'
 import { extractZcodeV2Meta, parseZcodeV2Transcript } from './zcodeV2Parser.js'
 import { parseZcodeCliTranscript } from './zcodeCliParser.js'
 import { listZcodeCliSessions, loadZcodeCliSessionText } from './zcodeCliStore.js'
@@ -106,11 +106,27 @@ interface ScannedFile {
   mtime: Date
 }
 
-/** scanCodex 中同一 thread 的一个 rollout 快照（文件 + 解析出的轻量元数据） */
+/** scanCodex 中一个原生 thread 的 rollout 快照（文件 + 解析出的轻量元数据） */
 interface CodexRolloutCandidate {
   file: ScannedFile
-  meta: TranscriptMeta
+  meta: CodexTranscriptMeta
+  nativeThreadId: string
 }
+
+/** 本地 Spark 会话对 Codex 原生 thread 的归属信息 */
+interface CodexNativeThreadOwner {
+  sparkSessionId: string
+  sparkSessionTitle: string | null
+}
+
+/** Codex 导入候选；同一 Spark 会话可以包含多个原生 thread */
+interface CodexRolloutGroup {
+  sourceSessionId: string
+  candidates: CodexRolloutCandidate[]
+  sparkSessionTitle: string | null
+}
+
+const SPARK_SESSION_SOURCE_ID_PREFIX = 'spark-session:'
 
 export class HistoryImportService {
   private readonly home: string
@@ -120,10 +136,12 @@ export class HistoryImportService {
    */
   private readonly mainRootCache = new Map<string, string | null>()
   /**
-   * threadId → 主线（时间衔接链）rollout 文件路径列表。scan/import 入口失效重建；
-   * 供 codex 导入/预览的拼接解析复用，避免对每个选中条目重复枚举 sessions 目录。
+   * 导入候选 ID → 主线 rollout 快照。scan/import 入口失效重建；供 codex 导入/预览的
+   * 拼接解析复用，避免对每个选中条目重复枚举 sessions 目录。
    */
-  private codexMainlineCache: Map<string, string[]> | null = null
+  private codexMainlineCache: Map<string, CodexRolloutCandidate[]> | null = null
+  /** 原生 thread ID → 导入候选 ID，兼容扫描后 UI 仍持有旧的原生 ID。 */
+  private codexGroupAliasCache: Map<string, string> | null = null
 
   constructor(private readonly deps: HistoryImportDeps) {
     this.home = deps.homeDir ?? homedir()
@@ -250,38 +268,18 @@ export class HistoryImportService {
       const threadNames = await this.loadCodexThreadNames()
       const files: ScannedFile[] = []
       await this.walkCodex(root, files)
-      // 先按 thread id（最后一条 session_meta 的 id，见 codexParser.collectMeta）
-      // 分组：同一会话 resume 出的各代 rollout 快照必须归并为一个条目，
-      // 否则同 thread 会在列表里重复出现且 sourceSessionId 全部撞车（勾选联动 +
-      // 导入去重静默丢弃其余快照）。
-      const byThread = new Map<string, CodexRolloutCandidate[]>()
-      for (const file of files) {
-        try {
-          const text = await this.readForMeta(file.filePath, file.sizeBytes)
-          const fallbackId = codexIdFromFilename(file.filePath)
-          const meta = extractCodexMeta(text, null, fallbackId)
-          if (meta.messageCount === 0) continue
-          const list = byThread.get(meta.sourceSessionId)
-          if (list != null) list.push({ file, meta })
-          else byThread.set(meta.sourceSessionId, [{ file, meta }])
-        } catch (err) {
-          log.warn(`scan codex file failed: ${file.filePath}: ${errMsg(err)}`)
-        }
-      }
+      const groups = await this.collectCodexGroups(files)
       // 主线（时间衔接链）写入实例缓存：preview 直接复用 scan 的枚举结果；
       // 每次扫描重建新 Map（而非复用旧实例），避免残留已删除 thread 的失效路径；
       // import 入口失效重建，保证与磁盘最新一致
-      const mainlineCache = new Map<string, string[]>()
-      for (const [threadId, candidates] of byThread) {
-        const mainline = pickCodexMainline(candidates)
-        out.push(this.buildCodexThreadItem(mainline, candidates, threadNames, importedIds))
-        mainlineCache.set(
-          threadId,
-          mainline.map((c) => c.file.filePath),
-        )
+      this.cacheCodexGroups(groups)
+      const mainlineCache = this.codexMainlineCache
+      if (mainlineCache == null) throw new Error('codex mainline cache was not initialized')
+      for (const group of groups.values()) {
+        const mainline = mainlineCache.get(group.sourceSessionId) ?? []
+        out.push(this.buildCodexThreadItem(group, mainline, threadNames, importedIds))
         count++
       }
-      this.codexMainlineCache = mainlineCache
       return { source: 'codex', available: true, count, rootPath: root }
     } catch (err) {
       return { source: 'codex', available: false, count, rootPath: root, error: errMsg(err) }
@@ -289,7 +287,7 @@ export class HistoryImportService {
   }
 
   /**
-   * 把同一 thread 的多个 rollout 文件归并为一个导入条目。
+   * 把同一导入候选的多个 rollout 文件归并为一个导入条目。
    *
    * Codex 的 resume 机制让同一 thread 在磁盘上以多个 rollout 文件存在，实测两种形态：
    *   1. 增量衔接——resume 后的新文件只记录新增内容，与前一文件时间精确衔接
@@ -300,21 +298,126 @@ export class HistoryImportService {
    * lastTimestamp 聚合为组内完整跨度；filePath 指向最全文件（单文件兜底导入源）。
    */
   private buildCodexThreadItem(
+    group: CodexRolloutGroup,
     mainline: CodexRolloutCandidate[],
-    candidates: CodexRolloutCandidate[],
     threadNames: Map<string, string>,
     importedIds: Set<string>,
   ): HistoryImportItem {
-    const best = pickMostCompleteRollout(candidates)
-    const threadName = threadNames.get(best.meta.sourceSessionId) ?? null
+    const best = pickMostCompleteRollout(group.candidates)
+    const threadName = group.sparkSessionTitle ?? threadNames.get(best.nativeThreadId) ?? null
     const meta: TranscriptMeta = {
       ...best.meta,
+      sourceSessionId: group.sourceSessionId,
       ...(threadName != null ? { title: threadName } : {}),
       messageCount: mainline.reduce((sum, c) => sum + c.meta.messageCount, 0),
-      firstTimestamp: earliestTs(candidates.map((c) => c.meta.firstTimestamp)),
-      lastTimestamp: latestTs(candidates.map((c) => c.meta.lastTimestamp)),
+      firstTimestamp: earliestTs(group.candidates.map((c) => c.meta.firstTimestamp)),
+      lastTimestamp: latestTs(group.candidates.map((c) => c.meta.lastTimestamp)),
     }
-    return this.toItem('codex', best.file, meta, importedIds)
+    const item = this.toItem('codex', best.file, meta, importedIds)
+    // 兼容修复前已导入的单个 native thread：新扫描候选换成 Spark session ID 后，
+    // 只要组内任一原生 thread 已导入，就不能再次展示为可导入。
+    if (!item.alreadyImported && group.candidates.some((c) => importedIds.has(c.nativeThreadId))) {
+      return { ...item, alreadyImported: true }
+    }
+    return item
+  }
+
+  /** 从 rollout 元数据构造 Codex 导入候选。 */
+  private async collectCodexGroups(files: ScannedFile[]): Promise<Map<string, CodexRolloutGroup>> {
+    const nativeThreadOwners = this.loadCodexNativeThreadOwners()
+    const groups = new Map<string, CodexRolloutGroup>()
+    for (const file of files) {
+      try {
+        const text = await this.readForMeta(file.filePath, file.sizeBytes)
+        const fallbackId = codexIdFromFilename(file.filePath)
+        const meta = extractCodexMeta(text, null, fallbackId)
+        if (meta.messageCount === 0) continue
+
+        const nativeThreadId = meta.sourceSessionId
+        const owner =
+          meta.originator === 'spark-agent' ? nativeThreadOwners.get(nativeThreadId) : undefined
+        const sourceSessionId =
+          owner != null
+            ? `${SPARK_SESSION_SOURCE_ID_PREFIX}${owner.sparkSessionId}`
+            : nativeThreadId
+        const existing = groups.get(sourceSessionId)
+        const candidate: CodexRolloutCandidate = { file, meta, nativeThreadId }
+        if (existing != null) {
+          existing.candidates.push(candidate)
+        } else {
+          groups.set(sourceSessionId, {
+            sourceSessionId,
+            candidates: [candidate],
+            sparkSessionTitle: owner?.sparkSessionTitle ?? null,
+          })
+        }
+      } catch (err) {
+        log.warn(`scan codex file failed: ${file.filePath}: ${errMsg(err)}`)
+      }
+    }
+    return groups
+  }
+
+  /**
+   * 缓存各导入候选的主线，并建立 native thread 别名映射。
+   * 同一 Spark 会话的不同 native thread 各自选主线后再合并，避免把独立轮次当成
+   * resume 重叠快照淘汰。
+   */
+  private cacheCodexGroups(groups: Map<string, CodexRolloutGroup>): void {
+    const mainlineCache = new Map<string, CodexRolloutCandidate[]>()
+    const aliases = new Map<string, string>()
+    for (const group of groups.values()) {
+      mainlineCache.set(group.sourceSessionId, pickCodexGroupMainline(group))
+      for (const candidate of group.candidates) {
+        aliases.set(candidate.nativeThreadId, group.sourceSessionId)
+      }
+    }
+    this.codexMainlineCache = mainlineCache
+    this.codexGroupAliasCache = aliases
+  }
+
+  /** 读取本地 Spark 会话保存的 Codex native thread → Spark session 映射。 */
+  private loadCodexNativeThreadOwners(): Map<string, CodexNativeThreadOwner> {
+    const owners = new Map<string, CodexNativeThreadOwner>()
+    const ambiguous = new Set<string>()
+    try {
+      const rows = this.deps.db.raw
+        .prepare(
+          "SELECT id, title, metadata_json FROM sessions WHERE metadata_json LIKE '%nativeThreadBindings%'",
+        )
+        .all() as Array<{ id?: unknown; title?: unknown; metadata_json?: unknown }>
+      for (const row of rows) {
+        const sparkSessionId = readNonEmptyString(row.id)
+        if (sparkSessionId == null || typeof row.metadata_json !== 'string') continue
+        let metadata: unknown
+        try {
+          metadata = JSON.parse(row.metadata_json)
+        } catch {
+          continue
+        }
+        const appServer = readRecord(readRecord(metadata)?.codexAppServer)
+        const bindings = appServer?.nativeThreadBindings
+        if (!Array.isArray(bindings)) continue
+        const sparkSessionTitle = readNonEmptyString(row.title)
+        for (const value of bindings) {
+          const threadId = readNonEmptyString(readRecord(value)?.threadId)
+          if (threadId == null) continue
+          const existing = owners.get(threadId)
+          if (existing != null && existing.sparkSessionId !== sparkSessionId) {
+            ambiguous.add(threadId)
+            continue
+          }
+          if (!ambiguous.has(threadId)) {
+            owners.set(threadId, { sparkSessionId, sparkSessionTitle })
+          }
+        }
+      }
+      for (const threadId of ambiguous) owners.delete(threadId)
+    } catch (err) {
+      // 历史数据库/测试替身可能没有 sessions 或 metadata_json；此时退回外部会话规则。
+      log.warn(`load codex native thread owners failed: ${errMsg(err)}`)
+    }
+    return owners
   }
 
   private async walkCodex(dir: string, out: ScannedFile[]): Promise<void> {
@@ -523,6 +626,7 @@ export class HistoryImportService {
   async import(selections: HistoryImportSelection[]): Promise<HistoryImportResponse> {
     // codex 主线缓存按 import 批次失效，保证拼接用到的文件列表与磁盘最新一致
     this.codexMainlineCache = null
+    this.codexGroupAliasCache = null
     const results: HistoryImportResultEntry[] = []
     const importedIds = this.loadImportedSourceIds()
     const workspaceCache = new Map<string, string>()
@@ -541,7 +645,11 @@ export class HistoryImportService {
         sourceSessionId: sel.sourceSessionId,
       })
 
-      if (importedIds.has(sel.sourceSessionId)) {
+      const alreadyImported =
+        importedIds.has(sel.sourceSessionId) ||
+        (sel.source === 'codex' &&
+          (await this.isCodexSourceAlreadyImported(sel.sourceSessionId, importedIds)))
+      if (alreadyImported) {
         skipped++
         results.push({ sourceSessionId: sel.sourceSessionId, status: 'skipped' })
         continue
@@ -685,18 +793,20 @@ export class HistoryImportService {
     fallbackFilePath: string,
     sessionId: string,
   ): Promise<ParsedTranscript> {
-    let paths: string[]
+    let groupId = threadId
+    let candidates: CodexRolloutCandidate[] = []
     try {
-      paths = await this.listCodexMainlinePaths(threadId)
+      const resolved = await this.listCodexMainlineCandidates(threadId)
+      groupId = resolved.groupId
+      candidates = resolved.candidates
     } catch (err) {
       log.warn(`list codex mainline failed: ${threadId}: ${errMsg(err)}`)
-      paths = []
     }
-    if (paths.length === 0) {
+    if (candidates.length === 0) {
       const text = await readFile(fallbackFilePath, 'utf-8')
       return parseCodexRollout(text, {
         sessionId,
-        sourceSessionId: threadId,
+        sourceSessionId: groupId,
         threadName: null,
         fallbackTimestamp: new Date().toISOString(),
       })
@@ -706,12 +816,12 @@ export class HistoryImportService {
     const firsts: Array<string | null> = []
     const lasts: Array<string | null> = []
     let headMeta: TranscriptMeta | null = null
-    let lastUserText: string | null = null
-    for (const p of paths) {
-      const text = await readFile(p, 'utf-8')
+    const lastUserTextByThread = new Map<string, string>()
+    for (const candidate of candidates) {
+      const text = await readFile(candidate.file.filePath, 'utf-8')
       const parsed = parseCodexRollout(text, {
         sessionId,
-        sourceSessionId: threadId,
+        sourceSessionId: groupId,
         threadName: null,
         fallbackTimestamp,
       })
@@ -725,12 +835,14 @@ export class HistoryImportService {
           const content = event.content.trim()
           if (!firstUserSeen) {
             firstUserSeen = true
-            // 首文件无前置，直接保留；后继文件首条与已拼接末条相同 → resume 重放，丢弃
-            if (headMeta !== parsed.meta && content.length > 0 && content === lastUserText) {
+            // 仅同一 native thread 的后继文件才可能是 resume 重放；不同 native thread
+            // 即使用户输入文字相同，也是两个真实轮次，不能跨 thread 误删。
+            const previousUserText = lastUserTextByThread.get(candidate.nativeThreadId)
+            if (previousUserText != null && content.length > 0 && content === previousUserText) {
               continue
             }
           }
-          lastUserText = content
+          lastUserTextByThread.set(candidate.nativeThreadId, content)
         }
         events.push(event)
       }
@@ -742,7 +854,7 @@ export class HistoryImportService {
       // 单文件解析各自从 0 编 seq，拼接后统一经 completeImportedTurns 重排
       events: completeImportedTurns(events),
       meta: {
-        sourceSessionId: threadId,
+        sourceSessionId: groupId,
         title: headMeta?.title ?? deriveTitle(null, '未命名 Codex 会话'),
         cwd: headMeta?.cwd ?? null,
         firstTimestamp: earliestTs(firsts),
@@ -752,35 +864,38 @@ export class HistoryImportService {
     }
   }
 
-  /** threadId → 主线文件路径（枚举 sessions 目录一次并缓存；scan/import 入口失效） */
-  private async listCodexMainlinePaths(threadId: string): Promise<string[]> {
-    let cache = this.codexMainlineCache
-    if (cache == null) {
-      cache = new Map<string, string[]>()
+  /** 导入候选 ID → 主线 rollout 快照（枚举 sessions 目录一次并缓存）。 */
+  private async listCodexMainlineCandidates(
+    sourceSessionId: string,
+  ): Promise<{ groupId: string; candidates: CodexRolloutCandidate[] }> {
+    if (this.codexMainlineCache == null || this.codexGroupAliasCache == null) {
       const files: ScannedFile[] = []
       await this.walkCodex(this.codexRoot, files)
-      const byThread = new Map<string, CodexRolloutCandidate[]>()
-      for (const file of files) {
-        try {
-          const text = await this.readForMeta(file.filePath, file.sizeBytes)
-          const meta = extractCodexMeta(text, null, codexIdFromFilename(file.filePath))
-          if (meta.messageCount === 0) continue
-          const list = byThread.get(meta.sourceSessionId)
-          if (list != null) list.push({ file, meta })
-          else byThread.set(meta.sourceSessionId, [{ file, meta }])
-        } catch (err) {
-          log.warn(`scan codex file failed: ${file.filePath}: ${errMsg(err)}`)
-        }
-      }
-      for (const [id, candidates] of byThread) {
-        cache.set(
-          id,
-          pickCodexMainline(candidates).map((c) => c.file.filePath),
-        )
-      }
-      this.codexMainlineCache = cache
+      this.cacheCodexGroups(await this.collectCodexGroups(files))
     }
-    return cache.get(threadId) ?? []
+    const mainlineCache = this.codexMainlineCache
+    const aliasCache = this.codexGroupAliasCache
+    if (mainlineCache == null || aliasCache == null) {
+      throw new Error('codex mainline cache was not initialized')
+    }
+    const groupId = mainlineCache.has(sourceSessionId)
+      ? sourceSessionId
+      : (aliasCache.get(sourceSessionId) ?? sourceSessionId)
+    return { groupId, candidates: mainlineCache.get(groupId) ?? [] }
+  }
+
+  /** 服务端兜底检查聚合候选的任一原生 thread 是否已被旧版本导入。 */
+  private async isCodexSourceAlreadyImported(
+    sourceSessionId: string,
+    importedIds: Set<string>,
+  ): Promise<boolean> {
+    try {
+      const resolved = await this.listCodexMainlineCandidates(sourceSessionId)
+      return resolved.candidates.some((candidate) => importedIds.has(candidate.nativeThreadId))
+    } catch (err) {
+      log.warn(`check codex import duplicate failed: ${sourceSessionId}: ${errMsg(err)}`)
+      return false
+    }
   }
 
   private parse(
@@ -1024,6 +1139,37 @@ function pickCodexMainline(candidates: CodexRolloutCandidate[]): CodexRolloutCan
   return mainline
 }
 
+/**
+ * 组内按 native thread 分别选主线，再按时间合并。
+ *
+ * 同一 Spark 会话的不同 native thread 可能只是配置变化后为同一轮历史新建的
+ * 载体，不能把它们放进同一个区间覆盖算法，否则后一个真实轮次可能因时间间隔
+ * 或与前一个轮次重叠而被误淘汰。
+ */
+function pickCodexGroupMainline(group: CodexRolloutGroup): CodexRolloutCandidate[] {
+  const byNativeThread = new Map<string, CodexRolloutCandidate[]>()
+  for (const candidate of group.candidates) {
+    const list = byNativeThread.get(candidate.nativeThreadId)
+    if (list != null) list.push(candidate)
+    else byNativeThread.set(candidate.nativeThreadId, [candidate])
+  }
+  return [...byNativeThread.values()]
+    .flatMap((candidates) => pickCodexMainline(candidates))
+    .sort(compareCodexCandidates)
+}
+
+function compareCodexCandidates(left: CodexRolloutCandidate, right: CodexRolloutCandidate): number {
+  const leftStart = left.meta.firstTimestamp ?? left.file.mtime.toISOString()
+  const rightStart = right.meta.firstTimestamp ?? right.file.mtime.toISOString()
+  return (
+    leftStart.localeCompare(rightStart) ||
+    (left.meta.lastTimestamp ?? left.file.mtime.toISOString()).localeCompare(
+      right.meta.lastTimestamp ?? right.file.mtime.toISOString(),
+    ) ||
+    left.file.filePath.localeCompare(right.file.filePath)
+  )
+}
+
 /** 解析结果 → 预览消息列表（多取 1 条用于 truncated 判定） */
 function toPreviewResponse(parsed: ParsedTranscript, limit: number): HistoryImportPreviewResponse {
   const messages: HistoryImportPreviewMessage[] = []
@@ -1063,6 +1209,18 @@ function latestTs(values: Array<string | null>): string | null {
     if (max == null || v.localeCompare(max) > 0) max = v
   }
   return max
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  return text.length > 0 ? text : null
 }
 
 /** rollout-<ts>-<uuid>.jsonl → uuid */

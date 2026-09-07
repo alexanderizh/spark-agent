@@ -62,6 +62,7 @@ import {
   SidebarFilterMenu,
   DEFAULT_SIDEBAR_FILTER,
   canReorderSidebarSessions,
+  clearSidebarFilters,
   type SidebarFilterState,
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
@@ -2096,10 +2097,10 @@ export function SidebarSessionList() {
     writeSidebarFilter(next)
   }, [])
   const handleFilterClear = useCallback(() => {
-    const cleared = { ...DEFAULT_SIDEBAR_FILTER }
+    const cleared = clearSidebarFilters(filter)
     setFilter(cleared)
     writeSidebarFilter(cleared)
-  }, [])
+  }, [filter])
 
   // Notice
   const [notice, setNotice] = useState('')

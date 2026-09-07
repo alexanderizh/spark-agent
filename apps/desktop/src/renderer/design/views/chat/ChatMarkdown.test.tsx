@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type MockMarkdownBlock =
   | { kind: 'paragraph'; text: string }
+  | { kind: 'code'; lang: string; code: string }
   | {
       kind: 'list'
       ordered: true
@@ -22,6 +23,14 @@ const markdownMocks = vi.hoisted(() => ({
 
 const documentOutputMocks = vi.hoisted(() => ({
   renderDocumentOutputParagraph: vi.fn(() => null),
+}))
+
+const diagramMocks = vi.hoisted(() => ({
+  RenderDiagramBlock: vi.fn(
+    ({ block }: { block: { source: string; diagramType: string } }) => (
+      <div data-diagram-type={block.diagramType}>{block.source}</div>
+    ),
+  ),
 }))
 
 vi.mock('./ChatMarkdownUtils', () => ({
@@ -65,6 +74,8 @@ vi.mock('./ChatDocumentOutput', () => ({
   renderDocumentOutputParagraph: documentOutputMocks.renderDocumentOutputParagraph,
 }))
 
+vi.mock('./RenderDiagramBlock', () => diagramMocks)
+
 import { MarkdownText } from './ChatMarkdown'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -75,6 +86,7 @@ describe('MarkdownText', () => {
   beforeEach(() => {
     markdownMocks.parseMarkdown.mockClear()
     documentOutputMocks.renderDocumentOutputParagraph.mockClear()
+    diagramMocks.RenderDiagramBlock.mockClear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -136,6 +148,38 @@ describe('MarkdownText', () => {
     act(() => root.render(<MarkdownText content="2. second item" />))
 
     expect(container.querySelector('ol')?.getAttribute('start')).toBe('2')
+  })
+
+  it.each(['mermaid', 'MMD'])('renders %s fences as diagram blocks', (lang) => {
+    markdownMocks.parseMarkdown.mockReturnValueOnce([
+      { kind: 'code', lang, code: 'flowchart TD\n  A --> B' },
+    ])
+
+    act(() => root.render(<MarkdownText content={`\`\`\`${lang}\nflowchart TD\n  A --> B\n\`\`\``} />))
+
+    expect(diagramMocks.RenderDiagramBlock.mock.calls[0]?.[0]).toMatchObject(
+      expect.objectContaining({
+        block: expect.objectContaining({
+          diagramType: 'mermaid',
+          source: 'flowchart TD\n  A --> B',
+          status: 'rendered',
+        }),
+      }),
+    )
+    expect(container.querySelector('[data-diagram-type="mermaid"]')?.textContent).toBe(
+      'flowchart TD\n  A --> B',
+    )
+  })
+
+  it('keeps non-Mermaid fences as regular code blocks', () => {
+    markdownMocks.parseMarkdown.mockReturnValueOnce([
+      { kind: 'code', lang: 'typescript', code: 'const value = 1' },
+    ])
+
+    act(() => root.render(<MarkdownText content={'```typescript\nconst value = 1\n```'} />))
+
+    expect(diagramMocks.RenderDiagramBlock).not.toHaveBeenCalled()
+    expect(container.querySelector('pre')?.textContent).toBe('const value = 1')
   })
 
   it('keeps user text ending in a document extension as plain markdown', () => {

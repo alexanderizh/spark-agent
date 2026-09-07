@@ -29,6 +29,8 @@ export interface SessionMeta {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly latestSeq: number;
+  /** First user input of the session, whitespace-collapsed and truncated for pickers. */
+  readonly preview?: string;
 }
 
 export interface SessionStore {

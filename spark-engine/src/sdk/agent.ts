@@ -7,7 +7,7 @@ import type { AgentEvent } from '../events/schema.js'
 import { SessionScheduler } from '../kernel/scheduler.js'
 import { stableStringify } from '../kernel/stable-json.js'
 import { TurnMachine, type RunTurnOptions, type TurnResult } from '../kernel/turn-machine.js'
-import type { AgentEnv, BudgetLimits } from '../seams.js'
+import type { AgentEnv, BudgetLimits, SessionMeta } from '../seams.js'
 import type { LlmService } from '../seams.js'
 import { normalizeLegacyPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { ReasoningEffort } from '../llm/types.js'
@@ -87,6 +87,11 @@ export class Agent {
     })
     this.#sessions.set(sessionId, session)
     return session
+  }
+
+  /** Sessions recorded for this agent's cwd project, most recently updated first. */
+  async listSessions(): Promise<SessionMeta[]> {
+    return this.#env.store.list(this.#cwd)
   }
 
   async openSession(sessionId: string): Promise<AgentSession> {

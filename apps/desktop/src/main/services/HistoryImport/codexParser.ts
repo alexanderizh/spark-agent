@@ -35,6 +35,7 @@ interface CodexPayload {
   id?: string
   cwd?: string
   timestamp?: string
+  originator?: string
   turn_id?: string
   role?: string
   content?: CodexContentBlock[]
@@ -50,6 +51,10 @@ interface CodexLine {
   type?: string
   timestamp?: string
   payload?: CodexPayload
+}
+
+export interface CodexTranscriptMeta extends TranscriptMeta {
+  originator?: string
 }
 
 const SPARK_MCP_SECTION_RE = new RegExp(
@@ -192,9 +197,10 @@ function collectMeta(
   lines: CodexLine[],
   threadName: string | null,
   fallbackId: string,
-): TranscriptMeta {
+): CodexTranscriptMeta {
   let id: string | null = null
   let cwd: string | null = null
+  let originator: string | null = null
   let firstTs: string | null = null
   let lastTs: string | null = null
   let messageCount = 0
@@ -204,6 +210,7 @@ function collectMeta(
     if (l.type === 'session_meta' && p != null) {
       if (p.id != null) id = p.id
       if (p.cwd != null) cwd = p.cwd
+      if (p.originator != null) originator = p.originator
       if (p.timestamp != null && firstTs == null) firstTs = p.timestamp
     }
     if (l.type === 'turn_context' && p?.cwd != null && cwd == null) cwd = p.cwd
@@ -230,6 +237,7 @@ function collectMeta(
     firstTimestamp: firstTs,
     lastTimestamp: lastTs,
     messageCount,
+    ...(originator != null ? { originator } : {}),
   }
 }
 
@@ -238,7 +246,7 @@ export function extractCodexMeta(
   text: string,
   threadName: string | null,
   fallbackId: string,
-): TranscriptMeta {
+): CodexTranscriptMeta {
   return collectMeta(parseLines(text), threadName, fallbackId)
 }
 

@@ -53,6 +53,9 @@ export class TurnMachine {
     let budgetWarning: string | undefined
     let cacheReadTokens = 0
     let cacheWriteTokens = 0
+    let llmMsTotal = 0
+    let reasoningTokensTotal = 0
+    let turnTtftMs: number | undefined
 
     const append = async (draft: BoundEventDraft): Promise<AgentEvent> => {
       const event = await ledger.append(draft)
@@ -73,8 +76,11 @@ export class TurnMachine {
           outputTokens: snapshot.outputTokens,
           cacheReadTokens,
           cacheWriteTokens,
+          reasoningTokens: reasoningTokensTotal,
         },
         wallMs: snapshot.wallMs,
+        llmMs: llmMsTotal,
+        ttftMs: turnTtftMs ?? 0,
         costUsd: snapshot.costUsd,
       }
     }
@@ -194,10 +200,15 @@ export class TurnMachine {
           turnId: options.turnId,
           message: response.message,
           usage: response.usage,
+          llmMs: response.llmMs,
+          ttftMs: response.ttftMs,
         })
         completedSteps.push(assistantEvent.seq)
         cacheReadTokens += response.usage.cacheReadTokens
         cacheWriteTokens += response.usage.cacheWriteTokens
+        llmMsTotal += response.llmMs
+        reasoningTokensTotal += response.usage.reasoningTokens
+        turnTtftMs ??= response.ttftMs
 
         if (response.message.toolCalls.length > 0) {
           const runner = new ToolRunner({

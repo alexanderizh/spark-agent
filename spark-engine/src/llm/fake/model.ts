@@ -62,6 +62,11 @@ async function* emitReply(reply: FakeReply, signal: AbortSignal): AsyncIterable<
     outputTokens: reply.usage.outputTokens,
     cacheReadTokens: reply.usage.cacheReadTokens,
     cacheWriteTokens: reply.usage.cacheWriteTokens,
+    ...(reply.usage.reasoningTokens > 0
+      ? { reasoningTokens: reply.usage.reasoningTokens }
+      : {}),
+    ...(reply.timing?.llmMs === undefined ? {} : { callDurationMs: reply.timing.llmMs }),
+    ...(reply.timing?.ttftMs === undefined ? {} : { ttftMs: reply.timing.ttftMs }),
   };
   yield { type: 'done' };
 }

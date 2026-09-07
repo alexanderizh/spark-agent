@@ -11,6 +11,7 @@ import {
   type ConfiguredModelRuntime,
 } from '../config/model-config.js'
 import { createDefaultEnv, defaultSparkHome } from '../env.js'
+import { JsonlSessionStore, shortSessionId } from '../events/ledger.js'
 import type { AgentEvent } from '../events/schema.js'
 import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import { isReasoningEffort } from '../llm/types.js'
@@ -47,7 +48,11 @@ interface CliOptions {
   readonly allowPrerelease: boolean
   readonly package: boolean
   readonly permissionMode: PermissionMode
+  readonly permissionModeExplicit: boolean
   readonly reasoningEffort?: ReasoningEffort
+  readonly continueSession: boolean
+  /** '' = picker sentinel (bare --resume); a concrete session id otherwise. */
+  readonly resume?: string
   readonly positionals: readonly string[]
 }
 
@@ -112,6 +117,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     return runMaintenanceCommand(maintenance, options)
   }
+  if (maintenance === 'sessions') {
+    if (options.positionals.length > 1 || options.prompt) {
+      process.stderr.write('spark sessions does not accept extra arguments.\n')
+      return 2
+    }
+    return listSessionsCommand(options.json)
+  }
 
   const positionalPrompt = options.positionals.join(' ').trim()
   let prompt = options.prompt ?? positionalPrompt
@@ -145,11 +157,20 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     } catch (error) {
       startupError = terminalSafe(message(error))
     }
+    let resumeSessionId: string | undefined
+    try {
+      resumeSessionId = await resolveResumeTarget(options)
+    } catch (error) {
+      process.stderr.write(`${terminalSafe(message(error))}\n`)
+      return 2
+    }
     await runTui({
       cwd: process.cwd(),
       version: await runningVersion(),
-      permissionMode: options.permissionMode,
       updateRunner: createTuiUpdateRunner(),
+      ...(options.permissionModeExplicit ? { permissionMode: options.permissionMode } : {}),
+      ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+      ...(options.resume === '' ? { resumePicker: true } : {}),
       ...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort }),
@@ -165,6 +186,21 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 0
   }
 
+  // Usage errors take precedence over model-resolution errors: a bad or
+  // non-TTY --resume must be reported even when no model is configured yet.
+  let resumeSessionId: string | undefined
+  try {
+    resumeSessionId = await resolveResumeTarget(options)
+  } catch (error) {
+    process.stderr.write(`${terminalSafe(message(error))}\n`)
+    return 2
+  }
+  if (resumeSessionId === undefined && options.resume === '') {
+    process.stderr.write(
+      'Bare --resume opens the interactive session picker; pickers need a TUI.\n',
+    )
+    return 2
+  }
   let runtime: ConfiguredModelRuntime
   try {
     runtime = await loadConfiguredModel({
@@ -175,10 +211,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.stderr.write(`${terminalSafe(message(error))}\n`)
     return 2
   }
-  if (prompt) return runOnce(prompt, options, runtime)
+  if (prompt) return runOnce(prompt, options, runtime, resumeSessionId)
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
-    return runPlainRepl(runtime, options.permissionMode, options.reasoningEffort)
+    return runPlainRepl(runtime, options, resumeSessionId)
   }
   process.stderr.write(
     'No task was provided. Pass a prompt, pipe stdin, or run spark in an interactive TTY.\n',
@@ -326,9 +362,26 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
   return 0
 }
 
+/**
+ * node:util parseArgs rejects a valueless `--resume`; users expect
+ * `spark --resume` (no id) to open the in-TUI session picker. Rewrite a bare
+ * flag into an empty-string value before parsing — '' is the picker sentinel.
+ */
+function normalizeResumeArgv(argv: readonly string[]): string[] {
+  const out = [...argv];
+  for (let index = 0; index < out.length; index += 1) {
+    const token = out[index];
+    if (token === '--resume' || token === '-r') {
+      const next = out[index + 1];
+      if (next === undefined || next.startsWith('-')) out.splice(index + 1, 0, '');
+    }
+  }
+  return out;
+}
+
 function parseCli(argv: readonly string[]): CliOptions {
   const parsed = parseArgs({
-    args: [...argv],
+    args: normalizeResumeArgv(argv),
     allowPositionals: true,
     strict: true,
     options: {
@@ -349,6 +402,8 @@ function parseCli(argv: readonly string[]): CliOptions {
       'permission-mode': { type: 'string' },
       'dangerously-skip-permissions': { type: 'boolean', default: false },
       'output-format': { type: 'string' },
+      continue: { type: 'boolean', short: 'c', default: false },
+      resume: { type: 'string', short: 'r' },
     },
   })
   const outputFormat = parsed.values['output-format']
@@ -367,6 +422,11 @@ function parseCli(argv: readonly string[]): CliOptions {
   if (dangerousBypass && configuredPermissionMode && configuredPermissionMode !== 'bypass') {
     throw new Error('--dangerously-skip-permissions conflicts with --permission-mode')
   }
+  const continueLatest = parsed.values.continue ?? false
+  const resume = parsed.values.resume
+  if (continueLatest && resume !== undefined) {
+    throw new Error('--continue and --resume are mutually exclusive')
+  }
   return {
     help: parsed.values.help ?? false,
     version: parsed.values.version ?? false,
@@ -382,26 +442,103 @@ function parseCli(argv: readonly string[]): CliOptions {
     allowPrerelease: parsed.values['allow-prerelease'] ?? false,
     package: parsed.values.package ?? false,
     permissionMode: dangerousBypass ? 'bypass' : (configuredPermissionMode ?? 'manual'),
+    permissionModeExplicit: dangerousBypass || configuredPermissionMode !== undefined,
     // Always explicit: no channel-dependent "auto" default anywhere in the CLI.
     reasoningEffort: configuredEffort ?? 'high',
+    continueSession: continueLatest,
+    // '' sentinel = bare --resume → in-TUI session picker; otherwise a concrete id.
+    ...(resume === undefined ? {} : { resume }),
     positionals: parsed.positionals,
   }
+}
+
+function openProjectSessionStore(): JsonlSessionStore {
+  return new JsonlSessionStore({ dataRoot: defaultSparkHome(), projectDir: process.cwd() })
+}
+
+/**
+ * `--continue` / `--resume <id>` target resolution against the on-disk ledger
+ * of the current project. Returns undefined for "start a new session" (no
+ * sessions yet, or the bare-`--resume` picker sentinel). Throws when an
+ * explicitly requested session id does not exist.
+ */
+async function resolveResumeTarget(options: CliOptions): Promise<string | undefined> {
+  if (!options.continueSession && options.resume === undefined) return undefined
+  if (options.resume === '') return undefined // picker sentinel; TUI handles it
+  const sessions = await openProjectSessionStore().list(null)
+  if (options.continueSession) {
+    const latest = sessions[0]
+    if (latest === undefined) {
+      process.stderr.write('No sessions recorded here yet; starting a new session.\n')
+      return undefined
+    }
+    return latest.sessionId
+  }
+  const requested = options.resume ?? ''
+  const found = sessions.find((session) => session.sessionId === requested)
+  if (found === undefined) {
+    const recent = sessions
+      .slice(0, 5)
+      .map((session) => `  ${shortSessionId(session.sessionId)}  ${session.preview ?? ''}`.trimEnd())
+      .join('\n')
+    throw new Error(
+      `Session not found: ${requested}${recent === '' ? '' : `\nRecent sessions:\n${recent}`}`,
+    )
+  }
+  return requested
+}
+
+/**
+ * Resume semantics shared by the TUI, print, and plain-REPL paths: an explicit
+ * `--permission-mode` overrides the mode restored from the ledger; without the
+ * flag the session keeps whatever mode it ran under before.
+ */
+async function openOrCreateSession(
+  agent: Agent,
+  config: Readonly<Record<string, unknown>>,
+  resumeSessionId: string | undefined,
+  explicitPermissionMode: PermissionMode | undefined,
+): Promise<AgentSession> {
+  if (resumeSessionId === undefined) return agent.newSession(config)
+  const session = await agent.openSession(resumeSessionId)
+  if (explicitPermissionMode !== undefined) session.setPermissionMode(explicitPermissionMode)
+  return session
+}
+
+async function listSessionsCommand(json: boolean): Promise<number> {
+  const sessions = await openProjectSessionStore().list(null)
+  if (json) {
+    for (const session of sessions) process.stdout.write(`${JSON.stringify(session)}\n`)
+    return 0
+  }
+  if (sessions.length === 0) {
+    process.stdout.write('No sessions recorded for this directory yet.\n')
+    return 0
+  }
+  for (const session of sessions) {
+    const updated = new Date(session.updatedAt).toISOString()
+    process.stdout.write(
+      `${updated}  #${session.latestSeq}  ${shortSessionId(session.sessionId)}  ${session.preview ?? ''}\n`,
+    )
+  }
+  return 0
 }
 
 async function runOnce(
   prompt: string,
   options: CliOptions,
   runtime: ConfiguredModelRuntime,
+  resumeSessionId?: string,
 ): Promise<number> {
   const agent = createConfiguredAgent(runtime)
   warnPermissionBypass(options.permissionMode)
-  const session = await agent.newSession({
+  const session = await openOrCreateSession(agent, {
     output: options.json ? 'json' : 'text',
     model: runtime.modelId,
     route: runtime.route,
     config: runtime.configSnapshot,
     permissionMode: options.permissionMode,
-  })
+  }, resumeSessionId, options.permissionModeExplicit ? options.permissionMode : undefined)
   if (options.json) {
     for await (const event of session.events()) {
       process.stdout.write(`${JSON.stringify(event)}\n`)
@@ -446,18 +583,19 @@ async function runOnce(
 
 async function runPlainRepl(
   runtime: ConfiguredModelRuntime,
-  permissionMode: PermissionMode,
-  reasoningEffort: ReasoningEffort | undefined,
+  options: CliOptions,
+  resumeSessionId?: string,
 ): Promise<number> {
   const agent = createConfiguredAgent(runtime)
-  warnPermissionBypass(permissionMode)
-  const session = await agent.newSession({
+  warnPermissionBypass(options.permissionMode)
+  const session = await openOrCreateSession(agent, {
     output: 'plain-repl',
     model: runtime.modelId,
     route: runtime.route,
     config: runtime.configSnapshot,
-    permissionMode,
-  })
+    permissionMode: options.permissionMode,
+  }, resumeSessionId, options.permissionModeExplicit ? options.permissionMode : undefined)
+  const reasoningEffort = options.reasoningEffort
   const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
   process.stdout.write('spark plain REPL · /exit 退出\n> ')
   try {
@@ -510,7 +648,7 @@ async function readStdin(): Promise<string> {
 }
 
 function helpText(version?: string): string {
-  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> manual | auto | bypass (default: manual)
+  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark sessions            List sessions recorded for the current directory\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n  -c, --continue            Continue the most recent session in this directory\n  -r, --resume [<id>]       Resume a session; without an id pick one in the TUI\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> manual | auto | bypass (default: manual)
       --effort <level>      Reasoning effort: off | low | medium | high | max (default: high)\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
 }
 

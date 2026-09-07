@@ -6,6 +6,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Dropdown, Tooltip } from '@lobehub/ui'
+import { Switch } from 'antd'
 import { ListFilter } from 'lucide-react'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
@@ -47,6 +48,11 @@ export function isDefaultFilter(state: SidebarFilterState): boolean {
     state.canvasProjects === DEFAULT_SIDEBAR_FILTER.canvasProjects &&
     state.groupBy === DEFAULT_SIDEBAR_FILTER.groupBy
   )
+}
+
+/** 清除筛选时保留独立的画布项目显示偏好。 */
+export function clearSidebarFilters(state: SidebarFilterState): SidebarFilterState {
+  return { ...DEFAULT_SIDEBAR_FILTER, canvasProjects: state.canvasProjects }
 }
 
 /**
@@ -92,14 +98,6 @@ export const SCHEDULED_TASK_FILTER_OPTIONS: Array<{
   { value: 'none', labelKey: 'sidebar.filter.scheduledTasks.none' },
 ]
 
-const CANVAS_PROJECT_FILTER_OPTIONS: Array<{
-  value: SidebarCanvasProjectsFilter
-  labelKey: string
-}> = [
-  { value: 'show', labelKey: 'sidebar.filter.canvasProjects.show' },
-  { value: 'hide', labelKey: 'sidebar.filter.canvasProjects.hide' },
-]
-
 const GROUP_BY_OPTIONS: Array<{ value: SidebarGroupBy; labelKey: string }> = [
   { value: 'date', labelKey: 'sidebar.filter.groupBy.date' },
   { value: 'project', labelKey: 'sidebar.filter.groupBy.project' },
@@ -125,13 +123,6 @@ function getScheduledTasksLabelKey(value: SidebarScheduledTasksFilter): string {
   return (
     SCHEDULED_TASK_FILTER_OPTIONS.find((option) => option.value === value)?.labelKey ??
     'sidebar.filter.all'
-  )
-}
-
-function getCanvasProjectsLabelKey(value: SidebarCanvasProjectsFilter): string {
-  return (
-    CANVAS_PROJECT_FILTER_OPTIONS.find((option) => option.value === value)?.labelKey ??
-    'sidebar.filter.canvasProjects.show'
   )
 }
 
@@ -270,15 +261,6 @@ function FilterPopupContent({
       })),
     [t],
   )
-  const canvasProjectOptions = useMemo(
-    () =>
-      CANVAS_PROJECT_FILTER_OPTIONS.map((option) => ({
-        value: option.value,
-        label: t(option.labelKey),
-      })),
-    [t],
-  )
-
   const projectOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; hint?: string }> = [
       { value: 'all', label: t('sidebar.filter.allProjects') },
@@ -312,12 +294,25 @@ function FilterPopupContent({
     })
   }
 
+  const setCanvasProjectsVisibility = (show: boolean) => {
+    const value: SidebarCanvasProjectsFilter = show ? 'show' : 'hide'
+    // 隐藏画布项目时，把选中集合里的画布项目剔除；其余选择保留。
+    const canvasWorkspaceIds = show ? null : getCanvasWorkspaceIds(workspaces)
+    onChange({
+      ...state,
+      canvasProjects: value,
+      projectIds:
+        canvasWorkspaceIds != null
+          ? state.projectIds.filter((id) => !canvasWorkspaceIds.has(id))
+          : state.projectIds,
+    })
+  }
+
   const statusHighlight =
     state.status !== DEFAULT_SIDEBAR_FILTER.status || state.status === 'active'
   const projectHighlight = state.projectIds.length > 0
   const lastActivityHighlight = state.lastActivity !== 'all'
   const scheduledTasksHighlight = state.scheduledTasks !== 'all'
-  const canvasProjectsHighlight = state.canvasProjects !== DEFAULT_SIDEBAR_FILTER.canvasProjects
 
   return (
     <div className="sidebar-filter-menu" onClick={(e) => e.stopPropagation()}>
@@ -342,28 +337,6 @@ function FilterPopupContent({
           selectedIds={selectedProjectIdSet}
           onToggleAll={() => onChange({ ...state, projectIds: [] })}
           onToggle={toggleProject}
-        />
-      </FilterRow>
-      <FilterRow
-        label={t('sidebar.filter.rowCanvasProjects')}
-        valueLabel={t(getCanvasProjectsLabelKey(state.canvasProjects))}
-        highlighted={canvasProjectsHighlight}
-      >
-        <SubMenu
-          options={canvasProjectOptions}
-          current={state.canvasProjects}
-          onSelect={(value) => {
-            // 隐藏画布项目时，把选中集合里的画布项目剔除；其余选择保留。
-            const canvasWorkspaceIds = value === 'hide' ? getCanvasWorkspaceIds(workspaces) : null
-            onChange({
-              ...state,
-              canvasProjects: value,
-              projectIds:
-                canvasWorkspaceIds != null
-                  ? state.projectIds.filter((id) => !canvasWorkspaceIds.has(id))
-                  : state.projectIds,
-            })
-          }}
         />
       </FilterRow>
       <FilterRow
@@ -399,6 +372,18 @@ function FilterPopupContent({
           onSelect={(value) => onChange({ ...state, groupBy: value })}
         />
       </FilterRow>
+      <div className="sidebar-filter-divider" />
+      <div className="sidebar-filter-setting">
+        <span className="sidebar-filter-setting-label">
+          {t('sidebar.filter.rowCanvasProjects')}
+        </span>
+        <Switch
+          size="small"
+          checked={state.canvasProjects === 'show'}
+          onChange={setCanvasProjectsVisibility}
+          aria-label={t('sidebar.filter.rowCanvasProjects')}
+        />
+      </div>
       <div className="sidebar-filter-divider" />
       <button type="button" className="sidebar-filter-clear" onClick={onClear}>
         {t('sidebar.filter.clearFilters')}

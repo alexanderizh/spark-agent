@@ -22,6 +22,7 @@ export class AnthropicMessagesService implements LlmService {
   }
 
   async *stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta> {
+    const startedAt = Date.now();
     const opened = await openSse({
       provider: 'anthropic',
       url: messagesEndpoint(this.#options.baseUrl ?? 'https://api.anthropic.com'),
@@ -33,7 +34,7 @@ export class AnthropicMessagesService implements LlmService {
       signal: context.signal,
       ...(this.#options.fetch ? { fetch: this.#options.fetch } : {}),
     });
-    yield* decodeAnthropicEvents(opened.events, opened.requestId);
+    yield* decodeAnthropicEvents(opened.events, opened.requestId, startedAt);
   }
 }
 
@@ -129,7 +130,8 @@ function toThinking(
 
 async function* decodeAnthropicEvents(
   events: AsyncIterable<{ readonly data: string }>,
-  requestId?: string,
+  requestId: string | undefined,
+  startedAt: number,
 ): AsyncIterable<LlmDelta> {
   const blocks = new Map<number, Record<string, unknown>>();
   const partialJson = new Map<number, string>();
@@ -137,6 +139,7 @@ async function* decodeAnthropicEvents(
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
+  let firstContentAt: number | undefined;
   let stopped = false;
 
   for await (const event of events) {
@@ -164,10 +167,12 @@ async function* decodeAnthropicEvents(
       if (delta.type === 'text_delta') {
         const text = requiredString(delta.text, type, requestId);
         block.text = `${stringValue(block.text) ?? ''}${text}`;
+        firstContentAt ??= Date.now();
         yield { type: 'text', text };
       } else if (delta.type === 'thinking_delta') {
         const text = requiredString(delta.thinking, type, requestId);
         block.thinking = `${stringValue(block.thinking) ?? ''}${text}`;
+        firstContentAt ??= Date.now();
         yield { type: 'thinking', text };
       } else if (delta.type === 'signature_delta') {
         block.signature = `${stringValue(block.signature) ?? ''}${requiredString(delta.signature, type, requestId)}`;
@@ -185,6 +190,7 @@ async function* decodeAnthropicEvents(
         const json = partialJson.get(index) ?? '';
         const args = json ? parseJson(json, 'llm.anthropic.invalid_tool_json', requestId) : block.input;
         block.input = args;
+        firstContentAt ??= Date.now();
         yield {
           type: 'tool_call',
           callId: requiredString(block.id, type, requestId),
@@ -219,6 +225,10 @@ async function* decodeAnthropicEvents(
         outputTokens,
         cacheReadTokens,
         cacheWriteTokens,
+        callDurationMs: Math.max(0, Date.now() - startedAt),
+        ...(firstContentAt === undefined
+          ? {}
+          : { ttftMs: Math.max(0, firstContentAt - startedAt) }),
       };
       yield { type: 'done' };
     }

@@ -15,6 +15,9 @@ export const UsageSchema = z.object({
   outputTokens: z.number().int().nonnegative(),
   cacheReadTokens: z.number().int().nonnegative().default(0),
   cacheWriteTokens: z.number().int().nonnegative().default(0),
+  // Tokens the provider spent on hidden reasoning (OpenAI reports them apart
+  // from output_tokens); 0 for providers that fold reasoning into output.
+  reasoningTokens: z.number().int().nonnegative().default(0),
 });
 
 export const ArtifactRefSchema = z.object({
@@ -48,6 +51,11 @@ export const TurnStatsSchema = z.object({
   toolCalls: z.number().int().nonnegative(),
   usage: UsageSchema,
   wallMs: z.number().int().nonnegative(),
+  // Summed LLM call time across steps (excludes tool execution); the basis for
+  // generation throughput. 0 keeps ledgers written before timing landed valid.
+  llmMs: z.number().int().nonnegative().default(0),
+  // Time to the turn's first content token (first LLM call); 0 when unreported.
+  ttftMs: z.number().int().nonnegative().default(0),
   costUsd: z.number().nonnegative().default(0),
 });
 
@@ -117,6 +125,10 @@ const AssistantCompletedEventSchema = z.object({
   turnId: z.string().min(1),
   message: AssistantMessageSchema,
   usage: UsageSchema,
+  // Per-call timing (analogous to tool.result.durationMs); 0 before timing
+  // landed or when the provider adapter could not measure it.
+  llmMs: z.number().int().nonnegative().default(0),
+  ttftMs: z.number().int().nonnegative().default(0),
 });
 
 const ToolCallEventSchema = z.object({

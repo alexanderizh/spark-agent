@@ -1329,6 +1329,7 @@ body.sidebar-resizing {
 .md-surface p {
   margin: 0 0 0.7em;
   text-wrap: pretty;
+  line-height: 2.2;
 }
 /* **小标题** 单独成行时按分节节奏留白（比 h2 的 1.6em 略小一档，下紧上松） */
 .md-surface p:has(> strong:only-child) {
@@ -1349,6 +1350,7 @@ body.sidebar-resizing {
 }
 .md-surface li {
   margin: 2px 0;
+  line-height: 2.2;
 }
 .md-surface li > :last-child {
   margin-bottom: 0;
@@ -1360,7 +1362,7 @@ body.sidebar-resizing {
   list-style: none;
   display: flex;
   gap: 7px;
-  align-items: flex-start;
+  align-items: center;
   margin-left: -18px;
 }
 .md-surface li.md-task .spark-input,

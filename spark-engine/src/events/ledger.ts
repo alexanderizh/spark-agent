@@ -31,6 +31,26 @@ function isBoundary(event: AgentEvent): boolean {
   );
 }
 
+const PREVIEW_MAX_CHARS = 80;
+
+/**
+ * First user input of a session, whitespace-collapsed and truncated — the
+ * one-line identity shown in session pickers and `spark sessions`. Sessions
+ * without any user turn (e.g. created then abandoned) have no preview.
+ */
+function previewFromEvents(events: readonly AgentEvent[]): string | undefined {
+  for (const event of events) {
+    if (event.type === 'turn.started') {
+      const collapsed = event.input.text.replaceAll(/\s+/g, ' ').trim();
+      if (collapsed.length === 0) continue;
+      return collapsed.length > PREVIEW_MAX_CHARS
+        ? `${collapsed.slice(0, PREVIEW_MAX_CHARS)}…`
+        : collapsed;
+    }
+  }
+  return undefined;
+}
+
 export class SessionLedger {
   readonly #sessionId: string;
   readonly #store: SessionStore;
@@ -114,13 +134,17 @@ export class MemorySessionStore implements SessionStore {
   }
 
   async list(projectDir: string | null): Promise<SessionMeta[]> {
-    return [...this.#sessions].map(([sessionId, events]) => ({
-      sessionId,
-      projectDir,
-      createdAt: events[0]?.ts ?? 0,
-      updatedAt: events.at(-1)?.ts ?? 0,
-      latestSeq: events.at(-1)?.seq ?? -1,
-    }));
+    return [...this.#sessions].map(([sessionId, events]) => {
+      const preview = previewFromEvents(events);
+      return {
+        sessionId,
+        projectDir,
+        createdAt: events[0]?.ts ?? 0,
+        updatedAt: events.at(-1)?.ts ?? 0,
+        latestSeq: events.at(-1)?.seq ?? -1,
+        ...(preview === undefined ? {} : { preview }),
+      };
+    });
   }
 }
 
@@ -225,12 +249,14 @@ export class JsonlSessionStore implements SessionStore {
       const events: AgentEvent[] = [];
       for await (const event of this.read(entry.name)) events.push(event);
       if (events.length === 0) continue;
+      const preview = previewFromEvents(events);
       sessions.push({
         sessionId: entry.name,
         projectDir: this.#projectDir,
         createdAt: events[0]?.ts ?? 0,
         updatedAt: events.at(-1)?.ts ?? 0,
         latestSeq: events.at(-1)?.seq ?? -1,
+        ...(preview === undefined ? {} : { preview }),
       });
     }
     return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -288,6 +314,12 @@ export function encodeProjectDir(projectDir: string): string {
   const readable = absolute.replaceAll(/[^a-zA-Z0-9._-]+/g, '-').replaceAll(/^-+|-+$/g, '');
   const digest = createHash('sha256').update(absolute).digest('hex').slice(0, 12);
   return `${readable.slice(-96) || 'root'}-${digest}`;
+}
+
+/** Compact display form of a session id for pickers and lists (`session_<uuid>` → first 8 hex). */
+export function shortSessionId(sessionId: string): string {
+  const withoutPrefix = sessionId.startsWith('session_') ? sessionId.slice('session_'.length) : sessionId;
+  return withoutPrefix.slice(0, 8);
 }
 
 function assertSessionId(sessionId: string): void {

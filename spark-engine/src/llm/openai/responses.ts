@@ -20,6 +20,7 @@ export class OpenAiResponsesService implements LlmService {
   }
 
   async *stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta> {
+    const startedAt = Date.now()
     const opened = await openSse({
       provider: 'openai',
       url: `${normalizeBaseUrl(this.#options.baseUrl ?? 'https://api.openai.com/v1')}/responses`,
@@ -28,7 +29,7 @@ export class OpenAiResponsesService implements LlmService {
       signal: context.signal,
       ...(this.#options.fetch ? { fetch: this.#options.fetch } : {}),
     })
-    yield* decodeOpenAiEvents(opened.events, opened.requestId)
+    yield* decodeOpenAiEvents(opened.events, opened.requestId, startedAt)
   }
 }
 
@@ -109,9 +110,11 @@ function continuationItems(continuation: ProviderContinuation | undefined): unkn
 
 async function* decodeOpenAiEvents(
   events: AsyncIterable<{ readonly data: string }>,
-  requestId?: string,
+  requestId: string | undefined,
+  startedAt: number,
 ): AsyncIterable<LlmDelta> {
   const emittedCalls = new Set<string>()
+  let firstContentAt: number | undefined
   let completed = false
 
   for await (const event of events) {
@@ -119,11 +122,13 @@ async function* decodeOpenAiEvents(
     const value = parseEvent(event.data, requestId)
     const type = stringValue(value.type)
     if (type === 'response.output_text.delta' || type === 'response.refusal.delta') {
+      firstContentAt ??= Date.now()
       yield { type: 'text', text: requiredString(value.delta, type, requestId) }
     } else if (
       type === 'response.reasoning_summary_text.delta' ||
       type === 'response.reasoning_text.delta'
     ) {
+      firstContentAt ??= Date.now()
       yield { type: 'thinking', text: requiredString(value.delta, type, requestId) }
     } else if (type === 'response.output_item.done') {
       const item = asRecord(value.item)
@@ -131,6 +136,7 @@ async function* decodeOpenAiEvents(
       const call = parseFunctionCall(item, requestId)
       if (call && !emittedCalls.has(call.callId)) {
         emittedCalls.add(call.callId)
+        firstContentAt ??= Date.now()
         yield call
       }
     } else if (type === 'response.completed') {
@@ -143,11 +149,13 @@ async function* decodeOpenAiEvents(
         const call = parseFunctionCall(item, requestId)
         if (call && !emittedCalls.has(call.callId)) {
           emittedCalls.add(call.callId)
+          firstContentAt ??= Date.now()
           yield call
         }
       }
       const usage = asRecord(response.usage)
       const inputDetails = asRecord(usage?.input_tokens_details)
+      const outputDetails = asRecord(usage?.output_tokens_details)
       yield {
         type: 'continuation',
         continuation: { protocol: 'openai-responses', data: structuredClone(output) },
@@ -158,6 +166,9 @@ async function* decodeOpenAiEvents(
         outputTokens: token(usage?.output_tokens),
         cacheReadTokens: token(inputDetails?.cached_tokens),
         cacheWriteTokens: 0,
+        ...(outputDetails === undefined ? {} : { reasoningTokens: token(outputDetails.reasoning_tokens) }),
+        callDurationMs: Math.max(0, Date.now() - startedAt),
+        ...(firstContentAt === undefined ? {} : { ttftMs: Math.max(0, firstContentAt - startedAt) }),
       }
       yield { type: 'done' }
       completed = true

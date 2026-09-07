@@ -4,6 +4,8 @@ export interface FakeReply {
   readonly kind: 'reply';
   readonly message: AssistantMessage;
   readonly usage: Usage;
+  /** Synthetic call timing emitted with the usage delta (tests only). */
+  readonly timing?: { readonly llmMs?: number; readonly ttftMs?: number };
   readonly chunkSize: number;
 }
 
@@ -21,11 +23,13 @@ const DEFAULT_USAGE: Usage = {
   outputTokens: 20,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
+  reasoningTokens: 0,
 };
 
 export interface FakeReplyOptions {
   readonly thinking?: string;
   readonly usage?: Partial<Usage>;
+  readonly timing?: { readonly llmMs?: number; readonly ttftMs?: number };
   readonly chunkSize?: number;
 }
 
@@ -49,6 +53,7 @@ export function reply(
       toolCalls: [...(message.toolCalls ?? [])],
     },
     usage: usage(options.usage),
+    ...(options.timing === undefined ? {} : { timing: options.timing }),
     chunkSize: options.chunkSize ?? 12,
   };
 }

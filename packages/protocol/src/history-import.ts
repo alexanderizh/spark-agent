@@ -34,7 +34,10 @@ export type ZcodeImportOrigin = 'desktop' | 'cli'
 export interface HistoryImportMetadata {
   /** 来源 CLI */
   importedFrom: HistoryImportSource
-  /** 来源会话 ID（Claude Code 的 sessionId / Codex 的 rollout id），用于去重 */
+  /**
+   * 导入候选 ID（Claude Code 的 sessionId / Codex 的 native thread ID；
+   * Spark 生成的 Codex rollout 归并后为 spark-session:<Spark sessionId>），用于去重
+   */
   sourceSessionId: string
   /** 来源文件绝对路径 */
   sourceFile: string
@@ -45,7 +48,7 @@ export interface HistoryImportMetadata {
 /** 扫描得到的单个可导入条目（轻量元数据） */
 export interface HistoryImportItem {
   source: HistoryImportSource
-  /** 来源会话 ID */
+  /** 来源导入候选 ID；Codex 的 Spark-originated rollout 可能是聚合后的 Spark session ID */
   sourceSessionId: string
   /** zcode 专属：桌面 App / CLI 存储通道（claude-code、codex 恒为 undefined） */
   origin?: ZcodeImportOrigin
@@ -65,7 +68,7 @@ export interface HistoryImportItem {
   sizeBytes: number
   /** 来源文件绝对路径 */
   filePath: string
-  /** 是否已导入过（按 sourceSessionId 去重） */
+  /** 是否已导入过（按导入候选 ID 去重；兼容检查其底层 native thread 别名） */
   alreadyImported: boolean
 }
 
