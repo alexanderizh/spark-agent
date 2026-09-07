@@ -2,14 +2,13 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { app, dialog } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { SparkError } from '@spark/shared'
-import type { SubAppSharePackageBody } from '@spark/protocol'
 import { getDatabase } from '../db.js'
 import { getMainWindow, sendToMainWindow } from '../windows/index.js'
 import { typedIpcHandle } from './typed-ipc.js'
 import { SubAppBackend } from './subAppBackend.js'
 import { computeBodySha256 } from '../services/SubAppShareService.js'
+import { cacheSubAppImportBody, takeCachedSubAppImportBody } from './SubAppImportCache.js'
 import { registerSubAppBrowserDownloadIpc } from './registerSubAppBrowserDownloadIpc.js'
 
 export interface RegisterSubAppIpcOptions {
@@ -21,25 +20,6 @@ export interface RegisterSubAppIpcOptions {
  * 导入包在主进程内存的缓存：preview 解析出的 body 留在主进程，renderer 只拿
  * 摘要与 token。有界（条数上限）+ 有淘汰（TTL），不设永久持有路径。
  */
-const SUB_APP_IMPORT_CACHE_LIMIT = 4
-const SUB_APP_IMPORT_CACHE_TTL_MS = 10 * 60 * 1000
-const subAppImportCache = new Map<string, { body: SubAppSharePackageBody; sha256: string; at: number }>()
-
-function cacheSubAppImportBody(body: SubAppSharePackageBody, sha256: string): string {
-  const now = Date.now()
-  for (const [key, entry] of subAppImportCache) {
-    if (now - entry.at > SUB_APP_IMPORT_CACHE_TTL_MS) subAppImportCache.delete(key)
-  }
-  while (subAppImportCache.size >= SUB_APP_IMPORT_CACHE_LIMIT) {
-    const oldest = [...subAppImportCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
-    if (oldest == null) break
-    subAppImportCache.delete(oldest[0])
-  }
-  const token = randomUUID()
-  subAppImportCache.set(token, { body, sha256, at: now })
-  return token
-}
-
 export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void {
   registerSubAppBrowserDownloadIpc()
   const backend =
@@ -235,11 +215,10 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
 
   typedIpcHandle('sub-app:share:import-apply', async (request, event) => {
     assertTrusted(event)
-    const entry = subAppImportCache.get(request.importToken)
+    const entry = takeCachedSubAppImportBody(request.importToken)
     if (entry == null) {
       throw new SparkError('VALIDATION_FAILED', '导入会话已过期，请重新选择分享包文件。')
     }
-    subAppImportCache.delete(request.importToken)
     return notifyDirectoryChanged(await backend.shareApply(entry.body, request.mode, entry.sha256))
   })
 }

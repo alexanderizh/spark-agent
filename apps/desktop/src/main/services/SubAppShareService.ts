@@ -184,13 +184,12 @@ export class SubAppShareService {
    */
   private async collectAppFiles(appId: string): Promise<Array<{ path: string; content: string }>> {
     const appRoot = path.resolve(this.fileStoreRoot, appId)
-    let relativePaths: string[]
     try {
       await fs.stat(appRoot)
-      relativePaths = await this.walkFiles(appRoot, appRoot, 0)
     } catch {
       return []
     }
+    const relativePaths = await this.walkFiles(appRoot, appRoot, 0)
     const files: Array<{ path: string; content: string }> = []
     for (const relPath of relativePaths) {
       const content = await fs.readFile(path.join(appRoot, relPath), 'utf8')
@@ -205,28 +204,27 @@ export class SubAppShareService {
     appRoot: string,
     currentDir: string,
     depth: number,
+    collected: string[] = [],
   ): Promise<Array<string>> {
     if (depth > 8) {
       throw new SparkError('VALIDATION_FAILED', '应用文件空间目录层级过深，无法导出。')
     }
     const dirents = await fs.readdir(currentDir, { withFileTypes: true })
-    const out: Array<string> = []
     for (const dirent of dirents) {
-      if (out.length >= SUB_APP_SHARE_FILE_COUNT_LIMIT) {
-        throw new SparkError(
-          'VALIDATION_FAILED',
-          `应用文件空间超过 ${SUB_APP_SHARE_FILE_COUNT_LIMIT} 个文件，无法导出，请先清理。`,
-        )
-      }
       const childPath = path.join(currentDir, dirent.name)
       if (dirent.isDirectory()) {
-        const nested = await this.walkFiles(appRoot, childPath, depth + 1)
-        out.push(...nested)
+        await this.walkFiles(appRoot, childPath, depth + 1, collected)
       } else if (dirent.isFile()) {
-        out.push(path.relative(appRoot, childPath).split(path.sep).join('/'))
+        if (collected.length >= SUB_APP_SHARE_FILE_COUNT_LIMIT) {
+          throw new SparkError(
+            'VALIDATION_FAILED',
+            `应用文件空间超过 ${SUB_APP_SHARE_FILE_COUNT_LIMIT} 个文件，无法导出，请先清理。`,
+          )
+        }
+        collected.push(path.relative(appRoot, childPath).split(path.sep).join('/'))
       }
     }
-    return out
+    return collected
   }
 
   // ─── 导入侧 ───────────────────────────────────────────────────────────────
@@ -373,9 +371,7 @@ export class SubAppShareService {
     if (!overwriteExisting) {
       const baseName = manifest.name.trim()
       const taken = new Set(
-        this.repository
-          .list({ limit: 200 })
-          .items.map((item) => item.name.trim().toLowerCase()),
+        this.repository.list({ limit: 200 }).items.map((item) => item.name.trim().toLowerCase()),
       )
       if (taken.has(baseName.toLowerCase())) {
         let candidate = `${baseName}（导入）`
@@ -442,10 +438,7 @@ export class SubAppShareService {
     try {
       const result = await this.buildPackage(appId, { includeData: true, includeFiles: true })
       await fs.mkdir(this.backupsDir, { recursive: true })
-      const stamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, '')
-        .replace(/\..+$/, '')
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '')
       const safeName = result.body.manifest.name.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40)
       const backupPath = path.join(this.backupsDir, `${safeName}-覆盖前备份-${stamp}.sparkapp`)
       await fs.writeFile(backupPath, result.text, 'utf8')
@@ -593,9 +586,7 @@ function collectSecretHints(
   }
 }
 
-function describeSecretHints(
-  hints: SubAppShareCapabilityReport['secretHints'],
-): Array<string> {
+function describeSecretHints(hints: SubAppShareCapabilityReport['secretHints']): Array<string> {
   return hints.map((hint) =>
     hint.scope === 'source'
       ? `源码（${hint.location}）疑似包含明文密钥，请确认后再分享。`
@@ -711,7 +702,8 @@ export function buildImportChecks(
     checks.push({
       level: 'warning',
       code: 'IPC_CHANNELS',
-      message: '应用引用了 AI 渠道相关能力：导入后请在本机选择自己的 Provider，渠道引用不随包转移。',
+      message:
+        '应用引用了 AI 渠道相关能力：导入后请在本机选择自己的 Provider，渠道引用不随包转移。',
       detail: body.capabilities.providerRefs,
     })
   }
@@ -775,12 +767,19 @@ export function buildImportChecks(
       oversizedFiles.push(file.path)
     }
   }
-  if (invalidFiles.length > 0 || oversizedFiles.length > 0) {
+  const fileCountExceeded = body.files.length > SUB_APP_SHARE_FILE_COUNT_LIMIT
+  if (invalidFiles.length > 0 || oversizedFiles.length > 0 || fileCountExceeded) {
     checks.push({
       level: 'error',
       code: 'FILE_LIMIT',
       message: '部分文件不满足文件空间限制（单文件 2MB / 安全路径 / 数量上限），无法导入。',
-      detail: [...invalidFiles, ...oversizedFiles],
+      detail: [
+        ...invalidFiles,
+        ...oversizedFiles,
+        ...(fileCountExceeded
+          ? [`文件数量 ${body.files.length}（上限 ${SUB_APP_SHARE_FILE_COUNT_LIMIT}）`]
+          : []),
+      ],
     })
   }
 

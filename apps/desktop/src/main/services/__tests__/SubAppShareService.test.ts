@@ -85,7 +85,7 @@ describe('SubAppShareService', () => {
           source: [
             "await sparkApp.ipc.invoke('sub-app:data:list', {})",
             "sparkApp.ipc.on('stream:session:agent-event', fn)",
-            "const pid = providerProfileId",
+            'const pid = providerProfileId',
             "fetch('https://api.example.com', { headers: { apiKey: 'abcdefghijklmnop' } })",
           ].join('\n'),
         },
@@ -130,6 +130,34 @@ describe('SubAppShareService', () => {
     }
     const blocking = buildImportChecks(oversize, true, '1.2.3')
     expect(blocking.find((check) => check.code === 'DATA_LIMIT')?.level).toBe('error')
+
+    const tooManyFiles = {
+      ...base,
+      files: Array.from({ length: 501 }, (_, index) => ({
+        path: `dir-${index % 2}/file-${index}.txt`,
+        content: 'ok',
+      })),
+    }
+    const fileBlocking = buildImportChecks(tooManyFiles, true, '1.2.3')
+    expect(fileBlocking.find((check) => check.code === 'FILE_LIMIT')?.level).toBe('error')
+    expect(fileBlocking.find((check) => check.code === 'FILE_LIMIT')?.detail).toContain(
+      '文件数量 501（上限 500）',
+    )
+  })
+
+  it('rejects export when files exceed the limit across multiple directories', async () => {
+    const created = repository.create({ name: '文件上限', source: '<main>app</main>' })
+    const appRoot = join(testDir, 'files', created.id)
+    mkdirSync(join(appRoot, 'first'), { recursive: true })
+    mkdirSync(join(appRoot, 'second'), { recursive: true })
+    for (let index = 0; index < 250; index += 1) {
+      writeFileSync(join(appRoot, 'first', `file-${index}.txt`), 'a')
+    }
+    for (let index = 0; index < 251; index += 1) {
+      writeFileSync(join(appRoot, 'second', `file-${index}.txt`), 'b')
+    }
+
+    await expect(service.buildPackage(created.id)).rejects.toThrow(/超过 500 个文件/)
   })
 
   it('end-to-end: export → preview → import as new app (files + data + releases)', async () => {
@@ -195,7 +223,11 @@ describe('SubAppShareService', () => {
 
     // 文件空间目录没有残留 incoming/old 临时目录。
     const filesRoot = join(testDir, 'files')
-    expect(readdirSync(filesRoot).filter((name) => name.includes('.incoming-') || name.includes('.old-'))).toEqual([])
+    expect(
+      readdirSync(filesRoot).filter(
+        (name) => name.includes('.incoming-') || name.includes('.old-'),
+      ),
+    ).toEqual([])
   })
 
   it('rejects apply when the body sha differs from preview', async () => {
@@ -248,8 +280,6 @@ describe('SubAppShareService', () => {
     }
     // 超大 data 在预检阶段被拦（error 级），不发生文件交换也不写库。
     await expect(service.applyImport(evil, 'new-app')).rejects.toThrow()
-    expect(
-      () => statSync(join(testDir, 'files', '01900000-0000-7000-8000-0000000000cc')),
-    ).toThrow()
+    expect(() => statSync(join(testDir, 'files', '01900000-0000-7000-8000-0000000000cc'))).toThrow()
   })
 })
