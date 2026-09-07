@@ -1,6 +1,6 @@
 # 工作流包(Workflow Bundle)导入导出与隔离空间
 
-> 状态: [已落地] | 最后核对: 2026-09-05
+> 状态: [已落地] | 最后核对: 2026-09-06
 
 ## 1. 背景与目标
 
@@ -15,14 +15,14 @@
 
 ## 2. 现状结论(代码探索)
 
-| 项 | 现状 | 关键位置 |
-|---|---|---|
-| 导出 | 前端仅 stringify graph,不含 id/技能/MCP | `WorkflowView.tsx:83-92` |
-| 导入 | 手写弱校验,graph 透传,每次新建不去重 | `WorkflowView.tsx:648-692` |
-| 技能存储 | `{userData}/skills/<slug>/`,DB `skills` 表;ID 前缀即命名空间(`builtin:`/`skill:skillhub:`) | skills 服务 |
-| MCP 存储 | `mcp_servers` 表 name/scope/config_json,无来源标记;运行时全量 enabled 挂载 | `session-mcp-tooling.ts:91-136` |
-| 防污染关键点 | Agent 无技能配置时回落「全部已启用技能」——bundle 技能必须从该回落中排除 | `runtime-composition.service.ts:134` |
-| Schema 先例 | 画布工作流已有 zod Package schema 可仿照 | `packages/protocol/src/canvas-workflow.ts:93-117` |
+| 项           | 现状                                                                                       | 关键位置                                          |
+| ------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| 导出         | 前端仅 stringify graph,不含 id/技能/MCP                                                    | `WorkflowView.tsx:83-92`                          |
+| 导入         | 手写弱校验,graph 透传,每次新建不去重                                                       | `WorkflowView.tsx:648-692`                        |
+| 技能存储     | `{userData}/skills/<slug>/`,DB `skills` 表;ID 前缀即命名空间(`builtin:`/`skill:skillhub:`) | skills 服务                                       |
+| MCP 存储     | `mcp_servers` 表 name/scope/config_json,无来源标记;运行时全量 enabled 挂载                 | `session-mcp-tooling.ts:91-136`                   |
+| 防污染关键点 | Agent 无技能配置时回落「全部已启用技能」——bundle 技能必须从该回落中排除                    | `runtime-composition.service.ts:134`              |
+| Schema 先例  | 画布工作流已有 zod Package schema 可仿照                                                   | `packages/protocol/src/canvas-workflow.ts:93-117` |
 
 ## 3. 包格式:`.sparkflow`(zip 容器)
 
@@ -39,13 +39,25 @@ manifest 核心结构:
 ```jsonc
 {
   "schemaVersion": 1,
-  "name": "…", "version": "1.0.0", "author": "…", "exportedFrom": "…",
+  "name": "…",
+  "version": "1.0.0",
+  "author": "…",
+  "exportedFrom": "…",
   "workflows": [{ "file": "workflows/0.json", "name": "…" }],
-  "skills":   [{ "bundleSkillId": "…", "path": "skills/…", "sha256": "…" }],
-  "mcpServers": [{ "refId": "…", "transport": "http|stdio", "file": "mcp/…",
-                   "requiredSecrets": [{ "path": "headers.X-API-Key", "label": "…" }] }],
+  "skills": [{ "bundleSkillId": "…", "path": "skills/…", "sha256": "…" }],
+  "mcpServers": [
+    {
+      "refId": "…",
+      "transport": "http|stdio",
+      "file": "mcp/…",
+      "requiredSecrets": [{ "path": "headers.X-API-Key", "label": "…" }],
+    },
+  ],
   "unresolved": [{ "type": "agent|rule|tool", "nodeId": "…", "hint": "…" }],
-  "verification": { "status": "passed|warned|failed", "checks": [{ "id": "…", "ok": true, "message": "…" }] }
+  "verification": {
+    "status": "passed|warned|failed",
+    "checks": [{ "id": "…", "ok": true, "message": "…" }],
+  },
 }
 ```
 
@@ -87,4 +99,5 @@ manifest 核心结构:
 - 2026-09-05:方案确认,创建分支与 worktree,本文档建立,依赖安装中。
 - 2026-09-05:全部落地。协议层(zod schema + IPC 通道)、迁移 093(workflow_bundles 表 + workflows/mcp_servers.bundle_id)、导出/导入/验证服务(agent-runtime services/workflow-bundle/)、防污染回落(bundle: 前缀排除)、UI(导入下拉 + 导出格式二选一 + 包管理抽屉)。
 - 验证:protocol/agent-runtime/storage/desktop 四包 tsc 通过;lint 0 error;单测 protocol 337、storage 287、agent-runtime 相关 33(含全流程 6 例与回落隔离 2 例)全部通过;文件尺寸门禁 WorkflowView.tsx 净减 87 行(2159→2072)。
-- 已知限制(v1):宿主链接技能(_links)仅顶层 realpath 跟随;试运行(testRun)报告未做;MCP oauth 授权凭据不随包(需导入方重新授权)。
+- 2026-09-06:Electron e2e 真机走查通过(`apps/desktop/e2e/workflow-bundle.e2e.ts`,连跑 2 次):预置工作流 → 导出 .sparkflow(zip manifest 解包断言)→ 导入预览 → 隔离导入(基线翻倍)→ 包面板「验证此包」徽章回写 → 卸载零残留(回到基线)。环境备注:worktree 原生模块为 Electron-ABI(与主仓共享二进制,marker `electron-43.2.0-x64`);e2e 首启流程会清空 `apps/desktop/resources/skills/**`(测试后需 `git checkout --` 恢复)。
+- 已知限制(v1):宿主链接技能(\_links)仅顶层 realpath 跟随;试运行(testRun)报告未做;MCP oauth 授权凭据不随包(需导入方重新授权)。
