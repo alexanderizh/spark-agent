@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { shouldSwallowImeKeypress } from '../ime-guard.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
 import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
+import { PickerRow } from './picker-layout.js'
 
 /** One row of the slash-command completion menu. */
 export interface CompletionEntry {
@@ -226,13 +227,18 @@ export function InputEditor(props: InputEditorProps): ReactElement {
             const index = windowStart + offset
             const highlighted = index === selectedCompletion
             return (
-              <Text key={entry.name}>
+              <PickerRow
+                key={entry.name}
+                selected={highlighted}
+                theme={props.theme}
+                capabilities={props.capabilities}
+              >
                 <Text color={highlighted ? props.theme.accent : props.theme.dim}>
                   {highlighted ? `${symbols.user} ` : '  '}
                   {entry.name}
                 </Text>
                 {entry.summary ? <Text color={props.theme.dim}>  {entry.summary}</Text> : null}
-              </Text>
+              </PickerRow>
             )
           })}
           {completions.length > COMPLETION_MAX_VISIBLE && (

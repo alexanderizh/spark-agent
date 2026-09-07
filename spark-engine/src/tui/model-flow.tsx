@@ -2,9 +2,10 @@ import { Box, Text, useInput } from 'ink'
 import { useMemo, useState, type ReactElement } from 'react'
 
 import type { ConfiguredModelCatalog } from '../config/model-config.js'
+import { PickerFrame, PickerRow } from './components/picker-layout.js'
 import { shouldSwallowImeKeypress } from './ime-guard.js'
 import type { ModelProtocol } from '../llm/registry.js'
-import type { TuiTheme } from './theme.js'
+import type { TerminalCapabilities, TuiTheme } from './theme.js'
 
 const MAX_VISIBLE_ENTRIES = 15
 
@@ -24,6 +25,7 @@ export interface ModelPickerProps {
   readonly error: string | undefined
   readonly selectedModel: string | undefined
   readonly theme: TuiTheme
+  readonly capabilities?: TerminalCapabilities | undefined
   readonly canClose: boolean
   onSelect(modelId: string): void
   onConfigureLocal(): void
@@ -58,10 +60,11 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
   })
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={props.theme.accent} paddingX={1}>
-      <Text bold color={props.theme.accent}>
-        {props.notice ?? '选择模型'}
-      </Text>
+    <PickerFrame
+      title={props.notice ?? '选择模型'}
+      footer={`↑↓ 选择 · Enter 确认 · c 配置本地渠道 · r 刷新${props.canClose ? ' · esc 返回' : ' · Ctrl+C 退出'}`}
+      theme={props.theme}
+    >
       {props.busy && <Text color={props.theme.dim}>正在加载模型…</Text>}
       {props.catalog && (
         <Text color={props.theme.dim}>
@@ -81,15 +84,21 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
       ) : (
         <Box flexDirection="column">
           {visible.map((entry, index) => (
-            <Text key={entry.id} dimColor={props.busy}>
-              {index === cursor ? '❯' : ' '}
-              {entry.selected ? '*' : ' '}
+            <PickerRow
+              key={entry.id}
+              selected={index === cursor}
+              theme={props.theme}
+              capabilities={props.capabilities}
+              dimmed={props.busy}
+            >
+              {index === cursor ? '❯ ' : '  '}
+              {entry.selected ? '*' : ' '}{' '}
               {entry.model}
               <Text color={props.theme.dim}>
                 {'  '}
                 {entry.providerName} · {entry.protocol} · [{entry.source}]
               </Text>
-            </Text>
+            </PickerRow>
           ))}
           {entries.length > visible.length && (
             <Text color={props.theme.dim}>
@@ -98,17 +107,14 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
           )}
         </Box>
       )}
-      <Text color={props.theme.dim}>
-        ↑↓ 选择 · Enter 确认 · c 配置本地渠道 · r 刷新
-        {props.canClose ? ' · esc 返回' : ' · Ctrl+C 退出'}
-      </Text>
       {props.error && <Text color={props.theme.warn}>{props.error}</Text>}
-    </Box>
+    </PickerFrame>
   )
 }
 
 export interface ProviderConfigFormProps {
   readonly theme: TuiTheme
+  readonly capabilities?: TerminalCapabilities | undefined
   readonly error: string | undefined
   onSubmit(draft: LocalProviderDraft): void
   onCancel(): void
@@ -168,16 +174,30 @@ export function ProviderConfigForm(props: ProviderConfigFormProps): ReactElement
   })
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={props.theme.accent} paddingX={1}>
-      <Text bold color={props.theme.accent}>
-        配置本地模型渠道（凭据只存环境变量名，绝不写入文件）
-      </Text>
-      <Text color={props.theme.dim}>
-        协议：<Text bold={protocol === 'openai-responses'}>1 OpenAI Responses</Text>
-        {' / '}
-        <Text bold={protocol === 'anthropic-messages'}>2 Anthropic Messages</Text>
-        {step === 'protocol' ? '（按 1/2 切换，Enter 下一步）' : ''}
-      </Text>
+    <PickerFrame
+      title="配置本地模型渠道"
+      titleSuffix=" · 凭据只存环境变量名"
+      footer={step === 'summary' ? 'Enter 确认 · b 返回修改 · esc 取消' : 'Enter 下一步 · esc 取消'}
+      theme={props.theme}
+    >
+      <Text color={props.theme.faint ?? props.theme.dim}>协议</Text>
+      <PickerRow
+        selected={protocol === 'openai-responses'}
+        theme={props.theme}
+        capabilities={props.capabilities}
+      >
+        01  OpenAI Responses
+      </PickerRow>
+      <PickerRow
+        selected={protocol === 'anthropic-messages'}
+        theme={props.theme}
+        capabilities={props.capabilities}
+      >
+        02  Anthropic Messages
+      </PickerRow>
+      {step === 'protocol' && (
+        <Text color={props.theme.faint ?? props.theme.dim}>按 1/2 切换协议</Text>
+      )}
       {step === 'model' && (
         <TextField
           label="上游模型 ID（如 gpt-5.6 / claude-sonnet-4-5）"
@@ -233,11 +253,10 @@ export function ProviderConfigForm(props: ProviderConfigFormProps): ReactElement
           <Text color={props.theme.dim}>
             启动前请设置环境变量：export {draft.apiKeyEnv}=&lt;你的密钥&gt;
           </Text>
-          <Text color={props.theme.dim}>Enter 确认 · b 返回修改 · esc 取消</Text>
         </Box>
       )}
       {props.error && <Text color={props.theme.warn}>{props.error}</Text>}
-    </Box>
+    </PickerFrame>
   )
 }
 

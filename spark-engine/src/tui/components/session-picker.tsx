@@ -1,14 +1,16 @@
-import { Box, Text, useInput } from 'ink'
+import { Text, useInput } from 'ink'
 import { useEffect, useState, type ReactElement } from 'react'
 
 import { shortSessionId } from '../../events/ledger.js'
 import type { SessionMeta } from '../../seams.js'
-import type { TuiTheme } from '../theme.js'
+import type { TerminalCapabilities, TuiTheme } from '../theme.js'
+import { PickerFrame, PickerRow } from './picker-layout.js'
 
 const PICKER_WINDOW = 8
 
 export interface SessionPickerProps {
   readonly theme: TuiTheme
+  readonly capabilities?: TerminalCapabilities | undefined
   readonly sessions: readonly SessionMeta[]
   readonly currentSessionId: string
   onPick(sessionId: string): void
@@ -57,9 +59,17 @@ export function SessionPicker(props: SessionPickerProps): ReactElement {
     }
   })
 
+  const footer =
+    (props.sessions.length > PICKER_WINDOW ? '↑↓ 滚动 · ' : '') +
+    '↑↓/数字 选择 · enter 切换 · esc 关闭'
+
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={props.theme.accent} paddingX={1}>
-      <Text color={props.theme.accent}>选择会话(最近更新优先)</Text>
+    <PickerFrame
+      title="选择会话"
+      titleSuffix=" · 最近更新优先"
+      footer={footer}
+      theme={props.theme}
+    >
       {props.sessions.length === 0 ? (
         <Text color={props.theme.dim}>当前目录还没有历史会话</Text>
       ) : (
@@ -67,7 +77,12 @@ export function SessionPicker(props: SessionPickerProps): ReactElement {
           const index = scroll + offset
           const when = formatSessionTime(session.updatedAt)
           return (
-            <Text key={session.sessionId}>
+            <PickerRow
+              key={session.sessionId}
+              selected={selected === index}
+              theme={props.theme}
+              capabilities={props.capabilities}
+            >
               {selected === index ? '❯' : ' '}
               {index + 1} {when}
               <Text color={props.theme.dim}> {session.preview ?? '(无输入)'}</Text>
@@ -75,15 +90,11 @@ export function SessionPicker(props: SessionPickerProps): ReactElement {
                 <Text color={props.theme.ok}> ✓当前</Text>
               ) : null}
               <Text color={props.theme.dim}> · {shortSessionId(session.sessionId)}</Text>
-            </Text>
+            </PickerRow>
           )
         })
       )}
-      <Text color={props.theme.dim}>
-        {props.sessions.length > PICKER_WINDOW ? `↑↓ 滚动 · ` : ''}↑↓/数字 选择 · enter 切换 · esc
-        关闭
-      </Text>
-    </Box>
+    </PickerFrame>
   )
 }
 

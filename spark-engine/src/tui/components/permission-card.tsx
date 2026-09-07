@@ -1,18 +1,26 @@
-import { Box, Text, useInput } from 'ink';
+import { Text, useInput } from 'ink';
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 
 import type { PermissionDecision } from '../../permission/types.js';
 import type { PendingApproval } from '../../permission/interactive.js';
-import type { TuiTheme } from '../theme.js';
+import type { TerminalCapabilities, TuiTheme } from '../theme.js';
+import { PickerFrame, PickerRow } from './picker-layout.js';
 
 export interface PermissionCardProps {
   readonly pending: PendingApproval;
   readonly theme: TuiTheme;
+  readonly capabilities?: TerminalCapabilities | undefined;
   readonly onDecide: (decision: PermissionDecision) => void;
   readonly onNotice: (message: string) => void;
 }
 
-export function PermissionCard({ pending, theme, onDecide, onNotice }: PermissionCardProps): ReactElement {
+export function PermissionCard({
+  pending,
+  theme,
+  capabilities,
+  onDecide,
+  onNotice,
+}: PermissionCardProps): ReactElement {
   const [selected, setSelected] = useState(0);
   const options = useMemo(
     () => [
@@ -58,20 +66,28 @@ export function PermissionCard({ pending, theme, onDecide, onNotice }: Permissio
 
   const { request } = pending;
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
-      <Text color={theme.accent}>权限确认 · {request.call.name}</Text>
+    <PickerFrame
+      title={`权限确认 · ${request.call.name}`}
+      footer="↑↓/数字选择 · enter 确认 · esc 拒绝"
+      theme={theme}
+    >
       <Text>{request.argsPreview}</Text>
       {request.reason && <Text color={theme.dim}>策略: {request.reason}</Text>}
       {request.sessionScopeLabel && (
         <Text color={theme.dim}>会话授权范围: {request.sessionScopeLabel}</Text>
       )}
       <Text color={theme.warn}>风险: {request.call.definition.destructive ? '破坏性工具' : '需要授权'}</Text>
-      <Text>
-        {options
-          .map((option, index) => `${selected === index ? '❯' : ' '} ${index + 1} ${option.label}`)
-          .join('   ')}
-      </Text>
-      <Text color={theme.dim}>↑↓/数字选择 · enter 确认 · esc 拒绝</Text>
-    </Box>
+      {options.map((option, index) => (
+        <PickerRow
+          key={option.label}
+          selected={selected === index}
+          theme={theme}
+          capabilities={capabilities}
+          warning={option.decision.decision === 'deny'}
+        >
+          {selected === index ? '❯' : ' '} {index + 1} {option.label}
+        </PickerRow>
+      ))}
+    </PickerFrame>
   );
 }

@@ -1,8 +1,9 @@
-import { Box, Text, useInput } from 'ink'
+import { Text, useInput } from 'ink'
 import { useState, type ReactElement } from 'react'
 
 import type { ReasoningEffort } from '../../llm/types.js'
-import type { TuiTheme } from '../theme.js'
+import type { TerminalCapabilities, TuiTheme } from '../theme.js'
+import { PickerFrame, PickerRow } from './picker-layout.js'
 
 export const EFFORT_OPTIONS: readonly {
   readonly value: ReasoningEffort
@@ -21,6 +22,7 @@ export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'high'
 
 export interface EffortPickerProps {
   readonly theme: TuiTheme
+  readonly capabilities?: TerminalCapabilities | undefined
   readonly current: ReasoningEffort
   onPick(effort: ReasoningEffort): void
   onClose(): void
@@ -63,16 +65,24 @@ export function EffortPicker(props: EffortPickerProps): ReactElement {
   })
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={props.theme.accent} paddingX={1}>
-      <Text color={props.theme.accent}>推理强度(对下一个 turn 生效)</Text>
+    <PickerFrame
+      title="推理强度"
+      titleSuffix=" · 对下一个 turn 生效"
+      footer="↑↓/数字 选择 · enter 应用 · esc 关闭"
+      theme={props.theme}
+    >
       {EFFORT_OPTIONS.map((option, index) => (
-        <Text key={option.label}>
+        <PickerRow
+          key={option.label}
+          selected={selected === index}
+          theme={props.theme}
+          capabilities={props.capabilities}
+        >
           {selected === index ? '❯' : ' '} {index + 1} {option.label}
           <Text color={props.theme.dim}> — {option.hint}</Text>
           {option.value === props.current ? <Text color={props.theme.ok}> ✓当前</Text> : null}
-        </Text>
+        </PickerRow>
       ))}
-      <Text color={props.theme.dim}>↑↓/数字 选择 · enter 应用 · esc 关闭</Text>
-    </Box>
+    </PickerFrame>
   )
 }

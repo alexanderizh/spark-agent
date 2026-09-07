@@ -1,8 +1,9 @@
-import { Box, Text, useInput } from 'ink'
+import { Text, useInput } from 'ink'
 import { useEffect, useState, type ReactElement } from 'react'
 
 import type { PermissionMode } from '../../permission/types.js'
-import type { TuiTheme } from '../theme.js'
+import type { TerminalCapabilities, TuiTheme } from '../theme.js'
+import { PickerFrame, PickerRow } from './picker-layout.js'
 
 // Exactly three approval levels, mirroring the engine's PermissionMode union:
 // manual asks per call, auto approves everything short of explicit deny rules,
@@ -19,6 +20,7 @@ export const PERMISSION_MODES: readonly {
 
 export interface PermissionPickerProps {
   readonly theme: TuiTheme
+  readonly capabilities?: TerminalCapabilities | undefined
   readonly current: PermissionMode
   /** Selected after the destructive double-confirm; others apply immediately. */
   onPick(mode: PermissionMode): void
@@ -79,19 +81,26 @@ export function PermissionPicker(props: PermissionPickerProps): ReactElement {
   }
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={props.theme.accent} paddingX={1}>
-      <Text color={props.theme.accent}>
-        权限策略切换(本会话生效){armingBypass ? ' · 再次按 enter 确认危险选项' : ''}
-      </Text>
+    <PickerFrame
+      title="权限策略切换"
+      titleSuffix={armingBypass ? ' · 再次按 enter 确认危险选项' : ' · 本会话生效'}
+      footer="↑↓/数字 选择 · enter 应用 · esc 关闭"
+      theme={props.theme}
+    >
       {PERMISSION_MODES.map((entry, index) => (
-        <Text key={entry.mode} {...(entry.mode === 'bypass' ? { color: props.theme.warn } : {})}>
+        <PickerRow
+          key={entry.mode}
+          selected={selected === index}
+          theme={props.theme}
+          capabilities={props.capabilities}
+          warning={entry.mode === 'bypass'}
+        >
           {selected === index ? '❯' : ' '} {index + 1} {entry.label}
           <Text color={props.theme.dim}> — {entry.hint}</Text>
           {entry.mode === props.current ? <Text color={props.theme.ok}> ✓当前</Text> : null}
-        </Text>
+        </PickerRow>
       ))}
-      <Text color={props.theme.dim}>↑↓/数字 选择 · enter 应用 · esc 关闭</Text>
-    </Box>
+    </PickerFrame>
   )
 }
 

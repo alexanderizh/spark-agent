@@ -101,7 +101,7 @@ First run without local configuration: `spark` still opens the TUI and shows the
 
 ## Interactive session controls
 
-The TUI keeps a persistent status line under the input box — model · permission mode · reasoning effort · token/cost tally — so you always know what will run before you type.
+The TUI uses a graphite-and-mint terminal theme with flat, shared selection rows for the model, permission, effort, session, approval, and command pickers. Truecolor/256-color terminals use a solid focus fill; 16-color and mono terminals fall back to inverse video. A persistent divided status line under the input keeps the model, permission mode, reasoning effort, latest model-call performance, working directory, and `/help` visible; the help hint stays right-aligned when space permits.
 
 | Command   | Action                                                    |
 | --------- | --------------------------------------------------------- |

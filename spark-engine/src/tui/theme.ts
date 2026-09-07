@@ -7,10 +7,18 @@ export interface TerminalCapabilities {
 export interface TuiTheme {
   readonly fg?: string
   readonly dim: string
+  readonly faint?: string
   readonly accent: string
+  readonly accentStrong?: string
   readonly ok: string
   readonly warn: string
   readonly error: string
+  /** Quiet separators used by flat panels and the status bar. */
+  readonly line?: string
+  /** Solid focus fill; only emitted on truecolor/256-color terminals. */
+  readonly selectedBg?: string
+  /** Bottom chrome fill; only emitted on truecolor/256-color terminals. */
+  readonly chromeBg?: string
   /** User-message block background; terminals below 256 colors drop it. */
   readonly userBg?: string
 }
@@ -28,16 +36,27 @@ export interface TuiGlyphs {
   readonly spinner: readonly string[]
 }
 
-// Warm terracotta accent over quiet grays, matching the visual language of
-// first-class terminal agents (Claude Code / opencode): chrome stays dim,
-// content stays bright, one accent carries the brand and the busy state.
+// Industrial console palette: graphite surfaces carry the hierarchy while a
+// single cool mint accent communicates focus and activity. Amber is reserved
+// for warnings so selection and risk never compete for attention.
 export const defaultTheme: TuiTheme = {
-  dim: 'gray',
-  accent: '#d97757',
-  ok: '#46c46a',
-  warn: '#d6a235',
-  error: '#e5534b',
-  userBg: '#30303a',
+  fg: '#dce6ea',
+  dim: '#7d8b94',
+  faint: '#52606a',
+  accent: '#55d6be',
+  accentStrong: '#78ead4',
+  ok: '#55d6be',
+  warn: '#f0b35a',
+  error: '#ff716c',
+  line: '#293640',
+  selectedBg: '#163a38',
+  chromeBg: '#0a1015',
+  userBg: '#16222c',
+}
+
+/** Rich fills become noisy or unreadable when terminals quantize below 256 colors. */
+export function supportsRichBackground(capabilities: TerminalCapabilities | undefined): boolean {
+  return capabilities?.color === 'truecolor' || capabilities?.color === '256'
 }
 
 export function detectTerminalCapabilities(

@@ -17,6 +17,7 @@ import { PERMISSION_MODES, PermissionPicker, nextPermissionMode } from './compon
 import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { SessionPicker } from './components/session-picker.js'
+import { StatusBar } from './components/status-bar.js'
 import { InputEditor } from './components/input-editor.js'
 import { WorkingLine } from './components/spinner.js'
 import { WelcomeBox } from './components/welcome.js'
@@ -545,6 +546,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         <PermissionCard
           pending={pending}
           theme={theme}
+          capabilities={capabilities}
           onDecide={decide}
           onNotice={(message) => {
             setNotice(message)
@@ -554,6 +556,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {permPickerOpen && !pending && (
         <PermissionPicker
           theme={theme}
+          capabilities={capabilities}
           current={permissionMode}
           onPick={applyPermissionMode}
           onClose={() => {
@@ -567,6 +570,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {effortPickerOpen && !pending && !permPickerOpen && (
         <EffortPicker
           theme={theme}
+          capabilities={capabilities}
           current={reasoningEffort}
           onPick={(effort) => {
             setReasoningEffort(effort)
@@ -581,6 +585,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {sessionPickerOpen && !pending && !permPickerOpen && (
         <SessionPicker
           theme={theme}
+          capabilities={capabilities}
           sessions={sessions}
           currentSessionId={session.sessionId}
           onPick={(sessionId) => {
@@ -600,6 +605,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           error={modelRuntime.error}
           selectedModel={effectiveModel}
           theme={theme}
+          capabilities={capabilities}
           canClose={effectiveModel !== undefined}
           onSelect={(modelId) => {
             void modelRuntime.select(modelId)
@@ -619,6 +625,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {pickerOpen && modelRuntime && configFormOpen && (
         <ProviderConfigForm
           theme={theme}
+          capabilities={capabilities}
           error={modelRuntime.error}
           onCancel={() => {
             setConfigFormOpen(false)
@@ -660,17 +667,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setShowThinking((visible) => !visible)
         }}
       />
-      {/* Status bar: bare values only — model, permission, effort, perf, cwd. */}
-      <Box gap={2} flexWrap="wrap">
-        <Text color={theme.accent}>{visibleModelName ?? '未选择模型'}</Text>
-        <Text color={permissionMode === 'bypass' ? theme.warn : theme.dim}>
-          {permissionMode}
-        </Text>
-        <Text color={theme.ok}>{reasoningEffort}</Text>
-        {perfText && <Text color={theme.dim}>{perfText}</Text>}
-        {formatCwd(props.cwd) && <Text color={theme.dim}>{formatCwd(props.cwd)}</Text>}
-        <Text color={theme.dim}>/help</Text>
-      </Box>
+      <StatusBar
+        model={visibleModelName ?? '未选择模型'}
+        permission={permissionMode}
+        effort={reasoningEffort}
+        perf={perfText || undefined}
+        cwd={formatCwd(props.cwd)}
+        capabilities={capabilities}
+        theme={theme}
+      />
     </Box>
   )
 }
