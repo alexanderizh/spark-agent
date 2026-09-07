@@ -114,6 +114,7 @@ import type {
   ComputerUseIpcChannelMap,
 } from '../computer-use/ipc.js'
 import type { SubAppIpcChannelMap } from '../sub-app.js'
+import type { SubAppJob, SubAppV2IpcChannelMap } from '../sub-app-v2.js'
 import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
 import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool-package.js'
 import type { NotificationsIpcChannelMap } from '../notifications.js'
@@ -6444,6 +6445,7 @@ export interface IpcChannelMap
     EvidenceCostIpcChannelMap,
     ReplayPlaybookIpcChannelMap,
     SubAppIpcChannelMap,
+    SubAppV2IpcChannelMap,
     CustomToolsIpcChannelMap,
     ToolPackagesIpcChannelMap,
     NotificationsIpcChannelMap,
@@ -7268,6 +7270,17 @@ export interface IpcStreamChannelMap {
    * 任何入口（管理页 UI、Agent MCP 工具、IPC）造成的创建/发布/启停/归档/
    * 删除/草稿更新都会触发，保证会话内创建的应用即时出现在菜单与胶囊。 */
   'stream:subapp:directory-changed': Record<string, never>
+  /** V2 子应用后台服务事件（renderer 按 appId/event 过滤）。 */
+  'stream:subapp:service-event': {
+    appId: string
+    event: string
+    payload: unknown
+  }
+  /** V2 持久任务状态/进度变化。 */
+  'stream:subapp:job-changed': {
+    appId: string
+    job: SubAppJob
+  }
   /** 工作区内容搜索分批结果（主进程推送；渲染端按自己发起的 requestId 过滤） */
   'stream:workspace-search:content': WorkspaceSearchContentStreamPayload
   /** 自定义工具变更（创建/更新/删除/启停/导入）：渲染进程工具列表据此刷新。 */

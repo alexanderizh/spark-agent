@@ -82,6 +82,7 @@ export interface SubAppRunnerProps {
   mode: 'draft' | 'published'
   /** 发布运行时传发布记录（versionId 取 release.id）；草稿运行传 undefined。 */
   release?: SubAppRelease | null
+  packageFormat?: 'v1' | 'v2'
   className?: string
 }
 
@@ -110,6 +111,8 @@ export interface SubAppRunnerState {
  */
 export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   const { appId, manifest, source, mode, release } = props
+  const packageFormat = props.packageFormat ?? release?.format ?? 'v1'
+  const isV2 = packageFormat === 'v2'
   const resolvedTheme = useResolvedTheme()
   const { t, setTweak } = useApp()
   const primary = t.primary
@@ -119,6 +122,9 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
 
   const frameRef = React.useRef<HTMLIFrameElement | null>(null)
   const hostRef = React.useRef<SubAppBridgeHost | null>(null)
+  const runtimeErrorsRef = React.useRef<Array<{ kind: string; message: string; source?: string }>>(
+    [],
+  )
   const resolvedThemeRef = React.useRef(resolvedTheme)
   const primaryRef = React.useRef(primary)
   // media 域实例级任务缓存：clientTaskId → repoll 所需的完整参数。
@@ -151,6 +157,49 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   )
   const versionId = release?.id ?? `draft-${appId}`
 
+  const [packageRuntime, setPackageRuntime] = React.useState<{
+    token: string
+    entrySource: string
+    assetsBaseUrl: string
+  } | null>(null)
+
+  React.useEffect(() => {
+    if (!isV2) {
+      setPackageRuntime(null)
+      return
+    }
+    let cancelled = false
+    let token: string | null = null
+    setPackageRuntime(null)
+    void subAppClient
+      .putRuntimePackage({
+        appId,
+        mode,
+        ...(mode === 'published' && release != null ? { releaseId: release.id } : {}),
+      })
+      .then((result) => {
+        token = result.token
+        if (!cancelled) {
+          setPackageRuntime({
+            token: result.token,
+            entrySource: result.entrySource,
+            assetsBaseUrl: result.assetsBaseUrl,
+          })
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setStatus('error')
+        setErrorMessage(
+          `V2 应用包加载失败：${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
+    return () => {
+      cancelled = true
+      if (token != null) void subAppClient.releaseRuntimePackage({ token }).catch(() => {})
+    }
+  }, [appId, isV2, mode, release?.id, reloadCounter])
+
   // 运行时安全选项：localStorage 同步首屏 + IPC 权威值；设置页改动经
   // spark-settings-updated 事件热更新（文档重建 -> iframe 随版本号重载）。
   const [runtimeSecurity, setRuntimeSecurity] = React.useState<SubAppRuntimeSettings>(
@@ -180,7 +229,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   const sandboxDocument = React.useMemo(
     () =>
       buildAppRuntimeDocument({
-        source,
+        source: isV2 ? (packageRuntime?.entrySource ?? '') : source,
         theme: resolvedThemeRef.current,
         config: {
           appId,
@@ -188,12 +237,25 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
           instanceId,
           mode,
           surface: manifest.surface,
-          trusted: true,
+          trusted: !isV2,
         },
         security: runtimeSecurity,
+        ...(packageRuntime?.assetsBaseUrl != null
+          ? { assetBaseUrl: packageRuntime.assetsBaseUrl }
+          : {}),
       }),
     // 文档只随源码/实例/surface/安全设置变化重建；主题走 postMessage 热推送。
-    [source, instanceId, appId, versionId, mode, manifest.surface, runtimeSecurity],
+    [
+      source,
+      isV2,
+      packageRuntime,
+      instanceId,
+      appId,
+      versionId,
+      mode,
+      manifest.surface,
+      runtimeSecurity,
+    ],
   )
 
   const [frameSrc, setFrameSrc] = React.useState<string | null>(null)
@@ -202,6 +264,10 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
   // 合成文档 → 主进程登记 → capability-asset 导航地址。
   // 源码变化时复用 token 覆盖登记，并用递增 version 强制 iframe 重新加载。
   React.useEffect(() => {
+    if (isV2 && packageRuntime == null) {
+      setFrameSrc(null)
+      return
+    }
     let cancelled = false
     const token = instanceId
     docVersionRef.current += 1
@@ -222,11 +288,23 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       cancelled = true
       void subAppClient.releaseRuntimeDoc({ token }).catch(() => {})
     }
-  }, [sandboxDocument, instanceId])
+  }, [sandboxDocument, instanceId, isV2, packageRuntime])
 
   React.useEffect(() => {
     setStatus('loading')
     setErrorMessage(null)
+    runtimeErrorsRef.current = []
+    void subAppClient
+      .reportRuntime({
+        appId,
+        instanceId,
+        mode,
+        versionId,
+        status: 'loading',
+        errors: [],
+        audit: [],
+      })
+      .catch(() => {})
     const host = new SubAppBridgeHost({
       runtimeInfo: {
         appId,
@@ -238,7 +316,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         instanceId,
         mode,
         permissions: manifest.permissions,
-        trusted: true,
+        trusted: !isV2,
       },
       getFrameWindow: () => frameRef.current?.contentWindow ?? null,
       invoke: (channel, request) => window.spark.invoke(channel, request),
@@ -396,14 +474,106 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         window.spark.invoke('browser:sub-app-reveal-download', request),
       previewDownloadFile: async (request) =>
         window.spark.invoke('browser:sub-app-preview-download', request),
+      reportDiagnostic: (diagnostic) => {
+        runtimeErrorsRef.current = [...runtimeErrorsRef.current.slice(-48), diagnostic]
+        void subAppClient
+          .reportRuntime({
+            appId,
+            instanceId,
+            mode,
+            versionId,
+            status: 'error',
+            errors: runtimeErrorsRef.current,
+            audit: hostRef.current?.getAuditEntries().map(({ at: _at, ...entry }) => entry) ?? [],
+          })
+          .catch(() => {})
+      },
+      managedRequest: async (payload) =>
+        window.spark.invoke('sub-app:network:request', {
+          appId,
+          slot: String(payload.slot ?? ''),
+          ...(typeof payload.method === 'string'
+            ? { method: payload.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' }
+            : {}),
+          path: String(payload.path ?? ''),
+          ...(payload.headers != null && typeof payload.headers === 'object'
+            ? { headers: payload.headers as Record<string, string> }
+            : {}),
+          ...(payload.body !== undefined ? { body: payload.body } : {}),
+          ...(typeof payload.timeoutMs === 'number' ? { timeoutMs: payload.timeoutMs } : {}),
+        }),
+      backendRequest: async (operation, payload) => {
+        if (operation === 'status') return window.spark.invoke('sub-app:service:status', { appId })
+        return window.spark.invoke('sub-app:backend:invoke', {
+          appId,
+          action: String(payload.action ?? ''),
+          ...(payload.input !== undefined ? { input: payload.input } : {}),
+          ...(typeof payload.timeoutMs === 'number' ? { timeoutMs: payload.timeoutMs } : {}),
+        })
+      },
+      subscribeBackend: (event, callback) =>
+        window.spark.on('stream:subapp:service-event', (payload) => {
+          if (payload.appId === appId && payload.event === event) callback(payload.payload)
+        }),
+      jobsRequest: async (operation, payload) => {
+        if (operation === 'create')
+          return window.spark.invoke('sub-app:jobs:create', {
+            appId,
+            type: String(payload.type ?? ''),
+            ...(payload.input !== undefined ? { input: payload.input } : {}),
+          })
+        if (operation === 'get')
+          return window.spark.invoke('sub-app:jobs:get', {
+            appId,
+            jobId: String(payload.jobId ?? ''),
+          })
+        if (operation === 'cancel')
+          return window.spark.invoke('sub-app:jobs:cancel', {
+            appId,
+            jobId: String(payload.jobId ?? ''),
+          })
+        return window.spark.invoke('sub-app:jobs:list', {
+          appId,
+          ...(typeof payload.status === 'string'
+            ? {
+                status: payload.status as
+                  | 'queued'
+                  | 'running'
+                  | 'succeeded'
+                  | 'failed'
+                  | 'cancelled'
+                  | 'interrupted',
+              }
+            : {}),
+          ...(typeof payload.limit === 'number' ? { limit: payload.limit } : {}),
+          ...(typeof payload.offset === 'number' ? { offset: payload.offset } : {}),
+        })
+      },
+      subscribeJob: (jobId, callback) =>
+        window.spark.on('stream:subapp:job-changed', (payload) => {
+          if (payload.appId === appId && payload.job.id === jobId) callback(payload.job)
+        }),
     })
     hostRef.current = host
     host.attach()
 
     const readyTimer = window.setTimeout(() => {
       if (!host.isReady()) {
+        const timeoutError = { kind: 'ready-timeout', message: '应用未在 15 秒内完成启动。' }
+        runtimeErrorsRef.current = [...runtimeErrorsRef.current.slice(-48), timeoutError]
         setStatus('error')
         setErrorMessage('应用未在 15 秒内完成启动。请检查应用源码是否阻塞，然后点击重新加载。')
+        void subAppClient
+          .reportRuntime({
+            appId,
+            instanceId,
+            mode,
+            versionId,
+            status: 'error',
+            errors: runtimeErrorsRef.current,
+            audit: host.getAuditEntries().map(({ at: _at, ...entry }) => entry),
+          })
+          .catch(() => {})
       }
     }, SUB_APP_READY_TIMEOUT_MS)
     const readyPoll = window.setInterval(() => {
@@ -411,6 +581,17 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
         window.clearInterval(readyPoll)
         window.clearTimeout(readyTimer)
         setStatus('ready')
+        void subAppClient
+          .reportRuntime({
+            appId,
+            instanceId,
+            mode,
+            versionId,
+            status: runtimeErrorsRef.current.length > 0 ? 'error' : 'ready',
+            errors: runtimeErrorsRef.current,
+            audit: host.getAuditEntries().map(({ at: _at, ...entry }) => entry),
+          })
+          .catch(() => {})
       }
     }, 120)
 
@@ -420,7 +601,7 @@ export function useSubAppRunner(props: SubAppRunnerProps): SubAppRunnerState {
       host.detach()
       if (hostRef.current === host) hostRef.current = null
     }
-  }, [appId, manifest, versionId, mode, instanceId])
+  }, [appId, manifest, versionId, mode, instanceId, isV2])
 
   // 主题热切换：只推送 token，不重建文档。
   React.useEffect(() => {

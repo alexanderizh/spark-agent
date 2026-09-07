@@ -375,7 +375,7 @@ import type {
 } from './remote-command-utils.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
-import { registerSubAppIpc } from './registerSubAppIpc.js'
+import { registerSubAppPlatformIpc } from './registerSubAppPlatformIpc.js'
 import { getCustomToolService, registerCustomToolsIpc } from './registerCustomToolsIpc.js'
 import { registerToolPackagesIpc } from './registerToolPackagesIpc.js'
 import { createDesktopToolPackageCapabilities } from './toolPackageExtendedCapabilities.js'
@@ -9764,7 +9764,14 @@ export function registerAllIpcHandlers(): void {
   registerSidebarOrderIpc()
   registerWorkspaceSearchIpc()
   registerPluginIpc()
-  registerSubAppIpc()
+  registerSubAppPlatformIpc({
+    database: getDatabase(),
+    userDataPath: app.getPath('userData'),
+    platformVersion: app.getVersion(),
+    setRuntimeBridge: (bridge) => getSessionService().setSubAppRuntimeBridge(bridge),
+    emitServiceEvent: (event) => pushStreamEvent('stream:subapp:service-event', event),
+    emitJobChanged: (event) => pushStreamEvent('stream:subapp:job-changed', event),
+  })
   registerCustomToolsIpc()
   registerToolPackagesIpc(
     getSessionService().getToolPackageService(),

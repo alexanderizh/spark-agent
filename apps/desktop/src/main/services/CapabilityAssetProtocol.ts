@@ -6,6 +6,10 @@ import { getOptionalCapabilityManager } from '../ipc/registerOptionalCapabilityI
 import { createSafeFileResponse } from './SafeFileProtocol.js'
 import { HTML_RENDER_RUNTIME_HOST, takeHtmlRenderRuntimeDoc } from './HtmlRenderRuntimeDocs.js'
 import { SUB_APP_RUNTIME_HOST, takeSubAppRuntimeDoc } from './SubAppRuntimeDocs.js'
+import {
+  SUB_APP_PACKAGE_RUNTIME_HOST,
+  resolveSubAppRuntimePackagePath,
+} from './SubAppPackageRuntime.js'
 
 export const CAPABILITY_ASSET_SCHEME = 'capability-asset'
 const log = createLogger('capability-assets')
@@ -88,6 +92,15 @@ export function registerCapabilityAssetProtocol(): void {
             'cache-control': 'no-store',
           },
         })
+      }
+      if (url.hostname === SUB_APP_PACKAGE_RUNTIME_HOST) {
+        const segments = rawPathSegments(request.url).map((segment) => decodeURIComponent(segment))
+        const token = segments.shift()
+        if (token == null || segments.length === 0)
+          return new Response('Not Found', { status: 404 })
+        const packagePath = await resolveSubAppRuntimePackagePath(token, segments.join('/'))
+        if (packagePath == null) return new Response('Not Found', { status: 404 })
+        return createSafeFileResponse(packagePath, request)
       }
       const filePath = await resolveCapabilityAssetPath(request.url, async () =>
         getOptionalCapabilityManager().getArtifactDirectory(

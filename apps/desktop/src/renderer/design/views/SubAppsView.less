@@ -319,6 +319,155 @@
   color: var(--text-faint, var(--text-muted, var(--text)));
 }
 
+/* 子应用 V2 开发/运维：扁平分段，不使用嵌套卡片。 */
+.sao-loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+.sao-error {
+  margin: 6px 0;
+  color: var(--danger, #ef4444);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sao-sections {
+  display: flex;
+  flex-direction: column;
+}
+.sao-section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--divider, var(--border));
+}
+.sao-section:first-child {
+  padding-top: 0;
+}
+.sao-section:last-child {
+  border-bottom: 0;
+}
+.sao-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sao-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong, var(--text));
+}
+.sao-section header span {
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+}
+.sao-section header span[data-status='running'] {
+  color: var(--success, #10b981);
+}
+.sao-section header span[data-status='degraded'],
+.sao-section header span[data-status='starting'] {
+  color: var(--warning, #f59e0b);
+}
+.sao-section header span[data-status='crashed'] {
+  color: var(--danger, #ef4444);
+}
+.sao-section dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+  margin: 0;
+}
+.sao-section dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.sao-section dt,
+.sao-section dd {
+  margin: 0;
+  font-size: 12px;
+}
+.sao-section dt {
+  color: var(--text-muted, var(--text));
+}
+.sao-section dd {
+  color: var(--text-strong, var(--text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sao-muted {
+  margin: 6px 0 0;
+  color: var(--text-muted, var(--text));
+  font-size: 12px;
+  line-height: 1.55;
+}
+.sao-lines,
+.sao-diagnostics {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sao-lines li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-top: 1px solid var(--divider, var(--border));
+}
+.sao-lines li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.sao-lines strong,
+.sao-lines span {
+  font-size: 12px;
+}
+.sao-lines span {
+  color: var(--text-muted, var(--text));
+}
+.sao-diagnostics li {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) 1fr;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--divider, var(--border));
+  font-size: 12px;
+}
+.sao-diagnostics code {
+  color: var(--danger, #ef4444);
+}
+.sao-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sao-logs {
+  max-height: 190px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--divider, var(--border));
+  border-bottom: 1px solid var(--divider, var(--border));
+  color: var(--text-muted, var(--text));
+  background: transparent;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 680px) {
+  .sao-section dl {
+    grid-template-columns: 1fr;
+  }
+  .sao-diagnostics li {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+
 /* ─── Agent 创建引导 ──────────────────────────────────────────────────────── */
 
 .sa-guide {

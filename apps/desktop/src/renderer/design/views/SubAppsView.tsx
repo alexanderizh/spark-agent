@@ -33,6 +33,7 @@ import {
 import { SubAppIcon } from '../sub-app/SubAppIcon'
 import { SUB_APP_ICON_OPTIONS } from '../sub-app/subAppIconOptions'
 import { SubAppExportModal, SubAppImportModal } from '../sub-app/SubAppShareModals'
+import { SubAppOperationsDrawer } from '../sub-app/SubAppOperationsDrawer'
 import { useApp } from '../AppContext'
 import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
@@ -114,6 +115,7 @@ export function SubAppsView(): React.ReactElement {
   // 分享 / 导入
   const [exportFor, setExportFor] = useState<SubAppSummary | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [operationsFor, setOperationsFor] = useState<SubAppSummary | null>(null)
 
   const reload = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -221,17 +223,48 @@ export function SubAppsView(): React.ReactElement {
   const handlePublish = useCallback(
     (app: SubAppSummary): Promise<void> =>
       withBusy(app.id, async () => {
-        await subAppClient.publish({ appId: app.id, expectedDraftRevision: app.draftRevision })
+        if (app.format === 'v2') {
+          await subAppClient.projectPublish({
+            appId: app.id,
+            expectedDraftRevision: app.draftRevision,
+          })
+        } else {
+          await subAppClient.publish({ appId: app.id, expectedDraftRevision: app.draftRevision })
+        }
         antdMessage.success(`已发布 ${app.name} v${(app.publishedVersion ?? 0) + 1}`)
       }),
     [withBusy],
   )
 
   const handleSetEnabled = useCallback(
-    (app: SubAppSummary, enabled: boolean): Promise<void> =>
-      withBusy(app.id, async () => {
+    async (app: SubAppSummary, enabled: boolean): Promise<void> => {
+      if (enabled && app.format === 'v2') {
+        try {
+          const project = await subAppClient.projectStatus({ appId: app.id })
+          const effects = project.manifest?.permissions.osEffects ?? []
+          const hasService = project.manifest?.service != null
+          if (hasService || effects.length > 0) {
+            const confirmed = await new Promise<boolean>((resolve) => {
+              AntdModal.confirm({
+                title: '启用此 V2 应用？',
+                content: `该应用${hasService ? '包含受管后台服务' : '不含后台服务'}，OS effects：${effects.join('、') || '无'}。后台代码以当前用户权限运行，不是安全沙箱。`,
+                okText: '确认启用',
+                cancelText: '取消',
+                onOk: () => resolve(true),
+                onCancel: () => resolve(false),
+              })
+            })
+            if (!confirmed) return
+          }
+        } catch (err) {
+          antdMessage.error(`无法读取应用权限：${err instanceof Error ? err.message : String(err)}`)
+          return
+        }
+      }
+      return withBusy(app.id, async () => {
         await subAppClient.setEnabled({ appId: app.id, enabled })
-      }),
+      })
+    },
     [withBusy],
   )
 
@@ -386,10 +419,7 @@ export function SubAppsView(): React.ReactElement {
               刷新
             </Button>
           </Tooltip>
-          <Button
-            icon={<Icons.Upload size={15} />}
-            onClick={() => setImportOpen(true)}
-          >
+          <Button icon={<Icons.Upload size={15} />} onClick={() => setImportOpen(true)}>
             导入
           </Button>
           <Button
@@ -477,6 +507,15 @@ export function SubAppsView(): React.ReactElement {
                         },
                       ]
                     : []),
+                  {
+                    key: 'operations',
+                    label: (
+                      <span className="sa-card-menu-item">
+                        <Icons.Activity size={14} /> 开发与运维
+                      </span>
+                    ),
+                    onClick: () => setOperationsFor(app),
+                  },
                   {
                     key: 'share',
                     label: (
@@ -691,6 +730,8 @@ export function SubAppsView(): React.ReactElement {
           void reload()
         }}
       />
+
+      <SubAppOperationsDrawer app={operationsFor} onClose={() => setOperationsFor(null)} />
 
       <Modal
         title={iconEditorFor == null ? '设置应用图标' : `设置「${iconEditorFor.name}」图标`}

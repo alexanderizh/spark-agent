@@ -39,6 +39,10 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
       throw new SparkError('PERMISSION_DENIED', '子应用管理接口仅允许主应用窗口访问。')
     }
   }
+  void backend.restoreServices().catch(() => {})
+  app.once('before-quit', () => {
+    void backend.dispose()
+  })
 
   typedIpcHandle('sub-app:list', async (request, event) => {
     assertTrusted(event)
@@ -140,6 +144,91 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
     return backend.releaseRuntimeDoc(request)
   })
 
+  typedIpcHandle('sub-app:project:status', async (request, event) => {
+    assertTrusted(event)
+    return backend.projectStatus(request)
+  })
+  typedIpcHandle('sub-app:project:read-file', async (request, event) => {
+    assertTrusted(event)
+    return backend.projectReadFile(request)
+  })
+  typedIpcHandle('sub-app:project:write-file', async (request, event) => {
+    assertTrusted(event)
+    return notifyDirectoryChanged(await backend.projectWriteFile(request))
+  })
+  typedIpcHandle('sub-app:project:validate', async (request, event) => {
+    assertTrusted(event)
+    return backend.projectValidate(request.appId)
+  })
+  typedIpcHandle('sub-app:project:publish', async (request, event) => {
+    assertTrusted(event)
+    return notifyDirectoryChanged(await backend.projectPublish(request))
+  })
+  typedIpcHandle('sub-app:runtime:put-package', async (request, event) => {
+    assertTrusted(event)
+    return backend.runtimePutPackage(request)
+  })
+  typedIpcHandle('sub-app:runtime:release-package', async (request, event) => {
+    assertTrusted(event)
+    return backend.runtimeReleasePackage(request)
+  })
+  typedIpcHandle('sub-app:connections:list', async (request, event) => {
+    assertTrusted(event)
+    return backend.connectionList(request)
+  })
+  typedIpcHandle('sub-app:connections:bind', async (request, event) => {
+    assertTrusted(event)
+    return backend.connectionBind(request)
+  })
+  typedIpcHandle('sub-app:connections:unbind', async (request, event) => {
+    assertTrusted(event)
+    return backend.connectionUnbind(request)
+  })
+  typedIpcHandle('sub-app:network:request', async (request, event) => {
+    assertTrusted(event)
+    return backend.networkRequest(request)
+  })
+  typedIpcHandle('sub-app:backend:invoke', async (request, event) => {
+    assertTrusted(event)
+    return backend.backendInvoke(request)
+  })
+  typedIpcHandle('sub-app:service:status', async (request, event) => {
+    assertTrusted(event)
+    return backend.serviceStatus(request)
+  })
+  typedIpcHandle('sub-app:service:logs', async (request, event) => {
+    assertTrusted(event)
+    return backend.serviceLogs(request)
+  })
+  typedIpcHandle('sub-app:service:restart', async (request, event) => {
+    assertTrusted(event)
+    return backend.serviceRestart(request)
+  })
+  typedIpcHandle('sub-app:jobs:create', async (request, event) => {
+    assertTrusted(event)
+    return backend.jobCreate(request)
+  })
+  typedIpcHandle('sub-app:jobs:get', async (request, event) => {
+    assertTrusted(event)
+    return backend.jobGet(request)
+  })
+  typedIpcHandle('sub-app:jobs:list', async (request, event) => {
+    assertTrusted(event)
+    return backend.jobList(request)
+  })
+  typedIpcHandle('sub-app:jobs:cancel', async (request, event) => {
+    assertTrusted(event)
+    return backend.jobCancel(request)
+  })
+  typedIpcHandle('sub-app:diagnose', async (request, event) => {
+    assertTrusted(event)
+    return backend.diagnose(request)
+  })
+  typedIpcHandle('sub-app:runtime:report', async (request, event) => {
+    assertTrusted(event)
+    return backend.reportRuntime(request)
+  })
+
   // ─── 分享 / 导入（.sparkapp 单文件 JSON）───────────────────────────────────
   // 大包在主进程打包/解析，renderer 只接触摘要；body 经有界 token 缓存留在
   // 主进程内存，apply 凭 token + sha256 取用。
@@ -180,7 +269,7 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
     })
     const filePath = open.filePaths[0]
     if (open.canceled || filePath == null) {
-      return { started: false, canceled: true, checks: [], conflict: { kind: 'none' } }
+      return { started: false, canceled: true, checks: [], conflict: { kind: 'none' as const } }
     }
     const preview = await backend.sharePreviewFromFile(filePath)
     const summary = {

@@ -21,11 +21,15 @@ describe('spark_app MCP server', () => {
   let port = 0
   let lastRpc: { method: string; params: Record<string, unknown> } | null = null
   let rpcResponseData: unknown
+  let rpcResponseFor:
+    | ((request: { method: string; params: Record<string, unknown> }) => unknown)
+    | null
   let workspaceRoot = ''
 
   beforeEach(async () => {
     workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-subapp-mcp-'))
     rpcResponseData = { id: 'app-1', draft: { revision: 1 }, items: [], total: 0 }
+    rpcResponseFor = null
     server = createServer((request, response) => {
       const chunks: Buffer[] = []
       request.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
@@ -39,7 +43,7 @@ describe('spark_app MCP server', () => {
         response.end(
           JSON.stringify({
             ok: true,
-            data: rpcResponseData,
+            data: rpcResponseFor?.(body) ?? rpcResponseData,
           }),
         )
       })
@@ -81,13 +85,23 @@ describe('spark_app MCP server', () => {
       }>
     }
     const tools = result.tools ?? []
+    const guide = tools.find((tool) => tool.name === 'spark_app_developer_guide')
+    const validate = tools.find((tool) => tool.name === 'spark_app_validate')
     const create = tools.find((tool) => tool.name === 'spark_app_create')
     const update = tools.find((tool) => tool.name === 'spark_app_update_draft')
     const exportSource = tools.find((tool) => tool.name === 'spark_app_export_source')
     const dataSet = tools.find((tool) => tool.name === 'spark_app_data_set')
-    expect(create?.description).toContain('sparkApp.data')
-    expect(create?.description).toContain('localStorage')
-    expect(create?.description).toContain('默认不要给应用根容器')
+    const scaffold = tools.find((tool) => tool.name === 'spark_app_scaffold')
+    const projectPublish = tools.find((tool) => tool.name === 'spark_app_project_publish')
+    const serviceStatus = tools.find((tool) => tool.name === 'spark_app_service_status')
+    const jobsCreate = tools.find((tool) => tool.name === 'spark_app_jobs_create')
+    const diagnose = tools.find((tool) => tool.name === 'spark_app_diagnose')
+    expect(guide?.description).toContain('权威开发契约')
+    expect(validate?.description).toContain('error、warning、suggestion')
+    expect(create?.description).toContain('spark_app_developer_guide')
+    expect(create?.description).toContain('spark_app_validate')
+    expect(create?.description.length).toBeLessThan(1800)
+    expect(update?.description.length).toBeLessThan(1200)
     // 防误用约束：未明确要求内置子应用时，默认外部项目开发，不得默认创建子应用
     expect(create?.description).toContain('何时不要调用')
     expect(create?.description).toContain('外部项目开发')
@@ -96,9 +110,271 @@ describe('spark_app MCP server', () => {
     expect(update?.inputSchema?.properties).toHaveProperty('draftFilePath')
     expect(exportSource?.description).toContain('.spark-agent/sub-app-sources/')
     expect(dataSet?.description).toContain('expectedRevision')
+    expect(scaffold?.description).toContain('V2')
+    expect(projectPublish?.description).toContain('候选 service 健康后才切换')
+    expect(serviceStatus?.description).toContain('后台服务')
+    expect(jobsCreate?.description).toContain('release')
+    expect(diagnose?.description).toContain('联合诊断')
+  })
+
+  it('returns a compact guide index and exact SDK contract status without bridge RPC', async () => {
+    const running = start()
+    const indexResponse = await callMcp(running, {
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: { name: 'spark_app_developer_guide', arguments: {} },
+    })
+    const index = JSON.parse(toolText(indexResponse)) as {
+      navigation: Array<{ id: string }>
+      versions: { digest: string }
+    }
+    expect(index.navigation.some((topic) => topic.id === 'backend')).toBe(true)
+    expect(index.versions.digest).toMatch(/^[a-f0-9]{64}$/)
+    expect(lastRpc).toBeNull()
+
+    const symbolResponse = await callMcp(running, {
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: {
+        name: 'spark_app_developer_guide',
+        arguments: { symbol: 'sparkApp.backend.invoke' },
+      },
+    })
+    const symbolResult = JSON.parse(toolText(symbolResponse)) as {
+      matches: Array<{ symbol: string; status: string }>
+    }
+    expect(symbolResult.matches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ symbol: 'sparkApp.backend.invoke', status: 'implemented' }),
+      ]),
+    )
+    expect(lastRpc).toBeNull()
+
+    const lifecycleResponse = await callMcp(running, {
+      jsonrpc: '2.0',
+      id: 25,
+      method: 'tools/call',
+      params: {
+        name: 'spark_app_developer_guide',
+        arguments: { query: '页面关闭后继续' },
+      },
+    })
+    const lifecycle = JSON.parse(toolText(lifecycleResponse)) as {
+      topics: Array<{ id: string }>
+      totalMatches: number
+    }
+    expect(lifecycle.totalMatches).toBeGreaterThan(0)
+    expect(lifecycle.topics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'lifecycle' })]),
+    )
+
+    const broadResponse = await callMcp(running, {
+      jsonrpc: '2.0',
+      id: 27,
+      method: 'tools/call',
+      params: {
+        name: 'spark_app_developer_guide',
+        arguments: { query: 'sparkApp' },
+      },
+    })
+    const broad = JSON.parse(toolText(broadResponse)) as {
+      matches: unknown[]
+      totalMatches: number
+      returnedMatches: number
+      truncated: boolean
+    }
+    expect(broad.totalMatches).toBeGreaterThan(20)
+    expect(broad.matches).toHaveLength(20)
+    expect(broad.returnedMatches).toBe(20)
+    expect(broad.truncated).toBe(true)
+  })
+
+  it('exports a V2 managed project into the current workspace without overwriting', async () => {
+    rpcResponseFor = (request) => {
+      if (request.method === 'subapp.project_status') {
+        return { revision: 3, files: [{ path: 'spark-app.json' }, { path: 'frontend/index.html' }] }
+      }
+      if (request.method === 'subapp.project_read_file') {
+        const content =
+          request.params.path === 'spark-app.json' ? '{"schemaVersion":2}' : '<main>ok</main>'
+        return { content: Buffer.from(content).toString('base64') }
+      }
+      return rpcResponseData
+    }
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 29,
+      method: 'tools/call',
+      params: { name: 'spark_app_project_export', arguments: { appId: 'app-v2' } },
+    })
+    expect(toolText(response)).not.toContain('Error:')
+    const target = path.join(workspaceRoot, '.spark-agent', 'sub-app-projects', 'app-v2', 'rev-3')
+    expect(readFileSync(path.join(target, 'frontend/index.html'), 'utf8')).toBe('<main>ok</main>')
+
+    const repeated = await callMcp(child!, {
+      jsonrpc: '2.0',
+      id: 30,
+      method: 'tools/call',
+      params: { name: 'spark_app_project_export', arguments: { appId: 'app-v2' } },
+    })
+    expect(repeated.result).toMatchObject({ isError: true })
+  })
+
+  it('validates deterministic runtime failures separately from legacy warnings', async () => {
+    const source = `<!doctype html>
+      <html><body>
+        <iframe src="child.html"></iframe>
+        <script>
+          localStorage.setItem('value', '1')
+          sparkApp.backend.invoke('work', {})
+          sparkApp.missing.run()
+          sparkApp.ipc.invoke('provider:get-api-key', { id: 'profile' })
+        </script>
+      </body></html>`
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: {
+        name: 'spark_app_validate',
+        arguments: { draftHtml: source },
+      },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      valid: boolean
+      readyToPublish: boolean
+      summary: { errors: number; warnings: number }
+      diagnostics: Array<{ severity: string; code: string }>
+    }
+    expect(validation.valid).toBe(false)
+    expect(validation.readyToPublish).toBe(false)
+    expect(validation.summary.errors).toBeGreaterThanOrEqual(2)
+    expect(validation.summary.warnings).toBeGreaterThanOrEqual(2)
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'error', code: 'CSP_UNSUPPORTED_ELEMENT' }),
+        expect.objectContaining({ severity: 'error', code: 'UNKNOWN_SDK_CAPABILITY' }),
+        expect.objectContaining({ severity: 'warning', code: 'LEGACY_RAW_IPC' }),
+        expect.objectContaining({ severity: 'warning', code: 'LEGACY_PROVIDER_SECRET_ACCESS' }),
+      ]),
+    )
+  })
+
+  it('accepts a self-contained themed V1 app and reports its capabilities', async () => {
+    const source = `<!doctype html><html><head><style>
+      body { color: var(--spark-color-text); }
+    </style></head><body><script>
+      async function load() {
+        const item = await sparkApp.data.get('app', 'value')
+        await sparkApp.data.upsert('app', 'value', item?.value || {}, item?.revision)
+      }
+      load().catch(console.error)
+    </script></body></html>`
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 23,
+      method: 'tools/call',
+      params: { name: 'spark_app_validate', arguments: { draftHtml: source } },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      valid: boolean
+      readyToPublish: boolean
+      detectedCapabilities: string[]
+      summary: { errors: number }
+    }
+    expect(validation.valid).toBe(true)
+    expect(validation.readyToPublish).toBe(true)
+    expect(validation.detectedCapabilities).toContain('data')
+    expect(validation.summary.errors).toBe(0)
+    expect(lastRpc).toBeNull()
+  })
+
+  it('does not report SDK errors for examples inside HTML text, comments, or strings', async () => {
+    const source = `<!doctype html><html><head><style>
+      body { color: var(--spark-color-text); }
+    </style></head><body>
+      <p>Do not call sparkApp.missing.run() here.</p>
+      <script>
+        // sparkApp.unknown.call()
+        const example = 'sparkApp.backend.invoke()'
+        sparkApp.platform.ipc.invoke('app:list', {})
+      </script>
+    </body></html>`
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 26,
+      method: 'tools/call',
+      params: { name: 'spark_app_validate', arguments: { draftHtml: source } },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      summary: { errors: number; warnings: number }
+      diagnostics: Array<{ code: string }>
+    }
+    expect(validation.summary.errors).toBe(0)
+    expect(validation.diagnostics.some((item) => item.code === 'LEGACY_RAW_IPC')).toBe(true)
+  })
+
+  it('treats a JavaScript-managed form as a warning instead of a broken element', async () => {
+    const source = `<!doctype html><html><head><style>
+      body { color: var(--spark-color-text); }
+    </style></head><body>
+      <form onsubmit="event.preventDefault(); sparkApp.ui.toast('saved')">
+        <button>Save</button>
+      </form>
+    </body></html>`
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 28,
+      method: 'tools/call',
+      params: { name: 'spark_app_validate', arguments: { draftHtml: source } },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      valid: boolean
+      diagnostics: Array<{ severity: string; code: string }>
+    }
+    expect(validation.valid).toBe(true)
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'warning', code: 'CSP_FORM_SUBMISSION_BLOCKED' }),
+      ]),
+    )
+  })
+
+  it('loads an existing draft for validation and preserves its target identity', async () => {
+    rpcResponseData = {
+      id: 'app-1',
+      surface: 'overlay',
+      draft: {
+        revision: 4,
+        source: '<main style="background:var(--spark-color-bg-container)">ok</main>',
+        manifest: { surface: 'overlay' },
+      },
+    }
+    const response = await callMcp(start(), {
+      jsonrpc: '2.0',
+      id: 24,
+      method: 'tools/call',
+      params: { name: 'spark_app_validate', arguments: { appId: 'app-1' } },
+    })
+    const validation = JSON.parse(toolText(response)) as {
+      target: { appId: string; kind: string }
+      readyToPreview: boolean
+    }
+    expect(lastRpc).toEqual({
+      method: 'subapp.get',
+      params: { appId: 'app-1' },
+    })
+    expect(validation.target).toEqual({ appId: 'app-1', kind: 'draft' })
+    expect(validation.readyToPreview).toBe(true)
   })
 
   it('maps draftHtml to source and leaves omitted permissions for the durable default', async () => {
+    rpcResponseData = {
+      id: 'app-1',
+      draft: { revision: 1, source: '<main>todo</main>', manifest: { surface: 'content' } },
+    }
     const response = await callMcp(start(), {
       jsonrpc: '2.0',
       id: 2,
@@ -113,6 +389,9 @@ describe('spark_app MCP server', () => {
       method: 'subapp.create',
       params: { name: 'Todo', source: '<main>todo</main>' },
     })
+    const resultText = toolText(response)
+    expect(resultText).toContain('validation')
+    expect(resultText).toContain('contractDigest')
   })
 
   it('reads long draft source from a workspace file instead of the tool arguments', async () => {

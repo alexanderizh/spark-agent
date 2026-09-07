@@ -38,6 +38,10 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain('media: {')
     expect(doc).toContain('canvas: {')
     expect(doc).toContain('browser: {')
+    expect(doc).toContain('network: {')
+    expect(doc).toContain('provider: {')
+    expect(doc).toContain('backend: {')
+    expect(doc).toContain('jobs: {')
     expect(doc).toContain('inspectMedia: function')
     expect(doc).toContain('download: function')
     expect(doc).toContain('openDownload: function')
@@ -51,6 +55,19 @@ describe('buildAppRuntimeDocument', () => {
     expect(doc).toContain("call('ipc', 'subscribe'")
     expect(doc).toContain("type === 'host/event'")
     expect(doc).toContain('trusted: cfg.trusted === true')
+  })
+
+  it('V2 package runtime injects a capability-asset base without enabling raw IPC trust', () => {
+    const doc = buildAppRuntimeDocument({
+      source:
+        '<link rel="stylesheet" href="./styles.css"><script type="module" src="./app.js"></script>',
+      theme: 'light',
+      config: { ...baseConfig, trusted: false },
+      assetBaseUrl: 'capability-asset://subapp-package/token-1/frontend/',
+    })
+    expect(doc).toContain('<base href="capability-asset://subapp-package/token-1/frontend/">')
+    expect(doc).toContain('capability-asset:')
+    expect(doc).toContain('"trusted":false')
   })
 
   it('完整文档源码在 head 内注入，不破坏原有结构', () => {

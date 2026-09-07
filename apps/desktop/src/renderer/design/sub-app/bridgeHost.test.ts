@@ -381,6 +381,119 @@ describe('SubAppBridgeHost 可信内部 IPC', () => {
   })
 })
 
+describe('SubAppBridgeHost V2 managed capabilities', () => {
+  it('routes network, backend and jobs only through typed host callbacks', async () => {
+    const managedRequest = vi.fn().mockResolvedValue({ status: 200 })
+    const backendRequest = vi.fn().mockResolvedValue({ output: { ok: true } })
+    const jobsRequest = vi.fn().mockResolvedValue({ id: 'job-1' })
+    const local = createHarness(
+      ['network', 'backend', 'jobs'],
+      { managedRequest, backendRequest, jobsRequest },
+      false,
+    )
+    try {
+      local.send(
+        requestMessage({
+          capability: 'network',
+          operation: 'request',
+          payload: { slot: 'api', path: '/items' },
+          requestId: 'network-1',
+        }),
+      )
+      await local.flush()
+      expect(managedRequest).toHaveBeenCalledWith({ slot: 'api', path: '/items' })
+
+      local.send(
+        requestMessage({
+          capability: 'backend',
+          operation: 'invoke',
+          payload: { action: 'health' },
+          requestId: 'backend-1',
+        }),
+      )
+      await local.flush()
+      expect(backendRequest).toHaveBeenCalledWith('invoke', { action: 'health' })
+
+      local.send(
+        requestMessage({
+          capability: 'jobs',
+          operation: 'create',
+          payload: { type: 'sync' },
+          requestId: 'jobs-1',
+        }),
+      )
+      await local.flush()
+      expect(jobsRequest).toHaveBeenCalledWith('create', { type: 'sync' })
+    } finally {
+      local.host.detach(window)
+    }
+  })
+
+  it('subscribes and cleans up backend and job events', async () => {
+    let backendListener: ((payload: unknown) => void) | undefined
+    let jobListener: ((payload: unknown) => void) | undefined
+    const stopBackend = vi.fn()
+    const stopJob = vi.fn()
+    const local = createHarness(
+      ['backend', 'jobs'],
+      {
+        subscribeBackend: (_event, listener) => {
+          backendListener = listener
+          return stopBackend
+        },
+        subscribeJob: (_jobId, listener) => {
+          jobListener = listener
+          return stopJob
+        },
+      },
+      false,
+    )
+    try {
+      local.send(
+        requestMessage({
+          capability: 'backend',
+          operation: 'subscribe',
+          payload: { event: 'changed' },
+          requestId: 'sub-backend',
+        }),
+      )
+      await local.flush()
+      const backendSubscription = (
+        outboundAt(local.frame).response?.data as { subscriptionId: string }
+      ).subscriptionId
+      backendListener?.({ value: 1 })
+      expect(outboundAt(local.frame, 1)).toMatchObject({ type: 'host/event' })
+
+      local.send(
+        requestMessage({
+          capability: 'jobs',
+          operation: 'subscribe',
+          payload: { jobId: '11111111-1111-4111-8111-111111111111' },
+          requestId: 'sub-job',
+        }),
+      )
+      await local.flush()
+      jobListener?.({ progress: 0.5 })
+      expect(outboundAt(local.frame, 3)).toMatchObject({ type: 'host/event' })
+
+      local.send(
+        requestMessage({
+          capability: 'backend',
+          operation: 'unsubscribe',
+          payload: { subscriptionId: backendSubscription },
+          requestId: 'unsub-backend',
+        }),
+      )
+      await local.flush()
+      expect(stopBackend).toHaveBeenCalledOnce()
+      local.host.detach(window)
+      expect(stopJob).toHaveBeenCalledOnce()
+    } finally {
+      local.host.detach(window)
+    }
+  })
+})
+
 describe('SubAppBridgeHost 生命周期', () => {
   it('app/ready 后标记就绪并立即推送主题', async () => {
     harness.send({ type: 'app/ready', instanceId, protocolVersion: SUB_APP_PROTOCOL_VERSION })

@@ -397,7 +397,7 @@ import type { CheckpointRestoreResult, CheckpointSnapshot, CommandListItem } fro
 import { McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
-import { PlatformBridgeService } from './platform-bridge.service.js'
+import { PlatformBridgeService, type PlatformBridgeDeps } from './platform-bridge.service.js'
 import { SESSION_SCHEDULE_AGENT_SYSTEM_PROMPT } from './session-schedule-agent-tools.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
 import {
@@ -922,6 +922,7 @@ export class SessionService {
   /** sessionId:turnId → Host 与所有成员共享的文件变更路径键，避免同轮重复归因。 */
   private readonly fileChangeKeysByTurn = new Map<string, Set<string>>()
   private readonly platformBridge: PlatformBridgeService
+  private subAppRuntimeBridge: PlatformBridgeDeps['subAppRuntime']
   private pluginManager: PluginManager | null = null
   private customToolService: CustomToolService | null = null
   private customToolRuntimeUnsubscribe: (() => void) | null = null
@@ -6045,6 +6046,33 @@ export class SessionService {
 
   getPlatformBridge(): PlatformBridgeService {
     return this.platformBridge
+  }
+
+  getSubAppRuntimeBridge(): NonNullable<PlatformBridgeDeps['subAppRuntime']> {
+    const invoke = (
+      method: keyof NonNullable<PlatformBridgeDeps['subAppRuntime']>,
+      params: Record<string, unknown>,
+    ) => {
+      const runtime = this.subAppRuntimeBridge
+      if (runtime == null) throw new Error('Sub-app desktop runtime is not initialized')
+      return runtime[method](params)
+    }
+    return {
+      serviceStatus: (params) => invoke('serviceStatus', params),
+      serviceLogs: (params) => invoke('serviceLogs', params),
+      serviceRestart: (params) => invoke('serviceRestart', params),
+      jobCreate: (params) => invoke('jobCreate', params),
+      jobGet: (params) => invoke('jobGet', params),
+      jobList: (params) => invoke('jobList', params),
+      jobCancel: (params) => invoke('jobCancel', params),
+      diagnose: (params) => invoke('diagnose', params),
+      releaseChanged: (params) => invoke('releaseChanged', params),
+      preflightProject: (params) => invoke('preflightProject', params),
+    }
+  }
+
+  setSubAppRuntimeBridge(bridge: PlatformBridgeDeps['subAppRuntime']): void {
+    this.subAppRuntimeBridge = bridge
   }
 
   getPluginManager(): PluginManager | null {

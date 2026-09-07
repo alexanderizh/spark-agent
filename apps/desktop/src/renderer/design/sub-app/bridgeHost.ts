@@ -193,6 +193,21 @@ export interface SubAppBridgeHostOptions {
   previewDownloadFile?: (
     request: BrowserSubAppPreviewDownloadRequest,
   ) => Promise<BrowserSubAppPreviewDownloadResponse>
+  /** V2 受管网络 / Provider 请求；appId 由宿主覆盖。 */
+  managedRequest?: (input: Record<string, unknown>) => Promise<unknown>
+  /** V2 受管后台 RPC 与状态。 */
+  backendRequest?: (
+    operation: 'invoke' | 'status',
+    input: Record<string, unknown>,
+  ) => Promise<unknown>
+  subscribeBackend?: (event: string, callback: (payload: unknown) => void) => () => void
+  /** V2 持久任务 CRUD。 */
+  jobsRequest?: (
+    operation: 'create' | 'get' | 'list' | 'cancel',
+    input: Record<string, unknown>,
+  ) => Promise<unknown>
+  subscribeJob?: (jobId: string, callback: (payload: unknown) => void) => () => void
+  reportDiagnostic?: (diagnostic: { kind: string; message: string; source?: string }) => void
 }
 
 export interface SubAppBridgeAuditEntry {
@@ -299,6 +314,11 @@ export class SubAppBridgeHost {
       }
       this.ready = true
       this.pushTheme()
+      return
+    }
+
+    if (message.type === 'app/diagnostic') {
+      this.options.reportDiagnostic?.(message.diagnostic)
       return
     }
 
@@ -638,6 +658,55 @@ export class SubAppBridgeHost {
       }
       throw new BridgeRouteError('UNSUPPORTED_OPERATION')
     }
+    if (request.capability === 'network' || request.capability === 'provider') {
+      if (request.operation !== 'request') throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      const managedRequest = this.options.managedRequest
+      if (managedRequest == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      return managedRequest(asRecord(request.payload))
+    }
+    if (request.capability === 'backend') {
+      if (request.operation === 'subscribe') {
+        const subscribeBackend = this.options.subscribeBackend
+        if (subscribeBackend == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const event = readStringMax(asRecord(request.payload).event, 'event', 120)
+        const subscriptionId = `${this.options.runtimeInfo.instanceId}-backend-${++this.subscriptionSequence}`
+        this.subscriptions.set(
+          subscriptionId,
+          subscribeBackend(event, (payload) => this.pushEvent(subscriptionId, event, payload)),
+        )
+        return { subscriptionId }
+      }
+      if (request.operation === 'unsubscribe') return this.unsubscribeLocal(request.payload)
+      if (request.operation !== 'invoke' && request.operation !== 'status') {
+        throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      }
+      const backendRequest = this.options.backendRequest
+      if (backendRequest == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      return backendRequest(request.operation, asRecord(request.payload))
+    }
+    if (request.capability === 'jobs') {
+      if (request.operation === 'subscribe') {
+        const subscribeJob = this.options.subscribeJob
+        if (subscribeJob == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+        const jobId = readStringMax(asRecord(request.payload).jobId, 'jobId', 80)
+        const subscriptionId = `${this.options.runtimeInfo.instanceId}-job-${++this.subscriptionSequence}`
+        this.subscriptions.set(
+          subscriptionId,
+          subscribeJob(jobId, (payload) => this.pushEvent(subscriptionId, jobId, payload)),
+        )
+        return { subscriptionId }
+      }
+      if (request.operation === 'unsubscribe') return this.unsubscribeLocal(request.payload)
+      if (!['create', 'get', 'list', 'cancel'].includes(request.operation)) {
+        throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+      }
+      const jobsRequest = this.options.jobsRequest
+      if (jobsRequest == null) throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
+      return jobsRequest(
+        request.operation as 'create' | 'get' | 'list' | 'cancel',
+        asRecord(request.payload),
+      )
+    }
     // 已过权限检查但宿主尚未实现的能力域。
     throw new BridgeRouteError('CAPABILITY_NOT_IMPLEMENTED')
   }
@@ -670,6 +739,19 @@ export class SubAppBridgeHost {
       return { unsubscribed: true }
     }
     throw new BridgeRouteError('UNSUPPORTED_OPERATION')
+  }
+
+  private unsubscribeLocal(payloadValue: unknown): { unsubscribed: boolean } {
+    const subscriptionId = readStringMax(
+      asRecord(payloadValue).subscriptionId,
+      'subscriptionId',
+      160,
+    )
+    const unsubscribe = this.subscriptions.get(subscriptionId)
+    if (unsubscribe == null) return { unsubscribed: false }
+    this.subscriptions.delete(subscriptionId)
+    unsubscribe()
+    return { unsubscribed: true }
   }
 
   private respond(instanceId: string, response: SparkAppBridgeResponse): void {

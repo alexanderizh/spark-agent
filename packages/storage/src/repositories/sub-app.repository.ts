@@ -31,6 +31,7 @@ export interface SubAppRow {
   published_release_id: string | null
   created_at: string
   updated_at: string
+  draft_format?: 'v1' | 'v2'
 }
 
 export interface SubAppReleaseRow {
@@ -46,6 +47,7 @@ export interface SubAppReleaseRow {
   description: string
   icon: string | null
   published_at: string
+  format?: 'v1' | 'v2'
 }
 
 export interface SubAppDataRow {
@@ -374,7 +376,9 @@ export class SubAppRepository extends BaseRepository {
     const offset = Math.max(options.offset ?? 0, 0)
     const rows = this.raw
       .prepare(
-        `SELECT * FROM sub_app_releases WHERE app_id = ?
+        `SELECT r.*, CASE WHEN ra.release_id IS NULL THEN 'v1' ELSE 'v2' END AS format
+         FROM sub_app_releases r LEFT JOIN sub_app_release_artifacts ra ON ra.release_id = r.id
+         WHERE r.app_id = ?
          ORDER BY version DESC
          LIMIT ? OFFSET ?`,
       )
@@ -700,7 +704,11 @@ export class SubAppRepository extends BaseRepository {
   /** 导出打包用：读取应用的全部发布版本（含源码），按版本号升序。 */
   listAllReleasesFull(id: string): SubAppRelease[] {
     const rows = this.raw
-      .prepare('SELECT * FROM sub_app_releases WHERE app_id = ? ORDER BY version ASC')
+      .prepare(
+        `SELECT r.*, CASE WHEN ra.release_id IS NULL THEN 'v1' ELSE 'v2' END AS format
+        FROM sub_app_releases r LEFT JOIN sub_app_release_artifacts ra ON ra.release_id = r.id
+        WHERE r.app_id = ? ORDER BY r.version ASC`,
+      )
       .all(id) as SubAppReleaseRow[]
     return rows.map((row) => this.toRelease(row))
   }
@@ -730,16 +738,24 @@ export class SubAppRepository extends BaseRepository {
 
   private getReleaseById(id: string): SubAppReleaseRow | null {
     return (
-      (this.raw.prepare('SELECT * FROM sub_app_releases WHERE id = ?').get(id) as
-        | SubAppReleaseRow
-        | undefined) ?? null
+      (this.raw
+        .prepare(
+          `SELECT r.*, CASE WHEN ra.release_id IS NULL THEN 'v1' ELSE 'v2' END AS format
+        FROM sub_app_releases r LEFT JOIN sub_app_release_artifacts ra ON ra.release_id = r.id
+        WHERE r.id = ?`,
+        )
+        .get(id) as SubAppReleaseRow | undefined) ?? null
     )
   }
 
   private getReleaseRow(appId: string, version: number): SubAppReleaseRow | null {
     return (
       (this.raw
-        .prepare('SELECT * FROM sub_app_releases WHERE app_id = ? AND version = ?')
+        .prepare(
+          `SELECT r.*, CASE WHEN ra.release_id IS NULL THEN 'v1' ELSE 'v2' END AS format
+          FROM sub_app_releases r LEFT JOIN sub_app_release_artifacts ra ON ra.release_id = r.id
+          WHERE r.app_id = ? AND r.version = ?`,
+        )
         .get(appId, version) as SubAppReleaseRow | undefined) ?? null
     )
   }
@@ -762,6 +778,7 @@ export class SubAppRepository extends BaseRepository {
     const published =
       row.published_release_id == null ? null : this.getReleaseById(row.published_release_id)
     return {
+      format: row.draft_format ?? 'v1',
       id: row.id,
       name: row.name,
       description: row.description,
@@ -779,6 +796,7 @@ export class SubAppRepository extends BaseRepository {
   private toDetails(row: SubAppRow, release: SubAppReleaseRow | null): SubAppDetails {
     const manifest = this.toManifest(row)
     const draft: SubAppDraft = {
+      format: row.draft_format ?? 'v1',
       revision: row.draft_revision,
       source: row.draft_source,
       config: this.parseJson<Record<string, unknown>>(row.draft_config_json, '草稿配置'),
@@ -805,6 +823,7 @@ export class SubAppRepository extends BaseRepository {
 
   private toRelease(row: SubAppReleaseRow): SubAppRelease {
     return {
+      format: row.format ?? 'v1',
       id: row.id,
       appId: row.app_id,
       version: row.version,

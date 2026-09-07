@@ -61,7 +61,11 @@ import type { UpdateWorkflowParams } from '@spark/storage'
 import type { AgentRepository } from '@spark/storage'
 import type { UpdateAgentParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
-import type { SubAppRepository } from '@spark/storage'
+import type {
+  SubAppPackageService,
+  SubAppPlatformRepository,
+  SubAppRepository,
+} from '@spark/storage'
 import type { TeamDefinitionRepository } from '@spark/storage'
 import {
   SubAppConflictError,
@@ -91,6 +95,7 @@ import {
   normalizeSparkReasoningEffort,
   type SparkReasoningEffort,
 } from '../sdk/reasoning-effort.js'
+import { handleSubAppV2BridgeMethod } from './platform-bridge-sub-apps-v2.js'
 
 const log = createLogger('platform-bridge')
 
@@ -409,6 +414,20 @@ export interface PlatformBridgeDeps {
   settingsRepo: SettingsRepository
   /** 自定义子应用仓库（spark_app MCP 桥的 subapp.* RPC 直访）。 */
   subAppRepo: SubAppRepository
+  subAppPackageService: SubAppPackageService
+  subAppPlatformRepo: SubAppPlatformRepository
+  subAppRuntime?: {
+    serviceStatus(params: Record<string, unknown>): unknown | Promise<unknown>
+    serviceLogs(params: Record<string, unknown>): unknown | Promise<unknown>
+    serviceRestart(params: Record<string, unknown>): unknown | Promise<unknown>
+    jobCreate(params: Record<string, unknown>): unknown | Promise<unknown>
+    jobGet(params: Record<string, unknown>): unknown | Promise<unknown>
+    jobList(params: Record<string, unknown>): unknown | Promise<unknown>
+    jobCancel(params: Record<string, unknown>): unknown | Promise<unknown>
+    diagnose(params: Record<string, unknown>): unknown | Promise<unknown>
+    releaseChanged(params: Record<string, unknown>): unknown | Promise<unknown>
+    preflightProject(params: Record<string, unknown>): unknown | Promise<unknown>
+  }
   pluginManager: PluginManager
   githubConnectorService: GitHubConnectorService
   sessionScheduleTools: SessionScheduleAgentTools
@@ -634,6 +653,8 @@ export class PlatformBridgeService {
 
   private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
     const d = this.deps!
+    const subAppV2 = await handleSubAppV2BridgeMethod(method, d, params)
+    if (subAppV2.handled) return subAppV2.value
     switch (method) {
       // ── Skills ──
       case 'skills.list':
@@ -980,7 +1001,6 @@ export class PlatformBridgeService {
         return this.subAppDataSet(d, params)
       case 'subapp.data_delete':
         return this.subAppDataDelete(d, params)
-
       default:
         throw new Error(`Unknown method: ${method}`)
     }
@@ -2584,25 +2604,33 @@ export class PlatformBridgeService {
     }
   }
 
-  private subAppDeleteRelease(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+  private async subAppDeleteRelease(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const appId = requireText(params, 'appId', 80)
     const releaseVersion = optionalSubAppInt(params.releaseVersion, 'releaseVersion', 1)
     if (releaseVersion == null) throw new Error('Missing parameter: releaseVersion')
     try {
       const deleted = d.subAppRepo.deleteRelease(appId, releaseVersion)
       if (!deleted) throw new SubAppReleaseNotFoundError()
+      await d.subAppPackageService.cleanupOrphanedArtifacts()
       return { deleted: true, appId, releaseVersion }
     } catch (error) {
       throw subAppBridgeError(error)
     }
   }
 
-  private subAppRollback(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+  private async subAppRollback(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const appId = requireText(params, 'appId', 80)
     const releaseVersion = optionalSubAppInt(params.releaseVersion, 'releaseVersion', 1)
     if (releaseVersion == null) throw new Error('Missing parameter: releaseVersion')
     const expectedDraftRevision = requireSubAppRevision(params, 'expectedDraftRevision')
     try {
+      if (d.subAppPlatformRepo.getPackageByVersion(appId, releaseVersion) != null) {
+        await d.subAppPackageService.rollback(appId, releaseVersion, expectedDraftRevision)
+        const details = d.subAppRepo.get(appId)
+        if (details == null) throw new SubAppNotFoundError()
+        d.onConfigChanged?.('sub-app', 'update', appId)
+        return details
+      }
       const details = d.subAppRepo.rollbackDraft(appId, releaseVersion, expectedDraftRevision)
       if (details == null) throw new SubAppNotFoundError()
       d.onConfigChanged?.('sub-app', 'update', appId)
@@ -2642,11 +2670,14 @@ export class PlatformBridgeService {
    * 桥接层做幂等收口：应用已不存在时返回 deleted=false 的空操作结果，
    * 不重复报错——stdio 侧的工具描述已要求 agent 先向用户确认。
    */
-  private subAppDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+  private async subAppDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const appId = requireText(params, 'appId', 80)
     try {
       const deleted = d.subAppRepo.delete(appId)
-      if (deleted) d.onConfigChanged?.('sub-app', 'delete', appId)
+      if (deleted) {
+        await d.subAppPackageService.cleanupDeletedApp(appId).catch(() => {})
+        d.onConfigChanged?.('sub-app', 'delete', appId)
+      }
       return deleted
         ? { deleted: true, appId }
         : { deleted: false, appId, note: '应用不存在（可能已被删除），本次为幂等空操作。' }

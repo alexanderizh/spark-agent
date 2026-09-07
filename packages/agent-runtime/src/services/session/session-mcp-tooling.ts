@@ -15,6 +15,8 @@ import {
   McpServerRepository,
   ProviderProfileRepository,
   SubAppRepository,
+  SubAppPackageService,
+  SubAppPlatformRepository,
   ScheduledTaskRepository,
   SessionHistoryRepository,
   SettingsRepository,
@@ -25,7 +27,7 @@ import type { SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import type { SDKMcpServerConfig } from '../../sdk/index.js'
 import type { McpService, McpOAuthTokenProvider } from '../mcp-server.service.js'
-import type { PlatformBridgeService } from '../platform-bridge.service.js'
+import type { PlatformBridgeDeps, PlatformBridgeService } from '../platform-bridge.service.js'
 import type { PluginManager } from '../plugins/plugin-manager.service.js'
 import type { CustomToolService } from '../custom-tools/custom-tool.service.js'
 import type { ToolPackageService } from '../tool-packages/tool-package.service.js'
@@ -82,6 +84,7 @@ export interface SessionMcpToolingHost {
   getPlatformConfigChangedHandler(): PlatformConfigChangedHandler | undefined
   /** Platform Bridge deps 需回调会话服务公共方法（引用/运行时切换/记忆桥等）。 */
   getSessionService(): SessionService
+  getSubAppRuntimeBridge(): PlatformBridgeDeps['subAppRuntime']
 }
 
 export class SessionMcpTooling {
@@ -180,6 +183,7 @@ export class SessionMcpTooling {
       /* non-critical */
     }
 
+    const subAppRuntime = this.host.getSubAppRuntimeBridge()
     const deps = {
       skillService: new SkillService(skillRepo),
       skillLoader,
@@ -198,6 +202,9 @@ export class SessionMcpTooling {
       settingsRepo,
       // spark_app MCP 桥（subapp.* RPC）直访子应用仓库
       subAppRepo: new SubAppRepository(this.db),
+      subAppPackageService: new SubAppPackageService(this.db),
+      subAppPlatformRepo: new SubAppPlatformRepository(this.db),
+      ...(subAppRuntime != null ? { subAppRuntime } : {}),
       pluginManager,
       sessionScheduleTools: new SessionScheduleAgentTools(
         new ScheduledTaskService(

@@ -61,6 +61,7 @@ export function UnifiedSubAppPanel({ appId }: { appId: string }): React.ReactEle
       source={runtime.source}
       mode={state.details.publishedRelease != null ? 'published' : 'draft'}
       release={state.details.publishedRelease}
+      packageFormat={runtime.format ?? 'v1'}
       className="subapp-unified-runner"
     />
   )

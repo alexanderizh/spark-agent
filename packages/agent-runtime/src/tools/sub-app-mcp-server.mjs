@@ -12,6 +12,13 @@
  * 由独立 Node 进程执行，不能依赖 app.asar 内的模块）。
  *
  * 工具（SDK 命名空间 mcp__spark_app__）：
+ *   spark_app_developer_guide / spark_app_validate / spark_app_scaffold /
+ *   spark_app_project_status / spark_app_project_read_file /
+ *   spark_app_project_write_file / spark_app_project_publish /
+ *   spark_app_connections_list / spark_app_connections_bind / spark_app_connections_unbind /
+ *   spark_app_service_status / spark_app_service_logs / spark_app_service_restart /
+ *   spark_app_jobs_create / spark_app_jobs_get / spark_app_jobs_list / spark_app_jobs_cancel /
+ *   spark_app_diagnose /
  *   spark_app_create / spark_app_list / spark_app_get / spark_app_update_draft /
  *   spark_app_publish / spark_app_list_releases / spark_app_delete_release /
  *   spark_app_rollback /
@@ -26,11 +33,19 @@
  */
 import { request as httpRequest } from 'node:http'
 import readline from 'node:readline'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import {
   compactSubAppDetails,
   exportWorkspaceSubAppSource,
   readWorkspaceSubAppSource,
 } from './sub-app-source-store.mjs'
+import {
+  querySubAppDeveloperGuide,
+  SUB_APP_GUIDE_TOPICS,
+  SUB_APP_SOURCE_HARD_LIMIT,
+} from './sub-app-developer-contract.mjs'
+import { validateSubAppSource } from './sub-app-validator.mjs'
 
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
@@ -191,43 +206,326 @@ const SURFACE_DESCRIPTION =
 const PERMISSIONS_DESCRIPTION =
   '兼容旧版本的 manifest 字段（能力名，如 runtime/theme/ui/data/browser）；当前 SparkWork 子应用按平台核心内部应用运行，宿主不会用它裁剪平台 IPC、MCP、Plugin、Skill、Provider 或模型能力'
 
-const THEME_INTEGRATION_GUIDE =
-  '界面必须适配 SparkWork 宿主主题：使用 sparkApp.theme.get()/onChange 或 --spark-* CSS 变量（如 --spark-color-bg-container、--spark-color-text、--spark-color-primary），不要把深浅色背景和文字颜色硬编码为固定值。除非用户明确要求独立背景或特殊视觉效果，默认不要给应用根容器、页面或主布局设置 background/background-color/background-image，让 SparkWork 主应用自带的背景自然透出；确需自定义背景时也必须使用宿主主题 token。例外：surface=overlay 的悬浮窗应用，其悬浮弹窗容器背景是透明的，必须给应用根容器（弹窗容器本体）显式设置宿主主题背景色（如 background: var(--spark-color-bg-container)），否则界面会呈透明悬浮、文字与背后内容叠透。运行时会自动把宿主 token 同步为这些 CSS 变量。'
-
-const DATA_PERSISTENCE_GUIDE = [
-  '数据持久化契约：凡是用户创建、编辑、删除后还应在重新打开或重启 SparkWork 后保留的数据，必须使用 sparkApp.data.get/list/upsert/delete 写入应用专属持久化库。',
-  'sparkApp.data 仍然是应用专属隔离数据的便捷 API；也可以按需通过 sparkApp.ipc 调用平台的其他数据与文件 IPC。',
-  '推荐更新模式：先 await sparkApp.data.get("app", "todos")，再把返回的 revision 传给 sparkApp.data.upsert("app", "todos", value, revision)；首次创建键时不传 revision。',
-  '删除必须先读取当前 revision，再调用 sparkApp.data.delete(namespace, key, revision)。',
-  '不要把 localStorage、sessionStorage、IndexedDB、内存数组或 URL 参数作为唯一数据源；它们不能替代 SparkWork 应用数据持久化。',
-].join(' ')
-
-const BROWSER_INTEGRATION_GUIDE = [
-  '浏览器能力：源码使用 sparkApp.browser.open/openUrl/inspectMedia/download 时，直接调用即可，无需在 manifest permissions 中逐项声明。open(url, options) 打开或复用 SparkWork 内置浏览器并返回 windowId；inspectMedia(windowId) 读取当前页面 video/source 节点与已记录的媒体请求；download(windowId, url, filename) 只能下载 inspectMedia 返回的 http(s) 媒体地址，并沿用该浏览器页面的登录会话。媒体下载推荐按 open → 等待页面加载 → inspectMedia → 选择候选 → download 顺序调用；更底层的浏览器能力可按现有 IPC channel 通过 sparkApp.ipc.invoke/on 直接组合。',
-].join(' ')
-
-const PLATFORM_IPC_GUIDE = [
-  '子应用是 SparkWork 的一等平台应用，可以直接使用完整原始 IPC 面：sparkApp.ipc.invoke(channel, request) 调用任意已注册 IPC，sparkApp.ipc.on(streamChannel, listener) 订阅任意 stream。',
-  '开发 AI 应用时可并行调用 provider:list、provider:get-api-key、provider:export、model:list、agent:list/get、skill:list/detail/execute、mcp:list/server-tools、plugin 与 plugin-runtime channel，自行选择 Provider/Model 并组合 Agent、Skill、Plugin、MCP。',
-  '会话示例：先调用 session:create({ providerProfileId, modelId, agentId })，再订阅 stream:session:agent-event，最后调用 session:submit-turn({ sessionId, message, providerProfileId, modelId, agentId, skillIds })；事件 payload 自带 sessionId，应用自行过滤和渲染。',
-  '凭据和原始 Provider 配置是平台内部应用可读取的能力，provider:get-api-key 的请求字段是 id；不要把密钥写入日志、源码或持久化应用数据。',
-].join(' ')
-
 const DESIGN_PREVIEW_WORKFLOW_GUIDE = [
   '开发流程（设计先行）：创建新应用或大幅改版时，必须先产出界面设计预览给用户确认（用会话内可用的预览手段，如 render_html 渲染静态界面效果图或低仿真原型），根据用户反馈不断迭代调整设计；用户明确确认界面方案后，才开发完整实现写入草稿。',
   '用户确认设计之前不要直接开发落地，更不要未经确认就发布。',
 ].join(' ')
 
-const LIBRARY_DEV_GUIDE = [
-  '外部库与框架开发指引：应用沙箱默认放行外部网络与 unsafe-eval，可直接使用 React/Vue 等框架和组件库开发。',
-  '推荐引入方式：UMD（<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script> + react-dom）或 ESM（<script type="module"> + import ... from "https://esm.sh/react@18"）。',
-  '可使用 babel-standalone（<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script> + <script type="text/babel">）直接写 JSX；组件库优先选有 UMD/ESM 构建的（如 antd、echarts）。',
-  '应用内可直接 fetch/XHR 任意 https/http 接口（无需经宿主），但需要持久化的数据仍必须走 sparkApp.data。',
-  '离线或 CDN 不可用时外部依赖会加载失败，重要依赖可考虑内联；源码无长度限制（5 MB 硬上限内）。',
-].join(' ')
+function runtimeToolDefinitions() {
+  const appOnly = { type: 'object', required: ['appId'], properties: { appId: { type: 'string' } } }
+  return [
+    {
+      name: 'spark_app_service_status',
+      description: '查询子应用受管后台服务状态、当前 release、启动时间、崩溃与重启次数。',
+      inputSchema: appOnly,
+    },
+    {
+      name: 'spark_app_service_logs',
+      description: '查询子应用后台服务的有界内存日志；日志不包含请求 payload 或凭据。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 500 },
+        },
+      },
+    },
+    {
+      name: 'spark_app_service_restart',
+      description: '手动停止并重启已发布 V2 子应用的受管后台服务。',
+      inputSchema: appOnly,
+    },
+    {
+      name: 'spark_app_jobs_create',
+      description: '创建并异步启动一个固定到当前 release 的持久子应用任务。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'type'],
+        properties: { appId: { type: 'string' }, type: { type: 'string' }, input: {} },
+      },
+    },
+    {
+      name: 'spark_app_jobs_get',
+      description: '查询持久任务的状态、进度、checkpoint、结果或错误。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'jobId'],
+        properties: { appId: { type: 'string' }, jobId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_jobs_list',
+      description: '分页列出子应用持久任务。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+          status: {
+            type: 'string',
+            enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'],
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 100 },
+          offset: { type: 'integer', minimum: 0 },
+        },
+      },
+    },
+    {
+      name: 'spark_app_jobs_cancel',
+      description: '请求取消一个排队中或运行中的持久任务。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'jobId'],
+        properties: { appId: { type: 'string' }, jobId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_diagnose',
+      description:
+        '联合诊断 V2 项目/发布制品、后台服务和可执行状态，返回 correlationId 与结构化问题。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+          mode: { type: 'string', enum: ['draft', 'published'], default: 'draft' },
+          includeService: { type: 'boolean', default: true },
+        },
+      },
+    },
+  ]
+}
 
 function toolDefinitions() {
   return [
+    // ── 开发契约与校验 ──
+    {
+      name: 'spark_app_developer_guide',
+      description:
+        '按需查询当前 SparkWork 子应用运行时的权威开发契约。无参数只返回主题目录；复杂应用在编码前按 topic 或精确 symbol 查询，不能根据规划文档猜测未实现 API。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          topic: {
+            type: 'string',
+            enum: Object.keys(SUB_APP_GUIDE_TOPICS),
+            description: '按能力主题查询。',
+          },
+          query: { type: 'string', maxLength: 160, description: '按自然语言关键词搜索契约。' },
+          symbol: {
+            type: 'string',
+            maxLength: 160,
+            description: '精确 SDK 符号，例如 sparkApp.data.upsert。',
+          },
+          surface: {
+            type: 'string',
+            enum: ['content', 'panel', 'overlay', 'global-window', 'desktop-pet'],
+            description: '查询某个展示面的布局、背景和生命周期。',
+          },
+          includeExamples: { type: 'boolean', default: true, description: '是否返回最小示例。' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_validate',
+      description: [
+        '静态校验 V1 单 HTML 源码或已保存的子应用草稿/发布版本，返回 error、warning、suggestion、检测到的能力和契约 digest。',
+        'error 是可确定的运行边界问题并阻断 readyToPreview/readyToPublish；warning 和 suggestion 不冒充确定缺陷。',
+        'appId、draftHtml、draftFilePath 三种来源只能选择一种；appId 可配 releaseVersion 校验历史版本。',
+      ].join(' '),
+      inputSchema: {
+        type: 'object',
+        properties: {
+          appId: { type: 'string', description: '已保存子应用 ID；默认校验当前草稿。' },
+          releaseVersion: {
+            type: 'integer',
+            minimum: 1,
+            description: '配合 appId 校验历史发布版本。',
+          },
+          draftHtml: {
+            type: 'string',
+            maxLength: SUB_APP_SOURCE_HARD_LIMIT,
+            description: '要校验的完整 V1 HTML 源码。',
+          },
+          draftFilePath: {
+            type: 'string',
+            description: '工作区内的 .html/.htm 文件路径；与 appId、draftHtml 互斥。',
+          },
+          surface: {
+            type: 'string',
+            enum: ['content', 'panel', 'overlay', 'global-window', 'desktop-pet'],
+            description: '直接校验源码时的展示面，默认 content。',
+          },
+        },
+      },
+    },
+    {
+      name: 'spark_app_scaffold',
+      description:
+        '创建 V2 受管多文件子应用骨架。frontend 仅生成前端；fullstack 同时生成受管 Node 后台服务。不会自动发布。',
+      inputSchema: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 120 },
+          description: { type: 'string', maxLength: 400 },
+          icon: { type: 'string', maxLength: 240 },
+          surface: {
+            type: 'string',
+            enum: ['content', 'panel', 'overlay', 'global-window', 'desktop-pet'],
+          },
+          template: { type: 'string', enum: ['frontend', 'fullstack'], default: 'frontend' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_status',
+      description: '读取 V2 受管项目的文件列表、manifest、草稿 revision 和静态校验结果。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: {
+          appId: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_read_file',
+      description: '读取 V2 受管项目中的一个文件。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'path'],
+        properties: {
+          appId: { type: 'string' },
+          path: { type: 'string' },
+          encoding: { type: 'string', enum: ['utf8', 'base64'], default: 'utf8' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_write_file',
+      description:
+        '以 CAS 方式写入 V2 项目单文件；每次写入生成新的不可变草稿 revision，并返回全包校验。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'expectedRevision', 'path', 'content'],
+        properties: {
+          appId: { type: 'string' },
+          expectedRevision: { type: 'integer', minimum: 1 },
+          path: { type: 'string' },
+          content: { type: 'string' },
+          encoding: { type: 'string', enum: ['utf8', 'base64'], default: 'utf8' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_delete_file',
+      description: '以 CAS 方式删除 V2 项目文件；不允许删除 spark-app.json。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'expectedRevision', 'path'],
+        properties: {
+          appId: { type: 'string' },
+          expectedRevision: { type: 'integer', minimum: 1 },
+          path: { type: 'string' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_publish',
+      description:
+        '校验并发布 V2 项目为内容寻址的不可变制品，候选 service 健康后才切换前端、service、manifest 和契约。每次 V2 发布后都保持禁用，需用户查看 OS effects 后显式重新启用。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'expectedRevision'],
+        properties: {
+          appId: { type: 'string' },
+          expectedRevision: { type: 'integer', minimum: 1 },
+        },
+      },
+    },
+    {
+      name: 'spark_app_project_export',
+      description:
+        '把 V2 草稿导出为工作区内 .spark-agent/sub-app-projects/ 下的多文件项目，同 revision 内容不一致时拒绝覆盖。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: { appId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_project_import',
+      description:
+        '从当前工作区目录导入一个完整 V2 项目为新子应用草稿；先校验 spark-app.json、路径、体积与入口。',
+      inputSchema: {
+        type: 'object',
+        required: ['projectDir'],
+        properties: { projectDir: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_migration_report',
+      description:
+        '扫描 V1 子应用对 raw IPC、Provider 明文密钥、相对资源和浏览器存储的依赖，评估迁移 V2 前需要处理的项目。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: { appId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_migrate_v1',
+      description:
+        '把当前 V1 单 HTML 草稿显式转换为同 appId 的 V2 多文件草稿；不自动发布，原 V1 历史 release 保留。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'expectedRevision'],
+        properties: {
+          appId: { type: 'string' },
+          expectedRevision: { type: 'integer', minimum: 1 },
+        },
+      },
+    },
+    {
+      name: 'spark_app_connections_list',
+      description: '列出 V2 子应用的连接槽绑定（不返回密钥）。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId'],
+        properties: { appId: { type: 'string' } },
+      },
+    },
+    {
+      name: 'spark_app_connections_bind',
+      description:
+        '把 manifest 声明的连接槽绑定到已有 API Connection 或 Provider；授权 origin 不能超出发布包声明。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'slot', 'bindingKind', 'bindingId'],
+        properties: {
+          appId: { type: 'string' },
+          slot: { type: 'string' },
+          bindingKind: { type: 'string', enum: ['api-connection', 'provider-profile'] },
+          bindingId: { type: 'string' },
+          grantedOrigins: { type: 'array', items: { type: 'string' } },
+          allowPrivateNetwork: { type: 'boolean' },
+        },
+      },
+    },
+    {
+      name: 'spark_app_connections_unbind',
+      description: '解除子应用连接槽绑定，不删除 Provider 或 API Connection 本身。',
+      inputSchema: {
+        type: 'object',
+        required: ['appId', 'slot'],
+        properties: { appId: { type: 'string' }, slot: { type: 'string' } },
+      },
+    },
+    ...runtimeToolDefinitions(),
     // ── 应用生命周期 ──
     {
       name: 'spark_app_create',
@@ -236,11 +534,7 @@ function toolDefinitions() {
         '何时调用：仅当用户明确要求平台内置子应用时——用户明确提到「子应用」「内置应用」「SparkWork 应用」「桌面宠物」，或要求应用出现在平台应用入口、悬浮窗等宿主界面中。',
         '何时不要调用：用户要求开发一个应用/小工具/网页/服务端但没有说明要内置到平台时，默认是外部项目开发——直接在当前工作目录创建普通项目文件，不要调用本工具。拿不准时先问用户「要平台内置子应用，还是当前目录的外部项目」，不要默认创建子应用。',
         DESIGN_PREVIEW_WORKFLOW_GUIDE,
-        THEME_INTEGRATION_GUIDE,
-        DATA_PERSISTENCE_GUIDE,
-        BROWSER_INTEGRATION_GUIDE,
-        PLATFORM_IPC_GUIDE,
-        LIBRARY_DEV_GUIDE,
+        '复杂应用先调用 spark_app_developer_guide 查询所需 SDK；写入前调用 spark_app_validate。创建结果会附带静态校验摘要，但不会自动发布。',
         '源码较长时先写入工作区 HTML 文件并传 draftFilePath，避免把完整源码作为工具参数反复带入上下文。draftHtml 与 draftFilePath 二选一。',
         '返回紧凑详情，其中的 draft.revision 是后续修改草稿要用的 CAS 基线。',
       ].join(' '),
@@ -252,6 +546,7 @@ function toolDefinitions() {
           description: { type: 'string', maxLength: 400, description: '应用描述（可选）' },
           draftHtml: {
             type: 'string',
+            maxLength: SUB_APP_SOURCE_HARD_LIMIT,
             description:
               '初始草稿源码：完整的自包含 HTML 文档（内联 CSS/JS，或经 CDN 引入外部库；不引外部本地文件）。可选，之后可用 spark_app_update_draft 替换。',
           },
@@ -344,11 +639,7 @@ function toolDefinitions() {
       description: [
         '修改子应用草稿。可更新源码（draftHtml 或 draftFilePath）、名称、描述、权限、展示面、图标、入口中的任意字段。',
         '涉及界面大改版时同样遵循设计先行：先出界面设计预览给用户确认，再写入完整实现。',
-        THEME_INTEGRATION_GUIDE,
-        DATA_PERSISTENCE_GUIDE,
-        BROWSER_INTEGRATION_GUIDE,
-        PLATFORM_IPC_GUIDE,
-        LIBRARY_DEV_GUIDE,
+        '复杂应用先调用 spark_app_developer_guide；写入前调用 spark_app_validate。更新结果会附带静态校验摘要，但不会自动发布。',
         'CAS 语义：必须传 spark_app_get 拿到的当前 expectedRevision；若期间草稿已被其他操作更新会返回冲突（SUBAPP_CONFLICT），此时应重新 get 拿新 revision 再重试，不要盲目覆盖。',
         '源码是整篇替换语义；长源码优先传工作区 draftFilePath，避免完整 HTML 常驻工具调用历史。draftHtml 与 draftFilePath 二选一。成功后 revision +1。',
       ].join(' '),
@@ -364,6 +655,7 @@ function toolDefinitions() {
           },
           draftHtml: {
             type: 'string',
+            maxLength: SUB_APP_SOURCE_HARD_LIMIT,
             description: '新的完整草稿源码（自包含 HTML 文档，可经 CDN 引入外部库）',
           },
           draftFilePath: {
@@ -467,7 +759,8 @@ function toolDefinitions() {
     {
       name: 'spark_app_set_enabled',
       description: [
-        '启用/禁用子应用。只有已发布（published）的应用才能启用；禁用后应用不再出现在应用入口但数据与版本都保留。',
+        '启用/禁用子应用。禁用后应用不再出现在应用入口但数据与版本都保留。',
+        'V2 应用包含 service 或 OS effects 时，启用前必须向用户明确展示其以当前用户权限运行且非安全沙箱；只有用户同意后才传 confirmTrustedLocal=true。',
         '已归档应用不能直接启用，需先回滚草稿重新发布。',
       ].join(' '),
       inputSchema: {
@@ -476,6 +769,10 @@ function toolDefinitions() {
         properties: {
           appId: { type: 'string', description: '应用 ID' },
           enabled: { type: 'boolean', description: 'true=启用，false=禁用' },
+          confirmTrustedLocal: {
+            type: 'boolean',
+            description: '已向用户展示 V2 后台/OS effects 且获得明确同意',
+          },
         },
       },
     },
@@ -631,9 +928,136 @@ async function dispatchTool(name, args) {
   const key = str(args.key)
 
   switch (name) {
+    case 'spark_app_developer_guide':
+      return querySubAppDeveloperGuide({
+        topic: str(args.topic),
+        query: str(args.query),
+        symbol: str(args.symbol),
+        surface: str(args.surface),
+        includeExamples: optBool(args.includeExamples),
+      })
+
+    case 'spark_app_validate':
+      return resolveValidation(args)
+
+    case 'spark_app_scaffold':
+      return rpc(
+        'subapp.scaffold',
+        defined({
+          name: str(args.name),
+          description: str(args.description),
+          icon: str(args.icon),
+          surface: str(args.surface),
+          template: str(args.template),
+        }),
+      )
+    case 'spark_app_project_status':
+      return compactProjectStatus(
+        await rpc('subapp.project_status', { appId }),
+        optPositiveInt(args.limit) ?? 100,
+        optNonNegativeInt(args.offset) ?? 0,
+      )
+    case 'spark_app_project_read_file':
+      return rpc('subapp.project_read_file', {
+        appId,
+        path: str(args.path),
+        encoding: str(args.encoding),
+      })
+    case 'spark_app_project_write_file':
+      return rpc('subapp.project_write_file', {
+        appId,
+        expectedDraftRevision: optPositiveInt(args.expectedRevision),
+        path: str(args.path),
+        content: str(args.content),
+        encoding: str(args.encoding),
+      })
+    case 'spark_app_project_delete_file':
+      return rpc('subapp.project_delete_file', {
+        appId,
+        expectedDraftRevision: optPositiveInt(args.expectedRevision),
+        path: str(args.path),
+      })
+    case 'spark_app_project_publish':
+      return rpc('subapp.project_publish', {
+        appId,
+        expectedDraftRevision: optPositiveInt(args.expectedRevision),
+      })
+    case 'spark_app_project_export':
+      return exportManagedProject(appId)
+    case 'spark_app_project_import':
+      return importManagedProject(str(args.projectDir))
+    case 'spark_app_migration_report': {
+      const details = await rpc('subapp.get', { appId })
+      const validation = validateSubAppSource({
+        source: details.draft.source,
+        surface: details.draft.manifest?.surface,
+      })
+      return {
+        appId,
+        format: details.draft.format ?? details.format ?? 'v1',
+        readyForMechanicalMigration: validation.diagnostics.every(
+          (item) =>
+            !['LEGACY_RAW_IPC', 'LEGACY_PROVIDER_SECRET_ACCESS', 'V1_RELATIVE_RESOURCE'].includes(
+              item.code,
+            ),
+        ),
+        migrationDiagnostics: validation.diagnostics.filter((item) =>
+          [
+            'LEGACY_RAW_IPC',
+            'LEGACY_PROVIDER_SECRET_ACCESS',
+            'V1_RELATIVE_RESOURCE',
+            'NON_DURABLE_BROWSER_STORAGE',
+          ].includes(item.code),
+        ),
+      }
+    }
+    case 'spark_app_migrate_v1':
+      return rpc('subapp.migrate_v1', {
+        appId,
+        expectedDraftRevision: optPositiveInt(args.expectedRevision),
+      })
+    case 'spark_app_connections_list':
+      return rpc('subapp.connections_list', { appId })
+    case 'spark_app_connections_bind':
+      return rpc('subapp.connections_bind', {
+        appId,
+        slot: str(args.slot),
+        bindingKind: str(args.bindingKind),
+        bindingId: str(args.bindingId),
+        grantedOrigins: optStringArray(args.grantedOrigins),
+        allowPrivateNetwork: optBool(args.allowPrivateNetwork),
+      })
+    case 'spark_app_connections_unbind':
+      return rpc('subapp.connections_unbind', { appId, slot: str(args.slot) })
+    case 'spark_app_service_status':
+      return rpc('subapp.service_status', { appId })
+    case 'spark_app_service_logs':
+      return rpc('subapp.service_logs', { appId, limit: optPositiveInt(args.limit) })
+    case 'spark_app_service_restart':
+      return rpc('subapp.service_restart', { appId })
+    case 'spark_app_jobs_create':
+      return rpc('subapp.jobs_create', { appId, type: str(args.type), input: args.input })
+    case 'spark_app_jobs_get':
+      return rpc('subapp.jobs_get', { appId, jobId: str(args.jobId) })
+    case 'spark_app_jobs_list':
+      return rpc('subapp.jobs_list', {
+        appId,
+        status: str(args.status),
+        limit: optPositiveInt(args.limit),
+        offset: optNonNegativeInt(args.offset),
+      })
+    case 'spark_app_jobs_cancel':
+      return rpc('subapp.jobs_cancel', { appId, jobId: str(args.jobId) })
+    case 'spark_app_diagnose':
+      return rpc('subapp.diagnose', {
+        appId,
+        mode: str(args.mode),
+        includeService: optBool(args.includeService),
+      })
+
     case 'spark_app_create': {
       const source = await resolveDraftSource(args)
-      return rpc('subapp.create', {
+      const created = await rpc('subapp.create', {
         name: str(args.name),
         description: str(args.description),
         // 工具参数叫 draftHtml，bridge RPC 字段统一叫 source（与 update_draft 一致）。
@@ -644,6 +1068,12 @@ async function dispatchTool(name, args) {
         icon: args.icon === null ? null : str(args.icon),
         entry: str(args.entry),
       })
+      return attachValidation(
+        created,
+        source ?? created?.draft?.source,
+        str(args.draftFilePath),
+        str(args.surface) ?? created?.draft?.manifest?.surface ?? created?.surface,
+      )
     }
 
     case 'spark_app_list':
@@ -696,11 +1126,15 @@ async function dispatchTool(name, args) {
         icon: args.icon === undefined ? undefined : args.icon === null ? null : str(args.icon),
         entry: str(args.entry),
       })
-      return rpc('subapp.update_draft', {
+      const updated = await rpc('subapp.update_draft', {
         appId,
         expectedDraftRevision: optPositiveInt(args.expectedRevision),
         patch,
       })
+      const resultingSource = source ?? updated?.draft?.source
+      const resultingSurface =
+        str(args.surface) ?? updated?.draft?.manifest?.surface ?? updated?.surface
+      return attachValidation(updated, resultingSource, str(args.draftFilePath), resultingSurface)
     }
 
     case 'spark_app_publish':
@@ -729,11 +1163,27 @@ async function dispatchTool(name, args) {
         expectedDraftRevision: optPositiveInt(args.expectedRevision),
       })
 
-    case 'spark_app_set_enabled':
+    case 'spark_app_set_enabled': {
+      if (optBool(args.enabled) === true) {
+        const details = await rpc('subapp.get', { appId })
+        if (details?.draft?.format === 'v2') {
+          const status = await rpc('subapp.project_status', { appId })
+          const effects = status?.manifest?.permissions?.osEffects ?? []
+          if (
+            (status?.manifest?.service != null || effects.length > 0) &&
+            optBool(args.confirmTrustedLocal) !== true
+          ) {
+            throw new Error(
+              `V2 应用启用前必须展示 trusted-local 风险并获得用户同意；OS effects: ${effects.join(', ') || 'none'}`,
+            )
+          }
+        }
+      }
       return rpc('subapp.set_enabled', {
         appId,
         enabled: optBool(args.enabled),
       })
+    }
 
     case 'spark_app_archive':
       return rpc('subapp.archive', { appId })
@@ -797,6 +1247,63 @@ function present(name, data) {
   return JSON.stringify(data, null, 2)
 }
 
+async function resolveValidation(args) {
+  const appId = str(args.appId)
+  const inlineSource = str(args.draftHtml)
+  const filePath = str(args.draftFilePath)
+  const sourceCount = [appId, inlineSource, filePath].filter((value) => value != null).length
+  if (sourceCount !== 1) {
+    throw new Error('appId、draftHtml、draftFilePath 必须且只能提供一个。')
+  }
+  if (appId != null) {
+    const releaseVersion = optPositiveInt(args.releaseVersion)
+    const details = await rpc('subapp.get', { appId, releaseVersion })
+    const owner = releaseVersion == null ? details?.draft : details?.publishedRelease
+    if (owner == null || typeof owner.source !== 'string') {
+      throw new Error(
+        releaseVersion == null ? '当前草稿源码不存在。' : `发布版本 ${releaseVersion} 不存在。`,
+      )
+    }
+    return {
+      target: {
+        appId,
+        kind: releaseVersion == null ? 'draft' : 'release',
+        ...(releaseVersion ? { releaseVersion } : {}),
+      },
+      ...validateSubAppSource({
+        source: owner.source,
+        surface: owner.manifest?.surface ?? details?.surface,
+      }),
+    }
+  }
+  const source =
+    filePath == null ? inlineSource : await readWorkspaceSubAppSource(filePath, WORKSPACE_ROOT)
+  return {
+    target: {
+      kind: filePath == null ? 'inline' : 'workspace-file',
+      ...(filePath ? { file: filePath } : {}),
+    },
+    ...validateSubAppSource({ source, file: filePath, surface: str(args.surface) }),
+  }
+}
+
+function attachValidation(data, source, file, surface) {
+  if (data == null || typeof data !== 'object' || typeof source !== 'string') return data
+  const validation = validateSubAppSource({ source, file, surface })
+  return {
+    ...data,
+    validation: {
+      valid: validation.valid,
+      readyToPreview: validation.readyToPreview,
+      readyToPublish: validation.readyToPublish,
+      detectedCapabilities: validation.detectedCapabilities,
+      summary: validation.summary,
+      contractDigest: validation.contractDigest,
+      topDiagnostics: validation.diagnostics.slice(0, 5),
+    },
+  }
+}
+
 async function resolveDraftSource(args) {
   const inlineSource = str(args.draftHtml)
   const filePath = str(args.draftFilePath)
@@ -805,6 +1312,172 @@ async function resolveDraftSource(args) {
   }
   if (filePath != null) return readWorkspaceSubAppSource(filePath, WORKSPACE_ROOT)
   return inlineSource
+}
+
+async function exportManagedProject(appId) {
+  if (!appId) throw new Error('appId 必填。')
+  const status = await rpc('subapp.project_status', { appId })
+  if (!Array.isArray(status?.files) || status.files.length === 0)
+    throw new Error('子应用没有 V2 项目文件。')
+  const target = path.join(
+    WORKSPACE_ROOT,
+    '.spark-agent',
+    'sub-app-projects',
+    appId,
+    `rev-${status.revision}`,
+  )
+  await assertWorkspaceTarget(target)
+  const exists = await fs
+    .lstat(target)
+    .then(() => true)
+    .catch((error) => {
+      if (error.code === 'ENOENT') return false
+      throw error
+    })
+  if (exists) throw new Error('导出目录已存在；为避免覆盖用户编辑，请使用新草稿 revision 再导出。')
+  const staging = `${target}.staging-${process.pid}`
+  await fs.mkdir(staging, { recursive: true })
+  try {
+    for (const item of status.files) {
+      const relative = safeProjectRelativePath(item.path)
+      const result = await rpc('subapp.project_read_file', {
+        appId,
+        path: relative,
+        encoding: 'base64',
+      })
+      const destination = path.join(staging, relative)
+      await fs.mkdir(path.dirname(destination), { recursive: true })
+      await fs.writeFile(destination, Buffer.from(result.content, 'base64'), { flag: 'wx' })
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.rename(staging, target)
+  } catch (error) {
+    await fs.rm(staging, { recursive: true, force: true })
+    throw error
+  }
+  return { appId, directory: target, revision: status.revision, files: status.files.length }
+}
+
+async function importManagedProject(projectDir) {
+  if (!projectDir) throw new Error('projectDir 必填。')
+  const root = await resolveWorkspaceDirectory(projectDir)
+  const files = await collectWorkspaceProjectFiles(root)
+  const manifestFile = files.find((item) => item.path === 'spark-app.json')
+  if (manifestFile == null) throw new Error('项目缺少 spark-app.json。')
+  let manifest
+  try {
+    manifest = JSON.parse(manifestFile.content.toString('utf8'))
+  } catch {
+    throw new Error('spark-app.json 不是有效 JSON。')
+  }
+  if (manifest?.schemaVersion !== 2 || typeof manifest.name !== 'string')
+    throw new Error('spark-app.json 必须是有效 V2 manifest。')
+  const created = await rpc('subapp.scaffold', {
+    name: manifest.name,
+    description: typeof manifest.description === 'string' ? manifest.description : undefined,
+    icon: typeof manifest.icon === 'string' ? manifest.icon : undefined,
+    surface: typeof manifest.surface === 'string' ? manifest.surface : undefined,
+    template: manifest.service ? 'fullstack' : 'frontend',
+  })
+  let revision = created.draftRevision
+  const existing = new Set(created.project.files.map((item) => item.path))
+  for (const item of files) {
+    const updated = await rpc('subapp.project_write_file', {
+      appId: created.appId,
+      expectedDraftRevision: revision,
+      path: item.path,
+      content: item.content.toString('base64'),
+      encoding: 'base64',
+    })
+    revision = updated.revision
+    existing.delete(item.path)
+  }
+  for (const extra of existing) {
+    if (extra === 'spark-app.json') continue
+    const updated = await rpc('subapp.project_delete_file', {
+      appId: created.appId,
+      expectedDraftRevision: revision,
+      path: extra,
+    })
+    revision = updated.revision
+  }
+  const status = await rpc('subapp.project_status', { appId: created.appId })
+  if (!status.validation?.readyToPublish)
+    throw new Error(`导入后校验失败：${JSON.stringify(status.validation?.diagnostics ?? [])}`)
+  return { appId: created.appId, draftRevision: revision, project: status }
+}
+
+async function collectWorkspaceProjectFiles(root) {
+  const output = []
+  let total = 0
+  const walk = async (directory) => {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name)
+      if (entry.isSymbolicLink()) throw new Error('导入项目不允许符号链接。')
+      if (entry.isDirectory()) {
+        await walk(absolute)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const relative = safeProjectRelativePath(
+        path.relative(root, absolute).split(path.sep).join('/'),
+      )
+      const content = await fs.readFile(absolute)
+      if (content.byteLength > 5 * 1024 * 1024) throw new Error(`单文件超过 5 MB：${relative}`)
+      total += content.byteLength
+      if (total > 20 * 1024 * 1024) throw new Error('项目总大小超过 20 MB。')
+      output.push({ path: relative, content })
+      if (output.length > 1000) throw new Error('项目文件数超过 1000。')
+    }
+  }
+  await walk(root)
+  return output.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+async function resolveWorkspaceDirectory(input) {
+  if (!WORKSPACE_ROOT) throw new Error('当前会话没有可用工作区。')
+  const workspace = await fs.realpath(WORKSPACE_ROOT)
+  const candidate = await fs.realpath(path.resolve(workspace, input))
+  if (candidate !== workspace && !candidate.startsWith(workspace + path.sep))
+    throw new Error('项目目录必须位于当前工作区内。')
+  if (!(await fs.lstat(candidate)).isDirectory()) throw new Error('projectDir 不是目录。')
+  return candidate
+}
+
+async function assertWorkspaceTarget(target) {
+  if (!WORKSPACE_ROOT) throw new Error('当前会话没有可用工作区。')
+  const workspace = path.resolve(WORKSPACE_ROOT)
+  const resolved = path.resolve(target)
+  if (!resolved.startsWith(workspace + path.sep)) throw new Error('导出路径逃逸工作区。')
+  let current = workspace
+  for (const segment of path.relative(workspace, path.dirname(resolved)).split(path.sep)) {
+    current = path.join(current, segment)
+    const stat = await fs.lstat(current).catch((error) => {
+      if (error.code === 'ENOENT') return null
+      throw error
+    })
+    if (stat?.isSymbolicLink()) throw new Error('导出路径包含符号链接，已拒绝写入。')
+  }
+}
+
+function safeProjectRelativePath(value) {
+  if (
+    !value ||
+    value.startsWith('/') ||
+    value.includes('\\') ||
+    value.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+  )
+    throw new Error(`非法项目路径：${value}`)
+  return value
+}
+
+function compactProjectStatus(status, limit, offset) {
+  const files = Array.isArray(status?.files) ? status.files : []
+  return {
+    ...status,
+    files: files.slice(offset, offset + limit),
+    filePage: { total: files.length, limit, offset, hasMore: offset + limit < files.length },
+  }
 }
 
 // ─── Main loop ───────────────────────────────────────────────────────

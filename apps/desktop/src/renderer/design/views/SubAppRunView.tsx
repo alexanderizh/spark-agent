@@ -93,10 +93,18 @@ export function SubAppRunView(): React.ReactElement {
     if (details == null) return
     setPublishing(true)
     try {
-      const res = await subAppClient.publish({
-        appId: details.id,
-        expectedDraftRevision: details.draftRevision,
-      })
+      if (details.draft.format === 'v2') {
+        await subAppClient.projectPublish({
+          appId: details.id,
+          expectedDraftRevision: details.draftRevision,
+        })
+      } else {
+        await subAppClient.publish({
+          appId: details.id,
+          expectedDraftRevision: details.draftRevision,
+        })
+      }
+      const res = await subAppClient.get({ appId: details.id })
       setDetails(res)
       notifySubAppDirectoryChanged()
       antdMessage.success(`已发布 ${res.name} v${res.publishedVersion ?? ''}`)
@@ -140,9 +148,18 @@ export function SubAppRunView(): React.ReactElement {
     details == null
       ? null
       : mode === 'published' && details.publishedRelease != null
-        ? { source: details.publishedRelease.source, manifest: details.publishedRelease.manifest }
-        : { source: details.draft.source, manifest: details.draft.manifest }
-  const sourceIsEmpty = runnerSource != null && runnerSource.source.trim().length === 0
+        ? {
+            source: details.publishedRelease.source,
+            manifest: details.publishedRelease.manifest,
+            format: details.publishedRelease.format ?? 'v1',
+          }
+        : {
+            source: details.draft.source,
+            manifest: details.draft.manifest,
+            format: details.draft.format ?? 'v1',
+          }
+  const sourceIsEmpty =
+    runnerSource != null && runnerSource.format === 'v1' && runnerSource.source.trim().length === 0
   // 已发布的 content 应用是用户真正使用的工作区内容，不再套一层平台运行
   // 工具栏；草稿预览仍保留工具栏，方便切换版本、发布和重载。
   const isPublishedContent = mode === 'published' && hasPublished && details?.surface === 'content'
@@ -291,6 +308,7 @@ export function SubAppRunView(): React.ReactElement {
             source={runnerSource.source}
             mode={mode}
             release={mode === 'published' ? details.publishedRelease : null}
+            packageFormat={runnerSource.format}
             className="sar-runner"
           />
         ) : null}

@@ -36,6 +36,10 @@ export const SUB_APP_CAPABILITIES = [
   'canvas',
   'media',
   'browser',
+  'network',
+  'provider',
+  'backend',
+  'jobs',
   /** 可信内部子应用：直接访问宿主类型化 IPC 与 stream。 */
   'ipc',
 ] as const
@@ -51,6 +55,8 @@ export interface SubAppManifest {
 }
 
 export interface SubAppDraft {
+  /** 缺省 v1；V2 为受管多文件项目。 */
+  format?: 'v1' | 'v2'
   revision: number
   source: string
   config: Record<string, unknown>
@@ -59,6 +65,8 @@ export interface SubAppDraft {
 }
 
 export interface SubAppRelease {
+  /** 缺省 v1；V2 发布版关联不可变制品。 */
+  format?: 'v1' | 'v2'
   id: string
   appId: string
   version: number
@@ -69,6 +77,8 @@ export interface SubAppRelease {
 }
 
 export interface SubAppSummary {
+  /** 当前草稿开发模式；缺省 v1 兼容旧数据。 */
+  format?: 'v1' | 'v2'
   id: string
   name: string
   description: string
@@ -506,7 +516,10 @@ export interface SubAppIpcChannelMap {
   'sub-app:runtime:put-doc': [SubAppRuntimeDocPutRequest, SubAppRuntimeDocAck]
   'sub-app:runtime:release-doc': [SubAppRuntimeDocReleaseRequest, SubAppRuntimeDocAck]
   'sub-app:share:export': [SubAppShareExportRequest, SubAppShareExportResponse]
-  'sub-app:share:import-preview': [SubAppShareImportPreviewRequest, SubAppShareImportPreviewResponse]
+  'sub-app:share:import-preview': [
+    SubAppShareImportPreviewRequest,
+    SubAppShareImportPreviewResponse,
+  ]
   'sub-app:share:import-apply': [SubAppShareImportApplyRequest, SubAppShareImportApplyResponse]
 }
 
@@ -579,6 +592,11 @@ export type SparkAppBridgeInboundMessage =
       instanceId: string
       request: SparkAppBridgeRequest
     }
+  | {
+      type: 'app/diagnostic'
+      instanceId: string
+      diagnostic: { kind: string; message: string; source?: string }
+    }
 
 export type SparkAppBridgeOutboundMessage =
   | {
@@ -623,6 +641,19 @@ export const SPARK_APP_BRIDGE_INBOUND_SCHEMA = z.discriminatedUnion('type', [
           capability: z.enum(SUB_APP_CAPABILITIES),
           operation: z.string().min(1).max(60),
           payload: z.unknown(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('app/diagnostic'),
+      instanceId: z.string().min(1).max(80),
+      diagnostic: z
+        .object({
+          kind: z.string().min(1).max(80),
+          message: z.string().min(1).max(2_000),
+          source: z.string().max(500).optional(),
         })
         .strict(),
     })

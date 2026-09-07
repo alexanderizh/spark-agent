@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   setTweak: vi.fn(),
   get: vi.fn(),
   publish: vi.fn(),
+  projectPublish: vi.fn(),
   setEnabled: vi.fn(),
   runnerProps: [] as Array<Record<string, unknown>>,
 }))
@@ -53,6 +54,7 @@ vi.mock('../sub-app/subAppClient', () => ({
   subAppClient: {
     get: (...args: unknown[]) => mocks.get(...args),
     publish: (...args: unknown[]) => mocks.publish(...args),
+    projectPublish: (...args: unknown[]) => mocks.projectPublish(...args),
     setEnabled: (...args: unknown[]) => mocks.setEnabled(...args),
   },
 }))
@@ -138,6 +140,7 @@ describe('SubAppRunView', () => {
     mocks.setTweak.mockReset()
     mocks.get.mockReset()
     mocks.publish.mockReset()
+    mocks.projectPublish.mockReset()
     mocks.setEnabled.mockReset()
     mocks.runnerProps = []
     // macOS 环境：App.tsx 对 sub-app 视图跳过公用拖拽条，由本页自管
@@ -234,6 +237,20 @@ describe('SubAppRunView', () => {
     expect(container?.querySelector('[data-testid="sub-app-runner"]')).toBeNull()
     expect(container?.textContent).toContain('这个应用还没有可运行的源码')
     expect(container?.textContent).toContain('去会话修复')
+  })
+
+  it('V2 草稿即使 source 字段为空也由包运行时加载', async () => {
+    const details = makeDetails({
+      publicationStatus: 'draft',
+      publishedVersion: null,
+      publishedRelease: null,
+      draft: { ...makeDetails().draft, format: 'v2', source: '' },
+    })
+    mocks.get.mockResolvedValue(details)
+    await renderView()
+    expect(container?.querySelector('[data-testid="sub-app-runner"]')).not.toBeNull()
+    expect(mocks.runnerProps[0]).toMatchObject({ mode: 'draft', packageFormat: 'v2' })
+    expect(container?.textContent).not.toContain('这个应用还没有可运行的源码')
   })
 
   it('加载失败显示错误与重试/返回', async () => {

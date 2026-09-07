@@ -192,6 +192,11 @@ export {
   SubAppReleaseNotFoundError,
   SubAppStateError,
 } from './sub-app.repository.js'
+export { SubAppPlatformRepository } from './sub-app-platform.repository.js'
+export type {
+  PublishSubAppPackageInput,
+  PublishedSubAppPackage,
+} from './sub-app-platform.repository.js'
 export type {
   CreateSubAppParams,
   ImportSubAppDataInput,

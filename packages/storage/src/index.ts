@@ -17,6 +17,13 @@
 // 数据库核心
 export { SparkDatabase, createDatabase } from './database.js'
 export type { SqliteDatabase } from './database.js'
+export {
+  SubAppPackageService,
+  validatePackageFiles,
+  digestFiles,
+  assertPackagePath,
+} from './sub-app-package.service.js'
+export { SubAppPlatformRepository } from './repositories/sub-app-platform.repository.js'
 
 // CJK 逐字预分词（memory_fts 写入/查询两侧共用，禁止各自实现）
 export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'

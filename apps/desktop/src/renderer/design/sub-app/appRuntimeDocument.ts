@@ -37,10 +37,15 @@ export const DEFAULT_SUB_APP_RUNTIME_SECURITY: Required<SubAppRuntimeSecurityOpt
  * frame-src / object-src / base-uri / form-action 固定 'none'（无场景需要）；
  * script / connect 按安全选项拼接，其余指令保持放行外部 HTTPS/HTTP 资源。
  */
-function buildSubAppRuntimeCsp(security: Required<SubAppRuntimeSecurityOptions>): string {
+function buildSubAppRuntimeCsp(
+  security: Required<SubAppRuntimeSecurityOptions>,
+  allowPackageAssets: boolean,
+): string {
+  const packageSource = allowPackageAssets ? ['capability-asset:'] : []
   const scriptSrc = [
     "'unsafe-inline'",
     ...(security.allowUnsafeEval ? ["'unsafe-eval'"] : []),
+    ...packageSource,
     'https:',
     'http:',
   ].join(' ')
@@ -48,15 +53,15 @@ function buildSubAppRuntimeCsp(security: Required<SubAppRuntimeSecurityOptions>)
   return [
     "default-src 'none'",
     `script-src ${scriptSrc}`,
-    "style-src 'unsafe-inline' https: http:",
-    'img-src data: blob: https: http: safe-file:',
-    'media-src data: blob: https: http: safe-file:',
-    'font-src data: https: http:',
+    `style-src 'unsafe-inline' https: http: ${packageSource.join(' ')}`,
+    `img-src data: blob: https: http: safe-file: ${packageSource.join(' ')}`,
+    `media-src data: blob: https: http: safe-file: ${packageSource.join(' ')}`,
+    `font-src data: https: http: ${packageSource.join(' ')}`,
     `connect-src ${connectSrc}`,
     'worker-src blob:',
     "frame-src 'none'",
     "object-src 'none'",
-    "base-uri 'none'",
+    allowPackageAssets ? 'base-uri capability-asset:' : "base-uri 'none'",
     "form-action 'none'",
   ].join('; ')
 }
@@ -77,6 +82,8 @@ export interface BuildAppRuntimeDocumentInput {
   config: SubAppBootstrapConfig
   /** 运行时安全选项；缺省按 DEFAULT_SUB_APP_RUNTIME_SECURITY 全放行。 */
   security?: SubAppRuntimeSecurityOptions
+  /** V2 多文件包的当前运行 token 根 URL。 */
+  assetBaseUrl?: string
 }
 
 /**
@@ -134,7 +141,10 @@ export function buildAppRuntimeDocument(input: BuildAppRuntimeDocumentInput): st
   }
 
   const head = [
-    `<meta http-equiv="Content-Security-Policy" content="${buildSubAppRuntimeCsp(security)}">`,
+    `<meta http-equiv="Content-Security-Policy" content="${buildSubAppRuntimeCsp(security, input.assetBaseUrl != null)}">`,
+    ...(input.assetBaseUrl != null
+      ? [`<base href="${input.assetBaseUrl.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">`]
+      : []),
     `<meta name="color-scheme" content="${theme}">`,
     `<meta name="spark-app-mode" content="${config.mode}">`,
     // html 锁定视口高度后 body 的 min-height:100% 才能解析（否则标准模式下按 auto 处理）
@@ -196,6 +206,25 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
   var REQUEST_TIMEOUT_MS = 30000
 
   function post(message) { parent.postMessage(message, '*') }
+
+  function reportDiagnostic(kind, message, source) {
+    var diagnostic = { kind: String(kind || 'error').slice(0, 80), message: String(message || 'Unknown runtime error').slice(0, 2000) }
+    if (source) diagnostic.source = String(source).slice(0, 500)
+    post({ type: 'app/diagnostic', instanceId: cfg.instanceId, diagnostic: diagnostic })
+  }
+
+  window.addEventListener('error', function (event) {
+    var target = event.target
+    if (target && target !== window && (target.src || target.href)) {
+      reportDiagnostic('resource', 'Resource failed to load', target.src || target.href)
+      return
+    }
+    reportDiagnostic('javascript', event.message || 'JavaScript error', event.filename)
+  }, true)
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event.reason
+    reportDiagnostic('promise', reason && reason.message ? reason.message : String(reason || 'Unhandled rejection'))
+  })
 
   window.addEventListener('message', function (event) {
     var data = event.data
@@ -313,6 +342,22 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
         }
       })
     },
+  }
+
+  function subscribe(capability, operation, payload, listener) {
+    if (typeof listener !== 'function') return Promise.reject(new Error('listener 必须是函数'))
+    return call(capability, operation, payload).then(function (result) {
+      var subscriptionId = result && result.subscriptionId
+      if (typeof subscriptionId !== 'string') throw new Error('Spark App Bridge 未返回订阅 ID')
+      ipcListeners[subscriptionId] = listener
+      var active = true
+      return function () {
+        if (!active) return Promise.resolve({ unsubscribed: false })
+        active = false
+        delete ipcListeners[subscriptionId]
+        return call(capability, 'unsubscribe', { subscriptionId: subscriptionId })
+      }
+    })
   }
 
   window.sparkApp = {
@@ -433,6 +478,28 @@ function buildBootstrapScript(config: SubAppBootstrapConfig): string {
       previewDownload: function (filePath) {
         return call('browser', 'previewDownload', { filePath: filePath })
       },
+    },
+    network: {
+      request: function (options) { return call('network', 'request', options || {}) },
+    },
+    provider: {
+      request: function (options) { return call('provider', 'request', options || {}) },
+    },
+    backend: {
+      invoke: function (action, input, options) {
+        var payload = { action: action, input: input === undefined ? null : input }
+        if (options && options.timeoutMs !== undefined) payload.timeoutMs = options.timeoutMs
+        return call('backend', 'invoke', payload)
+      },
+      status: function () { return call('backend', 'status', {}) },
+      on: function (event, listener) { return subscribe('backend', 'subscribe', { event: event }, listener) },
+    },
+    jobs: {
+      create: function (type, input) { return call('jobs', 'create', { type: type, input: input === undefined ? null : input }) },
+      get: function (jobId) { return call('jobs', 'get', { jobId: jobId }) },
+      list: function (options) { return call('jobs', 'list', options || {}) },
+      cancel: function (jobId) { return call('jobs', 'cancel', { jobId: jobId }) },
+      onProgress: function (jobId, listener) { return subscribe('jobs', 'subscribe', { jobId: jobId }, listener) },
     },
     // 平台核心子应用的原始 IPC/stream 面：不受 manifest permissions 裁剪。
     ipc: privilegedIpc,

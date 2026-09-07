@@ -466,6 +466,7 @@ function SubAppOverlayCard({
         source={instance.source}
         mode={instance.mode}
         release={instance.release}
+        packageFormat={instance.release?.format ?? 'v1'}
         className="subapp-overlay-runner"
       />
       {/* 四个拉伸入口：右缘、下缘、右下角，以及可反向调整位置和尺寸的左上角 */}
@@ -598,6 +599,7 @@ function SubAppPanelDock({
           source={instance.source}
           mode={instance.mode}
           release={instance.release}
+          packageFormat={instance.release?.format ?? 'v1'}
           className="subapp-panel-runner"
         />
       </div>

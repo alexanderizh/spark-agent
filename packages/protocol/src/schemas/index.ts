@@ -45,6 +45,7 @@ import { CrossSessionCollaborationIpcSchemaRegistry } from '../cross-session-col
 import { EvidenceCostIpcSchemaRegistry } from '../evidence-cost.js'
 import { ReplayIpcSchemaRegistry } from '../replay-playbook.js'
 import { SubAppIpcSchemaRegistry } from '../sub-app.js'
+import { SubAppV2IpcSchemaRegistry } from '../sub-app-v2.js'
 import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
 import { ToolPackagesIpcSchemaRegistry } from '../tool-package.js'
 import { NotificationsIpcSchemaRegistry } from '../notifications.js'
@@ -1068,6 +1069,7 @@ export const IpcSchemaRegistry = {
   ...EvidenceCostIpcSchemaRegistry,
   ...ReplayIpcSchemaRegistry,
   ...SubAppIpcSchemaRegistry,
+  ...SubAppV2IpcSchemaRegistry,
   ...CustomToolsIpcSchemaRegistry,
   ...ToolPackagesIpcSchemaRegistry,
   ...NotificationsIpcSchemaRegistry,

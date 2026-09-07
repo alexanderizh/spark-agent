@@ -38,6 +38,24 @@ import type {
   SubAppSetEnabledResponse,
   SubAppUpdateDraftRequest,
   SubAppUpdateDraftResponse,
+  SubAppRuntimePackagePutRequest,
+  SubAppRuntimePackagePutResponse,
+  SubAppRuntimePackageReleaseRequest,
+  SubAppProjectStatusRequest,
+  SubAppProjectStatus,
+  SubAppProjectPublishRequest,
+  SubAppConnectionListRequest,
+  SubAppConnectionListResponse,
+  SubAppServiceStatusRequest,
+  SubAppServiceStatus,
+  SubAppServiceLogsRequest,
+  SubAppServiceLogsResponse,
+  SubAppServiceRestartRequest,
+  SubAppJobListRequest,
+  SubAppJobListResponse,
+  SubAppDiagnosticRequest,
+  SubAppDiagnosticResult,
+  SubAppRuntimeReportRequest,
 } from '@spark/protocol'
 
 /**
@@ -99,6 +117,41 @@ export const subAppClient = {
   releaseRuntimeDoc: (request: SubAppRuntimeDocReleaseRequest): Promise<SubAppRuntimeDocAck> =>
     window.spark.invoke('sub-app:runtime:release-doc', request),
 
+  putRuntimePackage: (
+    request: SubAppRuntimePackagePutRequest,
+  ): Promise<SubAppRuntimePackagePutResponse> =>
+    window.spark.invoke('sub-app:runtime:put-package', request),
+
+  releaseRuntimePackage: (request: SubAppRuntimePackageReleaseRequest): Promise<{ ok: true }> =>
+    window.spark.invoke('sub-app:runtime:release-package', request),
+
+  projectStatus: (request: SubAppProjectStatusRequest): Promise<SubAppProjectStatus> =>
+    window.spark.invoke('sub-app:project:status', request),
+
+  projectPublish: (request: SubAppProjectPublishRequest): Promise<unknown> =>
+    window.spark.invoke('sub-app:project:publish', request),
+
+  connectionList: (request: SubAppConnectionListRequest): Promise<SubAppConnectionListResponse> =>
+    window.spark.invoke('sub-app:connections:list', request),
+
+  serviceStatus: (request: SubAppServiceStatusRequest): Promise<SubAppServiceStatus> =>
+    window.spark.invoke('sub-app:service:status', request),
+
+  serviceLogs: (request: SubAppServiceLogsRequest): Promise<SubAppServiceLogsResponse> =>
+    window.spark.invoke('sub-app:service:logs', request),
+
+  serviceRestart: (request: SubAppServiceRestartRequest): Promise<SubAppServiceStatus> =>
+    window.spark.invoke('sub-app:service:restart', request),
+
+  jobList: (request: SubAppJobListRequest): Promise<SubAppJobListResponse> =>
+    window.spark.invoke('sub-app:jobs:list', request),
+
+  diagnose: (request: SubAppDiagnosticRequest): Promise<SubAppDiagnosticResult> =>
+    window.spark.invoke('sub-app:diagnose', request),
+
+  reportRuntime: (request: SubAppRuntimeReportRequest): Promise<{ ok: true }> =>
+    window.spark.invoke('sub-app:runtime:report', request),
+
   // ─── 分享 / 导入（.sparkapp）──────────────────────────────────────────────
   // 大包在主进程打包/解析：export 返回保存结果摘要，import-preview 返回
   // 预览报告并持有主进程侧 token，import-apply 凭 token 应用导入。
@@ -109,7 +162,9 @@ export const subAppClient = {
   shareImportPreview: (): Promise<SubAppShareImportPreviewResponse> =>
     window.spark.invoke('sub-app:share:import-preview', {}),
 
-  shareImportApply: (request: SubAppShareImportApplyRequest): Promise<SubAppShareImportApplyResponse> =>
+  shareImportApply: (
+    request: SubAppShareImportApplyRequest,
+  ): Promise<SubAppShareImportApplyResponse> =>
     window.spark.invoke('sub-app:share:import-apply', request),
 } as const
 
