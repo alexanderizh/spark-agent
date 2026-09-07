@@ -1,7 +1,7 @@
 /**
  * @module session-title-generator
  *
- * 异步会话标题生成：基于首轮 user/assistant 消息，调用 provider API
+ * 异步会话标题生成：基于会话正文摘录，调用 provider API
  * 生成简短中文标题（≤ 16 字符）。失败时返回 null，由调用方决定是否回退。
  */
 
@@ -60,7 +60,7 @@ function isAnthropic(providerType: string): boolean {
 
 function buildPrompt(userMessage: string, assistantMessage: string): string {
   const assistantPart =
-    assistantMessage.length > 0 ? `\n\n[Assistant 回复]\n${assistantMessage}` : ''
+    assistantMessage.length > 0 ? `\n\n[Assistant 对话摘录]\n${assistantMessage}` : ''
   return [
     '为下面这段对话生成一个尽量简短、能体现主题的中文标题。',
     '要求：',
@@ -68,7 +68,7 @@ function buildPrompt(userMessage: string, assistantMessage: string): string {
     '- 不要包含引号、标点、表情符号或前缀（如"标题："）',
     '- 直接输出标题，不要任何解释',
     '',
-    `[用户首条消息]\n${userMessage}${assistantPart}`,
+    `[用户对话摘录]\n${userMessage}${assistantPart}`,
   ].join('\n')
 }
 

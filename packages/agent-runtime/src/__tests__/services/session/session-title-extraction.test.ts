@@ -13,7 +13,7 @@ import {
  * 重命名弹窗「提取标题」测试（session:extract-title）：
  *
  * - 纯函数 pickTitleSourceFromDialogueEvents：标题素材选取规则
- *   （首条可见用户消息 + 首条 assistant 回复、隐藏消息跳过、displayContent 优先）。
+ *   （按轮次均匀取样、隐藏轮次跳过、displayContent 优先、assistant-only 回退）。
  * - extractSessionTitle 集成：模型解析链（会话模型 → Provider 默认模型）、
  *   不可用码映射。
  */
@@ -64,12 +64,16 @@ function userEvent(overrides: {
   } as AgentEvent
 }
 
-function assistantEvent(seq: number, content: string): AgentEvent {
+function assistantEvent(
+  seq: number,
+  content: string,
+  turnId = `turn-${Math.max(0, seq - 1)}`,
+): AgentEvent {
   return {
     id: `evt-a-${seq}`,
     type: 'assistant_message',
     sessionId: SESSION_ID,
-    turnId: `turn-${seq}`,
+    turnId,
     timestamp: new Date(2026, 0, 1, seq).toISOString(),
     seq,
     mode: 'complete',
@@ -80,20 +84,28 @@ function assistantEvent(seq: number, content: string): AgentEvent {
 }
 
 describe('pickTitleSourceFromDialogueEvents', () => {
-  it('取首条可见用户消息 + 首条 assistant 回复', () => {
+  it('按时间均匀取多轮可见用户消息和对应 assistant 回复', () => {
     const source = pickTitleSourceFromDialogueEvents([
-      userEvent({ seq: 0, content: '帮我优化首页布局' }),
-      assistantEvent(1, '好的，我来分析当前布局。'),
-      userEvent({ seq: 2, content: '第二个问题' }),
-      assistantEvent(3, '第二条回复'),
+      userEvent({ seq: 0, content: '第一轮问题' }),
+      assistantEvent(1, '第一轮回复'),
+      userEvent({ seq: 2, content: '第二轮问题' }),
+      assistantEvent(3, '第二轮回复'),
+      userEvent({ seq: 4, content: '第三轮问题' }),
+      assistantEvent(5, '第三轮回复'),
+      userEvent({ seq: 6, content: '第四轮问题' }),
+      assistantEvent(7, '第四轮回复'),
+      userEvent({ seq: 8, content: '第五轮问题' }),
+      assistantEvent(9, '第五轮回复'),
     ])
     expect(source).toEqual({
-      userMessage: '帮我优化首页布局',
-      assistantMessage: '好的，我来分析当前布局。',
+      userMessage:
+        '[第1轮用户]\n第一轮问题\n\n[第2轮用户]\n第二轮问题\n\n[第4轮用户]\n第四轮问题\n\n[第5轮用户]\n第五轮问题',
+      assistantMessage:
+        '[第1轮助手]\n第一轮回复\n\n[第2轮助手]\n第二轮回复\n\n[第4轮助手]\n第四轮回复\n\n[第5轮助手]\n第五轮回复',
     })
   })
 
-  it('隐藏消息（定时任务/command follow-up）不作为标题来源', () => {
+  it('隐藏轮次（定时任务/command follow-up）及其 assistant 回复整体跳过', () => {
     const source = pickTitleSourceFromDialogueEvents([
       userEvent({
         seq: 0,
@@ -105,8 +117,8 @@ describe('pickTitleSourceFromDialogueEvents', () => {
       assistantEvent(3, '后续回复'),
     ])
     expect(source).toEqual({
-      userMessage: '用户真正的第一条消息',
-      assistantMessage: '定时任务执行完成',
+      userMessage: '[第1轮用户]\n用户真正的第一条消息',
+      assistantMessage: '[第1轮助手]\n后续回复',
     })
   })
 
@@ -119,13 +131,58 @@ describe('pickTitleSourceFromDialogueEvents', () => {
       }),
       assistantEvent(1, '回复'),
     ])
-    expect(source?.userMessage).toBe('面向用户的展示正文')
+    expect(source?.userMessage).toBe('[第1轮用户]\n面向用户的展示正文')
   })
 
-  it('没有可见用户消息时返回 null', () => {
+  it('展示正文为空时回退到原始用户消息', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({
+        seq: 0,
+        content: '原始用户消息',
+        userMessageDisplayContent: '   ',
+      }),
+    ])
+    expect(source?.userMessage).toBe('[第1轮用户]\n原始用户消息')
+  })
+
+  it('没有 user_message 时使用可见 turn_prompt_snapshot 作为用户正文', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      {
+        id: 'evt-snapshot',
+        type: 'turn_prompt_snapshot',
+        sessionId: SESSION_ID,
+        turnId: 'snapshot-turn',
+        timestamp: new Date(2026, 0, 1, 0).toISOString(),
+        seq: 0,
+        userMessage: '模型实际收到的用户正文',
+        systemPromptSections: [],
+        model: 'gpt-test',
+        adapterKind: 'spark',
+        permissionMode: 'auto',
+        toolCount: 0,
+      },
+      assistantEvent(1, '回复', 'snapshot-turn'),
+    ] as AgentEvent[])
+    expect(source).toEqual({
+      userMessage: '[第1轮用户]\n模型实际收到的用户正文',
+      assistantMessage: '[第1轮助手]\n回复',
+    })
+  })
+
+  it('没有可见用户消息时回退到 assistant 正文', () => {
     const source = pickTitleSourceFromDialogueEvents([
       userEvent({ seq: 0, content: '内部指令', userMessageVisibility: 'hidden' }),
-      assistantEvent(1, '回复'),
+      assistantEvent(1, '回复', 'assistant-only'),
+    ])
+    expect(source).toEqual({
+      userMessage: '[第1轮助手]\n回复',
+      assistantMessage: '',
+    })
+  })
+
+  it('没有任何可见正文时返回 null', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({ seq: 0, content: '内部指令', userMessageVisibility: 'hidden' }),
     ])
     expect(source).toBeNull()
   })
@@ -208,8 +265,8 @@ describe('extractSessionTitle', () => {
       apiKey?: string
     }
     expect(call.model).toBe('gpt-session')
-    expect(call.userMessage).toBe('帮我把导出功能加上进度条')
-    expect(call.assistantMessage).toBe('已为导出流程补充进度反馈。')
+    expect(call.userMessage).toBe('[第1轮用户]\n帮我把导出功能加上进度条')
+    expect(call.assistantMessage).toBe('[第1轮助手]\n已为导出流程补充进度反馈。')
     expect(call.apiKey).toBe('test-api-key')
   })
 
