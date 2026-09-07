@@ -347,6 +347,68 @@ describe('canvasInputBindings', () => {
     )
   })
 
+  it('collapses a persisted picker owner into its materialized output after reopening', () => {
+    const operation = canvasNode('operation-1', 'text_to_image')
+    const image = canvasNode('image-1', 'image')
+    const owners = new Map<string, readonly string[]>([['image-1', ['operation-1']]])
+    const promptBlock = {
+      kind: 'reference' as const,
+      id: 'manual-operation',
+      source: 'manual' as const,
+      sourceNodeId: operation.id,
+      relation: 'reference_image' as const,
+      label: '角色图任务',
+      order: 0,
+    }
+
+    const result = reconcileCanvasInputBindings({
+      bindings: [
+        binding({
+          id: 'picker:operation-1:last_frame',
+          sourceNodeId: operation.id,
+          origin: 'picker',
+          role: 'last_frame',
+          relation: 'last_frame',
+          promptBlockId: promptBlock.id,
+        }),
+        binding({
+          id: 'picker:operation-1:reference',
+          sourceNodeId: operation.id,
+          origin: 'picker',
+          role: 'reference',
+          relation: 'reference_image',
+          promptBlockId: promptBlock.id,
+          order: 1,
+        }),
+      ],
+      nodes: [operation, image],
+      connectionNodeIds: [image.id],
+      document: { version: 2, blocks: [promptBlock] },
+      promptOwnerNodeIdsBySourceNodeId: owners,
+    })
+
+    expect(activeCanvasInputBindings(result)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceNodeId: image.id,
+          origin: 'connection',
+          role: 'last_frame',
+          relation: 'last_frame',
+          promptBlockId: promptBlock.id,
+        }),
+        expect.objectContaining({
+          sourceNodeId: image.id,
+          origin: 'connection',
+          role: 'reference',
+          relation: 'reference_image',
+          promptBlockId: promptBlock.id,
+        }),
+      ]),
+    )
+    expect(activeCanvasInputBindings(result)).toHaveLength(2)
+    expect(result.some((item) => item.sourceNodeId === operation.id)).toBe(false)
+  })
+
   it('removes every provider role for a tile and cleans linked prompt blocks', () => {
     const bindings = [
       binding({ id: 'reference', origin: 'connection', promptBlockId: 'connection-tag' }),

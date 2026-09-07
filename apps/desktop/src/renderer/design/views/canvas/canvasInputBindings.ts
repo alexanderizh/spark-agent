@@ -192,14 +192,25 @@ export function reconcileCanvasInputBindings(input: {
         binding.promptBlockId === promptBlockId &&
         binding.role === 'input',
     )
+    const logicalOwnerBinding = next.find(
+      (binding) =>
+        binding.enabled &&
+        binding.promptBlockId === promptBlockId &&
+        binding.sourceNodeId !== node.id &&
+        (input.promptOwnerNodeIdsBySourceNodeId?.get(node.id) ?? []).includes(binding.sourceNodeId),
+    )
+    const inheritedRole = membershipBinding?.role ?? logicalOwnerBinding?.role
+    const nodeRelation = relationForNode(node, input.outputMediaKindByNodeId)
     const candidate = bindingForNode(
       node,
       'connection',
       promptBlockId,
       next.length,
-      relationForNode(node, input.outputMediaKindByNodeId),
+      logicalOwnerBinding?.role
+        ? relationForRole(nodeRelation, logicalOwnerBinding.role)
+        : nodeRelation,
       undefined,
-      membershipBinding ? 'input' : undefined,
+      inheritedRole,
       input.outputMediaKindByNodeId,
     )
     if (
@@ -209,6 +220,9 @@ export function reconcileCanvasInputBindings(input: {
     }
     next = addCanvasInputBinding(next, candidate)
   }
+
+  next = materializeSingleChildPromptOwnerRoles(next, input.promptOwnerNodeIdsBySourceNodeId)
+  next = collapseMaterializedPromptOwnerBindings(next, input.promptOwnerNodeIdsBySourceNodeId)
 
   for (const [blockIndex, block] of input.document.blocks.entries()) {
     if (block.kind !== 'reference' && block.kind !== 'structured') continue
@@ -250,6 +264,80 @@ export function reconcileCanvasInputBindings(input: {
     next = addCanvasInputBinding(next, candidate)
   }
   return normalizeCanvasInputBindingOrders(next, input.document)
+}
+
+/** Preserve every explicit provider role when one stable owner resolves to one media child. */
+function materializeSingleChildPromptOwnerRoles(
+  bindings: readonly CanvasInputBinding[],
+  promptOwnerNodeIdsBySourceNodeId: ReadonlyMap<string, readonly string[]> | undefined,
+): CanvasInputBinding[] {
+  if (!promptOwnerNodeIdsBySourceNodeId) return bindings.map((binding) => ({ ...binding }))
+  let next = bindings.map((binding) => ({ ...binding }))
+  for (const ownerBinding of bindings) {
+    if (!ownerBinding.enabled || !ownerBinding.promptBlockId) continue
+    const materialized = bindings.filter(
+      (candidate) =>
+        candidate.enabled &&
+        candidate.promptBlockId === ownerBinding.promptBlockId &&
+        candidate.sourceNodeId !== ownerBinding.sourceNodeId &&
+        (promptOwnerNodeIdsBySourceNodeId.get(candidate.sourceNodeId) ?? []).includes(
+          ownerBinding.sourceNodeId,
+        ),
+    )
+    const childNodeIds = new Set(materialized.map((candidate) => candidate.sourceNodeId))
+    if (childNodeIds.size !== 1) continue
+    const childBinding = materialized[0]
+    if (!childBinding) continue
+    const role = ownerBinding.role ?? 'input'
+    next = addCanvasInputBinding(
+      next,
+      createCanvasInputBinding({
+        sourceNodeId: childBinding.sourceNodeId,
+        origin: childBinding.origin,
+        kind: childBinding.kind,
+        relation: relationForMaterializedMediaRole(childBinding, role),
+        role,
+        order: ownerBinding.order,
+        promptBlockId: ownerBinding.promptBlockId,
+      }),
+    )
+  }
+  return next
+}
+
+/**
+ * A prompt tag may keep the stable operation/group id while execution uses its materialized
+ * media child. They are one logical input, so once the child exists the owner placeholder must
+ * not remain as another inventory item after reopening the panel.
+ */
+function collapseMaterializedPromptOwnerBindings(
+  bindings: readonly CanvasInputBinding[],
+  promptOwnerNodeIdsBySourceNodeId: ReadonlyMap<string, readonly string[]> | undefined,
+): CanvasInputBinding[] {
+  if (!promptOwnerNodeIdsBySourceNodeId) return bindings.map((binding) => ({ ...binding }))
+  const activeMaterializedBindings = bindings.filter(
+    (binding) =>
+      binding.enabled &&
+      binding.promptBlockId &&
+      (promptOwnerNodeIdsBySourceNodeId.get(binding.sourceNodeId)?.length ?? 0) > 0,
+  )
+  if (activeMaterializedBindings.length === 0) {
+    return bindings.map((binding) => ({ ...binding }))
+  }
+
+  return bindings.flatMap((binding) => {
+    if (!binding.enabled || !binding.promptBlockId) return [{ ...binding }]
+    const representedByMaterializedChild = activeMaterializedBindings.some(
+      (materialized) =>
+        materialized.sourceNodeId !== binding.sourceNodeId &&
+        materialized.promptBlockId === binding.promptBlockId &&
+        (promptOwnerNodeIdsBySourceNodeId.get(materialized.sourceNodeId) ?? []).includes(
+          binding.sourceNodeId,
+        ),
+    )
+    if (!representedByMaterializedChild) return [{ ...binding }]
+    return binding.origin === 'connection' ? [{ ...binding, enabled: false }] : []
+  })
 }
 
 const MEDIA_BINDING_KINDS = new Set<CanvasInputBinding['kind']>(['image', 'video', 'audio', 'file'])
@@ -636,4 +724,17 @@ function relationForRole(
   if (role === 'first_frame') return 'first_frame'
   if (role === 'last_frame') return 'last_frame'
   return current
+}
+
+function relationForMaterializedMediaRole(
+  binding: Pick<CanvasInputBinding, 'kind' | 'relation'>,
+  role: CanvasInputBindingRole,
+): CanvasPromptRelation {
+  if (role === 'first_frame' || role === 'last_frame') return role
+  if (role === 'input') return 'generic'
+  if (role !== 'reference') return binding.relation
+  if (binding.kind === 'image') return 'reference_image'
+  if (binding.kind === 'video') return 'reference_video'
+  if (binding.kind === 'audio') return 'reference_audio'
+  return binding.relation
 }
