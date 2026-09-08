@@ -40,8 +40,16 @@ export interface GitPanelProps {
   onRefresh: () => void
   /** 写操作后回写共享快照（applyGitStatus） */
   onStatusApplied: (status: WorkspaceGitStatusResponse | null) => void
-  /** 在编辑器中打开文件（相对路径，自动切 diff 视图） */
+  /** 在编辑器中打开当前工作区文件（相对路径，自动切 diff 视图） */
   onOpenFile: (relativePath: string) => void
+  /** 在编辑器中打开指定提交中的文件 diff */
+  onOpenHistoricalFile?:
+    | ((
+        relativePath: string,
+        commitHash: string,
+        changeType?: 'create' | 'modify' | 'delete' | 'rename',
+      ) => void)
+    | undefined
 }
 
 export function GitPanel({
@@ -50,6 +58,7 @@ export function GitPanel({
   onRefresh,
   onStatusApplied,
   onOpenFile,
+  onOpenHistoricalFile,
 }: GitPanelProps) {
   const [commitMessage, setCommitMessage] = useState('')
   const [stagedCollapsed, setStagedCollapsed] = useState(false)
@@ -242,12 +251,14 @@ export function GitPanel({
           onDropRequest={(selector, label) => setConfirm({ kind: 'drop-stash', selector, label })}
         />
         <GitCommitHistory
+          workspaceId={workspaceId}
           commits={log.commits}
           loading={log.loading}
           error={log.error}
           collapsed={historyCollapsed}
           onToggle={() => setHistoryCollapsed((v) => !v)}
           onRefresh={() => setLogTick((t) => t + 1)}
+          onOpenHistoricalFile={onOpenHistoricalFile}
         />
       </div>
 

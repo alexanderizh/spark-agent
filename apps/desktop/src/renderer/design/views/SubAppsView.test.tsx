@@ -33,14 +33,44 @@ vi.mock('@lobehub/ui', async () => {
     loading?: boolean
     onClick?: () => void
   }) => ReactActual.createElement('button', { disabled: disabled || loading, onClick }, children)
-  const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+  const Input = ({
+    allowClear: _allowClear,
+    ...props
+  }: React.InputHTMLAttributes<HTMLInputElement> & { allowClear?: boolean }) =>
     ReactActual.createElement('input', props)
   const Empty = ({ children, description }: { children?: React.ReactNode; description?: string }) =>
     ReactActual.createElement('div', { 'data-testid': 'empty', 'data-desc': description }, children)
   const Tooltip = ({ children }: { children?: React.ReactNode }) =>
     ReactActual.createElement(ReactActual.Fragment, null, children)
-  const Modal = ({ children, open }: { children?: React.ReactNode; open?: boolean }) =>
-    ReactActual.createElement('div', { 'data-modal-open': String(open) }, children)
+  const Modal = ({
+    children,
+    className,
+    onCancel,
+    open,
+    title,
+  }: {
+    children?: React.ReactNode
+    className?: string
+    onCancel?: () => void
+    open?: boolean
+    title?: React.ReactNode
+  }) =>
+    ReactActual.createElement(
+      'div',
+      { className, 'data-modal-open': String(open), 'data-modal-title': title },
+      open
+        ? ReactActual.createElement(
+            ReactActual.Fragment,
+            null,
+            ReactActual.createElement(
+              'button',
+              { 'aria-label': '关闭', className: 'ant-modal-close', onClick: onCancel },
+              '×',
+            ),
+            children,
+          )
+        : null,
+    )
   // 简化版 Dropdown：点击触发器展开，把 menu.items 渲染为按钮列表，便于测试菜单项交互。
   type MockMenuEntry =
     | { key: string; label: React.ReactNode; onClick?: () => void }
@@ -275,6 +305,107 @@ describe('SubAppsView', () => {
     expect(container?.textContent).toContain('读书打卡')
     expect(container?.textContent).toContain('已发布 v2')
     expect(container?.textContent).toContain('草稿')
+    expect(
+      container?.querySelector('[data-testid="sub-app-card"]')?.getAttribute('data-featured'),
+    ).toBe('true')
+  })
+
+  it('状态筛选只展示对应应用并保留特色卡片锚点', async () => {
+    mocks.list.mockResolvedValue({
+      items: [
+        makeApp(),
+        makeApp({
+          id: 'app-0002',
+          name: '读书打卡',
+          publicationStatus: 'draft',
+          publishedVersion: null,
+        }),
+      ],
+      total: 2,
+    })
+    await renderView()
+
+    const draftFilter = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>('.sa-filter') ?? [],
+    ).find((button) => button.textContent === '草稿')
+    expect(draftFilter).toBeDefined()
+    await act(async () => {
+      draftFilter?.click()
+    })
+
+    const cards = container?.querySelectorAll('[data-testid="sub-app-card"]')
+    expect(cards?.length).toBe(1)
+    expect(cards?.[0]?.textContent).toContain('读书打卡')
+    expect(cards?.[0]?.getAttribute('data-featured')).toBe('false')
+  })
+
+  it('筛选工具栏将搜索筛选与统计归档分列到两侧', async () => {
+    mocks.list.mockResolvedValue({ items: [makeApp()], total: 1 })
+    await renderView()
+
+    const start = container?.querySelector('.sa-toolbar-start')
+    const end = container?.querySelector('.sa-toolbar-end')
+    expect(start?.querySelector('.sa-search')).not.toBeNull()
+    expect(start?.querySelector('.sa-filters')).not.toBeNull()
+    expect(end?.querySelector('.sa-toolbar-meta')).not.toBeNull()
+    expect(end?.querySelector('.sa-archived-toggle')).not.toBeNull()
+  })
+
+  it('头部保持紧凑且双击控件不会触发窗口最大化', async () => {
+    mocks.list.mockResolvedValue({ items: [makeApp()], total: 1 })
+    const invoke = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke },
+    })
+    await renderView()
+
+    const header = container?.querySelector('.sa-header')
+    expect(header?.querySelector('.sa-eyebrow')).toBeNull()
+    expect(header?.querySelector('.sa-subtitle')).toBeNull()
+
+    const refreshButton = Array.from(header?.querySelectorAll('button') ?? []).find(
+      (button) => button.textContent === '刷新',
+    )
+    expect(refreshButton).toBeDefined()
+    await act(async () => {
+      refreshButton?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+    expect(invoke).not.toHaveBeenCalled()
+
+    await act(async () => {
+      header?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+    expect(invoke).toHaveBeenCalledWith('window:maximize', {})
+
+    delete (window as unknown as { spark?: unknown }).spark
+  })
+
+  it('创建引导弹窗的关闭按钮可点击并关闭弹窗', async () => {
+    mocks.list.mockResolvedValue({ items: [], total: 0 })
+    await renderView()
+
+    const openButton = Array.from(container?.querySelectorAll('button') ?? []).find((button) =>
+      button.textContent?.includes('查看创建方式'),
+    )
+    expect(openButton).toBeDefined()
+    await act(async () => {
+      openButton?.click()
+    })
+    expect(container?.querySelector('.sa-guide-modal')?.getAttribute('data-modal-open')).toBe(
+      'true',
+    )
+
+    const closeButton = container?.querySelector<HTMLButtonElement>(
+      '.sa-guide-modal .ant-modal-close',
+    )
+    expect(closeButton).not.toBeNull()
+    await act(async () => {
+      closeButton?.click()
+    })
+    expect(container?.querySelector('.sa-guide-modal')?.getAttribute('data-modal-open')).toBe(
+      'false',
+    )
   })
 
   it('目录变化事件触发列表刷新并显示新发布应用', async () => {

@@ -15,7 +15,8 @@ export interface TranscriptProps {
 export function Transcript({ rows, theme, capabilities }: TranscriptProps): ReactElement {
   // Below 256 colors a background block turns into terminal soup; drop it.
   const userBg =
-    theme.userBg !== undefined && (capabilities.color === 'truecolor' || capabilities.color === '256')
+    theme.userBg !== undefined &&
+    (capabilities.color === 'truecolor' || capabilities.color === '256')
       ? theme.userBg
       : undefined
   return (
@@ -42,22 +43,49 @@ export function Transcript({ rows, theme, capabilities }: TranscriptProps): Reac
           )
         }
         if (row.toolLine) {
+          const toolLine = row.toolLine
           const symbols = glyphs(capabilities)
-          const argColor = row.toolLine.ok ? theme.dim : theme.error
+          const branch = capabilities.unicode ? '└' : '\\'
+          const status = toolLine.isTask
+            ? toolLine.ok
+              ? 'subagent completed'
+              : 'subagent failed'
+            : toolLine.ok
+              ? 'completed'
+              : 'failed'
           return (
-            <Text key={row.key}>
-              <Text color={theme.accent}>
-                {symbols.tool} {row.toolLine.tool}
+            <Box key={row.key} flexDirection="column" marginTop={1} width={capabilities.width}>
+              <Text>
+                <Text color={theme.accent}>
+                  {symbols.tool} {toolLine.title}
+                </Text>
+                {toolLine.detail === undefined ? undefined : (
+                  <Text color={theme.dim}> · {toolLine.detail}</Text>
+                )}
               </Text>
-              {row.toolLine.args === '' ? undefined : (
-                <Text color={argColor}>({row.toolLine.args})</Text>
-              )}
-              <Text color={row.toolLine.ok ? theme.ok : theme.error}>
-                {' '}
-                {row.toolLine.ok ? symbols.success : symbols.failure}
+              <Text>
+                <Text color={theme.dim}> {branch} </Text>
+                <Text color={toolLine.ok ? theme.ok : theme.error}>
+                  {toolLine.ok ? symbols.success : symbols.failure} {status}
+                </Text>
+                <Text color={theme.dim}>
+                  {' '}
+                  · {toolLine.durationMs}
+                  {toolLine.sessionId === undefined
+                    ? ''
+                    : ` · session ${shortId(toolLine.sessionId)}`}
+                </Text>
               </Text>
-              <Text color={theme.dim}> {row.toolLine.durationMs}</Text>
-            </Text>
+              {toolLine.resultLines.map((line, index) => (
+                <Text
+                  key={`${row.key}-result-${index}`}
+                  color={toolLine.ok ? theme.dim : theme.error}
+                >
+                  {'    '}
+                  {line}
+                </Text>
+              ))}
+            </Box>
           )
         }
         const color = toneColor(row.tone, theme)
@@ -81,31 +109,41 @@ export interface ActiveToolsProps {
 
 export function ActiveTools({ tools, capabilities, theme }: ActiveToolsProps): ReactElement {
   const symbols = glyphs(capabilities)
+  const branch = capabilities.unicode ? '└' : '\\'
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" marginTop={tools.length > 0 ? 1 : 0}>
       {tools.map((tool) => (
-        <Text key={tool.callId}>
-          <Text color={tool.status === 'running' ? theme.accent : theme.dim}>
-            {symbols.tool} {tool.tool}
+        <Box key={tool.callId} flexDirection="column" marginBottom={1}>
+          <Text>
+            <Text color={tool.status === 'running' ? theme.accent : theme.dim}>
+              {symbols.tool} {tool.title}
+            </Text>
+            {tool.detail === undefined ? undefined : (
+              <Text color={theme.dim}> · {tool.detail}</Text>
+            )}
           </Text>
           <Text color={theme.dim}>
-            {tool.status === 'running'
-              ? ` ${symbols.spinner[0]} ${previewArgs(tool.args)}`
-              : ` ${symbols.pending} ${previewArgs(tool.args)}`}
+            {'  '}
+            {branch}{' '}
+            <Text color={tool.status === 'running' ? theme.accent : theme.dim}>
+              {tool.status === 'running' ? symbols.spinner[0] : symbols.pending}
+            </Text>{' '}
+            {tool.isTask
+              ? tool.status === 'running'
+                ? 'subagent dispatched'
+                : 'subagent waiting for approval'
+              : tool.status === 'running'
+                ? 'running'
+                : 'waiting for approval'}
           </Text>
-        </Text>
+        </Box>
       ))}
     </Box>
   )
 }
 
-function previewArgs(value: unknown): string {
-  try {
-    const text = JSON.stringify(value) ?? ''
-    return text.length > 60 ? `${text.slice(0, 59)}…` : text
-  } catch {
-    return ''
-  }
+function shortId(value: string): string {
+  return value.length <= 12 ? value : value.slice(0, 12)
 }
 
 function toneColor(tone: RowTone, theme: TuiTheme): string | undefined {

@@ -6,7 +6,11 @@ import type {
   WorkspaceGitStashEntry,
   WorkspaceGitStatusResponse,
   WorkspaceGitCommitEntry,
+  WorkspaceGitCommitFile,
+  WorkspaceGitCommitFilesResponse,
   WorkspaceGitLogResponse,
+  WorkspaceGitFileHistoryEntry,
+  WorkspaceGitFileHistoryResponse,
 } from '@spark/protocol'
 import { homedir } from 'node:os'
 import { isGitCommandError, type GitRepositoryState } from '@spark/agent-runtime'
@@ -463,7 +467,23 @@ export async function getWorkspaceGitFileDiff(
   rootPath: string,
   filePath: string,
   untracked: boolean,
+  commitHash?: string,
 ): Promise<WorkspaceGitFileDiffResponse> {
+  if (commitHash != null) {
+    const normalizedHash = normalizeGitCommitHash(commitHash)
+    const diff =
+      (await tryGitRawStdout(rootPath, [
+        'show',
+        '--format=',
+        '--no-ext-diff',
+        '--unified=3',
+        normalizedHash,
+        '--',
+        filePath,
+      ])) ?? ''
+    return { diff, isBinary: diff.includes('Binary files') }
+  }
+
   // 以 git 自身跟踪状态为准：未跟踪文件 `git diff` 永远返回空，必须走 `--no-index`。
   // 前端透传的 untracked 可能缺失（变更卡片未带 changeType），此处用 ls-files 兜底。
   // 已 staged 的新文件仍在 index 中，ls-files 命中 → 走 tracked 分支，由 `git diff HEAD` 以 new file 呈现。
@@ -643,6 +663,12 @@ export async function pullWorkspaceBranch(rootPath: string): Promise<void> {
 const GIT_LOG_DEFAULT_LIMIT = 100
 const GIT_LOG_MAX_LIMIT = 500
 
+function normalizeGitCommitHash(hash: string): string {
+  const normalized = hash.trim()
+  if (!/^[0-9a-f]{4,64}$/i.test(normalized)) throw new Error('无效的提交 hash')
+  return normalized
+}
+
 function clampGitLogLimit(limit: number | undefined): number {
   if (limit == null || !Number.isFinite(limit)) return GIT_LOG_DEFAULT_LIMIT
   return Math.min(GIT_LOG_MAX_LIMIT, Math.max(1, Math.round(limit)))
@@ -676,32 +702,141 @@ export async function getWorkspaceGitLog(
     tryGitStdout(rootPath, ['rev-list', '@{u}..HEAD'], [0, 128]),
   ])
   const unpushedHashes = new Set((unpushedOut ?? '').split(/\r?\n/).filter(Boolean))
-  const commits = (logOut ?? '')
+  return { commits: parseGitLogEntries(logOut ?? '', upstream, unpushedHashes) }
+}
+
+function parseGitLogEntries(
+  logOut: string,
+  upstream: string | null,
+  unpushedHashes: ReadonlySet<string>,
+): WorkspaceGitCommitEntry[] {
+  return logOut
     .split('\x1e')
-    .map((record): WorkspaceGitCommitEntry | null => {
-      const trimmed = record.trim()
-      if (!trimmed) return null
-      const [hash, shortHash, authorName, authorEmail, date, refs, ...tailParts] =
-        trimmed.split('\x1f')
-      if (hash == null || shortHash == null) return null
-      // tailParts[0] 为 subject，其余为 body（多行 body 的内部 \n 不受影响）
-      const body = tailParts.slice(1).join('\x1f').trim()
-      return {
-        hash,
-        shortHash,
-        authorName: authorName ?? '',
-        date: date ?? '',
-        subject: tailParts[0] ?? '',
-        // exactOptionalPropertyTypes：可选字段有值才带属性，空值保持文档约定的缺省
-        ...(authorEmail ? { authorEmail } : {}),
-        ...(refs ? { refs } : {}),
-        ...(body ? { body } : {}),
-        // upstream == null 时 rev-list 也为空，unpushed 自然全为 false
-        unpushed: upstream != null && unpushedHashes.has(hash),
-      }
-    })
+    .map((record) => parseGitLogEntry(record, upstream, unpushedHashes))
     .filter((item): item is WorkspaceGitCommitEntry => item != null)
-  return { commits }
+}
+
+function parseGitLogEntry(
+  record: string,
+  upstream: string | null,
+  unpushedHashes: ReadonlySet<string>,
+): WorkspaceGitCommitEntry | null {
+  const trimmed = record.trim()
+  if (!trimmed) return null
+  const [hash, shortHash, authorName, authorEmail, date, refs, ...tailParts] = trimmed.split('\x1f')
+  if (hash == null || shortHash == null) return null
+  // tailParts[0] 为 subject，其余为 body（多行 body 的内部 \n 不受影响）
+  const body = tailParts.slice(1).join('\x1f').trim()
+  return {
+    hash,
+    shortHash,
+    authorName: authorName ?? '',
+    date: date ?? '',
+    subject: tailParts[0] ?? '',
+    // undefined 在 IPC 序列化时仍会被省略；保留显式 undefined 便于调用方区分空字段。
+    authorEmail: authorEmail || undefined,
+    refs: refs || undefined,
+    body: body || undefined,
+    // upstream == null 时 rev-list 也为空，unpushed 自然全为 false
+    unpushed: upstream != null && unpushedHashes.has(hash),
+  }
+}
+
+function parseGitCommitFiles(stdout: string): WorkspaceGitCommitFile[] {
+  const tokens = stdout.split('\0')
+  const files: WorkspaceGitCommitFile[] = []
+  let cursor = 0
+  while (cursor < tokens.length) {
+    const statusToken = tokens[cursor++] ?? ''
+    if (!statusToken) continue
+
+    // Git 在 -z 模式下一般用 NUL 分隔 status/path；兼容保留 tab 的版本输出。
+    const tabIndex = statusToken.indexOf('\t')
+    const status = (tabIndex >= 0 ? statusToken.slice(0, tabIndex) : statusToken).trim()
+    const firstPath = tabIndex >= 0 ? statusToken.slice(tabIndex + 1) : (tokens[cursor++] ?? '')
+    if (!status || !firstPath) continue
+
+    const code = status[0] ?? 'M'
+    const isRenameOrCopy = code === 'R' || code === 'C'
+    const path = isRenameOrCopy ? (tokens[cursor++] ?? '') : firstPath
+    if (!path) continue
+    files.push({
+      path,
+      status,
+      ...(isRenameOrCopy && firstPath !== path ? { previousPath: firstPath } : {}),
+    })
+  }
+  return files
+}
+
+/** 返回指定提交下的文件清单；只读，不读取工作区文件内容。 */
+export async function getWorkspaceGitCommitFiles(
+  rootPath: string,
+  commitHash: string,
+): Promise<WorkspaceGitCommitFilesResponse> {
+  const normalizedHash = normalizeGitCommitHash(commitHash)
+  const output =
+    (await tryGitRawStdout(rootPath, [
+      'diff-tree',
+      '--root',
+      '--no-commit-id',
+      '-r',
+      '-M',
+      '--name-status',
+      '-z',
+      normalizedHash,
+    ])) ?? ''
+  return { files: parseGitCommitFiles(output) }
+}
+
+/** 返回指定文件最近的提交历史，--follow 让重命名前的历史也能被找到。 */
+export async function getWorkspaceGitFileHistory(
+  rootPath: string,
+  filePath: string,
+  limit?: number,
+): Promise<WorkspaceGitFileHistoryResponse> {
+  const normalizedPath = filePath.trim()
+  if (!normalizedPath) throw new Error('文件路径不能为空')
+  const bounded = clampGitLogLimit(limit)
+  const [logOut, upstream, unpushedOut] = await Promise.all([
+    tryGitRawStdout(
+      rootPath,
+      [
+        'log',
+        '-n',
+        String(bounded),
+        '--follow',
+        '--date=iso-strict',
+        '--format=%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1f%b',
+        '--name-status',
+        '-z',
+        '--',
+        normalizedPath,
+      ],
+      [0, 128],
+    ),
+    tryGitStdout(rootPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], [0, 128]),
+    tryGitStdout(rootPath, ['rev-list', '@{u}..HEAD'], [0, 128]),
+  ])
+  const unpushedHashes = new Set((unpushedOut ?? '').split(/\r?\n/).filter(Boolean))
+  return {
+    commits: parseGitFileHistoryEntries(logOut ?? '', upstream, unpushedHashes),
+  }
+}
+
+function parseGitFileHistoryEntries(
+  logOut: string,
+  upstream: string | null,
+  unpushedHashes: ReadonlySet<string>,
+): WorkspaceGitFileHistoryEntry[] {
+  return logOut.split('\x1e').flatMap((record) => {
+    const metadataEnd = record.indexOf('\0')
+    if (metadataEnd < 0) return []
+    const commit = parseGitLogEntry(record.slice(0, metadataEnd), upstream, unpushedHashes)
+    if (commit == null) return []
+    const file = parseGitCommitFiles(record.slice(metadataEnd + 1))[0]
+    return file == null ? [] : [{ ...commit, path: file.path }]
+  })
 }
 
 function normalizePathList(paths: string[] | undefined): string[] | null {

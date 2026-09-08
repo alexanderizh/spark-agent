@@ -34,6 +34,7 @@ describe('invariant: task subagents', () => {
     expect(env.fixtures.fs.exists('blocked.txt')).toBe(false)
     expect(parentEvents.find((event) => event.type === 'tool.result')).toMatchObject({
       ok: true,
+      childSessionId: childSessions[0]?.sessionId,
       content: expect.stringContaining('The workspace was inspected successfully.'),
     })
     expect(childSessions).toHaveLength(1)

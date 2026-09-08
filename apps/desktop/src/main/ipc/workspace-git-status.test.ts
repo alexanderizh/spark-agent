@@ -6,7 +6,9 @@ import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   getWorkspaceBranches,
+  getWorkspaceGitCommitFiles,
   getWorkspaceGitFileDiff,
+  getWorkspaceGitFileHistory,
   getWorkspaceGitLog,
   getWorkspaceGitStatus,
   pullWorkspaceBranch,
@@ -269,6 +271,84 @@ describe('workspace Git log', () => {
         refs: undefined,
       }),
     )
+  })
+
+  it('lists files for a commit and returns the file history', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await fs.writeFile(path.join(workspacePath, 'feature.txt'), 'local feature changed\n')
+    await git(workspacePath, ['add', 'feature.txt'])
+    await git(workspacePath, ['commit', '-m', 'update local feature'])
+
+    const log = await getWorkspaceGitLog(workspacePath)
+    const latest = log.commits[0]
+    if (latest == null) throw new Error('expected a latest commit')
+
+    await expect(getWorkspaceGitCommitFiles(workspacePath, latest.hash)).resolves.toEqual({
+      files: [expect.objectContaining({ path: 'feature.txt', status: 'M' })],
+    })
+    await expect(
+      getWorkspaceGitFileDiff(workspacePath, 'feature.txt', false, latest.hash),
+    ).resolves.toMatchObject({
+      isBinary: false,
+      diff: expect.stringContaining('+local feature changed'),
+    })
+
+    const history = await getWorkspaceGitFileHistory(workspacePath, 'feature.txt')
+    expect(history.commits.slice(0, 2).map((commit) => commit.subject)).toEqual([
+      'update local feature',
+      'add local feature',
+    ])
+  })
+
+  it('preserves trailing whitespace in a historical diff', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    await fs.writeFile(path.join(workspacePath, 'feature.txt'), 'changed with spaces   \n')
+    await git(workspacePath, ['add', 'feature.txt'])
+    await git(workspacePath, ['commit', '-m', 'preserve whitespace'])
+
+    const log = await getWorkspaceGitLog(workspacePath)
+    const latest = log.commits[0]
+    if (latest == null) throw new Error('expected a latest commit')
+
+    const fileDiff = await getWorkspaceGitFileDiff(workspacePath, 'feature.txt', false, latest.hash)
+
+    expect(fileDiff.diff).toContain('+changed with spaces   ')
+  })
+
+  it('supports root commits and rename paths in a commit file list', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+    const log = await getWorkspaceGitLog(workspacePath)
+    const root = log.commits.find((commit) => commit.subject === 'base')
+    if (root == null) throw new Error('expected a root commit')
+
+    await expect(getWorkspaceGitCommitFiles(workspacePath, root.hash)).resolves.toEqual({
+      files: [expect.objectContaining({ path: 'base.txt', status: 'A' })],
+    })
+    await expect(
+      getWorkspaceGitFileDiff(workspacePath, 'base.txt', false, root.hash),
+    ).resolves.toMatchObject({
+      isBinary: false,
+      diff: expect.stringContaining('+base'),
+    })
+
+    await git(workspacePath, ['mv', 'feature.txt', 'renamed-feature.txt'])
+    await git(workspacePath, ['commit', '-am', 'rename local feature'])
+    const renamedLog = await getWorkspaceGitLog(workspacePath)
+    const renamed = renamedLog.commits[0]
+    if (renamed == null) throw new Error('expected a rename commit')
+    await expect(getWorkspaceGitCommitFiles(workspacePath, renamed.hash)).resolves.toEqual({
+      files: [
+        expect.objectContaining({
+          path: 'renamed-feature.txt',
+          previousPath: 'feature.txt',
+        }),
+      ],
+    })
+    const renameHistory = await getWorkspaceGitFileHistory(workspacePath, 'renamed-feature.txt')
+    expect(renameHistory.commits.slice(0, 2).map((commit) => commit.path)).toEqual([
+      'renamed-feature.txt',
+      'feature.txt',
+    ])
   })
 })
 

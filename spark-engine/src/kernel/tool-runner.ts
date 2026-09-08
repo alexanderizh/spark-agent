@@ -2,7 +2,7 @@ import type { SessionLedger } from '../events/ledger.js'
 import type { AgentEvent, AssistantMessage, BoundEventDraft } from '../events/schema.js'
 import { stableStringify } from './stable-json.js'
 import { isAbortError, throwIfAborted, timeoutSignal } from './cancellation.js'
-import type { AgentEnv, SubagentRunner } from '../seams.js'
+import type { AgentEnv, SubagentRunner, SubagentRunResult } from '../seams.js'
 import type { ReasoningEffort } from '../llm/types.js'
 import type {
   PermissionCheckContext,
@@ -11,7 +11,7 @@ import type {
   PolicyDecision,
 } from '../permission/types.js'
 import type { HookRunContext } from '../hooks/types.js'
-import type { ResolvedToolCall, ToolOutcome } from '../tools/contract.js'
+import type { ResolvedToolCall } from '../tools/contract.js'
 import { taskArgs } from '../tools/task/definition.js'
 import { processToolOutput, type ProcessedToolOutput } from '../tools/output.js'
 import { ToolArgumentValidator } from '../tools/validation.js'
@@ -26,6 +26,7 @@ interface ExecutionRecord {
   readonly ok: boolean
   readonly output: ProcessedToolOutput
   readonly aborted: boolean
+  readonly childSessionId?: string
 }
 
 export interface ToolRunSummary {
@@ -88,6 +89,7 @@ export class ToolRunner {
           durationMs: record.durationMs,
           ok: record.ok,
           content: record.output.content,
+          ...(record.childSessionId === undefined ? {} : { childSessionId: record.childSessionId }),
           ...(record.output.artifact === undefined ? {} : { artifact: record.output.artifact }),
         })
         executed += 1
@@ -341,6 +343,7 @@ export class ToolRunner {
     let ok = false
     let content: string
     let aborted = false
+    let childSessionId: string | undefined
     try {
       const outcome =
         call.name === 'task'
@@ -351,6 +354,9 @@ export class ToolRunner {
             })
       ok = outcome.ok
       content = outcome.content
+      if ('sessionId' in outcome && typeof outcome.sessionId === 'string') {
+        childSessionId = outcome.sessionId
+      }
     } catch (error) {
       if (this.options.signal.aborted) {
         content = 'aborted'
@@ -380,10 +386,11 @@ export class ToolRunner {
       ok,
       output,
       aborted,
+      ...(childSessionId === undefined ? {} : { childSessionId }),
     }
   }
 
-  async #runTask(call: ResolvedToolCall, signal: AbortSignal): Promise<ToolOutcome> {
+  async #runTask(call: ResolvedToolCall, signal: AbortSignal): Promise<SubagentRunResult> {
     if (!this.options.subagent) {
       return { ok: false, content: 'Task tool is unavailable in this runtime.' }
     }

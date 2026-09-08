@@ -1530,6 +1530,7 @@ export function ChatView({
         diff?: string
         changeType?: OpenCodeFile['changeType']
         viewMode?: CodeViewMode
+        gitCommitHash?: string
       },
     ) => {
       const absPath = resolveAbsCodePath(filePath)
@@ -1550,6 +1551,7 @@ export function ChatView({
                     diff: opts?.diff ?? f.diff,
                     lineNumber: opts?.lineNumber ?? f.lineNumber,
                     changeType: opts?.changeType ?? f.changeType,
+                    gitCommitHash: opts?.gitCommitHash,
                   }
                 : f,
             )
@@ -1562,6 +1564,7 @@ export function ChatView({
                 diff: opts?.diff,
                 lineNumber: opts?.lineNumber,
                 changeType: opts?.changeType,
+                gitCommitHash: opts?.gitCommitHash,
               },
             ],
       )
@@ -3428,7 +3431,14 @@ export function ChatView({
                 gitStatus={gitStatus}
                 onGitStatusApplied={applyGitStatus}
                 onRefreshGitStatus={() => void refreshGitStatus()}
-                onOpenFileFromGit={(rel) => openInCodeTab(rel, { viewMode: 'diff' })}
+                onOpenFileFromGit={(rel, commitHash, changeType) =>
+                  openInCodeTab(
+                    rel,
+                    commitHash == null
+                      ? { viewMode: 'diff' }
+                      : { viewMode: 'diff', gitCommitHash: commitHash, changeType },
+                  )
+                }
                 onPreviewFileFromToolbar={(path, type) =>
                   handleFilePreview(path, type, { mode: 'preview' })
                 }
@@ -3608,9 +3618,7 @@ export function ChatView({
                   ? { workspaceRootPath: activeFilePreviewRootPath }
                   : {})}
                 onEdit={
-                  canOpenInEditor(previewTabPath)
-                    ? () => openInCodeTab(previewTabPath)
-                    : undefined
+                  canOpenInEditor(previewTabPath) ? () => openInCodeTab(previewTabPath) : undefined
                 }
                 onClose={() => {
                   if (activeUnifiedSideTab != null) closeUnifiedSidePanel(activeUnifiedSideTab)

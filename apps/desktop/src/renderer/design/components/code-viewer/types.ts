@@ -36,6 +36,8 @@ export interface OpenCodeFile {
   lineNumber?: number | undefined
   /** 变更类型；delete 时禁止编辑、diff 仅展示删除 */
   changeType?: CodeFileChangeType | undefined
+  /** 当前 tab 若来自提交历史，则 diff 固定读取该提交的 patch。 */
+  gitCommitHash?: string | undefined
 }
 
 /** 单文件加载状态 */

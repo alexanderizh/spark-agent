@@ -20,15 +20,28 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     <Text key="model" bold color={props.theme.accentStrong ?? props.theme.accent}>
       {props.model}
     </Text>,
-    <Text key="permission" color={props.permission === 'bypass' ? props.theme.warn : props.theme.dim}>
+    <Text
+      key="permission"
+      color={props.permission === 'bypass' ? props.theme.warn : props.theme.dim}
+    >
       {props.permission}
     </Text>,
     <Text key="effort" {...(props.theme.fg === undefined ? {} : { color: props.theme.fg })}>
-      reasoning: {props.effort}
+      {props.effort}
     </Text>,
   ]
-  if (props.perf) segments.push(<Text key="perf" color={props.theme.dim}>{props.perf}</Text>)
-  if (props.cwd) segments.push(<Text key="cwd" color={props.theme.dim}>{props.cwd}</Text>)
+  if (props.perf)
+    segments.push(
+      <Text key="perf" color={props.theme.dim}>
+        {props.perf}
+      </Text>,
+    )
+  if (props.cwd)
+    segments.push(
+      <Text key="cwd" color={props.theme.dim}>
+        {props.cwd}
+      </Text>,
+    )
 
   return (
     <Box width="100%" paddingX={1} flexWrap="wrap">
@@ -36,7 +49,9 @@ export function StatusBar(props: StatusBarProps): ReactElement {
       <Box flexGrow={1} flexShrink={1} flexWrap="wrap">
         {segments.map((segment, index) => (
           <Box key={index}>
-            {index > 0 && <Text color={props.theme.line ?? props.theme.faint ?? props.theme.dim}> │ </Text>}
+            {index > 0 && (
+              <Text color={props.theme.line ?? props.theme.faint ?? props.theme.dim}> │ </Text>
+            )}
             {segment}
           </Box>
         ))}

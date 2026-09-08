@@ -491,7 +491,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
 
   const projection = useMemo(() => projectTranscript(events, capabilities), [capabilities, events])
-  const action = deriveAction(events, liveText, liveThinking, pending)
+  const action = deriveAction(events, projection.activeTools, liveText, liveThinking, pending)
   const perfText = formatPerf(lastStepPerf(events) ?? { tokensPerSec: 0, ttftMs: 0 })
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
 
@@ -541,8 +541,16 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         theme={theme}
         capabilities={capabilities}
       />
-      {showThinking && liveThinking && <Text color={theme.dim}>▍ {liveThinking}</Text>}
-      {liveText && <Text>{liveText}</Text>}
+      {showThinking && liveThinking && (
+        <Box marginTop={1}>
+          <Text color={theme.dim}>▍ {liveThinking}</Text>
+        </Box>
+      )}
+      {liveText && (
+        <Box marginTop={1}>
+          <Text>{liveText}</Text>
+        </Box>
+      )}
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
       {activeTurns > 0 && (
         <WorkingLine
@@ -696,6 +704,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
 function deriveAction(
   events: readonly AgentEvent[],
+  activeTools: readonly { readonly title: string; readonly isTask: boolean }[],
   liveText: string,
   liveThinking: string,
   pending: PendingApproval | undefined,
@@ -703,8 +712,10 @@ function deriveAction(
   if (pending) return '等待权限确认'
   if (liveText) return '生成回答'
   if (liveThinking) return '正在思考'
+  const activeTool = activeTools.at(-1)
+  if (activeTool)
+    return activeTool.isTask ? `子代理已调度 · ${activeTool.title}` : `运行 ${activeTool.title}`
   const latest = events.at(-1)
-  if (latest?.type === 'tool.intent') return `运行工具 ${latest.callId}`
   if (latest?.type === 'step.started') return '请求模型'
   return '处理中'
 }

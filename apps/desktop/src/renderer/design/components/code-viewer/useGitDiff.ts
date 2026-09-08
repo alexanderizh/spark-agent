@@ -3,6 +3,7 @@
  *
  * 设计：只在 enabled（用户切到 diff 视图）时发起请求，避免对每个打开的文件都预取。
  * 用相对 workspace 的路径（OpenCodeFile.displayPath）+ workspaceId；新增文件传 untracked=true。
+ * 历史提交 diff 额外传 commitHash，此时主进程读取该提交的 patch。
  *
  * 之所以不沿用变更记录卡片里的 FileChangeSummaryItem.diff 字段：那条 diff 是「该轮 agent 改动」
  * 的快照，而 renderBlocks 是模块级独立函数、调用处十余个，透传 diff 会大面积波及 onFilePreview
@@ -25,6 +26,7 @@ export function useGitDiff(
   relativePath: string | null | undefined,
   untracked: boolean,
   enabled: boolean,
+  commitHash?: string | undefined,
 ): GitDiffState {
   const [state, setState] = useState<GitDiffState>({ loading: false })
 
@@ -36,7 +38,12 @@ export function useGitDiff(
     let cancelled = false
     setState({ loading: true, diff: undefined, error: undefined })
     window.spark
-      .invoke('workspace:git-file-diff', { workspaceId, path: relativePath, untracked })
+      .invoke('workspace:git-file-diff', {
+        workspaceId,
+        path: relativePath,
+        untracked,
+        ...(commitHash == null ? {} : { commitHash }),
+      })
       .then((r: GitDiffResp) => {
         if (cancelled) return
         setState({ loading: false, diff: r.diff ?? '', isBinary: r.isBinary })
@@ -53,7 +60,7 @@ export function useGitDiff(
     return () => {
       cancelled = true
     }
-  }, [workspaceId, relativePath, untracked, enabled])
+  }, [workspaceId, relativePath, untracked, enabled, commitHash])
 
   return state
 }

@@ -2,6 +2,7 @@ import type { AgentEvent } from '../events/schema.js'
 import { stableStringify } from '../kernel/stable-json.js'
 import type { TerminalCapabilities } from './theme.js'
 import { glyphs } from './theme.js'
+import { presentTool, presentToolResult, singleLine } from './tool-presentation.js'
 
 export type RowTone = 'normal' | 'dim' | 'accent' | 'ok' | 'warn' | 'error'
 
@@ -11,9 +12,13 @@ export type RowKind = 'user' | 'thinking' | 'plain' | 'assistant'
 /** Structured view of a settled tool line, colored per-part by the renderer. */
 export interface ToolLineParts {
   readonly tool: string
-  readonly args: string
+  readonly title: string
+  readonly detail?: string
   readonly ok: boolean
   readonly durationMs: string
+  readonly resultLines: readonly string[]
+  readonly sessionId?: string
+  readonly isTask: boolean
 }
 
 export interface TranscriptRow {
@@ -27,7 +32,9 @@ export interface TranscriptRow {
 export interface ActiveToolProjection {
   readonly callId: string
   readonly tool: string
-  readonly args: unknown
+  readonly title: string
+  readonly detail?: string
+  readonly isTask: boolean
   readonly status: 'pending' | 'running'
 }
 
@@ -76,7 +83,11 @@ export function projectTranscript(
         if (event.message.thinking) {
           settled.push({
             key: `thinking-${event.seq}`,
-            text: wrapThinking(event.message.thinking, Math.max(20, capabilities.width - 4), symbols.bar),
+            text: wrapThinking(
+              event.message.thinking,
+              Math.max(20, capabilities.width - 4),
+              symbols.bar,
+            ),
             tone: 'dim',
             kind: 'thinking',
           })
@@ -100,16 +111,27 @@ export function projectTranscript(
         results.add(event.callId)
         const call = calls.get(event.callId)
         const mark = event.ok ? symbols.success : symbols.failure
-        const argsPreview = call ? preview(call.args) : ''
+        const presentation = presentTool(call?.tool ?? 'unknown', call?.args)
+        const result = presentToolResult(
+          call?.tool ?? 'unknown',
+          event.content,
+          event.durationMs,
+          capabilities.width,
+          event.childSessionId,
+        )
         settled.push({
           key: `tool-${event.callId}`,
-          text: `${symbols.tool} ${call?.tool ?? 'unknown'}${call ? `(${argsPreview})` : ''} ${mark} ${event.durationMs}ms`,
+          text: `${symbols.tool} ${presentation.title} ${mark} ${event.durationMs}ms`,
           tone: event.ok ? 'dim' : 'error',
           toolLine: {
             tool: call?.tool ?? 'unknown',
-            args: argsPreview,
+            title: presentation.title,
+            ...(presentation.detail === undefined ? {} : { detail: presentation.detail }),
             ok: event.ok,
-            durationMs: `${event.durationMs}ms`,
+            durationMs: result.duration,
+            resultLines: result.lines,
+            ...(result.sessionId === undefined ? {} : { sessionId: result.sessionId }),
+            isTask: call?.tool === 'task',
           },
         })
         break
@@ -178,18 +200,18 @@ export function projectTranscript(
 
   const activeTools = [...calls.values()]
     .filter((call) => !results.has(call.callId))
-    .map((call) => ({
-      callId: call.callId,
-      tool: call.tool,
-      args: call.args,
-      status: intents.has(call.callId) ? ('running' as const) : ('pending' as const),
-    }))
+    .map((call) => {
+      const presentation = presentTool(call.tool, call.args)
+      return {
+        callId: call.callId,
+        tool: call.tool,
+        title: presentation.title,
+        ...(presentation.detail === undefined ? {} : { detail: presentation.detail }),
+        isTask: call.tool === 'task',
+        status: intents.has(call.callId) ? ('running' as const) : ('pending' as const),
+      }
+    })
   return { settled, activeTools }
-}
-
-export function singleLine(value: string, maximum: number): string {
-  const line = value.replaceAll(/\s+/g, ' ').trim()
-  return line.length <= maximum ? line : `${line.slice(0, Math.max(0, maximum - 1))}…`
 }
 
 /** Longest thinking transcript we are willing to settle into the log. */

@@ -1251,7 +1251,9 @@ Tool Package 和 Sub App 分别保留自己的 manifest、授权、调用和状�
 - Phase 2：Connection slot/binding、Provider/API Connection 凭据注入、origin 双重约束、DNS 私网检查、重定向复验、超时/响应容量/敏感响应脱敏已落地。
 - Phase 3：独立 Node 进程、stdio 帧协议、on-demand/application 生命周期、候选 release 健康预检、崩溃退避、有界日志和事件订阅已落地。
 - Phase 4：持久 job 状态机、progress/checkpoint/result、取消、release pinning、活动任务发布阻断与宿主重启中断语义已落地。
-- Phase 5：子应用页新增扁平的项目/连接/后台/任务/诊断分段；iframe 会上报 ready、JS、Promise、资源错误和 Bridge 审计。
+- Phase 5：子应用页新增卡片式的项目/连接/后台/任务/诊断管理区；主列表使用低饱和色面、明确主次操作和响应式布局，iframe 会上报 ready、JS、Promise、资源错误和 Bridge 审计。
 - Phase 6：Agent 可将 V2 项目安全导入/导出至工作区，可生成 V1 迁移报告并显式转换草稿；存量 V1 release 不被重写。
 
 实现中的安全收紧：V2 禁止 raw IPC 和未实现保留能力；每次 V2 发布后保持禁用，必须展示 trusted-local/OS effects 后由用户显式重新启用。
+
+本轮管理页视觉落地：`SubAppsView` 已从均质后台卡片调整为“特色主卡 + 次级应用卡 + 创建卡”的工作台布局；新增发布/草稿筛选、筛选空态、卡片错峰入场、悬浮抬升和主卡轻量插画细节。动效遵循 `prefers-reduced-motion`，不改变既有子应用 API 和生命周期行为。界面头部保持单行紧凑布局（窄屏才换行），筛选工具栏拆为左右两组；创建引导弹窗的 Portal 内容、Modal/Drawer 关闭热区和头部控件均显式退出窗口拖拽区域。

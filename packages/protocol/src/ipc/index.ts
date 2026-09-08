@@ -1510,6 +1510,8 @@ export interface WorkspaceGitFileDiffRequest {
   workspaceId: string
   path: string
   untracked?: boolean
+  /** 指定提交时读取该提交相对于父提交的文件 diff；缺省读取工作区当前 diff。 */
+  commitHash?: string
 }
 
 export interface WorkspaceGitFileDiffResponse {
@@ -1529,11 +1531,27 @@ export interface WorkspaceGitCommitEntry {
   /** 尚未推送到上游（无上游分支时恒为 false） */
   unpushed: boolean
   /** 提交信息正文（subject 之后的部分，无正文时缺省） */
-  body?: string
+  body?: string | undefined
   /** 作者邮箱（缺失时缺省） */
-  authorEmail?: string
+  authorEmail?: string | undefined
   /** git 装饰引用（%D，如 `HEAD -> master, origin/master, tag: v1.0`，无装饰时缺省） */
-  refs?: string
+  refs?: string | undefined
+}
+
+/** 提交详情中的一个文件变更。rename/copy 时 previousPath 为变更前路径。 */
+export interface WorkspaceGitCommitFile {
+  path: string
+  status: string
+  previousPath?: string | undefined
+}
+
+export interface WorkspaceGitCommitFilesRequest {
+  workspaceId: string
+  hash: string
+}
+
+export interface WorkspaceGitCommitFilesResponse {
+  files: WorkspaceGitCommitFile[]
 }
 
 export interface WorkspaceGitLogRequest {
@@ -1544,6 +1562,22 @@ export interface WorkspaceGitLogRequest {
 
 export interface WorkspaceGitLogResponse {
   commits: WorkspaceGitCommitEntry[]
+}
+
+export interface WorkspaceGitFileHistoryRequest {
+  workspaceId: string
+  path: string
+  /** 返回最近 N 条，缺省 100，上限 500。 */
+  limit?: number
+}
+
+export interface WorkspaceGitFileHistoryEntry extends WorkspaceGitCommitEntry {
+  /** 该提交中该文件实际使用的路径；重命名前的提交可能与当前路径不同。 */
+  path: string
+}
+
+export interface WorkspaceGitFileHistoryResponse {
+  commits: WorkspaceGitFileHistoryEntry[]
 }
 
 export interface WorkspaceGitStageRequest {
@@ -6565,6 +6599,8 @@ export interface IpcChannelMap
   'workspace:fetch-branches': [WorkspaceFetchBranchesRequest, WorkspaceFetchBranchesResponse]
   'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
   'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
+  'workspace:git-commit-files': [WorkspaceGitCommitFilesRequest, WorkspaceGitCommitFilesResponse]
+  'workspace:git-file-history': [WorkspaceGitFileHistoryRequest, WorkspaceGitFileHistoryResponse]
   'workspace:git-check-ignore': [WorkspaceGitCheckIgnoreRequest, WorkspaceGitCheckIgnoreResponse]
   'workspace:git-commit': [WorkspaceGitCommitRequest, WorkspaceGitCommitResponse]
   'workspace:git-push': [WorkspaceGitPushRequest, WorkspaceGitPushResponse]

@@ -309,7 +309,9 @@ import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
   getWorkspaceBranches,
+  getWorkspaceGitCommitFiles,
   getWorkspaceGitFileDiff,
+  getWorkspaceGitFileHistory,
   getWorkspaceGitLog,
   getWorkspaceGitStatus,
   discardWorkspacePaths,
@@ -5982,7 +5984,12 @@ export function registerAllIpcHandlers(): void {
     log.info(`workspace:git-file-diff requested, workspaceId=${req.workspaceId}, path=${req.path}`)
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     try {
-      return await getWorkspaceGitFileDiff(workspace.root_path, req.path, req.untracked === true)
+      return await getWorkspaceGitFileDiff(
+        workspace.root_path,
+        req.path,
+        req.untracked === true,
+        req.commitHash,
+      )
     } catch (error) {
       throw asSparkGitError(error, '读取 Git diff 失败')
     }
@@ -6117,6 +6124,30 @@ export function registerAllIpcHandlers(): void {
       return await getWorkspaceGitLog(workspace.root_path, req.limit)
     } catch (err) {
       throw asSparkGitError(err, '获取提交记录失败')
+    }
+  })
+
+  typedIpcHandle('workspace:git-commit-files', async (req) => {
+    log.info(`workspace:git-commit-files requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      assertWorkspaceGitReady(await getGitCommandService().probeRepository(workspace.root_path))
+      return await getWorkspaceGitCommitFiles(workspace.root_path, req.hash)
+    } catch (err) {
+      throw asSparkGitError(err, '获取提交文件失败')
+    }
+  })
+
+  typedIpcHandle('workspace:git-file-history', async (req) => {
+    log.info(
+      `workspace:git-file-history requested, workspaceId=${req.workspaceId}, path=${req.path}`,
+    )
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      assertWorkspaceGitReady(await getGitCommandService().probeRepository(workspace.root_path))
+      return await getWorkspaceGitFileHistory(workspace.root_path, req.path, req.limit)
+    } catch (err) {
+      throw asSparkGitError(err, '获取文件变更历史失败')
     }
   })
 

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { createDeterministicEnv } from '../../src/env.js'
 import { InteractiveApprover } from '../../src/permission/interactive.js'
 import { RulePermissionPolicy } from '../../src/permission/policy.js'
-import { text } from '../../src/llm/fake/reply-dsl.js'
+import { text, toolCall } from '../../src/llm/fake/reply-dsl.js'
 import { Agent } from '../../src/sdk/agent.js'
 import { SparkTuiApp } from '../../src/tui/app.js'
 import { shouldSwallowImeKeypress } from '../../src/tui/ime-guard.js'
@@ -42,6 +42,7 @@ describe('TUI deterministic interaction', () => {
     for (let index = 0; index < 20; index += 1)
       await new Promise<void>((resolve) => setImmediate(resolve))
     const actual = stripAnsi(app.lastFrame() ?? '')
+    expect(actual).not.toContain('reasoning:')
     const goldenUrl = new URL('../golden-ui/basic-turn.txt', import.meta.url)
     if (process.env.UPDATE_GOLDEN === '1') {
       await writeFile(goldenUrl, `${actual}\n`)
@@ -84,6 +85,44 @@ describe('TUI deterministic interaction', () => {
     expect(frame).toContain('~/dev/demo') // home prefix collapsed
     // Status bar is the last line: the path must sit before the trailing /help hint there.
     expect(frame.indexOf('~/dev/demo')).toBeLessThan(frame.lastIndexOf('/help'))
+    app.unmount()
+  })
+
+  it('renders task dispatch and completion as an observable subagent block', async () => {
+    const base = createDeterministicEnv([
+      toolCall('task-1', 'task', {
+        description: 'Inspect the workspace',
+        prompt: 'Inspect the workspace and report a concise result.',
+      }),
+      text('The child inspected three source files.'),
+      text('Parent received the result.'),
+    ])
+    const approver = new InteractiveApprover()
+    const env = {
+      ...base,
+      permission: { policy: new RulePermissionPolicy(), approver },
+    }
+    const agent = Agent.open({ cwd: '/workspace', env })
+    const session = await agent.newSession({ permissionMode: 'auto' })
+    await session.turn('Delegate an inspection.')
+    const initial = await collect(session)
+    const app = render(
+      <SparkTuiApp
+        initialSession={session}
+        initialEvents={initial}
+        approver={approver}
+        createSession={async () => agent.newSession()}
+        model="fake-m1"
+        capabilities={{ color: 'mono', unicode: false, width: 120 }}
+      />,
+    )
+
+    const frame = stripAnsi(app.lastFrame() ?? '')
+    expect(frame).toContain('+ Task · Inspect the workspace · read-only')
+    expect(frame).toContain('v subagent completed')
+    expect(frame).toContain('session session2')
+    expect(frame).not.toContain('Subagent session:')
+    expect(frame).toContain('The child inspected three source files.')
     app.unmount()
   })
 

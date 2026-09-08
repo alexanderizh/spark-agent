@@ -7,6 +7,7 @@
  * 不依赖 .code-viewer-panel 作用域内的 --cv-* 变量。
  *
  * 悬停接力：行 leave → 延时关闭，指针进入浮层即取消（父组件管开合，这里只回调）。
+ * 卡片只显示短 hash，复制按钮复制完整 hash，避免同一 hash 在卡片内重复展示。
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -59,9 +60,12 @@ export function GitCommitDetailPopover({
   }, [anchorEl, commit])
 
   // 卸载时清理复制反馈计时器，避免 setState 打到已卸载组件
-  useEffect(() => () => {
-    if (copyTimerRef.current != null) window.clearTimeout(copyTimerRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current != null) window.clearTimeout(copyTimerRef.current)
+    },
+    [],
+  )
 
   const handleCopyHash = useCallback((): void => {
     // 剪贴板不可用时静默失败（Electron 渲染进程常态可用），不弹未处理 rejection
@@ -75,26 +79,30 @@ export function GitCommitDetailPopover({
       .catch(() => {})
   }, [commit.hash])
 
-  const refs = commit.refs?.split(',').map((ref) => ref.trim()).filter(Boolean) ?? []
+  const refs =
+    commit.refs
+      ?.split(',')
+      .map((ref) => ref.trim())
+      .filter(Boolean) ?? []
 
   const renderBody = (
     <div
       ref={popoverRef}
       className="gp-cpop"
-      style={position == null ? { visibility: 'hidden' } : { left: position.left, top: position.top }}
+      style={
+        position == null ? { visibility: 'hidden' } : { left: position.left, top: position.top }
+      }
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       role="tooltip"
     >
       <div className="gp-cpop-head">
         <span className="gp-cpop-short">{commit.shortHash}</span>
-        <span className="gp-cpop-hash" title={commit.hash}>
-          {commit.hash}
-        </span>
         <button
           type="button"
           className="gp-cpop-copy"
           title={copied ? '已复制' : '复制完整 hash'}
+          aria-label={copied ? '已复制完整 hash' : '复制完整 hash'}
           onClick={handleCopyHash}
         >
           {copied ? <Icons.Check size={13} /> : <Icons.Copy size={13} />}

@@ -468,14 +468,24 @@
 
 /* ---------- 提交历史行 ---------- */
 
+.gp-commit-entry {
+  width: 100%;
+}
+
 .gp-commit-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   height: 28px;
   padding: 0 10px;
+  border: none;
   border-radius: 4px;
+  background: transparent;
   color: var(--cv-text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 
   &:hover {
     background: var(--cv-bg-3);
@@ -484,6 +494,16 @@
 
   &.unpushed {
     color: var(--cv-text);
+  }
+}
+
+.gp-commit-chevron {
+  flex: none;
+  color: var(--cv-text-faint);
+  transition: transform 0.12s ease;
+
+  &.open {
+    transform: rotate(90deg);
   }
 }
 
@@ -538,6 +558,149 @@
 
 .gp-commit-time {
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 提交展开的文件与文件历史 ---------- */
+
+.gp-commit-files-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 10px 4px 32px;
+  color: var(--cv-text-faint);
+  font-size: 11px;
+
+  &.error {
+    color: var(--cv-red);
+    word-break: break-all;
+  }
+}
+
+.gp-commit-files {
+  padding: 2px 0 4px 20px;
+  border-left: 1px solid var(--cv-border-soft);
+  margin-left: 16px;
+}
+
+.gp-commit-file-group {
+  min-width: 0;
+}
+
+.gp-commit-file-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  padding: 0 8px 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover,
+  &.expanded {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+
+  .gp-file-dir {
+    max-width: 38%;
+  }
+}
+
+.gp-commit-file-chevron {
+  flex: none;
+  color: var(--cv-text-faint);
+  transition: transform 0.12s ease;
+
+  &.open {
+    transform: rotate(90deg);
+  }
+}
+
+.gp-commit-file-history {
+  margin: 1px 0 3px 17px;
+  padding: 1px 0 1px 12px;
+  border-left: 1px solid var(--cv-border);
+}
+
+.gp-commit-history-state {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 23px;
+  padding: 0 8px;
+  color: var(--cv-text-faint);
+  font-size: 11px;
+
+  &.error {
+    color: var(--cv-red);
+    word-break: break-all;
+  }
+}
+
+.gp-commit-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gp-commit-history-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cv-text-dim);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--cv-bg-3);
+    color: var(--cv-text);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.gp-commit-history-hash {
+  flex: none;
+  font-family: var(--cv-mono);
+  font-size: 10px;
+  color: var(--cv-accent);
+}
+
+.gp-commit-history-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.gp-commit-history-meta {
+  flex: none;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cv-text-faint);
+  font-size: 10px;
 }
 
 /* ---------- foot 栏 ---------- */
@@ -692,17 +855,6 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--primary, #6366f1);
-}
-
-.gp-cpop-hash {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  color: var(--text-faint, #9b9489);
 }
 
 .gp-cpop-copy {
