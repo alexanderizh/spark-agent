@@ -114,6 +114,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         // Interrupt takes priority while a turn runs; otherwise a non-empty
         // draft is cleared first so retyping never fights the transcript.
         if (!props.running && characters.length > 0) {
+          setHistoryIndex(-1)
           setValue('')
           setCursor(0)
           setPreferredColumn(undefined)
@@ -131,6 +132,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         return
       }
       if (key.ctrl && input === 'u') {
+        setHistoryIndex(-1)
         setValue('')
         setCursor(0)
         setPreferredColumn(undefined)
@@ -196,7 +198,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       } else if (key.backspace) removeBeforeCursor()
       else if (key.delete) removeAtCursor()
       else if (key.upArrow || key.downArrow) {
-        if (value.length === 0) {
+        if (value.length === 0 || historyIndex >= 0) {
           // Keep the existing history behavior for an empty draft.
           navigateHistory(key.upArrow ? 1 : -1)
         } else if (value.includes('\n')) {
@@ -215,6 +217,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   )
 
   const insert = (input: string): void => {
+    setHistoryIndex(-1)
     const inserted = Array.from(input)
     setValue([...characters.slice(0, cursor), ...inserted, ...characters.slice(cursor)].join(''))
     setCursor(cursor + inserted.length)
@@ -223,18 +226,21 @@ export function InputEditor(props: InputEditorProps): ReactElement {
 
   const removeBeforeCursor = (): void => {
     if (cursor === 0) return
+    setHistoryIndex(-1)
     setValue([...characters.slice(0, cursor - 1), ...characters.slice(cursor)].join(''))
     setCursor(cursor - 1)
     setPreferredColumn(undefined)
   }
 
   const removeAtCursor = (): void => {
+    setHistoryIndex(-1)
     if (cursor >= characters.length) return
     setValue([...characters.slice(0, cursor), ...characters.slice(cursor + 1)].join(''))
     setPreferredColumn(undefined)
   }
 
   const removeWordBeforeCursor = (): void => {
+    setHistoryIndex(-1)
     let position = cursor
     while (position > 0 && (characters[position - 1] ?? '').trim() === '') position -= 1
     while (position > 0 && (characters[position - 1] ?? '').trim() !== '') position -= 1
@@ -341,6 +347,9 @@ export function InputEditor(props: InputEditorProps): ReactElement {
           {!props.locked && after}
         </Text>
       </Box>
+      {props.running && !props.locked && (
+        <Text color={props.theme.dim}> Enter 加入队列 · Esc 中断当前任务</Text>
+      )}
     </Box>
   )
 }

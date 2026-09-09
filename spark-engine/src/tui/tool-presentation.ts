@@ -1,3 +1,4 @@
+import { processPresentation } from './process-presentation.js'
 import { stableStringify } from '../kernel/stable-json.js'
 
 export interface ToolPresentation {
@@ -6,6 +7,8 @@ export interface ToolPresentation {
 }
 
 export interface ToolResultPresentation {
+  readonly processStatus?: string
+  readonly processId?: string
   readonly lines: readonly string[]
   readonly duration: string
   readonly sessionId?: string
@@ -47,6 +50,11 @@ export function presentTool(tool: string, args: unknown): ToolPresentation {
         ...(path === undefined ? {} : { detail: `in ${singleLine(path, 72)}` }),
       }
     }
+    case 'process_wait':
+    case 'process_cancel':
+      return {
+        title: `${tool === 'process_wait' ? 'Wait' : 'Cancel'} · ${singleLine(stringValue(record.process_id) ?? 'unknown process', 36)}`,
+      }
     case 'bash':
       return {
         title: `${display} · ${singleLine(stringValue(record.command) ?? 'unknown command', 96)}`,
@@ -68,7 +76,9 @@ export function presentToolResult(
 ): ToolResultPresentation {
   const sessionId =
     recordedSessionId ?? (tool === 'task' ? extractSubagentSessionId(content) : undefined)
-  const withoutSession = sessionId === undefined ? content : removeSubagentSessionLine(content)
+  const managed = processPresentation(tool, content)
+  const withoutSession =
+    managed?.output ?? (sessionId === undefined ? content : removeSubagentSessionLine(content))
   const maximumLineWidth = Math.max(24, Math.min(120, terminalWidth - 8))
   const lines: string[] = []
   let used = 0
@@ -93,6 +103,7 @@ export function presentToolResult(
   return {
     lines,
     duration: formatDuration(durationMs),
+    ...(managed === undefined ? {} : { processStatus: managed.status, processId: managed.id }),
     ...(sessionId === undefined ? {} : { sessionId }),
   }
 }

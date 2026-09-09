@@ -11,6 +11,8 @@ export type RowKind = 'user' | 'thinking' | 'plain' | 'assistant'
 
 /** Structured view of a settled tool line, colored per-part by the renderer. */
 export interface ToolLineParts {
+  readonly processStatus?: string
+  readonly processId?: string
   readonly tool: string
   readonly title: string
   readonly detail?: string
@@ -35,7 +37,7 @@ export interface ActiveToolProjection {
   readonly title: string
   readonly detail?: string
   readonly isTask: boolean
-  readonly status: 'pending' | 'running'
+  readonly status: 'pending' | 'approval' | 'running'
 }
 
 export interface TranscriptProjection {
@@ -56,6 +58,11 @@ export function projectTranscript(
   const settled: TranscriptRow[] = []
   const calls = new Map<string, Extract<AgentEvent, { type: 'tool.call' }>>()
   const intents = new Set<string>()
+  const waitingApproval = new Set<string>()
+  const stepTurns = new Map<string, string>()
+  const callTurns = new Map<string, string>()
+  const terminalTurns = new Set<string>()
+  let currentTurn: string | undefined
   const results = new Set<string>()
   const permissions = new Map<string, Extract<AgentEvent, { type: 'permission.requested' }>>()
   const symbols = glyphs(capabilities)
@@ -72,6 +79,7 @@ export function projectTranscript(
     const event = candidate
     switch (event.type) {
       case 'turn.started':
+        currentTurn = event.turnId
         settled.push({
           key: `event-${event.seq}`,
           text: `${symbols.bullet} ${event.input.text}`,
@@ -103,6 +111,10 @@ export function projectTranscript(
         break
       case 'tool.call':
         calls.set(event.callId, event)
+        {
+          const turn = stepTurns.get(event.stepId) ?? currentTurn
+          if (turn !== undefined) callTurns.set(event.callId, turn)
+        }
         break
       case 'tool.intent':
         intents.add(event.callId)
@@ -130,6 +142,8 @@ export function projectTranscript(
             ok: event.ok,
             durationMs: result.duration,
             resultLines: result.lines,
+            ...(result.processStatus === undefined ? {} : { processStatus: result.processStatus }),
+            ...(result.processId === undefined ? {} : { processId: result.processId }),
             ...(result.sessionId === undefined ? {} : { sessionId: result.sessionId }),
             isTask: call?.tool === 'task',
           },
@@ -138,9 +152,11 @@ export function projectTranscript(
       }
       case 'permission.requested':
         permissions.set(event.requestId, event)
+        waitingApproval.add(event.callId)
         break
       case 'permission.decided': {
         const request = permissions.get(event.requestId)
+        if (request) waitingApproval.delete(request.callId)
         settled.push({
           key: `permission-${event.requestId}`,
           text: `● ${event.decision === 'allow' ? 'allowed' : 'denied'} ${request?.risk.tool ?? 'tool'}${event.grantScope ? ` scope=${event.grantScope}` : ''}`,
@@ -151,6 +167,7 @@ export function projectTranscript(
       case 'permission.evaluated':
         break
       case 'turn.completed':
+        terminalTurns.add(event.turnId)
         if (event.reason === 'budget') {
           settled.push({
             key: `event-${event.seq}`,
@@ -162,6 +179,7 @@ export function projectTranscript(
         // the answer and tool results; a trailing stats line is noise.
         break
       case 'turn.cancelled':
+        terminalTurns.add(event.turnId)
         settled.push({
           key: `event-${event.seq}`,
           text: `${symbols.failure} 已中断 · 已产出内容保留`,
@@ -169,6 +187,7 @@ export function projectTranscript(
         })
         break
       case 'turn.failed':
+        terminalTurns.add(event.turnId)
         settled.push({
           key: `event-${event.seq}`,
           text: `${symbols.failure} ${event.error.code}: ${event.error.message}${event.recoveryHint ? ` · ${event.recoveryHint}` : ''}`,
@@ -197,16 +216,20 @@ export function projectTranscript(
           tone: 'dim',
         })
         break
+      case 'step.started':
+        stepTurns.set(event.stepId, event.turnId)
+        break
       case 'session.started':
       case 'turn.queued':
-      case 'step.started':
       case 'log.rewind':
         break
     }
   }
 
   const activeTools = [...calls.values()]
-    .filter((call) => !results.has(call.callId))
+    .filter(
+      (call) => !results.has(call.callId) && !terminalTurns.has(callTurns.get(call.callId) ?? ''),
+    )
     .map((call) => {
       const presentation = presentTool(call.tool, call.args)
       return {
@@ -215,7 +238,11 @@ export function projectTranscript(
         title: presentation.title,
         ...(presentation.detail === undefined ? {} : { detail: presentation.detail }),
         isTask: call.tool === 'task',
-        status: intents.has(call.callId) ? ('running' as const) : ('pending' as const),
+        status: waitingApproval.has(call.callId)
+          ? ('approval' as const)
+          : intents.has(call.callId)
+            ? ('running' as const)
+            : ('pending' as const),
       }
     })
   return { settled, activeTools }

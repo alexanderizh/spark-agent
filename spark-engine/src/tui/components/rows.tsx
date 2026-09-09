@@ -66,13 +66,15 @@ function renderTranscriptRow(
     const toolLine = row.toolLine
     const symbols = glyphs(capabilities)
     const branch = capabilities.unicode ? '└' : '\\'
-    const status = toolLine.isTask
-      ? toolLine.ok
-        ? 'subagent completed'
-        : 'subagent failed'
-      : toolLine.ok
-        ? 'completed'
-        : 'failed'
+    const status =
+      toolLine.processStatus ??
+      (toolLine.isTask
+        ? toolLine.ok
+          ? 'subagent completed'
+          : 'subagent failed'
+        : toolLine.ok
+          ? 'completed'
+          : 'failed')
     return (
       <Box key={row.key} flexDirection="column" marginTop={1} width={capabilities.width}>
         <Text>
@@ -86,12 +88,18 @@ function renderTranscriptRow(
         <Text>
           <Text color={theme.dim}> {branch} </Text>
           <Text color={toolLine.ok ? theme.ok : theme.error}>
-            {toolLine.ok ? symbols.success : symbols.failure} {status}
+            {toolLine.processStatus === 'still running'
+              ? symbols.pending
+              : toolLine.ok
+                ? symbols.success
+                : symbols.failure}{' '}
+            {status}
           </Text>
           <Text color={theme.dim}>
             {' '}
             · {toolLine.durationMs}
             {toolLine.sessionId === undefined ? '' : ` · session ${shortId(toolLine.sessionId)}`}
+            {toolLine.processId === undefined ? '' : ` · process ${shortId(toolLine.processId)}`}
           </Text>
         </Text>
         {toolLine.resultLines.map((line, index) => (
@@ -143,10 +151,14 @@ export function ActiveTools({ tools, capabilities, theme }: ActiveToolsProps): R
             {tool.isTask
               ? tool.status === 'running'
                 ? 'subagent dispatched'
-                : 'subagent waiting for approval'
+                : tool.status === 'approval'
+                  ? 'subagent waiting for approval'
+                  : 'subagent queued'
               : tool.status === 'running'
                 ? 'running'
-                : 'waiting for approval'}
+                : tool.status === 'approval'
+                  ? 'waiting for approval'
+                  : 'preparing'}
           </Text>
         </Box>
       ))}

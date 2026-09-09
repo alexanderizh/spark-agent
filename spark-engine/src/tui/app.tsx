@@ -34,7 +34,7 @@ import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
 import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
-import { projectTranscript } from './projection.js'
+import { projectTranscript, type ActiveToolProjection } from './projection.js'
 import {
   describeUpdateOutcome,
   type SparkUpdateRunner,
@@ -158,6 +158,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [liveThinking, setLiveThinking] = useState('')
   const [showThinking, setShowThinking] = useState(true)
   const [activeTurns, setActiveTurns] = useState(0)
+  const [cancelling, setCancelling] = useState(false)
   const [pending, setPending] = useState<PendingApproval>()
   const [notice, setNoticeFull] = useState<NoticeState | undefined>(
     props.permissionMode === 'bypass'
@@ -247,6 +248,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       current.some((candidate) => candidate.seq === event.seq) ? current : [...current, event],
     )
     if (
+      event.type === 'assistant.completed' ||
       event.type === 'turn.completed' ||
       event.type === 'turn.cancelled' ||
       event.type === 'turn.failed'
@@ -283,7 +285,14 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           onEvent: appendEvent,
           onDelta: handleDelta,
         })
+        .catch((error: unknown) => {
+          setNoticeFull({
+            text: `任务执行失败：${error instanceof Error ? error.message : String(error)}`,
+            tone: 'error',
+          })
+        })
         .finally(() => {
+          if (controller.signal.aborted) setCancelling(false)
           controllers.current = controllers.current.filter((candidate) => candidate !== controller)
           setActiveTurns((count) => Math.max(0, count - 1))
         })
@@ -307,7 +316,12 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           startTurn(expanded)
           return
         }
-        void handleCommand(value)
+        void handleCommand(value).catch((error: unknown) => {
+          setNoticeFull({
+            text: `操作失败：${error instanceof Error ? error.message : String(error)}`,
+            tone: 'error',
+          })
+        })
         return
       }
       startTurn(value)
@@ -448,7 +462,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
   const interrupt = useCallback(() => {
     const controller = controllers.current[0]
-    if (controller) controller.abort('User interrupted')
+    if (controller && !controller.signal.aborted) {
+      setCancelling(true)
+      controller.abort('User interrupted')
+    }
   }, [])
 
   /** Switch the live session to a recorded one and replay its transcript. */
@@ -508,7 +525,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       setNoticeFull({
         text:
           mode === 'bypass'
-            ? '危险：完全访问已启用（仅本会话），审批与规则全部跳过。'
+            ? '完全访问已启用（仅本会话）；宿主强制拒绝的工具仍不可执行。'
             : mode === 'auto'
               ? '已切换到自动审批：工具自动执行（显式 deny 规则仍生效）。'
               : `权限策略已切换为 ${permissionLabel(mode)}（本会话生效）。`,
@@ -543,7 +560,11 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           because a shorter/equal replacement transcript reuses row positions. */}
       <Transcript
         key={session.sessionId}
-        rows={projection.settled}
+        rows={
+          !scrollableOutput || showThinking
+            ? projection.settled
+            : projection.settled.filter((row) => row.kind !== 'thinking')
+        }
         theme={theme}
         capabilities={capabilities}
         staticOutput={!scrollableOutput}
@@ -561,8 +582,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       <ActiveTools tools={projection.activeTools} capabilities={capabilities} theme={theme} />
       {activeTurns > 0 && (
         <WorkingLine
-          label={action}
-          detail={`esc 中断${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
+          label={cancelling ? '正在中断 · 等待工具清理' : action}
+          detail={`${cancelling ? '已保留当前输入' : pending ? 'esc 拒绝当前工具' : 'esc 中断当前任务'}${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
           capabilities={capabilities}
           theme={theme}
         />
@@ -683,6 +704,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   return (
     <Box
       flexDirection="column"
+      width={capabilities.width}
       {...(capabilities.height === undefined ? {} : { height: capabilities.height })}
     >
       {scrollableOutput ? (
@@ -738,17 +760,20 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
 function deriveAction(
   events: readonly AgentEvent[],
-  activeTools: readonly { readonly title: string; readonly isTask: boolean }[],
+  activeTools: readonly ActiveToolProjection[],
   liveText: string,
   liveThinking: string,
   pending: PendingApproval | undefined,
 ): string {
   if (pending) return '等待权限确认'
+  const activeTool = activeTools.at(-1)
+  if (activeTool) {
+    if (activeTool.status === 'approval') return `等待审批 · ${activeTool.title}`
+    if (activeTool.status === 'pending') return `准备工具 · ${activeTool.title}`
+    return activeTool.isTask ? `子代理已调度 · ${activeTool.title}` : `运行 ${activeTool.title}`
+  }
   if (liveText) return '生成回答'
   if (liveThinking) return '正在思考'
-  const activeTool = activeTools.at(-1)
-  if (activeTool)
-    return activeTool.isTask ? `子代理已调度 · ${activeTool.title}` : `运行 ${activeTool.title}`
   const latest = events.at(-1)
   if (latest?.type === 'step.started') return '请求模型'
   return '处理中'

@@ -78,6 +78,46 @@ describe('InputEditor shortcuts', () => {
     app.unmount()
   })
 
+  it('walks backward and forward through multiple history entries', async () => {
+    const onSubmit = vi.fn()
+    const app = editor({ onSubmit })
+    for (const prompt of ['first task', 'second task']) {
+      app.stdin.write(prompt)
+      await tick()
+      app.stdin.write('\r')
+      await tick()
+    }
+    app.stdin.write('\u001b[A')
+    await tick()
+    expect(app.lastFrame()).toContain('second task')
+    app.stdin.write('\u001b[A')
+    await tick()
+    expect(app.lastFrame()).toContain('first task')
+    app.stdin.write('\u001b[B')
+    await tick()
+    expect(app.lastFrame()).toContain('second task')
+    app.stdin.write('\u001b[B')
+    await tick()
+    expect(app.lastFrame()).not.toContain('second task')
+    app.unmount()
+  })
+
+  it('editing a recalled entry detaches it from history browsing', async () => {
+    const app = editor()
+    app.stdin.write('old task')
+    await tick()
+    app.stdin.write('\r')
+    await tick()
+    app.stdin.write('\u001b[A')
+    await tick()
+    app.stdin.write(' revised')
+    await tick()
+    app.stdin.write('\u001b[B')
+    await tick()
+    expect(app.lastFrame()).toContain('old task revised')
+    app.unmount()
+  })
+
   it('Ctrl+U clears the whole line and Ctrl+W deletes one word back', async () => {
     const onSubmit = vi.fn()
     const app = editor({ onSubmit })
