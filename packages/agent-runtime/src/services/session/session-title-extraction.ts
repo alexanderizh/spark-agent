@@ -33,6 +33,7 @@ interface TitleDialogueTurn {
   firstSeq: number
   userMessage: string
   snapshotUserMessage: string
+  hiddenDisplayContent: string
   assistantMessages: string[]
   hidden: boolean
 }
@@ -48,7 +49,8 @@ interface TitleDialogueSample {
  *
  * - 以 turnId 配对用户正文与同轮 assistant 回复，避免把隐藏定时任务的回复
  *   错配给下一条可见用户消息。
- * - 隐藏消息（定时任务/command follow-up/goal 等内部 turn）整轮跳过。
+ * - 定时任务隐藏消息仅在带安全展示正文时参与取样，并且不读取内部 prompt；
+ *   command follow-up/goal 等其他内部 turn 仍整轮跳过。
  * - 会话超过 4 轮时取首、中间、末尾等均匀位置，避免标题只反映开场内容。
  * - 没有可见用户正文但存在 assistant 正文时，仍允许从 assistant 内容提取标题；
  *   这兼容导入、恢复或仅产生 assistant 输出的历史会话。
@@ -67,6 +69,7 @@ export function pickTitleSourceFromDialogueEvents(
         firstSeq: event.seq,
         userMessage: '',
         snapshotUserMessage: '',
+        hiddenDisplayContent: '',
         assistantMessages: [],
         hidden: false,
       }
@@ -77,6 +80,11 @@ export function pickTitleSourceFromDialogueEvents(
       const user = event as UserMessageEvent
       if (user.userMessageVisibility === 'hidden') {
         turn.hidden = true
+        const displayContent =
+          user.turnSource === 'scheduled_task' ? (user.userMessageDisplayContent?.trim() ?? '') : ''
+        if (turn.hiddenDisplayContent.length === 0 && displayContent.length > 0) {
+          turn.hiddenDisplayContent = displayContent
+        }
         continue
       }
       const content = resolvePreferredText(user.userMessageDisplayContent, user.content)
@@ -88,6 +96,13 @@ export function pickTitleSourceFromDialogueEvents(
       const snapshot = event as TurnPromptSnapshotEvent
       if (snapshot.userMessageVisibility === 'hidden') {
         turn.hidden = true
+        const displayContent =
+          snapshot.turnSource === 'scheduled_task'
+            ? (snapshot.userMessageDisplayContent?.trim() ?? '')
+            : ''
+        if (turn.hiddenDisplayContent.length === 0 && displayContent.length > 0) {
+          turn.hiddenDisplayContent = displayContent
+        }
         continue
       }
       const content = resolvePreferredText(snapshot.userMessageDisplayContent, snapshot.userMessage)
@@ -105,14 +120,20 @@ export function pickTitleSourceFromDialogueEvents(
   }
 
   for (const turn of turns.values()) {
-    if (turn.userMessage.length === 0) turn.userMessage = turn.snapshotUserMessage
+    if (turn.hidden) {
+      // 定时任务会隐藏模型实际收到的内部 prompt，但会持久化一份安全展示正文。
+      // 标题提取只能使用后者，避免把调度上下文或系统指令发给标题模型。
+      turn.userMessage = turn.hiddenDisplayContent
+    } else if (turn.userMessage.length === 0) {
+      turn.userMessage = turn.snapshotUserMessage
+    }
   }
 
   const allTurns = [...turns.values()].sort((left, right) => left.firstSeq - right.firstSeq)
-  const visibleTurns = allTurns.filter((turn) => !turn.hidden && turn.userMessage.length > 0)
-  if (visibleTurns.length > 0) {
-    const samples = selectEvenly(visibleTurns, MAX_TITLE_SOURCE_TURNS).map((turn) =>
-      toTitleDialogueSample(turn, visibleTurns.indexOf(turn) + 1),
+  const titleEligibleTurns = allTurns.filter((turn) => turn.userMessage.length > 0)
+  if (titleEligibleTurns.length > 0) {
+    const samples = selectEvenly(titleEligibleTurns, MAX_TITLE_SOURCE_TURNS).map((turn) =>
+      toTitleDialogueSample(turn, titleEligibleTurns.indexOf(turn) + 1),
     )
     return formatTitleSource(samples)
   }

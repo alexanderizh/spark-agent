@@ -13,7 +13,7 @@ import {
  * 重命名弹窗「提取标题」测试（session:extract-title）：
  *
  * - 纯函数 pickTitleSourceFromDialogueEvents：标题素材选取规则
- *   （按轮次均匀取样、隐藏轮次跳过、displayContent 优先、assistant-only 回退）。
+ *   （按轮次均匀取样、隐藏轮次安全展示正文、displayContent 优先、assistant-only 回退）。
  * - extractSessionTitle 集成：模型解析链（会话模型 → Provider 默认模型）、
  *   不可用码映射。
  */
@@ -44,6 +44,8 @@ const SESSION_ID = 'sess-extract-title'
 function userEvent(overrides: {
   seq: number
   content: string
+  turnId?: string
+  turnSource?: 'scheduled_task' | 'command_follow_up'
   userMessageVisibility?: 'hidden'
   userMessageDisplayContent?: string
 }): AgentEvent {
@@ -51,10 +53,11 @@ function userEvent(overrides: {
     id: `evt-u-${overrides.seq}`,
     type: 'user_message',
     sessionId: SESSION_ID,
-    turnId: `turn-${overrides.seq}`,
+    turnId: overrides.turnId ?? `turn-${overrides.seq}`,
     timestamp: new Date(2026, 0, 1, overrides.seq).toISOString(),
     seq: overrides.seq,
     content: overrides.content,
+    ...(overrides.turnSource != null ? { turnSource: overrides.turnSource } : {}),
     ...(overrides.userMessageVisibility != null
       ? { userMessageVisibility: overrides.userMessageVisibility }
       : {}),
@@ -122,6 +125,55 @@ describe('pickTitleSourceFromDialogueEvents', () => {
     })
   })
 
+  it('定时任务隐藏轮次使用安全展示正文，并保留同轮 assistant 回复', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({
+        seq: 0,
+        content: '[Scheduled Task Context] 包含内部调度信息的完整提示词',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: '每小时推送两道高级前端面试题',
+      }),
+      assistantEvent(1, '已生成本期 React 与浏览器方向面试题'),
+    ])
+
+    expect(source).toEqual({
+      userMessage: '[第1轮用户]\n每小时推送两道高级前端面试题',
+      assistantMessage: '[第1轮助手]\n已生成本期 React 与浏览器方向面试题',
+    })
+    expect(source?.userMessage).not.toContain('内部调度信息')
+  })
+
+  it('隐藏轮次的安全展示正文为空时不回退到内部提示词', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({
+        seq: 0,
+        content: '[Scheduled Task Context] 不能进入标题素材',
+        turnSource: 'scheduled_task',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: '   ',
+      }),
+      assistantEvent(1, '同轮回复也应被排除'),
+    ])
+
+    expect(source).toBeNull()
+  })
+
+  it('非定时任务的隐藏轮次即使带展示正文也不参与标题提取', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({
+        seq: 0,
+        content: '命令内部提示词',
+        turnSource: 'command_follow_up',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: '不应参与提取的命令摘要',
+      }),
+      assistantEvent(1, '同轮回复也应被排除'),
+    ])
+
+    expect(source).toBeNull()
+  })
+
   it('优先使用 userMessageDisplayContent 作为用户消息正文', () => {
     const source = pickTitleSourceFromDialogueEvents([
       userEvent({
@@ -166,6 +218,34 @@ describe('pickTitleSourceFromDialogueEvents', () => {
     expect(source).toEqual({
       userMessage: '[第1轮用户]\n模型实际收到的用户正文',
       assistantMessage: '[第1轮助手]\n回复',
+    })
+  })
+
+  it('只有隐藏 turn_prompt_snapshot 时使用安全展示正文', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      {
+        id: 'evt-scheduled-snapshot',
+        type: 'turn_prompt_snapshot',
+        sessionId: SESSION_ID,
+        turnId: 'scheduled-snapshot-turn',
+        timestamp: new Date(2026, 0, 1, 0).toISOString(),
+        seq: 0,
+        userMessage: '[Scheduled Task Context] 内部提示词',
+        userMessageVisibility: 'hidden',
+        userMessageDisplayContent: '检查部署状态并汇报',
+        turnSource: 'scheduled_task',
+        systemPromptSections: [],
+        model: 'gpt-test',
+        adapterKind: 'spark',
+        permissionMode: 'auto',
+        toolCount: 0,
+      },
+      assistantEvent(1, '部署状态正常', 'scheduled-snapshot-turn'),
+    ] as AgentEvent[])
+
+    expect(source).toEqual({
+      userMessage: '[第1轮用户]\n检查部署状态并汇报',
+      assistantMessage: '[第1轮助手]\n部署状态正常',
     })
   })
 
@@ -268,6 +348,57 @@ describe('extractSessionTitle', () => {
     expect(call.userMessage).toBe('[第1轮用户]\n帮我把导出功能加上进度条')
     expect(call.assistantMessage).toBe('[第1轮助手]\n已为导出流程补充进度反馈。')
     expect(call.apiKey).toBe('test-api-key')
+  })
+
+  it('从持久化的定时任务隐藏轮次提取安全展示正文', async () => {
+    new ProviderProfileRepository(db).create({
+      id: 'provider-extract',
+      providerType: 'openai',
+      name: 'Extract Provider',
+      config: { defaultModel: 'gpt-default', modelIds: ['gpt-default'] },
+      keystoreRef: 'key-extract',
+    })
+    seedSession({ providerProfileId: 'provider-extract', modelId: 'gpt-session' })
+    const eventRepo = new EventRepository(db)
+    eventRepo.insert({
+      id: 'evt-scheduled-user',
+      sessionId: SESSION_ID,
+      turnId: 'turn-scheduled',
+      eventType: 'user_message',
+      eventJson: JSON.stringify(
+        userEvent({
+          seq: 1,
+          content: '[Scheduled Task Context] 内部调度提示词',
+          turnId: 'turn-scheduled',
+          turnSource: 'scheduled_task',
+          userMessageVisibility: 'hidden',
+          userMessageDisplayContent: '每小时推送两道高级前端面试题',
+        }),
+      ),
+    })
+    eventRepo.insert({
+      id: 'evt-scheduled-assistant',
+      sessionId: SESSION_ID,
+      turnId: 'turn-scheduled',
+      eventType: 'assistant_message',
+      eventJson: JSON.stringify(
+        assistantEvent(2, '本期涵盖 React Fiber 与浏览器事件循环', 'turn-scheduled'),
+      ),
+    })
+    generateTitleMock.mockResolvedValue('高级前端面试题学习')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '高级前端面试题学习' })
+    const call = generateTitleMock.mock.calls[0]?.[0] as {
+      userMessage?: string
+      assistantMessage?: string
+    }
+    expect(call.userMessage).toBe('[第1轮用户]\n每小时推送两道高级前端面试题')
+    expect(call.userMessage).not.toContain('内部调度提示词')
+    expect(call.assistantMessage).toBe(
+      '[第1轮助手]\n本期涵盖 React Fiber 与浏览器事件循环',
+    )
   })
 
   it('会话未指定模型时回退 Provider 默认模型', async () => {
