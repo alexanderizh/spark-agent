@@ -5983,6 +5983,20 @@ body.side-chat-resizing {
   color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
 }
 
+/* 块级 code 兜底：思考过程 / 工具日志里的代码块，块内 <code> 只保留字号与颜色，
+   不再画行内胶囊背景（胶囊背景只属于段落里的行内 code）。
+   代码块自己的底色统一由 .md-code-block 提供；暗色下 --code-bg 与模块底色并不同色，
+   若保留 inner code 背景就会在模块内出现一条条与模块底色不一致的行背景。
+   选择器比 views.css 的 `.thinking-content.md-surface code` 更具体，不依赖引入顺序。 */
+.thinking-content.md-surface .md-code-block code,
+.thinking-content.md-surface pre code,
+.tool-log-section-md.md-surface .md-code-block code,
+.tool-log-section-md.md-surface pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
 /* 代码还原点入口按钮：开启态用 accent 着色 + 右上角小圆点，未开启保持默认灰。 */
 .icon-btn.checkpoint-entry {
   position: relative;

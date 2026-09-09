@@ -3,27 +3,87 @@
 // 设计 token 与 .md-image 对齐：--r-md / --border / --bg-soft / --text-muted。
 
 .presented-media-list {
-  display: flex;
-  flex-direction: column;
-  // 关键：flex 列容器默认 align-items: stretch，会把 .md-image 横向拉满到容器宽度，
-  // 而 .md-image-toolbar 是 absolute/right:6px 定位——锚点是被拉满的容器而非图片本身，
-  // 于是工具条跑到会话最右端、离图片很远。改 flex-start 让每个媒体项按内容宽度靠左，
-  // .md-image 收缩回图片自然宽度，工具条就贴回图片右上角。音频/视频同理按自身尺寸排布。
-  align-items: flex-start;
-  gap: 8px;
-  margin: 8px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: min(100%, 760px);
+  margin: 10px 0;
 
-  // 图片复用 MarkdownImage，抵消它默认的 6px 上下 margin，由本容器的 gap 统一间距
   .md-image {
     margin: 0;
   }
 }
 
+.presented-media-list.is-image-gallery {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.presented-media-image {
+  position: relative;
+  min-width: 0;
+  max-width: 560px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--r-md) + 2px);
+  background: var(--bg-soft);
+
+  .md-image {
+    display: block;
+    width: 100%;
+    max-width: none;
+  }
+
+  .md-image-img {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+.is-image-gallery .presented-media-image {
+  max-width: none;
+  aspect-ratio: 4 / 3;
+
+  .md-image,
+  .md-image-img {
+    height: 100%;
+  }
+
+  .md-image-img {
+    max-height: none;
+    object-fit: cover;
+  }
+}
+
+.presented-media-image-name {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 22px 10px 8px;
+  overflow: hidden;
+  color: #fff;
+  font-size: var(--font-xs, 11px);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: linear-gradient(transparent, rgba(9, 9, 11, 0.72));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.presented-media-image:hover .presented-media-image-name,
+.presented-media-image:focus-within .presented-media-image-name {
+  opacity: 1;
+}
+
 .presented-media-audio {
   display: flex;
   flex-direction: column;
+  grid-column: 1 / -1;
   gap: 8px;
-  width: min(100%, 420px);
+  width: 100%;
   padding: 10px 12px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
@@ -77,7 +137,13 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: min(100%, 560px);
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 680px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--r-md) + 2px);
+  background: var(--bg-soft);
 }
 
 .presented-media-video-head {
@@ -125,7 +191,26 @@
   max-width: 100%;
   max-height: 420px; // 与 .md-image-img 的最大高度对齐，避免视频撑爆会话气泡
   border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  padding: 10px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  background: #09090b;
+  object-fit: contain;
+}
+
+@media (max-width: 620px) {
+  .presented-media-list.is-image-gallery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .is-image-gallery .presented-media-image {
+    aspect-ratio: 16 / 10;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presented-media-image-name,
+  .presented-media-action {
+    transition: none;
+  }
 }

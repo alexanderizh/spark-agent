@@ -121,21 +121,31 @@ function PresentedMediaOpenButton({ filePath }: { filePath: string }): ReactNode
  * 渲染 presented_files 中的媒体部分。媒体自包含预览能力（图片走 MarkdownImage 全屏，
  * 音视频走原生 controls），不依赖外部 onFilePreview。
  */
-export function PresentedMediaList<T extends PresentedFile>({
-  files,
-}: {
-  files: T[]
-}): ReactNode {
+export function PresentedMediaList<T extends PresentedFile>({ files }: { files: T[] }): ReactNode {
   const mediaFiles = files.filter((file) => classifyPresentedFile(file.path) != null)
   if (mediaFiles.length === 0) return null
+  const imageCount = mediaFiles.filter(
+    (file) => classifyPresentedFile(file.path) === 'image',
+  ).length
 
   return (
-    <div className="presented-media-list">
+    <div
+      className={`presented-media-list${imageCount > 1 ? ' is-image-gallery' : ''}`}
+      role="group"
+      aria-label="会话产物"
+    >
       {mediaFiles.map((file) => {
         const kind = classifyPresentedFile(file.path)
         const label = file.title ?? getBaseName(file.path)
         if (kind === 'image') {
-          return <MarkdownImage key={file.path} src={file.path} alt={label} />
+          return (
+            <div key={file.path} className="presented-media-image">
+              <MarkdownImage src={file.path} alt={label} />
+              <span className="presented-media-image-name" title={file.path}>
+                {label}
+              </span>
+            </div>
+          )
         }
         if (kind === 'audio') {
           const ext = getExtension(file.path).toUpperCase()

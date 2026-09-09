@@ -567,16 +567,17 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 
 /* === Document output cards (agent-produced document links) === */
 .document-output-card-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 8px;
+  width: min(100%, 760px);
   margin: 8px 0;
 }
 .document-output-card {
-  width: min(100%, 560px);
-  min-height: 94px;
+  width: 100%;
+  min-height: 78px;
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   padding: 10px 12px;
@@ -601,7 +602,7 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 }
 .document-output-card-preview {
   position: relative;
-  height: 72px;
+  height: 58px;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
@@ -613,8 +614,8 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 .document-output-card-preview::after {
   content: '';
   position: absolute;
-  inset: auto 14px 0 34px;
-  height: 58px;
+  inset: auto 9px 0 27px;
+  height: 44px;
   border-radius: 7px 7px 0 0;
   background: color-mix(in srgb, var(--panel) 88%, white);
   border: 1px solid var(--divider);
@@ -628,15 +629,15 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 .document-output-card-lines {
   position: absolute;
   z-index: 1;
-  left: 46px;
-  right: 14px;
-  bottom: 15px;
+  left: 37px;
+  right: 9px;
+  bottom: 11px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 .document-output-card-lines span {
-  height: 7px;
+  height: 5px;
   border-radius: 99px;
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
@@ -698,10 +699,10 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 
 @media (max-width: 720px) {
   .document-output-card {
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: 64px minmax(0, 1fr);
   }
   .document-output-card-preview {
-    height: 62px;
+    height: 54px;
   }
   .document-output-card-action {
     display: none;
