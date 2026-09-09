@@ -1,3 +1,4 @@
+import { processToolDefinitions } from './process-definitions.js';
 import type { ToolDefinition } from '../contract.js';
 
 const path = { type: 'string', minLength: 1 } as const;
@@ -121,10 +122,13 @@ export const workspaceToolDefinitions: readonly ToolDefinition[] = [
   {
     name: 'bash',
     description:
-      'Run a non-interactive shell command in the workspace with bounded output and process-group cancellation.',
+      'Run a non-interactive shell command with bounded output and process-group cancellation. Optional yield_ms (0..30000) starts a turn-owned managed command, returning process_id for process_wait/process_cancel. It has a 120-second lifetime and must finish within this turn. A running status is not completion; do not restart the command.',
     inputSchema: {
       type: 'object',
-      properties: { command: { type: 'string', minLength: 1, maxLength: 100_000 } },
+      properties: {
+        command: { type: 'string', minLength: 1, maxLength: 100_000 },
+        yield_ms: { type: 'integer', minimum: 0, maximum: 30000 },
+      },
       required: ['command'],
       additionalProperties: false,
     },
@@ -137,4 +141,5 @@ export const workspaceToolDefinitions: readonly ToolDefinition[] = [
     interruptible: true,
     costClass: 'cpu',
   },
+  ...processToolDefinitions,
 ];

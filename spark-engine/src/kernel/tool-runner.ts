@@ -14,6 +14,7 @@ import type { HookRunContext } from '../hooks/types.js'
 import type { ResolvedToolCall } from '../tools/contract.js'
 import { taskArgs } from '../tools/task/definition.js'
 import { processToolOutput, type ProcessedToolOutput } from '../tools/output.js'
+import { ToolExecutionError } from '../tools/execution-error.js'
 import { ToolArgumentValidator } from '../tools/validation.js'
 
 interface PreparedCall {
@@ -144,8 +145,9 @@ export class ToolRunner {
     }
 
     // PreToolUse hooks run before the permission policy: a `block` decision
-    // denies the call outright, an `approve` decision short-circuits the ask.
+    // denies the call outright; approval may skip an ask, never a policy denial.
     const hooks = this.options.env.hooks
+    let hookApproved = false
     if (hooks) {
       const outcome = await hooks.run(
         'PreToolUse',
@@ -164,16 +166,10 @@ export class ToolRunner {
         )
         return undefined
       }
-      if (outcome.approved) {
-        await this.#appendPermissionEvaluation(call.callId, {
-          decision: 'allow',
-          reason: 'PreToolUse hook approved',
-        })
-        return { call }
-      }
+      hookApproved = outcome.approved
     }
 
-    let policyDecision
+    let policyDecision: PolicyDecision
     try {
       policyDecision = await this.options.env.permission.policy.check(
         call,
@@ -187,6 +183,13 @@ export class ToolRunner {
       })
       await this.#deny(modelCall.callId, reason)
       return undefined
+    }
+    if (hookApproved && policyDecision.decision === 'ask') {
+      policyDecision = {
+        decision: 'allow',
+        reason: 'PreToolUse hook approved after policy evaluation',
+        ...(policyDecision.rule ? { rule: policyDecision.rule } : {}),
+      }
     }
     await this.#appendPermissionEvaluation(call.callId, policyDecision)
     if (policyDecision.decision === 'deny') {
@@ -351,10 +354,20 @@ export class ToolRunner {
           ? await this.#runTask(call, timeout.signal)
           : await this.options.env.tools.executor.execute(call, {
               signal: timeout.signal,
+              turnSignal: this.options.signal,
+              ...(this.options.turnId === undefined
+                ? {}
+                : { owner: { sessionId: this.options.sessionId, turnId: this.options.turnId } }),
               timeoutMs: call.definition.timeoutMs,
             })
       ok = outcome.ok
       content = outcome.content
+      if (this.options.signal.aborted || timeout.timedOut()) {
+        ok = false
+        aborted = this.options.signal.aborted
+        const status = aborted ? 'aborted' : `timeout after ${call.definition.timeoutMs}ms`
+        content = `${status}\nOutcome is not confirmed; inspect actual state before retrying.\n${content}`
+      }
       if ('sessionId' in outcome && typeof outcome.sessionId === 'string') {
         childSessionId = outcome.sessionId
       }
@@ -366,6 +379,9 @@ export class ToolRunner {
         content = `timeout after ${call.definition.timeoutMs}ms`
       } else {
         content = `tool execution failed: ${errorMessage(error)}`
+      }
+      if (error instanceof ToolExecutionError && error.output) {
+        content += `\nPartial output (operation did not complete successfully):\n${error.output}`
       }
     } finally {
       timeout.dispose()

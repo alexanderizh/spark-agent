@@ -75,12 +75,23 @@ export interface ToolRegistry {
   list(): readonly ToolDefinition[]
 }
 
+export interface ToolOwner {
+  readonly sessionId: string
+  readonly turnId: string
+}
+
 export interface ToolCallContext {
+  readonly owner?: ToolOwner
+  readonly turnSignal?: AbortSignal
   readonly signal: AbortSignal
   readonly timeoutMs: number
 }
 
 export interface ToolExecutor {
+  /** Reject normal completion while owned commands have unobserved results. */
+  assertTurnSettled?(owner: ToolOwner): void
+  /** Reap owned processes on every terminal path. */
+  closeTurn?(owner: ToolOwner): Promise<void>
   execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome>
 }
 

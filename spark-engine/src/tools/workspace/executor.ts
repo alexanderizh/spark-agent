@@ -6,8 +6,9 @@ import fastGlob from 'fast-glob';
 import ignore from 'ignore';
 
 import { KernelError } from '../../kernel/errors.js';
-import type { ToolCallContext, ToolExecutor } from '../../seams.js';
+import type { ToolCallContext, ToolExecutor, ToolOwner } from '../../seams.js';
 import type { ResolvedToolCall, ToolOutcome } from '../contract.js';
+import { ManagedProcesses } from './managed-processes.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { WorkspacePathGuard } from './path-guard.js';
 import { runProcess, withCustomEnvironment } from './process.js';
@@ -16,12 +17,21 @@ const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
 export class WorkspaceToolExecutor implements ToolExecutor {
   readonly #guard: WorkspacePathGuard;
+  readonly #processes = new ManagedProcesses();
 
   constructor(
     readonly cwd: string,
     private readonly customEnv?: Readonly<Record<string, string>>,
   ) {
     this.#guard = new WorkspacePathGuard(cwd);
+  }
+
+  assertTurnSettled(owner: ToolOwner): void {
+    this.#processes.assertTurnSettled(owner);
+  }
+
+  async closeTurn(owner: ToolOwner): Promise<void> {
+    await this.#processes.closeTurn(owner);
   }
 
   async execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome> {
@@ -39,7 +49,20 @@ export class WorkspaceToolExecutor implements ToolExecutor {
       case 'edit':
         return this.#edit(args, context.signal);
       case 'bash':
-        return this.#bash(args, context.signal);
+        return this.#bash(args, context, call.callId);
+      case 'process_wait':
+        return this.#processes.wait(
+          stringArg(args.process_id, 'process_id'),
+          Number(args.cursor ?? 0),
+          Number(args.wait_ms ?? 1000),
+          context,
+        );
+      case 'process_cancel':
+        return this.#processes.cancel(
+          stringArg(args.process_id, 'process_id'),
+          Number(args.cursor ?? 0),
+          context,
+        );
       default:
         return { ok: false, content: `Unknown workspace tool: ${call.name}` };
     }
@@ -161,13 +184,30 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     }
   }
 
-  async #bash(args: Record<string, unknown>, signal: AbortSignal): Promise<ToolOutcome> {
+  async #bash(
+    args: Record<string, unknown>,
+    context: ToolCallContext,
+    callId: string,
+  ): Promise<ToolOutcome> {
     const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
     const command = stringArg(args.command, 'command');
     const shellArgs = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-lc', command];
+    if (args.yield_ms !== undefined) {
+      return this.#processes.start(
+        callId,
+        shell,
+        shellArgs,
+        {
+          cwd: this.cwd,
+          env: withCustomEnvironment(this.customEnv),
+          yieldMs: Number(args.yield_ms),
+        },
+        context,
+      );
+    }
     const result = await runProcess(shell, shellArgs, {
       cwd: this.cwd,
-      signal,
+      signal: context.signal,
       env: withCustomEnvironment(this.customEnv),
     });
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();

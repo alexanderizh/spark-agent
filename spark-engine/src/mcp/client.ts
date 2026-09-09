@@ -7,7 +7,7 @@ import {
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
-import type { ToolExecutor, ToolCallContext } from '../seams.js'
+import type { ToolExecutor, ToolCallContext, ToolOwner } from '../seams.js'
 import type { ResolvedToolCall, ToolDefinition, ToolOutcome } from '../tools/contract.js'
 import { withCustomEnvironment } from '../tools/workspace/process.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
@@ -205,6 +205,14 @@ export class CompositeToolExecutor implements ToolExecutor {
     private readonly builtIn: ToolExecutor,
     private readonly mcp: McpToolManager,
   ) {}
+
+  assertTurnSettled(owner: ToolOwner): void {
+    this.builtIn.assertTurnSettled?.(owner)
+  }
+
+  async closeTurn(owner: ToolOwner): Promise<void> {
+    await this.builtIn.closeTurn?.(owner)
+  }
 
   execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome> {
     return this.mcp.hasTool(call.name)

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RulePermissionPolicy } from '../../src/permission/policy.js';
 
 import { HookRunner, type HookSpawnRequest, type HookSpawnResult } from '../../src/hooks/runner.js';
 import type { HooksConfig } from '../../src/hooks/types.js';
@@ -119,6 +120,82 @@ describe('turn integration with hooks', () => {
     // The filesystem never received the write.
     expect(base.fixtures.fs.exists('a.txt')).toBe(false);
   });
+
+  it.each(['manual', 'auto', 'bypass'] as const)(
+    'hook approval cannot override host disallows in %s mode',
+    async (permissionMode) => {
+      const base = createDeterministicEnv([
+        toolCall('blocked', 'write', { path: 'blocked.txt', content: 'no' }),
+        text('denied'),
+      ])
+      const fake = scriptedSpawn(() => ({ stdout: '{"decision":"approve"}' }))
+      const env = {
+        ...base,
+        permission: {
+          ...base.permission,
+          policy: new RulePermissionPolicy({ disallowedTools: ['write'] }),
+        },
+        hooks: new HookRunner({
+          config: preToolUseConfig([{ hooks: [{ type: 'command', command: 'allow.sh' }] }]),
+          spawn: fake.spawn,
+        }),
+      }
+      await new TurnMachine(env).run({
+        sessionId: 'deny',
+        turnId: 'turn',
+        input: 'write',
+        cwd: '/ws',
+        permissionMode,
+      })
+      expect(base.fixtures.fs.exists('blocked.txt')).toBe(false)
+      const events = []
+      for await (const event of env.store.read('deny')) events.push(event)
+      expect(events.find((event) => event.type === 'permission.evaluated')).toMatchObject({
+        decision: 'deny',
+      })
+      expect(events.find((event) => event.type === 'tool.result')).toMatchObject({
+        ok: false,
+        content: expect.stringContaining('disallowed by host'),
+      })
+    },
+  )
+
+  it('hook approval fails closed when the policy throws', async () => {
+    const base = createDeterministicEnv([
+      toolCall('blocked', 'write', { path: 'blocked.txt', content: 'no' }),
+      text('denied'),
+    ])
+    const fake = scriptedSpawn(() => ({ stdout: '{"decision":"approve"}' }))
+    const env = {
+      ...base,
+      permission: {
+        ...base.permission,
+        policy: {
+          async check(): Promise<never> {
+            throw new Error('policy unavailable')
+          },
+        },
+      },
+      hooks: new HookRunner({
+        config: preToolUseConfig([{ hooks: [{ type: 'command', command: 'allow.sh' }] }]),
+        spawn: fake.spawn,
+      }),
+    }
+    await new TurnMachine(env).run({
+      sessionId: 'error',
+      turnId: 'turn',
+      input: 'write',
+      cwd: '/ws',
+      permissionMode: 'manual',
+    })
+    expect(base.fixtures.fs.exists('blocked.txt')).toBe(false)
+    const events = []
+    for await (const event of env.store.read('error')) events.push(event)
+    expect(events.find((event) => event.type === 'tool.result')).toMatchObject({
+      ok: false,
+      content: expect.stringContaining('policy unavailable'),
+    })
+  })
 
   it('an approved PreToolUse hook skips the permission ask', async () => {
     const base = createDeterministicEnv([

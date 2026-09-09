@@ -1,12 +1,15 @@
+import { StringDecoder } from 'node:string_decoder';
 import { spawn } from 'node:child_process';
 
 import { KernelError } from '../../kernel/errors.js';
+import { ToolExecutionError } from '../execution-error.js';
 
 export interface ProcessOptions {
   readonly cwd: string;
   readonly signal: AbortSignal;
   readonly env?: NodeJS.ProcessEnv;
   readonly maxOutputBytes?: number;
+  readonly onOutput?: (text: string) => void;
 }
 
 export interface ProcessResult {
@@ -37,22 +40,39 @@ export async function runProcess(
     terminateTree(child.pid, 'SIGTERM');
     if (killTimer) return;
     killTimer = setTimeout(() => {
-      if (child.exitCode === null) terminateTree(child.pid, 'SIGKILL');
+      // The group leader may have exited while descendants still hold pipes.
+      terminateTree(child.pid, 'SIGKILL');
     }, 1_500);
     killTimer.unref();
   };
+  const emitOutput = (value: string): void => {
+    if (!value) return;
+    try {
+      options.onOutput?.(value);
+    } catch {
+      /* Observers cannot interrupt process cleanup. */
+    }
+  };
+  const stdoutDecoder = new StringDecoder('utf8');
+  const stderrDecoder = new StringDecoder('utf8');
   const capture =
-    (target: Buffer[]) =>
+    (target: Buffer[], decoder: StringDecoder) =>
     (chunk: Buffer): void => {
+      const remaining = Math.max(0, maxOutputBytes - outputBytes);
+      if (remaining > 0) {
+        const captured = Buffer.from(chunk.subarray(0, remaining));
+        target.push(captured);
+        const decoded = decoder.write(captured);
+        emitOutput(decoded);
+      }
       outputBytes += chunk.byteLength;
-      if (outputBytes <= maxOutputBytes) target.push(Buffer.from(chunk));
-      else if (!outputExceeded) {
+      if (outputBytes > maxOutputBytes && !outputExceeded) {
         outputExceeded = true;
         terminate();
       }
     };
-  child.stdout.on('data', capture(stdout));
-  child.stderr.on('data', capture(stderr));
+  child.stdout.on('data', capture(stdout, stdoutDecoder));
+  child.stderr.on('data', capture(stderr, stderrDecoder));
   const abort = (): void => {
     terminate();
   };
@@ -62,6 +82,8 @@ export async function runProcess(
     const exitCode = await new Promise<number>((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => {
+        const tail = stdoutDecoder.end() + stderrDecoder.end();
+        emitOutput(tail);
         if (code !== null) resolve(code);
         else if (options.signal.aborted) reject(abortError());
         else if (outputExceeded) resolve(1);
@@ -80,6 +102,19 @@ export async function runProcess(
       stdout: Buffer.concat(stdout).toString('utf8'),
       stderr: Buffer.concat(stderr).toString('utf8'),
     };
+  } catch (error) {
+    const output = [Buffer.concat(stdout).toString('utf8'), Buffer.concat(stderr).toString('utf8')]
+      .filter(Boolean)
+      .join('\n');
+    if (!output) throw error;
+    const failure = new ToolExecutionError(
+      error instanceof Error ? error.message : String(error),
+      output,
+      { cause: error },
+    );
+    // Keep cancellation recognizable to callers outside ToolRunner too.
+    if (options.signal.aborted) failure.name = 'AbortError';
+    throw failure;
   } finally {
     if (killTimer) clearTimeout(killTimer);
     options.signal.removeEventListener('abort', abort);

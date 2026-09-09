@@ -250,6 +250,7 @@ export class TurnMachine {
           toolCalls: response.message.toolCalls.length,
         })
         if (response.message.toolCalls.length === 0) {
+          this.env.tools.executor.assertTurnSettled?.(options)
           const terminal = await gate.finalize(async () =>
             asTerminal(
               await append({
@@ -266,6 +267,7 @@ export class TurnMachine {
           return { turnId: options.turnId, terminal }
         }
         if (action.kind === 'stop') {
+          this.env.tools.executor.assertTurnSettled?.(options)
           const terminal = await gate.finalize(async () =>
             asTerminal(
               await append({
@@ -309,7 +311,11 @@ export class TurnMachine {
       if (!terminal) throw error
       return { turnId: options.turnId, terminal }
     } finally {
-      cancellation.dispose()
+      try {
+        await this.env.tools.executor.closeTurn?.(options)
+      } finally {
+        cancellation.dispose()
+      }
     }
   }
 
