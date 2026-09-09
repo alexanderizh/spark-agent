@@ -122,6 +122,19 @@ describe('ChatConfigPanel runtime configuration feedback', () => {
     container.remove()
   })
 
+  it('exposes accessible section toggles and preserves drafts when collapsed', () => {
+    const toggle = container.querySelector<HTMLButtonElement>('.session-panel-toggle')!
+    expect(toggle.tagName).toBe('BUTTON')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    act(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.runtime-env-key')).toBeNull()
+    act(() => toggle.click())
+    expect(container.querySelector<HTMLInputElement>('.runtime-env-key')?.value).toBe('API_KEY')
+    expect(container.querySelector<HTMLInputElement>('.runtime-env-value')?.value).toBe('secret')
+    expect(mocks.updateEnvConfig).not.toHaveBeenCalled()
+  })
+
   it('shows success feedback after explicit environment and prompt saves', async () => {
     const blocks = container.querySelectorAll('.runtime-prompt-block')
     const projectEnvBlock = blocks.item(0)

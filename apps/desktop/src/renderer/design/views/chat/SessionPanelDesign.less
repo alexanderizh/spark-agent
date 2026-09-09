@@ -1,0 +1,228 @@
+// Shared visual language, scoped to the conversation configuration and inspector.
+.session-panel {
+  container-type: inline-size;
+
+  > .inspector {
+    padding: 0 12px 24px;
+    gap: 12px;
+    border-left: 0;
+    background: var(--bg-soft);
+  }
+
+  .session-panel-heading {
+    display: grid;
+    gap: 5px;
+    padding: 20px 4px 8px;
+
+    strong {
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 650;
+    }
+    span {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+  }
+
+  .inspector-section {
+    flex-shrink: 0;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+
+    h4 {
+      height: auto;
+      min-height: 28px;
+      gap: 8px;
+      margin: 0 0 12px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+  }
+
+  .session-panel-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    .spacer {
+      flex: 1;
+    }
+  }
+
+  :is(button, input, textarea):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  .runtime-prompt-block {
+    gap: 10px;
+    padding: 14px 0 0;
+    + .runtime-prompt-block {
+      margin-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+  }
+  .runtime-prompt-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text);
+    font-size: 12px;
+  }
+  .session-panel-count {
+    border-radius: 5px;
+    background: var(--bg-soft);
+    padding: 2px 6px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .session-panel-caption {
+    margin-top: -5px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .runtime-env-hint {
+    padding: 10px 12px;
+    margin-bottom: 0;
+    border-radius: 8px;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .runtime-env-empty {
+    padding: 14px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    line-height: 1.7;
+  }
+  .runtime-env-row {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 10px 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft);
+  }
+  .session-env-field {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 5px;
+    min-width: 0;
+    > span {
+      color: var(--text-muted);
+      font-size: 10px;
+      line-height: 1.4;
+    }
+    &--key {
+      grid-column: 1;
+    }
+    .form-input {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      height: 32px;
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+    }
+  }
+  .runtime-env-key,
+  .runtime-env-value {
+    font-family: var(--font-mono, monospace);
+  }
+  .runtime-env-remove {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    width: 28px;
+    height: 32px;
+    padding: 0;
+  }
+  .runtime-env-actions {
+    gap: 8px;
+    padding-top: 2px;
+  }
+  .runtime-env-transfer-actions {
+    flex: 0 1 auto;
+    gap: 4px;
+  }
+  .runtime-env-actions :is(.btn, .icon-btn) {
+    min-height: 30px;
+  }
+  .inspector-textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 112px;
+    max-height: 360px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft);
+    font-size: 12px;
+    line-height: 1.7;
+    resize: vertical;
+  }
+  .kv-row {
+    gap: 12px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .kv-row .v {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .token-usage-stats {
+    gap: 8px;
+  }
+  .token-stat {
+    min-width: 0;
+    padding: 10px 6px;
+    border-radius: 8px;
+    background: var(--bg-soft);
+  }
+  .token-stat-value {
+    font-variant-numeric: tabular-nums;
+  }
+  .inspector-muted {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+@container (min-width: 480px) {
+  .session-panel .runtime-env-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+  }
+  .session-panel .session-env-field--value {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .session-panel .runtime-env-remove {
+    grid-column: 3;
+  }
+}
