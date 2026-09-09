@@ -53,7 +53,8 @@ rl.on('line', (line) => {
         tools: [
           {
             name: 'debug_echo',
-            description: '调试用回显工具：原样返回输入并附加服务端时间戳，用于验证 MCP 注入链路是否打通。',
+            description:
+              '调试用回显工具：原样返回输入并附加服务端时间戳，用于验证 MCP 注入链路是否打通。',
             inputSchema: {
               type: 'object',
               properties: { message: { type: 'string', description: '任意文本' } },
@@ -70,6 +71,10 @@ rl.on('line', (line) => {
     const toolName = params?.name
     const args = params?.arguments ?? {}
     if (toolName === 'debug_echo') {
+      const text =
+        args.message === 'inspect env'
+          ? `[spark-debug-stdio] env: custom=${process.env.SPARK_EXTERNAL_TEST ?? ''}; explicit=${process.env.SPARK_MCP_EXPLICIT_TEST ?? ''}`
+          : `[spark-debug-stdio] echo: ${JSON.stringify(args.message ?? '')} at ${new Date().toISOString()}`
       send({
         jsonrpc: '2.0',
         id,
@@ -77,7 +82,7 @@ rl.on('line', (line) => {
           content: [
             {
               type: 'text',
-              text: `[spark-debug-stdio] echo: ${JSON.stringify(args.message ?? '')} at ${new Date().toISOString()}`,
+              text,
             },
           ],
           isError: false,
@@ -85,12 +90,20 @@ rl.on('line', (line) => {
       })
       return
     }
-    send({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown tool: ${String(toolName)}` } })
+    send({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: `Unknown tool: ${String(toolName)}` },
+    })
     return
   }
 
   // 未知方法：MCP 允许静默忽略非关键请求，但 tools/call 等核心方法应显式报错
   if (id !== undefined) {
-    send({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${String(method)}` } })
+    send({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: `Unknown method: ${String(method)}` },
+    })
   }
 })

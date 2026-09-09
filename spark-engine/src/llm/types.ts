@@ -62,11 +62,7 @@ export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high' | 'max'
 
 export function isReasoningEffort(value: string): value is ReasoningEffort {
   return (
-    value === 'off' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'max'
+    value === 'off' || value === 'low' || value === 'medium' || value === 'high' || value === 'max'
   )
 }
 
@@ -79,13 +75,32 @@ export const EFFORT_BUDGET_TOKENS: Readonly<Record<Exclude<ReasoningEffort, 'off
 }
 
 /**
+ * Conservative fallback only used when no provider/model budget is available.
+ * Configured SparkWork routes never use this value.
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 16_384
+
+/**
  * Maps a user-selected effort level onto the provider-neutral thinking config:
  * explicit off, or a concrete token budget that each protocol translates into
  * its native shape (Anthropic budget_tokens, OpenAI reasoning.effort).
  */
-export function thinkingConfigFor(effort: ReasoningEffort): ThinkingConfig {
+export function thinkingConfigFor(
+  effort: ReasoningEffort,
+  budgetOverrideTokens?: number,
+): ThinkingConfig {
   if (effort === 'off') return { type: 'disabled' }
-  return { type: 'enabled', budgetTokens: EFFORT_BUDGET_TOKENS[effort] }
+  const normalizedOverride =
+    budgetOverrideTokens !== undefined &&
+    Number.isSafeInteger(budgetOverrideTokens) &&
+    budgetOverrideTokens >= 1_024 &&
+    budgetOverrideTokens <= 128_000
+      ? budgetOverrideTokens
+      : undefined
+  return {
+    type: 'enabled',
+    budgetTokens: normalizedOverride ?? EFFORT_BUDGET_TOKENS[effort],
+  }
 }
 
 export interface ProviderContinuation {
@@ -102,6 +117,21 @@ export interface LlmRequest {
   readonly maxTokens: number
   readonly stopSequences?: readonly string[]
   readonly metadata: Readonly<Record<string, string>>
+}
+
+/**
+ * Provider/model supplied generation limits.
+ *
+ * These values are authoritative when present. They are deliberately kept
+ * separate from user-facing reasoning effort: a provider's output ceiling is
+ * a hard protocol limit, while effort only controls how the model spends that
+ * output budget internally.
+ */
+export interface ModelBudget {
+  /** Provider/model context window, including input and generated tokens. */
+  readonly contextWindowTokens?: number
+  /** Provider/model maximum generated tokens, including reasoning tokens. */
+  readonly maxOutputTokens?: number
 }
 
 export type LlmDelta =

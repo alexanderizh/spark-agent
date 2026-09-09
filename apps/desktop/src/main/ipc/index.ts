@@ -231,6 +231,7 @@ import type {
   CanvasMediaPreviewTemplateInvocationResponse,
   MediaCapabilityId,
   SessionId,
+  RemoteConnectionConfig,
 } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
@@ -2346,8 +2347,15 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
       })
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
+    const commandPrefix = getRemoteConnectionService()
+      .list()
+      .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
     void getRemoteConnectionService()
-      .sendReply(target.connectionId, target.externalId, buildRemoteErrorGuidance(event.message))
+      .sendReply(
+        target.connectionId,
+        target.externalId,
+        buildRemoteErrorGuidance(event.message, commandPrefix),
+      )
       .catch((err) => {
         log.warn(`Failed to send remote error reply: ${String(err)}`)
       })
@@ -2736,8 +2744,26 @@ function parseRemoteCommand(
   return { name: name.toLowerCase(), args, text: body }
 }
 
+function formatRemoteCommand(
+  connection: Pick<RemoteConnectionConfig, 'commandPrefix'>,
+  name: string,
+  argument?: string,
+): string {
+  const prefix = connection.commandPrefix.trim() || '/'
+  return `${prefix}${name}${argument == null ? '' : ` ${argument}`}`
+}
+
+function formatRemoteCommandUsage(
+  usage: string,
+  connection: Pick<RemoteConnectionConfig, 'commandPrefix'>,
+): string {
+  const prefix = connection.commandPrefix.trim() || '/'
+  return usage.replace(/^\/([a-z][a-z-]*)/iu, `${prefix}$1`)
+}
+
 const REMOTE_SELECTION_CACHE_TTL_MS = 10 * 60_000
 const remoteSelectionCache = new Map<string, { expiresAt: number; rows: RemoteSelectionRow[] }>()
+const remoteSelectionActive = new Map<string, { kind: RemoteSelectionKind; expiresAt: number }>()
 const remoteAuditLog: Array<{
   at: string
   connectionId: string
@@ -2752,10 +2778,13 @@ function cacheRemoteSelection(
   kind: RemoteSelectionKind,
   rows: RemoteSelectionRow[],
 ): void {
+  const expiresAt = Date.now() + REMOTE_SELECTION_CACHE_TTL_MS
   remoteSelectionCache.set(`${connectionId}:${kind}`, {
-    expiresAt: Date.now() + REMOTE_SELECTION_CACHE_TTL_MS,
+    expiresAt,
     rows,
   })
+  if (rows.length === 0) remoteSelectionActive.delete(connectionId)
+  else remoteSelectionActive.set(connectionId, { kind, expiresAt })
   if (remoteSelectionCache.size > 200) {
     for (const [key, value] of remoteSelectionCache) {
       if (value.expiresAt < Date.now()) remoteSelectionCache.delete(key)
@@ -2770,6 +2799,28 @@ function getCachedRemoteSelection(
   const cached = remoteSelectionCache.get(`${connectionId}:${kind}`)
   if (cached == null || cached.expiresAt < Date.now()) return null
   return cached.rows
+}
+
+function getActiveRemoteSelectionKind(connectionId: string): RemoteSelectionKind | null {
+  const active = remoteSelectionActive.get(connectionId)
+  if (active == null || active.expiresAt < Date.now()) {
+    if (active != null) remoteSelectionActive.delete(connectionId)
+    return null
+  }
+  if (getCachedRemoteSelection(connectionId, active.kind) == null) {
+    remoteSelectionActive.delete(connectionId)
+    return null
+  }
+  return active.kind
+}
+
+const REMOTE_SELECTION_COMMANDS: Record<RemoteSelectionKind, string> = {
+  providers: 'use-provider',
+  models: 'use-model',
+  agents: 'use-agent',
+  sessions: 'use-session',
+  workspaces: 'new-session',
+  windows: 'focus',
 }
 
 function appendRemoteAudit(entry: Omit<(typeof remoteAuditLog)[number], 'at'>): void {
@@ -2823,6 +2874,17 @@ function formatRemoteSessionStatus(status: RemoteSessionStatus): string {
   return '空闲'
 }
 
+function formatRemoteSelectionList(
+  rows: RemoteSelectionRow[],
+  empty: string,
+  kindLabel: string,
+  useCommand: string,
+): string {
+  const list = formatRows(rows, empty)
+  if (rows.length === 0) return list
+  return `${list}\n\n发送序号即可选择${kindLabel}；也可发送 ${useCommand} <序号|名称>。`
+}
+
 async function listRemoteSessionRows(status?: RemoteSessionStatus): Promise<{
   rows: RemoteSelectionRow[]
   total: number
@@ -2862,12 +2924,12 @@ async function executeRemoteCommand(
     if (connection.capabilities[capability]) return null
     const hint =
       capability === 'switchSession'
-        ? '请在设置中启用会话切换能力；启用后可使用 /sessions 和 /use-session。'
+        ? `请在设置中启用会话切换能力；启用后可使用 ${formatRemoteCommand(connection, 'sessions')} 和 ${formatRemoteCommand(connection, 'use-session')}。`
         : capability === 'switchModel'
-          ? '请在设置中启用模型切换能力；启用后可使用 /providers、/models 和 /use-model。'
+          ? `请在设置中启用模型切换能力；启用后可使用 ${formatRemoteCommand(connection, 'providers')}、${formatRemoteCommand(connection, 'models')} 和 ${formatRemoteCommand(connection, 'use-model')}。`
           : capability === 'switchAgent'
-            ? '请在设置中启用 Agent 切换能力；启用后可使用 /agents 和 /use-agent。'
-            : '请在设置中启用对应能力，或发送 /help 查看当前连接可用命令。'
+            ? `请在设置中启用 Agent 切换能力；启用后可使用 ${formatRemoteCommand(connection, 'agents')} 和 ${formatRemoteCommand(connection, 'use-agent')}。`
+            : `请在设置中启用对应能力，或发送 ${formatRemoteCommand(connection, 'help')} 查看当前连接可用命令。`
     return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。\n${hint}` }
   }
 
@@ -2896,19 +2958,22 @@ async function executeRemoteCommand(
               .map((cmd) => {
                 const enabled =
                   cmd.capability === 'system' || connection.capabilities[cmd.capability]
-                return `${enabled ? '·' : '·（未授权）'} ${cmd.usage} - ${cmd.description}`
+                return `${enabled ? '·' : '·（未授权）'} ${formatRemoteCommandUsage(cmd.usage, connection)} - ${cmd.description}`
               })
             return `${group}\n${lines.join('\n')}`
           })
           .join('\n\n') +
-        '\n\n示例：/providers 后发送 /use-provider 2；也可发送 /use-provider 智谱 GLM Coding Plan 或完整 ID。',
+        `\n\n示例：${formatRemoteCommand(connection, 'providers')} 后发送 ${formatRemoteCommand(connection, 'use-provider', '2')}；也可发送 ${formatRemoteCommand(connection, 'use-provider', '智谱 GLM Coding Plan')} 或完整 ID。`,
       ...(connection.capabilities.runCommands
         ? {
             actions: [
-              { label: '查看会话', command: '/sessions' },
-              { label: '查看运行中', command: '/sessions running' },
-              { label: '查看模型', command: '/models' },
-              { label: '查看 Provider', command: '/providers' },
+              { label: '查看会话', command: formatRemoteCommand(connection, 'sessions') },
+              {
+                label: '查看运行中',
+                command: formatRemoteCommand(connection, 'sessions', 'running'),
+              },
+              { label: '查看模型', command: formatRemoteCommand(connection, 'models') },
+              { label: '查看 Provider', command: formatRemoteCommand(connection, 'providers') },
             ],
           }
         : {}),
@@ -2940,7 +3005,7 @@ async function executeRemoteCommand(
   if (command.name === 'sessions') {
     const blocked = requireCapability('switchSession')
     if (blocked != null) return blocked
-    const filter = parseRemoteSessionFilter(command.args)
+    const filter = parseRemoteSessionFilter(command.args, connection.commandPrefix)
     if (filter.error != null) {
       return {
         ok: false,
@@ -2959,9 +3024,9 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: `主机会话 · ${statusText}`,
-      text: `${formatRows(visibleRows, '暂无符合条件的会话')}${suffix}`,
+      text: `${formatRemoteSelectionList(visibleRows, '暂无符合条件的会话', '会话', formatRemoteCommand(connection, 'use-session'))}${suffix}`,
       ...(connection.capabilities.runCommands
-        ? { actions: buildRemoteSessionActions(visibleRows) }
+        ? { actions: buildRemoteSessionActions(visibleRows, connection.commandPrefix) }
         : {}),
     }
   }
@@ -2974,14 +3039,14 @@ async function executeRemoteCommand(
       return {
         ok: false,
         title: '缺少目标会话',
-        text: '用法：/use-session <序号|名称|sessionId>。请先发送 /sessions 查看会话。',
+        text: `用法：${formatRemoteCommand(connection, 'use-session', '<序号|名称|sessionId>')}。请先发送 ${formatRemoteCommand(connection, 'sessions')} 查看会话。`,
       }
     }
     const result = await listRemoteSessionRows()
     const rows = result.rows
     const resolved = resolveRemoteSelection(target, rows, {
       kindLabel: '会话',
-      listCommand: '/sessions',
+      listCommand: formatRemoteCommand(connection, 'sessions'),
       cachedRows: getCachedRemoteSelection(connection.id, 'sessions'),
     })
     if (!resolved.ok) return resolved
@@ -2989,7 +3054,7 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: '已切换默认会话',
-      text: `${resolved.row.label}\n${resolved.row.id}\n\n后续手机消息会继续进入该会话。发送 /status 可确认当前默认会话。`,
+      text: `${resolved.row.label}\n${resolved.row.id}\n\n后续手机消息会继续进入该会话。发送 ${formatRemoteCommand(connection, 'status')} 可确认当前默认会话。`,
     }
   }
 
@@ -3006,12 +3071,17 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: '模型配置',
-      text: formatRows(rows, '暂无模型配置'),
+      text: formatRemoteSelectionList(
+        rows,
+        '暂无模型配置',
+        '模型',
+        formatRemoteCommand(connection, 'use-model'),
+      ),
       ...(connection.capabilities.runCommands
         ? {
-            actions: rows.slice(0, 6).map((row, index) => ({
+            actions: rows.slice(0, 6).map((row) => ({
               label: `切换 ${row.label}`,
-              command: `/use-model ${index + 1}`,
+              command: formatRemoteCommand(connection, 'use-model', row.id),
               style: 'primary' as const,
             })),
           }
@@ -3028,12 +3098,17 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: 'Provider 配置',
-      text: formatRows(rows, '暂无 Provider'),
+      text: formatRemoteSelectionList(
+        rows,
+        '暂无 Provider',
+        'Provider',
+        formatRemoteCommand(connection, 'use-provider'),
+      ),
       ...(connection.capabilities.runCommands
         ? {
-            actions: rows.slice(0, 6).map((row, index) => ({
+            actions: rows.slice(0, 6).map((row) => ({
               label: `切换 ${row.label}`,
-              command: `/use-provider ${index + 1}`,
+              command: formatRemoteCommand(connection, 'use-provider', row.id),
               style: 'primary' as const,
             })),
           }
@@ -3050,12 +3125,17 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: 'Agent',
-      text: formatRows(rows, '暂无 Agent'),
+      text: formatRemoteSelectionList(
+        rows,
+        '暂无 Agent',
+        'Agent',
+        formatRemoteCommand(connection, 'use-agent'),
+      ),
       ...(connection.capabilities.runCommands
         ? {
-            actions: rows.slice(0, 6).map((row, index) => ({
+            actions: rows.slice(0, 6).map((row) => ({
               label: `切换 ${row.label}`,
-              command: `/use-agent ${index + 1}`,
+              command: formatRemoteCommand(connection, 'use-agent', row.id),
               style: 'primary' as const,
             })),
           }
@@ -3074,7 +3154,12 @@ async function executeRemoteCommand(
     return {
       ok: true,
       title: '工作区',
-      text: formatRows(rows, '暂无工作区'),
+      text: formatRemoteSelectionList(
+        rows,
+        '暂无工作区',
+        '工作区',
+        formatRemoteCommand(connection, 'new-session'),
+      ),
     }
   }
 
@@ -3090,7 +3175,7 @@ async function executeRemoteCommand(
         .map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
       const resolved = resolveRemoteSelection(workspaceInput, rows, {
         kindLabel: '工作区',
-        listCommand: '/workspaces',
+        listCommand: formatRemoteCommand(connection, 'workspaces'),
         cachedRows: getCachedRemoteSelection(connection.id, 'workspaces'),
       })
       if (!resolved.ok) return resolved
@@ -3105,7 +3190,11 @@ async function executeRemoteCommand(
     if (blocked != null) return blocked
     const rootPath = command.text.replace(/^open-workspace\s*/i, '').trim()
     if (rootPath.length === 0)
-      return { ok: false, title: '缺少项目路径', text: '用法：/open-workspace <path>' }
+      return {
+        ok: false,
+        title: '缺少项目路径',
+        text: `用法：${formatRemoteCommand(connection, 'open-workspace', '<path>')}`,
+      }
     const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, {
       create: false,
     })
@@ -3128,10 +3217,10 @@ async function executeRemoteCommand(
     if (target.length === 0) {
       const listCommand =
         command.name === 'use-model'
-          ? '/models'
+          ? formatRemoteCommand(connection, 'models')
           : command.name === 'use-provider'
-            ? '/providers'
-            : '/agents'
+            ? formatRemoteCommand(connection, 'providers')
+            : formatRemoteCommand(connection, 'agents')
       return executeRemoteCommand(connectionId, listCommand, sessionId)
     }
     let resolved: { ok: true; row: RemoteSelectionRow } | { ok: false; title: string; text: string }
@@ -3143,7 +3232,7 @@ async function executeRemoteCommand(
       }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: 'Provider',
-        listCommand: '/providers',
+        listCommand: formatRemoteCommand(connection, 'providers'),
         cachedRows: getCachedRemoteSelection(connection.id, 'providers'),
       })
     } else if (command.name === 'use-model') {
@@ -3156,7 +3245,7 @@ async function executeRemoteCommand(
         }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: '模型',
-        listCommand: '/models',
+        listCommand: formatRemoteCommand(connection, 'models'),
         cachedRows: getCachedRemoteSelection(connection.id, 'models'),
       })
     } else {
@@ -3170,7 +3259,7 @@ async function executeRemoteCommand(
         }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: 'Agent',
-        listCommand: '/agents',
+        listCommand: formatRemoteCommand(connection, 'agents'),
         cachedRows: getCachedRemoteSelection(connection.id, 'agents'),
       })
     }
@@ -3195,7 +3284,11 @@ async function executeRemoteCommand(
     const blocked = requireCapability('manageRuntime')
     if (blocked != null) return blocked
     if (sessionId == null)
-      return { ok: false, title: '缺少默认会话', text: '请先使用 /use-session 绑定会话。' }
+      return {
+        ok: false,
+        title: '缺少默认会话',
+        text: `请先使用 ${formatRemoteCommand(connection, 'use-session')} 绑定会话。`,
+      }
     const queue = getSessionService().getQueueState({ sessionId })
     return {
       ok: true,
@@ -3213,7 +3306,7 @@ async function executeRemoteCommand(
       .reverse()
       .map(
         (item, index) =>
-          `${index + 1}. ${item.at} · /${item.command} · ${item.ok ? '成功' : `失败：${item.error ?? '未知错误'}`}${item.target != null ? ` · ${item.target}` : ''}`,
+          `${index + 1}. ${item.at} · ${formatRemoteCommand(connection, item.command)} · ${item.ok ? '成功' : `失败：${item.error ?? '未知错误'}`}${item.target != null ? ` · ${item.target}` : ''}`,
       )
     return { ok: true, title: '远程审计', text: rows.join('\n') || '暂无远程命令记录' }
   }
@@ -3222,7 +3315,11 @@ async function executeRemoteCommand(
     const blocked = requireCapability('manageRuntime')
     if (blocked != null) return blocked
     if (sessionId == null)
-      return { ok: false, title: '缺少默认会话', text: '请先使用 /use-session 绑定会话。' }
+      return {
+        ok: false,
+        title: '缺少默认会话',
+        text: `请先使用 ${formatRemoteCommand(connection, 'use-session')} 绑定会话。`,
+      }
     const cancelled = await getSessionService().cancelTurn(sessionId)
     return { ok: true, title: cancelled.cancelled ? '已取消' : '没有可取消任务', text: sessionId }
   }
@@ -3248,7 +3345,7 @@ async function executeRemoteCommand(
       text:
         rows.length > 0
           ? formatRows(rows, '暂无窗口')
-          : '当前未找到可观察窗口。远程截图/图像回传将在后续渠道适配中启用。',
+          : `当前未找到可观察窗口。远程截图/图像回传将在后续渠道适配中启用。发送 ${formatRemoteCommand(connection, 'help')} 查看可用命令。`,
     }
   }
 
@@ -3258,7 +3355,7 @@ async function executeRemoteCommand(
     return {
       ok: false,
       title: '桌面控制需要原生适配',
-      text: '已预留权限和命令入口；当前版本仅开放 /screen 与 /windows 观察能力，点击/输入/快捷键需接入平台级安全执行器后启用。',
+      text: `已预留权限和命令入口；当前版本仅开放 ${formatRemoteCommand(connection, 'screen')} 与 ${formatRemoteCommand(connection, 'windows')} 观察能力，点击/输入/快捷键需接入平台级安全执行器后启用。`,
     }
   }
 
@@ -3276,9 +3373,15 @@ async function executeRemoteCommand(
       return {
         ok: false,
         title: '缺少默认会话',
-        text: '请先使用 /use-session <sessionId> 绑定会话。',
+        text: `请先使用 ${formatRemoteCommand(connection, 'use-session', '<sessionId>')} 绑定会话。`,
       }
-    if (text.length === 0) return { ok: false, title: '消息为空', text: '用法：/send <message>' }
+    if (text.length === 0) {
+      return {
+        ok: false,
+        title: '消息为空',
+        text: `用法：${formatRemoteCommand(connection, 'send', '<message>')}`,
+      }
+    }
     const result = await getSessionService().sendTurn({
       sessionId,
       message: text,
@@ -3301,33 +3404,54 @@ async function executeRemoteCommand(
     ok: false,
     error: 'unknown-command',
   })
-  return { ok: false, title: '未知命令', text: '发送 /help 查看可用命令。' }
+  return {
+    ok: false,
+    title: '未知命令',
+    text: `发送 ${formatRemoteCommand(connection, 'help')} 查看可用命令。`,
+  }
 }
 
 async function handleRemoteInboundMessage(
   message: RemoteInboundMessage,
 ): Promise<RemoteInboundResponse | void> {
   const prefix = message.connection.commandPrefix.trim() || '/'
-  const isCommandMessage = message.text.trim().startsWith(prefix)
-  if (isCommandMessage) {
+  const trimmedText = message.text.trim()
+  const isCommandMessage = trimmedText.startsWith(prefix)
+  const activeSelectionKind =
+    !isCommandMessage && /^\d+$/.test(trimmedText)
+      ? getActiveRemoteSelectionKind(message.connection.id)
+      : null
+  if (isCommandMessage || activeSelectionKind != null) {
     if (!message.connection.capabilities.runCommands) {
       return {
         title: '功能未授权',
-        text: '该连接没有启用远程命令能力。请在设置中启用后发送 /help 查看可用操作。',
+        text: `该连接没有启用远程命令能力。请在设置中启用后发送 ${formatRemoteCommand(message.connection, 'help')} 查看可用操作。`,
       }
     }
+    const commandMessage =
+      activeSelectionKind == null
+        ? message.text
+        : formatRemoteCommand(
+            message.connection,
+            REMOTE_SELECTION_COMMANDS[activeSelectionKind],
+            trimmedText,
+          )
     const result = await executeRemoteCommand(
       message.connection.id,
-      message.text,
+      commandMessage,
       message.connection.defaultSessionId,
     )
-    return { title: result.title, text: result.text }
+    return {
+      title: result.title,
+      text: result.text,
+      ...(result.actions == null ? {} : { actions: result.actions }),
+    }
   }
 
   if (!message.connection.capabilities.sendMessages) {
     return {
       title: '功能未授权',
-      text: '该连接没有启用消息投递能力。请在设置中启用后再发送任务消息；发送 /help 可查看命令。',
+      text: `该连接没有启用消息投递能力。请在设置中启用后再发送任务消息；发送 ${formatRemoteCommand(message.connection, 'help')} 可查看命令。`,
     }
   }
   const sessionId =
@@ -3357,11 +3481,14 @@ async function handleRemoteInboundMessage(
     log.warn(`Failed to send remote reply from history: ${String(err)}`)
     if (!remoteTurnTargets.has(result.turnId)) return
     remoteTurnTargets.delete(result.turnId)
+    const commandPrefix = getRemoteConnectionService()
+      .list()
+      .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
     void getRemoteConnectionService()
       .sendReply(
         target.connectionId,
         target.externalId,
-        buildRemoteErrorGuidance(err instanceof Error ? err.message : String(err)),
+        buildRemoteErrorGuidance(err instanceof Error ? err.message : String(err), commandPrefix),
       )
       .catch((sendErr) => {
         log.warn(`Failed to send remote history error reply: ${String(sendErr)}`)

@@ -63,13 +63,21 @@ export class EventContextProjector implements ContextProjector {
 export interface DefaultPromptComposerOptions {
   /** Layered instruction files (SPARK.md / AGENTS.md / CLAUDE.md) injected as a stable section. */
   readonly instructions?: InstructionProvider
+  /** Host-composed system prompt, kept as its own cache-stable section. */
+  readonly systemPrompt?: string
+  /** Progressive skill context supplied by the host. */
+  readonly skillSystemPrompt?: string
 }
 
 export class DefaultPromptComposer implements PromptComposer {
   readonly #instructions: InstructionProvider | undefined
+  readonly #systemPrompt: string | undefined
+  readonly #skillSystemPrompt: string | undefined
 
   constructor(options: DefaultPromptComposerOptions = {}) {
     this.#instructions = options.instructions
+    this.#systemPrompt = nonEmpty(options.systemPrompt)
+    this.#skillSystemPrompt = nonEmpty(options.skillSystemPrompt)
   }
 
   async compose(facts: SessionFacts, config: ProjectorConfig): Promise<readonly SystemSection[]> {
@@ -97,9 +105,28 @@ export class DefaultPromptComposer implements PromptComposer {
         sections.splice(1, 0, { id: 'project-instructions', stability: 'stable', content })
       }
     }
+    if (this.#systemPrompt !== undefined) {
+      sections.splice(1, 0, {
+        id: 'host-system-prompt',
+        stability: 'stable',
+        content: this.#systemPrompt,
+      })
+    }
+    if (this.#skillSystemPrompt !== undefined) {
+      sections.splice(1, 0, {
+        id: 'host-skill-prompt',
+        stability: 'stable',
+        content: this.#skillSystemPrompt,
+      })
+    }
     if (facts.warning) {
       sections.push({ id: 'budget-warning', stability: 'volatile', content: facts.warning })
     }
     return sections
   }
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed
 }

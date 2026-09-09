@@ -4,6 +4,7 @@ import {
   buildRemoteErrorGuidance,
   buildRemoteSessionActions,
   filterTelegramCallbackActions,
+  formatRows,
   parseRemoteSessionFilter,
   resolveRemoteSelection,
   type RemoteSelectionRow,
@@ -133,6 +134,20 @@ describe('resolveRemoteSelection', () => {
   })
 })
 
+describe('formatRows', () => {
+  it('keeps list output human-readable without exposing internal ids', () => {
+    expect(
+      formatRows(
+        [
+          { id: 'provider-secret-id', label: '主 Provider', meta: 'openai' },
+          { id: 'provider-secret-id-2', label: '备用 Provider' },
+        ],
+        '暂无 Provider',
+      ),
+    ).toBe('1. 主 Provider · openai\n2. 备用 Provider')
+  })
+})
+
 describe('buildRemoteErrorGuidance', () => {
   it('routes model/provider/token/quota errors to the model recovery path', () => {
     expect(buildRemoteErrorGuidance('provider returned 429')).toContain(
@@ -163,6 +178,12 @@ describe('buildRemoteErrorGuidance', () => {
     expect(buildRemoteErrorGuidance('remodel done')).not.toContain('/use-model <序号>')
     expect(buildRemoteErrorGuidance('failed to tokenize input')).not.toContain('/use-model <序号>')
     expect(buildRemoteErrorGuidance('remodel done')).toContain('/status')
+  })
+
+  it('uses the connection command prefix in recovery guidance', () => {
+    const text = buildRemoteErrorGuidance('provider returned 429', '!')
+    expect(text).toContain('!providers → !models → !use-model <序号>')
+    expect(text).not.toContain('/providers')
   })
 })
 
@@ -211,6 +232,11 @@ describe('buildRemoteSessionActions', () => {
       (action) => action.style === 'primary',
     )
     expect(switchActions).toHaveLength(6)
+  })
+
+  it('uses a custom command prefix for interactive buttons', () => {
+    expect(buildRemoteSessionActions(sessionRows, '!')[0]?.command).toBe('!sessions')
+    expect(buildRemoteSessionActions(sessionRows, '!')[4]?.command).toBe('!use-session sess-a')
   })
 })
 

@@ -41,14 +41,16 @@ export async function runProcess(
     }, 1_500);
     killTimer.unref();
   };
-  const capture = (target: Buffer[]) => (chunk: Buffer): void => {
-    outputBytes += chunk.byteLength;
-    if (outputBytes <= maxOutputBytes) target.push(Buffer.from(chunk));
-    else if (!outputExceeded) {
-      outputExceeded = true;
-      terminate();
-    }
-  };
+  const capture =
+    (target: Buffer[]) =>
+    (chunk: Buffer): void => {
+      outputBytes += chunk.byteLength;
+      if (outputBytes <= maxOutputBytes) target.push(Buffer.from(chunk));
+      else if (!outputExceeded) {
+        outputExceeded = true;
+        terminate();
+      }
+    };
   child.stdout.on('data', capture(stdout));
   child.stderr.on('data', capture(stderr));
   const abort = (): void => {
@@ -93,10 +95,36 @@ export function safeShellEnvironment(source: NodeJS.ProcessEnv = process.env): N
   return result;
 }
 
+/**
+ * Adds explicitly configured session variables to a child-process environment.
+ *
+ * Ambient secrets remain filtered, while values deliberately supplied through
+ * customEnv are allowed through to the requested tool subprocess. The overlay
+ * never mutates process.env.
+ */
+export function withCustomEnvironment(
+  customEnv: Readonly<Record<string, string>> | undefined,
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const result = safeShellEnvironment(source);
+  for (const [name, value] of Object.entries(customEnv ?? {})) {
+    validateEnvironmentEntry(name, value);
+    result[name] = value;
+  }
+  return result;
+}
+
+function validateEnvironmentEntry(name: string, value: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+    throw new Error(`Invalid custom environment variable name: ${name}`);
+  }
+  if (value.includes('\0')) {
+    throw new Error(`Custom environment variable contains NUL: ${name}`);
+  }
+}
+
 function isSecretName(name: string): boolean {
-  return /(?:^|_)(?:API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PWD|CREDENTIALS?)(?:_|$)/iu.test(
-    name,
-  );
+  return /(?:^|_)(?:API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PWD|CREDENTIALS?)(?:_|$)/iu.test(name);
 }
 
 function terminateTree(pid: number | undefined, signal: NodeJS.Signals): void {

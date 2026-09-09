@@ -81,6 +81,7 @@ export interface LoadHookRunnerOptions {
   readonly userSettingsDir: string
   readonly spawn?: HookSpawn
   readonly telemetry?: Telemetry
+  readonly env?: NodeJS.ProcessEnv
 }
 
 /**
@@ -95,6 +96,7 @@ export function loadHookRunner(options: LoadHookRunnerOptions): HookRunner | und
     config: discovered.config,
     ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
+    ...(options.env === undefined ? {} : { env: options.env }),
   })
 }
 

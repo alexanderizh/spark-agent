@@ -1,5 +1,5 @@
 import type { LlmCallContext, LlmService } from '../seams.js'
-import type { LlmDelta, LlmRequest } from './types.js'
+import type { LlmDelta, LlmRequest, ModelBudget } from './types.js'
 
 /**
  * A mutable LlmService used by interactive hosts. The runtime model can be
@@ -19,6 +19,10 @@ export class SwitchableLlmService implements LlmService {
   set(service: LlmService): void {
     this.assertIdle('switch')
     this.#current = service
+  }
+
+  getModelBudget(): ModelBudget | undefined {
+    return this.#current?.getModelBudget?.()
   }
 
   clear(): void {

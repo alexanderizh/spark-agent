@@ -2,6 +2,8 @@ export interface TerminalCapabilities {
   readonly color: 'truecolor' | '256' | '16' | 'mono'
   readonly unicode: boolean
   readonly width: number
+  /** Terminal rows, available for the interactive full-screen viewport. */
+  readonly height?: number
 }
 
 export interface TuiTheme {
@@ -60,7 +62,7 @@ export function supportsRichBackground(capabilities: TerminalCapabilities | unde
 }
 
 export function detectTerminalCapabilities(
-  output: Pick<NodeJS.WriteStream, 'isTTY' | 'columns'> = process.stdout,
+  output: Pick<NodeJS.WriteStream, 'isTTY' | 'columns' | 'rows'> = process.stdout,
   environment: NodeJS.ProcessEnv = process.env,
 ): TerminalCapabilities {
   const mono =
@@ -80,6 +82,7 @@ export function detectTerminalCapabilities(
     color,
     unicode: !mono && /utf-?8/i.test(locale),
     width: output.columns ?? 80,
+    ...(output.isTTY && output.rows !== undefined ? { height: output.rows } : {}),
   }
 }
 
@@ -108,6 +111,9 @@ export function glyphs(capabilities: TerminalCapabilities): TuiGlyphs {
     failure: '✗',
     pending: '◌',
     divider: '─',
-    spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+    // Braille spinner frames render against the top of many terminal glyph
+    // cells. Quarter-circle frames keep the same one-cell footprint while
+    // staying visually centred beside the status copy.
+    spinner: ['◒', '◐', '◓', '◑'],
   }
 }

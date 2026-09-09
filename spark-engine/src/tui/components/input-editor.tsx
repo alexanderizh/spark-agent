@@ -5,6 +5,7 @@ import { shouldSwallowImeKeypress } from '../ime-guard.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
 import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
 import { PickerRow } from './picker-layout.js'
+import { isMouseInput } from './scroll-region.js'
 
 /** One row of the slash-command completion menu. */
 export interface CompletionEntry {
@@ -33,9 +34,51 @@ export interface InputEditorProps {
   readonly onToggleThinking?: () => void
 }
 
+interface VerticalCursorMove {
+  readonly cursor: number
+  readonly preferredColumn: number
+}
+
+/** Move between logical lines while retaining the requested horizontal column. */
+function moveCursorVertically(
+  characters: readonly string[],
+  cursor: number,
+  direction: -1 | 1,
+  preferredColumn: number | undefined,
+): VerticalCursorMove {
+  let currentStart = cursor
+  while (currentStart > 0 && characters[currentStart - 1] !== '\n') currentStart -= 1
+
+  let currentEnd = cursor
+  while (currentEnd < characters.length && characters[currentEnd] !== '\n') currentEnd += 1
+
+  const targetColumn = preferredColumn ?? cursor - currentStart
+  if (direction === -1) {
+    if (currentStart === 0) return { cursor, preferredColumn: targetColumn }
+    const previousEnd = currentStart - 1
+    let previousStart = previousEnd
+    while (previousStart > 0 && characters[previousStart - 1] !== '\n') previousStart -= 1
+    return {
+      cursor: Math.min(previousStart + targetColumn, previousEnd),
+      preferredColumn: targetColumn,
+    }
+  }
+
+  if (currentEnd === characters.length) return { cursor, preferredColumn: targetColumn }
+  const nextStart = currentEnd + 1
+  let nextEnd = nextStart
+  while (nextEnd < characters.length && characters[nextEnd] !== '\n') nextEnd += 1
+  return {
+    cursor: Math.min(nextStart + targetColumn, nextEnd),
+    preferredColumn: targetColumn,
+  }
+}
+
 export function InputEditor(props: InputEditorProps): ReactElement {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
+  // Keep the intended horizontal column while moving across short lines.
+  const [preferredColumn, setPreferredColumn] = useState<number | undefined>()
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [completionIndex, setCompletionIndex] = useState(0)
@@ -51,9 +94,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
   )
   const completions = useMemo(
     () =>
-      value.startsWith('/')
-        ? commandEntries.filter((entry) => entry.name.startsWith(value))
-        : [],
+      value.startsWith('/') ? commandEntries.filter((entry) => entry.name.startsWith(value)) : [],
     [commandEntries, value],
   )
   // Typing reshapes the candidate list; the highlight restarts from the top.
@@ -64,6 +105,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
 
   useInput(
     (input, key) => {
+      if (isMouseInput(input)) return
       if (key.ctrl && input === 'c') {
         props.onControlC()
         return
@@ -74,6 +116,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         if (!props.running && characters.length > 0) {
           setValue('')
           setCursor(0)
+          setPreferredColumn(undefined)
         } else {
           props.onEscape()
         }
@@ -90,6 +133,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       if (key.ctrl && input === 'u') {
         setValue('')
         setCursor(0)
+        setPreferredColumn(undefined)
         return
       }
       if (key.ctrl && input === 'w') {
@@ -107,12 +151,15 @@ export function InputEditor(props: InputEditorProps): ReactElement {
       }
       if (key.upArrow && completions.length > 0) {
         setCompletionIndex(
-          (index) => (Math.min(index, completions.length - 1) + completions.length - 1) % completions.length,
+          (index) =>
+            (Math.min(index, completions.length - 1) + completions.length - 1) % completions.length,
         )
         return
       }
       if (key.downArrow && completions.length > 0) {
-        setCompletionIndex((index) => (Math.min(index, completions.length - 1) + 1) % completions.length)
+        setCompletionIndex(
+          (index) => (Math.min(index, completions.length - 1) + 1) % completions.length,
+        )
         return
       }
       if (key.tab && completions.length > 0) {
@@ -125,6 +172,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
           // A trailing backslash turns Enter into a hard newline instead of
           // submitting; the backslash itself is consumed.
           setValue([...characters.slice(0, cursor - 1), '\n', ...characters.slice(cursor)].join(''))
+          setPreferredColumn(undefined)
         } else if (completions.length > 0 && selectedCompletion >= 0) {
           // Menu open: Enter runs the highlighted command instead of the raw
           // partial text (which the dispatcher would reject as unknown).
@@ -133,15 +181,35 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         } else submit()
         return
       }
-      if (key.leftArrow) setCursor((position) => Math.max(0, position - 1))
-      else if (key.rightArrow) setCursor((position) => Math.min(characters.length, position + 1))
-      else if (key.home) setCursor(0)
-      else if (key.end) setCursor(characters.length)
-      else if (key.backspace) removeBeforeCursor()
+      if (key.leftArrow) {
+        setPreferredColumn(undefined)
+        setCursor((position) => Math.max(0, position - 1))
+      } else if (key.rightArrow) {
+        setPreferredColumn(undefined)
+        setCursor((position) => Math.min(characters.length, position + 1))
+      } else if (key.home) {
+        setPreferredColumn(undefined)
+        setCursor(0)
+      } else if (key.end) {
+        setPreferredColumn(undefined)
+        setCursor(characters.length)
+      } else if (key.backspace) removeBeforeCursor()
       else if (key.delete) removeAtCursor()
-      else if ((key.upArrow || key.downArrow) && value.length === 0)
-        navigateHistory(key.upArrow ? 1 : -1)
-      else if (input && !key.ctrl && !key.meta) insert(input)
+      else if (key.upArrow || key.downArrow) {
+        if (value.length === 0) {
+          // Keep the existing history behavior for an empty draft.
+          navigateHistory(key.upArrow ? 1 : -1)
+        } else if (value.includes('\n')) {
+          const moved = moveCursorVertically(
+            characters,
+            cursor,
+            key.upArrow ? -1 : 1,
+            preferredColumn,
+          )
+          setCursor(moved.cursor)
+          setPreferredColumn(moved.preferredColumn)
+        }
+      } else if (input && !key.ctrl && !key.meta) insert(input)
     },
     { isActive: props.active && !props.locked },
   )
@@ -150,17 +218,20 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     const inserted = Array.from(input)
     setValue([...characters.slice(0, cursor), ...inserted, ...characters.slice(cursor)].join(''))
     setCursor(cursor + inserted.length)
+    setPreferredColumn(undefined)
   }
 
   const removeBeforeCursor = (): void => {
     if (cursor === 0) return
     setValue([...characters.slice(0, cursor - 1), ...characters.slice(cursor)].join(''))
     setCursor(cursor - 1)
+    setPreferredColumn(undefined)
   }
 
   const removeAtCursor = (): void => {
     if (cursor >= characters.length) return
     setValue([...characters.slice(0, cursor), ...characters.slice(cursor + 1)].join(''))
+    setPreferredColumn(undefined)
   }
 
   const removeWordBeforeCursor = (): void => {
@@ -170,6 +241,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     if (position === cursor) return
     setValue([...characters.slice(0, position), ...characters.slice(cursor)].join(''))
     setCursor(position)
+    setPreferredColumn(undefined)
   }
 
   const submit = (): void => {
@@ -182,6 +254,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     setHistoryIndex(-1)
     setValue('')
     setCursor(0)
+    setPreferredColumn(undefined)
     props.onSubmit(raw)
   }
 
@@ -190,6 +263,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     if (!name) return
     setValue(`${name} `)
     setCursor(Array.from(name).length + 1)
+    setPreferredColumn(undefined)
   }
 
   const navigateHistory = (direction: number): void => {
@@ -199,23 +273,22 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     const selected = next < 0 ? '' : (history.at(-(next + 1)) ?? '')
     setValue(selected)
     setCursor(Array.from(selected).length)
+    setPreferredColumn(undefined)
   }
 
-  const visible =
-    value.split('\n').length >= 8
-      ? `[粘贴 ${value.split('\n').length} 行 · 提交后按原文发送]`
-      : value
-  const visibleCharacters = Array.from(visible)
-  const before = visibleCharacters.slice(0, Math.min(cursor, visibleCharacters.length)).join('')
-  const current = visibleCharacters[Math.min(cursor, visibleCharacters.length)]
-  const after = visibleCharacters
-    .slice(Math.min(cursor, visibleCharacters.length) + (current ? 1 : 0))
-    .join('')
+  const visibleCharacters = Array.from(value)
+  const visibleCursor = Math.min(cursor, visibleCharacters.length)
+  const before = visibleCharacters.slice(0, visibleCursor).join('')
+  const current = visibleCharacters[visibleCursor]
+  const after = visibleCharacters.slice(visibleCursor + (current ? 1 : 0)).join('')
 
   // Sliding window so long custom-command lists never push the input away.
   const windowStart = Math.max(
     0,
-    Math.min(selectedCompletion - (COMPLETION_MAX_VISIBLE - 1), completions.length - COMPLETION_MAX_VISIBLE),
+    Math.min(
+      selectedCompletion - (COMPLETION_MAX_VISIBLE - 1),
+      completions.length - COMPLETION_MAX_VISIBLE,
+    ),
   )
   const visibleCompletions = completions.slice(windowStart, windowStart + COMPLETION_MAX_VISIBLE)
 
@@ -237,7 +310,7 @@ export function InputEditor(props: InputEditorProps): ReactElement {
                   {highlighted ? `${symbols.user} ` : '  '}
                   {entry.name}
                 </Text>
-                {entry.summary ? <Text color={props.theme.dim}>  {entry.summary}</Text> : null}
+                {entry.summary ? <Text color={props.theme.dim}> {entry.summary}</Text> : null}
               </PickerRow>
             )
           })}
@@ -253,12 +326,18 @@ export function InputEditor(props: InputEditorProps): ReactElement {
         borderColor={props.locked ? props.theme.dim : props.theme.accent}
         paddingX={1}
       >
-        <Text color={props.locked ? props.theme.dim : props.theme.accent}>
-          {symbols.user}{' '}
-        </Text>
+        <Text color={props.locked ? props.theme.dim : props.theme.accent}>{symbols.user} </Text>
         <Text>
           {props.locked ? '(输入已锁定)' : before}
-          {!props.locked && <Text inverse>{current ?? ' '}</Text>}
+          {!props.locked &&
+            (current === '\n' ? (
+              <>
+                <Text inverse> </Text>
+                {'\n'}
+              </>
+            ) : (
+              <Text inverse>{current ?? ' '}</Text>
+            ))}
           {!props.locked && after}
         </Text>
       </Box>

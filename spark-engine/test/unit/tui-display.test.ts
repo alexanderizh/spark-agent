@@ -17,10 +17,18 @@ describe('displayModelName', () => {
     expect(displayModelName('main', catalog)).toBe('gpt-host')
   })
 
-  it('falls back to the last route segment without a catalog match', () => {
+  it('falls back to the model portion of an unknown route', () => {
     expect(displayModelName('sparkwork:uuid-2:claude-x', catalog)).toBe('claude-x')
     expect(displayModelName('fake-m1', undefined)).toBe('fake-m1')
     expect(displayModelName(undefined, catalog)).toBeUndefined()
+  })
+
+  it('preserves colons in an unqualified model name', () => {
+    expect(displayModelName('qwen3.8:27b', undefined)).toBe('qwen3.8:27b')
+  })
+
+  it('preserves colons in the model portion of an unknown SparkWork route', () => {
+    expect(displayModelName('sparkwork:provider-1:qwen3.8:27b', undefined)).toBe('qwen3.8:27b')
   })
 })
 

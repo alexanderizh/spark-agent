@@ -97,6 +97,82 @@ describe('SparkEngineExecutor', () => {
     expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
   })
 
+  it('把宿主提示词、技能提示词和 customEnv 传入 Spark SDK 环境', async () => {
+    const fake = new FakeModel([text('已收到宿主上下文。')])
+    setSparkLlmFactoryForTests(() => fake)
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+
+    await executor.executeTurn(
+      'sess-1',
+      'turn-injection',
+      '执行宿主注入测试',
+      makeConfig({
+        systemPrompt: 'Host runtime contract',
+        skillSystemPrompt: 'Skill catalog summary',
+        customEnv: { SPARK_EXECUTOR_TEST: 'injected-only-to-children' },
+        allowedTools: ['mcp__spark_ui__render_html'],
+        disallowedTools: ['bash rm*'],
+      }),
+    )
+
+    const request = fake.requests[0]
+    expect(request?.system.map((section) => section.content).join('\n')).toEqual(
+      expect.stringContaining('Host runtime contract'),
+    )
+    expect(request?.system.map((section) => section.content).join('\n')).toEqual(
+      expect.stringContaining('Skill catalog summary'),
+    )
+    expect(request?.system.map((section) => section.content).join('\n')).not.toContain(
+      'injected-only-to-children',
+    )
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
+  it('把模型输出预算、推理预算和 host reasoning 档位送进 Spark turn', async () => {
+    const fake = new FakeModel([text('预算已生效。')])
+    setSparkLlmFactoryForTests(() => fake)
+    const executor = new SparkEngineExecutor()
+    collectEvents(executor)
+
+    await executor.executeTurn(
+      'sess-1',
+      'turn-budget',
+      '检查预算',
+      makeConfig({
+        maxTokens: 4_096,
+        contextWindowTokens: 128_000,
+        reasoningEffort: 'high',
+        reasoningBudgetTokens: 8_192,
+      }),
+    )
+
+    expect(fake.requests[0]?.maxTokens).toBe(4_096)
+    expect(fake.requests[0]?.thinking).toEqual({ type: 'enabled', budgetTokens: 8_192 })
+  })
+
+  it('跳过 Spark 不支持的 MCP transport，不阻断主 turn', async () => {
+    const fake = new FakeModel([text('主 turn 已完成。')])
+    setSparkLlmFactoryForTests(() => fake)
+    const executor = new SparkEngineExecutor()
+    const events = collectEvents(executor)
+
+    await executor.executeTurn(
+      'sess-1',
+      'turn-mcp-fallback',
+      '继续执行',
+      makeConfig({
+        mcpServers: {
+          legacy: { type: 'sse', url: 'http://127.0.0.1:1/sse' },
+          malformed: { type: 'http' },
+        },
+      }),
+    )
+
+    expect(fake.requests[0]?.tools.some((tool) => tool.name.startsWith('mcp__'))).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'agent_status', status: 'completed' })
+  })
+
   it('续跑：sdkSessionId + continueSession 走 openSession，ledger sessionId 保持不变', async () => {
     // turn 1：新会话
     setSparkLlmFactoryForTests(scriptFactory([text('第一轮回答。')]))

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { RulePermissionPolicy, type PermissionRuleLayer } from '../../src/permission/policy.js';
 import {
-  RulePermissionPolicy,
-  type PermissionRuleLayer,
-} from '../../src/permission/policy.js';
-import { normalizeLegacyPermissionMode, type PermissionCheckContext, type PermissionMode } from '../../src/permission/types.js';
+  normalizeLegacyPermissionMode,
+  type PermissionCheckContext,
+  type PermissionMode,
+} from '../../src/permission/types.js';
 import type { ResolvedToolCall } from '../../src/tools/contract.js';
 import { workspaceToolDefinitions } from '../../src/tools/workspace/definitions.js';
 
@@ -37,7 +38,9 @@ describe('structured permission policy', () => {
     ];
     const policy = new RulePermissionPolicy({ layers });
 
-    await expect(policy.check(call('bash', { command: 'npm test' }), context())).resolves.toMatchObject({
+    await expect(
+      policy.check(call('bash', { command: 'npm test' }), context()),
+    ).resolves.toMatchObject({
       decision: 'allow',
       rule: { id: 'allow-npm', source: 'user' },
     });
@@ -60,10 +63,12 @@ describe('structured permission policy', () => {
       ],
     });
 
-    await expect(policy.check(call('write', { path: 'a.ts', content: 'x' }), context('bypass')))
-      .resolves.toMatchObject({ decision: 'allow', reason: 'Permission bypass mode' });
-    await expect(policy.check(call('bash', { command: 'rm -rf build' }), context('bypass')))
-      .resolves.toMatchObject({ decision: 'allow', reason: 'Permission bypass mode' });
+    await expect(
+      policy.check(call('write', { path: 'a.ts', content: 'x' }), context('bypass')),
+    ).resolves.toMatchObject({ decision: 'allow', reason: 'Permission bypass mode' });
+    await expect(
+      policy.check(call('bash', { command: 'rm -rf build' }), context('bypass')),
+    ).resolves.toMatchObject({ decision: 'allow', reason: 'Permission bypass mode' });
   });
 
   it('auto-approves asks in auto mode but explicit deny rules still bite', async () => {
@@ -96,7 +101,9 @@ describe('structured permission policy', () => {
     };
 
     // Shell commands would ask in manual mode; auto silences the ask.
-    await expect(policy.check(call('bash', { command: 'npm test' }), context('auto'))).resolves.toMatchObject({
+    await expect(
+      policy.check(call('bash', { command: 'npm test' }), context('auto')),
+    ).resolves.toMatchObject({
       decision: 'allow',
       reason: 'Auto approval mode',
     });
@@ -123,7 +130,9 @@ describe('structured permission policy', () => {
     await expect(
       policy.check(call('write', { path: 'a.ts', content: 'x' }), context()),
     ).resolves.toMatchObject({ decision: 'ask', allowedGrantScopes: ['once', 'session'] });
-    await expect(policy.check(call('bash', { command: 'npm test' }), context())).resolves.toMatchObject({
+    await expect(
+      policy.check(call('bash', { command: 'npm test' }), context()),
+    ).resolves.toMatchObject({
       decision: 'ask',
       allowedGrantScopes: ['once'],
     });
@@ -144,6 +153,24 @@ describe('structured permission policy', () => {
     ).resolves.toMatchObject({ decision: 'allow', rule: { id: 'allow-write', source: 'project' } });
   });
 
+  it('treats allowedTools as approval grants and disallowedTools as hard denies', async () => {
+    const policy = new RulePermissionPolicy({
+      allowedTools: ['mcp__spark_search__*'],
+      disallowedTools: ['mcp__spark_search__delete_*'],
+    });
+    const allowed = externalCall('mcp__spark_search__query');
+    const denied = externalCall('mcp__spark_search__delete_index');
+
+    await expect(policy.check(allowed, context('manual'))).resolves.toMatchObject({
+      decision: 'allow',
+      reason: 'Tool is allowed by host configuration',
+    });
+    await expect(policy.check(denied, context('bypass'))).resolves.toMatchObject({
+      decision: 'deny',
+      reason: 'Tool is disallowed by host configuration',
+    });
+  });
+
   it('scopes remembered grants to one session and one resource', async () => {
     const policy = new RulePermissionPolicy();
     const first = call('write', { path: 'src/a.ts', content: 'one' });
@@ -158,11 +185,17 @@ describe('structured permission policy', () => {
     });
     policy.recordDecision(first, { decision: 'allow', grantScope: 'session' }, sessionOne);
 
-    await expect(policy.check(sameResource, sessionOne)).resolves.toMatchObject({ decision: 'allow' });
-    await expect(policy.check(otherResource, sessionOne)).resolves.toMatchObject({ decision: 'ask' });
-    await expect(policy.check(sameResource, context('manual', 'session-2'))).resolves.toMatchObject({
+    await expect(policy.check(sameResource, sessionOne)).resolves.toMatchObject({
+      decision: 'allow',
+    });
+    await expect(policy.check(otherResource, sessionOne)).resolves.toMatchObject({
       decision: 'ask',
     });
+    await expect(policy.check(sameResource, context('manual', 'session-2'))).resolves.toMatchObject(
+      {
+        decision: 'ask',
+      },
+    );
   });
 
   it('never permits an always-approval tool to create a session grant', async () => {
@@ -202,9 +235,21 @@ function call(name: string, args: unknown): ResolvedToolCall {
   return { callId: `call-${name}`, name, args, definition };
 }
 
-function context(
-  mode: PermissionMode = 'manual',
-  sessionId = 'session-1',
-): PermissionCheckContext {
+function externalCall(name: string): ResolvedToolCall {
+  const base = call('read', { path: 'a.ts' });
+  return {
+    ...base,
+    name,
+    definition: {
+      ...base.definition,
+      name,
+      readonly: false,
+      permissionClass: 'external',
+      approval: 'always',
+    },
+  };
+}
+
+function context(mode: PermissionMode = 'manual', sessionId = 'session-1'): PermissionCheckContext {
   return { sessionId, mode, cwd: '/workspace' };
 }

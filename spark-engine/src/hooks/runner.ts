@@ -17,6 +17,8 @@ import { NullTelemetry } from '../telemetry.js'
 export interface HookSpawnRequest {
   readonly command: string
   readonly cwd: string
+  /** Child-process environment; the parent process environment is never mutated. */
+  readonly env?: NodeJS.ProcessEnv
   /** JSON payload piped to the hook process stdin. */
   readonly input: string
   readonly timeoutMs: number
@@ -49,7 +51,7 @@ export const nodeHookSpawn: HookSpawn = (request) =>
       useWindows ? ['/d', '/s', '/c', request.command] : ['-c', request.command],
       {
         cwd: request.cwd,
-        env: process.env,
+        env: request.env ?? process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         signal: request.signal,
       },
@@ -99,6 +101,7 @@ export interface HookRunnerOptions {
   readonly config: HooksConfig
   readonly spawn?: HookSpawn
   readonly telemetry?: Telemetry
+  readonly env?: NodeJS.ProcessEnv
 }
 
 /**
@@ -111,11 +114,13 @@ export class HookRunner {
   readonly #config: HooksConfig
   readonly #spawn: HookSpawn
   readonly #telemetry: Telemetry
+  readonly #env: NodeJS.ProcessEnv | undefined
 
   constructor(options: HookRunnerOptions) {
     this.#config = options.config
     this.#spawn = options.spawn ?? nodeHookSpawn
     this.#telemetry = options.telemetry ?? new NullTelemetry()
+    this.#env = options.env
   }
 
   async run(
@@ -171,6 +176,7 @@ export class HookRunner {
       spawnResult = await this.#spawn({
         command: hook.command,
         cwd: context.cwd,
+        ...(this.#env === undefined ? {} : { env: this.#env }),
         input: buildPayload(event, invocation, context),
         timeoutMs,
         signal,

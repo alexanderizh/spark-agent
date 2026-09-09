@@ -44,6 +44,7 @@ export interface ToolRunnerOptions {
   readonly cwd: string
   readonly permissionMode: PermissionMode
   readonly reasoningEffort?: ReasoningEffort
+  readonly reasoningBudgetTokens?: number
   readonly signal: AbortSignal
   readonly subagent?: SubagentRunner
   readonly onEvent?: (event: AgentEvent) => Promise<void> | void
@@ -417,6 +418,9 @@ export class ToolRunner {
       ...(this.options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: this.options.reasoningEffort }),
+      ...(this.options.reasoningBudgetTokens === undefined
+        ? {}
+        : { reasoningBudgetTokens: this.options.reasoningBudgetTokens }),
       signal,
     })
   }

@@ -42,7 +42,10 @@ export async function consumeLlmStream(
         break;
       case 'tool_call':
         if (callIds.has(delta.callId)) {
-          throw new KernelError('llm.duplicate_tool_call', `Duplicate tool call id: ${delta.callId}`);
+          throw new KernelError(
+            'llm.duplicate_tool_call',
+            `Duplicate tool call id: ${delta.callId}`,
+          );
         }
         callIds.add(delta.callId);
         toolCalls.push({ callId: delta.callId, name: delta.name, args: delta.args });
@@ -76,8 +79,14 @@ export async function consumeLlmStream(
   }
 
   if (!sawDone) throw new KernelError('llm.incomplete_stream', 'Model stream ended without done');
-  if (!text && !thinking && toolCalls.length === 0) {
-    throw new KernelError('llm.empty_response', 'Model returned an empty response', { retryable: true });
+  if (!text && toolCalls.length === 0) {
+    throw new KernelError(
+      thinking ? 'llm.no_final_text' : 'llm.empty_response',
+      thinking
+        ? 'Model returned reasoning without a final answer or tool call'
+        : 'Model returned an empty response',
+      { retryable: true },
+    );
   }
   return {
     message: {

@@ -5,7 +5,7 @@ export type GrantScope = 'once' | 'session';
  * Three approval levels only:
  * - `manual`: read-only tools run free; write/edit and shell commands ask.
  * - `auto`: everything auto-approved, but explicit `deny` rules still bite.
- * - `bypass`: policy skipped entirely (deny rules included).
+ * - `bypass`: ordinary policy rules are skipped; host disallowed-tools remain hard denies.
  * Legacy ledger values (`default`/`acceptEdits`/`plan`) are normalized on replay.
  */
 export type PermissionMode = 'manual' | 'auto' | 'bypass';
@@ -23,7 +23,11 @@ export interface PermissionRuleReference {
 }
 
 export type PolicyDecision =
-  | { readonly decision: 'allow'; readonly reason?: string; readonly rule?: PermissionRuleReference }
+  | {
+      readonly decision: 'allow';
+      readonly reason?: string;
+      readonly rule?: PermissionRuleReference;
+    }
   | { readonly decision: 'deny'; readonly reason?: string; readonly rule?: PermissionRuleReference }
   | {
       readonly decision: 'ask';

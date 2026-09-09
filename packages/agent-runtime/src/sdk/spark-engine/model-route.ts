@@ -87,3 +87,22 @@ export function toSparkEnginePermissionMode(
       return 'manual'
   }
 }
+
+/** Map the host-wide reasoning enum onto Spark's five-level public enum. */
+export function toSparkEngineReasoningEffort(
+  value: SDKExecutorConfig['reasoningEffort'],
+): 'low' | 'medium' | 'high' | 'max' | undefined {
+  switch (value) {
+    case 'minimal':
+      return 'low'
+    case 'low':
+    case 'medium':
+    case 'high':
+    case 'max':
+      return value
+    case 'xhigh':
+      return 'max'
+    default:
+      return undefined
+  }
+}

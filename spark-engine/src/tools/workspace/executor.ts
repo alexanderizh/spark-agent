@@ -10,14 +10,17 @@ import type { ToolCallContext, ToolExecutor } from '../../seams.js';
 import type { ResolvedToolCall, ToolOutcome } from '../contract.js';
 import { atomicWriteFile } from './atomic-write.js';
 import { WorkspacePathGuard } from './path-guard.js';
-import { runProcess, safeShellEnvironment } from './process.js';
+import { runProcess, withCustomEnvironment } from './process.js';
 
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
 export class WorkspaceToolExecutor implements ToolExecutor {
   readonly #guard: WorkspacePathGuard;
 
-  constructor(readonly cwd: string) {
+  constructor(
+    readonly cwd: string,
+    private readonly customEnv?: Readonly<Record<string, string>>,
+  ) {
     this.#guard = new WorkspacePathGuard(cwd);
   }
 
@@ -75,7 +78,10 @@ export class WorkspaceToolExecutor implements ToolExecutor {
       assertRevision(input, latest?.sha256, expected);
     });
     const sha256 = digest(Buffer.from(content));
-    return { ok: true, content: `Wrote ${input}\nsha256: ${sha256}\nbytes: ${Buffer.byteLength(content)}` };
+    return {
+      ok: true,
+      content: `Wrote ${input}\nsha256: ${sha256}\nbytes: ${Buffer.byteLength(content)}`,
+    };
   }
 
   async #edit(args: Record<string, unknown>, signal: AbortSignal): Promise<ToolOutcome> {
@@ -88,7 +94,8 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     if (!current) throw new KernelError('tool.path_not_found', `Path does not exist: ${input}`);
     assertRevision(input, current.sha256, expected);
     const first = current.text.indexOf(oldText);
-    if (first === -1) throw new KernelError('tool.edit_no_match', `Edit text was not found in ${input}`);
+    if (first === -1)
+      throw new KernelError('tool.edit_no_match', `Edit text was not found in ${input}`);
     if (current.text.slice(first + oldText.length).includes(oldText)) {
       throw new KernelError('tool.edit_ambiguous', `Edit text occurs more than once in ${input}`);
     }
@@ -157,13 +164,11 @@ export class WorkspaceToolExecutor implements ToolExecutor {
   async #bash(args: Record<string, unknown>, signal: AbortSignal): Promise<ToolOutcome> {
     const shell = process.env.SHELL ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
     const command = stringArg(args.command, 'command');
-    const shellArgs = process.platform === 'win32'
-      ? ['/d', '/s', '/c', command]
-      : ['-lc', command];
+    const shellArgs = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-lc', command];
     const result = await runProcess(shell, shellArgs, {
       cwd: this.cwd,
       signal,
-      env: safeShellEnvironment(),
+      env: withCustomEnvironment(this.customEnv),
     });
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     return {
@@ -172,7 +177,11 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     };
   }
 
-  async #listFiles(patterns: readonly string[], limit: number, signal: AbortSignal): Promise<string[]> {
+  async #listFiles(
+    patterns: readonly string[],
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<string[]> {
     const args = [
       '--files',
       '--hidden',
@@ -184,7 +193,8 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     ];
     try {
       const result = await runProcess('rg', args, { cwd: this.cwd, signal });
-      if (result.exitCode > 1) throw new Error(result.stderr || `ripgrep exited ${result.exitCode}`);
+      if (result.exitCode > 1)
+        throw new Error(result.stderr || `ripgrep exited ${result.exitCode}`);
       return result.stdout.split('\n').filter(Boolean).sort().slice(0, limit);
     } catch (error) {
       if (!isMissingCommand(error)) throw error;
@@ -200,7 +210,10 @@ export class WorkspaceToolExecutor implements ToolExecutor {
       const matcher = ignore();
       const gitignore = await readFile(`${this.cwd}/.gitignore`, 'utf8').catch(() => '');
       if (gitignore) matcher.add(gitignore);
-      return entries.filter((entry) => !matcher.ignores(entry)).sort().slice(0, limit);
+      return entries
+        .filter((entry) => !matcher.ignores(entry))
+        .sort()
+        .slice(0, limit);
     }
   }
 
@@ -237,7 +250,10 @@ export class WorkspaceToolExecutor implements ToolExecutor {
       }
       if (matches.length >= maximum) break;
     }
-    return { ok: true, content: `${matches.join('\n')}\n[fallback: JavaScript regex engine]`.trim() };
+    return {
+      ok: true,
+      content: `${matches.join('\n')}\n[fallback: JavaScript regex engine]`.trim(),
+    };
   }
 }
 
@@ -258,17 +274,23 @@ async function readTextFile(path: string, signal: AbortSignal): Promise<TextFile
   if (bytes.byteLength > MAX_FILE_BYTES) {
     throw new KernelError('tool.file_too_large', `File exceeds ${MAX_FILE_BYTES} bytes: ${path}`);
   }
-  if (bytes.includes(0)) throw new KernelError('tool.binary_file', `Refusing to decode binary file: ${path}`);
+  if (bytes.includes(0))
+    throw new KernelError('tool.binary_file', `Refusing to decode binary file: ${path}`);
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch (error) {
-    throw new KernelError('tool.invalid_utf8', `File is not valid UTF-8: ${path}`, { cause: error });
+    throw new KernelError('tool.invalid_utf8', `File is not valid UTF-8: ${path}`, {
+      cause: error,
+    });
   }
   return { text, sha256: digest(bytes), bytes: bytes.byteLength };
 }
 
-async function readOptionalTextFile(path: string, signal: AbortSignal): Promise<TextFile | undefined> {
+async function readOptionalTextFile(
+  path: string,
+  signal: AbortSignal,
+): Promise<TextFile | undefined> {
   try {
     return await readTextFile(path, signal);
   } catch (error) {
@@ -277,7 +299,11 @@ async function readOptionalTextFile(path: string, signal: AbortSignal): Promise<
   }
 }
 
-function assertRevision(path: string, actual: string | undefined, expected: string | undefined): void {
+function assertRevision(
+  path: string,
+  actual: string | undefined,
+  expected: string | undefined,
+): void {
   if (actual === undefined && expected !== undefined) {
     throw new KernelError('tool.write_conflict', `File was removed after it was read: ${path}`);
   }
@@ -306,7 +332,10 @@ function isMissingCommand(error: unknown): boolean {
 }
 
 function isMissingFile(error: unknown): boolean {
-  return asCode(error) === 'ENOENT' || (error instanceof KernelError && error.code === 'tool.path_not_found');
+  return (
+    asCode(error) === 'ENOENT' ||
+    (error instanceof KernelError && error.code === 'tool.path_not_found')
+  );
 }
 
 function asCode(error: unknown): unknown {

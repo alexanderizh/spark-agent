@@ -126,6 +126,74 @@ describe('TUI deterministic interaction', () => {
     app.unmount()
   })
 
+  it('keeps the final assistant answer visible after a live tool call', async () => {
+    const base = createDeterministicEnv(
+      [toolCall('read-live', 'read', { path: 'README.md' }), text('Final answer after reading.')],
+      { files: { 'README.md': '# Spark' } },
+    )
+    const approver = new InteractiveApprover()
+    const env = {
+      ...base,
+      permission: { policy: new RulePermissionPolicy(), approver },
+    }
+    const agent = Agent.open({ cwd: '/workspace', env })
+    const session = await agent.newSession({ permissionMode: 'auto' })
+    const initial = await collect(session)
+    const app = render(
+      <SparkTuiApp
+        initialSession={session}
+        initialEvents={initial}
+        approver={approver}
+        createSession={async () => agent.newSession()}
+        model="fake-m1"
+        capabilities={{ color: 'mono', unicode: false, width: 120 }}
+      />,
+    )
+
+    app.stdin.write('read README.md and summarize it')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    app.stdin.write('\r')
+    for (let index = 0; index < 40; index += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+
+    const frame = stripAnsi(app.lastFrame() ?? '')
+    expect(frame).toContain('Read · README.md')
+    expect(frame).toContain('Final answer after reading.')
+    app.unmount()
+  })
+
+  it('explains a budget stop after tool logs instead of ending silently', async () => {
+    const base = createDeterministicEnv([toolCall('read-budget', 'read', { path: 'README.md' })], {
+      files: { 'README.md': '# Spark' },
+    })
+    const approver = new InteractiveApprover()
+    const env = {
+      ...base,
+      permission: { policy: new RulePermissionPolicy(), approver },
+    }
+    const agent = Agent.open({ cwd: '/workspace', env })
+    const session = await agent.newSession({ permissionMode: 'auto' })
+    await session.turn('read README.md', { budget: { maxSteps: 1 } })
+    const initial = await collect(session)
+
+    const app = render(
+      <SparkTuiApp
+        initialSession={session}
+        initialEvents={initial}
+        approver={approver}
+        createSession={async () => agent.newSession()}
+        model="fake-m1"
+        capabilities={{ color: 'mono', unicode: false, width: 120 }}
+      />,
+    )
+
+    const frame = stripAnsi(app.lastFrame() ?? '')
+    expect(frame).toContain('执行因预算限制结束')
+    expect(frame).toContain('Read · README.md')
+    app.unmount()
+  })
+
   it('replays a resumed session transcript on open', async () => {
     const base = createDeterministicEnv([text('First reply.'), text('Second reply.')])
     const approver = new InteractiveApprover()

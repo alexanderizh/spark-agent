@@ -51,9 +51,10 @@ type RemoteOutboundMessage = {
   actions?: RemoteMessageAction[]
 }
 
-function buildRemoteRuntimeErrorMessage(error: unknown): string {
+function buildRemoteRuntimeErrorMessage(error: unknown, commandPrefix = '/'): string {
   const message = (error instanceof Error ? error.message : String(error)).trim().slice(0, 1000)
-  return `处理失败：${message || '未知错误'}\n\n建议：发送 /status 查看连接状态，发送 /help 查看可用命令；如果问题与模型有关，请依次使用 /providers、/models、/use-model。`
+  const prefix = commandPrefix.trim() || '/'
+  return `处理失败：${message || '未知错误'}\n\n建议：发送 ${prefix}status 查看连接状态，发送 ${prefix}help 查看可用命令；如果问题与模型有关，请依次使用 ${prefix}providers、${prefix}models、${prefix}use-model。`
 }
 
 function formatRemoteOutboundText(message: RemoteOutboundMessage): string {
@@ -368,10 +369,10 @@ function createPairingPayload(
   return `spark-agent://remote-pair?${params.toString()}`
 }
 
-const BIND_COMMAND_PATTERN = /^\/bind\s+([A-Z0-9]{6,12})$/i
-
-function extractBindCode(text: string): string | null {
-  const match = text.trim().match(BIND_COMMAND_PATTERN)
+function extractBindCode(text: string, commandPrefix = '/'): string | null {
+  const prefix = commandPrefix.trim() || '/'
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = text.trim().match(new RegExp(`^${escapedPrefix}bind\\s+([A-Z0-9]{6,12})$`, 'i'))
   return match?.[1]?.toUpperCase() ?? null
 }
 
@@ -534,7 +535,7 @@ function chunkActions<T>(actions: T[], size = 2): T[][] {
   return rows
 }
 
-function buildFeishuCard(message: RemoteOutboundMessage): Record<string, unknown> {
+export function buildFeishuCard(message: RemoteOutboundMessage): Record<string, unknown> {
   const actions = message.actions ?? []
   return {
     config: { wide_screen_mode: true },
@@ -1064,7 +1065,7 @@ export class RemoteConnectionService {
     const text = message.text.trim()
     if (text.length === 0) return
 
-    const bindCode = extractBindCode(text)
+    const bindCode = extractBindCode(text, connection.commandPrefix)
     if (bindCode != null) {
       await this.confirmInboundPairing(connection, bindCode, message.externalId, message.senderName)
       return
@@ -1074,10 +1075,11 @@ export class RemoteConnectionService {
       this.readStore().connections.find((item) => item.id === connection.id) ?? connection
     if (!latest.enabled) return
     if (!this.isAuthorized(latest, message.externalId)) {
+      const prefix = latest.commandPrefix.trim() || '/'
       await this.sendDirectMessage(
         latest,
         message.externalId,
-        '该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 /bind <配对码>。配对失败时请重新生成未过期的配对码。',
+        `该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 ${prefix}bind <配对码>。配对失败时请重新生成未过期的配对码。`,
       )
       return
     }
@@ -1085,10 +1087,11 @@ export class RemoteConnectionService {
     this.markSeen(latest.id, message.externalId)
     await this.sendProcessingFeedback(latest, message.externalId, message.messageId)
     if (this.inboundHandler == null) {
+      const prefix = latest.commandPrefix.trim() || '/'
       await this.sendDirectMessage(
         latest,
         message.externalId,
-        '远程连接运行时尚未就绪，请稍后重试；如果持续失败，请在桌面端检查远程连接状态后发送 /status。',
+        `远程连接运行时尚未就绪，请稍后重试；如果持续失败，请在桌面端检查远程连接状态后发送 ${prefix}status。`,
       )
       return
     }
@@ -1109,7 +1112,11 @@ export class RemoteConnectionService {
         })
       }
     } catch (err) {
-      await this.sendDirectMessage(latest, message.externalId, buildRemoteRuntimeErrorMessage(err))
+      await this.sendDirectMessage(
+        latest,
+        message.externalId,
+        buildRemoteRuntimeErrorMessage(err, latest.commandPrefix),
+      )
     }
   }
 
@@ -1132,13 +1139,13 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         externalId,
-        '已绑定 SparkWork。后续消息会进入该连接的默认会话，发送 /help 查看命令。',
+        `已绑定 SparkWork。后续消息会进入该连接的默认会话，发送 ${latest.commandPrefix.trim() || '/'}help 查看命令。`,
       )
     } catch (err) {
       await this.sendDirectMessage(
         latest,
         externalId,
-        `绑定失败：${err instanceof Error ? err.message : String(err)}\n\n建议：检查配对码是否过期；回到 SparkWork 重新生成配对码后，再发送 /bind <配对码>。`,
+        `绑定失败：${err instanceof Error ? err.message : String(err)}\n\n建议：检查配对码是否过期；回到 SparkWork 重新生成配对码后，再发送 ${latest.commandPrefix.trim() || '/'}bind <配对码>。`,
       )
     }
   }
@@ -1536,21 +1543,25 @@ export class RemoteConnectionService {
     if (appId == null || appSecret == null) throw new Error('飞书 App ID 或 App Secret 未配置')
     const token = await this.getFeishuToken(connection.id, appId, appSecret)
     const receiveIdType = resolveFeishuReceiveIdType(externalId)
-    await this.postJson(
-      `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
-      message.actions != null && message.actions.length > 0
-        ? {
-            receive_id: externalId,
-            msg_type: 'interactive',
-            content: JSON.stringify(buildFeishuCard(message)),
-          }
-        : {
-            receive_id: externalId,
-            msg_type: 'text',
-            content: JSON.stringify({ text: formatRemoteOutboundText(message) }),
-          },
-      { Authorization: `Bearer ${token}` },
-    )
+    const chunks = splitText(message.text, 10_000)
+    for (const [index, text] of chunks.entries()) {
+      const actions = index === chunks.length - 1 ? message.actions : undefined
+      await this.postJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+        {
+          receive_id: externalId,
+          msg_type: 'interactive',
+          content: JSON.stringify(
+            buildFeishuCard({
+              ...(message.title == null ? {} : { title: message.title }),
+              text,
+              ...(actions == null ? {} : { actions }),
+            }),
+          ),
+        },
+        { Authorization: `Bearer ${token}` },
+      )
+    }
   }
 
   private async sendProcessingFeedback(

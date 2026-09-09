@@ -3,7 +3,7 @@ import { AnthropicMessagesService } from './anthropic/messages.js';
 import type { FetchLike } from './http/client.js';
 import { OpenAiResponsesService } from './openai/responses.js';
 import { ResilientLlmService, type ResilientLlmOptions } from './resilience.js';
-import type { ModelCapabilities } from './types.js';
+import type { ModelBudget, ModelCapabilities } from './types.js';
 
 export type ModelProtocol = 'anthropic-messages' | 'openai-responses';
 
@@ -14,6 +14,7 @@ export interface ModelDescriptor {
   readonly model: string;
   readonly baseUrl: string;
   readonly capabilities: ModelCapabilities;
+  readonly budget?: ModelBudget;
 }
 
 export interface HttpModelRegistration {
@@ -24,6 +25,8 @@ export interface HttpModelRegistration {
   readonly baseUrl?: string;
   readonly apiKey: string;
   readonly capabilities?: Partial<ModelCapabilities>;
+  readonly contextWindowTokens?: number;
+  readonly maxOutputTokens?: number;
   readonly fetch?: FetchLike;
 }
 
@@ -36,7 +39,8 @@ export class ModelRegistry {
   readonly #models = new Map<string, RegisteredModel>();
 
   register(descriptor: ModelDescriptor, create: () => LlmService): () => void {
-    if (this.#models.has(descriptor.id)) throw new Error(`Model already registered: ${descriptor.id}`);
+    if (this.#models.has(descriptor.id))
+      throw new Error(`Model already registered: ${descriptor.id}`);
     const registered = { descriptor: freezeDescriptor(descriptor), create };
     this.#models.set(descriptor.id, registered);
     return () => {
@@ -60,6 +64,7 @@ export class ModelRegistry {
         ...defaultCapabilities(options.protocol),
         ...options.capabilities,
       },
+      ...modelBudgetFields(options),
     };
     return this.register(descriptor, () => {
       if (options.protocol === 'anthropic-messages') {
@@ -91,16 +96,39 @@ export class ModelRegistry {
   create(id: string): LlmService {
     const registered = this.#models.get(id);
     if (!registered) throw new Error(`Unknown model: ${id}`);
-    return registered.create();
+    const service = registered.create();
+    if (registered.descriptor.budget === undefined) return service;
+    return {
+      stream: (request, context) => service.stream(request, context),
+      getModelBudget: () => registered.descriptor.budget,
+    };
   }
 
-  createRoute(modelIds: readonly string[], options: Omit<ResilientLlmOptions, 'routes'> = {}): LlmService {
+  createRoute(
+    modelIds: readonly string[],
+    options: Omit<ResilientLlmOptions, 'routes'> = {},
+  ): LlmService {
     if (modelIds.length === 0) throw new Error('At least one model id is required');
+    const primaryId = modelIds[0];
+    const primary = primaryId === undefined ? undefined : this.#models.get(primaryId)?.descriptor;
     return new ResilientLlmService({
       ...options,
       routes: modelIds.map((id) => ({ id, service: this.create(id) })),
+      ...(primary?.budget === undefined ? {} : { modelBudget: primary.budget }),
     });
   }
+}
+
+function modelBudgetFields(options: HttpModelRegistration): { readonly budget?: ModelBudget } {
+  const contextWindowTokens = positiveInteger(options.contextWindowTokens);
+  const maxOutputTokens = positiveInteger(options.maxOutputTokens);
+  if (contextWindowTokens === undefined && maxOutputTokens === undefined) return {};
+  return {
+    budget: {
+      ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    },
+  };
 }
 
 export function defaultCapabilities(protocol: ModelProtocol): ModelCapabilities {
@@ -119,5 +147,10 @@ function freezeDescriptor(descriptor: ModelDescriptor): ModelDescriptor {
   return Object.freeze({
     ...descriptor,
     capabilities: Object.freeze({ ...descriptor.capabilities }),
+    ...(descriptor.budget === undefined ? {} : { budget: Object.freeze({ ...descriptor.budget }) }),
   });
+}
+
+function positiveInteger(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }

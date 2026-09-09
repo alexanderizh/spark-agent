@@ -4,14 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { consumeLlmStream } from '../../src/llm/consume.js';
-import {
-  AnthropicMessagesService,
-  toAnthropicRequest,
-} from '../../src/llm/anthropic/messages.js';
-import {
-  OpenAiResponsesService,
-  toOpenAiRequest,
-} from '../../src/llm/openai/responses.js';
+import { AnthropicMessagesService, toAnthropicRequest } from '../../src/llm/anthropic/messages.js';
+import { OpenAiResponsesService, toOpenAiRequest } from '../../src/llm/openai/responses.js';
 import type { LlmRequest } from '../../src/llm/types.js';
 
 const context = {
@@ -180,15 +174,83 @@ describe('real model protocol adapters', () => {
     expect(response.ttftMs).toBeGreaterThanOrEqual(0);
   });
 
+  it('recovers Responses final text when the gateway omits text deltas', async () => {
+    const sse = [
+      'event: response.created',
+      'data: {"type":"response.created","response":{"id":"r2","status":"in_progress"}}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"r2","status":"completed","output":[{"id":"msg_r2","type":"message","role":"assistant","content":[{"type":"output_text","text":"gateway final answer","annotations":[]}]}],"usage":{"input_tokens":10,"output_tokens":4}}}',
+      '',
+    ].join('\n');
+    const service = new OpenAiResponsesService({
+      apiKey: 'secret',
+      model: 'gpt-test',
+      fetch: async () => sseResponse(sse),
+    });
+
+    const response = await consumeLlmStream(service.stream(baseRequest(), context));
+
+    expect(response.message.text).toBe('gateway final answer');
+  });
+
+  it('recovers Anthropic final text supplied on a gateway completion block', async () => {
+    const sse = [
+      'event: message_start',
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":2,"output_tokens":1}}}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"gateway final answer"}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+    const service = new AnthropicMessagesService({
+      apiKey: 'secret',
+      model: 'claude-test',
+      fetch: async () => sseResponse(sse),
+    });
+
+    const response = await consumeLlmStream(service.stream(baseRequest(), context));
+
+    expect(response.message.text).toBe('gateway final answer');
+  });
+
+  it('does not treat reasoning-only output as a successful final answer', async () => {
+    const stream = (async function* () {
+      yield { type: 'thinking', text: 'I should answer next.' } as const;
+      yield {
+        type: 'usage',
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      } as const;
+      yield { type: 'done' } as const;
+    })();
+
+    await expect(consumeLlmStream(stream)).rejects.toMatchObject({
+      code: 'llm.no_final_text',
+      retryable: true,
+    });
+  });
+
   it('classifies an HTTP 429 as retryable without exposing credentials', async () => {
     const service = new OpenAiResponsesService({
       apiKey: 'never-print-this',
       model: 'gpt-test',
       fetch: async () =>
-        new Response(JSON.stringify({ error: { type: 'rate_limit_error', message: 'slow down' } }), {
-          status: 429,
-          headers: { 'content-type': 'application/json', 'retry-after': '2' },
-        }),
+        new Response(
+          JSON.stringify({ error: { type: 'rate_limit_error', message: 'slow down' } }),
+          {
+            status: 429,
+            headers: { 'content-type': 'application/json', 'retry-after': '2' },
+          },
+        ),
     });
     const consume = () => consumeLlmStream(service.stream(baseRequest(), context));
     await expect(consume()).rejects.toMatchObject({
@@ -237,10 +299,7 @@ function baseRequest(): LlmRequest {
 }
 
 async function loadFixture(name: string): Promise<string> {
-  return readFile(
-    fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url)),
-    'utf8',
-  );
+  return readFile(fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url)), 'utf8');
 }
 
 function sseResponse(value: string): Response {

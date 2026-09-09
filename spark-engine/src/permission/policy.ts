@@ -34,6 +34,10 @@ export interface PermissionRuleLayer {
 
 export interface RulePermissionPolicyOptions {
   readonly layers?: readonly PermissionRuleLayer[];
+  /** Tool patterns that bypass interactive approval in manual mode. */
+  readonly allowedTools?: readonly string[];
+  /** Tool patterns that are denied before mode-specific handling. */
+  readonly disallowedTools?: readonly string[];
 }
 
 interface SelectedRule {
@@ -43,12 +47,16 @@ interface SelectedRule {
 
 export class RulePermissionPolicy implements PermissionPolicy {
   readonly #rules: readonly SelectedRule[];
+  readonly #allowedTools: readonly string[];
+  readonly #disallowedTools: readonly string[];
   readonly #sessionGrants = new Map<string, Set<string>>();
 
   constructor(options: RulePermissionPolicyOptions | readonly PermissionRule[] = {}) {
     const normalized: RulePermissionPolicyOptions = Array.isArray(options)
       ? { layers: [{ source: 'host', rules: options as readonly PermissionRule[] }] }
       : (options as RulePermissionPolicyOptions);
+    this.#allowedTools = [...(normalized.allowedTools ?? [])];
+    this.#disallowedTools = [...(normalized.disallowedTools ?? [])];
     this.#rules = (normalized.layers ?? []).flatMap((layer) =>
       layer.rules.map((rule) => {
         validateRule(rule);
@@ -61,16 +69,22 @@ export class RulePermissionPolicy implements PermissionPolicy {
     // Session mode is the single source of truth: the tool runner always
     // forwards the session's current mode, so the policy never second-guesses it.
     const mode = context.mode;
-    if (mode === 'bypass') return { decision: 'allow', reason: 'Permission bypass mode' };
     let selected: SelectedRule | undefined;
     for (const rule of this.#rules) {
       if (wildcardMatches(rule.rule.tool, call.name) && matchesArguments(rule.rule, call.args)) {
         selected = rule;
       }
     }
+    if (matchesAny(this.#disallowedTools, call.name)) {
+      return { decision: 'deny', reason: 'Tool is disallowed by host configuration' };
+    }
+    if (mode === 'bypass') return { decision: 'allow', reason: 'Permission bypass mode' };
     // Explicit deny rules stay enforceable in auto mode; auto only removes the
-    // interactive asks. Bypass (handled above) skips even these.
+    // interactive asks. Bypass skips ordinary rules but not host disallows.
     if (selected?.rule.action === 'deny') return ruleDecision(selected);
+    if (matchesAny(this.#allowedTools, call.name)) {
+      return { decision: 'allow', reason: 'Tool is allowed by host configuration' };
+    }
     if (mode === 'auto') {
       return { decision: 'allow', reason: 'Auto approval mode' };
     }
@@ -220,8 +234,13 @@ export function wildcardMatches(pattern: string, value: string): boolean {
   return patternIndex === pattern.length;
 }
 
+function matchesAny(patterns: readonly string[], value: string): boolean {
+  return patterns.some((pattern) => wildcardMatches(pattern, value));
+}
+
 function validateRule(rule: PermissionRule): void {
-  if (!rule.id || !rule.tool || rule.tool.length > 256) throw new Error('Permission rule requires a valid id and tool pattern');
+  if (!rule.id || !rule.tool || rule.tool.length > 256)
+    throw new Error('Permission rule requires a valid id and tool pattern');
   if (rule.remember && rule.action !== 'ask') {
     throw new Error(`Permission rule ${rule.id} can only set remember when action is ask`);
   }

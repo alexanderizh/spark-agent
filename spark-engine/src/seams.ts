@@ -1,6 +1,12 @@
 import type { AgentEvent, ArtifactRef } from './events/schema.js'
 import type { HookRunner } from './hooks/runner.js'
-import type { LlmDelta, LlmRequest, ReasoningEffort, SystemSection } from './llm/types.js'
+import type {
+  LlmDelta,
+  LlmRequest,
+  ModelBudget,
+  ReasoningEffort,
+  SystemSection,
+} from './llm/types.js'
 import type {
   PermissionDecision,
   PermissionCheckContext,
@@ -60,6 +66,8 @@ export interface LlmCallContext {
 
 export interface LlmService {
   stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta>
+  /** Current route's authoritative model budget, when the host supplied one. */
+  getModelBudget?(): ModelBudget | undefined
 }
 
 export interface ToolRegistry {
@@ -89,6 +97,8 @@ export interface SubagentRunRequest {
   readonly maxTokens?: number
   /** Inherited from the owning turn unless a future agent profile overrides it. */
   readonly reasoningEffort?: ReasoningEffort
+  /** Explicit provider thinking budget inherited by task subagents. */
+  readonly reasoningBudgetTokens?: number
   readonly signal: AbortSignal
 }
 

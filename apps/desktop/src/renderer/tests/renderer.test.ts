@@ -264,7 +264,7 @@ describe('Renderer Smoke Tests', () => {
   function expectRunningTaskTag() {
     const runningTag = container.querySelector('.agent-task-running-tag')
     expect(runningTag).not.toBeNull()
-    expect(runningTag?.textContent).toContain('执行任务中')
+    expect(runningTag?.textContent).toContain('Generating')
   }
 
   async function createChatSurface<P extends object>(

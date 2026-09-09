@@ -25,6 +25,7 @@ import {
 import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { SessionPicker } from './components/session-picker.js'
+import { ScrollRegion } from './components/scroll-region.js'
 import { StatusBar } from './components/status-bar.js'
 import { InputEditor } from './components/input-editor.js'
 import { WorkingLine } from './components/spinner.js'
@@ -178,6 +179,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
   const [updateRunning, setUpdateRunning] = useState(false)
   const [updateCheckOnly, setUpdateCheckOnly] = useState(false)
+  const [outputScrolled, setOutputScrolled] = useState(false)
   const controllers = useRef<AbortController[]>([])
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -209,12 +211,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   useEffect(() => {
     let refresh: ReturnType<typeof setTimeout> | undefined
     let lastWidth = stdout.columns
+    let lastHeight = stdout.rows
     const onResize = (): void => {
       const width = stdout.columns
-      if (width === undefined || width === lastWidth) return
+      const height = stdout.rows
+      if (width === undefined || (width === lastWidth && height === lastHeight)) return
       if (refresh !== undefined) clearTimeout(refresh)
       refresh = setTimeout(() => {
         lastWidth = stdout.columns
+        lastHeight = stdout.rows
         setCapabilities(detectTerminalCapabilities(stdout))
       }, 150)
     }
@@ -523,8 +528,9 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     applyPermissionMode(nextPermissionMode(permissionMode))
   }, [activeTurns, applyPermissionMode, permissionMode, setNotice])
 
-  return (
-    <Box flexDirection="column">
+  const scrollableOutput = capabilities.height !== undefined
+  const output = (
+    <>
       {empty && !pickerOpen && (
         <WelcomeBox
           version={props.version ?? SPARK_ENGINE_VERSION}
@@ -533,13 +539,14 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      {/* Remount only on session switch: ink <Static> counts flushed rows by
-          position, so a shorter/equal replacement transcript needs a reset. */}
+      {/* Remount on session switch; the Static fallback also needs a reset
+          because a shorter/equal replacement transcript reuses row positions. */}
       <Transcript
         key={session.sessionId}
         rows={projection.settled}
         theme={theme}
         capabilities={capabilities}
+        staticOutput={!scrollableOutput}
       />
       {showThinking && liveThinking && (
         <Box marginTop={1}>
@@ -560,6 +567,11 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
+    </>
+  )
+
+  const overlays = (
+    <>
       {pending && (
         <PermissionCard
           pending={pending}
@@ -665,6 +677,27 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         />
       )}
       {notice && <Text color={noticeColor(theme, notice.tone)}>{notice.text}</Text>}
+    </>
+  )
+
+  return (
+    <Box
+      flexDirection="column"
+      {...(capabilities.height === undefined ? {} : { height: capabilities.height })}
+    >
+      {scrollableOutput ? (
+        <ScrollRegion
+          active={
+            !pending && !pickerOpen && !permPickerOpen && !effortPickerOpen && !sessionPickerOpen
+          }
+          onScrollStateChange={setOutputScrolled}
+        >
+          {output}
+        </ScrollRegion>
+      ) : (
+        output
+      )}
+      {overlays}
       <InputEditor
         active={!pickerOpen}
         locked={
@@ -695,6 +728,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         effort={reasoningEffort}
         perf={perfText || undefined}
         cwd={formatCwd(props.cwd)}
+        scrollHint={outputScrolled}
         capabilities={capabilities}
         theme={theme}
       />

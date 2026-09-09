@@ -46,6 +46,91 @@ describe('built CLI contract', () => {
     expect(events.map((event) => event.seq)).toEqual([0, 1, 2, 3, 4])
   })
 
+  it('prints the completed assistant answer when a gateway omits text deltas', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-completed-output-'))
+    roots.push(root)
+    const server = await startResponsesServer(false)
+    await mkdir(join(root, '.spark'))
+    await writeFile(
+      join(root, '.spark', 'config.toml'),
+      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+    )
+
+    const result = await runCli(
+      ['hello'],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+      root,
+    )
+    await server.close()
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain('done')
+  })
+
+  it('emits one final result object for output-format json', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-json-result-'))
+    roots.push(root)
+    const server = await startResponsesServer()
+    await mkdir(join(root, '.spark'))
+    await writeFile(
+      join(root, '.spark', 'config.toml'),
+      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+    )
+
+    const result = await runCli(
+      ['--output-format', 'json', 'hello'],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+      root,
+    )
+    await server.close()
+
+    expect(result.code).toBe(0)
+    const output = JSON.parse(result.stdout) as {
+      type: string
+      status: string
+      message: string
+      terminal: { type: string }
+    }
+    expect(output).toMatchObject({
+      type: 'result',
+      status: 'completed',
+      message: 'done',
+      terminal: { type: 'turn.completed' },
+    })
+    expect(result.stdout.trim().split('\n')).toHaveLength(1)
+    expect(result.stdout).not.toContain('session.started')
+    expect(result.stderr).toBe('')
+  })
+
+  it('emits persisted events and live deltas for stream-json', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-stream-json-'))
+    roots.push(root)
+    const server = await startResponsesServer()
+    await mkdir(join(root, '.spark'))
+    await writeFile(
+      join(root, '.spark', 'config.toml'),
+      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+    )
+
+    const result = await runCli(
+      ['--output-format', 'stream-json', 'hello'],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+      root,
+    )
+    await server.close()
+
+    expect(result.code).toBe(0)
+    const records = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string; delta?: { type: string } })
+    expect(records.some((record) => record.type === 'delta' && record.delta?.type === 'text')).toBe(
+      true,
+    )
+    expect(records.some((record) => record.type === 'turn.completed')).toBe(true)
+    expect(result.stderr).toBe('')
+  })
+
   it('lists sessions and resumes the latest one with --continue', async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-resume-'))
     roots.push(root)
@@ -122,6 +207,12 @@ describe('built CLI contract', () => {
     const result = await runCli(['--output-format', 'xml', 'hello'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('Unsupported --output-format')
+  })
+
+  it('rejects conflicting legacy json and output format flags', async () => {
+    const result = await runCli(['--json', '--output-format', 'text', 'hello'])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('--json conflicts with --output-format')
   })
 
   it('reports an unusable selected model instead of declaring doctor healthy', async () => {
@@ -306,7 +397,7 @@ async function startSparkWorkHost(root: string): Promise<{
   }
 }
 
-async function startResponsesServer(): Promise<{
+async function startResponsesServer(includeTextDelta = true): Promise<{
   readonly baseUrl: string
   readonly close: () => Promise<void>
 }> {
@@ -316,9 +407,12 @@ async function startResponsesServer(): Promise<{
       return
     }
     response.writeHead(200, { 'content-type': 'text/event-stream' })
+    const delta = includeTextDelta
+      ? 'event: response.output_text.delta\n' +
+        'data: {"type":"response.output_text.delta","delta":"done"}\n\n'
+      : ''
     response.end(
-      'event: response.output_text.delta\n' +
-        'data: {"type":"response.output_text.delta","delta":"done"}\n\n' +
+      delta +
         'event: response.completed\n' +
         'data: {"type":"response.completed","response":{"id":"resp_cli","status":"completed","output":[{"id":"msg_cli","type":"message","role":"assistant","content":[{"type":"output_text","text":"done","annotations":[]}]}],"usage":{"input_tokens":2,"output_tokens":1}}}\n\n',
     )

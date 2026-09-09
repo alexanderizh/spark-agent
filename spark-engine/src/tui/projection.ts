@@ -151,8 +151,15 @@ export function projectTranscript(
       case 'permission.evaluated':
         break
       case 'turn.completed':
-        // Settles silently: the transcript already shows the answer and tool
-        // results; a trailing stats line is noise.
+        if (event.reason === 'budget') {
+          settled.push({
+            key: `event-${event.seq}`,
+            text: `${symbols.failure} 执行因预算限制结束 · ${event.stats.steps} steps · ${event.stats.toolCalls} tool calls`,
+            tone: 'warn',
+          })
+        }
+        // A normal final turn settles silently: the transcript already shows
+        // the answer and tool results; a trailing stats line is noise.
         break
       case 'turn.cancelled':
         settled.push({

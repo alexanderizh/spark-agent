@@ -27,6 +27,7 @@ const RouteSchema = z
     protocol: z.enum(['anthropic-messages', 'openai-responses']),
     model: z.string().min(1).max(1_000),
     contextWindow: z.number().int().positive().optional(),
+    maxOutputTokens: z.number().int().positive().optional(),
   })
   .strict()
 
@@ -80,6 +81,7 @@ export interface SparkWorkHostRoute {
   readonly protocol: ModelProtocol
   readonly model: string
   readonly contextWindow?: number
+  readonly maxOutputTokens?: number
 }
 
 export interface SparkWorkHostCatalog {
@@ -227,9 +229,7 @@ async function fetchCatalog(
   descriptor: Descriptor,
   fetcher: FetchLike,
 ): Promise<SparkWorkHostCatalog> {
-  const timeout = isProcessAlive(descriptor.pid)
-    ? LIVE_BRIDGE_TIMEOUT_MS
-    : DEAD_BRIDGE_TIMEOUT_MS
+  const timeout = isProcessAlive(descriptor.pid) ? LIVE_BRIDGE_TIMEOUT_MS : DEAD_BRIDGE_TIMEOUT_MS
   let response: Response
   try {
     response = await fetcher(`${stripTrailingSlash(descriptor.endpoint)}/v1/catalog`, {
@@ -237,7 +237,9 @@ async function fetchCatalog(
       signal: AbortSignal.timeout(timeout),
     })
   } catch (error) {
-    throw new Error(`bridge pid ${descriptor.pid} did not answer (${message(error)})`, { cause: error })
+    throw new Error(`bridge pid ${descriptor.pid} did not answer (${message(error)})`, {
+      cause: error,
+    })
   }
   if (!response.ok) {
     throw new Error(`bridge pid ${descriptor.pid} rejected catalog (HTTP ${response.status})`)
@@ -257,6 +259,9 @@ async function fetchCatalog(
             protocol: route.protocol,
             model: route.model,
             ...(route.contextWindow === undefined ? {} : { contextWindow: route.contextWindow }),
+            ...(route.maxOutputTokens === undefined
+              ? {}
+              : { maxOutputTokens: route.maxOutputTokens }),
           }),
         ),
       ),
@@ -264,7 +269,9 @@ async function fetchCatalog(
       token: descriptor.token,
     })
   } catch (error) {
-    throw new Error(`bridge returned an invalid model catalog: ${message(error)}`, { cause: error })
+    throw new Error(`bridge returned an invalid model catalog: ${message(error)}`, {
+      cause: error,
+    })
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { pickerRowStyle } from '../../src/tui/components/picker-layout.js'
-import { defaultTheme, supportsRichBackground } from '../../src/tui/theme.js'
+import { defaultTheme, glyphs, supportsRichBackground } from '../../src/tui/theme.js'
 
 describe('TUI theme capability fallbacks', () => {
   it('uses solid fills only when the terminal can preserve their contrast', () => {
@@ -12,16 +12,12 @@ describe('TUI theme capability fallbacks', () => {
   })
 
   it('falls back from a rich background to inverse video for a selected row', () => {
-    const rich = pickerRowStyle(
-      true,
-      defaultTheme,
-      { color: 'truecolor', unicode: true, width: 80 },
-    )
-    const limited = pickerRowStyle(
-      true,
-      defaultTheme,
-      { color: '16', unicode: true, width: 80 },
-    )
+    const rich = pickerRowStyle(true, defaultTheme, {
+      color: 'truecolor',
+      unicode: true,
+      width: 80,
+    })
+    const limited = pickerRowStyle(true, defaultTheme, { color: '16', unicode: true, width: 80 })
     const legacyTheme = pickerRowStyle(
       true,
       {
@@ -37,5 +33,12 @@ describe('TUI theme capability fallbacks', () => {
     expect(rich).toEqual({ backgroundColor: defaultTheme.selectedBg, inverse: false })
     expect(limited).toEqual({ backgroundColor: undefined, inverse: true })
     expect(legacyTheme).toEqual({ backgroundColor: undefined, inverse: true })
+  })
+
+  it('uses visually centred, single-cell spinner frames for unicode terminals', () => {
+    const symbols = glyphs({ color: 'truecolor', unicode: true, width: 80 })
+
+    expect(symbols.spinner).toEqual(['◒', '◐', '◓', '◑'])
+    expect(symbols.spinner.every((frame) => Array.from(frame).length === 1)).toBe(true)
   })
 })

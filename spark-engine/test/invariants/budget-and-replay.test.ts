@@ -2,15 +2,28 @@ import { describe, expect, it } from 'vitest';
 
 import { createDeterministicEnv } from '../../src/env.js';
 import { text, toolCall } from '../../src/llm/fake/reply-dsl.js';
+import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../src/llm/types.js';
 import { Agent } from '../../src/sdk/agent.js';
 import { collectEvents } from '../helpers.js';
 
 describe('invariants: budgets and replay', () => {
+  it('uses an output ceiling that leaves room for high-effort reasoning and a final answer', async () => {
+    const env = createDeterministicEnv([text('final answer')]);
+    const session = await Agent.open({ cwd: '/workspace', env }).newSession();
+
+    await session.turn('answer carefully', { reasoningEffort: 'high' });
+
+    expect(env.fixtures.model.requests[0]?.maxTokens).toBe(DEFAULT_MAX_OUTPUT_TOKENS);
+  });
+
   it('injects a soft warning into the next model request', async () => {
-    const env = createDeterministicEnv([
-      toolCall('read-1', 'read', { path: 'a.ts' }, { usage: { inputTokens: 80 } }),
-      text('Converged after the warning.'),
-    ], { files: { 'a.ts': 'x' } });
+    const env = createDeterministicEnv(
+      [
+        toolCall('read-1', 'read', { path: 'a.ts' }, { usage: { inputTokens: 80 } }),
+        text('Converged after the warning.'),
+      ],
+      { files: { 'a.ts': 'x' } },
+    );
     const session = await Agent.open({ cwd: '/workspace', env }).newSession();
     await session.turn('read then answer', { budget: { maxInputTokens: 100 } });
     expect(env.fixtures.model.requests[1]?.system).toContainEqual(

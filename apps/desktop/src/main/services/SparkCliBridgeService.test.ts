@@ -53,6 +53,7 @@ describe('SparkCliBridgeService', () => {
           apiEndpoint: 'https://models.example/v1',
           codexApiKind: 'responses',
           contextWindow: 200_000,
+          maxTokens: 64_000,
           isDefault: true,
         },
         {
@@ -103,6 +104,7 @@ describe('SparkCliBridgeService', () => {
           protocol: 'openai-responses',
           model: 'gpt-test',
           contextWindow: 200_000,
+          maxOutputTokens: 64_000,
         },
       ],
     })

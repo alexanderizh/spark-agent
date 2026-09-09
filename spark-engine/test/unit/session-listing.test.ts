@@ -5,6 +5,15 @@ import { text } from '../../src/llm/fake/reply-dsl.js'
 import { Agent } from '../../src/sdk/agent.js'
 
 describe('Agent.listSessions', () => {
+  it('does not record a session until its first turn is submitted', async () => {
+    const env = createDeterministicEnv([])
+    const agent = Agent.open({ cwd: '/workspace', env })
+    const empty = await agent.newSession()
+
+    expect(await agent.listSessions()).toEqual([])
+    expect(await collect(empty)).toEqual([])
+  })
+
   it('lists recorded sessions most recently updated first with input previews', async () => {
     const env = createDeterministicEnv([
       text('alpha reply.'),
@@ -48,3 +57,9 @@ describe('Agent.listSessions', () => {
     await expect(agent.openSession('session_nope')).rejects.toThrow('Session not found')
   })
 })
+
+async function collect(session: Awaited<ReturnType<Agent['newSession']>>) {
+  const events = []
+  for await (const event of session.events()) events.push(event)
+  return events
+}

@@ -4,6 +4,7 @@ import {
   resolveSparkModelRoute,
   resolveSparkUpstreamProtocol,
   toSparkEnginePermissionMode,
+  toSparkEngineReasoningEffort,
 } from '../../sdk/spark-engine/model-route.js'
 
 describe('resolveSparkUpstreamProtocol', () => {
@@ -87,5 +88,14 @@ describe('toSparkEnginePermissionMode', () => {
     expect(toSparkEnginePermissionMode('claude-accept-edits')).toBe('manual')
     expect(toSparkEnginePermissionMode(null)).toBe('manual')
     expect(toSparkEnginePermissionMode(undefined)).toBe('manual')
+  })
+})
+
+describe('toSparkEngineReasoningEffort', () => {
+  it('maps host-only levels to Spark equivalents without silently disabling reasoning', () => {
+    expect(toSparkEngineReasoningEffort('minimal')).toBe('low')
+    expect(toSparkEngineReasoningEffort('xhigh')).toBe('max')
+    expect(toSparkEngineReasoningEffort('high')).toBe('high')
+    expect(toSparkEngineReasoningEffort(undefined)).toBeUndefined()
   })
 })

@@ -3,7 +3,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { isAbortError } from '../kernel/cancellation.js';
 import { KernelError } from '../kernel/errors.js';
 import type { LlmCallContext, LlmService } from '../seams.js';
-import type { LlmDelta, LlmRequest } from './types.js';
+import { resolveOutputBudget } from './budget.js';
+import type { LlmDelta, LlmRequest, ModelBudget } from './types.js';
 
 export interface LlmRoute {
   readonly id: string;
@@ -22,6 +23,7 @@ export interface ResilientLlmOptions {
   readonly retry?: Partial<RetryPolicy>;
   readonly random?: () => number;
   readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  readonly modelBudget?: ModelBudget;
 }
 
 const DEFAULT_RETRY: RetryPolicy = {
@@ -44,13 +46,18 @@ export class ResilientLlmService implements LlmService {
     this.#retry = { ...DEFAULT_RETRY, ...options.retry };
   }
 
+  getModelBudget(): ModelBudget | undefined {
+    return this.#options.modelBudget;
+  }
+
   async *stream(request: LlmRequest, context: LlmCallContext): AsyncIterable<LlmDelta> {
     let lastError: unknown;
     for (const [routeIndex, route] of this.#options.routes.entries()) {
       for (let attempt = 0; attempt <= this.#retry.maxRetries; attempt += 1) {
         let emitted = false;
         try {
-          for await (const delta of route.service.stream(request, context)) {
+          const routeRequest = requestForRoute(request, route.service.getModelBudget?.());
+          for await (const delta of route.service.stream(routeRequest, context)) {
             if (delta.type !== 'heartbeat') emitted = true;
             yield delta;
           }
@@ -90,6 +97,20 @@ export class ResilientLlmService implements LlmService {
     }
     await delay(milliseconds, undefined, { signal });
   }
+}
+
+function requestForRoute(request: LlmRequest, modelBudget: ModelBudget | undefined): LlmRequest {
+  if (modelBudget === undefined) return request;
+  const resolved = resolveOutputBudget({
+    requestedMaxTokens: request.maxTokens,
+    modelBudget,
+    system: request.system,
+    messages: request.messages,
+    tools: request.tools,
+  });
+  return resolved.maxTokens === request.maxTokens
+    ? request
+    : { ...request, maxTokens: resolved.maxTokens };
 }
 
 function isRetryable(error: unknown): boolean {

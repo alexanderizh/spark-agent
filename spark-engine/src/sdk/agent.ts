@@ -41,6 +41,8 @@ export interface SessionTurnOptions {
   readonly parentId?: string
   /** User-selected reasoning effort for this turn chain; omitted = protocol default. */
   readonly reasoningEffort?: ReasoningEffort
+  /** Explicit provider thinking budget for this turn chain. */
+  readonly reasoningBudgetTokens?: number
   readonly onEvent?: RunTurnOptions['onEvent']
   readonly onDelta?: RunTurnOptions['onDelta']
 }
@@ -90,18 +92,17 @@ export class Agent {
     const permissionMode = permissionModeFromConfig(config)
     const sessionId = this.#env.ids.next('session')
     const ledger = new SessionLedger(sessionId, this.#env.store, this.#env.clock)
-    await ledger.append({
-      type: 'session.started',
-      schemaVersion: 1,
-      engineVersion: this.#engineVersion,
-      cwd: this.#cwd,
-      configSnapshot: stableStringify(config),
-    })
     const session = new AgentSession({
       sessionId,
       cwd: this.#cwd,
       env: this.#env,
       scheduler: this.#scheduler,
+      ledger,
+      start: {
+        engineVersion: this.#engineVersion,
+        cwd: this.#cwd,
+        configSnapshot: stableStringify(config),
+      },
       recovery: { orphanIntents: [] },
       permissionMode,
       subagent: this.#subagent,
@@ -160,6 +161,8 @@ export class Agent {
       cwd: this.#cwd,
       env: sessionEnv,
       scheduler: this.#scheduler,
+      ledger,
+      started: true,
       recovery,
       permissionMode: permissionModeFromEvents(events),
       ...(subagent === undefined ? {} : { subagent }),
@@ -205,6 +208,9 @@ export class Agent {
         ...(request.reasoningEffort === undefined
           ? {}
           : { reasoningEffort: request.reasoningEffort }),
+        ...(request.reasoningBudgetTokens === undefined
+          ? {}
+          : { reasoningBudgetTokens: request.reasoningBudgetTokens }),
       })
       const events = await collectEvents(childSession)
       const answer = latestAssistantText(events, turn.turnId)
@@ -303,6 +309,13 @@ interface AgentSessionOptions {
   readonly cwd: string
   readonly env: AgentEnv
   readonly scheduler: SessionScheduler
+  readonly ledger: SessionLedger
+  readonly start?: {
+    readonly engineVersion: string
+    readonly cwd: string
+    readonly configSnapshot: string
+  }
+  readonly started?: boolean
   readonly recovery: SessionRecovery
   readonly permissionMode: PermissionMode
   readonly subagent?: SubagentRunner
@@ -316,6 +329,10 @@ export class AgentSession {
   readonly #env: AgentEnv
   readonly #scheduler: SessionScheduler
   readonly #subagent: SubagentRunner | undefined
+  readonly #ledger: SessionLedger
+  readonly #start: AgentSessionOptions['start']
+  #started: boolean
+  #startPromise: Promise<void> | undefined
   #permissionMode: PermissionMode
 
   constructor(options: AgentSessionOptions) {
@@ -326,6 +343,9 @@ export class AgentSession {
     this.#env = options.env
     this.#scheduler = options.scheduler
     this.#subagent = options.subagent
+    this.#ledger = options.ledger
+    this.#start = options.start
+    this.#started = options.started ?? false
   }
 
   get permissionMode(): PermissionMode {
@@ -341,7 +361,7 @@ export class AgentSession {
     this.#permissionMode = mode
   }
 
-  turn(input: string, options: SessionTurnOptions = {}): Promise<TurnResult> {
+  async turn(input: string, options: SessionTurnOptions = {}): Promise<TurnResult> {
     const turnId = this.#env.ids.next('turn')
     const ledger = new SessionLedger(this.sessionId, this.#env.store, this.#env.clock)
     const notify = async (event: AgentEvent): Promise<void> => {
@@ -351,6 +371,7 @@ export class AgentSession {
         this.#env.telemetry.counter('observer.event.failed', { type: event.type })
       }
     }
+    await this.#ensureStarted(notify)
     return this.#scheduler.schedule({
       sessionId: this.sessionId,
       onQueued: async () => {
@@ -375,6 +396,9 @@ export class AgentSession {
           ...(options.reasoningEffort === undefined
             ? {}
             : { reasoningEffort: options.reasoningEffort }),
+          ...(options.reasoningBudgetTokens === undefined
+            ? {}
+            : { reasoningBudgetTokens: options.reasoningBudgetTokens }),
           ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
           ...(options.onDelta === undefined ? {} : { onDelta: options.onDelta }),
           ...(this.#subagent === undefined ? {} : { subagent: this.#subagent }),
@@ -382,8 +406,9 @@ export class AgentSession {
     })
   }
 
-  events(fromSeq = 0): AsyncIterable<AgentEvent> {
-    return this.#env.store.read(this.sessionId, fromSeq)
+  async *events(fromSeq = 0): AsyncIterable<AgentEvent> {
+    await this.#startPromise
+    yield* this.#env.store.read(this.sessionId, fromSeq)
   }
 
   async fork(uptoSeq: number): Promise<string> {
@@ -392,6 +417,28 @@ export class AgentSession {
 
   queuedTurns(): number {
     return this.#scheduler.queued(this.sessionId)
+  }
+
+  async #ensureStarted(notify: (event: AgentEvent) => Promise<void>): Promise<void> {
+    if (this.#started) return
+    if (this.#start === undefined) {
+      throw new Error(`Session ${this.sessionId} has no startup metadata`)
+    }
+    if (this.#startPromise === undefined) {
+      this.#startPromise = this.#ledger
+        .append({
+          type: 'session.started',
+          schemaVersion: 1,
+          engineVersion: this.#start.engineVersion,
+          cwd: this.#start.cwd,
+          configSnapshot: this.#start.configSnapshot,
+        })
+        .then(async (event) => {
+          this.#started = true
+          await notify(event)
+        })
+    }
+    await this.#startPromise
   }
 }
 

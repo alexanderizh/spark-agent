@@ -13,6 +13,27 @@ afterEach(async () => {
 })
 
 describe('model configuration', () => {
+  it('keeps standalone model context and output budgets on the resolved runtime', async () => {
+    const root = await createRoot()
+    const globalPath = join(root, 'home', 'config.toml')
+    await writeFile(
+      globalPath,
+      '[agent]\nmodel = "main"\n\n[providers.local]\nprotocol = "openai-responses"\napi_key_env = "TEST_KEY"\n\n[models.main]\nprovider = "local"\nmodel = "gpt-test"\ncontext_window = 128000\nmax_tokens = 64000\n',
+    )
+
+    const runtime = await loadConfiguredModel({
+      cwd: join(root, 'project'),
+      globalConfigPath: globalPath,
+      projectConfigPath: join(root, 'project', '.spark', 'config.toml'),
+      env: { TEST_KEY: 'secret' },
+    })
+
+    expect(runtime.service.getModelBudget?.()).toEqual({
+      contextWindowTokens: 128_000,
+      maxOutputTokens: 64_000,
+    })
+  })
+
   it('merges global, project, environment, and CLI layers in precedence order', async () => {
     const root = await createRoot()
     const globalPath = join(root, 'home', 'config.toml')
@@ -117,6 +138,8 @@ describe('model configuration', () => {
                 providerName: 'Provider One',
                 protocol: 'openai-responses',
                 model: 'gpt-test',
+                contextWindow: 200_000,
+                maxOutputTokens: 64_000,
               },
             ],
           }),
@@ -126,6 +149,10 @@ describe('model configuration', () => {
 
     expect(runtime.modelId).toBe('sparkwork:provider-1:gpt-test')
     expect(runtime.route).toEqual(['sparkwork:provider-1:gpt-test'])
+    expect(runtime.service.getModelBudget?.()).toEqual({
+      contextWindowTokens: 200_000,
+      maxOutputTokens: 64_000,
+    })
     expect(JSON.stringify(runtime.configSnapshot)).not.toContain('bridge-token')
     expect(runtime.configSnapshot).toMatchObject({
       sparkwork: {

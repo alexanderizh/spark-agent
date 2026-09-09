@@ -7,6 +7,7 @@ import {
 } from '../events/schema.js'
 import { consumeLlmStream } from '../llm/consume.js'
 import type { LlmDelta, LlmRequest, ReasoningEffort } from '../llm/types.js'
+import { resolveOutputBudget } from '../llm/budget.js'
 import { thinkingConfigFor } from '../llm/types.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { AgentEnv, BudgetLimits, SubagentRunner } from '../seams.js'
@@ -34,6 +35,8 @@ export interface RunTurnOptions {
   readonly subagent?: SubagentRunner
   /** User-selected reasoning effort; omitted keeps the protocol default. */
   readonly reasoningEffort?: ReasoningEffort
+  /** Explicit provider thinking budget; omitted uses the effort preset. */
+  readonly reasoningBudgetTokens?: number
   readonly onEvent?: (event: AgentEvent) => Promise<void> | void
   readonly onDelta?: (delta: LlmDelta) => Promise<void> | void
 }
@@ -160,18 +163,28 @@ export class TurnMachine {
           turnId: options.turnId,
         })
 
+        const modelBudget = this.env.llm.getModelBudget?.()
+        const tools = this.env.tools.registry.list().map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        }))
         const request: LlmRequest = {
           system,
           messages: projected.messages,
-          tools: this.env.tools.registry.list().map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
+          tools,
           ...(options.reasoningEffort === undefined
             ? {}
-            : { thinking: thinkingConfigFor(options.reasoningEffort) }),
-          maxTokens: options.maxTokens ?? 8_192,
+            : {
+                thinking: thinkingConfigFor(options.reasoningEffort, options.reasoningBudgetTokens),
+              }),
+          maxTokens: resolveOutputBudget({
+            ...(options.maxTokens === undefined ? {} : { requestedMaxTokens: options.maxTokens }),
+            ...(modelBudget === undefined ? {} : { modelBudget }),
+            system,
+            messages: projected.messages,
+            tools,
+          }).maxTokens,
           metadata: {
             sessionId: options.sessionId,
             turnId: options.turnId,
@@ -221,6 +234,9 @@ export class TurnMachine {
             ...(options.reasoningEffort === undefined
               ? {}
               : { reasoningEffort: options.reasoningEffort }),
+            ...(options.reasoningBudgetTokens === undefined
+              ? {}
+              : { reasoningBudgetTokens: options.reasoningBudgetTokens }),
             signal: cancellation.signal,
             ...(options.subagent === undefined ? {} : { subagent: options.subagent }),
             ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),

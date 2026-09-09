@@ -41,6 +41,9 @@ const ModelSchema = z
   .object({
     provider: z.string().min(1),
     model: z.string().min(1),
+    /** Model-level limits for standalone CLI configurations. */
+    context_window: z.number().int().positive().optional(),
+    max_tokens: z.number().int().positive().optional(),
     capabilities: CapabilitiesSchema.optional(),
   })
   .strict()
@@ -559,6 +562,8 @@ function registerConfiguredModel(
           },
         }
       : {}),
+    ...(model.context_window === undefined ? {} : { contextWindowTokens: model.context_window }),
+    ...(model.max_tokens === undefined ? {} : { maxOutputTokens: model.max_tokens }),
   })
 }
 
@@ -595,6 +600,8 @@ function registerSparkWorkModel(
     model: route.model,
     baseUrl: sparkWorkProxyBaseUrl(host, route),
     apiKey: host.token,
+    ...(route.contextWindow === undefined ? {} : { contextWindowTokens: route.contextWindow }),
+    ...(route.maxOutputTokens === undefined ? {} : { maxOutputTokens: route.maxOutputTokens }),
     ...(fetcher ? { fetch: fetcher } : {}),
   })
 }

@@ -107,16 +107,14 @@ The TUI uses a graphite-and-mint terminal theme with flat, shared selection rows
 | --------- | --------------------------------------------------------- |
 | `/model`  | Open the model picker (SparkWork routes + local channels) |
 | `/perm`   | Switch permission policy for this session                 |
-| `/effort` | Cycle reasoning effort: auto → off → low → medium → high  |
+| `/effort` | Cycle reasoning effort: low → medium → high → max → off   |
 | `/status` | Session id, queued turns, event count, current controls   |
 | `/clear`  | Start a fresh session                                     |
 | `/help`   | Command reference (Tab completes any prefix)              |
 
-Permission switching is session-scoped: `/perm` opens a picker over `default` → `acceptEdits` → `plan` → `bypass`. The destructive `bypass` entry demands a second Enter to arm, and single-key cycling never reaches it — bypass requires going through the picker or launching with `--permission-mode bypass`. A new session falls back to its config snapshot.
+Permission switching is session-scoped: `/perm` opens the three-mode picker `manual` → `auto` → `bypass`. The destructive `bypass` entry demands a second Enter to arm, and single-key cycling never reaches it — bypass requires going through the picker or launching with `--permission-mode bypass`. A new session falls back to its config snapshot.
 
-Reasoning effort (`/effort`, or `--effort off|low|medium|high` on one-shot runs) maps onto each protocol's native control: Anthropic receives a thinking-token budget (4k/12k/32k), the OpenAI Responses API receives the matching `reasoning.effort`. `auto` leaves the provider default untouched.
-
-Plan mode composes an approval loop with the policy switch: a turn run under `plan` sees only read-only tools; when it finishes with a proposal on screen, the TUI shows it back bounded to twelve lines — **Enter** approves the plan, switches the session to `acceptEdits`, and immediately executes with full tooling; **Esc** keeps iterating in plan mode.
+Reasoning effort (`/effort`, or `--effort off|low|medium|high|max` on one-shot runs) maps onto each protocol's native control. SparkWork routes provide the authoritative context window and maximum generated-token budget; Spark clamps each request to those limits and then reserves space for the current prompt. Anthropic receives an enabled-thinking budget below `max_tokens`, while OpenAI Responses receives the corresponding `reasoning.effort`. An exhausted context window fails with a structured diagnostic instead of sending a request that cannot produce a response.
 
 Approvals remain fail-closed: every side-effecting tool call renders a card with the exact arguments, policy reason, and risk class, offering allow-once, allow-for-session (when the policy grants that scope), and deny; Esc always denies.
 
@@ -140,6 +138,9 @@ api_key_env = "OPENAI_API_KEY"
 [models.primary]
 provider = "openai"
 model = "your-model-id"
+# Optional standalone limits when SparkWork is not supplying the route.
+context_window = 128000
+max_tokens = 64000
 ```
 
 Anthropic uses `protocol = "anthropic-messages"` and defaults to `ANTHROPIC_API_KEY`. Select another configured model with `spark --model <id>` or `SPARK_MODEL=<id>`.
@@ -147,13 +148,23 @@ Anthropic uses `protocol = "anthropic-messages"` and defaults to `ANTHROPIC_API_
 ```bash
 spark "inspect this repository and run the relevant tests"
 spark --json --model primary "explain the current failure"
-spark --permission-mode plan "design the change without editing files"
+spark --output-format stream-json --model primary "stream machine-readable events"
+spark --permission-mode manual "design the change without editing files"
 spark models
 spark doctor
 ```
+
+For automation, stdout has a strict contract: default text mode writes only the
+final answer to stdout and sends diagnostics to stderr. `--json` keeps the
+backward-compatible persisted-event JSONL stream. `--output-format json` writes
+one final result object, while `--output-format stream-json` writes persisted
+events plus live `delta` records as JSONL. A failed or cancelled turn still
+produces a result/status record and returns a non-zero process status.
 
 The production CLI/TUI requires a configured real model. `FakeModel`, `VirtualFileSystem`, and `FakeShell` remain exported only as deterministic SDK test seams.
 
 Built-in workspace tools are `read`, `glob`, `grep`, `write`, `edit`, and `bash`. The `task` tool can delegate focused prompts to isolated child sessions: children are read-only by default, `allowed_tools` is an exact capability allowlist, and each child has independent step/tool-call/time budgets while inheriting the parent turn's permission mode and reasoning effort. Independent read-only task calls from one model step run concurrently, with a shared SDK limit of four active children by default (`maxConcurrentSubagents`, 1–32); mutation-capable children remain serial while they share a workspace. Child ledgers are hidden from normal session listings and `--continue`; the returned child session id can be used for explicit inspection or resume, with its allowlist re-applied. File writes are atomic and require the SHA-256 revision returned by `read` when replacing an existing file.
 
-Permission modes are `default`, `acceptEdits`, `plan`, and `bypass`. `plan` hides and rejects tools with side effects. `bypass` requires the explicit `--permission-mode bypass` or `--dangerously-skip-permissions` flag and prints a danger warning. Every policy result is persisted as a `permission.evaluated` fact event.
+When Spark is embedded by a host, the host can provide stable system/skill prompt sections, custom environment variables, permission lists, and MCP servers. Spark passes custom environment variables only to its workspace shell and hook children; configured MCP servers receive only their own explicit server environment. MCP `stdio` and Streamable HTTP transports are supported by the Spark engine; legacy SSE and in-process SDK servers are skipped at the boundary. Host team tools use the same Streamable HTTP bridge as other external consumers, so tool calls retain normal permission and event handling.
+
+Permission modes are `manual`, `auto`, and `bypass`. `bypass` requires the explicit `--permission-mode bypass` or `--dangerously-skip-permissions` flag and prints a danger warning. Every policy result is persisted as a `permission.evaluated` fact event.

@@ -11,6 +11,8 @@ import { FakeModel } from './llm/fake/model.js'
 import type { FakeScriptItem } from './llm/fake/reply-dsl.js'
 import { loadHookRunner } from './hooks/settings.js'
 import { FileInstructionLoader } from './memory/instructions.js'
+import { CompositeToolExecutor, McpToolManager } from './mcp/client.js'
+import type { SparkMcpServerMap } from './mcp/types.js'
 import type { LlmService } from './seams.js'
 import type { AgentEnv, Approver } from './seams.js'
 import { FakeApprover } from './permission/approver.js'
@@ -24,6 +26,7 @@ import { OrderedToolRegistry } from './tools/registry.js'
 import { taskToolDefinition } from './tools/task/definition.js'
 import { workspaceToolDefinitions } from './tools/workspace/definitions.js'
 import { WorkspaceToolExecutor } from './tools/workspace/executor.js'
+import { withCustomEnvironment } from './tools/workspace/process.js'
 
 export interface DefaultEnvOptions {
   readonly cwd: string
@@ -31,6 +34,13 @@ export interface DefaultEnvOptions {
   readonly llm: LlmService
   readonly permissionRules?: readonly PermissionRule[]
   readonly approver?: Approver
+  readonly systemPrompt?: string
+  readonly skillSystemPrompt?: string
+  readonly customEnv?: Readonly<Record<string, string>>
+  /** Tool names that may run without an interactive approval in manual mode. */
+  readonly allowedTools?: readonly string[]
+  /** Tool names/patterns that are always denied and hidden from no model state. */
+  readonly disallowedTools?: readonly string[]
 }
 
 export function defaultSparkHome(): string {
@@ -38,11 +48,60 @@ export function defaultSparkHome(): string {
 }
 
 export function createDefaultEnv(options: DefaultEnvOptions): AgentEnv {
+  return buildDefaultEnv(options)
+}
+
+export interface ManagedDefaultEnv {
+  readonly env: AgentEnv
+  readonly close: () => Promise<void>
+}
+
+export interface McpDefaultEnvOptions extends DefaultEnvOptions {
+  readonly mcpServers?: SparkMcpServerMap
+  readonly mcpStartupTimeoutMs?: number
+}
+
+/**
+ * Builds an env after connecting configured MCP servers and returns the
+ * lifetime handle that must be closed by the owning executor.
+ */
+export async function createDefaultEnvWithMcp(
+  options: McpDefaultEnvOptions,
+): Promise<ManagedDefaultEnv> {
+  const manager = await McpToolManager.connect({
+    cwd: options.cwd,
+    servers: options.mcpServers ?? {},
+    ...(options.mcpStartupTimeoutMs === undefined
+      ? {}
+      : { startupTimeoutMs: options.mcpStartupTimeoutMs }),
+  })
+  try {
+    return {
+      env: buildDefaultEnv(options, manager),
+      close: () => manager.close(),
+    }
+  } catch (error) {
+    await manager.close()
+    throw error
+  }
+}
+
+function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): AgentEnv {
   const clock = new SystemClock()
   const dataRoot = resolve(options.dataRoot ?? defaultSparkHome())
-  const registry = new OrderedToolRegistry([...workspaceToolDefinitions, taskToolDefinition])
-  const executor = new WorkspaceToolExecutor(options.cwd)
-  const hooks = loadHookRunner({ cwd: options.cwd, userSettingsDir: dataRoot })
+  const registry = new OrderedToolRegistry([
+    ...workspaceToolDefinitions,
+    ...(mcp?.listDefinitions() ?? []),
+    taskToolDefinition,
+  ])
+  const workspaceExecutor = new WorkspaceToolExecutor(options.cwd, options.customEnv)
+  const executor =
+    mcp === undefined ? workspaceExecutor : new CompositeToolExecutor(workspaceExecutor, mcp)
+  const hooks = loadHookRunner({
+    cwd: options.cwd,
+    userSettingsDir: dataRoot,
+    ...(options.customEnv === undefined ? {} : { env: withCustomEnvironment(options.customEnv) }),
+  })
   return {
     clock,
     ids: new UuidIdGen(),
@@ -51,12 +110,25 @@ export function createDefaultEnv(options: DefaultEnvOptions): AgentEnv {
     llm: options.llm,
     tools: { registry, executor },
     permission: {
-      policy: new RulePermissionPolicy(options.permissionRules),
+      policy: new RulePermissionPolicy({
+        layers:
+          options.permissionRules === undefined
+            ? []
+            : [{ source: 'host', rules: options.permissionRules }],
+        ...(options.allowedTools === undefined ? {} : { allowedTools: options.allowedTools }),
+        ...(options.disallowedTools === undefined
+          ? {}
+          : { disallowedTools: options.disallowedTools }),
+      }),
       approver: options.approver ?? new FakeApprover(),
     },
     projector: new EventContextProjector(),
     prompt: new DefaultPromptComposer({
       instructions: new FileInstructionLoader({ cwd: options.cwd }),
+      ...(options.systemPrompt === undefined ? {} : { systemPrompt: options.systemPrompt }),
+      ...(options.skillSystemPrompt === undefined
+        ? {}
+        : { skillSystemPrompt: options.skillSystemPrompt }),
     }),
     ...(hooks === undefined ? {} : { hooks }),
     budgets: new DefaultBudgetFactory(clock),

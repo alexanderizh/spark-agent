@@ -8,7 +8,12 @@ import {
   thinkingConfigFor,
   type LlmRequest,
 } from '../../src/llm/types.js'
-import { helpDetail, helpLine, SLASH_COMMANDS, TUI_SHORTCUTS } from '../../src/tui/slash-commands.js'
+import {
+  helpDetail,
+  helpLine,
+  SLASH_COMMANDS,
+  TUI_SHORTCUTS,
+} from '../../src/tui/slash-commands.js'
 import { DEFAULT_REASONING_EFFORT, EFFORT_OPTIONS } from '../../src/tui/components/effort-picker.js'
 import { nextPermissionMode } from '../../src/tui/components/permission-picker.js'
 
@@ -32,6 +37,14 @@ describe('reasoning effort mapping', () => {
       })
     }
     expect(EFFORT_BUDGET_TOKENS.max).toBeGreaterThan(EFFORT_BUDGET_TOKENS.high)
+    expect(thinkingConfigFor('high', 0)).toEqual({
+      type: 'enabled',
+      budgetTokens: EFFORT_BUDGET_TOKENS.high,
+    })
+    expect(thinkingConfigFor('high', 8_192)).toEqual({
+      type: 'enabled',
+      budgetTokens: 8_192,
+    })
   })
 
   it('validates CLI-provided levels strictly', () => {
@@ -80,14 +93,20 @@ describe('reasoning effort mapping', () => {
       true,
     )
     expect(off.thinking).toEqual({ type: 'disabled' })
-    // Any effort level — including max — must stay below the request's own
-    // output ceiling or the API rejects the request outright.
+    // Thinking and visible output share the ceiling. Keep a visible answer
+    // reserve instead of spending the entire request on hidden reasoning.
     const clamped = toAnthropicRequest(
       { ...baseRequest(), thinking: thinkingConfigFor('max') },
       'claude-test',
       true,
     )
-    expect(clamped.thinking).toEqual({ type: 'enabled', budget_tokens: 8_192 - 1 })
+    expect(clamped.thinking).toEqual({ type: 'enabled', budget_tokens: 6_144 })
+    const tooSmallForThinking = toAnthropicRequest(
+      { ...baseRequest(), maxTokens: 512, thinking: thinkingConfigFor('high') },
+      'claude-test',
+      true,
+    )
+    expect(tooSmallForThinking.thinking).toEqual({ type: 'disabled' })
   })
 
   it('coarsens the max budget onto the OpenAI high effort bucket', () => {

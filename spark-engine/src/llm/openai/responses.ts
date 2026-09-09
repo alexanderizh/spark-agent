@@ -74,7 +74,11 @@ function toOpenAiInput(messages: readonly IrMessage[]): unknown[] {
     if (message.role === 'user') {
       input.push({ role: 'user', content: [{ type: 'input_text', text: message.content }] })
     } else if (message.role === 'tool_result') {
-      input.push({ type: 'function_call_output', call_id: message.callId, output: message.content })
+      input.push({
+        type: 'function_call_output',
+        call_id: message.callId,
+        output: message.content,
+      })
     } else {
       const continuation = continuationItems(message.continuation)
       if (continuation) {
@@ -114,6 +118,7 @@ async function* decodeOpenAiEvents(
   startedAt: number,
 ): AsyncIterable<LlmDelta> {
   const emittedCalls = new Set<string>()
+  let streamedText = ''
   let firstContentAt: number | undefined
   let completed = false
 
@@ -123,7 +128,9 @@ async function* decodeOpenAiEvents(
     const type = stringValue(value.type)
     if (type === 'response.output_text.delta' || type === 'response.refusal.delta') {
       firstContentAt ??= Date.now()
-      yield { type: 'text', text: requiredString(value.delta, type, requestId) }
+      const text = requiredString(value.delta, type, requestId)
+      streamedText += text
+      yield { type: 'text', text }
     } else if (
       type === 'response.reasoning_summary_text.delta' ||
       type === 'response.reasoning_text.delta'
@@ -143,6 +150,18 @@ async function* decodeOpenAiEvents(
       const response = asRecord(value.response)
       if (!response) malformed(type, requestId)
       const output = Array.isArray(response.output) ? response.output : []
+      const completedText =
+        stringValue(response.output_text) ??
+        output
+          .map((rawItem) => extractOutputText(asRecord(rawItem)))
+          .filter((text): text is string => text !== undefined)
+          .join('')
+      const missingText = missingSuffix(completedText, streamedText)
+      if (missingText !== '') {
+        firstContentAt ??= Date.now()
+        streamedText += missingText
+        yield { type: 'text', text: missingText }
+      }
       for (const rawItem of output) {
         const item = asRecord(rawItem)
         if (!item) malformed(type, requestId)
@@ -166,9 +185,13 @@ async function* decodeOpenAiEvents(
         outputTokens: token(usage?.output_tokens),
         cacheReadTokens: token(inputDetails?.cached_tokens),
         cacheWriteTokens: 0,
-        ...(outputDetails === undefined ? {} : { reasoningTokens: token(outputDetails.reasoning_tokens) }),
+        ...(outputDetails === undefined
+          ? {}
+          : { reasoningTokens: token(outputDetails.reasoning_tokens) }),
         callDurationMs: Math.max(0, Date.now() - startedAt),
-        ...(firstContentAt === undefined ? {} : { ttftMs: Math.max(0, firstContentAt - startedAt) }),
+        ...(firstContentAt === undefined
+          ? {}
+          : { ttftMs: Math.max(0, firstContentAt - startedAt) }),
       }
       yield { type: 'done' }
       completed = true
@@ -207,6 +230,34 @@ async function* decodeOpenAiEvents(
       },
     )
   }
+}
+
+function extractOutputText(item: Record<string, unknown> | undefined): string | undefined {
+  if (!item) return undefined
+  if (item.type === 'output_text' || item.type === 'refusal') {
+    return stringValue(item.text) ?? stringValue(item.refusal)
+  }
+  if (item.type !== 'message' || !Array.isArray(item.content)) return undefined
+  return (
+    item.content
+      .map((rawContent) => {
+        const content = asRecord(rawContent)
+        if (!content) return undefined
+        if (content.type === 'output_text') return stringValue(content.text)
+        if (content.type === 'refusal') return stringValue(content.refusal)
+        return undefined
+      })
+      .filter((text): text is string => text !== undefined)
+      .join('') || undefined
+  )
+}
+
+function missingSuffix(completeText: string | undefined, emittedText: string): string {
+  if (completeText === undefined || completeText === emittedText) return ''
+  if (completeText.startsWith(emittedText)) return completeText.slice(emittedText.length)
+  // A gateway may omit or reorder deltas. Prefer one complete answer over a
+  // silent answer, while avoiding duplication when the normal prefix exists.
+  return completeText
 }
 
 function parseFunctionCall(

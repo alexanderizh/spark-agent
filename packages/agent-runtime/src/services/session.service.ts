@@ -428,6 +428,7 @@ import type {
   SDKQuestionRequestContext,
 } from '../sdk/index.js'
 import { CodexRuntimeMcpResourceCoordinator } from './session/codex-runtime-mcp-resources.js'
+import { buildSparkEngineMcpRuntime } from './session/spark-engine-runtime.js'
 import type { ActiveExecution } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { isPermissionModeAware } from '../sdk/index.js'
@@ -3462,8 +3463,8 @@ export class SessionService {
       invocationObserver?.(snapshot)
     }
     // ---- Spark 引擎分支（adapter 'spark'）----
-    // M2 能力面：无 host MCP 注入（引擎自带内置工具集，host MCP 桥接为后续里程碑）、
-    // 无自定义系统提示词注入（DefaultPromptComposer 接缝在引擎侧扩展后接入）。
+    // Spark 引擎消费宿主提示词、技能快照、customEnv、MCP 与模型预算；所有外部
+    // 注入仍经 Spark 自己的 schema、权限和事件账本边界收敛。
     if (adapterKind === 'spark') {
       const sparkRoute = resolveSparkUpstreamProtocol(provider.provider_type, config.codexApiKind)
       const persistUserMessage = (): void => {
@@ -3512,12 +3513,92 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
         return
       }
+      const sparkCustomMcpServers = await this.getMcpTooling().buildMcpServersForSDK()
+      const sparkMemoryMcpServer = await this.getMcpTooling().resolveSparkMemoryMcpServer(
+        sessionId,
+        workspaceRootPath,
+        runtimeAgent.id,
+      )
+      const sparkSessionMcpServer = await this.resolveSparkSessionMcpServer(sessionId)
+      const sparkToolResultServer = resolveToolResultReaderMcpServer(workspaceRootPath)
+      const sparkMcpRuntime = buildSparkEngineMcpRuntime({
+        customServers: sparkCustomMcpServers,
+        ...(imageGenerationContext != null
+          ? { imageServer: imageGenerationContext.mcpServer }
+          : {}),
+        ...(mediaGenerationContext != null
+          ? { mediaServer: mediaGenerationContext.mcpServer }
+          : {}),
+        ...(teamMcpServer != null
+          ? {
+              teamServer: teamMcpServer,
+              teamToolNames: [
+                ...(this.teamMcpToolNames.get(teamMcpServer) ??
+                  new Set(['agent_dispatch', 'agent_dispatch_batch'])),
+              ].map((name) => `mcp__${SPARK_TEAM_MCP_SERVER_NAME}__${name}`),
+            }
+          : {}),
+        ...(platformMcpServer != null ? { platformServer: platformMcpServer } : {}),
+        ...(pluginRuntimeMcp != null
+          ? { pluginServer: pluginRuntimeMcp.server, pluginToolNames: pluginRuntimeMcp.toolNames }
+          : {}),
+        ...(webSearchMcpServer != null ? { searchServer: webSearchMcpServer } : {}),
+        ...(subAppMcpServer != null ? { subAppServer: subAppMcpServer } : {}),
+        ...(presentFilesMcpServer != null ? { filesServer: presentFilesMcpServer } : {}),
+        ...(quickRepliesMcpServer != null ? { uiServer: quickRepliesMcpServer } : {}),
+        ...(browserAutomationMcpServer != null
+          ? { browserServer: browserAutomationMcpServer }
+          : {}),
+        ...(computerUseMcp != null
+          ? {
+              computerServer: computerUseMcp.server,
+              computerToolNames: computerUseMcp.allowedTools,
+            }
+          : {}),
+        ...(debugMcpServer != null ? { debugServer: debugMcpServer } : {}),
+        ...(sparkMemoryMcpServer != null ? { memoryServer: sparkMemoryMcpServer } : {}),
+        ...(sparkSessionMcpServer != null ? { sessionServer: sparkSessionMcpServer } : {}),
+        ...(sparkToolResultServer != null ? { toolResultServer: sparkToolResultServer } : {}),
+      })
+      const governedSparkMcpServers = governMcpServers(sparkMcpRuntime.servers, {
+        workspaceRootPath,
+        nodeExecutable: tryResolveMcpNodeRuntimeExecutable(),
+        proxyServerPath: resolveToolResultProxyMcpServerPath(),
+        readerServer: sparkToolResultServer,
+      })
+      runtimeMetrics.recordMcpConfiguration(
+        Object.keys(governedSparkMcpServers),
+        this.mcpService.getConnectedToolCatalogs(),
+      )
+      runtimeMetrics.pauseMcpConfiguration()
       const sparkConfig: SDKExecutorConfig = {
         apiKey,
         model,
         workspaceRootPath,
         permissionMode,
         contextWindowTokens,
+        ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+        ...(composedSkillSystemPrompt != null
+          ? { skillSystemPrompt: composedSkillSystemPrompt }
+          : {}),
+        ...(runtimeContext.customEnv != null ? { customEnv: runtimeContext.customEnv } : {}),
+        ...(Object.keys(governedSparkMcpServers).length > 0
+          ? { mcpServers: governedSparkMcpServers }
+          : {}),
+        ...(sparkMcpRuntime.allowedTools.length > 0
+          ? { allowedTools: [...sparkMcpRuntime.allowedTools] }
+          : {}),
+        ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
+        ...(session.reasoning_effort != null
+          ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
+          : {}),
+        ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
+          ? {
+              reasoningBudgetTokens: normalizeReasoningBudgetTokens(
+                agent.metadata.reasoningBudgetTokens,
+              ),
+            }
+          : {}),
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         sparkUpstreamProtocol: sparkRoute.protocol,
         ...(sparkLedgerSessionId != null
@@ -5194,10 +5275,10 @@ export class SessionService {
   }
 
   /**
-   * Spark 引擎 turn 启动（对照 tryStartCodexCliTurn 骨架，裁剪至 spark 引擎 M2 能力面）。
+   * Spark 引擎 turn 启动（对照 tryStartCodexCliTurn 骨架，使用 Spark 自己的事件收敛）。
    *
    * 差异点：
-   * - 无 host MCP 注入：引擎自带内置工具集，host MCP 桥接为后续里程碑；
+   * - Host MCP 由上游按 stdio / Streamable HTTP 组装后注入，unsupported transport 在组装期跳过；
    * - 无媒体产物即时展示（mediaPresentationCollector）：spark 引擎 M2 事件流不产生
    *   file_change / 媒体类事件，待引擎侧工具产物上抛通道打通后接入；
    * - 终态语义与 codex 路径一致：completed 即时广播、无 result 标记的 error 扣留到
@@ -6320,10 +6401,11 @@ export class SessionService {
     /** Persistent Codex runtime lease that should own the HTTP bridge bearer/session. */
     codexRuntimeLeaseKey?: string
   }): Promise<SDKMcpServerConfig | null> {
-    // FR-0b：目标消费者是 codex 时用 HTTP 桥接（codex 子进程无法回调主进程 in-process sdk server）；
-    // claude 消费者走 in-process（现状）。两形态共用下方 tool 定义，避免实现漂移。
-    const isCodexConsumer =
-      ctx.consumerAdapter != null && resolveEngineKind(ctx.consumerAdapter) === 'codex'
+    // 独立进程消费者（Codex / Spark）使用 HTTP 桥接；Claude 消费者走 in-process。
+    // 两形态共用下方 tool 定义，避免实现漂移。
+    const isExternalMcpConsumer =
+      ctx.consumerAdapter != null &&
+      ['codex', 'spark'].includes(resolveEngineKind(ctx.consumerAdapter))
     const discussionId = ctx.discussionId
     const discussionRepo = discussionId != null ? this.getTeamDiscussionRepository() : null
     const ledgerAdapter =
@@ -7352,8 +7434,8 @@ export class SessionService {
     ]
     if (defs.length === 0) return null
 
-    if (isCodexConsumer) {
-      // Codex consumers use the HTTP MCP bridge so SDK-backed chat-wire providers keep team tools.
+    if (isExternalMcpConsumer) {
+      // 独立进程消费者使用 HTTP MCP bridge，避免依赖主进程 in-process SDK server。
       const handle = await getTeamMcpHttpBridge().serve(
         defs,
         ctx.signal != null || ctx.codexRuntimeLeaseKey != null

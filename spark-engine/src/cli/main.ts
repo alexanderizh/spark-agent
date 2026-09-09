@@ -38,6 +38,10 @@ interface CliOptions {
   readonly version: boolean
   readonly plain: boolean
   readonly json: boolean
+  /** Machine-readable output contract for a single task invocation. */
+  readonly outputFormat: CliOutputFormat
+  /** Backward-compatible `--json` event JSONL, which predates output-format. */
+  readonly legacyJson: boolean
   readonly prompt?: string
   readonly model?: string
   readonly bin?: string
@@ -55,6 +59,8 @@ interface CliOptions {
   readonly resume?: string
   readonly positionals: readonly string[]
 }
+
+type CliOutputFormat = 'text' | 'json' | 'stream-json'
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   let options: CliOptions
@@ -132,6 +138,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const tuiAvailable =
     !options.plain &&
     !options.json &&
+    options.outputFormat === 'text' &&
     process.stdin.isTTY &&
     process.stdout.isTTY &&
     process.env.CI !== 'true' &&
@@ -406,10 +413,24 @@ function parseCli(argv: readonly string[]): CliOptions {
       resume: { type: 'string', short: 'r' },
     },
   })
-  const outputFormat = parsed.values['output-format']
-  if (outputFormat && !['text', 'json', 'stream-json'].includes(outputFormat)) {
-    throw new Error(`Unsupported --output-format: ${outputFormat}`)
+  const requestedOutputFormat = parsed.values['output-format']
+  if (requestedOutputFormat && !['text', 'json', 'stream-json'].includes(requestedOutputFormat)) {
+    throw new Error(`Unsupported --output-format: ${requestedOutputFormat}`)
   }
+  if (
+    parsed.values.json &&
+    requestedOutputFormat !== undefined &&
+    requestedOutputFormat !== 'stream-json'
+  ) {
+    throw new Error('--json conflicts with --output-format text/json; use stream-json explicitly')
+  }
+  const legacyJson = parsed.values.json && requestedOutputFormat === undefined
+  const outputFormat =
+    requestedOutputFormat === undefined
+      ? legacyJson
+        ? 'stream-json'
+        : 'text'
+      : (requestedOutputFormat as CliOutputFormat)
   const configuredPermissionMode = parsed.values['permission-mode']
   if (configuredPermissionMode !== undefined && !isPermissionMode(configuredPermissionMode)) {
     throw new Error(`Unsupported --permission-mode: ${configuredPermissionMode}`)
@@ -430,8 +451,10 @@ function parseCli(argv: readonly string[]): CliOptions {
   return {
     help: parsed.values.help ?? false,
     version: parsed.values.version ?? false,
-    plain: parsed.values.plain ?? outputFormat === 'text',
-    json: parsed.values.json ?? (outputFormat === 'json' || outputFormat === 'stream-json'),
+    plain: parsed.values.plain,
+    json: parsed.values.json || outputFormat !== 'text',
+    outputFormat,
+    legacyJson,
     ...(parsed.values.prompt === undefined ? {} : { prompt: parsed.values.prompt }),
     ...(parsed.values.model === undefined ? {} : { model: parsed.values.model }),
     ...(parsed.values.bin === undefined ? {} : { bin: parsed.values.bin }),
@@ -540,7 +563,7 @@ async function runOnce(
   const session = await openOrCreateSession(
     agent,
     {
-      output: options.json ? 'json' : 'text',
+      output: options.outputFormat,
       model: runtime.modelId,
       route: runtime.route,
       config: runtime.configSnapshot,
@@ -549,7 +572,9 @@ async function runOnce(
     resumeSessionId,
     options.permissionModeExplicit ? options.permissionMode : undefined,
   )
-  if (options.json) {
+  const eventJson = options.legacyJson || options.outputFormat === 'stream-json'
+  const finalJson = options.outputFormat === 'json' && !options.legacyJson
+  if (eventJson) {
     for await (const event of session.events()) {
       process.stdout.write(`${JSON.stringify(event)}\n`)
     }
@@ -560,34 +585,73 @@ async function runOnce(
   }
   process.once('SIGINT', onSigint)
   let wroteText = false
+  let finalText = ''
   try {
     const result = await session.turn(prompt, {
       signal: controller.signal,
       ...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort }),
-      onEvent: options.json
+      onEvent: eventJson
         ? (event) => {
             process.stdout.write(`${JSON.stringify(event)}\n`)
           }
         : (event) => {
+            if (event.type === 'assistant.completed' && event.message.text) {
+              finalText = event.message.text
+            }
             renderPlainEvent(event)
           },
-      onDelta: options.json
-        ? undefined
-        : (delta) => {
-            if (delta.type === 'text') {
-              wroteText = true
-              process.stdout.write(delta.text)
+      onDelta:
+        eventJson && options.outputFormat === 'stream-json' && !options.legacyJson
+          ? (delta) => {
+              process.stdout.write(`${JSON.stringify({ type: 'delta', delta })}\n`)
             }
-          },
+          : eventJson || finalJson
+            ? undefined
+            : (delta) => {
+                if (delta.type === 'text') {
+                  wroteText = true
+                  process.stdout.write(delta.text)
+                }
+              },
     })
-    if (!options.json && wroteText) process.stdout.write('\n')
+    if (!eventJson && !finalJson && !wroteText && finalText !== '') {
+      process.stdout.write(finalText)
+      wroteText = true
+    }
+    if (finalJson) {
+      process.stdout.write(
+        `${JSON.stringify({
+          type: 'result',
+          sessionId: session.sessionId,
+          turnId: result.turnId,
+          status: terminalStatus(result.terminal),
+          message: finalText || null,
+          terminal: result.terminal,
+        })}\n`,
+      )
+    } else if (!eventJson && wroteText) {
+      process.stdout.write('\n')
+    }
     if (result.terminal.type === 'turn.completed') return 0
     if (result.terminal.type === 'turn.cancelled') return 130
     return 1
   } finally {
     process.removeListener('SIGINT', onSigint)
+  }
+}
+
+function terminalStatus(terminal: AgentEvent): 'completed' | 'cancelled' | 'failed' {
+  switch (terminal.type) {
+    case 'turn.completed':
+      return 'completed'
+    case 'turn.cancelled':
+      return 'cancelled'
+    case 'turn.failed':
+      return 'failed'
+    default:
+      throw new Error(`Expected terminal event, got ${terminal.type}`)
   }
 }
 
@@ -611,7 +675,11 @@ async function runPlainRepl(
     options.permissionModeExplicit ? options.permissionMode : undefined,
   )
   const reasoningEffort = options.reasoningEffort
-  const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
+  const terminal = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  })
   process.stdout.write('spark plain REPL · /exit 退出\n> ')
   try {
     for await (const line of terminal) {
@@ -631,6 +699,7 @@ async function runPlainTurn(
   reasoningEffort: ReasoningEffort | undefined,
 ): Promise<void> {
   let wroteText = false
+  let finalText = ''
   await session.turn(prompt, {
     ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     onDelta: (delta: LlmDelta) => {
@@ -639,19 +708,73 @@ async function runPlainTurn(
         process.stdout.write(delta.text)
       }
     },
-    onEvent: renderPlainEvent,
+    onEvent: (event) => {
+      if (event.type === 'assistant.completed' && event.message.text) {
+        finalText = event.message.text
+      }
+      renderPlainEvent(event)
+    },
   })
+  if (!wroteText && finalText !== '') {
+    process.stdout.write(finalText)
+    wroteText = true
+  }
   if (wroteText) process.stdout.write('\n')
 }
 
 function renderPlainEvent(event: AgentEvent): void {
-  if (event.type === 'tool.result') {
-    process.stderr.write(`[tool ${event.callId}] ${event.ok ? 'ok' : 'failed'}: ${event.content}\n`)
-  } else if (event.type === 'turn.failed') {
-    process.stderr.write(`${event.error.code}: ${event.error.message}\n`)
-  } else if (event.type === 'turn.cancelled') {
-    process.stderr.write('Turn cancelled.\n')
+  switch (event.type) {
+    case 'tool.call':
+      process.stderr.write(
+        `[tool ${terminalSafe(event.tool)}] requested ${previewCliValue(event.args)}\n`,
+      )
+      break
+    case 'tool.intent':
+      process.stderr.write(`[tool ${event.callId}] running\n`)
+      break
+    case 'tool.result':
+      process.stderr.write(
+        `[tool ${event.callId}] ${event.ok ? 'ok' : 'failed'} (${event.durationMs}ms): ${terminalSafe(event.content)}\n`,
+      )
+      break
+    case 'permission.requested':
+      process.stderr.write(
+        `[permission ${event.risk.tool}] approval required: ${terminalSafe(event.risk.argsPreview)}\n`,
+      )
+      break
+    case 'permission.decided':
+      process.stderr.write(
+        `[permission ${event.requestId}] ${event.decision}${event.grantScope ? ` (${event.grantScope})` : ''}\n`,
+      )
+      break
+    case 'turn.failed':
+      process.stderr.write(
+        `${terminalSafe(event.error.code)}: ${terminalSafe(event.error.message)}\n`,
+      )
+      break
+    case 'turn.cancelled':
+      process.stderr.write('Turn cancelled.\n')
+      break
+    case 'turn.completed':
+      if (event.reason === 'budget') {
+        process.stderr.write(
+          `Turn stopped at budget: ${event.stats.steps} steps, ${event.stats.toolCalls} tool calls.\n`,
+        )
+      }
+      break
+    default:
+      break
   }
+}
+
+function previewCliValue(value: unknown): string {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(value)
+  } catch {
+    serialized = '[unserializable]'
+  }
+  return terminalSafe(serialized.length > 240 ? `${serialized.slice(0, 237)}...` : serialized)
 }
 
 async function readStdin(): Promise<string> {
@@ -663,8 +786,60 @@ async function readStdin(): Promise<string> {
 }
 
 function helpText(version?: string): string {
-  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent\n\nUsage:\n  spark                     Interactive TUI\n  spark "task"              Run one task\n  spark -p "task"           Run one task\n  spark --plain             Plain interactive REPL\n  spark --json "task"       NDJSON fact events\n  spark models              List local and SparkWork-synced models\n  spark doctor              Diagnose install, discovery, and model selection\n  spark sessions            List sessions recorded for the current directory\n  spark install [--bin dir] Link the spark launcher onto PATH\n  spark uninstall [--bin dir]\n                            Remove the spark launcher only\n  spark uninstall --package\n                            Remove the npm package, its shims, and the launcher;\n                            ~/.spark config/sessions/caches are kept\n  spark update [--check]    Check for or install a release upgrade\n  spark upgrade             Alias for spark update\n  spark init                Write a starter ~/.spark/config.toml\n\nUpdate exit codes:\n  0 update available / update applied        1 up to date, older remote, or prerelease gated\n  2 usage error                               3 check or upgrade failed\n  4 another update is in progress\n\nOptions:\n  -p, --prompt <text>       Task prompt\n  -m, --model <id>          Select a local id, SparkWork route id, or unique model name\n  -c, --continue            Continue the most recent session in this directory\n  -r, --resume [<id>]       Resume a session; without an id pick one in the TUI\n      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)\n      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,\n                            [update] base_url in config.toml, then the built-in release host)\n      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)\n      --check               Only report the update status; apply nothing\n      --allow-prerelease    Consider prerelease releases for update\n      --package             With uninstall: remove the installed npm package too\n      --force               Replace a foreign launcher during install\n      --plain               Disable color and terminal redraw\n      --json                Emit persisted events as NDJSON; structured update results\n      --output-format <fmt> text | json | stream-json\n      --permission-mode <m> manual | auto | bypass (default: manual)
-      --effort <level>      Reasoning effort: off | low | medium | high | max (default: high)\n      --dangerously-skip-permissions\n                             Alias for --permission-mode bypass\n  -h, --help                Show help\n  -V, --version             Show version\n`
+  return `spark ${version === undefined ? '' : `${version} `}— deterministic coding agent
+
+Usage:
+  spark                     Interactive TUI
+  spark "task"              Run one task
+  spark -p "task"           Run one task
+  spark --plain             Plain interactive REPL
+  spark --json "task"       NDJSON fact events
+  spark --output-format json "task"
+                            One final JSON result object
+  spark --output-format stream-json "task"
+                            Event and streaming-delta JSONL
+  spark models              List local and SparkWork-synced models
+  spark doctor              Diagnose install, discovery, and model selection
+  spark sessions            List sessions recorded for the current directory
+  spark install [--bin dir] Link the spark launcher onto PATH
+  spark uninstall [--bin dir]
+                            Remove the spark launcher only
+  spark uninstall --package
+                            Remove the npm package, its shims, and the launcher;
+                            ~/.spark config/sessions/caches are kept
+  spark update [--check]    Check for or install a release upgrade
+  spark upgrade             Alias for spark update
+  spark init                Write a starter ~/.spark/config.toml
+
+Update exit codes:
+  0 update available / update applied        1 up to date, older remote, or prerelease gated
+  2 usage error                               3 check or upgrade failed
+  4 another update is in progress
+
+Options:
+  -p, --prompt <text>       Task prompt
+  -m, --model <id>          Select a local id, SparkWork route id, or unique model name
+  -c, --continue            Continue the most recent session in this directory
+  -r, --resume [<id>]       Resume a session; without an id pick one in the TUI
+      --bin <dir>           Launcher directory for install/uninstall (default ~/.spark/bin)
+      --base <url>          Release base for update (default SPARK_RELEASE_BASE, SPARK_INSTALL_BASE,
+                            [update] base_url in config.toml, then the built-in release host)
+      --target <semver>     Pin an exact version for update (checksum via the .sha256 sidecar)
+      --check               Only report the update status; apply nothing
+      --allow-prerelease    Consider prerelease releases for update
+      --package             With uninstall: remove the installed npm package too
+      --force               Replace a foreign launcher during install
+      --plain               Disable color and terminal redraw
+      --json                Backward-compatible persisted-event NDJSON output
+      --output-format <fmt> text | json | stream-json
+                            json emits one final result; stream-json emits events and deltas
+      --permission-mode <m> manual | auto | bypass (default: manual)
+      --effort <level>      Reasoning effort: off | low | medium | high | max (default: high)
+      --dangerously-skip-permissions
+                             Alias for --permission-mode bypass
+  -h, --help                Show help
+  -V, --version             Show version
+`
 }
 
 async function runningVersion(): Promise<string> {

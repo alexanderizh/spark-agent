@@ -26,17 +26,22 @@ const SESSION_STATUS_ALIASES: Record<string, RemoteSessionStatus> = {
   失败: 'error',
 }
 
-export function parseRemoteSessionFilter(args: readonly string[]): {
+export function parseRemoteSessionFilter(
+  args: readonly string[],
+  commandPrefix = '/',
+): {
   status?: RemoteSessionStatus | undefined
   error?: string
 } {
+  const prefix = commandPrefix.trim() || '/'
+  const usage = `状态筛选格式：${prefix}sessions [all|idle|running|error]`
   const tokens = args.map((arg) => arg.trim()).filter(Boolean)
   if (tokens.length === 0) return { status: undefined }
 
   const first = tokens[0] ?? ''
   const isSeparateStatusFlag = first === '--status' || first === '-s'
   if (isSeparateStatusFlag && tokens[1] == null) {
-    return { error: '状态筛选格式：/sessions [all|idle|running|error]' }
+    return { error: usage }
   }
   const rawValue = isSeparateStatusFlag
     ? tokens[1]
@@ -45,37 +50,37 @@ export function parseRemoteSessionFilter(args: readonly string[]): {
   if (value == null || value === '' || value === 'all' || value === '全部') {
     return tokens.length <= (isSeparateStatusFlag ? 2 : 1)
       ? { status: undefined }
-      : { error: '状态筛选格式：/sessions [all|idle|running|error]' }
+      : { error: usage }
   }
 
   const status = SESSION_STATUS_ALIASES[value]
   if (status == null || tokens.length > (isSeparateStatusFlag ? 2 : 1)) {
-    return { error: '状态筛选格式：/sessions [all|idle|running|error]' }
+    return { error: usage }
   }
   return { status }
 }
 
-export function buildRemoteErrorGuidance(error: string): string {
+export function buildRemoteErrorGuidance(error: string, commandPrefix = '/'): string {
   const message = error.trim().slice(0, 1000) || '未知错误'
   const lower = message.toLocaleLowerCase()
+  const prefix = commandPrefix.trim() || '/'
+  const command = (name: string, argument?: string): string =>
+    `${prefix}${name}${argument == null ? '' : ` ${argument}`}`
   if (
     /\bmodel\b|\bprovider\b|模型|配额|限额|\bquota\b|rate limit|429|401|403|\btoken\b/.test(lower)
   ) {
-    return `处理失败：${message}\n\n建议：/providers → /models → /use-model <序号>；也可使用 /use-provider <序号> 切换 Provider。`
+    return `处理失败：${message}\n\n建议：${command('providers')} → ${command('models')} → ${command('use-model', '<序号>')}；也可使用 ${command('use-provider', '<序号>')} 切换 Provider。`
   }
   if (/\bsession\b|会话/.test(lower)) {
-    return `处理失败：${message}\n\n建议：发送 /sessions 查看主机会话；需要继续其他会话时使用 /use-session <序号|名称|sessionId>。`
+    return `处理失败：${message}\n\n建议：发送 ${command('sessions')} 查看主机会话；需要继续其他会话时使用 ${command('use-session', '<序号|名称|sessionId>')}。`
   }
-  return `处理失败：${message}\n\n建议：发送 /status 查看当前连接，发送 /help 查看可用命令；如果问题与模型有关，请依次使用 /providers、/models、/use-model。`
+  return `处理失败：${message}\n\n建议：发送 ${command('status')} 查看当前连接，发送 ${command('help')} 查看可用命令；如果问题与模型有关，请依次使用 ${command('providers')}、${command('models')}、${command('use-model')}。`
 }
 
 export function formatRows(rows: RemoteSelectionRow[], empty: string): string {
   if (rows.length === 0) return empty
   return rows
-    .map(
-      (row, index) =>
-        `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`,
-    )
+    .map((row, index) => `${index + 1}. ${row.label}${row.meta != null ? ` · ${row.meta}` : ''}`)
     .join('\n')
 }
 
@@ -161,15 +166,19 @@ export function filterTelegramCallbackActions(
  * 会话切换按钮直接携带 sessionId，避免依赖连接级序号缓存——
  * 序号缓存会被下一次 /sessions 覆盖，按钮点旧消息会切到错误会话。
  */
-export function buildRemoteSessionActions(rows: RemoteSelectionRow[]): RemoteMessageAction[] {
+export function buildRemoteSessionActions(
+  rows: RemoteSelectionRow[],
+  commandPrefix = '/',
+): RemoteMessageAction[] {
+  const prefix = commandPrefix.trim() || '/'
   return [
-    { label: '全部', command: '/sessions' },
-    { label: '运行中', command: '/sessions running' },
-    { label: '空闲', command: '/sessions idle' },
-    { label: '错误', command: '/sessions error' },
+    { label: '全部', command: `${prefix}sessions` },
+    { label: '运行中', command: `${prefix}sessions running` },
+    { label: '空闲', command: `${prefix}sessions idle` },
+    { label: '错误', command: `${prefix}sessions error` },
     ...rows.slice(0, 6).map((row) => ({
       label: `切换 ${row.label}`,
-      command: `/use-session ${row.id}`,
+      command: `${prefix}use-session ${row.id}`,
       style: 'primary' as const,
     })),
   ]

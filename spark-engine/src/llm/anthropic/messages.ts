@@ -61,9 +61,7 @@ export function toAnthropicRequest(
     messages: toAnthropicMessages(request.messages),
     ...(tools.length === 0 ? {} : { tools }),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(request.thinking
-      ? { thinking: toThinking(request.thinking, request.maxTokens) }
-      : {}),
+    ...(request.thinking ? { thinking: toThinking(request.thinking, request.maxTokens) } : {}),
     ...(promptCaching && request.system.some((section) => section.stability === 'stable')
       ? { cache_control: { type: 'ephemeral' } }
       : {}),
@@ -118,9 +116,21 @@ function toThinking(
   maxTokens: number,
 ): Record<string, unknown> {
   if (thinking.type === 'enabled') {
-    // The API rejects budget_tokens >= max_tokens; clamp so any effort level
-    // (including max) stays valid against the request's output ceiling.
-    return { type: 'enabled', budget_tokens: Math.min(thinking.budgetTokens, maxTokens - 1) };
+    // Anthropic counts thinking and visible answer tokens against the same
+    // max_tokens ceiling. Keep a meaningful answer reserve instead of
+    // allowing the default `high` budget to leave one token for the answer.
+    // The reserve scales down for deliberately tiny caller-provided limits.
+    const visibleReserve = Math.min(2_048, Math.max(1, Math.floor(maxTokens / 4)));
+    const availableThinking = Math.max(0, maxTokens - visibleReserve);
+    // Anthropic's manual budget_tokens has a 1K lower bound. When the model's
+    // configured output ceiling cannot fit a valid thinking block plus a
+    // visible answer reserve, disable thinking rather than sending a request
+    // the provider will reject.
+    if (availableThinking < 1_024) return { type: 'disabled' };
+    return {
+      type: 'enabled',
+      budget_tokens: Math.min(thinking.budgetTokens, availableThinking),
+    };
   }
   if (thinking.type === 'adaptive') {
     return { type: 'adaptive', ...(thinking.display ? { display: thinking.display } : {}) };
@@ -140,6 +150,7 @@ async function* decodeAnthropicEvents(
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
   let firstContentAt: number | undefined;
+  const emittedTextByIndex = new Map<number, string>();
   let stopped = false;
 
   for await (const event of events) {
@@ -167,6 +178,7 @@ async function* decodeAnthropicEvents(
       if (delta.type === 'text_delta') {
         const text = requiredString(delta.text, type, requestId);
         block.text = `${stringValue(block.text) ?? ''}${text}`;
+        emittedTextByIndex.set(index, `${emittedTextByIndex.get(index) ?? ''}${text}`);
         firstContentAt ??= Date.now();
         yield { type: 'text', text };
       } else if (delta.type === 'thinking_delta') {
@@ -188,7 +200,9 @@ async function* decodeAnthropicEvents(
       if (!block) malformed(type, requestId);
       if (block.type === 'tool_use') {
         const json = partialJson.get(index) ?? '';
-        const args = json ? parseJson(json, 'llm.anthropic.invalid_tool_json', requestId) : block.input;
+        const args = json
+          ? parseJson(json, 'llm.anthropic.invalid_tool_json', requestId)
+          : block.input;
         block.input = args;
         firstContentAt ??= Date.now();
         yield {
@@ -215,10 +229,45 @@ async function* decodeAnthropicEvents(
       );
     } else if (type === 'message_stop') {
       stopped = true;
-      const content = [...blocks.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([, block]) => block);
-      yield { type: 'continuation', continuation: { protocol: 'anthropic-messages', data: content } };
+      const orderedBlocks = [...blocks.entries()].sort(([left], [right]) => left - right);
+      const content = orderedBlocks.map(([, block]) => block);
+      let hasTextBlock = false;
+      for (const [index, block] of orderedBlocks) {
+        if (block.type !== 'text') continue;
+        hasTextBlock = true;
+        const completeText = stringValue(block.text);
+        if (completeText === undefined) continue;
+        const emittedText = emittedTextByIndex.get(index) ?? '';
+        const missingText = missingSuffix(completeText, emittedText);
+        if (missingText !== '') {
+          firstContentAt ??= Date.now();
+          yield { type: 'text', text: missingText };
+        }
+      }
+      const stopMessage = asRecord(value.message);
+      const stopContent = Array.isArray(stopMessage?.content)
+        ? stopMessage.content.filter(
+            (item): item is Record<string, unknown> => asRecord(item) !== undefined,
+          )
+        : [];
+      if (!hasTextBlock && stopContent.length > 0) {
+        const completeText = stopContent
+          .filter((block) => block.type === 'text')
+          .map((block) => stringValue(block.text))
+          .filter((text): text is string => text !== undefined)
+          .join('');
+        const emittedText = [...emittedTextByIndex.values()].join('');
+        const missingText = missingSuffix(completeText, emittedText);
+        if (missingText !== '') {
+          firstContentAt ??= Date.now();
+          yield { type: 'text', text: missingText };
+        }
+        content.push(...stopContent);
+      }
+      yield {
+        type: 'continuation',
+        continuation: { protocol: 'anthropic-messages', data: content },
+      };
       yield {
         type: 'usage',
         inputTokens,
@@ -241,6 +290,14 @@ async function* decodeAnthropicEvents(
   }
 }
 
+function missingSuffix(completeText: string, emittedText: string): string {
+  if (completeText === emittedText) return '';
+  if (completeText.startsWith(emittedText)) return completeText.slice(emittedText.length);
+  // A gateway may omit or reorder deltas. Prefer one complete answer over a
+  // silent answer, while avoiding duplication when the normal prefix exists.
+  return completeText;
+}
+
 function parseEvent(data: string, provider: string, requestId?: string): Record<string, unknown> {
   const value = parseJson(data, `llm.${provider}.invalid_sse_json`, requestId);
   const record = asRecord(value);
@@ -260,9 +317,13 @@ function parseJson(data: string, code: string, requestId?: string): unknown {
 }
 
 function malformed(type: unknown, requestId?: string): never {
-  throw new KernelError('llm.anthropic.malformed_event', `Malformed Anthropic ${String(type)} event`, {
-    detail: { ...(requestId ? { requestId } : {}) },
-  });
+  throw new KernelError(
+    'llm.anthropic.malformed_event',
+    `Malformed Anthropic ${String(type)} event`,
+    {
+      detail: { ...(requestId ? { requestId } : {}) },
+    },
+  );
 }
 
 function requiredString(value: unknown, type: unknown, requestId?: string): string {

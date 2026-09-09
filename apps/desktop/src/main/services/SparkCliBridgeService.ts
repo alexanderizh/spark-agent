@@ -26,6 +26,8 @@ export interface SparkCliProviderProfile {
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   contextWindow?: number
   modelContextWindows?: Record<string, number>
+  /** Provider-configured maximum generated tokens for text/agent turns. */
+  maxTokens?: number
   modelType?: string
   isDefault: boolean
 }
@@ -45,6 +47,7 @@ interface CatalogRoute {
   protocol: 'anthropic-messages' | 'openai-responses'
   model: string
   contextWindow?: number
+  maxOutputTokens?: number
 }
 
 interface BridgeDescriptor {
@@ -196,6 +199,7 @@ function providerRoutes(provider: SparkCliProviderProfile): CatalogRoute[] {
     protocol,
     model,
     ...contextWindow(provider, model),
+    ...maxOutputTokens(provider),
   }))
 }
 
@@ -214,6 +218,14 @@ function contextWindow(
   const value = provider.modelContextWindows?.[model] ?? provider.contextWindow
   return typeof value === 'number' && Number.isInteger(value) && value > 0
     ? { contextWindow: value }
+    : {}
+}
+
+function maxOutputTokens(provider: SparkCliProviderProfile): Pick<CatalogRoute, 'maxOutputTokens'> {
+  return typeof provider.maxTokens === 'number' &&
+    Number.isInteger(provider.maxTokens) &&
+    provider.maxTokens > 0
+    ? { maxOutputTokens: provider.maxTokens }
     : {}
 }
 
