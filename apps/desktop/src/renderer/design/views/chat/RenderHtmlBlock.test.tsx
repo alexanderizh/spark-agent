@@ -4,6 +4,8 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HtmlCodePreview, HtmlRenderProvider, RenderHtmlBlock } from './RenderHtmlBlock'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,6 +27,22 @@ describe('RenderHtmlBlock', () => {
   let container: HTMLDivElement
   let root: Root | null = null
   let invoke: ReturnType<typeof vi.fn>
+
+  it('lets the fullscreen panel fill the available viewport', () => {
+    const styles = readFileSync(resolve(__dirname, 'RenderHtmlBlock.less'), 'utf8')
+    const fullscreenPanelRule = styles.match(/\.render-html-fullscreen-panel\s*\{([^}]*)\}/)?.[1]
+
+    expect(fullscreenPanelRule).toContain('width: 100%')
+    expect(fullscreenPanelRule).toContain('height: 100%')
+    expect(fullscreenPanelRule).not.toContain('1200px')
+    expect(fullscreenPanelRule).not.toContain('820px')
+  })
+
+  it('keeps the fullscreen action large enough to discover and click', () => {
+    const markup = renderToStaticMarkup(<RenderHtmlBlock block={block} />)
+
+    expect(markup).toContain('render-html-fullscreen-action')
+  })
 
   beforeEach(() => {
     container = document.createElement('div')

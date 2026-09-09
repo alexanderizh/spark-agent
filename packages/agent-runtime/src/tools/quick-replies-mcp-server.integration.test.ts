@@ -99,6 +99,11 @@ describe('quick-replies MCP server', () => {
                 maxLength: 200_000,
                 description: expect.stringContaining('HTTP(S)'),
               }),
+              height: expect.objectContaining({
+                minimum: 120,
+                maximum: 800,
+                default: 400,
+              }),
             }),
           }),
         }),

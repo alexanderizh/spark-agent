@@ -1,8 +1,8 @@
 export const MAX_HTML_RENDER_LENGTH = 200_000
 export const MAX_HTML_RENDER_TITLE_LENGTH = 60
 export const MIN_HTML_RENDER_HEIGHT = 120
-export const MAX_HTML_RENDER_HEIGHT = 640
-export const DEFAULT_HTML_RENDER_HEIGHT = 320
+export const MAX_HTML_RENDER_HEIGHT = 800
+export const DEFAULT_HTML_RENDER_HEIGHT = 400
 
 // Diagram (markmap / mermaid) 渲染负载约束 —— source 是 Markdown 大纲或 Mermaid DSL
 export const MAX_DIAGRAM_RENDER_LENGTH = 50_000

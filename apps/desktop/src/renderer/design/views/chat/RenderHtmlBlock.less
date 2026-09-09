@@ -102,6 +102,12 @@
   color: var(--render-html-text);
 }
 
+.render-html-fullscreen-action {
+  min-height: 30px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
 .render-html-source-actions .render-html-action {
   flex-shrink: 0;
 }
@@ -287,8 +293,8 @@
 .render-html-fullscreen-panel {
   display: flex;
   flex-direction: column;
-  width: min(1200px, 100%);
-  height: min(820px, 100%);
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   border: 1px solid var(--render-html-border);
   border-radius: 8px;

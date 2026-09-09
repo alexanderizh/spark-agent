@@ -206,10 +206,10 @@ export function RenderHtmlBlock({
             {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && !gateExternal && (
               <Button
                 type="text"
-                size="small"
-                className="render-html-action"
+                size="middle"
+                className="render-html-action render-html-fullscreen-action"
                 aria-label="全屏查看 HTML"
-                icon={<Icons.Maximize size={13} />}
+                icon={<Icons.Maximize size={15} />}
                 onClick={() => setFullscreen(true)}
               >
                 全屏
