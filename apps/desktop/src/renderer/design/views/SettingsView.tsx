@@ -5255,12 +5255,12 @@ function IntegritySection() {
       {/* ── FFmpeg (视频处理工作台依赖) ── */}
       <FfmpegStatusCard />
 
-      <OptionalCapabilitiesSettingsCard />
-
       <CodexRuntimeDiagnosticsCard />
 
       {/* ── 语音输入 (ASR) 语音包完整性 ── */}
       <VoiceIntegritySettingsItem />
+
+      <OptionalCapabilitiesSettingsCard />
     </div>
   )
 }

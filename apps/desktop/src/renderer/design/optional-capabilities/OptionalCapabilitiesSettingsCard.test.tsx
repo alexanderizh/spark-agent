@@ -78,4 +78,19 @@ describe('OptionalCapabilitiesSettingsCard', () => {
 
     expect(container.textContent).not.toContain('卸载')
   })
+
+  it('opens the optional capability installer from the integrity page action', async () => {
+    const listener = vi.fn()
+    window.addEventListener('spark:open-optional-capability-center', listener)
+    await act(async () => root.render(<OptionalCapabilitiesSettingsCard />))
+
+    const openButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('选择并安装可选功能'),
+    )
+    expect(openButton).toBeTruthy()
+    await act(async () => openButton?.click())
+
+    expect(listener).toHaveBeenCalledOnce()
+    window.removeEventListener('spark:open-optional-capability-center', listener)
+  })
 })

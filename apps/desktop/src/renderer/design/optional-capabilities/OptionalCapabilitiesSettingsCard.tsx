@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Button, Progress, Switch } from 'antd'
 import type { OptionalCapabilityId, OptionalCapabilityItem } from '@spark/protocol'
 import { useApp } from '../AppContext'
+import { Icons } from '../Icons'
 import { useOptionalCapabilities } from './useOptionalCapabilities'
+import { openOptionalCapabilityCenter } from './optionalCapabilityNavigation'
 
 export function OptionalCapabilitiesSettingsCard() {
   const { requestConfirm } = useApp()
@@ -65,12 +67,15 @@ export function OptionalCapabilitiesSettingsCard() {
                   {item.targetVersion ? ` · 最新 ${item.targetVersion}` : ''}
                 </div>
                 <div className="voice-integrity-desc">{item.description}</div>
-                {progress && ['queued', 'downloading', 'verifying', 'extracting', 'activating'].includes(progress.phase) && (
-                  <div className="voice-integrity-progress-wrap">
-                    <Progress percent={progress.percent ?? 0} size="small" />
-                    <span>{progress.message}</span>
-                  </div>
-                )}
+                {progress &&
+                  ['queued', 'downloading', 'verifying', 'extracting', 'activating'].includes(
+                    progress.phase,
+                  ) && (
+                    <div className="voice-integrity-progress-wrap">
+                      <Progress percent={progress.percent ?? 0} size="small" />
+                      <span>{progress.message}</span>
+                    </div>
+                  )}
                 {item.error && <div className="integrity-sdk-error">{item.error}</div>}
               </div>
               <div className="integrity-sdk-right">
@@ -95,13 +100,32 @@ export function OptionalCapabilitiesSettingsCard() {
                   {primaryLabel(item)}
                 </Button>
                 {item.installedVersion && item.supportsUninstall !== false && (
-                  <Button danger onClick={() => void uninstall(item)}>卸载</Button>
+                  <Button danger onClick={() => void uninstall(item)}>
+                    卸载
+                  </Button>
                 )}
               </div>
             </div>
           )
         })}
       </div>
+      <button
+        type="button"
+        className="optional-capability-open-button"
+        onClick={openOptionalCapabilityCenter}
+      >
+        <span className="optional-capability-open-icon" aria-hidden="true">
+          <Icons.Package size={18} />
+        </span>
+        <span className="optional-capability-open-copy">
+          <strong>选择并安装可选功能</strong>
+          <span>重新打开批量安装弹窗，查看全部组件状态</span>
+        </span>
+        <span className="optional-capability-open-action">
+          打开
+          <Icons.ChevronRight size={14} aria-hidden="true" />
+        </span>
+      </button>
     </section>
   )
 }
@@ -111,7 +135,9 @@ function statusText(item: OptionalCapabilityItem): string {
   if (item.state === 'update_available') return `已安装 ${item.installedVersion}，有更新`
   if (item.state === 'damaged') return `组件损坏 · ${item.installedVersion}`
   if (item.state === 'error') return '安装失败'
-  return item.targetVersion ? `未安装 · 下载 ${(item.downloadSize / 1024 / 1024).toFixed(1)} MB` : '当前平台暂不可用'
+  return item.targetVersion
+    ? `未安装 · 下载 ${(item.downloadSize / 1024 / 1024).toFixed(1)} MB`
+    : '当前平台暂不可用'
 }
 
 function primaryLabel(item: OptionalCapabilityItem): string {
