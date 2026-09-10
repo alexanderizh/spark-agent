@@ -138,6 +138,15 @@ export type LlmDelta =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'thinking'; readonly text: string }
   | {
+      readonly type: 'retry'
+      readonly routeId: string
+      /** One-based retry number; the initial request is not counted. */
+      readonly attempt: number
+      readonly maxRetries: number
+      readonly delayMs: number
+      readonly error: { readonly code?: string; readonly message: string }
+    }
+  | {
       readonly type: 'tool_call'
       readonly callId: string
       readonly name: string

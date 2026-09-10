@@ -40,7 +40,7 @@ describe('model configuration', () => {
     const projectPath = join(root, 'project', '.spark', 'config.toml')
     await writeFile(
       globalPath,
-      '[agent]\nmodel = "primary"\nfailover = ["backup"]\nmax_retries = 1\n\n[providers.local]\nprotocol = "openai-responses"\nbase_url = "https://global.example/v1"\napi_key_env = "TEST_KEY"\n\n[models.primary]\nprovider = "local"\nmodel = "global-model"\n\n[models.backup]\nprovider = "local"\nmodel = "backup-model"\n',
+      '[agent]\nmodel = "primary"\nfailover = ["backup"]\nmax_retries = 1\nretry_initial_delay_ms = 1000\nretry_max_delay_ms = 30000\nretry_jitter_ratio = 0.1\n\n[providers.local]\nprotocol = "openai-responses"\nbase_url = "https://global.example/v1"\napi_key_env = "TEST_KEY"\n\n[models.primary]\nprovider = "local"\nmodel = "global-model"\n\n[models.backup]\nprovider = "local"\nmodel = "backup-model"\n',
     )
     await writeFile(
       projectPath,
@@ -57,6 +57,12 @@ describe('model configuration', () => {
     expect(runtime.route).toEqual(['primary', 'backup'])
     expect(JSON.stringify(runtime.configSnapshot)).not.toContain('secret')
     expect(runtime.configSnapshot).toMatchObject({
+      agent: {
+        max_retries: 1,
+        retry_initial_delay_ms: 1_000,
+        retry_max_delay_ms: 30_000,
+        retry_jitter_ratio: 0.1,
+      },
       providers: { local: { base_url: 'https://project.example/v1' } },
       models: { primary: { model: 'project-model', provider: 'local' } },
     })

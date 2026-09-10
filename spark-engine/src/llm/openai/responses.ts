@@ -1,5 +1,6 @@
 import { KernelError } from '../../kernel/errors.js'
 import type { LlmCallContext, LlmService } from '../../seams.js'
+import { safeDiagnosticText, safeProviderError } from '../error-detail.js'
 import { asRecord, numberValue, openSse, stringValue, type FetchLike } from '../http/client.js'
 import type { IrMessage, LlmDelta, LlmRequest, ProviderContinuation } from '../types.js'
 
@@ -203,9 +204,13 @@ async function* decodeOpenAiEvents(
         type === 'response.failed'
           ? 'llm.openai.response_failed'
           : 'llm.openai.response_incomplete',
-        stringValue(error?.message) ?? stringValue(incomplete?.reason) ?? `OpenAI emitted ${type}`,
+        safeDiagnosticText(
+          stringValue(error?.message) ??
+            stringValue(incomplete?.reason) ??
+            `OpenAI emitted ${type}`,
+        ),
         {
-          retryable: type === 'response.failed',
+          retryable: type === 'response.failed' && isRetryableOpenAiStreamError(error),
           detail: { ...(requestId ? { requestId } : {}) },
         },
       )
@@ -213,8 +218,14 @@ async function* decodeOpenAiEvents(
       const error = asRecord(value.error) ?? value
       throw new KernelError(
         `llm.openai.${stringValue(error.code) ?? 'stream_error'}`,
-        stringValue(error.message) ?? 'OpenAI stream failed',
-        { retryable: true, detail: { ...(requestId ? { requestId } : {}) } },
+        safeDiagnosticText(stringValue(error.message) ?? 'OpenAI stream failed'),
+        {
+          retryable: isRetryableOpenAiStreamError(error),
+          detail: {
+            ...(requestId ? { requestId } : {}),
+            providerError: safeProviderError(error),
+          },
+        },
       )
     } else if (type === 'response.in_progress' || type === 'response.created') {
       yield { type: 'heartbeat' }
@@ -230,6 +241,26 @@ async function* decodeOpenAiEvents(
       },
     )
   }
+}
+
+function isRetryableOpenAiStreamError(error: Record<string, unknown> | undefined): boolean {
+  const classification = (stringValue(error?.code) ?? stringValue(error?.type))?.toLowerCase()
+  if (classification === undefined) return true
+  return ![
+    'account_deactivated',
+    'authentication_error',
+    'billing_error',
+    'billing_hard_limit_reached',
+    'content_filter',
+    'context_length_exceeded',
+    'insufficient_quota',
+    'invalid_api_key',
+    'invalid_request_error',
+    'model_not_found',
+    'not_found_error',
+    'permission_error',
+    'unsupported_value',
+  ].includes(classification)
 }
 
 function extractOutputText(item: Record<string, unknown> | undefined): string | undefined {

@@ -613,6 +613,8 @@ async function runOnce(
                 if (delta.type === 'text') {
                   wroteText = true
                   process.stdout.write(delta.text)
+                } else if (delta.type === 'retry') {
+                  renderRetryDelta(delta)
                 }
               },
     })
@@ -706,6 +708,8 @@ async function runPlainTurn(
       if (delta.type === 'text') {
         wroteText = true
         process.stdout.write(delta.text)
+      } else if (delta.type === 'retry') {
+        renderRetryDelta(delta)
       }
     },
     onEvent: (event) => {
@@ -749,7 +753,7 @@ function renderPlainEvent(event: AgentEvent): void {
       break
     case 'turn.failed':
       process.stderr.write(
-        `${terminalSafe(event.error.code)}: ${terminalSafe(event.error.message)}\n`,
+        `${terminalDiagnostic(event.error.code, 256)}: ${terminalDiagnostic(event.error.message)}${errorCauseSuffix(event.error.detail)}\n`,
       )
       break
     case 'turn.cancelled':
@@ -765,6 +769,37 @@ function renderPlainEvent(event: AgentEvent): void {
     default:
       break
   }
+}
+
+function errorCauseSuffix(detail: unknown): string {
+  if (typeof detail !== 'object' || detail === null) return ''
+  const cause = (detail as Record<string, unknown>).cause
+  if (typeof cause !== 'object' || cause === null) return ''
+  const causeRecord = cause as Record<string, unknown>
+  const code = causeRecord.code
+  const causeMessage = causeRecord.message
+  const causeDetail =
+    typeof causeRecord.detail === 'object' && causeRecord.detail !== null
+      ? (causeRecord.detail as Record<string, unknown>)
+      : undefined
+  const requestId = causeDetail?.requestId
+  if (
+    typeof code !== 'string' &&
+    typeof causeMessage !== 'string' &&
+    typeof requestId !== 'string'
+  ) {
+    return ''
+  }
+  const root = `cause: ${terminalDiagnostic(typeof code === 'string' ? code : 'stream_error', 256)}: ${terminalDiagnostic(typeof causeMessage === 'string' ? causeMessage : 'unknown error', 1_024)}`
+  const request =
+    typeof requestId === 'string' ? `; request-id: ${terminalDiagnostic(requestId, 256)}` : ''
+  return ` (${root}${request})`
+}
+
+function renderRetryDelta(delta: Extract<LlmDelta, { type: 'retry' }>): void {
+  process.stderr.write(
+    `[model] reconnecting ${delta.attempt}/${delta.maxRetries} in ${(delta.delayMs / 1_000).toFixed(1)}s: ${terminalSafe(delta.error.code ?? delta.error.message)}\n`,
+  )
 }
 
 function previewCliValue(value: unknown): string {
@@ -892,6 +927,11 @@ function terminalSafe(value: string): string {
     safe.push(codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? '�' : character)
   }
   return safe.join('')
+}
+
+function terminalDiagnostic(value: string, maxLength = 2_048): string {
+  const safe = terminalSafe(value)
+  return safe.length <= maxLength ? safe : `${safe.slice(0, Math.max(0, maxLength - 1))}…`
 }
 
 function createConfiguredAgent(runtime: ConfiguredModelRuntime): Agent {

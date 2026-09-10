@@ -58,7 +58,7 @@ describe('TUI execution feedback', () => {
       expect(frame.split('Preparing the requested write.')).toHaveLength(2)
       expect(frame).toContain('waiting for approval')
       expect(frame).toContain('esc 拒绝当前工具')
-      const border = frame.split('\n').find(line => line.startsWith('╭'))
+      const border = frame.split('\n').find((line) => line.startsWith('╭'))
       expect(border?.length).toBe(64)
       app.stdin.write('\u001b')
       await new Promise((resolve) => setTimeout(resolve, 40))
@@ -84,6 +84,34 @@ describe('TUI execution feedback', () => {
       app.stdin.write('new draft')
       await tick()
       expect(app.lastFrame()).toContain('new draft')
+    } finally {
+      app.unmount()
+      mock.mockRestore()
+    }
+  })
+
+  it('shows retry progress and the classified stream error', async () => {
+    const { session, mount } = await fixture()
+    const mock = vi.spyOn(session, 'turn').mockImplementationOnce(async (_prompt, options) => {
+      await options?.onDelta?.({
+        type: 'retry',
+        routeId: 'primary',
+        attempt: 2,
+        maxRetries: 3,
+        delayMs: 4_000,
+        error: { code: 'llm.transport_error', message: 'connection reset' },
+      })
+      return new Promise<never>(() => undefined)
+    })
+    const app = mount()
+    try {
+      app.stdin.write('retry task')
+      await tick()
+      app.stdin.write('\r')
+      await tick()
+      expect(app.lastFrame()).toContain('正在重连模型 2/3')
+      expect(app.lastFrame()).toContain('llm.transport_error · connection reset')
+      expect(app.lastFrame()).toContain('4.0s 后重试')
     } finally {
       app.unmount()
       mock.mockRestore()

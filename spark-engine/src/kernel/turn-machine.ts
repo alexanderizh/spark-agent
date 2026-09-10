@@ -2,6 +2,7 @@ import { SessionLedger } from '../events/ledger.js'
 import {
   type AgentEvent,
   type BoundEventDraft,
+  type ErrorInfo,
   type TurnStats,
   type Usage,
 } from '../events/schema.js'
@@ -297,14 +298,14 @@ export class TurnMachine {
             }),
           )
         }
+        const errorInfo = toErrorInfo(error)
         return asTerminal(
           await append({
             type: 'turn.failed',
             schemaVersion: 1,
             turnId: options.turnId,
-            error: toErrorInfo(error),
-            recoveryHint:
-              'Inspect the event log and retry after correcting the reported boundary failure.',
+            error: errorInfo,
+            recoveryHint: recoveryHintFor(errorInfo),
           }),
         )
       })
@@ -351,6 +352,18 @@ async function collectEvents(ledger: SessionLedger): Promise<AgentEvent[]> {
   const events: AgentEvent[] = []
   for await (const event of ledger.read()) events.push(event)
   return events
+}
+
+function recoveryHintFor(error: ErrorInfo): string {
+  if (error.code === 'llm.partial_stream_failed') {
+    return 'Retry the turn; if it repeats, inspect the recorded root cause and check the model gateway or network.'
+  }
+  if (error.code === 'llm.retry_delay_exceeded') {
+    return 'Retry later, configure a larger retry_max_delay_ms, or add a failover model.'
+  }
+  return error.retryable
+    ? 'Retry the turn; the failure was classified as transient.'
+    : 'Inspect the event log and correct the reported boundary failure before retrying.'
 }
 
 function usageToBudget(

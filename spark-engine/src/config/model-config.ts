@@ -52,9 +52,18 @@ const AgentSchema = z
     model: z.string().min(1).optional(),
     failover: z.array(z.string().min(1)).default([]),
     max_retries: z.number().int().min(0).max(10).default(2),
+    retry_initial_delay_ms: z.number().int().min(0).max(60_000).default(500),
+    retry_max_delay_ms: z.number().int().min(0).max(300_000).default(60_000),
+    retry_jitter_ratio: z.number().min(0).max(1).default(0.2),
   })
   .strict()
-  .default({ failover: [], max_retries: 2 })
+  .default({
+    failover: [],
+    max_retries: 2,
+    retry_initial_delay_ms: 500,
+    retry_max_delay_ms: 60_000,
+    retry_jitter_ratio: 0.2,
+  })
 const ModelConfigSchema = z
   .object({
     agent: AgentSchema,
@@ -177,7 +186,14 @@ function buildConfiguredRuntime(
     registerModelRoute(registry, id, config, environment, host.catalog, fetcher)
   }
   return {
-    service: registry.createRoute(route, { retry: { maxRetries: config.agent.max_retries } }),
+    service: registry.createRoute(route, {
+      retry: {
+        maxRetries: config.agent.max_retries,
+        initialDelayMs: config.agent.retry_initial_delay_ms,
+        maxDelayMs: config.agent.retry_max_delay_ms,
+        jitterRatio: config.agent.retry_jitter_ratio,
+      },
+    }),
     modelId,
     route,
     configSnapshot: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDeterministicEnv } from '../../src/env.js'
+import type { AgentEvent } from '../../src/events/schema.js'
 import { text, toolCall } from '../../src/llm/fake/reply-dsl.js'
 import { Agent } from '../../src/sdk/agent.js'
 import { projectTranscript } from '../../src/tui/projection.js'
@@ -57,5 +58,35 @@ describe('TUI tool lifecycle', () => {
         capabilities,
       ).activeTools[0]?.status,
     ).toBe('running')
+  })
+
+  it('shows the recorded stream root cause instead of only the wrapper error', () => {
+    const failure: AgentEvent = {
+      schemaVersion: 1,
+      sessionId: 'session-1',
+      seq: 1,
+      ts: 1,
+      type: 'turn.failed',
+      turnId: 'turn-1',
+      error: {
+        code: 'llm.partial_stream_failed',
+        message: 'failed after emitting output',
+        retryable: false,
+        detail: {
+          cause: {
+            code: 'llm.anthropic.bridge_stream_error',
+            message: 'socket reset by peer',
+            detail: { requestId: 'req-test-1' },
+          },
+        },
+      },
+      recoveryHint: 'generic old hint',
+    }
+
+    const row = projectTranscript([failure], capabilities).settled[0]?.text
+    expect(row).toContain('根因 llm.anthropic.bridge_stream_error: socket reset by peer')
+    expect(row).toContain('request-id req-test-1')
+    expect(row).toContain('可直接重试')
+    expect(row).not.toContain('generic old hint')
   })
 })

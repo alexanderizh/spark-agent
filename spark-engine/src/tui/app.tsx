@@ -156,6 +156,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const [events, setEvents] = useState<AgentEvent[]>([...props.initialEvents])
   const [liveText, setLiveText] = useState('')
   const [liveThinking, setLiveThinking] = useState('')
+  const [retrying, setRetrying] = useState<Extract<LlmDelta, { type: 'retry' }>>()
   const [showThinking, setShowThinking] = useState(true)
   const [activeTurns, setActiveTurns] = useState(0)
   const [cancelling, setCancelling] = useState(false)
@@ -255,6 +256,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     ) {
       setLiveText('')
       setLiveThinking('')
+      setRetrying(undefined)
     }
   }, [])
 
@@ -264,8 +266,17 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   const pickerOpen = modelRuntime?.open === true
 
   const handleDelta = useCallback((delta: LlmDelta) => {
-    if (delta.type === 'text') setLiveText((current) => current + delta.text)
-    else if (delta.type === 'thinking') setLiveThinking((current) => current + delta.text)
+    if (delta.type === 'retry') {
+      setRetrying(delta)
+    } else if (delta.type === 'text') {
+      setRetrying(undefined)
+      setLiveText((current) => current + delta.text)
+    } else if (delta.type === 'thinking') {
+      setRetrying(undefined)
+      setLiveThinking((current) => current + delta.text)
+    } else if (delta.type === 'tool_call') {
+      setRetrying(undefined)
+    }
   }, [])
 
   const startTurn = useCallback(
@@ -513,7 +524,9 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
 
   const projection = useMemo(() => projectTranscript(events, capabilities), [capabilities, events])
-  const action = deriveAction(events, projection.activeTools, liveText, liveThinking, pending)
+  const action = retrying
+    ? `正在重连模型 ${retrying.attempt}/${retrying.maxRetries}`
+    : deriveAction(events, projection.activeTools, liveText, liveThinking, pending)
   const perfText = formatPerf(lastStepPerf(events) ?? { tokensPerSec: 0, ttftMs: 0 })
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
 
@@ -583,7 +596,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       {activeTurns > 0 && (
         <WorkingLine
           label={cancelling ? '正在中断 · 等待工具清理' : action}
-          detail={`${cancelling ? '已保留当前输入' : pending ? 'esc 拒绝当前工具' : 'esc 中断当前任务'}${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
+          detail={`${
+            cancelling
+              ? '已保留当前输入'
+              : retrying
+                ? `${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
+                : pending
+                  ? 'esc 拒绝当前工具'
+                  : 'esc 中断当前任务'
+          }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
           capabilities={capabilities}
           theme={theme}
         />

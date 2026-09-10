@@ -129,6 +129,9 @@ When SparkWork is running, the CLI also discovers its currently enabled Provider
 model = "primary"
 failover = []
 max_retries = 2
+retry_initial_delay_ms = 500
+retry_max_delay_ms = 60000
+retry_jitter_ratio = 0.2
 
 [providers.openai]
 protocol = "openai-responses"

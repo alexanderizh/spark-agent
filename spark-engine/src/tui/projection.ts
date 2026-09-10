@@ -190,7 +190,7 @@ export function projectTranscript(
         terminalTurns.add(event.turnId)
         settled.push({
           key: `event-${event.seq}`,
-          text: `${symbols.failure} ${event.error.code}: ${event.error.message}${event.recoveryHint ? ` · ${event.recoveryHint}` : ''}`,
+          text: presentTurnFailure(symbols.failure, event.error, event.recoveryHint),
           tone: 'error',
         })
         break
@@ -281,6 +281,42 @@ function wrapSegment(text: string, width: number): string[] {
     pieces.push(characters.slice(offset, offset + columns).join(''))
   }
   return pieces
+}
+
+function presentTurnFailure(
+  failureSymbol: string,
+  error: { readonly code: string; readonly message: string; readonly detail?: unknown },
+  recoveryHint: string | undefined,
+): string {
+  const summary = `${failureSymbol} ${singleLine(error.code, 96)}: ${singleLine(error.message, 320)}`
+  const detail = asRecord(error.detail)
+  const cause = asRecord(detail?.cause)
+  const causeCode = stringField(cause?.code)
+  const causeMessage = stringField(cause?.message)
+  const causeDetail = asRecord(cause?.detail)
+  const requestId = stringField(causeDetail?.requestId)
+  const rootCause =
+    causeCode || causeMessage
+      ? ` · 根因 ${singleLine(causeCode ?? 'stream_error', 96)}: ${singleLine(causeMessage ?? 'unknown error', 240)}`
+      : ''
+  const request = requestId ? ` · request-id ${singleLine(requestId, 128)}` : ''
+  const hint =
+    error.code === 'llm.partial_stream_failed'
+      ? ' · 可直接重试；若重复出现，请检查模型网关与网络'
+      : recoveryHint
+        ? ` · ${singleLine(recoveryHint, 240)}`
+        : ''
+  return `${summary}${rootCause}${request}${hint}`
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
 }
 
 function preview(value: unknown): string {
