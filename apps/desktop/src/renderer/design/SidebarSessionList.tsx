@@ -39,6 +39,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
 import { requestOpenProjectCodeViewer } from './components/code-viewer/codeViewerNavigation'
+import { requestOpenProjectFiles } from './components/project-files/projectFilesPanelNavigation'
 import { requestOpenTerminalPanel } from './views/chat/terminalPanelNavigation'
 import { writeSessionReferenceDragPayload } from './views/chat/session-reference-dnd'
 import { requestSessionReferenceAdd } from './views/chat/session-reference-control'
@@ -1136,6 +1137,7 @@ export function ProjectSessionGroup({
   onDeleteProject,
   onOpenProjectFolder,
   onOpenProjectInEditor,
+  onOpenProjectFiles,
   onRenameSession,
   onCommitSessionTitle,
   onToggleSessionPinned,
@@ -1165,6 +1167,8 @@ export function ProjectSessionGroup({
   onDeleteProject: (workspace: WorkspaceInfo) => void
   onOpenProjectFolder: (workspace: WorkspaceInfo) => void
   onOpenProjectInEditor: (workspace: WorkspaceInfo) => void
+  /** 可选：在右侧「文件」面板打开该项目（不切换会话激活项目） */
+  onOpenProjectFiles?: (workspace: WorkspaceInfo) => void
   onRenameSession: (session: SessionSummary) => void
   onCommitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   onToggleSessionPinned: (session: SessionSummary) => void
@@ -1210,6 +1214,15 @@ export function ProjectSessionGroup({
       label: t('sidebar.project.openFolder'),
       onClick: () => onOpenProjectFolder(group.workspace),
     },
+    ...(onOpenProjectFiles != null
+      ? [
+          {
+            icon: <Icons.FolderOpen size={14} />,
+            label: t('sidebar.project.openFiles'),
+            onClick: () => onOpenProjectFiles(group.workspace),
+          },
+        ]
+      : []),
     {
       icon: <Icons.Copy size={14} />,
       label: '复制路径',
@@ -2707,6 +2720,12 @@ export function SidebarSessionList() {
                                 if (!opened) return // 打开失败（如目录已被删除）：保留错误 toast，不再切视图/开空面板
                                 setTweak('view', 'chat')
                                 requestOpenProjectCodeViewer()
+                              }}
+                              onOpenProjectFiles={(targetWorkspace) => {
+                                // 「文件」面板可独立切换浏览的项目：只切视图并打开面板，
+                                // 不改会话激活项目（这是它与「在编辑器中打开」的关键差异）
+                                setTweak('view', 'chat')
+                                requestOpenProjectFiles(targetWorkspace.id)
                               }}
                               onRenameSession={ctx.handleRenameSession}
                               onCommitSessionTitle={ctx.commitSessionTitle}

@@ -174,6 +174,12 @@ import {
   UnifiedSidePanelPicker,
   type UnifiedSidePanelKind,
 } from './chat/ChatSidePanels'
+import { ProjectFilesPanel } from '../components/project-files/ProjectFilesPanel'
+import { setSelectedProjectFilesWorkspaceId } from '../components/project-files/projectFilesPanelStore'
+import {
+  OPEN_PROJECT_FILES_EVENT,
+  consumePendingOpenProjectFiles,
+} from '../components/project-files/projectFilesPanelNavigation'
 import { BrowserChrome } from '../components/browser/BrowserChrome'
 import { panelBrowserTabsStore } from '../components/browser/browserTabsStore'
 import {
@@ -2164,6 +2170,33 @@ export function ChatView({
     openUnifiedSidePanel('code')
   }, [codeViewerOpenSignal, openUnifiedSidePanel])
 
+  // 「打开项目文件面板」导航（侧栏项目菜单 -> 文件面板）：与代码面板同构 —— 挂载时消费
+  // localStorage 待处理请求（派发瞬间 ChatView 未挂载的场景），运行期监听事件并经
+  // consumePending 读走标记，统一转为信号计数由落地 effect 处理。
+  // 待处理标记携带目标项目 id（ref 暂存），落地时持久化为面板选中项目；
+  // 声明位置在会话切换的面板快照 effect 之后，保证同帧先收起、后展开。
+  const [filesPanelOpenSignal, setFilesPanelOpenSignal] = useState(0)
+  const filesPanelSignalWorkspaceRef = useRef<string | null>(null)
+  useEffect(() => {
+    const raiseSignal = (): void => {
+      const pending = consumePendingOpenProjectFiles()
+      if (pending == null) return
+      filesPanelSignalWorkspaceRef.current = pending.workspaceId
+      setFilesPanelOpenSignal((n) => n + 1)
+    }
+    raiseSignal()
+    window.addEventListener(OPEN_PROJECT_FILES_EVENT, raiseSignal)
+    return () => window.removeEventListener(OPEN_PROJECT_FILES_EVENT, raiseSignal)
+  }, [])
+  const lastHandledFilesPanelSignalRef = useRef(0)
+  useEffect(() => {
+    if (filesPanelOpenSignal <= lastHandledFilesPanelSignalRef.current) return
+    lastHandledFilesPanelSignalRef.current = filesPanelOpenSignal
+    const workspaceId = filesPanelSignalWorkspaceRef.current
+    if (workspaceId != null) setSelectedProjectFilesWorkspaceId(workspaceId)
+    openUnifiedSidePanel('files')
+  }, [filesPanelOpenSignal, openUnifiedSidePanel])
+
   // 「打开终端面板」导航（侧栏会话条目终端图标）：与代码面板同构 —— 挂载时消费
   // localStorage 待处理请求（派发瞬间 ChatView 未挂载的场景），运行期监听事件并清标记，
   // 统一转为信号计数由落地 effect 处理。
@@ -3400,7 +3433,20 @@ export function ChatView({
             onOpen={openUnifiedSidePanel}
             onCloseTab={closeUnifiedSidePanel}
           >
-            {activeUnifiedSideTab === 'code' ? (
+            {activeUnifiedSideTab === 'files' ? (
+              <ProjectFilesPanel
+                workspaces={workspaces}
+                sessionWorkspaceId={gitWorkspaceId}
+                onOpenFile={(abs) =>
+                  shouldOpenInEditorByDefault(abs)
+                    ? openInCodeTab(abs)
+                    : handleFilePreview(abs, 'text')
+                }
+                onPreviewFile={(abs) => handleFilePreview(abs, 'text', { mode: 'preview' })}
+                onEditFile={(abs) => openInCodeTab(abs)}
+                onAddToChat={(abs) => void addExplorerNodeToConversation(abs)}
+              />
+            ) : activeUnifiedSideTab === 'code' ? (
               <CodeViewerPanel
                 files={codeFiles}
                 activeAbsPath={activeCodePath}

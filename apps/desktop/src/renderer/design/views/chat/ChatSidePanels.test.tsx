@@ -134,6 +134,41 @@ describe('UnifiedSessionSidePanel', () => {
     expect(emptyMarkup).toContain('待办清单')
   })
 
+  it('「文件」面板以「文件」渲染 tab，并出现在空状态快捷卡片中', () => {
+    const markup = renderToStaticMarkup(
+      <UnifiedSessionSidePanel
+        tabs={['code', 'files']}
+        activeTab="files"
+        width={560}
+        onWidthChange={vi.fn()}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        onCloseTab={vi.fn()}
+      >
+        <div>files panel content</div>
+      </UnifiedSessionSidePanel>,
+    )
+    expect(markup).toContain('data-tab-kind="files"')
+    expect(markup).toContain('文件')
+
+    // 空状态（无任何 tab）时快捷卡片列出「文件」入口
+    const emptyMarkup = renderToStaticMarkup(
+      <UnifiedSessionSidePanel
+        tabs={[]}
+        activeTab={null}
+        width={560}
+        onWidthChange={vi.fn()}
+        onSelect={vi.fn()}
+        onOpen={vi.fn()}
+        onCloseTab={vi.fn()}
+      >
+        <div>ignored</div>
+      </UnifiedSessionSidePanel>,
+    )
+    expect(emptyMarkup).toContain('快捷打开')
+    expect(emptyMarkup).toContain('文件')
+  })
+
   it('点击加号菜单外部时自动收起菜单', async () => {
     const container = document.createElement('div')
     const outside = document.createElement('button')

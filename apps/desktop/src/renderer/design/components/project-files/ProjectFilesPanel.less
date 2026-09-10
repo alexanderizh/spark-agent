@@ -1,0 +1,100 @@
+/**
+ * 「文件」面板样式。
+ *
+ * fe-* 文件树组件依赖 --cv-* 令牌，原作用域为 .code-viewer-panel（code-viewer/index.less）；
+ * 本面板在统一侧边面板内渲染、位于该作用域之外，故此处把 --cv-* 映射到全局 design token，
+ * 跟随应用明暗主题自动适配（不复用 code-viewer 的固定深色盘）。
+ */
+
+.pf-panel {
+  --cv-bg: var(--panel, #fff);
+  --cv-bg-2: var(--panel-elev, var(--panel, #fff));
+  --cv-bg-3: var(--bg-sunken, #f2f2f2);
+  --cv-border: var(--border-strong, #d7d2c9);
+  --cv-border-soft: var(--border, #f6f3ec);
+  --cv-text: var(--text, #23231f);
+  --cv-text-dim: color-mix(in srgb, var(--text, #23231f) 72%, transparent);
+  --cv-text-faint: color-mix(in srgb, var(--text, #23231f) 55%, transparent);
+  --cv-accent: var(--primary, #3b82f6);
+  --cv-accent-soft: var(--primary-soft, rgba(59, 130, 246, 0.12));
+  --cv-accent-fg: var(--primary-fg, #fff);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--cv-bg);
+  color: var(--cv-text);
+  font-size: var(--font-sm, 12px);
+  overflow: hidden;
+}
+
+.pf-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cv-border-soft);
+  flex: none;
+  min-width: 0;
+}
+
+.pf-header-icon {
+  color: var(--cv-text-dim);
+  flex: none;
+}
+
+.pf-project-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--cv-text);
+  font-size: var(--font-sm, 12px);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--hover, rgba(36, 32, 27, 0.045));
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--cv-accent);
+    outline-offset: 1px;
+  }
+}
+
+.pf-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-explorer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  // fe-panel 自身 height:100%；放在 flex 容器内由父级约束高度，避免窄屏溢出
+  > .fe-panel {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.pf-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--cv-text-dim);
+  font-size: var(--font-sm, 12px);
+  text-align: center;
+}

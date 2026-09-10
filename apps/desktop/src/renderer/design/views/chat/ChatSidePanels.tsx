@@ -25,6 +25,8 @@ export type UnifiedSidePanelKind =
   | 'plan'
   | 'html'
   | 'code'
+  // 项目文件浏览器：常驻文件树，可切换左侧项目列表中的任意项目
+  | 'files'
   // 内置浏览器（多 tab / 元素拾取 / 面板⇄独立窗口切换）
   | 'browser'
   // 已发布+启用的 panel 子应用：kind 编码 appId，随应用目录动态增减
@@ -60,12 +62,13 @@ export function filePathOfPreviewPanelKind(kind: UnifiedSidePanelKind): string |
   return filePath.length > 0 ? filePath : null
 }
 
-// 统一面板快捷项：终端/侧聊/审查/代码/计划 + 内置浏览器。
+// 统一面板快捷项：终端/侧聊/审查/代码/文件/计划 + 内置浏览器。
 const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
   'terminal',
   'side-chat',
   'review',
   'code',
+  'files',
   'plan',
   'browser',
 ]
@@ -119,6 +122,13 @@ const getUnifiedSidePanelMeta = (kind: UnifiedSidePanelKind): UnifiedSidePanelIt
       title: '代码查看器',
       shortcutLabel: '打开代码查看器',
       icon: <Icons.Code size={14} />,
+    }
+  if (kind === 'files')
+    return {
+      label: '文件',
+      title: '项目文件',
+      shortcutLabel: '打开项目文件面板',
+      icon: <Icons.Folder size={14} />,
     }
   if (kind === 'browser')
     return {

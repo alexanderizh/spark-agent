@@ -56,8 +56,9 @@ export interface FileExplorerPanelProps {
   onEditFile?: ((relativePath: string) => void) | undefined
   // 右键菜单「添加到对话」（可选：不传则菜单不显示对应项）
   onAddToChat?: ((relativePath: string) => void) | undefined
-  /** 工具栏搜索按钮：切换到全局搜索面板（与文件树槽位互斥） */
-  onOpenSearch: () => void
+  /** 工具栏搜索按钮：切换到全局搜索面板（与文件树槽位互斥）。
+   * 可选：不传则工具栏不显示搜索按钮（「文件」面板不承载搜索）。 */
+  onOpenSearch?: (() => void) | undefined
 }
 
 export function FileExplorerPanel({
@@ -301,7 +302,7 @@ export function FileExplorerPanel({
         workspaceLabel={baseName(workspaceRootPath ?? '') || '项目'}
         onNewFile={() => menuActions.onCreateFile('')}
         onNewDirectory={() => menuActions.onCreateDirectory('')}
-        onOpenSearch={onOpenSearch}
+        {...(onOpenSearch != null ? { onOpenSearch } : {})}
         onCollapseAll={() => onExpandedChange(new Set())}
         onRefresh={tree.refresh}
       />

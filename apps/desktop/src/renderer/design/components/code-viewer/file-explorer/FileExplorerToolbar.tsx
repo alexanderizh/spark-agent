@@ -10,8 +10,9 @@ export interface FileExplorerToolbarProps {
   workspaceLabel: string
   onNewFile: () => void
   onNewDirectory: () => void
-  /** 切换到全局搜索面板（文件名 + 内容搜索，替代原树内过滤） */
-  onOpenSearch: () => void
+  /** 切换到全局搜索面板（文件名 + 内容搜索，替代原树内过滤）。
+   * 可选：不传则不显示搜索按钮（「文件」面板不承载搜索）。 */
+  onOpenSearch?: (() => void) | undefined
   onCollapseAll: () => void
   onRefresh: () => void
 }
@@ -36,14 +37,16 @@ export function FileExplorerToolbar({
       <button type="button" className="fe-tool-btn" title="新建文件夹" onClick={onNewDirectory}>
         <Icons.FolderPlus size={14} />
       </button>
-      <button
-        type="button"
-        className="fe-tool-btn"
-        title="切换到搜索面板（文件名 / 内容搜索）"
-        onClick={onOpenSearch}
-      >
-        <Icons.Search size={14} />
-      </button>
+      {onOpenSearch != null && (
+        <button
+          type="button"
+          className="fe-tool-btn"
+          title="切换到搜索面板（文件名 / 内容搜索）"
+          onClick={onOpenSearch}
+        >
+          <Icons.Search size={14} />
+        </button>
+      )}
       <button type="button" className="fe-tool-btn" title="折叠全部" onClick={onCollapseAll}>
         <Icons.ChevronRight size={14} className="fe-collapse-all-icon" />
       </button>
