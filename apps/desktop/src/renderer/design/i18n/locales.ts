@@ -255,7 +255,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'chat.summary.reapplyFailed': '重新应用失败',
     'chat.summary.openFailed': '无法打开文件',
     'chat.summary.openFileFailed': '打开文件失败',
-    'chat.summary.done': '本次修改完成',
+    'chat.summary.done': '本次编辑',
     'chat.summary.fileCount': '{{count}} 个文件',
     'chat.summary.generatedHidden': '已隐藏 {{count}} 个生成文件',
     'chat.summary.generatedGroup': '{{count}} 个生成/构建文件',

@@ -384,30 +384,100 @@
 /* === Turn File Summary Card (本次修改完成) === */
 .turn-summary-card {
   overflow: hidden;
+  border: 0;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 50%, var(--bg-sunken));
+  margin-block: var(--pad-sm);
 }
-html[data-theme='light'] .turn-summary-card,
-.app.theme-light .turn-summary-card {
-  border-color: color-mix(in srgb, var(--border-strong) 62%, var(--border));
-  background: color-mix(in srgb, var(--bg-sunken) 32%, var(--panel));
+.turn-summary-card > .turn-summary-header {
+  min-height: calc(var(--row-h) + var(--pad-md));
+  padding: var(--pad-md) var(--pad-md);
+  gap: var(--pad-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+  background: transparent;
+  cursor: pointer;
 }
-html[data-theme='light'] .turn-summary-card > .chat-card-h,
-.app.theme-light .turn-summary-card > .chat-card-h {
-  border-bottom-color: color-mix(in srgb, var(--border-strong) 38%, var(--divider));
-  background: color-mix(in srgb, var(--bg-sunken) 58%, var(--panel));
+.turn-summary-card > .turn-summary-header:hover {
+  background: transparent;
+}
+.turn-summary-header .turn-summary-status {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--success);
+}
+.turn-summary-header .turn-summary-status svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+.turn-summary-title {
+  color: var(--text-strong);
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+.turn-summary-header .turn-summary-file-count,
+.turn-summary-header .turn-summary-generated-badge {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.turn-summary-header .turn-summary-file-count::before {
+  margin-right: 8px;
+  color: var(--text-faint);
+  content: '·';
+}
+.turn-summary-total-stats.diff-stats {
+  margin-left: 0;
+  gap: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.turn-summary-total-stats.diff-stats .add,
+.turn-summary-total-stats.diff-stats .del {
+  min-width: 0;
+}
+.turn-summary-history-action {
+  height: 24px;
+  padding-inline: 7px;
+  border-radius: var(--r-sm);
+  font-size: 10.5px;
+  gap: 4px;
+}
+.turn-summary-toggle.btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+}
+.turn-summary-card > .chat-card-body {
+  padding: var(--pad-sm) var(--pad-md) var(--pad-md);
 }
 .turn-summary-files {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--pad-xs) / 3);
 }
 .turn-summary-more {
   display: flex;
-  justify-content: center;
-  padding-top: 8px;
+  justify-content: flex-start;
+  padding: var(--pad-xs) 0 0 calc(20px + var(--pad-sm));
+}
+.turn-summary-more .btn {
+  height: 24px;
+  padding-inline: 6px;
+  font-size: 10.5px;
 }
 .turn-summary-generated-badge {
   color: var(--text-muted);
-  border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
 }
 .turn-summary-generated-groups {
   display: flex;
@@ -451,9 +521,10 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
 .turn-summary-file-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  border-radius: var(--r-sm);
+  gap: var(--pad-xs);
+  min-height: var(--row-h);
+  padding: calc(var(--pad-md) / 2) var(--pad-sm);
+  border-radius: 5px;
   font-size: 11.5px;
   transition: background 0.12s ease;
 }
@@ -464,9 +535,9 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 42px;
-  width: 42px;
-  height: 22px;
+  min-width: 20px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -477,13 +548,17 @@ html[data-theme='light'] .turn-summary-card > .chat-card-h,
   line-height: 1;
 }
 .turn-summary-file-row .file-type-badge img {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 .turn-summary-file-row .file-type-badge .document-file-icon {
-  min-width: 28px;
-  height: 20px;
+  min-width: 20px;
+  height: 18px;
+  padding-inline: 2px;
+  border: 0;
+  background: transparent;
+  font-size: 7.5px;
 }
 .document-file-icon {
   display: inline-flex;

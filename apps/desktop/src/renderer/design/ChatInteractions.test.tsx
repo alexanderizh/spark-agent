@@ -100,6 +100,21 @@ describe('TurnFileSummaryCard', () => {
     expect(container.querySelector('.file-stats')).toBeNull()
   })
 
+  it('omits zero values from otherwise meaningful line statistics', () => {
+    act(() => {
+      root.render(
+        <TurnFileSummaryCard
+          files={[{ path: '/tmp/new-file.ts', changeType: 'create', adds: 12, dels: 0 }]}
+          totalAdds={12}
+          totalDels={0}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.diff-stats')?.textContent).toBe('+12')
+    expect(container.querySelector('.file-stats')?.textContent).toBe('+12')
+  })
+
   it('shortens absolute paths for display while retaining the full path as the title', () => {
     const fullPath = '/Users/test/project/packages/app/src/index.ts'
     act(() => {

@@ -9,11 +9,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { Icons } from './Icons'
 import { useToast } from './components/Toast'
 import { useI18n } from './i18n'
-import {
-  FileTypeIcon,
-  getFileTypeBadge,
-  type FileTypeBadge,
-} from './components/FileDisplay'
+import { FileTypeIcon, getFileTypeBadge, type FileTypeBadge } from './components/FileDisplay'
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
 import { FilePathContextMenu } from './components/FilePathContextMenu'
 import type { FileOpenHandler, FileOpenMode } from './components/fileOpenRouting'
@@ -465,39 +461,34 @@ export function TurnFileSummaryCard({
   return (
     <div className="chat-card turn-summary-card">
       <div
-        className="chat-card-h success"
+        className="chat-card-h success turn-summary-header"
         onClick={() => setExpanded(!expanded)}
-        style={{ cursor: 'pointer' }}
       >
-        <span className="ico">
+        <span className="ico turn-summary-status">
           <Icons.CheckCircle />
         </span>
-        <span>{t('chat.summary.done')}</span>
-        {hasSummaryStats && (
-          <span className="diff-stats">
-            <span className="add">+{totalAdds}</span>
-            <span className="del">−{totalDels}</span>
-          </span>
-        )}
-        <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>
+        <span className="turn-summary-title">{t('chat.summary.done')}</span>
+        <span className="badge turn-summary-file-count">
           {t('chat.summary.fileCount', { count: fileCount })}
         </span>
         {generatedGroups.length > 0 && (
-          <span
-            className="badge turn-summary-generated-badge"
-            style={{ fontSize: 10, marginLeft: 6 }}
-          >
+          <span className="badge turn-summary-generated-badge">
             {t('chat.summary.generatedHidden', {
               count: generatedGroups.reduce((sum, group) => sum + group.fileCount, 0),
             })}
           </span>
         )}
-        <span className="spacer" />
+        <span className="spacer" style={{flexGrow: 1}} />
+        {hasSummaryStats && (
+          <span className="diff-stats turn-summary-total-stats">
+            {totalAdds !== 0 && <span className="add">+{totalAdds}</span>}
+            {totalDels !== 0 && <span className="del">−{totalDels}</span>}
+          </span>
+        )}
         {onUndo != null && undoState !== 'undone' && undoState !== 'reapplying' && (
           <button
             type="button"
-            className="btn ghost sm"
-            style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
+            className="btn ghost sm turn-summary-history-action"
             onClick={handleUndo}
             disabled={undoState === 'undoing'}
             title={t('chat.summary.undoTitle')}
@@ -509,8 +500,7 @@ export function TurnFileSummaryCard({
         {onReapply != null && (undoState === 'undone' || undoState === 'reapplying') && (
           <button
             type="button"
-            className="btn ghost sm"
-            style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
+            className="btn ghost sm turn-summary-history-action"
             onClick={handleReapply}
             disabled={undoState === 'reapplying'}
             title={t('chat.summary.reapplyTitle')}
@@ -519,7 +509,15 @@ export function TurnFileSummaryCard({
             {undoState === 'reapplying' ? t('chat.summary.reapplying') : t('chat.summary.reapply')}
           </button>
         )}
-        <button className="btn ghost sm" style={{ height: 20, padding: '0 6px' }}>
+        <button
+          type="button"
+          className="btn ghost sm turn-summary-toggle"
+          aria-expanded={expanded}
+          onClick={(event) => {
+            event.stopPropagation()
+            setExpanded((value) => !value)
+          }}
+        >
           {expanded ? <Icons.ChevronDown size={12} /> : <Icons.ChevronRight size={12} />}
         </button>
       </div>
@@ -530,7 +528,7 @@ export function TurnFileSummaryCard({
               const canOpen = file.changeType !== 'delete'
               const fileType = getTurnSummaryFileType(file.path)
               const displayPath = getTurnSummaryDisplayPath(file.path, workspaceRootPath)
-              const hasFileStats = file.adds !== 0 || file.dels !== 0 || file.diff != null
+              const hasFileStats = file.adds !== 0 || file.dels !== 0
               return (
                 <div
                   key={i}
@@ -540,10 +538,7 @@ export function TurnFileSummaryCard({
                     canOpen && onFilePreview
                       ? (event) => {
                           // 点行内「打开方式」等按钮时不触发行级打开，避免重复触发
-                          if (
-                            event.target instanceof Element &&
-                            event.target.closest('button, a')
-                          )
+                          if (event.target instanceof Element && event.target.closest('button, a'))
                             return
                           onFilePreview(file.path, 'text')
                         }
@@ -563,8 +558,8 @@ export function TurnFileSummaryCard({
                   </code>
                   {hasFileStats && (
                     <span className="file-stats">
-                      <span className="add">+{file.adds}</span>
-                      <span className="del">−{file.dels}</span>
+                      {file.adds !== 0 && <span className="add">+{file.adds}</span>}
+                      {file.dels !== 0 && <span className="del">−{file.dels}</span>}
                     </span>
                   )}
                   <span className="file-actions">

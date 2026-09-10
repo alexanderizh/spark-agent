@@ -3,20 +3,20 @@
   container-type: inline-size;
 
   > .inspector {
-    padding: 0 12px 24px;
-    gap: 12px;
+    padding: var(--pad-md);
+    gap: var(--pad-md);
     border-left: 0;
     background: var(--bg-soft);
   }
 
   .session-panel-heading {
     display: grid;
-    gap: 5px;
-    padding: 20px 4px 8px;
+    gap: calc(var(--pad-sm) / 2);
+    padding: calc(var(--pad-sm) / 2) calc(var(--pad-sm) / 2) 0;
 
     strong {
       color: var(--text);
-      font-size: 16px;
+      font-size: var(--font-lg);
       font-weight: 650;
     }
     span {
@@ -29,16 +29,16 @@
   .inspector-section {
     flex-shrink: 0;
     min-width: 0;
-    padding: 14px;
+    padding: var(--pad-md);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: var(--bg);
 
     h4 {
       height: auto;
       min-height: 28px;
-      gap: 8px;
-      margin: 0 0 12px;
+      gap: var(--pad-sm);
+      margin: 0 0 var(--pad-md);
       color: var(--text);
       font-size: 12px;
       font-weight: 650;
@@ -50,7 +50,7 @@
   .session-panel-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--pad-sm);
     width: 100%;
     min-height: 28px;
     padding: 0;
@@ -71,64 +71,64 @@
   }
 
   .runtime-prompt-block {
-    gap: 10px;
-    padding: 14px 0 0;
+    gap: var(--pad-sm);
+    padding: var(--pad-md) 0 0;
     + .runtime-prompt-block {
-      margin-top: 18px;
-      border-top: 1px solid var(--border);
+      margin-top: var(--pad-md);
+      border-top: 1px solid var(--divider);
     }
   }
   .runtime-prompt-title {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--pad-sm);
     color: var(--text);
     font-size: 12px;
   }
   .session-panel-count {
-    border-radius: 5px;
-    background: var(--bg-soft);
-    padding: 2px 6px;
+    padding: 0;
     color: var(--text-muted);
     font-size: 10px;
     font-weight: 500;
     white-space: nowrap;
   }
   .session-panel-caption {
-    margin-top: -5px;
+    margin-top: calc(var(--pad-sm) / -2);
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.5;
   }
   .runtime-env-hint {
-    padding: 10px 12px;
+    padding: 0;
     margin-bottom: 0;
-    border-radius: 8px;
-    background: var(--bg-soft);
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.7;
   }
   .runtime-env-empty {
-    padding: 14px 12px;
-    border: 1px dashed var(--border);
-    border-radius: 8px;
+    padding: calc(var(--pad-sm) / 2) 0;
+    border: 0;
     line-height: 1.7;
   }
   .runtime-env-row {
     position: relative;
     grid-template-columns: minmax(0, 1fr) 28px;
-    gap: 10px 8px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    gap: var(--pad-sm);
+    padding: var(--pad-md);
+    border: 0;
+    border-radius: var(--r-sm);
     background: var(--bg-soft);
+    transition: background-color 0.15s ease;
+
+    &:focus-within {
+      background: var(--bg-hover);
+    }
   }
   .session-env-field {
     display: grid;
     grid-column: 1 / -1;
-    gap: 5px;
+    gap: calc(var(--pad-sm) / 2);
     min-width: 0;
     > span {
       color: var(--text-muted);
@@ -142,10 +142,10 @@
       box-sizing: border-box;
       width: 100%;
       min-width: 0;
-      height: 32px;
-      padding: 6px 9px;
+      height: var(--row-h);
+      padding: calc(var(--pad-sm) / 2) var(--pad-sm);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       background: var(--bg);
       color: var(--text);
       font-size: 12px;
@@ -160,50 +160,62 @@
     grid-row: 1;
     align-self: end;
     width: 28px;
-    height: 32px;
+    height: var(--row-h);
     padding: 0;
   }
   .runtime-env-actions {
-    gap: 8px;
-    padding-top: 2px;
+    gap: var(--pad-md);
+    padding-top: 0;
   }
   .runtime-env-transfer-actions {
     flex: 0 1 auto;
-    gap: 4px;
+    gap: calc(var(--pad-sm) / 2);
   }
   .runtime-env-actions :is(.btn, .icon-btn) {
-    min-height: 30px;
+    min-height: var(--row-h);
+    border-radius: var(--r-sm);
   }
   .inspector-textarea {
     box-sizing: border-box;
     width: 100%;
-    min-height: 112px;
+    min-height: 88px;
     max-height: 360px;
-    padding: 10px 12px;
+    padding: var(--pad-sm);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-soft);
+    border-radius: var(--r-sm);
+    background: var(--bg);
     font-size: 12px;
     line-height: 1.7;
     resize: vertical;
   }
   .kv-row {
-    gap: 12px;
-    padding-top: 5px;
-    padding-bottom: 5px;
+    gap: var(--pad-md);
+    padding-block: calc(var(--pad-sm) / 2);
   }
   .kv-row .v {
     min-width: 0;
     overflow-wrap: anywhere;
   }
   .token-usage-stats {
-    gap: 8px;
+    gap: var(--pad-md);
   }
-  .token-stat {
+  .inspector-section .token-stat,
+  .inspector-section .perf-tile,
+  .inspector-section .prompt-runtime-metrics {
     min-width: 0;
-    padding: 10px 6px;
-    border-radius: 8px;
-    background: var(--bg-soft);
+    padding: calc(var(--pad-sm) / 2) 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .perf-tiles,
+  .chat-inspector-perf {
+    gap: var(--pad-md);
+  }
+  .inspector-section .token-stat + .token-stat,
+  .inspector-section .perf-tile + .perf-tile {
+    border-left: 1px solid var(--divider);
+    padding-left: var(--pad-md);
   }
   .token-stat-value {
     font-variant-numeric: tabular-nums;
@@ -214,7 +226,7 @@
   }
 }
 
-@container (min-width: 480px) {
+@container (min-width: 400px) {
   .session-panel .runtime-env-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
   }
