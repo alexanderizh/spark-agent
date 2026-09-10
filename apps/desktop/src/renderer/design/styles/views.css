@@ -807,7 +807,7 @@ body.sidebar-resizing {
   font-size: var(--font-base);
   font-weight: 600;
   color: var(--text-strong);
-  max-width: 80%;
+  max-width: 40%;
   min-width: 0;
 }
 .chat-tabbar .chat-project-label {
@@ -1162,6 +1162,27 @@ body.sidebar-resizing {
 }
 
 .msg-hover-copy:hover {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.msg-hover-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  transition:
+    color 0.15s,
+    background 0.15s;
+  line-height: 0;
+}
+
+.msg-hover-edit:hover {
   color: var(--text-muted);
   background: var(--bg-subtle);
 }

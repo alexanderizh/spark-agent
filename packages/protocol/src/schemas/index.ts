@@ -1035,6 +1035,10 @@ export const IpcSchemaRegistry = {
   'session:reject-plan': SessionRejectPlanRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
   'session:list-checkpoints': SessionListCheckpointsRequestSchema,
+  'session:rewind-last-turn': z.object({
+    sessionId: SessionIdSchema,
+    turnId: TurnIdSchema,
+  }),
   'session:list': SessionListRequestSchema,
   'session:search': SessionSearchRequestSchema,
   'session:update': SessionUpdateRequestSchema,

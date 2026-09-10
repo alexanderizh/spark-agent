@@ -121,6 +121,20 @@ export function scopeCodexNativeThreadBindingKey(bindingKey: string, generation:
   return generation > 0 ? `${bindingKey}:generation:${generation}` : bindingKey
 }
 
+/**
+ * 把会话历史修订代数纳入 SDK 原生 session id 的哈希 scope，同时保持 UUID 输出形状。
+ * generation=0 时完全沿用旧 identity，避免普通会话升级后无故断开连续性。
+ */
+export function scopeRuntimeSessionIdentity(
+  identity: string | undefined,
+  generation: number,
+): string | undefined {
+  if (generation <= 0) return identity
+  return identity == null
+    ? `conversation-generation:${generation}`
+    : `${identity}:conversation-generation:${generation}`
+}
+
 export function readCodexNativeThreadGeneration(metadataJson: string | null | undefined): number {
   if (metadataJson == null || metadataJson.length === 0) return 0
   try {

@@ -6,7 +6,12 @@
  * 执行器内存清理、活跃会话枚举）经窄接口 SessionCheckpointHost 注入。
  */
 import crypto from 'node:crypto'
-import { EventRepository, SessionRepository, WorkspaceRepository } from '@spark/storage'
+import {
+  EventRepository,
+  SessionRepository,
+  SessionSummaryRepository,
+  WorkspaceRepository,
+} from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
@@ -14,6 +19,8 @@ import type { CheckpointRestoreResult, CheckpointSnapshot } from '../../core/ind
 import { CheckpointGitService } from '../checkpoint-git.service.js'
 import { ensureSessionWorkspaceRootPathSync } from '../session-workspace-root.js'
 import { listSessionCheckpointsFromEvents } from './session-pure-utils.js'
+import { createCodexNativeThreadClearPatch } from './codex-native-thread-binding.js'
+import { createSparkLedgerClearPatch } from './spark-ledger-binding.js'
 
 const log = createLogger('session.checkpoint')
 
@@ -33,6 +40,8 @@ export interface SessionCheckpointHost {
   clearSessionMemoryForEvents(sessionId: string): boolean
   /** 当前所有活跃 turn 的会话 id（还原安全拦截用）。 */
   listActiveSessionIds(): string[]
+  /** 清除被撤回轮次的进程内 usage 累计，避免替代轮次继承旧基线。 */
+  clearUsageLedgerTurnState(sessionId: string, turnId?: string): void
 }
 
 export class SessionCheckpointManager {
@@ -182,6 +191,116 @@ export class SessionCheckpointManager {
 
     const count = eventRepo.deleteEventsByIds(eventIds)
     return { deleted: count }
+  }
+
+  /**
+   * 撤回最新一轮可见用户对话，为“编辑后重新发送”建立干净的上下文边界。
+   *
+   * 这里故意不修改工作区文件：与 Claude/Codex 的默认消息编辑语义一致。只允许最新、
+   * 非内部隐藏且当前不再运行的 turn，避免截断队列、Goal 内部续轮或活跃执行器。
+   */
+  async rewindLastTurnForEdit(
+    sessionId: string,
+    turnId: string,
+  ): Promise<{
+    retractedEventIds: string[]
+    turnCount: number
+    logicalMessageCount: number
+  }> {
+    const sessionRepo = new SessionRepository(this.db)
+    const session = sessionRepo.get(sessionId)
+    if (session == null) throw new Error('会话不存在或已删除')
+    if (session.status === 'running' || this.host.listActiveSessionIds().includes(sessionId)) {
+      throw new Error('Agent 正在执行，请结束本轮后再编辑消息')
+    }
+
+    const pending = this.db.raw
+      .prepare(
+        `SELECT 1 FROM turn_requests
+         WHERE session_id = ? AND status IN ('accepted', 'running')
+         LIMIT 1`,
+      )
+      .get(sessionId)
+    if (pending != null) throw new Error('会话仍有待处理消息，请先处理或清空队列')
+
+    const eventRepo = new EventRepository(this.db)
+    const rows = eventRepo.queryAllBySession(sessionId)
+    const latestUserRow = [...rows].reverse().find((row) => row.event_type === 'user_message')
+    if (latestUserRow?.turn_id == null || latestUserRow.turn_id !== turnId) {
+      throw new Error('只能编辑当前会话最后一轮用户消息')
+    }
+    const latestUserEvent = JSON.parse(latestUserRow.event_json) as AgentEvent
+    if (
+      latestUserEvent.type !== 'user_message' ||
+      latestUserEvent.userMessageVisibility === 'hidden'
+    ) {
+      throw new Error('内部续轮消息不能编辑')
+    }
+
+    const turnRows = rows.filter((row) => row.turn_id === turnId)
+    const turnSeqs = turnRows
+      .map((row) => row.seq)
+      .filter((seq): seq is number => typeof seq === 'number')
+    if (turnSeqs.length === 0) throw new Error('找不到要编辑的会话轮次')
+    const firstTurnSeq = Math.min(...turnSeqs)
+    const laterTurn = rows.find(
+      (row) =>
+        row.seq != null && row.seq > firstTurnSeq && row.turn_id != null && row.turn_id !== turnId,
+    )
+    if (laterTurn != null) throw new Error('只能编辑当前会话最后一轮用户消息')
+
+    const retractedEventIds = turnRows.map((row) => row.id)
+    if (retractedEventIds.length === 0) throw new Error('找不到要编辑的会话轮次')
+
+    // 即便会话已经 idle，也清掉 SDK resume、队列闸门、团队运行态和 seq 缓存；下一次
+    // submit-turn 必须从删减后的事件历史重新构建，而不能沿用旧轮的进程内上下文。
+    this.host.clearSessionMemoryForEvents(sessionId)
+    const remove = this.db.raw.transaction(() => {
+      // 原生 Claude/Codex/Spark 会话各自持有历史；仅删 agent_events 会让下一轮继续
+      // resume 到含旧 turn 的上游上下文。轮换 generation 并清空 ledger binding，强制
+      // 所有 adapter 从删减后的 Spark 历史创建新原生会话。
+      sessionRepo.patchMetadata(
+        sessionId,
+        createCodexNativeThreadClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      sessionRepo.patchMetadata(
+        sessionId,
+        createSparkLedgerClearPatch(sessionRepo.getMetadata(sessionId)),
+      )
+      // 摘要是事件历史的派生缓存，可能包含刚撤回的文本；全部作废后由后续 turn
+      // 按保留下来的历史重新生成，避免 fresh runtime 仍注入旧轮内容。
+      new SessionSummaryRepository(this.db).deleteBySession(sessionId)
+      eventRepo.deleteTurn(sessionId, turnId)
+      this.db.raw
+        .prepare('DELETE FROM turn_requests WHERE id = ? AND session_id = ?')
+        .run(turnId, sessionId)
+      this.db.raw
+        .prepare('DELETE FROM turn_perf_metrics WHERE session_id = ? AND turn_id = ?')
+        .run(sessionId, turnId)
+      this.db.raw
+        .prepare(
+          `UPDATE sessions
+           SET status = 'idle',
+               metadata_json = json_remove(metadata_json, '$.lastRunOutcome'),
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(new Date().toISOString(), sessionId)
+    })
+    remove()
+    this.host.clearUsageLedgerTurnState(sessionId, turnId)
+
+    const updated = sessionRepo.findByIdOrFail(sessionId)
+    log.info('rewound latest turn for user edit', {
+      sessionId,
+      turnId,
+      retractedEvents: retractedEventIds.length,
+    })
+    return {
+      retractedEventIds,
+      turnCount: updated.turn_count,
+      logicalMessageCount: updated.logical_message_count,
+    }
   }
 
   /**

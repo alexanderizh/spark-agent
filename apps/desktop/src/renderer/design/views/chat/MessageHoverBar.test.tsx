@@ -55,4 +55,16 @@ describe('MessageHoverBar', () => {
     act(() => buttons[1]?.click())
     expect(onFork).toHaveBeenCalledOnce()
   })
+
+  it('shows and invokes the edit action when the caller marks a message editable', () => {
+    const onEdit = vi.fn()
+    act(() => {
+      root.render(<MessageHoverBar textContent="内容" position="right" onEdit={onEdit} />)
+    })
+
+    const button = container.querySelector<HTMLButtonElement>('.msg-hover-edit')
+    expect(button?.getAttribute('aria-label')).toBe('编辑消息')
+    act(() => button?.click())
+    expect(onEdit).toHaveBeenCalledOnce()
+  })
 })

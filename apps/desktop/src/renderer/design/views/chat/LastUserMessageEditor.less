@@ -1,0 +1,74 @@
+.last-user-message-editor {
+  width: min(680px, calc(100vw - 96px));
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--panel-elev);
+}
+
+html[data-theme='light'] .last-user-message-editor {
+  background: color-mix(in srgb, var(--panel-elev) 45%, var(--bg-sunken) 55%);
+}
+
+.last-user-message-editor-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  max-height: 320px;
+  resize: vertical;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.6;
+}
+
+.last-user-message-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+
+  button {
+    min-width: 64px;
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--bg-soft);
+    color: var(--text);
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      opacity 120ms ease;
+  }
+
+  button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--bg-soft) 86%, var(--text) 14%);
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  button.is-primary {
+    background: var(--text);
+    color: var(--bg-soft);
+  }
+
+  button.is-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 86%, var(--bg-soft) 14%);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+  }
+}
+
+@media (max-width: 640px) {
+  .last-user-message-editor {
+    width: calc(100vw - 40px);
+  }
+}

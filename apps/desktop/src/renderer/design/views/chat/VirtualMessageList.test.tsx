@@ -134,4 +134,26 @@ describe('VirtualMessageList', () => {
 
     expect(container.childElementCount).toBe(0)
   })
+
+  it('keeps content rendered after the last message in the same ordered row', () => {
+    const items = [{ id: 'assistant' }, { id: 'edited-user' }]
+
+    act(() => {
+      root.render(
+        <VirtualMessageList
+          items={items}
+          scrollElementRef={scrollElementRef}
+          getItemKey={(item) => item.id}
+          renderItem={(item) => <div>{item.id}</div>}
+          renderAfterItem={(_, index) =>
+            index === items.length - 1 ? <div>agent-running-placeholder</div> : null
+          }
+        />,
+      )
+    })
+
+    const rows = container.querySelectorAll<HTMLElement>('[data-virtual-message-index]')
+    expect(rows).toHaveLength(2)
+    expect(rows[1]?.textContent).toBe('edited-useragent-running-placeholder')
+  })
 })

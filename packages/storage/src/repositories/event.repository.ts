@@ -740,6 +740,14 @@ export class EventRepository extends BaseRepository {
     return result.changes
   }
 
+  /** Delete a complete turn, including tool, usage, status, and stream events. */
+  deleteTurn(sessionId: string, turnId: string): number {
+    const result = this.raw
+      .prepare('DELETE FROM agent_events WHERE session_id = ? AND turn_id = ?')
+      .run(sessionId, turnId)
+    return result.changes
+  }
+
   /**
    * 按事件内容搜索，返回匹配的 session ID 列表和内容片段。
    *

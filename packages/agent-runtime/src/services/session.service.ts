@@ -161,6 +161,7 @@ import {
   buildPersistentCodexAppServerConfig,
   createCodexNativeThreadMetadataPatch,
   readCodexNativeThreadGeneration,
+  scopeRuntimeSessionIdentity,
   scopeCodexNativeThreadBindingKey,
   shouldUsePersistentCodexAppServer,
 } from './session/codex-native-thread-binding.js'
@@ -2485,19 +2486,21 @@ export class SessionService {
         : effectiveRuntimeProviderProfileId
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
+    const nativeThreadGeneration = readCodexNativeThreadGeneration(session.metadata_json)
     const stableSdkSessionId = isMentionTurn
       ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
           resumeProviderProfileId,
           model,
           agentAdapter,
-          `mention:${agent.id}`,
+          scopeRuntimeSessionIdentity(`mention:${agent.id}`, nativeThreadGeneration),
         )
       : this.resumeGate.makeRuntimeSessionId(
           sessionId,
           resumeProviderProfileId,
           model,
           agentAdapter,
+          scopeRuntimeSessionIdentity(undefined, nativeThreadGeneration),
         )
     const codexNativeThreadBindingKey = scopeCodexNativeThreadBindingKey(
       this.resumeGate.makeRuntimeSessionId(
@@ -2507,7 +2510,7 @@ export class SessionService {
         agentAdapter,
         buildCodexNativeThreadIdentityScope({ agentId: agent.id, isMentionTurn }),
       ),
-      readCodexNativeThreadGeneration(session.metadata_json),
+      nativeThreadGeneration,
     )
     const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
@@ -8138,7 +8141,10 @@ export class SessionService {
               : providerProfileId,
             model,
             memberAdapter,
-            buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
+            scopeRuntimeSessionIdentity(
+              buildMemberContinuityKey(buildTeamContinuityScope(discussionId), member.id),
+              readCodexNativeThreadGeneration(session.metadata_json),
+            ),
           )
         : null
     const memberSdkSessionId =
@@ -10691,6 +10697,10 @@ export class SessionService {
 
   async deleteMessage(sessionId: string, eventIds: string[]): Promise<{ deleted: number }> {
     return this.getCheckpointManager().deleteMessage(sessionId, eventIds)
+  }
+
+  async rewindLastTurnForEdit(sessionId: string, turnId: string) {
+    return this.getCheckpointManager().rewindLastTurnForEdit(sessionId, turnId)
   }
 
   listCheckpoints(sessionId: string): CheckpointSnapshot[] {

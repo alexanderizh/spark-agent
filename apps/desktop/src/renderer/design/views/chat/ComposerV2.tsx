@@ -122,6 +122,7 @@ import type {
   ComposerMenuOption,
   ComposerOptionTone,
   ComposerPrefillPayload,
+  ComposerRevisionPayload,
   ComposerPrefs,
   ComposerDraftSnapshot,
   ComposerSessionReference,
@@ -134,6 +135,7 @@ import type {
   TextEditMenuState,
 } from './ChatComposerTypes'
 import { COMPOSER_ATTACHMENT_LIMIT } from './ChatComposerTypes'
+import { useLastUserMessageRevision } from './useLastUserMessageRevision'
 import { useComposerCodeReferences } from './composer-code-references'
 import { useComposerBrowserReferences } from './composer-browser-references'
 import type { BrowserElementReference } from '../../components/browser/elementPickerScript'
@@ -744,6 +746,9 @@ export function ComposerV2({
   focusTrigger = 0,
   resendRequest = null,
   onResendConsumed,
+  revisionRequest = null,
+  onRevisionConsumed,
+  onRevisionApplied,
   dispatching,
   onDispatchStateChange,
   optimisticUserSendCallbacks,
@@ -844,6 +849,14 @@ export function ComposerV2({
   // 应用到切进来的会话草稿（文本+图片），表现为"重发内容像狗皮膏药跨会话残留"。
   // 父组件在此回调里 setResendRequest(null) 即可彻底切断残留链。
   onResendConsumed?: () => void
+  /** 行内编辑提交：先撤回旧轮，再经正常发送管线提交替代轮。 */
+  revisionRequest?: { requestId: number; payload: ComposerRevisionPayload } | null
+  onRevisionConsumed?: () => void
+  onRevisionApplied?: (result: {
+    sessionId: string
+    turnCount: number
+    logicalMessageCount: number
+  }) => void
   // 主会话由 ChatView 持有该状态，确保 hero/会话布局切换导致 Composer 重挂载时
   // 发送按钮仍保持 loading；侧边会话不传时继续使用 Composer 本地状态。
   dispatching?: boolean
@@ -1889,9 +1902,20 @@ export function ComposerV2({
         sessionReferences?: ComposerSessionReference[]
         preserveDraft?: boolean
         resumePausedQueue?: boolean
+        mentionAgentId?: string
+        skipCommandHandling?: boolean
       } = {},
     ) => {
       const turnSessionReferences = options.sessionReferences ?? sessionReferences
+      const turnMentionAgentId =
+        options.mentionAgentId ??
+        replySnapshot?.agentId ??
+        (teamConfig.enabled &&
+        pendingMention != null &&
+        text.includes(`@${pendingMention.name}`) &&
+        pendingMention.agentId !== effectiveHostAgentId
+          ? pendingMention.agentId
+          : undefined)
       const clearSentDraft = (buckets: Array<string | null | undefined>): void => {
         if (!options.preserveDraft) clearDraftBuckets(buckets)
       }
@@ -1909,7 +1933,7 @@ export function ComposerV2({
         return toSessionAttachments(prepared.attachments)
       }
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
-      if (text.startsWith('/')) {
+      if (text.startsWith('/') && options.skipCommandHandling !== true) {
         if (isLocalCopySlashCommand(text)) {
           const markdown = getLastAssistantMessageMarkdown(messages)
           if (markdown == null) {
@@ -1994,14 +2018,7 @@ export function ComposerV2({
                 content: text,
                 attachments: turnAttachments,
                 sessionReferences: turnSessionReferences,
-                ...(replySnapshot?.agentId != null
-                  ? { mentionAgentId: replySnapshot.agentId }
-                  : teamConfig.enabled &&
-                      pendingMention != null &&
-                      text.includes(`@${pendingMention.name}`) &&
-                      pendingMention.agentId !== effectiveHostAgentId
-                    ? { mentionAgentId: pendingMention.agentId }
-                    : {}),
+                ...(turnMentionAgentId != null ? { mentionAgentId: turnMentionAgentId } : {}),
               },
               optimisticUserSendCallbacks,
             )
@@ -2027,13 +2044,7 @@ export function ComposerV2({
               ...(teamConfig.enabled && effectiveHostAgentId != null
                 ? { teamConfig, agentId: effectiveHostAgentId }
                 : {}),
-              ...(teamConfig.enabled &&
-              pendingMention != null &&
-              text.includes(`@${pendingMention.name}`) &&
-              pendingMention.agentId !== effectiveHostAgentId
-                ? { mentionAgentId: pendingMention.agentId }
-                : {}),
-              ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
+              ...(turnMentionAgentId != null ? { mentionAgentId: turnMentionAgentId } : {}),
               ...(options.resumePausedQueue === true ? { resumePausedQueue: true } : {}),
             })
             settleOptimisticUserSend(optimisticSend, sendRes)
@@ -2109,14 +2120,7 @@ export function ComposerV2({
             content: text,
             attachments: turnAttachments,
             sessionReferences: turnSessionReferences,
-            ...(replySnapshot?.agentId != null
-              ? { mentionAgentId: replySnapshot.agentId }
-              : teamConfig.enabled &&
-                  pendingMention != null &&
-                  text.includes(`@${pendingMention.name}`) &&
-                  pendingMention.agentId !== effectiveHostAgentId
-                ? { mentionAgentId: pendingMention.agentId }
-                : {}),
+            ...(turnMentionAgentId != null ? { mentionAgentId: turnMentionAgentId } : {}),
           },
           optimisticUserSendCallbacks,
         )
@@ -2142,13 +2146,7 @@ export function ComposerV2({
           ...(teamConfig.enabled && effectiveHostAgentId != null
             ? { teamConfig, agentId: effectiveHostAgentId }
             : {}),
-          ...(teamConfig.enabled &&
-          pendingMention != null &&
-          text.includes(`@${pendingMention.name}`) &&
-          pendingMention.agentId !== effectiveHostAgentId
-            ? { mentionAgentId: pendingMention.agentId }
-            : {}),
-          ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
+          ...(turnMentionAgentId != null ? { mentionAgentId: turnMentionAgentId } : {}),
           ...(options.resumePausedQueue === true ? { resumePausedQueue: true } : {}),
         })
         settleOptimisticUserSend(optimisticSend, res)
@@ -3869,6 +3867,25 @@ export function ComposerV2({
     // 团队启动栏位于 Composer 外部，这里把 Host 选择同步回新会话草稿运行时。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewSessionComposer, teamConfig.enabled, teamConfig.hostAgentId, teamConfig.teamId])
+
+  useLastUserMessageRevision({
+    request: revisionRequest,
+    sessionId: session?.id ?? null,
+    providerAvailable: selectedProvider != null,
+    submitGate: submitGateRef.current,
+    setSending,
+    dispatchMessage,
+    ...(onRevisionConsumed != null ? { onConsumed: onRevisionConsumed } : {}),
+    ...(onRevisionApplied != null ? { onApplied: onRevisionApplied } : {}),
+    restoreDraft: (draft) => {
+      setValue(draft.value)
+      setAttachments(draft.attachments)
+      setSessionReferences(draft.sessionReferences)
+      setCodeReferences([])
+      textareaRef.current?.focus()
+    },
+    toast,
+  })
 
   /**
    * React to external composer prefill requests:

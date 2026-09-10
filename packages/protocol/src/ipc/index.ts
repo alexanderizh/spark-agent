@@ -636,6 +636,22 @@ export interface SessionDeleteMessageResponse {
   deleted: number
 }
 
+/**
+ * Rewind the latest persisted, user-visible turn before submitting an edited replacement.
+ * The replacement itself still goes through `session:submit-turn` so every adapter shares the
+ * normal attachment, runtime-selection, queue, and optimistic-message path.
+ */
+export interface SessionRewindLastTurnRequest {
+  sessionId: SessionId
+  turnId: TurnId
+}
+
+export interface SessionRewindLastTurnResponse {
+  retractedEventIds: string[]
+  turnCount: number
+  logicalMessageCount: number
+}
+
 export type UserQuestionKind = 'single_choice' | 'multi_choice' | 'text'
 
 export interface UserQuestionOption {
@@ -6526,6 +6542,7 @@ export interface IpcChannelMap
     SessionSetCheckpointConfigResponse,
   ]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
+  'session:rewind-last-turn': [SessionRewindLastTurnRequest, SessionRewindLastTurnResponse]
   'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
   'session:list-pending-questions': [
     SessionListPendingQuestionsRequest,

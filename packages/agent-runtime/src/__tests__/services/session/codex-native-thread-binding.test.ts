@@ -6,6 +6,7 @@ import {
   readCodexNativeThreadBindings,
   readCodexNativeThreadGeneration,
   scopeCodexNativeThreadBindingKey,
+  scopeRuntimeSessionIdentity,
   shouldUsePersistentCodexAppServer,
 } from '../../../services/session/codex-native-thread-binding.js'
 import type { CodexNativeThreadBinding } from '../../../sdk/types.js'
@@ -131,6 +132,11 @@ describe('Codex native thread binding metadata', () => {
     expect(readCodexNativeThreadGeneration(clearedJson)).toBe(1)
     expect(scopeCodexNativeThreadBindingKey('host-key', 0)).toBe('host-key')
     expect(scopeCodexNativeThreadBindingKey('host-key', 1)).not.toBe('host-key')
+    expect(scopeRuntimeSessionIdentity(undefined, 0)).toBeUndefined()
+    expect(scopeRuntimeSessionIdentity(undefined, 1)).toBe('conversation-generation:1')
+    expect(scopeRuntimeSessionIdentity('mention:agent', 2)).toBe(
+      'mention:agent:conversation-generation:2',
+    )
     expect(cleared).toMatchObject({
       existing: true,
       codexAppServer: {

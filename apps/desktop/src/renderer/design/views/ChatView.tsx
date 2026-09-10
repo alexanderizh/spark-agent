@@ -129,6 +129,17 @@ import { SessionSwitchingOverlay } from './chat/SessionSwitchingOverlay'
 import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { SessionForkDialog } from './chat/SessionForkDialog'
 import { MessageHoverBar } from './chat/MessageHoverBar'
+import { LastUserMessageEditor } from './chat/LastUserMessageEditor'
+import { getLastEditableUserMessageId } from './chat/last-user-message-edit'
+import {
+  buildUserMessagePrefillPayload,
+  buildUserMessageRevisionPayload,
+} from './chat/user-message-actions'
+import {
+  deriveChatHistoryState,
+  retractAgentEvents,
+  toContextLedgerState,
+} from './chat/chat-history-revision'
 import {
   UserMessageSessionReferences,
   type UserMessageSessionReferenceDisplay,
@@ -233,16 +244,12 @@ import {
 } from '../components/fileOpenRouting'
 import type { HtmlOpenMode } from '../services/render-html'
 import {
-  buildUsageDataFromEvents,
   clamp,
   computeCacheHitRate,
   createEmptySessionUsageData,
-  eventsAfterLastHistoryReset,
   formatRelativeTime,
   formatTokenCount,
   getBasename,
-  getLatestInputTokens,
-  getLatestRuntimeContextSnapshot,
   getProviderContextInputUpdate,
   getRuntimeContextSnapshotUpdate,
   type RuntimeContextSnapshotState,
@@ -259,6 +266,7 @@ import type {
   AgentAdapter,
   BranchState,
   ComposerPrefillPayload,
+  ComposerRevisionPayload,
   ContextMenuItem,
   MessageAttachment,
   PermissionModeChoice,
@@ -1146,6 +1154,11 @@ export function ChatView({
   // ComposerV2 的 consumedResendIdRef 去重，使"同一会话内连续重发第二条"失效。
   // 用独立计数器保证 requestId 在 ChatView 生命周期内严格单调递增。
   const resendRequestIdRef = useRef(0)
+  const [revisionRequest, setRevisionRequest] = useState<{
+    requestId: number
+    payload: ComposerRevisionPayload
+  } | null>(null)
+  const revisionRequestIdRef = useRef(0)
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
@@ -1474,6 +1487,7 @@ export function ChatView({
       sessionCtx.bumpSessionMessageCount(sessionId)
       setScrollToBottomTrigger((n) => n + 1)
       setResendRequest(null)
+      setRevisionRequest(null)
     },
     [setSessionStatus, sessionCtx],
   )
@@ -2590,6 +2604,7 @@ export function ChatView({
    * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
    */
   const handleResendMessage = useCallback((payload: ComposerPrefillPayload) => {
+    setRevisionRequest(null)
     resendRequestIdRef.current += 1
     setResendRequest({
       requestId: resendRequestIdRef.current,
@@ -2606,6 +2621,29 @@ export function ChatView({
   const handleResendConsumed = useCallback(() => {
     setResendRequest(null)
   }, [])
+
+  const handleEditMessage = useCallback((payload: ComposerRevisionPayload) => {
+    setResendRequest(null)
+    revisionRequestIdRef.current += 1
+    setRevisionRequest({ requestId: revisionRequestIdRef.current, payload })
+  }, [])
+
+  const handleRevisionConsumed = useCallback(() => {
+    setRevisionRequest(null)
+  }, [])
+
+  const handleRevisionApplied = useCallback(
+    (result: { sessionId: string; turnCount: number; logicalMessageCount: number }) => {
+      sessionCtx.updateSessionInList(result.sessionId as SessionId, {
+        turnCount: result.turnCount,
+        logicalMessageCount: result.logicalMessageCount,
+        messageCount: result.logicalMessageCount,
+        status: 'idle',
+        lastRunOutcome: null,
+      })
+    },
+    [sessionCtx],
+  )
 
   const handleHeroPromptSelect = useCallback((text: string) => {
     resendRequestIdRef.current += 1
@@ -2908,6 +2946,9 @@ export function ChatView({
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
         onResendConsumed={handleResendConsumed}
+        revisionRequest={revisionRequest}
+        onRevisionConsumed={handleRevisionConsumed}
+        onRevisionApplied={handleRevisionApplied}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onPickProject={pickProjectFolder}
@@ -2970,6 +3011,9 @@ export function ChatView({
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
         onResendConsumed={handleResendConsumed}
+        revisionRequest={revisionRequest}
+        onRevisionConsumed={handleRevisionConsumed}
+        onRevisionApplied={handleRevisionApplied}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onPickProject={pickProjectFolder}
@@ -3197,6 +3241,7 @@ export function ChatView({
                 onReplyTo={handleReplyTo}
                 onReplyToMember={handleReplyToMember}
                 onResendMessage={handleResendMessage}
+                onEditMessage={handleEditMessage}
                 onLoadingChange={setActiveSessionLoading}
                 emptyStateVariant="loading"
                 modelSwitchMarkers={modelSwitchMarkers}
@@ -3686,6 +3731,7 @@ function ChatStream({
   onReplyToMember,
   onFilePreview,
   onResendMessage,
+  onEditMessage,
   onLoadingChange,
   emptyStateVariant = 'hint',
   modelSwitchMarkers = [],
@@ -3742,6 +3788,8 @@ function ChatStream({
   onFilePreview?: FileOpenHandler
   /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
   onResendMessage?: (payload: ComposerPrefillPayload) => void
+  /** 编辑并替换当前会话最后一轮用户消息。 */
+  onEditMessage?: (payload: ComposerRevisionPayload) => void
   /**
    * 消息为空且非历史加载时的占位形态：
    *  - 'hint'（默认）：静态「开始对话」提示，用于侧边 ChatStream 这类真正可能长期为空的场景；
@@ -3780,6 +3828,14 @@ function ChatStream({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [multiSelectMode, setMultiSelectMode] = useState(false)
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(() => new Set())
+  const lastEditableUserMessageId = useMemo(
+    () =>
+      getLastEditableUserMessageId(
+        displayMessages,
+        agentIsRunning || persistedSessionStatus === 'running' || multiSelectMode,
+      ),
+    [agentIsRunning, displayMessages, multiSelectMode, persistedSessionStatus],
+  )
   // 窗口化加载：是否还有更早历史 + 是否正在加载更早一页（顶部 loading 指示）
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
@@ -3945,6 +4001,34 @@ function ChatStream({
         callbacks.onProjectContextChange(null)
         callbacks.onTurnPromptSnapshotsChange([])
         callbacks.onStatusChange('')
+        setAgentIsRunning(false)
+        isStreamingRef.current = false
+        return false
+      }
+      if (event.type === 'transcript_retraction' && event.reason === 'user_edit') {
+        const revised = retractAgentEvents(loadedEventsRef.current, event.eventIds)
+        const retainedEvents = revised.events
+        loadedEventsRef.current = retainedEvents
+        loadedEventIdsRef.current = createAgentEventIdSet(retainedEvents)
+        builderRef.current = revised.builder
+        const nextMessages = revised.messages
+        setMessages(nextMessages)
+        callbacks.onMessagesChange(nextMessages)
+
+        const derived = deriveChatHistoryState(retainedEvents)
+        callbacks.onUsageChange(derived.inputTokens)
+        callbacks.onRuntimeContextChange(derived.runtimeContext)
+        usageRef.current = derived.usage
+        callbacks.onUsageDataChange(derived.usage)
+        callbacks.onContextUsageChange(derived.contextUsage)
+        callbacks.onContextLedgerChange(derived.contextLedger)
+        callbacks.onProjectContextChange(derived.projectContext)
+        callbacks.onTurnPromptSnapshotsChange(revised.builder.getTurnPromptSnapshots())
+        callbacks.onPlanProposed(revised.builder.getPendingPlan())
+        callbacks.onGoalChange?.(revised.builder.getActiveGoal())
+        callbacks.onOrchestrationChange?.(revised.builder.getOrchestrationStatus())
+        callbacks.onStatusChange('')
+        callbacks.onSessionStatusChange('idle')
         setAgentIsRunning(false)
         isStreamingRef.current = false
         return false
@@ -4182,13 +4266,11 @@ function ChatStream({
 
       // 上下文/用量派生与消息回放使用同一窗口：session_history_reset 标记之后的事件。
       // 否则清空后未发新轮次的会话重进时，最新 ledger/usage 会取到标记之前的旧值。
-      const eventsSinceReset = eventsAfterLastHistoryReset(events)
-
-      callbacks.onUsageChange(getLatestInputTokens(eventsSinceReset))
-      callbacks.onRuntimeContextChange(getLatestRuntimeContextSnapshot(eventsSinceReset))
-      const historyUsage = buildUsageDataFromEvents(eventsSinceReset)
-      usageRef.current = historyUsage
-      callbacks.onUsageDataChange(historyUsage)
+      const derived = deriveChatHistoryState(events)
+      callbacks.onUsageChange(derived.inputTokens)
+      callbacks.onRuntimeContextChange(derived.runtimeContext)
+      usageRef.current = derived.usage
+      callbacks.onUsageDataChange(derived.usage)
       const latestStatus = getLatestAgentStatus(
         events,
         persistedSessionStatusRef.current ?? undefined,
@@ -4203,22 +4285,9 @@ function ChatStream({
           hasRunningTeamMemberActivity(nextMessages, getBlockTeamMemberContext),
         )
       }
-      const latestContext = getLatestContextUsageEvent(eventsSinceReset)
-      callbacks.onContextUsageChange(
-        latestContext != null
-          ? {
-              estimatedTokens: latestContext.estimatedTokens,
-              softLimitTokens: latestContext.softLimitTokens,
-              contextWindowTokens: latestContext.contextWindowTokens,
-              compactedThisTurn: latestContext.compacted,
-            }
-          : null,
-      )
-      const latestLedger = getLatestContextLedgerEvent(eventsSinceReset)
-      callbacks.onContextLedgerChange(
-        latestLedger != null ? toContextLedgerState(latestLedger) : null,
-      )
-      callbacks.onProjectContextChange(getLatestProjectContextEvent(eventsSinceReset))
+      callbacks.onContextUsageChange(derived.contextUsage)
+      callbacks.onContextLedgerChange(derived.contextLedger)
+      callbacks.onProjectContextChange(derived.projectContext)
       callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
       // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
       // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
@@ -4684,6 +4753,12 @@ function ChatStream({
     }
     return { id: assistantAgentId, name: assistantName, avatarSrc: assistantAvatarSrc }
   }, [displayMessages, agents, assistantAgentId, assistantName, assistantAvatarSrc])
+  const waitingAgentTargetRef = useRef({ enabled: false, agentId: '', messageIndex: -1 })
+  waitingAgentTargetRef.current = {
+    enabled: showWaitingAgent,
+    agentId: placeholderIdentity.id,
+    messageIndex: displayMessages.length - 1,
+  }
 
   const selectedMessages = useMemo(
     () => displayMessages.filter((msg) => selectedMessageIds.has(msg.id)),
@@ -4920,6 +4995,23 @@ function ChatStream({
         target.scrollIntoView({ behavior: 'smooth', block: 'center' })
         return
       }
+      const waitingTarget = waitingAgentTargetRef.current
+      if (
+        waitingTarget.enabled &&
+        waitingTarget.agentId === agentId &&
+        waitingTarget.messageIndex >= 0
+      ) {
+        virtualMessageListRef.current?.scrollToIndex(waitingTarget.messageIndex, 'end')
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const match = root.querySelector<HTMLElement>(
+              `[data-running-agent-id="${escapedAgentId}"][data-running="true"]`,
+            )
+            match?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          })
+        })
+        return
+      }
       const messageIndex = findLastAgentMessageIndex(messagesRef.current, agentId)
       if (messageIndex < 0) return
       virtualMessageListRef.current?.scrollToIndex(messageIndex, 'center')
@@ -4933,6 +5025,27 @@ function ChatStream({
       window.removeEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
     }
   }, [])
+
+  const waitingAgentMessage = showWaitingAgent ? (
+    <AgentMsg
+      key="agent-running-placeholder"
+      sessionId={sessionId}
+      workspaceRootPath={workspaceRootPath}
+      status="running"
+      blocks={[]}
+      messageStatus="streaming"
+      isLatest
+      assistantId={placeholderIdentity.id}
+      assistantName={placeholderIdentity.name}
+      assistantAvatarSrc={placeholderIdentity.avatarSrc}
+      showIdentity={shouldShowAssistantIdentity(
+        teamConfig.enabled,
+        placeholderIdentity.id,
+        assistantAgentId,
+      )}
+      {...(onFilePreview != null ? { onFilePreview } : {})}
+    />
+  ) : null
 
   return (
     <div className="chat-stream-viewport">
@@ -4990,16 +5103,22 @@ function ChatStream({
                   scrollElementRef={streamRef}
                   getItemKey={(msg) => msg.id}
                   estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
-                  renderAfterItem={(msg) => {
+                  renderAfterItem={(msg, index) => {
                     const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
                     const segments = segmentsFor(msg.id)
-                    if (marker == null && segments.length === 0) return null
+                    const waitingAfterLastMessage =
+                      index === displayMessages.length - 1 ? waitingAgentMessage : null
+                    if (marker == null && segments.length === 0 && waitingAfterLastMessage == null)
+                      return null
                     return (
                       <>
                         {marker != null && <ModelSwitchNotice marker={marker} />}
                         {segments.map((view) => (
                           <ComputerActivitySegmentCard key={view.key} view={view} />
                         ))}
+                        {waitingAfterLastMessage != null && (
+                          <div style={{ marginTop: 16 }}>{waitingAfterLastMessage}</div>
+                        )}
                       </>
                     )
                   }}
@@ -5064,30 +5183,28 @@ function ChatStream({
                         {...(onResendMessage != null
                           ? {
                               onResend: () =>
-                                onResendMessage({
-                                  text: extractTextFromBlocks(msg.blocks),
-                                  attachments: msg.attachments ?? [],
-                                  ...(msg.sessionReferences != null &&
-                                  msg.sessionReferences.length > 0
-                                    ? {
-                                        sessionReferences: msg.sessionReferences.map(
-                                          (reference) => ({
-                                            sourceSessionId: reference.sourceSessionId,
-                                            title:
-                                              reference.title ??
-                                              sessions.find(
-                                                (item) => item.id === reference.sourceSessionId,
-                                              )?.title ??
-                                              '未命名会话',
-                                            ...(reference.snapshotSeq !== undefined
-                                              ? { snapshotSeq: reference.snapshotSeq }
-                                              : {}),
-                                            status: 'active',
-                                          }),
-                                        ),
-                                      }
-                                    : {}),
-                                }),
+                                onResendMessage(
+                                  buildUserMessagePrefillPayload(
+                                    msg,
+                                    extractTextFromBlocks(msg.blocks),
+                                    sessions,
+                                  ),
+                                ),
+                            }
+                          : {})}
+                        {...(onEditMessage != null &&
+                        msg.id === lastEditableUserMessageId &&
+                        msg.turnId != null
+                          ? {
+                              onEdit: (text: string) =>
+                                onEditMessage(
+                                  buildUserMessageRevisionPayload(
+                                    sessionId,
+                                    msg as UIMessage & { turnId: string },
+                                    text,
+                                    sessions,
+                                  ),
+                                ),
                             }
                           : {})}
                       >
@@ -5166,26 +5283,7 @@ function ChatStream({
               )}
             </ComputerActivitySegmentsBridge>
           </ComputerActivityProvider>
-          {showWaitingAgent && (
-            <AgentMsg
-              key="agent-running-placeholder"
-              sessionId={sessionId}
-              workspaceRootPath={workspaceRootPath}
-              status="running"
-              blocks={[]}
-              messageStatus="streaming"
-              isLatest
-              assistantId={placeholderIdentity.id}
-              assistantName={placeholderIdentity.name}
-              assistantAvatarSrc={placeholderIdentity.avatarSrc}
-              showIdentity={shouldShowAssistantIdentity(
-                teamConfig.enabled,
-                placeholderIdentity.id,
-                assistantAgentId,
-              )}
-              {...(onFilePreview != null ? { onFilePreview } : {})}
-            />
-          )}
+          {displayMessages.length === 0 && waitingAgentMessage}
           {displayMessages.length === 0 && !showWaitingAgent && (
             <div className="chat-stream-empty-state">
               <div className="empty-state">
@@ -5293,46 +5391,6 @@ function yieldToBrowser(): Promise<void> {
     }
     window.setTimeout(resolve, 0)
   })
-}
-
-function getLatestContextUsageEvent(
-  events: AgentEvent[],
-): Extract<AgentEvent, { type: 'context_usage' }> | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]
-    if (event?.type === 'context_usage') return event
-  }
-  return null
-}
-
-function getLatestContextLedgerEvent(
-  events: AgentEvent[],
-): Extract<AgentEvent, { type: 'context_ledger' }> | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]
-    if (event?.type === 'context_ledger') return event
-  }
-  return null
-}
-
-function toContextLedgerState(
-  event: Extract<AgentEvent, { type: 'context_ledger' }>,
-): ContextLedgerState {
-  return {
-    sections: event.sections,
-    totalEstimatedTokens: event.totalEstimatedTokens,
-    softLimitTokens: event.softLimitTokens,
-    contextWindowTokens: event.contextWindowTokens,
-    usagePercent: event.usagePercent,
-  }
-}
-
-function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]
-    if (event?.type === 'project_context_loaded') return event
-  }
-  return null
 }
 
 function applyAgentStatus(
@@ -7163,6 +7221,7 @@ const UserMsg = React.memo(
     mentionAgentName,
     onReply,
     onResend,
+    onEdit,
     selectionMode = false,
     selected = false,
     onToggleSelected,
@@ -7181,12 +7240,18 @@ const UserMsg = React.memo(
     onReply?: (selectedText?: string) => void
     /** 重发：把这条消息的文本+附件重新塞回输入区 */
     onResend?: () => void
+    /** 仅最后一轮已完成消息：提交编辑后的正文并替换整轮。 */
+    onEdit?: (text: string) => void
     selectionMode?: boolean
     selected?: boolean
     onToggleSelected?: () => void
     onStartMultiSelect?: () => void
   }) {
     const textContent = extractTextFromBlocks(blocks)
+    const [editing, setEditing] = useState(false)
+    useEffect(() => {
+      if (onEdit == null) setEditing(false)
+    }, [onEdit])
     const [contextMenu, setContextMenu] = useState<{
       x: number
       y: number
@@ -7293,11 +7358,23 @@ const UserMsg = React.memo(
         )}
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
-          <CollapsibleContent>
-            <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-              <div className="msg-content">{children}</div>
-            </div>
-          </CollapsibleContent>
+          {editing ? (
+            <LastUserMessageEditor
+              initialValue={textContent}
+              allowEmpty={attachments.length > 0 || sessionReferences.length > 0}
+              onCancel={() => setEditing(false)}
+              onSubmit={(text) => {
+                setEditing(false)
+                onEdit?.(text)
+              }}
+            />
+          ) : (
+            <CollapsibleContent>
+              <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+                <div className="msg-content">{children}</div>
+              </div>
+            </CollapsibleContent>
+          )}
         </div>
         {deliveryState != null && deliveryState !== 'accepted' && (
           <div className={`msg-user-delivery msg-user-delivery-${deliveryState}`}>
@@ -7328,13 +7405,16 @@ const UserMsg = React.memo(
             <strong>@{mentionAgentName}</strong> 处理
           </div>
         )}
-        <MessageHoverBar
-          timestamp={timestamp}
-          textContent={textContent}
-          position="right"
-          {...(onDelete ? { onDelete } : {})}
-          {...(onResend ? { onResend } : {})}
-        />
+        {!editing && (
+          <MessageHoverBar
+            timestamp={timestamp}
+            textContent={textContent}
+            position="right"
+            {...(onDelete ? { onDelete } : {})}
+            {...(onResend ? { onResend } : {})}
+            {...(onEdit ? { onEdit: () => setEditing(true) } : {})}
+          />
+        )}
         {contextMenu != null && contextMenuItems.length > 0 && (
           <InlineContextMenu
             x={contextMenu.x}
@@ -7356,6 +7436,7 @@ const UserMsg = React.memo(
       prev.mentionAgentName === next.mentionAgentName &&
       prev.deliveryState === next.deliveryState &&
       prev.deliveryError === next.deliveryError &&
+      (prev.onEdit != null) === (next.onEdit != null) &&
       prev.timestamp === next.timestamp &&
       prev.selectionMode === next.selectionMode &&
       prev.selected === next.selected

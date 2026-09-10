@@ -1009,7 +1009,7 @@ export interface RuntimeSignalEvent extends BaseEvent {
 export interface TranscriptRetractionEvent extends BaseEvent {
   type: 'transcript_retraction'
   eventIds: string[]
-  reason: 'model_refusal_fallback'
+  reason: 'model_refusal_fallback' | 'user_edit'
 }
 
 // ─── 白盒调试类事件 ───────────────────────────────────────────────────────────

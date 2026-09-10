@@ -3856,6 +3856,27 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().deleteMessage(req.sessionId, req.eventIds)
   })
 
+  typedIpcHandle('session:rewind-last-turn', async (req) => {
+    log.info(`session:rewind-last-turn requested, sessionId=${req.sessionId} turnId=${req.turnId}`)
+    const result = await getSessionService().rewindLastTurnForEdit(req.sessionId, req.turnId)
+    // 这是一条仅供当前 renderer 立即修订本地窗口的瞬态通知；权威历史中的整轮事件
+    // 已经在同一 IPC 调用内删除，重新进入会话时会自然从删减后的历史重建。
+    pushStreamEvent('stream:session:agent-event', {
+      id: crypto.randomUUID(),
+      type: 'transcript_retraction',
+      sessionId: req.sessionId,
+      turnId: req.turnId,
+      timestamp: new Date().toISOString(),
+      // Keep the transient retraction after any history page that may already be
+      // hydrating in the renderer. Otherwise a page sorted after a seq=0
+      // retraction could briefly resurrect the just-removed turn.
+      seq: Number.MAX_SAFE_INTEGER,
+      eventIds: result.retractedEventIds,
+      reason: 'user_edit',
+    })
+    return result
+  })
+
   typedIpcHandle('session:answer-question', async (req) => {
     log.info(
       `session:answer-question requested, sessionId=${req.sessionId} questionId=${req.questionId}`,

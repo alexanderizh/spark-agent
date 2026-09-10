@@ -26,6 +26,7 @@ export function MessageHoverBar({
   position,
   onDelete,
   onResend,
+  onEdit,
   onFork,
 }: {
   timestamp?: string | undefined
@@ -34,6 +35,8 @@ export function MessageHoverBar({
   onDelete?: () => void
   /** 仅用户消息：把这条消息的文本+附件重新塞回输入区 */
   onResend?: () => void
+  /** 仅当前会话最后一轮已完成用户消息：行内编辑并替换该轮。 */
+  onEdit?: () => void
   /** 仅已完成的助手消息：从该轮创建分支 */
   onFork?: () => void
 }) {
@@ -62,6 +65,17 @@ export function MessageHoverBar({
       {textContent && (
         <button type="button" className="msg-hover-copy" title="复制" onClick={handleCopy}>
           {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
+        </button>
+      )}
+      {onEdit && (
+        <button
+          type="button"
+          className="msg-hover-edit"
+          title="编辑消息"
+          aria-label="编辑消息"
+          onClick={onEdit}
+        >
+          <Icons.Pencil size={12} />
         </button>
       )}
       {onFork && (

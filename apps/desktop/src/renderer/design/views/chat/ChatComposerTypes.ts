@@ -6,6 +6,8 @@ import type {
   CliSparkOverride,
   SessionPermissionMode,
   SessionReasoningEffort,
+  SessionId,
+  TurnId,
   SessionQueueRuntimeSelection,
   WorkspaceGitBranch,
   WorkspaceGitState,
@@ -115,6 +117,13 @@ export type ComposerPrefillPayload = {
   attachments: MessageAttachment[]
   sessionReferences?: ComposerSessionReference[]
   agentId?: string
+}
+
+/** 完整替换最新一轮时携带的原消息上下文；正文由行内编辑器覆盖。 */
+export type ComposerRevisionPayload = ComposerPrefillPayload & {
+  sessionId: SessionId
+  turnId: TurnId
+  mentionAgentId?: string
 }
 
 export type ComposerInputSelection = {
