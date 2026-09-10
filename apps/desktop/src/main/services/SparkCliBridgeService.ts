@@ -5,6 +5,9 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024
+const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024
+const LF_BOUNDARY = Buffer.from('\n\n')
+const CRLF_BOUNDARY = Buffer.from('\r\n\r\n')
 const NON_HTTP_PROVIDER_IDS = new Set([
   'local-cli',
   'local-codex-cli',
@@ -255,13 +258,23 @@ async function proxyModelRequest(
   response.once('close', () => {
     if (!response.writableEnded) controller.abort('client disconnected')
   })
-  const upstream = await (dependencies.fetch ?? fetch)(upstreamUrl(provider, protocol), {
-    method: 'POST',
-    headers: upstreamHeaders(request, protocol, credential),
-    body,
-    signal: controller.signal,
-    redirect: 'error',
-  })
+  let upstream: Response
+  try {
+    upstream = await (dependencies.fetch ?? fetch)(upstreamUrl(provider, protocol), {
+      method: 'POST',
+      headers: upstreamHeaders(request, protocol, credential),
+      body,
+      signal: controller.signal,
+      redirect: 'error',
+    })
+  } catch (error) {
+    if (controller.signal.aborted) throw error
+    const cause = safeStreamError(error)
+    sendJson(response, 502, {
+      error: { type: 'bridge_transport_error', message: streamErrorSummary(cause), cause },
+    })
+    return
+  }
   response.statusCode = upstream.status
   copyResponseHeaders(upstream.headers, response)
   if (!upstream.body) {
@@ -270,15 +283,149 @@ async function proxyModelRequest(
   }
   const reader = upstream.body.getReader()
   try {
-    while (true) {
-      const item = await reader.read()
-      if (item.done) break
-      if (!response.write(item.value)) await waitForDrain(response)
+    try {
+      await forwardCompleteSseFrames(reader, response)
+      response.end()
+    } catch (error) {
+      if (response.destroyed || response.writableEnded) throw error
+      // Once response headers/body have started, an HTTP status can no longer
+      // communicate failure. Finish the stream with the provider protocol's
+      // native error shape so the CLI retains a useful, retryable root cause.
+      response.write(streamErrorEvent(protocol, error))
+      response.end()
     }
-    response.end()
   } finally {
     reader.releaseLock()
   }
+}
+
+/**
+ * Forward only complete SSE frames. If upstream disconnects in the middle of
+ * JSON, the incomplete tail is discarded before a structured error frame is
+ * appended, so downstream parsers never see two events accidentally joined.
+ */
+async function forwardCompleteSseFrames(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  response: ServerResponse,
+): Promise<void> {
+  let pending = Buffer.alloc(0)
+  while (true) {
+    const item = await reader.read()
+    if (item.done) break
+    pending =
+      pending.length === 0
+        ? Buffer.from(item.value)
+        : Buffer.concat([pending, Buffer.from(item.value)])
+    while (true) {
+      const boundary = nextSseBoundary(pending)
+      if (boundary === undefined) break
+      const frame = pending.subarray(0, boundary)
+      pending = Buffer.from(pending.subarray(boundary))
+      if (!response.write(frame)) await waitForDrain(response)
+    }
+    if (pending.length > MAX_SSE_FRAME_BYTES) {
+      throw Object.assign(new Error(`SSE frame exceeded ${MAX_SSE_FRAME_BYTES} bytes`), {
+        code: 'SPARK_CLI_BRIDGE_SSE_FRAME_TOO_LARGE',
+      })
+    }
+  }
+  // A final SSE event may legally end at EOF without a blank line.
+  if (pending.length > 0) {
+    if (!isCompleteFinalSseFrame(pending)) {
+      throw Object.assign(new Error('Upstream SSE stream ended with an incomplete event'), {
+        code: 'SPARK_CLI_BRIDGE_INCOMPLETE_SSE_EVENT',
+      })
+    }
+    if (!response.write(pending)) await waitForDrain(response)
+  }
+}
+
+function nextSseBoundary(buffer: Buffer): number | undefined {
+  const lf = buffer.indexOf(LF_BOUNDARY)
+  const crlf = buffer.indexOf(CRLF_BOUNDARY)
+  if (lf === -1 && crlf === -1) return undefined
+  if (lf === -1) return crlf + CRLF_BOUNDARY.length
+  if (crlf === -1) return lf + LF_BOUNDARY.length
+  return lf < crlf ? lf + LF_BOUNDARY.length : crlf + CRLF_BOUNDARY.length
+}
+
+function isCompleteFinalSseFrame(frame: Buffer): boolean {
+  let value: string
+  try {
+    value = new TextDecoder('utf-8', { fatal: true }).decode(frame)
+  } catch {
+    return false
+  }
+  const data: string[] = []
+  for (const rawLine of value.split(/\r?\n/u)) {
+    if (!rawLine || rawLine.startsWith(':')) continue
+    const colon = rawLine.indexOf(':')
+    const field = colon === -1 ? rawLine : rawLine.slice(0, colon)
+    let fieldValue = colon === -1 ? '' : rawLine.slice(colon + 1)
+    if (fieldValue.startsWith(' ')) fieldValue = fieldValue.slice(1)
+    if (field === 'data') data.push(fieldValue)
+  }
+  if (data.length === 0) return true
+  const payload = data.join('\n')
+  if (payload === '[DONE]') return true
+  try {
+    JSON.parse(payload)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function streamErrorEvent(protocol: CatalogRoute['protocol'], error: unknown): string {
+  const cause = safeStreamError(error)
+  const message = streamErrorSummary(cause)
+  if (protocol === 'anthropic-messages') {
+    return `event: error\ndata: ${JSON.stringify({
+      type: 'error',
+      error: { type: 'bridge_stream_error', message, cause },
+    })}\n\n`
+  }
+  return `event: error\ndata: ${JSON.stringify({
+    type: 'error',
+    error: { code: 'bridge_stream_error', message, cause },
+  })}\n\n`
+}
+
+type SafeStreamError = { name: string; message: string; code?: string; cause?: SafeStreamError }
+
+function safeStreamError(error: unknown, depth = 0): SafeStreamError {
+  if (!(error instanceof Error)) return { name: 'Error', message: safeBridgeText(String(error)) }
+  const errorWithCause = error as Error & { code?: unknown; cause?: unknown }
+  const code = errorWithCause.code
+  return {
+    name: safeBridgeText(error.name),
+    message: safeBridgeText(error.message),
+    ...(typeof code === 'string' ? { code: safeBridgeText(code) } : {}),
+    ...(depth < 2 && errorWithCause.cause !== undefined
+      ? { cause: safeStreamError(errorWithCause.cause, depth + 1) }
+      : {}),
+  }
+}
+
+function streamErrorSummary(cause: SafeStreamError): string {
+  const parts: string[] = []
+  let current: SafeStreamError | undefined = cause
+  while (current) {
+    parts.push(`${current.code ? `${current.code}: ` : ''}${current.message}`)
+    current = current.cause
+  }
+  return safeBridgeText(parts.join(' → '))
+}
+
+function safeBridgeText(value: string): string {
+  let withoutControls = ''
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    withoutControls +=
+      codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character
+  }
+  const normalized = withoutControls.replace(/\s+/gu, ' ').trim()
+  return normalized.length <= 1_024 ? normalized : `${normalized.slice(0, 1_023)}…`
 }
 
 function waitForDrain(response: ServerResponse): Promise<void> {

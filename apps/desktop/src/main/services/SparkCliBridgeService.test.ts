@@ -163,6 +163,155 @@ describe('SparkCliBridgeService', () => {
     await expect(readModels()).resolves.toEqual(['model-b'])
   })
 
+  it.each([
+    {
+      provider: 'anthropic',
+      protocolPath: 'messages',
+      upstreamEvent: 'event: message_start\ndata: {"type":"message_start"}\n\n',
+      expectedCode: 'bridge_stream_error',
+    },
+    {
+      provider: 'openai',
+      protocolPath: 'responses',
+      upstreamEvent: 'data: {"type":"response.created"}\n\n',
+      expectedCode: 'bridge_stream_error',
+    },
+  ])(
+    'turns an upstream $provider disconnect into a structured stream error',
+    async ({ provider, protocolPath, upstreamEvent, expectedCode }) => {
+      const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-stream-error-'))
+      roots.push(sparkHome)
+      let sentInitialChunk = false
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (!sentInitialChunk) {
+            sentInitialChunk = true
+            controller.enqueue(new TextEncoder().encode(`${upstreamEvent}data: {"type":"truncated`))
+            return
+          }
+          controller.error(
+            new TypeError('terminated', {
+              cause: Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' }),
+            }),
+          )
+        },
+      })
+      const bridge = await startSparkCliBridge({
+        sparkHome,
+        listProviders: async () => [
+          {
+            id: 'provider-1',
+            name: 'Provider',
+            provider,
+            defaultModel: 'model-1',
+            modelIds: ['model-1'],
+            ...(provider === 'openai' ? { codexApiKind: 'responses' as const } : {}),
+            isDefault: true,
+          },
+        ],
+        resolveCredential: async () => 'secret',
+        fetch: vi.fn(
+          async () => new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+        ) as typeof fetch,
+      })
+      bridges.push(bridge)
+      const descriptor = JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as {
+        token: string
+      }
+      const response = await fetch(`${bridge.endpoint}/v1/proxy/provider-1/v1/${protocolPath}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${descriptor.token}` },
+        body: JSON.stringify({ model: 'model-1', stream: true }),
+      })
+      const text = await response.text()
+      expect(text).toContain(upstreamEvent.trim())
+      expect(text).toContain(expectedCode)
+      expect(text).toContain('socket reset by peer')
+      expect(text).toContain('ECONNRESET')
+      expect(text).not.toContain('truncated')
+    },
+  )
+
+  it('replaces a truncated final SSE event at normal EOF with a structured error', async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-truncated-eof-'))
+    roots.push(sparkHome)
+    const bridge = await startSparkCliBridge({
+      sparkHome,
+      listProviders: async () => [
+        {
+          id: 'provider-1',
+          name: 'Provider',
+          provider: 'openai',
+          defaultModel: 'model-1',
+          modelIds: ['model-1'],
+          codexApiKind: 'responses',
+          isDefault: true,
+        },
+      ],
+      resolveCredential: async () => 'secret',
+      fetch: vi.fn(
+        async () =>
+          new Response('data: {"type":"truncated', {
+            headers: { 'content-type': 'text/event-stream' },
+          }),
+      ) as typeof fetch,
+    })
+    bridges.push(bridge)
+    const descriptor = JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as {
+      token: string
+    }
+    const response = await fetch(`${bridge.endpoint}/v1/proxy/provider-1/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${descriptor.token}` },
+      body: JSON.stringify({ model: 'model-1', stream: true }),
+    })
+    const text = await response.text()
+    expect(text).toContain('bridge_stream_error')
+    expect(text).toContain('SPARK_CLI_BRIDGE_INCOMPLETE_SSE_EVENT')
+    expect(text).not.toContain('"type":"truncated')
+  })
+
+  it('returns a structured root cause when the upstream connection fails before headers', async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-connect-error-'))
+    roots.push(sparkHome)
+    const bridge = await startSparkCliBridge({
+      sparkHome,
+      listProviders: async () => [
+        {
+          id: 'provider-1',
+          name: 'Provider',
+          provider: 'openai',
+          defaultModel: 'model-1',
+          modelIds: ['model-1'],
+          codexApiKind: 'responses',
+          isDefault: true,
+        },
+      ],
+      resolveCredential: async () => 'secret',
+      fetch: vi.fn(async () => {
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' }),
+        })
+      }) as typeof fetch,
+    })
+    bridges.push(bridge)
+    const descriptor = JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as {
+      token: string
+    }
+    const response = await fetch(`${bridge.endpoint}/v1/proxy/provider-1/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${descriptor.token}` },
+      body: JSON.stringify({ model: 'model-1', stream: true }),
+    })
+    const payload = (await response.json()) as {
+      error: { type: string; message: string; cause: { cause?: { code?: string } } }
+    }
+    expect(response.status).toBe(502)
+    expect(payload.error.type).toBe('bridge_transport_error')
+    expect(payload.error.message).toContain('ECONNREFUSED')
+    expect(payload.error.cause.cause?.code).toBe('ECONNREFUSED')
+  })
+
   it('keeps concurrent instances independent: stopping one never deletes the other', async () => {
     const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-multi-'))
     roots.push(sparkHome)
