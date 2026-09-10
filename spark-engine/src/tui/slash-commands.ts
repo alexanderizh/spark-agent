@@ -30,6 +30,7 @@ export const TUI_SHORTCUTS: readonly {
   { keys: 'esc', summary: '中断任务；输入非空时先清空输入框' },
   { keys: 'Shift+Tab', summary: '循环权限策略(手动审批→自动审批；完全访问走 /perm)' },
   { keys: 'Ctrl+O', summary: '显示/隐藏实时思考流' },
+  { keys: 'Ctrl+E', summary: '展开/折叠长粘贴文本' },
   { keys: 'Ctrl+U', summary: '清空整行输入' },
   { keys: 'Ctrl+W', summary: '删除光标前一个词' },
   { keys: '\\ + Enter', summary: '强制换行' },

@@ -32,6 +32,10 @@ async function escapeTick(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 30))
 }
 
+function bracketedPaste(text: string): string {
+  return `\u001b[200~${text}\u001b[201~`
+}
+
 describe('InputEditor shortcuts', () => {
   it('clears a non-empty draft on Esc without interrupting', async () => {
     const onEscape = vi.fn()
@@ -186,6 +190,60 @@ describe('InputEditor shortcuts', () => {
     app.stdin.write('\r')
     await tick()
     expect(onSubmit).toHaveBeenCalledWith('first line \nsecond line')
+    app.unmount()
+  })
+
+  it('folds long bracketed pastes while submitting the complete original text', async () => {
+    const onSubmit = vi.fn()
+    const pasted = Array.from({ length: 12 }, (_, index) => `const line${index} = ${index}`).join('\n')
+    const app = editor({ onSubmit })
+
+    app.stdin.write(bracketedPaste(pasted))
+    await tick()
+
+    const frame = app.lastFrame() ?? ''
+    expect(frame).toContain('[已粘贴文本 #1 · 12 行]')
+    expect(frame).not.toContain('const line0')
+
+    app.stdin.write('\r')
+    await tick()
+    expect(onSubmit).toHaveBeenCalledWith(pasted)
+    app.unmount()
+  })
+
+  it('keeps short pastes directly editable', async () => {
+    const app = editor()
+    app.stdin.write(bracketedPaste('first line\nsecond line'))
+    await tick()
+
+    const frame = app.lastFrame() ?? ''
+    expect(frame).toContain('first line')
+    expect(frame).toContain('second line')
+    expect(frame).not.toContain('已粘贴文本')
+    app.unmount()
+  })
+
+  it('deletes a folded paste as one block and can expand it with Ctrl+E', async () => {
+    const pasted = Array.from({ length: 10 }, (_, index) => `line ${index}`).join('\n')
+    const app = editor()
+    app.stdin.write(bracketedPaste(pasted))
+    await tick()
+    expect(app.lastFrame() ?? '').toContain('[已粘贴文本 #1 · 10 行]')
+
+    app.stdin.write('\u0008') // Backspace at the end removes the whole folded block.
+    await tick()
+    expect(app.lastFrame() ?? '').not.toContain('已粘贴文本')
+
+    app.stdin.write(bracketedPaste(pasted))
+    await tick()
+    app.stdin.write('\u0005') // Ctrl+E expands the paste for explicit inspection/editing.
+    await tick()
+    expect(app.lastFrame() ?? '').toContain('line 0')
+    expect(app.lastFrame() ?? '').not.toContain('已粘贴文本')
+
+    app.stdin.write('\u0005')
+    await tick()
+    expect(app.lastFrame() ?? '').toContain('[已粘贴文本 #2 · 10 行]')
     app.unmount()
   })
 })

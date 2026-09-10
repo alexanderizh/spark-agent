@@ -1,6 +1,6 @@
 # Spark Engine CLI / SDK 运行时说明
 
-> 状态: 已落地 | 最后核对: 2026-09-10
+> 状态: 已落地 | 最后核对: 2026-09-11
 
 本文记录 `spark-engine` 当前可验证的提示词归属、外部注入、MCP stdio/Streamable HTTP、模型预算解析、TUI 工具日志和同步 `task` 子代理边界。
 
@@ -41,6 +41,20 @@
 
 桌面端通过 SparkWork loopback bridge 把 Provider 的 `maxTokens` 和模型级/Provider 级上下文窗口传给 CLI；Spark executor 同样消费 `SDKExecutorConfig.maxTokens`、`contextWindowTokens` 和 `reasoningBudgetTokens`。CLI `/model` 切换后，`SwitchableLlmService` 会随当前 route 更新预算，task 子代理和 failover route 继续沿用各自的上限。
 
+## 模型流式容错
+
+Spark CLI 对请求建立前或尚未产生可见内容的瞬时故障执行有上限的指数退避，并遵守 Provider 的 `retry-after`。usage、continuation 和 done 属于单次尝试的记账事件：在流完整结束前暂存，失败尝试不会把这些状态泄漏到上层或阻止安全重试。
+
+每次自动重试都会发出结构化 retry delta，包含 route、次数、等待时长和安全错误摘要。TUI 显示“正在重连模型”及进度，纯文本模式写入 stderr，stream-json 模式原样输出 delta，宿主无需解析日志文本。
+
+`[agent]` 可通过 `max_retries`、`retry_initial_delay_ms`、`retry_max_delay_ms` 和 `retry_jitter_ratio` 调整重试预算与指数退避；默认分别为 2、500ms、60000ms 和 0.2。Provider 返回的 `retry-after` 超过等待上限时不会被强行截短后快速重试：当前路由立即停止重试并尝试 failover，没有备用路由时返回 `llm.retry_delay_exceeded`。
+
+协议层会把限流、过载、服务端故障和桥接断流归为瞬时错误；无效请求、认证/权限/计费失败、内容过滤和上下文超限归为永久错误并立即返回，避免无意义等待与重复计费。
+
+一旦已经输出文本、思考内容或完整工具调用，CLI 不自动重放整个请求，避免重复显示和重复副作用。此时 `llm.partial_stream_failed.detail` 会记录输出阶段、字符数、工具调用数和底层结构化错误，TUI 与纯文本模式直接附带根因和重试建议。所有外部错误详情都会限制长度、深度和字段数量，清理终端控制字符并对凭据形态字段脱敏。
+
+SparkWork loopback bridge 只向 CLI 转发完整 SSE 帧；上游若在半个 JSON 中断，未完成尾帧会被丢弃，再发送独立的 Anthropic/OpenAI 协议 error 事件，保留 `ECONNRESET` 等错误码和消息。standalone Provider 的响应体读取异常则由通用 SSE 层包装为可重试的 `llm.sse_stream_error`。支持 continuation/resume 的 Provider 后续可以在这一安全边界上增加专用续传。
+
 ## TUI 工具日志
 
 TUI 从事件账本投影展示，不依赖临时控制台输出：
@@ -75,6 +89,7 @@ PreToolUse hook 的 approve 仅免除策略产生的交互 ask；仍先检查宿
 - Esc 中断后显示等待工具清理并保留输入草稿；清理结束后恢复正常输入状态。运行期间提示 Enter 将新输入加入队列。
 - 上下键可以连续翻看输入历史；编辑取回的内容后退出历史浏览，避免下一次方向键丢失修改。
 - Ctrl+O 在全屏可滚动终端中同时切换实时与已完成思考。缺少终端高度、使用 Static 输出的环境只能隐藏实时思考，已写入终端滚动历史的内容不撤回。
+- CLI 输入启用 bracketed paste；超过 8 行或 1,000 字符的粘贴内容在草稿中折叠为单个块，提交仍保留完整原文，Backspace/Delete 可整块删除，Ctrl+E 可展开检查。
 - turn Promise 或命令处理失败会显示错误并恢复输入，不再成为未处理的 Promise rejection。
 
 终端根布局显式采用终端列宽，输入框和审批区随宽度收敛。审批期间 Esc 提示为拒绝当前工具，非审批期间为中断当前任务；两者不混用。
