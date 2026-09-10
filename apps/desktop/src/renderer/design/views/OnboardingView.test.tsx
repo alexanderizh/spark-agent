@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   refreshData: vi.fn(),
   handleNewSession: vi.fn(),
   invoke: vi.fn(),
+  api: vi.fn(),
 }))
 
 vi.mock('@lobehub/ui', async () => {
@@ -56,7 +57,7 @@ vi.mock('../auth/AuthContext', () => ({
 }))
 
 vi.mock('../hooks/useIpc', () => ({
-  useIpcInvoke: () => ({ invoke: vi.fn() }),
+  useIpcInvoke: (channel: string) => ({ invoke: (args: unknown) => mocks.api(channel, args) }),
 }))
 
 vi.mock('../SessionSidebarContext', () => ({
@@ -72,6 +73,10 @@ vi.mock('../components/Toast', () => ({
 
 vi.mock('../components/ProviderLogo', () => ({
   ProviderLogo: () => React.createElement('span', { 'data-testid': 'provider-logo' }),
+}))
+
+vi.mock('../components/brand/SparkRibbon', () => ({
+  SparkRibbon: () => React.createElement('div', { 'data-testid': 'ribbon' }),
 }))
 
 function buttonByText(text: string): HTMLButtonElement {
@@ -94,6 +99,7 @@ describe('OnboardingView', () => {
     mocks.refreshData.mockClear()
     mocks.handleNewSession.mockClear()
     mocks.invoke.mockReset()
+    mocks.api.mockReset()
     // 默认：settings:get 返回 null（未设置），settings:set 成功
     mocks.invoke.mockImplementation((channel: string) => {
       if (channel === 'settings:get') return Promise.resolve({ value: null })
@@ -137,6 +143,90 @@ describe('OnboardingView', () => {
       key: 'data',
       value: { completed: true, dismissed: true },
     })
+  })
+
+  it('matches the banner and assistant to the selected use case', () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(<OnboardingView />)
+    })
+    act(() => buttonByText('资料与文件').click())
+    expect(buttonByText('资料与文件').getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('.experience-story')?.textContent).toContain(
+      '让信息，清晰起来。',
+    )
+    expect(container.querySelectorAll('.experience-progress li')).toHaveLength(3)
+  })
+
+  it('creates the matched assistant and opens chat after the first task succeeds', async () => {
+    mocks.api.mockImplementation((channel: string) => {
+      if (channel === 'provider:list') return Promise.resolve({ profiles: [] })
+      if (channel === 'agent:create') return Promise.resolve({ agent: { id: 'agent-1' } })
+      return Promise.resolve({})
+    })
+    mocks.handleNewSession.mockResolvedValue('session-1')
+    act(() => {
+      root = createRoot(container)
+      root.render(<OnboardingView />)
+    })
+    act(() => buttonByText('资料与文件').click())
+    await act(async () => {
+      buttonByText('继续').click()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    await act(async () => {
+      buttonByText('暂时跳过').click()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    await act(async () => {
+      buttonByText('开始第一项任务').click()
+    })
+    expect(mocks.api).toHaveBeenCalledWith(
+      'agent:create',
+      expect.objectContaining({ metadata: expect.objectContaining({ templateId: 'document' }) }),
+    )
+    expect(mocks.api).toHaveBeenCalledWith(
+      'session:submit-turn',
+      expect.objectContaining({ sessionId: 'session-1' }),
+    )
+    expect(mocks.setTweak).toHaveBeenCalledWith('view', 'chat')
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'settings:set',
+      expect.objectContaining({ value: { completed: true, dismissed: false } }),
+    )
+  })
+
+  it('keeps onboarding open and reports a failed first task', async () => {
+    mocks.api.mockImplementation((channel: string) => {
+      if (channel === 'provider:list') return Promise.resolve({ profiles: [] })
+      if (channel === 'agent:create') return Promise.resolve({ agent: { id: 'agent-1' } })
+      if (channel === 'session:submit-turn') return Promise.reject(new Error('network unavailable'))
+      return Promise.resolve({})
+    })
+    mocks.handleNewSession.mockResolvedValue('session-1')
+    act(() => {
+      root = createRoot(container)
+      root.render(<OnboardingView />)
+    })
+    await act(async () => {
+      buttonByText('继续').click()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    await act(async () => {
+      buttonByText('暂时跳过').click()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    await act(async () => {
+      buttonByText('开始第一项任务').click()
+    })
+    expect(container.querySelector('.onboarding-error')?.textContent).toContain(
+      'network unavailable',
+    )
+    expect(mocks.setTweak).not.toHaveBeenCalledWith('view', 'chat')
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      'settings:set',
+      expect.objectContaining({ value: { completed: true, dismissed: false } }),
+    )
   })
 
   it('shouldShowOnboardingAsync returns false when the main process marks onboarding completed', async () => {

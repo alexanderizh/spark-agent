@@ -1,3 +1,4 @@
+import { EXPERIENCE_CASES, OnboardingBanner, OnboardingProgress } from './OnboardingExperience'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
@@ -8,8 +9,7 @@ import {
   TextArea as LobeTextArea,
 } from '@lobehub/ui'
 import './OnboardingView.less'
-import sparkLogo from '../../assets/spark-logo.png'
-import { ONBOARDING_POSTERS } from './onboardingPosters'
+import './OnboardingExperience.less'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { AuthGate } from '../auth/AuthGate'
@@ -19,7 +19,6 @@ import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
-import { RemoteAssetImage } from '../components/RemoteAssetImage'
 import { Icons } from '../Icons'
 import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
 import {
@@ -48,13 +47,12 @@ export type OnboardingStep =
   | 'connection-test'
   | 'agent-template'
   | 'first-session'
-  | 'canvas-guide'
-  | 'skills-guide'
   | 'workflows-guide'
+  | 'canvas-guide'
   | 'media-guide'
   | 'done'
 type ModelSource = 'spark-account' | 'third-party-provider' | 'local-cli'
-type UseCaseId = 'daily' | 'document' | 'work' | 'developer' | 'unsure'
+type UseCaseId = 'daily' | 'document' | 'work' | 'developer'
 type TemplateId = 'general' | 'document' | 'work' | 'developer'
 
 type LocalCliKind = 'claude' | 'codex'
@@ -87,7 +85,7 @@ type Action =
 
 const initialState: OnboardingState = {
   step: 'welcome',
-  useCase: null,
+  useCase: 'daily',
   modelSource: null,
   providerProfileId: null,
   modelId: null,
@@ -106,9 +104,33 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
     case 'set-step':
       return { ...state, step: action.step }
     case 'set-use-case':
-      return { ...state, useCase: action.useCase, templateId: action.templateId }
+      return {
+        ...state,
+        agentId: state.useCase === action.useCase ? state.agentId : null,
+        useCase: action.useCase,
+        templateId: action.templateId,
+        firstPrompt:
+          state.useCase === action.useCase
+            ? state.firstPrompt
+            : {
+                general: '帮我写一封简洁、友好的邮件，同步本周工作进展。',
+                document: '帮我设计一份阅读笔记模板，包含核心观点、关键证据和待确认的问题。',
+                work: '帮我制定本周工作计划，按优先级拆解并预留复盘时间。',
+                developer: '帮我梳理新项目的启动清单，包含目标、技术选型和第一阶段任务。',
+              }[action.templateId],
+      }
     case 'set-model-source':
-      return { ...state, modelSource: action.modelSource, step: action.step }
+      return {
+        ...state,
+        modelSource: action.modelSource,
+        step: action.step,
+        agentId: null,
+        providerProfileId: null,
+        modelId: null,
+        localAdapter: null,
+        localPermissionMode: null,
+        localCliKind: null,
+      }
     case 'set-provider':
       return {
         ...state,
@@ -131,9 +153,9 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
       }
     }
     case 'set-agent':
-      return { ...state, agentId: action.agentId, step: 'first-session' }
+      return { ...state, agentId: action.agentId }
     case 'set-template':
-      return { ...state, templateId: action.templateId }
+      return { ...state, templateId: action.templateId, agentId: null }
     case 'set-first-prompt':
       return { ...state, firstPrompt: action.firstPrompt }
     default:
@@ -151,45 +173,16 @@ function previousStep(state: OnboardingState): OnboardingStep {
   )
     return 'model-source'
   if (state.step === 'connection-test') {
-    return state.localCliKind != null ? 'local-cli' : 'third-party-provider'
+    return state.modelSource ?? 'model-source'
   }
-  if (state.step === 'agent-template') return 'connection-test'
-  if (state.step === 'first-session') return 'agent-template'
-  if (state.step === 'canvas-guide') return 'first-session'
-  if (state.step === 'skills-guide') return 'canvas-guide'
-  if (state.step === 'workflows-guide') return 'skills-guide'
-  if (state.step === 'media-guide') return 'workflows-guide'
+  if (state.step === 'agent-template') return 'model-source'
+  if (state.step === 'first-session') return 'model-source'
+  if (state.step === 'workflows-guide') return 'first-session'
+  if (state.step === 'canvas-guide') return 'workflows-guide'
+  if (state.step === 'media-guide') return 'canvas-guide'
   if (state.step === 'done') return 'media-guide'
   return 'first-session'
 }
-
-const useCases: Array<{ id: UseCaseId; title: string; desc: string; templateId: TemplateId }> = [
-  {
-    id: 'daily',
-    title: '写内容 / 做总结',
-    desc: '邮件、报告、会议纪要、日常问答。',
-    templateId: 'general',
-  },
-  {
-    id: 'document',
-    title: '处理文件 / 资料',
-    desc: '阅读、归纳、整理文档与表格信息。',
-    templateId: 'document',
-  },
-  {
-    id: 'work',
-    title: '规划任务 / 做助理',
-    desc: '拆解目标、安排步骤、跟进事项。',
-    templateId: 'work',
-  },
-  {
-    id: 'developer',
-    title: '项目 / 代码 / 自动化',
-    desc: '适合已经需要处理项目工程的用户。',
-    templateId: 'developer',
-  },
-  { id: 'unsure', title: '我还不确定', desc: '先用一个通用助手快速体验。', templateId: 'general' },
-]
 
 const templates: Record<
   TemplateId,
@@ -248,151 +241,16 @@ const providerPresets = PROVIDER_PRESETS.filter(
     preset.modelType !== 'video',
 )
 
-const visualByStep: Record<
-  OnboardingStep,
-  {
-    kicker: string
-    title: string
-    caption: string
-    stat: string
-    points: string[]
-  }
-> = {
-  welcome: {
-    kicker: 'Start',
-    title: '把第一次配置拆成 4 步',
-    caption: '先选目标，再接模型，最后直接进入第一轮对话。',
-    stat: '3 min',
-    points: ['按你的用途推荐助手模板', '配置项只在需要时出现', '跳过后不会再次自动打开'],
-  },
-  'model-source': {
-    kicker: 'Model',
-    title: '填好 API Key，直接开始',
-    caption: '使用已有第三方模型密钥，安全保存在本机。',
-    stat: '',
-    points: [],
-  },
-  'spark-account': {
-    kicker: 'Account',
-    title: '使用 Spark 平台模型',
-    caption: '登录账号即可使用，无需配置 API Key。',
-    stat: '可用',
-    points: ['直接使用账号额度', '无需填写 API Key', '可与其他模型同时使用'],
-  },
-  'third-party-provider': {
-    kicker: 'Provider',
-    title: '保存服务商与密钥',
-    caption: '配置会写入本机安全存储，并立即做健康检查。',
-    stat: 'API',
-    points: ['优先选择常见 Anthropic 兼容服务', '密钥只保存在本机', '测试通过后再创建助手'],
-  },
-  'local-cli': {
-    kicker: 'Local',
-    title: '连接本机 AI 工具',
-    caption: '适合已经配置 Claude Code 或 Codex 的用户。',
-    stat: 'CLI',
-    points: ['自动检测本机可用工具', '不需要重新填写 API Key', '适合项目代码和自动化任务'],
-  },
-  'connection-test': {
-    kicker: 'Check',
-    title: '确认模型已响应',
-    caption: '测试通过后再创建助手，避免后续第一条消息失败。',
-    stat: 'OK',
-    points: ['失败时可返回修改模型', '本机 CLI 会检查可执行文件', '第三方模型会做一次健康检查'],
-  },
-  'agent-template': {
-    kicker: 'Agent',
-    title: '选择你的助手类型',
-    caption: '通用、文档、工作、开发四类模板覆盖常见任务。',
-    stat: '02',
-    points: [
-      '模板只是起点：提示词、技能、工作流后续都能改',
-      '助手页可继续挂载技能、绑定工作流',
-      '开发助手会默认使用较稳妥的权限',
-    ],
-  },
-  'first-session': {
-    kicker: 'Chat',
-    title: '发出第一条消息',
-    caption: '用一条真实请求完成初始化，而不是停在空白页面。',
-    stat: '03',
-    points: ['可以直接选示例问题', '发送后会创建新会话', '接下来是可跳过的能力导览'],
-  },
-  'canvas-guide': {
-    kicker: 'Canvas',
-    title: '画布 = 多媒体创作工作台',
-    caption: '按项目组织剧本、角色、分镜、参考图和生成结果。',
-    stat: 'Guide',
-    points: [
-      '节点承载文本、图片、视频、音频、镜头',
-      '从左侧切到画布视图进入项目',
-      '适合分镜、视频与视觉创作',
-    ],
-  },
-  'skills-guide': {
-    kicker: 'Skills',
-    title: 'Skill 给 Agent 增加专门能力',
-    caption: '内置、推荐、SkillHub 市场、本地检测四种来源，按需启用。',
-    stat: 'Guide',
-    points: ['内置 Skill 开箱即用', '推荐 / SkillHub 市场可安装更多', '本地 Skill 会被自动检测到'],
-  },
-  'workflows-guide': {
-    kicker: 'Workflows',
-    title: '把多步任务编排成工作流',
-    caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行；代码任务跑偏时还能回到还原点。',
-    stat: 'Guide',
-    points: [
-      '节点代表一个步骤，边代表顺序',
-      '工作流可绑定到 Agent',
-      '可保存为模板，并结合代码还原点更稳地迭代',
-    ],
-  },
-  'media-guide': {
-    kicker: 'Media',
-    title: '多媒体模型也能在对话里使用',
-    caption: '当服务商支持图片、视频或语音模型时，可以在对话和画布里调用它们。',
-    stat: 'Guide',
-    points: [
-      '图片生成、图生视频、语音等模型会按类型展示',
-      '可把参考素材放入对话或画布上下文',
-      '生成结果适合继续回到画布整理',
-    ],
-  },
-  done: {
-    kicker: 'Done',
-    title: '配置完成',
-    caption: '以后可以在模型与助手设置中继续扩展能力。',
-    stat: '✓',
-    points: ['新手引导已标记完成', '可从设置页重新打开', '现在可以开始正式会话'],
-  },
-}
-
-function getDefaultProviderPreset() {
-  const deepseek = providerPresets.find((p) => p.id === 'deepseek-api-anthropic')
-  const preset = deepseek ?? providerPresets[0] ?? PROVIDER_PRESETS[0]
-  if (!preset) throw new Error('No provider presets configured')
-  return preset
-}
-
-const defaultProviderPreset = getDefaultProviderPreset()
+const defaultProviderPreset =
+  providerPresets.find((p) => p.id === 'deepseek-api-anthropic') ??
+  providerPresets[0] ??
+  PROVIDER_PRESETS[0]!
 
 const firstPrompts = [
   '帮我写一段简短的工作总结，语气自然、清楚。',
   '请把这段话整理得更清楚，并列出重点。',
   '帮我规划今天的 3 个重要任务，并给出执行顺序。',
 ]
-
-const ONBOARDING_STEP_ITEMS = [
-  { label: '欢迎', step: 'welcome' },
-  { label: '连接模型', step: 'model-source' },
-  { label: '创建助手', step: 'agent-template' },
-  { label: '第一次对话', step: 'first-session' },
-  { label: '画布', step: 'canvas-guide' },
-  { label: 'Skill', step: 'skills-guide' },
-  { label: '工作流', step: 'workflows-guide' },
-  { label: '多媒体', step: 'media-guide' },
-  { label: '完成', step: 'done' },
-] as const satisfies ReadonlyArray<{ label: string; step: OnboardingStep }>
 
 function getActiveStepIndex(step: OnboardingStep): number {
   if (step === 'welcome') return 0
@@ -404,16 +262,9 @@ function getActiveStepIndex(step: OnboardingStep): number {
       'local-cli',
       'connection-test',
     ].includes(step)
-  ) {
+  )
     return 1
-  }
-  if (step === 'agent-template') return 2
-  if (step === 'first-session') return 3
-  if (step === 'canvas-guide') return 4
-  if (step === 'skills-guide') return 5
-  if (step === 'workflows-guide') return 6
-  if (step === 'media-guide') return 7
-  return 8
+  return 2
 }
 
 function completeOnboarding(): void {
@@ -679,8 +530,8 @@ export function OnboardingView(): React.ReactElement {
       })
       const agent = (res as { agent: ManagedAgent }).agent
       dispatch({ type: 'set-agent', agentId: agent.id })
-      toast.success('第一个 AI 助手已创建。')
       void sessionCtx.refreshData()
+      return agent.id
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(`创建助手失败：${message}`)
@@ -710,15 +561,19 @@ export function OnboardingView(): React.ReactElement {
     setBusy(true)
     setError('')
     try {
+      const agentId = state.agentId ?? (await handleCreateAgent())
+      if (!agentId) return
+      setBusy(true)
       const sessionId = await sessionCtx.handleNewSession(null, {
-        agentId: state.agentId ?? undefined,
+        agentId,
         providerProfileId: state.providerProfileId ?? undefined,
         modelId: state.modelId ?? undefined,
       })
       if (!sessionId) throw new Error('没有可用的模型配置，请先完成模型连接。')
       await sendTurn({ sessionId, message: prompt })
       toast.success('第一次会话已创建。')
-      dispatch({ type: 'set-step', step: 'canvas-guide' })
+      completeOnboarding()
+      goChat()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(`发送失败：${message}`)
@@ -727,6 +582,8 @@ export function OnboardingView(): React.ReactElement {
     }
   }, [
     sendTurn,
+    handleCreateAgent,
+    goChat,
     sessionCtx,
     state.agentId,
     state.firstPrompt,
@@ -737,7 +594,7 @@ export function OnboardingView(): React.ReactElement {
   ])
 
   return (
-    <div className="onboarding-shell">
+    <div className="onboarding-shell experience-shell" data-use={state.useCase}>
       {/* 引导页自带透明拖拽条（拖拽移动窗口 / 双击最大化）：
           不复用 MacWindowDragHeader，避免其底色在页面背景上形成异色头部；
           透明背景让氛围光晕与页面背景自然透出。 */}
@@ -748,64 +605,24 @@ export function OnboardingView(): React.ReactElement {
           window.spark?.invoke('window:maximize', {}).catch(() => {})
         }}
       />
-      <aside className="onboarding-steps" aria-label="新手引导步骤">
-        <div className="onboarding-brand">
-          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork
-        </div>
-        <button
-          className="onboarding-back"
-          type="button"
-          onClick={() => dispatch({ type: 'back' })}
-          disabled={state.step === 'welcome'}
-        >
-          <Icons.ArrowLeft size={14} /> 上一步
-        </button>
-        <div className="onboarding-progress-track" aria-hidden="true">
-          <motion.div
-            className="onboarding-progress-fill"
-            animate={{
-              width: `${((getActiveStepIndex(state.step) + 1) / ONBOARDING_STEP_ITEMS.length) * 100}%`,
-            }}
-            transition={{ type: 'spring', stiffness: 260, damping: 32 }}
-          />
-        </div>
-        <div className="onboarding-steps-list" role="list">
-          {ONBOARDING_STEP_ITEMS.map((item, index) => {
-            const activeIndex = getActiveStepIndex(state.step)
-            const isActive = index === activeIndex
-            const isDone = index < activeIndex
-            return (
-              <button
-                key={item.label}
-                type="button"
-                role="listitem"
-                className={`onboarding-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
-                aria-current={isActive ? 'step' : undefined}
-                onClick={() => dispatch({ type: 'set-step', step: item.step })}
-              >
-                {isActive && (
-                  <motion.span
-                    className="onboarding-step-pill"
-                    layoutId="onboarding-step-pill"
-                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                  />
-                )}
-                <span className="onboarding-step-dot">
-                  {isDone ? <Icons.Check size={12} /> : index + 1}
-                </span>
-                <span className="onboarding-step-label">{item.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        <button className="onboarding-skip" type="button" onClick={skip}>
-          稍后再说
-        </button>
-      </aside>
+      <OnboardingBanner useCase={state.useCase} />
 
       <main className="onboarding-main">
         <section className="onboarding-card">
           <div className="onboarding-copy">
+            <OnboardingProgress phase={getActiveStepIndex(state.step)} />
+            <div className="experience-navigation">
+              <button
+                type="button"
+                disabled={busy || state.step === 'welcome'}
+                onClick={() => dispatch({ type: 'back' })}
+              >
+                <Icons.ArrowLeft size={14} /> 上一步
+              </button>
+              <button type="button" disabled={busy} onClick={skip}>
+                稍后再说
+              </button>
+            </div>
             <AnimatePresence mode="wait">
               <motion.div
                 key={state.step}
@@ -815,7 +632,9 @@ export function OnboardingView(): React.ReactElement {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.22, ease: 'easeOut' }}
               >
-                {state.step === 'welcome' && <WelcomeStep dispatch={dispatch} />}
+                {state.step === 'welcome' && (
+                  <WelcomeStep dispatch={dispatch} useCase={state.useCase} />
+                )}
                 {state.step === 'model-source' && <ModelSourceStep dispatch={dispatch} />}
                 {state.step === 'spark-account' && (
                   <SparkAccountStep
@@ -854,30 +673,21 @@ export function OnboardingView(): React.ReactElement {
                 {state.step === 'connection-test' && (
                   <ConnectionTestStep output={connectionTestOutput} dispatch={dispatch} />
                 )}
-                {state.step === 'agent-template' && (
-                  <AgentTemplateStep
-                    templateId={state.templateId}
-                    dispatch={dispatch}
-                    onSubmit={handleCreateAgent}
-                    busy={busy}
-                  />
-                )}
-                {state.step === 'first-session' && (
+                {(state.step === 'agent-template' || state.step === 'first-session') && (
                   <FirstSessionStep
                     prompt={state.firstPrompt}
+                    templateId={state.templateId}
                     dispatch={dispatch}
                     onSubmit={handleStartFirstSession}
+                    onSkip={skip}
                     busy={busy}
                   />
-                )}
-                {state.step === 'canvas-guide' && (
-                  <CanvasGuideStep dispatch={dispatch} onFinish={goChat} />
-                )}
-                {state.step === 'skills-guide' && (
-                  <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
                 )}
                 {state.step === 'workflows-guide' && (
                   <WorkflowsGuideStep dispatch={dispatch} onFinish={goChat} />
+                )}
+                {state.step === 'canvas-guide' && (
+                  <CanvasGuideStep dispatch={dispatch} onFinish={goChat} />
                 )}
                 {state.step === 'media-guide' && (
                   <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
@@ -889,36 +699,53 @@ export function OnboardingView(): React.ReactElement {
               </motion.div>
             </AnimatePresence>
           </div>
-          <OnboardingVisual step={state.step} />
         </section>
       </main>
     </div>
   )
 }
 
-function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
+function WelcomeStep({
+  dispatch,
+  useCase,
+}: {
+  dispatch: React.Dispatch<Action>
+  useCase: UseCaseId | null
+}) {
   return (
     <>
-      <h1>欢迎使用 SparkWork</h1>
-      <p className="lead">
-        不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
-      </p>
-      <div className="welcome-use-cases">
-        {useCases.map((item) => (
-          <div key={item.id} className="welcome-use-case">
+      <h1>你想先做些什么？</h1>
+      <p className="lead">选一个最贴近你的场景，我们为你准备一个好的开始。</p>
+      <div className="experience-choices">
+        {EXPERIENCE_CASES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={useCase === item.id}
+            className="experience-choice"
+            onClick={() =>
+              dispatch({ type: 'set-use-case', useCase: item.id, templateId: item.templateId })
+            }
+          >
+            <span className="experience-icon">
+              <item.icon size={21} strokeWidth={1.7} />
+            </span>
             <strong>{item.title}</strong>
-            <span>{item.desc}</span>
-          </div>
+            <small>{item.desc}</small>
+            {useCase === item.id && (
+              <span className="experience-check" aria-hidden="true">
+                <Icons.Check size={12} />
+              </span>
+            )}
+          </button>
         ))}
       </div>
-      <Button
-        className="welcome-start-button"
-        type="primary"
-        size="middle"
-        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
-      >
-        开始设置
-      </Button>
+      <p className="experience-hint">随时可以尝试其他用途，这不会限制你的助手。</p>
+      <div className="button-row experience-continue">
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
+          继续 <Icons.ArrowRight size={16} />
+        </Button>
+      </div>
     </>
   )
 }
@@ -947,9 +774,11 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
       <p className="lead">
         推荐使用已有的第三方模型 API Key，也可以登录 Spark 账号或连接本机工具。
       </p>
-      <div className="source-list source-list-minimal">
-        <div className="source-primary">
-          <Icons.Server size={22} />
+      <div className="experience-choices source-options">
+        <div className="experience-choice source-choice-primary">
+          <span className="experience-icon">
+            <Icons.Server size={21} strokeWidth={1.7} />
+          </span>
           <div className="source-primary-copy">
             <div className="source-primary-title">
               <strong>第三方模型</strong>
@@ -972,7 +801,7 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         </div>
         <button
           type="button"
-          className="source-card source-row"
+          className="experience-choice source-choice"
           onClick={() =>
             dispatch({
               type: 'set-model-source',
@@ -981,29 +810,29 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             })
           }
         >
-          <Icons.User size={22} />
-          <div>
-            <strong>Spark 账号</strong>
-            <span>登录即可使用，无需配置</span>
-          </div>
-          <span className="source-row-arrow" aria-hidden="true">
-            ›
+          <span className="experience-icon">
+            <Icons.User size={21} strokeWidth={1.7} />
+          </span>
+          <strong>Spark 账号</strong>
+          <small>登录即可使用，无需配置</small>
+          <span className="source-choice-arrow" aria-hidden="true">
+            <Icons.ArrowRight size={16} strokeWidth={1.7} />
           </span>
         </button>
         <button
           type="button"
-          className="source-card source-row"
+          className="experience-choice source-choice"
           onClick={() =>
             dispatch({ type: 'set-model-source', modelSource: 'local-cli', step: 'local-cli' })
           }
         >
-          <Icons.Terminal size={22} />
-          <div>
-            <strong>本机 AI 工具</strong>
-            <span>连接 Claude Code 或 Codex</span>
-          </div>
-          <span className="source-row-arrow" aria-hidden="true">
-            ›
+          <span className="experience-icon">
+            <Icons.Terminal size={21} strokeWidth={1.7} />
+          </span>
+          <strong>本机 AI 工具</strong>
+          <small>连接 Claude Code 或 Codex</small>
+          <span className="source-choice-arrow" aria-hidden="true">
+            <Icons.ArrowRight size={16} strokeWidth={1.7} />
           </span>
         </button>
       </div>
@@ -1029,13 +858,6 @@ function SparkAccountStep({
 }) {
   return (
     <>
-      <button
-        type="button"
-        className="model-source-back"
-        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
-      >
-        <Icons.ArrowLeft size={14} /> 切换模型方式
-      </button>
       <h1>使用 Spark 平台模型</h1>
       <p className="lead">
         不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。
@@ -1127,13 +949,6 @@ function LocalCliStep({
 
   return (
     <>
-      <button
-        type="button"
-        className="model-source-back"
-        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
-      >
-        <Icons.ArrowLeft size={14} /> 切换模型方式
-      </button>
       <h1>连接本机的 Claude Code 或 Codex</h1>
       <p className="lead">
         选中后会直接复用你本机已登录的 Claude Code / Codex 配置，不需要再填写 API Key。
@@ -1146,11 +961,13 @@ function LocalCliStep({
             <button
               key={option.kind}
               type="button"
-              className="source-card local-cli-card"
+              className={`source-card local-cli-card ${
+                option.kind === 'claude' ? 'accent-amber' : 'accent-blue'
+              }`}
               disabled={busy || current !== 'available'}
               onClick={() => onSelect(option.kind)}
             >
-              <Icons.Terminal size={22} />
+              <Icons.Terminal size={21} strokeWidth={1.7} />
               <div>
                 <strong>{option.title}</strong>
                 <span>
@@ -1214,15 +1031,6 @@ function ProviderStep(props: {
 }) {
   return (
     <>
-      {props.dispatch && (
-        <button
-          type="button"
-          className="model-source-back"
-          onClick={() => props.dispatch?.({ type: 'set-step', step: 'model-source' })}
-        >
-          <Icons.ArrowLeft size={14} /> 切换模型方式
-        </button>
-      )}
       <h1>填写你的模型服务信息</h1>
       <p className="lead">
         “密钥”就是模型服务商给你的使用凭证。SparkWork 会把它安全保存在你的电脑里。
@@ -1231,91 +1039,112 @@ function ProviderStep(props: {
         className="onboarding-promo-banner"
         onSelectPreset={props.setProviderPresetId}
       />
-      <label>
-        服务商
-        <LobeSelect
-          value={props.providerPresetId}
-          onChange={(value) => props.setProviderPresetId(String(value))}
-          options={providerPresets.map((p) => ({
-            label: (
-              <span className="provider-select-option">
-                <ProviderLogo
-                  vendor={getVendorMeta(p.vendorId) ?? null}
-                  size={24}
-                  shape="rounded"
-                />
-                <span>
-                  <strong>{p.name}</strong>
-                  <small>{p.defaultModel}</small>
+      <div className="onboarding-form">
+        <label>
+          <span className="onboarding-field-head">
+            服务商
+            <small className="onboarding-field-hint">已内置接口地址与默认模型</small>
+          </span>
+          <LobeSelect
+            value={props.providerPresetId}
+            onChange={(value) => props.setProviderPresetId(String(value))}
+            options={providerPresets.map((p) => ({
+              label: (
+                <span className="provider-select-option">
+                  <ProviderLogo
+                    vendor={getVendorMeta(p.vendorId) ?? null}
+                    size={24}
+                    shape="rounded"
+                  />
+                  <span>
+                    <strong>{p.name}</strong>
+                    <small>{p.defaultModel}</small>
+                  </span>
                 </span>
-              </span>
-            ),
-            value: p.id,
-          }))}
-        />
-      </label>
-      <label>
-        <span className="onboarding-field-head">
-          密钥
+              ),
+              value: p.id,
+            }))}
+          />
+          {/* 渠道简介取自 VendorMeta.desc，未知渠道不渲染，避免占位空白 */}
           {(() => {
-            // 仅已知渠道（VendorMeta.apiKeyUrl）显示「获取密钥」快捷入口，未知渠道不渲染
             const preset = providerPresets.find((p) => p.id === props.providerPresetId)
-            const apiKeyUrl = preset ? getVendorMeta(preset.vendorId)?.apiKeyUrl : undefined
-            return apiKeyUrl ? (
-              <a
-                className="onboarding-apikey-link"
-                href={apiKeyUrl}
-                target="_blank"
-                rel="noreferrer"
-                title={`前往 ${apiKeyUrl} 获取密钥`}
-              >
-                获取密钥
-                <Icons.ExternalLink size={11} />
-              </a>
-            ) : null
+            const desc = preset ? getVendorMeta(preset.vendorId)?.desc : undefined
+            return desc ? <small className="onboarding-field-hint">{desc}</small> : null
           })()}
-        </span>
-        <InputPassword
-          value={props.apiKey}
-          onChange={(e) => props.setApiKey(e.target.value)}
-          placeholder="粘贴 API Key"
-        />
-      </label>
-      <label>
-        模型 ID
-        <div className="provider-model-row">
-          {props.fetchedModelIds.length > 0 ? (
-            <LobeSelect
-              showSearch
-              value={props.customModel || undefined}
-              onChange={(value) => props.setCustomModel(String(value))}
-              placeholder="选择模型"
-              options={props.fetchedModelIds.map((id) => ({ label: id, value: id }))}
-            />
-          ) : (
-            <LobeInput
-              value={props.customModel}
-              onChange={(e) => props.setCustomModel(e.target.value)}
-            />
-          )}
-          <Button
-            type="default"
-            onClick={props.onFetchModels}
-            loading={props.fetchingModels}
-            disabled={props.busy}
-          >
-            {props.fetchedModelIds.length > 0 ? '重新获取' : '获取模型'}
-          </Button>
-        </div>
-      </label>
-      <label>
-        API URL
-        <LobeInput
-          value={props.customEndpoint}
-          onChange={(e) => props.setCustomEndpoint(e.target.value)}
-          placeholder="默认可留空"
-        />
-      </label>
+        </label>
+        <label>
+          <span className="onboarding-field-head">
+            密钥
+            {(() => {
+              // 仅已知渠道（VendorMeta.apiKeyUrl）显示「获取密钥」快捷入口，未知渠道不渲染
+              const preset = providerPresets.find((p) => p.id === props.providerPresetId)
+              const apiKeyUrl = preset ? getVendorMeta(preset.vendorId)?.apiKeyUrl : undefined
+              return apiKeyUrl ? (
+                <a
+                  className="onboarding-apikey-link"
+                  href={apiKeyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`前往 ${apiKeyUrl} 获取密钥`}
+                >
+                  获取密钥
+                  <Icons.ExternalLink size={11} />
+                </a>
+              ) : null
+            })()}
+          </span>
+          <InputPassword
+            value={props.apiKey}
+            onChange={(e) => props.setApiKey(e.target.value)}
+            placeholder="粘贴 API Key"
+          />
+          <small className="onboarding-field-hint">
+            只保存在本机，不会上传到任何服务器
+          </small>
+        </label>
+        <label>
+          <span className="onboarding-field-head">
+            模型 ID
+            <small className="onboarding-field-hint">点右侧按钮可从服务商读取可用模型</small>
+          </span>
+          <div className="provider-model-row">
+            {props.fetchedModelIds.length > 0 ? (
+              <LobeSelect
+                showSearch
+                value={props.customModel || undefined}
+                onChange={(value) => props.setCustomModel(String(value))}
+                placeholder="选择模型"
+                options={props.fetchedModelIds.map((id) => ({ label: id, value: id }))}
+              />
+            ) : (
+              <LobeInput
+                value={props.customModel}
+                onChange={(e) => props.setCustomModel(e.target.value)}
+                placeholder="填写 Model ID"
+              />
+            )}
+            <Button
+              type="default"
+              onClick={props.onFetchModels}
+              loading={props.fetchingModels}
+              disabled={props.busy}
+            >
+              {props.fetchedModelIds.length > 0 ? '重新获取' : '获取模型'}
+            </Button>
+          </div>
+        </label>
+        <label>
+          API URL
+          <LobeInput
+            value={props.customEndpoint}
+            onChange={(e) => props.setCustomEndpoint(e.target.value)}
+            placeholder="默认可留空"
+          />
+          <small className="onboarding-field-hint">
+            仅在使用自建或代理接口时填写，需兼容 OpenAI 接口格式
+          </small>
+        </label>
+      </div>
       <div className="button-row">
         {props.dispatch && <SkipStepButton dispatch={props.dispatch} target="agent-template" />}
         <Button type="primary" size="middle" onClick={props.onSubmit} loading={props.busy}>
@@ -1326,82 +1155,43 @@ function ProviderStep(props: {
   )
 }
 
-function AgentTemplateStep({
-  templateId,
-  dispatch,
-  onSubmit,
-  busy,
-}: {
-  templateId: TemplateId
-  dispatch: React.Dispatch<Action>
-  onSubmit: () => void
-  busy: boolean
-}) {
-  return (
-    <>
-      <h1>选择你的 AI 助手类型</h1>
-      <div className="choice-grid templates">
-        {Object.entries(templates).map(([id, item]) => (
-          <button
-            key={id}
-            type="button"
-            className={`choice-card ${templateId === id ? 'selected' : ''}`}
-            onClick={() => dispatch({ type: 'set-template', templateId: id as TemplateId })}
-          >
-            <span className="choice-card-mark" aria-hidden="true" />
-            <strong>{item.title}</strong>
-            <span>{item.desc}</span>
-          </button>
-        ))}
-      </div>
-      <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Skills size={22} />
-          <div>
-            <strong>挂载技能</strong>
-            <span>
-              模板只带一个默认提示词。去助手详情页的「技能」Tab，挂载已安装或从技能市场装的技能，让它掌握写
-              PPT、查资料等具体流程。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Workflow size={22} />
-          <div>
-            <strong>绑定工作流</strong>
-            <span>
-              把"先做 A、再做 B、最后做
-              C"这类多步任务编排成工作流后绑定到助手，收到匹配任务时会自动跑完整个流程。
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="button-row">
-        <Button onClick={() => dispatch({ type: 'back' })}>返回模型测试</Button>
-        <SkipStepButton dispatch={dispatch} target="first-session" />
-        <Button type="primary" onClick={onSubmit} loading={busy}>
-          {busy ? '正在创建…' : `创建“${templates[templateId].name}”`}
-        </Button>
-      </div>
-    </>
-  )
-}
-
 function FirstSessionStep({
+  templateId,
+  onSkip,
   prompt,
   dispatch,
   onSubmit,
   busy,
 }: {
   prompt: string
+  templateId: TemplateId
+  onSkip: () => void
   dispatch: React.Dispatch<Action>
   onSubmit: () => void
   busy: boolean
 }) {
   return (
     <>
-      <h1>试着发出第一条消息</h1>
-      <p className="lead">发送后会创建新会话，然后进入几页可跳过的功能导览。</p>
+      <h1>从第一件小事开始。</h1>
+      <p className="experience-assistant">已为你匹配：{templates[templateId].title}</p>
+      <details className="experience-template-options">
+        <summary>调整助手类型</summary>
+        <div className="choice-grid templates">
+          {Object.entries(templates).map(([id, item]) => (
+            <button
+              type="button"
+              key={id}
+              disabled={busy}
+              aria-pressed={templateId === id}
+              className={`choice-card ${templateId === id ? 'selected' : ''}`}
+              onClick={() => dispatch({ type: 'set-template', templateId: id as TemplateId })}
+            >
+              {item.title}
+            </button>
+          ))}
+        </div>
+      </details>
+      <p className="lead">修改下面的内容，开始你的第一项任务。发送成功后将进入工作台。</p>
       <div className="prompt-list">
         {firstPrompts.map((item) => (
           <button
@@ -1417,12 +1207,21 @@ function FirstSessionStep({
         value={prompt}
         onChange={(e) => dispatch({ type: 'set-first-prompt', firstPrompt: e.target.value })}
         rows={4}
+        aria-label="第一项任务"
+        disabled={busy}
       />
       <div className="button-row">
-        <Button onClick={() => dispatch({ type: 'back' })}>返回助手选择</Button>
-        <SkipStepButton dispatch={dispatch} target="canvas-guide" />
+        <Button disabled={busy} onClick={onSkip}>
+          稍后开始，进入工作台
+        </Button>
+        <Button
+          disabled={busy}
+          onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
+        >
+          了解更多功能
+        </Button>
         <Button type="primary" onClick={onSubmit} loading={busy}>
-          {busy ? '正在发送…' : '发送并继续导览'}
+          {busy ? '正在发送…' : '开始第一项任务'}
         </Button>
       </div>
     </>
@@ -1477,67 +1276,8 @@ function CanvasGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
-          继续了解 Skill
-        </Button>
-      </div>
-    </>
-  )
-}
-
-function SkillsGuideStep({
-  dispatch,
-  onFinish,
-}: {
-  dispatch: React.Dispatch<Action>
-  onFinish: () => void
-}) {
-  return (
-    <>
-      <h1>Skill 让 Agent 一次上手新能力</h1>
-      <p className="lead">
-        Skill 像是给 Agent 的任务手册：里面写好了应对特定场景的流程、模板、提示词与工具用法。Spark
-        Agent 通过四种来源为你提供 Skill，按需取用即可。
-      </p>
-      <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Globe size={22} />
-          <div>
-            <strong>从技能市场安装</strong>
-            <span>
-              技能商店（SkillHub）里有完整的分类与搜索，覆盖写作、代码、视觉、研究等场景，按需装回「已安装」。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Sparkles size={22} />
-          <div>
-            <strong>举个例子：ppt-master 制作 PPT</strong>
-            <span>
-              想做一份产品发布 PPT，可以先去技能市场的「精选市场」安装 <code>ppt-master</code>
-              ，应用会优先使用 Spark 自建安装源。装好之后，只要在输入框里写一条提示词，例如：
-              <br />
-              <code className="guide-prompt-example">
-                用 ppt-master 帮我做一份 8 页的产品发布 PPT，主题是「X
-                智能助手」，受众是潜在企业客户，风格简洁商务。
-              </code>
-              <br />
-              Agent 会按技能里的流程自动出大纲、生成幻灯片并交付文件。
-              <em>（以上仅是提示词示例，不会自动触发。）</em>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
-          返回画布
-        </Button>
-        <Button
-          type="primary"
-          onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
-        >
-          继续了解工作流
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
+          继续了解多媒体模型
         </Button>
       </div>
     </>
@@ -1576,8 +1316,8 @@ function MediaGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}>
-          返回工作流
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
+          返回画布
         </Button>
         <Button
           type="primary"
@@ -1640,11 +1380,11 @@ function WorkflowsGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
-          返回 Skill
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'first-session' })}>
+          返回第一项任务
         </Button>
-        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
-          继续了解多媒体模型
+        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
+          继续了解画布
         </Button>
       </div>
     </>
@@ -1670,45 +1410,10 @@ function ConnectionTestStep({
           type="primary"
           onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}
         >
-          继续创建助手
+          继续
         </Button>
       </div>
     </>
-  )
-}
-
-function OnboardingVisual({ step }: { step: OnboardingStep }) {
-  const visual = visualByStep[step]
-  const poster = ONBOARDING_POSTERS[step]
-  return (
-    <div className="onboarding-visual" aria-hidden="true">
-      <div className="visual-stage">
-        <div className="visual-topline">
-          <span>{visual.kicker}</span>
-        </div>
-        <div className="visual-preview">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              className="visual-preview-inner"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <RemoteAssetImage className="visual-poster" src={poster} alt="" />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-        {visual.points.length > 0 && (
-          <ul className="visual-points">
-            {visual.points.map((point) => (
-              <li key={point}>{point}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
   )
 }
 

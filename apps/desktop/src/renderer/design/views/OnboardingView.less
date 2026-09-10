@@ -5,7 +5,6 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
@@ -57,238 +56,6 @@
     );
 }
 
-.onboarding-steps {
-  position: relative;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  padding: 54px 14px 18px;
-  border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 90%, var(--bg-soft));
-  overflow: hidden;
-}
-
-.onboarding-steps-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  /* 让滚动条出现时步骤内容不会被遮挡 */
-  padding: 2px 2px 8px;
-  margin: 0 -2px 8px;
-  scrollbar-gutter: stable;
-}
-
-.onboarding-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  margin-bottom: 14px;
-  color: var(--text-strong);
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-
-.onboarding-brand img {
-  width: 28px;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, #000 5%, transparent),
-    0 4px 12px color-mix(in srgb, #000 16%, transparent);
-}
-
-.onboarding-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  min-height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  padding: 4px 6px 4px 2px;
-  border-radius: 7px;
-  margin-bottom: 16px;
-  text-align: left;
-  font-size: 13px;
-  font-weight: 600;
-  transition:
-    color 0.18s ease,
-    gap 0.18s ease,
-    transform 0.18s ease;
-}
-
-.onboarding-back svg {
-  transition: transform 0.18s ease;
-}
-
-.onboarding-back:not(:disabled):hover {
-  color: var(--text-strong);
-  gap: 9px;
-}
-
-.onboarding-back:not(:disabled):hover svg {
-  transform: translateX(-2px);
-}
-
-.onboarding-back:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.onboarding-progress-track {
-  position: relative;
-  height: 3px;
-  border-radius: 999px;
-  margin: 0 2px 16px;
-  background: color-mix(in srgb, var(--border-strong) 60%, transparent);
-  overflow: hidden;
-}
-
-.onboarding-progress-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: var(--primary);
-}
-
-.onboarding-step {
-  position: relative;
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  color: var(--text-muted);
-  font-size: 13px;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  transition: color 0.18s ease;
-}
-
-/* 连接线从本行 dot 下缘画到下一行 dot 上缘（top:26px → 46px），首列 20px 与 dot 同宽，
-   left:17px + 2px 线宽正好落在 dot 圆心竖轴（8px padding + 10px 半径 = 18px）上，串成连续链路。
-   26/20 两个值依赖 32px 行高 + 8px 列表 gap，改动行距时需同步。
-   z-index 高于选中态 pill，保证线穿过 pill 区域时不断开；已完成段用 success 色。 */
-.onboarding-step:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  left: 17px;
-  top: 26px;
-  width: 2px;
-  height: 20px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--border-strong) 55%, transparent);
-  z-index: 2;
-}
-
-.onboarding-step.done:not(:last-child)::after {
-  background: color-mix(in srgb, var(--success) 65%, transparent);
-}
-
-.onboarding-step:hover:not(.active) {
-  color: var(--text-strong);
-}
-
-.onboarding-step:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
-}
-
-.onboarding-step-pill {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
-}
-
-.onboarding-step-dot {
-  position: relative;
-  z-index: 1;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--panel);
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 800;
-  transition:
-    background 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
-}
-
-.onboarding-step-label {
-  position: relative;
-  z-index: 1;
-}
-
-.onboarding-step.active {
-  color: var(--text-strong);
-  font-weight: 800;
-}
-
-.onboarding-step.active .onboarding-step-dot {
-  border-color: transparent;
-  background: var(--primary);
-  color: var(--primary-fg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
-  transform: none;
-}
-
-.onboarding-step.done .onboarding-step-dot {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--success) 88%, var(--primary));
-  color: var(--primary-fg);
-}
-
-.onboarding-skip {
-  width: 100%;
-  min-height: 38px;
-  border: 1px dashed var(--border-strong);
-  background: transparent;
-  color: var(--text-muted);
-  padding: 9px 12px;
-  border-radius: 8px;
-  margin-top: auto;
-  text-align: center;
-  font-size: 13px;
-  transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
-}
-
-.onboarding-skip:hover {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border-strong));
-  background: color-mix(in srgb, var(--primary) 6%, transparent);
-  color: var(--text-strong);
-}
-
 .onboarding-main {
   position: relative;
   z-index: 30;
@@ -307,8 +74,6 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 404px;
-  gap: 0;
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -480,18 +245,6 @@
   background: color-mix(in srgb, var(--primary) 6%, var(--panel));
 }
 
-.choice-card-mark {
-  position: absolute;
-  top: 15px;
-  left: 15px;
-  width: 24px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--primary);
-  box-shadow: none;
-  transition: width 0.2s ease;
-}
-
 .choice-card strong,
 .source-card strong {
   display: block;
@@ -517,10 +270,6 @@
   background: color-mix(in srgb, var(--primary) 9%, var(--panel));
 }
 
-.choice-card.selected .choice-card-mark {
-  width: 40px;
-}
-
 /* 欢迎页用途选项卡：纯展示，不可点击 —— 关掉共享 .choice-card:hover 的可交互视觉 */
 .source-list {
   display: grid;
@@ -535,14 +284,38 @@
   min-height: 76px;
 }
 
-.source-card svg {
-  width: 40px;
-  height: 40px;
-  padding: 9px;
+/* 与 OnboardingExperience.less 的 .experience-icon 保持同一套图标底座语言。
+   仅作用于首个图标位：卡片内还有行尾箭头等小图标，套上底座会变成一坨色块。 */
+.source-card > svg {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  padding: 8px;
   border-radius: 11px;
   box-sizing: border-box;
   color: color-mix(in srgb, var(--primary) 85%, var(--text));
   background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+}
+
+/* 本机 CLI 卡片（Claude Code / Codex）：沿用用途卡片的场景色语言，两条路径一眼可分 */
+.source-card.accent-blue > svg {
+  color: #6683a6;
+  background: color-mix(in srgb, #82a9c0 13%, var(--panel));
+  border-color: color-mix(in srgb, #82a9c0 20%, var(--border));
+}
+
+.source-card.accent-amber > svg {
+  color: #a78466;
+  background: color-mix(in srgb, #c0a082 13%, var(--panel));
+  border-color: color-mix(in srgb, #c0a082 20%, var(--border));
+}
+
+/* 未检测到 / 不可用时回到中性，避免禁用态仍带彩色强调 */
+.source-card:disabled > svg {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
+  border-color: var(--border);
 }
 
 .source-card.recommended {
@@ -557,106 +330,6 @@
   background: color-mix(in srgb, var(--warning) 88%, var(--primary));
   border-radius: 6px;
   padding: 5px 9px;
-}
-
-.source-list-minimal {
-  gap: 0;
-  max-width: 760px;
-  margin-top: 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.source-primary {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  padding: 22px 0 26px;
-  border-bottom: 1px solid var(--border);
-}
-
-.source-primary > svg {
-  width: 48px;
-  height: 48px;
-  box-sizing: border-box;
-  padding: 11px;
-  border-radius: 50%;
-  color: var(--text-inverse);
-  background: var(--primary);
-}
-
-.source-primary-copy,
-.source-primary-title {
-  min-width: 0;
-}
-
-.source-primary-title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 6px;
-}
-
-.source-primary-title strong {
-  color: var(--text-strong);
-  font-size: 17px;
-}
-
-.source-primary-title em {
-  padding: 3px 7px;
-  border-radius: 5px;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-}
-
-.source-primary-copy > span {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.source-primary .ant-btn {
-  min-width: 124px;
-}
-
-.source-row.source-card {
-  grid-template-columns: 40px minmax(0, 1fr) 18px;
-  min-height: 94px;
-  padding: 16px 0;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  text-align: left;
-}
-
-.source-row.source-card:last-of-type {
-  border-bottom: 0;
-}
-
-.source-row.source-card:hover {
-  transform: none;
-  background: color-mix(in srgb, var(--primary) 4%, transparent);
-}
-
-.source-row.source-card strong {
-  margin: 0 0 4px;
-  font-size: 15px;
-}
-
-.source-row.source-card > svg {
-  color: var(--text-muted);
-  background: transparent;
-}
-
-.source-row-arrow {
-  color: var(--text-muted);
-  font-size: 30px;
-  font-weight: 300;
-  line-height: 1;
 }
 
 .source-skip {
@@ -705,7 +378,6 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
-.notice-card,
 .test-output {
   position: relative;
   border-radius: 10px;
@@ -717,7 +389,6 @@
   animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.notice-card::before,
 .test-output::before {
   content: '';
   position: absolute;
@@ -785,31 +456,6 @@
 .onboarding-auth-embed + .button-row > .ant-btn:first-child:hover {
   color: var(--primary);
   background: transparent;
-}
-
-.model-source-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  margin: 0 0 18px;
-  padding: 5px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.model-source-back:hover {
-  color: var(--primary);
-}
-
-.model-source-back:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 4px;
-  border-radius: 2px;
 }
 
 .guide-panel {
@@ -880,40 +526,6 @@
   line-height: 1.6;
 }
 
-.guide-item code {
-  display: inline-block;
-  padding: 1px 6px;
-  margin: 0 2px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
-  color: var(--text-strong);
-  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
-  font-size: 12px;
-}
-
-.guide-item .guide-prompt-example {
-  display: block;
-  margin: 8px 0 6px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-soft) 80%, var(--panel));
-  border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--border));
-  color: var(--text);
-  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-.guide-item em {
-  display: inline-block;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-style: normal;
-  opacity: 0.85;
-}
-
 .test-output {
   white-space: pre-wrap;
   font: inherit;
@@ -977,20 +589,34 @@
   opacity: 0.62;
 }
 
+// 字段行采用「行间距 > 行内间距」的节奏：同一字段的标签/控件/说明贴近，
+// 字段与字段之间明显分开，避免原来 7px 均分导致的层级含混。
 .onboarding-copy-inner label {
   display: grid;
-  gap: 7px;
-  margin-bottom: 12px;
-  font-weight: 700;
+  row-gap: 6px;
+  margin-bottom: 18px;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
   color: var(--text-strong);
 }
 
-// label 文字行：右侧可挂「获取密钥」快捷链接（仅已知渠道渲染）
+// 字段辅助说明：弱化到 muted 层级，对齐输入框左缘，不与字段名抢视觉
+.onboarding-field-hint {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+// label 文字行：右侧可挂「获取密钥」快捷链接或说明文案（仅已知渠道渲染链接）
 .onboarding-field-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -1009,6 +635,11 @@
   }
 }
 
+// 表单字段容器：只做语义分组，间距交给子 label 的 row-gap/margin-bottom
+.onboarding-form {
+  max-width: 720px;
+}
+
 .provider-model-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1024,9 +655,10 @@
   width: 100%;
 }
 
+// 按钮与同行输入框等高对齐，避免输入框 42px / 按钮 40px 的错位
 .provider-model-row .ant-btn {
   min-width: 88px;
-  height: auto;
+  height: 100%;
   min-height: 40px;
   white-space: nowrap;
 }
@@ -1131,43 +763,6 @@
   font-size: 12.5px;
 }
 
-.welcome-use-cases {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 28px;
-  margin: 4px 0 20px;
-  border-top: 1px solid var(--border);
-}
-
-.welcome-use-case {
-  padding: 16px 0 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.welcome-use-case strong,
-.welcome-use-case span {
-  display: block;
-}
-
-.welcome-use-case strong {
-  color: var(--text-strong);
-  font-size: 15px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.welcome-use-case span {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.welcome-start-button {
-  width: min(100%, 560px);
-  margin-top: 8px;
-  padding: 4px 0;
-}
-
 .onboarding-copy-inner textarea {
   resize: vertical;
   margin-bottom: 18px;
@@ -1182,119 +777,6 @@
   color: var(--danger);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
   animation: riseIn 0.3s ease both;
-}
-
-/* ───────────────────────── 右侧插画面板 ───────────────────────── */
-
-.onboarding-visual {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  min-height: 0;
-  border-left: 1px solid var(--border);
-  border-radius: 0;
-  box-shadow: none;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--panel) 92%, var(--primary) 3%),
-      var(--bg-soft)
-    ),
-    var(--bg-soft);
-  overflow: hidden;
-}
-
-.visual-stage {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 24px;
-  padding: 60px 28px 28px;
-}
-
-.visual-topline {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.visual-preview {
-  position: relative;
-  aspect-ratio: auto;
-  height: clamp(280px, 52vh, 560px);
-  min-height: 0;
-  margin: 0;
-  border-radius: 8px;
-  box-shadow: none;
-  background: transparent;
-  overflow: hidden;
-}
-
-.visual-preview-inner {
-  position: absolute;
-  inset: 0;
-}
-
-.visual-poster {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 8px;
-}
-
-.visual-points {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.visual-points li {
-  position: relative;
-  padding: 12px 0 12px 16px;
-  border-radius: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  box-shadow: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
-  animation: riseIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.visual-points li:nth-child(1) {
-  animation-delay: 60ms;
-}
-
-.visual-points li:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.visual-points li:nth-child(3) {
-  animation-delay: 180ms;
-}
-
-.visual-points li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 18px;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary) 78%, var(--success));
 }
 
 .provider-select-option {
@@ -1355,145 +837,25 @@ html[data-theme='dark'] .onboarding-shell,
   .choice-card,
   .source-card,
   .prompt-list button,
-  .notice-card,
   .test-output,
-  .visual-points li,
   .onboarding-error {
     animation: none !important;
   }
 }
 
-@media (max-width: 1280px) {
-  .onboarding-card {
-    grid-template-columns: minmax(0, 1fr) 360px;
-  }
-
-  .onboarding-copy {
-    padding-inline: 30px;
-  }
-
-  .visual-stage {
-    padding-inline: 22px;
-  }
-}
-
-@media (max-width: 1120px) {
-  .onboarding-shell {
-    grid-template-columns: 180px minmax(0, 1fr);
-  }
-
-  .onboarding-steps {
-    padding-inline: 10px;
-  }
-
-  .onboarding-card {
-    grid-template-columns: minmax(0, 1fr) 300px;
-  }
-
-  .onboarding-copy {
-    padding: 50px 24px 24px;
-  }
-
-  .onboarding-copy h1 {
-    font-size: 36px;
-  }
-
-  .visual-preview {
-    height: clamp(240px, 46vh, 430px);
-  }
-
-  .visual-points {
-    display: none;
-  }
-}
-
 @media (max-width: 980px) {
-  .onboarding-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .onboarding-steps {
-    display: none;
-  }
-
   .onboarding-main {
     overflow-y: auto;
   }
 
-  .onboarding-card {
-    grid-template-columns: 1fr;
-    height: auto;
-    min-height: 100%;
-  }
-
-  .onboarding-visual {
-    min-height: 0;
-    order: -1;
-    border-left: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .visual-stage {
-    padding: 42px 18px 14px;
-    gap: 10px;
-  }
-
-  .visual-topline {
-    display: none;
-  }
-
-  .visual-preview {
-    height: clamp(150px, 24vh, 240px);
-    margin: 0;
-  }
-
-  .welcome-use-cases {
-    grid-template-columns: 1fr;
-  }
-
-  .source-primary {
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 14px;
-  }
-
-  .source-primary > svg {
-    width: 44px;
-    height: 44px;
-  }
-
-  .source-primary .ant-btn {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  .onboarding-copy {
-    padding: 24px 18px 30px;
-  }
-
-  .onboarding-copy h1 {
-    font-size: 36px;
-  }
-
   .onboarding-copy-inner {
     max-width: none;
-    padding-bottom: 34px;
   }
 }
 
 @media (max-width: 720px) {
-  .onboarding-copy h1 {
-    font-size: 30px;
-    line-height: 1.12;
-  }
-
-  .lead {
-    font-size: 13px;
-    line-height: 1.6;
-  }
-
   .choice-grid,
-  .templates,
-  .prompt-list {
+  .templates {
     grid-template-columns: 1fr;
   }
 

@@ -1,3 +1,4 @@
+import { SparkBootSplash } from './design/components/brand/SparkRibbon'
 import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import {
@@ -2264,14 +2265,7 @@ function GateAwareShell(): React.ReactElement {
   }, [setTweak])
 
   if (auth.bootstrapping || !onboardingResolved) {
-    return (
-      <div className="boot-splash" role="status" aria-label={tr('app.boot.starting')}>
-        <div className="boot-splash-inner" aria-hidden="true">
-          <div className="boot-splash-spinner" />
-          {appVersion && <div className="boot-splash-version">v{appVersion}</div>}
-        </div>
-      </div>
-    )
+    return <SparkBootSplash version={appVersion} label={tr('app.boot.starting')} />
   }
   return <Shell />
 }
