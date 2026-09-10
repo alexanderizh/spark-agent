@@ -93,12 +93,14 @@ describe('TUI execution feedback', () => {
   it('shows retry progress and the classified stream error', async () => {
     const { session, mount } = await fixture()
     const mock = vi.spyOn(session, 'turn').mockImplementationOnce(async (_prompt, options) => {
+      await options?.onDelta?.({ type: 'text', text: 'discard me' })
       await options?.onDelta?.({
         type: 'retry',
         routeId: 'primary',
         attempt: 2,
         maxRetries: 3,
         delayMs: 4_000,
+        resetOutput: true,
         error: { code: 'llm.transport_error', message: 'connection reset' },
       })
       return new Promise<never>(() => undefined)
@@ -109,7 +111,9 @@ describe('TUI execution feedback', () => {
       await tick()
       app.stdin.write('\r')
       await tick()
-      expect(app.lastFrame()).toContain('正在重连模型 2/3')
+      expect(app.lastFrame()).toContain('正在重试模型 2/3')
+      expect(app.lastFrame()).toContain('已丢弃失败尝试的临时输出')
+      expect(app.lastFrame()).not.toContain('discard me')
       expect(app.lastFrame()).toContain('llm.transport_error · connection reset')
       expect(app.lastFrame()).toContain('4.0s 后重试')
     } finally {

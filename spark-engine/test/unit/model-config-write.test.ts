@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   configureLocalProvider,
   createConfiguredRuntime,
+  loadCliPreferences,
   loadConfiguredModel,
+  persistCliPreferences,
   persistSelectedModel,
 } from '../../src/config/model-config.js'
 
@@ -83,6 +85,29 @@ describe('persistSelectedModel', () => {
       /model id/u,
     )
     expect(await readFile(configPath, 'utf8')).toBe('[agent]\nmodel = "kept"\n')
+  })
+})
+
+describe('CLI preferences', () => {
+  it('persists and reloads the selected permission mode and reasoning effort', async () => {
+    const home = await tempHome()
+
+    await persistCliPreferences({
+      sparkHome: home,
+      permissionMode: 'auto',
+      reasoningEffort: 'max',
+    })
+
+    expect(
+      await loadCliPreferences({
+        cwd: home,
+        globalConfigPath: join(home, 'config.toml'),
+        projectConfigPath: join(home, 'project', '.spark', 'config.toml'),
+        env: { SPARK_HOME: home },
+      }),
+    ).toEqual({ permissionMode: 'auto', reasoningEffort: 'max' })
+    expect(await readFile(join(home, 'config.toml'), 'utf8')).toContain('permission_mode = "auto"')
+    expect(await readFile(join(home, 'config.toml'), 'utf8')).toContain('reasoning_effort = "max"')
   })
 })
 

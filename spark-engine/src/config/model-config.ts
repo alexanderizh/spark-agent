@@ -8,6 +8,8 @@ import { z } from 'zod'
 import type { LlmService } from '../seams.js'
 import type { FetchLike } from '../llm/http/client.js'
 import { ModelRegistry, type ModelProtocol } from '../llm/registry.js'
+import type { ReasoningEffort } from '../llm/types.js'
+import type { PermissionMode } from '../permission/types.js'
 import {
   discoverSparkWorkHost,
   resolveSparkWorkRoute,
@@ -17,6 +19,8 @@ import {
 } from './sparkwork-host.js'
 
 const ProtocolSchema = z.enum(['anthropic-messages', 'openai-responses'])
+const PermissionModeSchema = z.enum(['manual', 'auto', 'bypass'])
+const ReasoningEffortSchema = z.enum(['off', 'low', 'medium', 'high', 'max'])
 const CapabilitiesSchema = z
   .object({
     tools: z.boolean().optional(),
@@ -50,6 +54,8 @@ const ModelSchema = z
 const AgentSchema = z
   .object({
     model: z.string().min(1).optional(),
+    permission_mode: PermissionModeSchema.optional(),
+    reasoning_effort: ReasoningEffortSchema.optional(),
     failover: z.array(z.string().min(1)).default([]),
     max_retries: z.number().int().min(0).max(10).default(2),
     retry_initial_delay_ms: z.number().int().min(0).max(60_000).default(500),
@@ -89,6 +95,15 @@ export interface ConfiguredModelRuntime {
   readonly modelId: string
   readonly route: readonly string[]
   readonly configSnapshot: Readonly<Record<string, unknown>>
+}
+
+export interface CliPreferences {
+  readonly permissionMode: PermissionMode
+  readonly reasoningEffort: ReasoningEffort
+}
+
+export interface PersistCliPreferencesInput extends CliPreferences {
+  readonly sparkHome: string
 }
 
 export interface ConfiguredModelCatalogEntry {
@@ -153,6 +168,15 @@ export async function loadConfiguredModel(
     failover,
     options.fetch,
   )
+}
+
+/** Loads durable CLI defaults without requiring a model to be configured. */
+export async function loadCliPreferences(options: LoadModelConfigOptions): Promise<CliPreferences> {
+  const { config } = await loadModelContext(options)
+  return {
+    permissionMode: config.agent.permission_mode ?? 'manual',
+    reasoningEffort: config.agent.reasoning_effort ?? 'high',
+  }
 }
 
 /**
@@ -361,6 +385,18 @@ export async function persistSelectedModel(input: PersistSelectedModelInput): Pr
   return writeGlobalConfig(input.sparkHome, (layer) => {
     const agent = asRecord(layer.agent) ?? {}
     layer.agent = { ...agent, model }
+  })
+}
+
+/** Persists the user's TUI choices as global CLI defaults. */
+export async function persistCliPreferences(input: PersistCliPreferencesInput): Promise<string> {
+  return writeGlobalConfig(input.sparkHome, (layer) => {
+    const agent = asRecord(layer.agent) ?? {}
+    layer.agent = {
+      ...agent,
+      permission_mode: input.permissionMode,
+      reasoning_effort: input.reasoningEffort,
+    }
   })
 }
 

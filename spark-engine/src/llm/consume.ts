@@ -74,7 +74,19 @@ export async function consumeLlmStream(
         sawDone = true
         break
       case 'heartbeat':
+        break
       case 'retry':
+        if (delta.resetOutput) {
+          text = ''
+          thinking = ''
+          toolCalls.length = 0
+          callIds.clear()
+          continuation = undefined
+          usage = emptyUsage()
+          llmMs = 0
+          ttftMs = 0
+          sawDone = false
+        }
         break
     }
   }
@@ -99,5 +111,15 @@ export async function consumeLlmStream(
     usage,
     llmMs,
     ttftMs,
+  }
+}
+
+function emptyUsage(): Usage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
   }
 }

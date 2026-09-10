@@ -220,6 +220,41 @@ describe('real model protocol adapters', () => {
     expect(response.message.text).toBe('gateway final answer')
   })
 
+  it('diagnoses malformed Anthropic tool arguments without persisting their content', async () => {
+    const sse = [
+      'event: message_start',
+      'data: {"type":"message_start","message":{"model":"random/free-model","usage":{"input_tokens":2}}}',
+      '',
+      'event: content_block_start',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_bad","name":"write","input":{}}}',
+      '',
+      'event: content_block_delta',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"path\\":\\"secret.html\\""}}',
+      '',
+      'event: content_block_stop',
+      'data: {"type":"content_block_stop","index":0}',
+      '',
+    ].join('\n')
+    const service = new AnthropicMessagesService({
+      apiKey: 'secret',
+      model: 'openrouter/free',
+      fetch: async () => sseResponse(sse),
+    })
+
+    const consume = () => consumeLlmStream(service.stream(baseRequest(), context))
+    await expect(consume()).rejects.toMatchObject({
+      code: 'llm.anthropic.invalid_tool_json',
+      detail: {
+        requestId: 'request-1',
+        responseModel: 'random/free-model',
+        jsonCharacters: 21,
+        likelyTruncated: true,
+        parseError: expect.any(String),
+      },
+    })
+    await expect(consume()).rejects.not.toThrow(/secret\.html/u)
+  })
+
   it('does not treat reasoning-only output as a successful final answer', async () => {
     const stream = (async function* () {
       yield { type: 'thinking', text: 'I should answer next.' } as const

@@ -62,7 +62,9 @@ export function toAnthropicRequest(
     messages: toAnthropicMessages(request.messages),
     ...(tools.length === 0 ? {} : { tools }),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
-    ...(request.thinking ? { thinking: toThinking(request.thinking, request.maxTokens) } : {}),
+    ...(request.thinking
+      ? { thinking: toThinking(request.thinking, request.maxTokens, tools.length > 0) }
+      : {}),
     ...(promptCaching && request.system.some((section) => section.stability === 'stable')
       ? { cache_control: { type: 'ephemeral' } }
       : {}),
@@ -115,13 +117,16 @@ function reconstructedBlocks(message: Extract<IrMessage, { role: 'assistant' }>)
 function toThinking(
   thinking: NonNullable<LlmRequest['thinking']>,
   maxTokens: number,
+  hasTools: boolean,
 ): Record<string, unknown> {
   if (thinking.type === 'enabled') {
     // Anthropic counts thinking and visible answer tokens against the same
     // max_tokens ceiling. Keep a meaningful answer reserve instead of
     // allowing the default `high` budget to leave one token for the answer.
     // The reserve scales down for deliberately tiny caller-provided limits.
-    const visibleReserve = Math.min(2_048, Math.max(1, Math.floor(maxTokens / 4)))
+    const visibleReserve = hasTools
+      ? Math.min(8_192, Math.max(1_024, Math.floor(maxTokens / 3)))
+      : Math.min(2_048, Math.max(1, Math.floor(maxTokens / 4)))
     const availableThinking = Math.max(0, maxTokens - visibleReserve)
     // Anthropic's manual budget_tokens has a 1K lower bound. When the model's
     // configured output ceiling cannot fit a valid thinking block plus a
@@ -151,6 +156,7 @@ async function* decodeAnthropicEvents(
   let cacheReadTokens = 0
   let cacheWriteTokens = 0
   let firstContentAt: number | undefined
+  let responseModel: string | undefined
   const emittedTextByIndex = new Map<number, string>()
   let stopped = false
 
@@ -161,7 +167,9 @@ async function* decodeAnthropicEvents(
     if (type === 'ping') {
       yield { type: 'heartbeat' }
     } else if (type === 'message_start') {
-      const usage = asRecord(asRecord(value.message)?.usage)
+      const message = asRecord(value.message)
+      responseModel = stringValue(message?.model)
+      const usage = asRecord(message?.usage)
       inputTokens = token(usage?.input_tokens)
       cacheReadTokens = token(usage?.cache_read_input_tokens)
       cacheWriteTokens = cacheCreationTokens(usage?.cache_creation_input_tokens)
@@ -202,7 +210,10 @@ async function* decodeAnthropicEvents(
       if (block.type === 'tool_use') {
         const json = partialJson.get(index) ?? ''
         const args = json
-          ? parseJson(json, 'llm.anthropic.invalid_tool_json', requestId)
+          ? parseJson(json, 'llm.anthropic.invalid_tool_json', requestId, {
+              ...(responseModel ? { responseModel } : {}),
+              jsonCharacters: json.length,
+            })
           : block.input
         block.input = args
         firstContentAt ??= Date.now()
@@ -326,15 +337,36 @@ function parseEvent(data: string, provider: string, requestId?: string): Record<
   return record
 }
 
-function parseJson(data: string, code: string, requestId?: string): unknown {
+function parseJson(
+  data: string,
+  code: string,
+  requestId?: string,
+  extraDetail: Readonly<Record<string, unknown>> = {},
+): unknown {
   try {
     return JSON.parse(data)
   } catch (error) {
     throw new KernelError(code, 'Provider stream contained invalid JSON', {
       cause: error,
-      detail: { ...(requestId ? { requestId } : {}) },
+      detail: {
+        ...(requestId ? { requestId } : {}),
+        ...extraDetail,
+        parseError: safeDiagnosticText(
+          error instanceof Error ? error.message : 'Unknown JSON parse error',
+          256,
+        ),
+        likelyTruncated: isLikelyTruncatedJson(data, error),
+      },
     })
   }
+}
+
+function isLikelyTruncatedJson(data: string, error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : ''
+  return (
+    /unexpected end|unterminated/u.test(message) ||
+    !['}', ']'].includes(data.trimEnd().at(-1) ?? '')
+  )
 }
 
 function malformed(type: unknown, requestId?: string): never {

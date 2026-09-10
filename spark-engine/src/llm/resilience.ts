@@ -73,24 +73,12 @@ export class ResilientLlmService implements LlmService {
         } catch (error) {
           if (context.signal.aborted || isAbortError(error)) throw error
           lastError = error
-          if (output.hasMeaningfulOutput) {
-            throw new KernelError(
-              'llm.partial_stream_failed',
-              `LLM route ${route.id} failed after emitting output; automatic replay was suppressed`,
-              {
-                retryable: false,
-                cause: error,
-                detail: {
-                  routeId: route.id,
-                  routeIndex,
-                  attempt,
-                  output: output.detail(),
-                  cause: errorDetail(error),
-                },
-              },
-            )
+          const recoverableMalformedToolOutput =
+            output.canResetForRetry && isMalformedToolJson(error)
+          if (output.hasMeaningfulOutput && !recoverableMalformedToolOutput) {
+            throw partialStreamError(route.id, routeIndex, attempt, output, error)
           }
-          if (!isRetryable(error)) throw error
+          if (!isRetryable(error) && !recoverableMalformedToolOutput) throw error
           if (attempt < this.#retry.maxRetries) {
             const requestedDelayMs = retryAfterDelay(error)
             if (requestedDelayMs !== undefined && requestedDelayMs > this.#retry.maxDelayMs) {
@@ -118,10 +106,14 @@ export class ResilientLlmService implements LlmService {
               attempt: attempt + 1,
               maxRetries: this.#retry.maxRetries,
               delayMs,
+              resetOutput: output.hasMeaningfulOutput,
               error: retryErrorSummary(error),
             }
             await this.#sleep(delayMs, context.signal)
             continue
+          }
+          if (output.hasMeaningfulOutput) {
+            throw partialStreamError(route.id, routeIndex, attempt, output, error)
           }
         }
       }
@@ -157,6 +149,10 @@ class StreamOutputState {
     return this.#textCharacters > 0 || this.#thinkingCharacters > 0 || this.#toolCalls > 0
   }
 
+  get canResetForRetry(): boolean {
+    return this.#toolCalls === 0
+  }
+
   observe(delta: LlmDelta): void {
     if (delta.type === 'text') this.#textCharacters += delta.text.length
     else if (delta.type === 'thinking') this.#thinkingCharacters += delta.text.length
@@ -171,6 +167,37 @@ class StreamOutputState {
       visible: this.#textCharacters > 0 || this.#thinkingCharacters > 0,
     }
   }
+}
+
+function isMalformedToolJson(error: unknown): boolean {
+  return (
+    error instanceof KernelError &&
+    (error.code === 'llm.anthropic.invalid_tool_json' ||
+      error.code === 'llm.openai.invalid_tool_json')
+  )
+}
+
+function partialStreamError(
+  routeId: string,
+  routeIndex: number,
+  attempt: number,
+  output: StreamOutputState,
+  cause: unknown,
+): KernelError {
+  return new KernelError(
+    'llm.partial_stream_failed',
+    `LLM route ${routeId} failed after emitting output; automatic replay was suppressed`,
+    {
+      cause,
+      detail: {
+        routeId,
+        routeIndex,
+        attempt,
+        output: output.detail(),
+        cause: errorDetail(cause),
+      },
+    },
+  )
 }
 
 function errorDetail(error: unknown): Record<string, unknown> {

@@ -31,6 +31,7 @@ export interface EffortPickerProps {
 /**
  * Interactive reasoning-effort selector opened by /effort — same interaction
  * model as the model and permission pickers (↑↓/digits + enter, esc closes).
+ * The owning TUI persists the selected level as the next-launch default.
  */
 export function EffortPicker(props: EffortPickerProps): ReactElement {
   const initialIndex = Math.max(

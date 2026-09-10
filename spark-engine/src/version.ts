@@ -3,4 +3,4 @@
  * screen). The npm manifest version in package.json is bumped to the same
  * value at release time; keep the two in lockstep.
  */
-export const SPARK_ENGINE_VERSION = '0.6.2'
+export const SPARK_ENGINE_VERSION = '0.6.3'

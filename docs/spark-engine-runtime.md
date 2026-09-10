@@ -53,6 +53,8 @@ Spark CLI 对请求建立前或尚未产生可见内容的瞬时故障执行有�
 
 一旦已经输出文本、思考内容或完整工具调用，CLI 不自动重放整个请求，避免重复显示和重复副作用。此时 `llm.partial_stream_failed.detail` 会记录输出阶段、字符数、工具调用数和底层结构化错误，TUI 与纯文本模式直接附带根因和重试建议。所有外部错误详情都会限制长度、深度和字段数量，清理终端控制字符并对凭据形态字段脱敏。
 
+工具参数 JSON 损坏是特殊的安全恢复边界：若当前尝试尚未产生完整工具调用，CLI 会通知上层丢弃该尝试的临时正文/思考，再在 `max_retries` 内重新生成；统一消费器、TUI 与结构化 delta 都同步 reset，失败尝试不会进入会话账本。已经形成完整工具调用时仍禁止自动重放。带工具的 Anthropic 请求会为最终正文和结构化参数保留更大的输出预算，避免高推理强度挤占工具参数空间。错误详情只记录实际响应模型、参数字符数、解析原因和疑似截断标记，不落盘损坏参数原文。
+
 SparkWork loopback bridge 只向 CLI 转发完整 SSE 帧；上游若在半个 JSON 中断，未完成尾帧会被丢弃，再发送独立的 Anthropic/OpenAI 协议 error 事件，保留 `ECONNRESET` 等错误码和消息。standalone Provider 的响应体读取异常则由通用 SSE 层包装为可重试的 `llm.sse_stream_error`。支持 continuation/resume 的 Provider 后续可以在这一安全边界上增加专用续传。
 
 ## TUI 工具日志

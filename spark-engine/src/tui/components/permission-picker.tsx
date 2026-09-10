@@ -29,8 +29,8 @@ export interface PermissionPickerProps {
 }
 
 /**
- * Interactive permission-mode switcher. Switching is session-scoped: the new
- * policy applies to subsequent turns of this conversation only.
+ * Interactive permission-mode switcher. The new policy applies to subsequent
+ * turns and is persisted as the CLI default by the owning TUI.
  */
 export function PermissionPicker(props: PermissionPickerProps): ReactElement {
   const initialIndex = Math.max(

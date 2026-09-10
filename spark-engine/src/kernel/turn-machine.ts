@@ -356,6 +356,9 @@ async function collectEvents(ledger: SessionLedger): Promise<AgentEvent[]> {
 
 function recoveryHintFor(error: ErrorInfo): string {
   if (error.code === 'llm.partial_stream_failed') {
+    if (nestedErrorCode(error.detail)?.endsWith('.invalid_tool_json')) {
+      return 'The model repeatedly produced invalid tool arguments. Retry with lower reasoning effort or choose a model with more reliable tool calling.'
+    }
     return 'Retry the turn; if it repeats, inspect the recorded root cause and check the model gateway or network.'
   }
   if (error.code === 'llm.retry_delay_exceeded') {
@@ -364,6 +367,14 @@ function recoveryHintFor(error: ErrorInfo): string {
   return error.retryable
     ? 'Retry the turn; the failure was classified as transient.'
     : 'Inspect the event log and correct the reported boundary failure before retrying.'
+}
+
+function nestedErrorCode(detail: unknown): string | undefined {
+  if (typeof detail !== 'object' || detail === null) return undefined
+  const cause = (detail as Record<string, unknown>).cause
+  if (typeof cause !== 'object' || cause === null) return undefined
+  const code = (cause as Record<string, unknown>).code
+  return typeof code === 'string' ? code : undefined
 }
 
 function usageToBudget(

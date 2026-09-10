@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { KernelError } from '../../src/kernel/errors.js'
+import { consumeLlmStream } from '../../src/llm/consume.js'
 import { ResilientLlmService } from '../../src/llm/resilience.js'
 import type { LlmDelta, LlmRequest } from '../../src/llm/types.js'
 import type { LlmService } from '../../src/seams.js'
@@ -39,6 +40,7 @@ describe('LLM retry and failover safety', () => {
         attempt: 1,
         maxRetries: 1,
         delayMs: 100,
+        resetOutput: false,
         error: { code: 'llm.rate_limit', message: 'slow' },
       },
       { type: 'text', text: 'ok' },
@@ -125,6 +127,54 @@ describe('LLM retry and failover safety', () => {
     })
   })
 
+  it('discards uncommitted output and retries malformed tool JSON with a hard limit', async () => {
+    let calls = 0
+    const deltas: LlmDelta[] = []
+    const service = new ResilientLlmService({
+      routes: [
+        {
+          id: 'primary',
+          service: {
+            async *stream() {
+              calls += 1
+              if (calls === 1) {
+                yield { type: 'thinking', text: 'long failed reasoning' } as const
+                yield { type: 'text', text: 'I will write it.' } as const
+                throw new KernelError(
+                  'llm.anthropic.invalid_tool_json',
+                  'Provider stream contained invalid JSON',
+                )
+              }
+              yield { type: 'text', text: 'Recovered answer' } as const
+              yield { type: 'usage', inputTokens: 3, outputTokens: 2 } as const
+              yield { type: 'done' } as const
+            },
+          },
+        },
+      ],
+      retry: { maxRetries: 1, initialDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
+    })
+
+    const response = await consumeLlmStream(service.stream(request, context), (delta) => {
+      deltas.push(delta)
+    })
+    expect(response.message).toEqual({ text: 'Recovered answer', toolCalls: [] })
+    expect(response.usage).toMatchObject({ inputTokens: 3, outputTokens: 2 })
+    expect(deltas).toContainEqual({
+      type: 'retry',
+      routeId: 'primary',
+      attempt: 1,
+      maxRetries: 1,
+      delayMs: 0,
+      resetOutput: true,
+      error: {
+        code: 'llm.anthropic.invalid_tool_json',
+        message: 'Provider stream contained invalid JSON',
+      },
+    })
+    expect(calls).toBe(2)
+  })
+
   it('retries when only invisible bookkeeping was emitted', async () => {
     let calls = 0
     const service = new ResilientLlmService({
@@ -158,6 +208,7 @@ describe('LLM retry and failover safety', () => {
         attempt: 1,
         maxRetries: 1,
         delayMs: 0,
+        resetOutput: false,
         error: { code: 'llm.connection_reset', message: 'reset' },
       },
       { type: 'text', text: 'recovered' },

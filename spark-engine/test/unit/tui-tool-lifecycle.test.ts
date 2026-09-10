@@ -89,4 +89,32 @@ describe('TUI tool lifecycle', () => {
     expect(row).toContain('可直接重试')
     expect(row).not.toContain('generic old hint')
   })
+
+  it('explains repeated malformed tool output and identifies the routed model', () => {
+    const failure: AgentEvent = {
+      schemaVersion: 1,
+      sessionId: 'session-1',
+      seq: 2,
+      ts: 2,
+      type: 'turn.failed',
+      turnId: 'turn-2',
+      error: {
+        code: 'llm.partial_stream_failed',
+        message: 'failed after retrying malformed output',
+        retryable: false,
+        detail: {
+          cause: {
+            code: 'llm.anthropic.invalid_tool_json',
+            message: 'Provider stream contained invalid JSON',
+            detail: { responseModel: 'random/free-model', requestId: 'req-2' },
+          },
+        },
+      },
+    }
+
+    const row = projectTranscript([failure], capabilities).settled[0]?.text
+    expect(row).toContain('实际模型 random/free-model')
+    expect(row).toContain('工具参数生成连续失败')
+    expect(row).toContain('降低推理强度')
+  })
 })

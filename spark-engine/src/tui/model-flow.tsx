@@ -7,8 +7,6 @@ import { shouldSwallowImeKeypress } from './ime-guard.js'
 import type { ModelProtocol } from '../llm/registry.js'
 import type { TerminalCapabilities, TuiTheme } from './theme.js'
 
-const MAX_VISIBLE_ENTRIES = 15
-
 export interface LocalProviderDraft {
   readonly alias: string
   readonly protocol: ModelProtocol
@@ -37,7 +35,9 @@ export interface ModelPickerProps {
 export function ModelPicker(props: ModelPickerProps): ReactElement {
   const entries = props.catalog?.entries ?? []
   const [cursor, setCursor] = useState(0)
-  const visible = entries.slice(0, MAX_VISIBLE_ENTRIES)
+  // Keep every discovered route selectable. Hiding entries makes valid
+  // SparkWork routes impossible to choose.
+  const visible = entries
   const clampCursor = (next: number): number =>
     visible.length === 0 ? 0 : Math.min(visible.length - 1, Math.max(0, next))
 
@@ -100,11 +100,6 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
               </Text>
             </PickerRow>
           ))}
-          {entries.length > visible.length && (
-            <Text color={props.theme.dim}>
-              … 共 {entries.length} 个，仅显示前 {visible.length} 个
-            </Text>
-          )}
         </Box>
       )}
       {props.error && <Text color={props.theme.warn}>{props.error}</Text>}

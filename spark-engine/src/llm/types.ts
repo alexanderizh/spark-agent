@@ -144,6 +144,8 @@ export type LlmDelta =
       readonly attempt: number
       readonly maxRetries: number
       readonly delayMs: number
+      /** Discard deltas from the failed attempt before consuming the retry. */
+      readonly resetOutput: boolean
       readonly error: { readonly code?: string; readonly message: string }
     }
   | {

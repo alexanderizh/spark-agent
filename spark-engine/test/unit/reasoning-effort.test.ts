@@ -95,12 +95,22 @@ describe('reasoning effort mapping', () => {
     expect(off.thinking).toEqual({ type: 'disabled' })
     // Thinking and visible output share the ceiling. Keep a visible answer
     // reserve instead of spending the entire request on hidden reasoning.
-    const clamped = toAnthropicRequest(
+    const clampedWithoutTools = toAnthropicRequest(
       { ...baseRequest(), thinking: thinkingConfigFor('max') },
       'claude-test',
       true,
     )
-    expect(clamped.thinking).toEqual({ type: 'enabled', budget_tokens: 6_144 })
+    expect(clampedWithoutTools.thinking).toEqual({ type: 'enabled', budget_tokens: 6_144 })
+    const clampedWithTools = toAnthropicRequest(
+      {
+        ...baseRequest(),
+        tools: [{ name: 'write', description: 'Write a file', inputSchema: { type: 'object' } }],
+        thinking: thinkingConfigFor('max'),
+      },
+      'claude-test',
+      true,
+    )
+    expect(clampedWithTools.thinking).toEqual({ type: 'enabled', budget_tokens: 5_462 })
     const tooSmallForThinking = toAnthropicRequest(
       { ...baseRequest(), maxTokens: 512, thinking: thinkingConfigFor('high') },
       'claude-test',

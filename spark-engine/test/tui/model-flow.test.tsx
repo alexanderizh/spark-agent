@@ -50,6 +50,48 @@ describe('ModelPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('local-main')
   })
 
+  it('keeps all catalog entries selectable instead of stopping at fifteen', async () => {
+    const onSelect = vi.fn()
+    const entries = Array.from({ length: 17 }, (_, index) => ({
+      id: `model-${index + 1}`,
+      source: 'sparkwork' as const,
+      providerId: 'provider',
+      providerName: 'Provider',
+      protocol: 'openai-responses' as const,
+      model: `model-${index + 1}`,
+      selected: false,
+    }))
+    const app = render(
+      <ModelPicker
+        catalog={{
+          entries,
+          sparkWorkConnected: true,
+          sparkWorkStaleBridgeDescriptors: 0,
+        }}
+        refreshing={false}
+        busy={false}
+        notice={undefined}
+        error={undefined}
+        selectedModel={undefined}
+        theme={defaultTheme}
+        canClose={false}
+        onSelect={onSelect}
+        onConfigureLocal={vi.fn()}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+        onExit={vi.fn()}
+      />,
+    )
+
+    expect(app.lastFrame()).toContain('model-17')
+    for (let index = 0; index < 16; index += 1) app.stdin.write('\u001b[B')
+    await flush()
+    app.stdin.write('\r')
+    await flush()
+    expect(onSelect).toHaveBeenCalledWith('model-17')
+    app.unmount()
+  })
+
   it('exposes configure and refresh shortcuts and closes only when allowed', async () => {
     const onConfigureLocal = vi.fn()
     const onRefresh = vi.fn()
@@ -217,6 +259,33 @@ describe('unconfigured TUI onboarding', () => {
     expect(frame).not.toContain('选择模型')
     harness.app.unmount()
   })
+
+  it('persists permission and reasoning selections for the next launch', async () => {
+    const persistPreferences = vi.fn(async () => undefined)
+    const harness = await createHarness(persistPreferences)
+
+    harness.app.stdin.write('\r') // select the first model
+    await flush(20)
+    harness.app.stdin.write('\u001b[Z') // Shift+Tab: manual -> auto
+    await flush(10)
+    expect(persistPreferences).toHaveBeenLastCalledWith({
+      permissionMode: 'auto',
+      reasoningEffort: 'high',
+    })
+
+    harness.app.stdin.write('/effort')
+    await flush(5)
+    harness.app.stdin.write('\r')
+    await flush(10)
+    expect(harness.app.lastFrame()).toContain('推理强度')
+    harness.app.stdin.write('4') // max
+    await flush(10)
+    expect(persistPreferences).toHaveBeenLastCalledWith({
+      permissionMode: 'auto',
+      reasoningEffort: 'max',
+    })
+    harness.app.unmount()
+  })
 })
 
 interface Harness {
@@ -232,7 +301,12 @@ interface FakeSeams extends ModelRuntimeSeams {
   readonly persist: ReturnType<typeof vi.fn>
 }
 
-async function createHarness(): Promise<Harness> {
+async function createHarness(
+  persistPreferences?: (preferences: {
+    readonly permissionMode: 'manual' | 'auto' | 'bypass'
+    readonly reasoningEffort: 'off' | 'low' | 'medium' | 'high' | 'max'
+  }) => Promise<void>,
+): Promise<Harness> {
   const llm = new FakeModel([text('host done')])
   const seams: FakeSeams = {
     cwd: '/workspace',
@@ -278,6 +352,7 @@ async function createHarness(): Promise<Harness> {
       createSession={async () => agent.newSession()}
       seams={seams}
       switchable={switchable}
+      {...(persistPreferences === undefined ? {} : { persistPreferences })}
     />,
   )
   await flush(10)
@@ -291,6 +366,10 @@ interface HarnessAppProps {
   readonly createSession: () => Promise<AgentSession>
   readonly seams: ModelRuntimeSeams
   readonly switchable: SwitchableLlmService
+  readonly persistPreferences?: (preferences: {
+    readonly permissionMode: 'manual' | 'auto' | 'bypass'
+    readonly reasoningEffort: 'off' | 'low' | 'medium' | 'high' | 'max'
+  }) => Promise<void>
 }
 
 function HarnessApp(props: HarnessAppProps): React.ReactElement {
@@ -303,6 +382,9 @@ function HarnessApp(props: HarnessAppProps): React.ReactElement {
       createSession={props.createSession}
       modelRuntime={modelRuntime}
       capabilities={CAPABILITIES}
+      {...(props.persistPreferences === undefined
+        ? {}
+        : { persistPreferences: props.persistPreferences })}
     />
   )
 }

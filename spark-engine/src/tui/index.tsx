@@ -2,7 +2,8 @@ import { render, type RenderOptions } from 'ink'
 import React from 'react'
 
 import { loadCustomCommands, type CustomCommand } from '../commands/custom-commands.js'
-import { createDefaultEnv } from '../env.js'
+import { persistCliPreferences } from '../config/model-config.js'
+import { createDefaultEnv, defaultSparkHome } from '../env.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { LlmService, SessionMeta } from '../seams.js'
 import { InteractiveApprover } from '../permission/interactive.js'
@@ -26,6 +27,8 @@ export interface RunTuiOptions {
   /** Real package version for the welcome screen; avoids stale fallback text. */
   readonly version?: string | undefined
   readonly permissionMode?: PermissionMode | undefined
+  /** Whether permissionMode came from an explicit CLI flag. */
+  readonly permissionModeExplicit?: boolean | undefined
   /** In-TUI /update channel; the CLI layer injects the real transaction. */
   readonly updateRunner?: SparkUpdateRunner | undefined
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
@@ -54,6 +57,8 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
   })
   const agent = Agent.open({ cwd, env })
   const permissionMode = options.permissionMode ?? 'manual'
+  const permissionModeExplicit =
+    options.permissionModeExplicit ?? options.permissionMode !== undefined
   let currentModel = options.model
   const createSession = async (): Promise<AgentSession> =>
     agent.newSession({
@@ -66,7 +71,11 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     options.resumeSessionId === undefined
       ? await createSession()
       : await agent.openSession(options.resumeSessionId)
-  if (options.resumeSessionId !== undefined && options.permissionMode !== undefined) {
+  if (
+    options.resumeSessionId !== undefined &&
+    permissionModeExplicit &&
+    options.permissionMode !== undefined
+  ) {
     session.setPermissionMode(options.permissionMode)
   }
   const permission = session.permissionMode
@@ -76,6 +85,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     ...(options.dataRoot === undefined ? {} : { userDir: options.dataRoot }),
     reservedNames: SLASH_COMMANDS.map((command) => command.name),
   }).catch(() => [])
+  let preferencesWrite: Promise<void> = Promise.resolve()
   const stdout = options.stdout ?? process.stdout
   const renderOptions: RenderOptions = {
     stdout,
@@ -98,6 +108,15 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       initialModel={options.model}
       startupError={options.startupError}
       permissionMode={permission}
+      persistPreferences={(preferences) => {
+        const next = preferencesWrite
+          .catch(() => undefined)
+          .then(async () => {
+            await persistCliPreferences({ sparkHome: defaultSparkHome(), ...preferences })
+          })
+        preferencesWrite = next
+        return next
+      }}
       resumePicker={options.resumePicker === true ? true : undefined}
       {...(options.updateRunner === undefined ? {} : { updateRunner: options.updateRunner })}
       {...(options.version === undefined ? {} : { version: options.version })}
@@ -130,6 +149,10 @@ interface SparkTuiRootProps {
   readonly resumePicker?: boolean | undefined
   readonly updateRunner?: SparkUpdateRunner | undefined
   readonly reasoningEffort?: ReasoningEffort | undefined
+  readonly persistPreferences?: (preferences: {
+    readonly permissionMode: PermissionMode
+    readonly reasoningEffort: ReasoningEffort
+  }) => Promise<void>
   readonly customCommands?: readonly CustomCommand[] | undefined
   readonly cwd?: string | undefined
   readonly onModelChanged: (model: string | undefined) => void
@@ -152,6 +175,9 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       openSession={props.openSession}
       listSessions={props.listSessions}
       permissionMode={props.permissionMode}
+      {...(props.persistPreferences === undefined
+        ? {}
+        : { persistPreferences: props.persistPreferences })}
       {...(props.resumePicker === true ? { resumePicker: true } : {})}
       {...(props.updateRunner === undefined ? {} : { updateRunner: props.updateRunner })}
       {...(props.version === undefined ? {} : { version: props.version })}

@@ -295,18 +295,21 @@ function presentTurnFailure(
   const causeMessage = stringField(cause?.message)
   const causeDetail = asRecord(cause?.detail)
   const requestId = stringField(causeDetail?.requestId)
+  const responseModel = stringField(causeDetail?.responseModel)
   const rootCause =
     causeCode || causeMessage
       ? ` · 根因 ${singleLine(causeCode ?? 'stream_error', 96)}: ${singleLine(causeMessage ?? 'unknown error', 240)}`
       : ''
   const request = requestId ? ` · request-id ${singleLine(requestId, 128)}` : ''
-  const hint =
-    error.code === 'llm.partial_stream_failed'
+  const model = responseModel ? ` · 实际模型 ${singleLine(responseModel, 128)}` : ''
+  const hint = causeCode?.endsWith('.invalid_tool_json')
+    ? ' · 工具参数生成连续失败；可降低推理强度或换用工具调用更稳定的模型'
+    : error.code === 'llm.partial_stream_failed'
       ? ' · 可直接重试；若重复出现，请检查模型网关与网络'
       : recoveryHint
         ? ` · ${singleLine(recoveryHint, 240)}`
         : ''
-  return `${summary}${rootCause}${request}${hint}`
+  return `${summary}${rootCause}${model}${request}${hint}`
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

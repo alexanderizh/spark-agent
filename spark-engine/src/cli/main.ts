@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util'
 
 import {
   inspectConfiguredModels,
+  loadCliPreferences,
   loadConfiguredModel,
   type ConfiguredModelCatalog,
   type ConfiguredModelRuntime,
@@ -131,6 +132,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return listSessionsCommand(options.json)
   }
 
+  const storedPreferences = await loadCliPreferences({ cwd: process.cwd() }).catch(() => undefined)
+  const resolvedOptions: CliOptions = {
+    ...options,
+    permissionMode: options.permissionModeExplicit
+      ? options.permissionMode
+      : (storedPreferences?.permissionMode ?? 'manual'),
+    reasoningEffort: options.reasoningEffort ?? storedPreferences?.reasoningEffort ?? 'high',
+  }
+
   const positionalPrompt = options.positionals.join(' ').trim()
   let prompt = options.prompt ?? positionalPrompt
   if (!prompt && !process.stdin.isTTY) prompt = (await readStdin()).trim()
@@ -175,12 +185,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       cwd: process.cwd(),
       version: await runningVersion(),
       updateRunner: createTuiUpdateRunner(),
-      ...(options.permissionModeExplicit ? { permissionMode: options.permissionMode } : {}),
+      permissionMode: resolvedOptions.permissionMode,
+      permissionModeExplicit: options.permissionModeExplicit,
       ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
       ...(options.resume === '' ? { resumePicker: true } : {}),
-      ...(options.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: options.reasoningEffort }),
+      reasoningEffort: resolvedOptions.reasoningEffort,
       ...(runtime ? { llm: runtime.service, model: runtime.modelId } : { startupError }),
     })
     const notice = await Promise.race([
@@ -218,10 +227,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.stderr.write(`${terminalSafe(message(error))}\n`)
     return 2
   }
-  if (prompt) return runOnce(prompt, options, runtime, resumeSessionId)
+  if (prompt) return runOnce(prompt, resolvedOptions, runtime, resumeSessionId)
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
-    return runPlainRepl(runtime, options, resumeSessionId)
+    return runPlainRepl(runtime, resolvedOptions, resumeSessionId)
   }
   process.stderr.write(
     'No task was provided. Pass a prompt, pipe stdin, or run spark in an interactive TTY.\n',
@@ -466,8 +475,7 @@ function parseCli(argv: readonly string[]): CliOptions {
     package: parsed.values.package ?? false,
     permissionMode: dangerousBypass ? 'bypass' : (configuredPermissionMode ?? 'manual'),
     permissionModeExplicit: dangerousBypass || configuredPermissionMode !== undefined,
-    // Always explicit: no channel-dependent "auto" default anywhere in the CLI.
-    reasoningEffort: configuredEffort ?? 'high',
+    ...(configuredEffort === undefined ? {} : { reasoningEffort: configuredEffort }),
     continueSession: continueLatest,
     // '' sentinel = bare --resume → in-TUI session picker; otherwise a concrete id.
     ...(resume === undefined ? {} : { resume }),
@@ -783,22 +791,26 @@ function errorCauseSuffix(detail: unknown): string {
       ? (causeRecord.detail as Record<string, unknown>)
       : undefined
   const requestId = causeDetail?.requestId
+  const responseModel = causeDetail?.responseModel
   if (
     typeof code !== 'string' &&
     typeof causeMessage !== 'string' &&
-    typeof requestId !== 'string'
+    typeof requestId !== 'string' &&
+    typeof responseModel !== 'string'
   ) {
     return ''
   }
   const root = `cause: ${terminalDiagnostic(typeof code === 'string' ? code : 'stream_error', 256)}: ${terminalDiagnostic(typeof causeMessage === 'string' ? causeMessage : 'unknown error', 1_024)}`
   const request =
     typeof requestId === 'string' ? `; request-id: ${terminalDiagnostic(requestId, 256)}` : ''
-  return ` (${root}${request})`
+  const model =
+    typeof responseModel === 'string' ? `; model: ${terminalDiagnostic(responseModel, 256)}` : ''
+  return ` (${root}${model}${request})`
 }
 
 function renderRetryDelta(delta: Extract<LlmDelta, { type: 'retry' }>): void {
   process.stderr.write(
-    `[model] reconnecting ${delta.attempt}/${delta.maxRetries} in ${(delta.delayMs / 1_000).toFixed(1)}s: ${terminalSafe(delta.error.code ?? delta.error.message)}\n`,
+    `[model] retrying ${delta.attempt}/${delta.maxRetries} in ${(delta.delayMs / 1_000).toFixed(1)}s${delta.resetOutput ? '; discarding the failed attempt output' : ''}: ${terminalSafe(delta.error.code ?? delta.error.message)}\n`,
   )
 }
 

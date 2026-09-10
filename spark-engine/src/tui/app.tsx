@@ -60,6 +60,11 @@ export interface SparkTuiAppProps {
   /** In-TUI self-update channel; absent disables /update (static/test mode). */
   readonly updateRunner?: SparkUpdateRunner
   readonly permissionMode?: PermissionMode
+  /** Persists the selected CLI defaults for the next launch. */
+  readonly persistPreferences?: (preferences: {
+    readonly permissionMode: PermissionMode
+    readonly reasoningEffort: ReasoningEffort
+  }) => Promise<void>
   /** Initial reasoning effort (from --effort); adjustable via /effort. */
   readonly reasoningEffort?: ReasoningEffort
   /** Prompt files from `.spark/commands/**`; expanded and sent as the turn input. */
@@ -244,6 +249,22 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     setNoticeFull({ text, tone: 'warn' })
   }, [])
 
+  const persistPreferences = useCallback(
+    (preferences: {
+      readonly permissionMode: PermissionMode
+      readonly reasoningEffort: ReasoningEffort
+    }): void => {
+      if (props.persistPreferences === undefined) return
+      void props.persistPreferences(preferences).catch((error: unknown) => {
+        setNoticeFull({
+          text: `写入 CLI 默认配置失败：${error instanceof Error ? error.message : String(error)}`,
+          tone: 'error',
+        })
+      })
+    },
+    [props.persistPreferences],
+  )
+
   const appendEvent = useCallback((event: AgentEvent) => {
     setEvents((current) =>
       current.some((candidate) => candidate.seq === event.seq) ? current : [...current, event],
@@ -267,6 +288,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
   const handleDelta = useCallback((delta: LlmDelta) => {
     if (delta.type === 'retry') {
+      if (delta.resetOutput) {
+        setLiveText('')
+        setLiveThinking('')
+      }
       setRetrying(delta)
     } else if (delta.type === 'text') {
       setRetrying(undefined)
@@ -525,7 +550,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
 
   const projection = useMemo(() => projectTranscript(events, capabilities), [capabilities, events])
   const action = retrying
-    ? `正在重连模型 ${retrying.attempt}/${retrying.maxRetries}`
+    ? `正在重试模型 ${retrying.attempt}/${retrying.maxRetries}`
     : deriveAction(events, projection.activeTools, liveText, liveThinking, pending)
   const perfText = formatPerf(lastStepPerf(events) ?? { tokensPerSec: 0, ttftMs: 0 })
   const empty = projection.settled.length === 0 && liveText === '' && liveThinking === ''
@@ -535,6 +560,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       session.setPermissionMode(mode)
       setPermissionModeState(mode)
       setPermPickerOpen(false)
+      persistPreferences({ permissionMode: mode, reasoningEffort })
       setNoticeFull({
         text:
           mode === 'bypass'
@@ -545,7 +571,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         tone: mode === 'bypass' ? 'warn' : 'info',
       })
     },
-    [session],
+    [persistPreferences, reasoningEffort, session],
   )
 
   // Shift+Tab walks the safe modes only; arming bypass stays behind /perm's
@@ -600,7 +626,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
             cancelling
               ? '已保留当前输入'
               : retrying
-                ? `${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
+                ? `${retrying.resetOutput ? '已丢弃失败尝试的临时输出 · ' : ''}${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
                 : pending
                   ? 'esc 拒绝当前工具'
                   : 'esc 中断当前任务'
@@ -647,6 +673,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           onPick={(effort) => {
             setReasoningEffort(effort)
             setEffortPickerOpen(false)
+            persistPreferences({ permissionMode, reasoningEffort: effort })
             setNotice(`推理强度: ${effort}（对下一个 turn 生效）`)
           }}
           onClose={() => {
