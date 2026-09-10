@@ -2,7 +2,7 @@ const vert = `attribute vec3 position;attribute vec3 normal;uniform mat3 rotatio
 const frag = `precision mediump float;varying vec3 N;varying vec3 P;varying vec3 O;uniform float dark;uniform float material;void main(){vec3 n=normalize(N);if(!gl_FrontFacing)n=-n;vec3 v=normalize(vec3(0.,0.,5.)-P);vec3 r=reflect(-v,n);float f=pow(1.-max(dot(n,v),0.),2.8);float key=max(dot(n,normalize(vec3(-.4,.9,1.3))),0.);float softbox=pow(max(0.,1.-abs(r.x+.35)*1.3),14.)*smoothstep(-.3,.5,r.y);float edge=pow(max(0.,1.-abs(r.y-.72)*2.),28.);float x=clamp((O.x+1.6)/3.2,0.,1.);vec3 c=mix(vec3(.12,.40,.82),vec3(.52,.19,.71),smoothstep(0.,.48,x));c=mix(c,vec3(.91,.29,.40),smoothstep(.40,.78,x));c=mix(c,vec3(1.,.65,.28),smoothstep(.75,1.,x));c=mix(c,vec3(.34,.79,.84),max(0.,O.y)*.25);vec3 col=c*(.65+key*.40)+softbox*.40+edge*.22+f*.14;col=mix(col,vec3(.98,.91,.98),f*.12);gl_FragColor=vec4(col,1.);}`
 type Vec3 = [number, number, number]
 function norm(a: Vec3): Vec3 {
-  let l = Math.hypot(...a)
+  const l = Math.hypot(...a)
   return a.map((x) => x / l) as Vec3
 }
 function surface(t: number, w: number): Vec3 {
@@ -31,7 +31,7 @@ function point(t: number, w: number) {
 const vertices: number[] = []
 for (let i = 0; i < 320; i++)
   for (let j = 0; j < 24; j++) {
-    let t = (i / 320) * Math.PI * 2,
+    const t = (i / 320) * Math.PI * 2,
       w = -0.34 + (j / 24) * 0.68,
       t2 = ((i + 1) / 320) * Math.PI * 2,
       w2 = -0.34 + ((j + 1) / 24) * 0.68
