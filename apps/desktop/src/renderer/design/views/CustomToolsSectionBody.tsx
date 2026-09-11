@@ -733,16 +733,7 @@ export function CustomToolsSection() {
                   : '还没有自定义工具'
             }
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-          >
-            {!query && activeView === 'tools' && (
-              <div className="ct_empty_actions">
-                <p>也可以在 Agent 对话中直接描述工具需求，由 Agent 帮你创建并保存工具草稿。</p>
-                <Button type="primary" onClick={() => setCreateOpen(true)}>
-                  创建第一个工具
-                </Button>
-              </div>
-            )}
-          </Empty>
+          />
         ) : (
           visibleTools.map((tool) => (
             <div key={tool.id} className="ct_row">

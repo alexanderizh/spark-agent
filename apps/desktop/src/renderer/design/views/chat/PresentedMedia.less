@@ -1,6 +1,12 @@
 // PresentedMedia — presented_files 中媒体(图/音/视)渲染样式
-// 图片复用全局 .md-image（见 styles/views.css），这里只统一外边距 + 给音/视频容器配套样式。
+// 图片复用全局 .md-image（见 styles/views.css），这里补齐三件事：
+//   1) 单图：卡片贴合图片、原图比例展示（不被全局 max-height 压扁）
+//   2) 多图：横向胶片条，等高、宽随比例、不换行、横向滚动
+//   3) 音/视频容器与比例约束
 // 设计 token 与 .md-image 对齐：--r-md / --border / --bg-soft / --text-muted。
+//
+// 通用约束：给 <img>/<video> 定宽 + 全局 max-height 会改变宽高比。
+// 需要「限高」时一律让宽高都回到 auto，交给 max-width / max-height 双向夹取。
 
 .presented-media-list {
   display: grid;
@@ -14,13 +20,33 @@
   }
 }
 
+// 多图：横向胶片条 —— 统一高度、宽度随各自比例、不换行、横向滚动。
+// 每张图都完整可见且不变形，不用固定外框裁剪，也不用等高网格挤压。
 .presented-media-list.is-image-gallery {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-flow: row nowrap;
+  // 不拉伸：flex 默认 align-items: stretch 会把图片卡片撑到与最高的兄弟等高
+  // （混排音频/视频时尤其明显），卡片会拖出一块空底色。
+  align-items: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  // 给横向滚动条留出位置，避免压住图片下沿
+  padding-bottom: 8px;
+
+  // 图集里混进音频/视频时，它们不能被当成可压缩的 flex 项挤在图片中间，
+  // 各占满一整个容器宽的槽位（图片仍不换行、继续横向滚动到它们）。
+  .presented-media-audio,
+  .presented-media-video-wrap {
+    flex: 1 0 100%;
+  }
 }
 
 .presented-media-image {
   position: relative;
   min-width: 0;
+  // 卡片贴合图片自身宽度：图片等比缩放后不会在卡片里留下一块同色空边。
+  // fit-content 天然被网格轨道宽度夹取，窄屏下不会溢出。
+  width: fit-content;
   max-width: 560px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -33,25 +59,34 @@
     max-width: none;
   }
 
+  // 关键：不要给 <img> 定宽。全局 .md-image-img 带 max-height: 420px，
+  // 一旦这里再写 width: 100%，浏览器只会把高度压到 420 而不回收宽度，
+  // 竖图/方图就被横向拉扁（宽高比被改变，只剩横图侥幸正常）。
+  // 宽高都交回原图比例，由 max-width / max-height 双向夹取 → 永远等比。
   .md-image-img {
-    width: 100%;
+    width: auto;
+    height: auto;
+    max-width: 100%;
     border: 0;
     border-radius: 0;
   }
 }
 
 .is-image-gallery .presented-media-image {
+  // 不参与 flex 伸缩、不被 560px 上限约束：卡片宽度就是图片宽度
+  flex: 0 0 auto;
+  width: fit-content;
   max-width: none;
-  aspect-ratio: 4 / 3;
 
-  .md-image,
+  // 高度定死、宽度交给原图比例：竖图窄、横图宽，逐张等比，不裁剪不拉伸。
+  // 注意高度必须写成绝对值——若写成 height: 100%，卡片做 max-content
+  // 计算时百分比无法解析，卡片会被撑到图片的原始像素宽度，两侧露出底色。
   .md-image-img {
-    height: 100%;
-  }
-
-  .md-image-img {
+    width: auto;
+    height: 220px;
+    max-width: none;
     max-height: none;
-    object-fit: cover;
+    object-fit: contain;
   }
 }
 
@@ -188,23 +223,24 @@
 
 .presented-media-video {
   display: block;
+  // 跟随视频自身比例：竖版(9:16)就竖着显示，不再被固定 16:9 外框压成中间一条 + 两侧黑边。
+  // 宽度不写 100%：max-height 一旦夹住高度，浏览器不会回收宽度，视频会被压扁。
+  // align-self 抵消 wrap 的 flex 拉伸，否则 width:auto 仍会被拉满整行、退化成大黑框。
+  align-self: flex-start;
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 420px; // 与 .md-image-img 的最大高度对齐，避免视频撑爆会话气泡
   border-radius: var(--r-md);
-  width: 100%;
-  aspect-ratio: 16 / 9;
   border: 0;
   background: #09090b;
   object-fit: contain;
 }
 
 @media (max-width: 620px) {
-  .presented-media-list.is-image-gallery {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .is-image-gallery .presented-media-image {
-    aspect-ratio: 16 / 10;
+  // 窄屏胶片条矮一点，一屏能多看到几张
+  .is-image-gallery .presented-media-image .md-image-img {
+    height: 180px;
   }
 }
 

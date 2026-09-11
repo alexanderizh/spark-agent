@@ -22,7 +22,13 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useToast } from './Toast'
-import { ImagePreviewModal } from './ImagePreviewModal'
+import { ImagePreviewModal, type LightboxImage } from './ImagePreviewModal'
+
+/** gallery 里的单张图；src 与本体 src 同形（本地路径 / http(s) / data: 等），由本组件统一解析 */
+export interface MarkdownImageGalleryItem {
+  src: string
+  alt?: string
+}
 
 type Props = {
   /** 原始 src，可能为本地路径、file:// URL、http(s) URL、data: URL */
@@ -35,6 +41,11 @@ type Props = {
    * 再走 safe-file:// 转换；缺省时保持旧行为（相对路径原样透传，由失败占位兜底）。
    */
   basePath?: string | null
+  /**
+   * 多图导航：本图所在的同组图片列表（含自身）与自身序号。
+   * 列表多于 1 张时，全屏预览支持左右切换；缺省或仅 1 张时行为与原来完全一致。
+   */
+  gallery?: { images: MarkdownImageGalleryItem[]; index: number } | undefined
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
@@ -148,7 +159,7 @@ function deriveFileName(src: string, alt: string): string {
   return last
 }
 
-export function MarkdownImage({ src, alt, basePath }: Props): ReactNode {
+export function MarkdownImage({ src, alt, basePath, gallery }: Props): ReactNode {
   const { toast } = useToast()
   const [error, setError] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -158,6 +169,16 @@ export function MarkdownImage({ src, alt, basePath }: Props): ReactNode {
   const resolvedSrc = useMemo(() => resolveImageSrc(src, basePath), [src, basePath])
   const fileName = useMemo(() => deriveFileName(src, alt), [src, alt])
   const isLocal = useMemo(() => resolvedSrc.startsWith(`${SAFE_FILE_SCHEME}:`), [resolvedSrc])
+
+  // 多图导航：把同组图片统一解析为 lightbox 可加载的 URL；仅 1 张（或未传）时不启用
+  const galleryNavigation = useMemo<LightboxImage[] | null>(() => {
+    if (!gallery || gallery.images.length <= 1) return null
+    return gallery.images.map((item) => ({
+      src: resolveImageSrc(item.src, basePath),
+      alt: item.alt ?? '',
+      fileName: deriveFileName(item.src, item.alt ?? ''),
+    }))
+  }, [gallery, basePath])
 
   // src 变化时清空 error 状态
   useEffect(() => {
@@ -303,6 +324,17 @@ export function MarkdownImage({ src, alt, basePath }: Props): ReactNode {
           alt={alt}
           fileName={fileName}
           onClose={() => setPreviewOpen(false)}
+          navigation={
+            galleryNavigation
+              ? {
+                  images: galleryNavigation,
+                  startIndex: Math.min(
+                    Math.max(gallery?.index ?? 0, 0),
+                    galleryNavigation.length - 1,
+                  ),
+                }
+              : undefined
+          }
         />
       )}
     </>

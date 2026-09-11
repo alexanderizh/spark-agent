@@ -17,8 +17,8 @@
  * 保证「后端收集到的」与「前端能渲染的」集合一致。
  */
 import type { ReactNode } from 'react'
-import { useCallback } from 'react'
-import { MarkdownImage } from '../../components/MarkdownImage'
+import { useCallback, useMemo } from 'react'
+import { MarkdownImage, type MarkdownImageGalleryItem } from '../../components/MarkdownImage'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useToast } from '../../components/Toast'
@@ -122,7 +122,23 @@ function PresentedMediaOpenButton({ filePath }: { filePath: string }): ReactNode
  * 音视频走原生 controls），不依赖外部 onFilePreview。
  */
 export function PresentedMediaList<T extends PresentedFile>({ files }: { files: T[] }): ReactNode {
-  const mediaFiles = files.filter((file) => classifyPresentedFile(file.path) != null)
+  const mediaFiles = useMemo(
+    () => files.filter((file) => classifyPresentedFile(file.path) != null),
+    [files],
+  )
+  // 图集导航：同一组 presented 媒体里的全部图片（按出现顺序）+ 每个图片文件对应的序号。
+  // 仅图片参与翻页，音视频不混入；单图时 MarkdownImage 侧自动退化为原单图预览。
+  const { galleryImages, galleryIndexByPath } = useMemo(() => {
+    const images: MarkdownImageGalleryItem[] = []
+    const indexByPath = new Map<string, number>()
+    for (const file of mediaFiles) {
+      if (classifyPresentedFile(file.path) !== 'image') continue
+      indexByPath.set(file.path, images.length)
+      images.push({ src: file.path, alt: file.title ?? getBaseName(file.path) })
+    }
+    return { galleryImages: images, galleryIndexByPath: indexByPath }
+  }, [mediaFiles])
+
   if (mediaFiles.length === 0) return null
   const imageCount = mediaFiles.filter(
     (file) => classifyPresentedFile(file.path) === 'image',
@@ -140,7 +156,18 @@ export function PresentedMediaList<T extends PresentedFile>({ files }: { files: 
         if (kind === 'image') {
           return (
             <div key={file.path} className="presented-media-image">
-              <MarkdownImage src={file.path} alt={label} />
+              <MarkdownImage
+                src={file.path}
+                alt={label}
+                gallery={
+                  galleryImages.length > 1
+                    ? {
+                        images: galleryImages,
+                        index: galleryIndexByPath.get(file.path) ?? 0,
+                      }
+                    : undefined
+                }
+              />
               <span className="presented-media-image-name" title={file.path}>
                 {label}
               </span>

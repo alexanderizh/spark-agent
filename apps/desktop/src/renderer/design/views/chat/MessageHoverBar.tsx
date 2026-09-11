@@ -35,7 +35,7 @@ export function MessageHoverBar({
   onDelete?: () => void
   /** 仅用户消息：把这条消息的文本+附件重新塞回输入区 */
   onResend?: () => void
-  /** 仅当前会话最后一轮已完成用户消息：行内编辑并替换该轮。 */
+  /** 仅当前会话最后一轮已结束用户消息：行内编辑并替换该轮。 */
   onEdit?: () => void
   /** 仅已完成的助手消息：从该轮创建分支 */
   onFork?: () => void

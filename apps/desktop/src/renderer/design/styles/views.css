@@ -1116,7 +1116,7 @@ body.sidebar-resizing {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 0 0;
+  padding: 6px 0 0;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
@@ -2333,7 +2333,8 @@ body.sidebar-resizing {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  /* 工具动作名是界面文案；使用 UI 字体，避免 Windows 为等宽字体回退中文时字面异常放大。 */
+  font-family: var(--font-sans);
 }
 .tool-log-entry-subtitle {
   flex: 0 0 auto;

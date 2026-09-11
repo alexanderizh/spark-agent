@@ -1,0 +1,53 @@
+/**
+ * ImagePreviewModal（lightbox）多图导航样式
+ *
+ * 单图预览的基础样式历史上落在 styles/views.css（遗留全局表，禁止新增），
+ * 这里只承载新增的左右切换能力：两侧悬浮箭头 + 顶栏序号。
+ * backdrop 为 position: fixed，箭头按钮以其为定位锚。
+ */
+
+.image-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f1f3;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    opacity 0.12s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  &:active {
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  &.is-prev {
+    left: 18px;
+  }
+
+  &.is-next {
+    right: 18px;
+  }
+}
+
+.image-lightbox-counter {
+  flex-shrink: 0;
+  padding: 0 2px;
+  color: rgba(241, 241, 243, 0.6);
+  font-size: var(--font-xs, 12px);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+}

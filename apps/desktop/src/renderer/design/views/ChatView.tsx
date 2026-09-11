@@ -2633,7 +2633,16 @@ export function ChatView({
   }, [])
 
   const handleRevisionApplied = useCallback(
-    (result: { sessionId: string; turnCount: number; logicalMessageCount: number }) => {
+    (result: {
+      sessionId: string
+      turnId: string
+      turnCount: number
+      logicalMessageCount: number
+    }) => {
+      cancelledOptimisticTurnIdsRef.current.delete(result.turnId)
+      setOptimisticUserMessages((current) =>
+        cancelOptimisticUserMessageByTurnId(current, result.sessionId, result.turnId),
+      )
       sessionCtx.updateSessionInList(result.sessionId as SessionId, {
         turnCount: result.turnCount,
         logicalMessageCount: result.logicalMessageCount,
@@ -7240,7 +7249,7 @@ const UserMsg = React.memo(
     onReply?: (selectedText?: string) => void
     /** 重发：把这条消息的文本+附件重新塞回输入区 */
     onResend?: () => void
-    /** 仅最后一轮已完成消息：提交编辑后的正文并替换整轮。 */
+    /** 仅最后一轮已结束消息：提交编辑后的正文并替换整轮。 */
     onEdit?: (text: string) => void
     selectionMode?: boolean
     selected?: boolean

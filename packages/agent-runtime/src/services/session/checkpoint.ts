@@ -225,19 +225,32 @@ export class SessionCheckpointManager {
 
     const eventRepo = new EventRepository(this.db)
     const rows = eventRepo.queryAllBySession(sessionId)
+    const turnRows = rows.filter((row) => row.turn_id === turnId)
     const latestUserRow = [...rows].reverse().find((row) => row.event_type === 'user_message')
-    if (latestUserRow?.turn_id == null || latestUserRow.turn_id !== turnId) {
+    const turnRequest = this.db.raw
+      .prepare('SELECT status FROM turn_requests WHERE id = ? AND session_id = ?')
+      .get(turnId, sessionId) as { status: string } | undefined
+    const cancelledBeforeUserMessagePersisted =
+      turnRequest?.status === 'cancelled' &&
+      !turnRows.some((row) => row.event_type === 'user_message') &&
+      turnRows.some((row) => {
+        if (row.event_type !== 'agent_status') return false
+        const event = JSON.parse(row.event_json) as Partial<AgentEvent>
+        return event.type === 'agent_status' && event.status === 'cancelled'
+      })
+    if (latestUserRow?.turn_id !== turnId && !cancelledBeforeUserMessagePersisted) {
       throw new Error('只能编辑当前会话最后一轮用户消息')
     }
-    const latestUserEvent = JSON.parse(latestUserRow.event_json) as AgentEvent
-    if (
-      latestUserEvent.type !== 'user_message' ||
-      latestUserEvent.userMessageVisibility === 'hidden'
-    ) {
-      throw new Error('内部续轮消息不能编辑')
+    if (latestUserRow?.turn_id === turnId) {
+      const latestUserEvent = JSON.parse(latestUserRow.event_json) as AgentEvent
+      if (
+        latestUserEvent.type !== 'user_message' ||
+        latestUserEvent.userMessageVisibility === 'hidden'
+      ) {
+        throw new Error('内部续轮消息不能编辑')
+      }
     }
 
-    const turnRows = rows.filter((row) => row.turn_id === turnId)
     const turnSeqs = turnRows
       .map((row) => row.seq)
       .filter((seq): seq is number => typeof seq === 'number')

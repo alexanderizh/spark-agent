@@ -854,6 +854,7 @@ export function ComposerV2({
   onRevisionConsumed?: () => void
   onRevisionApplied?: (result: {
     sessionId: string
+    turnId: string
     turnCount: number
     logicalMessageCount: number
   }) => void

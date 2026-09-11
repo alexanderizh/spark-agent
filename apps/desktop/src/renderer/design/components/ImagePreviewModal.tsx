@@ -5,6 +5,8 @@
  *   - 黑色半透明背景，居中显示原图，按比例缩放
  *   - 点击背景或按 Esc / 右上角关闭按钮 → 关闭
  *   - 顶栏显示文件名 + 复制 / 下载 + 关闭按钮
+ *   - 传入 navigation（多图列表 + 起始序号）时支持左右切换：
+ *     两侧悬浮箭头按钮、键盘 ←/→（循环）、顶栏序号指示；单图调用方不受影响
  *
  * 设计要点：
  *   - 不复用现有 .modal-backdrop，因为那个只用于权限弹窗，且 z-index 较窄；
@@ -12,38 +14,83 @@
  *   - 移动端 / 缩小窗口：图片保持长宽比自适应
  */
 
-import { useCallback, useEffect, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Icons } from '../Icons'
 import { useToast } from './Toast'
+import './ImagePreviewModal.less'
+
+/** 多图导航时的单张图片描述；src 需已解析为浏览器可加载的 URL（如 safe-file://） */
+export interface LightboxImage {
+  src: string
+  alt: string
+  fileName: string
+}
 
 type Props = {
   src: string
   alt: string
   fileName: string
   onClose: () => void
+  /** 多图导航：提供且列表多于 1 张时启用左右切换（循环），否则行为与单图完全一致 */
+  navigation?: { images: LightboxImage[]; startIndex: number } | undefined
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
 
-export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
+export function ImagePreviewModal({ src, alt, fileName, onClose, navigation }: Props) {
   const { toast } = useToast()
   const [imgError, setImgError] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // Esc 关闭
+  // 多图导航：当前序号。组件按需挂载（调用方 previewOpen 条件渲染），挂载时以 startIndex 初始化即可
+  const [navIndex, setNavIndex] = useState(navigation?.startIndex ?? 0)
+  const canNavigate = !!navigation && navigation.images.length > 1
+
+  /** 当前生效的图片：多图时取导航列表，单图回落到 props */
+  const current = useMemo<LightboxImage>(() => {
+    if (navigation && navigation.images.length > 0) {
+      const clamped = Math.min(Math.max(navIndex, 0), navigation.images.length - 1)
+      return navigation.images[clamped] ?? { src, alt, fileName }
+    }
+    return { src, alt, fileName }
+  }, [navigation, navIndex, src, alt, fileName])
+
+  const imageCount = navigation?.images.length ?? 0
+  const displayIndex = canNavigate ? navIndex + 1 : 0
+
+  // 切图同时重置加载失败状态（上一张的失败不代表下一张也失败）；navIndex 只经这两个入口变化
+  const goPrev = useCallback(() => {
+    setNavIndex((i) => (i - 1 + (imageCount || 1)) % (imageCount || 1))
+    setImgError(false)
+  }, [imageCount])
+  const goNext = useCallback(() => {
+    setNavIndex((i) => (i + 1) % (imageCount || 1))
+    setImgError(false)
+  }, [imageCount])
+
+  // Esc 关闭；多图时 ←/→ 循环切换（capture 阶段，避免被滚动等默认行为吞掉）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         onClose()
+        return
+      }
+      if (!canNavigate) return
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goPrev()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goNext()
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
+  }, [onClose, canNavigate, goPrev, goNext])
 
   /** 复制图片到剪贴板。优先用 fetch 取 blob，再走 Clipboard API */
   const handleCopy = useCallback(async () => {
@@ -54,8 +101,8 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     try {
       let blob: Blob | null = null
       // safe-file 协议已声明 supportFetchAPI，渲染进程可以用 fetch 取
-      if (src.startsWith(`${SAFE_FILE_SCHEME}:`) || src.startsWith('http')) {
-        const resp = await fetch(src)
+      if (current.src.startsWith(`${SAFE_FILE_SCHEME}:`) || current.src.startsWith('http')) {
+        const resp = await fetch(current.src)
         if (resp.ok) blob = await resp.blob()
       }
       if (!blob) {
@@ -78,7 +125,7 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     } catch (err) {
       toast.error(`复制失败：${err instanceof Error ? err.message : String(err)}`)
     }
-  }, [src, imgError, toast])
+  }, [current.src, imgError, toast])
 
   const handleDownload = useCallback(async () => {
     if (imgError) {
@@ -87,8 +134,8 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     }
     setDownloading(true)
     try {
-      if (src.startsWith(`${SAFE_FILE_SCHEME}:`)) {
-        const sourcePath = decodeSafeFilePath(src)
+      if (current.src.startsWith(`${SAFE_FILE_SCHEME}:`)) {
+        const sourcePath = decodeSafeFilePath(current.src)
         if (!sourcePath) {
           toast.error('下载失败：无法解析图片路径')
           return
@@ -99,15 +146,15 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
         }
         const res = await window.spark.invoke('file:save-image', {
           sourcePath,
-          suggestedFileName: fileName,
+          suggestedFileName: current.fileName,
         })
         if (res.saved) {
           toast.success(`已保存到 ${res.savedPath}`)
         }
       } else {
         const a = document.createElement('a')
-        a.href = src
-        a.download = fileName
+        a.href = current.src
+        a.download = current.fileName
         a.target = '_blank'
         a.rel = 'noreferrer'
         document.body.appendChild(a)
@@ -120,7 +167,7 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
     } finally {
       setDownloading(false)
     }
-  }, [src, imgError, fileName, toast])
+  }, [current.src, current.fileName, imgError, toast])
 
   /** 点击图片周围的空白遮罩（stage 本体，非图片/错误块）→ 关闭预览。
    *  用 target === currentTarget 判定来源：点图片本体或错误提示不会触发，
@@ -133,12 +180,11 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
   )
 
   return createPortal(
-    (
     <div
       className="image-lightbox-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={`预览图片 ${fileName}`}
+      aria-label={`预览图片 ${current.fileName}`}
       onClick={onClose}
     >
       {/* 顶部工具栏 */}
@@ -146,9 +192,14 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
         className={`image-lightbox-topbar ${isPlatformDarwin ? 'platform-darwin-safe-area' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="image-lightbox-title" title={fileName}>
-          {fileName}
+        <span className="image-lightbox-title" title={current.fileName}>
+          {current.fileName}
         </span>
+        {canNavigate && (
+          <span className="image-lightbox-counter">
+            {displayIndex} / {imageCount}
+          </span>
+        )}
         <button
           type="button"
           className="image-lightbox-btn"
@@ -186,20 +237,49 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
           <div className="image-lightbox-error">
             <Icons.Image size={48} />
             <div>图片加载失败</div>
-            <div className="image-lightbox-error-path">{fileName}</div>
+            <div className="image-lightbox-error-path">{current.fileName}</div>
           </div>
         ) : (
           <img
-            src={src}
-            alt={alt}
+            src={current.src}
+            alt={current.alt}
             className="image-lightbox-img"
             onError={() => setImgError(true)}
             draggable={false}
           />
         )}
       </div>
-    </div>
-    ),
+
+      {/* 左右切换按钮：仅多图时渲染；点按钮不触发遮罩关闭 */}
+      {canNavigate && (
+        <>
+          <button
+            type="button"
+            className="image-lightbox-nav is-prev"
+            onClick={(e) => {
+              e.stopPropagation()
+              goPrev()
+            }}
+            title="上一张 (←)"
+            aria-label="上一张"
+          >
+            <Icons.ChevronLeft size={20} />
+          </button>
+          <button
+            type="button"
+            className="image-lightbox-nav is-next"
+            onClick={(e) => {
+              e.stopPropagation()
+              goNext()
+            }}
+            title="下一张 (→)"
+            aria-label="下一张"
+          >
+            <Icons.ChevronRight size={20} />
+          </button>
+        </>
+      )}
+    </div>,
     document.body,
   )
 }

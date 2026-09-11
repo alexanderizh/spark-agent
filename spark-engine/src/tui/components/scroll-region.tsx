@@ -1,9 +1,11 @@
-import { Box, useBoxMetrics, useInput, type DOMElement } from 'ink'
+import { Box, useBoxMetrics, useInput, useStdout, type DOMElement } from 'ink'
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 
 const SGR_MOUSE_PREFIX = '\u001b[<'
 const PARSED_SGR_MOUSE_PREFIX = '[<'
 const MOUSE_WHEEL_STEP = 3
+const ENABLE_SGR_MOUSE = '\u001b[?1000h\u001b[?1006h'
+const DISABLE_SGR_MOUSE = '\u001b[?1006l\u001b[?1000l'
 
 export interface ScrollRegionProps {
   readonly children: ReactNode
@@ -29,9 +31,8 @@ export function parseMouseWheelDelta(input: string): -1 | 1 | undefined {
 
 /** Mouse reports must never become literal text in the command editor.
  *
- * ScrollRegion deliberately does not enable mouse tracking. Keeping this
- * defensive filter protects callers embedded in a host that already enabled
- * it, while leaving ordinary mouse selection to the terminal emulator.
+ * ScrollRegion enables mouse tracking while its output viewport is active;
+ * keep this defensive filter for input paths that are shared with the editor.
  */
 export function isMouseInput(input: string): boolean {
   const prefix = input.startsWith(SGR_MOUSE_PREFIX)
@@ -50,13 +51,13 @@ export function isMouseInput(input: string): boolean {
  * reading earlier output. This region keeps the transcript in the live frame,
  * owns the scroll offset, and follows new output only until the user scrolls.
  *
- * Mouse tracking is intentionally not enabled here: terminal modes 1000/1006
- * route button and drag events to the CLI, which prevents the terminal
- * emulator's native text selection and copy behavior. Scrolling remains
- * available through PageUp/PageDown/Home/End; native mouse selection remains
- * available for copying output.
+ * Mouse tracking is enabled while this region is active so terminal emulators
+ * send wheel reports to the CLI instead of scrolling an unrelated outer
+ * viewport. The terminal modes are restored on unmount; PageUp/PageDown and
+ * Home/End remain available when mouse reporting is unavailable.
  */
 export function ScrollRegion(props: ScrollRegionProps): ReactElement {
+  const { stdout } = useStdout()
   const viewportRef = useRef<DOMElement>(null)
   const contentRef = useRef<DOMElement>(null)
   const viewport = useBoxMetrics(viewportRef)
@@ -77,6 +78,14 @@ export function ScrollRegion(props: ScrollRegionProps): ReactElement {
   useEffect(() => {
     props.onScrollStateChange?.(props.active !== false && !followTail)
   }, [followTail, props.active, props.onScrollStateChange])
+
+  useEffect(() => {
+    if (!props.active || !stdout.isTTY) return
+    writeBestEffort(stdout, ENABLE_SGR_MOUSE)
+    return () => {
+      writeBestEffort(stdout, DISABLE_SGR_MOUSE)
+    }
+  }, [props.active, stdout])
 
   const moveBy = useCallback(
     (delta: number) => {
@@ -135,4 +144,12 @@ export function ScrollRegion(props: ScrollRegionProps): ReactElement {
       </Box>
     </Box>
   )
+}
+
+function writeBestEffort(stdout: NodeJS.WriteStream, value: string): void {
+  try {
+    stdout.write(value)
+  } catch {
+    // The terminal may already be closed while React is unmounting.
+  }
 }

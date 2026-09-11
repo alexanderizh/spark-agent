@@ -218,4 +218,65 @@ describe('SessionCheckpointManager.rewindLastTurnForEdit', () => {
       new SessionCheckpointManager(db, host).rewindLastTurnForEdit('session-edit', turnId),
     ).resolves.toMatchObject({ turnCount: 0, logicalMessageCount: 0 })
   })
+
+  it('removes a latest durable turn cancelled before its user message was persisted', async () => {
+    insertTurn('turn-1', 'earlier message')
+    const turnId = 'turn-cancelled-before-user-message'
+    const now = new Date().toISOString()
+    db.raw
+      .prepare(
+        `INSERT INTO turn_requests (id, session_id, payload_json, status, created_at, updated_at)
+         VALUES (?, ?, '{}', 'cancelled', ?, ?)`,
+      )
+      .run(turnId, 'session-edit', now, now)
+    eventRepo.insert({
+      id: `${turnId}-cancelled`,
+      sessionId: 'session-edit',
+      turnId,
+      eventType: 'agent_status',
+      eventJson: JSON.stringify({
+        id: `${turnId}-cancelled`,
+        sessionId: 'session-edit',
+        turnId,
+        timestamp: now,
+        seq: 0,
+        type: 'agent_status',
+        status: 'cancelled',
+      }),
+    })
+
+    await expect(
+      new SessionCheckpointManager(db, host).rewindLastTurnForEdit('session-edit', turnId),
+    ).resolves.toMatchObject({ turnCount: 1, logicalMessageCount: 2 })
+    expect(eventRepo.queryAllBySession('session-edit').map((row) => row.turn_id)).toEqual([
+      'turn-1',
+      'turn-1',
+      'turn-1',
+      'turn-1',
+    ])
+    expect(db.raw.prepare('SELECT 1 FROM turn_requests WHERE id = ?').get(turnId)).toBeUndefined()
+  })
+
+  it('rejects an event-only cancelled turn without a matching durable request', async () => {
+    const turnId = 'unknown-cancelled-turn'
+    eventRepo.insert({
+      id: `${turnId}-cancelled`,
+      sessionId: 'session-edit',
+      turnId,
+      eventType: 'agent_status',
+      eventJson: JSON.stringify({
+        id: `${turnId}-cancelled`,
+        sessionId: 'session-edit',
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        type: 'agent_status',
+        status: 'cancelled',
+      }),
+    })
+
+    await expect(
+      new SessionCheckpointManager(db, host).rewindLastTurnForEdit('session-edit', turnId),
+    ).rejects.toThrow('只能编辑当前会话最后一轮用户消息')
+  })
 })

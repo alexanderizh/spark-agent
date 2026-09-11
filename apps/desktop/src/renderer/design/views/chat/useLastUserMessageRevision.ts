@@ -35,6 +35,7 @@ export function useLastUserMessageRevision(params: {
   onConsumed?: () => void
   onApplied?: (result: {
     sessionId: string
+    turnId: string
     turnCount: number
     logicalMessageCount: number
   }) => void
@@ -95,6 +96,7 @@ export function useLastUserMessageRevision(params: {
         })
         params.onApplied?.({
           sessionId: payload.sessionId,
+          turnId: payload.turnId,
           turnCount: result.turnCount,
           logicalMessageCount: result.logicalMessageCount,
         })
