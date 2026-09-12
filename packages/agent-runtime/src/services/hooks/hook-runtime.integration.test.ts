@@ -1026,6 +1026,110 @@ describe('Hook 运行时全管线', () => {
     expect(management.listRuns()).toHaveLength(2)
   })
 
+  it('测试运行：产生 isTest 独立运行并可执行成功，不影响真实事件链路', async () => {
+    const management = new HookManagementService({ db })
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: alwaysEnabled,
+    })
+
+    // 未创建任何定义/绑定的情况下直接试运行
+    const run = management.testRun({
+      name: '试运行',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    expect(run.isTest).toBe(true)
+    expect(run.status).toBe('queued')
+    expect(run.definitionSnapshot.name).toBe('试运行')
+
+    await worker.tickOnce()
+    expect(management.getRun(run.id)?.status).toBe('succeeded')
+    expect(builtins.calls).toHaveLength(1)
+
+    // 测试运行不写 outbox、与真实事件运行互不影响
+    const events = new HookEventRepository(db)
+    expect(events.countByStatus('pending')).toBe(0)
+    expect(events.countByStatus('resolved')).toBe(0)
+  })
+
+  it('测试运行按确认时快照执行：与其他定义并存互不影响', async () => {
+    const management = new HookManagementService({ db })
+    // 预创建一个无关定义，证明测试运行不受现存定义影响
+    management.createDefinition({
+      name: '无关定义',
+      eventName: 'turn.failed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: alwaysEnabled,
+    })
+    const run = management.testRun({
+      name: '试运行通知',
+      eventName: 'response.committed',
+      action: { type: 'builtin.notification', title: { const: '测试通知' } },
+      inputMapping: {},
+    })
+    await worker.tickOnce()
+    const finished = management.getRun(run.id)
+    expect(finished?.status).toBe('succeeded')
+    expect(builtins.calls).toHaveLength(1)
+    expect(builtins.calls[0]?.title).toBe('测试通知')
+  })
+
+  it('listRuns 支持事件/作用域/时间范围筛选', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: 'filter hook',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+    const completedDefinition = management.createDefinition({
+      name: 'completed hook',
+      eventName: 'turn.completed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: completedDefinition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: completedDefinition.executionHash,
+    })
+    const bridge = new HookLifecycleBridge(db)
+    bridge.responseCommitted('session-1', 'turn-30', 'msg-30', '回答一')
+    bridge.turnTerminal('session-1', 'turn-31', 'completed')
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    expect(await dispatcher.dispatchPending()).toBe(2)
+
+    expect(management.listRuns({ eventName: 'response.committed' })).toHaveLength(1)
+    expect(management.listRuns({ eventName: 'turn.completed' })).toHaveLength(1)
+    expect(management.listRuns({ scopeKind: 'application' })).toHaveLength(2)
+    expect(management.listRuns({ from: new Date(Date.now() + 60_000).toISOString() })).toHaveLength(
+      0,
+    )
+    expect(management.listRuns({ to: new Date(Date.now() - 60_000).toISOString() })).toHaveLength(0)
+  })
+
   it('未使用 Hook 功能时生命周期事件零写入（bridge 短路）', () => {
     const events = new HookEventRepository(db)
     const bridge = new HookLifecycleBridge(db)

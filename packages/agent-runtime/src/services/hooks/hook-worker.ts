@@ -7,8 +7,6 @@ import {
   type SparkDatabase,
 } from '@spark/storage'
 import { createLogger } from '@spark/shared'
-
-const log = createLogger('hooks:worker')
 import {
   HookActionExecutor,
   type HookBuiltinActionHandlers,
@@ -22,6 +20,8 @@ import {
 } from './hook-action-policy.js'
 import { deriveIdempotencyKey, evaluateInputMapping, HookMappingError } from './hook-expression.js'
 import { summarizeValue } from './hook-redaction.js'
+
+const log = createLogger('hooks:worker')
 
 /**
  * HookWorker（设计方案 §5/§10/§12）：短租约领取 queued 运行，调用前对定义、绑定与
@@ -161,15 +161,17 @@ export class HookWorker {
     run: Awaited<ReturnType<HookRunRepository['claimNextRunnable']>>,
   ): Promise<{ status: string }> {
     if (run == null) return { status: 'noop' }
-    const definition = this.definitions.get(run.hookId)
-    const binding = this.bindings.get(run.bindingId)
+    // 测试运行没有持久化定义/绑定：直接使用用户确认时的快照（§14）；
+    // 工具治理（存在性/停用/版本/风险）仍在执行前照常复核。
+    const definition = run.isTest ? run.definitionSnapshot : this.definitions.get(run.hookId)
+    const binding = run.isTest ? run.bindingSnapshot : this.bindings.get(run.bindingId)
 
     // ── 调用前最终复核（强制兜底）────────────────────────────────────────────
     if (definition == null || binding == null) {
       this.runs.finish(run.id, {
         status: 'blocked',
         errorCode: 'binding_disabled',
-        errorMessage: '定义或绑定已不存在',
+        errorMessage: run.isTest ? 'Hook 定义已不存在' : '定义或绑定已不存在',
       })
       return { status: 'blocked' }
     }

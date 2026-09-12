@@ -40,6 +40,7 @@ export interface HookRunRow {
   output_summary_json: string | null
   correlation_id: string | null
   invocation_id: string | null
+  is_test: number
   created_at: string
   updated_at: string
 }
@@ -62,6 +63,8 @@ export interface CreateHookRunParams {
   errorCode?: HookErrorCodeV1
   errorMessage?: string
   availableAt?: string
+  /** §14 测试运行：用户显式确认后的独立试运行。 */
+  isTest?: boolean
 }
 
 export interface FinishHookRunParams {
@@ -107,6 +110,7 @@ function toDomain(row: HookRunRow): HookRunV1 {
     ...(outputSummary != null ? { outputSummary } : {}),
     ...(row.correlation_id != null ? { correlationId: row.correlation_id } : {}),
     ...(row.invocation_id != null ? { invocationId: row.invocation_id } : {}),
+    isTest: row.is_test === 1,
     definitionSnapshot: JSON.parse(row.definition_snapshot_json) as HookDefinitionV1,
     bindingSnapshot: JSON.parse(row.binding_snapshot_json) as HookBindingV1,
     envelope: JSON.parse(row.envelope_json) as HookEventEnvelopeV1,
@@ -130,8 +134,8 @@ export class HookRunRepository extends BaseRepository {
           id, event_id, event_name, hook_id, hook_revision, binding_id, scope_kind,
           session_id, turn_id, definition_snapshot_json, binding_snapshot_json, envelope_json,
           mapped_input_json, status, attempt_count, available_at, error_code, error_message,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+          is_test, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -151,6 +155,7 @@ export class HookRunRepository extends BaseRepository {
         params.availableAt ?? now,
         params.errorCode ?? null,
         params.errorMessage ?? null,
+        params.isTest === true ? 1 : 0,
         now,
         now,
       )
@@ -177,6 +182,13 @@ export class HookRunRepository extends BaseRepository {
       sessionId?: string
       hookId?: string
       status?: HookRunStatusV1
+      eventId?: string
+      eventName?: HookEventNameV1
+      scopeKind?: HookScopeKindV1
+      /** created_at >= from（ISO）。 */
+      from?: string
+      /** created_at <= to（ISO）。 */
+      to?: string
       limit?: number
     } = {},
   ): HookRunV1[] {
@@ -193,6 +205,26 @@ export class HookRunRepository extends BaseRepository {
     if (filters.status != null) {
       conditions.push('status = ?')
       values.push(filters.status)
+    }
+    if (filters.eventId != null) {
+      conditions.push('event_id = ?')
+      values.push(filters.eventId)
+    }
+    if (filters.eventName != null) {
+      conditions.push('event_name = ?')
+      values.push(filters.eventName)
+    }
+    if (filters.scopeKind != null) {
+      conditions.push('scope_kind = ?')
+      values.push(filters.scopeKind)
+    }
+    if (filters.from != null) {
+      conditions.push('created_at >= ?')
+      values.push(filters.from)
+    }
+    if (filters.to != null) {
+      conditions.push('created_at <= ?')
+      values.push(filters.to)
     }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
     const limit = Math.min(filters.limit ?? 50, 200)

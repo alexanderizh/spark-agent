@@ -63,6 +63,14 @@ const SAMPLE_REQUESTS: Record<(typeof HOOK_V2_CHANNELS)[number], unknown> = {
       inputMapping: { sessionId: { path: 'session.id' } },
     },
   },
+  'hookV2:test-run': {
+    definition: {
+      name: 'test run',
+      eventName: 'response.committed',
+      action: { type: 'builtin.notification', title: { const: '测试通知' } },
+      inputMapping: {},
+    },
+  },
 }
 
 describe('hookV2 IPC contracts', () => {
@@ -70,9 +78,10 @@ describe('hookV2 IPC contracts', () => {
     for (const channel of HOOK_V2_CHANNELS) {
       const schema = HookV2IpcSchemaRegistry[channel]
       expect(schema, `missing schema for ${channel}`).toBeDefined()
-      expect(schema.parse(SAMPLE_REQUESTS[channel]), `schema rejects sample for ${channel}`).toEqual(
-        expect.anything(),
-      )
+      expect(
+        schema.parse(SAMPLE_REQUESTS[channel]),
+        `schema rejects sample for ${channel}`,
+      ).toEqual(expect.anything())
     }
   })
 
@@ -81,9 +90,7 @@ describe('hookV2 IPC contracts', () => {
   })
 
   it('拒绝非法载荷：未知字段、越权事件名、destructive 之外的结构错误', () => {
-    expect(() =>
-      HookV2IpcSchemaRegistry['hookV2:set-enabled'].parse({ enabled: 'yes' }),
-    ).toThrow()
+    expect(() => HookV2IpcSchemaRegistry['hookV2:set-enabled'].parse({ enabled: 'yes' })).toThrow()
     expect(() =>
       HookV2IpcSchemaRegistry['hookV2:list-definitions'].parse({ eventName: 'tool.before' }),
     ).toThrow()

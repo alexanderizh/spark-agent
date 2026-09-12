@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type {
   HookBindingV1,
   HookDefinitionInputV1,
@@ -36,6 +37,48 @@ import {
 
 const SETTINGS_CATEGORY = 'hooks-v2'
 const ENABLED_KEY = 'enabled'
+
+/** 测试运行的信封：样例优先，缺省用最小样例并替换为 test 专用事件 ID。 */
+function testEnvelope(
+  eventName: HookEventNameV1,
+  sampleEnvelope: HookEventEnvelopeV1 | undefined,
+): HookEventEnvelopeV1 {
+  const base = sampleEnvelope ?? defaultTestEnvelope(eventName)
+  return { ...base, schemaVersion: 1, source: 'host', eventId: `hev_test_${randomUUID()}` }
+}
+
+function envelopeSessionId(
+  sampleEnvelope: HookEventEnvelopeV1 | undefined,
+  eventName: HookEventNameV1,
+): string {
+  return sampleEnvelope?.session.id ?? defaultTestEnvelope(eventName).session.id
+}
+
+function defaultTestEnvelope(eventName: HookEventNameV1): HookEventEnvelopeV1 {
+  const payload: Record<string, unknown> =
+    eventName === 'response.committed'
+      ? { response: { messageId: 'test-message', finalText: '（测试最终回答正文）' } }
+      : eventName === 'permission.requested'
+        ? { requestId: 'test-request', toolName: 'sample_tool', action: 'write', riskLevel: 'low' }
+        : eventName === 'question.requested'
+          ? { questionId: 'test-question', questions: [{ title: '（测试问题）' }] }
+          : eventName === 'turn.started'
+            ? {}
+            : { message: '（测试消息）' }
+  return {
+    schemaVersion: 1,
+    eventId: `hev_test_${randomUUID()}`,
+    eventName,
+    occurredAt: new Date().toISOString(),
+    source: 'host',
+    session: { id: 'test-session', title: '测试运行会话' },
+    turn: { id: 'test-turn' },
+    agent: { id: 'test-agent', name: '测试 Agent' },
+    workspaces: [{ id: 'test-workspace', name: '测试项目' }],
+    primaryWorkspaceId: 'test-workspace',
+    payload,
+  }
+}
 
 function normalizeRetryPolicy(
   partial?: Partial<HookDefinitionInputV1['retryPolicy']> | undefined,
@@ -224,8 +267,8 @@ export class HookManagementService {
   }): HookBindingV1 {
     const definition = this.definitions.get(input.hookId)
     if (definition == null) throw new Error(`Hook 定义不存在: ${input.hookId}`)
-    const scopeId = input.scopeKind === 'application' ? '' : (input.scopeId ?? '')
-    if (input.scopeKind !== 'application' && scopeId.trim() === '') {
+    const scopeId = input.scopeKind === 'application' ? '' : (input.scopeId ?? '').trim()
+    if (input.scopeKind !== 'application' && scopeId === '') {
       throw new Error(`${input.scopeKind} 作用域必须提供 scopeId`)
     }
     const enabled = input.enabled ?? true
@@ -320,10 +363,79 @@ export class HookManagementService {
       sessionId?: string
       hookId?: string
       status?: HookRunV1['status']
+      eventId?: string
+      eventName?: HookEventNameV1
+      scopeKind?: HookScopeKindV1
+      from?: string
+      to?: string
       limit?: number
     } = {},
   ): HookRunV1[] {
     return this.runs.list(filters)
+  }
+
+  /**
+   * 测试运行（设计方案 §14/§17）：用样例事件产生标记为 test 的独立运行记录，
+   * 经 Worker 正常执行（会产生真实外部副作用，调用前必须经用户确认）。
+   * 与真实事件触发的运行互不影响；工具治理与定义哈希复核照常生效。
+   */
+  testRun(input: HookDefinitionInputV1, sampleEnvelope?: HookEventEnvelopeV1): HookRunV1 {
+    const { valid, errors } = this.validateDefinition(input)
+    if (!valid) throw new Error(`Hook 定义校验失败: ${errors.join('; ')}`)
+    const nowIso = new Date().toISOString()
+    const executionHash = computeExecutionHash({
+      eventName: input.eventName,
+      ...(input.condition != null ? { condition: input.condition } : {}),
+      action: input.action,
+      inputMapping: input.inputMapping ?? {},
+      timeoutMs: input.timeoutMs ?? 15_000,
+      retryPolicy: normalizeRetryPolicy(input.retryPolicy),
+      concurrencyPolicy: input.concurrencyPolicy ?? 'serial_per_session',
+    })
+    const definitionSnapshot: HookDefinitionV1 = {
+      id: `test-${randomUUID()}`,
+      name: input.name,
+      ...(input.description != null ? { description: input.description } : {}),
+      enabled: true,
+      eventName: input.eventName,
+      ...(input.condition != null ? { condition: input.condition } : {}),
+      action: input.action,
+      inputMapping: input.inputMapping ?? {},
+      timeoutMs: input.timeoutMs ?? 15_000,
+      retryPolicy: normalizeRetryPolicy(input.retryPolicy),
+      concurrencyPolicy: input.concurrencyPolicy ?? 'serial_per_session',
+      revision: 1,
+      executionHash,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    const bindingSnapshot: HookBindingV1 = {
+      id: `test-binding-${randomUUID()}`,
+      hookId: definitionSnapshot.id,
+      scopeKind: 'application',
+      scopeId: '',
+      enabled: true,
+      state: 'active',
+      trustedExecutionHash: executionHash,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    const run = this.runs.insertIfAbsent({
+      eventId: `hev_test_${randomUUID()}`,
+      eventName: definitionSnapshot.eventName,
+      hookId: definitionSnapshot.id,
+      hookRevision: definitionSnapshot.revision,
+      bindingId: bindingSnapshot.id,
+      scopeKind: 'application',
+      sessionId: envelopeSessionId(sampleEnvelope, input.eventName),
+      turnId: 'test-turn',
+      definitionSnapshot,
+      bindingSnapshot,
+      envelope: testEnvelope(input.eventName, sampleEnvelope),
+      isTest: true,
+    })
+    if (run == null) throw new Error('测试运行创建失败')
+    return run
   }
 
   getRun(id: string): HookRunV1 | null {

@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS hook_runs (
   output_summary_json TEXT,
   correlation_id TEXT,
   invocation_id TEXT,
+  -- §14 测试运行：用户显式确认后的独立试运行，与真实事件触发的运行区分。
+  is_test INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   -- 同一事件 + 同一 Hook 只允许一条运行记录（跨 revision 也不自动重跑）。

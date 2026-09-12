@@ -88,4 +88,9 @@ export function registerHooksV2Ipc(options: RegisterHooksV2IpcOptions): void {
   typedIpcHandle('hookV2:preview', async (request) =>
     resolveManagement().preview(request.definition, request.sampleEnvelope),
   )
+
+  typedIpcHandle('hookV2:test-run', async (request) => ({
+    // §14/§17：测试运行会产生真实外部副作用，渲染层必须在调用前向用户确认。
+    run: resolveManagement().testRun(request.definition, request.sampleEnvelope),
+  }))
 }

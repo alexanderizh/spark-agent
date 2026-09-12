@@ -342,6 +342,8 @@ export interface HookRunV1 {
   /** 首次解析时的绑定快照（含来源作用域与授权状态）。 */
   bindingSnapshot: HookBindingV1
   envelope: HookEventEnvelopeV1
+  /** §14 测试运行：用户显式确认后的独立试运行（会产生真实外部副作用）。 */
+  isTest: boolean
   createdAt: string
   updatedAt: string
 }
@@ -436,6 +438,11 @@ export type HookRunListRequest = {
   sessionId?: string
   hookId?: string
   status?: HookRunStatusV1
+  eventId?: string
+  eventName?: HookEventNameV1
+  scopeKind?: HookScopeKindV1
+  from?: string
+  to?: string
   limit?: number
 }
 export type HookRunListResponse = { runs: HookRunV1[] }
@@ -458,6 +465,13 @@ export type HookSystemEnabledSetResponse = HookSystemStatusV1
 export type HookPreviewRequest = HookPreviewRequestV1
 export type HookPreviewResponse = HookPreviewResultV1
 
+/**
+ * 测试运行请求（设计方案 §14/§17）：展示完整动作与发送字段并经用户确认后调用；
+ * 产生标记为 test 的独立运行记录，会产生真实外部副作用。
+ */
+export type HookTestRunRequest = HookPreviewRequestV1
+export type HookTestRunResponse = { run: HookRunV1 }
+
 /** 全部 hookV2 IPC 通道名（契约测试与渲染层封装共用）。 */
 export const HOOK_V2_CHANNELS = [
   'hookV2:list-definitions',
@@ -476,6 +490,7 @@ export const HOOK_V2_CHANNELS = [
   'hookV2:set-enabled',
   'hookV2:list-tool-candidates',
   'hookV2:preview',
+  'hookV2:test-run',
 ] as const
 
 /** 工具候选：按 Hook 风险策略给出可选工具与不可选原因（设计方案 §14）。 */
@@ -509,6 +524,7 @@ export interface HookV2IpcChannelMap {
   'hookV2:set-enabled': [HookSystemEnabledSetRequest, HookSystemEnabledSetResponse]
   'hookV2:preview': [HookPreviewRequest, HookPreviewResponse]
   'hookV2:list-tool-candidates': [HookToolCandidateListRequest, HookToolCandidateListResponse]
+  'hookV2:test-run': [HookTestRunRequest, HookTestRunResponse]
 }
 
 // ─── Zod Schema（IPC 运行时校验）────────────────────────────────────────────
@@ -602,6 +618,11 @@ export const HookV2IpcSchemaRegistry = {
           'outcome_unknown',
         ])
         .optional(),
+      eventId: z.string().min(1).optional(),
+      eventName: HookEventNameV1Schema.optional(),
+      scopeKind: z.enum(['application', 'workspace', 'agent', 'session']).optional(),
+      from: z.string().min(1).optional(),
+      to: z.string().min(1).optional(),
       limit: z.number().int().min(1).max(200).optional(),
     })
     .strict(),
@@ -617,4 +638,10 @@ export const HookV2IpcSchemaRegistry = {
     })
     .strict(),
   'hookV2:list-tool-candidates': z.object({}).strict(),
+  'hookV2:test-run': z
+    .object({
+      definition: z.object(hookDefinitionInputSchemaShape).strict(),
+      sampleEnvelope: HookEventEnvelopeV1Schema.optional(),
+    })
+    .strict(),
 } as const

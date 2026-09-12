@@ -424,4 +424,60 @@ describe('Hook V2 repositories', () => {
     // 应用级绑定不受影响
     expect(bindings.listForScopes([{ scopeKind: 'application', scopeId: '' }])).toHaveLength(1)
   })
+
+  it('运行记录 isTest 标记与多维筛选（事件/作用域/时间）', () => {
+    const def = definitions.create(makeDefinitionInput())
+    const binding = bindings.upsert({
+      hookId: def.id,
+      scopeKind: 'application',
+      scopeId: '',
+      enabled: true,
+      state: 'active',
+      trustedExecutionHash: 'hash-1',
+    })
+    const defV1 = definitions.get(def.id)
+    if (defV1 == null) throw new Error('definition missing')
+
+    const insertRun = (eventId: string, isTest: boolean, createdAtOffsetMs = 0): string => {
+      events.insertIfAbsent({
+        eventId,
+        eventName: 'response.committed',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        envelope: makeEnvelope(eventId),
+      })
+      const created = runs.insertIfAbsent({
+        eventId,
+        eventName: 'response.committed',
+        hookId: defV1.id,
+        hookRevision: defV1.revision,
+        bindingId: binding.id,
+        scopeKind: 'application',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        definitionSnapshot: defV1,
+        bindingSnapshot: binding,
+        envelope: makeEnvelope(eventId),
+        isTest,
+      })
+      if (created == null) throw new Error('run insert failed')
+      if (createdAtOffsetMs !== 0) {
+        db.raw
+          .prepare('UPDATE hook_runs SET created_at = ? WHERE id = ?')
+          .run(new Date(Date.now() + createdAtOffsetMs).toISOString(), created.id)
+      }
+      return created.id
+    }
+    const realId = insertRun('evt-f-1', false, -60_000)
+    const testId = insertRun('evt-f-2', true, 60_000)
+
+    expect(runs.get(testId)?.isTest).toBe(true)
+    expect(runs.get(realId)?.isTest).toBe(false)
+
+    expect(runs.list({ eventId: 'evt-f-1' })).toHaveLength(1)
+    expect(runs.list({ eventName: 'response.committed' })).toHaveLength(2)
+    expect(runs.list({ scopeKind: 'application' })).toHaveLength(2)
+    expect(runs.list({ from: new Date(Date.now()).toISOString() })).toHaveLength(1)
+    expect(runs.list({ to: new Date(Date.now()).toISOString() })).toHaveLength(1)
+  })
 })
