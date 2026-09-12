@@ -1573,7 +1573,8 @@ const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string
   controlDesktop: '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
   useInternalBrowser:
     '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
-  transferFiles: '预留给远程文件上传、下载与摘要读取，默认关闭',
+  transferFiles:
+    '允许 Telegram 双向传输图片：入站图片进入当前会话识别；出站本地图片直传失败时使用 Spark 临时存储中转',
   manageRuntime: '允许 /progress、/queue、/history、/cancel 管理远程任务',
   dangerousActions: '允许 /confirm 确认高危动作，仍需二次确认',
 }

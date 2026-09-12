@@ -16,8 +16,20 @@ import type {
   RemotePairingChallenge,
   RemotePairingMode,
   RemoteTestResponse,
+  SessionAttachment,
 } from '@spark/protocol'
 import { QqBotGateway } from './QqBotGateway.js'
+import { getAuthService } from './Auth/AuthService.js'
+import {
+  downloadTelegramInboundImage,
+  extractTelegramInboundImages,
+  type TelegramInboundImageDescriptor,
+} from './telegramInboundMedia.js'
+import { extractTelegramOutboundMedia, sendTelegramOutboundImage } from './telegramOutboundMedia.js'
+import {
+  TelegramTurnFeedbackManager,
+  type TelegramTurnDraftUpdate,
+} from './telegramTurnFeedback.js'
 import {
   buildQqExternalId,
   parseQqDispatchEvent,
@@ -41,6 +53,7 @@ export type RemoteInboundMessage = {
   senderName: string
   text: string
   messageId?: string
+  attachments?: SessionAttachment[]
 }
 
 export type RemoteMessageAction = ProtocolRemoteMessageAction
@@ -525,7 +538,7 @@ function parseJsonContent(value: unknown): string | undefined {
   }
 }
 
-function parseWebhookBody(
+export function parseWebhookBody(
   channel: RemoteChannelType,
   body: unknown,
 ):
@@ -535,6 +548,7 @@ function parseWebhookBody(
       senderName: string
       text: string
       messageId?: string
+      inboundImages?: TelegramInboundImageDescriptor[]
     }
   | { kind: 'challenge'; responseBody: unknown }
   | { kind: 'ignore' } {
@@ -566,8 +580,9 @@ function parseWebhookBody(
     const chat = isRecord(message?.chat) ? message.chat : undefined
     const from = isRecord(message?.from) ? message.from : undefined
     const externalId = chat != null ? String(chat.id ?? '') : ''
-    const text = readString(message?.text)
-    if (!externalId || !text) return { kind: 'ignore' }
+    const inboundImages = message != null ? extractTelegramInboundImages(message) : []
+    const text = readString(message?.text) ?? readString(message?.caption)
+    if (!externalId || (text == null && inboundImages.length === 0)) return { kind: 'ignore' }
     const username = readString(from?.username)
     const firstName = readString(from?.first_name)
     return {
@@ -577,7 +592,8 @@ function parseWebhookBody(
         username != null
           ? `${firstName ?? username}(@${username})`
           : (firstName ?? 'Telegram 用户'),
-      text: normalizeInboundText(channel, text),
+      text: normalizeInboundText(channel, text ?? '请识别并说明这张图片。'),
+      ...(inboundImages.length > 0 ? { inboundImages } : {}),
       ...(message?.message_id != null
         ? { messageId: `telegram:${String(message.message_id)}` }
         : {}),
@@ -797,8 +813,34 @@ export class RemoteConnectionService {
     { msgId: string; sentCount: number; expiresAt: number }
   >()
   private changeListeners = new Set<(event: RemoteConnectionChangeEvent) => void>()
+  private readonly telegramTurnFeedback: TelegramTurnFeedbackManager
 
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly telegramAttachmentRoot?: string,
+  ) {
+    this.telegramTurnFeedback = new TelegramTurnFeedbackManager({
+      sendTyping: async (connectionId, externalId) => {
+        const connection = this.readStore().connections.find((item) => item.id === connectionId)
+        if (connection?.channel !== 'telegram') return
+        await this.sendTelegramChatAction(connection, externalId, 'typing')
+      },
+      sendDraft: async (connectionId, externalId, draftId, text) => {
+        const connection = this.readStore().connections.find((item) => item.id === connectionId)
+        if (connection?.channel !== 'telegram') throw new Error('Telegram connection unavailable')
+        const chatId = Number(externalId)
+        if (!Number.isSafeInteger(chatId) || chatId <= 0) {
+          throw new Error('Telegram streaming drafts require a private chat')
+        }
+        const token = readString(connection.credentials.botToken)
+        if (token == null) throw new Error('Telegram bot token 未配置')
+        await this.postJson(
+          `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessageDraft`,
+          { chat_id: chatId, draft_id: draftId, text },
+        )
+      },
+    })
+  }
 
   onChange(listener: (event: RemoteConnectionChangeEvent) => void): () => void {
     this.changeListeners.add(listener)
@@ -1004,10 +1046,38 @@ export class RemoteConnectionService {
     return this.save(next)
   }
 
-  async sendReply(connectionId: string, externalId: string, text: string): Promise<void> {
+  async sendReply(
+    connectionId: string,
+    externalId: string,
+    text: string,
+    attachments?: SessionAttachment[],
+  ): Promise<void> {
     const connection = this.readStore().connections.find((item) => item.id === connectionId)
     if (connection == null) throw new Error('Remote connection not found')
-    await this.sendDirectMessage(connection, externalId, text)
+    await this.sendDirectMessage(connection, externalId, {
+      text,
+      ...(attachments != null && attachments.length > 0
+        ? {
+            images: attachments
+              .filter((attachment) => attachment.type === 'image')
+              .map((attachment) => ({ source: attachment.path, alt: '' })),
+          }
+        : {}),
+    })
+  }
+
+  startTurnFeedback(turnId: string, connectionId: string, externalId: string): void {
+    const connection = this.readStore().connections.find((item) => item.id === connectionId)
+    if (connection?.channel !== 'telegram') return
+    this.telegramTurnFeedback.start(turnId, connectionId, externalId)
+  }
+
+  updateTurnFeedback(turnId: string, update: TelegramTurnDraftUpdate): void {
+    this.telegramTurnFeedback.update(turnId, update)
+  }
+
+  async finishTurnFeedback(turnId: string): Promise<void> {
+    await this.telegramTurnFeedback.finish(turnId)
   }
 
   async startRuntime(handler: RemoteInboundHandler): Promise<void> {
@@ -1022,6 +1092,7 @@ export class RemoteConnectionService {
   }
 
   async stopRuntime(): Promise<void> {
+    await this.telegramTurnFeedback.stopAll()
     for (const connectionId of this.pollingStates.keys()) {
       this.stopTelegramPolling(connectionId)
     }
@@ -1230,6 +1301,7 @@ export class RemoteConnectionService {
       senderName: string
       text: string
       messageId?: string
+      inboundImages?: TelegramInboundImageDescriptor[]
     },
   ): Promise<void> {
     if (message.messageId != null) {
@@ -1263,6 +1335,41 @@ export class RemoteConnectionService {
     }
 
     this.markSeen(latest.id, message.externalId)
+    let attachments: SessionAttachment[] | undefined
+    if ((message.inboundImages?.length ?? 0) > 0) {
+      if (!latest.capabilities.transferFiles) {
+        await this.sendDirectMessage(
+          latest,
+          message.externalId,
+          '该连接未启用“传输文件”能力，无法接收图片。请在 SparkWork 的远程连接设置中开启后重试。',
+        )
+        return
+      }
+      const token = readString(latest.credentials.botToken)
+      const attachmentRoot = this.telegramAttachmentRoot
+      if (token == null || attachmentRoot == null) {
+        await this.sendDirectMessage(
+          latest,
+          message.externalId,
+          '图片接收运行时尚未就绪，请稍后重试。',
+        )
+        return
+      }
+      try {
+        attachments = await Promise.all(
+          (message.inboundImages ?? []).map((descriptor) =>
+            downloadTelegramInboundImage({ token, descriptor, attachmentRoot }),
+          ),
+        )
+      } catch (error) {
+        await this.sendDirectMessage(
+          latest,
+          message.externalId,
+          `图片接收失败：${error instanceof Error ? error.message : String(error)}`,
+        )
+        return
+      }
+    }
     await this.sendProcessingFeedback(latest, message.externalId, message.messageId)
     if (this.inboundHandler == null) {
       const prefix = latest.commandPrefix.trim() || '/'
@@ -1281,6 +1388,7 @@ export class RemoteConnectionService {
         senderName: message.senderName,
         text,
         ...(message.messageId != null ? { messageId: message.messageId } : {}),
+        ...(attachments != null ? { attachments } : {}),
       })
       if (response != null) {
         await this.sendDirectMessage(latest, message.externalId, {
@@ -1733,7 +1841,17 @@ export class RemoteConnectionService {
   ): Promise<void> {
     const token = readString(connection.credentials.botToken)
     if (token == null) throw new Error('Telegram bot token 未配置')
-    const chunks = splitText(formatRemoteOutboundText(message), 3900)
+    const formattedText = formatRemoteOutboundText(message)
+    const media = connection.capabilities.transferFiles
+      ? extractTelegramOutboundMedia(formattedText)
+      : { text: formattedText, images: [] }
+    const messageText =
+      media.text.length > 0
+        ? media.text
+        : (message.actions?.length ?? 0) > 0
+          ? (message.title ?? '请选择操作')
+          : ''
+    const chunks = messageText.length > 0 ? splitText(messageText, 3900) : []
     for (const [index, chunk] of chunks.entries()) {
       const actions = index === chunks.length - 1 ? (message.actions ?? []) : []
       await this.postJson(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
@@ -1753,6 +1871,34 @@ export class RemoteConnectionService {
             }
           : {}),
       })
+    }
+    for (const image of media.images) {
+      try {
+        await sendTelegramOutboundImage(
+          { token, chatId: externalId, image },
+          {
+            uploadTemporaryFile: async ({ filePath, fileName, mimeType }) => {
+              const uploaded = await getAuthService().uploadFile({
+                filePath,
+                fileName,
+                mimeType,
+                purpose: 'media-transfer',
+              })
+              return uploaded.aiUrl
+            },
+          },
+        )
+      } catch (error) {
+        log.warn(`Telegram 图片发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.postJson(
+          `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`,
+          {
+            chat_id: externalId,
+            text: `图片发送失败：${image.alt || '未命名图片'}${/^https?:\/\//iu.test(image.source) ? `\n${image.source}` : ''}`,
+            disable_web_page_preview: false,
+          },
+        )
+      }
     }
   }
 

@@ -1820,7 +1820,10 @@ let _remoteConnectionService: RemoteConnectionService | null = null
 let _remoteConnectionChangeHookRegistered = false
 function getRemoteConnectionService(): RemoteConnectionService {
   if (_remoteConnectionService == null) {
-    _remoteConnectionService = new RemoteConnectionService(getSettingsService())
+    _remoteConnectionService = new RemoteConnectionService(
+      getSettingsService(),
+      path.join(app.getPath('userData'), 'attachments', 'remote', 'telegram'),
+    )
   }
   if (!_remoteConnectionChangeHookRegistered) {
     _remoteConnectionChangeHookRegistered = true
@@ -2307,7 +2310,10 @@ const pendingUserQuestions = new PendingUserQuestionStore({
     })
   },
 })
-const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
+const remoteTurnTargets = new Map<
+  string,
+  { connectionId: string; externalId: string; attachments: SessionAttachment[] }
+>()
 
 async function recoverExistingDetachedQuestionAttachments(
   sessionId: string,
@@ -2355,47 +2361,82 @@ async function filterExistingSessionAttachments(
 function registerRemoteTurn(
   turnId: string,
   target: { connectionId: string; externalId: string },
-): void {
-  remoteTurnTargets.set(turnId, target)
+): { connectionId: string; externalId: string; attachments: SessionAttachment[] } {
+  const stored = { ...target, attachments: [] as SessionAttachment[] }
+  remoteTurnTargets.set(turnId, stored)
+  getRemoteConnectionService().startTurnFeedback(turnId, target.connectionId, target.externalId)
   if (remoteTurnTargets.size > 500) {
     const oldest = remoteTurnTargets.keys().next().value
-    if (oldest != null) remoteTurnTargets.delete(oldest)
+    if (oldest != null) {
+      remoteTurnTargets.delete(oldest)
+      void getRemoteConnectionService().finishTurnFeedback(oldest)
+    }
   }
+  return stored
 }
 
 function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void {
   const target = remoteTurnTargets.get(event.turnId)
   if (target == null) return
-  if (event.type === 'assistant_message' && event.isFinal) {
+  if (event.type === 'presented_files') {
+    for (const file of event.files) {
+      if (!/\.(?:png|jpe?g|webp|gif)$/iu.test(file.path)) continue
+      if (!target.attachments.some((attachment) => attachment.path === file.path)) {
+        target.attachments.push({ type: 'image', path: file.path })
+      }
+    }
+  } else if (event.type === 'assistant_message' && !event.isFinal) {
+    getRemoteConnectionService().updateTurnFeedback(event.turnId, {
+      content: event.content,
+      mode: event.mode,
+      ...(event.segmentId == null ? {} : { segmentId: event.segmentId }),
+    })
+  } else if (event.type === 'assistant_message' && event.isFinal) {
     remoteTurnTargets.delete(event.turnId)
     const content = event.content.trim()
-    if (content.length === 0) return
-    void getRemoteConnectionService()
-      .sendReply(target.connectionId, target.externalId, content)
+    const service = getRemoteConnectionService()
+    void service
+      .finishTurnFeedback(event.turnId)
+      .then(async () => {
+        if (content.length === 0) return
+        await service.sendReply(target.connectionId, target.externalId, content, target.attachments)
+      })
       .catch((err) => {
         log.warn(`Failed to send remote assistant reply: ${String(err)}`)
       })
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
-    const commandPrefix = getRemoteConnectionService()
+    const service = getRemoteConnectionService()
+    const commandPrefix = service
       .list()
       .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
-    void getRemoteConnectionService()
-      .sendReply(
-        target.connectionId,
-        target.externalId,
-        buildRemoteErrorGuidance(event.message, commandPrefix),
+    void service
+      .finishTurnFeedback(event.turnId)
+      .then(() =>
+        service.sendReply(
+          target.connectionId,
+          target.externalId,
+          buildRemoteErrorGuidance(event.message, commandPrefix),
+        ),
       )
       .catch((err) => {
         log.warn(`Failed to send remote error reply: ${String(err)}`)
       })
+  } else if (
+    event.type === 'agent_status' &&
+    (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
+  ) {
+    // Most executors emit a final message or agent_error first. This terminal-status
+    // fallback prevents feedback timers leaking for tool-only or interrupted turns.
+    remoteTurnTargets.delete(event.turnId)
+    void getRemoteConnectionService().finishTurnFeedback(event.turnId)
   }
 }
 
 async function sendRemoteTurnReplyFromHistory(
   sessionId: string,
   turnId: string,
-  target: { connectionId: string; externalId: string },
+  target: { connectionId: string; externalId: string; attachments: SessionAttachment[] },
 ): Promise<boolean> {
   const history = await getSessionService().getHistory({ sessionId, limit: 200 })
   const final = history.events.find(
@@ -2408,10 +2449,13 @@ async function sendRemoteTurnReplyFromHistory(
   if (final == null || final.type !== 'assistant_message') return false
   if (remoteTurnTargets.get(turnId) !== target) return true
   remoteTurnTargets.delete(turnId)
-  await getRemoteConnectionService().sendReply(
+  const service = getRemoteConnectionService()
+  await service.finishTurnFeedback(turnId)
+  await service.sendReply(
     target.connectionId,
     target.externalId,
     final.content.trim(),
+    target.attachments,
   )
   return true
 }
@@ -3914,7 +3958,7 @@ async function handleRemoteInboundMessage(
 
   const result = await getSessionService().sendTurn({
     sessionId,
-    message: message.text,
+    message: `【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n${message.text}`,
     ...(message.connection.defaultProviderProfileId != null
       ? { providerProfileId: message.connection.defaultProviderProfileId }
       : {}),
@@ -3924,24 +3968,29 @@ async function handleRemoteInboundMessage(
     ...(message.connection.defaultAgentId != null
       ? { agentId: message.connection.defaultAgentId }
       : {}),
+    ...(message.attachments != null ? { attachments: message.attachments } : {}),
   })
   const target = {
     connectionId: message.connection.id,
     externalId: message.externalId,
   }
-  registerRemoteTurn(result.turnId, target)
-  void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, target).catch((err) => {
+  const storedTarget = registerRemoteTurn(result.turnId, target)
+  void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, storedTarget).catch((err) => {
     log.warn(`Failed to send remote reply from history: ${String(err)}`)
     if (!remoteTurnTargets.has(result.turnId)) return
     remoteTurnTargets.delete(result.turnId)
-    const commandPrefix = getRemoteConnectionService()
+    const service = getRemoteConnectionService()
+    const commandPrefix = service
       .list()
       .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
-    void getRemoteConnectionService()
-      .sendReply(
-        target.connectionId,
-        target.externalId,
-        buildRemoteErrorGuidance(err instanceof Error ? err.message : String(err), commandPrefix),
+    void service
+      .finishTurnFeedback(result.turnId)
+      .then(() =>
+        service.sendReply(
+          target.connectionId,
+          target.externalId,
+          buildRemoteErrorGuidance(err instanceof Error ? err.message : String(err), commandPrefix),
+        ),
       )
       .catch((sendErr) => {
         log.warn(`Failed to send remote history error reply: ${String(sendErr)}`)

@@ -4,6 +4,7 @@ import {
   RemoteConnectionService,
   buildFeishuCard,
   buildTelegramBotCommands,
+  parseWebhookBody,
 } from './RemoteConnectionService.js'
 
 describe('buildFeishuCard', () => {
@@ -55,6 +56,28 @@ describe('buildFeishuCard', () => {
 })
 
 describe('remote command coverage', () => {
+  it('keeps Telegram image metadata and uses the caption as the session prompt', () => {
+    expect(
+      parseWebhookBody('telegram', {
+        message: {
+          message_id: 7,
+          chat: { id: 42 },
+          caption: '看看这张图',
+          photo: [
+            { file_id: 'small', width: 90, height: 90 },
+            { file_id: 'large', file_unique_id: 'photo-1', width: 1280, height: 720 },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      kind: 'message',
+      externalId: '42',
+      text: '看看这张图',
+      messageId: 'telegram:7',
+      inboundImages: [{ fileId: 'large', fileUniqueId: 'photo-1' }],
+    })
+  })
+
   it('builds a native Telegram command menu with normalized, permitted commands', () => {
     const commands = buildTelegramBotCommands({
       telegramCommands: ['/new-session', 'new_session', 'use-model', 'use_model'],
