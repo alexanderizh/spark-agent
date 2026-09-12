@@ -10,7 +10,10 @@ import { tmpdir } from 'os'
 import {
   SparkDatabase,
   McpServerRepository,
+  SessionRepository,
+  SessionWorkflowBindingRepository,
   SkillRepository,
+  WorkflowReferenceGuardError,
   WorkflowBundleRepository,
   WorkflowRepository,
 } from '@spark/storage'
@@ -295,6 +298,39 @@ describe('WorkflowBundleService end-to-end', () => {
       beforeWorkflowIds,
     )
     expect(bundleRepo.list()).toHaveLength(1)
+  })
+
+  it('会话挂载包内工作流时卸载被守卫拒绝且不留半卸载状态', async () => {
+    const bundleId = service.listBundles()[0]!.id
+    const bundledWorkflow = workflowRepo
+      .list({ includeArchived: true })
+      .find((w) => w.bundleId === bundleId)!
+    const sessions = new SessionRepository(db)
+    const bindings = new SessionWorkflowBindingRepository(db)
+    sessions.create({
+      id: 'session-guard',
+      kind: 'chat',
+      title: 'Guard',
+      status: 'idle',
+      projectId: 'p',
+    })
+    bindings.create({
+      sessionId: 'session-guard',
+      mode: 'override',
+      workflowId: bundledWorkflow.id,
+    })
+
+    try {
+      await expect(service.uninstallBundle(bundleId)).rejects.toBeInstanceOf(
+        WorkflowReferenceGuardError,
+      )
+
+      // 整包原样保留：工作流、登记行都在，没有半卸载残留。
+      expect(workflowRepo.get(bundledWorkflow.id)).not.toBeNull()
+      expect(bundleRepo.get(bundleId)).not.toBeNull()
+    } finally {
+      bindings.delete('session-guard')
+    }
   })
 
   it('卸载整包:工作流/技能/MCP/目录/登记全部清除', async () => {

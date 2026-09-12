@@ -55,6 +55,7 @@ import {
   type ToolPackageBridgeMethod,
 } from './platform-bridge-tool-packages.js'
 import type { McpServerRepository } from '@spark/storage'
+import { WorkflowReferenceGuardError } from '@spark/storage'
 import type { ProviderProfileRepository } from '@spark/storage'
 import type { WorkflowRepository } from '@spark/storage'
 import type { UpdateWorkflowParams } from '@spark/storage'
@@ -1568,9 +1569,17 @@ export class PlatformBridgeService {
 
   private workflowDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
-    const ok = d.workflowRepo.delete(id)
-    if (ok) d.onConfigChanged?.('workflow', 'delete', id)
-    return { success: ok }
+    try {
+      const ok = d.workflowRepo.delete(id)
+      if (ok) d.onConfigChanged?.('workflow', 'delete', id)
+      return { success: ok }
+    } catch (error) {
+      // 引用守卫（仓储层强制）：结构化返回阻断明细，不透传 500 裸错误。
+      if (error instanceof WorkflowReferenceGuardError) {
+        return { success: false, blocked: error.blockers, error: error.message }
+      }
+      throw error
+    }
   }
 
   // ── Agent handlers ──

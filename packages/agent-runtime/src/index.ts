@@ -1,6 +1,4 @@
 export { ProviderService } from './services/provider.service.js'
-export { inspectWorkflowReferences } from './services/workflow/workflow-reference.guard.js'
-export type { WorkflowReferenceBlocker } from './services/workflow/workflow-reference.guard.js'
 export {
   resolveProviderApiKey,
   resolveProviderApiKeyForProfile,

@@ -273,7 +273,8 @@ export class WorkflowBundleImporter {
         unresolved: bundle.manifest.unresolved,
       }
     } catch (err) {
-      for (const id of workflowIds) this.workflowRepo.delete(id)
+      // 导入失败回滚：对象尚未对外可见，internalRollback 仅断言零绑定零运行。
+      for (const id of workflowIds) this.workflowRepo.delete(id, { policy: 'internalRollback' })
       for (const id of importedMcpServerIds) this.mcpRepo.deleteById(id)
       for (const id of installedSkillIds) this.skillRepo.deleteById(id)
       await rm(join(this.userSkillsDir, BUNDLE_SKILLS_DIR_NAME, bundleId), {
@@ -285,30 +286,42 @@ export class WorkflowBundleImporter {
     }
   }
 
-  /** 卸载整包:工作流 + MCP + bundle 技能行 + 技能目录 + 包登记,零残留。 */
+  /**
+   * 卸载整包:工作流 + MCP + bundle 技能行 + 技能目录 + 包登记,零残留。
+   *
+   * DB 变更包在单事务里：任一工作流被引用守卫拒绝（会话挂载或可恢复 Run，
+   * 方案 §8.2）时整体回滚，不留半卸载状态。Agent 默认引用在卸载这一显式
+   * 生命周期操作中解除（不再留下悬空引用）；技能目录删除为事务外的尽力清理。
+   */
   async uninstallBundle(bundleId: string): Promise<boolean> {
     const row = this.bundleRepo.get(bundleId)
     if (row == null) return false
 
-    // 包内工作流
-    for (const workflow of this.workflowRepo.list({ includeArchived: true })) {
-      if (workflow.bundleId === bundleId) this.workflowRepo.delete(workflow.id)
-    }
-    // 包内 MCP
-    for (const server of this.mcpRepo.findByBundleId(bundleId)) {
-      this.mcpRepo.deleteById(server.id)
-    }
-    // bundle 技能行 + 目录
+    const bundledWorkflows = this.workflowRepo
+      .list({ includeArchived: true })
+      .filter((workflow) => workflow.bundleId === bundleId)
+    const bundledServers = this.mcpRepo.findByBundleId(bundleId)
     const prefix = `${BUNDLE_SKILL_ID_PREFIX}${bundleId}:`
-    for (const skill of this.skillRepo.list()) {
-      if (skill.id.startsWith(prefix)) this.skillRepo.deleteById(skill.id)
-    }
+    const bundledSkills = this.skillRepo.list().filter((skill) => skill.id.startsWith(prefix))
+
+    this.bundleRepo.transaction(() => {
+      for (const workflow of bundledWorkflows) {
+        this.workflowRepo.clearAgentReferences(workflow.id)
+        this.workflowRepo.delete(workflow.id, { policy: 'bundle-uninstall' })
+      }
+      for (const server of bundledServers) {
+        this.mcpRepo.deleteById(server.id)
+      }
+      for (const skill of bundledSkills) {
+        this.skillRepo.deleteById(skill.id)
+      }
+      this.bundleRepo.delete(bundleId)
+    })
+
     await rm(join(this.userSkillsDir, BUNDLE_SKILLS_DIR_NAME, bundleId), {
       recursive: true,
       force: true,
     })
-    // 包登记
-    this.bundleRepo.delete(bundleId)
     return true
   }
 
