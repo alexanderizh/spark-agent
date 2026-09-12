@@ -279,11 +279,12 @@ describe('Hook V2 repositories', () => {
     expect(runs.getByEventAndHook('evt-run-1', defV1.id)?.hookRevision).toBe(1)
 
     const claimed = runs.claimNextRunnable('worker-A', 60_000)
-    expect(claimed?.id).toBe(created!.id)
+    const claimedId = claimed?.id as string
+    expect(claimedId).toBe(created?.id)
     expect(claimed?.status).toBe('running')
     expect(claimed?.attemptCount).toBe(1)
 
-    const finished = runs.finish(claimed!.id, {
+    const finished = runs.finish(claimedId, {
       status: 'failed',
       errorCode: 'action_failed',
       errorMessage: 'webhook 5xx',
@@ -293,11 +294,11 @@ describe('Hook V2 repositories', () => {
     expect(finished?.durationMs).toBeGreaterThanOrEqual(0)
 
     // 手动重试仅对终态运行生效
-    expect(runs.requeueForManualRetry(claimed!.id)?.status).toBe('queued')
+    expect(runs.requeueForManualRetry(claimedId)?.status).toBe('queued')
     expect(runs.list({ status: 'queued' })).toHaveLength(1)
 
     // queued 运行可被取消
-    const cancelled = runs.cancelPending(claimed!.id)
+    const cancelled = runs.cancelPending(claimedId)
     expect(cancelled?.status).toBe('cancelled')
   })
 
@@ -334,7 +335,7 @@ describe('Hook V2 repositories', () => {
         bindingSnapshot: binding,
         envelope: makeEnvelope(eventId, sessionId),
       })
-      return run!.id
+      return run?.id as string
     }
     const firstId = insertRun('evt-s-1', 'session-1')
     const secondId = insertRun('evt-s-2', 'session-1')
@@ -384,7 +385,7 @@ describe('Hook V2 repositories', () => {
     runs.claimNextRunnable('worker-A', /* leaseMs */ -1) // 立即过期的租约
     const recovered = runs.recoverExpiredLeasesToOutcomeUnknown()
     expect(recovered).toBe(1)
-    expect(runs.get(run!.id)?.status).toBe('outcome_unknown')
+    expect(runs.get(run?.id as string)?.status).toBe('outcome_unknown')
     // outcome_unknown 不会被自动领取
     expect(runs.claimNextRunnable('worker-A', 60_000)).toBeNull()
   })
