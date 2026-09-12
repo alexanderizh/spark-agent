@@ -3290,8 +3290,16 @@ export interface WorkflowDeleteRequest {
   id: string
 }
 
+export interface WorkflowDeleteBlockedReason {
+  code: 'workflow_referenced_by_bindings' | 'workflow_run_working'
+  /** 仅 workflow_referenced_by_bindings：仍挂载该工作流的会话，供 UI 列出。 */
+  sessionIds?: string[]
+}
+
 export interface WorkflowDeleteResponse {
   deleted: boolean
+  /** 删除被引用守卫拦截时的结构化原因；renderer 本地化展示。 */
+  blockedReason?: WorkflowDeleteBlockedReason | null
 }
 
 // ─── App Info Channels ──────────────────────────────────────────────────────

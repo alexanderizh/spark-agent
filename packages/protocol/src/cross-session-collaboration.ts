@@ -52,12 +52,22 @@ export interface SessionForkRequest {
   title?: string
 }
 
+export type SessionForkBindingWarningCode =
+  | 'workflow_not_found'
+  | 'workflow_disabled'
+  | 'workflow_not_active'
+
 export interface SessionForkResponse {
   sessionId: SessionId
   session: SessionListResponse['sessions'][number]
   lineage: SessionLineage
   copiedTurnCount: number
   sourceWasRunning: boolean
+  /**
+   * Fork 复制了显式挂载（override）但其目标工作流当前不可用时的警告；
+   * 配置保留用于解释历史，子会话首个 Host Turn 会按 Preflight 明确失败。
+   */
+  bindingWarning?: { code: SessionForkBindingWarningCode } | null
 }
 
 export interface SessionLineageRequest {
