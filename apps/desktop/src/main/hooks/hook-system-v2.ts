@@ -212,22 +212,50 @@ export class HookSystemV2 {
 
   /** 挂到 SessionService（发射生命周期事件）并启动崩溃恢复 + Worker 轮询。 */
   attachSessionService(sessionService: {
-    setHookLifecycleBridge: (bridge: unknown) => void
+    setHookLifecycleBridge: (bridge: HookLifecycleBridge | null) => void
   }): void {
     sessionService.setHookLifecycleBridge(this.bridge)
     if (!this.started) {
-      const recovery = this.worker.recoverOnStartup()
-      if (recovery.unknownRuns > 0 || recovery.requeuedEvents > 0) {
-        log.info(`startup recovery: ${JSON.stringify(recovery)}`)
+      try {
+        const recovery = this.worker.recoverOnStartup()
+        if (recovery.unknownRuns > 0 || recovery.requeuedEvents > 0) {
+          log.info(`startup recovery: ${JSON.stringify(recovery)}`)
+        }
+        // 启动恢复出的 pending 事件不能等下一次生命周期事件才被消费。
+        void this.dispatcher
+          .dispatchPending()
+          .catch((error) =>
+            log.warn(
+              `startup dispatch failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          )
+        // 周期维护扫描：兜底派发失败重试/开关关闭期间积累的事件。
+        this.dispatcher.startSweep()
+        this.worker.start()
+        this.started = true
+      } catch (error) {
+        // 失败隔离：Hook 基础设施异常不得阻断 SessionService 构建（设计方案 §12.4）。
+        log.error(
+          `hook system startup failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
       }
-      this.worker.start()
-      this.started = true
     }
   }
 
   /** 挂到 PermissionService：真实权限请求进入等待时发射 permission.requested。 */
   attachPermissionService(permissionService: {
-    setPermissionRequestedListener: (listener: unknown) => void
+    setPermissionRequestedListener: (
+      listener:
+        | ((info: {
+            sessionId: string
+            requestId: string
+            toolName: string
+            action: string
+            riskLevel: string
+            turnId?: string
+          }) => void)
+        | null,
+    ) => void
   }): void {
     permissionService.setPermissionRequestedListener(
       (info: {
@@ -259,9 +287,13 @@ export class HookSystemV2 {
     if (!enabled) {
       this.worker.stop()
       this.started = false
-    } else if (!this.started) {
-      this.worker.start()
-      this.started = true
+    } else {
+      if (!this.started) {
+        this.worker.start()
+        this.started = true
+      }
+      // 重新开启后立即消化开关关闭期间积累的 pending 事件（周期扫描兜底）。
+      void this.dispatcher.dispatchPending().catch(() => {})
     }
     return applied
   }
@@ -305,6 +337,7 @@ export class HookSystemV2 {
 
   /** 应用退出流程：停止领取并尽力取消运行中动作（不撤回已发生的外部副作用）。 */
   stop(): void {
+    this.dispatcher.stopSweep()
     this.worker.stop()
     this.started = false
   }

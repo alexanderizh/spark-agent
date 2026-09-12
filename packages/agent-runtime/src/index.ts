@@ -382,6 +382,7 @@ export type {
   HookToolGateway,
   HookWorkerOptions,
 } from './services/hooks/index.js'
+export type { HookErrorCodeV1 } from '@spark/protocol'
 export {
   checkExecutionPolicy,
   isTransientErrorCode,

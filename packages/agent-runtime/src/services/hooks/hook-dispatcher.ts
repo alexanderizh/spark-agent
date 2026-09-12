@@ -29,7 +29,14 @@ export interface HookDispatcherOptions {
   isEnabled?: () => boolean
 }
 
+/** resolved 事件的队列保留期：运行记录持有信封快照，事件残留到期可回收。 */
+const DEFAULT_RESOLVED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+/** 清理扫描最小间隔（避免每次 sweep 都全表扫描）。 */
+const PRUNE_MIN_INTERVAL_MS = 10 * 60 * 1000
+
 export class HookDispatcher {
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
+  private lastPruneAt = 0
   private readonly events: HookEventRepository
   private readonly definitions: HookDefinitionRepository
   private readonly bindings: HookBindingRepository
@@ -133,5 +140,47 @@ export class HookDispatcher {
       processed += 1
     }
     return processed
+  }
+
+  /**
+   * 单次维护扫描：派发积压的 pending 事件并按保留期清理已 resolved 的队列残留。
+   * 宿主用 startSweep 周期调用；事件只在「新事件持久化」时触发派发是不够的——
+   * 派发失败释放回 pending 的事件、总开关关闭期间积累的事件、启动恢复出来的
+   * 事件都必须靠周期扫描兜底，否则会永久滞留。
+   */
+  async sweepOnce(
+    options: { pruneResolvedAfterMs?: number } = {},
+  ): Promise<{ dispatched: number; pruned: number }> {
+    const dispatched = await this.dispatchPending(32)
+    let pruned = 0
+    const retainMs = options.pruneResolvedAfterMs ?? DEFAULT_RESOLVED_RETENTION_MS
+    const now = Date.now()
+    if (now - this.lastPruneAt >= PRUNE_MIN_INTERVAL_MS) {
+      this.lastPruneAt = now
+      try {
+        pruned = this.events.pruneResolvedOlderThan(new Date(now - retainMs).toISOString())
+      } catch (error) {
+        log.warn(
+          `prune resolved events failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    return { dispatched, pruned }
+  }
+
+  /** 启动周期维护扫描（宿主组合根调用；unref 不阻止进程退出）。 */
+  startSweep(intervalMs = 5_000): void {
+    if (this.sweepTimer != null) return
+    this.sweepTimer = setInterval(() => {
+      void this.sweepOnce().catch(() => {})
+    }, intervalMs)
+    this.sweepTimer.unref?.()
+  }
+
+  stopSweep(): void {
+    if (this.sweepTimer != null) {
+      clearInterval(this.sweepTimer)
+      this.sweepTimer = null
+    }
   }
 }

@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HookEventEnvelopeV1 } from '@spark/protocol'
-import { SessionRepository, SparkDatabase, WorkspaceRepository } from '@spark/storage'
+import {
+  HookEventRepository,
+  SessionRepository,
+  SparkDatabase,
+  WorkspaceRepository,
+} from '@spark/storage'
 import { HookDispatcher } from './hook-dispatcher.js'
 import { HookLifecycleBridge } from './hook-lifecycle-bridge.js'
 import { HookManagementService } from './hook-definition-service.js'
@@ -900,6 +905,165 @@ describe('Hook 运行时全管线', () => {
 
     const run = management.listRuns()[0]
     expect(run?.status).toBe('succeeded')
+  })
+
+  it('闭环兜底：pending 事件由周期扫描消费（总开关关闭期间积累 → 开启后扫描派发）', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: 'sweep hook',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+
+    const enabledRef = { value: false }
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: () => enabledRef.value,
+    })
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: () => enabledRef.value,
+    })
+    const bridge = new HookLifecycleBridge(db)
+    bridge.responseCommitted('session-1', 'turn-21', 'msg-21', '回答')
+    // 开关关闭：新事件持久化触发的派发为空，事件滞留 pending
+    expect(await dispatcher.dispatchPending()).toBe(0)
+
+    // 开启后（模拟 setSystemEnabled(true) 的即时派发 + 周期 sweepOnce）
+    enabledRef.value = true
+    const sweep = await dispatcher.sweepOnce()
+    expect(sweep.dispatched).toBe(1)
+    await worker.tickOnce()
+    expect(management.listRuns()).toHaveLength(1)
+    expect(builtins.calls).toHaveLength(1)
+  })
+
+  it('派发失败释放回 pending 的事件由下一次扫描重试（事件不丢失）', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: 'retry sweep hook',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+    const bridge = new HookLifecycleBridge(db)
+    bridge.responseCommitted('session-1', 'turn-22', 'msg-22', '回答')
+
+    // 定义启用中，事件必然入 outbox；模拟一次派发后事件已 resolved
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    expect(await dispatcher.dispatchPending()).toBe(1)
+    const events = new HookEventRepository(db)
+    expect(events.countByStatus('resolved')).toBe(1)
+
+    // sweep 不重复消费 resolved 事件，也不产生第二条运行（唯一约束兜底）
+    const sweep = await dispatcher.sweepOnce()
+    expect(sweep.dispatched).toBe(0)
+    expect(management.listRuns()).toHaveLength(1)
+  })
+
+  it('resolved 事件按保留期清理，pending 事件不受影响', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: 'prune hook',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+    const bridge = new HookLifecycleBridge(db)
+    bridge.responseCommitted('session-1', 'turn-23', 'msg-23', '回答一')
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    expect(await dispatcher.dispatchPending()).toBe(1)
+
+    // 手动把 resolved 事件的 resolved_at 拨老
+    const events = new HookEventRepository(db)
+    db.raw
+      .prepare("UPDATE hook_events SET resolved_at = ? WHERE status = 'resolved'")
+      .run(new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
+
+    // 制造一个滞留 pending 事件（关闭开关期间到达）
+    const enabledRef = { value: false }
+    const gatedDispatcher = new HookDispatcher(db, {
+      owner: 'gated',
+      isEnabled: () => enabledRef.value,
+    })
+    bridge.responseCommitted('session-1', 'turn-24', 'msg-24', '回答二')
+    expect(await gatedDispatcher.dispatchPending()).toBe(0)
+
+    const sweep = await dispatcher.sweepOnce({ pruneResolvedAfterMs: 7 * 24 * 60 * 60 * 1000 })
+    expect(sweep.pruned).toBe(1)
+    // 周期扫描同时消化了滞留的 pending 事件（闭环兜底语义）
+    expect(sweep.dispatched).toBeGreaterThanOrEqual(1)
+    expect(events.countByStatus('pending')).toBe(0)
+    // 运行记录（审计事实）不随事件清理：老事件 1 条 + 扫描新派发 1 条
+    expect(management.listRuns()).toHaveLength(2)
+  })
+
+  it('未使用 Hook 功能时生命周期事件零写入（bridge 短路）', () => {
+    const events = new HookEventRepository(db)
+    const bridge = new HookLifecycleBridge(db)
+    bridge.turnStarted('session-1', 'turn-25')
+    bridge.responseCommitted('session-1', 'turn-25', 'msg-25', '回答')
+    bridge.turnTerminal('session-1', 'turn-25', 'completed')
+    bridge.permissionRequested({
+      sessionId: 'session-1',
+      turnId: 'turn-25',
+      requestId: 'req-25',
+      toolName: 'bash',
+      action: 'run',
+      riskLevel: 'low',
+    })
+    bridge.questionRequested('session-1', 'turn-25', { questionId: 'q-25' })
+    expect(events.countByStatus('pending')).toBe(0)
+    expect(events.countByStatus('resolved')).toBe(0)
+  })
+
+  it('定义停用时事件不写入；启用后恢复写入', () => {
+    const management = new HookManagementService({ db })
+    const events = new HookEventRepository(db)
+    const definition = management.createDefinition({
+      name: 'gate hook',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+      enabled: false,
+    })
+    const bridge = new HookLifecycleBridge(db)
+    // 定义级停用：事件不写入 outbox
+    bridge.responseCommitted('session-1', 'turn-26', 'msg-26', '回答')
+    expect(events.countByStatus('pending')).toBe(0)
+
+    // 启用定义后恢复写入
+    management.updateDefinition(definition.id, { enabled: true })
+    bridge.responseCommitted('session-1', 'turn-27', 'msg-27', '回答')
+    expect(events.countByStatus('pending')).toBe(1)
   })
 
   it('重新启用已授权绑定不使授权失效；提供错误授权哈希则降级 needs_review', () => {

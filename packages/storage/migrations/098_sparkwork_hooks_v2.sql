@@ -70,6 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_hook_events_status_available
   ON hook_events(status, available_at);
 CREATE INDEX IF NOT EXISTS idx_hook_events_session
   ON hook_events(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_hook_events_resolved
+  ON hook_events(status, resolved_at);
 
 CREATE TABLE IF NOT EXISTS hook_runs (
   id TEXT PRIMARY KEY,

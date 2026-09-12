@@ -2438,7 +2438,7 @@ function getSessionService(): SessionService {
         {
           ...permissionContext,
           sdkRequestId: sdkContext.requestId,
-          turnId: sdkContext.turnId,
+          ...(sdkContext.turnId != null ? { turnId: sdkContext.turnId } : {}),
           onDecision: (decision) => {
             selectedDecision = decision
           },

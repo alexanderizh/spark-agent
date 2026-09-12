@@ -143,6 +143,24 @@ export class HookEventRepository extends BaseRepository {
     return result.changes
   }
 
+  /**
+   * 清理已终态（resolved）且超过保留期的 outbox 事件：运行记录已持有信封快照，
+   * 事件队列残留可安全回收；pending/resolving/failed 一律不动（设计方案 §18）。
+   * 返回清理数量（有界，单次最多 limit 条）。
+   */
+  pruneResolvedOlderThan(cutoffIso: string, limit = 500): number {
+    const result = this.raw
+      .prepare(
+        `DELETE FROM hook_events WHERE event_id IN (
+           SELECT event_id FROM hook_events
+           WHERE status = 'resolved' AND resolved_at IS NOT NULL AND resolved_at < ?
+           LIMIT ?
+         )`,
+      )
+      .run(cutoffIso, limit)
+    return result.changes
+  }
+
   countByStatus(status: HookEventStatus): number {
     const row = this.raw
       .prepare('SELECT COUNT(*) AS n FROM hook_events WHERE status = ?')

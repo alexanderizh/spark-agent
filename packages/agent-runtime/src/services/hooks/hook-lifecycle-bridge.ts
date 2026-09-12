@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { HookEventEnvelopeV1, HookEventNameV1 } from '@spark/protocol'
 import {
   AgentRepository,
+  HookDefinitionRepository,
   HookEventRepository,
   SessionRepository,
   type SparkDatabase,
@@ -42,6 +43,7 @@ export class HookLifecycleBridge {
   private readonly sessionRepository: SessionRepository
   private readonly agentRepository: AgentRepository
   private readonly workspaceRepository: WorkspaceRepository
+  private readonly definitions: HookDefinitionRepository
 
   constructor(
     private readonly db: SparkDatabase,
@@ -53,6 +55,7 @@ export class HookLifecycleBridge {
     this.sessionRepository = new SessionRepository(db)
     this.agentRepository = new AgentRepository(db)
     this.workspaceRepository = new WorkspaceRepository(db)
+    this.definitions = new HookDefinitionRepository(db)
   }
 
   getEventEmitter(): HookEventEmitter {
@@ -200,6 +203,9 @@ export class HookLifecycleBridge {
     sourceId: string,
   ): void {
     try {
+      // 短路：该事件没有任何启用中的 Hook 定义时不写 outbox——未使用 Hook 功能的
+      // 应用保持零额外写入（事件仅是待消费队列，定义创建后的新事件才会入队）。
+      if (this.definitions.listEnabledByEvent(eventName).length === 0) return
       const context = this.buildSessionContext(sessionId)
       if (context == null) return
       const envelope = this.buildEnvelope(

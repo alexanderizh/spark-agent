@@ -458,6 +458,40 @@ export type HookSystemEnabledSetResponse = HookSystemStatusV1
 export type HookPreviewRequest = HookPreviewRequestV1
 export type HookPreviewResponse = HookPreviewResultV1
 
+/** 全部 hookV2 IPC 通道名（契约测试与渲染层封装共用）。 */
+export const HOOK_V2_CHANNELS = [
+  'hookV2:list-definitions',
+  'hookV2:create-definition',
+  'hookV2:update-definition',
+  'hookV2:delete-definition',
+  'hookV2:validate-definition',
+  'hookV2:list-bindings',
+  'hookV2:upsert-binding',
+  'hookV2:list-effective',
+  'hookV2:list-runs',
+  'hookV2:get-run',
+  'hookV2:retry-run',
+  'hookV2:cancel-run',
+  'hookV2:get-system-status',
+  'hookV2:set-enabled',
+  'hookV2:list-tool-candidates',
+  'hookV2:preview',
+] as const
+
+/** 工具候选：按 Hook 风险策略给出可选工具与不可选原因（设计方案 §14）。 */
+export interface HookToolCandidateV1 {
+  target: HookToolTargetV1
+  title: string
+  risk: 'read' | 'low-write' | 'high-write' | 'destructive'
+  effect: string
+  idempotency: 'safe' | 'keyed' | 'unsafe'
+  selectable: boolean
+  unselectableReason?: string
+}
+
+export type HookToolCandidateListRequest = Record<string, never>
+export type HookToolCandidateListResponse = { candidates: HookToolCandidateV1[] }
+
 export interface HookV2IpcChannelMap {
   'hookV2:list-definitions': [HookDefinitionListRequest, HookDefinitionListResponse]
   'hookV2:create-definition': [HookDefinitionCreateRequest, HookDefinitionCreateResponse]
@@ -474,6 +508,7 @@ export interface HookV2IpcChannelMap {
   'hookV2:get-system-status': [HookSystemStatusGetRequest, HookSystemStatusGetResponse]
   'hookV2:set-enabled': [HookSystemEnabledSetRequest, HookSystemEnabledSetResponse]
   'hookV2:preview': [HookPreviewRequest, HookPreviewResponse]
+  'hookV2:list-tool-candidates': [HookToolCandidateListRequest, HookToolCandidateListResponse]
 }
 
 // ─── Zod Schema（IPC 运行时校验）────────────────────────────────────────────
@@ -581,4 +616,5 @@ export const HookV2IpcSchemaRegistry = {
       sampleEnvelope: HookEventEnvelopeV1Schema.optional(),
     })
     .strict(),
+  'hookV2:list-tool-candidates': z.object({}).strict(),
 } as const
