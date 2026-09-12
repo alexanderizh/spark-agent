@@ -3,15 +3,18 @@ import type {
   MediaProviderProfile,
   MediaTaskRecord,
   MediaTaskRuntimeService,
+  ProviderService,
   SessionService,
   ToolPackageBuiltInCapabilityDeps,
   ToolHostCapabilityContext,
 } from '@spark/agent-runtime'
+import { WorkflowSessionLauncher } from '@spark/agent-runtime'
 import type { MediaCapabilityId } from '@spark/protocol'
 import {
   AgentRepository,
-  ProviderProfileRepository,
   SessionRepository,
+  SettingsRepository,
+  TurnRequestRepository,
   WorkflowRepository,
   WorkflowRunRepository,
   type SparkDatabase,
@@ -31,9 +34,16 @@ type ExtendedCapabilityDeps = Pick<
 
 const TOOL_PACKAGE_WORKFLOW_OWNER_METADATA_KEY = 'toolPackageWorkflowOwner'
 
+/** Tool Package 工作流启动窗口锁（与编辑器试跑的锁相互独立，按入口隔离）。 */
+const toolPackageWorkflowLaunchLocks = new Set<string>()
+function getToolPackageWorkflowLaunchLocks(): Set<string> {
+  return toolPackageWorkflowLaunchLocks
+}
+
 export function createDesktopToolPackageCapabilities(input: {
   db: SparkDatabase
   sessionService: SessionService
+  providerService: Pick<ProviderService, 'listProviders'>
   computerController: ComputerUseAgentController
   resolveMediaProviders(): Promise<MediaProviderProfile[]>
   mediaTaskRuntime: MediaTaskRuntimeService
@@ -82,45 +92,42 @@ export function createDesktopToolPackageCapabilities(input: {
     runWorkflow: async (context, request) => {
       if (context.signal?.aborted === true)
         throw new DOMException('Workflow start cancelled', 'AbortError')
-      const workflow = new WorkflowRepository(input.db).get(request.workflowId)
-      if (workflow == null || !workflow.enabled || workflow.status !== 'active') {
-        throw new Error(`Workflow is unavailable: ${request.workflowId}`)
-      }
-      const agent = new AgentRepository(input.db)
-        .list()
-        .find((candidate) => candidate.workflowId === workflow.id)
-      if (agent == null) throw new Error(`Workflow has no enabled execution Agent: ${workflow.id}`)
-      const providerId =
-        request.providerProfileId ??
-        agent.providerProfileId ??
-        new ProviderProfileRepository(input.db).getDefault()?.id
-      if (providerId == null) throw new Error('Workflow execution Provider is not configured')
-      const created = await input.sessionService.createSession({
-        providerProfileId: providerId,
-        agentId: agent.id,
+      // 统一走 WorkflowSessionLauncher（方案 §15 阶段 6）：启动锁、工作中冲突、
+      // 图结构校验、Provider 回落、失败清理与运行留档与编辑器试跑同一实现。
+      // Owner 元数据在启动后落位：workflows.status 鉴权读取发生在远端轮询时，
+      // 与启动窗口无竞争。
+      const launchLocks = getToolPackageWorkflowLaunchLocks()
+      const launched = await new WorkflowSessionLauncher({
+        workflowRepo: new WorkflowRepository(input.db),
+        workflowRunRepo: new WorkflowRunRepository(input.db),
+        turnRequestRepo: new TurnRequestRepository(input.db),
+        agentRepo: new AgentRepository(input.db),
+        settingsRepo: new SettingsRepository(input.db),
+        providerService: input.providerService,
+        sessionService: input.sessionService,
+        launchingWorkflowIds: launchLocks,
+      }).launch({
+        workflowId: request.workflowId,
+        objective: request.objective,
+        source: 'tool-package',
+        ...(request.providerProfileId != null
+          ? { providerProfileId: request.providerProfileId }
+          : {}),
         ...(request.modelId != null ? { modelId: request.modelId } : {}),
         ...(request.workspaceId != null ? { workspaceId: request.workspaceId } : {}),
-        title: `${workflow.name} · Tool Package`,
       })
-      new SessionRepository(input.db).patchMetadata(created.sessionId, {
+      new SessionRepository(input.db).patchMetadata(launched.sessionId, {
         [TOOL_PACKAGE_WORKFLOW_OWNER_METADATA_KEY]: {
           packageId: context.packageId,
           packageVersion: context.packageVersion,
         },
       })
-      let turn: Awaited<ReturnType<SessionService['sendTurn']>>
-      try {
-        turn = await input.sessionService.sendTurn({
-          sessionId: created.sessionId,
-          message: request.objective,
-        })
-      } catch (error) {
-        // 会话刚创建、turn 未被接受即失败：删除空会话，避免遗留无法产生任何运行记录的孤儿会话。
-        // deleteSession 会先终止在跑执行器再删关联数据；清理失败不掩盖原始错误。
-        await input.sessionService.deleteSession(created.sessionId).catch(() => undefined)
-        throw error
+      return {
+        workflowId: request.workflowId,
+        agentId: launched.hostAgentId,
+        sessionId: launched.sessionId,
+        turnId: launched.turnId,
       }
-      return { workflowId: workflow.id, agentId: agent.id, sessionId: created.sessionId, ...turn }
     },
     getWorkflowStatus: async (context, request) => {
       const owner = new SessionRepository(input.db).getMetadata(request.sessionId)[

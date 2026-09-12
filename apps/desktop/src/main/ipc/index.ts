@@ -9998,6 +9998,7 @@ export function registerAllIpcHandlers(): void {
     createDesktopToolPackageCapabilities({
       db: getDatabase(),
       sessionService: getSessionService(),
+      providerService: getProviderService(),
       computerController: computerUseAgentController,
       resolveMediaProviders: resolveCanvasMediaProviders,
       mediaTaskRuntime: getMediaTaskRuntimeService(),

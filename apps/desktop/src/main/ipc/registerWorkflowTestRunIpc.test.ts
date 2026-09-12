@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentRepository,
+  SettingsRepository,
   TurnRequestRepository,
   WorkflowRepository,
   WorkflowRunRepository,
@@ -73,7 +74,11 @@ interface RegisterOptions {
 
 function register(options: RegisterOptions = {}): {
   agentRepo: { create: ReturnType<typeof vi.fn> }
-  sessionService: { createSession: ReturnType<typeof vi.fn>; submitTurn: ReturnType<typeof vi.fn> }
+  sessionService: {
+    createSession: ReturnType<typeof vi.fn>
+    submitTurn: ReturnType<typeof vi.fn>
+    deleteSession: ReturnType<typeof vi.fn>
+  }
   workflowRunRepo: {
     findWorkingByWorkflow: ReturnType<typeof vi.fn>
   }
@@ -83,6 +88,8 @@ function register(options: RegisterOptions = {}): {
       id: 'wf-1',
       name: '发布流程',
       description: '  ',
+      status: 'active' as const,
+      enabled: true,
       graph: options.workflowGraph ?? acyclicGraph,
     })),
   } as unknown as WorkflowRepository
@@ -131,24 +138,29 @@ function register(options: RegisterOptions = {}): {
 
   const createSession = vi.fn(async () => ({ sessionId: 'sess-1', session: {} }))
   const submitTurn = vi.fn(async () => ({ turnId: 'turn-1', accepted: true, started: true }))
+  const deleteSession = vi.fn(async () => ({ deleted: true }))
   const sessionService = {
     createSession,
     submitTurn,
+    deleteSession,
     hasActiveTurnLoop: vi.fn(() => false),
   } as unknown as SessionService
+
+  const settingsRepo = { get: vi.fn(() => null) }
 
   registerWorkflowTestRunIpc({
     workflowRepo,
     workflowRunRepo,
     turnRequestRepo,
     agentRepo: agentRepo as AgentRepository,
+    settingsRepo: settingsRepo as unknown as SettingsRepository,
     providerService,
     sessionService,
     launchingWorkflowIds: new Set<string>(),
   })
   return {
     agentRepo: { create },
-    sessionService: { createSession, submitTurn },
+    sessionService: { createSession, submitTurn, deleteSession },
     workflowRunRepo: { findWorkingByWorkflow },
   }
 }
@@ -291,7 +303,14 @@ describe('registerWorkflowTestRunIpc', () => {
 
   it('fails when no provider profile is available', async () => {
     const workflowRepo = {
-      get: vi.fn(() => ({ id: 'wf-1', name: 'w', description: '', graph: acyclicGraph })),
+      get: vi.fn(() => ({
+        id: 'wf-1',
+        name: 'w',
+        description: '',
+        status: 'active' as const,
+        enabled: true,
+        graph: acyclicGraph,
+      })),
     } as unknown as WorkflowRepository
     const agentRepo = {
       list: vi.fn(() => []),
@@ -317,6 +336,7 @@ describe('registerWorkflowTestRunIpc', () => {
       workflowRunRepo,
       turnRequestRepo,
       agentRepo,
+      settingsRepo: { get: vi.fn(() => null) } as unknown as SettingsRepository,
       providerService,
       sessionService: sessionService as SessionService,
       launchingWorkflowIds: new Set<string>(),

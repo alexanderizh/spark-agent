@@ -42,6 +42,18 @@ describe('desktop Tool Package extended capabilities', () => {
     const capabilities = createDesktopToolPackageCapabilities({
       db,
       sessionService: {} as SessionService,
+      providerService: {
+        listProviders: vi.fn(async () => [
+          {
+            id: 'p-default',
+            name: 'Default',
+            provider: 'openai' as const,
+            defaultModel: 'm',
+            modelIds: [],
+            isDefault: true,
+          },
+        ]),
+      } as unknown as Parameters<typeof createDesktopToolPackageCapabilities>[0]['providerService'],
       computerController: {} as ComputerUseAgentController,
       resolveMediaProviders: vi.fn(async () => []),
       mediaTaskRuntime: {} as MediaTaskRuntimeService,
@@ -85,7 +97,7 @@ describe('desktop Tool Package extended capabilities', () => {
       providerProfileId: 'provider-1',
     })
     const createSession = vi.fn(async () => ({ sessionId: 'session-leaked' }))
-    const sendTurn = vi.fn(async () => {
+    const submitTurn = vi.fn(async () => {
       throw new Error('provider unavailable')
     })
     const deleteSession = vi.fn(async () => ({ deleted: true }))
@@ -93,9 +105,21 @@ describe('desktop Tool Package extended capabilities', () => {
       db,
       sessionService: {
         createSession,
-        sendTurn,
+        submitTurn,
         deleteSession,
       } as unknown as SessionService,
+      providerService: {
+        listProviders: vi.fn(async () => [
+          {
+            id: 'p-default',
+            name: 'Default',
+            provider: 'openai' as const,
+            defaultModel: 'm',
+            modelIds: [],
+            isDefault: true,
+          },
+        ]),
+      } as unknown as Parameters<typeof createDesktopToolPackageCapabilities>[0]['providerService'],
       computerController: {} as ComputerUseAgentController,
       resolveMediaProviders: vi.fn(async () => []),
       mediaTaskRuntime: {} as MediaTaskRuntimeService,
