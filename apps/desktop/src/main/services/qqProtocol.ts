@@ -53,6 +53,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * 解析事件时间戳为秒。QQ 官方事件的时间戳是 RFC3339 字符串
+ * （如 "2026-09-13T01:39:00+08:00"），兼容数值秒/毫秒与纯数字字符串；
+ * 无法解析时回退当前时间（宁可放过，不可误判为远古旧事件导致消息被丢弃）。
+ */
+export function parseQqEventTimestamp(raw: unknown): number {
+  const now = Math.floor(Date.now() / 1000)
+  const MIN_PLAUSIBLE = 946684800 // 2000-01-01，早于此的解析结果视为异常
+  const normalize = (seconds: number): number => (seconds > MIN_PLAUSIBLE ? seconds : now)
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return normalize(raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw))
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (trimmed.length > 0) {
+      // 仅对形如 "2026-09-13T01:39:00+08:00" 的 ISO 日期走 Date.parse，
+      // 避免 V8 宽松解析（如 "2026" → 2026-01-01）把残缺字符串误判为合法旧时间。
+      if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}/.test(trimmed)) {
+        const parsedMs = Date.parse(trimmed)
+        if (!Number.isNaN(parsedMs)) return normalize(Math.floor(parsedMs / 1000))
+      }
+      const parsedNum = Number(trimmed)
+      if (Number.isFinite(parsedNum)) {
+        return normalize(parsedNum > 1e12 ? Math.floor(parsedNum / 1000) : Math.floor(parsedNum))
+      }
+    }
+  }
+  return now
+}
+
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
@@ -67,13 +97,7 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
   const author = isRecord(d.author) ? d.author : undefined
   const content = readString(d.content)
   const msgId = readString(d.id)
-  const timestampRaw = d.timestamp
-  const timestamp =
-    (typeof timestampRaw === 'number'
-      ? timestampRaw
-      : typeof timestampRaw === 'string'
-        ? Number.parseInt(timestampRaw, 10)
-        : NaN) || Math.floor(Date.now() / 1000)
+  const timestamp = parseQqEventTimestamp(d.timestamp)
 
   if (content == null) return null
 

@@ -4,6 +4,7 @@ import {
   buildQqExternalId,
   parseQqDispatchEvent,
   parseQqExternalId,
+  parseQqEventTimestamp,
   splitQqContent,
 } from './qqProtocol.js'
 
@@ -61,6 +62,25 @@ describe('parseQqDispatchEvent', () => {
     expect(parseQqDispatchEvent('C2C_MESSAGE_CREATE', { content: 'hi' })).toBeNull()
     expect(parseQqDispatchEvent(undefined, { content: 'hi' })).toBeNull()
   })
+
+  it('解析 RFC3339 时间戳（QQ 官方事件格式），不得误判为旧事件', () => {
+    const now = Math.floor(Date.now() / 1000)
+    // 回归：QQ 事件时间戳是 RFC3339 字符串，旧的 parseInt 实现会解析成 "2026"
+    // 这样的年份，导致网关重放过滤把所有消息当旧事件丢弃。
+    const event = parseQqDispatchEvent('C2C_MESSAGE_CREATE', {
+      id: 'msgid-4',
+      content: '/bind 123456',
+      author: { id: 'auth4', user_openid: 'USER2' },
+      timestamp: '2026-09-12T17:39:00+08:00',
+    })
+    expect(event).not.toBeNull()
+    expect(event?.timestamp).toBeGreaterThanOrEqual(
+      Math.floor(Date.parse('2026-09-12T17:39:00+08:00') / 1000) - 1,
+    )
+    // 现在时刻的消息绝不能被判定为 60 秒前的旧事件（网关重放过滤的判定条件）。
+    expect(event && event.timestamp * 1000 >= Date.now() - 86_400_000).toBe(true)
+    expect(now).toBeGreaterThan(0)
+  })
 })
 
 describe('QQ externalId 编解码', () => {
@@ -78,6 +98,29 @@ describe('QQ externalId 编解码', () => {
   it('拒绝无前缀与空目标', () => {
     expect(parseQqExternalId('G1')).toBeNull()
     expect(parseQqExternalId('qq-group:')).toBeNull()
+  })
+})
+
+describe('parseQqEventTimestamp', () => {
+  it('解析 RFC3339 字符串为秒', () => {
+    expect(parseQqEventTimestamp('2026-09-12T17:39:00+08:00')).toBe(
+      Math.floor(Date.parse('2026-09-12T17:39:00+08:00') / 1000),
+    )
+  })
+
+  it('兼容数值秒/毫秒与纯数字字符串', () => {
+    expect(parseQqEventTimestamp(1717054268)).toBe(1717054268)
+    expect(parseQqEventTimestamp(1717054268000)).toBe(1717054268)
+    expect(parseQqEventTimestamp('1717054268')).toBe(1717054268)
+  })
+
+  it('异常输入回退当前时间而非远古时间（防重放过滤误杀）', () => {
+    const before = Math.floor(Date.now() / 1000)
+    // 旧的 parseInt bug：RFC3339 截断出 "2026" 这样的年份；此处直接模拟该输入。
+    for (const bad of ['2026', 'abc', null, undefined, '', 0, NaN]) {
+      const parsed = parseQqEventTimestamp(bad as unknown)
+      expect(Math.abs(parsed - before)).toBeLessThan(5)
+    }
   })
 })
 

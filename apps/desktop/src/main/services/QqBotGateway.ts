@@ -267,8 +267,9 @@ export class QqBotGateway {
       return
     }
     // 过滤重连/Resume 期间重放的旧事件，与飞书网关的 startedAt 过滤口径一致。
+    // 丢弃消息属于重要事件，用 warn 级别保证在默认日志级别(warn)下可见。
     if (message.timestamp * 1000 < this.startedAt - 60_000) {
-      log.info(`忽略重放旧事件: ${payload.t ?? ''} ts=${message.timestamp}`)
+      log.warn(`忽略重放旧事件: ${payload.t ?? ''} ts=${message.timestamp}`)
       return
     }
     try {
