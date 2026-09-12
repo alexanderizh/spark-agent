@@ -51,6 +51,10 @@ import { ToolPackagesIpcSchemaRegistry } from '../tool-package.js'
 import { NotificationsIpcSchemaRegistry } from '../notifications.js'
 import { AccountSyncIpcSchemaRegistry } from '../account-sync.js'
 import { WorkflowBundleIpcSchemaRegistry } from '../workflow-bundle-ipc.js'
+import {
+  SessionWorkflowBindingCreateSchema,
+  SessionWorkflowBindingIpcSchemaRegistry,
+} from '../session-workflow-binding.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -266,6 +270,7 @@ export const SessionCreateRequestSchema = z.object({
   cliSparkOverride: CliSparkOverrideSchema.nullable().optional(),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
+  workflowBinding: SessionWorkflowBindingCreateSchema.optional(),
 })
 
 export const SessionSendTurnRequestSchema = z.object({
@@ -1084,6 +1089,7 @@ export const IpcSchemaRegistry = {
   ...NotificationsIpcSchemaRegistry,
   ...AccountSyncIpcSchemaRegistry,
   ...WorkflowBundleIpcSchemaRegistry,
+  ...SessionWorkflowBindingIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

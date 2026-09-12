@@ -120,6 +120,8 @@ import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool
 import type { NotificationsIpcChannelMap } from '../notifications.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
 import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
+import type { SessionWorkflowBindingIpcChannelMap } from '../session-workflow-binding.js'
+import type { SessionWorkflowBindingCreate } from '../session-workflow-binding.js'
 import type { NotificationChangedEvent } from '../notifications.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
 import type { AppControlCommandRequest } from '../computer-use/action.js'
@@ -312,6 +314,8 @@ export interface SessionCreateRequest {
   title?: string
   /** 关联的 Workspace ID（可选）*/
   workspaceId?: string
+  /** Atomically persisted only when the trusted write feature flag is enabled. */
+  workflowBinding?: SessionWorkflowBindingCreate
 }
 
 export interface SessionCreateResponse {
@@ -6502,7 +6506,8 @@ export interface IpcChannelMap
     ToolPackagesIpcChannelMap,
     NotificationsIpcChannelMap,
     AccountSyncIpcChannelMap,
-    WorkflowBundleIpcChannelMap {
+    WorkflowBundleIpcChannelMap,
+    SessionWorkflowBindingIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -7302,6 +7307,12 @@ export interface IpcStreamChannelMap {
     sessionId: string
     /** Optional for compatibility with older main processes. */
     session?: SessionListResponse['sessions'][number]
+  }
+  /** Session-scoped workflow binding changed; active Chat views should reload the summary. */
+  'stream:session:config-changed': {
+    sessionId: string
+    bindingInstanceId: string
+    kind: 'workflow-binding'
   }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
   'stream:session:user-question': UserQuestionRequest
