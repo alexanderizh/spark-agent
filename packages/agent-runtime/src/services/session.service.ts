@@ -3428,6 +3428,7 @@ export class SessionService {
                 // Hook V2：提问进入等待即发射（questionId 为稳定源；缺省时桥内生成）。
                 this.hookLifecycleBridge?.questionRequested(sid, turnId, {
                   ...(context.questionId != null ? { questionId: context.questionId } : {}),
+                  ...(context.requestId != null ? { requestId: context.requestId } : {}),
                   questions: questions.map((question) => ({
                     title: question.header,
                     description: question.question,
@@ -8485,6 +8486,7 @@ export class SessionService {
               // Hook V2：提问进入等待即发射（questionId 为稳定源；缺省时桥内生成）。
               this.hookLifecycleBridge?.questionRequested(sid, turnId, {
                 ...(context.questionId != null ? { questionId: context.questionId } : {}),
+                ...(context.requestId != null ? { requestId: context.requestId } : {}),
                 questions: questions.map((question) => ({
                   title: question.header,
                   description: question.question,

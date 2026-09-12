@@ -6,6 +6,9 @@ import {
   HookRunRepository,
   type SparkDatabase,
 } from '@spark/storage'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('hooks:worker')
 import {
   HookActionExecutor,
   type HookBuiltinActionHandlers,
@@ -130,8 +133,27 @@ export class HookWorker {
     const run = this.runs.claimNextRunnable(this.owner, this.leaseMs)
     if (run == null) return false
 
-    const outcome = await this.executeRun(run)
-    this.onRunFinished?.(run.id, outcome.status)
+    try {
+      const outcome = await this.executeRun(run)
+      this.onRunFinished?.(run.id, outcome.status)
+    } catch (error) {
+      // 兜底：执行管线自身异常不得让运行永久滞留 running；记为可重试的瞬态失败。
+      log.warn(
+        `run ${run.id} crashed in worker pipeline: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+      try {
+        this.runs.requeueForAutoRetry(
+          run.id,
+          new Date(Date.now() + 60_000).toISOString(),
+          'transient_failure',
+          'worker pipeline crashed',
+        )
+      } catch {
+        // finish 兜底也失败（如数据库不可用）：交给启动租约回收兜底。
+      }
+    }
     return true
   }
 
@@ -299,8 +321,8 @@ export class HookWorker {
       const binding = this.bindings.get(bindingId)
       if (binding != null && binding.state === 'active') {
         this.bindings.updateState(bindingId, 'needs_review')
-        console.warn(
-          `[hooks-v2] hook ${hookId} binding ${bindingId} paused (needs_review) after repeated failures`,
+        log.warn(
+          `hook ${hookId} binding ${bindingId} paused (needs_review) after repeated failures`,
         )
       }
     }

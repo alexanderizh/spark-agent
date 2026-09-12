@@ -163,16 +163,19 @@ export class HookLifecycleBridge {
     )
   }
 
-  /** Agent 提问进入等待用户输入。稳定源：questionId（缺省时一次性生成）。 */
+  /** Agent 提问进入等待用户输入。稳定源：questionId（缺省回退 requestId，再缺省一次性生成）。 */
   questionRequested(
     sessionId: string,
     turnId: string,
     options: {
       questionId?: string
+      requestId?: string
       questions?: Array<{ label?: string; title?: string; description?: string }>
     } = {},
   ): void {
-    const questionId = options.questionId ?? randomUUID()
+    // 稳定源优先级：questionId > requestId > 一次性生成——引擎重发同一问题时
+    // 前两者保证 eventId 确定性去重。
+    const questionId = options.questionId ?? options.requestId ?? randomUUID()
     this.emitForSession(
       sessionId,
       'question.requested',
