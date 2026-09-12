@@ -28,6 +28,7 @@ import {
   shell,
 } from 'electron'
 import { join } from 'path'
+import { MAIN_WINDOW_MIN_WIDTH } from '../window-sizing.js'
 
 // ─── Broken pipe guard (EPIPE / EIO) ─────────────────────────────────────────
 // 当主进程从控制台分离启动（Windows 上常见）或父进程/终端关闭后，stdout/stderr 的
@@ -723,7 +724,7 @@ function createWindow(): BrowserWindow {
     title: 'SparkWork',
     width: 1310,
     height: 800,
-    minWidth: 800,
+    minWidth: MAIN_WINDOW_MIN_WIDTH,
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,

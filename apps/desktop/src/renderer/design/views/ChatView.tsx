@@ -15,6 +15,7 @@ import React, {
   useId,
   Fragment,
 } from 'react'
+import { MAIN_WINDOW_MIN_WIDTH } from '../../../window-sizing.js'
 import './ChatView.less'
 import './ToolDropdown.less'
 import './chat/ChatEmptyThemes.less'
@@ -2258,7 +2259,7 @@ export function ChatView({
       // 与用户拖拽打架形成持续抖动。布局真的放不下时 deficit 为正，minWidth 仍会
       // 高于当前宽度，加宽路径不受影响。CSS↔屏幕像素的换算在主进程按 zoomFactor 做。
       const minWidth = Math.max(
-        800,
+        MAIN_WINDOW_MIN_WIDTH,
         Math.ceil(window.innerWidth + desiredLayoutWidth - layout.clientWidth),
       )
       void ensureWindowWidth({ minWidth, allowShrink, allowGrow }).catch(() => {})

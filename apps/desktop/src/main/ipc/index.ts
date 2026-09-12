@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { MAIN_WINDOW_MIN_WIDTH } from '../../window-sizing.js'
 import { CanvasSnapshotWriteCoordinator } from './canvasSnapshotWriteCoordinator.js'
 import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
 import { registerTeamP1Ipc } from './registerTeamP1Ipc.js'
@@ -10285,7 +10286,7 @@ export function registerAllIpcHandlers(): void {
     // 否则阈值整体漂移（如 90% 缩放下偏移 +11%），放得下的布局也被判定放不下。
     const zoomFactor = win.webContents.getZoomFactor()
     const targetWidth = Math.min(
-      Math.max(800, Math.ceil(req.minWidth * zoomFactor)),
+      Math.max(MAIN_WINDOW_MIN_WIDTH, Math.ceil(req.minWidth * zoomFactor)),
       workArea.width,
     )
     // req.allowGrow 默认 true（schema 已设置默认值），保持向后兼容。
