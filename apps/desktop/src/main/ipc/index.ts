@@ -304,6 +304,7 @@ import { registerPromptLibraryPackageIpc } from './registerPromptLibraryPackageI
 import { registerWorkflowBundleIpc } from './registerWorkflowBundleIpc.js'
 import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
+import { registerSessionWorkflowBindingIpc } from './registerSessionWorkflowBindingIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
@@ -3505,6 +3506,16 @@ export function registerAllIpcHandlers(): void {
   registerWorkflowBundleIpc({ getMcpService })
   registerPastedTextIpc()
   registerSessionImageOptimizerIpc()
+  registerSessionWorkflowBindingIpc({
+    getSessionService,
+    onChanged: (sessionId, bindingInstanceId) => {
+      pushStreamEvent('stream:session:config-changed', {
+        sessionId,
+        bindingInstanceId,
+        kind: 'workflow-binding',
+      })
+    },
+  })
   registerFontAssetIpc()
   registerVoiceIpc()
   registerCanvasWorkflowIpc()

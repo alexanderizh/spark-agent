@@ -50,6 +50,7 @@ import { countExistingMembers } from '../../teamMembership'
 import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
 import { projectQueuedTurnsForDisplay } from './internal-turn-message-visibility'
+import { SessionWorkflowPicker } from './workflow/SessionWorkflowPicker'
 import {
   CLAUDE_AUTO_ROUTER_PROVIDER_ID,
   CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
@@ -4523,6 +4524,16 @@ export function ComposerV2({
                   onChange={handleProviderModelChange}
                 />
               )}
+              <SessionWorkflowPicker
+                sessionId={session?.id ?? null}
+                disabled={sending || isWorking}
+                mentionActive={
+                  teamConfig.enabled &&
+                  pendingMention != null &&
+                  value.includes(`@${pendingMention.name}`) &&
+                  pendingMention.agentId !== effectiveHostAgentId
+                }
+              />
               {showProjectPicker && (
                 <ProjectPicker
                   workspaces={workspaces}

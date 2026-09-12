@@ -1,0 +1,129 @@
+.session-workflow-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.session-workflow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(220px, 32vw);
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.session-workflow-chip:hover,
+.session-workflow-chip[aria-expanded='true'] {
+  color: var(--color-text-primary);
+  background: var(--color-fill-secondary);
+}
+
+.session-workflow-chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.session-workflow-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.session-workflow-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-workflow-menu {
+  position: absolute;
+  z-index: 80;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(420px, 60vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 16%);
+}
+
+.session-workflow-menu-head,
+.session-workflow-section-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.session-workflow-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-workflow-option:hover:not(:disabled) {
+  background: var(--color-fill-secondary);
+}
+
+.session-workflow-option.is-active {
+  color: var(--color-primary);
+  background: var(--color-fill-tertiary);
+}
+
+.session-workflow-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.session-workflow-option small {
+  color: var(--color-text-tertiary);
+}
+
+.session-workflow-divider {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--color-border-secondary);
+}
+
+.session-workflow-empty,
+.session-workflow-notice,
+.session-workflow-error {
+  padding: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.session-workflow-error {
+  color: var(--color-error);
+}
+
+.session-workflow-notice.is-warning {
+  color: var(--color-warning);
+}
+
+@media (max-width: 560px) {
+  .session-workflow-chip {
+    max-width: 150px;
+  }
+}
