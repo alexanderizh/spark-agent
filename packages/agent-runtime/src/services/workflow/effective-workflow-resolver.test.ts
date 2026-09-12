@@ -566,6 +566,62 @@ describe('EffectiveWorkflowResolver', () => {
     expect(result.resumableRunId).toBe(run.id)
   })
 
+  it('treats enabled=false as a hard stop that outranks archived-run restoration', () => {
+    const workflow = makeWorkflow('workflow-archived-disabled')
+    workflow.status = 'archived'
+    workflow.enabled = false
+    const graph = normalizeWorkflowGraph(workflow.graph)
+    const run = {
+      id: 'run-archived-disabled',
+      session_id: 'session-a',
+      turn_id: 'turn-a',
+      workflow_id: workflow.id,
+      status: 'failed',
+      objective: 'cannot resume a hard-disabled workflow',
+      graph_json: JSON.stringify(graph),
+      state_json: '{}',
+      executions_json: '[]',
+      atomic_executions_json: '[]',
+      completed_node_ids_json: '[]',
+      skipped_node_ids_json: '[]',
+      failed_node_json: null,
+      started_at: '2026-09-12T00:00:00.000Z',
+      updated_at: '2026-09-12T00:01:00.000Z',
+      ended_at: '2026-09-12T00:01:00.000Z',
+      workflow_binding_instance_id: 'binding-override',
+      workflow_graph_digest: digestNormalizedWorkflowGraph(graph),
+      workflow_name_snapshot: workflow.name,
+      workflow_version_snapshot: workflow.version,
+      binding_source: 'session-override',
+    } satisfies WorkflowRunRow
+
+    let caught: unknown
+    try {
+      new EffectiveWorkflowResolver(
+        { get: () => makeBinding('override', workflow.id) },
+        { get: () => workflow },
+        {
+          findLatestResumable: () => null,
+          findLatestResumableByBinding: () => run,
+        },
+      ).resolve({
+        sessionId: 'session-a',
+        hostAgent: { id: 'agent-a', workflowId: null },
+        isMentionTurn: false,
+        agentAdapter: 'claude-sdk',
+        resolveWorkflowMembers: () => [],
+        runtimeIdentity: runtimeIdentityInput(),
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      context: { issues: [{ code: 'workflow_disabled' }] },
+    })
+  })
+
   it.each([
     [false, 0],
     [false, 2],

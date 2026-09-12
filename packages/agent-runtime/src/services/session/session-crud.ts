@@ -10,6 +10,7 @@ import {
   ProviderProfileRepository,
   SessionCollaborationRepository,
   SessionRepository,
+  WorkflowRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type {
@@ -81,6 +82,7 @@ export class SessionCrudController {
       lineage: toProtocolLineage(result.lineage)!,
       copiedTurnCount: result.copiedTurnCount,
       sourceWasRunning: result.sourceWasRunning,
+      bindingWarning: resolveForkBindingWarning(this.db, result.copiedBinding),
     }
   }
 
@@ -505,4 +507,26 @@ export class SessionCrudController {
     }
     return { deleted }
   }
+}
+
+/**
+ * Fork 复制的 Binding 是否需要带警告返回（方案 §7.5）。
+ *
+ * 只有 override 挂载能确定性地判定：目标定义缺失 / 停用 / 非活跃时配置
+ * 保留（解释历史），但子会话首个 Host Turn 会按 Preflight 明确失败，因此
+ * 在 Fork 响应中给出可本地化的警告码。inherit 挂载的可用性取决于 Host
+ * Agent 的默认工作流，交给首个 Turn 的 Preflight，不在 Fork 时静态判定。
+ */
+function resolveForkBindingWarning(
+  db: SparkDatabase,
+  copiedBinding: { mode: string; workflowId: string | null } | null,
+): { code: 'workflow_not_found' | 'workflow_disabled' | 'workflow_not_active' } | null {
+  if (copiedBinding == null || copiedBinding.mode !== 'override') return null
+  const workflowId = copiedBinding.workflowId
+  if (workflowId == null) return null
+  const workflow = new WorkflowRepository(db).get(workflowId)
+  if (workflow == null) return { code: 'workflow_not_found' }
+  if (workflow.enabled === false) return { code: 'workflow_disabled' }
+  if (workflow.status !== 'active') return { code: 'workflow_not_active' }
+  return null
 }
