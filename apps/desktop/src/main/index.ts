@@ -29,18 +29,21 @@ import {
 } from 'electron'
 import { join } from 'path'
 
-// ─── EPIPE guard ─────────────────────────────────────────────────────────────
-// 当主进程从控制台分离启动（Windows 上常见）或父进程关闭后，stdout/stderr 的管道
-// 会断开，此后任何 console.* 写入都会抛出 EPIPE。若未处理便成为 uncaughtException，
-// 触发 Electron 的崩溃弹窗（"A JavaScript error occurred in the main process"）。
-// 这里在输出流上挂 'error' 监听，吞掉 EPIPE：有监听器后，流错误不会升级成
-// uncaughtException，也就不会触发崩溃弹窗。其他流错误仍重新抛出，保留诊断能力。
-const ignoreEpipe = (err: NodeJS.ErrnoException): void => {
-  if (err?.code === 'EPIPE') return
+// ─── Broken pipe guard (EPIPE / EIO) ─────────────────────────────────────────
+// 当主进程从控制台分离启动（Windows 上常见）或父进程/终端关闭后，stdout/stderr 的
+// 管道会断开：Windows 上表现为 EPIPE，macOS 上终端消失后表现为 EIO。此后任何
+// console.* 写入都会触发流错误，若未处理便成为 uncaughtException，触发 Electron 的
+// 崩溃弹窗（"A JavaScript error occurred in the main process"）。更糟的是 uncaught
+// 兜底里的 log.error 又会写 console → 再次 EIO → 再次 uncaughtException，形成递归
+// 日志风暴（2026-09-12 main.log 被 write EIO 刷穿的根因）。这里在输出流上挂
+// 'error' 监听并吞掉 EPIPE/EIO：有监听器后，流错误不会升级成 uncaughtException。
+// 其他流错误仍重新抛出，保留诊断能力。
+const ignoreBrokenStreamErrors = (err: NodeJS.ErrnoException): void => {
+  if (err?.code === 'EPIPE' || err?.code === 'EIO') return
   throw err
 }
-process.stdout?.on('error', ignoreEpipe)
-process.stderr?.on('error', ignoreEpipe)
+process.stdout?.on('error', ignoreBrokenStreamErrors)
+process.stderr?.on('error', ignoreBrokenStreamErrors)
 
 // ─── Overlay scrollbars ───────────────────────────────────────────────────
 // 【关键】显式【禁用】OverlayScrollbar feature。
