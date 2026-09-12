@@ -155,7 +155,15 @@ const Body = () => (
     <h2 id="platform-runtime">6. 平台运行时要点</h2>
     <ul>
       <li>
-        <strong>Telegram</strong>：<code>getUpdates</code> 轮询 + <code>sendMessage</code>。
+        <strong>Telegram</strong>：<code>getUpdates</code> 轮询；文本走 <code>sendMessage</code>。
+        长任务期间每 4 秒续期 <code>sendChatAction(typing)</code>；私聊优先通过{' '}
+        <code>sendMessageDraft</code>{' '}
+        展示节流后的临时流式预览，不支持时自动退回持续输入状态，完成后再发送正式消息。
+        开启“传输文件”能力后，回复中的 Markdown 图片会通过 <code>sendPhoto</code> 发送。本地图片优先
+        multipart 直传 Telegram；若图片模式被拒绝则以文件模式发送，直传失败时上传到 Spark
+        临时存储，再由 Telegram 拉取临时 URL。用户发送的 Telegram 图片或图片文件会通过{' '}
+        <code>getFile</code> 下载到本机持久附件目录，并作为图片附件提交给当前会话识别；单张图片限制
+        20 MB。
       </li>
       <li>
         <strong>飞书</strong>：通过 <code>@larksuiteoapi/node-sdk</code> 的官方 WebSocket
