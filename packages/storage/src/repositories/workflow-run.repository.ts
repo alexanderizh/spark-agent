@@ -3,6 +3,12 @@ import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 
 export type WorkflowRunStatus = 'working' | 'completed' | 'failed' | 'canceled'
+export type WorkflowRunBindingSource =
+  | 'legacy-agent'
+  | 'session-inherit'
+  | 'session-override'
+  | 'editor-test'
+  | 'tool-package'
 
 export interface WorkflowRunRow {
   id: string
@@ -21,6 +27,11 @@ export interface WorkflowRunRow {
   started_at: string
   updated_at: string
   ended_at: string | null
+  workflow_binding_instance_id: string | null
+  workflow_graph_digest: string | null
+  workflow_name_snapshot: string | null
+  workflow_version_snapshot: string | null
+  binding_source: WorkflowRunBindingSource | null
 }
 
 export interface CreateWorkflowRunParams {
@@ -30,6 +41,11 @@ export interface CreateWorkflowRunParams {
   workflowId: string
   objective: string
   graph: Record<string, unknown>
+  workflowBindingInstanceId?: string | null
+  workflowGraphDigest?: string | null
+  workflowNameSnapshot?: string | null
+  workflowVersionSnapshot?: string | null
+  bindingSource?: WorkflowRunBindingSource | null
 }
 
 /** listByWorkflow 的轻量行：不含 graph_json/state_json/executions_json/atomic_executions_json。 */
@@ -72,9 +88,10 @@ export class WorkflowRunRepository extends BaseRepository {
         `INSERT INTO workflow_runs (
           id, session_id, turn_id, workflow_id, status, objective, graph_json,
           state_json, executions_json, atomic_executions_json, completed_node_ids_json,
-          skipped_node_ids_json,
+          skipped_node_ids_json, workflow_binding_instance_id, workflow_graph_digest,
+          workflow_name_snapshot, workflow_version_snapshot, binding_source,
           started_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -89,6 +106,11 @@ export class WorkflowRunRepository extends BaseRepository {
         '[]',
         '[]',
         '[]',
+        params.workflowBindingInstanceId ?? null,
+        params.workflowGraphDigest ?? null,
+        params.workflowNameSnapshot ?? null,
+        params.workflowVersionSnapshot ?? null,
+        params.bindingSource ?? null,
         now,
         now,
       )
@@ -142,6 +164,31 @@ export class WorkflowRunRepository extends BaseRepository {
          LIMIT 1`,
       )
       .get(sessionId, workflowId) as WorkflowRunRow | undefined
+    return row ?? null
+  }
+
+  /** Prefer the binding generation when resolving runs for a session binding. */
+  findLatestResumableByBinding(
+    sessionId: string,
+    bindingInstanceId: string,
+    workflowId?: string,
+  ): WorkflowRunRow | null {
+    const conditions = [
+      'session_id = ?',
+      'workflow_binding_instance_id = ?',
+      "status IN ('working','failed')",
+    ]
+    const values: unknown[] = [sessionId, bindingInstanceId]
+    if (workflowId !== undefined) {
+      conditions.push('workflow_id = ?')
+      values.push(workflowId)
+    }
+    const row = this.raw
+      .prepare(
+        `SELECT * FROM workflow_runs WHERE ${conditions.join(' AND ')}
+         ORDER BY updated_at DESC, started_at DESC LIMIT 1`,
+      )
+      .get(...values) as WorkflowRunRow | undefined
     return row ?? null
   }
 

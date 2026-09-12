@@ -106,6 +106,37 @@ describe('WorkflowRunRepository', () => {
     expect(repo.findLatestResumable('sess-1', 'workflow-1')).toBeNull()
   })
 
+  it('keeps a failed run resumable for the next turn', () => {
+    repo.create({
+      id: 'run-failed',
+      sessionId: 'sess-1',
+      turnId: 'turn-failed',
+      workflowId: 'workflow-1',
+      objective: 'resume after failure',
+      graph: { nodes: [], edges: [] },
+    })
+    repo.updateSnapshot('run-failed', {
+      status: 'failed',
+      state: { completed: 'partial result' },
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: ['completed'],
+      failedNode: {
+        nodeId: 'remaining',
+        agentId: 'worker',
+        attempt: 1,
+        error: { code: 'transient_failure', message: 'try again next turn' },
+      },
+      endedAt: '2026-09-11T00:00:00.000Z',
+    })
+
+    expect(repo.findLatestResumable('sess-1', 'workflow-1')).toMatchObject({
+      id: 'run-failed',
+      status: 'failed',
+      workflow_id: 'workflow-1',
+    })
+  })
+
   it('lists run summaries by workflow, newest first, without heavy JSON columns', () => {
     for (const id of ['run-old', 'run-new', 'run-other-workflow']) {
       const workflowId = id === 'run-other-workflow' ? 'workflow-2' : 'workflow-1'

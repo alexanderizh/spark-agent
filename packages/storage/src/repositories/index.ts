@@ -249,6 +249,15 @@ export type {
   WorkflowStatus,
 } from './workflow.repository.js'
 export { WorkflowRunRepository } from './workflow-run.repository.js'
+export { SessionWorkflowBindingRepository } from './session-workflow-binding.repository.js'
+export type {
+  SessionWorkflowBinding,
+  SessionWorkflowBindingMode,
+  SessionWorkflowBindingRow,
+  SetSessionWorkflowBindingParams,
+  SetSessionWorkflowBindingResult,
+} from './session-workflow-binding.repository.js'
+export { SessionWorkflowBindingConflictError } from './session-workflow-binding.repository.js'
 export { WorkflowBundleRepository } from './workflow-bundle.repository.js'
 export type {
   CreateWorkflowBundleParams,
@@ -260,6 +269,7 @@ export type {
   CreateWorkflowRunParams,
   UpdateWorkflowRunSnapshotParams,
   WorkflowRunRow,
+  WorkflowRunBindingSource,
   WorkflowRunSummaryRow,
   WorkflowRunStatus,
 } from './workflow-run.repository.js'
