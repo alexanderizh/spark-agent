@@ -3291,9 +3291,19 @@ export interface WorkflowDeleteRequest {
 }
 
 export interface WorkflowDeleteBlockedReason {
-  code: 'workflow_referenced_by_bindings' | 'workflow_run_working'
-  /** 仅 workflow_referenced_by_bindings：仍挂载该工作流的会话，供 UI 列出。 */
+  code:
+    | 'workflow_referenced_by_agents'
+    | 'workflow_referenced_by_bindings'
+    | 'workflow_run_resumable'
+    | 'workflow_in_installed_bundle'
+  /** workflow_referenced_by_agents：仍绑定该工作流的 Agent。 */
+  agentIds?: string[]
+  /** workflow_referenced_by_bindings：仍挂载该工作流的会话，供 UI 列出。 */
   sessionIds?: string[]
+  /** workflow_run_resumable：仍可恢复的 Run。 */
+  runIds?: string[]
+  /** workflow_in_installed_bundle：所属 Bundle，删除须走卸载流程。 */
+  bundleId?: string
 }
 
 export interface WorkflowDeleteResponse {
