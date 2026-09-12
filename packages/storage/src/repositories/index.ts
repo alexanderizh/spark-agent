@@ -249,6 +249,13 @@ export type {
   WorkflowStatus,
 } from './workflow.repository.js'
 export { WorkflowRunRepository } from './workflow-run.repository.js'
+export {
+  WorkflowReferenceGuardError,
+  inspectWorkflowReferences,
+  enforceWorkflowDeletePolicy,
+  assertWorkflowDeletable,
+} from './workflow-reference.guard.js'
+export type { WorkflowDeletePolicy, WorkflowReferenceBlocker } from './workflow-reference.guard.js'
 export { SessionWorkflowBindingRepository } from './session-workflow-binding.repository.js'
 export type {
   SessionWorkflowBinding,

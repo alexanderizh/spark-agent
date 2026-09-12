@@ -24,6 +24,10 @@ export {
   assertPackagePath,
 } from './sub-app-package.service.js'
 export { SubAppPlatformRepository } from './repositories/sub-app-platform.repository.js'
+export type {
+  WorkflowDeletePolicy,
+  WorkflowReferenceBlocker,
+} from './repositories/workflow-reference.guard.js'
 
 // CJK 逐字预分词（memory_fts 写入/查询两侧共用，禁止各自实现）
 export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'
@@ -113,6 +117,10 @@ export {
   AgentRepository,
   WorkflowRepository,
   WorkflowRunRepository,
+  WorkflowReferenceGuardError,
+  inspectWorkflowReferences,
+  enforceWorkflowDeletePolicy,
+  assertWorkflowDeletable,
   SessionWorkflowBindingRepository,
   SessionWorkflowBindingConflictError,
   TeamDispatchRepository,

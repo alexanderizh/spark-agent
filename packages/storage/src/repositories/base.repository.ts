@@ -32,6 +32,11 @@ export abstract class BaseRepository {
     return this.db.raw
   }
 
+  /** 在单个同步事务中执行 fn；异常自动回滚，供跨仓储多表写入复用。 */
+  transaction<T>(fn: () => T): T {
+    return this.raw.transaction(fn)() as T
+  }
+
   /**
    * 根据 ID 查找单条记录
    */

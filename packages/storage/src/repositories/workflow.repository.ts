@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
+import { assertWorkflowDeletable, type WorkflowDeletePolicy } from './workflow-reference.guard.js'
 
 export type WorkflowStatus = 'draft' | 'active' | 'archived'
 
@@ -127,7 +128,23 @@ export class WorkflowRepository extends BaseRepository {
     return this.get(id)
   }
 
-  delete(id: string): boolean {
+  /**
+   * Bundle 卸载等显式生命周期操作解除 Agent 对该工作流的默认引用；
+   * 普通硬删除不调用本方法（守卫会直接拒绝），避免静默解绑。
+   */
+  clearAgentReferences(workflowId: string): number {
+    return this.raw
+      .prepare('UPDATE agents SET workflow_id = NULL WHERE workflow_id = ?')
+      .run(workflowId).changes
+  }
+
+  /**
+   * 删除工作流定义。仓储层强制执行引用守卫（方案 §8.2）：任何入口都绕不过，
+   * 被 activity 引用阻断时抛 WorkflowReferenceGuardError，由调用方转结构化响应。
+   * `internalRollback` 仅限 Bundle 导入失败回滚等对象尚未对外可见的场景。
+   */
+  delete(id: string, options?: { policy?: WorkflowDeletePolicy }): boolean {
+    assertWorkflowDeletable(this.db, id, options?.policy ?? 'interactive')
     return this.deleteById(id)
   }
 
