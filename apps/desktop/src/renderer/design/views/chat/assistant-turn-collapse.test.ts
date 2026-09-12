@@ -412,4 +412,62 @@ describe('projectAssistantTurnCollapse', () => {
       collapsedBlocks: [memberFinalPartOne, memberFinalPartTwo],
     })
   })
+
+  it('keeps every member reply visible when the host posts a final summary', () => {
+    const firstMemberReply: Extract<UIBlock, { kind: 'team_member_message' }> = {
+      kind: 'team_member_message',
+      dispatchId: 'dispatch-1',
+      memberAgentId: 'member-1',
+      content: '成员一的分析结果',
+      isStreaming: false,
+      isFinalAnswer: true,
+    }
+    const secondMemberReply: Extract<UIBlock, { kind: 'team_member_message' }> = {
+      kind: 'team_member_message',
+      dispatchId: 'dispatch-2',
+      memberAgentId: 'member-2',
+      content: '成员二的复核结果',
+      isStreaming: false,
+      isFinalAnswer: true,
+    }
+    const hostFinal = text('Host 汇总结论', { final: true })
+    const blocks: UIBlock[] = [
+      {
+        kind: 'team_dispatch',
+        dispatchId: 'dispatch-1',
+        hostAgentId: 'host',
+        memberAgentId: 'member-1',
+        task: {
+          taskId: 'task-1',
+          hostAgentId: 'host',
+          memberAgentId: 'member-1',
+          rootTurnId: 'turn-1',
+          instruction: '分析实现',
+        },
+        state: 'completed',
+      },
+      firstMemberReply,
+      {
+        kind: 'team_dispatch',
+        dispatchId: 'dispatch-2',
+        hostAgentId: 'host',
+        memberAgentId: 'member-2',
+        task: {
+          taskId: 'task-2',
+          hostAgentId: 'host',
+          memberAgentId: 'member-2',
+          rootTurnId: 'turn-1',
+          instruction: '复核实现',
+        },
+        state: 'completed',
+      },
+      secondMemberReply,
+      hostFinal,
+    ]
+
+    expect(projectAssistantTurnCollapse('completed', blocks)).toEqual({
+      canCollapse: true,
+      collapsedBlocks: [firstMemberReply, secondMemberReply, hostFinal],
+    })
+  })
 })

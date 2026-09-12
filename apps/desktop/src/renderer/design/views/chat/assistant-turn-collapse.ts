@@ -20,12 +20,29 @@ export function projectAssistantTurnCollapse(
   const canCollapse =
     status === 'completed' && summaryBlocks.length > 0 && !blocks.some(blocksAutomaticTurnCollapse)
 
-  return {
-    canCollapse,
-    collapsedBlocks: canCollapse
-      ? [...summaryBlocks, ...blocks.filter(isArtifactPresentationBlock)]
-      : blocks,
+  if (!canCollapse) {
+    return { canCollapse: false, collapsedBlocks: blocks }
   }
+
+  const summaryBlockSet = new Set(summaryBlocks)
+  const visibleResultBlocks = blocks.filter(
+    (block) => summaryBlockSet.has(block) || isVisibleTeamMemberResultBlock(block),
+  )
+
+  return {
+    canCollapse: true,
+    collapsedBlocks: [...visibleResultBlocks, ...blocks.filter(isArtifactPresentationBlock)],
+  }
+}
+
+/**
+ * Team member replies are user-visible collaboration results, not execution logs.
+ * Keep every non-empty member reply beside the host summary when a completed turn
+ * collapses; otherwise the UI misleadingly makes a successful dispatch look as if
+ * only the host produced output.
+ */
+function isVisibleTeamMemberResultBlock(block: UIBlock): boolean {
+  return block.kind === 'team_member_message' && block.content.trim().length > 0
 }
 
 /**
