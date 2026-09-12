@@ -100,6 +100,7 @@ import type { ImportProviderResolution } from '../services/HistoryImport/History
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { registerAccountSyncIpc } from '../services/AccountSync/registerAccountSyncIpc.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
+import { inspectWorkflowReferences } from '@spark/agent-runtime'
 import {
   EventRepository,
   ProviderProfileRepository,
@@ -7650,6 +7651,22 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('workflow:delete', async (req) => {
+    // 引用守卫（阶段 5）：有会话挂载或运行中 Run 时结构化阻断，
+    // 不让 FK RESTRICT 的裸错误漏到 UI。
+    const blockers = inspectWorkflowReferences(getDatabase(), req.id)
+    if (blockers.length > 0) {
+      const blocker = blockers[0]
+      if (blocker == null) throw new Error('workflow reference blockers were empty')
+      return {
+        deleted: false,
+        blockedReason: {
+          code: blocker.code,
+          ...(blocker.code === 'workflow_referenced_by_bindings'
+            ? { sessionIds: blocker.sessionIds }
+            : {}),
+        },
+      }
+    }
     const agents = getAgentRepository().list({ includeDisabled: true })
     for (const agent of agents) {
       if (agent.workflowId === req.id && !agent.builtIn) {
@@ -7657,7 +7674,7 @@ export function registerAllIpcHandlers(): void {
       }
     }
     const deleted = getWorkflowRepository().delete(req.id)
-    return { deleted }
+    return { deleted, blockedReason: null }
   })
 
   // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────

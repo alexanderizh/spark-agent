@@ -590,6 +590,19 @@ function WorkflowViewInner() {
         }
         setWorkflows((prev) => prev.filter((item) => item.id !== id))
         await refresh()
+        return
+      }
+      if (res.blockedReason?.code === 'workflow_referenced_by_bindings') {
+        const count = res.blockedReason.sessionIds?.length ?? 0
+        toast.error(
+          count > 0
+            ? `仍有 ${count} 个会话挂载此工作流，请先在这些会话中解除挂载再删除。`
+            : '仍有会话挂载此工作流，请先解除挂载再删除。',
+        )
+        return
+      }
+      if (res.blockedReason?.code === 'workflow_run_working') {
+        toast.error('此工作流仍有运行中的任务，请先取消运行再删除。')
       }
     },
     [deleteWorkflow, loadWorkflowIntoCanvas, refresh],

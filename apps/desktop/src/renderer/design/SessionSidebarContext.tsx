@@ -1343,6 +1343,15 @@ export function SessionSidebarProvider({
         if (result.sourceWasRunning) {
           toast.info('源会话仍在运行；副本只复制到最近一个已完成轮次。')
         }
+        if (result.bindingWarning != null) {
+          const warningText =
+            result.bindingWarning.code === 'workflow_not_found'
+              ? '源会话挂载的工作流已不存在；副本保留该配置用于解释历史，首次执行时会明确失败。'
+              : result.bindingWarning.code === 'workflow_disabled'
+                ? '源会话挂载的工作流已停用；副本保留该配置用于解释历史，首次执行时会明确失败。'
+                : '源会话挂载的工作流不在活跃状态；副本保留该配置用于解释历史，首次执行时会明确失败。'
+          toast.warning(warningText)
+        }
         window.dispatchEvent(
           new CustomEvent('spark:composer:reset-draft', {
             detail: { sessionId: result.sessionId },
