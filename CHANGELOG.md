@@ -4,6 +4,16 @@
 
 > 发布约定：如需提供面向用户的更新说明，可在升级 `apps/desktop/package.json` 时把变更从 `Unreleased` 移入精确的 `## [x.y.z] - YYYY-MM-DD` 条目。发布流水线允许版本没有对应条目。
 
+## [0.11.57] - 2026-09-12
+
+### Bug 修复
+
+- **团队派发排队状态与超时对齐**：串行派发（`parallel !== true`）入队时持久化为 `pending`，真正出队执行才迁移为 `working`，超时计时器与状态起点严格对齐；此前排队中的任务在库里被读成长时间 `working`，看起来像超时而实际仍在排队。
+- **嵌套派发串行死锁**：团队成员在自己轮次内再调用 `agent_dispatch` 时共用同 turn 串行队列，而发起者自身正占着队列槽位，形成「等自己结束」的死锁并空转到外层超时；嵌套派发（`currentDepth > 0`）现强制绕过串行队列，Host 侧单发串行语义不变。
+- **同步咨询剩余时间不足时的收尾**：peer call 剩余截止时间不足的提前返回分支，就地收尾派发行（置 `failed`）、清理 controller 注册与 abort 监听，不再遗留永久停留在创建态的僵尸记录。
+- **团队配置 round-trip 丢字段**：`team:list-members` 回显配置时按已知字段重建，`dispatchTimeoutMs`、`threadContextTokenBudget` 不在清单内；且 IPC 请求方向的 zod `TeamModeConfigSchema` 未注册 `dispatchTimeoutMs`（strip 模式会剥掉未知字段），而会话提交回写 `metadata.team` 是整体替换语义——会话级超时配置会被静默冲掉。现 schema 补齐字段、回显透传，round-trip 闭环。
+- **主进程 EIO 日志风暴**：macOS 终端关闭后 stdout/stderr 管道断开表现为 `EIO`，输出流守卫此前只吞 `EPIPE`；EIO 升级为 uncaughtException 后，兜底日志再写 console 触发递归 `write EIO`，可短时间内刷穿全部轮转日志。守卫现同时吞掉 `EIO`，其他流错误仍重新抛出保留诊断。
+
 ## [0.11.53] - 2026-09-10
 
 ### 改进
