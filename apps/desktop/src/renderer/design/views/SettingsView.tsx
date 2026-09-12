@@ -1003,6 +1003,17 @@ function RemoteConnectionsSection() {
     }
   }
 
+  const copyPairingCommand = async () => {
+    if (draft.pairing == null) return
+    try {
+      if (navigator.clipboard == null) throw new Error('当前环境不支持剪贴板')
+      await navigator.clipboard.writeText(`/bind ${draft.pairing.code}`)
+      toast.success('配对命令已复制')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '复制配对命令失败')
+    }
+  }
+
   const confirmPairing = async () => {
     if (!draft.id || draft.pairing == null) return
     if (manualPairUser.trim().length === 0) {
@@ -1409,7 +1420,19 @@ function RemoteConnectionsSection() {
                       <div className="remote-pair-code">{draft.pairing.code}</div>
                       <div className="remote-pair-tip">
                         在 {REMOTE_CHANNEL_META[draft.channel].label} 中发送{' '}
-                        <code>/bind {draft.pairing.code}</code> 完成配对。
+                        <span className="remote-pair-command">
+                          <code>/bind {draft.pairing.code}</code>
+                          <button
+                            type="button"
+                            className="remote-pair-command-copy"
+                            title="复制配对命令"
+                            aria-label="复制配对命令"
+                            onClick={() => void copyPairingCommand()}
+                          >
+                            <Icons.Copy size={13} />
+                          </button>
+                        </span>{' '}
+                        完成配对。
                       </div>
                       <div className="muted text-xs-12">
                         过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}

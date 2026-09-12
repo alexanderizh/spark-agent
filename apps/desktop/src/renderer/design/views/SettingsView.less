@@ -1946,12 +1946,20 @@
   align-items: center;
 }
 
-/* 编辑器 Modal 用 antd 默认宽度（520px）过窄，撑不开 logo + 标题 + 状态 tag 三列。
-   拉宽标题行并抵消 Modal 头部左右内边距，让标题视觉对齐 body 内容区。
-   若后续给 .remote-editor-modal 显式设置 width，应同步调整这里的 width/margin。 */
+/* 标题宽度跟随 Modal 的实际可用空间。窗口较窄时 Modal 会自动收缩，
+   这里不能使用固定宽度或负边距，否则标题两端会被裁切。 */
 .remote-editor-title--wide {
-  width: 900px;
-  margin-left: -40px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-right: 28px;
+}
+
+.remote-editor-modal .ant-modal-header,
+.remote-editor-modal .ant-modal-title {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .remote-editor-title-copy {
@@ -2195,6 +2203,34 @@
 .remote-pair-tip code {
   font-family: var(--font-mono);
   color: var(--primary);
+}
+.remote-pair-command {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.remote-pair-command-copy {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+.remote-pair-command-copy:hover {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.remote-pair-command-copy:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: 1px;
 }
 .remote-manual-pair {
   display: grid;
