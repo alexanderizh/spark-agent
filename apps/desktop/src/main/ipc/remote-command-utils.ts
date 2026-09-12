@@ -1,4 +1,5 @@
 import type {
+  ProviderProfile,
   RemoteMessageAction,
   SessionAgentAdapter,
   SessionPermissionMode,
@@ -26,6 +27,17 @@ export type RemoteSelectionPage = {
   totalPages: number
   total: number
   rows: RemoteSelectionRow[]
+}
+
+export function buildRemoteProviderModelRows(
+  provider: Pick<ProviderProfile, 'modelIds' | 'defaultModel'>,
+): RemoteSelectionRow[] {
+  const modelIds = [...new Set(provider.modelIds.map((modelId) => modelId.trim()).filter(Boolean))]
+  return modelIds.map((modelId) => ({
+    id: modelId,
+    label: modelId,
+    ...(modelId === provider.defaultModel ? { meta: '渠道默认' } : {}),
+  }))
 }
 
 export const REMOTE_REASONING_ROWS: Array<RemoteSelectionRow & { id: SessionReasoningEffort }> = [

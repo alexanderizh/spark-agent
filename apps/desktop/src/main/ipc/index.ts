@@ -368,6 +368,7 @@ import type {
 } from '../services/RemoteConnectionService.js'
 import {
   buildRemoteErrorGuidance,
+  buildRemoteProviderModelRows,
   buildRemoteSelectionActions,
   buildRemoteSessionActions,
   defaultRemotePermissionMode,
@@ -385,6 +386,7 @@ import type {
   RemoteSelectionRow,
   RemoteSessionStatus,
 } from './remote-command-utils.js'
+import { appendRemoteContextSummary, type RemoteContextSummary } from './remote-context-summary.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
 import { registerPluginRuntimeIpc } from '../services/PluginRuntime/registerPluginRuntimeIpc.js'
 import { registerSubAppPlatformIpc } from './registerSubAppPlatformIpc.js'
@@ -2967,6 +2969,31 @@ async function getRemoteSession(
   return result.sessions.find((item) => item.id === sessionId)
 }
 
+async function resolveRemoteContextSummary(
+  connectionId: string,
+  preferredSessionId?: string,
+): Promise<RemoteContextSummary> {
+  const connection = getRemoteConnectionService()
+    .list()
+    .connections.find((item) => item.id === connectionId)
+  if (connection == null) return {}
+  const session = await getRemoteSession(preferredSessionId ?? connection.defaultSessionId)
+  const providers = await getProviderService().listProviders()
+  const providerId = session?.providerProfileId ?? connection.defaultProviderProfileId
+  const provider = providers.find((item) => item.id === providerId)
+  const workspaceId = session?.workspaceIds[0] ?? connection.defaultWorkspaceId
+  const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
+  const modelId = session?.modelId ?? connection.defaultModelId ?? provider?.defaultModel
+  return {
+    ...(workspaceId != null ? { workspaceId } : {}),
+    ...(workspace?.label != null ? { workspaceName: workspace.label } : {}),
+    ...(session != null ? { sessionId: session.id, sessionTitle: session.title || '新会话' } : {}),
+    ...(providerId != null ? { providerId } : {}),
+    ...(provider != null ? { providerName: provider.name, providerKind: provider.provider } : {}),
+    ...(modelId != null ? { modelId } : {}),
+  }
+}
+
 async function listRemoteSessionRows(status?: RemoteSessionStatus): Promise<{
   rows: RemoteSelectionRow[]
   total: number
@@ -3163,10 +3190,11 @@ async function executeRemoteCommand(
     })
     if (!resolved.ok) return resolved
     remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: resolved.row.id })
+    const context = await resolveRemoteContextSummary(connection.id, resolved.row.id)
     return {
       ok: true,
       title: '已切换默认会话',
-      text: `${resolved.row.label}\n${resolved.row.id}\n\n后续手机消息会继续进入该会话。发送 ${formatRemoteCommand(connection, 'status')} 可确认当前默认会话。`,
+      text: appendRemoteContextSummary('后续手机消息会继续进入该会话。', context),
       actions: [
         { label: '查看状态', command: formatRemoteCommand(connection, 'status') },
         { label: '切换模型', command: formatRemoteCommand(connection, 'models') },
@@ -3194,11 +3222,7 @@ async function executeRemoteCommand(
     }
     const selectedModelId =
       currentSession?.modelId ?? connection.defaultModelId ?? provider.defaultModel
-    const rows = [...new Set(provider.modelIds)].map((modelId) => ({
-      id: modelId,
-      label: modelId,
-      ...(modelId === provider.defaultModel ? { meta: '渠道默认' } : {}),
-    }))
+    const rows = buildRemoteProviderModelRows(provider)
     const page = paginateRemoteSelection(rows, parsedPage.page)
     cacheRemoteSelection(connection.id, 'models', page.rows)
     const interactive = supportsRemoteInteractiveLists(connection)
@@ -3344,10 +3368,11 @@ async function executeRemoteCommand(
       workspaceId = resolved.row.id
     }
     const created = await createRemoteSession(connection.id, workspaceId)
+    const context = await resolveRemoteContextSummary(connection.id, created.sessionId)
     return {
       ok: true,
       title: '已新建默认会话',
-      text: `后续消息将进入该会话。\n${created.sessionId}`,
+      text: appendRemoteContextSummary('后续消息将进入该会话。', context),
       actions: [
         { label: '查看会话', command: formatRemoteCommand(connection, 'sessions') },
         { label: '选择模型', command: formatRemoteCommand(connection, 'models') },
@@ -3369,10 +3394,11 @@ async function executeRemoteCommand(
     if (target.toLocaleLowerCase() === 'none' || target === '不使用项目') {
       remoteService.updateConnectionDefaults(connection.id, { defaultWorkspaceId: null })
       const created = await createRemoteSession(connection.id)
+      const context = await resolveRemoteContextSummary(connection.id, created.sessionId)
       return {
         ok: true,
         title: '已切换为不使用项目',
-        text: `已新建 no-project 会话。\n${created.sessionId}`,
+        text: appendRemoteContextSummary('已新建 no-project 会话。', context),
         actions: [{ label: '查看会话', command: formatRemoteCommand(connection, 'sessions') }],
       }
     }
@@ -3395,10 +3421,11 @@ async function executeRemoteCommand(
         defaultWorkspaceId: resolved.row.id,
         defaultSessionId: latestSession.id,
       })
+      const context = await resolveRemoteContextSummary(connection.id, latestSession.id)
       return {
         ok: true,
         title: `已切换项目 · ${resolved.row.label}`,
-        text: `已继续最近会话：${latestSession.title || '新会话'}`,
+        text: appendRemoteContextSummary('已继续该项目的最近会话。', context),
         actions: [
           { label: '项目会话', command: formatRemoteCommand(connection, 'sessions') },
           {
@@ -3409,10 +3436,11 @@ async function executeRemoteCommand(
       }
     }
     const created = await createRemoteSession(connection.id, resolved.row.id)
+    const context = await resolveRemoteContextSummary(connection.id, created.sessionId)
     return {
       ok: true,
       title: `已切换项目 · ${resolved.row.label}`,
-      text: `该项目暂无会话，已自动创建。\n${created.sessionId}`,
+      text: appendRemoteContextSummary('该项目暂无会话，已自动创建。', context),
     }
   }
 
@@ -3490,7 +3518,7 @@ async function executeRemoteCommand(
         providers.find((item) => item.id === providerId) ??
         providers.find((item) => item.isDefault) ??
         providers[0]
-      const rows = provider?.modelIds.map((modelId) => ({ id: modelId, label: modelId })) ?? []
+      const rows = provider != null ? buildRemoteProviderModelRows(provider) : []
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: '模型',
         listCommand: formatRemoteCommand(connection, 'models'),
@@ -3566,13 +3594,20 @@ async function executeRemoteCommand(
           }
         : {}),
     })
+    const context = await resolveRemoteContextSummary(connection.id, sessionId)
+    const resultText =
+      command.name === 'use-channel' && selectedProviderDefaultModel != null
+        ? `${resolved.row.label}\n已同步切换为渠道默认模型：${selectedProviderDefaultModel}`
+        : resolved.row.label
     return {
       ok: true,
-      title: '已切换',
-      text:
-        command.name === 'use-channel' && selectedProviderDefaultModel != null
-          ? `${resolved.row.label}\n已同步切换为渠道默认模型：${selectedProviderDefaultModel}`
-          : resolved.row.label,
+      title:
+        command.name === 'use-channel'
+          ? '已切换渠道'
+          : command.name === 'use-model'
+            ? '已切换模型'
+            : '已切换 Agent',
+      text: appendRemoteContextSummary(resultText, context),
       actions:
         command.name === 'use-channel'
           ? [{ label: '选择模型', command: formatRemoteCommand(connection, 'models') }]
@@ -3615,10 +3650,11 @@ async function executeRemoteCommand(
     remoteService.updateConnectionDefaults(connection.id, {
       defaultReasoningEffort: reasoningEffort,
     })
+    const context = await resolveRemoteContextSummary(connection.id, sessionId)
     return {
       ok: true,
       title: '已切换推理强度',
-      text: `${resolved.row.label}（${reasoningEffort}）`,
+      text: appendRemoteContextSummary(`${resolved.row.label}（${reasoningEffort}）`, context),
       actions: [{ label: '查看状态', command: formatRemoteCommand(connection, 'status') }],
     }
   }
@@ -3674,10 +3710,11 @@ async function executeRemoteCommand(
     const permissionMode = resolved.row.id as SessionPermissionMode
     if (sessionId != null) await getSessionService().updateSession({ sessionId, permissionMode })
     remoteService.updateConnectionDefaults(connection.id, { defaultPermissionMode: permissionMode })
+    const context = await resolveRemoteContextSummary(connection.id, sessionId)
     return {
       ok: true,
       title: '已切换权限模式',
-      text: `${resolved.row.label}（${permissionMode}）`,
+      text: appendRemoteContextSummary(`${resolved.row.label}（${permissionMode}）`, context),
       actions: [{ label: '查看状态', command: formatRemoteCommand(connection, 'status') }],
     }
   }

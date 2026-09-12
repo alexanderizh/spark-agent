@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildRemoteProviderModelRows,
   TELEGRAM_CALLBACK_DATA_LIMIT,
   buildRemoteErrorGuidance,
   buildRemoteSelectionActions,
@@ -14,6 +15,20 @@ import {
   resolveRemoteSelection,
   type RemoteSelectionRow,
 } from './remote-command-utils.js'
+
+describe('buildRemoteProviderModelRows', () => {
+  it('only returns the current provider enabled models and removes duplicates', () => {
+    expect(
+      buildRemoteProviderModelRows({
+        defaultModel: 'gpt-5.6-luna',
+        modelIds: ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-luna', '  '],
+      }),
+    ).toEqual([
+      { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna', meta: '渠道默认' },
+      { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
+    ])
+  })
+})
 
 const sessionRows: RemoteSelectionRow[] = [
   { id: 'sess-a', label: '会话 A' },
