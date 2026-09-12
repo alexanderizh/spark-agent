@@ -129,6 +129,38 @@ export class SessionWorkflowBindingRepository extends BaseRepository {
     return this.set(params)
   }
 
+  /**
+   * Rotate the binding generation while keeping mode/workflow_id untouched.
+   *
+   * 用于「放弃并新建运行」：旧代次的 Run 因 binding_instance_id 不再匹配而被
+   * 隔离出自动恢复范围，配置本身（挂载哪个工作流）保持不变。与 set() 一样接受
+   * 乐观锁期望值；无 Binding 行时抛冲突，防止给旧路径会话凭空造行。
+   */
+  rotateGeneration(sessionId: string, expectedBindingInstanceId: string): SessionWorkflowBinding {
+    const tx = this.raw.transaction(() => {
+      const current = this.getRow(sessionId)
+      if (current == null || current.binding_instance_id !== expectedBindingInstanceId) {
+        throw new SessionWorkflowBindingConflictError(
+          sessionId,
+          expectedBindingInstanceId,
+          current?.binding_instance_id ?? null,
+        )
+      }
+      const bindingInstanceId = randomUUID()
+      this.raw
+        .prepare(
+          `UPDATE session_workflow_bindings
+           SET binding_instance_id = ?, updated_at = ?
+           WHERE session_id = ?`,
+        )
+        .run(bindingInstanceId, new Date().toISOString(), sessionId)
+      const binding = this.get(sessionId)
+      if (binding == null) throw new Error('session workflow binding rotation did not persist')
+      return binding
+    })
+    return tx() as SessionWorkflowBinding
+  }
+
   /** Create a first binding and fail if this session was already touched. */
   create(
     params: Omit<SetSessionWorkflowBindingParams, 'expectedBindingInstanceId'>,

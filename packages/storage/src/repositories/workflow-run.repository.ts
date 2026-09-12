@@ -252,6 +252,25 @@ export class WorkflowRunRepository extends BaseRepository {
     return result.changes
   }
 
+  /**
+   * Cancel a failed run for the explicit "abandon and start a new run" flow.
+   *
+   * 只允许放弃 failed Run：working 会被并发恢复抢占（应走 workflow_run_working
+   * 阻断），completed/canceled 本就不参与自动恢复。返回受影响行数供调用方判定
+   * 是否发生了并发状态变化。
+   */
+  markAbandoned(id: string): number {
+    const now = new Date().toISOString()
+    const result = this.raw
+      .prepare(
+        `UPDATE workflow_runs
+         SET status = 'canceled', updated_at = ?, ended_at = COALESCE(ended_at, ?)
+         WHERE id = ? AND status = 'failed'`,
+      )
+      .run(now, now, id)
+    return result.changes
+  }
+
   markStaleAsFailed(olderThanIso: string): number {
     const now = new Date().toISOString()
     const result = this.raw

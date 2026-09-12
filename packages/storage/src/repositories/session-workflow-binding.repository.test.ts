@@ -158,6 +158,27 @@ describe('SessionWorkflowBindingRepository', () => {
     expect(bindings.get('session-a')).toBeNull()
   })
 
+  it('rotateGeneration keeps mode and workflow while rotating the instance id', () => {
+    const workflow = workflows.create({ id: 'wf-rotate', name: 'R', status: 'active' })
+    const created = bindings.create({
+      sessionId: 'session-a',
+      mode: 'override',
+      workflowId: workflow.id,
+    })
+
+    const rotated = bindings.rotateGeneration('session-a', created.bindingInstanceId)
+    expect(rotated.bindingInstanceId).not.toBe(created.bindingInstanceId)
+    expect(rotated).toMatchObject({ mode: 'override', workflowId: workflow.id })
+
+    // 乐观锁：旧代次再次轮换必须冲突，不覆盖并发写入。
+    expect(() => bindings.rotateGeneration('session-a', created.bindingInstanceId)).toThrow(
+      /changed concurrently/,
+    )
+    // 无 Binding 行的旧路径会话同样按冲突处理，不凭空造行。
+    expect(() => bindings.rotateGeneration('session-b', 'whatever')).toThrow(/changed concurrently/)
+    expect(bindings.get('session-b')).toBeNull()
+  })
+
   it('enforces session, workflow, and mode constraints in SQLite', () => {
     const workflow = workflows.create({ id: 'wf-a', name: 'A', status: 'active' })
     bindings.create({ sessionId: 'session-a', mode: 'override', workflowId: workflow.id })

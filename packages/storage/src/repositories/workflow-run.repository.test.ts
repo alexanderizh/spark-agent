@@ -214,4 +214,43 @@ describe('WorkflowRunRepository', () => {
     expect(repo.findWorkingByWorkflow('workflow-crowded')?.id).toBe('run-working-old')
     expect(repo.findWorkingByWorkflow('workflow-unknown')).toBeNull()
   })
+
+  it('markAbandoned only cancels failed runs and stamps ended_at', () => {
+    const failed = repo.create({
+      id: 'run-abandon-failed',
+      sessionId: 'sess-1',
+      turnId: 'turn-1',
+      workflowId: 'workflow-a',
+      objective: 'failed attempt',
+      graph: { nodes: [], edges: [] },
+    })
+    repo.updateSnapshot(failed.id, {
+      status: 'failed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      failedNode: { nodeId: 'n', agentId: 'a', attempt: 1, error: { code: 'x' } },
+    })
+    const working = repo.create({
+      id: 'run-abandon-working',
+      sessionId: 'sess-1',
+      turnId: 'turn-2',
+      workflowId: 'workflow-a',
+      objective: 'live attempt',
+      graph: { nodes: [], edges: [] },
+    })
+
+    expect(repo.markAbandoned(failed.id)).toBe(1)
+    expect(repo.get(failed.id)).toMatchObject({
+      status: 'canceled',
+      ended_at: expect.any(String),
+    })
+    // 重复放弃同一 Run 是 0 行：状态已不是 failed。
+    expect(repo.markAbandoned(failed.id)).toBe(0)
+    // working Run 不能通过放弃通道取消。
+    expect(repo.markAbandoned(working.id)).toBe(0)
+    expect(repo.get(working.id)?.status).toBe('working')
+    expect(repo.markAbandoned('run-unknown')).toBe(0)
+  })
 })
