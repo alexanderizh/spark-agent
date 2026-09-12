@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { HookEventEnvelopeV1, HookDefinitionV1 } from '@spark/protocol'
 import { SparkDatabase } from '../database.js'
+import { SessionRepository } from './session.repository.js'
 import { HookBindingRepository } from './hook-binding.repository.js'
 import { HookDefinitionRepository } from './hook-definition.repository.js'
 import { HookEventRepository } from './hook-event.repository.js'
@@ -386,5 +387,40 @@ describe('Hook V2 repositories', () => {
     expect(runs.get(run!.id)?.status).toBe('outcome_unknown')
     // outcome_unknown 不会被自动领取
     expect(runs.claimNextRunnable('worker-A', 60_000)).toBeNull()
+  })
+
+  it('会话删除级联清理会话作用域绑定', () => {
+    const sessions = new SessionRepository(db)
+    sessions.create({
+      id: 'session-del',
+      kind: 'chat',
+      title: '待删',
+      status: 'idle',
+      projectId: 'p1',
+    })
+    const def = definitions.create(makeDefinitionInput())
+    bindings.upsert({
+      hookId: def.id,
+      scopeKind: 'session',
+      scopeId: 'session-del',
+      enabled: true,
+      state: 'active',
+      trustedExecutionHash: 'hash-1',
+    })
+    bindings.upsert({
+      hookId: def.id,
+      scopeKind: 'application',
+      scopeId: '',
+      enabled: true,
+      state: 'active',
+      trustedExecutionHash: 'hash-1',
+    })
+
+    sessions.deleteWithRelatedData('session-del')
+    expect(bindings.listForScopes([{ scopeKind: 'session', scopeId: 'session-del' }])).toHaveLength(
+      0,
+    )
+    // 应用级绑定不受影响
+    expect(bindings.listForScopes([{ scopeKind: 'application', scopeId: '' }])).toHaveLength(1)
   })
 })

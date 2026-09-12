@@ -902,6 +902,43 @@ describe('Hook 运行时全管线', () => {
     expect(run?.status).toBe('succeeded')
   })
 
+  it('重新启用已授权绑定不使授权失效；提供错误授权哈希则降级 needs_review', () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: '授权保留',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+    })
+    const binding = management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+    expect(binding.state).toBe('active')
+
+    // 仅切换 enabled=false 再重新启用（不带授权参数）：既有授权保留
+    management.upsertBinding({ hookId: definition.id, scopeKind: 'application', enabled: false })
+    const reEnabled = management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+    })
+    expect(reEnabled.state).toBe('active')
+    expect(reEnabled.trustedExecutionHash).toBe(definition.executionHash)
+    expect(reEnabled.id).toBe(binding.id)
+
+    // 提供不匹配的授权哈希：显式降级 needs_review
+    const mismatched = management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: 'wrong-hash',
+    })
+    expect(mismatched.state).toBe('needs_review')
+  })
+
   it('updateDefinition 部分字段提交时哈希基于归一化值（同语义同哈希）', () => {
     const management = new HookManagementService({ db })
     const definition = management.createDefinition({

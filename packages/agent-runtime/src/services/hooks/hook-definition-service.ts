@@ -230,9 +230,20 @@ export class HookManagementService {
     }
     const enabled = input.enabled ?? true
     // 授权哈希必须匹配当前定义执行哈希；不匹配（或未提供授权）进入 needs_review。
-    const authorized =
+    // 例外：重新启用已存在且信任哈希仍匹配当前定义的绑定时，不需要重新授权——
+    // 单纯切换 enabled 开关属于非执行性变更，不得使既有授权失效。
+    const existing = this.bindings.findByScope(input.hookId, input.scopeKind, scopeId)
+    const explicitlyAuthorized =
       input.authorizeExecutionHash != null &&
       input.authorizeExecutionHash === definition.executionHash
+    // 仅在未提供授权参数时保留既有有效信任；显式给出授权哈希（即使错误）视为明确
+    // 的重新授权意图，不匹配则降级 needs_review。
+    const trustPreserved =
+      input.authorizeExecutionHash == null &&
+      existing != null &&
+      existing.trustedExecutionHash != null &&
+      existing.trustedExecutionHash === definition.executionHash
+    const authorized = explicitlyAuthorized || trustPreserved
     const state = enabled ? (authorized ? 'active' : 'needs_review') : 'disabled'
     return this.bindings.upsert({
       hookId: input.hookId,
@@ -241,8 +252,10 @@ export class HookManagementService {
       enabled,
       state,
       trustedExecutionHash: authorized ? definition.executionHash : null,
-      authorizedEffect: authorized ? (input.authorizedEffect ?? definition.action.type) : null,
-      authorizedAt: authorized ? new Date().toISOString() : null,
+      authorizedEffect: authorized
+        ? (input.authorizedEffect ?? existing?.authorizedEffect ?? definition.action.type)
+        : null,
+      authorizedAt: authorized ? (existing?.authorizedAt ?? new Date().toISOString()) : null,
     })
   }
 
