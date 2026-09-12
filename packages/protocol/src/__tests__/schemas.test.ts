@@ -116,6 +116,24 @@ describe('IPC schemas', () => {
     expect(request.reasoningEffort).toBe('max')
   })
 
+  it('preserves remote project, reasoning, and permission defaults', () => {
+    const request = IpcSchemaRegistry['remote:save'].parse({
+      connection: {
+        channel: 'telegram',
+        name: 'Remote',
+        defaultWorkspaceId: 'workspace-1',
+        defaultReasoningEffort: 'high',
+        defaultPermissionMode: 'codex-auto-review',
+      },
+    })
+
+    expect(request.connection).toMatchObject({
+      defaultWorkspaceId: 'workspace-1',
+      defaultReasoningEffort: 'high',
+      defaultPermissionMode: 'codex-auto-review',
+    })
+  })
+
   it('accepts the managed Spark platform provider id during session creation', () => {
     const request = SessionCreateRequestSchema.parse({
       providerProfileId: 'spark-platform-newapi',

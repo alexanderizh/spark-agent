@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFeishuCard } from './RemoteConnectionService.js'
+import {
+  RemoteConnectionService,
+  buildFeishuCard,
+  buildTelegramBotCommands,
+} from './RemoteConnectionService.js'
 
 describe('buildFeishuCard', () => {
   it('keeps Markdown content in a rich-text card even without actions', () => {
@@ -37,5 +41,78 @@ describe('buildFeishuCard', () => {
         },
       ],
     })
+  })
+
+  it('does not truncate long Feishu action commands', () => {
+    const command = `/use-model ${'model-id-'.repeat(30)}`
+    const card = buildFeishuCard({
+      text: '选择模型',
+      actions: [{ label: '长模型 ID', command }],
+    }) as { elements: Array<{ actions?: Array<{ value: { command: string } }> }> }
+
+    expect(card.elements.at(-1)?.actions?.[0]?.value.command).toBe(command)
+  })
+})
+
+describe('remote command coverage', () => {
+  it('builds a native Telegram command menu with normalized, permitted commands', () => {
+    const commands = buildTelegramBotCommands({
+      telegramCommands: ['/new-session', 'new_session', 'use-model', 'use_model'],
+      capabilities: {
+        sendMessages: true,
+        switchModel: false,
+        switchSession: true,
+        switchAgent: true,
+        manageWorkspace: true,
+        runCommands: true,
+        approvePermissions: true,
+        observeDesktop: true,
+        controlDesktop: false,
+        useInternalBrowser: true,
+        transferFiles: true,
+        manageRuntime: true,
+        dangerousActions: false,
+      },
+    })
+
+    expect(commands.map((command) => command.command)).toEqual(['new_session'])
+  })
+
+  it('covers project, session, channel, model, reasoning, and permission workflows', () => {
+    const service = new RemoteConnectionService({} as never)
+    const names = new Set(service.getCommandCatalog().map((command) => command.name))
+    for (const name of [
+      'projects',
+      'add-project',
+      'use-project',
+      'sessions',
+      'new-session',
+      'use-session',
+      'channels',
+      'use-channel',
+      'models',
+      'use-model',
+      'reasoning',
+      'use-reasoning',
+      'permissions',
+      'use-permission',
+    ]) {
+      expect(names.has(name), `missing /${name}`).toBe(true)
+    }
+  })
+
+  it('enables safe runtime controls and permission selection for new connections', () => {
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const service = new RemoteConnectionService(settings as never)
+    const draft = service.createBotDraft('telegram').connection
+    expect(draft.capabilities.manageRuntime).toBe(true)
+    expect(draft.capabilities.approvePermissions).toBe(true)
+    expect(draft.capabilities.dangerousActions).toBe(false)
   })
 })

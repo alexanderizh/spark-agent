@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   TELEGRAM_CALLBACK_DATA_LIMIT,
   buildRemoteErrorGuidance,
+  buildRemoteSelectionActions,
   buildRemoteSessionActions,
+  defaultRemotePermissionMode,
   filterTelegramCallbackActions,
   formatRows,
+  getRemotePermissionRows,
+  paginateRemoteSelection,
+  parseRemotePage,
   parseRemoteSessionFilter,
   resolveRemoteSelection,
   type RemoteSelectionRow,
@@ -25,23 +30,31 @@ describe('parseRemoteSessionFilter', () => {
     [['全部'], undefined],
     [[], undefined],
   ] as const)('parses %j as %s', (args, status) => {
-    expect(parseRemoteSessionFilter(args)).toEqual({ status })
+    expect(parseRemoteSessionFilter(args)).toEqual({ status, page: undefined })
   })
 
   it('accepts Chinese status aliases', () => {
-    expect(parseRemoteSessionFilter(['运行中'])).toEqual({ status: 'running' })
-    expect(parseRemoteSessionFilter(['失败'])).toEqual({ status: 'error' })
+    expect(parseRemoteSessionFilter(['运行中'])).toEqual({ status: 'running', page: undefined })
+    expect(parseRemoteSessionFilter(['失败'])).toEqual({ status: 'error', page: undefined })
+  })
+
+  it('parses status and pagination together', () => {
+    expect(parseRemoteSessionFilter(['running', '3'])).toEqual({ status: 'running', page: 3 })
+    expect(parseRemoteSessionFilter(['--status', 'idle', '--page', '2'])).toEqual({
+      status: 'idle',
+      page: 2,
+    })
   })
 
   it('rejects an incomplete status flag', () => {
     expect(parseRemoteSessionFilter(['--status'])).toEqual({
-      error: '状态筛选格式：/sessions [all|idle|running|error]',
+      error: '格式：/sessions [all|idle|running|error] [页码]',
     })
   })
 
   it('rejects an unknown status', () => {
     expect(parseRemoteSessionFilter(['boom'])).toEqual({
-      error: '状态筛选格式：/sessions [all|idle|running|error]',
+      error: '格式：/sessions [all|idle|running|error] [页码]',
     })
   })
 })
@@ -148,6 +161,47 @@ describe('formatRows', () => {
   })
 })
 
+describe('remote selection pagination', () => {
+  it('paginates rows and emits stable id-based navigation actions', () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({
+      id: `model-${index + 1}`,
+      label: `模型 ${index + 1}`,
+    }))
+    const page = paginateRemoteSelection(rows, 2)
+    expect(page).toMatchObject({ page: 2, totalPages: 2, total: 8 })
+    expect(page.rows.map((row) => row.id)).toEqual(['model-7', 'model-8'])
+    expect(
+      buildRemoteSelectionActions(page.rows, {
+        selectCommand: '/use-model',
+        listCommand: '/models',
+        page: page.page,
+        totalPages: page.totalPages,
+      }).map((action) => action.command),
+    ).toEqual(['/use-model model-7', '/use-model model-8', '/models 1', '/models 2'])
+  })
+
+  it('parses a plain page number and rejects invalid pages', () => {
+    expect(parseRemotePage(['2'], '/models [页码]')).toEqual({ page: 2 })
+    expect(parseRemotePage(['0'], '/models [页码]')).toEqual({ error: '/models [页码]' })
+  })
+})
+
+describe('remote permission choices', () => {
+  it('defaults each runtime to its automatic approval mode', () => {
+    expect(defaultRemotePermissionMode('claude-sdk')).toBe('claude-auto')
+    expect(defaultRemotePermissionMode('codex')).toBe('codex-auto-review')
+    expect(defaultRemotePermissionMode('spark')).toBe('spark-auto')
+  })
+
+  it('only presents permission modes supported by the active adapter', () => {
+    expect(getRemotePermissionRows('codex').map((row) => row.id)).toEqual([
+      'codex-default',
+      'codex-auto-review',
+      'codex-full-access',
+    ])
+  })
+})
+
 describe('buildRemoteErrorGuidance', () => {
   it('routes model/provider/token/quota errors to the model recovery path', () => {
     expect(buildRemoteErrorGuidance('provider returned 429')).toContain(
@@ -190,7 +244,7 @@ describe('buildRemoteErrorGuidance', () => {
 describe('buildRemoteSessionActions', () => {
   it('emits session-id based switch commands, never sequence numbers', () => {
     const actions = buildRemoteSessionActions(sessionRows)
-    const switchActions = actions.filter((action) => action.style === 'primary')
+    const switchActions = actions.slice(4)
     expect(switchActions).toHaveLength(3)
     expect(switchActions.map((action) => action.command)).toEqual([
       '/use-session sess-a',
@@ -205,12 +259,7 @@ describe('buildRemoteSessionActions', () => {
 
   it('labels switch buttons with the session title', () => {
     const actions = buildRemoteSessionActions(sessionRows)
-    const switchActions = actions.filter((action) => action.style === 'primary')
-    expect(switchActions.map((action) => action.label)).toEqual([
-      '切换 会话 A',
-      '切换 会话 B',
-      '切换 项目讨论',
-    ])
+    expect(actions.slice(4).map((action) => action.label)).toEqual(['会话 A', '会话 B', '项目讨论'])
   })
 
   it('always prepends the status filter shortcuts', () => {
@@ -228,10 +277,7 @@ describe('buildRemoteSessionActions', () => {
       id: `s${index}`,
       label: `会话${index}`,
     }))
-    const switchActions = buildRemoteSessionActions(many).filter(
-      (action) => action.style === 'primary',
-    )
-    expect(switchActions).toHaveLength(6)
+    expect(buildRemoteSessionActions(many)).toHaveLength(10)
   })
 
   it('uses a custom command prefix for interactive buttons', () => {
@@ -263,5 +309,9 @@ describe('filterTelegramCallbackActions', () => {
   it('returns an empty array when every command is too long (no silent truncation)', () => {
     const actions = [{ label: 'a', command: 'x'.repeat(100) }]
     expect(filterTelegramCallbackActions(actions)).toEqual([])
+  })
+
+  it('measures Telegram callback limits in UTF-8 bytes', () => {
+    expect(filterTelegramCallbackActions([{ label: 'cn', command: '选'.repeat(22) }])).toEqual([])
   })
 })

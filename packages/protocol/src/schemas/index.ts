@@ -159,9 +159,12 @@ const RemoteConnectionPatchSchema = z.object({
   allowedUserIds: z.array(z.string().min(1).max(160)).max(200).optional(),
   allowedChatIds: z.array(z.string().min(1).max(160)).max(200).optional(),
   defaultSessionId: z.string().min(1).max(160).optional(),
+  defaultWorkspaceId: z.string().min(1).max(160).optional(),
   defaultProviderProfileId: z.string().min(1).max(160).optional(),
   defaultModelId: z.string().min(1).max(200).optional(),
   defaultAgentId: z.string().min(1).max(160).optional(),
+  defaultPermissionMode: SessionPermissionModeSchema.optional(),
+  defaultReasoningEffort: SessionReasoningEffortSchema.optional(),
   telegramCommands: z.array(z.string().min(1).max(80)).max(80).optional(),
   capabilities: RemoteCapabilitiesSchema.optional(),
 })

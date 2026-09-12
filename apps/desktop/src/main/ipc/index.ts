@@ -367,9 +367,16 @@ import type {
 } from '../services/RemoteConnectionService.js'
 import {
   buildRemoteErrorGuidance,
+  buildRemoteSelectionActions,
   buildRemoteSessionActions,
+  defaultRemotePermissionMode,
   formatRows,
+  getRemotePermissionRows,
+  normalizeRemotePermissionInput,
+  paginateRemoteSelection,
+  parseRemotePage,
   parseRemoteSessionFilter,
+  REMOTE_REASONING_ROWS,
   resolveRemoteSelection,
 } from './remote-command-utils.js'
 import type {
@@ -2761,7 +2768,7 @@ function parseRemoteCommand(
     ? trimmed.slice(effectivePrefix.length).trim()
     : `send ${trimmed}`
   const [name = 'help', ...args] = body.split(/\s+/).filter(Boolean)
-  return { name: name.toLowerCase(), args, text: body }
+  return { name: name.toLowerCase().replace(/_/g, '-'), args, text: body }
 }
 
 function formatRemoteCommand(
@@ -2839,7 +2846,9 @@ const REMOTE_SELECTION_COMMANDS: Record<RemoteSelectionKind, string> = {
   models: 'use-model',
   agents: 'use-agent',
   sessions: 'use-session',
-  workspaces: 'new-session',
+  workspaces: 'use-project',
+  permissions: 'use-permission',
+  reasoning: 'use-reasoning',
   windows: 'focus',
 }
 
@@ -2863,15 +2872,39 @@ async function createRemoteSession(
   if (provider == null) {
     throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
   }
+  const effectiveModelId =
+    connection.defaultModelId != null && provider.modelIds.includes(connection.defaultModelId)
+      ? connection.defaultModelId
+      : provider.defaultModel
   await ensureNoProjectDirectoryExists()
   const defaults = getRuntimePermissionDefaults()
+  const configuredAgent =
+    connection.defaultAgentId != null
+      ? getAgentRepository().get(connection.defaultAgentId)
+      : undefined
+  const configuredAdapter = configuredAgent?.agentAdapter
+  const agentAdapter: SessionAgentAdapter =
+    configuredAdapter === 'claude' ||
+    configuredAdapter === 'claude-sdk' ||
+    configuredAdapter === 'codex' ||
+    configuredAdapter === 'spark'
+      ? configuredAdapter
+      : defaults.agentAdapter
+  const permissionRows = getRemotePermissionRows(agentAdapter)
+  const configuredPermission = permissionRows.some(
+    (row) => row.id === connection.defaultPermissionMode,
+  )
+    ? connection.defaultPermissionMode
+    : undefined
+  const effectiveWorkspaceId = workspaceId ?? connection.defaultWorkspaceId
   const created = await getSessionService().createSession({
     providerProfileId: provider.id,
-    ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
+    ...(effectiveModelId.length > 0 ? { modelId: effectiveModelId } : {}),
     ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
-    agentAdapter: defaults.agentAdapter,
-    permissionMode: defaults.permissionMode,
-    ...(workspaceId != null ? { workspaceId } : {}),
+    agentAdapter,
+    permissionMode: configuredPermission ?? defaultRemotePermissionMode(agentAdapter),
+    reasoningEffort: connection.defaultReasoningEffort ?? 'max',
+    ...(effectiveWorkspaceId != null ? { workspaceId: effectiveWorkspaceId } : {}),
     title: `远程会话 · ${connection.name}`,
   })
   pushStreamEvent('stream:session:created', {
@@ -2881,13 +2914,13 @@ async function createRemoteSession(
   remoteService.updateConnectionDefaults(connection.id, {
     defaultSessionId: created.sessionId,
     defaultProviderProfileId: provider.id,
+    ...(effectiveModelId.length > 0 ? { defaultModelId: effectiveModelId } : {}),
+    ...(effectiveWorkspaceId != null ? { defaultWorkspaceId: effectiveWorkspaceId } : {}),
   })
   return { sessionId: created.sessionId, connectionName: connection.name }
 }
 
 const REMOTE_SESSION_QUERY_LIMIT = 1000
-const REMOTE_SESSION_DISPLAY_LIMIT = 20
-
 function formatRemoteSessionStatus(status: RemoteSessionStatus): string {
   if (status === 'running') return '运行中'
   if (status === 'error') return '错误'
@@ -2899,10 +2932,38 @@ function formatRemoteSelectionList(
   empty: string,
   kindLabel: string,
   useCommand: string,
+  options: { interactive?: boolean; page?: number; totalPages?: number; total?: number } = {},
 ): string {
+  if (options.interactive === true && rows.length > 0) {
+    const page = options.page ?? 1
+    const totalPages = options.totalPages ?? 1
+    return `共 ${options.total ?? rows.length} 项 · 第 ${page}/${totalPages} 页\n点击下方按钮选择${kindLabel}。`
+  }
   const list = formatRows(rows, empty)
   if (rows.length === 0) return list
   return `${list}\n\n发送序号即可选择${kindLabel}；也可发送 ${useCommand} <序号|名称>。`
+}
+
+function supportsRemoteInteractiveLists(connection: RemoteConnectionConfig): boolean {
+  return connection.channel === 'telegram' || connection.channel === 'feishu'
+}
+
+function listRemoteWorkspaceRows(): RemoteSelectionRow[] {
+  return getWorkspaceService()
+    .listWorkspaces(1_000, 0, { includeArchived: false })
+    .map(createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true)))
+    .map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
+}
+
+async function getRemoteSession(
+  sessionId: string | undefined,
+): Promise<SessionListResponse['sessions'][number] | undefined> {
+  if (sessionId == null) return undefined
+  const result = await getSessionService().listSessions({
+    includeArchived: false,
+    limit: REMOTE_SESSION_QUERY_LIMIT,
+  })
+  return result.sessions.find((item) => item.id === sessionId)
 }
 
 async function listRemoteSessionRows(status?: RemoteSessionStatus): Promise<{
@@ -2936,7 +2997,17 @@ async function executeRemoteCommand(
     return { ok: false, title: '连接不存在', text: '请先在设置中创建远程连接。' }
   if (!connection.enabled) return { ok: false, title: '连接未启用', text: '请先启用该远程连接。' }
 
-  const command = parseRemoteCommand(message, connection.commandPrefix)
+  const parsedCommand = parseRemoteCommand(message, connection.commandPrefix)
+  const commandAliases: Record<string, string> = {
+    providers: 'channels',
+    'use-provider': 'use-channel',
+    workspaces: 'projects',
+    'open-workspace': 'add-project',
+  }
+  const command = {
+    ...parsedCommand,
+    name: commandAliases[parsedCommand.name] ?? parsedCommand.name,
+  }
   const sessionId = explicitSessionId ?? connection.defaultSessionId
   const requireCapability = (
     capability: keyof typeof connection.capabilities,
@@ -2946,7 +3017,7 @@ async function executeRemoteCommand(
       capability === 'switchSession'
         ? `请在设置中启用会话切换能力；启用后可使用 ${formatRemoteCommand(connection, 'sessions')} 和 ${formatRemoteCommand(connection, 'use-session')}。`
         : capability === 'switchModel'
-          ? `请在设置中启用模型切换能力；启用后可使用 ${formatRemoteCommand(connection, 'providers')}、${formatRemoteCommand(connection, 'models')} 和 ${formatRemoteCommand(connection, 'use-model')}。`
+          ? `请在设置中启用模型切换能力；启用后可使用 ${formatRemoteCommand(connection, 'channels')}、${formatRemoteCommand(connection, 'models')} 和 ${formatRemoteCommand(connection, 'use-model')}。`
           : capability === 'switchAgent'
             ? `请在设置中启用 Agent 切换能力；启用后可使用 ${formatRemoteCommand(connection, 'agents')} 和 ${formatRemoteCommand(connection, 'use-agent')}。`
             : `请在设置中启用对应能力，或发送 ${formatRemoteCommand(connection, 'help')} 查看当前连接可用命令。`
@@ -2957,9 +3028,10 @@ async function executeRemoteCommand(
     const commands = remoteService.getCommandCatalog()
     const grouped = [
       ['会话', ['sessions', 'use-session', 'new-session']],
-      ['模型', ['providers', 'use-provider', 'models', 'use-model']],
+      ['渠道与模型', ['channels', 'use-channel', 'models', 'use-model']],
       ['Agent', ['agents', 'use-agent']],
-      ['工作区', ['workspaces', 'open-workspace']],
+      ['项目', ['projects', 'use-project', 'add-project']],
+      ['运行配置', ['reasoning', 'use-reasoning', 'permissions', 'use-permission']],
       ['远程桌面', ['screen', 'windows', 'focus', 'click', 'type', 'hotkey']],
       ['运行时', ['progress', 'queue', 'history', 'cancel', 'stop']],
       ['消息', ['send']],
@@ -2982,8 +3054,7 @@ async function executeRemoteCommand(
               })
             return `${group}\n${lines.join('\n')}`
           })
-          .join('\n\n') +
-        `\n\n示例：${formatRemoteCommand(connection, 'providers')} 后发送 ${formatRemoteCommand(connection, 'use-provider', '2')}；也可发送 ${formatRemoteCommand(connection, 'use-provider', '智谱 GLM Coding Plan')} 或完整 ID。`,
+          .join('\n\n') + `\n\n推荐直接点击按钮操作；Provider 旧命令仍可继续使用。`,
       ...(connection.capabilities.runCommands
         ? {
             actions: [
@@ -2992,8 +3063,8 @@ async function executeRemoteCommand(
                 label: '查看运行中',
                 command: formatRemoteCommand(connection, 'sessions', 'running'),
               },
-              { label: '查看模型', command: formatRemoteCommand(connection, 'models') },
-              { label: '查看 Provider', command: formatRemoteCommand(connection, 'providers') },
+              { label: '项目', command: formatRemoteCommand(connection, 'projects') },
+              { label: '渠道与模型', command: formatRemoteCommand(connection, 'channels') },
             ],
           }
         : {}),
@@ -3002,23 +3073,37 @@ async function executeRemoteCommand(
 
   if (command.name === 'status') {
     const providers = await getProviderService().listProviders()
-    const provider = providers.find((item) => item.id === connection.defaultProviderProfileId)
-    const models = getModelService().list()
-    const model = models.find((item) => item.id === connection.defaultModelId)
+    const session = await getRemoteSession(sessionId)
+    const providerId = session?.providerProfileId ?? connection.defaultProviderProfileId
+    const provider = providers.find((item) => item.id === providerId)
+    const modelId = session?.modelId ?? connection.defaultModelId ?? provider?.defaultModel
+    const workspaceId = connection.defaultWorkspaceId ?? session?.workspaceIds[0]
+    const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
     const agent =
       connection.defaultAgentId != null ? getAgentRepository().get(connection.defaultAgentId) : null
     return {
       ok: true,
       title: connection.name,
       text: [
-        `渠道：${connection.channel}`,
+        `远程渠道：${connection.channel}`,
         `状态：${connection.status}`,
         `配对设备：${connection.pairedDevices.length}`,
-        `默认会话：${connection.defaultSessionId ?? '未设置'}`,
-        `默认 Provider：${provider != null ? `${provider.name} (${provider.id})` : (connection.defaultProviderProfileId ?? '未设置')}`,
-        `默认模型：${model != null ? `${model.name} (${model.id})` : (connection.defaultModelId ?? '未设置')}`,
+        `当前项目：${workspace?.label ?? workspaceId ?? '不使用项目'}`,
+        `默认会话：${session?.title ?? connection.defaultSessionId ?? '未设置'}`,
+        `模型渠道：${provider != null ? `${provider.name} (${provider.provider})` : (providerId ?? '未设置')}`,
+        `当前模型：${modelId ?? '未设置'}`,
+        `推理强度：${session?.reasoningEffort ?? connection.defaultReasoningEffort ?? 'max'}`,
+        `权限模式：${session?.permissionMode ?? connection.defaultPermissionMode ?? '自动审批（新建远程会话默认）'}`,
         `默认 Agent：${agent != null ? `${agent.name} (${agent.id})` : (connection.defaultAgentId ?? '未设置')}`,
       ].join('\n'),
+      actions: [
+        { label: '会话', command: formatRemoteCommand(connection, 'sessions') },
+        { label: '项目', command: formatRemoteCommand(connection, 'projects') },
+        { label: '渠道', command: formatRemoteCommand(connection, 'channels') },
+        { label: '模型', command: formatRemoteCommand(connection, 'models') },
+        { label: '推理强度', command: formatRemoteCommand(connection, 'reasoning') },
+        { label: '权限模式', command: formatRemoteCommand(connection, 'permissions') },
+      ],
     }
   }
 
@@ -3034,20 +3119,26 @@ async function executeRemoteCommand(
       }
     }
     const result = await listRemoteSessionRows(filter.status)
-    const visibleRows = result.rows.slice(0, REMOTE_SESSION_DISPLAY_LIMIT)
-    cacheRemoteSelection(connection.id, 'sessions', visibleRows)
+    const page = paginateRemoteSelection(result.rows, filter.page)
+    cacheRemoteSelection(connection.id, 'sessions', page.rows)
     const statusText = filter.status == null ? '全部状态' : formatRemoteSessionStatus(filter.status)
-    const suffix =
-      result.total > visibleRows.length
-        ? `\n\n共 ${result.total} 个会话，当前显示前 ${visibleRows.length} 个。可使用完整 sessionId 切换。`
-        : ''
+    const interactive = supportsRemoteInteractiveLists(connection)
     return {
       ok: true,
       title: `主机会话 · ${statusText}`,
-      text: `${formatRemoteSelectionList(visibleRows, '暂无符合条件的会话', '会话', formatRemoteCommand(connection, 'use-session'))}${suffix}`,
-      ...(connection.capabilities.runCommands
-        ? { actions: buildRemoteSessionActions(visibleRows, connection.commandPrefix) }
-        : {}),
+      text: formatRemoteSelectionList(
+        page.rows,
+        '暂无符合条件的会话',
+        '会话',
+        formatRemoteCommand(connection, 'use-session'),
+        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
+      ),
+      actions: buildRemoteSessionActions(page.rows, connection.commandPrefix, {
+        page: page.page,
+        totalPages: page.totalPages,
+        ...(filter.status != null ? { status: filter.status } : {}),
+        selectedId: sessionId,
+      }),
     }
   }
 
@@ -3075,111 +3166,164 @@ async function executeRemoteCommand(
       ok: true,
       title: '已切换默认会话',
       text: `${resolved.row.label}\n${resolved.row.id}\n\n后续手机消息会继续进入该会话。发送 ${formatRemoteCommand(connection, 'status')} 可确认当前默认会话。`,
+      actions: [
+        { label: '查看状态', command: formatRemoteCommand(connection, 'status') },
+        { label: '切换模型', command: formatRemoteCommand(connection, 'models') },
+      ],
     }
   }
 
   if (command.name === 'models') {
     const blocked = requireCapability('switchModel')
     if (blocked != null) return blocked
-    const models = getModelService().list()
-    const rows = models.map((item) => ({
-      id: item.id,
-      label: item.name,
-      meta: item.enabled ? 'enabled' : 'disabled',
+    const parsedPage = parseRemotePage(
+      command.args,
+      `用法：${formatRemoteCommand(connection, 'models', '[页码]')}`,
+    )
+    if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
+    const currentSession = await getRemoteSession(sessionId)
+    const providers = await getProviderService().listProviders()
+    const providerId = currentSession?.providerProfileId ?? connection.defaultProviderProfileId
+    const provider =
+      providers.find((item) => item.id === providerId) ??
+      providers.find((item) => item.isDefault) ??
+      providers[0]
+    if (provider == null) {
+      return { ok: false, title: '暂无模型渠道', text: '请先在桌面端添加 Provider。' }
+    }
+    const selectedModelId =
+      currentSession?.modelId ?? connection.defaultModelId ?? provider.defaultModel
+    const rows = [...new Set(provider.modelIds)].map((modelId) => ({
+      id: modelId,
+      label: modelId,
+      ...(modelId === provider.defaultModel ? { meta: '渠道默认' } : {}),
     }))
-    cacheRemoteSelection(connection.id, 'models', rows)
+    const page = paginateRemoteSelection(rows, parsedPage.page)
+    cacheRemoteSelection(connection.id, 'models', page.rows)
+    const interactive = supportsRemoteInteractiveLists(connection)
     return {
       ok: true,
-      title: '模型配置',
+      title: `模型 · ${provider.name}`,
       text: formatRemoteSelectionList(
-        rows,
+        page.rows,
         '暂无模型配置',
         '模型',
         formatRemoteCommand(connection, 'use-model'),
+        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
       ),
-      ...(connection.capabilities.runCommands
-        ? {
-            actions: rows.slice(0, 6).map((row) => ({
-              label: `切换 ${row.label}`,
-              command: formatRemoteCommand(connection, 'use-model', row.id),
-              style: 'primary' as const,
-            })),
-          }
-        : {}),
+      actions: buildRemoteSelectionActions(page.rows, {
+        selectCommand: formatRemoteCommand(connection, 'use-model'),
+        listCommand: formatRemoteCommand(connection, 'models'),
+        page: page.page,
+        totalPages: page.totalPages,
+        selectedId: selectedModelId,
+      }),
     }
   }
 
-  if (command.name === 'providers') {
+  if (command.name === 'channels') {
     const blocked = requireCapability('switchModel')
     if (blocked != null) return blocked
+    const parsedPage = parseRemotePage(
+      command.args,
+      `用法：${formatRemoteCommand(connection, 'channels', '[页码]')}`,
+    )
+    if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
     const providers = await getProviderService().listProviders()
     const rows = providers.map((item) => ({ id: item.id, label: item.name, meta: item.provider }))
-    cacheRemoteSelection(connection.id, 'providers', rows)
+    const page = paginateRemoteSelection(rows, parsedPage.page)
+    cacheRemoteSelection(connection.id, 'providers', page.rows)
+    const currentSession = await getRemoteSession(sessionId)
+    const selectedProviderId =
+      currentSession?.providerProfileId ?? connection.defaultProviderProfileId
+    const interactive = supportsRemoteInteractiveLists(connection)
     return {
       ok: true,
-      title: 'Provider 配置',
+      title: '模型渠道',
       text: formatRemoteSelectionList(
-        rows,
-        '暂无 Provider',
-        'Provider',
-        formatRemoteCommand(connection, 'use-provider'),
+        page.rows,
+        '暂无可用渠道',
+        '渠道',
+        formatRemoteCommand(connection, 'use-channel'),
+        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
       ),
-      ...(connection.capabilities.runCommands
-        ? {
-            actions: rows.slice(0, 6).map((row) => ({
-              label: `切换 ${row.label}`,
-              command: formatRemoteCommand(connection, 'use-provider', row.id),
-              style: 'primary' as const,
-            })),
-          }
-        : {}),
+      actions: buildRemoteSelectionActions(page.rows, {
+        selectCommand: formatRemoteCommand(connection, 'use-channel'),
+        listCommand: formatRemoteCommand(connection, 'channels'),
+        page: page.page,
+        totalPages: page.totalPages,
+        selectedId: selectedProviderId,
+      }),
     }
   }
 
   if (command.name === 'agents') {
     const blocked = requireCapability('switchAgent')
     if (blocked != null) return blocked
+    const parsedPage = parseRemotePage(
+      command.args,
+      `用法：${formatRemoteCommand(connection, 'agents', '[页码]')}`,
+    )
+    if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
     const agents = getAgentRepository().list({ includeDisabled: false }).map(toManagedAgent)
     const rows = agents.map((item) => ({ id: item.id, label: item.name, meta: item.agentAdapter }))
-    cacheRemoteSelection(connection.id, 'agents', rows)
+    const page = paginateRemoteSelection(rows, parsedPage.page)
+    cacheRemoteSelection(connection.id, 'agents', page.rows)
+    const interactive = supportsRemoteInteractiveLists(connection)
     return {
       ok: true,
       title: 'Agent',
       text: formatRemoteSelectionList(
-        rows,
+        page.rows,
         '暂无 Agent',
         'Agent',
         formatRemoteCommand(connection, 'use-agent'),
+        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
       ),
-      ...(connection.capabilities.runCommands
-        ? {
-            actions: rows.slice(0, 6).map((row) => ({
-              label: `切换 ${row.label}`,
-              command: formatRemoteCommand(connection, 'use-agent', row.id),
-              style: 'primary' as const,
-            })),
-          }
-        : {}),
+      actions: buildRemoteSelectionActions(page.rows, {
+        selectCommand: formatRemoteCommand(connection, 'use-agent'),
+        listCommand: formatRemoteCommand(connection, 'agents'),
+        page: page.page,
+        totalPages: page.totalPages,
+        selectedId: connection.defaultAgentId,
+      }),
     }
   }
 
-  if (command.name === 'workspaces') {
+  if (command.name === 'projects') {
     const blocked = requireCapability('manageWorkspace')
     if (blocked != null) return blocked
-    const list = getWorkspaceService()
-      .listWorkspaces(12, 0, { includeArchived: false })
-      .map(createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true)))
-    const rows = list.map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
-    cacheRemoteSelection(connection.id, 'workspaces', rows)
+    const parsedPage = parseRemotePage(
+      command.args,
+      `用法：${formatRemoteCommand(connection, 'projects', '[页码]')}`,
+    )
+    if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
+    const rows = listRemoteWorkspaceRows()
+    const page = paginateRemoteSelection(rows, parsedPage.page)
+    cacheRemoteSelection(connection.id, 'workspaces', page.rows)
+    const interactive = supportsRemoteInteractiveLists(connection)
+    const currentSession = await getRemoteSession(sessionId)
+    const selectedWorkspaceId = connection.defaultWorkspaceId ?? currentSession?.workspaceIds[0]
     return {
       ok: true,
-      title: '工作区',
+      title: '项目',
       text: formatRemoteSelectionList(
-        rows,
-        '暂无工作区',
-        '工作区',
-        formatRemoteCommand(connection, 'new-session'),
+        page.rows,
+        '暂无项目',
+        '项目',
+        formatRemoteCommand(connection, 'use-project'),
+        { interactive, page: page.page, totalPages: page.totalPages, total: page.total },
       ),
+      actions: [
+        ...buildRemoteSelectionActions(page.rows, {
+          selectCommand: formatRemoteCommand(connection, 'use-project'),
+          listCommand: formatRemoteCommand(connection, 'projects'),
+          page: page.page,
+          totalPages: page.totalPages,
+          selectedId: selectedWorkspaceId,
+        }),
+        { label: '不使用项目', command: formatRemoteCommand(connection, 'use-project', 'none') },
+      ],
     }
   }
 
@@ -3189,45 +3333,119 @@ async function executeRemoteCommand(
     const workspaceInput = command.args.join(' ')
     let workspaceId: string | undefined
     if (workspaceInput.length > 0) {
-      const rows = getWorkspaceService()
-        .listWorkspaces(12, 0, { includeArchived: false })
-        .map(createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true)))
-        .map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
+      const rows = listRemoteWorkspaceRows()
       const resolved = resolveRemoteSelection(workspaceInput, rows, {
-        kindLabel: '工作区',
-        listCommand: formatRemoteCommand(connection, 'workspaces'),
+        kindLabel: '项目',
+        listCommand: formatRemoteCommand(connection, 'projects'),
         cachedRows: getCachedRemoteSelection(connection.id, 'workspaces'),
       })
       if (!resolved.ok) return resolved
       workspaceId = resolved.row.id
     }
     const created = await createRemoteSession(connection.id, workspaceId)
-    return { ok: true, title: '已新建默认会话', text: created.sessionId }
+    return {
+      ok: true,
+      title: '已新建默认会话',
+      text: `后续消息将进入该会话。\n${created.sessionId}`,
+      actions: [
+        { label: '查看会话', command: formatRemoteCommand(connection, 'sessions') },
+        { label: '选择模型', command: formatRemoteCommand(connection, 'models') },
+        { label: '权限模式', command: formatRemoteCommand(connection, 'permissions') },
+      ],
+    }
   }
 
-  if (command.name === 'open-workspace') {
+  if (command.name === 'use-project') {
     const blocked = requireCapability('manageWorkspace')
     if (blocked != null) return blocked
-    const rootPath = command.text.replace(/^open-workspace\s*/i, '').trim()
+    const target = command.args.join(' ')
+    if (target.length === 0)
+      return executeRemoteCommand(
+        connectionId,
+        formatRemoteCommand(connection, 'projects'),
+        sessionId,
+      )
+    if (target.toLocaleLowerCase() === 'none' || target === '不使用项目') {
+      remoteService.updateConnectionDefaults(connection.id, { defaultWorkspaceId: null })
+      const created = await createRemoteSession(connection.id)
+      return {
+        ok: true,
+        title: '已切换为不使用项目',
+        text: `已新建 no-project 会话。\n${created.sessionId}`,
+        actions: [{ label: '查看会话', command: formatRemoteCommand(connection, 'sessions') }],
+      }
+    }
+    const rows = listRemoteWorkspaceRows()
+    const resolved = resolveRemoteSelection(target, rows, {
+      kindLabel: '项目',
+      listCommand: formatRemoteCommand(connection, 'projects'),
+      cachedRows: getCachedRemoteSelection(connection.id, 'workspaces'),
+    })
+    if (!resolved.ok) return resolved
+    const sessions = await getSessionService().listSessions({
+      includeArchived: false,
+      limit: REMOTE_SESSION_QUERY_LIMIT,
+    })
+    const latestSession = sessions.sessions.find((item) =>
+      item.workspaceIds.includes(resolved.row.id),
+    )
+    if (latestSession != null) {
+      remoteService.updateConnectionDefaults(connection.id, {
+        defaultWorkspaceId: resolved.row.id,
+        defaultSessionId: latestSession.id,
+      })
+      return {
+        ok: true,
+        title: `已切换项目 · ${resolved.row.label}`,
+        text: `已继续最近会话：${latestSession.title || '新会话'}`,
+        actions: [
+          { label: '项目会话', command: formatRemoteCommand(connection, 'sessions') },
+          {
+            label: '在此新建会话',
+            command: formatRemoteCommand(connection, 'new-session', resolved.row.id),
+          },
+        ],
+      }
+    }
+    const created = await createRemoteSession(connection.id, resolved.row.id)
+    return {
+      ok: true,
+      title: `已切换项目 · ${resolved.row.label}`,
+      text: `该项目暂无会话，已自动创建。\n${created.sessionId}`,
+    }
+  }
+
+  if (command.name === 'add-project') {
+    const blocked = requireCapability('manageWorkspace')
+    if (blocked != null) return blocked
+    const rootPath = command.args.join(' ').trim()
     if (rootPath.length === 0)
       return {
         ok: false,
         title: '缺少项目路径',
-        text: `用法：${formatRemoteCommand(connection, 'open-workspace', '<path>')}`,
+        text: `用法：${formatRemoteCommand(connection, 'add-project', '<path>')}`,
       }
     const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, {
       create: false,
     })
     return {
       ok: true,
-      title: '已打开项目',
-      text: `${workspace.name}\n${workspace.id}\n${workspace.root_path}`,
+      title: '已添加项目',
+      text: `${workspace.name}\n${workspace.root_path}`,
+      actions: [
+        {
+          label: '切换到此项目',
+          command: formatRemoteCommand(connection, 'use-project', workspace.id),
+          style: 'primary',
+        },
+        { label: '查看项目', command: formatRemoteCommand(connection, 'projects') },
+      ],
     }
   }
 
   if (
     command.name === 'use-model' ||
-    command.name === 'use-provider' ||
+    command.name === 'use-channel' ||
     command.name === 'use-agent'
   ) {
     const capability = command.name === 'use-agent' ? 'switchAgent' : 'switchModel'
@@ -3238,66 +3456,229 @@ async function executeRemoteCommand(
       const listCommand =
         command.name === 'use-model'
           ? formatRemoteCommand(connection, 'models')
-          : command.name === 'use-provider'
-            ? formatRemoteCommand(connection, 'providers')
+          : command.name === 'use-channel'
+            ? formatRemoteCommand(connection, 'channels')
             : formatRemoteCommand(connection, 'agents')
       return executeRemoteCommand(connectionId, listCommand, sessionId)
     }
     let resolved: { ok: true; row: RemoteSelectionRow } | { ok: false; title: string; text: string }
-    if (command.name === 'use-provider') {
+    let selectedProviderDefaultModel: string | undefined
+    let selectedAgentAdapter: SessionAgentAdapter | undefined
+    if (command.name === 'use-channel') {
       const rows = (await getProviderService().listProviders()).map((item) => ({
         id: item.id,
         label: item.name,
         meta: item.provider,
       }))
       resolved = resolveRemoteSelection(target, rows, {
-        kindLabel: 'Provider',
-        listCommand: formatRemoteCommand(connection, 'providers'),
+        kindLabel: '渠道',
+        listCommand: formatRemoteCommand(connection, 'channels'),
         cachedRows: getCachedRemoteSelection(connection.id, 'providers'),
       })
+      if (resolved.ok) {
+        const selectedProviderId = resolved.row.id
+        selectedProviderDefaultModel = (await getProviderService().listProviders()).find(
+          (item) => item.id === selectedProviderId,
+        )?.defaultModel
+      }
     } else if (command.name === 'use-model') {
-      const rows = getModelService()
-        .list()
-        .map((item) => ({
-          id: item.id,
-          label: item.name,
-          meta: item.enabled ? 'enabled' : 'disabled',
-        }))
+      const currentSession = await getRemoteSession(sessionId)
+      const providers = await getProviderService().listProviders()
+      const providerId = currentSession?.providerProfileId ?? connection.defaultProviderProfileId
+      const provider =
+        providers.find((item) => item.id === providerId) ??
+        providers.find((item) => item.isDefault) ??
+        providers[0]
+      const rows = provider?.modelIds.map((modelId) => ({ id: modelId, label: modelId })) ?? []
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: '模型',
         listCommand: formatRemoteCommand(connection, 'models'),
         cachedRows: getCachedRemoteSelection(connection.id, 'models'),
       })
     } else {
-      const rows = getAgentRepository()
-        .list({ includeDisabled: false })
-        .map(toManagedAgent)
-        .map((item) => ({
-          id: item.id,
-          label: item.name,
-          meta: item.agentAdapter,
-        }))
+      const agents = getAgentRepository().list({ includeDisabled: false }).map(toManagedAgent)
+      const rows = agents.map((item) => ({
+        id: item.id,
+        label: item.name,
+        meta: item.agentAdapter,
+      }))
       resolved = resolveRemoteSelection(target, rows, {
         kindLabel: 'Agent',
         listCommand: formatRemoteCommand(connection, 'agents'),
         cachedRows: getCachedRemoteSelection(connection.id, 'agents'),
       })
+      if (resolved.ok) {
+        const selectedAgentId = resolved.row.id
+        const adapter = agents.find((item) => item.id === selectedAgentId)?.agentAdapter
+        if (
+          adapter === 'claude' ||
+          adapter === 'claude-sdk' ||
+          adapter === 'codex' ||
+          adapter === 'spark'
+        ) {
+          selectedAgentAdapter = adapter
+        }
+      }
     }
     if (!resolved.ok) return resolved
     if (sessionId != null) {
       await getSessionService().updateSession({
         sessionId,
         ...(command.name === 'use-model' ? { modelId: resolved.row.id } : {}),
-        ...(command.name === 'use-provider' ? { providerProfileId: resolved.row.id } : {}),
-        ...(command.name === 'use-agent' ? { agentId: resolved.row.id } : {}),
+        ...(command.name === 'use-channel'
+          ? {
+              providerProfileId: resolved.row.id,
+              ...(selectedProviderDefaultModel != null
+                ? { modelId: selectedProviderDefaultModel }
+                : {}),
+            }
+          : {}),
+        ...(command.name === 'use-agent'
+          ? {
+              agentId: resolved.row.id,
+              ...(selectedAgentAdapter != null
+                ? {
+                    agentAdapter: selectedAgentAdapter,
+                    permissionMode: defaultRemotePermissionMode(selectedAgentAdapter),
+                  }
+                : {}),
+            }
+          : {}),
       })
     }
     remoteService.updateConnectionDefaults(connection.id, {
       ...(command.name === 'use-model' ? { defaultModelId: resolved.row.id } : {}),
-      ...(command.name === 'use-provider' ? { defaultProviderProfileId: resolved.row.id } : {}),
-      ...(command.name === 'use-agent' ? { defaultAgentId: resolved.row.id } : {}),
+      ...(command.name === 'use-channel'
+        ? {
+            defaultProviderProfileId: resolved.row.id,
+            ...(selectedProviderDefaultModel != null
+              ? { defaultModelId: selectedProviderDefaultModel }
+              : {}),
+          }
+        : {}),
+      ...(command.name === 'use-agent'
+        ? {
+            defaultAgentId: resolved.row.id,
+            ...(selectedAgentAdapter != null
+              ? { defaultPermissionMode: defaultRemotePermissionMode(selectedAgentAdapter) }
+              : {}),
+          }
+        : {}),
     })
-    return { ok: true, title: '已切换', text: `${resolved.row.label}\n${resolved.row.id}` }
+    return {
+      ok: true,
+      title: '已切换',
+      text:
+        command.name === 'use-channel' && selectedProviderDefaultModel != null
+          ? `${resolved.row.label}\n已同步切换为渠道默认模型：${selectedProviderDefaultModel}`
+          : resolved.row.label,
+      actions:
+        command.name === 'use-channel'
+          ? [{ label: '选择模型', command: formatRemoteCommand(connection, 'models') }]
+          : [{ label: '查看状态', command: formatRemoteCommand(connection, 'status') }],
+    }
+  }
+
+  if (command.name === 'reasoning' || command.name === 'use-reasoning') {
+    const blocked = requireCapability('manageRuntime')
+    if (blocked != null) return blocked
+    const currentSession = await getRemoteSession(sessionId)
+    if (command.name === 'reasoning' || command.args.length === 0) {
+      cacheRemoteSelection(connection.id, 'reasoning', REMOTE_REASONING_ROWS)
+      return {
+        ok: true,
+        title: '推理强度',
+        text: supportsRemoteInteractiveLists(connection)
+          ? '点击下方按钮选择。无当前会话时，设置会用于下次新建会话。'
+          : formatRemoteSelectionList(
+              REMOTE_REASONING_ROWS,
+              '暂无可用档位',
+              '推理强度',
+              formatRemoteCommand(connection, 'use-reasoning'),
+            ),
+        actions: buildRemoteSelectionActions(REMOTE_REASONING_ROWS, {
+          selectCommand: formatRemoteCommand(connection, 'use-reasoning'),
+          listCommand: formatRemoteCommand(connection, 'reasoning'),
+          selectedId: currentSession?.reasoningEffort ?? connection.defaultReasoningEffort ?? 'max',
+        }),
+      }
+    }
+    const resolved = resolveRemoteSelection(command.args.join(' '), REMOTE_REASONING_ROWS, {
+      kindLabel: '推理强度',
+      listCommand: formatRemoteCommand(connection, 'reasoning'),
+      cachedRows: getCachedRemoteSelection(connection.id, 'reasoning'),
+    })
+    if (!resolved.ok) return resolved
+    const reasoningEffort = resolved.row.id as SessionReasoningEffort
+    if (sessionId != null) await getSessionService().updateSession({ sessionId, reasoningEffort })
+    remoteService.updateConnectionDefaults(connection.id, {
+      defaultReasoningEffort: reasoningEffort,
+    })
+    return {
+      ok: true,
+      title: '已切换推理强度',
+      text: `${resolved.row.label}（${reasoningEffort}）`,
+      actions: [{ label: '查看状态', command: formatRemoteCommand(connection, 'status') }],
+    }
+  }
+
+  if (command.name === 'permissions' || command.name === 'use-permission') {
+    const blocked = requireCapability('approvePermissions')
+    if (blocked != null) return blocked
+    const currentSession = await getRemoteSession(sessionId)
+    const adapter = currentSession?.agentAdapter ?? getRuntimePermissionDefaults().agentAdapter
+    const rows = getRemotePermissionRows(adapter)
+    if (command.name === 'permissions' || command.args.length === 0) {
+      cacheRemoteSelection(connection.id, 'permissions', rows)
+      const actions = buildRemoteSelectionActions(rows, {
+        selectCommand: formatRemoteCommand(connection, 'use-permission'),
+        listCommand: formatRemoteCommand(connection, 'permissions'),
+        selectedId: currentSession?.permissionMode ?? connection.defaultPermissionMode,
+      }).map((action) =>
+        action.command.includes('full-access') || action.command.includes('bypass')
+          ? { ...action, style: 'danger' as const }
+          : action,
+      )
+      return {
+        ok: true,
+        title: `权限模式 · ${adapter}`,
+        text: supportsRemoteInteractiveLists(connection)
+          ? '新建远程会话默认使用“自动审批”。完全访问仍需额外开启高危操作权限。'
+          : formatRemoteSelectionList(
+              rows,
+              '暂无权限模式',
+              '权限模式',
+              formatRemoteCommand(connection, 'use-permission'),
+            ),
+        actions,
+      }
+    }
+    const normalizedTarget = normalizeRemotePermissionInput(command.args.join(' '), adapter)
+    const resolved = resolveRemoteSelection(normalizedTarget, rows, {
+      kindLabel: '权限模式',
+      listCommand: formatRemoteCommand(connection, 'permissions'),
+      cachedRows: getCachedRemoteSelection(connection.id, 'permissions'),
+    })
+    if (!resolved.ok) return resolved
+    if (
+      (resolved.row.id.includes('full-access') || resolved.row.id.includes('bypass')) &&
+      !connection.capabilities.dangerousActions
+    ) {
+      return {
+        ok: false,
+        title: '完全访问未授权',
+        text: '请先在桌面端的远程连接设置中开启“高危操作”。',
+      }
+    }
+    const permissionMode = resolved.row.id as SessionPermissionMode
+    if (sessionId != null) await getSessionService().updateSession({ sessionId, permissionMode })
+    remoteService.updateConnectionDefaults(connection.id, { defaultPermissionMode: permissionMode })
+    return {
+      ok: true,
+      title: '已切换权限模式',
+      text: `${resolved.row.label}（${permissionMode}）`,
+      actions: [{ label: '查看状态', command: formatRemoteCommand(connection, 'status') }],
+    }
   }
 
   if (command.name === 'progress' || command.name === 'queue') {
@@ -3415,6 +3796,20 @@ async function executeRemoteCommand(
       ok: true,
       title: result.started ? '已发送' : '已加入队列',
       text: `turnId: ${result.turnId}`,
+    }
+  }
+
+  if (command.name === 'expired-action') {
+    return {
+      ok: false,
+      title: '按钮已过期',
+      text: '请重新打开对应列表后再选择。',
+      actions: [
+        { label: '项目', command: formatRemoteCommand(connection, 'projects') },
+        { label: '会话', command: formatRemoteCommand(connection, 'sessions') },
+        { label: '渠道', command: formatRemoteCommand(connection, 'channels') },
+        { label: '模型', command: formatRemoteCommand(connection, 'models') },
+      ],
     }
   }
 

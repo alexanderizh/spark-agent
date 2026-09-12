@@ -1,4 +1,9 @@
-import type { RemoteMessageAction } from '@spark/protocol'
+import type {
+  RemoteMessageAction,
+  SessionAgentAdapter,
+  SessionPermissionMode,
+  SessionReasoningEffort,
+} from '@spark/protocol'
 
 export type RemoteSessionStatus = 'idle' | 'running' | 'error'
 
@@ -10,7 +15,95 @@ export type RemoteSelectionKind =
   | 'agents'
   | 'sessions'
   | 'workspaces'
+  | 'permissions'
+  | 'reasoning'
   | 'windows'
+
+export const REMOTE_SELECTION_PAGE_SIZE = 6
+
+export type RemoteSelectionPage = {
+  page: number
+  totalPages: number
+  total: number
+  rows: RemoteSelectionRow[]
+}
+
+export const REMOTE_REASONING_ROWS: Array<RemoteSelectionRow & { id: SessionReasoningEffort }> = [
+  { id: 'minimal', label: '最低' },
+  { id: 'low', label: '低' },
+  { id: 'medium', label: '中' },
+  { id: 'high', label: '高' },
+  { id: 'xhigh', label: '很高' },
+  { id: 'max', label: '最高' },
+]
+
+export function getRemotePermissionRows(
+  adapter: SessionAgentAdapter,
+): Array<RemoteSelectionRow & { id: SessionPermissionMode }> {
+  if (adapter === 'codex') {
+    return [
+      { id: 'codex-default', label: '手动审批' },
+      { id: 'codex-auto-review', label: '自动审批', meta: '推荐' },
+      { id: 'codex-full-access', label: '完全访问', meta: '高风险' },
+    ]
+  }
+  if (adapter === 'spark') {
+    return [
+      { id: 'spark-default', label: '手动审批' },
+      { id: 'spark-auto', label: '自动审批', meta: '推荐' },
+      { id: 'spark-bypass', label: '完全访问', meta: '高风险' },
+    ]
+  }
+  return [
+    { id: 'claude-ask', label: '手动审批' },
+    { id: 'claude-auto-edits', label: '自动编辑' },
+    { id: 'claude-plan', label: '规划模式' },
+    { id: 'claude-auto', label: '自动审批', meta: '推荐' },
+    { id: 'claude-bypass', label: '完全访问', meta: '高风险' },
+  ]
+}
+
+export function defaultRemotePermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
+  if (adapter === 'codex') return 'codex-auto-review'
+  if (adapter === 'spark') return 'spark-auto'
+  return 'claude-auto'
+}
+
+export function normalizeRemotePermissionInput(
+  input: string,
+  adapter: SessionAgentAdapter,
+): string {
+  const value = input.trim().toLocaleLowerCase()
+  const aliases: Record<string, string> = {
+    manual:
+      adapter === 'codex' ? 'codex-default' : adapter === 'spark' ? 'spark-default' : 'claude-ask',
+    手动:
+      adapter === 'codex' ? 'codex-default' : adapter === 'spark' ? 'spark-default' : 'claude-ask',
+    auto: defaultRemotePermissionMode(adapter),
+    自动: defaultRemotePermissionMode(adapter),
+    plan: adapter === 'spark' ? 'spark-plan' : 'claude-plan',
+    规划: adapter === 'spark' ? 'spark-plan' : 'claude-plan',
+    full:
+      adapter === 'codex'
+        ? 'codex-full-access'
+        : adapter === 'spark'
+          ? 'spark-bypass'
+          : 'claude-bypass',
+    bypass:
+      adapter === 'codex'
+        ? 'codex-full-access'
+        : adapter === 'spark'
+          ? 'spark-bypass'
+          : 'claude-bypass',
+    完全:
+      adapter === 'codex'
+        ? 'codex-full-access'
+        : adapter === 'spark'
+          ? 'spark-bypass'
+          : 'claude-bypass',
+  }
+  return aliases[value] ?? input.trim()
+}
 
 const SESSION_STATUS_ALIASES: Record<string, RemoteSessionStatus> = {
   idle: 'idle',
@@ -31,33 +124,87 @@ export function parseRemoteSessionFilter(
   commandPrefix = '/',
 ): {
   status?: RemoteSessionStatus | undefined
+  page?: number | undefined
   error?: string
 } {
   const prefix = commandPrefix.trim() || '/'
-  const usage = `状态筛选格式：${prefix}sessions [all|idle|running|error]`
+  const usage = `格式：${prefix}sessions [all|idle|running|error] [页码]`
   const tokens = args.map((arg) => arg.trim()).filter(Boolean)
-  if (tokens.length === 0) return { status: undefined }
-
-  const first = tokens[0] ?? ''
-  const isSeparateStatusFlag = first === '--status' || first === '-s'
-  if (isSeparateStatusFlag && tokens[1] == null) {
+  let status: RemoteSessionStatus | undefined
+  let page: number | undefined
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? ''
+    if (token === '--status' || token === '-s') {
+      const next = tokens[index + 1]
+      if (next == null) return { error: usage }
+      const parsed = SESSION_STATUS_ALIASES[next.toLocaleLowerCase()]
+      if (parsed == null || status != null) return { error: usage }
+      status = parsed
+      index += 1
+      continue
+    }
+    if (token === '--page' || token === '-p') {
+      const next = tokens[index + 1]
+      if (next == null || !/^\d+$/.test(next) || Number(next) < 1 || page != null) {
+        return { error: usage }
+      }
+      page = Number(next)
+      index += 1
+      continue
+    }
+    const statusValue = token.replace(/^--status[=:]/i, '').replace(/^status[=:]/i, '')
+    const normalizedStatus = statusValue.toLocaleLowerCase()
+    if (normalizedStatus === 'all' || normalizedStatus === '全部') {
+      if (status != null) return { error: usage }
+      continue
+    }
+    const parsedStatus = SESSION_STATUS_ALIASES[normalizedStatus]
+    if (parsedStatus != null) {
+      if (status != null) return { error: usage }
+      status = parsedStatus
+      continue
+    }
+    const pageValue = token.replace(/^--page[=:]/i, '').replace(/^page[=:]/i, '')
+    if (/^\d+$/.test(pageValue) && Number(pageValue) >= 1 && page == null) {
+      page = Number(pageValue)
+      continue
+    }
     return { error: usage }
   }
-  const rawValue = isSeparateStatusFlag
-    ? tokens[1]
-    : first.replace(/^--status[=:]/i, '').replace(/^status[=:]/i, '')
-  const value = rawValue?.toLocaleLowerCase()
-  if (value == null || value === '' || value === 'all' || value === '全部') {
-    return tokens.length <= (isSeparateStatusFlag ? 2 : 1)
-      ? { status: undefined }
-      : { error: usage }
-  }
+  return { status, page }
+}
 
-  const status = SESSION_STATUS_ALIASES[value]
-  if (status == null || tokens.length > (isSeparateStatusFlag ? 2 : 1)) {
-    return { error: usage }
-  }
-  return { status }
+export function parseRemotePage(
+  args: readonly string[],
+  usage: string,
+):
+  | { page: number }
+  | {
+      error: string
+    } {
+  if (args.length === 0) return { page: 1 }
+  const tokens = args.filter((arg) => arg.trim().length > 0)
+  const raw =
+    tokens[0] === '--page' || tokens[0] === '-p'
+      ? tokens.length === 2
+        ? tokens[1]
+        : undefined
+      : tokens.length === 1
+        ? tokens[0]?.replace(/^--page[=:]/i, '').replace(/^page[=:]/i, '')
+        : undefined
+  if (raw == null || !/^\d+$/.test(raw) || Number(raw) < 1) return { error: usage }
+  return { page: Number(raw) }
+}
+
+export function paginateRemoteSelection(
+  rows: RemoteSelectionRow[],
+  requestedPage = 1,
+  pageSize = REMOTE_SELECTION_PAGE_SIZE,
+): RemoteSelectionPage {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const page = Math.min(Math.max(1, requestedPage), totalPages)
+  const start = (page - 1) * pageSize
+  return { page, totalPages, total: rows.length, rows: rows.slice(start, start + pageSize) }
 }
 
 export function buildRemoteErrorGuidance(error: string, commandPrefix = '/'): string {
@@ -149,17 +296,40 @@ export function resolveRemoteSelection(
   }
 }
 
-/**
- * Telegram callback_data 上限为 64 字节。超长的 command 不能静默截断（会变成无效命令），
- * 这里改为直接丢弃对应按钮——用户仍可在文本输入框手动发送该 command。
- */
+/** Telegram callback_data 的 UTF-8 字节上限；供校验与兼容调用使用。 */
 export const TELEGRAM_CALLBACK_DATA_LIMIT = 64
 
 export function filterTelegramCallbackActions(
   actions: RemoteMessageAction[],
   limit: number = TELEGRAM_CALLBACK_DATA_LIMIT,
 ): RemoteMessageAction[] {
-  return actions.filter((action) => action.command.length <= limit)
+  return actions.filter((action) => Buffer.byteLength(action.command, 'utf8') <= limit)
+}
+
+export function buildRemoteSelectionActions(
+  rows: RemoteSelectionRow[],
+  options: {
+    selectCommand: string
+    listCommand: string
+    page?: number
+    totalPages?: number
+    selectedId?: string | null | undefined
+  },
+): RemoteMessageAction[] {
+  const page = options.page ?? 1
+  const totalPages = options.totalPages ?? 1
+  const actions: RemoteMessageAction[] = rows.map((row) => ({
+    label: `${row.id === options.selectedId ? '✓ ' : ''}${row.label}`,
+    command: `${options.selectCommand} ${row.id}`,
+    style: row.id === options.selectedId ? ('primary' as const) : ('default' as const),
+  }))
+  if (page > 1) actions.push({ label: '‹ 上一页', command: `${options.listCommand} ${page - 1}` })
+  if (totalPages > 1) {
+    actions.push({ label: `${page}/${totalPages}`, command: `${options.listCommand} ${page}` })
+  }
+  if (page < totalPages)
+    actions.push({ label: '下一页 ›', command: `${options.listCommand} ${page + 1}` })
+  return actions
 }
 
 /**
@@ -169,17 +339,33 @@ export function filterTelegramCallbackActions(
 export function buildRemoteSessionActions(
   rows: RemoteSelectionRow[],
   commandPrefix = '/',
+  options: {
+    page?: number
+    totalPages?: number
+    status?: RemoteSessionStatus
+    selectedId?: string | null | undefined
+  } = {},
 ): RemoteMessageAction[] {
   const prefix = commandPrefix.trim() || '/'
+  const filter = options.status == null ? '' : ` ${options.status}`
+  const page = options.page ?? 1
+  const totalPages = options.totalPages ?? 1
   return [
     { label: '全部', command: `${prefix}sessions` },
     { label: '运行中', command: `${prefix}sessions running` },
     { label: '空闲', command: `${prefix}sessions idle` },
     { label: '错误', command: `${prefix}sessions error` },
-    ...rows.slice(0, 6).map((row) => ({
-      label: `切换 ${row.label}`,
+    ...rows.slice(0, REMOTE_SELECTION_PAGE_SIZE).map((row) => ({
+      label: `${row.id === options.selectedId ? '✓ ' : ''}${row.label}`,
       command: `${prefix}use-session ${row.id}`,
-      style: 'primary' as const,
+      style: row.id === options.selectedId ? ('primary' as const) : ('default' as const),
     })),
+    ...(page > 1 ? [{ label: '‹ 上一页', command: `${prefix}sessions${filter} ${page - 1}` }] : []),
+    ...(totalPages > 1
+      ? [{ label: `${page}/${totalPages}`, command: `${prefix}sessions${filter} ${page}` }]
+      : []),
+    ...(page < totalPages
+      ? [{ label: '下一页 ›', command: `${prefix}sessions${filter} ${page + 1}` }]
+      : []),
   ]
 }
