@@ -4580,6 +4580,13 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(resumedNodeIds).toContain(frozenNodeId)
     expect(resumedNodeIds).not.toContain(editedNodeId)
     expect([...mockState.workflowRuns.values()]).toHaveLength(1)
+
+    // 系统 Prompt 必须与执行器描述同一张冻结图：含冻结步骤/名称，不含编辑后的。
+    const secondPrompt = String(secondConfig.systemPrompt ?? '')
+    expect(secondPrompt).toContain('Frozen node')
+    expect(secondPrompt).not.toContain('Edited node')
+    expect(secondPrompt).toContain('Stage 4 Workflow')
+    expect(secondPrompt).not.toContain('Edited Workflow')
   })
 
   it('does not resume a failed run after the Binding generation changes for the same workflow', async () => {

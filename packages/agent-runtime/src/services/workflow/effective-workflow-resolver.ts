@@ -44,6 +44,12 @@ export interface EffectiveWorkflowExecutionContext {
   workflowVersion: string | null
   workflowStatus: 'draft' | 'active' | 'archived' | null
   workflowEnabled: boolean | null
+  /**
+   * Prompt 消费的工作流视图：恢复冻结 Run 时 name/version/graph 均来自
+   * run 快照（graph_json + 名称/版本快照列），保证系统 Prompt、成员解析
+   * 与执行器描述同一张图（方案 6.4/6.6）。无 Run 时即当前定义。
+   */
+  workflowSnapshot: WorkflowItem | null
   graph: NormalizedWorkflowGraph | null
   graphDigest: string | null
   graphSource: EffectiveWorkflowGraphSource
@@ -111,6 +117,7 @@ export class EffectiveWorkflowResolver {
         workflowVersion: null,
         workflowStatus: null,
         workflowEnabled: null,
+        workflowSnapshot: null,
         graph: null,
         graphDigest: null,
         graphSource: 'none',
@@ -181,6 +188,7 @@ export class EffectiveWorkflowResolver {
       workflowVersion: effectiveWorkflow?.version ?? null,
       workflowStatus: workflow?.status ?? null,
       workflowEnabled: workflow?.enabled ?? null,
+      workflowSnapshot: effectiveWorkflow,
       graph,
       graphDigest: graph == null ? null : digestNormalizedWorkflowGraph(graph),
       graphSource: graph == null ? 'none' : resumableRun == null ? 'definition' : 'resumable-run',

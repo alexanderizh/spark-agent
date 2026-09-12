@@ -2625,10 +2625,10 @@ export class SessionService {
         legacyWorkflow,
         legacyGraph: legacyWorkflowGraph ?? null,
       })
-      workflow =
-        effectiveWorkflowContext.workflowId == null
-          ? null
-          : (new WorkflowRepository(this.db).get(effectiveWorkflowContext.workflowId) ?? workflow)
+      // Prompt、成员与执行器必须描述同一张图：恢复冻结 Run 时
+      // workflowSnapshot 携带 run 的 name/version/graph 快照，禁止回查当前
+      // 定义（否则系统 Prompt 描述编辑后步骤而执行器跑冻结图，见方案 6.4）。
+      workflow = effectiveWorkflowContext.workflowSnapshot
       workflowGraph = effectiveWorkflowContext.graph ?? undefined
       workflowMembers =
         workflowGraph == null ? [] : this.resolveWorkflowMembers(workflowGraph, runtimeAgent)

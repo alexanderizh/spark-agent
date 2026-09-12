@@ -206,6 +206,7 @@ describe('EffectiveWorkflowResolver', () => {
       workflowVersion: null,
       workflowStatus: null,
       workflowEnabled: null,
+      workflowSnapshot: null,
       graph: null,
       graphDigest: null,
       graphSource: 'none',
@@ -414,6 +415,70 @@ describe('EffectiveWorkflowResolver', () => {
           {
             code: 'workflow_run_snapshot_invalid',
             params: { runId: 'run-corrupt-snapshot' },
+          },
+        ],
+      },
+    })
+  })
+
+  it('fails closed when a structurally valid snapshot digest does not match the frozen graph', () => {
+    const workflow = makeWorkflow('workflow-digest-mismatch')
+    // 合法 JSON 但 digest 被篡改：必须命中 digest 比对分支，而不是 JSON 解析分支。
+    const tamperedRun = {
+      id: 'run-digest-mismatch',
+      session_id: 'session-a',
+      turn_id: 'turn-a',
+      workflow_id: workflow.id,
+      status: 'failed',
+      objective: 'resume safely',
+      graph_json: JSON.stringify(workflow.graph),
+      state_json: '{}',
+      executions_json: '[]',
+      atomic_executions_json: '[]',
+      completed_node_ids_json: '[]',
+      skipped_node_ids_json: '[]',
+      failed_node_json: null,
+      started_at: '2026-09-12T00:00:00.000Z',
+      updated_at: '2026-09-12T00:01:00.000Z',
+      ended_at: '2026-09-12T00:01:00.000Z',
+      workflow_binding_instance_id: 'binding-digest',
+      workflow_graph_digest: 'digest-tampered',
+      workflow_name_snapshot: workflow.name,
+      workflow_version_snapshot: workflow.version,
+      binding_source: 'session-override',
+    } satisfies WorkflowRunRow
+
+    const resolver = new EffectiveWorkflowResolver(
+      { get: () => makeBinding('override', workflow.id) },
+      { get: () => workflow },
+      {
+        findLatestResumable: () => null,
+        findLatestResumableByBinding: () => tamperedRun,
+      },
+    )
+
+    let caught: unknown
+    try {
+      resolver.resolve({
+        sessionId: 'session-a',
+        hostAgent: { id: 'agent-a', workflowId: null },
+        isMentionTurn: false,
+        agentAdapter: 'claude-sdk',
+        resolveWorkflowMembers: () => [],
+        runtimeIdentity: runtimeIdentityInput(),
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toMatchObject({
+      name: 'SparkError',
+      code: 'VALIDATION_FAILED',
+      context: {
+        issues: [
+          {
+            code: 'workflow_run_snapshot_invalid',
+            params: { runId: 'run-digest-mismatch' },
           },
         ],
       },
@@ -688,6 +753,7 @@ describe('effective workflow shadow observation', () => {
     const shadow = {
       ...legacy,
       bindingInstanceId: null,
+      workflowSnapshot: null,
       graph: null,
       resumableRunId: null,
       workflowVersion: '2.0.0',
@@ -723,6 +789,7 @@ describe('effective workflow shadow observation', () => {
     const shadow = {
       ...legacy,
       bindingInstanceId: null,
+      workflowSnapshot: null,
       graph: null,
       resumableRunId: null,
       workflowMemberSignatures: ['shadow-member-signature'],
