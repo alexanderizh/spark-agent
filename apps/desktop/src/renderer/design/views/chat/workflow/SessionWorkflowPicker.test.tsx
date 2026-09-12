@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   error: null as string | null,
   reload: vi.fn(),
   update: vi.fn(),
+  abandonRun: vi.fn(),
 }))
 
 vi.mock('./useSessionWorkflowBinding', () => ({
@@ -20,9 +21,11 @@ vi.mock('./useSessionWorkflowBinding', () => ({
     workflows: harness.workflows,
     loading: harness.loading,
     saving: false,
+    abandoning: false,
     error: harness.error,
     reload: harness.reload,
     update: harness.update,
+    abandonRun: harness.abandonRun,
   }),
 }))
 
@@ -39,6 +42,7 @@ describe('SessionWorkflowPicker', () => {
     root = createRoot(container)
     harness.update.mockReset()
     harness.reload.mockReset()
+    harness.abandonRun.mockReset()
     harness.workflows = []
     harness.loading = false
     harness.error = null
@@ -166,6 +170,46 @@ describe('SessionWorkflowPicker', () => {
     expect(retry?.textContent).toContain('工作流状态加载失败，重试')
     await act(async () => retry?.click())
     expect(harness.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires a separate confirmation before abandoning a failed run', async () => {
+    harness.state = {
+      ...makeState({ writeEnabled: true, runtimeRequested: false, runtimeEnabled: false }),
+      resumableRun: {
+        id: 'run-1',
+        workflowId: 'workflow-a',
+        status: 'failed',
+        objective: '首次尝试',
+        startedAt: '2026-09-12T00:00:00.000Z',
+        updatedAt: '2026-09-12T00:00:01.000Z',
+        endedAt: '2026-09-12T00:00:01.000Z',
+        graphDigest: 'digest',
+      },
+    }
+    await act(async () => root.render(<SessionWorkflowPicker sessionId="session-a" />))
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.session-workflow-chip')?.click(),
+    )
+
+    expect(container.textContent).toContain('上次运行失败，下一条 Host 消息将继续此运行')
+    const abandon = container.querySelector<HTMLButtonElement>('.session-workflow-abandon')
+    expect(abandon).not.toBeNull()
+    // 单独确认：第一次点击只展开确认，不触发放弃。
+    await act(async () => abandon?.click())
+    expect(harness.abandonRun).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('确认放弃此运行？')
+
+    const cancel = container.querySelector<HTMLButtonElement>('.session-workflow-abandon-cancel')
+    await act(async () => cancel?.click())
+    expect(container.textContent).not.toContain('确认放弃此运行？')
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.session-workflow-abandon')?.click(),
+    )
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.session-workflow-abandon-accept')?.click(),
+    )
+    expect(harness.abandonRun).toHaveBeenCalledTimes(1)
   })
 })
 

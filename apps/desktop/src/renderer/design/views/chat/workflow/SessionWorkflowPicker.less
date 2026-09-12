@@ -122,6 +122,52 @@
   color: var(--color-warning);
 }
 
+.session-workflow-abandon,
+.session-workflow-abandon-accept,
+.session-workflow-abandon-cancel {
+  height: 24px;
+  margin-top: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.session-workflow-abandon:hover:not(:disabled),
+.session-workflow-abandon-accept:hover:not(:disabled),
+.session-workflow-abandon-cancel:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  background: var(--color-fill-secondary);
+}
+
+.session-workflow-abandon:disabled,
+.session-workflow-abandon-accept:disabled,
+.session-workflow-abandon-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.session-workflow-abandon-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+}
+
+.session-workflow-abandon-confirm > span {
+  flex: 1 1 100%;
+}
+
+.session-workflow-abandon-accept {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
 @media (max-width: 560px) {
   .session-workflow-chip {
     max-width: 150px;

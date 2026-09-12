@@ -15,4 +15,11 @@ export function registerSessionWorkflowBindingIpc(input: {
     }
     return response
   })
+  typedIpcHandle('session:abandon-workflow-run', async (request) => {
+    const response = input.getSessionService().abandonWorkflowRun(request)
+    if (response.changed && response.binding != null) {
+      input.onChanged(request.sessionId, response.binding.bindingInstanceId)
+    }
+    return response
+  })
 }

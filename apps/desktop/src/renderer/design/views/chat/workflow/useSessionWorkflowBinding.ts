@@ -10,6 +10,7 @@ import { localizeBindingError } from './sessionWorkflowBindingModel'
 export function useSessionWorkflowBinding(sessionId: string | null) {
   const getBinding = useIpcInvoke('session:get-workflow-binding')
   const setBinding = useIpcInvoke('session:set-workflow-binding')
+  const abandonRunInvoke = useIpcInvoke('session:abandon-workflow-run')
   const listWorkflows = useIpcInvoke('workflow:list')
   const [state, setState] = useState<SessionGetWorkflowBindingResponse | null>(null)
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -98,13 +99,51 @@ export function useSessionWorkflowBinding(sessionId: string | null) {
     [reload, sessionId, setBinding.invoke, state],
   )
 
+  /** 「放弃并新建运行」：放弃当前代次失败 Run 并轮换代次；错误时刷新状态。 */
+  const abandonRun = useCallback(async () => {
+    if (
+      sessionId == null ||
+      state?.binding == null ||
+      state.resumableRun == null ||
+      state.resumableRun.status !== 'failed'
+    ) {
+      return
+    }
+    try {
+      const result = await abandonRunInvoke.invoke({
+        sessionId,
+        expectedBindingInstanceId: state.binding.bindingInstanceId,
+        runId: state.resumableRun.id,
+      })
+      if (result.error != null) {
+        setError(localizeBindingError(result.error))
+        await reload()
+        return
+      }
+      setState({
+        binding: result.binding,
+        effective: result.effective,
+        resumableRun: result.resumableRun,
+        canChange: true,
+        changeBlockers: [],
+        features: state.features,
+      })
+      setError(null)
+    } catch (cause) {
+      setError(localizeBindingError(cause))
+      await reload()
+    }
+  }, [abandonRunInvoke.invoke, reload, sessionId, state])
+
   return {
     state,
     workflows,
     loading: getBinding.loading || listWorkflows.loading,
     saving: setBinding.loading,
+    abandoning: abandonRunInvoke.loading,
     error,
     reload,
     update,
+    abandonRun,
   }
 }

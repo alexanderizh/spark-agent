@@ -12,16 +12,19 @@ export function SessionWorkflowPicker(props: {
   disabled?: boolean
   mentionActive?: boolean
 }): React.JSX.Element | null {
-  const { state, workflows, loading, saving, error, reload, update } = useSessionWorkflowBinding(
-    props.sessionId,
-  )
+  const { state, workflows, loading, saving, abandoning, error, reload, update, abandonRun } =
+    useSessionWorkflowBinding(props.sessionId)
   const [open, setOpen] = useState(false)
+  const [confirmAbandon, setConfirmAbandon] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
     const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setConfirmAbandon(false)
+      }
     }
     window.addEventListener('mousedown', close)
     return () => window.removeEventListener('mousedown', close)
@@ -92,6 +95,44 @@ export function SessionWorkflowPicker(props: {
           {props.mentionActive && (
             <div className="session-workflow-notice">
               本条 @成员消息不应用会话工作流，按成员自身配置执行。
+            </div>
+          )}
+          {state.resumableRun?.status === 'failed' && (
+            <div className="session-workflow-notice is-warning">
+              <div>上次运行失败，下一条 Host 消息将继续此运行。</div>
+              {confirmAbandon ? (
+                <div className="session-workflow-abandon-confirm">
+                  <span>确认放弃此运行？历史保留，下一条消息将新建运行。</span>
+                  <button
+                    type="button"
+                    className="session-workflow-abandon-accept"
+                    disabled={abandoning || blocked}
+                    onClick={() => {
+                      setConfirmAbandon(false)
+                      void abandonRun()
+                    }}
+                  >
+                    {abandoning ? '正在放弃…' : '确认放弃'}
+                  </button>
+                  <button
+                    type="button"
+                    className="session-workflow-abandon-cancel"
+                    disabled={abandoning}
+                    onClick={() => setConfirmAbandon(false)}
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="session-workflow-abandon"
+                  disabled={blocked || abandoning}
+                  onClick={() => setConfirmAbandon(true)}
+                >
+                  放弃并新建运行
+                </button>
+              )}
             </div>
           )}
           <WorkflowOption
