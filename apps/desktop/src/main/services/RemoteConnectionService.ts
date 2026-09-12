@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import http from 'node:http'
 import { URL } from 'node:url'
 import type { SettingsService } from '@spark/agent-runtime'
+import { createLogger } from '@spark/shared'
 import { DEFAULT_TELEGRAM_REMOTE_COMMANDS } from '@spark/protocol'
 import type {
   RemoteChannelType,
@@ -26,6 +27,7 @@ import {
 } from './qqProtocol.js'
 
 const SETTINGS_CATEGORY = 'remote-connections'
+const log = createLogger('remote-connections')
 const SETTINGS_KEY = 'data'
 
 type RemoteConnectionStore = {
@@ -1916,15 +1918,24 @@ export class RemoteConnectionService {
         target.scene === 'group'
           ? `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(target.targetId)}/messages`
           : `https://api.sgroup.qq.com/v2/users/${encodeURIComponent(target.targetId)}/messages`
-      await this.postJson(
-        endpointBase,
-        {
-          msg_type: 0,
-          content: chunk,
-          ...(reply != null ? { msg_id: reply.msgId, msg_seq: reply.msgSeq } : {}),
-        },
-        { Authorization: `QQBot ${token}` },
-      )
+      try {
+        await this.postJson(
+          endpointBase,
+          {
+            msg_type: 0,
+            content: chunk,
+            ...(reply != null ? { msg_id: reply.msgId, msg_seq: reply.msgSeq } : {}),
+          },
+          { Authorization: `QQBot ${token}` },
+        )
+      } catch (err) {
+        log.error(
+          `QQ 消息发送失败: scene=${target.scene} target=${target.targetId} ` +
+            `被动回复=${reply != null ? `msg_seq=${reply.msgSeq}` : '否(超窗/无凭据)'} ` +
+            `错误=${err instanceof Error ? err.message : String(err)}`,
+        )
+        throw err
+      }
     }
   }
 

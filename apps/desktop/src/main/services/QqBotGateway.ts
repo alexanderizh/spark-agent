@@ -158,7 +158,7 @@ export class QqBotGateway {
                   log.info('QQ 网关会话已恢复(RESUMED)')
                 }
                 ready = true
-                this.updateStatus({ running: true, lastError: undefined })
+                this.updateStatus({ running: true })
               } else {
                 log.info(`收到 QQ 事件: ${payload.t ?? '(无类型)'}`)
                 this.handleDispatch(payload)
