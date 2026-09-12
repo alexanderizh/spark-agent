@@ -8,6 +8,7 @@ import {
   SparkDatabase,
   TurnRequestRepository,
   WorkflowRepository,
+  WorkflowRunRepository,
 } from '@spark/storage'
 import {
   WorkflowBindingService,
@@ -440,6 +441,148 @@ describe('WorkflowBindingService', () => {
       expectedBindingInstanceId: null,
     })
     expect(disabled).toMatchObject({ changed: true, error: null, preflight: { ok: true } })
+  })
+
+  it('abandons the failed run of the current generation and rotates the binding', () => {
+    enableFlags(db)
+    new WorkflowRepository(db).create({
+      id: 'workflow-a',
+      name: 'Workflow A',
+      status: 'active',
+      enabled: true,
+      graph: { nodes: [{ id: 'step', kind: 'input', title: 'Step', config: {} }], edges: [] },
+    })
+    const set = service.set({
+      sessionId: 'session-a',
+      mode: 'override',
+      workflowId: 'workflow-a',
+      expectedBindingInstanceId: null,
+    })
+    if (set.binding == null) throw new Error('expected binding')
+    const runs = new WorkflowRunRepository(db)
+    const run = runs.create({
+      sessionId: 'session-a',
+      turnId: 'turn-1',
+      workflowId: 'workflow-a',
+      objective: 'first attempt',
+      graph: { nodes: [], edges: [] },
+      workflowBindingInstanceId: set.binding.bindingInstanceId,
+    })
+    runs.updateSnapshot(run.id, {
+      status: 'failed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      failedNode: { nodeId: 'step', agentId: 'agent-a', attempt: 1, error: { code: 'x' } },
+    })
+    expect(service.get('session-a').resumableRun?.id).toBe(run.id)
+
+    const abandoned = service.abandonRun({
+      sessionId: 'session-a',
+      expectedBindingInstanceId: set.binding.bindingInstanceId,
+      runId: run.id,
+    })
+    expect(abandoned).toMatchObject({
+      changed: true,
+      abandonedRunId: run.id,
+      error: null,
+      resumableRun: null,
+    })
+    expect(abandoned.binding).not.toBeNull()
+    if (abandoned.binding == null) throw new Error('expected rotated binding')
+    expect(abandoned.binding.bindingInstanceId).not.toBe(set.binding.bindingInstanceId)
+    expect(abandoned.binding.mode).toBe('override')
+    expect(abandoned.binding.workflowId).toBe('workflow-a')
+
+    const canceled = runs.get(run.id)
+    expect(canceled).toMatchObject({ status: 'canceled', ended_at: expect.any(String) })
+    // 历史保留 + 新代次不再自动恢复旧 Run。
+    expect(
+      runs.findLatestResumableByBinding('session-a', abandoned.binding.bindingInstanceId),
+    ).toBeNull()
+    expect(host.onBindingChanged).toHaveBeenCalledWith(
+      'session-a',
+      abandoned.binding.bindingInstanceId,
+    )
+  })
+
+  it('refuses to abandon a working run, stale views, and busy sessions', () => {
+    enableFlags(db)
+    new WorkflowRepository(db).create({
+      id: 'workflow-a',
+      name: 'Workflow A',
+      status: 'active',
+      enabled: true,
+      graph: { nodes: [{ id: 'step', kind: 'input', title: 'Step', config: {} }], edges: [] },
+    })
+    const set = service.set({
+      sessionId: 'session-a',
+      mode: 'override',
+      workflowId: 'workflow-a',
+      expectedBindingInstanceId: null,
+    })
+    if (set.binding == null) throw new Error('expected binding')
+    const runs = new WorkflowRunRepository(db)
+    const working = runs.create({
+      sessionId: 'session-a',
+      turnId: 'turn-1',
+      workflowId: 'workflow-a',
+      objective: 'still running',
+      graph: { nodes: [], edges: [] },
+      workflowBindingInstanceId: set.binding.bindingInstanceId,
+    })
+    const response = service.abandonRun({
+      sessionId: 'session-a',
+      expectedBindingInstanceId: set.binding.bindingInstanceId,
+      runId: working.id,
+    })
+    expect(response).toMatchObject({
+      changed: false,
+      abandonedRunId: null,
+      error: { code: 'workflow_run_working' },
+    })
+    expect(runs.get(working.id)?.status).toBe('working')
+
+    const stale = service.abandonRun({
+      sessionId: 'session-a',
+      expectedBindingInstanceId: set.binding.bindingInstanceId,
+      runId: 'run-that-vanished',
+    })
+    expect(stale).toMatchObject({ changed: false, error: { code: 'binding_conflict' } })
+
+    runs.updateSnapshot(working.id, {
+      status: 'failed',
+      state: {},
+      executions: [],
+      atomicExecutions: [],
+      completedNodeIds: [],
+      failedNode: { nodeId: 'step', agentId: 'agent-a', attempt: 1, error: { code: 'x' } },
+    })
+    blockers.push({ code: 'turn_queue_not_empty' })
+    const busy = service.abandonRun({
+      sessionId: 'session-a',
+      expectedBindingInstanceId: set.binding.bindingInstanceId,
+      runId: working.id,
+    })
+    expect(busy).toMatchObject({
+      changed: false,
+      error: { code: 'turn_queue_not_empty' },
+    })
+    expect(runs.get(working.id)?.status).toBe('failed')
+    expect(set.binding.bindingInstanceId).toBe(
+      new SessionWorkflowBindingRepository(db).get('session-a')?.bindingInstanceId,
+    )
+  })
+
+  it('rejects abandoning without the trusted write switch', () => {
+    expect(() =>
+      service.abandonRun({
+        sessionId: 'session-a',
+        expectedBindingInstanceId: 'missing',
+        runId: 'run-1',
+      }),
+    ).toThrow('尚未启用')
   })
 })
 

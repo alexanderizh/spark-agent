@@ -83,6 +83,8 @@ import type {
   SessionGetWorkflowBindingResponse,
   SessionSetWorkflowBindingRequest,
   SessionSetWorkflowBindingResponse,
+  SessionAbandonWorkflowRunRequest,
+  SessionAbandonWorkflowRunResponse,
   BindingChangeBlocker,
 } from '@spark/protocol'
 import type { ProjectSkillSummaryItem, SessionPermissionMode } from '@spark/protocol'
@@ -10782,6 +10784,13 @@ export class SessionService {
       getInMemoryChangeBlockers: (id) => this.getWorkflowBindingChangeBlockers(id),
       onBindingChanged: (id) => this.handleWorkflowBindingChanged(id),
     }).set(request)
+  }
+
+  abandonWorkflowRun(request: SessionAbandonWorkflowRunRequest): SessionAbandonWorkflowRunResponse {
+    return new WorkflowBindingService(this.db, {
+      getInMemoryChangeBlockers: (id) => this.getWorkflowBindingChangeBlockers(id),
+      onBindingChanged: (id) => this.handleWorkflowBindingChanged(id),
+    }).abandonRun(request)
   }
 
   async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {

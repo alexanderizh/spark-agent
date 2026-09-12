@@ -13,6 +13,8 @@ import {
 import type {
   BindingChangeBlocker,
   EffectiveWorkflowSummary,
+  SessionAbandonWorkflowRunRequest,
+  SessionAbandonWorkflowRunResponse,
   SessionGetWorkflowBindingResponse,
   SessionSetWorkflowBindingRequest,
   SessionSetWorkflowBindingResponse,
@@ -119,6 +121,119 @@ export class WorkflowBindingService {
       changed: result.changed,
       error: null,
       preflight,
+    }
+  }
+
+  /**
+   * 「放弃并新建运行」（方案 §7.3）：当前代次的 failed Run 标记 canceled 并
+   * 轮换 Binding 代次。历史保留；下一次 workflow_run 调用因代次不匹配新建 Run。
+   *
+   * 与普通切换分开确认：runId 必须仍是当前代次最新的 resumable Run，任何状态
+   * 漂移（并发恢复、并发放弃、换代）都返回 binding_conflict 让 UI 刷新。
+   */
+  abandonRun(request: SessionAbandonWorkflowRunRequest): SessionAbandonWorkflowRunResponse {
+    const flags = readSessionWorkflowFeatureFlags(new SettingsRepository(this.db))
+    if (!flags.writeEnabled) {
+      throw new SparkError('CAPABILITY_DISABLED', '会话工作流挂载功能尚未启用。')
+    }
+
+    const bindingRepo = new SessionWorkflowBindingRepository(this.db)
+    const runRepo = new WorkflowRunRepository(this.db)
+    const binding = bindingRepo.get(request.sessionId)
+    const resumable =
+      binding == null
+        ? null
+        : runRepo.findLatestResumableByBinding(request.sessionId, binding.bindingInstanceId)
+
+    // 前置校验全部走只读快照，避免事务内先抛 SparkError 带来的部分写。
+    if (
+      binding == null ||
+      binding.bindingInstanceId !== request.expectedBindingInstanceId ||
+      resumable == null ||
+      resumable.id !== request.runId
+    ) {
+      return {
+        binding,
+        effective: this.resolveEffectiveSummary(request.sessionId),
+        resumableRun: resumable == null ? null : toRunSummary(resumable),
+        abandonedRunId: null,
+        changed: false,
+        error: { code: 'binding_conflict' },
+      }
+    }
+    if (resumable.status === 'working') {
+      return {
+        binding,
+        effective: this.resolveEffectiveSummary(request.sessionId),
+        resumableRun: toRunSummary(resumable),
+        abandonedRunId: null,
+        changed: false,
+        error: { code: 'workflow_run_working' },
+      }
+    }
+
+    let newBinding: ReturnType<SessionWorkflowBindingRepository['rotateGeneration']>
+    try {
+      newBinding = this.db.raw.transaction(() => {
+        const session = new SessionRepository(this.db).findByIdOrFail(request.sessionId)
+        const blockers = this.collectChangeBlockers(
+          request.sessionId,
+          session.status,
+          session.archived_at,
+        )
+        if (blockers.length > 0) {
+          const blocker = blockers[0]
+          if (blocker == null) throw new Error('binding blocker collection was empty')
+          throw new SparkError('CONFLICT', localizeBlocker(blocker.code), {
+            blocker: blocker.code,
+          })
+        }
+        // markAbandoned 只影响 failed 行；0 行说明并发状态变化，按冲突处理。
+        if (runRepo.markAbandoned(resumable.id) !== 1) {
+          throw new SparkError('CONFLICT', localizeBlocker('binding_conflict'), {
+            blocker: 'binding_conflict',
+          })
+        }
+        return bindingRepo.rotateGeneration(request.sessionId, request.expectedBindingInstanceId)
+      })()
+    } catch (error) {
+      if (error instanceof SessionWorkflowBindingConflictError) {
+        return this.abandonFailureResponse(request.sessionId, { code: error.code })
+      }
+      if (
+        error instanceof SparkError &&
+        typeof error.context?.blocker === 'string' &&
+        isBindingChangeBlockerCode(error.context.blocker)
+      ) {
+        return this.abandonFailureResponse(request.sessionId, {
+          code: error.context.blocker,
+        })
+      }
+      throw error
+    }
+
+    this.host.onBindingChanged(request.sessionId, newBinding.bindingInstanceId)
+    return {
+      binding: newBinding,
+      effective: this.resolveEffectiveSummary(request.sessionId),
+      resumableRun: null,
+      abandonedRunId: resumable.id,
+      changed: true,
+      error: null,
+    }
+  }
+
+  private abandonFailureResponse(
+    sessionId: string,
+    error: BindingChangeBlocker,
+  ): SessionAbandonWorkflowRunResponse {
+    return {
+      binding: new SessionWorkflowBindingRepository(this.db).get(sessionId),
+      effective: this.resolveEffectiveSummary(sessionId),
+      resumableRun: this.resolveResumableRun(sessionId),
+      abandonedRunId: null,
+      changed: false,
+      error,
     }
   }
 
