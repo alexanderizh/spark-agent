@@ -1,9 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import type { WorkflowItem } from '@spark/storage'
+import type { AgentItem, WorkflowItem } from '@spark/storage'
+import { buildManagedAgentSystemPrompt } from './session-workflow-helpers.js'
 import {
   buildWorkflowBindingAuthorityPrompt,
   buildWorkflowSystemPrompt,
 } from './workflow-system-prompt.js'
+
+function makeAgent(): AgentItem {
+  return {
+    id: 'agent-host',
+    name: 'Host Agent',
+    description: 'Coordinates the current session.',
+    builtIn: false,
+    enabled: true,
+    isDefault: false,
+    providerProfileId: null,
+    modelId: null,
+    agentAdapter: 'claude-sdk',
+    permissionMode: 'claude-plan',
+    reasoningEffort: 'high',
+    prompt: 'Keep the response concise.',
+    ruleIds: [],
+    skillIds: [],
+    disabledSkillIds: [],
+    mcpServerIds: [],
+    hookConfig: {},
+    workflowId: null,
+    metadata: {},
+    createdAt: '2026-09-11T00:00:00.000Z',
+    updatedAt: '2026-09-11T00:00:00.000Z',
+  }
+}
 
 function makeWorkflow(): WorkflowItem {
   return {
@@ -95,5 +122,86 @@ describe('buildWorkflowSystemPrompt', () => {
 
     expect(buildWorkflowBindingAuthorityPrompt(workflow)).toBe('')
     expect(buildWorkflowSystemPrompt(workflow, 'workflow_run')).toBe('')
+  })
+})
+
+describe('managed Agent workflow prompt baseline', () => {
+  it('keeps an Agent without workflow free of workflow instructions', () => {
+    expect(buildManagedAgentSystemPrompt(makeAgent(), null)).toBe(
+      [
+        '[Managed Agent]',
+        'Agent: Host Agent (agent-host)',
+        'Description: Coordinates the current session.',
+        '[Agent Instructions]\nKeep the response concise.',
+      ].join('\n\n'),
+    )
+  })
+
+  it('keeps the full managed workflow prompt stable for every execution mode', () => {
+    expect({
+      workflow_run: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'workflow_run'),
+      codex_guided: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'codex_guided'),
+      guided: buildManagedAgentSystemPrompt(makeAgent(), makeWorkflow(), 'guided'),
+    }).toMatchInlineSnapshot(`
+      {
+        "codex_guided": "[Managed Agent]
+
+      Agent: Host Agent (agent-host)
+
+      Description: Coordinates the current session.
+
+      [Agent Instructions]
+      Keep the response concise.
+
+      [Workflow Execution Plan]
+
+      Workflow: New approval workflow (workflow-new)
+
+      Description: The newly selected workflow.
+
+      This runtime does not expose \`workflow_run\`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.
+
+      1. New plan step [kind=plan]
+         prompt: Use the new plan.",
+        "guided": "[Managed Agent]
+
+      Agent: Host Agent (agent-host)
+
+      Description: Coordinates the current session.
+
+      [Agent Instructions]
+      Keep the response concise.
+
+      [Workflow Execution Plan]
+
+      Workflow: New approval workflow (workflow-new)
+
+      Description: The newly selected workflow.
+
+      Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.
+
+      1. New plan step [kind=plan]
+         prompt: Use the new plan.",
+        "workflow_run": "[Managed Agent]
+
+      Agent: Host Agent (agent-host)
+
+      Description: Coordinates the current session.
+
+      [Agent Instructions]
+      Keep the response concise.
+
+      [Workflow Execution Plan]
+
+      Workflow: New approval workflow (workflow-new)
+
+      Description: The newly selected workflow.
+
+      When workflow_run is available, call \`mcp__spark_team__workflow_run\` exactly once with the current user objective. The tool executes ready agent nodes in parallel waves, runs atomic nodes serially, and carries outputKey state between nodes.
+
+      1. New plan step [kind=plan]
+         prompt: Use the new plan.",
+      }
+    `)
   })
 })

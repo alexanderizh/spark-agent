@@ -14,6 +14,7 @@ import {
   AgentRepository,
   WorkflowRepository,
   WorkflowRunRepository,
+  type WorkflowRunBindingSource,
   TeamDispatchRepository,
   TeamDiscussionRepository,
   TeamDefinitionRepository,
@@ -22,6 +23,7 @@ import {
   TurnRequestRepository,
   SessionSummaryRepository,
   SessionCollaborationRepository,
+  SessionWorkflowBindingRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -77,6 +79,11 @@ import type {
   SessionReference,
   SessionReferenceInput,
   SessionReferenceCandidate,
+  SessionWorkflowBindingCreate,
+  SessionGetWorkflowBindingResponse,
+  SessionSetWorkflowBindingRequest,
+  SessionSetWorkflowBindingResponse,
+  BindingChangeBlocker,
 } from '@spark/protocol'
 import type { ProjectSkillSummaryItem, SessionPermissionMode } from '@spark/protocol'
 import {
@@ -88,7 +95,7 @@ import {
   pickUserMessagePresentation,
   getAutoRouterAdapterForProviderId,
 } from '@spark/protocol'
-import { estimateTokens, normalizeReasoningBudgetTokens } from '@spark/shared'
+import { estimateTokens, normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
@@ -111,6 +118,19 @@ import {
 } from './team-runtime-tooling.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
+import {
+  EffectiveWorkflowResolver,
+  digestNormalizedWorkflowGraph,
+  observeEffectiveWorkflowResolutionShadow,
+  type EffectiveWorkflowExecutionContext,
+} from './workflow/effective-workflow-resolver.js'
+import { resolveWorkflowExecutionModeCapability } from './workflow/workflow-execution-mode.js'
+import { readSessionWorkflowFeatureFlags } from './workflow/session-workflow-feature-flags.js'
+import { WorkflowBindingService } from './workflow/workflow-binding.service.js'
+import {
+  assertSessionWorkflowBindingCreationReady,
+  createSessionAndBindingAtomically,
+} from './workflow/session-workflow-creation.js'
 import { buildContextLedger } from './context-ledger.js'
 import { joinDistinctPromptSections } from './prompt-deduplication.js'
 import { TurnRuntimeMetricsTracker } from './turn-runtime-metrics.js'
@@ -1649,6 +1669,7 @@ export class SessionService {
     cliSparkOverride?: CliSparkOverride | null
     title?: string
     workspaceId?: string
+    workflowBinding?: SessionWorkflowBindingCreate
   }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = crypto.randomUUID()
@@ -1657,36 +1678,45 @@ export class SessionService {
       if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, id)
     }
     const agent = this.resolveAgent(params.agentId)
-    const row = sessionRepo.create({
-      id,
-      kind: 'agent',
-      title: params.title?.trim() || '新会话',
-      status: 'idle',
-      projectId: params.workspaceId ?? 'default',
-      workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
-      providerProfileId: params.providerProfileId ?? agent.providerProfileId ?? '',
-      ...(params.modelId !== undefined
-        ? { modelId: params.modelId }
-        : agent.modelId != null
-          ? { modelId: agent.modelId }
-          : {}),
-      agentId: agent.id,
-      agentAdapter: params.agentAdapter ?? normalizeAgentAdapter(agent.agentAdapter),
-      permissionMode: params.permissionMode ?? normalizePermissionMode(agent.permissionMode),
-      ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
-      reasoningEffort: params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
+    assertSessionWorkflowBindingCreationReady(this.db, params.workflowBinding, agent.id)
+    const row = createSessionAndBindingAtomically({
+      db: this.db,
+      binding: params.workflowBinding,
+      createSession: () =>
+        sessionRepo.create({
+          id,
+          kind: 'agent',
+          title: params.title?.trim() || '新会话',
+          status: 'idle',
+          projectId: params.workspaceId ?? 'default',
+          workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
+          providerProfileId: params.providerProfileId ?? agent.providerProfileId ?? '',
+          ...(params.modelId !== undefined
+            ? { modelId: params.modelId }
+            : agent.modelId != null
+              ? { modelId: agent.modelId }
+              : {}),
+          agentId: agent.id,
+          agentAdapter: params.agentAdapter ?? normalizeAgentAdapter(agent.agentAdapter),
+          permissionMode: params.permissionMode ?? normalizePermissionMode(agent.permissionMode),
+          ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
+          reasoningEffort:
+            params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
+        }),
+      applyMetadata: (created) => {
+        if (params.debugMode !== undefined) {
+          sessionRepo.patchMetadata(created.id, { debugMode: params.debugMode })
+        }
+        if (params.fastMode !== undefined) {
+          sessionRepo.patchMetadata(created.id, { fastMode: params.fastMode })
+        }
+        if (params.cliSparkOverride !== undefined) {
+          sessionRepo.patchMetadata(created.id, {
+            cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
+          })
+        }
+      },
     })
-    if (params.debugMode !== undefined) {
-      sessionRepo.patchMetadata(row.id, { debugMode: params.debugMode })
-    }
-    if (params.fastMode !== undefined) {
-      sessionRepo.patchMetadata(row.id, { fastMode: params.fastMode })
-    }
-    if (params.cliSparkOverride !== undefined) {
-      sessionRepo.patchMetadata(row.id, {
-        cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
-      })
-    }
     const { session } = await this.updateSession({ sessionId: row.id })
     return { sessionId: row.id as SessionId, createdAt: row.created_at, session }
   }
@@ -2216,14 +2246,14 @@ export class SessionService {
       !isMentionTurn && sessionTeamConfig?.enabled === true
         ? (new AgentRepository(this.db).get(sessionTeamConfig.hostAgentId) ?? agent)
         : agent
-    const workflow =
+    let workflow =
       runtimeAgent.workflowId != null
         ? new WorkflowRepository(this.db).get(runtimeAgent.workflowId)
         : null
-    const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
-    const workflowMembers =
+    let workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
+    let workflowMembers =
       workflowGraph != null ? this.resolveWorkflowMembers(workflowGraph, agent) : []
-    const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
+    let enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：会话运行时是普通 turn 的唯一权威，保证 UI 当前选择与实际执行一致。
     // Agent 绑定只用于 @mention、团队 Host，或旧会话缺少 provider 时的兼容兜底。
     const explicitProviderProfileId = isMentionTurn
@@ -2484,10 +2514,30 @@ export class SessionService {
       activeCliSparkOverride != null
         ? `${cliProvider.id}::${effectiveRuntimeProviderProfileId}`
         : effectiveRuntimeProviderProfileId
+    let workflowCanUseManagedExecutor =
+      workflowGraph != null &&
+      hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, runtimeAgent.id)
+    let workflowExecutionMode = resolveWorkflowExecutionModeCapability({
+      agentAdapter,
+      hasWorkflowGraph: workflowGraph != null,
+      managedExecutorAvailable: workflowCanUseManagedExecutor,
+      isMentionTurn,
+    })
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
     const nativeThreadGeneration = readCodexNativeThreadGeneration(session.metadata_json)
-    const stableSdkSessionId = isMentionTurn
+    const workflowRuntimeIdentityInput = {
+      makeRuntimeSessionId: this.resumeGate.makeRuntimeSessionId.bind(this.resumeGate),
+      sessionId,
+      providerProfileId: resumeProviderProfileId,
+      model,
+      agentAdapter,
+      turnId,
+      nativeThreadGeneration,
+      agentId: agent.id,
+      isMentionTurn,
+    }
+    const legacyStableSdkSessionId = isMentionTurn
       ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
           resumeProviderProfileId,
@@ -2502,7 +2552,14 @@ export class SessionService {
           agentAdapter,
           scopeRuntimeSessionIdentity(undefined, nativeThreadGeneration),
         )
-    const codexNativeThreadBindingKey = scopeCodexNativeThreadBindingKey(
+    const legacyTurnSdkSessionId = this.resumeGate.makeRuntimeSessionId(
+      sessionId,
+      resumeProviderProfileId,
+      model,
+      agentAdapter,
+      isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
+    )
+    const legacyCodexNativeThreadBindingKey = scopeCodexNativeThreadBindingKey(
       this.resumeGate.makeRuntimeSessionId(
         sessionId,
         resumeProviderProfileId,
@@ -2512,6 +2569,83 @@ export class SessionService {
       ),
       nativeThreadGeneration,
     )
+    const legacySparkLedgerBindingKey = legacyStableSdkSessionId
+    const legacyRuntimeIdentity = {
+      stableSdkSessionId: legacyStableSdkSessionId,
+      turnSdkSessionId: legacyTurnSdkSessionId,
+      codexNativeThreadBindingKey: legacyCodexNativeThreadBindingKey,
+      sparkLedgerBindingKey: legacySparkLedgerBindingKey,
+    }
+    const legacyWorkflow = workflow
+    const legacyWorkflowGraph = workflowGraph
+    const legacyWorkflowMembers = workflowMembers
+    const legacyWorkflowExecutionMode = workflowExecutionMode
+    const workflowRuntimeFlags = readSessionWorkflowFeatureFlags(new SettingsRepository(this.db))
+    const workflowRuntimeBinding = isMentionTurn
+      ? null
+      : new SessionWorkflowBindingRepository(this.db).get(sessionId)
+    observeEffectiveWorkflowResolutionShadow({
+      db: this.db,
+      sessionId,
+      hostAgent: runtimeAgent,
+      isMentionTurn,
+      agentAdapter,
+      legacyWorkflowMembers,
+      resolveWorkflowMembers: (candidateGraph) =>
+        candidateGraph === legacyWorkflowGraph
+          ? legacyWorkflowMembers
+          : this.resolveWorkflowMembers(candidateGraph, runtimeAgent),
+      runtimeIdentity: workflowRuntimeIdentityInput,
+      legacyRuntimeIdentity,
+      legacyWorkflow,
+      legacyGraph: legacyWorkflowGraph ?? null,
+      legacyExecutionMode: legacyWorkflowExecutionMode,
+    })
+    let effectiveWorkflowContext: EffectiveWorkflowExecutionContext | null = null
+    // Runtime takeover is intentionally limited to sessions that have an
+    // explicit Binding row. Legacy sessions keep the pre-stage-4 resolver,
+    // Run lookup, graph and identity semantics even when the flag is on.
+    if (workflowRuntimeFlags.runtimeEnabled && workflowRuntimeBinding != null) {
+      effectiveWorkflowContext = new EffectiveWorkflowResolver(
+        new SessionWorkflowBindingRepository(this.db),
+        new WorkflowRepository(this.db),
+        new WorkflowRunRepository(this.db),
+      ).resolve({
+        sessionId,
+        hostAgent: runtimeAgent,
+        isMentionTurn,
+        agentAdapter,
+        resolveWorkflowMembers: (candidateGraph) =>
+          candidateGraph === legacyWorkflowGraph
+            ? legacyWorkflowMembers
+            : this.resolveWorkflowMembers(candidateGraph, runtimeAgent),
+        runtimeIdentity: workflowRuntimeIdentityInput,
+        legacyWorkflow,
+        legacyGraph: legacyWorkflowGraph ?? null,
+      })
+      workflow =
+        effectiveWorkflowContext.workflowId == null
+          ? null
+          : (new WorkflowRepository(this.db).get(effectiveWorkflowContext.workflowId) ?? workflow)
+      workflowGraph = effectiveWorkflowContext.graph ?? undefined
+      workflowMembers =
+        workflowGraph == null ? [] : this.resolveWorkflowMembers(workflowGraph, runtimeAgent)
+      enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
+      workflowCanUseManagedExecutor =
+        workflowGraph != null &&
+        hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, runtimeAgent.id)
+      workflowExecutionMode =
+        effectiveWorkflowContext.executionMode === 'none'
+          ? 'guided'
+          : effectiveWorkflowContext.executionMode
+    }
+    const activeRuntimeIdentity = effectiveWorkflowContext?.runtimeIdentity ?? legacyRuntimeIdentity
+    const {
+      stableSdkSessionId,
+      turnSdkSessionId,
+      codexNativeThreadBindingKey,
+      sparkLedgerBindingKey,
+    } = activeRuntimeIdentity
     const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
       model,
@@ -2534,19 +2668,10 @@ export class SessionService {
       hasImageAttachments: (attachments ?? []).some((attachment) => attachment.type === 'image'),
     })
     const codexRuntimeLeaseKey = `host:${sessionId}`
-    const sdkSessionId = sdkResumeSafe
-      ? stableSdkSessionId
-      : this.resumeGate.makeRuntimeSessionId(
-          sessionId,
-          resumeProviderProfileId,
-          model,
-          agentAdapter,
-          isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
-        )
+    const sdkSessionId = sdkResumeSafe ? stableSdkSessionId : turnSdkSessionId
     // Spark 引擎续跑：bindingKey 复用 stableSdkSessionId（含 provider/model/adapter 与
     // mention 身份）；ledger binding 存在即允许 resume——引擎原生 openSession 重放，
     // 账本缺失时执行器自动降级新会话并回写，不走 claude 口径的 sdkResumeSafe 白名单。
-    const sparkLedgerBindingKey = stableSdkSessionId
     const sparkLedgerSessionId =
       adapterKind === 'spark'
         ? readSparkLedgerSessionId(session.metadata_json, sparkLedgerBindingKey)
@@ -2726,7 +2851,7 @@ export class SessionService {
         turnId,
         ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
         agentId: runtimeAgent.id,
-        ...(runtimeAgent.workflowId != null ? { workflowId: runtimeAgent.workflowId } : {}),
+        ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
       },
     )
     const webSearchMcpServer =
@@ -2765,15 +2890,6 @@ export class SessionService {
     runtimeMetrics.pauseMcpConfiguration()
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
-    const workflowCanUseManagedExecutor =
-      workflowGraph != null &&
-      hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, runtimeAgent.id)
-    const workflowExecutionMode =
-      workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
-        ? 'guided'
-        : resolveEngineKind(agentAdapter) === 'claude-sdk'
-          ? 'workflow_run'
-          : 'codex_guided'
     const managedAgentPrompt = buildManagedAgentSystemPrompt(
       runtimeAgent,
       workflow,
@@ -2864,9 +2980,32 @@ export class SessionService {
             exposeTeamDispatchTools: hasDispatchableTeamMembers,
             ...(hasWorkflowExecutionPlan
               ? {
-                  workflowGraph,
+                  workflowGraph: workflowGraph as NormalizedWorkflowGraph,
                   workflowWorkerIds: enabledWorkflowWorkerIds,
                   ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
+                  ...(effectiveWorkflowContext != null
+                    ? {
+                        ...(effectiveWorkflowContext.bindingInstanceId != null
+                          ? {
+                              workflowBindingInstanceId: effectiveWorkflowContext.bindingInstanceId,
+                            }
+                          : {}),
+                        workflowGraphDigest:
+                          effectiveWorkflowContext.graphDigest ??
+                          digestNormalizedWorkflowGraph(workflowGraph as NormalizedWorkflowGraph),
+                        ...(effectiveWorkflowContext.workflowName != null
+                          ? { workflowNameSnapshot: effectiveWorkflowContext.workflowName }
+                          : {}),
+                        ...(effectiveWorkflowContext.workflowVersion != null
+                          ? { workflowVersionSnapshot: effectiveWorkflowContext.workflowVersion }
+                          : {}),
+                        ...(effectiveWorkflowContext.source === 'session-inherit' ||
+                        effectiveWorkflowContext.source === 'session-override' ||
+                        effectiveWorkflowContext.source === 'legacy-agent'
+                          ? { workflowBindingSource: effectiveWorkflowContext.source }
+                          : {}),
+                      }
+                    : {}),
                   ...(attachments != null && attachments.length > 0
                     ? { workflowAttachments: mapSessionAttachmentsToDispatch(attachments) }
                     : {}),
@@ -3675,7 +3814,7 @@ export class SessionService {
               turnId,
               ...(primaryWorkspaceId != null ? { projectId: primaryWorkspaceId } : {}),
               agentId: runtimeAgent.id,
-              ...(runtimeAgent.workflowId != null ? { workflowId: runtimeAgent.workflowId } : {}),
+              ...(workflow?.id != null ? { workflowId: workflow.id } : {}),
             })
           ).map((entry) => ({
             name: entry.qualifiedName,
@@ -6382,6 +6521,15 @@ export class SessionService {
     workflowWorkerIds?: ReadonlySet<string>
     /** Managed workflow id, for run persistence/resume. */
     workflowId?: string
+    /** Binding generation frozen for this Host turn; omitted for legacy callers. */
+    workflowBindingInstanceId?: string
+    /** Digest of the normalized graph frozen for this Host turn. */
+    workflowGraphDigest?: string
+    /** Definition metadata captured with a newly-created run. */
+    workflowNameSnapshot?: string
+    workflowVersionSnapshot?: string
+    /** Source of the workflow selection used by a newly-created run. */
+    workflowBindingSource?: WorkflowRunBindingSource
     /** 真实团队讨论上下文（workflow-only 合成 teamConfig 路径为空）。 */
     discussionId?: string
     discussionRoundIndex?: number
@@ -7159,13 +7307,21 @@ export class SessionService {
                 )
               }
 
-              // 自动续跑：同 (session, workflow) 有未完成 run 则复用其 state + 已完成节点（仅取仍存在于当前图的节点）。
+              // 自动续跑：Binding-aware sessions only reuse the current generation. Legacy
+              // sessions retain the historical (session, workflow) lookup.
               let runId: string | null = null
               let initialState: Record<string, unknown> | undefined
               let initialCompletedNodeIds: string[] | undefined
               let initialSkippedNodeIds: string[] | undefined
               if (ctx.workflowId != null) {
-                const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
+                const resumable =
+                  ctx.workflowBindingInstanceId != null
+                    ? runRepo.findLatestResumableByBinding(
+                        ctx.sessionId,
+                        ctx.workflowBindingInstanceId,
+                        ctx.workflowId,
+                      )
+                    : runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
                 if (resumable != null) {
                   runId = resumable.id
                   try {
@@ -7202,6 +7358,21 @@ export class SessionService {
                     workflowId: ctx.workflowId,
                     objective,
                     graph: ctx.workflowGraph as unknown as Record<string, unknown>,
+                    ...(ctx.workflowBindingInstanceId != null
+                      ? { workflowBindingInstanceId: ctx.workflowBindingInstanceId }
+                      : {}),
+                    ...(ctx.workflowGraphDigest != null
+                      ? { workflowGraphDigest: ctx.workflowGraphDigest }
+                      : {}),
+                    ...(ctx.workflowNameSnapshot != null
+                      ? { workflowNameSnapshot: ctx.workflowNameSnapshot }
+                      : {}),
+                    ...(ctx.workflowVersionSnapshot != null
+                      ? { workflowVersionSnapshot: ctx.workflowVersionSnapshot }
+                      : {}),
+                    ...(ctx.workflowBindingSource != null
+                      ? { bindingSource: ctx.workflowBindingSource }
+                      : {}),
                   }).id
                   log.info('workflow run: start', {
                     sessionId: ctx.sessionId,
@@ -10599,6 +10770,20 @@ export class SessionService {
     return this.getCrudController().extractSessionTitle(sessionId)
   }
 
+  getWorkflowBinding(sessionId: string): SessionGetWorkflowBindingResponse {
+    return new WorkflowBindingService(this.db, {
+      getInMemoryChangeBlockers: (id) => this.getWorkflowBindingChangeBlockers(id),
+      onBindingChanged: (id) => this.handleWorkflowBindingChanged(id),
+    }).get(sessionId)
+  }
+
+  setWorkflowBinding(request: SessionSetWorkflowBindingRequest): SessionSetWorkflowBindingResponse {
+    return new WorkflowBindingService(this.db, {
+      getInMemoryChangeBlockers: (id) => this.getWorkflowBindingChangeBlockers(id),
+      onBindingChanged: (id) => this.handleWorkflowBindingChanged(id),
+    }).set(request)
+  }
+
   async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {
     return this.getCrudController().getSessionRuntimeState(sessionId)
   }
@@ -10611,6 +10796,32 @@ export class SessionService {
 
   bumpMcpVersion(): void {
     this.mcpVersion += 1
+  }
+
+  private getWorkflowBindingChangeBlockers(sessionId: string): BindingChangeBlocker[] {
+    const blockers: BindingChangeBlocker[] = []
+    if (
+      this.turnRegistry.hasActiveSession(sessionId) ||
+      this.turnRegistry.isSessionStarting(sessionId) ||
+      this.teamDispatchService?.hasActiveDispatches(sessionId) === true
+    ) {
+      blockers.push({ code: 'session_busy' })
+    }
+    if ((this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
+      blockers.push({ code: 'turn_queue_not_empty' })
+    }
+    if (this.pendingPlanApprovals.has(sessionId)) blockers.push({ code: 'approval_pending' })
+    if (this.pendingUserQuestionGate.isBlocked(sessionId)) {
+      blockers.push({ code: 'question_pending' })
+    }
+    return blockers
+  }
+
+  private handleWorkflowBindingChanged(sessionId: string): void {
+    // binding_instance_id is the per-session runtime generation. Changing it
+    // rotates SDK/native/ledger identity only for this session on the next turn.
+    // Idle Codex app-server leases are recycled narrowly; no global MCP bump.
+    this.restartIdleCodexRuntimes(`host:${sessionId}`)
   }
 
   applyPermissionModeChange(sessionId: string, permissionMode: SessionPermissionMode): void {

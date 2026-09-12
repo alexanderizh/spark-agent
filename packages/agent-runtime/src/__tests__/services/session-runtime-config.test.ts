@@ -17,6 +17,7 @@ import {
   buildMediaGenerationSystemPrompt,
   isSdkResumeSafe,
 } from '../../services/session.service.js'
+import { registerSessionWorkflowRuntimeBaselineTests } from './session-workflow-runtime-baseline.js'
 
 type SessionRow = {
   id: string
@@ -113,6 +114,9 @@ type MockAgentItem = {
 type MockWorkflowItem = {
   id: string
   name: string
+  version?: string
+  status?: 'draft' | 'active' | 'archived'
+  enabled?: boolean
   description: string
   graph: {
     nodes: Array<Record<string, unknown>>
@@ -180,6 +184,17 @@ const mockState = vi.hoisted(() => ({
   >(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
+  workflowBindings: new Map<
+    string,
+    {
+      sessionId: string
+      bindingInstanceId: string
+      mode: 'inherit' | 'override' | 'disabled'
+      workflowId: string | null
+      createdAt: string
+      updatedAt: string
+    }
+  >(),
   discussions: new Map<
     string,
     {
@@ -219,10 +234,16 @@ const mockState = vi.hoisted(() => ({
       executions_json: string
       atomic_executions_json: string
       completed_node_ids_json: string
+      skipped_node_ids_json: string
       failed_node_json: string | null
       started_at: string
       updated_at: string
       ended_at: string | null
+      workflow_binding_instance_id: string | null
+      workflow_graph_digest: string | null
+      workflow_name_snapshot: string | null
+      workflow_version_snapshot: string | null
+      binding_source: 'legacy-agent' | 'session-inherit' | 'session-override' | null
     }
   >(),
   nextSdkTurnErrors: [] as string[],
@@ -266,6 +287,14 @@ vi.mock('@spark/shared/keystore', () => ({
 vi.mock('../../services/debug-log-server.service.js', () => ({
   getDebugLogServer: () => ({ start: async () => 43123 }),
 }))
+
+vi.mock('../../sdk/spark-engine/spark-engine-executor.js', async () => {
+  const { ClaudeSDKExecutor } = await import('../../sdk/index.js')
+  return {
+    SparkEngineExecutor: ClaudeSDKExecutor,
+    isSparkEngineAvailable: vi.fn(async () => true),
+  }
+})
 
 vi.mock('@spark/storage', () => {
   const now = () => '2026-05-28T00:00:00.000Z'
@@ -1114,6 +1143,27 @@ vi.mock('@spark/storage', () => {
       return mockState.workflows.get(id) ?? null
     }
   }
+  class SessionWorkflowBindingRepository {
+    get(sessionId: string) {
+      return mockState.workflowBindings.get(sessionId) ?? null
+    }
+    create(params: {
+      sessionId: string
+      mode: 'inherit' | 'override' | 'disabled'
+      workflowId?: string
+    }) {
+      const binding = {
+        sessionId: params.sessionId,
+        bindingInstanceId: `binding-${params.sessionId}`,
+        mode: params.mode,
+        workflowId: params.mode === 'override' ? (params.workflowId ?? null) : null,
+        createdAt: now(),
+        updatedAt: now(),
+      }
+      mockState.workflowBindings.set(params.sessionId, binding)
+      return binding
+    }
+  }
   class WorkflowRunRepository {
     constructor(_db?: unknown) {}
 
@@ -1123,6 +1173,11 @@ vi.mock('@spark/storage', () => {
       workflowId: string
       objective: string
       graph: Record<string, unknown>
+      workflowBindingInstanceId?: string | null
+      workflowGraphDigest?: string | null
+      workflowNameSnapshot?: string | null
+      workflowVersionSnapshot?: string | null
+      bindingSource?: 'legacy-agent' | 'session-inherit' | 'session-override' | null
     }): { id: string } {
       const id = `workflow-run-${mockState.workflowRuns.size + 1}`
       mockState.workflowRuns.set(id, {
@@ -1137,10 +1192,16 @@ vi.mock('@spark/storage', () => {
         executions_json: '[]',
         atomic_executions_json: '[]',
         completed_node_ids_json: '[]',
+        skipped_node_ids_json: '[]',
         failed_node_json: null,
         started_at: now(),
         updated_at: now(),
         ended_at: null,
+        workflow_binding_instance_id: params.workflowBindingInstanceId ?? null,
+        workflow_graph_digest: params.workflowGraphDigest ?? null,
+        workflow_name_snapshot: params.workflowNameSnapshot ?? null,
+        workflow_version_snapshot: params.workflowVersionSnapshot ?? null,
+        binding_source: params.bindingSource ?? null,
       })
       return { id }
     }
@@ -1158,6 +1219,24 @@ vi.mock('@spark/storage', () => {
       )
     }
 
+    findLatestResumableByBinding(
+      sessionId: string,
+      bindingInstanceId: string,
+      workflowId?: string,
+    ) {
+      return (
+        [...mockState.workflowRuns.values()]
+          .filter(
+            (row) =>
+              row.session_id === sessionId &&
+              row.workflow_binding_instance_id === bindingInstanceId &&
+              (workflowId == null || row.workflow_id === workflowId) &&
+              (row.status === 'working' || row.status === 'failed'),
+          )
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+      )
+    }
+
     updateSnapshot(
       id: string,
       params: {
@@ -1166,6 +1245,7 @@ vi.mock('@spark/storage', () => {
         executions: unknown[]
         atomicExecutions: unknown[]
         completedNodeIds: string[]
+        skippedNodeIds?: string[]
         failedNode?: unknown
         endedAt?: string | null
       },
@@ -1177,6 +1257,7 @@ vi.mock('@spark/storage', () => {
       row.executions_json = JSON.stringify(params.executions)
       row.atomic_executions_json = JSON.stringify(params.atomicExecutions)
       row.completed_node_ids_json = JSON.stringify(params.completedNodeIds)
+      row.skipped_node_ids_json = JSON.stringify(params.skippedNodeIds ?? [])
       row.failed_node_json =
         params.failedNode === undefined ? null : JSON.stringify(params.failedNode)
       row.updated_at = now()
@@ -1389,6 +1470,7 @@ vi.mock('@spark/storage', () => {
     TeamDefinitionRepository,
     AgentRepository,
     WorkflowRepository,
+    SessionWorkflowBindingRepository,
     WorkflowRunRepository,
     ContextPreferenceRepository,
     SessionSummaryRepository,
@@ -1492,6 +1574,8 @@ vi.mock('../../sdk/index.js', () => {
     CodexCliExecutor: MockTurnExecutor,
     CodexOpenAIExecutor: MockTurnExecutor,
     CodexAppServerExecutor: MockTurnExecutor,
+    isSparkEngineAvailable: vi.fn(async () => true),
+    resolveSparkUpstreamProtocol: vi.fn(() => ({ ok: true, protocol: 'responses' })),
   }
 })
 
@@ -1583,6 +1667,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workspaces.clear()
     mockState.agents.clear()
     mockState.workflows.clear()
+    mockState.workflowBindings.clear()
     mockState.discussions.clear()
     mockState.threadMessages.length = 0
     mockState.workflowRuns.clear()
@@ -1632,6 +1717,44 @@ describe('SessionService runtime provider/model resolution', () => {
       keystore_ref: 'key-anthropic',
       is_default: 0,
     })
+  })
+
+  registerSessionWorkflowRuntimeBaselineTests({
+    state: {
+      sdkConfigs: mockState.sdkConfigs,
+      workflowRuns: mockState.workflowRuns,
+      nextSdkTurnErrors: mockState.nextSdkTurnErrors,
+      eventRows: mockState.events,
+    },
+    createService: (onEvent) => new SessionService({} as never, onEvent),
+    seedOpenAiProvider: (id) =>
+      seedProvider({
+        id,
+        provider_type: 'openai',
+        name: id,
+        config_json: JSON.stringify({
+          defaultModel: 'gpt-5.2-codex',
+          modelIds: ['gpt-5.2-codex'],
+          apiEndpoint: 'https://api.openai.com/v1',
+          codexApiKind: 'responses',
+        }),
+        keystore_ref: `key-${id}`,
+        is_default: 0,
+      }),
+    setAgent: (id, input) =>
+      mockState.agents.set(
+        id,
+        makeAgent({
+          id,
+          name: id,
+          workflowId: input.workflowId,
+          providerProfileId: input.providerProfileId,
+          agentAdapter: input.agentAdapter,
+          permissionMode: input.permissionMode,
+        }),
+      ),
+    setWorkflow: (id, graph) =>
+      mockState.workflows.set(id, { id, name: id, description: '', graph }),
   })
 
   it.each(['claude-sdk', 'codex'] as const)(
@@ -4252,6 +4375,393 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[2]?.continueSession).toBe(true)
     expect(mockState.sdkConfigs[2]?.sdkSessionId).toBe(mockState.sdkConfigs[0]?.sdkSessionId)
     expect(mockState.sdkConfigs[1]?.sdkSessionId).not.toBe(mockState.sdkConfigs[0]?.sdkSessionId)
+  })
+
+  it('keeps stage-3 bindings observational when runtime takeover is disabled', async () => {
+    mockState.agents.set(
+      'legacy-host',
+      makeAgent({
+        id: 'legacy-host',
+        name: 'Legacy Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-legacy',
+      }),
+    )
+    mockState.workflows.set('workflow-legacy', {
+      id: 'workflow-legacy',
+      name: 'Legacy Workflow',
+      description: '',
+      graph: {
+        nodes: [{ id: 'legacy-step', kind: 'input', title: 'Legacy Step', config: {} }],
+        edges: [],
+      },
+    })
+    mockState.workflows.set('workflow-override', {
+      id: 'workflow-override',
+      name: 'Override Workflow',
+      description: '',
+      graph: {
+        nodes: [{ id: 'override-step', kind: 'input', title: 'Override Step', config: {} }],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'legacy-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+    })
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId: 'binding-override',
+      mode: 'override',
+      workflowId: 'workflow-override',
+      createdAt: '2026-05-28T00:00:00.000Z',
+      updatedAt: '2026-05-28T00:00:00.000Z',
+    })
+    mockState.settings.set('sessionWorkflowBinding:runtimeEnabled', false)
+
+    await service.sendTurn({ sessionId, message: 'use the current workflow' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const prompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
+    expect(prompt).toContain('Workflow: Legacy Workflow (workflow-legacy)')
+    expect(prompt).not.toContain('Workflow: Override Workflow (workflow-override)')
+  })
+
+  it('persists Binding generation metadata and resumes the frozen graph from the same generation', async () => {
+    const hostId = 'stage4-host'
+    const workerId = 'stage4-worker'
+    const workflowId = 'stage4-workflow'
+    const bindingInstanceId = 'stage4-binding-1'
+    const frozenNodeId = 'frozen-node'
+    const editedNodeId = 'edited-node'
+
+    mockState.settings.set('sessionWorkflowBinding:runtimeEnabled', true)
+    mockState.agents.set(
+      hostId,
+      makeAgent({
+        id: hostId,
+        name: 'Stage 4 Host',
+        providerProfileId: 'tencent-provider',
+        workflowId,
+      }),
+    )
+    mockState.agents.set(
+      workerId,
+      makeAgent({ id: workerId, name: 'Stage 4 Worker', providerProfileId: 'tencent-provider' }),
+    )
+    mockState.workflows.set(workflowId, {
+      id: workflowId,
+      name: 'Stage 4 Workflow',
+      version: '1.0.0',
+      status: 'active',
+      enabled: true,
+      description: '',
+      graph: {
+        nodes: [
+          {
+            id: frozenNodeId,
+            kind: 'agent',
+            title: 'Frozen node',
+            config: { agentId: workerId, outputKey: 'frozen' },
+          },
+        ],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: hostId,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Stage 4 runtime session',
+    })
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId,
+      mode: 'override',
+      workflowId,
+      createdAt: '2026-09-12T00:00:00.000Z',
+      updatedAt: '2026-09-12T00:00:00.000Z',
+    })
+
+    await service.sendTurn({ sessionId, message: 'start the frozen workflow' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    const firstConfig = mockState.sdkConfigs[0]
+    if (firstConfig == null) throw new Error('expected first runtime config')
+    const firstServer = (
+      firstConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
+    ).spark_team
+    const firstTool = firstServer?.instance?.tools?.find(
+      (candidate) =>
+        typeof candidate === 'object' &&
+        candidate != null &&
+        (candidate as { name?: unknown }).name === 'workflow_run',
+    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
+    if (firstTool == null) throw new Error('expected first workflow_run tool')
+    await firstTool.handler({ objective: 'resume the same run' })
+
+    const firstRun = [...mockState.workflowRuns.values()][0]
+    if (firstRun == null) throw new Error('expected first workflow run')
+    expect(firstRun).toMatchObject({
+      workflow_id: workflowId,
+      workflow_binding_instance_id: bindingInstanceId,
+      workflow_graph_digest: expect.any(String),
+      workflow_name_snapshot: 'Stage 4 Workflow',
+      workflow_version_snapshot: '1.0.0',
+      binding_source: 'session-override',
+    })
+
+    firstRun.status = 'failed'
+    firstRun.ended_at = '2026-09-12T00:01:00.000Z'
+    firstRun.completed_node_ids_json = '[]'
+    firstRun.skipped_node_ids_json = '[]'
+    firstRun.graph_json = JSON.stringify({
+      nodes: [
+        {
+          id: frozenNodeId,
+          kind: 'agent',
+          title: 'Frozen node',
+          config: { agentId: workerId, outputKey: 'frozen' },
+        },
+      ],
+      edges: [],
+    })
+    mockState.workflows.set(workflowId, {
+      id: workflowId,
+      name: 'Edited Workflow',
+      version: '2.0.0',
+      status: 'active',
+      enabled: true,
+      description: '',
+      graph: {
+        nodes: [
+          {
+            id: editedNodeId,
+            kind: 'agent',
+            title: 'Edited node',
+            config: { agentId: workerId, outputKey: 'edited' },
+          },
+        ],
+        edges: [],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'continue the failed workflow' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs.length).toBeGreaterThan(1))
+    const secondConfig = [...mockState.sdkConfigs].reverse().find((config) => {
+      const server = (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)
+        ?.spark_team
+      return server?.instance?.tools?.some(
+        (candidate) =>
+          typeof candidate === 'object' &&
+          candidate != null &&
+          (candidate as { name?: unknown }).name === 'workflow_run',
+      )
+    })
+    if (secondConfig == null) throw new Error('expected second runtime config')
+    const secondServer = (
+      secondConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
+    ).spark_team
+    const secondTool = secondServer?.instance?.tools?.find(
+      (candidate) =>
+        typeof candidate === 'object' &&
+        candidate != null &&
+        (candidate as { name?: unknown }).name === 'workflow_run',
+    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
+    if (secondTool == null) throw new Error('expected second workflow_run tool')
+    const secondResult = (await secondTool.handler({ objective: 'resume the same run' })) as {
+      structuredContent?: { executions?: Array<{ nodeId: string }> }
+    }
+    const resumedNodeIds = secondResult.structuredContent?.executions?.map((item) => item.nodeId)
+    expect(resumedNodeIds).toContain(frozenNodeId)
+    expect(resumedNodeIds).not.toContain(editedNodeId)
+    expect([...mockState.workflowRuns.values()]).toHaveLength(1)
+  })
+
+  it('does not resume a failed run after the Binding generation changes for the same workflow', async () => {
+    const hostId = 'stage4-generation-host'
+    const workerId = 'stage4-generation-worker'
+    const workflowId = 'stage4-generation-workflow'
+    mockState.settings.set('sessionWorkflowBinding:runtimeEnabled', true)
+    mockState.agents.set(
+      hostId,
+      makeAgent({
+        id: hostId,
+        name: 'Generation Host',
+        providerProfileId: 'tencent-provider',
+        workflowId,
+      }),
+    )
+    mockState.agents.set(
+      workerId,
+      makeAgent({ id: workerId, name: 'Generation Worker', providerProfileId: 'tencent-provider' }),
+    )
+    mockState.workflows.set(workflowId, {
+      id: workflowId,
+      name: 'Generation Workflow',
+      version: '1.0.0',
+      status: 'active',
+      enabled: true,
+      description: '',
+      graph: {
+        nodes: [
+          {
+            id: 'generation-node',
+            kind: 'agent',
+            title: 'Generation node',
+            config: { agentId: workerId, outputKey: 'generation' },
+          },
+        ],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: hostId,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Generation isolation session',
+    })
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId: 'generation-one',
+      mode: 'override',
+      workflowId,
+      createdAt: '2026-09-12T00:00:00.000Z',
+      updatedAt: '2026-09-12T00:00:00.000Z',
+    })
+
+    await service.sendTurn({ sessionId, message: 'start generation one' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    const firstConfig = mockState.sdkConfigs[0]
+    if (firstConfig == null) throw new Error('expected first runtime config')
+    const firstServer = (
+      firstConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
+    ).spark_team
+    const firstTool = firstServer?.instance?.tools?.find(
+      (candidate) =>
+        typeof candidate === 'object' &&
+        candidate != null &&
+        (candidate as { name?: unknown }).name === 'workflow_run',
+    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
+    if (firstTool == null) throw new Error('expected first workflow_run tool')
+    await firstTool.handler({ objective: 'leave a failed run behind' })
+    const firstRun = [...mockState.workflowRuns.values()][0]
+    if (firstRun == null) throw new Error('expected first workflow run')
+    firstRun.status = 'failed'
+    firstRun.ended_at = '2026-09-12T00:01:00.000Z'
+    firstRun.updated_at = '2026-09-12T00:01:00.000Z'
+
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId: 'generation-two',
+      mode: 'override',
+      workflowId,
+      createdAt: '2026-09-12T00:02:00.000Z',
+      updatedAt: '2026-09-12T00:02:00.000Z',
+    })
+    await service.sendTurn({ sessionId, message: 'start generation two' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs.length).toBeGreaterThan(1))
+    const secondConfig = [...mockState.sdkConfigs].reverse().find((config) => {
+      const server = (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)
+        ?.spark_team
+      return server?.instance?.tools?.some(
+        (candidate) =>
+          typeof candidate === 'object' &&
+          candidate != null &&
+          (candidate as { name?: unknown }).name === 'workflow_run',
+      )
+    })
+    if (secondConfig == null) throw new Error('expected second runtime config')
+    const secondServer = (
+      secondConfig.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>
+    ).spark_team
+    const secondTool = secondServer?.instance?.tools?.find(
+      (candidate) =>
+        typeof candidate === 'object' &&
+        candidate != null &&
+        (candidate as { name?: unknown }).name === 'workflow_run',
+    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
+    if (secondTool == null) throw new Error('expected second workflow_run tool')
+    await secondTool.handler({ objective: 'start a fresh generation' })
+
+    expect([...mockState.workflowRuns.values()]).toHaveLength(2)
+    const runs = [...mockState.workflowRuns.values()]
+    expect(runs.map((run) => run.workflow_binding_instance_id)).toEqual([
+      'generation-one',
+      'generation-two',
+    ])
+  })
+
+  it('keeps a mentioned member on its own workflow when a session override exists', async () => {
+    mockState.agents.set(
+      'mention-host',
+      makeAgent({
+        id: 'mention-host',
+        name: 'Mention Host',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.agents.set(
+      'mentioned-worker',
+      makeAgent({
+        id: 'mentioned-worker',
+        name: 'Mentioned Worker',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-member',
+      }),
+    )
+    for (const [id, name, step] of [
+      ['workflow-member', 'Member Workflow', 'Member Step'],
+      ['workflow-override', 'Override Workflow', 'Override Step'],
+    ] as const) {
+      mockState.workflows.set(id, {
+        id,
+        name,
+        description: '',
+        graph: { nodes: [{ id: step, kind: 'input', title: step, config: {} }], edges: [] },
+      })
+    }
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: 'mention-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'mention-host',
+        memberAgentIds: ['mentioned-worker'],
+      },
+    })
+    mockState.workflowBindings.set(sessionId, {
+      sessionId,
+      bindingInstanceId: 'binding-override',
+      mode: 'override',
+      workflowId: 'workflow-override',
+      createdAt: '2026-05-28T00:00:00.000Z',
+      updatedAt: '2026-05-28T00:00:00.000Z',
+    })
+
+    await service.sendTurn({
+      sessionId,
+      message: '@Mentioned Worker use your workflow',
+      mentionAgentId: 'mentioned-worker',
+    })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const prompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
+    expect(prompt).toContain('Workflow: Member Workflow (workflow-member)')
+    expect(prompt).not.toContain('Workflow: Override Workflow (workflow-override)')
   })
 
   it('exposes workflow_run for a managed host with an enabled explicit workflow worker', async () => {
