@@ -32,7 +32,7 @@ export interface SessionScheduledTaskTurnDeps {
 export async function runSessionScheduledTaskTurn(
   params: SessionScheduledTaskTurnParams,
   deps: SessionScheduledTaskTurnDeps,
-): Promise<{ sessionId: string; output: string }> {
+): Promise<{ sessionId: string; output: string; turnId: string }> {
   const session = deps.getSession(params.sessionId)
   if (session == null) {
     throw new Error(`Scheduled task session no longer exists: ${params.sessionId}`)
@@ -61,5 +61,6 @@ export async function runSessionScheduledTaskTurn(
   return {
     sessionId: params.sessionId,
     output: `Turn ${result.turnId} queued`,
+    turnId: result.turnId,
   }
 }

@@ -72,6 +72,7 @@ type RemoteOutboundMessage = {
   title?: string
   text: string
   actions?: RemoteMessageAction[]
+  images?: Array<{ source: string; alt: string }>
 }
 
 function buildRemoteRuntimeErrorMessage(error: unknown, commandPrefix = '/'): string {
@@ -1843,7 +1844,13 @@ export class RemoteConnectionService {
     if (token == null) throw new Error('Telegram bot token 未配置')
     const formattedText = formatRemoteOutboundText(message)
     const media = connection.capabilities.transferFiles
-      ? extractTelegramOutboundMedia(formattedText)
+      ? (() => {
+          const extracted = extractTelegramOutboundMedia(formattedText)
+          return {
+            text: extracted.text,
+            images: [...extracted.images, ...(message.images ?? [])],
+          }
+        })()
       : { text: formattedText, images: [] }
     const messageText =
       media.text.length > 0

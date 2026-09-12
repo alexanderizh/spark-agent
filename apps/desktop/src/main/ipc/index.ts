@@ -2020,8 +2020,17 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
   const sessionRepo = new SessionRepository(getDatabase())
 
+  const registerScheduledRemoteTurn = (sessionId: string, turnId: string): void => {
+    const remote = getRemoteConnectionService()
+      .list()
+      .connections.find((connection) => connection.defaultSessionId === sessionId)
+    const externalId = remote?.allowedChatIds[0]
+    if (remote == null || externalId == null) return
+    registerRemoteTurn(turnId, { connectionId: remote.id, externalId })
+  }
+
   if (params.sessionId != null) {
-    return runSessionScheduledTaskTurn(
+    const result = await runSessionScheduledTaskTurn(
       { ...params, sessionId: params.sessionId },
       {
         getSession: (sessionId) => sessionRepo.get(sessionId),
@@ -2032,6 +2041,8 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
         },
       },
     )
+    registerScheduledRemoteTurn(result.sessionId, result.turnId)
+    return result
   }
 
   // 按 user-selected model > agent's model > default 的优先级解析 provider/model
@@ -2090,6 +2101,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
       ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
       ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
     })
+    registerScheduledRemoteTurn(created.sessionId, result.turnId)
 
     return {
       sessionId: created.sessionId,
