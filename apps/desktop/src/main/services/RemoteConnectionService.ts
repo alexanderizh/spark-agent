@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import http from 'node:http'
 import { URL } from 'node:url'
 import type { SettingsService } from '@spark/agent-runtime'
+import { DEFAULT_TELEGRAM_REMOTE_COMMANDS } from '@spark/protocol'
 import type {
   RemoteChannelType,
   RemoteCommandDefinition,
@@ -15,7 +16,14 @@ import type {
   RemotePairingMode,
   RemoteTestResponse,
 } from '@spark/protocol'
-import { filterTelegramCallbackActions } from '../ipc/remote-command-utils.js'
+import { QqBotGateway } from './QqBotGateway.js'
+import {
+  buildQqExternalId,
+  parseQqDispatchEvent,
+  parseQqExternalId,
+  splitQqContent,
+  type QqInboundMessage,
+} from './qqProtocol.js'
 
 const SETTINGS_CATEGORY = 'remote-connections'
 const SETTINGS_KEY = 'data'
@@ -135,12 +143,12 @@ const DEFAULT_CAPABILITIES: RemoteConnectionCapabilities = {
   switchAgent: true,
   manageWorkspace: true,
   runCommands: true,
-  approvePermissions: false,
+  approvePermissions: true,
   observeDesktop: true,
   controlDesktop: false,
   useInternalBrowser: false,
   transferFiles: false,
-  manageRuntime: false,
+  manageRuntime: true,
   dangerousActions: false,
 }
 
@@ -148,8 +156,8 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
   { name: 'help', usage: '/help', description: '查看远程可用命令', capability: 'system' },
   {
     name: 'sessions',
-    usage: '/sessions [all|idle|running|error]',
-    description: '查看主机会话，可按状态筛选',
+    usage: '/sessions [all|idle|running|error] [页码]',
+    description: '查看并切换会话',
     capability: 'switchSession',
   },
   {
@@ -158,7 +166,12 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
     description: '切换默认会话',
     capability: 'switchSession',
   },
-  { name: 'models', usage: '/models', description: '列出可用模型配置', capability: 'switchModel' },
+  {
+    name: 'models',
+    usage: '/models [页码]',
+    description: '列出当前渠道的可用模型',
+    capability: 'switchModel',
+  },
   {
     name: 'use-model',
     usage: '/use-model <序号|名称|modelId>',
@@ -167,8 +180,8 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
   },
   {
     name: 'providers',
-    usage: '/providers',
-    description: '列出 Provider 配置',
+    usage: '/providers [页码]',
+    description: '列出 Provider（兼容命令）',
     capability: 'switchModel',
   },
   {
@@ -177,7 +190,19 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
     description: '切换当前会话或连接默认 Provider',
     capability: 'switchModel',
   },
-  { name: 'agents', usage: '/agents', description: '列出 Agent', capability: 'switchAgent' },
+  {
+    name: 'channels',
+    usage: '/channels [页码]',
+    description: '列出可用模型渠道',
+    capability: 'switchModel',
+  },
+  {
+    name: 'use-channel',
+    usage: '/use-channel <序号|名称|渠道ID>',
+    description: '切换当前会话的模型渠道',
+    capability: 'switchModel',
+  },
+  { name: 'agents', usage: '/agents [页码]', description: '列出 Agent', capability: 'switchAgent' },
   {
     name: 'use-agent',
     usage: '/use-agent <序号|名称|agentId>',
@@ -186,8 +211,20 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
   },
   {
     name: 'workspaces',
-    usage: '/workspaces',
-    description: '列出工作区',
+    usage: '/workspaces [页码]',
+    description: '列出项目（兼容命令）',
+    capability: 'manageWorkspace',
+  },
+  {
+    name: 'projects',
+    usage: '/projects [页码]',
+    description: '列出项目',
+    capability: 'manageWorkspace',
+  },
+  {
+    name: 'use-project',
+    usage: '/use-project <序号|名称|项目ID>',
+    description: '切换默认项目',
     capability: 'manageWorkspace',
   },
   {
@@ -199,8 +236,38 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
   {
     name: 'open-workspace',
     usage: '/open-workspace <path>',
-    description: '打开本地项目目录',
+    description: '添加本地项目（兼容命令）',
     capability: 'manageWorkspace',
+  },
+  {
+    name: 'add-project',
+    usage: '/add-project <path>',
+    description: '添加本地项目',
+    capability: 'manageWorkspace',
+  },
+  {
+    name: 'reasoning',
+    usage: '/reasoning',
+    description: '选择推理强度',
+    capability: 'manageRuntime',
+  },
+  {
+    name: 'use-reasoning',
+    usage: '/use-reasoning <minimal|low|medium|high|xhigh|max>',
+    description: '切换推理强度',
+    capability: 'manageRuntime',
+  },
+  {
+    name: 'permissions',
+    usage: '/permissions',
+    description: '选择权限模式',
+    capability: 'approvePermissions',
+  },
+  {
+    name: 'use-permission',
+    usage: '/use-permission <manual|auto|plan|full>',
+    description: '切换权限模式',
+    capability: 'approvePermissions',
   },
   {
     name: 'send',
@@ -299,7 +366,7 @@ const CHANNEL_META: Record<
     instructions: [
       '在 BotFather 中创建 bot 并复制 bot token。',
       '回到 SparkWork 填入 bot token，生成配对码后发送给 bot。',
-      '可选：在 Telegram 命令配置中同步 /help、/sessions、/models、/agents。',
+      '可选：在 Telegram 命令配置中同步 /help、/projects、/sessions、/channels、/models。',
     ],
   },
   feishu: {
@@ -317,9 +384,11 @@ const CHANNEL_META: Record<
     consoleUrl: 'https://q.qq.com/#/app/bot',
     requiredFields: ['qqBotAppId', 'qqBotSecret'],
     instructions: [
-      '在 QQ 开放平台创建机器人应用并开通消息事件。',
+      '在 QQ 开放平台创建机器人，并在管理端申请开通「群聊」与「单聊」消息能力。',
       '复制机器人 AppID 和 AppSecret 到连接配置。',
-      '保存后生成配对码，在目标群聊或私聊内完成绑定。',
+      'SparkWork 通过 QQ 官方 WebSocket 长连接接收消息，无需公网地址。',
+      '单聊：在 QQ 里搜索机器人加好友即可直接私聊；群聊：把机器人拉进群后 @机器人 发消息。',
+      '生成配对码后在 QQ 里发送 /bind <配对码> 完成绑定。',
     ],
   },
   'wechat-claw': {
@@ -352,8 +421,60 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
 }
 
+function isRemotePermissionMode(
+  value: unknown,
+): value is NonNullable<RemoteConnectionConfig['defaultPermissionMode']> {
+  return [
+    'claude-ask',
+    'claude-auto-edits',
+    'claude-plan',
+    'claude-auto',
+    'claude-bypass',
+    'codex-default',
+    'codex-auto-review',
+    'codex-full-access',
+    'spark-default',
+    'spark-accept-edits',
+    'spark-plan',
+    'spark-bypass',
+    'spark-auto',
+  ].includes(String(value))
+}
+
+function isRemoteReasoningEffort(
+  value: unknown,
+): value is NonNullable<RemoteConnectionConfig['defaultReasoningEffort']> {
+  return ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(String(value))
+}
+
 function defaultTelegramCommands(): string[] {
-  return COMMAND_CATALOG.map((cmd) => cmd.name).filter((name) => name !== 'send')
+  return [...DEFAULT_TELEGRAM_REMOTE_COMMANDS]
+}
+
+export function buildTelegramBotCommands(
+  connection: Pick<RemoteConnectionConfig, 'telegramCommands' | 'capabilities'>,
+): Array<{ command: string; description: string }> {
+  const catalog = new Map(COMMAND_CATALOG.map((cmd) => [cmd.name, cmd]))
+  const seen = new Set<string>()
+  const commands: Array<{ command: string; description: string }> = []
+
+  for (const configuredName of connection.telegramCommands) {
+    const canonicalName = configuredName.trim().replace(/^\/+/, '').toLowerCase().replace(/_/g, '-')
+    const definition = catalog.get(canonicalName)
+    if (definition == null) continue
+    if (
+      definition.capability !== 'system' &&
+      connection.capabilities[definition.capability] !== true
+    ) {
+      continue
+    }
+    const command = definition.name.replace(/-/g, '_')
+    if (seen.has(command)) continue
+    seen.add(command)
+    commands.push({ command, description: definition.description.slice(0, 256) })
+  }
+
+  return commands
 }
 
 function createPairingPayload(
@@ -484,24 +605,17 @@ function parseWebhookBody(
   }
 
   if (channel === 'qq') {
-    if (body.t && body.t !== 'GROUP_AT_MESSAGE_CREATE' && body.t !== 'C2C_MESSAGE_CREATE') {
-      return { kind: 'ignore' }
-    }
-    const data = isRecord(body.d) ? body.d : body
-    const externalId =
-      readString(data.group_openid) ??
-      readString(data.guild_id) ??
-      readString(data.channel_id) ??
-      readString(data.author_id)
-    const text = readString(data.content)
-    if (!externalId || !text) return { kind: 'ignore' }
-    const author = isRecord(data.author) ? data.author : undefined
+    const event = parseQqDispatchEvent(
+      isRecord(body) ? readString(body.t) : undefined,
+      isRecord(body) && isRecord(body.d) ? body.d : body,
+    )
+    if (event == null || event.text.length === 0) return { kind: 'ignore' }
     return {
       kind: 'message',
-      externalId,
-      senderName: readString(author?.member_openid) ?? readString(author?.user_openid) ?? 'QQ 用户',
-      text: normalizeInboundText(channel, text),
-      ...(readString(body.id) ? { messageId: `qq:${String(body.id)}` } : {}),
+      externalId: buildQqExternalId(event.scene, event.targetId),
+      senderName: event.senderName,
+      text: event.text,
+      ...(event.msgId != null ? { messageId: `qq:${event.msgId}` } : {}),
     }
   }
 
@@ -557,7 +671,7 @@ export function buildFeishuCard(message: RemoteOutboundMessage): Record<string, 
           tag: 'button',
           text: { tag: 'plain_text', content: action.label.slice(0, 30) },
           type: action.style ?? 'default',
-          value: { command: action.command.slice(0, 200) },
+          value: { command: action.command },
         })),
       })),
     ],
@@ -625,11 +739,20 @@ function sanitizeConnection(input: unknown): RemoteConnectionConfig | null {
     ...(typeof input.defaultSessionId === 'string'
       ? { defaultSessionId: input.defaultSessionId }
       : {}),
+    ...(typeof input.defaultWorkspaceId === 'string'
+      ? { defaultWorkspaceId: input.defaultWorkspaceId }
+      : {}),
     ...(typeof input.defaultProviderProfileId === 'string'
       ? { defaultProviderProfileId: input.defaultProviderProfileId }
       : {}),
     ...(typeof input.defaultModelId === 'string' ? { defaultModelId: input.defaultModelId } : {}),
     ...(typeof input.defaultAgentId === 'string' ? { defaultAgentId: input.defaultAgentId } : {}),
+    ...(isRemotePermissionMode(input.defaultPermissionMode)
+      ? { defaultPermissionMode: input.defaultPermissionMode }
+      : {}),
+    ...(isRemoteReasoningEffort(input.defaultReasoningEffort)
+      ? { defaultReasoningEffort: input.defaultReasoningEffort }
+      : {}),
     telegramCommands:
       normalizeStringArray(input.telegramCommands).length > 0
         ? normalizeStringArray(input.telegramCommands)
@@ -658,9 +781,19 @@ export class RemoteConnectionService {
   private inboundHandler: RemoteInboundHandler | null = null
   private pollingStates = new Map<string, TelegramPollingState>()
   private feishuWsStates = new Map<string, FeishuWsState>()
+  private qqGateways = new Map<string, QqBotGateway>()
   private processedMessages = new Set<string>()
   private tokenCache = new Map<string, TokenCacheEntry>()
   private telegramCommandSignatures = new Map<string, string>()
+  private telegramCallbackActions = new Map<
+    string,
+    { connectionId: string; command: string; expiresAt: number }
+  >()
+  // QQ 群聊/单聊被动回复需要引用触发消息的 msg_id（5 分钟窗口、同一 msg_id 至多 5 条）。
+  private qqReplyContexts = new Map<
+    string,
+    { msgId: string; sentCount: number; expiresAt: number }
+  >()
   private changeListeners = new Set<(event: RemoteConnectionChangeEvent) => void>()
 
   constructor(private readonly settingsService: SettingsService) {}
@@ -842,16 +975,31 @@ export class RemoteConnectionService {
 
   updateConnectionDefaults(
     id: string,
-    patch: Partial<
-      Pick<
-        RemoteConnectionConfig,
-        'defaultSessionId' | 'defaultProviderProfileId' | 'defaultModelId' | 'defaultAgentId'
-      >
-    >,
+    patch: Omit<
+      Partial<
+        Pick<
+          RemoteConnectionConfig,
+          | 'defaultSessionId'
+          | 'defaultWorkspaceId'
+          | 'defaultProviderProfileId'
+          | 'defaultModelId'
+          | 'defaultAgentId'
+          | 'defaultPermissionMode'
+          | 'defaultReasoningEffort'
+        >
+      >,
+      'defaultWorkspaceId'
+    > & {
+      defaultWorkspaceId?: string | null
+    },
   ): RemoteConnectionConfig {
     const connection = this.readStore().connections.find((item) => item.id === id)
     if (connection == null) throw new Error('Remote connection not found')
-    return this.save({ ...connection, ...patch })
+    const { defaultWorkspaceId, ...rest } = patch
+    const next: RemoteConnectionConfig = { ...connection, ...rest }
+    if (defaultWorkspaceId === null) delete next.defaultWorkspaceId
+    else if (defaultWorkspaceId != null) next.defaultWorkspaceId = defaultWorkspaceId
+    return this.save(next)
   }
 
   async sendReply(connectionId: string, externalId: string, text: string): Promise<void> {
@@ -878,6 +1026,9 @@ export class RemoteConnectionService {
     for (const connectionId of this.feishuWsStates.keys()) {
       this.stopFeishuWs(connectionId)
     }
+    for (const connectionId of this.qqGateways.keys()) {
+      this.stopQqGateway(connectionId)
+    }
     this.telegramCommandSignatures.clear()
     if (this.server == null) return
     const server = this.server
@@ -897,6 +1048,7 @@ export class RemoteConnectionService {
 
     const activeTelegramIds = new Set<string>()
     const activeFeishuIds = new Set<string>()
+    const activeQqIds = new Set<string>()
     for (const connection of store.connections) {
       if (!connection.enabled) continue
       if (connection.channel === 'telegram') {
@@ -911,6 +1063,12 @@ export class RemoteConnectionService {
         if (appId == null || appSecret == null) continue
         activeFeishuIds.add(connection.id)
         this.startFeishuWs(connection, appId, appSecret)
+      } else if (connection.channel === 'qq') {
+        const appId = readString(connection.credentials.qqBotAppId)
+        const clientSecret = readString(connection.credentials.qqBotSecret)
+        if (appId == null || clientSecret == null) continue
+        activeQqIds.add(connection.id)
+        this.startQqGateway(connection, appId, clientSecret)
       }
     }
 
@@ -924,6 +1082,11 @@ export class RemoteConnectionService {
         this.stopFeishuWs(connectionId)
       }
     }
+    for (const connectionId of this.qqGateways.keys()) {
+      if (!activeQqIds.has(connectionId)) {
+        this.stopQqGateway(connectionId)
+      }
+    }
   }
 
   getRuntimeStatus(): {
@@ -933,7 +1096,7 @@ export class RemoteConnectionService {
     polling: Array<{ connectionId: string; running: boolean; lastError?: string }>
     longConnections: Array<{
       connectionId: string
-      channel: 'feishu'
+      channel: 'feishu' | 'qq'
       running: boolean
       lastError?: string
     }>
@@ -947,12 +1110,22 @@ export class RemoteConnectionService {
         running: state.running,
         ...(state.lastError != null ? { lastError: state.lastError } : {}),
       })),
-      longConnections: Array.from(this.feishuWsStates.entries()).map(([connectionId, state]) => ({
-        connectionId,
-        channel: 'feishu',
-        running: state.running,
-        ...(state.lastError != null ? { lastError: state.lastError } : {}),
-      })),
+      longConnections: [
+        ...Array.from(this.feishuWsStates.entries()).map(([connectionId, state]) => ({
+          connectionId,
+          channel: 'feishu' as const,
+          running: state.running,
+          ...(state.lastError != null ? { lastError: state.lastError } : {}),
+        })),
+        ...Array.from(this.qqGateways.entries()).map(([connectionId, gateway]) => ({
+          connectionId,
+          channel: 'qq' as const,
+          running: gateway.getStatus().running,
+          ...(gateway.getStatus().lastError != null
+            ? { lastError: gateway.getStatus().lastError }
+            : {}),
+        })),
+      ],
     }
   }
 
@@ -1038,7 +1211,10 @@ export class RemoteConnectionService {
     connection: RemoteConnectionConfig,
     body: unknown,
   ): Promise<unknown> {
-    const parsed = parseWebhookBody(connection.channel, body)
+    const parsed = parseWebhookBody(
+      connection.channel,
+      connection.channel === 'telegram' ? this.expandTelegramCallback(connection, body) : body,
+    )
     if (parsed.kind === 'challenge') return parsed.responseBody
     if (parsed.kind === 'ignore') return { ok: true, ignored: true }
     await this.handleInboundMessage(connection, parsed)
@@ -1362,6 +1538,87 @@ export class RemoteConnectionService {
     })
   }
 
+  private startQqGateway(
+    connection: RemoteConnectionConfig,
+    appId: string,
+    clientSecret: string,
+  ): void {
+    const existing = this.qqGateways.get(connection.id)
+    if (existing != null && existing.matches(appId, clientSecret)) return
+    existing?.stop()
+    log.info(`启动 QQ 网关: connection=${connection.id} appId=${appId}`)
+    const gateway = new QqBotGateway({
+      appId,
+      clientSecret,
+      getToken: () => this.getQqToken(connection.id, appId, clientSecret),
+      onMessage: (message) => {
+        void this.handleQqInbound(connection.id, message)
+      },
+      onStatusChange: () => {
+        this.emitChange({ reason: 'runtime-updated', connectionId: connection.id })
+      },
+    })
+    this.qqGateways.set(connection.id, gateway)
+    gateway.start()
+  }
+
+  private stopQqGateway(connectionId: string): void {
+    const gateway = this.qqGateways.get(connectionId)
+    gateway?.stop()
+    this.qqGateways.delete(connectionId)
+  }
+
+  private async handleQqInbound(connectionId: string, message: QqInboundMessage): Promise<void> {
+    const connection = this.readStore().connections.find((item) => item.id === connectionId)
+    if (connection == null || !connection.enabled || connection.channel !== 'qq') {
+      log.warn(`忽略 QQ 消息: 连接不存在或未启用 connection=${connectionId}`)
+      return
+    }
+    log.info(
+      `收到 QQ 消息: scene=${message.scene} from=${message.senderName ?? '(未知)'} text="${message.text.slice(0, 60)}"`,
+    )
+    const externalId = buildQqExternalId(message.scene, message.targetId)
+    if (message.msgId != null) {
+      this.qqReplyContexts.set(externalId, {
+        msgId: message.msgId,
+        sentCount: 0,
+        expiresAt: Date.now() + 4.5 * 60_000,
+      })
+      this.pruneQqReplyContexts()
+    }
+    await this.handleInboundMessage(connection, {
+      externalId,
+      senderName: message.senderName,
+      text: message.text,
+      ...(message.msgId != null ? { messageId: `qq:${message.msgId}` } : {}),
+    })
+  }
+
+  private pruneQqReplyContexts(): void {
+    if (this.qqReplyContexts.size <= 200) return
+    const now = Date.now()
+    for (const [key, context] of this.qqReplyContexts) {
+      if (context.expiresAt < now || context.sentCount >= 5) {
+        this.qqReplyContexts.delete(key)
+      }
+    }
+  }
+
+  /**
+   * 取出一次被动回复凭据：同一 msg_id 限 5 条、有效期约 5 分钟；
+   * 超限后返回 null，由发送侧退化为主动消息（可能被平台限流拒绝）。
+   */
+  private takeQqReply(externalId: string): { msgId: string; msgSeq: number } | null {
+    const context = this.qqReplyContexts.get(externalId)
+    if (context == null) return null
+    if (context.expiresAt < Date.now() || context.sentCount >= 5) {
+      this.qqReplyContexts.delete(externalId)
+      return null
+    }
+    context.sentCount += 1
+    return { msgId: context.msgId, msgSeq: context.sentCount }
+  }
+
   private async pollTelegramOnce(connectionId: string, state: TelegramPollingState): Promise<void> {
     const connection = this.readStore().connections.find((item) => item.id === connectionId)
     if (connection == null || !connection.enabled || connection.channel !== 'telegram') {
@@ -1423,24 +1680,20 @@ export class RemoteConnectionService {
     connection: RemoteConnectionConfig,
     token: string,
   ): Promise<void> {
-    const signature = JSON.stringify(connection.telegramCommands)
+    const signature = JSON.stringify({
+      commands: connection.telegramCommands,
+      capabilities: connection.capabilities,
+    })
     if (this.telegramCommandSignatures.get(connection.id) === signature) return
-    const catalog = new Map(COMMAND_CATALOG.map((cmd) => [cmd.name, cmd]))
-    const commands = connection.telegramCommands
-      .map((name) => catalog.get(name.replace(/^\//, '')))
-      .filter((cmd): cmd is RemoteCommandDefinition => cmd != null)
-      .map((cmd) => ({
-        command: cmd.name,
-        description: cmd.description.slice(0, 256),
-      }))
-    if (commands.length === 0) return
+    const commands = buildTelegramBotCommands(connection)
+    const method = commands.length > 0 ? 'setMyCommands' : 'deleteMyCommands'
     try {
       const response = await fetch(
-        `https://api.telegram.org/bot${encodeURIComponent(token)}/setMyCommands`,
+        `https://api.telegram.org/bot${encodeURIComponent(token)}/${method}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ commands }),
+          body: JSON.stringify(commands.length > 0 ? { commands } : {}),
         },
       )
       if (response.ok) this.telegramCommandSignatures.set(connection.id, signature)
@@ -1480,8 +1733,7 @@ export class RemoteConnectionService {
     if (token == null) throw new Error('Telegram bot token 未配置')
     const chunks = splitText(formatRemoteOutboundText(message), 3900)
     for (const [index, chunk] of chunks.entries()) {
-      const actions =
-        index === chunks.length - 1 ? filterTelegramCallbackActions(message.actions ?? []) : []
+      const actions = index === chunks.length - 1 ? (message.actions ?? []) : []
       await this.postJson(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
         chat_id: externalId,
         text: chunk,
@@ -1492,7 +1744,7 @@ export class RemoteConnectionService {
                 inline_keyboard: chunkActions(actions).map((row) =>
                   row.map((action) => ({
                     text: action.label,
-                    callback_data: action.command,
+                    callback_data: this.encodeTelegramCallback(connection.id, action.command),
                   })),
                 ),
               },
@@ -1500,6 +1752,43 @@ export class RemoteConnectionService {
           : {}),
       })
     }
+  }
+
+  private encodeTelegramCallback(connectionId: string, command: string): string {
+    if (Buffer.byteLength(command, 'utf8') <= 64) return command
+    const token = `spark:${crypto.randomBytes(12).toString('base64url')}`
+    this.telegramCallbackActions.set(token, {
+      connectionId,
+      command,
+      expiresAt: Date.now() + 24 * 60 * 60_000,
+    })
+    if (this.telegramCallbackActions.size > 2_000) {
+      const now = Date.now()
+      for (const [key, value] of this.telegramCallbackActions) {
+        if (value.expiresAt < now || this.telegramCallbackActions.size > 1_500) {
+          this.telegramCallbackActions.delete(key)
+        }
+      }
+    }
+    return token
+  }
+
+  private expandTelegramCallback(connection: RemoteConnectionConfig, body: unknown): unknown {
+    if (!isRecord(body) || !isRecord(body.callback_query)) return body
+    const data = readString(body.callback_query.data)
+    if (data == null || !data.startsWith('spark:')) return body
+    const stored = this.telegramCallbackActions.get(data)
+    if (stored == null || stored.connectionId !== connection.id || stored.expiresAt < Date.now()) {
+      this.telegramCallbackActions.delete(data)
+      return {
+        ...body,
+        callback_query: {
+          ...body.callback_query,
+          data: `${connection.commandPrefix.trim() || '/'}expired-action`,
+        },
+      }
+    }
+    return { ...body, callback_query: { ...body.callback_query, data: stored.command } }
   }
 
   private async sendTelegramChatAction(
@@ -1602,15 +1891,41 @@ export class RemoteConnectionService {
     const clientSecret = readString(connection.credentials.qqBotSecret)
     if (appId == null || clientSecret == null)
       throw new Error('QQ 机器人 AppID 或 AppSecret 未配置')
+    const target = parseQqExternalId(externalId)
+    if (target == null) {
+      throw new Error(
+        `QQ 回复目标无法识别：${externalId}（应为 qq-group:/qq-user:/qq-channel: 前缀）`,
+      )
+    }
     const token = await this.getQqToken(connection.id, appId, clientSecret)
-    await this.postJson(
-      `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(externalId)}/messages`,
-      {
-        msg_type: 0,
-        content: plainText(text).slice(0, 1900),
-      },
-      { Authorization: `QQBot ${token}` },
-    )
+    // 群聊/单聊文本按 UTF-8 字节计上限（1024 字节，留余量）；频道文本上限更宽松。
+    const maxBytes = target.scene === 'channel' ? 1900 : 1000
+    const chunks = splitQqContent(plainText(text), maxBytes)
+    for (const chunk of chunks) {
+      if (target.scene === 'channel') {
+        await this.postJson(
+          `https://api.sgroup.qq.com/channels/${encodeURIComponent(target.targetId)}/messages`,
+          { content: chunk },
+          { Authorization: `QQBot ${token}` },
+        )
+        continue
+      }
+      // 群聊/单聊：优先被动回复（引用 msg_id + 递增 msg_seq），超窗后退化为主动消息。
+      const reply = this.takeQqReply(externalId)
+      const endpointBase =
+        target.scene === 'group'
+          ? `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(target.targetId)}/messages`
+          : `https://api.sgroup.qq.com/v2/users/${encodeURIComponent(target.targetId)}/messages`
+      await this.postJson(
+        endpointBase,
+        {
+          msg_type: 0,
+          content: chunk,
+          ...(reply != null ? { msg_id: reply.msgId, msg_seq: reply.msgSeq } : {}),
+        },
+        { Authorization: `QQBot ${token}` },
+      )
+    }
   }
 
   private async sendClawMessage(

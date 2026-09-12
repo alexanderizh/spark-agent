@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Work 通过「远程连接」让你从 Telegram / 飞书这几个 IM 通道继续与 本地 Agent
+      Spark Work 通过「远程连接」让你从 Telegram / 飞书 / QQ / 微信 Claw 继续与本地 Agent
       通信。设计参考 TeamAgentX 的桥接 Bot 流程：外部消息由平台适配器规范化，
       <code>/bind CODE</code> 配对，配对后所有消息路由进 Spark Work 会话或内置远程命令。
     </p>
@@ -12,6 +12,8 @@ const Body = () => (
     <ul>
       <li>Telegram Bot</li>
       <li>飞书 Bot</li>
+      <li>QQ Bot</li>
+      <li>微信 Claw</li>
     </ul>
     <p>每条通道可独立启用；可以同时配置并配对多个通道。</p>
 
@@ -77,22 +79,19 @@ const Body = () => (
         <code>/help</code>
       </li>
       <li>
-        <code>/sessions [all|idle|running|error]</code>（也支持 <code>--status</code> 和中文状态）
+        <code>/sessions [all|idle|running|error] [页码]</code>
       </li>
       <li>
         <code>/use-session &lt;序号|名称|sessionId&gt;</code>
       </li>
       <li>
-        <code>/models</code>
+        <code>/projects [页码]</code> / <code>/use-project</code> / <code>/add-project</code>
       </li>
       <li>
-        <code>/use-model &lt;modelId&gt;</code>
+        <code>/channels [页码]</code>
       </li>
       <li>
-        <code>/providers</code>
-      </li>
-      <li>
-        <code>/use-provider &lt;providerProfileId&gt;</code>
+        <code>/use-channel &lt;序号|名称|渠道ID&gt;</code>
       </li>
       <li>
         <code>/agents</code>
@@ -101,13 +100,16 @@ const Body = () => (
         <code>/use-agent &lt;agentId&gt;</code>
       </li>
       <li>
-        <code>/workspaces</code>
+        <code>/models [页码]</code> / <code>/use-model</code>
       </li>
       <li>
         <code>/new-session [workspaceId]</code>
       </li>
       <li>
-        <code>/open-workspace &lt;path&gt;</code>
+        <code>/reasoning</code> / <code>/use-reasoning</code>
+      </li>
+      <li>
+        <code>/permissions</code> / <code>/use-permission</code>
       </li>
       <li>
         <code>/send &lt;message&gt;</code>
@@ -122,9 +124,13 @@ const Body = () => (
       <li>
         普通消息 → 通过 <code>SessionService.sendTurn</code> 发到该连接的默认会话。
       </li>
-      <li>没配置默认会话 → Spark 自动创建一个 no-project 会话并设为该连接默认。</li>
+      <li>
+        没配置默认会话 → Spark 在默认项目中自动创建会话；选择“不使用项目”时立即创建 no-project
+        会话。
+      </li>
       <li>配置了 default provider / model / agent → 在发送时应用。</li>
-      <li>Telegram 和飞书的列表响应支持按钮；点击后仍由同一套远程命令鉴权和执行。</li>
+      <li>Telegram 和飞书的列表响应使用分页按钮，不再回传大段列表文本。</li>
+      <li>新建远程会话默认使用各执行器的自动审批模式；完全访问仍受高危操作权限保护。</li>
     </ol>
     <p>
       设置页提供「默认会话」选择器，确保普通消息有明确去处。 Telegram 命令会在轮询启动时通过{' '}
@@ -211,14 +217,14 @@ export const remoteConnections: DocsPageContent = {
     },
   ],
   quickReference: [
-    { key: '通道', value: 'Telegram / 飞书' },
+    { key: '通道', value: 'Telegram / 飞书 / QQ / 微信 Claw' },
     { key: '配置分类', value: 'app_settings.remote-connections.data' },
     { key: '本地 webhook', value: '127.0.0.1:32178（端口占用时随机回退）' },
     { key: '端点', value: 'GET /remote/health · POST /remote/webhook/:channel/:connectionId' },
     {
       key: '内置命令',
       value:
-        '/help · /sessions [状态] · /use-session · /models · /providers · /agents · /send · /status',
+        '/help · /projects · /sessions · /channels · /models · /reasoning · /permissions · /send · /status',
     },
     { key: 'QR 配对', value: 'spark-agent://remote-pair (含 connectionId/channel/code/expiry)' },
   ],
@@ -237,10 +243,10 @@ export const remoteConnections: DocsPageContent = {
   aiSummary:
     'Spark Work 远程连接（Telegram / 飞书）：配置存在 app_settings.remote-connections.data，包含 global pairing defaults 与 connection 列表；' +
     '本地桥接运行时暴露 GET /remote/health、POST /remote/webhook/:channel/:connectionId，默认监听 127.0.0.1:32178（端口占用时随机回退）。' +
-    'Telegram 走 getUpdates 轮询；飞书走 @larksuiteoapi/node-sdk 官方 WebSocket 长连接（仅需 App ID / App Secret，无需公网 webhook），' +
+    'Telegram 走 getUpdates 轮询并使用分页 inline keyboard；飞书走 @larksuiteoapi/node-sdk 官方 WebSocket 长连接并使用交互卡片，' +
     '可通过 https://open.feishu.cn/page/openclaw?form=multiAgent 一键搭建。配对流程：保存凭据 → 生成 CODE → 外部聊天 /bind CODE → ' +
-    'spark-agent://remote-pair QR。内置命令 /help /sessions [状态] /use-session /models /use-model /providers /use-provider /agents /use-agent /workspaces ' +
-    '/new-session /open-workspace /send /status。设置 UI 顶部运行态条 + 平台图标卡 + 列表卡 + 段导航编辑模态。' +
+    'spark-agent://remote-pair QR。内置命令覆盖项目、会话、渠道、模型、Agent、推理强度、权限模式与运行时操作；' +
+    '新建远程会话默认自动审批，完全访问需高危操作授权。设置 UI 顶部运行态条 + 平台图标卡 + 列表卡 + 段导航编辑模态。' +
     '启动项集成：app:get-startup-settings / app:set-startup-settings 同步 general.autoStart。',
   Body,
 }

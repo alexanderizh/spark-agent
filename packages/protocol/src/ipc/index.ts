@@ -5540,6 +5540,23 @@ export interface RemoteConnectionCapabilities {
   dangerousActions: boolean
 }
 
+/** Commands shown in Telegram's native bot command menu for new connections. */
+export const DEFAULT_TELEGRAM_REMOTE_COMMANDS = [
+  'help',
+  'status',
+  'projects',
+  'sessions',
+  'new-session',
+  'channels',
+  'models',
+  'agents',
+  'reasoning',
+  'permissions',
+  'progress',
+  'queue',
+  'cancel',
+] as const
+
 export interface RemotePairedDevice {
   id: string
   remoteUserId: string
@@ -5567,9 +5584,13 @@ export interface RemoteConnectionConfig {
   allowedUserIds: string[]
   allowedChatIds: string[]
   defaultSessionId?: string
+  /** Remote project used when creating the next session. */
+  defaultWorkspaceId?: string
   defaultProviderProfileId?: string
   defaultModelId?: string
   defaultAgentId?: string
+  defaultPermissionMode?: SessionPermissionMode
+  defaultReasoningEffort?: SessionReasoningEffort
   telegramCommands: string[]
   capabilities: RemoteConnectionCapabilities
   pairing?: RemotePairingChallenge
@@ -5692,7 +5713,7 @@ export interface RemoteRuntimeStatusResponse {
   }>
   longConnections: Array<{
     connectionId: string
-    channel: 'feishu'
+    channel: 'feishu' | 'qq'
     running: boolean
     lastError?: string
   }>

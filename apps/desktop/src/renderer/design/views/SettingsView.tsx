@@ -45,6 +45,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { estimateTokens, ModelCapabilityRegistry } from '@spark/shared'
+import { DEFAULT_TELEGRAM_REMOTE_COMMANDS } from '@spark/protocol'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
@@ -144,12 +145,12 @@ const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
 
 /**
  * 对外可「新建」的远程通道白名单。
- * QQ 通道依赖腾讯官方 webhook（强制公网 HTTPS + 仅 80/443/8080/8443 + Ed25519 验签），
- * 桌面端本机无法直连；微信 Claw 通道依赖一个项目尚未提供的自建网关，二者目前均不可用，
- * 故暂不在 UI 暴露新建入口。已保存的存量 QQ / 微信连接仍会渲染展示，
- * 因此 REMOTE_CHANNEL_LABELS / REMOTE_CHANNEL_META 保留 qq / wechat-claw 键以保证兼容。
+ * QQ 通道已改为官方 WebSocket 长连接接入（与飞书同构，客户端主动拉取，无需公网），
+ * 现已开放新建；微信 Claw 通道依赖一个项目尚未提供的自建网关，暂不在 UI 暴露新建入口。
+ * 已保存的存量微信连接仍会渲染展示，
+ * 因此 REMOTE_CHANNEL_LABELS / REMOTE_CHANNEL_META 保留 wechat-claw 键以保证兼容。
  */
-const AVAILABLE_REMOTE_CHANNELS: RemoteChannelType[] = ['telegram', 'feishu']
+const AVAILABLE_REMOTE_CHANNELS: RemoteChannelType[] = ['telegram', 'feishu', 'qq']
 
 const REMOTE_STATUS_LABELS: Record<RemoteConnectionConfig['status'], string> = {
   disabled: '已停用',
@@ -196,7 +197,8 @@ const REMOTE_CHANNEL_META: Record<
     short: 'QQ',
     icon: qqLogo,
     consoleLabel: 'QQ 开放平台',
-    setupHint: '填写机器人 AppID 和 AppSecret，用 webhook 接收远程消息。',
+    setupHint:
+      '填写机器人 AppID / App Secret 后保存并启用，系统会自动启动 WebSocket 长连接；单聊加好友直接私聊，群聊需 @机器人。',
   },
   'wechat-claw': {
     label: '微信 Claw',
@@ -776,7 +778,7 @@ function createRemoteDraft(channel: RemoteChannelType): RemoteConnectionConfig {
     commandPrefix: '/',
     allowedUserIds: [],
     allowedChatIds: [],
-    telegramCommands: ['help', 'sessions', 'models', 'agents', 'status'],
+    telegramCommands: [...DEFAULT_TELEGRAM_REMOTE_COMMANDS],
     capabilities: { ...DEFAULT_REMOTE_CAPABILITIES },
     pairedDevices: [],
     createdAt: now,
@@ -904,29 +906,37 @@ function RemoteConnectionsSection() {
     }))
   }
 
+  // 把当前表单草稿落盘（不带任何 UI 反馈），返回服务端归一后的连接配置。
+  // 测试/配对等操作先走它，保证后端基于表单里的最新配置执行；
+  // 保存后 setDraft 与持久化一致，后续 refresh 不会把表单回退成旧值。
+  const persistDraft = async () => {
+    const payload: Partial<RemoteConnectionConfig> &
+      Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
+      ...draft,
+      status: draft.enabled ? draft.status : 'disabled',
+    }
+    // 新建草稿时 createRemoteDraft 把 id 初始化成 ''，spread 会把它带进来，
+    // 这里统一清掉，让服务端按缺失 id 处理（service 会自动 createId）。
+    if (!draft.id) delete (payload as { id?: string }).id
+    else payload.id = draft.id
+    const res = await window.spark.invoke('remote:save', { connection: payload })
+    setConnections((prev) => {
+      const exists = prev.some((item) => item.id === res.connection.id)
+      return exists
+        ? prev.map((item) => (item.id === res.connection.id ? res.connection : item))
+        : [res.connection, ...prev]
+    })
+    setSelectedId(res.connection.id)
+    setDraft(res.connection)
+    await refreshRuntime()
+    return res.connection
+  }
+
   const saveDraft = async () => {
     setBusy('save')
     try {
-      const payload: Partial<RemoteConnectionConfig> &
-        Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
-        ...draft,
-        status: draft.enabled ? draft.status : 'disabled',
-      }
-      // 新建草稿时 createRemoteDraft 把 id 初始化成 ''，spread 会把它带进来，
-      // 这里统一清掉，让服务端按缺失 id 处理（service 会自动 createId）。
-      if (!draft.id) delete (payload as { id?: string }).id
-      else payload.id = draft.id
-      const res = await window.spark.invoke('remote:save', { connection: payload })
-      setConnections((prev) => {
-        const exists = prev.some((item) => item.id === res.connection.id)
-        return exists
-          ? prev.map((item) => (item.id === res.connection.id ? res.connection : item))
-          : [res.connection, ...prev]
-      })
-      setSelectedId(res.connection.id)
-      setDraft(res.connection)
+      await persistDraft()
       setEditorOpen(true)
-      await refreshRuntime()
       toast.success('远程连接已保存')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '保存失败')
@@ -957,13 +967,12 @@ function RemoteConnectionsSection() {
   }
 
   const testConnection = async () => {
-    if (!draft.id) {
-      toast.error('请先保存连接')
-      return
-    }
     setBusy('test')
     try {
-      const res = await window.spark.invoke('remote:test', { id: draft.id })
+      // 先落盘表单里的最新配置再测试：后端 remote:test 只读持久化存储，
+      // 不保存的话测的是旧配置；保存后 setDraft 已同步，refresh 不会清空表单。
+      const saved = await persistDraft()
+      const res = await window.spark.invoke('remote:test', { id: saved.id })
       toast[res.ok ? 'success' : 'error'](res.message)
       await refresh()
     } catch (err) {
@@ -1066,7 +1075,7 @@ function RemoteConnectionsSection() {
       <div className="remote-settings-hero">
         <div>
           <h2>远程连接</h2>
-          <div className="lede">通过 Telegram、飞书从远程桌面或移动端与 SparkWork 通信。</div>
+          <div className="lede">通过 Telegram、飞书、QQ 从远程桌面或移动端与 SparkWork 通信。</div>
         </div>
         <div className="remote-runtime-summary">
           <span className={runtimeStatus.running ? 'live' : ''}>
@@ -1348,22 +1357,34 @@ function RemoteConnectionsSection() {
                       : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
                 </div>
               )}
+              {draft.channel === 'qq' && (
+                <div className="remote-muted-box">
+                  {longConnection?.running
+                    ? 'QQ WebSocket 长连接已启动，无需公网 webhook；在 QQ 里发送 /bind 配对码 后即可使用（单聊直接私聊，群聊需 @机器人）。'
+                    : longConnection?.lastError != null
+                      ? `QQ 长连接未启动：${longConnection.lastError}`
+                      : '保存并启用 AppID / AppSecret 后会自动启动 QQ 长连接；需先在 QQ 开放平台开通群聊与单聊消息能力。'}
+                </div>
+              )}
             </section>
             <section className="remote-editor-section">
               <div className="subsec-h">配对</div>
               <div className="remote-pairing-panel">
-                {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
-                  <div className="remote-webhook-box">
-                    <span>{webhookUrl}</span>
-                    <Button
-                      size="middle"
-                      icon={<Icons.Copy size={13} />}
-                      onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
-                    >
-                      复制
-                    </Button>
-                  </div>
-                )}
+                {webhookUrl &&
+                  draft.channel !== 'telegram' &&
+                  draft.channel !== 'feishu' &&
+                  draft.channel !== 'qq' && (
+                    <div className="remote-webhook-box">
+                      <span>{webhookUrl}</span>
+                      <Button
+                        size="middle"
+                        icon={<Icons.Copy size={13} />}
+                        onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
+                      >
+                        复制
+                      </Button>
+                    </div>
+                  )}
                 <div className="remote-pairing-actions">
                   <Button
                     size="middle"
