@@ -368,7 +368,6 @@ import { governAgentToolResultEvent } from '../tools/tool-result-artifact-store.
 
 import {
   buildManagedAgentSystemPrompt,
-  buildWorkflowAtomicInstruction,
   extractWorkflowApprovalCommentImpl,
   extractWorkflowApprovalTextImpl,
   findWorkflowApprovalAnswerImpl,
@@ -377,8 +376,6 @@ import {
   hasWorkflowExecutableNodes,
   resolveWorkflowArtifactExportPath,
   shouldRunWorkflowAtomicNodeAsAgent,
-  validateWorkflowInputStructuredContent,
-  validateWorkflowRouteDecisionContent,
   workflowAtomicMemberId,
   // 内部使用
   createWorkflowSubagentMember,
@@ -387,13 +384,9 @@ import {
   getDefaultWorkflowAtomicContent,
   memberDisallowedToolsFromConfig,
   shouldAttachWorkflowSessionMcp,
-  runWorkflowVerifyNode,
   buildWorkflowToolInvocationInstruction,
-  buildWorkflowProgressNodes,
-  buildWorkflowProgressNodeMetas,
   formatWorkflowMcpToolResult,
   formatWorkflowPlatformToolResult,
-  getWorkflowToolInvocationSpec,
 } from './session-workflow-helpers.js'
 import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {

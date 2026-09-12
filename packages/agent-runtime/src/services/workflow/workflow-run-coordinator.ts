@@ -44,11 +44,6 @@ import {
 // 日志通道沿用迁移前标签，保证日志检索与告警不因抽取而漂移。
 const log = createLogger('session.service')
 
-/** 原子节点执行请求（与执行器 executeAtomicNode 回调入参同构）。 */
-type AtomicNodeRequest = Parameters<
-  NonNullable<Parameters<typeof executeWorkflowAgentPlan>[0]['executeAtomicNode']>
->[0]
-
 /** workflow_run 协调器实际消费的会话执行上下文（SessionService 装配后传入）。 */
 export interface WorkflowRunToolContext {
   sessionId: string
