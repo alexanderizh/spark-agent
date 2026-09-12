@@ -6577,7 +6577,11 @@ export class SessionService {
                 : {}),
             }),
         },
-        { parallel },
+        // 嵌套派发（currentDepth > 0，发起者是成员）必须绕过 turn 串行队列：发起者
+        // 自身往往正占着同 turn 的队列槽位在执行，串行入队会形成「等自己结束」的死锁，
+        // 直到外层超时才解锁（与 recordPeerMessage 传 parallel:true 的理由相同）。
+        // Host 侧（depth 0）单发保持串行语义不变；batch 已显式传 parallel=true。
+        { parallel: parallel || (ctx.currentDepth ?? 0) > 0 },
       )
     }
 

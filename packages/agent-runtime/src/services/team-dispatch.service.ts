@@ -256,6 +256,10 @@ export class TeamDispatchService {
       timestamp: new Date().toISOString(),
       seq: 0,
     })
+    // 串行派发（parallel !== true）入队时只标记 pending：超时计时器到真正出队后才
+    // 启动，状态与计时起点对齐，避免「排队十几分钟的 300s 任务」在库里被读成长超时。
+    // parallel 路径立即执行，保持原来的 working 语义。
+    const queued = options.parallel !== true
     this.dispatches.create({
       id: dispatchId,
       sessionId: ctx.sessionId,
@@ -263,7 +267,7 @@ export class TeamDispatchService {
       hostAgentId: ctx.hostAgentId,
       memberAgentId: member.id,
       taskJson: JSON.stringify(task),
-      state: 'working',
+      state: queued ? 'pending' : 'working',
     })
     ctx.emitEvent({
       ...base(),
@@ -278,7 +282,7 @@ export class TeamDispatchService {
       type: 'team_member_status',
       dispatchId,
       memberAgentId: member.id,
-      status: 'working',
+      status: queued ? 'pending' : 'working',
     })
     log.info('dispatch start', {
       turnId: ctx.turnId,
@@ -296,6 +300,18 @@ export class TeamDispatchService {
     ctx.signal?.addEventListener('abort', onParentAbort)
     // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
     const runMember = async (): Promise<TeamA2AReply> => {
+      // 出队后（串行路径）才从 pending → working，与超时计时器起点对齐；
+      // parallel 路径创建时已是 working，无需迁移。
+      if (queued) {
+        this.dispatches.update(dispatchId, { state: 'working' })
+        ctx.emitEvent({
+          ...base(),
+          type: 'team_member_status',
+          dispatchId,
+          memberAgentId: member.id,
+          status: 'working',
+        })
+      }
       // 超时优先级：task 级 > 团队配置级 > 默认；统一受 MAX 上限约束。
       const requestedTimeout =
         task.timeoutMs ?? ctx.teamConfig.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
@@ -304,10 +320,30 @@ export class TeamDispatchService {
       const effectiveDeadlineAt = ctx.deadlineAt ?? now + cappedTimeoutMs
       const remainingMs = effectiveDeadlineAt - now
       if (ctx.countAsPeerCall === true && remainingMs < PEER_CALL_DEADLINE_BUFFER_MS) {
-        return fail(
+        // 剩余时间不足的同步咨询：在 try 外提前返回，需就地收尾 dispatch 行与
+        // controller 注册，否则该行会永久停在创建态（僵尸 working）、controllers 泄漏。
+        const reply = fail(
           'timeout',
           'Not enough time remains to consult a teammate synchronously. Use agent_message mode "note" or answer with the information you already have.',
         )
+        this.dispatches.update(dispatchId, {
+          state: 'failed',
+          replyJson: JSON.stringify(reply),
+          errorMessage: reply.error?.message ?? null,
+          endedAt: new Date().toISOString(),
+        })
+        ctx.emitEvent({
+          ...base(),
+          type: 'team_dispatch_completed',
+          dispatchId,
+          hostAgentId: ctx.hostAgentId,
+          memberAgentId: member.id,
+          reply,
+        })
+        this.controllers.delete(dispatchId)
+        ctx.signal?.removeEventListener('abort', onParentAbort)
+        ctx.onActivityChange?.(ctx.sessionId)
+        return reply
       }
       const timeoutMs =
         ctx.countAsPeerCall === true
