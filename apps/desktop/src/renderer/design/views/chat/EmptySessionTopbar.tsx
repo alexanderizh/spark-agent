@@ -11,6 +11,7 @@ import {
 import { ensureSessionScheduleSession } from './ChatViewUtils'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './ChatTitlebar'
 import { ProjectOpenDropdown, TabbarIcon, TabbarTooltipButton } from './ChatToolbar'
+import { ChatHeaderOverflowMenu } from './ChatHeaderOverflowMenu'
 
 type EmptySessionTopbarProps = {
   activeSessionId: SessionId | null
@@ -76,6 +77,40 @@ export function EmptySessionTopbar({
     showSessionSchedule,
   ])
 
+  const overflowItems = [
+    {
+      id: 'schedule',
+      label: '计划任务',
+      icon: Clock3,
+      onSelect: toggleSessionSchedule,
+      active: showSessionSchedule,
+      indicator: sessionScheduleEnabledCount > 0,
+    },
+    {
+      id: 'inspector',
+      label: '会话检查器',
+      icon: PanelRight,
+      onSelect: onToggleInspector,
+      active: showInspector,
+    },
+    {
+      id: 'config',
+      label: '配置面板',
+      icon: SlidersHorizontal,
+      onSelect: onToggleConfig,
+      active: showConfigPanel,
+      disabled: !activeWorkspace,
+    },
+    {
+      id: 'unified-panel',
+      label: '统一侧边面板',
+      icon: MoreHorizontal,
+      onSelect: onToggleUnifiedPanel,
+      active: showUnifiedPanel,
+      disabled: !activeWorkspace,
+    },
+  ]
+
   return (
     <div
       className="chat-sidebar-topbar"
@@ -112,7 +147,7 @@ export function EmptySessionTopbar({
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
           onClick={toggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -123,7 +158,7 @@ export function EmptySessionTopbar({
           </span>
         </TabbarTooltipButton>
         <button
-          className={`icon-btn ${showInspector ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showInspector ? 'active' : ''}`}
           title="会话检查器"
           aria-label="会话检查器"
           onClick={onToggleInspector}
@@ -131,7 +166,7 @@ export function EmptySessionTopbar({
           <TabbarIcon icon={PanelRight} />
         </button>
         <button
-          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
           title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
           aria-label="配置面板"
           disabled={!activeWorkspace}
@@ -140,7 +175,7 @@ export function EmptySessionTopbar({
           <TabbarIcon icon={SlidersHorizontal} />
         </button>
         <button
-          className={`icon-btn ${showUnifiedPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showUnifiedPanel ? 'active' : ''}`}
           title={activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'}
           aria-label="统一侧边面板"
           disabled={!activeWorkspace}
@@ -148,6 +183,7 @@ export function EmptySessionTopbar({
         >
           <TabbarIcon icon={MoreHorizontal} />
         </button>
+        <ChatHeaderOverflowMenu items={overflowItems} />
       </div>
       <ChatTitlebarEnd />
     </div>

@@ -1,5 +1,48 @@
 /* FloatingSidebar — collapsible nav styles */
 
+/* On compact chat windows the sidebar becomes a drawer above the conversation.
+   The normal desktop layout remains unchanged whenever enough inline room exists. */
+.app.sidebar-overlay-mode .main-content-area {
+  margin-left: 0;
+}
+
+.app.sidebar-overlay-mode .floating-sidebar {
+  width: min(var(--sidebar-w, 288px), calc(100% - 44px));
+  z-index: 60;
+  box-shadow:
+    10px 0 34px rgba(0, 0, 0, 0.22),
+    var(--shadow-lg);
+}
+
+.floating-sidebar-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--bg) 24%, transparent);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  cursor: default;
+  animation: floating-sidebar-backdrop-in 0.18s ease-out;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes floating-sidebar-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-sidebar-backdrop {
+    animation: none;
+  }
+}
+
 /* ─── Pin button on nav items ───
    - 默认隐藏；菜单项 hover 时显示
    - 已固定项 hover 时显示主色（取消固定）

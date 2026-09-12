@@ -1,0 +1,181 @@
+.chat-header-overflow {
+  position: relative;
+  display: none;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+
+.chat-header-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 45;
+  width: max-content;
+  min-width: 190px;
+  max-width: min(240px, calc(100vw - 20px));
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel-elev, var(--panel));
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-header-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--hover);
+  }
+
+  &:disabled {
+    color: var(--text-faint);
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+
+  &.danger {
+    color: var(--danger);
+  }
+}
+
+.chat-header-overflow-item-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.chat-header-overflow-indicator {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--panel-elev, var(--panel));
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.chat-header-overflow-active-dot {
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+/* Header width, rather than viewport width, is the useful signal when a right
+   panel is open. Both topbar variants opt into this named size container. */
+.chat-tabbar,
+.chat-sidebar-topbar {
+  container-name: chat-header;
+  container-type: inline-size;
+}
+
+/* The active-session header owns a flexible title in the middle and a stable
+   action island on the right. Only the title is allowed to absorb pressure. */
+.chat-tabbar .tabbar-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@container chat-header (max-width: 780px) {
+  .chat-header-collapsible {
+    display: none !important;
+  }
+
+  .chat-header-overflow {
+    display: inline-flex;
+  }
+
+  .chat-tabbar .chat-project-label,
+  .chat-tabbar .chat-team-status-chip {
+    display: none;
+  }
+
+  .git-session-counts {
+    display: none;
+  }
+
+  .git-session-trigger {
+    max-width: 132px;
+  }
+
+  .git-session-branch {
+    max-width: 76px;
+  }
+
+  .chat-tabbar .clear-confirm-bar {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 12px;
+    z-index: 46;
+    height: 30px;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+@container chat-header (max-width: 620px) {
+  .chat-tabbar .chat-title-block {
+    display: flex;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .chat-tabbar .chat-title {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
+
+  .chat-tabbar .msg-running,
+  .chat-tabbar .chat-project-label,
+  .chat-tabbar .chat-team-status-chip {
+    display: none;
+  }
+
+  .git-session-trigger {
+    max-width: 92px;
+    padding-inline: 6px;
+  }
+
+  .git-session-branch {
+    max-width: 52px;
+  }
+}
+
+@container chat-header (max-width: 500px) {
+  .git-session-trigger {
+    width: var(--component-icon-button-size, 28px);
+    min-width: var(--component-icon-button-size, 28px);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .git-session-branch {
+    display: none;
+  }
+
+  .tabbar-actions,
+  .chat-sidebar-topbar-actions {
+    gap: 2px;
+  }
+}

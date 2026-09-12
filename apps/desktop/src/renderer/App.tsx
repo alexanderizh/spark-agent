@@ -65,6 +65,7 @@ import { Button, Dropdown, Modal, type MenuProps } from 'antd'
 import { Segmented, Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
+import { shouldOverlaySidebar } from './sidebarResponsiveLayout'
 import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
 import sparkLogo from './assets/spark-logo.png'
@@ -1279,6 +1280,15 @@ function Shell() {
   // flat / hidden 完全不受影响。
   const mainContentRef = useRef<HTMLDivElement>(null)
   const [contentFocused, setContentFocused] = useState(false)
+  const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(
+    () =>
+      t.view === 'chat' &&
+      shouldOverlaySidebar({
+        viewportWidth: window.innerWidth,
+        sidebarWidth: t.floatingSidebarWidth,
+        sidebarGutter: t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER,
+      }),
+  )
   useEffect(() => {
     const main = mainContentRef.current
     if (!main) return
@@ -1318,6 +1328,32 @@ function Shell() {
   useEffect(() => {
     floatingSidebarWidthRef.current = t.floatingSidebarWidth
   }, [t.floatingSidebarWidth])
+
+  useEffect(() => {
+    const syncResponsiveSidebarMode = () => {
+      setSidebarOverlaysContent(
+        t.view === 'chat' &&
+          shouldOverlaySidebar({
+            viewportWidth: window.innerWidth,
+            sidebarWidth: t.floatingSidebarWidth,
+            sidebarGutter: t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER,
+          }),
+      )
+    }
+
+    syncResponsiveSidebarMode()
+    window.addEventListener('resize', syncResponsiveSidebarMode)
+    return () => window.removeEventListener('resize', syncResponsiveSidebarMode)
+  }, [t.floatingSidebarWidth, t.sidebarStyle, t.view])
+
+  useEffect(() => {
+    if (!sidebarOverlaysContent || t.sidebarHidden) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTweak('sidebarHidden', true)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [setTweak, sidebarOverlaysContent, t.sidebarHidden])
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -1986,7 +2022,7 @@ function Shell() {
       <SubAppSurfaceProvider>
         <div
           ref={scaleRef}
-          className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
+          className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${sidebarOverlaysContent ? ' sidebar-overlay-mode' : ''}${sidebarOverlaysContent && !sidebarHidden ? ' sidebar-overlay-open' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
           style={
             {
               '--primary': primary,
@@ -2007,6 +2043,14 @@ function Shell() {
           ) : (
             <>
               {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
+              {sidebarOverlaysContent && !sidebarHidden && (
+                <button
+                  type="button"
+                  className="floating-sidebar-backdrop"
+                  aria-label="关闭主菜单"
+                  onClick={() => setTweak('sidebarHidden', true)}
+                />
+              )}
               {/* macOS / Linux: unified shell title bar when sidebar is hidden.
                   Mirrors win-titlebar so every view (including chat) gets the expand
                   button; on macOS the left padding reserves space for traffic lights.

@@ -29,6 +29,7 @@ vi.mock('./ChatToolbar', () => ({
     </button>
   ),
 }))
+vi.mock('./ChatHeaderOverflowMenu', () => ({ ChatHeaderOverflowMenu: () => null }))
 vi.mock('./ChatGitEnv', () => ({ GitSessionTrigger: () => null }))
 vi.mock('./ChatHero', () => ({ resolveAgentDisplay: () => null }))
 vi.mock('../../teamMembership', () => ({ countExistingMembers: () => 0 }))

@@ -25,6 +25,7 @@ import { GitSessionTrigger } from './ChatGitEnv'
 import { resolveAgentDisplay } from './ChatHero'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './ChatTitlebar'
 import { ProjectOpenDropdown, TabbarIcon, TabbarTooltipButton } from './ChatToolbar'
+import { ChatHeaderOverflowMenu } from './ChatHeaderOverflowMenu'
 
 /**
  * 顶栏运行态 spinner 的隐藏延迟。
@@ -193,6 +194,59 @@ export function ChatTabbar({
           ? 'Claude CLI'
           : 'Claude SDK'
 
+  const overflowItems = [
+    ...(onCopyAllMessages
+      ? [
+          {
+            id: 'copy',
+            label: '复制全部聊天记录',
+            icon: Copy,
+            onSelect: onCopyAllMessages,
+          },
+        ]
+      : []),
+    ...(onClearMessages
+      ? [
+          {
+            id: 'clear',
+            label: '清空会话消息',
+            icon: Trash,
+            onSelect: handleClearClick,
+            danger: true,
+          },
+        ]
+      : []),
+    {
+      id: 'schedule',
+      label: '计划任务',
+      icon: Clock3,
+      onSelect: onToggleSessionSchedule,
+      active: showSessionSchedule,
+      indicator: sessionScheduleEnabledCount > 0,
+    },
+    {
+      id: 'config',
+      label: '配置面板',
+      icon: SlidersHorizontal,
+      onSelect: onToggleConfig,
+      active: showConfigPanel,
+    },
+    {
+      id: 'inspector',
+      label: '会话检查器',
+      icon: PanelRight,
+      onSelect: () => setShowInspector(!showInspector),
+      active: showInspector,
+    },
+    {
+      id: 'unified-panel',
+      label: '统一侧边面板',
+      icon: MoreHorizontal,
+      onSelect: onToggleUnifiedPanel,
+      active: showUnifiedPanel,
+    },
+  ]
+
   return (
     <div
       className="chat-tabbar"
@@ -308,21 +362,25 @@ export function ChatTabbar({
         {onCopyAllMessages && (
           <TabbarTooltipButton
             title="复制全部聊天记录"
-            className="icon-btn"
+            className="icon-btn chat-header-collapsible"
             onClick={onCopyAllMessages}
           >
             <TabbarIcon icon={Copy} />
           </TabbarTooltipButton>
         )}
         {!showClearConfirm && onClearMessages && (
-          <TabbarTooltipButton title="清空会话消息" className="icon-btn" onClick={handleClearClick}>
+          <TabbarTooltipButton
+            title="清空会话消息"
+            className="icon-btn chat-header-collapsible"
+            onClick={handleClearClick}
+          >
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
           onClick={onToggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -335,7 +393,7 @@ export function ChatTabbar({
         <TabbarTooltipButton
           title="配置面板（环境变量 / 提示词 / Skills / 工具）"
           ariaLabel="配置面板"
-          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
           onClick={onToggleConfig}
         >
           <TabbarIcon icon={SlidersHorizontal} />
@@ -343,7 +401,7 @@ export function ChatTabbar({
         <TabbarTooltipButton
           title="会话检查器"
           ariaLabel="会话检查器"
-          className={`icon-btn ${showInspector ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showInspector ? 'active' : ''}`}
           onClick={() => setShowInspector(!showInspector)}
         >
           <TabbarIcon icon={PanelRight} />
@@ -351,11 +409,12 @@ export function ChatTabbar({
         <TabbarTooltipButton
           title="统一侧边面板（终端 / 侧聊 / 审查 / 计划）"
           ariaLabel="统一侧边面板"
-          className={`icon-btn ${showUnifiedPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible ${showUnifiedPanel ? 'active' : ''}`}
           onClick={onToggleUnifiedPanel}
         >
           <TabbarIcon icon={MoreHorizontal} />
         </TabbarTooltipButton>
+        <ChatHeaderOverflowMenu items={overflowItems} />
       </div>
       <ChatTitlebarEnd />
     </div>

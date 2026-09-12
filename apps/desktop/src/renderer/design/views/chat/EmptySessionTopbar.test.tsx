@@ -30,6 +30,7 @@ vi.mock('./ChatToolbar', () => ({
     </button>
   ),
 }))
+vi.mock('./ChatHeaderOverflowMenu', () => ({ ChatHeaderOverflowMenu: () => null }))
 
 import { EmptySessionTopbar } from './EmptySessionTopbar'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
