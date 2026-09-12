@@ -6,6 +6,9 @@ import { SparkDatabase } from '../database.js'
 import { EventRepository } from './event.repository.js'
 import { SessionCollaborationRepository } from './session-collaboration.repository.js'
 import { SessionRepository } from './session.repository.js'
+import { SessionWorkflowBindingRepository } from './session-workflow-binding.repository.js'
+import { WorkflowRepository } from './workflow.repository.js'
+import { WorkflowRunRepository } from './workflow-run.repository.js'
 
 function createDatabase(testDir: string): SparkDatabase {
   const db = new SparkDatabase(join(testDir, 'collaboration.db'))
@@ -198,6 +201,59 @@ describe('SessionCollaborationRepository', () => {
       true,
     )
     expect(result.child.turn_count).toBe(1)
+  })
+
+  it('copies the session workflow binding for a fork with a fresh generation and no runs', () => {
+    const workflows = new WorkflowRepository(db)
+    workflows.create({ id: 'wf-fork', name: 'Fork Target', status: 'active' })
+    const bindings = new SessionWorkflowBindingRepository(db)
+    const runs = new WorkflowRunRepository(db)
+    sessions.create({
+      id: 'source-bound',
+      kind: 'chat',
+      title: 'Bound source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    const sourceBinding = bindings.create({
+      sessionId: 'source-bound',
+      mode: 'override',
+      workflowId: 'wf-fork',
+    })
+    runs.create({
+      id: 'run-source-bound',
+      sessionId: 'source-bound',
+      turnId: 'turn-source-bound',
+      workflowId: 'wf-fork',
+      objective: 'must stay with the source',
+      graph: { nodes: [], edges: [] },
+      workflowBindingInstanceId: sourceBinding.bindingInstanceId,
+    })
+
+    const result = collaboration.forkSession({ sourceSessionId: 'source-bound' })
+
+    // 复制配置 + 新代次；Run 不复制；源会话 Binding 与 Run 原样保留。
+    expect(result.copiedBinding).toMatchObject({ mode: 'override', workflowId: 'wf-fork' })
+    expect(result.copiedBinding?.bindingInstanceId).not.toBe(sourceBinding.bindingInstanceId)
+    expect(bindings.get(result.child.id)?.bindingInstanceId).toBe(
+      result.copiedBinding?.bindingInstanceId,
+    )
+    expect(runs.listBySession(result.child.id)).toEqual([])
+    expect(runs.listBySession('source-bound')).toHaveLength(1)
+    expect(bindings.get('source-bound')?.bindingInstanceId).toBe(sourceBinding.bindingInstanceId)
+  })
+
+  it('keeps a fork of a legacy session without any binding row', () => {
+    sessions.create({
+      id: 'source-legacy',
+      kind: 'chat',
+      title: 'Legacy source',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    const result = collaboration.forkSession({ sourceSessionId: 'source-legacy' })
+    expect(result.copiedBinding).toBeNull()
+    expect(new SessionWorkflowBindingRepository(db).get(result.child.id)).toBeNull()
   })
 
   it('does not copy hidden internal turns that precede a visible fork anchor', () => {

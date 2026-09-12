@@ -4,6 +4,10 @@ import { BaseRepository } from './base.repository.js'
 import { EventRepository, extractSearchableEventBody } from './event.repository.js'
 import type { AgentEventRow, InsertEventParams } from './event.repository.js'
 import type { SessionRow } from './session.repository.js'
+import {
+  SessionWorkflowBindingRepository,
+  type SessionWorkflowBinding,
+} from './session-workflow-binding.repository.js'
 
 export type SessionReferenceStatus = 'active' | 'revoked' | 'unavailable'
 export type SessionReferenceAuditAction = 'attach' | 'update_snapshot' | 'revoke' | 'read'
@@ -71,6 +75,11 @@ export interface SessionForkResult {
   lineage: SessionLineageRow
   copiedTurnCount: number
   sourceWasRunning: boolean
+  /**
+   * Fork 复制出的会话工作流 Binding（新代次，Run 不复制）；源会话无
+   * Binding 行时为 null（旧兼容路径，子会话同样不留行）。
+   */
+  copiedBinding: SessionWorkflowBinding | null
 }
 
 export interface ReferencedSessionTurn {
@@ -217,6 +226,10 @@ export class SessionCollaborationRepository extends BaseRepository {
       eventJson: event.eventJson,
     }))
 
+    // Binding 复制必须在 fork 事务内：与源会话的 Binding 更新共用同一临界区，
+    // 保证复制的是确定版本，且 workflow_runs 永不跨会话复制（copyForFork 语义）。
+    const bindings = new SessionWorkflowBindingRepository(this.db)
+    let copiedBinding: SessionWorkflowBinding | null = null
     const tx = this.raw.transaction(() => {
       insertSession.run(
         child.id,
@@ -251,6 +264,7 @@ export class SessionCollaborationRepository extends BaseRepository {
         lineage.created_at,
       )
       this.events.insertBatchInTransaction(insertEvents)
+      copiedBinding = bindings.copyForFork(params.sourceSessionId, childId)
     })
     tx()
 
@@ -260,6 +274,7 @@ export class SessionCollaborationRepository extends BaseRepository {
       copiedTurnCount:
         anchor == null ? 0 : completedTurns.filter((turn) => turn.cutoffSeq <= cutoffSeq).length,
       sourceWasRunning,
+      copiedBinding,
     }
   }
 
