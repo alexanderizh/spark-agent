@@ -100,7 +100,6 @@ import type { ImportProviderResolution } from '../services/HistoryImport/History
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { registerAccountSyncIpc } from '../services/AccountSync/registerAccountSyncIpc.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
-import { inspectWorkflowReferences } from '@spark/agent-runtime'
 import {
   EventRepository,
   ProviderProfileRepository,
@@ -386,6 +385,7 @@ import { registerToolPackagesIpc } from './registerToolPackagesIpc.js'
 import { createDesktopToolPackageCapabilities } from './toolPackageExtendedCapabilities.js'
 import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
+import { WorkflowReferenceGuardError } from '@spark/storage'
 import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
@@ -1761,6 +1761,24 @@ function getAgentRepository(): AgentRepository {
 
 function getWorkflowRepository(): WorkflowRepository {
   return new WorkflowRepository(getDatabase())
+}
+
+/** 守卫错误 → 结构化 blockedReason（取首个阻断项，携带引用明细供 UI 展示）。 */
+function toWorkflowBlockedReason(
+  error: InstanceType<typeof WorkflowReferenceGuardError>,
+): import('@spark/protocol').WorkflowDeleteBlockedReason {
+  const blocker = error.blockers[0]
+  if (blocker == null) throw new Error('workflow reference guard error had no blockers')
+  switch (blocker.code) {
+    case 'workflow_referenced_by_agents':
+      return { code: blocker.code, agentIds: blocker.agentIds }
+    case 'workflow_referenced_by_bindings':
+      return { code: blocker.code, sessionIds: blocker.sessionIds }
+    case 'workflow_run_resumable':
+      return { code: blocker.code, runIds: blocker.runIds }
+    case 'workflow_in_installed_bundle':
+      return { code: blocker.code, bundleId: blocker.bundleId }
+  }
 }
 
 function getRuntimeCompositionService(): RuntimeCompositionService {
@@ -7651,30 +7669,17 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('workflow:delete', async (req) => {
-    // 引用守卫（阶段 5）：有会话挂载或运行中 Run 时结构化阻断，
-    // 不让 FK RESTRICT 的裸错误漏到 UI。
-    const blockers = inspectWorkflowReferences(getDatabase(), req.id)
-    if (blockers.length > 0) {
-      const blocker = blockers[0]
-      if (blocker == null) throw new Error('workflow reference blockers were empty')
-      return {
-        deleted: false,
-        blockedReason: {
-          code: blocker.code,
-          ...(blocker.code === 'workflow_referenced_by_bindings'
-            ? { sessionIds: blocker.sessionIds }
-            : {}),
-        },
+    // 引用守卫在仓储层强制执行（方案 §8.2）：Agent 绑定、会话挂载、可恢复
+    // Run、已安装 Bundle 任一存在都拒绝；不静默解除任何 Agent/会话绑定。
+    try {
+      const deleted = getWorkflowRepository().delete(req.id)
+      return { deleted, blockedReason: null }
+    } catch (error) {
+      if (error instanceof WorkflowReferenceGuardError) {
+        return { deleted: false, blockedReason: toWorkflowBlockedReason(error) }
       }
+      throw error
     }
-    const agents = getAgentRepository().list({ includeDisabled: true })
-    for (const agent of agents) {
-      if (agent.workflowId === req.id && !agent.builtIn) {
-        getAgentRepository().update(agent.id, { workflowId: null })
-      }
-    }
-    const deleted = getWorkflowRepository().delete(req.id)
-    return { deleted, blockedReason: null }
   })
 
   // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────

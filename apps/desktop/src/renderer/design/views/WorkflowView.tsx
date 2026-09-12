@@ -592,17 +592,31 @@ function WorkflowViewInner() {
         await refresh()
         return
       }
-      if (res.blockedReason?.code === 'workflow_referenced_by_bindings') {
-        const count = res.blockedReason.sessionIds?.length ?? 0
-        toast.error(
-          count > 0
-            ? `仍有 ${count} 个会话挂载此工作流，请先在这些会话中解除挂载再删除。`
-            : '仍有会话挂载此工作流，请先解除挂载再删除。',
-        )
-        return
-      }
-      if (res.blockedReason?.code === 'workflow_run_working') {
-        toast.error('此工作流仍有运行中的任务，请先取消运行再删除。')
+      switch (res.blockedReason?.code) {
+        case 'workflow_referenced_by_agents': {
+          const count = res.blockedReason.agentIds?.length ?? 0
+          toast.error(
+            count > 0
+              ? `仍有 ${count} 个 Agent 以此工作流为默认配置，请先在 Agent 设置中改绑或清除后再删除。`
+              : '仍有 Agent 以此工作流为默认配置，请先改绑后再删除。',
+          )
+          return
+        }
+        case 'workflow_referenced_by_bindings': {
+          const count = res.blockedReason.sessionIds?.length ?? 0
+          toast.error(
+            count > 0
+              ? `仍有 ${count} 个会话挂载此工作流，请先在这些会话中解除挂载再删除。`
+              : '仍有会话挂载此工作流，请先解除挂载再删除。',
+          )
+          return
+        }
+        case 'workflow_run_resumable':
+          toast.error('此工作流仍有进行中或可恢复的运行记录，请先取消或放弃运行再删除。')
+          return
+        case 'workflow_in_installed_bundle':
+          toast.error('此工作流来自已安装的 Bundle，请在 Bundle 管理中卸载整包。')
+          return
       }
     },
     [deleteWorkflow, loadWorkflowIntoCanvas, refresh],

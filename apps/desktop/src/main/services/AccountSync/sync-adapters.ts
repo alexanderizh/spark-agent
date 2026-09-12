@@ -10,6 +10,7 @@ import {
   RulesRepository,
   SettingsRepository,
   TeamDefinitionRepository,
+  WorkflowReferenceGuardError,
   WorkflowRepository,
   WorkspaceRepository,
   type SparkDatabase,
@@ -802,6 +803,14 @@ export class AccountSyncAdapters {
     return { errorCodes: Array.from(new Set(errorCodes)) }
   }
 
+  /** 云端 tombstone 被本地引用守卫拒绝时仅记录，不阻断分类同步。 */
+  private logWorkflowTombstoneBlocked(workflowId: string, error: WorkflowReferenceGuardError) {
+    console.warn(
+      `[account-sync] workflow tombstone skipped (locally referenced): ${workflowId}`,
+      error.blockers.map((blocker) => blocker.code).join(','),
+    )
+  }
+
   private async applyWorkflows(
     records: AccountSyncItem[],
     protectedIds: ReadonlySet<string>,
@@ -810,7 +819,19 @@ export class AccountSyncAdapters {
       if (protectedIds.has(item.id)) continue
       const existing = this.workflows.get(item.id)
       if (item.deleted) {
-        if (existing != null) this.workflows.delete(item.id)
+        if (existing != null) {
+          try {
+            this.workflows.delete(item.id)
+          } catch (error) {
+            // 引用守卫拒绝（本机会话挂载/可恢复 Run，方案 §8.2）：保留本地定义，
+            // 跳过该 tombstone 而不是让整个 workflows 分类每轮重试失败。
+            if (error instanceof WorkflowReferenceGuardError) {
+              this.logWorkflowTombstoneBlocked(item.id, error)
+              continue
+            }
+            throw error
+          }
+        }
         continue
       }
       const value = itemValue(item)
