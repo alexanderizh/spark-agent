@@ -180,6 +180,11 @@ export const TeamModeConfigSchema = z.object({
    *  调大可让成员一次看到更多历史正文（代价是每次执行吃更多上下文）；全文始终可用
    *  team_thread_read 工具按需读取，故预算只影响「默认注入多少」。 */
   threadContextTokenBudget: z.number().int().min(500).max(40000).optional(),
+  /** 单次 dispatch 超时（毫秒）。缺省 600_000（10 分钟），上限 1_800_000（与
+   *  agent-runtime 的 MAX_DISPATCH_TIMEOUT_MS 对齐）。Host 在 task.timeoutMs 中可
+   *  按任务覆盖（仍受上限约束）。会话级字段（sessions.metadata.team），无 UI 入口，
+   *  需在 team:list-members 回显时透传以避免提交回写时丢失。 */
+  dispatchTimeoutMs: z.number().int().min(10_000).max(1_800_000).optional(),
 })
 
 // ── 长期团队定义（agent_teams）CRUD 请求 ────────────────────────────────────

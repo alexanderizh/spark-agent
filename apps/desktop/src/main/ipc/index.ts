@@ -7461,6 +7461,14 @@ export function registerAllIpcHandlers(): void {
             ...(typeof team.teamId === 'string' && team.teamId.length > 0
               ? { teamId: team.teamId }
               : {}),
+            // 会话级无 UI 入口的可选字段必须透传：否则渲染端拿到的 config 缺字段，
+            // 下次提交回写 metadata.team（整体替换语义）时会把它静默丢掉。
+            ...(typeof team.threadContextTokenBudget === 'number'
+              ? { threadContextTokenBudget: team.threadContextTokenBudget }
+              : {}),
+            ...(typeof team.dispatchTimeoutMs === 'number'
+              ? { dispatchTimeoutMs: team.dispatchTimeoutMs }
+              : {}),
           }
         : null
     return { hostAgentId, members, candidates, config }
