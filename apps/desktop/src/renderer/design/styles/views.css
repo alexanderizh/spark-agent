@@ -8433,6 +8433,14 @@ body.inspector-resizing {
 .goal-iteration-divider-next {
   color: color-mix(in srgb, var(--text-muted) 75%, transparent);
 }
+/* ── 定时任务唤醒分割线（scheduled-wake-divider）── 复用 goal-iteration-divider 结构 */
+.scheduled-wake-divider-clock {
+  color: var(--primary);
+}
+.scheduled-wake-divider-time {
+  color: color-mix(in srgb, var(--text-muted) 80%, transparent);
+  font-weight: 500;
+}
 .team-discussion-status {
   display: inline-flex;
   align-items: center;

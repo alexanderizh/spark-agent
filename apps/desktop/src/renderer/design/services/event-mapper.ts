@@ -600,6 +600,8 @@ export class MessageBuilder {
   private currentTurnCheckpointId: string | undefined
   /** 是否已经为当前 turn 生成了汇总 */
   private turnSummaryEmitted = false
+  /** 文件变更 tracker 归属的轮次；定时任务唤醒等新轮开始时据此判定重置 */
+  private turnFileChangesTurnId: string | null = null
 
   getLatestContextUsage(): ContextUsageSnapshot | null {
     return this.latestContextUsage
@@ -659,6 +661,7 @@ export class MessageBuilder {
           this.currentTurnFileChanges = []
           this.currentTurnCheckpointId = undefined
           this.turnSummaryEmitted = false
+          this.turnFileChangesTurnId = null
         }
         if (
           this.currentAssistantId != null &&
@@ -672,6 +675,9 @@ export class MessageBuilder {
       case 'user_message': {
         // 新用户消息抵达 = 上一个待审批的 plan 已被处理（批准发送 send-turn 或被取消后用户重新发言）
         this.latestPlanProposed = null
+        // 新轮开始（含定时任务唤醒轮）：重置上一轮遗留的文件变更 tracker。
+        // 按 turnId 判定，乱序补投的同轮 user_message 不会误清本轮已收集的变更。
+        this.resetTurnTrackerForTurn(event.turnId)
         const userMessage: UIMessage = {
           id: event.id,
           turnId: event.turnId,
@@ -736,6 +742,9 @@ export class MessageBuilder {
           }
           this.messages.push(msg)
           this.currentAssistantId = msg.id
+          // 唤醒轮等 hidden 轮次的第一个 assistant 侧事件会走这条内联新建路径，
+          // 这里同样要按轮次边界重置 tracker，避免上一轮的文件变更被挂到新轮消息上。
+          this.resetTurnTrackerForTurn(event.turnId)
         } else {
           if (!msg.eventIds.includes(event.id)) {
             msg.eventIds.push(event.id)
@@ -2110,6 +2119,7 @@ export class MessageBuilder {
     this.currentTurnFileChanges = []
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
+    this.turnFileChangesTurnId = null
   }
 
   private getOrCreateAssistant(
@@ -2141,11 +2151,22 @@ export class MessageBuilder {
     }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
-    // 新消息开始时重置 turn 追踪状态
+    // 新消息开始时重置 turn 追踪状态（同 turnId 重复调用不清空已收集的变更）
+    this.resetTurnTrackerForTurn(event?.turnId)
+    return msg
+  }
+
+  /**
+   * turn 边界变化时重置文件变更/汇总 tracker。turnId 未变化（同轮或事件缺
+   * turnId 且 tracker 尚无归属）时保持现状，保证乱序补投的同轮事件安全。
+   */
+  private resetTurnTrackerForTurn(turnId: string | undefined): void {
+    const nextTurnId = turnId ?? null
+    if (this.turnFileChangesTurnId === nextTurnId) return
+    this.turnFileChangesTurnId = nextTurnId
     this.currentTurnFileChanges = []
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
-    return msg
   }
 
   /**
@@ -2473,6 +2494,16 @@ export class MessageBuilder {
   /** 在消息末尾追加文件变更汇总块 */
   private appendTurnSummary(msg: UIMessage): void {
     if (this.turnSummaryEmitted || this.currentTurnFileChanges.length === 0) return
+    // 轮次归属校验：tracker 收集的变更必须来自目标消息所属的轮次。终态事件晚于
+    // 下一轮开始到达时（唤醒场景常见），不再把上一轮的变更挂到新轮消息上。
+    // 两侧任一缺 turnId 时无法判定，保持旧行为宽松放行（兼容历史事件）。
+    if (
+      msg.turnId != null &&
+      this.turnFileChangesTurnId != null &&
+      msg.turnId !== this.turnFileChangesTurnId
+    ) {
+      return
+    }
     this.turnSummaryEmitted = true
 
     const prepared = prepareTurnFileSummary(this.currentTurnFileChanges)

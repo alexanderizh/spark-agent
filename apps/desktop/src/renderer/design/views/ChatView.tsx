@@ -75,6 +75,7 @@ import { PlanSidePanel } from './chat/PlanSidePanel'
 import { PlanSummary } from './chat/PlanSummary'
 import { GoalContractCard } from './chat/GoalContractCard'
 import { GoalIterationDivider } from './chat/GoalIterationDivider'
+import { ScheduledWakeDivider } from './chat/ScheduledWakeDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
@@ -4539,6 +4540,40 @@ function ChatStream({
     onStatusChange('')
   }, [onMessagesChange, onStatusChange, stopTrigger])
 
+  // 终态双信号兜底：主进程队列广播表明本会话已空闲（running=false）时，若渲染端
+  // 仍有 streaming 消息，说明 agent_status 终态事件晚到或丢失（定时任务唤醒轮在
+  // 无人值守时段最常见），按终态收敛渲染态。真实终态先到时消息已是终态，
+  // finalize 幂等无副作用——这是第二信号，不替代第一信号。
+  useEffect(() => {
+    return window.spark?.on?.('stream:session:queue-changed', (snapshot) => {
+      if (snapshot.sessionId !== sessionId || snapshot.running) return
+      // 水合窗口内 builderRef 仍指向旧会话的 builder（commitEventsToView 才切换），
+      // 切会话瞬间的空闲广播不得作用到旧会话的消息上——与 live 事件路径同一门控。
+      if (hydratingRef.current) return
+      // 队列因轮次失败暂停时按 error 收敛，避免无人值守时段把失败轮标成已完成。
+      const finalStatus = snapshot.paused?.reason === 'turn_error' ? 'error' : 'completed'
+      const changed = builderRef.current.finalizeRunningMessages(finalStatus)
+      if (changed) {
+        const nextMessages = builderRef.current.getAllMessages()
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        // 与正常终态路径对齐：兜底生成的文件变更汇总同样过滤嵌套 agent worktree 路径。
+        if (nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+          void sanitizeTurnFileSummaries(nextMessages, workspaceRootPath).then((filtered) => {
+            if (filtered === nextMessages) return
+            setMessages(filtered)
+            onMessagesChange(filtered)
+          })
+        }
+      }
+      // 队列空闲是主进程侧的权威信号：同步收敛会话级运行态，避免停止按钮/
+      // 输入框状态与消息气泡不一致。对已收敛状态是幂等 no-op。
+      setAgentIsRunning(false)
+      isStreamingRef.current = false
+      onStatusChange('')
+    })
+  }, [sessionId, onMessagesChange, onStatusChange, workspaceRootPath])
+
   // 用户点了「发送」时立即贴底（IM 即时反馈）。
   // 不等 user_message 事件从后端回来——bump 后立刻 scrollTop = scrollHeight，并清掉
   // 用户上滚状态/「回到最新」按钮，保证发送瞬间体感「自己的消息立刻出现在底部」。
@@ -5147,82 +5182,90 @@ function ChatStream({
                         : undefined
 
                     return msg.role === 'user' ? (
-                      <UserMsg
-                        key={msg.id}
-                        timestamp={msg.timestamp}
-                        blocks={msg.blocks}
-                        {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
-                        {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
-                          ? {
-                              sessionReferences: msg.sessionReferences.map((reference) => ({
-                                sourceSessionId: reference.sourceSessionId,
-                                title:
-                                  reference.title ??
-                                  sessions.find((item) => item.id === reference.sourceSessionId)
-                                    ?.title ??
-                                  '未命名会话',
-                              })),
-                            }
-                          : {})}
-                        {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
-                          ? {
-                              mentionAgentName:
-                                agents.find((a) => a.id === msg.mentionAgentId)?.name ??
-                                msg.mentionAgentId,
-                            }
-                          : {})}
-                        {...(msg.deliveryState != null ? { deliveryState: msg.deliveryState } : {})}
-                        {...(msg.deliveryError != null ? { deliveryError: msg.deliveryError } : {})}
-                        {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
-                          ? {
-                              onDelete: () =>
-                                handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
-                            }
-                          : {})}
-                        selectionMode={multiSelectMode}
-                        selected={selectedMessageIds.has(msg.id)}
-                        onToggleSelected={() => toggleMessageSelected(msg.id)}
-                        onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
-                        {...(onReplyTo != null
-                          ? {
-                              onReply: (selectedText?: string) =>
-                                onReplyTo(msg, undefined, undefined, selectedText),
-                            }
-                          : {})}
-                        {...(onResendMessage != null
-                          ? {
-                              onResend: () =>
-                                onResendMessage(
-                                  buildUserMessagePrefillPayload(
-                                    msg,
-                                    extractTextFromBlocks(msg.blocks),
-                                    sessions,
+                      <Fragment key={msg.id}>
+                        {msg.turnSource === 'scheduled_task' ? (
+                          <ScheduledWakeDivider timestamp={msg.timestamp} />
+                        ) : null}
+                        <UserMsg
+                          timestamp={msg.timestamp}
+                          blocks={msg.blocks}
+                          {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                          {...(msg.sessionReferences != null && msg.sessionReferences.length > 0
+                            ? {
+                                sessionReferences: msg.sessionReferences.map((reference) => ({
+                                  sourceSessionId: reference.sourceSessionId,
+                                  title:
+                                    reference.title ??
+                                    sessions.find((item) => item.id === reference.sourceSessionId)
+                                      ?.title ??
+                                    '未命名会话',
+                                })),
+                              }
+                            : {})}
+                          {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                            ? {
+                                mentionAgentName:
+                                  agents.find((a) => a.id === msg.mentionAgentId)?.name ??
+                                  msg.mentionAgentId,
+                              }
+                            : {})}
+                          {...(msg.deliveryState != null
+                            ? { deliveryState: msg.deliveryState }
+                            : {})}
+                          {...(msg.deliveryError != null
+                            ? { deliveryError: msg.deliveryError }
+                            : {})}
+                          {...(msg.eventIds.length > 0 || isDeletableOptimisticUserMessage(msg)
+                            ? {
+                                onDelete: () =>
+                                  handleDeleteMessage(msg.id, msg.eventIds, msg.clientId),
+                              }
+                            : {})}
+                          selectionMode={multiSelectMode}
+                          selected={selectedMessageIds.has(msg.id)}
+                          onToggleSelected={() => toggleMessageSelected(msg.id)}
+                          onStartMultiSelect={() => enterMultiSelectMode(msg.id)}
+                          {...(onReplyTo != null
+                            ? {
+                                onReply: (selectedText?: string) =>
+                                  onReplyTo(msg, undefined, undefined, selectedText),
+                              }
+                            : {})}
+                          {...(onResendMessage != null
+                            ? {
+                                onResend: () =>
+                                  onResendMessage(
+                                    buildUserMessagePrefillPayload(
+                                      msg,
+                                      extractTextFromBlocks(msg.blocks),
+                                      sessions,
+                                    ),
                                   ),
-                                ),
-                            }
-                          : {})}
-                        {...(onEditMessage != null &&
-                        msg.id === lastEditableUserMessageId &&
-                        msg.turnId != null
-                          ? {
-                              onEdit: (text: string) =>
-                                onEditMessage(
-                                  buildUserMessageRevisionPayload(
-                                    sessionId,
-                                    msg as UIMessage & { turnId: string },
-                                    text,
-                                    sessions,
+                              }
+                            : {})}
+                          {...(onEditMessage != null &&
+                          msg.id === lastEditableUserMessageId &&
+                          msg.turnId != null
+                            ? {
+                                onEdit: (text: string) =>
+                                  onEditMessage(
+                                    buildUserMessageRevisionPayload(
+                                      sessionId,
+                                      msg as UIMessage & { turnId: string },
+                                      text,
+                                      sessions,
+                                    ),
                                   ),
-                                ),
-                            }
-                          : {})}
-                      >
-                        {renderBlocks(msg.blocks, {
-                          detectDocumentOutput: false,
-                          ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
-                          ...(onFilePreview != null ? { onFilePreview } : {}),
-                        })}
-                      </UserMsg>
+                              }
+                            : {})}
+                        >
+                          {renderBlocks(msg.blocks, {
+                            detectDocumentOutput: false,
+                            ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+                            ...(onFilePreview != null ? { onFilePreview } : {}),
+                          })}
+                        </UserMsg>
+                      </Fragment>
                     ) : (
                       (() => {
                         const identity = resolveAssistantIdentity(
