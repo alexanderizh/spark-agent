@@ -4589,6 +4589,86 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(secondPrompt).not.toContain('Edited Workflow')
   })
 
+  it('records the launcher entry as the binding_source of workflow runs (stage 6)', async () => {
+    const hostId = 'stage6-launcher-host'
+    const workerId = 'stage6-launcher-worker'
+    const workflowId = 'stage6-launcher-workflow'
+    mockState.settings.set('sessionWorkflowBinding:runtimeEnabled', true)
+    mockState.settings.set('sessionWorkflowBinding:writeEnabled', true)
+    mockState.agents.set(
+      hostId,
+      makeAgent({
+        id: hostId,
+        name: 'Launcher Host',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.agents.set(
+      workerId,
+      makeAgent({ id: workerId, name: 'Launcher Worker', providerProfileId: 'tencent-provider' }),
+    )
+    mockState.workflows.set(workflowId, {
+      id: workflowId,
+      name: 'Launcher Workflow',
+      version: '1.0.0',
+      status: 'active',
+      enabled: true,
+      description: '',
+      graph: {
+        nodes: [
+          {
+            id: 'launcher-node',
+            kind: 'agent',
+            title: 'Launcher node',
+            config: { agentId: workerId, outputKey: 'launcher' },
+          },
+        ],
+        edges: [],
+      },
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    // 模拟 WorkflowSessionLauncher 的原子创建：Binding + 启动来源同事务落库。
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentId: hostId,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: '试跑 · Launcher Workflow',
+      workflowBinding: { mode: 'override', workflowId },
+      workflowBindingSource: 'editor-test',
+    })
+    expect(mockState.workflowBindings.get(sessionId)).toMatchObject({
+      mode: 'override',
+      workflowId,
+    })
+    expect(JSON.parse(mockState.sessions.get(sessionId)?.metadata_json ?? '{}')).toMatchObject({
+      workflowLaunchSource: 'editor-test',
+    })
+
+    await service.sendTurn({ sessionId, message: 'run the launcher workflow' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    const config = mockState.sdkConfigs[0]
+    if (config == null) throw new Error('expected launcher runtime config')
+    const tool = (
+      (config.mcpServers as Record<string, { instance?: { tools?: unknown[] } }>)?.spark_team
+        ?.instance?.tools ?? []
+    ).find(
+      (candidate) =>
+        typeof candidate === 'object' &&
+        candidate != null &&
+        (candidate as { name?: unknown }).name === 'workflow_run',
+    ) as { handler: (args: unknown) => Promise<unknown> } | undefined
+    if (tool == null) throw new Error('expected workflow_run tool')
+    await tool.handler({ objective: 'launcher objective' })
+
+    const run = [...mockState.workflowRuns.values()][0]
+    expect(run).toMatchObject({
+      workflow_id: workflowId,
+      binding_source: 'editor-test',
+      workflow_binding_instance_id: expect.any(String),
+    })
+  })
+
   it('does not resume a failed run after the Binding generation changes for the same workflow', async () => {
     const hostId = 'stage4-generation-host'
     const workerId = 'stage4-generation-worker'

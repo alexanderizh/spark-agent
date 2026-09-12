@@ -128,6 +128,7 @@ import {
 } from './workflow/effective-workflow-resolver.js'
 import { resolveWorkflowExecutionModeCapability } from './workflow/workflow-execution-mode.js'
 import { readSessionWorkflowFeatureFlags } from './workflow/session-workflow-feature-flags.js'
+import { readWorkflowLaunchSource } from './workflow/workflow-session-launcher.js'
 import { WorkflowBindingService } from './workflow/workflow-binding.service.js'
 import {
   assertSessionWorkflowBindingCreationReady,
@@ -1672,6 +1673,12 @@ export class SessionService {
     title?: string
     workspaceId?: string
     workflowBinding?: SessionWorkflowBindingCreate
+    /**
+     * WorkflowSessionLauncher 内部启动来源：跳过面向用户的挂载 Preflight
+     * （launcher 已自行校验），并把启动入口原子写入会话元数据供 Run 审计。
+     * 仅限服务端内部调用，不经 session:create IPC 暴露。
+     */
+    workflowBindingSource?: 'editor-test' | 'tool-package'
   }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = crypto.randomUUID()
@@ -1680,7 +1687,11 @@ export class SessionService {
       if (workspace != null) await ensureSessionWorkspaceRootPath(workspace, id)
     }
     const agent = this.resolveAgent(params.agentId)
-    assertSessionWorkflowBindingCreationReady(this.db, params.workflowBinding, agent.id)
+    assertSessionWorkflowBindingCreationReady(this.db, params.workflowBinding, agent.id, {
+      ...(params.workflowBindingSource != null
+        ? { launchSource: params.workflowBindingSource }
+        : {}),
+    })
     const row = createSessionAndBindingAtomically({
       db: this.db,
       binding: params.workflowBinding,
@@ -1715,6 +1726,11 @@ export class SessionService {
         if (params.cliSparkOverride !== undefined) {
           sessionRepo.patchMetadata(created.id, {
             cliSparkOverride: normalizeCliSparkOverride(params.cliSparkOverride),
+          })
+        }
+        if (params.workflowBindingSource != null) {
+          sessionRepo.patchMetadata(created.id, {
+            workflowLaunchSource: params.workflowBindingSource,
           })
         }
       },
@@ -3001,11 +3017,21 @@ export class SessionService {
                         ...(effectiveWorkflowContext.workflowVersion != null
                           ? { workflowVersionSnapshot: effectiveWorkflowContext.workflowVersion }
                           : {}),
-                        ...(effectiveWorkflowContext.source === 'session-inherit' ||
-                        effectiveWorkflowContext.source === 'session-override' ||
-                        effectiveWorkflowContext.source === 'legacy-agent'
-                          ? { workflowBindingSource: effectiveWorkflowContext.source }
-                          : {}),
+                        ...(() => {
+                          // 启动器会话（编辑器试跑/Tool Package）以启动入口为
+                          // Run 审计来源，替代泛化的 session-override。
+                          if (effectiveWorkflowContext.source === 'session-override') {
+                            const launchSource = readWorkflowLaunchSource(session.metadata_json)
+                            if (launchSource != null) {
+                              return { workflowBindingSource: launchSource }
+                            }
+                          }
+                          return effectiveWorkflowContext.source === 'session-inherit' ||
+                            effectiveWorkflowContext.source === 'session-override' ||
+                            effectiveWorkflowContext.source === 'legacy-agent'
+                            ? { workflowBindingSource: effectiveWorkflowContext.source }
+                            : {}
+                        })(),
                       }
                     : {}),
                   ...(attachments != null && attachments.length > 0

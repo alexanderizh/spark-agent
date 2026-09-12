@@ -12,12 +12,21 @@ export function assertSessionWorkflowBindingCreationReady(
   db: SparkDatabase,
   binding: SessionWorkflowBindingCreate | undefined,
   hostAgentId?: string,
+  options?: {
+    /**
+     * WorkflowSessionLauncher 内部启动（编辑器试跑 / Tool Package）：
+     * 跳过面向用户的挂载 Preflight（launcher 自行校验存在性、enabled、
+     * draft 放行与图结构），仅保留功能开关要求。
+     */
+    launchSource?: 'editor-test' | 'tool-package'
+  },
 ): void {
   if (binding == null) return
   const flags = readSessionWorkflowFeatureFlags(new SettingsRepository(db))
   if (!flags.writeEnabled) {
     throw new SparkError('CAPABILITY_DISABLED', '会话工作流挂载功能尚未启用。')
   }
+  if (options?.launchSource != null) return
   const preflight = new WorkflowPreflightService(db).inspect({
     ...binding,
     ...(hostAgentId != null ? { hostAgentId } : {}),

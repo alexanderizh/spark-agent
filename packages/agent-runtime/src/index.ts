@@ -1,4 +1,11 @@
 export { ProviderService } from './services/provider.service.js'
+export { WorkflowSessionLauncher } from './services/workflow/workflow-session-launcher.js'
+export type {
+  LaunchWorkflowSessionInput,
+  LaunchWorkflowSessionResult,
+  WorkflowSessionLaunchSource,
+  WorkflowSessionLauncherDeps,
+} from './services/workflow/workflow-session-launcher.js'
 export {
   resolveProviderApiKey,
   resolveProviderApiKeyForProfile,
