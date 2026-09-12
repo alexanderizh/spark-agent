@@ -158,6 +158,7 @@ import {
   runShutdownCleanupSteps,
 } from './app-shutdown.js'
 import { disposeSessionServiceForShutdown } from './session-service-shutdown.js'
+import { disposeHookSystemForShutdown } from './hooks/hook-system-v2.js'
 import {
   resolveAuthKeytarService,
   shouldEnableSingleInstanceLock,
@@ -989,6 +990,10 @@ async function initializeApp(): Promise<void> {
               {
                 name: 'custom tools runtime',
                 run: () => customToolsRuntime?.stop() ?? Promise.resolve(),
+              },
+              {
+                name: 'hooks worker',
+                run: () => disposeHookSystemForShutdown(),
               },
               {
                 name: 'registered app lifecycle cleanup',

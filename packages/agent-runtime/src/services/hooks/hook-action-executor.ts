@@ -1,4 +1,10 @@
-import type { HookDefinitionV1, HookEventEnvelopeV1, HookErrorCodeV1 } from '@spark/protocol'
+import type {
+  HookDefinitionV1,
+  HookEventEnvelopeV1,
+  HookErrorCodeV1,
+  HookValueExpressionV1,
+} from '@spark/protocol'
+import { evaluateValueExpression } from './hook-expression.js'
 import { summarizeValue } from './hook-redaction.js'
 
 /**
@@ -126,17 +132,23 @@ export class HookActionExecutor {
         return { status: 'succeeded' }
       }
       if (definition.action.type === 'builtin.notification') {
-        const title = definition.action.title
-        const body = definition.action.body
+        // 标题/正文表达式按事件白名单路径求值（const/path/template）；
+        // 求值为空时回退到事件默认文案，不允许发出空标题通知。
         const titleValue =
-          title != null ? this.renderExpression(title, envelope, mappedInput) : undefined
+          definition.action.title != null
+            ? this.renderText(definition.action.title, envelope)
+            : undefined
         const bodyValue =
-          body != null ? this.renderExpression(body, envelope, mappedInput) : undefined
+          definition.action.body != null
+            ? this.renderText(definition.action.body, envelope)
+            : undefined
+        const fallbackTitle = BUILTIN_NOTIFICATION_TITLES[envelope.eventName] ?? 'SparkWork 通知'
+        const effectiveTitle =
+          titleValue != null && titleValue.trim() !== '' ? titleValue : fallbackTitle
         await this.withTimeout(
           this.builtins.notification({
-            title:
-              titleValue ?? BUILTIN_NOTIFICATION_TITLES[envelope.eventName] ?? 'SparkWork 通知',
-            ...(bodyValue != null ? { body: bodyValue } : {}),
+            title: effectiveTitle,
+            ...(bodyValue != null && bodyValue.trim() !== '' ? { body: bodyValue } : {}),
             sessionId: envelope.session.id,
             eventId: envelope.eventId,
             hookRunId: request.runId,
@@ -211,28 +223,11 @@ export class HookActionExecutor {
     }
   }
 
-  private renderExpression(
-    expression: { const?: unknown; path?: string; template?: string },
-    envelope: HookEventEnvelopeV1,
-    mappedInput: Record<string, unknown>,
-  ): string {
-    // 通知标题/正文允许直接引用已映射字段（简写：$field），路径/模板走统一求值。
-    if (typeof expression.const === 'string') return expression.const
-    if (expression.path != null) {
-      const mapped = mappedInput[expression.path]
-      if (mapped != null) return String(mapped)
-    }
-    if (expression.template != null) {
-      return expression.template.replace(/\$\{([^}]+)\}/g, (_m, rawPath: string) => {
-        const path = rawPath.trim()
-        const mapped = mappedInput[path]
-        if (mapped != null) return String(mapped)
-        return ''
-      })
-    }
-    if ('const' in expression && expression.const != null) return String(expression.const)
-    void envelope
-    return ''
+  private renderText(expression: HookValueExpressionV1, envelope: HookEventEnvelopeV1): string {
+    const value = evaluateValueExpression(envelope, expression)
+    if (value == null) return ''
+    if (typeof value === 'object') return JSON.stringify(value)
+    return String(value)
   }
 
   private async withTimeout<T>(

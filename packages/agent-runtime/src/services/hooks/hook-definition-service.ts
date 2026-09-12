@@ -140,7 +140,17 @@ export class HookManagementService {
     const errors = validateDefinitionInput(merged)
     if (errors.length > 0) throw new Error(`Hook 定义校验失败: ${errors.join('; ')}`)
 
-    const executionHash = computeExecutionHash(merged)
+    // 哈希必须基于归一化后的执行字段（retryPolicy 补全缺省值），
+    // 保证「同语义定义同哈希」不因提交方式（全量/部分字段）而漂移。
+    const executionHash = computeExecutionHash({
+      eventName: merged.eventName,
+      ...(merged.condition != null ? { condition: merged.condition } : {}),
+      action: merged.action,
+      inputMapping: merged.inputMapping ?? {},
+      ...(merged.timeoutMs != null ? { timeoutMs: merged.timeoutMs } : {}),
+      retryPolicy: normalizeRetryPolicy(merged.retryPolicy),
+      concurrencyPolicy: merged.concurrencyPolicy ?? 'serial_per_session',
+    })
     const executableChanged = executionHash !== current.executionHash
     const updated = this.definitions.update(id, {
       name: merged.name,

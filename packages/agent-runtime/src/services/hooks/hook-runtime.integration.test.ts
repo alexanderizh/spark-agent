@@ -790,4 +790,132 @@ describe('Hook 运行时全管线', () => {
     expect(management.listRuns()).toHaveLength(1)
     expect(management.listRuns()[0]?.eventName).toBe('question.requested')
   })
+
+  it('内置通知标题/正文表达式按事件白名单求值，空值回退默认标题', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: '表达式通知',
+      eventName: 'response.committed',
+      action: {
+        type: 'builtin.notification',
+        title: { template: '会话 ${session.title} 有新回答' },
+        body: { path: 'payload.response.finalText' },
+      },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: alwaysEnabled,
+    })
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    new HookLifecycleBridge(db).responseCommitted('session-1', 'turn-18', 'msg-18', '正文内容')
+    expect(await dispatcher.dispatchPending()).toBe(1)
+    await worker.tickOnce()
+
+    expect(builtins.calls).toHaveLength(1)
+    expect(builtins.calls[0]?.title).toBe('会话 测试会话 有新回答')
+    expect(builtins.calls[0]?.body).toBe('正文内容')
+  })
+
+  it('通知标题路径在事件中缺失时回退默认标题而不是空串', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: '缺失路径通知',
+      eventName: 'turn.completed',
+      action: { type: 'builtin.notification', title: { path: 'payload.message' } },
+      inputMapping: {},
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: alwaysEnabled,
+    })
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    // turn.completed 无 message 载荷 → title 求值为空 → 回退默认标题
+    new HookLifecycleBridge(db).turnTerminal('session-1', 'turn-19', 'completed')
+    expect(await dispatcher.dispatchPending()).toBe(1)
+    await worker.tickOnce()
+
+    expect(builtins.calls).toHaveLength(1)
+    expect(builtins.calls[0]?.title).toBe('SparkWork - 任务完成')
+  })
+
+  it('问题载荷支持数组索引映射（payload.questions.<n>.title）', async () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: '提问联动',
+      eventName: 'question.requested',
+      action: { type: 'builtin.notification' },
+      inputMapping: { firstQuestion: { path: 'payload.questions.0.title' } },
+    })
+    management.upsertBinding({
+      hookId: definition.id,
+      scopeKind: 'application',
+      enabled: true,
+      authorizeExecutionHash: definition.executionHash,
+    })
+
+    const builtins = makeBuiltins()
+    const worker = new HookWorker(db, {
+      owner: 'test-worker',
+      builtins,
+      toolGateway: makeToolGateway(),
+      isEnabled: alwaysEnabled,
+    })
+    const dispatcher = new HookDispatcher(db, {
+      owner: 'test-dispatcher',
+      isEnabled: alwaysEnabled,
+    })
+    new HookLifecycleBridge(db).questionRequested('session-1', 'turn-20', {
+      questionId: 'q-20',
+      questions: [{ title: '继续吗？', description: '请确认' }],
+    })
+    expect(await dispatcher.dispatchPending()).toBe(1)
+    await worker.tickOnce()
+
+    const run = management.listRuns()[0]
+    expect(run?.status).toBe('succeeded')
+  })
+
+  it('updateDefinition 部分字段提交时哈希基于归一化值（同语义同哈希）', () => {
+    const management = new HookManagementService({ db })
+    const definition = management.createDefinition({
+      name: 'hash 稳定性',
+      eventName: 'response.committed',
+      action: { type: 'builtin.sound' },
+      inputMapping: {},
+      retryPolicy: { mode: 'safe', maxAttempts: 3, backoffMs: 1000 },
+    })
+    // 只改 mode，缺省 maxAttempts/backoffMs 由归一化补全，哈希与全量提交一致
+    const { definition: updated } = management.updateDefinition(definition.id, {
+      retryPolicy: { mode: 'safe' },
+    })
+    expect(updated.retryPolicy).toEqual({ mode: 'safe', maxAttempts: 3, backoffMs: 1000 })
+    expect(updated.executionHash).toBe(definition.executionHash)
+  })
 })

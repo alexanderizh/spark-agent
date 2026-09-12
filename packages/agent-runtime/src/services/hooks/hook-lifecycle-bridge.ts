@@ -7,8 +7,11 @@ import {
   type SparkDatabase,
   WorkspaceRepository,
 } from '@spark/storage'
+import { createLogger } from '@spark/shared'
 import { deriveEventId } from './hook-expression.js'
 import { HookEventEmitter } from './hook-event-emitter.js'
+
+const log = createLogger('hooks:bridge')
 
 /**
  * HookLifecycleBridge（设计方案 §13）：把 SessionService / PermissionService 的
@@ -204,9 +207,14 @@ export class HookLifecycleBridge {
         deriveEventId(eventName, sourceId),
       )
       this.emitter.emit(envelope)
-    } catch {
-      // Hook 基础设施不可用时 Agent 主流程继续（设计方案 §12.4）；
-      // 事件缺失由补偿扫描（后续阶段）兜底，这里不向调用方抛错。
+    } catch (error) {
+      // Hook 基础设施不可用时 Agent 主流程继续（设计方案 §12.4），不向调用方抛错；
+      // 记录持久化故障日志，事件缺失由补偿扫描（后续阶段）兜底。
+      log.warn(
+        `emit ${eventName} failed for session ${sessionId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
     }
   }
 }

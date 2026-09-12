@@ -100,6 +100,16 @@ export class HookEventRepository extends BaseRepository {
     return claim()
   }
 
+  /** 派发器内部失败时释放当前租约回 pending（不等租约过期即可重试）。 */
+  releaseLease(eventId: string): void {
+    this.raw
+      .prepare(
+        `UPDATE hook_events SET status = 'pending', lease_owner = NULL, lease_expires_at = NULL
+         WHERE event_id = ? AND status = 'resolving'`,
+      )
+      .run(eventId)
+  }
+
   markResolved(eventId: string): void {
     this.raw
       .prepare(

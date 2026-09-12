@@ -77,7 +77,12 @@ export function registerHooksV2Ipc(options: RegisterHooksV2IpcOptions): void {
   }))
 
   typedIpcHandle('hookV2:set-enabled', async (request) => ({
-    enabled: resolveManagement().setSystemEnabled(request.enabled),
+    // 走运行时组装根：关闭时尽力取消运行中动作并暂停领取（设计方案 §10.1）。
+    enabled: getHookSystemV2(options.getDeps()).setSystemEnabled(request.enabled),
+  }))
+
+  typedIpcHandle('hookV2:list-tool-candidates', async () => ({
+    candidates: await getHookSystemV2(options.getDeps()).listToolCandidates(),
   }))
 
   typedIpcHandle('hookV2:preview', async (request) =>

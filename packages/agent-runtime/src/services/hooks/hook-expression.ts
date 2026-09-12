@@ -58,6 +58,8 @@ export function isAllowedEventPath(eventName: HookEventNameV1, path: string): bo
   if (COMMON_ALLOWED_PATHS.has(path)) return true
   // 数组索引形式：workspaces.<n>.id / workspaces.<n>.name
   if (/^workspaces\.\d+\.(id|name)$/.test(path)) return true
+  // 提问载荷的数组索引形式（通知/工单联动需要引用具体问题）
+  if (/^payload\.questions\.\d+\.(label|title|description)$/.test(path)) return true
   return (PAYLOAD_PATHS_BY_EVENT[eventName] ?? []).includes(path)
 }
 

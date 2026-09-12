@@ -6,6 +6,9 @@ import {
   HookRunRepository,
   type SparkDatabase,
 } from '@spark/storage'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('hooks:dispatcher')
 import { executableBindings, resolveEffectiveBindings } from './hook-binding-resolver.js'
 import { evaluateCondition } from './hook-expression.js'
 
@@ -82,10 +85,14 @@ export class HookDispatcher {
       })
 
       const runnable = executableBindings(items)
-      for (const item of runnable) {
-        const conditionMatched =
-          item.hook.condition == null || evaluateCondition(envelope, item.hook.condition)
-        this.db.raw.transaction(() => {
+      for (const hookId of ambiguousHookIds) {
+        log.warn(`[hooks-v2] ambiguous binding for hook ${hookId}; skipped`)
+      }
+      // 设计方案 §11.4：运行快照创建与事件标 resolved 必须在同一事务。
+      this.db.raw.transaction(() => {
+        for (const item of runnable) {
+          const conditionMatched =
+            item.hook.condition == null || evaluateCondition(envelope, item.hook.condition)
           this.runs.insertIfAbsent({
             eventId: envelope.eventId,
             eventName: envelope.eventName,
@@ -101,18 +108,14 @@ export class HookDispatcher {
             status: conditionMatched ? 'queued' : 'skipped',
             ...(conditionMatched ? {} : { errorCode: 'condition_not_matched' as const }),
           })
-        })()
-      }
-      for (const hookId of ambiguousHookIds) {
-        console.warn(
-          `[hooks-v2] ambiguous binding for hook ${hookId} on event ${envelope.eventId}; skipped`,
-        )
-      }
-      this.events.markResolved(event.event_id)
+        }
+        this.events.markResolved(event.event_id)
+      })()
       return true
     } catch (error) {
-      this.events.requeueExpiredLeases()
-      console.warn(
+      // 派发失败不终结事件：立即释放当前租约回 pending，交给下次调度重试。
+      this.events.releaseLease(event.event_id)
+      log.warn(
         `[hooks-v2] dispatch failed for event ${envelope.eventId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
