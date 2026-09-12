@@ -120,4 +120,30 @@ describe('session workflow binding IPC schemas', () => {
 
     expect(response.preflight.issues[0]?.params).toEqual({ dependencyName: 'tool-a' })
   })
+
+  it('requires the observed generation and run for abandon-run requests', () => {
+    const schema = IpcSchemaRegistry['session:abandon-workflow-run']
+    expect(
+      schema.parse({
+        sessionId: 'session-a',
+        expectedBindingInstanceId: 'binding-gen-1',
+        runId: 'run-1',
+      }),
+    ).toEqual({
+      sessionId: 'session-a',
+      expectedBindingInstanceId: 'binding-gen-1',
+      runId: 'run-1',
+    })
+    expect(() =>
+      schema.parse({ sessionId: 'session-a', expectedBindingInstanceId: 'binding-gen-1' }),
+    ).toThrow()
+    expect(() =>
+      schema.parse({
+        sessionId: 'session-a',
+        expectedBindingInstanceId: 'binding-gen-1',
+        runId: 'run-1',
+        mode: 'override',
+      }),
+    ).toThrow()
+  })
 })

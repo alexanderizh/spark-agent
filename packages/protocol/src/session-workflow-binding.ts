@@ -139,6 +139,29 @@ export interface SessionSetWorkflowBindingResponse {
   }
 }
 
+/**
+ * 「放弃并新建运行」：放弃当前 Binding 代次中最后一个 failed Run。
+ *
+ * 语义（方案 §7.3）：旧 Run 标记 canceled（历史保留），Binding 轮换新代次，
+ * 下一次 workflow_run 调用将新建 Run。expectedBindingInstanceId 是乐观锁；
+ * runId 是 UI 确认弹窗看到的失败 Run，状态漂移时返回 binding_conflict。
+ */
+export interface SessionAbandonWorkflowRunRequest {
+  sessionId: string
+  expectedBindingInstanceId: string
+  runId: string
+}
+
+export interface SessionAbandonWorkflowRunResponse {
+  binding: SessionWorkflowBinding | null
+  effective: EffectiveWorkflowSummary
+  resumableRun: WorkflowRunSummary | null
+  /** 被放弃的 Run；未发生放弃（错误或无 Run 可放弃）时为 null。 */
+  abandonedRunId: string | null
+  changed: boolean
+  error: BindingChangeBlocker | null
+}
+
 const expectedBindingInstanceId = BindingIdSchema.nullable()
 
 export const SessionWorkflowBindingIpcSchemaRegistry = {
@@ -167,6 +190,13 @@ export const SessionWorkflowBindingIpcSchemaRegistry = {
       })
       .strict(),
   ]),
+  'session:abandon-workflow-run': z
+    .object({
+      sessionId: BindingIdSchema,
+      expectedBindingInstanceId: BindingIdSchema,
+      runId: BindingIdSchema,
+    })
+    .strict(),
 } as const
 
 export interface SessionWorkflowBindingIpcChannelMap {
@@ -177,5 +207,9 @@ export interface SessionWorkflowBindingIpcChannelMap {
   'session:set-workflow-binding': [
     SessionSetWorkflowBindingRequest,
     SessionSetWorkflowBindingResponse,
+  ]
+  'session:abandon-workflow-run': [
+    SessionAbandonWorkflowRunRequest,
+    SessionAbandonWorkflowRunResponse,
   ]
 }
