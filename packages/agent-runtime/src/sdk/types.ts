@@ -452,6 +452,8 @@ export interface SDKPermissionRequestContext {
   toolUseID: string
   agentID?: string
   requestId: string
+  /** Hook V2：权限请求的归因 turn（SessionService 包装层注入）。 */
+  turnId?: string
 }
 
 /** Correlation and cancellation metadata for a host-rendered user question. */

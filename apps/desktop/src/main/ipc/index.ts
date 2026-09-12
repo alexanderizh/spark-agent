@@ -296,6 +296,7 @@ import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
+import { registerHooksV2Ipc } from './registerHooksV2Ipc.js'
 import { registerWorkspaceSearchIpc } from './registerWorkspaceSearchIpc.js'
 import { getPluginManager, registerPluginIpc } from './registerPluginIpc.js'
 import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
@@ -385,6 +386,7 @@ import { createDesktopToolPackageCapabilities } from './toolPackageExtendedCapab
 import { registerHtmlRuntimeDocIpc } from './registerHtmlRuntimeDocIpc.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
+import { getHookSystemV2 } from '../hooks/hook-system-v2.js'
 import { getWindowForIpcSender } from './window-controls.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
 import { getDefaultSystemTempRoots, healBoardTasks } from './board-tasks-heal.js'
@@ -2071,6 +2073,11 @@ let _permissionService: PermissionService | null = null
 function getPermissionService(): PermissionService {
   if (_permissionService == null) {
     _permissionService = new PermissionService(new PermissionProfileRepository(getDatabase()))
+    // Hook V2：真实权限请求进入等待时发射 permission.requested（运行时事实源）。
+    getHookSystemV2({
+      db: getDatabase(),
+      getSessionService: () => _sessionService,
+    }).attachPermissionService(_permissionService)
   }
   return _permissionService
 }
@@ -2431,6 +2438,7 @@ function getSessionService(): SessionService {
         {
           ...permissionContext,
           sdkRequestId: sdkContext.requestId,
+          turnId: sdkContext.turnId,
           onDecision: (decision) => {
             selectedDecision = decision
           },
@@ -2537,6 +2545,11 @@ function getSessionService(): SessionService {
     _sessionService.setSessionWorktreeChangedHandler((sessionId, worktree) => {
       pushStreamEvent('stream:session:worktree-changed', { sessionId, worktree })
     })
+    // Hook V2：挂生命周期桥（发射七类 MVP 事件）并启动崩溃恢复 + Worker 轮询
+    getHookSystemV2({
+      db: getDatabase(),
+      getSessionService: () => _sessionService,
+    }).attachSessionService(_sessionService)
   }
   return _sessionService
 }
@@ -2655,7 +2668,9 @@ async function triggerHook(
 ): Promise<boolean> {
   try {
     // 直接调用 hook 逻辑（不通过 IPC）
-    const hookConfigValue = getSettingsService().get('hooks', 'config')
+    // 迁移期双读：renderer 历史上写 ('hooks','data')，主进程读 ('hooks','config')。
+    const hookConfigValue =
+      getSettingsService().get('hooks', 'config') ?? getSettingsService().get('hooks', 'data')
     const globalHookConfig = parseHookConfig(hookConfigValue)
     const agentHookConfig = readAgentHookConfig(sessionId)
     const hookConfig = agentHookConfig.enabled ? agentHookConfig : globalHookConfig
@@ -3523,6 +3538,9 @@ export function registerAllIpcHandlers(): void {
   registerCodexRuntimeIpc({
     getDiagnostics: () => getSessionService().getCodexRuntimeDiagnostics(),
     restartIdle: () => getSessionService().restartIdleCodexRuntimes(),
+  })
+  registerHooksV2Ipc({
+    getDeps: () => ({ db: getDatabase(), getSessionService: () => _sessionService }),
   })
   registerOutcomeRoomIpc()
   registerTeamP1Ipc()
@@ -9015,7 +9033,9 @@ export function registerAllIpcHandlers(): void {
     log.info(`hook:trigger requested, sessionId=${sessionId}, node=${node}`)
 
     // 从 settings 获取 hook 配置
-    const hookConfigValue = getSettingsService().get('hooks', 'config')
+    // 迁移期双读：renderer 历史上写 ('hooks','data')，主进程读 ('hooks','config')。
+    const hookConfigValue =
+      getSettingsService().get('hooks', 'config') ?? getSettingsService().get('hooks', 'data')
     const hookConfig = parseHookConfig(hookConfigValue)
 
     // 如果 hook 系统未启用，直接返回

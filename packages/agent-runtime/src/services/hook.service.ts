@@ -50,7 +50,10 @@ export class HookService {
    * 获取 hook 配置
    */
   getConfig(): HookConfig {
-    const value = this.settingsService.get(HOOK_SETTINGS_CATEGORY, HOOK_SETTINGS_KEY)
+    // 迁移期双读：renderer 历史上写 ('hooks','data')，读取兼容两个键。
+    const value =
+      this.settingsService.get(HOOK_SETTINGS_CATEGORY, HOOK_SETTINGS_KEY) ??
+      this.settingsService.get(HOOK_SETTINGS_CATEGORY, 'data')
     if (value == null || typeof value !== 'object') {
       return DEFAULT_HOOK_CONFIG
     }

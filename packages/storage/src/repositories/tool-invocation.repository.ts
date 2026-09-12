@@ -7,7 +7,7 @@ export type ToolInvocationSourceKind =
   | 'tool-package'
   | 'workflow'
   | 'test'
-export type ToolInvocationSource = 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+export type ToolInvocationSource = 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
 export type ToolInvocationStatus = 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled'
 
 export interface ToolInvocationRow {
@@ -26,6 +26,8 @@ export interface ToolInvocationRow {
   agent_id: string | null
   workflow_id: string | null
   invocation_source: ToolInvocationSource
+  hook_id: string | null
+  hook_run_id: string | null
   status: ToolInvocationStatus
   started_at: string
   finished_at: string | null
@@ -55,6 +57,9 @@ export interface StartToolInvocationParams {
   agentId?: string
   workflowId?: string
   invocationSource: ToolInvocationSource
+  /** Hook 来源调用归因（invocationSource='hook' 时提供）。 */
+  hookId?: string
+  hookRunId?: string
   inputSha256: string
   startedAt?: string
 }
@@ -95,8 +100,8 @@ export class ToolInvocationRepository extends BaseRepository {
         `INSERT INTO tool_invocations (
           id, correlation_id, source_kind, source_id, package_id, tool_id, tool_name,
           version, adapter, session_id, turn_id, project_id, agent_id, workflow_id,
-          invocation_source, status, started_at, input_sha256, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
+          invocation_source, hook_id, hook_run_id, status, started_at, input_sha256, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`,
       )
       .run(
         params.id,
@@ -114,6 +119,8 @@ export class ToolInvocationRepository extends BaseRepository {
         params.agentId ?? null,
         params.workflowId ?? null,
         params.invocationSource,
+        params.hookId ?? null,
+        params.hookRunId ?? null,
         startedAt,
         params.inputSha256,
         startedAt,

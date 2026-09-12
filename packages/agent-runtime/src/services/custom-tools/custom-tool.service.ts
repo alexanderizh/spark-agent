@@ -564,7 +564,8 @@ export class CustomToolService {
     agentId?: string
     workflowId?: string
     correlationId?: string
-    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
+    hookAttribution?: { hookId: string; hookRunId: string; eventId: string }
     source?: CustomToolInvocationSource
     signal?: AbortSignal
     /** Internal recursion guard for native code-tool composition. */
@@ -598,6 +599,7 @@ export class CustomToolService {
         ...(params.workflowId != null ? { workflowId: params.workflowId } : {}),
         ...(params.correlationId != null ? { correlationId: params.correlationId } : {}),
         ...(invocationSource != null ? { invocationSource } : {}),
+        ...(params.hookAttribution != null ? { hookAttribution: params.hookAttribution } : {}),
       })
       throw new CustomToolError('DENIED', `工具 ${record.id} 已停用`).attachTraceId(traceId)
     }
@@ -656,6 +658,7 @@ export class CustomToolService {
           : invocationSource != null
             ? { invocationSource }
             : {}),
+        ...(params.hookAttribution != null ? { hookAttribution: params.hookAttribution } : {}),
       })
       return { ...result, ...(traceId != null ? { traceId } : {}) }
     } catch (error) {
@@ -678,6 +681,7 @@ export class CustomToolService {
           : invocationSource != null
             ? { invocationSource }
             : {}),
+        ...(params.hookAttribution != null ? { hookAttribution: params.hookAttribution } : {}),
       })
       if (isCustomToolError(error)) throw error.attachTraceId(traceId)
       throw new CustomToolError(
@@ -921,7 +925,8 @@ export class CustomToolService {
     agentId?: string
     workflowId?: string
     correlationId?: string
-    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+    invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
+    hookAttribution?: { hookId: string; hookRunId: string; eventId: string }
   }): number | undefined {
     const inputSha256 = createHash('sha256').update(JSON.stringify(input.input)).digest('hex')
     const effectiveToolVersion =
@@ -970,6 +975,12 @@ export class CustomToolService {
         ...(input.workflowId != null ? { workflowId: input.workflowId } : {}),
         invocationSource:
           input.invocationSource ?? (input.source === 'model' ? 'model' : 'platform'),
+        ...(input.hookAttribution != null
+          ? {
+              hookId: input.hookAttribution.hookId,
+              hookRunId: input.hookAttribution.hookRunId,
+            }
+          : {}),
         inputSha256,
         startedAt,
       })

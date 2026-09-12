@@ -1210,6 +1210,12 @@ export class ToolPackageService {
       invocationSource:
         request.context?.invocationSource ??
         (request.context?.workflowId != null ? 'workflow' : 'model'),
+      ...(request.context?.hookAttribution != null
+        ? {
+            hookId: request.context.hookAttribution.hookId,
+            hookRunId: request.context.hookAttribution.hookRunId,
+          }
+        : {}),
       inputSha256: hashJson(request.input),
     })
     try {

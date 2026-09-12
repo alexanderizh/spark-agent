@@ -118,6 +118,7 @@ import type { SubAppJob, SubAppV2IpcChannelMap } from '../sub-app-v2.js'
 import type { CustomToolsIpcChannelMap } from '../custom-tools.js'
 import type { ToolPackageRuntimeEvent, ToolPackagesIpcChannelMap } from '../tool-package.js'
 import type { NotificationsIpcChannelMap } from '../notifications.js'
+import type { HookV2IpcChannelMap } from '../hooks-v2.js'
 import type { AccountSyncIpcChannelMap } from '../account-sync.js'
 import type { WorkflowBundleIpcChannelMap } from '../workflow-bundle-ipc.js'
 import type { NotificationChangedEvent } from '../notifications.js'
@@ -5740,7 +5741,7 @@ export interface HookTriggerRequest {
   body?: string
 }
 
-export type SystemNotificationNavigateReason = HookNode | 'plan_approval'
+export type SystemNotificationNavigateReason = HookNode | 'plan_approval' | 'hook'
 
 export type SystemNotificationViewTarget =
   | 'chat'
@@ -6501,6 +6502,7 @@ export interface IpcChannelMap
     CustomToolsIpcChannelMap,
     ToolPackagesIpcChannelMap,
     NotificationsIpcChannelMap,
+    HookV2IpcChannelMap,
     AccountSyncIpcChannelMap,
     WorkflowBundleIpcChannelMap {
   // Session

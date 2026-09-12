@@ -413,6 +413,10 @@ export class SessionRepository extends BaseRepository {
     this.raw.prepare('DELETE FROM deliberation_events WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM deliberation_conflicts WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM deliberations WHERE session_id = ?').run(id)
+    // Hook 事件/运行记录按 session_id 冗余归因，随会话级联清理；
+    // 保留期语义见 hook 仓储（运行记录不因定义删除而丢失，但会话删除除外）。
+    this.raw.prepare('DELETE FROM hook_runs WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM hook_events WHERE session_id = ?').run(id)
 
     return this.raw.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0
   }
