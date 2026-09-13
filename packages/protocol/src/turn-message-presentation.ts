@@ -1,6 +1,7 @@
 /** Turn 的发起来源。缺省表示历史记录或普通用户输入，保持向后兼容。 */
 export type TurnSource =
   | 'user'
+  | 'remote_user'
   | 'scheduled_task'
   | 'goal_contract_draft'
   | 'goal_iteration'
@@ -19,6 +20,24 @@ export interface UserMessagePresentation {
    * 缺省时继续遵循 userMessageVisibility；该字段不改变模型实际收到的消息。
    */
   userMessageDisplayContent?: string
+}
+
+const LEGACY_TELEGRAM_REMOTE_PROMPT =
+  '【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n'
+
+/** Compatibility for remote turns persisted before display-content metadata existed. */
+export function getLegacyRemoteUserDisplayContent(content: string): string | undefined {
+  if (!content.startsWith(LEGACY_TELEGRAM_REMOTE_PROMPT)) return undefined
+  const userMessage = content.slice(LEGACY_TELEGRAM_REMOTE_PROMPT.length)
+  return userMessage.trim().length > 0 ? userMessage : '（图片或附件）'
+}
+
+export function resolveUserMessageDisplayText(
+  presentation: UserMessagePresentation | undefined,
+  modelMessage: string,
+): string {
+  const displayContent = presentation?.userMessageDisplayContent
+  return displayContent != null && displayContent.trim().length > 0 ? displayContent : modelMessage
 }
 
 export const SCHEDULED_TASK_TURN_PRESENTATION = {

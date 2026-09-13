@@ -121,6 +121,7 @@ describe('IPC schemas', () => {
       connection: {
         channel: 'telegram',
         name: 'Remote',
+        defaultSessionId: null,
         defaultWorkspaceId: 'workspace-1',
         defaultReasoningEffort: 'high',
         defaultPermissionMode: 'codex-auto-review',
@@ -128,6 +129,7 @@ describe('IPC schemas', () => {
     })
 
     expect(request.connection).toMatchObject({
+      defaultSessionId: null,
       defaultWorkspaceId: 'workspace-1',
       defaultReasoningEffort: 'high',
       defaultPermissionMode: 'codex-auto-review',

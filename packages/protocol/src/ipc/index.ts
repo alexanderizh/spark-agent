@@ -5584,6 +5584,8 @@ export interface RemoteConnectionConfig {
   allowedUserIds: string[]
   allowedChatIds: string[]
   defaultSessionId?: string
+  /** Allow multiple remote connections to intentionally share one session and its runtime state. */
+  allowSharedSession?: boolean
   /** Remote project used when creating the next session. */
   defaultWorkspaceId?: string
   defaultProviderProfileId?: string
@@ -5625,7 +5627,10 @@ export interface RemoteListResponse {
 }
 
 export interface RemoteSaveRequest {
-  connection: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'>
+  connection: Omit<Partial<RemoteConnectionConfig>, 'defaultSessionId'> &
+    Pick<RemoteConnectionConfig, 'channel' | 'name'> & {
+      defaultSessionId?: string | null
+    }
 }
 export interface RemoteSaveResponse {
   connection: RemoteConnectionConfig
