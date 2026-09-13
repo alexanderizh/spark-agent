@@ -5,9 +5,40 @@ const log = createLogger('qq-gateway')
 
 const QQ_API_BASE = 'https://api.sgroup.qq.com'
 
-// GROUP_AND_C2C_EVENT（群聊 + 单聊）与 PUBLIC_GUILD_MESSAGES（频道 @ 消息）。
+// GROUP_AND_C2C_EVENT（群聊 + 单聊）、PUBLIC_GUILD_MESSAGES（频道 @ 消息）与 GUILDS（基础事件）。
+const QQ_INTENTS_GUILDS = 1 << 0
 const QQ_INTENTS_GROUP_C2C = 1 << 25
 const QQ_INTENTS_PUBLIC_GUILD_MESSAGES = 1 << 9
+
+// intents 降级阶梯：Identify 被拒（op:9 / 关闭码 4013/4014）时逐级降低事件订阅。
+// 机器人未开通某类消息能力时不应彻底无法连接——管理员自用、仅部分场景可用的情况下，
+// 降低订阅后仍可保持长连接在线；下次 start() 会回到全量重新尝试。
+const INTENT_FALLBACK_LADDER = [
+  QQ_INTENTS_GROUP_C2C | QQ_INTENTS_PUBLIC_GUILD_MESSAGES,
+  QQ_INTENTS_GROUP_C2C,
+  QQ_INTENTS_PUBLIC_GUILD_MESSAGES,
+  QQ_INTENTS_GUILDS,
+] as const
+
+// 官方 WebSocket 错误码 → 提示文案（见 https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/event-emit/websocket.html）。
+const QQ_WS_CLOSE_CODE_HINTS: Record<number, string> = {
+  4001: '无效的 opcode',
+  4002: '无效的 payload',
+  4006: '无效的 session id，需重新鉴权',
+  4007: 'seq 错误，需重新鉴权',
+  4008: '发送频率过快',
+  4009: '连接过期',
+  4010: '无效的 shard',
+  4011: '连接需要处理的频道过多，需分片',
+  4012: '无效的 version',
+  4013: 'intents 参数无效',
+  4014: '机器人未开通所申请的事件订阅（消息能力）权限',
+  4914: '机器人未上线，只允许连接沙箱环境',
+  4915: '机器人已被封禁',
+}
+
+// 这两个关闭码表示服务端拒绝了本次 intents 申请，降级订阅后重试可能恢复。
+const INTENT_REJECT_CLOSE_CODES = new Set([4013, 4014])
 
 const OP_DISPATCH = 0
 const OP_HEARTBEAT = 1
@@ -49,6 +80,8 @@ export class QqBotGateway {
   private heartbeatAckAt = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private failCount = 0
+  // 当前 intents 降级档位（INTENT_FALLBACK_LADDER 下标）；Identify 被拒时逐级下调。
+  private intentsLevel = 0
   private startedAt = 0
   private status: QqGatewayStatus = { running: false }
 
@@ -67,6 +100,7 @@ export class QqBotGateway {
   start(): void {
     if (!this.stopped && this.startedAt > 0) return
     this.stopped = false
+    this.intentsLevel = 0
     this.startedAt = Date.now()
     void this.connectLoop()
   }
@@ -153,7 +187,14 @@ export class QqBotGateway {
               if (payload.t === 'READY' || payload.t === 'RESUMED') {
                 if (payload.t === 'READY') {
                   this.sessionId = readSessionId(payload.d)
-                  log.info('QQ 网关就绪(READY)，会话已建立')
+                  if (this.intentsLevel > 0) {
+                    log.warn(
+                      `QQ 网关就绪(READY)，当前为降级事件订阅(intentsLevel=${this.intentsLevel})；` +
+                        '如需恢复群聊/单聊订阅，请到 QQ 开放平台开通对应消息能力后重新启用连接',
+                    )
+                  } else {
+                    log.info('QQ 网关就绪(READY)，会话已建立')
+                  }
                 } else {
                   log.info('QQ 网关会话已恢复(RESUMED)')
                 }
@@ -175,10 +216,33 @@ export class QqBotGateway {
               break
             }
             case OP_INVALID_SESSION: {
-              log.warn('会话失效(op:9)，丢弃 session 重新 Identify')
-              this.sessionId = null
-              this.lastSeq = null
-              this.sendIdentifyOrResume(socket, token)
+              // 协议要求：收到 op:9 后服务端会关闭当前连接，不能在同一 socket 上重发
+              // Identify/Resume；d 为布尔值，指示 session 是否可续用。READY 前收到 op:9
+              // 视为服务端拒绝本次鉴权（常见于申请的 intents 超出机器人权限），断开后
+              // 由外层退避重连；重连前自动降低一档事件订阅，避免未开通消息能力的机器人
+              // （如仅管理员自用）彻底无法建立长连接。
+              const resumable = payload.d === true
+              if (!resumable) {
+                this.sessionId = null
+                this.lastSeq = null
+              }
+              if (ready) {
+                log.warn(`会话失效(op:9, resumable=${resumable})，断开后重连`)
+                finish()
+                break
+              }
+              const downgraded = this.downgradeIntents()
+              log.warn(
+                `会话在 READY 前失效(op:9, resumable=${resumable})` +
+                  `${downgraded ? `，已降级事件订阅至第 ${this.intentsLevel} 档后重连` : '，等待重连'}`,
+              )
+              finish(
+                new Error(
+                  downgraded
+                    ? `QQ 鉴权被拒(op:9)，已降级事件订阅至第 ${this.intentsLevel} 档重试`
+                    : 'QQ 会话在 READY 前失效(op:9)，等待重连',
+                ),
+              )
               break
             }
           }
@@ -186,9 +250,35 @@ export class QqBotGateway {
           finish(err instanceof Error ? err : new Error(String(err)))
         }
       }
-      const onClose = () => {
-        // READY 之前断开视为连接失败，交由外层退避重试。
-        finish(ready ? undefined : new Error('QQ WebSocket 在 READY 前断开'))
+      // 主进程编译目标无 DOM lib，Node 内置 WebSocket 未暴露全局 CloseEvent 类型，
+      // 用结构类型约束本回调实际读取的 code/reason 字段。
+      const onClose = (event: { code: number; reason: string }) => {
+        // 服务端拒绝鉴权时通过关闭码给出原因（4014=intents 无权限、4914=未上线仅允许
+        // 沙箱、4915=封禁等），必须记录并透传到 lastError，否则无法定位真实拒绝原因。
+        const code = event.code
+        const hint = QQ_WS_CLOSE_CODE_HINTS[code]
+        const reason = event.reason ? `, reason=${event.reason.slice(0, 120)}` : ''
+        if (ready) {
+          log.info(`QQ WebSocket 就绪后关闭(code=${code}${reason})`)
+          finish()
+          return
+        }
+        log.warn(`QQ WebSocket 在 READY 前被关闭(code=${code}${reason})${hint ? `：${hint}` : ''}`)
+        if (INTENT_REJECT_CLOSE_CODES.has(code)) {
+          const downgraded = this.downgradeIntents()
+          finish(
+            new Error(
+              `QQ 网关被服务端拒绝(code=${code})：${hint}` +
+                (downgraded ? `，已降级事件订阅至第 ${this.intentsLevel} 档重试` : ''),
+            ),
+          )
+          return
+        }
+        finish(
+          new Error(
+            `QQ WebSocket 在 READY 前断开(code=${code}${reason})${hint ? `：${hint}` : ''}`,
+          ),
+        )
       }
       const onError = () => {
         finish(ready ? undefined : new Error('QQ WebSocket 连接失败'))
@@ -231,11 +321,20 @@ export class QqBotGateway {
         op: OP_IDENTIFY,
         d: {
           token: `QQBot ${token}`,
-          intents: QQ_INTENTS_GROUP_C2C | QQ_INTENTS_PUBLIC_GUILD_MESSAGES,
+          intents: INTENT_FALLBACK_LADDER[this.intentsLevel] ?? INTENT_FALLBACK_LADDER[0],
           shard: [0, 1],
         },
       }),
     )
+  }
+
+  /**
+   * 降低一档事件订阅；已在最低档时返回 false（保持原档位继续退避重试）。
+   */
+  private downgradeIntents(): boolean {
+    if (this.intentsLevel >= INTENT_FALLBACK_LADDER.length - 1) return false
+    this.intentsLevel += 1
+    return true
   }
 
   private startHeartbeat(): void {

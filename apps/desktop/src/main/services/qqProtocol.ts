@@ -1,3 +1,5 @@
+import { extractQqInboundImages, type QqInboundImage } from './qqImageMedia.js'
+
 /**
  * QQ 官方机器人协议的纯函数部分：事件解析、目标编码与内容分片。
  *
@@ -14,6 +16,7 @@ export type QqInboundMessage = {
   targetId: string
   senderName: string
   text: string
+  images?: QqInboundImage[]
   /** 被动回复引用的 msg_id（群聊/单聊必带；频道回复不需要） */
   msgId?: string
   /** 事件时间戳（秒），用于过滤重连重放的旧事件 */
@@ -96,10 +99,13 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
 
   const author = isRecord(d.author) ? d.author : undefined
   const content = readString(d.content)
+  const images = extractQqInboundImages(d)
+  const normalized = normalizeQqText(content ?? '')
+  const text = normalized || (images.length > 0 ? '请识别并说明这张图片。' : '')
   const msgId = readString(d.id)
   const timestamp = parseQqEventTimestamp(d.timestamp)
 
-  if (content == null) return null
+  if (content == null && images.length === 0) return null
 
   if (t === 'GROUP_AT_MESSAGE_CREATE') {
     const groupOpenid = readString(d.group_openid)
@@ -108,7 +114,8 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       scene: 'group',
       targetId: groupOpenid,
       senderName: readString(author?.member_openid) ?? readString(author?.id) ?? 'QQ 用户',
-      text: normalizeQqText(content),
+      text,
+      ...(images.length > 0 ? { images } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }
@@ -121,7 +128,8 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       scene: 'user',
       targetId: userOpenid,
       senderName: readString(author?.user_openid) ?? readString(author?.id) ?? 'QQ 用户',
-      text: normalizeQqText(content),
+      text,
+      ...(images.length > 0 ? { images } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }
@@ -134,7 +142,8 @@ export function parseQqDispatchEvent(t: string | undefined, d: unknown): QqInbou
       scene: 'channel',
       targetId: channelId,
       senderName: readString(author?.username) ?? readString(author?.id) ?? 'QQ 用户',
-      text: normalizeQqText(content),
+      text,
+      ...(images.length > 0 ? { images } : {}),
       ...(msgId != null ? { msgId } : {}),
       timestamp,
     }
@@ -151,7 +160,24 @@ export function normalizeQqText(rawText: string): string {
     .trim()
 }
 
-/** QQ 群聊/单聊文本按 UTF-8 字节计长（上限 1024 字节），按字节安全分片。 */
+/** 句末标点：断在这里不会劈开语义。 */
+const SENTENCE_BREAK_RE = /[。！？；…!?;.]/
+/** 软断点：逗号/顿号/空白，优先级低于句末标点。 */
+const SOFT_BREAK_RE = /[，、, \t]/
+
+function findLastMatchIndex(text: string, re: RegExp): number {
+  let last = -1
+  for (const match of text.matchAll(new RegExp(re.source, 'g'))) {
+    last = match.index
+  }
+  return last
+}
+
+/**
+ * QQ 群聊/单聊文本按 UTF-8 字节计长（上限 1024 字节），按字节安全分片。
+ * 超长时优先在自然边界断开：换行 > 句末标点 > 逗号/顿号/空白，都没有才硬切；
+ * 断点字符均为单个 BMP 码元，按 UTF-16 下标切片不会拆散代理对。
+ */
 export function splitQqContent(text: string, maxBytes: number): string[] {
   if (maxBytes <= 0) return [text]
   const encoder = new TextEncoder()
@@ -161,9 +187,32 @@ export function splitQqContent(text: string, maxBytes: number): string[] {
   for (const char of Array.from(text)) {
     const size = encoder.encode(char).byteLength
     if (currentBytes + size > maxBytes && current.length > 0) {
-      chunks.push(current)
-      current = ''
-      currentBytes = 0
+      const newline = current.lastIndexOf('\n')
+      const sentence = newline >= 1 ? -1 : findLastMatchIndex(current, SENTENCE_BREAK_RE)
+      const soft = newline >= 1 || sentence >= 0 ? -1 : findLastMatchIndex(current, SOFT_BREAK_RE)
+      const cut =
+        newline >= 1
+          ? newline + 1
+          : sentence >= 0
+            ? sentence + 1
+            : soft >= 0
+              ? soft + 1
+              : current.length
+      let rest = current.slice(cut).replace(/^\s+/, '')
+      let head = current.slice(0, cut)
+      // 自然断点的块去掉尾随空白（硬切块保持原样），且不允许修剪成空块
+      if (newline >= 1 || sentence >= 0 || soft >= 0) {
+        const trimmedHead = head.replace(/\s+$/, '')
+        if (trimmedHead.length > 0) head = trimmedHead
+      }
+      chunks.push(head)
+      // 自然断点后的剩余部分加上当前字符仍超预算时，将其独立成块，保证每块都不超限
+      if (rest.length > 0 && encoder.encode(rest).byteLength + size > maxBytes) {
+        chunks.push(rest)
+        rest = ''
+      }
+      current = rest
+      currentBytes = rest.length > 0 ? encoder.encode(rest).byteLength : 0
     }
     current += char
     currentBytes += size

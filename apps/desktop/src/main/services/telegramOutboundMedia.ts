@@ -22,6 +22,31 @@ function isSupportedImageSource(source: string): boolean {
   return /^https?:\/\//iu.test(source) || /^file:\/\//iu.test(source) || path.isAbsolute(source)
 }
 
+function imageSourceKey(source: string): string {
+  const localPath = localPathFromSource(source)
+  if (localPath != null) return `file:${path.resolve(localPath)}`
+  try {
+    return `url:${new URL(source).href}`
+  } catch {
+    return `raw:${source}`
+  }
+}
+
+export function mergeTelegramOutboundImages(
+  ...groups: Array<readonly TelegramOutboundImage[]>
+): TelegramOutboundImage[] {
+  const seen = new Set<string>()
+  const result: TelegramOutboundImage[] = []
+  for (const image of groups.flat()) {
+    const key = imageSourceKey(image.source)
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(image)
+    if (result.length >= MAX_IMAGES_PER_REPLY) break
+  }
+  return result
+}
+
 export function extractTelegramOutboundMedia(text: string): TelegramOutboundMedia {
   const images: TelegramOutboundImage[] = []
   const remainingText = text.replace(

@@ -139,4 +139,41 @@ describe('splitQqContent', () => {
   it('空内容返回单空串', () => {
     expect(splitQqContent('', 100)).toEqual([''])
   })
+
+  it('优先在换行处断开，断点块去尾随空白、续块去行首空白', () => {
+    // 预算 12 字节：取最后一个换行为断点，块尾 '\n\n' 与续块行首空白都被去掉
+    const chunks = splitQqContent('aaaa\n\nbbbbbbbb', 12)
+    expect(chunks).toEqual(['aaaa', 'bbbbbbbb'])
+  })
+
+  it('无换行时优先在句末标点处断开', () => {
+    // 预算 10 字节：硬切会落在 'cdefg|h' 中间，句末断点应切在 'ab。' 之后
+    const chunks = splitQqContent('ab。cdefghij', 10)
+    expect(chunks).toEqual(['ab。', 'cdefghij'])
+  })
+
+  it('无句末标点时在逗号/空格等软断点断开', () => {
+    // 预算 8 字节：英文按空格断开（断点块尾随空格被去掉）
+    expect(splitQqContent('one two three', 8)).toEqual(['one two', 'three'])
+    // 预算 9 字节：中文按逗号断开
+    expect(splitQqContent('甲，乙，丙丁', 9)).toEqual(['甲，', '乙，', '丙丁'])
+  })
+
+  it('断点后剩余部分加当前字符仍超预算时独立成块，任何一块都不超限', () => {
+    // 预算 11 字节：'.' 后的剩余 9 字节 + 3 字节字符 > 11，剩余部分须独立成块
+    const chunks = splitQqContent('.中文中文中文文', 11)
+    expect(chunks).toEqual(['.', '中文中', '文中文', '文'])
+  })
+
+  it('长混合文本分片不变量：每块均非空且不超过预算', () => {
+    const paragraph = '段落一。第二段落，包含中文与 English words 混排。\n'
+    const text = paragraph.repeat(6)
+    const chunks = splitQqContent(text, 100)
+    expect(chunks.length).toBeGreaterThan(1)
+    const encoder = new TextEncoder()
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeGreaterThan(0)
+      expect(encoder.encode(chunk).byteLength).toBeLessThanOrEqual(100)
+    }
+  })
 })

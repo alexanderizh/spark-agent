@@ -3,7 +3,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { extractTelegramOutboundMedia, sendTelegramOutboundImage } from './telegramOutboundMedia.js'
+import {
+  extractTelegramOutboundMedia,
+  mergeTelegramOutboundImages,
+  sendTelegramOutboundImage,
+} from './telegramOutboundMedia.js'
 
 const temporaryDirectories: string[] = []
 
@@ -26,6 +30,15 @@ describe('extractTelegramOutboundMedia', () => {
       { source: 'https://cdn.example/result.png', alt: '远程图' },
       { source: '/tmp/result image.png', alt: '本地图' },
     ])
+  })
+
+  it('deduplicates the same presented file and Markdown image', () => {
+    expect(
+      mergeTelegramOutboundImages(
+        [{ source: 'file:///tmp/result.png', alt: 'Markdown 图片' }],
+        [{ source: '/tmp/result.png', alt: '' }],
+      ),
+    ).toEqual([{ source: 'file:///tmp/result.png', alt: 'Markdown 图片' }])
   })
 })
 
