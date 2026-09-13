@@ -164,6 +164,8 @@ interface RequestApprovalOptions {
   projectId?: string
   workspaceIds?: string[]
   sdkRequestId?: string
+  /** Hook V2：权限请求的归因 turn（SessionService 包装层注入）。 */
+  turnId?: string
   onDecision?: (decision: PermissionApprovalDecision) => void
   /**
    * 一条审批请求在没有用户操作的情况下失效时回调（超时 / 会话被取消）。
@@ -253,11 +255,30 @@ function selectGrantDecision(
   return second
 }
 
+export type PermissionRequestedListener = (info: {
+  sessionId: string
+  requestId: string
+  toolName: string
+  action: string
+  riskLevel: string
+  turnId?: string
+}) => void
+
 export class PermissionService {
+  private permissionRequestedListener: PermissionRequestedListener | undefined
+
   constructor(private readonly repo: PermissionProfileRepository) {
     this.repo.ensureSchema()
     this.seedBuiltins()
     this.migrateBuiltinRules()
+  }
+
+  /**
+   * Hook V2：注入真实权限请求进入等待的监听器（宿主用它发射 permission.requested
+   * 产品 Hook 事件，移除 Renderer 作为事实触发源的职责）。
+   */
+  setPermissionRequestedListener(listener: PermissionRequestedListener | null): void {
+    this.permissionRequestedListener = listener ?? undefined
   }
 
   private seedBuiltins(): void {
@@ -505,6 +526,20 @@ export class PermissionService {
       if (onExpireRaw != null) {
         // cancelled 路径（cancelPendingApprovals）从这里取出并调用，toolName 已闭包在内
         this._approvalExpireNotifiers.set(requestId, fireExpired)
+      }
+      // Hook V2：真实权限请求已创建并进入等待，先于 pushFn 通知宿主监听器；
+      // 监听器异常不得影响审批流程本身。
+      try {
+        this.permissionRequestedListener?.({
+          sessionId: params.sessionId,
+          requestId,
+          toolName: params.toolName,
+          action: params.action,
+          riskLevel,
+          ...(params.options.turnId != null ? { turnId: params.options.turnId } : {}),
+        })
+      } catch {
+        // ignore: hook 基础设施故障不阻塞会话
       }
       params.pushFn({
         requestId,

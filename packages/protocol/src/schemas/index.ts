@@ -49,6 +49,7 @@ import { SubAppV2IpcSchemaRegistry } from '../sub-app-v2.js'
 import { CustomToolsIpcSchemaRegistry } from '../custom-tools.js'
 import { ToolPackagesIpcSchemaRegistry } from '../tool-package.js'
 import { NotificationsIpcSchemaRegistry } from '../notifications.js'
+import { HookV2IpcSchemaRegistry } from '../hooks-v2.js'
 import { AccountSyncIpcSchemaRegistry } from '../account-sync.js'
 import { WorkflowBundleIpcSchemaRegistry } from '../workflow-bundle-ipc.js'
 import {
@@ -1091,6 +1092,7 @@ export const IpcSchemaRegistry = {
   ...CustomToolsIpcSchemaRegistry,
   ...ToolPackagesIpcSchemaRegistry,
   ...NotificationsIpcSchemaRegistry,
+  ...HookV2IpcSchemaRegistry,
   ...AccountSyncIpcSchemaRegistry,
   ...WorkflowBundleIpcSchemaRegistry,
   ...SessionWorkflowBindingIpcSchemaRegistry,

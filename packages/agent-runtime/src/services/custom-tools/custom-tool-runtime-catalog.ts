@@ -8,7 +8,9 @@ export interface CustomToolInvocationContext {
   agentId?: string
   workflowId?: string
   correlationId?: string
-  invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+  invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
+  /** Hook 来源调用的归因信息（invocationSource='hook' 时提供）。 */
+  hookAttribution?: { hookId: string; hookRunId: string; eventId: string }
 }
 
 export interface NativeCustomToolCatalogEntry {
@@ -59,6 +61,9 @@ export class CustomToolRuntimeCatalog {
             ...(context.correlationId != null ? { correlationId: context.correlationId } : {}),
             ...(context.invocationSource != null
               ? { invocationSource: context.invocationSource }
+              : {}),
+            ...(context.hookAttribution != null
+              ? { hookAttribution: context.hookAttribution }
               : {}),
           })
           return {

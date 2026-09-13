@@ -373,6 +373,34 @@ export type {
   ExecutionStatus as TaskExecutionStatus,
 } from './services/scheduled-task.service.js'
 export { HookService } from './services/hook.service.js'
+// Hook V2（观察型 MVP）：生命周期桥、派发、执行与事件语义
+export {
+  HookActionExecutor,
+  HookActionError,
+  HookDispatcher,
+  HookEventEmitter,
+  HookLifecycleBridge,
+  HookManagementService,
+  HookWorker,
+} from './services/hooks/index.js'
+export type {
+  HookBuiltinActionHandlers,
+  HookExecutionOutcome,
+  HookToolGateway,
+  HookWorkerOptions,
+} from './services/hooks/index.js'
+export type { HookErrorCodeV1 } from '@spark/protocol'
+export {
+  checkExecutionPolicy,
+  isTransientErrorCode,
+  resolveEffectiveBindings,
+  executableBindings,
+  computeExecutionHash,
+  deriveEventId,
+  evaluateCondition,
+  evaluateInputMapping,
+  validateDefinitionInput,
+} from './services/hooks/index.js'
 export type { HookTriggerFn } from './services/hook.service.js'
 export type {
   SkillRegistryAdapter,

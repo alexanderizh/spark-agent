@@ -428,6 +428,7 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SessionQuestionGate } from './session-question-gate.js'
+import type { HookLifecycleBridge } from './hooks/hook-lifecycle-bridge.js'
 import {
   getWorkflowNodesDeep,
   getWorkflowNodeWorkerId,
@@ -1172,6 +1173,16 @@ export class SessionService {
     this.recoverInterruptedSessions()
     this.recoverAcceptedTurnRequests()
     this.cleanupOrphanedSessionEventsInBackground()
+  }
+
+  private hookLifecycleBridge: HookLifecycleBridge | undefined
+
+  /**
+   * 注入 Hook 生命周期桥（主进程组装 HookEventEmitter/Dispatcher/Worker 后调用一次）。
+   * 薄接线：SessionService 只在领域事实持久化后调用桥发射事件，不含 Hook 执行逻辑。
+   */
+  setHookLifecycleBridge(bridge: HookLifecycleBridge | null): void {
+    this.hookLifecycleBridge = bridge ?? undefined
   }
 
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
@@ -1965,6 +1976,8 @@ export class SessionService {
       if (typeof database.raw?.transaction === 'function') database.raw.transaction(persistTurn)()
       else persistTurn()
     }
+    // Hook V2：Turn 注册持久化完成后发射 turn.started（turnId 确定性事件 ID）。
+    this.hookLifecycleBridge?.turnStarted(sessionId, turnId)
     if (resumedErrorQueue) {
       this.getQueueErrorPauseGate().resolve(sessionId)
       new SessionRepository(this.db).updateStatus(sessionId, 'idle')
@@ -3558,7 +3571,7 @@ export class SessionService {
               ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
                 try {
-                  return await this.onApproval!(sid, toolName, toolInput, context)
+                  return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -3574,6 +3587,15 @@ export class SessionService {
               ) => {
                 const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
+                // Hook V2：提问进入等待即发射（questionId 为稳定源；缺省时桥内生成）。
+                this.hookLifecycleBridge?.questionRequested(sid, turnId, {
+                  ...(context.questionId != null ? { questionId: context.questionId } : {}),
+                  ...(context.requestId != null ? { requestId: context.requestId } : {}),
+                  questions: questions.map((question) => ({
+                    title: question.header,
+                    description: question.question,
+                  })),
+                })
                 try {
                   return await this.onQuestion!(sid, questions, { ...context, turnId })
                 } finally {
@@ -3790,7 +3812,7 @@ export class SessionService {
               ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
                 try {
-                  return await this.onApproval!(sid, toolName, toolInput, context)
+                  return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -3953,7 +3975,7 @@ export class SessionService {
               toolName: string,
               toolInput: Record<string, unknown>,
               context: SDKPermissionRequestContext,
-            ) => this.onApproval!(sid, toolName, toolInput, context),
+            ) => this.onApproval!(sid, toolName, toolInput, { ...context, turnId }),
           }
         : {}),
     }
@@ -6349,7 +6371,8 @@ export class SessionService {
       agentId?: string
       workflowId?: string
       correlationId?: string
-      invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+      invocationSource?: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
+      hookAttribution?: { hookId: string; hookRunId: string; eventId: string }
     } = {},
   ) {
     return new UnifiedToolCatalog(
@@ -8318,7 +8341,7 @@ export class SessionService {
             ) => {
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
               try {
-                return await this.onApproval!(sid, toolName, toolInput, context)
+                return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
               } finally {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
               }
@@ -8334,6 +8357,15 @@ export class SessionService {
             ) => {
               const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
+              // Hook V2：提问进入等待即发射（questionId 为稳定源；缺省时桥内生成）。
+              this.hookLifecycleBridge?.questionRequested(sid, turnId, {
+                ...(context.questionId != null ? { questionId: context.questionId } : {}),
+                ...(context.requestId != null ? { requestId: context.requestId } : {}),
+                questions: questions.map((question) => ({
+                  title: question.header,
+                  description: question.question,
+                })),
+              })
               try {
                 return await this.onQuestion!(sid, questions, { ...context, turnId })
               } finally {
@@ -8548,6 +8580,11 @@ export class SessionService {
     if (event.type === 'usage_update') {
       this.usageLedger.recordUpdate(sessionId, turnId, event)
     }
+    // Hook V2：最终可见回答成功持久化（assistant_message complete + isFinal）后发射
+    // response.committed；messageId 即事件 id，finalText 只含最终展示正文。
+    if (event.type === 'assistant_message' && event.mode === 'complete' && event.isFinal) {
+      this.hookLifecycleBridge?.responseCommitted(sessionId, turnId, event.id, event.content)
+    }
 
     // 触发 hook：检测 agent_status 事件的关键状态变化
     if (event.type === 'agent_status') {
@@ -8577,6 +8614,14 @@ export class SessionService {
           title: 'Spark Agent - 需要您的输入',
           body: event.message ?? 'Agent 需要您提供更多信息',
         })
+      }
+      // Hook V2：Turn 终态首次持久化后发射（turnId 确定性事件 ID 去重重复状态）。
+      if (status === 'completed') {
+        this.hookLifecycleBridge?.turnTerminal(sessionId, turnId, 'completed')
+      } else if (status === 'error') {
+        this.hookLifecycleBridge?.turnTerminal(sessionId, turnId, 'failed', event.message)
+      } else if (status === 'cancelled') {
+        this.hookLifecycleBridge?.turnTerminal(sessionId, turnId, 'cancelled', event.message)
       }
       if (TERMINAL_AGENT_STATUSES.has(status)) {
         this.usageLedger.clearTurnState(sessionId, turnId)

@@ -553,7 +553,7 @@ export interface ToolInvocationTrace {
   projectId: string | null
   agentId: string | null
   workflowId: string | null
-  invocationSource: 'model' | 'workflow' | 'test' | 'platform' | 'nested'
+  invocationSource: 'model' | 'workflow' | 'test' | 'platform' | 'nested' | 'hook'
   status: 'running' | 'ok' | 'error' | 'timeout' | 'denied' | 'cancelled'
   startedAt: string
   finishedAt: string | null

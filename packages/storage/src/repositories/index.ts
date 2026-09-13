@@ -265,6 +265,22 @@ export type {
   SetSessionWorkflowBindingResult,
 } from './session-workflow-binding.repository.js'
 export { SessionWorkflowBindingConflictError } from './session-workflow-binding.repository.js'
+export { HookDefinitionRepository } from './hook-definition.repository.js'
+export type {
+  CreateHookDefinitionParams,
+  HookDefinitionRow,
+  UpdateHookDefinitionParams,
+} from './hook-definition.repository.js'
+export { HookBindingRepository } from './hook-binding.repository.js'
+export type { HookBindingRow, UpsertHookBindingParams } from './hook-binding.repository.js'
+export { HookEventRepository } from './hook-event.repository.js'
+export type {
+  HookEventRow,
+  HookEventStatus,
+  InsertHookEventParams,
+} from './hook-event.repository.js'
+export { HookRunRepository } from './hook-run.repository.js'
+export type { CreateHookRunParams, FinishHookRunParams, HookRunRow } from './hook-run.repository.js'
 export { WorkflowBundleRepository } from './workflow-bundle.repository.js'
 export type {
   CreateWorkflowBundleParams,
