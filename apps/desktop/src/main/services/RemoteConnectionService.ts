@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import http from 'node:http'
+import path from 'node:path'
 import { URL } from 'node:url'
 import type { SettingsService } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
@@ -25,7 +26,25 @@ import {
   extractTelegramInboundImages,
   type TelegramInboundImageDescriptor,
 } from './telegramInboundMedia.js'
-import { extractTelegramOutboundMedia, sendTelegramOutboundImage } from './telegramOutboundMedia.js'
+import {
+  extractTelegramOutboundMedia,
+  mergeTelegramOutboundImages,
+  sendTelegramOutboundImage,
+} from './telegramOutboundMedia.js'
+import { formatTelegramMarkdown, isTelegramFormattingError } from './telegramTextFormatting.js'
+import {
+  downloadFeishuImage,
+  extractFeishuInboundImage,
+  uploadFeishuImage,
+  type FeishuInboundImage,
+} from './feishuImageMedia.js'
+import { downloadQqImage, uploadQqImage, type QqInboundImage } from './qqImageMedia.js'
+import { readOutboundImage } from './remoteImageMedia.js'
+import {
+  canShareRemoteSession,
+  remoteConnectionsForSession,
+  remoteRouteKey,
+} from './remoteSessionIsolation.js'
 import {
   TelegramTurnFeedbackManager,
   type TelegramTurnDraftUpdate,
@@ -550,6 +569,8 @@ export function parseWebhookBody(
       text: string
       messageId?: string
       inboundImages?: TelegramInboundImageDescriptor[]
+      feishuImage?: FeishuInboundImage
+      qqImages?: QqInboundImage[]
     }
   | { kind: 'challenge'; responseBody: unknown }
   | { kind: 'ignore' } {
@@ -608,15 +629,21 @@ export function parseWebhookBody(
     const message = isRecord(event.message) ? event.message : event
     const externalId =
       readString(message.chat_id) ?? readString(message.open_chat_id) ?? readString(event.chat_id)
+    const feishuImage = extractFeishuInboundImage({
+      message_id: readString(message.message_id),
+      message_type: readString(message.message_type),
+      content: readString(message.content),
+    })
     const text = parseJsonContent(message.content) ?? readString(message.text)
-    if (!externalId || !text) return { kind: 'ignore' }
+    if (!externalId || (!text && feishuImage == null)) return { kind: 'ignore' }
     const sender = isRecord(event.sender) ? event.sender : undefined
     const senderId = isRecord(sender?.sender_id) ? sender.sender_id : undefined
     return {
       kind: 'message',
       externalId,
       senderName: readString(senderId?.open_id) ?? readString(senderId?.user_id) ?? '飞书用户',
-      text: normalizeInboundText(channel, text),
+      text: normalizeInboundText(channel, text ?? '请识别并说明这张图片。'),
+      ...(feishuImage != null ? { feishuImage } : {}),
       ...(readString(message.message_id)
         ? { messageId: `feishu:${String(message.message_id)}` }
         : {}),
@@ -628,12 +655,14 @@ export function parseWebhookBody(
       isRecord(body) ? readString(body.t) : undefined,
       isRecord(body) && isRecord(body.d) ? body.d : body,
     )
-    if (event == null || event.text.length === 0) return { kind: 'ignore' }
+    if (event == null || (event.text.length === 0 && (event.images?.length ?? 0) === 0))
+      return { kind: 'ignore' }
     return {
       kind: 'message',
       externalId: buildQqExternalId(event.scene, event.targetId),
       senderName: event.senderName,
       text: event.text,
+      ...(event.images != null ? { qqImages: event.images } : {}),
       ...(event.msgId != null ? { messageId: `qq:${event.msgId}` } : {}),
     }
   }
@@ -758,6 +787,9 @@ function sanitizeConnection(input: unknown): RemoteConnectionConfig | null {
     ...(typeof input.defaultSessionId === 'string'
       ? { defaultSessionId: input.defaultSessionId }
       : {}),
+    ...(typeof input.allowSharedSession === 'boolean'
+      ? { allowSharedSession: input.allowSharedSession }
+      : {}),
     ...(typeof input.defaultWorkspaceId === 'string'
       ? { defaultWorkspaceId: input.defaultWorkspaceId }
       : {}),
@@ -826,18 +858,33 @@ export class RemoteConnectionService {
         if (connection?.channel !== 'telegram') return
         await this.sendTelegramChatAction(connection, externalId, 'typing')
       },
-      sendDraft: async (connectionId, externalId, draftId, text) => {
+      sendPreview: async (connectionId, externalId, text) => {
         const connection = this.readStore().connections.find((item) => item.id === connectionId)
         if (connection?.channel !== 'telegram') throw new Error('Telegram connection unavailable')
-        const chatId = Number(externalId)
-        if (!Number.isSafeInteger(chatId) || chatId <= 0) {
-          throw new Error('Telegram streaming drafts require a private chat')
-        }
         const token = readString(connection.credentials.botToken)
         if (token == null) throw new Error('Telegram bot token 未配置')
-        await this.postJson(
-          `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessageDraft`,
-          { chat_id: chatId, draft_id: draftId, text },
+        const response = await this.postTelegramFormattedText(
+          `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`,
+          { chat_id: externalId, disable_web_page_preview: true },
+          text,
+        )
+        const messageId = (response as { result?: { message_id?: unknown } }).result?.message_id
+        if (!Number.isSafeInteger(messageId)) throw new Error('Telegram preview message ID missing')
+        return messageId as number
+      },
+      editPreview: async (connectionId, externalId, messageId, text) => {
+        const connection = this.readStore().connections.find((item) => item.id === connectionId)
+        if (connection?.channel !== 'telegram') throw new Error('Telegram connection unavailable')
+        const token = readString(connection.credentials.botToken)
+        if (token == null) throw new Error('Telegram bot token 未配置')
+        await this.postTelegramFormattedText(
+          `https://api.telegram.org/bot${encodeURIComponent(token)}/editMessageText`,
+          {
+            chat_id: externalId,
+            message_id: messageId,
+            disable_web_page_preview: true,
+          },
+          text,
         )
       },
     })
@@ -857,7 +904,10 @@ export class RemoteConnectionService {
   }
 
   save(
-    patch: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'>,
+    patch: Omit<Partial<RemoteConnectionConfig>, 'defaultSessionId'> &
+      Pick<RemoteConnectionConfig, 'channel' | 'name'> & {
+        defaultSessionId?: string | null
+      },
   ): RemoteConnectionConfig {
     const store = this.readStore()
     const existing =
@@ -879,7 +929,7 @@ export class RemoteConnectionService {
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-    const next: RemoteConnectionConfig = {
+    const next = {
       ...base,
       ...patch,
       credentials: { ...base.credentials, ...(patch.credentials ?? {}) },
@@ -892,6 +942,24 @@ export class RemoteConnectionService {
     }
     const sanitized = sanitizeConnection(next)
     if (sanitized == null) throw new Error('Invalid remote connection')
+    const sessionConflicts = remoteConnectionsForSession(
+      store.connections,
+      sanitized.defaultSessionId,
+      sanitized.id,
+    )
+    const isEnablingShareForExistingBinding =
+      existing?.defaultSessionId === sanitized.defaultSessionId &&
+      sanitized.allowSharedSession === true &&
+      patch.allowSharedSession === true
+    if (
+      sessionConflicts.length > 0 &&
+      !canShareRemoteSession(sanitized, sessionConflicts) &&
+      !isEnablingShareForExistingBinding
+    ) {
+      throw new Error(
+        `会话已绑定到远程连接“${sessionConflicts.map((item) => item.name).join('、')}”。为避免渠道、历史和运行配置混淆，请选择其他会话；如确需共享，请先在所有相关连接中开启“跨连接共享会话”。`,
+      )
+    }
     this.writeConnections(store, sanitized)
     this.emitChange({ reason: 'connection-saved', connectionId: sanitized.id })
     return sanitized
@@ -1025,6 +1093,7 @@ export class RemoteConnectionService {
         Pick<
           RemoteConnectionConfig,
           | 'defaultSessionId'
+          | 'allowSharedSession'
           | 'defaultWorkspaceId'
           | 'defaultProviderProfileId'
           | 'defaultModelId'
@@ -1044,6 +1113,13 @@ export class RemoteConnectionService {
     const next: RemoteConnectionConfig = { ...connection, ...rest }
     if (defaultWorkspaceId === null) delete next.defaultWorkspaceId
     else if (defaultWorkspaceId != null) next.defaultWorkspaceId = defaultWorkspaceId
+    const store = this.readStore()
+    const conflicts = remoteConnectionsForSession(store.connections, next.defaultSessionId, next.id)
+    if (conflicts.length > 0 && !canShareRemoteSession(next, conflicts)) {
+      throw new Error(
+        `会话已绑定到远程连接“${conflicts.map((item) => item.name).join('、')}”。请选择其他会话，或先在所有相关连接中开启“跨连接共享会话”。`,
+      )
+    }
     return this.save(next)
   }
 
@@ -1077,8 +1153,8 @@ export class RemoteConnectionService {
     this.telegramTurnFeedback.update(turnId, update)
   }
 
-  async finishTurnFeedback(turnId: string): Promise<void> {
-    await this.telegramTurnFeedback.finish(turnId)
+  async finishTurnFeedback(turnId: string, finalText?: string): Promise<boolean> {
+    return this.telegramTurnFeedback.finish(turnId, finalText)
   }
 
   async startRuntime(handler: RemoteInboundHandler): Promise<void> {
@@ -1303,6 +1379,8 @@ export class RemoteConnectionService {
       text: string
       messageId?: string
       inboundImages?: TelegramInboundImageDescriptor[]
+      feishuImage?: FeishuInboundImage
+      qqImages?: QqInboundImage[]
     },
   ): Promise<void> {
     if (message.messageId != null) {
@@ -1336,8 +1414,13 @@ export class RemoteConnectionService {
     }
 
     this.markSeen(latest.id, message.externalId)
+    await this.sendProcessingFeedback(latest, message.externalId, message.messageId)
     let attachments: SessionAttachment[] | undefined
-    if ((message.inboundImages?.length ?? 0) > 0) {
+    if (
+      (message.inboundImages?.length ?? 0) > 0 ||
+      message.feishuImage != null ||
+      (message.qqImages?.length ?? 0) > 0
+    ) {
       if (!latest.capabilities.transferFiles) {
         await this.sendDirectMessage(
           latest,
@@ -1346,9 +1429,8 @@ export class RemoteConnectionService {
         )
         return
       }
-      const token = readString(latest.credentials.botToken)
       const attachmentRoot = this.telegramAttachmentRoot
-      if (token == null || attachmentRoot == null) {
+      if (attachmentRoot == null) {
         await this.sendDirectMessage(
           latest,
           message.externalId,
@@ -1357,11 +1439,36 @@ export class RemoteConnectionService {
         return
       }
       try {
-        attachments = await Promise.all(
-          (message.inboundImages ?? []).map((descriptor) =>
-            downloadTelegramInboundImage({ token, descriptor, attachmentRoot }),
-          ),
-        )
+        if (latest.channel === 'telegram') {
+          const token = readString(latest.credentials.botToken)
+          if (token == null) throw new Error('Telegram bot token 未配置')
+          attachments = await Promise.all(
+            (message.inboundImages ?? []).map((descriptor) =>
+              downloadTelegramInboundImage({ token, descriptor, attachmentRoot }),
+            ),
+          )
+        } else if (latest.channel === 'feishu' && message.feishuImage != null) {
+          const appId = readString(latest.credentials.appId)
+          const appSecret = readString(latest.credentials.appSecret)
+          if (appId == null || appSecret == null) throw new Error('飞书凭据未配置')
+          const token = await this.getFeishuToken(latest.id, appId, appSecret)
+          attachments = [
+            await downloadFeishuImage({
+              token,
+              image: message.feishuImage,
+              attachmentRoot: path.join(path.dirname(attachmentRoot), 'feishu'),
+            }),
+          ]
+        } else if (latest.channel === 'qq') {
+          attachments = await Promise.all(
+            (message.qqImages ?? []).map((image) =>
+              downloadQqImage({
+                image,
+                attachmentRoot: path.join(path.dirname(attachmentRoot), 'qq'),
+              }),
+            ),
+          )
+        }
       } catch (error) {
         await this.sendDirectMessage(
           latest,
@@ -1371,7 +1478,6 @@ export class RemoteConnectionService {
         return
       }
     }
-    await this.sendProcessingFeedback(latest, message.externalId, message.messageId)
     if (this.inboundHandler == null) {
       const prefix = latest.commandPrefix.trim() || '/'
       await this.sendDirectMessage(
@@ -1616,13 +1722,16 @@ export class RemoteConnectionService {
     const createdAt = parseFeishuMessageTimestamp(message.create_time)
     if (createdAt != null && createdAt < state.startedAt - 60_000) return
 
-    const text = parseJsonContent(message.content) ?? ''
+    const feishuImage = extractFeishuInboundImage(message)
+    const text =
+      parseJsonContent(message.content) ?? (feishuImage == null ? '' : '请识别并说明这张图片。')
     const normalized = normalizeInboundText('feishu', text)
-    if (normalized.length === 0) return
+    if (normalized.length === 0 && feishuImage == null) return
     await this.handleInboundMessage(connection, {
       externalId: message.chat_id,
       senderName: event.sender?.sender_id?.open_id ?? '飞书用户',
       text: normalized,
+      ...(feishuImage != null ? { feishuImage } : {}),
       ...(message.message_id != null ? { messageId: `feishu:${message.message_id}` } : {}),
     })
   }
@@ -1690,7 +1799,7 @@ export class RemoteConnectionService {
     )
     const externalId = buildQqExternalId(message.scene, message.targetId)
     if (message.msgId != null) {
-      this.qqReplyContexts.set(externalId, {
+      this.qqReplyContexts.set(remoteRouteKey(connection.id, externalId), {
         msgId: message.msgId,
         sentCount: 0,
         expiresAt: Date.now() + 4.5 * 60_000,
@@ -1701,6 +1810,7 @@ export class RemoteConnectionService {
       externalId,
       senderName: message.senderName,
       text: message.text,
+      ...(message.images != null ? { qqImages: message.images } : {}),
       ...(message.msgId != null ? { messageId: `qq:${message.msgId}` } : {}),
     })
   }
@@ -1719,11 +1829,15 @@ export class RemoteConnectionService {
    * 取出一次被动回复凭据：同一 msg_id 限 5 条、有效期约 5 分钟；
    * 超限后返回 null，由发送侧退化为主动消息（可能被平台限流拒绝）。
    */
-  private takeQqReply(externalId: string): { msgId: string; msgSeq: number } | null {
-    const context = this.qqReplyContexts.get(externalId)
+  private takeQqReply(
+    connectionId: string,
+    externalId: string,
+  ): { msgId: string; msgSeq: number } | null {
+    const key = remoteRouteKey(connectionId, externalId)
+    const context = this.qqReplyContexts.get(key)
     if (context == null) return null
     if (context.expiresAt < Date.now() || context.sentCount >= 5) {
-      this.qqReplyContexts.delete(externalId)
+      this.qqReplyContexts.delete(key)
       return null
     }
     context.sentCount += 1
@@ -1829,7 +1943,7 @@ export class RemoteConnectionService {
       return
     }
     if (connection.channel === 'qq') {
-      await this.sendQqMessage(connection, externalId, formatRemoteOutboundText(outbound))
+      await this.sendQqMessage(connection, externalId, outbound)
       return
     }
     await this.sendClawMessage(connection, externalId, formatRemoteOutboundText(outbound))
@@ -1848,7 +1962,7 @@ export class RemoteConnectionService {
           const extracted = extractTelegramOutboundMedia(formattedText)
           return {
             text: extracted.text,
-            images: [...extracted.images, ...(message.images ?? [])],
+            images: mergeTelegramOutboundImages(extracted.images, message.images ?? []),
           }
         })()
       : { text: formattedText, images: [] }
@@ -1861,23 +1975,26 @@ export class RemoteConnectionService {
     const chunks = messageText.length > 0 ? splitText(messageText, 3900) : []
     for (const [index, chunk] of chunks.entries()) {
       const actions = index === chunks.length - 1 ? (message.actions ?? []) : []
-      await this.postJson(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
-        chat_id: externalId,
-        text: chunk,
-        disable_web_page_preview: true,
-        ...(actions.length > 0
-          ? {
-              reply_markup: {
-                inline_keyboard: chunkActions(actions).map((row) =>
-                  row.map((action) => ({
-                    text: action.label,
-                    callback_data: this.encodeTelegramCallback(connection.id, action.command),
-                  })),
-                ),
-              },
-            }
-          : {}),
-      })
+      await this.postTelegramFormattedText(
+        `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`,
+        {
+          chat_id: externalId,
+          disable_web_page_preview: true,
+          ...(actions.length > 0
+            ? {
+                reply_markup: {
+                  inline_keyboard: chunkActions(actions).map((row) =>
+                    row.map((action) => ({
+                      text: action.label,
+                      callback_data: this.encodeTelegramCallback(connection.id, action.command),
+                    })),
+                  ),
+                },
+              }
+            : {}),
+        },
+        chunk,
+      )
     }
     for (const image of media.images) {
       try {
@@ -1987,7 +2104,15 @@ export class RemoteConnectionService {
     if (appId == null || appSecret == null) throw new Error('飞书 App ID 或 App Secret 未配置')
     const token = await this.getFeishuToken(connection.id, appId, appSecret)
     const receiveIdType = resolveFeishuReceiveIdType(externalId)
-    const chunks = splitText(message.text, 10_000)
+    const extracted = connection.capabilities.transferFiles
+      ? extractTelegramOutboundMedia(message.text)
+      : { text: message.text, images: [] }
+    const images = [
+      ...extracted.images,
+      ...(connection.capabilities.transferFiles ? (message.images ?? []) : []),
+    ]
+    const messageText = extracted.text || ((message.actions?.length ?? 0) > 0 ? '请选择操作' : '')
+    const chunks = messageText.length > 0 ? splitText(messageText, 10_000) : []
     for (const [index, text] of chunks.entries()) {
       const actions = index === chunks.length - 1 ? message.actions : undefined
       await this.postJson(
@@ -2006,6 +2131,34 @@ export class RemoteConnectionService {
         { Authorization: `Bearer ${token}` },
       )
     }
+    for (const image of images) {
+      try {
+        const imageKey = await uploadFeishuImage({ token, source: image.source })
+        const result = await this.postJson(
+          `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+          {
+            receive_id: externalId,
+            msg_type: 'image',
+            content: JSON.stringify({ image_key: imageKey }),
+          },
+          { Authorization: `Bearer ${token}` },
+        )
+        if (isRecord(result) && typeof result.code === 'number' && result.code !== 0) {
+          throw new Error(`飞书图片消息发送失败：${String(result.msg ?? result.code)}`)
+        }
+      } catch (error) {
+        log.warn(`飞书图片发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.postJson(
+          `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+          {
+            receive_id: externalId,
+            msg_type: 'text',
+            content: JSON.stringify({ text: `图片发送失败：${image.alt || '未命名图片'}` }),
+          },
+          { Authorization: `Bearer ${token}` },
+        )
+      }
+    }
   }
 
   private async sendProcessingFeedback(
@@ -2014,7 +2167,25 @@ export class RemoteConnectionService {
     messageId?: string,
   ): Promise<void> {
     if (connection.channel === 'telegram') {
-      await this.sendTelegramChatAction(connection, externalId, 'typing')
+      const telegramMessageId = messageId?.match(/^telegram:(\d+)$/)?.[1]
+      const reaction = async () => {
+        if (telegramMessageId == null) return
+        const token = readString(connection.credentials.botToken)
+        if (token == null) return
+        try {
+          await this.postJson(
+            `https://api.telegram.org/bot${encodeURIComponent(token)}/setMessageReaction`,
+            {
+              chat_id: externalId,
+              message_id: Number(telegramMessageId),
+              reaction: [{ type: 'emoji', emoji: '👀' }],
+            },
+          )
+        } catch {
+          // 群组可能禁用 👀，反应失败不阻断消息处理。
+        }
+      }
+      await Promise.all([this.sendTelegramChatAction(connection, externalId, 'typing'), reaction()])
     }
     if (connection.channel === 'feishu' && messageId != null) {
       const feishuMessageId = messageId.replace(/^feishu:/, '')
@@ -2040,7 +2211,7 @@ export class RemoteConnectionService {
   private async sendQqMessage(
     connection: RemoteConnectionConfig,
     externalId: string,
-    text: string,
+    message: RemoteOutboundMessage,
   ): Promise<void> {
     const appId = readString(connection.credentials.qqBotAppId)
     const clientSecret = readString(connection.credentials.qqBotSecret)
@@ -2053,20 +2224,30 @@ export class RemoteConnectionService {
       )
     }
     const token = await this.getQqToken(connection.id, appId, clientSecret)
+    const formatted = formatRemoteOutboundText(message)
+    const extracted = extractTelegramOutboundMedia(formatted)
+    const requestedImages = [...extracted.images, ...(message.images ?? [])]
+    const imageTransferBlocked =
+      !connection.capabilities.transferFiles && requestedImages.length > 0
+    const images = imageTransferBlocked ? [] : requestedImages
+    const outboundText = imageTransferBlocked
+      ? '图片未发送：当前 QQ 连接未启用“传输文件”能力。请在 SparkWork 的远程连接设置中开启后重试。'
+      : extracted.text
     // 群聊/单聊文本按 UTF-8 字节计上限（1024 字节，留余量）；频道文本上限更宽松。
     const maxBytes = target.scene === 'channel' ? 1900 : 1000
-    const chunks = splitQqContent(plainText(text), maxBytes)
+    const chunks = outboundText.length > 0 ? splitQqContent(plainText(outboundText), maxBytes) : []
     for (const chunk of chunks) {
       if (target.scene === 'channel') {
+        const reply = this.takeQqReply(connection.id, externalId)
         await this.postJson(
           `https://api.sgroup.qq.com/channels/${encodeURIComponent(target.targetId)}/messages`,
-          { content: chunk },
+          { content: chunk, ...(reply != null ? { msg_id: reply.msgId } : {}) },
           { Authorization: `QQBot ${token}` },
         )
         continue
       }
       // 群聊/单聊：优先被动回复（引用 msg_id + 递增 msg_seq），超窗后退化为主动消息。
-      const reply = this.takeQqReply(externalId)
+      const reply = this.takeQqReply(connection.id, externalId)
       const endpointBase =
         target.scene === 'group'
           ? `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(target.targetId)}/messages`
@@ -2088,6 +2269,61 @@ export class RemoteConnectionService {
             `错误=${err instanceof Error ? err.message : String(err)}`,
         )
         throw err
+      }
+    }
+    for (const image of images) {
+      try {
+        if (target.scene === 'channel') {
+          const { bytes, fileName, mimeType } = await readOutboundImage(image.source)
+          const form = new FormData()
+          form.append('file_image', new Blob([bytes], { type: mimeType }), fileName)
+          const reply = this.takeQqReply(connection.id, externalId)
+          if (reply != null) form.append('msg_id', reply.msgId)
+          const response = await fetch(
+            `https://api.sgroup.qq.com/channels/${encodeURIComponent(target.targetId)}/messages`,
+            {
+              method: 'POST',
+              headers: { Authorization: `QQBot ${token}` },
+              body: form,
+              signal: AbortSignal.timeout(30_000),
+            },
+          )
+          if (!response.ok) throw new Error(`QQ 频道图片发送失败：HTTP ${response.status}`)
+        } else {
+          const endpointBase =
+            target.scene === 'group'
+              ? `https://api.sgroup.qq.com/v2/groups/${encodeURIComponent(target.targetId)}`
+              : `https://api.sgroup.qq.com/v2/users/${encodeURIComponent(target.targetId)}`
+          const fileInfo = await uploadQqImage({
+            token,
+            endpointBase,
+            source: image.source,
+            uploadTemporaryFile: async ({ filePath, fileName, mimeType }) => {
+              const uploaded = await getAuthService().uploadFile({
+                filePath,
+                fileName,
+                mimeType,
+                purpose: 'media-transfer',
+              })
+              return uploaded.aiUrl
+            },
+          })
+          const reply = this.takeQqReply(connection.id, externalId)
+          await this.postJson(
+            `${endpointBase}/messages`,
+            {
+              msg_type: 7,
+              media: { file_info: fileInfo },
+              ...(reply != null ? { msg_id: reply.msgId, msg_seq: reply.msgSeq } : {}),
+            },
+            { Authorization: `QQBot ${token}` },
+          )
+        }
+      } catch (error) {
+        log.warn(`QQ 图片发送失败: ${error instanceof Error ? error.message : String(error)}`)
+        await this.sendQqMessage(connection, externalId, {
+          text: `图片发送失败：${image.alt || '未命名图片'}`,
+        })
       }
     }
   }
@@ -2190,6 +2426,21 @@ export class RemoteConnectionService {
       return JSON.parse(text)
     } catch {
       return { text }
+    }
+  }
+
+  private async postTelegramFormattedText(
+    url: string,
+    body: Record<string, unknown>,
+    markdown: string,
+  ): Promise<unknown> {
+    const html = formatTelegramMarkdown(markdown)
+    try {
+      return await this.postJson(url, { ...body, text: html, parse_mode: 'HTML' })
+    } catch (error) {
+      if (!isTelegramFormattingError(error)) throw error
+      // A malformed or partially streamed Markdown construct must not suppress the reply.
+      return this.postJson(url, { ...body, text: markdown })
     }
   }
 

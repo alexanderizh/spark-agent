@@ -362,6 +362,13 @@ import { registerImageProcessIpc } from './registerImageProcessIpc.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
+import { deliverRemoteTurnReply } from '../services/remoteTurnReply.js'
+import {
+  canShareRemoteSession,
+  canUseConfiguredRemoteSession,
+  remoteConnectionsForSession,
+} from '../services/remoteSessionIsolation.js'
+import { createRemoteUserTurn, extractExplicitRemoteImageSendPath } from './remote-user-turn.js'
 import type {
   RemoteInboundMessage,
   RemoteInboundResponse,
@@ -451,12 +458,15 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
   sessionId,
   workspaceRootPath,
 ) => {
-  const remoteConnection = getRemoteConnectionService()
+  const remoteConnections = getRemoteConnectionService()
     .list()
-    .connections.find((connection) => connection.defaultSessionId === sessionId)
-  if (remoteConnection != null && remoteConnection.capabilities.useInternalBrowser !== true) {
+    .connections.filter((connection) => connection.defaultSessionId === sessionId)
+  const browserBlockedBy = remoteConnections.filter(
+    (connection) => connection.capabilities.useInternalBrowser !== true,
+  )
+  if (browserBlockedBy.length > 0) {
     log.info(
-      `spark_browser disabled for remote session=${sessionId} connection=${remoteConnection.id}`,
+      `spark_browser disabled for remote session=${sessionId} connections=${browserBlockedBy.map((item) => item.id).join(',')}`,
     )
     return null
   }
@@ -2021,10 +2031,20 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionRepo = new SessionRepository(getDatabase())
 
   const registerScheduledRemoteTurn = (sessionId: string, turnId: string): void => {
-    const remote = getRemoteConnectionService()
+    const remotes = getRemoteConnectionService()
       .list()
-      .connections.find((connection) => connection.defaultSessionId === sessionId)
-    const externalId = remote?.allowedChatIds[0]
+      .connections.filter((connection) => connection.defaultSessionId === sessionId)
+    if (remotes.length > 1) {
+      log.warn(
+        `Skipping scheduled remote delivery for shared session=${sessionId}; no originating remote route is available`,
+      )
+      return
+    }
+    const remote = remotes[0]
+    const externalId =
+      remote?.allowedChatIds[0] ??
+      remote?.pairedDevices[0]?.channelThreadId ??
+      remote?.pairedDevices[0]?.remoteUserId
     if (remote == null || externalId == null) return
     registerRemoteTurn(turnId, { connectionId: remote.id, externalId })
   }
@@ -2405,17 +2425,12 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
     })
   } else if (event.type === 'assistant_message' && event.isFinal) {
     remoteTurnTargets.delete(event.turnId)
-    const content = event.content.trim()
-    const service = getRemoteConnectionService()
-    void service
-      .finishTurnFeedback(event.turnId)
-      .then(async () => {
-        if (content.length === 0) return
-        await service.sendReply(target.connectionId, target.externalId, content, target.attachments)
-      })
-      .catch((err) => {
-        log.warn(`Failed to send remote assistant reply: ${String(err)}`)
-      })
+    void deliverRemoteTurnReply(
+      getRemoteConnectionService(),
+      event.turnId,
+      target,
+      event.content,
+    ).catch((err) => log.warn(`Failed to send remote assistant reply: ${String(err)}`))
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
     const service = getRemoteConnectionService()
@@ -2434,12 +2449,27 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
       .catch((err) => {
         log.warn(`Failed to send remote error reply: ${String(err)}`)
       })
+  } else if (event.type === 'agent_status' && event.status === 'completed') {
+    // A terminal status can precede the persisted final message. Give the final
+    // event a moment, then recover it from history before retiring the target.
+    const turnId = event.turnId
+    const sessionId = event.sessionId
+    void (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      if (remoteTurnTargets.get(turnId) !== target) return
+      try {
+        if (await sendRemoteTurnReplyFromHistory(sessionId, turnId, target)) return
+      } catch (error) {
+        log.warn(`Failed to recover completed remote reply: ${String(error)}`)
+      }
+      if (remoteTurnTargets.get(turnId) !== target) return
+      remoteTurnTargets.delete(turnId)
+      await getRemoteConnectionService().finishTurnFeedback(turnId)
+    })().catch((error) => log.warn(`Failed to settle remote turn: ${String(error)}`))
   } else if (
     event.type === 'agent_status' &&
-    (event.status === 'completed' || event.status === 'cancelled' || event.status === 'error')
+    (event.status === 'cancelled' || event.status === 'error')
   ) {
-    // Most executors emit a final message or agent_error first. This terminal-status
-    // fallback prevents feedback timers leaking for tool-only or interrupted turns.
     remoteTurnTargets.delete(event.turnId)
     void getRemoteConnectionService().finishTurnFeedback(event.turnId)
   }
@@ -2461,14 +2491,7 @@ async function sendRemoteTurnReplyFromHistory(
   if (final == null || final.type !== 'assistant_message') return false
   if (remoteTurnTargets.get(turnId) !== target) return true
   remoteTurnTargets.delete(turnId)
-  const service = getRemoteConnectionService()
-  await service.finishTurnFeedback(turnId)
-  await service.sendReply(
-    target.connectionId,
-    target.externalId,
-    final.content.trim(),
-    target.attachments,
-  )
+  await deliverRemoteTurnReply(getRemoteConnectionService(), turnId, target, final.content)
   return true
 }
 
@@ -3165,6 +3188,13 @@ async function executeRemoteCommand(
     const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
     const agent =
       connection.defaultAgentId != null ? getAgentRepository().get(connection.defaultAgentId) : null
+    const otherSessionBindings = remoteConnectionsForSession(
+      store.connections,
+      sessionId,
+      connection.id,
+    )
+    const intentionallyShared =
+      otherSessionBindings.length > 0 && canShareRemoteSession(connection, otherSessionBindings)
     return {
       ok: true,
       title: connection.name,
@@ -3174,6 +3204,7 @@ async function executeRemoteCommand(
         `配对设备：${connection.pairedDevices.length}`,
         `当前项目：${workspace?.label ?? workspaceId ?? '不使用项目'}`,
         `默认会话：${session?.title ?? connection.defaultSessionId ?? '未设置'}`,
+        `会话隔离：${intentionallyShared ? `与 ${otherSessionBindings.map((item) => item.name).join('、')} 显式共享` : '独立'}`,
         `模型渠道：${provider != null ? `${provider.name} (${provider.provider})` : (providerId ?? '未设置')}`,
         `当前模型：${modelId ?? '未设置'}`,
         `推理强度：${session?.reasoningEffort ?? connection.defaultReasoningEffort ?? 'max'}`,
@@ -3245,6 +3276,14 @@ async function executeRemoteCommand(
       cachedRows: getCachedRemoteSelection(connection.id, 'sessions'),
     })
     if (!resolved.ok) return resolved
+    const conflicts = remoteConnectionsForSession(store.connections, resolved.row.id, connection.id)
+    if (conflicts.length > 0 && !canShareRemoteSession(connection, conflicts)) {
+      return {
+        ok: false,
+        title: '会话已被其他远程连接占用',
+        text: `该会话绑定到“${conflicts.map((item) => item.name).join('、')}”。请选择其他会话；如确需共享，请先在所有相关连接中开启“跨连接共享会话”。`,
+      }
+    }
     remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: resolved.row.id })
     const context = await resolveRemoteContextSummary(connection.id, resolved.row.id)
     return {
@@ -3925,6 +3964,14 @@ async function handleRemoteInboundMessage(
 ): Promise<RemoteInboundResponse | void> {
   const prefix = message.connection.commandPrefix.trim() || '/'
   const trimmedText = message.text.trim()
+  const currentConnections = getRemoteConnectionService().list().connections
+  let effectiveSessionId = message.connection.defaultSessionId
+  if (
+    effectiveSessionId != null &&
+    !canUseConfiguredRemoteSession(currentConnections, message.connection)
+  ) {
+    effectiveSessionId = (await createRemoteSession(message.connection.id)).sessionId
+  }
   const isCommandMessage = trimmedText.startsWith(prefix)
   const activeSelectionKind =
     !isCommandMessage && /^\d+$/.test(trimmedText)
@@ -3948,7 +3995,7 @@ async function handleRemoteInboundMessage(
     const result = await executeRemoteCommand(
       message.connection.id,
       commandMessage,
-      message.connection.defaultSessionId,
+      effectiveSessionId,
     )
     return {
       title: result.title,
@@ -3963,14 +4010,39 @@ async function handleRemoteInboundMessage(
       text: `该连接没有启用消息投递能力。请在设置中启用后再发送任务消息；发送 ${formatRemoteCommand(message.connection, 'help')} 可查看命令。`,
     }
   }
+  const explicitImagePath = extractExplicitRemoteImageSendPath(message.text)
+  if (explicitImagePath != null) {
+    if (!message.connection.capabilities.transferFiles) {
+      return {
+        title: '功能未授权',
+        text: '该连接没有启用“传输文件”能力，请在远程连接设置中开启后重试。',
+      }
+    }
+    try {
+      const stat = await fs.stat(explicitImagePath)
+      if (!stat.isFile()) throw new Error('目标不是文件')
+      // Explicit local image delivery is deterministic and must use the connection
+      // that received this message; do not ask the model to infer a channel from history.
+      await getRemoteConnectionService().sendReply(message.connection.id, message.externalId, '', [
+        { type: 'image', path: explicitImagePath },
+      ])
+      return undefined
+    } catch (error) {
+      return {
+        title: '图片发送失败',
+        text: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
   const sessionId =
-    message.connection.defaultSessionId ??
-    (await createRemoteSession(message.connection.id)).sessionId
+    effectiveSessionId ?? (await createRemoteSession(message.connection.id)).sessionId
   await ensureSessionWorkspacePaths(sessionId)
 
   const result = await getSessionService().sendTurn({
     sessionId,
-    message: `【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n${message.text}`,
+    ...createRemoteUserTurn(message.connection.channel, message.text, {
+      canTransferFiles: message.connection.capabilities.transferFiles,
+    }),
     ...(message.connection.defaultProviderProfileId != null
       ? { providerProfileId: message.connection.defaultProviderProfileId }
       : {}),
