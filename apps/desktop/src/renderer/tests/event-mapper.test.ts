@@ -394,6 +394,21 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('recovers a safe display body for historical remote messages', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      type: 'user_message',
+      content:
+        '【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n浏览器截图发给我',
+    })
+
+    expect(builder.getAllMessages()[0]).toMatchObject({
+      turnSource: 'remote_user',
+      userMessageDisplayContent: '浏览器截图发给我',
+    })
+  })
+
   it('does not append duplicate streaming deltas with the same event id', () => {
     const builder = new MessageBuilder()
     const delta: AgentEvent = {

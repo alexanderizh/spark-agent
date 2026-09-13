@@ -910,9 +910,12 @@ function RemoteConnectionsSection() {
   // 测试/配对等操作先走它，保证后端基于表单里的最新配置执行；
   // 保存后 setDraft 与持久化一致，后续 refresh 不会把表单回退成旧值。
   const persistDraft = async () => {
-    const payload: Partial<RemoteConnectionConfig> &
-      Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
+    const payload: Omit<Partial<RemoteConnectionConfig>, 'defaultSessionId'> &
+      Pick<RemoteConnectionConfig, 'channel' | 'name'> & {
+        defaultSessionId?: string | null
+      } = {
       ...draft,
+      defaultSessionId: draft.defaultSessionId ?? null,
       status: draft.enabled ? draft.status : 'disabled',
     }
     // 新建草稿时 createRemoteDraft 把 id 初始化成 ''，spread 会把它带进来，
@@ -1077,6 +1080,12 @@ function RemoteConnectionsSection() {
     (item) => item.connectionId === draft.id,
   )
   const selectedSession = sessions.find((item) => item.id === draft.defaultSessionId)
+  const sessionBindingConflicts =
+    draft.defaultSessionId == null
+      ? []
+      : connections.filter(
+          (item) => item.id !== draft.id && item.defaultSessionId === draft.defaultSessionId,
+        )
   const enabledCount = connections.filter((item) => item.enabled).length
   const connectedCount = connections.filter((item) => item.status === 'connected').length
   const draftChannelMeta = REMOTE_CHANNEL_META[draft.channel]
@@ -1337,7 +1346,23 @@ function RemoteConnectionsSection() {
                     })),
                   ]}
                 />
+
+                <label>
+                  跨连接共享会话
+                  <span className="sub">默认关闭；开启会共享对话历史和会话运行配置</span>
+                </label>
+                <Switch
+                  size="middle"
+                  checked={draft.allowSharedSession === true}
+                  onChange={(value) => updateDraft({ allowSharedSession: value })}
+                />
               </div>
+              {sessionBindingConflicts.length > 0 && (
+                <div className="remote-muted-box">
+                  该会话也绑定到：{sessionBindingConflicts.map((item) => item.name).join('、')}。
+                  只有所有相关连接都开启“跨连接共享会话”后才会共享；否则下一条远程消息会自动创建独立会话。
+                </div>
+              )}
               {selectedSession == null && draft.defaultSessionId != null && (
                 <div className="remote-muted-box">
                   当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
@@ -1374,7 +1399,16 @@ function RemoteConnectionsSection() {
                     ? 'QQ WebSocket 长连接已启动，无需公网 webhook；在 QQ 里发送 /bind 配对码 后即可使用（单聊直接私聊，群聊需 @机器人）。'
                     : longConnection?.lastError != null
                       ? `QQ 长连接未启动：${longConnection.lastError}`
-                      : '保存并启用 AppID / AppSecret 后会自动启动 QQ 长连接；需先在 QQ 开放平台开通群聊与单聊消息能力。'}
+                      : '保存并启用 AppID / AppSecret 后会自动启动 QQ 长连接；建议在 QQ 开放平台配置好群聊与单聊消息能力。'}
+                  {/(op:9|code=40(13|14)|code=49(14|15))/.test(longConnection?.lastError ?? '') && (
+                    <div className="remote-muted-hint">
+                      该报错只影响当前这条连接对应的机器人（多条 QQ 连接相互独立）。常见原因与处理：
+                      机器人未开通「群聊与单聊消息」能力（op:9 /
+                      code=4014）——连接会自动降低事件订阅重试，
+                      开通后重新启用本连接即可恢复全量订阅；机器人未上线时仅允许连接沙箱环境（code=4914）——
+                      请到 QQ 开放平台 → 机器人管理核对消息能力与沙箱/上线配置。
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -1574,7 +1608,7 @@ const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string
   useInternalBrowser:
     '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
   transferFiles:
-    '允许 Telegram 双向传输图片：入站图片进入当前会话识别；出站本地图片直传失败时使用 Spark 临时存储中转',
+    '允许 Telegram、飞书和 QQ 双向传输图片：入站图片进入当前会话识别；QQ 大图及 Telegram 发送失败时可使用 Spark 临时存储中转',
   manageRuntime: '允许 /progress、/queue、/history、/cancel 管理远程任务',
   dangerousActions: '允许 /confirm 确认高危动作，仍需二次确认',
 }

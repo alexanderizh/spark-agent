@@ -16,7 +16,7 @@ import type {
   UserQuestionPrompt,
   WorkflowProgressNode,
 } from '@spark/protocol'
-import { isEngineCompactSummaryText } from '@spark/protocol'
+import { getLegacyRemoteUserDisplayContent, isEngineCompactSummaryText } from '@spark/protocol'
 import {
   prepareTurnFileSummary,
   type TurnFileChangeCollectionSource,
@@ -48,7 +48,7 @@ export interface UIMessage {
   turnSource?: TurnSource
   /** The original user body is hidden; logical messages and assistant output remain available. */
   userMessageVisibility?: UserMessageVisibility
-  /** Safe user-facing body for an otherwise hidden platform-generated message. */
+  /** Safe user-facing body when the model input also contains internal context. */
   userMessageDisplayContent?: string
   role: 'user' | 'assistant'
   status: 'streaming' | 'completed' | 'error' | 'cancelled'
@@ -678,6 +678,10 @@ export class MessageBuilder {
         // 新轮开始（含定时任务唤醒轮）：重置上一轮遗留的文件变更 tracker。
         // 按 turnId 判定，乱序补投的同轮 user_message 不会误清本轮已收集的变更。
         this.resetTurnTrackerForTurn(event.turnId)
+        const legacyRemoteDisplay =
+          event.userMessageDisplayContent == null
+            ? getLegacyRemoteUserDisplayContent(event.content)
+            : null
         const userMessage: UIMessage = {
           id: event.id,
           turnId: event.turnId,
@@ -702,13 +706,19 @@ export class MessageBuilder {
           eventIds: [event.id],
           ...(event.clientMessageId != null ? { clientId: event.clientMessageId } : {}),
           ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
-          ...(event.turnSource != null ? { turnSource: event.turnSource } : {}),
+          ...(event.turnSource != null
+            ? { turnSource: event.turnSource }
+            : legacyRemoteDisplay != null
+              ? { turnSource: 'remote_user' as const }
+              : {}),
           ...(event.userMessageVisibility != null
             ? { userMessageVisibility: event.userMessageVisibility }
             : {}),
           ...(event.userMessageDisplayContent != null
             ? { userMessageDisplayContent: event.userMessageDisplayContent }
-            : {}),
+            : legacyRemoteDisplay != null
+              ? { userMessageDisplayContent: legacyRemoteDisplay }
+              : {}),
         }
         const existingAssistantIndex = this.messages.findIndex(
           (message) => message.role === 'assistant' && message.turnId === event.turnId,

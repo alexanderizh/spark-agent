@@ -1,4 +1,5 @@
 import type { SessionQueuedTurn, TurnPromptSnapshotEvent } from '@spark/protocol'
+import { getLegacyRemoteUserDisplayContent } from '@spark/protocol'
 import type { UIMessage } from '../../services/event-mapper'
 
 export const HIDDEN_INTERNAL_TURN_PLACEHOLDER = '内部提示已隐藏'
@@ -24,12 +25,11 @@ export function projectVisibleChatMessages(messages: UIMessage[]): UIMessage[] {
   }
 
   return messages.flatMap((message) => {
-    if (message.role === 'user' && message.userMessageVisibility === 'hidden') {
-      if (
-        message.userMessageDisplayContent == null ||
-        message.userMessageDisplayContent.trim().length === 0
-      ) {
-        return []
+    if (message.role === 'user') {
+      const displayContent = message.userMessageDisplayContent
+      if (displayContent == null || displayContent.trim().length === 0) {
+        if (message.userMessageVisibility === 'hidden') return []
+        return [message]
       }
       return [
         {
@@ -37,7 +37,7 @@ export function projectVisibleChatMessages(messages: UIMessage[]): UIMessage[] {
           blocks: [
             {
               kind: 'text' as const,
-              content: message.userMessageDisplayContent,
+              content: displayContent,
               isStreaming: false,
             },
           ],
@@ -66,25 +66,32 @@ function getInternalTurnDisplayLabel(turnSource: SessionQueuedTurn['turnSource']
 
 /** Keeps queue controls available while replacing hidden prompt bodies with safe labels. */
 export function projectQueuedTurnsForDisplay(turns: SessionQueuedTurn[]): SessionQueuedTurn[] {
-  return turns.map((turn) =>
-    turn.userMessageVisibility === 'hidden'
-      ? {
-          ...turn,
-          message:
-            turn.userMessageDisplayContent != null &&
-            turn.userMessageDisplayContent.trim().length > 0
-              ? turn.userMessageDisplayContent
-              : getInternalTurnDisplayLabel(turn.turnSource),
-        }
-      : turn,
-  )
+  return turns.map((turn) => {
+    const legacyRemoteDisplay = getLegacyRemoteUserDisplayContent(turn.message)
+    const displayContent = turn.userMessageDisplayContent ?? legacyRemoteDisplay
+    if (displayContent != null && displayContent.trim().length > 0) {
+      return {
+        ...turn,
+        message: displayContent,
+        ...(legacyRemoteDisplay != null && turn.turnSource == null
+          ? { turnSource: 'remote_user' as const }
+          : {}),
+      }
+    }
+    return turn.userMessageVisibility === 'hidden'
+      ? { ...turn, message: getInternalTurnDisplayLabel(turn.turnSource) }
+      : turn
+  })
 }
 
-/** Runtime audit shows only the explicit safe body for a hidden prompt, otherwise a placeholder. */
+/** Runtime audit prefers the explicit safe body whenever model input includes internal context. */
 export function getVisibleTurnPromptSnapshotUserMessage(snapshot: TurnPromptSnapshotEvent): string {
-  if (snapshot.userMessageVisibility !== 'hidden') return snapshot.userMessage
-  return snapshot.userMessageDisplayContent != null &&
-    snapshot.userMessageDisplayContent.trim().length > 0
-    ? snapshot.userMessageDisplayContent
-    : HIDDEN_INTERNAL_TURN_PLACEHOLDER
+  const displayContent =
+    snapshot.userMessageDisplayContent ?? getLegacyRemoteUserDisplayContent(snapshot.userMessage)
+  if (displayContent != null && displayContent.trim().length > 0) {
+    return displayContent
+  }
+  return snapshot.userMessageVisibility === 'hidden'
+    ? HIDDEN_INTERNAL_TURN_PLACEHOLDER
+    : snapshot.userMessage
 }

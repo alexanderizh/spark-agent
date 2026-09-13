@@ -85,6 +85,68 @@ describe('projectVisibleChatMessages', () => {
     expect(projectVisibleChatMessages([legacy, visible])).toEqual([legacy, visible])
   })
 
+  it('shows only the safe user text for a visible remote turn', () => {
+    const remote = message({
+      id: 'remote-user',
+      role: 'user',
+      turnId: 'turn-remote',
+      turnSource: 'remote_user',
+      userMessageDisplayContent: '浏览器页面截图发给我',
+      blocks: [
+        {
+          kind: 'text',
+          content: '【远程 Telegram 会话】内置提示\n\n浏览器页面截图发给我',
+          isStreaming: false,
+        },
+      ],
+    })
+    expect(projectVisibleChatMessages([remote])[0]?.blocks).toEqual([
+      { kind: 'text', content: '浏览器页面截图发给我', isStreaming: false },
+    ])
+    expect(remote.blocks[0]).toMatchObject({ content: expect.stringContaining('内置提示') })
+    expect(
+      projectQueuedTurnsForDisplay([
+        {
+          turnId: 'turn-remote',
+          message: '【远程 Telegram 会话】内置提示\n\n浏览器页面截图发给我',
+          enqueuedAt: '2026-08-13T00:00:00.000Z',
+          turnSource: 'remote_user',
+          userMessageDisplayContent: '浏览器页面截图发给我',
+        },
+      ])[0]?.message,
+    ).toBe('浏览器页面截图发给我')
+  })
+
+  it('redacts the known historical Telegram prompt in queued and inspected turns', () => {
+    const legacy =
+      '【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n截图发给我'
+    expect(
+      projectQueuedTurnsForDisplay([
+        {
+          turnId: 'legacy-remote',
+          message: legacy,
+          enqueuedAt: '2026-08-13T00:00:00.000Z',
+        },
+      ])[0],
+    ).toMatchObject({ message: '截图发给我', turnSource: 'remote_user' })
+    expect(
+      getVisibleTurnPromptSnapshotUserMessage({
+        id: 'legacy-snapshot',
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session',
+        turnId: 'legacy-remote',
+        timestamp: '2026-08-13T00:00:00.000Z',
+        seq: 1,
+        userMessage: legacy,
+        systemPromptSections: [],
+        model: 'model',
+        adapterKind: 'codex',
+        permissionMode: 'default',
+        toolCount: 0,
+      }),
+    ).toBe('截图发给我')
+  })
+
   it('redacts hidden internal prompts while preserving renderer queue controls', () => {
     expect(
       projectQueuedTurnsForDisplay([
@@ -174,6 +236,27 @@ describe('projectVisibleChatMessages', () => {
         userMessageVisibility: 'hidden',
       }),
     ).toBe('check deployment status')
+  })
+
+  it('prefers safe display text in a visible remote prompt snapshot', () => {
+    expect(
+      getVisibleTurnPromptSnapshotUserMessage({
+        id: 'snapshot-remote',
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session',
+        turnId: 'turn-remote',
+        timestamp: '2026-08-13T00:00:00.000Z',
+        seq: 1,
+        userMessage: '【远程 Telegram 会话】内置提示\n\n浏览器页面截图发给我',
+        userMessageDisplayContent: '浏览器页面截图发给我',
+        systemPromptSections: [],
+        model: 'model',
+        adapterKind: 'codex',
+        permissionMode: 'default',
+        toolCount: 0,
+        turnSource: 'remote_user',
+      }),
+    ).toBe('浏览器页面截图发给我')
   })
 
   it('keeps pure internal prompt snapshots redacted when no safe body is provided', () => {

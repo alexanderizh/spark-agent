@@ -120,4 +120,17 @@ describe('buildTurnRetryPayload', () => {
 
     expect(buildTurnRetryPayload(messages, 'turn-hidden')).toBeNull()
   })
+
+  it('does not retry a remote-origin turn through the local composer', () => {
+    const messages = [
+      uiMessage({
+        id: 'remote-user',
+        turnId: 'turn-remote',
+        role: 'user',
+        turnSource: 'remote_user',
+        blocks: [{ kind: 'text', content: '【远程 Telegram 会话】内部提示', isStreaming: false }],
+      }),
+    ]
+    expect(buildTurnRetryPayload(messages, 'turn-remote')).toBeNull()
+  })
 })

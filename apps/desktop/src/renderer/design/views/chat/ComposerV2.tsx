@@ -1667,7 +1667,9 @@ export function ComposerV2({
             reference.sourceSessionId,
           ...(reference.snapshotSeq !== undefined ? { snapshotSeq: reference.snapshotSeq } : {}),
         })),
-        editable: turn.userMessageVisibility !== 'hidden',
+        editable:
+          turn.userMessageVisibility !== 'hidden' &&
+          (turn.turnSource == null || turn.turnSource === 'user'),
         ...(turn.runtime != null ? { runtime: turn.runtime } : {}),
       })),
     [sessions],

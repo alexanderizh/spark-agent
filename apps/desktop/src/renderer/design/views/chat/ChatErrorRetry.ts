@@ -11,6 +11,7 @@ function buildUserRetryPayload(
     if (message?.role !== 'user') continue
     if (turnId != null && message.turnId !== turnId) continue
     if (message.userMessageVisibility === 'hidden') return null
+    if (message.turnSource === 'remote_user') return null
     const text = message.blocks
       .filter((block) => block.kind === 'text')
       .map((block) => block.content)

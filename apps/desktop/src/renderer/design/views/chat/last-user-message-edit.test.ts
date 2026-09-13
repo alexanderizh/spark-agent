@@ -39,6 +39,7 @@ describe('getLastEditableUserMessageId', () => {
     expect(
       getLastEditableUserMessageId([message({ turnSource: 'scheduled_task' })], false),
     ).toBeNull()
+    expect(getLastEditableUserMessageId([message({ turnSource: 'remote_user' })], false)).toBeNull()
     expect(getLastEditableUserMessageId([message({ status: 'streaming' })], false)).toBeNull()
   })
 
