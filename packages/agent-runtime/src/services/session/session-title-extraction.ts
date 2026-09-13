@@ -21,6 +21,7 @@ import type {
   TurnPromptSnapshotEvent,
   UserMessageEvent,
 } from '@spark/protocol'
+import { getLegacyRemoteUserDisplayContent } from '@spark/protocol'
 import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import { generateSessionTitle } from '../session-title-generator.js'
 
@@ -87,7 +88,10 @@ export function pickTitleSourceFromDialogueEvents(
         }
         continue
       }
-      const content = resolvePreferredText(user.userMessageDisplayContent, user.content)
+      const content = resolvePreferredText(
+        user.userMessageDisplayContent ?? getLegacyRemoteUserDisplayContent(user.content),
+        user.content,
+      )
       if (turn.userMessage.length === 0 && content.length > 0) turn.userMessage = content
       continue
     }
@@ -105,7 +109,11 @@ export function pickTitleSourceFromDialogueEvents(
         }
         continue
       }
-      const content = resolvePreferredText(snapshot.userMessageDisplayContent, snapshot.userMessage)
+      const content = resolvePreferredText(
+        snapshot.userMessageDisplayContent ??
+          getLegacyRemoteUserDisplayContent(snapshot.userMessage),
+        snapshot.userMessage,
+      )
       if (turn.snapshotUserMessage.length === 0 && content.length > 0) {
         turn.snapshotUserMessage = content
       }

@@ -186,6 +186,17 @@ describe('pickTitleSourceFromDialogueEvents', () => {
     expect(source?.userMessage).toBe('[第1轮用户]\n面向用户的展示正文')
   })
 
+  it('旧版远程会话提取标题时不采样内置提示词', () => {
+    const source = pickTitleSourceFromDialogueEvents([
+      userEvent({
+        seq: 0,
+        content:
+          '【远程 Telegram 会话】当前回复会直接发送回 Telegram。若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；不要只在文字里说“已发送/见上方”。\n\n浏览器截图发给我',
+      }),
+    ])
+    expect(source?.userMessage).toBe('[第1轮用户]\n浏览器截图发给我')
+  })
+
   it('展示正文为空时回退到原始用户消息', () => {
     const source = pickTitleSourceFromDialogueEvents([
       userEvent({
@@ -396,9 +407,7 @@ describe('extractSessionTitle', () => {
     }
     expect(call.userMessage).toBe('[第1轮用户]\n每小时推送两道高级前端面试题')
     expect(call.userMessage).not.toContain('内部调度提示词')
-    expect(call.assistantMessage).toBe(
-      '[第1轮助手]\n本期涵盖 React Fiber 与浏览器事件循环',
-    )
+    expect(call.assistantMessage).toBe('[第1轮助手]\n本期涵盖 React Fiber 与浏览器事件循环')
   })
 
   it('会话未指定模型时回退 Provider 默认模型', async () => {

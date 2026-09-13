@@ -95,6 +95,7 @@ import {
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
   pickUserMessagePresentation,
+  resolveUserMessageDisplayText,
   getAutoRouterAdapterForProviderId,
 } from '@spark/protocol'
 import { estimateTokens, normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
@@ -2318,7 +2319,9 @@ export class SessionService {
       userMessagePresentation?.userMessageVisibility !== 'hidden' &&
       shouldDeriveSessionTitle(session.title)
     if (shouldGenerateSessionTitle) {
-      const derivedTitle = deriveSessionTitle(message)
+      const derivedTitle = deriveSessionTitle(
+        resolveUserMessageDisplayText(userMessagePresentation, message),
+      )
       sessionRepo.updateTitle(sessionId, derivedTitle)
       this.onSessionRenamed?.(sessionId, derivedTitle)
     }
@@ -3605,7 +3608,7 @@ export class SessionService {
           apiKey,
           model,
           ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-          userMessage: message,
+          userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
         }
       }
       await this.tryStartSDKTurn(
@@ -3812,7 +3815,7 @@ export class SessionService {
           apiKey,
           model,
           ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-          userMessage: message,
+          userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
         }
       }
       await this.tryStartSparkEngineTurn(
@@ -3972,7 +3975,7 @@ export class SessionService {
         apiKey,
         model,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-        userMessage: message,
+        userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
       }
     }
     await this.tryStartCodexCliTurn(
