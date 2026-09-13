@@ -16,6 +16,11 @@ const Body = () => (
       <li>微信 Claw</li>
     </ul>
     <p>每条通道可独立启用；可以同时配置并配对多个通道。</p>
+    <p>
+      每个远程连接默认使用独立会话。一个会话已被其他远程连接绑定时，新连接不能直接复用；
+      只有所有相关连接都显式开启“跨连接共享会话”才允许共享。共享会话会同时共享对话历史和会话级
+      模型、Agent、推理强度及权限状态。
+    </p>
 
     <h2 id="model">2. 配置模型</h2>
     <p>
@@ -153,17 +158,20 @@ const Body = () => (
     </ul>
 
     <h2 id="platform-runtime">6. 平台运行时要点</h2>
+    <p>远程消息附带的内置运行说明只提供给 Agent；软件会话中展示用户原话，不展示内置提示词。</p>
     <ul>
       <li>
         <strong>Telegram</strong>：<code>getUpdates</code> 轮询；文本走 <code>sendMessage</code>。
-        长任务期间每 4 秒续期 <code>sendChatAction(typing)</code>；私聊优先通过{' '}
-        <code>sendMessageDraft</code>{' '}
-        展示节流后的临时流式预览，不支持时自动退回持续输入状态，完成后再发送正式消息。
+        收到已配对用户的消息后，优先在原消息添加 👀 反应确认接收（若该聊天不允许反应则静默跳过）；
+        长任务期间每 4 秒续期 <code>sendChatAction(typing)</code>；产生正文后通过{' '}
+        <code>sendMessage</code> 与 <code>editMessageText</code> 在同一条消息中增量展示，
+        最终回复尽量原位收口；常用 Markdown 会转换为 Telegram HTML
+        富文本，解析失败时自动回退纯文本； 发送或编辑失败时退回持续输入状态与正常回复。
         开启“传输文件”能力后，回复中的 Markdown 图片会通过 <code>sendPhoto</code> 发送。本地图片优先
         multipart 直传 Telegram；若图片模式被拒绝则以文件模式发送，直传失败时上传到 Spark
         临时存储，再由 Telegram 拉取临时 URL。用户发送的 Telegram 图片或图片文件会通过{' '}
         <code>getFile</code> 下载到本机持久附件目录，并作为图片附件提交给当前会话识别；单张图片限制
-        20 MB。
+        20 MB。同一图片同时出现在 Markdown 引用和文件卡片时，发送前会按文件路径或 URL 去重。
       </li>
       <li>
         <strong>飞书</strong>：通过 <code>@larksuiteoapi/node-sdk</code> 的官方 WebSocket
@@ -171,9 +179,20 @@ const Body = () => (
         <code>https://open.feishu.cn/page/openclaw?form=multiAgent</code>{' '}
         作为搭建入口（自建机器人应用 + 常用能力勾选）。 回复走 <code>im/v1/messages</code>，
         <code>chat_id</code> 默认作为接收 ID 类型。 Spark Work 在收到配对消息后会给源消息加{' '}
-        <code>Typing</code> 表情反应。
+        <code>Typing</code> 表情反应。开启“传输文件”后，收到的图片从消息资源接口下载并提交给会话；
+        回复图片先上传到 <code>im/v1/images</code>，再用 <code>image_key</code> 发送原生图片消息。
+      </li>
+      <li>
+        <strong>QQ</strong>：单聊、群聊及频道消息中的图片附件从腾讯图片 CDN 下载并提交给会话。
+        单聊和群聊的回复图片先上传到 <code>/files</code> 获取 <code>file_info</code>，再通过
+        <code>msg_type=7</code> 发送富媒体消息；频道使用 <code>file_image</code> 字段发送图片。
+        单聊和群聊的大图上传失败时，可使用 Spark 临时存储 URL 中转。
       </li>
     </ul>
+    <p>
+      三种渠道的入站图片均在配对鉴权后下载，限制为 20
+      MB，并按图片文件签名校验。此能力需要连接中开启“传输文件”。
+    </p>
 
     <h2 id="bot-creation">7. 一键创建 Bot</h2>
     <p>设置页为每个通道提供「一键起草」：</p>
