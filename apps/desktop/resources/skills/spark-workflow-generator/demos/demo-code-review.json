@@ -1,0 +1,73 @@
+{
+  "id": "demo-code-review",
+  "name": "代码评审工作流",
+  "description": "输入 PR 描述与变更范围 → 制定评审计划 → Agent 执行评审 → review 裁决（approve / request_changes）→ 双分支各自独立交付：通过报告或修改清单。演示 review 决策分流 + 分支不汇合铁律。",
+  "tags": ["评审", "条件分支", "demo"],
+  "needsBinding": "agent-1 导入后需绑定 Agent",
+  "graph": {
+    "nodes": [
+      {
+        "id": "input-1",
+        "kind": "input",
+        "title": "PR 输入",
+        "x": 80,
+        "y": 160,
+        "config": {
+          "prompt": "解析 PR 描述、变更文件范围与评审关注点（正确性/安全/性能/风格）。",
+          "outputKey": "pr_context",
+          "retryCount": 1
+        }
+      },
+      {
+        "id": "plan-1",
+        "kind": "plan",
+        "title": "评审计划",
+        "x": 340,
+        "y": 160,
+        "config": { "prompt": "按变更范围拆解评审步骤：先读 diff，再核对测试覆盖，最后检查边界条件。", "outputKey": "review_plan" }
+      },
+      {
+        "id": "agent-1",
+        "kind": "agent",
+        "title": "执行评审",
+        "x": 600,
+        "y": 160,
+        "config": { "prompt": "按评审计划逐文件评审，记录问题清单（severity: blocker/major/minor）与亮点。", "outputKey": "review_notes" }
+      },
+      {
+        "id": "review-1",
+        "kind": "review",
+        "title": "评审裁决",
+        "x": 860,
+        "y": 160,
+        "config": {
+          "prompt": "基于 review_notes 裁决：无 blocker 且 major 均有解释则通过。严格只输出 'approve' 或 'request_changes'。",
+          "outputKey": "verdict"
+        }
+      },
+      {
+        "id": "artifact-approve",
+        "kind": "artifact",
+        "title": "通过报告",
+        "x": 1120,
+        "y": 60,
+        "config": { "prompt": "整理评审通过报告：结论、亮点、minor 建议清单。", "outputKey": "approve_report" }
+      },
+      {
+        "id": "artifact-changes",
+        "kind": "artifact",
+        "title": "修改清单",
+        "x": 1120,
+        "y": 320,
+        "config": { "prompt": "整理修改清单：blocker/major 问题逐条列出，附文件位置与修复建议。", "outputKey": "change_list" }
+      }
+    ],
+    "edges": [
+      { "id": "e-input-plan", "from": "input-1", "to": "plan-1" },
+      { "id": "e-plan-agent", "from": "plan-1", "to": "agent-1" },
+      { "id": "e-agent-review", "from": "agent-1", "to": "review-1" },
+      { "id": "e-review-approve", "from": "review-1", "to": "artifact-approve", "condition": { "op": "equals", "key": "verdict", "value": "approve" } },
+      { "id": "e-review-changes", "from": "review-1", "to": "artifact-changes", "condition": { "op": "equals", "key": "verdict", "value": "request_changes" } }
+    ]
+  }
+}

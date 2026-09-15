@@ -1,0 +1,73 @@
+{
+  "id": "tpl-approval-mcp",
+  "name": "审批门禁 + MCP 工具流",
+  "description": "计划经人工审批后，先经 MCP 工具直调采集外部数据，再由 Agent 综合产出并交付。展示 approval 门禁、mcp 确定性直调（{{key}} 插值）与 agent 执行的组合。",
+  "tags": ["审批", "MCP", "工具调用", "门禁"],
+  "needsBinding": "mcp-1 导入后需绑定 MCP 服务器并填 toolName；agent-1 需绑定 Agent",
+  "graph": {
+    "nodes": [
+      {
+        "id": "input-1",
+        "kind": "input",
+        "title": "需求输入",
+        "x": 80,
+        "y": 160,
+        "config": { "prompt": "解析任务目标与所需外部数据范围。", "outputKey": "objective", "retryCount": 1 }
+      },
+      {
+        "id": "plan-1",
+        "kind": "plan",
+        "title": "制定计划",
+        "x": 340,
+        "y": 160,
+        "config": { "prompt": "拆解步骤：需要采集哪些外部数据、如何综合产出。", "outputKey": "plan" }
+      },
+      {
+        "id": "approval-1",
+        "kind": "approval",
+        "title": "计划审批",
+        "x": 600,
+        "y": 160,
+        "config": {
+          "prompt": "请审批以下计划是否进入执行；拒绝将终止工作流，批准可附修改意见。",
+          "outputKey": "approval"
+        }
+      },
+      {
+        "id": "mcp-1",
+        "kind": "mcp",
+        "title": "采集外部数据",
+        "x": 860,
+        "y": 160,
+        "config": {
+          "toolName": "REPLACE_WITH_MCP_TOOL_NAME",
+          "toolArgs": { "query": "{{objective}}" },
+          "outputKey": "external_data"
+        }
+      },
+      {
+        "id": "agent-1",
+        "kind": "agent",
+        "title": "综合产出",
+        "x": 1120,
+        "y": 160,
+        "config": { "prompt": "结合计划与采集到的外部数据，完成最终产出。", "outputKey": "implementation" }
+      },
+      {
+        "id": "artifact-1",
+        "kind": "artifact",
+        "title": "交付产物",
+        "x": 1380,
+        "y": 160,
+        "config": { "prompt": "整理交付物与数据来源说明。", "outputKey": "deliverable" }
+      }
+    ],
+    "edges": [
+      { "id": "e-input-plan", "from": "input-1", "to": "plan-1" },
+      { "id": "e-plan-approval", "from": "plan-1", "to": "approval-1" },
+      { "id": "e-approval-mcp", "from": "approval-1", "to": "mcp-1" },
+      { "id": "e-mcp-agent", "from": "mcp-1", "to": "agent-1" },
+      { "id": "e-agent-artifact", "from": "agent-1", "to": "artifact-1" }
+    ]
+  }
+}

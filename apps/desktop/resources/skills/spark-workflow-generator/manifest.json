@@ -1,0 +1,7 @@
+{
+  "id": "builtin:spark-workflow-generator",
+  "category": "utility",
+  "requiredTools": [],
+  "parameters": []
+}
+

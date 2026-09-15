@@ -1,0 +1,23 @@
+{
+  "id": "test-bad-sample",
+  "name": "故意做坏的样本（校验器负向测试用，勿导入）",
+  "description": "埋了 5 类错误：①route 缺 routeOptions ②分支汇合 ③不存在的 kind ④条件边引用不存在的 outputKey ⑤loop 嵌套 loop。预期校验器全部抓到。",
+  "graph": {
+    "nodes": [
+      { "id": "input-1", "kind": "input", "title": "输入", "x": 80, "y": 160, "config": { "outputKey": "objective" } },
+      { "id": "route-1", "kind": "route", "title": "坏路由", "x": 340, "y": 160, "config": { "prompt": "分流", "outputKey": "route" } },
+      { "id": "magic-1", "kind": "magic_node", "title": "不存在的类型", "x": 600, "y": 60, "config": {} },
+      { "id": "merge-1", "kind": "artifact", "title": "非法汇合点", "x": 860, "y": 160, "config": { "outputKey": "deliverable" } },
+      { "id": "loop-outer", "kind": "loop", "title": "外层循环", "x": 600, "y": 320,
+        "config": { "maxIterations": 3, "breakCondition": { "op": "equals", "key": "not_exist_key", "value": "x" },
+          "body": { "nodes": [ { "id": "loop-inner", "kind": "loop", "title": "非法嵌套循环", "x": 80, "y": 80, "config": { "body": { "nodes": [], "edges": [] } } } ], "edges": [] } } }
+    ],
+    "edges": [
+      { "id": "e-input-route", "from": "input-1", "to": "route-1" },
+      { "id": "e-route-magic", "from": "route-1", "to": "magic-1", "condition": { "op": "equals", "key": "route", "value": "a" } },
+      { "id": "e-route-merge", "from": "route-1", "to": "merge-1", "condition": { "op": "equals", "key": "ghost_key", "value": "b" } },
+      { "id": "e-magic-merge", "from": "magic-1", "to": "merge-1", "condition": { "op": "equals", "key": "route", "value": "a" } },
+      { "id": "e-input-loop", "from": "input-1", "to": "loop-outer" }
+    ]
+  }
+}
