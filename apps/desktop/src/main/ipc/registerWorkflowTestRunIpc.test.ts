@@ -10,6 +10,7 @@ import type { ProviderService, SessionService } from '@spark/agent-runtime'
 
 const harness = vi.hoisted(() => ({
   handlers: new Map<string, (request: any) => Promise<any>>(),
+  sent: [] as Array<{ channel: string; payload: unknown }>,
 }))
 
 vi.mock('./typed-ipc.js', () => ({
@@ -20,6 +21,12 @@ vi.mock('./typed-ipc.js', () => ({
 
 vi.mock('../db.js', () => ({
   getDatabase: vi.fn(),
+}))
+
+vi.mock('../windows/index.js', () => ({
+  sendToMainWindow: (channel: string, payload: unknown) => {
+    harness.sent.push({ channel, payload })
+  },
 }))
 
 import { registerWorkflowTestRunIpc } from './registerWorkflowTestRunIpc.js'
@@ -192,6 +199,21 @@ describe('registerWorkflowTestRunIpc', () => {
       }),
     )
     expect(res.sessionId).toBe('sess-1')
+  })
+
+  it('notifies renderer to refresh session list after launching a test run', async () => {
+    register()
+    harness.sent.length = 0
+    const res = await harness.handlers.get('workflow:test-run')!({
+      workflowId: 'wf-1',
+      objective: 'x',
+    })
+    expect(harness.sent).toEqual([
+      {
+        channel: 'stream:session:list-changed',
+        payload: { source: 'workflow-test-run', sessionId: res.sessionId },
+      },
+    ])
   })
 
   it('reuses an existing bound agent instead of creating one', async () => {

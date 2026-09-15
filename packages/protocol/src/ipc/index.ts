@@ -8016,6 +8016,11 @@ export interface IpcStreamChannelMap {
   'stream:browser-panel:open-tab': {
     url: string
   }
+  /** 主进程经工作流试跑等路径创建会话后，通知渲染端刷新会话列表（修复试跑期间侧栏列表不更新）。 */
+  'stream:session:list-changed': {
+    source: 'workflow-test-run'
+    sessionId?: string
+  }
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

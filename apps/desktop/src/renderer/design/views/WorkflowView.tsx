@@ -171,6 +171,26 @@ function confirmDeleteWorkflow(name: string, onOk: () => void) {
   })
 }
 
+const WORKFLOW_EDITOR_MEMORY_KEY = 'spark-agent:workflow-last-open-editor'
+
+type WorkflowEditorMemory = { screen: WorkflowScreen; activeId: string | null }
+
+/** 读取上次记住的编辑器打开态；缺失/损坏返回 null。 */
+function readLastOpenWorkflowEditor(): WorkflowEditorMemory | null {
+  try {
+    const raw = window.localStorage.getItem(WORKFLOW_EDITOR_MEMORY_KEY)
+    if (raw == null) return null
+    const parsed = JSON.parse(raw) as Partial<WorkflowEditorMemory>
+    if (parsed.screen !== 'list' && parsed.screen !== 'detail') return null
+    return {
+      screen: parsed.screen,
+      activeId: typeof parsed.activeId === 'string' ? parsed.activeId : null,
+    }
+  } catch {
+    return null
+  }
+}
+
 export function WorkflowView() {
   return (
     <ReactFlowProvider>
@@ -199,12 +219,13 @@ function WorkflowViewInner() {
   // 编排方向：横向（左右 handle）/纵向（上下 handle）；smoothstep 边自动跟随 handle 朝向画折线。
   const [orientation, setOrientation] = useState<WorkflowOrientation>('vertical')
   const [editorScope, setEditorScope] = useState<WorkflowEditorScope>({ kind: 'root' })
-  const [screen, setScreen] = useState<WorkflowScreen>('list')
+  const [restoredEditor] = useState(readLastOpenWorkflowEditor)
+  const [screen, setScreen] = useState<WorkflowScreen>(restoredEditor?.screen ?? 'list')
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [savedSnapshot, setSavedSnapshot] = useState('')
-  const activeIdRef = useRef<string | null>(null)
-  const screenRef = useRef<WorkflowScreen>('list')
+  const activeIdRef = useRef<string | null>(restoredEditor?.activeId ?? null)
+  const screenRef = useRef<WorkflowScreen>(restoredEditor?.screen ?? 'list')
   const dirtyRef = useRef(false)
   const draftIdRef = useRef<string | null>(null)
 
@@ -320,6 +341,23 @@ function WorkflowViewInner() {
   useEffect(() => {
     return deferEffect(refresh)
   }, [refresh])
+
+  // 编辑器打开态跨页面切换持久化：从「打开会话」离开再返回时
+  // 恢复回原编辑中的工作流（修复返回只落回列表的问题）。
+  useEffect(() => {
+    try {
+      if (screen === 'detail' && activeId != null) {
+        window.localStorage.setItem(
+          WORKFLOW_EDITOR_MEMORY_KEY,
+          JSON.stringify({ screen, activeId }),
+        )
+      } else if (screen === 'list') {
+        window.localStorage.removeItem(WORKFLOW_EDITOR_MEMORY_KEY)
+      }
+    } catch {
+      // localStorage 不可用场景忽略，不影响主流程
+    }
+  }, [screen, activeId])
 
   const currentEditorGraph = useMemo(
     () => reactFlowToGraph(nodes, edges, orientation),

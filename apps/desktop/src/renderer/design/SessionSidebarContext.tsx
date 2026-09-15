@@ -5,7 +5,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { useIpcInvoke } from './hooks/useIpc'
+import { useIpcInvoke, useIpcStream } from './hooks/useIpc'
 import { createSingleFlightRefresh } from './services/single-flight-refresh'
 import { useOptionalToast, type ToastFn } from './components/Toast'
 import { useApp } from './AppContext'
@@ -708,6 +708,12 @@ export function SessionSidebarProvider({
     [performRefresh],
   )
   const refreshData = useCallback(() => refreshCoordinator.run(), [refreshCoordinator])
+
+  // 主进程路径创建的会话（如工作流试跑）不经渲染端创建流程，
+  // 订阅主进程通知立即刷新，避免试跑运行期间侧栏任务列表空白。
+  useIpcStream('stream:session:list-changed', () => {
+    refreshData().catch(console.error)
+  })
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

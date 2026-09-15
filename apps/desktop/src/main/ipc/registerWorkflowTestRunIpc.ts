@@ -22,6 +22,7 @@ import {
 } from '@spark/storage'
 import { getDatabase } from '../db.js'
 import { typedIpcHandle } from './typed-ipc.js'
+import { sendToMainWindow } from '../windows/index.js'
 
 interface WorkflowTestRunDeps {
   workflowRepo: WorkflowRepository
@@ -61,6 +62,12 @@ export function registerWorkflowTestRunIpc(deps?: Partial<WorkflowTestRunDeps>):
         workflowId: request.workflowId,
         ...(request.objective != null ? { objective: request.objective } : {}),
         source: 'editor-test',
+      })
+      // 会话由主进程创建，渲染端会话列表无感知；推送刷新事件，
+      // 避免试跑运行期间侧栏任务列表空白（仅「打开会话」手动刷新后才显示）。
+      sendToMainWindow('stream:session:list-changed', {
+        source: 'workflow-test-run',
+        sessionId: result.sessionId,
       })
       return {
         sessionId: result.sessionId,
