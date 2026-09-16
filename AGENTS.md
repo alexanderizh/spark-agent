@@ -81,3 +81,7 @@ This project is indexed by GitNexus as **spark-agent** (81367 symbols, 147023 re
 
 - 多媒体模型渠道的配置、扩展和参数校验经验，见 `.agents/memory/multimedia-model-channel-configuration.md`。
 - 后续涉及多媒体 Provider、MediaModelManifest、模型参数枚举或自定义渠道时，先阅读该记忆文档，再按其中的分层流程定位改动范围。
+
+## 分支管理（铁律）
+- 严禁直接在 `daily` 等集成分支上开发或提交代码；所有改动必须先提交到对应需求的开发分支（如 `story-*-frontend` / `story-*-backend`）并推送，再合并进集成分支推送。
+- 提交前必须核实当前分支：若改动误落集成分支，须先迁回开发分支补齐并推送，再走合并流程，不得将错就错。
