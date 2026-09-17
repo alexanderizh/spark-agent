@@ -8,7 +8,8 @@ import {
   checkCodexRuntimeIntegrity,
   configureCodexRuntimeEnvironment,
   installCodexRuntime,
-  selectCodexArtifact,
+  describeCodexRuntimeSelection,
+  selectCodexRuntimeArtifact,
 } from '../CodexRuntimeIntegrityService.js'
 import { codexTargetTriple } from '../../../../../../packages/agent-runtime/src/sdk/codex-runtime.js'
 import {
@@ -16,17 +17,17 @@ import {
   installFfmpegFromSparkManifest,
   selectFfmpegArtifact,
 } from '../FfmpegIntegrityService.js'
-import { detectIntegrity as detectPlaywrightIntegrity, installBrowser } from '../PlaywrightIntegrityService.js'
+import {
+  detectIntegrity as detectPlaywrightIntegrity,
+  installBrowser,
+} from '../PlaywrightIntegrityService.js'
 import {
   checkVoiceIntegrity,
   installVoicePack,
   selectVoiceModelArtifact,
   selectVoiceNativeArtifact,
 } from '../VoiceIntegrityService.js'
-import type {
-  SupportedDesktopArch,
-  SupportedDesktopPlatform,
-} from './definitions.js'
+import type { SupportedDesktopArch, SupportedDesktopPlatform } from './definitions.js'
 
 export interface ExternalCapabilityContext {
   manifest: SparkInstallManifest
@@ -82,15 +83,16 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
       const sdkVersion = process.env.SPARK_CODEX_SDK_VERSION ?? null
       const targetTriple = codexTargetTriple()
       const runtime = await checkCodexRuntimeIntegrity(false, sdkVersion)
-      const artifact = targetTriple
-        ? selectCodexArtifact(manifest.artifacts, targetTriple, sdkVersion, platform, arch)
-        : undefined
+      const selection = targetTriple
+        ? selectCodexRuntimeArtifact(manifest.artifacts, targetTriple, sdkVersion, platform, arch)
+        : null
+      const artifact = selection?.artifact
       const targetVersion = artifact?.version ?? runtime.installedVersion
       const state = runtime.installed
         ? runtime.installedVersion != null &&
-            runtime.installedVersion !== 'bundled' &&
-            artifact &&
-            isVersionNewer(artifact.version, runtime.installedVersion)
+          runtime.installedVersion !== 'bundled' &&
+          artifact &&
+          isVersionNewer(artifact.version, runtime.installedVersion)
           ? 'update_available'
           : 'ready'
         : artifact
@@ -107,7 +109,11 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
           : {}),
         ...(state === 'error' && !runtime.error
           ? {
-              error: `当前平台暂无与 Codex SDK 匹配的运行环境 (${targetTriple ?? 'unsupported'})`,
+              // 必须说明「为什么取不到运行时」，否则用户只会看到一句无解的报错。
+              error:
+                selection != null
+                  ? describeCodexRuntimeSelection(selection, targetTriple ?? 'unknown', sdkVersion)
+                  : `当前平台暂不支持 Codex 运行时 (${targetTriple ?? 'unsupported'})`,
               errorCode: 'artifact_unavailable' as const,
               retryable: false,
             }
@@ -116,21 +122,22 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
     },
     async install({ signal }, report) {
       throwIfAborted(signal)
-      const result = await installCodexRuntime(process.env.SPARK_CODEX_SDK_VERSION ?? null, (progress) => {
-        report(
-          mapSdkPhase(progress.state),
-          progress.downloaded,
-          progress.total,
-          progress.message,
-          progress.version,
-        )
-      })
+      const result = await installCodexRuntime(
+        process.env.SPARK_CODEX_SDK_VERSION ?? null,
+        (progress) => {
+          report(
+            mapSdkPhase(progress.state),
+            progress.downloaded,
+            progress.total,
+            progress.message,
+            progress.version,
+          )
+        },
+      )
       return {
         success: result.success,
         message: result.message,
-        ...(result.success
-          ? {}
-          : { errorCode: 'download_failed' as const, retryable: true }),
+        ...(result.success ? {} : { errorCode: 'download_failed' as const, retryable: true }),
       }
     },
   },
@@ -176,7 +183,12 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
         report('downloading', downloaded, total, '正在下载 FFmpeg')
       })
       if (!result.success) {
-        return { success: false, message: result.message ?? 'FFmpeg 安装失败', errorCode: 'download_failed', retryable: true }
+        return {
+          success: false,
+          message: result.message ?? 'FFmpeg 安装失败',
+          errorCode: 'download_failed',
+          retryable: true,
+        }
       }
       report('verifying', 0, 0, '正在校验 FFmpeg')
       return { success: true, message: result.message ?? 'FFmpeg 安装成功' }
@@ -209,9 +221,19 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
         )
       })
       if (!result.success) {
-        return { success: false, message: result.message, errorCode: 'download_failed', retryable: true }
+        return {
+          success: false,
+          message: result.message,
+          errorCode: 'download_failed',
+          retryable: true,
+        }
       }
-      report('ready', CHROMIUM_ESTIMATED_DOWNLOAD_SIZE, CHROMIUM_ESTIMATED_DOWNLOAD_SIZE, result.message)
+      report(
+        'ready',
+        CHROMIUM_ESTIMATED_DOWNLOAD_SIZE,
+        CHROMIUM_ESTIMATED_DOWNLOAD_SIZE,
+        result.message,
+      )
       return { success: true, message: result.message }
     },
   },
@@ -228,7 +250,13 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
       const ready = state.ready
       const updateAvailable = ready && targetVersion != null && targetVersion !== installedVersion
       return {
-        state: updateAvailable ? 'update_available' : ready ? 'ready' : native && model ? 'missing' : 'error',
+        state: updateAvailable
+          ? 'update_available'
+          : ready
+            ? 'ready'
+            : native && model
+              ? 'missing'
+              : 'error',
         installedVersion,
         targetVersion,
         downloadSize: (native?.size ?? 0) + (model?.size ?? 0),
@@ -252,30 +280,40 @@ const adapters: Record<ExternalCapabilityId, ExternalCapabilityAdapter> = {
         report(phase, progress.downloaded, progress.total, progress.message, progress.version)
       })
       if (!result.success) {
-        return { success: false, message: result.message, errorCode: 'download_failed', retryable: true }
+        return {
+          success: false,
+          message: result.message,
+          errorCode: 'download_failed',
+          retryable: true,
+        }
       }
       return { success: true, message: result.message }
     },
   },
 }
 
-export function getExternalCapabilityAdapter(
-  id: ExternalCapabilityId,
-): ExternalCapabilityAdapter {
+export function getExternalCapabilityAdapter(id: ExternalCapabilityId): ExternalCapabilityAdapter {
   return adapters[id]
 }
 
-export function getExternalCapabilityAdapters(): Record<ExternalCapabilityId, ExternalCapabilityAdapter> {
+export function getExternalCapabilityAdapters(): Record<
+  ExternalCapabilityId,
+  ExternalCapabilityAdapter
+> {
   return adapters
 }
 
-function mapSdkPhase(state: 'preparing' | 'downloading' | 'verifying' | 'activating' | 'done' | 'error'): OptionalCapabilityPhase {
+function mapSdkPhase(
+  state: 'preparing' | 'downloading' | 'verifying' | 'activating' | 'done' | 'error',
+): OptionalCapabilityPhase {
   if (state === 'preparing' || state === 'downloading') return 'downloading'
   if (state === 'done') return 'ready'
   return state
 }
 
-function mapVoicePhase(state: 'preparing' | 'downloading' | 'verifying' | 'activating' | 'done' | 'error'): OptionalCapabilityPhase {
+function mapVoicePhase(
+  state: 'preparing' | 'downloading' | 'verifying' | 'activating' | 'done' | 'error',
+): OptionalCapabilityPhase {
   if (state === 'preparing' || state === 'downloading') return 'downloading'
   if (state === 'done') return 'ready'
   return state

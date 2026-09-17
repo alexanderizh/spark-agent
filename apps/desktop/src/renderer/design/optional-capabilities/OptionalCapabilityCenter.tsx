@@ -9,6 +9,7 @@ import { useApp } from '../AppContext'
 import { useOptionalCapabilities } from './useOptionalCapabilities'
 import { OPEN_OPTIONAL_CAPABILITY_CENTER_EVENT } from './optionalCapabilityNavigation'
 import {
+  isPromptWorthyCapability,
   shouldShowCapabilityPrompt,
   type OptionalCapabilityPromptPreference,
 } from './startupPromptPolicy'
@@ -27,7 +28,10 @@ export function OptionalCapabilityCenter() {
     () => readPromptPreference()?.disabled === true,
   )
 
-  const installable = useMemo(() => snapshot?.capabilities.filter(isInstallable) ?? [], [snapshot])
+  const installable = useMemo(
+    () => snapshot?.capabilities.filter(isPromptWorthyCapability) ?? [],
+    [snapshot],
+  )
   const shouldOpenPrompt = useMemo(
     () => snapshot != null && shouldShowCapabilityPrompt(snapshot, readPromptPreference()),
     [snapshot],
@@ -40,6 +44,13 @@ export function OptionalCapabilityCenter() {
   const selectedDownloadSize = installable
     .filter((item) => selectedInstallable.includes(item.id))
     .reduce((total, item) => total + item.downloadSize, 0)
+  // 启动提醒可能只包含「有更新」，此时用更新语义而不是安装语义。
+  const selectedItems = installable.filter((item) => selectedInstallable.includes(item.id))
+  const selectedAreUpdates =
+    selectedItems.length > 0 && selectedItems.every((item) => item.state === 'update_available')
+  const promptIsUpdateOnly =
+    installable.length > 0 && installable.every((item) => item.state === 'update_available')
+  const updateCount = installable.filter((item) => item.state === 'update_available').length
 
   useEffect(() => {
     const openManually = () => {
@@ -104,7 +115,7 @@ export function OptionalCapabilityCenter() {
     <>
       <Modal
         open={manualOpen || (startupPromptOpen && installable.length > 0)}
-        title="安装可选功能"
+        title={manualOpen ? '安装可选功能' : promptIsUpdateOnly ? '核心组件更新' : '安装可选功能'}
         width={640}
         destroyOnHidden
         className="optional-capability-modal"
@@ -126,19 +137,28 @@ export function OptionalCapabilityCenter() {
             disabled={selectedInstallable.length === 0}
             onClick={installSelected}
           >
-            后台安装{selectedInstallable.length > 0 ? `（${selectedInstallable.length}）` : ''}
+            {promptIsUpdateOnly || selectedAreUpdates ? '后台更新' : '后台安装'}
+            {selectedInstallable.length > 0 ? `（${selectedInstallable.length}）` : ''}
           </Button>,
         ]}
       >
         <div className="optional-capability-prompt-intro">
           <p className="optional-capability-prompt-copy">
-            按需下载所需资源，不会增加基础安装包体积。安装将在后台静默进行。
+            {promptIsUpdateOnly
+              ? `检测到 ${updateCount} 个核心组件有新版本（例如 Codex 运行时）。更新在后台静默进行，不会影响已经可用的功能。`
+              : '按需下载所需资源，不会增加基础安装包体积。安装将在后台静默进行。'}
           </p>
-          <span>{promptMode === 'manual' ? '组件状态' : '可安装组件'}</span>
+          <span>
+            {promptMode === 'manual'
+              ? '组件状态'
+              : promptIsUpdateOnly
+                ? '可更新组件'
+                : '可安装组件'}
+          </span>
         </div>
         <div className="optional-capability-choice-list">
           {promptItems.map((item) => {
-            const selectable = isInstallable(item)
+            const selectable = isPromptWorthyCapability(item)
             return (
               <Checkbox
                 key={item.id}
@@ -195,7 +215,7 @@ export function OptionalCapabilityCenter() {
             checked={disableStartupReminder}
             onChange={(event) => updateStartupReminder(event.target.checked)}
           >
-            不再在启动时提醒（仍可在“设置 → 完整性”中安装）
+            不再在启动时提醒（下个版本更新会再提醒一次；也可在“设置 → 完整性”中手动安装）
           </Checkbox>
         )}
       </Modal>
@@ -250,14 +270,6 @@ export function OptionalCapabilityCenter() {
   )
 }
 
-function isInstallable(item: OptionalCapabilityItem): boolean {
-  return (
-    (item.state === 'missing' || item.state === 'damaged') &&
-    item.targetVersion != null &&
-    item.downloadSize > 0
-  )
-}
-
 function capabilityStatus(item: OptionalCapabilityItem): string {
   if (item.state === 'checking') return '检查中'
   if (item.state === 'queued') return '等待安装'
@@ -293,11 +305,21 @@ function manualSelectionSummary(items: OptionalCapabilityItem[] | undefined): st
 }
 
 function persistPromptPreference(snapshot: OptionalCapabilitySnapshot, disabled: boolean): void {
+  // 记录本次提醒过的目标版本：「稍后」对同一版本不再打扰，出现新版本才再提醒。
+  const dismissedTargets: Record<string, string> = {
+    ...(readPromptPreference()?.dismissedTargets ?? {}),
+  }
+  for (const capability of snapshot.capabilities) {
+    if (isPromptWorthyCapability(capability) && capability.targetVersion != null) {
+      dismissedTargets[capability.id] = capability.targetVersion
+    }
+  }
   window.localStorage.setItem(
     PROMPT_PREFERENCE_KEY,
     JSON.stringify({
       manifestUpdatedAt: snapshot.manifestUpdatedAt,
       dismissedAt: Date.now(),
+      dismissedTargets,
       ...(disabled ? { disabled: true } : {}),
     } satisfies OptionalCapabilityPromptPreference),
   )

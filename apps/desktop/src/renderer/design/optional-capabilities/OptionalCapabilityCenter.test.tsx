@@ -107,6 +107,71 @@ describe('OptionalCapabilityCenter', () => {
     expect(mocks.install).toHaveBeenCalledWith('office-viewer')
   })
 
+  it('prompts at startup for core component updates and labels the action as update', async () => {
+    mocks.snapshot.capabilities = [
+      {
+        id: 'codex-runtime',
+        displayName: 'Codex 运行时',
+        description: 'Codex native runtime',
+        state: 'update_available',
+        installedVersion: '0.149.0',
+        targetVersion: '0.153.4',
+        downloadSize: 200_000_000,
+        installedSize: 200_000_000,
+        autoUpdate: false,
+      },
+    ] as typeof mocks.snapshot.capabilities
+
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+
+    expect(document.body.textContent).toContain('核心组件更新')
+    const updateButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.replace(/\s+/g, '').includes('后台更新'),
+    )
+    expect(updateButton).toBeTruthy()
+
+    const capabilityCheckbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    await act(async () => capabilityCheckbox?.click())
+    const enabledButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.replace(/\s+/g, '').includes('后台更新（1）'),
+    )
+    expect(enabledButton?.hasAttribute('disabled')).toBe(false)
+    await act(async () => enabledButton?.click())
+    expect(mocks.install).toHaveBeenCalledWith('codex-runtime')
+  })
+
+  it('remembers the dismissed update version so the same prompt does not repeat', async () => {
+    mocks.snapshot.capabilities = [
+      {
+        id: 'codex-runtime',
+        displayName: 'Codex 运行时',
+        description: 'Codex native runtime',
+        state: 'update_available',
+        installedVersion: '0.149.0',
+        targetVersion: '0.153.4',
+        downloadSize: 200_000_000,
+        installedSize: 200_000_000,
+        autoUpdate: false,
+      },
+    ] as typeof mocks.snapshot.capabilities
+
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+    const laterButton = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.replace(/\s+/g, '') === '稍后',
+    )
+    await act(async () => laterButton?.click())
+
+    expect(
+      JSON.parse(window.localStorage.getItem('spark-optional-capability-prompt') ?? '{}'),
+    ).toMatchObject({ dismissedTargets: { 'codex-runtime': '0.153.4' } })
+
+    // 同一目标版本重挂载后不再自动弹出。
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+    expect(document.body.textContent).not.toContain('核心组件更新')
+  })
+
   it('does not render the startup resource prompt during onboarding', async () => {
     mocks.view = 'onboarding'
     await act(async () => root.render(<OptionalCapabilityCenter />))
