@@ -75,6 +75,13 @@ function artifact(
   }
 }
 
+const FUTURE_RUNTIME_VERSION = '9.9.9'
+
+/** 与云端真实 manifest 一致：sdkPackage 记录的是该制品自身的版本。 */
+function publishedRuntime(version: string): SparkInstallArtifact {
+  return { ...artifact(version), sdkPackage: `@openai/codex-sdk@${version}` }
+}
+
 function currentTargetTriple(): string {
   if (process.platform === 'darwin')
     return process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
@@ -144,7 +151,157 @@ describe('CodexRuntimeIntegrityService', () => {
     }
     expect(
       selectCodexArtifact(artifacts, 'aarch64-apple-darwin', '9.9.9', 'darwin', 'arm64'),
-    ).toBeUndefined()
+    ).toMatchObject({ version: CODEX_SDK_VERSION })
+  })
+
+  // 回归：应用内 SDK 版本不在云端 manifest 时，曾经因为「精确相等」过滤得到空集，
+  // 完整性页既不显示可用更新也无法安装，Codex 直接不可用。
+  describe('runtime artifact selection without an exact SDK pairing', () => {
+    const runtime = (version: string, sdkVersion: string): SparkInstallArtifact => ({
+      id: `runtime.codex-agent.${version}.darwin-arm64`,
+      type: 'binary',
+      runtime: 'codex',
+      name: `Codex ${version}`,
+      version,
+      url: `codex-${version}.tgz`,
+      sha256: 'a'.repeat(64),
+      size: 100,
+      platform: 'darwin',
+      arch: 'arm64',
+      targetTriple: 'aarch64-apple-darwin',
+      sdkPackage: `@openai/codex-sdk@${sdkVersion}`,
+      archive: { format: 'tar.gz', contentRoot: '.' },
+    })
+
+    it('prefers the artifact paired with the app SDK', async () => {
+      const { selectCodexRuntimeArtifact } = await import('../CodexRuntimeIntegrityService.js')
+      const selection = selectCodexRuntimeArtifact(
+        [runtime('0.149.0', '0.149.0'), runtime('0.153.4', '0.153.4')],
+        'aarch64-apple-darwin',
+        '0.149.0',
+        'darwin',
+        'arm64',
+      )
+      expect(selection.artifact).toMatchObject({ version: '0.149.0' })
+      expect(selection.reason).toBe('exact-sdk-match')
+    })
+
+    it('falls back to the newest runtime not newer than the app SDK', async () => {
+      const { selectCodexRuntimeArtifact } = await import('../CodexRuntimeIntegrityService.js')
+      // 应用 SDK 0.152.0 从未发布过对应 runtime：旧实现返回空集。
+      const selection = selectCodexRuntimeArtifact(
+        [
+          runtime('0.144.5', '0.144.5'),
+          runtime('0.149.0', '0.149.0'),
+          runtime('0.153.4', '0.153.4'),
+        ],
+        'aarch64-apple-darwin',
+        '0.152.0',
+        'darwin',
+        'arm64',
+      )
+      expect(selection.artifact).toMatchObject({ version: '0.149.0' })
+      expect(selection.reason).toBe('newest-compatible')
+    })
+
+    it('picks the newest supported runtime when the app SDK version is unknown', async () => {
+      const { selectCodexRuntimeArtifact } = await import('../CodexRuntimeIntegrityService.js')
+      const selection = selectCodexRuntimeArtifact(
+        [runtime('0.144.5', '0.144.5'), runtime('0.153.4', '0.153.4')],
+        'aarch64-apple-darwin',
+        null,
+        'darwin',
+        'arm64',
+      )
+      expect(selection.artifact).toMatchObject({ version: '0.153.4' })
+      expect(selection.reason).toBe('newest-compatible')
+    })
+
+    it('refuses to install a runtime newer than the app SDK and explains why', async () => {
+      const { selectCodexRuntimeArtifact, describeCodexRuntimeSelection } =
+        await import('../CodexRuntimeIntegrityService.js')
+      const selection = selectCodexRuntimeArtifact(
+        [runtime('0.153.4', '0.153.4')],
+        'aarch64-apple-darwin',
+        '0.140.0',
+        'darwin',
+        'arm64',
+      )
+      expect(selection.artifact).toBeUndefined()
+      expect(selection.reason).toBe('newer-than-app-sdk')
+      expect(describeCodexRuntimeSelection(selection, 'aarch64-apple-darwin', '0.140.0')).toContain(
+        '升级 Spark Agent',
+      )
+    })
+
+    it('ignores runtimes below the protocol baseline and says so', async () => {
+      const { selectCodexRuntimeArtifact, describeCodexRuntimeSelection } =
+        await import('../CodexRuntimeIntegrityService.js')
+      const selection = selectCodexRuntimeArtifact(
+        [runtime('0.140.0', '0.140.0')],
+        'aarch64-apple-darwin',
+        '0.153.4',
+        'darwin',
+        'arm64',
+      )
+      expect(selection.artifact).toBeUndefined()
+      expect(selection.reason).toBe('below-protocol-baseline')
+      expect(selection.candidateVersions).toEqual(['0.140.0'])
+      expect(describeCodexRuntimeSelection(selection, 'aarch64-apple-darwin', '0.153.4')).toContain(
+        '协议基线',
+      )
+    })
+
+    it('reports when the platform has no published runtime at all', async () => {
+      const { selectCodexRuntimeArtifact, describeCodexRuntimeSelection } =
+        await import('../CodexRuntimeIntegrityService.js')
+      const selection = selectCodexRuntimeArtifact([], 'aarch64-apple-darwin', '0.153.4')
+      expect(selection.artifact).toBeUndefined()
+      expect(selection.reason).toBe('no-published-runtime')
+      expect(describeCodexRuntimeSelection(selection, 'aarch64-apple-darwin', '0.153.4')).toContain(
+        '暂未提供',
+      )
+    })
+  })
+
+  it('explains why a newer published runtime is not offered to an older app', async () => {
+    // 应用内置 SDK 0.144.5、已装 0.144.5、云端已有 0.153.4：旧实现页面直接显示「最新」，
+    // 用户完全不知道云端还有更新。现在必须给出可读说明。
+    const older = {
+      ...artifact('0.144.5'),
+      sdkPackage: '@openai/codex-sdk@0.144.5',
+    }
+    mocks.artifacts = [
+      older,
+      {
+        ...artifact(UPDATED_RUNTIME_VERSION),
+        sdkPackage: `@openai/codex-sdk@${UPDATED_RUNTIME_VERSION}`,
+      },
+    ]
+    const { checkCodexRuntimeIntegrity, installCodexRuntime } =
+      await import('../CodexRuntimeIntegrityService.js')
+    await installCodexRuntime('0.144.5')
+    const integrity = await checkCodexRuntimeIntegrity(true, '0.144.5')
+    expect(integrity.latestVersion).toBe('0.144.5')
+    expect(integrity.updateAvailable).toBe(false)
+    expect(integrity.note).toContain(UPDATED_RUNTIME_VERSION)
+    expect(integrity.note).toContain('升级 Spark Agent')
+  })
+
+  it('surfaces a readable reason when the manifest has no installable runtime', async () => {
+    // 只有晚于应用 SDK 的制品：必须给出「无可安装更新」的可读原因，
+    // 而不是让完整性页一片空白。
+    mocks.artifacts = [
+      {
+        ...artifact(UPDATED_RUNTIME_VERSION),
+        sdkPackage: `@openai/codex-sdk@${UPDATED_RUNTIME_VERSION}`,
+      },
+    ]
+    const { checkCodexRuntimeIntegrity } = await import('../CodexRuntimeIntegrityService.js')
+    const integrity = await checkCodexRuntimeIntegrity(true, '0.100.0')
+    expect(integrity.latestVersion).toBeNull()
+    expect(integrity.updateAvailable).toBe(false)
+    expect(integrity.error).toContain('升级 Spark Agent')
   })
 
   it('rejects Codex runtime artifacts without a valid SHA256', async () => {
@@ -252,5 +409,57 @@ describe('CodexRuntimeIntegrityService', () => {
       latestVersion: CODEX_SDK_VERSION,
       updateAvailable: true,
     })
+  })
+
+  it('explains why a newer published runtime is not offered when it is not paired with the app SDK', async () => {
+    mocks.artifacts = [publishedRuntime(CODEX_SDK_VERSION)]
+    const { checkCodexRuntimeIntegrity, installCodexRuntime } =
+      await import('../CodexRuntimeIntegrityService.js')
+    expect((await installCodexRuntime(CODEX_SDK_VERSION)).success).toBe(true)
+    mocks.artifacts = [
+      publishedRuntime(CODEX_SDK_VERSION),
+      publishedRuntime(FUTURE_RUNTIME_VERSION),
+    ]
+
+    const integrity = await checkCodexRuntimeIntegrity(true, CODEX_SDK_VERSION)
+
+    expect(integrity.error).toBeUndefined()
+    expect(integrity.updateAvailable).toBe(false)
+    expect(integrity.latestVersion).toBe(CODEX_SDK_VERSION)
+    expect(integrity.note).toContain(FUTURE_RUNTIME_VERSION)
+    expect(integrity.note).toContain('升级 Spark Agent')
+  })
+
+  it('explains the unpaired newer runtime when only a fallback version can be offered', async () => {
+    mocks.artifacts = [publishedRuntime(CODEX_SDK_VERSION)]
+    const { checkCodexRuntimeIntegrity, installCodexRuntime } =
+      await import('../CodexRuntimeIntegrityService.js')
+    expect((await installCodexRuntime(CODEX_SDK_VERSION)).success).toBe(true)
+    mocks.artifacts = [
+      publishedRuntime(CODEX_SDK_VERSION),
+      publishedRuntime(FUTURE_RUNTIME_VERSION),
+    ]
+    const unpairedAppSdkVersion = `0.${Number(CODEX_SDK_VERSION.split('.')[1] ?? '0') + 1}.0`
+
+    const integrity = await checkCodexRuntimeIntegrity(true, unpairedAppSdkVersion)
+
+    expect(integrity.latestVersion).toBe(CODEX_SDK_VERSION)
+    expect(integrity.note).toContain(FUTURE_RUNTIME_VERSION)
+  })
+
+  it('does not raise an error when the installed runtime already covers the newest published one', async () => {
+    mocks.artifacts = [publishedRuntime(FUTURE_RUNTIME_VERSION)]
+    const { checkCodexRuntimeIntegrity, installCodexRuntime } =
+      await import('../CodexRuntimeIntegrityService.js')
+    // 用未来版本号安装，构造「>= 云端全部制品，但与应用内 SDK 不配对」的本机状态。
+    expect((await installCodexRuntime(FUTURE_RUNTIME_VERSION)).success).toBe(true)
+
+    const integrity = await checkCodexRuntimeIntegrity(true, CODEX_SDK_VERSION)
+
+    expect(integrity.installedVersion).toBe(FUTURE_RUNTIME_VERSION)
+    expect(integrity.error).toBeUndefined()
+    expect(integrity.note).toBeUndefined()
+    expect(integrity.latestVersion).toBe(FUTURE_RUNTIME_VERSION)
+    expect(integrity.updateAvailable).toBe(false)
   })
 })

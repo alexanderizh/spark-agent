@@ -7469,6 +7469,13 @@ body.inspector-resizing {
   font-size: 11px;
   color: var(--danger);
 }
+/* 非阻塞说明：与 error 同层级但语义是「解释」而非「失败」。 */
+.integrity-sdk-note {
+  padding: 0 var(--pad-lg) 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
 .integrity-empty {
   display: flex;
   flex-direction: column;

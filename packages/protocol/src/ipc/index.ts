@@ -4741,6 +4741,11 @@ export interface SdkIntegrityItem {
     targetTriple: string | null
     artifactId: string | null
     error?: string
+    /**
+     * 非阻塞说明。用于解释「为什么这里显示最新、但云端其实还有更新的制品」，
+     * 例如应用内置 SDK 尚未跟上最新的 runtime，需要先升级应用。
+     */
+    note?: string
   }
 }
 

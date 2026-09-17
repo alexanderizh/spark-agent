@@ -5369,6 +5369,9 @@ function IntegritySection() {
             {(sdk.error || sdk.runtime?.error) && (
               <div className="integrity-sdk-error">{sdk.error || sdk.runtime?.error}</div>
             )}
+            {!sdk.error && !sdk.runtime?.error && sdk.runtime?.note && (
+              <div className="integrity-sdk-note">{sdk.runtime.note}</div>
+            )}
           </div>
         ))}
         {sdks.length === 0 && !isChecking && (
