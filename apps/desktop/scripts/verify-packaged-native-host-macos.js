@@ -10,6 +10,50 @@ const {
   validatePackagedNativeHost,
 } = require('./verify-packaged-native-host.js')
 
+// `spctl` 与 `xcrun stapler validate` 都要联网向 Apple 核验公证状态：票据较大时
+// stapler 会先从 api.apple-cloudkit.com 的 ticket-delivery 端点下载真实票据再校验。
+// Apple 侧偶发网络超时会直接判死整条发布流水线（0.11.74 的 mac-x64 就是这样失败
+// 并需要人工重跑的），而这两个命令都是只读、幂等的，因此对明确的网络瞬时错误做
+// 有界重试。真正的签名/公证缺陷不带网络错误特征，会立即上报，不会被重试掩盖。
+const CONNECTED_VERIFICATION_MAX_ATTEMPTS = 3
+const CONNECTED_VERIFICATION_INITIAL_DELAY_MS = 10_000
+const TRANSIENT_NETWORK_FAILURE_PATTERN =
+  /NSURLError|timed out|timeout|connection|network|temporarily unavailable|try again|ECONN|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|TLS|SSL|HTTP 5\d\d/i
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 判定错误信息是否属于 Apple 侧网络瞬时故障，而不是真实的签名/公证失败。 */
+function isTransientNetworkFailure(message) {
+  return TRANSIENT_NETWORK_FAILURE_PATTERN.test(String(message))
+}
+
+/**
+ * 对只读核验做有界重试：仅当错误信息带网络瞬时特征时重试，其他错误原样抛出。
+ * `sleep` 可注入，便于测试时不必真的等待。
+ */
+async function retryTransientNetworkFailures(operation, options = {}) {
+  const maxAttempts = options.maxAttempts ?? CONNECTED_VERIFICATION_MAX_ATTEMPTS
+  const initialDelayMs = options.initialDelayMs ?? CONNECTED_VERIFICATION_INITIAL_DELAY_MS
+  const label = options.label ?? '联网核验'
+  const sleep = options.sleep ?? delay
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation(attempt)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (attempt >= maxAttempts || !isTransientNetworkFailure(message)) throw error
+      const attemptDelayMs = initialDelayMs * attempt
+      console.warn(
+        `[release-verify] ${label} 第 ${attempt}/${maxAttempts} 次失败（Apple 侧网络瞬时错误），已等待 ${Math.round(attemptDelayMs / 1000)} 秒后重试：${message}`,
+      )
+      await sleep(attemptDelayMs)
+    }
+  }
+}
+
 async function verifyPackagedMacNativeHost(options) {
   const appPath = path.resolve(options.appPath)
   const executablePath = path.join(appPath, 'Contents', 'Helpers', 'SparkComputerHost')
@@ -43,8 +87,16 @@ async function verifyPackagedMacNativeHost(options) {
     allowLocal: options.allowLocal,
   })
   if (!options.allowLocal) {
-    await requireSuccess('/usr/sbin/spctl', ['-a', '-vv', '--type', 'execute', appPath])
-    await requireSuccess('/usr/bin/xcrun', ['stapler', 'validate', appPath])
+    await requireConnectedSuccess(
+      '/usr/sbin/spctl',
+      ['-a', '-vv', '--type', 'execute', appPath],
+      'spctl Gatekeeper 评估',
+    )
+    await requireConnectedSuccess(
+      '/usr/bin/xcrun',
+      ['stapler', 'validate', appPath],
+      'stapler validate',
+    )
   }
 
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-native-applications-'))
@@ -160,6 +212,24 @@ async function requireSuccess(command, args) {
   }
 }
 
+/**
+ * 与 requireSuccess 等价，但用于需要联网核验的只读命令：对 Apple 侧网络瞬时错误
+ * （含 runCommand 自身超时中止）做有界重试，其他错误立即上报。
+ */
+async function requireConnectedSuccess(command, args, label) {
+  await retryTransientNetworkFailures(
+    async () => {
+      const result = await runCommand(command, args)
+      if (result.code !== 0) {
+        throw new Error(
+          `${command} verification failed: ${(result.stderr || result.stdout).trim()}`,
+        )
+      }
+    },
+    { label },
+  )
+}
+
 if (require.main === module) {
   const args = parseArguments(process.argv.slice(2), ['app', 'arch'])
   verifyPackagedMacNativeHost({
@@ -176,4 +246,9 @@ if (require.main === module) {
     })
 }
 
-module.exports = { parseMacSignatureOutput, verifyPackagedMacNativeHost }
+module.exports = {
+  isTransientNetworkFailure,
+  parseMacSignatureOutput,
+  retryTransientNetworkFailures,
+  verifyPackagedMacNativeHost,
+}

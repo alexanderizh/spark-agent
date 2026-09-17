@@ -303,6 +303,7 @@ jobs:
             local log_file="${RUNNER_TEMP}/build-mac-${{ matrix.arch }}.log"
             local exit_code
             local devices
+            local retry_reason
 
             while [ "$attempt" -le "$attempts" ]; do
               echo "[publish] macOS build attempt ${attempt}/${attempts}"
@@ -317,19 +318,34 @@ jobs:
                 return 0
               fi
 
-              if [ "$attempt" -ge "$attempts" ] \
-                || ! grep -q "Command failed: hdiutil detach" "$log_file" \
-                || ! grep -q "Resource busy" "$log_file"; then
+              # 整条 mac 构建约 20 分钟，只有可恢复的瞬时故障才值得重建一次：
+              #   1) DMG 卸载撞上 'Resource busy'
+              #   2) Apple 侧联网核验/公证的瞬时网络错误
+              #   3) 公证上传/等待的瞬时网络错误
+              # 其余失败（签名不符、公证被拒、脚本错误）必须原样上报，不做无谓重建。
+              retry_reason=""
+              if grep -q "Command failed: hdiutil detach" "$log_file" \
+                && grep -q "Resource busy" "$log_file"; then
+                retry_reason="dmg-detach"
+              elif grep -qE "NSURLError|The request timed out|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|HTTP 50[234]" "$log_file"; then
+                retry_reason="apple-network"
+              fi
+
+              if [ "$attempt" -ge "$attempts" ] || [ -z "$retry_reason" ]; then
                 return "$exit_code"
               fi
 
-              echo "[retry] DMG detach hit 'Resource busy'; force-detaching stale disk images before one retry."
-              devices="$(grep -Eo '/dev/disk[0-9]+' "$log_file" | sort -u || true)"
-              if [ -n "$devices" ]; then
-                while IFS= read -r device; do
-                  [ -n "$device" ] || continue
-                  hdiutil detach -force "$device" || true
-                done <<< "$devices"
+              if [ "$retry_reason" = "dmg-detach" ]; then
+                echo "[retry] DMG detach hit 'Resource busy'; force-detaching stale disk images before one retry."
+                devices="$(grep -Eo '/dev/disk[0-9]+' "$log_file" | sort -u || true)"
+                if [ -n "$devices" ]; then
+                  while IFS= read -r device; do
+                    [ -n "$device" ] || continue
+                    hdiutil detach -force "$device" || true
+                  done <<< "$devices"
+                fi
+              else
+                echo "[retry] Apple-side transient network failure (${retry_reason}); rebuilding once."
               fi
 
               rm -f apps/desktop/dist/*.dmg apps/desktop/dist/*.blockmap
