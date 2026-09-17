@@ -6,13 +6,23 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { parseMacSignatureOutput } =
+const { isTransientNetworkFailure, parseMacSignatureOutput, retryTransientNetworkFailures } =
   require('../../../../scripts/verify-packaged-native-host-macos.js') as {
     parseMacSignatureOutput: (output: string) => {
       identifier: string
       teamIdentifier: string
       hardenedRuntime: boolean
     }
+    isTransientNetworkFailure: (message: string) => boolean
+    retryTransientNetworkFailures: <T>(
+      operation: (attempt: number) => Promise<T>,
+      options?: {
+        maxAttempts?: number
+        initialDelayMs?: number
+        label?: string
+        sleep?: (ms: number) => Promise<void>
+      },
+    ) => Promise<T>
   }
 const { WINDOWS_RELEASE_SMOKE_TIMEOUT_MS } =
   require('../../../../scripts/verify-packaged-native-host-windows.js') as {
@@ -120,6 +130,98 @@ describe('packaged Native Host release verifier', () => {
     expect(detectWindowsPeArchitecture(createPeFixture(0x8664))).toBe('x64')
     expect(detectWindowsPeArchitecture(createPeFixture(0xaa64))).toBe('arm64')
     expect(() => detectWindowsPeArchitecture(Buffer.from('not-pe'))).toThrow('DOS header')
+  })
+
+  it('treats only Apple-side network failures as retryable during ticket validation', () => {
+    // 0.11.74 mac-x64 的真实失败输出：stapler 从 CloudKit 下载大票据时请求超时。
+    expect(
+      isTransientNetworkFailure(
+        [
+          'Processing: /tmp/Spark Agent.app',
+          'error is Error Domain=NSURLErrorDomain Code=-1001 "The request timed out."',
+          'NSErrorFailingURLKey=https://api.apple-cloudkit.com/database/1/com.apple.gk.ticket-delivery/public/records/lookup',
+          'The validate action failed! Error 68.',
+        ].join('\n'),
+      ),
+    ).toBe(true)
+    expect(isTransientNetworkFailure('/usr/bin/xcrun exceeded the release smoke timeout')).toBe(
+      true,
+    )
+
+    // 真实的签名/公证缺陷不能被重试掩盖。
+    expect(isTransientNetworkFailure('The validate action failed! Error 65.')).toBe(false)
+    expect(
+      isTransientNetworkFailure(
+        '/tmp/Spark Agent.app: rejected\nsource=Unnotarized Developer ID\norigin=Developer ID Application: yang zhang',
+      ),
+    ).toBe(false)
+  })
+
+  it('retries macOS connected verification with linear backoff before it succeeds', async () => {
+    const attempts: number[] = []
+    const delays: number[] = []
+    const transient = new Error('Error Domain=NSURLErrorDomain Code=-1001 "The request timed out."')
+
+    await expect(
+      retryTransientNetworkFailures(
+        async (attempt: number) => {
+          attempts.push(attempt)
+          if (attempt < 3) throw transient
+          return 'verified'
+        },
+        {
+          sleep: (ms: number): Promise<void> => {
+            delays.push(ms)
+            return Promise.resolve()
+          },
+        },
+      ),
+    ).resolves.toBe('verified')
+    expect(attempts).toEqual([1, 2, 3])
+    expect(delays).toEqual([10_000, 20_000])
+  })
+
+  it('fails fast on permanent macOS verification failures and stops at the retry budget', async () => {
+    const noSleep = (): Promise<void> => Promise.resolve()
+
+    const permanent = new Error('The validate action failed! Error 65.')
+    const permanentAttempts: number[] = []
+    await expect(
+      retryTransientNetworkFailures(
+        async (attempt: number) => {
+          permanentAttempts.push(attempt)
+          throw permanent
+        },
+        { sleep: noSleep },
+      ),
+    ).rejects.toBe(permanent)
+    expect(permanentAttempts).toEqual([1])
+
+    const transient = new Error('connection reset while validating notarization ticket')
+    const transientAttempts: number[] = []
+    await expect(
+      retryTransientNetworkFailures(
+        async (attempt: number) => {
+          transientAttempts.push(attempt)
+          throw transient
+        },
+        { sleep: noSleep },
+      ),
+    ).rejects.toBe(transient)
+    expect(transientAttempts).toEqual([1, 2, 3])
+  })
+
+  it('routes both connected macOS release-gate checks through the retry helper', async () => {
+    const script = await readFile(
+      new URL('../../../../scripts/verify-packaged-native-host-macos.js', import.meta.url),
+      'utf8',
+    )
+    expect(script).toMatch(/await requireConnectedSuccess\(\s*'\/usr\/sbin\/spctl'/)
+    expect(script).toMatch(
+      /await requireConnectedSuccess\(\s*'\/usr\/bin\/xcrun',\s*\['stapler', 'validate'/,
+    )
+    expect(script).not.toMatch(/await requireSuccess\(\s*'\/usr\/sbin\/spctl'/)
+    expect(script).not.toMatch(/await requireSuccess\(\s*'\/usr\/bin\/xcrun',\s*\['stapler'/)
   })
 
   it('requires explicit macOS identity fields and hardened runtime flags', () => {
