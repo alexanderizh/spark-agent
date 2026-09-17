@@ -1,0 +1,131 @@
+/* ── Settings: Usage — Provider breakdown（用量排行·渠道 tab 内容）──
+   卡片外壳由 UsageRankingCard 提供，本文件只负责渠道列表本身。
+   行网格与 SettingsView.less 的 .usage-rank-item 保持一致：
+   minmax(0,1fr) minmax(0,2fr) auto auto（末列为展开箭头）。 */
+
+.provider-rank-group {
+  border-bottom: 1px solid var(--border);
+}
+.provider-rank-group:last-of-type {
+  border-bottom: none;
+}
+
+.provider-rank-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px var(--pad-lg);
+  cursor: pointer;
+  user-select: none;
+}
+.provider-rank-row:hover {
+  background: var(--bg-soft);
+}
+.provider-rank-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.provider-rank-unknown {
+  color: var(--text-faint);
+}
+
+/* 渠道总量柱：暗紫色，与模型明细的主蓝柱区分；暗色主题提亮保证可见。 */
+.provider-rank-fill {
+  height: 100%;
+  background: #64558f;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+html[data-spark-theme='dark'] .provider-rank-fill {
+  background: #8d7fc7;
+}
+
+.provider-rank-chevron {
+  width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+/* 展开后的模型明细行：整体压暗一档 + 缩进，柱更细、主色减淡。 */
+.provider-rank-models {
+  background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
+  padding: 4px 0 6px;
+}
+.provider-rank-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 5px var(--pad-lg) 5px calc(var(--pad-lg) + 14px);
+}
+.provider-rank-model-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.provider-rank-tree {
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  flex-shrink: 0;
+}
+.provider-rank-model-title {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-rank-model-bar {
+  min-width: 0;
+}
+.provider-rank-model-fill {
+  height: 6px;
+  background: color-mix(in srgb, var(--primary) 55%, transparent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* 图例 */
+.provider-rank-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px var(--pad-lg) 10px;
+  border-top: 1px solid var(--border);
+}
+.provider-rank-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+}
+.provider-rank-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.provider-rank-legend-dot--provider {
+  background: #64558f;
+}
+html[data-spark-theme='dark'] .provider-rank-legend-dot--provider {
+  background: #8d7fc7;
+}
+.provider-rank-legend-dot--model {
+  background: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+@media (max-width: 760px) {
+  .provider-rank-row,
+  .provider-rank-model-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+  .provider-rank-row .usage-rank-bar,
+  .provider-rank-model-row .provider-rank-model-bar {
+    grid-column: 1 / -1;
+  }
+}

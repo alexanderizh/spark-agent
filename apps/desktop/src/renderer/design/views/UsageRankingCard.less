@@ -1,0 +1,32 @@
+/* ── Settings: Usage — UsageRankingCard（用量排行：模型 / 渠道 tab）──
+   头部复用 SettingsView.less 的 .subsec-h 标题样式，右侧并排两组
+   Segmented（视图切换 + 时间区间），窄屏自动换行。 */
+
+.usage-rank-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.usage-rank-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 模型视图图例（渠道视图图例见 ProviderUsageBreakdown.less，规格一致）。 */
+.usage-rank-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px var(--pad-lg) 10px;
+  border-top: 1px solid var(--border);
+}
+.usage-rank-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+}

@@ -48,6 +48,7 @@ import { estimateTokens, ModelCapabilityRegistry } from '@spark/shared'
 import { DEFAULT_QQ_REMOTE_COMMANDS, DEFAULT_TELEGRAM_REMOTE_COMMANDS } from '@spark/protocol'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
+import { UsageRankingCard } from './UsageRankingCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
 import { OptionalCapabilitiesSettingsCard } from '../optional-capabilities/OptionalCapabilitiesSettingsCard'
 import { CodexRuntimeDiagnosticsCard } from '../optional-capabilities/CodexRuntimeDiagnosticsCard'
@@ -3876,13 +3877,6 @@ function UsageSection() {
       totalCacheWriteTokens: number
       recordCount: number
     }
-    topModels: Array<{
-      modelId: string
-      providerId: string
-      totalInputTokens: number
-      totalOutputTokens: number
-      recordCount: number
-    }>
     recentRecords: Array<{
       id: string
       session_id: string
@@ -3947,7 +3941,6 @@ function UsageSection() {
 
   const month = dashboard?.currentMonth
   const total = dashboard?.total
-  const models = dashboard?.topModels ?? []
   const records = dashboard?.recentRecords ?? []
 
   return (
@@ -4034,43 +4027,8 @@ function UsageSection() {
         </div>
       </div>
 
-      {/* ── Top Models ── */}
-      <div className="subsec-h">模型用量排行</div>
-      <div className="card">
-        {models.length === 0 && !loading && (
-          <div className="settings-card-row usage-empty">暂无用量数据</div>
-        )}
-        {(() => {
-          const sorted = [...models].sort(
-            (a, b) =>
-              b.totalInputTokens + b.totalOutputTokens - (a.totalInputTokens + a.totalOutputTokens),
-          )
-          const grand = sorted.reduce((s, m) => s + m.totalInputTokens + m.totalOutputTokens, 0)
-          return sorted.map((m) => {
-            const mTotal = m.totalInputTokens + m.totalOutputTokens
-            const pct = grand > 0 ? (mTotal / grand) * 100 : 0
-            return (
-              <div key={`${m.providerId}-${m.modelId}`} className="usage-rank-item">
-                <div className="usage-rank-name">
-                  <div className="row-title">{m.modelId}</div>
-                  <div className="row-desc">{m.providerId}</div>
-                </div>
-                <div className="usage-rank-bar">
-                  <div className="usage-rank-track">
-                    <div className="usage-rank-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-                <div className="usage-rank-stats">
-                  <span className="mono-sm">
-                    ↑{fmt(m.totalInputTokens)} ↓{fmt(m.totalOutputTokens)}
-                  </span>
-                  <span className="usage-rank-pct">{pct.toFixed(0)}%</span>
-                </div>
-              </div>
-            )
-          })
-        })()}
-      </div>
+      {/* ── Usage ranking（模型 / 渠道 tab + 时间区间）── */}
+      <UsageRankingCard />
 
       {/* ── Recent Records ── */}
       <div className="subsec-h">最近请求</div>
