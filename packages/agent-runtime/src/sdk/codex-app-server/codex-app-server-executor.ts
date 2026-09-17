@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, TurnRuntimeMetrics } from '@spark/protocol'
 import {
+  createLogger,
   estimateTokens,
   resolveModelContextWindow,
   resolveSoftContextLimit,
@@ -68,7 +69,8 @@ import {
   CodexAppServerRuntimeSupervisor,
   type CodexRuntimeLease,
 } from './codex-runtime-supervisor.js'
-import { withCodexModelCatalog } from '../codex-model-catalog.js'
+import { resolveActiveCodexRuntimeVersion, withCodexModelCatalog } from '../codex-model-catalog.js'
+import { diagnoseCodexModelCatalogFailure } from '../codex-model-catalog-diagnostics.js'
 
 /**
  * codex 引擎的 app-server 载具（流式修复主路径）。
@@ -92,6 +94,8 @@ import { withCodexModelCatalog } from '../codex-model-catalog.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
+const log = createLogger('codex-app-server')
+
 type TurnOutcome = { status: 'completed' | 'interrupted' | 'failed'; errorMessage?: string }
 
 /** 测试注入点：替身二进制 / 环境覆盖 / 回退执行器工厂。 */
@@ -256,9 +260,18 @@ export class CodexAppServerExecutor
     } | null = null
     try {
       prepared = await this.prepareSession(sessionId, effectiveConfig, skillIsolation)
-    } catch {
+    } catch (err) {
       // turn/start 前的准备错误统一交给 Sdk fallback；fallback 自己负责生成
       // 可操作的 agent_error（包括 CODEX_RUNTIME_NOT_INSTALLED）。
+      // 这里补一条诊断日志：app-server 启动阶段失败（例如 runtime 拒绝
+      // model_catalog_json）否则会在 fallback 之前完全静默，无法定位。
+      const prepareFailure = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      log.warn(
+        `会话准备失败，转交 Sdk fallback：${prepareFailure.slice(0, 600)}` +
+          (effectiveConfig.codexModelCatalogPath != null
+            ? `；catalog=${effectiveConfig.codexModelCatalogPath}`
+            : ''),
+      )
     }
     if (prepared == null) {
       await this.runViaFallback(sessionId, turnId, userMessage, effectiveConfig)
@@ -474,18 +487,24 @@ export class CodexAppServerExecutor
     } catch (err) {
       invalidateRuntime = true
       const aborted = this.cancelRequested
+      const rawMessage = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      const catalogDiagnosis = aborted
+        ? null
+        : await diagnoseCodexModelCatalogFailure({
+            rawMessage,
+            catalogPath: effectiveConfig.codexModelCatalogPath,
+            runtimeVersion: resolveActiveCodexRuntimeVersion(),
+          })
       for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
       this.emit({
         ...makeBase(),
         type: 'agent_error',
-        code: aborted ? 'CODEX_SDK_CANCELLED' : 'CODEX_APPSERVER_ERROR',
+        code: catalogDiagnosis?.code ?? (aborted ? 'CODEX_SDK_CANCELLED' : 'CODEX_APPSERVER_ERROR'),
         message: aborted
           ? 'Codex app-server run was cancelled'
-          : err instanceof Error
-            ? err.message
-            : String(err),
+          : (catalogDiagnosis?.message ?? (err instanceof Error ? err.message : String(err))),
         retryable: !aborted,
-        rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        rawError: rawMessage,
       })
       this.emit({
         ...makeBase(),

@@ -34,7 +34,12 @@ import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
-import { resolveCodexHome, withCodexModelCatalog } from './codex-model-catalog.js'
+import {
+  resolveActiveCodexRuntimeVersion,
+  resolveCodexHome,
+  withCodexModelCatalog,
+} from './codex-model-catalog.js'
+import { diagnoseCodexModelCatalogFailure } from './codex-model-catalog-diagnostics.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
@@ -200,16 +205,23 @@ export class CodexCliExecutor implements EngineExecutor {
         }
         const failureMessage =
           extractCodexFailureText(result.stdout, result.stderr) || result.failureMessage
+        const rawError = [failureMessage, result.stderr, result.stdout].filter(Boolean).join('\n\n')
+        const catalogDiagnosis = await diagnoseCodexModelCatalogFailure({
+          rawMessage: rawError,
+          catalogPath: effectiveConfig.codexModelCatalogPath,
+          runtimeVersion: resolveActiveCodexRuntimeVersion(),
+        })
         this.emit({
           ...makeBase(),
           type: 'agent_error',
-          code: 'CODEX_CLI_ERROR',
+          code: catalogDiagnosis?.code ?? 'CODEX_CLI_ERROR',
           message:
-            failureMessage.length > 0
+            catalogDiagnosis?.message ??
+            (failureMessage.length > 0
               ? `Codex CLI failed: ${failureMessage}`
-              : `Codex CLI exited with code ${result.exitCode}`,
+              : `Codex CLI exited with code ${result.exitCode}`),
           retryable: true,
-          rawError: [failureMessage, result.stderr, result.stdout].filter(Boolean).join('\n\n'),
+          rawError,
         })
         this.emit({
           ...makeBase(),

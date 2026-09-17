@@ -44,7 +44,8 @@ import type { EngineExecutor } from './engine-executor.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 import { codexTargetTriple, resolveManagedCodexCli } from './codex-runtime.js'
 import { buildDefaultGitChildEnvironment } from '../services/git-command.service.js'
-import { withCodexModelCatalog } from './codex-model-catalog.js'
+import { resolveActiveCodexRuntimeVersion, withCodexModelCatalog } from './codex-model-catalog.js'
+import { diagnoseCodexModelCatalogFailure } from './codex-model-catalog-diagnostics.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
@@ -250,18 +251,26 @@ export class CodexSdkExecutor implements EngineExecutor {
       })
     } catch (err) {
       const aborted = controller.signal.aborted
+      const rawMessage = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      // 模型目录不兼容是环境问题，原始 serde 文本对用户没有意义；
+      // 统一翻译成可操作提示，并停用该目录让下一轮直接恢复。
+      const catalogDiagnosis = aborted
+        ? null
+        : await diagnoseCodexModelCatalogFailure({
+            rawMessage,
+            catalogPath: effectiveConfig.codexModelCatalogPath,
+            runtimeVersion: resolveActiveCodexRuntimeVersion(),
+          })
       for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
       this.emit({
         ...makeBase(),
         type: 'agent_error',
-        code: codexSdkExecutionErrorCode(err, aborted),
+        code: catalogDiagnosis?.code ?? codexSdkExecutionErrorCode(err, aborted),
         message: aborted
           ? 'Codex SDK run was cancelled'
-          : err instanceof Error
-            ? err.message
-            : String(err),
+          : (catalogDiagnosis?.message ?? (err instanceof Error ? err.message : String(err))),
         retryable: !aborted,
-        rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        rawError: rawMessage,
       })
       this.emit({
         ...makeBase(),

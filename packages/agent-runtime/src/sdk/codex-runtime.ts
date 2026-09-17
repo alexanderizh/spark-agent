@@ -103,7 +103,7 @@ export function resolveManagedCodexCli(
   }
 }
 
-function compareRuntimeVersions(left: string, right: string): number {
+export function compareRuntimeVersions(left: string, right: string): number {
   const leftWithoutBuild = left.split('+')[0] ?? left
   const rightWithoutBuild = right.split('+')[0] ?? right
   const leftParts = leftWithoutBuild.split('-')[0]?.split('.').map(Number) ?? []
