@@ -202,7 +202,13 @@ describe('spark login contract', () => {
     ).toBe(challenge)
 
     const credentials = await stat(payload.credentialPath)
-    expect(credentials.mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      // Windows reports a fixed 0o666-style mode mask; file access there is
+      // governed by ACLs, so the 0600 contract is POSIX-only.
+      expect(credentials.mode & 0o777).toBe(0o600)
+    } else {
+      expect(credentials.isFile()).toBe(true)
+    }
 
     const whoami = await runCli(['whoami', '--json'], root, home, account.baseUrl)
     expect(whoami.code).toBe(0)
