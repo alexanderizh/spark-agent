@@ -1,0 +1,365 @@
+import type { AgentEvent, BoundEventDraft } from '../events/schema.js'
+import { consumeLlmStream } from '../llm/consume.js'
+import { estimateMessageTokens, estimateTextTokens } from '../llm/budget.js'
+import type { IrMessage, LlmDelta, LlmRequest } from '../llm/types.js'
+import type { SessionLedger } from '../events/ledger.js'
+import { DEFAULT_COMPACTION_POLICY, type AgentEnv, type ContextCompactionPolicy } from '../seams.js'
+import { throwIfAborted } from './cancellation.js'
+
+export { DEFAULT_COMPACTION_POLICY }
+
+/**
+ * Conservative context-window assumption used only when the active model
+ * route reports no `contextWindowTokens`. It enables proactive auto-compact
+ * for unconfigured routes while staying small enough that the provider's
+ * real window is almost always larger.
+ */
+export const DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS = 200_000
+
+/**
+ * One `[from, to)` sequence-number window covering all events of a single
+ * turn, from its `turn.started` up to (not including) the next turn's start.
+ */
+export interface TurnRange {
+  readonly turnId: string
+  readonly fromSeq: number
+  /** Exclusive upper bound. */
+  readonly toSeq: number
+}
+
+export function turnRanges(events: readonly AgentEvent[]): readonly TurnRange[] {
+  const ranges: TurnRange[] = []
+  const lastSeq = events.at(-1)?.seq ?? -1
+  for (const event of events) {
+    if (event.type !== 'turn.started') continue
+    ranges.push({ turnId: event.turnId, fromSeq: event.seq, toSeq: lastSeq + 1 })
+  }
+  for (let index = 0; index < ranges.length - 1; index += 1) {
+    const current = ranges[index]
+    const next = ranges[index + 1]
+    if (current && next) ranges[index] = { ...current, toSeq: next.fromSeq }
+  }
+  return ranges
+}
+
+/**
+ * Smallest safely-droppable context units. Older turns are dropped whole;
+ * inside the newest turn the range is subdivided at assistant boundaries —
+ * each unit is one complete exchange (assistant message plus every tool call
+ * and result it produced), so dropping a unit never orphans a tool pair and
+ * never removes the latest exchange the model is still working from.
+ */
+export function droppableUnits(
+  events: readonly AgentEvent[],
+  policy: ContextCompactionPolicy,
+): readonly TurnRange[] {
+  const ranges = turnRanges(events)
+  const current = ranges.at(-1)
+  if (current === undefined) return []
+  const older = ranges.slice(0, -1)
+  const keepOlder = Math.max(0, policy.keepRecentTurns - 1)
+  const units: TurnRange[] = older
+    .slice(0, Math.max(0, older.length - keepOlder))
+    .map((range) => ({ ...range }))
+  // Subdivide the current turn at assistant boundaries and offer every
+  // segment except the last (the live exchange) for dropping.
+  const assistantSeqs = events
+    .filter(
+      (event) =>
+        event.type === 'assistant.completed' &&
+        event.seq >= current.fromSeq &&
+        event.seq < current.toSeq,
+    )
+    .map((event) => event.seq)
+  let start = current.fromSeq
+  const segments: TurnRange[] = []
+  for (const boundary of assistantSeqs) {
+    segments.push({ turnId: current.turnId, fromSeq: start, toSeq: boundary })
+    start = boundary
+  }
+  segments.push({ turnId: current.turnId, fromSeq: start, toSeq: current.toSeq })
+  units.push(...segments.slice(0, -1))
+  return units
+}
+
+export interface CompactionPlan {
+  /** Oldest context units that will be summarized and dropped. */
+  readonly dropped: readonly TurnRange[]
+  /** Estimated token count of the dropped part. */
+  readonly droppedTokens: number
+  readonly remainingTokens: number
+}
+
+/**
+ * Pure planner: chooses which oldest context units to drop so the kept
+ * context fits comfortably under the compaction threshold. Tool call/result
+ * pairs always share one unit, so dropping whole units never orphans a pair.
+ */
+export function planCompaction(
+  messages: readonly IrMessage[],
+  events: readonly AgentEvent[],
+  policy: ContextCompactionPolicy,
+  options: { readonly force?: boolean } = {},
+): CompactionPlan | undefined {
+  const units = droppableUnits(events, policy)
+  if (units.length === 0) return undefined
+
+  let droppedTokens = 0
+  let remainingTokens = 0
+  for (const message of messages) {
+    const firstSeq = message.sourceSeqs[0]
+    const droppedUnit =
+      firstSeq !== undefined &&
+      units.some((unit) => firstSeq >= unit.fromSeq && firstSeq < unit.toSeq)
+    if (droppedUnit) droppedTokens += estimateMessageTokens(message)
+    else remainingTokens += estimateMessageTokens(message)
+  }
+  if (droppedTokens === 0) return undefined
+  if (!options.force && droppedTokens < policy.minCompactableTokens) return undefined
+  return { dropped: units, droppedTokens, remainingTokens }
+}
+
+function turnIdOf(plan: CompactionPlan, seq: number): string | undefined {
+  return plan.dropped.find((range) => seq >= range.fromSeq && seq < range.toSeq)?.turnId
+}
+
+/** Turns dropped ranges plus projected messages into the summarizer input. */
+export function droppedMessages(
+  plan: CompactionPlan,
+  messages: readonly IrMessage[],
+): readonly IrMessage[] {
+  const droppedTurnIds = new Set(plan.dropped.map((range) => range.turnId))
+  return messages.filter((message) => {
+    const firstSeq = message.sourceSeqs[0]
+    if (firstSeq === undefined) return false
+    // Membership is decided by the first source seq: every source seq of a
+    // message belongs to the same turn range.
+    const turnId = turnIdOf(plan, firstSeq)
+    return turnId !== undefined && droppedTurnIds.has(turnId)
+  })
+}
+
+/**
+ * System prompt for the compaction call. The summary is a handoff document:
+ * the model continues the task from this text alone, so concrete state
+ * matters far more than prose.
+ */
+export const COMPACTION_SUMMARY_PROMPT = `You are the context-compaction pass of the Spark agent runtime. The conversation above is being summarized to free context window; the next turn continues this exact task from your summary alone.
+
+Write a dense handoff summary in markdown with exactly these sections:
+
+# Conversation Summary
+## 1. Task & Intent
+What the user asked for, verbatim constraints, and success criteria.
+## 2. Current State
+What has been done so far and what is in progress. Include the last action and its outcome.
+## 3. Key Decisions & Rationale
+Choices made and why, including rejected alternatives that must not be retried.
+## 4. Files & Artifacts
+Every file path, command, URL, or identifier that was read, written, or referenced, with one line on why it matters.
+## 5. Important Tool Results
+Numbers, errors, stack traces, and outputs that are still needed to finish the task.
+## 6. Next Steps
+The concrete, ordered steps to continue.
+
+Rules:
+- Preserve exact identifiers: file paths, symbols, commands, versions, error codes.
+- Never invent state that is not visible in the conversation.
+- Keep it under 2000 words. Prefer lists over prose.`
+
+/** Summarizer input is capped so the compaction call itself cannot overflow. */
+const SUMMARY_INPUT_TOKEN_CAP = 60_000
+
+export interface CompactOutcome {
+  readonly event: AgentEvent
+  readonly summary: string
+  readonly plan: CompactionPlan
+}
+
+export interface CompactOptions {
+  readonly sessionId: string
+  readonly cwd: string
+  readonly permissionMode?: string
+  /** Full event history of the session (buffered by the caller). */
+  readonly events: readonly AgentEvent[]
+  readonly ledger: SessionLedger
+  readonly signal?: AbortSignal
+  readonly force?: boolean
+  readonly onDelta?: (delta: LlmDelta) => Promise<void> | void
+}
+
+export interface CompactSkipped {
+  readonly skipped: 'nothing-to-compact' | 'planner-declined' | 'summary-failed'
+  readonly detail?: string
+}
+
+/**
+ * Runs one compaction pass against a session ledger: projects the history,
+ * picks the oldest turns to drop, summarizes them through the LLM, persists
+ * the summary as an artifact, and appends a `context.compacted` event so the
+ * projector replaces the dropped prefix with the summary on every later step.
+ */
+export class ContextCompactor {
+  constructor(
+    private readonly env: AgentEnv,
+    private readonly policy: ContextCompactionPolicy = DEFAULT_COMPACTION_POLICY,
+  ) {}
+
+  async compact(options: CompactOptions): Promise<CompactOutcome | CompactSkipped> {
+    const projected = this.env.projector.project(options.events, {
+      cwd: options.cwd,
+      ...(options.permissionMode === undefined
+        ? {}
+        : { permissionMode: options.permissionMode as never }),
+    })
+    const plan = planCompaction(projected.messages, options.events, this.policy, {
+      ...(options.force === true ? { force: true } : {}),
+    })
+    if (plan === undefined) return { skipped: 'nothing-to-compact' }
+
+    const summary = await this.#summarize(plan, projected.messages, options)
+    if (summary === undefined) {
+      return { skipped: 'summary-failed', detail: 'The summarization call did not return text.' }
+    }
+
+    const summaryRef = await this.env.artifacts.put(summary, 'text/markdown')
+    const event = await options.ledger.append({
+      type: 'context.compacted',
+      schemaVersion: 1,
+      summary,
+      summaryRef,
+      droppedRanges: plan.dropped.map((range) => [range.fromSeq, range.toSeq]),
+    } satisfies BoundEventDraft)
+    this.env.telemetry.counter('context.compacted', {
+      droppedTurns: plan.dropped.length,
+      droppedTokens: plan.droppedTokens,
+      remainingTokens: plan.remainingTokens,
+    })
+    return { event, summary, plan }
+  }
+
+  async #summarize(
+    plan: CompactionPlan,
+    messages: readonly IrMessage[],
+    options: CompactOptions,
+  ): Promise<string | undefined> {
+    if (options.signal !== undefined) throwIfAborted(options.signal)
+    const signal = options.signal ?? new AbortController().signal
+    let input = droppedMessages(plan, messages).map(stripImageRefs)
+    let truncated = false
+    while (input.length > 1 && estimateListTokens(input) > SUMMARY_INPUT_TOKEN_CAP) {
+      input = input.slice(1)
+      truncated = true
+    }
+    if (input.length === 0) return undefined
+    const body = truncated
+      ? `${SUMMARY_INPUT_NOTE}\n\n${renderTranscript(input)}`
+      : renderTranscript(input)
+    const request: LlmRequest = {
+      system: [
+        { id: 'compaction-summary', stability: 'volatile', content: COMPACTION_SUMMARY_PROMPT },
+      ],
+      messages: [{ role: 'user', content: body, sourceSeqs: [] }],
+      tools: [],
+      maxTokens: 16_384,
+      metadata: { sessionId: options.sessionId, purpose: 'context-compaction' },
+    }
+    try {
+      const response = await consumeLlmStream(
+        this.env.llm.stream(request, {
+          signal,
+          turnId: options.sessionId,
+          stepId: 'compaction',
+        }),
+        options.onDelta === undefined ? undefined : async (delta) => options.onDelta?.(delta),
+      )
+      return response.message.text?.trim() ?? undefined
+    } catch {
+      // Compaction is an optimization; a failed summarization call must not
+      // break the ongoing turn. The caller falls back to the original error.
+      this.env.telemetry.counter('context.compaction.summary_failed', {})
+      return undefined
+    }
+  }
+}
+
+const SUMMARY_INPUT_NOTE =
+  '[The oldest dropped messages were omitted from this summarization input to fit the window; their detail is unrecoverable.]'
+
+function stripImageRefs(message: IrMessage): IrMessage {
+  if (message.role !== 'user') return message
+  // Summaries are text-only; image payloads stay in the artifact store and
+  // remain reachable through the dropped turns' ledger entries.
+  return { role: 'user', content: message.content, sourceSeqs: message.sourceSeqs }
+}
+
+function estimateListTokens(messages: readonly IrMessage[]): number {
+  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
+}
+
+function renderTranscript(messages: readonly IrMessage[]): string {
+  return messages
+    .map((message) => {
+      if (message.role === 'user') return `[user]\n${message.content}`
+      if (message.role === 'tool_result') {
+        return `[tool:${message.tool} ${message.ok ? 'ok' : 'error'}]\n${message.content}`
+      }
+      const calls = message.toolCalls
+        .map((call) => `- ${call.name}(${safeJson(call.args)}) [${call.callId}]`)
+        .join('\n')
+      const parts = [
+        `[assistant]`,
+        ...(message.content ? [message.content] : []),
+        ...(calls ? [`Tool calls:\n${calls}`] : []),
+      ]
+      return parts.join('\n')
+    })
+    .join('\n\n')
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? ''
+  } catch {
+    return '[unserializable]'
+  }
+}
+
+/**
+ * Provider errors that mean "the request no longer fits the context window".
+ * Only these justify compacting mid-turn and retrying the same step.
+ */
+export function isContextOverflowError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as { readonly code?: unknown }).code
+  if (typeof code === 'string' && code === 'llm.context_window_exhausted') return true
+  const detailCode = nestedCode(error)
+  if (detailCode === 'context_length_exceeded') return true
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('context length exceeded') ||
+    message.includes('maximum context length') ||
+    message.includes('prompt is too long') ||
+    message.includes('context_window_exhausted')
+  )
+}
+
+function nestedCode(error: Error): string | undefined {
+  const detail = (error as { readonly detail?: unknown }).detail
+  if (typeof detail !== 'object' || detail === null) return undefined
+  const cause = (detail as Record<string, unknown>).cause
+  if (typeof cause !== 'object' || cause === null) return undefined
+  const code = (cause as Record<string, unknown>).code
+  return typeof code === 'string' ? code : undefined
+}
+
+/** Estimated tokens of the composed request, excluding tool schemas. */
+export function estimateContextTokens(
+  system: readonly { content: string }[],
+  messages: readonly IrMessage[],
+): number {
+  return (
+    system.reduce((total, section) => total + estimateTextTokens(section.content) + 16, 0) +
+    messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
+  )
+}

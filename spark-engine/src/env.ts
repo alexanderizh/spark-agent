@@ -19,7 +19,7 @@ import { LocalSkillCatalog } from './skills/catalog.js'
 import { skillToolDefinitions, SkillToolExecutor } from './skills/tools.js'
 import type { LlmService } from './seams.js'
 import type { ToolDefinition } from './tools/contract.js'
-import type { AgentEnv, Approver } from './seams.js'
+import type { AgentEnv, Approver, ContextCompactionPolicy } from './seams.js'
 import { FakeApprover } from './permission/approver.js'
 import { RulePermissionPolicy, wildcardMatches, type PermissionRule } from './permission/policy.js'
 import type { PermissionDecision } from './permission/types.js'
@@ -68,6 +68,8 @@ export interface DefaultEnvOptions {
   readonly memoryMaxInjectTokens?: number
   /** Host logger; CLI defaults to a stderr logger. */
   readonly logger?: RuntimeLogger
+  /** Context-window management overrides; absent = kernel defaults. */
+  readonly compactionPolicy?: Partial<ContextCompactionPolicy>
 }
 
 export function defaultSparkHome(): string {
@@ -234,6 +236,9 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
       memory,
     }),
     ...(hooks === undefined ? {} : { hooks }),
+    ...(options.compactionPolicy === undefined
+      ? {}
+      : { context: { compaction: options.compactionPolicy } }),
     budgets: new DefaultBudgetFactory(clock),
     telemetry: new NullTelemetry(),
   }

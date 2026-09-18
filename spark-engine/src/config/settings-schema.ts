@@ -130,3 +130,19 @@ export const PlatformSettingsSchema = z
   })
   .strict()
 export type PlatformSettings = z.output<typeof PlatformSettingsSchema>
+
+export const ContextSettingsSchema = z
+  .object({
+    /** Master switch for automatic mid-turn context compaction. */
+    auto_compact: z.boolean().optional(),
+    /** Fraction of the context window that triggers auto-compact (0.5–0.95). */
+    compact_threshold: z.number().min(0.5).max(0.95).optional(),
+    /** Most recent turns that are never summarized away (1–10). */
+    keep_recent_turns: z.number().int().min(1).max(10).optional(),
+    /** Smallest dropped-part size in tokens an automatic compaction accepts. */
+    min_compactable_tokens: z.number().int().min(1_000).max(500_000).optional(),
+    /** Upper bound of compactions within a single turn. */
+    max_compactions_per_turn: z.number().int().min(1).max(50).optional(),
+  })
+  .strict()
+export type ContextSettings = z.output<typeof ContextSettingsSchema>

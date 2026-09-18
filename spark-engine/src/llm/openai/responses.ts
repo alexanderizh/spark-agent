@@ -52,6 +52,11 @@ export function toOpenAiRequest(request: LlmRequest, model: string): Record<stri
       parameters: tool.inputSchema,
       strict: false,
     })),
+    // Prefix caching is automatic on the Responses API, but routing by session
+    // keeps a long-running conversation on the same cache shard.
+    ...(request.metadata.sessionId === undefined
+      ? {}
+      : { prompt_cache_key: request.metadata.sessionId }),
     ...(request.stopSequences?.length ? { stop: request.stopSequences } : {}),
     ...(request.thinking?.type === 'adaptive'
       ? {

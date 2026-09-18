@@ -354,3 +354,22 @@ function isKnownEvent(event: AgentEvent | UnknownEvent): event is AgentEvent {
     'user.answered',
   ]).has(event.type)
 }
+
+/**
+ * One-line context usage summary for /status: the latest provider-reported
+ * input tokens as the context footprint, plus the session-wide cache hit
+ * ratio (cached / billed input tokens across all assistant steps).
+ */
+export function contextStatsLine(events: readonly AgentEvent[]): string {
+  let lastInput = 0
+  let inputTotal = 0
+  let cacheReadTotal = 0
+  for (const event of events) {
+    if (event.type !== 'assistant.completed') continue
+    inputTotal += event.usage.inputTokens
+    cacheReadTotal += event.usage.cacheReadTokens
+    if (event.usage.inputTokens > 0) lastInput = event.usage.inputTokens
+  }
+  const hitRate = inputTotal > 0 ? Math.round((cacheReadTotal / inputTotal) * 100) : 0
+  return `ctx≈${lastInput} tok · 缓存命中 ${hitRate}%`
+}

@@ -14,6 +14,7 @@ export const SLASH_COMMANDS: readonly {
   { name: '/effort', summary: '选择推理强度(low/medium/high/max/off，默认 high)' },
   { name: '/update', summary: '检查并安装新版本(--check 仅检查)' },
   { name: '/sessions', summary: '选择并切换到历史会话' },
+  { name: '/compact', summary: '压缩上下文：把早期对话折叠为摘要' },
   { name: '/clear', summary: '开启全新会话' },
   { name: '/exit', summary: '退出(Ctrl+C 两次同效)' },
 ]

@@ -37,7 +37,7 @@ import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
 import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
-import { projectTranscript, type ActiveToolProjection } from './projection.js'
+import { contextStatsLine, projectTranscript, type ActiveToolProjection } from './projection.js'
 import {
   describeUpdateOutcome,
   type SparkUpdateRunner,
@@ -404,9 +404,26 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       case '/status':
         setNotice(
           `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}` +
+            ` · ${contextStatsLine(events)}` +
             ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${reasoningEffort}`,
         )
         break
+      case '/compact': {
+        if (activeTurns > 0) {
+          setNotice('turn 运行中；请先中断或等待完成，再压缩上下文。')
+          break
+        }
+        setNotice('正在压缩上下文（早期对话将折叠为摘要）…')
+        const result = await session.compact()
+        if (!result.compacted) {
+          setNotice('当前没有可压缩的历史：需要至少一次较早的对话轮次。')
+          break
+        }
+        setNotice(
+          `上下文已压缩：${result.droppedTurns ?? 0} 个早期轮次已折叠为摘要（约 ${result.droppedTokens ?? 0} tokens）。`,
+        )
+        break
+      }
       case '/model':
         if (!modelRuntime) {
           setNotice(`当前模型: ${props.model ?? 'unconfigured'}（静态模式，未接入切换器）`)

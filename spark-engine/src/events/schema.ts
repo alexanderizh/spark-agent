@@ -69,6 +69,9 @@ export const TurnStatsSchema = z.object({
   // Time to the turn's first content token (first LLM call); 0 when unreported.
   ttftMs: z.number().int().nonnegative().default(0),
   costUsd: z.number().nonnegative().default(0),
+  // Context compactions performed while running this turn. 0 keeps older
+  // ledgers valid.
+  compactions: z.number().int().nonnegative().default(0),
 })
 
 const envelope = {
@@ -215,7 +218,12 @@ const PermissionDecidedEventSchema = z.object({
 const ContextCompactedEventSchema = z.object({
   ...envelope,
   type: z.literal('context.compacted'),
+  // Dropped ranges are half-open [from, to) sequence windows covering whole
+  // turns only, so tool call/result pairs are never split.
   summaryRef: ArtifactRefSchema.optional(),
+  // Inline summary text so replay never needs an artifact read; summaryRef
+  // keeps the same content addressable for audits.
+  summary: z.string().min(1).optional(),
   droppedRanges: z.array(z.tuple([z.number().int(), z.number().int()])),
 })
 

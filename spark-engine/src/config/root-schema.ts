@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import {
+  ContextSettingsSchema,
   McpSettingsSchema,
   MemorySettingsSchema,
   PermissionSettingsSchema,
@@ -77,6 +78,7 @@ const ModelConfigSchema = z
     mcp: McpSettingsSchema.optional(),
     memory: MemorySettingsSchema.optional(),
     platform: PlatformSettingsSchema.optional(),
+    context: ContextSettingsSchema.optional(),
   })
   .strict()
 

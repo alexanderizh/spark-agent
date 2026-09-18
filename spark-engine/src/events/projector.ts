@@ -56,6 +56,9 @@ export class EventContextProjector implements ContextProjector {
           })
           break
         }
+        case 'context.compacted':
+          applyCompaction(messages, event.droppedRanges, event.summary, event.seq)
+          break
         default:
           break
       }
@@ -65,6 +68,33 @@ export class EventContextProjector implements ContextProjector {
       messages,
       sourceSeqs: [...new Set(messages.flatMap((message) => message.sourceSeqs))],
     }
+  }
+}
+
+/**
+ * Replaces the dropped sequence ranges with the compaction summary. Ranges
+ * always cover whole turns, so tool call/result pairs are dropped together
+ * and the request never carries an orphaned half of a pair.
+ */
+function applyCompaction(
+  messages: IrMessage[],
+  droppedRanges: readonly (readonly [number, number])[],
+  summary: string | undefined,
+  compactedSeq: number,
+): void {
+  const dropped = (seqs: readonly number[]): boolean =>
+    seqs.some((seq) => droppedRanges.some(([from, to]) => seq >= from && seq < to))
+  const kept = messages.filter((message) => !dropped(message.sourceSeqs))
+  messages.length = 0
+  messages.push(...kept)
+  if (summary !== undefined && summary.trim() !== '') {
+    messages.push({
+      role: 'user',
+      content: `<context-summary>\nThe earlier conversation was compacted to free context window. The summary below is the authoritative record of everything before this point.\n\n${summary.trim()}\n</context-summary>`,
+      // Bound to the compaction event itself so a later compaction that drops
+      // this turn range also retires this summary instead of stacking copies.
+      sourceSeqs: [compactedSeq],
+    })
   }
 }
 

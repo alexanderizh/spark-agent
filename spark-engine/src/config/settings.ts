@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { SparkMcpServerConfig, SparkMcpServerMap } from '../mcp/types.js'
 import type { PermissionRule } from '../permission/policy.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
+import type { ContextCompactionPolicy } from '../seams.js'
 import {
   ConfigFileError,
   deepMergeLayers,
@@ -222,6 +223,27 @@ export function resolveMemorySettings(settings: SparkSettings): ResolvedMemorySe
   }
 }
 
+/**
+ * Context-window management knobs, shaped as a partial engine compaction
+ * policy so only explicitly configured fields override kernel defaults.
+ */
+export function resolveContextSettings(settings: SparkSettings): Partial<ContextCompactionPolicy> {
+  const context = settings.config.context
+  const policy: { -readonly [K in keyof ContextCompactionPolicy]+?: ContextCompactionPolicy[K] } =
+    {}
+  if (context === undefined) return policy
+  if (context.auto_compact !== undefined) policy.autoCompact = context.auto_compact
+  if (context.compact_threshold !== undefined) policy.thresholdRatio = context.compact_threshold
+  if (context.keep_recent_turns !== undefined) policy.keepRecentTurns = context.keep_recent_turns
+  if (context.min_compactable_tokens !== undefined) {
+    policy.minCompactableTokens = context.min_compactable_tokens
+  }
+  if (context.max_compactions_per_turn !== undefined) {
+    policy.maxCompactionsPerTurn = context.max_compactions_per_turn
+  }
+  return policy
+}
+
 export interface ResolvedPlatformSettings {
   readonly serverUrl: string
   readonly webLoginUrl?: string
@@ -276,6 +298,7 @@ export interface ResolvedEngineSettings {
   readonly memoryEnabled: boolean
   readonly memoryMaxInjectTokens: number
   readonly memoryAgentId: string
+  readonly compactionPolicy: Partial<ContextCompactionPolicy>
 }
 
 export function resolveEngineSettings(
@@ -297,6 +320,7 @@ export function resolveEngineSettings(
     memoryEnabled: memory.enabled,
     memoryMaxInjectTokens: memory.maxInjectTokens,
     memoryAgentId: memory.agentId,
+    compactionPolicy: resolveContextSettings(settings),
   }
 }
 

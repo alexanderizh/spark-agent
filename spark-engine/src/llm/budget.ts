@@ -114,22 +114,30 @@ export function estimateRequestTokens(options: {
 }): number {
   let total = 0
   for (const section of options.system) total += estimateTextTokens(section.content) + 16
-  for (const message of options.messages) {
-    if (message.role === 'user') {
-      total += estimateTextTokens(message.content) + 12
-      for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
-    } else if (message.role === 'tool_result') {
-      total += estimateTextTokens(message.content) + 12
-    } else {
-      total += estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
-      for (const call of message.toolCalls) {
-        total += estimateTextTokens(call.name) + estimateTextTokens(safeJson(call.args)) + 16
-      }
-    }
-  }
+  for (const message of options.messages) total += estimateMessageTokens(message)
   for (const tool of options.tools) {
     total += estimateTextTokens(tool.name) + estimateTextTokens(tool.description)
     total += estimateTextTokens(safeJson(tool.inputSchema)) + 32
+  }
+  return total
+}
+
+/**
+ * Estimated wire cost of one projected message, including role framing
+ * overhead. Used by the context compactor to compare conversation prefixes.
+ */
+export function estimateMessageTokens(message: IrMessage): number {
+  if (message.role === 'user') {
+    let total = estimateTextTokens(message.content) + 12
+    for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
+    return total
+  }
+  if (message.role === 'tool_result') {
+    return estimateTextTokens(message.content) + 12
+  }
+  let total = estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
+  for (const call of message.toolCalls) {
+    total += estimateTextTokens(call.name) + estimateTextTokens(safeJson(call.args)) + 16
   }
   return total
 }
@@ -156,7 +164,7 @@ export function estimateImageTokens(image: {
   return Math.max(tileBased, pixelBased)
 }
 
-function estimateTextTokens(value: string | undefined): number {
+export function estimateTextTokens(value: string | undefined): number {
   if (!value) return 0
   let ascii = 0
   let other = 0
