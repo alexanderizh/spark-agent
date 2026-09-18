@@ -59,6 +59,9 @@ describe('process failure diagnostics', () => {
   })
 
   it('retains output when a process terminates from a signal', async () => {
+    // Windows has no signal model: process.kill there always yields a plain
+    // non-zero exit, never the signal-terminated rejection this asserts.
+    if (process.platform === 'win32') return
     const outcome = runProcess(
       process.execPath,
       ['-e', 'process.stdout.write("diagnostic", () => process.kill(process.pid, "SIGTERM"))'],

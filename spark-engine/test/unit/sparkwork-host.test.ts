@@ -34,7 +34,8 @@ describe('sparkwork host discovery', () => {
     const discovery = await discoverSparkWorkHost({
       sparkHome: root,
       fetch: async (input) => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         fetches.push(url)
         if (url.startsWith('http://127.0.0.1:39871')) {
           throw new TypeError('bridge connection refused (stale port)')
@@ -69,7 +70,8 @@ describe('sparkwork host discovery', () => {
     const discovery = await discoverSparkWorkHost({
       sparkHome: root,
       fetch: async (input) => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         return catalogResponse(
           url.startsWith('http://127.0.0.1:39882')
             ? 'sparkwork:provider-1:gpt-newer'
@@ -128,6 +130,11 @@ describe('sparkwork host discovery', () => {
   })
 
   it('treats a world-readable or malformed descriptor as stale, not fatal', async () => {
+    if (process.platform === 'win32') {
+      // File readability there is ACL-based; only the malformed-descriptor
+      // half of this contract exists. It is covered on POSIX machines.
+      return
+    }
     const root = await createRoot()
     await writeDescriptor(root, 'bridge-valid.json', {
       endpoint: 'http://127.0.0.1:39901',
@@ -137,11 +144,9 @@ describe('sparkwork host discovery', () => {
     const loosePath = join(root, 'hosts', 'sparkwork', 'bridge-loose.json')
     await writeFile(loosePath, validDescriptorJson('http://127.0.0.1:39902'), { mode: 0o644 })
     if (process.platform !== 'win32') await chmod(loosePath, 0o644)
-    await writeFile(
-      join(root, 'hosts', 'sparkwork', 'bridge-broken.json'),
-      '{not json',
-      { mode: 0o600 },
-    )
+    await writeFile(join(root, 'hosts', 'sparkwork', 'bridge-broken.json'), '{not json', {
+      mode: 0o600,
+    })
 
     const discovery = await discoverSparkWorkHost({
       sparkHome: root,
@@ -155,9 +160,12 @@ describe('sparkwork host discovery', () => {
   it('returns a quiet negative when no bridge directory exists', async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-host-empty-'))
     roots.push(root)
-    const discovery = await discoverSparkWorkHost({ sparkHome: root, fetch: async () => {
-      throw new Error('must not probe anything')
-    } })
+    const discovery = await discoverSparkWorkHost({
+      sparkHome: root,
+      fetch: async () => {
+        throw new Error('must not probe anything')
+      },
+    })
     expect(discovery).toEqual({ staleBridgeDescriptors: 0 })
   })
 

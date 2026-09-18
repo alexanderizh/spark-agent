@@ -24,7 +24,12 @@ import type { ResolvedToolCall } from '../../src/tools/contract.js'
 import { workspaceToolDefinitions } from '../../src/tools/workspace/definitions.js'
 import { collectEvents } from '../helpers.js'
 
-const debugServer = resolve(process.cwd(), '../scripts/debug-mcp/stdio-echo-server.mjs')
+// TOML basic strings treat backslashes as escapes, so the embedded server
+// path is written with forward slashes (Windows APIs accept those too).
+const debugServer = resolve(process.cwd(), '../scripts/debug-mcp/stdio-echo-server.mjs').replaceAll(
+  String.fromCharCode(92),
+  '/',
+)
 const roots: string[] = []
 
 afterEach(async () => {
@@ -89,7 +94,12 @@ describe('layered settings', () => {
 
     // `/perm` persists `agent.permission_mode`; that explicit choice outranks
     // the static default without needing any code change in the TUI.
-    await writeSetting({ cwd: root, sparkHome: home, key: 'agent.permission_mode', value: 'manual' })
+    await writeSetting({
+      cwd: root,
+      sparkHome: home,
+      key: 'agent.permission_mode',
+      value: 'manual',
+    })
     const overridden = await loadSparkSettings({ cwd: root, sparkHome: home })
     expect(resolveSessionPermissionMode(overridden)).toBe('manual')
   })
@@ -167,9 +177,9 @@ describe('tool configuration', () => {
     // A resumed session can still replay a call for a tool that was hidden
     // after the fact; the policy must deny it in every mode.
     for (const mode of ['manual', 'auto', 'bypass'] as const) {
-      await expect(env.permission.policy.check(call('bash', { command: 'ls' }), context(mode))).resolves.toMatchObject(
-        { decision: 'deny' },
-      )
+      await expect(
+        env.permission.policy.check(call('bash', { command: 'ls' }), context(mode)),
+      ).resolves.toMatchObject({ decision: 'deny' })
     }
   })
 
@@ -182,7 +192,12 @@ describe('tool configuration', () => {
       llm: new FakeModel([text('ok')]),
       ...resolveEngineSettings(settings),
     })
-    expect(env.tools.registry.list().map((tool) => tool.name).sort()).toEqual(['grep', 'read'])
+    expect(
+      env.tools.registry
+        .list()
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(['grep', 'read'])
   })
 
   it('rejects a config that sets both enabled and disabled', async () => {
@@ -197,10 +212,7 @@ describe('tool configuration', () => {
 describe('permission configuration', () => {
   it('turns deny entries into hard denies and allow entries into silent approvals', async () => {
     const root = await workspace()
-    const settings = await settingsWith(
-      root,
-      '[permissions]\nallow = ["bash"]\ndeny = ["edit"]\n',
-    )
+    const settings = await settingsWith(root, '[permissions]\nallow = ["bash"]\ndeny = ["edit"]\n')
     const env = createDefaultEnv({
       cwd: root,
       dataRoot: join(root, '.spark-data'),
