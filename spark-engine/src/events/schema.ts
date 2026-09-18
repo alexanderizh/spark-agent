@@ -74,6 +74,12 @@ export const TurnStatsSchema = z.object({
   compactions: z.number().int().nonnegative().default(0),
   // Tool-result bodies sunk to artifacts by microcompact during this turn.
   slimmedToolResults: z.number().int().nonnegative().default(0),
+  // Active model context window, when the route reports one; lets hosts
+  // render headroom without re-deriving the model budget.
+  contextWindowTokens: z.number().int().positive().optional(),
+  // Input tokens of the turn's final LLM call — the provider's own view of
+  // the context footprint. Omitted when the provider reported nothing.
+  lastInputTokens: z.number().int().nonnegative().optional(),
 })
 
 const envelope = {

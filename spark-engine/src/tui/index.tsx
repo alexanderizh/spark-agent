@@ -232,6 +232,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       {...(props.cwd === undefined ? {} : { cwd: props.cwd })}
       {...(props.imageInput === undefined ? {} : { imageInput: props.imageInput })}
       modelRuntime={modelRuntime}
+      getModelBudget={() => props.switchable.getModelBudget()}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />
   )

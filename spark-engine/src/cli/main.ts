@@ -45,7 +45,7 @@ import {
   uninstallLauncher,
   type InstallReport,
 } from './install.js'
-import { installWarnings, renderInstallReport } from './diagnostics.js'
+import { formatModelLimitsTail, installWarnings, renderInstallReport } from './diagnostics.js'
 import { executeUpdate } from './update.js'
 import { uninstallSparkPackage } from './uninstall-package.js'
 import { NOTICE_TIMEOUT_MS, updateNoticeLine } from './update-notice.js'
@@ -152,7 +152,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     options.positionals[0] !== undefined &&
     SUBCOMMANDS.has(options.positionals[0])
   ) {
-    process.stderr.write(`--image only applies to a task prompt, not to ${options.positionals[0]}.\n`)
+    process.stderr.write(
+      `--image only applies to a task prompt, not to ${options.positionals[0]}.\n`,
+    )
     return 2
   }
   if (options.positionals[0] === 'serve') {
@@ -385,7 +387,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (!prompt && !process.stdin.isTTY) prompt = (await readStdin()).trim()
 
   if (options.images.length > 0 && !prompt) {
-    process.stderr.write('--image 需要与任务提示词一起使用，例如：spark -p "分析截图" -i shot.png\n')
+    process.stderr.write(
+      '--image 需要与任务提示词一起使用，例如：spark -p "分析截图" -i shot.png\n',
+    )
     return 2
   }
   const attachedImages = await loadPromptImages(options.images)
@@ -478,7 +482,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2
   }
   if (prompt) {
-    return runOnce(prompt, resolvedOptions, runtime, engineSettings, resumeSessionId, attachedImages.images)
+    return runOnce(
+      prompt,
+      resolvedOptions,
+      runtime,
+      engineSettings,
+      resumeSessionId,
+      attachedImages.images,
+    )
   }
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
@@ -604,6 +615,13 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
       )
     }
     process.stdout.write(`Selected model: ${terminalSafe(catalog.selectedModel ?? 'none')}\n`)
+    const selectedEntry = catalog.entries.find((entry) => entry.selected)
+    if (selectedEntry?.contextWindowTokens !== undefined) {
+      process.stdout.write(`Context window: ${selectedEntry.contextWindowTokens} tokens\n`)
+    }
+    if (selectedEntry?.maxOutputTokens !== undefined) {
+      process.stdout.write(`Max output: ${selectedEntry.maxOutputTokens} tokens\n`)
+    }
     process.stdout.write(`Available models: ${catalog.entries.length}\n`)
     process.stdout.write(
       `Configuration: ${configurationError ? `error — ${configurationError}` : 'ready'}\n`,
@@ -624,7 +642,8 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
   for (const entry of catalog.entries) {
     const marker = entry.selected ? '*' : ' '
     process.stdout.write(
-      `${marker} ${terminalSafe(entry.model)}  ${terminalSafe(entry.providerName)}  ${entry.protocol}  [${entry.source}]\n`,
+      `${marker} ${terminalSafe(entry.model)}  ${terminalSafe(entry.providerName)}  ${entry.protocol}  [${entry.source}]` +
+        `${formatModelLimitsTail(entry)}\n`,
     )
   }
   return 0

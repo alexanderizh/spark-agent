@@ -11,7 +11,7 @@ import {
 import type { AgentEvent } from '../events/schema.js'
 import { shortSessionId } from '../events/ledger.js'
 import type { SessionMeta } from '../seams.js'
-import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
+import type { LlmDelta, ModelBudget, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { TurnImageAttachment } from '../images/attachments.js'
@@ -55,6 +55,8 @@ export interface SparkTuiAppProps {
   readonly initialEvents: readonly AgentEvent[]
   readonly approver: InteractiveApprover
   readonly createSession: () => Promise<AgentSession>
+  /** Current route's model budget, for /status context headroom display. */
+  readonly getModelBudget?: () => ModelBudget | undefined
   readonly capabilities?: TerminalCapabilities
   readonly theme?: TuiTheme
   readonly version?: string
@@ -404,7 +406,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       case '/status':
         setNotice(
           `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}` +
-            ` · ${contextStatsLine(events)}` +
+            ` · ${contextStatsLine(events, props.getModelBudget?.()?.contextWindowTokens)}` +
             ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${reasoningEffort}`,
         )
         break

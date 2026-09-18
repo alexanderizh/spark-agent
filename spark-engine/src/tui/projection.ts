@@ -367,10 +367,14 @@ function isKnownEvent(event: AgentEvent | UnknownEvent): event is AgentEvent {
 
 /**
  * One-line context usage summary for /status: the latest provider-reported
- * input tokens as the context footprint, plus the session-wide cache hit
- * ratio (cached / billed input tokens across all assistant steps).
+ * input tokens as the context footprint (with window share when the active
+ * model budget is known), plus the session-wide cache hit ratio (cached /
+ * billed input tokens across all assistant steps).
  */
-export function contextStatsLine(events: readonly AgentEvent[]): string {
+export function contextStatsLine(
+  events: readonly AgentEvent[],
+  contextWindowTokens?: number,
+): string {
   let lastInput = 0
   let inputTotal = 0
   let cacheReadTotal = 0
@@ -381,5 +385,9 @@ export function contextStatsLine(events: readonly AgentEvent[]): string {
     if (event.usage.inputTokens > 0) lastInput = event.usage.inputTokens
   }
   const hitRate = inputTotal > 0 ? Math.round((cacheReadTotal / inputTotal) * 100) : 0
-  return `ctx≈${lastInput} tok · 缓存命中 ${hitRate}%`
+  const usage =
+    contextWindowTokens !== undefined && contextWindowTokens > 0
+      ? `ctx≈${lastInput}/${contextWindowTokens} tok (${Math.min(999, Math.round((lastInput / contextWindowTokens) * 100))}%)`
+      : `ctx≈${lastInput} tok`
+  return `${usage} · 缓存命中 ${hitRate}%`
 }

@@ -102,6 +102,7 @@ export class TurnMachine {
     const compactor = new ContextCompactor(this.env, compactionPolicy)
     let compactions = 0
     let slimmedToolResults = 0
+    let lastInputTokens = 0
     const contextWindowTokens = (): number =>
       this.env.llm.getModelBudget?.()?.contextWindowTokens ?? DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS
 
@@ -116,6 +117,7 @@ export class TurnMachine {
     }
     const stats = (): TurnStats => {
       const snapshot = budget.snapshot()
+      const contextWindowTokens = this.env.llm.getModelBudget?.()?.contextWindowTokens
       return {
         steps: snapshot.steps,
         toolCalls: snapshot.toolCalls,
@@ -132,6 +134,9 @@ export class TurnMachine {
         costUsd: snapshot.costUsd,
         compactions,
         slimmedToolResults,
+        ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
+        // A provider that reports no input tokens would make 0 misleading.
+        ...(lastInputTokens > 0 ? { lastInputTokens } : {}),
       }
     }
     /**
@@ -220,7 +225,6 @@ export class TurnMachine {
         }
       }
 
-      let lastInputTokens = 0
       while (true) {
         throwIfAborted(cancellation.signal)
         await pullEvents()

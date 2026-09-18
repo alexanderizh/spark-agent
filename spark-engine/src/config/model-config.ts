@@ -64,6 +64,10 @@ export interface ConfiguredModelCatalogEntry {
   readonly protocol: ModelProtocol
   readonly model: string
   readonly selected: boolean
+  /** Configured context window; absent when the source reports none. */
+  readonly contextWindowTokens?: number
+  /** Configured output ceiling; absent when the source reports none. */
+  readonly maxOutputTokens?: number
 }
 
 export interface ConfiguredModelCatalog {
@@ -217,6 +221,10 @@ export async function inspectConfiguredModels(
           protocol: provider.protocol,
           model: model.model,
           selected: selected === id,
+          ...(model.context_window === undefined
+            ? {}
+            : { contextWindowTokens: model.context_window }),
+          ...(model.max_tokens === undefined ? {} : { maxOutputTokens: model.max_tokens }),
         },
       ]
     },
@@ -230,6 +238,8 @@ export async function inspectConfiguredModels(
       protocol: route.protocol,
       model: route.model,
       selected: selectedHostRoute?.routeId === route.routeId,
+      ...(route.contextWindow === undefined ? {} : { contextWindowTokens: route.contextWindow }),
+      ...(route.maxOutputTokens === undefined ? {} : { maxOutputTokens: route.maxOutputTokens }),
     })) ?? []
   return Object.freeze({
     entries: Object.freeze([...hostEntries, ...localEntries]),
