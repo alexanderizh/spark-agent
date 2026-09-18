@@ -243,15 +243,24 @@ async function describeCandidate(
   platform: NodeJS.Platform,
 ): Promise<PathSparkCandidate> {
   const info = await lstat(candidatePath)
-  if (platform === 'win32' || !info.isSymbolicLink()) {
+  if (platform === 'win32') {
+    if (!(await hasCmdMarker(candidatePath))) return { path: candidatePath, dir }
+    // The .cmd shim embeds its entry as `node "<entry>" %*`; resolving that
+    // line gives Windows the same drift/broken reporting symlinks provide on
+    // POSIX.
+    const entry = await cmdLauncherEntry(candidatePath)
+    if (entry === undefined) return { path: candidatePath, dir, isSparkInstall: true }
+    if (!(await fileExists(entry))) {
+      return { path: candidatePath, dir, broken: true, targetPath: entry }
+    }
+    return { path: candidatePath, dir, targetPath: entry, ...(await describeTarget(entry)) }
+  }
+  if (!info.isSymbolicLink()) {
     return {
       path: candidatePath,
       dir,
-      // The marker line only exists in Windows shims; foreign regular entries on
-      // POSIX are reported as-is without reading (possibly huge) file bodies.
-      ...(platform === 'win32' && (await hasCmdMarker(candidatePath))
-        ? { isSparkInstall: true }
-        : {}),
+      // Foreign regular entries on POSIX are reported as-is without reading
+      // (possibly huge) file bodies.
     }
   }
   const targetPath = await readlink(candidatePath)
@@ -265,6 +274,19 @@ async function describeCandidate(
     targetPath: resolvedTarget,
     ...(await describeTarget(resolvedTarget)),
   }
+}
+
+/** Extracts the `node "<entry>"` target embedded in a spark .cmd shim. */
+async function cmdLauncherEntry(launcherPath: string): Promise<string | undefined> {
+  let content: string
+  try {
+    content = await readFile(launcherPath, 'utf8')
+  } catch {
+    return undefined
+  }
+  const match = /^node "([^"]+)"(?: %\*)?\r?$/mu.exec(content)
+  if (match?.[1] === undefined) return undefined
+  return resolve(dirname(launcherPath), match[1])
 }
 
 async function describeTarget(
