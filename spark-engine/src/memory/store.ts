@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -85,7 +85,9 @@ export class FileMemoryStore implements MemoryProvider {
   readonly #logger: RuntimeLogger
 
   constructor(options: MemoryStoreOptions) {
-    this.#homeDir = resolve(options.homeDir ?? process.env.SPARK_AGENT_HOME ?? join(homedir(), '.spark-agent'))
+    this.#homeDir = resolve(
+      options.homeDir ?? process.env.SPARK_AGENT_HOME ?? join(homedir(), '.spark-agent'),
+    )
     this.#cwd = resolve(options.cwd)
     this.#agentId = normalizeAgentId(options.agentId ?? DEFAULT_AGENT_ID)
     this.#maxInjectTokens = normalizeBudget(options.maxInjectTokens)
@@ -124,7 +126,9 @@ export class FileMemoryStore implements MemoryProvider {
     const ranked = entries
       .map((entry) => ({ entry, score: scoreEntry(entry, terms) }))
       .filter((item) => item.score > 0)
-      .sort((left, right) => right.score - left.score || compareForInjection(left.entry, right.entry))
+      .sort(
+        (left, right) => right.score - left.score || compareForInjection(left.entry, right.entry),
+      )
       .map((item) => item.entry)
     return options.limit === undefined ? ranked : ranked.slice(0, normalizeLimit(options.limit))
   }
@@ -168,7 +172,10 @@ export class FileMemoryStore implements MemoryProvider {
     const entry: MemoryEntry = {
       id,
       scope: input.scope,
-      scopeRef: input.scope === 'project' ? location.scopeRef : scopeReference(input.scope, input.agentId ?? this.#agentId),
+      scopeRef:
+        input.scope === 'project'
+          ? location.scopeRef
+          : scopeReference(input.scope, input.agentId ?? this.#agentId),
       type: input.type ?? defaultTypeForScope(input.scope),
       name,
       description,
@@ -228,7 +235,11 @@ export class FileMemoryStore implements MemoryProvider {
     await this.#updateIndex(entry.scope, entry.scopeRef, directory)
   }
 
-  async #updateIndex(scope: MemoryScope, scopeRef: string | null, directory: string): Promise<void> {
+  async #updateIndex(
+    scope: MemoryScope,
+    scopeRef: string | null,
+    directory: string,
+  ): Promise<void> {
     const entries = await this.#readLocation({ scope, scopeRef, directory })
     const lines = entries
       .filter((entry) => !entry.archived)
@@ -247,7 +258,11 @@ export class FileMemoryStore implements MemoryProvider {
     const locations: MemoryLocation[] = []
     const projectDirectory = findProjectMemoryDirectory(this.#cwd, this.#homeDir)
     if (scope === undefined || scope === 'user') {
-      locations.push({ scope: 'user', scopeRef: null, directory: join(this.#homeDir, 'memory', 'user') })
+      locations.push({
+        scope: 'user',
+        scopeRef: null,
+        directory: join(this.#homeDir, 'memory', 'user'),
+      })
     }
     if (scope === undefined || scope === 'project') {
       locations.push({ scope: 'project', scopeRef: this.#cwd, directory: projectDirectory })
@@ -297,29 +312,73 @@ export class FileMemoryStore implements MemoryProvider {
   }
 }
 
+/**
+ * Equality of two directory paths on the real filesystem. On Windows the
+ * same directory is frequently reached through an 8.3 short name
+ * (`ADMINI~1`) in one path and a long name in the other, so string equality
+ * of resolved paths is not enough — the native realpath (GetFinalPathNameBy-
+ * Handle) canonicalizes both to the long form.
+ */
+function isSameDirectory(left: string, right: string): boolean {
+  const canonicalize = (path: string): string | undefined => {
+    try {
+      return realpathSync.native(path)
+    } catch {
+      try {
+        return realpathSync(path)
+      } catch {
+        return undefined
+      }
+    }
+  }
+  const leftReal = canonicalize(left)
+  const rightReal = canonicalize(right)
+  if (leftReal !== undefined && rightReal !== undefined) return leftReal === rightReal
+  return resolve(left) === resolve(right)
+}
+
 function findProjectMemoryDirectory(cwd: string, homeDir: string): string {
   let current = resolve(cwd)
   const globalMemoryDirectory = resolve(homeDir, 'memory')
+  // The default install's global store must never become a project scope
+  // either — even when this store is configured with a different home
+  // (SPARK_AGENT_HOME, embedding hosts). Otherwise the ancestor walk on a
+  // machine with the desktop installed would read and pollute the real user
+  // memory directory.
+  const defaultGlobalMemoryDirectory = resolve(homedir(), '.spark-agent', 'memory')
   while (true) {
     const candidate = join(current, '.spark-agent', 'memory')
     // Prefer the nearest existing workspace memory directory. If none exists,
     // the current directory remains the safe and unsurprising write target.
-    // Do not mistake the user's global ~/.spark-agent/memory directory for a
-    // project scope when the cwd happens to be below the home directory.
-    if (resolve(candidate) !== globalMemoryDirectory && existsSync(candidate)) return candidate
+    // Do not mistake a user's global ~/.spark-agent/memory directory for a
+    // project scope when the cwd happens to be below a home directory.
+    if (
+      existsSync(candidate) &&
+      !isSameDirectory(candidate, globalMemoryDirectory) &&
+      !isSameDirectory(candidate, defaultGlobalMemoryDirectory)
+    ) {
+      return candidate
+    }
     const parent = dirname(current)
     if (parent === current) return join(resolve(cwd), '.spark-agent', 'memory')
     current = parent
   }
 }
 
-function parseMemoryFile(source: string, filePath: string, location: MemoryLocation): MemoryEntry | undefined {
+function parseMemoryFile(
+  source: string,
+  filePath: string,
+  location: MemoryLocation,
+): MemoryEntry | undefined {
   const parsed = parseFrontmatter(source)
-  const fileName = filePath.slice(Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')) + 1).replace(/\.md$/u, '')
+  const fileName = filePath
+    .slice(Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')) + 1)
+    .replace(/\.md$/u, '')
   const id = stringField(parsed.fields.id) ?? fileName
   if (!ID_PATTERN.test(id)) return undefined
   const name = stringField(parsed.fields.name) ?? id
-  const description = stringField(parsed.fields.description) ?? firstMeaningfulLine(parsed.body) ?? name
+  const description =
+    stringField(parsed.fields.description) ?? firstMeaningfulLine(parsed.body) ?? name
   return {
     id,
     scope: location.scope,
@@ -340,7 +399,10 @@ function parseMemoryFile(source: string, filePath: string, location: MemoryLocat
   }
 }
 
-function parseFrontmatter(source: string): { readonly fields: Record<string, string>; readonly body: string } {
+function parseFrontmatter(source: string): {
+  readonly fields: Record<string, string>
+  readonly body: string
+} {
   const normalized = source.replace(/^\uFEFF/u, '').replace(/\r\n?/gu, '\n')
   if (!normalized.startsWith('---\n')) return { fields: {}, body: normalized }
   const end = normalized.indexOf('\n---', 4)
@@ -394,10 +456,17 @@ function renderMemoryBlock(entries: readonly MemoryEntry[], cwd: string): string
     lines.push('<user-memory>', ...user.map(renderSummary), '</user-memory>')
   }
   if (project.length > 0) {
-    lines.push(`<project-memory workspace="${sanitizeInline(cwd)}">`, ...project.map(renderSummary), '</project-memory>')
+    lines.push(
+      `<project-memory workspace="${sanitizeInline(cwd)}">`,
+      ...project.map(renderSummary),
+      '</project-memory>',
+    )
   }
   if (agent.length > 0) lines.push('<agent-memory>', ...agent.map(renderSummary), '</agent-memory>')
-  lines.push('', '摘要只展示按优先级和预算选出的记忆；需要详情时使用 `search_memory` 与 `recall_memory`。')
+  lines.push(
+    '',
+    '摘要只展示按优先级和预算选出的记忆；需要详情时使用 `search_memory` 与 `recall_memory`。',
+  )
   return lines.join('\n')
 }
 
@@ -406,8 +475,17 @@ function renderSummary(entry: MemoryEntry): string {
 }
 
 function compareForInjection(left: MemoryEntry, right: MemoryEntry): number {
-  const priority: Readonly<Record<MemoryType, number>> = { feedback: 0, user: 1, project: 2, reference: 3 }
-  return priority[left.type] - priority[right.type] || right.updatedAt - left.updatedAt || left.id.localeCompare(right.id)
+  const priority: Readonly<Record<MemoryType, number>> = {
+    feedback: 0,
+    user: 1,
+    project: 2,
+    reference: 3,
+  }
+  return (
+    priority[left.type] - priority[right.type] ||
+    right.updatedAt - left.updatedAt ||
+    left.id.localeCompare(right.id)
+  )
 }
 
 function scoreEntry(entry: MemoryEntry, terms: readonly string[]): number {
@@ -428,7 +506,9 @@ function scoreEntry(entry: MemoryEntry, terms: readonly string[]): number {
 function tokenize(value: string): string[] {
   const normalized = value.toLocaleLowerCase().normalize('NFKC')
   const tokens: string[] = []
-  for (const segment of normalized.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Letter}\p{Number}]+/gu) ?? []) {
+  for (const segment of normalized.match(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Letter}\p{Number}]+/gu,
+  ) ?? []) {
     if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(segment)) {
       for (const character of segment) tokens.push(character)
     } else {
@@ -467,7 +547,8 @@ function normalizeBudget(value: number | undefined): number {
 }
 
 function normalizeLimit(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error('Memory search limit must be a positive integer')
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new Error('Memory search limit must be a positive integer')
   return Math.min(value, 100)
 }
 
@@ -527,15 +608,24 @@ function parseLinks(value: string | undefined): readonly string[] {
 }
 
 function firstMeaningfulLine(value: string): string | undefined {
-  return value.split('\n').map((line) => line.trim()).find((line) => line.length > 0)
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
 }
 
 function sanitizeInline(value: string): string {
-  return value.replace(/[<>]/gu, (character) => (character === '<' ? '‹' : '›')).replace(/[\r\n]+/gu, ' ')
+  return value
+    .replace(/[<>]/gu, (character) => (character === '<' ? '‹' : '›'))
+    .replace(/[\r\n]+/gu, ' ')
 }
 
 function unquote(value: string): string {
-  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
     return value.slice(1, -1)
   }
   return value
