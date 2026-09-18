@@ -476,3 +476,121 @@ describe('projector replay of context.tool_results_slimmed', () => {
     expect(messages.filter((message) => message.role === 'tool_result')).toHaveLength(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Hierarchical (chunked) summarization
+// ---------------------------------------------------------------------------
+
+import { chunkMessages, ContextCompactor } from '../../src/kernel/compaction.js'
+import { createDeterministicEnv } from '../../src/env.js'
+import { text } from '../../src/llm/fake/reply-dsl.js'
+
+describe('chunkMessages', () => {
+  const message = (content: string): IrMessage => ({
+    role: 'user',
+    content,
+    sourceSeqs: [0],
+  })
+
+  it('splits greedily under the cap and keeps every message', () => {
+    const input = [message('a'.repeat(300)), message('b'.repeat(300)), message('c'.repeat(300))]
+    // cap = 2 messages worth (each ≈112 tokens incl. framing)
+    const chunks = chunkMessages(input, 250)
+    expect(chunks).toHaveLength(2)
+    expect(chunks.flat()).toEqual(input)
+  })
+
+  it('keeps one oversized message as its own chunk', () => {
+    const input = [message('x'.repeat(9_000)), message('y'.repeat(10))]
+    const chunks = chunkMessages(input, 100)
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0]).toEqual([input[0]])
+  })
+
+  it('returns no chunks for empty input', () => {
+    expect(chunkMessages([], 1_000)).toEqual([])
+  })
+})
+
+describe('ContextCompactor chunked summarization', () => {
+  function bigAssistant(turnId: string, seq: number, text: string): AgentEvent {
+    return event(
+      {
+        type: 'assistant.completed',
+        schemaVersion: 1,
+        turnId,
+        stepId: `step-${seq}`,
+        message: { text, toolCalls: [] },
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          reasoningTokens: 0,
+        },
+        llmMs: 1,
+        ttftMs: 1,
+      },
+      seq,
+    )
+  }
+
+  it('summarizes oversized dropped content per chunk and reduces the intermediates', async () => {
+    // Two dropped bodies of ~34k tokens each exceed the 60k cap together.
+    const bodyOne = `body-one ${'a'.repeat(100_000)}`
+    const bodyTwo = `body-two ${'b'.repeat(100_000)}`
+    const events: AgentEvent[] = [
+      turnStarted('t1', 0, 'long turn'),
+      bigAssistant('t1', 1, bodyOne),
+      bigAssistant('t1', 2, bodyTwo),
+      turnStarted('t2', 3, 'current turn'),
+      assistant('t2', 4, 'current answer'),
+    ]
+    const base = createDeterministicEnv([
+      text('segment one digest'),
+      text('segment two digest'),
+      text('final reduced summary of both segments'),
+    ])
+    const policy: ContextCompactionPolicy = { ...DEFAULT_COMPACTION_POLICY, keepRecentTurns: 1 }
+    const outcome = await new ContextCompactor(base, policy).compact({
+      sessionId: 's1',
+      cwd: '/ws',
+      events,
+      ledger: new (await import('../../src/events/ledger.js')).SessionLedger(
+        's1',
+        base.store,
+        base.clock,
+      ),
+      force: true,
+    })
+    if (!('event' in outcome)) throw new Error(`compaction skipped: ${JSON.stringify(outcome)}`)
+
+    expect(base.fixtures.model.requests).toHaveLength(3)
+    const [first, second, reduce] = base.fixtures.model.requests
+    const textOf = (request: typeof first): string =>
+      request?.messages
+        .map((message) => (message.role === 'user' ? message.content : ''))
+        .join('\n') ?? ''
+    expect(textOf(first)).toContain('body-one')
+    expect(textOf(first)).not.toContain('body-two')
+    expect(textOf(second)).toContain('body-two')
+    expect(textOf(second)).not.toContain('body-one')
+    // The reduce pass consumes the intermediates, not the raw bodies.
+    expect(textOf(reduce)).toContain('segment one digest')
+    expect(textOf(reduce)).toContain('segment two digest')
+    expect(textOf(reduce)).not.toContain('body-one')
+    expect(textOf(reduce)).not.toContain('body-two')
+
+    expect(outcome.summary).toBe('final reduced summary of both segments')
+    expect(outcome.event.type).toBe('context.compacted')
+    if (outcome.event.type === 'context.compacted') {
+      expect(outcome.event.summary).toBe('final reduced summary of both segments')
+    }
+    // The chunked pass is observable.
+    expect(
+      base.fixtures.telemetry.records.some(
+        (record) => record.name === 'context.compaction.chunked' && record.attributes?.chunks === 2,
+      ),
+    ).toBe(true)
+  })
+})

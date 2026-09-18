@@ -245,16 +245,49 @@ export class ContextCompactor {
   ): Promise<string | undefined> {
     if (options.signal !== undefined) throwIfAborted(options.signal)
     const signal = options.signal ?? new AbortController().signal
-    let input = droppedMessages(plan, messages).map(stripImageRefs)
-    let truncated = false
-    while (input.length > 1 && estimateListTokens(input) > SUMMARY_INPUT_TOKEN_CAP) {
-      input = input.slice(1)
-      truncated = true
-    }
+    const input = droppedMessages(plan, messages).map(stripImageRefs)
     if (input.length === 0) return undefined
-    const body = truncated
-      ? `${SUMMARY_INPUT_NOTE}\n\n${renderTranscript(input)}`
-      : renderTranscript(input)
+
+    // Hierarchical summarization: inputs over the cap are split into chunks,
+    // each summarized by its own call, and the final pass summarizes the
+    // intermediate summaries — so nothing is silently discarded, only
+    // progressively condensed.
+    const chunks = chunkMessages(input, SUMMARY_INPUT_TOKEN_CAP)
+    if (chunks.length > 1) {
+      this.env.telemetry.counter('context.compaction.chunked', { chunks: chunks.length })
+    }
+    const intermediates: string[] = []
+    for (const chunk of chunks) {
+      const summary = await this.#summaryCall(renderTranscript(chunk), options, signal)
+      if (summary === undefined) return undefined
+      if (chunks.length === 1) return summary
+      intermediates.push(summary)
+    }
+
+    // Reduce pass. If even the condensed intermediates overflow, degrade by
+    // dropping the oldest ones and say so in the input.
+    let reduceEntries = intermediates
+    let degraded = false
+    while (
+      reduceEntries.length > 1 &&
+      estimateTextTokens(reduceEntries.join('\n\n')) > SUMMARY_INPUT_TOKEN_CAP
+    ) {
+      reduceEntries = reduceEntries.slice(1)
+      degraded = true
+    }
+    const reduceBody =
+      (degraded ? `${SUMMARY_INPUT_NOTE}\n\n` : '') +
+      reduceEntries
+        .map((summary, index) => `[Earlier segment ${index + 1} summary]\n${summary}`)
+        .join('\n\n')
+    return await this.#summaryCall(reduceBody, options, signal)
+  }
+
+  async #summaryCall(
+    body: string,
+    options: CompactOptions,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
     const request: LlmRequest = {
       system: [
         { id: 'compaction-summary', stability: 'volatile', content: COMPACTION_SUMMARY_PROMPT },
@@ -283,18 +316,40 @@ export class ContextCompactor {
   }
 }
 
+/**
+ * Greedy token-bounded chunking for the summarizer input. A single message
+ * larger than the cap forms its own oversized chunk rather than being split
+ * mid-message; an empty input yields no chunks.
+ */
+export function chunkMessages(
+  messages: readonly IrMessage[],
+  capTokens: number,
+): readonly (readonly IrMessage[])[] {
+  const chunks: (readonly IrMessage[])[] = []
+  let current: IrMessage[] = []
+  let currentTokens = 0
+  for (const message of messages) {
+    const tokens = estimateMessageTokens(message)
+    if (current.length > 0 && currentTokens + tokens > capTokens) {
+      chunks.push(current)
+      current = []
+      currentTokens = 0
+    }
+    current.push(message)
+    currentTokens += tokens
+  }
+  if (current.length > 0) chunks.push(current)
+  return chunks
+}
+
 const SUMMARY_INPUT_NOTE =
-  '[The oldest dropped messages were omitted from this summarization input to fit the window; their detail is unrecoverable.]'
+  '[Some of the oldest intermediate summaries were omitted from this reduction input to fit the window; their detail is only available in the condensed segments that fit.]'
 
 function stripImageRefs(message: IrMessage): IrMessage {
   if (message.role !== 'user') return message
   // Summaries are text-only; image payloads stay in the artifact store and
   // remain reachable through the dropped turns' ledger entries.
   return { role: 'user', content: message.content, sourceSeqs: message.sourceSeqs }
-}
-
-function estimateListTokens(messages: readonly IrMessage[]): number {
-  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
 }
 
 function renderTranscript(messages: readonly IrMessage[]): string {
