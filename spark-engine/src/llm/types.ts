@@ -4,10 +4,35 @@ export interface SystemSection {
   readonly stability: 'stable' | 'volatile'
 }
 
+/**
+ * One image attached to a user message, expressed as an artifact reference.
+ * The projector stays synchronous and pure: it never reads artifact bytes.
+ */
+export interface IrImageRef {
+  readonly sha256: string
+  readonly bytes: number
+  readonly mediaType: string
+  readonly summary: string
+  readonly readHint: string
+  readonly name?: string
+  readonly width?: number
+  readonly height?: number
+}
+
+/** Base64 payload resolved from an artifact reference for one request. */
+export interface IrImagePart {
+  readonly mediaType: string
+  readonly base64: string
+}
+
 export interface IrUserMessage {
   readonly role: 'user'
   readonly content: string
   readonly sourceSeqs: readonly number[]
+  /** Ledger image references; resolved into `imageParts` before the request. */
+  readonly imageRefs?: readonly IrImageRef[]
+  /** Image payloads for the wire format; absent when the turn has no images. */
+  readonly imageParts?: readonly IrImagePart[]
 }
 
 export interface IrAssistantMessage {

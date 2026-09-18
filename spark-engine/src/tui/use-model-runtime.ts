@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   configureLocalProvider,
@@ -29,6 +29,11 @@ export interface ModelRuntimeSeams {
 
 export interface ModelRuntimeController {
   readonly model: string | undefined
+  /**
+   * `capabilities.images` of the selected model. `false` means the channel
+   * never declared image input; the CLI hints once and still sends.
+   */
+  readonly supportsImages: boolean | undefined
   readonly catalog: ConfiguredModelCatalog | undefined
   readonly busy: boolean
   readonly refreshing: boolean
@@ -53,20 +58,31 @@ export interface UseModelRuntimeOptions {
   readonly onModelChanged?: (model: string | undefined) => void
 }
 
+/**
+ * How long a discovered catalog stays fresh. The picker refreshes in the
+ * background once it expires, so `/model` always has a list to show — including
+ * the runs that started with a configured default model and therefore never
+ * loaded one at startup.
+ */
+const CATALOG_TTL_MS = 30_000
+
 export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeController {
   const [seams] = useState(() => options.seams ?? defaultSeams())
   const [model, setModel] = useState<string | undefined>(options.initialModel)
+  const [supportsImages, setSupportsImages] = useState<boolean | undefined>(undefined)
   const [catalog, setCatalog] = useState<ConfiguredModelCatalog | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [open, setOpen] = useState(options.initialModel === undefined)
   const [notice, setNotice] = useState<string | undefined>(options.startupError)
+  const loadedAtMs = useRef<number | undefined>(undefined)
 
   const applyModel = useCallback(
     (runtime: ConfiguredModelRuntime) => {
       options.switchable.set(runtime.service)
       setModel(runtime.modelId)
+      setSupportsImages(runtime.capabilities?.images)
       setError(undefined)
       setNotice(undefined)
       setOpen(false)
@@ -79,6 +95,8 @@ export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeCo
     setRefreshing(true)
     try {
       setCatalog(await seams.inspect({ cwd: seams.cwd }))
+      loadedAtMs.current = Date.now()
+      setError(undefined)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -140,6 +158,7 @@ export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeCo
 
   return {
     model,
+    supportsImages,
     catalog,
     busy,
     refreshing,
@@ -150,6 +169,12 @@ export function useModelRuntime(options: UseModelRuntimeOptions): ModelRuntimeCo
     openPicker: (reason?: string) => {
       setNotice(reason ?? '切换模型')
       setOpen(true)
+      // Opening the picker is the moment the user needs the list, so a missing
+      // or expired catalog is reloaded here instead of waiting for an explicit
+      // `r` refresh. `r` still forces one at any time.
+      if (!refreshing && catalogExpired(catalog, loadedAtMs.current, Date.now())) {
+        void refresh()
+      }
     },
     closePicker: () => {
       if (model !== undefined) {
@@ -193,4 +218,14 @@ async function persistSelection(
   } catch (cause) {
     return cause instanceof Error ? cause.message : String(cause)
   }
+}
+
+/** True when the picker must load the catalog before it can show anything. */
+function catalogExpired(
+  catalog: ConfiguredModelCatalog | undefined,
+  loadedAtMs: number | undefined,
+  nowMs: number,
+): boolean {
+  if (catalog === undefined || loadedAtMs === undefined) return true
+  return nowMs - loadedAtMs > CATALOG_TTL_MS
 }

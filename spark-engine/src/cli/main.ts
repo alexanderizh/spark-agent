@@ -32,6 +32,8 @@ import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import { isReasoningEffort } from '../llm/types.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { AgentEnv } from '../seams.js'
+import { loadImageFiles, type LoadImageFilesResult } from '../images/files.js'
+import type { TurnImageAttachment } from '../images/attachments.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import {
   buildInstallReport,
@@ -59,6 +61,8 @@ interface CliOptions {
   /** Backward-compatible `--json` event JSONL, which predates output-format. */
   readonly legacyJson: boolean
   readonly prompt?: string
+  /** `-i/--image` paths attached to the one-shot prompt, in order. */
+  readonly images: readonly string[]
   readonly model?: string
   readonly bin?: string
   readonly base?: string
@@ -105,6 +109,28 @@ interface CliOptions {
 
 type CliOutputFormat = 'text' | 'json' | 'stream-json'
 
+/** `spark <name>` maintenance commands; they never take a task prompt. */
+const SUBCOMMANDS = new Set([
+  'serve',
+  'models',
+  'doctor',
+  'update',
+  'upgrade',
+  'install',
+  'uninstall',
+  'init',
+  'login',
+  'logout',
+  'whoami',
+  'config',
+  'mcp',
+  'memory',
+  'plan',
+  'skills',
+  'todo',
+  'sessions',
+])
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   let options: CliOptions
   try {
@@ -120,6 +146,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (options.version) {
     process.stdout.write(`${await runningVersion()}\n`)
     return 0
+  }
+  if (
+    options.images.length > 0 &&
+    options.positionals[0] !== undefined &&
+    SUBCOMMANDS.has(options.positionals[0])
+  ) {
+    process.stderr.write(`--image only applies to a task prompt, not to ${options.positionals[0]}.\n`)
+    return 2
   }
   if (options.positionals[0] === 'serve') {
     process.stderr.write(
@@ -350,6 +384,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   let prompt = options.prompt ?? positionalPrompt
   if (!prompt && !process.stdin.isTTY) prompt = (await readStdin()).trim()
 
+  if (options.images.length > 0 && !prompt) {
+    process.stderr.write('--image 需要与任务提示词一起使用，例如：spark -p "分析截图" -i shot.png\n')
+    return 2
+  }
+  const attachedImages = await loadPromptImages(options.images)
+  if (!attachedImages.ok) {
+    process.stderr.write(`${terminalSafe(attachedImages.message)}\n`)
+    return 2
+  }
+
   const tuiAvailable =
     !options.plain &&
     !options.json &&
@@ -433,7 +477,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     process.stderr.write(`${terminalSafe(message(error))}\n`)
     return 2
   }
-  if (prompt) return runOnce(prompt, resolvedOptions, runtime, engineSettings, resumeSessionId)
+  if (prompt) {
+    return runOnce(prompt, resolvedOptions, runtime, engineSettings, resumeSessionId, attachedImages.images)
+  }
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
     return runPlainRepl(runtime, resolvedOptions, engineSettings, resumeSessionId)
@@ -612,6 +658,7 @@ function parseCli(argv: readonly string[]): CliOptions {
       plain: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
       prompt: { type: 'string', short: 'p' },
+      image: { type: 'string', short: 'i', multiple: true },
       model: { type: 'string', short: 'm' },
       bin: { type: 'string' },
       base: { type: 'string' },
@@ -698,6 +745,7 @@ function parseCli(argv: readonly string[]): CliOptions {
     outputFormat,
     legacyJson,
     ...(parsed.values.prompt === undefined ? {} : { prompt: parsed.values.prompt }),
+    images: parsed.values.image ?? [],
     ...(parsed.values.model === undefined ? {} : { model: parsed.values.model }),
     ...(parsed.values.bin === undefined ? {} : { bin: parsed.values.bin }),
     ...(parsed.values.base === undefined ? {} : { base: parsed.values.base }),
@@ -839,13 +887,20 @@ async function runOnce(
   runtime: ConfiguredModelRuntime,
   engineSettings: ResolvedEngineSettings,
   resumeSessionId?: string,
+  images: readonly TurnImageAttachment[] = [],
 ): Promise<number> {
   const managed = await openConfiguredEnv(runtime, engineSettings)
   try {
-    return await runOnceWithEnv(prompt, options, runtime, managed.env, resumeSessionId)
+    return await runOnceWithEnv(prompt, options, runtime, managed.env, resumeSessionId, images)
   } finally {
     await managed.close()
   }
+}
+
+/** Reads `-i/--image` files, rejecting the batch before any model work starts. */
+async function loadPromptImages(paths: readonly string[]): Promise<LoadImageFilesResult> {
+  if (paths.length === 0) return { ok: true, images: [] }
+  return loadImageFiles(paths)
 }
 
 async function runOnceWithEnv(
@@ -854,6 +909,7 @@ async function runOnceWithEnv(
   runtime: ConfiguredModelRuntime,
   env: AgentEnv,
   resumeSessionId?: string,
+  images: readonly TurnImageAttachment[] = [],
 ): Promise<number> {
   const agent = Agent.open({ cwd: process.cwd(), env })
   warnPermissionBypass(options.permissionMode)
@@ -886,6 +942,7 @@ async function runOnceWithEnv(
   try {
     const result = await session.turn(prompt, {
       signal: controller.signal,
+      ...(images.length === 0 ? {} : { images }),
       ...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort }),
@@ -1149,6 +1206,8 @@ Usage:
                             One final JSON result object
   spark --output-format stream-json "task"
                             Event and streaming-delta JSONL
+  spark -p "分析截图" -i shot.png -i arch.jpg
+                            Attach images (PNG/JPEG/WEBP/GIF) to one task
   spark models              List local and SparkWork-synced models
   spark doctor              Diagnose install, discovery, and model selection
   spark login               Sign in to your Spark account (browser login)
@@ -1212,6 +1271,7 @@ Update exit codes:
 
 Options:
   -p, --prompt <text>       Task prompt
+  -i, --image <file>        Attach an image file to the prompt (repeatable)
   -m, --model <id>          Select a local id, SparkWork route id, or unique model name
       --no-browser          Print the login url instead of opening a browser (spark login)
   -c, --continue            Continue the most recent session in this directory

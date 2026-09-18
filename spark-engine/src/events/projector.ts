@@ -5,11 +5,11 @@ import type {
   PromptComposer,
   SessionFacts,
 } from '../seams.js'
-import type { IrMessage, SystemSection } from '../llm/types.js'
+import type { IrImageRef, IrMessage, SystemSection } from '../llm/types.js'
 import type { InstructionProvider } from '../memory/instructions.js'
 import type { MemoryProvider } from '../memory/store.js'
 import { SPARK_KERNEL_PROMPT } from '../prompts/kernel.js'
-import type { AgentEvent } from './schema.js'
+import type { AgentEvent, TurnInputImage } from './schema.js'
 
 export class EventContextProjector implements ContextProjector {
   project(events: readonly AgentEvent[], config: ProjectorConfig): ProjectedContext {
@@ -19,9 +19,16 @@ export class EventContextProjector implements ContextProjector {
 
     for (const event of events) {
       switch (event.type) {
-        case 'turn.started':
-          messages.push({ role: 'user', content: event.input.text, sourceSeqs: [event.seq] })
+        case 'turn.started': {
+          const imageRefs = event.input.images?.map(toIrImageRef) ?? []
+          messages.push({
+            role: 'user',
+            content: event.input.text,
+            sourceSeqs: [event.seq],
+            ...(imageRefs.length === 0 ? {} : { imageRefs }),
+          })
           break
+        }
         case 'assistant.completed':
           messages.push({
             role: 'assistant',
@@ -58,6 +65,20 @@ export class EventContextProjector implements ContextProjector {
       messages,
       sourceSeqs: [...new Set(messages.flatMap((message) => message.sourceSeqs))],
     }
+  }
+}
+
+/** Keeps the ledger's artifact identity without leaking summary/readHint text. */
+function toIrImageRef(image: TurnInputImage): IrImageRef {
+  return {
+    sha256: image.ref.sha256,
+    bytes: image.ref.bytes,
+    mediaType: image.ref.mediaType,
+    summary: image.ref.summary,
+    readHint: image.ref.readHint,
+    ...(image.name === undefined ? {} : { name: image.name }),
+    ...(image.width === undefined ? {} : { width: image.width }),
+    ...(image.height === undefined ? {} : { height: image.height }),
   }
 }
 

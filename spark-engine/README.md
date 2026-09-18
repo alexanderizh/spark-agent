@@ -118,6 +118,33 @@ Reasoning effort (`/effort`, or `--effort off|low|medium|high|max` on one-shot r
 
 Approvals remain fail-closed: every side-effecting tool call renders a card with the exact arguments, policy reason, and risk class, offering allow-once, allow-for-session (when the policy grants that scope), and deny; Esc always denies.
 
+### Images in a prompt
+
+Press `Ctrl+V` to attach the picture on the clipboard; on Windows/WSL terminals `Alt+V` does the
+same. The image becomes an atomic `[Image #N]` block in the draft — Backspace deletes it whole,
+deleting one renumbers the rest, and a placeholder removed from the text is simply not sent (the
+rest of the prompt still goes out). The submitted text keeps `[Image #N]`, so the model can refer
+to "the second image". Pasting a path to an existing image file attaches that file instead of
+inserting the path text.
+
+```sh
+spark -p "分析这张截图" -i shot.png -i arch.jpg   # one-shot runs take images too
+```
+
+Supported containers are PNG/JPEG/WEBP/GIF, up to 20 MB per image, 50 MB and 20 images per turn.
+Bytes are stored content-addressed (`<dataRoot>/artifacts/<sha256>`), so the ledger records only a
+reference and replays reproduce the same picture. The clipboard is read through the platform tool
+— JXA/AppKit on macOS (PNG → JPEG → copied file → TIFF converted in process), `wl-paste`/`xclip` on
+Linux, and an STA PowerShell script on Windows/WSL — so no native clipboard dependency is bundled.
+A model whose channel never declared image input still receives the picture; Spark only shows a
+one-time hint, and a real provider rejection surfaces as an ordinary turn failure.
+
+Some terminals send the paste key through their own paste channel, where a picture — which has no
+text representation — arrives as an *empty* pasted string; Spark treats that empty paste as a
+clipboard-image read, so `Ctrl+V` (or the terminal's own paste key) attaches the picture either
+way. While a model picker or an approval prompt owns the keyboard the draft is locked: an image
+paste then reports which prompt is holding the input instead of appearing to do nothing.
+
 ## Configuration
 
 `spark` reads `~/.spark/config.toml` and then `<cwd>/.spark/config.toml`, merging them with the

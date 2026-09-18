@@ -3,8 +3,10 @@ import { resolve } from 'node:path'
 import { createDefaultEnv } from '../env.js'
 import { SessionLedger } from '../events/ledger.js'
 import { findInterruptedTurn, scanOrphanIntents, type OrphanIntent } from '../events/recovery.js'
-import type { AgentEvent } from '../events/schema.js'
+import type { AgentEvent, TurnInputImage } from '../events/schema.js'
+import { validateImageAttachments, type TurnImageAttachment } from '../images/attachments.js'
 import { abortError, throwIfAborted } from '../kernel/cancellation.js'
+import { KernelError } from '../kernel/errors.js'
 import { SessionScheduler } from '../kernel/scheduler.js'
 import { stableStringify } from '../kernel/stable-json.js'
 import { TurnMachine, type RunTurnOptions, type TurnResult } from '../kernel/turn-machine.js'
@@ -43,6 +45,12 @@ export interface SessionTurnOptions {
   readonly reasoningEffort?: ReasoningEffort
   /** Explicit provider thinking budget for this turn chain. */
   readonly reasoningBudgetTokens?: number
+  /**
+   * Images attached to this turn. Bytes are persisted into the content
+   * addressed artifact store before the turn starts, so the ledger only ever
+   * records references; omitting them keeps the turn byte-identical to before.
+   */
+  readonly images?: readonly TurnImageAttachment[]
   readonly onEvent?: RunTurnOptions['onEvent']
   readonly onDelta?: RunTurnOptions['onDelta']
 }
@@ -362,6 +370,10 @@ export class AgentSession {
   }
 
   async turn(input: string, options: SessionTurnOptions = {}): Promise<TurnResult> {
+    const images =
+      options.images === undefined || options.images.length === 0
+        ? undefined
+        : await this.#persistImages(options.images)
     const turnId = this.#env.ids.next('turn')
     const ledger = new SessionLedger(this.sessionId, this.#env.store, this.#env.clock)
     const notify = async (event: AgentEvent): Promise<void> => {
@@ -387,6 +399,7 @@ export class AgentSession {
           sessionId: this.sessionId,
           turnId,
           input,
+          ...(images === undefined ? {} : { images }),
           cwd: this.cwd,
           permissionMode: this.#permissionMode,
           ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -404,6 +417,24 @@ export class AgentSession {
           ...(this.#subagent === undefined ? {} : { subagent: this.#subagent }),
         }),
     })
+  }
+
+  /** Validates and stores one batch of attachments, returning ledger records. */
+  async #persistImages(attachments: readonly TurnImageAttachment[]): Promise<TurnInputImage[]> {
+    const validation = validateImageAttachments(attachments)
+    if (!validation.ok) throw new KernelError('image.invalid_attachment', validation.message)
+    const images: TurnInputImage[] = []
+    for (const attachment of attachments) {
+      const ref = await this.#env.artifacts.put(attachment.bytes, attachment.mediaType)
+      images.push({
+        ref: { ...ref, summary: attachment.name ?? ref.summary },
+        ...(attachment.name === undefined ? {} : { name: attachment.name }),
+        ...(attachment.width === undefined ? {} : { width: attachment.width }),
+        ...(attachment.height === undefined ? {} : { height: attachment.height }),
+      })
+    }
+    this.#env.telemetry.counter('image.persisted', { count: images.length })
+    return images
   }
 
   async *events(fromSeq = 0): AsyncIterable<AgentEvent> {

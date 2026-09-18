@@ -3,17 +3,18 @@ import {
   type AgentEvent,
   type BoundEventDraft,
   type ErrorInfo,
+  type TurnInputImage,
   type TurnStats,
   type Usage,
 } from '../events/schema.js'
 import { consumeLlmStream } from '../llm/consume.js'
-import type { LlmDelta, LlmRequest, ReasoningEffort } from '../llm/types.js'
+import type { IrImagePart, IrImageRef, IrMessage, LlmDelta, LlmRequest, ReasoningEffort } from '../llm/types.js'
 import { resolveOutputBudget } from '../llm/budget.js'
 import { thinkingConfigFor } from '../llm/types.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { AgentEnv, BudgetLimits, SubagentRunner } from '../seams.js'
 import { CancellationTree, isAbortError, throwIfAborted } from './cancellation.js'
-import { toErrorInfo } from './errors.js'
+import { KernelError, toErrorInfo } from './errors.js'
 import { ToolRunner } from './tool-runner.js'
 import { TurnGate } from './turn-gate.js'
 
@@ -26,6 +27,11 @@ export interface RunTurnOptions {
   readonly sessionId: string
   readonly turnId: string
   readonly input: string
+  /**
+   * Images already persisted in the artifact store. The turn only records
+   * their references; bytes are resolved per request.
+   */
+  readonly images?: readonly TurnInputImage[]
   readonly cwd: string
   readonly permissionMode: PermissionMode
   readonly parentId?: string
@@ -57,6 +63,7 @@ export class TurnMachine {
     const budget = this.env.budgets.create(options.budget)
     const completedSteps: number[] = []
     let budgetWarning: string | undefined
+    const imageCache = new Map<string, IrImagePart>()
     let cacheReadTokens = 0
     let cacheWriteTokens = 0
     let llmMsTotal = 0
@@ -96,9 +103,18 @@ export class TurnMachine {
         type: 'turn.started',
         schemaVersion: 1,
         turnId: options.turnId,
-        input: { kind: 'text', text: options.input },
+        input: {
+          kind: 'text',
+          text: options.input,
+          ...(options.images === undefined || options.images.length === 0
+            ? {}
+            : { images: options.images.map((image) => structuredClone(image)) }),
+        },
         ...(options.parentId === undefined ? {} : { parentId: options.parentId }),
       })
+      if (options.images !== undefined && options.images.length > 0) {
+        this.env.telemetry.counter('image.attached', { count: options.images.length })
+      }
 
       const hooks = this.env.hooks
       if (hooks) {
@@ -144,6 +160,7 @@ export class TurnMachine {
           permissionMode: options.permissionMode,
           ...(budgetWarning === undefined ? {} : { warning: budgetWarning }),
         })
+        const messages = await resolveImageParts(this.env, projected.messages, imageCache)
         const system = await this.env.prompt.compose(
           {
             sessionId: options.sessionId,
@@ -172,7 +189,7 @@ export class TurnMachine {
         }))
         const request: LlmRequest = {
           system,
-          messages: projected.messages,
+          messages,
           tools,
           ...(options.reasoningEffort === undefined
             ? {}
@@ -183,7 +200,7 @@ export class TurnMachine {
             ...(options.maxTokens === undefined ? {} : { requestedMaxTokens: options.maxTokens }),
             ...(modelBudget === undefined ? {} : { modelBudget }),
             system,
-            messages: projected.messages,
+            messages,
             tools,
           }).maxTokens,
           metadata: {
@@ -346,6 +363,83 @@ export class TurnMachine {
       this.env.telemetry.counter('hook.run.failed', { event: 'Stop' })
     }
   }
+}
+
+/**
+ * Resolves ledger image references into base64 payloads for the wire format.
+ *
+ * Resolution happens here, not in the projector, so the projection stays a
+ * pure function of the event log. Payloads are cached per turn: a multi-step
+ * turn reads and encodes each image once.
+ */
+async function resolveImageParts(
+  env: AgentEnv,
+  messages: readonly IrMessage[],
+  cache: Map<string, IrImagePart>,
+): Promise<readonly IrMessage[]> {
+  const needsResolution = messages.some(
+    (message) => message.role === 'user' && (message.imageRefs?.length ?? 0) > 0,
+  )
+  if (!needsResolution) return messages
+
+  const resolved: IrMessage[] = []
+  for (const message of messages) {
+    if (message.role !== 'user' || message.imageRefs === undefined || message.imageRefs.length === 0) {
+      resolved.push(message)
+      continue
+    }
+    const imageParts: IrImagePart[] = []
+    for (const ref of message.imageRefs) {
+      const cached = cache.get(ref.sha256)
+      if (cached !== undefined) {
+        imageParts.push(cached)
+        continue
+      }
+      const part = await readImagePart(env, ref)
+      cache.set(ref.sha256, part)
+      imageParts.push(part)
+    }
+    resolved.push({ ...message, imageParts })
+  }
+  return resolved
+}
+
+async function readImagePart(env: AgentEnv, ref: IrImageRef): Promise<IrImagePart> {
+  const label = ref.name ?? `sha256:${ref.sha256.slice(0, 12)}`
+  let content: string | Uint8Array
+  try {
+    content = await env.artifacts.get({
+      sha256: ref.sha256,
+      bytes: ref.bytes,
+      mediaType: ref.mediaType,
+      summary: ref.summary,
+      readHint: ref.readHint,
+    })
+  } catch (error) {
+    env.telemetry.counter('image.resolve_failed', { mediaType: ref.mediaType, reason: 'missing' })
+    throw new KernelError(
+      'image.artifact_missing',
+      `图片附件 ${label} 的产物已不可读取，无法发送给模型。`,
+      {
+        cause: error,
+        retryable: false,
+        detail: { sha256: ref.sha256, mediaType: ref.mediaType },
+      },
+    )
+  }
+  const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content
+  if (bytes.byteLength !== ref.bytes) {
+    env.telemetry.counter('image.resolve_failed', { mediaType: ref.mediaType, reason: 'corrupt' })
+    throw new KernelError(
+      'image.artifact_corrupt',
+      `图片附件 ${label} 的产物长度为 ${bytes.byteLength} 字节，与记录的 ${ref.bytes} 字节不一致。`,
+      {
+        retryable: false,
+        detail: { sha256: ref.sha256, mediaType: ref.mediaType, actualBytes: bytes.byteLength },
+      },
+    )
+  }
+  return { mediaType: ref.mediaType, base64: Buffer.from(bytes).toString('base64') }
 }
 
 async function collectEvents(ledger: SessionLedger): Promise<AgentEvent[]> {

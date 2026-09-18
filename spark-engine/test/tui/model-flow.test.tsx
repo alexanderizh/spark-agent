@@ -231,6 +231,26 @@ describe('unconfigured TUI onboarding', () => {
     harness.app.unmount()
   })
 
+  it('loads the catalog when /model opens the picker on a configured default model', async () => {
+    const harness = await createHarness(undefined, 'local-main')
+    // 已有默认模型时启动不拉目录，选择器也不会自动打开。
+    expect(harness.seams.inspect).not.toHaveBeenCalled()
+    expect(harness.app.lastFrame() ?? '').not.toContain('↑↓ 选择')
+
+    harness.app.stdin.write('/model')
+    await flush(5)
+    harness.app.stdin.write('\r')
+    await flush(20)
+
+    // 打开选择器本身就要把列表取回来，不能等用户按 r。
+    expect(harness.seams.inspect).toHaveBeenCalledWith({ cwd: '/workspace' })
+    const frame = harness.app.lastFrame() ?? ''
+    expect(frame).toContain('↑↓ 选择')
+    expect(frame).toContain('gpt-host')
+    expect(frame).not.toContain('没有可用模型')
+    harness.app.unmount()
+  })
+
   it('runs the terminal provider configuration flow end to end', async () => {
     const harness = await createHarness()
     harness.app.stdin.write('c')
@@ -306,6 +326,7 @@ async function createHarness(
     readonly permissionMode: 'manual' | 'auto' | 'bypass'
     readonly reasoningEffort: 'off' | 'low' | 'medium' | 'high' | 'max'
   }) => Promise<void>,
+  initialModel?: string,
 ): Promise<Harness> {
   const llm = new FakeModel([text('host done')])
   const seams: FakeSeams = {
@@ -352,6 +373,7 @@ async function createHarness(
       createSession={async () => agent.newSession()}
       seams={seams}
       switchable={switchable}
+      {...(initialModel === undefined ? {} : { initialModel })}
       {...(persistPreferences === undefined ? {} : { persistPreferences })}
     />,
   )
@@ -366,6 +388,7 @@ interface HarnessAppProps {
   readonly createSession: () => Promise<AgentSession>
   readonly seams: ModelRuntimeSeams
   readonly switchable: SwitchableLlmService
+  readonly initialModel?: string
   readonly persistPreferences?: (preferences: {
     readonly permissionMode: 'manual' | 'auto' | 'bypass'
     readonly reasoningEffort: 'off' | 'low' | 'medium' | 'high' | 'max'
@@ -373,7 +396,11 @@ interface HarnessAppProps {
 }
 
 function HarnessApp(props: HarnessAppProps): React.ReactElement {
-  const modelRuntime = useModelRuntime({ switchable: props.switchable, seams: props.seams })
+  const modelRuntime = useModelRuntime({
+    switchable: props.switchable,
+    seams: props.seams,
+    ...(props.initialModel === undefined ? {} : { initialModel: props.initialModel }),
+  })
   return (
     <SparkTuiApp
       initialSession={props.session}

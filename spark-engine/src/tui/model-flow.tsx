@@ -75,12 +75,20 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
           {props.catalog.sparkWorkDiagnostic ? ` · ${props.catalog.sparkWorkDiagnostic}` : ''}
         </Text>
       )}
-      {props.refreshing && <Text color={props.theme.dim}>刷新目录中…</Text>}
+      {props.refreshing && visible.length > 0 && (
+        <Text color={props.theme.dim}>刷新目录中…</Text>
+      )}
       {visible.length === 0 ? (
-        <Text>
-          没有可用模型。打开 SparkWork（渠道会自动同步），或按 <Text bold>c</Text>{' '}
-          配置本地渠道，或按 <Text bold>r</Text> 刷新。
-        </Text>
+        props.refreshing ? (
+          // 打开选择器会自动拉取目录：加载中不能显示成"没有可用模型"，
+          // 否则用户以为要手动按 r 才看得到列表。
+          <Text color={props.theme.dim}>正在加载模型…</Text>
+        ) : (
+          <Text>
+            没有可用模型。打开 SparkWork（渠道会自动同步），或按 <Text bold>c</Text>{' '}
+            配置本地渠道，或按 <Text bold>r</Text> 刷新。
+          </Text>
+        )
       ) : (
         <Box flexDirection="column">
           {visible.map((entry, index) => (

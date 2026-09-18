@@ -14,6 +14,8 @@ import type { SessionMeta } from '../seams.js'
 import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
+import type { TurnImageAttachment } from '../images/attachments.js'
+import type { ImageInputSeam } from '../images/seam.js'
 import type { AgentSession } from '../sdk/agent.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
 import { PermissionCard } from './components/permission-card.js'
@@ -26,6 +28,7 @@ import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-pick
 import { ActiveTools, Transcript } from './components/rows.js'
 import { SessionPicker } from './components/session-picker.js'
 import { ScrollRegion } from './components/scroll-region.js'
+import { useTerminalCapabilities } from './terminal-resize.js'
 import { StatusBar } from './components/status-bar.js'
 import { InputEditor } from './components/input-editor.js'
 import { WorkingLine } from './components/spinner.js'
@@ -77,6 +80,8 @@ export interface SparkTuiAppProps {
   readonly listSessions?: () => Promise<readonly SessionMeta[]>
   /** Open the session picker at startup (bare `spark --resume`). */
   readonly resumePicker?: boolean
+  /** Clipboard/file image intake for the input editor. */
+  readonly imageInput?: ImageInputSeam
 }
 
 interface NoticeState {
@@ -149,14 +154,16 @@ function noticeColor(theme: TuiTheme, tone: NoticeState['tone']): string {
 }
 
 export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
-  const { exit } = useApp()
+  const { exit, suspendTerminal } = useApp()
   const { stdout } = useStdout()
   const theme = props.theme ?? defaultTheme
   // Capabilities re-detect on terminal resize so wrapping reflows; the
   // initial value honors the injected prop (tests pin width/color mode).
-  const [capabilities, setCapabilities] = useState(
-    () => props.capabilities ?? detectTerminalCapabilities(),
-  )
+  const capabilities = useTerminalCapabilities({
+    stdout,
+    initial: props.capabilities ?? detectTerminalCapabilities(),
+    suspendTerminal,
+  })
   const [session, setSession] = useState(props.initialSession)
   const [events, setEvents] = useState<AgentEvent[]>([...props.initialEvents])
   const [liveText, setLiveText] = useState('')
@@ -211,31 +218,9 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     }
   }, [sessionPickerOpen, props.listSessions])
 
-  // Static transcript rows already live in terminal history. Replaying them
-  // on resize appends duplicate history because clearing the viewport does not
-  // clear scrollback. Let the terminal reflow committed rows and only refresh
-  // capabilities for subsequent/dynamic layout after the width settles.
-  useEffect(() => {
-    let refresh: ReturnType<typeof setTimeout> | undefined
-    let lastWidth = stdout.columns
-    let lastHeight = stdout.rows
-    const onResize = (): void => {
-      const width = stdout.columns
-      const height = stdout.rows
-      if (width === undefined || (width === lastWidth && height === lastHeight)) return
-      if (refresh !== undefined) clearTimeout(refresh)
-      refresh = setTimeout(() => {
-        lastWidth = stdout.columns
-        lastHeight = stdout.rows
-        setCapabilities(detectTerminalCapabilities(stdout))
-      }, 150)
-    }
-    stdout.on('resize', onResize)
-    return () => {
-      stdout.off('resize', onResize)
-      if (refresh !== undefined) clearTimeout(refresh)
-    }
-  }, [stdout])
+  // Resize handling lives in useTerminalCapabilities: the frame geometry follows
+  // the terminal immediately, and once a resize settles the frame is rewritten
+  // from the viewport origin to clear the residue the terminal's reflow left.
 
   useEffect(
     () => () => {
@@ -305,7 +290,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   }, [])
 
   const startTurn = useCallback(
-    (prompt: string) => {
+    (prompt: string, images: readonly TurnImageAttachment[] = []) => {
       if (effectiveModel === undefined) {
         modelRuntime?.openPicker('先选择或配置一个模型，再开始任务')
         return
@@ -318,6 +303,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         .turn(prompt, {
           signal: controller.signal,
           reasoningEffort,
+          ...(images.length === 0 ? {} : { images }),
           onEvent: appendEvent,
           onDelta: handleDelta,
         })
@@ -337,7 +323,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
 
   const submit = useCallback(
-    (value: string) => {
+    (value: string, images: readonly TurnImageAttachment[] = []) => {
       if (value.startsWith('/')) {
         const custom =
           props.customCommands === undefined
@@ -360,7 +346,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         })
         return
       }
-      startTurn(value)
+      startTurn(value, images)
     },
     [props.customCommands, startTurn],
   )
@@ -785,6 +771,10 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           name: `/${command.name}`,
           ...(command.description === '' ? {} : { summary: command.description }),
         }))}
+        {...(props.imageInput === undefined ? {} : { imageInput: props.imageInput })}
+        {...(modelRuntime?.supportsImages === undefined
+          ? {}
+          : { supportsImages: modelRuntime.supportsImages })}
         onSubmit={submit}
         onEscape={interrupt}
         onControlC={controlC}

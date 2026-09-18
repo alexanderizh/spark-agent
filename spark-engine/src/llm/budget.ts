@@ -115,7 +115,10 @@ export function estimateRequestTokens(options: {
   let total = 0
   for (const section of options.system) total += estimateTextTokens(section.content) + 16
   for (const message of options.messages) {
-    if (message.role === 'user' || message.role === 'tool_result') {
+    if (message.role === 'user') {
+      total += estimateTextTokens(message.content) + 12
+      for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
+    } else if (message.role === 'tool_result') {
       total += estimateTextTokens(message.content) + 12
     } else {
       total += estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
@@ -129,6 +132,28 @@ export function estimateRequestTokens(options: {
     total += estimateTextTokens(safeJson(tool.inputSchema)) + 32
   }
   return total
+}
+
+/**
+ * Conservative per-image estimate. Providers bill images by tiles or by
+ * pixels, and none of them advertise the exact rule; taking the larger of the
+ * two documented formulas keeps an oversized image from slipping past the
+ * context guard, and an unknown size falls back to a fixed conservative cost.
+ */
+export const UNKNOWN_IMAGE_TOKENS = 1_600
+
+export function estimateImageTokens(image: {
+  readonly width?: number
+  readonly height?: number
+}): number {
+  const width = image.width
+  const height = image.height
+  if (width === undefined || height === undefined || width <= 0 || height <= 0) {
+    return UNKNOWN_IMAGE_TOKENS
+  }
+  const tileBased = Math.ceil(width / 512) * Math.ceil(height / 512) * 170 + 85
+  const pixelBased = Math.ceil((width * height) / 750)
+  return Math.max(tileBased, pixelBased)
 }
 
 function estimateTextTokens(value: string | undefined): number {

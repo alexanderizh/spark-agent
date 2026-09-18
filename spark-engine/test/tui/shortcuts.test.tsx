@@ -189,7 +189,7 @@ describe('InputEditor shortcuts', () => {
 
     app.stdin.write('\r')
     await tick()
-    expect(onSubmit).toHaveBeenCalledWith('first line \nsecond line')
+    expect(onSubmit).toHaveBeenCalledWith('first line \nsecond line', [])
     app.unmount()
   })
 
@@ -207,7 +207,7 @@ describe('InputEditor shortcuts', () => {
 
     app.stdin.write('\r')
     await tick()
-    expect(onSubmit).toHaveBeenCalledWith(pasted)
+    expect(onSubmit).toHaveBeenCalledWith(pasted, [])
     app.unmount()
   })
 

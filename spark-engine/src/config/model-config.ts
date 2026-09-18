@@ -15,7 +15,7 @@ import { ModelConfigSchema, type ModelConfig } from './root-schema.js'
 import type { LlmService } from '../seams.js'
 import type { FetchLike } from '../llm/http/client.js'
 import { ModelRegistry, type ModelProtocol } from '../llm/registry.js'
-import type { ReasoningEffort } from '../llm/types.js'
+import type { ModelCapabilities, ReasoningEffort } from '../llm/types.js'
 import type { PermissionMode } from '../permission/types.js'
 import {
   discoverSparkWorkHost,
@@ -40,6 +40,11 @@ export interface ConfiguredModelRuntime {
   readonly modelId: string
   readonly route: readonly string[]
   readonly configSnapshot: Readonly<Record<string, unknown>>
+  /**
+   * Capabilities of the primary route, used by the CLI to warn about
+   * undeclared inputs (e.g. images) without blocking the turn.
+   */
+  readonly capabilities?: ModelCapabilities
 }
 
 export interface CliPreferences {
@@ -154,6 +159,7 @@ function buildConfiguredRuntime(
     }
     registerModelRoute(registry, id, config, environment, host.catalog, fetcher)
   }
+  const primaryCapabilities = registry.get(modelId)?.capabilities
   return {
     service: registry.createRoute(route, {
       retry: {
@@ -165,6 +171,7 @@ function buildConfiguredRuntime(
     }),
     modelId,
     route,
+    ...(primaryCapabilities === undefined ? {} : { capabilities: primaryCapabilities }),
     configSnapshot: {
       ...structuredClone(config),
       ...(host.catalog

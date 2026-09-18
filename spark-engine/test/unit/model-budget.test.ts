@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createDeterministicEnv } from '../../src/env.js'
 import { text } from '../../src/llm/fake/reply-dsl.js'
-import { resolveOutputBudget } from '../../src/llm/budget.js'
+import { UNKNOWN_IMAGE_TOKENS, estimateImageTokens, resolveOutputBudget } from '../../src/llm/budget.js'
 import { ModelRegistry } from '../../src/llm/registry.js'
 import { ResilientLlmService } from '../../src/llm/resilience.js'
 import type { LlmRequest, ModelBudget } from '../../src/llm/types.js'
@@ -100,6 +100,46 @@ describe('model-aware output budgets', () => {
       contextWindowTokens: 128_000,
       maxOutputTokens: 32_000,
     })
+  })
+
+  it('counts attached images against the context window', () => {
+    const plain = resolveOutputBudget({
+      requestedMaxTokens: 8_192,
+      system: [{ id: 'system', content: 'You are Spark.', stability: 'stable' }],
+      messages: [{ role: 'user', content: 'what is this?', sourceSeqs: [0] }],
+      tools: [],
+    })
+    const withImage = resolveOutputBudget({
+      requestedMaxTokens: 8_192,
+      system: [{ id: 'system', content: 'You are Spark.', stability: 'stable' }],
+      messages: [
+        {
+          role: 'user',
+          content: 'what is this?',
+          sourceSeqs: [0],
+          imageRefs: [
+            {
+              sha256: 'a'.repeat(64),
+              bytes: 1_024,
+              mediaType: 'image/png',
+              summary: 'shot',
+              readHint: 'spark artifact read',
+              width: 1920,
+              height: 1080,
+            },
+          ],
+        },
+      ],
+      tools: [],
+    })
+    expect(withImage.estimatedInputTokens).toBeGreaterThan(plain.estimatedInputTokens)
+
+    // An image with unknown dimensions is billed at the conservative fixed cost.
+    expect(estimateImageTokens({})).toBe(UNKNOWN_IMAGE_TOKENS)
+    expect(estimateImageTokens({ width: 1920, height: 1080 })).toBeGreaterThan(
+      UNKNOWN_IMAGE_TOKENS,
+    )
+    expect(estimateImageTokens({ width: 64, height: 64 })).toBeGreaterThan(0)
   })
 
   it('re-clamps a failover request to the fallback route ceiling', async () => {

@@ -2,6 +2,7 @@ import { KernelError } from '../../kernel/errors.js'
 import type { LlmCallContext, LlmService } from '../../seams.js'
 import { safeDiagnosticText, safeProviderError } from '../error-detail.js'
 import { asRecord, numberValue, openSse, stringValue, type FetchLike } from '../http/client.js'
+import { clientIdentityHeaders } from '../http/client-identity.js'
 import type { IrMessage, LlmDelta, LlmRequest, ProviderContinuation } from '../types.js'
 
 export interface OpenAiResponsesOptions {
@@ -25,7 +26,10 @@ export class OpenAiResponsesService implements LlmService {
     const opened = await openSse({
       provider: 'openai',
       url: `${normalizeBaseUrl(this.#options.baseUrl ?? 'https://api.openai.com/v1')}/responses`,
-      headers: { authorization: `Bearer ${this.#options.apiKey}` },
+      headers: {
+        ...clientIdentityHeaders(request.metadata.sessionId),
+        authorization: `Bearer ${this.#options.apiKey}`,
+      },
       body: toOpenAiRequest(request, this.#options.model),
       signal: context.signal,
       ...(this.#options.fetch ? { fetch: this.#options.fetch } : {}),
@@ -73,7 +77,7 @@ function toOpenAiInput(messages: readonly IrMessage[]): unknown[] {
   const input: unknown[] = []
   for (const message of messages) {
     if (message.role === 'user') {
-      input.push({ role: 'user', content: [{ type: 'input_text', text: message.content }] })
+      input.push({ role: 'user', content: openAiUserContent(message) })
     } else if (message.role === 'tool_result') {
       input.push({
         type: 'function_call_output',
@@ -103,6 +107,22 @@ function toOpenAiInput(messages: readonly IrMessage[]): unknown[] {
     }
   }
   return input
+}
+
+/**
+ * The Responses API only accepts images as a URL or data URL. Without images
+ * the content array keeps its exact single-`input_text` shape, so existing
+ * requests stay byte-identical.
+ */
+function openAiUserContent(message: Extract<IrMessage, { role: 'user' }>): unknown[] {
+  const content: unknown[] = [{ type: 'input_text', text: message.content }]
+  for (const image of message.imageParts ?? []) {
+    content.push({
+      type: 'input_image',
+      image_url: `data:${image.mediaType};base64,${image.base64}`,
+    })
+  }
+  return content
 }
 
 function continuationItems(continuation: ProviderContinuation | undefined): unknown[] | undefined {

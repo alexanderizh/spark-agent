@@ -28,6 +28,18 @@ export const ArtifactRefSchema = z.object({
   readHint: z.string(),
 })
 
+/**
+ * One image attached to a `turn.started` input. Only the content-addressed
+ * artifact reference is recorded: the ledger stays small, identical images
+ * de-duplicate, and replay re-reads the same bytes.
+ */
+export const TurnInputImageSchema = z.object({
+  ref: ArtifactRefSchema,
+  name: z.string().min(1).optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+})
+
 export const ToolCallSchema = z.object({
   callId: z.string().min(1),
   name: z.string().min(1),
@@ -78,7 +90,13 @@ const TurnStartedEventSchema = z.object({
   ...envelope,
   type: z.literal('turn.started'),
   turnId: z.string().min(1),
-  input: z.object({ kind: z.literal('text'), text: z.string() }),
+  // `images` is additive within schema v1: engines that predate it drop the
+  // field while reading, and ledgers written before it stay valid.
+  input: z.object({
+    kind: z.literal('text'),
+    text: z.string(),
+    images: z.array(TurnInputImageSchema).optional(),
+  }),
   parentId: z.string().optional(),
 })
 
@@ -253,6 +271,7 @@ export type AgentEvent = z.output<typeof AgentEventSchema>
 export type ErrorInfo = z.output<typeof ErrorInfoSchema>
 export type Usage = z.output<typeof UsageSchema>
 export type ArtifactRef = z.output<typeof ArtifactRefSchema>
+export type TurnInputImage = z.output<typeof TurnInputImageSchema>
 export type AssistantMessage = z.output<typeof AssistantMessageSchema>
 export type TurnStats = z.output<typeof TurnStatsSchema>
 

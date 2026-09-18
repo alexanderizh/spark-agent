@@ -2,6 +2,7 @@ import { KernelError } from '../../kernel/errors.js'
 import type { LlmCallContext, LlmService } from '../../seams.js'
 import { safeDiagnosticText, safeProviderError } from '../error-detail.js'
 import { asRecord, numberValue, openSse, stringValue, type FetchLike } from '../http/client.js'
+import { clientIdentityHeaders } from '../http/client-identity.js'
 import type { IrMessage, LlmDelta, LlmRequest, ProviderContinuation } from '../types.js'
 
 export interface AnthropicMessagesOptions {
@@ -28,6 +29,7 @@ export class AnthropicMessagesService implements LlmService {
       provider: 'anthropic',
       url: messagesEndpoint(this.#options.baseUrl ?? 'https://api.anthropic.com'),
       headers: {
+        ...clientIdentityHeaders(request.metadata.sessionId),
         'x-api-key': this.#options.apiKey,
         'anthropic-version': this.#options.version ?? '2023-06-01',
       },
@@ -80,7 +82,7 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
   }
   for (const message of messages) {
     if (message.role === 'user') {
-      append('user', [{ type: 'text', text: message.content }])
+      append('user', [{ type: 'text', text: message.content }, ...anthropicImageBlocks(message)])
     } else if (message.role === 'tool_result') {
       append('user', [
         {
@@ -95,6 +97,19 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
     }
   }
   return result
+}
+
+/**
+ * Anthropic takes inline base64 images after the text block, so the model
+ * reads the prompt first and then the attached pictures it refers to.
+ */
+function anthropicImageBlocks(
+  message: Extract<IrMessage, { role: 'user' }>,
+): Record<string, unknown>[] {
+  return (message.imageParts ?? []).map((image) => ({
+    type: 'image',
+    source: { type: 'base64', media_type: image.mediaType, data: image.base64 },
+  }))
 }
 
 function continuationBlocks(continuation: ProviderContinuation | undefined): unknown[] | undefined {

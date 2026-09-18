@@ -11,14 +11,17 @@ export interface WelcomeBoxProps {
   readonly theme: TuiTheme
 }
 
-// Pixel sparkle mark: solid blocks only, so every monospace font renders it
-// identically. The core brightens towards the middle like a struck spark.
-const MARK_ROWS: readonly { readonly cells: string; readonly tone: 'core' | 'edge' | 'tip' }[] = [
-  { cells: '  █  ', tone: 'tip' },
-  { cells: ' ███ ', tone: 'edge' },
+type MarkTone = 'core' | 'edge'
+
+// Pixel sparkle: solid blocks with half-block tips, so every monospace font
+// renders the same silhouette. Terminal cells are about twice as tall as they
+// are wide, so the mark stays three rows high — a taller grid would stretch
+// back into a thin, lopsided diamond — and sits flush with the three identity
+// lines beside it.
+const MARK_ROWS: readonly { readonly cells: string; readonly tone: MarkTone }[] = [
+  { cells: ' ▄█▄ ', tone: 'edge' },
   { cells: '█████', tone: 'core' },
-  { cells: ' ███ ', tone: 'edge' },
-  { cells: '  █  ', tone: 'tip' },
+  { cells: ' ▀█▀ ', tone: 'edge' },
 ]
 
 /**
@@ -28,16 +31,8 @@ const MARK_ROWS: readonly { readonly cells: string; readonly tone: 'core' | 'edg
  */
 export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
   const width = Math.min(props.capabilities.width - 2, 64)
-  const markColor = (tone: 'core' | 'edge' | 'tip'): string => {
-    switch (tone) {
-      case 'core':
-        return props.theme.accentStrong ?? props.theme.accent
-      case 'edge':
-        return props.theme.accent
-      case 'tip':
-        return props.theme.faint ?? props.theme.dim
-    }
-  }
+  const markColor = (tone: MarkTone): string =>
+    tone === 'core' ? (props.theme.accentStrong ?? props.theme.accent) : props.theme.accent
   return (
     <Box
       flexDirection="column"
@@ -55,10 +50,7 @@ export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
             </Text>
           ))}
         </Box>
-        {/* One blank row above and below keeps the identity block vertically
-            centred against the five-pixel mark. */}
         <Box flexDirection="column" marginLeft={2}>
-          <Text> </Text>
           <Text>
             <Text color={props.theme.accentStrong ?? props.theme.accent} bold>
               Spark
@@ -74,12 +66,13 @@ export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
           {props.cwd !== undefined && props.cwd !== '' && (
             <Text color={props.theme.dim}>目录 {props.cwd}</Text>
           )}
-          <Text> </Text>
         </Box>
       </Box>
       <Text> </Text>
       <Text color={props.theme.dim}>输入任务直接开始 · /help 查看全部命令</Text>
-      <Text color={props.theme.dim}>↑↓ 历史 · Shift+Enter 换行 · Esc 中断 · Ctrl+C 两次退出</Text>
+      <Text color={props.theme.dim}>
+        Ctrl+V 粘贴图片 · ↑↓ 历史 · Shift+Enter 换行 · Esc 中断 · Ctrl+C 两次退出
+      </Text>
     </Box>
   )
 }

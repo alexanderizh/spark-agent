@@ -7,6 +7,8 @@ import { join, resolve } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { pngBytes } from '../fixtures/image-bytes.js'
+
 const roots: string[] = []
 
 afterEach(async () => {
@@ -215,6 +217,75 @@ describe('built CLI contract', () => {
     expect(result.stderr).toContain('--json conflicts with --output-format')
   })
 
+  it('attaches -i images to the prompt and records only their artifact reference', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-'))
+    roots.push(root)
+    let requestBody = ''
+    const server = await startResponsesServer(true, (body) => {
+      requestBody = body
+    })
+    await mkdir(join(root, '.spark'))
+    await writeFile(
+      join(root, '.spark', 'config.toml'),
+      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+    )
+    const shot = join(root, 'shot.png')
+    await writeFile(shot, pngBytes(1920, 1080))
+
+    const result = await runCli(
+      ['--json', '-p', 'describe this', '-i', shot],
+      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+      root,
+    )
+    await server.close()
+
+    expect(result.code).toBe(0)
+    const events = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+    const started = events.find((event) => event.type === 'turn.started') as {
+      input: { images?: { ref: { sha256: string; bytes: number; mediaType: string } }[] }
+    }
+    expect(started.input.images).toEqual([
+      expect.objectContaining({
+        ref: expect.objectContaining({
+          bytes: 24,
+          mediaType: 'image/png',
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      }),
+    ])
+    // The wire format carries a data URL; the ledger never carries base64.
+    expect(requestBody).toContain('"type":"input_image"')
+    expect(requestBody).toContain('data:image/png;base64,')
+    expect(result.stdout).not.toContain('base64,')
+  })
+
+  it('rejects invalid -i inputs as usage errors before any model work', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-usage-'))
+    roots.push(root)
+    const missing = join(root, 'missing.png')
+    const text = join(root, 'notes.md')
+    await writeFile(text, 'not an image')
+
+    const missingResult = await runCli(['-p', 'hi', '-i', missing], {}, root)
+    expect(missingResult.code).toBe(2)
+    expect(missingResult.stderr).toContain('找不到图片文件')
+
+    const unsupported = await runCli(['-p', 'hi', '-i', text], {}, root)
+    expect(unsupported.code).toBe(2)
+    expect(unsupported.stderr).toContain('不支持的图片格式')
+
+    const noPrompt = await runCli(['-i', text], {}, root)
+    expect(noPrompt.code).toBe(2)
+    expect(noPrompt.stderr).toContain('--image 需要与任务提示词一起使用')
+
+    const subcommand = await runCli(['models', '-i', text], {}, root)
+    expect(subcommand.code).toBe(2)
+    expect(subcommand.stderr).toContain('--image only applies to a task prompt')
+  })
+
   it('reports an unusable selected model instead of declaring doctor healthy', async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-doctor-'))
     roots.push(root)
@@ -258,8 +329,13 @@ describe('built CLI contract', () => {
       {
         path: '/v1/proxy/provider-1/v1/responses',
         authorization: `Bearer ${host.token}`,
+        // 上游网关（opencode）按会话归属请求：客户端必须声明自己的身份，并为本会话
+        // 稳定发送 x-opencode-session，否则上游直接 400 MissingSessionID。
+        userAgent: expect.stringMatching(/^spark-engine\//u),
+        session: expect.any(String),
       },
     ])
+    expect(host.requests[0]?.session).toMatch(/^[A-Za-z0-9_-]{6,}$/u)
   })
 
   it('keeps non-interactive runs fail-fast when no model is configured', async () => {
@@ -321,11 +397,21 @@ async function runCli(
 
 async function startSparkWorkHost(root: string): Promise<{
   readonly token: string
-  readonly requests: { path: string; authorization: string | undefined }[]
+  readonly requests: {
+    path: string
+    authorization: string | undefined
+    userAgent: string | undefined
+    session: string | undefined
+  }[]
   readonly close: () => Promise<void>
 }> {
   const token = 'sparkwork-test-token-that-is-at-least-32-characters'
-  const requests: { path: string; authorization: string | undefined }[] = []
+  const requests: {
+    path: string
+    authorization: string | undefined
+    userAgent: string | undefined
+    session: string | undefined
+  }[] = []
   const server = createServer((request, response) => {
     if (request.headers.authorization !== `Bearer ${token}`) {
       response.writeHead(401).end()
@@ -354,7 +440,15 @@ async function startSparkWorkHost(root: string): Promise<{
       return
     }
     if (request.method === 'POST' && request.url === '/v1/proxy/provider-1/v1/responses') {
-      requests.push({ path: request.url, authorization: request.headers.authorization })
+      requests.push({
+        path: request.url,
+        authorization: request.headers.authorization,
+        userAgent: request.headers['user-agent'],
+        session:
+          typeof request.headers['x-opencode-session'] === 'string'
+            ? request.headers['x-opencode-session']
+            : undefined,
+      })
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       response.end(
         'event: response.output_text.delta\n' +
@@ -397,7 +491,10 @@ async function startSparkWorkHost(root: string): Promise<{
   }
 }
 
-async function startResponsesServer(includeTextDelta = true): Promise<{
+async function startResponsesServer(
+  includeTextDelta = true,
+  onBody?: (body: string) => void,
+): Promise<{
   readonly baseUrl: string
   readonly close: () => Promise<void>
 }> {
@@ -406,6 +503,11 @@ async function startResponsesServer(includeTextDelta = true): Promise<{
       response.writeHead(404).end()
       return
     }
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => chunks.push(chunk))
+    request.on('end', () => {
+      onBody?.(Buffer.concat(chunks).toString('utf8'))
+    })
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     const delta = includeTextDelta
       ? 'event: response.output_text.delta\n' +

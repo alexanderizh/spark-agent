@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { consumeLlmStream } from '../../src/llm/consume.js'
 import { AnthropicMessagesService, toAnthropicRequest } from '../../src/llm/anthropic/messages.js'
 import { OpenAiResponsesService, toOpenAiRequest } from '../../src/llm/openai/responses.js'
+import { CLIENT_USER_AGENT, clientIdentityHeaders } from '../../src/llm/http/client-identity.js'
 import type { LlmRequest } from '../../src/llm/types.js'
 
 const context = {
@@ -89,6 +90,48 @@ describe('real model protocol adapters', () => {
     await consumeLlmStream(service.stream(baseRequest(), context))
 
     expect(requestedUrl).toBe('https://gateway.example/anthropic/v1/messages')
+  })
+
+  it('identifies the client and its session on every upstream request', async () => {
+    const seen: { url: Parameters<typeof globalThis.fetch>[0]; headers: Headers }[] = []
+    const record =
+      (fixture: string): typeof globalThis.fetch =>
+      async (input, init) => {
+        seen.push({ url: input, headers: new Headers(init?.headers) })
+        return sseResponse(await loadFixture(fixture))
+      }
+
+    await consumeLlmStream(
+      new AnthropicMessagesService({
+        apiKey: 'secret',
+        model: 'claude-test',
+        fetch: record('anthropic-tool.sse'),
+      }).stream(baseRequest(), context),
+    )
+    await consumeLlmStream(
+      new OpenAiResponsesService({
+        apiKey: 'secret',
+        model: 'gpt-test',
+        fetch: record('openai-tool.sse'),
+      }).stream(baseRequest(), context),
+    )
+
+    expect(seen.map((request) => request.url)).toEqual([
+      'https://api.anthropic.com/v1/messages',
+      'https://api.openai.com/v1/responses',
+    ])
+    for (const request of seen) {
+      expect(request.headers.get('user-agent')).toBe(CLIENT_USER_AGENT)
+      // 上游网关按会话归属请求（opencode 缺这个头直接 400 MissingSessionID）。
+      expect(request.headers.get('x-opencode-session')).toBe('session-1')
+    }
+    expect(seen[0]?.headers.get('x-api-key')).toBe('secret')
+    expect(seen[1]?.headers.get('authorization')).toBe('Bearer secret')
+  })
+
+  it('omits the session header when the turn carries no session id', () => {
+    expect(clientIdentityHeaders(undefined)).toEqual({ 'user-agent': CLIENT_USER_AGENT })
+    expect(clientIdentityHeaders('   ')).toEqual({ 'user-agent': CLIENT_USER_AGENT })
   })
 
   it('parses Responses tool streaming and replays opaque reasoning items', async () => {
@@ -455,6 +498,87 @@ describe('real model protocol adapters', () => {
         },
       },
     })
+  })
+
+  it('encodes attached images as provider image blocks after the text block', () => {
+    const request: LlmRequest = {
+      ...baseRequest(),
+      messages: [
+        {
+          role: 'user',
+          content: 'what is in this screenshot?',
+          sourceSeqs: [0],
+          imageRefs: [
+            {
+              sha256: 'a'.repeat(64),
+              bytes: 4,
+              mediaType: 'image/png',
+              summary: 'shot',
+              readHint: 'spark artifact read',
+              width: 1920,
+              height: 1080,
+            },
+          ],
+          imageParts: [
+            { mediaType: 'image/png', base64: 'cG5n' },
+            { mediaType: 'image/jpeg', base64: 'anBn' },
+          ],
+        },
+      ],
+    }
+
+    const anthropic = toAnthropicRequest(request, 'claude-test', true)
+    expect(anthropic.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is in this screenshot?' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'cG5n' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'anBn' } },
+        ],
+      },
+    ])
+
+    const responses = toOpenAiRequest(request, 'gpt-test')
+    expect(responses.input).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'what is in this screenshot?' },
+          { type: 'input_image', image_url: 'data:image/png;base64,cG5n' },
+          { type: 'input_image', image_url: 'data:image/jpeg;base64,anBn' },
+        ],
+      },
+    ])
+  })
+
+  it('keeps requests byte-identical when a turn carries no resolved images', () => {
+    const withRefsOnly: LlmRequest = {
+      ...baseRequest(),
+      messages: [
+        {
+          role: 'user',
+          content: 'Read the file',
+          sourceSeqs: [0],
+          imageRefs: [
+            {
+              sha256: 'b'.repeat(64),
+              bytes: 4,
+              mediaType: 'image/png',
+              summary: 'shot',
+              readHint: 'spark artifact read',
+            },
+          ],
+        },
+      ],
+    }
+    // Refs alone (an unresolved projection) must not change the wire format.
+    expect(toAnthropicRequest(withRefsOnly, 'claude-test', true).messages).toEqual(
+      toAnthropicRequest(baseRequest(), 'claude-test', true).messages,
+    )
+    expect(toOpenAiRequest(withRefsOnly, 'gpt-test').input).toEqual(
+      toOpenAiRequest(baseRequest(), 'gpt-test').input,
+    )
   })
 
   it('omits OpenAI reasoning summaries unless summarized display is requested', () => {

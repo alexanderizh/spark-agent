@@ -7,6 +7,7 @@ import type { ResolvedEngineSettings } from '../config/settings.js'
 import { createResilientEnv, defaultSparkHome } from '../env.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { AgentEnv, LlmService, SessionMeta } from '../seams.js'
+import { createImageInputSeam, type ImageInputSeam } from '../images/seam.js'
 import { InteractiveApprover } from '../permission/interactive.js'
 import { SLASH_COMMANDS } from './slash-commands.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
@@ -49,6 +50,11 @@ export interface RunTuiOptions {
   readonly resumeSessionId?: string | undefined
   /** Open the session picker at startup (bare `spark --resume`). */
   readonly resumePicker?: boolean | undefined
+  /**
+   * Clipboard/file image intake. Hosts may inject their own reader; the CLI
+   * default reads the OS clipboard through the platform tool.
+   */
+  readonly imageInput?: ImageInputSeam | undefined
 }
 
 export async function runTui(options: RunTuiOptions): Promise<void> {
@@ -132,6 +138,7 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
     incrementalRendering: true,
     alternateScreen: false,
   }
+  const imageInput = options.imageInput ?? createImageInputSeam()
   const instance = render(
     <SparkTuiRoot
       initialSession={session}
@@ -155,6 +162,7 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
         return next
       }}
       resumePicker={options.resumePicker === true ? true : undefined}
+      imageInput={imageInput}
       {...(options.updateRunner === undefined ? {} : { updateRunner: options.updateRunner })}
       {...(options.version === undefined ? {} : { version: options.version })}
       {...(options.reasoningEffort === undefined
@@ -192,6 +200,7 @@ interface SparkTuiRootProps {
   }) => Promise<void>
   readonly customCommands?: readonly CustomCommand[] | undefined
   readonly cwd?: string | undefined
+  readonly imageInput?: ImageInputSeam | undefined
   readonly onModelChanged: (model: string | undefined) => void
   readonly stdout: NodeJS.WriteStream
 }
@@ -221,6 +230,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       {...(props.reasoningEffort === undefined ? {} : { reasoningEffort: props.reasoningEffort })}
       {...(props.customCommands === undefined ? {} : { customCommands: props.customCommands })}
       {...(props.cwd === undefined ? {} : { cwd: props.cwd })}
+      {...(props.imageInput === undefined ? {} : { imageInput: props.imageInput })}
       modelRuntime={modelRuntime}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />
@@ -242,6 +252,7 @@ export * from './theme.js'
 export * from './update-runner.js'
 export * from './display-name.js'
 export * from './components/input-editor.js'
+export * from './components/input-image-blocks.js'
 export * from './components/effort-picker.js'
 export * from './components/markdown.js'
 export * from './components/permission-card.js'
