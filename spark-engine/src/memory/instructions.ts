@@ -1,6 +1,7 @@
 import { open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { canonicalDirectory, isSameDirectory } from '../fs/real-path.js'
 
 /**
  * Project instruction files, mirroring the layered-memory conventions of
@@ -79,10 +80,7 @@ export class FileInstructionLoader implements InstructionProvider {
 
   async #collect(): Promise<InstructionSnapshot> {
     const sections: InstructionSection[] = []
-    const userSection = await this.#readSection(
-      join(this.#home, '.spark', 'SPARK.md'),
-      'user',
-    )
+    const userSection = await this.#readSection(join(this.#home, '.spark', 'SPARK.md'), 'user')
     if (userSection) sections.push(userSection)
     for (const directory of ancestorDirectories(this.#cwd)) {
       for (const name of INSTRUCTION_FILE_NAMES) {
@@ -122,16 +120,24 @@ export class FileInstructionLoader implements InstructionProvider {
  * Directories from the filesystem root down to `cwd` (inclusive), so callers
  * iterate from least to most specific.
  */
+/**
+ * Ancestor chain of `cwd`, root first. The walk stops at the user's home
+ * directory (exclusive): everything at or above home belongs to the user
+ * scope, and scanning above it would pick up unrelated installed tool data
+ * from sibling directories.
+ */
 export function ancestorDirectories(cwd: string): readonly string[] {
   const chain: string[] = []
   let current = resolve(cwd)
+  const homeRoot = canonicalDirectory(homedir())
   while (true) {
     chain.push(current)
+    if (isSameDirectory(current, homeRoot)) break
     const parent = dirname(current)
     if (parent === current) break
     current = parent
   }
-  return chain.reverse()
+  return chain.reverse().filter((directory) => !isSameDirectory(directory, homeRoot))
 }
 
 async function readTextHead(path: string, maxBytes: number): Promise<string> {

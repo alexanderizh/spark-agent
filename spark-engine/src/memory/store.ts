@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
+import { isSameDirectory } from '../fs/real-path.js'
 import { NULL_RUNTIME_LOGGER, type RuntimeLogger } from '../observability/logger.js'
 
 export const MEMORY_SCOPES = ['user', 'project', 'agent'] as const
@@ -310,31 +311,6 @@ export class FileMemoryStore implements MemoryProvider {
     }
     return entries
   }
-}
-
-/**
- * Equality of two directory paths on the real filesystem. On Windows the
- * same directory is frequently reached through an 8.3 short name
- * (`ADMINI~1`) in one path and a long name in the other, so string equality
- * of resolved paths is not enough — the native realpath (GetFinalPathNameBy-
- * Handle) canonicalizes both to the long form.
- */
-function isSameDirectory(left: string, right: string): boolean {
-  const canonicalize = (path: string): string | undefined => {
-    try {
-      return realpathSync.native(path)
-    } catch {
-      try {
-        return realpathSync(path)
-      } catch {
-        return undefined
-      }
-    }
-  }
-  const leftReal = canonicalize(left)
-  const rightReal = canonicalize(right)
-  if (leftReal !== undefined && rightReal !== undefined) return leftReal === rightReal
-  return resolve(left) === resolve(right)
 }
 
 function findProjectMemoryDirectory(cwd: string, homeDir: string): string {

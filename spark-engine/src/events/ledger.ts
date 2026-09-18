@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 
 import type { Clock, SessionListOptions, SessionMeta, SessionStore } from '../seams.js'
+import { canonicalDirectory } from '../fs/real-path.js'
 import { decodeLine } from './migrations.js'
 import { AgentEventSchema, type AgentEvent, type BoundEventDraft } from './schema.js'
 
@@ -211,7 +212,10 @@ export class JsonlSessionStore implements SessionStore {
   #forkCounter = 0
 
   constructor(options: JsonlSessionStoreOptions) {
-    this.#projectDir = resolve(options.projectDir)
+    // Canonical (8.3-expanded) form: a session store opened through a
+    // different but identical directory must still find the same project
+    // bucket instead of silently splitting into two.
+    this.#projectDir = canonicalDirectory(options.projectDir)
     this.#projectRoot = resolve(options.dataRoot, 'projects', encodeProjectDir(this.#projectDir))
     this.#fsync = options.fsync ?? 'step-boundary'
   }
@@ -283,7 +287,7 @@ export class JsonlSessionStore implements SessionStore {
   }
 
   async list(projectDir: string | null, options?: SessionListOptions): Promise<SessionMeta[]> {
-    if (projectDir !== null && resolve(projectDir) !== this.#projectDir) return []
+    if (projectDir !== null && canonicalDirectory(projectDir) !== this.#projectDir) return []
     let entries
     try {
       entries = await readdir(this.#projectRoot, { withFileTypes: true })
