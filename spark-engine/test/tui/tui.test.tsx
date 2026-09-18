@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 
 import { render } from 'ink-testing-library'
 import { describe, expect, it } from 'vitest'
@@ -49,7 +49,9 @@ describe('TUI deterministic interaction', () => {
       app.unmount()
       return
     }
-    const expected = await readFile(goldenUrl, 'utf8')
+    const expectedRaw = await readFile(goldenUrl, 'utf8')
+    // Git may check the fixture out with CRLF; ink frames always join with LF.
+    const expected = expectedRaw.replaceAll('\r\n', '\n')
     expect(`${actual}\n`).toBe(expected)
     app.unmount()
   })
@@ -82,9 +84,12 @@ describe('TUI deterministic interaction', () => {
       />,
     )
     const frame = app.lastFrame() ?? ''
-    expect(frame).toContain('~/dev/demo') // home prefix collapsed
+    // The status bar collapses the home prefix but keeps the platform's path
+    // separator (`~\dev\demo` on Windows).
+    const expectedCwd = `~${sep}dev${sep}demo`
+    expect(frame).toContain(expectedCwd) // home prefix collapsed
     // Status bar is the last line: the path must sit before the trailing /help hint there.
-    expect(frame.indexOf('~/dev/demo')).toBeLessThan(frame.lastIndexOf('/help'))
+    expect(frame.indexOf(expectedCwd)).toBeLessThan(frame.lastIndexOf('/help'))
     app.unmount()
   })
 
