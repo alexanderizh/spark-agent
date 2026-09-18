@@ -11,6 +11,7 @@ import { clipboard, dialog, Notification, shell } from 'electron'
 import { getDatabase } from '../db.js'
 import { getAuthService } from '../services/Auth/AuthService.js'
 import { openExternalUrlSafely } from '../services/ExternalUrlPolicy.js'
+import { showTrackedOpenDialog, showTrackedSaveDialog } from '../services/DialogPathMemory.js'
 import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
 import { getInternalBrowserService } from '../services/InternalBrowserService.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
@@ -166,7 +167,7 @@ export function registerToolPackagesIpc(
       if (input.mode === 'file' || input.mode === 'any') properties.push('openFile')
       if (input.mode === 'directory' || input.mode === 'any') properties.push('openDirectory')
       if (input.allowMultiple === true) properties.push('multiSelections')
-      return dialog.showOpenDialog({
+      return showTrackedOpenDialog({
         properties,
         ...(input.title != null ? { title: input.title } : {}),
         ...(input.defaultPath != null ? { defaultPath: input.defaultPath } : {}),
@@ -174,7 +175,7 @@ export function registerToolPackagesIpc(
       })
     },
     saveDialog: async (_context, input) =>
-      dialog.showSaveDialog({
+      showTrackedSaveDialog({
         ...(input.title != null ? { title: input.title } : {}),
         ...(input.defaultPath != null ? { defaultPath: input.defaultPath } : {}),
         ...(input.filters != null ? { filters: input.filters } : {}),

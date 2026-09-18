@@ -1,9 +1,10 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { SparkError } from '@spark/shared'
 import { getDatabase } from '../db.js'
+import { showTrackedOpenDialog, showTrackedSaveDialog } from '../services/DialogPathMemory.js'
 import { getMainWindow, sendToMainWindow } from '../windows/index.js'
 import { typedIpcHandle } from './typed-ipc.js'
 import { SubAppBackend } from './subAppBackend.js'
@@ -241,7 +242,7 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
       capabilities: packed.capabilities,
       secretWarnings: packed.secretWarnings,
     }
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '分享导出子应用',
       defaultPath: path.join(app.getPath('downloads'), `${packed.name}.sparkapp`),
       filters: [{ name: 'SparkWork 子应用分享包', extensions: ['sparkapp'] }],
@@ -259,7 +260,7 @@ export function registerSubAppIpc(options: RegisterSubAppIpcOptions = {}): void 
 
   typedIpcHandle('sub-app:share:import-preview', async (_request, event) => {
     assertTrusted(event)
-    const open = await dialog.showOpenDialog({
+    const open = await showTrackedOpenDialog({
       title: '导入子应用分享包',
       properties: ['openFile'],
       filters: [

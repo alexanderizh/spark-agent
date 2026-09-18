@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -125,6 +126,82 @@ describe('SparkCliBridgeService', () => {
       body: JSON.stringify({ model: 'gpt-test', stream: true }),
       redirect: 'error',
     })
+  })
+
+  it('forwards the client session identity and never leaks a bare runtime User-Agent', async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-'))
+    roots.push(sparkHome)
+    const seen: Headers[] = []
+    const upstreamFetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers))
+      return new Response('data: {"type":"response.completed","response":{"output":[]}}\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+    const bridge = await startSparkCliBridge({
+      sparkHome,
+      listProviders: async () => [
+        {
+          id: 'opencode',
+          name: 'OpenCode',
+          provider: 'openai',
+          enabled: true,
+          defaultModel: 'glm-5.3-flash',
+          modelIds: ['glm-5.3-flash'],
+          apiEndpoint: 'https://opencode.ai/zen/go/v1',
+          codexApiKind: 'responses',
+          isDefault: true,
+        },
+      ],
+      resolveCredential: async () => 'provider-secret',
+      fetch: upstreamFetch as typeof fetch,
+    })
+    bridges.push(bridge)
+
+    const descriptor = JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as {
+      token: string
+    }
+    const proxy = `${bridge.endpoint}/v1/proxy/opencode/v1/responses`
+    const body = JSON.stringify({ model: 'glm-5.3-flash', stream: true })
+
+    // opencode 网关要求每个会话带稳定的 x-opencode-session，并由客户端声明自己的
+    // User-Agent；bridge 必须原样转发这两个头，同时仍然覆盖凭据。
+    await fetch(proxy, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${descriptor.token}`,
+        'content-type': 'application/json',
+        'x-opencode-session': 'session-abc',
+        'user-agent': 'spark-engine/0.6.7',
+      },
+      body,
+    })
+    expect(seen[0]?.get('x-opencode-session')).toBe('session-abc')
+    expect(seen[0]?.get('user-agent')).toBe('spark-engine/0.6.7')
+    expect(seen[0]?.get('authorization')).toBe('Bearer provider-secret')
+
+    // node:http 客户端不带 User-Agent，上游不该看到运行时的默认身份。
+    await new Promise<void>((resolve, reject) => {
+      const request = httpRequest(
+        proxy,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${descriptor.token}`,
+            'content-type': 'application/json',
+            'x-opencode-session': 'session-abc',
+          },
+        },
+        (response) => {
+          response.resume()
+          response.on('end', () => resolve())
+        },
+      )
+      request.on('error', reject)
+      request.end(body)
+    })
+    expect(seen[1]?.get('user-agent')).toBe('sparkwork-cli-bridge')
+    expect(seen[1]?.get('x-opencode-session')).toBe('session-abc')
   })
 
   it('re-reads providers for every catalog request so updates need no CLI config copy', async () => {

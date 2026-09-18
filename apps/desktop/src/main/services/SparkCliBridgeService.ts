@@ -4,6 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
+import { createLogger } from '@spark/shared'
+
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024
 const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024
 const LF_BOUNDARY = Buffer.from('\n\n')
@@ -17,6 +19,28 @@ const NON_HTTP_PROVIDER_IDS = new Set([
 // bridge.json 是单实例时代的遗留名；每实例独立文件（bridge-<instanceId>.json）
 // 之后，旧名仍会被启动期 GC 清理，避免升级残留永久霸占发现路径。
 const DESCRIPTOR_NAME = /^bridge(-[A-Za-z0-9._-]{1,200})?\.json$/u
+
+const log = createLogger('spark-cli-bridge')
+
+/**
+ * Client headers the bridge forwards verbatim. It stays an allow-list so a
+ * local caller can never smuggle arbitrary headers (or extra credentials)
+ * upstream.
+ */
+const FORWARDED_REQUEST_HEADERS = [
+  'anthropic-version',
+  'anthropic-beta',
+  'openai-organization',
+  'openai-project',
+  // 会话身份头：opencode 网关要求每个会话带稳定的 x-opencode-session，缺了直接 400
+  // MissingSessionID。bridge 生成不出这个值（它必须跨请求稳定并与会话一一对应），
+  // 只能由客户端发送、这里原样透传。
+  'x-opencode-session',
+  'user-agent',
+] as const
+
+// 桌面端自有的 fallback：即使调用方没带 User-Agent，上游也不该看到运行时默认值。
+const BRIDGE_USER_AGENT = 'sparkwork-cli-bridge'
 
 export interface SparkCliProviderProfile {
   id: string
@@ -258,11 +282,18 @@ async function proxyModelRequest(
   response.once('close', () => {
     if (!response.writableEnded) controller.abort('client disconnected')
   })
+  const target = upstreamUrl(provider, protocol)
+  const headers = upstreamHeaders(request, protocol, credential)
+  // 上游 4xx（例如 opencode 的 MissingSessionID）排查入口：这一行记录实际转发的
+  // 客户端身份头是否存在，不记录任何头值。
+  log.debug(
+    `proxy provider=${provider.id} model=${model} target=${logSafeTarget(target)} sessionHeader=${String(headers.has('x-opencode-session'))}`,
+  )
   let upstream: Response
   try {
-    upstream = await (dependencies.fetch ?? fetch)(upstreamUrl(provider, protocol), {
+    upstream = await (dependencies.fetch ?? fetch)(target, {
       method: 'POST',
-      headers: upstreamHeaders(request, protocol, credential),
+      headers,
       body,
       signal: controller.signal,
       redirect: 'error',
@@ -481,18 +512,26 @@ function upstreamHeaders(
   credential: string,
 ): Headers {
   const headers = new Headers({ accept: 'text/event-stream', 'content-type': 'application/json' })
-  for (const name of [
-    'anthropic-version',
-    'anthropic-beta',
-    'openai-organization',
-    'openai-project',
-  ]) {
+  for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers[name]
-    if (typeof value === 'string' && value.length <= 4_096) headers.set(name, value)
+    if (typeof value === 'string' && value.length > 0 && value.length <= 4_096) {
+      headers.set(name, value)
+    }
   }
+  if (!headers.has('user-agent')) headers.set('user-agent', BRIDGE_USER_AGENT)
   if (protocol === 'anthropic-messages') headers.set('x-api-key', credential)
   else headers.set('authorization', `Bearer ${credential}`)
   return headers
+}
+
+/** Drops URL credentials so an endpoint with embedded userinfo never reaches the log. */
+function logSafeTarget(value: string): string {
+  try {
+    const url = new URL(value)
+    return `${url.protocol}//${url.host}${url.pathname}`
+  } catch {
+    return value
+  }
 }
 
 function copyResponseHeaders(headers: Headers, response: ServerResponse): void {

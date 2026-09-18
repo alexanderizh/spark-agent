@@ -25,6 +25,7 @@ import {
   buildCanvasRuntimeRequest,
   buildCanvasSystemPrompt,
   resolveCanvasAgentTurnResult,
+  resolveCanvasRuntimeImages,
 } from './canvas-prompt-runtime.js'
 import {
   buildCanvasTextRawResponse,
@@ -80,7 +81,8 @@ import {
   isSessionServiceShutdownStarted,
   registerSessionServiceForShutdown,
 } from '../session-service-shutdown.js'
-import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
+import { app, clipboard, shell, Notification, screen } from 'electron'
+import { showTrackedOpenDialog, showTrackedSaveDialog } from '../services/DialogPathMemory.js'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
@@ -5651,7 +5653,14 @@ export function registerAllIpcHandlers(): void {
       const ordered = preferredProviderId
         ? profiles.filter((p) => p.id === preferredProviderId)
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
-      const runtimeRequest = buildCanvasRuntimeRequest(req)
+      // 输入图片只有本地 path + safe-file:// 展示 URL；HTTP 直连上游 vision 需要
+      // http(s) URL 或 base64 dataUrl，这里统一解析，本地文件读成 base64。
+      const runtimeRequest = {
+        ...buildCanvasRuntimeRequest(req),
+        images: await resolveCanvasRuntimeImages(
+          req.inputFiles != null ? { inputFiles: req.inputFiles } : {},
+        ),
+      }
       const candidate = ordered.find((profile) => isTextProvider(profile))
       const requestedMaxTokens =
         typeof req.modelParams?.maxTokens === 'number'
@@ -6330,7 +6339,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.sourceUrl !== undefined ? { sourceUrl: req.sourceUrl } : {}),
     })
     const defaultDirectory = req.defaultDirectory?.trim() || app.getPath('downloads')
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '下载项目资产',
       defaultPath: path.join(defaultDirectory, suggestedFileName),
       filters: canvasAssetDownloadFilters(req.type),
@@ -6359,7 +6368,7 @@ export function registerAllIpcHandlers(): void {
     // 批量下载：只弹一次目录选择对话框，然后把所有资产写入该目录。
     // 文件名冲突时自动加序号（name-1.png / name-2.png），避免互相覆盖。
     const defaultDirectory = req.defaultDirectory?.trim() || app.getPath('downloads')
-    const openResult = await dialog.showOpenDialog({
+    const openResult = await showTrackedOpenDialog({
       title: `批量下载 ${req.items.length} 个资产到文件夹`,
       defaultPath: defaultDirectory,
       properties: ['openDirectory', 'createDirectory'],
@@ -6418,7 +6427,7 @@ export function registerAllIpcHandlers(): void {
     const targetParent = req.targetParentDirectory?.trim()
       ? path.resolve(req.targetParentDirectory)
       : (
-          await dialog.showOpenDialog({
+          await showTrackedOpenDialog({
             title: '选择 Canvas 项目包导出位置',
             properties: ['openDirectory', 'createDirectory'],
           })
@@ -6670,7 +6679,7 @@ export function registerAllIpcHandlers(): void {
     const datePart = new Date().toISOString().slice(0, 10)
     const defaultName = `spark-agent-providers-${datePart}.json`
 
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '导出 Provider 配置',
       defaultPath: defaultName,
       filters: [
@@ -6702,7 +6711,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:import-from-file', async () => {
     log.info('provider:import-from-file requested')
 
-    const result = await dialog.showOpenDialog({
+    const result = await showTrackedOpenDialog({
       title: '选择 Provider 配置文件',
       properties: ['openFile'],
       filters: [
@@ -7400,7 +7409,7 @@ export function registerAllIpcHandlers(): void {
   // ─── Native Dialog Handlers ─────────────────────────────────────────────
 
   typedIpcHandle('dialog:open-directory', async (req) => {
-    const result = await dialog.showOpenDialog({
+    const result = await showTrackedOpenDialog({
       title: req.title ?? '选择工作区目录',
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
       properties: ['openDirectory', 'createDirectory'],
@@ -7426,7 +7435,7 @@ export function registerAllIpcHandlers(): void {
         : req.multiple === true || req.allowDirectories === true
           ? ['openFile', 'multiSelections']
           : ['openFile']
-    const result = await dialog.showOpenDialog({
+    const result = await showTrackedOpenDialog({
       title: req.title ?? '选择文件',
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
       properties: baseProperties,
@@ -7448,7 +7457,7 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('dialog:save-file', async (req) => {
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: req.title ?? '保存文件',
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
       ...(req.filters ? { filters: req.filters } : {}),
@@ -8213,7 +8222,7 @@ export function registerAllIpcHandlers(): void {
     const datePart = new Date().toISOString().slice(0, 10)
     const defaultName = `spark-agent-export-${datePart}.json`
 
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '导出 Agent 配置',
       defaultPath: defaultName,
       filters: [
@@ -8243,7 +8252,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('agent:import-from-file', async () => {
     log.info('agent:import-from-file requested')
 
-    const result = await dialog.showOpenDialog({
+    const result = await showTrackedOpenDialog({
       title: '选择 Agent 配置文件',
       properties: ['openFile'],
       filters: [
@@ -9694,7 +9703,7 @@ export function registerAllIpcHandlers(): void {
     const datePart = new Date().toISOString().slice(0, 10)
     const defaultName = `spark-agent-tasks-${datePart}.json`
 
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '导出定时任务',
       defaultPath: defaultName,
       filters: [
@@ -9725,7 +9734,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('scheduled-task:import-from-file', async () => {
     log.info('scheduled-task:import-from-file requested')
 
-    const result = await dialog.showOpenDialog({
+    const result = await showTrackedOpenDialog({
       title: '选择定时任务配置文件',
       properties: ['openFile'],
       filters: [
@@ -10166,7 +10175,7 @@ export function registerAllIpcHandlers(): void {
     const suggestedName = req.suggestedFileName ?? sourceBaseName
     const defaultDir = req.defaultDirectory ?? app.getPath('downloads')
 
-    const result = await dialog.showSaveDialog({
+    const result = await showTrackedSaveDialog({
       title: '保存图片',
       defaultPath: path.join(defaultDir, suggestedName),
       filters: [
