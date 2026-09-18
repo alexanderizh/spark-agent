@@ -143,7 +143,9 @@ describe('sparkwork host discovery', () => {
     })
     const loosePath = join(root, 'hosts', 'sparkwork', 'bridge-loose.json')
     await writeFile(loosePath, validDescriptorJson('http://127.0.0.1:39902'), { mode: 0o644 })
-    if (process.platform !== 'win32') await chmod(loosePath, 0o644)
+    // Windows returned above; here the platform is POSIX, where the mode mask
+    // is meaningful and the chmod is what makes the descriptor world-readable.
+    await chmod(loosePath, 0o644)
     await writeFile(join(root, 'hosts', 'sparkwork', 'bridge-broken.json'), '{not json', {
       mode: 0o600,
     })
