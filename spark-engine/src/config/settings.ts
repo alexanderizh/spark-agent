@@ -241,6 +241,16 @@ export function resolveContextSettings(settings: SparkSettings): Partial<Context
   if (context.max_compactions_per_turn !== undefined) {
     policy.maxCompactionsPerTurn = context.max_compactions_per_turn
   }
+  if (context.micro_compact !== undefined) policy.microcompactEnabled = context.micro_compact
+  if (context.micro_compact_keep_exchanges !== undefined) {
+    policy.microcompactKeepExchanges = context.micro_compact_keep_exchanges
+  }
+  if (context.micro_compact_min_tokens !== undefined) {
+    policy.microcompactMinTokens = context.micro_compact_min_tokens
+  }
+  if (context.micro_compact_max_per_turn !== undefined) {
+    policy.microcompactMaxPerTurn = context.micro_compact_max_per_turn
+  }
   return policy
 }
 

@@ -221,6 +221,17 @@ export interface ContextCompactionPolicy {
   readonly minCompactableTokens: number
   /** Safety loop guard: compactions allowed within one turn. */
   readonly maxCompactionsPerTurn: number
+  /**
+   * Microcompact: sink stale tool-result bodies into the artifact store and
+   * keep a head+tail stub in context, without summarizing anything away.
+   */
+  readonly microcompactEnabled: boolean
+  /** The most recent assistant exchanges keep full-fidelity tool bodies. */
+  readonly microcompactKeepExchanges: number
+  /** Tool bodies smaller than this are not worth a slimming pass. */
+  readonly microcompactMinTokens: number
+  /** Safety loop guard: tool results slimmed within one turn. */
+  readonly microcompactMaxPerTurn: number
 }
 
 export const DEFAULT_COMPACTION_POLICY: ContextCompactionPolicy = {
@@ -229,6 +240,10 @@ export const DEFAULT_COMPACTION_POLICY: ContextCompactionPolicy = {
   keepRecentTurns: 2,
   minCompactableTokens: 8_000,
   maxCompactionsPerTurn: 8,
+  microcompactEnabled: true,
+  microcompactKeepExchanges: 2,
+  microcompactMinTokens: 400,
+  microcompactMaxPerTurn: 64,
 }
 
 export interface AgentContextConfig {

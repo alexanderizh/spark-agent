@@ -164,3 +164,63 @@ describe('turn context compaction', () => {
     expect(userTexts).not.toContain('first question')
   })
 })
+
+describe('turn microcompact', () => {
+  it('sinks stale tool bodies into artifacts and sends stubs on later requests', async () => {
+    const bigFile = 'file line\n'.repeat(400) // ~4400 chars ≈ 1.5k tokens
+    const base = createDeterministicEnv(
+      [
+        toolCall('c1', 'read', { path: 'a.ts' }),
+        toolCall('c2', 'read', { path: 'b.ts' }),
+        toolCall('c3', 'read', { path: 'c.ts' }),
+        text('done'),
+      ],
+      { files: { 'a.ts': bigFile, 'b.ts': bigFile, 'c.ts': bigFile } },
+    )
+    const machine = new TurnMachine(base)
+
+    const result = await machine.run({
+      sessionId: 's1',
+      turnId: 't1',
+      input: 'read the files',
+      cwd: '/ws',
+      permissionMode: 'auto',
+    })
+
+    expect(result.terminal.type).toBe('turn.completed')
+    if (result.terminal.type !== 'turn.completed') return
+    // c1 is two exchanges behind by the time step 4 runs; c2 is one behind.
+    expect(result.terminal.stats.slimmedToolResults).toBe(1)
+
+    const allEvents = (async () => {
+      const events = []
+      for await (const event of base.store.read('s1')) events.push(event)
+      return events
+    })()
+    const slimEvent = (await allEvents).find(
+      (event) => event.type === 'context.tool_results_slimmed',
+    )
+    expect(slimEvent?.type).toBe('context.tool_results_slimmed')
+    if (slimEvent?.type !== 'context.tool_results_slimmed') return
+    expect(slimEvent.slimmed[0]?.callId).toBe('c1')
+
+    // The complete body is recoverable from the artifact store.
+    const fullRef = slimEvent.slimmed[0]?.fullRef
+    expect(fullRef).toBeDefined()
+    if (fullRef === undefined) return
+    expect(await base.artifacts.get(fullRef)).toBe(bigFile)
+
+    // The final request carries the stub, not the body, and keeps fresh
+    // results intact.
+    const finalRequest = base.fixtures.model.requests.at(-1)
+    const toolContents = (finalRequest?.messages ?? [])
+      .filter((message) => message.role === 'tool_result')
+      .map((message) => (message.role === 'tool_result' ? message.content : ''))
+    expect(toolContents.find((content) => content.includes('microcompacted'))).toBeDefined()
+    // Exactly two results still carry a full-size body (c2, c3); the c1 stub
+    // keeps only its head/tail window.
+    expect(toolContents.filter((content) => content.length > bigFile.length / 2)).toHaveLength(2)
+    const stub = toolContents.find((content) => content.includes('microcompacted'))
+    expect(stub?.length ?? Number.POSITIVE_INFINITY).toBeLessThan(1_500)
+  })
+})

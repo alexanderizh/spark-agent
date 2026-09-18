@@ -10,6 +10,7 @@ import {
   turnRanges,
 } from '../../src/kernel/compaction.js'
 import type { ContextCompactionPolicy } from '../../src/seams.js'
+import type { IrMessage } from '../../src/llm/types.js'
 
 function event(input: BoundEventDraft, seq: number): AgentEvent {
   return AgentEventSchema.parse({ ...input, sessionId: 's1', seq, ts: seq })
@@ -271,5 +272,207 @@ describe('isContextOverflowError', () => {
       ),
     ).toBe(false)
     expect(isContextOverflowError(new Error('connection reset'))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Microcompact
+// ---------------------------------------------------------------------------
+
+import { planMicrocompact, slimmedStub } from '../../src/kernel/compaction.js'
+
+function toolResultMessage(
+  callId: string,
+  seqs: readonly number[],
+  content: string,
+): Extract<IrMessage, { role: 'tool_result' }> {
+  return { role: 'tool_result', callId, tool: 'read', ok: true, content, sourceSeqs: seqs }
+}
+
+describe('planMicrocompact', () => {
+  const microPolicy: ContextCompactionPolicy = {
+    ...DEFAULT_COMPACTION_POLICY,
+    microcompactKeepExchanges: 2,
+    microcompactMinTokens: 100,
+  }
+  const bigBody = 'x'.repeat(1_000)
+  const tinyBody = 'x'.repeat(10)
+
+  function eventsWithExchanges(exchangeCount: number, toolSeq: number): AgentEvent[] {
+    const events: AgentEvent[] = []
+    for (let index = 0; index < exchangeCount; index += 1) {
+      events.push(assistant('t1', (index + 1) * 10, `exchange ${index}`))
+    }
+    void toolSeq
+    return events
+  }
+
+  it('slims tool results older than the keep window and skips fresh or tiny ones', () => {
+    // assistant boundaries at 10, 20; tool results at 5 (stale), 15 (fresh), 25 (fresh)
+    const messages = [
+      toolResultMessage('old', [5], bigBody),
+      toolResultMessage('fresh', [15], bigBody),
+      toolResultMessage('tiny', [5], tinyBody),
+    ]
+    const events = eventsWithExchanges(2, 0)
+    const plan = planMicrocompact(messages, events, microPolicy)
+    expect(plan.map((candidate) => candidate.callId)).toEqual(['old'])
+  })
+
+  it('returns nothing when disabled', () => {
+    const messages = [toolResultMessage('old', [5], bigBody)]
+    const events = eventsWithExchanges(2, 0)
+    expect(
+      planMicrocompact(messages, events, { ...microPolicy, microcompactEnabled: false }),
+    ).toEqual([])
+  })
+
+  it('does not slim failed tool results', () => {
+    const messages: IrMessage[] = [
+      {
+        role: 'tool_result',
+        callId: 'bad',
+        tool: 'read',
+        ok: false,
+        content: bigBody,
+        sourceSeqs: [5],
+      },
+    ]
+    const events = eventsWithExchanges(2, 0)
+    expect(planMicrocompact(messages, events, microPolicy)).toEqual([])
+  })
+
+  it('formats the stub with head, artifact hint, and tail', () => {
+    const body = `${'head'.repeat(200)}${'tail'.repeat(100)}`
+    const stub = slimmedStub(body, 'spark artifact read: sha256:abc (1234 bytes)', 900)
+    expect(stub).toContain('microcompacted')
+    expect(stub).toContain('Full output: spark artifact read: sha256:abc (1234 bytes)')
+    expect(stub).toContain('tail'.repeat(100).slice(-100))
+    expect(stub.length).toBeLessThan(body.length)
+  })
+})
+
+describe('projector replay of context.tool_results_slimmed', () => {
+  it('patches the surviving tool_result and keeps later content intact', () => {
+    const projector = new EventContextProjector()
+    const events: AgentEvent[] = [
+      turnStarted('t1', 0, 'start'),
+      assistant('t1', 1, ''),
+      event(
+        { type: 'tool.call', schemaVersion: 1, stepId: 's1', callId: 'c1', tool: 'read', args: {} },
+        2,
+      ),
+      event(
+        {
+          type: 'tool.result',
+          schemaVersion: 1,
+          callId: 'c1',
+          durationMs: 1,
+          ok: true,
+          content: 'huge body'.repeat(200),
+        },
+        3,
+      ),
+      assistant('t1', 4, 'intermediate'),
+      event(
+        {
+          type: 'context.tool_results_slimmed',
+          schemaVersion: 1,
+          slimmed: [
+            {
+              callId: 'c1',
+              fullRef: {
+                sha256: 'a'.repeat(64),
+                bytes: 9,
+                mediaType: 'text/plain',
+                summary: 'tool output',
+                readHint: 'spark artifact read: c1',
+              },
+              slimmedContent: 'stub head… Full output: spark artifact read: c1 …stub tail',
+              savedTokens: 1200,
+            },
+          ],
+        },
+        5,
+      ),
+      assistant('t1', 6, 'final'),
+    ]
+    const messages = projector.project(events, { cwd: '/ws' }).messages
+    const slimmed = messages.find(
+      (message) => message.role === 'tool_result' && message.callId === 'c1',
+    )
+    expect(slimmed?.role === 'tool_result' && slimmed.content).toContain(
+      'Full output: spark artifact read: c1',
+    )
+    expect(slimmed?.role === 'tool_result' && slimmed.content).not.toContain('huge body')
+    const last = messages.at(-1)
+    expect(last).toMatchObject({ role: 'assistant', content: 'final' })
+  })
+
+  it('still patches a tool_result that survives an earlier compaction', () => {
+    const projector = new EventContextProjector()
+    // The first assistant exchange (seq 1) is compacted away; the tool result
+    // at seq 3-4 survives and its slot index shifts down after the rebuild —
+    // the slim patch must land on the right message regardless.
+    const events: AgentEvent[] = [
+      turnStarted('t1', 0, 'first'),
+      assistant('t1', 1, 'first exchange'),
+      assistant('t1', 2, 'second exchange'),
+      event(
+        { type: 'tool.call', schemaVersion: 1, stepId: 's2', callId: 'c1', tool: 'read', args: {} },
+        3,
+      ),
+      event(
+        {
+          type: 'tool.result',
+          schemaVersion: 1,
+          callId: 'c1',
+          durationMs: 1,
+          ok: true,
+          content: 'kept body',
+        },
+        4,
+      ),
+      assistant('t1', 5, 'third exchange'),
+      turnStarted('t2', 6, 'second'),
+      assistant('t2', 7, 'second answer'),
+      event(
+        {
+          type: 'context.compacted',
+          schemaVersion: 1,
+          summary: 'earlier summarized',
+          droppedRanges: [[0, 2]],
+        },
+        8,
+      ),
+      event(
+        {
+          type: 'context.tool_results_slimmed',
+          schemaVersion: 1,
+          slimmed: [
+            {
+              callId: 'c1',
+              fullRef: {
+                sha256: 'b'.repeat(64),
+                bytes: 9,
+                mediaType: 'text/plain',
+                summary: 'tool output',
+                readHint: 'spark artifact read: c1',
+              },
+              slimmedContent: 'slimmed after compaction',
+              savedTokens: 300,
+            },
+          ],
+        },
+        7,
+      ),
+    ]
+    const messages = projector.project(events, { cwd: '/ws' }).messages
+    const slimmed = messages.find(
+      (message) => message.role === 'tool_result' && message.callId === 'c1',
+    )
+    expect(slimmed?.role === 'tool_result' && slimmed.content).toBe('slimmed after compaction')
+    // Exactly one tool_result message survived, and it is the patched one.
+    expect(messages.filter((message) => message.role === 'tool_result')).toHaveLength(1)
   })
 })

@@ -72,6 +72,8 @@ export const TurnStatsSchema = z.object({
   // Context compactions performed while running this turn. 0 keeps older
   // ledgers valid.
   compactions: z.number().int().nonnegative().default(0),
+  // Tool-result bodies sunk to artifacts by microcompact during this turn.
+  slimmedToolResults: z.number().int().nonnegative().default(0),
 })
 
 const envelope = {
@@ -227,6 +229,27 @@ const ContextCompactedEventSchema = z.object({
   droppedRanges: z.array(z.tuple([z.number().int(), z.number().int()])),
 })
 
+const SlimmedToolResultSchema = z.object({
+  callId: z.string().min(1),
+  /** Artifact holding the complete original body; the ledger keeps context. */
+  fullRef: ArtifactRefSchema,
+  /** Head+tail stub that replaces the body in every later projection. */
+  slimmedContent: z.string().min(1),
+  /** Estimated tokens freed from the per-step request. */
+  savedTokens: z.number().int().nonnegative(),
+})
+
+/**
+ * Microcompact record: stale tool bodies are sunk into the artifact store
+ * and replaced by stubs. Pure token hygiene — the message itself stays, so
+ * no tool pairing changes and the original content stays recoverable.
+ */
+const ToolResultsSlimmedEventSchema = z.object({
+  ...envelope,
+  type: z.literal('context.tool_results_slimmed'),
+  slimmed: z.array(SlimmedToolResultSchema).min(1),
+})
+
 const LogRewindEventSchema = z.object({
   ...envelope,
   type: z.literal('log.rewind'),
@@ -269,6 +292,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   PermissionRequestedEventSchema,
   PermissionDecidedEventSchema,
   ContextCompactedEventSchema,
+  ToolResultsSlimmedEventSchema,
   LogRewindEventSchema,
   PluginActivatedEventSchema,
   PluginDeactivatedEventSchema,

@@ -25,6 +25,7 @@ import {
   DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS,
   DEFAULT_COMPACTION_POLICY,
   isContextOverflowError,
+  slimToolResults,
 } from './compaction.js'
 import { CancellationTree, isAbortError, throwIfAborted } from './cancellation.js'
 import { KernelError, toErrorInfo } from './errors.js'
@@ -100,6 +101,7 @@ export class TurnMachine {
     }
     const compactor = new ContextCompactor(this.env, compactionPolicy)
     let compactions = 0
+    let slimmedToolResults = 0
     const contextWindowTokens = (): number =>
       this.env.llm.getModelBudget?.()?.contextWindowTokens ?? DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS
 
@@ -129,6 +131,7 @@ export class TurnMachine {
         ttftMs: turnTtftMs ?? 0,
         costUsd: snapshot.costUsd,
         compactions,
+        slimmedToolResults,
       }
     }
     /**
@@ -227,6 +230,33 @@ export class TurnMachine {
           permissionMode: options.permissionMode,
           ...(budgetWarning === undefined ? {} : { warning: budgetWarning }),
         })
+
+        // Microcompact: sink stale tool bodies into artifacts before paying
+        // for the request. Pure token hygiene — may avoid a full compaction.
+        if (
+          compactionPolicy.microcompactEnabled &&
+          slimmedToolResults < compactionPolicy.microcompactMaxPerTurn
+        ) {
+          const slimOutcome = await slimToolResults(this.env, {
+            events: history,
+            messages: projected.messages,
+            ledger,
+            policy: compactionPolicy,
+          })
+          if ('event' in slimOutcome) {
+            slimmedToolResults += slimOutcome.slimmedCount
+            try {
+              await options.onEvent?.(slimOutcome.event)
+            } catch {
+              this.env.telemetry.counter('observer.event.failed', {
+                type: slimOutcome.event.type,
+              })
+            }
+            await pullEvents()
+            continue
+          }
+        }
+
         const messages = await resolveImageParts(this.env, projected.messages, imageCache)
         const system = await this.env.prompt.compose(
           {

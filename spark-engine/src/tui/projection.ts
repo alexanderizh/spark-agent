@@ -201,6 +201,15 @@ export function projectTranscript(
           tone: 'dim',
         })
         break
+      case 'context.tool_results_slimmed': {
+        const saved = event.slimmed.reduce((total, entry) => total + entry.savedTokens, 0)
+        settled.push({
+          key: `event-${event.seq}`,
+          text: `⇲ ${event.slimmed.length} 个工具结果已瘦身 · 完整输出已存档 · 每步约省 ${saved} tokens`,
+          tone: 'dim',
+        })
+        break
+      }
       case 'plugin.activated':
       case 'plugin.deactivated':
         settled.push({
@@ -348,6 +357,7 @@ function isKnownEvent(event: AgentEvent | UnknownEvent): event is AgentEvent {
     'permission.decided',
     'permission.evaluated',
     'context.compacted',
+    'context.tool_results_slimmed',
     'log.rewind',
     'plugin.activated',
     'plugin.deactivated',

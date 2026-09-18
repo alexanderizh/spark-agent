@@ -16,6 +16,16 @@ export class EventContextProjector implements ContextProjector {
     void config
     const messages: IrMessage[] = []
     const calls = new Map<string, { tool: string; seq: number }>()
+    const toolResultSlots = new Map<
+      string,
+      { readonly index: number; message: Extract<IrMessage, { role: 'tool_result' }> }
+    >()
+    const reindexToolResults = (): void => {
+      toolResultSlots.clear()
+      messages.forEach((message, index) => {
+        if (message.role === 'tool_result') toolResultSlots.set(message.callId, { index, message })
+      })
+    }
 
     for (const event of events) {
       switch (event.type) {
@@ -46,19 +56,32 @@ export class EventContextProjector implements ContextProjector {
           break
         case 'tool.result': {
           const call = calls.get(event.callId)
-          messages.push({
+          const message: Extract<IrMessage, { role: 'tool_result' }> = {
             role: 'tool_result',
             callId: event.callId,
             tool: call?.tool ?? 'unknown',
             ok: event.ok,
             content: event.content,
             sourceSeqs: call ? [call.seq, event.seq] : [event.seq],
-          })
+          }
+          toolResultSlots.set(event.callId, { index: messages.length, message })
+          messages.push(message)
           break
         }
         case 'context.compacted':
           applyCompaction(messages, event.droppedRanges, event.summary, event.seq)
+          reindexToolResults()
           break
+        case 'context.tool_results_slimmed': {
+          for (const entry of event.slimmed) {
+            const slot = toolResultSlots.get(entry.callId)
+            if (slot === undefined) continue
+            const patched = { ...slot.message, content: entry.slimmedContent }
+            messages[slot.index] = patched
+            toolResultSlots.set(entry.callId, { index: slot.index, message: patched })
+          }
+          break
+        }
         default:
           break
       }

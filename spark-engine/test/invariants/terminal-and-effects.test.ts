@@ -28,6 +28,7 @@ const terminal = (seq: number): Extract<AgentEvent, { type: 'turn.completed' }> 
     ttftMs: 0,
     costUsd: 0,
     compactions: 0,
+    slimmedToolResults: 0,
   },
 })
 

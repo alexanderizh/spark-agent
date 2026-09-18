@@ -1,4 +1,4 @@
-import type { AgentEvent, BoundEventDraft } from '../events/schema.js'
+import type { AgentEvent, ArtifactRef, BoundEventDraft } from '../events/schema.js'
 import { consumeLlmStream } from '../llm/consume.js'
 import { estimateMessageTokens, estimateTextTokens } from '../llm/budget.js'
 import type { IrMessage, LlmDelta, LlmRequest } from '../llm/types.js'
@@ -362,4 +362,124 @@ export function estimateContextTokens(
     system.reduce((total, section) => total + estimateTextTokens(section.content) + 16, 0) +
     messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
   )
+}
+
+// ---------------------------------------------------------------------------
+// Microcompact: sink stale tool-result bodies into the artifact store and
+// keep a head+tail stub in context. Unlike full compaction, no message is
+// removed — tool pairing is untouched and the body stays recoverable.
+// ---------------------------------------------------------------------------
+
+export interface SlimCandidate {
+  readonly callId: string
+  readonly tool: string
+  readonly content: string
+  readonly tokens: number
+}
+
+/** Fixed stub geometry, independent of the body size being slimmed. */
+const SLIM_HEAD_CHARS = 500
+const SLIM_TAIL_CHARS = 200
+
+/**
+ * Pure planner: stale tool results (older than `microcompactKeepExchanges`
+ * assistant boundaries) whose body is large enough to be worth a stub.
+ */
+export function planMicrocompact(
+  messages: readonly IrMessage[],
+  events: readonly AgentEvent[],
+  policy: ContextCompactionPolicy,
+): readonly SlimCandidate[] {
+  if (!policy.microcompactEnabled) return []
+  const assistantSeqs = events
+    .filter((event) => event.type === 'assistant.completed')
+    .map((event) => event.seq)
+  const candidates: SlimCandidate[] = []
+  for (const message of messages) {
+    if (message.role !== 'tool_result' || !message.ok) continue
+    const lastSeq = Math.max(...message.sourceSeqs)
+    const newerExchanges = assistantSeqs.filter((seq) => seq > lastSeq).length
+    if (newerExchanges < policy.microcompactKeepExchanges) continue
+    const tokens = estimateMessageTokens(message)
+    if (tokens < policy.microcompactMinTokens) continue
+    candidates.push({
+      callId: message.callId,
+      tool: message.tool,
+      content: message.content,
+      tokens,
+    })
+  }
+  return candidates
+}
+
+/** Head+tail stub replacing a slimmed body; mirrors processToolOutput style. */
+export function slimmedStub(content: string, fullHint: string, savedTokens: number): string {
+  const omitted = Math.max(0, content.length - SLIM_HEAD_CHARS - SLIM_TAIL_CHARS)
+  return (
+    `${content.slice(0, SLIM_HEAD_CHARS)}\n\n` +
+    `… microcompacted: ${omitted} characters moved to artifact (≈${savedTokens} tokens freed per step) …\n` +
+    `Full output: ${fullHint}\n\n` +
+    content.slice(-SLIM_TAIL_CHARS)
+  )
+}
+
+const STUB_BASE_TOKENS =
+  estimateTextTokens(
+    '… microcompacted: 000000 characters moved to artifact (≈00000 tokens freed per step) …\nFull output: sha256:0000000000000000000000000000000000000000000000000000000000000000 (1234567 bytes)\n\n',
+  ) + Math.ceil((SLIM_HEAD_CHARS + SLIM_TAIL_CHARS) / 3)
+
+/**
+ * Runs one microcompact batch: sinks every planned body into the artifact
+ * store and appends a single `context.tool_results_slimmed` event so the
+ * projector swaps in the stubs on every later step.
+ */
+export async function slimToolResults(
+  env: AgentEnv,
+  options: {
+    readonly events: readonly AgentEvent[]
+    readonly messages: readonly IrMessage[]
+    readonly ledger: SessionLedger
+    readonly policy: ContextCompactionPolicy
+  },
+): Promise<
+  | {
+      readonly event: AgentEvent
+      readonly slimmedCount: number
+      readonly savedTokens: number
+    }
+  | { readonly skipped: 'nothing-to-slim' }
+> {
+  const candidates = planMicrocompact(options.messages, options.events, options.policy).slice(
+    0,
+    Math.max(1, options.policy.microcompactMaxPerTurn),
+  )
+  const slimmed: {
+    callId: string
+    fullRef: ArtifactRef
+    slimmedContent: string
+    savedTokens: number
+  }[] = []
+  for (const candidate of candidates) {
+    const fullRef = await env.artifacts.put(candidate.content, 'text/plain')
+    const savedTokens = Math.max(0, candidate.tokens - STUB_BASE_TOKENS)
+    if (savedTokens <= 0) continue
+    slimmed.push({
+      callId: candidate.callId,
+      fullRef,
+      slimmedContent: slimmedStub(candidate.content, fullRef.readHint, savedTokens),
+      savedTokens,
+    })
+  }
+  if (slimmed.length === 0) return { skipped: 'nothing-to-slim' }
+  const event = await options.ledger.append({
+    type: 'context.tool_results_slimmed',
+    schemaVersion: 1,
+    slimmed,
+  })
+  const savedTotal = slimmed.reduce((total, entry) => total + entry.savedTokens, 0)
+  env.telemetry.counter('context.tool_results_slimmed', {
+    count: slimmed.length,
+    savedTokens: savedTotal,
+  })
+  return { event, slimmedCount: slimmed.length, savedTokens: savedTotal }
 }
