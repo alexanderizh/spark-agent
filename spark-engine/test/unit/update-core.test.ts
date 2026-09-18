@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
@@ -68,9 +69,20 @@ describe('acquireUpdateLock', () => {
 
   it('keeps a fresh foreign lock', async () => {
     const home = await tempHome()
-    await writeFile(join(home, 'update.lock'), '{"pid":1}\n')
-    expect(await acquireUpdateLock(home)).toBeUndefined()
-    expect(await readFile(join(home, 'update.lock'), 'utf8')).toContain('"pid":1')
+    // A genuinely alive foreign pid: signal-0 probing of a fixed low pid is
+    // POSIX-only (Windows refuses kill(1,0), making pid 1 look dead there).
+    const foreign = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
+      stdio: 'ignore',
+    })
+    try {
+      await writeFile(join(home, 'update.lock'), `${JSON.stringify({ pid: foreign.pid })}\n`)
+      expect(await acquireUpdateLock(home)).toBeUndefined()
+      expect(await readFile(join(home, 'update.lock'), 'utf8')).toContain(
+        JSON.stringify({ pid: foreign.pid }),
+      )
+    } finally {
+      foreign.kill()
+    }
   })
 })
 
