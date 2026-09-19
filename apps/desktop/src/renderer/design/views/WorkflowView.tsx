@@ -53,6 +53,7 @@ import {
 import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
 import { WorkflowLoopBodySummary } from './workflow/WorkflowLoopBodySummary'
+import { WorkflowAgentPanel } from './workflow/WorkflowAgentPanel'
 import { WorkflowLoopBodyToolbar } from './workflow/WorkflowLoopBodyToolbar'
 import { WorkflowRunHistory } from './workflow/WorkflowRunHistory'
 import { WorkflowTestRunPanel } from './workflow/WorkflowTestRunPanel'
@@ -241,6 +242,8 @@ function WorkflowViewInner() {
   const [runHistoryOpen, setRunHistoryOpen] = useState(false)
   // 试跑面板（workflow:test-run：真实会话执行 + 轮询 run-detail 展示节点级进度）。
   const [testRunOpen, setTestRunOpen] = useState(false)
+  // 编辑器内嵌 Agent 浮层面板（E2-2）：对话式生成/修改当前工作流。
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false)
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -1185,6 +1188,17 @@ function WorkflowViewInner() {
           >
             {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
           </Button>
+          {!editingLoopBody && (
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Sparkles size={12} />}
+              onClick={() => setAgentPanelOpen((open) => !open)}
+              title="AI 助手：用自然语言生成或修改当前工作流（整图提交，保存闸门自动校验）"
+            >
+              AI 助手
+            </Button>
+          )}
           {!editingLoopBody && workflows.some((item) => item.id === draft.id) && (
             <Button
               size="middle"
@@ -1358,6 +1372,29 @@ function WorkflowViewInner() {
       )}
       {runHistoryOpen && (
         <WorkflowRunHistory workflowId={draft.id} onClose={() => setRunHistoryOpen(false)} />
+      )}
+      {agentPanelOpen && (
+        <WorkflowAgentPanel
+          open={agentPanelOpen}
+          onClose={() => setAgentPanelOpen(false)}
+          editorState={{
+            workflowId: activeId,
+            name: draft?.name ?? '未命名工作流',
+            graph: completeRootGraph,
+          }}
+          providers={providers}
+          agents={agents}
+          onWorkflowCreated={(workflowId) => {
+            void window.spark
+              .invoke('workflow:get', { id: workflowId })
+              .then((res) => {
+                if (res.workflow != null) openWorkflow(res.workflow)
+              })
+              .catch((error) => {
+                toast.error(error instanceof Error ? error.message : '打开新生成的工作流失败。')
+              })
+          }}
+        />
       )}
       {testRunOpen && (
         <WorkflowTestRunPanel

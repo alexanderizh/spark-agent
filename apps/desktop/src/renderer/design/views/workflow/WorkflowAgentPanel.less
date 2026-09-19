@@ -1,0 +1,80 @@
+/* 工作流 Agent 浮层面板（E2-2，M1；对称 CanvasAgentPicker.less 的关键样式） */
+.workflow-agent-panel {
+  position: fixed;
+  right: 24px;
+  top: 72px;
+  bottom: 24px;
+  width: min(560px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #1c1c1e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  z-index: 1200;
+  overflow: hidden;
+}
+
+.workflow-agent-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.workflow-agent-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f0f0f0);
+}
+
+.workflow-agent-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #9a9a9e);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #f0f0f0);
+  }
+}
+
+.workflow-agent-connection {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+
+  &.is-attached {
+    color: var(--status-green, #4ade80);
+    border-color: var(--status-green, #4ade80);
+  }
+
+  &.is-attaching,
+  &.is-detached {
+    color: var(--text-secondary, #9a9a9e);
+    border-color: var(--border-color, rgba(255, 255, 255, 0.12));
+  }
+
+  &.is-error {
+    color: var(--status-red, #f87171);
+    border-color: var(--status-red, #f87171);
+  }
+}
+
+.workflow-agent-context-copy {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
