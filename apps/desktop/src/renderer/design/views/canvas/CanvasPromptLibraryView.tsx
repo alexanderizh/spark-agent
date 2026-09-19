@@ -7,6 +7,7 @@ import { SidebarExpandButton } from '../../SidebarExpandButton'
 import promptLibraryPlaceholderCover from '../../../assets/canvas-prompt-library-placeholder-cover.png'
 import { useCanvasProjects } from './canvas.store'
 import { canvasApi } from './canvas.api'
+import { CanvasPromptCoverGenerator } from './CanvasPromptCoverGenerator'
 import { readFileAsDataUrl } from './canvas-safe-file'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
 import { filmUid, readAssetKind } from './canvasFilmAssets'
@@ -1151,6 +1152,22 @@ function PromptLibraryEditorModal({
                 </span>
               </span>
             </button>
+            <CanvasPromptCoverGenerator
+              promptText={editor.text}
+              disabled={saving}
+              onGenerated={(cover) => {
+                if (editor.coverPreviewUrl?.startsWith('blob:'))
+                  URL.revokeObjectURL(editor.coverPreviewUrl)
+                onChange({
+                  ...editor,
+                  coverFile: null,
+                  coverAssetId: null,
+                  coverUrl: cover.url,
+                  coverMimeType: cover.mimeType,
+                  coverPreviewUrl: null,
+                })
+              }}
+            />
           </div>
           <div>
             <label className="canvas-prompt-editor-field">
