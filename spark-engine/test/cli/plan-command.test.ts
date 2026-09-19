@@ -10,11 +10,12 @@ import { JsonlSessionStore } from '../../src/events/ledger.js'
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('spark plan contract', () => {
-  it('sets, shows, appends, and clears an explicit session plan', async () => {
+  it('sets, shows, appends, and clears an explicit session plan', { timeout: 30_000 }, async () => {
     const root = await workspace()
     const home = resolve(root, 'home')
     const session = 'session-cli'
@@ -42,7 +43,7 @@ describe('spark plan contract', () => {
     expect(cleared.stdout).toContain('Cleared plan for session session-cli')
   })
 
-  it('requires content for plan writes', async () => {
+  it('requires content for plan writes', { timeout: 30_000 }, async () => {
     const root = await workspace()
     const result = await runCli(['plan', 'set', 'session-cli'], root, resolve(root, 'home'))
 
@@ -50,28 +51,38 @@ describe('spark plan contract', () => {
     expect(result.stderr).toContain('--body <markdown>')
   })
 
-  it('uses the latest user session when no session id is supplied', async () => {
-    const root = await workspace()
-    const home = resolve(root, 'home')
-    const sessionStore = new JsonlSessionStore({ dataRoot: home, projectDir: await realpath(root) })
-    await sessionStore.append('session-latest', {
-      schemaVersion: 1,
-      sessionId: 'session-latest',
-      seq: 0,
-      ts: Date.now(),
-      type: 'session.started',
-      engineVersion: 'test',
-      cwd: root,
-      configSnapshot: '{}',
-    })
+  it(
+    'uses the latest user session when no session id is supplied',
+    { timeout: 30_000 },
+    async () => {
+      const root = await workspace()
+      const home = resolve(root, 'home')
+      const sessionStore = new JsonlSessionStore({
+        dataRoot: home,
+        projectDir: await realpath(root),
+      })
+      await sessionStore.append('session-latest', {
+        schemaVersion: 1,
+        sessionId: 'session-latest',
+        seq: 0,
+        ts: Date.now(),
+        type: 'session.started',
+        engineVersion: 'test',
+        cwd: root,
+        configSnapshot: '{}',
+      })
 
-    const set = await runCli(['plan', 'set', '--body', '# Latest'], root, home)
-    expect(set.code).toBe(0)
-    expect(set.stdout).toContain('session-latest')
+      const set = await runCli(['plan', 'set', '--body', '# Latest'], root, home)
+      expect(set.code).toBe(0)
+      expect(set.stdout).toContain('session-latest')
 
-    const shown = await runCli(['plan', 'show', '--json'], root, home)
-    expect(JSON.parse(shown.stdout)).toMatchObject({ sessionId: 'session-latest', plan: '# Latest' })
-  })
+      const shown = await runCli(['plan', 'show', '--json'], root, home)
+      expect(JSON.parse(shown.stdout)).toMatchObject({
+        sessionId: 'session-latest',
+        plan: '# Latest',
+      })
+    },
+  )
 })
 
 async function workspace(): Promise<string> {

@@ -15,11 +15,17 @@ import { createResilientEnv, defaultSparkHome, type ManagedEnvResult } from '../
 import {
   loadSparkSettings,
   resolveEngineSettings,
+  resolvePlatformSettings,
   resolveSessionPermissionMode,
   type ResolvedEngineSettings,
 } from '../config/settings.js'
 import type { SettingsScope } from '../config/settings.js'
+import { runServeCommand } from '../serve/run.js'
+import { executeScheduleCommand, runSchedulerHost } from './schedule-command.js'
 import { executeAuthCommand } from './auth-command.js'
+import { bootstrapPlatformModels } from '../platform/models.js'
+import { PlatformAuthExpiredError } from '../platform/edu-server-client.js'
+import { PlatformCredentialStore, type StoredPlatformCredentials } from '../platform/credentials.js'
 import { executeConfigCommand } from './config-command.js'
 import { executeMcpCommand, type McpAddInput } from './mcp-command.js'
 import { executeMemoryCommand } from './memory-command.js'
@@ -33,6 +39,8 @@ import { isReasoningEffort } from '../llm/types.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { AgentEnv } from '../seams.js'
 import { loadImageFiles, type LoadImageFilesResult } from '../images/files.js'
+import { extractAndSaveMemories } from '../memory/extraction.js'
+import { FileMemoryStore } from '../memory/store.js'
 import type { TurnImageAttachment } from '../images/attachments.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import {
@@ -45,7 +53,7 @@ import {
   uninstallLauncher,
   type InstallReport,
 } from './install.js'
-import { installWarnings, renderInstallReport } from './diagnostics.js'
+import { formatModelLimitsTail, installWarnings, renderInstallReport } from './diagnostics.js'
 import { executeUpdate } from './update.js'
 import { uninstallSparkPackage } from './uninstall-package.js'
 import { NOTICE_TIMEOUT_MS, updateNoticeLine } from './update-notice.js'
@@ -97,6 +105,11 @@ interface CliOptions {
   readonly skillLimit?: string
   /** `spark todo` command flags. */
   readonly todoTitle?: string
+  /** `spark models --takeover` */
+  readonly takeover?: boolean
+  /** `spark serve` flags. */
+  readonly port?: string
+  readonly host?: string
   readonly todoStatus?: string
   readonly todoPriority?: string
   readonly todoNotes?: string
@@ -125,6 +138,8 @@ const SUBCOMMANDS = new Set([
   'config',
   'mcp',
   'memory',
+  'schedule',
+  'scheduler',
   'plan',
   'skills',
   'todo',
@@ -152,21 +167,57 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     options.positionals[0] !== undefined &&
     SUBCOMMANDS.has(options.positionals[0])
   ) {
-    process.stderr.write(`--image only applies to a task prompt, not to ${options.positionals[0]}.\n`)
-    return 2
-  }
-  if (options.positionals[0] === 'serve') {
     process.stderr.write(
-      'spark serve is not part of the M1 kernel slice; the versioned App Server lands in M3.\n',
+      `--image only applies to a task prompt, not to ${options.positionals[0]}.\n`,
     )
     return 2
   }
+  if (options.positionals[0] === 'serve') {
+    if (options.positionals.length > 1) {
+      process.stderr.write('spark serve does not accept positional arguments.\n')
+      return 2
+    }
+    return runServeCommand({
+      ...(options.port === undefined ? {} : { port: Number(options.port) }),
+      ...(options.host === undefined ? {} : { host: options.host }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      json: options.json,
+    })
+  }
   if (options.positionals[0] === 'models' || options.positionals[0] === 'doctor') {
-    if (options.positionals.length > 1 || options.prompt) {
+    if (options.prompt) {
       process.stderr.write(`${options.positionals[0]} does not accept a task prompt.\n`)
       return 2
     }
+    if (options.positionals.length > 1) {
+      process.stderr.write(
+        `spark ${options.positionals[0]} does not accept extra arguments (use --takeover).\n`,
+      )
+      return 2
+    }
+    if (options.takeover === true) {
+      const takeoverResult = await runPlatformModelBootstrap(true)
+      if (takeoverResult !== 0) return takeoverResult
+    }
     return inspectModels(options.positionals[0], options.json)
+  }
+  if (options.positionals[0] === 'scheduler') {
+    if (options.prompt) {
+      process.stderr.write('spark scheduler does not accept a task prompt.\n')
+      return 2
+    }
+    return runSchedulerHost({
+      ...(options.model === undefined ? {} : { model: options.model }),
+    })
+  }
+  if (options.positionals[0] === 'schedule') {
+    return executeScheduleCommand({
+      args: options.positionals.slice(1),
+      json: options.json,
+      cwd: process.cwd(),
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+    })
   }
   const maintenance = options.positionals[0]
   if (maintenance === 'update' || maintenance === 'upgrade') {
@@ -385,7 +436,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (!prompt && !process.stdin.isTTY) prompt = (await readStdin()).trim()
 
   if (options.images.length > 0 && !prompt) {
-    process.stderr.write('--image 需要与任务提示词一起使用，例如：spark -p "分析截图" -i shot.png\n')
+    process.stderr.write(
+      '--image 需要与任务提示词一起使用，例如：spark -p "分析截图" -i shot.png\n',
+    )
     return 2
   }
   const attachedImages = await loadPromptImages(options.images)
@@ -478,7 +531,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2
   }
   if (prompt) {
-    return runOnce(prompt, resolvedOptions, runtime, engineSettings, resumeSessionId, attachedImages.images)
+    return runOnce(
+      prompt,
+      resolvedOptions,
+      runtime,
+      engineSettings,
+      resumeSessionId,
+      attachedImages.images,
+    )
   }
 
   if (process.stdin.isTTY && process.stdout.isTTY && options.plain) {
@@ -551,6 +611,52 @@ async function runMaintenanceCommand(
   }
 }
 
+/**
+ * Re-runs the platform-model bootstrap for the signed-in account. The Spark
+ * session comes from the credential store; expiry surfaces as "run spark
+ * login" instead of deleting the stored session.
+ */
+async function runPlatformModelBootstrap(takeover: boolean): Promise<number> {
+  const settings = await loadSparkSettings({ cwd: process.cwd() })
+  const platform = resolvePlatformSettings(settings)
+  const store = new PlatformCredentialStore({ sparkHome: settings.paths.sparkHome })
+  let stored: StoredPlatformCredentials | null
+  try {
+    stored = await store.load()
+  } catch (error) {
+    process.stderr.write(`${terminalSafe(message(error))}\n`)
+    return 1
+  }
+  if (stored === null) {
+    process.stderr.write('Platform models bind to a Spark account; run `spark login` first.\n')
+    return 1
+  }
+  try {
+    const status = await bootstrapPlatformModels({
+      sparkHome: settings.paths.sparkHome,
+      serverUrl: stored.serverUrl || platform.serverUrl,
+      session: stored.session,
+      ...(takeover ? { forceTakeover: true } : {}),
+    })
+    if (status.providerReady) {
+      process.stdout.write(
+        `Platform models bound (${status.models.length} available) via ${status.baseUrl}\n`,
+      )
+    } else {
+      process.stderr.write(`${status.message}\n`)
+      return 1
+    }
+    return 0
+  } catch (error) {
+    if (error instanceof PlatformAuthExpiredError) {
+      process.stderr.write('Your Spark account session expired. Run `spark login` again.\n')
+      return 1
+    }
+    process.stderr.write(`${terminalSafe(message(error))}\n`)
+    return 1
+  }
+}
+
 async function inspectModels(command: 'models' | 'doctor', json: boolean): Promise<number> {
   let catalog: ConfiguredModelCatalog
   try {
@@ -604,6 +710,19 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
       )
     }
     process.stdout.write(`Selected model: ${terminalSafe(catalog.selectedModel ?? 'none')}\n`)
+    const selectedEntry = catalog.entries.find((entry) => entry.selected)
+    if (selectedEntry?.contextWindowTokens !== undefined) {
+      process.stdout.write(`Context window: ${selectedEntry.contextWindowTokens} tokens\n`)
+    }
+    if (selectedEntry?.maxOutputTokens !== undefined) {
+      process.stdout.write(`Max output: ${selectedEntry.maxOutputTokens} tokens\n`)
+    }
+    const platformCount = catalog.entries.filter((entry) => entry.source === 'platform').length
+    process.stdout.write(
+      catalog.platformConnected
+        ? `Platform models: bound (${platformCount} available; spark models --takeover to rebind)\n`
+        : 'Platform models: not bound (run spark login to bind)\n',
+    )
     process.stdout.write(`Available models: ${catalog.entries.length}\n`)
     process.stdout.write(
       `Configuration: ${configurationError ? `error — ${configurationError}` : 'ready'}\n`,
@@ -624,7 +743,8 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
   for (const entry of catalog.entries) {
     const marker = entry.selected ? '*' : ' '
     process.stdout.write(
-      `${marker} ${terminalSafe(entry.model)}  ${terminalSafe(entry.providerName)}  ${entry.protocol}  [${entry.source}]\n`,
+      `${marker} ${terminalSafe(entry.model)}  ${terminalSafe(entry.providerName)}  ${entry.protocol}  [${entry.source}]` +
+        `${formatModelLimitsTail(entry)}\n`,
     )
   }
   return 0
@@ -670,6 +790,9 @@ function parseCli(argv: readonly string[]): CliOptions {
       effort: { type: 'string' },
       'permission-mode': { type: 'string' },
       'dangerously-skip-permissions': { type: 'boolean', default: false },
+      takeover: { type: 'boolean', default: false },
+      port: { type: 'string' },
+      host: { type: 'string' },
       'output-format': { type: 'string' },
       continue: { type: 'boolean', short: 'c', default: false },
       resume: { type: 'string', short: 'r' },
@@ -891,7 +1014,15 @@ async function runOnce(
 ): Promise<number> {
   const managed = await openConfiguredEnv(runtime, engineSettings)
   try {
-    return await runOnceWithEnv(prompt, options, runtime, managed.env, resumeSessionId, images)
+    return await runOnceWithEnv(
+      prompt,
+      options,
+      runtime,
+      engineSettings,
+      managed.env,
+      resumeSessionId,
+      images,
+    )
   } finally {
     await managed.close()
   }
@@ -907,6 +1038,7 @@ async function runOnceWithEnv(
   prompt: string,
   options: CliOptions,
   runtime: ConfiguredModelRuntime,
+  engineSettings: ResolvedEngineSettings,
   env: AgentEnv,
   resumeSessionId?: string,
   images: readonly TurnImageAttachment[] = [],
@@ -942,6 +1074,7 @@ async function runOnceWithEnv(
   try {
     const result = await session.turn(prompt, {
       signal: controller.signal,
+      autoContinue: 3,
       ...(images.length === 0 ? {} : { images }),
       ...(options.reasoningEffort === undefined
         ? {}
@@ -990,7 +1123,25 @@ async function runOnceWithEnv(
     } else if (!eventJson && wroteText) {
       process.stdout.write('\n')
     }
-    if (result.terminal.type === 'turn.completed') return 0
+    if (result.terminal.type === 'turn.completed') {
+      if (engineSettings.memoryEnabled && engineSettings.memoryAutoExtract) {
+        // Bounded post-turn pass: distills durable facts into the memory
+        // store. Failures are logged inside, never surfaced to the caller.
+        const events: AgentEvent[] = []
+        for await (const event of session.events()) events.push(event)
+        await extractAndSaveMemories({
+          env,
+          store: new FileMemoryStore({
+            cwd: process.cwd(),
+            agentId: engineSettings.memoryAgentId,
+            enabled: true,
+          }),
+          events,
+          sessionId: session.sessionId,
+        })
+      }
+      return 0
+    }
     if (result.terminal.type === 'turn.cancelled') return 130
     return 1
   } finally {
@@ -1208,8 +1359,15 @@ Usage:
                             Event and streaming-delta JSONL
   spark -p "分析截图" -i shot.png -i arch.jpg
                             Attach images (PNG/JPEG/WEBP/GIF) to one task
-  spark models              List local and SparkWork-synced models
+  spark models              List local, platform, and SparkWork-synced models
+  spark models --takeover   Rebind platform models on this device
   spark doctor              Diagnose install, discovery, and model selection
+  spark serve [--port n]    Run the loopback App Server (protocol v1); the
+                            startup handshake JSON is printed on stdout
+  spark schedule add "<prompt>" --every <minutes>
+                            Register a recurring local task
+  spark schedule list       Show schedules and their last outcomes
+  spark scheduler           Run the schedule host loop until interrupted
   spark login               Sign in to your Spark account (browser login)
   spark logout              Remove the stored Spark account session
   spark whoami              Show the signed-in Spark account

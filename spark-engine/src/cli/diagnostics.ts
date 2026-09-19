@@ -68,3 +68,18 @@ export function installWarnings(
   }
   return warnings
 }
+
+/**
+ * Tail appended to a `spark models` row when the catalog reports generation
+ * limits for the model. Empty string keeps unconfigured rows byte-identical.
+ */
+export function formatModelLimitsTail(entry: {
+  readonly contextWindowTokens?: number
+  readonly maxOutputTokens?: number
+}): string {
+  const limits = [
+    entry.contextWindowTokens === undefined ? undefined : `ctx ${entry.contextWindowTokens}`,
+    entry.maxOutputTokens === undefined ? undefined : `out ${entry.maxOutputTokens}`,
+  ].filter((part) => part !== undefined)
+  return limits.length > 0 ? `  ${limits.join(' · ')}` : ''
+}

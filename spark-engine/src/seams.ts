@@ -205,6 +205,51 @@ export interface Telemetry {
   hist(name: string, value: number, attributes?: Readonly<Record<string, string | number>>): void
 }
 
+/**
+ * Context-window management policy for long-running sessions. Hosts tune it
+ * through `AgentEnv.context`; the kernel applies `DEFAULT_COMPACTION_POLICY`
+ * for every absent field.
+ */
+export interface ContextCompactionPolicy {
+  /** Master switch: threshold-triggered auto-compact (overflow rescue stays on). */
+  readonly autoCompact: boolean
+  /** Auto-compact once context usage reaches this fraction of the window. */
+  readonly thresholdRatio: number
+  /** The most recent N turns are never summarized away. */
+  readonly keepRecentTurns: number
+  /** Skip an automatic compaction when the dropped part is smaller than this. */
+  readonly minCompactableTokens: number
+  /** Safety loop guard: compactions allowed within one turn. */
+  readonly maxCompactionsPerTurn: number
+  /**
+   * Microcompact: sink stale tool-result bodies into the artifact store and
+   * keep a head+tail stub in context, without summarizing anything away.
+   */
+  readonly microcompactEnabled: boolean
+  /** The most recent assistant exchanges keep full-fidelity tool bodies. */
+  readonly microcompactKeepExchanges: number
+  /** Tool bodies smaller than this are not worth a slimming pass. */
+  readonly microcompactMinTokens: number
+  /** Safety loop guard: tool results slimmed within one turn. */
+  readonly microcompactMaxPerTurn: number
+}
+
+export const DEFAULT_COMPACTION_POLICY: ContextCompactionPolicy = {
+  autoCompact: true,
+  thresholdRatio: 0.8,
+  keepRecentTurns: 2,
+  minCompactableTokens: 8_000,
+  maxCompactionsPerTurn: 8,
+  microcompactEnabled: true,
+  microcompactKeepExchanges: 2,
+  microcompactMinTokens: 400,
+  microcompactMaxPerTurn: 64,
+}
+
+export interface AgentContextConfig {
+  readonly compaction?: Partial<ContextCompactionPolicy>
+}
+
 export interface AgentEnv {
   readonly clock: Clock
   readonly ids: IdGen
@@ -221,6 +266,8 @@ export interface AgentEnv {
   }
   readonly projector: ContextProjector
   readonly prompt: PromptComposer
+  /** Context-window management (compaction thresholds); absent = defaults. */
+  readonly context?: AgentContextConfig
   /** Lifecycle hooks (settings-driven); absent when no settings file exists. */
   readonly hooks?: HookRunner
   readonly budgets: BudgetFactory

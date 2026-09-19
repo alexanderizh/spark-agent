@@ -41,13 +41,19 @@ export class AnthropicMessagesService implements LlmService {
   }
 }
 
+/** Block-level cache marker: the only form the Messages API understands. */
+const EPHEMERAL_CACHE_CONTROL = { type: 'ephemeral' } as const
+
 export function toAnthropicRequest(
   request: LlmRequest,
   model: string,
   promptCaching: boolean,
 ): Record<string, unknown> {
-  const system = request.system.map((section) => ({ type: 'text', text: section.content }))
-  const tools = request.tools.map((tool) => {
+  const system: Record<string, unknown>[] = request.system.map((section) => ({
+    type: 'text',
+    text: section.content,
+  }))
+  const tools: Record<string, unknown>[] = request.tools.map((tool) => {
     if (typeof tool.inputSchema === 'boolean') {
       throw new KernelError(
         'llm.anthropic.unsupported_tool_schema',
@@ -56,21 +62,66 @@ export function toAnthropicRequest(
     }
     return { name: tool.name, description: tool.description, input_schema: tool.inputSchema }
   })
+  const messages = toAnthropicMessages(request.messages)
+  if (promptCaching) {
+    // Cache prefixes are written at explicit content-block breakpoints. The
+    // cache prefix order is tools → system → messages, so three markers cover
+    // the whole request: the static tool/system definitions, and one rolling
+    // marker on the newest message so the next step hits the full prefix.
+    const lastStableSection = lastStableIndex(request.system)
+    const stableSystemBlock = system[lastStableSection]
+    if (stableSystemBlock !== undefined) {
+      system[lastStableSection] = { ...stableSystemBlock, cache_control: EPHEMERAL_CACHE_CONTROL }
+    }
+    const lastTool = tools.at(-1)
+    if (lastTool !== undefined)
+      tools[tools.length - 1] = { ...lastTool, cache_control: EPHEMERAL_CACHE_CONTROL }
+    markNewestMessage(messages)
+  }
   return {
     model,
     max_tokens: request.maxTokens,
     stream: true,
     system,
-    messages: toAnthropicMessages(request.messages),
+    messages,
     ...(tools.length === 0 ? {} : { tools }),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
     ...(request.thinking
       ? { thinking: toThinking(request.thinking, request.maxTokens, tools.length > 0) }
       : {}),
-    ...(promptCaching && request.system.some((section) => section.stability === 'stable')
-      ? { cache_control: { type: 'ephemeral' } }
-      : {}),
   }
+}
+
+function lastStableIndex(sections: LlmRequest['system']): number {
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    if (sections[index]?.stability === 'stable') return index
+  }
+  return -1
+}
+
+/**
+ * Places the rolling breakpoint on the newest cacheable block. Thinking
+ * blocks (replayed verbatim when thinking is enabled) must not carry
+ * cache_control, so the marker lands on the newest text/tool block instead.
+ */
+function markNewestMessage(messages: Record<string, unknown>[]): void {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const content = messages[messageIndex]?.content
+    if (!Array.isArray(content)) continue
+    const blocks = content as Record<string, unknown>[]
+    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = blocks[blockIndex]
+      if (!isCacheableBlock(block)) continue
+      blocks[blockIndex] = { ...block, cache_control: EPHEMERAL_CACHE_CONTROL }
+      return
+    }
+  }
+}
+
+function isCacheableBlock(block: unknown): boolean {
+  if (typeof block !== 'object' || block === null) return false
+  const type = (block as Record<string, unknown>).type
+  return type !== 'thinking' && type !== 'redacted_thinking'
 }
 
 function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unknown>[] {
@@ -91,6 +142,9 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
           content: message.content,
           ...(message.ok ? {} : { is_error: true }),
         },
+        // Images a tool produced ride in the same user turn, right after the
+        // tool_result block they belong to.
+        ...anthropicImageBlocks(message),
       ])
     } else {
       append('assistant', continuationBlocks(message.continuation) ?? reconstructedBlocks(message))
@@ -103,9 +157,9 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
  * Anthropic takes inline base64 images after the text block, so the model
  * reads the prompt first and then the attached pictures it refers to.
  */
-function anthropicImageBlocks(
-  message: Extract<IrMessage, { role: 'user' }>,
-): Record<string, unknown>[] {
+function anthropicImageBlocks(message: {
+  readonly imageParts?: readonly { readonly mediaType: string; readonly base64: string }[]
+}): Record<string, unknown>[] {
   return (message.imageParts ?? []).map((image) => ({
     type: 'image',
     source: { type: 'base64', media_type: image.mediaType, data: image.base64 },

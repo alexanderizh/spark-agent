@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -9,8 +9,12 @@ const roots: string[] = []
 const nodeDir = dirname(process.execPath)
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
+
+/** Platform launcher file name, mirroring the product's install layout. */
+const launcherName = process.platform === 'win32' ? 'spark.cmd' : 'spark'
 
 describe('spark install / uninstall / init', () => {
   it('reports the real package version', async () => {
@@ -32,7 +36,7 @@ describe('spark install / uninstall / init', () => {
     expect(install.stdout).toContain('Installed launcher:')
     expect(install.stdout).toContain(`-> ${resolve('dist', 'cli', 'main.js')}`)
 
-    const launcher = join(binDir, 'spark')
+    const launcher = join(binDir, launcherName)
     expect(await exists(launcher)).toBe(true)
     if (process.platform !== 'win32') {
       expect(await readLink(launcher)).toBe(resolve('dist', 'cli', 'main.js'))
@@ -71,16 +75,16 @@ describe('spark install / uninstall / init', () => {
     const root = await createRoot()
     const foreignDir = join(root, 'early')
     const binDir = join(root, 'bin')
-    const foreign = join(foreignDir, 'spark')
+    const foreign = join(foreignDir, launcherName)
     await mkdir(foreignDir, { recursive: true })
-    await writeFile(foreign, '#!/bin/sh\necho foreign-spark\n', { mode: 0o755 })
+    await writeFile(foreign, foreignLauncherBody('foreign-spark'))
     if (process.platform !== 'win32') await chmod(foreign, 0o755)
 
     const install = await runCli(
       ['install', '--bin', binDir],
       {
         SPARK_HOME: join(root, 'home'),
-        PATH: [foreignDir, binDir, nodeDir].join(':'),
+        PATH: [foreignDir, binDir, nodeDir].join(delimiter),
       },
       root,
     )
@@ -92,9 +96,9 @@ describe('spark install / uninstall / init', () => {
   it('refuses to replace a foreign file unless --force is passed', async () => {
     const root = await createRoot()
     const binDir = join(root, 'bin')
-    const launcher = join(binDir, 'spark')
+    const launcher = join(binDir, launcherName)
     await mkdir(binDir, { recursive: true })
-    await writeFile(launcher, '#!/bin/sh\necho not-spark\n', { mode: 0o755 })
+    await writeFile(launcher, foreignLauncherBody('not-spark'))
 
     const refused = await runCli(['install', '--bin', binDir], { SPARK_HOME: join(root, 'home') })
     expect(refused.code).toBe(2)
@@ -110,9 +114,9 @@ describe('spark install / uninstall / init', () => {
   it('uninstall refuses to remove a foreign spark entry', async () => {
     const root = await createRoot()
     const binDir = join(root, 'bin')
-    const launcher = join(binDir, 'spark')
+    const launcher = join(binDir, launcherName)
     await mkdir(binDir, { recursive: true })
-    await writeFile(launcher, '#!/bin/sh\necho keep-me\n', { mode: 0o755 })
+    await writeFile(launcher, foreignLauncherBody('keep-me'))
 
     const result = await runCli(['uninstall', '--bin', binDir], { SPARK_HOME: join(root, 'home') })
     expect(result.code).toBe(2)
@@ -139,10 +143,10 @@ describe('spark install / uninstall / init', () => {
 
     const driftBin = join(root, 'drift-bin')
     await mkdir(driftBin, { recursive: true })
-    await symlink(fakeEntry, join(driftBin, 'spark'))
+    await publishLauncher(driftBin, fakeEntry)
     const drift = await runCli(
       ['doctor'],
-      { SPARK_HOME: join(root, 'home'), PATH: [driftBin, nodeDir].join(':') },
+      { SPARK_HOME: join(root, 'home'), PATH: [driftBin, nodeDir].join(delimiter) },
       root,
     )
     expect(drift.stdout).toContain(`v9.9.9 — this spark is v${manifest.version}`)
@@ -150,10 +154,10 @@ describe('spark install / uninstall / init', () => {
 
     const brokenBin = join(root, 'broken-bin')
     await mkdir(brokenBin, { recursive: true })
-    await symlink(join(root, 'moved-away', 'dist', 'cli', 'main.js'), join(brokenBin, 'spark'))
+    await publishLauncher(brokenBin, join(root, 'moved-away', 'dist', 'cli', 'main.js'))
     const broken = await runCli(
       ['doctor'],
-      { SPARK_HOME: join(root, 'home'), PATH: [brokenBin, nodeDir].join(':') },
+      { SPARK_HOME: join(root, 'home'), PATH: [brokenBin, nodeDir].join(delimiter) },
       root,
     )
     expect(broken.stdout).toContain('broken link')
@@ -202,6 +206,32 @@ describe('spark install / uninstall / init', () => {
   })
 })
 
+/**
+ * Writes a launcher entry the way the product does on the current platform:
+ * a symlink to the entry, or a marked .cmd shim on Windows.
+ */
+async function publishLauncher(binDir: string, entry: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const nl = String.fromCharCode(13, 10)
+    await writeFile(
+      join(binDir, launcherName),
+      `@echo off${nl}rem @spark/agent launcher${nl}node "${entry}" %*${nl}`,
+      'utf8',
+    )
+    return
+  }
+  await symlink(entry, join(binDir, launcherName))
+}
+
+/** A non-spark launcher body: no spark marker on either platform. */
+function foreignLauncherBody(echo: string): string {
+  if (process.platform === 'win32') {
+    const nl = String.fromCharCode(13, 10)
+    return `@echo off${nl}echo ${echo}${nl}`
+  }
+  return `#!/bin/sh\\necho ${echo}\\n`
+}
+
 async function runCli(
   args: readonly string[],
   environment: Readonly<Record<string, string>> = {},
@@ -219,10 +249,20 @@ async function runDirect(
   const merged = {
     ...process.env,
     // Children launched through their shebang need a node directory on PATH.
-    PATH: [nodeDir, process.env.PATH ?? ''].join(':'),
+    PATH: [nodeDir, process.env.PATH ?? ''].join(delimiter),
     ...environment,
   }
-  const child = spawn(binary, [...args], {
+  // Windows cannot exec a shebang script directly; go through node there,
+  // and through cmd.exe for .cmd launchers.
+  const windows = process.platform === 'win32'
+  const isCmd = windows && /\.cmd$/iu.test(binary)
+  const command = isCmd ? (process.env.ComSpec ?? 'cmd.exe') : windows ? process.execPath : binary
+  const finalArgs = isCmd
+    ? ['/d', '/s', '/c', binary, ...args]
+    : windows
+      ? [binary, ...args]
+      : [...args]
+  const child = spawn(command, finalArgs, {
     cwd,
     env: merged,
     stdio: ['ignore', 'pipe', 'pipe'],

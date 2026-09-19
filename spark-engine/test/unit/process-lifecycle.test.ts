@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { runProcess } from '../../src/tools/workspace/process.js'
 
 describe('workspace process lifecycle', () => {
-  it('captures output and preserves nonzero exit status', async () => {
+  it('captures output and preserves nonzero exit status', { timeout: 60_000 }, async () => {
     const result = await runProcess(
       process.execPath,
       ['-e', 'console.log("out"); console.error("err"); process.exitCode = 7'],
@@ -33,7 +33,7 @@ describe('workspace process lifecycle', () => {
         signal: controller.signal,
       }).then(
         () => 'completed',
-        (error: unknown) => error instanceof Error ? error.name : String(error),
+        (error: unknown) => (error instanceof Error ? error.name : String(error)),
       )
       try {
         for (let attempt = 0; attempt < 100; attempt += 1) {

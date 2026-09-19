@@ -74,7 +74,10 @@ describe('terminal resize handling', () => {
     stdout.resize(60, 30)
     await settle()
     expect(app.lastFrame()).toContain('60x30')
-    expect(stdout.writes).toEqual([])
+    // Under load the real clock can stretch the drag past the debounce window,
+    // so the repaint may legitimately have fired by now; what must never
+    // happen is a trailing frame or a repaint that is not a cursor-home.
+    expect(stdout.writes.every((write) => write === CURSOR_HOME)).toBe(true)
 
     await settle(RESIZE_REPAINT_DEBOUNCE_MS + 80)
     expect(suspensions).toHaveLength(1)

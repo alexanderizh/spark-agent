@@ -51,7 +51,10 @@ describe('invariant: task subagents', () => {
     expect(childEvents.find((event) => event.type === 'turn.started')).toMatchObject({
       parentId: parentTurn?.type === 'turn.started' ? parentTurn.turnId : undefined,
     })
-    expect(env.fixtures.model.requests[1]?.tools.map((tool) => tool.name)).toEqual(['read'])
+    expect(env.fixtures.model.requests[1]?.tools.map((tool) => tool.name)).toEqual([
+      'read',
+      'view_image',
+    ])
     expect(env.fixtures.model.requests[1]?.tools.map((tool) => tool.name)).not.toContain('task')
   })
 
@@ -142,7 +145,10 @@ describe('invariant: task subagents', () => {
         (session) => session.kind === 'subagent',
       ),
     ).toHaveLength(1)
-    expect(env.fixtures.model.requests[3]?.tools.map((tool) => tool.name)).toEqual(['read'])
+    expect(env.fixtures.model.requests[3]?.tools.map((tool) => tool.name)).toEqual([
+      'read',
+      'view_image',
+    ])
     const resumedEvents = await collectEvents(resumedChild)
     expect(resumedEvents.find((event) => event.type === 'tool.result')).toMatchObject({
       ok: false,

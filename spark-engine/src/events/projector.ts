@@ -5,6 +5,7 @@ import type {
   PromptComposer,
   SessionFacts,
 } from '../seams.js'
+import { isImageMediaType } from '../images/attachments.js'
 import type { IrImageRef, IrMessage, SystemSection } from '../llm/types.js'
 import type { InstructionProvider } from '../memory/instructions.js'
 import type { MemoryProvider } from '../memory/store.js'
@@ -16,6 +17,16 @@ export class EventContextProjector implements ContextProjector {
     void config
     const messages: IrMessage[] = []
     const calls = new Map<string, { tool: string; seq: number }>()
+    const toolResultSlots = new Map<
+      string,
+      { readonly index: number; message: Extract<IrMessage, { role: 'tool_result' }> }
+    >()
+    const reindexToolResults = (): void => {
+      toolResultSlots.clear()
+      messages.forEach((message, index) => {
+        if (message.role === 'tool_result') toolResultSlots.set(message.callId, { index, message })
+      })
+    }
 
     for (const event of events) {
       switch (event.type) {
@@ -46,14 +57,35 @@ export class EventContextProjector implements ContextProjector {
           break
         case 'tool.result': {
           const call = calls.get(event.callId)
-          messages.push({
+          const message: Extract<IrMessage, { role: 'tool_result' }> = {
             role: 'tool_result',
             callId: event.callId,
             tool: call?.tool ?? 'unknown',
             ok: event.ok,
             content: event.content,
             sourceSeqs: call ? [call.seq, event.seq] : [event.seq],
-          })
+            // A view_image-style result carries its image as an artifact; the
+            // adapters attach the bytes next to the tool_result block.
+            ...(event.artifact !== undefined && isImageMediaType(event.artifact.mediaType)
+              ? { imageRefs: [artifactToImageRef(event.artifact)] }
+              : {}),
+          }
+          toolResultSlots.set(event.callId, { index: messages.length, message })
+          messages.push(message)
+          break
+        }
+        case 'context.compacted':
+          applyCompaction(messages, event.droppedRanges, event.summary, event.seq)
+          reindexToolResults()
+          break
+        case 'context.tool_results_slimmed': {
+          for (const entry of event.slimmed) {
+            const slot = toolResultSlots.get(entry.callId)
+            if (slot === undefined) continue
+            const patched = { ...slot.message, content: entry.slimmedContent }
+            messages[slot.index] = patched
+            toolResultSlots.set(entry.callId, { index: slot.index, message: patched })
+          }
           break
         }
         default:
@@ -65,6 +97,50 @@ export class EventContextProjector implements ContextProjector {
       messages,
       sourceSeqs: [...new Set(messages.flatMap((message) => message.sourceSeqs))],
     }
+  }
+}
+
+/**
+ * Replaces the dropped sequence ranges with the compaction summary. Ranges
+ * always cover whole turns, so tool call/result pairs are dropped together
+ * and the request never carries an orphaned half of a pair.
+ */
+function applyCompaction(
+  messages: IrMessage[],
+  droppedRanges: readonly (readonly [number, number])[],
+  summary: string | undefined,
+  compactedSeq: number,
+): void {
+  const dropped = (seqs: readonly number[]): boolean =>
+    seqs.some((seq) => droppedRanges.some(([from, to]) => seq >= from && seq < to))
+  const kept = messages.filter((message) => !dropped(message.sourceSeqs))
+  messages.length = 0
+  messages.push(...kept)
+  if (summary !== undefined && summary.trim() !== '') {
+    messages.push({
+      role: 'user',
+      content: `<context-summary>\nThe earlier conversation was compacted to free context window. The summary below is the authoritative record of everything before this point.\n\n${summary.trim()}\n</context-summary>`,
+      // Bound to the compaction event itself so a later compaction that drops
+      // this turn range also retires this summary instead of stacking copies.
+      sourceSeqs: [compactedSeq],
+    })
+  }
+}
+
+/** ArtifactRef and IrImageRef share the same identity fields by design. */
+function artifactToImageRef(artifact: {
+  readonly sha256: string
+  readonly bytes: number
+  readonly mediaType: string
+  readonly summary: string
+  readonly readHint: string
+}): IrImageRef {
+  return {
+    sha256: artifact.sha256,
+    bytes: artifact.bytes,
+    mediaType: artifact.mediaType,
+    summary: artifact.summary,
+    readHint: artifact.readHint,
   }
 }
 

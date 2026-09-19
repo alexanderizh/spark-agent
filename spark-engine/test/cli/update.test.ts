@@ -40,6 +40,10 @@ const fixtureRoots: string[] = []
 const caseRoots: string[] = []
 
 beforeAll(async () => {
+  // The update flow is exercised through the POSIX installer; on Windows the
+  // suite's cases skip below, so skip the npm-built fixtures too (npm is a
+  // .cmd there and execFile cannot run it directly).
+  if (process.platform === 'win32') return
   const root = await mkdtemp(join(tmpdir(), 'spark-update-e2e-'))
   fixtureRoots.push(root)
   serveDir = join(root, 'release')
@@ -101,15 +105,21 @@ beforeAll(async () => {
 }, 300_000)
 
 afterAll(async () => {
-  await new Promise<void>((resolveClose) =>
-    server?.close(() => {
+  await new Promise<void>((resolveClose) => {
+    if (server === undefined) {
       resolveClose()
-    }),
-  )
-  for (const root of fixtureRoots.splice(0)) await rm(root, { recursive: true, force: true })
+      return
+    }
+    server.close(() => {
+      resolveClose()
+    })
+  })
+  for (const root of fixtureRoots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 afterEach(async () => {
-  for (const root of caseRoots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of caseRoots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 async function packVariant(options: {
@@ -270,116 +280,121 @@ async function exists(path: string): Promise<boolean> {
   )
 }
 
-describe('spark update — check contract (no side effects)', () => {
-  it('exit 0 + JSON when an update is available', async () => {
-    await publish(variants.next!.version, variants.next!.bytes, variants.next!.sha256)
-    const result = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(0)
-    const payload = JSON.parse(result.stdout.trim()) as {
-      status: string
-      current: string
-      latest: string
-    }
-    expect(payload).toMatchObject({
-      status: 'update_available',
-      current: packageVersion,
-      latest: variants.next!.version,
+describe.skipIf(process.platform === 'win32')(
+  'spark update — check contract (no side effects)',
+  () => {
+    it('exit 0 + JSON when an update is available', async () => {
+      await publish(variants.next!.version, variants.next!.bytes, variants.next!.sha256)
+      const result = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(0)
+      const payload = JSON.parse(result.stdout.trim()) as {
+        status: string
+        current: string
+        latest: string
+      }
+      expect(payload).toMatchObject({
+        status: 'update_available',
+        current: packageVersion,
+        latest: variants.next!.version,
+      })
     })
-  })
 
-  it('exit 1 for up-to-date, older remote, and gated prerelease', async () => {
-    const environment = checkEnvironment()
-    await publish(baseTarball.version, baseTarball.bytes, baseTarball.sha256)
-    const same = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl],
-      environment,
-      packageRoot,
-    )
-    expect(same.code).toBe(1)
-    expect((JSON.parse(same.stdout.trim()) as { status: string }).status).toBe('up_to_date')
+    it('exit 1 for up-to-date, older remote, and gated prerelease', async () => {
+      const environment = checkEnvironment()
+      await publish(baseTarball.version, baseTarball.bytes, baseTarball.sha256)
+      const same = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl],
+        environment,
+        packageRoot,
+      )
+      expect(same.code).toBe(1)
+      expect((JSON.parse(same.stdout.trim()) as { status: string }).status).toBe('up_to_date')
 
-    await publish(variants.older!.version, variants.older!.bytes, variants.older!.sha256)
-    const older = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl],
-      environment,
-      packageRoot,
-    )
-    expect(older.code).toBe(1)
-    expect((JSON.parse(older.stdout.trim()) as { status: string }).status).toBe('remote_older')
+      await publish(variants.older!.version, variants.older!.bytes, variants.older!.sha256)
+      const older = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl],
+        environment,
+        packageRoot,
+      )
+      expect(older.code).toBe(1)
+      expect((JSON.parse(older.stdout.trim()) as { status: string }).status).toBe('remote_older')
 
-    await publish(variants.rc!.version, variants.rc!.bytes, variants.rc!.sha256)
-    const prerelease = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl],
-      environment,
-      packageRoot,
-    )
-    expect(prerelease.code).toBe(1)
-    expect((JSON.parse(prerelease.stdout.trim()) as { status: string }).status).toBe(
-      'prerelease_available',
-    )
-  })
+      await publish(variants.rc!.version, variants.rc!.bytes, variants.rc!.sha256)
+      const prerelease = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl],
+        environment,
+        packageRoot,
+      )
+      expect(prerelease.code).toBe(1)
+      expect((JSON.parse(prerelease.stdout.trim()) as { status: string }).status).toBe(
+        'prerelease_available',
+      )
+    })
 
-  it('exit 3 with a failed JSON line when the manifest is corrupt', async () => {
-    await writeFile(join(serveDir, 'latest.json'), '{"name":"@evil/agent","version":"9.9.9"}')
-    const result = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(3)
-    expect(result.stderr).toContain('spark update failed')
-    expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe('failed')
-  })
+    it('exit 3 with a failed JSON line when the manifest is corrupt', async () => {
+      await writeFile(join(serveDir, 'latest.json'), '{"name":"@evil/agent","version":"9.9.9"}')
+      const result = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(3)
+      expect(result.stderr).toContain('spark update failed')
+      expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe('failed')
+    })
 
-  it('exit 3 when the release server is unreachable', async () => {
-    const result = await runSpark(
-      ['update', '--check', '--json', '--base', 'http://127.0.0.1:1'],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(3)
-    expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe('failed')
-  })
+    it('exit 3 when the release server is unreachable', async () => {
+      const result = await runSpark(
+        ['update', '--check', '--json', '--base', 'http://127.0.0.1:1'],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(3)
+      expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe('failed')
+    })
 
-  it('upgrade is an alias of update', async () => {
-    await publish(variants.next!.version, variants.next!.bytes, variants.next!.sha256)
-    const result = await runSpark(
-      ['upgrade', '--check', '--json', '--base', serverUrl],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(0)
-    expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe('update_available')
-  })
+    it('upgrade is an alias of update', async () => {
+      await publish(variants.next!.version, variants.next!.bytes, variants.next!.sha256)
+      const result = await runSpark(
+        ['upgrade', '--check', '--json', '--base', serverUrl],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(0)
+      expect((JSON.parse(result.stdout.trim()) as { status: string }).status).toBe(
+        'update_available',
+      )
+    })
 
-  it('checks a pinned version through the checksum sidecar', async () => {
-    const next = variants.next!
-    await publish(next.version, next.bytes, next.sha256)
-    const result = await runSpark(
-      ['update', '--check', '--json', '--base', serverUrl, '--target', variants.next!.version],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(0)
-    expect((JSON.parse(result.stdout.trim()) as { status: string; pinned: boolean }).pinned).toBe(
-      true,
-    )
-  })
+    it('checks a pinned version through the checksum sidecar', async () => {
+      const next = variants.next!
+      await publish(next.version, next.bytes, next.sha256)
+      const result = await runSpark(
+        ['update', '--check', '--json', '--base', serverUrl, '--target', variants.next!.version],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(0)
+      expect((JSON.parse(result.stdout.trim()) as { status: string; pinned: boolean }).pinned).toBe(
+        true,
+      )
+    })
 
-  it('rejects an unparsable --target', async () => {
-    const result = await runSpark(
-      ['update', '--check', '--base', serverUrl, '--target', 'latest'],
-      checkEnvironment(),
-      packageRoot,
-    )
-    expect(result.code).toBe(3)
-    expect(result.stderr).toContain('strict SemVer')
-  })
-})
+    it('rejects an unparsable --target', async () => {
+      const result = await runSpark(
+        ['update', '--check', '--base', serverUrl, '--target', 'latest'],
+        checkEnvironment(),
+        packageRoot,
+      )
+      expect(result.code).toBe(3)
+      expect(result.stderr).toContain('strict SemVer')
+    })
+  },
+)
 
 describe('spark update — apply transaction (real npm prefix)', () => {
   posixOnly(

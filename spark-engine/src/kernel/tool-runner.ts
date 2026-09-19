@@ -348,6 +348,7 @@ export class ToolRunner {
     let content: string
     let aborted = false
     let childSessionId: string | undefined
+    let passthroughArtifact: ProcessedToolOutput['artifact'] | undefined
     try {
       const outcome =
         call.name === 'task'
@@ -362,6 +363,9 @@ export class ToolRunner {
             })
       ok = outcome.ok
       content = outcome.content
+      // Executor-produced artifacts (view_image images) bypass the text
+      // truncation pipeline and flow straight onto the tool-result event.
+      passthroughArtifact = outcome.artifact
       if (this.options.signal.aborted || timeout.timedOut()) {
         ok = false
         aborted = this.options.signal.aborted
@@ -388,11 +392,14 @@ export class ToolRunner {
     }
     let output: ProcessedToolOutput
     try {
-      output = await processToolOutput(
-        content,
-        this.options.env.artifacts,
-        this.options.maxOutputCharacters,
-      )
+      output =
+        passthroughArtifact !== undefined
+          ? { content, artifact: passthroughArtifact }
+          : await processToolOutput(
+              content,
+              this.options.env.artifacts,
+              this.options.maxOutputCharacters,
+            )
     } catch (error) {
       ok = false
       output = { content: `artifact pipeline failed: ${errorMessage(error)}` }

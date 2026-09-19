@@ -1,9 +1,9 @@
-import type { ToolCallContext, ToolExecutor } from '../../seams.js';
-import type { ResolvedToolCall, ToolDefinition, ToolOutcome } from '../contract.js';
-import { FakeShell } from './shell.js';
-import { VirtualFileSystem } from './virtual-fs.js';
+import type { ArtifactStore, ToolCallContext, ToolExecutor } from '../../seams.js'
+import type { ResolvedToolCall, ToolDefinition, ToolOutcome } from '../contract.js'
+import { FakeShell } from './shell.js'
+import { VirtualFileSystem } from './virtual-fs.js'
 
-const pathSchema = { type: 'string', minLength: 1 } as const;
+const pathSchema = { type: 'string', minLength: 1 } as const
 
 export const fakeToolDefinitions: readonly ToolDefinition[] = [
   {
@@ -66,6 +66,23 @@ export const fakeToolDefinitions: readonly ToolDefinition[] = [
     costClass: 'io',
   },
   {
+    name: 'view_image',
+    description: 'Read an image file (PNG/JPEG/WEBP/GIF) from the workspace so you can look at it.',
+    inputSchema: {
+      type: 'object',
+      properties: { path: { type: 'string', minLength: 1 } },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    readonly: true,
+    permissionClass: 'read',
+    approval: 'never',
+    concurrency: 'parallel',
+    timeoutMs: 10_000,
+    interruptible: true,
+    costClass: 'io',
+  },
+  {
     name: 'bash',
     description: 'Run a shell command in the session workspace.',
     inputSchema: {
@@ -83,17 +100,19 @@ export const fakeToolDefinitions: readonly ToolDefinition[] = [
     interruptible: true,
     costClass: 'cpu',
   },
-];
+]
 
 export class FakeToolExecutor implements ToolExecutor {
   constructor(
     readonly fs: VirtualFileSystem = new VirtualFileSystem(),
     readonly shell: FakeShell = new FakeShell(),
+    private readonly artifacts?: ArtifactStore,
+    private readonly viewImageBytes?: Uint8Array,
   ) {}
 
   async execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome> {
-    context.signal.throwIfAborted();
-    const args = call.args as Record<string, unknown>;
+    context.signal.throwIfAborted()
+    const args = call.args as Record<string, unknown>
     switch (call.name) {
       case 'read':
         return {
@@ -103,20 +122,33 @@ export class FakeToolExecutor implements ToolExecutor {
             args.offset === undefined ? 1 : Number(args.offset),
             args.limit === undefined ? undefined : Number(args.limit),
           ),
-        };
+        }
       case 'write':
-        this.fs.write(String(args.path), String(args.content));
-        return { ok: true, content: `Wrote ${String(args.path)}` };
+        this.fs.write(String(args.path), String(args.content))
+        return { ok: true, content: `Wrote ${String(args.path)}` }
       case 'edit':
-        this.fs.edit(String(args.path), String(args.old), String(args.new));
-        return { ok: true, content: `Edited ${String(args.path)}` };
+        this.fs.edit(String(args.path), String(args.old), String(args.new))
+        return { ok: true, content: `Edited ${String(args.path)}` }
+      case 'view_image': {
+        // Test-side view_image: sinks the fixture bytes into the fixture
+        // store so the projector's image injection can resolve them.
+        if (this.artifacts === undefined || this.viewImageBytes === undefined) {
+          return { ok: false, content: 'view_image is not configured in this fixture' }
+        }
+        const artifact = await this.artifacts.put(this.viewImageBytes, 'image/png')
+        return {
+          ok: true,
+          content: `Image view: ${String(args.path)} (image/png). The image is attached to this result.`,
+          artifact,
+        }
+      }
       case 'bash': {
-        const reply = await this.shell.run(String(args.command), context.signal);
-        const output = [reply.stdout, reply.stderr].filter(Boolean).join('\n');
-        return { ok: reply.exitCode === 0, content: `${output}\nexit ${reply.exitCode}`.trim() };
+        const reply = await this.shell.run(String(args.command), context.signal)
+        const output = [reply.stdout, reply.stderr].filter(Boolean).join('\n')
+        return { ok: reply.exitCode === 0, content: `${output}\nexit ${reply.exitCode}`.trim() }
       }
       default:
-        return { ok: false, content: `Unknown fake tool: ${call.name}` };
+        return { ok: false, content: `Unknown fake tool: ${call.name}` }
     }
   }
 }

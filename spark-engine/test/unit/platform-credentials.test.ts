@@ -34,7 +34,10 @@ describe('PlatformCredentialStore', () => {
     expect(loaded?.serverUrl).toBe('https://spark.example.com/')
     expect(loaded?.session).toEqual(SESSION)
     const stats = await stat(store.path)
-    expect(stats.mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      // Windows reports a fixed mode mask; access control there is ACL-based.
+      expect(stats.mode & 0o777).toBe(0o600)
+    }
     expect(await readdir(home)).toEqual(['credentials.json'])
   })
 
@@ -80,7 +83,9 @@ describe('PlatformCredentialStore', () => {
     await store.load()
 
     const stats = await stat(store.path)
-    expect(stats.mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      expect(stats.mode & 0o777).toBe(0o600)
+    }
   })
 
   it('clears the stored session and reports whether anything was removed', async () => {

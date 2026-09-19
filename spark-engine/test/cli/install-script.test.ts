@@ -19,10 +19,14 @@ const nodeDir = dirname(process.execPath)
 
 afterEach(async () => {
   for (const close of closers.splice(0)) await close()
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
-describe('install.sh one-line installer', () => {
+// install.sh is the POSIX one-line installer (sh + symlink launchers + npm
+// CLI); Windows installs through `npm i -g @spark/agent` instead, so this
+// contract suite is POSIX-only.
+describe.skipIf(process.platform === 'win32')('install.sh one-line installer', () => {
   it('downloads, verifies, installs with npm, and leaves a runnable spark', async () => {
     const fixture = await createReleaseFixture()
     const environment = installerEnvironment(fixture)

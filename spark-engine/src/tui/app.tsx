@@ -11,7 +11,18 @@ import {
 import type { AgentEvent } from '../events/schema.js'
 import { shortSessionId } from '../events/ledger.js'
 import type { SessionMeta } from '../seams.js'
-import type { LlmDelta, ReasoningEffort } from '../llm/types.js'
+import type { LlmDelta, ModelBudget, ReasoningEffort } from '../llm/types.js'
+import type { ContextBreakdown } from '../llm/budget.js'
+
+/** Everything /context renders; assembled by the host from the live env. */
+export interface ContextReportView {
+  readonly breakdown: ContextBreakdown
+  readonly windowTokens?: number
+  readonly lastInputTokens?: number
+  readonly cacheHitRate?: number
+  readonly compactions: number
+  readonly slimmedToolResults: number
+}
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { TurnImageAttachment } from '../images/attachments.js'
@@ -37,7 +48,7 @@ import { ModelPicker, ProviderConfigForm } from './model-flow.js'
 import { displayModelName } from './display-name.js'
 import { helpDetail } from './slash-commands.js'
 import type { ModelRuntimeController } from './use-model-runtime.js'
-import { projectTranscript, type ActiveToolProjection } from './projection.js'
+import { contextStatsLine, projectTranscript, type ActiveToolProjection } from './projection.js'
 import {
   describeUpdateOutcome,
   type SparkUpdateRunner,
@@ -55,6 +66,20 @@ export interface SparkTuiAppProps {
   readonly initialEvents: readonly AgentEvent[]
   readonly approver: InteractiveApprover
   readonly createSession: () => Promise<AgentSession>
+  /** Current route's model budget, for /status context headroom display. */
+  readonly getModelBudget?: () => ModelBudget | undefined
+  /**
+   * Post-turn hook (memory auto-extraction). Fired after a completed turn,
+   * never awaited — extraction failures surface as a warning notice only.
+   */
+  readonly onTurnCompleted?: (session: AgentSession) => Promise<void>
+  /**
+   * Async context accounting for /context: projects the given events through
+   * the real prompt composer and tool registry. Absent in static embeds.
+   */
+  readonly getContextReport?: (
+    events: readonly AgentEvent[],
+  ) => Promise<{ breakdown: ContextBreakdown; windowTokens?: number }>
   readonly capabilities?: TerminalCapabilities
   readonly theme?: TuiTheme
   readonly version?: string
@@ -302,10 +327,24 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       void session
         .turn(prompt, {
           signal: controller.signal,
+          autoContinue: 3,
           reasoningEffort,
           ...(images.length === 0 ? {} : { images }),
           onEvent: appendEvent,
           onDelta: handleDelta,
+        })
+        .then((result) => {
+          if (result.terminal.type !== 'turn.completed' || props.onTurnCompleted === undefined) {
+            return
+          }
+          // Fire-and-forget: extraction is a post-turn optimization and must
+          // not hold the session busy for the next user input.
+          void props.onTurnCompleted(session).catch((extractionError: unknown) => {
+            setNoticeFull({
+              text: `记忆抽取失败：${extractionError instanceof Error ? extractionError.message : String(extractionError)}`,
+              tone: 'warn',
+            })
+          })
         })
         .catch((error: unknown) => {
           setNoticeFull({
@@ -319,7 +358,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setActiveTurns((count) => Math.max(0, count - 1))
         })
     },
-    [appendEvent, effectiveModel, handleDelta, modelRuntime, reasoningEffort, session],
+    [
+      appendEvent,
+      effectiveModel,
+      handleDelta,
+      modelRuntime,
+      props.onTurnCompleted,
+      reasoningEffort,
+      session,
+    ],
   )
 
   const submit = useCallback(
@@ -404,9 +451,77 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       case '/status':
         setNotice(
           `session=${session.sessionId} · queued=${session.queuedTurns()} · events=${events.length}` +
+            ` · ${contextStatsLine(events, props.getModelBudget?.()?.contextWindowTokens)}` +
             ` · 模型=${effectiveModel ?? '未配置'} · 权限=${permissionMode} · 推理=${reasoningEffort}`,
         )
         break
+      case '/compact': {
+        if (activeTurns > 0) {
+          setNotice('turn 运行中；请先中断或等待完成，再压缩上下文。')
+          break
+        }
+        setNotice('正在压缩上下文（早期对话将折叠为摘要）…')
+        const result = await session.compact()
+        if (!result.compacted) {
+          setNotice('当前没有可压缩的历史：需要至少一次较早的对话轮次。')
+          break
+        }
+        setNotice(
+          `上下文已压缩：${result.droppedTurns ?? 0} 个早期轮次已折叠为摘要（约 ${result.droppedTokens ?? 0} tokens）。`,
+        )
+        break
+      }
+      case '/context': {
+        if (props.getContextReport === undefined) {
+          setNotice('当前环境未接入上下文诊断。')
+          break
+        }
+        setNotice('正在统计上下文构成…')
+        const report = await props.getContextReport(events)
+        const lines: string[] = ['上下文构成（估算）:']
+        for (const line of report.breakdown.system) {
+          lines.push(`  system  ${line.label}  ${line.tokens} tok`)
+        }
+        lines.push(
+          `  tools   (${report.breakdown.tools.length} 个)  ${report.breakdown.toolsTokens} tok`,
+        )
+        lines.push(
+          `  messages  user ${report.breakdown.userTokens} · assistant ${report.breakdown.assistantTokens} · tool_result ${report.breakdown.toolResultTokens} tok`,
+        )
+        const windowPart =
+          report.windowTokens === undefined
+            ? `${report.breakdown.total} tok`
+            : `${report.breakdown.total}/${report.windowTokens} tok (${Math.min(999, Math.round((report.breakdown.total / report.windowTokens) * 100))}%)`
+        lines.push(`  合计 ≈ ${windowPart}`)
+        // History-derived facts come from the live event feed, not the host.
+        let lastInputTokens: number | undefined
+        let inputTotal = 0
+        let cacheReadTotal = 0
+        let compactions = 0
+        let slimmedToolResults = 0
+        for (const event of events) {
+          if (event.type === 'assistant.completed') {
+            inputTotal += event.usage.inputTokens
+            cacheReadTotal += event.usage.cacheReadTokens
+            if (event.usage.inputTokens > 0) lastInputTokens = event.usage.inputTokens
+          } else if (event.type === 'context.compacted') {
+            compactions += 1
+          } else if (event.type === 'context.tool_results_slimmed') {
+            slimmedToolResults += event.slimmed.length
+          }
+        }
+        if (lastInputTokens !== undefined) {
+          lines.push(`  上次实报输入 ${lastInputTokens} tok`)
+        }
+        if (inputTotal > 0) {
+          lines.push(`  缓存命中率 ${Math.round((cacheReadTotal / inputTotal) * 100)}%`)
+        }
+        if (compactions > 0 || slimmedToolResults > 0) {
+          lines.push(`  压缩 ${compactions} 次 · 工具结果瘦身 ${slimmedToolResults} 个`)
+        }
+        setNoticeFull({ text: lines.join('\n'), tone: 'info' })
+        break
+      }
       case '/model':
         if (!modelRuntime) {
           setNotice(`当前模型: ${props.model ?? 'unconfigured'}（静态模式，未接入切换器）`)

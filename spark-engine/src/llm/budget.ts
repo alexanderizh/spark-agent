@@ -114,22 +114,32 @@ export function estimateRequestTokens(options: {
 }): number {
   let total = 0
   for (const section of options.system) total += estimateTextTokens(section.content) + 16
-  for (const message of options.messages) {
-    if (message.role === 'user') {
-      total += estimateTextTokens(message.content) + 12
-      for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
-    } else if (message.role === 'tool_result') {
-      total += estimateTextTokens(message.content) + 12
-    } else {
-      total += estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
-      for (const call of message.toolCalls) {
-        total += estimateTextTokens(call.name) + estimateTextTokens(safeJson(call.args)) + 16
-      }
-    }
-  }
+  for (const message of options.messages) total += estimateMessageTokens(message)
   for (const tool of options.tools) {
     total += estimateTextTokens(tool.name) + estimateTextTokens(tool.description)
     total += estimateTextTokens(safeJson(tool.inputSchema)) + 32
+  }
+  return total
+}
+
+/**
+ * Estimated wire cost of one projected message, including role framing
+ * overhead. Used by the context compactor to compare conversation prefixes.
+ */
+export function estimateMessageTokens(message: IrMessage): number {
+  if (message.role === 'user') {
+    let total = estimateTextTokens(message.content) + 12
+    for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
+    return total
+  }
+  if (message.role === 'tool_result') {
+    let total = estimateTextTokens(message.content) + 12
+    for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
+    return total
+  }
+  let total = estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
+  for (const call of message.toolCalls) {
+    total += estimateTextTokens(call.name) + estimateTextTokens(safeJson(call.args)) + 16
   }
   return total
 }
@@ -156,7 +166,7 @@ export function estimateImageTokens(image: {
   return Math.max(tileBased, pixelBased)
 }
 
-function estimateTextTokens(value: string | undefined): number {
+export function estimateTextTokens(value: string | undefined): number {
   if (!value) return 0
   let ascii = 0
   let other = 0
@@ -168,6 +178,69 @@ function estimateTextTokens(value: string | undefined): number {
   // ASCII prose/code averages roughly 3 chars/token; CJK and emoji are much
   // closer to one token/code point. Rounding upward makes this a safety guard.
   return Math.ceil(ascii / 3) + other
+}
+
+export interface ContextBreakdownLine {
+  readonly label: string
+  readonly tokens: number
+}
+
+export interface ContextBreakdown {
+  readonly system: readonly ContextBreakdownLine[]
+  readonly systemTokens: number
+  readonly tools: readonly ContextBreakdownLine[]
+  readonly toolsTokens: number
+  readonly userTokens: number
+  readonly assistantTokens: number
+  readonly toolResultTokens: number
+  readonly messagesTokens: number
+  readonly total: number
+}
+
+/**
+ * Per-section / per-role context accounting for diagnostics (`/context`).
+ * Same estimator as the output-budget guard, so the numbers reconcile with
+ * the compaction thresholds.
+ */
+export function describeContextBreakdown(options: {
+  readonly system: readonly SystemSection[]
+  readonly messages: readonly IrMessage[]
+  readonly tools: readonly IrToolDefinition[]
+}): ContextBreakdown {
+  const system = options.system.map((section) => ({
+    label: section.id,
+    tokens: estimateTextTokens(section.content) + 16,
+  }))
+  const tools = options.tools.map((tool) => ({
+    label: tool.name,
+    tokens:
+      estimateTextTokens(tool.name) +
+      estimateTextTokens(tool.description) +
+      estimateTextTokens(safeJson(tool.inputSchema)) +
+      32,
+  }))
+  let userTokens = 0
+  let assistantTokens = 0
+  let toolResultTokens = 0
+  for (const message of options.messages) {
+    if (message.role === 'user') userTokens += estimateMessageTokens(message)
+    else if (message.role === 'tool_result') toolResultTokens += estimateMessageTokens(message)
+    else assistantTokens += estimateMessageTokens(message)
+  }
+  const systemTokens = system.reduce((total, line) => total + line.tokens, 0)
+  const toolsTokens = tools.reduce((total, line) => total + line.tokens, 0)
+  const messagesTokens = userTokens + assistantTokens + toolResultTokens
+  return {
+    system,
+    systemTokens,
+    tools,
+    toolsTokens,
+    userTokens,
+    assistantTokens,
+    toolResultTokens,
+    messagesTokens,
+    total: systemTokens + toolsTokens + messagesTokens,
+  }
 }
 
 function safeJson(value: unknown): string {

@@ -52,6 +52,11 @@ export function toOpenAiRequest(request: LlmRequest, model: string): Record<stri
       parameters: tool.inputSchema,
       strict: false,
     })),
+    // Prefix caching is automatic on the Responses API, but routing by session
+    // keeps a long-running conversation on the same cache shard.
+    ...(request.metadata.sessionId === undefined
+      ? {}
+      : { prompt_cache_key: request.metadata.sessionId }),
     ...(request.stopSequences?.length ? { stop: request.stopSequences } : {}),
     ...(request.thinking?.type === 'adaptive'
       ? {
@@ -84,6 +89,20 @@ function toOpenAiInput(messages: readonly IrMessage[]): unknown[] {
         call_id: message.callId,
         output: message.content,
       })
+      // The Responses API cannot attach images to function_call_output items,
+      // so tool-produced images follow as their own user message.
+      for (const image of message.imageParts ?? []) {
+        input.push({
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: `Image produced by tool call ${message.callId} (${message.tool}):`,
+            },
+            { type: 'input_image', image_url: `data:${image.mediaType};base64,${image.base64}` },
+          ],
+        })
+      }
     } else {
       const continuation = continuationItems(message.continuation)
       if (continuation) {

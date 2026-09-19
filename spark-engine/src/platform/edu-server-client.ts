@@ -153,6 +153,14 @@ export class EduServerClient {
     }
   }
 
+  /**
+   * Authenticated POST against a platform feature endpoint (e.g.
+   * `/platform-model/bootstrap`). Refreshes an expired access token once.
+   */
+  async postPlatform<T>(path: string, body?: unknown): Promise<T> {
+    return this.#request<T>('POST', path, { auth: 'required', body })
+  }
+
   /** Rotates the session tokens. Concurrent callers share one request. */
   refresh(): Promise<PlatformSession | null> {
     const existing = this.#refreshInflight

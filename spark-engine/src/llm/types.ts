@@ -57,6 +57,14 @@ export interface IrToolResultMessage {
   readonly ok: boolean
   readonly content: string
   readonly sourceSeqs: readonly number[]
+  /**
+   * Images produced by the tool (e.g. `view_image`), resolved from the
+   * tool-result artifact before the request. Providers encode these next to
+   * the tool_result block.
+   */
+  readonly imageRefs?: readonly IrImageRef[]
+  /** Resolved payloads for the wire format; absent when the result has none. */
+  readonly imageParts?: readonly IrImagePart[]
 }
 
 export type IrMessage = IrUserMessage | IrAssistantMessage | IrToolResultMessage

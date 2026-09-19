@@ -201,6 +201,15 @@ export function projectTranscript(
           tone: 'dim',
         })
         break
+      case 'context.tool_results_slimmed': {
+        const saved = event.slimmed.reduce((total, entry) => total + entry.savedTokens, 0)
+        settled.push({
+          key: `event-${event.seq}`,
+          text: `⇲ ${event.slimmed.length} 个工具结果已瘦身 · 完整输出已存档 · 每步约省 ${saved} tokens`,
+          tone: 'dim',
+        })
+        break
+      }
       case 'plugin.activated':
       case 'plugin.deactivated':
         settled.push({
@@ -348,9 +357,37 @@ function isKnownEvent(event: AgentEvent | UnknownEvent): event is AgentEvent {
     'permission.decided',
     'permission.evaluated',
     'context.compacted',
+    'context.tool_results_slimmed',
     'log.rewind',
     'plugin.activated',
     'plugin.deactivated',
     'user.answered',
   ]).has(event.type)
+}
+
+/**
+ * One-line context usage summary for /status: the latest provider-reported
+ * input tokens as the context footprint (with window share when the active
+ * model budget is known), plus the session-wide cache hit ratio (cached /
+ * billed input tokens across all assistant steps).
+ */
+export function contextStatsLine(
+  events: readonly AgentEvent[],
+  contextWindowTokens?: number,
+): string {
+  let lastInput = 0
+  let inputTotal = 0
+  let cacheReadTotal = 0
+  for (const event of events) {
+    if (event.type !== 'assistant.completed') continue
+    inputTotal += event.usage.inputTokens
+    cacheReadTotal += event.usage.cacheReadTokens
+    if (event.usage.inputTokens > 0) lastInput = event.usage.inputTokens
+  }
+  const hitRate = inputTotal > 0 ? Math.round((cacheReadTotal / inputTotal) * 100) : 0
+  const usage =
+    contextWindowTokens !== undefined && contextWindowTokens > 0
+      ? `ctx≈${lastInput}/${contextWindowTokens} tok (${Math.min(999, Math.round((lastInput / contextWindowTokens) * 100))}%)`
+      : `ctx≈${lastInput} tok`
+  return `${usage} · 缓存命中 ${hitRate}%`
 }

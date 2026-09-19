@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { SparkMcpServerConfig, SparkMcpServerMap } from '../mcp/types.js'
 import type { PermissionRule } from '../permission/policy.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
+import type { ContextCompactionPolicy } from '../seams.js'
 import {
   ConfigFileError,
   deepMergeLayers,
@@ -79,6 +80,7 @@ export interface ResolvedMcpSettings {
 
 export interface ResolvedMemorySettings {
   readonly enabled: boolean
+  readonly autoExtract: boolean
   readonly maxInjectTokens: number
   readonly agentId: string
 }
@@ -217,9 +219,41 @@ export function resolveMemorySettings(settings: SparkSettings): ResolvedMemorySe
   const memory = settings.config.memory
   return {
     enabled: memory?.enabled ?? true,
+    autoExtract: memory?.auto_extract ?? false,
     maxInjectTokens: memory?.max_inject_tokens ?? 4_000,
     agentId: memory?.agent_id ?? 'default',
   }
+}
+
+/**
+ * Context-window management knobs, shaped as a partial engine compaction
+ * policy so only explicitly configured fields override kernel defaults.
+ */
+export function resolveContextSettings(settings: SparkSettings): Partial<ContextCompactionPolicy> {
+  const context = settings.config.context
+  const policy: { -readonly [K in keyof ContextCompactionPolicy]+?: ContextCompactionPolicy[K] } =
+    {}
+  if (context === undefined) return policy
+  if (context.auto_compact !== undefined) policy.autoCompact = context.auto_compact
+  if (context.compact_threshold !== undefined) policy.thresholdRatio = context.compact_threshold
+  if (context.keep_recent_turns !== undefined) policy.keepRecentTurns = context.keep_recent_turns
+  if (context.min_compactable_tokens !== undefined) {
+    policy.minCompactableTokens = context.min_compactable_tokens
+  }
+  if (context.max_compactions_per_turn !== undefined) {
+    policy.maxCompactionsPerTurn = context.max_compactions_per_turn
+  }
+  if (context.micro_compact !== undefined) policy.microcompactEnabled = context.micro_compact
+  if (context.micro_compact_keep_exchanges !== undefined) {
+    policy.microcompactKeepExchanges = context.micro_compact_keep_exchanges
+  }
+  if (context.micro_compact_min_tokens !== undefined) {
+    policy.microcompactMinTokens = context.micro_compact_min_tokens
+  }
+  if (context.micro_compact_max_per_turn !== undefined) {
+    policy.microcompactMaxPerTurn = context.micro_compact_max_per_turn
+  }
+  return policy
 }
 
 export interface ResolvedPlatformSettings {
@@ -274,8 +308,10 @@ export interface ResolvedEngineSettings {
   readonly mcpServers: SparkMcpServerMap
   readonly mcpStartupTimeoutMs?: number
   readonly memoryEnabled: boolean
+  readonly memoryAutoExtract: boolean
   readonly memoryMaxInjectTokens: number
   readonly memoryAgentId: string
+  readonly compactionPolicy: Partial<ContextCompactionPolicy>
 }
 
 export function resolveEngineSettings(
@@ -295,8 +331,10 @@ export function resolveEngineSettings(
     mcpServers: mcp.servers,
     ...(mcp.startupTimeoutMs === undefined ? {} : { mcpStartupTimeoutMs: mcp.startupTimeoutMs }),
     memoryEnabled: memory.enabled,
+    memoryAutoExtract: memory.autoExtract,
     memoryMaxInjectTokens: memory.maxInjectTokens,
     memoryAgentId: memory.agentId,
+    compactionPolicy: resolveContextSettings(settings),
   }
 }
 

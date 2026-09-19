@@ -70,7 +70,57 @@ describe('real model protocol adapters', () => {
       true,
     )
     expect(JSON.stringify(followup)).toContain('signed-state')
-    expect(followup).toMatchObject({ cache_control: { type: 'ephemeral' } })
+    // Caching is expressed as block-level breakpoints (tools → system → the
+    // newest message), never as a top-level field the API would ignore.
+    expect(followup.cache_control).toBeUndefined()
+    const followupSystem = followup.system as { cache_control?: { type: string } }[]
+    expect(followupSystem.at(-1)).toMatchObject({ cache_control: { type: 'ephemeral' } })
+    const followupTools = followup.tools as { cache_control?: { type: string } }[]
+    expect(followupTools.at(-1)).toMatchObject({ cache_control: { type: 'ephemeral' } })
+    const followupMessages = followup.messages as {
+      content: { type?: string; cache_control?: { type: string } }[]
+    }[]
+    const lastBlocks = followupMessages.at(-1)?.content ?? []
+    expect(lastBlocks.at(-1)).toMatchObject({
+      type: 'tool_result',
+      cache_control: { type: 'ephemeral' },
+    })
+  })
+
+  it('keeps Anthropic cache markers off thinking blocks and off the request entirely when disabled', () => {
+    const thinkingContinuation = {
+      protocol: 'anthropic-messages' as const,
+      data: [
+        { type: 'thinking', thinking: 'plan', signature: 'sig' },
+        { type: 'text', text: 'answer' },
+      ],
+    }
+    const request: LlmRequest = {
+      ...baseRequest(),
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [],
+          continuation: thinkingContinuation,
+          sourceSeqs: [1],
+        },
+      ],
+    }
+    const cached = toAnthropicRequest(request, 'claude-test', true)
+    const blocks = (cached.messages as { content: { type?: string }[] }[]).at(-1)?.content ?? []
+    const marked = blocks.filter((block) => 'cache_control' in block)
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toMatchObject({ type: 'text' })
+
+    const uncached = toAnthropicRequest(request, 'claude-test', false)
+    expect(uncached.cache_control).toBeUndefined()
+    expect(JSON.stringify(uncached)).not.toContain('cache_control')
+  })
+
+  it('routes OpenAI requests by session for prefix-cache affinity', () => {
+    const openAi = toOpenAiRequest(baseRequest(), 'gpt-test')
+    expect(openAi.prompt_cache_key).toBe('session-1')
   })
 
   it('does not duplicate the Anthropic API version in a gateway base URL', async () => {
@@ -534,7 +584,12 @@ describe('real model protocol adapters', () => {
         content: [
           { type: 'text', text: 'what is in this screenshot?' },
           { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'cG5n' } },
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'anBn' } },
+          // The rolling cache breakpoint lands on the newest (last) block.
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: 'anBn' },
+            cache_control: { type: 'ephemeral' },
+          },
         ],
       },
     ])

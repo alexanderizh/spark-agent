@@ -108,6 +108,8 @@ export const MemorySettingsSchema = z
   .object({
     /** Disable prompt injection and memory tools without deleting files. */
     enabled: z.boolean().default(true),
+    /** Distill durable facts into the memory store after each finished turn. */
+    auto_extract: z.boolean().default(false),
     /** Estimated token budget for the compact summary injected into each turn. */
     max_inject_tokens: z.number().int().min(100).max(100_000).default(4_000),
     /** Agent profile used for the agent-scoped Markdown directory. */
@@ -130,3 +132,27 @@ export const PlatformSettingsSchema = z
   })
   .strict()
 export type PlatformSettings = z.output<typeof PlatformSettingsSchema>
+
+export const ContextSettingsSchema = z
+  .object({
+    /** Master switch for automatic mid-turn context compaction. */
+    auto_compact: z.boolean().optional(),
+    /** Fraction of the context window that triggers auto-compact (0.5–0.95). */
+    compact_threshold: z.number().min(0.5).max(0.95).optional(),
+    /** Most recent turns that are never summarized away (1–10). */
+    keep_recent_turns: z.number().int().min(1).max(10).optional(),
+    /** Smallest dropped-part size in tokens an automatic compaction accepts. */
+    min_compactable_tokens: z.number().int().min(1_000).max(500_000).optional(),
+    /** Upper bound of compactions within a single turn. */
+    max_compactions_per_turn: z.number().int().min(1).max(50).optional(),
+    /** Microcompact: sink stale tool bodies into artifacts, keep stubs. */
+    micro_compact: z.boolean().optional(),
+    /** Most recent assistant exchanges that keep full tool bodies (1–10). */
+    micro_compact_keep_exchanges: z.number().int().min(1).max(10).optional(),
+    /** Tool bodies below this many tokens are never slimmed. */
+    micro_compact_min_tokens: z.number().int().min(50).max(100_000).optional(),
+    /** Upper bound of slimmed tool results within a single turn. */
+    micro_compact_max_per_turn: z.number().int().min(1).max(500).optional(),
+  })
+  .strict()
+export type ContextSettings = z.output<typeof ContextSettingsSchema>

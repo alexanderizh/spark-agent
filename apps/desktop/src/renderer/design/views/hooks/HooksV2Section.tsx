@@ -7,6 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react'
+import './HooksV2Section.less'
 import { Button, Tag } from '@lobehub/ui'
 import { Modal as AntdModal, Switch } from 'antd'
 import { Icons } from '../../Icons'

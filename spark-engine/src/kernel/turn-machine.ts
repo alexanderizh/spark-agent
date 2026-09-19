@@ -8,11 +8,25 @@ import {
   type Usage,
 } from '../events/schema.js'
 import { consumeLlmStream } from '../llm/consume.js'
-import type { IrImagePart, IrImageRef, IrMessage, LlmDelta, LlmRequest, ReasoningEffort } from '../llm/types.js'
-import { resolveOutputBudget } from '../llm/budget.js'
+import type {
+  IrImagePart,
+  IrImageRef,
+  IrMessage,
+  LlmDelta,
+  LlmRequest,
+  ReasoningEffort,
+} from '../llm/types.js'
+import { estimateRequestTokens, resolveOutputBudget } from '../llm/budget.js'
 import { thinkingConfigFor } from '../llm/types.js'
 import type { PermissionMode } from '../permission/types.js'
 import type { AgentEnv, BudgetLimits, SubagentRunner } from '../seams.js'
+import {
+  ContextCompactor,
+  DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS,
+  DEFAULT_COMPACTION_POLICY,
+  isContextOverflowError,
+  slimToolResults,
+} from './compaction.js'
 import { CancellationTree, isAbortError, throwIfAborted } from './cancellation.js'
 import { KernelError, toErrorInfo } from './errors.js'
 import { ToolRunner } from './tool-runner.js'
@@ -70,6 +84,28 @@ export class TurnMachine {
     let reasoningTokensTotal = 0
     let turnTtftMs: number | undefined
 
+    // Context management: history is buffered in memory and extended
+    // incrementally from the store, so a long turn never re-reads the whole
+    // ledger on every step.
+    const history: AgentEvent[] = []
+    let pulledThrough = -1
+    const pullEvents = async (): Promise<void> => {
+      for await (const event of ledger.read(pulledThrough + 1)) {
+        history.push(event)
+        pulledThrough = event.seq
+      }
+    }
+    const compactionPolicy = {
+      ...DEFAULT_COMPACTION_POLICY,
+      ...(this.env.context?.compaction ?? {}),
+    }
+    const compactor = new ContextCompactor(this.env, compactionPolicy)
+    let compactions = 0
+    let slimmedToolResults = 0
+    let lastInputTokens = 0
+    const contextWindowTokens = (): number =>
+      this.env.llm.getModelBudget?.()?.contextWindowTokens ?? DEFAULT_ASSUMED_CONTEXT_WINDOW_TOKENS
+
     const append = async (draft: BoundEventDraft): Promise<AgentEvent> => {
       const event = await ledger.append(draft)
       try {
@@ -81,6 +117,7 @@ export class TurnMachine {
     }
     const stats = (): TurnStats => {
       const snapshot = budget.snapshot()
+      const contextWindowTokens = this.env.llm.getModelBudget?.()?.contextWindowTokens
       return {
         steps: snapshot.steps,
         toolCalls: snapshot.toolCalls,
@@ -95,7 +132,44 @@ export class TurnMachine {
         llmMs: llmMsTotal,
         ttftMs: turnTtftMs ?? 0,
         costUsd: snapshot.costUsd,
+        compactions,
+        slimmedToolResults,
+        ...(contextWindowTokens === undefined ? {} : { contextWindowTokens }),
+        // A provider that reports no input tokens would make 0 misleading.
+        ...(lastInputTokens > 0 ? { lastInputTokens } : {}),
       }
+    }
+    /**
+     * Runs one compaction pass. Returns true when the context was rewritten;
+     * the caller re-enters the loop so the next request uses the summary.
+     */
+    const compactContext = async (
+      reason: 'threshold' | 'overflow',
+      force: boolean,
+    ): Promise<boolean> => {
+      if (compactions >= compactionPolicy.maxCompactionsPerTurn) return false
+      const outcome = await compactor.compact({
+        sessionId: options.sessionId,
+        cwd: options.cwd,
+        permissionMode: options.permissionMode,
+        events: history,
+        ledger,
+        ...(options.signal === undefined ? {} : { signal: cancellation.signal }),
+        ...(force ? { force } : {}),
+      })
+      if ('skipped' in outcome) {
+        this.env.telemetry.counter('context.compaction.skipped', { reason })
+        return false
+      }
+      compactions += 1
+      try {
+        await options.onEvent?.(outcome.event)
+      } catch {
+        this.env.telemetry.counter('observer.event.failed', { type: outcome.event.type })
+      }
+      await pullEvents()
+      budgetWarning = undefined
+      return true
     }
 
     try {
@@ -153,13 +227,40 @@ export class TurnMachine {
 
       while (true) {
         throwIfAborted(cancellation.signal)
+        await pullEvents()
         const stepId = this.env.ids.next('step')
-        const history = await collectEvents(ledger)
         const projected = this.env.projector.project(history, {
           cwd: options.cwd,
           permissionMode: options.permissionMode,
           ...(budgetWarning === undefined ? {} : { warning: budgetWarning }),
         })
+
+        // Microcompact: sink stale tool bodies into artifacts before paying
+        // for the request. Pure token hygiene — may avoid a full compaction.
+        if (
+          compactionPolicy.microcompactEnabled &&
+          slimmedToolResults < compactionPolicy.microcompactMaxPerTurn
+        ) {
+          const slimOutcome = await slimToolResults(this.env, {
+            events: history,
+            messages: projected.messages,
+            ledger,
+            policy: compactionPolicy,
+          })
+          if ('event' in slimOutcome) {
+            slimmedToolResults += slimOutcome.slimmedCount
+            try {
+              await options.onEvent?.(slimOutcome.event)
+            } catch {
+              this.env.telemetry.counter('observer.event.failed', {
+                type: slimOutcome.event.type,
+              })
+            }
+            await pullEvents()
+            continue
+          }
+        }
+
         const messages = await resolveImageParts(this.env, projected.messages, imageCache)
         const system = await this.env.prompt.compose(
           {
@@ -174,6 +275,31 @@ export class TurnMachine {
             ...(budgetWarning === undefined ? {} : { warning: budgetWarning }),
           },
         )
+
+        // Auto-compact: before paying for a request that the window already
+        // outgrew, summarize the oldest turns and continue with the summary.
+        const modelBudget = this.env.llm.getModelBudget?.()
+        const compactThreshold = contextWindowTokens() * compactionPolicy.thresholdRatio
+        const estimatedTokens = estimateRequestTokens({
+          system,
+          messages,
+          tools: this.env.tools.registry.list().map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
+        })
+        if (
+          compactionPolicy.autoCompact &&
+          compactions < compactionPolicy.maxCompactionsPerTurn &&
+          (lastInputTokens >= compactThreshold || estimatedTokens >= compactThreshold)
+        ) {
+          this.env.telemetry.hist('context.compaction.trigger', estimatedTokens, {
+            reason: 'threshold',
+          })
+          if (await compactContext('threshold', false)) continue
+        }
+
         await append({
           type: 'step.started',
           schemaVersion: 1,
@@ -181,7 +307,6 @@ export class TurnMachine {
           turnId: options.turnId,
         })
 
-        const modelBudget = this.env.llm.getModelBudget?.()
         const tools = this.env.tools.registry.list().map((tool) => ({
           name: tool.name,
           description: tool.description,
@@ -209,20 +334,34 @@ export class TurnMachine {
             stepId,
           },
         }
-        const response = await consumeLlmStream(
-          this.env.llm.stream(request, {
-            signal: cancellation.signal,
-            turnId: options.turnId,
-            stepId,
-          }),
-          async (delta) => {
-            try {
-              await options.onDelta?.(delta)
-            } catch {
-              this.env.telemetry.counter('observer.delta.failed', { type: delta.type })
-            }
-          },
-        )
+        let response
+        try {
+          response = await consumeLlmStream(
+            this.env.llm.stream(request, {
+              signal: cancellation.signal,
+              turnId: options.turnId,
+              stepId,
+            }),
+            async (delta) => {
+              try {
+                await options.onDelta?.(delta)
+              } catch {
+                this.env.telemetry.counter('observer.delta.failed', { type: delta.type })
+              }
+            },
+          )
+        } catch (error) {
+          // A provider rejection for context length is recoverable: compact
+          // hard and retry the same step once before giving up.
+          if (isContextOverflowError(error) && !cancellation.signal.aborted) {
+            this.env.telemetry.hist('context.compaction.trigger', estimatedTokens, {
+              reason: 'overflow',
+            })
+            if (await compactContext('overflow', true)) continue
+          }
+          throw error
+        }
+        lastInputTokens = response.usage.inputTokens
         const assistantEvent = await append({
           type: 'assistant.completed',
           schemaVersion: 1,
@@ -378,13 +517,19 @@ async function resolveImageParts(
   cache: Map<string, IrImagePart>,
 ): Promise<readonly IrMessage[]> {
   const needsResolution = messages.some(
-    (message) => message.role === 'user' && (message.imageRefs?.length ?? 0) > 0,
+    (message) =>
+      (message.role === 'user' || message.role === 'tool_result') &&
+      (message.imageRefs?.length ?? 0) > 0,
   )
   if (!needsResolution) return messages
 
   const resolved: IrMessage[] = []
   for (const message of messages) {
-    if (message.role !== 'user' || message.imageRefs === undefined || message.imageRefs.length === 0) {
+    if (
+      (message.role !== 'user' && message.role !== 'tool_result') ||
+      message.imageRefs === undefined ||
+      message.imageRefs.length === 0
+    ) {
       resolved.push(message)
       continue
     }
@@ -440,12 +585,6 @@ async function readImagePart(env: AgentEnv, ref: IrImageRef): Promise<IrImagePar
     )
   }
   return { mediaType: ref.mediaType, base64: Buffer.from(bytes).toString('base64') }
-}
-
-async function collectEvents(ledger: SessionLedger): Promise<AgentEvent[]> {
-  const events: AgentEvent[] = []
-  for await (const event of ledger.read()) events.push(event)
-  return events
 }
 
 function recoveryHintFor(error: ErrorInfo): string {

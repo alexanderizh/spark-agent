@@ -24,6 +24,12 @@ import {
   type SparkWorkHostCatalog,
   type SparkWorkHostRoute,
 } from './sparkwork-host.js'
+import {
+  PLATFORM_CONTEXT_WINDOW_TOKENS,
+  PLATFORM_MAX_OUTPUT_TOKENS,
+  readPlatformModelSnapshot,
+  type PlatformModelSnapshot,
+} from '../platform/models.js'
 
 export interface LoadModelConfigOptions {
   readonly cwd: string
@@ -58,17 +64,23 @@ export interface PersistCliPreferencesInput extends CliPreferences {
 
 export interface ConfiguredModelCatalogEntry {
   readonly id: string
-  readonly source: 'local' | 'sparkwork'
+  readonly source: 'local' | 'sparkwork' | 'platform'
   readonly providerId: string
   readonly providerName: string
   readonly protocol: ModelProtocol
   readonly model: string
   readonly selected: boolean
+  /** Configured context window; absent when the source reports none. */
+  readonly contextWindowTokens?: number
+  /** Configured output ceiling; absent when the source reports none. */
+  readonly maxOutputTokens?: number
 }
 
 export interface ConfiguredModelCatalog {
   readonly entries: readonly ConfiguredModelCatalogEntry[]
   readonly selectedModel?: string
+  /** A complete platform-model binding (gateway + key + models) exists. */
+  readonly platformConnected: boolean
   readonly sparkWorkConnected: boolean
   readonly sparkWorkDiagnostic?: string
   readonly sparkWorkStaleBridgeDescriptors: number
@@ -88,6 +100,7 @@ export async function loadConfiguredModel(
     config,
     environment,
     host,
+    platform,
     projectLayer,
     globalPath,
     projectPath,
@@ -96,9 +109,13 @@ export async function loadConfiguredModel(
   } = await loadModelContext(options)
   const localSelected = options.model ?? environment.SPARK_MODEL ?? selectedModel(projectLayer)
   // A persisted CLI selection ([agent].model, written by the TUI picker) is an
-  // explicit choice and stays sticky above the SparkWork default route; the
-  // host default only applies while the CLI has picked nothing itself.
-  const modelId = localSelected ?? config.agent.model ?? host.catalog?.defaultRoute
+  // explicit choice and stays sticky above the platform and SparkWork default
+  // routes; those defaults only apply while the CLI has picked nothing itself.
+  const modelId =
+    localSelected ??
+    config.agent.model ??
+    (platform?.models[0] !== undefined ? `platform:${platform.models[0]}` : undefined) ??
+    host.catalog?.defaultRoute
   if (!modelId) {
     throw noModelSelectedError({ host, globalPath, projectPath, globalExists, projectExists })
   }
@@ -108,6 +125,7 @@ export async function loadConfiguredModel(
       config,
       environment,
       host,
+      platform,
       projectLayer,
       globalPath,
       projectPath,
@@ -150,14 +168,19 @@ function buildConfiguredRuntime(
   failover: readonly string[],
   fetcher: FetchLike | undefined,
 ): ConfiguredModelRuntime {
-  const { config, environment, host } = context
+  const { config, environment, host, platform } = context
   const route = [...new Set([modelId, ...failover])]
   const registry = new ModelRegistry()
   for (const id of route) {
-    if (!config.models[id] && !host.catalog && host.diagnostic) {
+    if (
+      !config.models[id] &&
+      !platform?.models.includes(platformModelId(id)) &&
+      !host.catalog &&
+      host.diagnostic
+    ) {
       throw new ModelConfigError(`Model ${id} is unavailable. ${host.diagnostic}`)
     }
-    registerModelRoute(registry, id, config, environment, host.catalog, fetcher)
+    registerModelRoute(registry, id, config, environment, host.catalog, platform, fetcher)
   }
   const primaryCapabilities = registry.get(modelId)?.capabilities
   return {
@@ -174,6 +197,7 @@ function buildConfiguredRuntime(
     ...(primaryCapabilities === undefined ? {} : { capabilities: primaryCapabilities }),
     configSnapshot: {
       ...structuredClone(config),
+      ...(platform ? { platform: { gateway: platform.baseUrl, selectedRoute: modelId } } : {}),
       ...(host.catalog
         ? {
             sparkwork: {
@@ -189,12 +213,13 @@ function buildConfiguredRuntime(
 export async function inspectConfiguredModels(
   options: LoadModelConfigOptions,
 ): Promise<ConfiguredModelCatalog> {
-  const { config, environment, host, projectLayer } = await loadModelContext(options)
+  const { config, environment, host, platform, projectLayer } = await loadModelContext(options)
   const selected =
     options.model ??
     environment.SPARK_MODEL ??
     selectedModel(projectLayer) ??
     config.agent.model ??
+    (platform?.models[0] !== undefined ? `platform:${platform.models[0]}` : undefined) ??
     host.catalog?.defaultRoute
   const selectedHostRoute =
     selected && host.catalog && !config.models[selected]
@@ -217,6 +242,10 @@ export async function inspectConfiguredModels(
           protocol: provider.protocol,
           model: model.model,
           selected: selected === id,
+          ...(model.context_window === undefined
+            ? {}
+            : { contextWindowTokens: model.context_window }),
+          ...(model.max_tokens === undefined ? {} : { maxOutputTokens: model.max_tokens }),
         },
       ]
     },
@@ -230,10 +259,26 @@ export async function inspectConfiguredModels(
       protocol: route.protocol,
       model: route.model,
       selected: selectedHostRoute?.routeId === route.routeId,
+      ...(route.contextWindow === undefined ? {} : { contextWindowTokens: route.contextWindow }),
+      ...(route.maxOutputTokens === undefined ? {} : { maxOutputTokens: route.maxOutputTokens }),
     })) ?? []
+  const platformEntries: ConfiguredModelCatalogEntry[] = (platform?.models ?? []).map(
+    (modelId) => ({
+      id: `platform:${modelId}`,
+      source: 'platform' as const,
+      providerId: 'platform',
+      providerName: 'Spark 平台模型',
+      protocol: 'anthropic-messages' as const,
+      model: modelId,
+      selected: selected === `platform:${modelId}`,
+      contextWindowTokens: PLATFORM_CONTEXT_WINDOW_TOKENS,
+      maxOutputTokens: PLATFORM_MAX_OUTPUT_TOKENS,
+    }),
+  )
   return Object.freeze({
-    entries: Object.freeze([...hostEntries, ...localEntries]),
+    entries: Object.freeze([...hostEntries, ...localEntries, ...platformEntries]),
     ...(selected ? { selectedModel: selected } : {}),
+    platformConnected: platform !== undefined,
     sparkWorkConnected: host.catalog !== undefined,
     sparkWorkStaleBridgeDescriptors: host.staleBridgeDescriptors,
     ...(host.diagnostic ? { sparkWorkDiagnostic: host.diagnostic } : {}),
@@ -382,6 +427,7 @@ async function writeGlobalConfig(
 interface LoadedModelContext {
   readonly config: ModelConfig
   readonly environment: NodeJS.ProcessEnv
+  readonly platform: PlatformModelSnapshot | undefined
   readonly host: Awaited<ReturnType<typeof discoverSparkWorkHost>>
   readonly projectLayer: Record<string, unknown>
   readonly globalPath: string
@@ -414,9 +460,13 @@ async function loadModelContext(options: LoadModelConfigOptions): Promise<Loaded
     ...(options.sparkWorkBridgePath ? { descriptorPath: options.sparkWorkBridgePath } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   })
+  // Platform models come from the stored bootstrap binding, never a network
+  // call: selection must work offline once `spark login` bootstrapped once.
+  const platform = await readPlatformModelSnapshot(sparkHome).catch(() => undefined)
   return {
     config,
     environment,
+    platform,
     host,
     projectLayer: project.layer,
     globalPath,
@@ -553,17 +603,43 @@ function registerModelRoute(
   config: ModelConfig,
   environment: NodeJS.ProcessEnv,
   host: SparkWorkHostCatalog | undefined,
+  platform: PlatformModelSnapshot | undefined,
   fetcher: FetchLike | undefined,
 ): void {
   if (config.models[id]) {
     registerConfiguredModel(registry, id, config, environment)
     return
   }
+  if (platform) {
+    const platformModel = platformModelId(id)
+    if (platform.models.includes(platformModel)) {
+      // The platform gateway speaks the Anthropic wire protocol and appends
+      // /v1/messages itself, so the bare gateway URL is the correct base.
+      registry.registerHttp({
+        id,
+        providerId: 'platform',
+        protocol: 'anthropic-messages',
+        model: platformModel,
+        baseUrl: platform.baseUrl,
+        apiKey: platform.apiKey,
+        contextWindowTokens: PLATFORM_CONTEXT_WINDOW_TOKENS,
+        maxOutputTokens: PLATFORM_MAX_OUTPUT_TOKENS,
+        ...(fetcher ? { fetch: fetcher } : {}),
+      })
+      return
+    }
+  }
   const hostRoute = host ? resolveSparkWorkRoute(host, id) : undefined
   if (!host || !hostRoute) {
-    throw new ModelConfigError(`Model ${id} is not defined locally or available from SparkWork`)
+    throw new ModelConfigError(
+      `Model ${id} is not defined locally, available from the platform, or available from SparkWork`,
+    )
   }
   registerSparkWorkModel(registry, id, host, hostRoute, fetcher)
+}
+
+function platformModelId(id: string): string {
+  return id.startsWith('platform:') ? id.slice('platform:'.length) : id
 }
 
 function registerSparkWorkModel(

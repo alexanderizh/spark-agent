@@ -8,16 +8,16 @@ import { afterEach, describe, expect, it } from 'vitest'
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('spark skills contract', () => {
-  it('lists compact metadata and reads a selected skill body', async () => {
-    const root = await workspace()
-    const home = resolve(root, 'home')
-    await writeSkill(root, 'review', 'Review', 'Review the change', '# Review\n\nRun checks.')
+  it('lists compact metadata and reads a selected skill body', { timeout: 30_000 }, async () => {
+    const { home, project } = await workspace()
+    await writeSkill(project, 'review', 'Review', 'Review the change', '# Review\n\nRun checks.')
 
-    const list = await runCli(['skills', 'list', '--json'], root, home)
+    const list = await runCli(['skills', 'list', '--json'], project, home)
     expect(list.code).toBe(0)
     const listed = JSON.parse(list.stdout) as {
       readonly skills: readonly { readonly id: string; readonly description: string }[]
@@ -26,31 +26,50 @@ describe('spark skills contract', () => {
     expect(listed.skills[0]).toMatchObject({ description: 'Review the change' })
     expect(list.stdout).not.toContain('Run checks.')
 
-    const read = await runCli(['skills', 'read', listed.skills[0]!.id], root, home)
+    const read = await runCli(['skills', 'read', listed.skills[0]!.id], project, home)
     expect(read.code).toBe(0)
     expect(read.stdout).toContain('# Review\n\nRun checks.')
   })
 
-  it('supports query and limit, and reports missing skill ids as command failures', async () => {
-    const root = await workspace()
-    const home = resolve(root, 'home')
-    await writeSkill(root, 'one', 'One', 'Alpha skill', 'one')
-    await writeSkill(root, 'two', 'Two', 'Beta skill', 'two')
+  it(
+    'supports query and limit, and reports missing skill ids as command failures',
+    { timeout: 30_000 },
+    async () => {
+      const { home, project } = await workspace()
+      await writeSkill(project, 'one', 'One', 'Alpha skill', 'one')
+      await writeSkill(project, 'two', 'Two', 'Beta skill', 'two')
 
-    const filtered = await runCli(['skills', 'list', 'beta', '--limit', '1', '--json'], root, home)
-    expect(filtered.code).toBe(0)
-    expect(JSON.parse(filtered.stdout)).toMatchObject({ total: 1 })
+      const filtered = await runCli(
+        ['skills', 'list', 'beta', '--limit', '1', '--json'],
+        project,
+        home,
+      )
+      expect(filtered.code).toBe(0)
+      expect(JSON.parse(filtered.stdout)).toMatchObject({ total: 1 })
 
-    const missing = await runCli(['skills', 'read', 'missing'], root, home)
-    expect(missing.code).toBe(1)
-    expect(missing.stderr).toContain('Skill not found: missing')
-  })
+      const missing = await runCli(['skills', 'read', 'missing'], project, home)
+      expect(missing.code).toBe(1)
+      expect(missing.stderr).toContain('Skill not found: missing')
+    },
+  )
 })
 
-async function workspace(): Promise<string> {
+/**
+ * The CLI workspace lives INSIDE the isolated home: the skill catalog scans
+ * project ancestors up to the home boundary, so this layout keeps the real
+ * user's installed skills out of the sandbox on any machine.
+ */
+async function workspace(): Promise<{
+  readonly root: string
+  readonly home: string
+  readonly project: string
+}> {
   const root = await mkdtemp(resolve(tmpdir(), 'spark-skills-cli-'))
   roots.push(root)
-  return root
+  const home = resolve(root, 'home')
+  const project = resolve(home, 'project')
+  await mkdir(project, { recursive: true })
+  return { root, home, project }
 }
 
 async function writeSkill(

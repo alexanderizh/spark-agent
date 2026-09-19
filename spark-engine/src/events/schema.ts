@@ -69,6 +69,17 @@ export const TurnStatsSchema = z.object({
   // Time to the turn's first content token (first LLM call); 0 when unreported.
   ttftMs: z.number().int().nonnegative().default(0),
   costUsd: z.number().nonnegative().default(0),
+  // Context compactions performed while running this turn. 0 keeps older
+  // ledgers valid.
+  compactions: z.number().int().nonnegative().default(0),
+  // Tool-result bodies sunk to artifacts by microcompact during this turn.
+  slimmedToolResults: z.number().int().nonnegative().default(0),
+  // Active model context window, when the route reports one; lets hosts
+  // render headroom without re-deriving the model budget.
+  contextWindowTokens: z.number().int().positive().optional(),
+  // Input tokens of the turn's final LLM call — the provider's own view of
+  // the context footprint. Omitted when the provider reported nothing.
+  lastInputTokens: z.number().int().nonnegative().optional(),
 })
 
 const envelope = {
@@ -215,8 +226,34 @@ const PermissionDecidedEventSchema = z.object({
 const ContextCompactedEventSchema = z.object({
   ...envelope,
   type: z.literal('context.compacted'),
+  // Dropped ranges are half-open [from, to) sequence windows covering whole
+  // turns only, so tool call/result pairs are never split.
   summaryRef: ArtifactRefSchema.optional(),
+  // Inline summary text so replay never needs an artifact read; summaryRef
+  // keeps the same content addressable for audits.
+  summary: z.string().min(1).optional(),
   droppedRanges: z.array(z.tuple([z.number().int(), z.number().int()])),
+})
+
+const SlimmedToolResultSchema = z.object({
+  callId: z.string().min(1),
+  /** Artifact holding the complete original body; the ledger keeps context. */
+  fullRef: ArtifactRefSchema,
+  /** Head+tail stub that replaces the body in every later projection. */
+  slimmedContent: z.string().min(1),
+  /** Estimated tokens freed from the per-step request. */
+  savedTokens: z.number().int().nonnegative(),
+})
+
+/**
+ * Microcompact record: stale tool bodies are sunk into the artifact store
+ * and replaced by stubs. Pure token hygiene — the message itself stays, so
+ * no tool pairing changes and the original content stays recoverable.
+ */
+const ToolResultsSlimmedEventSchema = z.object({
+  ...envelope,
+  type: z.literal('context.tool_results_slimmed'),
+  slimmed: z.array(SlimmedToolResultSchema).min(1),
 })
 
 const LogRewindEventSchema = z.object({
@@ -261,6 +298,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   PermissionRequestedEventSchema,
   PermissionDecidedEventSchema,
   ContextCompactedEventSchema,
+  ToolResultsSlimmedEventSchema,
   LogRewindEventSchema,
   PluginActivatedEventSchema,
   PluginDeactivatedEventSchema,

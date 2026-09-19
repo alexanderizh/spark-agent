@@ -8,11 +8,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) {
+    // Windows keeps the temp dir locked while a spawned CLI child is dying.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 })
 
 describe('spark todo contract', () => {
-  it('adds, lists, updates, and clears project tasks', async () => {
+  // Four sequential CLI spawns; the 5s default cannot survive a loaded machine.
+  it('adds, lists, updates, and clears project tasks', { timeout: 30_000 }, async () => {
     const root = await sandbox()
     const home = resolve(root, 'home')
 
@@ -55,16 +59,20 @@ describe('spark todo contract', () => {
     expect((await runCli(['todo', 'list', '--json'], root, home)).stdout).toContain('"todos": []')
   })
 
-  it('keeps validation errors from mutating the project task file', async () => {
-    const root = await sandbox()
-    const home = resolve(root, 'home')
-    const invalid = await runCli(['todo', 'add', 'Bad', '--priority', 'urgent'], root, home)
+  it(
+    'keeps validation errors from mutating the project task file',
+    { timeout: 30_000 },
+    async () => {
+      const root = await sandbox()
+      const home = resolve(root, 'home')
+      const invalid = await runCli(['todo', 'add', 'Bad', '--priority', 'urgent'], root, home)
 
-    expect(invalid.code).toBe(2)
-    expect(invalid.stderr).toContain('Invalid todo priority')
-    const list = await runCli(['todo', 'list', '--json'], root, home)
-    expect(JSON.parse(list.stdout)).toMatchObject({ todos: [] })
-  })
+      expect(invalid.code).toBe(2)
+      expect(invalid.stderr).toContain('Invalid todo priority')
+      const list = await runCli(['todo', 'list', '--json'], root, home)
+      expect(JSON.parse(list.stdout)).toMatchObject({ todos: [] })
+    },
+  )
 })
 
 async function sandbox(): Promise<string> {
