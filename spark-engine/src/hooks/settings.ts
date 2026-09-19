@@ -21,6 +21,8 @@ export interface DiscoveredHookSettings {
   readonly config: HooksConfig
   readonly files: readonly HookSettingsFile[]
   readonly issues: readonly HookSettingsIssue[]
+  /** Per-scope validated configs in ascending-precedence order; empty when no file loaded. */
+  readonly scopedConfigs: readonly { scope: HookSettingsScope; config: HooksConfig }[]
 }
 
 /**
@@ -72,7 +74,7 @@ export function discoverHookSettings(
     configs.push({ scope: file.scope, config: validated.data })
     files.push(file)
   }
-  return { config: mergeHooksConfigs(configs), files, issues }
+  return { config: mergeHooksConfigs(configs), files, issues, scopedConfigs: configs }
 }
 
 export interface LoadHookRunnerOptions {
@@ -113,6 +115,49 @@ function mergeHooksConfigs(
     }
   }
   return merged
+}
+
+/** One hook command as listed for hosts (mirrors the Claude SDK's get_hooks_listing shape, host-relevant subset). */
+export interface ListedHookEntry {
+  readonly event: HookEventName
+  /** Tool-name glob for PreToolUse/PostToolUse; absent = all tools. */
+  readonly matcher?: string
+  readonly command: string
+  readonly timeoutMs?: number
+  /** File the entry was loaded from, when discovery kept file attribution. */
+  readonly sourcePath: string | null
+  /** Settings scope the entry came from (ascending precedence: user → project → local). */
+  readonly scope: HookSettingsScope
+}
+
+/**
+ * Flattens discovered settings into a per-command listing. Scope order follows
+ * hookSettingsFiles (ascending precedence: user → project → local); every
+ * entry from every loaded file is listed, matching the merge semantics of
+ * loadHookRunner. Informational only — hosts edit the source files.
+ */
+export function listHookEntries(discovered: DiscoveredHookSettings): readonly ListedHookEntry[] {
+  const pathByScope = new Map<HookSettingsScope, string>()
+  for (const file of discovered.files) pathByScope.set(file.scope, file.path)
+  const entries: ListedHookEntry[] = []
+  for (const { scope, config } of discovered.scopedConfigs) {
+    const sourcePath = pathByScope.get(scope) ?? null
+    for (const event of Object.keys(config) as HookEventName[]) {
+      for (const matcherGroup of config[event] ?? []) {
+        for (const hook of matcherGroup.hooks) {
+          entries.push({
+            event,
+            ...(matcherGroup.matcher ? { matcher: matcherGroup.matcher } : {}),
+            command: hook.command,
+            ...(hook.timeoutMs ? { timeoutMs: hook.timeoutMs } : {}),
+            sourcePath,
+            scope,
+          })
+        }
+      }
+    }
+  }
+  return entries
 }
 
 function issueIssue(issue: {

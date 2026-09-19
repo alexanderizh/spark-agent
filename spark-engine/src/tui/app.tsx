@@ -440,12 +440,13 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     const [command] = raw.trim().split(/\s+/, 1)
     switch (command) {
       case '/help': {
-        const custom = props.customCommands ?? []
-        const customText =
-          custom.length === 0
-            ? ''
-            : `\n自定义命令：${custom.map((command) => `/${command.name}${command.description === '' ? '' : ` ${command.description}`}`).join(' · ')}`
-        setNoticeFull({ text: helpDetail() + customText, tone: 'info' })
+        // Custom commands reuse the builtin list layout so /help stays one
+        // entry per line even when the project defines many commands.
+        const custom = (props.customCommands ?? []).map((entry) => ({
+          label: `/${entry.name}`,
+          summary: entry.description,
+        }))
+        setNoticeFull({ text: helpDetail(custom), tone: 'info' })
         break
       }
       case '/status':
@@ -729,11 +730,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
               ? '已保留当前输入'
               : retrying
                 ? `${retrying.resetOutput ? '已丢弃失败尝试的临时输出 · ' : ''}${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
-                : pending
-                  ? 'esc 拒绝当前工具'
-                  : 'esc 中断当前任务'
-          }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`}
-          capabilities={capabilities}
+                : ''
+          }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`.trim()}
           theme={theme}
         />
       )}
@@ -843,7 +841,6 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         <WorkingLine
           label={updateCheckOnly ? '正在检查更新' : '正在更新 Spark'}
           detail="连接发布通道，下载并校验安装包"
-          capabilities={capabilities}
           theme={theme}
         />
       )}
@@ -905,6 +902,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         perf={perfText || undefined}
         cwd={formatCwd(props.cwd)}
         scrollHint={outputScrolled}
+        running={activeTurns > 0 || updateRunning}
         capabilities={capabilities}
         theme={theme}
       />

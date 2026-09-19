@@ -1,8 +1,10 @@
 import type {
   AgentEvent,
+  ContextUsageCategory,
   GoalEvent,
   GoalEventStatus,
   ProposedGoalContract,
+  SessionUsageReportEvent,
   TeamA2ATask,
   TeamA2AReply,
   TeamMemberEventContext,
@@ -403,6 +405,8 @@ export interface ContextUsageSnapshot {
   softLimitTokens: number
   contextWindowTokens: number
   compactedThisTurn: boolean
+  /** turn 终态后的按类目细分（Claude SDK 0.3.278+ getContextUsage；缺省表示不可用）。 */
+  categories?: ContextUsageCategory[]
 }
 
 /** Goal 状态轻量快照，用于 UI 侧右上角 GitEnvPanel 等浮窗展示。
@@ -590,6 +594,7 @@ export class MessageBuilder {
   private processedEventIds = new Set<string>()
   private currentAssistantId: string | null = null
   private latestContextUsage: ContextUsageSnapshot | null = null
+  private latestUsageReport: SessionUsageReportEvent | null = null
   private latestPlanProposed: string | null = null
   private activeGoal: GoalSnapshot | null = null
   private orchestrationStatus: OrchestrationSnapshot | null = null
@@ -606,6 +611,11 @@ export class MessageBuilder {
 
   getLatestContextUsage(): ContextUsageSnapshot | null {
     return this.latestContextUsage
+  }
+
+  /** /usage 结构化快照（会话累计 + 计划限额）；无订阅通道/旧 CLI 时为 null。 */
+  getLatestUsageReport(): SessionUsageReportEvent | null {
+    return this.latestUsageReport
   }
 
   getTurnPromptSnapshots(): TurnPromptSnapshotEvent[] {
@@ -649,6 +659,7 @@ export class MessageBuilder {
         this.clearAll()
         this.processedEventIds.add(event.id)
         this.latestContextUsage = null
+        this.latestUsageReport = null
         this.latestPlanProposed = null
         break
       }
@@ -1318,7 +1329,17 @@ export class MessageBuilder {
           softLimitTokens: event.softLimitTokens,
           contextWindowTokens: event.contextWindowTokens,
           compactedThisTurn: event.compacted,
+          ...(event.categories != null && event.categories.length > 0
+            ? { categories: event.categories }
+            : {}),
         }
+        break
+      }
+
+      case 'session_usage_report': {
+        // /usage 结构化快照（Claude SDK 0.3.278+）：会话累计 + claude.ai 计划限额，
+        // 仅供用量仪表消费，不创建时间线消息；用量卡片 UI 后续接。
+        this.latestUsageReport = event
         break
       }
 

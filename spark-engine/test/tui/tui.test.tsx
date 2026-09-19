@@ -123,9 +123,9 @@ describe('TUI deterministic interaction', () => {
     )
 
     const frame = stripAnsi(app.lastFrame() ?? '')
-    expect(frame).toContain('+ Task · Inspect the workspace · read-only')
-    expect(frame).toContain('v subagent completed')
-    expect(frame).toContain('session session2')
+    expect(frame).toContain('+ Task · Inspect the workspace')
+    expect(frame).toMatch(/v \d+ms · session session2/)
+    expect(frame).toContain('read-only')
     expect(frame).not.toContain('Subagent session:')
     expect(frame).toContain('The child inspected three source files.')
     app.unmount()

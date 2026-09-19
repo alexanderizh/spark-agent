@@ -1,7 +1,8 @@
 /**
  * codex app-server v2 协议类型（Spark 消费面子集）。
  *
- * 来源：`codex app-server generate-ts --out <dir>`（0.153.4 实测），
+ * 来源：`codex app-server generate-ts --out <dir>`（0.153.4 实测；0.155.1 复核
+ * 通过 check:codex-protocol，消费面子集无变化），
  * 本文件只收敛 CodexAppServerExecutor 实际读写的请求/通知/条目形状；
  * 未消费的字段一律不声明，避免与上游 experimental 协议过度耦合。
  * 升级 codex 运行时版本时重新生成 schema 并核对本文件。
@@ -261,3 +262,101 @@ export interface PermissionsApprovalResponse {
 
 /** v1 兼容审批方法（applyPatchApproval / execCommandApproval）与 v2 同形决策。 */
 export type LegacyApprovalResponse = CommandExecutionApprovalResponse | FileChangeApprovalResponse
+
+// ── MCP 服务状态查询（0.155.1 mcpServerStatus/list，消费面子集） ─────────────
+
+export type AppServerMcpConnectionStatus =
+  | 'notStarted'
+  | 'starting'
+  | 'connected'
+  | 'authenticationRequired'
+  | 'failed'
+  | 'cancelled'
+  | 'disabled'
+
+/**
+ * MCP 服务运行状态。`toolsError`（0.155.1 新增）：工具发现失败且未返回 catalog
+ * 时的原因；返回 catalog（含缓存/空 catalog）时为 null——非空即可直接展示。
+ */
+export interface AppServerMcpServerStatus {
+  name: string
+  runtimeStatus: AppServerMcpConnectionStatus | null
+  toolsError: string | null
+}
+
+export interface AppServerListMcpServerStatusParams {
+  /** 限定查询某个 thread 的运行时连接状态；缺省查询全局配置状态。 */
+  threadId?: string | null
+}
+
+export interface AppServerListMcpServerStatusResponse {
+  data: AppServerMcpServerStatus[]
+  nextCursor: string | null
+}
+
+// ── thread attachments：会话级 KV（0.155.1，resume 后存活） ─────────────────
+
+/**
+ * 独立持久化的线程附件：attachmentType + identityKey 定位、payload 为任意 JSON。
+ * add 幂等（outcome=existing 表示已存在同名键），remove 按 (attachmentType,
+ * identityKey) 删除。线程 resume 后附件仍在。
+ */
+export interface AppServerThreadAttachment {
+  id: string
+  attachmentType: string
+  identityKey: string
+  payload: unknown
+  createdAt: number
+}
+
+export interface AppServerThreadAttachmentAddParams {
+  threadId: string
+  attachmentType: string
+  identityKey: string
+  payload: unknown
+}
+
+export interface AppServerThreadAttachmentAddResponse {
+  outcome: 'created' | 'existing'
+  attachment: AppServerThreadAttachment
+}
+
+export interface AppServerThreadAttachmentListParams {
+  threadId: string
+  cursor?: string | null
+  limit?: number | null
+}
+
+export interface AppServerThreadAttachmentListResponse {
+  data: AppServerThreadAttachment[]
+  nextCursor: string | null
+}
+
+export interface AppServerThreadAttachmentRemoveParams {
+  threadId: string
+  attachmentType: string
+  identityKey: string
+}
+
+// ── account/rateLimits/read（0.155.1 查询参数与响应增强，消费面子集） ────────
+
+export interface AppServerGetAccountRateLimitsParams {
+  /** 客户端支持自动 Luna Reserve 回退；允许后端在普通用量被阻断后记录实验曝光。 */
+  supportsLunaReserve?: boolean
+  /** 跳过 reset-credit 明细查询（后台轮询用）；响应仍含可用数量。 */
+  excludeResetCreditDetails?: boolean
+}
+
+/**
+ * 消费面子集：`ordinaryUsageAllowed` 为 null 表示后端不可用，
+ * 客户端不得从百分比或重置时间推断恢复；`normalModelSlug` 是描述该额度
+ * 别名的常规模型（展示名与 reasoning 选项来源）。
+ */
+export interface AppServerGetAccountRateLimitsResponse {
+  ordinaryUsageAllowed: boolean | null
+  rateLimits: {
+    limitId: string | null
+    normalModelSlug: string | null
+  }
+  accountId: string | null
+}

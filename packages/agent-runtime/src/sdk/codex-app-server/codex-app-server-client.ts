@@ -2,7 +2,16 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type {
   AppServerClientInfo,
+  AppServerGetAccountRateLimitsParams,
+  AppServerGetAccountRateLimitsResponse,
   AppServerInitializeParams,
+  AppServerListMcpServerStatusParams,
+  AppServerListMcpServerStatusResponse,
+  AppServerThreadAttachmentAddParams,
+  AppServerThreadAttachmentAddResponse,
+  AppServerThreadAttachmentListParams,
+  AppServerThreadAttachmentListResponse,
+  AppServerThreadAttachmentRemoveParams,
   JsonRpcClientRequest,
   JsonRpcErrorShape,
   JsonRpcNotificationFrame,
@@ -209,6 +218,44 @@ export class CodexAppServerClient {
     const params: AppServerInitializeParams = { clientInfo }
     await this.request('initialize', params, timeoutMs)
     this.notification('initialized', {})
+  }
+
+  /** MCP 服务运行状态（0.155.1）：toolsError 非空即工具发现失败原因。 */
+  async listMcpServerStatus(
+    params: AppServerListMcpServerStatusParams = {},
+    timeoutMs = 30_000,
+  ): Promise<AppServerListMcpServerStatusResponse> {
+    return this.request('mcpServerStatus/list', params, timeoutMs)
+  }
+
+  /** 会话级 KV（0.155.1 thread attachments）：add 幂等，resume 后存活。 */
+  async addThreadAttachment(
+    params: AppServerThreadAttachmentAddParams,
+    timeoutMs = 30_000,
+  ): Promise<AppServerThreadAttachmentAddResponse> {
+    return this.request('thread/attachment/add', params, timeoutMs)
+  }
+
+  async listThreadAttachments(
+    params: AppServerThreadAttachmentListParams,
+    timeoutMs = 30_000,
+  ): Promise<AppServerThreadAttachmentListResponse> {
+    return this.request('thread/attachment/list', params, timeoutMs)
+  }
+
+  async removeThreadAttachment(
+    params: AppServerThreadAttachmentRemoveParams,
+    timeoutMs = 30_000,
+  ): Promise<void> {
+    await this.request('thread/attachment/remove', params, timeoutMs)
+  }
+
+  /** 账号速率限额（0.155.1 参数增强）。 */
+  async getAccountRateLimits(
+    params: AppServerGetAccountRateLimitsParams = {},
+    timeoutMs = 30_000,
+  ): Promise<AppServerGetAccountRateLimitsResponse> {
+    return this.request('account/rateLimits/read', params, timeoutMs)
   }
 
   async request<T>(method: string, params?: unknown, timeoutMs = 120_000): Promise<T> {

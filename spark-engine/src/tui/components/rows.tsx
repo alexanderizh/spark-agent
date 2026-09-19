@@ -63,53 +63,7 @@ function renderTranscriptRow(
     )
   }
   if (row.toolLine) {
-    const toolLine = row.toolLine
-    const symbols = glyphs(capabilities)
-    const branch = capabilities.unicode ? '└' : '\\'
-    const status =
-      toolLine.processStatus ??
-      (toolLine.isTask
-        ? toolLine.ok
-          ? 'subagent completed'
-          : 'subagent failed'
-        : toolLine.ok
-          ? 'completed'
-          : 'failed')
-    return (
-      <Box key={row.key} flexDirection="column" marginTop={1} width={capabilities.width}>
-        <Text>
-          <Text color={theme.accent}>
-            {symbols.tool} {toolLine.title}
-          </Text>
-          {toolLine.detail === undefined ? undefined : (
-            <Text color={theme.dim}> · {toolLine.detail}</Text>
-          )}
-        </Text>
-        <Text>
-          <Text color={theme.dim}> {branch} </Text>
-          <Text color={toolLine.ok ? theme.ok : theme.error}>
-            {toolLine.processStatus === 'still running'
-              ? symbols.pending
-              : toolLine.ok
-                ? symbols.success
-                : symbols.failure}{' '}
-            {status}
-          </Text>
-          <Text color={theme.dim}>
-            {' '}
-            · {toolLine.durationMs}
-            {toolLine.sessionId === undefined ? '' : ` · session ${shortId(toolLine.sessionId)}`}
-            {toolLine.processId === undefined ? '' : ` · process ${shortId(toolLine.processId)}`}
-          </Text>
-        </Text>
-        {toolLine.resultLines.map((line, index) => (
-          <Text key={`${row.key}-result-${index}`} color={toolLine.ok ? theme.dim : theme.error}>
-            {'    '}
-            {line}
-          </Text>
-        ))}
-      </Box>
-    )
+    return renderToolLine(row, theme, capabilities)
   }
   const color = toneColor(row.tone, theme)
   return color === undefined ? (
@@ -129,38 +83,102 @@ export interface ActiveToolsProps {
 
 export function ActiveTools({ tools, capabilities, theme }: ActiveToolsProps): ReactElement {
   const symbols = glyphs(capabilities)
-  const branch = capabilities.unicode ? '└' : '\\'
   return (
     <Box flexDirection="column" marginTop={tools.length > 0 ? 1 : 0}>
       {tools.map((tool) => (
-        <Box key={tool.callId} flexDirection="column" marginBottom={1}>
+        <Box key={tool.callId} marginBottom={1}>
           <Text>
             <Text color={tool.status === 'running' ? theme.accent : theme.dim}>
               {symbols.tool} {tool.title}
+            </Text>
+            <Text color={theme.dim}>
+              {' '}
+              {symbols.pending}{' '}
+              {tool.isTask
+                ? tool.status === 'running'
+                  ? 'subagent running'
+                  : tool.status === 'approval'
+                    ? 'subagent waiting for approval'
+                    : 'subagent queued'
+                : tool.status === 'running'
+                  ? 'running'
+                  : tool.status === 'approval'
+                    ? 'waiting for approval'
+                    : 'preparing'}
             </Text>
             {tool.detail === undefined ? undefined : (
               <Text color={theme.dim}> · {tool.detail}</Text>
             )}
           </Text>
-          <Text color={theme.dim}>
-            {'  '}
-            {branch}{' '}
-            <Text color={tool.status === 'running' ? theme.accent : theme.dim}>
-              {tool.status === 'running' ? symbols.spinner[0] : symbols.pending}
-            </Text>{' '}
-            {tool.isTask
-              ? tool.status === 'running'
-                ? 'subagent dispatched'
-                : tool.status === 'approval'
-                  ? 'subagent waiting for approval'
-                  : 'subagent queued'
-              : tool.status === 'running'
-                ? 'running'
-                : tool.status === 'approval'
-                  ? 'waiting for approval'
-                  : 'preparing'}
-          </Text>
         </Box>
+      ))}
+    </Box>
+  )
+}
+
+/** Bounded error excerpt kept under a failed tool line. */
+const FAILED_DETAIL_MAX_LINES = 3
+
+/** Subagent reply excerpt kept under a completed task line. */
+const TASK_DETAIL_MAX_LINES = 2
+
+/**
+ * One settled tool call collapses to a single line (`⏺ Read · path ✓ 19ms`):
+ * the mark plus duration already carry the outcome, so the former second
+ * status line and the multi-line result preview are noise once a tool lands.
+ * Details stay only where they change decisions: failures keep a short error
+ * excerpt, and background processes keep their live output tail.
+ */
+function renderToolLine(
+  row: TranscriptRow,
+  theme: TuiTheme,
+  capabilities: TerminalCapabilities,
+): ReactElement {
+  const toolLine = row.toolLine
+  if (toolLine === undefined) return <Text key={row.key}>{row.text}</Text>
+  const symbols = glyphs(capabilities)
+  const running = toolLine.processStatus === 'still running'
+  const failed = !toolLine.ok
+  const statusColor = failed ? theme.error : running ? theme.dim : theme.ok
+  const statusGlyph = running ? symbols.pending : failed ? symbols.failure : symbols.success
+  const statusWord = toolLine.processStatus ?? (failed ? 'failed' : undefined)
+  const trail: string[] = []
+  if (toolLine.sessionId !== undefined) trail.push(`session ${shortId(toolLine.sessionId)}`)
+  if (toolLine.processId !== undefined) trail.push(`process ${shortId(toolLine.processId)}`)
+  // Failures, live background output, and subagent replies stay legible;
+  // plain successes fold to the single header line.
+  const detailLines = failed
+    ? toolLine.resultLines.slice(0, FAILED_DETAIL_MAX_LINES)
+    : running
+      ? toolLine.resultLines.slice(0, FAILED_DETAIL_MAX_LINES)
+      : toolLine.isTask
+        ? toolLine.resultLines.slice(0, TASK_DETAIL_MAX_LINES)
+        : []
+  return (
+    <Box key={row.key} flexDirection="column" marginTop={1} width={capabilities.width}>
+      <Text>
+        <Text color={failed ? theme.error : theme.accent}>
+          {symbols.tool} {toolLine.title}
+        </Text>
+        <Text color={statusColor}>
+          {' '}
+          {statusGlyph}
+          {statusWord === undefined ? '' : ` ${statusWord}`}
+        </Text>
+        <Text color={theme.dim}>
+          {' '}
+          {toolLine.durationMs}
+          {trail.length === 0 ? '' : ` · ${trail.join(' · ')}`}
+        </Text>
+        {toolLine.detail === undefined ? undefined : (
+          <Text color={theme.dim}> · {toolLine.detail}</Text>
+        )}
+      </Text>
+      {detailLines.map((line, index) => (
+        <Text key={`${row.key}-result-${index}`} color={failed ? theme.error : theme.dim}>
+          {'  '}
+          {line}
+        </Text>
       ))}
     </Box>
   )

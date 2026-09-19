@@ -35,7 +35,16 @@ export function presentTool(tool: string, args: unknown): ToolPresentation {
     case 'read':
     case 'write':
     case 'edit':
+    case 'view_image':
       return { title: `${display} · ${singleLine(stringValue(record.path) ?? 'unknown path', 88)}` }
+    case 'web_search':
+      return {
+        title: `${display} · ${singleLine(stringValue(record.query) ?? 'unknown query', 88)}`,
+      }
+    case 'web_fetch': {
+      const url = stringValue(record.url) ?? 'unknown url'
+      return { title: `${display} · ${singleLine(url.replace(/^https?:\/\//u, ''), 88)}` }
+    }
     case 'glob': {
       const pattern = Array.isArray(record.pattern)
         ? record.pattern.join(', ')
@@ -157,6 +166,9 @@ function toolDisplayName(tool: string): string {
     edit: 'Edit',
     bash: 'Bash',
     task: 'Task',
+    view_image: 'View',
+    web_search: 'Search',
+    web_fetch: 'Fetch',
   }
   return names[tool] ?? singleLine(tool, 64)
 }

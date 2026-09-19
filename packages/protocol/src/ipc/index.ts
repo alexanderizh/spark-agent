@@ -1972,6 +1972,25 @@ export interface PermissionApprovalRequest {
   projectId?: string
   workspaceIds?: string[]
   persistentScopes: PermissionDecisionScope[]
+  /**
+   * 高危询问（Claude SDK 0.3.278+）：弹卡默认聚焦拒绝、不得预选批准。
+   * 渲染端渲染批准选项时应把焦点放在拒绝按钮上。
+   */
+  defaultToNo?: boolean
+  /**
+   * 高危询问（Claude SDK 0.3.278+）：本次询问不得提供「不再询问」持久选项。
+   * 主进程已同步收窄 persistentScopes；此字段供渲染端隐藏持久化 UI 的双保险。
+   */
+  suppressAlwaysAllowRule?: boolean
+  /**
+   * MCP 工具调用的来源徽标（Claude SDK 0.3.278+）：source 是配置来源
+   * （'sdk' 为 SDK 注册的可信来源），name 是配置键名（不可信文本，展示前转义）。
+   * 非 MCP 工具或缺省时不展示。
+   */
+  mcpServer?: {
+    name: string
+    source: string
+  }
 }
 
 /**

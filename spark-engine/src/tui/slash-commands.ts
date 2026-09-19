@@ -46,10 +46,63 @@ export function helpLine(): string {
   return SLASH_COMMANDS.map((command) => command.name).join(' ')
 }
 
-export function helpDetail(): string {
-  const commands = SLASH_COMMANDS.map((command) => `${command.name} ${command.summary}`).join(' · ')
-  const shortcuts = TUI_SHORTCUTS.map((shortcut) => `${shortcut.keys} ${shortcut.summary}`).join(
-    ' · ',
-  )
-  return [`命令：${commands}`, `快捷键：${shortcuts}`].join('\n')
+/** One /help row: a left label column plus the explanation shown next to it. */
+export interface HelpEntry {
+  readonly label: string
+  readonly summary: string
+}
+
+/** Blank cell count between the padded label column and the summary column. */
+const LABEL_GAP = 2
+
+/** Two-space indent keeps the rows visually nested under the section title. */
+const ROW_INDENT = '  '
+
+/**
+ * Renders one /help section: the title followed by one line per entry, with
+ * every label padded to `labelWidth` so the summaries line up in a shared
+ * column instead of the list collapsing into one wrapped paragraph.
+ *
+ * Labels are ASCII command names and key names, so `length` is their terminal
+ * cell width; revisit this if a label ever carries wide (CJK/emoji) glyphs.
+ */
+export function formatHelpSection(
+  title: string,
+  entries: readonly HelpEntry[],
+  labelWidth: number,
+): readonly string[] {
+  const rows = entries.map((entry) => {
+    const label = entry.label.padEnd(labelWidth)
+    return `${ROW_INDENT}${label}${' '.repeat(LABEL_GAP)}${entry.summary}`.trimEnd()
+  })
+  return [title, ...rows]
+}
+
+/** Widest label across a section set: the shared summary column starts after it. */
+export function widestHelpLabel(entries: readonly HelpEntry[]): number {
+  return entries.reduce((widest, entry) => Math.max(widest, entry.label.length), 0)
+}
+
+/**
+ * /help body: commands and shortcuts as one entry per line, grouped into
+ * labelled sections separated by a blank line. Custom commands from
+ * `.spark/commands` are appended as their own section. All sections share one
+ * label column and the same section layout as the builtin lists.
+ */
+export function helpDetail(custom: readonly HelpEntry[] = []): string {
+  const commands = SLASH_COMMANDS.map((command) => ({
+    label: command.name,
+    summary: command.summary,
+  }))
+  const shortcuts = TUI_SHORTCUTS.map((shortcut) => ({
+    label: shortcut.keys,
+    summary: shortcut.summary,
+  }))
+  const width = widestHelpLabel([...commands, ...shortcuts, ...custom])
+  const sections: readonly (readonly string[])[] = [
+    formatHelpSection('命令：', commands, width),
+    formatHelpSection('快捷键：', shortcuts, width),
+    ...(custom.length === 0 ? [] : [formatHelpSection('自定义命令：', custom, width)]),
+  ]
+  return sections.map((section) => section.join('\n')).join('\n\n')
 }

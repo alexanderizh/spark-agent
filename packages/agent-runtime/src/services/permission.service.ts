@@ -166,6 +166,15 @@ interface RequestApprovalOptions {
   sdkRequestId?: string
   /** Hook V2：权限请求的归因 turn（SessionService 包装层注入）。 */
   turnId?: string
+  /** 高危询问（Claude SDK 0.3.278+）：弹卡默认聚焦拒绝。 */
+  defaultToNo?: boolean
+  /** 高危询问（Claude SDK 0.3.278+）：不提供「不再询问」持久选项。 */
+  suppressAlwaysAllowRule?: boolean
+  /** MCP 工具调用的来源徽标（Claude SDK 0.3.278+）。 */
+  mcpServer?: {
+    name: string
+    source: string
+  }
   onDecision?: (decision: PermissionApprovalDecision) => void
   /**
    * 一条审批请求在没有用户操作的情况下失效时回调（超时 / 会话被取消）。
@@ -555,7 +564,14 @@ export class PermissionService {
         ...(params.options.workspaceIds != null
           ? { workspaceIds: params.options.workspaceIds }
           : {}),
-        persistentScopes,
+        // 高危询问（SDK 0.3.278+）：suppressAlwaysAllowRule 时不给持久化选项，
+        // 主进程侧收窄（渲染端另有字段双保险）。
+        persistentScopes: params.options.suppressAlwaysAllowRule === true ? [] : persistentScopes,
+        ...(params.options.defaultToNo === true ? { defaultToNo: true } : {}),
+        ...(params.options.suppressAlwaysAllowRule === true
+          ? { suppressAlwaysAllowRule: true }
+          : {}),
+        ...(params.options.mcpServer != null ? { mcpServer: params.options.mcpServer } : {}),
       })
     })
   }

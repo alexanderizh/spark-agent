@@ -1,4 +1,10 @@
 import type { AgentEvent } from '@spark/protocol'
+import type {
+  AppServerGetAccountRateLimitsParams,
+  AppServerGetAccountRateLimitsResponse,
+  AppServerThreadAttachment,
+  AppServerThreadAttachmentAddResponse,
+} from './codex-app-server/app-server-protocol.js'
 import type { SDKExecutorConfig } from './types.js'
 
 /**
@@ -86,6 +92,34 @@ export interface CompactCapableExecutor extends EngineExecutor {
 }
 
 /**
+ * 能力接口：会话级 KV（codex 0.155.1 thread attachments）——app-server 载具经
+ * `thread/attachment/add|list|remove` 读写与 turn 无关的持久附件（add 幂等、
+ * 线程 resume 后存活）。载具级能力先行：方法仅在 turn 活跃窗口内可用
+ * （activeClient/activeThreadId 就绪时）；跨 resume 的完整宿主接线需 lease 池
+ * 层的长驻访问点，属后续消费（承载会话任务状态/用户偏好等）。
+ */
+export interface ThreadAttachmentsCapableExecutor extends EngineExecutor {
+  listThreadAttachments(options?: { attachmentType?: string }): Promise<AppServerThreadAttachment[]>
+  setThreadAttachment(params: {
+    attachmentType: string
+    identityKey: string
+    payload: unknown
+  }): Promise<AppServerThreadAttachmentAddResponse>
+  removeThreadAttachment(params: { attachmentType: string; identityKey: string }): Promise<void>
+}
+
+/**
+ * 能力接口：账号速率限额查询（codex 0.155.1 参数增强）——拉取式 API，
+ * 宿主（用量面板等）按需调用；`ordinaryUsageAllowed` 为 null 表示后端
+ * 不可用，不得从百分比推断恢复。
+ */
+export interface RateLimitsCapableExecutor extends EngineExecutor {
+  getAccountRateLimits(
+    params?: AppServerGetAccountRateLimitsParams,
+  ): Promise<AppServerGetAccountRateLimitsResponse>
+}
+
+/**
  * 能力守卫的参数取 EngineExecutor 的结构超集：turnRegistry 持有的 ActiveExecution
  * （Pick<EngineExecutor,'cancel'> + 可选能力）同样可判 —— 会话层无需持有完整执行器。
  * 可选能力显式带 | undefined：exactOptionalPropertyTypes 下 ActiveExecution 的
@@ -99,6 +133,10 @@ type CapabilityProbe = Pick<EngineExecutor, 'cancel'> & {
   rewindFiles?: RewindCapableExecutor['rewindFiles'] | undefined
   steer?: SteerCapableExecutor['steer'] | undefined
   compact?: CompactCapableExecutor['compact'] | undefined
+  listThreadAttachments?: ThreadAttachmentsCapableExecutor['listThreadAttachments'] | undefined
+  setThreadAttachment?: ThreadAttachmentsCapableExecutor['setThreadAttachment'] | undefined
+  removeThreadAttachment?: ThreadAttachmentsCapableExecutor['removeThreadAttachment'] | undefined
+  getAccountRateLimits?: RateLimitsCapableExecutor['getAccountRateLimits'] | undefined
 }
 
 export const isPermissionModeAware = (
@@ -116,6 +154,16 @@ export const isCompactCapable = (
   e: CapabilityProbe,
 ): e is CapabilityProbe & CompactCapableExecutor =>
   typeof (e as Partial<CompactCapableExecutor>).compact === 'function'
+
+export const isThreadAttachmentsCapable = (
+  e: CapabilityProbe,
+): e is CapabilityProbe & ThreadAttachmentsCapableExecutor =>
+  typeof (e as Partial<ThreadAttachmentsCapableExecutor>).setThreadAttachment === 'function'
+
+export const isRateLimitsCapable = (
+  e: CapabilityProbe,
+): e is CapabilityProbe & RateLimitsCapableExecutor =>
+  typeof (e as Partial<RateLimitsCapableExecutor>).getAccountRateLimits === 'function'
 
 /**
  * session 层对活跃执行体的最小结构视图（迁自 session.service）。

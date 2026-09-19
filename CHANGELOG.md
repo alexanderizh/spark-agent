@@ -13,11 +13,14 @@
 - **五类资产团队共享**：技能、MCP、工作流、平台 Agent、子应用均可发布到团队注册中心并安装回本地——发布走原生资源与 AgentSpec 信封（服务端自动版本、防回退、公开范围、下载统计），安装支持六态比对与历史版本安装/回滚。
 - **自包含捆绑（空机器可运行）**：工作流/Agent/子应用发布载荷内联全部运行依赖——引用技能的完整文件（二进制 base64 保真）、脱敏 MCP 配置、级联的平台 Agent；接收方零依赖安装即可运行，安装落草稿/停用态由使用者确认启用，不可移植项显式警告不静默。
 - **团队商店**：侧边栏新入口聚合五类资产——搜索、分类页签带计数、状态筛选、更新横幅一键全更、详情抽屉（元数据/版本历史/逐版本安装）、上传共享面板（本地资产三页签一键发布，V2 多文件应用与归档应用禁发并说明原因）。
+- **Claude/Codex SDK 升级与新能力接入**：Claude Agent SDK 0.3.263 → 0.3.278、Codex 0.153.4 → 0.155.1（MinIO 六平台 runtime 制品同步上架，老版本应用可在「设置 → 完整性」升级）。接入 Claude 结构化启动失败分诊（16 种原因映射稳定错误码 `CLAUDE_STARTUP_FAILED_*`）、worktree 会话 `projectConfigRoot`（hooks/permissions/.claude 配置树不随分支漂移）、权限审批高危标记（`defaultToNo` 审批卡默认聚焦拒绝、`suppressAlwaysAllowRule` 主进程收窄持久化选项）与 MCP 工具来源徽标（`source === 'sdk'` 可信标识，审批卡已展示）、上下文用量四分类（used/free/buffer/deferred 终态细分事件，渲染端快照可查）与 /usage 结构化用量事件（`session_usage_report`）；Codex 侧接入 thread attachments 会话级 KV 与账号速率限额查询两个载具级能力接口（`ThreadAttachmentsCapableExecutor` / `RateLimitsCapableExecutor`）、MCP `toolsError` 工具发现失败透传，并显式映射 `configuration_update` 条目。
+- **spark-engine 引擎层对标能力**：新增结构化启动失败原因（`StartupFailureError` + 九值 reason，MCP 连接失败已接线）、会话级 KV 存储（`SessionKvStore`：set 幂等/list/remove，resume 后存活）、MCP 服务 `toolsError` 状态查询（工具发现失败降级不阻断会话）、权限规则列表 API（`listRules` 带来源与可编辑性）、Hooks 清单 API（`listHookEntries` 按 scope 展开）与上下文用量四分类事件（`context.usage_snapshot`）。
 
 ### 修复
 
 - 团队注册中心 IPC 报错透传真实原因（原被掩码为「操作未完成」），技能目录被安全软件清空等场景给出可行动提示。
 - `pnpm test:unit` 在 Windows 上可用（跨平台测试编排器，POSIX 行为不变）。
+- **Spark CLI `/help`**：命令与快捷键改为按行列表输出（标签列统一对齐、命令/快捷键分区、自定义命令独立成段），不再挤成一段自动换行文本。
 
 ## [0.11.63] - 2026-09-13
 

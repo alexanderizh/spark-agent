@@ -2642,6 +2642,11 @@ function getSessionService(): SessionService {
           ...permissionContext,
           sdkRequestId: sdkContext.requestId,
           ...(sdkContext.turnId != null ? { turnId: sdkContext.turnId } : {}),
+          // 高危询问与 MCP 来源徽标（Claude SDK 0.3.278+）：从 canUseTool 回调
+          // 上下文透传到审批卡数据结构。
+          ...(sdkContext.defaultToNo === true ? { defaultToNo: true } : {}),
+          ...(sdkContext.suppressAlwaysAllowRule === true ? { suppressAlwaysAllowRule: true } : {}),
+          ...(sdkContext.mcpServer != null ? { mcpServer: sdkContext.mcpServer } : {}),
           onDecision: (decision) => {
             selectedDecision = decision
           },

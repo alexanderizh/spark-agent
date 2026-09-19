@@ -1,110 +1,135 @@
-import { createHash } from 'node:crypto';
+import { createHash } from 'node:crypto'
 
-import { stableStringify } from '../kernel/stable-json.js';
-import type { PermissionPolicy } from '../seams.js';
-import type { ResolvedToolCall } from '../tools/contract.js';
+import { stableStringify } from '../kernel/stable-json.js'
+import type { PermissionPolicy } from '../seams.js'
+import type { ResolvedToolCall } from '../tools/contract.js'
 import type {
   PermissionCheckContext,
   PermissionDecision,
   PermissionRuleReference,
   PermissionRuleSource,
   PolicyDecision,
-} from './types.js';
+} from './types.js'
 
-type JsonScalar = string | number | boolean | null;
-const MAX_TRACKED_SESSIONS = 1_024;
+type JsonScalar = string | number | boolean | null
+const MAX_TRACKED_SESSIONS = 1_024
 
 export type PermissionArgumentMatcher =
   | { readonly path: string; readonly operator: 'equals'; readonly value: JsonScalar }
-  | { readonly path: string; readonly operator: 'glob' | 'prefix'; readonly value: string };
+  | { readonly path: string; readonly operator: 'glob' | 'prefix'; readonly value: string }
 
 export interface PermissionRule {
-  readonly id: string;
-  readonly tool: string;
-  readonly action: PolicyDecision['decision'];
-  readonly reason?: string;
-  readonly match?: readonly PermissionArgumentMatcher[];
-  readonly remember?: 'never' | 'session';
+  readonly id: string
+  readonly tool: string
+  readonly action: PolicyDecision['decision']
+  readonly reason?: string
+  readonly match?: readonly PermissionArgumentMatcher[]
+  readonly remember?: 'never' | 'session'
 }
 
 export interface PermissionRuleLayer {
-  readonly source: PermissionRuleSource;
-  readonly rules: readonly PermissionRule[];
+  readonly source: PermissionRuleSource
+  readonly rules: readonly PermissionRule[]
 }
 
 export interface RulePermissionPolicyOptions {
-  readonly layers?: readonly PermissionRuleLayer[];
+  readonly layers?: readonly PermissionRuleLayer[]
   /** Tool patterns that bypass interactive approval in manual mode. */
-  readonly allowedTools?: readonly string[];
+  readonly allowedTools?: readonly string[]
   /** Tool patterns that are denied before mode-specific handling. */
-  readonly disallowedTools?: readonly string[];
+  readonly disallowedTools?: readonly string[]
 }
 
 interface SelectedRule {
-  readonly rule: PermissionRule;
-  readonly reference: PermissionRuleReference;
+  readonly rule: PermissionRule
+  readonly reference: PermissionRuleReference
+}
+
+/** One rule with its provenance, for hosts rendering a rules list (mirrors the Claude SDK's list_permission_rules). */
+export interface ListedPermissionRule {
+  readonly id: string
+  readonly tool: string
+  readonly action: PermissionRule['action']
+  readonly source: PermissionRuleSource
+  /**
+   * Where the rule lives: `persistent` (user/project config files),
+   * `session` (cli-origin, memory only), or `readonly` (builtin/host —
+   * this listing API never mutates rules).
+   */
+  readonly editability: 'persistent' | 'session' | 'readonly'
+  readonly reason?: string
+}
+
+const EDITABILITY_BY_SOURCE: Readonly<
+  Record<PermissionRuleSource, ListedPermissionRule['editability']>
+> = {
+  builtin: 'readonly',
+  user: 'persistent',
+  project: 'persistent',
+  cli: 'session',
+  host: 'readonly',
 }
 
 export class RulePermissionPolicy implements PermissionPolicy {
-  readonly #rules: readonly SelectedRule[];
-  readonly #allowedTools: readonly string[];
-  readonly #disallowedTools: readonly string[];
-  readonly #sessionGrants = new Map<string, Set<string>>();
+  readonly #rules: readonly SelectedRule[]
+  readonly #allowedTools: readonly string[]
+  readonly #disallowedTools: readonly string[]
+  readonly #sessionGrants = new Map<string, Set<string>>()
 
   constructor(options: RulePermissionPolicyOptions | readonly PermissionRule[] = {}) {
     const normalized: RulePermissionPolicyOptions = Array.isArray(options)
       ? { layers: [{ source: 'host', rules: options as readonly PermissionRule[] }] }
-      : (options as RulePermissionPolicyOptions);
-    this.#allowedTools = [...(normalized.allowedTools ?? [])];
-    this.#disallowedTools = [...(normalized.disallowedTools ?? [])];
+      : (options as RulePermissionPolicyOptions)
+    this.#allowedTools = [...(normalized.allowedTools ?? [])]
+    this.#disallowedTools = [...(normalized.disallowedTools ?? [])]
     this.#rules = (normalized.layers ?? []).flatMap((layer) =>
       layer.rules.map((rule) => {
-        validateRule(rule);
-        return { rule: structuredClone(rule), reference: { id: rule.id, source: layer.source } };
+        validateRule(rule)
+        return { rule: structuredClone(rule), reference: { id: rule.id, source: layer.source } }
       }),
-    );
+    )
   }
 
   async check(call: ResolvedToolCall, context: PermissionCheckContext): Promise<PolicyDecision> {
     // Session mode is the single source of truth: the tool runner always
     // forwards the session's current mode, so the policy never second-guesses it.
-    const mode = context.mode;
-    let selected: SelectedRule | undefined;
+    const mode = context.mode
+    let selected: SelectedRule | undefined
     for (const rule of this.#rules) {
       if (wildcardMatches(rule.rule.tool, call.name) && matchesArguments(rule.rule, call.args)) {
-        selected = rule;
+        selected = rule
       }
     }
     if (matchesAny(this.#disallowedTools, call.name)) {
-      return { decision: 'deny', reason: 'Tool is disallowed by host configuration' };
+      return { decision: 'deny', reason: 'Tool is disallowed by host configuration' }
     }
-    if (mode === 'bypass') return { decision: 'allow', reason: 'Permission bypass mode' };
+    if (mode === 'bypass') return { decision: 'allow', reason: 'Permission bypass mode' }
     // Explicit deny rules stay enforceable in auto mode; auto only removes the
     // interactive asks. Bypass skips ordinary rules but not host disallows.
-    if (selected?.rule.action === 'deny') return ruleDecision(selected);
+    if (selected?.rule.action === 'deny') return ruleDecision(selected)
     if (matchesAny(this.#allowedTools, call.name)) {
-      return { decision: 'allow', reason: 'Tool is allowed by host configuration' };
+      return { decision: 'allow', reason: 'Tool is allowed by host configuration' }
     }
     if (mode === 'auto') {
-      return { decision: 'allow', reason: 'Auto approval mode' };
+      return { decision: 'allow', reason: 'Auto approval mode' }
     }
     if (selected) {
-      if (selected.rule.action !== 'ask') return ruleDecision(selected);
+      if (selected.rule.action !== 'ask') return ruleDecision(selected)
       const grant = grantDetails(
         call,
         selected.rule.remember === 'session' && call.definition.approval !== 'always',
-      );
+      )
       if (this.#hasGrant(context.sessionId, grant.key)) {
-        return { decision: 'allow', reason: `Session grant: ${grant.label}` };
+        return { decision: 'allow', reason: `Session grant: ${grant.label}` }
       }
-      return askDecision(call, selected, grant);
+      return askDecision(call, selected, grant)
     }
-    const grant = grantDetails(call, call.definition.approval === 'session');
+    const grant = grantDetails(call, call.definition.approval === 'session')
     if (this.#hasGrant(context.sessionId, grant.key)) {
-      return { decision: 'allow', reason: `Session grant: ${grant.label}` };
+      return { decision: 'allow', reason: `Session grant: ${grant.label}` }
     }
-    if (call.definition.approval === 'never') return { decision: 'allow' };
-    return askDecision(call, undefined, grant);
+    if (call.definition.approval === 'never') return { decision: 'allow' }
+    return askDecision(call, undefined, grant)
   }
 
   recordDecision(
@@ -114,44 +139,61 @@ export class RulePermissionPolicy implements PermissionPolicy {
   ): void {
     if (decision.decision === 'allow' && decision.grantScope === 'session') {
       if (!this.#mayRemember(call)) {
-        throw new Error(`Tool ${call.name} does not permit session grants`);
+        throw new Error(`Tool ${call.name} does not permit session grants`)
       }
-      let grants = this.#sessionGrants.get(context.sessionId);
+      let grants = this.#sessionGrants.get(context.sessionId)
       if (!grants) {
         if (this.#sessionGrants.size >= MAX_TRACKED_SESSIONS) {
-          const oldest = this.#sessionGrants.keys().next().value;
-          if (oldest) this.#sessionGrants.delete(oldest);
+          const oldest = this.#sessionGrants.keys().next().value
+          if (oldest) this.#sessionGrants.delete(oldest)
         }
-        grants = new Set<string>();
+        grants = new Set<string>()
       }
-      grants.add(grantDetails(call, true).key);
-      this.#sessionGrants.set(context.sessionId, grants);
+      grants.add(grantDetails(call, true).key)
+      this.#sessionGrants.set(context.sessionId, grants)
     }
   }
 
   #hasGrant(sessionId: string, key: string): boolean {
-    return this.#sessionGrants.get(sessionId)?.has(key) ?? false;
+    return this.#sessionGrants.get(sessionId)?.has(key) ?? false
+  }
+
+  /**
+   * Full rule listing with provenance and editability. Informational only —
+   * mutating rules means editing the source settings, not calling this API.
+   * Later layers win in `check`; the listing preserves registration order so
+   * hosts can show precedence the way the policy applies it.
+   */
+  listRules(): readonly ListedPermissionRule[] {
+    return this.#rules.map(({ rule, reference }) => ({
+      id: rule.id,
+      tool: rule.tool,
+      action: rule.action,
+      source: reference.source,
+      editability: EDITABILITY_BY_SOURCE[reference.source],
+      ...(rule.reason ? { reason: rule.reason } : {}),
+    }))
   }
 
   #mayRemember(call: ResolvedToolCall): boolean {
-    let selected: SelectedRule | undefined;
+    let selected: SelectedRule | undefined
     for (const rule of this.#rules) {
       if (wildcardMatches(rule.rule.tool, call.name) && matchesArguments(rule.rule, call.args)) {
-        selected = rule;
+        selected = rule
       }
     }
     return selected?.rule.action === 'ask'
       ? selected.rule.remember === 'session' && call.definition.approval !== 'always'
-      : call.definition.approval === 'session';
+      : call.definition.approval === 'session'
   }
 }
 
 function ruleDecision(selected: SelectedRule): PolicyDecision {
-  const { rule, reference } = selected;
+  const { rule, reference } = selected
   if (rule.action === 'allow') {
-    return { decision: 'allow', ...(rule.reason ? { reason: rule.reason } : {}), rule: reference };
+    return { decision: 'allow', ...(rule.reason ? { reason: rule.reason } : {}), rule: reference }
   }
-  return { decision: 'deny', ...(rule.reason ? { reason: rule.reason } : {}), rule: reference };
+  return { decision: 'deny', ...(rule.reason ? { reason: rule.reason } : {}), rule: reference }
 }
 
 function askDecision(
@@ -165,94 +207,94 @@ function askDecision(
     ...(selected ? { rule: selected.reference } : {}),
     allowedGrantScopes: grant.remember ? ['once', 'session'] : ['once'],
     ...(grant.remember ? { sessionScopeLabel: grant.label } : {}),
-  };
+  }
 }
 
 function grantDetails(
   call: ResolvedToolCall,
   remember: boolean,
 ): { readonly key: string; readonly label: string; readonly remember: boolean } {
-  const args = asRecord(call.args);
-  const path = typeof args?.path === 'string' ? args.path : undefined;
-  const command = typeof args?.command === 'string' ? args.command : undefined;
-  const identity = path === undefined ? stableStringify(call.args) : stableStringify({ path });
-  const digest = createHash('sha256').update(identity).digest('hex');
-  const detail = path ?? command ?? 'these exact arguments';
+  const args = asRecord(call.args)
+  const path = typeof args?.path === 'string' ? args.path : undefined
+  const command = typeof args?.command === 'string' ? args.command : undefined
+  const identity = path === undefined ? stableStringify(call.args) : stableStringify({ path })
+  const digest = createHash('sha256').update(identity).digest('hex')
+  const detail = path ?? command ?? 'these exact arguments'
   return {
     key: `${call.name}:${digest}`,
     label: `${call.name}: ${singleLine(detail, 160)}`,
     remember,
-  };
+  }
 }
 
 function matchesArguments(rule: PermissionRule, args: unknown): boolean {
   return (rule.match ?? []).every((matcher) => {
-    const actual = resolvePointer(args, matcher.path);
-    if (matcher.operator === 'equals') return Object.is(actual, matcher.value);
-    if (typeof actual !== 'string') return false;
+    const actual = resolvePointer(args, matcher.path)
+    if (matcher.operator === 'equals') return Object.is(actual, matcher.value)
+    if (typeof actual !== 'string') return false
     return matcher.operator === 'prefix'
       ? actual.startsWith(matcher.value)
-      : wildcardMatches(matcher.value, actual);
-  });
+      : wildcardMatches(matcher.value, actual)
+  })
 }
 
 function resolvePointer(value: unknown, pointer: string): unknown {
-  if (pointer === '') return value;
-  let current = value;
+  if (pointer === '') return value
+  let current = value
   for (const encoded of pointer.slice(1).split('/')) {
-    const key = encoded.replaceAll('~1', '/').replaceAll('~0', '~');
-    const record = asRecord(current);
-    if (!record || !Object.hasOwn(record, key)) return undefined;
-    current = record[key];
+    const key = encoded.replaceAll('~1', '/').replaceAll('~0', '~')
+    const record = asRecord(current)
+    if (!record || !Object.hasOwn(record, key)) return undefined
+    current = record[key]
   }
-  return current;
+  return current
 }
 
 /** Glob match with `*` wildcards; shared with hook matchers and permission rules. */
 export function wildcardMatches(pattern: string, value: string): boolean {
-  let patternIndex = 0;
-  let valueIndex = 0;
-  let starIndex = -1;
-  let retryValueIndex = -1;
+  let patternIndex = 0
+  let valueIndex = 0
+  let starIndex = -1
+  let retryValueIndex = -1
   while (valueIndex < value.length) {
     if (pattern[patternIndex] === value[valueIndex]) {
-      patternIndex += 1;
-      valueIndex += 1;
+      patternIndex += 1
+      valueIndex += 1
     } else if (pattern[patternIndex] === '*') {
-      starIndex = patternIndex;
-      retryValueIndex = valueIndex;
-      patternIndex += 1;
+      starIndex = patternIndex
+      retryValueIndex = valueIndex
+      patternIndex += 1
     } else if (starIndex >= 0) {
-      patternIndex = starIndex + 1;
-      retryValueIndex += 1;
-      valueIndex = retryValueIndex;
+      patternIndex = starIndex + 1
+      retryValueIndex += 1
+      valueIndex = retryValueIndex
     } else {
-      return false;
+      return false
     }
   }
-  while (pattern[patternIndex] === '*') patternIndex += 1;
-  return patternIndex === pattern.length;
+  while (pattern[patternIndex] === '*') patternIndex += 1
+  return patternIndex === pattern.length
 }
 
 function matchesAny(patterns: readonly string[], value: string): boolean {
-  return patterns.some((pattern) => wildcardMatches(pattern, value));
+  return patterns.some((pattern) => wildcardMatches(pattern, value))
 }
 
 function validateRule(rule: PermissionRule): void {
   if (!rule.id || !rule.tool || rule.tool.length > 256)
-    throw new Error('Permission rule requires a valid id and tool pattern');
+    throw new Error('Permission rule requires a valid id and tool pattern')
   if (rule.remember && rule.action !== 'ask') {
-    throw new Error(`Permission rule ${rule.id} can only set remember when action is ask`);
+    throw new Error(`Permission rule ${rule.id} can only set remember when action is ask`)
   }
   for (const matcher of rule.match ?? []) {
     if (matcher.path !== '' && (!matcher.path.startsWith('/') || matcher.path.length > 512)) {
-      throw new Error(`Permission rule ${rule.id} contains an invalid JSON pointer`);
+      throw new Error(`Permission rule ${rule.id} contains an invalid JSON pointer`)
     }
     if (/(?:~(?![01]))/u.test(matcher.path)) {
-      throw new Error(`Permission rule ${rule.id} contains an invalid JSON pointer escape`);
+      throw new Error(`Permission rule ${rule.id} contains an invalid JSON pointer escape`)
     }
     if (typeof matcher.value === 'string' && matcher.value.length > 4_096) {
-      throw new Error(`Permission rule ${rule.id} contains an oversized matcher value`);
+      throw new Error(`Permission rule ${rule.id} contains an oversized matcher value`)
     }
   }
 }
@@ -260,10 +302,10 @@ function validateRule(rule: PermissionRule): void {
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
-    : undefined;
+    : undefined
 }
 
 function singleLine(value: string, maximum: number): string {
-  const normalized = value.replaceAll(/\s+/gu, ' ').trim();
-  return normalized.length <= maximum ? normalized : `${normalized.slice(0, maximum - 1)}…`;
+  const normalized = value.replaceAll(/\s+/gu, ' ').trim()
+  return normalized.length <= maximum ? normalized : `${normalized.slice(0, maximum - 1)}…`
 }

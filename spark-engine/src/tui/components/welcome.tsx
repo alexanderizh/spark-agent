@@ -11,17 +11,20 @@ export interface WelcomeBoxProps {
   readonly theme: TuiTheme
 }
 
-type MarkTone = 'core' | 'edge'
-
-// Pixel sparkle: solid blocks with half-block tips, so every monospace font
-// renders the same silhouette. Terminal cells are about twice as tall as they
-// are wide, so the mark stays three rows high — a taller grid would stretch
-// back into a thin, lopsided diamond — and sits flush with the three identity
-// lines beside it.
-const MARK_ROWS: readonly { readonly cells: string; readonly tone: MarkTone }[] = [
-  { cells: ' ▄█▄ ', tone: 'edge' },
-  { cells: '█████', tone: 'core' },
-  { cells: ' ▀█▀ ', tone: 'edge' },
+// Pixel infinity knot: the Spark app mark (two interlocked bands, the right
+// one crossing over) flattened into half-block pixels, so every monospace
+// font renders the same silhouette. Terminal cells are about twice as tall as
+// they are wide, so three rows give the lemniscate a wide 13:6 outline while
+// staying flush with the three identity lines beside it. The diamond waist —
+// top edge dipping, bottom edge rising, both pinched to one cell — is what
+// keeps the center crossing readable at this size. Each row splits at the
+// crossing: the left band renders in the edge tone and the right band plus
+// the crossing in the core tone, echoing the app icon's dark-left /
+// colorful-right split.
+const MARK_ROWS: readonly { readonly edge: string; readonly core: string }[] = [
+  { edge: '▄▀▀▀▀▄', core: '▄▄▀▀▀▀▄' },
+  { edge: '█', core: '     █     █' },
+  { edge: '▀▄▄▄▄▀', core: '▀▀▄▄▄▄▀' },
 ]
 
 /**
@@ -31,8 +34,7 @@ const MARK_ROWS: readonly { readonly cells: string; readonly tone: MarkTone }[] 
  */
 export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
   const width = Math.min(props.capabilities.width - 2, 64)
-  const markColor = (tone: MarkTone): string =>
-    tone === 'core' ? (props.theme.accentStrong ?? props.theme.accent) : props.theme.accent
+  const coreColor = props.theme.accentStrong ?? props.theme.accent
   return (
     <Box
       flexDirection="column"
@@ -45,8 +47,9 @@ export function WelcomeBox(props: WelcomeBoxProps): ReactElement {
       <Box flexShrink={0}>
         <Box flexDirection="column">
           {MARK_ROWS.map((row, index) => (
-            <Text key={index} color={markColor(row.tone)}>
-              {row.cells}
+            <Text key={index}>
+              <Text color={props.theme.accent}>{row.edge}</Text>
+              <Text color={coreColor}>{row.core}</Text>
             </Text>
           ))}
         </Box>

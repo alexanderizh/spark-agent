@@ -54,6 +54,7 @@ import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './p
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type {
   SDKApprovalResult,
+  SDKContextUsageResponse,
   SDKExecutorConfig,
   SDKMcpServerConfig,
   SDKMessage,
@@ -531,6 +532,55 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
     }
   }
 
+  /**
+   * turn 终态后从 SDK 拉取按类目上下文细分（getContextUsage，0.3.278+），
+   * 以真实 totalTokens 发一个增强版 context_usage 事件（带 categories 四分类）。
+   * 旧 CLI 不支持（方法缺省）或拉取失败时静默跳过——turn 开始的估算版事件
+   * 已经发出，此处只是增量增强，不构成终态依赖。
+   */
+  private async emitPostTurnContextUsage(
+    query: SDKQuery,
+    config: SDKExecutorConfig,
+    makeBase: () => {
+      id: string
+      sessionId: string
+      turnId: string
+      timestamp: string
+      seq: number
+    },
+  ): Promise<void> {
+    try {
+      if (typeof query.getContextUsage !== 'function') return
+      const usage = await query.getContextUsage({ detail: 'summary' })
+      if (usage == null || !Array.isArray(usage.categories)) return
+      const categories = usage.categories.filter(
+        (
+          category: SDKContextUsageResponse['categories'][number],
+        ): category is SDKContextUsageResponse['categories'][number] =>
+          category != null &&
+          typeof category.name === 'string' &&
+          typeof category.tokens === 'number' &&
+          (category.kind === 'used' ||
+            category.kind === 'free' ||
+            category.kind === 'buffer' ||
+            category.kind === 'deferred'),
+      )
+      this.emitter.emit({
+        ...makeBase(),
+        type: 'context_usage',
+        estimatedTokens: usage.totalTokens,
+        softLimitTokens: softContextLimit(config.model, config.contextWindowTokens),
+        contextWindowTokens: contextWindow(config.model, config.contextWindowTokens),
+        compacted: false,
+        ...(categories.length > 0 ? { categories } : {}),
+      })
+    } catch (err) {
+      log.debug('getContextUsage unavailable; skipping post-turn context breakdown', {
+        reason: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
   async executeTurn(
     sessionId: string,
     turnId: string,
@@ -673,6 +723,9 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
     if (autoCompactWindow != null) {
       runtimeEnv.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(autoCompactWindow)
     }
+    // 已知启动失败时让 CLI 写出带 startup_failure_reason 的零值 error result
+    // （0.3.278+）：不设置时启动失败只走 stderr，无法结构化分诊。
+    runtimeEnv.CLAUDE_CODE_STARTUP_FAILURE_RESULTS = '1'
     const settings: SDKSettings = {
       model: effectiveModel,
       env: runtimeEnv,
@@ -778,6 +831,11 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
         ...(resumeExistingSession ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
         ...(config.additionalDirectories != null && config.additionalDirectories.length > 0
           ? { additionalDirectories: config.additionalDirectories }
+          : {}),
+        // worktree 会话：项目配置树（hooks/permissions/.claude）从主仓库根读取
+        // 而非 worktree cwd，不随分支漂移（SDK 0.3.278+）。
+        ...(config.projectConfigRoot != null && config.projectConfigRoot.length > 0
+          ? { projectConfigRoot: config.projectConfigRoot }
           : {}),
 
         includePartialMessages: true,
@@ -997,7 +1055,13 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
         try {
           for await (const message of queryResult) {
             if (abortController.signal.aborted) break
-            if (message.type === 'result') activeInteractivePrompt.requestClose()
+            if (message.type === 'result') {
+              activeInteractivePrompt.requestClose()
+              // turn 终态后拉取按类目上下文细分（0.3.278 getContextUsage）：
+              // 以 SDK 真实 totalTokens 发一个增强版 context_usage 事件；
+              // 旧 CLI 不支持或拉取失败时静默跳过（turn 开始的估算版已发出）。
+              void this.emitPostTurnContextUsage(queryResult, config, makeBase)
+            }
             if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
               log.debug('Claude Code init message received', {
                 sparkSessionId: sessionId,

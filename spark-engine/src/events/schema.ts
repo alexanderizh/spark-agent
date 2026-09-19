@@ -140,6 +140,16 @@ const TurnFailedEventSchema = z.object({
   recoveryHint: z.string().optional(),
 })
 
+const TurnBoundaryRejectedEventSchema = z.object({
+  ...envelope,
+  type: z.literal('turn.boundary_rejected'),
+  turnId: z.string().min(1),
+  reason: z.literal('process_unobserved'),
+  /** Model-facing feedback with per-process terminal states and output tails. */
+  message: z.string(),
+  processIds: z.array(z.string().min(1)),
+})
+
 const StepStartedEventSchema = z.object({
   ...envelope,
   type: z.literal('step.started'),
@@ -256,6 +266,33 @@ const ToolResultsSlimmedEventSchema = z.object({
   slimmed: z.array(SlimmedToolResultSchema).min(1),
 })
 
+/**
+ * One row of a context-usage breakdown (mirrors the Claude SDK
+ * getContextUsage categories). Consumers classify on `kind`, never on the
+ * display `name`.
+ */
+const ContextUsageCategorySchema = z.object({
+  /** Display name as the producer renders it; classification lives in `kind`. */
+  name: z.string().min(1).max(128),
+  tokens: z.number().int().nonnegative(),
+  kind: z.enum(['used', 'free', 'buffer', 'deferred']),
+})
+
+/**
+ * Context window breakdown snapshot. Emitted after a turn settles (or on
+ * demand) with per-category rows: `used` occupies the window, `free` is the
+ * remainder, `buffer` is the compaction reserve, `deferred` rows are
+ * out-of-window tool schemas — listed for awareness, excluded from usage
+ * math. Complements TurnStats' scalar context fields with the full picture.
+ */
+const ContextUsageSnapshotEventSchema = z.object({
+  ...envelope,
+  type: z.literal('context.usage_snapshot'),
+  categories: z.array(ContextUsageCategorySchema).max(64),
+  totalTokens: z.number().int().nonnegative(),
+  maxTokens: z.number().int().positive(),
+})
+
 const LogRewindEventSchema = z.object({
   ...envelope,
   type: z.literal('log.rewind'),
@@ -289,6 +326,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TurnCompletedEventSchema,
   TurnCancelledEventSchema,
   TurnFailedEventSchema,
+  TurnBoundaryRejectedEventSchema,
   StepStartedEventSchema,
   AssistantCompletedEventSchema,
   ToolCallEventSchema,
@@ -299,6 +337,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   PermissionDecidedEventSchema,
   ContextCompactedEventSchema,
   ToolResultsSlimmedEventSchema,
+  ContextUsageSnapshotEventSchema,
   LogRewindEventSchema,
   PluginActivatedEventSchema,
   PluginDeactivatedEventSchema,

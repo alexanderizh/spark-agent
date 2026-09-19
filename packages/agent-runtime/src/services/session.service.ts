@@ -3519,6 +3519,12 @@ export class SessionService {
         ...(isLocalCli && activeCliSparkOverride == null ? { useLocalConfig: true } : {}),
         model,
         workspaceRootPath,
+        // worktree 会话：项目配置树（hooks/permissions/.claude）从主仓库根读取，
+        // 不随分支漂移（Claude SDK 0.3.278+ projectConfigRoot）。
+        ...(workspaceInfo?.worktreeMeta?.baseRepoRoot != null &&
+        workspaceInfo.worktreeMeta.baseRepoRoot.trim().length > 0
+          ? { projectConfigRoot: workspaceInfo.worktreeMeta.baseRepoRoot }
+          : {}),
         permissionMode,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         ...(config.haikuModel != null ? { haikuModel: config.haikuModel } : {}),

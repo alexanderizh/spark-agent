@@ -31,7 +31,9 @@ import { StreamTerminalizer } from '../stream-terminalizer.js'
 import type {
   CompactCapableExecutor,
   EngineExecutor,
+  RateLimitsCapableExecutor,
   SteerCapableExecutor,
+  ThreadAttachmentsCapableExecutor,
 } from '../engine-executor.js'
 import {
   CodexSdkExecutor,
@@ -54,6 +56,10 @@ import type {
 } from '../types.js'
 import { buildDefaultGitChildEnvironment } from '../../services/git-command.service.js'
 import type {
+  AppServerGetAccountRateLimitsParams,
+  AppServerGetAccountRateLimitsResponse,
+  AppServerThreadAttachment,
+  AppServerThreadAttachmentAddResponse,
   AppServerThreadParamsBase,
   AppServerTurnStartParams,
   JsonRpcErrorShape,
@@ -133,7 +139,12 @@ function roundedElapsed(startedAt: number): number {
 }
 
 export class CodexAppServerExecutor
-  implements EngineExecutor, SteerCapableExecutor, CompactCapableExecutor
+  implements
+    EngineExecutor,
+    SteerCapableExecutor,
+    CompactCapableExecutor,
+    ThreadAttachmentsCapableExecutor,
+    RateLimitsCapableExecutor
 {
   readonly engine = 'codex' as const
 
@@ -233,6 +244,73 @@ export class CodexAppServerExecutor
       throw new Error('no active codex app-server thread to compact')
     }
     await client.request('thread/compact/start', { threadId })
+  }
+
+  /**
+   * 能力：会话级 KV（`thread/attachment/*`，codex 0.155.1）。与 turn 生命周期
+   * 无关的持久附件：add 幂等、线程 resume 后存活。仅在 turn 活跃窗口内可用
+   * （activeClient/activeThreadId 就绪时）；跨 resume 的宿主接线需 lease 池层
+   * 长驻访问点，属后续消费（承载会话任务状态/用户偏好）。
+   */
+  async listThreadAttachments(
+    options: { attachmentType?: string } = {},
+  ): Promise<AppServerThreadAttachment[]> {
+    const { client, threadId } = this.requireActiveAttachmentContext('list')
+    const rows: AppServerThreadAttachment[] = []
+    let cursor: string | null = null
+    do {
+      const page = await client.listThreadAttachments({ threadId, cursor })
+      rows.push(...page.data)
+      cursor = page.nextCursor
+    } while (cursor != null && cursor.length > 0)
+    // 协议 list 不支持服务端按 type 过滤，客户端过滤兜底。
+    return options.attachmentType != null
+      ? rows.filter((row) => row.attachmentType === options.attachmentType)
+      : rows
+  }
+
+  async setThreadAttachment(params: {
+    attachmentType: string
+    identityKey: string
+    payload: unknown
+  }): Promise<AppServerThreadAttachmentAddResponse> {
+    const { client, threadId } = this.requireActiveAttachmentContext('write')
+    return client.addThreadAttachment({ threadId, ...params })
+  }
+
+  async removeThreadAttachment(params: {
+    attachmentType: string
+    identityKey: string
+  }): Promise<void> {
+    const { client, threadId } = this.requireActiveAttachmentContext('remove')
+    await client.removeThreadAttachment({ threadId, ...params })
+  }
+
+  /**
+   * 能力：账号速率限额查询（`account/rateLimits/read`，codex 0.155.1）。
+   * 拉取式 API，宿主（用量面板）按需调用；ordinaryUsageAllowed 为 null 表示
+   * 后端不可用，不得从百分比推断恢复。
+   */
+  async getAccountRateLimits(
+    params: AppServerGetAccountRateLimitsParams = {},
+  ): Promise<AppServerGetAccountRateLimitsResponse> {
+    const client = this.activeClient
+    if (client == null) {
+      throw new Error('no active codex app-server client to read rate limits')
+    }
+    return client.getAccountRateLimits(params)
+  }
+
+  private requireActiveAttachmentContext(operation: string): {
+    client: CodexAppServerClient
+    threadId: string
+  } {
+    const client = this.activeClient
+    const threadId = this.activeThreadId
+    if (client == null || threadId == null) {
+      throw new Error(`no active codex app-server thread to ${operation} attachments`)
+    }
+    return { client, threadId }
   }
 
   async executeTurn(
@@ -350,6 +428,10 @@ export class CodexAppServerExecutor
       compacted: false,
     })
     this.emitSkillIsolationWarning(skillIsolation, makeBase)
+    // MCP 服务状态观测（0.155.1 mcpServerStatus/list）：toolsError 非空即该服务
+    // 工具发现失败原因，记入统一日志（后续 MCP 面板可直接复用该查询）；
+    // 异步执行、失败静默，不阻塞也不影响 turn 主链路。
+    void this.observeMcpServerStatus(client, threadId, sessionId)
 
     let turnOutcome: TurnOutcome | null = null
     let processFailure: Error | null = null
@@ -1131,8 +1213,45 @@ export class CodexAppServerExecutor
         if (compactEvent != null) this.emit(compactEvent)
         return
       }
-      default:
+      default: {
+        // v2 ThreadItem 联合未收录的新变体：0.155.1 v1 ResponseItem 的
+        // configuration_update（后端路由模型的 reasoning 配置变化）在 v2 侧以
+        // camelCase 出现时在此显式识别并记日志，其余未知变体保持静默忽略。
+        const rawType = (item as { type?: string }).type
+        if (rawType === 'configurationUpdate' || rawType === 'configuration_update') {
+          const effort = (item as { reasoning?: { effort?: unknown } }).reasoning?.effort
+          log.info('Codex backend reasoning configuration updated', {
+            itemRawType: rawType,
+            effort: typeof effort === 'string' ? effort : null,
+          })
+        }
         return
+      }
+    }
+  }
+
+  private async observeMcpServerStatus(
+    client: CodexAppServerClient,
+    threadId: string,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      const response = await client.listMcpServerStatus({ threadId }, 10_000)
+      for (const server of response.data) {
+        if (typeof server?.toolsError === 'string' && server.toolsError.length > 0) {
+          log.warn(`MCP 工具发现失败：server=${server.name}`, {
+            sessionId,
+            threadId,
+            runtimeStatus: server.runtimeStatus ?? null,
+            toolsError: server.toolsError,
+          })
+        }
+      }
+    } catch (err) {
+      log.debug('mcpServerStatus/list 查询失败（不影响 turn）', {
+        sessionId,
+        reason: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 

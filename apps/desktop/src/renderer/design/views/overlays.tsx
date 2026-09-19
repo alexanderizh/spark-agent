@@ -1043,7 +1043,12 @@ export function PermissionModal({
             <span className="kbd">esc</span> 拒绝
           </span>
           <div className="flex1" />
-          <button className="btn" onClick={() => respond('deny')}>
+          <button
+            className="btn"
+            // 高危询问（SDK defaultToNo）：焦点落在拒绝上，不允许误击批准
+            autoFocus={request.defaultToNo === true}
+            onClick={() => respond('deny')}
+          >
             拒绝
           </button>
           <button className="btn" onClick={() => respond('deny-session')}>

@@ -3634,6 +3634,13 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   line-height: 1.45;
 }
+.permission-request-mcp {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
 .permission-request-fields {
   display: grid;
   gap: 1px;

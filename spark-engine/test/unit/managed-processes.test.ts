@@ -68,9 +68,7 @@ describe.skipIf(process.platform === 'win32')('turn-owned managed commands', () 
     expect(result.exit_code).toBe(7)
     expect(result.status).toBe('failed')
     expect(await readFile(join(f.root, 'starts'), 'utf8')).toBe('x')
-    expect(() => {
-      f.manager.assertTurnSettled(f.owner)
-    }).not.toThrow()
+    await expect(f.manager.settleTurnBoundary(f.owner)).resolves.toBeUndefined()
   })
 
   it('cancelling a wait does not cancel or restart its process', async () => {
@@ -106,9 +104,13 @@ describe.skipIf(process.platform === 'win32')('turn-owned managed commands', () 
     await expect(f.manager.wait(first.process_id, 100, 0, f.context)).rejects.toMatchObject({
       code: 'tool.invalid_cursor',
     })
-    expect(() => {
-      f.manager.assertTurnSettled(f.owner)
-    }).toThrow('Cannot finish')
+    const report = await f.manager.settleTurnBoundary(f.owner)
+    expect(report?.processIds).toEqual([first.process_id])
+    expect(report?.feedback).toContain('Cannot finish with unobserved managed commands')
+    expect(report?.feedback).toContain(first.process_id)
+    expect(report?.feedback).toContain('status=cancelled')
+    // Settlement observes the forced terminal state; a second check is clean.
+    await expect(f.manager.settleTurnBoundary(f.owner)).resolves.toBeUndefined()
     await f.manager.closeTurn(f.owner)
     await expect(f.manager.wait(first.process_id, 0, 0, f.context)).rejects.toMatchObject({
       code: 'tool.process_not_found',
@@ -120,9 +122,7 @@ describe.skipIf(process.platform === 'win32')('turn-owned managed commands', () 
     const first = parse(await f.start('process.stdout.write("x".repeat(10000))'))
     const result = await drain(f.manager, first, f.context)
     expect(result.output).toHaveLength(10000)
-    expect(() => {
-      f.manager.assertTurnSettled(f.owner)
-    }).not.toThrow()
+    await expect(f.manager.settleTurnBoundary(f.owner)).resolves.toBeUndefined()
     const replay = parse(await f.manager.wait(first.process_id, 0, 0, f.context))
     expect(replay.output).toHaveLength(2000)
     expect(replay.has_more).toBe(true)
@@ -155,9 +155,7 @@ describe.skipIf(process.platform === 'win32')('turn-owned managed commands', () 
         f.context,
       ),
     ).rejects.toMatchObject({ code: 'tool.invalid_wait' })
-    expect(() => {
-      f.manager.assertTurnSettled(f.owner)
-    }).not.toThrow()
+    await expect(f.manager.settleTurnBoundary(f.owner)).resolves.toBeUndefined()
     for (let i = 0; i < 8; i += 1) await f.start('setInterval(() => {}, 1000)', `call-${i}`)
     await expect(f.start('setInterval(() => {}, 1000)', 'overflow')).rejects.toMatchObject({
       code: 'tool.process_limit',

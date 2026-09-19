@@ -63,6 +63,9 @@ export function projectTranscript(
   const callTurns = new Map<string, string>()
   const terminalTurns = new Set<string>()
   let currentTurn: string | undefined
+  // Microcompact fires once per step, so a long turn appends many slim events;
+  // fold them into one row per turn whose totals update as batches land.
+  const slimRows = new Map<string, { index: number; count: number; savedTokens: number }>()
   const results = new Set<string>()
   const permissions = new Map<string, Extract<AgentEvent, { type: 'permission.requested' }>>()
   const symbols = glyphs(capabilities)
@@ -194,6 +197,13 @@ export function projectTranscript(
           tone: 'error',
         })
         break
+      case 'turn.boundary_rejected':
+        settled.push({
+          key: `event-${event.seq}`,
+          text: `${symbols.failure} 已取消 ${event.processIds.length} 个未观测的后台命令 · 结果已反馈给模型继续执行`,
+          tone: 'warn',
+        })
+        break
       case 'context.compacted':
         settled.push({
           key: `event-${event.seq}`,
@@ -203,11 +213,28 @@ export function projectTranscript(
         break
       case 'context.tool_results_slimmed': {
         const saved = event.slimmed.reduce((total, entry) => total + entry.savedTokens, 0)
-        settled.push({
-          key: `event-${event.seq}`,
-          text: `⇲ ${event.slimmed.length} 个工具结果已瘦身 · 完整输出已存档 · 每步约省 ${saved} tokens`,
-          tone: 'dim',
-        })
+        const turnKey = currentTurn ?? 'unknown'
+        const aggregate = slimRows.get(turnKey)
+        if (aggregate === undefined) {
+          slimRows.set(turnKey, {
+            index: settled.length,
+            count: event.slimmed.length,
+            savedTokens: saved,
+          })
+          settled.push({
+            key: `slim-${turnKey}`,
+            text: slimmingRowText(event.slimmed.length, saved),
+            tone: 'dim',
+          })
+        } else {
+          aggregate.count += event.slimmed.length
+          aggregate.savedTokens += saved
+          settled[aggregate.index] = {
+            key: `slim-${turnKey}`,
+            text: slimmingRowText(aggregate.count, aggregate.savedTokens),
+            tone: 'dim',
+          }
+        }
         break
       }
       case 'plugin.activated':
@@ -255,6 +282,15 @@ export function projectTranscript(
       }
     })
   return { settled, activeTools }
+}
+
+/**
+ * Aggregated microcompact notice: one row per turn, totals summed across the
+ * turn's batches. "每步约省" stays accurate — every later request carries all
+ * stubs, so the per-step saving is the cumulative total.
+ */
+function slimmingRowText(count: number, savedTokens: number): string {
+  return `⇲ ${count} 个工具结果已瘦身 · 完整输出已存档 · 每步约省 ${savedTokens} tokens`
 }
 
 /** Longest thinking transcript we are willing to settle into the log. */
@@ -348,6 +384,7 @@ function isKnownEvent(event: AgentEvent | UnknownEvent): event is AgentEvent {
     'turn.completed',
     'turn.cancelled',
     'turn.failed',
+    'turn.boundary_rejected',
     'step.started',
     'assistant.completed',
     'tool.call',

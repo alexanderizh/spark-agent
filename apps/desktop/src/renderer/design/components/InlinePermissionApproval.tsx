@@ -74,6 +74,8 @@ export function InlinePermissionApproval({
               type="button"
               className="composer-approval-btn ghost"
               disabled={busyDecision != null}
+              // 高危询问（SDK defaultToNo）：焦点落在拒绝上，不允许误击批准
+              autoFocus={request.defaultToNo === true}
               onClick={() => void respond('deny')}
             >
               拒绝

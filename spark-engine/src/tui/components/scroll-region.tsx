@@ -44,6 +44,22 @@ export function isMouseInput(input: string): boolean {
 }
 
 /**
+ * Returns whether wheel-driven scrolling should take over the terminal mouse.
+ *
+ * Enabling mouse tracking (DECSET 1000/1006) makes the terminal send every
+ * mouse press to the CLI, which disables the emulator's native text selection
+ * — users could no longer select and copy transcript output. Selection is the
+ * more important capability (Claude Code and Codex CLI both leave the mouse to
+ * the terminal), so tracking stays off unless explicitly opted in by setting
+ * SPARK_TUI_MOUSE=1 or SPARK_TUI_MOUSE=true. While tracking is on, terminals
+ * still allow native selection with a modifier held (Option on iTerm2/
+ * Terminal.app, Shift on Windows Terminal).
+ */
+export function isWheelTrackingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SPARK_TUI_MOUSE === '1' || env.SPARK_TUI_MOUSE === 'true'
+}
+
+/**
  * A fixed terminal viewport for the live TUI output.
  *
  * Ink's Static component is ideal for append-only logs, but a terminal redraw
@@ -51,10 +67,9 @@ export function isMouseInput(input: string): boolean {
  * reading earlier output. This region keeps the transcript in the live frame,
  * owns the scroll offset, and follows new output only until the user scrolls.
  *
- * Mouse tracking is enabled while this region is active so terminal emulators
- * send wheel reports to the CLI instead of scrolling an unrelated outer
- * viewport. The terminal modes are restored on unmount; PageUp/PageDown and
- * Home/End remain available when mouse reporting is unavailable.
+ * Wheel reports are only received when SPARK_TUI_MOUSE opts into mouse
+ * tracking, and the terminal modes are restored on unmount. PageUp/PageDown
+ * and Home/End remain available regardless of mouse reporting.
  */
 export function ScrollRegion(props: ScrollRegionProps): ReactElement {
   const { stdout } = useStdout()
@@ -80,7 +95,7 @@ export function ScrollRegion(props: ScrollRegionProps): ReactElement {
   }, [followTail, props.active, props.onScrollStateChange])
 
   useEffect(() => {
-    if (!props.active || !stdout.isTTY) return
+    if (!props.active || !stdout.isTTY || !isWheelTrackingEnabled()) return
     writeBestEffort(stdout, ENABLE_SGR_MOUSE)
     return () => {
       writeBestEffort(stdout, DISABLE_SGR_MOUSE)

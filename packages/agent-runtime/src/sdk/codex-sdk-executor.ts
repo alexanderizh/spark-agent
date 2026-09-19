@@ -13,6 +13,7 @@ import type {
 } from '@openai/codex-sdk'
 import type { AgentEvent } from '@spark/protocol'
 import {
+  createLogger,
   estimateTokens,
   resolveModelContextWindow,
   resolveSoftContextLimit,
@@ -49,6 +50,7 @@ import { diagnoseCodexModelCatalogFailure } from './codex-model-catalog-diagnost
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
+const log = createLogger('codex-sdk-executor')
 type CodexSdkModule = typeof import('@openai/codex-sdk')
 type CodexThread = Thread
 type CodexClient = Codex
@@ -512,6 +514,19 @@ export class CodexSdkExecutor implements EngineExecutor {
           rawError: item.message,
         })
         return
+      default: {
+        // 0.155.1 v1 ResponseItem 新增 configuration_update（后端路由模型的 reasoning
+        // 配置变化）。TS ThreadItem 联合尚未收录该变体，此处显式识别并记日志，
+        // 避免上游补入联合或运行时下发时被静默吞掉；对用户不可见，不 emit 事件。
+        const rawType = (item as { type?: string }).type
+        if (rawType === 'configuration_update') {
+          const effort = (item as { reasoning?: { effort?: unknown } }).reasoning?.effort
+          log.info('Codex backend reasoning configuration updated', {
+            effort: typeof effort === 'string' ? effort : null,
+          })
+        }
+        return
+      }
     }
   }
 

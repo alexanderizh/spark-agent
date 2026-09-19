@@ -6,6 +6,7 @@ import { JsonlSessionStore, MemorySessionStore } from './events/ledger.js'
 import { DefaultPromptComposer, EventContextProjector } from './events/projector.js'
 import { DefaultBudgetFactory } from './kernel/budget.js'
 import { SteppingClock, SystemClock } from './kernel/clock.js'
+import { StartupFailureError } from './kernel/errors.js'
 import { SequentialIdGen, UuidIdGen } from './kernel/ids.js'
 import { FakeModel } from './llm/fake/model.js'
 import type { FakeScriptItem } from './llm/fake/reply-dsl.js'
@@ -34,6 +35,7 @@ import { PlanStore } from './tools/plan/store.js'
 import { todoToolDefinitions, TodoToolExecutor } from './tools/todo/tools.js'
 import { TodoStore } from './tools/todo/store.js'
 import { webFetchToolDefinition, WebFetchToolExecutor } from './tools/web-fetch.js'
+import { webSearchToolDefinition, WebSearchToolExecutor } from './tools/web-search.js'
 import { workspaceToolDefinitions } from './tools/workspace/definitions.js'
 import { WorkspaceToolExecutor } from './tools/workspace/executor.js'
 import { withCustomEnvironment } from './tools/workspace/process.js'
@@ -97,13 +99,24 @@ export interface McpDefaultEnvOptions extends DefaultEnvOptions {
 export async function createDefaultEnvWithMcp(
   options: McpDefaultEnvOptions,
 ): Promise<ManagedDefaultEnv> {
-  const manager = await McpToolManager.connect({
-    cwd: options.cwd,
-    servers: options.mcpServers ?? {},
-    ...(options.mcpStartupTimeoutMs === undefined
-      ? {}
-      : { startupTimeoutMs: options.mcpStartupTimeoutMs }),
-  })
+  let manager: McpToolManager
+  try {
+    manager = await McpToolManager.connect({
+      cwd: options.cwd,
+      servers: options.mcpServers ?? {},
+      ...(options.mcpStartupTimeoutMs === undefined
+        ? {}
+        : { startupTimeoutMs: options.mcpStartupTimeoutMs }),
+    })
+  } catch (error) {
+    // Structured startup diagnosis (kernel/errors): hosts classify on the
+    // reason instead of parsing message text.
+    throw new StartupFailureError(
+      'mcp_server_connect_failed',
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    )
+  }
   try {
     return {
       env: buildDefaultEnv(options, manager),
@@ -177,6 +190,7 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
         ...todoToolDefinitions,
         ...planToolDefinitions,
         webFetchToolDefinition,
+        webSearchToolDefinition,
         ...(mcp?.listDefinitions() ?? []),
         taskToolDefinition,
       ],
@@ -195,6 +209,7 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
       ? new SkillToolExecutor(new LocalSkillCatalog({ cwd: options.cwd, logger }))
       : undefined
   const webFetchExecutor = new WebFetchToolExecutor(logger)
+  const webSearchExecutor = new WebSearchToolExecutor({ logger })
   const executor = new CompositeToolExecutor(
     workspaceExecutor,
     mcp,
@@ -203,6 +218,7 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
     planExecutor,
     webFetchExecutor,
     skillExecutor,
+    webSearchExecutor,
   )
   const hooks = loadHookRunner({
     cwd: options.cwd,

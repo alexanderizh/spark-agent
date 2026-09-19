@@ -6,7 +6,7 @@
  * When the SDK is not installed the runtime fails fast with SDK_REQUIRED.
  *
  * Source: https://code.claude.com/docs/en/agent-sdk/typescript
- * Package: @anthropic-ai/claude-agent-sdk 0.3.263
+ * Package: @anthropic-ai/claude-agent-sdk 0.3.278
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
@@ -40,6 +40,61 @@ export interface SDKAssistantMessage {
   subagent_type?: string
   task_description?: string
   supersedes?: string[]
+  /**
+   * /usage 结果的结构化孪生（0.3.278+）：挂在投递 /usage 文本的合成 assistant
+   * 消息上（wrapper 层兄弟字段，不在 message.content 内、不会重放给模型）。
+   * 仅新版 CLI + claude.ai 订阅会话出现；message.content 文本始终是兜底。
+   */
+  usage_report?: SDKUsageReport
+}
+
+/** SDKUsageReport 的消费面子集（会话累计 + 计划限额快照）。 */
+export interface SDKUsageReport {
+  session: {
+    total_cost_usd: number
+    total_api_duration_ms: number
+    total_duration_ms: number
+    total_lines_added: number
+    total_lines_removed: number
+    model_usage: Record<string, SDKModelUsage>
+  }
+  rate_limits: {
+    /** 服务端原始用量行；null 表示本次未能获取（无计划/token 无 profile 权限/拉取失败）。 */
+    limits: SDKUsageLimitRow[] | null
+    /** 额外用量（overage）花费；计划支持时才有。金额为 currency 最小单位（美分为分）。 */
+    extra_usage?: {
+      is_enabled: boolean
+      monthly_limit: number | null
+      used_credits: number | null
+      utilization: number | null
+      currency?: string | null
+    } | null
+  } | null
+}
+
+export interface SDKModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  costUSD: number
+}
+
+export interface SDKUsageLimitRow {
+  /** 计量类型（如 'session'/'weekly_all'/'weekly_scoped'）；分类以此为准，不按 label。 */
+  kind: string
+  group: string
+  /** 窗口用量百分比 0-100。 */
+  percent: number
+  resets_at: string | null
+  scope?: {
+    model?: { display_name: string } | null
+    surface?: { display_name: string } | null
+  } | null
+  /** 服务端给出的行严重度（'normal'/'warning'/'critical' 等），客户端不自评。 */
+  severity: string
+  /** 服务端的单值指标选行。 */
+  is_active: boolean
 }
 
 export type SDKAssistantMessageError =
@@ -53,6 +108,9 @@ export type SDKAssistantMessageError =
   | 'server_error'
   | 'unknown'
   | 'max_output_tokens'
+  // SDK 0.3.278 新增：账号需完成验证 / 云端凭据失效（0.3.263 → 0.3.278 diff 确认）。
+  | 'verification_required'
+  | 'cloud_credential_error'
 
 export interface SDKResultMessage {
   type: 'result'
@@ -88,7 +146,35 @@ export interface SDKResultMessage {
   >
   errors?: string[]
   checkpoint?: SDKCheckpointInfo
+  /**
+   * 已知启动失败的结构化原因（0.3.278+）：仅在宿主设置
+   * CLAUDE_CODE_STARTUP_FAILURE_RESULTS 时由 CLI 写在零值 error result 上；
+   * 未知原因的启动失败与旧版本缺省。
+   */
+  startup_failure_reason?: SDKStartupFailureReason
 }
+
+/**
+ * CLI 已知启动失败原因（0.3.278+，16 值）。分诊文案在 event-mapper 的
+ * describeClaudeStartupFailure 统一维护。
+ */
+export type SDKStartupFailureReason =
+  | 'org_pin_api_key_conflict'
+  | 'org_verify_failed'
+  | 'org_pin_mismatch'
+  | 'managed_settings_invalid'
+  | 'remote_settings_required_unavailable'
+  | 'gateway_signin_required'
+  | 'gateway_access_denied'
+  | 'proxy_invalid'
+  | 'temp_dir_unusable'
+  | 'cwd_unavailable'
+  | 'shell_tool_missing'
+  | 'session_held_by_background'
+  | 'worktree_resume_refused'
+  | 'worktree_unverified'
+  | 'cli_version_too_old'
+  | 'bypass_root'
 
 export interface SDKCheckpointInfo {
   id?: string
@@ -454,6 +540,25 @@ export interface SDKPermissionRequestContext {
   requestId: string
   /** Hook V2：权限请求的归因 turn（SessionService 包装层注入）。 */
   turnId?: string
+  /**
+   * 高危询问（0.3.278+）：弹窗默认聚焦拒绝、不提供单键批准捷径。
+   * 宿主渲染批准选项时不应预选批准。
+   */
+  defaultToNo?: boolean
+  /**
+   * 高危询问（0.3.278+）：本次询问不得提供「不再询问」持久规则选项——
+   * 该规则会比本次动作自身授予更多权限。
+   */
+  suppressAlwaysAllowRule?: boolean
+  /**
+   * MCP 工具调用时的来源信息（0.3.278+）：source 是配置来源（如 'sdk'、
+   * 'project'、'local'），name 是配置里的键名（不可信文本，展示前需转义）。
+   * 信任判定以 source 为准；非 MCP 工具或旧 CLI 上缺省。
+   */
+  mcpServer?: {
+    name: string
+    source: string
+  }
 }
 
 /** Correlation and cancellation metadata for a host-rendered user question. */
@@ -569,6 +674,12 @@ export interface SDKQueryOptions {
   settingSources?: SDKSettingSource[] | undefined
   persistSession?: boolean | undefined
   additionalDirectories?: string[] | undefined
+  /**
+   * 受信主仓库根（0.3.278+）：当 cwd 是 worktree 时，项目设置（hooks/
+   * permissions）、.mcp.json、.claude 配置树与 CLAUDE_PROJECT_DIR 从这里
+   * 读取而非 cwd——配置不随 worktree 分支漂移。绝对路径；缺省不传。
+   */
+  projectConfigRoot?: string | undefined
   debug?: boolean | undefined
   stderr?: ((data: string) => void) | undefined
   includePartialMessages?: boolean | undefined
@@ -642,6 +753,23 @@ export interface SDKQuery extends AsyncGenerator<SDKMessage, void> {
   interrupt(): Promise<void>
   setPermissionMode?(mode: SDKPermissionMode): Promise<void>
   close(): void
+  /**
+   * 按类目拉取当前上下文窗口占用（0.3.278+，控制请求 get_context_usage）。
+   * 可选方法：旧 CLI 不支持时缺省，调用方需做能力探测。
+   */
+  getContextUsage?(opts?: { detail?: 'summary' | 'full' }): Promise<SDKContextUsageResponse>
+}
+
+/** getContextUsage 响应的消费面子集（categories 分类以 kind 为准）。 */
+export interface SDKContextUsageResponse {
+  categories: Array<{
+    name: string
+    tokens: number
+    kind: 'used' | 'free' | 'buffer' | 'deferred'
+  }>
+  totalTokens: number
+  maxTokens: number
+  percentage: number
 }
 
 export interface SDKQueryFunction {
@@ -753,6 +881,12 @@ export interface SDKExecutorConfig {
   contextWindowTokens?: number | undefined
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
+  /**
+   * 受信主仓库根（Claude SDK 0.3.278+ projectConfigRoot）：workspaceRootPath
+   * 是 git worktree 时由会话层传入主仓库根，使 hooks/permissions/.claude 配置
+   * 树不随分支漂移。缺省不传，行为与旧版完全一致。
+   */
+  projectConfigRoot?: string | undefined
   reasoningEffort?: SparkReasoningEffort | undefined
   /** OpenAI request service tier. True maps to service_tier/serviceTier = "fast". */
   fastMode?: boolean | undefined

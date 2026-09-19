@@ -28,7 +28,7 @@ afterEach(() => {
   toast.warning.mockReset()
 })
 
-function request(): PermissionApprovalRequest {
+function request(overrides: Partial<PermissionApprovalRequest> = {}): PermissionApprovalRequest {
   return {
     requestId: 'approval-1',
     sessionId: 'session-12345678',
@@ -37,6 +37,7 @@ function request(): PermissionApprovalRequest {
     toolInput: { command: 'pnpm test' },
     riskLevel: 'medium',
     persistentScopes: [],
+    ...overrides,
   }
 }
 
@@ -91,5 +92,60 @@ describe('InlinePermissionApproval', () => {
 
     expect(toast.error).toHaveBeenCalledWith('network failed')
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('shows the MCP source badge for MCP tool requests (sdk = trusted)', async () => {
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke: vi.fn(async () => ({ ok: true })) },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted.push({ root, container })
+
+    await act(async () =>
+      root.render(
+        <InlinePermissionApproval
+          request={request({
+            mcpServer: { name: 'playwright', source: 'sdk' },
+          })}
+        />,
+      ),
+    )
+    expect(container.textContent).toContain('MCP 服务 playwright')
+    expect(container.textContent).toContain('SDK 注册，可信')
+
+    await act(async () =>
+      root.render(
+        <InlinePermissionApproval
+          request={request({
+            mcpServer: { name: 'local-helper', source: 'project' },
+          })}
+        />,
+      ),
+    )
+    expect(container.textContent).toContain('来源 project')
+    expect(container.textContent).not.toContain('SDK 注册，可信')
+  })
+
+  it('focuses the deny button for high-risk asks (defaultToNo)', async () => {
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke: vi.fn(async () => ({ ok: true })) },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted.push({ root, container })
+
+    await act(async () =>
+      root.render(<InlinePermissionApproval request={request({ defaultToNo: true })} />),
+    )
+    const deny = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '拒绝',
+    )
+    expect(deny).toBeDefined()
+    expect(document.activeElement).toBe(deny)
   })
 })

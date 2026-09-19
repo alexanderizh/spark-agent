@@ -68,14 +68,16 @@ function shouldCollapsePaste(text: string): boolean {
 
 /** Keep pasted terminal control sequences from becoming terminal commands when displayed. */
 function sanitizeDisplayText(text: string): string {
-  return text
-    // eslint-disable-next-line no-control-regex
-    .replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g, '')
-    // eslint-disable-next-line no-control-regex
-    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '')
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-    .replace(/\r\n?/g, '\n')
+  return (
+    text
+      // eslint-disable-next-line no-control-regex
+      .replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .replace(/\r\n?/g, '\n')
+  )
 }
 
 function sliceCharacters(characters: readonly string[], start: number, end: number): string {
@@ -158,10 +160,7 @@ function renderDraftSlice(
       continue
     }
     if (!expanded && block.start >= start && block.end <= end) {
-      const detail =
-        block.lineCount > 1
-          ? `${block.lineCount} 行`
-          : `${block.characterCount} 字符`
+      const detail = block.lineCount > 1 ? `${block.lineCount} 行` : `${block.characterCount} 字符`
       nodes.push(
         <Text key={`paste-${block.id}`} color={theme.accent}>
           [已粘贴文本 #{block.id} · {detail}]
@@ -457,7 +456,9 @@ export function InputEditor(props: InputEditorProps): ReactElement {
 
   function moveCursorAcrossPaste(position: number, direction: -1 | 1): number {
     if (pastesExpanded) {
-      return direction === -1 ? Math.max(0, position - 1) : Math.min(characters.length, position + 1)
+      return direction === -1
+        ? Math.max(0, position - 1)
+        : Math.min(characters.length, position + 1)
     }
     for (const block of pasteBlocks) {
       if (direction === -1 && position > block.start && position <= block.end) {
@@ -480,7 +481,11 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     return position
   }
 
-  function replaceCharacters(start: number, removedLength: number, inserted: readonly string[]): void {
+  function replaceCharacters(
+    start: number,
+    removedLength: number,
+    inserted: readonly string[],
+  ): void {
     const nextCharacters = [
       ...characters.slice(0, start),
       ...inserted,
@@ -500,18 +505,19 @@ export function InputEditor(props: InputEditorProps): ReactElement {
     const { characters, cursor, pasteBlocks } = latestEditRef.current
     setHistoryIndex(-1)
     const shiftedBlocks = shiftPasteBlocksAfterInsertion(pasteBlocks, cursor, inserted.length)
-    const nextBlocks = shouldCollapsePaste(input) && pasted
-      ? [
-          ...shiftedBlocks,
-          {
-            id: nextPasteId.current++,
-            start: cursor,
-            end: cursor + inserted.length,
-            lineCount: pasteLineCount(input),
-            characterCount: inserted.length,
-          },
-        ].sort((left, right) => left.start - right.start)
-      : shiftedBlocks
+    const nextBlocks =
+      shouldCollapsePaste(input) && pasted
+        ? [
+            ...shiftedBlocks,
+            {
+              id: nextPasteId.current++,
+              start: cursor,
+              end: cursor + inserted.length,
+              lineCount: pasteLineCount(input),
+              characterCount: inserted.length,
+            },
+          ].sort((left, right) => left.start - right.start)
+        : shiftedBlocks
     setValue([...characters.slice(0, cursor), ...inserted, ...characters.slice(cursor)].join(''))
     setPasteBlocks(nextBlocks)
     if (nextBlocks.length > shiftedBlocks.length) setPastesExpanded(false)
@@ -813,17 +819,12 @@ export function InputEditor(props: InputEditorProps): ReactElement {
           {pastesExpanded ? ' Ctrl+E 折叠粘贴' : ' Ctrl+E 展开粘贴'} · Backspace/Delete 删除整块
         </Text>
       )}
-      {readingImage && !props.locked && (
-        <Text color={props.theme.dim}> 正在读取剪贴板图片…</Text>
-      )}
+      {readingImage && !props.locked && <Text color={props.theme.dim}> 正在读取剪贴板图片…</Text>}
       {imageNotice !== undefined && (
         <Text color={imageNotice.tone === 'error' ? props.theme.error : props.theme.dim}>
           {' '}
           {imageNotice.text}
         </Text>
-      )}
-      {props.running && !props.locked && (
-        <Text color={props.theme.dim}> Enter 加入队列 · Esc 中断当前任务</Text>
       )}
     </Box>
   )

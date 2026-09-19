@@ -55,6 +55,15 @@ export class EventContextProjector implements ContextProjector {
         case 'tool.call':
           calls.set(event.callId, { tool: event.tool, seq: event.seq })
           break
+        case 'turn.boundary_rejected':
+          // Completion was rejected and the offending commands cancelled; the
+          // feedback steers the model's next attempt and survives compaction.
+          messages.push({
+            role: 'user',
+            content: `<turn-boundary>\n${event.message}\n</turn-boundary>`,
+            sourceSeqs: [event.seq],
+          })
+          break
         case 'tool.result': {
           const call = calls.get(event.callId)
           const message: Extract<IrMessage, { role: 'tool_result' }> = {

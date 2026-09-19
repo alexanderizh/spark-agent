@@ -7,7 +7,7 @@ import {
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
-import type { ToolExecutor, ToolCallContext, ToolOwner } from '../seams.js'
+import type { ToolExecutor, ToolCallContext, ToolOwner, TurnBoundaryReport } from '../seams.js'
 import type { ResolvedToolCall, ToolDefinition, ToolOutcome } from '../tools/contract.js'
 import { withCustomEnvironment } from '../tools/workspace/process.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
@@ -16,7 +16,8 @@ import type { SkillToolExecutor } from '../skills/tools.js'
 import type { TodoToolExecutor } from '../tools/todo/tools.js'
 import type { PlanToolExecutor } from '../tools/plan/tools.js'
 import type { WebFetchToolExecutor } from '../tools/web-fetch.js'
-import type { SparkMcpServerConfig, SparkMcpServerMap } from './types.js'
+import type { WebSearchToolExecutor } from '../tools/web-search.js'
+import type { SparkMcpServerConfig, SparkMcpServerMap, SparkMcpServerStatus } from './types.js'
 
 const DEFAULT_MCP_TIMEOUT_MS = 120_000
 const MAX_MCP_TOOL_NAME_LENGTH = 128
@@ -47,10 +48,15 @@ export interface McpToolManagerOptions {
 export class McpToolManager implements ToolExecutor {
   readonly #bindings: Map<string, McpBinding>
   readonly #clients: Set<Client>
+  readonly #statuses: Map<
+    string,
+    { runtimeStatus: 'connected' | 'failed'; toolsError: string | null; toolCount: number }
+  >
 
   private constructor() {
     this.#bindings = new Map()
     this.#clients = new Set()
+    this.#statuses = new Map()
   }
 
   static async connect(options: McpToolManagerOptions): Promise<McpToolManager> {
@@ -70,6 +76,16 @@ export class McpToolManager implements ToolExecutor {
 
   listDefinitions(): readonly ToolDefinition[] {
     return [...this.#bindings.values()].map((binding) => binding.tool)
+  }
+
+  /**
+   * Per-server runtime status. `toolsError` is non-null when the transport
+   * connected but tool discovery (tools/list) failed — the session keeps
+   * running with that server's tools unavailable, mirroring the Codex
+   * app-server `McpServerStatus.toolsError` contract.
+   */
+  serverStatuses(): readonly SparkMcpServerStatus[] {
+    return [...this.#statuses.entries()].map(([name, status]) => ({ name, ...status }))
   }
 
   hasTool(name: string): boolean {
@@ -122,23 +138,50 @@ export class McpToolManager implements ToolExecutor {
     // runtime contract is identical, but TypeScript 5.9 rejects the package's
     // declaration pair under our exactOptionalPropertyTypes setting.
     const clientTransport = transport as unknown as Parameters<Client['connect']>[0]
-    await client.connect(clientTransport, {
-      timeout: options.startupTimeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
-    })
-    let cursor: string | undefined
-    const seenCursors = new Set<string>()
-    do {
-      if (cursor !== undefined) {
-        if (seenCursors.has(cursor))
-          throw new Error(`MCP server ${serverName} repeated a tools/list cursor`)
-        seenCursors.add(cursor)
-      }
-      const page = await client.listTools(cursor === undefined ? undefined : { cursor }, {
+    try {
+      await client.connect(clientTransport, {
         timeout: options.startupTimeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
       })
-      for (const tool of page.tools) this.#registerTool(serverName, client, tool)
-      cursor = page.nextCursor
-    } while (cursor !== undefined && cursor.length > 0)
+    } catch (error) {
+      this.#statuses.set(serverName, {
+        runtimeStatus: 'failed',
+        toolsError: null,
+        toolCount: 0,
+      })
+      throw error
+    }
+    let toolCount = 0
+    try {
+      let cursor: string | undefined
+      const seenCursors = new Set<string>()
+      do {
+        if (cursor !== undefined) {
+          if (seenCursors.has(cursor))
+            throw new Error(`MCP server ${serverName} repeated a tools/list cursor`)
+          seenCursors.add(cursor)
+        }
+        const page = await client.listTools(cursor === undefined ? undefined : { cursor }, {
+          timeout: options.startupTimeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
+        })
+        for (const tool of page.tools) this.#registerTool(serverName, client, tool)
+        toolCount += page.tools.length
+        cursor = page.nextCursor
+      } while (cursor !== undefined && cursor.length > 0)
+      this.#statuses.set(serverName, {
+        runtimeStatus: 'connected',
+        toolsError: null,
+        toolCount,
+      })
+    } catch (error) {
+      // Discovery failed after a successful connect: the server stays wired
+      // (its status is queryable) but contributes no tools. Repeated-cursor
+      // guard failures land here too — partial pages already registered.
+      this.#statuses.set(serverName, {
+        runtimeStatus: 'connected',
+        toolsError: error instanceof Error ? error.message : String(error),
+        toolCount,
+      })
+    }
   }
 
   #registerTool(serverName: string, client: Client, tool: Tool): void {
@@ -215,10 +258,11 @@ export class CompositeToolExecutor implements ToolExecutor {
     private readonly webFetch?: WebFetchToolExecutor,
     /** Appended to preserve the positional constructor contract for SDK hosts. */
     private readonly skills?: SkillToolExecutor,
+    private readonly webSearch?: WebSearchToolExecutor,
   ) {}
 
-  assertTurnSettled(owner: ToolOwner): void {
-    this.builtIn.assertTurnSettled?.(owner)
+  async settleTurnBoundary(owner: ToolOwner): Promise<TurnBoundaryReport | undefined> {
+    return this.builtIn.settleTurnBoundary?.(owner)
   }
 
   async closeTurn(owner: ToolOwner): Promise<void> {
@@ -231,6 +275,7 @@ export class CompositeToolExecutor implements ToolExecutor {
     if (this.todo?.hasTool(call.name)) return this.todo.execute(call, context)
     if (this.plan?.hasTool(call.name)) return this.plan.execute(call, context)
     if (this.webFetch?.hasTool(call.name)) return this.webFetch.execute(call, context)
+    if (this.webSearch?.hasTool(call.name)) return this.webSearch.execute(call, context)
     if (this.mcp?.hasTool(call.name)) return this.mcp.execute(call, context)
     return this.builtIn.execute(call, context)
   }

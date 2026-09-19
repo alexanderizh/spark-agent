@@ -24,10 +24,16 @@ import type {
   SDKStreamEvent,
   SDKContentBlock,
   SDKUserMessage,
+  SDKUsageReport,
 } from './types.js'
 import { mapExtendedContentBlock, serializePublicContent } from './content-block-mapper.js'
 import { mapSDKToolName } from './tool-name-mapper.js'
 import { buildUnifiedDiff } from './unified-diff.js'
+import {
+  claudeStartupFailureErrorCode,
+  describeClaudeStartupFailure,
+  isSDKStartupFailureReason,
+} from './claude-startup-failure.js'
 
 interface EventContext {
   sessionId: string
@@ -995,6 +1001,13 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
     })
   }
 
+  // /usage 的结构化孪生（0.3.278+ usage_report）：合成 assistant 消息附带
+  // 会话累计与计划限额数据，在常规文本事件外额外发一个结构化事件；
+  // message.content 的 markdown 文本仍是兜底渲染。仅主会话消息会出现。
+  if (!isSubagentMessage && msg.usage_report != null) {
+    events.push(mapUsageReport(msg.usage_report, ctx))
+  }
+
   for (const block of content) {
     if (isSubagentMessage && (block.type === 'text' || block.type === 'thinking')) {
       const content = block.type === 'text' ? block.text : block.thinking
@@ -1367,22 +1380,34 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
     const nonRetryable =
       msg.subtype === 'error_max_budget_usd' ||
       msg.subtype === 'error_max_structured_output_retries'
+    // 已知启动失败（0.3.278+ startup_failure_reason）：结构化分诊覆盖默认错误事件，
+    // 稳定错误码 CLAUDE_STARTUP_FAILED_<REASON> 供 UI 精准引导；未知原因走默认路径。
+    const startupReason = isSDKStartupFailureReason(msg.startup_failure_reason)
+      ? msg.startup_failure_reason
+      : null
+    const startupFailure =
+      startupReason != null ? describeClaudeStartupFailure(startupReason) : null
     events.push({
       ...baseEvent(ctx),
       type: 'agent_error',
-      code: msg.subtype.toUpperCase(),
+      code:
+        startupReason != null
+          ? claudeStartupFailureErrorCode(startupReason)
+          : msg.subtype.toUpperCase(),
       title:
-        msg.subtype === 'error_max_structured_output_retries'
+        startupFailure?.title ??
+        (msg.subtype === 'error_max_structured_output_retries'
           ? '结构化输出校验失败'
-          : 'Claude 执行失败',
-      message: errorMsg,
-      retryable: !nonRetryable,
+          : 'Claude 执行失败'),
+      message: startupFailure != null ? `${startupFailure.message} ${errorMsg}` : errorMsg,
+      retryable: startupFailure != null ? startupFailure.retryable : !nonRetryable,
       actionHint:
-        msg.subtype === 'error_max_structured_output_retries'
+        startupFailure?.actionHint ??
+        (msg.subtype === 'error_max_structured_output_retries'
           ? '调整结构化输出约束或模型后重试。'
           : msg.subtype === 'error_max_budget_usd'
             ? '提高预算上限或缩小任务范围。'
-            : '可重新发送上一条消息。',
+            : '可重新发送上一条消息。'),
     })
     events.push({
       ...baseEvent(ctx),
@@ -1393,6 +1418,57 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
   }
 
   return events
+}
+
+function mapUsageReport(report: SDKUsageReport, ctx: EventContext): AgentEvent {
+  const rateLimits =
+    report.rate_limits != null
+      ? {
+          limits: Array.isArray(report.rate_limits.limits)
+            ? report.rate_limits.limits.map((row) => ({
+                kind: row.kind,
+                group: row.group,
+                percent: row.percent,
+                resetsAt: row.resets_at ?? null,
+                severity: row.severity,
+                isActive: row.is_active === true,
+                scopeModelDisplayName: row.scope?.model?.display_name ?? null,
+                scopeSurfaceDisplayName: row.scope?.surface?.display_name ?? null,
+              }))
+            : null,
+          extraUsage: (() => {
+            const extra = report.rate_limits?.extra_usage
+            if (extra == null) return null
+            return {
+              isEnabled: extra.is_enabled === true,
+              monthlyLimit: extra.monthly_limit ?? null,
+              usedCredits: extra.used_credits ?? null,
+              utilization: extra.utilization ?? null,
+              currency: extra.currency ?? null,
+            }
+          })(),
+        }
+      : null
+  return {
+    ...baseEvent(ctx),
+    type: 'session_usage_report',
+    session: {
+      totalCostUsd: report.session.total_cost_usd ?? 0,
+      totalApiDurationMs: report.session.total_api_duration_ms ?? 0,
+      totalDurationMs: report.session.total_duration_ms ?? 0,
+      totalLinesAdded: report.session.total_lines_added ?? 0,
+      totalLinesRemoved: report.session.total_lines_removed ?? 0,
+      modelUsage: Object.entries(report.session.model_usage ?? {}).map(([model, usage]) => ({
+        model,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadInputTokens: usage.cacheReadInputTokens ?? 0,
+        cacheCreationInputTokens: usage.cacheCreationInputTokens ?? 0,
+        costUSD: usage.costUSD ?? 0,
+      })),
+    },
+    rateLimits,
+  }
 }
 
 function mapAuthStatusMessage(msg: SDKAuthStatusMessage, ctx: EventContext): AgentEvent[] {
@@ -1538,6 +1614,18 @@ function describeClaudeAssistantError(error: SDKAssistantMessageError): {
       message: '模型在完成回答前达到了最大输出 token。',
       retryable: true,
       actionHint: '缩小请求范围，或继续下一轮让模型补全。',
+    },
+    verification_required: {
+      title: 'Claude 账号需要验证',
+      message: 'Claude 要求先完成账号验证才能继续请求。',
+      retryable: false,
+      actionHint: '在 Claude 官网完成账号验证后重试。',
+    },
+    cloud_credential_error: {
+      title: 'Claude 云端凭据失效',
+      message: '云端会话凭据已过期或不可用。',
+      retryable: false,
+      actionHint: '重新登录 Claude 账号以刷新凭据。',
     },
   }
   return descriptions[error] ?? descriptions.unknown

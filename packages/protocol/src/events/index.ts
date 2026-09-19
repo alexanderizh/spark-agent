@@ -686,6 +686,54 @@ export interface UsageUpdateEvent extends BaseEvent {
 }
 
 /**
+ * /usage 结果的结构化孪生（Claude SDK 0.3.278+ 的 assistant 消息 usage_report
+ * 包装字段）。与 UsageUpdateEvent 严格分离：usage_update 承载轮内单次调用的
+ * token 消耗，本事件承载会话级累计与 claude.ai 计划限额快照。
+ * rate_limits 为 null 表示 CLI 未能获取计划用量（非订阅通道或 token 无 profile 权限）。
+ */
+export interface SessionUsageReportEvent extends BaseEvent {
+  type: 'session_usage_report'
+  session: {
+    totalCostUsd: number
+    totalApiDurationMs: number
+    totalDurationMs: number
+    totalLinesAdded: number
+    totalLinesRemoved: number
+    modelUsage: Array<{
+      model: string
+      inputTokens: number
+      outputTokens: number
+      cacheReadInputTokens: number
+      cacheCreationInputTokens: number
+      costUSD: number
+    }>
+  }
+  rateLimits: {
+    /** 服务端原始用量行；null 表示服务端未返回行（渲染按服务端顺序原样展示） */
+    limits: Array<{
+      /** 计量类型（如 'session'/'weekly_all'）；分类以此为准，不按 label */
+      kind: string
+      group: string
+      /** 窗口用量百分比 0-100 */
+      percent: number
+      resetsAt: string | null
+      /** 服务端给出的行严重度（如 'normal'/'warning'/'critical'），客户端不自评 */
+      severity: string
+      isActive: boolean
+      scopeModelDisplayName: string | null
+      scopeSurfaceDisplayName: string | null
+    }> | null
+    extraUsage: {
+      isEnabled: boolean
+      monthlyLimit: number | null
+      usedCredits: number | null
+      utilization: number | null
+      currency: string | null
+    } | null
+  } | null
+}
+
+/**
  * Codex native runtime 对「最近一次真实模型请求」的上下文快照。
  *
  * 与 UsageUpdateEvent 严格分离：usage_update 继续承载成本/累计消耗语义；本事件只
@@ -722,6 +770,23 @@ export interface ContextUsageEvent extends BaseEvent {
   contextWindowTokens: number
   /** 本轮是否触发了自动压缩 */
   compacted: boolean
+  /**
+   * turn 结束后从 SDK 拉取的按类目细分（可选；SDK/CLI 不支持或拉取失败时缺省，
+   * 消费方按 estimatedTokens 兜底）。zero-token 行也会保留，由渲染层决定是否隐藏。
+   */
+  categories?: ContextUsageCategory[]
+}
+
+/**
+ * 上下文用量按类目细分的一行（Claude SDK getContextUsage，0.3.278+）。
+ * 分类以 kind 为准、不要按 name（展示文案）匹配。
+ */
+export interface ContextUsageCategory {
+  /** 行显示名（如 "Messages"、"MCP tools (deferred)"），仅 UI 展示用 */
+  name: string
+  tokens: number
+  /** used=占用窗口；free=剩余窗口；buffer=压缩预留；deferred=窗口外工具 schema（不计入用量合计） */
+  kind: 'used' | 'free' | 'buffer' | 'deferred'
 }
 
 export interface ProjectContextSource {
@@ -1091,6 +1156,7 @@ export type AgentEvent =
   | GoalEvent
   | UsageUpdateEvent
   | RuntimeContextSnapshotEvent
+  | SessionUsageReportEvent
   | AgentErrorEvent
   | RuntimeSignalEvent
   | TranscriptRetractionEvent

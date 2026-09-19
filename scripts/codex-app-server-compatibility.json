@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lockedSdkVersion": "0.153.4",
+  "lockedSdkVersion": "0.155.1",
   "minimumRuntimeVersion": "0.144.5",
   "testedRuntimeVersions": [
     {
@@ -15,8 +15,13 @@
     },
     {
       "version": "0.153.4",
-      "support": "locked",
+      "support": "tested",
       "evidence": "2026-09-07 generate-ts schema keeps every required request/notification/field/sandbox variant; drift versus 0.149.0 is additive only (new functionCallOutput item, externalSandbox sandbox variant, granular approval policy, optional turn fields)."
+    },
+    {
+      "version": "0.155.1",
+      "support": "locked",
+      "evidence": "2026-09-20 generate-ts schema keeps every required request/notification/field/sandbox variant; drift versus 0.153.4 verified additive-only via check:codex-protocol before locking."
     }
   ],
   "requiredRequests": [

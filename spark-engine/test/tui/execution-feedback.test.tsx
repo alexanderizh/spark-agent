@@ -57,7 +57,7 @@ describe('TUI execution feedback', () => {
       const frame = app.lastFrame() ?? ''
       expect(frame.split('Preparing the requested write.')).toHaveLength(2)
       expect(frame).toContain('waiting for approval')
-      expect(frame).toContain('esc 拒绝当前工具')
+      expect(frame).toContain('等待权限确认')
       const border = frame.split('\n').find((line) => line.startsWith('╭'))
       expect(border?.length).toBe(64)
       app.stdin.write('\u001b')
@@ -158,7 +158,7 @@ describe('TUI execution feedback', () => {
       app.stdin.write('\r')
       await tick()
       expect(finishTool).toBeTypeOf('function')
-      expect(app.lastFrame()).toContain('Enter 加入队列')
+      expect(app.lastFrame()).toContain('运行 Read · a.txt')
       app.stdin.write('keep this draft')
       await tick()
       app.stdin.write('\u001b')

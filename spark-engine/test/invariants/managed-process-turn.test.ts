@@ -16,57 +16,93 @@ import { collectEvents } from '../helpers.js'
 
 // Shell fixture uses only a harmless wait; it must never survive turn teardown.
 describe.skipIf(process.platform === 'win32')('managed process turn contract', () => {
-  it.each([
-    { wrapped: false, budget: false },
-    { wrapped: true, budget: false },
-    { wrapped: true, budget: true },
-  ])('rejects an unobserved command and cleans its handle: %j', async ({ wrapped, budget }) => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-managed-turn-'))
+  it.each([{ wrapped: false }, { wrapped: true }])(
+    'feeds the boundary rejection back to the model instead of failing: %j',
+    async ({ wrapped }) => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-managed-turn-'))
+      const base = createDeterministicEnv([
+        toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
+        text('premature done'),
+        text('Observed the cancellation report.'),
+      ])
+      const workspace = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
+      const mcp = await McpToolManager.connect({ cwd: root, servers: {} })
+      const executor = wrapped ? new CompositeToolExecutor(workspace, mcp) : workspace
+      const env = {
+        ...base,
+        tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
+      }
+      try {
+        const session = await Agent.open({ cwd: root, env }).newSession({ permissionMode: 'auto' })
+        const result = await session.turn('run')
+        expect(result.terminal).toMatchObject({ type: 'turn.completed', reason: 'final' })
+        const events = await collectEvents(session)
+        const rejection = events.find((event) => event.type === 'turn.boundary_rejected')
+        if (rejection?.type !== 'turn.boundary_rejected') throw new Error('Missing rejection event')
+        expect(rejection.reason).toBe('process_unobserved')
+        expect(rejection.processIds).toHaveLength(1)
+        expect(rejection.message).toContain('Cannot finish with unobserved managed commands')
+        expect(rejection.message).toContain('status=cancelled')
+        // The retry request carried the feedback as a user-role message.
+        const model = base.fixtures.model
+        expect(model.requests).toHaveLength(3)
+        expect(
+          model.requests[2]?.messages.some(
+            (message) => message.role === 'user' && message.content.includes('<turn-boundary>'),
+          ),
+        ).toBe(true)
+        const launch = events.find((event) => event.type === 'tool.result')
+        expect(launch?.type).toBe('tool.result')
+        if (launch?.type !== 'tool.result') throw new Error('Missing launch result')
+        const id = JSON.parse(launch.content) as {
+          process_id: string
+        }
+        const definition = env.tools.registry.get('process_wait')
+        if (!definition) throw new Error('Missing process_wait definition')
+        await expect(
+          executor.execute(
+            {
+              name: definition.name,
+              callId: 'late',
+              definition,
+              args: { process_id: id.process_id },
+            },
+            {
+              owner: { sessionId: session.sessionId, turnId: result.turnId },
+              signal: new AbortController().signal,
+              turnSignal: new AbortController().signal,
+              timeoutMs: 100,
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'tool.process_not_found' })
+      } finally {
+        await mcp.close()
+        await rm(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('records the rejection without another model round once the budget has stopped the turn', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'spark-managed-budget-'))
     const base = createDeterministicEnv([
       toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
-      text('premature done'),
+      text('never reached'),
     ])
-    const workspace = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
-    const mcp = await McpToolManager.connect({ cwd: root, servers: {} })
-    const executor = wrapped ? new CompositeToolExecutor(workspace, mcp) : workspace
+    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const env = {
       ...base,
       tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
     }
     try {
       const session = await Agent.open({ cwd: root, env }).newSession({ permissionMode: 'auto' })
-      const result = await session.turn('run', budget ? { budget: { maxSteps: 1 } } : {})
-      expect(result.terminal).toMatchObject({
-        type: 'turn.failed',
-        error: { code: 'tool.process_unobserved' },
-      })
+      const result = await session.turn('run', { budget: { maxSteps: 1 } })
+      expect(result.terminal).toMatchObject({ type: 'turn.completed', reason: 'budget' })
       const events = await collectEvents(session)
-      const launch = events.find((event) => event.type === 'tool.result')
-      expect(launch?.type).toBe('tool.result')
-      if (launch?.type !== 'tool.result') throw new Error('Missing launch result')
-      const id = JSON.parse(launch.content) as {
-        process_id: string
-      }
-      const definition = env.tools.registry.get('process_wait')
-      if (!definition) throw new Error('Missing process_wait definition')
-      await expect(
-        executor.execute(
-          {
-            name: definition.name,
-            callId: 'late',
-            definition,
-            args: { process_id: id.process_id },
-          },
-          {
-            owner: { sessionId: session.sessionId, turnId: result.turnId },
-            signal: new AbortController().signal,
-            turnSignal: new AbortController().signal,
-            timeoutMs: 100,
-          },
-        ),
-      ).rejects.toMatchObject({ code: 'tool.process_not_found' })
+      const rejection = events.find((event) => event.type === 'turn.boundary_rejected')
+      if (rejection?.type !== 'turn.boundary_rejected') throw new Error('Missing rejection event')
+      expect(rejection.processIds).toHaveLength(1)
+      expect(base.fixtures.model.requests).toHaveLength(1)
     } finally {
-      await mcp.close()
       await rm(root, { recursive: true, force: true })
     }
   })

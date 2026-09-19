@@ -37,6 +37,9 @@ type TerminalEvent = Extract<
   { type: 'turn.completed' | 'turn.cancelled' | 'turn.failed' }
 >
 
+/** Max boundary-rejection retries before the turn completes with the feedback recorded. */
+const MAX_BOUNDARY_REJECTIONS = 3
+
 export interface RunTurnOptions {
   readonly sessionId: string
   readonly turnId: string
@@ -139,6 +142,24 @@ export class TurnMachine {
         ...(lastInputTokens > 0 ? { lastInputTokens } : {}),
       }
     }
+    // Boundary rejections hand the model its mistake as feedback instead of
+    // failing the turn; the cap keeps a looping model from stalling forever.
+    let boundaryRejections = 0
+    const settleTurnBoundary = async (): Promise<boolean> => {
+      const report = await this.env.tools.executor.settleTurnBoundary?.(options)
+      if (report === undefined) return false
+      this.env.telemetry.counter('turn.boundary_rejected', { reason: 'process_unobserved' })
+      await append({
+        type: 'turn.boundary_rejected',
+        schemaVersion: 1,
+        turnId: options.turnId,
+        reason: 'process_unobserved',
+        message: report.feedback,
+        processIds: [...report.processIds],
+      })
+      return true
+    }
+
     /**
      * Runs one compaction pass. Returns true when the context was rewritten;
      * the caller re-enters the loop so the next request uses the summary.
@@ -407,7 +428,19 @@ export class TurnMachine {
           toolCalls: response.message.toolCalls.length,
         })
         if (response.message.toolCalls.length === 0) {
-          this.env.tools.executor.assertTurnSettled?.(options)
+          const boundaryRejected = await settleTurnBoundary()
+          // Feed the rejection back to the model instead of failing the turn:
+          // it gets one more step to answer using the reported results. No
+          // retry once the budget has stopped the turn or the rejection cap
+          // is exhausted — the feedback stays in history for the next turn.
+          if (
+            boundaryRejected &&
+            action.kind !== 'stop' &&
+            boundaryRejections < MAX_BOUNDARY_REJECTIONS
+          ) {
+            boundaryRejections += 1
+            continue
+          }
           const terminal = await gate.finalize(async () =>
             asTerminal(
               await append({
@@ -424,7 +457,7 @@ export class TurnMachine {
           return { turnId: options.turnId, terminal }
         }
         if (action.kind === 'stop') {
-          this.env.tools.executor.assertTurnSettled?.(options)
+          await settleTurnBoundary()
           const terminal = await gate.finalize(async () =>
             asTerminal(
               await append({

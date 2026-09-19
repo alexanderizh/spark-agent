@@ -7,7 +7,13 @@ import ignore from 'ignore'
 
 import { detectImageMediaType, IMAGE_LIMITS } from '../../images/attachments.js'
 import { KernelError } from '../../kernel/errors.js'
-import type { ArtifactStore, ToolCallContext, ToolExecutor, ToolOwner } from '../../seams.js'
+import type {
+  ArtifactStore,
+  ToolCallContext,
+  ToolExecutor,
+  ToolOwner,
+  TurnBoundaryReport,
+} from '../../seams.js'
 import type { ResolvedToolCall, ToolOutcome } from '../contract.js'
 import { ManagedProcesses } from './managed-processes.js'
 import { atomicWriteFile } from './atomic-write.js'
@@ -30,8 +36,8 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     this.#artifacts = artifacts
   }
 
-  assertTurnSettled(owner: ToolOwner): void {
-    this.#processes.assertTurnSettled(owner)
+  async settleTurnBoundary(owner: ToolOwner): Promise<TurnBoundaryReport | undefined> {
+    return this.#processes.settleTurnBoundary(owner)
   }
 
   async closeTurn(owner: ToolOwner): Promise<void> {

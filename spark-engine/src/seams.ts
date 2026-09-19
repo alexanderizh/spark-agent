@@ -88,11 +88,21 @@ export interface ToolCallContext {
 }
 
 export interface ToolExecutor {
-  /** Reject normal completion while owned commands have unobserved results. */
-  assertTurnSettled?(owner: ToolOwner): void
+  /**
+   * Completion-path boundary settlement: cancel unobserved owned commands and
+   * return model-facing feedback, or undefined when everything was observed.
+   */
+  settleTurnBoundary?(owner: ToolOwner): Promise<TurnBoundaryReport | undefined>
   /** Reap owned processes on every terminal path. */
   closeTurn?(owner: ToolOwner): Promise<void>
   execute(call: ResolvedToolCall, context: ToolCallContext): Promise<ToolOutcome>
+}
+
+/** Result of forcing unobserved commands to a terminal state at a turn boundary. */
+export interface TurnBoundaryReport {
+  readonly processIds: readonly string[]
+  /** Model-facing feedback carrying each command's terminal state and output tail. */
+  readonly feedback: string
 }
 
 export interface SubagentRunRequest {

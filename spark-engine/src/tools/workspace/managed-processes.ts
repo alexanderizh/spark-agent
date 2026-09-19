@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { abortError, timeoutSignal } from '../../kernel/cancellation.js'
 import { KernelError } from '../../kernel/errors.js'
-import type { ToolCallContext, ToolOwner } from '../../seams.js'
+import type { ToolCallContext, ToolOwner, TurnBoundaryReport } from '../../seams.js'
 import type { ToolOutcome } from '../contract.js'
 import { runProcess } from './process.js'
 
@@ -158,15 +158,30 @@ export class ManagedProcesses {
     return snapshot(entry, cursor)
   }
 
-  assertTurnSettled(owner: ToolOwner): void {
+  /**
+   * Completion-path boundary settlement. Cancels still-running owned commands,
+   * marks them observed, and returns model-facing feedback with their terminal
+   * states and captured output tails; undefined when nothing is pending.
+   */
+  async settleTurnBoundary(owner: ToolOwner): Promise<TurnBoundaryReport | undefined> {
     const pending = [...this.#entries.values()].filter(
       (entry) => owns(entry, owner) && (entry.status === 'running' || !entry.observed),
     )
-    if (pending.length)
-      throw new KernelError(
-        'tool.process_unobserved',
-        `Cannot finish with unobserved managed commands: ${pending.map((entry) => entry.id).join(', ')}. Wait for terminal results before answering; remaining processes will be cancelled.`,
-      )
+    if (pending.length === 0) return undefined
+    for (const entry of pending) entry.cancel.abort('Turn finished with unobserved command')
+    await Promise.all(pending.map((entry) => entry.done))
+    const reports = pending.map((entry) => {
+      entry.observed = true
+      return formatBoundaryEntry(entry)
+    })
+    return {
+      processIds: pending.map((entry) => entry.id),
+      feedback: [
+        `Cannot finish with unobserved managed commands: ${pending.map((entry) => entry.id).join(', ')}. Wait for terminal results before answering; the remaining processes have been cancelled.`,
+        'To finish: use the reported results below, or run the commands again and observe them with process_wait until a terminal status before answering.',
+        ...reports,
+      ].join('\n'),
+    }
   }
 
   async closeTurn(owner: ToolOwner): Promise<void> {
@@ -197,6 +212,17 @@ function requireOwner(context: ToolCallContext): { owner: ToolOwner; signal: Abo
 }
 function owns(entry: Entry, owner: ToolOwner): boolean {
   return entry.owner.sessionId === owner.sessionId && entry.owner.turnId === owner.turnId
+}
+
+/** One command's terminal snapshot for the boundary feedback; bounded output tail. */
+function formatBoundaryEntry(entry: Entry): string {
+  const fields = [
+    `status=${entry.status}`,
+    ...(entry.exitCode === undefined ? [] : [`exit_code=${entry.exitCode}`]),
+    ...(entry.error === undefined ? [] : [`error=${entry.error}`]),
+  ].join(' ')
+  const tail = entry.output.slice(-800)
+  return `- ${entry.id} (${fields})\n  captured output tail: ${tail === '' ? '(none)' : tail}`
 }
 function validateCursor(entry: Entry, cursor: number): void {
   if (!Number.isInteger(cursor) || cursor < 0 || cursor > entry.output.length)

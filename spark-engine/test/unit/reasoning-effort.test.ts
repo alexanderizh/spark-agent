@@ -159,6 +159,40 @@ describe('slash command surface', () => {
     }
   })
 
+  it('lays the /help detail out as one aligned entry per line', () => {
+    const lines = helpDetail().split('\n')
+    // Two titles + one row per entry + a blank line between the two sections.
+    expect(lines).toHaveLength(2 + SLASH_COMMANDS.length + TUI_SHORTCUTS.length + 1)
+    expect(lines).not.toContainEqual(expect.stringContaining(' · '))
+    expect(lines).toContain('命令：')
+    expect(lines).toContain('快捷键：')
+
+    // Every entry owns its line, and the summary column starts at one offset.
+    const columns = [
+      ...SLASH_COMMANDS.map((command) => ({ label: command.name, summary: command.summary })),
+      ...TUI_SHORTCUTS.map((shortcut) => ({ label: shortcut.keys, summary: shortcut.summary })),
+    ].map((entry) => {
+      const row = lines.find((line) => line.trimStart().startsWith(`${entry.label} `))
+      expect(row, `missing /help row for ${entry.label}`).toBeDefined()
+      return (row ?? '').indexOf(entry.summary)
+    })
+    expect(columns).not.toContain(-1)
+    expect(new Set(columns).size).toBe(1)
+  })
+
+  it('appends custom commands as their own aligned /help section', () => {
+    const detail = helpDetail([{ label: '/review', summary: '审阅当前改动' }])
+    const lines = detail.split('\n')
+    expect(lines).toContain('自定义命令：')
+    expect(detail.split('\n\n')).toHaveLength(3)
+
+    const column = lines.find((line) => line.includes('中断任务'))?.indexOf('中断任务')
+    const customRow = lines.find((line) => line.trimStart().startsWith('/review '))
+    expect(customRow, 'missing custom command row').toBeDefined()
+    // Custom entries reuse the builtin label column so /help stays one grid.
+    expect((customRow ?? '').indexOf('审阅当前改动')).toBe(column)
+  })
+
   it('exposes the effort picker levels as the /effort option set', () => {
     const labels = EFFORT_OPTIONS.map((option) => option.label)
     expect(labels).toEqual(['low', 'medium', 'high', 'max', 'off'])

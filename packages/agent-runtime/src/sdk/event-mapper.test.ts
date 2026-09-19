@@ -42,6 +42,9 @@ describe('mapSDKMessageToEvents', () => {
     ['server_error', 'CLAUDE_SERVER_ERROR', true],
     ['unknown', 'CLAUDE_UNKNOWN', true],
     ['max_output_tokens', 'CLAUDE_MAX_OUTPUT_TOKENS', true],
+    // SDK 0.3.278 新增错误 kind（0.3.263 → 0.3.278 diff 确认）
+    ['verification_required', 'CLAUDE_VERIFICATION_REQUIRED', false],
+    ['cloud_credential_error', 'CLAUDE_CLOUD_CREDENTIAL_ERROR', false],
   ])('maps Claude assistant error %s', (error, code, retryable) => {
     const events = mapSDKMessageToEvents(
       {
@@ -66,6 +69,69 @@ describe('mapSDKMessageToEvents', () => {
         }),
         expect.objectContaining({ type: 'agent_status', status: 'error' }),
       ]),
+    )
+  })
+
+  it('emits a structured session_usage_report beside /usage text (0.3.278+)', () => {
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'assistant-usage',
+        session_id: 'sdk-session',
+        parent_tool_use_id: null,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'usage table' }] },
+        usage_report: {
+          session: {
+            total_cost_usd: 1.25,
+            total_api_duration_ms: 8000,
+            total_duration_ms: 60000,
+            total_lines_added: 10,
+            total_lines_removed: 2,
+            model_usage: {
+              'claude-sonnet-5': {
+                inputTokens: 100,
+                outputTokens: 50,
+                cacheReadInputTokens: 30,
+                cacheCreationInputTokens: 10,
+                costUSD: 1.25,
+              },
+            },
+          },
+          rate_limits: {
+            limits: [
+              {
+                kind: 'session',
+                group: 'session',
+                percent: 42,
+                resets_at: '2026-09-20T18:00:00Z',
+                severity: 'normal',
+                is_active: true,
+                scope: null,
+              },
+            ],
+            extra_usage: {
+              is_enabled: false,
+              monthly_limit: null,
+              used_credits: null,
+              utilization: null,
+            },
+          },
+        },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'session_usage_report',
+        session: expect.objectContaining({
+          totalCostUsd: 1.25,
+          modelUsage: [expect.objectContaining({ model: 'claude-sonnet-5', inputTokens: 100 })],
+        }),
+        rateLimits: expect.objectContaining({
+          limits: [expect.objectContaining({ kind: 'session', percent: 42, isActive: true })],
+        }),
+      }),
     )
   })
 
