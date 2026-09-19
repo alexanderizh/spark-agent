@@ -13,6 +13,9 @@ import { SLASH_COMMANDS } from './slash-commands.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import type { AgentEvent } from '../events/schema.js'
 import { SwitchableLlmService } from '../llm/switchable.js'
+import { extractAndSaveMemories } from '../memory/extraction.js'
+import { FileMemoryStore } from '../memory/store.js'
+import { createRuntimeLogger } from '../observability/logger.js'
 import type { ReasoningEffort } from '../llm/types.js'
 import { SparkTuiApp } from './app.js'
 import { useModelRuntime } from './use-model-runtime.js'
@@ -139,6 +142,29 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
     alternateScreen: false,
   }
   const imageInput = options.imageInput ?? createImageInputSeam()
+  const memorySettings = options.engineSettings
+  const memoryStore =
+    memorySettings?.memoryEnabled === true && memorySettings.memoryAutoExtract
+      ? new FileMemoryStore({
+          cwd,
+          agentId: memorySettings.memoryAgentId,
+          enabled: true,
+        })
+      : undefined
+  const onTurnCompleted =
+    memoryStore === undefined
+      ? undefined
+      : async (finishedSession: AgentSession): Promise<void> => {
+          const events: AgentEvent[] = []
+          for await (const event of finishedSession.events()) events.push(event)
+          await extractAndSaveMemories({
+            env,
+            store: memoryStore,
+            events,
+            sessionId: finishedSession.sessionId,
+            logger: createRuntimeLogger('memory'),
+          })
+        }
   const instance = render(
     <SparkTuiRoot
       initialSession={session}
@@ -172,6 +198,7 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
       onModelChanged={(model) => {
         currentModel = model
       }}
+      {...(onTurnCompleted === undefined ? {} : { onTurnCompleted })}
       stdout={stdout}
     />,
     renderOptions,
@@ -202,6 +229,7 @@ interface SparkTuiRootProps {
   readonly cwd?: string | undefined
   readonly imageInput?: ImageInputSeam | undefined
   readonly onModelChanged: (model: string | undefined) => void
+  readonly onTurnCompleted?: (session: AgentSession) => Promise<void>
   readonly stdout: NodeJS.WriteStream
 }
 
@@ -233,6 +261,7 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       {...(props.imageInput === undefined ? {} : { imageInput: props.imageInput })}
       modelRuntime={modelRuntime}
       getModelBudget={() => props.switchable.getModelBudget()}
+      {...(props.onTurnCompleted === undefined ? {} : { onTurnCompleted: props.onTurnCompleted })}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />
   )

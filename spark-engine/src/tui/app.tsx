@@ -57,6 +57,11 @@ export interface SparkTuiAppProps {
   readonly createSession: () => Promise<AgentSession>
   /** Current route's model budget, for /status context headroom display. */
   readonly getModelBudget?: () => ModelBudget | undefined
+  /**
+   * Post-turn hook (memory auto-extraction). Fired after a completed turn,
+   * never awaited — extraction failures surface as a warning notice only.
+   */
+  readonly onTurnCompleted?: (session: AgentSession) => Promise<void>
   readonly capabilities?: TerminalCapabilities
   readonly theme?: TuiTheme
   readonly version?: string
@@ -309,6 +314,19 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           onEvent: appendEvent,
           onDelta: handleDelta,
         })
+        .then((result) => {
+          if (result.terminal.type !== 'turn.completed' || props.onTurnCompleted === undefined) {
+            return
+          }
+          // Fire-and-forget: extraction is a post-turn optimization and must
+          // not hold the session busy for the next user input.
+          void props.onTurnCompleted(session).catch((extractionError: unknown) => {
+            setNoticeFull({
+              text: `记忆抽取失败：${extractionError instanceof Error ? extractionError.message : String(extractionError)}`,
+              tone: 'warn',
+            })
+          })
+        })
         .catch((error: unknown) => {
           setNoticeFull({
             text: `任务执行失败：${error instanceof Error ? error.message : String(error)}`,
@@ -321,7 +339,15 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           setActiveTurns((count) => Math.max(0, count - 1))
         })
     },
-    [appendEvent, effectiveModel, handleDelta, modelRuntime, reasoningEffort, session],
+    [
+      appendEvent,
+      effectiveModel,
+      handleDelta,
+      modelRuntime,
+      props.onTurnCompleted,
+      reasoningEffort,
+      session,
+    ],
   )
 
   const submit = useCallback(
