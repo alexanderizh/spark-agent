@@ -36,6 +36,11 @@ export interface ServeServerOptions {
   readonly engineVersion: string
   /** Protocol-side approver; tool approvals wait for host decisions on it. */
   readonly approver: ServeApprover
+  /**
+   * Post-turn hook (e.g. memory auto-extraction). Receives the full session
+   * event history after a terminal event; errors are logged, never raised.
+   */
+  readonly onTurnFinished?: (sessionId: string, events: readonly AgentEvent[]) => Promise<void>
   readonly model?: string
   readonly host?: string
   readonly port?: number
@@ -191,6 +196,15 @@ export function startServeServer(options: ServeServerOptions): Promise<ServeServ
         )
         response.end()
         log(`turn finished session=${session.sessionId} terminal=${result.terminal.type}`)
+        if (options.onTurnFinished !== undefined && result.terminal.type === 'turn.completed') {
+          try {
+            const events: AgentEvent[] = []
+            for await (const event of session.events()) events.push(event)
+            await options.onTurnFinished(session.sessionId, events)
+          } catch (error) {
+            log(`post-turn hook failed session=${session.sessionId}: ${errorMessage(error)}`)
+          }
+        }
       } catch (error) {
         activeTurns.delete(session.sessionId)
         // The ledger already recorded the terminal event for engine-level

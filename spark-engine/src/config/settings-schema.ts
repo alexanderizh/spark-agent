@@ -108,6 +108,8 @@ export const MemorySettingsSchema = z
   .object({
     /** Disable prompt injection and memory tools without deleting files. */
     enabled: z.boolean().default(true),
+    /** Distill durable facts into the memory store after each finished turn. */
+    auto_extract: z.boolean().default(false),
     /** Estimated token budget for the compact summary injected into each turn. */
     max_inject_tokens: z.number().int().min(100).max(100_000).default(4_000),
     /** Agent profile used for the agent-scoped Markdown directory. */

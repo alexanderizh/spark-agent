@@ -80,6 +80,7 @@ export interface ResolvedMcpSettings {
 
 export interface ResolvedMemorySettings {
   readonly enabled: boolean
+  readonly autoExtract: boolean
   readonly maxInjectTokens: number
   readonly agentId: string
 }
@@ -218,6 +219,7 @@ export function resolveMemorySettings(settings: SparkSettings): ResolvedMemorySe
   const memory = settings.config.memory
   return {
     enabled: memory?.enabled ?? true,
+    autoExtract: memory?.auto_extract ?? false,
     maxInjectTokens: memory?.max_inject_tokens ?? 4_000,
     agentId: memory?.agent_id ?? 'default',
   }
@@ -306,6 +308,7 @@ export interface ResolvedEngineSettings {
   readonly mcpServers: SparkMcpServerMap
   readonly mcpStartupTimeoutMs?: number
   readonly memoryEnabled: boolean
+  readonly memoryAutoExtract: boolean
   readonly memoryMaxInjectTokens: number
   readonly memoryAgentId: string
   readonly compactionPolicy: Partial<ContextCompactionPolicy>
@@ -328,6 +331,7 @@ export function resolveEngineSettings(
     mcpServers: mcp.servers,
     ...(mcp.startupTimeoutMs === undefined ? {} : { mcpStartupTimeoutMs: mcp.startupTimeoutMs }),
     memoryEnabled: memory.enabled,
+    memoryAutoExtract: memory.autoExtract,
     memoryMaxInjectTokens: memory.maxInjectTokens,
     memoryAgentId: memory.agentId,
     compactionPolicy: resolveContextSettings(settings),

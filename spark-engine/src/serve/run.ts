@@ -3,6 +3,8 @@ import { loadSparkSettings, resolveEngineSettings } from '../config/settings.js'
 import { errorMessage } from '../config/config-file.js'
 import { createResilientEnv } from '../env.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
+import { FileMemoryStore } from '../memory/store.js'
+import { extractAndSaveMemories } from '../memory/extraction.js'
 import { Agent } from '../sdk/agent.js'
 import { ServeApprover } from './approver.js'
 import { startServeServer, type ServeHandshake } from './server.js'
@@ -53,10 +55,26 @@ export async function runServeCommand(options: ServeCommandOptions): Promise<num
       permission: { ...managed.env.permission, approver },
     },
   })
+  const memoryStore =
+    engineSettings.memoryEnabled && engineSettings.memoryAutoExtract
+      ? new FileMemoryStore({ cwd, agentId: engineSettings.memoryAgentId, enabled: true })
+      : undefined
   const handle = await startServeServer({
     agent,
     approver,
     engineVersion: SPARK_ENGINE_VERSION,
+    ...(memoryStore === undefined
+      ? {}
+      : {
+          onTurnFinished: async (sessionId, events) => {
+            await extractAndSaveMemories({
+              env: managed.env,
+              store: memoryStore,
+              events,
+              sessionId,
+            })
+          },
+        }),
     model: runtime.modelId,
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(options.port === undefined ? {} : { port: options.port }),

@@ -38,6 +38,8 @@ import { isReasoningEffort } from '../llm/types.js'
 import { isPermissionMode, type PermissionMode } from '../permission/types.js'
 import type { AgentEnv } from '../seams.js'
 import { loadImageFiles, type LoadImageFilesResult } from '../images/files.js'
+import { extractAndSaveMemories } from '../memory/extraction.js'
+import { FileMemoryStore } from '../memory/store.js'
 import type { TurnImageAttachment } from '../images/attachments.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import {
@@ -991,7 +993,15 @@ async function runOnce(
 ): Promise<number> {
   const managed = await openConfiguredEnv(runtime, engineSettings)
   try {
-    return await runOnceWithEnv(prompt, options, runtime, managed.env, resumeSessionId, images)
+    return await runOnceWithEnv(
+      prompt,
+      options,
+      runtime,
+      engineSettings,
+      managed.env,
+      resumeSessionId,
+      images,
+    )
   } finally {
     await managed.close()
   }
@@ -1007,6 +1017,7 @@ async function runOnceWithEnv(
   prompt: string,
   options: CliOptions,
   runtime: ConfiguredModelRuntime,
+  engineSettings: ResolvedEngineSettings,
   env: AgentEnv,
   resumeSessionId?: string,
   images: readonly TurnImageAttachment[] = [],
@@ -1090,7 +1101,25 @@ async function runOnceWithEnv(
     } else if (!eventJson && wroteText) {
       process.stdout.write('\n')
     }
-    if (result.terminal.type === 'turn.completed') return 0
+    if (result.terminal.type === 'turn.completed') {
+      if (engineSettings.memoryEnabled && engineSettings.memoryAutoExtract) {
+        // Bounded post-turn pass: distills durable facts into the memory
+        // store. Failures are logged inside, never surfaced to the caller.
+        const events: AgentEvent[] = []
+        for await (const event of session.events()) events.push(event)
+        await extractAndSaveMemories({
+          env,
+          store: new FileMemoryStore({
+            cwd: process.cwd(),
+            agentId: engineSettings.memoryAgentId,
+            enabled: true,
+          }),
+          events,
+          sessionId: session.sessionId,
+        })
+      }
+      return 0
+    }
     if (result.terminal.type === 'turn.cancelled') return 130
     return 1
   } finally {
