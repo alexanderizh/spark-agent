@@ -327,6 +327,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
       void session
         .turn(prompt, {
           signal: controller.signal,
+          autoContinue: 3,
           reasoningEffort,
           ...(images.length === 0 ? {} : { images }),
           onEvent: appendEvent,

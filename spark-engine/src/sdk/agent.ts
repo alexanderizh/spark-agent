@@ -55,6 +55,13 @@ export interface SessionTurnOptions {
   readonly images?: readonly TurnImageAttachment[]
   readonly onEvent?: RunTurnOptions['onEvent']
   readonly onDelta?: RunTurnOptions['onDelta']
+  /**
+   * When a turn stops because its budget ran out (reason `budget`), keep the
+   * task alive by chaining follow-up turns with a continuation prompt, at
+   * most this many times. 0 (the default) keeps the historical behavior of
+   * ending the turn and letting the caller decide.
+   */
+  readonly autoContinue?: number
 }
 
 export interface SessionRecovery {
@@ -381,6 +388,22 @@ export class AgentSession {
   }
 
   async turn(input: string, options: SessionTurnOptions = {}): Promise<TurnResult> {
+    const result = await this.#runTurn(input, options)
+    const maxContinuations = options.autoContinue ?? 0
+    let remaining = maxContinuations
+    let chained: TurnResult = result
+    while (
+      chained.terminal.type === 'turn.completed' &&
+      chained.terminal.reason === 'budget' &&
+      remaining > 0
+    ) {
+      remaining -= 1
+      chained = await this.#runTurn(CONTINUATION_PROMPT, options)
+    }
+    return chained
+  }
+
+  async #runTurn(input: string, options: SessionTurnOptions): Promise<TurnResult> {
     const images =
       options.images === undefined || options.images.length === 0
         ? undefined
@@ -614,6 +637,10 @@ function errorMessage(error: unknown): string {
 }
 
 const DEFAULT_PERMISSION_MODE: PermissionMode = 'manual'
+
+/** Sent as the user turn after a budget stop when autoContinue is enabled. */
+const CONTINUATION_PROMPT =
+  '[自动继续] 上一个 turn 因预算耗尽而停止。请从中断处继续完成任务；先简要说明剩余工作，再继续执行。'
 
 function permissionModeFromConfig(config: Readonly<Record<string, unknown>>): PermissionMode {
   const value = config.permissionMode

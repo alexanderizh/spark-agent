@@ -1074,6 +1074,7 @@ async function runOnceWithEnv(
   try {
     const result = await session.turn(prompt, {
       signal: controller.signal,
+      autoContinue: 3,
       ...(images.length === 0 ? {} : { images }),
       ...(options.reasoningEffort === undefined
         ? {}

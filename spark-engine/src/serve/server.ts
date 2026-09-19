@@ -183,6 +183,7 @@ export function startServeServer(options: ServeServerOptions): Promise<ServeServ
       try {
         const result = await session.turn(input, {
           signal: controller.signal,
+          autoContinue: 3,
           ...(images === undefined ? {} : { images }),
           onEvent: (event: AgentEvent) => {
             writeSse(response, 'agent-event', JSON.stringify(event))
