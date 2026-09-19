@@ -452,6 +452,7 @@ import type { ActiveExecution } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { isPermissionModeAware } from '../sdk/index.js'
 import type { CanvasToolSchema } from './canvas-mcp-server.js'
+import type { WorkflowToolSchema } from './workflow-mcp-server.js'
 import type { SparkReasoningEffort } from '../sdk/reasoning-effort.js'
 import {
   buildConversationHistory,
@@ -837,6 +838,20 @@ export type CanvasMcpProvider = (sessionId: string) => Promise<{
   callTool?: ((sessionId: string, toolName: string, args: unknown) => Promise<unknown>) | undefined
 } | null>
 
+/**
+ * Workflow Agent 桥：由主进程注入。SessionService 在 sendTurn 时调用
+ * `workflowMcpProvider(sessionId)` 拿到 in-process MCP server 配置；若 session
+ * 没有 attach 到工作流编辑器 Agent 面板则返回 null，工具集不挂载。
+ * 与 CanvasMcpProvider 同构（E2-1 对称复刻）；工具作用于“编辑器当前打开的图”，
+ * 由渲染端工具 handler 执行时实时读取。
+ */
+export type WorkflowMcpProvider = (sessionId: string) => Promise<{
+  server?: import('../sdk/types.js').SDKMcpServerConfig | undefined
+  allowedTools: string[]
+  toolSchemas?: ReadonlyArray<WorkflowToolSchema> | undefined
+  callTool?: ((sessionId: string, toolName: string, args: unknown) => Promise<unknown>) | undefined
+} | null>
+
 /** Desktop main-process provider for the visible in-app browser MCP bridge. */
 export type BrowserAutomationMcpProvider = (
   sessionId: string,
@@ -884,6 +899,8 @@ export class SessionService {
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
+  /** 工作流 Agent MCP server 提供器（由主进程注入） */
+  private workflowMcpProvider: WorkflowMcpProvider | null = null
   /** 会话引擎级 worktree 状态变化回调（主进程注入，用于 UI 推流） */
   private sessionWorktreeChangedHandler?:
     | ((sessionId: string, worktree: SessionRuntimeWorktreeState | null) => void)
@@ -1213,6 +1230,11 @@ export class SessionService {
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
   setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
     this.canvasMcpProvider = provider
+  }
+
+  /** 注入工作流 Agent MCP provider（主进程持有工作流桥后调用一次） */
+  setWorkflowMcpProvider(provider: WorkflowMcpProvider | null): void {
+    this.workflowMcpProvider = provider
   }
 
   /**
@@ -4544,6 +4566,26 @@ export class SessionService {
       return
     }
 
+    // Workflow Agent in-process MCP server — only when the session is attached to
+    // the workflow editor agent panel. E2-1 提供 SDK 路径；CLI stdio 瘦桥接对称件
+    // 随 E2-2 双内核验收补齐。与画布不同：面板 UI E2-2 才存在，setup 失败暂不
+    // fail-closed 终止本轮（无 unavailable 事件可告知用户），仅 log.warn 降级为
+    // 无工作流工具状态继续，避免基础管道问题放大成整轮失败。
+    let workflowAllowedTools: string[] | undefined
+    if (this.workflowMcpProvider != null) {
+      try {
+        const workflow = await this.workflowMcpProvider(sessionId)
+        if (workflow?.server != null) {
+          mcpServers.spark_workflow = workflow.server
+          workflowAllowedTools = workflow.allowedTools
+        } else if (workflow != null) {
+          log.warn('the attached workflow MCP runtime could not be created')
+        }
+      } catch (err) {
+        log.warn(`workflow mcp provider failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     // MCP hot-reload: if the MCP set changed since the last SDK query was built,
     // force a fresh SDK session so the new tool inventory takes effect. The SDK
     // freezes the tool list at query start (ClaudeSDKExecutor passes mcpServers
@@ -4912,6 +4954,9 @@ export class SessionService {
     }
     if (canvasAllowedTools != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, canvasAllowedTools)
+    }
+    if (workflowAllowedTools != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, workflowAllowedTools)
     }
 
     // 编排宿主不再硬剥离 Edit/Write/Bash 等工具（产品决策 2026-07-04）：每个 agent

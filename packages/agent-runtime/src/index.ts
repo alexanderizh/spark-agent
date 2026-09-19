@@ -269,6 +269,7 @@ export type {
   SessionRenamedHandler,
   PlatformConfigChangedHandler,
   CanvasMcpProvider,
+  WorkflowMcpProvider,
   BrowserAutomationMcpProvider,
   ComputerUseMcpProvider,
 } from './services/session.service.js'
@@ -278,6 +279,15 @@ export type {
   CanvasToolCallBridge,
   CreateCanvasMcpServerOptions,
 } from './services/canvas-mcp-server.js'
+export {
+  createWorkflowMcpServer,
+  workflowAllowedToolNames,
+} from './services/workflow-mcp-server.js'
+export type {
+  WorkflowToolSchema,
+  WorkflowToolCallBridge,
+  CreateWorkflowMcpServerOptions,
+} from './services/workflow-mcp-server.js'
 export { TeamDispatchService } from './services/team-dispatch.service.js'
 export type {
   TeamDispatchRunContext,
