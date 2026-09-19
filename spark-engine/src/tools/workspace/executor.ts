@@ -5,8 +5,9 @@ import { dirname } from 'node:path'
 import fastGlob from 'fast-glob'
 import ignore from 'ignore'
 
+import { detectImageMediaType, IMAGE_LIMITS } from '../../images/attachments.js'
 import { KernelError } from '../../kernel/errors.js'
-import type { ToolCallContext, ToolExecutor, ToolOwner } from '../../seams.js'
+import type { ArtifactStore, ToolCallContext, ToolExecutor, ToolOwner } from '../../seams.js'
 import type { ResolvedToolCall, ToolOutcome } from '../contract.js'
 import { ManagedProcesses } from './managed-processes.js'
 import { atomicWriteFile } from './atomic-write.js'
@@ -18,12 +19,15 @@ const MAX_FILE_BYTES = 16 * 1024 * 1024
 export class WorkspaceToolExecutor implements ToolExecutor {
   readonly #guard: WorkspacePathGuard
   readonly #processes = new ManagedProcesses()
+  readonly #artifacts: ArtifactStore
 
   constructor(
     readonly cwd: string,
+    artifacts: ArtifactStore,
     private readonly customEnv?: Readonly<Record<string, string>>,
   ) {
     this.#guard = new WorkspacePathGuard(cwd)
+    this.#artifacts = artifacts
   }
 
   assertTurnSettled(owner: ToolOwner): void {
@@ -40,6 +44,8 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     switch (call.name) {
       case 'read':
         return this.#read(args, context.signal)
+      case 'view_image':
+        return this.#viewImage(args, context.signal)
       case 'glob':
         return this.#glob(args, context.signal)
       case 'grep':
@@ -83,6 +89,38 @@ export class WorkspaceToolExecutor implements ToolExecutor {
     return {
       ok: true,
       content: `path: ${this.#guard.relative(path)}\nsha256: ${file.sha256}\nbytes: ${file.bytes}\n---\n${body}`,
+    }
+  }
+
+  /**
+   * Reads an image file so the model can actually look at it: bytes are
+   * sniffed (extensions are never trusted), sunk into the artifact store, and
+   * the tool-result artifact is attached to the request as a real image.
+   */
+  async #viewImage(args: Record<string, unknown>, signal: AbortSignal): Promise<ToolOutcome> {
+    const input = stringArg(args.path, 'path')
+    const path = await this.#guard.existing(input)
+    signal.throwIfAborted()
+    const stats = await stat(path)
+    if (stats.size > IMAGE_LIMITS.maxBytesPerImage) {
+      return {
+        ok: false,
+        content: `Image exceeds the ${IMAGE_LIMITS.maxBytesPerImage}-byte limit: ${input} (${stats.size} bytes)`,
+      }
+    }
+    const bytes = await readFile(path)
+    signal.throwIfAborted()
+    const mediaType = detectImageMediaType(bytes)
+    if (mediaType === undefined) {
+      return { ok: false, content: `Not a recognized image (PNG/JPEG/WEBP/GIF): ${input}` }
+    }
+    const artifact = await this.#artifacts.put(bytes, mediaType)
+    return {
+      ok: true,
+      content:
+        `Image view: ${this.#guard.relative(path)} (${mediaType}, ${bytes.length} bytes).
+` + `The image is attached to this result — describe or analyze it directly.`,
+      artifact,
     }
   }
 

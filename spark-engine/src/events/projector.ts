@@ -5,6 +5,7 @@ import type {
   PromptComposer,
   SessionFacts,
 } from '../seams.js'
+import { isImageMediaType } from '../images/attachments.js'
 import type { IrImageRef, IrMessage, SystemSection } from '../llm/types.js'
 import type { InstructionProvider } from '../memory/instructions.js'
 import type { MemoryProvider } from '../memory/store.js'
@@ -63,6 +64,11 @@ export class EventContextProjector implements ContextProjector {
             ok: event.ok,
             content: event.content,
             sourceSeqs: call ? [call.seq, event.seq] : [event.seq],
+            // A view_image-style result carries its image as an artifact; the
+            // adapters attach the bytes next to the tool_result block.
+            ...(event.artifact !== undefined && isImageMediaType(event.artifact.mediaType)
+              ? { imageRefs: [artifactToImageRef(event.artifact)] }
+              : {}),
           }
           toolResultSlots.set(event.callId, { index: messages.length, message })
           messages.push(message)
@@ -118,6 +124,23 @@ function applyCompaction(
       // this turn range also retires this summary instead of stacking copies.
       sourceSeqs: [compactedSeq],
     })
+  }
+}
+
+/** ArtifactRef and IrImageRef share the same identity fields by design. */
+function artifactToImageRef(artifact: {
+  readonly sha256: string
+  readonly bytes: number
+  readonly mediaType: string
+  readonly summary: string
+  readonly readHint: string
+}): IrImageRef {
+  return {
+    sha256: artifact.sha256,
+    bytes: artifact.bytes,
+    mediaType: artifact.mediaType,
+    summary: artifact.summary,
+    readHint: artifact.readHint,
   }
 }
 

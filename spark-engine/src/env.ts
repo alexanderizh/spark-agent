@@ -186,7 +186,8 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
   // Hidden tools are also hard-denied: a resumed session can still replay a
   // call that predates the filter, and it must not bypass the configuration.
   const disallowedTools = [...(options.disallowedTools ?? []), ...(options.hiddenTools ?? [])]
-  const workspaceExecutor = new WorkspaceToolExecutor(options.cwd, options.customEnv)
+  const artifacts = new FileArtifactStore(dataRoot)
+  const workspaceExecutor = new WorkspaceToolExecutor(options.cwd, artifacts, options.customEnv)
   const todoExecutor = new TodoToolExecutor(new TodoStore({ cwd: options.cwd, logger }))
   const planExecutor = new PlanToolExecutor(new PlanStore({ cwd: options.cwd, logger }))
   const skillExecutor =
@@ -212,7 +213,7 @@ function buildDefaultEnv(options: DefaultEnvOptions, mcp?: McpToolManager): Agen
     clock,
     ids: new UuidIdGen(),
     store: new JsonlSessionStore({ dataRoot, projectDir: options.cwd }),
-    artifacts: new FileArtifactStore(dataRoot),
+    artifacts,
     llm: options.llm,
     tools: { registry, executor },
     permission: {
@@ -265,6 +266,11 @@ function filterToolDefinitions(
 
 export interface DeterministicEnvOptions {
   readonly files?: Readonly<Record<string, string>>
+  /**
+   * Bytes served by the fake `view_image` tool; when set, its tool result
+   * carries a real artifact so image-projection tests resolve the payload.
+   */
+  readonly viewImageBytes?: Uint8Array
   readonly shell?: Readonly<Record<string, FakeShellReply>>
   readonly approvals?: readonly PermissionDecision[]
   readonly permissionRules?: readonly PermissionRule[]
@@ -288,7 +294,8 @@ export function createDeterministicEnv(
   const clock = new SteppingClock()
   const fs = new VirtualFileSystem(options.files)
   const shell = new FakeShell(options.shell)
-  const executor = new FakeToolExecutor(fs, shell)
+  const artifacts = new MemoryArtifactStore()
+  const executor = new FakeToolExecutor(fs, shell, artifacts, options.viewImageBytes)
   const approver = new FakeApprover(options.approvals)
   const model = new FakeModel(script)
   const telemetry = new MemoryTelemetry()
@@ -296,7 +303,7 @@ export function createDeterministicEnv(
     clock,
     ids: new SequentialIdGen(),
     store: new MemorySessionStore(),
-    artifacts: new MemoryArtifactStore(),
+    artifacts,
     llm: model,
     tools: {
       registry: new OrderedToolRegistry([...fakeToolDefinitions, taskToolDefinition]),

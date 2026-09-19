@@ -89,6 +89,20 @@ function toOpenAiInput(messages: readonly IrMessage[]): unknown[] {
         call_id: message.callId,
         output: message.content,
       })
+      // The Responses API cannot attach images to function_call_output items,
+      // so tool-produced images follow as their own user message.
+      for (const image of message.imageParts ?? []) {
+        input.push({
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: `Image produced by tool call ${message.callId} (${message.tool}):`,
+            },
+            { type: 'input_image', image_url: `data:${image.mediaType};base64,${image.base64}` },
+          ],
+        })
+      }
     } else {
       const continuation = continuationItems(message.continuation)
       if (continuation) {

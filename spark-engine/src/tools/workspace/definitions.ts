@@ -1,7 +1,7 @@
-import { processToolDefinitions } from './process-definitions.js';
-import type { ToolDefinition } from '../contract.js';
+import { processToolDefinitions } from './process-definitions.js'
+import type { ToolDefinition } from '../contract.js'
 
-const path = { type: 'string', minLength: 1 } as const;
+const path = { type: 'string', minLength: 1 } as const
 
 export const workspaceToolDefinitions: readonly ToolDefinition[] = [
   {
@@ -15,6 +15,24 @@ export const workspaceToolDefinitions: readonly ToolDefinition[] = [
         offset: { type: 'integer', minimum: 1 },
         limit: { type: 'integer', minimum: 1, maximum: 20_000 },
       },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    readonly: true,
+    permissionClass: 'read',
+    approval: 'never',
+    concurrency: 'parallel',
+    timeoutMs: 10_000,
+    interruptible: true,
+    costClass: 'io',
+  },
+  {
+    name: 'view_image',
+    description:
+      'Read an image file (PNG/JPEG/WEBP/GIF) from the workspace so you can look at it. The image is attached to the tool result.',
+    inputSchema: {
+      type: 'object',
+      properties: { path },
       required: ['path'],
       additionalProperties: false,
     },
@@ -142,4 +160,4 @@ export const workspaceToolDefinitions: readonly ToolDefinition[] = [
     costClass: 'cpu',
   },
   ...processToolDefinitions,
-];
+]

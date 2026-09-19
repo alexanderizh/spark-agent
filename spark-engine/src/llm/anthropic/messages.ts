@@ -142,6 +142,9 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
           content: message.content,
           ...(message.ok ? {} : { is_error: true }),
         },
+        // Images a tool produced ride in the same user turn, right after the
+        // tool_result block they belong to.
+        ...anthropicImageBlocks(message),
       ])
     } else {
       append('assistant', continuationBlocks(message.continuation) ?? reconstructedBlocks(message))
@@ -154,9 +157,9 @@ function toAnthropicMessages(messages: readonly IrMessage[]): Record<string, unk
  * Anthropic takes inline base64 images after the text block, so the model
  * reads the prompt first and then the attached pictures it refers to.
  */
-function anthropicImageBlocks(
-  message: Extract<IrMessage, { role: 'user' }>,
-): Record<string, unknown>[] {
+function anthropicImageBlocks(message: {
+  readonly imageParts?: readonly { readonly mediaType: string; readonly base64: string }[]
+}): Record<string, unknown>[] {
   return (message.imageParts ?? []).map((image) => ({
     type: 'image',
     source: { type: 'base64', media_type: image.mediaType, data: image.base64 },

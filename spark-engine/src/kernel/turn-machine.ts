@@ -517,14 +517,16 @@ async function resolveImageParts(
   cache: Map<string, IrImagePart>,
 ): Promise<readonly IrMessage[]> {
   const needsResolution = messages.some(
-    (message) => message.role === 'user' && (message.imageRefs?.length ?? 0) > 0,
+    (message) =>
+      (message.role === 'user' || message.role === 'tool_result') &&
+      (message.imageRefs?.length ?? 0) > 0,
   )
   if (!needsResolution) return messages
 
   const resolved: IrMessage[] = []
   for (const message of messages) {
     if (
-      message.role !== 'user' ||
+      (message.role !== 'user' && message.role !== 'tool_result') ||
       message.imageRefs === undefined ||
       message.imageRefs.length === 0
     ) {

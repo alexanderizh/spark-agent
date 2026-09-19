@@ -1,41 +1,48 @@
-export type JsonSchema = Readonly<Record<string, unknown>> | boolean;
+import type { ArtifactRef } from '../events/schema.js'
 
-export type ToolApproval = 'never' | 'once' | 'session' | 'always';
-export type ToolConcurrency = 'parallel' | 'serial' | 'exclusive';
-export type ToolCostClass = 'io' | 'cpu' | 'network';
-export type ToolPermissionClass = 'read' | 'workspace-write' | 'command' | 'external';
+export type JsonSchema = Readonly<Record<string, unknown>> | boolean
+
+export type ToolApproval = 'never' | 'once' | 'session' | 'always'
+export type ToolConcurrency = 'parallel' | 'serial' | 'exclusive'
+export type ToolCostClass = 'io' | 'cpu' | 'network'
+export type ToolPermissionClass = 'read' | 'workspace-write' | 'command' | 'external'
 
 export interface ToolDefinition {
-  readonly name: string;
-  readonly description: string;
-  readonly inputSchema: JsonSchema;
-  readonly readonly: boolean;
-  readonly destructive?: boolean;
-  readonly permissionClass: ToolPermissionClass;
-  readonly approval: ToolApproval;
-  readonly concurrency: ToolConcurrency;
-  readonly timeoutMs: number;
-  readonly interruptible: boolean;
-  readonly costClass: ToolCostClass;
+  readonly name: string
+  readonly description: string
+  readonly inputSchema: JsonSchema
+  readonly readonly: boolean
+  readonly destructive?: boolean
+  readonly permissionClass: ToolPermissionClass
+  readonly approval: ToolApproval
+  readonly concurrency: ToolConcurrency
+  readonly timeoutMs: number
+  readonly interruptible: boolean
+  readonly costClass: ToolCostClass
 }
 
 export interface ResolvedToolCall {
-  readonly callId: string;
-  readonly name: string;
-  readonly args: unknown;
-  readonly definition: ToolDefinition;
+  readonly callId: string
+  readonly name: string
+  readonly args: unknown
+  readonly definition: ToolDefinition
 }
 
 export interface ToolOutcome {
-  readonly ok: boolean;
-  readonly content: string;
+  readonly ok: boolean
+  readonly content: string
+  /**
+   * A durable artifact produced by the tool (e.g. an image sunk by
+   * view_image). Passed through to the tool-result event unchanged.
+   */
+  readonly artifact?: ArtifactRef
 }
 
 export interface ToolImplementationContext {
-  readonly signal: AbortSignal;
+  readonly signal: AbortSignal
 }
 
 export type ToolImplementation = (
   args: unknown,
   context: ToolImplementationContext,
-) => Promise<ToolOutcome>;
+) => Promise<ToolOutcome>

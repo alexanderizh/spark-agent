@@ -133,7 +133,9 @@ export function estimateMessageTokens(message: IrMessage): number {
     return total
   }
   if (message.role === 'tool_result') {
-    return estimateTextTokens(message.content) + 12
+    let total = estimateTextTokens(message.content) + 12
+    for (const image of message.imageRefs ?? []) total += estimateImageTokens(image)
+    return total
   }
   let total = estimateTextTokens(message.content) + estimateTextTokens(message.thinking) + 16
   for (const call of message.toolCalls) {

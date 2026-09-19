@@ -2,6 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { MemoryArtifactStore } from '../../src/events/artifact-store.js'
 import { createDeterministicEnv } from '../../src/env.js'
 import { Agent } from '../../src/sdk/agent.js'
 import { FakeModel } from '../../src/llm/fake/model.js'
@@ -25,7 +26,7 @@ describe.skipIf(process.platform === 'win32')('managed process turn contract', (
       toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
       text('premature done'),
     ])
-    const workspace = new WorkspaceToolExecutor(root)
+    const workspace = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const mcp = await McpToolManager.connect({ cwd: root, servers: {} })
     const executor = wrapped ? new CompositeToolExecutor(workspace, mcp) : workspace
     const env = {
@@ -76,7 +77,7 @@ describe.skipIf(process.platform === 'win32')('managed process turn contract', (
       [toolCall('launch', 'bash', { command: 'touch forbidden', yield_ms: 0 }), text('denied')],
       { permissionRules: [{ id: 'no-shell', tool: 'bash', action: 'deny' }] },
     )
-    const executor = new WorkspaceToolExecutor(root)
+    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const env = {
       ...base,
       tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
@@ -100,7 +101,7 @@ describe.skipIf(process.platform === 'win32')('managed process turn contract', (
     const base = createDeterministicEnv([
       toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
     ])
-    const executor = new WorkspaceToolExecutor(root)
+    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const env = {
       ...base,
       tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
@@ -167,7 +168,7 @@ describe.skipIf(process.platform === 'win32')('managed process turn contract', (
         return new FakeModel([reply]).stream(request, context)
       },
     }
-    const executor = new WorkspaceToolExecutor(root)
+    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const env = {
       ...base,
       llm,
