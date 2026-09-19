@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import { basename, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -90,5 +91,38 @@ describe('renderer style architecture', () => {
     expect(views).not.toMatch(/(^|\n)\.board-view\s*\{/)
     expect(views).not.toMatch(/(^|\n)\.palette-backdrop\s*\{/)
     expect(views).not.toMatch(/(^|\n)\.runtime-skill-list\s*\{/)
+  })
+
+  it('ships every page-owned stylesheet (no .less left unimported)', () => {
+    const designDir = fileURLToPath(new URL('.', import.meta.url))
+    const stylesheets: string[] = []
+    const referencingSources: string[] = []
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          walk(fullPath)
+        } else if (entry.name.endsWith('.less')) {
+          stylesheets.push(fullPath)
+          referencingSources.push(fullPath)
+        } else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+          referencingSources.push(fullPath)
+        }
+      }
+    }
+    walk(designDir)
+
+    const referenced = new Set<string>()
+    for (const source of referencingSources) {
+      const sourceText = readFileSync(source, 'utf8')
+      for (const sheet of stylesheets) {
+        if (sheet !== source && sourceText.includes(basename(sheet))) referenced.add(sheet)
+      }
+    }
+
+    const unimported = stylesheets
+      .filter((sheet) => !referenced.has(sheet))
+      .map((sheet) => relative(designDir, sheet))
+    expect(unimported).toEqual([])
   })
 })

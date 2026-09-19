@@ -10,7 +10,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
+  border-bottom: 1px solid var(--divider);
 }
 
 .hookv2-toolbar-hint {
@@ -32,11 +32,11 @@
 }
 
 .hookv2-def-row {
-  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
+  border-bottom: 1px solid var(--divider);
 }
 
 .hookv2-def-row.expanded {
-  background: var(--fill-color, rgba(128, 128, 128, 0.06));
+  background: var(--bg-sunken);
 }
 
 .hookv2-def-line {
@@ -44,6 +44,20 @@
   align-items: center;
   gap: 8px;
   padding: 10px 4px;
+  border-radius: var(--r-xs);
+}
+
+/* 行内可点区域统一 hover 反馈；键盘聚焦用内描边，避免溢出容器。 */
+.hookv2-def-line:hover,
+.hookv2-run-line:hover {
+  background: var(--hover);
+}
+
+.hookv2-def-main:focus-visible,
+.hookv2-run-line:focus-visible,
+.hookv2-fold-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .hookv2-def-main {
@@ -106,7 +120,7 @@
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  border-bottom: 1px dashed var(--border-color, rgba(128, 128, 128, 0.15));
+  border-bottom: 1px dashed var(--divider);
 }
 
 .hookv2-binding-row:last-of-type {
@@ -122,6 +136,19 @@
 
 .hookv2-binding-sub {
   font-size: 12px;
+}
+
+.hookv2-binding-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hookv2-binding-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .hookv2-binding-add {
@@ -155,7 +182,7 @@
 }
 
 .hookv2-run-row {
-  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.14));
+  border-bottom: 1px solid var(--divider);
 }
 
 .hookv2-run-line {
@@ -163,6 +190,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
+  border-radius: var(--r-xs);
   padding: 8px 2px;
   background: none;
   border: none;
@@ -173,7 +201,7 @@
 }
 
 .hookv2-run-event {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -185,7 +213,7 @@
 }
 
 .hookv2-run-error {
-  color: var(--error-color, #d4380d);
+  color: var(--danger);
   font-size: 12px;
   margin-left: auto;
   white-space: nowrap;
@@ -203,8 +231,8 @@
 .hookv2-run-detail pre {
   margin: 4px 0 0;
   padding: 8px;
-  background: var(--fill-color, rgba(128, 128, 128, 0.08));
-  border-radius: 6px;
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
   font-size: 12px;
   max-height: 220px;
   overflow: auto;
@@ -224,7 +252,7 @@
 
 .hookv2-run-error-message {
   font-size: 12px;
-  color: var(--error-color, #d4380d);
+  color: var(--danger);
 }
 
 .hookv2-run-actions {
@@ -303,7 +331,7 @@
 }
 
 .hookv2-fold {
-  border-top: 1px dashed var(--border-color, rgba(128, 128, 128, 0.15));
+  border-top: 1px dashed var(--divider);
   margin-top: 6px;
   padding-top: 6px;
 }
@@ -336,8 +364,8 @@
 
 .hookv2-preview {
   margin-top: 8px;
-  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
-  border-radius: 8px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -356,7 +384,7 @@
   margin: 0;
   padding-left: 18px;
   font-size: 12px;
-  color: var(--error-color, #d4380d);
+  color: var(--danger);
 }
 
 .hookv2-preview-line {
@@ -371,8 +399,8 @@
   margin: 0;
   width: 100%;
   padding: 8px;
-  background: var(--fill-color, rgba(128, 128, 128, 0.08));
-  border-radius: 6px;
+  background: var(--code-bg);
+  border-radius: var(--r-sm);
   font-size: 12px;
   max-height: 180px;
   overflow: auto;
@@ -384,7 +412,7 @@
   justify-content: space-between;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
+  border-top: 1px solid var(--divider);
 }
 
 .hookv2-editor-footer-left,
@@ -397,8 +425,13 @@
 
 .hookv2-legacy {
   margin-top: 24px;
-  border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
+  border-top: 1px solid var(--divider);
   padding-top: 8px;
+}
+
+.hookv2-legacy-inner {
+  display: flex;
+  flex-direction: column;
 }
 
 .hookv2-legacy-hint {
@@ -409,6 +442,97 @@
 .hookv2-legacy-head {
   padding: 8px 0;
   font-size: 13px;
+}
+
+/* 经典通知节点卡片：原先定义在 AgentsView.less（懒加载 chunk），
+   未访问 Agents 页时本区块无样式，故随本页样式一起加载。 */
+.hook-nodes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hook-node-card {
+  background: var(--bg-sunken);
+  border: none;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.hook-node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--hover);
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.hook-node-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.hook-node-meta {
+  /* inherits flex1 min-w-0 */
+}
+.hook-node-label {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.hook-node-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.hook-node-toggles {
+  display: flex;
+  flex-direction: column;
+}
+.hook-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-md);
+  padding: 8px 14px;
+}
+.hook-toggle-row + .hook-toggle-row {
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.hook-toggle-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hook-toggle-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.hook-toggle-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.hook-toggle-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hook-node-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 14px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 40%, transparent);
+  background: color-mix(in srgb, var(--bg-soft) 40%, transparent);
 }
 
 // 窄屏：表单行换行由 flex-wrap 处理；运行行隐藏次要列
