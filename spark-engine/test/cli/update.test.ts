@@ -114,10 +114,12 @@ afterAll(async () => {
       resolveClose()
     })
   })
-  for (const root of fixtureRoots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of fixtureRoots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 afterEach(async () => {
-  for (const root of caseRoots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of caseRoots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 async function packVariant(options: {

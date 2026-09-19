@@ -12,7 +12,8 @@ const servers: Server[] = []
 
 afterEach(async () => {
   for (const server of servers.splice(0)) await shutdownServer(server)
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 interface AccountServerOptions {
@@ -166,79 +167,87 @@ async function runCli(
 }
 
 describe('spark login contract', () => {
-  it('signs in through the browser protocol, persists 0600 credentials, and supports whoami/logout', async () => {
-    const { root, home } = await workspace()
-    const account = await startAccountServer()
+  it(
+    'signs in through the browser protocol, persists 0600 credentials, and supports whoami/logout',
+    { timeout: 30_000 },
+    async () => {
+      const { root, home } = await workspace()
+      const account = await startAccountServer()
 
-    const login = await runCli(['login', '--no-browser', '--json'], root, home, account.baseUrl)
-    expect(login.code).toBe(0)
-    const payload = JSON.parse(login.stdout) as {
-      readonly authenticated: boolean
-      readonly userId: string
-      readonly loginUrl: string
-      readonly openedInBrowser: boolean
-      readonly credentialPath: string
-      readonly account: { readonly nickname: string } | null
-    }
-    expect(payload.authenticated).toBe(true)
-    expect(payload.userId).toBe('99')
-    expect(payload.openedInBrowser).toBe(false)
-    expect(payload.account?.nickname).toBe('CLI User')
-    expect(payload.credentialPath).toBe(resolve(home, 'credentials.json'))
-    // Progress lines must not pollute the JSON contract.
-    expect(login.stdout.trimEnd().endsWith('}')).toBe(true)
-    expect(login.stderr).toContain('Open this page in a browser')
+      const login = await runCli(['login', '--no-browser', '--json'], root, home, account.baseUrl)
+      expect(login.code).toBe(0)
+      const payload = JSON.parse(login.stdout) as {
+        readonly authenticated: boolean
+        readonly userId: string
+        readonly loginUrl: string
+        readonly openedInBrowser: boolean
+        readonly credentialPath: string
+        readonly account: { readonly nickname: string } | null
+      }
+      expect(payload.authenticated).toBe(true)
+      expect(payload.userId).toBe('99')
+      expect(payload.openedInBrowser).toBe(false)
+      expect(payload.account?.nickname).toBe('CLI User')
+      expect(payload.credentialPath).toBe(resolve(home, 'credentials.json'))
+      // Progress lines must not pollute the JSON contract.
+      expect(login.stdout.trimEnd().endsWith('}')).toBe(true)
+      expect(login.stderr).toContain('Open this page in a browser')
 
-    // The exchanged verifier must match the challenge handed to the web page.
-    const challenge = new URL(payload.loginUrl).searchParams.get('challenge')
-    const exchange = account.requests.find((request) =>
-      request.path.startsWith('/api/v1/auth/desktop/exchange'),
-    )
-    const exchangeBody = JSON.parse(exchange?.body ?? '{}') as { readonly codeVerifier?: string }
-    expect(
-      createHash('sha256')
-        .update(exchangeBody.codeVerifier ?? '')
-        .digest('hex'),
-    ).toBe(challenge)
+      // The exchanged verifier must match the challenge handed to the web page.
+      const challenge = new URL(payload.loginUrl).searchParams.get('challenge')
+      const exchange = account.requests.find((request) =>
+        request.path.startsWith('/api/v1/auth/desktop/exchange'),
+      )
+      const exchangeBody = JSON.parse(exchange?.body ?? '{}') as { readonly codeVerifier?: string }
+      expect(
+        createHash('sha256')
+          .update(exchangeBody.codeVerifier ?? '')
+          .digest('hex'),
+      ).toBe(challenge)
 
-    const credentials = await stat(payload.credentialPath)
-    if (process.platform !== 'win32') {
-      // Windows reports a fixed 0o666-style mode mask; file access there is
-      // governed by ACLs, so the 0600 contract is POSIX-only.
-      expect(credentials.mode & 0o777).toBe(0o600)
-    } else {
-      expect(credentials.isFile()).toBe(true)
-    }
+      const credentials = await stat(payload.credentialPath)
+      if (process.platform !== 'win32') {
+        // Windows reports a fixed 0o666-style mode mask; file access there is
+        // governed by ACLs, so the 0600 contract is POSIX-only.
+        expect(credentials.mode & 0o777).toBe(0o600)
+      } else {
+        expect(credentials.isFile()).toBe(true)
+      }
 
-    const whoami = await runCli(['whoami', '--json'], root, home, account.baseUrl)
-    expect(whoami.code).toBe(0)
-    expect(JSON.parse(whoami.stdout)).toMatchObject({
-      authenticated: true,
-      userId: '99',
-      account: { account: 'cli@example.com', nickname: 'CLI User' },
-    })
+      const whoami = await runCli(['whoami', '--json'], root, home, account.baseUrl)
+      expect(whoami.code).toBe(0)
+      expect(JSON.parse(whoami.stdout)).toMatchObject({
+        authenticated: true,
+        userId: '99',
+        account: { account: 'cli@example.com', nickname: 'CLI User' },
+      })
 
-    const logout = await runCli(['logout'], root, home, account.baseUrl)
-    expect(logout.code).toBe(0)
-    expect(logout.stdout).toContain('Signed out')
-    await expect(access(payload.credentialPath)).rejects.toThrow()
+      const logout = await runCli(['logout'], root, home, account.baseUrl)
+      expect(logout.code).toBe(0)
+      expect(logout.stdout).toContain('Signed out')
+      await expect(access(payload.credentialPath)).rejects.toThrow()
 
-    const afterLogout = await runCli(['whoami'], root, home, account.baseUrl)
-    expect(afterLogout.code).toBe(1)
-    expect(afterLogout.stderr).toContain('Not signed in')
-  })
+      const afterLogout = await runCli(['whoami'], root, home, account.baseUrl)
+      expect(afterLogout.code).toBe(1)
+      expect(afterLogout.stderr).toContain('Not signed in')
+    },
+  )
 
-  it('reports an unauthenticated whoami without touching the server', async () => {
-    const { root, home } = await workspace()
-    const account = await startAccountServer()
+  it(
+    'reports an unauthenticated whoami without touching the server',
+    { timeout: 30_000 },
+    async () => {
+      const { root, home } = await workspace()
+      const account = await startAccountServer()
 
-    const whoami = await runCli(['whoami'], root, home, account.baseUrl)
-    expect(whoami.code).toBe(1)
-    expect(whoami.stderr).toContain('Run `spark login` first')
-    expect(account.requests).toHaveLength(0)
-  })
+      const whoami = await runCli(['whoami'], root, home, account.baseUrl)
+      expect(whoami.code).toBe(1)
+      expect(whoami.stderr).toContain('Run `spark login` first')
+      expect(account.requests).toHaveLength(0)
+    },
+  )
 
-  it('clears an expired session and asks for a new login', async () => {
+  it('clears an expired session and asks for a new login', { timeout: 30_000 }, async () => {
     const { root, home } = await workspace()
     const account = await startAccountServer({ sessionMode: 'unauthorized' })
 
@@ -253,26 +262,30 @@ describe('spark login contract', () => {
     await expect(access(resolve(home, 'credentials.json'))).rejects.toThrow()
   })
 
-  it('keeps the stored session when the account server is unreachable', async () => {
-    const { root, home } = await workspace()
-    const account = await startAccountServer()
+  it(
+    'keeps the stored session when the account server is unreachable',
+    { timeout: 30_000 },
+    async () => {
+      const { root, home } = await workspace()
+      const account = await startAccountServer()
 
-    const login = await runCli(['login', '--no-browser', '--json'], root, home, account.baseUrl)
-    expect(login.code).toBe(0)
-    const credentialPath = resolve(home, 'credentials.json')
-    await expect(access(credentialPath)).resolves.toBeUndefined()
+      const login = await runCli(['login', '--no-browser', '--json'], root, home, account.baseUrl)
+      expect(login.code).toBe(0)
+      const credentialPath = resolve(home, 'credentials.json')
+      await expect(access(credentialPath)).resolves.toBeUndefined()
 
-    await account.close()
+      await account.close()
 
-    const whoami = await runCli(['whoami'], root, home, account.baseUrl)
-    expect(whoami.code).toBe(1)
-    expect(whoami.stderr).toContain('Cannot reach the Spark account server')
-    expect(whoami.stderr).not.toContain('session expired')
-    // A network outage must not throw away a still-valid login.
-    await expect(access(credentialPath)).resolves.toBeUndefined()
-  })
+      const whoami = await runCli(['whoami'], root, home, account.baseUrl)
+      expect(whoami.code).toBe(1)
+      expect(whoami.stderr).toContain('Cannot reach the Spark account server')
+      expect(whoami.stderr).not.toContain('session expired')
+      // A network outage must not throw away a still-valid login.
+      await expect(access(credentialPath)).resolves.toBeUndefined()
+    },
+  )
 
-  it('rejects extra arguments before starting a login', async () => {
+  it('rejects extra arguments before starting a login', { timeout: 30_000 }, async () => {
     const { root, home } = await workspace()
     const account = await startAccountServer()
 

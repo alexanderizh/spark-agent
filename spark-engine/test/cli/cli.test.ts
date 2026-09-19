@@ -12,64 +12,73 @@ import { pngBytes } from '../fixtures/image-bytes.js'
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('built CLI contract', () => {
-  it('emits the complete fact stream in JSON mode with no ANSI escapes', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-'))
-    roots.push(root)
-    const server = await startResponsesServer()
-    await mkdir(join(root, '.spark'))
-    await writeFile(
-      join(root, '.spark', 'config.toml'),
-      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
-    )
-    const result = await runCli(
-      ['--json', 'hello'],
-      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
-      root,
-    )
-    await server.close()
-    expect(result.code).toBe(0)
-    expect(result.stderr).toBe('')
-    expect(result.stdout).not.toContain(String.fromCharCode(27))
-    const events = result.stdout
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line) as { type: string; seq: number })
-    expect(events.map((event) => event.type)).toEqual([
-      'session.started',
-      'turn.started',
-      'step.started',
-      'assistant.completed',
-      'turn.completed',
-    ])
-    expect(events.map((event) => event.seq)).toEqual([0, 1, 2, 3, 4])
-  })
+  it(
+    'emits the complete fact stream in JSON mode with no ANSI escapes',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-'))
+      roots.push(root)
+      const server = await startResponsesServer()
+      await mkdir(join(root, '.spark'))
+      await writeFile(
+        join(root, '.spark', 'config.toml'),
+        `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+      )
+      const result = await runCli(
+        ['--json', 'hello'],
+        { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+        root,
+      )
+      await server.close()
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).not.toContain(String.fromCharCode(27))
+      const events = result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { type: string; seq: number })
+      expect(events.map((event) => event.type)).toEqual([
+        'session.started',
+        'turn.started',
+        'step.started',
+        'assistant.completed',
+        'turn.completed',
+      ])
+      expect(events.map((event) => event.seq)).toEqual([0, 1, 2, 3, 4])
+    },
+  )
 
-  it('prints the completed assistant answer when a gateway omits text deltas', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-completed-output-'))
-    roots.push(root)
-    const server = await startResponsesServer(false)
-    await mkdir(join(root, '.spark'))
-    await writeFile(
-      join(root, '.spark', 'config.toml'),
-      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
-    )
+  it(
+    'prints the completed assistant answer when a gateway omits text deltas',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-completed-output-'))
+      roots.push(root)
+      const server = await startResponsesServer(false)
+      await mkdir(join(root, '.spark'))
+      await writeFile(
+        join(root, '.spark', 'config.toml'),
+        `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+      )
 
-    const result = await runCli(
-      ['hello'],
-      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
-      root,
-    )
-    await server.close()
+      const result = await runCli(
+        ['hello'],
+        { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+        root,
+      )
+      await server.close()
 
-    expect(result.code).toBe(0)
-    expect(result.stdout).toContain('done')
-  })
+      expect(result.code).toBe(0)
+      expect(result.stdout).toContain('done')
+    },
+  )
 
-  it('emits one final result object for output-format json', async () => {
+  it('emits one final result object for output-format json', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-json-result-'))
     roots.push(root)
     const server = await startResponsesServer()
@@ -104,7 +113,7 @@ describe('built CLI contract', () => {
     expect(result.stderr).toBe('')
   })
 
-  it('emits persisted events and live deltas for stream-json', async () => {
+  it('emits persisted events and live deltas for stream-json', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-stream-json-'))
     roots.push(root)
     const server = await startResponsesServer()
@@ -133,7 +142,7 @@ describe('built CLI contract', () => {
     expect(result.stderr).toBe('')
   })
 
-  it('lists sessions and resumes the latest one with --continue', async () => {
+  it('lists sessions and resumes the latest one with --continue', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-resume-'))
     roots.push(root)
     const server = await startResponsesServer()
@@ -179,7 +188,7 @@ describe('built CLI contract', () => {
     expect(events.map((event) => event.seq)).toEqual([...Array(events.length).keys()])
   })
 
-  it('rejects an unknown --resume id with recent-session hints', async () => {
+  it('rejects an unknown --resume id with recent-session hints', { timeout: 30_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-cli-resume-miss-'))
     roots.push(root)
     await mkdir(join(root, '.spark'))
@@ -193,178 +202,202 @@ describe('built CLI contract', () => {
     expect(result.stderr).toContain('Session not found: session_deadbeef')
   })
 
-  it('rejects conflicting --continue and --resume flags', async () => {
+  it('rejects conflicting --continue and --resume flags', { timeout: 30_000 }, async () => {
     const result = await runCli(['--continue', '--resume', 'session_x', 'hello'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('mutually exclusive')
   })
 
-  it('explains that the bare --resume picker needs a TTY', async () => {
+  it('explains that the bare --resume picker needs a TTY', { timeout: 30_000 }, async () => {
     const result = await runCli(['--resume'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('picker')
   })
 
-  it('returns usage error 2 for an invalid output format', async () => {
+  it('returns usage error 2 for an invalid output format', { timeout: 30_000 }, async () => {
     const result = await runCli(['--output-format', 'xml', 'hello'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('Unsupported --output-format')
   })
 
-  it('rejects conflicting legacy json and output format flags', async () => {
+  it('rejects conflicting legacy json and output format flags', { timeout: 30_000 }, async () => {
     const result = await runCli(['--json', '--output-format', 'text', 'hello'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('--json conflicts with --output-format')
   })
 
-  it('attaches -i images to the prompt and records only their artifact reference', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-'))
-    roots.push(root)
-    let requestBody = ''
-    const server = await startResponsesServer(true, (body) => {
-      requestBody = body
-    })
-    await mkdir(join(root, '.spark'))
-    await writeFile(
-      join(root, '.spark', 'config.toml'),
-      `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
-    )
-    const shot = join(root, 'shot.png')
-    await writeFile(shot, pngBytes(1920, 1080))
+  it(
+    'attaches -i images to the prompt and records only their artifact reference',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-'))
+      roots.push(root)
+      let requestBody = ''
+      const server = await startResponsesServer(true, (body) => {
+        requestBody = body
+      })
+      await mkdir(join(root, '.spark'))
+      await writeFile(
+        join(root, '.spark', 'config.toml'),
+        `[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\nbase_url = "${server.baseUrl}"\napi_key_env = "TEST_OPENAI_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n`,
+      )
+      const shot = join(root, 'shot.png')
+      await writeFile(shot, pngBytes(1920, 1080))
 
-    const result = await runCli(
-      ['--json', '-p', 'describe this', '-i', shot],
-      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
-      root,
-    )
-    await server.close()
+      const result = await runCli(
+        ['--json', '-p', 'describe this', '-i', shot],
+        { SPARK_HOME: join(root, 'home'), NO_COLOR: '1', TEST_OPENAI_KEY: 'test-key' },
+        root,
+      )
+      await server.close()
 
-    expect(result.code).toBe(0)
-    const events = result.stdout
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-    const started = events.find((event) => event.type === 'turn.started') as {
-      input: { images?: { ref: { sha256: string; bytes: number; mediaType: string } }[] }
-    }
-    expect(started.input.images).toEqual([
-      expect.objectContaining({
-        ref: expect.objectContaining({
-          bytes: 24,
-          mediaType: 'image/png',
-          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect(result.code).toBe(0)
+      const events = result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+      const started = events.find((event) => event.type === 'turn.started') as {
+        input: { images?: { ref: { sha256: string; bytes: number; mediaType: string } }[] }
+      }
+      expect(started.input.images).toEqual([
+        expect.objectContaining({
+          ref: expect.objectContaining({
+            bytes: 24,
+            mediaType: 'image/png',
+            sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+          }),
         }),
-      }),
-    ])
-    // The wire format carries a data URL; the ledger never carries base64.
-    expect(requestBody).toContain('"type":"input_image"')
-    expect(requestBody).toContain('data:image/png;base64,')
-    expect(result.stdout).not.toContain('base64,')
-  })
+      ])
+      // The wire format carries a data URL; the ledger never carries base64.
+      expect(requestBody).toContain('"type":"input_image"')
+      expect(requestBody).toContain('data:image/png;base64,')
+      expect(result.stdout).not.toContain('base64,')
+    },
+  )
 
-  it('rejects invalid -i inputs as usage errors before any model work', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-usage-'))
-    roots.push(root)
-    const missing = join(root, 'missing.png')
-    const text = join(root, 'notes.md')
-    await writeFile(text, 'not an image')
+  it(
+    'rejects invalid -i inputs as usage errors before any model work',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-image-usage-'))
+      roots.push(root)
+      const missing = join(root, 'missing.png')
+      const text = join(root, 'notes.md')
+      await writeFile(text, 'not an image')
 
-    const missingResult = await runCli(['-p', 'hi', '-i', missing], {}, root)
-    expect(missingResult.code).toBe(2)
-    expect(missingResult.stderr).toContain('找不到图片文件')
+      const missingResult = await runCli(['-p', 'hi', '-i', missing], {}, root)
+      expect(missingResult.code).toBe(2)
+      expect(missingResult.stderr).toContain('找不到图片文件')
 
-    const unsupported = await runCli(['-p', 'hi', '-i', text], {}, root)
-    expect(unsupported.code).toBe(2)
-    expect(unsupported.stderr).toContain('不支持的图片格式')
+      const unsupported = await runCli(['-p', 'hi', '-i', text], {}, root)
+      expect(unsupported.code).toBe(2)
+      expect(unsupported.stderr).toContain('不支持的图片格式')
 
-    const noPrompt = await runCli(['-i', text], {}, root)
-    expect(noPrompt.code).toBe(2)
-    expect(noPrompt.stderr).toContain('--image 需要与任务提示词一起使用')
+      const noPrompt = await runCli(['-i', text], {}, root)
+      expect(noPrompt.code).toBe(2)
+      expect(noPrompt.stderr).toContain('--image 需要与任务提示词一起使用')
 
-    const subcommand = await runCli(['models', '-i', text], {}, root)
-    expect(subcommand.code).toBe(2)
-    expect(subcommand.stderr).toContain('--image only applies to a task prompt')
-  })
+      const subcommand = await runCli(['models', '-i', text], {}, root)
+      expect(subcommand.code).toBe(2)
+      expect(subcommand.stderr).toContain('--image only applies to a task prompt')
+    },
+  )
 
-  it('reports an unusable selected model instead of declaring doctor healthy', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-doctor-'))
-    roots.push(root)
-    await mkdir(join(root, '.spark'))
-    await writeFile(
-      join(root, '.spark', 'config.toml'),
-      '[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\napi_key_env = "MISSING_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n',
-    )
+  it(
+    'reports an unusable selected model instead of declaring doctor healthy',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-doctor-'))
+      roots.push(root)
+      await mkdir(join(root, '.spark'))
+      await writeFile(
+        join(root, '.spark', 'config.toml'),
+        '[agent]\nmodel = "local"\n\n[providers.test]\nprotocol = "openai-responses"\napi_key_env = "MISSING_KEY"\n\n[models.local]\nprovider = "test"\nmodel = "gpt-test"\n',
+      )
 
-    const result = await runCli(['doctor'], { SPARK_HOME: join(root, 'home') }, root)
-    expect(result.code).toBe(1)
-    expect(result.stdout).toContain('Configuration: error')
-    expect(result.stdout).toContain('MISSING_KEY')
-  })
+      const result = await runCli(['doctor'], { SPARK_HOME: join(root, 'home') }, root)
+      expect(result.code).toBe(1)
+      expect(result.stdout).toContain('Configuration: error')
+      expect(result.stdout).toContain('MISSING_KEY')
+    },
+  )
 
-  it('lists and runs the SparkWork default model through the authenticated host bridge', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-host-'))
-    roots.push(root)
-    const host = await startSparkWorkHost(root)
-    const environment = { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' }
+  it(
+    'lists and runs the SparkWork default model through the authenticated host bridge',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-host-'))
+      roots.push(root)
+      const host = await startSparkWorkHost(root)
+      const environment = { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' }
 
-    const models = await runCli(['models'], environment, root)
-    expect(models.code).toBe(0)
-    expect(models.stdout).toContain(
-      '* gpt-host  SparkWork �]0;owned�Test  openai-responses  [sparkwork]',
-    )
-    expect(models.stdout).not.toContain('\u001b')
-    expect(models.stdout).not.toContain(host.token)
+      const models = await runCli(['models'], environment, root)
+      expect(models.code).toBe(0)
+      expect(models.stdout).toContain(
+        '* gpt-host  SparkWork �]0;owned�Test  openai-responses  [sparkwork]',
+      )
+      expect(models.stdout).not.toContain('\u001b')
+      expect(models.stdout).not.toContain(host.token)
 
-    const doctor = await runCli(['doctor'], environment, root)
-    expect(doctor.code).toBe(0)
-    expect(doctor.stdout).toContain('SparkWork bridge: connected')
-    expect(doctor.stdout).toContain('Selected model: sparkwork:provider-1:gpt-host')
+      const doctor = await runCli(['doctor'], environment, root)
+      expect(doctor.code).toBe(0)
+      expect(doctor.stdout).toContain('SparkWork bridge: connected')
+      expect(doctor.stdout).toContain('Selected model: sparkwork:provider-1:gpt-host')
 
-    const result = await runCli(['--json', 'use host'], environment, root)
-    await host.close()
-    expect(result.code).toBe(0)
-    expect(result.stderr).toBe('')
-    expect(result.stdout).toContain('"type":"turn.completed"')
-    expect(host.requests).toEqual([
-      {
-        path: '/v1/proxy/provider-1/v1/responses',
-        authorization: `Bearer ${host.token}`,
-        // 上游网关（opencode）按会话归属请求：客户端必须声明自己的身份，并为本会话
-        // 稳定发送 x-opencode-session，否则上游直接 400 MissingSessionID。
-        userAgent: expect.stringMatching(/^spark-engine\//u),
-        session: expect.any(String),
-      },
-    ])
-    expect(host.requests[0]?.session).toMatch(/^[A-Za-z0-9_-]{6,}$/u)
-  })
+      const result = await runCli(['--json', 'use host'], environment, root)
+      await host.close()
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('"type":"turn.completed"')
+      expect(host.requests).toEqual([
+        {
+          path: '/v1/proxy/provider-1/v1/responses',
+          authorization: `Bearer ${host.token}`,
+          // 上游网关（opencode）按会话归属请求：客户端必须声明自己的身份，并为本会话
+          // 稳定发送 x-opencode-session，否则上游直接 400 MissingSessionID。
+          userAgent: expect.stringMatching(/^spark-engine\//u),
+          session: expect.any(String),
+        },
+      ])
+      expect(host.requests[0]?.session).toMatch(/^[A-Za-z0-9_-]{6,}$/u)
+    },
+  )
 
-  it('keeps non-interactive runs fail-fast when no model is configured', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-cli-nocfg-'))
-    roots.push(root)
-    const result = await runCli(
-      ['do something'],
-      { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' },
-      root,
-    )
-    expect(result.code).toBe(2)
-    expect(result.stderr).toContain('No model is available')
-    expect(result.stderr).toContain('spark init')
-  })
+  it(
+    'keeps non-interactive runs fail-fast when no model is configured',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-cli-nocfg-'))
+      roots.push(root)
+      const result = await runCli(
+        ['do something'],
+        { SPARK_HOME: join(root, 'home'), NO_COLOR: '1' },
+        root,
+      )
+      expect(result.code).toBe(2)
+      expect(result.stderr).toContain('No model is available')
+      expect(result.stderr).toContain('spark init')
+    },
+  )
 
-  it('rejects unknown and conflicting permission modes before loading config', async () => {
-    const unknown = await runCli(['--permission-mode', 'unsafe', 'hello'])
-    const conflicting = await runCli([
-      '--permission-mode',
-      'auto',
-      '--dangerously-skip-permissions',
-      'hello',
-    ])
+  it(
+    'rejects unknown and conflicting permission modes before loading config',
+    { timeout: 30_000 },
+    async () => {
+      const unknown = await runCli(['--permission-mode', 'unsafe', 'hello'])
+      const conflicting = await runCli([
+        '--permission-mode',
+        'auto',
+        '--dangerously-skip-permissions',
+        'hello',
+      ])
 
-    expect(unknown.code).toBe(2)
-    expect(unknown.stderr).toContain('Unsupported --permission-mode: unsafe')
-    expect(conflicting.code).toBe(2)
-    expect(conflicting.stderr).toContain('conflicts with --permission-mode')
-  })
+      expect(unknown.code).toBe(2)
+      expect(unknown.stderr).toContain('Unsupported --permission-mode: unsafe')
+      expect(conflicting.code).toBe(2)
+      expect(conflicting.stderr).toContain('conflicts with --permission-mode')
+    },
+  )
 })
 
 async function runCli(

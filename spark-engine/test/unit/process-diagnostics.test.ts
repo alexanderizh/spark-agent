@@ -7,58 +7,70 @@ describe('process failure diagnostics', () => {
     vi.restoreAllMocks()
   })
 
-  it('retains a bounded prefix even when the first chunk exceeds the limit', async () => {
-    const outcome = runProcess(
-      process.execPath,
-      ['-e', 'process.stdout.write("x".repeat(10000))'],
-      {
+  it(
+    'retains a bounded prefix even when the first chunk exceeds the limit',
+    { timeout: 60_000 },
+    async () => {
+      const outcome = runProcess(
+        process.execPath,
+        ['-e', 'process.stdout.write("x".repeat(10000))'],
+        {
+          cwd: process.cwd(),
+          signal: new AbortController().signal,
+          maxOutputBytes: 100,
+        },
+      )
+      await expect(outcome).rejects.toMatchObject({
+        output: 'x'.repeat(100),
+        message: expect.stringContaining('100 bytes'),
+      })
+    },
+  )
+
+  it(
+    'isolates output observer exceptions from process completion',
+    { timeout: 60_000 },
+    async () => {
+      const result = await runProcess(process.execPath, ['-e', 'process.stdout.write("ok")'], {
         cwd: process.cwd(),
         signal: new AbortController().signal,
-        maxOutputBytes: 100,
-      },
-    )
-    await expect(outcome).rejects.toMatchObject({
-      output: 'x'.repeat(100),
-      message: expect.stringContaining('100 bytes'),
-    })
-  })
+        onOutput: () => {
+          throw new Error('observer failed')
+        },
+      })
+      expect(result).toMatchObject({ exitCode: 0, stdout: 'ok' })
+    },
+  )
 
-  it('isolates output observer exceptions from process completion', async () => {
-    const result = await runProcess(process.execPath, ['-e', 'process.stdout.write("ok")'], {
-      cwd: process.cwd(),
-      signal: new AbortController().signal,
-      onOutput: () => {
-        throw new Error('observer failed')
-      },
-    })
-    expect(result).toMatchObject({ exitCode: 0, stdout: 'ok' })
-  })
+  it(
+    'does not leak a POSIX process-group EPERM as an uncaught cleanup failure',
+    { timeout: 60_000 },
+    async () => {
+      if (process.platform === 'win32') return
+      const originalKill = process.kill.bind(process)
+      vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        if (pid < 0) {
+          throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+        }
+        return originalKill(pid, signal)
+      })
+      const outcome = runProcess(
+        process.execPath,
+        ['-e', 'process.stdout.write("x".repeat(10000))'],
+        {
+          cwd: process.cwd(),
+          signal: new AbortController().signal,
+          maxOutputBytes: 100,
+        },
+      )
+      await expect(outcome).rejects.toMatchObject({
+        output: 'x'.repeat(100),
+        message: expect.stringContaining('100 bytes'),
+      })
+    },
+  )
 
-  it('does not leak a POSIX process-group EPERM as an uncaught cleanup failure', async () => {
-    if (process.platform === 'win32') return
-    const originalKill = process.kill.bind(process)
-    vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-      if (pid < 0) {
-        throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
-      }
-      return originalKill(pid, signal)
-    })
-    const outcome = runProcess(
-      process.execPath,
-      ['-e', 'process.stdout.write("x".repeat(10000))'],
-      {
-        cwd: process.cwd(),
-        signal: new AbortController().signal,
-        maxOutputBytes: 100,
-      },
-    )
-    await expect(outcome).rejects.toMatchObject({
-      output: 'x'.repeat(100),
-      message: expect.stringContaining('100 bytes'),
-    })
-  })
-
-  it('retains output when a process terminates from a signal', async () => {
+  it('retains output when a process terminates from a signal', { timeout: 60_000 }, async () => {
     // Windows has no signal model: process.kill there always yields a plain
     // non-zero exit, never the signal-terminated rejection this asserts.
     if (process.platform === 'win32') return

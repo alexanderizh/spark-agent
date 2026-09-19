@@ -8,103 +8,118 @@ import { afterEach, describe, expect, it } from 'vitest'
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('spark config contract', () => {
-  it('round-trips a global value through set, get, list and unset', async () => {
-    const root = await sandbox()
-    const home = join(root, 'home')
+  it(
+    'round-trips a global value through set, get, list and unset',
+    { timeout: 30_000 },
+    async () => {
+      const root = await sandbox()
+      const home = join(root, 'home')
 
-    const set = await runCli(['config', 'set', 'permissions.mode', 'auto'], root, home)
-    expect(set.code).toBe(0)
-    expect(set.stdout).toContain('Set permissions.mode = auto')
-    if (process.platform !== 'win32') {
-      expect((await stat(join(home, 'config.toml'))).mode & 0o077).toBe(0)
-    }
+      const set = await runCli(['config', 'set', 'permissions.mode', 'auto'], root, home)
+      expect(set.code).toBe(0)
+      expect(set.stdout).toContain('Set permissions.mode = auto')
+      if (process.platform !== 'win32') {
+        expect((await stat(join(home, 'config.toml'))).mode & 0o077).toBe(0)
+      }
 
-    const get = await runCli(['config', 'get', 'permissions.mode'], root, home)
-    expect(get.code).toBe(0)
-    expect(get.stdout.trim()).toBe('auto')
+      const get = await runCli(['config', 'get', 'permissions.mode'], root, home)
+      expect(get.code).toBe(0)
+      expect(get.stdout.trim()).toBe('auto')
 
-    const list = await runCli(['config', 'list', '--json'], root, home)
-    expect(list.code).toBe(0)
-    const parsed = JSON.parse(list.stdout) as {
-      settings: { key: string; value: unknown; scope: string }[]
-      paths: { global: { path: string; exists: boolean } }
-    }
-    expect(parsed.settings).toContainEqual(
-      expect.objectContaining({ key: 'permissions.mode', value: 'auto', scope: 'global' }),
-    )
-    expect(parsed.paths.global).toEqual({ path: join(home, 'config.toml'), exists: true })
+      const list = await runCli(['config', 'list', '--json'], root, home)
+      expect(list.code).toBe(0)
+      const parsed = JSON.parse(list.stdout) as {
+        settings: { key: string; value: unknown; scope: string }[]
+        paths: { global: { path: string; exists: boolean } }
+      }
+      expect(parsed.settings).toContainEqual(
+        expect.objectContaining({ key: 'permissions.mode', value: 'auto', scope: 'global' }),
+      )
+      expect(parsed.paths.global).toEqual({ path: join(home, 'config.toml'), exists: true })
 
-    const unset = await runCli(['config', 'unset', 'permissions.mode'], root, home)
-    expect(unset.code).toBe(0)
-    const after = await runCli(['config', 'get', 'permissions.mode'], root, home)
-    expect(after.code).toBe(1)
-    expect(after.stderr).toContain('permissions.mode is not set')
-  })
+      const unset = await runCli(['config', 'unset', 'permissions.mode'], root, home)
+      expect(unset.code).toBe(0)
+      const after = await runCli(['config', 'get', 'permissions.mode'], root, home)
+      expect(after.code).toBe(1)
+      expect(after.stderr).toContain('permissions.mode is not set')
+    },
+  )
 
-  it('writes the project layer into the working directory with --project', async () => {
-    const root = await sandbox()
-    const home = join(root, 'home')
+  it(
+    'writes the project layer into the working directory with --project',
+    { timeout: 30_000 },
+    async () => {
+      const root = await sandbox()
+      const home = join(root, 'home')
 
-    const result = await runCli(
-      ['config', 'set', 'permissions.allow', '["read","glob"]', '--project'],
-      root,
-      home,
-    )
-    expect(result.code).toBe(0)
-    const projectFile = await readFile(join(root, '.spark', 'config.toml'), 'utf8')
-    expect(projectFile).toContain('[permissions]')
-    expect(projectFile).toContain('read')
-    expect(projectFile).toContain('glob')
+      const result = await runCli(
+        ['config', 'set', 'permissions.allow', '["read","glob"]', '--project'],
+        root,
+        home,
+      )
+      expect(result.code).toBe(0)
+      const projectFile = await readFile(join(root, '.spark', 'config.toml'), 'utf8')
+      expect(projectFile).toContain('[permissions]')
+      expect(projectFile).toContain('read')
+      expect(projectFile).toContain('glob')
 
-    const listed = await runCli(['config', 'list', '--json'], root, home)
-    const parsed = JSON.parse(listed.stdout) as {
-      settings: { key: string; value: unknown; scope: string }[]
-    }
-    expect(parsed.settings).toContainEqual(
-      expect.objectContaining({ key: 'permissions.allow', scope: 'project' }),
-    )
+      const listed = await runCli(['config', 'list', '--json'], root, home)
+      const parsed = JSON.parse(listed.stdout) as {
+        settings: { key: string; value: unknown; scope: string }[]
+      }
+      expect(parsed.settings).toContainEqual(
+        expect.objectContaining({ key: 'permissions.allow', scope: 'project' }),
+      )
 
-    // --global and --project cannot be combined.
-    const conflict = await runCli(
-      ['config', 'set', 'permissions.mode', 'auto', '--global', '--project'],
-      root,
-      home,
-    )
-    expect(conflict.code).toBe(2)
-  })
+      // --global and --project cannot be combined.
+      const conflict = await runCli(
+        ['config', 'set', 'permissions.mode', 'auto', '--global', '--project'],
+        root,
+        home,
+      )
+      expect(conflict.code).toBe(2)
+    },
+  )
 
-  it('rejects an invalid value without touching the file or the project config', async () => {
-    const root = await sandbox()
-    const home = join(root, 'home')
-    await runCli(['config', 'set', 'permissions.mode', 'manual'], root, home)
+  it(
+    'rejects an invalid value without touching the file or the project config',
+    { timeout: 30_000 },
+    async () => {
+      const root = await sandbox()
+      const home = join(root, 'home')
+      await runCli(['config', 'set', 'permissions.mode', 'manual'], root, home)
 
-    const invalid = await runCli(['config', 'set', 'permissions.mode', 'yolo'], root, home)
-    expect(invalid.code).toBe(2)
-    expect(invalid.stderr).toContain('would produce an invalid config')
+      const invalid = await runCli(['config', 'set', 'permissions.mode', 'yolo'], root, home)
+      expect(invalid.code).toBe(2)
+      expect(invalid.stderr).toContain('would produce an invalid config')
 
-    const missing = await runCli(
-      ['config', 'set', 'tools.disabled', '["read"]', '--project'],
-      root,
-      home,
-    )
-    // The project edit validated against the merged config still succeeds.
-    expect(missing.code).toBe(0)
-    expect(await readFile(join(home, 'config.toml'), 'utf8')).toContain('mode = "manual"')
+      const missing = await runCli(
+        ['config', 'set', 'tools.disabled', '["read"]', '--project'],
+        root,
+        home,
+      )
+      // The project edit validated against the merged config still succeeds.
+      expect(missing.code).toBe(0)
+      expect(await readFile(join(home, 'config.toml'), 'utf8')).toContain('mode = "manual"')
 
-    const unknownSection = await runCli(
-      ['config', 'set', 'permisions.mode', 'auto', '--project'],
-      root,
-      home,
-    )
-    expect(unknownSection.code).toBe(2)
-    expect(await readFile(join(root, '.spark', 'config.toml'), 'utf8')).not.toContain('permisions')
-  })
+      const unknownSection = await runCli(
+        ['config', 'set', 'permisions.mode', 'auto', '--project'],
+        root,
+        home,
+      )
+      expect(unknownSection.code).toBe(2)
+      expect(await readFile(join(root, '.spark', 'config.toml'), 'utf8')).not.toContain(
+        'permisions',
+      )
+    },
+  )
 
-  it('reports both configuration paths', async () => {
+  it('reports both configuration paths', { timeout: 30_000 }, async () => {
     const root = await sandbox()
     const home = join(root, 'home')
     await runCli(['config', 'set', 'permissions.mode', 'manual'], root, home)

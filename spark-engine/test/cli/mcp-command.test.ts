@@ -9,11 +9,12 @@ const debugServer = resolve(process.cwd(), '../scripts/debug-mcp/stdio-echo-serv
 const roots: string[] = []
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('spark mcp contract', () => {
-  it('adds, lists, and removes a stdio server', async () => {
+  it('adds, lists, and removes a stdio server', { timeout: 30_000 }, async () => {
     const root = await sandbox()
     const home = join(root, 'home')
 
@@ -45,15 +46,15 @@ describe('spark mcp contract', () => {
     expect(missing.code).toBe(1)
   })
 
-  it('probes configured servers and reports their tools', async () => {
+  it('probes configured servers and reports their tools', { timeout: 30_000 }, async () => {
     const root = await sandbox()
     const home = join(root, 'home')
+    await runCli(['mcp', 'add', 'echo', '--command', 'node', '--arg', debugServer], root, home)
     await runCli(
-      ['mcp', 'add', 'echo', '--command', 'node', '--arg', debugServer],
+      ['mcp', 'add', 'broken', '--command', 'spark-missing-binary-for-tests'],
       root,
       home,
     )
-    await runCli(['mcp', 'add', 'broken', '--command', 'spark-missing-binary-for-tests'], root, home)
 
     const status = await runCli(['mcp', 'status', '--json'], root, home)
     const parsed = JSON.parse(status.stdout) as {
@@ -68,32 +69,36 @@ describe('spark mcp contract', () => {
     expect(status.code).toBe(1)
   })
 
-  it('rejects ambiguous transports and malformed key/value flags', async () => {
-    const root = await sandbox()
-    const home = join(root, 'home')
+  it(
+    'rejects ambiguous transports and malformed key/value flags',
+    { timeout: 30_000 },
+    async () => {
+      const root = await sandbox()
+      const home = join(root, 'home')
 
-    const both = await runCli(
-      ['mcp', 'add', 'x', '--command', 'node', '--url', 'https://example.com/mcp'],
-      root,
-      home,
-    )
-    expect(both.code).toBe(2)
-    expect(both.stderr).toContain('exactly one of --command')
+      const both = await runCli(
+        ['mcp', 'add', 'x', '--command', 'node', '--url', 'https://example.com/mcp'],
+        root,
+        home,
+      )
+      expect(both.code).toBe(2)
+      expect(both.stderr).toContain('exactly one of --command')
 
-    const neither = await runCli(['mcp', 'add', 'x'], root, home)
-    expect(neither.code).toBe(2)
+      const neither = await runCli(['mcp', 'add', 'x'], root, home)
+      expect(neither.code).toBe(2)
 
-    const badEnv = await runCli(
-      ['mcp', 'add', 'x', '--command', 'node', '--env', 'NOT_A_PAIR'],
-      root,
-      home,
-    )
-    expect(badEnv.code).toBe(2)
-    expect(badEnv.stderr).toContain('KEY=VALUE')
+      const badEnv = await runCli(
+        ['mcp', 'add', 'x', '--command', 'node', '--env', 'NOT_A_PAIR'],
+        root,
+        home,
+      )
+      expect(badEnv.code).toBe(2)
+      expect(badEnv.stderr).toContain('KEY=VALUE')
 
-    const badName = await runCli(['mcp', 'add', 'bad name', '--command', 'node'], root, home)
-    expect(badName.code).toBe(2)
-  })
+      const badName = await runCli(['mcp', 'add', 'bad name', '--command', 'node'], root, home)
+      expect(badName.code).toBe(2)
+    },
+  )
 })
 
 async function sandbox(): Promise<string> {

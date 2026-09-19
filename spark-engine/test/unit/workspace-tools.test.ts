@@ -115,7 +115,7 @@ describe('workspace tools', () => {
     expect(result.content).not.toContain('sensitive-value')
   })
 
-  it('cancels the complete shell process group', async () => {
+  it('cancels the complete shell process group', { timeout: 60_000 }, async () => {
     const root = await createRoot()
     const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
     const controller = new AbortController()

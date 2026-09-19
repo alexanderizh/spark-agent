@@ -9,7 +9,8 @@ const roots: string[] = []
 const nodeDir = dirname(process.execPath)
 
 afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 /** Platform launcher file name, mirroring the product's install layout. */

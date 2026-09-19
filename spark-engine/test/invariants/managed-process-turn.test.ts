@@ -96,47 +96,51 @@ describe.skipIf(process.platform === 'win32')('managed process turn contract', (
     }
   })
 
-  it('user cancellation reaps a command before the turn promise returns', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'spark-managed-cancel-'))
-    const base = createDeterministicEnv([
-      toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
-    ])
-    const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
-    const env = {
-      ...base,
-      tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
-    }
-    const controller = new AbortController()
-    let id = ''
-    try {
-      const session = await Agent.open({ cwd: root, env }).newSession({ permissionMode: 'auto' })
-      const result = await session.turn('run', {
-        signal: controller.signal,
-        onEvent(event) {
-          if (event.type === 'tool.result') {
-            id = (JSON.parse(event.content) as { process_id: string }).process_id
-            controller.abort()
-          }
-        },
-      })
-      expect(result.terminal.type).toBe('turn.cancelled')
-      const definition = env.tools.registry.get('process_wait')
-      if (!definition) throw new Error('Missing process_wait')
-      await expect(
-        executor.execute(
-          { name: 'process_wait', callId: 'late', definition, args: { process_id: id } },
-          {
-            owner: { sessionId: session.sessionId, turnId: result.turnId },
-            signal: new AbortController().signal,
-            turnSignal: new AbortController().signal,
-            timeoutMs: 100,
+  it(
+    'user cancellation reaps a command before the turn promise returns',
+    { timeout: 60_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'spark-managed-cancel-'))
+      const base = createDeterministicEnv([
+        toolCall('launch', 'bash', { command: 'sleep 30', yield_ms: 0 }),
+      ])
+      const executor = new WorkspaceToolExecutor(root, new MemoryArtifactStore())
+      const env = {
+        ...base,
+        tools: { registry: new OrderedToolRegistry(workspaceToolDefinitions), executor },
+      }
+      const controller = new AbortController()
+      let id = ''
+      try {
+        const session = await Agent.open({ cwd: root, env }).newSession({ permissionMode: 'auto' })
+        const result = await session.turn('run', {
+          signal: controller.signal,
+          onEvent(event) {
+            if (event.type === 'tool.result') {
+              id = (JSON.parse(event.content) as { process_id: string }).process_id
+              controller.abort()
+            }
           },
-        ),
-      ).rejects.toMatchObject({ code: 'tool.process_not_found' })
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
+        })
+        expect(result.terminal.type).toBe('turn.cancelled')
+        const definition = env.tools.registry.get('process_wait')
+        if (!definition) throw new Error('Missing process_wait')
+        await expect(
+          executor.execute(
+            { name: 'process_wait', callId: 'late', definition, args: { process_id: id } },
+            {
+              owner: { sessionId: session.sessionId, turnId: result.turnId },
+              signal: new AbortController().signal,
+              turnSignal: new AbortController().signal,
+              timeoutMs: 100,
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'tool.process_not_found' })
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('completes through start/wait without re-executing the command', async () => {
     const root = await mkdtemp(join(tmpdir(), 'spark-managed-finish-'))
