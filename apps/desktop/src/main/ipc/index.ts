@@ -66,6 +66,7 @@ import {
   recoverDetachedQuestionAttachments,
 } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
+import { getWorkflowHostBridge } from '../workflow-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { getBrowserPanelWindowService } from '../services/BrowserPanelWindowService.js'
 import { startProviderScheduleWatcher } from '../services/ProviderScheduleWatcher.js'
@@ -2742,6 +2743,8 @@ function getSessionService(): SessionService {
     registerSessionServiceForShutdown(_sessionService)
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
+    // 接入工作流 Agent 桥：仅当 session 已 attach 到工作流编辑器 Agent 面板时返回 MCP server
+    _sessionService.setWorkflowMcpProvider(getWorkflowHostBridge().asMcpProvider())
     _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)
     _sessionService.setComputerUseMcpProvider(computerUseMcpProvider)
     // 会话引擎级 worktree 状态变化（agent 工具上报）→ 推流渲染层更新分支显示与徽标
@@ -4489,6 +4492,41 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:tool-ack', async (req) => {
     getCanvasHostBridge().handleToolAck(req.requestId)
+    return { ok: true } as const
+  })
+
+  // ─── Workflow Agent Bridge ─────────────────────────────────────────────
+  typedIpcHandle('workflow:host-attach', async (req, event) => {
+    const bridge = getWorkflowHostBridge()
+    log.info(
+      `workflow:host-attach requested, sessionId=${req.sessionId} toolSchemas=${req.toolSchemas.length}`,
+    )
+    bridge.setToolSchemas(req.toolSchemas)
+    bridge.attach(req.sessionId, event.sender)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('workflow:host-detach', async (req) => {
+    log.info(`workflow:host-detach requested, sessionId=${req.sessionId}`)
+    getWorkflowHostBridge().detach(req.sessionId)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('workflow:tool-result', async (req) => {
+    log.info(
+      `workflow:tool-result received, requestId=${req.requestId} ok=${req.ok}${req.ok ? '' : ` error=${req.error ?? '(none)'}`}`,
+    )
+    getWorkflowHostBridge().handleToolResult({
+      requestId: req.requestId,
+      ok: req.ok,
+      ...(req.result !== undefined ? { result: req.result } : {}),
+      ...(req.error !== undefined ? { error: req.error } : {}),
+    })
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('workflow:tool-ack', async (req) => {
+    getWorkflowHostBridge().handleToolAck(req.requestId)
     return { ok: true } as const
   })
 

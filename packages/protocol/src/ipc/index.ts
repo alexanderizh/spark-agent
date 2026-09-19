@@ -7762,6 +7762,16 @@ export interface IpcChannelMap
   'canvas:tool-result': [CanvasToolResultRequest, CanvasToolResultResponse]
   /** 渲染端确认已收到工具调用，即将开始执行（主进程据此启动超时计时器） */
   'canvas:tool-ack': [CanvasToolAckRequest, CanvasToolAckResponse]
+
+  // ─── Workflow Agent Bridge ─────────────────────────────────────────────
+  /** 渲染端声明：本 session 绑定到工作流编辑器 Agent 面板，主进程可以把工具调用打回来 */
+  'workflow:host-attach': [WorkflowHostAttachRequest, WorkflowHostAttachResponse]
+  /** 渲染端声明：本 session 不再绑定工作流编辑器（面板关闭或会话切换） */
+  'workflow:host-detach': [WorkflowHostDetachRequest, WorkflowHostDetachResponse]
+  /** 渲染端把工具调用结果回报给主进程 */
+  'workflow:tool-result': [WorkflowToolResultRequest, WorkflowToolResultResponse]
+  /** 渲染端确认已收到工具调用，即将开始执行（主进程据此启动超时计时器） */
+  'workflow:tool-ack': [WorkflowToolAckRequest, WorkflowToolAckResponse]
 }
 
 // ─── Canvas Agent Bridge Types ─────────────────────────────────────────────
@@ -7808,6 +7818,57 @@ export interface CanvasToolAckResponse {
 
 /** 主进程 → 渲染端：请求执行画布工具，渲染端用 canvas:tool-result 回报 */
 export interface CanvasToolCallEvent {
+  requestId: string
+  sessionId: string
+  toolName: string
+  args: unknown
+}
+
+// ─── Workflow Agent Bridge Types ───────────────────────────────────────────
+
+export interface WorkflowToolSchemaPayload {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+export interface WorkflowHostAttachRequest {
+  sessionId: string
+  /** 渲染端同步过来的工具 schema 列表（每次 attach 都会同步，主进程覆盖更新）。
+   * 与画布桥不同：无 projectId——工作流 Agent 绑定「编辑器当前打开的图」，
+   * 随导航切换，由渲染端工具 handler 执行时实时读取。 */
+  toolSchemas: WorkflowToolSchemaPayload[]
+}
+export interface WorkflowHostAttachResponse {
+  ok: true
+}
+
+export interface WorkflowHostDetachRequest {
+  sessionId: string
+}
+export interface WorkflowHostDetachResponse {
+  ok: true
+}
+
+export interface WorkflowToolResultRequest {
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+export interface WorkflowToolResultResponse {
+  ok: true
+}
+
+/** 渲染端 → 主进程：确认已收到工具调用并即将开始执行（用于精确计时） */
+export interface WorkflowToolAckRequest {
+  requestId: string
+}
+export interface WorkflowToolAckResponse {
+  ok: true
+}
+
+/** 主进程 → 渲染端：请求执行工作流工具，渲染端用 workflow:tool-result 回报 */
+export interface WorkflowToolCallEvent {
   requestId: string
   sessionId: string
   toolName: string
@@ -7948,6 +8009,8 @@ export interface IpcStreamChannelMap {
   'stream:canvas:text-task': CanvasTextTaskStreamPayload
   /** 画布 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 canvas:tool-result 回报。 */
   'stream:canvas:tool-call': CanvasToolCallEvent
+  /** 工作流 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 workflow:tool-result 回报。 */
+  'stream:workflow:tool-call': WorkflowToolCallEvent
   /** 独立画布窗口收到系统关闭请求，renderer 应先弹出画布离开守卫。 */
   'stream:canvas-window:close-request': CanvasWindowCloseRequestPayload
   /** Remote connection config/runtime changed */

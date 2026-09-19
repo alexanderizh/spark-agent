@@ -2062,4 +2062,32 @@ export const IpcSchemaRegistry = {
   'canvas:tool-ack': z.object({
     requestId: z.string().min(1).max(200),
   }),
+
+  // Workflow Agent Bridge（对称 canvas 桥）。attach 刻意不带 projectId：
+  // 工作流 Agent 绑定的是「编辑器当前打开的图」，会随导航切换，
+  // 由渲染端工具 handler 执行时实时读取，不在 attach 时冻结。
+  'workflow:host-attach': z.object({
+    sessionId: z.string().min(1).max(200),
+    toolSchemas: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          description: z.string().max(8000),
+          inputSchema: z.record(z.string(), z.unknown()),
+        }),
+      )
+      .max(200),
+  }),
+  'workflow:host-detach': z.object({
+    sessionId: z.string().min(1).max(200),
+  }),
+  'workflow:tool-result': z.object({
+    requestId: z.string().min(1).max(200),
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(8000).optional(),
+  }),
+  'workflow:tool-ack': z.object({
+    requestId: z.string().min(1).max(200),
+  }),
 } as const
