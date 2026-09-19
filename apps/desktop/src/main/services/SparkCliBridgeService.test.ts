@@ -453,6 +453,65 @@ describe('SparkCliBridgeService', () => {
     expect(await exists(livePath)).toBe(true)
     expect(await exists(bridge.descriptorPath)).toBe(true)
   })
+
+  it('appends /responses directly to endpoints whose last segment is already /vN', async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-versioned-'))
+    roots.push(sparkHome)
+    const capturedUrls: string[] = []
+    const upstreamFetch = vi.fn(async (input: string | URL | Request) => {
+      capturedUrls.push(String(input))
+      return new Response('data: {"type":"response.completed","response":{"output":[]}}\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+    const bridge = await startSparkCliBridge({
+      sparkHome,
+      listProviders: async () => [
+        {
+          id: 'glm-coding',
+          name: 'GLM Coding',
+          provider: 'openai',
+          enabled: true,
+          defaultModel: 'glm-test',
+          modelIds: ['glm-test'],
+          apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+          codexApiKind: 'responses',
+          isDefault: true,
+        },
+        {
+          id: 'lkeap-coding',
+          name: 'LKEAP Coding',
+          provider: 'openai',
+          enabled: true,
+          defaultModel: 'lkeap-test',
+          modelIds: ['lkeap-test'],
+          apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/v3',
+          codexApiKind: 'responses',
+          isDefault: false,
+        },
+      ],
+      resolveCredential: async () => 'provider-secret',
+      fetch: upstreamFetch as typeof fetch,
+    })
+    bridges.push(bridge)
+
+    const token = (JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as { token: string })
+      .token
+    for (const providerId of ['glm-coding', 'lkeap-coding']) {
+      const model = providerId === 'glm-coding' ? 'glm-test' : 'lkeap-test'
+      const response = await fetch(`${bridge.endpoint}/v1/proxy/${providerId}/v1/responses`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model, stream: true }),
+      })
+      expect(response.status).toBe(200)
+      await response.text()
+    }
+    expect(capturedUrls).toEqual([
+      'https://open.bigmodel.cn/api/coding/paas/v4/responses',
+      'https://api.lkeap.cloud.tencent.com/coding/v3/responses',
+    ])
+  })
 })
 
 async function exists(path: string): Promise<boolean> {

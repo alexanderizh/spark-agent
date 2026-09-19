@@ -206,10 +206,12 @@ describe('generateCanvasText multimodal', () => {
 
   it('DeepSeek storyboard tasks can disable default thinking mode to avoid hidden reasoning consuming output tokens', async () => {
     const captured = stubFetch({
-      choices: [{
-        finish_reason: 'length',
-        message: { content: '{"shots":[{"index":1}]}', reasoning_content: '思考'.repeat(3000) },
-      }],
+      choices: [
+        {
+          finish_reason: 'length',
+          message: { content: '{"shots":[{"index":1}]}', reasoning_content: '思考'.repeat(3000) },
+        },
+      ],
       usage: { prompt_tokens: 2000, completion_tokens: 30000, total_tokens: 32000 },
     })
     const result = await generateCanvasText({
@@ -272,6 +274,38 @@ describe('generateCanvasText multimodal', () => {
       body: captured.lastBody(),
       response: { status: 200 },
     })
+  })
+
+  it('OpenAI 兼容: 端点末段已是 /vN 时直接补动作后缀，不再追加 /v1', async () => {
+    const responses = stubFetch({ output_text: '剧本正文' })
+    const responsesResult = await generateCanvasText({
+      providerType: 'openai',
+      apiKind: 'responses',
+      apiKey: 'sk-x',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      model: 'glm-5',
+      system: '你是编剧',
+      prompt: '生成剧本',
+      maxTokens: 1200,
+    })
+    expect(responsesResult.text).toBe('剧本正文')
+    expect(responses.lastUrl()).toBe('https://open.bigmodel.cn/api/coding/paas/v4/responses')
+
+    const chat = stubFetch({
+      choices: [{ message: { content: '剧本正文' } }],
+    })
+    const chatResult = await generateCanvasText({
+      providerType: 'openai',
+      apiKind: 'chat',
+      apiKey: 'sk-x',
+      apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      model: 'glm-5',
+      system: '你是编剧',
+      prompt: '生成剧本',
+      maxTokens: 1200,
+    })
+    expect(chatResult.text).toBe('剧本正文')
+    expect(chat.lastUrl()).toBe('https://open.bigmodel.cn/api/coding/paas/v4/chat/completions')
   })
 
   it('OpenAI Responses API: maps Spark reasoning effort before sending canvas text requests', async () => {
@@ -381,8 +415,9 @@ describe('generateCanvasText prompt caching', () => {
       expect.objectContaining({ cache_control: { type: 'ephemeral' } }),
     ])
     expect(calls[1]?.system).toBe('You are a desktop operator.')
-    const retryBlocks = (calls[1]?.messages as Array<{ content: Array<Record<string, unknown>> }>)[0]
-      ?.content
+    const retryBlocks = (
+      calls[1]?.messages as Array<{ content: Array<Record<string, unknown>> }>
+    )[0]?.content
     expect(retryBlocks?.[0]).toEqual({
       type: 'image',
       source: { type: 'base64', media_type: 'image/png', data: expect.any(String) },
@@ -440,7 +475,10 @@ describe('generateCanvasText prompt caching', () => {
     expect(messages[1]).toEqual({ role: 'user', content: 'stable objective' })
     const variableParts = messages[2]!.content as Array<Record<string, unknown>>
     expect(variableParts[0]).toEqual({ type: 'text', text: 'Step index: 1' })
-    expect(variableParts[1]).toEqual({ type: 'image_url', image_url: { url: 'https://cdn/ref.png' } })
+    expect(variableParts[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'https://cdn/ref.png' },
+    })
     expect(result.usage).toEqual({
       promptTokens: 100,
       completionTokens: 5,

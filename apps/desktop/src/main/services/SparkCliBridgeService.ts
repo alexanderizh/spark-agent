@@ -503,7 +503,15 @@ function upstreamUrl(
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/responses`
-  return base.endsWith('/v1') ? `${base}/responses` : `${base}/v1/responses`
+  if (endsWithVersionSegment(base)) return `${base}/responses`
+  if (base.endsWith('/v1')) return `${base}/responses`
+  return `${base}/v1/responses`
+}
+
+/** 与 agent-runtime 的 getOpenAiResponsesEndpoint 对齐：末段已是 /vN 的端点直接补 /responses，不再追加 /v1。 */
+function endsWithVersionSegment(value: string): boolean {
+  const last = value.split('/').pop() ?? ''
+  return /^v\d+$/iu.test(last)
 }
 
 function upstreamHeaders(

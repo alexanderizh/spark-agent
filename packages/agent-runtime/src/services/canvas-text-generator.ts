@@ -523,6 +523,7 @@ function getOpenAiChatCompletionsEndpoint(apiEndpoint?: string): string {
   const base = normalizeEndpoint(apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
+  if (endsWithVersionSegment(base)) return `${base}/chat/completions`
   if (base.endsWith('/v1')) return `${base}/chat/completions`
   return `${base}/v1/chat/completions`
 }
@@ -532,8 +533,15 @@ function getOpenAiResponsesEndpoint(apiEndpoint?: string): string {
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/responses`
+  if (endsWithVersionSegment(base)) return `${base}/responses`
   if (base.endsWith('/v1')) return `${base}/responses`
   return `${base}/v1/responses`
+}
+
+/** 与 provider.service.ts 的同名判定对齐：末段已是 /vN 的端点直接补后缀，不再追加 /v1。 */
+function endsWithVersionSegment(value: string): boolean {
+  const last = value.split('/').pop() ?? ''
+  return /^v\d+$/iu.test(last)
 }
 
 function normalizeEndpoint(custom: string | undefined, fallback: string): string {

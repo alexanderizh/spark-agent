@@ -32,6 +32,16 @@ describe('canvas session runtime request diagnostics', () => {
     )
   })
 
+  it('appends the action suffix directly when the endpoint already ends with a /vN segment', () => {
+    const versioned = { apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4' }
+    expect(resolveCanvasSessionRuntimeModelUrl(profile(versioned), 'codex')).toBe(
+      'https://open.bigmodel.cn/api/coding/paas/v4/responses',
+    )
+    expect(
+      resolveCanvasSessionRuntimeModelUrl(profile({ ...versioned, codexApiKind: 'chat' }), 'codex'),
+    ).toBe('https://open.bigmodel.cn/api/coding/paas/v4/chat/completions')
+  })
+
   it('labels built-in CLI execution without pretending it is a captured HTTP request', () => {
     const local = profile({
       id: 'local-codex-cli',
