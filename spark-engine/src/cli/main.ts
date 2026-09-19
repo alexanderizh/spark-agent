@@ -20,6 +20,7 @@ import {
   type ResolvedEngineSettings,
 } from '../config/settings.js'
 import type { SettingsScope } from '../config/settings.js'
+import { runServeCommand } from '../serve/run.js'
 import { executeAuthCommand } from './auth-command.js'
 import { bootstrapPlatformModels } from '../platform/models.js'
 import { PlatformAuthExpiredError } from '../platform/edu-server-client.js'
@@ -101,6 +102,11 @@ interface CliOptions {
   readonly skillLimit?: string
   /** `spark todo` command flags. */
   readonly todoTitle?: string
+  /** `spark models --takeover` */
+  readonly takeover?: boolean
+  /** `spark serve` flags. */
+  readonly port?: string
+  readonly host?: string
   readonly todoStatus?: string
   readonly todoPriority?: string
   readonly todoNotes?: string
@@ -162,31 +168,29 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2
   }
   if (options.positionals[0] === 'serve') {
-    process.stderr.write(
-      'spark serve is not part of the M1 kernel slice; the versioned App Server lands in M3.\n',
-    )
-    return 2
+    if (options.positionals.length > 1) {
+      process.stderr.write('spark serve does not accept positional arguments.\n')
+      return 2
+    }
+    return runServeCommand({
+      ...(options.port === undefined ? {} : { port: Number(options.port) }),
+      ...(options.host === undefined ? {} : { host: options.host }),
+      ...(options.model === undefined ? {} : { model: options.model }),
+      json: options.json,
+    })
   }
   if (options.positionals[0] === 'models' || options.positionals[0] === 'doctor') {
     if (options.prompt) {
       process.stderr.write(`${options.positionals[0]} does not accept a task prompt.\n`)
       return 2
     }
-    const extraArgs = options.positionals.slice(1)
-    if (options.positionals[0] === 'doctor' && extraArgs.length > 0) {
-      process.stderr.write('spark doctor does not accept extra arguments.\n')
-      return 2
-    }
-    const takeover = extraArgs.includes('--takeover')
-    const unknownArgs = extraArgs.filter((arg) => arg !== '--takeover')
-    if (unknownArgs.length > 0) {
+    if (options.positionals.length > 1) {
       process.stderr.write(
-        `Unknown arguments for spark ${options.positionals[0]}: ${unknownArgs.join(' ')}\n` +
-          'Only --takeover is supported (rebind platform models on this device).\n',
+        `spark ${options.positionals[0]} does not accept extra arguments (use --takeover).\n`,
       )
       return 2
     }
-    if (takeover) {
+    if (options.takeover === true) {
       const takeoverResult = await runPlatformModelBootstrap(true)
       if (takeoverResult !== 0) return takeoverResult
     }
@@ -763,6 +767,9 @@ function parseCli(argv: readonly string[]): CliOptions {
       effort: { type: 'string' },
       'permission-mode': { type: 'string' },
       'dangerously-skip-permissions': { type: 'boolean', default: false },
+      takeover: { type: 'boolean', default: false },
+      port: { type: 'string' },
+      host: { type: 'string' },
       'output-format': { type: 'string' },
       continue: { type: 'boolean', short: 'c', default: false },
       resume: { type: 'string', short: 'r' },
@@ -1301,8 +1308,11 @@ Usage:
                             Event and streaming-delta JSONL
   spark -p "分析截图" -i shot.png -i arch.jpg
                             Attach images (PNG/JPEG/WEBP/GIF) to one task
-  spark models              List local and SparkWork-synced models
+  spark models              List local, platform, and SparkWork-synced models
+  spark models --takeover   Rebind platform models on this device
   spark doctor              Diagnose install, discovery, and model selection
+  spark serve [--port n]    Run the loopback App Server (protocol v1); the
+                            startup handshake JSON is printed on stdout
   spark login               Sign in to your Spark account (browser login)
   spark logout              Remove the stored Spark account session
   spark whoami              Show the signed-in Spark account
