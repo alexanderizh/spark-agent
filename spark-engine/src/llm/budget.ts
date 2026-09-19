@@ -180,6 +180,69 @@ export function estimateTextTokens(value: string | undefined): number {
   return Math.ceil(ascii / 3) + other
 }
 
+export interface ContextBreakdownLine {
+  readonly label: string
+  readonly tokens: number
+}
+
+export interface ContextBreakdown {
+  readonly system: readonly ContextBreakdownLine[]
+  readonly systemTokens: number
+  readonly tools: readonly ContextBreakdownLine[]
+  readonly toolsTokens: number
+  readonly userTokens: number
+  readonly assistantTokens: number
+  readonly toolResultTokens: number
+  readonly messagesTokens: number
+  readonly total: number
+}
+
+/**
+ * Per-section / per-role context accounting for diagnostics (`/context`).
+ * Same estimator as the output-budget guard, so the numbers reconcile with
+ * the compaction thresholds.
+ */
+export function describeContextBreakdown(options: {
+  readonly system: readonly SystemSection[]
+  readonly messages: readonly IrMessage[]
+  readonly tools: readonly IrToolDefinition[]
+}): ContextBreakdown {
+  const system = options.system.map((section) => ({
+    label: section.id,
+    tokens: estimateTextTokens(section.content) + 16,
+  }))
+  const tools = options.tools.map((tool) => ({
+    label: tool.name,
+    tokens:
+      estimateTextTokens(tool.name) +
+      estimateTextTokens(tool.description) +
+      estimateTextTokens(safeJson(tool.inputSchema)) +
+      32,
+  }))
+  let userTokens = 0
+  let assistantTokens = 0
+  let toolResultTokens = 0
+  for (const message of options.messages) {
+    if (message.role === 'user') userTokens += estimateMessageTokens(message)
+    else if (message.role === 'tool_result') toolResultTokens += estimateMessageTokens(message)
+    else assistantTokens += estimateMessageTokens(message)
+  }
+  const systemTokens = system.reduce((total, line) => total + line.tokens, 0)
+  const toolsTokens = tools.reduce((total, line) => total + line.tokens, 0)
+  const messagesTokens = userTokens + assistantTokens + toolResultTokens
+  return {
+    system,
+    systemTokens,
+    tools,
+    toolsTokens,
+    userTokens,
+    assistantTokens,
+    toolResultTokens,
+    messagesTokens,
+    total: systemTokens + toolsTokens + messagesTokens,
+  }
+}
+
 function safeJson(value: unknown): string {
   try {
     return JSON.stringify(value) ?? ''

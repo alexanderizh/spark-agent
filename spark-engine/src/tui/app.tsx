@@ -12,6 +12,17 @@ import type { AgentEvent } from '../events/schema.js'
 import { shortSessionId } from '../events/ledger.js'
 import type { SessionMeta } from '../seams.js'
 import type { LlmDelta, ModelBudget, ReasoningEffort } from '../llm/types.js'
+import type { ContextBreakdown } from '../llm/budget.js'
+
+/** Everything /context renders; assembled by the host from the live env. */
+export interface ContextReportView {
+  readonly breakdown: ContextBreakdown
+  readonly windowTokens?: number
+  readonly lastInputTokens?: number
+  readonly cacheHitRate?: number
+  readonly compactions: number
+  readonly slimmedToolResults: number
+}
 import type { InteractiveApprover, PendingApproval } from '../permission/interactive.js'
 import type { PermissionDecision, PermissionMode } from '../permission/types.js'
 import type { TurnImageAttachment } from '../images/attachments.js'
@@ -62,6 +73,13 @@ export interface SparkTuiAppProps {
    * never awaited — extraction failures surface as a warning notice only.
    */
   readonly onTurnCompleted?: (session: AgentSession) => Promise<void>
+  /**
+   * Async context accounting for /context: projects the given events through
+   * the real prompt composer and tool registry. Absent in static embeds.
+   */
+  readonly getContextReport?: (
+    events: readonly AgentEvent[],
+  ) => Promise<{ breakdown: ContextBreakdown; windowTokens?: number }>
   readonly capabilities?: TerminalCapabilities
   readonly theme?: TuiTheme
   readonly version?: string
@@ -450,6 +468,57 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         setNotice(
           `上下文已压缩：${result.droppedTurns ?? 0} 个早期轮次已折叠为摘要（约 ${result.droppedTokens ?? 0} tokens）。`,
         )
+        break
+      }
+      case '/context': {
+        if (props.getContextReport === undefined) {
+          setNotice('当前环境未接入上下文诊断。')
+          break
+        }
+        setNotice('正在统计上下文构成…')
+        const report = await props.getContextReport(events)
+        const lines: string[] = ['上下文构成（估算）:']
+        for (const line of report.breakdown.system) {
+          lines.push(`  system  ${line.label}  ${line.tokens} tok`)
+        }
+        lines.push(
+          `  tools   (${report.breakdown.tools.length} 个)  ${report.breakdown.toolsTokens} tok`,
+        )
+        lines.push(
+          `  messages  user ${report.breakdown.userTokens} · assistant ${report.breakdown.assistantTokens} · tool_result ${report.breakdown.toolResultTokens} tok`,
+        )
+        const windowPart =
+          report.windowTokens === undefined
+            ? `${report.breakdown.total} tok`
+            : `${report.breakdown.total}/${report.windowTokens} tok (${Math.min(999, Math.round((report.breakdown.total / report.windowTokens) * 100))}%)`
+        lines.push(`  合计 ≈ ${windowPart}`)
+        // History-derived facts come from the live event feed, not the host.
+        let lastInputTokens: number | undefined
+        let inputTotal = 0
+        let cacheReadTotal = 0
+        let compactions = 0
+        let slimmedToolResults = 0
+        for (const event of events) {
+          if (event.type === 'assistant.completed') {
+            inputTotal += event.usage.inputTokens
+            cacheReadTotal += event.usage.cacheReadTokens
+            if (event.usage.inputTokens > 0) lastInputTokens = event.usage.inputTokens
+          } else if (event.type === 'context.compacted') {
+            compactions += 1
+          } else if (event.type === 'context.tool_results_slimmed') {
+            slimmedToolResults += event.slimmed.length
+          }
+        }
+        if (lastInputTokens !== undefined) {
+          lines.push(`  上次实报输入 ${lastInputTokens} tok`)
+        }
+        if (inputTotal > 0) {
+          lines.push(`  缓存命中率 ${Math.round((cacheReadTotal / inputTotal) * 100)}%`)
+        }
+        if (compactions > 0 || slimmedToolResults > 0) {
+          lines.push(`  压缩 ${compactions} 次 · 工具结果瘦身 ${slimmedToolResults} 个`)
+        }
+        setNoticeFull({ text: lines.join('\n'), tone: 'info' })
         break
       }
       case '/model':

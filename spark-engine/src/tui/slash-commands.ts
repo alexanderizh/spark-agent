@@ -15,6 +15,7 @@ export const SLASH_COMMANDS: readonly {
   { name: '/update', summary: '检查并安装新版本(--check 仅检查)' },
   { name: '/sessions', summary: '选择并切换到历史会话' },
   { name: '/compact', summary: '压缩上下文：把早期对话折叠为摘要' },
+  { name: '/context', summary: '查看上下文构成与 token 去向' },
   { name: '/clear', summary: '开启全新会话' },
   { name: '/exit', summary: '退出(Ctrl+C 两次同效)' },
 ]

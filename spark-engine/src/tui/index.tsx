@@ -13,6 +13,7 @@ import { SLASH_COMMANDS } from './slash-commands.js'
 import { Agent, type AgentSession } from '../sdk/agent.js'
 import type { AgentEvent } from '../events/schema.js'
 import { SwitchableLlmService } from '../llm/switchable.js'
+import { describeContextBreakdown, type ContextBreakdown } from '../llm/budget.js'
 import { extractAndSaveMemories } from '../memory/extraction.js'
 import { FileMemoryStore } from '../memory/store.js'
 import { createRuntimeLogger } from '../observability/logger.js'
@@ -151,6 +152,31 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
           enabled: true,
         })
       : undefined
+  const getContextReport =
+    options.engineSettings === undefined
+      ? undefined
+      : async (events: readonly AgentEvent[]): Promise<ContextReportPayload> => {
+          const projected = env.projector.project(events, { cwd, permissionMode: permission })
+          const system = await env.prompt.compose(
+            { sessionId: session.sessionId, cwd, permissionMode: permission },
+            { cwd, permissionMode: permission },
+          )
+          const tools = env.tools.registry.list().map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          }))
+          const breakdown = describeContextBreakdown({
+            system,
+            messages: projected.messages,
+            tools,
+          })
+          const windowTokens = switchable.getModelBudget?.()?.contextWindowTokens
+          return {
+            breakdown,
+            ...(windowTokens === undefined ? {} : { windowTokens }),
+          }
+        }
   const onTurnCompleted =
     memoryStore === undefined
       ? undefined
@@ -199,6 +225,7 @@ async function runTuiWithEnv(options: RunTuiOptions, context: TuiRunContext): Pr
         currentModel = model
       }}
       {...(onTurnCompleted === undefined ? {} : { onTurnCompleted })}
+      {...(getContextReport === undefined ? {} : { getContextReport })}
       stdout={stdout}
     />,
     renderOptions,
@@ -230,7 +257,14 @@ interface SparkTuiRootProps {
   readonly imageInput?: ImageInputSeam | undefined
   readonly onModelChanged: (model: string | undefined) => void
   readonly onTurnCompleted?: (session: AgentSession) => Promise<void>
+  readonly getContextReport?: (events: readonly AgentEvent[]) => Promise<ContextReportPayload>
   readonly stdout: NodeJS.WriteStream
+}
+
+/** Payload the TUI /context command renders; assembled from the live env. */
+export interface ContextReportPayload {
+  readonly breakdown: ContextBreakdown
+  readonly windowTokens?: number
 }
 
 function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
@@ -262,6 +296,9 @@ function SparkTuiRoot(props: SparkTuiRootProps): React.ReactElement {
       modelRuntime={modelRuntime}
       getModelBudget={() => props.switchable.getModelBudget()}
       {...(props.onTurnCompleted === undefined ? {} : { onTurnCompleted: props.onTurnCompleted })}
+      {...(props.getContextReport === undefined
+        ? {}
+        : { getContextReport: props.getContextReport })}
       capabilities={detectTerminalCapabilities(props.stdout)}
     />
   )
