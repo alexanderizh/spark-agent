@@ -70,6 +70,7 @@ import {
 } from './SidebarFilterMenu'
 import type { SidebarActionMenuItem } from './SidebarActionMenu'
 import { SidebarActionMenu } from './SidebarActionMenu'
+import { ProjectFolderToggle } from './SidebarProjectFolderToggle'
 import { SessionLabelMenu } from './SessionLabelMenu'
 import { SessionLabelTag } from './SessionLabelTag'
 import './session-labels.less'
@@ -1315,11 +1316,11 @@ export function ProjectSessionGroup({
               role="button"
               aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
             >
-              {open ? (
-                <Icons.FolderOpen className="chev" size={15} />
-              ) : (
-                <Icons.FolderClosed className="chev" size={15} />
-              )}
+              <ProjectFolderToggle
+                open={open}
+                sessions={group.sessions}
+                sessionAgentStatuses={sessionAgentStatuses}
+              />
             </span>
           </Tooltip>
           <span className="proj-name">{group.workspace.name}</span>
@@ -1603,11 +1604,11 @@ export function FlatGroup({
             role="button"
             aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
           >
-            {open ? (
-              <Icons.FolderOpen className="chev" size={15} />
-            ) : (
-              <Icons.FolderClosed className="chev" size={15} />
-            )}
+            <ProjectFolderToggle
+              open={open}
+              sessions={sessions}
+              sessionAgentStatuses={sessionAgentStatuses}
+            />
           </span>
         </Tooltip>
         <span className="proj-name">{t(label)}</span>

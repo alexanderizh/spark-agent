@@ -192,6 +192,54 @@ button.session-terminal-indicator-btn {
   height: 12px;
 }
 
+/* 项目/分组折叠时，其下运行中会话在文件夹图标右上角的脉冲角标（组件
+   SidebarProjectFolderToggle）。配色与节奏复用 .session-badge-running
+   （--info + 1.6s ease-in-out）；单个会话运行为纯圆点，多个时徽标拉宽
+   显示数量（.with-count）。 */
+.proj-head .proj-running-badge {
+  position: absolute;
+  top: 1px;
+  right: 3.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--info);
+  color: #fff;
+  font-size: 7.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: proj-running-badge-pulse 1.6s ease-in-out infinite;
+}
+
+.proj-head .proj-running-badge.with-count {
+  min-width: 11px;
+  height: 8px;
+  padding: 0 2px;
+}
+
+@keyframes proj-running-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proj-head .proj-running-badge {
+    animation: none;
+  }
+}
+
 /* Waiting permission — warning yellow with pulse */
 .session-badge-waiting-permission {
   border: 1px solid var(--warning);
