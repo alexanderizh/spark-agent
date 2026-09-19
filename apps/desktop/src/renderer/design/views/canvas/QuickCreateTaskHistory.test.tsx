@@ -220,11 +220,19 @@ describe('QuickCreateTaskHistory', () => {
     const onReuse = vi.fn()
     const onSavePrompt = vi.fn()
     const onOpenOutput = vi.fn()
-    renderHistory(root, { onRowActivate, onRetry, onReuse, onSavePrompt, onOpenOutput })
+    const onDelete = vi.fn()
+    renderHistory(root, {
+      onRowActivate,
+      onRetry,
+      onReuse,
+      onSavePrompt,
+      onOpenOutput,
+      onDelete,
+    })
 
     const actions = document.querySelector('.quick-create-list-actions')
     expect(actions).not.toBeNull()
-    expect(actions?.querySelectorAll('button')).toHaveLength(5)
+    expect(actions?.querySelectorAll('button')).toHaveLength(6)
     expect(actions?.textContent).toBe('')
 
     await act(async () =>
@@ -234,13 +242,29 @@ describe('QuickCreateTaskHistory', () => {
     act(() => actions?.querySelector<HTMLButtonElement>('[aria-label="复用配置"]')?.click())
     act(() => actions?.querySelector<HTMLButtonElement>('[aria-label="存入提示词库"]')?.click())
     act(() => actions?.querySelector<HTMLButtonElement>('[aria-label="打开产物"]')?.click())
+    act(() => actions?.querySelector<HTMLButtonElement>('[aria-label="移除记录"]')?.click())
 
     expect(writeText).toHaveBeenCalledWith(IMAGE_TASK.prompt)
     expect(onRetry).toHaveBeenCalledWith(IMAGE_TASK)
     expect(onReuse).toHaveBeenCalledWith(IMAGE_TASK)
     expect(onSavePrompt).toHaveBeenCalledWith(IMAGE_TASK)
     expect(onOpenOutput).toHaveBeenCalledWith(IMAGE_TASK.assets[0])
+    expect(onDelete).toHaveBeenCalledWith(IMAGE_TASK.id)
     expect(onRowActivate).not.toHaveBeenCalled()
+  })
+
+  it('列表操作列的移除记录按钮带危险色标识，与只读操作区分', () => {
+    renderHistory(root, {})
+
+    const removeButton = document.querySelector<HTMLButtonElement>(
+      '.quick-create-list-actions [aria-label="移除记录"]',
+    )
+    expect(removeButton).not.toBeNull()
+    expect(removeButton?.classList.contains('is-danger')).toBe(true)
+    const reuseButton = document.querySelector<HTMLButtonElement>(
+      '.quick-create-list-actions [aria-label="复用配置"]',
+    )
+    expect(reuseButton?.className.includes('is-danger')).toBe(false)
   })
 
   it('运行中任务的列表操作列不显示重试和打开产物', () => {
@@ -251,6 +275,7 @@ describe('QuickCreateTaskHistory', () => {
     expect(actions?.querySelector('[aria-label="重新生成"]')).toBeNull()
     expect(actions?.querySelector('[aria-label="打开产物"]')).toBeNull()
     expect(actions?.querySelector('[aria-label="复用配置"]')).not.toBeNull()
+    expect(actions?.querySelector('[aria-label="移除记录"]')).not.toBeNull()
   })
 
   it('展开行详情使用差异色详情区块', () => {
@@ -291,20 +316,82 @@ describe('QuickCreateTaskHistory', () => {
     expect(writeText).toHaveBeenCalledWith('清晨窗边的静物')
   })
 
-  it('空提示词的反推任务不显示复制按钮', () => {
+  it('反推任务输入提示词为空时提示词块不显示复制，反推产物提示词可一键复制', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const reverseText = '逆光下的柯基特写，浅景深，暖色调'
     const reverseTask: QuickCreateTaskRecord = {
       ...IMAGE_TASK,
       id: 'task-reverse',
       mode: 'reverse',
+      operation: 'image_prompt_reverse',
       prompt: '',
       assets: [],
+      text: reverseText,
     }
     renderHistory(root, { tasks: [reverseTask], expandedTaskId: reverseTask.id })
 
-    expect(
-      document.querySelector('.quick-create-detail-prompt [aria-label="复制提示词"]'),
-    ).toBeNull()
     expect(document.body.textContent).toContain('图片反推任务')
+    const blocks = document.querySelectorAll(
+      '.quick-create-task-detail .quick-create-detail-prompt',
+    )
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]?.querySelector('[aria-label="复制提示词"]')).toBeNull()
+
+    const resultBlock = blocks[1]
+    expect(resultBlock?.textContent).toContain('反推提示词')
+    const copyButton =
+      resultBlock?.querySelector<HTMLButtonElement>('[aria-label="复制反推提示词"]')
+    expect(copyButton).not.toBeNull()
+
+    await act(async () => copyButton?.click())
+    expect(writeText).toHaveBeenCalledWith(reverseText)
+  })
+
+  it('反推任务的列表操作列复制的是反推产物提示词', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const reverseTask: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-reverse-list',
+      mode: 'reverse',
+      operation: 'image_prompt_reverse',
+      prompt: '',
+      assets: [],
+      text: '逆光下的柯基特写',
+    }
+    renderHistory(root, { tasks: [reverseTask] })
+
+    const actions = document.querySelector('.quick-create-list-actions')
+    expect(actions?.querySelector('[aria-label="复制提示词"]')).toBeNull()
+    const copyButton = actions?.querySelector<HTMLButtonElement>('[aria-label="复制反推提示词"]')
+    expect(copyButton).not.toBeNull()
+
+    await act(async () => copyButton?.click())
+    expect(writeText).toHaveBeenCalledWith('逆光下的柯基特写')
+  })
+
+  it('反推任务未产出提示词时不显示任何复制入口', () => {
+    const runningReverseTask: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-reverse-running',
+      mode: 'reverse',
+      operation: 'image_prompt_reverse',
+      prompt: '',
+      assets: [],
+      status: 'running',
+    }
+    renderHistory(root, { tasks: [runningReverseTask], expandedTaskId: runningReverseTask.id })
+
+    const actions = document.querySelector('.quick-create-list-actions')
+    expect(actions?.querySelector('[aria-label^="复制"]')).toBeNull()
+    expect(document.querySelector('.quick-create-task-detail [aria-label^="复制"]')).toBeNull()
   })
 
   it('成功任务详情显示重新生成并回调重试', () => {

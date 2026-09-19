@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { decodeCanvasSafeFileUrl } from './canvas-safe-file'
 import {
+  copyableTaskPrompt,
   isLocalInputPath,
   promptCoverFromTaskAssets,
   quickInputKindForPath,
   retryTaskRecord,
   selectQuickCreateInputPaths,
+  textOutputCopyMeta,
 } from './quickCreateTaskPresentation'
 
 describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
@@ -113,5 +115,47 @@ describe('quickCreateTaskPresentation 成功任务重试记录', () => {
 
   it('连续两次重试生成不同 id', () => {
     expect(retryTaskRecord(baseTask).id).not.toBe(retryTaskRecord(baseTask).id)
+  })
+})
+
+describe('quickCreateTaskPresentation 可复制的提示词', () => {
+  it('普通任务复制用户输入的提示词', () => {
+    expect(copyableTaskPrompt({ mode: 'image', prompt: ' 清晨窗边的静物 ' })).toEqual({
+      label: '复制提示词',
+      doneMessage: '提示词已复制',
+      text: '清晨窗边的静物',
+    })
+  })
+
+  it('反推任务优先复制反推产物，产物未回来时退回用户填写的补充要求', () => {
+    expect(
+      copyableTaskPrompt({ mode: 'reverse', prompt: '重点描述光线', text: '逆光下的柯基特写' }),
+    ).toEqual({
+      label: '复制反推提示词',
+      doneMessage: '反推提示词已复制',
+      text: '逆光下的柯基特写',
+    })
+
+    expect(copyableTaskPrompt({ mode: 'reverse', prompt: '重点描述光线', text: '  ' })).toEqual({
+      label: '复制反推提示词',
+      doneMessage: '反推提示词已复制',
+      text: '重点描述光线',
+    })
+  })
+
+  it('反推任务既无产物也无要求时不给复制入口', () => {
+    expect(copyableTaskPrompt({ mode: 'reverse', prompt: '' })).toBeNull()
+    expect(copyableTaskPrompt({ mode: 'image', prompt: '   ' })).toBeNull()
+  })
+
+  it('文本产物块的标题与复制提示按模式区分', () => {
+    expect(textOutputCopyMeta('reverse')).toEqual({
+      label: '反推提示词',
+      doneMessage: '反推提示词已复制',
+    })
+    expect(textOutputCopyMeta('image')).toEqual({
+      label: '文本输出',
+      doneMessage: '文本输出已复制',
+    })
   })
 })

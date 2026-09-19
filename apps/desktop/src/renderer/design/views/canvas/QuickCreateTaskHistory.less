@@ -1,7 +1,8 @@
 /* 列表行与操作列：保持扁平层级，紧凑但不牺牲可点击区域。 */
 .quick-create-task-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 148px;
+  /* 操作列按 6 个 28px 图标按钮 + 5 个 2px 间距预留，窄屏由下方媒体查询降级换行 */
+  grid-template-columns: minmax(0, 1fr) 178px;
   align-items: center;
   gap: 8px;
 }
@@ -55,6 +56,14 @@
 .quick-create-list-actions .quick-create-list-action.ant-btn:focus-visible:not(:disabled) {
   color: var(--quick-accent, var(--primary));
   background: color-mix(in srgb, var(--quick-accent, var(--primary)) 9%, transparent);
+}
+
+/* 移除记录属破坏性操作：hover / focus 走危险色，与只读操作保持层级区分 */
+.quick-create-list-actions .quick-create-list-action.is-danger.ant-btn:hover:not(:disabled),
+.quick-create-list-actions
+  .quick-create-list-action.is-danger.ant-btn:focus-visible:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* 展开详情与列表主行做低对比差异色分区，不增加卡片边框和阴影。 */

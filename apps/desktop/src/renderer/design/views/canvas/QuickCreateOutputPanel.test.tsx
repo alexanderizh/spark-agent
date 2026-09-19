@@ -149,6 +149,40 @@ describe('QuickCreateOutputPanel', () => {
     expect(document.body.textContent).toContain('这次创作没有完成')
   })
 
+  it('反推任务的提示词产物带标题并可一键复制', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const reverseText = '逆光下的柯基特写，浅景深，暖色调'
+    act(() =>
+      root.render(
+        <QuickCreateOutputPanel
+          task={{
+            ...TASK,
+            id: 'quick-output-reverse-test',
+            mode: 'reverse',
+            operation: 'image_prompt_reverse',
+            prompt: '',
+            assets: [],
+            text: reverseText,
+          }}
+        />,
+      ),
+    )
+
+    expect(document.querySelector('.quick-create-output-text-head')?.textContent).toContain(
+      '反推提示词',
+    )
+    expect(document.querySelector('.quick-create-output-text')?.textContent).toBe(reverseText)
+
+    const copyButton = document.querySelector<HTMLButtonElement>('[aria-label="复制反推提示词"]')
+    expect(copyButton).not.toBeNull()
+    await act(async () => copyButton?.click())
+    expect(writeText).toHaveBeenCalledWith(reverseText)
+  })
+
   it('空输出只显示下一步提示，不渲染装饰性营销内容', () => {
     act(() => root.render(<QuickCreateOutputPanel />))
 

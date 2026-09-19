@@ -66,6 +66,42 @@ export function retryTaskRecord(task: QuickCreateTaskRecord): QuickCreateTaskRec
   }
 }
 
+/**
+ * 文本产物块的标题与复制成功提示：反推任务的产物本身就是提示词，
+ * 标题、复制按钮与成功提示统一从这里取，避免各处写散。
+ */
+export function textOutputCopyMeta(mode: QuickCreateMode): { label: string; doneMessage: string } {
+  return mode === 'reverse'
+    ? { label: '反推提示词', doneMessage: '反推提示词已复制' }
+    : { label: '文本输出', doneMessage: '文本输出已复制' }
+}
+
+/** 一键复制提示词的按钮文案、成功提示与待复制文本。 */
+export type TaskPromptCopy = {
+  label: string
+  doneMessage: string
+  text: string
+}
+
+/**
+ * 取任务内「可一键复制的提示词」。
+ *
+ * 反推任务（image_prompt_reverse）的产物就是提示词本身（task.text），用户填写的
+ * 只是可选的补充要求，因此反推优先复制产物；产物未回来时才退回补充要求，
+ * 两者都没有则返回 null，由调用方决定是否渲染复制入口。
+ */
+export function copyableTaskPrompt(
+  task: Pick<QuickCreateTaskRecord, 'mode' | 'prompt' | 'text'>,
+): TaskPromptCopy | null {
+  const prompt = task.prompt.trim()
+  const reversed = (task.text ?? '').trim()
+  if (task.mode === 'reverse') {
+    const text = reversed || prompt
+    return text ? { label: '复制反推提示词', doneMessage: '反推提示词已复制', text } : null
+  }
+  return prompt ? { label: '复制提示词', doneMessage: '提示词已复制', text: prompt } : null
+}
+
 export function statusLabel(status: QuickCreateTaskStatus): string {
   return { running: '处理中', succeeded: '已完成', failed: '未完成', cancelled: '已取消' }[status]
 }

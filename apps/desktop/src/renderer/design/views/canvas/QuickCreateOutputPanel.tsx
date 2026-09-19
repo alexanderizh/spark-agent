@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react'
+import { Button, Tooltip, message } from 'antd'
 import type { CanvasMediaTaskAsset, CanvasMediaTaskInputFile } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { ImagePreviewModal, type LightboxImage } from '../../components/ImagePreviewModal'
 import { MediaArtifactViewer } from '../../components/MediaArtifactViewer'
+import { copyTextToClipboard } from './canvasClipboard'
 import { resolveMediaDisplayUrl } from './canvas-safe-file'
+import { textOutputCopyMeta } from './quickCreateTaskPresentation'
 import type { QuickCreateTaskRecord } from './quickCreateTaskStore'
 import './QuickCreateOutputPanel.less'
 
@@ -27,6 +30,16 @@ function fileName(value: string | undefined, fallback: string): string {
 
 function statusLabel(status: QuickCreateTaskRecord['status']): string {
   return { running: '处理中', succeeded: '已完成', failed: '未完成', cancelled: '已取消' }[status]
+}
+
+/** 复制反推产出的提示词：成功/失败都给出明确反馈，不静默失败。 */
+async function copyTextOutput(text: string, doneMessage: string) {
+  try {
+    await copyTextToClipboard(text)
+    message.success(doneMessage)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '复制失败')
+  }
 }
 
 /**
@@ -74,6 +87,8 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
       </section>
     )
   }
+
+  const textOutput = textOutputCopyMeta(task.mode)
 
   return (
     <section className="quick-create-output-panel" aria-label="输出预览">
@@ -140,7 +155,25 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
           )}
         </>
       ) : task.text ? (
-        <pre className="quick-create-output-text">{task.text}</pre>
+        // 反推任务的产物就是提示词，直接给出可复制入口，避免用户手动选中长文本
+        <div className="quick-create-output-text-block">
+          <div className="quick-create-output-text-head">
+            <span>{textOutput.label}</span>
+            <Tooltip title={`复制${textOutput.label}`} placement="top">
+              <Button
+                type="text"
+                size="small"
+                icon={<Icons.Copy size={13} />}
+                aria-label={`复制${textOutput.label}`}
+                title={`复制${textOutput.label}`}
+                onClick={() => void copyTextOutput(task.text ?? '', textOutput.doneMessage)}
+              >
+                复制
+              </Button>
+            </Tooltip>
+          </div>
+          <pre className="quick-create-output-text">{task.text}</pre>
+        </div>
       ) : task.status === 'running' ? (
         <div className="quick-create-output-pending">
           <div className="quick-create-output-loader" aria-hidden="true">

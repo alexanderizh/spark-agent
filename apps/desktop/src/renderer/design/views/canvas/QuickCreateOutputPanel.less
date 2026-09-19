@@ -203,10 +203,48 @@
   font-variant-numeric: tabular-nums;
 }
 
-// 反推任务的文本产物：左侧强调线标记引用，不做盒子
+// 反推任务的文本产物：标题行提供一键复制，正文左侧强调线标记引用，不做盒子
+.quick-create-output-text-block {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding-top: 8px;
+}
+
+.quick-create-output-text-head {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quick-create-output-text-head > span {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.quick-create-output-text-head .ant-btn.ant-btn-text {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.quick-create-output-text-head .ant-btn.ant-btn-text:hover:not(:disabled),
+.quick-create-output-text-head .ant-btn.ant-btn-text:focus-visible:not(:disabled) {
+  color: var(--quick-accent, var(--primary));
+  background: color-mix(in srgb, var(--quick-accent, var(--primary)) 9%, transparent);
+}
+
 .quick-create-output-text {
+  min-height: 0;
   max-height: 100%;
-  margin: 14px 0;
+  flex: 1;
+  margin: 6px 0 14px;
   padding: 12px 14px;
   overflow: auto;
   border-left: 2px solid var(--quick-accent);

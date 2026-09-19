@@ -3,11 +3,14 @@ import { Button, Modal, Tooltip, message } from 'antd'
 import type { CanvasMediaTaskAsset } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { MediaArtifactViewer } from '../../components/MediaArtifactViewer'
+import { copyTextToClipboard } from './canvasClipboard'
 import {
   MODE_ITEMS,
+  copyableTaskPrompt,
   modeLabel,
   statusLabel,
   taskOutputUrl,
+  textOutputCopyMeta,
   titleForPrompt,
 } from './quickCreateTaskPresentation'
 import {
@@ -49,27 +52,31 @@ function viewableOutputsOf(task: QuickCreateTaskRecord): TaskViewableOutput[] {
 /** 独立产物查看：taskId + 可查看产物列表下标；不切换创作结果区块。 */
 type ViewerTarget = { taskId: string; outputIndex: number }
 
-async function copyTaskPrompt(prompt: string) {
+async function copyTaskPrompt(prompt: string, doneMessage = '提示词已复制') {
   try {
-    await navigator.clipboard.writeText(prompt)
-    message.success('提示词已复制')
+    await copyTextToClipboard(prompt)
+    message.success(doneMessage)
   } catch {
     message.error('复制提示词失败')
   }
 }
 
 /**
- * 详情内提示词块：label 后带一键复制；clamp 时默认折叠（clampLines 行）、溢出可手动展开；
- * 展开后若传入 expandedMaxHeight 则提示词固定高度内部滚动，避免长提示词挤压图片或撑高弹层；
- * 空提示词（反推任务）不出现复制按钮。
+ * 详情内文本块（提示词 / 反推提示词）：label 后带一键复制；clamp 时默认折叠（clampLines 行）、
+ * 溢出可手动展开；展开后若传入 expandedMaxHeight 则固定高度内部滚动，避免长文本挤压图片或撑高弹层；
+ * 空文本（如反推任务的输入提示词）不出现复制按钮。
  */
 function DetailPrompt({
   prompt,
+  label = '提示词',
+  doneMessage = '提示词已复制',
   clamp = false,
   clampLines = 3,
   expandedMaxHeight,
 }: {
   prompt: string
+  label?: string
+  doneMessage?: string
   clamp?: boolean
   clampLines?: number
   expandedMaxHeight?: string
@@ -92,13 +99,13 @@ function DetailPrompt({
   return (
     <div className="quick-create-detail-prompt">
       <div className="quick-create-detail-prompt-label">
-        <span>提示词</span>
+        <span>{label}</span>
         {prompt.trim() && (
           <button
             type="button"
-            aria-label="复制提示词"
-            title="复制提示词"
-            onClick={() => void copyTaskPrompt(prompt)}
+            aria-label={`复制${label}`}
+            title={`复制${label}`}
+            onClick={() => void copyTaskPrompt(prompt, doneMessage)}
           >
             <Icons.Copy size={12} />
           </button>
@@ -197,12 +204,18 @@ export function QuickCreateTaskHistory({
     writeQuickCreatePreferences({ ...readQuickCreatePreferences(), taskFilter: next })
   }
 
-  const renderListAction = (label: string, icon: ReactNode, onClick: () => void) => (
+  // danger 变体用于「移除记录」这类破坏性操作：hover / focus 走危险色，与其它只读操作区分
+  const renderListAction = (
+    label: string,
+    icon: ReactNode,
+    onClick: () => void,
+    options?: { danger?: boolean },
+  ) => (
     <Tooltip title={label} placement="top">
       <Button
         type="text"
         size="small"
-        className="quick-create-list-action"
+        className={`quick-create-list-action${options?.danger ? ' is-danger' : ''}`}
         icon={icon}
         aria-label={label}
         title={label}
@@ -214,27 +227,34 @@ export function QuickCreateTaskHistory({
     </Tooltip>
   )
 
-  const renderListActions = (task: QuickCreateTaskRecord, output?: CanvasMediaTaskAsset) => (
-    <div className="quick-create-list-actions" aria-label="任务操作">
-      {task.prompt.trim() &&
-        renderListAction('复制提示词', <Icons.Copy size={14} />, () => {
-          void copyTaskPrompt(task.prompt)
+  const renderListActions = (task: QuickCreateTaskRecord, output?: CanvasMediaTaskAsset) => {
+    // 反推任务没有输入提示词，可复制的提示词是它的产物（task.text）
+    const copyTarget = copyableTaskPrompt(task)
+    return (
+      <div className="quick-create-list-actions" aria-label="任务操作">
+        {copyTarget &&
+          renderListAction(copyTarget.label, <Icons.Copy size={14} />, () => {
+            void copyTaskPrompt(copyTarget.text, copyTarget.doneMessage)
+          })}
+        {task.status !== 'running' &&
+          renderListAction(
+            task.status === 'succeeded' ? '重新生成' : '重试',
+            <Icons.RotateCcw size={14} />,
+            () => onRetry(task),
+          )}
+        {renderListAction('复用配置', <Icons.Repeat size={14} />, () => onReuse(task))}
+        {task.prompt.trim() &&
+          renderListAction('存入提示词库', <Icons.Book size={14} />, () => onSavePrompt(task))}
+        {output?.filePath &&
+          renderListAction('打开产物', <Icons.FolderOpen size={14} />, () => {
+            void onOpenOutput(output)
+          })}
+        {renderListAction('移除记录', <Icons.Trash size={14} />, () => onDelete(task.id), {
+          danger: true,
         })}
-      {task.status !== 'running' &&
-        renderListAction(
-          task.status === 'succeeded' ? '重新生成' : '重试',
-          <Icons.RotateCcw size={14} />,
-          () => onRetry(task),
-        )}
-      {renderListAction('复用配置', <Icons.Repeat size={14} />, () => onReuse(task))}
-      {task.prompt.trim() &&
-        renderListAction('存入提示词库', <Icons.Book size={14} />, () => onSavePrompt(task))}
-      {output?.filePath &&
-        renderListAction('打开产物', <Icons.FolderOpen size={14} />, () => {
-          void onOpenOutput(output)
-        })}
-    </div>
-  )
+      </div>
+    )
+  }
 
   const renderTaskActions = (task: QuickCreateTaskRecord, output?: CanvasMediaTaskAsset) => (
     <div className="quick-create-task-actions">
@@ -409,6 +429,7 @@ export function QuickCreateTaskHistory({
               const taskOutputs = viewableOutputsOf(task)
               const firstOutput = taskOutputs[0]
               const expanded = expandedTaskId === task.id
+              const textMeta = textOutputCopyMeta(task.mode)
               return (
                 <article
                   className={`quick-create-task${expanded ? ' is-expanded' : ''}`}
@@ -470,7 +491,14 @@ export function QuickCreateTaskHistory({
                           <span>进度 {Math.round(task.progress)}%</span>
                         )}
                       </div>
-                      {task.text && <pre>{task.text}</pre>}
+                      {task.text && (
+                        <DetailPrompt
+                          prompt={task.text}
+                          label={textMeta.label}
+                          doneMessage={textMeta.doneMessage}
+                          clamp
+                        />
+                      )}
                       {firstOutput && (
                         <button
                           type="button"
