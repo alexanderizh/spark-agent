@@ -5,6 +5,8 @@ import { errorMessage } from '../config/config-file.js'
 import type { AgentEvent } from '../events/schema.js'
 import type { Agent, AgentSession } from '../sdk/agent.js'
 import { isImageMediaType, type TurnImageAttachment } from '../images/attachments.js'
+import type { ServeApprover } from './approver.js'
+import type { PermissionDecision } from '../permission/types.js'
 
 /**
  * `spark serve` — the versioned App Server protocol (v1).
@@ -17,6 +19,8 @@ import { isImageMediaType, type TurnImageAttachment } from '../images/attachment
  *   POST /v1/sessions/:id/turns        → SSE stream of AgentEvent JSON
  *   GET  /v1/sessions/:id/events       → JSONL replay from the ledger
  *   POST /v1/sessions/:id/cancel       → abort the active turn
+ *   GET  /v1/approvals                 → pending tool approvals
+ *   POST /v1/approvals/:requestId      → answer one tool approval
  *
  * Every request needs the bearer token that was printed in the startup
  * handshake. The server binds the loopback interface by default; it is a local
@@ -30,6 +34,8 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024
 export interface ServeServerOptions {
   readonly agent: Agent
   readonly engineVersion: string
+  /** Protocol-side approver; tool approvals wait for host decisions on it. */
+  readonly approver: ServeApprover
   readonly model?: string
   readonly host?: string
   readonly port?: number
@@ -219,6 +225,45 @@ export function startServeServer(options: ServeServerOptions): Promise<ServeServ
       return
     }
 
+    if (request.method === 'GET' && path === '/v1/approvals') {
+      writeJson(response, 200, { pending: options.approver.listPending() })
+      return
+    }
+
+    const approvalMatch = /^\/v1\/approvals\/([^/]+)$/.exec(path)
+    if (request.method === 'POST' && approvalMatch?.[1] !== undefined) {
+      const body = await readJsonBody(response, request)
+      if (body === undefined) return
+      const verdict = stringField(body, 'decision')
+      if (verdict !== 'allow' && verdict !== 'deny') {
+        writeJson(response, 400, {
+          error: { code: 'invalid_decision', message: "decision must be 'allow' or 'deny'" },
+        })
+        return
+      }
+      const grantScope = stringField(body, 'grantScope')
+      if (grantScope !== '' && grantScope !== 'once' && grantScope !== 'session') {
+        writeJson(response, 400, {
+          error: { code: 'invalid_grant_scope', message: "grantScope must be 'once' or 'session'" },
+        })
+        return
+      }
+      const reason = stringField(body, 'reason')
+      const decision: PermissionDecision = {
+        decision: verdict,
+        ...(grantScope === '' ? {} : { grantScope: grantScope }),
+        ...(reason === '' ? {} : { reason }),
+      }
+      if (!options.approver.answer(approvalMatch[1], decision)) {
+        writeJson(response, 404, {
+          error: { code: 'approval_not_found', message: 'No pending approval with that id' },
+        })
+        return
+      }
+      writeJson(response, 200, { answered: true, requestId: approvalMatch[1] })
+      return
+    }
+
     const cancelMatch = /^\/v1\/sessions\/([^/]+)\/cancel$/.exec(path)
     if (request.method === 'POST' && cancelMatch?.[1] !== undefined) {
       const active = activeTurns.get(cancelMatch[1])
@@ -247,6 +292,7 @@ export function startServeServer(options: ServeServerOptions): Promise<ServeServ
         handshake: { protocolVersion: SERVE_PROTOCOL_VERSION, pid: process.pid, port, token },
         close: async () => {
           for (const active of activeTurns.values()) active.controller.abort('server shutting down')
+          options.approver.rejectAll('server shutting down')
           await new Promise<void>((resolveClose) =>
             server.close(() => {
               resolveClose()

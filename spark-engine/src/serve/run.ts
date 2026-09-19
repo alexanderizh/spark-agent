@@ -4,6 +4,7 @@ import { errorMessage } from '../config/config-file.js'
 import { createResilientEnv } from '../env.js'
 import { SPARK_ENGINE_VERSION } from '../version.js'
 import { Agent } from '../sdk/agent.js'
+import { ServeApprover } from './approver.js'
 import { startServeServer, type ServeHandshake } from './server.js'
 
 /**
@@ -42,9 +43,19 @@ export async function runServeCommand(options: ServeCommandOptions): Promise<num
     )
   }
 
-  const agent = Agent.open({ cwd, env: managed.env })
+  // Tool approvals become protocol messages: the host answers
+  // POST /v1/approvals/:requestId instead of a local TUI prompt.
+  const approver = new ServeApprover()
+  const agent = Agent.open({
+    cwd,
+    env: {
+      ...managed.env,
+      permission: { ...managed.env.permission, approver },
+    },
+  })
   const handle = await startServeServer({
     agent,
+    approver,
     engineVersion: SPARK_ENGINE_VERSION,
     model: runtime.modelId,
     ...(options.host === undefined ? {} : { host: options.host }),
