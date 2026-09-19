@@ -21,6 +21,7 @@ import {
 } from '../config/settings.js'
 import type { SettingsScope } from '../config/settings.js'
 import { runServeCommand } from '../serve/run.js'
+import { executeScheduleCommand, runSchedulerHost } from './schedule-command.js'
 import { executeAuthCommand } from './auth-command.js'
 import { bootstrapPlatformModels } from '../platform/models.js'
 import { PlatformAuthExpiredError } from '../platform/edu-server-client.js'
@@ -137,6 +138,8 @@ const SUBCOMMANDS = new Set([
   'config',
   'mcp',
   'memory',
+  'schedule',
+  'scheduler',
   'plan',
   'skills',
   'todo',
@@ -197,6 +200,24 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       if (takeoverResult !== 0) return takeoverResult
     }
     return inspectModels(options.positionals[0], options.json)
+  }
+  if (options.positionals[0] === 'scheduler') {
+    if (options.prompt) {
+      process.stderr.write('spark scheduler does not accept a task prompt.\n')
+      return 2
+    }
+    return runSchedulerHost({
+      ...(options.model === undefined ? {} : { model: options.model }),
+    })
+  }
+  if (options.positionals[0] === 'schedule') {
+    return executeScheduleCommand({
+      args: options.positionals.slice(1),
+      json: options.json,
+      cwd: process.cwd(),
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+    })
   }
   const maintenance = options.positionals[0]
   if (maintenance === 'update' || maintenance === 'upgrade') {
@@ -1342,6 +1363,10 @@ Usage:
   spark doctor              Diagnose install, discovery, and model selection
   spark serve [--port n]    Run the loopback App Server (protocol v1); the
                             startup handshake JSON is printed on stdout
+  spark schedule add "<prompt>" --every <minutes>
+                            Register a recurring local task
+  spark schedule list       Show schedules and their last outcomes
+  spark scheduler           Run the schedule host loop until interrupted
   spark login               Sign in to your Spark account (browser login)
   spark logout              Remove the stored Spark account session
   spark whoami              Show the signed-in Spark account
