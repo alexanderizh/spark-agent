@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search as SearchIcon, ArrowUpRight } from 'lucide-react'
 import { DocsSearch } from '../components/DocsSearch'
+import { DocsShell } from '../components/DocsShell'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
 import { searchDocs, splitByTokens, tokenize, type DocsSearchHit } from '../lib/docs-search'
@@ -94,109 +95,111 @@ export function DocsSearchPage() {
           url: absoluteUrl(`/docs/search${query ? `?q=${encodeURIComponent(query)}` : ''}`),
         }}
       />
-      <Section
-        headingLevel={1}
-        eyebrow="文档搜索"
-        title={query ? `搜索结果：${query}` : '搜索文档'}
-        intro="全文检索标题、描述、章节、FAQ 和正文摘要 —— 输入关键词后按回车。"
-      >
-        <DocsSearch key={query} initialQuery={query} />
-      </Section>
+      <DocsShell>
+        <Section
+          headingLevel={1}
+          eyebrow="文档搜索"
+          title={query ? `搜索结果：${query}` : '搜索文档'}
+          intro="全文检索标题、描述、章节、FAQ 和正文摘要 —— 输入关键词后按回车。"
+        >
+          <DocsSearch key={query} initialQuery={query} />
+        </Section>
 
-      {!query.trim() ? (
-        <Section title="可以试试这些关键词">
-          <div className="link-list large">
-            {[
-              '团队模式',
-              'MCP',
-              'Provider',
-              'Worktree',
-              'spark_search',
-              'spark_media',
-              'Keychain',
-              'auto-update',
-            ].map((kw) => (
-              <a key={kw} href={`/docs/search?q=${encodeURIComponent(kw)}`}>
-                {kw}
-              </a>
-            ))}
-          </div>
-        </Section>
-      ) : loading ? (
-        <Section title="搜索中…">
-          <p className="docs-fallback">正在遍历所有主题的标题、章节、FAQ 和摘要…</p>
-        </Section>
-      ) : hits.length === 0 ? (
-        <Section title="没有匹配结果">
-          <div className="doc-long">
-            <p>
-              没有匹配「<strong>{query}</strong>」的主题。请检查拼写，或换个更宽泛的关键词。
-            </p>
-            <p>
-              你也可以直接浏览 <a href="/docs">全部文档主题</a>。
-            </p>
-          </div>
-        </Section>
-      ) : (
-        <Section title={`${hits.length} 条匹配`}>
-          <ol className="docs-search-results">
-            {hits.map((h) => (
-              <li key={h.topic.slug}>
-                <a
-                  className="docs-search-result"
-                  href={`/docs/${h.topic.slug}`}
-                  onClick={(e) => {
-                    if (
-                      e.defaultPrevented ||
-                      e.metaKey ||
-                      e.ctrlKey ||
-                      e.shiftKey ||
-                      e.altKey ||
-                      e.button !== 0
-                    )
-                      return
-                    e.preventDefault()
-                    navigate(`/docs/${h.topic.slug}`)
-                  }}
-                >
-                  <div className="docs-search-result-head">
-                    <SearchIcon size={16} strokeWidth={1.8} aria-hidden="true" />
-                    <span className="docs-search-result-title">
-                      {renderHighlighted(h.topic.title, tokens)}
-                    </span>
-                    <ArrowUpRight
-                      size={16}
-                      strokeWidth={1.8}
-                      aria-hidden="true"
-                      className="docs-search-result-arrow"
-                    />
-                  </div>
-                  <p className="docs-search-result-desc">
-                    {renderHighlighted(h.topic.description, tokens)}
-                  </p>
-                  {h.highlights.length > 0 && (
-                    <ul className="docs-search-highlights">
-                      {h.highlights.slice(0, 3).map((hi, i) => (
-                        <li key={i}>
-                          <span className="docs-search-snippet">
-                            <span className="docs-search-field">{hi.field}</span>
-                            {renderHighlighted(hi.snippet, tokens)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="docs-search-result-meta">
-                    <span>相关度 {h.score.toFixed(1)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>阅读约 {h.topic.readTime} 分钟</span>
-                  </div>
+        {!query.trim() ? (
+          <Section title="可以试试这些关键词">
+            <div className="link-list large">
+              {[
+                '团队模式',
+                'MCP',
+                'Provider',
+                'Worktree',
+                'spark_search',
+                'spark_media',
+                'Keychain',
+                'auto-update',
+              ].map((kw) => (
+                <a key={kw} href={`/docs/search?q=${encodeURIComponent(kw)}`}>
+                  {kw}
                 </a>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      )}
+              ))}
+            </div>
+          </Section>
+        ) : loading ? (
+          <Section title="搜索中…">
+            <p className="docs-fallback">正在遍历所有主题的标题、章节、FAQ 和摘要…</p>
+          </Section>
+        ) : hits.length === 0 ? (
+          <Section title="没有匹配结果">
+            <div className="doc-long">
+              <p>
+                没有匹配「<strong>{query}</strong>」的主题。请检查拼写，或换个更宽泛的关键词。
+              </p>
+              <p>
+                你也可以直接浏览 <a href="/docs">全部文档主题</a>。
+              </p>
+            </div>
+          </Section>
+        ) : (
+          <Section title={`${hits.length} 条匹配`}>
+            <ol className="docs-search-results">
+              {hits.map((h) => (
+                <li key={h.topic.slug}>
+                  <a
+                    className="docs-search-result"
+                    href={`/docs/${h.topic.slug}`}
+                    onClick={(e) => {
+                      if (
+                        e.defaultPrevented ||
+                        e.metaKey ||
+                        e.ctrlKey ||
+                        e.shiftKey ||
+                        e.altKey ||
+                        e.button !== 0
+                      )
+                        return
+                      e.preventDefault()
+                      navigate(`/docs/${h.topic.slug}`)
+                    }}
+                  >
+                    <div className="docs-search-result-head">
+                      <SearchIcon size={16} strokeWidth={1.8} aria-hidden="true" />
+                      <span className="docs-search-result-title">
+                        {renderHighlighted(h.topic.title, tokens)}
+                      </span>
+                      <ArrowUpRight
+                        size={16}
+                        strokeWidth={1.8}
+                        aria-hidden="true"
+                        className="docs-search-result-arrow"
+                      />
+                    </div>
+                    <p className="docs-search-result-desc">
+                      {renderHighlighted(h.topic.description, tokens)}
+                    </p>
+                    {h.highlights.length > 0 && (
+                      <ul className="docs-search-highlights">
+                        {h.highlights.slice(0, 3).map((hi, i) => (
+                          <li key={i}>
+                            <span className="docs-search-snippet">
+                              <span className="docs-search-field">{hi.field}</span>
+                              {renderHighlighted(hi.snippet, tokens)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="docs-search-result-meta">
+                      <span>相关度 {h.score.toFixed(1)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>阅读约 {h.topic.readTime} 分钟</span>
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        )}
+      </DocsShell>
     </>
   )
 }

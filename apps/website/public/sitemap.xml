@@ -108,25 +108,43 @@
   </url>
   <url>
     <loc>https://spark.yiqibyte.com/docs/mcp-skills</loc>
-    <lastmod>2026-06-29</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://spark.yiqibyte.com/docs/governance</loc>
-    <lastmod>2026-06-29</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://spark.yiqibyte.com/docs/desktop-guide</loc>
-    <lastmod>2026-06-29</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://spark.yiqibyte.com/docs/builtin-tools</loc>
-    <lastmod>2026-07-08</lastmod>
+    <lastmod>2026-09-18</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/custom-tools</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/connectors</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/sub-apps</loc>
+    <lastmod>2026-09-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -155,8 +173,50 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://spark.yiqibyte.com/docs/session-flow</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://spark.yiqibyte.com/docs/canvas-video-workbench</loc>
     <lastmod>2026-08-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/computer-use</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/optional-capabilities</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/credentials-and-secrets</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/data-and-backup</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/hooks-v2</loc>
+    <lastmod>2026-09-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://spark.yiqibyte.com/docs/spark-cli</loc>
+    <lastmod>2026-09-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>

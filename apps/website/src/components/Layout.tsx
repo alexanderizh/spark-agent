@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   BookOpen,
   Code2,
@@ -12,6 +12,13 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { GITHUB_URL, OPEN_SOURCE_ENABLED } from '../lib/links'
+import {
+  DOCS_SEARCH_OPEN_EVENT,
+  DocsSearchDrawerEntry,
+  DocsSearchOverlay,
+  DocsSearchTrigger,
+  useDocsSearchHotkeys,
+} from './DocsSearchCommand'
 import { GithubIcon } from './GithubIcon'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
@@ -26,10 +33,27 @@ const nav = [
   { label: '联系', href: '/contact', icon: MessageCircle },
 ] satisfies Array<{ label: string; href: string; icon: LucideIcon; hidden?: boolean }>
 
-const visibleNav = nav.filter(item => !item.hidden)
+const visibleNav = nav.filter((item) => !item.hidden)
 
-export function Layout({ children, currentPath = '/' }: { children: React.ReactNode; currentPath?: string }) {
+export function Layout({
+  children,
+  currentPath = '/',
+}: {
+  children: React.ReactNode
+  currentPath?: string
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  const toggleSearch = useCallback(() => setSearchOpen((prev) => !prev), [])
+  useDocsSearchHotkeys(toggleSearch)
+
+  // 文档页内的「搜索文档」入口通过全局事件唤起同一个面板
+  useEffect(() => {
+    const onOpen = () => setSearchOpen(true)
+    window.addEventListener(DOCS_SEARCH_OPEN_EVENT, onOpen)
+    return () => window.removeEventListener(DOCS_SEARCH_OPEN_EVENT, onOpen)
+  }, [])
 
   // 路由变化时自动收起抽屉
   useEffect(() => {
@@ -73,6 +97,9 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
               </a>
             )
           })}
+        </nav>
+        <div className="nav-actions">
+          <DocsSearchTrigger onOpen={() => setSearchOpen(true)} />
           <ThemeToggle />
           {OPEN_SOURCE_ENABLED && (
             <a className="nav-github" href={GITHUB_URL} target="_blank" rel="noreferrer">
@@ -80,14 +107,14 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
               <span>GitHub</span>
             </a>
           )}
-        </nav>
+        </div>
         <button
           type="button"
           className="nav-toggle"
           aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
           aria-expanded={menuOpen}
           aria-controls="primary-nav-drawer"
-          onClick={() => setMenuOpen(v => !v)}
+          onClick={() => setMenuOpen((v) => !v)}
         >
           {menuOpen ? <X size={20} strokeWidth={1.8} /> : <Menu size={20} strokeWidth={1.8} />}
         </button>
@@ -98,6 +125,12 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
         aria-hidden={!menuOpen}
       >
         <div className="nav-drawer-inner">
+          <DocsSearchDrawerEntry
+            onOpen={() => {
+              setMenuOpen(false)
+              setSearchOpen(true)
+            }}
+          />
           {visibleNav.map(({ label, href, icon: Icon }) => {
             const active = href === currentPath
             return (
@@ -132,6 +165,7 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
       </div>
       <main>{children}</main>
       <Footer />
+      {searchOpen && <DocsSearchOverlay onClose={() => setSearchOpen(false)} />}
     </>
   )
 }

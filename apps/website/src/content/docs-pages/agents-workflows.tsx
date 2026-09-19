@@ -3,121 +3,357 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Agent 是 Spark Work 中「会用工具的 LLM 角色」。一个 Agent 由 <em>Provider / Model / Adapter /
-      Permission Mode / Reasoning Effort / Prompt / Skills / Rules / Hooks</em> 等组成，
-      可以按项目复用，也可以按会话临时覆盖。
+      Agent 是 Spark Work 里「会用工具的模型角色」。它是一份可复用配置：绑哪个 Provider 和模型、
+      用哪个执行器、权限和推理强度多大、带哪些 Skills / Rules / Hook、要不要挂工作流。
+      会话启动时，运行时把这些配置连同项目上下文一起拼成系统提示词注入模型。
     </p>
 
-    <h2 id="agent-profile">1. Agent Profile</h2>
+    <h2 id="agent-fields">1. Agent 的真实字段</h2>
     <p>
-      每个 Agent 的核心字段：
+      入口：左侧导航「助手」→ 顶部 <strong>Agents</strong> 标签 → 点开某个 Agent 进入编辑页
+      （同一个页面还有 <strong>Teams</strong> 标签，见「团队模式」一篇）。
+    </p>
+
+    <h3 id="fields-core">1.1 基本信息与执行器</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>界面标签</th>
+          <th>真实字段</th>
+          <th>取值与说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>名称 / 描述</td>
+          <td>
+            <code>name</code> / <code>description</code>
+          </td>
+          <td>
+            名称最长 30 字、描述最长 200 字（<code>AGENT_NAME_MAX</code> = 30 /{' '}
+            <code>AGENT_DESC_MAX</code> = 200）。
+          </td>
+        </tr>
+        <tr>
+          <td>状态</td>
+          <td>
+            <code>enabled</code>
+          </td>
+          <td>停用后 Agent 不出现在选择器里，也不会被工作流或团队派发。</td>
+        </tr>
+        <tr>
+          <td>默认 Agent</td>
+          <td>
+            <code>isDefault</code>
+          </td>
+          <td>同一时刻只有一个：设为默认时会清掉其他 Agent 的默认标记。</td>
+        </tr>
+        <tr>
+          <td>头像</td>
+          <td>
+            <code>metadata.avatar</code>
+          </td>
+          <td>没有自定义头像时按 id/名称派生默认头像。</td>
+        </tr>
+        <tr>
+          <td>Provider</td>
+          <td>
+            <code>providerProfileId</code>
+          </td>
+          <td>下拉里含「跟随会话」空值：留空表示用会话当前 Provider。</td>
+        </tr>
+        <tr>
+          <td>默认模型</td>
+          <td>
+            <code>modelId</code>
+          </td>
+          <td>可选「Provider 默认」。用的是本地 CLI Provider 时该框只读并显示「跟随本地 CLI」。</td>
+        </tr>
+        <tr>
+          <td>执行器 (SDK)</td>
+          <td>
+            <code>agentAdapter</code>
+          </td>
+          <td>
+            <code>claude-sdk</code>（推荐）/ <code>codex</code> / <code>spark</code>。 新建默认{' '}
+            <code>claude-sdk</code>；切换执行器会把权限模式重置为该执行器的默认值。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      数据存在本地 SQLite 的 <code>agents</code> 表（<code>provider_profile_id</code>、
+      <code>model_id</code>、<code>agent_adapter</code> 等列），平台侧 <code>agents_*</code> MCP
+      工具与编辑页写的是同一份数据。
+    </p>
+
+    <h3 id="fields-model">1.2 权限模式与推理强度</h3>
+    <p>权限模式不是一组通用枚举，而是按执行器分组的：界面只列出当前执行器合法的那几档。</p>
+    <table>
+      <thead>
+        <tr>
+          <th>执行器</th>
+          <th>可选权限模式</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <code>claude-sdk</code>
+          </td>
+          <td>
+            <code>claude-ask</code>（请求批准）、<code>claude-plan</code>（计划模式）、
+            <code>claude-auto</code>（自动审批）、<code>claude-bypass</code>（完全访问）
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>codex</code>
+          </td>
+          <td>
+            <code>codex-default</code>（按需批准，workspace-write）、
+            <code>codex-auto-review</code>（替我批准）、
+            <code>codex-full-access</code>（danger-full-access）
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>spark</code>
+          </td>
+          <td>
+            <code>spark-default</code>（手动审批）、<code>spark-auto</code>（自动审批）、
+            <code>spark-bypass</code>（完全访问）
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      会话工具栏里还有 <code>claude-auto-edits</code>（自动编辑，自动批准文件编辑）；
+      <code>spark-accept-edits</code> 与 <code>spark-plan</code> 是旧版残留值，只对存量会话生效，
+      新配置里不会出现。
     </p>
     <ul>
-      <li><strong>Provider / Model</strong>：默认文本模型。</li>
-      <li><strong>Adapter</strong>：执行内核（Claude Agent SDK / Codex / 自定义）。</li>
-      <li><strong>Permission Mode</strong>：默认 / 接受编辑 / 不接受编辑 / 计划模式。</li>
-      <li><strong>Reasoning Effort</strong>：低 / 中 / 高（决定思考深度）。</li>
-      <li><strong>Agent Prompt</strong>：系统级 prompt（区别于会话 prompt）。</li>
-      <li><strong>Rules</strong>：选中的项目级规则集。</li>
-      <li><strong>Skills</strong>：可启用的技能（builtin / 用户安装）。</li>
-      <li><strong>MCP</strong>：由应用统一启用，所有已启用服务器自动对该 Agent 可用。</li>
-      <li><strong>Hooks</strong>：在权限请求、用户提问、会话结束、失败时的钩子覆盖。</li>
-      <li><strong>Workflow</strong>：可选的工作流绑定（见下文）。</li>
+      <li>
+        <strong>推理强度</strong>：<code>reasoningEffort</code>，六档
+        <code>minimal / low / medium / high / xhigh / max</code>。新建 Agent 的草稿默认
+        <code>medium</code>；直接经平台 MCP 创建时数据库列默认 <code>max</code>。
+      </li>
+      <li>
+        <strong>推理 Token 预算</strong>：<code>metadata.reasoningBudgetTokens</code>， 范围 1024 ~
+        128000，<strong>只对 Claude SDK 的显式 extended thinking 生效</strong>；
+        其他执行器上该输入框禁用，留空表示由 SDK / 模型自行决定。
+      </li>
+      <li>
+        <strong>提示词</strong>：<code>prompt</code>，编辑页里标题是「提示词 / System Prompt」，
+        支持全屏编辑。它注入成 <code>[Agent Instructions]</code> 段，与终端里 Claude Code 的
+        <code>CLAUDE.md</code> 不是一回事。
+      </li>
     </ul>
+
+    <h3 id="fields-capability">1.3 能力面：Skills、Rules、Hook、Workflow</h3>
+    <ul>
+      <li>
+        <strong>Skills</strong>：<code>skillIds</code> + <code>disabledSkillIds</code>。 新建 Agent
+        会预选 <code>builtin:multi-search-engine</code>、<code>builtin:browser-use</code>、
+        <code>builtin:platform-manager</code>、<code>builtin:find-skills</code>；其中
+        <code>builtin:platform-manager</code> 由仓储层强制注入，任何 Agent 都摘不掉。
+      </li>
+      <li>
+        <strong>规则</strong>：<code>ruleIds</code>。这里勾选的规则会与工作流节点上配置的
+        <code>ruleIds</code> 合并进 <code>[Runtime Rules]</code>。
+      </li>
+      <li>
+        <strong>Hook</strong>：编辑页右栏的「Hook」区块展示的是 Hook 定义的绑定与授权状态 （生效中 /
+        待重新授权 / 已停用），可以在这里启用、停用或覆盖本 Agent 的绑定。
+      </li>
+      <li>
+        <strong>工作流</strong>：<code>workflowId</code>，可选。留空时 <code>workflowId</code> 为
+        null， Agent 按普通单 Agent 流程跑。
+      </li>
+    </ul>
+
+    <h3 id="fields-workspace">1.4 工作目录不由 Agent 决定</h3>
     <p>
-      内置默认 <strong>Spark助手</strong>（稳定 ID 为 <code>platform-manager-agent</code>）统一负责
-      平台管理与全栈开发任务，包括 Skills / MCP / Provider / Workflow / Agent / Team /
-      Settings / Session / Board Task 管理，以及代码分析、实现、测试与交付。
-      自定义 Agent 可以聚焦到具体工作，例如「React 审查 Agent」「i18n 重构 Agent」。
+      Agent 配置里<strong>没有</strong>「工作目录」字段。Agent
+      在哪个目录里干活，取决于会话绑定的项目 （<code>workspace</code>）或临时会话目录；这也是同一个
+      Agent 在不同项目里表现不同的原因。
+      「助手」页的「快速对话」会先让你选项目，或直接进入临时会话。
     </p>
 
-    <h2 id="runtime-injection">2. 运行时注入</h2>
+    <h2 id="runtime-injection">2. 会话启动时注入了什么</h2>
     <p>
-      当会话启动时，Spark Work 会按以下顺序构造系统 prompt：
+      一次 turn
+      的系统提示词由多个独立段拼成，下面按实际拼装顺序列出主要段落（不适用于当前会话的段会整段跳过）：
     </p>
     <ol>
-      <li><strong>[Runtime Rules]</strong>：激活的系统/项目规则 + 项目指令文件 + Agent 规则 + Workflow 节点规则。</li>
-      <li><strong>[Workflow Execution Plan]</strong>：如果 Agent 绑定了 Workflow，按拓扑顺序展示节点配置。</li>
-      <li><strong>Agent Prompt</strong>：用户配置的 system prompt。</li>
-      <li><strong>[Platform Tools]</strong>：注入 <code>spark_platform</code> MCP 的工具描述（管理员可见）。</li>
+      <li>应用基础提示词、工具使用指引。</li>
+      <li>
+        <strong>[Managed Agent]</strong>：Agent 名称与 id、描述、你的 <code>prompt</code>
+        （写为 <code>[Agent Instructions]</code>）。
+      </li>
+      <li>
+        <strong>[Workflow Execution Plan]</strong>：仅当该 Agent（或会话覆盖）绑定了工作流时注入，
+        这是 [Managed Agent] 段内的一部分；节点按拓扑顺序列出，并附边与条件。
+      </li>
+      <li>
+        团队相关段：[Orchestration Mode]、[Team Roster]、[Team Instructions]（见团队模式一篇）。
+      </li>
+      <li>工作区与 worktree 状态提示。</li>
+      <li>
+        <strong>[Runtime Rules]</strong>：应用里启用中的 Rules（按 <code>scope_ref</code>{' '}
+        匹配当前项目） + Agent 的 <code>ruleIds</code> + 工作流节点上的 <code>ruleIds</code>
+        ，按优先级排序、 去重后编号列出。
+      </li>
+      <li>
+        项目上下文：项目里的 <code>AGENTS.md</code>、<code>CLAUDE.md</code> 等规则文件， 按 token
+        预算裁剪后注入。项目级 Skill 走独立的 skill system prompt 通道，不在这一串段落里。
+      </li>
+      <li>长期记忆摘要与记忆行为引导。</li>
+      <li>
+        对话历史之后还有一个 <strong>[Current Workflow Binding — Authoritative]</strong> 段：
+        声明本轮唯一生效的工作流身份，覆盖提示词或历史里出现的其他工作流名称。
+      </li>
     </ol>
     <p>
-      Agent 级别选中的 Skill 会进入运行时「技能目录」；应用中所有「已启用」的 MCP 都会传给 SDK，
-      不需要再为 Agent 单独维护 Allow-list。
+      另外，工作流有三种执行强度，由「执行器 + 是否有可执行节点」决定：
+      <code>workflow_run</code>（Claude SDK 且存在可派发节点，运行时真实驱动图）、
+      <code>codex_guided</code>（Codex / Spark 路径，不给 <code>workflow_run</code> 工具，
+      由模型按拓扑顺序自己推进）、<code>guided</code>（没有托管执行器或这是 @ 提及轮）。
+      界面上的文案分别是「托管执行」「引导执行」「不执行」。
     </p>
 
-    <h2 id="workflow-graphs">3. Workflow Graphs</h2>
+    <h2 id="mcp-auto">3. MCP 与工具怎么挂载</h2>
     <p>
-      Workflow 是节点（Nodes） + 边（Edges）的有向图，存为 <code>workflows.graph_json</code>。你可以把它当作
-      「给 Agent 看的流程图」：节点代表阶段，连线代表顺序，节点配置决定这一阶段使用哪个 Agent、模型、工具或 Skill；MCP 保持全局可用。
+      Agent 的 <code>mcpServerIds</code> 是<strong>兼容字段，运行时忽略</strong>。 平台 MCP 的{' '}
+      <code>agents_create</code> / <code>agents_update</code> 工具参数里，
+      它的描述原文就是「兼容字段，运行时忽略；所有已启用 MCP 会自动对 Agent 可用」。 编辑页的「MCP
+      服务」区块也只列出当前已启用的服务器并写明「所有已启用的 MCP 对该 Agent 自动可用，
+      无需单独绑定」。
     </p>
-    <pre>
-{`{
-  "nodes": [
-    { "id": "n1", "kind": "plan",   "title": "需求拆解", "position": {"x": 0, "y": 0}, "config": {} },
-    { "id": "n2", "kind": "code",   "title": "编码",     "position": {"x": 0, "y": 1}, "config": {"providerId": "..."} },
-    { "id": "n3", "kind": "review", "title": "审查",     "position": {"x": 0, "y": 2}, "config": {} }
-  ],
-  "edges": [
-    { "from": "n1", "to": "n2" },
-    { "from": "n2", "to": "n3" }
-  ]
-}`}
-    </pre>
-    <p>节点支持 11 种 <code>kind</code>：</p>
+    <p>实际规则：</p>
     <ul>
-      <li><strong>input</strong>：整理用户需求、目标、约束和交付物。</li>
-      <li><strong>plan</strong>：只读规划，先想清楚再执行。</li>
-      <li><strong>agent</strong>：派发给一个已配置 Agent，适合真实执行代码、文档或内容任务。</li>
-      <li><strong>subagent</strong>：创建临时子 Agent 处理局部任务。</li>
-      <li><strong>skill</strong>：把某一步限制到指定 Skill 能力。</li>
-      <li><strong>tool</strong>：把某一步限制到指定内置工具，如 Read / Edit / Bash。</li>
-      <li><strong>mcp</strong>：明确某一步要调用外部能力；可使用应用中所有已启用 MCP。</li>
-      <li><strong>approval</strong>：暂停等待用户确认。</li>
-      <li><strong>verify</strong>：运行验证命令。</li>
-      <li><strong>review</strong>：只读复核结果与风险。</li>
-      <li><strong>artifact</strong>：整理最终交付物，可导出文件。</li>
+      <li>
+        会话、团队成员、<code>agent/subagent/skill/tool/mcp</code> 节点的 MCP 服务器集合都来自
+        「应用级已启用 MCP」这一处开关。
+      </li>
+      <li>
+        <strong>唯一例外是只读原子节点</strong>：
+        <code>input / route / plan / review / artifact</code>
+        运行时从空能力集起步，<strong>不挂任何 MCP</strong>，也不注入项目级 Skill 提示词——
+        它们只负责解析、计划与复核，不接触外部系统。
+      </li>
+      <li>
+        想缩小能力面，不要去找 Agent 白名单，而是到 MCP 管理页停用服务；在工作流节点上用
+        <code>toolIds</code> 收窄内置工具（见工作流编排一篇）。
+      </li>
+      <li>
+        工作流节点上残留的 <code>config.mcpServerIds</code> 字段旧数据仍会被读取成「该 worker 的 MCP
+        选择」， 但编辑器已经不提供这个入口，新图不要再依赖它。
+      </li>
+      <li>
+        Agent 选中的 Skill 会进入运行时技能目录，模型按需加载；Skill 与 MCP 是两套独立能力来源。
+      </li>
     </ul>
-    <p>
-      节点配置支持 Provider / Model 偏好、Agent ID、Skill ID、Rule ID、内置工具 ID、
-      重试次数、执行模式和导出路径。旧版 MCP ID 字段仅保留兼容，不再限制运行时能力。未配置 <code>toolIds</code> 表示不额外限制；一旦配置，
-      运行时会把未选择工具放入禁用列表。
-    </p>
-    <p>
-      在 Claude SDK 路径上，含可执行节点的工作流会暴露 <code>workflow_run</code>，
-      由运行时真实驱动图执行、派发 Agent / Subagent、执行 input / approval / verify 等原子节点，并保存
-      <code>workflow_runs</code> 快照用于恢复和审计。在 Codex 路径上，工作流保持为结构化执行计划。
-    </p>
 
-    <h2 id="workflow-ui">4. Workflow 视图</h2>
+    <h2 id="hooks">4. Hook：生命周期事件与经典通知</h2>
     <p>
-      Workflow 视图拆成两层：
+      Hook 现在是宿主确定性调度的「观察型」机制：事件发生了才执行动作，不改变已经发生的结果。
+      配置入口有两处：<strong>设置 → Hooks</strong>（定义、绑定、运行记录），以及
+      <strong>Agent 编辑页 → Hook</strong>（该 Agent 的绑定与授权状态）。
     </p>
+    <table>
+      <thead>
+        <tr>
+          <th>事件名</th>
+          <th>界面文案</th>
+          <th>触发时机</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <code>turn.started</code>
+          </td>
+          <td>Turn 开始</td>
+          <td>Turn 已建立、准备进入执行管线</td>
+        </tr>
+        <tr>
+          <td>
+            <code>permission.requested</code>
+          </td>
+          <td>权限请求</td>
+          <td>权限请求进入等待审批</td>
+        </tr>
+        <tr>
+          <td>
+            <code>question.requested</code>
+          </td>
+          <td>Agent 提问</td>
+          <td>Agent 提问进入等待用户输入</td>
+        </tr>
+        <tr>
+          <td>
+            <code>response.committed</code>
+          </td>
+          <td>回答已提交</td>
+          <td>最终回答成功落库、正文确定</td>
+        </tr>
+        <tr>
+          <td>
+            <code>turn.completed</code>
+          </td>
+          <td>Turn 完成</td>
+          <td>Turn 成功终态已持久化</td>
+        </tr>
+        <tr>
+          <td>
+            <code>turn.failed</code>
+          </td>
+          <td>Turn 失败</td>
+          <td>Turn 进入不可恢复失败终态</td>
+        </tr>
+        <tr>
+          <td>
+            <code>turn.cancelled</code>
+          </td>
+          <td>Turn 已取消</td>
+          <td>用户或系统明确取消 Turn</td>
+        </tr>
+      </tbody>
+    </table>
     <ul>
-      <li><strong>卡片列表</strong>：创建 / 刷新 / 选择 Workflow。</li>
-      <li><strong>编排详情</strong>：单个 Workflow 的图编辑器（节点面板 + 画布 + Inspector）。</li>
+      <li>
+        <strong>动作</strong>：<code>builtin.notification</code>（系统通知）、
+        <code>builtin.sound</code>（提示音）、
+        <code>tool.invoke</code>（调用连接器 / 自定义工具 / 工具包里的某个工具）。
+      </li>
+      <li>
+        <strong>条件与取值</strong>：支持 <code>eq / notEq / exists / contains / startsWith</code>与{' '}
+        <code>and / or / not</code> 组合；取值表达式只有常量、事件路径、模板字符串三种，
+        不会执行用户脚本。
+      </li>
+      <li>
+        <strong>执行策略</strong>：超时默认 15 秒；重试策略 <code>mode</code> 为
+        <code>safe / keyed / unsafe</code>（默认 <code>unsafe</code>）、默认最多 3 次、退避基数
+        1000ms； 并发策略 <code>serial_per_session</code> 或 <code>parallel</code>。
+      </li>
+      <li>
+        <strong>绑定与授权</strong>：作用域分 <code>application / workspace / agent / session</code>{' '}
+        四级， 绑定必须带授权（<code>authorizeExecutionHash</code>）才会执行；定义改动后哈希不一致，
+        绑定会退回「待重新授权」。
+      </li>
+      <li>
+        <strong>经典通知</strong>：设置 → Hooks 页底部还保留旧的 sound/notification 配置 （节点为{' '}
+        <code>permission_request / ask_user_question / session_end / session_fail</code>）， 它与 V2
+        并联但不会双发；<code>permission_request</code> 这条仍走旧路径。 Agent 表里的{' '}
+        <code>hook_config</code> 列就是这份旧配置。
+      </li>
     </ul>
-    <p>
-      把「选 Workflow」和「编辑 Workflow」分离，保证画布有足够空间。
-    </p>
 
-    <h2 id="hooks">5. Hooks</h2>
+    <h2 id="platform-tools">5. spark_platform：Agent 能管理平台自己</h2>
     <p>
-      Hooks 让你在「工具调用 / 权限请求 / 用户提问 / 会话结束 / 失败」等节点插入自定义逻辑：
-    </p>
-    <ul>
-      <li><strong>permission-request</strong>：拦截高风险操作前提示。</li>
-      <li><strong>user-question</strong>：自动补全或校验用户问题。</li>
-      <li><strong>session-complete</strong>：会话结束时跑总结 / 归档。</li>
-      <li><strong>failure</strong>：失败时跑兜底逻辑（重试 / 报警）。</li>
-    </ul>
-    <p>
-      Agent 级 Hook 优先级高于全局 Hook；未配置时回退到全局设置。
-    </p>
-
-    <h2 id="platform-tools">6. Platform 管理工具</h2>
-    <p>
-      每个会话都内置 <code>spark_platform</code> MCP，命名空间 <code>mcp__spark_platform__*</code>：
+      每个会话都挂载内置 MCP <code>spark_platform</code>，工具全名为
+      <code>mcp__spark_platform__&lt;tool&gt;</code>。按工具族划分：
     </p>
     <table>
       <thead>
@@ -127,28 +363,159 @@ const Body = () => (
         </tr>
       </thead>
       <tbody>
-        <tr><td>skills_*</td><td>list / load / search / install / GitHub install / uninstall / toggle</td></tr>
-        <tr><td>mcp_servers_*</td><td>list / create / update / delete / status</td></tr>
-        <tr><td>providers_*</td><td>list / get / create / update / delete / health-check / set-default / set-default-model</td></tr>
-        <tr><td>workflows_*</td><td>list / get / create / update / delete</td></tr>
-        <tr><td>agents_*</td><td>list / get / create / update / delete</td></tr>
-        <tr><td>teams_*</td><td>list / get / create / update / delete</td></tr>
-        <tr><td>settings_*</td><td>get / set / category get / get-all</td></tr>
-        <tr><td>sessions_*</td><td>get / switch-model-provider-mode-permission-reasoning</td></tr>
-        <tr><td>board_tasks_*</td><td>list / get / create / update / delete / batch / restore / permanent-delete</td></tr>
+        <tr>
+          <td>
+            <code>skills_*</code>
+          </td>
+          <td>
+            list / load / search / search_github / install / install_github / uninstall / toggle
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>mcp_*</code>
+          </td>
+          <td>list / create / update / delete / status</td>
+        </tr>
+        <tr>
+          <td>
+            <code>custom_tools_*</code>
+          </td>
+          <td>
+            guide / list / get / validate / create_draft / save_draft / test / publish / set_enabled
+            / rollback / delete
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>tool_packages_*</code>
+          </td>
+          <td>
+            guide / list / get / inspect / create_project / install_* / set_permission / test /
+            uninstall 等
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>providers_*</code>
+          </td>
+          <td>
+            list / get / create / update / delete / health_check / set_default /
+            set_default_model，另有 providers_media_* 渠道校验与诊断
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>workflows_*</code>
+          </td>
+          <td>list / get / create / update / delete</td>
+        </tr>
+        <tr>
+          <td>
+            <code>agents_*</code>
+          </td>
+          <td>list / get / create / update / delete</td>
+        </tr>
+        <tr>
+          <td>
+            <code>teams_*</code>
+          </td>
+          <td>list / get / create / update / delete</td>
+        </tr>
+        <tr>
+          <td>
+            <code>board_*</code>
+          </td>
+          <td>
+            list / get / create / update / delete / batch_create / batch_update / batch_delete /
+            restore / permanent_delete
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>settings_*</code>
+          </td>
+          <td>get / set / get_category / get_all</td>
+        </tr>
+        <tr>
+          <td>
+            <code>sessions_*</code>
+          </td>
+          <td>
+            get / switch_model / switch_provider / switch_mode / switch_permission /
+            switch_reasoning_effort
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>session_schedule_*</code>
+          </td>
+          <td>list / get / create / update / delete（仅当前会话）</td>
+        </tr>
+        <tr>
+          <td>
+            <code>session_history_*</code>
+          </td>
+          <td>list / read / search（本会话压缩前的完整历史）</td>
+        </tr>
+        <tr>
+          <td>
+            <code>referenced_sessions_list</code> / <code>referenced_session_*</code>
+          </td>
+          <td>列出并读取已授权的参考会话</td>
+        </tr>
+        <tr>
+          <td>
+            <code>artifacts_*</code>
+          </td>
+          <td>list / resolve（自建安装源里的运行时与依赖包）</td>
+        </tr>
+        <tr>
+          <td>
+            <code>github_*</code>
+          </td>
+          <td>status / 仓库读取 / 建分支 / 写文件 / Issue 与 PR 读写</td>
+        </tr>
+        <tr>
+          <td>
+            <code>codex_runtime_*</code>
+          </td>
+          <td>diagnostics / restart_idle</td>
+        </tr>
       </tbody>
     </table>
     <p>
-      Team CRUD 通过 <code>teams_*</code> 暴露，长期定义存在 <code>agent_teams</code> 表；
-      调用前用 <code>agents_list</code> 解析 host / member ID。
+      长期团队定义存在 <code>agent_teams</code> 表，用 <code>teams_*</code> 增删改查；创建团队前先用
+      <code>agents_list</code> 拿到 host / member 的真实 agent id。
     </p>
 
-    <h2 id="common-mistakes">7. 常见踩坑</h2>
+    <h2 id="common-mistakes">6. 常见坑</h2>
     <ul>
-      <li><strong>把所有节点都当成可写节点</strong>：<code>plan</code> / <code>input</code> / <code>review</code> 默认只读，代码修改应放在 <code>agent</code> / <code>subagent</code> / <code>tool</code> 节点。</li>
-      <li><strong>配置了 toolIds 却漏选编辑工具</strong>：一旦配置 toolIds，未选择工具会被禁用。要改代码请包含 Edit / MultiEdit / Write；要跑命令请包含 Bash 或使用 verify 节点。</li>
-      <li><strong>Hook 与 Rule 混用</strong>：Rule 是「注入 prompt 的策略」，Hook 是「事件回调」；二者不要重叠。</li>
-      <li><strong>Agent Prompt 写得太长</strong>：把通用部分下沉到 Rule，把与项目相关的内容放进 Prompt。</li>
+      <li>
+        <strong>以为 Agent 能限制 MCP</strong>：<code>mcpServerIds</code> 是兼容字段，填了也不生效。
+        要收窄就停用 MCP 服务，或改用工作流节点的工具白名单。
+      </li>
+      <li>
+        <strong>权限模式写错执行器</strong>：<code>claude-*</code>、<code>codex-*</code>、
+        <code>spark-*</code> 三组互不通用。切执行器后表单会重置权限模式，但通过
+        <code>agents_update</code> 直接写值时不会自动纠正。
+      </li>
+      <li>
+        <strong>
+          把 <code>spark-plan</code> / <code>spark-accept-edits</code> 当成现行枚举
+        </strong>
+        ： 它们是旧值，只在存量会话里被识别。
+      </li>
+      <li>
+        <strong>把推理 Token 预算配给非 Claude SDK 的 Agent</strong>：不生效。
+      </li>
+      <li>
+        <strong>在 Agent 里找「工作目录」</strong>：没有这个字段，目录来自会话绑定的项目。
+      </li>
+      <li>
+        <strong>把 Hook 当成 Rule 用</strong>：Rule 是注入提示词的策略，Hook 是事件回调， 观察型
+        Hook 无法改变已经发生的结果。
+      </li>
     </ul>
   </>
 )
@@ -156,60 +523,89 @@ const Body = () => (
 export const agentsWorkflows: DocsPageContent = {
   slug: 'agents-workflows',
   toc: [
-    { id: 'agent-profile', title: '1. Agent Profile', level: 2 },
-    { id: 'runtime-injection', title: '2. 运行时注入', level: 2 },
-    { id: 'workflow-graphs', title: '3. Workflow Graphs', level: 2 },
-    { id: 'workflow-ui', title: '4. Workflow 视图', level: 2 },
-    { id: 'hooks', title: '5. Hooks', level: 2 },
-    { id: 'platform-tools', title: '6. Platform 管理工具', level: 2 },
-    { id: 'common-mistakes', title: '7. 常见踩坑', level: 2 },
+    { id: 'agent-fields', title: '1. Agent 的真实字段', level: 2 },
+    { id: 'fields-core', title: '1.1 基本信息与执行器', level: 3 },
+    { id: 'fields-model', title: '1.2 权限与推理强度', level: 3 },
+    { id: 'fields-capability', title: '1.3 能力面与工作流绑定', level: 3 },
+    { id: 'fields-workspace', title: '1.4 工作目录从哪来', level: 3 },
+    { id: 'runtime-injection', title: '2. 会话启动时注入了什么', level: 2 },
+    { id: 'mcp-auto', title: '3. MCP 与工具怎么挂载', level: 2 },
+    { id: 'hooks', title: '4. Hook：生命周期事件与经典通知', level: 2 },
+    { id: 'platform-tools', title: '5. spark_platform 管理工具', level: 2 },
+    { id: 'common-mistakes', title: '6. 常见坑', level: 2 },
   ],
   faq: [
     {
-      question: 'Agent 和会话（Session）有什么区别？',
+      question: 'Agent 和会话（Session）是什么关系？',
       answer:
-        'Agent 是「会用工具的角色」模板；Session 是「一次具体的对话」。一个 Agent 可以被多个 Session 复用。',
+        'Agent 是配置模板（模型、执行器、权限、Skills、Rules、Hook、工作流绑定），会话是一次具体的对话。一个 Agent 可以被多个会话复用；工作目录、团队配置这类运行期状态挂在会话上，不在 Agent 上。',
     },
     {
-      question: 'Workflow 是必填的吗？',
-      answer: '不是。没有 Workflow 的 Agent 会按常规单 Agent 模式运行，注入 [Runtime Rules] 与 [Platform Tools]。',
+      question: '我改了全局 MCP，为什么所有 Agent 都变了？',
+      answer:
+        '因为 Agent 的 mcpServerIds 是兼容字段、运行时忽略。所有已启用的 MCP 会自动挂载到会话、团队成员和工作流节点，停用一个 MCP 服务是全局生效的；要按节点收窄能力，用工作流节点的 toolIds。',
     },
     {
-      question: '可以把多个 Workflow 嵌套吗？',
-      answer: '不支持嵌套。Workflow 是一个有向图，子任务用「节点」表达，不在节点里再嵌图。',
+      question: 'Agent 里能单独给我配的模型设权限模式吗？',
+      answer:
+        '权限模式是 Agent 级字段（permissionMode），按执行器分组：claude-sdk 有 claude-ask/claude-plan/claude-auto/claude-bypass，codex 有 codex-default/codex-auto-review/codex-full-access，spark 有 spark-default/spark-auto/spark-bypass。切执行器时表单会自动把权限模式重置为对应默认值。',
     },
     {
-      question: 'Hook 写在哪里？',
-      answer: 'Hook 配置存在 App Settings 的 hooks 分类，按事件类型分项。Agent 级别覆盖存在 Agent 的 metadata.hooks。',
+      question: 'Workflow 是必填的吗？绑定后会怎样？',
+      answer:
+        '不是必填。workflowId 留空时 Agent 按普通流程跑。绑定后系统提示词里会多出 [Workflow Execution Plan]，并且 Claude SDK 路径在有可派发节点时会变成「托管执行」，由 workflow_run 真实驱动整张图。',
+    },
+    {
+      question: 'Hook 写在哪里？和 Rule 有什么区别？',
+      answer:
+        'Hook 定义在「设置 → Hooks」创建，再绑定到 application/workspace/agent/session 作用域并授权；Agent 编辑页的 Hook 区块管的是本 Agent 的绑定状态。Rule 是注入提示词的策略，Hook 是事件发生后的动作（通知、提示音、调用工具），两者不要互相替代。',
+    },
+    {
+      question: '为什么 Agent 的推理强度设置了却没感觉？',
+      answer:
+        '先确认执行器。推理强度对三种执行器都生效，但「推理 Token 预算」（reasoningBudgetTokens）只对 Claude SDK 的显式 extended thinking 有效，其他执行器上输入框是禁用的。',
     },
   ],
   quickReference: [
-    { key: '默认 Agent', value: 'Spark助手（platform-manager-agent）' },
-    { key: '运行时 prompt 段', value: '[Runtime Rules] / [Workflow Execution Plan] / [Platform Tools]' },
-    { key: 'Workflow 存储', value: 'workflows.graph_json + workflow_runs 快照' },
-    { key: '平台 MCP', value: 'spark_platform（命名空间 mcp__spark_platform__*）' },
-    { key: '执行内核', value: 'Claude Agent SDK / Codex / 自定义' },
-    { key: '权限模式', value: 'default / accept-edits / plan / dont-ask' },
+    { key: '默认 Agent', value: 'Spark助手（platform-manager-agent，内置、不可删除）' },
+    { key: '编辑入口', value: '左侧「助手」→ Agents 标签' },
+    { key: '执行器', value: 'claude-sdk / codex / spark（默认 claude-sdk）' },
+    {
+      key: '权限模式',
+      value: 'claude 四档 / codex 三档 / spark 三档（按执行器分组）',
+    },
+    { key: '推理强度', value: 'minimal / low / medium / high / xhigh / max' },
+    { key: 'MCP', value: 'mcpServerIds 为兼容字段被忽略；应用级已启用 MCP 全局自动挂载' },
+    {
+      key: 'Hook 事件',
+      value:
+        'turn.started / permission.requested / question.requested / response.committed / turn.completed / turn.failed / turn.cancelled',
+    },
+    { key: '平台 MCP', value: 'spark_platform（mcp__spark_platform__*）' },
+    { key: '工作目录', value: '不在 Agent 上，来自会话绑定的项目或临时会话目录' },
   ],
   howTo: {
-    name: '用 Spark Work 创建并使用自定义 Agent',
-    description: '在「设置 → Agents」创建一个绑定特定模型和 Skills 的 Agent；已启用 MCP 自动可用',
+    name: '创建一个能跑真实任务的专属 Agent',
+    description: '在「助手 → Agents」里配置模型、权限、技能与工作流绑定',
     totalTime: 'PT5M',
     steps: [
-      '打开「设置 → Agents」，点「新建 Agent」',
-      '填入名称、描述、Agent Prompt',
-      '选择默认 Provider / Model 与 Adapter',
-      '在 Skills / Rules 标签里选择允许使用的资源；MCP 由应用统一启用',
-      '设置 Hooks（可选）与权限模式',
-      '保存后在新会话的 Agent 选择器里即可使用',
+      '打开左侧「助手」，切到 Agents 标签，点「新建 Agent」',
+      '填名称与描述，设好状态与「默认 Agent」开关',
+      '在「执行配置」里选 Provider 与默认模型；默认模型可留空表示用 Provider 默认',
+      '选「执行器 (SDK)」：Claude SDK / Codex / Spark；选完权限模式会自动重置为该执行器的默认档',
+      '按需调整权限、推理强度；只有 Claude SDK 需要时再填推理 Token 预算（1024~128000）',
+      '在右栏「Skills / 规则」里勾选能力与约束；MCP 不需要在这里绑定',
+      '可选：在「工作流」下拉里绑定一个工作流，让这个 Agent 走托管执行',
+      '可选：在「Hook」区块启用或覆盖该 Agent 的 Hook 绑定',
+      '保存后回到会话，在输入栏的 Agent 选择器里就能选到它',
     ],
   },
   aiSummary:
-    'Spark Work 工作流核心机制：默认 Spark助手统一承担平台管理与全栈开发；Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
-    '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, 11 种节点 input/plan/agent/subagent/skill/tool/mcp/approval/verify/review/artifact)、' +
-    'Workflow 视图（卡片列表 + 图编辑器）、Hooks（permission-request/user-question/session-complete/failure）、' +
-    'Platform 管理 MCP（mcp__spark_platform__*: skills/mcp_servers/providers/workflows/agents/teams/settings/sessions/board_tasks）、' +
-    'Agent 与 Session 的区别、常见踩坑（Workflow 不嵌套、Hook 与 Rule 不重叠）。',
+    'Spark Work 的 Agent 是一份可复用配置：agents 表里的 provider_profile_id / model_id / agent_adapter / permission_mode / reasoning_effort / prompt / skill_ids / disabled_skill_ids / rule_ids / hook_config / workflow_id / metadata，编辑入口是左侧「助手」的 Agents 标签。' +
+    '执行器有 claude-sdk、codex、spark 三种，权限模式按执行器分组（claude-ask/claude-plan/claude-auto/claude-bypass、codex-default/codex-auto-review/codex-full-access、spark-default/spark-auto/spark-bypass），推理强度为 minimal/low/medium/high/xhigh/max 六档，推理 Token 预算 1024~128000 仅 Claude SDK 有效。' +
+    'Agent 的 mcpServerIds 是兼容字段、运行时忽略：所有已启用的 MCP 自动挂载到会话、团队成员和工作流节点，要收窄能力请停用 MCP 服务或使用工作流节点的 toolIds。' +
+    '系统提示词按 [Managed Agent]（含 prompt 与 [Workflow Execution Plan]）、团队段、[Runtime Rules]、项目上下文（AGENTS.md/CLAUDE.md）、记忆、[Current Workflow Binding — Authoritative] 的顺序拼装；工作流执行强度分 workflow_run（托管执行）、codex_guided（引导执行）与 guided。' +
+    'Hook 是宿主确定性调度的观察型机制，事件为 turn.started / permission.requested / question.requested / response.committed / turn.completed / turn.failed / turn.cancelled，动作支持系统通知、提示音与调用工具，作用域分 application/workspace/agent/session；设置 → Hooks 页底部仍保留旧的 sound/notification 经典通知。',
   Body,
 }
 

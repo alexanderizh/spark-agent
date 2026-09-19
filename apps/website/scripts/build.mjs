@@ -44,6 +44,7 @@ async function main() {
         await writeFile(outputPath, injectPage(template, renderedPages[route.path]), 'utf8')
       }),
     )
+    await run(process.execPath, ['scripts/check-docs.mjs'])
     await run(process.execPath, ['scripts/check-geo.mjs'])
   } finally {
     await rm(prerenderDir, { recursive: true, force: true })

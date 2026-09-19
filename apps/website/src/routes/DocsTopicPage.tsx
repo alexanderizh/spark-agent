@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { Link } from '../components/Link'
 import { Section } from '../components/Section'
 import { Seo } from '../components/Seo'
-import { DocsBreadcrumbs, DocsSidebar } from '../components/DocsSidebar'
+import { DocsBreadcrumbs } from '../components/DocsSidebar'
+import { DocsShell } from '../components/DocsShell'
 import { findDocsTopic, relatedDocsTopics } from '../content/docs'
 import { getDocsPageContent } from '../content/docs-page-registry'
 import { OPEN_SOURCE_ENABLED } from '../lib/links'
@@ -30,38 +31,47 @@ interface DocsTopicBodyProps {
 }
 
 function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
-  // 加载完正文后锚点跳转（如从其它页带 #hash 进来）
+  /**
+   * 锚点跳转。
+   * 既要处理「带 #hash 进入本页」（slug 变化 / 首次挂载），
+   * 也要处理「已在本页时点击本页目录或搜索结果里的 #hash」——
+   * 后者只会触发 hashchange，不会重新挂载组件。
+   */
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const hash = window.location.hash.replace(/^#/, '')
-    if (!hash) return
-    // 给锚点渲染一点时间（动态 Body 已挂载）
-    const t = window.setTimeout(() => {
-      const el = document.getElementById(hash)
-      if (el) {
-        el.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' })
-      }
-    }, 60)
-    return () => window.clearTimeout(t)
+    const jump = () => {
+      const hash = window.location.hash.replace(/^#/, '')
+      if (!hash) return
+      const timer = window.setTimeout(() => {
+        document.getElementById(hash)?.scrollIntoView({ block: 'start' })
+      }, 60)
+      return () => window.clearTimeout(timer)
+    }
+    const cleanup = jump()
+    window.addEventListener('hashchange', jump)
+    return () => {
+      cleanup?.()
+      window.removeEventListener('hashchange', jump)
+    }
   }, [slug])
 
   const Body = content.Body
   const related = relatedDocsTopics(slug)
 
   return (
-    <article className="docs-topic">
-      <header className="docs-topic-header">
-        <DocsBreadcrumbs active={findDocsTopic(slug)} />
-        <h1>{findDocsTopic(slug)?.title ?? content.slug}</h1>
-        <p className="docs-topic-intro">{findDocsTopic(slug)?.description}</p>
-        <div className="docs-topic-meta">
-          <span>阅读约 {findDocsTopic(slug)?.readTime ?? 5} 分钟</span>
-          <span aria-hidden="true">·</span>
-          <span>最后核对 {findDocsTopic(slug)?.updatedAt}</span>
-        </div>
-      </header>
+    <DocsShell activeSlug={slug} toc={content.toc}>
+      <article className="docs-topic">
+        <header className="docs-topic-header">
+          <DocsBreadcrumbs active={findDocsTopic(slug)} />
+          <h1>{findDocsTopic(slug)?.title ?? content.slug}</h1>
+          <p className="docs-topic-intro">{findDocsTopic(slug)?.description}</p>
+          <div className="docs-topic-meta">
+            <span>阅读约 {findDocsTopic(slug)?.readTime ?? 5} 分钟</span>
+            <span aria-hidden="true">·</span>
+            <span>最后核对 {findDocsTopic(slug)?.updatedAt}</span>
+          </div>
+        </header>
 
-      <div className="docs-topic-grid">
         <div className="docs-topic-main">
           <div className="docs-topic-body">
             <Body />
@@ -124,22 +134,8 @@ function DocsTopicBody({ content, slug }: DocsTopicBodyProps) {
             ) : null}
           </nav>
         </div>
-
-        <aside className="docs-topic-aside">
-          <div className="docs-topic-toc" aria-label="本页目录">
-            <p className="docs-toc-heading">本页目录</p>
-            <ul>
-              {content.toc.map((item) => (
-                <li key={item.id} className={`docs-toc-level-${item.level}`}>
-                  <a href={`#${item.id}`}>{item.title}</a>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <DocsSidebar activeSlug={slug} variant="inline" />
-        </aside>
-      </div>
-    </article>
+      </article>
+    </DocsShell>
   )
 }
 

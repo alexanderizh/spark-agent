@@ -3,7 +3,9 @@ import {
   AppWindow,
   Boxes,
   Cable,
+  Database,
   FileText,
+  KeyRound,
   Globe,
   ImageIcon,
   LayoutGrid,
@@ -14,6 +16,8 @@ import {
   Sparkles,
   TerminalSquare,
   Users,
+  Webhook,
+  Terminal,
   type LucideIcon,
 } from 'lucide-react'
 import { DocsSearch } from '../components/DocsSearch'
@@ -44,6 +48,10 @@ const ICONS: Record<DocsTopicMeta['icon'], LucideIcon> = {
   AppWindow,
   Boxes,
   ShieldCheck,
+  KeyRound,
+  Database,
+  Webhook,
+  Terminal,
 }
 
 const LEVEL_LABEL: Record<DocsTopicMeta['level'], string> = {
