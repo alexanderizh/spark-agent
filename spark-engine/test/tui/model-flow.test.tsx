@@ -65,6 +65,7 @@ describe('ModelPicker', () => {
       <ModelPicker
         catalog={{
           entries,
+          platformConnected: false,
           sparkWorkConnected: true,
           sparkWorkStaleBridgeDescriptors: 0,
         }}
@@ -438,6 +439,7 @@ function fakeCatalog(): ConfiguredModelCatalog {
         selected: false,
       },
     ],
+    platformConnected: false,
     sparkWorkConnected: true,
     sparkWorkStaleBridgeDescriptors: 0,
   }

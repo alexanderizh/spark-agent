@@ -19,6 +19,8 @@ import {
   PlatformAuthExpiredError,
 } from '../platform/edu-server-client.js'
 import { PlatformLoginError, runPlatformLogin } from '../platform/login-flow.js'
+import { bootstrapPlatformModels, type PlatformModelsStatus } from '../platform/models.js'
+import { PlatformModelStore } from '../platform/model-store.js'
 
 /**
  * `spark login | logout | whoami` — the CLI's own Spark account session.
@@ -69,7 +71,7 @@ export async function executeAuthCommand(options: AuthCommandOptions): Promise<n
 }
 
 async function login(options: AuthCommandOptions): Promise<number> {
-  const { store, platform, serverUrl } = await openStore(options)
+  const { store, platform, serverUrl, settings } = await openStore(options)
   const logger = createRuntimeLogger('platform')
 
   let existing: StoredPlatformCredentials | null = null
@@ -128,6 +130,23 @@ async function login(options: AuthCommandOptions): Promise<number> {
     ...(account === undefined ? {} : { account }),
   })
 
+  // Bind platform models right away so the fresh session can select a model
+  // without extra steps. Any bootstrap failure never invalidates the login.
+  let platformModels: PlatformModelsStatus | undefined
+  let platformModelsError: string | undefined
+  try {
+    platformModels = await bootstrapPlatformModels({
+      sparkHome: settings.paths.sparkHome,
+      serverUrl,
+      session: result.session,
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      logger,
+    })
+  } catch (error) {
+    platformModelsError = formatError(error)
+    options.stderr(`Warning: platform models are not bound: ${platformModelsError}\n`)
+  }
+
   if (options.json) {
     options.stdout(
       `${JSON.stringify(
@@ -139,6 +158,7 @@ async function login(options: AuthCommandOptions): Promise<number> {
           openedInBrowser: result.opened,
           credentialPath: store.path,
           account: account ?? null,
+          platformModels: platformModels ?? (platformModelsError ? null : undefined),
         },
         null,
         2,
@@ -149,12 +169,27 @@ async function login(options: AuthCommandOptions): Promise<number> {
   options.stdout(`${accountLine(account, result.session.userId)}\n`)
   options.stdout(`Signed in to ${serverUrl}\n`)
   options.stdout(`Credentials saved to ${store.path}\n`)
+  if (platformModels?.providerReady === true) {
+    options.stdout(
+      `Platform models bound (${platformModels.models.length} available) via ${platformModels.baseUrl}\n`,
+    )
+  } else if (platformModels?.sessionConflict === true) {
+    options.stderr(`${platformModels.message}\n`)
+  }
   return 0
 }
 
 async function logout(options: AuthCommandOptions): Promise<number> {
-  const { store } = await openStore(options)
+  const { store, settings } = await openStore(options)
   const cleared = await store.clear()
+  // The platform-model binding belongs to the signed-in account; keeping it
+  // would let a later unrelated user silently reuse this machine's gateway.
+  await new PlatformModelStore({
+    sparkHome: settings.paths.sparkHome,
+    logger: createRuntimeLogger('platform'),
+  })
+    .clear()
+    .catch(() => undefined)
   if (options.json) {
     options.stdout(
       `${JSON.stringify({ signedOut: cleared, credentialPath: store.path }, null, 2)}\n`,

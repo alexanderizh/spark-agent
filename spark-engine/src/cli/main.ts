@@ -15,11 +15,15 @@ import { createResilientEnv, defaultSparkHome, type ManagedEnvResult } from '../
 import {
   loadSparkSettings,
   resolveEngineSettings,
+  resolvePlatformSettings,
   resolveSessionPermissionMode,
   type ResolvedEngineSettings,
 } from '../config/settings.js'
 import type { SettingsScope } from '../config/settings.js'
 import { executeAuthCommand } from './auth-command.js'
+import { bootstrapPlatformModels } from '../platform/models.js'
+import { PlatformAuthExpiredError } from '../platform/edu-server-client.js'
+import { PlatformCredentialStore, type StoredPlatformCredentials } from '../platform/credentials.js'
 import { executeConfigCommand } from './config-command.js'
 import { executeMcpCommand, type McpAddInput } from './mcp-command.js'
 import { executeMemoryCommand } from './memory-command.js'
@@ -164,9 +168,27 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2
   }
   if (options.positionals[0] === 'models' || options.positionals[0] === 'doctor') {
-    if (options.positionals.length > 1 || options.prompt) {
+    if (options.prompt) {
       process.stderr.write(`${options.positionals[0]} does not accept a task prompt.\n`)
       return 2
+    }
+    const extraArgs = options.positionals.slice(1)
+    if (options.positionals[0] === 'doctor' && extraArgs.length > 0) {
+      process.stderr.write('spark doctor does not accept extra arguments.\n')
+      return 2
+    }
+    const takeover = extraArgs.includes('--takeover')
+    const unknownArgs = extraArgs.filter((arg) => arg !== '--takeover')
+    if (unknownArgs.length > 0) {
+      process.stderr.write(
+        `Unknown arguments for spark ${options.positionals[0]}: ${unknownArgs.join(' ')}\n` +
+          'Only --takeover is supported (rebind platform models on this device).\n',
+      )
+      return 2
+    }
+    if (takeover) {
+      const takeoverResult = await runPlatformModelBootstrap(true)
+      if (takeoverResult !== 0) return takeoverResult
     }
     return inspectModels(options.positionals[0], options.json)
   }
@@ -562,6 +584,52 @@ async function runMaintenanceCommand(
   }
 }
 
+/**
+ * Re-runs the platform-model bootstrap for the signed-in account. The Spark
+ * session comes from the credential store; expiry surfaces as "run spark
+ * login" instead of deleting the stored session.
+ */
+async function runPlatformModelBootstrap(takeover: boolean): Promise<number> {
+  const settings = await loadSparkSettings({ cwd: process.cwd() })
+  const platform = resolvePlatformSettings(settings)
+  const store = new PlatformCredentialStore({ sparkHome: settings.paths.sparkHome })
+  let stored: StoredPlatformCredentials | null
+  try {
+    stored = await store.load()
+  } catch (error) {
+    process.stderr.write(`${terminalSafe(message(error))}\n`)
+    return 1
+  }
+  if (stored === null) {
+    process.stderr.write('Platform models bind to a Spark account; run `spark login` first.\n')
+    return 1
+  }
+  try {
+    const status = await bootstrapPlatformModels({
+      sparkHome: settings.paths.sparkHome,
+      serverUrl: stored.serverUrl || platform.serverUrl,
+      session: stored.session,
+      ...(takeover ? { forceTakeover: true } : {}),
+    })
+    if (status.providerReady) {
+      process.stdout.write(
+        `Platform models bound (${status.models.length} available) via ${status.baseUrl}\n`,
+      )
+    } else {
+      process.stderr.write(`${status.message}\n`)
+      return 1
+    }
+    return 0
+  } catch (error) {
+    if (error instanceof PlatformAuthExpiredError) {
+      process.stderr.write('Your Spark account session expired. Run `spark login` again.\n')
+      return 1
+    }
+    process.stderr.write(`${terminalSafe(message(error))}\n`)
+    return 1
+  }
+}
+
 async function inspectModels(command: 'models' | 'doctor', json: boolean): Promise<number> {
   let catalog: ConfiguredModelCatalog
   try {
@@ -622,6 +690,12 @@ async function inspectModels(command: 'models' | 'doctor', json: boolean): Promi
     if (selectedEntry?.maxOutputTokens !== undefined) {
       process.stdout.write(`Max output: ${selectedEntry.maxOutputTokens} tokens\n`)
     }
+    const platformCount = catalog.entries.filter((entry) => entry.source === 'platform').length
+    process.stdout.write(
+      catalog.platformConnected
+        ? `Platform models: bound (${platformCount} available; spark models --takeover to rebind)\n`
+        : 'Platform models: not bound (run spark login to bind)\n',
+    )
     process.stdout.write(`Available models: ${catalog.entries.length}\n`)
     process.stdout.write(
       `Configuration: ${configurationError ? `error — ${configurationError}` : 'ready'}\n`,
