@@ -380,7 +380,7 @@ const Body = () => (
         <code>
           GET {'{releasesApiBase}'}/api/v1/desktop/releases/latest?channel=&amp;platform=&amp;arch=
         </code>
-        。<code>releasesApiBase</code> 默认 <code>https://spark.yiqibyte.com</code>， 可被{' '}
+        。<code>releasesApiBase</code> 默认 <code>https://www.yiqibyte.com</code>， 可被{' '}
         <code>dev-app-update.yml</code> / <code>app-update.yml</code> 覆盖。请求头{' '}
         <code>user-agent: Spark-Agent-Updater</code>。
       </li>
@@ -413,7 +413,7 @@ const Body = () => (
         开发版按顺序找：当前工作目录的 <code>dev-app-update.yml</code>、
         <code>apps/desktop/dev-app-update.yml</code> 等候选路径；仓库里的这份内容是{' '}
         <code>provider: github</code>、<code>updaterCacheDirName: spark-agent-dev-updater</code>、
-        <code>releasesApiBase: https://spark.yiqibyte.com</code>。
+        <code>releasesApiBase: https://www.yiqibyte.com</code>。
       </li>
       <li>
         可识别字段：<code>owner</code>、<code>repo</code>、<code>updaterCacheDirName</code>、
@@ -602,7 +602,7 @@ export const autoUpdate: DocsPageContent = {
     { key: '发布源', value: 'GitHub Release + MinIO 对象存储 + 官网版本中心（GitHub 为回退源）' },
     { key: '登记接口', value: 'POST /api/v1/ci/desktop/releases/register（头 X-Release-Token）' },
     { key: '检查接口', value: 'GET /api/v1/desktop/releases/latest?channel=&platform=&arch=' },
-    { key: '版本中心默认地址', value: 'https://spark.yiqibyte.com' },
+    { key: '版本中心默认地址', value: 'https://www.yiqibyte.com' },
     {
       key: '对象存储路径',
       value: 's3://<bucket>/stable/<version>/（dmg/exe/AppImage/zip/deb/rpm/blockmap）',
@@ -644,7 +644,7 @@ export const autoUpdate: DocsPageContent = {
     'SparkWork 桌面端更新链路：GitHub Actions 的 publish-desktop-release.yml 在 master 上 apps/desktop/package.json 等路径变化时触发，比对版本号后创建 v<version> tag 与 GitHub Release，' +
     '在 macos-latest（arm64）、macos-26-intel（x64）、windows-2022（x64）三个 runner 上打包签名（macOS 公证走 notarize.js，Windows 需要 WIN_CSC_LINK 且要求 Authenticode 为 Valid）；' +
     '审批后安装包上传到 MinIO 的 stable/<version>/ 并由 register-release.mjs 登记到官网版本中心（POST /api/v1/ci/desktop/releases/register），失败可回退 GitHub Releases。' +
-    '应用内 UpdateService 优先 GET /api/v1/desktop/releases/latest（默认 https://spark.yiqibyte.com），启动后延迟 5 秒检查、常规 30 分钟 ±5 分钟抖动、失败指数退避上限 2 小时、聚焦/唤醒按 30 分钟阈值补查；' +
+    '应用内 UpdateService 优先 GET /api/v1/desktop/releases/latest（默认 https://www.yiqibyte.com），启动后延迟 5 秒检查、常规 30 分钟 ±5 分钟抖动、失败指数退避上限 2 小时、聚焦/唤醒按 30 分钟阈值补查；' +
     '状态机为 idle/checking/available/downloading/downloaded/not-available/error，默认不自动下载，缓存保留最近 2 个版本目录，带 digest 时做 SHA 校验，安装走 macOS 打开 dmg 或 Windows 启动 exe（autoInstall 仅 Windows）。' +
     '通道类型支持 stable/beta，但当前设置页没有通道选择器；blockmap 只登记不消费，实际都是全量下载。',
   Body,

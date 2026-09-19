@@ -112,6 +112,43 @@ describe('generateSessionTitle（Anthropic 路径）', () => {
     expect(title).toBe('目标模式排障')
   })
 
+  it('第三方端点同时投放 x-api-key 与 Bearer（阶跃类渠道只认后者）', async () => {
+    fetchJsonMock.mockResolvedValueOnce({ content: [{ type: 'text', text: '目标模式排障' }] })
+    await generateSessionTitle({
+      ...BASE_PARAMS,
+      providerType: 'anthropic',
+      apiKey: 'ep-stepfun',
+      apiEndpoint: 'https://api.stepfun.com/step_plan',
+    })
+    const headers = fetchJsonMock.mock.calls[0]?.[1]?.headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('ep-stepfun')
+    expect(headers['authorization']).toBe('Bearer ep-stepfun')
+  })
+
+  it('渠道填完整 messages 地址时不重复 /v1/messages 后缀', async () => {
+    fetchJsonMock.mockResolvedValueOnce({ content: [{ type: 'text', text: '端点归一化' }] })
+    await generateSessionTitle({
+      ...BASE_PARAMS,
+      providerType: 'anthropic',
+      apiKey: 'ep-stepfun',
+      apiEndpoint: 'https://api.stepfun.com/step_plan/v1/messages',
+    })
+    expect(fetchJsonMock.mock.calls[0]?.[0]).toBe('https://api.stepfun.com/step_plan/v1/messages')
+  })
+
+  it('官方端点保持单头 x-api-key', async () => {
+    fetchJsonMock.mockResolvedValueOnce({ content: [{ type: 'text', text: '官方端点标题' }] })
+    await generateSessionTitle({
+      ...BASE_PARAMS,
+      providerType: 'anthropic',
+      apiKey: 'sk-ant-api03-official',
+      apiEndpoint: 'https://api.anthropic.com',
+    })
+    const headers = fetchJsonMock.mock.calls[0]?.[1]?.headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('sk-ant-api03-official')
+    expect(headers['authorization']).toBeUndefined()
+  })
+
   it('HTTP 失败打 warn（生产日志可见）', async () => {
     fetchJsonMock.mockRejectedValueOnce(httpError(401, 'invalid api key'))
     const title = await generateSessionTitle({ ...BASE_PARAMS, providerType: 'anthropic' })

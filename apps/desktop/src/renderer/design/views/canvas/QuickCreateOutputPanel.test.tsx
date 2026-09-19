@@ -43,6 +43,12 @@ const NO_INPUT_TASK: QuickCreateTaskRecord = {
   inputFiles: [],
 }
 
+function contextMenuElement(): HTMLElement {
+  const menu = document.querySelector<HTMLElement>('.context-action-menu')
+  if (!menu) throw new Error('右键菜单未渲染')
+  return menu
+}
+
 function stageImageSrc(): string | null | undefined {
   return document
     .querySelector('.media-artifact-viewer-stage:not(.is-compare) img')
@@ -94,6 +100,23 @@ describe('QuickCreateOutputPanel', () => {
     expect(document.querySelector('.image-lightbox-img')?.getAttribute('src')).toBe(secondOutputSrc)
     act(() => document.querySelector<HTMLButtonElement>('[title="关闭 (Esc)"]')?.click())
     expect(document.querySelector('.image-lightbox-backdrop')).toBeNull()
+  })
+
+  it('大图灯箱打开时查看器交出键盘：←/→ 归灯箱，↑/↓ 不缩放舞台', () => {
+    act(() => root.render(<QuickCreateOutputPanel task={TASK} />))
+    const zoomLabel = () => document.querySelector('.media-artifact-viewer-zoom-level')?.textContent
+    const stageSrc = stageImageSrc()
+
+    act(() => document.querySelector<HTMLButtonElement>('[title="打开全屏大图预览"]')?.click())
+    const lightboxSrc = document.querySelector('.image-lightbox-img')?.getAttribute('src')
+    expect(lightboxSrc).toBe(stageSrc)
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(document.querySelector('.image-lightbox-img')?.getAttribute('src')).not.toBe(lightboxSrc)
+    expect(stageImageSrc()).toBe(stageSrc)
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' })))
+    expect(zoomLabel()).toBe('100%')
   })
 
   it('没有参考图时不渲染对比入口', () => {
@@ -191,5 +214,27 @@ describe('QuickCreateOutputPanel', () => {
     expect(document.body.textContent).toContain('填写提示词并点击')
     expect(document.querySelector('.quick-create-output-benefits')).toBeNull()
     expect(document.querySelector('.quick-create-output-tip')).toBeNull()
+  })
+
+  it('创作结果舞台右键给出产物动作，不出现任务级动作', async () => {
+    act(() => root.render(<QuickCreateOutputPanel task={TASK} />))
+
+    act(() =>
+      document
+        .querySelector('.media-artifact-viewer-stage')
+        ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 16, clientY: 18 })),
+    )
+
+    const menu = document.querySelector('.context-action-menu')
+    expect(menu).not.toBeNull()
+    expect(
+      Array.from(contextMenuElement().querySelectorAll('.action-menu-item')).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(['复制图片', '全屏大图预览', '另存为…', '打开所在文件夹'])
+
+    // 菜单是 body portal，卸载后还有 passive effect 清理待调度；这里显式冲掉，
+    // 否则调度回调会落在 jsdom 销毁之后（window is not defined）
+    await act(async () => {})
   })
 })

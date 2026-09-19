@@ -82,3 +82,5 @@ This project is indexed by GitNexus as **spark-agent** (87114 symbols, 163909 re
 
 - 多媒体模型渠道的配置、扩展和参数校验经验，见 `.agents/memory/multimedia-model-channel-configuration.md`。
 - 后续涉及多媒体 Provider、MediaModelManifest、模型参数枚举或自定义渠道时，先阅读该记忆文档，再按其中的分层流程定位改动范围。
+- Anthropic 兼容渠道（Claude 适配器 / spark 引擎 anthropic 路由 / 渠道探测 / 标题与分支名生成）的端点归一化与凭据投放经验，见 `.agents/memory/anthropic-compatible-channel-endpoints-and-credentials.md`。
+- 后续涉及 `ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`、anthropic 端点拼路径或渠道 401/404 排查时，先阅读该记忆文档。

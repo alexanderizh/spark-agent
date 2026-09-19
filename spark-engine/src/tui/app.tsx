@@ -732,6 +732,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
                 ? `${retrying.resetOutput ? '已丢弃失败尝试的临时输出 · ' : ''}${retrying.error.code ?? 'stream_error'} · ${retrying.error.message} · ${(retrying.delayMs / 1_000).toFixed(1)}s 后重试`
                 : ''
           }${session.queuedTurns() > 0 ? ` · +${session.queuedTurns()} 排队` : ''}`.trim()}
+          capabilities={capabilities}
           theme={theme}
         />
       )}
@@ -841,6 +842,7 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         <WorkingLine
           label={updateCheckOnly ? '正在检查更新' : '正在更新 Spark'}
           detail="连接发布通道，下载并校验安装包"
+          capabilities={capabilities}
           theme={theme}
         />
       )}

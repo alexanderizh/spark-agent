@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.11.78",
+  "version": "0.11.79",
   "description": "SparkWork desktop application — Electron + React + TypeScript",
   "author": "SparkWork Team",
   "private": true,
@@ -80,7 +80,7 @@
     "@lexical/react": "^0.47.0",
     "@lobehub/emojilib": "^1.0.0",
     "@lobehub/fluent-emoji": "^4.1.0",
-    "@lobehub/icons": "^5.10.0",
+    "@lobehub/icons": "^5.18.0",
     "@lobehub/ui": "^5.15.15",
     "@monaco-editor/react": "^4.7.0",
     "@playwright/test": "1.62.0",

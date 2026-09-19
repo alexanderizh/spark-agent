@@ -101,7 +101,9 @@ First run without local configuration: `spark` still opens the TUI and shows the
 
 ## Interactive session controls
 
-The TUI uses a graphite-and-mint terminal theme with flat, shared selection rows for the model, permission, effort, session, approval, and command pickers. Truecolor/256-color terminals use a solid focus fill; 16-color and mono terminals fall back to inverse video. A persistent divided status line under the input keeps the model, permission mode, reasoning effort, latest model-call performance, working directory, and `/help` visible; the help hint stays right-aligned when space permits.
+The TUI uses a graphite-and-mint terminal theme with flat, shared selection rows for the model, permission, effort, session, approval, and command pickers. Truecolor/256-color terminals use a solid focus fill; 16-color and mono terminals fall back to inverse video. A persistent divided status line under the input keeps the model, permission mode, reasoning effort, latest model-call performance, working directory, and `/help` visible; the help hint stays right-aligned when space permits. It starts with two blank alignment cells instead of a bar glyph, and a loading indicator takes that space while a turn or self-update runs — the busy line above the input carries the same indicator ahead of the current action (`请求模型`, `正在思考`, `运行 <工具>` …).
+
+Assistant fenced code is syntax-highlighted for the languages Spark ships tokenizers for (`ts`/`js`/`tsx`/`jsx`, `py`, `sh`/`bash`/`zsh`, `json`, `rs`, `go`, `yaml`, `toml`, `sql`), and unified diffs render with add/remove colors: an explicit `diff`/`patch` fence, an unlabeled fence that contains a hunk header, a landed `edit` patch (with a `+n -m` counter), and diff excerpts inside tool output. Highlighting is strictly character-preserving — it can only change color, never text, width, or indentation — and unknown languages keep the quiet dim code style.
 
 | Command   | Action                                                    |
 | --------- | --------------------------------------------------------- |
@@ -117,6 +119,30 @@ Permission switching is persistent: `/perm` opens the three-mode picker `manual`
 Reasoning effort (`/effort`, or `--effort off|low|medium|high|max` on one-shot runs) maps onto each protocol's native control and the TUI selection is saved as the CLI default in `~/.spark/config.toml`. SparkWork routes provide the authoritative context window and maximum generated-token budget; Spark clamps each request to those limits and then reserves space for the current prompt. Anthropic receives an enabled-thinking budget below `max_tokens`, while OpenAI Responses receives the corresponding `reasoning.effort`. An exhausted context window fails with a structured diagnostic instead of sending a request that cannot produce a response.
 
 Approvals remain fail-closed: every side-effecting tool call renders a card with the exact arguments, policy reason, and risk class, offering allow-once, allow-for-session (when the policy grants that scope), and deny; Esc always denies.
+
+### Custom slash commands
+
+Drop a Markdown file into `~/.spark/commands` (user scope) or `<cwd>/.spark/commands` (project
+scope) and it becomes a `/<name>` command in the TUI: Tab completes it, `/help` lists it in its own
+section next to the builtins, and its body is sent as the task prompt. A project file wins over a
+user file with the same name, subdirectories namespace the command (`review/api.md` → `/review/api`),
+and an optional `description:` frontmatter line supplies the `/help` summary.
+
+```bash
+mkdir -p .spark/commands
+cat > .spark/commands/fix.md <<'MD'
+---
+description: 修复一个 issue
+---
+请先复现，再修复 $1。完整描述：$ARGUMENTS
+MD
+```
+
+The body supports `$ARGUMENTS` (the whole argument string, substituted in a single pass so injected
+text is never re-expanded) and `$1`..`$9` (whitespace-split words); with no placeholder in the body
+the arguments are appended as a new paragraph. Built-in command names stay reserved, each file is
+read up to 64 KiB, and custom commands only expand in the TUI — `-p`, `--plain`, and `--json` runs
+send the text as-is.
 
 ### Images in a prompt
 
@@ -140,7 +166,7 @@ A model whose channel never declared image input still receives the picture; Spa
 one-time hint, and a real provider rejection surfaces as an ordinary turn failure.
 
 Some terminals send the paste key through their own paste channel, where a picture — which has no
-text representation — arrives as an *empty* pasted string; Spark treats that empty paste as a
+text representation — arrives as an _empty_ pasted string; Spark treats that empty paste as a
 clipboard-image read, so `Ctrl+V` (or the terminal's own paste key) attaches the picture either
 way. While a model picker or an approval prompt owns the keyboard the draft is locked: an image
 paste then reports which prompt is holding the input instead of appearing to do nothing.
@@ -183,7 +209,7 @@ url = "https://example.com/mcp"
 headers = { Authorization = "Bearer ${REMOTE_MCP_TOKEN}" }
 
 [platform]
-server_url = "https://spark.yiqibyte.com/"    # Spark account server
+server_url = "https://www.yiqibyte.com/"      # Spark account server
 # web_login_url = "https://www.yiqibyte.com/login"
 ```
 
@@ -319,7 +345,7 @@ context_window = 128000
 max_tokens = 64000
 ```
 
-Anthropic uses `protocol = "anthropic-messages"` and defaults to `ANTHROPIC_API_KEY`. Select another configured model with `spark --model <id>` or `SPARK_MODEL=<id>`.
+Anthropic uses `protocol = "anthropic-messages"` and defaults to `ANTHROPIC_API_KEY`; when that variable is unset the CLI also accepts `ANTHROPIC_AUTH_TOKEN` (many third-party Anthropic-compatible providers document only that name) and sends both `x-api-key` and `Authorization: Bearer` upstream, because channels accept either one. `api_key_env` may point at any variable name, and naming one explicitly disables the fallback. `base_url` accepts a bare root, a `…/v1` URL, or a complete `…/v1/messages` URL — the client always calls exactly one `/v1/messages`. Select another configured model with `spark --model <id>` or `SPARK_MODEL=<id>`.
 
 ```bash
 spark "inspect this repository and run the relevant tests"

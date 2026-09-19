@@ -8,6 +8,8 @@ export * from './edu-asset-url.js'
 export * from './token-estimator.js'
 export * from './usage-metering.js'
 export * from './reasoning-budget.js'
+export * from './anthropic-auth.js'
+export * from './anthropic-endpoint.js'
 export * from './http-retry.js'
 export * from './html-sandbox.js'
 // keystore 不在此处导出（只能从 '@spark/shared/keystore' 按需 import）

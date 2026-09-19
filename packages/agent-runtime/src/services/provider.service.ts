@@ -50,6 +50,7 @@ import {
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import {
+  buildAnthropicAuthHeaders,
   createLogger,
   describeNetworkError,
   fetchJson,
@@ -1156,7 +1157,7 @@ export class ProviderService {
     for (const url of candidates) {
       try {
         const json = await fetchJson<ModelsListResponse>(url, {
-          headers: getModelsRequestHeaders(providerType, apiKey),
+          headers: getModelsRequestHeaders(providerType, apiKey, baseUrl ?? url),
           timeoutMs: PROVIDER_HTTP_TIMEOUT_MS,
           maxRetries: 2,
         })
@@ -1543,7 +1544,8 @@ function fetchAnthropicMessagesPing(
   return fetchJson(getAnthropicMessagesEndpoint(apiEndpoint), {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
+      // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+      ...buildAnthropicAuthHeaders(apiEndpoint, apiKey),
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
@@ -1993,7 +1995,12 @@ function getModelsUrlCandidates(
   const override = modelsUrlOverride?.trim()
   if (override) return [override]
 
-  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  // 渠道配置可能填的是完整 messages 地址（…/v1/messages）：先摘掉，
+  // 否则会派生出 …/v1/messages/v1/models 这类必然 404 的候选地址。
+  const trimmed = baseUrl
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/v1\/messages$/u, '')
   if (!trimmed) return []
 
   const candidates: string[] = []
@@ -2027,10 +2034,15 @@ function getModelsUrlCandidates(
   return uniqStrings(candidates)
 }
 
-function getModelsRequestHeaders(providerType: string, apiKey: string): Record<string, string> {
+function getModelsRequestHeaders(
+  providerType: string,
+  apiKey: string,
+  endpoint?: string,
+): Record<string, string> {
   if (providerType === 'anthropic') {
     return {
-      'x-api-key': apiKey,
+      // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+      ...buildAnthropicAuthHeaders(endpoint, apiKey),
       'anthropic-version': '2023-06-01',
     }
   }

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 const iconMocks = vi.hoisted(() => {
   const icon = (title: string) => {
-    const Icon = () => null
+    const Icon = () => (title === 'Stepfun' ? `mono:${title}` : null)
     Icon.Avatar = () => `avatar:${title}`
     Icon.Combine = () => null
     Icon.title = title
@@ -58,6 +58,7 @@ const iconMocks = vi.hoisted(() => {
     'SiliconCloud',
     'Stability',
     'StateCloud',
+    'Stepfun',
     'Suno',
     'Tencent',
     'TencentCloud',
@@ -87,9 +88,10 @@ vi.mock('@lobehub/icons/es/features/modelConfig', () => {
   const entries = Object.entries(iconMocks.icons).filter(([name]) => name !== 'Midjourney')
   return {
     modelMappings: entries.map(([name, value]) => ({
-      Icon: typeof value === 'object' && value != null && 'default' in value
-        ? (value as { default: unknown }).default
-        : value,
+      Icon:
+        typeof value === 'object' && value != null && 'default' in value
+          ? (value as { default: unknown }).default
+          : value,
       keywords: [name],
     })),
   }
@@ -99,9 +101,10 @@ vi.mock('@lobehub/icons/es/features/providerConfig', () => {
   const entries = Object.entries(iconMocks.icons).filter(([name]) => name !== 'Midjourney')
   return {
     providerMappings: entries.map(([name, value]) => ({
-      Icon: typeof value === 'object' && value != null && 'default' in value
-        ? (value as { default: unknown }).default
-        : value,
+      Icon:
+        typeof value === 'object' && value != null && 'default' in value
+          ? (value as { default: unknown }).default
+          : value,
       keywords: [name],
     })),
   }
@@ -127,7 +130,14 @@ describe('ProviderLogo icon catalog', () => {
       label: '通用模型',
     })
     expect(PROVIDER_ICON_CATALOG.map((item) => item.id)).toEqual(
-      expect.arrayContaining(['openai', 'anthropic', 'deepseek', 'gemini', 'openrouter', 'wrappeddefault']),
+      expect.arrayContaining([
+        'openai',
+        'anthropic',
+        'deepseek',
+        'gemini',
+        'openrouter',
+        'wrappeddefault',
+      ]),
     )
   })
 
@@ -147,7 +157,10 @@ describe('ProviderLogo icon catalog', () => {
   it('maps automatic router vendors to their own model icons', async () => {
     const { getProviderIconForVendor } = await import('./ProviderLogo')
 
-    expect(getProviderIconForVendor('claude-auto-router')).toEqual({ id: 'claude', style: 'avatar' })
+    expect(getProviderIconForVendor('claude-auto-router')).toEqual({
+      id: 'claude',
+      style: 'avatar',
+    })
     expect(getProviderIconForVendor('codex-auto-router')).toEqual({ id: 'codex', style: 'avatar' })
   })
 
@@ -165,17 +178,22 @@ describe('ProviderLogo icon catalog', () => {
     const agnes = renderToStaticMarkup(<ProviderLogo vendor={vendor('agnes-ai', 'Agnes AI')} />)
     const xai = renderToStaticMarkup(<ProviderLogo vendor={vendor('xai', 'xAI')} />)
     const bailian = renderToStaticMarkup(<ProviderLogo vendor={vendor('bailian', '阿里云百炼')} />)
-    const midjourney = renderToStaticMarkup(<ProviderLogo vendor={vendor('midjourney', 'Midjourney')} />)
+    const midjourney = renderToStaticMarkup(
+      <ProviderLogo vendor={vendor('midjourney', 'Midjourney')} />,
+    )
+    const stepfun = renderToStaticMarkup(<ProviderLogo vendor={vendor('stepfun', '阶跃星辰')} />)
 
     expect(agnes).toContain('<svg')
     expect(agnes).toContain('<title>Agnes AI</title>')
     expect(xai).toContain('avatar:Grok')
     expect(bailian).toContain('avatar:Bailian')
     expect(midjourney).toContain('avatar:Midjourney')
+    expect(stepfun).toContain('mono:Stepfun')
     expect(getProviderIconForVendor('agnes-ai')).toEqual({ id: 'agnesai', style: 'avatar' })
     expect(getProviderIconForVendor('xai')).toEqual({ id: 'xai', style: 'avatar' })
     expect(getProviderIconForVendor('bailian')).toEqual({ id: 'bailian', style: 'avatar' })
     expect(getProviderIconForVendor('midjourney')).toEqual({ id: 'midjourney', style: 'avatar' })
+    expect(getProviderIconForVendor('stepfun')).toEqual({ id: 'stepfun', style: 'mono' })
     // providerKind（minimax-hailuo）在 CanvasModelPicker 里直接当 vendorId 传入，应映射到 lobehub 的 minimax 图标
     expect(getProviderIconForVendor('minimax-hailuo')).toEqual({ id: 'minimax', style: 'avatar' })
   })

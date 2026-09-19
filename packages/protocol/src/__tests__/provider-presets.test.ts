@@ -43,6 +43,30 @@ describe('provider presets', () => {
     })
   })
 
+  it('registers StepFun Messages and Responses channel templates', () => {
+    expect(getProviderPresetById('stepfun-anthropic')).toMatchObject({
+      vendorId: 'stepfun',
+      provider: 'anthropic',
+      apiEndpoint: 'https://api.stepfun.com/step_plan',
+      defaultModel: 'step-5-preview',
+      modelIds: ['step-5-preview', 'step-3.7-flash', 'step-3.5-flash', 'step-3.5-flash-2603'],
+      sourceUrls: expect.arrayContaining([
+        'https://platform.stepfun.com/docs/zh/api-reference/chat/messages-create',
+      ]),
+    })
+    expect(getProviderPresetById('stepfun-openai')).toMatchObject({
+      vendorId: 'stepfun',
+      provider: 'openai',
+      apiEndpoint: 'https://api.stepfun.com/v1',
+      codexApiKind: 'responses',
+      defaultModel: 'step-5-preview',
+      modelIds: ['step-5-preview', 'step-3.7-flash'],
+      sourceUrls: expect.arrayContaining([
+        'https://platform.stepfun.com/docs/zh/api-reference/responses/responses-create',
+      ]),
+    })
+  })
+
   it('exposes Agnes as a unified multimodal preset with media manifests', () => {
     expect(getProviderPresetById('agnes-ai')).toMatchObject({
       apiEndpoint: 'https://apihub.agnes-ai.com/v1',

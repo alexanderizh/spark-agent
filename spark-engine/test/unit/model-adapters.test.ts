@@ -142,6 +142,26 @@ describe('real model protocol adapters', () => {
     expect(requestedUrl).toBe('https://gateway.example/anthropic/v1/messages')
   })
 
+  it('keeps a full messages URL intact instead of appending a second /v1/messages', async () => {
+    const fixture = await loadFixture('anthropic-tool.sse')
+    let requestedUrl: Parameters<typeof globalThis.fetch>[0] | undefined
+    const fetcher: typeof globalThis.fetch = async (input) => {
+      requestedUrl = input
+      return sseResponse(fixture)
+    }
+    const service = new AnthropicMessagesService({
+      apiKey: 'secret',
+      model: 'claude-test',
+      // 渠道配置里可能直接填完整 messages 地址（阶跃星辰等国产端点的常见写法）
+      baseUrl: 'https://api.stepfun.com/step_plan/v1/messages',
+      fetch: fetcher,
+    })
+
+    await consumeLlmStream(service.stream(baseRequest(), context))
+
+    expect(requestedUrl).toBe('https://api.stepfun.com/step_plan/v1/messages')
+  })
+
   it('identifies the client and its session on every upstream request', async () => {
     const seen: { url: Parameters<typeof globalThis.fetch>[0]; headers: Headers }[] = []
     const record =

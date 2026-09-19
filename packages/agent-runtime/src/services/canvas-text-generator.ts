@@ -6,7 +6,7 @@
  * 失败返回 { error }，由调用方决定回退。
  */
 
-import { createLogger } from '@spark/shared'
+import { buildAnthropicAuthHeaders, createLogger } from '@spark/shared'
 import type { MediaRequestCall } from '@spark/protocol'
 import {
   toOpenAIResponsesReasoningEffort,
@@ -256,7 +256,8 @@ async function callAnthropic(
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-api-key': params.apiKey,
+          // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+          ...buildAnthropicAuthHeaders(params.apiEndpoint, params.apiKey),
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),

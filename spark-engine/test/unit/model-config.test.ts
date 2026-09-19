@@ -1,10 +1,14 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { loadConfiguredModel } from '../../src/config/model-config.js'
+import { consumeLlmStream } from '../../src/llm/consume.js'
+import type { LlmRequest } from '../../src/llm/types.js'
 
 const roots: string[] = []
 
@@ -75,14 +79,85 @@ describe('model configuration', () => {
       projectPath,
       '[agent]\nmodel = "main"\n\n[providers.anthropic]\nprotocol = "anthropic-messages"\n\n[models.main]\nprovider = "anthropic"\nmodel = "claude-test"\n',
     )
-    await expect(
+    const message = await failureMessage(() =>
       loadConfiguredModel({
         cwd: join(root, 'project'),
         globalConfigPath: join(root, 'missing.toml'),
         projectConfigPath: projectPath,
         env: {},
       }),
-    ).rejects.toThrow(/ANTHROPIC_API_KEY/u)
+    )
+
+    // 报错要同时给出两个被接受的名字，用户不必再去猜该 export 哪一个。
+    expect(message).toContain('ANTHROPIC_API_KEY')
+    expect(message).toContain('ANTHROPIC_AUTH_TOKEN')
+  })
+
+  it('falls back to ANTHROPIC_AUTH_TOKEN when the default ANTHROPIC_API_KEY is unset', async () => {
+    const root = await createRoot()
+    const fixture = await readFile(
+      fileURLToPath(new URL('../fixtures/anthropic-tool.sse', import.meta.url)),
+      'utf8',
+    )
+    const received: { url: string; headers: Record<string, string | string[] | undefined> }[] = []
+    const server = createServer((request, response) => {
+      received.push({ url: request.url ?? '', headers: request.headers })
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.end(fixture)
+    })
+    await new Promise<void>((listening) => server.listen(0, '127.0.0.1', listening))
+    const address = server.address()
+    const port = typeof address === 'object' && address !== null ? address.port : 0
+
+    try {
+      const globalPath = join(root, 'home', 'config.toml')
+      // base_url 故意填完整 messages 地址（阶跃星辰等国产端点的常见写法）。
+      await writeFile(
+        globalPath,
+        `[agent]\nmodel = "main"\n\n[providers.stepfun]\nprotocol = "anthropic-messages"\nbase_url = "http://127.0.0.1:${port}/step_plan/v1/messages"\n\n[models.main]\nprovider = "stepfun"\nmodel = "step-5-preview"\n`,
+      )
+      const runtime = await loadConfiguredModel({
+        cwd: join(root, 'project'),
+        globalConfigPath: globalPath,
+        projectConfigPath: join(root, 'project', '.spark', 'config.toml'),
+        // 厂商文档常只让导出 ANTHROPIC_AUTH_TOKEN：缺省变量名取不到时必须回退，而不是 fail closed。
+        env: { ANTHROPIC_AUTH_TOKEN: 'ep-auth-token' },
+      })
+      await consumeLlmStream(runtime.service.stream(anthropicRequest(), llmContext))
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((closed) =>
+        server.close(() => {
+          closed()
+        }),
+      )
+    }
+
+    // 完整 messages 地址不再二次拼接，且两种凭据头携带同一个值。
+    expect(received.map((entry) => entry.url)).toEqual(['/step_plan/v1/messages'])
+    expect(received[0]?.headers['x-api-key']).toBe('ep-auth-token')
+    expect(received[0]?.headers.authorization).toBe('Bearer ep-auth-token')
+  })
+
+  it('keeps an explicitly named credential variable strict (no fallback)', async () => {
+    const root = await createRoot()
+    const globalPath = join(root, 'home', 'config.toml')
+    await writeFile(
+      globalPath,
+      '[agent]\nmodel = "main"\n\n[providers.stepfun]\nprotocol = "anthropic-messages"\napi_key_env = "STEPFUN_TOKEN"\n\n[models.main]\nprovider = "stepfun"\nmodel = "step-5-preview"\n',
+    )
+    const message = await failureMessage(() =>
+      loadConfiguredModel({
+        cwd: join(root, 'project'),
+        globalConfigPath: globalPath,
+        projectConfigPath: join(root, 'project', '.spark', 'config.toml'),
+        env: { ANTHROPIC_AUTH_TOKEN: 'ep-auth-token' },
+      }),
+    )
+
+    // 显式写了变量名就按字面执行：不回退，也不谎报另一个名字可用。
+    expect(message).toContain('STEPFUN_TOKEN')
+    expect(message).not.toContain('ANTHROPIC_AUTH_TOKEN')
   })
 
   it('rejects unknown top-level fields before they can enter the config snapshot', async () => {
@@ -279,6 +354,31 @@ describe('model configuration', () => {
     })
   })
 })
+
+async function failureMessage(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run()
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+  throw new Error('expected the call to fail')
+}
+
+const llmContext = {
+  signal: new AbortController().signal,
+  turnId: 'turn-1',
+  stepId: 'step-1',
+}
+
+function anthropicRequest(): LlmRequest {
+  return {
+    system: [{ id: 'base', content: 'You are Spark.', stability: 'stable' }],
+    messages: [{ role: 'user', content: 'Read the file', sourceSeqs: [0] }],
+    tools: [],
+    maxTokens: 4_096,
+    metadata: { sessionId: 'session-1' },
+  }
+}
 
 async function createRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'spark-config-'))

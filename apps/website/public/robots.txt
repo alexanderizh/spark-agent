@@ -18,4 +18,4 @@ User-agent: PerplexityBot
 Allow: /
 Disallow: /docs/search
 
-Sitemap: https://spark.yiqibyte.com/sitemap.xml
+Sitemap: https://www.yiqibyte.com/sitemap.xml

@@ -5,6 +5,7 @@
  *   - 黑色半透明背景，居中显示原图，按比例缩放
  *   - 点击背景或按 Esc / 右上角关闭按钮 → 关闭
  *   - 顶栏显示文件名 + 复制 / 下载 + 关闭按钮
+ *   - 图片上右键可打开同一组动作的右键菜单（复制 / 下载 / 所在文件夹）
  *   - 传入 navigation（多图列表 + 起始序号）时支持左右切换：
  *     两侧悬浮箭头按钮、键盘 ←/→（循环）、顶栏序号指示；单图调用方不受影响
  *
@@ -17,6 +18,8 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Icons } from '../Icons'
+import { ContextMenu } from './ContextMenu'
+import { isContextMenuOpen, useContextMenu, type ContextMenuEntry } from './contextMenuModel'
 import { useToast } from './Toast'
 import { readLastMediaDownloadDir, writeLastMediaDownloadDir } from './mediaViewerPreferences'
 import './ImagePreviewModal.less'
@@ -76,6 +79,9 @@ export function ImagePreviewModal({ src, alt, fileName, onClose, navigation }: P
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // 右键菜单打开时 Esc 归菜单：本层是 capture 监听、先于菜单执行，
+        // 不判断的话一次 Esc 会把菜单和灯箱一起关掉
+        if (isContextMenuOpen()) return
         e.stopPropagation()
         onClose()
         return
@@ -199,6 +205,33 @@ export function ImagePreviewModal({ src, alt, fileName, onClose, navigation }: P
     }
   }, [current.src, toast])
 
+  // 图片右键菜单：与顶栏按钮同一组动作，鼠标不用移回顶栏
+  const imageMenu = useContextMenu<void>()
+  const imageMenuItems: ContextMenuEntry[] = [
+    {
+      key: 'copy',
+      label: '复制图片',
+      icon: <Icons.Copy size={14} />,
+      disabled: imgError,
+      onClick: () => void handleCopy(),
+    },
+    {
+      key: 'download',
+      label: '另存为…',
+      icon: <Icons.Download size={14} />,
+      disabled: imgError,
+      onClick: () => void handleDownload(),
+    },
+  ]
+  if (current.src.startsWith(`${SAFE_FILE_SCHEME}:`)) {
+    imageMenuItems.push({
+      key: 'reveal',
+      label: '打开所在文件夹',
+      icon: <Icons.FolderOpen size={14} />,
+      onClick: () => void handleReveal(),
+    })
+  }
+
   return createPortal(
     <div
       className="image-lightbox-backdrop"
@@ -263,7 +296,11 @@ export function ImagePreviewModal({ src, alt, fileName, onClose, navigation }: P
 
       {/* 图片。点击 stage 内图片周围的空白区域（遮罩）会关闭预览，
           见 handleStageClick；点图片/错误块本体不关闭。 */}
-      <div className="image-lightbox-stage" onClick={handleStageClick}>
+      <div
+        className="image-lightbox-stage"
+        onClick={handleStageClick}
+        onContextMenu={(event) => imageMenu.open(event, undefined)}
+      >
         {imgError ? (
           <div className="image-lightbox-error">
             <Icons.Image size={48} />
@@ -280,6 +317,16 @@ export function ImagePreviewModal({ src, alt, fileName, onClose, navigation }: P
           />
         )}
       </div>
+
+      {imageMenu.menu && (
+        <ContextMenu
+          x={imageMenu.menu.x}
+          y={imageMenu.menu.y}
+          items={imageMenuItems}
+          onClose={imageMenu.close}
+          ariaLabel="图片操作"
+        />
+      )}
 
       {/* 左右切换按钮：仅多图时渲染；点按钮不触发遮罩关闭 */}
       {canNavigate && (

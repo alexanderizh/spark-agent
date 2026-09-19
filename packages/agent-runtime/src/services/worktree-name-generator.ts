@@ -8,7 +8,13 @@
  * git 友好的英文 kebab-case slug（如 `add-login-form`），而非中文标题。
  */
 
-import { createLogger, fetchJson, HttpError } from '@spark/shared'
+import {
+  buildAnthropicAuthHeaders,
+  createLogger,
+  fetchJson,
+  HttpError,
+  resolveAnthropicMessagesUrl,
+} from '@spark/shared'
 
 const log = createLogger('worktree-name-generator')
 
@@ -32,7 +38,9 @@ export interface GenerateWorktreeNameParams {
 /**
  * 生成 git 分支 slug（不含 `spark/` 前缀）。失败返回 null。
  */
-export async function generateWorktreeName(params: GenerateWorktreeNameParams): Promise<string | null> {
+export async function generateWorktreeName(
+  params: GenerateWorktreeNameParams,
+): Promise<string | null> {
   const task = clip(params.taskText, TASK_PROMPT_MAX_CHARS)
   if (task.length === 0) return null
 
@@ -45,7 +53,9 @@ export async function generateWorktreeName(params: GenerateWorktreeNameParams): 
     const slug = sanitizeBranchSlug(raw)
     return slug.length === 0 ? null : slug
   } catch (err) {
-    log.warn(`Failed to generate worktree name: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Failed to generate worktree name: ${err instanceof Error ? err.message : String(err)}`,
+    )
     return null
   }
 }
@@ -55,10 +65,11 @@ export async function generateWorktreeName(params: GenerateWorktreeNameParams): 
  * 导出以便调用方做本地回退（无 LLM 时从任务文本直接取 slug）。
  */
 export function sanitizeBranchSlug(raw: string): string {
-  const firstLine = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? ''
+  const firstLine =
+    raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ''
   const slug = firstLine
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -84,9 +95,13 @@ function buildPrompt(taskText: string): string {
   ].join('\n')
 }
 
-async function callAnthropic(params: GenerateWorktreeNameParams, prompt: string): Promise<string | null> {
+async function callAnthropic(
+  params: GenerateWorktreeNameParams,
+  prompt: string,
+): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, ANTHROPIC_DEFAULT_ENDPOINT)
-  const url = `${endpoint}/v1/messages`
+  // 渠道配置允许填完整 messages 地址，统一归一化后再用，避免 /v1/messages 重复。
+  const url = resolveAnthropicMessagesUrl(endpoint)
   const body = {
     model: params.model,
     max_tokens: 32,
@@ -97,7 +112,8 @@ async function callAnthropic(params: GenerateWorktreeNameParams, prompt: string)
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': params.apiKey,
+        // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+        ...buildAnthropicAuthHeaders(endpoint, params.apiKey),
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
@@ -107,13 +123,20 @@ async function callAnthropic(params: GenerateWorktreeNameParams, prompt: string)
     const text = data.content?.find((item) => item.type === 'text')?.text
     return typeof text === 'string' ? text : null
   } catch (err) {
-    if (err instanceof HttpError) log.debug(`Anthropic worktree-name request failed: HTTP ${err.statusCode}`)
-    else log.debug(`Anthropic worktree-name request failed: ${err instanceof Error ? err.message : String(err)}`)
+    if (err instanceof HttpError)
+      log.debug(`Anthropic worktree-name request failed: HTTP ${err.statusCode}`)
+    else
+      log.debug(
+        `Anthropic worktree-name request failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     return null
   }
 }
 
-async function callOpenAICompatible(params: GenerateWorktreeNameParams, prompt: string): Promise<string | null> {
+async function callOpenAICompatible(
+  params: GenerateWorktreeNameParams,
+  prompt: string,
+): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
   const url = `${endpoint}/chat/completions`
   const body = {
@@ -136,8 +159,12 @@ async function callOpenAICompatible(params: GenerateWorktreeNameParams, prompt: 
     const text = data.choices?.[0]?.message?.content
     return typeof text === 'string' ? text : null
   } catch (err) {
-    if (err instanceof HttpError) log.debug(`OpenAI-compatible worktree-name request failed: HTTP ${err.statusCode}`)
-    else log.debug(`OpenAI-compatible worktree-name request failed: ${err instanceof Error ? err.message : String(err)}`)
+    if (err instanceof HttpError)
+      log.debug(`OpenAI-compatible worktree-name request failed: HTTP ${err.statusCode}`)
+    else
+      log.debug(
+        `OpenAI-compatible worktree-name request failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     return null
   }
 }

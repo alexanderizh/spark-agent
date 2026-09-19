@@ -9,7 +9,7 @@ import { defaultTheme, type TerminalCapabilities } from '../../src/tui/theme.js'
 const capabilities: TerminalCapabilities = { color: 'mono', unicode: false, width: 72 }
 
 describe('StatusBar running indicator', () => {
-  it('replaces the leading bar glyph with the animated spinner while a turn runs', () => {
+  it('shows the animated spinner in the leading indent while a turn runs', () => {
     const app = render(
       <StatusBar
         model="fake-m1"
@@ -23,7 +23,7 @@ describe('StatusBar running indicator', () => {
     )
     try {
       const frame = app.lastFrame() ?? ''
-      // Frame 1 of the mono spinner sequence is '+'; the idle bar '|' is gone.
+      // Frame 1 of the mono spinner sequence is '+'.
       // (The status bar pads its left edge with one space.)
       expect(frame).toMatch(/^\s*\+/)
       expect(frame).not.toMatch(/^\s*\|/)
@@ -33,7 +33,7 @@ describe('StatusBar running indicator', () => {
     }
   })
 
-  it('shows the static bar glyph when idle', () => {
+  it('draws no leading glyph at all when idle', () => {
     const app = render(
       <StatusBar
         model="fake-m1"
@@ -44,7 +44,10 @@ describe('StatusBar running indicator', () => {
       />,
     )
     try {
-      expect(app.lastFrame()).toMatch(/^\s*\|/)
+      const frame = app.lastFrame() ?? ''
+      // Blank alignment cells only: the row must never carry a bar glyph.
+      expect(frame).toMatch(/^\s*fake-m1/)
+      expect(frame).not.toMatch(/^\s*[|▎]/)
     } finally {
       app.unmount()
     }

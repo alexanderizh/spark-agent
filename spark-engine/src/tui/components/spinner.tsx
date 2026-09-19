@@ -42,21 +42,28 @@ export function SpinnerGlyph(props: SpinnerGlyphProps): ReactElement {
 export interface WorkingLineProps {
   readonly label: string
   readonly detail?: string
+  readonly capabilities: TerminalCapabilities
   readonly theme: TuiTheme
+  /** Deterministic frame override for tests. */
+  readonly tick?: number
 }
 
 /**
- * The busy status line shown while a turn runs: the current action in the
- * accent color with dim runtime details. The animated spinner itself lives in
- * the status bar (`SpinnerGlyph`), so this line stays a quiet text row.
+ * The busy status line shown while a turn runs: a loading glyph, the current
+ * action in the accent color, and dim runtime details. Empty details render
+ * nothing at all, so a bare action never trails a dangling separator.
  */
 export function WorkingLine(props: WorkingLineProps): ReactElement {
+  const detail = props.detail ?? ''
   return (
     <Text>
-      <Text color={props.theme.accent}>{props.label}</Text>
-      {props.detail === undefined ? undefined : (
-        <Text color={props.theme.dim}> · {props.detail}</Text>
-      )}
+      <SpinnerGlyph
+        capabilities={props.capabilities}
+        theme={props.theme}
+        {...(props.tick === undefined ? {} : { tick: props.tick })}
+      />
+      <Text color={props.theme.accent}> {props.label}</Text>
+      {detail === '' ? undefined : <Text color={props.theme.dim}> · {detail}</Text>}
     </Text>
   )
 }

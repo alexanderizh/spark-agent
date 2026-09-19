@@ -7,7 +7,7 @@ import {
   SubAppPlatformRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import { SparkError } from '@spark/shared'
+import { buildAnthropicAuthHeaders, SparkError } from '@spark/shared'
 import * as keystore from '@spark/shared/keystore'
 import { resolveProviderApiKeyForProfile } from '@spark/agent-runtime'
 
@@ -168,7 +168,7 @@ export class SubAppNetworkGateway {
         allowedOrigins: granted,
         allowPrivateNetwork:
           declaration.allowPrivateNetwork === true && binding.allowPrivateNetwork,
-        credentialHeaders: providerCredentialHeaders(row.provider_type, secret),
+        credentialHeaders: providerCredentialHeaders(row.provider_type, secret, endpoint),
       }
     }
 
@@ -304,10 +304,15 @@ function safeResponseHeaders(headers: Headers): Record<string, string> {
   return output
 }
 
-function providerCredentialHeaders(providerType: string, secret: string): Record<string, string> {
+function providerCredentialHeaders(
+  providerType: string,
+  secret: string,
+  endpoint?: string,
+): Record<string, string> {
   const normalized = providerType.toLowerCase()
   if (normalized.includes('anthropic')) {
-    return { 'x-api-key': secret, 'anthropic-version': '2023-06-01' }
+    // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+    return { ...buildAnthropicAuthHeaders(endpoint, secret), 'anthropic-version': '2023-06-01' }
   }
   if (normalized.includes('google') || normalized.includes('gemini')) {
     return { 'x-goog-api-key': secret }

@@ -1,5 +1,6 @@
 import type { AgentEvent } from '../events/schema.js'
 import { stableStringify } from '../kernel/stable-json.js'
+import { editDiffFromArgs, type EditDiff } from './diff.js'
 import type { TerminalCapabilities } from './theme.js'
 import { glyphs } from './theme.js'
 import { presentTool, presentToolResult, singleLine } from './tool-presentation.js'
@@ -21,6 +22,8 @@ export interface ToolLineParts {
   readonly resultLines: readonly string[]
   readonly sessionId?: string
   readonly isTask: boolean
+  /** Bounded old→new preview rendered under a successful edit. */
+  readonly diff?: EditDiff
 }
 
 export interface TranscriptRow {
@@ -127,6 +130,9 @@ export function projectTranscript(
         const call = calls.get(event.callId)
         const mark = event.ok ? symbols.success : symbols.failure
         const presentation = presentTool(call?.tool ?? 'unknown', call?.args)
+        // A landed edit is the one success whose payload still changes
+        // decisions, so it keeps a bounded colored patch under the header.
+        const diff = event.ok && call?.tool === 'edit' ? editDiffFromArgs(call.args) : undefined
         const result = presentToolResult(
           call?.tool ?? 'unknown',
           event.content,
@@ -148,6 +154,7 @@ export function projectTranscript(
             ...(result.processStatus === undefined ? {} : { processStatus: result.processStatus }),
             ...(result.processId === undefined ? {} : { processId: result.processId }),
             ...(result.sessionId === undefined ? {} : { sessionId: result.sessionId }),
+            ...(diff === undefined ? {} : { diff }),
             isTask: call?.tool === 'task',
           },
         })

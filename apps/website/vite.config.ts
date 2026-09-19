@@ -31,7 +31,7 @@ export default defineConfig(({ isPreview }) => ({
   server: {
     proxy: {
       '/api/v1': {
-        target: 'https://spark.yiqibyte.com',
+        target: 'https://www.yiqibyte.com',
         changeOrigin: true,
       },
     },

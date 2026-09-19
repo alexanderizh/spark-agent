@@ -6,8 +6,12 @@
  *     鼠标滚轮以光标为锚点缩放，按住拖拽平移查看局部，双击在适屏 / 放大间切换
  *   - 传入 inputImage 时提供「输入 / 输出对比」开关：左输入图、右输出图；
  *     没有参考图时不渲染对比入口
- *   - 工具栏：翻页（可选插槽）、对比、复制、下载、打开产物所在文件夹
+ *   - 工具栏：翻页（可选插槽，跨任务/跨集合时可用 label 说明当前项归属）、对比、复制、下载、打开产物所在文件夹
+ *   - 键盘 ←/→ 翻页（与工具栏翻页同一回调，可用 keyboardPaging 关闭）
+ *   - 键盘 ↑/↓ 缩放（与工具栏 +/- 同一档位，可用 keyboardZoom 关闭）
  *   - 下载目录记忆：保存成功后记住所选目录，下次保存直接落在该目录
+ *   - 舞台右键菜单：内置图片 / 视频动作（复制、另存为、所在文件夹、大图），
+ *     调用方可用 contextMenuExtraItems 追加自己的动作（如「删除这条任务」）
  *   - 视频产物回退为原生播放器，不提供缩放
  *
  * 该组件不感知任务概念，可被输出面板、详情弹层等任何产物展示场景复用。
@@ -21,8 +25,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { Icons } from '../Icons'
+import { useArrowPaging } from '../hooks/useArrowPaging'
+import { useArrowZoom } from '../hooks/useArrowZoom'
+import { ContextMenu } from './ContextMenu'
+import { useContextMenu, type ContextMenuEntry } from './contextMenuModel'
 import { useToast } from './Toast'
-import { readLastMediaDownloadDir, writeLastMediaDownloadDir } from './mediaViewerPreferences'
+import { copyMediaImage, revealMediaArtifact, saveMediaArtifact } from './mediaArtifactActions'
 import './MediaArtifactViewer.less'
 
 export type MediaArtifactViewSource = {
@@ -40,13 +48,33 @@ type MediaArtifactViewerProps = {
   /** 参考输入图；提供时工具栏出现对比开关 */
   inputImage?: { src: string; label?: string } | undefined
   /** 输出翻页插槽；不传则不渲染翻页区 */
-  pagination?: { index: number; total: number; onPrev: () => void; onNext: () => void } | undefined
+  pagination?:
+    | {
+        index: number
+        total: number
+        onPrev: () => void
+        onNext: () => void
+        /** 当前项归属说明（如任务标题）；跨任务翻页时提示用户翻到了哪条 */
+        label?: string
+      }
+    | undefined
   /** 提供「大图预览」入口（全屏灯箱等），由调用方决定打开方式 */
   onOpenFullscreen?: (() => void) | undefined
+  /** 是否用 ←/→ 翻页，默认开启；上层已有自己的键盘翻页（如全屏灯箱）时置 false */
+  keyboardPaging?: boolean | undefined
+  /** 是否用 ↑/↓ 缩放，默认开启；上层盖住了查看器（如全屏灯箱）时置 false */
+  keyboardZoom?: boolean | undefined
+  /**
+   * 舞台右键菜单里追加的动作（任务级操作等），渲染在内置产物动作之后，
+   * 中间自动加一条分割线；不传则只有内置动作。
+   */
+  contextMenuExtraItems?: ContextMenuEntry[] | undefined
 }
 
 const MIN_SCALE = 1
 const MAX_SCALE = 8
+/** 工具栏 +/- 与 ↑/↓ 的每一档缩放倍率 */
+const ZOOM_STEP = 1.4
 /** 双击放大档位 */
 const DOUBLE_CLICK_SCALE = 2.5
 
@@ -59,8 +87,12 @@ export function MediaArtifactViewer({
   inputImage,
   pagination,
   onOpenFullscreen,
+  keyboardPaging = true,
+  keyboardZoom = true,
+  contextMenuExtraItems,
 }: MediaArtifactViewerProps) {
   const { toast } = useToast()
+  const viewerRef = useRef<HTMLDivElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [compareOpen, setCompareOpen] = useState(false)
   // 缩放与位移收敛为单一 view 状态，保证 updater 纯函数（StrictMode 双调用安全）
@@ -73,6 +105,13 @@ export function MediaArtifactViewer({
   const isVideo = media.type === 'video'
   const canCompare = Boolean(inputImage?.src)
   const compareActive = canCompare && compareOpen && !isVideo
+
+  // 键盘翻页与工具栏翻页共用同一组回调；单页或显式关闭时不注册监听
+  useArrowPaging({
+    enabled: keyboardPaging && Boolean(pagination) && (pagination?.total ?? 0) > 1,
+    onPrev: () => pagination?.onPrev(),
+    onNext: () => pagination?.onNext(),
+  })
 
   // 切换产物时回到适屏状态，避免上一张的缩放残留。
   // 用 React 官方「渲染期间调整状态」模式（记录上次 mediaKey），不引入 effect。
@@ -127,6 +166,27 @@ export function MediaArtifactViewer({
     [clampOffset],
   )
 
+  // 键盘缩放与工具栏 +/- 同档位，锚点取舞台中心：缩放时当前视野中心不漂移，平移量按比例跟随
+  const zoomByKeyboard = useCallback(
+    (factor: number) => {
+      const stage = stageRef.current
+      if (!stage) {
+        zoomAt(scale * factor)
+        return
+      }
+      const rect = stage.getBoundingClientRect()
+      zoomAt(scale * factor, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+    },
+    [scale, zoomAt],
+  )
+
+  useArrowZoom({
+    rootRef: viewerRef,
+    enabled: keyboardZoom && !isVideo && !compareActive,
+    onZoomIn: () => zoomByKeyboard(ZOOM_STEP),
+    onZoomOut: () => zoomByKeyboard(1 / ZOOM_STEP),
+  })
+
   // React 的 onWheel 在根节点是 passive 的，无法 preventDefault；这里用原生监听接管滚轮缩放
   useEffect(() => {
     const stage = stageRef.current
@@ -176,16 +236,7 @@ export function MediaArtifactViewer({
 
   const handleCopy = useCallback(async () => {
     try {
-      const response = await fetch(media.src)
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const blob = await response.blob()
-      const ClipboardItemCtor = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
-        .ClipboardItem
-      if (typeof ClipboardItemCtor !== 'function') {
-        toast.error('当前环境不支持复制图片，请用下载')
-        return
-      }
-      await navigator.clipboard.write([new ClipboardItemCtor({ [blob.type || 'image/png']: blob })])
+      await copyMediaImage(media.src)
       setCopied(true)
       toast.success('已复制到剪贴板')
       setTimeout(() => setCopied(false), 1500)
@@ -199,25 +250,13 @@ export function MediaArtifactViewer({
       toast.warning('当前产物没有本地文件，无法下载')
       return
     }
-    if (!window.spark?.invoke) {
-      toast.error('下载失败：桌面能力尚未就绪')
-      return
-    }
     setDownloading(true)
     try {
-      const lastDir = readLastMediaDownloadDir()
-      const result = await window.spark.invoke('file:save-image', {
-        sourcePath: media.filePath,
-        ...(media.fileName ? { suggestedFileName: media.fileName } : {}),
-        ...(lastDir ? { defaultDirectory: lastDir } : {}),
-      })
+      const result = await saveMediaArtifact({ filePath: media.filePath, fileName: media.fileName })
       if (result.saved && result.savedPath) {
-        const dirIndex = Math.max(
-          result.savedPath.lastIndexOf('/'),
-          result.savedPath.lastIndexOf('\\'),
-        )
-        if (dirIndex > 0) writeLastMediaDownloadDir(result.savedPath.slice(0, dirIndex))
         toast.success(`已保存到 ${result.savedPath}`)
+      } else if (result.error) {
+        toast.error(`下载失败：${result.error}`)
       }
     } catch (err) {
       toast.error(`下载失败：${err instanceof Error ? err.message : String(err)}`)
@@ -229,18 +268,58 @@ export function MediaArtifactViewer({
   const handleReveal = useCallback(async () => {
     if (!media.filePath) return
     try {
-      const result = await window.spark.invoke('file:reveal', { filePath: media.filePath })
+      const result = await revealMediaArtifact(media.filePath)
       if (!result.revealed) toast.error(result.error ?? '打开产物所在文件夹失败')
     } catch (err) {
       toast.error(`打开产物所在文件夹失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }, [media.filePath, toast])
 
+  // 舞台右键菜单：内置动作与工具栏一致，调用方追加的任务级动作排在分割线之后
+  const stageMenu = useContextMenu<void>()
+  const stageMenuItems: ContextMenuEntry[] = []
+  if (!isVideo) {
+    stageMenuItems.push({
+      key: 'copy',
+      label: '复制图片',
+      icon: <Icons.Copy size={14} />,
+      onClick: () => void handleCopy(),
+    })
+  }
+  if (onOpenFullscreen && !isVideo) {
+    stageMenuItems.push({
+      key: 'fullscreen',
+      label: '全屏大图预览',
+      icon: <Icons.Maximize size={14} />,
+      onClick: onOpenFullscreen,
+    })
+  }
+  if (media.filePath) {
+    stageMenuItems.push({
+      key: 'download',
+      label: '另存为…',
+      icon: <Icons.Download size={14} />,
+      onClick: () => void handleDownload(),
+    })
+    stageMenuItems.push({
+      key: 'reveal',
+      label: '打开所在文件夹',
+      icon: <Icons.FolderOpen size={14} />,
+      onClick: () => void handleReveal(),
+    })
+  }
+  if (contextMenuExtraItems && contextMenuExtraItems.length > 0) {
+    stageMenuItems.push({ type: 'divider' }, ...contextMenuExtraItems)
+  }
+
   return (
-    <div className="media-artifact-viewer" aria-label={media.alt}>
+    <div ref={viewerRef} className="media-artifact-viewer" aria-label={media.alt}>
       <div
         ref={stageRef}
         className={`media-artifact-viewer-stage${compareActive ? ' is-compare' : ''}`}
+        onContextMenu={
+          stageMenuItems.length > 0 ? (event) => stageMenu.open(event, undefined) : undefined
+        }
       >
         {compareActive && inputImage ? (
           <>
@@ -279,11 +358,16 @@ export function MediaArtifactViewer({
       <div className="media-artifact-viewer-toolbar">
         {pagination && pagination.total > 1 && (
           <div className="media-artifact-viewer-pager">
+            {pagination.label && (
+              <span className="media-artifact-viewer-pager-label" title={pagination.label}>
+                {pagination.label}
+              </span>
+            )}
             <button
               type="button"
               aria-label="上一项输出"
               onClick={pagination.onPrev}
-              title="上一项"
+              title="上一项（←）"
             >
               <Icons.ChevronLeft size={15} />
             </button>
@@ -294,7 +378,7 @@ export function MediaArtifactViewer({
               type="button"
               aria-label="下一项输出"
               onClick={pagination.onNext}
-              title="下一项"
+              title="下一项（→）"
             >
               <Icons.ChevronRight size={15} />
             </button>
@@ -319,7 +403,8 @@ export function MediaArtifactViewer({
                 type="button"
                 aria-label="缩小"
                 disabled={scale <= MIN_SCALE}
-                onClick={() => zoomAt(scale / 1.4)}
+                title="缩小（↓）"
+                onClick={() => zoomAt(scale / ZOOM_STEP)}
               >
                 <Icons.Minus size={14} />
               </button>
@@ -335,7 +420,8 @@ export function MediaArtifactViewer({
                 type="button"
                 aria-label="放大"
                 disabled={scale >= MAX_SCALE}
-                onClick={() => zoomAt(scale * 1.4)}
+                title="放大（↑）"
+                onClick={() => zoomAt(scale * ZOOM_STEP)}
               >
                 <Icons.Plus size={14} />
               </button>
@@ -372,6 +458,16 @@ export function MediaArtifactViewer({
           )}
         </div>
       </div>
+
+      {stageMenu.menu && stageMenuItems.length > 0 && (
+        <ContextMenu
+          x={stageMenu.menu.x}
+          y={stageMenu.menu.y}
+          items={stageMenuItems}
+          onClose={stageMenu.close}
+          ariaLabel="产物操作"
+        />
+      )}
     </div>
   )
 }

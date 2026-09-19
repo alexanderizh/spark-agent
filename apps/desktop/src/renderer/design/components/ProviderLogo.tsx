@@ -48,6 +48,7 @@ import {
   SiliconCloud,
   Stability,
   StateCloud,
+  Stepfun as StepFun,
   Suno,
   Tencent,
   TencentCloud,
@@ -67,10 +68,11 @@ import genericProviderIconUrl from '../../assets/providers/generic.png'
 
 // ─── 本地资源回退 ───
 
-const assetModules = import.meta.glob<string>(
-  '../../assets/providers/*.{svg,png}',
-  { eager: true, query: '?url', import: 'default' },
-)
+const assetModules = import.meta.glob<string>('../../assets/providers/*.{svg,png}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
 
 function resolveLocalLogo(logoPath: string | undefined): string | null {
   if (!logoPath) return null
@@ -152,6 +154,8 @@ AgnesAI.Avatar = ({ size, shape = 'square' }) => (
   </span>
 )
 
+const StepFunIcon: AvatarComponent = ({ size }) => <StepFun size={size} color="#000" />
+
 const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   openai: OpenAI.Avatar as AvatarComponent,
   anthropic: Anthropic.Avatar as AvatarComponent,
@@ -189,6 +193,7 @@ const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   midjourney: Midjourney.Avatar as AvatarComponent,
   github: Github.Avatar as AvatarComponent,
   'new-api': NewAPI.Avatar as AvatarComponent,
+  stepfun: StepFunIcon,
 }
 
 export const PROVIDER_ICON_STYLES: Array<{ value: ProviderIconStyle; label: string }> = [
@@ -320,14 +325,15 @@ function isRenderableComponent(value: unknown): value is IconComponent {
 
 function resolveLobeIcon(value: unknown): LobeIcon | null {
   const candidate = isRenderableComponent(value) ? value : null
-  const maybeDefault = candidate != null && typeof candidate === 'object'
-    ? (candidate as { default?: unknown }).default
-    : undefined
+  const maybeDefault =
+    candidate != null && typeof candidate === 'object'
+      ? (candidate as { default?: unknown }).default
+      : undefined
   const iconLike = isRenderableComponent(maybeDefault) ? maybeDefault : candidate
   if (!isRenderableComponent(iconLike)) return null
   const icon = iconLike as Partial<LobeIcon>
   return isRenderableComponent(icon.Avatar) || isRenderableComponent(icon.Combine)
-    ? iconLike as LobeIcon
+    ? (iconLike as LobeIcon)
     : null
 }
 
@@ -373,13 +379,11 @@ const toCatalogEntry = (item: { Icon?: unknown; keywords?: string[] }): [string,
 ]
 
 export const PROVIDER_ICON_CATALOG: ProviderIconCatalogItem[] = buildProviderIconCatalog(
-  Object.fromEntries(
-    [
-      ...modelMappings.map(toCatalogEntry),
-      ...providerMappings.map(toCatalogEntry),
-      ...Object.entries(SUPPLEMENTAL_ICON_EXPORTS),
-    ],
-  ),
+  Object.fromEntries([
+    ...modelMappings.map(toCatalogEntry),
+    ...providerMappings.map(toCatalogEntry),
+    ...Object.entries(SUPPLEMENTAL_ICON_EXPORTS),
+  ]),
 )
 
 const PROVIDER_ICON_MAP: Record<string, ProviderIconCatalogItem> = Object.fromEntries(
@@ -422,9 +426,12 @@ const VENDOR_ICON_MAP: Record<string, string> = {
   'xiaomi-mimo': 'xiaomi-mimo',
   github: 'github',
   'new-api': 'new-api',
+  stepfun: 'stepfun',
 }
 
-export function normalizeProviderIconConfig(icon: ProviderIconConfig | null | undefined): ProviderIconConfig | null {
+export function normalizeProviderIconConfig(
+  icon: ProviderIconConfig | null | undefined,
+): ProviderIconConfig | null {
   if (!icon) return null
   const id = icon.id.trim().toLowerCase()
   if (!PROVIDER_ICON_MAP[id]) return null
@@ -432,10 +439,15 @@ export function normalizeProviderIconConfig(icon: ProviderIconConfig | null | un
   return { id, style }
 }
 
-export function getProviderIconForVendor(vendorId: string | undefined | null): ProviderIconConfig | null {
+export function getProviderIconForVendor(
+  vendorId: string | undefined | null,
+): ProviderIconConfig | null {
   if (!vendorId) return null
   const id = VENDOR_ICON_MAP[vendorId] ?? vendorId
-  return normalizeProviderIconConfig({ id, style: 'avatar' })
+  // StepFun 的官方 Lobe 图标本体就是黑色圆形阶梯格；使用默认 Mono
+  // 版本，避免 Avatar 版本把内部阶梯图单独放在白底中。
+  const style = id === 'stepfun' ? 'mono' : 'avatar'
+  return normalizeProviderIconConfig({ id, style })
 }
 
 function renderProviderIcon(icon: ProviderIconConfig, size: number, shape: 'circle' | 'square') {
@@ -511,7 +523,11 @@ export function ProviderLogo({
         title={title ?? PROVIDER_ICON_MAP[customIcon.id]?.label ?? vendor?.name}
         aria-label={PROVIDER_ICON_MAP[customIcon.id]?.label ?? vendor?.name}
       >
-        {renderProviderIcon(customIcon, customIcon.style === 'avatar' ? px : Math.max(14, px - 8), avatarShape)}
+        {renderProviderIcon(
+          customIcon,
+          customIcon.style === 'avatar' ? px : Math.max(14, px - 8),
+          avatarShape,
+        )}
       </span>
     )
   }

@@ -1417,11 +1417,37 @@ Update exit codes:
 
   Configuration:
   ~/.spark/config.toml and <cwd>/.spark/config.toml are merged (project wins).
+  Read and edit both through the spark config subcommands: list shows every
+  effective key with the layer it came from, get <key> prints one value,
+  set <key> <value> and unset <key> mutate a single layer (--global is the
+  default, --project the repository file), and path prints both file
+  locations together with whether each one exists yet.
+  Every write is schema-validated and applied atomically. Values are
+  true/false, numbers, plain strings, or JSON for arrays/objects. Setting
+  SPARK_HOME moves the ~/.spark data root.
   Sections: [agent] [providers] [models] (model channels),
             [permissions] mode/allow/deny/ask, [tools] enabled/disabled,
             [mcp.servers.<name>] command|url,
             [memory] enabled/max_inject_tokens/agent_id,
             [platform] server_url/web_login_url.
+
+  Channel credentials:
+  A provider reads its key from api_key_env (any variable name). For
+  anthropic-messages providers the default name is ANTHROPIC_API_KEY and
+  ANTHROPIC_AUTH_TOKEN is accepted as a fallback, so a provider whose docs
+  only mention one of the two still works; naming a variable explicitly
+  disables the fallback. Requests always carry exactly one /v1/messages, so
+  base_url may be a root, a …/v1 URL, or the full messages URL.
+
+  Custom commands:
+  Markdown files under ~/.spark/commands (user) and <cwd>/.spark/commands
+  (project, wins on a shared name) each become a /<name> command in the
+  interactive TUI: Tab completes it, /help lists it, and its body is sent as
+  the task prompt. Subdirectories namespace the name (review/api.md becomes
+  /review/api); an optional description: frontmatter line is the /help
+  summary; the body may use $ARGUMENTS (the whole argument string) or
+  $1..$9 (whitespace-split words). Built-in command names stay reserved, and
+  non-TUI runs (-p, --json, --plain) never expand custom commands.
 
   Account:
   spark login stores the session in ~/.spark/credentials.json (0600).

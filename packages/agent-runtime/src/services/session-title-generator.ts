@@ -5,7 +5,13 @@
  * 生成简短中文标题（≤ 16 字符）。失败时返回 null，由调用方决定是否回退。
  */
 
-import { createLogger, fetchJson, HttpError } from '@spark/shared'
+import {
+  buildAnthropicAuthHeaders,
+  createLogger,
+  fetchJson,
+  HttpError,
+  resolveAnthropicMessagesUrl,
+} from '@spark/shared'
 
 const log = createLogger('session-title-generator')
 
@@ -74,7 +80,8 @@ function buildPrompt(userMessage: string, assistantMessage: string): string {
 
 async function callAnthropic(params: GenerateTitleParams, prompt: string): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, ANTHROPIC_DEFAULT_ENDPOINT)
-  const url = `${endpoint}/v1/messages`
+  // 渠道配置允许填完整 messages 地址，统一归一化后再用，避免 /v1/messages 重复。
+  const url = resolveAnthropicMessagesUrl(endpoint)
   const body = {
     model: params.model,
     max_tokens: TITLE_MAX_OUTPUT_TOKENS,
@@ -85,7 +92,8 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': params.apiKey,
+        // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+        ...buildAnthropicAuthHeaders(endpoint, params.apiKey),
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),

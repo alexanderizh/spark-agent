@@ -8,7 +8,7 @@ import {
   ProviderProfileRepository,
   ToolPackageStorageRepository,
 } from '@spark/storage'
-import { fetchJson } from '@spark/shared'
+import { buildAnthropicAuthHeaders, fetchJson } from '@spark/shared'
 import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import type {
   ToolHostCapabilityContext,
@@ -898,7 +898,8 @@ async function invokeModel(
     headers: anthropic
       ? {
           'Content-Type': 'application/json',
-          ...(apiKey ? { 'x-api-key': apiKey } : {}),
+          // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+          ...(apiKey ? buildAnthropicAuthHeaders(config.apiEndpoint, apiKey) : {}),
           'anthropic-version': '2023-06-01',
         }
       : {

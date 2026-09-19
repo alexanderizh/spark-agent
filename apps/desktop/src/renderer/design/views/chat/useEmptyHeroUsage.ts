@@ -14,20 +14,26 @@ export const HERO_USAGE_MIN_ACTIVE_DAYS = 0
 
 /**
  * 空会话布局模式（快捷卡片与热力图互斥）：
- * - pending：用量数据尚未就绪，先按快捷卡片渲染（多数用户最终也是卡片）
- * - cards：没有任何活跃天数或加载失败，渲染完整快捷卡片，不展示热力图
+ * - pending：用量数据尚未就绪且没有任何已知数据，先按快捷卡片渲染（多数用户最终也是卡片）
+ * - cards：没有任何活跃天数（已确认无数据或加载失败），渲染完整快捷卡片，不展示热力图
  * - heatmap：16 周内任意一天（含今天）有用量数据，热力图替换快捷卡片
  */
 export type EmptyHeroUsageMode = 'pending' | 'cards' | 'heatmap'
 
+/**
+ * 已知有用量数据（缓存或上次成功结果）时始终返回 heatmap，
+ * 后台刷新在途、刷新失败都不回退成快捷卡片 —— 否则 hero 会在
+ * 「快捷卡片 ↔ 热力图」之间来回切换，就是用户看到的闪现。
+ */
 export function resolveEmptyHeroUsageMode(
   loading: boolean,
   error: string | null,
   activeDays: number,
 ): EmptyHeroUsageMode {
-  if (loading) return 'pending'
-  if (error != null) return 'cards'
-  return activeDays > HERO_USAGE_MIN_ACTIVE_DAYS ? 'heatmap' : 'cards'
+  if (activeDays > HERO_USAGE_MIN_ACTIVE_DAYS) return 'heatmap'
+  // 完全没有数据：加载中先按快捷卡片渲染，加载失败同样回落快捷卡片。
+  if (loading && error == null) return 'pending'
+  return 'cards'
 }
 
 export interface EmptyHeroUsage {
@@ -37,9 +43,11 @@ export interface EmptyHeroUsage {
 }
 
 /**
- * 空会话用量感知：仅在空会话 hero 真正展示（且非团队模式）时请求一次 16 周用量，
+ * 空会话用量感知：仅在空会话 hero 真正展示（且非团队模式）时请求 16 周用量，
  * 按活跃天数决定空会话展示快捷卡片还是使用足迹热力图（二者互斥）。
- * 失败时静默降级为快捷卡片，不弹错误。
+ *
+ * 数据源带缓存（见 usageHeatmapCache）：命中缓存时首帧即 heatmap，不经过 pending；
+ * 没有任何已知数据且加载失败时静默降级为快捷卡片，不弹错误。
  */
 export function useEmptyHeroUsage(enabled: boolean): EmptyHeroUsage {
   const { dailyGroups, loading, error } = useUsageHeatmapData(HERO_USAGE_RANGE, { enabled })

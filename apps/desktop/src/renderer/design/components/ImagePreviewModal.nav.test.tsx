@@ -22,6 +22,12 @@ function queryButton(title: string): HTMLButtonElement | null {
   return document.body.querySelector(`button[title="${title}"]`)
 }
 
+function contextMenuElement(): HTMLElement {
+  const menu = document.querySelector<HTMLElement>('.context-action-menu')
+  if (!menu) throw new Error('右键菜单未渲染')
+  return menu
+}
+
 describe('ImagePreviewModal 多图导航', () => {
   let container: HTMLDivElement
   let root: Root
@@ -134,5 +140,50 @@ describe('ImagePreviewModal 多图导航', () => {
     act(() => queryButton('下一张 (→)')?.click())
     expect(document.body.querySelector('.image-lightbox-error')).toBeNull()
     expect(currentImg()?.getAttribute('src')).toBe('safe-file://x/bbb')
+  })
+
+  it('图片右键给出复制 / 下载 / 所在文件夹，Esc 只关菜单不关灯箱', () => {
+    const onClose = vi.fn()
+    renderModal({ onClose })
+
+    act(() =>
+      document
+        .querySelector('.image-lightbox-stage')
+        ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 12, clientY: 16 })),
+    )
+
+    const menu = document.querySelector('.context-action-menu')
+    expect(menu).not.toBeNull()
+    expect(
+      Array.from(contextMenuElement().querySelectorAll('.action-menu-item')).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(['复制图片', '另存为…', '打开所在文件夹'])
+
+    // Esc 归菜单：灯箱保持打开（本层 Esc 监听是 capture，先于菜单执行，必须显式让位）
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(document.querySelector('.context-action-menu')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // 菜单关闭后 Esc 恢复关闭灯箱
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('图片加载失败时右键菜单里的复制与下载禁用', () => {
+    renderModal()
+
+    act(() => currentImg()?.dispatchEvent(new Event('error')))
+    act(() =>
+      document
+        .querySelector('.image-lightbox-stage')
+        ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 12, clientY: 16 })),
+    )
+
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.context-action-menu .action-menu-item'),
+    )
+    expect(buttons.find((button) => button.textContent === '复制图片')?.disabled).toBe(true)
+    expect(buttons.find((button) => button.textContent === '另存为…')?.disabled).toBe(true)
   })
 })

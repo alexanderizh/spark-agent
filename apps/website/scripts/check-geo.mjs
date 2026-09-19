@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const dist = resolve(root, 'dist')
-const siteUrl = 'https://spark.yiqibyte.com'
+const siteUrl = 'https://www.yiqibyte.com'
 
 async function main() {
   const sitemap = await readFile(resolve(dist, 'sitemap.xml'), 'utf8')

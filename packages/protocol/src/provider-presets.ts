@@ -178,8 +178,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     desc: 'MiniMax-M2.7 / M2.5 系列',
     logoPath: 'providers/minimax.png',
     purchaseUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
-    apiKeyUrl:
-      'https://platform.minimaxi.com/user-center/basic-information/interface-key',
+    apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
   },
   {
     id: 'kimi',
@@ -367,6 +366,16 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#0ea5e9',
     desc: '自建 LLM 网关（One-API / New-API）· OpenAI 格式聚合',
     logoPath: 'providers/new-api.svg',
+  },
+  {
+    id: 'stepfun',
+    name: '阶跃星辰',
+    emoji: 'SF',
+    color: '#005aff',
+    desc: 'Step 5 / Step 3.7 Flash / Step 3.5 Flash',
+    logoPath: 'providers/generic.png',
+    purchaseUrl: 'https://platform.stepfun.com/',
+    apiKeyUrl: 'https://platform.stepfun.com/interface-key',
   },
 
   /* ─── 多媒体模型平台（APIMart / xAI）─── */
@@ -1361,6 +1370,38 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     sourceUrls: [
       'https://platform.xiaomimimo.com/docs/en-US/integration/claudecode',
       'https://platform.xiaomimimo.com/docs/en-US/quick-start/first-api-call',
+    ],
+  },
+
+  /* ─── 阶跃星辰 StepFun ─── */
+  {
+    id: 'stepfun-anthropic',
+    vendorId: 'stepfun',
+    name: '阶跃星辰',
+    provider: 'anthropic',
+    // Anthropic SDK / Claude Code 会自动拼接 /v1/messages，所以这里给 Claude Code 计划
+    // 的根地址；实测该根地址拼出的 …/step_plan/v1/messages 用编码套餐 Key 返回 200，
+    // 而裸根 https://api.stepfun.com 形式未验证（无 Key 时两条路径都只回 401，无法区分）。
+    apiEndpoint: 'https://api.stepfun.com/step_plan',
+    defaultModel: 'step-5-preview',
+    modelIds: ['step-5-preview', 'step-3.7-flash', 'step-3.5-flash', 'step-3.5-flash-2603'],
+    sourceUrls: [
+      'https://platform.stepfun.com/docs/zh/welcome',
+      'https://platform.stepfun.com/docs/zh/api-reference/chat/messages-create',
+    ],
+  },
+  {
+    id: 'stepfun-openai',
+    vendorId: 'stepfun',
+    name: '阶跃星辰',
+    provider: 'openai',
+    apiEndpoint: 'https://api.stepfun.com/v1',
+    codexApiKind: 'responses',
+    defaultModel: 'step-5-preview',
+    modelIds: ['step-5-preview', 'step-3.7-flash'],
+    sourceUrls: [
+      'https://platform.stepfun.com/docs/zh/welcome',
+      'https://platform.stepfun.com/docs/zh/api-reference/responses/responses-create',
     ],
   },
 

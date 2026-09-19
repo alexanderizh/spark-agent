@@ -251,7 +251,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '自动更新',
     detail: 'GitHub Release + 官网版本中心 + UpdateService',
     description:
-      'Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。',
+      'Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（www.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。',
     category: 'release',
     level: 'intermediate',
     keywords: ['更新', 'update', 'release', 'electron-builder', 'WIN_CSC_LINK', 'CSC_LINK'],

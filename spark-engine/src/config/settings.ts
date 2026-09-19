@@ -262,7 +262,7 @@ export interface ResolvedPlatformSettings {
 }
 
 /** Matches the desktop default so a CLI session logs into the same account server. */
-export const DEFAULT_PLATFORM_SERVER_URL = 'https://spark.yiqibyte.com/'
+export const DEFAULT_PLATFORM_SERVER_URL = 'https://www.yiqibyte.com/'
 
 /**
  * Resolves the Spark account server used by `spark login` / `whoami`.

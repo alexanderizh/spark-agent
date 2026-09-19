@@ -75,9 +75,7 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
           {props.catalog.sparkWorkDiagnostic ? ` · ${props.catalog.sparkWorkDiagnostic}` : ''}
         </Text>
       )}
-      {props.refreshing && visible.length > 0 && (
-        <Text color={props.theme.dim}>刷新目录中…</Text>
-      )}
+      {props.refreshing && visible.length > 0 && <Text color={props.theme.dim}>刷新目录中…</Text>}
       {visible.length === 0 ? (
         props.refreshing ? (
           // 打开选择器会自动拉取目录：加载中不能显示成"没有可用模型"，
@@ -100,8 +98,7 @@ export function ModelPicker(props: ModelPickerProps): ReactElement {
               dimmed={props.busy}
             >
               {index === cursor ? '❯ ' : '  '}
-              {entry.selected ? '*' : ' '}{' '}
-              {entry.model}
+              {entry.selected ? '*' : ' '} {entry.model}
               <Text color={props.theme.dim}>
                 {'  '}
                 {entry.providerName} · {entry.protocol} · [{entry.source}]
@@ -189,14 +186,14 @@ export function ProviderConfigForm(props: ProviderConfigFormProps): ReactElement
         theme={props.theme}
         capabilities={props.capabilities}
       >
-        01  OpenAI Responses
+        01 OpenAI Responses
       </PickerRow>
       <PickerRow
         selected={protocol === 'anthropic-messages'}
         theme={props.theme}
         capabilities={props.capabilities}
       >
-        02  Anthropic Messages
+        02 Anthropic Messages
       </PickerRow>
       {step === 'protocol' && (
         <Text color={props.theme.faint ?? props.theme.dim}>按 1/2 切换协议</Text>
@@ -256,6 +253,11 @@ export function ProviderConfigForm(props: ProviderConfigFormProps): ReactElement
           <Text color={props.theme.dim}>
             启动前请设置环境变量：export {draft.apiKeyEnv}=&lt;你的密钥&gt;
           </Text>
+          {draft.protocol === 'anthropic-messages' && draft.apiKeyEnv === 'ANTHROPIC_API_KEY' && (
+            <Text color={props.theme.dim}>
+              厂商文档若写的是 ANTHROPIC_AUTH_TOKEN，只设它也可以（两个名字都认）
+            </Text>
+          )}
         </Box>
       )}
       {props.error && <Text color={props.theme.warn}>{props.error}</Text>}

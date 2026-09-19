@@ -36,8 +36,12 @@ import type {
   UserQuestionPrompt,
 } from '@spark/protocol'
 import {
+  ANTHROPIC_AUTH_ENV_KEYS,
+  buildAnthropicAuthEnv,
   createLogger,
   estimateTokens,
+  resolveAnthropicAuthMode,
+  resolveAnthropicBaseUrl,
   resolveModelContextWindow,
   resolveSoftContextLimit,
   resolveSoftContextLimitForWindow,
@@ -275,8 +279,29 @@ function buildIsolatedRuntimeEnv(
     }
     return finalizeManagedRuntimeEnv(env)
   }
-  env.ANTHROPIC_API_KEY = apiKey
-  if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
+  // 渠道认证键完全由 Provider 决定：先清掉 customEnv / 宿主继承里可能残留的同名键。
+  // 否则残留的 ANTHROPIC_AUTH_TOKEN 会与本次注入的凭据并存，造成「key 正确但 401」。
+  const staleAuthKeys = ANTHROPIC_AUTH_ENV_KEYS.filter((key) => env[key] != null)
+  for (const key of ANTHROPIC_AUTH_ENV_KEYS) delete env[key]
+  // 官方 Anthropic 端点按 key 形态投放单头；第三方 Anthropic 兼容渠道（阶跃 / GLM /
+  // Kimi / 中转站等）只认 x-api-key 或 Bearer 之一，同时投放两种凭据。
+  // 规则与证据见 @spark/shared/anthropic-auth。
+  const anthropicAuthEnv = buildAnthropicAuthEnv(apiEndpoint, apiKey)
+  Object.assign(env, anthropicAuthEnv)
+  // SDK 自己会在 base URL 后追加 /v1/messages：渠道配置里若填的是完整 messages
+  // 地址（…/v1/messages）或 …/v1，必须先归一化，否则请求会打到
+  // …/v1/messages/v1/messages 直接 404。
+  const anthropicBaseUrl = apiEndpoint != null ? resolveAnthropicBaseUrl(apiEndpoint) : null
+  if (anthropicBaseUrl != null) env.ANTHROPIC_BASE_URL = anthropicBaseUrl
+  log.debug(
+    `Anthropic credential injection: mode=${resolveAnthropicAuthMode(apiEndpoint, apiKey)}, ` +
+      `keys=${Object.keys(anthropicAuthEnv).join('+')}, ` +
+      `endpoint=${anthropicBaseUrl ?? 'default'}` +
+      (anthropicBaseUrl != null && anthropicBaseUrl !== apiEndpoint
+        ? ` (normalized from ${apiEndpoint})`
+        : '') +
+      (staleAuthKeys.length > 0 ? `, clearedStaleKeys=${staleAuthKeys.join('+')}` : ''),
+  )
   // Map Claude tier slots: prefer per-tier override, fall back to provider's
   // single configured model. Without this, SDK-spawned subagents (which default
   // to the Haiku tier) would request an Anthropic model ID the third-party

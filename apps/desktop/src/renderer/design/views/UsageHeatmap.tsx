@@ -22,11 +22,10 @@ export function UsageHeatmap() {
   const [range, setRange] = useState<UsageHeatmapRange>('1y')
   const { dailyGroups, loading, error, reload } = useUsageHeatmapData(range)
 
-  const weeks = useMemo(
-    () => buildUsageHeatmapWeeks(range, dailyGroups),
-    [dailyGroups, range],
-  )
+  const weeks = useMemo(() => buildUsageHeatmapWeeks(range, dailyGroups), [dailyGroups, range])
   const { totalTokens, maxTokens } = useMemo(() => summarizeUsageHeatmap(weeks), [weeks])
+  // 失败且完全没有数据时才整块换成错误提示；持有缓存数据时保留图表，避免刷新失败把区块闪没。
+  const hideBody = error != null && dailyGroups.length === 0
 
   return (
     <div className="settings-card usage-heatmap-card">
@@ -45,6 +44,7 @@ export function UsageHeatmap() {
         />
       </div>
 
+      {/* 刷新失败但仍持有缓存数据时，保留图表并单独提示，避免整块被错误态替换。 */}
       {error ? (
         <div className="usage-heatmap-error" role="alert">
           <span>用量数据加载失败：{error}</span>
@@ -52,7 +52,9 @@ export function UsageHeatmap() {
             重试
           </button>
         </div>
-      ) : loading ? (
+      ) : null}
+
+      {hideBody ? null : loading ? (
         <div className="usage-heatmap-loading" aria-label="正在加载用量数据">
           {Array.from({ length: 84 }, (_, index) => (
             <span key={index} />
@@ -93,7 +95,12 @@ export function UsageHeatmap() {
                     )
 
                     return dayLabel ? (
-                      <Tooltip key={day.date} mouseEnterDelay={0.05} placement="top" title={dayLabel}>
+                      <Tooltip
+                        key={day.date}
+                        mouseEnterDelay={0.05}
+                        placement="top"
+                        title={dayLabel}
+                      >
                         {cell}
                       </Tooltip>
                     ) : (
@@ -108,7 +115,13 @@ export function UsageHeatmap() {
       )}
 
       <div className="usage-heatmap-footer">
-        <span>{loading ? '—' : maxTokens > 0 ? `单日最高 ${formatUsageTokens(maxTokens)}` : '暂无用量记录'}</span>
+        <span>
+          {loading
+            ? '—'
+            : maxTokens > 0
+              ? `单日最高 ${formatUsageTokens(maxTokens)}`
+              : '暂无用量记录'}
+        </span>
         <span className="usage-heatmap-legend" aria-label="用量强度图例">
           <span>少</span>
           {[0, 1, 2, 3, 4].map((level) => (

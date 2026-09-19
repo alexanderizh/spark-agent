@@ -103,9 +103,19 @@
 
 .media-artifact-viewer-pager {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 4px;
   font-variant-numeric: tabular-nums;
+}
+
+/* 跨任务翻页时说明当前项归属：长标题单行省略，不撑高工具栏 */
+.media-artifact-viewer-pager-label {
+  max-width: min(240px, 30vw);
+  overflow: hidden;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .media-artifact-viewer-actions {

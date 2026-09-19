@@ -1,0 +1,14 @@
+/* ContextMenu — 通用右键菜单（容器 / 条目本身复用 views.css 的全局样式） */
+
+.action-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+/* 键盘 / 悬浮高亮项：与 :hover 同色，避免出现「鼠标高亮」和「键盘高亮」两套观感 */
+.context-action-menu .action-menu-item.is-active,
+.context-action-menu .action-menu-item.is-active:hover,
+.context-action-menu .action-menu-item.is-active:focus-visible {
+  background: var(--hover);
+}

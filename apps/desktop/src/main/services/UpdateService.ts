@@ -22,12 +22,7 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { app, powerMonitor } from 'electron'
 import { createLogger } from '@spark/shared'
-import type {
-  UpdateStatus,
-  UpdateInfo,
-  UpdateProgressInfo,
-  UpdateChannel,
-} from '@spark/protocol'
+import type { UpdateStatus, UpdateInfo, UpdateProgressInfo, UpdateChannel } from '@spark/protocol'
 import { pruneUpdaterCacheDirs } from './updaterCache.js'
 
 const log = createLogger('update-service')
@@ -43,7 +38,7 @@ const RELEASE_REQUEST_USER_AGENT = 'Spark-Agent-Updater'
 const DEFAULT_RELEASE_OWNER = 'alexanderizh'
 const DEFAULT_RELEASE_REPO = 'spark-agent'
 const DEFAULT_UPDATER_CACHE_DIR = 'spark-agent-updater'
-const DEFAULT_RELEASES_API_BASE = 'https://spark.yiqibyte.com'
+const DEFAULT_RELEASES_API_BASE = 'https://www.yiqibyte.com'
 
 export interface UpdatePreferences {
   autoCheck: boolean
@@ -162,7 +157,9 @@ function loadReleaseFeedConfig(): LoadedReleaseFeedConfig {
     releasesApiBase: DEFAULT_RELEASES_API_BASE,
   }
 
-  const configPath = app.isPackaged ? resolvePackagedUpdateConfigPath() : resolveDevUpdateConfigPath()
+  const configPath = app.isPackaged
+    ? resolvePackagedUpdateConfigPath()
+    : resolveDevUpdateConfigPath()
   if (configPath == null) {
     return {
       config: fallback,
@@ -177,22 +174,26 @@ function loadReleaseFeedConfig(): LoadedReleaseFeedConfig {
       return { config: fallback, source: `fallback (invalid config: ${configPath})` }
     }
     const record = parsed as Record<string, unknown>
-    const owner = typeof record.owner === 'string' && record.owner.trim().length > 0
-      ? record.owner.trim()
-      : fallback.owner
-    const repo = typeof record.repo === 'string' && record.repo.trim().length > 0
-      ? record.repo.trim()
-      : fallback.repo
+    const owner =
+      typeof record.owner === 'string' && record.owner.trim().length > 0
+        ? record.owner.trim()
+        : fallback.owner
+    const repo =
+      typeof record.repo === 'string' && record.repo.trim().length > 0
+        ? record.repo.trim()
+        : fallback.repo
     const updaterCacheDirName =
       typeof record.updaterCacheDirName === 'string' && record.updaterCacheDirName.trim().length > 0
         ? record.updaterCacheDirName.trim()
         : fallback.updaterCacheDirName
-    const token = typeof record.token === 'string' && record.token.trim().length > 0
-      ? record.token.trim()
-      : undefined
-    const releasesApiBase = typeof record.releasesApiBase === 'string' && record.releasesApiBase.trim().length > 0
-      ? record.releasesApiBase.trim().replace(/\/$/, '')
-      : fallback.releasesApiBase
+    const token =
+      typeof record.token === 'string' && record.token.trim().length > 0
+        ? record.token.trim()
+        : undefined
+    const releasesApiBase =
+      typeof record.releasesApiBase === 'string' && record.releasesApiBase.trim().length > 0
+        ? record.releasesApiBase.trim().replace(/\/$/, '')
+        : fallback.releasesApiBase
     return {
       config: {
         provider: 'github',
@@ -219,7 +220,10 @@ function parseFlatYaml(raw: string): Record<string, string> {
     if (separatorIndex <= 0) continue
     const key = trimmed.slice(0, separatorIndex).trim()
     let value = trimmed.slice(separatorIndex + 1).trim()
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1)
     }
     if (key.length > 0) {
@@ -241,12 +245,13 @@ function parseVersion(value: string): ParsedVersion {
     const parsed = Number.parseInt(segment, 10)
     return Number.isFinite(parsed) ? parsed : 0
   })
-  const prerelease = prereleasePart == null || prereleasePart.length === 0
-    ? null
-    : prereleasePart.split('.').map((segment) => {
-      if (/^\d+$/.test(segment)) return Number.parseInt(segment, 10)
-      return segment
-    })
+  const prerelease =
+    prereleasePart == null || prereleasePart.length === 0
+      ? null
+      : prereleasePart.split('.').map((segment) => {
+          if (/^\d+$/.test(segment)) return Number.parseInt(segment, 10)
+          return segment
+        })
   return { core, prerelease }
 }
 
@@ -355,7 +360,8 @@ function parseAssetDigest(digest: string | null | undefined): ParsedAssetDigest 
   return {
     algorithm,
     expected,
-    encoding: expected.length === expectedHexLength && /^[a-f\d]+$/i.test(expected) ? 'hex' : 'base64',
+    encoding:
+      expected.length === expectedHexLength && /^[a-f\d]+$/i.test(expected) ? 'hex' : 'base64',
   }
 }
 
@@ -390,11 +396,15 @@ function buildGitHubRateLimitMessage(retryAt: number | null): string {
   return 'GitHub 更新检查触发了频率限制，请稍后再试。'
 }
 
-function parseGitHubRateLimitState(response: Response, responseText: string): GitHubRateLimitState | null {
+function parseGitHubRateLimitState(
+  response: Response,
+  responseText: string,
+): GitHubRateLimitState | null {
   if (response.status !== 403 && response.status !== 429) return null
 
   const retryAfterHeader = response.headers.get('retry-after')
-  const retryAfterSeconds = retryAfterHeader == null ? Number.NaN : Number.parseInt(retryAfterHeader, 10)
+  const retryAfterSeconds =
+    retryAfterHeader == null ? Number.NaN : Number.parseInt(retryAfterHeader, 10)
   const retryAtFromRetryAfter = Number.isFinite(retryAfterSeconds)
     ? Date.now() + retryAfterSeconds * 1000
     : null
@@ -403,21 +413,22 @@ function parseGitHubRateLimitState(response: Response, responseText: string): Gi
   const remaining = remainingHeader == null ? Number.NaN : Number.parseInt(remainingHeader, 10)
   const resetHeader = response.headers.get('x-ratelimit-reset')
   const resetEpochSeconds = resetHeader == null ? Number.NaN : Number.parseInt(resetHeader, 10)
-  const retryAtFromReset = Number.isFinite(resetEpochSeconds)
-    ? resetEpochSeconds * 1000
-    : null
+  const retryAtFromReset = Number.isFinite(resetEpochSeconds) ? resetEpochSeconds * 1000 : null
 
   const lowerText = responseText.toLowerCase()
   const looksLikeRateLimit =
-    response.status === 429
-    || retryAtFromRetryAfter != null
-    || (remaining === 0 && retryAtFromReset != null)
-    || lowerText.includes('secondary rate limit')
-    || lowerText.includes('api rate limit exceeded')
+    response.status === 429 ||
+    retryAtFromRetryAfter != null ||
+    (remaining === 0 && retryAtFromReset != null) ||
+    lowerText.includes('secondary rate limit') ||
+    lowerText.includes('api rate limit exceeded')
 
   if (!looksLikeRateLimit) return null
 
-  const retryAt = retryAtFromRetryAfter ?? retryAtFromReset ?? (lowerText.includes('secondary rate limit') ? Date.now() + 60_000 : null)
+  const retryAt =
+    retryAtFromRetryAfter ??
+    retryAtFromReset ??
+    (lowerText.includes('secondary rate limit') ? Date.now() + 60_000 : null)
 
   return {
     message: buildGitHubRateLimitMessage(retryAt),
@@ -497,8 +508,10 @@ export class UpdateService {
   private consecutiveAutoCheckFailures = 0
   private onStatusChange: StatusChangeHandler | null = null
   private onLastCheckedChange: ((iso: string) => void) | null = null
-  private onUpdateAvailable: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null = null
-  private onUpdateDownloaded: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null = null
+  private onUpdateAvailable: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null =
+    null
+  private onUpdateDownloaded: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null =
+    null
   private onUpdateError: ((message: string) => void) | null = null
   private onRequestQuit: (() => void) | null = null
   private initialized = false
@@ -566,18 +579,24 @@ export class UpdateService {
 
     const loadedConfig = loadReleaseFeedConfig()
     this.releaseFeedConfig = loadedConfig.config
-    log.info(`Update feed configured from ${loadedConfig.source} -> ${loadedConfig.config.owner}/${loadedConfig.config.repo}`)
+    log.info(
+      `Update feed configured from ${loadedConfig.source} -> ${loadedConfig.config.owner}/${loadedConfig.config.repo}`,
+    )
 
     // 历史版本安装包只增不删会线性吃掉磁盘，启动时回收旧版本缓存目录。
     void pruneUpdaterCacheDirs(
       join(app.getPath('userData'), this.releaseFeedConfig.updaterCacheDirName),
-    ).then((removed) => {
-      if (removed.length > 0) {
-        log.info(`Pruned ${removed.length} stale updater cache directories: ${removed.map((entry) => basename(entry.directory)).join(', ')}`)
-      }
-    }).catch((error) => {
-      log.warn(`Failed to prune updater cache: ${String(error)}`)
-    })
+    )
+      .then((removed) => {
+        if (removed.length > 0) {
+          log.info(
+            `Pruned ${removed.length} stale updater cache directories: ${removed.map((entry) => basename(entry.directory)).join(', ')}`,
+          )
+        }
+      })
+      .catch((error) => {
+        log.warn(`Failed to prune updater cache: ${String(error)}`)
+      })
 
     app.on('browser-window-focus', this.onWindowFocus)
     app.on('will-quit', this.onWillQuit)
@@ -702,7 +721,11 @@ export class UpdateService {
   }
 
   async downloadUpdate(errorMode: UpdateErrorMode = 'notify'): Promise<boolean> {
-    if ((this.status.state !== 'available' && this.status.state !== 'downloaded') || this.releaseAsset == null || this.releaseInfo == null) {
+    if (
+      (this.status.state !== 'available' && this.status.state !== 'downloaded') ||
+      this.releaseAsset == null ||
+      this.releaseInfo == null
+    ) {
       log.warn(`Cannot download: current state is ${this.status.state}`)
       return false
     }
@@ -713,7 +736,11 @@ export class UpdateService {
 
     try {
       const version = this.releaseInfo.version
-      const targetDir = join(app.getPath('userData'), this.releaseFeedConfig.updaterCacheDirName, version)
+      const targetDir = join(
+        app.getPath('userData'),
+        this.releaseFeedConfig.updaterCacheDirName,
+        version,
+      )
       const finalPath = join(targetDir, this.releaseAsset.asset.name)
       const tempPath = `${finalPath}.download`
 
@@ -734,17 +761,29 @@ export class UpdateService {
 
       const declaredAssetSize = this.releaseAsset.asset.size
       const responseSize = Number.parseInt(response.headers.get('content-length') ?? '0', 10)
-      if (declaredAssetSize != null && declaredAssetSize > 0 && responseSize > 0 && responseSize !== declaredAssetSize) {
-        throw new Error(`更新包大小声明不一致：发布信息为 ${declaredAssetSize} 字节，服务器返回 ${responseSize} 字节`)
+      if (
+        declaredAssetSize != null &&
+        declaredAssetSize > 0 &&
+        responseSize > 0 &&
+        responseSize !== declaredAssetSize
+      ) {
+        throw new Error(
+          `更新包大小声明不一致：发布信息为 ${declaredAssetSize} 字节，服务器返回 ${responseSize} 字节`,
+        )
       }
-      const expectedSize = declaredAssetSize != null && declaredAssetSize > 0
-        ? declaredAssetSize
-        : responseSize > 0 ? responseSize : undefined
+      const expectedSize =
+        declaredAssetSize != null && declaredAssetSize > 0
+          ? declaredAssetSize
+          : responseSize > 0
+            ? responseSize
+            : undefined
       const total = expectedSize ?? 0
       const expectedDigest = parseAssetDigest(this.releaseAsset.asset.digest)
       const hasher = expectedDigest == null ? null : createHash(expectedDigest.algorithm)
       if (expectedDigest == null) {
-        log.warn(`Update asset ${this.releaseAsset.asset.name} has no integrity digest; keeping compatibility with legacy releases`)
+        log.warn(
+          `Update asset ${this.releaseAsset.asset.name} has no integrity digest; keeping compatibility with legacy releases`,
+        )
       }
       const writer = createWriteStream(tempPath)
       const reader = response.body.getReader()
@@ -780,9 +819,7 @@ export class UpdateService {
         ])
         writer.end()
         await finishPromise
-        const actualDigest = expectedDigest == null
-          ? null
-          : hasher!.digest(expectedDigest.encoding)
+        const actualDigest = expectedDigest == null ? null : hasher!.digest(expectedDigest.encoding)
         verifyDownloadedAsset(transferred, expectedSize, expectedDigest, actualDigest)
       } catch (error) {
         writer.destroy()
@@ -915,7 +952,10 @@ export class UpdateService {
     this.onStatusChange?.(this.status)
   }
 
-  private scheduleAutomaticCheck(delayMs: number, reason: AutomaticUpdateCheckReason = 'interval'): void {
+  private scheduleAutomaticCheck(
+    delayMs: number,
+    reason: AutomaticUpdateCheckReason = 'interval',
+  ): void {
     if (!this.initialized || !this.preferences.autoCheck) return
     if (this.autoCheckTimer != null) {
       clearTimeout(this.autoCheckTimer)
@@ -929,7 +969,8 @@ export class UpdateService {
   }
 
   private triggerAutomaticCheck(reason: AutomaticUpdateCheckReason): void {
-    if (!this.initialized || !this.preferences.autoCheck || this.automaticCheckInFlight != null) return
+    if (!this.initialized || !this.preferences.autoCheck || this.automaticCheckInFlight != null)
+      return
     if (this.autoCheckTimer != null) {
       clearTimeout(this.autoCheckTimer)
       this.autoCheckTimer = null
@@ -966,7 +1007,7 @@ export class UpdateService {
 
   private getNextAutoCheckDelay(): number {
     const backoffDelay = Math.min(
-      AUTO_CHECK_INTERVAL_MS * (2 ** this.consecutiveAutoCheckFailures),
+      AUTO_CHECK_INTERVAL_MS * 2 ** this.consecutiveAutoCheckFailures,
       AUTO_CHECK_MAX_BACKOFF_MS,
     )
     const jitter = Math.round((Math.random() * 2 - 1) * AUTO_CHECK_JITTER_MS)
@@ -1000,7 +1041,9 @@ export class UpdateService {
     return headers
   }
 
-  private getDownloadRequestHeaders(source: ResolvedReleaseAsset['source']): Record<string, string> {
+  private getDownloadRequestHeaders(
+    source: ResolvedReleaseAsset['source'],
+  ): Record<string, string> {
     if (source === 'github') return this.getRequestHeaders()
     return {
       'user-agent': RELEASE_REQUEST_USER_AGENT,
@@ -1090,8 +1133,16 @@ export class UpdateService {
     throw new Error(`检查更新失败：GitHub 返回 ${response.status}${suffix}`)
   }
 
-  private async resolveCachedDownloadPath(version: string, assetName: string): Promise<string | null> {
-    const candidate = join(app.getPath('userData'), this.releaseFeedConfig.updaterCacheDirName, version, assetName)
+  private async resolveCachedDownloadPath(
+    version: string,
+    assetName: string,
+  ): Promise<string | null> {
+    const candidate = join(
+      app.getPath('userData'),
+      this.releaseFeedConfig.updaterCacheDirName,
+      version,
+      assetName,
+    )
     if (!existsSync(candidate)) return null
     try {
       const info = await stat(candidate)

@@ -557,10 +557,13 @@ function registerConfiguredModel(
     )
   }
   const apiKeyEnv = provider.api_key_env ?? defaultKeyEnvironment(provider.protocol)
-  const apiKey = environment[apiKeyEnv]
-  if (!apiKey) {
+  const keyEnvironmentNames = credentialEnvironmentNames(provider.protocol, apiKeyEnv)
+  const apiKey = keyEnvironmentNames
+    .map((name) => environment[name])
+    .find((value): value is string => typeof value === 'string' && value.length > 0)
+  if (apiKey === undefined) {
     throw new ModelConfigError(
-      `Provider ${model.provider} requires credential environment variable ${apiKeyEnv}`,
+      `Provider ${model.provider} requires credential environment variable ${keyEnvironmentNames.join(' or ')}`,
     )
   }
   registry.registerHttp({
@@ -662,8 +665,23 @@ function registerSparkWorkModel(
   })
 }
 
+const ANTHROPIC_KEY_ENVIRONMENT = 'ANTHROPIC_API_KEY'
+const ANTHROPIC_KEY_ENVIRONMENT_FALLBACK = 'ANTHROPIC_AUTH_TOKEN'
+
 function defaultKeyEnvironment(protocol: ModelProtocol): string {
-  return protocol === 'anthropic-messages' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
+  return protocol === 'anthropic-messages' ? ANTHROPIC_KEY_ENVIRONMENT : 'OPENAI_API_KEY'
+}
+
+/**
+ * Anthropic 兼容渠道的凭据变量名没有统一口径：Claude Code 官方文档写
+ * `ANTHROPIC_API_KEY`，而多数第三方厂商 / 中转站文档只让导出 `ANTHROPIC_AUTH_TOKEN`。
+ * 默认名取不到时回退到另一个名字，避免「用户按厂商文档只设了 AUTH_TOKEN」直接
+ * fail closed。显式配置了非默认变量名时不做回退，保持「配什么用什么」的严格语义。
+ */
+function credentialEnvironmentNames(protocol: ModelProtocol, apiKeyEnv: string): string[] {
+  if (protocol !== 'anthropic-messages') return [apiKeyEnv]
+  if (apiKeyEnv !== ANTHROPIC_KEY_ENVIRONMENT) return [apiKeyEnv]
+  return [ANTHROPIC_KEY_ENVIRONMENT, ANTHROPIC_KEY_ENVIRONMENT_FALLBACK]
 }
 
 function parseFailover(value: string | undefined): string[] | undefined {

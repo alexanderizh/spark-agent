@@ -5,7 +5,7 @@ import type {
   ProviderProfileRow,
 } from '@spark/storage'
 import type { ModelProfile } from '@spark/protocol'
-import { createLogger, fetchJson, HttpError } from '@spark/shared'
+import { buildAnthropicAuthHeaders, createLogger, fetchJson, HttpError } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('model.service')
@@ -329,7 +329,8 @@ export class ModelService {
         headers: isAnthropic
           ? {
               'Content-Type': 'application/json',
-              ...(apiKey.length > 0 ? { 'x-api-key': apiKey } : {}),
+              // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
+              ...(apiKey.length > 0 ? buildAnthropicAuthHeaders(apiEndpoint, apiKey) : {}),
               'anthropic-version': '2023-06-01',
             }
           : {

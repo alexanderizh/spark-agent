@@ -1811,7 +1811,12 @@ function VendorPresetCard({
         }
       }}
     >
-      <ProviderLogo vendor={vendor} size={36} shape="rounded" />
+      <ProviderLogo
+        vendor={vendor}
+        icon={providerIconFromVendorId(vendor.id)}
+        size={36}
+        shape="rounded"
+      />
       <div className="pv_vendor_info">
         <div className="pv_vendor_name">{vendor.name}</div>
         <div className="pv_vendor_desc">{vendor.desc}</div>
@@ -3901,9 +3906,7 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">
-                模型配置图标
-              </label>
+              <label className="pv_form_label">模型配置图标</label>
               <button
                 type="button"
                 className="pv_icon_picker_trigger pv_form_select_preview"

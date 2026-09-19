@@ -4,8 +4,9 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeroUsageHeatmap } from './HeroUsageHeatmap'
-import { resolveEmptyHeroUsageMode, useEmptyHeroUsage } from './useEmptyHeroUsage'
+import { HERO_USAGE_RANGE, resolveEmptyHeroUsageMode, useEmptyHeroUsage } from './useEmptyHeroUsage'
 import type { UsageHeatmapDailyGroup } from '../usageHeatmap.utils'
+import { clearUsageHeatmapCache, writeUsageHeatmapCache } from '../usageHeatmapCache'
 
 vi.mock('@lobehub/ui', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
@@ -65,6 +66,8 @@ afterEach(() => {
     act(() => item.root.unmount())
     item.container.remove()
   }
+  // 缓存是模块级 + localStorage 的单例，逐用例清空避免相互污染。
+  clearUsageHeatmapCache()
   vi.restoreAllMocks()
 })
 
@@ -75,7 +78,9 @@ describe('resolveEmptyHeroUsageMode', () => {
     expect(resolveEmptyHeroUsageMode(false, null, 5)).toBe('heatmap')
     expect(resolveEmptyHeroUsageMode(false, null, 1)).toBe('heatmap')
     expect(resolveEmptyHeroUsageMode(false, null, 0)).toBe('cards')
-    expect(resolveEmptyHeroUsageMode(false, 'boom', 30)).toBe('cards')
+    // 已有 30 天活跃数据时，即使本轮刷新失败也保持热力图，不回退成快捷卡片（避免闪烁）。
+    expect(resolveEmptyHeroUsageMode(false, 'boom', 30)).toBe('heatmap')
+    expect(resolveEmptyHeroUsageMode(true, 'boom', 0)).toBe('cards')
   })
 })
 
@@ -134,6 +139,51 @@ describe('useEmptyHeroUsage', () => {
     await flushAsync()
 
     expect(container.textContent).toBe('pending')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('useEmptyHeroUsage 缓存优先（消除卡片 → 热力图闪现）', () => {
+  it('再次进入空会话时首帧直接是热力图，不再先渲染快捷卡片', async () => {
+    const invoke = vi.fn().mockResolvedValue({ dailyGroups: makeSparseActiveDays(3) })
+    ;(window as unknown as { spark: { invoke: typeof invoke } }).spark = { invoke }
+
+    // 首次进入没有任何缓存，仍会经过一次 pending（一次性成本）。
+    const first = mount(<HeroUsageModeProbe enabled />)
+    expect(first.textContent).toBe('pending')
+    await flushAsync()
+    expect(first.textContent).toBe('heatmap')
+
+    // 再次进入空会话（新建会话 / 重启应用后首帧）：命中缓存，首帧即是热力图。
+    const second = mount(<HeroUsageModeProbe enabled />)
+    expect(second.textContent).toBe('heatmap')
+  })
+
+  it('已有缓存数据时后台刷新失败也不回退成快捷卡片', async () => {
+    const invoke = vi.fn().mockResolvedValue({ dailyGroups: makeSparseActiveDays(2) })
+    ;(window as unknown as { spark: { invoke: typeof invoke } }).spark = { invoke }
+
+    const warm = mount(<HeroUsageModeProbe enabled />)
+    await flushAsync()
+    expect(warm.textContent).toBe('heatmap')
+
+    const failing = vi.fn().mockRejectedValue(new Error('db locked'))
+    ;(window as unknown as { spark: { invoke: typeof failing } }).spark = { invoke: failing }
+
+    const restored = mount(<HeroUsageModeProbe enabled />)
+    expect(restored.textContent).toBe('heatmap')
+    await flushAsync()
+    expect(restored.textContent).toBe('heatmap')
+  })
+
+  it('命中缓存时即使处于禁用态也直接给出 heatmap，且不发 IPC', async () => {
+    writeUsageHeatmapCache(HERO_USAGE_RANGE, makeSparseActiveDays(2))
+    const invoke = vi.fn()
+    ;(window as unknown as { spark: { invoke: typeof invoke } }).spark = { invoke }
+
+    const container = mount(<HeroUsageModeProbe enabled={false} />)
+    expect(container.textContent).toBe('heatmap')
+    await flushAsync()
     expect(invoke).not.toHaveBeenCalled()
   })
 })

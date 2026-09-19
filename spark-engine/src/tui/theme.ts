@@ -23,6 +23,27 @@ export interface TuiTheme {
   readonly chromeBg?: string
   /** User-message block background; terminals below 256 colors drop it. */
   readonly userBg?: string
+  /**
+   * Token colors for code and diff rendering. Optional: themes written before
+   * syntax highlighting keep working and fall back to {@link defaultCodePalette}.
+   */
+  readonly code?: TuiCodePalette
+}
+
+/**
+ * Terminal code/diff token palette. Kept deliberately narrow — comments stay
+ * quieter than body text and the two diff colors are the only saturated pair —
+ * so dense code never competes with the mint status accent.
+ */
+export interface TuiCodePalette {
+  readonly keyword: string
+  readonly string: string
+  readonly number: string
+  readonly comment: string
+  readonly type: string
+  readonly added: string
+  readonly removed: string
+  readonly hunk: string
 }
 
 export interface TuiGlyphs {
@@ -41,6 +62,17 @@ export interface TuiGlyphs {
 // Industrial console palette: graphite surfaces carry the hierarchy while a
 // single cool mint accent communicates focus and activity. Amber is reserved
 // for warnings so selection and risk never compete for attention.
+const defaultCodePalette: TuiCodePalette = {
+  keyword: '#7fb0e8',
+  string: '#b9d68f',
+  number: '#e6b473',
+  comment: '#5b6a73',
+  type: '#78ead4',
+  added: '#6fbf7f',
+  removed: '#e0736f',
+  hunk: '#c0a8ff',
+}
+
 export const defaultTheme: TuiTheme = {
   fg: '#dce6ea',
   dim: '#7d8b94',
@@ -54,6 +86,12 @@ export const defaultTheme: TuiTheme = {
   selectedBg: '#163a38',
   chromeBg: '#0a1015',
   userBg: '#16222c',
+  code: defaultCodePalette,
+}
+
+/** Resolves the code palette for a theme, tolerating themes that omit it. */
+export function codePalette(theme: TuiTheme): TuiCodePalette {
+  return { ...defaultCodePalette, ...theme.code }
 }
 
 /** Rich fills become noisy or unreadable when terminals quantize below 256 colors. */

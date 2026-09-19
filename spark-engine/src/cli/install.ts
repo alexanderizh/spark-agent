@@ -527,8 +527,8 @@ max_retries = 2
 
 # [providers.anthropic]
 # protocol = "anthropic-messages"
-# base_url = "https://api.anthropic.com"
-# api_key_env = "ANTHROPIC_API_KEY"
+# base_url = "https://api.anthropic.com"     # root, …/v1, or a full …/v1/messages URL
+# api_key_env = "ANTHROPIC_API_KEY"          # ANTHROPIC_AUTH_TOKEN is accepted as a fallback
 #
 # [models.claude]
 # provider = "anthropic"

@@ -158,7 +158,7 @@ const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
 const GITHUB_ISSUES_URL = 'https://github.com/alexanderizh/spark-agent/issues'
-const OFFICIAL_SITE_URL = 'https://spark.yiqibyte.com'
+const OFFICIAL_SITE_URL = 'https://www.yiqibyte.com/'
 const CONTACT_EMAIL = 'zhangyangupup@163.com'
 const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
 type RuntimeErrorDetails = {

@@ -437,7 +437,7 @@ const CHANNEL_META: Record<
   'wechat-claw': {
     defaultName: '微信 Claw',
     // 微信 Claw 为自建网关协议，无官方统一搭建入口；指向远程连接文档以便用户了解如何对接。
-    consoleUrl: 'https://spark.yiqibyte.com/docs/remote-connections',
+    consoleUrl: 'https://www.yiqibyte.com/docs/remote-connections',
     requiredFields: ['clawEndpoint', 'clawAccessToken'],
     instructions: [
       '启动微信 Claw 网关，并确认 SparkWork 可访问网关地址。',

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
-import type { SDKQueryOptions, SDKUserMessage } from '../../sdk/types.js'
+import type { SDKQueryOptions, SDKSettings, SDKUserMessage } from '../../sdk/types.js'
 
 const queryMock = vi.hoisted(() => vi.fn())
 
@@ -382,12 +382,96 @@ describe('ClaudeSDKExecutor', () => {
       model: 'glm-5',
       env: expect.objectContaining({
         ANTHROPIC_API_KEY: 'sk-runtime',
+        // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一：两种凭据同时注入，
+        // 渠道按自己支持的那个取用（claude CLI 在两个环境变量都存在时也是双头发送）。
+        ANTHROPIC_AUTH_TOKEN: 'sk-runtime',
         ANTHROPIC_BASE_URL: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
       }),
       permissions: {
         defaultMode: 'auto',
       },
     })
+  })
+
+  it('normalizes a full messages endpoint so the SDK does not double the /v1/messages path', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      apiKey: 'ep-stepfun',
+      // 渠道配置里填的是完整 messages 地址（阶跃星辰的常见写法）
+      apiEndpoint: 'https://api.stepfun.com/step_plan/v1/messages',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const settings = options.settings as SDKSettings | undefined
+    // SDK 会自己追加 /v1/messages，base URL 必须是裸根地址
+    expect(settings?.env?.ANTHROPIC_BASE_URL).toBe('https://api.stepfun.com/step_plan')
+    expect(options.env?.ANTHROPIC_BASE_URL).toBe('https://api.stepfun.com/step_plan')
+  })
+
+  it('keeps official Anthropic endpoints on the single x-api-key credential', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      apiKey: 'sk-ant-api03-official',
+      apiEndpoint: 'https://api.anthropic.com',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const settings = options.settings as SDKSettings | undefined
+    expect(settings?.env?.ANTHROPIC_API_KEY).toBe('sk-ant-api03-official')
+    expect(settings?.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+  })
+
+  it('clears a residual custom-env credential so provider auth stays authoritative', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      apiKey: 'ep-stepfun',
+      apiEndpoint: 'https://api.stepfun.com/step_plan',
+      customEnv: {
+        ANTHROPIC_API_KEY: 'stale-api-key',
+        ANTHROPIC_AUTH_TOKEN: 'stale-auth-token',
+      },
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const settings = options.settings as SDKSettings | undefined
+    expect(settings?.env?.ANTHROPIC_API_KEY).toBe('ep-stepfun')
+    expect(settings?.env?.ANTHROPIC_AUTH_TOKEN).toBe('ep-stepfun')
   })
 
   it('preserves Spark xhigh reasoning as Claude xhigh effort', async () => {

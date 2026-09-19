@@ -1,7 +1,10 @@
 import { Box, Text } from 'ink'
 import { cloneElement, type ReactElement } from 'react'
 
+import { diffLineKind, isDiffFence, looksLikeUnifiedDiff } from '../diff.js'
+import { codeLanguageFromFence } from '../syntax.js'
 import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
+import { codeSegments, diffSegments, type CodeSegment } from './code-segments.js'
 
 export interface MarkdownTextProps {
   readonly text: string
@@ -11,8 +14,9 @@ export interface MarkdownTextProps {
 
 /**
  * Dependency-free terminal markdown for settled assistant messages: headings,
- * lists, quotes, fenced code, inline code and bold. Unknown syntax falls
- * through as plain text, so a parse miss can never lose content.
+ * lists, quotes, fenced code, inline code and bold. Fenced `diff` content and
+ * recognized languages are colorized character-for-character; everything
+ * unknown falls through as plain text, so a parse miss can never lose content.
  */
 export function MarkdownText(props: MarkdownTextProps): ReactElement {
   const lines = renderLines(props.text, props.theme, props.capabilities)
@@ -21,9 +25,7 @@ export function MarkdownText(props: MarkdownTextProps): ReactElement {
       {lines.map((line, rowIndex) => (
         <Text key={rowIndex}>
           {line.map((segment, segmentIndex) =>
-            typeof segment === 'string'
-              ? segment
-              : cloneElement(segment, { key: segmentIndex }),
+            typeof segment === 'string' ? segment : cloneElement(segment, { key: segmentIndex }),
           )}
         </Text>
       ))}
@@ -31,7 +33,7 @@ export function MarkdownText(props: MarkdownTextProps): ReactElement {
   )
 }
 
-type Segment = string | ReactElement
+type Segment = CodeSegment
 
 function renderLines(
   text: string,
@@ -40,14 +42,20 @@ function renderLines(
 ): readonly Segment[][] {
   const symbols = glyphs(capabilities)
   const rows: Segment[][] = []
-  let inCode = false
+  let fence: Fence | undefined
   for (const rawLine of text.split('\n')) {
-    if (/^\s*(```|~~~)/.test(rawLine)) {
-      inCode = !inCode
+    const marker = /^\s*(?:```|~~~)\s*(.*)$/u.exec(rawLine)
+    if (marker !== null) {
+      if (fence === undefined) {
+        fence = { info: marker[1] ?? '', lines: [] }
+      } else {
+        rows.push(...codeRows(fence, theme))
+        fence = undefined
+      }
       continue
     }
-    if (inCode) {
-      rows.push([dim(theme, `  ${rawLine}`.trimEnd())])
+    if (fence !== undefined) {
+      fence.lines.push(rawLine)
       continue
     }
     if (rawLine.trim() === '') {
@@ -92,11 +100,42 @@ function renderLines(
     }
     rows.push(inline(rawLine, theme))
   }
+  // An unterminated fence still renders its content instead of dropping it.
+  if (fence !== undefined) rows.push(...codeRows(fence, theme))
   return rows
 }
 
+interface Fence {
+  readonly info: string
+  readonly lines: string[]
+}
+
+/**
+ * Fenced content: explicit diff fences and detected unified diffs render with
+ * add/remove colors, recognized languages get token colors, and anything else
+ * keeps the quiet dim code style.
+ */
+function codeRows(fence: Fence, theme: TuiTheme): Segment[][] {
+  const source = fence.lines.map((line) => line.trimEnd())
+  const indented = source.map((line) => `  ${line}`)
+  const language = codeLanguageFromFence(fence.info)
+  if (language !== undefined) {
+    return indented.map((line) => codeSegments(line, language, theme))
+  }
+  if (isDiffFence(fence.info) || looksLikeUnifiedDiff(source)) {
+    return source.map((line, index) =>
+      diffSegments({ kind: diffLineKind(line), text: indented[index] ?? line }, theme),
+    )
+  }
+  return indented.map((line) => [dim(theme, line)])
+}
+
 /** Splits `**bold**` and `` `code` `` runs; everything else stays verbatim. */
-function inline(text: string, theme: TuiTheme, base?: { bold?: boolean; color?: string }): Segment[] {
+function inline(
+  text: string,
+  theme: TuiTheme,
+  base?: { bold?: boolean; color?: string },
+): Segment[] {
   const segments: Segment[] = []
   for (const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
     if (part === '') continue
@@ -120,7 +159,11 @@ function styled(
   base?: { bold?: boolean; color?: string },
 ): ReactElement {
   if (base?.bold) {
-    return <Text bold {...(base.color === undefined ? {} : { color: base.color })}>{text}</Text>
+    return (
+      <Text bold {...(base.color === undefined ? {} : { color: base.color })}>
+        {text}
+      </Text>
+    )
   }
   if (base?.color !== undefined) return <Text color={base.color}>{text}</Text>
   return <Text>{text}</Text>
@@ -135,5 +178,9 @@ function accent(theme: TuiTheme, text: string): ReactElement {
 }
 
 function dim(theme: TuiTheme, text?: string): ReactElement {
-  return text === undefined ? <Text color={theme.dim}>{''}</Text> : <Text color={theme.dim}>{text}</Text>
+  return text === undefined ? (
+    <Text color={theme.dim}>{''}</Text>
+  ) : (
+    <Text color={theme.dim}>{text}</Text>
+  )
 }

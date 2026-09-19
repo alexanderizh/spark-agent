@@ -45,6 +45,8 @@ async function copyTextOutput(text: string, doneMessage: string) {
 /**
  * 创作结果面板：产物展示统一交给公用的 MediaArtifactViewer
  * （多图翻页 + 缩略图、输入/输出对比、缩放拖拽、复制下载、打开所在文件夹）。
+ * 键盘 ←/→ 翻页、↑/↓ 缩放由 MediaArtifactViewer 负责；大图灯箱盖在上面时把两类按键
+ * 都交给灯箱自己接管（keyboardPaging / keyboardZoom 置 false），避免一次按键动两层。
  */
 export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord | undefined }) {
   const [outputIndex, setOutputIndex] = useState(0)
@@ -126,6 +128,8 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
                 onNext: () => setOutputIndex((current) => (current + 1) % outputs.length),
               }}
               onOpenFullscreen={imageOutputs.length > 0 ? () => setPreviewOpen(true) : undefined}
+              keyboardPaging={!previewOpen}
+              keyboardZoom={!previewOpen}
             />
           </div>
           {outputs.length > 1 && (

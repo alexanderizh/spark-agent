@@ -6,7 +6,7 @@
  * 共享的无状态逻辑与跨模块事件名，便于单测。
  */
 
-export const DEFAULT_BROWSER_URL = 'https://spark.yiqibyte.com'
+export const DEFAULT_BROWSER_URL = 'https://www.yiqibyte.com/'
 
 /**
  * 与 agent 控制的 spark_browser 窗口（主进程 `persist:spark-browser:<profileId>`

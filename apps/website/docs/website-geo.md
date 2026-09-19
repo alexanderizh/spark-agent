@@ -1,12 +1,25 @@
 # Spark Work 官网 GEO 与可抓取静态页面
 
-> 状态: 已落地 | 最后核对: 2026-09-04
+> 状态: 已落地 | 最后核对: 2026-09-20
 
 ## 目标
 
 官网、下载页和使用文档应同时满足传统搜索引擎与 AI 答案引擎的抓取需求：首次 HTML 响应包含完整正文、独立元数据与结构化数据，不依赖浏览器执行 JavaScript 才能理解页面。
 
-官方站点地址统一为 `https://spark.yiqibyte.com`。canonical、Open Graph、JSON-LD、Sitemap、robots 和 LLM 抓取文件不得使用其他生产域名。
+官方站点地址统一为 `https://www.yiqibyte.com`（新主域）。canonical、Open Graph、JSON-LD、Sitemap、robots 和 LLM 抓取文件不得使用其他生产域名；旧域 `spark.yiqibyte.com` 由运维 301 迁移到主域，代码侧不再新增旧域引用。
+
+## 平台接口基地址
+
+新主域同时承接桌面端与 CLI 的平台接口，仓库内运行时默认地址已统一为 `https://www.yiqibyte.com`：
+
+| 位置                                                                                                | 用途                                                                |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `apps/desktop/src/main/index.ts` `defaultBaseUrl`                                                   | 桌面端登录 / 平台接口                                               |
+| `apps/desktop/src/main/services/UpdateService.ts` `DEFAULT_RELEASES_API_BASE`、`dev-app-update.yml` | 版本中心                                                            |
+| `spark-engine/src/config/settings.ts` `DEFAULT_PLATFORM_SERVER_URL`                                 | CLI 平台服务                                                        |
+| `RemoteConnectionService` `wechat-claw` `consoleUrl`                                                | 远程连接文档深链（指向 `www.yiqibyte.com/docs/remote-connections`） |
+
+`/api/v1/*` 与 `www` 页面同源，两个域名指向同一后端，因此切换基地址不影响既有登录态。`packages/shared/src/edu-asset-url.ts` 仍保留 `spark.yiqibyte.com`：它只用于识别历史资源 URL，不发起请求。
 
 ## 架构
 

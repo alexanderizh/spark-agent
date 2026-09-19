@@ -1,9 +1,11 @@
 import { Box, Static, Text } from 'ink'
 import type { ReactElement } from 'react'
 
+import { diffLineKind, looksLikeUnifiedDiff } from '../diff.js'
 import type { ActiveToolProjection, RowTone, TranscriptRow } from '../projection.js'
 import type { TerminalCapabilities, TuiTheme } from '../theme.js'
 import { glyphs } from '../theme.js'
+import { diffSegments } from './code-segments.js'
 import { MarkdownText } from './markdown.js'
 
 export interface TranscriptProps {
@@ -127,7 +129,8 @@ const TASK_DETAIL_MAX_LINES = 2
  * the mark plus duration already carry the outcome, so the former second
  * status line and the multi-line result preview are noise once a tool lands.
  * Details stay only where they change decisions: failures keep a short error
- * excerpt, and background processes keep their live output tail.
+ * excerpt, background processes keep their live output tail, and a landed edit
+ * keeps a bounded patch with add/remove colors.
  */
 function renderToolLine(
   row: TranscriptRow,
@@ -154,6 +157,10 @@ function renderToolLine(
       : toolLine.isTask
         ? toolLine.resultLines.slice(0, TASK_DETAIL_MAX_LINES)
         : []
+  // Shell output frequently carries a patch (`git diff`, `git show`); when the
+  // excerpt is clearly a diff, each line keeps its own add/remove color.
+  const previewDiff =
+    failed || toolLine.diff !== undefined ? false : looksLikeUnifiedDiff(toolLine.resultLines)
   return (
     <Box key={row.key} flexDirection="column" marginTop={1} width={capabilities.width}>
       <Text>
@@ -170,14 +177,26 @@ function renderToolLine(
           {toolLine.durationMs}
           {trail.length === 0 ? '' : ` · ${trail.join(' · ')}`}
         </Text>
+        {toolLine.diff === undefined ? undefined : (
+          <Text color={theme.dim}> · {toolLine.diff.summary}</Text>
+        )}
         {toolLine.detail === undefined ? undefined : (
           <Text color={theme.dim}> · {toolLine.detail}</Text>
         )}
       </Text>
-      {detailLines.map((line, index) => (
-        <Text key={`${row.key}-result-${index}`} color={failed ? theme.error : theme.dim}>
+      {toolLine.diff?.lines.map((line, index) => (
+        <Text key={`${row.key}-diff-${index}`}>
           {'  '}
-          {line}
+          {diffSegments(line, theme)}
+        </Text>
+      ))}
+      {detailLines.map((line, index) => (
+        <Text
+          key={`${row.key}-result-${index}`}
+          {...(previewDiff ? {} : { color: failed ? theme.error : theme.dim })}
+        >
+          {'  '}
+          {previewDiff ? diffSegments({ kind: diffLineKind(line), text: line }, theme) : line}
         </Text>
       ))}
     </Box>

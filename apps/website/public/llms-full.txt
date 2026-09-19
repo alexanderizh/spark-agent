@@ -4,7 +4,7 @@
 
 ## Spark Work - 本地优先的 AI 内容创作工作台
 
-Source: https://spark.yiqibyte.com
+Source: https://www.yiqibyte.com
 
 Spark Work 是一个本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。
 
@@ -12,7 +12,7 @@ Spark Work 本地优先的桌面端 AI Agent 工作台。把代码开发、办�
 
 ## 功能 - Spark Work AI 内容创作工作台
 
-Source: https://spark.yiqibyte.com/features
+Source: https://www.yiqibyte.com/features
 
 了解 Spark Work 如何把可执行工作流、代码开发、团队 Agent、权限治理、无限画布、多媒体生成、MCP 和 Skills 放进一个本地优先工作台。
 
@@ -20,7 +20,7 @@ Source: https://spark.yiqibyte.com/features
 
 ## 无限画布 - Spark Work AI 影视创作工作台
 
-Source: https://spark.yiqibyte.com/canvas
+Source: https://www.yiqibyte.com/canvas
 
 Spark Work 无限画布帮助团队组织剧本、角色、场景、镜头、分镜、Prompt、生成任务和多媒体资产。
 
@@ -28,7 +28,7 @@ Spark Work 无限画布帮助团队组织剧本、角色、场景、镜头、分
 
 ## 架构 - Spark Work Agent Runtime 与本地优先设计
 
-Source: https://spark.yiqibyte.com/architecture
+Source: https://www.yiqibyte.com/architecture
 
 了解 Spark Work 如何用本地优先架构、Agent Runtime、MCP、Provider、权限治理和 SQLite 数据层支撑可信 AI 工作流。
 
@@ -36,7 +36,7 @@ Source: https://spark.yiqibyte.com/architecture
 
 ## 下载 Spark Work - 跨平台 AI 桌面应用
 
-Source: https://spark.yiqibyte.com/download
+Source: https://www.yiqibyte.com/download
 
 下载 Spark Work macOS、Windows 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。
 
@@ -44,7 +44,7 @@ Source: https://spark.yiqibyte.com/download
 
 ## 使用文档 - Spark Work 教程
 
-Source: https://spark.yiqibyte.com/docs
+Source: https://www.yiqibyte.com/docs
 
 Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。支持站内搜索，并提供无需 JavaScript 的完整首屏正文。
 
@@ -52,7 +52,7 @@ Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多
 
 ## 开发计划 - Spark Work Roadmap
 
-Source: https://spark.yiqibyte.com/roadmap
+Source: https://www.yiqibyte.com/roadmap
 
 了解 Spark Work 的产品路线：桌面工作台、创作工作流模板、生态扩展和团队协作能力。
 
@@ -60,7 +60,7 @@ Source: https://spark.yiqibyte.com/roadmap
 
 ## 联系我们 - Spark Work
 
-Source: https://spark.yiqibyte.com/contact
+Source: https://www.yiqibyte.com/contact
 
 通过邮箱和 QQ 开发讨论群反馈 Spark Work 的产品问题、使用建议和安全问题。
 
@@ -68,7 +68,7 @@ Source: https://spark.yiqibyte.com/contact
 
 ## 快速开始 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/quick-start
+Source: https://www.yiqibyte.com/docs/quick-start
 
 Spark Work 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。
 
@@ -76,7 +76,7 @@ Spark Work 快速开始指南：下载适合你系统的安装包、完成首次
 
 ## 代码开发 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/code-development
+Source: https://www.yiqibyte.com/docs/code-development
 
 在 Spark Work 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。
 
@@ -84,7 +84,7 @@ Source: https://spark.yiqibyte.com/docs/code-development
 
 ## Agent 工作流 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/agents-workflows
+Source: https://www.yiqibyte.com/docs/agents-workflows
 
 Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、全局已启用 MCP 自动挂载、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。
 
@@ -92,7 +92,7 @@ Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 
 
 ## 团队模式 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/team-mode
+Source: https://www.yiqibyte.com/docs/team-mode
 
 Spark Work 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。
 
@@ -100,7 +100,7 @@ Spark Work 团队模式（Team Mode）：Host Agent 把子任务分派给多个 
 
 ## 无限画布 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/canvas-mvp
+Source: https://www.yiqibyte.com/docs/canvas-mvp
 
 Spark Work 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。
 
@@ -108,7 +108,7 @@ Spark Work 无限画布（Infinite Canvas）能力全景：项目管理、节点
 
 ## 多媒体 Provider - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/media-providers
+Source: https://www.yiqibyte.com/docs/media-providers
 
 Spark Work 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。
 
@@ -116,7 +116,7 @@ Spark Work 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / �
 
 ## 图片生成 Provider - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/image-providers
+Source: https://www.yiqibyte.com/docs/image-providers
 
 Spark Work 图片生成 Provider：图片 API 源与 imageApiType 字段、9 个内置图片预设、spark_image MCP 工具与 spark_media 统一栈的双链路判定、产物输出目录与 7 类渠道的参数归一规则。
 
@@ -124,7 +124,7 @@ Spark Work 图片生成 Provider：图片 API 源与 imageApiType 字段、9 个
 
 ## 联网搜索 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/web-search
+Source: https://www.yiqibyte.com/docs/web-search
 
 Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / DuckDuckGo / 百度）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。
 
@@ -132,7 +132,7 @@ Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免
 
 ## 浏览器自动化 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/browser-automation
+Source: https://www.yiqibyte.com/docs/browser-automation
 
 Spark Work 浏览器自动化：Playwright managed MCP 负责网页流程，spark_browser 内置 MCP 提供应用内可见窗口、本地 HTML 调试、console/network 和 profile 登录态。
 
@@ -140,7 +140,7 @@ Spark Work 浏览器自动化：Playwright managed MCP 负责网页流程，spar
 
 ## 远程连接 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/remote-connections
+Source: https://www.yiqibyte.com/docs/remote-connections
 
 Spark Work 远程连接（Telegram / 飞书）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。
 
@@ -148,15 +148,15 @@ Spark Work 远程连接（Telegram / 飞书）：连接配置、配对流程、�
 
 ## 自动更新 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/auto-update
+Source: https://www.yiqibyte.com/docs/auto-update
 
-Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。
+Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（www.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。
 
-搜索文档 ⌘K 入门 3 快速开始 桌面端架构 可选功能组件 代码开发 1 代码开发 团队 Agent 3 Agent 工作流 团队模式 工作流编排 无限画布 2 无限画布 视频工作台 Provider 2 多媒体 Provider 图片生成 Provider MCP & 工具 8 联网搜索 浏览器自动化 MCP 与 Skills 内置工具 自定义工具与工具包 连接器 子应用 长期记忆 治理 10 远程连接 权限与治理 任务面板 会话定时任务 会话与消息流 电脑操作 凭据与密钥 本地数据与备份 Hooks V2 实操手册 Spark CLI 与桌面联动 发布 1 自动更新 文档目录 搜索 本页目录（8 节） 1. 整体链路一览 2. 发布流程：workflow 的真实触发与结构 3. 官网版本中心：登记什么、读取什么 4. 应用内更新：状态机、节奏与缓存 5. 更新源选择、回退与错误文案 6. 签名、公证与原生模块要求 7. 本地构建与调试 8. 通道、设置与常见坑 首页 文档 自动更新 自动更新 Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。 阅读约 8 分钟 · 最后核对 2026-06-29 SparkWork 桌面端的更新链路有 三个真实参与方 ：GitHub Actions 负责构建与发布， 对象存储（MinIO / S3 兼容）承载安装包，官网版本中心（edu-server 的 /api/v1/desktop/releases/* ）提供应用内更新所需的元数据；GitHub Releases 是回退源。 应用内更新由主进程的 UpdateService 实现， 不走 electron-updater ： 它自己拉元数据、自己下载、自己用 SHA 校验、最后调用系统方式打开安装包。 1. 整体链路一览 环节 真实实现 产物/接口 CI 构建与发布 .github/workflows/publish-desktop-release.yml GitHub Release v<version> + 平台安装包（同时上传为 5 天有效的 workflow artifacts） 安装包归档 workflow 的 publish-to-official-website job（需要 official-website-production 环境审批） aws s3 cp 到 s3://<bucket>/stable/<version>/ （dmg/exe/AppImage/zip/deb/rpm/blockmap） 元数据登记 apps/desktop/scripts/register-release.mjs POST {RELEASE_API_BASE}/api/v1/ci/desktop/releases/register （头 X-Release-Token ） 应用内检查 apps/desktop/src/main/services/UpdateService.ts GET /api/v1/desktop/releases/latest?channel=&platform=&arch= ，失败回退 GitHub REST API 官网下载按钮 apps/website/src/lib/releases.ts + apps/website/scripts/fetch-downloads.mjs 运行时读同一个 /latest 接口，构建期烘焙快照到 src/content/downloads.generated.json 2. 发布流程：workflow 的真实触发与结构 触发条件 （比「只有 apps/desktop/package.json 变更才触发」更宽）： push 到 master ，且改动命中这些路径之一： apps/desktop/package.json 、 根 package.json 、 .nvmrc 、 .node-version 、 .github/workflows/publish-desktop-release.yml 自身。 手动 workflow_dispatch ，输入： platforms （all / mac / win / mac-arm64 / mac-x64 / win-x64）、 publish_to_release （默认 false，即只构建+签名验证）、 optional_capabilities_only （只构建深度可选能力包）、 ref 。 prepare job（判断是否真的要发布） ： 版本号取自 apps/desktop/package.json 的 version ，tag 为 v<version> 。 push 触发时会比对 github.event.before 那个提交里的版本号； 版本号没变就直接结束 （ should_publish=false ）。 若同名 tag 已存在且指向别的提交，直接报错退出：「请提升版本号，禁止把新产物发布到旧标签」。 更新说明由 scripts/release-notes.mjs 从 CHANGELOG.md 生成； 缺少该版本条目时允许为空，流程继续。 GitHub Release 由这一个 job 预先创建/更新（ --latest ）；不能让多个 matrix job 并发创建， 否则会撞 422 already_exists。 构建矩阵（push 默认全平台） ： target runner 产物 mac-arm64 macos-latest arm64 dmg mac-x64 macos-26-intel x64 dmg（Intel runner + Xcode 26） win-x64 windows-2022 x64 exe（NSIS 安装器） 构建步骤里的硬性要求： pnpm 固定 11.13.0，Node 用 .nvmrc ，安装用 --frozen-lockfile 。 先跑 pnpm run check:codex-protocol 校验 Codex App Server 协议兼容性。 macOS runner 需要 Python 3.11（node-gyp 9.x 依赖 distutils ）。 macOS 先用 apps/desktop/scripts/import-cert-ci.sh 把 Developer ID Application 证书导入临时钥匙串， 并立即用 security find-identity -v -p codesigning | grep "Developer ID Application" 校验， 证书误配会在构建早期直接失败。 Windows 构建带 REQUIRE_WINDOWS_SIGNING=1 与 ALLOW_UNSIGNED_WINDOWS_RELEASE=0 ， 正式发布必须有证书。 renderer 打包内存： NODE_OPTIONS=--max-old-space-size=8192 。 实际打包分别走 apps/desktop/scripts/build-mac-release.sh 与 apps/desktop/scripts/build-win-release.sh ；macOS 构建只对两类瞬时故障重试一次 （dmg 卸载 Resource busy 、Apple 侧网络错误）。 Release 发布后（或手动触发且勾选 publish_to_release ）才进入 publish-to-official-website job：它挂在 official-website-production 环境上， 一次人工审批 同时控制 MinIO 上传与版本中心登记。该 job 会先检查 6 个 secrets 是否齐备（ RELEASE_API_BASE 、 RELEASE_CI_TOKEN 、 RELEASE_MINIO_ENDPOINT 、 RELEASE_MINIO_BUCKET 、 RELEASE_MINIO_ACCESS_KEY 、 RELEASE_MINIO_SECRET_KEY ），缺一个就失败。 3. 官网版本中心：登记什么、读取什么 登记（CI → 官网） ： register-release.mjs 的行为可以逐条核对： 环境变量： VERSION 、 PLATFORM 、 ARCH 、 RELEASE_API_BASE 、 RELEASE_CI_TOKEN 、可选 CHANNEL （默认 stable）、 DIST_DIR （默认 apps/desktop/dist ）、 RELEASE_OBJECT_PREFIX （默认 <channel>/<version> ）、 RELEASE_AUTO_PUBLISH （设为 false 时发布为未自动上线）。 安装包匹配规则：文件名同时满足「含 -<platform>-<arch>. 」与扩展名属于 [.dmg, .exe, .appimage, .zip, .deb, .rpm] ；匹配不到直接报错并打印 dist 目录内容。 每个文件登记 platform 、 arch 、 fileName 、 fileSize 、 sha512 （Base64）、 objectKey 、 blockmapKey 。 请求： POST {apiBase}/api/v1/ci/desktop/releases/register ，头 X-Release-Token ，body {version, channel, files, releaseNotes, autoPublish} ； 失败最多重试 3 次（2s、4s 退避），响应 code !== 0 视为失败。 workflow 会按矩阵逐个平台/架构调用这个脚本，所以一次发布会登记多条文件记录。 读取（官网页面） ： 运行时： apps/website/src/lib/releases.ts 请求 /api/v1/desktop/releases/latest?channel=stable ；基地址优先取 VITE_RELEASES_API_BASE ，没有配置时用同源 window.location.origin 。 返回结构是 {code, message, data: LatestRelease | LatestRelease[] | null} ， 字段为 version/channel/platform/arch/fileName/fileSize/publicUrl/releaseNotes/publishedAt。 构建期： pnpm --filter @spark/website prebuild 会跑 scripts/fetch-downloads.mjs 把同一个接口的结果写进 src/content/downloads.generated.json ；页面首屏用这份快照渲染（无闪烁）， 后台再拉一次实时数据替换，接口失败则继续用快照。 4. 应用内更新：状态机、节奏与缓存 状态枚举（ UpdateStatusState ）： idle → checking → available → downloading → downloaded ， 以及 not-available 与 error 。 UpdateStatus 里还会带 currentVersion 、 updateInfo 、 progress 、 lastCheckedAt 、 updateSource （ version-center / github ）与 downloadSource 。 检查节奏（真实常量） ： 行为 取值 说明 启动检查延迟 5 秒 避免影响首屏 常规检查间隔 30 分钟 静默执行（自动检查失败不弹提示） 抖动 ±5 分钟 避免客户端集中请求 失败退避 30 分钟 × 2ⁿ，上限 2 小时 连续失败时指数退避 聚焦/唤醒补查 距上次检查超过 30 分钟才补 browser-window-focus 与 powerMonitor 的 resume 触发 手动检查失败 仍会显示错误 只有自动检查静默 下载与安装 ： 默认 autoDownload: false ：发现新版本先进入 available ，由用户点「下载更新」。 打开「自动下载」后才会在检查时自动下载。 下载落在 {userData}/spark-agent-updater/<version>/<assetName> ； 应用启动时会清理缓存，只保留最近 2 个版本目录（按目录修改时间）。命中缓存则直接进入 downloaded ，不重复下载。 校验：元数据带 digest （版本中心映射成 sha512:<base64> ， GitHub 资产可能是 sha256:<hex> ）时端到端校验，不匹配报「更新包 SHA…完整性校验失败」； 旧版本资产没有 digest 时只记录警告并继续（兼容行为）。 下载完成 → 系统通知 + 对话框。macOS 按钮是「打开安装镜像」，说明是「打开 dmg 后请将应用拖到 Applications 替换现有版本」， 随后应用延迟 1.2 秒退出；Windows 按钮是「安装更新」，直接启动 exe 安装器。 Windows 独有「自动安装」： autoInstall: true 且状态为 downloaded 时， 退出应用会自动启动安装器（其他平台该设置被强制为 false）。 没有增量更新 ： blockmap 会被上传与登记，但更新服务不消费它—— 每次都是下载完整 dmg/exe（资产筛选时还会显式排除 *.dmg.blockmap / *.exe.blockmap ）。 IPC 与界面 ： 通道： update:check 、 update:download 、 update:install-restart 、 update:get-status 、 update:settings （可改 autoCheck / autoDownload / autoInstall / channel）。 推送： stream:update:status 为主，另有 stream:update:available 、 stream:update:progress 、 stream:update:downloaded 。 设置 → 更新：状态卡（含下载进度条与操作按钮）、更新内容卡（超过 1200 字符可折叠）、 「打开 Release 页」、「更新策略」四项（自动检查更新 / 自动下载 / 自动安装 / 更新来源）、版本卡。 「更新来源」会写明检查顺序「官网版本中心 → GitHub Releases」并显示当前实际来源 （界面文案分别是 官网 / GitHub / 待检查 ）。 侧边栏头部图标按钮：只在非 idle 状态出现—— available 点击即下载、 downloading 点击跳到设置页、 downloaded 点击安装、 error / checking 有对应图标；tooltip 会显示「来源：官网版本中心 / GitHub Releases」。 偏好与上次检查时间持久化在 app_settings 的 updates/data 与 updates/lastChecked 。 5. 更新源选择、回退与错误文案 先请求版本中心： GET {releasesApiBase}/api/v1/desktop/releases/latest?channel=&platform=&arch= 。 releasesApiBase 默认 https://spark.yiqibyte.com ， 可被 dev-app-update.yml / app-update.yml 覆盖。请求头 user-agent: Spark-Agent-Updater 。 版本中心不可用（网络失败、 code !== 0 、非 2xx）时记录警告并回退 GitHub： stable 通道读 /releases/latest ； beta 通道读 /releases?per_page=20 并取第一个非 draft。 版本比较用 tag 规范化后的版本号：不大于当前版本 → not-available 。 平台资产筛选规则：macOS 只接受 .dmg ，按当前架构优先（arm64 优先含 arm64 的包， x64 优先含 x64 的包，fallback universal）；Windows 只接受 .exe ，含 setup 加权、含 portable 降权。找不到合适资产时报「当前 Release 缺少适用于 macOS/Windows 的安装包」。 GitHub 未认证请求会撞 rate limit：服务会解析 retry-after / x-ratelimit-reset 并在提示里给出重置时间；频繁点「检查更新」时请等待或改用带 token 的配置。 配置来源与优先级（用于排查「为什么读到的是另一份配置」）： 打包版读 {resourcesPath}/app-update.yml （由 electron-builder 依据 electron-builder.yml 的 publish 段生成：github / owner alexanderizh / repo spark-agent / releaseType release）。 开发版按顺序找：当前工作目录的 dev-app-update.yml 、 apps/desktop/dev-app-update.yml 等候选路径；仓库里的这份内容是 provider: github 、 updaterCacheDirName: spark-agent-dev-updater 、 releasesApiBase: https://spark.yiqibyte.com 。 可识别字段： owner 、 repo 、 updaterCacheDirName 、 token （用于提高 GitHub 限额，仅本地开发用）、 releasesApiBase 。都找不到时用内置默认值。 6. 签名、公证与原生模块要求 electron-builder.yml ： appId: com.spark-agent.desktop 、 productName: Spark Agent 、 artifactName: ${productName}-${version}-${os}-${arch}.${ext} 、 electronVersion: 43.2.0 、 mac.target: dmg 、 hardenedRuntime: true 、 identity: 'Developer ID Application' 、公证交给 afterSign: scripts/notarize.js 。 协议 scheme 注册为 spark-agent 。 macOS 还需要 APPLE_ID 、 APPLE_APP_SPECIFIC_PASSWORD 、 APPLE_TEAM_ID ； build-mac-release.sh 会在启动前检查这三个变量、 keychain 里的 Developer ID 证书以及 xcrun notarytool 可用性。 Windows： signtoolOptions 里是 SHA-256 + RFC3161 时间戳 （ http://timestamp.digicert.com ）， signExts: [.exe] 。 CI 传 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD ； build-win-release.sh 支持本地 .pfx 路径、 http(s) 、data URL 或 base64 内容， 并把证书写到临时目录、构建结束自动清理。 签名校验：有证书时脚本要求最终 .exe 的 Authenticode 状态是 Valid ； 正式发布路径（ REQUIRE_WINDOWS_SIGNING=1 ）缺少证书会直接失败； 只传了一半凭据也会失败（除非显式允许未签名）。 原生模块： better-sqlite3 、 keytar 、 node-pty 必须按目标架构重建到 Electron ABI。 打包脚本调用 pnpm run rebuild:native -- <arch> ，宿主架构与目标一致时会继续跑 native:verify （真实用 Electron 加载一次）；不一致时跳过并提示「在目标架构 runner 上构建」。 electron-builder.yml 关闭了自带 native rebuild（ npmRebuild: false ）， 原因写在配置注释里： node-pty@1.1.0 的 install 脚本会跑 tsc 编译测试文件， 类型检查失败会拖垮整个 rebuild。 7. 本地构建与调试 常用命令（都在 apps/desktop 下，或直接用脚本路径）： # 开发模式（更新检查/下载链路同样可用） pnpm --filter @spark/desktop dev # macOS 单架构发布构建（内部会先 rebuild:native 再 electron-builder） pnpm --filter @spark/desktop build:mac:arm64 pnpm --filter @spark/desktop build:mac:x64 # Windows 发布构建（不发布到 Release） pnpm --filter @spark/desktop build:win:release -- --publish never # 或者从仓库根目录： bash apps/desktop/scripts/build-win-release.sh x64 --publish never # 带本地证书的 Windows 构建 WIN_CSC_LINK=/path/to/cert.pfx \ WIN_CSC_KEY_PASSWORD=your-pfx-password \ pnpm --filter @spark/desktop build:win:release -- --publish never 调试要点： dev-app-update.yml 会覆盖仓库/缓存目录/版本中心地址；如果要绕过 GitHub 限额， 可以在里面加一个仅供开发用的 token 。 本地想验证「版本中心 → 官网下载按钮」链路时，设置 VITE_RELEASES_API_BASE （运行时） 与 RELEASES_API_BASE （ prebuild 拉快照）指向你的 edu-server 实例。 可观测点：设置 → 更新 的状态卡与「更新来源」、会话/主窗口里的 stream:update:status 事件、侧边栏更新按钮 tooltip、以及 {userData}/spark-agent-updater/ 下的缓存目录。 远端 Release 缺少对应平台安装包时，本地也会收到同一错误文案（例如「当前 Release 缺少适用于 macOS 的安装包」）。 8. 通道、设置与常见坑 通道类型是 UpdateChannel = 'stable' | 'beta' ，默认 stable ，可通过 update:settings 修改并持久化在 updates/data 。需要说清楚的是： 当前设置 → 更新 页面没有通道选择器 ，只有「自动检查更新 / 自动下载 / 自动安装 / 更新来源」四项， 以及检查、下载、安装三个动作按钮；也就是说 beta 在协议与检查逻辑上可用，但普通用户界面上切不了。 常见坑： 「自动安装」在 macOS 上打开又自己关掉 ：这是设计——保存偏好时会强制把非 Windows 平台的 autoInstall 置回 false（界面提示「当前平台不支持自动安装，下载后需手动打开安装包」）。 以为发的是增量包 ：blockmap 只被登记，不会被消费；用户每次都下完整安装包。 改了 CHANGELOG.md 却没触发发布 ：触发路径里没有 CHANGELOG， 它只影响 release notes 内容；另外版本号不变时 workflow 会判定不发布。 tag 已存在但指向旧提交 ：workflow 会直接失败并要求提升版本号，这是防止「新产物挂到旧标签」的保护。 Release 里能看到安装包，但应用内检查不到 ：应用内优先读版本中心； 如果版本中心登记失败（缺 secrets 或审批未通过），要么回退 GitHub 成功、要么提示缺少平台资产。 先看 GitHub Release 里资产名是否包含 -<platform>-<arch>. （例如 -mac-arm64.dmg ），这是登记与筛选共用的命名约定。 担心缓存越滚越大 ：更新器启动时只保留最近 2 个版本目录，其余自动回收； 想手动清理可以删掉 {userData}/spark-agent-updater/ 。 Windows 未签名包 ：本地构建允许产出未签名 exe（会有 SmartScreen 警告）， 但 CI 正式发布路径要求签名；判据就是脚本对 Authenticode 状态是否为 Valid 的校验。 速查表 发布源 GitHub Release + MinIO 对象存储 + 官网版本中心（GitHub 为回退源） 登记接口 POST /api/v1/ci/desktop/releases/register（头 X-Release-Token） 检查接口 GET /api/v1/desktop/releases/latest?channel=&platform=&arch= 版本中心默认地址 https://spark.yiqibyte.com 对象存储路径 s3://<bucket>/stable/<version>/（dmg/exe/AppImage/zip/deb/rpm/blockmap） 构建矩阵 mac-arm64（macos-latest）· mac-x64（macos-26-intel）· win-x64（windows-2022） 检查节奏 启动延迟 5 秒 · 常规 30 分钟 ± 5 分钟抖动 · 失败退避上限 2 小时 更新缓存 {userData}/spark-agent-updater/<version>/，保留最近 2 个版本 IPC update:check / download / install-restart / get-status / settings 推送 stream:update:status（另有 available / progress / downloaded） 原生模块 better-sqlite3 · keytar · node-pty（pnpm run rebuild:native -- <arch> + native:verify） macOS 签名 Developer ID Application + hardenedRuntime + afterSign 公证（notarize.js） Windows 签名 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD，SHA-256 + RFC3161 时间戳 常见问题 展开 6 条常见问题 GitHub Release 是唯一发布源吗？ 不是。CI 会同时把安装包上传到对象存储（MinIO/S3 兼容桶的 stable/<version>/）并把元数据登记到官网版本中心；应用内更新优先读版本中心，失败才回退 GitHub Releases API。 为什么我只改了版本号却要先人工审批？ electron-builder 推完 GitHub Release 后，publish-to-official-website job 挂在 official-website-production 环境上，required reviewer 会拦一次；这次审批同时控制 MinIO 上传与版本中心登记，所以正式分发路径需要人工放行。 应用内更新是增量下载吗？ 不是。blockmap 会被上传与登记，但 UpdateService 不消费它，资产筛选中还会显式排除 *.blockmap，因此每次都是完整安装包。 自动检查更新会打扰我吗？ 不会弹提示。启动后延迟 5 秒检查一次，之后约每 30 分钟静默检查（±5 分钟抖动），失败按 30 分钟 × 2ⁿ 退避、上限 2 小时；只有手动检查失败才会显示错误。 能切到 beta 通道吗？ 协议与检查逻辑支持 stable/beta（beta 会遍历 /releases?per_page=20 取第一个非 draft），也能通过 update:settings 修改并持久化；但当前设置 → 更新 页面没有通道选择器，界面上切不了。 Windows 一定要证书吗？ 本地构建可以不带证书（产出未签名 exe，会有 SmartScreen 警告）；CI 正式发布路径设置了 REQUIRE_WINDOWS_SIGNING=1 且不允许未签名，脚本还会要求最终 exe 的 Authenticode 状态为 Valid。 相关主题 快速开始 桌面端架构 ← 文档首页 本页目录 1. 整体链路一览 2. 发布流程：workflow 的真实触发与结构 3. 官网版本中心：登记什么、读取什么 4. 应用内更新：状态机、节奏与缓存 5. 更新源选择、回退与错误文案 6. 签名、公证与原生模块要求 7. 本地构建与调试 8. 通道、设置与常见坑 返回 文档首页 文档目录 搜索文档 ⌘K 入门 3 快速开始 桌面端架构 可选功能组件 代码开发 1 代码开发 团队 Agent 3 Agent 工作流 团队模式 工作流编排 无限画布 2 无限画布 视频工作台 Provider 2 多媒体 Provider 图片生成 Provider MCP & 工具 8 联网搜索 浏览器自动化 MCP 与 Skills 内置工具 自定义工具与工具包 连接器 子应用 长期记忆 治理 10 远程连接 权限与治理 任务面板 会话定时任务 会话与消息流 电脑操作 凭据与密钥 本地数据与备份 Hooks V2 实操手册 Spark CLI 与桌面联动 发布 1 自动更新
+搜索文档 ⌘K 入门 3 快速开始 桌面端架构 可选功能组件 代码开发 1 代码开发 团队 Agent 3 Agent 工作流 团队模式 工作流编排 无限画布 2 无限画布 视频工作台 Provider 2 多媒体 Provider 图片生成 Provider MCP & 工具 8 联网搜索 浏览器自动化 MCP 与 Skills 内置工具 自定义工具与工具包 连接器 子应用 长期记忆 治理 10 远程连接 权限与治理 任务面板 会话定时任务 会话与消息流 电脑操作 凭据与密钥 本地数据与备份 Hooks V2 实操手册 Spark CLI 与桌面联动 发布 1 自动更新 文档目录 搜索 本页目录（8 节） 1. 整体链路一览 2. 发布流程：workflow 的真实触发与结构 3. 官网版本中心：登记什么、读取什么 4. 应用内更新：状态机、节奏与缓存 5. 更新源选择、回退与错误文案 6. 签名、公证与原生模块要求 7. 本地构建与调试 8. 通道、设置与常见坑 首页 文档 自动更新 自动更新 Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（www.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。 阅读约 8 分钟 · 最后核对 2026-06-29 SparkWork 桌面端的更新链路有 三个真实参与方 ：GitHub Actions 负责构建与发布， 对象存储（MinIO / S3 兼容）承载安装包，官网版本中心（edu-server 的 /api/v1/desktop/releases/* ）提供应用内更新所需的元数据；GitHub Releases 是回退源。 应用内更新由主进程的 UpdateService 实现， 不走 electron-updater ： 它自己拉元数据、自己下载、自己用 SHA 校验、最后调用系统方式打开安装包。 1. 整体链路一览 环节 真实实现 产物/接口 CI 构建与发布 .github/workflows/publish-desktop-release.yml GitHub Release v<version> + 平台安装包（同时上传为 5 天有效的 workflow artifacts） 安装包归档 workflow 的 publish-to-official-website job（需要 official-website-production 环境审批） aws s3 cp 到 s3://<bucket>/stable/<version>/ （dmg/exe/AppImage/zip/deb/rpm/blockmap） 元数据登记 apps/desktop/scripts/register-release.mjs POST {RELEASE_API_BASE}/api/v1/ci/desktop/releases/register （头 X-Release-Token ） 应用内检查 apps/desktop/src/main/services/UpdateService.ts GET /api/v1/desktop/releases/latest?channel=&platform=&arch= ，失败回退 GitHub REST API 官网下载按钮 apps/website/src/lib/releases.ts + apps/website/scripts/fetch-downloads.mjs 运行时读同一个 /latest 接口，构建期烘焙快照到 src/content/downloads.generated.json 2. 发布流程：workflow 的真实触发与结构 触发条件 （比「只有 apps/desktop/package.json 变更才触发」更宽）： push 到 master ，且改动命中这些路径之一： apps/desktop/package.json 、 根 package.json 、 .nvmrc 、 .node-version 、 .github/workflows/publish-desktop-release.yml 自身。 手动 workflow_dispatch ，输入： platforms （all / mac / win / mac-arm64 / mac-x64 / win-x64）、 publish_to_release （默认 false，即只构建+签名验证）、 optional_capabilities_only （只构建深度可选能力包）、 ref 。 prepare job（判断是否真的要发布） ： 版本号取自 apps/desktop/package.json 的 version ，tag 为 v<version> 。 push 触发时会比对 github.event.before 那个提交里的版本号； 版本号没变就直接结束 （ should_publish=false ）。 若同名 tag 已存在且指向别的提交，直接报错退出：「请提升版本号，禁止把新产物发布到旧标签」。 更新说明由 scripts/release-notes.mjs 从 CHANGELOG.md 生成； 缺少该版本条目时允许为空，流程继续。 GitHub Release 由这一个 job 预先创建/更新（ --latest ）；不能让多个 matrix job 并发创建， 否则会撞 422 already_exists。 构建矩阵（push 默认全平台） ： target runner 产物 mac-arm64 macos-latest arm64 dmg mac-x64 macos-26-intel x64 dmg（Intel runner + Xcode 26） win-x64 windows-2022 x64 exe（NSIS 安装器） 构建步骤里的硬性要求： pnpm 固定 11.13.0，Node 用 .nvmrc ，安装用 --frozen-lockfile 。 先跑 pnpm run check:codex-protocol 校验 Codex App Server 协议兼容性。 macOS runner 需要 Python 3.11（node-gyp 9.x 依赖 distutils ）。 macOS 先用 apps/desktop/scripts/import-cert-ci.sh 把 Developer ID Application 证书导入临时钥匙串， 并立即用 security find-identity -v -p codesigning | grep "Developer ID Application" 校验， 证书误配会在构建早期直接失败。 Windows 构建带 REQUIRE_WINDOWS_SIGNING=1 与 ALLOW_UNSIGNED_WINDOWS_RELEASE=0 ， 正式发布必须有证书。 renderer 打包内存： NODE_OPTIONS=--max-old-space-size=8192 。 实际打包分别走 apps/desktop/scripts/build-mac-release.sh 与 apps/desktop/scripts/build-win-release.sh ；macOS 构建只对两类瞬时故障重试一次 （dmg 卸载 Resource busy 、Apple 侧网络错误）。 Release 发布后（或手动触发且勾选 publish_to_release ）才进入 publish-to-official-website job：它挂在 official-website-production 环境上， 一次人工审批 同时控制 MinIO 上传与版本中心登记。该 job 会先检查 6 个 secrets 是否齐备（ RELEASE_API_BASE 、 RELEASE_CI_TOKEN 、 RELEASE_MINIO_ENDPOINT 、 RELEASE_MINIO_BUCKET 、 RELEASE_MINIO_ACCESS_KEY 、 RELEASE_MINIO_SECRET_KEY ），缺一个就失败。 3. 官网版本中心：登记什么、读取什么 登记（CI → 官网） ： register-release.mjs 的行为可以逐条核对： 环境变量： VERSION 、 PLATFORM 、 ARCH 、 RELEASE_API_BASE 、 RELEASE_CI_TOKEN 、可选 CHANNEL （默认 stable）、 DIST_DIR （默认 apps/desktop/dist ）、 RELEASE_OBJECT_PREFIX （默认 <channel>/<version> ）、 RELEASE_AUTO_PUBLISH （设为 false 时发布为未自动上线）。 安装包匹配规则：文件名同时满足「含 -<platform>-<arch>. 」与扩展名属于 [.dmg, .exe, .appimage, .zip, .deb, .rpm] ；匹配不到直接报错并打印 dist 目录内容。 每个文件登记 platform 、 arch 、 fileName 、 fileSize 、 sha512 （Base64）、 objectKey 、 blockmapKey 。 请求： POST {apiBase}/api/v1/ci/desktop/releases/register ，头 X-Release-Token ，body {version, channel, files, releaseNotes, autoPublish} ； 失败最多重试 3 次（2s、4s 退避），响应 code !== 0 视为失败。 workflow 会按矩阵逐个平台/架构调用这个脚本，所以一次发布会登记多条文件记录。 读取（官网页面） ： 运行时： apps/website/src/lib/releases.ts 请求 /api/v1/desktop/releases/latest?channel=stable ；基地址优先取 VITE_RELEASES_API_BASE ，没有配置时用同源 window.location.origin 。 返回结构是 {code, message, data: LatestRelease | LatestRelease[] | null} ， 字段为 version/channel/platform/arch/fileName/fileSize/publicUrl/releaseNotes/publishedAt。 构建期： pnpm --filter @spark/website prebuild 会跑 scripts/fetch-downloads.mjs 把同一个接口的结果写进 src/content/downloads.generated.json ；页面首屏用这份快照渲染（无闪烁）， 后台再拉一次实时数据替换，接口失败则继续用快照。 4. 应用内更新：状态机、节奏与缓存 状态枚举（ UpdateStatusState ）： idle → checking → available → downloading → downloaded ， 以及 not-available 与 error 。 UpdateStatus 里还会带 currentVersion 、 updateInfo 、 progress 、 lastCheckedAt 、 updateSource （ version-center / github ）与 downloadSource 。 检查节奏（真实常量） ： 行为 取值 说明 启动检查延迟 5 秒 避免影响首屏 常规检查间隔 30 分钟 静默执行（自动检查失败不弹提示） 抖动 ±5 分钟 避免客户端集中请求 失败退避 30 分钟 × 2ⁿ，上限 2 小时 连续失败时指数退避 聚焦/唤醒补查 距上次检查超过 30 分钟才补 browser-window-focus 与 powerMonitor 的 resume 触发 手动检查失败 仍会显示错误 只有自动检查静默 下载与安装 ： 默认 autoDownload: false ：发现新版本先进入 available ，由用户点「下载更新」。 打开「自动下载」后才会在检查时自动下载。 下载落在 {userData}/spark-agent-updater/<version>/<assetName> ； 应用启动时会清理缓存，只保留最近 2 个版本目录（按目录修改时间）。命中缓存则直接进入 downloaded ，不重复下载。 校验：元数据带 digest （版本中心映射成 sha512:<base64> ， GitHub 资产可能是 sha256:<hex> ）时端到端校验，不匹配报「更新包 SHA…完整性校验失败」； 旧版本资产没有 digest 时只记录警告并继续（兼容行为）。 下载完成 → 系统通知 + 对话框。macOS 按钮是「打开安装镜像」，说明是「打开 dmg 后请将应用拖到 Applications 替换现有版本」， 随后应用延迟 1.2 秒退出；Windows 按钮是「安装更新」，直接启动 exe 安装器。 Windows 独有「自动安装」： autoInstall: true 且状态为 downloaded 时， 退出应用会自动启动安装器（其他平台该设置被强制为 false）。 没有增量更新 ： blockmap 会被上传与登记，但更新服务不消费它—— 每次都是下载完整 dmg/exe（资产筛选时还会显式排除 *.dmg.blockmap / *.exe.blockmap ）。 IPC 与界面 ： 通道： update:check 、 update:download 、 update:install-restart 、 update:get-status 、 update:settings （可改 autoCheck / autoDownload / autoInstall / channel）。 推送： stream:update:status 为主，另有 stream:update:available 、 stream:update:progress 、 stream:update:downloaded 。 设置 → 更新：状态卡（含下载进度条与操作按钮）、更新内容卡（超过 1200 字符可折叠）、 「打开 Release 页」、「更新策略」四项（自动检查更新 / 自动下载 / 自动安装 / 更新来源）、版本卡。 「更新来源」会写明检查顺序「官网版本中心 → GitHub Releases」并显示当前实际来源 （界面文案分别是 官网 / GitHub / 待检查 ）。 侧边栏头部图标按钮：只在非 idle 状态出现—— available 点击即下载、 downloading 点击跳到设置页、 downloaded 点击安装、 error / checking 有对应图标；tooltip 会显示「来源：官网版本中心 / GitHub Releases」。 偏好与上次检查时间持久化在 app_settings 的 updates/data 与 updates/lastChecked 。 5. 更新源选择、回退与错误文案 先请求版本中心： GET {releasesApiBase}/api/v1/desktop/releases/latest?channel=&platform=&arch= 。 releasesApiBase 默认 https://www.yiqibyte.com ， 可被 dev-app-update.yml / app-update.yml 覆盖。请求头 user-agent: Spark-Agent-Updater 。 版本中心不可用（网络失败、 code !== 0 、非 2xx）时记录警告并回退 GitHub： stable 通道读 /releases/latest ； beta 通道读 /releases?per_page=20 并取第一个非 draft。 版本比较用 tag 规范化后的版本号：不大于当前版本 → not-available 。 平台资产筛选规则：macOS 只接受 .dmg ，按当前架构优先（arm64 优先含 arm64 的包， x64 优先含 x64 的包，fallback universal）；Windows 只接受 .exe ，含 setup 加权、含 portable 降权。找不到合适资产时报「当前 Release 缺少适用于 macOS/Windows 的安装包」。 GitHub 未认证请求会撞 rate limit：服务会解析 retry-after / x-ratelimit-reset 并在提示里给出重置时间；频繁点「检查更新」时请等待或改用带 token 的配置。 配置来源与优先级（用于排查「为什么读到的是另一份配置」）： 打包版读 {resourcesPath}/app-update.yml （由 electron-builder 依据 electron-builder.yml 的 publish 段生成：github / owner alexanderizh / repo spark-agent / releaseType release）。 开发版按顺序找：当前工作目录的 dev-app-update.yml 、 apps/desktop/dev-app-update.yml 等候选路径；仓库里的这份内容是 provider: github 、 updaterCacheDirName: spark-agent-dev-updater 、 releasesApiBase: https://www.yiqibyte.com 。 可识别字段： owner 、 repo 、 updaterCacheDirName 、 token （用于提高 GitHub 限额，仅本地开发用）、 releasesApiBase 。都找不到时用内置默认值。 6. 签名、公证与原生模块要求 electron-builder.yml ： appId: com.spark-agent.desktop 、 productName: Spark Agent 、 artifactName: ${productName}-${version}-${os}-${arch}.${ext} 、 electronVersion: 43.2.0 、 mac.target: dmg 、 hardenedRuntime: true 、 identity: 'Developer ID Application' 、公证交给 afterSign: scripts/notarize.js 。 协议 scheme 注册为 spark-agent 。 macOS 还需要 APPLE_ID 、 APPLE_APP_SPECIFIC_PASSWORD 、 APPLE_TEAM_ID ； build-mac-release.sh 会在启动前检查这三个变量、 keychain 里的 Developer ID 证书以及 xcrun notarytool 可用性。 Windows： signtoolOptions 里是 SHA-256 + RFC3161 时间戳 （ http://timestamp.digicert.com ）， signExts: [.exe] 。 CI 传 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD ； build-win-release.sh 支持本地 .pfx 路径、 http(s) 、data URL 或 base64 内容， 并把证书写到临时目录、构建结束自动清理。 签名校验：有证书时脚本要求最终 .exe 的 Authenticode 状态是 Valid ； 正式发布路径（ REQUIRE_WINDOWS_SIGNING=1 ）缺少证书会直接失败； 只传了一半凭据也会失败（除非显式允许未签名）。 原生模块： better-sqlite3 、 keytar 、 node-pty 必须按目标架构重建到 Electron ABI。 打包脚本调用 pnpm run rebuild:native -- <arch> ，宿主架构与目标一致时会继续跑 native:verify （真实用 Electron 加载一次）；不一致时跳过并提示「在目标架构 runner 上构建」。 electron-builder.yml 关闭了自带 native rebuild（ npmRebuild: false ）， 原因写在配置注释里： node-pty@1.1.0 的 install 脚本会跑 tsc 编译测试文件， 类型检查失败会拖垮整个 rebuild。 7. 本地构建与调试 常用命令（都在 apps/desktop 下，或直接用脚本路径）： # 开发模式（更新检查/下载链路同样可用） pnpm --filter @spark/desktop dev # macOS 单架构发布构建（内部会先 rebuild:native 再 electron-builder） pnpm --filter @spark/desktop build:mac:arm64 pnpm --filter @spark/desktop build:mac:x64 # Windows 发布构建（不发布到 Release） pnpm --filter @spark/desktop build:win:release -- --publish never # 或者从仓库根目录： bash apps/desktop/scripts/build-win-release.sh x64 --publish never # 带本地证书的 Windows 构建 WIN_CSC_LINK=/path/to/cert.pfx \ WIN_CSC_KEY_PASSWORD=your-pfx-password \ pnpm --filter @spark/desktop build:win:release -- --publish never 调试要点： dev-app-update.yml 会覆盖仓库/缓存目录/版本中心地址；如果要绕过 GitHub 限额， 可以在里面加一个仅供开发用的 token 。 本地想验证「版本中心 → 官网下载按钮」链路时，设置 VITE_RELEASES_API_BASE （运行时） 与 RELEASES_API_BASE （ prebuild 拉快照）指向你的 edu-server 实例。 可观测点：设置 → 更新 的状态卡与「更新来源」、会话/主窗口里的 stream:update:status 事件、侧边栏更新按钮 tooltip、以及 {userData}/spark-agent-updater/ 下的缓存目录。 远端 Release 缺少对应平台安装包时，本地也会收到同一错误文案（例如「当前 Release 缺少适用于 macOS 的安装包」）。 8. 通道、设置与常见坑 通道类型是 UpdateChannel = 'stable' | 'beta' ，默认 stable ，可通过 update:settings 修改并持久化在 updates/data 。需要说清楚的是： 当前设置 → 更新 页面没有通道选择器 ，只有「自动检查更新 / 自动下载 / 自动安装 / 更新来源」四项， 以及检查、下载、安装三个动作按钮；也就是说 beta 在协议与检查逻辑上可用，但普通用户界面上切不了。 常见坑： 「自动安装」在 macOS 上打开又自己关掉 ：这是设计——保存偏好时会强制把非 Windows 平台的 autoInstall 置回 false（界面提示「当前平台不支持自动安装，下载后需手动打开安装包」）。 以为发的是增量包 ：blockmap 只被登记，不会被消费；用户每次都下完整安装包。 改了 CHANGELOG.md 却没触发发布 ：触发路径里没有 CHANGELOG， 它只影响 release notes 内容；另外版本号不变时 workflow 会判定不发布。 tag 已存在但指向旧提交 ：workflow 会直接失败并要求提升版本号，这是防止「新产物挂到旧标签」的保护。 Release 里能看到安装包，但应用内检查不到 ：应用内优先读版本中心； 如果版本中心登记失败（缺 secrets 或审批未通过），要么回退 GitHub 成功、要么提示缺少平台资产。 先看 GitHub Release 里资产名是否包含 -<platform>-<arch>. （例如 -mac-arm64.dmg ），这是登记与筛选共用的命名约定。 担心缓存越滚越大 ：更新器启动时只保留最近 2 个版本目录，其余自动回收； 想手动清理可以删掉 {userData}/spark-agent-updater/ 。 Windows 未签名包 ：本地构建允许产出未签名 exe（会有 SmartScreen 警告）， 但 CI 正式发布路径要求签名；判据就是脚本对 Authenticode 状态是否为 Valid 的校验。 速查表 发布源 GitHub Release + MinIO 对象存储 + 官网版本中心（GitHub 为回退源） 登记接口 POST /api/v1/ci/desktop/releases/register（头 X-Release-Token） 检查接口 GET /api/v1/desktop/releases/latest?channel=&platform=&arch= 版本中心默认地址 https://www.yiqibyte.com 对象存储路径 s3://<bucket>/stable/<version>/（dmg/exe/AppImage/zip/deb/rpm/blockmap） 构建矩阵 mac-arm64（macos-latest）· mac-x64（macos-26-intel）· win-x64（windows-2022） 检查节奏 启动延迟 5 秒 · 常规 30 分钟 ± 5 分钟抖动 · 失败退避上限 2 小时 更新缓存 {userData}/spark-agent-updater/<version>/，保留最近 2 个版本 IPC update:check / download / install-restart / get-status / settings 推送 stream:update:status（另有 available / progress / downloaded） 原生模块 better-sqlite3 · keytar · node-pty（pnpm run rebuild:native -- <arch> + native:verify） macOS 签名 Developer ID Application + hardenedRuntime + afterSign 公证（notarize.js） Windows 签名 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD，SHA-256 + RFC3161 时间戳 常见问题 展开 6 条常见问题 GitHub Release 是唯一发布源吗？ 不是。CI 会同时把安装包上传到对象存储（MinIO/S3 兼容桶的 stable/<version>/）并把元数据登记到官网版本中心；应用内更新优先读版本中心，失败才回退 GitHub Releases API。 为什么我只改了版本号却要先人工审批？ electron-builder 推完 GitHub Release 后，publish-to-official-website job 挂在 official-website-production 环境上，required reviewer 会拦一次；这次审批同时控制 MinIO 上传与版本中心登记，所以正式分发路径需要人工放行。 应用内更新是增量下载吗？ 不是。blockmap 会被上传与登记，但 UpdateService 不消费它，资产筛选中还会显式排除 *.blockmap，因此每次都是完整安装包。 自动检查更新会打扰我吗？ 不会弹提示。启动后延迟 5 秒检查一次，之后约每 30 分钟静默检查（±5 分钟抖动），失败按 30 分钟 × 2ⁿ 退避、上限 2 小时；只有手动检查失败才会显示错误。 能切到 beta 通道吗？ 协议与检查逻辑支持 stable/beta（beta 会遍历 /releases?per_page=20 取第一个非 draft），也能通过 update:settings 修改并持久化；但当前设置 → 更新 页面没有通道选择器，界面上切不了。 Windows 一定要证书吗？ 本地构建可以不带证书（产出未签名 exe，会有 SmartScreen 警告）；CI 正式发布路径设置了 REQUIRE_WINDOWS_SIGNING=1 且不允许未签名，脚本还会要求最终 exe 的 Authenticode 状态为 Valid。 相关主题 快速开始 桌面端架构 ← 文档首页 本页目录 1. 整体链路一览 2. 发布流程：workflow 的真实触发与结构 3. 官网版本中心：登记什么、读取什么 4. 应用内更新：状态机、节奏与缓存 5. 更新源选择、回退与错误文案 6. 签名、公证与原生模块要求 7. 本地构建与调试 8. 通道、设置与常见坑 返回 文档首页 文档目录 搜索文档 ⌘K 入门 3 快速开始 桌面端架构 可选功能组件 代码开发 1 代码开发 团队 Agent 3 Agent 工作流 团队模式 工作流编排 无限画布 2 无限画布 视频工作台 Provider 2 多媒体 Provider 图片生成 Provider MCP & 工具 8 联网搜索 浏览器自动化 MCP 与 Skills 内置工具 自定义工具与工具包 连接器 子应用 长期记忆 治理 10 远程连接 权限与治理 任务面板 会话定时任务 会话与消息流 电脑操作 凭据与密钥 本地数据与备份 Hooks V2 实操手册 Spark CLI 与桌面联动 发布 1 自动更新
 
 ## MCP 与 Skills - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/mcp-skills
+Source: https://www.yiqibyte.com/docs/mcp-skills
 
 Spark Work MCP / Skills 体系：内置技能（apps/desktop/resources/skills）、可安装技能目录、自建安装源（artifact，默认路径）与 tarball / GitHub 回退三条安装路径、传输类型与字段校验、OAuth 授权、按需加载与运行时注入。
 
@@ -164,7 +164,7 @@ Spark Work MCP / Skills 体系：内置技能（apps/desktop/resources/skills）
 
 ## 权限与治理 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/governance
+Source: https://www.yiqibyte.com/docs/governance
 
 Spark Work 权限治理：会话权限模式与 Profile 规则的两层判定、审批卡四档与超时行为、Rules 作用域、经典 Hooks 与 Hooks V2、用量账本，以及当前真正可查的审计记录入口。
 
@@ -172,7 +172,7 @@ Spark Work 权限治理：会话权限模式与 Profile 规则的两层判定、
 
 ## 桌面端架构 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/desktop-guide
+Source: https://www.yiqibyte.com/docs/desktop-guide
 
 Spark Work 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload / 类型化 IPC 桥、Agent Runtime 真实服务清单、本地 SQLite 与文件目录、凭据存储（keystore / 加密 vault）与三种执行引擎的载具差异。
 
@@ -180,7 +180,7 @@ Spark Work 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload /
 
 ## 内置工具 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/builtin-tools
+Source: https://www.yiqibyte.com/docs/builtin-tools
 
 Spark Work 应用内置的全部 17 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / multimedia-use / spark-web-tool / spark-workflow-generator / video-workflow / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都给出真实技能 ID、触发场景、配套工具与跳过条件。
 
@@ -188,7 +188,7 @@ Spark Work 应用内置的全部 17 个 Skill 教程：claude-api / commit / rea
 
 ## 自定义工具与工具包 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/custom-tools
+Source: https://www.yiqibyte.com/docs/custom-tools
 
 Spark Work 自定义工具完整指南：Tool Studio 的 http / code / provider-vision 三种适配器与真实字段约束，以及 Tool Package 的 spark-tool.json manifest、五个 runtime.adapter、六条安装来源、受管工程 install/build、OS 行为与 Spark Capability 权限模型、密钥与启用卸载规则。附 11 个 custom_tools_* 与 22 个 tool_packages_* 工具清单和常见坑排查表。
 
@@ -196,7 +196,7 @@ Spark Work 自定义工具完整指南：Tool Studio 的 http / code / provider-
 
 ## 连接器 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/connectors
+Source: https://www.yiqibyte.com/docs/connectors
 
 Spark Work 连接器完整指南：先分清「连接器」在代码里的三种含义（扩展中心的插件型连接器、平台管理 MCP 的 github_* 工具、远程连接的 IM 机器人），再详述 plugin.json 完整字段与四类 contribution、source/trust 枚举、github / google / notion / obsidian 四个内置运行时的真实工具清单与能力开关、九个权限与「只有聚合闸门、无逐权限强制」的真实强制力、本地目录导入与默认不可用的市场、凭据只进系统 keystore、运行时的工具如何以 mcp__spark_plugins__<runtime>_<tool> 注入 Agent，以及 GitHub 两套实现的差异与 ConnectorsPanel 未被挂载这一界面缺口。附 20 行排查表。
 
@@ -204,7 +204,7 @@ Spark Work 连接器完整指南：先分清「连接器」在代码里的三种
 
 ## 子应用 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/sub-apps
+Source: https://www.yiqibyte.com/docs/sub-apps
 
 Spark Work 子应用（Sub-App）完整指南：先分清 V1 单 HTML 与 V2 受管多文件的真实差异，再讲清五个展示面里只有 content / panel / overlay 真有宿主、17 个能力名与权限检查的真实位置、draft/published/archived 状态机（重点：归档在代码里不可逆）、发布对 enabled 的反向影响（V1 自动启用、V2 保持禁用）、版本号递增与「当前生效版本不能删」的保护、应用数据 512 KB 上限与 revision CAS、文件空间与 .sparkapp 分享包的十项导入检查、V2 后台服务与 release pinning 的持久任务，以及 39 个 spark_app_* 工具、19 个 developer_guide 查询主题与 17 条静态诊断。附 18 行排查表。
 
@@ -212,7 +212,7 @@ Spark Work 子应用（Sub-App）完整指南：先分清 V1 单 HTML 与 V2 受
 
 ## 长期记忆 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/long-term-memory
+Source: https://www.yiqibyte.com/docs/long-term-memory
 
 Spark Work 三层长期记忆系统：User / Project / Agent 作用域隔离不串味，后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话，FTS5+sqlite-vec 混合检索，自动整合进化，search_memory / recall_memory 工具按需深挖。
 
@@ -220,7 +220,7 @@ Spark Work 三层长期记忆系统：User / Project / Agent 作用域隔离不�
 
 ## 工作流编排 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/workflow-usage
+Source: https://www.yiqibyte.com/docs/workflow-usage
 
 Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环体子图可视化编辑、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。
 
@@ -228,7 +228,7 @@ Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、o
 
 ## 任务面板 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/board-view
+Source: https://www.yiqibyte.com/docs/board-view
 
 Spark Work 任务面板（BoardView）使用教程：6 个状态列（todo / in-progress / bug-fix / done / accepted / closed）、TaskCard 完整字段（id / title / description / status / priority / assignee / project / tags / dueDate / processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder）、内联创建 / 编辑、拖拽改变状态、右键菜单、回收站软删除、多维筛选、通过 platform-manager Skill 让 Agent 自动操作。
 
@@ -236,7 +236,7 @@ Spark Work 任务面板（BoardView）使用教程：6 个状态列（todo / in-
 
 ## 会话定时任务 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/session-scheduled-tasks
+Source: https://www.yiqibyte.com/docs/session-scheduled-tasks
 
 Spark Work 会话内定时任务：在单个会话作用域创建持久化任务，到点自动用本会话当时的 Agent/模型/权限/工作区续接一轮对话。支持 interval（固定间隔）/ cron（5 字段表达式）/ once（单次定时），用户工具栏和 Agent MCP 工具两个入口，调度引擎托管重试、并发与下次执行。
 
@@ -244,7 +244,7 @@ Spark Work 会话内定时任务：在单个会话作用域创建持久化任务
 
 ## 会话与消息流 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/session-flow
+Source: https://www.yiqibyte.com/docs/session-flow
 
 Spark Work 会话与消息流完整指南：先讲清「会话 → 轮次 → 事件」三层模型与 turnId 的作用，再展开消息流的真实链路（submit-turn 与 send-turn 的持久性差异、started 的真实语义、排队时消息气泡为何消失）、队列的两层结构与面板操作（含「拖拽排序重启后丢失」这个真实缺口）、出错暂停与两种恢复方式、调度并发（单会话 1 / 全局硬编码 6）。目标与计划部分覆盖 /goal 命令族、验收契约门控的解析规则（success_criteria 缺失即整块作废）、契约卡片、spark-goal-status 块的四种状态映射、五项预算熔断及其「计数依赖进度日志」的真实缺口、计划模式审批与闸门解除。会话级操作部分覆盖消息级操作（悬停栏按钮的真实出现条件、右键菜单、多选、乐观气泡状态机）、编辑最后一轮的先删后发语义、删除的按轮扩大与「浅清理」、会话分叉的轮次级锚点与元数据继承坑、参考会话的 10 条上限、代码还原点的 git 实现，以及历史导入的四个来源路径与四步流程。文末附 20 行排查表。
 
@@ -252,7 +252,7 @@ Spark Work 会话与消息流完整指南：先讲清「会话 → 轮次 → �
 
 ## 视频工作台 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/canvas-video-workbench
+Source: https://www.yiqibyte.com/docs/canvas-video-workbench
 
 Spark Work 画布视频工作台：视频节点的全屏一站式处理台，覆盖深度视频转换（本地 Depth Anything V2，离线不上云）、关键帧提取（scene / iframe / uniform 三策略，超限自动退化，可回填画布）、剪辑处理（转码、切割、音频分离、变速、倒放、画面裁剪）和多段时间线轨道拼接。
 
@@ -260,7 +260,7 @@ Spark Work 画布视频工作台：视频节点的全屏一站式处理台，覆
 
 ## 电脑操作 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/computer-use
+Source: https://www.yiqibyte.com/docs/computer-use
 
 Spark Work 电脑操作（Computer Use）完整指南：Agent 直接操作真实桌面的能力。先讲清两条架构完全不同的使用路径——原子动作（会话模型自己逐步操作，每个会话一个隐式会话、空闲 5 分钟释放）与委派的 start_task（独立决策循环，各自的任务契约预算不同），再展开权限模型：会话权限层里 fail-closed 的 computer_direct_action / computer_unknown 硬闸，与生产路径上更早生效的自动放行名单的关系，以及 Broker 层「策略只做风险分级、不做内容拦截」的真实边界（evaluate 在所有分支返回 allow，唯一 deny 是 focus_mismatch；任务契约里 allowedApps / allowedDomains / forbiddenActions 等字段没有任何读取点）。执行内核部分覆盖 L0–L4 风险计算与哪些升级规则在生产不可达、十个原子工具与 click 的语义改写、坐标按「模型看到的图」换算、type_text 带 into/submit 会拆成最多三个动作、五个控制工具的真实语义（pause 与 takeover 逐行等价、resume 只有 MCP 路径会重启算子、bind_target 必须先暂停）。底层部分覆盖原生宿主为什么必需、双向签名校验与本地信任旁路、5 字节帧头 stdio 协议与「没有请求级取消，超时即 SIGKILL 宿主」、心跳与每会话一次的重启预算、元素树渲染与 treeVersion 的 stale 语义、以及 macOS 与 Windows 的能力不对等。数据部分覆盖三套尺寸的截图、AES-256-GCM 加密快照库与保留策略（只有证据帧有 24 小时 TTL、整体无磁盘配额）、预览令牌的 5 分钟 TTL 与 turn 边界撤销、17 项凭据类应用黑名单的实际覆盖面。最后是界面可达性（设置页只有授权与诊断、那套设置没有界面、全新安装不会武装紧急停止键）与 10 个 V2 开关里哪 4 个没有任何消费者。文末附 30 行排查表。
 
@@ -268,7 +268,7 @@ Spark Work 电脑操作（Computer Use）完整指南：Agent 直接操作真实
 
 ## 可选功能组件 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/optional-capabilities
+Source: https://www.yiqibyte.com/docs/optional-capabilities
 
 Spark Work 可选功能组件完整指南：Codex 本地运行环境、离线 Office 预览、本地深度处理、FFmpeg、Chromium 与语音输入资源六个大体积组件不随安装包分发，而是按需下载。本页先讲清 definitions.ts 里 archive 与 external 两条安装通道的真实差异——四个 external 能力里三个照样从 Spark 自建制品仓库下载，只有 Chromium 走 npm 生态，selectArtifacts 返回空数组只是「不走通用流水线」的意思；接着逐个拆解四个专用完整性服务的探测与安装：FFmpeg 的 managed/system/none 三级降级与从目录名解析版本、Chromium 的四组包解析候选与三级浏览器探测及其 150 MB 固定估值、语音包的三组件与四值平台白名单及单飞保护、Codex 运行时的四段目录与 bundled 开发态旁路。版本协商部分给出协议基线 0.144.5、exact-sdk-match 与 newest-compatible 的取舍、五种失败原因对应的用户提示原文，以及三个环境变量的注入点。archive 部分覆盖七个阶段、包内 manifest 与全量文件 SHA-256、三层路径与符号链接防护、CapabilityPackageHealth 实际只覆盖两个能力的事实，以及激活失败时「原版本已保留」的回滚语义。操作语义部分说明 install/update/repair 是同一个实现（修复必然整包重下）、取消与卸载只对 archive 能力可用、卸载只删状态目录而够不到外部能力的二进制、自动更新默认值与 check 的触发条件、启动提醒的 7 天冷却与按版本静音，以及清单缓存 24 小时内不联网会让 remoteAvailable 为假从而静默跳过提醒的关键坑。协议部分覆盖 capability-asset:// 的五步路径穿越与符号链接防护、四条 host 分支与构建期资源外部化插件的 fail-fast，以及 Codex Runtime 诊断卡片的指标、四个告警阈值与「只回收空闲实例」的重启语义。文末附 11 个 IPC 通道契约、30 行排查表，以及 11 项声明了但当前不起作用的东西。
 
@@ -276,7 +276,7 @@ Spark Work 可选功能组件完整指南：Codex 本地运行环境、离线 Of
 
 ## 凭据与密钥 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/credentials-and-secrets
+Source: https://www.yiqibyte.com/docs/credentials-and-secrets
 
 SparkWork 凭据与密钥管理完整指南：密钥实际有四种落点（共享 keystore 的 macOS 集中 vault、第二个 keytar 实现 TokenStore、SQLite app_settings 明文、CLI 的 credentials.json），逐层讲清各自的读写路径与保护边界。覆盖 keystore 的常量与五个 API、critical 的 legacyChecked 惰性迁移与 deleteSecret 语义、keystore_ref 列清单与 tool_package_config 的 DB 级互斥约束、ref 命名规则总表、两份同名 maskSecret 的差异、Provider 凭据从表单到真实请求的全链路（空串写库的语义坑、provider:get-api-key 的明文回显与受管 Provider 硬拒、导出会把明文 Key 写盘、测试连接会真的发请求）、平台账号与 MCP OAuth 的 TokenStore 细节（含备份文件被两个命名空间共用导致取消 MCP 授权会删掉登录备份）、三处明文落点（IM 机器人凭据还会明文回显到普通输入框、会话与项目环境变量、MCP config_json）、声明与填值分离的三条面（自定义工具 secretRefs 全生命周期、工具包 secret 环境变量与一次性安全输入、子应用连接槽）、脱敏覆盖面、删除与清理边界、备份导出与账号同步各路径的密钥行为，附 24 行排查表与事实边界。
 
@@ -284,7 +284,7 @@ SparkWork 凭据与密钥管理完整指南：密钥实际有四种落点（共�
 
 ## 本地数据与备份 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/data-and-backup
+Source: https://www.yiqibyte.com/docs/data-and-backup
 
 SparkWork 本地数据、备份与账号同步完整指南：先把数据分成三个根讲清——应用数据在 {userData}（开发实例走兄弟目录 @spark/desktop-dev，由 SPARK_DATA_PROFILE 控制）、跨工作区记忆与看板在 ~/.spark-agent、Spark CLI 另用 ~/.spark。再讲唯一权威存储 spark.db（WAL 与 pragma、101 个迁移与 schema_migrations）与升级安全网：迁移前自动恢复点走 SQLite 在线备份产出单文件快照，保留 2 份 / 14 天，自动回滚的唯一门槛是 createdThisStartup === true；同一个 backups/database 目录下还有继承安装版数据时裸拷的 pre-inherit-* 三件套，它不受任何清理约束，且整个 backups/ 不计入存储用量、也没有界面清理入口。最后讲账号同步：7 个类别默认全关、只在点「立即同步」时执行、走同一个 /desktop-sync/execute 端点（预览靠 mode 区分），四重校验（字段白名单、键名黑名单、类型表、值文本扫描）是整条跳过而非裁剪，配保护列表防止云端覆盖本地。含保留期对照、真实限额、本地应用顺序、25 行排查表，并如实记录两处代码与文案不一致。
 
@@ -292,7 +292,7 @@ SparkWork 本地数据、备份与账号同步完整指南：先把数据分成�
 
 ## Hooks V2 实操手册 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/hooks-v2
+Source: https://www.yiqibyte.com/docs/hooks-v2
 
 SparkWork Hooks V2 完整实操手册：先辨析产品里三套同名机制——桌面 Hooks V2（7 个生命周期事件、通知/提示音/调用工具三种动作）、设置页底部的经典通知（V1 四个节点、布尔开关），以及 spark-engine 里那套没有任何界面的 shell 命令 hook（4 个闭集事件，退出码 2 或输出 block 决策可真正拦截，桌面 Spark 执行器同样会加载项目目录下的 .spark/settings.json）。再讲清 Hooks V2 的真实行为：七个事件的发射时机与 payload、确定性事件 ID 与两级去重、条件路径白名单与八个操作符的真实语义（eq 比较 null 恒为 false、contains 不支持数组）、三种值表达式与模板占位符规则、作用域优先级与基于执行哈希的绑定授权、什么改动会让授权失效、事件到执行的四段管线与三个定时器、超时/重试/幂等/并发的准确语义，以及 20 行排查对照。含如实记录的已知缺口：high-write 工具无法开放、条件无法通过界面移除、失败事件不清理、部分协议能力界面配不到。
 
@@ -300,7 +300,7 @@ SparkWork Hooks V2 完整实操手册：先辨析产品里三套同名机制—�
 
 ## Spark CLI 与桌面联动 - Spark Work 文档
 
-Source: https://spark.yiqibyte.com/docs/spark-cli
+Source: https://www.yiqibyte.com/docs/spark-cli
 
 Spark CLI（包名 @spark/agent，命令 spark）完整参考：18 个子命令与参数解析的真实边界（所有 flag 共用一张解析表，与本命令无关的 flag 会被静默忽略）、三种输出格式的区别（--json 给事件流、--output-format json 才给一行结果对象）、完整退出码表（取消是 130、用法错误是 2、update 有专属 0/1/2/3/4）、会话账本的组织方式与 -c/-r 的差别、TUI 的七个准入条件与 9 条公开斜杠命令、图片附件的格式与限额。桌面联动部分讲清本地回环桥的发现与选主、bridge 描述文件协议、三个真实端点、哪些渠道会被桥接（只有 Anthropic 与显式标记 responses 的 OpenAI 渠道），以及桥的安全模型与凭据链路。最后是 ~/.spark 与项目级 .spark 的数据落点、配置分层合并规则、各子命令的真实行为与 28 行排查对照。
 

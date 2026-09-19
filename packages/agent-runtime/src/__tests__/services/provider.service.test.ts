@@ -86,7 +86,10 @@ function makeRepo() {
       rows.set(id, next)
       return next
     }),
-    delete: vi.fn((id: string) => { rows.delete(id); return true }),
+    delete: vi.fn((id: string) => {
+      rows.delete(id)
+      return true
+    }),
     setDefault: vi.fn(),
     findByProviderType: vi.fn(() => []),
     getDefault: vi.fn(() => null),
@@ -210,11 +213,13 @@ describe('ProviderService', () => {
     const result = await importedService.importProviders(payload, 'merge')
 
     expect(result).toMatchObject({ imported: 1, skipped: 0, errors: [] })
-    expect(importedRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({
-        providerIcon: { id: 'generic', style: 'mono' },
+    expect(importedRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          providerIcon: { id: 'generic', style: 'mono' },
+        }),
       }),
-    }))
+    )
   })
 
   it('createProvider stores image provider routing fields', async () => {
@@ -230,16 +235,18 @@ describe('ProviderService', () => {
       imageApiType: 'async',
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({
-        defaultModel: 'gpt-image-2',
-        modelIds: ['gpt-image-2'],
-        apiEndpoint: 'https://api.apimart.ai/v1',
-        modelType: 'image',
-        imageProvider: 'apimart',
-        imageApiType: 'async',
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          defaultModel: 'gpt-image-2',
+          modelIds: ['gpt-image-2'],
+          apiEndpoint: 'https://api.apimart.ai/v1',
+          modelType: 'image',
+          imageProvider: 'apimart',
+          imageApiType: 'async',
+        }),
       }),
-    }))
+    )
     expect(profile.modelType).toBe('image')
     expect(profile.imageProvider).toBe('apimart')
     expect(profile.imageApiType).toBe('async')
@@ -331,15 +338,18 @@ describe('ProviderService', () => {
       imageApiType: 'async',
     })
 
-    expect(repo.update).toHaveBeenCalledWith('id-image-switch', expect.objectContaining({
-      config: expect.objectContaining({
-        modelType: 'image',
-        imageProvider: 'apimart',
-        mediaProvider: 'apimart',
-        mediaApiType: 'async',
-        mediaCapabilities: expect.arrayContaining(['image.generate']),
+    expect(repo.update).toHaveBeenCalledWith(
+      'id-image-switch',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          modelType: 'image',
+          imageProvider: 'apimart',
+          mediaProvider: 'apimart',
+          mediaApiType: 'async',
+          mediaCapabilities: expect.arrayContaining(['image.generate']),
+        }),
       }),
-    }))
+    )
   })
 
   it('exportProviders roundtrips media config fields', async () => {
@@ -397,10 +407,14 @@ describe('ProviderService', () => {
     expect(profile.mediaModelRefs?.[0]?.manifest?.invocation.endpoint).toBe('/images/generations')
 
     const listed = await service.listProviders()
-    expect(listed.find((item) => item.id === profile.id)?.mediaModelRefs?.[0]?.manifest?.id).toBe(manifest.id)
+    expect(listed.find((item) => item.id === profile.id)?.mediaModelRefs?.[0]?.manifest?.id).toBe(
+      manifest.id,
+    )
 
     const payload = await service.exportProviders([profile.id])
-    expect(payload.profiles[0]?.mediaModelRefs?.[0]?.manifest?.capabilities[0]?.id).toBe('image.generate')
+    expect(payload.profiles[0]?.mediaModelRefs?.[0]?.manifest?.capabilities[0]?.id).toBe(
+      'image.generate',
+    )
   })
 
   it('preserves media ref adapterMode and capabilityOverrides through create and list', async () => {
@@ -499,13 +513,15 @@ describe('ProviderService', () => {
       apiKey: 'sk-openai-local',
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: {
-        defaultModel: 'gpt-4o-mini',
-        modelIds: ['gpt-4o-mini', 'gpt-4.1'],
-        apiEndpoint: 'https://api.example.com/v1',
-      },
-    }))
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: {
+          defaultModel: 'gpt-4o-mini',
+          modelIds: ['gpt-4o-mini', 'gpt-4.1'],
+          apiEndpoint: 'https://api.example.com/v1',
+        },
+      }),
+    )
     expect(profile.apiEndpoint).toBe('https://api.example.com/v1')
   })
 
@@ -520,12 +536,14 @@ describe('ProviderService', () => {
       codexApiKind: 'responses',
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      providerType: 'openai-compatible',
-      config: expect.objectContaining({
-        codexApiKind: 'responses',
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerType: 'openai-compatible',
+        config: expect.objectContaining({
+          codexApiKind: 'responses',
+        }),
       }),
-    }))
+    )
     expect(profile.provider).toBe('openai-compatible')
 
     const payload = await service.exportProviders([])
@@ -547,14 +565,16 @@ describe('ProviderService', () => {
       codexApiKind: 'responses',
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: {
-        defaultModel: 'gpt-5-codex',
-        modelIds: ['gpt-5-codex'],
-        apiEndpoint: 'https://api.openai.com/v1',
-        codexApiKind: 'responses',
-      },
-    }))
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: {
+          defaultModel: 'gpt-5-codex',
+          modelIds: ['gpt-5-codex'],
+          apiEndpoint: 'https://api.openai.com/v1',
+          codexApiKind: 'responses',
+        },
+      }),
+    )
     expect(profile.codexApiKind).toBe('responses')
   })
 
@@ -568,12 +588,14 @@ describe('ProviderService', () => {
       apiKey: 'sk-glm',
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({
-        apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
-        codexApiKind: 'responses',
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+          codexApiKind: 'responses',
+        }),
       }),
-    }))
+    )
     expect(profile.codexApiKind).toBe('responses')
   })
 
@@ -586,13 +608,15 @@ describe('ProviderService', () => {
       supportsMillionContext: true,
     })
 
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: {
-        defaultModel: 'provider-default',
-        modelIds: ['provider-default'],
-        supportsMillionContext: true,
-      },
-    }))
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: {
+          defaultModel: 'provider-default',
+          modelIds: ['provider-default'],
+          supportsMillionContext: true,
+        },
+      }),
+    )
     expect(profile.supportsMillionContext).toBe(true)
   })
 
@@ -601,7 +625,8 @@ describe('ProviderService', () => {
       id: 'id-long-context',
       provider_type: 'openai',
       name: 'Long Context',
-      config_json: '{"defaultModel":"provider-default","modelIds":["provider-default"],"supportsMillionContext":true}',
+      config_json:
+        '{"defaultModel":"provider-default","modelIds":["provider-default"],"supportsMillionContext":true}',
       enabled: 1,
       keystore_ref: 'openai-id-long-context',
       is_default: 0,
@@ -768,7 +793,8 @@ describe('ProviderService', () => {
       id: 'id-codex',
       provider_type: 'openai',
       name: 'OpenAI Codex',
-      config_json: '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"apiEndpoint":"https://api.openai.com/v1"}',
+      config_json:
+        '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"apiEndpoint":"https://api.openai.com/v1"}',
       enabled: 1,
       keystore_ref: 'openai-id-codex',
       is_default: 0,
@@ -816,7 +842,8 @@ describe('ProviderService', () => {
       id: 'id-6',
       provider_type: 'openai',
       name: 'Compat',
-      config_json: '{"defaultModel":"gpt-4o","modelIds":["gpt-4o"],"apiEndpoint":"https://api.example.com/v1"}',
+      config_json:
+        '{"defaultModel":"gpt-4o","modelIds":["gpt-4o"],"apiEndpoint":"https://api.example.com/v1"}',
       enabled: 1,
       keystore_ref: 'openai-id-6',
       is_default: 0,
@@ -870,7 +897,11 @@ describe('ProviderService', () => {
     expect(realProfile).not.toHaveProperty('apiKey')
     expect(realProfile!.defaultModel).toBe('claude-3')
     expect(realProfile!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
-    expect(claudeRouter).toMatchObject({ id: CLAUDE_AUTO_ROUTER_PROVIDER_ID, provider: 'anthropic', keystoreRef: '' })
+    expect(claudeRouter).toMatchObject({
+      id: CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+      provider: 'anthropic',
+      keystoreRef: '',
+    })
     expect(codexRouter).toBeUndefined()
   })
 
@@ -950,7 +981,8 @@ describe('ProviderService', () => {
       id: 'id-codex-profile',
       provider_type: 'openai',
       name: 'Codex',
-      config_json: '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"codexApiKind":"responses"}',
+      config_json:
+        '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"codexApiKind":"responses"}',
       enabled: 1,
       keystore_ref: 'openai-id-codex-profile',
       is_default: 0,
@@ -972,7 +1004,8 @@ describe('ProviderService', () => {
       id: 'id-legacy-coding-plan',
       provider_type: 'openai',
       name: 'Legacy Coding Plan',
-      config_json: '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://ark.cn-beijing.volces.com/api/coding"}',
+      config_json:
+        '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://ark.cn-beijing.volces.com/api/coding"}',
       enabled: 1,
       keystore_ref: 'openai-id-legacy-coding-plan',
       is_default: 0,
@@ -995,7 +1028,8 @@ describe('ProviderService', () => {
       id: 'id-legacy-chat-coding-plan',
       provider_type: 'openai',
       name: 'Legacy Chat Coding Plan',
-      config_json: '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://open.bigmodel.cn/api/coding/paas/v4","codexApiKind":"chat"}',
+      config_json:
+        '{"defaultModel":"glm-5.2","modelIds":["glm-5.2"],"apiEndpoint":"https://open.bigmodel.cn/api/coding/paas/v4","codexApiKind":"chat"}',
       enabled: 1,
       keystore_ref: 'openai-id-legacy-chat-coding-plan',
       is_default: 0,
@@ -1018,7 +1052,8 @@ describe('ProviderService', () => {
       id: 'id-anthropic-compatible',
       provider_type: 'anthropic',
       name: 'Tencent Coding Plan',
-      config_json: '{"defaultModel":"glm-5","modelIds":["glm-5"],"apiEndpoint":"https://api.lkeap.cloud.tencent.com/coding/anthropic"}',
+      config_json:
+        '{"defaultModel":"glm-5","modelIds":["glm-5"],"apiEndpoint":"https://api.lkeap.cloud.tencent.com/coding/anthropic"}',
       enabled: 1,
       keystore_ref: 'anthropic-id-anthropic-compatible',
       is_default: 0,
@@ -1177,12 +1212,13 @@ describe('ProviderService', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({
-        data: [
-          { id: 'glm-5.1', owned_by: 'zhipu' },
-          { id: 'glm-5.2', owned_by: 'zhipu' },
-        ],
-      }),
+      text: async () =>
+        JSON.stringify({
+          data: [
+            { id: 'glm-5.1', owned_by: 'zhipu' },
+            { id: 'glm-5.2', owned_by: 'zhipu' },
+          ],
+        }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1205,7 +1241,8 @@ describe('ProviderService', () => {
   })
 
   it('fetchModels retries by stripping known Anthropic-compatible suffixes', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -1235,6 +1272,32 @@ describe('ProviderService', () => {
       'https://api.deepseek.com/v1/models',
       expect.any(Object),
     )
+  })
+
+  it('fetchModels does not derive candidates from a doubled messages path', async () => {
+    // 渠道里填的是完整 messages 地址（阶跃星辰常见写法）时，候选地址不能再拼一次 /v1。
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => 'missing',
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      service.fetchModels({
+        provider: 'anthropic',
+        apiEndpoint: 'https://api.stepfun.com/step_plan/v1/messages',
+        apiKey: 'sk-test',
+      }),
+    ).rejects.toThrow()
+
+    const requested = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(requested.length).toBeGreaterThan(0)
+    for (const url of requested) {
+      expect(url).not.toContain('/v1/messages/v1')
+      expect(url).not.toContain('/v1/messages/models')
+    }
+    expect(requested).toContain('https://api.stepfun.com/step_plan/v1/models')
   })
 
   it('fetchModels redacts credentials echoed by a failing channel', async () => {
@@ -1282,7 +1345,8 @@ describe('ProviderService', () => {
       // 用 includes 兼容 execFileAsync('claude.cmd') 和 execAsync('claude.cmd --version')
       cliExecMock.resolve = (cmd) => cmd.includes('claude.cmd')
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCliAvailable()
@@ -1294,7 +1358,8 @@ describe('ProviderService', () => {
       setPlatform('win32')
       cliExecMock.resolve = () => false
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCliAvailable()
@@ -1310,7 +1375,8 @@ describe('ProviderService', () => {
         return cmd === 'claude'
       }
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCliAvailable()
@@ -1328,13 +1394,13 @@ describe('ProviderService', () => {
         return cmd === 'claude'
       }
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
-      await expect(Promise.all([
-        fresh.isLocalCliAvailable(),
-        fresh.isLocalCliAvailable(),
-      ])).resolves.toEqual([true, true])
+      await expect(
+        Promise.all([fresh.isLocalCliAvailable(), fresh.isLocalCliAvailable()]),
+      ).resolves.toEqual([true, true])
       await expect(fresh.isLocalCliAvailable()).resolves.toBe(true)
 
       expect(seen.filter((cmd) => cmd === 'claude')).toHaveLength(1)
@@ -1344,7 +1410,8 @@ describe('ProviderService', () => {
       setPlatform('win32')
       cliExecMock.resolve = (cmd) => cmd.includes('claude.cmd')
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       await expect(fresh.isLocalCliAvailable()).resolves.toBe(true)
@@ -1374,7 +1441,8 @@ describe('ProviderService', () => {
         return false
       }
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCliAvailable()
@@ -1388,7 +1456,8 @@ describe('ProviderService', () => {
       setPlatform('darwin')
       cliExecMock.resolve = () => false
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCliAvailable()
@@ -1408,7 +1477,8 @@ describe('ProviderService', () => {
         return false
       }
       vi.resetModules()
-      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const { ProviderService: FreshProviderService } =
+        await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
       const available = await fresh.isLocalCodexCliAvailable()
@@ -1450,13 +1520,15 @@ describe('ProviderService', () => {
       ownerUserId: '42',
       baseUrl: 'https://newapi.example/',
       modelIds: ['glm-5'],
-      mediaModelRefs: [{
-        manifestId: 'platform:spark-img:test',
-        modelId: 'spark-img',
-        templateManifestId: 'openai-images:gpt-image-2',
-        displayName: 'spark-img',
-        enabled: true,
-      }],
+      mediaModelRefs: [
+        {
+          manifestId: 'platform:spark-img:test',
+          modelId: 'spark-img',
+          templateManifestId: 'openai-images:gpt-image-2',
+          displayName: 'spark-img',
+          enabled: true,
+        },
+      ],
       apiKey: 'sk-platform-secret',
     })
 
@@ -1478,11 +1550,15 @@ describe('ProviderService', () => {
       apiKey: 'sk-platform-secret',
     })
 
-    expect((await service.listProviders()).map(profile => profile.id)).toContain('spark-platform-newapi')
+    expect((await service.listProviders()).map((profile) => profile.id)).toContain(
+      'spark-platform-newapi',
+    )
 
     await service.disableManagedNewApiProvider('42')
 
-    expect((await service.listProviders()).map(profile => profile.id)).not.toContain('spark-platform-newapi')
+    expect((await service.listProviders()).map((profile) => profile.id)).not.toContain(
+      'spark-platform-newapi',
+    )
   })
 
   it('migrates an existing official provider from codex-chat to anthropic claude-sdk semantics', async () => {
@@ -1521,10 +1597,13 @@ describe('ProviderService', () => {
     expect(profile.apiEndpoint).toBe('https://newapi.example')
     expect(profile.maxTokens).toBe(128_000)
     expect(profile).not.toHaveProperty('codexApiKind')
-    expect(repo.update).toHaveBeenCalledWith('spark-platform-newapi', expect.objectContaining({
-      providerType: 'anthropic',
-      config: expect.objectContaining({ apiEndpoint: 'https://newapi.example' }),
-    }))
+    expect(repo.update).toHaveBeenCalledWith(
+      'spark-platform-newapi',
+      expect.objectContaining({
+        providerType: 'anthropic',
+        config: expect.objectContaining({ apiEndpoint: 'https://newapi.example' }),
+      }),
+    )
   })
 
   it('applies the platform output cap before an existing managed provider is refreshed', async () => {
@@ -1550,7 +1629,7 @@ describe('ProviderService', () => {
     })
 
     const profile = (await service.listProviders()).find(
-      candidate => candidate.id === 'spark-platform-newapi',
+      (candidate) => candidate.id === 'spark-platform-newapi',
     )
 
     expect(profile?.maxTokens).toBe(128_000)
@@ -1675,13 +1754,15 @@ describe('ProviderService', () => {
     const refreshed = await service.refreshManagedNewApiModels({
       ownerUserId: '42',
       modelIds: ['glm-5'],
-      mediaModelRefs: [{
-        manifestId: 'platform:doubao-seedream-4-5-251128:test',
-        modelId: 'doubao-seedream-4-5-251128',
-        templateManifestId: 'openai-images:gpt-image-2',
-        displayName: 'doubao-seedream-4-5-251128',
-        enabled: true,
-      }],
+      mediaModelRefs: [
+        {
+          manifestId: 'platform:doubao-seedream-4-5-251128:test',
+          modelId: 'doubao-seedream-4-5-251128',
+          templateManifestId: 'openai-images:gpt-image-2',
+          displayName: 'doubao-seedream-4-5-251128',
+          enabled: true,
+        },
+      ],
     })
 
     expect(refreshed.availableModelIds).toEqual(['glm-5'])
@@ -1701,12 +1782,14 @@ describe('ProviderService', () => {
       ownerUserId: '42',
       baseUrl: 'https://newapi.example',
       modelIds: ['glm-5', 'MiniMax-M3', 'retired-model'],
-      mediaModelRefs: [{
-        manifestId: 'platform:retired-image:test',
-        modelId: 'retired-image',
-        templateManifestId: 'openai-images:gpt-image-2',
-        enabled: true,
-      }],
+      mediaModelRefs: [
+        {
+          manifestId: 'platform:retired-image:test',
+          modelId: 'retired-image',
+          templateManifestId: 'openai-images:gpt-image-2',
+          enabled: true,
+        },
+      ],
       apiKey: 'sk-platform-secret',
     })
     await service.updateManagedNewApiModelPreferences({
@@ -1735,11 +1818,13 @@ describe('ProviderService', () => {
     })
     const before = repo.rows.get('spark-platform-newapi')?.config_json
 
-    await expect(service.refreshManagedNewApiModels({
-      ownerUserId: '42',
-      modelIds: [],
-      mediaModelRefs: [],
-    })).rejects.toThrow('没有可用文本模型')
+    await expect(
+      service.refreshManagedNewApiModels({
+        ownerUserId: '42',
+        modelIds: [],
+        mediaModelRefs: [],
+      }),
+    ).rejects.toThrow('没有可用文本模型')
 
     expect(repo.rows.get('spark-platform-newapi')?.config_json).toBe(before)
   })
@@ -1752,10 +1837,12 @@ describe('ProviderService', () => {
       apiKey: 'sk-platform-secret',
     })
 
-    await expect(service.updateManagedNewApiModelPreferences({
-      modelIds: [],
-      defaultModel: '',
-    })).rejects.toThrow('至少启用一个')
+    await expect(
+      service.updateManagedNewApiModelPreferences({
+        modelIds: [],
+        defaultModel: '',
+      }),
+    ).rejects.toThrow('至少启用一个')
   })
 
   it('blocks editing and deleting an official managed provider', async () => {
@@ -1766,8 +1853,9 @@ describe('ProviderService', () => {
       apiKey: 'sk-platform-secret',
     })
 
-    await expect(service.updateProvider({ id: 'spark-platform-newapi', name: 'hijacked' }))
-      .rejects.toThrow('不能手动编辑')
+    await expect(
+      service.updateProvider({ id: 'spark-platform-newapi', name: 'hijacked' }),
+    ).rejects.toThrow('不能手动编辑')
     await expect(service.getProviderApiKey('spark-platform-newapi')).rejects.toThrow('不能读取凭据')
     await expect(service.deleteProvider('spark-platform-newapi')).rejects.toThrow('不能删除')
   })

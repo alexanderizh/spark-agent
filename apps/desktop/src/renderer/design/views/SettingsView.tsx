@@ -55,6 +55,7 @@ import { CodexRuntimeDiagnosticsCard } from '../optional-capabilities/CodexRunti
 import { FontAssetControl } from '../components/FontAssetControl'
 import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './onboarding-state'
+import { clearUsageHeatmapCache } from './usageHeatmapCache'
 import { canvasApi } from './canvas/canvas.api'
 import { CanvasBatchSubmitPreferenceSetting } from './canvas/CanvasBatchSubmitPreferenceSetting'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
@@ -3931,6 +3932,8 @@ function UsageSection() {
     setError(null)
     try {
       await window.spark.invoke('usage:purge', { olderThanDays: 90 })
+      // 记录已删除：清掉热力图缓存，避免 6 个月 / 1 年档位回显已清理的数据。
+      clearUsageHeatmapCache()
       await loadDashboard()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

@@ -454,6 +454,64 @@ describe('SparkCliBridgeService', () => {
     expect(await exists(bridge.descriptorPath)).toBe(true)
   })
 
+  it('normalizes Anthropic endpoints to exactly one /v1/messages without doubling', async () => {
+    const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-anthropic-'))
+    roots.push(sparkHome)
+    const captured: { url: string; headers: Headers }[] = []
+    const upstreamFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      captured.push({ url: String(input), headers: new Headers(init?.headers) })
+      return new Response('event: message_stop\ndata: {"type":"message_stop"}\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+    const endpoints: Record<string, string> = {
+      'anthropic-root': 'https://api.stepfun.com/step_plan',
+      'anthropic-versioned': 'https://openrouter.example/api/v1',
+      'anthropic-full': 'https://api.stepfun.com/step_plan/v1/messages',
+      'anthropic-bare-messages': 'https://gw.example/step_plan/messages',
+    }
+    const bridge = await startSparkCliBridge({
+      sparkHome,
+      listProviders: async () =>
+        Object.entries(endpoints).map(([id, apiEndpoint], index) => ({
+          id,
+          name: id,
+          provider: 'anthropic' as const,
+          enabled: true,
+          defaultModel: `${id}-model`,
+          modelIds: [`${id}-model`],
+          apiEndpoint,
+          isDefault: index === 0,
+        })),
+      resolveCredential: async () => 'provider-secret',
+      fetch: upstreamFetch as typeof fetch,
+    })
+    bridges.push(bridge)
+
+    const token = (JSON.parse(await readFile(bridge.descriptorPath, 'utf8')) as { token: string })
+      .token
+    for (const providerId of Object.keys(endpoints)) {
+      const response = await fetch(`${bridge.endpoint}/v1/proxy/${providerId}/v1/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: `${providerId}-model`, stream: true }),
+      })
+      expect(response.status).toBe(200)
+      await response.text()
+    }
+
+    expect(captured.map((entry) => entry.url)).toEqual([
+      'https://api.stepfun.com/step_plan/v1/messages',
+      'https://openrouter.example/api/v1/messages',
+      // 已经是完整 messages 地址：原样使用，绝不追加第二个 /v1/messages
+      'https://api.stepfun.com/step_plan/v1/messages',
+      'https://gw.example/step_plan/v1/messages',
+    ])
+    // 第三方端点同时投放 x-api-key 与 Bearer，两种渠道口径都能认。
+    expect(captured[0]?.headers.get('x-api-key')).toBe('provider-secret')
+    expect(captured[0]?.headers.get('authorization')).toBe('Bearer provider-secret')
+  })
+
   it('appends /responses directly to endpoints whose last segment is already /vN', async () => {
     const sparkHome = await mkdtemp(join(tmpdir(), 'spark-cli-bridge-versioned-'))
     roots.push(sparkHome)

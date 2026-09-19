@@ -150,9 +150,9 @@ describe('TUI output scrolling', () => {
 
   it('keeps the transcript viewport still while a turn runs without model output', async () => {
     // Regression lock for "scrolled to the bottom, but the scroll content keeps
-    // refreshing": busy animation must live outside the ScrollRegion viewport.
-    // A pre-2026-09 build animated the WorkingLine spinner inside the content
-    // box, so the transcript repainted every 130ms even with no new output.
+    // refreshing": only the busy line at the very bottom of the viewport and
+    // the status bar below it may animate. Every settled transcript row above
+    // them must stay byte-identical across spinner frames.
     const base = createDeterministicEnv([
       text(Array.from({ length: 30 }, (_, index) => `reply line ${index + 1}`).join('\n'), {
         chunkSize: 24,
@@ -198,8 +198,13 @@ describe('TUI output scrolling', () => {
     for (const frame of changed) {
       const beforeRows = (baseline ?? '').split('\n')
       const afterRows = frame.split('\n')
-      // Only the status bar row (the last row) may differ.
-      expect(afterRows.slice(0, -1)).toEqual(beforeRows.slice(0, -1))
+      const busyRow = beforeRows.findIndex((row) => row.includes('请求模型'))
+      expect(busyRow).toBeGreaterThan(0)
+      // Nothing above the busy line may change...
+      expect(afterRows.slice(0, busyRow)).toEqual(beforeRows.slice(0, busyRow))
+      // ...and the input box under it stays frozen too; only the busy line and
+      // the status bar are animated.
+      expect(afterRows.slice(busyRow + 1, -1)).toEqual(beforeRows.slice(busyRow + 1, -1))
     }
     app.unmount()
   })

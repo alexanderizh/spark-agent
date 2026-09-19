@@ -1,4 +1,5 @@
 import { KernelError } from '../../kernel/errors.js'
+import { anthropicAuthHeaders } from './auth-headers.js'
 import type { LlmCallContext, LlmService } from '../../seams.js'
 import { safeDiagnosticText, safeProviderError } from '../error-detail.js'
 import { asRecord, numberValue, openSse, stringValue, type FetchLike } from '../http/client.js'
@@ -30,7 +31,8 @@ export class AnthropicMessagesService implements LlmService {
       url: messagesEndpoint(this.#options.baseUrl ?? 'https://api.anthropic.com'),
       headers: {
         ...clientIdentityHeaders(request.metadata.sessionId),
-        'x-api-key': this.#options.apiKey,
+        // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，按端点形态投放。
+        ...anthropicAuthHeaders(this.#options.baseUrl, this.#options.apiKey),
         'anthropic-version': this.#options.version ?? '2023-06-01',
       },
       body: toAnthropicRequest(request, this.#options.model, this.#options.promptCaching ?? true),
@@ -471,5 +473,8 @@ function cacheCreationTokens(value: unknown): number {
 
 function messagesEndpoint(value: string): string {
   const normalized = value.replace(/\/+$/u, '')
+  // 渠道配置允许填完整 messages 地址；直接追加会拼成 …/v1/messages/v1/messages（404）。
+  if (normalized.endsWith('/v1/messages')) return normalized
+  if (normalized.endsWith('/messages')) return normalized.replace(/\/messages$/u, '/v1/messages')
   return normalized.endsWith('/v1') ? `${normalized}/messages` : `${normalized}/v1/messages`
 }

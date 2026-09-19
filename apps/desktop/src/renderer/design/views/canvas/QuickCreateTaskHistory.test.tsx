@@ -29,6 +29,13 @@ const IMAGE_TASK: QuickCreateTaskRecord = {
   updatedAt: '2026-09-14T00:00:00.000Z',
 }
 
+const SECOND_IMAGE_TASK: QuickCreateTaskRecord = {
+  ...IMAGE_TASK,
+  id: 'task-image-second',
+  prompt: '雨后的霓虹街道',
+  assets: [{ type: 'image', filePath: '/tmp/output-c.png' }],
+}
+
 const VIDEO_TASK: QuickCreateTaskRecord = {
   ...IMAGE_TASK,
   id: 'task-video',
@@ -72,6 +79,48 @@ function renderHistory(root: Root, props: Partial<Parameters<typeof QuickCreateT
   )
 }
 
+/** 在指定元素上触发右键菜单 */
+function openContextMenu(target: Element | null) {
+  act(() =>
+    target?.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 24, clientY: 32 }),
+    ),
+  )
+}
+
+function menuLabels(): string[] {
+  const menu = document.querySelector('.context-action-menu')
+  if (!menu) return []
+  return Array.from(menu.children).map((child) =>
+    child.classList.contains('action-menu-divider') ? '---' : (child.textContent ?? ''),
+  )
+}
+
+function menuItem(label: string): HTMLButtonElement | undefined {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('.context-action-menu .action-menu-item'),
+  ).find((button) => button.textContent === label)
+}
+
+/** 剪贴板图片复制的环境准备：fetch 取 Blob + ClipboardItem + clipboard.write */
+function stubImageClipboard() {
+  const write = vi.fn<(items: unknown[]) => Promise<void>>().mockResolvedValue(undefined)
+  class FakeClipboardItem {
+    constructor(readonly items: Record<string, Blob>) {}
+  }
+  vi.stubGlobal('ClipboardItem', FakeClipboardItem)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(['png'], { type: 'image/png' }),
+    })),
+  )
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } })
+  return write
+}
+
 describe('QuickCreateTaskHistory', () => {
   let container: HTMLDivElement
   let root: Root
@@ -97,10 +146,13 @@ describe('QuickCreateTaskHistory', () => {
     root = createRoot(container)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     act(() => root.unmount())
     container.remove()
     document.body.innerHTML = ''
+    // 右键菜单是 body portal：卸载后的 passive effect 清理由 React 调度到下一轮任务，
+    // 不在这里冲掉就会跑到 jsdom 销毁之后（window is not defined）
+    await act(async () => {})
   })
 
   it('默认列表展示全部记录，切换卡片视图后瀑布流只显示有产物图片的任务', () => {
@@ -420,6 +472,90 @@ describe('QuickCreateTaskHistory', () => {
     expect(onRetry).toHaveBeenCalledWith(CANCELLED_TASK)
   })
 
+  it('卡片视图详情弹层可翻到上 / 下一个任务，并支持键盘 ←/→', () => {
+    renderHistory(root, { tasks: [IMAGE_TASK, SECOND_IMAGE_TASK, VIDEO_TASK] })
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="卡片视图"]')?.click())
+    act(() => document.querySelector<HTMLButtonElement>('.quick-create-card-media')?.click())
+
+    const modalText = () =>
+      document.querySelector('.quick-create-task-detail-modal')?.textContent ?? ''
+    expect(modalText()).toContain('清晨窗边的静物')
+    expect(document.querySelector('.quick-create-detail-pager')?.textContent).toContain('1 / 2')
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="下一个任务"]')?.click())
+    expect(modalText()).toContain('雨后的霓虹街道')
+    expect(modalText()).not.toContain('清晨窗边的静物')
+    expect(document.querySelector('.quick-create-detail-pager')?.textContent).toContain('2 / 2')
+
+    // → 在末条循环回第一条，← 再回到末条
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(modalText()).toContain('清晨窗边的静物')
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' })))
+    expect(modalText()).toContain('雨后的霓虹街道')
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="上一个任务"]')?.click())
+    expect(modalText()).toContain('清晨窗边的静物')
+  })
+
+  it('卡片视图产物查看弹层跨任务翻页，并标出当前产物归属任务', () => {
+    renderHistory(root, { tasks: [IMAGE_TASK, SECOND_IMAGE_TASK, VIDEO_TASK] })
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="卡片视图"]')?.click())
+    act(() => document.querySelector<HTMLButtonElement>('.quick-create-card-media')?.click())
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="查看大图"]')?.click())
+
+    const pagerText = () =>
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager')
+        ?.textContent ?? ''
+    const pagerLabel = () =>
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager-label')
+        ?.textContent ?? ''
+
+    // 两条卡片任务共 3 张图（2 + 1），视频任务不参与瀑布流翻页
+    expect(pagerText()).toContain('1 / 3')
+    expect(pagerLabel()).toBe('清晨窗边的静物')
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(pagerText()).toContain('2 / 3')
+    expect(pagerLabel()).toBe('清晨窗边的静物')
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(pagerText()).toContain('3 / 3')
+    expect(pagerLabel()).toBe('雨后的霓虹街道')
+
+    // 末项循环回第一项，仍停留在查看弹层
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="下一项输出"]')?.click())
+    expect(pagerText()).toContain('1 / 3')
+    expect(pagerLabel()).toBe('清晨窗边的静物')
+    expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
+  })
+
+  it('列表视图产物查看弹层按当前列表顺序跨任务翻页', () => {
+    renderHistory(root, { tasks: [IMAGE_TASK, SECOND_IMAGE_TASK], expandedTaskId: IMAGE_TASK.id })
+
+    act(() =>
+      document.querySelector<HTMLButtonElement>('.quick-create-history-output-thumb')?.click(),
+    )
+
+    // 列表视图下视频任务也在序列里：本用例只有两条图片任务，共 3 张
+    const pagerText = () =>
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager')
+        ?.textContent ?? ''
+    expect(pagerText()).toContain('1 / 3')
+    expect(
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager-label')
+        ?.textContent,
+    ).toBe('清晨窗边的静物')
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager-label')
+        ?.textContent,
+    ).toBe('雨后的霓虹街道')
+  })
+
   it('任意状态（含运行中）都显示复用配置', () => {
     const onReuse = vi.fn()
     renderHistory(root, { tasks: [RUNNING_TASK], onReuse, expandedTaskId: RUNNING_TASK.id })
@@ -436,5 +572,142 @@ describe('QuickCreateTaskHistory', () => {
 
     act(() => reuseButton?.click())
     expect(onReuse).toHaveBeenCalledWith(RUNNING_TASK)
+  })
+
+  it('列表行右键给出产物与任务两组动作，直接删除任务', () => {
+    const onDelete = vi.fn()
+    renderHistory(root, { onDelete })
+
+    openContextMenu(document.querySelector('.quick-create-task'))
+
+    expect(document.querySelector('.context-action-menu')).not.toBeNull()
+    expect(menuLabels()).toEqual([
+      '查看大图',
+      '复制图片',
+      '另存为…',
+      '打开所在文件夹',
+      '---',
+      '查看详情',
+      '复制提示词',
+      '复用配置',
+      '重新生成',
+      '存入提示词库',
+      '---',
+      '删除任务',
+    ])
+
+    act(() => menuItem('删除任务')?.click())
+    expect(onDelete).toHaveBeenCalledWith(IMAGE_TASK.id)
+    expect(document.querySelector('.context-action-menu')).toBeNull()
+  })
+
+  it('卡片封面右键可复制图片、查看大图，也能进详情', async () => {
+    const write = stubImageClipboard()
+    renderHistory(root, {})
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="卡片视图"]')?.click())
+    openContextMenu(document.querySelector('.quick-create-card-media img'))
+
+    expect(menuLabels()).toContain('查看大图')
+    await act(async () => menuItem('复制图片')?.click())
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('safe-file://'))
+
+    openContextMenu(document.querySelector('.quick-create-card-media img'))
+    act(() => menuItem('查看大图')?.click())
+
+    expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
+    expect(document.querySelector('.media-artifact-viewer')).not.toBeNull()
+  })
+
+  it('详情弹层内右键只给任务动作，可复制图片与删除任务', async () => {
+    const write = stubImageClipboard()
+    const onDelete = vi.fn()
+    renderHistory(root, { onDelete })
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="卡片视图"]')?.click())
+    act(() => document.querySelector<HTMLButtonElement>('.quick-create-card-media')?.click())
+    expect(document.querySelector('.quick-create-task-detail-modal')).not.toBeNull()
+
+    openContextMenu(document.querySelector('.quick-create-detail-media'))
+
+    expect(menuLabels()).toEqual([
+      '查看大图',
+      '复制图片',
+      '另存为…',
+      '打开所在文件夹',
+      '---',
+      '复制提示词',
+      '复用配置',
+      '重新生成',
+      '存入提示词库',
+      '---',
+      '删除任务',
+    ])
+    expect(menuLabels()).not.toContain('查看详情')
+
+    await act(async () => menuItem('复制图片')?.click())
+    expect(write).toHaveBeenCalledTimes(1)
+
+    openContextMenu(document.querySelector('.quick-create-detail-media'))
+    act(() => menuItem('删除任务')?.click())
+    expect(onDelete).toHaveBeenCalledWith(IMAGE_TASK.id)
+  })
+
+  it('产物查看弹层舞台右键同时给出产物动作与任务动作，键盘也能执行', () => {
+    const onDelete = vi.fn()
+    renderHistory(root, { expandedTaskId: IMAGE_TASK.id, onDelete })
+
+    act(() =>
+      document.querySelector<HTMLButtonElement>('.quick-create-history-output-thumb')?.click(),
+    )
+    openContextMenu(document.querySelector('.media-artifact-viewer-stage'))
+
+    // 内置产物动作（复制 / 另存为 / 所在文件夹）在前，追加的任务动作在后
+    expect(menuLabels()).toEqual([
+      '复制图片',
+      '另存为…',
+      '打开所在文件夹',
+      '---',
+      '复制提示词',
+      '复用配置',
+      '重新生成',
+      '存入提示词库',
+      '---',
+      '删除任务',
+    ])
+
+    // 菜单打开时方向键归菜单：↑/↓ 不被查看器拿去缩放
+    const zoomLabel = () =>
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-zoom-level')
+        ?.textContent
+    const before = zoomLabel()
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' })))
+    expect(zoomLabel()).toBe(before)
+
+    // ↓ 到「删除任务」再回车执行
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' })))
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })))
+    expect(onDelete).toHaveBeenCalledWith(IMAGE_TASK.id)
+  })
+
+  it('菜单打开时 ←/→ 不被查看器拿去翻页，Esc 只关菜单', () => {
+    renderHistory(root, { expandedTaskId: IMAGE_TASK.id })
+
+    act(() =>
+      document.querySelector<HTMLButtonElement>('.quick-create-history-output-thumb')?.click(),
+    )
+    const pagerText = () =>
+      document.querySelector('.quick-create-media-viewer-modal .media-artifact-viewer-pager')
+        ?.textContent ?? ''
+    const before = pagerText()
+
+    openContextMenu(document.querySelector('.media-artifact-viewer-stage'))
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })))
+    expect(pagerText()).toBe(before)
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(document.querySelector('.context-action-menu')).toBeNull()
+    expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
   })
 })

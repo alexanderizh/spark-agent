@@ -2,7 +2,7 @@ import { Box, Text } from 'ink'
 import type { ReactElement, ReactNode } from 'react'
 
 import type { PermissionMode } from '../../permission/types.js'
-import { glyphs, type TerminalCapabilities, type TuiTheme } from '../theme.js'
+import type { TerminalCapabilities, TuiTheme } from '../theme.js'
 import { SpinnerGlyph } from './spinner.js'
 
 export interface StatusBarProps {
@@ -13,8 +13,8 @@ export interface StatusBarProps {
   readonly cwd?: string | undefined
   readonly scrollHint?: boolean
   /**
-   * Turn (or self-update) in flight: the leading bar glyph is replaced by the
-   * animated spinner so running state is anchored beside the model name.
+   * Turn (or self-update) in flight: the leading indent shows the animated
+   * spinner so running state is anchored beside the model name.
    */
   readonly running?: boolean
   /** Deterministic spinner frame override for tests. */
@@ -58,9 +58,13 @@ export function StatusBar(props: StatusBarProps): ReactElement {
       </Text>,
     )
 
-  const bar = glyphs(props.capabilities).bar
   return (
     <Box width="100%" paddingX={1} flexWrap="wrap">
+      {/*
+        Two blank cells keep the row aligned with the input prompt's `❯ ` while
+        staying free of a permanent vertical line; the loading glyph takes that
+        space only while a turn or self-update runs.
+      */}
       {props.running ? (
         <Text color={props.theme.accent}>
           <SpinnerGlyph
@@ -70,7 +74,7 @@ export function StatusBar(props: StatusBarProps): ReactElement {
           />{' '}
         </Text>
       ) : (
-        <Text color={props.theme.accent}>{bar} </Text>
+        <Text>{'  '}</Text>
       )}
       <Box flexGrow={1} flexShrink={1} flexWrap="wrap">
         {segments.map((segment, index) => (

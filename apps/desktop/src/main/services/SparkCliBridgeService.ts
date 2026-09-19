@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
-import { createLogger } from '@spark/shared'
+import { buildAnthropicAuthHeaders, createLogger, resolveAnthropicMessagesUrl } from '@spark/shared'
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024
 const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024
@@ -283,7 +283,7 @@ async function proxyModelRequest(
     if (!response.writableEnded) controller.abort('client disconnected')
   })
   const target = upstreamUrl(provider, protocol)
-  const headers = upstreamHeaders(request, protocol, credential)
+  const headers = upstreamHeaders(request, protocol, credential, target)
   // 上游 4xx（例如 opencode 的 MissingSessionID）排查入口：这一行记录实际转发的
   // 客户端身份头是否存在，不记录任何头值。
   log.debug(
@@ -497,8 +497,9 @@ function upstreamUrl(
     protocol === 'anthropic-messages' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
   const base = (provider.apiEndpoint?.trim() || fallback).replace(/\/+$/u, '')
   if (protocol === 'anthropic-messages') {
-    if (base.endsWith('/v1/messages')) return base
-    return base.endsWith('/v1') ? `${base}/messages` : `${base}/v1/messages`
+    // 渠道配置允许填根地址 / …/v1 / 完整 …/v1/messages；共享归一化保证恰好一个
+    // /v1/messages 后缀（裸 /messages 也要收敛，否则会拼成 …/messages/v1/messages）。
+    return resolveAnthropicMessagesUrl(provider.apiEndpoint?.trim() || fallback)
   }
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
@@ -518,6 +519,7 @@ function upstreamHeaders(
   request: IncomingMessage,
   protocol: CatalogRoute['protocol'],
   credential: string,
+  targetUrl: string,
 ): Headers {
   const headers = new Headers({ accept: 'text/event-stream', 'content-type': 'application/json' })
   for (const name of FORWARDED_REQUEST_HEADERS) {
@@ -527,8 +529,12 @@ function upstreamHeaders(
     }
   }
   if (!headers.has('user-agent')) headers.set('user-agent', BRIDGE_USER_AGENT)
-  if (protocol === 'anthropic-messages') headers.set('x-api-key', credential)
-  else headers.set('authorization', `Bearer ${credential}`)
+  if (protocol === 'anthropic-messages') {
+    // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，按目标端点双投放。
+    for (const [name, value] of Object.entries(buildAnthropicAuthHeaders(targetUrl, credential))) {
+      headers.set(name, value)
+    }
+  } else headers.set('authorization', `Bearer ${credential}`)
   return headers
 }
 
