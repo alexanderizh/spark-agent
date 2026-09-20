@@ -2,7 +2,7 @@
  * 快速创作任务右键菜单：条目构造 + 产物定位。
  *
  * 菜单分两组，中间一条分割线：
- *   - 产物组：直接对着图片 / 视频复制、另存为、定位文件
+ *   - 产物组：直接对着图片 / 视频复制、去图编辑、另存为、定位文件
  *   - 任务组：查看详情、复制提示词、复用配置、重试、存入提示词库、删除任务
  *
  * 目标用「任务 id + 产物 key」描述而不是数组下标：任务刷新或产物顺序变化后
@@ -46,6 +46,8 @@ export type QuickCreateTaskMenuHandlers = {
   onViewOutput: (task: QuickCreateTaskRecord, outputIndex: number) => void
   onCopyPrompt: (text: string, doneMessage: string) => void
   onCopyImage: (url: string) => void
+  /** 产物图片「去图编辑」：不传则菜单里隐藏该项（视频产物永远不显示） */
+  onEditImage?: ((asset: CanvasMediaTaskAsset) => void) | undefined
   onSaveOutput: (asset: CanvasMediaTaskAsset) => void
   onRevealOutput: (asset: CanvasMediaTaskAsset) => void
   onReuse: (task: QuickCreateTaskRecord) => void
@@ -83,6 +85,14 @@ export function buildQuickCreateTaskMenuItems(
         icon: <Icons.Copy size={14} />,
         onClick: () => handlers.onCopyImage(output.url),
       })
+      if (handlers.onEditImage) {
+        items.push({
+          key: 'edit_image',
+          label: '去图编辑',
+          icon: <Icons.ImagePlus size={14} />,
+          onClick: () => handlers.onEditImage?.(output.asset),
+        })
+      }
     }
     if (output.asset.filePath) {
       items.push({

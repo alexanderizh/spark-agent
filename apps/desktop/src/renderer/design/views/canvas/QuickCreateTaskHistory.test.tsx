@@ -73,6 +73,8 @@ function renderHistory(root: Root, props: Partial<Parameters<typeof QuickCreateT
         onDelete={vi.fn()}
         onOpenOutput={vi.fn()}
         onSavePrompt={vi.fn()}
+        onGenerateImage={vi.fn()}
+        onEditImage={vi.fn()}
         {...props}
       />,
     ),
@@ -584,6 +586,7 @@ describe('QuickCreateTaskHistory', () => {
     expect(menuLabels()).toEqual([
       '查看大图',
       '复制图片',
+      '去图编辑',
       '另存为…',
       '打开所在文件夹',
       '---',
@@ -634,6 +637,7 @@ describe('QuickCreateTaskHistory', () => {
     expect(menuLabels()).toEqual([
       '查看大图',
       '复制图片',
+      '去图编辑',
       '另存为…',
       '打开所在文件夹',
       '---',
@@ -663,12 +667,13 @@ describe('QuickCreateTaskHistory', () => {
     )
     openContextMenu(document.querySelector('.media-artifact-viewer-stage'))
 
-    // 内置产物动作（复制 / 另存为 / 所在文件夹）在前，追加的任务动作在后
+    // 内置产物动作（复制 / 另存为 / 所在文件夹）在前，追加的「去图编辑」与任务动作在后
     expect(menuLabels()).toEqual([
       '复制图片',
       '另存为…',
       '打开所在文件夹',
       '---',
+      '去图编辑',
       '复制提示词',
       '复用配置',
       '重新生成',
@@ -709,5 +714,90 @@ describe('QuickCreateTaskHistory', () => {
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(document.querySelector('.context-action-menu')).toBeNull()
     expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
+  })
+
+  it('反推成功任务的列表行与详情都显示生图按钮并回调', () => {
+    const reverseTask: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-reverse-done',
+      mode: 'reverse',
+      operation: 'image_prompt_reverse',
+      prompt: '',
+      text: '一位穿红色连衣裙的女孩站在海边，黄昏光线',
+      status: 'succeeded',
+      assets: [],
+    }
+    const onGenerateImage = vi.fn()
+    renderHistory(root, { tasks: [reverseTask], expandedTaskId: reverseTask.id, onGenerateImage })
+
+    const rowAction = document.querySelector<HTMLButtonElement>('[aria-label="生图"]')
+    expect(rowAction).not.toBeNull()
+    act(() => rowAction?.click())
+    expect(onGenerateImage).toHaveBeenCalledWith(reverseTask)
+
+    act(() =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.quick-create-task-actions button'))
+        .find((button) => button.textContent?.trim() === '生图')
+        ?.click(),
+    )
+    expect(onGenerateImage).toHaveBeenCalledTimes(2)
+  })
+
+  it('未完成的反推任务与非反推任务都不显示生图按钮', () => {
+    const runningReverse: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-reverse-running',
+      mode: 'reverse',
+      operation: 'image_prompt_reverse',
+      prompt: '',
+      status: 'running',
+      assets: [],
+    }
+    renderHistory(root, { tasks: [IMAGE_TASK, runningReverse], expandedTaskId: IMAGE_TASK.id })
+
+    expect(document.querySelector('[aria-label="生图"]')).toBeNull()
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).some(
+        (button) => button.textContent?.trim() === '生图',
+      ),
+    ).toBe(false)
+  })
+
+  it('列表行产物图片右键在统一菜单中提供去图编辑', () => {
+    const onEditImage = vi.fn()
+    renderHistory(root, { tasks: [IMAGE_TASK], onEditImage })
+
+    openContextMenu(document.querySelector('.quick-create-task-main > img'))
+
+    expect(document.querySelector('.context-action-menu')).not.toBeNull()
+    act(() => menuItem('去图编辑')?.click())
+    expect(onEditImage).toHaveBeenCalledWith(IMAGE_TASK.assets[0])
+    expect(document.querySelector('.context-action-menu')).toBeNull()
+  })
+
+  it('详情弹窗图片右键同样提供去图编辑', () => {
+    const onEditImage = vi.fn()
+    renderHistory(root, { tasks: [IMAGE_TASK], onEditImage })
+
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="卡片视图"]')?.click())
+    act(() => document.querySelector<HTMLButtonElement>('.quick-create-card-media')?.click())
+    openContextMenu(document.querySelector('.quick-create-detail-media img'))
+
+    expect(menuLabels()).toContain('去图编辑')
+    act(() => menuItem('去图编辑')?.click())
+    expect(onEditImage).toHaveBeenCalledWith(IMAGE_TASK.assets[0])
+  })
+
+  it('大图查看器舞台右键提供去图编辑', () => {
+    const onEditImage = vi.fn()
+    renderHistory(root, { expandedTaskId: IMAGE_TASK.id, onEditImage })
+
+    act(() =>
+      document.querySelector<HTMLButtonElement>('.quick-create-history-output-thumb')?.click(),
+    )
+    openContextMenu(document.querySelector('.media-artifact-viewer-stage'))
+
+    act(() => menuItem('去图编辑')?.click())
+    expect(onEditImage).toHaveBeenCalledWith(IMAGE_TASK.assets[0])
   })
 })

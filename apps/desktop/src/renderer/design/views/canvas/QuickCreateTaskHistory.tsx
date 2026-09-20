@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
 import { Button, Modal, Tooltip, message } from 'antd'
 import type { CanvasMediaTaskAsset } from '@spark/protocol'
 import { Icons } from '../../Icons'
@@ -46,6 +53,10 @@ type HistoryProps = {
   onDelete: (taskId: string) => void
   onOpenOutput: (asset: CanvasMediaTaskAsset) => void
   onSavePrompt: (task: QuickCreateTaskRecord) => void
+  /** 反推任务一键转生图：把反推出的提示词填入左侧生图表单。 */
+  onGenerateImage: (task: QuickCreateTaskRecord) => void
+  /** 任务产物图右键「去图编辑」：产物图作为参考素材填入左侧图编辑表单。 */
+  onEditImage: (asset: CanvasMediaTaskAsset) => void
 }
 
 /** 独立产物查看：taskId + 可查看产物列表下标；不切换创作结果区块。 */
@@ -203,6 +214,8 @@ export function QuickCreateTaskHistory({
   onDelete,
   onOpenOutput,
   onSavePrompt,
+  onGenerateImage,
+  onEditImage,
 }: HistoryProps) {
   const [filter, setFilter] = useState<QuickCreateMode | 'all'>(
     () => readQuickCreatePreferences().taskFilter ?? 'all',
@@ -324,11 +337,17 @@ export function QuickCreateTaskHistory({
     </Tooltip>
   )
 
+  /** 反推任务拿到反推结果后可一键转生图。 */
+  const canGenerateImage = (task: QuickCreateTaskRecord) =>
+    task.mode === 'reverse' && task.status === 'succeeded' && Boolean(task.text?.trim())
+
   const renderListActions = (task: QuickCreateTaskRecord, output?: CanvasMediaTaskAsset) => {
     // 反推任务没有输入提示词，可复制的提示词是它的产物（task.text）
     const copyTarget = copyableTaskPrompt(task)
     return (
       <div className="quick-create-list-actions" aria-label="任务操作">
+        {canGenerateImage(task) &&
+          renderListAction('生图', <Icons.ImagePlus size={14} />, () => onGenerateImage(task))}
         {copyTarget &&
           renderListAction(copyTarget.label, <Icons.Copy size={14} />, () => {
             void copyTaskPrompt(copyTarget.text, copyTarget.doneMessage)
@@ -355,6 +374,16 @@ export function QuickCreateTaskHistory({
 
   const renderTaskActions = (task: QuickCreateTaskRecord, output?: CanvasMediaTaskAsset) => (
     <div className="quick-create-task-actions">
+      {canGenerateImage(task) && (
+        <Button
+          size="small"
+          type="text"
+          icon={<Icons.ImagePlus size={13} />}
+          onClick={() => onGenerateImage(task)}
+        >
+          生图
+        </Button>
+      )}
       {task.status === 'running' && task.runtimeTaskId && (
         <Button size="small" type="text" onClick={() => void onCancel(task)}>
           取消任务
@@ -420,6 +449,7 @@ export function QuickCreateTaskHistory({
     onViewOutput: (task, outputIndex) => setViewer({ taskId: task.id, outputIndex }),
     onCopyPrompt: (text, doneMessage) => void copyTaskPrompt(text, doneMessage),
     onCopyImage: (url) => void copyTaskImage(url),
+    onEditImage,
     onSaveOutput: (asset) => void saveTaskOutput(asset),
     onRevealOutput: (asset) => void revealTaskOutput(asset),
     onReuse,
@@ -428,13 +458,26 @@ export function QuickCreateTaskHistory({
     onDelete,
   })
 
-  // 产物查看弹层的追加项：只给任务级动作（assetRef=null），产物自身动作由 viewer 内置提供
+  // 产物查看弹层的追加项：任务级动作（assetRef=null）+ 当前大图的「去图编辑」，
+  // 其余产物自身动作（复制 / 另存为 / 所在文件夹）由 viewer 内置提供，不在这里重复
   const viewerMenuItems: ContextMenuEntry[] = viewerTask
-    ? buildQuickCreateTaskMenuItems(
-        viewerTask,
-        { taskId: viewerTask.id, assetRef: null },
-        buildMenuHandlers({ taskId: viewerTask.id, assetRef: null, surface: 'detail' }),
-      )
+    ? [
+        ...(viewerOutput && viewerOutput.asset.type === 'image'
+          ? [
+              {
+                key: 'viewer_edit_image',
+                label: '去图编辑',
+                icon: <Icons.ImagePlus size={14} />,
+                onClick: () => onEditImage(viewerOutput.asset),
+              },
+            ]
+          : []),
+        ...buildQuickCreateTaskMenuItems(
+          viewerTask,
+          { taskId: viewerTask.id, assetRef: null },
+          buildMenuHandlers({ taskId: viewerTask.id, assetRef: null, surface: 'detail' }),
+        ),
+      ]
     : []
 
   return (

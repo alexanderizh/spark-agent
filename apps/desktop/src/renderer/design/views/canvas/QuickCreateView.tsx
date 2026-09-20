@@ -654,10 +654,6 @@ export function QuickCreateView() {
   const taskIdsRef = useRef(new Set(tasks.map((task) => task.id)))
   const hydratingParamsRef = useRef(false)
 
-  const invalidateFocusedTask = useCallback(() => {
-    setFocusedTaskId(null)
-  }, [])
-
   const updateTask = useCallback((id: string, patch: Partial<QuickCreateTaskRecord>) => {
     setTasks((current) => {
       const next = current.map((task) =>
@@ -952,7 +948,6 @@ export function QuickCreateView() {
             .slice(0, limit)
             .map((filePath) => prepareInputFile(filePath, quickInputKindForPath(filePath))),
         )
-        invalidateFocusedTask()
         setInputs((current) =>
           mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, limit),
         )
@@ -961,7 +956,7 @@ export function QuickCreateView() {
         message.error(error instanceof Error ? error.message : '读取输入素材失败')
       }
     },
-    [invalidateFocusedTask, mode],
+    [mode],
   )
 
   /** 拖入素材与粘贴同一语义：反推整组替换，其余模式追加并封顶 6 个 */
@@ -983,7 +978,6 @@ export function QuickCreateView() {
             .slice(0, limit)
             .map((filePath) => prepareInputFile(filePath, quickInputKindForPath(filePath))),
         )
-        invalidateFocusedTask()
         setInputs((current) =>
           mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, limit),
         )
@@ -992,7 +986,7 @@ export function QuickCreateView() {
         message.error(error instanceof Error ? error.message : '读取拖入素材失败')
       }
     },
-    [invalidateFocusedTask, mode],
+    [mode],
   )
 
   const dragDepthRef = useRef(0)
@@ -1056,7 +1050,6 @@ export function QuickCreateView() {
         )
         const prepared = pasted.filter((item): item is QuickInput => item != null)
         if (prepared.length === 0) return
-        invalidateFocusedTask()
         setInputs((current) =>
           mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, 6),
         )
@@ -1065,7 +1058,7 @@ export function QuickCreateView() {
         message.error(error instanceof Error ? error.message : '粘贴图片失败')
       }
     },
-    [invalidateFocusedTask, mode],
+    [mode],
   )
 
   const handlePickFiles = useCallback(async () => {
@@ -1109,7 +1102,6 @@ export function QuickCreateView() {
   }, [handleChooseFiles, mode])
 
   const handleModeChange = (nextMode: QuickCreateMode) => {
-    invalidateFocusedTask()
     setMode(nextMode)
     setPrompt('')
     setInputs([])
@@ -1133,13 +1125,12 @@ export function QuickCreateView() {
       })
       if (value) nextParams[field.name] = value
     }
-    invalidateFocusedTask()
     setPrompt('')
     setInputs([])
     setPromptPickerOpen(false)
     setPromptSearch('')
     setModelParamDraft(nextParams)
-  }, [fields, invalidateFocusedTask, operation, selectedCapability, selectedModel])
+  }, [fields, operation, selectedCapability, selectedModel])
 
   const savePromptToLibrary = useCallback(
     async (
@@ -1194,9 +1185,9 @@ export function QuickCreateView() {
   )
 
   const submitTask = useCallback(
-    // keepActiveTab：从创作历史发起重试时使用，任务照常提交，但不把右侧切回「创作结果」，
-    // 让用户在历史列表里连续操作。
-    async (source?: QuickCreateTaskRecord, options?: { keepActiveTab?: boolean }) => {
+    // 提交只入队任务，不改变右侧内容区的显示状态：在任务管理就留在任务管理，
+    // 在创作结果就留在创作结果（focusedTaskId 更新让「创作结果」跟随最新任务）。
+    async (source?: QuickCreateTaskRecord) => {
       const taskId =
         source?.id ?? `quick-create-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const taskMode = source?.mode ?? mode
@@ -1252,7 +1243,6 @@ export function QuickCreateView() {
       }
       addTask(record)
       setFocusedTaskId(taskId)
-      if (!options?.keepActiveTab) setActiveTab('compose')
       setExpandedTaskId(taskId)
       setPendingSubmissions((current) => current + 1)
       let requestAccepted = false
@@ -1365,9 +1355,7 @@ export function QuickCreateView() {
     (task: QuickCreateTaskRecord) => {
       // 成功任务重试新建记录（复用原 id 会触发替换语义清掉旧产物）；
       // 失败/已取消任务无产物可丢失，维持原地替换。
-      void submitTask(task.status === 'succeeded' ? retryTaskRecord(task) : task, {
-        keepActiveTab: true,
-      })
+      void submitTask(task.status === 'succeeded' ? retryTaskRecord(task) : task)
     },
     [submitTask],
   )
@@ -1495,6 +1483,41 @@ export function QuickCreateView() {
     setExpandedTaskId((current) => (current === task.id ? null : task.id))
   }, [])
 
+  /** 反推结果一键转生图：反推出的提示词直接填入生图表单，开始新的文生图任务。 */
+  const handleGenerateImageFromReverse = useCallback((task: QuickCreateTaskRecord) => {
+    const text = task.text?.trim()
+    if (!text) return
+    setMode('image')
+    setPrompt(text)
+    setInputs([])
+    setPromptPickerOpen(false)
+    message.success('已用反推结果填充生图表单')
+  }, [])
+
+  /** 任务产物图一键转图编辑：产物图作为参考素材替换表单，进入图像编辑模式。 */
+  const handleEditImageFromAsset = useCallback((asset: CanvasMediaTaskAsset) => {
+    if (asset.type !== 'image') return
+    const source = asset.filePath ?? asset.url ?? ''
+    if (!source.trim()) {
+      message.warning('当前图片没有可用的文件地址')
+      return
+    }
+    const restored = quickInputFromTaskFile(
+      {
+        type: 'image',
+        ...(asset.filePath ? { path: asset.filePath } : {}),
+        ...(asset.url ? { url: asset.url } : {}),
+        ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+      },
+      0,
+    )
+    setMode('image')
+    setInputs([{ ...restored, mimeType: restored.mimeType || 'image/png' }])
+    setPrompt('')
+    setPromptPickerOpen(false)
+    message.success('已加入参考素材，当前按图像编辑处理')
+  }, [])
+
   return (
     <div
       className="quick-create-view"
@@ -1595,10 +1618,9 @@ export function QuickCreateView() {
                         <button
                           type="button"
                           aria-label={`移除 ${input.name}`}
-                          onClick={() => {
-                            invalidateFocusedTask()
+                          onClick={() =>
                             setInputs((current) => current.filter((item) => item.id !== input.id))
-                          }}
+                          }
                         >
                           <Icons.X size={12} />
                         </button>
@@ -1638,7 +1660,6 @@ export function QuickCreateView() {
                         title="从提示词库插入"
                         aria-label="从提示词库插入"
                         onClick={() => {
-                          invalidateFocusedTask()
                           setPromptPickerOpen(true)
                           setPromptSearch('')
                         }}
@@ -1653,10 +1674,7 @@ export function QuickCreateView() {
                   id="quick-create-prompt"
                   className="quick-create-prompt"
                   value={prompt}
-                  onChange={(event) => {
-                    invalidateFocusedTask()
-                    setPrompt(event.target.value)
-                  }}
+                  onChange={(event) => setPrompt(event.target.value)}
                   aria-label={mode === 'reverse' ? '反推补充要求' : '提示词'}
                   placeholder={
                     mode === 'reverse'
@@ -1708,7 +1726,6 @@ export function QuickCreateView() {
                             className="quick-create-library-card"
                             title={item.text}
                             onClick={() => {
-                              invalidateFocusedTask()
                               setPrompt(item.text)
                               setPromptPickerOpen(false)
                             }}
@@ -1747,7 +1764,6 @@ export function QuickCreateView() {
                       value: provider.id,
                     }))}
                     onChange={(value) => {
-                      invalidateFocusedTask()
                       setTextProviderId(value ?? '')
                       const provider = textProviders.find((item) => item.id === value)
                       setTextModelId(provider?.defaultModel ?? '')
@@ -1761,10 +1777,7 @@ export function QuickCreateView() {
                       textProviders.find((provider) => provider.id === textProviderId)?.modelIds ??
                       []
                     ).map((model) => ({ label: model, value: model }))}
-                    onChange={(value) => {
-                      invalidateFocusedTask()
-                      setTextModelId(value ?? '')
-                    }}
+                    onChange={(value) => setTextModelId(value ?? '')}
                   />
                 </div>
               ) : (
@@ -1778,10 +1791,7 @@ export function QuickCreateView() {
                           models={compatibleModels}
                           value={effectiveModelKey}
                           loading={modelsLoading}
-                          onChange={(value) => {
-                            invalidateFocusedTask()
-                            setModelKey(value)
-                          }}
+                          onChange={setModelKey}
                         />
                       )}
                     </div>
@@ -1796,12 +1806,11 @@ export function QuickCreateView() {
                     values={modelParamDraft}
                     customValueHistoryKey={parameterHistoryKey}
                     legacyParameterScope={parameterScope}
-                    onChange={(name, value) => {
-                      invalidateFocusedTask()
+                    onChange={(name, value) =>
                       setModelParamDraft((current) =>
                         updateModelParamDraftValue(current, name, value),
                       )
-                    }}
+                    }
                   />
                 </>
               )}
@@ -1889,6 +1898,8 @@ export function QuickCreateView() {
                     promptCoverFromTaskAssets(task.assets),
                   )
                 }
+                onGenerateImage={handleGenerateImageFromReverse}
+                onEditImage={handleEditImageFromAsset}
               />
             )}
           </div>

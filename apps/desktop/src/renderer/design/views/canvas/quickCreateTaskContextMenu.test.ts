@@ -189,4 +189,48 @@ describe('buildQuickCreateTaskMenuItems', () => {
     findByLabel(items, '查看大图').onClick?.()
     expect(h.onViewOutput).toHaveBeenCalledWith(reordered, 0)
   })
+
+  it('提供 onEditImage 时图片产物菜单出现「去图编辑」并回调对应产物', () => {
+    const h = handlers({ onEditImage: vi.fn() })
+    const items = buildQuickCreateTaskMenuItems(
+      IMAGE_TASK,
+      { taskId: IMAGE_TASK.id, assetRef: '/tmp/output-b.png' },
+      h,
+    )
+
+    expect(labelsOf(items)).toEqual([
+      '查看大图',
+      '复制图片',
+      '去图编辑',
+      '另存为…',
+      '打开所在文件夹',
+      '---',
+      '查看详情',
+      '复制提示词',
+      '复用配置',
+      '重新生成',
+      '存入提示词库',
+      '---',
+      '删除任务',
+    ])
+    findByLabel(items, '去图编辑').onClick?.()
+    expect(h.onEditImage).toHaveBeenCalledWith(IMAGE_TASK.assets[1])
+  })
+
+  it('视频产物不显示「去图编辑」', () => {
+    const videoTask: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-video-edit',
+      mode: 'video',
+      operation: 'text_to_video',
+      assets: [{ type: 'video', filePath: '/tmp/output.mp4' }],
+    }
+    const items = buildQuickCreateTaskMenuItems(
+      videoTask,
+      { taskId: videoTask.id, assetRef: '/tmp/output.mp4' },
+      handlers({ onEditImage: vi.fn() }),
+    )
+
+    expect(labelsOf(items)).not.toContain('去图编辑')
+  })
 })
