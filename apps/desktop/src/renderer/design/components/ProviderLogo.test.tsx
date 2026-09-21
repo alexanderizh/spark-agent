@@ -154,14 +154,31 @@ describe('ProviderLogo icon catalog', () => {
     })
   })
 
-  it('maps automatic router vendors to their own model icons', async () => {
+  it('旧 auto-router 魔法 vendor id 已下线，不再映射到任何可选图标', async () => {
     const { getProviderIconForVendor } = await import('./ProviderLogo')
 
-    expect(getProviderIconForVendor('claude-auto-router')).toEqual({
-      id: 'claude',
-      style: 'avatar',
-    })
-    expect(getProviderIconForVendor('codex-auto-router')).toEqual({ id: 'codex', style: 'avatar' })
+    expect(getProviderIconForVendor('claude-auto-router')).toBeNull()
+    expect(getProviderIconForVendor('codex-auto-router')).toBeNull()
+  })
+
+  it('auto-router 合成 vendor 渲染专属 SVG 分流图标（紫色底 + 白色箭头）', async () => {
+    const { ProviderLogo } = await import('./ProviderLogo')
+
+    const vendor = {
+      id: 'auto-router',
+      name: '自动路由',
+      emoji: '⇄',
+      color: '#a855f7',
+      desc: '',
+      logoPath: '',
+    }
+    const html = renderToStaticMarkup(<ProviderLogo vendor={vendor} />)
+
+    expect(html).toContain('#a855f7')
+    expect(html).toContain('自动路由')
+    expect(html).toContain('M9 12c3 0 2.5-5.5 5.5-5.5H19')
+    // 走 Avatar 分支后不应再渲染 emoji 兜底
+    expect(html).not.toContain('>⇄<')
   })
 
   it('uses Lobe avatars for multimedia template vendors', async () => {

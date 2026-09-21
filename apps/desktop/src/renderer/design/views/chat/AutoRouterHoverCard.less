@@ -1,0 +1,165 @@
+/* 会话模型选择器「智能路由」行的悬浮配置卡片（portal 到 document.body，fixed 定位）。
+   扁平基线：层级靠强度色点 + 文字明暗 + 间距表达，卡片内部只保留 2 条分割线
+   （分流器行 / 执行模型行之间、配置明细 / 底部摘要之间），行与行之间不再画线，
+   避免密集横线把卡片切碎。
+   pointer-events: none —— 纯展示，不吃点击也不挡滚动。 */
+
+.composer-auto-router-card {
+  position: fixed;
+  z-index: 3600;
+  box-sizing: border-box;
+  /* 三段式：头部一行 / 分流器 + 三强度行 / 底部摘要一行 */
+  width: 304px;
+  padding: 9px 12px 10px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  user-select: none;
+  animation: composer-auto-router-card-in 0.12s ease-out both;
+}
+
+@keyframes composer-auto-router-card-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-auto-router-card {
+    animation: none;
+  }
+}
+
+.composer-auto-router-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer-auto-router-card-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-auto-router-card-adapter {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.composer-auto-router-card-rows {
+  margin-top: 7px;
+}
+
+.composer-auto-router-card-row {
+  display: flex;
+  /* 极长模型名 + 多条计数时让行尾 meta 折到下一行，避免渠道名被压成一个省略号 */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  /* border-box + min-height：行高按「整行」算（含 padding），单行行高 = 32px */
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 3px 0;
+}
+
+/* 分流器行与三强度执行行之间用分割线区隔两组语义（卡片内部仅此 1 条 + 底部摘要 1 条） */
+.composer-auto-router-card-row:first-child {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 强度色点（内联 color 决定颜色）：6px 纯圆点，未配置档位转空心 */
+.composer-auto-router-card-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.composer-auto-router-card-dot.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* 分流器行没有强度语义：保留色点列宽，不显示点 */
+.composer-auto-router-card-dot.is-placeholder {
+  background: transparent;
+  visibility: hidden;
+}
+
+.composer-auto-router-card-row-label {
+  flex: none;
+  width: 36px;
+  color: color-mix(in srgb, var(--text-strong) 62%, transparent);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.composer-auto-router-card-row-model {
+  /* flex-basis 用小基准（而不是 auto = 内容宽度）：行内断行按 90px 参与计算，
+     模型名因此留在第一行按可用宽度截断，只有行尾 meta 会折到下一行右对齐；
+     min-width 90px 兜底，保证任何情况下都不会被压成一个省略号。 */
+  flex: 1 1 90px;
+  min-width: 90px;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-auto-router-card-row-provider {
+  flex: 0 1 auto;
+  min-width: 52px;
+  max-width: 88px;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-auto-router-card-row-meta {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.composer-auto-router-card-footer {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* 配置解析失败时只有一行说明 */
+.composer-auto-router-card-error {
+  margin-top: 7px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}

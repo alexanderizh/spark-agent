@@ -23,9 +23,12 @@ export function isProviderCompatibleWithAdapter(
   if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
   // AutoRouter 行按其声明的引擎（autoRouterConfig.adapter）判定会话兼容性：
   // claude 会话认 claude router，codex 会话认 codex router（防跨引擎无效组合）。
+  // spark 引擎不接管 AutoRouter（SparkCliBridgeService 构建路由目录时直接剔除），
+  // 必须在引擎二分前显式排除，否则 codex router 会被误判为 spark 可用。
   if (provider.providerType === AUTO_ROUTER_PROVIDER_TYPE) {
     const routerAdapter = provider.autoRouterConfig?.adapter
     if (routerAdapter == null) return false
+    if (isSparkAdapter(adapter)) return false
     return isClaudeAdapter(adapter) ? routerAdapter === 'claude' : routerAdapter === 'codex'
   }
   if (isSparkAdapter(adapter)) {

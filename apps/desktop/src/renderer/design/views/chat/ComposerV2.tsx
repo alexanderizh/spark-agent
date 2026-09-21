@@ -102,7 +102,10 @@ import {
   resolveOpenAIFastModeProvider,
   supportsOpenAIFastModeProvider,
 } from './openai-fast-mode'
+import { AutoRouterHoverCard } from './AutoRouterHoverCard'
+import { buildAutoRouterHoverCardModel } from './auto-router-hover-card-model'
 import { ModelPickerMenuItem } from './ModelPickerMenuItem'
+import { useAutoRouterHoverCard } from './useAutoRouterHoverCard'
 import { resolvePinnedModelEntries, usePinnedModels } from './pinned-models'
 import {
   getProviderPickerLogoSize,
@@ -217,7 +220,10 @@ import {
   readFileExplorerNodeDragPayload,
 } from '../../components/code-viewer/file-explorer/fileExplorerDnd'
 import { ComposerDropOverlay } from './ComposerDropOverlay'
-import { hasExecutableComposerModel } from './composer-model-selection'
+import {
+  hasExecutableComposerModel,
+  resolveComposerModelVisibility,
+} from './composer-model-selection'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -1024,9 +1030,12 @@ export function ComposerV2({
   const compatibleProviders = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
+  // 绑定项从全量列表解析（不进 compatibleProviders）：绑定与会话引擎不一致时
+  // （历史数据、引擎被重置），选中态仍须反映会话的真实配置，由下方自动同步
+  // effect 按绑定项校准引擎，而不是把会话改绑到兼容列表的回落渠道。
   const sessionProvider =
     session?.providerProfileId != null
-      ? compatibleProviders.find((item) => item.id === session.providerProfileId)
+      ? providers.find((item) => item.id === session.providerProfileId)
       : undefined
   const sessionModelProvider = findProviderForModel(compatibleProviders, session?.modelId)
   const concreteSessionModelProvider = findConcreteProviderForModel(providers, session?.modelId)
@@ -1040,8 +1049,10 @@ export function ComposerV2({
     session.modelId.trim().length > 0 &&
     (sessionProvider == null || sessionProvider.id !== concreteSessionModelProvider.id) &&
     (!sessionProviderMatchesModel || sessionProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE)
+  // 空会话草稿的选中项同样从全量列表解析：草稿引擎未承诺，任何引擎的渠道/路由
+  // 都可能成为上次选择（选中即校准会同步 draftAdapter）。
   const draftProvider =
-    session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
+    session == null ? providers.find((item) => item.id === selectedProviderId) : undefined
   const selectedProvider =
     (shouldPreferConcreteModelProvider ? concreteSessionModelProvider : undefined) ??
     (sessionProviderMatchesModel ? sessionProvider : undefined) ??
@@ -4580,7 +4591,8 @@ export function ComposerV2({
                   selectedProviderId={selectedProvider?.id ?? ''}
                   selectedModelId={effectiveModelId}
                   disabled={sending || providers.length === 0}
-                  sessionAdapter={adapter}
+                  filterAdapter={session != null ? session.agentAdapter : null}
+                  boundProviderId={session?.providerProfileId ?? null}
                   cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
                   cliSparkOverride={cliSparkOverride}
                   onCliSparkModelChange={handleCliSparkModelChange}
@@ -5581,7 +5593,8 @@ function ProviderModelPicker({
   selectedProviderId,
   selectedModelId,
   disabled,
-  sessionAdapter,
+  filterAdapter,
+  boundProviderId,
   cliSparkProvidersByPrimaryId,
   cliSparkOverride,
   onCliSparkModelChange,
@@ -5593,8 +5606,14 @@ function ProviderModelPicker({
   selectedProviderId: string
   selectedModelId: string
   disabled?: boolean
-  /** 会话当前引擎：智能路由分组按 adapter 过滤 router（防跨引擎无效组合）。 */
-  sessionAdapter?: AgentAdapter
+  /**
+   * 模型可见性的引擎上下文：null = 空会话草稿（尚无引擎承诺，全部对话渠道与
+   * 启用路由可见，选中即校准草稿引擎）；历史会话传 session.agentAdapter，
+   * 按会话自身的引擎配置判定可见性。
+   */
+  filterAdapter: AgentAdapter | null
+  /** 历史会话当前绑定的 provider（含 router）id；无条件保留可见，防绑定被隐藏后回落改绑。 */
+  boundProviderId?: string | null | undefined
   cliSparkProvidersByPrimaryId?: ReadonlyMap<string, ProviderProfile[]>
   cliSparkOverride?: CliSparkOverride | null
   onCliSparkModelChange?: (
@@ -5610,34 +5629,23 @@ function ProviderModelPicker({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   const { pinned, isPinned, togglePinned } = usePinnedModels()
-  // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
-  // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）；router 行不进普通
-  // 分组（modelIds 恒空），单独走「智能路由」分组。
-  const conversationalProviders = useMemo(
-    () =>
-      providers.filter(
-        (provider) =>
-          provider.providerType !== 'auto-router' &&
-          provider.modelType !== 'image' &&
-          provider.modelType !== 'voice' &&
-          provider.modelType !== 'video',
-      ),
-    [providers],
+  // 显示隐藏规则单一真相源（resolveComposerModelVisibility，含单测矩阵）：
+  // - 空会话（filterAdapter=null）：尚无引擎承诺，全部对话渠道 + 全部启用路由
+  //   （两种引擎都显示）可见，选中任意项由 handleProviderModelChange 校准引擎。
+  // - 历史会话：按会话引擎（session.agentAdapter）判定可见性（与运行时兼容
+  //   判定 isProviderCompatibleWithAdapter 同源）；多媒体生成渠道过滤与 router
+  //   行独立分组也收敛在该函数内。绑定项（boundProviderId）无条件保留可见。
+  const { conversationalProviders, autoRouterProviders } = useMemo(
+    () => resolveComposerModelVisibility({ providers, filterAdapter, boundProviderId }),
+    [providers, filterAdapter, boundProviderId],
   )
-  // 「智能路由」分组：启用中的 router 行，按会话引擎过滤 adapter（防 codex 会话
-  // 选中 claude router 的无效组合；运行时另有 adapterMismatch 兜底）。
-  const autoRouterProviders = useMemo(() => {
-    const routerAdapter =
-      sessionAdapter === 'codex' ? 'codex' : sessionAdapter === 'spark' ? null : 'claude'
-    return providers.filter(
-      (provider) =>
-        provider.providerType === 'auto-router' &&
-        provider.enabled !== false &&
-        (routerAdapter == null ||
-          provider.autoRouterConfig == null ||
-          provider.autoRouterConfig.adapter === routerAdapter),
-    )
-  }, [providers, sessionAdapter])
+  // 「智能路由」行悬浮配置卡片：开合状态由 hook 管理（延迟打开、菜单关闭即清空）。
+  const {
+    target: autoRouterHoverTarget,
+    hover: hoverAutoRouterRow,
+    leave: leaveAutoRouterRow,
+    dismiss: dismissAutoRouterHoverCard,
+  } = useAutoRouterHoverCard(open)
   // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
   const normalizedSearch = search.trim().toLowerCase()
   const cliSparkProviderGroupsByPrimaryId = useMemo(() => {
@@ -5781,6 +5789,20 @@ function ProviderModelPicker({
     }
   }, [open])
 
+  // 悬浮行仍可见时才构建卡片模型（菜单关闭、选项被过滤掉时直接不渲染）
+  const hoveredAutoRouter =
+    open && autoRouterHoverTarget != null
+      ? autoRouterProviders.find((router) => router.id === autoRouterHoverTarget.routerId)
+      : undefined
+  const autoRouterHoverModel =
+    hoveredAutoRouter != null
+      ? buildAutoRouterHoverCardModel({
+          name: hoveredAutoRouter.name,
+          config: hoveredAutoRouter.autoRouterConfig ?? null,
+          providers,
+        })
+      : null
+
   return (
     <Dropdown
       menu={{ items: [] }}
@@ -5791,12 +5813,16 @@ function ProviderModelPicker({
         triggerNode.closest<HTMLElement>('.chat-main-empty[data-empty-theme]') ?? document.body
       }
       onOpenChange={(nextOpen) => {
-        if (disabled || conversationalProviders.length === 0) {
+        if (disabled || (conversationalProviders.length === 0 && autoRouterProviders.length === 0)) {
           setOpen(false)
           return
         }
         setOpen(nextOpen)
-        if (!nextOpen) setSearch('')
+        if (!nextOpen) {
+          setSearch('')
+          // 菜单关闭即丢弃悬浮卡片状态，避免下次打开时残留上一次的卡片
+          dismissAutoRouterHoverCard()
+        }
       }}
       popupRender={() => (
         <div
@@ -5816,7 +5842,7 @@ function ProviderModelPicker({
             </div>
           )}
           <div className="composer-model-list">
-            {conversationalProviders.length === 0 && (
+            {conversationalProviders.length === 0 && autoRouterProviders.length === 0 && (
               <div className="composer-menu-empty">未配置</div>
             )}
             {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
@@ -5872,20 +5898,19 @@ function ProviderModelPicker({
                 </div>
                 {autoRouterProviders.map((router) => {
                   const config = router.autoRouterConfig
-                  const summary =
-                    config != null
-                      ? [
-                          `分流器: ${config.dispatcher.modelId || '未配置'}`,
-                          `高: ${config.executors.find((e) => e.enabled && e.intensity === 'high')?.modelId ?? '—'}`,
-                          `平衡: ${config.executors.find((e) => e.enabled && e.intensity === 'balanced')?.modelId ?? '—'}`,
-                          `低: ${config.executors.find((e) => e.enabled && e.intensity === 'low')?.modelId ?? '—'}`,
-                        ].join(' · ')
-                      : '路由器配置无效'
                   return (
                     <div
                       key={`auto-router:${router.id}`}
                       className="composer-auto-router-row"
-                      title={summary}
+                      // 悬浮配置卡片（替代原生 title：卡片是唯一提示源，避免双重提示）
+                      onMouseEnter={(event) =>
+                        hoverAutoRouterRow(router.id, event.currentTarget)
+                      }
+                      onMouseLeave={leaveAutoRouterRow}
+                      onFocus={(event) =>
+                        hoverAutoRouterRow(router.id, event.currentTarget, { immediate: true })
+                      }
+                      onBlur={leaveAutoRouterRow}
                     >
                       <ModelPickerMenuItem
                         label={router.name}
@@ -6016,6 +6041,12 @@ function ProviderModelPicker({
               )
             })}
           </div>
+          {autoRouterHoverModel != null && autoRouterHoverTarget != null && (
+            <AutoRouterHoverCard
+              model={autoRouterHoverModel}
+              anchorEl={autoRouterHoverTarget.anchorEl}
+            />
+          )}
         </div>
       )}
     >

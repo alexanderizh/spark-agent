@@ -154,10 +154,60 @@ AgnesAI.Avatar = ({ size, shape = 'square' }) => (
   </span>
 )
 
+// 自动路由（auto-router）专属合成图标：「一进三出」分流箭头，对应分流器 → 多个执行模型的语义。
+// 复用 Lobe Avatar 组件接口，挂在合成 vendor id 'auto-router' 上（见 VENDOR_AVATAR_MAP）。
+const AutoRouterIconBase: IconComponent = ({ size = 24, color = 'currentColor' }) => (
+  <svg
+    fill="none"
+    height={size}
+    role="img"
+    viewBox="0 0 24 24"
+    width={size}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <title>自动路由</title>
+    <g fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}>
+      {/* 输入主干：单一来源 */}
+      <path d="M3.5 12H9" />
+      {/* 上下两条分流支线（对称分叉，间距拉开保证小尺寸可读） */}
+      <path d="M9 12c3 0 2.5-5.5 5.5-5.5H19" />
+      <path d="M9 12c3 0 2.5 5.5 5.5 5.5H19" />
+      {/* 支线末端箭头 */}
+      <path d="m16.9 4.4 3.1 2.1-3.1 2.1" />
+      <path d="m16.9 15.4 3.1 2.1-3.1 2.1" />
+    </g>
+  </svg>
+)
+
+const AutoRouter = AutoRouterIconBase as LobeIcon
+AutoRouter.title = '自动路由'
+AutoRouter.Avatar = ({ size, shape = 'square' }) => (
+  <span
+    aria-label="自动路由"
+    style={{
+      alignItems: 'center',
+      background: '#a855f7',
+      borderRadius: shape === 'circle' ? '50%' : Math.floor(size * 0.22),
+      color: '#fff',
+      display: 'inline-flex',
+      flexShrink: 0,
+      height: size,
+      justifyContent: 'center',
+      width: size,
+    }}
+  >
+    <span style={{ display: 'inline-flex', transform: 'scale(0.62)' }}>
+      <AutoRouterIconBase color="#fff" size={size} />
+    </span>
+  </span>
+)
+
 const StepFunIcon: AvatarComponent = ({ size }) => <StepFun size={size} color="#000" />
 
 const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   openai: OpenAI.Avatar as AvatarComponent,
+  // 自动路由合成 vendor（无真实厂商）：专属 SVG 图标，见 ProvidersView 的 AUTO_ROUTER_VENDOR_META
+  'auto-router': AutoRouter.Avatar as AvatarComponent,
   anthropic: Anthropic.Avatar as AvatarComponent,
   claude: Claude.Avatar as AvatarComponent,
   // 内置本地 CLI provider（id 与 provider profile id 对齐）
