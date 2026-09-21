@@ -99,6 +99,9 @@ import {
   resolveUserMessageDisplayText,
   isLegacyAutoRouterProviderId,
   AUTO_ROUTER_PROVIDER_TYPE,
+  findExecutorByIntensity,
+  parseAutoRouterConfig,
+  type RouterAdapter,
 } from '@spark/protocol'
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
@@ -468,6 +471,10 @@ import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
+import {
+  AutoRouterService,
+  type AutoRouterRouteResult,
+} from './auto-router.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
@@ -481,6 +488,7 @@ import {
 } from './session-event-sequencer.js'
 import {
   createLogger,
+  estimateTokens,
   resolveModelContextWindowForProvider,
   resolveSoftContextLimitForWindow,
 } from '@spark/shared'
@@ -2427,36 +2435,99 @@ export class SessionService {
     }
     let model: string
 
+    // AutoRouter（重构版）：provider 为 router 行（provider_type='auto-router'）时，
+    // 先由分流器模型分析当轮任务强度，再原地替换为对应强度执行器的渠道与模型。
+    // 四变量（id/provider/config/model）同步替换：下游标题精炼/分支名/性能统计/
+    // 记忆抽取回退拿到的均为具体执行器。router 会话 modelId 恒为空（分流器决定执行模型）。
+    let autoRouterTierModels: { haiku: string; sonnet: string; opus: string } | null = null
     {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
+      let autoRouterRouting: AutoRouterRouteResult | null = null
+      if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
+        // 会话引擎（adapterMismatch 判定）：与 2527 行 agentAdapter 同源取数，
+        // 但 router 行无渠道 config 可依，useSparkExecutor 不参与判定。
+        const sessionRouterAdapter: RouterAdapter =
+          resolveEngineKind(
+            getAgentAdapterFromSession(
+              isMentionTurn
+                ? (agent.agentAdapter ?? session.agent_adapter)
+                : sessionTeamConfig?.enabled === true
+                  ? runtimeAgent.agentAdapter
+                  : session.agent_adapter,
+              session.chat_mode,
+              null,
+              undefined,
+            ),
+          ) === 'codex'
+            ? 'codex'
+            : 'claude'
+        const autoRouterOutcome = await this.routeAutoRouterTurn({
+          routerRow: provider,
+          sessionId,
+          turnId,
+          message,
+          eventCount: existingEventCount,
+          sessionAdapter: sessionRouterAdapter,
+          isTurnCancelled: () => this.turnRegistry.isTurnCancelled(turnId),
+          eventRepo,
+        })
+        autoRouterRouting = autoRouterOutcome.routing
+        autoRouterTierModels = autoRouterOutcome.tierModels
+        if (autoRouterRouting.resolvedProviderId.length === 0) {
+          throw new Error(
+            `自动路由「${provider.name}」没有可用执行模型：${autoRouterRouting.reason}。请在渠道管理 → 自动路由中检查配置`,
+          )
+        }
+        log.info('auto-router executor swap applied', {
+          sessionId,
+          turnId,
+          from: { providerId: provider.id, model: '' },
+          to: {
+            providerId: autoRouterRouting.resolvedProviderId,
+            model: autoRouterRouting.resolvedModelId,
+          },
+          tierEnvInjected: autoRouterTierModels,
+        })
+        runtimeMetrics.recordAutoRouterRouting({
+          routingMs: autoRouterRouting.latencyMs,
+          routerId: provider.id,
+          intensity: autoRouterRouting.intensity,
+        })
+        effectiveRuntimeProviderProfileId = autoRouterRouting.resolvedProviderId
+        provider = loadProvider(effectiveRuntimeProviderProfileId)
+      }
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
-      const configuredAgentModel =
-        (isMentionTurn
-          ? agent.modelId
-          : runtimeAgentProviderIsStale ||
-              (!runtimeAgentSelectionTakesPrecedence && sessionProviderProfileId)
-            ? null
-            : runtimeAgent.modelId
-        )?.trim() ?? ''
-      const sessionModel = session.model_id?.trim() ?? ''
-      const configuredModels = Array.isArray(config.modelIds)
-        ? config.modelIds.filter((item): item is string => typeof item === 'string')
-        : []
-      const inheritedModel =
-        sessionModel.length > 0 &&
-        (configuredModels.length === 0 || configuredModels.includes(sessionModel))
-          ? sessionModel
-          : ''
-      model = isLocalCli
-        ? getLocalCliDefaultModel(provider)
-        : explicitModelId ||
-          (runtimeAgentSelectionTakesPrecedence
-            ? configuredAgentModel || inheritedModel
-            : inheritedModel || configuredAgentModel) ||
-          config.defaultModel ||
-          config.model ||
-          ''
+      if (autoRouterRouting != null) {
+        model = autoRouterRouting.resolvedModelId
+      } else {
+        const configuredAgentModel =
+          (isMentionTurn
+            ? agent.modelId
+            : runtimeAgentProviderIsStale ||
+                (!runtimeAgentSelectionTakesPrecedence && sessionProviderProfileId)
+              ? null
+              : runtimeAgent.modelId
+          )?.trim() ?? ''
+        const sessionModel = session.model_id?.trim() ?? ''
+        const configuredModels = Array.isArray(config.modelIds)
+          ? config.modelIds.filter((item): item is string => typeof item === 'string')
+          : []
+        const inheritedModel =
+          sessionModel.length > 0 &&
+          (configuredModels.length === 0 || configuredModels.includes(sessionModel))
+            ? sessionModel
+            : ''
+        model = isLocalCli
+          ? getLocalCliDefaultModel(provider)
+          : explicitModelId ||
+            (runtimeAgentSelectionTakesPrecedence
+              ? configuredAgentModel || inheritedModel
+              : inheritedModel || configuredAgentModel) ||
+            config.defaultModel ||
+            config.model ||
+            ''
+      }
       if (model.length === 0) {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
@@ -3504,6 +3575,15 @@ export class SessionService {
         ...(config.haikuModel != null ? { haikuModel: config.haikuModel } : {}),
         ...(config.sonnetModel != null ? { sonnetModel: config.sonnetModel } : {}),
         ...(config.opusModel != null ? { opusModel: config.opusModel } : {}),
+        // AutoRouter 子代理档位映射优先于执行器渠道自带档位：
+        // SDK 原生 Task 子代理（含 Explore/Plan）按 router 强度分级执行。
+        ...(autoRouterTierModels != null
+          ? {
+              haikuModel: autoRouterTierModels.haiku,
+              sonnetModel: autoRouterTierModels.sonnet,
+              opusModel: autoRouterTierModels.opus,
+            }
+          : {}),
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
         ...(resumeRecoveryHistoryPrompt != null
           ? { resumeFallbackSystemPrompt: resumeRecoveryHistoryPrompt }
@@ -7761,6 +7841,10 @@ export class SessionService {
       return row
     }
     const memberRouteMessage = buildMemberUserMessage(task)
+    // AutoRouter：成员 provider 指向 router 行时同样分流（与主循环解析对称），
+    // 四变量替换为对应强度执行器；成员 adapter 取 member.agentAdapter 回落会话快照。
+    let memberAutoRouterTierModels: { haiku: string; sonnet: string; opus: string } | null = null
+    let memberRoutedModelId: string | null = null
     let provider: ProviderProfileRow
     let isLocalCli: boolean
     let providerConfig: {
@@ -7795,6 +7879,48 @@ export class SessionService {
     }
     {
       provider = loadProvider(providerProfileId)
+      if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
+        const memberRouterAdapter: RouterAdapter =
+          resolveEngineKind(
+            getAgentAdapterFromSession(
+              member.agentAdapter ?? runtimeSelectionSnapshot.agentAdapter,
+              runtimeSelectionSnapshot.chatMode,
+              null,
+              undefined,
+            ),
+          ) === 'codex'
+            ? 'codex'
+            : 'claude'
+        const memberOutcome = await this.routeAutoRouterTurn({
+          routerRow: provider,
+          sessionId,
+          turnId,
+          message: memberRouteMessage,
+          eventCount: eventRepo.countBySession(sessionId),
+          sessionAdapter: memberRouterAdapter,
+          isTurnCancelled: () => signal.aborted || this.turnRegistry.isTurnCancelled(turnId),
+          eventRepo,
+        })
+        memberAutoRouterTierModels = memberOutcome.tierModels
+        if (memberOutcome.routing.resolvedProviderId.length === 0) {
+          throw new Error(
+            `成员自动路由「${provider.name}」没有可用执行模型：${memberOutcome.routing.reason}`,
+          )
+        }
+        log.info('auto-router member executor swap applied', {
+          sessionId,
+          turnId,
+          memberId: member.id,
+          from: { providerId: provider.id, model: '' },
+          to: {
+            providerId: memberOutcome.routing.resolvedProviderId,
+            model: memberOutcome.routing.resolvedModelId,
+          },
+        })
+        providerProfileId = memberOutcome.routing.resolvedProviderId
+        provider = loadProvider(providerProfileId)
+        memberRoutedModelId = memberOutcome.routing.resolvedModelId
+      }
       isLocalCli = isBuiltInLocalCliProvider(provider)
       providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
       const sessionModel = runtimeSelectionSnapshot.modelId?.trim() ?? ''
@@ -7809,7 +7935,8 @@ export class SessionService {
       model = (
         isLocalCli
           ? getLocalCliDefaultModel(provider)
-          : member.modelId?.trim() ||
+          : memberRoutedModelId ||
+            member.modelId?.trim() ||
             inheritedModel ||
             providerConfig.defaultModel ||
             providerConfig.model ||
@@ -8243,6 +8370,14 @@ export class SessionService {
       ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
+      // AutoRouter 子代理档位映射优先于渠道自带档位（与主循环同规则）。
+      ...(memberAutoRouterTierModels != null
+        ? {
+            haikuModel: memberAutoRouterTierModels.haiku,
+            sonnetModel: memberAutoRouterTierModels.sonnet,
+            opusModel: memberAutoRouterTierModels.opus,
+          }
+        : {}),
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(!isReadonlyAtomicMember && memberSkillSystemPrompt != null
         ? { skillSystemPrompt: memberSkillSystemPrompt }
@@ -8540,6 +8675,151 @@ export class SessionService {
   clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
     this.usageLedger.clearTurnState(sessionId, turnId)
   }
+
+  /**
+   * AutoRouter 分流决策（主/成员侧共用）：解析 router 行配置 → AutoRouterService
+   * 分流（LLM → 规则兜底 → 强度粘性）→ 落 auto_router_decision 事件 → 计算子代理
+   * 档位映射（仅 claude 引擎且 router 开启）。任何内部分流失败都不抛异常，由
+   * result.ok / resolvedProviderId 为空表示（调用方决定报错文案）。
+   */
+  private async routeAutoRouterTurn(params: {
+    routerRow: ProviderProfileRow
+    sessionId: string
+    turnId: string
+    message: string
+    eventCount: number
+    sessionAdapter: RouterAdapter
+    isTurnCancelled: () => boolean
+    eventRepo: EventRepository
+  }): Promise<{
+    routing: AutoRouterRouteResult
+    tierModels: { haiku: string; sonnet: string; opus: string } | null
+  }> {
+    let routerConfig = parseAutoRouterConfig(safeJsonParseLoose(params.routerRow.config_json))
+    if (routerConfig == null) {
+      log.warn('auto-router config invalid; routing degraded', {
+        sessionId: params.sessionId,
+        turnId: params.turnId,
+        routerId: params.routerRow.id,
+        routerName: params.routerRow.name,
+      })
+      routerConfig = null
+    }
+    const providerRepoForRouter = new ProviderProfileRepository(this.db)
+    const settingsRepoForRouter = new SettingsRepository(this.db)
+    const modelServiceForRouter = new ModelService(
+      new ModelProfileRepository(this.db),
+      providerRepoForRouter,
+      (category: string, key: string) => settingsRepoForRouter.get(category, key),
+    )
+    // router 行配置失效：构造空结果（no_executor 兜底由调用方处理报错文案）
+    const emptyResult: AutoRouterRouteResult = {
+      ok: false,
+      intensity: 'balanced',
+      resolvedProviderId: '',
+      resolvedModelId: '',
+      modelDisplayName: '',
+      reason: '路由器配置无效（config_json 解析失败）',
+      fallbackUsed: true,
+      fallbackStage: 'no_executor',
+      latencyMs: 0,
+      prevIntensity: null,
+      keptPrevIntensity: false,
+      decompose: false,
+      subtasks: [],
+      cancelled: false,
+      invalidEntries: [],
+    }
+    const routing =
+      routerConfig == null
+        ? emptyResult
+        : await new AutoRouterService({
+            complete: (prompt, opts) => modelServiceForRouter.complete(prompt, opts),
+            getProviderRow: (providerId) => providerRepoForRouter.get(providerId),
+            getLatestDecisionIntensity: (sessionId) => {
+              const latest = params.eventRepo.getLatestByType(sessionId, 'auto_router_decision')
+              if (latest == null) return null
+              const parsed = safeJsonParseLoose(latest.event_json) as {
+                intensity?: unknown
+              } | null
+              const intensity = parsed?.intensity
+              return intensity === 'high' || intensity === 'balanced' || intensity === 'low'
+                ? intensity
+                : null
+            },
+          }).routeTurn({
+            sessionId: params.sessionId,
+            turnId: params.turnId,
+            routerId: params.routerRow.id,
+            routerName: params.routerRow.name,
+            config: routerConfig,
+            userMessage: params.message,
+            eventCount: params.eventCount,
+            estimatedTokens: estimateTokens(params.message) + params.eventCount * 400,
+            recentUserMessages: params.eventRepo
+              .listRecentByType(params.sessionId, 'user_message', 3)
+              .filter((row) => row.turn_id !== params.turnId)
+              .map((row) => {
+                const parsed = safeJsonParseLoose(row.event_json) as { content?: unknown } | null
+                return typeof parsed?.content === 'string' ? parsed.content : ''
+              })
+              .filter((text) => text.length > 0),
+            sessionAdapter: params.sessionAdapter,
+            isTurnCancelled: params.isTurnCancelled,
+          })
+
+    // 落决策事件（事件 payload 自渲染所需全量字段，渲染端免二次反查）
+    this.emitAndPersist(
+      params.sessionId,
+      params.turnId,
+      {
+        id: crypto.randomUUID(),
+        type: 'auto_router_decision',
+        sessionId: params.sessionId,
+        turnId: params.turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        routerId: params.routerRow.id,
+        routerName: params.routerRow.name,
+        intensity: routing.intensity,
+        resolvedProviderId: routing.resolvedProviderId,
+        resolvedModelId: routing.resolvedModelId,
+        modelDisplayName: routing.modelDisplayName,
+        reason: routing.reason,
+        fallbackUsed: routing.fallbackUsed,
+        ...(routing.fallbackStage != null ? { fallbackStage: routing.fallbackStage } : {}),
+        ...(routing.adapterMismatch === true ? { adapterMismatch: true } : {}),
+        latencyMs: routing.latencyMs,
+        prevIntensity: routing.prevIntensity,
+        decompose: routing.decompose,
+        ...(routing.subtasks.length > 0 ? { subtasks: routing.subtasks } : {}),
+      },
+      params.eventRepo,
+    )
+
+    // 子代理档位映射（仅 claude 引擎 + router 开启）：低/平衡/高执行模型注入
+    // SDK tier env；未配置档位回退当轮主强度模型（防第三方渠道 invalid_model）。
+    const tierModels =
+      routerConfig != null &&
+      routerConfig.subagentIntensityMapping &&
+      params.sessionAdapter === 'claude' &&
+      routing.ok
+        ? {
+            haiku:
+              findExecutorByIntensity(routerConfig, 'low')?.modelId.trim() ||
+              routing.resolvedModelId,
+            sonnet:
+              findExecutorByIntensity(routerConfig, 'balanced')?.modelId.trim() ||
+              routing.resolvedModelId,
+            opus:
+              findExecutorByIntensity(routerConfig, 'high')?.modelId.trim() ||
+              routing.resolvedModelId,
+          }
+        : null
+
+    return { routing, tierModels }
+  }
+
   private emitAndPersist(
     sessionId: string,
     turnId: string,
@@ -10799,5 +11079,15 @@ export class SessionService {
 
   listActiveSessionIds(): string[] {
     return Array.from(this.turnRegistry.activeLoops.keys())
+  }
+}
+
+/** 容错 JSON.parse：任何输入不合法都返回 null（AutoRouter 配置/事件反查用）。 */
+function safeJsonParseLoose(text: string | null | undefined): unknown {
+  if (typeof text !== 'string' || text.length === 0) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
   }
 }

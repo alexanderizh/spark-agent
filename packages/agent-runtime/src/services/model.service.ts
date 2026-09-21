@@ -234,7 +234,22 @@ export class ModelService {
    *   - 其它（deepseek/openrouter/openai/vLLM 等）：OpenAI 兼容 /chat/completions
    * embedding 仍仅 OpenAI 兼容（anthropic 不提供 embedding 模型，纯 claude 配置走 FTS-only）。
    */
-  async complete(prompt: string, opts?: { maxTokens?: number }): Promise<CompleteResult> {
+  async complete(
+    prompt: string,
+    opts?: {
+      maxTokens?: number
+      /** 显式指定渠道（AutoRouter 分流器直连调用）；缺省沿用 settings memory 回退链 */
+      providerId?: string
+      /** 显式指定模型；缺省沿用回退链 */
+      model?: string
+      /** system 提示词（分流器决策指令）；anthropic 走 system 字段，OpenAI 兼容走 system role */
+      systemPrompt?: string
+      /** 覆盖 HTTP 超时（默认 30s）；分流器传 8s 与轮次取消信号先到者为准 */
+      timeoutMs?: number
+      /** 调用方取消信号（轮次取消联动） */
+      abortSignal?: AbortSignal
+    },
+  ): Promise<CompleteResult> {
     // 记录开始时间，用于算 HTTP 耗时（让"1 秒返回是真调了还是短路"可验证）
     const t0 = Date.now()
     try {
@@ -252,6 +267,18 @@ export class ModelService {
       let providerId = typeof providerIdRaw === 'string' ? providerIdRaw : ''
       let model = typeof modelRaw === 'string' ? modelRaw : ''
       let source = 'settings'
+
+      // 显式指定（AutoRouter 分流器）：优先于 settings 回退链，不经任何回退。
+      if (
+        typeof opts?.providerId === 'string' &&
+        opts.providerId.length > 0 &&
+        typeof opts.model === 'string' &&
+        opts.model.length > 0
+      ) {
+        providerId = opts.providerId
+        model = opts.model
+        source = 'explicit'
+      }
 
       // settings 未配时回退到当前会话 / @mention agent 的对话模型。
       // 仅当 settings 完全没配才回退；settings 给空字符串被视为"显式禁用"不触发回退。
@@ -343,16 +370,21 @@ export class ModelService {
                 model,
                 max_tokens: maxTokens,
                 ...(disableGlmThinking ? { thinking: { type: 'disabled' } } : {}),
+                ...(opts?.systemPrompt ? { system: opts.systemPrompt } : {}),
                 messages: [{ role: 'user', content: prompt }],
               }
             : {
                 model,
-                messages: [{ role: 'user', content: prompt }],
+                messages: [
+                  ...(opts?.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
+                  { role: 'user', content: prompt },
+                ],
                 max_tokens: maxTokens,
                 temperature: 0,
               },
         ),
-        timeoutMs: COMPLETE_HTTP_TIMEOUT_MS,
+        timeoutMs: opts?.timeoutMs ?? COMPLETE_HTTP_TIMEOUT_MS,
+        ...(opts?.abortSignal != null ? { signal: opts.abortSignal } : {}),
         // 该路径只做确定性记忆抽取；瞬时失败允许一次重试，避免单次抖动静默丢记忆。
         maxRetries: 1,
         retryBackoffMs: 250,

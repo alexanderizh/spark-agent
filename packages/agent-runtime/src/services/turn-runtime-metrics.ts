@@ -101,6 +101,20 @@ export class TurnRuntimeMetricsTracker {
     this.requestSentAt ??= this.now()
   }
 
+  /** AutoRouter 分流决策耗时与归属（TTFT 拆出 routingMs 分量；渲染端 Inspector 消费）。 */
+  recordAutoRouterRouting(metrics: {
+    routingMs: number
+    routerId: string
+    intensity: 'high' | 'balanced' | 'low'
+  }): void {
+    this.mergePendingMetrics({
+      autoRouterRoutingMs: Math.max(0, Math.round(metrics.routingMs)),
+      autoRouterId: metrics.routerId,
+      autoRouterIntensity: metrics.intensity,
+    })
+    if (this.firstOutputObserved) this.scheduleMetricsDelivery()
+  }
+
   recordAdapterMetrics(metrics: TurnRuntimeMetrics): void {
     this.mergePendingMetrics(metrics)
     this.scheduleMetricsDelivery()

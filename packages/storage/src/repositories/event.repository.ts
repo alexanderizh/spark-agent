@@ -422,6 +422,18 @@ export class EventRepository extends BaseRepository {
     return (stmt.get(sessionId, eventType) as AgentEventRow | undefined) ?? null
   }
 
+  /** 取某 session 内指定类型最近 limit 条事件（按 seq 倒序，最近的在前）。 */
+  listRecentByType(sessionId: string, eventType: string, limit: number): AgentEventRow[] {
+    const seqExpr = 'seq'
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ? AND event_type = ?
+       ORDER BY ${seqExpr} DESC, created_at DESC, rowid DESC
+       LIMIT ?`,
+    )
+    return stmt.all(sessionId, eventType, limit) as AgentEventRow[]
+  }
+
   /**
    * 取指定事件类型中 JSON 字段匹配的最近一条记录。
    * JSON path 与值均使用参数绑定；用于按稳定 SDK session id 查找各自最近快照，

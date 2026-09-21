@@ -302,6 +302,10 @@ export type TurnPerfRow = {
   outputTokens: number | null
   /** 吞吐 = outputTokens / streamActiveMs；任一缺测为 null */
   tokensPerSecond: number | null
+  /** AutoRouter 分流耗时（TTFT 的路由分量；非 router 会话为 null） */
+  autoRouterRoutingMs: number | null
+  /** AutoRouter 当轮执行强度（非 router 会话为 null） */
+  autoRouterIntensity: 'high' | 'balanced' | 'low' | null
 }
 
 export type SessionPerfSummary = {
@@ -362,6 +366,8 @@ export function buildSessionPerf(
       turnDurationMs: metrics.turnDurationMs ?? null,
       outputTokens: metrics.outputTokens ?? null,
       tokensPerSecond: metrics.outputTokensPerSecond ?? null,
+      autoRouterRoutingMs: metrics.autoRouterRoutingMs ?? null,
+      autoRouterIntensity: metrics.autoRouterIntensity ?? null,
     })
   }
 

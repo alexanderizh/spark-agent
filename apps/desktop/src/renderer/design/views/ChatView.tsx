@@ -80,6 +80,11 @@ import { ScheduledWakeDivider } from './chat/ScheduledWakeDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
+  AutoRouterDecisionNotice,
+  AutoRouterTurnMetaTag,
+} from './chat/AutoRouterDecisionNotice'
+import type { AutoRouterDecisionEvent } from '@spark/protocol'
+import {
   ComputerActivityProvider,
   ComputerActivitySegmentCard,
   ComputerActivitySegmentsBridge,
@@ -3814,6 +3819,18 @@ function ChatStream({
   const streamId = useId()
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
+  // AutoRouter 分流决策（事件驱动，session_events 持久化；不用 localStorage 方案）：
+  // 轮次边界提示条与轮次尾部 meta 标识的数据源，按 turnId 关联渲染。
+  const [autoRouterDecisions, setAutoRouterDecisions] = useState<AutoRouterDecisionEvent[]>([])
+  const autoRouterDecisionByTurn = useMemo(() => {
+    const map = new Map<string, AutoRouterDecisionEvent>()
+    for (const decision of autoRouterDecisions) map.set(decision.turnId, decision)
+    return map
+  }, [autoRouterDecisions])
+  // 会话切换时清空上一会话的决策（等待历史窗口重建）。
+  useEffect(() => {
+    setAutoRouterDecisions([])
+  }, [sessionId])
   const displayMessages = useMemo(
     () =>
       projectVisibleChatMessages(
@@ -4178,6 +4195,10 @@ function ChatStream({
         callbacks.onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
       }
 
+      if (event.type === 'auto_router_decision') {
+        setAutoRouterDecisions((prev) => [...prev, event])
+      }
+
       return true
     },
     [sessionId],
@@ -4266,6 +4287,17 @@ function ChatStream({
           callbacks.onMessagesChange(filtered)
         })
       }
+      // AutoRouter 决策事件随历史窗口重建：初始加载（deriveMeta）全量替换；
+      // 加载更早窗口时该窗口的决策在前拼接（live 事件维护的尾部保留）。
+      {
+        const historyDecisions = events.filter(
+          (event): event is AutoRouterDecisionEvent => event.type === 'auto_router_decision',
+        )
+        setAutoRouterDecisions((prev) =>
+          deriveMeta ? historyDecisions : [...historyDecisions, ...prev],
+        )
+      }
+
       if (!deriveMeta) return nextMessages
 
       // 上下文/用量派生与消息回放使用同一窗口：session_history_reset 标记之后的事件。
@@ -5151,10 +5183,55 @@ function ChatStream({
                     const segments = segmentsFor(msg.id)
                     const waitingAfterLastMessage =
                       index === displayMessages.length - 1 ? waitingAgentMessage : null
-                    if (marker == null && segments.length === 0 && waitingAfterLastMessage == null)
+                    // 路由提示条：下一条消息是新轮次首条 user 消息且该轮有分流决策时，
+                    // 渲染在该 user 消息上方（轮次边界）。仅当本轮实际模型与上一轮不同
+                    // （或降级/失配/首轮）才显示，连续同强度不刷屏。
+                    const nextMsg = displayMessages[index + 1]
+                    const nextDecision =
+                      nextMsg?.turnId != null && nextMsg.role === 'user' && msg.turnId !== nextMsg.turnId
+                        ? autoRouterDecisionByTurn.get(nextMsg.turnId)
+                        : undefined
+                    let showRouterNotice = nextDecision != null
+                    if (nextDecision != null) {
+                      const decisionIndex = autoRouterDecisions.findIndex(
+                        (item) => item.turnId === nextDecision.turnId,
+                      )
+                      const prevDecision =
+                        decisionIndex > 0 ? autoRouterDecisions[decisionIndex - 1] : undefined
+                      showRouterNotice =
+                        prevDecision == null ||
+                        prevDecision.resolvedModelId !== nextDecision.resolvedModelId ||
+                        nextDecision.fallbackUsed ||
+                        nextDecision.adapterMismatch === true
+                    }
+                    // 轮次 meta 常驻标识（显示点 3）：该轮最后一条消息（assistant）后
+                    // 渲染 ●强度色点 + 模型名，每轮可见（无 decision 则不渲染，零侵入）。
+                    const isTurnTail =
+                      msg.turnId != null &&
+                      msg.role === 'assistant' &&
+                      (nextMsg == null || nextMsg.turnId !== msg.turnId)
+                    const tailDecision =
+                      isTurnTail && msg.turnId != null
+                        ? autoRouterDecisionByTurn.get(msg.turnId)
+                        : undefined
+                    if (
+                      marker == null &&
+                      segments.length === 0 &&
+                      waitingAfterLastMessage == null &&
+                      !showRouterNotice &&
+                      tailDecision == null
+                    )
                       return null
                     return (
                       <>
+                        {showRouterNotice && nextDecision != null && (
+                          <AutoRouterDecisionNotice decision={nextDecision} />
+                        )}
+                        {tailDecision != null && (
+                          <div className="auto-router-turn-tail">
+                            <AutoRouterTurnMetaTag decision={tailDecision} />
+                          </div>
+                        )}
                         {marker != null && <ModelSwitchNotice marker={marker} />}
                         {segments.map((view) => (
                           <ComputerActivitySegmentCard key={view.key} view={view} />

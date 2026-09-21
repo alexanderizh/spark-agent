@@ -23,7 +23,13 @@ const INTERRUPTED_LABEL: Partial<Record<TurnPerfRow['status'], string>> = {
 }
 
 function rowTooltip(row: TurnPerfRow): string {
-  const lines = [`第 ${row.turnNumber} 轮 · ${row.model}`]
+  const intensityLabel =
+    row.autoRouterIntensity == null
+      ? ''
+      : { high: '高强度', balanced: '平衡', low: '低强度' }[row.autoRouterIntensity]
+  const lines = [
+    `第 ${row.turnNumber} 轮 · ${row.model}${intensityLabel ? ` · ${intensityLabel}` : ''}`,
+  ]
   if (row.tokensPerSecond != null) {
     lines.push(
       `吞吐 ${formatTokensPerSecond(row.tokensPerSecond)} tok/s（输出 ${row.outputTokens ?? '—'} tokens / 纯生成 ${
@@ -33,11 +39,12 @@ function rowTooltip(row: TurnPerfRow): string {
   } else {
     lines.push(`吞吐未测（${row.streamActiveMs != null ? '无输出 token 计量' : '无可观测流输出'}）`)
   }
-  lines.push(
-    `首输出 ${row.ttftMs != null ? formatMs(row.ttftMs) : '—'} · 轮次 ${
-      row.turnDurationMs != null ? formatMs(row.turnDurationMs) : '—'
-    }`,
-  )
+  const ttftParts: string[] = []
+  if (row.autoRouterRoutingMs != null) ttftParts.push(`路由 ${formatMs(row.autoRouterRoutingMs)}`)
+  ttftParts.push(`首输出 ${row.ttftMs != null ? formatMs(row.ttftMs) : '—'}`)
+  lines.push(`${ttftParts.join(' · ')} · 轮次 ${
+    row.turnDurationMs != null ? formatMs(row.turnDurationMs) : '—'
+  }`)
   return lines.join('\n')
 }
 
@@ -176,13 +183,29 @@ export function ChatInspectorPerf({
             row.tokensPerSecond != null &&
             row.tokensPerSecond < (perf.slowTokensPerSecond ?? 0)
           const pct = ((row.tokensPerSecond ?? 0) / maxTokensPerSecond) * 100
+          // 强度色点（高红/平衡绿/低蓝）：router 会话每轮标识当轮执行强度
+          const intensityColor =
+            row.autoRouterIntensity == null
+              ? undefined
+              : { high: 'var(--danger)', balanced: 'var(--success)', low: 'var(--info)' }[
+                  row.autoRouterIntensity
+                ]
           return (
             <div
               key={row.turnId}
               className={`perf-row${row.status === 'running' ? ' perf-row-live' : ''}${isSlow ? ' perf-row-slow' : ''}`}
               title={rowTooltip(row)}
             >
-              <span className="perf-row-index">{row.turnNumber}</span>
+              <span className="perf-row-index">
+                {row.turnNumber}
+                {intensityColor != null && (
+                  <span
+                    className="perf-row-intensity-dot"
+                    style={{ background: intensityColor }}
+                    aria-hidden
+                  />
+                )}
+              </span>
               <div className="perf-bar-track">
                 <div
                   className={`perf-bar-fill${isSlow ? ' perf-bar-slow' : ''}${row.status === 'running' ? ' perf-bar-live' : ''}`}
@@ -193,6 +216,7 @@ export function ChatInspectorPerf({
                 {row.tokensPerSecond != null ? formatTokensPerSecond(row.tokensPerSecond) : '—'}
               </span>
               <span className="perf-row-ttft">
+                {row.autoRouterRoutingMs != null ? `⚙${formatMs(row.autoRouterRoutingMs)} ` : ''}
                 {row.ttftMs != null ? formatMs(row.ttftMs) : '—'}
                 {isSlow ? ' ⚠' : ''}
               </span>

@@ -1387,7 +1387,11 @@ function AgentsTabContent({
                 }}
                 options={[
                   { label: '跟随会话', value: '' },
-                  ...providers.map((p) => ({ label: p.name, value: p.id })),
+                  ...providers.map((p) => ({
+                    // router 行加 ⚙ 前缀标识（选中后模型由分流器逐轮决定）
+                    label: p.providerType === 'auto-router' ? `⚙ ${p.name}` : p.name,
+                    value: p.id,
+                  })),
                 ]}
                 style={agentSelectStyle}
               />
@@ -1419,12 +1423,22 @@ function AgentsTabContent({
               label="默认模型"
               hint={
                 selectedProvider && !allowModelOverride
-                  ? '本地 CLI 直接沿用宿主机实际配置，这里不再单独覆盖模型。'
+                  ? selectedProvider.providerType === 'auto-router'
+                    ? '智能路由已选中：每轮由分流器分析任务强度后自动决定执行模型。'
+                    : '本地 CLI 直接沿用宿主机实际配置，这里不再单独覆盖模型。'
                   : undefined
               }
             >
               {selectedProvider && !allowModelOverride ? (
-                <LobeInput value="跟随本地 CLI" readOnly disabled />
+                <LobeInput
+                  value={
+                    selectedProvider.providerType === 'auto-router'
+                      ? '由智能路由分流决定'
+                      : '跟随本地 CLI'
+                  }
+                  readOnly
+                  disabled
+                />
               ) : (
                 <LobeSelect
                   value={draft.modelId}
@@ -1798,10 +1812,12 @@ function AgentCard({
   const workflow = workflows.find((w) => w.id === agent.workflowId)
   const avatar = getAgentAvatarConfig(agent.metadata, agent.id, agent.name)
   const modelLabel =
-    agent.modelId?.trim() ||
-    provider?.defaultModel ||
-    provider?.modelIds[0] ||
-    (agent.agentAdapter === 'codex' ? 'Codex' : agent.agentAdapter === 'spark' ? 'Spark' : 'Claude')
+    provider?.providerType === 'auto-router'
+      ? `⚙ ${provider.name}`
+      : agent.modelId?.trim() ||
+        provider?.defaultModel ||
+        provider?.modelIds[0] ||
+        (agent.agentAdapter === 'codex' ? 'Codex' : agent.agentAdapter === 'spark' ? 'Spark' : 'Claude')
   const skillCount = countExistingRefs(agent.skillIds, skills)
   const ruleCount = countExistingRefs(agent.ruleIds, rules)
   const hasMetaTags = agent.isDefault || skillCount > 0 || workflow != null || ruleCount > 0

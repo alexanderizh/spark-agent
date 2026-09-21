@@ -212,23 +212,29 @@ describe('ProviderService AutoRouter CRUD', () => {
 
     // 导入新建 = router 行 + 缺失的 Low Co 渠道；三个同名渠道 merge 跳过
     expect(result.imported).toBe(2)
-    const imported = targetService.repo.listAll().find(
-      (row) => (row as { provider_type: string }).provider_type === AUTO_ROUTER_PROVIDER_TYPE,
-    ) as { id: string; config_json: string }
-    const importedConfig = JSON.parse(importedConfigJson(imported)) as AutoRouterConfig
+    const importedRouter = (await targetService.listProviders()).find(
+      (profile) => profile.providerType === AUTO_ROUTER_PROVIDER_TYPE,
+    )
+    expect(importedRouter?.autoRouterConfig).toBeDefined()
+    const importedConfig = importedRouter?.autoRouterConfig as AutoRouterConfig
     expect(importedConfig.dispatcher.providerProfileId).toBe('new-dispatch')
+    // 读取视图：Low Co 在目标机器不存在 → 读取侧有效性校验剔除该条目（UI 不显示失效引用）
     expect(importedConfig.executors.map((e) => e.providerProfileId)).toEqual([
       'new-high',
       'new-bal',
-      // Low Co 匹配不到 → 引用保留导出机器原值（读取侧校验会剔除该条目）
+    ])
+    // 落库原值：失配引用保留导出机器原 id（换回渠道后自动恢复可用）
+    const storedRow = targetRepo.rows.get(importedRouter?.id ?? '') as
+      | { config_json?: string }
+      | undefined
+    const storedConfig = JSON.parse(storedRow?.config_json ?? '{}') as AutoRouterConfig
+    expect(storedConfig.executors.map((e) => e.providerProfileId)).toEqual([
+      'new-high',
+      'new-bal',
       'p-low',
     ])
   })
 })
-
-function importedConfigJson(row: { config_json: string }): string {
-  return row.config_json
-}
 
 describe('resolveLegacyRouterFallbackProviderRow', () => {
   const row = (id: string, providerType: string, enabled: number, isDefault: number) => ({

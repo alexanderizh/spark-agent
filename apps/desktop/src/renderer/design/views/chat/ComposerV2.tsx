@@ -4580,6 +4580,7 @@ export function ComposerV2({
                   selectedProviderId={selectedProvider?.id ?? ''}
                   selectedModelId={effectiveModelId}
                   disabled={sending || providers.length === 0}
+                  sessionAdapter={adapter}
                   cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
                   cliSparkOverride={cliSparkOverride}
                   onCliSparkModelChange={handleCliSparkModelChange}
@@ -5580,6 +5581,7 @@ function ProviderModelPicker({
   selectedProviderId,
   selectedModelId,
   disabled,
+  sessionAdapter,
   cliSparkProvidersByPrimaryId,
   cliSparkOverride,
   onCliSparkModelChange,
@@ -5591,6 +5593,8 @@ function ProviderModelPicker({
   selectedProviderId: string
   selectedModelId: string
   disabled?: boolean
+  /** 会话当前引擎：智能路由分组按 adapter 过滤 router（防跨引擎无效组合）。 */
+  sessionAdapter?: AgentAdapter
   cliSparkProvidersByPrimaryId?: ReadonlyMap<string, ProviderProfile[]>
   cliSparkOverride?: CliSparkOverride | null
   onCliSparkModelChange?: (
@@ -5607,17 +5611,33 @@ function ProviderModelPicker({
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   const { pinned, isPinned, togglePinned } = usePinnedModels()
   // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
-  // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）
+  // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）；router 行不进普通
+  // 分组（modelIds 恒空），单独走「智能路由」分组。
   const conversationalProviders = useMemo(
     () =>
       providers.filter(
         (provider) =>
+          provider.providerType !== 'auto-router' &&
           provider.modelType !== 'image' &&
           provider.modelType !== 'voice' &&
           provider.modelType !== 'video',
       ),
     [providers],
   )
+  // 「智能路由」分组：启用中的 router 行，按会话引擎过滤 adapter（防 codex 会话
+  // 选中 claude router 的无效组合；运行时另有 adapterMismatch 兜底）。
+  const autoRouterProviders = useMemo(() => {
+    const routerAdapter =
+      sessionAdapter === 'codex' ? 'codex' : sessionAdapter === 'spark' ? null : 'claude'
+    return providers.filter(
+      (provider) =>
+        provider.providerType === 'auto-router' &&
+        provider.enabled !== false &&
+        (routerAdapter == null ||
+          provider.autoRouterConfig == null ||
+          provider.autoRouterConfig.adapter === routerAdapter),
+    )
+  }, [providers, sessionAdapter])
   // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
   const normalizedSearch = search.trim().toLowerCase()
   const cliSparkProviderGroupsByPrimaryId = useMemo(() => {
@@ -5692,9 +5712,11 @@ function ProviderModelPicker({
   )
   // 置顶模型汇总到顶部「常用」组；解析基于过滤后的分组，搜索时「常用」组同步收窄
   const pinnedEntries = resolvePinnedModelEntries(pinned, filteredProviderGroups)
-  const selectedProviderById = conversationalProviders.find(
-    (provider) => provider.id === selectedProviderId,
-  )
+  const selectedProviderById =
+    // router 行不在 conversationalProviders（普通分组）里，选中态需在全量 providers 中命中
+    providers.find(
+      (provider) => provider.id === selectedProviderId && provider.providerType === 'auto-router',
+    ) ?? conversationalProviders.find((provider) => provider.id === selectedProviderId)
   const selectedProviderByModel = findProviderForModel(conversationalProviders, selectedModelId)
   const selectedProvider =
     (selectedModelId.trim().length === 0 ||
@@ -5717,7 +5739,16 @@ function ProviderModelPicker({
     selectedCliSparkProvider != null && cliSparkOverride != null
       ? getPickerModelDisplayLabel(selectedCliSparkProvider, cliSparkOverride.modelId)
       : undefined
-  const primaryLabel = getPickerModelDisplayLabel(selectedProvider, selectedModelId)
+  // router 选中态主标签：显示路由器名称（modelId 恒空，不显示空白模型名）；
+  // 轮次执行后的实际模型名由轮次 meta 行与路由提示条展示（auto_router_decision 事件）。
+  const selectedAutoRouter =
+    selectedProvider != null && selectedProvider.providerType === 'auto-router'
+      ? selectedProvider
+      : undefined
+  const primaryLabel =
+    selectedAutoRouter != null
+      ? selectedAutoRouter.name
+      : getPickerModelDisplayLabel(selectedProvider, selectedModelId)
   const label =
     selectedCliSparkModelLabel != null
       ? `${primaryLabel} · ${selectedCliSparkModelLabel}`
@@ -5827,6 +5858,68 @@ function ProviderModelPicker({
                       }}
                       onTogglePin={() => togglePinned(provider.id, modelId)}
                     />
+                  )
+                })}
+              </div>
+            )}
+            {autoRouterProviders.length > 0 && (
+              <div className="composer-model-group composer-auto-router-group">
+                <div className="composer-model-group-title">
+                  <span className="composer-model-group-icon">
+                    <Icons.Shuffle size={12} />
+                  </span>
+                  <span>智能路由</span>
+                </div>
+                {autoRouterProviders.map((router) => {
+                  const config = router.autoRouterConfig
+                  const summary =
+                    config != null
+                      ? [
+                          `分流器: ${config.dispatcher.modelId || '未配置'}`,
+                          `高: ${config.executors.find((e) => e.enabled && e.intensity === 'high')?.modelId ?? '—'}`,
+                          `平衡: ${config.executors.find((e) => e.enabled && e.intensity === 'balanced')?.modelId ?? '—'}`,
+                          `低: ${config.executors.find((e) => e.enabled && e.intensity === 'low')?.modelId ?? '—'}`,
+                        ].join(' · ')
+                      : '路由器配置无效'
+                  return (
+                    <div key={`auto-router:${router.id}`} className="composer-auto-router-row" title={summary}>
+                      <ModelPickerMenuItem
+                        label={router.name}
+                        active={router.id === resolvedSelectedProviderId}
+                        pinned={false}
+                        showPin={false}
+                        onTogglePin={() => undefined}
+                        leading={
+                        <span className="composer-auto-router-gear">
+                          <Icons.Shuffle size={13} />
+                        </span>
+                      }
+                      trailing={
+                        config != null ? (
+                          <span className="composer-auto-router-dots" aria-hidden>
+                            {(['high', 'balanced', 'low'] as const).map((intensity) => (
+                              <span
+                                key={intensity}
+                                className={`badge dot ${
+                                  intensity === 'high'
+                                    ? 'danger'
+                                    : intensity === 'balanced'
+                                      ? 'success'
+                                      : 'info'
+                                }${config.executors.some((e) => e.enabled && e.intensity === intensity) ? '' : ' is-empty'}`}
+                              />
+                            ))}
+                          </span>
+                        ) : undefined
+                      }
+                      onSelect={() => {
+                        setOpen(false)
+                        setSearch('')
+                        // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
+                        void onChange(router.id, '')
+                      }}
+                      />
+                    </div>
                   )
                 })}
               </div>

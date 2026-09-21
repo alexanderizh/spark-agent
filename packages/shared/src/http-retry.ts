@@ -57,6 +57,11 @@ export interface FetchJsonOptions extends RetryOptions {
   /** 期望二进制响应时为 true，返回 Buffer */
   binary?: boolean
   /**
+   * 调用方取消信号（如轮次取消）：触发后中止在途请求，且不进入重试。
+   * 与 timeoutMs 各自独立生效，先到者为准。
+   */
+  signal?: AbortSignal
+  /**
    * 自定义错误工厂。命中非 2xx 时调用，返回要抛出的 Error。
    * 默认抛 HttpError('provider_http_error', `HTTP ${status}: ...`, status)。
    */
@@ -83,12 +88,25 @@ export async function fetchJson<T = unknown>(
   let retryCount = 0
   let nextBackoffMs = retryBackoffMs
   for (let attempt = 0; ; attempt += 1) {
+    // 调用方已取消：直接抛出，不发起请求也不重试。
+    if (opts.signal?.aborted) {
+      throw new HttpError(
+        'request_aborted',
+        `Request to ${safeUrl} was aborted before dispatch`,
+        undefined,
+      )
+    }
     const controller = new AbortController()
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
       controller.abort()
     }, timeoutMs)
+    // 外部取消信号联动：触发时中止在途请求（catch 段按 signal.aborted 判定不重试）。
+    const onExternalAbort = (): void => {
+      controller.abort()
+    }
+    opts.signal?.addEventListener('abort', onExternalAbort)
     try {
       const init: RequestInit = { method, signal: controller.signal }
       if (opts.headers !== undefined) init.headers = opts.headers
@@ -123,6 +141,10 @@ export async function fetchJson<T = unknown>(
       return body as T
     } catch (err) {
       const meaningful = normalizeError(err, timedOut, controller.signal.aborted, method, safeUrl, url, timeoutMs)
+      // 调用方主动取消（非超时）不重试，立即上抛交由调用方判定。
+      if (opts.signal?.aborted) {
+        throw meaningful
+      }
       if (retryCount >= maxRetries || !isRetryable(meaningful)) {
         throw meaningful
       }
@@ -139,6 +161,7 @@ export async function fetchJson<T = unknown>(
       await new Promise((resolve) => setTimeout(resolve, backoff))
     } finally {
       clearTimeout(timer)
+      opts.signal?.removeEventListener('abort', onExternalAbort)
     }
   }
 }

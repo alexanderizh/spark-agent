@@ -25,6 +25,7 @@
 import { z } from 'zod'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
 import type { SessionReferenceInput } from '../cross-session-collaboration.js'
+import type { RouterIntensity } from '../auto-router-config.js'
 export type {
   TurnSource,
   UserMessagePresentation,
@@ -853,6 +854,11 @@ export interface TurnRuntimeMetrics {
   cacheWriteTokens?: number
   /** Spark 为当前 turn 解析/挂载 MCP 配置的耗时。 */
   mcpConfigurationMs?: number
+  /** AutoRouter 分流耗时（TTFT 的路由分量；非 router 会话缺省）。 */
+  autoRouterRoutingMs?: number
+  /** AutoRouter 当轮路由到的 router id 与执行强度（非 router 会话缺省）。 */
+  autoRouterId?: string
+  autoRouterIntensity?: RouterIntensity
   /** 请求提交到 SDK 回报 MCP/tool 初始化完成的耗时。 */
   requestToMcpReadyMs?: number
   /** 请求提交到首个正文或 reasoning 输出的耗时。 */
@@ -1138,6 +1144,45 @@ export interface TurnPromptSnapshotEvent extends BaseEvent, UserMessagePresentat
  * SQLite 存储此类型的序列化形式
  * Renderer Timeline UI 消费此类型
  */
+/**
+ * AutoRouter 分流决策（router 会话每轮一条，用户消息之后、执行开始前落库）。
+ *
+ * 渲染端数据源：轮次边界路由提示条（模型变化才显示）与轮次 meta 行常驻标识
+ * 都消费本事件；payload 自带 modelDisplayName 等显示所需全量字段，渲染端免二次反查。
+ */
+export interface AutoRouterDecisionEvent extends BaseEvent {
+  type: 'auto_router_decision'
+  routerId: string
+  routerName: string
+  /** 本轮主执行强度 */
+  intensity: RouterIntensity
+  /** 实际执行器（四变量替换落点） */
+  resolvedProviderId: string
+  resolvedModelId: string
+  /** 渲染端直接显示的模型名（主进程一次解析完成；无显示名回退原始 modelId） */
+  modelDisplayName: string
+  /** 一句话决策理由（提示条与决策详情浮层展示） */
+  reason: string
+  /** 是否走了兜底链（超时/HTTP 失败/JSON 不合法 → 规则或 fallbackIntensity） */
+  fallbackUsed: boolean
+  /** 兜底触发阶段（no_executor = 无可用执行模型） */
+  fallbackStage?: 'timeout' | 'http' | 'schema' | 'rule' | 'no_executor'
+  /** 跨引擎不匹配回退标记（router.adapter 与会话引擎不一致时） */
+  adapterMismatch?: boolean
+  /** 分流耗时（TTFT 的 routingMs 分量） */
+  latencyMs: number
+  /** 上一轮强度（强度粘性依据，从本表反查）；首轮为 null */
+  prevIntensity: RouterIntensity | null
+  /** 分流器是否建议拆分子任务（Phase 3 decomposed 模式消费） */
+  decompose: boolean
+  /** 建议子任务清单（decompose=true 时 1..maxConcurrentSubtasks 条） */
+  subtasks?: Array<{
+    summary: string
+    intensity: RouterIntensity
+    parallelizable: boolean
+  }>
+}
+
 export type AgentEvent =
   | UserMessageEvent
   | AssistantMessageEvent
@@ -1183,6 +1228,7 @@ export type AgentEvent =
   | TeamDiscussionConcludedEvent
   | OrchestrationStatusEvent
   | WorkflowProgressEvent
+  | AutoRouterDecisionEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

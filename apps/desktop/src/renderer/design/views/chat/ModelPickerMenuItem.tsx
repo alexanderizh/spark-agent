@@ -13,6 +13,7 @@ export function ModelPickerMenuItem({
   active,
   pinned,
   leading,
+  trailing,
   onSelect,
   onTogglePin,
   showPin = true,
@@ -21,6 +22,8 @@ export function ModelPickerMenuItem({
   active: boolean
   pinned: boolean
   leading?: ReactNode
+  /** 行尾补充节点（智能路由行的三强度色点摘要等）。 */
+  trailing?: ReactNode
   onSelect: () => void
   onTogglePin: () => void
   showPin?: boolean
@@ -34,6 +37,7 @@ export function ModelPickerMenuItem({
       >
         {leading != null && <span className="composer-menu-item-leading-icon">{leading}</span>}
         <span className="composer-model-item-label">{label}</span>
+        {trailing != null && <span className="composer-menu-item-trailing">{trailing}</span>}
         {active && <Icons.Check size={14} />}
       </button>
       {showPin && (
