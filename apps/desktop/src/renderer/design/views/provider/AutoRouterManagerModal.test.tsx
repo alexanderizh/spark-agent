@@ -40,15 +40,18 @@ vi.mock('@lobehub/ui', async () => {
     children,
     open,
     title,
+    footer,
   }: {
     children?: React.ReactNode
     open?: boolean
     title?: React.ReactNode
+    footer?: React.ReactNode
   }) =>
     open ? (
       <div>
         <div className="modal-title">{title}</div>
         {children}
+        {footer}
       </div>
     ) : null
   return { Button, Input, Select, Modal }

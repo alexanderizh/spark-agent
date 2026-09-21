@@ -259,7 +259,22 @@ export function AutoRouterManagerModal({
           <span>自动路由管理</span>
         </div>
       }
-      footer={null}
+      footer={
+        <div className="arm_footer">
+          {selectedId != null && (
+            <Button size="small" type="default" loading={saving} onClick={handleDelete}>
+              删除
+            </Button>
+          )}
+          <div className="arm_footer_spacer" />
+          <Button size="small" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="small" type="primary" loading={saving} onClick={handleSave}>
+            {selectedId != null ? '保存' : '创建'}
+          </Button>
+        </div>
+      }
       width={880}
       onCancel={onClose}
     >
@@ -482,21 +497,6 @@ export function AutoRouterManagerModal({
               子代理档位映射：把高/平衡/低执行模型注入引擎子代理环境变量（仅 Claude 引擎生效），
               让 SDK 原生 Task 子代理也按强度分级。
             </div>
-          </div>
-
-          <div className="arm_footer">
-            {selectedId != null && (
-              <Button size="small" type="default" loading={saving} onClick={handleDelete}>
-                删除
-              </Button>
-            )}
-            <div className="arm_footer_spacer" />
-            <Button size="small" onClick={onClose}>
-              取消
-            </Button>
-            <Button size="small" type="primary" loading={saving} onClick={handleSave}>
-              {selectedId != null ? '保存' : '创建'}
-            </Button>
           </div>
         </div>
       </div>

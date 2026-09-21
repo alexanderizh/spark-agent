@@ -1250,11 +1250,13 @@
   line-height: 1.6;
 }
 
+/* 按钮组渲染在弹窗原生 footer（.ant-modal-footer 为 flex + justify-content:end），
+   必须撑满宽度让 spacer 生效、删除按钮才能靠左；分隔间距由 footer 自带 padding 提供。 */
 .arm_footer {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
