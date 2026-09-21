@@ -447,6 +447,8 @@ export function CodeViewerPanel({
                     onStatusApplied={onGitStatusApplied ?? (() => {})}
                     onOpenFile={onOpenFileFromGit ?? (() => {})}
                     onOpenHistoricalFile={onOpenFileFromGit}
+                    workspaceRootPath={workspaceRootPath ?? null}
+                    onAddToChat={onAddToChatFromExplorer}
                   />
                 )}
               </div>

@@ -8,6 +8,7 @@ import {
   formatGitCommitAbsoluteTime,
   formatGitCommitMessageText,
   formatGitRelativeTime,
+  joinGitWorkspacePath,
   splitPendingGitChanges,
 } from './gitPanelViewUtils'
 
@@ -295,5 +296,30 @@ describe('formatGitCommitMessageText', () => {
     expect(formatGitCommitMessageText({ subject: 'chore: 清理', body: '   \n  ' })).toBe(
       'chore: 清理',
     )
+  })
+})
+
+describe('joinGitWorkspacePath', () => {
+  it('POSIX root 用斜杠拼接相对路径', () => {
+    expect(joinGitWorkspacePath('/Users/dev/Spark-Agent', 'src/renderer/a.ts')).toBe(
+      '/Users/dev/Spark-Agent/src/renderer/a.ts',
+    )
+  })
+
+  it('Windows root 用反斜杠拼接并归一化分隔符', () => {
+    expect(joinGitWorkspacePath('D:\\workspace\\demo', 'src/renderer/a.ts')).toBe(
+      'D:\\workspace\\demo\\src\\renderer\\a.ts',
+    )
+  })
+
+  it('root 未知或为空时原样返回相对路径', () => {
+    expect(joinGitWorkspacePath(null, 'src/a.ts')).toBe('src/a.ts')
+    expect(joinGitWorkspacePath(undefined, 'src/a.ts')).toBe('src/a.ts')
+    expect(joinGitWorkspacePath('', 'src/a.ts')).toBe('src/a.ts')
+  })
+
+  it('容忍 root 尾部斜杠与 ./ 前缀', () => {
+    expect(joinGitWorkspacePath('/repo/', './src/a.ts')).toBe('/repo/src/a.ts')
+    expect(joinGitWorkspacePath('/repo//', '/src/a.ts')).toBe('/repo/src/a.ts')
   })
 })

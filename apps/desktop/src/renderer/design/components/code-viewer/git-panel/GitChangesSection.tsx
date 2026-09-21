@@ -5,11 +5,21 @@
  *                   + ±行数（hover 时替换为操作按钮：暂存 / 取消暂存 / 打开 / 丢弃）。
  * 树形模式：按目录嵌套展示（目录行可折叠、默认展开），文件行不再需要消歧目录。
  * 组头带批量操作：全部暂存 / 全部取消暂存 / 贮藏 / 全部丢弃（丢弃走二次确认）。
+ * 文件行支持右键菜单（通用 ContextMenu）：打开 / 添加到对话 / 复制路径 / 在 Finder（资源管理
+ * 器）中显示 + 暂存（或取消暂存）/ 丢弃更改；两组各持一个菜单实例。
  */
 
-import { useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useCallback, useState } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { Icons } from '../../../Icons'
+import { useToast } from '../../Toast'
+import { ContextMenu } from '../../ContextMenu'
+import { useContextMenu, type ContextMenuEntry } from '../../contextMenuModel'
+import {
+  OPEN_IN_FILE_MANAGER_LABEL,
+  revealPathInFileManager,
+  writeClipboardText,
+} from '../file-explorer/fileExplorerActions'
 import { VscodeFileIcon } from '../VscodeFileIcon'
 import type { WorkspaceGitFileChange } from '@spark/protocol'
 import {
@@ -19,11 +29,18 @@ import {
 } from '../../../views/chat/ChatGitUtils'
 import {
   buildGitPanelChangeTree,
+  joinGitWorkspacePath,
   type GitPanelFileLabel,
   type GitPanelTreeDir,
   type GitPanelTreeEntry,
 } from './gitPanelViewUtils'
 import type { GitPanelActionName } from './useGitPanelActions'
+
+/** 右键菜单目标：变更项 + 行显示名（丢弃确认文案用） */
+export interface GitFileMenuTarget {
+  change: WorkspaceGitFileChange
+  name: string
+}
 
 interface GitFileRowProps {
   change: WorkspaceGitFileChange
@@ -40,6 +57,8 @@ interface GitFileRowProps {
   onUnstage: (paths: string[]) => void
   onOpenFile: (path: string) => void
   onDiscardRequest: (paths: string[], label: string) => void
+  /** 行右键打开文件菜单（不传则行不响应右键） */
+  onOpenFileMenu?: ((event: ReactMouseEvent, target: GitFileMenuTarget) => void) | undefined
 }
 
 function GitFileRow({
@@ -53,13 +72,21 @@ function GitFileRow({
   onUnstage,
   onOpenFile,
   onDiscardRequest,
+  onOpenFileMenu,
 }: GitFileRowProps) {
   const code = getGitChangeStatusCode(change)
   const openable = isGitReviewFileOpenable(change)
   const indentStyle: CSSProperties | undefined =
     depth > 0 ? { paddingLeft: 6 + depth * 13 } : undefined
   return (
-    <div className="gp-file-row" style={indentStyle} title={change.path}>
+    <div
+      className="gp-file-row"
+      style={indentStyle}
+      title={change.path}
+      onContextMenu={
+        onOpenFileMenu != null ? (event) => onOpenFileMenu(event, { change, name }) : undefined
+      }
+    >
       <button
         type="button"
         className="gp-file-main"
@@ -127,6 +154,103 @@ function GitFileRow({
   )
 }
 
+/**
+ * 构造文件行右键菜单条目（通用 ContextMenu 的 entries）。
+ *
+ * 常规区：打开（diff 视图，已删除文件不可开）· 添加到对话（入口未接通时隐藏）· 复制路径
+ *         · 在 Finder/资源管理器中显示（已删除文件与 root 未知时隐藏）；
+ * Git 操作区（分割线分隔）：暂存 / 取消暂存（随所在组）· 丢弃更改（danger，走二次确认）。
+ * Git 操作在写操作进行中（busy）时禁用。
+ */
+export function buildGitFileMenuEntries(input: {
+  target: GitFileMenuTarget
+  group: 'staged' | 'changes'
+  /** git 写操作进行中（暂存/取消暂存/丢弃禁用） */
+  disabled: boolean
+  /** 工作区根目录绝对路径（复制路径用，null 时复制相对路径） */
+  rootAbsPath: string | null
+  onOpenFile: (path: string) => void
+  onAddToChat?: ((relativePath: string) => void) | undefined
+  onCopyPath: (relativePath: string) => void
+  onOpenInFileManager?: ((relativePath: string) => void) | undefined
+  onStage: (paths: string[]) => void
+  onUnstage: (paths: string[]) => void
+  onDiscardRequest: (paths: string[], label: string) => void
+}): ContextMenuEntry[] {
+  const {
+    target,
+    group,
+    disabled,
+    onOpenFile,
+    onAddToChat,
+    onCopyPath,
+    onOpenInFileManager,
+    onStage,
+    onUnstage,
+    onDiscardRequest,
+  } = input
+  const { change, name } = target
+  const entries: ContextMenuEntry[] = []
+  if (isGitReviewFileOpenable(change)) {
+    entries.push({
+      key: 'open',
+      label: '在编辑器中打开',
+      icon: <Icons.Code size={14} />,
+      onClick: () => onOpenFile(change.path),
+    })
+  }
+  if (onAddToChat != null) {
+    entries.push({
+      key: 'add-to-chat',
+      label: '添加到对话',
+      icon: <Icons.MessageSquarePlus size={14} />,
+      onClick: () => onAddToChat(change.path),
+    })
+  }
+  entries.push({
+    key: 'copy-path',
+    label: '复制路径',
+    icon: <Icons.Copy size={14} />,
+    onClick: () => onCopyPath(change.path),
+  })
+  // 「在系统文件夹打开」需要文件真实存在于磁盘（已删除不可用），且 root 未知时无法拼绝对路径
+  if (onOpenInFileManager != null && isGitReviewFileOpenable(change)) {
+    entries.push({
+      key: 'open-in-file-manager',
+      label: OPEN_IN_FILE_MANAGER_LABEL,
+      icon: <Icons.FolderOpen size={14} />,
+      onClick: () => onOpenInFileManager(change.path),
+    })
+  }
+  entries.push({ type: 'divider' })
+  if (group === 'changes') {
+    entries.push({
+      key: 'stage',
+      label: '暂存',
+      icon: <Icons.Plus size={14} />,
+      disabled,
+      onClick: () => onStage([change.path]),
+    })
+    entries.push({
+      key: 'discard',
+      label: '丢弃更改',
+      icon: <Icons.Undo2 size={14} />,
+      danger: true,
+      disabled,
+      onClick: () => onDiscardRequest([change.path], name),
+    })
+  } else {
+    entries.push({
+      key: 'unstage',
+      label: '取消暂存',
+      icon: <Icons.Minus size={14} />,
+      disabled,
+      onClick: () => onUnstage([change.path]),
+    })
+  }
+  return entries
+}
+
 /** 树形模式的目录行：可折叠（默认展开），右侧 pill 显示递归文件数。 */
 function GitTreeDirRow({
   dir,
@@ -165,6 +289,10 @@ interface GitGroupSectionProps {
   viewMode: 'list' | 'tree'
   collapsed: boolean
   busy: GitPanelActionName | null
+  /** 工作区根目录绝对路径（文件行右键「复制路径」用；null 时复制相对路径） */
+  rootAbsPath: string | null
+  /** 文件行右键「添加到对话」（可选：不传则菜单不显示对应项） */
+  onAddToChat?: ((relativePath: string) => void) | undefined
   onToggle: () => void
   onStage: (paths?: string[]) => void
   onUnstage: (paths?: string[]) => void
@@ -182,6 +310,8 @@ export function GitGroupSection({
   viewMode,
   collapsed,
   busy,
+  rootAbsPath,
+  onAddToChat,
   onToggle,
   onStage,
   onUnstage,
@@ -190,6 +320,7 @@ export function GitGroupSection({
   onStash,
 }: GitGroupSectionProps) {
   const disabled = busy != null
+  const { toast } = useToast()
   // 树形模式的目录折叠状态（存「已折叠」的目录路径，默认全展开）；两组各自独立。
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(new Set())
   const toggleDir = (path: string): void => {
@@ -200,6 +331,62 @@ export function GitGroupSection({
       return next
     })
   }
+  // 文件行右键菜单：两组各持一个实例，互不串扰
+  const { menu: fileMenu, open: openFileMenu, close: closeFileMenu } =
+    useContextMenu<GitFileMenuTarget>()
+
+  const handleCopyPath = useCallback(
+    async (relativePath: string): Promise<void> => {
+      try {
+        // 与文件树「复制路径」同语义：复制绝对路径（root 未知时回退相对路径）
+        await writeClipboardText(joinGitWorkspacePath(rootAbsPath, relativePath))
+        toast.success('已复制路径')
+      } catch {
+        toast.error('复制路径失败')
+      }
+    },
+    [rootAbsPath, toast],
+  )
+
+  // 「在系统文件夹打开」：打开所在目录并选中文件（root 未知时无法拼绝对路径，不提供该项）
+  const handleOpenInFileManager = useCallback(
+    (relativePath: string): void => {
+      if (rootAbsPath == null) return
+      void revealPathInFileManager(joinGitWorkspacePath(rootAbsPath, relativePath)).catch(() => {
+        toast.error('打开系统文件夹失败')
+      })
+    },
+    [rootAbsPath, toast],
+  )
+
+  const buildMenuEntries = useCallback(
+    (target: GitFileMenuTarget): ContextMenuEntry[] =>
+      buildGitFileMenuEntries({
+        target,
+        group,
+        disabled,
+        rootAbsPath,
+        onOpenFile,
+        onAddToChat,
+        onCopyPath: (relativePath) => void handleCopyPath(relativePath),
+        ...(rootAbsPath != null ? { onOpenInFileManager: handleOpenInFileManager } : {}),
+        onStage,
+        onUnstage,
+        onDiscardRequest,
+      }),
+    [
+      group,
+      disabled,
+      rootAbsPath,
+      onOpenFile,
+      onAddToChat,
+      handleCopyPath,
+      handleOpenInFileManager,
+      onStage,
+      onUnstage,
+      onDiscardRequest,
+    ],
+  )
 
   const renderTreeRows = (entries: readonly GitPanelTreeEntry[], depth: number) =>
     entries.map((entry) =>
@@ -226,6 +413,7 @@ export function GitGroupSection({
           onUnstage={(paths) => onUnstage(paths)}
           onOpenFile={onOpenFile}
           onDiscardRequest={onDiscardRequest}
+          onOpenFileMenu={openFileMenu}
         />
       ),
     )
@@ -311,11 +499,21 @@ export function GitGroupSection({
                     onUnstage={(paths) => onUnstage(paths)}
                     onOpenFile={onOpenFile}
                     onDiscardRequest={onDiscardRequest}
+                    onOpenFileMenu={openFileMenu}
                   />
                 )
               })}
           {files.length === 0 && <div className="gp-group-empty">暂无文件</div>}
         </div>
+      )}
+      {fileMenu != null && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          ariaLabel="Git 文件操作菜单"
+          items={buildMenuEntries(fileMenu.target)}
+          onClose={closeFileMenu}
+        />
       )}
     </div>
   )

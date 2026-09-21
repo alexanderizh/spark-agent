@@ -253,3 +253,17 @@ export function buildGitPanelLogRefreshKey(
     status.changedFiles,
   ].join('|')
 }
+
+/**
+ * 相对仓库路径 → 绝对路径（「复制路径」用，与文件树 joinAbs / ChatView resolveAbsCodePath
+ * 同语义：root 未知或为空时原样返回相对路径；Windows root 用反斜杠拼接）。
+ */
+export function joinGitWorkspacePath(
+  rootAbsPath: string | null | undefined,
+  relPath: string,
+): string {
+  if (rootAbsPath == null || rootAbsPath.length === 0) return relPath
+  const sep = rootAbsPath.includes('\\') ? '\\' : '/'
+  const normalized = relPath.replace(/^\.\//, '').replace(/^[\\/]+/, '')
+  return `${rootAbsPath.replace(/[\\/]+$/, '')}${sep}${normalized.split('/').join(sep)}`
+}

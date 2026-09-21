@@ -50,6 +50,10 @@ export interface GitPanelProps {
         changeType?: 'create' | 'modify' | 'delete' | 'rename',
       ) => void)
     | undefined
+  /** 工作区根目录绝对路径（文件行右键「复制路径」用；null 时复制相对路径） */
+  workspaceRootPath?: string | null
+  /** 文件行右键「添加到对话」（可选：不传则菜单不显示对应项） */
+  onAddToChat?: ((relativePath: string) => void) | undefined
 }
 
 export function GitPanel({
@@ -59,6 +63,8 @@ export function GitPanel({
   onStatusApplied,
   onOpenFile,
   onOpenHistoricalFile,
+  workspaceRootPath = null,
+  onAddToChat,
 }: GitPanelProps) {
   const [commitMessage, setCommitMessage] = useState('')
   const [stagedCollapsed, setStagedCollapsed] = useState(false)
@@ -221,6 +227,8 @@ export function GitPanel({
           viewMode={viewMode}
           collapsed={stagedCollapsed}
           busy={actions.busy}
+          rootAbsPath={workspaceRootPath}
+          onAddToChat={onAddToChat}
           onToggle={() => setStagedCollapsed((v) => !v)}
           onStage={actions.stage}
           onUnstage={actions.unstage}
@@ -235,6 +243,8 @@ export function GitPanel({
           viewMode={viewMode}
           collapsed={changesCollapsed}
           busy={actions.busy}
+          rootAbsPath={workspaceRootPath}
+          onAddToChat={onAddToChat}
           onToggle={() => setChangesCollapsed((v) => !v)}
           onStage={actions.stage}
           onUnstage={actions.unstage}
