@@ -1561,7 +1561,7 @@ export function QuickCreateView() {
               title="在独立窗口中打开"
               onClick={() => void handleOpenStandaloneWindow()}
             >
-              <Icons.ExternalLink size={15} />
+              <Icons.AppWindow size={15} />
             </button>
           )}
           <nav className="quick-create-tabs" aria-label="快速创作任务">
