@@ -111,6 +111,7 @@ describe('IPC handler registration completeness', () => {
         'prompt-config',
         'prompt-library',
         'provider',
+        'quick-create',
         'remote',
         'replay',
         'rules',
