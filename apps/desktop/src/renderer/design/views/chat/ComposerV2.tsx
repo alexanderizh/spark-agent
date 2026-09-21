@@ -5893,11 +5893,6 @@ function ProviderModelPicker({
                         pinned={false}
                         showPin={false}
                         onTogglePin={() => undefined}
-                        leading={
-                          <span className="composer-auto-router-gear">
-                            <Icons.Shuffle size={13} />
-                          </span>
-                        }
                         trailing={
                           config != null ? (
                             <span className="composer-auto-router-dots" aria-hidden>

@@ -4712,16 +4712,9 @@ body.sidebar-resizing {
 
 /* —— 智能路由行 ——
    `.composer-menu-item span` 的 min-width:60px（为模型名截断设计）会误伤
-   行内的图标与色点 span：外层 leading 图标容器被撑到 60px 且内容居中
-   （gear 悬在行中部）、`.badge.dot` 胶囊被拉成 60px 长条。置顶组在上方
-   4706 行用组内高特异性规则修过同一个坑，这里对智能路由组沿用同一先例；
-   色点则收为 6px 纯圆点。特异性均需压过 0,1,1 的宽泛规则。 */
-.composer-auto-router-group
-  .composer-model-item
-  .composer-menu-item
-  .composer-menu-item-leading-icon {
-  min-width: 14px;
-}
+   行内的色点 span：`.badge.dot` 胶囊会被拉成 60px 长条，这里收为 6px
+   纯圆点；trailing 容器同样需要解除 min-width 误伤。行首不放图标，
+   文字与普通渠道行同几何对齐。 */
 .composer-menu-item .composer-menu-item-trailing {
   display: inline-flex;
   align-items: center;
@@ -4729,9 +4722,6 @@ body.sidebar-resizing {
   flex-shrink: 0;
   min-width: 0;
   overflow: visible;
-}
-.composer-menu-item .composer-auto-router-gear {
-  min-width: 0;
 }
 /* 色点摘要：复用 .badge 的强度配色，但收为 6px 纯圆点而非 20px 胶囊 */
 .composer-menu-item .composer-auto-router-dots {
