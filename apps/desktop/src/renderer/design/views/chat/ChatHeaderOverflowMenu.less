@@ -168,6 +168,13 @@
     max-width: 100%;
   }
 
+  /* 标题编辑态同样让位：极窄头部下输入框吃掉全部可用宽度，否则编辑长标题只剩一条缝 */
+  .chat-tabbar .chat-title-input {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 100%;
+  }
+
   .chat-tabbar .msg-running {
     display: none;
   }

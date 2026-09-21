@@ -23,6 +23,7 @@ import { resolveDisplayedGitBranch } from '../chat-session-routing'
 import type { BranchState } from './ChatComposerTypes'
 import { GitSessionTrigger } from './ChatGitEnv'
 import { resolveAgentDisplay } from './ChatHero'
+import { ChatTitleInlineEditor } from './ChatTitleInlineEditor'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './ChatTitlebar'
 import { ProjectOpenDropdown, TabbarIcon, TabbarTooltipButton } from './ChatToolbar'
 import { ChatHeaderOverflowMenu } from './ChatHeaderOverflowMenu'
@@ -74,6 +75,7 @@ export function ChatTabbar({
   onExpandSidebar,
   onOpenInEditor,
   onOpenInTerminal,
+  onCommitSessionTitle,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -116,6 +118,11 @@ export function ChatTabbar({
   onOpenInEditor?: () => void
   /** 展开内置终端面板，供项目打开方式下拉新增「内置终端」选项 */
   onOpenInTerminal?: () => void
+  /**
+   * 会话标题原地改名。传入时标题槽位变为可点击编辑器（单击进编辑、回车/失焦保存）；
+   * 不传入则保持纯文本展示，旧调用方行为不变。
+   */
+  onCommitSessionTitle?: (title: string) => Promise<void>
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
@@ -258,7 +265,15 @@ export function ChatTabbar({
       <div className="chat-title-block">
         {session ? (
           <>
-            <span className="chat-title truncate">{session.title || '新会话'}</span>
+            {onCommitSessionTitle ? (
+              <ChatTitleInlineEditor
+                className="chat-title"
+                value={session.title || '新会话'}
+                onCommit={onCommitSessionTitle}
+              />
+            ) : (
+              <span className="chat-title truncate">{session.title || '新会话'}</span>
+            )}
             <span className="chat-project-label truncate" title={workspace?.rootPath ?? '临时会话'}>
               <Icons.Folder size={10} />
               {workspace?.name === NO_PROJECT_WORKSPACE_NAME

@@ -230,3 +230,118 @@ describe('ChatTabbar agentStatus grace', () => {
     expect(spinner()).toBeNull()
   })
 })
+
+describe('ChatTabbar session title inline rename', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    Object.defineProperty(window, 'spark', {
+      configurable: true,
+      value: { invoke: vi.fn(async () => ({})) },
+    })
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  const baseProps = (onCommitSessionTitle?: (title: string) => Promise<void>) => ({
+    session: { id: 'session-1', title: '有一个提交的提交时间不…', modelId: null } as never,
+    workspace: null,
+    agentStatus: '',
+    branchState: {} as never,
+    gitStatus: null,
+    isGitRepo: false,
+    taskCount: 0,
+    taskCompletedCount: 0,
+    hasGoal: false,
+    showGitEnvPanel: false,
+    onToggleGitEnvPanel: () => undefined,
+    showInspector: false,
+    setShowInspector: () => undefined,
+    showConfigPanel: false,
+    onToggleConfig: () => undefined,
+    showTerminalPanel: false,
+    setShowTerminalPanel: () => undefined,
+    showSideChatPanel: false,
+    onToggleSideChat: () => undefined,
+    showUnifiedPanel: false,
+    onToggleUnifiedPanel: () => undefined,
+    teamConfig: { enabled: false, hostAgentId: '', memberAgentIds: [] } as never,
+    orchestration: null,
+    effectiveHostAgentId: null,
+    agents: [],
+    showSessionSchedule: false,
+    sessionScheduleEnabledCount: 0,
+    onToggleSessionSchedule: () => undefined,
+    ...(onCommitSessionTitle ? { onCommitSessionTitle } : {}),
+  })
+
+  it('未传 onCommitSessionTitle 时标题保持纯文本，点击不进编辑', () => {
+    act(() => {
+      root.render(<ChatTabbar {...baseProps()} />)
+    })
+    const title = container.querySelector('.chat-title')
+    expect(title?.textContent).toBe('有一个提交的提交时间不…')
+    // 展示态仍要带 truncate：长标题靠省略号收边，不能因为能编辑就丢掉
+    expect(title?.className).toContain('truncate')
+    expect(container.querySelector('.chat-title-input')).toBeNull()
+
+    act(() => {
+      title?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.chat-title-input')).toBeNull()
+  })
+
+  it('点击标题进入输入框，回车把新会话名交给调用方', async () => {
+    const onCommitSessionTitle = vi.fn(async () => {})
+    act(() => {
+      root.render(<ChatTabbar {...baseProps(onCommitSessionTitle)} />)
+    })
+
+    act(() => {
+      container
+        .querySelector('.chat-title-text')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const input = container.querySelector<HTMLInputElement>('.chat-title-input')
+    if (input == null) throw new Error('chat-title-input 未渲染')
+
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(input, '会话名已改')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+    })
+
+    expect(onCommitSessionTitle).toHaveBeenCalledWith('会话名已改')
+    await act(async () => {})
+    expect(container.querySelector('.chat-title-input')).toBeNull()
+  })
+
+  it('标题编辑不冒泡到顶栏双击，不会顺手把窗口最大化', () => {
+    const invoke = vi.fn(async () => ({}))
+    Object.defineProperty(window, 'spark', { configurable: true, value: { invoke } })
+    act(() => {
+      root.render(<ChatTabbar {...baseProps(vi.fn(async () => {}))} />)
+    })
+
+    act(() => {
+      container
+        .querySelector('.chat-title-text')
+        ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+
+    expect(invoke).not.toHaveBeenCalledWith('window:maximize', {})
+  })
+})
+

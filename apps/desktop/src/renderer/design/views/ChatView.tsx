@@ -3192,7 +3192,17 @@ export function ChatView({
                 orchestration={activeSessionOrchestration}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
-                {...(active ? { onClearMessages: handleClearMessages, clearWillStopRun } : {})}
+                {...(active
+                  ? {
+                      onClearMessages: handleClearMessages,
+                      clearWillStopRun,
+                      // 头部标题原地改名：与侧边栏悬浮卡 / 弹窗改名共用同一落库逻辑
+                      onCommitSessionTitle: async (title: string) => {
+                        if (activeSession == null) return
+                        await sessionCtx.commitSessionTitle(activeSession, title)
+                      },
+                    }
+                  : {})}
                 {...(onExpandSidebar ? { onExpandSidebar } : {})}
               />
             )}

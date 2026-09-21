@@ -812,6 +812,44 @@ body.sidebar-resizing {
   max-width: 40%;
   min-width: 0;
 }
+/* 会话标题原地改名：展示态保留 truncate 省略号，单击后切成同槽位输入框。
+   输入框不套 truncate——省略号会让正在编辑的文本看不全，改由 input 自身横向滚动。 */
+/* 左右内边距与编辑态输入框保持一致（input padding: 2px 6px）：
+   hover 背景不贴文字，且展示态切到编辑态时槽位不会横向跳动。 */
+.chat-tabbar .chat-title-text {
+  cursor: text;
+  padding-inline: 6px;
+  border-radius: var(--r-sm);
+  transition: background 0.12s ease;
+}
+.chat-tabbar .chat-title-text:hover {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.chat-tabbar .chat-title-text:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.chat-tabbar .chat-title-input {
+  font-family: inherit;
+  font-size: var(--font-base);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-strong);
+  background: var(--panel);
+  border: 1px solid var(--primary);
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  margin: 0;
+  width: 320px;
+  min-width: 0;
+  max-width: 60%;
+  outline: none;
+}
+.chat-tabbar .chat-title-input:focus,
+.chat-tabbar .chat-title-input:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
 .chat-tabbar .chat-project-label {
   display: inline-flex;
   align-items: center;
