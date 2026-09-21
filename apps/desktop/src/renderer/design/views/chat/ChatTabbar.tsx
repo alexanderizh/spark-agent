@@ -9,8 +9,8 @@ import type {
 import {
   Clock3,
   Copy,
-  MoreHorizontal,
   PanelRight,
+  PanelsTopLeft,
   Server,
   SlidersHorizontal,
   Trash,
@@ -241,7 +241,7 @@ export function ChatTabbar({
     {
       id: 'unified-panel',
       label: '统一侧边面板',
-      icon: MoreHorizontal,
+      icon: PanelsTopLeft,
       onSelect: onToggleUnifiedPanel,
       active: showUnifiedPanel,
     },
@@ -370,7 +370,7 @@ export function ChatTabbar({
         {onCopyAllMessages && (
           <TabbarTooltipButton
             title="复制全部聊天记录"
-            className="icon-btn chat-header-collapsible"
+            className="icon-btn chat-header-collapsible chat-header-collapsible-secondary"
             onClick={onCopyAllMessages}
           >
             <TabbarIcon icon={Copy} />
@@ -379,16 +379,17 @@ export function ChatTabbar({
         {!showClearConfirm && onClearMessages && (
           <TabbarTooltipButton
             title="清空会话消息"
-            className="icon-btn chat-header-collapsible"
+            className="icon-btn chat-header-collapsible chat-header-collapsible-secondary"
             onClick={handleClearClick}
           >
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
+        {/* 收起优先级：secondary（复制/清空）最先并入溢出菜单，其次才是 middle（计划任务/配置） */}
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showSessionSchedule ? 'active' : ''}`}
           onClick={onToggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -401,7 +402,7 @@ export function ChatTabbar({
         <TabbarTooltipButton
           title="配置面板（环境变量 / 提示词 / Skills / 工具）"
           ariaLabel="配置面板"
-          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showConfigPanel ? 'active' : ''}`}
           onClick={onToggleConfig}
         >
           <TabbarIcon icon={SlidersHorizontal} />
@@ -420,7 +421,7 @@ export function ChatTabbar({
           className={`icon-btn chat-header-collapsible ${showUnifiedPanel ? 'active' : ''}`}
           onClick={onToggleUnifiedPanel}
         >
-          <TabbarIcon icon={MoreHorizontal} />
+          <TabbarIcon icon={PanelsTopLeft} />
         </TabbarTooltipButton>
         <ChatHeaderOverflowMenu items={overflowItems} />
       </div>

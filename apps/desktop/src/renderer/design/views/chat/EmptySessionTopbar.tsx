@@ -3,8 +3,8 @@ import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import {
   Clock3,
   FolderOpen,
-  MoreHorizontal,
   PanelRight,
+  PanelsTopLeft,
   Server,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -104,7 +104,7 @@ export function EmptySessionTopbar({
     {
       id: 'unified-panel',
       label: '统一侧边面板',
-      icon: MoreHorizontal,
+      icon: PanelsTopLeft,
       onSelect: onToggleUnifiedPanel,
       active: showUnifiedPanel,
       disabled: !activeWorkspace,
@@ -144,10 +144,11 @@ export function EmptySessionTopbar({
             <TabbarIcon icon={FolderOpen} />
           </button>
         )}
+        {/* 空会话顶栏按钮岛更窄：计划任务/配置面板作为第一档收起（middle），检查器/统一面板走 base */}
         <TabbarTooltipButton
           title="计划任务"
           ariaLabel="计划任务"
-          className={`icon-btn chat-header-collapsible ${showSessionSchedule ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showSessionSchedule ? 'active' : ''}`}
           onClick={toggleSessionSchedule}
         >
           <span className="chat-session-schedule-icon">
@@ -166,7 +167,7 @@ export function EmptySessionTopbar({
           <TabbarIcon icon={PanelRight} />
         </button>
         <button
-          className={`icon-btn chat-header-collapsible ${showConfigPanel ? 'active' : ''}`}
+          className={`icon-btn chat-header-collapsible chat-header-collapsible-middle ${showConfigPanel ? 'active' : ''}`}
           title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
           aria-label="配置面板"
           disabled={!activeWorkspace}
@@ -181,7 +182,7 @@ export function EmptySessionTopbar({
           disabled={!activeWorkspace}
           onClick={onToggleUnifiedPanel}
         >
-          <TabbarIcon icon={MoreHorizontal} />
+          <TabbarIcon icon={PanelsTopLeft} />
         </button>
         <ChatHeaderOverflowMenu items={overflowItems} />
       </div>
