@@ -164,6 +164,7 @@ export {
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'
+export { AutoRouterService } from './services/auto-router.service.js'
 export {
   McpService,
   MANAGED_MCP_SCOPE,
