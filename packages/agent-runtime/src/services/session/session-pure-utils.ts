@@ -41,16 +41,14 @@ import type {
   TeamModeConfig,
 } from '@spark/protocol'
 import {
+  AUTO_ROUTER_PROVIDER_TYPE,
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   isLocalCodexCliProvider,
-  filterBlockedModelIds,
   SESSION_LABEL_KEYS,
   isScheduleActiveNow,
   parseModelSchedules,
-  sanitizeModelSchedules,
   scheduleBlockMessage,
-  scheduledBlockedModelIds,
 } from '@spark/protocol'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../../sdk/index.js'
 import {
@@ -64,7 +62,6 @@ import { ProjectContextService } from '../project-context.service.js'
 import { normalizeWorkflowGraph, type WorkflowDispatchAttachment } from '../workflow-executor.js'
 import { resolveEngineKind } from './engine-kinds.js'
 import type { AgentAdapterKind } from '../session-resume-gate.js'
-import type { ModelRouterProvider } from '../model-router.service.js'
 import { isCommand, parseCommand } from '../../core/index.js'
 
 export type WorktreePromptMeta = {
@@ -1343,45 +1340,24 @@ export function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider) ? LOCAL_CODEX_CLI_DEFAULT_MODEL : LOCAL_CLI_DEFAULT_MODEL
 }
 
-export function providerRowsForModelRouter(
-  rows: Array<{ id: string; provider_type: string; config_json: string; enabled: number }>,
-): ModelRouterProvider[] {
-  return rows
-    .filter((row) => row.enabled !== 0)
-    .map((row) => {
-      const config = parseProviderConfigForModelRouter(row.config_json)
-      // 峰谷定时禁用：被禁模型不参与 Auto Router 候选（读取时判定，不改库）。
-      const schedules = sanitizeModelSchedules(config.modelSchedules)
-      const rawModelIds = Array.isArray(config.modelIds)
-        ? config.modelIds.filter((item): item is string => typeof item === 'string')
-        : []
-      const rawDefaultModel =
-        stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? ''
-      const blocked = scheduledBlockedModelIds(schedules)
-      return {
-        id: row.id,
-        provider: row.provider_type,
-        defaultModel: blocked.has(rawDefaultModel) ? '' : rawDefaultModel,
-        modelIds: filterBlockedModelIds(rawModelIds, schedules),
-        ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
-        ...(typeof config.mediaProvider === 'string'
-          ? { mediaProvider: config.mediaProvider }
-          : {}),
-        ...(Array.isArray(config.mediaCapabilities)
-          ? {
-              mediaCapabilities: config.mediaCapabilities.filter(
-                (item): item is string => typeof item === 'string',
-              ),
-            }
-          : {}),
-      }
-    })
+/**
+ * 旧 Auto Router 魔法 id（伪 provider 已下线）引用的回退渠道解析：
+ * 优先取启用的默认渠道（排除 AutoRouter 行自身），否则取第一个启用的普通渠道。
+ * 返回 null 表示本机没有任何可用渠道。
+ */
+export function resolveLegacyRouterFallbackProviderRow<
+  T extends { id: string; provider_type: string; enabled: number; is_default: number },
+>(rows: readonly T[]): T | null {
+  const candidates = rows.filter(
+    (row) => row.enabled === 1 && row.provider_type !== AUTO_ROUTER_PROVIDER_TYPE,
+  )
+  return candidates.find((row) => row.is_default === 1) ?? candidates[0] ?? null
 }
 
 /**
  * turn / member dispatch 的最终硬校验：provider 与 model 定值后，若该模型处于
  * 定时禁用时段（峰谷定价规避）则抛错，引导用户切换模型。挂在定格点可覆盖
- * 普通分支、Auto Router 分支与 CLI override 分支。
+ * 普通分支与 CLI override 分支。
  */
 export function assertModelNotScheduledBlocked(configJson: string, modelId: string): void {
   for (const schedule of parseModelSchedules(configJson)) {
@@ -1389,30 +1365,6 @@ export function assertModelNotScheduledBlocked(configJson: string, modelId: stri
       throw new Error(scheduleBlockMessage(schedule, modelId))
     }
   }
-}
-
-export function parseProviderConfigForModelRouter(configJson: string): Record<string, unknown> {
-  try {
-    return JSON.parse(configJson) as Record<string, unknown>
-  } catch {
-    return {}
-  }
-}
-
-export function stringConfigValue(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
-}
-
-export function isKnownModelType(
-  value: unknown,
-): value is NonNullable<ModelRouterProvider['modelType']> {
-  return (
-    value === 'image' ||
-    value === 'text' ||
-    value === 'multimodal' ||
-    value === 'voice' ||
-    value === 'video'
-  )
 }
 
 export function buildCodexCliModelProviderConfig(params: {

@@ -275,9 +275,7 @@ describe('ProviderEditPanel progressive configuration', () => {
 
   it('refreshes local provider data without requiring platform catalog access', async () => {
     const listProviders = vi.fn(async () => ({ profiles: [] }))
-    const listModels = vi.fn(async () => ({ models: [] }))
     mocks.invokers.set('provider:list', listProviders)
-    mocks.invokers.set('model:list', listModels)
 
     await act(async () => {
       root = createRoot(container)
@@ -293,7 +291,6 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     expect(listProviders).toHaveBeenCalledWith({ includeDisabled: true })
-    expect(listModels).toHaveBeenCalledWith({})
     expect(mocks.invokers.has('platform-model:refresh-catalog')).toBe(false)
   })
 
@@ -1481,15 +1478,12 @@ describe('resolveProviderCardKind', () => {
   const profile = (id: string, modelType?: string) =>
     ({ id, modelType }) as unknown as Parameters<typeof resolveProviderCardKind>[0]
 
-  it('claude-auto-router → router（最高优先级，忽略 modelType）', () => {
-    expect(resolveProviderCardKind(profile('claude-auto-router', 'image'))).toBe('router')
+  it('旧 auto-router 魔法 id 已无 router 分类，回落普通文本卡（旧伪 provider 下线）', () => {
+    expect(resolveProviderCardKind(profile('claude-auto-router', 'image'))).toBe('image')
+    expect(resolveProviderCardKind(profile('codex-auto-router'))).toBe('text')
   })
 
-  it('codex-auto-router → router', () => {
-    expect(resolveProviderCardKind(profile('codex-auto-router'))).toBe('router')
-  })
-
-  it('local-cli / local-codex-cli → cli（仅次于 router，忽略 modelType）', () => {
+  it('local-cli / local-codex-cli → cli（最高优先级，忽略 modelType）', () => {
     expect(resolveProviderCardKind(profile('local-cli', 'video'))).toBe('cli')
     expect(resolveProviderCardKind(profile('local-codex-cli'))).toBe('cli')
   })
@@ -1518,10 +1512,8 @@ describe('resolveProviderCardKind', () => {
     expect(resolveProviderCardKind(profile('custom'))).toBe('text')
   })
 
-  it('判定优先级：router 高于 cli（虽不会同时为真，但确保顺序稳定）', () => {
-    // auto-router 的 id 永远不等于 local-cli，这里只是回归保护
-    expect(resolveProviderCardKind(profile('claude-auto-router'))).toBe('router')
-    expect(resolveProviderCardKind(profile('local-cli'))).toBe('cli')
+  it('判定优先级：cli 优先于 modelType 媒体维度', () => {
+    expect(resolveProviderCardKind(profile('local-cli', 'image'))).toBe('cli')
   })
 })
 
@@ -1534,10 +1526,6 @@ describe('canHealthCheckProviderCardKind', () => {
   it('对话和语音模型卡仍保留健康检查', () => {
     expect(canHealthCheckProviderCardKind('text')).toBe(true)
     expect(canHealthCheckProviderCardKind('voice')).toBe(true)
-  })
-
-  it('自动路由卡仍不提供健康检查', () => {
-    expect(canHealthCheckProviderCardKind('router')).toBe(false)
   })
 })
 

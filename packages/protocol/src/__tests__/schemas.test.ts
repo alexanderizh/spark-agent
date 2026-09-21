@@ -385,25 +385,24 @@ describe('IPC schemas', () => {
     ).toThrow()
   })
 
-  it('accepts auto router provider ids for routing model profile cards', () => {
-    const create = IpcSchemaRegistry['model:create'].parse({
-      providerId: 'codex-auto-router',
-      name: 'Auto Codex',
-      configJson: JSON.stringify({
-        kind: 'router',
-        adapter: 'codex',
-        candidates: {
-          default: {
-            providerProfileId: '00000000-0000-4000-8000-000000000001',
-            modelId: 'qwen-coder',
-          },
-        },
-      }),
-    })
-    const list = IpcSchemaRegistry['model:list'].parse({ providerId: 'claude-auto-router' })
-
-    expect(create.providerId).toBe('codex-auto-router')
-    expect(list.providerId).toBe('claude-auto-router')
+  it('rejects legacy auto router magic ids (pseudo providers removed)', () => {
+    // 旧伪 provider 魔法 id 已从 ProfileIdSchema 移除；model:create 指向它们应被拒绝
+    expect(
+      IpcSchemaRegistry['model:create'].safeParse({
+        providerId: 'codex-auto-router',
+        name: 'Auto Codex',
+        configJson: JSON.stringify({ kind: 'router', adapter: 'codex' }),
+      }).success,
+    ).toBe(false)
+    expect(IpcSchemaRegistry['model:list'].safeParse({ providerId: 'claude-auto-router' }).success).toBe(
+      false,
+    )
+    // 普通 uuid 渠道 id 不受影响
+    expect(
+      IpcSchemaRegistry['model:list'].safeParse({
+        providerId: '00000000-0000-4000-8000-000000000001',
+      }).success,
+    ).toBe(true)
   })
 
   it('validates Spark-managed Goal IPC payloads', () => {

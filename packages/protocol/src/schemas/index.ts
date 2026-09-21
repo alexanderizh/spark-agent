@@ -17,10 +17,6 @@ import {
 } from '../media-config.js'
 import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
-import {
-  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  CODEX_AUTO_ROUTER_PROVIDER_ID,
-} from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
 import { ProviderModelScheduleSchema } from '../provider-model-schedule.js'
 import { VideoChannelTasksIpcSchemaRegistry } from '../video-channel-tasks.js'
@@ -67,8 +63,6 @@ export const ProfileIdSchema = z.union([
   z.string().uuid(),
   z.literal(LOCAL_CLI_PROVIDER_ID),
   z.literal(LOCAL_CODEX_CLI_PROVIDER_ID),
-  z.literal(CLAUDE_AUTO_ROUTER_PROVIDER_ID),
-  z.literal(CODEX_AUTO_ROUTER_PROVIDER_ID),
   z.literal(PLATFORM_NEWAPI_PROVIDER_ID),
 ])
 export const RuleIdSchema = z.string().uuid()

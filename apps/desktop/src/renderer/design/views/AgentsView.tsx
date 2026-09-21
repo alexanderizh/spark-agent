@@ -33,7 +33,6 @@ import {
 import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import { SPARK_PERMISSION_MODE_OPTIONS as SHARED_SPARK_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
-import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { isMediaProviderProfile } from '../utils/provider-model-kind'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
@@ -47,7 +46,6 @@ import type {
   AgentExportPayload,
   ManagedAgent,
   McpServerItem,
-  ModelProfile,
   ProviderProfile,
   RuleItem,
   SessionAgentAdapter,
@@ -57,11 +55,7 @@ import type {
   WorkspaceInfo,
   WorkflowItem,
 } from '@spark/protocol'
-import {
-  isBuiltInLocalCliProvider,
-  isAutoRouterProvider,
-  isRoutingModelConfig,
-} from '@spark/protocol'
+import { isBuiltInLocalCliProvider } from '@spark/protocol'
 import {
   MAX_REASONING_BUDGET_TOKENS,
   MIN_REASONING_BUDGET_TOKENS,
@@ -267,7 +261,6 @@ function AgentsTabContent({
   const { handleNewSession, setActiveSession, workspaces, refreshData } = sessionSidebar
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
-  const [modelCards, setModelCards] = useState<ModelProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [mcpServers, setMcpServers] = useState<McpServerItem[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
@@ -324,7 +317,6 @@ function AgentsTabContent({
   const { invoke: exportAgentsToFile } = useIpcInvoke('agent:export-to-file')
   const { invoke: importAgentsFromFile } = useIpcInvoke('agent:import-from-file')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: listModels } = useIpcInvoke('model:list')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
@@ -336,11 +328,10 @@ function AgentsTabContent({
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [agentRes, providerRes, modelRes, skillRes, mcpRes, ruleRes, workflowRes] =
+      const [agentRes, providerRes, skillRes, mcpRes, ruleRes, workflowRes] =
         await Promise.all([
           listAgents({ includeDisabled: true }),
           listProviders({}),
-          listModels({}),
           listSkills({}),
           listMcp({}),
           listRules({}),
@@ -349,11 +340,10 @@ function AgentsTabContent({
       setAgents(agentRes.agents)
       onAgentsChange?.(agentRes.agents)
       setProviders(
-        filterProvidersForVisibleUi(providerRes.profiles).filter(
+        providerRes.profiles.filter(
           (provider) => !isMediaProviderProfile(provider),
         ),
       )
-      setModelCards(modelRes.models)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
@@ -383,7 +373,6 @@ function AgentsTabContent({
   }, [
     listAgents,
     listMcp,
-    listModels,
     listProviders,
     listRules,
     listSkills,
@@ -425,8 +414,8 @@ function AgentsTabContent({
   const lockedAdapter = getLockedAgentAdapterForProvider(selectedProvider)
   const effectiveAgentAdapter = lockedAdapter ?? draft.agentAdapter
   const modelOptions = useMemo(
-    () => getAgentModelOptions(selectedProvider, modelCards),
-    [modelCards, selectedProvider],
+    () => getAgentModelOptions(selectedProvider),
+    [selectedProvider],
   )
   const allowModelOverride = shouldAllowAgentModelOverride(selectedProvider)
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
@@ -2225,32 +2214,12 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
 
 function getAgentModelOptions(
   provider: ProviderProfile | null | undefined,
-  modelCards: ModelProfile[],
 ): Array<{ label: string; value: string }> {
   if (provider == null) return []
-  const providerModels = getProviderModelOptions(provider).map((modelId) => ({
+  return getProviderModelOptions(provider).map((modelId) => ({
     label: modelId,
     value: modelId,
   }))
-  const routeModels = modelCards
-    .filter(
-      (model) =>
-        isAutoRouterProvider(provider) &&
-        model.enabled &&
-        model.providerId === provider.id &&
-        isRoutingModelCard(model),
-    )
-    .map((model) => ({ label: model.name, value: model.id }))
-  return [...providerModels, ...routeModels]
-}
-
-function isRoutingModelCard(model: ModelProfile): boolean {
-  try {
-    const parsed = JSON.parse(model.configJson) as unknown
-    return isRoutingModelConfig(parsed)
-  } catch {
-    return false
-  }
 }
 
 function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {

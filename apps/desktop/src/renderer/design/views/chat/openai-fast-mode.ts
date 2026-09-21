@@ -1,6 +1,6 @@
 import type { ProviderProfile, SessionListResponse } from '@spark/protocol'
 import {
-  isAutoRouterProvider,
+  AUTO_ROUTER_PROVIDER_TYPE,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
 } from '@spark/protocol'
@@ -35,7 +35,7 @@ export function supportsOpenAIFastModeProvider(
   return (
     provider != null &&
     (!isBuiltInLocalCliProvider(provider) || isLocalCodexCliProvider(provider)) &&
-    !isAutoRouterProvider(provider) &&
+    provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE &&
     provider.provider !== 'anthropic' &&
     provider.codexApiKind !== 'embedding'
   )

@@ -24,7 +24,6 @@ import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
-import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { filterConversationalProviders } from '../utils/provider-model-kind'
 import './ScheduledTasksView.less'
 
@@ -1006,7 +1005,7 @@ function TaskFormPage({
         // 定时任务执行的是文本 turn，多媒体渠道（图像/语音/视频）的模型不能进入候选：
         // 主进程会按 modelId 反查渠道，选中多媒体模型会把 turn 落到图像/视频渠道上。
         setProviders(
-          filterConversationalProviders(filterProvidersForVisibleUi(providerRes.profiles ?? [])),
+          filterConversationalProviders(providerRes.profiles ?? []),
         )
         setWorkspaces(workspaceRes.workspaces ?? [])
       })

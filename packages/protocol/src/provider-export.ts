@@ -19,6 +19,7 @@ import {
   ProviderMediaDefaultsSchema,
 } from './media-config.js'
 import { ProviderMediaModelRefSchema } from './media-model-manifest.js'
+import { AUTO_ROUTER_PROVIDER_TYPE, AutoRouterConfigSchema } from './auto-router-config.js'
 
 /** 当前 schema 版本。导入时校验；不匹配则拒绝 */
 export const PROVIDER_EXPORT_VERSION = 2 as const
@@ -48,12 +49,20 @@ export const ProviderExportProfileSchema = z.object({
   /** 源 profile id（仅作为元数据保留，导入时不复用 id） */
   id: z.string().min(1).max(200),
   name: z.string().min(1).max(100),
-  provider: z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible']),
+  provider: z.enum([
+    'anthropic',
+    'openai',
+    'deepseek',
+    'ollama',
+    'openai-compatible',
+    AUTO_ROUTER_PROVIDER_TYPE,
+  ]),
   /** 全局可用状态；旧版导出文件缺省时按启用处理。 */
   enabled: z.boolean().optional(),
   /** 自定义 API Endpoint；null 表示使用默认 */
   apiEndpoint: z.string().min(1).max(500).nullable(),
-  defaultModel: z.string().min(1).max(200),
+  /** AutoRouter 行无默认模型（恒为空串）；普通渠道始终非空。 */
+  defaultModel: z.string().min(0).max(200),
   modelIds: z.array(z.string().min(1).max(200)).max(200),
   /** Provider 列表和模型配置表单里展示的图标配置 */
   providerIcon: ProviderIconConfigSchema.optional(),
@@ -92,6 +101,13 @@ export const ProviderExportProfileSchema = z.object({
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+  /** AutoRouter 行专用：完整路由配置（dispatcher + executors）。 */
+  autoRouterConfig: AutoRouterConfigSchema.optional(),
+  /**
+   * AutoRouter 行专用：config 中引用的渠道名清单（顺序 = dispatcher 在前、
+   * executors 其后），导入端据此按 name 重建本机 providerProfileId 引用。
+   */
+  autoRouterReferencedNames: z.array(z.string().min(1).max(100)).max(40).optional(),
   /** API Key（导出时从 Keychain 读取；导入时写入 Keychain） */
   apiKey: z.string().min(1).max(500).optional(),
 })

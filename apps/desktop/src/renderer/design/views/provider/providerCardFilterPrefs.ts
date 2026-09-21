@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { AUTO_ROUTER_UI_VISIBLE } from '../../utils/auto-router-ui'
 import type { ProviderCardKind } from '../provider-card-actions'
 
 /**
@@ -41,8 +40,8 @@ export const DEFAULT_PROVIDER_CARD_FILTERS: ProviderCardFilters = {
 
 /**
  * 合法筛选值白名单。
- * router 卡在自动路由入口隐藏时同时被 filterProvidersForVisibleUi 过滤掉，
- * 因此该值只在入口可见时才允许参与筛选，避免恢复出「必定空列表」的筛选条件。
+ * 旧「路由」卡片类别（kind='router'）已随旧 Auto Router 下线；历史缓存中
+ * 残留的该值会在 normalize 时回落 'all'。
  */
 const KIND_VALUES: readonly ProviderCardKindFilter[] = [
   'all',
@@ -51,7 +50,6 @@ const KIND_VALUES: readonly ProviderCardKindFilter[] = [
   'video',
   'voice',
   'cli',
-  ...(AUTO_ROUTER_UI_VISIBLE ? (['router'] as const) : []),
 ]
 
 const ENABLED_VALUES: readonly ProviderCardEnabledFilter[] = ['all', 'enabled', 'disabled']

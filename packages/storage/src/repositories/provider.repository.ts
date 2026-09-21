@@ -17,7 +17,12 @@ export interface CreateProviderParams {
   id: string
   providerType: string
   name: string
-  config: { defaultModel: string; modelIds: string[]; providerIcon?: { id: string; style: 'avatar' | 'mono' }; apiEndpoint?: string; mediaApiEndpoint?: string; codexApiKind?: 'chat' | 'responses' | 'embedding'; supportsMillionContext?: boolean; contextWindow?: number; maxTokens?: number; temperature?: number; modelType?: string; imageProvider?: string | null; imageApiType?: 'sync' | 'async' | 'auto' | null; mediaModelRefs?: unknown[]; managed?: boolean; managedType?: 'newapi'; managedOwnerUserId?: string; credentialState?: string }
+  /**
+   * 序列化进 config_json 的完整对象。普通渠道为归一化后的渠道配置；
+   * AutoRouter 行（providerType='auto-router'）为 AutoRouterConfig 路由配置，
+   * 因此这里保持宽类型，具体形状由 ProviderService 侧校验。
+   */
+  config: Record<string, unknown>
   keystoreRef: string
   isDefault?: boolean
 }

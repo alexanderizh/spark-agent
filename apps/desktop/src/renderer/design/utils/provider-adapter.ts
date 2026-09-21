@@ -1,7 +1,7 @@
 import type { ProviderProfile, SessionAgentAdapter } from '@spark/protocol'
 import {
+  AUTO_ROUTER_PROVIDER_TYPE,
   isBuiltInLocalCliProvider,
-  isAutoRouterProvider,
   isLocalClaudeCliProvider,
   isLocalCodexCliProvider,
 } from '@spark/protocol'
@@ -22,8 +22,8 @@ export function isProviderCompatibleWithAdapter(
   if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
   if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
   if (isSparkAdapter(adapter)) {
-    // spark 引擎不接管本地 CLI 内置渠道与自动路由元渠道；远程对话渠道按协议可映射性判定
-    if (isAutoRouterProvider(provider)) return false
+    // spark 引擎不接管本地 CLI 内置渠道与 AutoRouter 元渠道；远程对话渠道按协议可映射性判定
+    if (provider.providerType === AUTO_ROUTER_PROVIDER_TYPE) return false
     if (
       provider.modelType === 'image' ||
       provider.modelType === 'voice' ||
@@ -55,7 +55,7 @@ export function getCliSparkOverrideProviders(
   return providers.filter(
     (provider) =>
       !isBuiltInLocalCliProvider(provider) &&
-      !isAutoRouterProvider(provider) &&
+      provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE &&
       isProviderCompatibleWithAdapter(provider, adapter) &&
       (provider.modelIds.length > 0 || provider.defaultModel.trim().length > 0),
   )
@@ -77,7 +77,9 @@ export function getPreferredProviderForAdapter(
   const compatible = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
-  const concreteCompatible = compatible.filter((provider) => !isAutoRouterProvider(provider))
+  const concreteCompatible = compatible.filter(
+    (provider) => provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE,
+  )
   return (
     concreteCompatible.find((provider) => provider.id === preferredProviderId) ??
     concreteCompatible.find((provider) => provider.isDefault) ??

@@ -24,14 +24,13 @@ import {
   type ProviderMediaDefaults,
   type ProviderMediaModelRef,
   ProviderMediaModelRefSchema,
-  isProviderAllowedForRouterAdapter,
-  type RoutingAdapter,
 } from '@spark/protocol'
 import {
-  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
-  CODEX_AUTO_ROUTER_PROVIDER_ID,
-  CODEX_AUTO_ROUTER_PROVIDER_NAME,
+  AUTO_ROUTER_PROVIDER_TYPE,
+  type AutoRouterConfig,
+  AutoRouterConfigSchema,
+  type AutoRouterExecutorRef,
+  parseAutoRouterConfig,
   PROVIDER_EXPORT_VERSION,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CLI_PROVIDER_NAME,
@@ -40,7 +39,6 @@ import {
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
   isBuiltInLocalCliProvider,
-  isAutoRouterProvider,
   isLocalCodexCliProvider,
   type ProviderModelSchedule,
   filterBlockedModelIds,
@@ -349,6 +347,7 @@ function rowToProfile(row: {
     id: row.id,
     name,
     provider: normalizeProviderType(row.provider_type),
+    providerType: row.provider_type,
     enabled: row.enabled === 1,
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
@@ -390,37 +389,139 @@ function rowToProfile(row: {
   }
 }
 
-function createAutoRouterProvider(adapter: 'claude' | 'codex'): ProviderProfile {
-  const isClaude = adapter === 'claude'
-  return {
-    id: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_ID : CODEX_AUTO_ROUTER_PROVIDER_ID,
-    name: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_NAME : CODEX_AUTO_ROUTER_PROVIDER_NAME,
-    provider: isClaude ? 'anthropic' : 'openai',
-    enabled: true,
-    defaultModel: '',
-    modelIds: [],
-    ...(isClaude ? {} : { codexApiKind: 'responses' as const }),
-    supportsMillionContext: false,
-    modelType: 'text',
-    keystoreRef: '',
-    isDefault: false,
-    createdAt: '',
+/** router 校验用：从 config_json 提取渠道可用模型清单（modelIds 优先，回退 defaultModel）。 */
+function rowModelIds(configJson: string | null | undefined): string[] {
+  if (typeof configJson !== 'string' || configJson.length === 0) return []
+  try {
+    const parsed = JSON.parse(configJson) as { modelIds?: unknown; defaultModel?: unknown }
+    const ids = Array.isArray(parsed.modelIds)
+      ? parsed.modelIds.filter((item): item is string => typeof item === 'string')
+      : []
+    const fallback = typeof parsed.defaultModel === 'string' ? parsed.defaultModel : ''
+    return [...new Set([...ids, fallback].map((id) => id.trim()).filter((id) => id.length > 0))]
+  } catch {
+    return []
   }
 }
 
-function hasRouteableTextProvider(profiles: ProviderProfile[], adapter: RoutingAdapter): boolean {
-  return profiles.some((profile) => {
-    if (!profile.enabled) return false
-    if (isBuiltInLocalCliProvider(profile) || isAutoRouterProvider(profile)) return false
-    if (profile.codexApiKind === 'embedding') return false
-    if (!isProviderAllowedForRouterAdapter(adapter, profile)) return false
-    return providerModelIds(profile).length > 0
-  })
+type AutoRouterInvalidReason = 'provider_missing' | 'provider_disabled' | 'model_missing'
+
+function safeJsonParse(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
 }
 
-function providerModelIds(profile: ProviderProfile): string[] {
-  const ids = profile.modelIds.length > 0 ? profile.modelIds : [profile.defaultModel]
-  return [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))]
+/** 方案 3.7 配置·CRUD 日志：结构化记录 router 创建/更新/删除。 */
+function logAutoRouterConfigChange(
+  action: 'create' | 'update' | 'delete',
+  routerId: string,
+  routerName: string,
+  config?: AutoRouterConfig,
+): void {
+  if (config != null) {
+    log.info('auto-router config changed', {
+      action,
+      routerId,
+      routerName,
+      adapter: config.adapter,
+      dispatcher: { providerId: config.dispatcher.providerProfileId, model: config.dispatcher.modelId },
+      executorCount: config.executors.length,
+      intensitySlots: [...new Set(config.executors.map((entry) => entry.intensity))],
+    })
+    return
+  }
+  log.info('auto-router config changed', { action, routerId, routerName })
+}
+
+function autoRouterExecutorInvalidReason(
+  entry: Pick<AutoRouterExecutorRef, 'providerProfileId' | 'modelId'>,
+  rowById: Map<string, ProviderProfileRowInput>,
+): AutoRouterInvalidReason | null {
+  const refRow = rowById.get(entry.providerProfileId)
+  if (refRow == null) return 'provider_missing'
+  if (refRow.enabled === 0) return 'provider_disabled'
+  if (!rowModelIds(refRow.config_json).includes(entry.modelId)) return 'model_missing'
+  return null
+}
+
+interface ProviderProfileRowInput {
+  id: string
+  provider_type: string
+  name: string
+  config_json: string
+  enabled: number
+  keystore_ref: string | null
+  is_default: number
+  created_at: string
+}
+
+/**
+ * AutoRouter 行读取侧转换：解析 config_json 为 AutoRouterConfig，剔除引用失效的
+ * 执行器条目（渠道被删/停用/模型被移除），把校验后的有效配置挂到
+ * `autoRouterConfig` 供管理页与运行时分流直接消费。配置整体不合法时
+ * autoRouterConfig 缺省，UI 按无效配置标红提示。
+ */
+function rowToAutoRouterProfile(
+  row: ProviderProfileRowInput,
+  rowById: Map<string, ProviderProfileRowInput>,
+): ProviderProfile {
+  const base: ProviderProfile = {
+    id: row.id,
+    name: row.name,
+    provider: row.provider_type,
+    providerType: AUTO_ROUTER_PROVIDER_TYPE,
+    enabled: row.enabled === 1,
+    defaultModel: '',
+    modelIds: [],
+    supportsMillionContext: false,
+    keystoreRef: row.keystore_ref ?? '',
+    isDefault: row.is_default === 1,
+    createdAt: row.created_at,
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(row.config_json)
+  } catch {
+    parsed = null
+  }
+  const config = parseAutoRouterConfig(parsed)
+  if (config == null) {
+    log.warn('auto-router config invalid, profile returned without config', {
+      routerId: row.id,
+      routerName: row.name,
+    })
+    return base
+  }
+  const validExecutors: AutoRouterExecutorRef[] = []
+  const invalidEntries: Array<{ entryId: string; providerId: string; reason: string }> = []
+  for (const entry of config.executors) {
+    const reason = autoRouterExecutorInvalidReason(entry, rowById)
+    if (reason != null) {
+      invalidEntries.push({ entryId: entry.id, providerId: entry.providerProfileId, reason })
+    } else {
+      validExecutors.push(entry)
+    }
+  }
+  if (invalidEntries.length > 0) {
+    log.warn('auto-router executors pruned on read', {
+      routerId: row.id,
+      routerName: row.name,
+      invalidEntries,
+    })
+  }
+  const dispatcherReason = autoRouterExecutorInvalidReason(config.dispatcher, rowById)
+  if (dispatcherReason != null) {
+    log.warn('auto-router dispatcher reference invalid', {
+      routerId: row.id,
+      routerName: row.name,
+      reason: dispatcherReason,
+    })
+  }
+  const validated: AutoRouterConfig = { ...config, executors: validExecutors }
+  return { ...base, autoRouterConfig: validated }
 }
 
 /**
@@ -444,7 +545,13 @@ export class ProviderService {
   async listProviders(
     options: { includeDisabled?: boolean; includeScheduledBlocked?: boolean } = {},
   ): Promise<ProviderProfile[]> {
-    const profiles = this.repo.listAll().map(rowToProfile)
+    const rows = this.repo.listAll()
+    const rowById = new Map(rows.map((row) => [row.id, row]))
+    const profiles = rows.map((row) =>
+      row.provider_type === AUTO_ROUTER_PROVIDER_TYPE
+        ? rowToAutoRouterProfile(row, rowById)
+        : rowToProfile(row),
+    )
     const [claudeAvailable, codexAvailable] = await Promise.all([
       this.isLocalCliAvailable(),
       this.isLocalCodexCliAvailable(),
@@ -457,18 +564,10 @@ export class ProviderService {
       return true
     })
     // 定时禁用默认在读取侧剔除（全平台选择器看不到）；编辑界面传 includeScheduledBlocked 拿完整列表。
-    const effectiveProfiles =
-      options.includeScheduledBlocked === true
-        ? visibleProfiles
-        : visibleProfiles.map(applyScheduledBlocking)
-    const routers: ProviderProfile[] = []
-    if (hasRouteableTextProvider(effectiveProfiles, 'claude')) {
-      routers.push(createAutoRouterProvider('claude'))
-    }
-    if (hasRouteableTextProvider(effectiveProfiles, 'codex')) {
-      routers.push(createAutoRouterProvider('codex'))
-    }
-    return [...effectiveProfiles, ...routers]
+    // AutoRouter 行 config 里没有模型清单，不受定时禁用影响。
+    return options.includeScheduledBlocked === true
+      ? visibleProfiles
+      : visibleProfiles.map(applyScheduledBlocking)
   }
 
   /**
@@ -961,18 +1060,87 @@ export class ProviderService {
     return rowToProfile(updated)
   }
 
+  /** AutoRouter 专用 CRUD：router 行 config 为 AutoRouterConfig，不走普通渠道 normalize。 */
+  async createAutoRouter(params: {
+    name: string
+    config: AutoRouterConfig
+    enabled?: boolean
+    isDefault?: boolean
+  }): Promise<ProviderProfile> {
+    const parsed = AutoRouterConfigSchema.safeParse(params.config)
+    if (!parsed.success) {
+      const detail = parsed.error.issues
+        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; ')
+      throw new Error(`Invalid auto-router config: ${detail}`)
+    }
+    const id = crypto.randomUUID()
+    this.repo.create({
+      id,
+      providerType: AUTO_ROUTER_PROVIDER_TYPE,
+      name: params.name,
+      config: parsed.data as unknown as Record<string, unknown>,
+      keystoreRef: '',
+      isDefault: params.isDefault === true,
+    })
+    if (params.enabled === false) this.repo.update(id, { enabled: false })
+    logAutoRouterConfigChange('create', id, params.name, parsed.data)
+    const rows = this.repo.listAll()
+    return rowToAutoRouterProfile(this.repo.get(id)!, new Map(rows.map((row) => [row.id, row])))
+  }
+
+  async updateAutoRouter(
+    id: string,
+    params: {
+      name?: string
+      config?: AutoRouterConfig
+      enabled?: boolean
+      isDefault?: boolean
+    },
+  ): Promise<ProviderProfile> {
+    const existing = this.repo.get(id)
+    if (existing == null) throw new Error(`Provider not found: ${id}`)
+    if (existing.provider_type !== AUTO_ROUTER_PROVIDER_TYPE) {
+      throw new Error(`Provider is not an auto-router: ${id}`)
+    }
+    let nextConfig: AutoRouterConfig | undefined
+    if (params.config !== undefined) {
+      const parsed = AutoRouterConfigSchema.safeParse(params.config)
+      if (!parsed.success) {
+        const detail = parsed.error.issues
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join('; ')
+        throw new Error(`Invalid auto-router config: ${detail}`)
+      }
+      nextConfig = parsed.data
+    }
+    this.repo.update(id, {
+      ...(params.name !== undefined && { name: params.name }),
+      ...(nextConfig !== undefined && {
+        config: nextConfig as unknown as Record<string, unknown>,
+      }),
+      ...(params.enabled !== undefined && { enabled: params.enabled }),
+    })
+    if (params.isDefault) this.repo.setDefault(id)
+    const effective = nextConfig ?? parseAutoRouterConfig(safeJsonParse(existing.config_json))
+    if (effective != null) {
+      logAutoRouterConfigChange('update', id, existing.name, effective)
+    }
+    const rows = this.repo.listAll()
+    return rowToAutoRouterProfile(this.repo.get(id)!, new Map(rows.map((row) => [row.id, row])))
+  }
+
   async deleteProvider(id: string): Promise<void> {
-    if (
-      id === LOCAL_CLI_PROVIDER_ID ||
-      id === LOCAL_CODEX_CLI_PROVIDER_ID ||
-      isAutoRouterProvider(id)
-    ) {
+    if (id === LOCAL_CLI_PROVIDER_ID || id === LOCAL_CODEX_CLI_PROVIDER_ID) {
       throw new Error('Cannot delete the built-in provider')
     }
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
     if (isManagedProviderRow(row)) throw new Error('平台官方 Provider 由系统管理，不能删除')
 
+    if (row.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
+      logAutoRouterConfigChange('delete', id, row.name)
+    }
     if (row.keystore_ref) {
       await keystore.deleteSecret(row.keystore_ref as keystore.KeystoreRef)
     }
@@ -1438,6 +1606,10 @@ export class ProviderService {
     for (const row of rows) {
       if (idSet !== null && !idSet.has(row.id)) continue
       if (isManagedProviderRow(row)) continue
+      if (row.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
+        profiles.push(rowToAutoRouterExportProfile(row, rows))
+        continue
+      }
       const apiKey = row.keystore_ref
         ? await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
         : null
@@ -1469,12 +1641,62 @@ export class ProviderService {
     if (payload.profiles.length === 0) return result
 
     const existing = new Map<string, ReturnType<typeof this.repo.listAll>[number]>()
+    const nameToId = new Map<string, string>()
     for (const row of this.repo.listAll()) {
       existing.set(row.name, row)
+      nameToId.set(row.name, row.id)
     }
 
     for (const profile of payload.profiles) {
       try {
+        // AutoRouter 行：config 为路由配置，须按引用渠道 name 重建本机 providerProfileId
+        const routerConfig = profile.autoRouterConfig
+        if (routerConfig != null) {
+          const remap = remapAutoRouterConfigReferences(
+            structuredClone(routerConfig),
+            profile.autoRouterReferencedNames,
+            nameToId,
+          )
+          if (remap.remapped > 0 || remap.unmatchedNames.length > 0) {
+            log.info('auto-router import reference remap', {
+              routerName: profile.name,
+              remapped: remap.remapped,
+              unmatchedNames: remap.unmatchedNames,
+            })
+          }
+          const match = existing.get(profile.name)
+          if (match != null) {
+            if (isManagedProviderRow(match)) {
+              result.skipped += 1
+              result.errors.push(`平台官方 Provider「${profile.name}」不能被导入覆盖`)
+              continue
+            }
+            if (mode === 'merge') {
+              result.skipped += 1
+              continue
+            }
+            this.repo.update(match.id, {
+              name: profile.name,
+              config: remap.config as unknown as Record<string, unknown>,
+              enabled: profile.enabled !== false,
+            })
+            result.imported += 1
+            continue
+          }
+          const created = this.repo.create({
+            id: crypto.randomUUID(),
+            providerType: AUTO_ROUTER_PROVIDER_TYPE,
+            name: profile.name,
+            // router 行无凭据，不走 keystore
+            config: remap.config as unknown as Record<string, unknown>,
+            keystoreRef: '',
+            isDefault: false,
+          })
+          if (!profile.enabled) this.repo.update(created.id, { enabled: false })
+          result.imported += 1
+          continue
+        }
+
         const match = existing.get(profile.name)
         if (match != null) {
           if (isManagedProviderRow(match)) {
@@ -2210,4 +2432,73 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.mediaDefaults !== undefined && { mediaDefaults: profile.mediaDefaults }),
     ...(profile.mediaModelRefs !== undefined && { mediaModelRefs: profile.mediaModelRefs }),
   }
+}
+
+/**
+ * AutoRouter 行导出：config_json 原样带出（不走普通渠道 normalize），
+ * 并附引用渠道 name 清单供导入端重建 providerProfileId 引用。
+ * name 清单与 [dispatcher, ...executors] 等长；渠道已删除时该位置回退原
+ * providerProfileId（导入端匹配不上即保留原值，由读取侧校验兜底剔除）。
+ */
+function rowToAutoRouterExportProfile(
+  row: ProviderProfileRowInput,
+  allRows: ProviderProfileRowInput[],
+): ProviderExportProfile {
+  let config: AutoRouterConfig | null = null
+  try {
+    config = parseAutoRouterConfig(JSON.parse(row.config_json))
+  } catch {
+    config = null
+  }
+  const nameById = new Map(allRows.map((item) => [item.id, item.name]))
+  return {
+    id: row.id,
+    name: row.name,
+    provider: AUTO_ROUTER_PROVIDER_TYPE,
+    enabled: row.enabled === 1,
+    apiEndpoint: null,
+    defaultModel: '',
+    modelIds: [],
+    modelType: 'text',
+    supportsMillionContext: false,
+    isDefault: row.is_default === 1,
+    ...(config != null && {
+      autoRouterConfig: config,
+      autoRouterReferencedNames: [
+        nameById.get(config.dispatcher.providerProfileId) ??
+          config.dispatcher.providerProfileId,
+        ...config.executors.map(
+          (entry) => nameById.get(entry.providerProfileId) ?? entry.providerProfileId,
+        ),
+      ],
+    }),
+  }
+}
+
+/**
+ * 导入端按 name 重建 router config 的渠道引用：导入会为渠道生成新 uuid，
+ * 导出文件里的 providerProfileId 在本机必然失效。referencedNames 与
+ * [dispatcher, ...executors] 顺序一一对应；匹配不到的引用保留原值并上报。
+ */
+function remapAutoRouterConfigReferences(
+  config: AutoRouterConfig,
+  referencedNames: string[] | undefined,
+  nameToId: Map<string, string>,
+): { config: AutoRouterConfig; remapped: number; unmatchedNames: string[] } {
+  const unmatchedNames: string[] = []
+  let remapped = 0
+  const resolveRef = (ref: { providerProfileId: string }, index: number): void => {
+    const name = referencedNames?.[index]
+    if (name == null) return
+    const localId = nameToId.get(name)
+    if (localId != null) {
+      if (localId !== ref.providerProfileId) remapped += 1
+      ref.providerProfileId = localId
+      return
+    }
+    if (name !== ref.providerProfileId) unmatchedNames.push(name)
+  }
+  resolveRef(config.dispatcher, 0)
+  config.executors.forEach((entry, index) => resolveRef(entry, index + 1))
+  return { config, remapped, unmatchedNames }
 }

@@ -52,7 +52,6 @@ import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { usePlatformModelCatalogRefresh } from './platform-model/usePlatformModelCatalogRefresh'
-import { AUTO_ROUTER_UI_VISIBLE, filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import {
   PROVIDER_PRESETS,
   getProviderPresetById,
@@ -61,12 +60,6 @@ import {
   getUniqueVendorIds,
   getProviderPromoByVendor,
   isBuiltInLocalCliProvider,
-  isAutoRouterProvider,
-  isClaudeAutoRouterProvider,
-  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
-  CODEX_AUTO_ROUTER_PROVIDER_ID,
-  CODEX_AUTO_ROUTER_PROVIDER_NAME,
   isLocalCodexCliProvider,
   MEDIA_CAPABILITY_IDS,
   DEFAULT_VIDEO_POLL_TIMEOUT_MS,
@@ -76,9 +69,6 @@ import {
   ProviderMediaModelRefSchema,
   MediaModelManifestSchema,
   validateMediaModelManifestSemantics,
-  isProviderAllowedForRouterAdapter,
-  isRoutingModelConfig,
-  normalizeRoutingCandidates,
   scheduledBlockedModelIds,
 } from '@spark/protocol'
 import type {
@@ -103,11 +93,6 @@ import type {
   CanvasMediaPruneModelParamsByInlineManifestResponse,
   CanvasMediaPreviewTemplateInvocationRequest,
   CanvasMediaPreviewTemplateInvocationResponse,
-  ModelProfile,
-  RoutingAdapter,
-  RoutingCandidateRef,
-  RoutingComplexity,
-  RoutingModelConfig,
   ProviderIconConfig,
   ProviderIconStyle,
   ProviderModelSchedule,
@@ -198,22 +183,6 @@ type ProviderForm = {
   mediaPollInterval: string
   mediaTimeout: string
 }
-
-type RouteModelDraft = {
-  id?: string
-  providerId: string
-  name: string
-  adapter: RoutingAdapter
-  enabled: boolean
-  candidates: Record<RoutingComplexity, RoutingCandidateRef[]>
-}
-
-const ROUTING_SLOTS: Array<{ value: RoutingComplexity; label: string; hint: string }> = [
-  { value: 'simple', label: '简单任务', hint: '短问答、解释、翻译、轻量修改' },
-  { value: 'default', label: '默认任务', hint: '未命中其他规则时使用' },
-  { value: 'complex', label: '复杂任务', hint: '开发、重构、debug、测试、方案' },
-  { value: 'longContext', label: '长上下文', hint: '超长历史或大上下文任务' },
-]
 
 const EMPTY_MEDIA_FORM = {
   mediaProvider: '' as MediaProviderKind | '',
@@ -804,7 +773,7 @@ function enumOptionsFromModels(
 /**
  * 卡片类型分类（与筛选下拉/右上角 tag 共用口径）。
  *
- * 判定优先级：router（自动路由虚拟项）→ cli（内置本地 CLI）→ 媒体（image/video/voice）→ text。
+ * 判定优先级：cli（内置本地 CLI）→ 媒体（image/video/voice）→ text。
  * 一张卡片只归一类，避免与「默认 Provider」「内置」等已有 tag 语义重叠。
  */
 /** 每个类别对应的图标（项目本地 Lucide 风格）、文案、胶囊 CSS 修饰类 */
@@ -812,7 +781,6 @@ const CARD_KIND_META: Record<
   ProviderCardKind,
   { label: string; icon: ComponentType<{ size?: number }>; kindClass: string }
 > = {
-  router: { label: '路由', icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
   cli: { label: 'CLI', icon: Icons.Terminal, kindClass: 'pv_kind--cli' },
   image: { label: '图片', icon: Icons.Image, kindClass: 'pv_kind--image' },
   video: { label: '视频', icon: Icons.Film, kindClass: 'pv_kind--video' },
@@ -827,15 +795,14 @@ const CARD_KIND_FILTER_OPTIONS: Array<{ value: ProviderCardKind; label: string }
   { value: 'video', label: '视频' },
   { value: 'voice', label: '语音' },
   { value: 'cli', label: 'CLI' },
-  ...(AUTO_ROUTER_UI_VISIBLE ? [{ value: 'router' as const, label: '路由' }] : []),
 ]
 
 /** 名称排序用的中文 collator（模块级单例，避免每次排序重新构造） */
 const NAME_COLLATOR = new Intl.Collator('zh-Hans', { sensitivity: 'base' })
 
-/** 排序时是否「钉在最前」：内置的 router / cli 项始终优先于自定义项 */
+/** 排序时是否「钉在最前」：内置 cli 项始终优先于自定义项 */
 function isBuiltInPinned(profile: ProviderProfile): boolean {
-  return isAutoRouterProvider(profile) || isBuiltInLocalCliProvider(profile)
+  return isBuiltInLocalCliProvider(profile)
 }
 
 export function sortProviderProfilesForCards(
@@ -859,11 +826,10 @@ export function sortProviderProfilesForCards(
 /**
  * 推导一张 Provider 卡片归属的类型（用于右上角 tag + 筛选）。
  *
- * router / cli 优先级最高（它们是按 id 判定的内置项，modelType 不可靠）；
+ * cli 优先级最高（按 id 判定的内置项，modelType 不可靠）；
  * 之后看 modelType 媒体维度；其余统一归为对话/文本模型。
  */
 export function resolveProviderCardKind(profile: ProviderProfile): ProviderCardKind {
-  if (isAutoRouterProvider(profile)) return 'router'
   if (isBuiltInLocalCliProvider(profile)) return 'cli'
   const modelType = normalizeLegacyModelType(profile.modelType)
   if (modelType === 'image') return 'image'
@@ -939,14 +905,12 @@ function ProvidersView() {
   const { toast } = useToast()
   const showProviderEdit = t.showProviderEdit
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
-  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
   /** 列表加载中：初始为 true（挂载即触发一次刷新），列表为空时用 loading 视图替代空状态 */
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [managedEditingProfile, setManagedEditingProfile] = useState<ProviderProfile | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
   const [showPresetCatalog, setShowPresetCatalog] = useState(false)
-  const [showRouteModels, setShowRouteModels] = useState(false)
   const [presetCatalogSearch, setPresetCatalogSearch] = useState('')
   /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
   const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
@@ -971,7 +935,6 @@ function ProvidersView() {
   const importButtonRef = useRef<HTMLButtonElement>(null)
 
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: listModels } = useIpcInvoke('model:list')
   const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
   const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
   const { invoke: exportProviders } = useIpcInvoke('provider:export')
@@ -991,14 +954,13 @@ function ProvidersView() {
 
   const refresh = useCallback(() => {
     setLoading(true)
-    Promise.all([listProviders({ includeDisabled: true }), listModels({})])
-      .then(([providerRes, modelRes]) => {
+    listProviders({ includeDisabled: true })
+      .then((providerRes) => {
         setProfiles(providerRes.profiles)
-        setModelProfiles(modelRes.models)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [listModels, listProviders])
+  }, [listProviders])
 
   // Provider 管理页的刷新只负责重读本地配置；平台模型目录同步是可选的后台任务，
   // 不能让未登录平台账号或目录服务异常阻断普通 Provider 的刷新。
@@ -1059,7 +1021,7 @@ function ProvidersView() {
     setSelectedIds(
       new Set(
         profiles
-          .filter((p) => !isBuiltInLocalCliProvider(p) && !isAutoRouterProvider(p))
+          .filter((p) => !isBuiltInLocalCliProvider(p))
           .map((p) => p.id),
       ),
     )
@@ -1073,7 +1035,7 @@ function ProvidersView() {
     setSelectedIds((prev) => {
       const next = new Set<string>()
       for (const p of profiles) {
-        if (isBuiltInLocalCliProvider(p) || isAutoRouterProvider(p)) continue
+        if (isBuiltInLocalCliProvider(p)) continue
         if (!prev.has(p.id)) next.add(p.id)
       }
       return next
@@ -1093,7 +1055,7 @@ function ProvidersView() {
     let ok = 0
     const errs: string[] = []
     for (const id of selectedIds) {
-      if (isBuiltInLocalCliProvider({ id }) || isAutoRouterProvider(id)) continue
+      if (isBuiltInLocalCliProvider({ id })) continue
       try {
         await deleteProvider({ id })
         ok += 1
@@ -1241,7 +1203,7 @@ function ProvidersView() {
    * - 排序：平台受管项始终最前；'default' 下其余项保持原序；nameAsc/nameDesc
    *   下 router/cli 内置项其次，其他项按名称排序。
    */
-  const uiProfiles = useMemo(() => filterProvidersForVisibleUi(profiles), [profiles])
+  const uiProfiles = useMemo(() => profiles, [profiles])
   const visibleProfiles = useMemo(() => {
     const keyword = cardSearch.trim().toLowerCase()
     const filtered = uiProfiles.filter((p) => {
@@ -1367,17 +1329,6 @@ function ProvidersView() {
             >
               从模板添加
             </Button>
-            {AUTO_ROUTER_UI_VISIBLE && (
-              <Button
-                size="small"
-                type={showRouteModels ? 'primary' : 'default'}
-                icon={<Icons.Shuffle />}
-                onClick={() => setShowRouteModels(true)}
-                title="配置 Claude / Codex 自动路由模型卡"
-              >
-                自动路由
-              </Button>
-            )}
             <Button
               size="small"
               type="primary"
@@ -1481,17 +1432,14 @@ function ProvidersView() {
                 const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
                 const vendor =
                   resolveManagedPlatformVendor(p) ??
-                  resolveAutoRouterVendor(p) ??
                   resolveBuiltinLocalCliVendor(p) ??
                   vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
                   guessVendorByName(p.name, getUniqueVendorIds()) ??
                   (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
-                const builtin = isBuiltInLocalCliProvider(p) || isAutoRouterProvider(p)
-                const builtinDesc = isAutoRouterProvider(p)
-                  ? '内置 · 虚拟自动路由 Provider'
-                  : isLocalCodexCliProvider(p)
-                    ? '内置 · 沿用宿主机本地 Codex CLI 配'
-                    : '内置 · 沿用宿主机本地 Claude CLI 配置'
+                const builtin = isBuiltInLocalCliProvider(p)
+                const builtinDesc = isLocalCodexCliProvider(p)
+                  ? '内置 · 沿用宿主机本地 Codex CLI 配'
+                  : '内置 · 沿用宿主机本地 Claude CLI 配置'
                 // 媒体 Provider 卡片应展示真正配置的 mediaModelRefs，而非旧版/模板预填的 modelIds。
                 const profileModelType = normalizeLegacyModelType(p.modelType)
                 const isMediaProvider = hasConfiguredMediaStack(
@@ -1529,7 +1477,6 @@ function ProvidersView() {
                     isManaged={p.managed === true}
                     isDefault={p.isDefault}
                     enabled={p.enabled !== false}
-                    canToggleEnabled={!isAutoRouterProvider(p)}
                     cardKind={resolveProviderCardKind(p)}
                     multiSelect={multiSelect && !builtin && p.managed !== true}
                     selected={selectedIds.has(p.id)}
@@ -1604,14 +1551,6 @@ function ProvidersView() {
           )}
         </div>
       </Modal>
-
-      <RouteModelManagerModal
-        open={showRouteModels}
-        providers={profiles}
-        models={modelProfiles}
-        onClose={() => setShowRouteModels(false)}
-        onChanged={refresh}
-      />
 
       {managedEditingProfile ? (
         <ManagedModelPreferencesModal
@@ -1758,29 +1697,6 @@ function resolveProviderIconForProfile(
   )
 }
 
-const CLAUDE_AUTO_ROUTER_VENDOR: VendorMeta = {
-  id: 'claude-auto-router',
-  name: CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
-  emoji: 'AR',
-  color: '#d97757',
-  desc: '',
-  logoPath: '',
-}
-
-const CODEX_AUTO_ROUTER_VENDOR: VendorMeta = {
-  id: 'codex-auto-router',
-  name: CODEX_AUTO_ROUTER_PROVIDER_NAME,
-  emoji: 'AR',
-  color: '#10a37f',
-  desc: '',
-  logoPath: '',
-}
-
-function resolveAutoRouterVendor(provider: ProviderProfile): VendorMeta | null {
-  if (!isAutoRouterProvider(provider)) return null
-  return isClaudeAutoRouterProvider(provider) ? CLAUDE_AUTO_ROUTER_VENDOR : CODEX_AUTO_ROUTER_VENDOR
-}
-
 /**
  * 内置本地 CLI provider → 合成 vendor（用于 logo 渲染）；其余返回 null 走原有 name 匹配。
  */
@@ -1881,7 +1797,7 @@ function ProviderCardX({
   isDefault?: boolean
   /** 全局 Provider 可用状态。 */
   enabled?: boolean
-  /** 自动路由等虚拟 Provider 不支持持久化开关。 */
+  /** 内置虚拟 Provider 不支持持久化开关。 */
   canToggleEnabled?: boolean
   /** 卡片类型（名称行 tag + 筛选用）；多选模式下隐藏 tag */
   cardKind: ProviderCardKind
@@ -2109,495 +2025,6 @@ function ProviderCardX({
         </div>
       )}
     </div>
-  )
-}
-
-function emptyRouteCandidates(): RouteModelDraft['candidates'] {
-  return {
-    simple: [],
-    default: [],
-    complex: [],
-    longContext: [],
-  }
-}
-
-function parseRouteModelConfig(model: ModelProfile): RoutingModelConfig | null {
-  try {
-    const parsed = JSON.parse(model.configJson) as unknown
-    return isRoutingModelConfig(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function createEmptyRouteDraft(
-  providers: ProviderProfile[],
-  adapter: RoutingAdapter,
-): RouteModelDraft {
-  const candidate = getRouteCandidateOptions(providers, adapter)[0]
-  return {
-    providerId: getRouteProviderId(adapter),
-    name: defaultRouteModelName(adapter),
-    adapter,
-    enabled: true,
-    candidates: {
-      ...emptyRouteCandidates(),
-      default: candidate ? [decodeRouteCandidateValue(candidate.value)] : [],
-    },
-  }
-}
-
-function routeModelToDraft(model: ModelProfile, providers: ProviderProfile[]): RouteModelDraft {
-  const config = parseRouteModelConfig(model)
-  if (config == null) return createEmptyRouteDraft(providers, 'claude')
-  return {
-    id: model.id,
-    providerId: isAutoRouterProvider(model.providerId)
-      ? model.providerId
-      : getRouteProviderId(config.adapter),
-    name: model.name,
-    adapter: config.adapter,
-    enabled: model.enabled,
-    candidates: {
-      ...emptyRouteCandidates(),
-      ...ROUTING_SLOTS.reduce<Partial<RouteModelDraft['candidates']>>((acc, slot) => {
-        acc[slot.value] = normalizeRoutingCandidates(config.candidates)[slot.value] ?? []
-        return acc
-      }, {}),
-    },
-  }
-}
-
-function buildRoutingConfigFromDraft(draft: RouteModelDraft): RoutingModelConfig {
-  const candidates = ROUTING_SLOTS.reduce<RoutingModelConfig['candidates']>((acc, slot) => {
-    const slotCandidates = uniqRouteCandidates(draft.candidates[slot.value])
-    if (slotCandidates.length === 1) {
-      const first = slotCandidates[0]
-      if (first != null) acc[slot.value] = first
-    } else if (slotCandidates.length > 1) {
-      acc[slot.value] = slotCandidates
-    }
-    return acc
-  }, {})
-  return {
-    kind: 'router',
-    adapter: draft.adapter,
-    candidates,
-  }
-}
-
-function uniqRouteCandidates(candidates: RoutingCandidateRef[]): RoutingCandidateRef[] {
-  const seen = new Set<string>()
-  const normalized: RoutingCandidateRef[] = []
-  for (const candidate of candidates) {
-    if (!candidate.providerProfileId || !candidate.modelId) continue
-    const key = encodeRouteCandidateValue(candidate)
-    if (seen.has(key)) continue
-    seen.add(key)
-    normalized.push(candidate)
-  }
-  return normalized
-}
-
-function getRouteCandidateOptions(
-  providers: ProviderProfile[],
-  adapter: RoutingAdapter,
-): Array<{ label: string; value: string }> {
-  return providers
-    .filter((provider) => !isBuiltInLocalCliProvider(provider) && !isAutoRouterProvider(provider))
-    .filter((provider) => isProviderAllowedForRouterAdapter(adapter, provider))
-    .filter((provider) => provider.codexApiKind !== 'embedding')
-    .flatMap((provider) =>
-      providerModelIds(provider).map((modelId) => ({
-        label: `${provider.name} · ${modelId}`,
-        value: encodeRouteCandidateValue({ providerProfileId: provider.id, modelId }),
-      })),
-    )
-}
-
-function providerModelIds(provider: ProviderProfile): string[] {
-  const ids = provider.modelIds.length > 0 ? provider.modelIds : [provider.defaultModel]
-  return uniqPreserveOrder(ids.map((id) => id.trim()).filter((id) => id.length > 0))
-}
-
-function defaultRouteModelName(adapter: RoutingAdapter): string {
-  return adapter === 'claude' ? 'Auto Claude' : 'Auto Codex'
-}
-
-function getRouteProviderId(adapter: RoutingAdapter): string {
-  return adapter === 'claude' ? CLAUDE_AUTO_ROUTER_PROVIDER_ID : CODEX_AUTO_ROUTER_PROVIDER_ID
-}
-
-function encodeRouteCandidateValue(candidate: RoutingCandidateRef): string {
-  return JSON.stringify([candidate.providerProfileId, candidate.modelId])
-}
-
-function decodeRouteCandidateValue(value: string): RoutingCandidateRef {
-  try {
-    const parsed = JSON.parse(value) as unknown
-    if (Array.isArray(parsed) && typeof parsed[0] === 'string' && typeof parsed[1] === 'string') {
-      return { providerProfileId: parsed[0], modelId: parsed[1] }
-    }
-  } catch {
-    // fall through
-  }
-  return { providerProfileId: '', modelId: '' }
-}
-
-function providerNameById(providers: ProviderProfile[], providerId: string): string {
-  return providers.find((provider) => provider.id === providerId)?.name ?? providerId
-}
-
-function draftToModelProfile(draft: RouteModelDraft): ModelProfile {
-  return {
-    id: draft.id ?? '',
-    providerId: draft.providerId,
-    name: draft.name,
-    configJson: JSON.stringify(buildRoutingConfigFromDraft(draft)),
-    enabled: draft.enabled,
-    createdAt: '',
-    updatedAt: '',
-  }
-}
-
-function RouteModelManagerModal({
-  open,
-  providers,
-  models,
-  onClose,
-  onChanged,
-}: {
-  open: boolean
-  providers: ProviderProfile[]
-  models: ModelProfile[]
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const { toast } = useToast()
-  const { invoke: createModel } = useIpcInvoke('model:create')
-  const { invoke: updateModel } = useIpcInvoke('model:update')
-  const { invoke: deleteModel } = useIpcInvoke('model:delete')
-  const routeModels = useMemo(
-    () =>
-      models.filter(
-        (model) => isAutoRouterProvider(model.providerId) && parseRouteModelConfig(model) != null,
-      ),
-    [models],
-  )
-  const [draft, setDraft] = useState<RouteModelDraft>(() =>
-    createEmptyRouteDraft(providers, 'claude'),
-  )
-  const [saving, setSaving] = useState(false)
-  const [pendingDeleteModel, setPendingDeleteModel] = useState<ModelProfile | null>(null)
-
-  useEffect(() => {
-    if (!open) {
-      setPendingDeleteModel(null)
-      return
-    }
-    setDraft((prev) => {
-      const current = prev.id ? routeModels.find((model) => model.id === prev.id) : null
-      if (current) return routeModelToDraft(current, providers)
-      const first = routeModels[0]
-      return first
-        ? routeModelToDraft(first, providers)
-        : createEmptyRouteDraft(providers, 'claude')
-    })
-  }, [open, providers, routeModels])
-
-  const candidateOptions = useMemo(
-    () => getRouteCandidateOptions(providers, draft.adapter),
-    [draft.adapter, providers],
-  )
-  const activeConfig = buildRoutingConfigFromDraft(draft)
-
-  const updateDraft = <K extends keyof RouteModelDraft>(key: K, value: RouteModelDraft[K]) => {
-    setDraft((prev) => ({ ...prev, [key]: value }))
-  }
-
-  const selectRouteModel = (model: ModelProfile) => {
-    setPendingDeleteModel(null)
-    setDraft(routeModelToDraft(model, providers))
-  }
-
-  const createNewDraft = (adapter: RoutingAdapter = 'claude') => {
-    setPendingDeleteModel(null)
-    setDraft(createEmptyRouteDraft(providers, adapter))
-  }
-
-  const changeAdapter = (adapter: RoutingAdapter) => {
-    setPendingDeleteModel(null)
-    setDraft((prev) => {
-      const candidateValues = new Set(
-        getRouteCandidateOptions(providers, adapter).map((option) => option.value),
-      )
-      const candidates = ROUTING_SLOTS.reduce<RouteModelDraft['candidates']>((acc, slot) => {
-        acc[slot.value] = prev.candidates[slot.value].filter((candidate) =>
-          candidateValues.has(encodeRouteCandidateValue(candidate)),
-        )
-        return acc
-      }, emptyRouteCandidates())
-      return {
-        ...prev,
-        adapter,
-        providerId: getRouteProviderId(adapter),
-        name: prev.id ? prev.name : defaultRouteModelName(adapter),
-        candidates,
-      }
-    })
-  }
-
-  const changeCandidate = (slot: RoutingComplexity, value: string[] | null | undefined) => {
-    setDraft((prev) => ({
-      ...prev,
-      candidates: {
-        ...prev.candidates,
-        [slot]: (value ?? []).map(decodeRouteCandidateValue),
-      },
-    }))
-  }
-
-  const handleSaveRoute = async () => {
-    if (!draft.name.trim()) {
-      toast.error('请填写路由模型名称')
-      return
-    }
-    if ((draft.candidates.default ?? []).length === 0) {
-      toast.error('请至少配置默认任务模型')
-      return
-    }
-    setSaving(true)
-    try {
-      const payload = {
-        name: draft.name.trim(),
-        configJson: JSON.stringify(activeConfig, null, 2),
-      }
-      if (draft.id) {
-        const res = await updateModel({
-          id: draft.id,
-          ...payload,
-          enabled: draft.enabled,
-        })
-        setDraft(routeModelToDraft(res.model, providers))
-        toast.success('自动路由模型已更新')
-      } else {
-        const res = await createModel({
-          providerId: draft.providerId,
-          ...payload,
-        })
-        let savedModel = res.model
-        if (!draft.enabled) {
-          savedModel = (await updateModel({ id: res.model.id, enabled: false })).model
-        }
-        setDraft(routeModelToDraft(savedModel, providers))
-        toast.success('自动路由模型已创建')
-      }
-      onChanged()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存自动路由模型失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDeleteRoute = async (model: ModelProfile) => {
-    setSaving(true)
-    try {
-      await deleteModel({ id: model.id })
-      toast.success('自动路由模型已删除')
-      const remaining = routeModels.filter((item) => item.id !== model.id)
-      setDraft(
-        remaining[0]
-          ? routeModelToDraft(remaining[0], providers)
-          : createEmptyRouteDraft(providers, draft.adapter),
-      )
-      setPendingDeleteModel(null)
-      onChanged()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除自动路由模型失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      title={
-        <div className="pv_route_title">
-          <Icons.Shuffle size={16} />
-          <span>自动模型路由</span>
-        </div>
-      }
-      onCancel={onClose}
-      footer={
-        pendingDeleteModel ? (
-          <div className="pv_route_delete_confirm">
-            <span>删除「{pendingDeleteModel.name}」？</span>
-            <Button type="text" onClick={() => setPendingDeleteModel(null)} disabled={saving}>
-              取消
-            </Button>
-            <Button
-              type="primary"
-              danger
-              loading={saving}
-              onClick={() => void handleDeleteRoute(pendingDeleteModel)}
-            >
-              确认删除
-            </Button>
-          </div>
-        ) : (
-          <div className="pv_route_modal_footer">
-            {draft.id && (
-              <Button
-                type="text"
-                danger
-                icon={<Icons.Trash />}
-                onClick={() => setPendingDeleteModel(draftToModelProfile(draft))}
-              >
-                删除
-              </Button>
-            )}
-            <span className="pv_route_editor_spacer" />
-            <Button type="text" onClick={onClose} disabled={saving}>
-              关闭
-            </Button>
-            <Button type="primary" loading={saving} onClick={() => void handleSaveRoute()}>
-              {draft.id ? '保存路由模型' : '创建路由模型'}
-            </Button>
-          </div>
-        )
-      }
-      style={{ width: 1120, maxWidth: 'calc(100vw - 48px)' }}
-      destroyOnHidden
-    >
-      <div className="pv_route_manager">
-        <div className="pv_route_sidebar">
-          <div className="pv_route_sidebar_head">
-            <span>模型卡</span>
-            <Button size="small" type="text" icon={<Icons.Plus />} onClick={() => createNewDraft()}>
-              新建
-            </Button>
-          </div>
-          <div className="pv_route_list">
-            {routeModels.length === 0 ? (
-              <div className="pv_route_empty">暂无自动路由模型</div>
-            ) : (
-              routeModels.map((model) => {
-                const config = parseRouteModelConfig(model)
-                const active = draft.id === model.id
-                return (
-                  <button
-                    key={model.id}
-                    type="button"
-                    className={`pv_route_item${active ? ' active' : ''}`}
-                    onClick={() => selectRouteModel(model)}
-                  >
-                    <span className="pv_route_item_name">{model.name}</span>
-                    <span className="pv_route_item_meta">
-                      {config?.adapter === 'claude' ? 'Claude' : 'Codex'} ·{' '}
-                      {providerNameById(providers, model.providerId)}
-                    </span>
-                    {!model.enabled && (
-                      <Tag size="middle" color="gray">
-                        已停用
-                      </Tag>
-                    )}
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-
-        <div className="pv_route_editor">
-          <div className="pv_route_editor_head">
-            <Button
-              size="small"
-              type={draft.adapter === 'claude' ? 'primary' : 'default'}
-              icon={<Icons.Bot size={12} />}
-              onClick={() => changeAdapter('claude')}
-              disabled={!!draft.id}
-            >
-              Claude
-            </Button>
-            <Button
-              size="small"
-              type={draft.adapter === 'codex' ? 'primary' : 'default'}
-              icon={<Icons.Cpu size={12} />}
-              onClick={() => changeAdapter('codex')}
-              disabled={!!draft.id}
-            >
-              Codex
-            </Button>
-            <span className="pv_route_editor_spacer" />
-            {draft.id && (
-              <div className="pv_route_enable">
-                <span>{draft.enabled ? '启用' : '停用'}</span>
-                <Switch
-                  size="small"
-                  checked={draft.enabled}
-                  onChange={(checked) => updateDraft('enabled', checked)}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="pv_route_editor_body">
-            <div className="pv_route_form">
-              <label className="pv_form_label">
-                模型卡名称
-                <span className="pv_form_sub">会显示在 Chat 和 Agent 的模型选择器中</span>
-              </label>
-              <Input
-                value={draft.name}
-                onChange={(event) => updateDraft('name', event.target.value)}
-                placeholder={defaultRouteModelName(draft.adapter)}
-              />
-
-              <label className="pv_form_label">
-                路由 Provider
-                <span className="pv_form_sub">自动路由作为虚拟 Provider 出现在模型选择器中</span>
-              </label>
-              <Input value={providerNameById(providers, draft.providerId)} readOnly disabled />
-            </div>
-
-            <div className="pv_route_slots">
-              {ROUTING_SLOTS.map((slot) => {
-                const candidates = draft.candidates[slot.value]
-                return (
-                  <div key={slot.value} className="pv_route_slot">
-                    <div className="pv_route_slot_label">
-                      <span>{slot.label}</span>
-                      <small>{slot.hint}</small>
-                    </div>
-                    <Select
-                      mode="multiple"
-                      value={candidates.map(encodeRouteCandidateValue)}
-                      onChange={(value) =>
-                        changeCandidate(
-                          slot.value,
-                          Array.isArray(value) ? value.map(String) : value ? [String(value)] : [],
-                        )
-                      }
-                      options={candidateOptions}
-                      allowClear={slot.value !== 'default'}
-                      placeholder={
-                        slot.value === 'default' ? '至少选择一个默认模型' : '未配置则回退默认'
-                      }
-                    />
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="pv_route_preview">
-              <code>{JSON.stringify(activeConfig, null, 2)}</code>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Modal>
   )
 }
 

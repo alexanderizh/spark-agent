@@ -33,7 +33,7 @@ import type {
   TerminalStreamEvent,
   SidebarOrderState,
 } from '@spark/protocol'
-import { isAutoRouterProvider, SessionWorkflowBindingCreateSchema } from '@spark/protocol'
+import { AUTO_ROUTER_PROVIDER_TYPE, SessionWorkflowBindingCreateSchema } from '@spark/protocol'
 import { SerialTaskQueue } from './sidebar-manual-order'
 import {
   getPreferredProviderWithAdapterFallback,
@@ -1141,7 +1141,9 @@ export function SessionSidebarProvider({
           (p) => p.id === selectedProvider && isProviderCompatibleWithAdapter(p, preferredAdapter),
         )
         const hasConcreteCompatibleProvider = knownProviders.some(
-          (p) => !isAutoRouterProvider(p) && isProviderCompatibleWithAdapter(p, preferredAdapter),
+          (p) =>
+            p.providerType !== AUTO_ROUTER_PROVIDER_TYPE &&
+            isProviderCompatibleWithAdapter(p, preferredAdapter),
         )
         const profile =
           knownProviders.find((p) => p.id === optionProviderProfileId) ??
@@ -1151,7 +1153,8 @@ export function SessionSidebarProvider({
               isProviderCompatibleWithAdapter(p, preferredAdapter),
           ) ??
           (selectedProviderProfile != null &&
-          (!isAutoRouterProvider(selectedProviderProfile) || !hasConcreteCompatibleProvider)
+          (selectedProviderProfile.providerType !== AUTO_ROUTER_PROVIDER_TYPE ||
+            !hasConcreteCompatibleProvider)
             ? selectedProviderProfile
             : undefined) ??
           getPreferredProvider(knownProviders, prefs, preferredAdapter)

@@ -10,7 +10,6 @@ import {
 } from '@spark/protocol'
 
 import { Icons } from '../../Icons'
-import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
 import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
@@ -1173,7 +1172,6 @@ function isTextModelOperation(operation: CanvasOperationType): boolean {
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {
   return (
-    isProviderVisibleInUi(provider) &&
     (provider.modelType == null ||
       provider.modelType === 'text' ||
       provider.modelType === 'multimodal')

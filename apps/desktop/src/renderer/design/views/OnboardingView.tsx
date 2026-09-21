@@ -16,7 +16,6 @@ import { AuthGate } from '../auth/AuthGate'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
-import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { Icons } from '../Icons'
@@ -512,7 +511,7 @@ export function OnboardingView(): React.ReactElement {
       let modelId = state.modelId
       if (!providerId) {
         const providers = await listProviders({})
-        const profile = filterProvidersForVisibleUi(providers.profiles as ProviderProfile[])[0]
+        const profile = (providers.profiles as ProviderProfile[])[0]
         providerId = profile?.id ?? null
         modelId = modelId ?? profile?.defaultModel ?? null
       }

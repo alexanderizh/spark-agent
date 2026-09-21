@@ -160,8 +160,6 @@ const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   openai: OpenAI.Avatar as AvatarComponent,
   anthropic: Anthropic.Avatar as AvatarComponent,
   claude: Claude.Avatar as AvatarComponent,
-  'claude-auto-router': Claude.Avatar as AvatarComponent,
-  'codex-auto-router': Codex.Avatar as AvatarComponent,
   // 内置本地 CLI provider（id 与 provider profile id 对齐）
   'local-claude-cli': ClaudeCode.Avatar as AvatarComponent,
   'local-codex-cli': Codex.Avatar as AvatarComponent,
@@ -394,8 +392,6 @@ const VENDOR_ICON_MAP: Record<string, string> = {
   openai: 'openai',
   anthropic: 'anthropic',
   claude: 'claude',
-  'claude-auto-router': 'claude',
-  'codex-auto-router': 'codex',
   'local-claude-cli': 'claude-code',
   'local-codex-cli': 'codex',
   'google-gemini': 'gemini',

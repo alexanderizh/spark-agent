@@ -25,6 +25,7 @@ import type {
   WorkflowProgressNode,
 } from '../events/index.js'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
+import type { AutoRouterConfig } from '../auto-router-config.js'
 import type {
   ImageProcessProgress,
   ImageProcessRequest,
@@ -840,10 +841,21 @@ export interface ProviderProfile {
   id: string
   name: string
   provider: string
+  /**
+   * provider_profiles.provider_type 的镜像（anthropic / openai / …）。
+   * AutoRouter 行固定为 'auto-router'，其余渠道与其 provider 协议类型一致；
+   * 旧数据缺省时视为普通渠道。
+   */
+  providerType?: string
   /** Provider 是否参与会话、画布和多媒体工具的模型解析；旧数据缺省时按启用处理。 */
   enabled?: boolean
   defaultModel: string
   modelIds: string[]
+  /**
+   * AutoRouter 专用：读取侧解析并校验后的有效配置（仅 providerType='auto-router' 行存在）。
+   * 执行器条目已剔除引用失效项；配置整体不合法时该字段缺省。
+   */
+  autoRouterConfig?: AutoRouterConfig
   /** 受管 Provider 从服务端同步到的完整模型清单；modelIds 仅表示本机启用项。 */
   availableModelIds?: string[]
   /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */

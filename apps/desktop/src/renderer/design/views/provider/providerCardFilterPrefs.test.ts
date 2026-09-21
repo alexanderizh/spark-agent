@@ -2,7 +2,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AUTO_ROUTER_UI_VISIBLE } from '../../utils/auto-router-ui'
 import {
   DEFAULT_PROVIDER_CARD_FILTERS,
   PROVIDER_CARD_FILTERS_STORAGE_KEY,
@@ -53,10 +52,8 @@ describe('normalizeProviderCardFilters', () => {
     )
   })
 
-  it('router 仅在自动路由入口可见时才是合法筛选值（否则回落全部类型）', () => {
-    expect(normalizeProviderCardFilters({ kind: 'router' }).kind).toBe(
-      AUTO_ROUTER_UI_VISIBLE ? 'router' : 'all',
-    )
+  it('历史缓存中残留的 router 类别回落全部类型（旧路由卡已下线）', () => {
+    expect(normalizeProviderCardFilters({ kind: 'router' }).kind).toBe('all')
   })
 })
 

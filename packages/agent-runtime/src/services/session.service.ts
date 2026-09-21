@@ -97,9 +97,10 @@ import {
   isLocalCodexCliProvider,
   pickUserMessagePresentation,
   resolveUserMessageDisplayText,
-  getAutoRouterAdapterForProviderId,
+  isLegacyAutoRouterProviderId,
+  AUTO_ROUTER_PROVIDER_TYPE,
 } from '@spark/protocol'
-import { estimateTokens, normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
+import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
@@ -279,7 +280,6 @@ import {
   pickGoalDrainableRuntimeSelection,
   prepareTurnAttachments,
   getProviderUseSparkExecutor,
-  providerRowsForModelRouter,
   assertModelNotScheduledBlocked,
   readSessionTeamConfig,
   resolveCodexMemberExecutionProfile,
@@ -287,6 +287,7 @@ import {
   supportsOpenAIFastMode,
   toLastRunOutcome,
   withAgentSnapshot,
+  resolveLegacyRouterFallbackProviderRow,
 } from './session/session-pure-utils.js'
 import type { SessionRuntimePatch, WorktreePromptMeta } from './session/session-pure-utils.js'
 import {
@@ -467,7 +468,6 @@ import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
-import { ModelRouterService } from './model-router.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
@@ -2376,18 +2376,7 @@ export class SessionService {
       this.emitAndPersist(sessionId, turnId, authoritativeUserMessage, eventRepo)
     }
     let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
-    const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
-    const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
     const explicitModelId = isMentionTurn ? undefined : runtimePatch?.modelId?.trim()
-    const requestedModel =
-      explicitModelId ||
-      (runtimeAgentSelectionTakesPrecedence
-        ? runtimeAgent.modelId?.trim() || session.model_id
-        : sessionProviderProfileId
-          ? session.model_id?.trim()
-          : runtimeAgentProviderIsStale
-            ? session.model_id
-            : runtimeAgent.modelId?.trim() || session.model_id)
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -2398,7 +2387,23 @@ export class SessionService {
       }
       return row
     }
-    const autoRouterAdapter = getAutoRouterAdapterForProviderId(effectiveRuntimeProviderProfileId)
+    // 旧 Auto Router 伪 provider（魔法 id）已下线：引用它的存量会话回退默认渠道，
+    // 保证轮次可继续执行（配置废弃策略见 todo/2026-09-21 AutoRouter 重构方案 3.6）。
+    if (isLegacyAutoRouterProviderId(effectiveRuntimeProviderProfileId)) {
+      const fallbackRow = resolveLegacyRouterFallbackProviderRow(providerRepo.listAll())
+      log.warn('legacy auto-router provider fell back to default provider', {
+        sessionId,
+        turnId,
+        oldProviderId: effectiveRuntimeProviderProfileId,
+        fallbackProviderId: fallbackRow?.id ?? null,
+      })
+      if (fallbackRow == null) {
+        throw new Error(
+          '原 Auto Router 已下线，且当前没有可用的默认渠道；请在渠道管理中选择模型后重试',
+        )
+      }
+      effectiveRuntimeProviderProfileId = fallbackRow.id
+    }
     let provider: ProviderProfileRow
     let isLocalCli: boolean
 
@@ -2422,38 +2427,7 @@ export class SessionService {
     }
     let model: string
 
-    if (autoRouterAdapter != null) {
-      const selectedRoutingModelId = requestedModel?.trim() ?? ''
-      if (!selectedRoutingModelId) {
-        throw new Error(
-          `Auto router ${effectiveRuntimeProviderProfileId} requires a routing model card`,
-        )
-      }
-      const routeSelection = new ModelRouterService().resolveModelSelection({
-        selectedModelId: selectedRoutingModelId,
-        modelProfiles: modelProfilesForRouting,
-        providers: providersForRouting,
-        message,
-        // W1.1b：history 加载延后到 sdkResume 判定后，此处用 eventCount 估算。
-        // 系数 100 token/event 是保守上界（typical assistant message 200-500 token，
-        // user message 50-200）。消息本身统一走 shared tokenizer，避免中文低估；这里取保守值
-        // 避免 longContext 路径（128k threshold）漏判。
-        estimatedTokens: Math.max(estimateTokens(message), existingEventCount * 100),
-      })
-      if (routeSelection == null) {
-        throw new Error(`Routing model not found or disabled: ${selectedRoutingModelId}`)
-      }
-      if (routeSelection.adapter !== autoRouterAdapter) {
-        throw new Error(
-          `Routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`,
-        )
-      }
-      effectiveRuntimeProviderProfileId = routeSelection.providerProfileId
-      provider = loadProvider(effectiveRuntimeProviderProfileId)
-      isLocalCli = isBuiltInLocalCliProvider(provider)
-      config = JSON.parse(provider.config_json) as typeof config
-      model = routeSelection.modelId
-    } else {
+    {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
@@ -2497,7 +2471,7 @@ export class SessionService {
       const overrideConfig = JSON.parse(overrideProvider.config_json) as typeof config
       if (
         isBuiltInLocalCliProvider(overrideProvider) ||
-        getAutoRouterAdapterForProviderId(overrideProvider.id) != null ||
+        overrideProvider.provider_type === AUTO_ROUTER_PROVIDER_TYPE ||
         !isCliSparkOverrideCompatible(cliProvider, overrideProvider, overrideConfig)
       ) {
         throw new Error(
@@ -7787,9 +7761,6 @@ export class SessionService {
       return row
     }
     const memberRouteMessage = buildMemberUserMessage(task)
-    const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
-    const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
-    const autoRouterAdapter = getAutoRouterAdapterForProviderId(providerProfileId)
     let provider: ProviderProfileRow
     let isLocalCli: boolean
     let providerConfig: {
@@ -7807,30 +7778,22 @@ export class SessionService {
     }
     let model: string
 
-    if (autoRouterAdapter != null) {
-      const selectedRoutingModelId = member.modelId?.trim() ?? ''
-      if (!selectedRoutingModelId)
-        throw new Error(`Member auto router ${providerProfileId} requires a routing model card`)
-      const routeSelection = new ModelRouterService().resolveModelSelection({
-        selectedModelId: selectedRoutingModelId,
-        modelProfiles: modelProfilesForRouting,
-        providers: providersForRouting,
-        message: memberRouteMessage,
-        estimatedTokens: estimateTokens(memberRouteMessage),
+    // 旧 Auto Router 魔法 id 已下线：成员引用回退默认渠道，与主循环解析保持一致。
+    if (isLegacyAutoRouterProviderId(providerProfileId)) {
+      const fallbackRow = resolveLegacyRouterFallbackProviderRow(providerRepo.listAll())
+      log.warn('member legacy auto-router provider fell back to default provider', {
+        sessionId,
+        providerProfileId,
+        fallbackProviderId: fallbackRow?.id ?? null,
       })
-      if (routeSelection == null)
-        throw new Error(`Member routing model not found or disabled: ${selectedRoutingModelId}`)
-      if (routeSelection.adapter !== autoRouterAdapter) {
+      if (fallbackRow == null) {
         throw new Error(
-          `Member routing model adapter mismatch: expected ${autoRouterAdapter}, got ${routeSelection.adapter}`,
+          '原 Auto Router 已下线，且当前没有可用的默认渠道；请在渠道管理中选择模型后重试',
         )
       }
-      providerProfileId = routeSelection.providerProfileId
-      provider = loadProvider(providerProfileId)
-      isLocalCli = isBuiltInLocalCliProvider(provider)
-      providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
-      model = routeSelection.modelId
-    } else {
+      providerProfileId = fallbackRow.id
+    }
+    {
       provider = loadProvider(providerProfileId)
       isLocalCli = isBuiltInLocalCliProvider(provider)
       providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
@@ -7863,7 +7826,7 @@ export class SessionService {
       const overrideConfig = JSON.parse(overrideProvider.config_json) as typeof providerConfig
       const incompatible =
         isBuiltInLocalCliProvider(overrideProvider) ||
-        getAutoRouterAdapterForProviderId(overrideProvider.id) != null ||
+        overrideProvider.provider_type === AUTO_ROUTER_PROVIDER_TYPE ||
         !isCliSparkOverrideCompatible(cliProvider, overrideProvider, overrideConfig)
       if (!incompatible) {
         const validModels = getProviderModelIds(overrideProvider.config_json)
@@ -8029,7 +7992,7 @@ export class SessionService {
     // 作废（continuity key 的设计意图被自身抵消）。现改为 per-dispatch 载荷——追加到发
     // 给执行器的 user message 尾部，内容逐字保留仅位置后移：member system 收敛为
     // (member, teamConfig, roster) 级稳定（member 记忆块已后置到段尾，记忆更新只影响
-    // 尾部）。刻意不并入 memberRouteMessage：auto-router 分类（见上）与 memory 抽取
+    // 尾部）。刻意不并入 memberRouteMessage：memory 抽取
     // （见 maybeWriteMemoryFromTurn）只看任务本身，不看讨论上下文。
     const memberThreadContext =
       discussionId != null

@@ -45,7 +45,6 @@ import {
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
-import { filterProvidersForVisibleUi } from '../../utils/auto-router-ui'
 import { countExistingMembers } from '../../teamMembership'
 import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spark/shared'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
@@ -53,24 +52,17 @@ import { projectQueuedTurnsForDisplay } from './internal-turn-message-visibility
 import { SessionWorkflowPicker } from './workflow/SessionWorkflowPicker'
 import { useNewSessionWorkflowDraft } from './workflow/useNewSessionWorkflowDraft'
 import {
-  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
-  CODEX_AUTO_ROUTER_PROVIDER_ID,
-  CODEX_AUTO_ROUTER_PROVIDER_NAME,
+  AUTO_ROUTER_PROVIDER_TYPE,
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   VENDOR_CATALOG,
   type CliSparkOverride,
-  isAutoRouterProvider,
   isBuiltInLocalCliProvider,
-  isClaudeAutoRouterProvider,
-  isRoutingModelConfig,
   type CommandListItem,
   type ManagedAgent,
   type ManagedTeam,
-  type ModelProfile,
   type PermissionApprovalRequest,
   type ProviderProfile,
   type SessionChatMode,
@@ -1046,7 +1038,8 @@ export function ComposerV2({
     session?.modelId != null &&
     session.modelId.trim().length > 0 &&
     (sessionProvider == null || sessionProvider.id !== concreteSessionModelProvider.id) &&
-    (!sessionProviderMatchesModel || isAutoRouterProvider(sessionProvider))
+    (!sessionProviderMatchesModel ||
+      sessionProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE)
   const draftProvider =
     session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
   const selectedProvider =
@@ -5613,46 +5606,11 @@ function ProviderModelPicker({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   const { pinned, isPinned, togglePinned } = usePinnedModels()
-  const { invoke: listModels } = useIpcInvoke('model:list')
-  const [modelCards, setModelCards] = useState<ModelProfile[]>([])
-  const refreshModelCards = useCallback(async () => {
-    try {
-      const res = await listModels({})
-      setModelCards((res as { models?: ModelProfile[] }).models ?? [])
-    } catch {
-      setModelCards([])
-    }
-  }, [listModels])
-  useEffect(() => {
-    let canceled = false
-    refreshModelCards().catch(() => {
-      if (!canceled) setModelCards([])
-    })
-    return () => {
-      canceled = true
-    }
-  }, [refreshModelCards])
-  useEffect(() => {
-    return (
-      window.spark?.on?.('stream:config:changed', (event) => {
-        if (event.scope === 'model' || event.scope === 'provider') void refreshModelCards()
-      }) ?? (() => {})
-    )
-  }, [refreshModelCards])
-  const modelNameById = useMemo(() => {
-    const entries: Array<[string, string]> = modelCards
-      .filter(
-        (model) =>
-          model.enabled && isAutoRouterProvider(model.providerId) && isRoutingModelCard(model),
-      )
-      .map((model) => [model.id, model.name] as const)
-    return new Map(entries)
-  }, [modelCards])
   // 会话对话场景仅展示文本/多模态对话模型，过滤掉图片/语音/视频等多媒体生成模型
   // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）
   const conversationalProviders = useMemo(
     () =>
-      filterProvidersForVisibleUi(providers).filter(
+      providers.filter(
         (provider) =>
           provider.modelType !== 'image' &&
           provider.modelType !== 'voice' &&
@@ -5684,7 +5642,7 @@ function ProviderModelPicker({
               : configuredModels.filter(
                   (modelId) =>
                     modelId.toLowerCase().includes(normalizedSearch) ||
-                    getPickerModelDisplayLabel(provider, modelId, modelNameById)
+                    getPickerModelDisplayLabel(provider, modelId)
                       .toLowerCase()
                       .includes(normalizedSearch),
                 )
@@ -5695,7 +5653,7 @@ function ProviderModelPicker({
       result.set(primaryId, groups)
     }
     return result
-  }, [cliSparkProvidersByPrimaryId, modelNameById, normalizedSearch])
+  }, [cliSparkProvidersByPrimaryId, normalizedSearch])
   const filteredProviderGroups = prioritizeManagedProviderGroups(
     conversationalProviders
       .map((provider) => {
@@ -5704,16 +5662,7 @@ function ProviderModelPicker({
           : provider.defaultModel
             ? [provider.defaultModel]
             : []
-        const routeModels = modelCards
-          .filter(
-            (model) =>
-              isAutoRouterProvider(provider) &&
-              model.enabled &&
-              model.providerId === provider.id &&
-              isRoutingModelCard(model),
-          )
-          .map((model) => model.id)
-        const models = Array.from(new Set([...configuredModels, ...routeModels]))
+        const models = Array.from(new Set(configuredModels))
         if (normalizedSearch === '') return { provider, models }
         const vendorName = resolveProviderVendor(provider)?.name ?? ''
         const providerMatches =
@@ -5724,7 +5673,7 @@ function ProviderModelPicker({
           : models.filter(
               (modelId) =>
                 modelId.toLowerCase().includes(normalizedSearch) ||
-                getPickerModelDisplayLabel(provider, modelId, modelNameById)
+                getPickerModelDisplayLabel(provider, modelId)
                   .toLowerCase()
                   .includes(normalizedSearch),
             )
@@ -5766,13 +5715,9 @@ function ProviderModelPicker({
       : undefined
   const selectedCliSparkModelLabel =
     selectedCliSparkProvider != null && cliSparkOverride != null
-      ? getPickerModelDisplayLabel(
-          selectedCliSparkProvider,
-          cliSparkOverride.modelId,
-          modelNameById,
-        )
+      ? getPickerModelDisplayLabel(selectedCliSparkProvider, cliSparkOverride.modelId)
       : undefined
-  const primaryLabel = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
+  const primaryLabel = getPickerModelDisplayLabel(selectedProvider, selectedModelId)
   const label =
     selectedCliSparkModelLabel != null
       ? `${primaryLabel} · ${selectedCliSparkModelLabel}`
@@ -5859,7 +5804,7 @@ function ProviderModelPicker({
                   return (
                     <ModelPickerMenuItem
                       key={`pinned:${provider.id}:${modelId}`}
-                      label={getPickerModelDisplayLabel(provider, modelId, modelNameById)}
+                      label={getPickerModelDisplayLabel(provider, modelId)}
                       active={
                         provider.id === resolvedSelectedProviderId && modelId === selectedModelId
                       }
@@ -5902,11 +5847,7 @@ function ProviderModelPicker({
                     : undefined
                 const sparkModelLabel =
                   sparkProvider != null && cliSparkOverride != null
-                    ? getPickerModelDisplayLabel(
-                        sparkProvider,
-                        cliSparkOverride.modelId,
-                        modelNameById,
-                      )
+                    ? getPickerModelDisplayLabel(sparkProvider, cliSparkOverride.modelId)
                     : undefined
                 return (
                   <CliProviderModelMenu
@@ -5915,8 +5856,8 @@ function ProviderModelPicker({
                     primaryModelId={primaryModelId}
                     primaryModelLabel={
                       sparkModelLabel != null
-                        ? `${getPickerModelDisplayLabel(provider, primaryModelId, modelNameById)} · ${sparkModelLabel}`
-                        : getPickerModelDisplayLabel(provider, primaryModelId, modelNameById)
+                        ? `${getPickerModelDisplayLabel(provider, primaryModelId)} · ${sparkModelLabel}`
+                        : getPickerModelDisplayLabel(provider, primaryModelId)
                     }
                     primarySelected={provider.id === resolvedSelectedProviderId}
                     sparkOverride={cliSparkOverride ?? null}
@@ -5926,7 +5867,7 @@ function ProviderModelPicker({
                     togglePinned={togglePinned}
                     resolveVendor={resolveProviderVendor}
                     getModelLabel={(sparkProvider, modelId) =>
-                      getPickerModelDisplayLabel(sparkProvider, modelId, modelNameById)
+                      getPickerModelDisplayLabel(sparkProvider, modelId)
                     }
                     onSelectPrimaryModel={() => {
                       setOpen(false)
@@ -5967,7 +5908,7 @@ function ProviderModelPicker({
                     return (
                       <ModelPickerMenuItem
                         key={`${provider.id}:${modelId}`}
-                        label={getPickerModelDisplayLabel(provider, modelId, modelNameById)}
+                        label={getPickerModelDisplayLabel(provider, modelId)}
                         active={active}
                         pinned={isPinned(provider.id, modelId)}
                         onSelect={() => {
@@ -6532,7 +6473,8 @@ function findConcreteProviderForModel(
   modelId: string | null | undefined,
 ): ProviderProfile | undefined {
   return providers.find(
-    (provider) => !isAutoRouterProvider(provider) && providerSupportsModel(provider, modelId),
+    (provider) =>
+      provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE && providerSupportsModel(provider, modelId),
   )
 }
 
@@ -6566,24 +6508,6 @@ const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
   logoPath: '',
 }
 
-const CLAUDE_AUTO_ROUTER_VENDOR: VendorMeta = {
-  id: CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  name: CLAUDE_AUTO_ROUTER_PROVIDER_NAME,
-  emoji: 'AR',
-  color: '#d97757',
-  desc: '',
-  logoPath: '',
-}
-
-const CODEX_AUTO_ROUTER_VENDOR: VendorMeta = {
-  id: CODEX_AUTO_ROUTER_PROVIDER_ID,
-  name: CODEX_AUTO_ROUTER_PROVIDER_NAME,
-  emoji: 'AR',
-  color: '#10a37f',
-  desc: '',
-  logoPath: '',
-}
-
 /**
  * 按协议格式（anthropic / openai）合成 vendor，让自定义供应商也能渲染出官方彩色图标。
  * id 对齐 ProviderLogo 的 VENDOR_AVATAR_MAP（anthropic → Anthropic.Avatar，openai → OpenAI.Avatar）。
@@ -6611,11 +6535,6 @@ function resolveProviderVendor(provider: ProviderProfile | null | undefined): Ve
   if (!provider) return null
   const managedVendor = resolveManagedPlatformVendor(provider)
   if (managedVendor) return managedVendor
-  if (isAutoRouterProvider(provider)) {
-    return isClaudeAutoRouterProvider(provider)
-      ? CLAUDE_AUTO_ROUTER_VENDOR
-      : CODEX_AUTO_ROUTER_VENDOR
-  }
   if (provider.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_VENDOR
   if (provider.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLAUDE_CLI_VENDOR
 
@@ -6675,19 +6594,8 @@ function getModelDisplayLabel(
 function getPickerModelDisplayLabel(
   provider: ProviderProfile | null | undefined,
   modelId: string | null | undefined,
-  routeModelNameById: Map<string, string>,
 ): string {
-  const routeName = modelId != null ? routeModelNameById.get(modelId) : undefined
-  return routeName ?? getModelDisplayLabel(provider, modelId)
-}
-
-function isRoutingModelCard(model: ModelProfile): boolean {
-  try {
-    const parsed = JSON.parse(model.configJson) as unknown
-    return isRoutingModelConfig(parsed)
-  } catch {
-    return false
-  }
+  return getModelDisplayLabel(provider, modelId)
 }
 
 function getReasoningOptions(

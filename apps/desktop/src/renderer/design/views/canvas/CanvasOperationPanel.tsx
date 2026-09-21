@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Input, InputNumber, Popover, Select, Switch, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
-import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
 import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import {
   capabilitySupportsFrameRoles,
@@ -3279,7 +3278,6 @@ function canRepollCanvasTask(task: CanvasTask): boolean {
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {
   return (
-    isProviderVisibleInUi(provider) &&
     (provider.modelType == null ||
       provider.modelType === 'text' ||
       provider.modelType === 'multimodal')

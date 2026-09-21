@@ -6,8 +6,6 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
-  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-  CODEX_AUTO_ROUTER_PROVIDER_ID,
   createBasicCustomMediaManifest,
 } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
@@ -458,49 +456,13 @@ describe('ProviderService', () => {
     })
   })
 
-  it('hides auto router providers when there are no routeable text model profiles', async () => {
+  it('does not synthesize legacy auto router pseudo providers anymore', async () => {
     const listed = await service.listProviders()
 
-    expect(listed.some((item) => item.id === CLAUDE_AUTO_ROUTER_PROVIDER_ID)).toBe(false)
-    expect(listed.some((item) => item.id === CODEX_AUTO_ROUTER_PROVIDER_ID)).toBe(false)
-  })
-
-  it('shows only auto routers backed by routeable text providers', async () => {
-    repo.rows.set('anthropic-text', {
-      id: 'anthropic-text',
-      provider_type: 'anthropic',
-      name: 'Anthropic Text',
-      config_json: JSON.stringify({
-        defaultModel: 'claude-sonnet',
-        modelIds: ['claude-sonnet'],
-        modelType: 'text',
-      }),
-      enabled: 1,
-      keystore_ref: 'anthropic-text-key',
-      is_default: 0,
-      created_at: '',
-      updated_at: '',
-    })
-    repo.rows.set('openai-image', {
-      id: 'openai-image',
-      provider_type: 'openai',
-      name: 'OpenAI Image',
-      config_json: JSON.stringify({
-        defaultModel: 'gpt-image',
-        modelIds: ['gpt-image'],
-        modelType: 'image',
-      }),
-      enabled: 1,
-      keystore_ref: 'openai-image-key',
-      is_default: 0,
-      created_at: '',
-      updated_at: '',
-    })
-
-    const listed = await service.listProviders()
-
-    expect(listed.some((item) => item.id === CLAUDE_AUTO_ROUTER_PROVIDER_ID)).toBe(true)
-    expect(listed.some((item) => item.id === CODEX_AUTO_ROUTER_PROVIDER_ID)).toBe(false)
+    // 旧伪 provider（魔法 id 动态合成）已下线：即使存在可用文本渠道也不应出现
+    expect(listed.some((item) => item.id === 'claude-auto-router')).toBe(false)
+    expect(listed.some((item) => item.id === 'codex-auto-router')).toBe(false)
+    expect(listed.some((item) => item.providerType === 'auto-router')).toBe(false)
   })
 
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
@@ -890,19 +852,11 @@ describe('ProviderService', () => {
     const profiles = await service.listProviders()
 
     const realProfile = profiles.find((profile) => profile.id === 'id-4')
-    const claudeRouter = profiles.find((profile) => profile.id === CLAUDE_AUTO_ROUTER_PROVIDER_ID)
-    const codexRouter = profiles.find((profile) => profile.id === CODEX_AUTO_ROUTER_PROVIDER_ID)
 
     expect(realProfile).toBeDefined()
     expect(realProfile).not.toHaveProperty('apiKey')
     expect(realProfile!.defaultModel).toBe('claude-3')
     expect(realProfile!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
-    expect(claudeRouter).toMatchObject({
-      id: CLAUDE_AUTO_ROUTER_PROVIDER_ID,
-      provider: 'anthropic',
-      keystoreRef: '',
-    })
-    expect(codexRouter).toBeUndefined()
   })
 
   it('normalizes the built-in local CLI provider model display config', async () => {

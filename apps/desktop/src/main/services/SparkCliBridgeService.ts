@@ -5,17 +5,13 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
 import { buildAnthropicAuthHeaders, createLogger, resolveAnthropicMessagesUrl } from '@spark/shared'
+import { AUTO_ROUTER_PROVIDER_TYPE } from '@spark/protocol'
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024
 const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024
 const LF_BOUNDARY = Buffer.from('\n\n')
 const CRLF_BOUNDARY = Buffer.from('\r\n\r\n')
-const NON_HTTP_PROVIDER_IDS = new Set([
-  'local-cli',
-  'local-codex-cli',
-  'claude-auto-router',
-  'codex-auto-router',
-])
+const NON_HTTP_PROVIDER_IDS = new Set(['local-cli', 'local-codex-cli'])
 // bridge.json 是单实例时代的遗留名；每实例独立文件（bridge-<instanceId>.json）
 // 之后，旧名仍会被启动期 GC 清理，避免升级残留永久霸占发现路径。
 const DESCRIPTOR_NAME = /^bridge(-[A-Za-z0-9._-]{1,200})?\.json$/u
@@ -46,6 +42,8 @@ export interface SparkCliProviderProfile {
   id: string
   name: string
   provider: string
+  /** provider_profiles.provider_type；AutoRouter 行（'auto-router'）无 HTTP 端点。 */
+  providerType?: string
   enabled?: boolean
   defaultModel: string
   modelIds: string[]
@@ -211,6 +209,7 @@ function providerRoutes(provider: SparkCliProviderProfile): CatalogRoute[] {
   if (
     provider.enabled === false ||
     NON_HTTP_PROVIDER_IDS.has(provider.id) ||
+    provider.providerType === AUTO_ROUTER_PROVIDER_TYPE ||
     !protocol ||
     provider.modelType === 'image'
   ) {

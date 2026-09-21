@@ -25,7 +25,6 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
-import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
 import type {
@@ -72,6 +71,12 @@ import {
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { InspectorField, TagPicker, asStringArray } from './workflow/inspector-fields'
 import { WorkflowToolConfigPanel } from './workflow/WorkflowToolConfigPanel'
+import { WorkflowNodeRuntimeFields } from './workflow/WorkflowNodeRuntimeFields'
+import {
+  buildAgentBindingPatch,
+  buildProviderModelIndex,
+  collectModelIds,
+} from './workflow/node-model-options'
 import { openWorkflowTestRunSession } from './workflow/open-test-run-session'
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
@@ -303,7 +308,7 @@ function WorkflowViewInner() {
         listAgents({}),
       ])
       setWorkflows(workflowRes.workflows)
-      setProviders(filterProvidersForVisibleUi(providerRes.profiles))
+      setProviders(providerRes.profiles)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
@@ -401,19 +406,9 @@ function WorkflowViewInner() {
     [editingLoopBody],
   )
 
-  const modelOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          providers
-            .flatMap((provider) =>
-              provider.modelIds.length ? provider.modelIds : [provider.defaultModel],
-            )
-            .filter(Boolean),
-        ),
-      ),
-    [providers],
-  )
+  // 渠道 → 模型候选索引：检查器按节点生效渠道收窄模型下拉，避免选到别的渠道的模型。
+  const providerModelIndex = useMemo(() => buildProviderModelIndex(providers), [providers])
+  const allModelIds = useMemo(() => collectModelIds(providerModelIndex), [providerModelIndex])
 
   const patchDraftMeta = (patch: Partial<WorkflowItem>) => {
     setDraft((prev) => (prev == null ? prev : { ...prev, ...patch }))
@@ -1321,7 +1316,8 @@ function WorkflowViewInner() {
         <WorkflowInspector
           node={selectedNode}
           providers={providers}
-          modelOptions={modelOptions}
+          providerModelIndex={providerModelIndex}
+          allModelIds={allModelIds}
           skills={skills}
           rules={rules}
           mcpServers={mcpServers}
@@ -1547,7 +1543,10 @@ function defaultStarterGraph(): WorkflowGraph {
 type InspectorProps = {
   node: SparkFlowNode | null
   providers: ProviderProfile[]
-  modelOptions: string[]
+  /** providerId → 该渠道可选模型：生效渠道已知时据此收窄模型下拉。 */
+  providerModelIndex: ReadonlyMap<string, string[]>
+  /** 全部渠道模型并集：生效渠道未知（继承宿主 Agent）时的兜底候选。 */
+  allModelIds: string[]
   skills: SkillItem[]
   rules: RuleItem[]
   mcpServers: McpServerItem[]
@@ -1567,7 +1566,8 @@ function WorkflowInspector(props: InspectorProps) {
   const {
     node,
     providers,
-    modelOptions,
+    providerModelIndex,
+    allModelIds,
     skills,
     rules,
     mcpServers,
@@ -1647,6 +1647,18 @@ function WorkflowInspector(props: InspectorProps) {
       })
     }
   }
+  // 绑定 Agent 决定「继承 Agent」时的渠道来源：换 Agent 一并校正模型归属。
+  const patchAgentBinding = (nextAgentId: string) => {
+    props.onPatchConfig(
+      buildAgentBindingPatch({
+        agents,
+        providerModelIndex,
+        configProviderProfileId: config.providerProfileId,
+        configModelId: config.modelId,
+        nextAgentId,
+      }),
+    )
+  }
   const patchLoopBodyDraft = (value: string) => {
     setLoopBodyDraft(value)
     try {
@@ -1717,26 +1729,14 @@ function WorkflowInspector(props: InspectorProps) {
             )}
           />
         </InspectorField>
-        <InspectorField label="Provider">
-          <LobeSelect
-            value={String(config.providerProfileId ?? '')}
-            onChange={(value) => props.onPatchConfig({ providerProfileId: String(value) || null })}
-            options={[
-              { label: '继承 Agent', value: '' },
-              ...providers.map((provider) => ({ label: provider.name, value: provider.id })),
-            ]}
-          />
-        </InspectorField>
-        <InspectorField label="模型">
-          <LobeSelect
-            value={String(config.modelId ?? '')}
-            onChange={(value) => props.onPatchConfig({ modelId: String(value) || null })}
-            options={[
-              { label: '继承 Agent', value: '' },
-              ...modelOptions.map((model) => ({ label: model, value: model })),
-            ]}
-          />
-        </InspectorField>
+        <WorkflowNodeRuntimeFields
+          config={config}
+          providers={providers}
+          providerModelIndex={providerModelIndex}
+          allModelIds={allModelIds}
+          agents={agents}
+          onPatchConfig={props.onPatchConfig}
+        />
         <InspectorField label="节点提示词">
           <LobeTextArea
             rows={6}
@@ -1977,7 +1977,7 @@ function WorkflowInspector(props: InspectorProps) {
           <InspectorField label="执行 Agent">
             <LobeSelect
               value={String(config.agentId ?? '')}
-              onChange={(value) => props.onPatchConfig({ agentId: String(value) || null })}
+              onChange={(value) => patchAgentBinding(String(value ?? ''))}
               options={[
                 { label: '宿主 Agent（当前会话）', value: '' },
                 ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),
@@ -1990,7 +1990,7 @@ function WorkflowInspector(props: InspectorProps) {
             <InspectorField label="子代理">
               <LobeSelect
                 value={String(config.agentId ?? '')}
-                onChange={(value) => props.onPatchConfig({ agentId: String(value) || null })}
+                onChange={(value) => patchAgentBinding(String(value ?? ''))}
                 options={[
                   { label: '生成临时子代理', value: '' },
                   ...selectableAgents.map((agent) => ({ label: agent.name, value: agent.id })),

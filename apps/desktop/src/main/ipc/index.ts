@@ -251,7 +251,7 @@ import type {
 } from '@spark/protocol'
 import {
   MediaModelManifestSchema,
-  isAutoRouterProvider,
+  AUTO_ROUTER_PROVIDER_TYPE,
   migrateMediaModelManifestToV2,
   createScheduledTaskTurnPresentation,
   validateMediaModelManifestSemantics,
@@ -7840,7 +7840,7 @@ export function registerAllIpcHandlers(): void {
       const providers = await getProviderService().listProviders()
       svc.seedDefaultModels(
         providers
-          .filter((provider) => !isAutoRouterProvider(provider))
+          .filter((provider) => provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE)
           .map((p) => ({ id: p.id, provider: p.provider })),
       )
       models = svc.list(req.providerId !== undefined ? { providerId: req.providerId } : undefined)
