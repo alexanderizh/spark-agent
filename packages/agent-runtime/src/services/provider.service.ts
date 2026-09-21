@@ -427,7 +427,10 @@ function logAutoRouterConfigChange(
       routerId,
       routerName,
       adapter: config.adapter,
-      dispatcher: { providerId: config.dispatcher.providerProfileId, model: config.dispatcher.modelId },
+      dispatcher: {
+        providerId: config.dispatcher.providerProfileId,
+        model: config.dispatcher.modelId,
+      },
       executorCount: config.executors.length,
       intensitySlots: [...new Set(config.executors.map((entry) => entry.intensity))],
     })
@@ -2455,11 +2458,12 @@ function rowToAutoRouterExportProfile(
   row: ProviderProfileRowInput,
   allRows: ProviderProfileRowInput[],
 ): ProviderExportProfile {
+  // 解析失败时 config 保持初始 null（catch 里再赋一次 null 属于无读取的多余赋值，lint 报 no-useless-assignment）
   let config: AutoRouterConfig | null = null
   try {
     config = parseAutoRouterConfig(JSON.parse(row.config_json))
   } catch {
-    config = null
+    // 配置损坏：按「无 AutoRouter 配置」导出，引用校验由导入端兜底
   }
   const nameById = new Map(allRows.map((item) => [item.id, item.name]))
   return {
@@ -2476,8 +2480,7 @@ function rowToAutoRouterExportProfile(
     ...(config != null && {
       autoRouterConfig: config,
       autoRouterReferencedNames: [
-        nameById.get(config.dispatcher.providerProfileId) ??
-          config.dispatcher.providerProfileId,
+        nameById.get(config.dispatcher.providerProfileId) ?? config.dispatcher.providerProfileId,
         ...config.executors.map(
           (entry) => nameById.get(entry.providerProfileId) ?? entry.providerProfileId,
         ),
