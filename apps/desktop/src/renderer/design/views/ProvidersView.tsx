@@ -23,6 +23,11 @@ import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotic
 import { SparkExecutorSwitch } from './provider/SparkExecutorSwitch'
 import { sparkExecutorAvailability } from '../utils/sparkExecutorAvailability'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
+import {
+  ProviderContextWindowSlider,
+  CONTEXT_WINDOW_SLIDER_MIN,
+  CONTEXT_WINDOW_SLIDER_MAX,
+} from './provider/ProviderContextWindowSlider'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
 import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
@@ -112,7 +117,6 @@ import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
 import { editableProviderApiKeyPayload, loadEditableProviderSnapshot } from './providerApiKeyEcho'
-import { CONTEXT_WINDOW_PRESETS, resolveContextWindowSelectValue } from '../utils/context-window'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -845,9 +849,12 @@ export function resolveProviderCardKind(profile: ProviderProfile): ProviderCardK
   return 'text'
 }
 
-/** 自动路由卡片的合成 vendor：无真实厂商，用「⇄」+ 中性紫渲染 logo fallback */
+/**
+ * 自动路由卡片的合成 vendor：无真实厂商，走 ProviderLogo 的 Avatar 分支
+ * 渲染专属 SVG 路由图标（VENDOR_AVATAR_MAP['auto-router']），emoji 仅作兜底。
+ */
 const AUTO_ROUTER_VENDOR_META: VendorMeta = {
-  id: '',
+  id: 'auto-router',
   name: '自动路由',
   emoji: '⇄',
   color: '#a855f7',
@@ -2157,7 +2164,8 @@ export function ProviderEditPanel({
   const [invocationPreviewError, setInvocationPreviewError] = useState('')
   const [invocationPreviewLoading, setInvocationPreviewLoading] = useState(false)
   // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
-  // 避免用户清空输入框时下拉跳回"默认"并卸载输入框。
+  // 标记滑块切换到了数字输入（范围外数值 / 用户点「自定义」），
+  // 避免用户清空输入框时滑块跳回"默认"并卸载输入框。
   const [isCustomContextWindow, setIsCustomContextWindow] = useState(false)
   const [fetchedModels, setFetchedModels] = useState<ProviderFetchedModel[]>([])
   const [fetchingModels, setFetchingModels] = useState(false)
@@ -2350,10 +2358,12 @@ export function ProviderEditPanel({
               : p.supportsMillionContext === true
                 ? 1_000_000
                 : 0
-          // 非预设值（如 50K / 256K 之外的自定义数）打开时直接进入自定义模式。
+          // 滑块范围外（<200K 或 >1M）的自定义数打开时直接进入自定义输入模式；
+          // 范围内的任意值（如 300K）由滑块直接承载，不再落入自定义输入。
           setIsCustomContextWindow(
             effectiveContextWindow > 0 &&
-              !CONTEXT_WINDOW_PRESETS.some((opt) => opt.value === effectiveContextWindow),
+              (effectiveContextWindow < CONTEXT_WINDOW_SLIDER_MIN ||
+                effectiveContextWindow > CONTEXT_WINDOW_SLIDER_MAX),
           )
           setForm({
             presetId: 'custom',
@@ -3677,63 +3687,21 @@ export function ProviderEditPanel({
               {isChatModel && (
                 <>
                   <label className="pv_form_label">上下文窗口</label>
-                  <div className="pv_form_control_inline">
-                    <Select
-                      size="middle"
-                      style={{ width: 160 }}
-                      value={
-                        isCustomContextWindow
-                          ? -1
-                          : resolveContextWindowSelectValue(form.contextWindow)
-                      }
-                      onChange={(value: number) => {
-                        if (value === -1) {
-                          // 切到自定义：保留当前值或回落 256k；isCustomContextWindow 独立标记意图
-                          setIsCustomContextWindow(true)
-                          const next = form.contextWindow > 0 ? form.contextWindow : 256_000
-                          setForm((prev) => ({
-                            ...prev,
-                            contextWindow: next,
-                            supportsMillionContext: next === 1_000_000,
-                          }))
-                        } else {
-                          setIsCustomContextWindow(false)
-                          setForm((prev) => ({
-                            ...prev,
-                            contextWindow: value,
-                            supportsMillionContext: value === 1_000_000,
-                          }))
-                        }
-                      }}
-                      options={CONTEXT_WINDOW_PRESETS}
-                    />
-                    {isCustomContextWindow && (
-                      <Input
-                        size="middle"
-                        style={{ width: 140, marginInlineStart: 8 }}
-                        type="number"
-                        min={1024}
-                        max={10_000_000}
-                        step={1024}
-                        value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
-                        placeholder="tokens"
-                        onChange={(e) => {
-                          const raw = Number((e.target as HTMLInputElement).value)
-                          // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
-                          // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
-                          let next = 0
-                          if (Number.isFinite(raw) && raw > 0) {
-                            next = Math.min(Math.floor(raw), 10_000_000)
-                          }
-                          setForm((prev) => ({
-                            ...prev,
-                            contextWindow: next,
-                            supportsMillionContext: next === 1_000_000,
-                          }))
-                        }}
-                      />
-                    )}
-                  </div>
+                  <ProviderContextWindowSlider
+                    value={form.contextWindow}
+                    supportsMillionContext={form.supportsMillionContext}
+                    isCustom={isCustomContextWindow}
+                    disabled={saving || testingConnection}
+                    onChange={(contextWindow) => {
+                      // 滑块 / 自定义输入统一出口：supportsMillionContext 仅在显式 1M 时为 true
+                      setForm((prev) => ({
+                        ...prev,
+                        contextWindow,
+                        supportsMillionContext: contextWindow === 1_000_000,
+                      }))
+                    }}
+                    onIsCustomChange={setIsCustomContextWindow}
+                  />
                 </>
               )}
 

@@ -1,0 +1,156 @@
+// 渠道「上下文窗口」滑块：胶囊轨道 + 竖条手柄 + 对数刻度尺（样式对齐参考稿）
+.pv_cw {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+
+  &.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  // ─── 顶部：当前值 / 自定义输入 + 操作链接 ───
+  .pv_cw_head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .pv_cw_value {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+
+    &.is-default {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+  }
+
+  .pv_cw_input {
+    width: 160px;
+  }
+
+  .pv_cw_actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pv_cw_action {
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--primary);
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) {
+      opacity: 0.8;
+    }
+
+    &:disabled {
+      color: var(--text-faint);
+      cursor: not-allowed;
+    }
+  }
+
+  // ─── 胶囊轨道 ───
+  .pv_cw_track {
+    position: relative;
+    height: 22px;
+    border-radius: 11px;
+    background: var(--bg-sunken);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+
+    &.is-dragging {
+      cursor: grabbing;
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    &.is-default {
+      .pv_cw_fill,
+      .pv_cw_handle {
+        opacity: 0.45;
+      }
+    }
+  }
+
+  .pv_cw_fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 11px 0 0 11px;
+    background: var(--border-strong);
+    pointer-events: none;
+  }
+
+  // 竖条手柄：略微突出轨道上下，标记当前值分界点
+  .pv_cw_handle {
+    position: absolute;
+    top: 50%;
+    width: 4px;
+    height: 30px;
+    border-radius: 2px;
+    background: var(--primary);
+    box-shadow: var(--shadow-xs);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  // ─── 刻度尺 + 标签 ───
+  .pv_cw_scale {
+    position: relative;
+    height: 18px;
+    margin-top: -2px;
+  }
+
+  .pv_cw_tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 5px;
+    background: var(--border-strong);
+    opacity: 0.5;
+    transform: translateX(-50%);
+  }
+
+  .pv_cw_scale_label {
+    position: absolute;
+    top: 8px;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-faint);
+    white-space: nowrap;
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+
+    &.is-start {
+      transform: none;
+    }
+
+    &.is-end {
+      transform: translateX(-100%);
+    }
+
+    &.is-active {
+      color: var(--text);
+      font-weight: 600;
+    }
+  }
+}
