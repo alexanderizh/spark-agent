@@ -402,6 +402,35 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     lastFinishedAt: string | null
   } | null>(null)
   const syncMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 同步执行中的即时守卫：避免同一 tick 内重复触发（state 更新是异步的） */
+  const syncMenuBusyRef = useRef(false)
+
+  const clearSyncMenuCloseTimer = useCallback(() => {
+    if (syncMenuCloseTimerRef.current != null) {
+      clearTimeout(syncMenuCloseTimerRef.current)
+      syncMenuCloseTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => clearSyncMenuCloseTimer, [clearSyncMenuCloseTimer])
+
+  /**
+   * 菜单开合统一入口：关闭时顺手清掉本次同步结果，下次打开回到真实偏好状态；
+   * 同步结束后的自动收起也走这里，保证计时器与结果态一起清干净。
+   */
+  const handleUserMenuOpenChange = useCallback(
+    (next: boolean, info?: { source: 'trigger' | 'menu' }) => {
+      // 同步进行中保持菜单打开：antd 在菜单项点击后一定会请求收起，
+      // 这里只忽略「点菜单项」这一种来源，点触发器 / 点击外部仍然正常关闭。
+      if (!next && info?.source === 'menu' && syncMenuBusyRef.current) return
+      setUserMenuOpen(next)
+      if (!next) {
+        clearSyncMenuCloseTimer()
+        setSyncMenuOutcome(null)
+      }
+    },
+    [clearSyncMenuCloseTimer],
+  )
   const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
@@ -638,10 +667,13 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     setTweak('showPalette', true)
   }, [setTweak])
 
-  const handleOpenExternal = useCallback((url: string) => {
-    void window.spark?.invoke('browser:open-external', { url })
-    setUserMenuOpen(false)
-  }, [])
+  const handleOpenExternal = useCallback(
+    (url: string) => {
+      void window.spark?.invoke('browser:open-external', { url })
+      handleUserMenuOpenChange(false)
+    },
+    [handleUserMenuOpenChange],
+  )
 
   const handleCopyEmail = useCallback(async () => {
     try {
@@ -653,15 +685,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     }
   }, [toast, tr])
 
-  const clearSyncMenuCloseTimer = useCallback(() => {
-    if (syncMenuCloseTimerRef.current != null) {
-      clearTimeout(syncMenuCloseTimerRef.current)
-      syncMenuCloseTimerRef.current = null
-    }
-  }, [])
-
-  useEffect(() => clearSyncMenuCloseTimer, [clearSyncMenuCloseTimer])
-
   /**
    * 菜单一打开就取一次同步偏好，让「账号同步」行能显示未开启 / 上次同步时间；
    * 取不到时留空，不阻塞菜单其余入口。
@@ -669,7 +692,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   useEffect(() => {
     if (!userMenuOpen || !auth.isAuthenticated) return
     let cancelled = false
-    setSyncMenuOutcome(null)
     void window.spark
       .invoke('account-sync:get-preferences', {})
       .then((response) => {
@@ -694,7 +716,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
    * 用户菜单「账号同步」：已开启并勾选类别则直接执行，否则引导到设置页。
    * 返回执行去向，便于菜单决定「保持打开看 loading」还是「跳走并收起」。
    */
-  const syncMenuBusyRef = useRef(false)
   const handleQuickSync = useCallback(async (): Promise<'performed' | 'navigated' | 'busy'> => {
     if (syncMenuBusyRef.current) return 'busy'
     syncMenuBusyRef.current = true
@@ -756,15 +777,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     const outcome = await handleQuickSync()
     if (outcome === 'busy') return
     if (outcome === 'navigated') {
-      setUserMenuOpen(false)
+      handleUserMenuOpenChange(false)
       return
     }
     clearSyncMenuCloseTimer()
     syncMenuCloseTimerRef.current = setTimeout(() => {
       syncMenuCloseTimerRef.current = null
-      setUserMenuOpen(false)
+      handleUserMenuOpenChange(false)
     }, 1400)
-  }, [clearSyncMenuCloseTimer, handleQuickSync])
+  }, [clearSyncMenuCloseTimer, handleQuickSync, handleUserMenuOpenChange])
 
   const updateState = updateStatus?.state ?? 'idle'
   const updateProgressPercent = updateStatus?.progress?.percent ?? 0
@@ -883,7 +904,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     (key: string) => {
       if (key.startsWith('accent-')) {
         setTweak('primary', key.slice('accent-'.length))
-        setUserMenuOpen(false)
+        handleUserMenuOpenChange(false)
         return
       }
       switch (key) {
@@ -923,10 +944,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         default:
           return
       }
-      setUserMenuOpen(false)
+      handleUserMenuOpenChange(false)
     },
     [
       auth,
+      handleUserMenuOpenChange,
       handleCopyEmail,
       handleOpenExternal,
       handleUserMenuUpdate,
@@ -1178,7 +1200,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="sidebar-bottom-user">
           <UserMenuDropdown
             open={userMenuOpen}
-            onOpenChange={setUserMenuOpen}
+            onOpenChange={handleUserMenuOpenChange}
             tr={tr}
             account={{
               authenticated: auth.isAuthenticated,
