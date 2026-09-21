@@ -22,6 +22,25 @@ import {
   type UserMenuValue,
 } from './userMenuModel'
 
+/**
+ * 图标列统一规格：14px 视框、1.6 描边（渲染后约 0.93px 线宽）。
+ *
+ * 同一 size 渲染时墨迹并不等大：图形在 24 视框里占的百分比不同，实测
+ * 人像只有 0.67（渲染后 9.3×9.9px）、星芒 0.63（8.9×9.6px），而齿轮外的
+ * 阳光/调色板/云下载接近 0.83（11.7px）。两者按同一 size 出图就像漏了一号。
+ *
+ * 做法：这两类放大到图标槽上限并对描边等比收细，使墨迹落回与其余图标同一档
+ *（实测 10.7~11.6px，且线宽统一 0.93px）。
+ */
+const MENU_ICON_SIZE = 14
+const MENU_ICON_STROKE = 1.6
+/** 人像：墨迹占 0.67，16px 视框后约 10.7×11.3px */
+const PERSON_ICON_SIZE = 16
+/** 星芒：墨迹只占 0.63，需要再大一档才不至于显得小一圈 */
+const SPARKLE_ICON_SIZE = 17
+/** 等比收细描边，保证渲染后的实际线宽与其余图标一致 */
+const opticalStroke = (size: number): number => MENU_ICON_STROKE * (MENU_ICON_SIZE / size)
+
 export type UserMenuTranslate = (
   key: TranslationKey,
   params?: Record<string, string | number>,
@@ -64,7 +83,7 @@ function iconSlot(node: React.ReactNode): React.ReactNode {
 }
 
 function indicatorNode(indicator: UserMenuValue['indicator']): React.ReactNode {
-  if (indicator === 'spinner') return <Icons.Spinner size={12} className="animate-spin" />
+  if (indicator === 'spinner') return <Icons.Spinner size={12} className="user-menu-spinner" />
   if (indicator === 'check') return <Icons.Check size={12} />
   if (indicator === 'alert') return <Icons.AlertTriangle size={12} />
   return null
@@ -181,7 +200,18 @@ export function buildUserMenuItems(
     })
     items.push({
       key: 'account',
-      label: row({ icon: <Icons.User size={14} />, text: tr('app.user.accountCenter') }, tr),
+      label: row(
+        {
+          icon: (
+            <Icons.User
+              size={PERSON_ICON_SIZE}
+              strokeWidth={opticalStroke(PERSON_ICON_SIZE)}
+            />
+          ),
+          text: tr('app.user.accountCenter'),
+        },
+        tr,
+      ),
     })
     items.push({
       key: 'account-sync',
@@ -189,7 +219,7 @@ export function buildUserMenuItems(
       className: sync.busy ? 'user-menu-item-busy' : '',
       label: row(
         {
-          icon: <Icons.Refresh size={14} />,
+          icon: <Icons.Refresh size={MENU_ICON_SIZE} />,
           text: tr('app.user.sync'),
           value: describeSyncValue(sync),
         },
@@ -199,7 +229,18 @@ export function buildUserMenuItems(
   } else {
     items.push({
       key: 'login',
-      label: row({ icon: <Icons.User size={14} />, text: tr('app.user.login') }, tr),
+      label: row(
+        {
+          icon: (
+            <Icons.User
+              size={PERSON_ICON_SIZE}
+              strokeWidth={opticalStroke(PERSON_ICON_SIZE)}
+            />
+          ),
+          text: tr('app.user.login'),
+        },
+        tr,
+      ),
     })
   }
 
@@ -212,11 +253,11 @@ export function buildUserMenuItems(
       ariaLabel: tr('app.user.theme'),
       icon:
         appearance.theme === 'dark' ? (
-          <Icons.Moon size={14} />
+          <Icons.Moon size={MENU_ICON_SIZE} />
         ) : appearance.theme === 'light' ? (
-          <Icons.Sun size={14} />
+          <Icons.Sun size={MENU_ICON_SIZE} />
         ) : (
-          <Icons.Monitor size={14} />
+          <Icons.Monitor size={MENU_ICON_SIZE} />
         ),
       label: tr('app.user.theme'),
       className: 'user-menu-inline-segmented-appearance',
@@ -235,7 +276,7 @@ export function buildUserMenuItems(
     popupClassName: 'user-menu-submenu-popup',
     label: row(
       {
-        icon: <Icons.Palette size={14} />,
+        icon: <Icons.Palette size={MENU_ICON_SIZE} />,
         text: tr('app.user.accent'),
         value: {
           labelKey: null,
@@ -265,7 +306,7 @@ export function buildUserMenuItems(
     className: 'user-menu-inline-menu-item',
     label: inlineControl({
       ariaLabel: tr('app.sidebar.style'),
-      icon: <Icons.PanelLeft size={14} />,
+      icon: <Icons.PanelLeft size={MENU_ICON_SIZE} />,
       label: tr('app.sidebar.style'),
       className: 'user-menu-inline-segmented-sidebar',
       value: appearance.sidebarStyle,
@@ -281,13 +322,13 @@ export function buildUserMenuItems(
 
   items.push({
     key: 'remote',
-    label: row({ icon: <Icons.Globe size={14} />, text: tr('app.nav.remote') }, tr),
+    label: row({ icon: <Icons.Globe size={MENU_ICON_SIZE} />, text: tr('app.nav.remote') }, tr),
   })
   items.push({
     key: 'check-update',
     label: row(
       {
-        icon: <Icons.CloudDownload size={14} />,
+        icon: <Icons.CloudDownload size={MENU_ICON_SIZE} />,
         text: tr('app.update.check'),
         value: describeUpdateValue(update),
       },
@@ -297,20 +338,20 @@ export function buildUserMenuItems(
   items.push({
     key: 'help',
     popupClassName: 'user-menu-submenu-popup',
-    label: row({ icon: <Icons.HelpCircle size={14} />, text: tr('app.user.help') }, tr),
+    label: row({ icon: <Icons.HelpCircle size={MENU_ICON_SIZE} />, text: tr('app.user.help') }, tr),
     children: [
       {
         key: 'contact-qq',
-        label: row({ icon: <Icons.Chat size={14} />, text: tr('app.user.qqGroup') }, tr),
+        label: row({ icon: <Icons.Chat size={MENU_ICON_SIZE} />, text: tr('app.user.qqGroup') }, tr),
       },
       {
         key: 'contact-email',
-        label: row({ icon: <Icons.Mail size={14} />, text: tr('app.user.emailFeedback') }, tr),
+        label: row({ icon: <Icons.Mail size={MENU_ICON_SIZE} />, text: tr('app.user.emailFeedback') }, tr),
       },
       {
         key: 'contact-github-issue',
         label: row(
-          { icon: <Icons.Bug size={14} />, text: tr('app.user.contactGithubIssue') },
+          { icon: <Icons.Bug size={MENU_ICON_SIZE} />, text: tr('app.user.contactGithubIssue') },
           tr,
         ),
       },
@@ -319,15 +360,26 @@ export function buildUserMenuItems(
   items.push({
     key: 'about-spark',
     popupClassName: 'user-menu-submenu-popup',
-    label: row({ icon: <Icons.Sparkles size={14} />, text: tr('app.user.aboutSpark') }, tr),
+    label: row(
+      {
+        icon: (
+          <Icons.Sparkles
+            size={SPARKLE_ICON_SIZE}
+            strokeWidth={opticalStroke(SPARKLE_ICON_SIZE)}
+          />
+        ),
+        text: tr('app.user.aboutSpark'),
+      },
+      tr,
+    ),
     children: [
       {
         key: 'website',
-        label: row({ icon: <Icons.Home size={14} />, text: tr('app.user.website') }, tr),
+        label: row({ icon: <Icons.Home size={MENU_ICON_SIZE} />, text: tr('app.user.website') }, tr),
       },
       {
         key: 'github',
-        label: row({ icon: <Icons.GitHub size={14} />, text: tr('app.user.githubRepo') }, tr),
+        label: row({ icon: <Icons.GitHub size={MENU_ICON_SIZE} />, text: tr('app.user.githubRepo') }, tr),
       },
     ],
   })

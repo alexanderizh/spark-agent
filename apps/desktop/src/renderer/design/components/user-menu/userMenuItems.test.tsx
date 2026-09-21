@@ -230,7 +230,7 @@ describe('buildUserMenuItems', () => {
     const element = renderLabel(labelOf(syncItem))
     expect(element.querySelector('.user-menu-value')?.textContent).toContain('同步中…')
     expect(element.querySelector('.user-menu-value')?.className).toContain('is-primary')
-    expect(element.querySelector('.animate-spin')).not.toBeNull()
+    expect(element.querySelector('.user-menu-spinner')).not.toBeNull()
   })
 
   it('同步未开启显示「未开启」，有记录则显示上次同步时间', () => {

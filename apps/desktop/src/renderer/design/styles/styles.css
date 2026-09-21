@@ -1004,6 +1004,11 @@ body.floating-sidebar-resizing * {
   box-shadow: var(--shadow-md);
   padding: 4px;
   z-index: var(--z-dropdown, 100);
+  /* 首级行右侧统一让出箭头列（8px 行内边距 + 14px 箭头 + 6px 间距）。
+     数值列（账号同步 / 检查更新 / 主题色的色块+色名）因此收在箭头左侧，
+     不会与二级入口的 › 叠字；二级弹层（.user-menu-submenu-popup）不继承该变量，
+     回落到 8px，勾选列仍贴右边缘。 */
+  --user-menu-end-gutter: 28px;
 }
 .user-menu-portal {
   position: static;
@@ -1034,7 +1039,9 @@ body.floating-sidebar-resizing * {
 .ant-dropdown-menu.user-menu .user-menu-inline-menu-item {
   height: auto !important;
   min-height: 40px;
-  padding: 6px 8px !important;
+  /* 与其余首级行同一条右侧基线（见 --user-menu-end-gutter），
+     否则分段开关会比数值列多出 20px，右列看起来是两列。 */
+  padding: 6px var(--user-menu-end-gutter, 8px) 6px 8px !important;
   cursor: default;
 }
 .user-menu-inline-control {
@@ -1180,16 +1187,21 @@ body.floating-sidebar-resizing * {
   white-space: nowrap;
 }
 
-/* 图标列：固定 16px 容器 + 14px 线性图标，所有行左边缘对齐到同一条竖线；
-   图标色弱于文字，悬停时随行一起提亮。 */
+/* 图标列：固定 17px 容器 + 14px 线性图标（少数稀疏图形 17px，见 userMenuItems），
+   所有行左边缘对齐到同一条竖线；悬停时随行一起提亮。 */
 .user-menu-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  color: var(--text-muted);
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  /* 不用 --text-muted：它在浅色主题是暖米色 #b2a997，落到浅色弹层上只有约 2.2:1，
+     14px 视框 / 0.93px 线宽的细描边几乎看不清。改用文字色 80%：
+     浅色约 8.2:1、暗色约 6.6:1，比数值列（68%）略强、比行标签（100%）略轻。
+     注意这里混到 --panel-elev（实色）而不是 transparent：线性图标的子路径常有交叉
+     （Globe / CloudDownload 的云+箭头），半透明色会在交叉处二次合成、比同类图标更黑。 */
+  color: color-mix(in srgb, var(--text) 80%, var(--panel-elev));
 }
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover .user-menu-icon,
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover .user-menu-icon,
@@ -1206,7 +1218,10 @@ body.floating-sidebar-resizing * {
   margin-left: auto;
   font-size: 12px;
   line-height: 1.2;
-  color: var(--text-muted);
+  /* 数值是给用户读的信息，用中性可读灰而不是 --text-muted：
+     后者在浅色主题偏暖偏浅，弹层白底上对比不足（约 1.8:1），
+     这里取文字色 68% 透明度，浅色/深色都保持 ~5:1 的可读对比。 */
+  color: color-mix(in srgb, var(--text) 68%, transparent);
 }
 .user-menu-value.is-primary {
   color: var(--primary);
@@ -1223,6 +1238,15 @@ body.floating-sidebar-resizing * {
 .user-menu-value-text {
   white-space: nowrap;
 }
+/* 菜单自带旋转动画：不依赖别处视图的 .spin 规则或构建期生成的工具类 */
+.user-menu-spinner {
+  animation: user-menu-spin 900ms linear infinite;
+}
+@keyframes user-menu-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .user-menu-value-swatch {
   display: inline-block;
   width: 12px;
@@ -1234,8 +1258,9 @@ body.floating-sidebar-resizing * {
 
 /* 账号区：头像 + 昵称 + 账号 + 档位标识，只作展示，不参与点击。 */
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item.user-menu-account-header {
+  /* 权重与 !important 都要压过上面那条通用行规则（它把行高钉在 40px） */
   height: auto !important;
-  min-height: 56px;
+  min-height: 56px !important;
   padding: 8px !important;
   cursor: default;
 }
@@ -1288,7 +1313,8 @@ body.floating-sidebar-resizing * {
 }
 .user-menu-account-sub {
   font-size: 11px;
-  color: var(--text-muted);
+  /* 与数值列同一套可读灰，账号（邮箱/手机号）同样是要读的信息 */
+  color: color-mix(in srgb, var(--text) 68%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1308,13 +1334,15 @@ body.floating-sidebar-resizing * {
   background: var(--primary-soft);
 }
 
-/* 分区：分割线内缩到文字列起点（8px 内边距 + 16px 图标列 + 8px 间距），
+/* 分区：分割线内缩到文字列起点（8px 内边距 + 17px 图标列 + 8px 间距），
    颜色用带透明度的文字色，浅色/深色主题都可见。 */
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item-divider {
   min-width: auto;
   height: 1px;
-  margin: 5px 8px 5px 32px;
-  background-color: color-mix(in srgb, var(--text) 12%, transparent);
+  /* 与行内边距同理：antd 的分割线规则同为 0-3-0，必须显式压过它，
+     否则打包态会退化成通栏 1px 线（左内缩丢失、与文字列错位）。 */
+  margin: 5px 8px 5px 33px !important;
+  background-color: color-mix(in srgb, var(--text) 12%, transparent) !important;
 }
 
 /* 同步执行中：整行保持可读但不再触发点击（重复点击由宿主拦掉）。 */
@@ -1517,9 +1545,16 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   flex-wrap: nowrap;
   gap: 8px;
   box-sizing: border-box;
-  height: 40px;
-  min-height: 40px;
-  padding: 6px 8px;
+  /* !important：antd 的 `.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item`
+     与这里的选择器同为 0-3-0（它外面的 :where() 不计权重），只按注入先后分胜负——
+     开发态 HMR 会把本文件重新插到 antd 运行时样式之后、打包态则在之前，
+     同一份代码会在 8px 与 12px 内边距之间漂移（图标列、分割线、数值列跟着错位）。
+     这里连同高度一起钉死，菜单版式不再依赖样式注入顺序。 */
+  height: 40px !important;
+  min-height: 40px !important;
+  /* 右侧让出箭头列：首级菜单定义 --user-menu-end-gutter = 28px；
+     二级弹层没有箭头，取回落值 8px（勾选列贴右边缘）。 */
+  padding: 6px var(--user-menu-end-gutter, 8px) 6px 8px !important;
   border-radius: var(--r-sm);
   font-family: var(--font-sans) !important;
   font-size: var(--font-sm) !important;
@@ -1543,6 +1578,20 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
 .user-menu-submenu-popup .ant-dropdown-menu-title-content > svg {
   flex-shrink: 0;
 }
+
+/* 首级行的右侧箭头列：自定义 expandIcon 会被 antd clone 上
+   `ant-dropdown-menu-submenu-expand-icon`，于是吃到它「绝对定位 +
+   inset-inline-end: var(--ant-padding-xs)」的默认规则，压在「主题色」的色块+色名上。
+   这里把箭头钉在行右侧的箭头列（行内边距 8px 起），行再用 --user-menu-end-gutter
+   让出同宽槽位，数值/开关与箭头各占一条竖线。 */
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-expand-icon.user-menu-expand-icon {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 8px;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+}
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover,
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover,
 .user-menu-submenu-popup .ant-dropdown-menu-item:hover,
@@ -1555,14 +1604,17 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: var(--text-faint);
+  /* 箭头同样不再用 --text-faint（浅色 #9b9489 仅约 3.0:1、暗色约 2.4:1）；
+     取文字色 70%：浅色约 5.9:1、暗色约 5.4:1，与数值列同档，悬停再提亮。
+     同样混实色，避免与折叠子路径叠加时变深。 */
+  color: color-mix(in srgb, var(--text) 70%, var(--panel-elev));
   transition: color 140ms ease;
 }
 .user-menu-expand-icon svg {
   display: block;
 }
 .ant-dropdown-menu-submenu-title:hover > .user-menu-expand-icon {
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text) 88%, var(--panel-elev));
 }
 
 :where(.css-dev-only-do-not-override-xsuzon).ant-dropdown
