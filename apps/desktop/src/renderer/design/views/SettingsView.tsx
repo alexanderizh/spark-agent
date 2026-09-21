@@ -5060,7 +5060,9 @@ function IntegritySection() {
       state: 'preparing',
       downloaded: 0,
       total: 0,
-      percent: 0,
+      // percent 为 null 表示尚无法计算进度：按钮显示「下载中」、进度条走
+      // indeterminate 动画；写成 0 会让进行中与完成后都显示成 0% 空条。
+      percent: null,
       message: '正在准备下载',
     })
     try {
@@ -5068,6 +5070,20 @@ function IntegritySection() {
       setInstallResult({ pkg: packageName, success: result.success, message: result.message })
       if (result.success) {
         toast.success(result.message)
+        // 部分安装路径（如 claude-agent-sdk 的 pnpm 安装）全程不发进度事件；
+        // 成功后必须把合成进度收敛为 done/100%，否则条目下会一直挂着 0% 空进度条。
+        setInstallProgress((current) =>
+          current?.packageName === packageName
+            ? {
+                packageName,
+                state: 'done',
+                downloaded: current.downloaded,
+                total: current.total,
+                percent: 100,
+                message: result.message,
+              }
+            : current,
+        )
         // Re-check after install
         await handleCheck(true)
       } else {

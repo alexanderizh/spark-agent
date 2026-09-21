@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SparkInstallManifest } from '../../../../../../packages/agent-runtime/src/services/skill-registry/artifact-manifest'
+import type { OptionalCapabilityProgress } from '@spark/protocol'
 import { OPTIONAL_CAPABILITY_DEFINITIONS } from './definitions'
 import type { ExternalCapabilityAdapter } from './externalCapabilityAdapters'
 import { OptionalCapabilityManager } from './OptionalCapabilityManager'
@@ -208,7 +209,7 @@ describe('OptionalCapabilityManager', () => {
   it('publishes external capability state and routes its install progress', async () => {
     const root = await fixtureRoot()
     let installed = false
-    const progress: string[] = []
+    const progress: OptionalCapabilityProgress[] = []
     const adapter: ExternalCapabilityAdapter = {
       async describe() {
         return {
@@ -233,7 +234,7 @@ describe('OptionalCapabilityManager', () => {
       fetchManifest: async () => manifest(),
       externalAdapters: { chromium: adapter },
       onProgress: (event) => {
-        if (event.capabilityId === 'chromium') progress.push(event.phase)
+        if (event.capabilityId === 'chromium') progress.push(event)
       },
     })
 
@@ -243,7 +244,13 @@ describe('OptionalCapabilityManager', () => {
       ]),
     })
     await expect(manager.install('chromium')).resolves.toMatchObject({ success: true })
-    expect(progress).toEqual(expect.arrayContaining(['queued', 'downloading', 'ready']))
+    expect(progress.map((event) => event.phase)).toEqual(
+      expect.arrayContaining(['queued', 'downloading', 'ready']),
+    )
+    // manager 在适配器上报后还会追加一条不带字节数的 ready 终态事件；
+    // 它是前端收到的最后一条进度，必须保持 100%，不能回落成 null/0%。
+    const finalProgress = progress.at(-1)
+    expect(finalProgress).toMatchObject({ phase: 'ready', percent: 100 })
 
     await manager.setAutoUpdate('chromium', false)
     const restarted = new OptionalCapabilityManager({

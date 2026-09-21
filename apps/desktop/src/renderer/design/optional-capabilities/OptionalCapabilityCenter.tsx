@@ -235,7 +235,7 @@ export function OptionalCapabilityCenter() {
                 <span>{phaseLabel(item.phase)}</span>
               </div>
               <Progress
-                percent={item.percent ?? 0}
+                percent={item.phase === 'ready' ? (item.percent ?? 100) : (item.percent ?? 0)}
                 {...(item.phase === 'error' ? { status: 'exception' as const } : {})}
                 size="small"
               />

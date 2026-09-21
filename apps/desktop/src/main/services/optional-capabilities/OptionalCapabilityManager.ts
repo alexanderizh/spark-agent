@@ -849,7 +849,15 @@ export class OptionalCapabilityManager {
       phase,
       downloaded,
       total,
-      percent: total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : null,
+      // 外部能力安装成功时 manager 只知道终态、不知道字节数（total=0）。
+      // 若不兜底，最终 ready 事件的 percent 为 null，会覆盖适配器先前上报的
+      // 100%，前端把 null 渲染成 0% 空进度条（完成后显示 0% 的 bug）。
+      percent:
+        total > 0
+          ? Math.min(100, Math.round((downloaded / total) * 100))
+          : phase === 'ready'
+            ? 100
+            : null,
       queuePosition,
       message,
       ...(version ? { version } : {}),
