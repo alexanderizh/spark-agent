@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod'
+import { AutoRouterConfigSchema } from '../auto-router-config.js'
 import { ProviderExportPayloadSchema, ProviderImportModeSchema } from '../provider-export.js'
 import {
   MediaProviderKindSchema,
@@ -1095,6 +1096,19 @@ export const IpcSchemaRegistry = {
   'team:update-def': TeamUpdateDefRequestSchema,
   'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
+  'provider:auto-router:create': z.object({
+    name: z.string().min(1).max(100),
+    config: AutoRouterConfigSchema,
+    enabled: z.boolean().optional(),
+    isDefault: z.boolean().optional(),
+  }),
+  'provider:auto-router:update': z.object({
+    id: z.string().min(1),
+    name: z.string().min(1).max(100).optional(),
+    config: AutoRouterConfigSchema.optional(),
+    enabled: z.boolean().optional(),
+    isDefault: z.boolean().optional(),
+  }),
   'provider:get-api-key': ProviderGetApiKeyRequestSchema,
   ...ProviderFilesIpcSchemaRegistry,
   ...VideoChannelTasksIpcSchemaRegistry,

@@ -52,6 +52,7 @@ import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { ProviderPromoBanner } from '../components/ProviderPromoBanner'
 import { usePlatformModelCatalogRefresh } from './platform-model/usePlatformModelCatalogRefresh'
+import { AutoRouterManagerModal } from './provider/AutoRouterManagerModal'
 import {
   PROVIDER_PRESETS,
   getProviderPresetById,
@@ -911,6 +912,7 @@ function ProvidersView() {
   const [managedEditingProfile, setManagedEditingProfile] = useState<ProviderProfile | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
   const [showPresetCatalog, setShowPresetCatalog] = useState(false)
+  const [showAutoRouterManager, setShowAutoRouterManager] = useState(false)
   const [presetCatalogSearch, setPresetCatalogSearch] = useState('')
   /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
   const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
@@ -1331,6 +1333,14 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
+              icon={<Icons.Shuffle />}
+              onClick={() => setShowAutoRouterManager(true)}
+              title="创建与管理自动路由（分流器 + 强度分级执行模型）"
+            >
+              自动路由
+            </Button>
+            <Button
+              size="small"
               type="primary"
               icon={<Icons.Plus />}
               onClick={() => {
@@ -1551,6 +1561,13 @@ function ProvidersView() {
           )}
         </div>
       </Modal>
+
+      <AutoRouterManagerModal
+        open={showAutoRouterManager}
+        providers={profiles}
+        onClose={() => setShowAutoRouterManager(false)}
+        onChanged={refresh}
+      />
 
       {managedEditingProfile ? (
         <ManagedModelPreferencesModal

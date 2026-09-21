@@ -1110,6 +1110,23 @@ export interface ProviderCreateResponse {
   profile: ProviderProfile
 }
 
+export interface ProviderAutoRouterCreateRequest {
+  name: string
+  config: AutoRouterConfig
+  enabled?: boolean
+  isDefault?: boolean
+}
+
+export interface ProviderAutoRouterUpdateRequest {
+  id: string
+  name?: string
+  config?: AutoRouterConfig
+  enabled?: boolean
+  isDefault?: boolean
+}
+
+export type ProviderAutoRouterResponse = ProviderCreateResponse
+
 export interface ProviderUpdateRequest {
   id: string
   /** 全局可用状态；false 时从会话、画布和多媒体工具中排除。 */
@@ -7090,6 +7107,9 @@ export interface IpcChannelMap
   'provider:get-api-key': [ProviderGetApiKeyRequest, ProviderGetApiKeyResponse]
   'provider:create': [ProviderCreateRequest, ProviderCreateResponse]
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
+  // AutoRouter（provider_type='auto-router' 落库行）专用 CRUD
+  'provider:auto-router:create': [ProviderAutoRouterCreateRequest, ProviderAutoRouterResponse]
+  'provider:auto-router:update': [ProviderAutoRouterUpdateRequest, ProviderAutoRouterResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]

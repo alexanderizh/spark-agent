@@ -1078,3 +1078,177 @@
   object-fit: cover;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   AutoRouter 管理弹层（arm_*）— 扁平基线：分割线分节、无卡片盒子
+   ============================================================ */
+
+.arm_layout {
+  display: flex;
+  gap: 20px;
+  min-height: 420px;
+  max-height: 70vh;
+}
+
+.arm_sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  padding-right: 16px;
+}
+
+.arm_sidebar_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.arm_router_list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.arm_router_item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--r-md, 8px);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.arm_router_item:hover {
+  background: var(--bg-soft);
+}
+
+.arm_router_item.active {
+  border-left-color: var(--primary);
+  background: var(--bg-soft);
+}
+
+.arm_router_name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.arm_router_meta {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.arm_editor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.arm_section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.arm_section_title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.arm_form_grid {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.arm_form_label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.arm_executors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.arm_executor_row {
+  display: grid;
+  grid-template-columns: 56px minmax(120px, 1.2fr) minmax(120px, 1.2fr) 84px auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.arm_executor_row > .badge {
+  justify-self: start;
+}
+
+.arm_icon_btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.arm_icon_btn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.arm_empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.arm_hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.arm_footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.arm_footer_spacer {
+  flex: 1;
+}

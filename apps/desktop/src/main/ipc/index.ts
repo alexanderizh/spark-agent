@@ -4824,6 +4824,23 @@ export function registerAllIpcHandlers(): void {
     return { profile }
   })
 
+  typedIpcHandle('provider:auto-router:create', async (req) => {
+    log.info(
+      `provider:auto-router:create requested, name=${req.name}, adapter=${req.config?.adapter}`,
+    )
+    const profile = await getProviderService().createAutoRouter(req)
+    pushConfigChanged('provider', 'create', profile.id)
+    return { profile }
+  })
+
+  typedIpcHandle('provider:auto-router:update', async (req) => {
+    log.info(`provider:auto-router:update requested, id=${req.id}`)
+    const profile = await getProviderService().updateAutoRouter(req.id, req)
+    getCanvasTextOutputCapabilityCache().clearProvider(req.id)
+    pushConfigChanged('provider', 'update', profile.id)
+    return { profile }
+  })
+
   typedIpcHandle('provider:update', async (req) => {
     log.info(`provider:update requested, id=${req.id}, enabled=${String(req.enabled)}`)
     const profile = await getProviderService().updateProvider(req)
