@@ -204,6 +204,8 @@ body.sidebar-resizing {
   cursor: pointer;
   color: var(--text-faint);
   border-radius: var(--r-xs);
+  /* 运行中角标（.proj-running-badge）的定位上下文 */
+  position: relative;
   transition:
     background 0.12s,
     color 0.12s;
@@ -8195,6 +8197,38 @@ body.inspector-resizing {
 .team-member-origin-pill.peer {
   color: color-mix(in srgb, var(--member-accent) 82%, var(--text-strong));
   background: color-mix(in srgb, var(--member-accent) 14%, transparent);
+}
+/* 显示点 4：AutoRouter 一次性强度 worker 的子任务标识（强度色点 · 强度 · 模型 · 摘要）。
+   扁平基线：无底色无边框，靠色点与字号/明暗建立层级，摘要溢出省略并保留 title 全文。 */
+.team-member-router-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.team-member-router-meta-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.team-member-router-meta-sep {
+  color: var(--text-tertiary, #858585);
+}
+.team-member-router-meta-model {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.team-member-router-meta-summary {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .team-member-running {
   display: inline-flex;

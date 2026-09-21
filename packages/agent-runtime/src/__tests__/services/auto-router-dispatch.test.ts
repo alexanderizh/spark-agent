@@ -201,6 +201,30 @@ describe('AutoRouterService 分流决策链', () => {
     expect(result.fallbackUsed).toBe(true)
     expect(result.resolvedModelId).toBe('sonnet-mid')
   })
+
+  it('规则兜底 + 该强度档未配置 → 强度标签仍对齐实际执行器（P3 回归）', async () => {
+    // 分流器超时（fallbackUsed=true）→ 规则判出 high；但只有 balanced 档配了执行器。
+    // 修复前 !fallbackUsed 守卫会让强度标签停在 high，实际跑的是 balanced 模型，
+    // 渲染端据此显示「●高」+ 错误模型强度语义。
+    const complete = failComplete('HTTP timeout after 8000ms')
+    const service = makeService(complete)
+    const config = makeConfig()
+    config.executors = config.executors.filter((entry) => entry.intensity !== 'high')
+    const result = await service.routeTurn(makeInput({ config }))
+    expect(result.fallbackUsed).toBe(true)
+    expect(result.resolvedModelId).toBe('sonnet-mid')
+    expect(result.intensity).toBe('balanced')
+    expect(result.reason).toContain('档未配置')
+  })
+
+  it('取消分支契约：cancelled=true 且 resolved 为空（调用方须先判 cancelled，不得报配置错）', async () => {
+    const service = makeService(okComplete('{}'))
+    const result = await service.routeTurn(makeInput({ isTurnCancelled: () => true }))
+    expect(result.cancelled).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.resolvedProviderId).toBe('')
+    expect(result.reason).toBe('轮次已取消')
+  })
 })
 
 describe('ruleClassifyIntensity 规则兜底', () => {

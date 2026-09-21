@@ -1,6 +1,11 @@
 import { useId } from 'react'
 import { Shuffle, TriangleAlert } from 'lucide-react'
 import type { AutoRouterDecisionEvent } from '@spark/protocol'
+import {
+  ROUTER_INTENSITY_COLOR,
+  ROUTER_INTENSITY_LABEL,
+  routerIntensityColor,
+} from '../../utils/auto-router-display'
 import './AutoRouterDecisionNotice.less'
 
 /**
@@ -11,20 +16,12 @@ import './AutoRouterDecisionNotice.less'
  * - meta 形态：轮次 meta 行常驻小标识（强度色点 + 模型名），每轮可见。
  */
 
-const INTENSITY_LABEL: Record<AutoRouterDecisionEvent['intensity'], string> = {
-  high: '高',
-  balanced: '平衡',
-  low: '低',
-}
+const INTENSITY_LABEL = ROUTER_INTENSITY_LABEL
+const INTENSITY_COLOR = ROUTER_INTENSITY_COLOR
 
-const INTENSITY_COLOR: Record<AutoRouterDecisionEvent['intensity'], string> = {
-  high: 'var(--danger)',
-  balanced: 'var(--success)',
-  low: 'var(--info)',
-}
-
+/** 兼容既有调用面（强度色点取色统一走 utils/auto-router-display）。 */
 export function intensityDotColor(intensity: AutoRouterDecisionEvent['intensity']): string {
-  return INTENSITY_COLOR[intensity]
+  return routerIntensityColor(intensity)
 }
 
 export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDecisionEvent }) {

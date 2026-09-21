@@ -451,3 +451,37 @@ ANTHROPIC_DEFAULT_OPUS_MODEL  = high 执行器模型
 | G6 | 开发 | Phase 0 改写会话引用 → Phase 2 才有分流服务，中间态断链 | 分期时序 | 3.6 迁移拆分 + Phase 0.3/2.4 |
 | G7 | 执行 | 强度粘性"上轮强度"读取来源未定义 | — | 3.3 session_events 反查 |
 | G8 | 执行 | 取消轮次时分流请求竞态；decompose 平台工具条件注入机制未确认 | — | 3.3 AbortSignal + Phase 3.1 前置确认 |
+
+## 附三：代码审查修复记录（2026-09-21，第三轮）
+
+对 5 个提交（`763d0df1` → `fd48d0281`）逐条回源码审查，**4 个真实缺陷 + 3 个边界缺陷**已全部修复并补回归测试；同时闭环 Phase 4 的两个入口缺口。每项修复前均回源码复核证据，修复后跑与风险匹配的验证。
+
+### 缺陷与修复
+
+| # | 严重度 | 缺陷 | 源码证据 | 修复 |
+|---|--------|------|----------|------|
+| P1 | 高 | decomposed 的派发工具面未打通：Host 拿到"请用 agent_dispatch 派发"的提示却没有该工具，静默退化为单模型执行（需求 4 失效） | `session.service.ts:3139` 只按 `hasDispatchableTeamMembers` 判定，与建 server 的花名册判定（:3083 含 `hasAutoRouterSubtasks`）不一致 | 抽出 `shouldExposeDispatchTools` 纯函数统一口径；`orchestration_status.source`/编排提示词按 `team > auto-router > workflow` 互斥推导（新增 `resolveOrchestrationSource`），router 拆分轮次不再谎报"挂了工作流" |
+| P2 | 中高 | 用户取消轮次被报成"没有可用执行模型…请检查配置"，并经 `handleQueuedTurnStartFailure` 写成 agent_error + 会话 error | `auto-router.service.ts:285-303` 取消分支返回 `resolved=null`；`session.service.ts:2530` 直接 throw | 主侧先判 `routing.cancelled` 安静退出本轮启动（cancelTurn 已写 user_cancelled_turn 终态）；成员侧按既有 abort 语义 `return { content:'', partial:true }` |
+| P3 | 中 | 规则兜底 + 该强度档未配置执行器时，强度标签与实际执行模型不一致（提示条显示"●低"、实际跑高强度模型） | `auto-router.service.ts:342-357` 强度修正被 `!fallbackUsed` 守卫挡住 | 强度一律对齐实际执行器强度（reason 追加"X 档未配置，回落 Y"） |
+| P4 | 中 | router 行按普通渠道卡片渲染（显示"OpenAI 格式 · 默认 "），点编辑可进普通面板把 `provider_type` 改掉留下脏行 | `ProvidersView.tsx:1208-1220` 列表未过滤；`provider.service.ts:840` `updateProvider` 无 router 拦截 | 渠道网格按 `providerType` 过滤 router 行（仍由工具栏「自动路由」弹层管理）；`updateProvider` 除启停外一律拒绝 router 行 |
+| P5 | 边界 | router 分支用 `getAgentAdapterFromSession(..., null)` 推导会话引擎：会话未显式声明 adapter/chat_mode 时硬判 codex，claude router 被误判 adapterMismatch（无 codex 系执行器时直接报错） | `session.service.ts:2456-2470` vs 主线 `:2652` 传执行器 `provider_type` | 新增 `resolveRouterSessionAdapter`：显式 adapter/chat_mode 优先，缺省时按 router 声明 adapter 假定；原始信号传入 `routeAutoRouterTurn` 统一推导（主/成员两侧同源） |
+| P6 | 边界 | 子任务 worker 在"该强度档无执行器"时回落 host 绑定（= router 行）→ 成员侧二次分流，白烧一次分流调用 | `session.service.ts:8777-8779` | 抽出 `resolveAutoRouterWorkerBinding`：回落本轮已解析主执行器，绝不回落 router 行 |
+| P7 | 中（本轮新发现） | `getProviderAdapterKind` 无 router 分支：claude 会话选中 claude router 时，"选中 provider 即校准引擎"的协调逻辑会把会话 `agentAdapter` 改成 codex，运行时随即判 adapterMismatch，claude 档位执行器全部失配 | `provider-adapter.ts:51`（`provider='auto-router'` ≠ `'anthropic'` → codex）；消费方 ComposerV2 协调 effect / AgentsView / 画布 | `getProviderAdapterKind` 增加 router 分支（按声明 adapter）；`agent-execution-config.getLockedAgentAdapterForProvider` 改为委托，消除两处口径分叉 |
+
+### Phase 4 入口缺口闭环
+
+- **画布**：`buildCanvasAgentModelOptions` 原按 `models.length > 0` 过滤，router 行（modelIds 恒空）根本选不到。现为 router 生成单条说明性条目「智能路由（由分流器决定执行模型）」，`resolveCanvasAgentProviderModel` 对 router 恒返回空 modelId，分组不提供置顶。
+- **定时任务**：模型候选抽为 `buildScheduledTaskModelOptions`，router 以「名称（智能路由）」出现、value 为其 provider id；主进程 `resolveScheduledTaskRuntime` 新增优先按 router id 命中分支（置空 modelId + 取声明引擎）。
+
+### 验证结果（本轮实跑）
+
+| 范围 | 结果 |
+|------|------|
+| typecheck | protocol / shared / storage / agent-runtime / desktop 全绿 |
+| agent-runtime 全量（HEAD + 本轮改动，干净 worktree） | 2892 tests：2876 通过、6 失败 —— 6 个全部是基线 7 个失败的子集（media contract、platform media routing、session-runtime-config spark_computer/spark_canvas、session.service 关闭等待），**零新增失败** |
+| desktop 全量（主树） | 5739 tests：40 失败 —— 基线 44 失败，**零新增失败**，其中 2 个为本次修复的既有失败（`canvas-agent-model-options`、`provider-model-picker-utils` 的旧魔法 id fixture） |
+| 本轮新增/更新单测 | **27 个新用例全过**：派发面口径 8、会话引擎推导 4（engine-kinds 共 17）、分流决策链 +2（共 13）、provider 编辑拦截 +1（共 11）、渲染端 provider-adapter 5、定时任务候选 3、画布 router 分组 +2（共 5）、显示点 4 数据通道 2；另修正 2 个既有失败 fixture（provider-model-picker-utils、canvas legacy router） |
+| 日志 | P1/P2/P3/P6 修复均补齐结构化日志（`auto-router` namespace：取消安静退出、强度回落、worker 绑定） |
+
+**未覆盖（如实说明）**：UI 真机验收（画布/定时任务/Composer 选择 router 的实机交互）需用户手动确认；主树全量测试存在既有的 vite-node 收集失败（`spark-engine/dist` 旧产物触发裸 `string_decoder` 解析失败），与本轮改动无关（基线同样存在），建议重建 `spark-engine/dist`。
+

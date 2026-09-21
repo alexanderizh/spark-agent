@@ -297,20 +297,30 @@ export interface TeamMemberMessageEvent extends BaseEvent {
   isFinal: boolean
   /** 同 AssistantMessageEvent.segmentId：member 一次 dispatch 内的消息段标识 */
   segmentId?: string
+  /**
+   * AutoRouter 一次性强度 worker 的展示信息（显示点 4）。worker 是每轮临时合成的
+   * 一次性 agent，不存在于 Agent 表，渲染端无法反查其模型，因此随事件下发。
+   */
+  autoRouter?: AutoRouterMemberDisplayInfo
+}
+
+/**
+ * AutoRouter 一次性强度 worker 的展示信息：子任务气泡头部
+ * 「强度色点 · 强度 · 模型名 · 子任务摘要」。普通团队成员事件缺省。
+ */
+export interface AutoRouterMemberDisplayInfo {
+  intensity: RouterIntensity
+  /** 该 worker 实际绑定的执行器模型名（member.modelId）。 */
+  modelDisplayName: string
+  /** 子任务摘要（分流器给出的 subtask.summary）。 */
+  summary: string
 }
 
 export interface TeamMemberEventContext {
   dispatchId: string
   memberAgentId: string
-  /**
-   * AutoRouter 一次性强度 worker 的展示信息（显示点 4）：子任务块头部
-   * 「摘要 · 强度色点 · 模型名」。普通团队成员事件缺省。
-   */
-  autoRouter?: {
-    intensity: RouterIntensity
-    modelDisplayName: string
-    summary: string
-  }
+  /** AutoRouter 一次性强度 worker 的展示信息（显示点 4）；普通成员缺省。 */
+  autoRouter?: AutoRouterMemberDisplayInfo
 }
 
 /** Member 在一次 dispatch 内的状态流转 */
@@ -396,11 +406,13 @@ export interface TeamDiscussionConcludedEvent extends BaseEvent {
  * workflow worker 执行。`source` 区分触发来源——显式打开的团队模式，还是当前
  * agent 挂了带真实派发节点的 workflow（用户未必知道自己在这个模式里）。
  * UI 据此显示编排态标识，agent 系统提示词也据此主动跟用户解释这个限制。
+ * 'auto-router' = 本会话绑定了 AutoRouter 且分流器判定本轮可拆分，一次性强度
+ * worker 已并入派发花名册（与团队成员共享 agent_dispatch 工具面）。
  */
 export interface OrchestrationStatusEvent extends BaseEvent {
   type: 'orchestration_status'
   active: boolean
-  source: 'team' | 'workflow'
+  source: 'team' | 'workflow' | 'auto-router'
   hostAgentId: string
   hostAgentName: string
   memberCount: number

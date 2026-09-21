@@ -1,4 +1,4 @@
-import type { SessionAgentAdapter, SessionPermissionMode } from '@spark/protocol'
+import type { RouterAdapter, SessionAgentAdapter, SessionPermissionMode } from '@spark/protocol'
 import type { EngineKind } from '../../sdk/engine-executor.js'
 
 /**
@@ -79,6 +79,51 @@ export function getAgentAdapterFromSession(
   // Default: Anthropic providers use claude-sdk. Direct Anthropic API is not a
   // supported execution path for the core code agent.
   return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
+}
+
+/**
+ * 取会话显式声明的引擎（无显式值时返回 null，不做兜底）。
+ *
+ * 与 getAgentAdapterFromSession 的区别：后者在会话没写 adapter/chat_mode 时会按
+ * 渠道 protocol 兜底（providerType=null 一律判 codex），无法区分"用户显式选了
+ * codex"与"会话里压根没写"。router 分支需要在缺省时改按 router 声明引擎假定，
+ * 因此需要这个不做兜底的版本。
+ */
+function readExplicitEngineKind(
+  value: string | null | undefined,
+): 'claude-sdk' | 'codex' | 'spark' | null {
+  if (value === 'claude-sdk' || value === 'claude') return 'claude-sdk'
+  if (value === 'codex') return 'codex'
+  if (value === 'spark') return 'spark'
+  return null
+}
+
+/**
+ * AutoRouter 会话引擎推导（router 行专用）。
+ *
+ * 为什么不能直接套 getAgentAdapterFromSession(..., providerType=null)：router 行
+ * 自身没有渠道 protocol 可供兜底，缺省时该函数一律判 codex；而 startTurnExecution
+ * 主线在替换成执行器渠道后会用执行器的 provider_type 复算引擎（anthropic →
+ * claude-sdk，其余 → codex）。于是在"会话无显式 adapter/chat_mode"时，claude
+ * router 会被判成 adapterMismatch（回退码系执行器，或干脆报没有可用执行模型）。
+ * 这里显式缺省时改用 router 声明的 adapter 假定会话引擎：替换后主线拿到 anthropic
+ * 系执行器恰好复算出 claude-sdk，两侧判定自洽。
+ *
+ * spark 引擎与 claude 同侧（router 只声明 claude / codex 两档，保持既有映射）。
+ */
+export function resolveRouterSessionAdapter(params: {
+  /** 会话显式 adapter（agent_adapter / 成员 agentAdapter 回落快照）。 */
+  sessionAdapter: string | null | undefined
+  /** 会话 chat_mode（历史 adapter 落点）。 */
+  chatMode: string | null | undefined
+  /** router 行声明的引擎；router 配置无效时为 null。 */
+  routerAdapter: RouterAdapter | null
+}): RouterAdapter {
+  const explicit = readExplicitEngineKind(params.sessionAdapter)
+  if (explicit != null) return explicit === 'codex' ? 'codex' : 'claude'
+  const legacy = readExplicitEngineKind(params.chatMode)
+  if (legacy != null) return legacy === 'codex' ? 'codex' : 'claude'
+  return params.routerAdapter ?? 'codex'
 }
 
 export function getPermissionModeFromSession(

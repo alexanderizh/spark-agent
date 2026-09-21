@@ -79,7 +79,16 @@ describe('provider model picker utilities', () => {
     const localCodex = provider({ id: 'local-codex-cli', provider: 'openai' })
     const anthropic = provider({ id: 'anthropic', provider: 'anthropic' })
     const openai = provider({ id: 'openai', provider: 'openai' })
-    const router = provider({ id: 'claude-auto-router', provider: 'anthropic' })
+    // AutoRouter 元渠道（重构后 provider_type='auto-router'）：CLI 的 Spark 上游必须是
+    // 具体渠道，router 由分流器逐轮决定执行渠道，不能作为 CLI 覆盖项。
+    // 旧 fixture 用的是已下线的魔法 id + provider='anthropic' 伪形态，会让 router 被
+    // 当成普通 anthropic 渠道混进候选（Phase 0 去魔法 id 后遗留的测试盲区）。
+    const router = provider({
+      id: 'router-1',
+      name: 'Claude Auto Router',
+      provider: 'auto-router',
+      providerType: 'auto-router',
+    })
 
     expect(
       getCliSparkOverrideProviders([localClaude, anthropic, openai, router], localClaude),

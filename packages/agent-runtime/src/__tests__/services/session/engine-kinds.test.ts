@@ -8,6 +8,7 @@ import {
   normalizeAgentAdapter,
   normalizePermissionMode,
   resolveEngineKind,
+  resolveRouterSessionAdapter,
 } from '../../../services/session/engine-kinds.js'
 
 /**
@@ -137,5 +138,63 @@ describe('getAgentAdapterFromSession / getPermissionModeFromSession（迁移回�
     expect(getPermissionModeFromSession(null, 'spark')).toBe('spark-default')
     expect(getPermissionModeFromSession('claude-auto', 'codex')).toBe('claude-auto')
     expect(getPermissionModeFromSession('spark-accept-edits', 'spark')).toBe('spark-accept-edits')
+  })
+})
+
+/**
+ * AutoRouter 会话引擎推导（P5 回归）。
+ *
+ * 关键约束：会话没有显式 adapter/chat_mode 时不能套 engine-kinds 的
+ * providerType=null 兜底（一律 codex）——router 行没有渠道 protocol 可依，
+ * 而主线在替换执行器后会按执行器 provider_type 复算引擎（anthropic → claude-sdk）。
+ * 两侧不一致会让 claude router 被判 adapterMismatch，claude 档位执行器全部失配。
+ */
+describe('resolveRouterSessionAdapter', () => {
+  it('会话显式 adapter 优先（codex / claude / spark 同侧映射）', () => {
+    expect(
+      resolveRouterSessionAdapter({
+        sessionAdapter: 'codex',
+        chatMode: 'claude',
+        routerAdapter: 'claude',
+      }),
+    ).toBe('codex')
+    expect(
+      resolveRouterSessionAdapter({
+        sessionAdapter: 'claude-sdk',
+        chatMode: null,
+        routerAdapter: 'codex',
+      }),
+    ).toBe('claude')
+    expect(
+      resolveRouterSessionAdapter({ sessionAdapter: 'spark', chatMode: null, routerAdapter: 'codex' }),
+    ).toBe('claude')
+  })
+
+  it('会话未显式声明时回落 chat_mode 历史值', () => {
+    expect(
+      resolveRouterSessionAdapter({ sessionAdapter: null, chatMode: 'codex', routerAdapter: 'claude' }),
+    ).toBe('codex')
+    expect(
+      resolveRouterSessionAdapter({
+        sessionAdapter: '',
+        chatMode: 'claude-sdk',
+        routerAdapter: 'codex',
+      }),
+    ).toBe('claude')
+  })
+
+  it('两者都缺省 → 按 router 声明引擎假定（不硬判 codex）', () => {
+    expect(
+      resolveRouterSessionAdapter({ sessionAdapter: null, chatMode: null, routerAdapter: 'claude' }),
+    ).toBe('claude')
+    expect(
+      resolveRouterSessionAdapter({ sessionAdapter: null, chatMode: null, routerAdapter: 'codex' }),
+    ).toBe('codex')
+  })
+
+  it('router 配置无效（声明缺失）→ 保守回落 codex，与 agent-execution-config 一致', () => {
+    expect(
+      resolveRouterSessionAdapter({ sessionAdapter: null, chatMode: null, routerAdapter: null }),
+    ).toBe('codex')
   })
 })

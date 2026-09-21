@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProviderProfile } from '@spark/protocol'
 import {
+  CANVAS_AUTO_ROUTER_MODEL_LABEL,
   buildCanvasAgentModelOptions,
   resolveCanvasAgentModelSelection,
 } from './canvas-agent-model-options'
@@ -59,12 +60,25 @@ describe('canvas agent model options', () => {
     modelIds: ['video-1'],
     modelType: 'video',
   })
+  // 重构后的 AutoRouter 行：provider_type='auto-router'，modelIds 恒空（执行模型由分流器逐轮决定）
   const autoRouterProvider = profile({
-    id: 'claude-auto-router',
-    provider: 'anthropic',
+    id: 'router-1',
+    provider: 'auto-router',
+    providerType: 'auto-router',
     name: 'Claude Auto Router',
-    defaultModel: 'route-balanced',
-    modelIds: ['route-balanced'],
+    defaultModel: '',
+    modelIds: [],
+    autoRouterConfig: {
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'claude',
+      dispatcher: { providerProfileId: 'p-dispatch', modelId: 'dispatch-mini', timeoutMs: 8_000 },
+      executors: [],
+      fallbackIntensity: 'balanced',
+      allowDecomposition: true,
+      maxConcurrentSubtasks: 3,
+      subagentIntensityMapping: true,
+    },
   })
 
   it('builds one provider/model list that carries the hidden adapter per option', () => {
@@ -93,7 +107,6 @@ describe('canvas agent model options', () => {
       imageProvider,
       voiceProvider,
       videoProvider,
-      autoRouterProvider,
       codexProvider,
     ])
 
@@ -101,6 +114,33 @@ describe('canvas agent model options', () => {
       'anthropic-provider',
       'openai-provider',
     ])
+  })
+
+  it('exposes AutoRouter as a selectable group with a single explanatory entry', () => {
+    // Phase 4 入口闭环回归：router 行 modelIds 恒空，若被 models.length>0 过滤掉，
+    // 画布 agent 就根本选不到 router。
+    const groups = buildCanvasAgentModelOptions([claudeProvider, autoRouterProvider])
+
+    const routerGroup = groups.find((group) => group.provider.id === 'router-1')
+    expect(routerGroup).toBeDefined()
+    expect(routerGroup?.adapter).toBe('claude-sdk')
+    expect(routerGroup?.models).toEqual([
+      { modelId: '', label: CANVAS_AUTO_ROUTER_MODEL_LABEL },
+    ])
+  })
+
+  it('resolves router selection to an empty model id (dispatcher decides per turn)', () => {
+    const selection = resolveCanvasAgentModelSelection({
+      providers: [claudeProvider, autoRouterProvider],
+      providerId: 'router-1',
+      // 存量节点可能带着旧模型 id 过来，选中 router 后必须被清空
+      modelId: 'claude-sonnet-4-5',
+      fallbackAdapter: 'codex',
+    })
+
+    expect(selection.providerId).toBe('router-1')
+    expect(selection.modelId).toBe('')
+    expect(selection.adapter).toBe('claude-sdk')
   })
 
   it('resolves provider, model, and adapter from a single model selection', () => {

@@ -60,6 +60,7 @@ import { buildSelectedNodesContext } from './canvasAgentContextBuilder'
 import { resolveCanvasAgentContextNodes } from './canvasAgentMessageContext'
 import {
   buildCanvasAgentModelOptions,
+  isCanvasAgentAutoRouter,
   filterCanvasAgentConversationProviders,
   getCanvasAgentProviderModels,
   resolveCanvasAgentModelSelection,
@@ -2148,7 +2149,10 @@ export function ProviderModelPickerInline({
     conversationalProviders.find((provider) => provider.id === selectedProviderId) ??
     conversationalProviders[0]
   const vendor = resolveProviderVendor(selectedProvider)
-  const label = selectedModelId || selectedProvider?.defaultModel || '选择模型'
+  // 选中 router：执行模型由分流器逐轮决定，主标签显示 router 名称而非空模型名
+  const label = isCanvasAgentAutoRouter(selectedProvider)
+    ? (selectedProvider?.name ?? '智能路由')
+    : selectedModelId || selectedProvider?.defaultModel || '选择模型'
   const modelGroups = useMemo(
     () => buildCanvasAgentModelOptions(conversationalProviders),
     [conversationalProviders],
@@ -2366,13 +2370,15 @@ export function ProviderModelPickerInline({
                   </div>
                   {models.map(({ modelId, label: modelLabel }) => {
                     const active = provider.id === selectedProviderId && modelId === selectedModelId
+                    // router 分组无固定模型，置顶无意义（且置顶记录按 modelId 匹配会落空）
+                    const routerGroup = isCanvasAgentAutoRouter(provider)
                     return (
                       <ModelPickerMenuItem
                         key={`${provider.id}:${modelId}`}
                         label={modelLabel}
                         active={active}
-                        pinned={isPinnedModel(provider.id, modelId)}
-                        showPin={pinningEnabled}
+                        pinned={!routerGroup && isPinnedModel(provider.id, modelId)}
+                        showPin={pinningEnabled && !routerGroup}
                         onSelect={() => {
                           onOpenChange(false)
                           setSearch('')

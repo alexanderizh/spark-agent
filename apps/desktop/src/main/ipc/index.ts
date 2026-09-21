@@ -2020,14 +2020,30 @@ async function resolveScheduledTaskRuntime(params: {
   let modelId: string | null = params.modelId ?? null
   const agentId: string | null = params.agentId ?? null
   let agentAdapterHint: SessionAgentAdapter | null = null
+  /** AutoRouter 元渠道命中时的引擎声明（覆盖引擎兜底，避免把 claude router 跑成 codex）。 */
+  let autoRouterAdapterHint: SessionAgentAdapter | null = null
 
-  // 1. 任务里挑了 modelId：找拥有这个 model 的 provider
+  // 1. 任务里挑了 AutoRouter：定时任务表单的选项值即 router 的 provider id。
+  //    命中则 modelId 置空——执行模型由分流器逐轮决定（与 Composer/画布口径一致）。
   if (modelId) {
+    const routerOwner = profiles.find(
+      (p) => p.id === modelId && p.providerType === AUTO_ROUTER_PROVIDER_TYPE,
+    )
+    if (routerOwner != null) {
+      providerProfileId = routerOwner.id
+      autoRouterAdapterHint =
+        routerOwner.autoRouterConfig?.adapter === 'codex' ? 'codex' : 'claude-sdk'
+      modelId = null
+    }
+  }
+
+  // 2. 任务里挑了普通 modelId：找拥有这个 model 的 provider
+  if (modelId && providerProfileId == null) {
     const owner = profiles.find((p) => p.defaultModel === modelId || p.modelIds.includes(modelId!))
     if (owner) providerProfileId = owner.id
   }
 
-  // 2. 任务里挑了 agentId：补全 provider / model
+  // 3. 任务里挑了 agentId：补全 provider / model
   if (agentId) {
     const agent = agentRepo.get(agentId)
     if (agent != null) {
@@ -2043,7 +2059,7 @@ async function resolveScheduledTaskRuntime(params: {
     }
   }
 
-  // 3. 兜底：沿用默认 agent + 默认 provider
+  // 4. 兜底：沿用默认 agent + 默认 provider
   if (providerProfileId == null) {
     const def = profiles.find((p) => p.isDefault) ?? profiles[0]
     if (def == null) throw new Error('No provider profile available')
@@ -2061,7 +2077,7 @@ async function resolveScheduledTaskRuntime(params: {
     providerProfileId: providerProfileId!,
     modelId: modelId ?? undefined,
     agentId: agentId ?? undefined,
-    agentAdapter: agentAdapterHint ?? runtimeDefaults.agentAdapter,
+    agentAdapter: autoRouterAdapterHint ?? agentAdapterHint ?? runtimeDefaults.agentAdapter,
   }
 }
 

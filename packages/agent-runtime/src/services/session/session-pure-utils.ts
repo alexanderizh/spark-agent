@@ -27,6 +27,7 @@ import type {
 } from '@spark/storage'
 import type {
   AgentEvent,
+  AutoRouterConfig,
   CliSparkOverride,
   HistoryImportSource,
   SessionChatMode,
@@ -36,12 +37,14 @@ import type {
   SessionLineage,
   SessionPermissionMode,
   SessionReference,
+  RouterIntensity,
   SessionReferenceCandidate,
   TeamA2ATask,
   TeamModeConfig,
 } from '@spark/protocol'
 import {
   AUTO_ROUTER_PROVIDER_TYPE,
+  findExecutorByIntensity,
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   isLocalCodexCliProvider,
@@ -527,18 +530,74 @@ export const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
   'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
 
+/** 本轮编排来源：团队花名册 / AutoRouter 拆分 worker / 托管工作流。 */
+export type OrchestrationSource = 'team' | 'workflow' | 'auto-router'
+
+/**
+ * 本轮编排来源判定（互斥，优先级 team > auto-router > workflow）。
+ *
+ * 与 createTeamMcpServer 的工具面判据同源：团队成员与 AutoRouter 一次性 worker
+ * 共享 agent_dispatch 工具面，二者都属于「可派发花名册」；只剩托管工作流时可派发
+ * 目标是 workflow_run 节点，不作为 dispatch 目标。
+ */
+export function resolveOrchestrationSource(input: {
+  hasDispatchableTeamMembers: boolean
+  hasAutoRouterSubtasks: boolean
+}): OrchestrationSource {
+  if (input.hasDispatchableTeamMembers) return 'team'
+  if (input.hasAutoRouterSubtasks) return 'auto-router'
+  return 'workflow'
+}
+
+/**
+ * 本轮是否暴露 agent_dispatch / agent_dispatch_batch 工具面。
+ *
+ * AutoRouter decomposed 轮次把一次性强度 worker 并入派发花名册，但派发工具面
+ * 若仍只按「有团队成员」判定，Host 会拿到「请用 agent_dispatch 派发子任务」的
+ * 提示却根本没有该工具，decomposed 静默退化为单模型执行（多模型同轮协作失效）。
+ * 工具面判定必须与建 server 的花名册判定一致。
+ */
+export function shouldExposeDispatchTools(input: {
+  hasDispatchableTeamMembers: boolean
+  hasAutoRouterSubtasks: boolean
+}): boolean {
+  return input.hasDispatchableTeamMembers || input.hasAutoRouterSubtasks
+}
+
+/**
+ * AutoRouter 子任务 worker 的执行器绑定：优先取该强度档配置的执行器，该档未配置时
+ * 回落本轮已解析出的主执行器（turn 级 resolvedProviderId/resolvedModelId）。
+ *
+ * 绝不能回落到 host 绑定：router 会话里 host 绑的正是 router 行，成员侧会因此再分流
+ * 一次（白烧一次分流调用），与「worker 直接绑定执行器、成员侧不二次分流」的约定冲突。
+ */
+export function resolveAutoRouterWorkerBinding(params: {
+  config: AutoRouterConfig
+  intensity: RouterIntensity
+  /** 本轮分流已解析出的执行器（缺配置时的回落目标）。 */
+  fallback: { providerProfileId: string; modelId: string }
+}): { providerProfileId: string; modelId: string } {
+  const executor = findExecutorByIntensity(params.config, params.intensity)
+  if (executor != null) {
+    return { providerProfileId: executor.providerProfileId, modelId: executor.modelId }
+  }
+  return params.fallback
+}
+
 /**
  * 编排宿主的行为引导（纯提示词，不禁用任何工具——产品决策 2026-07-04：所有 agent
  * 含团队 Host / 挂工作流的 agent 都保留全量工具权限，「优先派发」只靠引导实现）。
  */
 export function buildOrchestrationModeSystemPrompt(
-  source: 'team' | 'workflow',
+  source: OrchestrationSource,
   memberCount: number,
 ): string {
   const reason =
     source === 'team'
       ? 'Team Mode is enabled for this session'
-      : 'the agent you are running as has a workflow attached with dispatchable phases'
+      : source === 'auto-router'
+        ? 'the AutoRouter detected this turn is decomposable and assigned one-off intensity workers to you'
+        : 'the agent you are running as has a workflow attached with dispatchable phases'
   return [
     '[Orchestration Mode]',
     `You are the orchestration host this turn. Reason: ${reason}. You have ${memberCount} member(s)/worker(s) you can delegate to.`,

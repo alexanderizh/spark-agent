@@ -286,9 +286,17 @@ export function ChatTabbar({
             {!teamConfig.enabled && orchestration != null && (
               <span
                 className="chat-team-status-chip is-orchestration"
-                title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`}
+                title={
+                  orchestration.source === 'auto-router'
+                    ? `自动路由判定本轮任务可拆分，已为 ${orchestration.memberCount} 个子任务准备强度分级的一次性 worker，${orchestration.hostAgentName} 本轮以委派为主（保留全部工具）。`
+                    : `${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`
+                }
               >
-                <Icons.Workflow size={12} />
+                {orchestration.source === 'auto-router' ? (
+                  <Icons.Shuffle size={12} />
+                ) : (
+                  <Icons.Workflow size={12} />
+                )}
               </span>
             )}
           </>

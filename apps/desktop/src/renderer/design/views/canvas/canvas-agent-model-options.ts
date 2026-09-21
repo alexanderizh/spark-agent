@@ -1,4 +1,5 @@
 import type { ProviderProfile, SessionAgentAdapter } from '@spark/protocol'
+import { AUTO_ROUTER_PROVIDER_TYPE } from '@spark/protocol'
 import { getProviderAdapterKind } from '../../utils/provider-adapter'
 
 export interface CanvasAgentModelGroup {
@@ -28,8 +29,21 @@ export function filterCanvasAgentConversationProviders(
   return providers.filter(isCanvasAgentConversationProvider)
 }
 
+/** AutoRouter 行：执行模型由分流器逐轮决定，自身 modelIds 恒空（Phase 4 画布接入）。 */
+export function isCanvasAgentAutoRouter(provider: ProviderProfile | undefined): boolean {
+  return provider?.providerType === AUTO_ROUTER_PROVIDER_TYPE
+}
+
+/**
+ * router 的「模型」不是可选项而是一个说明性条目：选中它 = 由分流器逐轮决定执行模型
+ * （modelId 恒空，与 Composer / 会话侧口径一致）。
+ */
+export const CANVAS_AUTO_ROUTER_MODEL_LABEL = '智能路由（由分流器决定执行模型）'
+
 export function getCanvasAgentProviderModels(provider: ProviderProfile | undefined): string[] {
   if (provider == null) return []
+  // router 无固定模型清单：不返回 defaultModel/modelIds（即便存量行有残留值也不展示）
+  if (isCanvasAgentAutoRouter(provider)) return []
   return Array.from(
     new Set(
       [
@@ -52,10 +66,14 @@ export function buildCanvasAgentModelOptions(
     .map((provider) => ({
       provider,
       adapter: getProviderAdapterKind(provider),
-      models: getCanvasAgentProviderModels(provider).map((modelId) => ({
-        modelId,
-        label: modelId,
-      })),
+      models: isCanvasAgentAutoRouter(provider)
+        ? // router 行 modelIds 恒空，用单条说明性条目占位，避免被下方长度过滤丢弃
+          // （否则画布 agent 根本选不到 router，Phase 4 「入口闭环」形同虚设）。
+          [{ modelId: '', label: CANVAS_AUTO_ROUTER_MODEL_LABEL }]
+        : getCanvasAgentProviderModels(provider).map((modelId) => ({
+            modelId,
+            label: modelId,
+          })),
     }))
     .filter((group) => group.models.length > 0)
 }
@@ -64,6 +82,8 @@ export function resolveCanvasAgentProviderModel(
   provider: ProviderProfile,
   preferredModelId: string | undefined,
 ): string {
+  // router：modelId 恒空（分流器决定执行模型），任何残留的旧 modelId 都不得带过去
+  if (isCanvasAgentAutoRouter(provider)) return ''
   const models = getCanvasAgentProviderModels(provider)
   return preferredModelId != null && models.includes(preferredModelId)
     ? preferredModelId

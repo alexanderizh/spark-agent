@@ -11,10 +11,8 @@ function isAutoRouterProfile(
 export function getLockedAgentAdapterForProvider(
   provider: ProviderProfile | null | undefined,
 ): SessionAgentAdapter | null {
-  // router 行的引擎按其声明（autoRouterConfig.adapter），不按 provider 字段推断
-  if (isAutoRouterProfile(provider)) {
-    return provider?.autoRouterConfig?.adapter === 'codex' ? 'codex' : 'claude-sdk'
-  }
+  // 引擎推断统一走 getProviderAdapterKind（其中含 router 按其声明 adapter 的分支，
+  // 不再在此重复实现，避免两处口径分叉）。
   return provider ? getProviderAdapterKind(provider) : null
 }
 

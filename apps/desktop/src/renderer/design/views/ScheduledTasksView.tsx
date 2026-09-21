@@ -25,6 +25,7 @@ import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { filterConversationalProviders } from '../utils/provider-model-kind'
+import { buildScheduledTaskModelOptions } from './scheduled-task-model-options'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -1012,15 +1013,8 @@ function TaskFormPage({
       .catch(console.error)
   }, [listAgents, listTeams, listProviders, listWorkspaces])
 
-  // Build model options from all providers' modelIds
-  const modelOptions = useMemo(() => {
-    const modelSet = new Set<string>()
-    for (const p of providers) {
-      if (p.defaultModel) modelSet.add(p.defaultModel)
-      for (const m of p.modelIds) modelSet.add(m)
-    }
-    return Array.from(modelSet).map((m) => ({ label: m, value: m }))
-  }, [providers])
+  // 模型候选 = AutoRouter 元渠道（选项值即 router 的 provider id）+ 普通渠道的模型 id
+  const modelOptions = useMemo(() => buildScheduledTaskModelOptions(providers), [providers])
 
   const agentOptions = useMemo(() => agents.map((a) => ({ label: a.name, value: a.id })), [agents])
 

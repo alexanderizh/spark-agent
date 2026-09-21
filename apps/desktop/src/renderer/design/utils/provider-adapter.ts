@@ -50,6 +50,14 @@ export function isProviderCompatibleWithAdapter(
 
 export function getProviderAdapterKind(provider: ProviderProfile): SessionAgentAdapter {
   if (isLocalCodexCliProvider(provider)) return 'codex'
+  // AutoRouter 行是按强度分流到多个执行器渠道的元渠道，自身没有可用协议推断引擎
+  // （provider 字段为 'auto-router'，既不等于 'anthropic'）。若不显式分支，claude
+  // router 会被判成 codex：会话侧"选中 provider 即校准引擎"的协调逻辑会把 claude
+  // 会话的 agentAdapter 改成 codex，运行时随即判 adapterMismatch，claude 档位执行器
+  // 全部失配（回退 codex 执行器或直接报没有可用执行模型）。
+  if (provider.providerType === AUTO_ROUTER_PROVIDER_TYPE) {
+    return provider.autoRouterConfig?.adapter === 'codex' ? 'codex' : 'claude-sdk'
+  }
   return provider.provider === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 

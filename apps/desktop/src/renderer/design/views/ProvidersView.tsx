@@ -71,6 +71,7 @@ import {
   MediaModelManifestSchema,
   validateMediaModelManifestSemantics,
   scheduledBlockedModelIds,
+  AUTO_ROUTER_PROVIDER_TYPE,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -1209,6 +1210,10 @@ function ProvidersView() {
   const visibleProfiles = useMemo(() => {
     const keyword = cardSearch.trim().toLowerCase()
     const filtered = uiProfiles.filter((p) => {
+      // AutoRouter 行不是普通渠道：它由工具栏「自动路由」弹层管理，不进渠道卡片网格。
+      // 否则会渲染成「OpenAI 格式 · 默认 」（modelIds 恒空），且点编辑会走普通渠道
+      // 编辑面板，把 provider_type 改掉留下脏行（服务端已同步拒绝该写入）。
+      if (p.providerType === AUTO_ROUTER_PROVIDER_TYPE) return false
       if (cardKindFilter !== 'all' && resolveProviderCardKind(p) !== cardKindFilter) return false
       // 启用口径与卡片开关一致：enabled !== false 视为启用（undefined 旧数据按启用处理）
       if (cardEnabledFilter === 'enabled' && p.enabled === false) return false

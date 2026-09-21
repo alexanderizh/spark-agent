@@ -181,6 +181,22 @@ describe('ProviderService AutoRouter CRUD', () => {
     expect(router?.providerType).toBe(AUTO_ROUTER_PROVIDER_TYPE)
   })
 
+  it('updateProvider 拒绝在普通渠道编辑面板改写 router 行（只放行启停）', async () => {
+    const profile = await service.createAutoRouter({ name: '主力路由', config: routerConfig() })
+    // 普通渠道编辑面板会下发 provider 协议格式 → 若不拦截，router 行会被改成
+    // anthropic/openai，留下带 AutoRouterConfig 的脏行（不再被识别为 router）。
+    await expect(
+      service.updateProvider({ id: profile.id, provider: 'anthropic', name: '被改写' }),
+    ).rejects.toThrow('自动路由只能在「渠道管理 → 自动路由」中修改')
+    // 启停属于 router 合法操作，放行
+    await expect(
+      service.updateProvider({ id: profile.id, enabled: false }),
+    ).resolves.toBeDefined()
+    const row = repo.rows.get(profile.id)
+    expect(row?.provider_type).toBe(AUTO_ROUTER_PROVIDER_TYPE)
+    expect(row?.name).toBe('主力路由')
+  })
+
   it('deleteProvider 允许删除 router 行（去掉旧拒删特判）', async () => {
     const profile = await service.createAutoRouter({ name: '主力路由', config: routerConfig() })
     await expect(service.deleteProvider(profile.id)).resolves.toBeUndefined()

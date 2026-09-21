@@ -102,7 +102,7 @@ import {
   findExecutorByIntensity,
   parseAutoRouterConfig,
   type AutoRouterConfig,
-  type RouterAdapter,
+  type AutoRouterMemberDisplayInfo,
   type RouterIntensity,
 } from '@spark/protocol'
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
@@ -182,6 +182,7 @@ import {
   normalizeAgentAdapter,
   normalizePermissionMode,
   resolveEngineKind,
+  resolveRouterSessionAdapter,
 } from './session/engine-kinds.js'
 export { getAgentAdapterFromSession, getPermissionModeFromSession } from './session/engine-kinds.js'
 
@@ -287,8 +288,11 @@ import {
   getProviderUseSparkExecutor,
   assertModelNotScheduledBlocked,
   readSessionTeamConfig,
+  resolveOrchestrationSource,
+  resolveAutoRouterWorkerBinding,
   resolveCodexMemberExecutionProfile,
   shouldDeriveSessionTitle,
+  shouldExposeDispatchTools,
   supportsOpenAIFastMode,
   toLastRunOutcome,
   withAgentSnapshot,
@@ -313,7 +317,10 @@ export {
   formatThreadMessageBrowse,
   formatThreadMessageFull,
   mapSessionAttachmentsToDispatch,
+  resolveAutoRouterWorkerBinding,
   resolveCodexMemberExecutionProfile,
+  resolveOrchestrationSource,
+  shouldExposeDispatchTools,
 }
 export type { TeamRosterPromptOptions } from './session/session-pure-utils.js'
 
@@ -2451,30 +2458,21 @@ export class SessionService {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
       let autoRouterRouting: AutoRouterRouteResult | null = null
       if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
-        // 会话引擎（adapterMismatch 判定）：与 2527 行 agentAdapter 同源取数，
-        // 但 router 行无渠道 config 可依，useSparkExecutor 不参与判定。
-        const sessionRouterAdapter: RouterAdapter =
-          resolveEngineKind(
-            getAgentAdapterFromSession(
-              isMentionTurn
-                ? (agent.agentAdapter ?? session.agent_adapter)
-                : sessionTeamConfig?.enabled === true
-                  ? runtimeAgent.agentAdapter
-                  : session.agent_adapter,
-              session.chat_mode,
-              null,
-              undefined,
-            ),
-          ) === 'codex'
-            ? 'codex'
-            : 'claude'
+        // 会话引擎信号（adapterMismatch 判定）：这里只传会话自身的原始 adapter /
+        // chat_mode，不做 engine-kinds 兜底推导——router 行没有渠道 protocol 可依，
+        // 由 routeAutoRouterTurn 在解析出 router 声明引擎后统一推导（P5 修正）。
         const autoRouterOutcome = await this.routeAutoRouterTurn({
           routerRow: provider,
           sessionId,
           turnId,
           message,
           eventCount: existingEventCount,
-          sessionAdapter: sessionRouterAdapter,
+          sessionAdapterValue: isMentionTurn
+            ? (agent.agentAdapter ?? session.agent_adapter)
+            : sessionTeamConfig?.enabled === true
+              ? runtimeAgent.agentAdapter
+              : session.agent_adapter,
+          sessionChatMode: session.chat_mode,
           isTurnCancelled: () => this.turnRegistry.isTurnCancelled(turnId),
           eventRepo,
         })
@@ -2500,6 +2498,10 @@ export class SessionService {
             config: autoRouterOutcome.config,
             subtasks: capped,
             hostAgent: runtimeAgent,
+            fallback: {
+              providerProfileId: autoRouterRouting.resolvedProviderId,
+              modelId: autoRouterRouting.resolvedModelId,
+            },
           })
           if (capped.length < autoRouterRouting.subtasks.length) {
             log.warn('auto-router subtasks capped by concurrency budget', {
@@ -2526,6 +2528,21 @@ export class SessionService {
               modelId: worker.modelId,
             })),
           })
+        }
+        // P2：分流期间用户点了「停止」。这不是配置故障，必须先把取消单独收口，
+        // 否则会落到下面的"没有可用执行模型"报错（提示用户去改配置），并经
+        // handleQueuedTurnStartFailure 写成 agent_error + 会话 error。
+        // cancelTurn 的 starting 分支已写入 user_cancelled_turn 终态、把会话复位为
+        // idle 并标记 lastRunOutcome=cancelled，这里安静结束本轮启动即可。
+        if (autoRouterRouting.cancelled) {
+          log.info('auto-router turn cancelled during dispatch; executor swap skipped', {
+            sessionId,
+            turnId,
+            routerId: provider.id,
+            routerName: provider.name,
+            routingMs: autoRouterRouting.latencyMs,
+          })
+          return
         }
         if (autoRouterRouting.resolvedProviderId.length === 0) {
           throw new Error(
@@ -3136,7 +3153,10 @@ export class SessionService {
               providerType: provider.provider_type,
               codexApiKind: config.codexApiKind,
             }),
-            exposeTeamDispatchTools: hasDispatchableTeamMembers,
+            exposeTeamDispatchTools: shouldExposeDispatchTools({
+              hasDispatchableTeamMembers,
+              hasAutoRouterSubtasks,
+            }),
             ...(hasWorkflowExecutionPlan
               ? {
                   workflowGraph: workflowGraph as NormalizedWorkflowGraph,
@@ -3190,6 +3210,13 @@ export class SessionService {
             onDispatchBudgetExceeded: () => this.markTeamDispatchBudgetExhausted(sessionId, turnId),
             ...(usePersistentCodexAppServer ? { codexRuntimeLeaseKey } : {}),
           })) ?? undefined
+        // 本轮编排来源（互斥）：团队成员 > AutoRouter 一次性 worker > 托管工作流。
+        // 与上面的工具面判据同源，保证 orchestration_status 事件、编排提示词与
+        // agent_dispatch 工具面三处口径一致。
+        const orchestrationSource = resolveOrchestrationSource({
+          hasDispatchableTeamMembers,
+          hasAutoRouterSubtasks,
+        })
         // 告诉 UI（及下面拼进系统提示词的编排提示）：本轮宿主进入编排模式（保留全量
         // 工具，提示词引导「优先派发」——不再剥离 Edit/Write/Bash，产品决策 2026-07-04）。
         if (teamMcpServer != null) {
@@ -3204,7 +3231,7 @@ export class SessionService {
               timestamp: new Date().toISOString(),
               seq: 0,
               active: true,
-              source: hasDispatchableTeamMembers ? 'team' : 'workflow',
+              source: orchestrationSource,
               hostAgentId: runtimeAgent.id,
               hostAgentName: runtimeAgent.name,
               memberCount: dispatchMembers.length,
@@ -3212,7 +3239,7 @@ export class SessionService {
             eventRepo,
           )
           orchestrationModePrompt = buildOrchestrationModeSystemPrompt(
-            hasDispatchableTeamMembers ? 'team' : 'workflow',
+            orchestrationSource,
             dispatchMembers.length,
           )
         }
@@ -7945,28 +7972,30 @@ export class SessionService {
     {
       provider = loadProvider(providerProfileId)
       if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
-        const memberRouterAdapter: RouterAdapter =
-          resolveEngineKind(
-            getAgentAdapterFromSession(
-              member.agentAdapter ?? runtimeSelectionSnapshot.agentAdapter,
-              runtimeSelectionSnapshot.chatMode,
-              null,
-              undefined,
-            ),
-          ) === 'codex'
-            ? 'codex'
-            : 'claude'
         const memberOutcome = await this.routeAutoRouterTurn({
           routerRow: provider,
           sessionId,
           turnId,
           message: memberRouteMessage,
           eventCount: eventRepo.countBySession(sessionId),
-          sessionAdapter: memberRouterAdapter,
+          sessionAdapterValue: member.agentAdapter ?? runtimeSelectionSnapshot.agentAdapter,
+          sessionChatMode: runtimeSelectionSnapshot.chatMode,
           isTurnCancelled: () => signal.aborted || this.turnRegistry.isTurnCancelled(turnId),
           eventRepo,
         })
         memberAutoRouterTierModels = memberOutcome.tierModels
+        // P2：成员分流期间宿主轮次被取消/成员被中止时安静收尾，不把取消报成
+        // "没有可用执行模型"（与 executeMemberTurn 开头的 abort 早退语义一致）。
+        if (memberOutcome.routing.cancelled || signal.aborted) {
+          log.info('member auto-router turn cancelled during dispatch', {
+            sessionId,
+            turnId,
+            memberId: member.id,
+            routerId: provider.id,
+            routingMs: memberOutcome.routing.latencyMs,
+          })
+          return { content: '', partial: true }
+        }
         if (memberOutcome.routing.resolvedProviderId.length === 0) {
           throw new Error(
             `成员自动路由「${provider.name}」没有可用执行模型：${memberOutcome.routing.reason}`,
@@ -8578,6 +8607,10 @@ export class SessionService {
     // 收敛在 codex descriptor 内）。四执行器 onEvent/cancel/executeTurn 签名一致，监听复用。
     const executor = this.engineRegistry.resolveExecutor(memberAdapter, sdkConfig)
 
+    // 显示点 4：AutoRouter 一次性强度 worker 的展示信息（普通成员为 null）。
+    // worker 是每轮临时合成、不入 Agent 表，渲染端无法反查其模型，必须随事件下发。
+    const memberAutoRouterInfo = buildAutoRouterMemberDisplayInfo(member)
+
     // 按 segment 收集 member 多段正文（被工具调用分隔的每段文本）。
     // 给 Host 的最终 content 拼接所有段，避免最后一段 result 覆盖前面段。
     const segments: Array<{ id: string | undefined; text: string }> = []
@@ -8613,6 +8646,8 @@ export class SessionService {
             isFinal: event.isFinal,
             // 透传 segmentId：让 UI/历史按段聚合 member 的多段正文（与 Host 一致）
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+            // 显示点 4：子任务气泡头部展示「强度色点 · 模型名 · 摘要」
+            ...(memberAutoRouterInfo != null ? { autoRouter: memberAutoRouterInfo } : {}),
           },
           eventRepo,
         )
@@ -8652,7 +8687,7 @@ export class SessionService {
             sessionId,
             turnId,
             seq: 0,
-            teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId),
+            teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId, memberAutoRouterInfo),
           },
           workspaceRootPath,
         )
@@ -8674,7 +8709,7 @@ export class SessionService {
               changeType: change.changeType,
               ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
               collectionSource: 'agent_manifest',
-              teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId),
+              teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId, memberAutoRouterInfo),
             },
             eventRepo,
           )
@@ -8759,10 +8794,15 @@ export class SessionService {
     config: AutoRouterConfig
     subtasks: AutoRouterRouteResult['subtasks']
     hostAgent: AgentItem
+    /** 本轮分流已解析出的执行器（子任务强度档缺配置执行器时的回落目标）。 */
+    fallback: { providerProfileId: string; modelId: string }
   }): AgentItem[] {
     return params.subtasks.map((subtask, index) => {
-      const executor = findExecutorByIntensity(params.config, subtask.intensity)
-      // 执行器缺失时回退 null（成员解析时回落 host 绑定），并如实记录
+      const binding = resolveAutoRouterWorkerBinding({
+        config: params.config,
+        intensity: subtask.intensity,
+        fallback: params.fallback,
+      })
       const workerId = `autorouter:${params.routerId}:${params.turnId}:${index}`
       return {
         ...params.hostAgent,
@@ -8774,9 +8814,8 @@ export class SessionService {
         enabled: true,
         workflowId: null,
         hookConfig: {},
-        ...(executor != null
-          ? { providerProfileId: executor.providerProfileId, modelId: executor.modelId }
-          : {}),
+        providerProfileId: binding.providerProfileId,
+        modelId: binding.modelId,
         metadata: {
           ...params.hostAgent.metadata,
           temporaryAutoRouterWorker: true,
@@ -8794,7 +8833,10 @@ export class SessionService {
     turnId: string
     message: string
     eventCount: number
-    sessionAdapter: RouterAdapter
+    /** 会话显式 adapter 原始值（不做兜底推导，见 resolveRouterSessionAdapter）。 */
+    sessionAdapterValue: string | null | undefined
+    /** 会话 chat_mode（历史 adapter 落点）。 */
+    sessionChatMode: string | null | undefined
     isTurnCancelled: () => boolean
     eventRepo: EventRepository
   }): Promise<{
@@ -8804,6 +8846,13 @@ export class SessionService {
     config: AutoRouterConfig | null
   }> {
     let routerConfig = parseAutoRouterConfig(safeJsonParseLoose(params.routerRow.config_json))
+    // 会话引擎（adapterMismatch 判定）：会话显式 adapter/chat_mode 优先；两者都缺省时
+    // 按 router 声明的 adapter 假定（P5 修正，理由见 resolveRouterSessionAdapter）。
+    const sessionAdapter = resolveRouterSessionAdapter({
+      sessionAdapter: params.sessionAdapterValue,
+      chatMode: params.sessionChatMode,
+      routerAdapter: routerConfig?.adapter ?? null,
+    })
     if (routerConfig == null) {
       log.warn('auto-router config invalid; routing degraded', {
         sessionId: params.sessionId,
@@ -8872,7 +8921,7 @@ export class SessionService {
                 return typeof parsed?.content === 'string' ? parsed.content : ''
               })
               .filter((text) => text.length > 0),
-            sessionAdapter: params.sessionAdapter,
+            sessionAdapter,
             isTurnCancelled: params.isTurnCancelled,
           })
 
@@ -8910,7 +8959,7 @@ export class SessionService {
     const tierModels =
       routerConfig != null &&
       routerConfig.subagentIntensityMapping &&
-      params.sessionAdapter === 'claude' &&
+      sessionAdapter === 'claude' &&
       routing.ok
         ? {
             haiku:
@@ -11204,31 +11253,40 @@ function safeJsonParseLoose(text: string | null | undefined): unknown {
 const AUTO_ROUTER_MAX_SUBTASK_BUDGET = 10
 
 /**
+ * AutoRouter 一次性强度 worker 的展示信息（子任务摘要 · 强度 · 实际模型名）。
+ * 非 AutoRouter 临时 worker 返回 null（普通团队成员不展示该标识）。
+ */
+function buildAutoRouterMemberDisplayInfo(
+  member: AgentItem,
+): AutoRouterMemberDisplayInfo | null {
+  const metadata = member.metadata as {
+    temporaryAutoRouterWorker?: boolean
+    autoRouterIntensity?: RouterIntensity
+    autoRouterSubtaskSummary?: string
+  }
+  if (metadata.temporaryAutoRouterWorker !== true) return null
+  return {
+    intensity: metadata.autoRouterIntensity ?? 'balanced',
+    modelDisplayName: member.modelId ?? '',
+    summary: metadata.autoRouterSubtaskSummary ?? '',
+  }
+}
+
+/**
  * 成员事件上下文：一次性强度 worker 时附加 autoRouter 展示信息
  * （子任务摘要 · 强度 · 实际模型名 → 渲染端显示点 4）；普通成员保持两字段形态。
  */
 function buildTeamMemberContextWithAutoRouter(
   member: AgentItem,
   dispatchId: string,
+  autoRouterInfo: AutoRouterMemberDisplayInfo | null,
 ): { dispatchId: string; memberAgentId: string } & {
-  autoRouter?: { intensity: RouterIntensity; modelDisplayName: string; summary: string }
+  autoRouter?: AutoRouterMemberDisplayInfo
 } {
-  const metadata = member.metadata as {
-    temporaryAutoRouterWorker?: boolean
-    autoRouterIntensity?: RouterIntensity
-    autoRouterSubtaskSummary?: string
-  }
-  if (metadata.temporaryAutoRouterWorker !== true) {
-    return { dispatchId, memberAgentId: member.id }
-  }
   return {
     dispatchId,
     memberAgentId: member.id,
-    autoRouter: {
-      intensity: metadata.autoRouterIntensity ?? 'balanced',
-      modelDisplayName: member.modelId ?? '',
-      summary: metadata.autoRouterSubtaskSummary ?? '',
-    },
+    ...(autoRouterInfo != null ? { autoRouter: autoRouterInfo } : {}),
   }
 }
 

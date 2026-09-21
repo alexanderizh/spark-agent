@@ -17,6 +17,7 @@ import type {
   UserQuestionOption,
   UserQuestionPrompt,
   WorkflowProgressNode,
+  RouterIntensity,
 } from '@spark/protocol'
 import { getLegacyRemoteUserDisplayContent, isEngineCompactSummaryText } from '@spark/protocol'
 import {
@@ -365,6 +366,15 @@ export type UIBlock =
       isFinalAnswer?: boolean
       /** 产生/更新该 block 所消费的源 event id，用于「只删这条成员消息」时反查 event。 */
       eventIds?: string[]
+      /**
+       * AutoRouter 一次性强度 worker 的展示信息（显示点 4）：子任务块头部
+       * 「强度色点 · 模型名 · 子任务摘要」。普通团队成员事件缺省。
+       */
+      autoRouter?: {
+        intensity: RouterIntensity
+        modelDisplayName: string
+        summary: string
+      }
     }
   | {
       /** Team Mode：团队讨论里的协作消息（team_peer_message） */
@@ -424,7 +434,7 @@ export interface GoalSnapshot {
 
 /** 宿主是否处于编排（团队/工作流托管）模式——保留全量工具，提示词引导「优先派发」。 */
 export interface OrchestrationSnapshot {
-  source: 'team' | 'workflow'
+  source: 'team' | 'workflow' | 'auto-router'
   hostAgentId: string
   hostAgentName: string
   memberCount: number
@@ -1780,6 +1790,7 @@ export class MessageBuilder {
             isStreaming,
             ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
             eventIds: [event.id],
+            ...(event.autoRouter != null ? { autoRouter: event.autoRouter } : {}),
           }
           if (isFinalAnswer) block.isFinalAnswer = true
           msg.blocks.push(block)

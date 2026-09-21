@@ -882,6 +882,17 @@ export class ProviderService {
       throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
     }
 
+    // AutoRouter 行不是普通渠道：除启停之外的字段一律只能经 updateAutoRouter 修改。
+    // 若允许普通编辑面板写它，面板会把 provider_type 改成 anthropic/openai，留下一条
+    // 带 AutoRouterConfig 的脏行 —— 该行不再被识别为 router，执行链会按普通渠道解析
+    // （keystore_ref 为空、defaultModel 为空），后续轮次直接启动失败。
+    if (
+      existing.provider_type === AUTO_ROUTER_PROVIDER_TYPE &&
+      Object.keys(params).some((key) => key !== 'id' && key !== 'enabled')
+    ) {
+      throw new Error('自动路由只能在「渠道管理 → 自动路由」中修改')
+    }
+
     // 协议格式切换（anthropic ↔ openai）：同步 provider_type，并让配置按新类型重新归一化。
     const nextProviderType =
       params.provider !== undefined

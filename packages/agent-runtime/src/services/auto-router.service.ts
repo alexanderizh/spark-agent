@@ -344,12 +344,11 @@ export class AutoRouterService {
       findExecutorByIntensity({ ...input.config, executors: validExecutors }, intensity) ??
       findExecutorByIntensity({ ...input.config, executors: validExecutors }, input.config.fallbackIntensity) ??
       validExecutors[0]
-    if (
-      executor != null &&
-      executor.intensity !== intensity &&
-      !fallbackUsed
-    ) {
-      // 强度档位未配置执行器，静默回落兜底强度（记 reason）
+    if (executor != null && executor.intensity !== intensity) {
+      // 强度档位未配置执行器 → 回落兜底强度（或任意第一条），必须把强度一起改成
+      // 实际执行条目的强度：标签是渲染端"这轮谁在干活"的唯一依据，若保留请求强度
+      // 会出现「提示条显示●低、实际跑的是高强度模型」的错误标注（规则兜底 + 该强度
+      // 档未配置时最易触发，因为 fallbackUsed 已为 true）。
       reason = `${reason}（${intensity} 档未配置，回落 ${executor.intensity}）`.slice(0, 300)
       intensity = executor.intensity
       fallbackUsed = true

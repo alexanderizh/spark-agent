@@ -17,8 +17,10 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { RouterIntensity } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
+import { routerIntensityColor, routerIntensityLabel } from '../utils/auto-router-display'
 import { AvatarImage } from './AvatarImage'
 
 type ContextMenuItem = {
@@ -102,6 +104,12 @@ export interface TeamMemberBubbleProps {
   onDelete?: () => void
   /** 点击头像查看该 Member 的本次 dispatch 详情 */
   onOpenDetail?: () => void
+  /**
+   * AutoRouter 一次性强度 worker 的展示信息（显示点 4）：头部显示
+   * 「强度色点 · 强度 · 模型名 · 子任务摘要」，让用户看清同一轮里每个子任务
+   * 由哪个强度的哪个模型执行。
+   */
+  routerMeta?: { intensity: RouterIntensity; modelDisplayName: string; summary: string }
 }
 
 async function copyImageFromSrc(src: string): Promise<void> {
@@ -150,6 +158,7 @@ export function TeamMemberBubble({
   onReply,
   onDelete,
   onOpenDetail,
+  routerMeta,
 }: TeamMemberBubbleProps) {
   const avatar = deriveTeamAvatar(memberAgentId, memberName)
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -281,6 +290,35 @@ export function TeamMemberBubble({
           <span className="team-member-name">{memberName}</span>
           {metaLabel != null && metaLabel.trim().length > 0 && (
             <span className={`team-member-origin-pill ${origin}`}>{metaLabel}</span>
+          )}
+          {routerMeta != null && (
+            <span
+              className="team-member-router-meta"
+              title={`智能路由子任务 · ${routerIntensityLabel(routerMeta.intensity)}强度 · ${routerMeta.modelDisplayName || '执行器模型'}${routerMeta.summary.length > 0 ? `｜${routerMeta.summary}` : ''}`}
+            >
+              <span
+                className="team-member-router-meta-dot"
+                style={{ background: routerIntensityColor(routerMeta.intensity) }}
+                aria-hidden
+              />
+              <span>{routerIntensityLabel(routerMeta.intensity)}</span>
+              {routerMeta.modelDisplayName.length > 0 && (
+                <>
+                  <span className="team-member-router-meta-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="team-member-router-meta-model">{routerMeta.modelDisplayName}</span>
+                </>
+              )}
+              {routerMeta.summary.length > 0 && (
+                <>
+                  <span className="team-member-router-meta-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="team-member-router-meta-summary">{routerMeta.summary}</span>
+                </>
+              )}
+            </span>
           )}
           {running && (
             <span className="team-member-running" aria-label="正在执行任务">

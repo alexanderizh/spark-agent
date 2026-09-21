@@ -6439,6 +6439,14 @@ function TeamMemberActivityBlockView({
     () => memberTextBlocks.flatMap((b) => b.eventIds ?? []),
     [memberTextBlocks],
   )
+  // 显示点 4：AutoRouter 一次性强度 worker 的子任务信息（摘要 · 强度 · 模型名）。
+  // 同一 dispatch 的所有块共享同一份 worker 绑定，取首个命中即可；普通团队成员为 undefined。
+  const routerMeta = useMemo(() => {
+    for (const block of blocks) {
+      if (block.kind === 'team_member_message' && block.autoRouter != null) return block.autoRouter
+    }
+    return undefined
+  }, [blocks])
 
   if (!hasVisibleTeamMemberActivityBlocks(blocks, showActivityLogs)) return null
 
@@ -6450,6 +6458,7 @@ function TeamMemberActivityBlockView({
         avatarSrc={resolveAvatarSrc(avatar)}
         running={running}
         textContent={textContent}
+        {...(routerMeta != null ? { routerMeta } : {})}
         {...(onReplyToMember != null
           ? {
               onReply: (selectedText?: string) =>
@@ -8146,7 +8155,11 @@ function isHiddenTimelineBlock(block: UIBlock): boolean {
 
 function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {
   if (block.kind === 'team_member_message') {
-    return { dispatchId: block.dispatchId, memberAgentId: block.memberAgentId }
+    return {
+      dispatchId: block.dispatchId,
+      memberAgentId: block.memberAgentId,
+      ...(block.autoRouter != null ? { autoRouter: block.autoRouter } : {}),
+    }
   }
   if (
     block.kind === 'thinking' ||
