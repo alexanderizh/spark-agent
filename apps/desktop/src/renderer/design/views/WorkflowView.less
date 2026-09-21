@@ -827,10 +827,26 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
+/* 底部缩放控件：React Flow 的按钮底色/描边是写死的浅色（#fefefe / #eee），
+   容器自身又没有底色，浅色主题下整块会和画布底（--bg）糊在一起、和 minimap 不是一套语言；
+   暗色主题下又会变成"白底 + 浅色图标"看不清。这里统一改用应用令牌接管容器与按钮配色，
+   容器对齐右侧 minimap 的"实底 + 细描边 + 阴影"悬浮面板，图标色与 hover 对齐 .icon-btn。 */
 .workflow-builder-v2 .wf-flow .react-flow__controls {
-  box-shadow: var(--shadow-sm);
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  box-shadow: var(--shadow-md);
   border-radius: var(--r-md);
   overflow: hidden;
+  --xy-controls-button-background-color: transparent;
+  --xy-controls-button-background-color-hover: var(--hover);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-color-hover: var(--text-strong);
+  --xy-controls-button-border-color: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.workflow-builder-v2 .wf-flow .react-flow__controls-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--primary);
+  color: var(--text-strong);
 }
 .workflow-builder-v2 .wf-inspector {
   width: 360px;
