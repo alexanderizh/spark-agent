@@ -955,7 +955,7 @@ function WorkflowViewInner() {
     return (
       <div className="workflow-layout workflow-home">
         <div className="workflow-home-head">
-          <div>
+          <div className="workflow-home-title-block">
             <div className="agents-title-lg">Workflows</div>
             <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
           </div>

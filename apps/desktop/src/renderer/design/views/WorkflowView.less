@@ -428,6 +428,20 @@
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
+  /* 标题块与操作行都允许换行：容器放不下整行按钮时让操作行整体下移，
+   * 而不是把标题块压成单字一列的竖排（全站 word-break 会让 min-content 缩到一个字符）。 */
+  flex-wrap: wrap;
+}
+/* 标题块保留最小可读宽度，按钮再多也不能把它挤没。 */
+.workflow-home-title-block {
+  flex: 1 1 240px;
+  min-width: min(240px, 100%);
+}
+/* 操作行自身也换行：窄宽度下按钮折行，而不是横向溢出被裁掉最后一个按钮。
+ * 不给它 flex-grow：留在同一行时由 space-between 顶到右侧（与宽屏现状一致），
+ * 被换到下一行时自然左对齐，和 ≤980px 竖排模式的按钮对齐保持一致。 */
+.workflow-home-head .agents-actions {
+  flex-wrap: wrap;
 }
 .workflow-card-grid {
   display: grid;
@@ -1135,6 +1149,11 @@
   .workflow-home-head {
     flex-direction: column;
     align-items: stretch;
+  }
+  /* 竖排后标题块不再需要最小宽度（此处的 flex-basis 会作用于高度）。 */
+  .workflow-home-title-block {
+    flex: 0 0 auto;
+    min-width: 0;
   }
   .workflow-card-grid {
     grid-template-columns: 1fr;
