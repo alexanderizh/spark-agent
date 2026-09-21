@@ -1,6 +1,6 @@
 # AutoRouter 重构方案 — 多路由器 + LLM 分流器 + 强度分级执行
 
-> 状态: 已落地 | 最后核对: 2026-09-21
+> 状态: 已落地 | 最后核对: 2026-09-22
 
 > 落地记录：Phase 0（763d0df1）协议地基与旧伪 provider 下线；Phase 1（a871ce62）管理弹层；
 > Phase 2（b09cb67b）分流器核心闭环 + direct 模式 + 全部显示点 + 选择器分组；
@@ -9,6 +9,9 @@
 > 剩余打磨项（后续迭代）：本地路由统计 UI、dispatcher 连通性测试按钮、
 > decompose 子任务块的渲染端强度色点（数据通道 TeamMemberEventContext.autoRouter 已就绪）、
 > 端到端真机验证（UI 显示与分流行为需用户实机确认）。
+>
+> 2026-09-22 补充：会话模型选择器「智能路由」行的悬浮配置卡片已落地（见 §3.9 显示点 1 与 §3.10），
+> 替换原有原生 title 摘要；卡片数据全部取自现有 `autoRouterConfig`，未新增协议字段与 IPC。
 
 ## 一、背景与目标
 
@@ -312,7 +315,7 @@ ANTHROPIC_DEFAULT_OPUS_MODEL  = high 执行器模型
 #### 显示点 1 — Composer / 会话头（选中态，Phase 2）
 
 - router 选中时主标签分支：显示 **`⚙ {router 名称}`** + 「智能路由」徽标（`selectedModelId=''` 时不显示空白模型名）；标签构造点即 `ComposerV2.tsx:5775` 的 `primaryLabel` 处按 `provider_type === 'auto-router'` 分支。
-- 悬停 tooltip 展开配置摘要：「分流器: {model} · 高: {model} · 平衡: {model} · 低: {model}」，让用户不进管理页也能知道这个 router 会怎么派活。
+- 悬停（或键盘聚焦）该行展开**配置悬浮卡片**（2026-09-22 落地，替代原原生 title 摘要，见 §3.10）：让用户不进管理页也能知道这个 router 会怎么派活。
 - 会话 Tab / 侧栏会话卡片的当前模型显示（`ChatTabbar` 等消费点）同步适配 router 显示分支。
 
 #### 显示点 2 — 轮次边界路由提示条（核心，Phase 2）
@@ -343,6 +346,52 @@ ANTHROPIC_DEFAULT_OPUS_MODEL  = high 执行器模型
 - 提示条与 meta 行的模型名统一用**模型显示名**（渠道配置的 displayName/modelNameById 映射），无显示名时回退原始 modelId，绝不显示空串。
 - 提示条支持点击展开决策详情浮层：分流器完整输出（强度/理由/子任务建议/延迟/fallbackUsed），满足"想深究的人能看到全部"。
 - 色点语义全局一致：高=danger 红 / 平衡=success 绿 / 低=info 蓝（与选择器、管理页、提示条同色）。
+
+### 3.10 选择器「智能路由」行悬浮配置卡片（2026-09-22 落地）
+
+> 用户决策：按「方案 A（三段式）」实施，本轮只覆盖**会话模型选择器**；
+> 定时任务 / 画布助手的选择器后续按需复用同一组件。
+> 2026-09-22 视觉调整（第一轮）：按反馈「分割线太多、行高太低」重排版 —— 行间分割线全部去掉，
+> 单行行高由约 27px 提到 36px，卡片宽度由 300px 放宽到 340px。
+> 2026-09-22 视觉调整（第二轮）：按反馈「太大太松散 + 分流器与执行模型之间要加分割线」回调 ——
+> 卡片收到 304px、单行 32px、内边距与字号各收一档，并在分流器行与三强度行之间补回 1 条分割线
+> （卡片内部共 2 条：分流器行下沿 + 底部摘要上沿）。
+
+**结构（全部来自 `ProviderProfile.autoRouterConfig`，无新增字段）**
+
+1. 头部：`router.name` + `adapter` 标签（Claude 引擎 / Codex 引擎）；
+2. 分流器行：`dispatcher.modelId` + 渠道名 + 决策超时（≥1s 显示 `8s`，否则 `800ms`）；
+3. 高 / 平衡 / 低三行：取 `findExecutorByIntensity`（与 `auto-router.service` 选执行器同源）= 运行时真正生效的那一条，行尾 meta 承载该条目的 `reasoningEffort`（`推理 xhigh`）与同档其余条目的 `+N 备用` / `+N 停用` 计数；该档无启用条目时模型名显示「未配置」、色点转空心，meta 按运行时兜底链给出 `走兜底「平衡」`/`走首个启用条目`/`无启用执行模型`；
+4. 底部一行：`兜底 {强度} · 拆分 ≤N / 不拆分 · 子代理映射 开/关`；
+5. `autoRouterConfig` 缺失时退化为单行说明，不渲染空行。
+
+**交互与视觉**
+
+- 行 hover 延迟 200ms 打开（避免扫过列表闪卡），指针离开 / 焦点离开立即关闭；`focus-within` 同样可键盘唤起；
+- 卡片 `pointer-events: none`（纯展示，不吃点击、不挡滚动，因此无需"悬停接力"）；portal 到 `document.body` + `position: fixed`，默认贴菜单右侧 8px、与行顶部对齐并夹在视口内，右侧空间不足翻左侧；z-index 3600（高于 CLI 子菜单 3500）；
+- 菜单关闭 / 菜单列表滚动 / 窗口 resize 立即关闭（不做跟随重排）；同时只允许一张卡片；已移除原生 `title`，避免双重提示；
+- 扁平基线：强度色点（复用 `utils/auto-router-display.ts` 语义色）+ 文字明暗分层 + 间距表达层级，卡片内部无嵌套盒子；
+- 分割线只留 2 条：分流器行下沿 1 条（分流器与三强度执行行分组）+ 底部摘要上沿 1 条；三强度行之间不画线。第一轮曾把行间线全部去掉、只用间距分组，第二轮按反馈在分流器与执行模型之间补回分割线；
+- 尺寸与行高：卡片 304px 宽、内边距 `9px 12px 10px`；行用 `box-sizing: border-box` + `min-height: 32px` 按「整行」计高（原实现漏了 `border-box`，`min-height` 落在内容盒上，既造成行距不可控又把模型名挤成省略号）；行内 `gap: 6px`、标签列 36px、渠道名 `min-width: 52px` / `max-width: 88px`；
+- 折行策略：模型名 `flex: 1 1 90px` + `min-width: 90px`（**不是** `flex-basis: auto`）——行内断行按 90px 基准计算，模型名因此留在第一行按可用宽度截断（永远保有 ≥90px，不会被压成一个省略号），只有行尾 meta 放不下时才折到下一行右对齐（该行约 42px）。第一轮用的 `flex-basis: auto` 在 304px 窄卡下会让超长模型名独占一行、行高涨到 66px，故改为小基准。
+
+**实现文件（受单文件 3000 行规则约束，均为新建小模块，`ComposerV2.tsx` 只做接线）**
+
+| 文件 | 职责 |
+|------|------|
+| `views/chat/auto-router-hover-card-model.ts` | 配置 → 视图模型纯函数（渠道名回退、超时/兜底文案） |
+| `views/chat/auto-router-hover-card-placement.ts` | 定位纯函数（右侧优先 / 翻左 / 视口夹取） |
+| `views/chat/useAutoRouterHoverCard.ts` | 开合状态机（延迟、立即关闭、滚动/resize 关闭） |
+| `views/chat/AutoRouterHoverCard.tsx` | 展示组件（portal + 布局测量） |
+| `views/chat/AutoRouterHoverCard.less` | 组件级样式 |
+
+**验证**：`auto-router-hover-card-model.test.ts`（9 例：无效配置 / 三档取值 / 备用停用计数 / 全停用兜底 / 渠道缺失回退 / 开关文案 / 超时格式）、`auto-router-hover-card-placement.test.ts`（5 例：右侧 / 翻左 / 夹取 / 纵向夹取）、`useAutoRouterHoverCard.test.tsx`（7 例：延迟 / 立即 / 取消 / 禁用 / 滚动 / resize / dismiss）；`tsc --noEmit` 与 ESLint 通过。2026-09-22 两轮视觉调整后各复跑 4 个测试文件共 30 例全绿；样式改动在 Chromium 里用「应用真实 `styles.css`（含全部 token）+ 组件真实编译产物」渲染实测几何：
+- 常态配置：卡片 **304×205**，4 行均单行 32px，模型名与渠道名均未被截断；
+- 含备用/停用 + 超长模型名/渠道名：卡片 **304×215.4**，仅行尾 meta 三段的「高」行折行（42.4px），其余行 32px；
+- 配置无效：304×59.4（单行说明，无分割线）；
+- 卡片内部可见分割线**恒为 2 条**（分流器行 `border-bottom` + footer `border-top`，颜色 = `--border`）、无横向溢出；
+- 对比度（对卡片底色）：模型名浅色 19.0:1 / 暗色 12.6:1，档位标签 5.3:1 / 5.9:1（`color-mix` 62% 叠加后），渠道名与行尾 meta 3.0:1 / 2.7:1（沿用项目既有 `--text-faint`）；
+- **真实 Electron 实例的悬浮效果仍需用户在实机确认**。
 
 ## 四、实施计划（分期交付）
 
