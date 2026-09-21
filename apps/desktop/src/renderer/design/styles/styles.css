@@ -1030,20 +1030,13 @@ body.floating-sidebar-resizing * {
   background: var(--hover);
 }
 
-/* Inline appearance switch: keep the three theme modes in the root menu. */
-.ant-dropdown-menu.user-menu .user-menu-appearance-menu-item {
-  height: auto !important;
-  min-height: 40px;
-  padding: 6px 8px !important;
-  cursor: default;
-}
+/* 分段控件行（主题 / 菜单栏样式）：控件在行内直接切换，行本身不响应点击 */
 .ant-dropdown-menu.user-menu .user-menu-inline-menu-item {
   height: auto !important;
   min-height: 40px;
   padding: 6px 8px !important;
   cursor: default;
 }
-.user-menu-appearance,
 .user-menu-inline-control {
   display: flex;
   align-items: center;
@@ -1052,7 +1045,6 @@ body.floating-sidebar-resizing * {
   width: 100%;
   min-width: 0;
 }
-.user-menu-appearance-label,
 .user-menu-inline-control-label {
   display: inline-flex;
   align-items: center;
@@ -1062,8 +1054,7 @@ body.floating-sidebar-resizing * {
   font: inherit;
   white-space: nowrap;
 }
-.ant-dropdown-menu.user-menu .user-menu-inline-menu-item:hover,
-.ant-dropdown-menu.user-menu .user-menu-appearance-menu-item:hover {
+.ant-dropdown-menu.user-menu .user-menu-inline-menu-item:hover {
   background: transparent;
 }
 .user-menu-inline-segmented.ant-segmented {
@@ -1187,6 +1178,148 @@ body.floating-sidebar-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 图标列：固定 16px 容器 + 14px 线性图标，所有行左边缘对齐到同一条竖线；
+   图标色弱于文字，悬停时随行一起提亮。 */
+.user-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover .user-menu-icon,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover .user-menu-icon,
+.user-menu-submenu-popup .ant-dropdown-menu-item:hover .user-menu-icon {
+  color: var(--text);
+}
+
+/* 数值列：当前值 / 状态文案固定在右侧同一列，按语义着色；颜色与开关都落在这里。 */
+.user-menu-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+.user-menu-value.is-primary {
+  color: var(--primary);
+}
+.user-menu-value.is-success {
+  color: var(--success);
+}
+.user-menu-value.is-warning {
+  color: var(--warning);
+}
+.user-menu-value.is-danger {
+  color: var(--danger);
+}
+.user-menu-value-text {
+  white-space: nowrap;
+}
+.user-menu-value-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: 0 0 12px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+/* 账号区：头像 + 昵称 + 账号 + 档位标识，只作展示，不参与点击。 */
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item.user-menu-account-header {
+  height: auto !important;
+  min-height: 56px;
+  padding: 8px !important;
+  cursor: default;
+}
+.ant-dropdown-menu.user-menu .user-menu-account-header:hover {
+  background: transparent;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item-disabled.user-menu-account-header,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item-disabled.user-menu-account-header:hover {
+  color: var(--text);
+  cursor: default;
+}
+.user-menu-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.user-menu-account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+.user-menu-account-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.user-menu-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.user-menu-account-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-menu-account-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-menu-tier {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  white-space: nowrap;
+}
+.user-menu-tier.is-paid {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* 分区：分割线内缩到文字列起点（8px 内边距 + 16px 图标列 + 8px 间距），
+   颜色用带透明度的文字色，浅色/深色主题都可见。 */
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item-divider {
+  min-width: auto;
+  height: 1px;
+  margin: 5px 8px 5px 32px;
+  background-color: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+/* 同步执行中：整行保持可读但不再触发点击（重复点击由宿主拦掉）。 */
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item.user-menu-item-busy {
+  cursor: default;
 }
 
 /* App popups render in portals and may overlap titlebar drag regions. Electron
@@ -1420,23 +1553,16 @@ html[data-theme='dark'][data-backdrop-blur='1'] .spark-lobe-toast-host {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
+  width: 16px;
+  height: 16px;
   color: var(--text-faint);
-  background: color-mix(in srgb, currentColor 7%, transparent);
-  transition:
-    color 140ms ease,
-    background-color 140ms ease,
-    transform 140ms ease;
+  transition: color 140ms ease;
 }
 .user-menu-expand-icon svg {
   display: block;
 }
 .ant-dropdown-menu-submenu-title:hover > .user-menu-expand-icon {
-  color: var(--text);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  transform: translateX(1px);
+  color: var(--text-muted);
 }
 
 :where(.css-dev-only-do-not-override-xsuzon).ant-dropdown

@@ -59,11 +59,13 @@ import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { CanvasProjectSidebarList } from './design/CanvasProjectSidebarList'
 import { NotificationBell } from './design/components/notifications/NotificationBell'
+import { UserMenuDropdown } from './design/components/user-menu/UserMenuDropdown'
+import type { AccountSyncOutcome } from './design/components/user-menu/userMenuModel'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
-import { Button, Dropdown, Modal, type MenuProps } from 'antd'
-import { Segmented, Tooltip } from '@lobehub/ui'
+import { Button, Dropdown, Modal } from 'antd'
+import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { shouldOverlaySidebar } from './sidebarResponsiveLayout'
@@ -369,6 +371,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const auth = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [contactModalOpen, setContactModalOpen] = useState(false)
+  /** 用户菜单「账号同步」行状态：执行中 / 本次结果 / 偏好摘要 */
+  const [syncMenuBusy, setSyncMenuBusy] = useState(false)
+  const [syncMenuOutcome, setSyncMenuOutcome] = useState<AccountSyncOutcome | null>(null)
+  const [syncMenuPrefs, setSyncMenuPrefs] = useState<{
+    enabled: boolean
+    selectedCount: number
+    lastFinishedAt: string | null
+  } | null>(null)
+  const syncMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
@@ -620,25 +631,71 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     }
   }, [toast, tr])
 
-  /** 用户菜单「账号同步」：已开启并勾选类别则直接执行，否则引导到设置页 */
+  const clearSyncMenuCloseTimer = useCallback(() => {
+    if (syncMenuCloseTimerRef.current != null) {
+      clearTimeout(syncMenuCloseTimerRef.current)
+      syncMenuCloseTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => clearSyncMenuCloseTimer, [clearSyncMenuCloseTimer])
+
+  /**
+   * 菜单一打开就取一次同步偏好，让「账号同步」行能显示未开启 / 上次同步时间；
+   * 取不到时留空，不阻塞菜单其余入口。
+   */
+  useEffect(() => {
+    if (!userMenuOpen || !auth.isAuthenticated) return
+    let cancelled = false
+    setSyncMenuOutcome(null)
+    void window.spark
+      .invoke('account-sync:get-preferences', {})
+      .then((response) => {
+        if (cancelled) return
+        setSyncMenuPrefs({
+          enabled: response.preferences.enabled,
+          selectedCount: ACCOUNT_SYNC_CATEGORIES.filter(
+            (category) => response.preferences.categories[category],
+          ).length,
+          lastFinishedAt: response.preferences.lastOperation?.finishedAt ?? null,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setSyncMenuPrefs(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [auth.isAuthenticated, userMenuOpen])
+
+  /**
+   * 用户菜单「账号同步」：已开启并勾选类别则直接执行，否则引导到设置页。
+   * 返回执行去向，便于菜单决定「保持打开看 loading」还是「跳走并收起」。
+   */
   const syncMenuBusyRef = useRef(false)
-  const handleQuickSync = useCallback(async () => {
-    if (syncMenuBusyRef.current) return
+  const handleQuickSync = useCallback(async (): Promise<'performed' | 'navigated' | 'busy'> => {
+    if (syncMenuBusyRef.current) return 'busy'
     syncMenuBusyRef.current = true
+    setSyncMenuBusy(true)
     try {
       if (!auth.isAuthenticated) {
         setTweak('view', 'settings')
         setTweak('settingsSection', 'account-sync')
-        return
+        return 'navigated'
       }
       const prefsResponse = await window.spark.invoke('account-sync:get-preferences', {})
       const selected = ACCOUNT_SYNC_CATEGORIES.filter(
         (category) => prefsResponse.preferences.categories[category],
       ).length
+      setSyncMenuPrefs({
+        enabled: prefsResponse.preferences.enabled,
+        selectedCount: selected,
+        lastFinishedAt: prefsResponse.preferences.lastOperation?.finishedAt ?? null,
+      })
       if (!prefsResponse.preferences.enabled || selected === 0) {
         setTweak('view', 'settings')
         setTweak('settingsSection', 'account-sync')
-        return
+        return 'navigated'
       }
       const { executeAccountSync } = await import('./design/views/account-sync/account-sync-client')
       const response = await executeAccountSync(
@@ -655,12 +712,37 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       if (result.status === 'success') toast.success(`账号同步完成：${summary}`)
       else if (result.status === 'partial') toast.warning(`账号同步部分完成：${summary}`)
       else toast.error('账号同步失败，请到设置 → 账号同步查看详情')
+      setSyncMenuOutcome(result.status)
+      setSyncMenuPrefs({
+        enabled: true,
+        selectedCount: selected,
+        lastFinishedAt: new Date().toISOString(),
+      })
+      return 'performed'
     } catch (error) {
       toast.error(error instanceof Error && error.message.trim() ? error.message : '账号同步失败')
+      setSyncMenuOutcome('failed')
+      return 'performed'
     } finally {
       syncMenuBusyRef.current = false
+      setSyncMenuBusy(false)
     }
   }, [applySyncedAppearance, auth.isAuthenticated, setTweak, toast])
+
+  /** 菜单内触发同步：同步期间保持菜单打开展示 loading，结束后稍作停留再收起 */
+  const runAccountSyncFromMenu = useCallback(async () => {
+    const outcome = await handleQuickSync()
+    if (outcome === 'busy') return
+    if (outcome === 'navigated') {
+      setUserMenuOpen(false)
+      return
+    }
+    clearSyncMenuCloseTimer()
+    syncMenuCloseTimerRef.current = setTimeout(() => {
+      syncMenuCloseTimerRef.current = null
+      setUserMenuOpen(false)
+    }, 1400)
+  }, [clearSyncMenuCloseTimer, handleQuickSync])
 
   const updateState = updateStatus?.state ?? 'idle'
   const updateProgressPercent = updateStatus?.progress?.percent ?? 0
@@ -710,6 +792,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       })
   }, [toast, tr, updateState])
 
+  /** 菜单「检查更新」：空闲/异常时重新检查，其余状态交给更新按钮的既有语义 */
+  const handleUserMenuUpdate = useCallback(() => {
+    if (updateState === 'idle' || updateState === 'error' || updateState === 'not-available') {
+      handleCheckUpdate()
+      return
+    }
+    handleUpdateClick()
+  }, [handleCheckUpdate, handleUpdateClick, updateState])
+
   const getUpdateButtonTitle = () => {
     if (updateState === 'checking') return tr('app.update.checking')
     if (updateState === 'available')
@@ -752,12 +843,74 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     return <Icons.CloudDownload size={14} />
   }
 
-  const menuLabel = (leading: React.ReactNode, text: string, checked = false) => (
-    <span className="user-menu-label">
-      {leading}
-      <span className="user-menu-label-text">{text}</span>
-      {checked && <span className="user-menu-check">✓</span>}
-    </span>
+  /** 菜单内两个内置分段控件：与设置页写同一份 tweak，保持外观设置单一来源 */
+  const handleUserMenuThemeChange = useCallback(
+    (theme: typeof t.theme) => setTweak('theme', theme),
+    [setTweak],
+  )
+  const handleUserMenuSidebarStyleChange = useCallback(
+    (style: typeof t.sidebarStyle) => setTweak('sidebarStyle', style),
+    [setTweak],
+  )
+
+  /**
+   * 用户菜单动作统一入口：菜单组件只负责展示，点击与二级项都回到这里处理，
+   * 这样同步（需要保持菜单打开看 loading）与其余「点完即关」的条目行为清晰。
+   */
+  const handleUserMenuAction = useCallback(
+    (key: string) => {
+      if (key.startsWith('accent-')) {
+        setTweak('primary', key.slice('accent-'.length))
+        setUserMenuOpen(false)
+        return
+      }
+      switch (key) {
+        case 'account':
+          setTweak('view', 'account-center')
+          break
+        case 'login':
+          auth.setFlow('login')
+          setTweak('view', 'account-center')
+          break
+        case 'account-sync':
+          // 同步期间保持菜单打开展示行内 loading，结束后由 runAccountSyncFromMenu 收起
+          void runAccountSyncFromMenu()
+          return
+        case 'remote':
+          setTweak('view', 'settings')
+          setTweak('settingsSection', 'remote-connections')
+          break
+        case 'check-update':
+          handleUserMenuUpdate()
+          break
+        case 'contact-qq':
+          setContactModalOpen(true)
+          return // 保持菜单打开，二维码模态叠加在上面
+        case 'contact-email':
+          void handleCopyEmail()
+          break
+        case 'contact-github-issue':
+          handleOpenExternal(GITHUB_ISSUES_URL)
+          return
+        case 'github':
+          handleOpenExternal(REPOSITORY_URL)
+          return
+        case 'website':
+          handleOpenExternal(OFFICIAL_SITE_URL)
+          return
+        default:
+          return
+      }
+      setUserMenuOpen(false)
+    },
+    [
+      auth,
+      handleCopyEmail,
+      handleOpenExternal,
+      handleUserMenuUpdate,
+      runAccountSyncFromMenu,
+      setTweak,
+    ],
   )
 
   // Keep the panel mounted across hide/show so the slide+fade transition
@@ -1001,216 +1154,35 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       {/* Bottom area: user + window controls */}
       <div className="sidebar-bottom">
         <div className="sidebar-bottom-user">
-          <Dropdown
+          <UserMenuDropdown
             open={userMenuOpen}
             onOpenChange={setUserMenuOpen}
-            trigger={['click']}
-            placement="topLeft"
-            align={{ offset: [4, 0] }}
-            styles={{
-              root: {
-                width: 256,
-                minWidth: 246,
-                maxWidth: 'calc(100vw - 24px)',
-              },
+            tr={tr}
+            account={{
+              authenticated: auth.isAuthenticated,
+              name: userName,
+              accountLabel: auth.user?.account ?? '',
+              avatarSrc: userAvatarSrc,
+              tier: auth.user?.tier ?? null,
             }}
-            menu={
-              {
-                className: 'user-menu',
-                expandIcon: (
-                  <span className="user-menu-expand-icon" aria-hidden="true">
-                    <Icons.ChevronRight size={10} strokeWidth={2.2} />
-                  </span>
-                ),
-                items: [
-                  ...(auth.isAuthenticated
-                    ? [
-                        {
-                          key: 'account',
-                          label: menuLabel(
-                            <Icons.User size={14} />,
-                            tr('app.user.accountRecharge'),
-                          ),
-                        },
-                      ]
-                    : [
-                        {
-                          key: 'login',
-                          label: menuLabel(<Icons.User size={14} />, tr('app.user.login')),
-                        },
-                      ]),
-                  {
-                    key: 'account-sync',
-                    label: menuLabel(<Icons.Repeat size={14} />, '账号同步'),
-                  },
-                  {
-                    key: 'appearance',
-                    className: 'user-menu-appearance-menu-item',
-                    label: (
-                      <div
-                        className="user-menu-appearance"
-                        role="group"
-                        aria-label="外观"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <span className="user-menu-appearance-label">
-                          <Icons.Sun size={14} />
-                          <span>外观</span>
-                        </span>
-                        <Segmented
-                          className="user-menu-inline-segmented user-menu-inline-segmented-appearance"
-                          size="small"
-                          value={t.theme}
-                          options={[
-                            { label: '浅色', value: 'light' },
-                            { label: '深色', value: 'dark' },
-                            { label: '系统', value: 'system' },
-                          ]}
-                          onChange={(value) => setTweak('theme', value as typeof t.theme)}
-                        />
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'accent',
-                    popupClassName: 'user-menu-submenu-popup',
-                    label: menuLabel(
-                      <span className="user-menu-accent-dot" style={{ background: t.primary }} />,
-                      tr('app.user.accent'),
-                    ),
-                    children: Object.entries(PRIMARIES).map(([color, info]) => ({
-                      key: `accent-${color}`,
-                      label: menuLabel(
-                        <span className="user-menu-accent-swatch" style={{ background: color }} />,
-                        info.name,
-                        t.primary === color,
-                      ),
-                    })),
-                  },
-                  {
-                    key: 'sidebar-style-inline',
-                    className: 'user-menu-inline-menu-item',
-                    label: (
-                      <div
-                        className="user-menu-inline-control"
-                        role="group"
-                        aria-label={tr('app.sidebar.style')}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <span className="user-menu-inline-control-label">
-                          <Icons.PanelLeft size={14} />
-                          <span>{tr('app.sidebar.style')}</span>
-                        </span>
-                        <Segmented
-                          className="user-menu-inline-segmented user-menu-inline-segmented-sidebar"
-                          size="small"
-                          value={t.sidebarStyle}
-                          options={[
-                            { label: tr('app.sidebar.styleFloating'), value: 'floating' },
-                            { label: tr('app.sidebar.styleFlat'), value: 'flat' },
-                          ]}
-                          onChange={(value) =>
-                            setTweak('sidebarStyle', value as typeof t.sidebarStyle)
-                          }
-                        />
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'remote',
-                    label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),
-                  },
-                  {
-                    key: 'contact',
-                    popupClassName: 'user-menu-submenu-popup',
-                    label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactUs')),
-                    children: [
-                      {
-                        key: 'contact-qq',
-                        label: menuLabel(<Icons.Users size={14} />, tr('app.user.contactQQ')),
-                      },
-                      {
-                        key: 'contact-email',
-                        label: menuLabel(<Icons.Mail size={14} />, tr('app.user.contactEmail')),
-                      },
-                      {
-                        key: 'contact-github-issue',
-                        label: menuLabel(
-                          <Icons.AlertTriangle size={14} />,
-                          tr('app.user.contactGithubIssue'),
-                        ),
-                      },
-                    ],
-                  },
-                  {
-                    key: 'check-update',
-                    label: menuLabel(<Icons.Refresh size={14} />, tr('app.update.check')),
-                  },
-                  {
-                    key: 'about-spark',
-                    popupClassName: 'user-menu-submenu-popup',
-                    label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
-                    children: [
-                      {
-                        key: 'github',
-                        label: menuLabel(<Icons.GitHub size={14} />, 'GitHub'),
-                      },
-                      {
-                        key: 'website',
-                        label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')),
-                      },
-                      {
-                        key: 'app-version',
-                        label: menuLabel(
-                          <Icons.Hash size={14} />,
-                          `${appVersion ? `v${appVersion}` : '--'}`,
-                        ),
-                      },
-                    ],
-                  },
-                ],
-                onClick: ({ key }: { key: string }) => {
-                  switch (key) {
-                    case 'account':
-                      setTweak('view', 'account-center')
-                      break
-                    case 'login':
-                      auth.setFlow('login')
-                      setTweak('view', 'account-center')
-                      break
-                    case 'account-sync':
-                      void handleQuickSync()
-                      break
-                    default:
-                      if (key.startsWith('accent-')) {
-                        setTweak('primary', key.slice('accent-'.length))
-                      } else if (key === 'remote') {
-                        setTweak('view', 'settings')
-                        setTweak('settingsSection', 'remote-connections')
-                      } else if (key === 'github') {
-                        handleOpenExternal(REPOSITORY_URL)
-                      } else if (key === 'website') {
-                        handleOpenExternal(OFFICIAL_SITE_URL)
-                      } else if (key === 'app-version') {
-                        setTweak('view', 'settings')
-                        setTweak('settingsSection', 'updates')
-                      } else if (key === 'lobe-preview') {
-                        setTweak('view', 'lobe-preview')
-                      } else if (key === 'contact-qq') {
-                        setContactModalOpen(true)
-                        return // don't close parent menu — modal stays open
-                      } else if (key === 'contact-email') {
-                        void handleCopyEmail()
-                      } else if (key === 'contact-github-issue') {
-                        handleOpenExternal(GITHUB_ISSUES_URL)
-                      } else if (key === 'check-update') {
-                        handleCheckUpdate()
-                      }
-                  }
-                  setUserMenuOpen(false)
-                },
-              } as MenuProps
-            }
+            appearance={{ theme: t.theme, sidebarStyle: t.sidebarStyle, primary: t.primary }}
+            sync={{
+              authenticated: auth.isAuthenticated,
+              busy: syncMenuBusy,
+              outcome: syncMenuOutcome,
+              enabled: syncMenuPrefs?.enabled ?? null,
+              selectedCount: syncMenuPrefs?.selectedCount ?? 0,
+              lastFinishedAt: syncMenuPrefs?.lastFinishedAt ?? null,
+            }}
+            update={{
+              state: updateState,
+              currentVersion: appVersion,
+              availableVersion: updateStatus?.updateInfo?.version ?? null,
+              percent: updateProgressPercent,
+            }}
+            onAction={handleUserMenuAction}
+            onThemeChange={handleUserMenuThemeChange}
+            onSidebarStyleChange={handleUserMenuSidebarStyleChange}
           >
             <button
               className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
@@ -1236,7 +1208,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </div>
               <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
             </button>
-          </Dropdown>
+          </UserMenuDropdown>
           <NotificationBell />
           <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
             <button
