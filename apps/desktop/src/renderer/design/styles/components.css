@@ -1125,6 +1125,10 @@
   gap: 2px;
 }
 
+/* hover / 选中都用「整卡填充」表达，不用左侧竖线：
+   弹窗内容面是 antd colorBgElevated（浅色 #ffffff），与 --bg-soft 同色，
+   所以填充必须走 --hover / --selected 这类半透明叠加色，两种主题下才可见。
+   选中即同一份卡片填充 + 主色标题，与侧边栏 .nav-item 的规范保持一致。 */
 .arm_router_item {
   display: flex;
   flex-direction: column;
@@ -1132,27 +1136,32 @@
   align-items: flex-start;
   padding: 8px 10px;
   border: none;
-  border-left: 2px solid transparent;
   border-radius: var(--r-md, 8px);
   background: transparent;
   cursor: pointer;
   text-align: left;
   color: inherit;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .arm_router_item:hover {
-  background: var(--bg-soft);
+  background: var(--hover);
 }
 
 .arm_router_item.active {
-  border-left-color: var(--primary);
-  background: var(--bg-soft);
+  background: var(--selected);
 }
 
 .arm_router_name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+}
+
+.arm_router_item.active .arm_router_name {
+  color: var(--primary);
 }
 
 .arm_router_meta {
