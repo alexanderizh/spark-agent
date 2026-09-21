@@ -72,6 +72,7 @@ import {
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getWorkflowHostBridge } from '../workflow-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
+import { getQuickCreateWindowService } from '../services/QuickCreateWindowService.js'
 import { getBrowserPanelWindowService } from '../services/BrowserPanelWindowService.js'
 import { startProviderScheduleWatcher } from '../services/ProviderScheduleWatcher.js'
 import { encodeTextFileContent, parseTextFileEncoding } from '../services/TextFileEncoding.js'
@@ -4452,6 +4453,10 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:window:close-confirmed', async () => {
     return { success: getCanvasWindowService().closeAfterRendererGuard() }
+  })
+
+  typedIpcHandle('quick-create:window:open', async () => {
+    return getQuickCreateWindowService().open()
   })
 
   // ─── 内置浏览器：面板 ⇄ 独立窗口切换 ──────────────────────────────────

@@ -6834,6 +6834,13 @@ export interface CanvasWindowCloseRequestPayload {
   projectId: string | null
 }
 
+/** `quick-create:window:open` — 打开或聚焦快速创作独立窗口 */
+export interface QuickCreateWindowOpenRequest {}
+export interface QuickCreateWindowOpenResponse {
+  success: boolean
+  windowId?: number
+}
+
 /** `canvas:project:delete` — 软删除（status=deleted）或物理删除项目+快照 */
 export interface CanvasProjectDeleteRequest {
   projectId: string
@@ -7629,6 +7636,7 @@ export interface IpcChannelMap
     CanvasWindowCloseConfirmedRequest,
     CanvasWindowCloseConfirmedResponse,
   ]
+  'quick-create:window:open': [QuickCreateWindowOpenRequest, QuickCreateWindowOpenResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
   'canvas:project:update-cover': [CanvasProjectUpdateCoverRequest, CanvasProjectUpdateCoverResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]

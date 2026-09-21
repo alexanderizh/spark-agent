@@ -1,0 +1,67 @@
+/* 快速创作页头部动作与独立窗口容器，和超过 3000 行的页面主样式保持分离。 */
+.quick-create-header-actions {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.quick-create-window-open-button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--divider) 88%, transparent);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.quick-create-window-open-button:hover,
+.quick-create-window-open-button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--divider));
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  outline: none;
+}
+
+.quick-create-window-open-button:active {
+  transform: translateY(1px);
+}
+
+.quick-create-header-actions > .window-controls {
+  width: auto;
+  gap: 2px;
+  padding: 0;
+}
+
+.quick-create-window-standalone {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+}
+
+.quick-create-window-standalone > .quick-create-view {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 560px) {
+  .quick-create-header-actions {
+    gap: 4px;
+  }
+
+  .quick-create-window-open-button {
+    width: 28px;
+    height: 28px;
+  }
+}

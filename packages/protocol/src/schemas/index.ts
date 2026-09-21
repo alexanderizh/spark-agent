@@ -1603,6 +1603,7 @@ export const IpcSchemaRegistry = {
     projectId: z.string().min(1).max(200),
   }),
   'canvas:window:close-confirmed': z.object({}).optional().default({}),
+  'quick-create:window:open': z.object({}).optional().default({}),
   'canvas:project:delete': z.object({
     projectId: z.string().min(1).max(200),
     hard: z.boolean().optional(),

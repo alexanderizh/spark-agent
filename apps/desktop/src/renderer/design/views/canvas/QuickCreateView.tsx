@@ -29,6 +29,7 @@ import {
 } from './quickCreateCapability'
 import { Icons } from '../../Icons'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
+import { WindowControls } from '../../components/WindowControls'
 import { useApp } from '../../AppContext'
 import {
   getDataTransferFilePaths,
@@ -97,7 +98,9 @@ import {
   ensureQuickCreateTaskStreamSync,
   reconcileQuickCreateRunningTasks,
 } from './quickCreateTaskStreamSync'
+import { isQuickCreateWindowMode } from '../../../quickCreateWindowParams'
 import './QuickCreateView.less'
+import './QuickCreateWindow.less'
 
 /** 快速创作表单输入素材，类型与能力选择模块共用。 */
 type QuickInput = QuickCreateInput
@@ -630,6 +633,8 @@ function quickInputFromTaskFile(file: CanvasMediaTaskInputFile, index: number): 
 
 export function QuickCreateView() {
   const { t } = useApp()
+  const isStandaloneWindow = isQuickCreateWindowMode()
+  const isSidebarHidden = t.sidebarHidden || isStandaloneWindow
   const [savedPreferences] = useState<QuickCreatePreferences>(() => readQuickCreatePreferences())
   const [activeTab, setActiveTab] = useState<'compose' | 'tasks'>('compose')
   const [mode, setMode] = useState<QuickCreateMode>(savedPreferences?.mode ?? 'image')
@@ -1494,6 +1499,15 @@ export function QuickCreateView() {
     message.success('已用反推结果填充生图表单')
   }, [])
 
+  const handleOpenStandaloneWindow = useCallback(async () => {
+    try {
+      const response = await window.spark.invoke('quick-create:window:open', {})
+      if (!response.success) message.error('无法打开独立窗口，请稍后重试')
+    } catch {
+      message.error('无法打开独立窗口，请稍后重试')
+    }
+  }, [])
+
   /** 任务产物图一键转图编辑：产物图作为参考素材替换表单，进入图像编辑模式。 */
   const handleEditImageFromAsset = useCallback((asset: CanvasMediaTaskAsset) => {
     if (asset.type !== 'image') return
@@ -1525,7 +1539,7 @@ export function QuickCreateView() {
       onDrop={handleRootDragGuard}
     >
       <div
-        className={`quick-create-tabbar${t.sidebarHidden ? ' is-sidebar-hidden' : ''}`}
+        className={`quick-create-tabbar${isSidebarHidden ? ' is-sidebar-hidden' : ''}`}
         onDoubleClick={() => {
           window.spark?.invoke('window:maximize', {}).catch(() => {})
         }}
@@ -1538,12 +1552,26 @@ export function QuickCreateView() {
           <strong>快速创作</strong>
           <span>图片与视频</span>
         </div>
-        <nav className="quick-create-tabs" aria-label="快速创作任务">
-          <button type="button" onClick={() => setActiveTab('tasks')}>
-            <Icons.ListTodo size={14} /> 任务管理
-            {stats.running > 0 && <small>{stats.running}</small>}
-          </button>
-        </nav>
+        <div className="quick-create-header-actions">
+          {!isStandaloneWindow && (
+            <button
+              type="button"
+              className="quick-create-window-open-button"
+              aria-label="在独立窗口中打开快速创作"
+              title="在独立窗口中打开"
+              onClick={() => void handleOpenStandaloneWindow()}
+            >
+              <Icons.ExternalLink size={15} />
+            </button>
+          )}
+          <nav className="quick-create-tabs" aria-label="快速创作任务">
+            <button type="button" onClick={() => setActiveTab('tasks')}>
+              <Icons.ListTodo size={14} /> 任务管理
+              {stats.running > 0 && <small>{stats.running}</small>}
+            </button>
+          </nav>
+          {isStandaloneWindow && <WindowControls />}
+        </div>
       </div>
 
       <main className="quick-create-main">

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { readCanvasWindowProjectId } from './canvasWindowParams'
 import { isBrowserWindowMode } from './browserWindowParams'
+import { isQuickCreateWindowMode } from './quickCreateWindowParams'
 
 import './design/styles/styles.css'
 import './design/styles/views.css'
@@ -22,14 +23,20 @@ const CanvasWindowApp = lazy(async () => ({
 const BrowserWindowApp = lazy(async () => ({
   default: (await import('./BrowserWindowApp')).BrowserWindowApp,
 }))
+const QuickCreateWindowApp = lazy(async () => ({
+  default: (await import('./QuickCreateWindowApp')).QuickCreateWindowApp,
+}))
 const isCanvasWindow = readCanvasWindowProjectId() != null
 const isBrowserWindow = isBrowserWindowMode()
+const isQuickCreateWindow = isQuickCreateWindowMode()
 
 let rootContent: React.ReactNode
 if (isCanvasWindow) {
   rootContent = <CanvasWindowApp />
 } else if (isBrowserWindow) {
   rootContent = <BrowserWindowApp />
+} else if (isQuickCreateWindow) {
+  rootContent = <QuickCreateWindowApp />
 } else {
   rootContent = <App />
 }
