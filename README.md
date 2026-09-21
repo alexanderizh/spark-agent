@@ -4,7 +4,7 @@
 
 **本地优先的桌面 AI Agent 工作台：在一个应用里完成对话、开发、调研、文档、多媒体创作与自动化。**
 
-[官网](https://www.yiqibyte.com/) · [下载](#下载安装) · [功能特性](#功能特性) · [快速开始](#快速开始) · [从源码构建](#从源码构建) · [更新日志](CHANGELOG.md)
+[官网](https://www.yiqibyte.com/) · [下载](#下载安装) · [功能特性](#功能特性) · [快速开始](#快速开始) · [从源码构建](#从源码构建) · [架构手册](docs/architecture/overview.md) · [贡献指南](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
 
 [![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](apps/desktop)

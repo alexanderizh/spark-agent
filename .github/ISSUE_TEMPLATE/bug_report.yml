@@ -1,0 +1,55 @@
+name: Bug 报告
+description: 报告一个可复现的功能问题
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题。请先搜索已有 Issue，并删除日志中的密钥、Cookie、个人文件路径和隐私内容。
+  - type: input
+    id: version
+    attributes:
+      label: 版本与安装方式
+      placeholder: '例如 0.12.1，GitHub Release / 源码运行'
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 平台与环境
+      placeholder: '例如 macOS 15.6 arm64 / Node 22.14 / pnpm 11.13'
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 请给出最短、按顺序执行即可复现的步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 日志、截图或最小项目
+      description: 请先脱敏；不要上传 token、Cookie、私有文件或商业数据。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue，并确认这不是安全问题。
+          required: true
+        - label: 我已删除日志和附件中的敏感信息。
+          required: true

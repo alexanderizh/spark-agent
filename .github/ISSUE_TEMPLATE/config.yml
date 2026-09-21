@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用帮助与方案讨论
+    url: https://github.com/alexanderizh/spark-agent/discussions
+    about: 适合使用问题、方案交流和路线方向，不适合提交可复现缺陷。
+  - name: 工程手册
+    url: https://alexanderizh.github.io/spark-agent/
+    about: 查看运行架构、贡献流程、项目板、Wiki 和 Pages 的关系。
+  - name: 安全问题
+    url: https://github.com/alexanderizh/spark-agent/blob/master/SECURITY.md
+    about: 请不要公开披露可利用漏洞或真实凭据。

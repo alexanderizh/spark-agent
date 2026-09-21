@@ -1,0 +1,40 @@
+name: 功能建议
+description: 提议一个可讨论、可验收的新能力
+title: '[Feature]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先描述问题和使用场景，再描述方案。大型功能会在 triage 后进入 Project 的 Inbox/Planned。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 谁在什么情况下遇到什么阻碍？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 可以包含交互、API、数据、权限和失败路径。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案与不做事项
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 用可观察的结果描述“完成”。
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue 和 Discussions。
+          required: true
