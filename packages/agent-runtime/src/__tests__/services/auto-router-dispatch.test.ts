@@ -156,6 +156,23 @@ describe('AutoRouterService 分流决策链', () => {
     expect(complete).not.toHaveBeenCalled()
   })
 
+  it('分流调用中途用户取消 → cancelled=true，不得降级为规则兜底继续执行', async () => {
+    let cancelled = false
+    const complete = vi.fn<ModelService['complete']>(
+      async (): Promise<CompleteResult> => {
+        // 模拟：分流 HTTP 在途时用户点了停止，取消轮询 abort 掉在途请求
+        cancelled = true
+        return { available: false, reason: 'Request to https://x was aborted before dispatch' }
+      },
+    )
+    const service = makeService(complete)
+    const result = await service.routeTurn(makeInput({ isTurnCancelled: () => cancelled }))
+    expect(result.cancelled).toBe(true)
+    expect(result.resolvedProviderId).toBe('')
+    // 已取消就不该再发第二次分流请求（重试耗尽会带 cancelled=false 返回）
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
   it('adapterMismatch：codex 会话选 claude router → 回退匹配渠道并标记', async () => {
     const complete = okComplete('{}')
     const rows = [

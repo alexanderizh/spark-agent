@@ -445,7 +445,8 @@ export class AutoRouterService {
     prevIntensity: RouterIntensity | null,
   ): Promise<
     | { decision: AutoRouterDispatchDecision; cancelled: false; attemptCount: number; failureStage?: undefined }
-    | { decision: null; cancelled: boolean; attemptCount: number; failureStage: 'timeout' | 'http' | 'schema' }
+    | { decision: null; cancelled: true; attemptCount: number; failureStage?: undefined }
+    | { decision: null; cancelled: false; attemptCount: number; failureStage: 'timeout' | 'http' | 'schema' }
   > {
     const abortController = new AbortController()
     const cancelPoll = setInterval(() => {
@@ -460,13 +461,20 @@ export class AutoRouterService {
     try {
       // 前置检查：调用前轮次已取消则不发请求（interval 轮询覆盖在途取消）
       if (input.isTurnCancelled()) {
-        return { decision: null, cancelled: true, attemptCount: 0, failureStage: 'http' }
+        return { decision: null, cancelled: true, attemptCount: 0 }
       }
       let attemptCount = 0
       let lastFailureStage: 'timeout' | 'http' | 'schema' = 'http'
       // 最多 2 次尝试（1 次重试），schema 失败重试时强调输出格式
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         attemptCount = attempt
+        // 在途取消（interval 轮询已 abort 上一次请求）后不得再补发下一次尝试：
+        // 重试耗尽会走到函数末尾带 cancelled=false 返回，调用方按"规则兜底降级"
+        // 继续执行这条已被用户取消的轮次（claude/codex 路径仅靠下游 isTurnCancelled
+        // 闸门兜住，spark 执行器路径没有该闸门，会真的把轮次跑起来）。
+        if (attempt > 1 && input.isTurnCancelled()) {
+          return { decision: null, cancelled: true, attemptCount: attempt - 1 }
+        }
         log.info('dispatcher request dispatched', {
           turnId: input.turnId,
           dispatcherModel: `${input.config.dispatcher.providerProfileId}:${input.config.dispatcher.modelId}`,
@@ -495,6 +503,11 @@ export class AutoRouterService {
           return { decision: parsed.data, cancelled: false, attemptCount }
         }
         lastFailureStage = 'schema'
+      }
+      // 兜底：两次尝试都以"被取消"告终（如两次都在取消瞬间失败）时同样按取消收口，
+      // 不让取消伪装成超时降级。
+      if (input.isTurnCancelled()) {
+        return { decision: null, cancelled: true, attemptCount }
       }
       return { decision: null, cancelled: false, attemptCount, failureStage: lastFailureStage }
     } finally {

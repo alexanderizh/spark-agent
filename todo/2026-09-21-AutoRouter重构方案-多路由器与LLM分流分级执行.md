@@ -485,3 +485,15 @@ ANTHROPIC_DEFAULT_OPUS_MODEL  = high 执行器模型
 
 **未覆盖（如实说明）**：UI 真机验收（画布/定时任务/Composer 选择 router 的实机交互）需用户手动确认；主树全量测试存在既有的 vite-node 收集失败（`spark-engine/dist` 旧产物触发裸 `string_decoder` 解析失败），与本轮改动无关（基线同样存在），建议重建 `spark-engine/dist`。
 
+## 附四：第四轮复核（2026-09-21）—— 分流中取消的取消标记丢失（P8）
+
+继续复核修复提交 `13f4d76f2` 时发现并修复 1 个中危缺陷。发现过程：先读 `callDispatcher` 的
+重试循环与 `fetchJson` 的取消语义，再用单测实证（先写失败用例复现，再修复）。
+
+| # | 严重度 | 缺陷 | 源码证据 | 修复 |
+|---|--------|------|----------|------|
+| P8 | 中 | 分流 HTTP 在途时用户点停止：`callDispatcher` 第 1 次尝试被取消轮询 abort 后 `continue` 补发第 2 次，两次都以「已取消信号不再发起请求」快速失败 → 函数末尾以 `cancelled:false`（`failureStage:'timeout'`）返回。调用方因此走「规则兜底降级」继续执行，P2 的安静收口被绕过 | `auto-router.service.ts` 重试循环内无取消复检；`http-retry.ts:92` 已取消信号直接抛 `request_aborted`；`classifyDispatchFailure` 把 abort 归入 timeout | 每次重试前复检取消状态并立即以 `cancelled:true` 收口；函数末尾兜底再判一次；返回值类型拆出 `cancelled:true` 成员，取消不再伪装成超时降级 |
+
+**影响面（实测确认）**：claude/codex 路径有下游闸门（`session.service.ts:4709` / `:5361` 在建执行器前 `isTurnCancelled` 早退）兜住，**不会真的执行**，但会白跑一次重试并让轮次沿「降级兜底」路径继续走（标题/分支名生成等开销照跑）；`tryStartSparkEngineTurn` **没有**该闸门，spark 执行器渠道下的 router 会话可能出现「取消后轮次仍被启动」。
+
+**验证**：新增 1 个用例（`auto-router-dispatch.test.ts`：分流调用中途取消 → `cancelled:true`、`resolved` 为空、不再补发第二次请求）先复现失败再修复；聚焦回归 50 个用例全过（分流决策链 14 / provider 11 / 派发面 8 / engine-kinds 17）；全量 `pnpm run typecheck` 九包全绿。
