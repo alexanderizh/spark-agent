@@ -217,6 +217,7 @@ import {
   readFileExplorerNodeDragPayload,
 } from '../../components/code-viewer/file-explorer/fileExplorerDnd'
 import { ComposerDropOverlay } from './ComposerDropOverlay'
+import { hasExecutableComposerModel } from './composer-model-selection'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -1038,8 +1039,7 @@ export function ComposerV2({
     session?.modelId != null &&
     session.modelId.trim().length > 0 &&
     (sessionProvider == null || sessionProvider.id !== concreteSessionModelProvider.id) &&
-    (!sessionProviderMatchesModel ||
-      sessionProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE)
+    (!sessionProviderMatchesModel || sessionProvider?.providerType === AUTO_ROUTER_PROVIDER_TYPE)
   const draftProvider =
     session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
   const selectedProvider =
@@ -1260,7 +1260,7 @@ export function ComposerV2({
       browserReferences.length > 0 ||
       sessionReferences.length > 0) &&
     selectedProvider != null &&
-    effectiveModelId.length > 0 &&
+    hasExecutableComposerModel(selectedProvider, effectiveModelId) &&
     !needsTeamSelection
   const primaryAction = resolveComposerPrimaryAction(isWorking, canSubmit)
   const showTaskQueue = queuedMessages.length > 0
@@ -5882,7 +5882,11 @@ function ProviderModelPicker({
                         ].join(' · ')
                       : '路由器配置无效'
                   return (
-                    <div key={`auto-router:${router.id}`} className="composer-auto-router-row" title={summary}>
+                    <div
+                      key={`auto-router:${router.id}`}
+                      className="composer-auto-router-row"
+                      title={summary}
+                    >
                       <ModelPickerMenuItem
                         label={router.name}
                         active={router.id === resolvedSelectedProviderId}
@@ -5890,34 +5894,34 @@ function ProviderModelPicker({
                         showPin={false}
                         onTogglePin={() => undefined}
                         leading={
-                        <span className="composer-auto-router-gear">
-                          <Icons.Shuffle size={13} />
-                        </span>
-                      }
-                      trailing={
-                        config != null ? (
-                          <span className="composer-auto-router-dots" aria-hidden>
-                            {(['high', 'balanced', 'low'] as const).map((intensity) => (
-                              <span
-                                key={intensity}
-                                className={`badge dot ${
-                                  intensity === 'high'
-                                    ? 'danger'
-                                    : intensity === 'balanced'
-                                      ? 'success'
-                                      : 'info'
-                                }${config.executors.some((e) => e.enabled && e.intensity === intensity) ? '' : ' is-empty'}`}
-                              />
-                            ))}
+                          <span className="composer-auto-router-gear">
+                            <Icons.Shuffle size={13} />
                           </span>
-                        ) : undefined
-                      }
-                      onSelect={() => {
-                        setOpen(false)
-                        setSearch('')
-                        // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
-                        void onChange(router.id, '')
-                      }}
+                        }
+                        trailing={
+                          config != null ? (
+                            <span className="composer-auto-router-dots" aria-hidden>
+                              {(['high', 'balanced', 'low'] as const).map((intensity) => (
+                                <span
+                                  key={intensity}
+                                  className={`badge dot ${
+                                    intensity === 'high'
+                                      ? 'danger'
+                                      : intensity === 'balanced'
+                                        ? 'success'
+                                        : 'info'
+                                  }${config.executors.some((e) => e.enabled && e.intensity === intensity) ? '' : ' is-empty'}`}
+                                />
+                              ))}
+                            </span>
+                          ) : undefined
+                        }
+                        onSelect={() => {
+                          setOpen(false)
+                          setSearch('')
+                          // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
+                          void onChange(router.id, '')
+                        }}
                       />
                     </div>
                   )
@@ -6567,7 +6571,8 @@ function findConcreteProviderForModel(
 ): ProviderProfile | undefined {
   return providers.find(
     (provider) =>
-      provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE && providerSupportsModel(provider, modelId),
+      provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE &&
+      providerSupportsModel(provider, modelId),
   )
 }
 
