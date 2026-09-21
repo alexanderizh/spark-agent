@@ -103,7 +103,7 @@
    宽屏下右侧已有足够空间时不偏移；全宽布局时仅转移左内边距盈余；无盈余则不压缩内容区。
    注意：不可对 chat-main 使用 container-type，否则会破坏子树内 position:fixed 的右键菜单定位。 */
 .chat-main-active.git-env-panel-open {
-  --git-content-max: 900px;
+  --git-content-max: var(--chat-content-max-width, 900px);
   --git-gutter-min: 16px;
   --git-panel-want: 300px; /* 280px 面板 + 右侧偏移与间距 */
 }
@@ -2599,7 +2599,7 @@ body.git-review-tree-resizing {
 
 .chat-main-active .chat-stream-inner,
 .chat-main-active .composer-inner {
-  width: min(100%, 900px);
+  width: min(100%, var(--chat-content-max-width, 900px));
   max-width: none;
   min-width: 0;
   margin: 0 auto;
@@ -2692,6 +2692,10 @@ body.git-review-tree-resizing {
 
 .chat-main-active {
   padding-bottom: 14px;
+  /* 会话内容区最大宽度：窄窗口保底 900px；宽窗口按容器 82% 流式放宽（两侧各留约 9% 边距），
+     并设 1600px 可读性上限，避免宽屏下内容区两侧大片留白。
+     git-env-panel-open 的居中补偿（--git-content-max）复用同一变量，保持偏移计算与实际宽度一致。 */
+  --chat-content-max-width: max(900px, min(82%, 1600px));
 }
 
 /* 内容区与侧边会话区在浅色激活态下改为透明，让 .chat-layout 上的统一光晕透出，

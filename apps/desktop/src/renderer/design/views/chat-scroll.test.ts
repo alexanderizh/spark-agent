@@ -116,12 +116,15 @@ describe('chat scroll controls', () => {
     ].map((match) => match[0])
     const gitPanelLayoutBlock =
       stylesheet.match(/\.chat-main-active\.git-env-panel-open\s*\{[^}]*\}/)?.[0] ?? ''
+    const chatMainActiveBlock =
+      stylesheet.match(/\.chat-main-active\s*\{[^}]*\}/)?.[0] ?? ''
     const turnNavigatorStylesheet = readFileSync(
       fileURLToPath(new URL('./chat/ChatTurnNavigator.less', import.meta.url)),
       'utf8',
     )
 
-    expect(sharedContainerBlock).toContain('width: min(100%, 900px)')
+    expect(chatMainActiveBlock).toContain('--chat-content-max-width: max(900px, min(82%, 1600px))')
+    expect(sharedContainerBlock).toContain('width: min(100%, var(--chat-content-max-width, 900px))')
     expect(sharedContainerBlock).toContain('var(--chat-turn-nav-content-inset, 0px)')
     expect(sharedContainerBlock).toMatch(/padding-right:\s*\d+px/)
     expect(turnNavigatorStylesheet).toContain(
@@ -135,7 +138,7 @@ describe('chat scroll controls', () => {
     expect(
       gitGutterBlocks.some((block) => block.includes('var(--chat-turn-nav-content-inset, 0px)')),
     ).toBe(true)
-    expect(gitPanelLayoutBlock).toContain('--git-content-max: 900px')
+    expect(gitPanelLayoutBlock).toContain('--git-content-max: var(--chat-content-max-width, 900px)')
     expect(stylesheet).not.toContain('--git-turn-nav-reserve')
     expect(
       gitGutterBlocks.some((block) =>
