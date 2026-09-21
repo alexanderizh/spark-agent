@@ -1,60 +1,30 @@
-import { useMemo } from 'react'
-import { buildUsageHeatmapWeeks, summarizeUsageHeatmap } from '../usageHeatmap.utils'
-import type { UsageHeatmapDailyGroup, UsageHeatmapRange } from '../usageHeatmap.utils'
 import { useUsageHeatmapData } from '../useUsageHeatmapData'
+import type { UsageHeatmapDailyGroup, UsageHeatmapRange } from '../usageHeatmap.utils'
 
-/** 空会话 hero 固定展示最近 16 周（12 周再多一个月），不提供档位切换。 */
+/**
+ * 空会话 hero 的用量数据档：最近 16 周（12 周再多一个月），不提供档位切换。
+ * 展示层在容器足够宽时会另行按 6m 档拉长（见 HeroUsageHeatmap）。
+ */
 export const HERO_USAGE_RANGE: UsageHeatmapRange = '16w'
 
 /** hero 文案使用的范围标签，须与 HERO_USAGE_RANGE 保持一致。 */
 export const HERO_USAGE_RANGE_LABEL = '最近 16 周'
 
-/** 展示热力图所需的最少活跃天数：超过该天数（不要求连续）才用热力图替换快捷卡片。0 即任意一天有数据就展示。 */
-export const HERO_USAGE_MIN_ACTIVE_DAYS = 0
-
-/**
- * 空会话布局模式（快捷卡片与热力图互斥）：
- * - pending：用量数据尚未就绪且没有任何已知数据，先按快捷卡片渲染（多数用户最终也是卡片）
- * - cards：没有任何活跃天数（已确认无数据或加载失败），渲染完整快捷卡片，不展示热力图
- * - heatmap：16 周内任意一天（含今天）有用量数据，热力图替换快捷卡片
- */
-export type EmptyHeroUsageMode = 'pending' | 'cards' | 'heatmap'
-
-/**
- * 已知有用量数据（缓存或上次成功结果）时始终返回 heatmap，
- * 后台刷新在途、刷新失败都不回退成快捷卡片 —— 否则 hero 会在
- * 「快捷卡片 ↔ 热力图」之间来回切换，就是用户看到的闪现。
- */
-export function resolveEmptyHeroUsageMode(
-  loading: boolean,
-  error: string | null,
-  activeDays: number,
-): EmptyHeroUsageMode {
-  if (activeDays > HERO_USAGE_MIN_ACTIVE_DAYS) return 'heatmap'
-  // 完全没有数据：加载中先按快捷卡片渲染，加载失败同样回落快捷卡片。
-  if (loading && error == null) return 'pending'
-  return 'cards'
-}
-
 export interface EmptyHeroUsage {
-  mode: EmptyHeroUsageMode
-  /** 供 HeroUsageHeatmap 渲染的日粒度数据（非 heatmap 模式时为空数组）。 */
+  /** 供 HeroUsageHeatmap 渲染的日粒度数据；没有任何用量时为空数组，热力图照常渲染空网格。 */
   dailyGroups: UsageHeatmapDailyGroup[]
+  /** 首次加载中：该档位尚无任何已知数据且尚未失败（用于避免闪出「累计 0 tokens」）。 */
+  loading: boolean
 }
 
 /**
- * 空会话用量感知：仅在空会话 hero 真正展示（且非团队模式）时请求 16 周用量，
- * 按活跃天数决定空会话展示快捷卡片还是使用足迹热力图（二者互斥）。
+ * 空会话用量感知：空会话 hero 恒以「使用足迹」热力图呈现（有没有用量都是热力图形式），
+ * 因此这里只负责在 hero 真正展示（且非团队模式）时拉取 16 周用量并透传给热力图。
  *
- * 数据源带缓存（见 usageHeatmapCache）：命中缓存时首帧即 heatmap，不经过 pending；
- * 没有任何已知数据且加载失败时静默降级为快捷卡片，不弹错误。
+ * 数据源带缓存（见 usageHeatmapCache）：命中缓存时首帧即有数据；没有缓存时首帧按空网格渲染，
+ * 加载失败静默降级为空网格，不弹错误、也不改变 hero 的形态。
  */
 export function useEmptyHeroUsage(enabled: boolean): EmptyHeroUsage {
-  const { dailyGroups, loading, error } = useUsageHeatmapData(HERO_USAGE_RANGE, { enabled })
-  const activeDays = useMemo(
-    () => summarizeUsageHeatmap(buildUsageHeatmapWeeks(HERO_USAGE_RANGE, dailyGroups)).activeDays,
-    [dailyGroups],
-  )
-  const mode = resolveEmptyHeroUsageMode(loading, error, activeDays)
-  return { mode, dailyGroups: mode === 'heatmap' ? dailyGroups : [] }
+  const { dailyGroups, loading } = useUsageHeatmapData(HERO_USAGE_RANGE, { enabled })
+  return { dailyGroups, loading }
 }

@@ -2654,19 +2654,6 @@ export function ChatView({
     [sessionCtx],
   )
 
-  const handleHeroPromptSelect = useCallback((text: string) => {
-    resendRequestIdRef.current += 1
-    setResendRequest({
-      requestId: resendRequestIdRef.current,
-      payload: {
-        text,
-        attachments: [],
-        agentId: 'platform-manager-agent',
-      },
-    })
-    setComposerFocusTrigger((n) => n + 1)
-  }, [])
-
   const runningTeamAgentIds = useMemo(
     () =>
       teamConfig.enabled
@@ -3129,18 +3116,13 @@ export function ChatView({
               />
             ) : (
               <div className="chat-empty-hero-stack">
-                <SingleAgentEmptyHero
-                  themeId={t.emptyHeroTheme}
-                  hideActions={heroUsage.mode === 'heatmap'}
-                  onSelectPrompt={handleHeroPromptSelect}
+                <SingleAgentEmptyHero themeId={t.emptyHeroTheme} />
+                {/* 空会话恒为使用足迹热力图（有没有用量都展示，点击跳设置页看全量数据）。 */}
+                <HeroUsageHeatmap
+                  dailyGroups={heroUsage.dailyGroups}
+                  loading={heroUsage.loading}
+                  onOpenStats={() => setTweak('view', 'settings')}
                 />
-                {/* 活跃天数达标的老用户：热力图替换快捷卡片（互斥展示，点击跳设置页）。 */}
-                {heroUsage.mode === 'heatmap' ? (
-                  <HeroUsageHeatmap
-                    dailyGroups={heroUsage.dailyGroups}
-                    onOpenStats={() => setTweak('view', 'settings')}
-                  />
-                ) : null}
               </div>
             )}
           </div>
@@ -3337,8 +3319,8 @@ export function ChatView({
 
         {showEmptyHero ? (
           <div className="chat-empty-composer-dock">
-            {/* 团队模式与热力图形态显示快捷提示轮播；快捷卡片形态由卡片自身承担引导。 */}
-            {teamConfig.enabled || heroUsage.mode === 'heatmap' ? <HeroTipsTicker /> : null}
+            {/* 空会话统一为热力图形态（不再有快捷卡片承担引导），底部快捷提示轮播常显。 */}
+            <HeroTipsTicker />
             {composerNode}
           </div>
         ) : (

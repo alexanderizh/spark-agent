@@ -2198,147 +2198,6 @@ body.git-review-tree-resizing {
   line-height: 1.12;
 }
 
-.single-empty-actions {
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: min(560px, 100%);
-  min-height: 52px;
-  padding-top: 4px;
-}
-
-/* 切换动画：双层 cross-fade，位移下放到「每张卡片」做纵向滚动（与底部 hero-tips 的 translateY 风格一致）
-   - .single-empty-actions-layer-out：absolute 覆盖在 active 之上，每张卡向上滚出 + 淡出
-   - .single-empty-actions-layer-in：active 层，每次 activePage 变化重挂载，每张卡自下而上滚入 + 淡入
-   - stagger：卡片用 --card-i（JS 注入索引）错位入场/出场，强化「逐张纵向滚动」观感
-   两层共用 .single-empty-actions-layer 的 flex 布局（与父级一致）。 */
-.single-empty-actions-layer {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
-}
-
-.single-empty-actions-layer-out {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* 入场动画下放到每张 .single-empty-action，配合 --card-i 错位（见下方规则）。 */
-.single-empty-actions-layer-in {
-}
-
-/* 入场：每张卡自下而上滚入 + 淡入。backwards：delay 期间保持 from 值（隐藏），
-   结束后回到自然态，hover 的 transform 不被 animation 覆盖。 */
-.single-empty-actions-layer-in .single-empty-action {
-  animation: single-empty-action-in 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-  animation-delay: calc(var(--card-i, 0) * 70ms);
-}
-
-/* 出场：每张卡向上滚出 + 淡出。forwards 保持终态（透明，避免残留）。 */
-.single-empty-actions-layer-out .single-empty-action {
-  animation: single-empty-action-out 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  animation-delay: calc(var(--card-i, 0) * 50ms);
-}
-
-.single-empty-action {
-  display: flex;
-  min-width: 0;
-  flex: 0 1 180px;
-  max-width: 200px;
-  align-items: center;
-  gap: 8px;
-  min-height: 52px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
-  border-radius: 8px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--panel) 82%, transparent),
-    color-mix(in srgb, var(--bg-soft) 78%, transparent)
-  );
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease,
-    background-color 0.16s ease;
-}
-
-/* outgoing 层里的卡片快照：去掉 button 默认行为，禁用 hover 效果 */
-.single-empty-action-snapshot {
-  pointer-events: none;
-  cursor: default;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-}
-
-.single-empty-action:hover,
-.single-empty-action:focus-visible {
-  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--primary) 6%, var(--panel)),
-    color-mix(in srgb, var(--bg-soft) 78%, transparent)
-  );
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--primary) 10%, transparent);
-  transform: translateY(-1px);
-}
-
-.single-empty-action:focus-visible {
-  outline: none;
-}
-
-.single-empty-action-icon {
-  display: inline-grid;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
-  color: var(--primary);
-}
-
-.single-empty-action-copy {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-  text-align: left;
-}
-
-.single-empty-action-copy strong {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.single-empty-action-copy span {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app.theme-dark .single-empty-action {
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
-}
-
 @media (max-width: 720px) {
   .chat-main-empty .single-empty-hero {
     gap: 14px;
@@ -2346,21 +2205,6 @@ body.git-review-tree-resizing {
 
   .chat-main-empty .single-empty-title.chat-hero-title {
     font-size: 22px;
-  }
-
-  .single-empty-actions {
-    width: 100%;
-    max-width: 360px;
-  }
-
-  /* 移动端卡片单列 + 全宽 */
-  .single-empty-action {
-    flex: 1 1 100%;
-    max-width: 100%;
-  }
-
-  .single-empty-actions-layer {
-    width: 100%;
   }
 }
 
@@ -2429,36 +2273,6 @@ body.git-review-tree-resizing {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-/* 空会话推荐卡片：每张纵向滚入 / 滚出（位移 16px，与底部 hero-tips 的 translateY 风格一致）。 */
-@keyframes single-empty-action-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes single-empty-action-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-16px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .single-empty-actions-layer-in .single-empty-action,
-  .single-empty-actions-layer-out .single-empty-action {
-    animation: none;
   }
 }
 
@@ -3863,11 +3677,6 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   letter-spacing: 0.02em;
 }
 
-.composer-reasoning-menu.is-max .composer-reasoning-title strong {
-  color: color-mix(in srgb, var(--primary) 78%, var(--panel));
-  text-shadow: none;
-}
-
 .composer-reasoning-description {
   min-height: 30px;
   margin: -2px 0 9px;
@@ -3899,74 +3708,110 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   color: var(--primary);
 }
 
-.composer-reasoning-axis {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-  color: var(--text-faint);
-  font-size: var(--font-xs);
-  line-height: 1.1;
-}
-
 .composer-reasoning-slider {
-  --reasoning-fill-width: 10px;
+  --reasoning-pos: 50%;
   position: relative;
   width: 100%;
-  margin: 0;
   height: 24px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--text) 7%, var(--panel));
   cursor: ew-resize;
   outline: none;
-  overflow: hidden;
-  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--primary) 10%, transparent);
+  touch-action: none;
 }
 
 .composer-reasoning-slider:focus-visible {
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--primary) 36%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.composer-reasoning-slider[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.composer-reasoning-slider-track {
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, var(--panel));
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .composer-reasoning-slider-fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--reasoning-fill-width);
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--primary) 48%, #168ff5),
-    var(--primary) 58%,
-    color-mix(in srgb, var(--primary) 62%, #f346d2)
-  );
-  box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 24%, transparent);
+  inset: 50% auto auto 0;
+  width: var(--reasoning-pos);
+  height: 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  transform: translateY(-50%);
   pointer-events: none;
+  transition: width 0.16s ease;
 }
 
-.composer-reasoning-menu.is-max .composer-reasoning-slider {
+.composer-reasoning-slider-thumb {
+  position: absolute;
+  left: var(--reasoning-pos);
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition:
+    left 0.16s ease,
+    width 0.12s ease,
+    height 0.12s ease;
+}
+
+.composer-reasoning-slider:hover .composer-reasoning-slider-thumb,
+.composer-reasoning-slider:focus-visible .composer-reasoning-slider-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+.composer-reasoning-slider.is-dragging .composer-reasoning-slider-fill,
+.composer-reasoning-slider.is-dragging .composer-reasoning-slider-thumb {
+  transition: none;
+}
+
+.composer-reasoning-slider.is-dragging .composer-reasoning-slider-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+/* Max 档特效：彩虹渐变轨道 + 彗星粒子流 */
+.composer-reasoning-menu.is-max .composer-reasoning-slider-track {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--primary) 50%, #168ff5),
     var(--primary) 50%,
     color-mix(in srgb, var(--primary) 62%, #f346d2)
   );
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text) 12%, transparent),
-    inset 0 -4px 8px color-mix(in srgb, var(--primary) 18%, transparent),
-    0 3px 14px color-mix(in srgb, var(--primary) 28%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-slider-fill {
-  width: 100%;
   background: transparent;
-  box-shadow: none;
+}
+
+.composer-reasoning-menu.is-max .composer-reasoning-slider-thumb {
+  box-shadow:
+    -4px 0 13px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 1px 4px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .composer-reasoning-particles {
   position: absolute;
-  z-index: 1;
-  inset: 0 17px 0 0;
+  inset: 50% 18px auto 0;
+  height: 10px;
+  transform: translateY(-50%);
   overflow: hidden;
   pointer-events: none;
 }
@@ -3986,73 +3831,36 @@ html[data-theme='dark'] .composer-file-drop-overlay {
     cubic-bezier(0.4, 0, 0.2, 1) var(--reasoning-particle-delay) infinite;
 }
 
-.composer-reasoning-step {
-  position: absolute;
-  left: var(--reasoning-step-left);
-  top: 50%;
-  z-index: 2;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: ew-resize;
-  transform: translate(-50%, -50%);
-}
-
-.composer-reasoning-step.active {
-  width: 16px;
-}
-
-.composer-reasoning-step:focus-visible {
-  outline: none;
-}
-
-.composer-reasoning-dot {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 32%, transparent);
-  transform: translate(-50%, -50%);
-}
-
-.composer-reasoning-step.active .composer-reasoning-dot {
-  opacity: 0;
-}
-
-.composer-reasoning-menu.is-max .composer-reasoning-dot {
-  opacity: 0;
-}
-
-.composer-reasoning-thumb {
-  position: absolute;
-  left: var(--reasoning-step-left);
-  top: 0;
-  z-index: 3;
-  width: 16px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: var(--panel);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent);
-  transform: translateX(-50%);
-  cursor: ew-resize;
+.composer-reasoning-scale {
+  position: relative;
+  height: 15px;
+  margin-top: 3px;
   pointer-events: none;
-  transition:
-    left 0.16s ease,
-    background-color 0.16s ease;
 }
 
-.composer-reasoning-menu.is-max .composer-reasoning-thumb {
-  background: color-mix(in srgb, var(--text) 8%, var(--panel));
-  box-shadow:
-    -4px 0 13px color-mix(in srgb, var(--primary) 30%, transparent),
-    0 3px 9px rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+.composer-reasoning-scale-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 550;
+  line-height: 15px;
+  white-space: nowrap;
+  transition: color 0.14s ease;
+}
+
+.composer-reasoning-scale-label:first-child {
+  transform: none;
+}
+
+.composer-reasoning-scale-label:last-child {
+  transform: translateX(-100%);
+}
+
+.composer-reasoning-scale-label.is-active {
+  color: color-mix(in srgb, var(--primary) 76%, var(--text));
+  font-weight: 650;
 }
 
 .composer-fast-mode-section {
@@ -4134,6 +3942,17 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   opacity: 0.5;
 }
 
+@keyframes composer-reasoning-max-label-flow {
+  0%,
+  18% {
+    background-position: 0 0;
+  }
+  74%,
+  100% {
+    background-position: 240% 0;
+  }
+}
+
 @keyframes composer-reasoning-comet-flight {
   0% {
     transform: translate3d(-24px, 2px, 0) rotate(-5deg);
@@ -4151,19 +3970,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   }
 }
 
-@keyframes composer-reasoning-max-label-flow {
-  0%,
-  18% {
-    background-position: 0 0;
-  }
-  74%,
-  100% {
-    background-position: 240% 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .composer-reasoning-thumb,
+  .composer-reasoning-slider-fill,
+  .composer-reasoning-slider-thumb,
+  .composer-reasoning-scale-label,
   .composer-reasoning-comet,
   .composer-reasoning-select.is-max .composer-select-label-ticker-item.is-current {
     transition: none;

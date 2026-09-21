@@ -4,11 +4,11 @@
    已在 .chat-main-empty[data-empty-theme] 上覆盖 --primary 等变量，明暗模式同理自动适配。 */
 @import '../usageHeatmap.base.less';
 
-/* 空会话内容区：hero 卡片 + 使用足迹热力图 垂直堆叠。
+/* 空会话内容区：问候 banner + 使用足迹热力图 垂直堆叠（空会话恒为该组合）。
    经典主题：hero 是 720px 居中构图，stack 同宽居中，热力图随之居中。
    主题模式：hero 是 880px 左对齐构图（见 ChatEmptyThemes.less），stack 跟随同宽，
-   热力图贴左，与标题/卡片/输入框共用同一条左边缘。
-   gap 仅在热力图互斥形态（hero banner + 热力图两个子元素）生效，收紧让两者靠近。 */
+   热力图贴左，与标题/输入框共用同一条左边缘。
+   gap 收紧让 banner 与热力图靠紧。 */
 .chat-empty-hero-stack {
   display: flex;
   width: min(720px, 100%);
@@ -24,6 +24,11 @@
   align-items: stretch;
 }
 
+/* 暗色模式下无用量格子还原原透明度：暗底上 72% 已足够可辨，不随浅色加深 */
+.app.theme-dark .hero-usage-heatmap {
+  --uh-empty-bg: color-mix(in srgb, var(--bg-soft) 72%, transparent);
+}
+
 .chat-main-empty[data-empty-theme] .hero-usage-heatmap {
   align-self: flex-start;
 }
@@ -32,7 +37,9 @@
   --uh-cell: 17px;
   --uh-gap: 5px;
   --uh-months-h: 16px;
-  --uh-empty-bg: color-mix(in srgb, var(--bg-soft) 72%, transparent);
+  /* 无用量格子底色：浅色模式下比之前（72%）加深一档，避免在半透明面板上几乎隐形；
+     暗色模式见下方 theme-dark 覆盖，维持原 72% 不变 */
+  --uh-empty-bg: color-mix(in srgb, var(--bg-soft) 92%, transparent);
 
   position: relative;
   z-index: 1;
@@ -129,6 +136,16 @@
 .hero-usage-heatmap .usage-heatmap-legend .usage-heatmap-cell {
   width: 13px;
   height: 13px;
+}
+
+/* hero 变体 hover 收敛（用户反馈外圈描边显脏）：hover 恢复常态描边，不加外圈，
+   仅保留 base 的放大 + 提亮动效；focus-visible 仍走 base 描边圈，键盘定位可见。 */
+.hero-usage-heatmap .usage-heatmap-cell--interactive:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--divider) 18%, transparent);
+}
+/* level-4 常态自带同色细描边，hover 时同样恢复常态而不是 base 外圈。 */
+.hero-usage-heatmap .usage-heatmap-cell--level-4:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--uh-primary, var(--primary)) 70%, var(--text-strong));
 }
 
 @media (max-width: 720px) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ManagedAgent } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
@@ -10,76 +10,6 @@ export function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | nu
   if (agentId == null || agentId.length === 0) return null
   return agents.find((agent) => agent.id === agentId) ?? null
 }
-
-/**
- * 空会话推荐卡片：桌面端每次展示 4 个，5s 自动轮换一组，鼠标悬停暂停。
- *
- * 卡片规范：
- * - 标题 ≤ 6 字，简短有力
- * - desc 一行：Agent · 关键技能，便于一眼判断能力归属
- * - prompt 简洁：携带技能推荐 + 示例话术；点击后带入输入框，由 Agent 自行判断
- *   是否需要安装技能（如 ppt-master 需走 skill-installer 流程）。
- */
-const SINGLE_AGENT_HERO_ACTIONS = [
-  {
-    title: '制作网页',
-    desc: 'Web · 从设计到部署',
-    Icon: Icons.Globe,
-    prompt: '使用spark-web-tool 技能。做一个在线网页，主题是：',
-  },
-  {
-    title: '创建团队',
-    desc: 'Teams · 多 Agent 协作',
-    Icon: Icons.Team,
-    prompt: '帮我创建一个团队，用来做：',
-  },
-  {
-    title: '打开浏览器',
-    desc: 'Browser · 浏览与操作',
-    Icon: Icons.Monitor,
-    prompt:
-      '优先 browser-use 技能。告诉我你想打开的网址、要做什么（抓取信息 / 操作页面 / 截图），确认后再执行。',
-  },
-  {
-    title: '分析项目',
-    desc: 'Codebase · 理清结构',
-    Icon: Icons.Search,
-    prompt:
-      '请先阅读当前项目，梳理架构、关键执行流程和需要优先关注的风险，然后给我一份简洁的项目导览。',
-  },
-  {
-    title: '创建 Agent',
-    desc: 'Agent · 定义专属角色',
-    Icon: Icons.Bot,
-    prompt:
-      '使用 agent-identifier 技能。先问我 Agent 的职责、适用场景和权限边界，给一份可落地的配置方案，等我确认再落地。',
-  },
-  {
-    title: '安装 Skill',
-    desc: 'Skills · 扩展新能力',
-    Icon: Icons.Skills,
-    prompt: '优先 skill-installer 技能。先列出候选技能清单和风险，等我选定再装，不要自动安装。',
-  },
-  {
-    title: '制作 PPT',
-    desc: 'Slides · 可编辑演示稿',
-    Icon: Icons.Sparkles,
-    prompt:
-      '先检查是否已安装 ppt-master；未安装时请通过精选市场 catalog 安装（优先 Spark 自建安装源），再使用 ppt-master 制作高质量可编辑 PPTX。主题是：',
-  },
-  {
-    title: '继续开发',
-    desc: 'Workspace · 接续上下文',
-    Icon: Icons.Code,
-    prompt:
-      '请读取当前工作区和最近改动，概括上次做到哪里、还有哪些未完成事项，然后从最合理的下一步继续开发。',
-  },
-] as const
-
-/** 空会话推荐卡片：宽屏每页展示几张（与主题 CSS grid 保持一致）。 */
-const SINGLE_AGENT_HERO_VISIBLE_COUNT = 4
-/** 轮换间隔，参考底部 hero-tips 节奏（5s）。 */
-const SINGLE_AGENT_HERO_ROTATE_MS = 5000
 
 /* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
 type HeroTipKind = 'shortcut' | 'feature' | 'tip'
@@ -179,16 +109,7 @@ export function HeroTipsTicker() {
   )
 }
 
-export function SingleAgentEmptyHero({
-  themeId,
-  onSelectPrompt,
-  hideActions = false,
-}: {
-  themeId: EmptyHeroThemeId
-  onSelectPrompt: (prompt: string) => void
-  /** 热力图模式下隐藏快捷卡片，仅保留问候 banner。 */
-  hideActions?: boolean
-}) {
+export function SingleAgentEmptyHero({ themeId }: { themeId: EmptyHeroThemeId }) {
   const theme = getEmptyHeroTheme(themeId)
   const [localHour, setLocalHour] = useState(() => new Date().getHours())
 
@@ -199,83 +120,9 @@ export function SingleAgentEmptyHero({
 
   const titleLines = getEmptyHeroTitleLines(localHour)
 
-  // 推荐卡片按窗口宽度决定每页展示几张；移动端 grid 会塌成单列（见 .less），
-  // 用 matchMedia 跟 grid 列数同步：宽屏 4 列、中等窗口 2 列、窄屏 1 列。
-  // 双层 cross-fade 用一个 phase state 描述：activePage 是当前渲染页；
-  // outgoingPage 是正在淡出的旧页（动画完成前为非 null）。
-  // 用 setState callback 在 setInterval 回调里推进，避免 effect 同步 setState。
-  const [visibleCount, setVisibleCount] = useState(SINGLE_AGENT_HERO_VISIBLE_COUNT)
-  const [paused, setPaused] = useState(false)
-  const [phase, setPhase] = useState<{ activePage: number; outgoingPage: number | null }>({
-    activePage: 0,
-    outgoingPage: null,
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const narrowMql = window.matchMedia('(max-width: 720px)')
-    const mediumMql = window.matchMedia('(max-width: 1100px)')
-    const apply = () => {
-      // 列数变化时同步重置 phase（避免越界）。回调里 setState 是合法的。
-      setVisibleCount(
-        narrowMql.matches ? 1 : mediumMql.matches ? 2 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
-      )
-      setPhase({ activePage: 0, outgoingPage: null })
-    }
-    apply()
-    // Safari < 14 走 addListener；新版走 addEventListener。
-    if (typeof narrowMql.addEventListener === 'function') {
-      narrowMql.addEventListener('change', apply)
-      mediumMql.addEventListener('change', apply)
-      return () => {
-        narrowMql.removeEventListener('change', apply)
-        mediumMql.removeEventListener('change', apply)
-      }
-    }
-    narrowMql.addListener(apply)
-    mediumMql.addListener(apply)
-    return () => {
-      narrowMql.removeListener(apply)
-      mediumMql.removeListener(apply)
-    }
-  }, [])
-
-  const totalActions = SINGLE_AGENT_HERO_ACTIONS.length
-  const pageCount = Math.max(1, Math.ceil(totalActions / visibleCount))
-
-  useEffect(() => {
-    if (hideActions || paused || pageCount <= 1) return
-    const timer = window.setInterval(() => {
-      setPhase((prev) => {
-        const next = (prev.activePage + 1) % pageCount
-        if (next === prev.activePage) return prev
-        return { activePage: next, outgoingPage: prev.activePage }
-      })
-    }, SINGLE_AGENT_HERO_ROTATE_MS)
-    return () => window.clearInterval(timer)
-  }, [hideActions, paused, pageCount])
-
-  // 切换完成后清理 outgoingPage（动画 ~280ms，留余量到 600ms）
-  useEffect(() => {
-    if (phase.outgoingPage == null) return
-    const t = window.setTimeout(() => {
-      setPhase((prev) =>
-        prev.outgoingPage == null ? prev : { activePage: prev.activePage, outgoingPage: null },
-      )
-    }, 600)
-    return () => window.clearTimeout(t)
-  }, [phase.outgoingPage])
-
-  const sliceFor = (p: number) =>
-    SINGLE_AGENT_HERO_ACTIONS.slice(p * visibleCount, p * visibleCount + visibleCount)
-  const activeActions = sliceFor(phase.activePage)
-  const outgoingActions = phase.outgoingPage != null ? sliceFor(phase.outgoingPage) : []
-
   return (
     <section
-      className={`single-empty-hero single-empty-hero-${theme.id}${
-        hideActions ? ' single-empty-hero--banner' : ''
-      }`}
+      className={`single-empty-hero single-empty-hero-${theme.id}`}
       data-empty-theme={theme.id}
       aria-label={`${theme.name}空会话欢迎提示`}
     >
@@ -291,64 +138,6 @@ export function SingleAgentEmptyHero({
           </div>
         </div>
       </div>
-      {!hideActions && (
-      <div
-        className="single-empty-actions"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-      >
-        {/* outgoing 层：仅在切换瞬间渲染，absolute 覆盖在 active 之上向左淡出。
-            用 snapshot（不可点击 + 只显示标题），减负 + 避免误点。 */}
-        {outgoingActions.length > 0 && (
-          <div
-            className="single-empty-actions-layer single-empty-actions-layer-out"
-            aria-hidden="true"
-          >
-            {outgoingActions.map(({ title, Icon }, i) => (
-              <div
-                key={`out-${phase.outgoingPage}-${title}`}
-                className="single-empty-action single-empty-action-snapshot"
-                style={{ '--card-i': i } as React.CSSProperties}
-              >
-                <span className="single-empty-action-icon">
-                  <Icon size={14} />
-                </span>
-                <span className="single-empty-action-copy">
-                  <strong>{title}</strong>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* active 层：每次 activePage 变化都会重挂载（key 变化），触发 slide-in 入场动画。 */}
-        <div
-          key={`in-${phase.activePage}`}
-          className="single-empty-actions-layer single-empty-actions-layer-in"
-          aria-label="可尝试的任务类型"
-        >
-          {activeActions.map(({ title, desc, Icon, prompt }, i) => (
-            <button
-              key={title}
-              type="button"
-              className="single-empty-action"
-              style={{ '--card-i': i } as React.CSSProperties}
-              onClick={() => onSelectPrompt(prompt)}
-            >
-              <span className="single-empty-action-icon">
-                <Icon size={14} />
-              </span>
-              <span className="single-empty-action-copy">
-                <strong>{title}</strong>
-                <span>{desc}</span>
-              </span>
-              <span className="single-empty-action-arrow" aria-hidden="true">
-                →
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-      )}
     </section>
   )
 }

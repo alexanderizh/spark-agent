@@ -48,11 +48,10 @@
   --eh-accent-2: color-mix(in srgb, var(--primary) 62%, #2563eb);
   --eh-ink: #171923;
   --eh-muted: #686b78;
-  --eh-surface: rgba(255, 255, 255, 0.78);
   --eh-surface-strong: rgba(255, 255, 255, 0.94);
   --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, #fff);
   --eh-line: color-mix(in srgb, var(--primary) 18%, transparent);
-  /* 阴影保持中性灰发散，不随主题色染色（快捷卡片与输入区弹层共用）。 */
+  /* 阴影保持中性灰发散，不随主题色染色（空会话输入区弹层使用）。 */
   --eh-shadow: rgba(18, 18, 40, 0.12);
   --text: var(--eh-ink);
   --text-strong: var(--eh-ink);
@@ -103,17 +102,11 @@
 
 .single-empty-heading {
   display: grid;
-  min-height: 108px;
+  min-height: 0;
   grid-template-columns: 1fr;
   align-items: center;
   gap: clamp(20px, 4vw, 52px);
   padding-inline: 0;
-}
-
-/* 热力图互斥模式：hero 只剩 banner（无快捷卡片），去掉 heading 的最小高度预留，
-   让 banner 与下方热力图靠紧（高度不足时内容居中不再上下溢出贴边）。 */
-.chat-main-empty[data-empty-theme] .single-empty-hero--banner .single-empty-heading {
-  min-height: 0;
 }
 
 .chat-main-empty[data-empty-theme] .single-empty-copy {
@@ -157,100 +150,6 @@
   line-height: 1.12;
   text-align: left;
 }
-
-.chat-main-empty[data-empty-theme] .single-empty-actions {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 80px;
-  padding: 0;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-actions-layer {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 10px;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-actions-layer-out {
-  right: 0;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action {
-  position: relative;
-  width: auto;
-  min-height: 78px;
-  max-width: none;
-  flex: initial;
-  align-items: flex-start;
-  gap: 10px;
-  overflow: hidden;
-  padding: 12px;
-  border: 1px solid var(--eh-line);
-  border-radius: 12px;
-  background: var(--eh-surface);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--eh-shadow) 72%, transparent);
-  backdrop-filter: blur(12px) saturate(1.04);
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action::after {
-  position: absolute;
-  inset: auto -24px -32px auto;
-  width: 76px;
-  height: 76px;
-  border: 1px solid color-mix(in srgb, var(--eh-accent) 10%, transparent);
-  border-radius: 50%;
-  content: none;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action:hover,
-.chat-main-empty[data-empty-theme] .single-empty-action:focus-visible {
-  border-color: color-mix(in srgb, var(--eh-accent) 48%, var(--eh-line));
-  background: color-mix(in srgb, var(--eh-accent) 7%, var(--eh-surface-strong));
-  box-shadow:
-    0 10px 28px rgba(18, 18, 40, 0.12),
-    inset 0 1px 0 color-mix(in srgb, #fff 66%, transparent);
-  transform: translateY(-1px);
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--eh-accent) 11%, var(--eh-surface-strong));
-  color: var(--eh-accent);
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action-copy {
-  flex: 1;
-  gap: 4px;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action-copy strong {
-  color: var(--eh-ink);
-  font-size: 13px;
-  font-weight: 720;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action-copy span {
-  color: var(--eh-muted);
-  font-size: 10px;
-}
-
-.single-empty-action-arrow {
-  position: absolute;
-  right: 12px;
-  bottom: 10px;
-  color: var(--eh-accent);
-  font-family: var(--font-mono, monospace);
-  font-size: 15px;
-  transition: transform 160ms ease;
-}
-
-.single-empty-action:hover .single-empty-action-arrow {
-  transform: translateX(3px);
-}
-
 /* Composer surface stays functionally shared while the empty theme can tune its material. */
 .chat-main-empty[data-empty-theme] .composer-wrap {
   position: relative;
@@ -458,21 +357,10 @@
   transform: rotate(-7deg);
 }
 
-/* 信息层级与应用外壳保持一致的克制层。 */
+/* 信息层级与应用外壳保持一致的克制层。hero 恒为 banner + 热力图，不预留卡片高度。 */
 .chat-main-empty[data-empty-theme] .single-empty-heading {
-  min-height: 108px;
+  min-height: 0;
   background: transparent;
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-actions-layer {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.chat-main-empty[data-empty-theme] .single-empty-action:nth-child(n) {
-  min-height: 78px;
-  margin-top: 0;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--eh-shadow) 72%, transparent);
 }
 
 /*
@@ -482,7 +370,6 @@
 .app.theme-dark .chat-main-empty[data-empty-theme] {
   --eh-ink: #f4f3f8;
   --eh-muted: #a9a7b3;
-  --eh-surface: rgba(22, 23, 31, 0.78);
   --eh-surface-strong: rgba(19, 20, 28, 0.94);
   --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 4%, #15161d);
   --eh-line: rgba(235, 232, 255, 0.15);
@@ -622,14 +509,6 @@
   .chat-main-empty[data-empty-theme] .single-empty-hero {
     width: min(780px, 100%);
   }
-
-  .chat-main-empty[data-empty-theme] .single-empty-actions-layer {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .chat-main-empty[data-empty-theme] .single-empty-action {
-    min-height: 82px;
-  }
 }
 
 @media (max-width: 720px) {
@@ -658,23 +537,6 @@
     font-size: clamp(27px, 8.5vw, 38px);
   }
 
-  .chat-main-empty[data-empty-theme] .single-empty-actions-layer {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-main-empty[data-empty-theme] .single-empty-actions {
-    padding-right: 0;
-  }
-
-  .chat-main-empty[data-empty-theme] .single-empty-actions-layer-out {
-    right: 0;
-  }
-
-  .chat-main-empty[data-empty-theme] .single-empty-action {
-    min-height: 70px;
-    padding: 13px;
-  }
-
   .hero-tips-wrap {
     display: none;
   }
@@ -690,24 +552,13 @@
     gap: 12px;
   }
 
-  .single-empty-heading {
-    min-height: 104px;
-  }
-
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
     font-size: 31px;
-  }
-
-  .chat-main-empty[data-empty-theme] .single-empty-action {
-    min-height: 72px;
-    padding: 12px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-main-empty[data-empty-theme],
-  .chat-main-empty[data-empty-theme] .single-empty-action,
-  .single-empty-action-arrow {
+  .chat-main-empty[data-empty-theme] {
     transition: none;
   }
 }
