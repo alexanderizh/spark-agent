@@ -28,6 +28,11 @@ interface AutoRouterManagerModalProps {
   providers: ProviderProfile[]
   onClose: () => void
   onChanged: () => void
+  /**
+   * 外部指定打开时聚焦的 router（渠道卡片「编辑」入口）。
+   * 为 null / 不在列表中时按既有逻辑（恢复上次选中或进入新建态）。
+   */
+  focusRouterId?: string | null
 }
 
 const INTENSITY_OPTIONS: Array<{ value: RouterIntensity; label: string; badgeClass: string }> = [
@@ -70,6 +75,7 @@ export function AutoRouterManagerModal({
   providers,
   onClose,
   onChanged,
+  focusRouterId = null,
 }: AutoRouterManagerModalProps) {
   const { toast } = useToast()
   const { invoke: createRouter } = useIpcInvoke('provider:auto-router:create')
@@ -83,27 +89,36 @@ export function AutoRouterManagerModal({
   )
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [draft, setDraft] = useState<AutoRouterConfig>(() => createDefaultAutoRouterConfig('claude'))
+  const [draft, setDraft] = useState<AutoRouterConfig>(() =>
+    createDefaultAutoRouterConfig('claude'),
+  )
   const [routerName, setRouterName] = useState('')
   const [routerEnabled, setRouterEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   // 分流器连通性测试：testing 进行中；result 为 null 表示未测/已改动作废
   const [dispatcherTesting, setDispatcherTesting] = useState(false)
-  const [dispatcherTestResult, setDispatcherTestResult] = useState<
-    ProviderAutoRouterTestDispatcherResponse | null
-  >(null)
+  const [dispatcherTestResult, setDispatcherTestResult] =
+    useState<ProviderAutoRouterTestDispatcherResponse | null>(null)
 
-  // 打开时默认选中第一个 router；列表为空进入新建态
+  // 打开时优先聚焦外部指定的 router（卡片编辑入口）；否则默认选中第一个，
+  // 列表为空进入新建态
   useEffect(() => {
     if (!open) return
+    const focused =
+      focusRouterId != null ? routers.find((router) => router.id === focusRouterId) : undefined
+    if (focused != null) {
+      // 与当前选中不同才重置表单，避免 effect 重跑时覆盖用户正在编辑的草稿
+      if (selectedId !== focused.id) selectRouter(focused)
+      return
+    }
     if (selectedId == null || !routers.some((router) => router.id === selectedId)) {
       const first = routers[0]
       if (first != null) selectRouter(first)
       else startCreate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, routers])
+  }, [open, routers, focusRouterId])
 
   function selectRouter(provider: ProviderProfile): void {
     setSelectedId(provider.id)
@@ -160,7 +175,9 @@ export function AutoRouterManagerModal({
     }))
   }, [providerById, draft.dispatcher.providerProfileId])
 
-  function modelsForExecutor(executor: AutoRouterExecutorRef): Array<{ label: string; value: string }> {
+  function modelsForExecutor(
+    executor: AutoRouterExecutorRef,
+  ): Array<{ label: string; value: string }> {
     const provider = providerById.get(executor.providerProfileId)
     return (provider ? providerModels(provider) : []).map((modelId) => ({
       label: modelId,
@@ -253,7 +270,12 @@ export function AutoRouterManagerModal({
     setSaving(true)
     try {
       if (selectedId != null) {
-        await updateRouter({ id: selectedId, name: routerName.trim(), config: draft, enabled: routerEnabled })
+        await updateRouter({
+          id: selectedId,
+          name: routerName.trim(),
+          config: draft,
+          enabled: routerEnabled,
+        })
         toast.success('路由器已更新')
       } else {
         await createRouter({ name: routerName.trim(), config: draft, enabled: routerEnabled })
@@ -261,6 +283,8 @@ export function AutoRouterManagerModal({
       }
       setValidationError(null)
       onChanged()
+      // 保存 / 创建成功即视为本轮编辑完成，直接关闭弹窗回到渠道列表
+      onClose()
     } catch (err) {
       setValidationError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -309,7 +333,10 @@ export function AutoRouterManagerModal({
           </Button>
         </div>
       }
-      width={880}
+      // 动态宽度：小窗跟随视口收缩、大窗封顶 1240px；下限由 .arm_modal 的
+      // min-width 保证（执行模型一行 7 列控件需要足够横向空间）。
+      width="min(1240px, 94vw)"
+      className="arm_modal"
       onCancel={onClose}
     >
       <div className="arm_layout">
@@ -321,7 +348,9 @@ export function AutoRouterManagerModal({
             </Button>
           </div>
           <div className="arm_router_list">
-            {routers.length === 0 && <div className="arm_empty">还没有路由器，点击「新建」创建</div>}
+            {routers.length === 0 && (
+              <div className="arm_empty">还没有路由器，点击「新建」创建</div>
+            )}
             {routers.map((router) => (
               <button
                 key={router.id}
@@ -334,7 +363,8 @@ export function AutoRouterManagerModal({
                   <span className="badge">{router.autoRouterConfig?.adapter ?? '—'}</span>
                   {router.autoRouterConfig != null && (
                     <span className="badge dot">
-                      {router.autoRouterConfig.executors.filter((entry) => entry.enabled).length} 执行模型
+                      {router.autoRouterConfig.executors.filter((entry) => entry.enabled).length}{' '}
+                      执行模型
                     </span>
                   )}
                   {router.enabled === false && <span className="badge warning">已停用</span>}
@@ -362,11 +392,7 @@ export function AutoRouterManagerModal({
                 onChange={(value) => patchConfig({ adapter: value as RouterAdapter })}
               />
               <label className="arm_form_label">启用</label>
-              <Switch
-                size="small"
-                checked={routerEnabled}
-                onChange={setRouterEnabled}
-              />
+              <Switch size="small" checked={routerEnabled} onChange={setRouterEnabled} />
             </div>
           </div>
 
@@ -404,6 +430,7 @@ export function AutoRouterManagerModal({
                 value={draft.dispatcher.providerProfileId || undefined}
                 placeholder="选择渠道"
                 options={providerOptions}
+                popupMatchSelectWidth={false}
                 onChange={(value) =>
                   patchConfig({
                     dispatcher: { ...draft.dispatcher, providerProfileId: value, modelId: '' },
@@ -415,6 +442,7 @@ export function AutoRouterManagerModal({
                 value={draft.dispatcher.modelId || undefined}
                 placeholder="建议选择快且便宜的小模型"
                 options={dispatcherModelOptions}
+                popupMatchSelectWidth={false}
                 onChange={(value) =>
                   patchConfig({ dispatcher: { ...draft.dispatcher, modelId: value } })
                 }
@@ -440,7 +468,9 @@ export function AutoRouterManagerModal({
             <div className="arm_section_title">执行模型（按强度）</div>
             <div className="arm_executors">
               {draft.executors.length === 0 && (
-                <div className="arm_empty">尚未配置执行模型；每轮任务按分流器判定的强度分派给对应档位</div>
+                <div className="arm_empty">
+                  尚未配置执行模型；每轮任务按分流器判定的强度分派给对应档位
+                </div>
               )}
               {draft.executors.map((executor) => (
                 <div key={executor.id} className="arm_executor_row">
@@ -452,6 +482,7 @@ export function AutoRouterManagerModal({
                     value={executor.providerProfileId || undefined}
                     placeholder="渠道"
                     options={providerOptions}
+                    popupMatchSelectWidth={false}
                     onChange={(value) =>
                       patchExecutor(executor.id, { providerProfileId: value, modelId: '' })
                     }
@@ -461,6 +492,7 @@ export function AutoRouterManagerModal({
                     value={executor.modelId || undefined}
                     placeholder="模型"
                     options={modelsForExecutor(executor)}
+                    popupMatchSelectWidth={false}
                     onChange={(value) => patchExecutor(executor.id, { modelId: value })}
                   />
                   <Select
@@ -482,10 +514,13 @@ export function AutoRouterManagerModal({
                       { label: '推理·跟随会话', value: REASONING_EFFORT_FOLLOW },
                       ...REASONING_EFFORT_OPTIONS,
                     ]}
+                    popupMatchSelectWidth={false}
                     onChange={(value) =>
                       patchExecutor(executor.id, {
                         reasoningEffort:
-                          value === REASONING_EFFORT_FOLLOW ? null : (value as SessionReasoningEffort),
+                          value === REASONING_EFFORT_FOLLOW
+                            ? null
+                            : (value as SessionReasoningEffort),
                       })
                     }
                   />
@@ -524,9 +559,7 @@ export function AutoRouterManagerModal({
                   label: option.label,
                   value: option.value,
                 }))}
-                onChange={(value) =>
-                  patchConfig({ fallbackIntensity: value as RouterIntensity })
-                }
+                onChange={(value) => patchConfig({ fallbackIntensity: value as RouterIntensity })}
               />
               <label className="arm_form_label">允许拆分子任务</label>
               <Switch
@@ -554,8 +587,8 @@ export function AutoRouterManagerModal({
               />
             </div>
             <div className="arm_hint">
-              子代理档位映射：把高/平衡/低执行模型注入引擎子代理环境变量（仅 Claude 引擎生效），
-              让 SDK 原生 Task 子代理也按强度分级。
+              子代理档位映射：把高/平衡/低执行模型注入引擎子代理环境变量（仅 Claude 引擎生效）， 让
+              SDK 原生 Task 子代理也按强度分级。
             </div>
           </div>
         </div>

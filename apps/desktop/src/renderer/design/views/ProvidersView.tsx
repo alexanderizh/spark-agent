@@ -788,6 +788,8 @@ const CARD_KIND_META: Record<
   video: { label: '视频', icon: Icons.Film, kindClass: 'pv_kind--video' },
   voice: { label: '语音', icon: Icons.Mic, kindClass: 'pv_kind--voice' },
   text: { label: '通用模型', icon: Icons.Chat, kindClass: 'pv_kind--text' },
+  // 复用旧「路由」分类的紫色胶囊配色（kind 值本身已更名 auto-router）
+  'auto-router': { label: '自动路由', icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
 }
 
 /** 筛选下拉里与 CARD_KIND_META 对齐的类别选项（不含 'all'） */
@@ -797,6 +799,7 @@ const CARD_KIND_FILTER_OPTIONS: Array<{ value: ProviderCardKind; label: string }
   { value: 'video', label: '视频' },
   { value: 'voice', label: '语音' },
   { value: 'cli', label: 'CLI' },
+  { value: 'auto-router', label: '自动路由' },
 ]
 
 /** 名称排序用的中文 collator（模块级单例，避免每次排序重新构造） */
@@ -829,15 +832,50 @@ export function sortProviderProfilesForCards(
  * 推导一张 Provider 卡片归属的类型（用于右上角 tag + 筛选）。
  *
  * cli 优先级最高（按 id 判定的内置项，modelType 不可靠）；
+ * auto-router 按 provider_type 判定（行本身无 modelType / 端点语义）；
  * 之后看 modelType 媒体维度；其余统一归为对话/文本模型。
  */
 export function resolveProviderCardKind(profile: ProviderProfile): ProviderCardKind {
   if (isBuiltInLocalCliProvider(profile)) return 'cli'
+  if (profile.providerType === AUTO_ROUTER_PROVIDER_TYPE) return 'auto-router'
   const modelType = normalizeLegacyModelType(profile.modelType)
   if (modelType === 'image') return 'image'
   if (modelType === 'video') return 'video'
   if (modelType === 'voice') return 'voice'
   return 'text'
+}
+
+/** 自动路由卡片的合成 vendor：无真实厂商，用「⇄」+ 中性紫渲染 logo fallback */
+const AUTO_ROUTER_VENDOR_META: VendorMeta = {
+  id: '',
+  name: '自动路由',
+  emoji: '⇄',
+  color: '#a855f7',
+  desc: '',
+  logoPath: '',
+}
+
+/** 自动路由卡片描述行：引擎 · 分流器模型 · 启用的执行模型数 */
+function autoRouterCardDesc(profile: ProviderProfile): string {
+  const config = profile.autoRouterConfig
+  if (config == null) return '自动路由 · 未配置'
+  const adapterLabel = config.adapter === 'codex' ? 'Codex 引擎' : 'Claude 引擎'
+  const enabledCount = config.executors.filter((entry) => entry.enabled).length
+  return `${adapterLabel} · 分流器 ${config.dispatcher.modelId || '未配置'} · ${enabledCount} 个执行模型`
+}
+
+/** 自动路由卡片模型 chips：启用的执行模型（去重，同模型多档强度只显示一次） */
+function autoRouterCardModelIds(profile: ProviderProfile): string[] {
+  const config = profile.autoRouterConfig
+  if (config == null) return []
+  return [
+    ...new Set(
+      config.executors
+        .filter((entry) => entry.enabled)
+        .map((entry) => entry.modelId.trim())
+        .filter((modelId) => modelId.length > 0),
+    ),
+  ]
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
@@ -914,6 +952,8 @@ function ProvidersView() {
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
   const [showPresetCatalog, setShowPresetCatalog] = useState(false)
   const [showAutoRouterManager, setShowAutoRouterManager] = useState(false)
+  /** 自动路由弹层要聚焦的 router id：工具栏入口为 null（恢复上次选中），卡片编辑入口指定 */
+  const [autoRouterFocusId, setAutoRouterFocusId] = useState<string | null>(null)
   const [presetCatalogSearch, setPresetCatalogSearch] = useState('')
   /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
   const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
@@ -1021,13 +1061,7 @@ function ProvidersView() {
   }, [])
 
   const selectAll = useCallback(() => {
-    setSelectedIds(
-      new Set(
-        profiles
-          .filter((p) => !isBuiltInLocalCliProvider(p))
-          .map((p) => p.id),
-      ),
-    )
+    setSelectedIds(new Set(profiles.filter((p) => !isBuiltInLocalCliProvider(p)).map((p) => p.id)))
   }, [profiles])
 
   const clearSelection = useCallback(() => {
@@ -1210,10 +1244,9 @@ function ProvidersView() {
   const visibleProfiles = useMemo(() => {
     const keyword = cardSearch.trim().toLowerCase()
     const filtered = uiProfiles.filter((p) => {
-      // AutoRouter 行不是普通渠道：它由工具栏「自动路由」弹层管理，不进渠道卡片网格。
-      // 否则会渲染成「OpenAI 格式 · 默认 」（modelIds 恒空），且点编辑会走普通渠道
-      // 编辑面板，把 provider_type 改掉留下脏行（服务端已同步拒绝该写入）。
-      if (p.providerType === AUTO_ROUTER_PROVIDER_TYPE) return false
+      // AutoRouter 行也进卡片网格（专属「自动路由」类别），但编辑入口走
+      // 自动路由弹层而非普通渠道编辑面板——后者会把 provider_type 改掉留下
+      // 脏行（服务端已同步拒绝该写入），渲染分支见下方 ProviderCardX 特判。
       if (cardKindFilter !== 'all' && resolveProviderCardKind(p) !== cardKindFilter) return false
       // 启用口径与卡片开关一致：enabled !== false 视为启用（undefined 旧数据按启用处理）
       if (cardEnabledFilter === 'enabled' && p.enabled === false) return false
@@ -1339,7 +1372,10 @@ function ProvidersView() {
             <Button
               size="small"
               icon={<Icons.Shuffle />}
-              onClick={() => setShowAutoRouterManager(true)}
+              onClick={() => {
+                setAutoRouterFocusId(null)
+                setShowAutoRouterManager(true)
+              }}
               title="创建与管理自动路由（分流器 + 强度分级执行模型）"
             >
               自动路由
@@ -1445,12 +1481,15 @@ function ProvidersView() {
               {visibleProfiles.map((p) => {
                 const h = healthMap[p.id]
                 const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
-                const vendor =
-                  resolveManagedPlatformVendor(p) ??
-                  resolveBuiltinLocalCliVendor(p) ??
-                  vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
-                  guessVendorByName(p.name, getUniqueVendorIds()) ??
-                  (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
+                // AutoRouter 行是配置实体而非 HTTP 渠道：logo / 描述 / 模型 chips / 编辑入口都走专属分支
+                const isAutoRouter = p.providerType === AUTO_ROUTER_PROVIDER_TYPE
+                const vendor = isAutoRouter
+                  ? AUTO_ROUTER_VENDOR_META
+                  : (resolveManagedPlatformVendor(p) ??
+                    resolveBuiltinLocalCliVendor(p) ??
+                    vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
+                    guessVendorByName(p.name, getUniqueVendorIds()) ??
+                    (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META))
                 const builtin = isBuiltInLocalCliProvider(p)
                 const builtinDesc = isLocalCodexCliProvider(p)
                   ? '内置 · 沿用宿主机本地 Codex CLI 配'
@@ -1473,19 +1512,25 @@ function ProvidersView() {
                     key={p.id}
                     providerId={p.id}
                     vendor={vendor}
-                    icon={p.managed ? null : resolveProviderIconForProfile(p, vendor)}
+                    icon={
+                      p.managed || isAutoRouter ? null : resolveProviderIconForProfile(p, vendor)
+                    }
                     name={p.name}
                     desc={
-                      p.managed
-                        ? `平台官方 · 默认 ${p.defaultModel} · 与第三方 Provider 并存`
-                        : builtin
-                          ? builtinDesc
-                          : isMediaProvider
-                            ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
-                            : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                      isAutoRouter
+                        ? autoRouterCardDesc(p)
+                        : p.managed
+                          ? `平台官方 · 默认 ${p.defaultModel} · 与第三方 Provider 并存`
+                          : builtin
+                            ? builtinDesc
+                            : isMediaProvider
+                              ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
+                              : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                     }
-                    status={p.enabled !== false ? status : 'off'}
-                    modelIds={builtin ? [] : cardModelIds}
+                    status={p.enabled !== false ? (isAutoRouter ? 'unknown' : status) : 'off'}
+                    modelIds={
+                      isAutoRouter ? autoRouterCardModelIds(p) : builtin ? [] : cardModelIds
+                    }
                     scheduledBlockedCount={builtin ? 0 : (p.scheduledBlockedModelIds?.length ?? 0)}
                     defaultModel={p.defaultModel}
                     isBuiltin={builtin}
@@ -1493,7 +1538,7 @@ function ProvidersView() {
                     isDefault={p.isDefault}
                     enabled={p.enabled !== false}
                     cardKind={resolveProviderCardKind(p)}
-                    multiSelect={multiSelect && !builtin && p.managed !== true}
+                    multiSelect={multiSelect && !builtin && p.managed !== true && !isAutoRouter}
                     selected={selectedIds.has(p.id)}
                     canHealthCheck={
                       p.enabled !== false &&
@@ -1501,8 +1546,13 @@ function ProvidersView() {
                     }
                     onToggleSelect={() => toggleSelected(p.id)}
                     onEdit={() => {
-                      if (p.managed) setManagedEditingProfile(p)
-                      else {
+                      // AutoRouter 行只进专属弹层，禁止走普通编辑面板（会改掉 provider_type）
+                      if (isAutoRouter) {
+                        setAutoRouterFocusId(p.id)
+                        setShowAutoRouterManager(true)
+                      } else if (p.managed) {
+                        setManagedEditingProfile(p)
+                      } else {
                         setEditingId(p.id)
                         setTweak('showProviderEdit', true)
                       }
@@ -1570,7 +1620,11 @@ function ProvidersView() {
       <AutoRouterManagerModal
         open={showAutoRouterManager}
         providers={profiles}
-        onClose={() => setShowAutoRouterManager(false)}
+        focusRouterId={autoRouterFocusId}
+        onClose={() => {
+          setAutoRouterFocusId(null)
+          setShowAutoRouterManager(false)
+        }}
         onChanged={refresh}
       />
 

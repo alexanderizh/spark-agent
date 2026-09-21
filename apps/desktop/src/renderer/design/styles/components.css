@@ -1082,6 +1082,13 @@
    AutoRouter 管理弹层（arm_*）— 扁平基线：分割线分节、无卡片盒子
    ============================================================ */
 
+/* 弹窗宽度由组件内联 style 提供动态值 min(1240px, 94vw)；
+   这里补最小宽度下限：执行模型一行 7 列控件 + 推理强度下拉选项
+   文案较长，再窄就会把下拉触发器/选项压到截断。 */
+.ant-modal.arm_modal {
+  min-width: 1000px;
+}
+
 .arm_layout {
   display: flex;
   gap: 20px;
@@ -1220,8 +1227,9 @@
 
 .arm_executor_row {
   display: grid;
-  /* 强度档位 84px + 推理强度 100px（第七列，2026-09 新增执行器推理强度配置） */
-  grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 100px auto auto;
+  /* 强度档位 84px + 推理强度 132px（第七列，2026-09 新增执行器推理强度配置；
+     触发器需完整显示「推理·跟随会话」，下拉选项另由 popupMatchSelectWidth=false 自适应） */
+  grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 132px auto auto;
   gap: 8px;
   align-items: center;
   width: 100%;

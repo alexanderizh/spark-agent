@@ -1483,6 +1483,15 @@ describe('resolveProviderCardKind', () => {
     expect(resolveProviderCardKind(profile('codex-auto-router'))).toBe('text')
   })
 
+  it('providerType=auto-router → auto-router 分类（新版落库 router 行）', () => {
+    const routerRow = {
+      id: 'r1',
+      providerType: 'auto-router',
+      provider: 'auto-router',
+    } as unknown as Parameters<typeof resolveProviderCardKind>[0]
+    expect(resolveProviderCardKind(routerRow)).toBe('auto-router')
+  })
+
   it('local-cli / local-codex-cli → cli（最高优先级，忽略 modelType）', () => {
     expect(resolveProviderCardKind(profile('local-cli', 'video'))).toBe('cli')
     expect(resolveProviderCardKind(profile('local-codex-cli'))).toBe('cli')

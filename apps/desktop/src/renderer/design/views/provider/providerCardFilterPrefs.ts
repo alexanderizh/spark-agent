@@ -40,8 +40,8 @@ export const DEFAULT_PROVIDER_CARD_FILTERS: ProviderCardFilters = {
 
 /**
  * 合法筛选值白名单。
- * 旧「路由」卡片类别（kind='router'）已随旧 Auto Router 下线；历史缓存中
- * 残留的该值会在 normalize 时回落 'all'。
+ * 注意 'router' 是旧 Auto Router 时代的类别值，已废弃且不复用（避免历史缓存
+ * 误命中）；新版自动路由卡片类别为 'auto-router'。
  */
 const KIND_VALUES: readonly ProviderCardKindFilter[] = [
   'all',
@@ -50,6 +50,7 @@ const KIND_VALUES: readonly ProviderCardKindFilter[] = [
   'video',
   'voice',
   'cli',
+  'auto-router',
 ]
 
 const ENABLED_VALUES: readonly ProviderCardEnabledFilter[] = ['all', 'enabled', 'disabled']

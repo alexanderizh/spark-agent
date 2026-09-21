@@ -3,7 +3,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ReactElement } from 'react'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 // Mock UI 库与上下文（参照 ProvidersView.test 的 mock 模式，避免拉起 emoji-mart 等重依赖）
@@ -57,22 +56,14 @@ vi.mock('@lobehub/ui', async () => {
   return { Button, Input, Select, Modal }
 })
 vi.mock('antd', () => ({
-  Switch: ({
-    checked,
-    onChange,
-  }: {
-    checked?: boolean
-    onChange?: (checked: boolean) => void
-  }) => (
+  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (checked: boolean) => void }) => (
     <input
       type="checkbox"
       checked={checked}
       onChange={(event) => onChange?.(event.target.checked)}
     />
   ),
-  Alert: ({ message }: { message?: React.ReactNode }) => (
-    <div className="ant-alert">{message}</div>
-  ),
+  Alert: ({ message }: { message?: React.ReactNode }) => <div className="ant-alert">{message}</div>,
 }))
 vi.mock('../../Icons', async () => {
   const ReactActual = await vi.importActual<typeof import('react')>('react')
@@ -80,10 +71,8 @@ vi.mock('../../Icons', async () => {
     Icons: new Proxy(
       {},
       {
-        get:
-          (_target: Record<string, unknown>, prop: string) =>
-          () =>
-            ReactActual.createElement('span', { 'data-icon': prop }),
+        get: (_target: Record<string, unknown>, prop: string) => () =>
+          ReactActual.createElement('span', { 'data-icon': prop }),
       },
     ),
   }
@@ -100,7 +89,14 @@ vi.mock('../../hooks/useIpc', () => ({
   }),
 }))
 vi.mock('../../components/Toast', () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({
+    toast: {
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    },
+  }),
 }))
 vi.mock('../../AppContext', () => ({
   useApp: () => ({ t: {}, setTweak: vi.fn(), requestConfirm: vi.fn(async () => true) }),
@@ -144,7 +140,13 @@ function routerProfile(id: string, name: string): ProviderProfile {
       adapter: 'claude',
       dispatcher: { providerProfileId: 'p1', modelId: 'haiku-mini', timeoutMs: 8_000 },
       executors: [
-        { id: 'e1', providerProfileId: 'p2', modelId: 'opus-max', intensity: 'high', enabled: true },
+        {
+          id: 'e1',
+          providerProfileId: 'p2',
+          modelId: 'opus-max',
+          intensity: 'high',
+          enabled: true,
+        },
       ],
       fallbackIntensity: 'balanced',
       allowDecomposition: true,
@@ -196,13 +198,54 @@ describe('AutoRouterManagerModal', () => {
     expect(item?.textContent).toContain('日常路由')
   })
 
+  it('focusRouterId 指定时聚焦该 router（渠道卡片编辑入口）', () => {
+    render(
+      <AutoRouterManagerModal
+        open
+        providers={[...providers, routerProfile('r1', '日常路由'), routerProfile('r2', '备用路由')]}
+        focusRouterId="r2"
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    )
+    const item = container.querySelector('.arm_router_item.active')
+    expect(item?.textContent).toContain('备用路由')
+  })
+
+  it('保存成功后调用 onChanged 并关闭弹窗', async () => {
+    const onClose = vi.fn()
+    const onChanged = vi.fn()
+    render(
+      <AutoRouterManagerModal
+        open
+        providers={[...providers, routerProfile('r1', '日常路由')]}
+        onClose={onClose}
+        onChanged={onChanged}
+      />,
+    )
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    expect(saveButton).toBeDefined()
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(invokeCalls.some((entry) => entry.channel === 'provider:auto-router:update')).toBe(true)
+    expect(onChanged).toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('无 router 时进入新建态并展示空态提示', () => {
-    render(<AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />)
+    render(
+      <AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />,
+    )
     expect(container.querySelector('.arm_empty')?.textContent).toContain('还没有路由器')
   })
 
   it('校验拦截：新建态未填分流器时保存显示错误，不调用 create', async () => {
-    render(<AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />)
+    render(
+      <AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />,
+    )
     // 新建态：名称留空，直接点「创建」
     const saveButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === '创建',
@@ -216,7 +259,9 @@ describe('AutoRouterManagerModal', () => {
   })
 
   it('候选渠道按引擎过滤（codex 引擎不显示 anthropic 渠道）', () => {
-    render(<AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />)
+    render(
+      <AutoRouterManagerModal open providers={providers} onClose={vi.fn()} onChanged={vi.fn()} />,
+    )
     // 默认 claude 引擎：应显示 2 个 anthropic 文本渠道，不显示图片渠道
     const sidebarItems = container.querySelectorAll('.arm_router_item')
     expect(sidebarItems.length).toBe(0)
@@ -257,8 +302,9 @@ describe('AutoRouterManagerModal', () => {
     })
     const call = invokeCalls.find((entry) => entry.channel === 'provider:auto-router:update')
     expect(call).toBeDefined()
-    const config = (call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } })
-      .config
+    const config = (
+      call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } }
+    ).config
     expect(config.executors[0]?.reasoningEffort).toBe('xhigh')
   })
 
@@ -289,8 +335,9 @@ describe('AutoRouterManagerModal', () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const call = invokeCalls.find((entry) => entry.channel === 'provider:auto-router:update')
-    const config = (call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } })
-      .config
+    const config = (
+      call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } }
+    ).config
     expect(config.executors[0]?.reasoningEffort).toBeNull()
   })
 })
