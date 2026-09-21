@@ -5,6 +5,7 @@ import {
   filterCanvasModelProviderGroups,
   mediaModelKey,
   resolveSelectedCanvasModel,
+  sortCanvasModelProviderGroups,
 } from './canvasModelPickerModel'
 
 function model(input: Partial<CanvasMediaModelSummary>): CanvasMediaModelSummary {
@@ -74,5 +75,24 @@ describe('canvasModelPickerModel', () => {
     expect(resolveSelectedCanvasModel(models, mediaModelKey(xaiGrok))?.providerProfileId).toBe(
       'xai-1',
     )
+  })
+
+  it('sorts pinned models first within groups and pinned groups first overall', () => {
+    const groups = buildCanvasModelProviderGroups(models)
+    const pinned = new Set([mediaModelKey(apimartVeo), mediaModelKey(xaiGrok)])
+
+    const sorted = sortCanvasModelProviderGroups(groups, pinned)
+
+    expect(sorted.map((group) => group.label)).toEqual(['APIMart', 'xAI 官方'])
+    expect(sorted[0]?.models.map((item) => item.displayName)).toEqual(['VEO3', 'Grok Imagine 1.0'])
+    expect(sorted[1]?.models.map((item) => item.displayName)).toEqual(['Grok Imagine 1.0'])
+  })
+
+  it('keeps the original order intact when nothing is pinned', () => {
+    const groups = buildCanvasModelProviderGroups(models)
+    const sorted = sortCanvasModelProviderGroups(groups, new Set())
+
+    expect(sorted.map((group) => group.label)).toEqual(['APIMart', 'xAI 官方'])
+    expect(sorted[0]?.models.map((item) => item.displayName)).toEqual(['Grok Imagine 1.0', 'VEO3'])
   })
 })

@@ -10,11 +10,7 @@ export type CanvasModelProviderGroup = {
 }
 
 export function mediaModelKey(model: CanvasMediaModelSummary): string {
-  return [
-    model.providerProfileId ?? 'catalog',
-    model.manifestId,
-    model.effectiveModelId,
-  ].join('::')
+  return [model.providerProfileId ?? 'catalog', model.manifestId, model.effectiveModelId].join('::')
 }
 
 export function buildCanvasModelProviderGroups(
@@ -40,6 +36,24 @@ export function buildCanvasModelProviderGroups(
   return Array.from(groups.values())
 }
 
+// 置顶模型排到所在分组最前，含置顶模型的渠道排到渠道列表最前；sort 稳定，保持原有相对顺序。
+export function sortCanvasModelProviderGroups(
+  groups: readonly CanvasModelProviderGroup[],
+  pinnedKeys: ReadonlySet<string>,
+): CanvasModelProviderGroup[] {
+  const hasPinnedModel = (group: CanvasModelProviderGroup) =>
+    group.models.some((model) => pinnedKeys.has(mediaModelKey(model)))
+  return groups
+    .map((group) => ({
+      ...group,
+      models: [...group.models].sort(
+        (a, b) =>
+          Number(pinnedKeys.has(mediaModelKey(b))) - Number(pinnedKeys.has(mediaModelKey(a))),
+      ),
+    }))
+    .sort((a, b) => Number(hasPinnedModel(b)) - Number(hasPinnedModel(a)))
+}
+
 export function filterCanvasModelProviderGroups(
   groups: readonly CanvasModelProviderGroup[],
   query: string,
@@ -47,9 +61,7 @@ export function filterCanvasModelProviderGroups(
   const keyword = query.trim().toLowerCase()
   if (!keyword) return groups.map((group) => ({ ...group, models: [...group.models] }))
   return groups.flatMap((group) => {
-    const providerMatches = `${group.label} ${group.providerKind}`
-      .toLowerCase()
-      .includes(keyword)
+    const providerMatches = `${group.label} ${group.providerKind}`.toLowerCase().includes(keyword)
     const models = providerMatches
       ? [...group.models]
       : group.models.filter((model) =>

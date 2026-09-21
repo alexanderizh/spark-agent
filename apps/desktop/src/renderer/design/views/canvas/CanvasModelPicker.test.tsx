@@ -241,4 +241,58 @@ describe('CanvasModelPicker', () => {
     expect(container.querySelector('[data-tooltip-source="antd"]')).not.toBeNull()
     expect(container.querySelector('[data-tooltip-source="lobe"]')).toBeNull()
   })
+
+  it('pins a model from its row button, sorts it first, and does not change the selection', async () => {
+    const onChange = vi.fn()
+    window.localStorage.removeItem('spark-canvas:model-picker-pinned:v1')
+    const container = await renderPicker({ models, value: '', onChange })
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
+    const firstModelKey = () =>
+      container
+        .querySelector('[role="listbox"]')
+        ?.querySelector('[data-model-key]')
+        ?.getAttribute('data-model-key')
+    expect(firstModelKey()).toBe('apimart-1::xai:grok-imagine-1::grok-imagine-1')
+
+    const pinButton = container.querySelector<HTMLButtonElement>('[aria-label="置顶 VEO3"]')!
+    expect(pinButton).not.toBeNull()
+    await act(async () => pinButton.click())
+
+    expect(window.localStorage.getItem('spark-canvas:model-picker-pinned:v1')).toContain(
+      'apimart-1::google:veo-3::veo-3',
+    )
+    expect(firstModelKey()).toBe('apimart-1::google:veo-3::veo-3')
+    expect(container.querySelector('.canvas-model-picker-popover')).not.toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+
+    await act(async () => pinButton.click())
+    expect(window.localStorage.getItem('spark-canvas:model-picker-pinned:v1')).not.toContain(
+      'apimart-1::google:veo-3::veo-3',
+    )
+    window.localStorage.removeItem('spark-canvas:model-picker-pinned:v1')
+  })
+
+  it('restores pinned models from storage and opens the pinned provider group first', async () => {
+    const onChange = vi.fn()
+    window.localStorage.setItem(
+      'spark-canvas:model-picker-pinned:v1',
+      JSON.stringify(['xai-1::xai:grok-imagine-1::grok-imagine-1']),
+    )
+    const container = await renderPicker({ models, value: '', onChange })
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
+    const firstRow = container.querySelector('[role="listbox"] .canvas-model-picker-model-row')
+    expect(firstRow?.querySelector('[data-model-key]')?.getAttribute('data-model-key')).toBe(
+      'xai-1::xai:grok-imagine-1::grok-imagine-1',
+    )
+    expect(firstRow?.querySelector('.canvas-model-picker-pin')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    window.localStorage.removeItem('spark-canvas:model-picker-pinned:v1')
+  })
 })

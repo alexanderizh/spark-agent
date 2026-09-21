@@ -9,8 +9,26 @@ import {
   filterCanvasModelProviderGroups,
   mediaModelKey,
   resolveSelectedCanvasModel,
+  sortCanvasModelProviderGroups,
 } from './canvasModelPickerModel'
 import './CanvasModelPicker.less'
+
+const MODEL_PINNED_STORAGE_KEY = 'spark-canvas:model-picker-pinned:v1'
+
+function readPinnedModelKeys(): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(
+      window.localStorage.getItem(MODEL_PINNED_STORAGE_KEY) ?? '[]',
+    )
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((value): value is string => typeof value === 'string')
+        : [],
+    )
+  } catch {
+    return new Set()
+  }
+}
 
 export type CanvasModelPickerProps = {
   models: CanvasMediaModelSummary[]
@@ -40,11 +58,16 @@ export function CanvasModelPicker({
 }: CanvasModelPickerProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [pinnedKeys, setPinnedKeys] = useState<Set<string>>(() => readPinnedModelKeys())
   const selectedModel = useMemo(() => resolveSelectedCanvasModel(models, value), [models, value])
   const groups = useMemo(() => buildCanvasModelProviderGroups(models), [models])
+  const sortedGroups = useMemo(
+    () => sortCanvasModelProviderGroups(groups, pinnedKeys),
+    [groups, pinnedKeys],
+  )
   const filteredGroups = useMemo(
-    () => filterCanvasModelProviderGroups(groups, query),
-    [groups, query],
+    () => filterCanvasModelProviderGroups(sortedGroups, query),
+    [sortedGroups, query],
   )
   const [activeProviderKey, setActiveProviderKey] = useState('')
   const selectedProviderKey = providerGroupKey(selectedModel)
@@ -56,7 +79,9 @@ export function CanvasModelPicker({
     setOpen(nextOpen)
     if (nextOpen) {
       setQuery('')
-      setActiveProviderKey(selectedProviderKey || groups[0]?.key || '')
+      // 重新读取持久化置顶，保证同屏多个选择器之间状态一致。
+      setPinnedKeys(readPinnedModelKeys())
+      setActiveProviderKey(selectedProviderKey || sortedGroups[0]?.key || '')
     }
   }
 
@@ -64,6 +89,18 @@ export function CanvasModelPicker({
     onChange(modelKey)
     setOpen(false)
     setQuery('')
+  }
+
+  const togglePinnedModel = (modelKey: string) => {
+    const next = new Set(pinnedKeys)
+    if (next.has(modelKey)) next.delete(modelKey)
+    else next.add(modelKey)
+    setPinnedKeys(next)
+    try {
+      window.localStorage.setItem(MODEL_PINNED_STORAGE_KEY, JSON.stringify([...next]))
+    } catch {
+      // 持久化失败时置顶仅在当前会话内生效
+    }
   }
 
   const content = (
@@ -157,33 +194,46 @@ export function CanvasModelPicker({
             visibleGroup.models.map((model) => {
               const key = mediaModelKey(model)
               const selected = key === value
+              const pinned = pinnedKeys.has(key)
               const capabilityLabels = model.capabilities
                 .map((capability) => capability.label)
                 .filter(Boolean)
                 .slice(0, 3)
               return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`canvas-model-picker-model${selected ? ' is-selected' : ''}`}
-                  data-model-key={key}
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => chooseModel(key)}
-                >
-                  <span className="canvas-model-picker-model-copy">
-                    <strong>{model.displayName}</strong>
-                    <small title={model.effectiveModelId}>{model.effectiveModelId}</small>
-                    {capabilityLabels.length > 0 && (
-                      <span className="canvas-model-picker-capabilities">
-                        {capabilityLabels.map((label) => (
-                          <em key={label}>{label}</em>
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                  {selected && <Icons.Check size={15} />}
-                </button>
+                <div key={key} className="canvas-model-picker-model-row" role="presentation">
+                  <button
+                    type="button"
+                    className={`canvas-model-picker-model${selected ? ' is-selected' : ''}`}
+                    data-model-key={key}
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => chooseModel(key)}
+                  >
+                    <span className="canvas-model-picker-model-copy">
+                      <strong>{model.displayName}</strong>
+                      <small title={model.effectiveModelId}>{model.effectiveModelId}</small>
+                      {capabilityLabels.length > 0 && (
+                        <span className="canvas-model-picker-capabilities">
+                          {capabilityLabels.map((label) => (
+                            <em key={label}>{label}</em>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    {selected && <Icons.Check size={15} />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`canvas-model-picker-pin${pinned ? ' is-pinned' : ''}`}
+                    aria-label={`${pinned ? '取消置顶' : '置顶'} ${model.displayName}`}
+                    aria-pressed={pinned}
+                    title={pinned ? '取消置顶' : '置顶'}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => togglePinnedModel(key)}
+                  >
+                    {pinned ? <Icons.PinFill size={13} /> : <Icons.Pin size={13} />}
+                  </button>
+                </div>
               )
             })
           ) : (

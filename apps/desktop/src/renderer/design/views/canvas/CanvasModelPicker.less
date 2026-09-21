@@ -162,6 +162,7 @@
 .canvas-model-picker-provider:focus-visible,
 .canvas-model-picker-provider.is-active,
 .canvas-model-picker-model:hover,
+.canvas-model-picker-model-row:hover .canvas-model-picker-model,
 .canvas-model-picker-model:focus-visible,
 .canvas-model-picker-model.is-selected {
   background: color-mix(in srgb, var(--primary) 13%, var(--panel));
@@ -201,10 +202,45 @@
   white-space: nowrap;
 }
 
+.canvas-model-picker-model-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
 .canvas-model-picker-model {
   min-height: 58px;
-  margin-bottom: 4px;
+  flex: 1;
+  min-width: 0;
   padding: 8px 9px;
+}
+
+// 收藏置顶按钮：与 prompt-insert 菜单同一套交互——悬停行才浮现，置顶后常显并变主题色。
+.canvas-model-picker-pin {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.canvas-model-picker-model-row:hover .canvas-model-picker-pin,
+.canvas-model-picker-pin:focus-visible,
+.canvas-model-picker-pin.is-pinned {
+  opacity: 1;
+}
+
+.canvas-model-picker-pin:hover,
+.canvas-model-picker-pin.is-pinned {
+  color: var(--primary);
 }
 
 .canvas-model-picker-model.is-auto {
