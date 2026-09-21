@@ -26,6 +26,8 @@ import {
   createDirectoryPath,
   createFilePath,
   movePath,
+  openDirectoryInFileManager,
+  revealPathInFileManager,
   trashPath,
   writeClipboardText,
 } from './fileExplorerActions'
@@ -185,6 +187,19 @@ export function FileExplorerPanel({
     ...(onPreviewFile != null ? { onPreviewFile: (p: string) => onPreviewFile(p) } : {}),
     ...(onEditFile != null ? { onEditFile: (p: string) => onEditFile(p) } : {}),
     ...(onAddToChat != null ? { onAddToChat: (p: string) => onAddToChat(p) } : {}),
+    // 「在系统文件夹打开」需要绝对路径：root 未知（joinAbs 回退相对路径）时不提供该项
+    ...(workspaceRootPath != null
+      ? {
+          onOpenInFileManager: (p: string, isDir: boolean) => {
+            const abs = joinAbs(p)
+            void (isDir ? openDirectoryInFileManager(abs) : revealPathInFileManager(abs)).catch(
+              () => {
+                toast.error('打开系统文件夹失败')
+              },
+            )
+          },
+        }
+      : {}),
     onCopyPath: async (p) => {
       try {
         await writeClipboardText(joinAbs(p))

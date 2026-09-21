@@ -13,6 +13,7 @@
 import type { ReactNode } from 'react'
 import { Icons } from '../../../Icons'
 import { canOpenInEditor, canOpenPreview } from '../../fileOpenRouting'
+import { OPEN_IN_FILE_MANAGER_LABEL } from './fileExplorerActions'
 import type { FileClipboardEntry, FileExplorerNode } from './fileExplorerTypes'
 
 /** 文件树菜单触发的全部动作（由 FileExplorerPanel 实现） */
@@ -23,6 +24,8 @@ export interface FileMenuActions {
   onEditFile?: (path: string) => void
   /** 「添加到对话」：把文件/目录作为上下文引用加入当前会话输入框（可选：不传则菜单不显示对应项） */
   onAddToChat?: (path: string) => void
+  /** 「在系统文件夹打开」：目录=直接打开该目录；文件=在所在目录中选中（可选：不传则菜单不显示对应项） */
+  onOpenInFileManager?: (path: string, isDir: boolean) => void
   onCopyPath: (path: string) => void
   onCopy: (path: string) => void
   onCut: (path: string) => void
@@ -83,6 +86,14 @@ export function buildNodeMenuItems(
     )
   }
   items.push(item(<Icons.Copy size={14} />, '复制路径', () => actions.onCopyPath(node.path)))
+  // 「在系统文件夹打开」：目录=直接打开该目录，文件=在所在目录中选中
+  if (actions.onOpenInFileManager != null) {
+    items.push(
+      item(<Icons.FolderOpen size={14} />, OPEN_IN_FILE_MANAGER_LABEL, () =>
+        actions.onOpenInFileManager?.(node.path, isDir),
+      ),
+    )
+  }
   items.push(item(<Icons.Copy size={14} />, '复制', () => actions.onCopy(node.path)))
   items.push(item(<Icons.Scissors size={14} />, '剪切', () => actions.onCut(node.path)))
   if (isDir && clipboard != null) {
@@ -103,7 +114,7 @@ export function buildNodeMenuItems(
   return { items }
 }
 
-/** 空白处右键菜单（新建 / 粘贴 / 刷新）；targetDir 为粘贴/新建的目标目录 */
+/** 空白处右键菜单（新建 / 粘贴 / 刷新）；targetDir 为粘贴/新建的目标目录。空白区代表工作区根目录 */
 export function buildEmptyMenuItems(
   targetDir: string,
   actions: FileMenuActions,
@@ -117,5 +128,13 @@ export function buildEmptyMenuItems(
     items.push(item(<Icons.FolderPlus size={14} />, '粘贴', () => actions.onPasteInto(targetDir)))
   }
   items.push(item(<Icons.Refresh size={14} />, '刷新', () => actions.onRefresh()))
+  // 空白区即工作区根目录，提供「在系统文件夹打开」直达入口
+  if (actions.onOpenInFileManager != null) {
+    items.push(
+      item(<Icons.FolderOpen size={14} />, OPEN_IN_FILE_MANAGER_LABEL, () =>
+        actions.onOpenInFileManager?.(targetDir, true),
+      ),
+    )
+  }
   return { items }
 }

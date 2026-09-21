@@ -87,3 +87,20 @@ export async function copyPath(
 export async function writeClipboardText(text: string): Promise<void> {
   await window.spark.invoke('clipboard:write-text', { text })
 }
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
+
+/** 「在系统文件夹打开」菜单文案（随平台：macOS=Finder，其余=资源管理器） */
+export const OPEN_IN_FILE_MANAGER_LABEL = isMac ? '在 Finder 中显示' : '在资源管理器中显示'
+
+/** 在系统文件管理器中打开目录（目录节点与工作区根用） */
+export async function openDirectoryInFileManager(absPath: string): Promise<void> {
+  const res = await window.spark.invoke('tool:open-folder', { rootPath: absPath })
+  if (!res.opened) throw new Error(res.error ?? '打开目录失败')
+}
+
+/** 在系统文件管理器中显示文件（打开所在目录并选中该文件） */
+export async function revealPathInFileManager(absPath: string): Promise<void> {
+  const res = await window.spark.invoke('file:reveal', { filePath: absPath })
+  if (!res.revealed) throw new Error(res.error ?? '显示文件失败')
+}
