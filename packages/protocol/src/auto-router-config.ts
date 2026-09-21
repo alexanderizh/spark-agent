@@ -64,7 +64,8 @@ export interface AutoRouterExecutorRef {
 export interface AutoRouterDispatcherConfig {
   providerProfileId: string
   modelId: string
-  /** 分流决策超时毫秒数。 */
+  /** 分流决策超时毫秒数。上限是故障兜底而非正常耗时：模型快返回时不产生等待，
+   * 仅在真超时等满后才走规则降级；默认值需覆盖带思考时间的模型。 */
   timeoutMs: number
 }
 
@@ -116,7 +117,7 @@ export const AutoRouterExecutorRefSchema = z.object({
 export const AutoRouterDispatcherConfigSchema = z.object({
   providerProfileId: z.string().min(1),
   modelId: z.string().min(1),
-  timeoutMs: z.number().int().positive().max(60_000).default(8_000),
+  timeoutMs: z.number().int().positive().max(120_000).default(30_000),
 })
 
 export const AutoRouterConfigSchema = z.object({
@@ -173,7 +174,7 @@ export function createDefaultAutoRouterConfig(adapter: RouterAdapter): AutoRoute
     kind: 'auto-router',
     version: 1,
     adapter,
-    dispatcher: { providerProfileId: '', modelId: '', timeoutMs: 8_000 },
+    dispatcher: { providerProfileId: '', modelId: '', timeoutMs: 30_000 },
     executors: [],
     fallbackIntensity: 'balanced',
     allowDecomposition: true,

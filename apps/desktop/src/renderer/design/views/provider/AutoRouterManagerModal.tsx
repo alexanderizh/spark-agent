@@ -450,17 +450,23 @@ export function AutoRouterManagerModal({
               <label className="arm_form_label">决策超时 (ms)</label>
               <Input
                 type="number"
+                min={1_000}
+                max={120_000}
+                step={1_000}
                 value={String(draft.dispatcher.timeoutMs)}
                 onChange={(e) => {
                   const parsed = Number.parseInt(e.target.value, 10)
                   patchConfig({
                     dispatcher: {
                       ...draft.dispatcher,
-                      timeoutMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 8_000,
+                      timeoutMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000,
                     },
                   })
                 }}
               />
+            </div>
+            <div className="arm_hint">
+              分流器单次决策调用的等待上限，超时后走规则兜底不影响本轮执行。分流器只是轻量分类任务，优先选快且便宜的非思考模型；若选了带思考时间的模型，请按实际思考耗时放宽（如 60s）。
             </div>
           </div>
 

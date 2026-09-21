@@ -32,7 +32,7 @@ describe('AutoRouterConfigSchema', () => {
   it('合法配置通过并补全默认值', () => {
     const parsed = AutoRouterConfigSchema.parse(validConfig())
     expect(parsed.version).toBe(1)
-    expect(parsed.dispatcher.timeoutMs).toBe(8_000)
+    expect(parsed.dispatcher.timeoutMs).toBe(30_000)
     expect(parsed.fallbackIntensity).toBe('balanced')
     expect(parsed.allowDecomposition).toBe(true)
     expect(parsed.maxConcurrentSubtasks).toBe(3)
@@ -51,6 +51,19 @@ describe('AutoRouterConfigSchema', () => {
         validConfig({
           executors: [{ id: 'e1', providerProfileId: 'p1', modelId: 'm1', intensity: 'ultra' }],
         }),
+      ).success,
+    ).toBe(false)
+  })
+
+  it('决策超时支持到 120s 并拒绝超限值', () => {
+    expect(
+      AutoRouterConfigSchema.safeParse(
+        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 120_000 } }),
+      ).success,
+    ).toBe(true)
+    expect(
+      AutoRouterConfigSchema.safeParse(
+        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 120_001 } }),
       ).success,
     ).toBe(false)
   })
