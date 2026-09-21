@@ -22,6 +22,27 @@
 - `pnpm test:unit` 在 Windows 上可用（跨平台测试编排器，POSIX 行为不变）。
 - **Spark CLI `/help`**：命令与快捷键改为按行列表输出（标签列统一对齐、命令/快捷键分区、自定义命令独立成段），不再挤成一段自动换行文本。
 
+## [0.11.81] - 2026-09-22
+
+### 新增
+
+- **内容区 SVG 直接渲染**：`svg` 代码块升级为独立图形板块（与 mermaid / HTML 板块同构），默认直接画出图形，header 可切回源码。完整 SVG 文档交给 data URL + `<img>` 渲染（secure animated mode：脚本不执行、`<style>` 不污染宿主 DOM）；裸 `<svg>` 片段经 DOMPurify 净化后内联，并按 `getBBox()` 自动推导 viewBox，坐标原点不在 (0,0) 的图形也不会被裁掉。
+- **SVG / XML 源码着色**：`svg / svgz / xsl / xslt / xsd / xhtml / rss / atom / plist / wsdl` 统一归一为 xml 高亮（着色判定与「是否图形语言」判定共用同一份归一表）；此前这些语言的代码块因 shiki 无对应语言而整段回落成无色纯文本。
+- **画布模型选择弹层支持收藏置顶**：模型选项右侧图钉按钮（悬停浮现、置顶后常显主题色）可把常用模型置顶；置顶模型排所在渠道分组最前，含置顶模型的渠道在渠道列表中也排最前；点击置顶不改变当前选中、不关闭弹层，状态持久化到本机。
+- **快速创作反推任务一键生图**：反推任务操作组新增「生图」，反推结果直接填充生图表单；任务产物图片支持右键「去图编辑」，图片进素材并切换到图像编辑模式。
+- **工作流 Agent 基础设施桥接（E2-1）**：对称复刻画布 Agent 管道，为工作流编辑器内嵌 Agent 铺路——新增 `workflow:host-attach/detach/tool-result/tool-ack` 四通道与 `stream:workflow:tool-call` 推流事件、agent-runtime 的 `spark_workflow` 进程内 MCP server（含 JSON Schema → Zod 转换）、desktop 侧 WorkflowHostBridge（ACK 5s 宽限 + 执行 60s 超时）。面板 UI 在 E2-2。
+
+### 修复
+
+- **智能路由分流失败原因透出**：callDispatcher 失败时提取人话详情（HTTP 状态 + 业务 message，如「套餐未开放模型权限」），透出到降级 reason、WARN 日志与决策事件，提示条直接可见；reason 超长截断展示、tooltip 补完整原因。
+- **智能路由确定性错误不再重试**：401 / 403 / 404 / 400 / 422 立即收口（不再每轮白付一次调用），429 视为可能瞬时限流保留一次重试。
+- **分流器连通性可自测**：管理弹层新增「测试分流器」，对当前草稿（未保存亦可）发最小请求，配置期即暴露「无权限模型」，不再只在会话里表现为静默规则降级。
+- **智能路由提示可见性**：上一轮或本轮任一轮处于降级即显示提示条，降级 → 恢复的轮次不再被防刷屏条件吞掉；轮次标识改为 `⚙●平衡 · 模型名` 形式，降级轮 title 注明兜底。
+- **模型选择弹层智能路由行对齐**：去掉行首齿轮图标后与普通渠道行同几何对齐（图标贴左 24px 盒、文字 x=70 对齐、强度圆点贴右）。
+- **`safe-file://` 补齐图片与文档 MIME**：补上 `.svg` 后 SVG 可被 `<img>` 直接渲染（Chromium 不会对 `application/octet-stream` 嗅探 SVG），同时补齐 `.bmp / .ico / .avif / .apng`、`.html / .htm`、`.xml`、`.txt / .log`、`.md / .markdown`、`.csv`。
+- **`@spark/agent-runtime` 补齐 `AutoRouterService` 包入口导出**：此前遗漏会导致主进程 esbuild 构建失败、dev 无法启动。
+- agent-runtime 去掉 AutoRouter 导出路径上一处多余的空值赋值（CI `no-useless-assignment` 报错根因，行为不变）。
+
 ## [0.11.63] - 2026-09-13
 
 ### 新增
