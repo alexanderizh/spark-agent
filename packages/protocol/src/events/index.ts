@@ -302,6 +302,15 @@ export interface TeamMemberMessageEvent extends BaseEvent {
 export interface TeamMemberEventContext {
   dispatchId: string
   memberAgentId: string
+  /**
+   * AutoRouter 一次性强度 worker 的展示信息（显示点 4）：子任务块头部
+   * 「摘要 · 强度色点 · 模型名」。普通团队成员事件缺省。
+   */
+  autoRouter?: {
+    intensity: RouterIntensity
+    modelDisplayName: string
+    summary: string
+  }
 }
 
 /** Member 在一次 dispatch 内的状态流转 */

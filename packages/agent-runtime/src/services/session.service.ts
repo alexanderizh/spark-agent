@@ -101,7 +101,9 @@ import {
   AUTO_ROUTER_PROVIDER_TYPE,
   findExecutorByIntensity,
   parseAutoRouterConfig,
+  type AutoRouterConfig,
   type RouterAdapter,
+  type RouterIntensity,
 } from '@spark/protocol'
 import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
@@ -2440,6 +2442,11 @@ export class SessionService {
     // 四变量（id/provider/config/model）同步替换：下游标题精炼/分支名/性能统计/
     // 记忆抽取回退拿到的均为具体执行器。router 会话 modelId 恒为空（分流器决定执行模型）。
     let autoRouterTierModels: { haiku: string; sonnet: string; opus: string } | null = null
+    // decomposed 模式（Phase 3）：分流器判定可拆分时，为每个子任务合成一次性强度
+    // worker（直接绑定该强度执行器，不经过 router 行 → 成员侧不再二次分流），
+    // 并入本轮派发花名册，Host 经 agent_dispatch / agent_dispatch_batch 自主派发。
+    let autoRouterSubtaskWorkers: AgentItem[] = []
+    let autoRouterDispatchPrompt: string = ''
     {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
       let autoRouterRouting: AutoRouterRouteResult | null = null
@@ -2473,6 +2480,53 @@ export class SessionService {
         })
         autoRouterRouting = autoRouterOutcome.routing
         autoRouterTierModels = autoRouterOutcome.tierModels
+        // decomposed：合成一次性强度 worker + 派发建议 prompt（并发上限截断 + 预算治理）
+        if (
+          autoRouterRouting.ok &&
+          autoRouterRouting.decompose &&
+          autoRouterRouting.subtasks.length > 0 &&
+          autoRouterOutcome.config != null
+        ) {
+          const capped = autoRouterRouting.subtasks.slice(
+            0,
+            Math.min(
+              autoRouterOutcome.config.maxConcurrentSubtasks,
+              AUTO_ROUTER_MAX_SUBTASK_BUDGET,
+            ),
+          )
+          autoRouterSubtaskWorkers = this.buildAutoRouterSubtaskWorkers({
+            routerId: provider.id,
+            turnId,
+            config: autoRouterOutcome.config,
+            subtasks: capped,
+            hostAgent: runtimeAgent,
+          })
+          if (capped.length < autoRouterRouting.subtasks.length) {
+            log.warn('auto-router subtasks capped by concurrency budget', {
+              sessionId,
+              turnId,
+              proposed: autoRouterRouting.subtasks.length,
+              capped: capped.length,
+            })
+          }
+          autoRouterDispatchPrompt = buildAutoRouterDispatchPrompt(
+            provider.name,
+            autoRouterRouting.intensity,
+            capped,
+            autoRouterSubtaskWorkers,
+          )
+          log.info('auto-router subtask workers composed', {
+            sessionId,
+            turnId,
+            workerCount: autoRouterSubtaskWorkers.length,
+            workers: autoRouterSubtaskWorkers.map((worker) => ({
+              workerId: worker.id,
+              intensity: (worker.metadata as { autoRouterIntensity?: string }).autoRouterIntensity,
+              providerId: worker.providerProfileId,
+              modelId: worker.modelId,
+            })),
+          })
+        }
         if (autoRouterRouting.resolvedProviderId.length === 0) {
           throw new Error(
             `自动路由「${provider.name}」没有可用执行模型：${autoRouterRouting.reason}。请在渠道管理 → 自动路由中检查配置`,
@@ -3004,6 +3058,9 @@ export class SessionService {
         ? this.resolveTeamMembers(teamConfig.memberAgentIds, runtimeAgent.id)
         : []
       const hasDispatchableTeamMembers = teamMembers.length > 0
+      // decomposed（Phase 3）：一次性强度 worker 并入派发花名册，普通 router 会话
+      // 也能获得 agent_dispatch / agent_dispatch_batch 工具面（方案 3.4 模式二）。
+      const hasAutoRouterSubtasks = autoRouterSubtaskWorkers.length > 0
       let activeDiscussionId: string | undefined
       let activeDiscussionRound = 0
       const hasWorkflowExecutionPlan = workflowCanUseManagedExecutor
@@ -3023,7 +3080,7 @@ export class SessionService {
           // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
         }
       }
-      if (hasDispatchableTeamMembers || hasWorkflowExecutionPlan) {
+      if (hasDispatchableTeamMembers || hasWorkflowExecutionPlan || hasAutoRouterSubtasks) {
         if (teamConfig?.enabled && hasDispatchableTeamMembers) {
           const discussionRepo = this.getTeamDiscussionRepository()
           const activeDiscussion =
@@ -3042,7 +3099,10 @@ export class SessionService {
         }
         const dispatchMembers = [
           ...new Map(
-            [...teamMembers, ...workflowMembers].map((member) => [member.id, member]),
+            [...teamMembers, ...workflowMembers, ...autoRouterSubtaskWorkers].map((member) => [
+              member.id,
+              member,
+            ]),
           ).values(),
         ]
         const dispatchTeamConfig =
@@ -3051,7 +3111,10 @@ export class SessionService {
             : {
                 enabled: true,
                 hostAgentId: runtimeAgent.id,
-                memberAgentIds: [...enabledWorkflowWorkerIds],
+                memberAgentIds: [
+                  ...enabledWorkflowWorkerIds,
+                  ...autoRouterSubtaskWorkers.map((worker) => worker.id),
+                ],
                 maxDepth: 1,
                 allowNesting: false,
               }
@@ -3285,6 +3348,8 @@ export class SessionService {
       memoryBlock,
       MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       MEMORY_PROVENANCE_SYSTEM_PROMPT,
+      // decomposed（Phase 3）：分流决策预填的子任务派发建议（仅 router 拆分轮次注入）
+      autoRouterDispatchPrompt,
       conversationHistoryPrompt,
       ...trailingSystemPromptSections,
     )
@@ -8587,7 +8652,7 @@ export class SessionService {
             sessionId,
             turnId,
             seq: 0,
-            teamMemberContext: { dispatchId, memberAgentId: member.id },
+            teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId),
           },
           workspaceRootPath,
         )
@@ -8609,7 +8674,7 @@ export class SessionService {
               changeType: change.changeType,
               ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
               collectionSource: 'agent_manifest',
-              teamMemberContext: { dispatchId, memberAgentId: member.id },
+              teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId),
             },
             eventRepo,
           )
@@ -8682,6 +8747,47 @@ export class SessionService {
    * 档位映射（仅 claude 引擎且 router 开启）。任何内部分流失败都不抛异常，由
    * result.ok / resolvedProviderId 为空表示（调用方决定报错文案）。
    */
+  /**
+   * decomposed 模式：为分流器建议的子任务合成一次性强度 worker。
+   * 仿 createWorkflowAtomicMember 语义：以 Host agent 为基底、覆盖 provider/model
+   * 为子任务强度对应执行器（直接绑定执行器渠道，成员侧不再二次分流）；
+   * id 形如 autorouter:${routerId}:${turnId}:${idx}，一次性（不污染 Agent 表与 resume 链）。
+   */
+  private buildAutoRouterSubtaskWorkers(params: {
+    routerId: string
+    turnId: string
+    config: AutoRouterConfig
+    subtasks: AutoRouterRouteResult['subtasks']
+    hostAgent: AgentItem
+  }): AgentItem[] {
+    return params.subtasks.map((subtask, index) => {
+      const executor = findExecutorByIntensity(params.config, subtask.intensity)
+      // 执行器缺失时回退 null（成员解析时回落 host 绑定），并如实记录
+      const workerId = `autorouter:${params.routerId}:${params.turnId}:${index}`
+      return {
+        ...params.hostAgent,
+        id: workerId,
+        name: `子任务${index + 1}`,
+        description: subtask.summary.slice(0, 200),
+        builtIn: false,
+        isDefault: false,
+        enabled: true,
+        workflowId: null,
+        hookConfig: {},
+        ...(executor != null
+          ? { providerProfileId: executor.providerProfileId, modelId: executor.modelId }
+          : {}),
+        metadata: {
+          ...params.hostAgent.metadata,
+          temporaryAutoRouterWorker: true,
+          autoRouterIntensity: subtask.intensity,
+          autoRouterParallelizable: subtask.parallelizable,
+          autoRouterSubtaskSummary: subtask.summary,
+        },
+      }
+    })
+  }
+
   private async routeAutoRouterTurn(params: {
     routerRow: ProviderProfileRow
     sessionId: string
@@ -8694,6 +8800,8 @@ export class SessionService {
   }): Promise<{
     routing: AutoRouterRouteResult
     tierModels: { haiku: string; sonnet: string; opus: string } | null
+    /** 解析后的 router 配置（worker 合成需要；config 无效时为 null）。 */
+    config: AutoRouterConfig | null
   }> {
     let routerConfig = parseAutoRouterConfig(safeJsonParseLoose(params.routerRow.config_json))
     if (routerConfig == null) {
@@ -8817,7 +8925,7 @@ export class SessionService {
           }
         : null
 
-    return { routing, tierModels }
+    return { routing, tierModels, config: routerConfig }
   }
 
   private emitAndPersist(
@@ -11090,4 +11198,60 @@ function safeJsonParseLoose(text: string | null | undefined): unknown {
   } catch {
     return null
   }
+}
+
+/** decomposed 模式每轮子任务预算上限（与方案派发预算治理一致）。 */
+const AUTO_ROUTER_MAX_SUBTASK_BUDGET = 10
+
+/**
+ * 成员事件上下文：一次性强度 worker 时附加 autoRouter 展示信息
+ * （子任务摘要 · 强度 · 实际模型名 → 渲染端显示点 4）；普通成员保持两字段形态。
+ */
+function buildTeamMemberContextWithAutoRouter(
+  member: AgentItem,
+  dispatchId: string,
+): { dispatchId: string; memberAgentId: string } & {
+  autoRouter?: { intensity: RouterIntensity; modelDisplayName: string; summary: string }
+} {
+  const metadata = member.metadata as {
+    temporaryAutoRouterWorker?: boolean
+    autoRouterIntensity?: RouterIntensity
+    autoRouterSubtaskSummary?: string
+  }
+  if (metadata.temporaryAutoRouterWorker !== true) {
+    return { dispatchId, memberAgentId: member.id }
+  }
+  return {
+    dispatchId,
+    memberAgentId: member.id,
+    autoRouter: {
+      intensity: metadata.autoRouterIntensity ?? 'balanced',
+      modelDisplayName: member.modelId ?? '',
+      summary: metadata.autoRouterSubtaskSummary ?? '',
+    },
+  }
+}
+
+/**
+ * decomposed 模式 Host 派发建议 prompt：分流决策预填，Host 模型自主调用
+ * agent_dispatch / agent_dispatch_batch 完成同轮多模型协作（可并行的用 batch）。
+ */
+function buildAutoRouterDispatchPrompt(
+  routerName: string,
+  mainIntensity: RouterIntensity,
+  subtasks: AutoRouterRouteResult['subtasks'],
+  workers: AgentItem[],
+): string {
+  const lines = subtasks.map((subtask, index) => {
+    const worker = workers[index]
+    const parallelHint = subtask.parallelizable ? '（可并行）' : '（串行）'
+    return `- ${worker?.id ?? `子任务${index + 1}`}：${subtask.summary}${parallelHint}`
+  })
+  return [
+    `[AutoRouter 拆分建议]`,
+    `路由器「${routerName}」判定本轮任务可拆分（主强度：${mainIntensity}，由你主持统筹）。`,
+    `建议把以下子任务经 agent_dispatch（或可并行子任务用 agent_dispatch_batch）派发给对应一次性 worker 执行，`,
+    `等待结果汇总后由你完成最终回答；无需派发时可忽略本建议并直接作答。`,
+    ...lines,
+  ].join('\n')
 }
