@@ -28,6 +28,7 @@ export function ComposerReasoningControl({
   onFastModeChange: (enabled: boolean) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -46,17 +47,12 @@ export function ComposerReasoningControl({
   const activeOption = options[activeIndex] ?? options[0]
   const maxIndex = Math.max(1, options.length - 1)
   const isMax = value === 'max'
-  const edgeInset = 8
-  const getInsetPosition = (index: number) => {
+  const thumbInset = 7
+  const getStopPosition = (index: number) => {
     const ratio = index / maxIndex
-    return `calc(${ratio * 100}% + ${edgeInset - edgeInset * 2 * ratio}px)`
+    return `calc(${ratio * 100}% + ${thumbInset - thumbInset * 2 * ratio}px)`
   }
-  const activePosition = getInsetPosition(activeIndex)
-
-  const commitValue = (nextValue: SessionReasoningEffort) => {
-    setOpen(false)
-    if (nextValue !== value) void onChange(nextValue)
-  }
+  const activePosition = getStopPosition(activeIndex)
 
   const moveBy = (delta: number) => {
     const nextIndex = Math.min(maxIndex, Math.max(0, activeIndex + delta))
@@ -108,23 +104,21 @@ export function ComposerReasoningControl({
           <div className="composer-reasoning-description">
             {activeOption?.description ?? '调整模型用于分析和推理的强度'}
           </div>
-          <div className="composer-reasoning-axis" aria-hidden="true">
-            <span>响应更快</span>
-            <span>更强</span>
-          </div>
           <div
-            className="composer-reasoning-slider"
+            className={`composer-reasoning-slider${dragging ? ' is-dragging' : ''}`}
             role="slider"
-            tabIndex={0}
+            tabIndex={disabled ? -1 : 0}
             aria-label="推理强度"
+            aria-disabled={disabled || undefined}
             aria-valuemin={0}
             aria-valuemax={maxIndex}
             aria-valuenow={activeIndex}
             aria-valuetext={activeOption?.label ?? value}
-            style={{ '--reasoning-fill-width': activePosition } as CSSProperties}
+            style={{ '--reasoning-pos': activePosition } as CSSProperties}
             onPointerDown={(event) => {
               if (disabled) return
               event.currentTarget.setPointerCapture(event.pointerId)
+              setDragging(true)
               selectByPointer(event.clientX, event.currentTarget.getBoundingClientRect())
             }}
             onPointerMove={(event) => {
@@ -136,6 +130,7 @@ export function ComposerReasoningControl({
                 event.currentTarget.releasePointerCapture(event.pointerId)
               }
             }}
+            onLostPointerCapture={() => setDragging(false)}
             onKeyDown={(event) => {
               if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
                 event.preventDefault()
@@ -154,25 +149,21 @@ export function ComposerReasoningControl({
               }
             }}
           >
+            <span className="composer-reasoning-slider-track" />
             <span className="composer-reasoning-slider-fill" />
+            <span className="composer-reasoning-slider-thumb" />
             {isMax && <ReasoningMaxParticles />}
+          </div>
+          <div className="composer-reasoning-scale" aria-hidden="true">
             {options.map((option, index) => (
-              <button
+              <span
                 key={option.value}
-                type="button"
-                className={`composer-reasoning-step${index === activeIndex ? ' active' : ''}`}
-                style={{ '--reasoning-step-left': getInsetPosition(index) } as CSSProperties}
-                title={`${option.label} · ${option.description}`}
-                aria-label={option.label}
-                onClick={() => commitValue(option.value)}
+                className={`composer-reasoning-scale-label${index === activeIndex ? ' is-active' : ''}`}
+                style={{ left: getStopPosition(index) }}
               >
-                <span className="composer-reasoning-dot" />
-              </button>
+                {option.label}
+              </span>
             ))}
-            <span
-              className="composer-reasoning-thumb"
-              style={{ '--reasoning-step-left': activePosition } as CSSProperties}
-            />
           </div>
           {showFastMode && (
             <div className="composer-fast-mode-section">
