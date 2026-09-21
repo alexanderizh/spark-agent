@@ -257,6 +257,9 @@ pnpm typecheck && pnpm lint && pnpm test
 
 感谢每一位为 SparkWork 贡献代码的人：
 
+<a href="https://github.com/RileyBear013" title="RileyBear013">
+  <img src="https://github.com/RileyBear013.png" width="96" height="96" alt="RileyBear013" />
+</a>
 <a href="https://github.com/fizzlx001" title="fizzlx001">
   <img src="https://github.com/fizzlx001.png" width="96" height="96" alt="fizzlx001" />
 </a>
