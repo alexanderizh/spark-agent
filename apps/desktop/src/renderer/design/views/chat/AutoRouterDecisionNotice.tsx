@@ -72,19 +72,22 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
   )
 }
 
-/** 轮次 meta 行常驻标识：●强度色点 + 模型名（每轮可见，无提示条也知道是谁在干活）。 */
+/** 轮次 meta 行常驻标识：⚙ ●强度 模型名（每轮可见，无提示条也知道是谁在干活）。 */
 export function AutoRouterTurnMetaTag({ decision }: { decision: AutoRouterDecisionEvent }) {
   return (
     <span
       className="auto-router-meta-tag"
-      title={`智能路由 · ${decision.routerName} · ${INTENSITY_LABEL[decision.intensity]}强度`}
+      title={`智能路由 · ${decision.routerName} · ${INTENSITY_LABEL[decision.intensity]}强度${
+        decision.fallbackUsed ? '（分流降级，规则兜底）' : ''
+      }`}
     >
+      <Shuffle aria-hidden size={11} strokeWidth={1.8} className="auto-router-meta-icon" />
       <span
         className="auto-router-meta-dot"
         style={{ background: INTENSITY_COLOR[decision.intensity] }}
         aria-hidden
       />
-      {decision.modelDisplayName || decision.resolvedModelId}
+      {INTENSITY_LABEL[decision.intensity]} · {decision.modelDisplayName || decision.resolvedModelId}
     </span>
   )
 }

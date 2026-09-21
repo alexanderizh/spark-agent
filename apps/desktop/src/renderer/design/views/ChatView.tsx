@@ -5198,9 +5198,13 @@ function ChatStream({
                       )
                       const prevDecision =
                         decisionIndex > 0 ? autoRouterDecisions[decisionIndex - 1] : undefined
+                      // 降级状态翻转必须可见：上轮降级、本轮恢复正常（模型恰好相同）时
+                      // 也要显示，否则用户以为仍在降级（实测踩坑：连续降级提示后恢复
+                      // 轮静默，用户无从知道分流已正常）。
                       showRouterNotice =
                         prevDecision == null ||
                         prevDecision.resolvedModelId !== nextDecision.resolvedModelId ||
+                        prevDecision.fallbackUsed ||
                         nextDecision.fallbackUsed ||
                         nextDecision.adapterMismatch === true
                     }
