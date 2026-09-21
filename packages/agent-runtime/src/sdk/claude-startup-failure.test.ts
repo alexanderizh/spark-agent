@@ -107,6 +107,8 @@ describe('claude startup failure diagnosis', () => {
   })
 
   it('builds stable error codes', () => {
-    expect(claudeStartupFailureErrorCode('bypass_root')).toBe('CLAUDE_STARTUP_FAILED_BYPASS_ROOT')
+    expect(claudeStartupFailureErrorCode('bypass_root')).toBe(
+      'CLAUDE_STARTUP_FAILED_BYPASS_ROOT',
+    )
   })
 })
