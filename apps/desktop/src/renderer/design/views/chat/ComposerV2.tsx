@@ -4591,8 +4591,6 @@ export function ComposerV2({
                   selectedProviderId={selectedProvider?.id ?? ''}
                   selectedModelId={effectiveModelId}
                   disabled={sending || providers.length === 0}
-                  filterAdapter={session != null ? session.agentAdapter : null}
-                  boundProviderId={session?.providerProfileId ?? null}
                   cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
                   cliSparkOverride={cliSparkOverride}
                   onCliSparkModelChange={handleCliSparkModelChange}
@@ -5593,8 +5591,6 @@ function ProviderModelPicker({
   selectedProviderId,
   selectedModelId,
   disabled,
-  filterAdapter,
-  boundProviderId,
   cliSparkProvidersByPrimaryId,
   cliSparkOverride,
   onCliSparkModelChange,
@@ -5606,14 +5602,6 @@ function ProviderModelPicker({
   selectedProviderId: string
   selectedModelId: string
   disabled?: boolean
-  /**
-   * 模型可见性的引擎上下文：null = 空会话草稿（尚无引擎承诺，全部对话渠道与
-   * 启用路由可见，选中即校准草稿引擎）；历史会话传 session.agentAdapter，
-   * 按会话自身的引擎配置判定可见性。
-   */
-  filterAdapter: AgentAdapter | null
-  /** 历史会话当前绑定的 provider（含 router）id；无条件保留可见，防绑定被隐藏后回落改绑。 */
-  boundProviderId?: string | null | undefined
   cliSparkProvidersByPrimaryId?: ReadonlyMap<string, ProviderProfile[]>
   cliSparkOverride?: CliSparkOverride | null
   onCliSparkModelChange?: (
@@ -5630,14 +5618,13 @@ function ProviderModelPicker({
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   const { pinned, isPinned, togglePinned } = usePinnedModels()
   // 显示隐藏规则单一真相源（resolveComposerModelVisibility，含单测矩阵）：
-  // - 空会话（filterAdapter=null）：尚无引擎承诺，全部对话渠道 + 全部启用路由
-  //   （两种引擎都显示）可见，选中任意项由 handleProviderModelChange 校准引擎。
-  // - 历史会话：按会话引擎（session.agentAdapter）判定可见性（与运行时兼容
-  //   判定 isProviderCompatibleWithAdapter 同源）；多媒体生成渠道过滤与 router
-  //   行独立分组也收敛在该函数内。绑定项（boundProviderId）无条件保留可见。
+  // 历史会话与空会话一致——全部对话渠道 + 全部启用路由（两种引擎）都可见，
+  // 选中任意项由 handleProviderModelChange 校准会话引擎（agentAdapter / 权限模式
+  // 一并持久化）。跨引擎切换的上下文由 recovery 兜底组装保障，不在此处按引擎隐藏。
+  // 多媒体生成渠道过滤与 router 行独立分组也收敛在该函数内。
   const { conversationalProviders, autoRouterProviders } = useMemo(
-    () => resolveComposerModelVisibility({ providers, filterAdapter, boundProviderId }),
-    [providers, filterAdapter, boundProviderId],
+    () => resolveComposerModelVisibility({ providers }),
+    [providers],
   )
   // 「智能路由」行悬浮配置卡片：开合状态由 hook 管理（延迟打开、菜单关闭即清空）。
   const {
