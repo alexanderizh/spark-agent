@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SparkWork GitHub 项目板、Wiki、Issue、PR、CI、发布和 GitHub Pages 运维手册。"
+    />
+    <title>项目运维 · SparkWork</title>
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">S</span
+          ><span class="brand-copy"
+            ><strong>SparkWork</strong><span>github operations</span></span
+          ></a
+        >
+        <nav class="nav" aria-label="主导航">
+          <a href="index.html">总览</a><a href="architecture.html">运行架构</a
+          ><a aria-current="page" href="operations.html">项目运维</a
+          ><a href="https://github.com/alexanderizh/spark-agent/wiki">Wiki</a
+          ><a href="https://github.com/alexanderizh/spark-agent">GitHub</a>
+        </nav>
+      </header>
+      <main class="article">
+        <div class="eyebrow">operations / contribution loop</div>
+        <h1>让 Issue 有去处，让发布有边界。</h1>
+        <p class="meta-line">
+          事实源：<a
+            href="https://github.com/alexanderizh/spark-agent/blob/master/docs/operations/github-governance.md"
+            >docs/operations/github-governance.md</a
+          >
+          · 最后核对 2026-09-22
+        </p>
+
+        <h2 id="contribution">从问题到交付</h2>
+        <div class="diagram">
+          <div class="node">
+            <strong>Issue</strong><span>可复现缺陷<br />功能建议<br />维护任务</span>
+          </div>
+          <div class="node">
+            <strong>Inbox</strong><span>triage<br />补齐上下文<br />确认安全边界</span>
+          </div>
+          <div class="node accent">
+            <strong>Planned</strong><span>Priority<br />Area<br />验收条件</span>
+          </div>
+          <div class="node">
+            <strong>PR</strong><span>分支<br />验证<br />审查</span>
+          </div>
+          <div class="node">
+            <strong>Done</strong><span>合并<br />发布<br />文档核对</span>
+          </div>
+        </div>
+
+        <h2>Project 设计</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>资源</th>
+                <th>约定</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Status</td>
+                <td>Inbox → Planned → In Progress → In Review → Blocked → Done</td>
+              </tr>
+              <tr>
+                <td>Priority</td>
+                <td>P0 紧急、P1 近期、P2 常规、P3 以后</td>
+              </tr>
+              <tr>
+                <td>Area</td>
+                <td>Runtime、Desktop、Website/Docs、Provider、Canvas、CLI、Release、Governance</td>
+              </tr>
+              <tr>
+                <td>Views</td>
+                <td>Delivery Board、Roadmap Table、Needs Triage</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          项目板只追踪可交付的 Issue/PR，不预先堆积无法验证的愿望清单；设计事实回到仓库
+          docs，讨论性内容放 Discussions。
+        </p>
+
+        <h2 id="release">五条发布链</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>CI</h3>
+            <p>类型、lint、文件大小、Spark engine 和包级验证。</p>
+            <a href="https://github.com/alexanderizh/spark-agent/actions/workflows/ci.yml"
+              >打开 CI →</a
+            >
+          </article>
+          <article class="card">
+            <h3>桌面 / CLI</h3>
+            <p>桌面安装包走 GitHub Release；CLI 制品走 spark-cli-releases 分支。</p>
+            <a href="https://github.com/alexanderizh/spark-agent/releases">查看 Releases →</a>
+          </article>
+          <article class="card">
+            <h3>官网 / Pages</h3>
+            <p>官网走 Docker 与自有服务器；Pages 只部署 docs-site 工程手册。</p>
+            <a href="https://github.com/alexanderizh/spark-agent/actions">查看 Actions →</a>
+          </article>
+        </div>
+
+        <h2>GitHub Pages 合同</h2>
+        <div class="callout">
+          <strong>源文件在主仓库，artifact 只来自 docs-site。</strong>
+          <p>
+            Pages 使用相对链接，适配项目页的 <code>/spark-agent/</code> 路径；不读取发布
+            secrets，不参与桌面/CLI/官网部署。若内容错误，回滚文档提交并重跑部署即可。
+          </p>
+        </div>
+
+        <h2>维护节奏</h2>
+        <div class="split">
+          <div class="panel">
+            <h3>每次 PR</h3>
+            <ul>
+              <li>补齐验证命令和风险</li>
+              <li>架构/计划文档更新状态行</li>
+              <li>Pages 入口文件仍可构建</li>
+              <li>不公开凭据和私有数据</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>每季度</h3>
+            <ul>
+              <li>核对 docs 与代码</li>
+              <li>检查 Wiki、Pages、README 链接</li>
+              <li>复核 Project 字段和视图</li>
+              <li>检查 workflow action 版本</li>
+            </ul>
+          </div>
+        </div>
+
+        <p>
+          <a
+            href="https://github.com/alexanderizh/spark-agent/blob/master/docs/operations/release-and-pages.md"
+            >阅读完整发布与 Pages 运维文档 →</a
+          >
+        </p>
+      </main>
+      <footer class="footer">
+        <p>SparkWork / project operations</p>
+        <p><a href="index.html">← 总览</a> · <a href="architecture.html">运行架构 →</a></p>
+      </footer>
+    </div>
+  </body>
+</html>

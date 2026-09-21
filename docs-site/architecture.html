@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SparkWork 当前运行架构：Electron、Agent runtime、SQLite 和 spark-engine 的边界与任务流。"
+    />
+    <title>运行架构 · SparkWork</title>
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">S</span
+          ><span class="brand-copy"
+            ><strong>SparkWork</strong><span>runtime architecture</span></span
+          ></a
+        >
+        <nav class="nav" aria-label="主导航">
+          <a href="index.html">总览</a><a aria-current="page" href="architecture.html">运行架构</a
+          ><a href="operations.html">项目运维</a
+          ><a href="https://github.com/alexanderizh/spark-agent/wiki">Wiki</a
+          ><a href="https://github.com/alexanderizh/spark-agent">GitHub</a>
+        </nav>
+      </header>
+      <main class="article">
+        <div class="eyebrow">architecture / current state</div>
+        <h1>从桌面窗口，到一轮可恢复的 Agent 执行。</h1>
+        <p class="meta-line">
+          事实源：<a
+            href="https://github.com/alexanderizh/spark-agent/blob/master/docs/architecture/overview.md"
+            >docs/architecture/overview.md</a
+          >
+          · 最后核对 2026-09-22
+        </p>
+        <p class="quote">
+          SparkWork
+          的主线不是“把模型接进窗口”，而是把模型、工具、权限、事件、持久化和交付结果放进同一条可观察的执行链。
+        </p>
+
+        <h2>五个主要边界</h2>
+        <div class="diagram">
+          <div class="node">
+            <strong>Renderer</strong><span>对话、代码、终端、浏览器、画布和审查视图。</span>
+          </div>
+          <div class="node">
+            <strong>Electron Main</strong
+            ><span>生命周期、窗口、IPC、文件、Git、终端与系统集成。</span>
+          </div>
+          <div class="node accent">
+            <strong>Agent Runtime</strong
+            ><span>会话、执行器、Provider、MCP、Skills、权限、工作流与团队。</span>
+          </div>
+          <div class="node">
+            <strong>Storage</strong><span>SQLite/WAL、迁移、Repository、事件、用量和审计。</span>
+          </div>
+          <div class="node">
+            <strong>Spark Engine</strong
+            ><span>turn machine、tool runner、权限、事件账本与 CLI/TUI。</span>
+          </div>
+        </div>
+
+        <h2>启动顺序</h2>
+        <ol>
+          <li>主进程先隔离开发数据目录，安装日志、异常、退出和特权协议保护。</li>
+          <li>Electron ready 后初始化 SQLite、迁移前备份、迁移和恢复检查。</li>
+          <li>启动会话、Provider、MCP、浏览器、终端、Computer Use、更新、通知和后台维护服务。</li>
+          <li>注册集中式 typed IPC，再创建安全配置的 BrowserWindow 和 preload。</li>
+          <li>窗口 ready-to-show 后显示；退出按注册的清理步骤停止任务、释放服务和关闭数据库。</li>
+        </ol>
+
+        <h2>任务流</h2>
+        <div class="panel">
+          <ol>
+            <li>Renderer 接收消息，负责队列、计划审批和用户可见状态。</li>
+            <li>Main IPC 将请求交给 Session Service/Turn Registry，不让 UI 直接调用 SDK。</li>
+            <li>
+              Runtime 选择 Claude SDK、Codex 或 Spark Engine，合并 Provider、Model、Skill、Rule 和
+              MCP 上下文。
+            </li>
+            <li>Executor 执行模型轮次；工具调用进入权限闸门，可一次允许、会话允许、拒绝或暂停。</li>
+            <li>事件、用量、性能、checkpoint、产物和失败原因写入存储或本地 workspace。</li>
+            <li>流式事件回到 renderer，形成时间线、审查面板、任务面板、通知和可恢复的后续操作。</li>
+          </ol>
+        </div>
+
+        <h2>仓库落点</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>目录</th>
+                <th>看什么</th>
+                <th>变更时注意</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>apps/desktop</code></td>
+                <td>Electron main / preload / renderer</td>
+                <td>IPC、权限、窗口生命周期和跨平台原生依赖</td>
+              </tr>
+              <tr>
+                <td><code>packages/agent-runtime</code></td>
+                <td>会话、执行器、Provider、MCP、工作流、团队、媒体</td>
+                <td>取消、重试、事件恢复和上下文预算</td>
+              </tr>
+              <tr>
+                <td><code>packages/storage</code></td>
+                <td>SQLite、迁移和 Repository</td>
+                <td>旧数据库启动、备份、schema 兼容</td>
+              </tr>
+              <tr>
+                <td><code>spark-engine</code></td>
+                <td>内核、工具、权限、CLI、serve</td>
+                <td>保持独立构建、边界检查和包 smoke</td>
+              </tr>
+              <tr>
+                <td><code>apps/website</code></td>
+                <td>自有域名官网和用户文档</td>
+                <td>与 GitHub Pages 工程手册分开发布</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>必须守住的安全约束</h2>
+        <div class="split">
+          <div class="panel">
+            <h3>Electron</h3>
+            <ul>
+              <li><code>contextIsolation: true</code></li>
+              <li><code>nodeIntegration: false</code></li>
+              <li><code>sandbox: true</code></li>
+              <li>preload 只暴露最小 bridge</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>运行时</h3>
+            <ul>
+              <li>工具不绕过权限闸门</li>
+              <li>凭据不进 SQLite 或日志</li>
+              <li>外部能力有 adapter 和失败降级</li>
+              <li>长任务有取消、关闭和恢复路径</li>
+            </ul>
+          </div>
+        </div>
+
+        <p>
+          <a
+            href="https://github.com/alexanderizh/spark-agent/blob/master/docs/architecture/overview.md"
+            >阅读完整仓库架构文档 →</a
+          >
+        </p>
+      </main>
+      <footer class="footer">
+        <p>SparkWork / runtime map</p>
+        <p><a href="index.html">← 总览</a> · <a href="operations.html">项目运维 →</a></p>
+      </footer>
+    </div>
+  </body>
+</html>

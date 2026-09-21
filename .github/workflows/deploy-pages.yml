@@ -1,0 +1,60 @@
+name: 发布 GitHub Pages 工程手册
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs-site/**'
+      - 'docs/architecture/**'
+      - 'docs/operations/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy handbook
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Validate static handbook
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            docs-site/index.html \
+            docs-site/architecture.html \
+            docs-site/operations.html \
+            docs-site/404.html \
+            docs-site/assets/site.css; do
+            test -s "$file"
+          done
+          ! grep -RInE 'TODO|PLACEHOLDER|REPLACE_ME' docs-site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs-site
+
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

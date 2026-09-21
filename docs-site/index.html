@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SparkWork 公开源码项目的运行架构、GitHub 治理和贡献手册。" />
+    <title>SparkWork · 工程与开源手册</title>
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="index.html">
+          <span class="brand-mark">S</span>
+          <span class="brand-copy"
+            ><strong>SparkWork</strong><span>engineering handbook / 2026</span></span
+          >
+        </a>
+        <nav class="nav" aria-label="主导航">
+          <a aria-current="page" href="index.html">总览</a>
+          <a href="architecture.html">运行架构</a>
+          <a href="operations.html">项目运维</a>
+          <a href="https://github.com/alexanderizh/spark-agent/wiki">Wiki</a>
+          <a href="https://github.com/alexanderizh/spark-agent">GitHub</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <div class="eyebrow">open source field manual / 001</div>
+            <h1>把一个长期运行的仓库，变成一张可读的地图。</h1>
+            <p class="lede">
+              SparkWork 是本地优先的桌面 AI Agent 工作台。这份手册说明它如何启动、如何执行一轮 Agent
+              任务，以及贡献者从哪里开始修改而不踩穿边界。
+            </p>
+          </div>
+          <aside class="hero-note">
+            <div class="meta"><span>STATUS</span><span>CHECKED 2026-09-22</span></div>
+            <p>“先看边界，再看实现；先能恢复，再谈自动化。”</p>
+            <span class="meta">Current source: master</span>
+          </aside>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">start here</div>
+              <h2>三条入口，三种阅读任务。</h2>
+            </div>
+            <p>面向第一次看仓库的贡献者、正在排期的维护者，以及需要快速定位发布问题的人。</p>
+          </div>
+          <div class="cards">
+            <article class="card">
+              <h3>读懂运行时</h3>
+              <p>
+                从 Electron main/preload/renderer 到 Agent runtime、SQLite 和
+                spark-engine，建立系统边界。
+              </p>
+              <a href="architecture.html">进入架构页 →</a>
+            </article>
+            <article class="card">
+              <h3>开始贡献</h3>
+              <p>Issue、Project、PR、审查、验证和许可证的最短路径，避免把讨论和交付混在一起。</p>
+              <a href="operations.html#contribution">进入治理页 →</a>
+            </article>
+            <article class="card">
+              <h3>维护发布</h3>
+              <p>CI、桌面端、CLI、自有官网与 GitHub Pages 是五条不同链路，各自有自己的失败边界。</p>
+              <a href="operations.html#release">查看发布矩阵 →</a>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">runtime at a glance</div>
+              <h2>一次任务经过哪些边界？</h2>
+            </div>
+          </div>
+          <div class="diagram" aria-label="SparkWork 运行时边界图">
+            <div class="node">
+              <strong>Renderer</strong><span>React UI<br />queue · plan · review</span>
+            </div>
+            <div class="node">
+              <strong>Main</strong><span>Electron<br />IPC · files · Git</span>
+            </div>
+            <div class="node accent">
+              <strong>Runtime</strong><span>session · engine<br />tools · policy</span>
+            </div>
+            <div class="node">
+              <strong>Storage</strong><span>SQLite/WAL<br />events · repos</span>
+            </div>
+            <div class="node">
+              <strong>Engine</strong><span>turn machine<br />CLI · serve</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="split">
+            <div class="panel">
+              <h3>代码事实源</h3>
+              <ul>
+                <li><code>apps/desktop</code>：桌面壳、IPC 和界面</li>
+                <li><code>packages/agent-runtime</code>：会话与 Agent 编排</li>
+                <li><code>packages/storage</code>：SQLite、迁移和 Repository</li>
+                <li><code>spark-engine</code>：独立执行内核与 CLI</li>
+              </ul>
+            </div>
+            <div class="panel">
+              <h3>治理事实源</h3>
+              <ul>
+                <li>
+                  <a
+                    href="https://github.com/alexanderizh/spark-agent/blob/master/docs/architecture/overview.md"
+                    >仓库架构文档</a
+                  >
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/alexanderizh/spark-agent/blob/master/docs/operations/github-governance.md"
+                    >GitHub 治理文档</a
+                  >
+                </li>
+                <li>
+                  <a href="https://github.com/alexanderizh/spark-agent/blob/master/CONTRIBUTING.md"
+                    >贡献指南</a
+                  >
+                </li>
+                <li>
+                  <a href="https://github.com/alexanderizh/spark-agent/blob/master/SECURITY.md"
+                    >安全策略</a
+                  >
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="callout">
+            <strong>工程手册的边界</strong>
+            <p>
+              这里记录当前已经存在的架构和运维约定。产品功能、下载、版本中心和用户操作文档仍由
+              <a href="https://www.yiqibyte.com/">自有官网</a> 提供；GitHub Wiki
+              负责快速导航，不替代代码旁的详细设计。
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>SparkWork / Spark Agent · personal-use license</p>
+        <p>
+          <a href="architecture.html">Architecture</a> · <a href="operations.html">Operations</a> ·
+          <a href="https://github.com/alexanderizh/spark-agent">Repository</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
