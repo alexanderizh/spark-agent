@@ -7,6 +7,7 @@ import {
   isSemanticCodeBlockMode,
   type CodeBlockMode,
 } from './markdown-code/codeBlockSemantics'
+import { COMMON_LANGUAGES, normalizeCodeLanguage } from './markdown-code/codeLanguages'
 import { SemanticCodeBody } from './markdown-code/SemanticCodeBody'
 
 type MarkdownCodeBlockProps = {
@@ -20,42 +21,6 @@ const SHIKI_THEME = {
   light: 'github-light',
   dark: 'github-dark',
 } as const
-
-const LANGUAGE_ALIASES: Record<string, string> = {
-  cplusplus: 'cpp',
-  cxx: 'cpp',
-  js: 'javascript',
-  jsx: 'jsx',
-  ts: 'typescript',
-  tsx: 'tsx',
-  golang: 'go',
-  py: 'python',
-  sh: 'bash',
-  shell: 'bash',
-  shellscript: 'bash',
-  yml: 'yaml',
-}
-
-const COMMON_LANGUAGES = [
-  'bash',
-  'c',
-  'cpp',
-  'css',
-  'go',
-  'html',
-  'java',
-  'javascript',
-  'json',
-  'jsx',
-  'markdown',
-  'python',
-  'rust',
-  'sql',
-  'tsx',
-  'typescript',
-  'xml',
-  'yaml',
-] as const
 
 type ShikiHighlighter = {
   codeToHtml: (code: string, options: { lang: string; theme: string }) => string
@@ -71,10 +36,7 @@ function loadHighlighter(): Promise<ShikiHighlighter> {
     import('shiki/themes'),
   ]).then(([core, engine, langs, themes]) =>
     core.createHighlighterCore({
-      themes: [
-        themes.bundledThemes['github-light'],
-        themes.bundledThemes['github-dark'],
-      ],
+      themes: [themes.bundledThemes['github-light'], themes.bundledThemes['github-dark']],
       langs: COMMON_LANGUAGES.map((language) => langs.bundledLanguages[language]).filter(
         (language): language is NonNullable<typeof language> => language != null,
       ),
@@ -82,11 +44,6 @@ function loadHighlighter(): Promise<ShikiHighlighter> {
     }),
   )
   return highlighterPromise
-}
-
-function normalizeLanguage(lang: string): string {
-  const normalized = lang.trim().toLowerCase()
-  return LANGUAGE_ALIASES[normalized] ?? normalized
 }
 
 export function MarkdownCodeBlock({
@@ -99,15 +56,11 @@ export function MarkdownCodeBlock({
   const [html, setHtml] = useState<string | null>(null)
   const [highlightFailed, setHighlightFailed] = useState(false)
   const [copied, setCopied] = useState(false)
-  const language = useMemo(() => normalizeLanguage(lang), [lang])
-  const semanticMode = useMemo(
-    () => classifyCodeBlock(lang, code),
-    [lang, code],
-  )
+  const language = useMemo(() => normalizeCodeLanguage(lang), [lang])
+  const semanticMode = useMemo(() => classifyCodeBlock(lang, code), [lang, code])
   const shikiTheme = SHIKI_THEME[resolvedTheme]
   const shouldHighlight = syntaxHighlight && !incomplete && code.length > 0
-  const renderSemantic =
-    syntaxHighlight && !incomplete && isSemanticCodeBlockMode(semanticMode)
+  const renderSemantic = syntaxHighlight && !incomplete && isSemanticCodeBlockMode(semanticMode)
 
   useEffect(() => {
     let cancelled = false

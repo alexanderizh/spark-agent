@@ -2,6 +2,7 @@ import React, { useMemo, type ReactNode } from 'react'
 import type { JSX } from 'react'
 import { useAppearanceSettings } from '../../hooks/useAppearance'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
+import { isSvgCodeLanguage } from '../../components/markdown-code/codeLanguages'
 import { MarkdownImage } from '../../components/MarkdownImage'
 import {
   ClickableFilePath,
@@ -18,6 +19,7 @@ import {
 import { collectDocumentOutputKeys, renderDocumentOutputParagraph } from './ChatDocumentOutput'
 import { findStableMarkdownPrefixEnd, parseMarkdown, type MarkdownBlock } from './ChatMarkdownUtils'
 import { RenderDiagramBlock } from './RenderDiagramBlock'
+import { RenderSvgBlock } from './RenderSvgBlock'
 
 const EMPTY_MARKDOWN_BLOCKS: MarkdownBlock[] = []
 const STREAMING_STABLE_BLOCK_CACHE_LIMIT = 64
@@ -198,6 +200,11 @@ const MarkdownBlocks = React.memo(function MarkdownBlocks({
                   }}
                 />
               )
+            }
+            // ```svg 直接渲染成图形（源码走板块内「源码」切换）；
+            // 着色侧的语言归一在 MarkdownCodeBlock / codeLanguages 里统一处理。
+            if (isSvgCodeLanguage(block.lang) && block.code.trim().length > 0) {
+              return <RenderSvgBlock key={index} source={block.code} />
             }
             return (
               <MarkdownCodeBlock

@@ -147,6 +147,33 @@ describe('SafeFileProtocol', () => {
     }
   })
 
+  it('serves text, markup, and vector image previews with renderable MIME types', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'safe-file-preview-mime-'))
+    const cases: Array<[string, string]> = [
+      ['drawing.svg', 'image/svg+xml; charset=utf-8'],
+      ['feed.xml', 'application/xml; charset=utf-8'],
+      ['notes.md', 'text/markdown; charset=utf-8'],
+      ['body.html', 'text/html; charset=utf-8'],
+      ['plain.txt', 'text/plain; charset=utf-8'],
+      ['pixel.bmp', 'image/bmp'],
+      ['favicon.ico', 'image/x-icon'],
+    ]
+    for (const [name] of cases) writeFileSync(join(dir, name), 'x')
+
+    try {
+      for (const [name, expected] of cases) {
+        // Chromium 对 <img> 里的 SVG 不做嗅探：MIME 缺失时 svg 预览会直接失败
+        expect(
+          createSafeFileResponse(join(dir, name), new Request('safe-file://x/preview')).headers.get(
+            'content-type',
+          ),
+        ).toBe(expected)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('serves optional worker and WASM assets with executable MIME types', () => {
     const dir = mkdtempSync(join(tmpdir(), 'safe-file-mime-'))
     const worker = join(dir, 'worker.mjs')

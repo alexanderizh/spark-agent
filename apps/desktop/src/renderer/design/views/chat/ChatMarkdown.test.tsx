@@ -26,11 +26,13 @@ const documentOutputMocks = vi.hoisted(() => ({
 }))
 
 const diagramMocks = vi.hoisted(() => ({
-  RenderDiagramBlock: vi.fn(
-    ({ block }: { block: { source: string; diagramType: string } }) => (
-      <div data-diagram-type={block.diagramType}>{block.source}</div>
-    ),
-  ),
+  RenderDiagramBlock: vi.fn(({ block }: { block: { source: string; diagramType: string } }) => (
+    <div data-diagram-type={block.diagramType}>{block.source}</div>
+  )),
+}))
+
+const svgMocks = vi.hoisted(() => ({
+  RenderSvgBlock: vi.fn(({ source }: { source: string }) => <div data-svg-source={source} />),
 }))
 
 vi.mock('./ChatMarkdownUtils', () => ({
@@ -75,6 +77,7 @@ vi.mock('./ChatDocumentOutput', () => ({
 }))
 
 vi.mock('./RenderDiagramBlock', () => diagramMocks)
+vi.mock('./RenderSvgBlock', () => svgMocks)
 
 import { MarkdownText } from './ChatMarkdown'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -87,6 +90,7 @@ describe('MarkdownText', () => {
     markdownMocks.parseMarkdown.mockClear()
     documentOutputMocks.renderDocumentOutputParagraph.mockClear()
     diagramMocks.RenderDiagramBlock.mockClear()
+    svgMocks.RenderSvgBlock.mockClear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -155,7 +159,9 @@ describe('MarkdownText', () => {
       { kind: 'code', lang, code: 'flowchart TD\n  A --> B' },
     ])
 
-    act(() => root.render(<MarkdownText content={`\`\`\`${lang}\nflowchart TD\n  A --> B\n\`\`\``} />))
+    act(() =>
+      root.render(<MarkdownText content={`\`\`\`${lang}\nflowchart TD\n  A --> B\n\`\`\``} />),
+    )
 
     expect(diagramMocks.RenderDiagramBlock.mock.calls[0]?.[0]).toMatchObject(
       expect.objectContaining({
@@ -180,6 +186,33 @@ describe('MarkdownText', () => {
 
     expect(diagramMocks.RenderDiagramBlock).not.toHaveBeenCalled()
     expect(container.querySelector('pre')?.textContent).toBe('const value = 1')
+  })
+
+  it.each(['svg', 'SVG'])('renders %s fences as directly rendered svg blocks', (lang) => {
+    markdownMocks.parseMarkdown.mockReturnValueOnce([
+      { kind: 'code', lang, code: '<g id="bicycle">\n  <circle r="5" />\n</g>' },
+    ])
+
+    act(() => root.render(<MarkdownText content={`\`\`\`${lang}\n<g id="bicycle">\n\`\`\``} />))
+
+    expect(svgMocks.RenderSvgBlock.mock.calls[0]?.[0]).toMatchObject({
+      source: '<g id="bicycle">\n  <circle r="5" />\n</g>',
+    })
+    expect(container.querySelector('[data-svg-source]')?.getAttribute('data-svg-source')).toBe(
+      '<g id="bicycle">\n  <circle r="5" />\n</g>',
+    )
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('keeps xml fences as highlighted code blocks instead of svg graphics', () => {
+    markdownMocks.parseMarkdown.mockReturnValueOnce([
+      { kind: 'code', lang: 'xml', code: '<root><leaf /></root>' },
+    ])
+
+    act(() => root.render(<MarkdownText content={'```xml\n<root><leaf /></root>\n```'} />))
+
+    expect(svgMocks.RenderSvgBlock).not.toHaveBeenCalled()
+    expect(container.querySelector('pre')?.textContent).toBe('<root><leaf /></root>')
   })
 
   it('keeps user text ending in a document extension as plain markdown', () => {
