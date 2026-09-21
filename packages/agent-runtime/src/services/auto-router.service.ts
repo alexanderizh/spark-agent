@@ -330,12 +330,16 @@ export class AutoRouterService {
       })
     } else {
       intensity = ruleClassifyIntensity(input.userMessage, input.estimatedTokens)
-      reason = `分流降级（${decision.failureStage}），规则判定为${intensity}`
+      reason =
+        decision.failureDetail != null
+          ? `分流降级（${decision.failureStage}｜${decision.failureDetail}），规则判定为${intensity}`
+          : `分流降级（${decision.failureStage}），规则判定为${intensity}`
       fallbackUsed = true
       fallbackStage = decision.failureStage === 'timeout' ? 'timeout' : decision.failureStage
       log.warn('routing degraded to rule classifier', {
         turnId: input.turnId,
         failureStage: decision.failureStage,
+        failureDetail: decision.failureDetail ?? null,
         attemptCount: decision.attemptCount,
         degradedTo: 'rule',
         ruleIntensity: intensity,
@@ -396,6 +400,41 @@ export class AutoRouterService {
     })
   }
 
+  /**
+   * 分流器连通性探测（管理弹层「测试分流器」按钮用）：
+   * 用 dispatcher 渠道发一个 maxTokens=16 的最小请求，区分「渠道/模型可用」与
+   * 「鉴权/权限/模型名错误」。不解析决策 JSON——只验证调用链路，结果原样带回。
+   */
+  async testDispatcher(config: {
+    dispatcher: AutoRouterConfig['dispatcher']
+  }): Promise<{ ok: true; latencyMs: number } | { ok: false; latencyMs: number; error: string }> {
+    const t0 = Date.now()
+    const provider = this.deps.getProviderRow(config.dispatcher.providerProfileId)
+    if (provider == null) {
+      return { ok: false, latencyMs: 0, error: `分流器渠道不存在（${config.dispatcher.providerProfileId}）` }
+    }
+    if (provider.enabled === 0) {
+      return { ok: false, latencyMs: 0, error: `分流器渠道「${provider.name}」已禁用` }
+    }
+    log.info('dispatcher connectivity test dispatched', {
+      dispatcherModel: `${config.dispatcher.providerProfileId}:${config.dispatcher.modelId}`,
+    })
+    const result = await this.deps.complete('连通性测试：请原样回复 ok', {
+      providerId: config.dispatcher.providerProfileId,
+      model: config.dispatcher.modelId,
+      maxTokens: 16,
+      timeoutMs: config.dispatcher.timeoutMs,
+    })
+    const latencyMs = Date.now() - t0
+    if (result.available) {
+      log.info('dispatcher connectivity test ok', { latencyMs, textPreview: result.text.slice(0, 20) })
+      return { ok: true, latencyMs }
+    }
+    const error = extractDispatchFailureDetail(result.reason)
+    log.warn('dispatcher connectivity test failed', { latencyMs, error })
+    return { ok: false, latencyMs, error }
+  }
+
   // ─── 内部 ───────────────────────────────────────────────────────────────
 
   private validateExecutors(config: AutoRouterConfig): {
@@ -447,9 +486,16 @@ export class AutoRouterService {
     input: AutoRouterRouteInput,
     prevIntensity: RouterIntensity | null,
   ): Promise<
-    | { decision: AutoRouterDispatchDecision; cancelled: false; attemptCount: number; failureStage?: undefined }
-    | { decision: null; cancelled: true; attemptCount: number; failureStage?: undefined }
-    | { decision: null; cancelled: false; attemptCount: number; failureStage: 'timeout' | 'http' | 'schema' }
+    | { decision: AutoRouterDispatchDecision; cancelled: false; attemptCount: number; failureStage?: undefined; failureDetail?: undefined }
+    | { decision: null; cancelled: true; attemptCount: number; failureStage?: undefined; failureDetail?: undefined }
+    | {
+        decision: null
+        cancelled: false
+        attemptCount: number
+        failureStage: 'timeout' | 'http' | 'schema'
+        /** 人话失败摘要（HTTP 状态 + 业务 message），透出到降级 reason/日志/事件。 */
+        failureDetail?: string
+      }
   > {
     const abortController = new AbortController()
     const cancelPoll = setInterval(() => {
@@ -468,6 +514,7 @@ export class AutoRouterService {
       }
       let attemptCount = 0
       let lastFailureStage: 'timeout' | 'http' | 'schema' = 'http'
+      let lastFailureDetail: string | undefined
       // 最多 2 次尝试（1 次重试），schema 失败重试时强调输出格式
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         attemptCount = attempt
@@ -494,11 +541,24 @@ export class AutoRouterService {
         })
         if (!result.available) {
           lastFailureStage = classifyDispatchFailure(result.reason)
+          lastFailureDetail = extractDispatchFailureDetail(result.reason)
+          // 确定性 4xx（鉴权/权限/模型不存在/请求非法）：重试必然同样失败，立即收口，
+          // 不为每轮白付一次额外调用与等待（如"套餐未开放模型权限"会陪伴每一轮）。
+          if (lastFailureStage === 'http' && isDeterministicHttpFailure(result.reason)) {
+            log.warn('dispatcher failed with deterministic http error; skip retry', {
+              turnId: input.turnId,
+              failureStage: lastFailureStage,
+              failureDetail: lastFailureDetail,
+              attempt,
+            })
+            break
+          }
           continue
         }
         const jsonText = extractJsonText(result.text)
         if (jsonText == null) {
           lastFailureStage = 'schema'
+          lastFailureDetail = `分流器响应中未找到 JSON（返回 ${(result.text ?? '').slice(0, 80)}…）`
           continue
         }
         const parsed = AutoRouterDispatchDecisionSchema.safeParse(safeJsonParse(jsonText))
@@ -506,13 +566,20 @@ export class AutoRouterService {
           return { decision: parsed.data, cancelled: false, attemptCount }
         }
         lastFailureStage = 'schema'
+        lastFailureDetail = `分流器 JSON 不符合决策 schema：${jsonText.slice(0, 120)}`
       }
       // 兜底：两次尝试都以"被取消"告终（如两次都在取消瞬间失败）时同样按取消收口，
       // 不让取消伪装成超时降级。
       if (input.isTurnCancelled()) {
         return { decision: null, cancelled: true, attemptCount }
       }
-      return { decision: null, cancelled: false, attemptCount, failureStage: lastFailureStage }
+      return {
+        decision: null,
+        cancelled: false,
+        attemptCount,
+        failureStage: lastFailureStage,
+        ...(lastFailureDetail != null ? { failureDetail: lastFailureDetail } : {}),
+      }
     } finally {
       clearInterval(cancelPoll)
     }
@@ -561,6 +628,31 @@ export class AutoRouterService {
 function classifyDispatchFailure(reason: string): 'timeout' | 'http' {
   if (/timeout|timed?\s*out|aborted|ETIMEDOUT/i.test(reason)) return 'timeout'
   return 'http'
+}
+
+/**
+ * 确定性失败（重试也不会成功）：鉴权/权限/模型不存在/请求非法等 4xx。
+ * 429 视为可能瞬时限流，保留一次重试（套餐权限类 429 重试虽白费，但通用上无法区分）。
+ */
+function isDeterministicHttpFailure(reason: string): boolean {
+  const m = /HTTP (4\d\d)/.exec(reason)
+  if (m == null) return false
+  const status = Number(m[1])
+  return status !== 429
+}
+
+/**
+ * 从 complete 失败 reason 提取人话摘要：优先取响应体 JSON 里的 message 字段
+ * （如智谱 "[1311][当前订阅套餐暂未开放GLM-5.3-FlashX权限]"），否则截断原文。
+ * 仅用于日志/决策事件 reason 展示，不参与控制流。
+ */
+export function extractDispatchFailureDetail(reason: string): string {
+  const httpStatus = /HTTP (\d+)/.exec(reason)?.[1]
+  const messageMatch =
+    /"message"\s*:\s*"([^"]{1,200})"/.exec(reason)?.[1] ??
+    /HTTP \d+: ([^"{][^}]{1,160})/.exec(reason)?.[1]
+  const detail = (messageMatch ?? reason).replace(/\s+/g, ' ').trim().slice(0, 160)
+  return httpStatus != null ? `HTTP ${httpStatus}：${detail}` : detail
 }
 
 function safeJsonParse(text: string): unknown {

@@ -1180,6 +1180,18 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* 标题行右侧带动作（如「测试分流器」）：标题与按钮分居两端 */
+.arm_section_title_with_action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.arm_section .ant-alert {
+  margin-top: 8px;
+}
+
 .arm_form_grid {
   display: grid;
   grid-template-columns: 110px 1fr;

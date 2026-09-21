@@ -259,6 +259,86 @@ describe('AutoRouterService 分流决策链', () => {
     expect(result.resolvedProviderId).toBe('')
     expect(result.reason).toBe('轮次已取消')
   })
+
+  it('确定性 4xx（如套餐无权限 403）→ 不重试，降级 reason 含人话详情', async () => {
+    const complete = failComplete(
+      'HTTP 403: {"type":"error","error":{"type":"api_error","code":"1311","message":"[1311][当前订阅套餐暂未开放GLM-5.3-FlashX权限]"}}',
+    )
+    const service = makeService(complete)
+    const result = await service.routeTurn(makeInput({ userMessage: '普通问题' }))
+    // 401/403/404/400 等确定性错误：立即收口，不白付第二次调用
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(result.fallbackUsed).toBe(true)
+    expect(result.fallbackStage).toBe('http')
+    expect(result.reason).toContain('HTTP 403')
+    expect(result.reason).toContain('暂未开放')
+  })
+
+  it('429（可能瞬时限流）→ 保留一次重试', async () => {
+    const complete = failComplete('HTTP 429: rate limited')
+    const service = makeService(complete)
+    const result = await service.routeTurn(makeInput({ userMessage: '普通问题' }))
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(result.fallbackUsed).toBe(true)
+    expect(result.reason).toContain('HTTP 429')
+  })
+
+  it('testDispatcher：渠道可用 → ok；无权限模型 → 带回业务错误详情', async () => {
+    // 可用
+    const okService = makeService(okComplete('ok'))
+    const okResult = await okService.testDispatcher({
+      dispatcher: { providerProfileId: 'p-dispatch', modelId: 'dispatch-mini', timeoutMs: 5_000 },
+    })
+    expect(okResult.ok).toBe(true)
+
+    // 套餐无权限（真实 429 形态）：错误须包含状态码与业务 message，供弹层直接展示
+    const failService = makeService(
+      failComplete(
+        'HTTP 429: {"type":"error","error":{"type":"api_error","code":"1311","message":"[1311][当前订阅套餐暂未开放GLM-5.3-FlashX权限]"}}',
+      ),
+    )
+    const failResult = await failService.testDispatcher({
+      dispatcher: { providerProfileId: 'p-dispatch', modelId: 'glm-5.3-flashx', timeoutMs: 5_000 },
+    })
+    expect(failResult.ok).toBe(false)
+    if (!failResult.ok) {
+      expect(failResult.error).toContain('HTTP 429')
+      expect(failResult.error).toContain('暂未开放')
+    }
+
+    // 渠道不存在 / 已禁用：配置期即可发现，无需发请求
+    const noRowService = new AutoRouterService({
+      complete: okComplete('ok'),
+      getProviderRow: () => null,
+      getLatestDecisionIntensity: () => null,
+    })
+    const noRow = await noRowService.testDispatcher({
+      dispatcher: { providerProfileId: 'p-missing', modelId: 'm', timeoutMs: 5_000 },
+    })
+    expect(noRow.ok).toBe(false)
+
+    const disabledRows = new Map([['p-dispatch', { ...makeProviderRow('p-dispatch'), enabled: 0 }]])
+    const disabledService = new AutoRouterService({
+      complete: okComplete('ok'),
+      getProviderRow: (id) => disabledRows.get(id) ?? null,
+      getLatestDecisionIntensity: () => null,
+    })
+    const disabled = await disabledService.testDispatcher({
+      dispatcher: { providerProfileId: 'p-dispatch', modelId: 'm', timeoutMs: 5_000 },
+    })
+    expect(disabled.ok).toBe(false)
+    if (!disabled.ok) expect(disabled.error).toContain('已禁用')
+  })
+
+  it('extractDispatchFailureDetail：从真实错误体提取 message，无 JSON 时截断原文', async () => {
+    const { extractDispatchFailureDetail } = await import('../../services/auto-router.service')
+    expect(
+      extractDispatchFailureDetail(
+        'HTTP 429: {"type":"error","error":{"type":"api_error","message":"[1311][当前订阅套餐暂未开放GLM-5.3-FlashX权限]"}}',
+      ),
+    ).toBe('HTTP 429：[1311][当前订阅套餐暂未开放GLM-5.3-FlashX权限]')
+    expect(extractDispatchFailureDetail('fetch failed')).toBe('fetch failed')
+  })
 })
 
 describe('ruleClassifyIntensity 规则兜底', () => {

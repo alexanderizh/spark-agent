@@ -5,6 +5,13 @@
   font-weight: 600;
 }
 
+/* 降级原因摘要（可能含 HTTP 状态 + 业务错误信息）：截断展示，完整内容走 title/tooltip */
+.auto-router-notice .auto-router-notice-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
 .auto-router-meta-tag {
   display: inline-flex;
   align-items: center;

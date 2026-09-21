@@ -1127,6 +1127,19 @@ export interface ProviderAutoRouterUpdateRequest {
 
 export type ProviderAutoRouterResponse = ProviderCreateResponse
 
+/** 分流器连通性探测（管理弹层「测试分流器」；对 dispatcher 渠道发最小请求）。 */
+export interface ProviderAutoRouterTestDispatcherRequest {
+  /** 直接传当前编辑草稿的分流器配置（未保存也能测，渠道 id 必须已存在）。 */
+  dispatcher: AutoRouterConfig['dispatcher']
+}
+
+export interface ProviderAutoRouterTestDispatcherResponse {
+  ok: boolean
+  latencyMs: number
+  /** ok=false 时的人话失败原因（HTTP 状态 + 业务 message 摘要）。 */
+  error?: string
+}
+
 export interface ProviderUpdateRequest {
   id: string
   /** 全局可用状态；false 时从会话、画布和多媒体工具中排除。 */
@@ -7110,6 +7123,10 @@ export interface IpcChannelMap
   // AutoRouter（provider_type='auto-router' 落库行）专用 CRUD
   'provider:auto-router:create': [ProviderAutoRouterCreateRequest, ProviderAutoRouterResponse]
   'provider:auto-router:update': [ProviderAutoRouterUpdateRequest, ProviderAutoRouterResponse]
+  'provider:auto-router:test-dispatcher': [
+    ProviderAutoRouterTestDispatcherRequest,
+    ProviderAutoRouterTestDispatcherResponse,
+  ]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]

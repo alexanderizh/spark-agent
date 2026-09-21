@@ -188,6 +188,7 @@ import type {
 } from '@spark/agent-runtime'
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
+import { AutoRouterService } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
 import {
@@ -4893,6 +4894,33 @@ export function registerAllIpcHandlers(): void {
     getCanvasTextOutputCapabilityCache().clearProvider(req.id)
     pushConfigChanged('provider', 'update', profile.id)
     return { profile }
+  })
+
+  // 分流器连通性探测：对传入的 dispatcher 配置发最小 complete 请求。
+  // 让"配了无权限模型"在配置期就暴露（否则只在会话里表现为静默规则降级）。
+  typedIpcHandle('provider:auto-router:test-dispatcher', async (req) => {
+    log.info(
+      `provider:auto-router:test-dispatcher requested, provider=${req.dispatcher.providerProfileId}, model=${req.dispatcher.modelId}`,
+    )
+    const db = getDatabase()
+    const providerRepo = new ProviderProfileRepository(db)
+    const settingsRepo = new SettingsRepository(db)
+    const modelService = new ModelService(
+      new ModelProfileRepository(db),
+      providerRepo,
+      (c: string, k: string) => settingsRepo.get(c, k),
+    )
+    const result = await new AutoRouterService({
+      complete: (prompt, opts) => modelService.complete(prompt, opts),
+      getProviderRow: (providerId) => providerRepo.get(providerId),
+      getLatestDecisionIntensity: () => null,
+    }).testDispatcher({ dispatcher: req.dispatcher })
+    if (!result.ok) {
+      log.warn(
+        `provider:auto-router:test-dispatcher failed: ${result.error} (latency=${result.latencyMs}ms)`,
+      )
+    }
+    return result
   })
 
   typedIpcHandle('provider:update', async (req) => {

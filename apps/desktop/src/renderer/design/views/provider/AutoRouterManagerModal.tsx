@@ -8,6 +8,7 @@ import {
   AUTO_ROUTER_PROVIDER_TYPE,
   type AutoRouterConfig,
   type AutoRouterExecutorRef,
+  type ProviderAutoRouterTestDispatcherResponse,
   type ProviderProfile,
   type RouterAdapter,
   type RouterIntensity,
@@ -74,6 +75,7 @@ export function AutoRouterManagerModal({
   const { invoke: createRouter } = useIpcInvoke('provider:auto-router:create')
   const { invoke: updateRouter } = useIpcInvoke('provider:auto-router:update')
   const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
+  const { invoke: testDispatcherInvoke } = useIpcInvoke('provider:auto-router:test-dispatcher')
 
   const routers = useMemo(
     () => providers.filter((provider) => provider.providerType === AUTO_ROUTER_PROVIDER_TYPE),
@@ -86,6 +88,11 @@ export function AutoRouterManagerModal({
   const [routerEnabled, setRouterEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  // 分流器连通性测试：testing 进行中；result 为 null 表示未测/已改动作废
+  const [dispatcherTesting, setDispatcherTesting] = useState(false)
+  const [dispatcherTestResult, setDispatcherTestResult] = useState<
+    ProviderAutoRouterTestDispatcherResponse | null
+  >(null)
 
   // 打开时默认选中第一个 router；列表为空进入新建态
   useEffect(() => {
@@ -163,6 +170,33 @@ export function AutoRouterManagerModal({
 
   function patchConfig(patch: Partial<AutoRouterConfig>): void {
     setDraft((prev) => ({ ...prev, ...patch }))
+    // 配置变更后旧测试结果失效
+    setDispatcherTestResult(null)
+  }
+
+  /** 分流器连通性测试：对当前草稿（无需保存）的分流器渠道发最小请求。 */
+  async function runDispatcherTest(): Promise<void> {
+    if (
+      dispatcherTesting ||
+      draft.dispatcher.providerProfileId.length === 0 ||
+      draft.dispatcher.modelId.length === 0
+    ) {
+      return
+    }
+    setDispatcherTesting(true)
+    setDispatcherTestResult(null)
+    try {
+      const result = await testDispatcherInvoke({ dispatcher: draft.dispatcher })
+      setDispatcherTestResult(result)
+    } catch (err) {
+      setDispatcherTestResult({
+        ok: false,
+        latencyMs: 0,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setDispatcherTesting(false)
+    }
   }
 
   function patchExecutor(entryId: string, patch: Partial<AutoRouterExecutorRef>): void {
@@ -337,7 +371,33 @@ export function AutoRouterManagerModal({
           </div>
 
           <div className="arm_section">
-            <div className="arm_section_title">分流器模型</div>
+            <div className="arm_section_title arm_section_title_with_action">
+              <span>分流器模型</span>
+              <Button
+                size="small"
+                disabled={
+                  dispatcherTesting ||
+                  draft.dispatcher.providerProfileId.length === 0 ||
+                  draft.dispatcher.modelId.length === 0
+                }
+                onClick={() => {
+                  void runDispatcherTest()
+                }}
+              >
+                {dispatcherTesting ? '测试中…' : '测试分流器'}
+              </Button>
+            </div>
+            {dispatcherTestResult != null && (
+              <Alert
+                type={dispatcherTestResult.ok ? 'success' : 'error'}
+                showIcon
+                message={
+                  dispatcherTestResult.ok
+                    ? `连通正常 · ${Math.round(dispatcherTestResult.latencyMs)}ms`
+                    : `分流器不可用：${dispatcherTestResult.error}`
+                }
+              />
+            )}
             <div className="arm_form_grid">
               <label className="arm_form_label">渠道</label>
               <Select

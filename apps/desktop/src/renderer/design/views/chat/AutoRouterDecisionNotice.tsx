@@ -47,7 +47,12 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
           >
             ●{INTENSITY_LABEL[decision.intensity]} {decision.modelDisplayName || decision.resolvedModelId}
           </span>
-          {decision.reason.length > 0 ? ` · ${decision.reason}` : ''}
+          {decision.reason.length > 0 ? (
+            <span className="auto-router-notice-reason" title={decision.reason}>
+              {' '}
+              · {decision.reason}
+            </span>
+          ) : null}
         </span>
         <span className="model-switch-notice-help" tabIndex={0} aria-describedby={tooltipId}>
           <span id={tooltipId} className="model-switch-notice-tooltip" role="tooltip">
@@ -58,6 +63,7 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
             ｜推理强度：{decision.reasoningEffort ?? '跟随会话'}
             ｜分流耗时：{Math.round(decision.latencyMs)}ms
             {decision.fallbackUsed ? `｜兜底：${decision.fallbackStage ?? 'unknown'}` : ''}
+            {decision.reason.length > 0 ? `｜原因：${decision.reason}` : ''}
           </span>
         </span>
       </span>
