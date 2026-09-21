@@ -318,6 +318,24 @@ interface SidebarNavItem {
 }
 
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
+
+// 模式切换时各模式记忆的「上次所在视图」（内存级，不持久化——与 view 不持久化、
+// 重启回主视图的既有设计一致）。仅记录模式专属视图；智能体/模型服务/设置等
+// L3 全局共享页两边都能进，不算任一模式的位置，不参与记忆。
+const MODE_OWNED_VIEWS: Record<WorkspaceMode, ReadonlySet<ViewId>> = {
+  workbench: new Set<ViewId>(['chat', 'workflows', 'board', 'scheduled-tasks', 'sub-apps', 'sub-app']),
+  canvas: new Set<ViewId>(['canvas', 'canvas-workflows', 'canvas-prompts', 'quick-create', 'canvas-video-tasks']),
+}
+// 目标模式没去过（无记忆）时回落的各模式主视图，即旧行为。
+const MODE_MAIN_VIEW: Record<WorkspaceMode, ViewId> = {
+  workbench: 'chat',
+  canvas: 'canvas',
+}
+const lastViewByMode: Record<WorkspaceMode, ViewId | null> = {
+  workbench: null,
+  canvas: null,
+}
+
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak, applySyncedAppearance } = useApp()
   const { t: tr } = useI18n()
@@ -326,16 +344,20 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   // 团队商店侧栏角标（可更新总数；未配置恒为 0）
   const teamStoreBadge = useTeamStoreBadge()
 
-  // 切换侧栏工作模式 = 切换主功能。无条件联动主区 view 到该模式的主视图，
-  // 避免「侧栏画布 + 主区聊天」的割裂。切模式意味着用户想换到另一个主功能，
-  // 即使当前在 settings/providers 等次级页面也应当切走。
+  // 切换侧栏工作模式 = 切换主功能。切走前先记住当前模式最后所在的专属视图，
+  // 回切时恢复目标模式的上次位置（如画布快速创作 ⇄ 工作台对话来回切换互不丢位），
+  // 没有记忆时回落到该模式主视图，保持旧行为。即使当前在 settings/providers 等
+  // 次级页面也应当切走，但共享页不覆盖模式位置记忆。
   const handleSwitchMode = useCallback(
     (mode: WorkspaceMode) => {
       if (mode === t.workspaceMode) return
+      if (MODE_OWNED_VIEWS[t.workspaceMode].has(t.view)) {
+        lastViewByMode[t.workspaceMode] = t.view
+      }
       setTweak('workspaceMode', mode)
-      setTweak('view', mode === 'workbench' ? 'chat' : 'canvas')
+      setTweak('view', lastViewByMode[mode] ?? MODE_MAIN_VIEW[mode])
     },
-    [setTweak, t.workspaceMode],
+    [setTweak, t.workspaceMode, t.view],
   )
 
   // 侧栏「新建项目」：切到 canvas view 并触发 CanvasProjectsView 的创建弹窗。
