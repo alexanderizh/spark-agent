@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { SessionReasoningEffort } from './ipc/index.js'
 
 /**
  * AutoRouter 配置协议（重构版）。
@@ -51,6 +52,12 @@ export interface AutoRouterExecutorRef {
   modelId: string
   intensity: RouterIntensity
   enabled: boolean
+  /**
+   * 执行器显式推理强度（模型思考深度，与条目的"任务强度档位"无关）。
+   * null/缺省 = 跟随会话/Agent 既有配置；显式配置后经该执行器执行的轮次以此为准。
+   * 联合里显式含 undefined：与 zod .nullish() 推断对齐（exactOptionalPropertyTypes）。
+   */
+  reasoningEffort?: SessionReasoningEffort | null | undefined
 }
 
 /** 分流器模型配置。 */
@@ -84,12 +91,26 @@ export const RouterAdapterSchema = z.enum(['claude', 'codex'])
 
 export const RouterIntensitySchema = z.enum(['high', 'balanced', 'low'])
 
+/**
+ * 推理强度枚举（与 schemas 的 SessionReasoningEffortSchema 同值）。
+ * 本地重复定义以避免与 schemas/index.ts 的值级循环依赖（后者 import 本模块）。
+ */
+export const RouterReasoningEffortSchema = z.enum([
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+
 export const AutoRouterExecutorRefSchema = z.object({
   id: z.string().min(1),
   providerProfileId: z.string().min(1),
   modelId: z.string().min(1),
   intensity: RouterIntensitySchema,
   enabled: z.boolean().default(true),
+  reasoningEffort: RouterReasoningEffortSchema.nullish(),
 })
 
 export const AutoRouterDispatcherConfigSchema = z.object({

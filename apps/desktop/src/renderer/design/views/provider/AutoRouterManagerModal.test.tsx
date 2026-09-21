@@ -85,8 +85,16 @@ vi.mock('../../Icons', async () => {
     ),
   }
 })
+const { invokeCalls } = vi.hoisted(() => ({
+  invokeCalls: [] as Array<{ channel: string; payload: unknown }>,
+}))
 vi.mock('../../hooks/useIpc', () => ({
-  useIpcInvoke: () => ({ invoke: vi.fn(async () => ({ profile: {} })) }),
+  useIpcInvoke: (channel: string) => ({
+    invoke: vi.fn(async (payload: unknown) => {
+      invokeCalls.push({ channel, payload })
+      return { profile: {} }
+    }),
+  }),
 }))
 vi.mock('../../components/Toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -150,6 +158,7 @@ describe('AutoRouterManagerModal', () => {
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
+    invokeCalls.length = 0
   })
 
   afterEach(() => {
@@ -210,5 +219,75 @@ describe('AutoRouterManagerModal', () => {
     expect(sidebarItems.length).toBe(0)
     // 新建态编辑器可见
     expect(container.querySelector('.arm_editor')).not.toBeNull()
+  })
+
+  it('执行器推理强度：默认「跟随会话」，修改后保存写入 config（新字段闭环）', async () => {
+    render(
+      <AutoRouterManagerModal
+        open
+        providers={[...providers, routerProfile('r1', '日常路由')]}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    )
+    // fixture 的 e1 未配置 reasoningEffort → 推理强度下拉应为「跟随会话」（哨兵空串）
+    const executorSelects = Array.from(
+      container.querySelectorAll('.arm_executor_row select'),
+    ) as HTMLSelectElement[]
+    // 执行器行共 4 个下拉：渠道 / 模型 / 强度档位 / 推理强度
+    expect(executorSelects.length).toBe(4)
+    const effortSelect = executorSelects[3]!
+    expect(effortSelect.value).toBe('')
+    // 修改为 xhigh
+    await act(async () => {
+      effortSelect.value = 'xhigh'
+      effortSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(effortSelect.value).toBe('xhigh')
+    // 保存 → update IPC 的 config 携带推理强度
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    expect(saveButton).toBeDefined()
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const call = invokeCalls.find((entry) => entry.channel === 'provider:auto-router:update')
+    expect(call).toBeDefined()
+    const config = (call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } })
+      .config
+    expect(config.executors[0]?.reasoningEffort).toBe('xhigh')
+  })
+
+  it('执行器推理强度改回「跟随会话」→ 保存落库为 null（不跟随旧值）', async () => {
+    const fixture = routerProfile('r1', '日常路由')
+    fixture.autoRouterConfig!.executors[0]!.reasoningEffort = 'max'
+    render(
+      <AutoRouterManagerModal
+        open
+        providers={[...providers, fixture]}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    )
+    const effortSelect = Array.from(
+      container.querySelectorAll('.arm_executor_row select'),
+    )[3] as HTMLSelectElement
+    // 回显已配置的 max
+    expect(effortSelect.value).toBe('max')
+    await act(async () => {
+      effortSelect.value = ''
+      effortSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const call = invokeCalls.find((entry) => entry.channel === 'provider:auto-router:update')
+    const config = (call!.payload as { config: { executors: Array<{ reasoningEffort?: string | null }> } })
+      .config
+    expect(config.executors[0]?.reasoningEffort).toBeNull()
   })
 })

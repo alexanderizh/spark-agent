@@ -11,6 +11,7 @@ import {
   type ProviderProfile,
   type RouterAdapter,
   type RouterIntensity,
+  type SessionReasoningEffort,
   createDefaultAutoRouterConfig,
   isProviderAllowedForAutoRouter,
 } from '@spark/protocol'
@@ -37,6 +38,21 @@ const INTENSITY_OPTIONS: Array<{ value: RouterIntensity; label: string; badgeCla
 const ADAPTER_OPTIONS: Array<{ value: RouterAdapter; label: string }> = [
   { value: 'claude', label: 'Claude 引擎（Anthropic 渠道）' },
   { value: 'codex', label: 'Codex 引擎（OpenAI 系渠道）' },
+]
+
+/**
+ * 执行器推理强度选项（模型思考深度；与条目的"任务强度档位"是两回事）。
+ * 哨兵空串 = 跟随会话/Agent 既有配置（不写 reasoningEffort 字段）。
+ */
+const REASONING_EFFORT_FOLLOW = ''
+
+const REASONING_EFFORT_OPTIONS: Array<{ value: SessionReasoningEffort; label: string }> = [
+  { value: 'minimal', label: 'minimal · 最少推理' },
+  { value: 'low', label: 'low · 快速省资源' },
+  { value: 'medium', label: 'medium · 标准速度' },
+  { value: 'high', label: 'high · 更强推理' },
+  { value: 'xhigh', label: 'xhigh · 深度推理' },
+  { value: 'max', label: 'max · 极限推理' },
 ]
 
 function intensityBadgeClass(intensity: RouterIntensity): string {
@@ -383,6 +399,21 @@ export function AutoRouterManagerModal({
                       patchExecutor(executor.id, { intensity: value as RouterIntensity })
                     }
                   />
+                  <Select
+                    size="small"
+                    value={executor.reasoningEffort ?? REASONING_EFFORT_FOLLOW}
+                    title="推理强度（模型思考深度，留空跟随会话配置）"
+                    options={[
+                      { label: '推理·跟随会话', value: REASONING_EFFORT_FOLLOW },
+                      ...REASONING_EFFORT_OPTIONS,
+                    ]}
+                    onChange={(value) =>
+                      patchExecutor(executor.id, {
+                        reasoningEffort:
+                          value === REASONING_EFFORT_FOLLOW ? null : (value as SessionReasoningEffort),
+                      })
+                    }
+                  />
                   <Switch
                     size="small"
                     checked={executor.enabled}
@@ -401,6 +432,10 @@ export function AutoRouterManagerModal({
               <Button size="small" icon={<Icons.Plus size={14} />} onClick={addExecutor}>
                 添加执行模型
               </Button>
+              <div className="arm_hint">
+                推理强度：执行模型的思考深度，与左侧任务强度档位无关；默认「跟随会话」，
+                显式指定后经该执行模型执行的轮次以此为准（会话与 Agent 级配置被覆盖）。
+              </div>
             </div>
           </div>
 

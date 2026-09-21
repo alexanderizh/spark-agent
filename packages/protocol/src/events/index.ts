@@ -26,6 +26,7 @@ import { z } from 'zod'
 import type { UserMessagePresentation } from '../turn-message-presentation.js'
 import type { SessionReferenceInput } from '../cross-session-collaboration.js'
 import type { RouterIntensity } from '../auto-router-config.js'
+import type { SessionReasoningEffort } from '../ipc/index.js'
 export type {
   TurnSource,
   UserMessagePresentation,
@@ -1194,6 +1195,8 @@ export interface AutoRouterDecisionEvent extends BaseEvent {
   latencyMs: number
   /** 上一轮强度（强度粘性依据，从本表反查）；首轮为 null */
   prevIntensity: RouterIntensity | null
+  /** 本轮执行器显式推理强度（执行器未配置时缺省，UI 不展示该段） */
+  reasoningEffort?: SessionReasoningEffort | null
   /** 分流器是否建议拆分子任务（Phase 3 decomposed 模式消费） */
   decompose: boolean
   /** 建议子任务清单（decompose=true 时 1..maxConcurrentSubtasks 条） */

@@ -58,6 +58,58 @@ describe('AutoRouterConfigSchema', () => {
   it('kind 不是 auto-router 时拒绝（与其他 config 判别字段互斥）', () => {
     expect(AutoRouterConfigSchema.safeParse(validConfig({ kind: 'router' })).success).toBe(false)
   })
+
+  it('执行器推理强度：显式值合法、非法值拒绝、缺省/存量数据兼容（向后兼容）', () => {
+    // 显式配置通过并保留
+    const withEffort = AutoRouterConfigSchema.parse(
+      validConfig({
+        executors: [
+          {
+            id: 'e1',
+            providerProfileId: 'p1',
+            modelId: 'm1',
+            intensity: 'high',
+            reasoningEffort: 'xhigh',
+          },
+        ],
+      }),
+    )
+    expect(withEffort.executors[0]?.reasoningEffort).toBe('xhigh')
+    // null（UI「跟随会话」哨兵落库形态）也合法
+    const withNull = AutoRouterConfigSchema.parse(
+      validConfig({
+        executors: [
+          {
+            id: 'e1',
+            providerProfileId: 'p1',
+            modelId: 'm1',
+            intensity: 'high',
+            reasoningEffort: null,
+          },
+        ],
+      }),
+    )
+    expect(withNull.executors[0]?.reasoningEffort).toBeNull()
+    // 非法值拒绝
+    expect(
+      AutoRouterConfigSchema.safeParse(
+        validConfig({
+          executors: [
+            {
+              id: 'e1',
+              providerProfileId: 'p1',
+              modelId: 'm1',
+              intensity: 'high',
+              reasoningEffort: 'ultra',
+            },
+          ],
+        }),
+      ).success,
+    ).toBe(false)
+    // 既有存量数据（无该字段）解析不受影响
+    const legacy = AutoRouterConfigSchema.parse(validConfig())
+    expect(legacy.executors[0]?.reasoningEffort).toBeUndefined()
+  })
 })
 
 describe('parseAutoRouterConfig', () => {

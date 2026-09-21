@@ -55,6 +55,7 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
             {decision.prevIntensity != null
               ? `（上轮 ${INTENSITY_LABEL[decision.prevIntensity]}）`
               : '（首轮）'}
+            ｜推理强度：{decision.reasoningEffort ?? '跟随会话'}
             ｜分流耗时：{Math.round(decision.latencyMs)}ms
             {decision.fallbackUsed ? `｜兜底：${decision.fallbackStage ?? 'unknown'}` : ''}
           </span>

@@ -1187,6 +1187,14 @@
   align-items: center;
 }
 
+/* grid 单元格里的 antd Switch 会被拉伸（grid 项默认 justify-self: stretch），
+   与 .form-grid 保持同一口径，收敛为内容宽度并左对齐。 */
+.arm_form_grid .ant-switch,
+.arm_form_grid .ant-switch:focus {
+  width: max-content;
+  justify-self: start;
+}
+
 .arm_form_label {
   font-size: 12.5px;
   color: var(--text-secondary);
@@ -1201,7 +1209,8 @@
 
 .arm_executor_row {
   display: grid;
-  grid-template-columns: 56px minmax(120px, 1.2fr) minmax(120px, 1.2fr) 84px auto auto;
+  /* 强度档位 84px + 推理强度 100px（第七列，2026-09 新增执行器推理强度配置） */
+  grid-template-columns: 56px minmax(110px, 1.2fr) minmax(110px, 1.2fr) 84px 100px auto auto;
   gap: 8px;
   align-items: center;
   width: 100%;

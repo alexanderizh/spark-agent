@@ -8,6 +8,7 @@ import {
   type AutoRouterExecutorRef,
   type RouterAdapter,
   type RouterIntensity,
+  type SessionReasoningEffort,
 } from '@spark/protocol'
 import type { ModelService } from './model.service'
 
@@ -73,6 +74,8 @@ export interface AutoRouterRouteResult {
   prevIntensity: RouterIntensity | null
   /** 强度粘性命中（决策强度与上轮相同且执行器未变）。 */
   keptPrevIntensity: boolean
+  /** 解析出的执行器显式推理强度；null/缺省 = 跟随会话/Agent 既有配置。 */
+  reasoningEffort?: SessionReasoningEffort | null
   decompose: boolean
   subtasks: AutoRouterDispatchDecision['subtasks']
   /** 轮次在分流期间被取消。 */
@@ -543,6 +546,9 @@ export class AutoRouterService {
       ...(args.adapterMismatch === true ? { adapterMismatch: true } : {}),
       latencyMs: args.latencyMs,
       prevIntensity: args.prevIntensity,
+      ...(args.resolved?.reasoningEffort != null
+        ? { reasoningEffort: args.resolved.reasoningEffort }
+        : {}),
       keptPrevIntensity: args.keptPrevIntensity === true,
       decompose: args.decompose === true,
       subtasks: args.subtasks ?? [],

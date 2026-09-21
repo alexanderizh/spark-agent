@@ -2449,6 +2449,9 @@ export class SessionService {
     // 四变量（id/provider/config/model）同步替换：下游标题精炼/分支名/性能统计/
     // 记忆抽取回退拿到的均为具体执行器。router 会话 modelId 恒为空（分流器决定执行模型）。
     let autoRouterTierModels: { haiku: string; sonnet: string; opus: string } | null = null
+    // router 执行器显式配置的推理强度（非空时覆盖会话 reasoning_effort，见下方
+    // effectiveReasoningEffort 的推导说明）。
+    let autoRouterReasoningEffort: SparkReasoningEffort | null = null
     // decomposed 模式（Phase 3）：分流器判定可拆分时，为每个子任务合成一次性强度
     // worker（直接绑定该强度执行器，不经过 router 行 → 成员侧不再二次分流），
     // 并入本轮派发花名册，Host 经 agent_dispatch / agent_dispatch_batch 自主派发。
@@ -2478,6 +2481,7 @@ export class SessionService {
         })
         autoRouterRouting = autoRouterOutcome.routing
         autoRouterTierModels = autoRouterOutcome.tierModels
+        autoRouterReasoningEffort = autoRouterOutcome.routing.reasoningEffort ?? null
         // decomposed：合成一次性强度 worker + 派发建议 prompt（并发上限截断 + 预算治理）
         if (
           autoRouterRouting.ok &&
@@ -2501,6 +2505,7 @@ export class SessionService {
             fallback: {
               providerProfileId: autoRouterRouting.resolvedProviderId,
               modelId: autoRouterRouting.resolvedModelId,
+              reasoningEffort: autoRouterRouting.reasoningEffort ?? null,
             },
           })
           if (capped.length < autoRouterRouting.subtasks.length) {
@@ -2567,6 +2572,9 @@ export class SessionService {
         effectiveRuntimeProviderProfileId = autoRouterRouting.resolvedProviderId
         provider = loadProvider(effectiveRuntimeProviderProfileId)
       }
+      // 本轮生效推理强度：router 执行器显式配置最具体（用户在 router 里为该模型指定
+      // 了思考深度），优先于会话 reasoning_effort；均缺省时走 SDK 默认（undefined）。
+      // claude/spark/codex 三条执行路径的 config 组装点统一取该值。
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
       if (autoRouterRouting != null) {
@@ -2603,6 +2611,14 @@ export class SessionService {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
     }
+    // 本轮生效推理强度：router 执行器显式配置最具体（用户在 router 里为该模型指定
+    // 了思考深度），优先于会话 reasoning_effort；均缺省时走 SDK 默认（undefined）。
+    // claude/spark/codex 三条执行路径的 config 组装点统一取该值（函数级作用域）。
+    const effectiveReasoningEffort =
+      autoRouterReasoningEffort ??
+      (session.reasoning_effort != null
+        ? normalizeReasoningEffort(session.reasoning_effort)
+        : undefined)
     const cliProvider = provider
     const activeCliSparkOverride = isLocalCli
       ? getCliSparkOverrideFromMetadata(session.metadata_json)
@@ -3720,8 +3736,8 @@ export class SessionService {
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
-        ...(session.reasoning_effort != null
-          ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
+        ...(effectiveReasoningEffort != null
+          ? { reasoningEffort: effectiveReasoningEffort }
           : {}),
         ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
           ? {
@@ -3953,8 +3969,8 @@ export class SessionService {
           ? { allowedTools: [...sparkMcpRuntime.allowedTools] }
           : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
-        ...(session.reasoning_effort != null
-          ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
+        ...(effectiveReasoningEffort != null
+          ? { reasoningEffort: effectiveReasoningEffort }
           : {}),
         ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
           ? {
@@ -4127,8 +4143,8 @@ export class SessionService {
       ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
-      ...(session.reasoning_effort != null
-        ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
+      ...(effectiveReasoningEffort != null
+        ? { reasoningEffort: effectiveReasoningEffort }
         : {}),
       fastMode: effectiveFastMode,
       ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
@@ -7936,6 +7952,8 @@ export class SessionService {
     // AutoRouter：成员 provider 指向 router 行时同样分流（与主循环解析对称），
     // 四变量替换为对应强度执行器；成员 adapter 取 member.agentAdapter 回落会话快照。
     let memberAutoRouterTierModels: { haiku: string; sonnet: string; opus: string } | null = null
+    // 成员 router 执行器显式推理强度（非空时覆盖成员/宿主继承的 reasoningEffort）。
+    let memberAutoRouterReasoningEffort: SparkReasoningEffort | null = null
     let memberRoutedModelId: string | null = null
     let provider: ProviderProfileRow
     let isLocalCli: boolean
@@ -7984,6 +8002,7 @@ export class SessionService {
           eventRepo,
         })
         memberAutoRouterTierModels = memberOutcome.tierModels
+        memberAutoRouterReasoningEffort = memberOutcome.routing.reasoningEffort ?? null
         // P2：成员分流期间宿主轮次被取消/成员被中止时安静收尾，不把取消报成
         // "没有可用执行模型"（与 executeMemberTurn 开头的 abort 早退语义一致）。
         if (memberOutcome.routing.cancelled || signal.aborted) {
@@ -8491,9 +8510,12 @@ export class SessionService {
       // reasoningEffort，否则 member 用 SDK 默认（standard），违背用户在 agent 上
       // 配置 max/high 的意图。createWorkflowSubagentMember 已让 atomic member
       // 继承 hostAgent.reasoningEffort，真实 team member 自己有 reasoningEffort 字段。
-      ...(member.reasoningEffort != null
-        ? { reasoningEffort: normalizeReasoningEffort(member.reasoningEffort) }
-        : {}),
+      // 成员经 router 分流时，执行器显式推理强度最具体，优先于成员/宿主继承值。
+      ...(memberAutoRouterReasoningEffort != null
+        ? { reasoningEffort: memberAutoRouterReasoningEffort }
+        : member.reasoningEffort != null
+          ? { reasoningEffort: normalizeReasoningEffort(member.reasoningEffort) }
+          : {}),
       fastMode: effectiveMemberFastMode,
       ...(normalizeReasoningBudgetTokens(member.metadata.reasoningBudgetTokens) != null
         ? {
@@ -8795,7 +8817,7 @@ export class SessionService {
     subtasks: AutoRouterRouteResult['subtasks']
     hostAgent: AgentItem
     /** 本轮分流已解析出的执行器（子任务强度档缺配置执行器时的回落目标）。 */
-    fallback: { providerProfileId: string; modelId: string }
+    fallback: { providerProfileId: string; modelId: string; reasoningEffort: SparkReasoningEffort | null }
   }): AgentItem[] {
     return params.subtasks.map((subtask, index) => {
       const binding = resolveAutoRouterWorkerBinding({
@@ -8816,6 +8838,9 @@ export class SessionService {
         hookConfig: {},
         providerProfileId: binding.providerProfileId,
         modelId: binding.modelId,
+        // 执行器显式推理强度跟随子任务档位执行器（成员侧 config 组装点统一消费）；
+        // null 时不写，成员侧继续走「继承 hostAgent.reasoningEffort」的既有链。
+        ...(binding.reasoningEffort != null ? { reasoningEffort: binding.reasoningEffort } : {}),
         metadata: {
           ...params.hostAgent.metadata,
           temporaryAutoRouterWorker: true,
@@ -8948,6 +8973,7 @@ export class SessionService {
         ...(routing.adapterMismatch === true ? { adapterMismatch: true } : {}),
         latencyMs: routing.latencyMs,
         prevIntensity: routing.prevIntensity,
+        ...(routing.reasoningEffort != null ? { reasoningEffort: routing.reasoningEffort } : {}),
         decompose: routing.decompose,
         ...(routing.subtasks.length > 0 ? { subtasks: routing.subtasks } : {}),
       },

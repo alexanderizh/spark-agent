@@ -74,7 +74,7 @@ describe('resolveOrchestrationSource', () => {
 })
 
 describe('resolveAutoRouterWorkerBinding', () => {
-  function configWith(executors: Array<{ intensity: 'high' | 'balanced' | 'low'; providerProfileId: string; modelId: string }>) {
+  function configWith(executors: Array<{ intensity: 'high' | 'balanced' | 'low'; providerProfileId: string; modelId: string; reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' }>) {
     const config = createDefaultAutoRouterConfig('claude')
     config.executors = executors.map((entry, index) => ({
       id: `e-${index}`,
@@ -82,6 +82,7 @@ describe('resolveAutoRouterWorkerBinding', () => {
       providerProfileId: entry.providerProfileId,
       modelId: entry.modelId,
       enabled: true,
+      ...(entry.reasoningEffort != null ? { reasoningEffort: entry.reasoningEffort } : {}),
     }))
     return config
   }
@@ -92,20 +93,39 @@ describe('resolveAutoRouterWorkerBinding', () => {
         { intensity: 'low', providerProfileId: 'p-low', modelId: 'haiku-small' },
       ]),
       intensity: 'low',
-      fallback: { providerProfileId: 'p-router', modelId: '' },
+      fallback: { providerProfileId: 'p-router', modelId: '', reasoningEffort: null },
     })
-    expect(binding).toEqual({ providerProfileId: 'p-low', modelId: 'haiku-small' })
+    expect(binding).toEqual({ providerProfileId: 'p-low', modelId: 'haiku-small', reasoningEffort: null })
   })
 
-  it('该强度档未配置 → 回落本轮主执行器，绝不回落 host/router 绑定（P6 回归）', () => {
+  it('执行器显式配置推理强度 → worker 继承该配置', () => {
+    const binding = resolveAutoRouterWorkerBinding({
+      config: configWith([
+        { intensity: 'high', providerProfileId: 'p-high', modelId: 'opus-max', reasoningEffort: 'xhigh' },
+      ]),
+      intensity: 'high',
+      fallback: { providerProfileId: 'p-router', modelId: '', reasoningEffort: null },
+    })
+    expect(binding).toEqual({
+      providerProfileId: 'p-high',
+      modelId: 'opus-max',
+      reasoningEffort: 'xhigh',
+    })
+  })
+
+  it('该强度档未配置 → 回落本轮主执行器（含其推理强度），绝不回落 host/router 绑定（P6 回归）', () => {
     const binding = resolveAutoRouterWorkerBinding({
       config: configWith([
         { intensity: 'balanced', providerProfileId: 'p-bal', modelId: 'sonnet-mid' },
       ]),
       intensity: 'high',
-      fallback: { providerProfileId: 'p-bal', modelId: 'sonnet-mid' },
+      fallback: { providerProfileId: 'p-bal', modelId: 'sonnet-mid', reasoningEffort: 'high' },
     })
-    expect(binding).toEqual({ providerProfileId: 'p-bal', modelId: 'sonnet-mid' })
+    expect(binding).toEqual({
+      providerProfileId: 'p-bal',
+      modelId: 'sonnet-mid',
+      reasoningEffort: 'high',
+    })
     expect(binding.providerProfileId).not.toBe('p-router')
   })
 
@@ -117,8 +137,8 @@ describe('resolveAutoRouterWorkerBinding', () => {
     const binding = resolveAutoRouterWorkerBinding({
       config,
       intensity: 'high',
-      fallback: { providerProfileId: 'p-bal', modelId: 'sonnet-mid' },
+      fallback: { providerProfileId: 'p-bal', modelId: 'sonnet-mid', reasoningEffort: null },
     })
-    expect(binding).toEqual({ providerProfileId: 'p-bal', modelId: 'sonnet-mid' })
+    expect(binding).toEqual({ providerProfileId: 'p-bal', modelId: 'sonnet-mid', reasoningEffort: null })
   })
 })

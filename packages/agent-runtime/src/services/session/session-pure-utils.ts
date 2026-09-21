@@ -38,6 +38,7 @@ import type {
   SessionPermissionMode,
   SessionReference,
   RouterIntensity,
+  SessionReasoningEffort,
   SessionReferenceCandidate,
   TeamA2ATask,
   TeamModeConfig,
@@ -575,11 +576,15 @@ export function resolveAutoRouterWorkerBinding(params: {
   config: AutoRouterConfig
   intensity: RouterIntensity
   /** 本轮分流已解析出的执行器（缺配置时的回落目标）。 */
-  fallback: { providerProfileId: string; modelId: string }
-}): { providerProfileId: string; modelId: string } {
+  fallback: { providerProfileId: string; modelId: string; reasoningEffort: SessionReasoningEffort | null }
+}): { providerProfileId: string; modelId: string; reasoningEffort: SessionReasoningEffort | null } {
   const executor = findExecutorByIntensity(params.config, params.intensity)
   if (executor != null) {
-    return { providerProfileId: executor.providerProfileId, modelId: executor.modelId }
+    return {
+      providerProfileId: executor.providerProfileId,
+      modelId: executor.modelId,
+      reasoningEffort: executor.reasoningEffort ?? null,
+    }
   }
   return params.fallback
 }

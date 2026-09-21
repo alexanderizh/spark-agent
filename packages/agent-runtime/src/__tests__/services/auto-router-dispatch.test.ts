@@ -113,6 +113,23 @@ describe('AutoRouterService 分流决策链', () => {
     expect(call?.[1]?.timeoutMs).toBe(8_000)
   })
 
+  it('执行器显式推理强度 → 路由结果透传；未配置 → 缺省（跟随会话）', async () => {
+    const config = makeConfig()
+    config.executors[0] = {
+      ...config.executors[0]!,
+      reasoningEffort: 'xhigh',
+    }
+    const complete = okComplete('{"intensity":"high","decompose":false,"subtasks":[],"reason":"重构"}')
+    const service = makeService(complete)
+    const routed = await service.routeTurn(makeInput({ config }))
+    expect(routed.reasoningEffort).toBe('xhigh')
+
+    // 未配置推理强度的执行器：结果不带该字段（渲染端不展示、运行时跟随会话）
+    const plain = await makeService(okComplete('{"intensity":"low","decompose":false,"subtasks":[],"reason":"简单"}'))
+      .routeTurn(makeInput())
+    expect(plain.reasoningEffort).toBeUndefined()
+  })
+
   it('LLM 超时失败 → 规则兜底分类（含"重构" → high）', async () => {
     const complete = failComplete('HTTP timeout after 8000ms')
     const service = makeService(complete)
