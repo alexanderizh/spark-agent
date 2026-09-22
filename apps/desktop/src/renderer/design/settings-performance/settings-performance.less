@@ -869,6 +869,11 @@
     0 0 0 1px rgba(0, 0, 0, 0.04),
     0 6px 20px rgba(0, 0, 0, 0.12);
   pointer-events: auto;
+  /* 横幅 fixed 悬在窗口顶部、与 MacWindowDragHeader 拖拽区重叠：
+     app-region 只认显式声明、视觉覆盖不会自动抵消拖拽区（见
+     SubAppSurfaceHost.less 同款坑），不声明 no-drag 则横幅上的
+     关闭按钮与链接点击全部被拖拽吞掉。 */
+  -webkit-app-region: no-drag;
   animation: perf-notice-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 
   &::before {

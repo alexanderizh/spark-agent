@@ -72,9 +72,9 @@ const TRIPLE_SPECS: readonly TripleSpec[] = [
 ]
 
 const LEVEL_ROWS: ReadonlyArray<{ level: 'warning' | 'critical' | 'emergency'; desc: string }> = [
-  { level: 'warning', desc: '触发预警并限制新任务' },
-  { level: 'critical', desc: '暂停新派发，延迟后台任务' },
-  { level: 'emergency', desc: '暂停全部新任务，必要时终止排队任务' },
+  { level: 'warning', desc: '静默限流新任务，不弹通知' },
+  { level: 'critical', desc: '暂停新派发，不弹通知' },
+  { level: 'emergency', desc: '暂停全部新任务，即将溢出时弹通知' },
 ]
 
 interface PanelState {
@@ -105,8 +105,10 @@ function readPanelState(
     totalAgentProcessBudget: diagnostics?.diagnostics?.config.totalAgentProcessBudget ?? 8,
     maxMemberDispatches: diagnostics?.diagnostics?.config.maxMemberDispatches ?? 6,
     waveWidth: full?.workflowGovernance?.waveWidth ?? 4,
-    hostRssPct: thresholds?.hostRssPct ?? { warning: 25, critical: 35, emergency: 45 },
-    systemUsedPct: thresholds?.systemUsedPct ?? { warning: 80, critical: 88, emergency: 93 },
+    // 回退字面量须与 monitor-config 的 DEFAULT_PRESSURE_THRESHOLDS 保持一致
+    // （渲染层不依赖 agent-runtime，只能字面量兜底；运行时快照缺才走这里）。
+    hostRssPct: thresholds?.hostRssPct ?? { warning: 45, critical: 60, emergency: 75 },
+    systemUsedPct: thresholds?.systemUsedPct ?? { warning: 90, critical: 94, emergency: 97 },
     eventLoopDelayMs: thresholds?.eventLoopDelayMs ?? {
       warning: 300,
       critical: 600,
@@ -188,7 +190,7 @@ export function PerformanceConfigPanel({
   ): Promise<void> => {
     setState((s) => {
       const base = s.childrenCount.manual ??
-        s.childrenCount.derived ?? { warning: 16, critical: 32, emergency: 48 }
+        s.childrenCount.derived ?? { warning: 80, critical: 128, emergency: 160 }
       return {
         ...s,
         childrenCount: {
@@ -205,7 +207,7 @@ export function PerformanceConfigPanel({
         (full?.runtimeConfig?.thresholds.childrenCount.derived as Record<
           string,
           unknown
-        > | null) ?? { warning: 16, critical: 32, emergency: 48 }
+        > | null) ?? { warning: 80, critical: 128, emergency: 160 }
       thresholds.childrenCount = {
         ...cc,
         mode: 'manual',
@@ -313,16 +315,16 @@ export function PerformanceConfigPanel({
           <div className="r-main">
             <div className="r-title">子进程数阈值 · 治理口径 · 按核数与并发预算推导</div>
             <div className="r-desc">
-              治理口径只统计 claude / codex 家族子进程（每会话 5–9 个 MCP
-              桥与常驻池不计入，避免正常会话误报）。
+              治理口径统计 claude / codex 家族子进程及其内部 node 载体 （含会话挂载的 MCP server
+              进程，每会话常驻十几个属正常）， 因此阈值下限远高于日常用量，仅在进程数量失控时触发。
               {state.childrenCount.derived != null && cores != null && (
                 <>
                   {' '}
                   按本机基线（{cores} 逻辑核 / 预算 {state.totalAgentProcessBudget}）推导：警告{' '}
                   {Math.round(state.childrenCount.derived.warning)} / 严重{' '}
                   {Math.round(state.childrenCount.derived.critical)} / 危急{' '}
-                  {Math.round(state.childrenCount.derived.emergency)} 个，公式 max(下限, 核数×2/4/6,
-                  预算+4/12/24)。
+                  {Math.round(state.childrenCount.derived.emergency)} 个，公式 max(下限,
+                  核数×8/12/16, 预算+0/8/16)。
                 </>
               )}
               {state.childrenCount.mode === 'manual' &&
@@ -380,7 +382,7 @@ export function PerformanceConfigPanel({
                     value={
                       state.childrenCount.mode === 'manual' && state.childrenCount.manual != null
                         ? state.childrenCount.manual[row.level]
-                        : (state.childrenCount.derived?.[row.level] ?? 16)
+                        : (state.childrenCount.derived?.[row.level] ?? 80)
                     }
                     unit=" 个"
                     min={RANGES.childrenCount.min}

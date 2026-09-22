@@ -1,61 +1,60 @@
 /**
  * @module PressureNoticeHost
  *
- * 压力降级通知（M2 收尾 / M3 挂载）：监听 stream:resource-monitor:pressure-changed，
- * 三形态呈现（方案 §5 通知矩阵）——
- *  - 升入 warning：Toast 轻提示（不打断操作）；
- *  - 升入 critical / emergency：应用内常驻横幅（可手动关闭；压力恢复自动消失）；
- *  - 升入 emergency：同步发送一条系统通知；
- *  - 恢复至 nominal：横幅消失 +「性能已恢复」Toast。
- * 同一时刻仅显示最高级别横幅。页面加载前已发生的级别不补发通知
+ * 压力降级通知（M2 收尾 / M3 挂载）：监听 stream:resource-monitor:pressure-changed。
+ * 2026-09-23 产品决策：常态使用完全静默——warning（限流）/ critical（暂停新派发）
+ * 不再弹任何提示（状态在性能页可见），只有 emergency（即将溢出，已熔断全部派发）
+ * 才通知用户：应用内常驻横幅 + 一条系统通知；压力降回 emergency 以下横幅消失，
+ * 完全恢复（nominal）时补一条「电脑资源已恢复」。页面加载前已发生的级别不补发
  * （历史回看走性能页事件列表）。
+ * 文案导向（同日用户反馈）：主语必须是「电脑资源压力」而非「应用性能」——
+ * 这是系统资源保护机制的说辞，避免用户误以为应用本身出了故障。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, OctagonAlert, X } from 'lucide-react'
+import { OctagonAlert, X } from 'lucide-react'
 import type { PressureLevel, ResourcePressureChangedPayload } from '@spark/protocol'
-import { pressureActionCopy } from './performance-format'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 
 interface BannerState {
-  level: 'critical' | 'emergency'
   changedAt: string
   triggeredBy: string[]
 }
 
-const TRIGGER_LABELS: Record<string, string> = {
-  'system-used-pct': '系统内存',
-  'app-footprint-pct': '应用占用',
-  'host-rss-pct': '宿主内存',
-  'children-rss-pct': '子进程内存',
-  'children-count': '子进程数',
-  'event-loop-delay-ms': '事件循环延迟',
+/**
+ * 触发指标 → 用户视角的现象描述（2026-09-23 文案决策：主语是「电脑」，
+ * 不用指标名——用户关心的是「电脑怎么了」，不是 host-rss 与 children-rss
+ * 的区别；四个内存指标共用同一现象句，去重后只显示一次）。
+ */
+const TRIGGER_PHENOMENA: Record<string, string> = {
+  'system-used-pct': '内存占用接近上限',
+  'app-footprint-pct': '内存占用接近上限',
+  'host-rss-pct': '内存占用接近上限',
+  'children-rss-pct': '内存占用接近上限',
+  'children-count': '后台进程数量过多',
+  'event-loop-delay-ms': '系统响应明显变慢',
 }
 
-function triggerSummary(keys: string[]): string {
-  const labels = keys.map((key) => TRIGGER_LABELS[key] ?? key)
-  return labels.length > 0 ? labels.join('、') : '资源指标'
-}
-
-function bannerTitle(level: 'critical' | 'emergency'): string {
-  return level === 'emergency' ? '危急：已暂停全部新任务派发' : '性能降级：新任务派发已暂停'
-}
-
-function bannerBody(level: 'critical' | 'emergency', keys: string[]): string {
-  const triggers = triggerSummary(keys)
-  if (level === 'emergency') {
-    return `${triggers}压力越过危急阈值，${pressureActionCopy('emergency')}。进行中任务的输入已保留，压力恢复后自动重新调度。建议结束闲置会话或稍后重启应用释放资源。`
+function describePhenomena(keys: string[]): string {
+  const seen = new Set<string>()
+  for (const key of keys) {
+    const label = TRIGGER_PHENOMENA[key]
+    if (label != null) seen.add(label)
   }
-  return `${triggers}压力超过严重阈值，${pressureActionCopy('critical')}。进行中的任务不受影响，压力恢复后自动重新派发。`
+  return seen.size > 0 ? [...seen].join('、') : '资源占用接近饱和'
+}
+
+function bannerBody(keys: string[]): string {
+  return `检测到电脑整体${describePhenomena(keys)}。为避免电脑进一步变慢，Spark 已主动暂停新任务派发——这是系统资源保护机制，不是应用故障。进行中的任务不受影响；关闭闲置应用或会话、释放电脑资源后，会自动恢复派发。`
 }
 
 /** emergency 系统通知（Electron 渲染层 web Notification；失败静默——横幅仍在）。 */
 function sendSystemNotice(keys: string[]): void {
   try {
     if (typeof Notification === 'undefined') return
-    const body = `${triggerSummary(keys)}压力越过危急阈值，已暂停全部新任务派发。点击查看性能页详情。`
-    const notice = new Notification('SparkWork 性能危急', { body, silent: true })
+    const body = `电脑整体${describePhenomena(keys)}，Spark 已暂停新任务派发以保护系统流畅。释放电脑资源后将自动恢复。`
+    const notice = new Notification('电脑资源压力提示', { body, silent: true })
     notice.onclick = () => {
       window.focus()
       notice.close()
@@ -93,7 +92,6 @@ export function PressureNoticeHost() {
           payload.previousLevel,
           payload.level,
           payload.triggeredBy,
-          navigateToPerformance,
         )
       },
     )
@@ -104,17 +102,13 @@ export function PressureNoticeHost() {
   return (
     <div className="perf-notice-host">
       {banner != null && (
-        <div className={`perf-notice ${banner.level === 'critical' ? 'lvl-c' : 'lvl-e'}`}>
+        <div className="perf-notice lvl-e">
           <span className="n-ic">
-            {banner.level === 'emergency' ? (
-              <OctagonAlert size={17} />
-            ) : (
-              <AlertTriangle size={17} />
-            )}
+            <OctagonAlert size={17} />
           </span>
           <div className="n-c">
-            <div className="n-title">{bannerTitle(banner.level)}</div>
-            <div className="n-body">{bannerBody(banner.level, banner.triggeredBy)}</div>
+            <div className="n-title">电脑资源压力较高，已暂停新任务</div>
+            <div className="n-body">{bannerBody(banner.triggeredBy)}</div>
             <div className="n-actions">
               <button className="n-link" onClick={navigateToPerformance}>
                 查看性能
@@ -139,39 +133,19 @@ function handleLevelChange(
   previousLevel: PressureLevel,
   level: PressureLevel,
   triggeredBy: string[],
-  navigateToPerformance: () => void,
 ): void {
-  const upgraded = rank(level) > rank(previousLevel)
-
-  if (level === 'nominal') {
+  // emergency 以下全部静默（2026-09-23 产品决策）：warning/critical 仅内部
+  // 限流/暂停派发，性能页可见；弹窗提示只留给即将溢出的 emergency。
+  if (level !== 'emergency') {
     setBanner(null)
-    if (previousLevel !== 'nominal') {
-      toast.success('性能已恢复', { duration: 4000 })
+    if (level === 'nominal' && previousLevel === 'emergency') {
+      toast.success('电脑资源已恢复，任务派发已继续', { duration: 4000 })
     }
     return
   }
 
-  if (level === 'warning') {
-    setBanner(null)
-    if (upgraded) {
-      toast.warning('内存压力升高，新任务将延迟排队', {
-        duration: 8000,
-        actions: [{ label: '查看性能', onClick: navigateToPerformance }],
-      })
-    }
-    return
-  }
-
-  // critical / emergency：常驻横幅（同一时刻仅最高级别）。
-  setBanner((current) => {
-    if (current != null && rank(current.level) > rank(level)) return current
-    return {
-      level: level as 'critical' | 'emergency',
-      changedAt: new Date().toISOString(),
-      triggeredBy,
-    }
-  })
-  if (level === 'emergency' && upgraded) {
+  setBanner({ changedAt: new Date().toISOString(), triggeredBy })
+  if (rank(level) > rank(previousLevel)) {
     sendSystemNotice(triggeredBy)
   }
 }

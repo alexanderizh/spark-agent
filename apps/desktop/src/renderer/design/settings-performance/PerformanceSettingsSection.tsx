@@ -179,8 +179,9 @@ export function PerformanceSettingsSection() {
       />
 
       <p className="footnote">
-        通知规则：warning 升级以 Toast 轻提示；critical / emergency 以应用内常驻横幅提示 （emergency
-        同时发送系统通知），压力恢复后横幅自动消失并提示「性能已恢复」。
+        通知规则：warning / critical 仅静默降级（限流、暂停新派发），不弹任何提示；只有
+        emergency（电脑资源即将耗尽、已暂停全部新任务派发）才弹常驻横幅并发送系统通知。这是
+        电脑资源保护机制——压力恢复后横幅自动消失并提示「电脑资源已恢复」。
       </p>
     </section>
   )
