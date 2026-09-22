@@ -149,7 +149,8 @@ describe('registerResourceMonitorIpc', () => {
       available: true,
       diagnostics,
     })
-    // governor 未创建 → available=false + diagnostics=null（渲染端「活动治理」空态）
+    // handler 防御位：mock 返回 null → available=false（生产路径 session 侧
+    // 已触发惰性创建、恒返回诊断，此分支仅覆盖异常兜底语义）
     const { monitor: bare } = makeMonitorFixture()
     registerResourceMonitorIpc(makeSessionFactory(bare, null, null))
     await expect(

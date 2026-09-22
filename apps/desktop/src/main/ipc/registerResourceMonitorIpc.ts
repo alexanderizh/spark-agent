@@ -46,7 +46,9 @@ export function registerResourceMonitorIpc(getSessionService: () => SessionServi
     return { events: monitor.getRecentPressureEvents(request.limit) }
   })
 
-  // 闸门诊断（M3「活动治理」双池占用表数据源；不触发 governor 惰性创建）。
+  // 闸门诊断（M3「活动治理」双池占用表数据源）。诊断会触发闸门惰性创建
+  // （应用级常驻结构，创建零副作用），避免「尚未团队派发」空闲态渲染成
+  // 「诊断不可用」死态；available 保留作协议防御位。
   typedIpcHandle('dispatch-governor:get-diagnostics', async () => {
     const diagnostics = sessionService.getDispatchGovernorDiagnostics()
     return { available: diagnostics != null, diagnostics }

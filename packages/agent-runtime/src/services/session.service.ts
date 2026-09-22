@@ -1124,9 +1124,14 @@ export class SessionService {
       raw != null && typeof raw === 'object' ? (raw as Partial<DispatchGovernanceConfig>) : null
   }
 
-  /** 闸门诊断（只读，不触发惰性创建；IPC dispatch-governor:get-diagnostics 消费）。 */
-  getDispatchGovernorDiagnostics(): DispatchGovernorDiagnostics | null {
-    return this.dispatchGovernor?.diagnostics() ?? null
+  /**
+   * 闸门诊断（IPC dispatch-governor:get-diagnostics 消费）。
+   * 诊断会触发惰性创建：闸门是应用级常驻结构（纯内存信号量 + 配置），
+   * 惰性创建只是实现细节——若诊断只读，「尚未发生过团队派发」的正常空闲态
+   * 会在性能页呈现为「诊断不可用」死态，误导用户以为应用异常。
+   */
+  getDispatchGovernorDiagnostics(): DispatchGovernorDiagnostics {
+    return this.getDispatchGovernor().diagnostics()
   }
 
   /** 供 M2 压力联动：把 ResourceMonitor 的级别灌给闸门（联动由 monitor 回调自动驱动，此方法保留手动注入口）。 */

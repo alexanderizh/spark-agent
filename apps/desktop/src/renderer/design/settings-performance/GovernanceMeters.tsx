@@ -53,7 +53,7 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
       : [
           {
             key: 'main',
-            name: 'Agent 派发（主池）',
+            name: '成员派发（主池）',
             inUse: snapshot.mainInUse,
             capacity: snapshot.mainCapacity,
             waiting: snapshot.mainWaiting,
@@ -89,7 +89,7 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
   if (snapshot == null) {
     return (
       <div className="card">
-        <div className="ev-empty">闸门诊断不可用（governor 尚未创建或已停用）</div>
+        <div className="ev-empty">暂无闸门运行数据（将在首次任务派发后显示）</div>
       </div>
     )
   }
