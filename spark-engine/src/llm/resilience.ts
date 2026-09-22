@@ -73,12 +73,17 @@ export class ResilientLlmService implements LlmService {
         } catch (error) {
           if (context.signal.aborted || isAbortError(error)) throw error
           lastError = error
-          const recoverableMalformedToolOutput =
-            output.canResetForRetry && isMalformedToolJson(error)
-          if (output.hasMeaningfulOutput && !recoverableMalformedToolOutput) {
+          // A replay is safe as long as no settled tool call was emitted: the
+          // retry delta carries resetOutput, and every consumer (consume's
+          // accumulator, the TUI live buffer, the non-interactive CLI note)
+          // discards the failed attempt before the replayed stream arrives.
+          // Once a tool call landed, replaying could surface a second, divergent
+          // call for the same step, so the failure stays terminal.
+          const replayUnsafe = output.hasMeaningfulOutput && !output.canResetForRetry
+          if (replayUnsafe) {
             throw partialStreamError(route.id, routeIndex, attempt, output, error)
           }
-          if (!isRetryable(error) && !recoverableMalformedToolOutput) throw error
+          if (!isRetryable(error) && !isMalformedToolJson(error)) throw error
           if (attempt < this.#retry.maxRetries) {
             const requestedDelayMs = retryAfterDelay(error)
             if (requestedDelayMs !== undefined && requestedDelayMs > this.#retry.maxDelayMs) {
@@ -149,6 +154,11 @@ class StreamOutputState {
     return this.#textCharacters > 0 || this.#thinkingCharacters > 0 || this.#toolCalls > 0
   }
 
+  /**
+   * Whether the failed attempt can be replayed: text and thinking are dropped
+   * by consumers via the retry delta's resetOutput flag, while a settled tool
+   * call may already have been surfaced downstream and must not see a rival.
+   */
   get canResetForRetry(): boolean {
     return this.#toolCalls === 0
   }

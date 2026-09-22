@@ -98,26 +98,74 @@ describe('LLM retry and failover safety', () => {
     expect(await collect(service)).toEqual([{ type: 'text', text: 'backup' }, { type: 'done' }])
   })
 
-  it('suppresses replay after any visible delta to prevent duplicate output', async () => {
+  it('retries after visible text output by resetting the partial attempt', async () => {
+    let calls = 0
     const service = new ResilientLlmService({
       routes: [
         {
           id: 'primary',
           service: {
             async *stream() {
-              yield { type: 'text', text: 'partial' } as const
+              calls += 1
+              if (calls === 1) {
+                yield { type: 'thinking', text: 'half reasoning' } as const
+                yield { type: 'text', text: 'partial' } as const
+                throw new KernelError('llm.connection_reset', 'reset', { retryable: true })
+              }
+              yield { type: 'text', text: 'recovered' } as const
+              yield { type: 'done' } as const
+            },
+          },
+        },
+        { id: 'backup', service: scripted(() => [{ type: 'text', text: 'backup' }]) },
+      ],
+      retry: { maxRetries: 1, initialDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
+    })
+    // The generator has already forwarded the failed attempt's deltas —
+    // discarding them is the consumer's job via the retry delta's resetOutput.
+    expect(await collect(service)).toEqual([
+      { type: 'thinking', text: 'half reasoning' },
+      { type: 'text', text: 'partial' },
+      {
+        type: 'retry',
+        routeId: 'primary',
+        attempt: 1,
+        maxRetries: 1,
+        delayMs: 0,
+        resetOutput: true,
+        error: { code: 'llm.connection_reset', message: 'reset' },
+      },
+      { type: 'text', text: 'recovered' },
+      { type: 'done' },
+    ])
+    expect(calls).toBe(2)
+  })
+
+  it('suppresses replay after a settled tool call to avoid a divergent second call', async () => {
+    const service = new ResilientLlmService({
+      routes: [
+        {
+          id: 'primary',
+          service: {
+            async *stream() {
+              yield {
+                type: 'tool_call',
+                callId: 'call-1',
+                name: 'read',
+                args: { path: 'README.md' },
+              } as const
               throw new KernelError('llm.connection_reset', 'reset', { retryable: true })
             },
           },
         },
-        { id: 'backup', service: scripted(() => [{ type: 'text', text: 'duplicate' }]) },
+        { id: 'backup', service: scripted(() => [{ type: 'text', text: 'backup' }]) },
       ],
       retry: { maxRetries: 2 },
     })
     await expect(collect(service)).rejects.toMatchObject({
       code: 'llm.partial_stream_failed',
       detail: {
-        output: { textCharacters: 7, thinkingCharacters: 0, toolCalls: 0, visible: true },
+        output: { textCharacters: 0, thinkingCharacters: 0, toolCalls: 1, visible: false },
         cause: {
           code: 'llm.connection_reset',
           message: 'reset',
