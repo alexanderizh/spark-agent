@@ -185,6 +185,13 @@ export type {
 } from './plugin.repository.js'
 export { SettingsRepository } from './settings.repository.js'
 export type { SettingsRow } from './settings.repository.js'
+// 资源压力级别变更事件（性能监控 M1）
+export { ResourcePressureRepository } from './resource-pressure.repository.js'
+export type {
+  InsertResourcePressureEventParams,
+  ResourcePressureEventRow,
+  ResourcePressureLevelRow,
+} from './resource-pressure.repository.js'
 export {
   SubAppRepository,
   SubAppConflictError,

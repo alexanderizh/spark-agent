@@ -1819,6 +1819,30 @@ export const IpcSchemaRegistry = {
   'codex-runtime:diagnostics': z.object({}).strict(),
   'codex-runtime:restart-idle': z.object({}).strict(),
 
+  // 资源性能监控（M1）与并发闸门诊断（M0）
+  'resource-monitor:get-snapshot': z
+    .object({
+      detail: z.enum(['summary', 'full']).optional(),
+    })
+    .strict(),
+  'resource-monitor:get-history': z
+    .object({
+      windowMs: z.number().int().min(60_000).max(7_200_000).optional(),
+    })
+    .strict(),
+  'resource-monitor:subscribe': z
+    .object({
+      enabled: z.boolean(),
+      minIntervalMs: z.number().int().min(1_000).max(600_000).optional(),
+    })
+    .strict(),
+  'resource-monitor:get-pressure-events': z
+    .object({
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
+  'dispatch-governor:get-diagnostics': z.object({}).strict(),
+
   // Playwright Browser Automation
   'playwright:status': z.object({}),
   'playwright:install': z.object({

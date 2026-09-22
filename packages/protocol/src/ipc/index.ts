@@ -166,6 +166,22 @@ import type {
   CodexRuntimeRestartIdleRequest,
   CodexRuntimeRestartIdleResponse,
 } from '../codex-runtime.js'
+import type {
+  DispatchGovernorGetDiagnosticsRequest,
+  DispatchGovernorGetDiagnosticsResponse,
+} from '../dispatch-governor.js'
+import type {
+  ResourceMonitorGetHistoryRequest,
+  ResourceMonitorGetHistoryResponse,
+  ResourceMonitorGetPressureEventsRequest,
+  ResourceMonitorGetPressureEventsResponse,
+  ResourceMonitorGetSnapshotRequest,
+  ResourceMonitorGetSnapshotResponse,
+  ResourceMonitorSubscribeRequest,
+  ResourceMonitorSubscribeResponse,
+  ResourceMonitorSnapshotStreamPayload,
+  ResourcePressureChangedPayload,
+} from '../resource-monitor.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -7520,6 +7536,28 @@ export interface IpcChannelMap
   'codex-runtime:diagnostics': [CodexRuntimeDiagnosticsRequest, CodexRuntimeDiagnosticsResponse]
   'codex-runtime:restart-idle': [CodexRuntimeRestartIdleRequest, CodexRuntimeRestartIdleResponse]
 
+  // 资源性能监控（M1）：快照/历史拉取 + 订阅制节流推送的订阅开关。
+  'resource-monitor:get-snapshot': [
+    ResourceMonitorGetSnapshotRequest,
+    ResourceMonitorGetSnapshotResponse,
+  ]
+  'resource-monitor:get-history': [
+    ResourceMonitorGetHistoryRequest,
+    ResourceMonitorGetHistoryResponse,
+  ]
+  'resource-monitor:subscribe': [ResourceMonitorSubscribeRequest, ResourceMonitorSubscribeResponse]
+  // 压力事件回看（M3 性能页「治理事件」列表）。
+  'resource-monitor:get-pressure-events': [
+    ResourceMonitorGetPressureEventsRequest,
+    ResourceMonitorGetPressureEventsResponse,
+  ]
+
+  // 并发闸门诊断（M0）：waitingCount 可观测（性能页活动治理 + 排队提示）。
+  'dispatch-governor:get-diagnostics': [
+    DispatchGovernorGetDiagnosticsRequest,
+    DispatchGovernorGetDiagnosticsResponse,
+  ]
+
   // Shell Environment & Runtime Detection
   'env:get-status': [EnvGetStatusRequest, EnvGetStatusResponse]
   'env:recheck': [EnvRecheckRequest, EnvRecheckResponse]
@@ -7989,6 +8027,10 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
 export interface IpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
+  /** 资源压力级别变更（M1）：无论有无订阅恒推。 */
+  'stream:resource-monitor:pressure-changed': ResourcePressureChangedPayload
+  /** 资源快照周期推送（M1）：订阅制节流（50/60/120s 档），无订阅不推。 */
+  'stream:resource-monitor:snapshot': ResourceMonitorSnapshotStreamPayload
   /** Computer Use 操作时间线（回放与实时事件按 computerSessionId + seq 合并） */
   'stream:computer-use:activity-event': ComputerUseEvent
   /** Authenticated main-process request for a whitelisted SparkWork UI command. */
