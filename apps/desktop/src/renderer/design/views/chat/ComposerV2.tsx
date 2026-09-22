@@ -5813,7 +5813,10 @@ function ProviderModelPicker({
         triggerNode.closest<HTMLElement>('.chat-main-empty[data-empty-theme]') ?? document.body
       }
       onOpenChange={(nextOpen) => {
-        if (disabled || (conversationalProviders.length === 0 && autoRouterProviders.length === 0)) {
+        if (
+          disabled ||
+          (conversationalProviders.length === 0 && autoRouterProviders.length === 0)
+        ) {
           setOpen(false)
           return
         }
@@ -5903,9 +5906,7 @@ function ProviderModelPicker({
                       key={`auto-router:${router.id}`}
                       className="composer-auto-router-row"
                       // 悬浮配置卡片（替代原生 title：卡片是唯一提示源，避免双重提示）
-                      onMouseEnter={(event) =>
-                        hoverAutoRouterRow(router.id, event.currentTarget)
-                      }
+                      onMouseEnter={(event) => hoverAutoRouterRow(router.id, event.currentTarget)}
                       onMouseLeave={leaveAutoRouterRow}
                       onFocus={(event) =>
                         hoverAutoRouterRow(router.id, event.currentTarget, { immediate: true })
@@ -5937,6 +5938,7 @@ function ProviderModelPicker({
                           ) : undefined
                         }
                         onSelect={() => {
+                          dismissAutoRouterHoverCard()
                           setOpen(false)
                           setSearch('')
                           // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
