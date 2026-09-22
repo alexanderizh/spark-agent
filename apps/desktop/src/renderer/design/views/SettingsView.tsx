@@ -52,6 +52,7 @@ import { UsageRankingCard } from './UsageRankingCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
 import { OptionalCapabilitiesSettingsCard } from '../optional-capabilities/OptionalCapabilitiesSettingsCard'
 import { CodexRuntimeDiagnosticsCard } from '../optional-capabilities/CodexRuntimeDiagnosticsCard'
+import { PerformanceSettingsSection } from '../settings-performance/PerformanceSettingsSection'
 import { FontAssetControl } from '../components/FontAssetControl'
 import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './onboarding-state'
@@ -457,6 +458,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           keywords: ['辅助功能', '屏幕录制', '输入控制', '系统权限', 'computer use'],
         },
         {
+          id: 'performance',
+          icon: <Icons.Activity size={13} />,
+          label: '性能',
+          keywords: ['性能监控', '内存', '压力', '并发', '降级', '阈值', '资源占用', 'performance'],
+        },
+        {
           id: 'integrity',
           icon: <Icons.Shield size={13} />,
           label: '完整性',
@@ -544,6 +551,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
     'sub-app': SubAppRuntimeSettingsCard,
     'computer-use': ComputerUseSettingsSection,
+    performance: PerformanceSettingsSection,
     integrity: IntegritySection,
     playwright: PlaywrightStatusCard,
     telemetry: TelemetrySection,

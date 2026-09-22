@@ -71,6 +71,7 @@ import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { shouldOverlaySidebar } from './sidebarResponsiveLayout'
 import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
+import { PressureNoticeHost } from './design/settings-performance/PressureNoticeHost'
 import sparkLogo from './assets/spark-logo.png'
 import {
   enqueueUserQuestions,
@@ -323,8 +324,21 @@ interface SidebarNavItem {
 // 重启回主视图的既有设计一致）。仅记录模式专属视图；智能体/模型服务/设置等
 // L3 全局共享页两边都能进，不算任一模式的位置，不参与记忆。
 const MODE_OWNED_VIEWS: Record<WorkspaceMode, ReadonlySet<ViewId>> = {
-  workbench: new Set<ViewId>(['chat', 'workflows', 'board', 'scheduled-tasks', 'sub-apps', 'sub-app']),
-  canvas: new Set<ViewId>(['canvas', 'canvas-workflows', 'canvas-prompts', 'quick-create', 'canvas-video-tasks']),
+  workbench: new Set<ViewId>([
+    'chat',
+    'workflows',
+    'board',
+    'scheduled-tasks',
+    'sub-apps',
+    'sub-app',
+  ]),
+  canvas: new Set<ViewId>([
+    'canvas',
+    'canvas-workflows',
+    'canvas-prompts',
+    'quick-create',
+    'canvas-video-tasks',
+  ]),
 }
 // 目标模式没去过（无记忆）时回落的各模式主视图，即旧行为。
 const MODE_MAIN_VIEW: Record<WorkspaceMode, ViewId> = {
@@ -2271,6 +2285,7 @@ function Shell() {
           </Modal>
 
           {t.view !== 'onboarding' && <OptionalCapabilityCenter />}
+          <PressureNoticeHost />
           <ToastContainer />
         </div>
       </SubAppSurfaceProvider>
