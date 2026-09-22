@@ -11,19 +11,25 @@ async function tick() {
   for (let i = 0; i < 20; i += 1) await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-async function fixture() {
-  const env = createDeterministicEnv([
-    toolCall(
-      'write',
-      'write',
-      { path: 'a.txt', content: 'hello' },
-      {
-        text: 'Preparing the requested write.',
-        thinking: 'Inspect the file first.',
-      },
-    ),
-    text('Write finished.'),
-  ])
+const FIXTURE_SCRIPT = [
+  toolCall(
+    'write',
+    'write',
+    { path: 'a.txt', content: 'hello' },
+    {
+      text: 'Preparing the requested write.',
+      thinking: 'Inspect the file first.',
+    },
+  ),
+  text('Write finished.'),
+]
+
+async function fixture(extraTurns = 0) {
+  // FakeModel consumes its script globally across turns, so extra turns need
+  // their own copy of the reply sequence.
+  const script = [...FIXTURE_SCRIPT]
+  for (let turn = 0; turn < extraTurns; turn += 1) script.push(...FIXTURE_SCRIPT)
+  const env = createDeterministicEnv(script)
   const approver = new InteractiveApprover()
   const agent = Agent.open({
     cwd: '/workspace',
@@ -177,8 +183,8 @@ describe('TUI execution feedback', () => {
     }
   })
 
-  it('toggles settled thinking in the scrollable transcript', async () => {
-    const { session, mount } = await fixture()
+  it('applies the thinking toggle to transcript rows settled afterwards', async () => {
+    const { session, mount } = await fixture(2)
     session.setPermissionMode('auto')
     const app = mount()
     try {
@@ -186,14 +192,24 @@ describe('TUI execution feedback', () => {
       await tick()
       app.stdin.write('\r')
       await tick()
+      // Settled rows stream into the scrollback and cannot be withdrawn, so
+      // the toggle only hides thinking rows that settle after it.
       expect(app.lastFrame()).toContain('Inspect the file first.')
       app.stdin.write('\u000f')
       await tick()
-      expect(app.lastFrame()).not.toContain('Inspect the file first.')
-      expect(app.lastFrame()).toContain('Write finished.')
+      app.stdin.write('write again')
+      await tick()
+      app.stdin.write('\r')
+      await tick()
+      expect(app.lastFrame()?.split('Inspect the file first.')).toHaveLength(2)
+      expect(app.lastFrame()?.split('Write finished.')).toHaveLength(3)
       app.stdin.write('\u000f')
       await tick()
-      expect(app.lastFrame()).toContain('Inspect the file first.')
+      app.stdin.write('write third')
+      await tick()
+      app.stdin.write('\r')
+      await tick()
+      expect(app.lastFrame()?.split('Inspect the file first.')).toHaveLength(3)
     } finally {
       app.unmount()
     }

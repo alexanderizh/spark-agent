@@ -11,7 +11,6 @@ export interface StatusBarProps {
   readonly effort: string
   readonly perf?: string | undefined
   readonly cwd?: string | undefined
-  readonly scrollHint?: boolean
   /**
    * Turn (or self-update) in flight: the leading indent shows the animated
    * spinner so running state is anchored beside the model name.
@@ -49,12 +48,6 @@ export function StatusBar(props: StatusBarProps): ReactElement {
     segments.push(
       <Text key="cwd" color={props.theme.dim}>
         {props.cwd}
-      </Text>,
-    )
-  if (props.scrollHint)
-    segments.push(
-      <Text key="scroll" color={props.theme.warn}>
-        {props.capabilities.unicode ? '↑ 已暂停 · End 回到底部' : 'paused · End to bottom'}
       </Text>,
     )
 

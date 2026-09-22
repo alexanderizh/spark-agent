@@ -38,7 +38,6 @@ import {
 import { DEFAULT_REASONING_EFFORT, EffortPicker } from './components/effort-picker.js'
 import { ActiveTools, Transcript } from './components/rows.js'
 import { SessionPicker } from './components/session-picker.js'
-import { ScrollRegion } from './components/scroll-region.js'
 import { useTerminalCapabilities } from './terminal-resize.js'
 import { StatusBar } from './components/status-bar.js'
 import { InputEditor } from './components/input-editor.js'
@@ -218,7 +217,6 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
   const [updateRunning, setUpdateRunning] = useState(false)
   const [updateCheckOnly, setUpdateCheckOnly] = useState(false)
-  const [outputScrolled, setOutputScrolled] = useState(false)
   const controllers = useRef<AbortController[]>([])
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -686,7 +684,11 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
     applyPermissionMode(nextPermissionMode(permissionMode))
   }, [activeTurns, applyPermissionMode, permissionMode, setNotice])
 
-  const scrollableOutput = capabilities.height !== undefined
+  // Settled transcript rows stream into the terminal scrollback (ink Static):
+  // history stays scrollable and selectable with the terminal's native
+  // controls, and only the live strip below is redrawn (Claude Code / Codex
+  // CLI behavior). Keeping rows inside a fixed redrawn viewport instead traps
+  // them out of the scrollback, so wheel-up shows nothing earlier.
   const output = (
     <>
       {empty && !pickerOpen && (
@@ -698,18 +700,17 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
           theme={theme}
         />
       )}
-      {/* Remount on session switch; the Static fallback also needs a reset
-          because a shorter/equal replacement transcript reuses row positions. */}
+      {/* Remount on session switch so a shorter/equal replacement transcript
+          cannot reuse the previous session's Static row positions. */}
       <Transcript
         key={session.sessionId}
         rows={
-          !scrollableOutput || showThinking
+          showThinking
             ? projection.settled
             : projection.settled.filter((row) => row.kind !== 'thinking')
         }
         theme={theme}
         capabilities={capabilities}
-        staticOutput={!scrollableOutput}
       />
       {showThinking && liveThinking && (
         <Box marginTop={1}>
@@ -851,23 +852,8 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
   )
 
   return (
-    <Box
-      flexDirection="column"
-      width={capabilities.width}
-      {...(capabilities.height === undefined ? {} : { height: capabilities.height })}
-    >
-      {scrollableOutput ? (
-        <ScrollRegion
-          active={
-            !pending && !pickerOpen && !permPickerOpen && !effortPickerOpen && !sessionPickerOpen
-          }
-          onScrollStateChange={setOutputScrolled}
-        >
-          {output}
-        </ScrollRegion>
-      ) : (
-        output
-      )}
+    <Box flexDirection="column" width={capabilities.width}>
+      {output}
       {overlays}
       <InputEditor
         active={!pickerOpen}
@@ -903,7 +889,6 @@ export function SparkTuiApp(props: SparkTuiAppProps): ReactElement {
         effort={reasoningEffort}
         perf={perfText || undefined}
         cwd={formatCwd(props.cwd)}
-        scrollHint={outputScrolled}
         running={activeTurns > 0 || updateRunning}
         capabilities={capabilities}
         theme={theme}

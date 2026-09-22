@@ -18,7 +18,24 @@ import {
   type DraftBlock,
 } from './input-image-blocks.js'
 import { PickerRow } from './picker-layout.js'
-import { isMouseInput } from './scroll-region.js'
+
+const SGR_MOUSE_PREFIX = '\u001b[<'
+const PARSED_SGR_MOUSE_PREFIX = '[<'
+
+/**
+ * Mouse reports must never become literal text in the command editor. Terminals
+ * emit SGR mouse sequences (for example during text selection drag) on stdin
+ * even though the TUI leaves mouse tracking off; drop them before the editor
+ * can insert them as input.
+ */
+function isMouseInput(input: string): boolean {
+  const prefix = input.startsWith(SGR_MOUSE_PREFIX)
+    ? SGR_MOUSE_PREFIX
+    : input.startsWith(PARSED_SGR_MOUSE_PREFIX)
+      ? PARSED_SGR_MOUSE_PREFIX
+      : undefined
+  return prefix !== undefined && /^(?:\d+);\d+;\d+[mM]$/.test(input.slice(prefix.length))
+}
 
 /** One-line feedback shown under the input (clipboard errors, intake hints). */
 interface ImageNotice {
