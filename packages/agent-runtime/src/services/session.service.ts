@@ -109,6 +109,28 @@ import { normalizeReasoningBudgetTokens, SparkError } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { createTeamDispatchGovernanceHooks } from './team-dispatch-governance.js'
+import { DispatchGovernor } from './dispatch-governor/dispatch-governor.js'
+import type {
+  DispatchGovernanceConfig,
+  DispatchGovernorDiagnostics,
+} from './dispatch-governor/dispatch-governor.js'
+import {
+  DEFAULT_WORKFLOW_EXECUTION_GOVERNANCE,
+  normalizeWorkflowExecutionGovernance,
+  type WorkflowExecutionGovernance,
+} from './dispatch-governor/governance-config.js'
+import {
+  DEFAULT_IN_PROCESS_TOOL_RESULT_GOVERNANCE,
+  governInProcessToolResult,
+  normalizeInProcessToolResultGovernance,
+  wrapTeamToolDefinitionsWithGovernance,
+  type InProcessToolResultGovernanceConfig,
+} from './in-process-tool-result-governance.js'
+import {
+  normalizeWorkflowMemoryGovernance,
+  type WorkflowMemoryGovernance,
+} from './workflow/workflow-memory-governance.js'
+import { ResourceMonitorService } from './resource-monitor/index.js'
 import {
   TEAM_DISPATCH_AUTO_CONTINUATION_PRESENTATION,
   TEAM_DISPATCH_AUTO_CONTINUATION_PROMPT,
@@ -481,10 +503,7 @@ import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
 import { ModelService } from './model.service.js'
-import {
-  AutoRouterService,
-  type AutoRouterRouteResult,
-} from './auto-router.service.js'
+import { AutoRouterService, type AutoRouterRouteResult } from './auto-router.service.js'
 import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
@@ -848,7 +867,18 @@ function buildGoalIterationPrompt(
  * `canvasMcpProvider(sessionId)` 拿到 in-process MCP server 配置；若 session
  * 没有 attach 到画布弹窗则返回 null，工具集不挂载。
  */
-export type CanvasMcpProvider = (sessionId: string) => Promise<{
+/** 画布/工作流派发桥的会话上下文（M4：in-process 工具结果治理接线）。 */
+export interface BridgeWorkspaceContext {
+  /** 会话工作区根（artifact 归档落点）；不可用时省略（桥侧跳过治理）。 */
+  workspaceRootPath?: string | null
+  /** in-process 工具结果 envelope 化阈值（getInProcessToolResultGovernance）。 */
+  toolResultMaxChars?: number
+}
+
+export type CanvasMcpProvider = (
+  sessionId: string,
+  context?: BridgeWorkspaceContext,
+) => Promise<{
   server?: import('../sdk/types.js').SDKMcpServerConfig | undefined
   allowedTools: string[]
   toolSchemas?: ReadonlyArray<CanvasToolSchema> | undefined
@@ -862,7 +892,10 @@ export type CanvasMcpProvider = (sessionId: string) => Promise<{
  * 与 CanvasMcpProvider 同构（E2-1 对称复刻）；工具作用于“编辑器当前打开的图”，
  * 由渲染端工具 handler 执行时实时读取。
  */
-export type WorkflowMcpProvider = (sessionId: string) => Promise<{
+export type WorkflowMcpProvider = (
+  sessionId: string,
+  context?: BridgeWorkspaceContext,
+) => Promise<{
   server?: import('../sdk/types.js').SDKMcpServerConfig | undefined
   allowedTools: string[]
   toolSchemas?: ReadonlyArray<WorkflowToolSchema> | undefined
@@ -1035,9 +1068,138 @@ export class SessionService {
         new TeamDispatchRepository(this.db),
         undefined,
         new TeamDiscussionRepository(this.db),
+        undefined,
+        undefined,
+        { governor: this.getDispatchGovernor() },
       )
     }
     return this.teamDispatchService
+  }
+
+  // ─── M0 并发治理接线（惰性 getter，对齐 getTeamDispatchService 先例） ─────────
+
+  private dispatchGovernor: DispatchGovernor | null = null
+  /** governor 尚未创建时暂存配置（桌面装配层启动灌注 / settings 热更新）。 */
+  private dispatchGovernorSeedConfig: Partial<DispatchGovernanceConfig> | null = null
+  // 缺省即默认钳制（方案 M0：波宽/扇出止血不依赖任何持久化配置；
+  // 显式 setWorkflowExecutionGovernance(null) 仍是程序内逃生口）。
+  private workflowExecutionGovernance: WorkflowExecutionGovernance | null =
+    DEFAULT_WORKFLOW_EXECUTION_GOVERNANCE
+  // M4 内存治理：state/executions 截断 + 快照节流 + 结果摘要阈值 + in-process
+  // 工具结果 envelope 化。缺省即默认阈值（方案声明的显式行为变化，阈值可调大回退）；
+  // 桌面装配层经 set* 灌入 settings category=performance 的热更新值。
+  private workflowMemoryGovernance: WorkflowMemoryGovernance | null = null
+  private inProcessToolResultGovernance: InProcessToolResultGovernanceConfig | null = null
+
+  /**
+   * 全局成员派发并发闸门（惰性单例）。宿主 inflight 只读联动
+   * turnRegistry.inflightSessionCount()（不改 6 会话上限任何行为）。
+   */
+  private getDispatchGovernor(): DispatchGovernor {
+    if (this.dispatchGovernor == null) {
+      this.dispatchGovernor = new DispatchGovernor({
+        getHostInflightCount: () => this.turnRegistry.inflightSessionCount(),
+        ...(this.dispatchGovernorSeedConfig != null
+          ? { config: this.dispatchGovernorSeedConfig }
+          : {}),
+      })
+      this.dispatchGovernorSeedConfig = null
+      // M2 联动补灌：监控先于闸门运行时，把当前压力级别同步给新建闸门，
+      // 保证加压期间发生的首次派发即受降级矩阵约束。
+      const monitorLevel = this.resourceMonitor?.currentLevel
+      if (monitorLevel != null && monitorLevel !== 'nominal') {
+        this.dispatchGovernor.setPressureLevel(monitorLevel)
+      }
+    }
+    return this.dispatchGovernor
+  }
+
+  /** 设置热更新：governance 组变更时由桌面装配层调用（已创建则 reconfigure）。 */
+  setDispatchGovernanceConfig(raw: unknown): void {
+    if (this.dispatchGovernor != null) {
+      this.dispatchGovernor.reconfigure(raw)
+      return
+    }
+    this.dispatchGovernorSeedConfig =
+      raw != null && typeof raw === 'object' ? (raw as Partial<DispatchGovernanceConfig>) : null
+  }
+
+  /** 闸门诊断（只读，不触发惰性创建；IPC dispatch-governor:get-diagnostics 消费）。 */
+  getDispatchGovernorDiagnostics(): DispatchGovernorDiagnostics | null {
+    return this.dispatchGovernor?.diagnostics() ?? null
+  }
+
+  /** 供 M2 压力联动：把 ResourceMonitor 的级别灌给闸门（联动由 monitor 回调自动驱动，此方法保留手动注入口）。 */
+  setDispatchGovernorPressureLevel(level: 'nominal' | 'warning' | 'critical' | 'emergency'): void {
+    this.dispatchGovernor?.setPressureLevel(level)
+  }
+
+  // ─── M1 资源监控接线（惰性 getter，对齐 governor 先例） ─────────────────────
+
+  private resourceMonitor: ResourceMonitorService | null = null
+  private resourceMonitorSeedConfig: unknown = null
+
+  /**
+   * 资源监控服务（惰性单例）。压力级别变更回调直接联动派发闸门
+   * （monitor → governor 降级矩阵的监控侧闭环）；推流 sink 由桌面装配层
+   * 注册 IPC 时经 setResourceMonitorStreamSink 后注入。
+   */
+  getResourceMonitor(): ResourceMonitorService {
+    if (this.resourceMonitor == null) {
+      this.resourceMonitor = new ResourceMonitorService({
+        db: this.db,
+        ...(this.resourceMonitorSeedConfig != null
+          ? { config: this.resourceMonitorSeedConfig }
+          : {}),
+        onPressureChanged: (_previousLevel, level) => {
+          // 只在闸门已存在时联动；未创建说明尚无派发，级别会在创建时补灌。
+          this.dispatchGovernor?.setPressureLevel(level)
+        },
+      })
+      this.resourceMonitorSeedConfig = null
+    }
+    return this.resourceMonitor
+  }
+
+  /** 设置热更新：monitor 尚未创建时暂存为种子配置（对齐 governor seed 模式）。 */
+  setResourceMonitorConfig(raw: unknown): void {
+    if (this.resourceMonitor != null) {
+      this.resourceMonitor.reconfigure(raw)
+      return
+    }
+    this.resourceMonitorSeedConfig = raw
+  }
+
+  /** 设置热更新：workflow 治理组变更时由桌面装配层调用；null = 回落到不治理。 */
+  setWorkflowExecutionGovernance(raw: unknown): void {
+    this.workflowExecutionGovernance =
+      raw == null ? null : normalizeWorkflowExecutionGovernance(raw)
+  }
+
+  /** 工作流治理当前生效值（coordinator 每 turn 构建时读取，热更新自然跟随）。 */
+  getWorkflowExecutionGovernance(): WorkflowExecutionGovernance | null {
+    return this.workflowExecutionGovernance
+  }
+
+  /** M4：设置热更新——workflow 内存治理组变更时由桌面装配层调用；null = 回落默认值。 */
+  setWorkflowMemoryGovernance(raw: unknown): void {
+    this.workflowMemoryGovernance = raw == null ? null : normalizeWorkflowMemoryGovernance(raw)
+  }
+
+  /** M4：workflow 内存治理当前生效值（null = 默认阈值，coordinator 侧兜底）。 */
+  getWorkflowMemoryGovernance(): WorkflowMemoryGovernance | null {
+    return this.workflowMemoryGovernance
+  }
+
+  /** M4：设置热更新——toolResult.inProcessMaxChars 变更时由桌面装配层调用。 */
+  setInProcessToolResultGovernance(raw: unknown): void {
+    this.inProcessToolResultGovernance =
+      raw == null ? null : normalizeInProcessToolResultGovernance(raw)
+  }
+
+  /** M4：in-process 工具结果治理当前生效值（null = 默认 32KB）。 */
+  getInProcessToolResultGovernance(): InProcessToolResultGovernanceConfig {
+    return this.inProcessToolResultGovernance ?? DEFAULT_IN_PROCESS_TOOL_RESULT_GOVERNANCE
   }
 
   private markTeamDispatchBudgetExhausted(sessionId: string, turnId: string): void {
@@ -3758,9 +3920,7 @@ export class SessionService {
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
-        ...(effectiveReasoningEffort != null
-          ? { reasoningEffort: effectiveReasoningEffort }
-          : {}),
+        ...(effectiveReasoningEffort != null ? { reasoningEffort: effectiveReasoningEffort } : {}),
         ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
           ? {
               reasoningBudgetTokens: normalizeReasoningBudgetTokens(
@@ -3991,9 +4151,7 @@ export class SessionService {
           ? { allowedTools: [...sparkMcpRuntime.allowedTools] }
           : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
-        ...(effectiveReasoningEffort != null
-          ? { reasoningEffort: effectiveReasoningEffort }
-          : {}),
+        ...(effectiveReasoningEffort != null ? { reasoningEffort: effectiveReasoningEffort } : {}),
         ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
           ? {
               reasoningBudgetTokens: normalizeReasoningBudgetTokens(
@@ -4165,9 +4323,7 @@ export class SessionService {
       ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
-      ...(effectiveReasoningEffort != null
-        ? { reasoningEffort: effectiveReasoningEffort }
-        : {}),
+      ...(effectiveReasoningEffort != null ? { reasoningEffort: effectiveReasoningEffort } : {}),
       fastMode: effectiveFastMode,
       ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
       ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
@@ -4696,7 +4852,11 @@ export class SessionService {
     let canvasSetupFailure: string | null = null
     if (this.canvasMcpProvider != null) {
       try {
-        const canvas = await this.canvasMcpProvider(sessionId)
+        // M4：透传工作区根与 in-process 治理阈值，桥侧据此接线 toolResultGovernance。
+        const canvas = await this.canvasMcpProvider(sessionId, {
+          workspaceRootPath: config.workspaceRootPath,
+          toolResultMaxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
+        })
         if (canvas?.server != null) {
           mcpServers.spark_canvas = canvas.server
           canvasAllowedTools = canvas.allowedTools
@@ -4742,7 +4902,10 @@ export class SessionService {
     let workflowAllowedTools: string[] | undefined
     if (this.workflowMcpProvider != null) {
       try {
-        const workflow = await this.workflowMcpProvider(sessionId)
+        const workflow = await this.workflowMcpProvider(sessionId, {
+          workspaceRootPath: config.workspaceRootPath,
+          toolResultMaxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
+        })
         if (workflow?.server != null) {
           mcpServers.spark_workflow = workflow.server
           workflowAllowedTools = workflow.allowedTools
@@ -4750,7 +4913,9 @@ export class SessionService {
           log.warn('the attached workflow MCP runtime could not be created')
         }
       } catch (err) {
-        log.warn(`workflow mcp provider failed: ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `workflow mcp provider failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
 
@@ -6204,6 +6369,12 @@ export class SessionService {
             memScopes.push({ scope: 'agent', scopeRef: context.agentId })
           }
 
+          // M4：in-process MCP 工具结果治理（recall_memory 返回记忆完整正文可能
+          // 超 32KB，超限 envelope 化经 spark_tool_results 读回；未超限原样返回）。
+          const memGovernanceOptions = {
+            workspaceRootPath: context.workspaceRootPath,
+            maxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
+          }
           const searchMemoryTool = memTool(
             'search_memory',
             [
@@ -6216,71 +6387,86 @@ export class SessionService {
               type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
               limit: z.number().int().min(1).max(20).optional(),
             } as Record<string, unknown>,
-            async (args: Record<string, unknown>) => {
-              const query = typeof args.query === 'string' ? args.query : ''
-              const type = typeof args.type === 'string' ? args.type : undefined
-              const limit = typeof args.limit === 'number' ? args.limit : 8
-              const opts = {
-                scopes: memScopes,
-                ...(type != null ? { type } : {}),
-                limit,
-              }
-              const hits = await memSearchService.search(query, opts)
-              if (hits == null) {
-                return {
-                  content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }],
-                }
-              }
-              if (hits.length === 0) {
-                return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
-              }
-              const lines = hits.map(
-                (h) =>
-                  `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
-              )
-              const hitIds = new Set(hits.map((h) => h.entry.id))
-              const relatedMap = new Map<
-                string,
-                { id: string; name: string; type: string; description: string }
-              >()
-              for (const h of hits.slice(0, 3)) {
-                try {
-                  for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
-                    if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
-                      relatedMap.set(r.id, {
-                        id: r.id,
-                        name: r.name,
-                        type: r.type,
-                        description: r.description,
-                      })
-                    }
-                  }
-                } catch {
-                  // entity 表未就绪（旧库未跑 043）→ 静默跳过扩展
-                }
-              }
-              let text = lines.join('\n')
-              if (relatedMap.size > 0) {
-                const relLines = [...relatedMap.values()]
-                  .slice(0, 5)
-                  .map((r) => `- [${r.id}] ${r.name} (${r.type}): ${r.description}`)
-                text += `\n\n经实体关联的其他记忆：\n${relLines.join('\n')}`
-              }
-              return { content: [{ type: 'text' as const, text }] }
-            },
+            async (args: Record<string, unknown>) =>
+              governInProcessToolResult(await runSearchMemory(args), {
+                ...memGovernanceOptions,
+                toolName: 'mcp__spark_memory__search_memory',
+              }),
           )
+
+          async function runSearchMemory(
+            args: Record<string, unknown>,
+          ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+            const query = typeof args.query === 'string' ? args.query : ''
+            const type = typeof args.type === 'string' ? args.type : undefined
+            const limit = typeof args.limit === 'number' ? args.limit : 8
+            const opts = {
+              scopes: memScopes,
+              ...(type != null ? { type } : {}),
+              limit,
+            }
+            const hits = await memSearchService.search(query, opts)
+            if (hits == null) {
+              return {
+                content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }],
+              }
+            }
+            if (hits.length === 0) {
+              return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
+            }
+            const lines = hits.map(
+              (h) => `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
+            )
+            const hitIds = new Set(hits.map((h) => h.entry.id))
+            const relatedMap = new Map<
+              string,
+              { id: string; name: string; type: string; description: string }
+            >()
+            for (const h of hits.slice(0, 3)) {
+              try {
+                for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
+                  if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
+                    relatedMap.set(r.id, {
+                      id: r.id,
+                      name: r.name,
+                      type: r.type,
+                      description: r.description,
+                    })
+                  }
+                }
+              } catch {
+                // entity 表未就绪（旧库未跑 043）→ 静默跳过扩展
+              }
+            }
+            let text = lines.join('\n')
+            if (relatedMap.size > 0) {
+              const relLines = [...relatedMap.values()]
+                .slice(0, 5)
+                .map((r) => `- [${r.id}] ${r.name} (${r.type}): ${r.description}`)
+              text += `\n\n经实体关联的其他记忆：\n${relLines.join('\n')}`
+            }
+            return { content: [{ type: 'text' as const, text }] }
+          }
 
           const recallMemoryTool = memTool(
             'recall_memory',
             '读取一条长期记忆的完整正文（含 Why / How to apply）。传入 search_memory 返回或 system prompt 摘要里方括号内的 id。',
             { id: z.string().min(1) } as Record<string, unknown>,
-            async (args: Record<string, unknown>) => {
-              const id = typeof args.id === 'string' ? args.id : ''
-              const r = await memReader.recall(id)
-              const text = r.error != null ? `recall 失败：${r.error}` : r.content
-              return { content: [{ type: 'text' as const, text }] }
-            },
+            async (args: Record<string, unknown>) =>
+              governInProcessToolResult(await runRecallMemory(args), {
+                ...memGovernanceOptions,
+                toolName: 'mcp__spark_memory__recall_memory',
+              }),
           )
+
+          async function runRecallMemory(
+            args: Record<string, unknown>,
+          ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+            const id = typeof args.id === 'string' ? args.id : ''
+            const r = await memReader.recall(id)
+            const text = r.error != null ? `recall 失败：${r.error}` : r.content
+            return { content: [{ type: 'text' as const, text }] }
+          }
 
           mcpServers.spark_memory = memCreateServer({
             name: 'spark_memory',
@@ -6910,9 +7096,14 @@ export class SessionService {
 
     // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
     // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
+    // dispatchSource（M0 additive）：host/member 由 currentDepth 语义决定（0=Host
+    // 主循环，>0=成员发起），workflow 由 coordinator 侧包装注入——不靠启发式。
     const runSingleDispatch = async (
       args: Record<string, unknown>,
       parallel = false,
+      dispatchSource: 'host' | 'member' | 'workflow' = (ctx.currentDepth ?? 0) > 0
+        ? 'member'
+        : 'host',
     ): Promise<import('@spark/protocol').TeamA2AReply> => {
       if (discussionConcludedReason != null) {
         return {
@@ -6961,6 +7152,7 @@ export class SessionService {
           turnId: ctx.turnId,
           hostAgentId: ctx.hostAgent.id,
           callerAgentId: ctx.hostAgent.id,
+          dispatchSource,
           ...(ctx.discussionId != null ? { discussionId: ctx.discussionId } : {}),
           roundIndex: currentDiscussionRound,
           members: ctx.members,
@@ -7540,10 +7732,16 @@ export class SessionService {
     // 阶段 7 行为保持式抽取：workflow_run 的 Run 建档/按代次续跑、进度事件与
     // 原子节点执行已迁入 WorkflowRunCoordinator；此处只保留上下文装配与宿主
     // 能力接线（事件持久化通道 + approval/tool-invocation/artifact 节点执行器）。
+    // M0：coordinator 侧 dispatch 统一标 workflow 来源（治理诊断/降级矩阵用），
+    // governance 从会话级治理配置读取（settings 热更新自然跟随，缺省不治理）。
+    const workflowGovernance = this.getWorkflowExecutionGovernance()
+    const workflowMemoryGovernance = this.getWorkflowMemoryGovernance()
     const workflowDef = new WorkflowRunCoordinator({
       db: this.db,
       ctx,
-      runSingleDispatch,
+      runSingleDispatch: (args, parallel) => runSingleDispatch(args, parallel, 'workflow'),
+      ...(workflowGovernance != null ? { governance: workflowGovernance } : {}),
+      ...(workflowMemoryGovernance != null ? { memoryGovernance: workflowMemoryGovernance } : {}),
       hooks: {
         emitAndPersist: (sessionId, turnId, event, eventRepo) =>
           this.emitAndPersist(sessionId, turnId, event, eventRepo),
@@ -7576,10 +7774,19 @@ export class SessionService {
     ]
     if (defs.length === 0) return null
 
+    // M4 in-process 工具结果治理：团队工具（含 workflow_run）超
+    // toolResult.inProcessMaxChars 即 envelope 化（stdio 治理代理显式排除的
+    // 空洞）。包装在 defs 层，in-process SDK server 与 HTTP 桥（codex 消费者）
+    // 两种形态同时覆盖；未超限结果原样返回。
+    const governedDefs = wrapTeamToolDefinitionsWithGovernance(defs, {
+      workspaceRootPath: ctx.workspaceRootPath,
+      maxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
+    })
+
     if (isExternalMcpConsumer) {
       // 独立进程消费者使用 HTTP MCP bridge，避免依赖主进程 in-process SDK server。
       const handle = await getTeamMcpHttpBridge().serve(
-        defs,
+        governedDefs,
         ctx.signal != null || ctx.codexRuntimeLeaseKey != null
           ? {
               ...(ctx.signal != null ? { signal: ctx.signal } : {}),
@@ -7608,7 +7815,7 @@ export class SessionService {
     // claude 消费者：in-process（现状）
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
-    const tools = defs.map((d) => factory.tool(d.name, d.description, d.schema, d.handler))
+    const tools = governedDefs.map((d) => factory.tool(d.name, d.description, d.schema, d.handler))
     // 注：server 名保留 'spark_team' 以兼容现有代码/测试/文档；它现已是 goal/workflow/team
     // 通用的编排派发通道（agent_dispatch / agent_dispatch_batch / workflow_run），非仅团队模式。
     const server = factory.createSdkMcpServer({
@@ -8754,7 +8961,11 @@ export class SessionService {
             sessionId,
             turnId,
             seq: 0,
-            teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId, memberAutoRouterInfo),
+            teamMemberContext: buildTeamMemberContextWithAutoRouter(
+              member,
+              dispatchId,
+              memberAutoRouterInfo,
+            ),
           },
           workspaceRootPath,
         )
@@ -8776,7 +8987,11 @@ export class SessionService {
               changeType: change.changeType,
               ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
               collectionSource: 'agent_manifest',
-              teamMemberContext: buildTeamMemberContextWithAutoRouter(member, dispatchId, memberAutoRouterInfo),
+              teamMemberContext: buildTeamMemberContextWithAutoRouter(
+                member,
+                dispatchId,
+                memberAutoRouterInfo,
+              ),
             },
             eventRepo,
           )
@@ -8862,7 +9077,11 @@ export class SessionService {
     subtasks: AutoRouterRouteResult['subtasks']
     hostAgent: AgentItem
     /** 本轮分流已解析出的执行器（子任务强度档缺配置执行器时的回落目标）。 */
-    fallback: { providerProfileId: string; modelId: string; reasoningEffort: SparkReasoningEffort | null }
+    fallback: {
+      providerProfileId: string
+      modelId: string
+      reasoningEffort: SparkReasoningEffort | null
+    }
   }): AgentItem[] {
     return params.subtasks.map((subtask, index) => {
       const binding = resolveAutoRouterWorkerBinding({
@@ -9224,6 +9443,10 @@ export class SessionService {
       }
 
       await this.engineRegistry.dispose()
+      // M0：并发闸门随会话服务关停（拒绝全部排队等待者，唤醒在逃 permit 的清理路径）。
+      this.dispatchGovernor?.dispose()
+      // M1：资源监控随会话服务关停（停采样 timer 与事件循环直方图）。
+      this.resourceMonitor?.stop()
       this.customToolRuntimeUnsubscribe?.()
       this.customToolRuntimeUnsubscribe = null
       this.toolPackageRuntimeUnsubscribe?.()
@@ -11327,9 +11550,7 @@ const AUTO_ROUTER_MAX_SUBTASK_BUDGET = 10
  * AutoRouter 一次性强度 worker 的展示信息（子任务摘要 · 强度 · 实际模型名）。
  * 非 AutoRouter 临时 worker 返回 null（普通团队成员不展示该标识）。
  */
-function buildAutoRouterMemberDisplayInfo(
-  member: AgentItem,
-): AutoRouterMemberDisplayInfo | null {
+function buildAutoRouterMemberDisplayInfo(member: AgentItem): AutoRouterMemberDisplayInfo | null {
   const metadata = member.metadata as {
     temporaryAutoRouterWorker?: boolean
     autoRouterIntensity?: RouterIntensity

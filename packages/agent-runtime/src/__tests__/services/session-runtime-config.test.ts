@@ -1128,6 +1128,40 @@ vi.mock('@spark/storage', () => {
       return null
     }
   }
+  // team-registry v2.1 提交后平台桥启动链引入 TeamAssetPinsRepository
+  //（skill-registry initialize 构造、install/uninstall 使用）；mock 缺导出会
+  // 使 ensurePlatformBridge 抛错 → spark_platform/spark_canvas 缺失 → 测试失败。
+  // 以下补位为桥链依赖闭包的完整缺口（相对 import 图静态分析得出）。
+  class TeamAssetPinsRepository {
+    upsert(): void {}
+    listByType(): unknown[] {
+      return []
+    }
+    get(): null {
+      return null
+    }
+    deleteByAsset(): void {}
+  }
+  class HookDefinitionRepository {
+    // 真实类仅暴露 listEnabledByEvent(eventName)（hook-dispatcher 调用点）。
+    listEnabledByEvent(): unknown[] {
+      return []
+    }
+  }
+  class HookEventRepository {}
+  class SessionCollaborationRepository {}
+  class SubAppPackageService {}
+  class SubAppPlatformRepository {}
+  class ToolPackageRepository {}
+  class WorkflowBundleRepository {}
+  class SessionWorkflowBindingConflictError extends Error {}
+  class WorkflowReferenceGuardError extends Error {}
+  class SubAppConflictError extends Error {}
+  class SubAppDataConflictError extends Error {}
+  class SubAppDataValidationError extends Error {}
+  class SubAppNotFoundError extends Error {}
+  class SubAppReleaseNotFoundError extends Error {}
+  class SubAppStateError extends Error {}
   class TeamDefinitionRepository {
     get(): null {
       return null
@@ -1467,6 +1501,22 @@ vi.mock('@spark/storage', () => {
     SettingsRepository,
     SkillRepository,
     SkillRegistryRepository,
+    TeamAssetPinsRepository,
+    HookDefinitionRepository,
+    HookEventRepository,
+    SessionCollaborationRepository,
+    SubAppPackageService,
+    SubAppPlatformRepository,
+    ToolPackageRepository,
+    WorkflowBundleRepository,
+    SessionWorkflowBindingConflictError,
+    WorkflowReferenceGuardError,
+    SubAppConflictError,
+    SubAppDataConflictError,
+    SubAppDataValidationError,
+    SubAppNotFoundError,
+    SubAppReleaseNotFoundError,
+    SubAppStateError,
     TeamDefinitionRepository,
     AgentRepository,
     WorkflowRepository,

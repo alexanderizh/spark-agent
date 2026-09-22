@@ -293,7 +293,43 @@ export { TeamDispatchService } from './services/team-dispatch.service.js'
 export type {
   TeamDispatchRunContext,
   TeamMemberExecutionResult,
+  TeamDispatchServiceOptions,
 } from './services/team-dispatch.service.js'
+// M0 并发治理：全局成员派发闸门 + 工作流执行治理配置（性能监控与并发控制体系）。
+export { DispatchGovernor } from './services/dispatch-governor/dispatch-governor.js'
+export type {
+  DispatchGovernorAcquireArgs,
+  DispatchGovernorOptions,
+} from './services/dispatch-governor/dispatch-governor.js'
+export {
+  DispatchGateError,
+  DEFAULT_DISPATCH_GOVERNANCE_CONFIG,
+  DEFAULT_WORKFLOW_EXECUTION_GOVERNANCE,
+  normalizeDispatchGovernanceConfig,
+  normalizeWorkflowExecutionGovernance,
+} from './services/dispatch-governor/index.js'
+export type {
+  DispatchGatePermit,
+  DispatchGatePool,
+  DispatchGateRejectionKind,
+  DispatchGovernanceConfig,
+  DispatchGovernorDiagnostics,
+  DispatchSource,
+  WorkflowExecutionGovernance,
+} from './services/dispatch-governor/index.js'
+// M1 资源监控：宿主/子进程/系统内存/事件循环采集 + 压力判定 + 订阅推流（性能监控与并发控制体系）。
+export {
+  ResourceMonitorService,
+  DEFAULT_PRESSURE_THRESHOLDS,
+  DEFAULT_RESOURCE_MONITOR_CONFIG,
+  normalizeResourceMonitorConfig,
+  TrackedProcessRegistry,
+} from './services/resource-monitor/index.js'
+export type {
+  ResourceMonitorConfig,
+  ResourceMonitorServiceOptions,
+} from './services/resource-monitor/index.js'
+export { estimateWorkflowLoopDispatchBudget } from './services/workflow-executor.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
 export { GitWorktreeService } from './services/git-worktree.service.js'
@@ -559,7 +595,13 @@ export type { ActivateMcpResult } from './services/workflow-bundle/index.js'
 
 // ─── Team Registry（团队 Nacos 注册中心：技能/MCP/信封资产推拉） ─────
 export { TeamRegistryService, collectSkillFiles } from './services/team-registry/index.js'
-export { TeamMcpService, mcpSlugOf, pickLatestTeamVersion, listInstallableTeamVersions, toVersionInfos } from './services/team-registry/index.js'
+export {
+  TeamMcpService,
+  mcpSlugOf,
+  pickLatestTeamVersion,
+  listInstallableTeamVersions,
+  toVersionInfos,
+} from './services/team-registry/index.js'
 export {
   TeamAssetService,
   slugifyAssetName,
@@ -592,9 +634,21 @@ export type {
   TeamBundleSpec,
   TeamBundleUnresolved,
 } from './services/team-registry/index.js'
-export { computeNormalizedPayloadChecksum, computePayloadChecksum } from './services/team-registry/types.js'
+export {
+  computeNormalizedPayloadChecksum,
+  computePayloadChecksum,
+} from './services/team-registry/types.js'
 export { TeamRegistryConfigStore } from './services/team-registry/team-registry-config.js'
-export type { TeamRegistryConfigInput, TeamRegistryConfigSnapshot } from './services/team-registry/team-registry-config.js'
+export type {
+  TeamRegistryConfigInput,
+  TeamRegistryConfigSnapshot,
+} from './services/team-registry/team-registry-config.js'
 
-export type { TeamSkillPublishResult, TeamSkillUpdateInfo } from './services/skill-registry/index.js'
-export { collectGraphDependencies, rewriteGraphReferences } from './services/workflow-bundle/index.js'
+export type {
+  TeamSkillPublishResult,
+  TeamSkillUpdateInfo,
+} from './services/skill-registry/index.js'
+export {
+  collectGraphDependencies,
+  rewriteGraphReferences,
+} from './services/workflow-bundle/index.js'

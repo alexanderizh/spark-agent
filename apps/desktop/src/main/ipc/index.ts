@@ -194,6 +194,7 @@ import type {
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
 import { AutoRouterService } from '@spark/agent-runtime'
+import { DEFAULT_DISPATCH_GOVERNANCE_CONFIG } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import { runSessionScheduledTaskTurn } from './scheduled-task-executor.js'
 import {
@@ -307,6 +308,7 @@ import {
 } from './registerOptionalCapabilityIpc.js'
 import { registerSdkIntegrityIpc } from './registerSdkIntegrityIpc.js'
 import { registerCodexRuntimeIpc } from './registerCodexRuntimeIpc.js'
+import { registerResourceMonitorIpc } from './registerResourceMonitorIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
@@ -2987,6 +2989,51 @@ function applyTelemetrySettings(value: unknown): void {
   setLogLevel(resolveTelemetryLogLevel(value))
 }
 
+/**
+ * performance 组配置灌注（启动 seed + settings:set 热更新共用）。
+ * data JSON 形态：{ monitor?, thresholds?, hysteresis?, governance?, workflow?,
+ * workflowMemory?, toolResult? }；
+ * monitor/thresholds/hysteresis → ResourceMonitor（百分比与系数，无字节），
+ * governance → DispatchGovernor，workflow → 工作流执行治理，
+ * workflowMemory → M4 state/executions 截断与快照节流，toolResult → M4
+ * in-process 工具结果 envelope 化阈值。
+ * 组缺失不触碰对应模块（保持当前配置）；session service 未就绪时跳过（启动期竞态兜底）。
+ * 空对象 `{}` 为「恢复默认」信号：全模块灌注空配置，normalize 后回落各默认值
+ * （渲染端 resetSettings 即写 `{}`）。
+ */
+function applyPerformanceSettings(value: unknown): void {
+  if (_sessionService == null) return
+  if (value == null || typeof value !== 'object') return
+  const data = value as Record<string, unknown>
+  const resetAll = Object.keys(data).length === 0
+  if (resetAll || data.monitor != null || data.thresholds != null || data.hysteresis != null) {
+    _sessionService.setResourceMonitorConfig({
+      ...((data.monitor != null && typeof data.monitor === 'object' ? data.monitor : {}) as Record<
+        string,
+        unknown
+      >),
+      ...(data.thresholds != null ? { thresholds: data.thresholds } : {}),
+      ...(data.hysteresis != null ? { hysteresis: data.hysteresis } : {}),
+    })
+  }
+  if (resetAll || data.governance != null) {
+    // governor.reconfigure 为合并语义（{...previous, ...raw}），空对象不会重置；
+    // 恢复默认需显式灌默认配置。
+    _sessionService.setDispatchGovernanceConfig(
+      resetAll ? DEFAULT_DISPATCH_GOVERNANCE_CONFIG : data.governance,
+    )
+  }
+  if (resetAll || data.workflow != null) {
+    _sessionService.setWorkflowExecutionGovernance(resetAll ? {} : data.workflow)
+  }
+  if (resetAll || data.workflowMemory != null) {
+    _sessionService.setWorkflowMemoryGovernance(resetAll ? {} : data.workflowMemory)
+  }
+  if (resetAll || data.toolResult != null) {
+    _sessionService.setInProcessToolResultGovernance(resetAll ? {} : data.toolResult)
+  }
+}
+
 function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openAsHidden: boolean } {
   try {
     const settings = app.getLoginItemSettings()
@@ -4404,6 +4451,16 @@ export function registerAllIpcHandlers(): void {
     getDiagnostics: () => getSessionService().getCodexRuntimeDiagnostics(),
     restartIdle: () => getSessionService().restartIdleCodexRuntimes(),
   })
+  // M1 资源监控：IPC 三通道 + 推流 sink 注入 + 启动采样（性能监控体系）。
+  // 先灌注 performance 持久化配置（monitor/governor seed），再注册启动，
+  // 保证首个采样轮即用用户阈值。
+  try {
+    const performanceData = getSettingsService().get('performance', 'data')
+    applyPerformanceSettings(performanceData)
+  } catch (perfErr) {
+    log.warn(`Failed to seed performance settings: ${String(perfErr)}`)
+  }
+  registerResourceMonitorIpc(() => getSessionService())
   registerHooksV2Ipc({
     getDeps: () => ({ db: getDatabase(), getSessionService: () => _sessionService }),
   })
@@ -9193,6 +9250,11 @@ export function registerAllIpcHandlers(): void {
     }
     if (req.category === 'telemetry' && req.key === 'data') {
       applyTelemetrySettings(req.value)
+    }
+    // 性能监控体系热更新（performance 组 → monitor/governor/workflow 治理）。
+    // value === null（清除）时 no-op：monitor 沿用当前配置直至下次完整写入。
+    if (req.category === 'performance' && req.key === 'data') {
+      applyPerformanceSettings(req.value)
     }
     // 会话工作流灰度开关变更后，已打开会话的挂载入口要即时出现/隐藏：
     // 广播 scope='settings' 事件，useSessionWorkflowBinding 监听后重取 binding+features。
