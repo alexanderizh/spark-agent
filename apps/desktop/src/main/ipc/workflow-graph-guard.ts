@@ -51,3 +51,76 @@ export function assertWorkflowGraphSchema(graph: unknown): void {
     throw new Error(`工作流图校验失败：${formatWorkflowGraphIssues(parsed.error.issues)}`)
   }
 }
+
+/** 只读校验诊断条目（workflow:validate 返回结构，供工作流 Agent 修复回路消费） */
+export interface WorkflowGraphDiagnostic {
+  severity: 'error' | 'warning'
+  source: 'schema' | 'topology'
+  code: string
+  path?: string
+  message: string
+}
+
+/**
+ * 只读校验（E2-2）：与保存闸门同一套规则，但不抛错、返回结构化诊断——
+ * 工作流 Agent 的 workflow_validate 工具在落库前自检用，E2-3 修复熔断
+ * 直接把 diagnostics 回喂 LLM。
+ */
+export function validateWorkflowGraph(graph: unknown): {
+  ok: boolean
+  diagnostics: WorkflowGraphDiagnostic[]
+} {
+  const diagnostics: WorkflowGraphDiagnostic[] = []
+  if (graph == null) {
+    return {
+      ok: false,
+      diagnostics: [
+        { severity: 'error', source: 'schema', code: 'graph_missing', message: '缺少工作流图' },
+      ],
+    }
+  }
+  const graphInput = graph as Parameters<typeof normalizeWorkflowGraph>[0]
+  // 形状层：逐条收集 schema 违规（不抛，让修复回路拿到完整问题清单）
+  const parsed = WorkflowGraphSchema.safeParse(graphInput)
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      diagnostics.push({
+        severity: 'error',
+        source: 'schema',
+        code: 'schema_invalid',
+        path: issue.path.map(String).join('.') || '(root)',
+        message: issue.message,
+      })
+    }
+  }
+  // 拓扑层：与 assertWorkflowGraphValid 同源，三类问题逐条收集
+  const unsupportedKinds = detectWorkflowUnsupportedNodeKinds(graphInput)
+  if (unsupportedKinds.length > 0) {
+    diagnostics.push({
+      severity: 'error',
+      source: 'topology',
+      code: 'unsupported_node_kind',
+      message: formatWorkflowUnsupportedNodeKindError(unsupportedKinds),
+    })
+  }
+  const normalized = normalizeWorkflowGraph(graphInput)
+  const cycleReports = detectWorkflowGraphCycles(normalized)
+  if (cycleReports.length > 0) {
+    diagnostics.push({
+      severity: 'error',
+      source: 'topology',
+      code: 'graph_cycle',
+      message: formatWorkflowCycleError(cycleReports),
+    })
+  }
+  const referenceReports = detectWorkflowConditionReferenceErrors(normalized)
+  if (referenceReports.length > 0) {
+    diagnostics.push({
+      severity: 'error',
+      source: 'topology',
+      code: 'condition_reference_missing',
+      message: formatWorkflowConditionReferenceError(referenceReports),
+    })
+  }
+  return { ok: diagnostics.length === 0, diagnostics }
+}

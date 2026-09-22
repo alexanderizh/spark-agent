@@ -1,0 +1,65 @@
+{
+  "id": "tpl-simple-linear",
+  "name": "线性执行流",
+  "description": "最基础的五节点线性流：需求输入 → 计划 → 执行 → 验证 → 交付。适合单一目标的常规任务。",
+  "tags": ["线性", "基础", "入门"],
+  "needsBinding": "agent-1 执行节点导入后需绑定 Agent",
+  "graph": {
+    "nodes": [
+      {
+        "id": "input-1",
+        "kind": "input",
+        "title": "需求输入",
+        "x": 80,
+        "y": 160,
+        "config": {
+          "prompt": "解析用户需求，提炼目标、约束和交付物，作为后续节点的输入。",
+          "outputKey": "objective",
+          "retryCount": 1
+        }
+      },
+      {
+        "id": "plan-1",
+        "kind": "plan",
+        "title": "制定计划",
+        "x": 360,
+        "y": 160,
+        "config": { "prompt": "基于目标拆解可执行的实施步骤。", "outputKey": "plan" }
+      },
+      {
+        "id": "agent-1",
+        "kind": "agent",
+        "title": "执行实现",
+        "x": 640,
+        "y": 160,
+        "config": { "prompt": "按计划完成实现，记录关键决策与改动。", "outputKey": "implementation" }
+      },
+      {
+        "id": "verify-1",
+        "kind": "verify",
+        "title": "验证",
+        "x": 920,
+        "y": 160,
+        "config": {
+          "prompt": "运行验证命令确认实现正确。",
+          "outputKey": "verification",
+          "verifyCommands": ["echo ok"]
+        }
+      },
+      {
+        "id": "artifact-1",
+        "kind": "artifact",
+        "title": "交付产物",
+        "x": 1200,
+        "y": 160,
+        "config": { "prompt": "整理交付物、变更摘要和后续建议。", "outputKey": "deliverable" }
+      }
+    ],
+    "edges": [
+      { "id": "e-input-plan", "from": "input-1", "to": "plan-1" },
+      { "id": "e-plan-agent", "from": "plan-1", "to": "agent-1" },
+      { "id": "e-agent-verify", "from": "agent-1", "to": "verify-1" },
+      { "id": "e-verify-artifact", "from": "verify-1", "to": "artifact-1" }
+    ]
+  }
+}

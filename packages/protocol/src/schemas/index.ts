@@ -2098,4 +2098,8 @@ export const IpcSchemaRegistry = {
   'workflow:tool-ack': z.object({
     requestId: z.string().min(1).max(200),
   }),
+  // 只读校验（不落库）：工作流 Agent 的 workflow_validate 工具在提交前自检
+  'workflow:validate': z.object({
+    graph: z.unknown(),
+  }),
 } as const

@@ -11,7 +11,11 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
-import { assertWorkflowGraphSchema, assertWorkflowGraphValid } from './workflow-graph-guard.js'
+import {
+  assertWorkflowGraphSchema,
+  assertWorkflowGraphValid,
+  validateWorkflowGraph,
+} from './workflow-graph-guard.js'
 import { MAIN_WINDOW_MIN_WIDTH } from '../../window-sizing.js'
 import { CanvasSnapshotWriteCoordinator } from './canvasSnapshotWriteCoordinator.js'
 import { registerOutcomeRoomIpc } from './registerOutcomeRoomIpc.js'
@@ -4550,6 +4554,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workflow:tool-ack', async (req) => {
     getWorkflowHostBridge().handleToolAck(req.requestId)
     return { ok: true } as const
+  })
+
+  // 只读校验：与保存闸门同一套规则但不落库；工作流 Agent 提交前自检 + 修复回路回喂
+  typedIpcHandle('workflow:validate', async (req) => {
+    return validateWorkflowGraph(req.graph)
   })
 
   // ─── Session Handlers ──────────────────────────────────────────────────

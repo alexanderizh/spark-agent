@@ -7840,6 +7840,8 @@ export interface IpcChannelMap
   'workflow:tool-result': [WorkflowToolResultRequest, WorkflowToolResultResponse]
   /** 渲染端确认已收到工具调用，即将开始执行（主进程据此启动超时计时器） */
   'workflow:tool-ack': [WorkflowToolAckRequest, WorkflowToolAckResponse]
+  /** 只读校验工作流图（形状层 + 拓扑层诊断），供 Agent 提交前自检，不落库 */
+  'workflow:validate': [WorkflowValidateRequest, WorkflowValidateResponse]
 }
 
 // ─── Canvas Agent Bridge Types ─────────────────────────────────────────────
@@ -7941,6 +7943,23 @@ export interface WorkflowToolCallEvent {
   sessionId: string
   toolName: string
   args: unknown
+}
+
+export interface WorkflowGraphDiagnosticPayload {
+  severity: 'error' | 'warning'
+  source: 'schema' | 'topology'
+  code: string
+  path?: string
+  message: string
+}
+
+export interface WorkflowValidateRequest {
+  graph: unknown
+}
+
+export interface WorkflowValidateResponse {
+  ok: boolean
+  diagnostics: WorkflowGraphDiagnosticPayload[]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
