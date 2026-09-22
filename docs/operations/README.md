@@ -12,7 +12,7 @@
 
 ## 仓库外资源
 
-- [GitHub 项目](https://github.com/alexanderizh/spark-agent/projects)
+- [SparkWork · Open Source Roadmap](https://github.com/users/alexanderizh/projects/6)
 - [GitHub Wiki](https://github.com/alexanderizh/spark-agent/wiki)
 - [GitHub Pages 工程手册](https://alexanderizh.github.io/spark-agent/)
 - [自有官网](https://www.yiqibyte.com/)

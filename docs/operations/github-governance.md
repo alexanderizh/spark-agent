@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | Issues | 可复现的缺陷、明确的需求、维护任务 | Issue 模板 + 讨论记录 |
 | Discussions | 方案讨论、使用求助、展示和路线方向 | GitHub Discussions |
-| Project | 跨 Issue/PR 的交付状态和优先级 | `SparkWork · Open Source Roadmap` |
+| Project | 跨 Issue/PR 的交付状态和优先级 | [`SparkWork · Open Source Roadmap`](https://github.com/users/alexanderizh/projects/6) |
 | Wiki | GitHub 内的快速上手、架构摘要和维护手册 | Wiki 仓库中的 Markdown |
 | Pages | 可分享的工程手册、架构图和运维说明 | 主仓库 `docs-site/` |
 | `docs/` | 代码旁边的详细设计、计划、评审和长期事实 | 主仓库提交历史 |
@@ -23,7 +23,7 @@
 
 ### 状态
 
-建议使用以下单选状态，并保持顺序：
+当前看板使用以下单选状态，并保持顺序：
 
 1. `Inbox`：刚进入、尚未完成 triage。
 2. `Planned`：已确认范围和优先级，等待排期。
@@ -37,7 +37,7 @@
 | 字段 | 类型 | 选项/用途 |
 | --- | --- | --- |
 | Priority | 单选 | `P0` 紧急、`P1` 近期、`P2` 常规、`P3` 以后 |
-| Area | 单选 | `Runtime`、`Desktop`、`Website/Docs`、`Provider`、`Canvas`、`CLI`、`Release`、`Governance` |
+| Area | 单选 | `Runtime`、`Desktop`、`Website`、`Docs`、`Operations`、`Release` |
 | Target | 单选 | `Next`、`Later`、`Exploration` |
 | Milestone | 日期 | 只在有真实交付窗口时填写，不用虚构日期 |
 
@@ -46,6 +46,8 @@
 - `Delivery Board`：按 `Status` 分组，主视图用于每周推进。
 - `Roadmap Table`：按 `Area`、`Priority`、`Target` 筛选，适合发布前盘点。
 - `Needs Triage`：过滤 `Status = Inbox`，每次维护只清理这一小队列。
+
+看板入口：[SparkWork · Open Source Roadmap](https://github.com/users/alexanderizh/projects/6)。
 
 项目板不预先塞入无法核实的任务。新 Issue 进入 `Inbox`，完成 triage 后才进入 `Planned`；PR 合并后自动或手动移到 `Done`。
 

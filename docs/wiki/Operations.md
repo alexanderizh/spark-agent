@@ -4,13 +4,13 @@
 
 ## GitHub Project
 
-项目板 `SparkWork · Open Source Roadmap` 用于追踪可交付的 Issue/PR：
+项目板 [`SparkWork · Open Source Roadmap`](https://github.com/users/alexanderizh/projects/6) 用于追踪可交付的 Issue/PR：
 
 ```text
 Inbox → Planned → In Progress → In Review → Blocked → Done
 ```
 
-常用字段：`Priority`、`Area`、`Target`、`Milestone`。项目板不替代设计文档；方案事实回到 `docs/`。
+常用字段：`Priority`、`Area`、`Target`、`Milestone`。其中 `Priority` 使用 P0–P3，`Target` 使用 `Next`、`Later`、`Exploration`，`Area` 使用 `Runtime`、`Desktop`、`Website`、`Docs`、`Operations`、`Release`。项目板不替代设计文档；方案事实回到 `docs/`。
 
 ## GitHub Pages
 
