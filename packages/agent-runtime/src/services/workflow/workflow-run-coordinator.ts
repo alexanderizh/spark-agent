@@ -19,7 +19,14 @@ import {
 } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import type { AgentEvent, TeamA2AReply, WorkflowNodeKind } from '@spark/protocol'
+import type { WorkflowExecutionGovernance } from '../dispatch-governor/governance-config.js'
 import type { TeamToolDefinition } from '../team-mcp-http-bridge.js'
+import {
+  DEFAULT_WORKFLOW_MEMORY_GOVERNANCE,
+  summarizeWorkflowStateKeys,
+  type WorkflowMemoryGovernance,
+} from './workflow-memory-governance.js'
+import { WorkflowSnapshotWriteThrottle } from './workflow-snapshot-throttle.js'
 import {
   buildWorkflowAtomicInstruction,
   buildWorkflowProgressNodeMetas,
@@ -39,7 +46,9 @@ import {
   type WorkflowDispatchAttachment,
   type WorkflowRunSnapshot,
   type WorkflowAtomicNodeExecutionReply,
+  type WorkflowAgentPlanResult,
 } from '../workflow-executor.js'
+import { archiveToolResultAsEnvelope } from '../../tools/tool-result-artifact-store.mjs'
 
 // 日志通道沿用迁移前标签，保证日志检索与告警不因抽取而漂移。
 const log = createLogger('session.service')
@@ -102,13 +111,24 @@ export interface WorkflowRunCoordinatorInput {
   ctx: WorkflowRunToolContext
   runSingleDispatch: (args: Record<string, unknown>, parallel?: boolean) => Promise<TeamA2AReply>
   hooks: WorkflowRunCoordinatorHooks
+  /**
+   * M0 工作流治理透传（additive：缺省 undefined = 不治理，行为与旧版一致）。
+   * 来源为 settings category=performance 的 workflow 组（SessionService 注入）。
+   */
+  governance?: WorkflowExecutionGovernance
+  /**
+   * M4 内存治理（state/executions 截断 + 快照节流 + 结果摘要阈值）。
+   * 缺省 undefined = 使用 DEFAULT_WORKFLOW_MEMORY_GOVERNANCE（方案 §六 默认值，
+   * M4 为方案声明的显式行为变化，阈值可调大回退）；SessionService 注入热更新值。
+   */
+  memoryGovernance?: WorkflowMemoryGovernance
 }
 
 export class WorkflowRunCoordinator {
   constructor(private readonly input: WorkflowRunCoordinatorInput) {}
 
   buildToolDefinition(): TeamToolDefinition | null {
-    const { db, ctx, runSingleDispatch, hooks } = this.input
+    const { db, ctx, runSingleDispatch, hooks, governance } = this.input
     if (
       ctx.workflowGraph == null ||
       !hasWorkflowExecutableNodes(ctx.workflowGraph, ctx.workflowWorkerIds, ctx.hostAgent.id)
@@ -237,172 +257,193 @@ export class WorkflowRunCoordinator {
           }
         }
 
-        const result = await executeWorkflowAgentPlan({
-          graph: ctx.workflowGraph!,
-          objective,
-          ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
-            ? { attachments: ctx.workflowAttachments }
-            : {}),
-          availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
-          ...(initialState != null ? { initialState } : {}),
-          ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
-          ...(initialSkippedNodeIds != null ? { initialSkippedNodeIds } : {}),
-          onSnapshot: (snap) => {
-            if (runId != null) {
-              runRepo.updateSnapshot(runId, {
-                status: snap.status,
-                state: snap.state,
-                executions: snap.executions,
-                atomicExecutions: snap.atomicExecutions,
-                completedNodeIds: snap.completedNodeIds,
-                skippedNodeIds: snap.skippedNodeIds,
-                ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
-                ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
-              })
-            }
-            emitWorkflowProgress(snap)
-          },
-          executeAtomicNode: async (request) => {
-            // 原子节点按 kind 显式自执行：
-            // - verify：跑校验命令（runWorkflowVerifyNode）。
-            // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
-            // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
-            //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
-            // - route：经纯 LLM 临时 worker 只输出 routeOptions 中的一个 value，用于条件边分流。
-            // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
-            //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds；MCP 使用
-            //   全局已启用集合；input/plan/review 使用只读工具集）；artifact 另外支持 exportPath 写盘。
-            //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
-            // - tool/mcp 节点配了 toolSource/toolName 时走确定性调用：mcp 源经 McpService
-            //   原生直调（不经 LLM，tool 与 mcp 节点语义等价，mcp 节点仅多一个专属配置入口）；
-            //   platform 源直调平台自定义工具/工具包工具（不经 LLM，仅 tool 节点可选该源）；
-            //   builtin 源经锁定单工具 + 预渲染参数的强约束派发（仅 tool 节点可选该源）。
-            //   与其它 LLM 原子节点一致，execution:'static' 时回落静态回显不走直调。
-            const executionMode =
-              typeof request.config.execution === 'string' ? request.config.execution.trim() : ''
-            const toolInvocation =
-              executionMode === 'static' || (request.kind !== 'tool' && request.kind !== 'mcp')
-                ? null
-                : getWorkflowToolInvocationSpec(request.config, request.kind)
-            if (toolInvocation != null) {
-              return hooks.executeToolInvocationNode(request, toolInvocation, runSingleDispatch, {
-                sessionId: ctx.sessionId,
-                ...(ctx.turnId != null ? { turnId: ctx.turnId } : {}),
-                ...(ctx.workflowId != null ? { workflowId: ctx.workflowId } : {}),
-              })
-            }
-            switch (request.kind) {
-              case 'verify':
-                return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
-              case 'approval':
-                return hooks.executeApprovalNode(request)
-              case 'input':
-              case 'route':
-              case 'skill':
-              case 'tool':
-              case 'mcp':
-              case 'plan':
-              case 'review':
-              case 'artifact': {
-                // config.execution:'static' 或该节点未登记临时 worker 时回落静态回显。
-                const execution =
-                  typeof request.config.execution === 'string'
-                    ? request.config.execution.trim()
-                    : ''
-                const workerId = workflowAtomicMemberId(request.nodeId)
-                const isRegistered = ctx.members.some((m) => m.id === workerId)
-                if (execution === 'static' || !isRegistered) {
-                  return hooks.finalizeArtifactContent(
-                    request,
-                    getDefaultWorkflowAtomicContent(request),
-                  )
-                }
-                const reply = await runSingleDispatch({
-                  targetAgentId: workerId,
-                  instruction: buildWorkflowAtomicInstruction(request),
-                  inputs: request.inputs,
+        // M4：快照落库节流（working 按 snapshotMinIntervalMs + trailing 补写，终态
+        // 立即落库）；UI 进度事件（emitWorkflowProgress）不经节流器。
+        const memoryGovernance = this.input.memoryGovernance ?? DEFAULT_WORKFLOW_MEMORY_GOVERNANCE
+        const snapshotWrites = new WorkflowSnapshotWriteThrottle({
+          intervalMs: memoryGovernance.snapshotMinIntervalMs,
+        })
+        const persistSnapshot = (snap: WorkflowRunSnapshot): void => {
+          if (runId == null) return
+          runRepo.updateSnapshot(runId, {
+            status: snap.status,
+            state: snap.state,
+            executions: snap.executions,
+            atomicExecutions: snap.atomicExecutions,
+            completedNodeIds: snap.completedNodeIds,
+            skippedNodeIds: snap.skippedNodeIds,
+            ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
+            ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
+          })
+        }
+
+        let result: WorkflowAgentPlanResult
+        try {
+          result = await executeWorkflowAgentPlan({
+            graph: ctx.workflowGraph!,
+            objective,
+            ...(governance != null ? { governance } : {}),
+            // M4：快照副本截断（state 值 / executions content 超限头尾截断+标记）。
+            memoryGovernance,
+            ...(ctx.workflowAttachments != null && ctx.workflowAttachments.length > 0
+              ? { attachments: ctx.workflowAttachments }
+              : {}),
+            availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
+            ...(initialState != null ? { initialState } : {}),
+            ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
+            ...(initialSkippedNodeIds != null ? { initialSkippedNodeIds } : {}),
+            onSnapshot: (snap) => {
+              snapshotWrites.offer(snap, persistSnapshot)
+              emitWorkflowProgress(snap)
+            },
+            executeAtomicNode: async (request) => {
+              // 原子节点按 kind 显式自执行：
+              // - verify：跑校验命令（runWorkflowVerifyNode）。
+              // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
+              // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
+              //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
+              // - route：经纯 LLM 临时 worker 只输出 routeOptions 中的一个 value，用于条件边分流。
+              // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
+              //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds；MCP 使用
+              //   全局已启用集合；input/plan/review 使用只读工具集）；artifact 另外支持 exportPath 写盘。
+              //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
+              // - tool/mcp 节点配了 toolSource/toolName 时走确定性调用：mcp 源经 McpService
+              //   原生直调（不经 LLM，tool 与 mcp 节点语义等价，mcp 节点仅多一个专属配置入口）；
+              //   platform 源直调平台自定义工具/工具包工具（不经 LLM，仅 tool 节点可选该源）；
+              //   builtin 源经锁定单工具 + 预渲染参数的强约束派发（仅 tool 节点可选该源）。
+              //   与其它 LLM 原子节点一致，execution:'static' 时回落静态回显不走直调。
+              const executionMode =
+                typeof request.config.execution === 'string' ? request.config.execution.trim() : ''
+              const toolInvocation =
+                executionMode === 'static' || (request.kind !== 'tool' && request.kind !== 'mcp')
+                  ? null
+                  : getWorkflowToolInvocationSpec(request.config, request.kind)
+              if (toolInvocation != null) {
+                return hooks.executeToolInvocationNode(request, toolInvocation, runSingleDispatch, {
+                  sessionId: ctx.sessionId,
+                  ...(ctx.turnId != null ? { turnId: ctx.turnId } : {}),
+                  ...(ctx.workflowId != null ? { workflowId: ctx.workflowId } : {}),
                 })
-                if (reply.state !== 'completed') {
-                  return {
-                    state: reply.state,
-                    content: reply.content,
-                    error: {
-                      ...(reply.error?.code != null ? { code: reply.error.code } : {}),
-                      message:
-                        reply.error?.message ??
-                        `Workflow ${request.kind} node ${request.nodeId} did not complete successfully.`,
-                    },
+              }
+              switch (request.kind) {
+                case 'verify':
+                  return runWorkflowVerifyNode(request, ctx.workspaceRootPath)
+                case 'approval':
+                  return hooks.executeApprovalNode(request)
+                case 'input':
+                case 'route':
+                case 'skill':
+                case 'tool':
+                case 'mcp':
+                case 'plan':
+                case 'review':
+                case 'artifact': {
+                  // config.execution:'static' 或该节点未登记临时 worker 时回落静态回显。
+                  const execution =
+                    typeof request.config.execution === 'string'
+                      ? request.config.execution.trim()
+                      : ''
+                  const workerId = workflowAtomicMemberId(request.nodeId)
+                  const isRegistered = ctx.members.some((m) => m.id === workerId)
+                  if (execution === 'static' || !isRegistered) {
+                    return hooks.finalizeArtifactContent(
+                      request,
+                      getDefaultWorkflowAtomicContent(request),
+                    )
                   }
-                }
-                // input 节点：校验 reply.content 为合法结构化 JSON；非法 JSON 回落透传 + 提示。
-                if (request.kind === 'input') {
-                  const fallback = getDefaultWorkflowAtomicContent(request)
-                  const validated = validateWorkflowInputStructuredContent(reply.content, fallback)
-                  if (!validated.ok) {
-                    log.warn('workflow input: invalid JSON from LLM, fallback to passthrough', {
-                      sessionId: ctx.sessionId,
-                      node: request.nodeId,
-                    })
-                  }
-                  return { content: validated.content }
-                }
-                if (request.kind === 'route') {
-                  const validated = validateWorkflowRouteDecisionContent(
-                    reply.content,
-                    request.config,
-                  )
-                  if (!validated.ok) {
-                    log.warn('workflow route: invalid decision from LLM', {
-                      sessionId: ctx.sessionId,
-                      node: request.nodeId,
-                      decision: validated.decision,
-                    })
+                  const reply = await runSingleDispatch({
+                    targetAgentId: workerId,
+                    instruction: buildWorkflowAtomicInstruction(request),
+                    inputs: request.inputs,
+                  })
+                  if (reply.state !== 'completed') {
                     return {
-                      state: 'failed',
+                      state: reply.state,
                       content: reply.content,
                       error: {
-                        code: 'workflow_route_invalid_output',
-                        message: validated.message,
+                        ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                        message:
+                          reply.error?.message ??
+                          `Workflow ${request.kind} node ${request.nodeId} did not complete successfully.`,
                       },
                     }
                   }
-                  return { content: validated.content }
+                  // input 节点：校验 reply.content 为合法结构化 JSON；非法 JSON 回落透传 + 提示。
+                  if (request.kind === 'input') {
+                    const fallback = getDefaultWorkflowAtomicContent(request)
+                    const validated = validateWorkflowInputStructuredContent(
+                      reply.content,
+                      fallback,
+                    )
+                    if (!validated.ok) {
+                      log.warn('workflow input: invalid JSON from LLM, fallback to passthrough', {
+                        sessionId: ctx.sessionId,
+                        node: request.nodeId,
+                      })
+                    }
+                    return { content: validated.content }
+                  }
+                  if (request.kind === 'route') {
+                    const validated = validateWorkflowRouteDecisionContent(
+                      reply.content,
+                      request.config,
+                    )
+                    if (!validated.ok) {
+                      log.warn('workflow route: invalid decision from LLM', {
+                        sessionId: ctx.sessionId,
+                        node: request.nodeId,
+                        decision: validated.decision,
+                      })
+                      return {
+                        state: 'failed',
+                        content: reply.content,
+                        error: {
+                          code: 'workflow_route_invalid_output',
+                          message: validated.message,
+                        },
+                      }
+                    }
+                    return { content: validated.content }
+                  }
+                  // artifact 节点在成功后按 exportPath 写盘（其余 kind 该方法直接透传内容）。
+                  return hooks.finalizeArtifactContent(request, reply.content)
                 }
-                // artifact 节点在成功后按 exportPath 写盘（其余 kind 该方法直接透传内容）。
-                return hooks.finalizeArtifactContent(request, reply.content)
+                default:
+                  return { content: getDefaultWorkflowAtomicContent(request) }
               }
-              default:
-                return { content: getDefaultWorkflowAtomicContent(request) }
-            }
-          },
-          dispatch: async (request, options) => {
-            const reply = await runSingleDispatch(
-              {
-                targetAgentId: request.agentId,
-                instruction: request.instruction,
-                inputs: request.inputs,
-                ...(request.attachments != null && request.attachments.length > 0
-                  ? { attachments: request.attachments }
-                  : {}),
-              },
-              options?.parallel === true,
-            )
-            if (reply.state !== 'completed') {
-              const message =
-                reply.error?.message ??
-                `Workflow worker ${request.agentId} did not complete successfully.`
-              return {
-                state: reply.state,
-                content: reply.content,
-                error: {
-                  ...(reply.error?.code != null ? { code: reply.error.code } : {}),
-                  message,
+            },
+            dispatch: async (request, options) => {
+              const reply = await runSingleDispatch(
+                {
+                  targetAgentId: request.agentId,
+                  instruction: request.instruction,
+                  inputs: request.inputs,
+                  ...(request.attachments != null && request.attachments.length > 0
+                    ? { attachments: request.attachments }
+                    : {}),
                 },
+                options?.parallel === true,
+              )
+              if (reply.state !== 'completed') {
+                const message =
+                  reply.error?.message ??
+                  `Workflow worker ${request.agentId} did not complete successfully.`
+                return {
+                  state: reply.state,
+                  content: reply.content,
+                  error: {
+                    ...(reply.error?.code != null ? { code: reply.error.code } : {}),
+                    message,
+                  },
+                }
               }
-            }
-            return { state: 'completed', content: reply.content }
-          },
-        })
+              return { state: 'completed', content: reply.content }
+            },
+          })
+        } finally {
+          // 兜底：异常路径终态快照未到达时写出 trailing 待写（正常路径终态已立即落库）。
+          snapshotWrites.dispose()
+        }
         const workflowRunLog = result.status === 'completed' ? log.info : log.warn
         workflowRunLog('workflow run: ' + result.status, {
           sessionId: ctx.sessionId,
@@ -410,10 +451,84 @@ export class WorkflowRunCoordinator {
           executions: result.executions.length,
           failedNode: result.failedNode?.nodeId,
         })
-        const text =
+        // M4：inline state 超过 resultInlineStateMaxChars 时改为逐 key 摘要，全量
+        // result 经既有 tool_result_envelope 归档管道写 artifact（可经
+        // spark_tool_results 读回）；未超限保持现状全量形态。
+        const stateJson = JSON.stringify(result.state)
+        if (stateJson.length <= memoryGovernance.resultInlineStateMaxChars) {
+          const text =
+            result.status === 'completed'
+              ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${stateJson}`
+              : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${stateJson}`
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text,
+              },
+            ],
+            structuredContent: result as unknown as { [x: string]: unknown },
+          }
+        }
+        const summaryLines = summarizeWorkflowStateKeys(result.state)
+        let envelope: ReturnType<typeof archiveToolResultAsEnvelope>
+        try {
+          envelope = archiveToolResultAsEnvelope(result, {
+            workspaceRoot: ctx.workspaceRootPath,
+            toolName: 'workflow_run',
+            status: result.status === 'completed' ? 'success' : 'error',
+          })
+        } catch (error) {
+          // 归档失败不吞掉工作流结果：降级为纯摘要（无 artifact 引用）并 warn。
+          log.warn('workflow run: result archive failed, inline summary only', {
+            sessionId: ctx.sessionId,
+            runId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          const fallbackText = [
+            `Workflow ${result.status} after ${result.executions.length} agent node attempt(s). Final state exceeds the inline limit (${stateJson.length} > ${memoryGovernance.resultInlineStateMaxChars} chars); per-key summary:`,
+            ...summaryLines.map((line) => `  - ${line}`),
+            '',
+            `[Full workflow result could not be archived. Raise the workflow resultInlineStateMaxChars setting if the full state is required.]`,
+          ].join('\n')
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: fallbackText,
+              },
+            ],
+            structuredContent: {
+              status: result.status,
+              executions: result.executions.length,
+              atomicExecutions: result.atomicExecutions.length,
+              skippedNodeIds: result.skippedNodeIds,
+              ...(result.failedNode != null ? { failedNode: result.failedNode } : {}),
+              stateSummary: summaryLines,
+              stateTotalChars: stateJson.length,
+            },
+          }
+        }
+        log.info('workflow run: result inlined as summary + archived artifact', {
+          sessionId: ctx.sessionId,
+          runId,
+          stateChars: stateJson.length,
+          ...(envelope.artifact.available
+            ? { artifactId: envelope.artifact.artifactId }
+            : { archiveReason: envelope.artifact.reason }),
+        })
+        const baseLine =
           result.status === 'completed'
-            ? `Workflow completed ${result.executions.length} agent node attempt(s). Final state: ${JSON.stringify(result.state)}`
-            : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}. Final state: ${JSON.stringify(result.state)}`
+            ? `Workflow completed ${result.executions.length} agent node attempt(s).`
+            : `Workflow ${result.status} at node ${result.failedNode?.nodeId ?? 'unknown'} after ${result.failedNode?.attempt ?? 0} attempt(s). Error: ${result.failedNode?.error.message ?? 'Unknown error'}.`
+        const text = [
+          `${baseLine} Final state exceeds the inline limit (${stateJson.length} > ${memoryGovernance.resultInlineStateMaxChars} chars); per-key summary:`,
+          ...summaryLines.map((line) => `  - ${line}`),
+          '',
+          envelope.artifact.available
+            ? `[Full workflow result archived as artifact ${envelope.artifact.artifactId} (${envelope.artifact.characters} chars). Use mcp__spark_tool_results__read with this artifactId to read the complete result on demand.]`
+            : `[Full workflow result could not be archived: ${envelope.artifact.reason}. Raise the workflow resultInlineStateMaxChars setting if the full state is required.]`,
+        ].join('\n')
         return {
           content: [
             {
@@ -421,7 +536,25 @@ export class WorkflowRunCoordinator {
               text,
             },
           ],
-          structuredContent: result as unknown as { [x: string]: unknown },
+          structuredContent: {
+            status: result.status,
+            executions: result.executions.length,
+            atomicExecutions: result.atomicExecutions.length,
+            skippedNodeIds: result.skippedNodeIds,
+            ...(result.failedNode != null ? { failedNode: result.failedNode } : {}),
+            stateSummary: summaryLines,
+            stateTotalChars: stateJson.length,
+            ...(envelope.artifact.available
+              ? {
+                  artifact: {
+                    artifactId: envelope.artifact.artifactId,
+                    characters: envelope.artifact.characters,
+                    format: envelope.artifact.format,
+                  },
+                  continuation: envelope.continuation,
+                }
+              : {}),
+          },
         }
       },
     }

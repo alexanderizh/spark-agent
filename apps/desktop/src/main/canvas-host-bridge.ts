@@ -81,12 +81,8 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
   async callTool(sessionId: string, toolName: string, args: unknown): Promise<unknown> {
     const attachment = this.attachments.get(sessionId)
     if (attachment == null) {
-      log.warn(
-        `canvas tool call refused (no attachment): sessionId=${sessionId} tool=${toolName}`,
-      )
-      throw new Error(
-        `画布 session ${sessionId} 已 detach 或从未 attach，无法执行工具 ${toolName}`,
-      )
+      log.warn(`canvas tool call refused (no attachment): sessionId=${sessionId} tool=${toolName}`)
+      throw new Error(`画布 session ${sessionId} 已 detach 或从未 attach，无法执行工具 ${toolName}`)
     }
     if (attachment.webContents.isDestroyed()) {
       this.attachments.delete(sessionId)
@@ -156,9 +152,7 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
         log.warn(
           `canvas tool call timeout (post-ack): requestId=${requestId} timeoutMs=${TOOL_CALL_TIMEOUT_MS}`,
         )
-        pending.reject(
-          new Error(`画布工具执行超时（${TOOL_CALL_TIMEOUT_MS}ms）`),
-        )
+        pending.reject(new Error(`画布工具执行超时（${TOOL_CALL_TIMEOUT_MS}ms）`))
       }
     }, TOOL_CALL_TIMEOUT_MS)
   }
@@ -191,7 +185,7 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
 
   /** 给 SessionService 用的 provider：当 session 已 attach 时返回 MCP server 配置 */
   asMcpProvider(): CanvasMcpProvider {
-    return async (sessionId: string) => {
+    return async (sessionId: string, context) => {
       if (!this.isAttached(sessionId)) return null
       if (this.toolSchemas.length === 0) {
         log.warn(`canvas attached but no tool schemas registered; sessionId=${sessionId}`)
@@ -210,6 +204,15 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
           sessionId,
           bridge: this,
           toolSchemas: this.toolSchemas,
+          // M4：超限工具结果 envelope 化（workspace 缺失时跳过治理保持旧行为）。
+          ...(context?.workspaceRootPath != null && context.toolResultMaxChars != null
+            ? {
+                toolResultGovernance: {
+                  workspaceRootPath: context.workspaceRootPath,
+                  maxChars: context.toolResultMaxChars,
+                },
+              }
+            : {}),
         })
       } catch (error) {
         log.warn(

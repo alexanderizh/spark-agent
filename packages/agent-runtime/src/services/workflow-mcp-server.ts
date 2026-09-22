@@ -26,6 +26,7 @@ import {
   type CanvasToolSchema,
   type CanvasToolCallBridge,
 } from './canvas-mcp-server.js'
+import { governInProcessToolResult } from './in-process-tool-result-governance.js'
 
 /** 工作流工具 schema：与画布工具 schema 同构（对称复刻期直接别名复用，避免结构漂移） */
 export type WorkflowToolSchema = CanvasToolSchema
@@ -66,6 +67,13 @@ export interface CreateWorkflowMcpServerOptions {
   sessionId: string
   bridge: WorkflowToolCallBridge
   toolSchemas: ReadonlyArray<WorkflowToolSchema>
+  /**
+   * M4 in-process 工具结果治理（可选）：传入即启用——工具结果超过 maxChars
+   * 时 envelope 化（完整内容写内容寻址 artifact，经 spark_tool_results 读回）；
+   * 缺省不治理（行为与旧版一致）。装配层（apps/desktop workflow-host-bridge）
+   * 后续接线。
+   */
+  toolResultGovernance?: { workspaceRootPath: string; maxChars: number }
 }
 
 /**
@@ -97,10 +105,17 @@ export async function createWorkflowMcpServer(
               : typeof result === 'string'
                 ? result
                 : JSON.stringify(result, null, 2)
-          return {
+          const reply = {
             content: [{ type: 'text' as const, text }],
             structuredContent: result as unknown,
           }
+          const governance = opts.toolResultGovernance
+          if (governance == null) return reply
+          return governInProcessToolResult(reply, {
+            workspaceRootPath: governance.workspaceRootPath,
+            toolName: `mcp__spark_workflow__${schema.name}`,
+            maxChars: governance.maxChars,
+          })
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           return {

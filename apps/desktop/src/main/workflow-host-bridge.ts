@@ -191,7 +191,7 @@ export class WorkflowHostBridge implements WorkflowToolCallBridge {
 
   /** 给 SessionService 用的 provider：当 session 已 attach 时返回 MCP server 配置 */
   asMcpProvider(): WorkflowMcpProvider {
-    return async (sessionId: string) => {
+    return async (sessionId: string, context) => {
       if (!this.isAttached(sessionId)) return null
       if (this.toolSchemas.length === 0) {
         log.warn(`workflow attached but no tool schemas registered; sessionId=${sessionId}`)
@@ -210,6 +210,15 @@ export class WorkflowHostBridge implements WorkflowToolCallBridge {
           sessionId,
           bridge: this,
           toolSchemas: this.toolSchemas,
+          // M4：超限工具结果 envelope 化（workspace 缺失时跳过治理保持旧行为）。
+          ...(context?.workspaceRootPath != null && context.toolResultMaxChars != null
+            ? {
+                toolResultGovernance: {
+                  workspaceRootPath: context.workspaceRootPath,
+                  maxChars: context.toolResultMaxChars,
+                },
+              }
+            : {}),
         })
       } catch (error) {
         log.warn(

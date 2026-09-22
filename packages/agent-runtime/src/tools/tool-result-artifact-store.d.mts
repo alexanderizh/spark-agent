@@ -45,8 +45,23 @@ export interface ToolResultEnvelope {
 
 export function governMcpToolResult(
   result: Record<string, unknown>,
-  options: { workspaceRoot: string; toolName?: string; toolCallId?: string },
+  options: {
+    workspaceRoot: string
+    toolName?: string
+    toolCallId?: string
+    /** M4：自定义 inline 阈值（in-process MCP / 团队工具治理）；缺省 24000。 */
+    inlineCharLimit?: number
+  },
 ): Record<string, unknown>
+
+/**
+ * 无条件把任意 payload 归档为 tool_result_envelope（不做 inline 长度判断）。
+ * M4 workflow_run 结果摘要化使用；与 governMcpToolResult 走同一归档设施。
+ */
+export function archiveToolResultAsEnvelope(
+  payload: unknown,
+  options: { workspaceRoot: string; toolName?: string; toolCallId?: string; status?: string },
+): ToolResultEnvelope
 
 export function governAgentToolResultEvent(
   event: ToolResultEvent,

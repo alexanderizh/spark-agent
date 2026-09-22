@@ -19,6 +19,7 @@
 import { z } from 'zod'
 import { loadSdkMcpFactory } from '../sdk/claude-sdk-executor.js'
 import type { SDKMcpServerConfig } from '../sdk/types.js'
+import { governInProcessToolResult } from './in-process-tool-result-governance.js'
 
 /** 渲染端注册的工具 schema（JSON Schema 7 子集） */
 export interface CanvasToolSchema {
@@ -145,6 +146,13 @@ export interface CreateCanvasMcpServerOptions {
   sessionId: string
   bridge: CanvasToolCallBridge
   toolSchemas: ReadonlyArray<CanvasToolSchema>
+  /**
+   * M4 in-process 工具结果治理（可选）：传入即启用——工具结果超过
+   * maxChars 时 envelope 化（完整内容写内容寻址 artifact，经
+   * spark_tool_results 读回）；缺省不治理（行为与旧版一致）。
+   * 装配层（apps/desktop canvas-host-bridge）后续接线。
+   */
+  toolResultGovernance?: { workspaceRootPath: string; maxChars: number }
 }
 
 /**
@@ -208,10 +216,17 @@ export async function createCanvasMcpServer(
               : typeof result === 'string'
                 ? result
                 : JSON.stringify(result, null, 2)
-          return {
+          const reply = {
             content: [{ type: 'text' as const, text }],
             structuredContent: result as unknown,
           }
+          const governance = opts.toolResultGovernance
+          if (governance == null) return reply
+          return governInProcessToolResult(reply, {
+            workspaceRootPath: governance.workspaceRootPath,
+            toolName: `mcp__spark_canvas__${schema.name}`,
+            maxChars: governance.maxChars,
+          })
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           return {

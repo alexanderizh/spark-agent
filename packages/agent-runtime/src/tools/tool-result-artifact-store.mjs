@@ -20,7 +20,13 @@ const ERROR_LINE_PATTERN =
 
 export function governMcpToolResult(result, options) {
   const serialized = serializeToolResult(result)
-  if (serialized.content.length <= TOOL_RESULT_INLINE_CHAR_LIMIT) return result
+  // M4：in-process（type:'sdk'）MCP / 团队工具经 options.inlineCharLimit 携带
+  // toolResult.inProcessMaxChars；缺省沿用 stdio 治理代理的 24K 常量。
+  const inlineLimit =
+    typeof options?.inlineCharLimit === 'number' && Number.isFinite(options.inlineCharLimit)
+      ? options.inlineCharLimit
+      : TOOL_RESULT_INLINE_CHAR_LIMIT
+  if (serialized.content.length <= inlineLimit) return result
   const envelope = createToolResultEnvelope(serialized, {
     ...options,
     status: result?.isError === true ? 'error' : 'success',
@@ -31,6 +37,23 @@ export function governMcpToolResult(result, options) {
     content: [{ type: 'text', text: JSON.stringify(envelope, null, 2) }],
     structuredContent: envelope,
   }
+}
+
+/**
+ * 无条件把任意 payload 归档为 tool_result_envelope（不做 inline 长度判断）。
+ * M4 workflow_run 结果摘要化使用：inline 阈值判断由调用方按
+ * resultInlineStateMaxChars 先行完成，这里只负责全量内容落 artifact 并返回
+ * envelope（artifactId + continuation 指引），与 stdio 治理走同一归档设施，
+ * 可经 spark_tool_results MCP 读回。
+ */
+export function archiveToolResultAsEnvelope(payload, options) {
+  const serialized = serializeToolResult(payload)
+  return createToolResultEnvelope(serialized, {
+    workspaceRoot: options?.workspaceRoot,
+    toolName: options?.toolName,
+    ...(options?.toolCallId ? { toolCallId: options.toolCallId } : {}),
+    status: options?.status ?? 'success',
+  })
 }
 
 export function governAgentToolResultEvent(event, workspaceRoot) {
