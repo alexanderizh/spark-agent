@@ -103,21 +103,30 @@ export interface ResourceMonitorConfig {
 }
 
 export const DEFAULT_PRESSURE_THRESHOLDS: PressureThresholdConfig = {
-  // 默认阈值表（方案 §3.3.5，定义态只有百分比/系数/固定毫秒）
-  systemUsedPct: { warning: 80, critical: 88, emergency: 93 },
-  appFootprintPct: { warning: 50, critical: 65, emergency: 78 },
-  hostRssPct: { warning: 25, critical: 35, emergency: 45 },
-  childrenRssPct: { warning: 35, critical: 50, emergency: 65 },
+  // 默认阈值表（方案 §3.3.5，定义态只有百分比/系数/固定毫秒）。
+  // 2026-09-23 产品决策：常态使用不得触发压力提示——内存类 warning 拉高到
+  // 接近溢出区间（系统内存 90% 起），通知只在 emergency（即将溢出）出现，
+  // warning/critical 仅静默降级（性能页可见）。防失控第一道防线仍是
+  // dispatch-governor 物理并发闸门，阈值是第二道兜底。
+  systemUsedPct: { warning: 90, critical: 94, emergency: 97 },
+  appFootprintPct: { warning: 75, critical: 85, emergency: 92 },
+  hostRssPct: { warning: 45, critical: 60, emergency: 75 },
+  childrenRssPct: { warning: 60, critical: 72, emergency: 80 },
   childrenCount: {
+    // 2026-09-23 实测修正：治理口径含 claude CLI 的 MCP 常驻 node 载体
+    // （每会话数量 = MCP 配置数 × 1.5 左右，真实机器 2 会话即 37 个），
+    // 该指标随「MCP 数 × 会话数」线性增长而非压力信号——floor 必须高于
+    // 正常峰值（6 会话满配 ≈ 100+），只做 fork 失控兜底；内存压力由
+    // children-rss-pct 承担。floor 主导，核数乘数仅防极低配误伤。
     mode: 'auto',
     manual: null,
-    warnMult: 2,
-    critMult: 4,
-    emgMult: 6,
-    warnFloor: 10,
-    critFloor: 16,
-    emgFloor: 24,
-    budgetOffset: { warning: 4, critical: 12, emergency: 24 },
+    warnMult: 8,
+    critMult: 12,
+    emgMult: 16,
+    warnFloor: 80,
+    critFloor: 128,
+    emgFloor: 160,
+    budgetOffset: { warning: 0, critical: 8, emergency: 16 },
     processBudget: DEFAULT_TOTAL_AGENT_PROCESS_BUDGET,
   },
   eventLoopDelayMs: { warning: 300, critical: 600, emergency: 1200 },

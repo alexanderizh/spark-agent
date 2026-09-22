@@ -35,7 +35,7 @@ function makeValues(overrides: Partial<PressureIndicatorValues> = {}): PressureI
 describe('assessIndicatorLevels 逐指标最低水位', () => {
   it('单一指标爆表不被其他正常指标稀释（max-of-levels）', () => {
     const { overall, indicators } = assessIndicatorLevels(
-      makeValues({ childrenRssPct: 66, systemUsedPct: 50, hostRssPct: 10 }),
+      makeValues({ childrenRssPct: 82, systemUsedPct: 50, hostRssPct: 10 }),
       { config: makeConfig(), cpuCores: 8 },
     )
     expect(overall).toBe('emergency')
@@ -76,31 +76,31 @@ describe('assessIndicatorLevels 逐指标最低水位', () => {
     }
   })
 
-  it('children-count 阈值随核数推导（16 核 warning = max(10, 32, b+4)）', () => {
-    const { overall } = assessIndicatorLevels(makeValues({ governedChildrenCount: 30 }), {
+  it('children-count 阈值随核数推导（16 核 warning = max(80, 128, b) = 128）', () => {
+    const { overall } = assessIndicatorLevels(makeValues({ governedChildrenCount: 120 }), {
       config: makeConfig(),
       cpuCores: 16,
     })
-    // 16 核：warning = max(10, 16×2, 8+4) = 32；30 < 32 → nominal
+    // 16 核：warning = max(80, 16×8, 8) = 128；120 < 128 → nominal（正常峰值不误报）
     expect(overall).toBe('nominal')
-    const { overall: overallAt32 } = assessIndicatorLevels(
-      makeValues({ governedChildrenCount: 32 }),
+    const { overall: overallAt128 } = assessIndicatorLevels(
+      makeValues({ governedChildrenCount: 128 }),
       { config: makeConfig(), cpuCores: 16 },
     )
-    expect(overallAt32).toBe('warning')
+    expect(overallAt128).toBe('warning')
   })
 
-  it('低核数机器更保守（4 核 warning = max(10, 8, 12) = 12）', () => {
-    const { overall } = assessIndicatorLevels(makeValues({ governedChildrenCount: 11 }), {
+  it('低核数机器由 floor 主导（4 核 warning = max(80, 32, 8) = 80）', () => {
+    const { overall } = assessIndicatorLevels(makeValues({ governedChildrenCount: 79 }), {
       config: makeConfig(),
       cpuCores: 4,
     })
     expect(overall).toBe('nominal')
-    const { overall: at12 } = assessIndicatorLevels(makeValues({ governedChildrenCount: 12 }), {
+    const { overall: at80 } = assessIndicatorLevels(makeValues({ governedChildrenCount: 80 }), {
       config: makeConfig(),
       cpuCores: 4,
     })
-    expect(at12).toBe('warning')
+    expect(at80).toBe('warning')
   })
 })
 

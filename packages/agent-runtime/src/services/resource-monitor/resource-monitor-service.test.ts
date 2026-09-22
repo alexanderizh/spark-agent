@@ -94,8 +94,8 @@ async function tickOnce(fixture: Fixture): Promise<void> {
 describe('采样 → 评估 → 级别变更闭环', () => {
   it('system-used 连续 2 轮超 warning → 升 warning，联动回调与 pressure-changed 推流', async () => {
     const fixture = makeFixture()
-    // 16G 宿主机 warning=80%：rss 类指标全压制，仅 system-used 驱动
-    fixture.setSystem(85)
+    // 16G 宿主机 warning=90%：rss 类指标全压制，仅 system-used 驱动
+    fixture.setSystem(92)
     await tickOnce(fixture)
     expect(fixture.service.currentLevel).toBe('nominal') // 第 1 轮确认中
     await tickOnce(fixture)
@@ -110,28 +110,27 @@ describe('采样 → 评估 → 级别变更闭环', () => {
     expect(payload.triggeredBy).toContain('system-used-pct')
   })
 
-  it('children-count 爆表场景：核数相关的 critical/emergency 均可确认（tick 两次覆盖确认语义）', async () => {
+  it('children-count 爆表场景：远超 emergency 阈值一轮立即熔断（emergencyImmediateUpgrade）', async () => {
     const fixture = makeFixture()
     fixture.setChildren({
-      totalCount: 40,
+      totalCount: 500,
       totalRssBytes: 4096,
-      governedCount: 40,
+      governedCount: 500,
       governedRssBytes: 4096,
-      byKind: { 'claude-cli': 40 },
+      byKind: { 'claude-cli': 500 },
       registryTracked: 0,
-      sweepDiscovered: 40,
+      sweepDiscovered: 500,
       entries: [],
     })
     await tickOnce(fixture)
-    await tickOnce(fixture)
-    // 级别随宿主核数落位：低核（≤6）一轮 emergency；常规核数两轮确认 critical 及以上。
-    expect(['critical', 'emergency']).toContain(fixture.service.currentLevel)
+    // 500 > emergency（floor 160，核数 ≤31 时 max 均 ≤ 500）：立即升档不等待确认。
+    expect(fixture.service.currentLevel).toBe('emergency')
     expect(fixture.pressureChangedCalls.length).toBeGreaterThanOrEqual(1)
   })
 
   it('降级滞后：回落 nominal 后需 6 轮 + 30s 驻留', async () => {
     const fixture = makeFixture()
-    fixture.setSystem(85)
+    fixture.setSystem(92)
     await tickOnce(fixture)
     await tickOnce(fixture) // warning
     fixture.setSystem(40)
@@ -148,7 +147,7 @@ describe('采样 → 评估 → 级别变更闭环', () => {
 describe('采集失败退避与 stale 标记', () => {
   it('系统内存连续失败 → 指数退避 + 沿用旧值 + staleFields 标记 system', async () => {
     const fixture = makeFixture()
-    fixture.setSystem(85)
+    fixture.setSystem(92)
     await tickOnce(fixture)
     await tickOnce(fixture) // warning（顺便抬高子进程采集频率档）
     fixture.setSystem(null)
@@ -159,7 +158,7 @@ describe('采集失败退避与 stale 标记', () => {
     expect(snapshot?.system.stale).toBe(true)
     // 旧值沿用（退避期内不再采集）
     await tickOnce(fixture)
-    expect(fixture.service.getSnapshot('summary').summary?.system.usedPct).toBe(85)
+    expect(fixture.service.getSnapshot('summary').summary?.system.usedPct).toBe(92)
   })
 
   it('子进程采集失败 → 沿用上次汇总 + stale 标记 children', async () => {
@@ -211,10 +210,10 @@ describe('快照与历史', () => {
     const { summary, full } = fixture.service.getSnapshot('full')
     expect(summary).not.toBeNull()
     expect(full?.baseline.totalBytes).toBe(TOTAL_16G)
-    // 16G 宿主机：host-rss warning 25% 换算 bytes ≈ 4GB（展示语义）
+    // 16G 宿主机：host-rss warning 45% 换算 bytes ≈ 7.2GB（展示语义）
     const hostRss = full?.thresholds?.entries['host-rss-pct']
-    expect(hostRss?.warning.pct).toBe(25)
-    expect(Math.round((hostRss?.warning.bytes ?? 0) / 1024 ** 3)).toBe(4)
+    expect(hostRss?.warning.pct).toBe(45)
+    expect(Math.round((hostRss?.warning.bytes ?? 0) / 1024 ** 3)).toBe(7)
     expect(Array.isArray(full?.childrenEntries)).toBe(true)
   })
 
@@ -280,18 +279,18 @@ describe('enabled=false 与生命周期', () => {
 
   it('reconfigure 热更新：阈值即时生效', async () => {
     const fixture = makeFixture()
-    fixture.setSystem(85)
+    fixture.setSystem(92)
     await tickOnce(fixture)
     await tickOnce(fixture)
     expect(fixture.service.currentLevel).toBe('warning')
-    // 放宽阈值到 90 → 85 回到 nominal 评估（状态机降级仍受滞回约束）
+    // 放宽阈值到 96 → 92 回到 nominal 评估（状态机降级仍受滞回约束）
     fixture.service.reconfigure({
-      thresholds: { systemUsedPct: { warning: 90, critical: 95, emergency: 99 } },
+      thresholds: { systemUsedPct: { warning: 96, critical: 98, emergency: 99 } },
     })
-    fixture.setSystem(85)
+    fixture.setSystem(92)
     expect(
       fixture.service.getSnapshot('full').full?.thresholds?.entries['system-used-pct']?.warning.pct,
-    ).toBe(90)
+    ).toBe(96)
   })
 })
 
@@ -305,10 +304,10 @@ describe('基线漂移重采样', () => {
     await tickOnce(fixture)
     const full = fixture.service.getSnapshot('full').full
     expect(full?.baseline.totalBytes).toBe(32 * 1024 ** 3)
-    // 换算缓存跟随新基线：host-rss warning 25% ≈ 8GB
+    // 换算缓存跟随新基线：host-rss warning 45% ≈ 14.4GB
     expect(
       Math.round((full?.thresholds?.entries['host-rss-pct']?.warning.bytes ?? 0) / 1024 ** 3),
-    ).toBe(8)
+    ).toBe(14)
   })
 })
 

@@ -158,11 +158,11 @@ describe('full 快照 runtimeConfig 回显（M3 配置面板初始值）', () =>
       expect(runtime).not.toBeNull()
       expect(runtime?.monitorEnabled).toBe(true)
       expect(runtime?.thresholds.systemUsedPct).toEqual({
-        warning: 80,
-        critical: 88,
-        emergency: 93,
+        warning: 90,
+        critical: 94,
+        emergency: 97,
       })
-      expect(runtime?.thresholds.hostRssPct).toEqual({ warning: 25, critical: 35, emergency: 45 })
+      expect(runtime?.thresholds.hostRssPct).toEqual({ warning: 45, critical: 60, emergency: 75 })
       expect(runtime?.thresholds.eventLoopDelayMs).toEqual({
         warning: 300,
         critical: 600,
