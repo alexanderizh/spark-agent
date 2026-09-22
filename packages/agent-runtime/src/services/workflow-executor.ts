@@ -1,4 +1,9 @@
 import type { WorkflowEdgeCondition, WorkflowGraph, WorkflowNodeKind } from '@spark/protocol'
+import type { WorkflowExecutionGovernance } from './dispatch-governor/governance-config.js'
+import {
+  applyWorkflowSnapshotMemoryGovernance,
+  type WorkflowMemoryGovernance,
+} from './workflow/workflow-memory-governance.js'
 
 export type WorkflowState = Record<string, unknown>
 
@@ -48,6 +53,11 @@ export type WorkflowAgentExecutionRecord = WorkflowAgentDispatchRequest & {
   /** 本条记录（单次 attempt / 分支）的执行起止时间，ISO 8601，供运行详情展示耗时。 */
   startedAt?: string
   endedAt?: string
+  /**
+   * M4 内存治理（additive）：content 落库时超过 executionsContentMaxChars 被
+   * 头尾截断时置 true。仅出现在治理后的快照副本，未截断记录不携带该字段。
+   */
+  truncated?: boolean
 }
 
 export type WorkflowAtomicNodeExecutionRecord = {
@@ -60,6 +70,8 @@ export type WorkflowAtomicNodeExecutionRecord = {
   /** 本条记录的执行起止时间，ISO 8601，供运行详情展示耗时。 */
   startedAt?: string
   endedAt?: string
+  /** M4 内存治理（additive）：同 WorkflowAgentExecutionRecord.truncated。 */
+  truncated?: boolean
 }
 
 export type WorkflowAgentPlanResult = {
@@ -667,9 +679,25 @@ export async function executeWorkflowAgentPlan(input: {
   initialCompletedNodeIds?: Iterable<string>
   /** 续跑：预置为已因条件未命中而跳过的节点 id。 */
   initialSkippedNodeIds?: Iterable<string>
+  /**
+   * M0 工作流治理（additive：缺省 undefined 时执行器行为与旧版逐字节一致）：
+   * 波宽分块（waveWidth）、扇出钳制（fanoutClamp）、循环×扇出乘积上限
+   * （loopFanoutProductCap）、单 run 派发总量上限（maxDispatchesPerRun）。
+   */
+  governance?: WorkflowExecutionGovernance
+  /**
+   * M4 内存治理（additive：缺省 undefined 时快照逐字节与旧版一致）：对
+   * onSnapshot 观察到的快照副本做 state 值 / executions content 截断；执行器
+   * 内存中的 state/executions 不受影响（插值 / 条件 / loop 语义保持完整）。
+   */
+  memoryGovernance?: WorkflowMemoryGovernance
   /** 进度快照回调：每个节点完成后 + 终态时触发，调用方据此持久化（审计/续跑）。 */
   onSnapshot?: (snapshot: WorkflowRunSnapshot) => void | Promise<void>
 }): Promise<WorkflowAgentPlanResult> {
+  // M0：单 run 派发总量预算。dispatch 统一经 wrap 后向下游（agent 节点 / loop 体
+  // 递归）传递：loop 递归复用同一个 wrapped dispatch（Symbol 标记防重复包裹），
+  // 计数闭包全 run 树共享——「预算 10×续跑 20=210 派发」的运行维度硬顶。
+  const dispatch = applyDispatchBudget(input.dispatch, input.governance)
   const state: WorkflowState = { ...input.initialState }
   const executions: WorkflowAgentExecutionRecord[] = []
   const atomicExecutions: WorkflowAtomicNodeExecutionRecord[] = []
@@ -692,16 +720,22 @@ export async function executeWorkflowAgentPlan(input: {
     status: WorkflowRunSnapshotStatus,
     failedNode?: WorkflowAgentPlanResult['failedNode'],
   ): Promise<void> => {
-    await input.onSnapshot?.({
-      status,
-      state,
-      executions,
-      atomicExecutions,
-      completedNodeIds: [...completedNodeIds],
-      skippedNodeIds: [...skippedNodeIds],
-      runningNodeIds: [...runningNodeIds],
-      ...(failedNode != null ? { failedNode } : {}),
-    })
+    // M4：仅治理快照副本（未超限或未传 memoryGovernance 时同一对象原样传递，
+    // 逐字节保持现状）；内存中的 state/executions 引用不受影响。
+    const snapshot = applyWorkflowSnapshotMemoryGovernance(
+      {
+        status,
+        state,
+        executions,
+        atomicExecutions,
+        completedNodeIds: [...completedNodeIds],
+        skippedNodeIds: [...skippedNodeIds],
+        runningNodeIds: [...runningNodeIds],
+        ...(failedNode != null ? { failedNode } : {}),
+      },
+      input.memoryGovernance,
+    )
+    await input.onSnapshot?.(snapshot)
   }
 
   // 节点级实时上报后，同波多个节点可能相继完成并触发快照；串行链保证 onSnapshot
@@ -768,7 +802,7 @@ export async function executeWorkflowAgentPlan(input: {
             : {}),
           state,
           skippedNodeIds,
-          dispatch: input.dispatch,
+          dispatch,
           ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
           ...(input.availableWorkerIds != null
             ? { availableWorkerIds: input.availableWorkerIds }
@@ -776,6 +810,7 @@ export async function executeWorkflowAgentPlan(input: {
           ...(input.executeAtomicNode != null
             ? { executeAtomicNode: input.executeAtomicNode }
             : {}),
+          ...(input.governance != null ? { governance: input.governance } : {}),
         })
         runningNodeIds.delete(node.id)
         atomicExecutions.push(result.record)
@@ -801,44 +836,52 @@ export async function executeWorkflowAgentPlan(input: {
 
     const stateSnapshot = { ...state }
     const readyWorkerNodes = readyNodes.filter((node) => isWorkflowDispatchableNode(node))
-    for (const node of readyWorkerNodes) runningNodeIds.add(node.id)
-    await enqueueSnapshot('working')
-    // 节点级实时上报：单个节点完成即落 executions、更新集合并发快照，不再等整波结束——
-    // 同波快慢节点并存时，快节点的完成状态立即可见。节点输入仍取波开始时的 state
-    // 快照（stateSnapshot），state 写入按完成顺序串行（outputKey 互不冲突），语义不变。
+    // M0 波宽分块：ready worker 节点按 waveWidth 切块串行波；所有块输入取同一
+    // stateSnapshot（节点输入语义不变）；前块终态失败后后续块不再派发（背压，
+    // 显式行为变化写入发布说明）。governance 缺省 = 单块（行为与旧版一致）。
+    const waveChunks = chunkWorkflowNodes(readyWorkerNodes, input.governance?.waveWidth)
     let failedResult:
       | Extract<WorkflowAgentNodeResult, { status: 'failed' | 'canceled' }>
       | undefined
-    await Promise.all(
-      readyWorkerNodes.map(async (node) => {
-        const result = await executeWorkflowAgentNode({
-          graph: input.graph,
-          node,
-          objective: input.objective,
-          ...(input.attachments != null && input.attachments.length > 0
-            ? { attachments: input.attachments }
-            : {}),
-          state: stateSnapshot,
-          skippedNodeIds,
-          dispatch: input.dispatch,
-          parallel: readyNodes.length > 1,
-          ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
-          ...(input.availableWorkerIds != null
-            ? { availableWorkerIds: input.availableWorkerIds }
-            : {}),
-        })
-        runningNodeIds.delete(node.id)
-        executions.push(...result.executions)
-        pendingNodes.delete(result.nodeId)
-        if (result.status === 'completed') {
-          if (result.outputKey.length > 0) state[result.outputKey] = result.content
-          completedNodeIds.add(result.nodeId)
-        } else if (failedResult == null) {
-          failedResult = result
-        }
-        await enqueueSnapshot('working')
-      }),
-    )
+    for (const waveNodes of waveChunks) {
+      for (const node of waveNodes) runningNodeIds.add(node.id)
+      await enqueueSnapshot('working')
+      // 节点级实时上报：单个节点完成即落 executions、更新集合并发快照，不再等整波结束——
+      // 同波快慢节点并存时，快节点的完成状态立即可见。节点输入仍取波开始时的 state
+      // 快照（stateSnapshot），state 写入按完成顺序串行（outputKey 互不冲突），语义不变。
+      await Promise.all(
+        waveNodes.map(async (node) => {
+          const result = await executeWorkflowAgentNode({
+            graph: input.graph,
+            node,
+            objective: input.objective,
+            ...(input.attachments != null && input.attachments.length > 0
+              ? { attachments: input.attachments }
+              : {}),
+            state: stateSnapshot,
+            skippedNodeIds,
+            dispatch,
+            parallel: waveNodes.length > 1,
+            ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
+            ...(input.availableWorkerIds != null
+              ? { availableWorkerIds: input.availableWorkerIds }
+              : {}),
+            ...(input.governance != null ? { fanoutClamp: input.governance.fanoutClamp } : {}),
+          })
+          runningNodeIds.delete(node.id)
+          executions.push(...result.executions)
+          pendingNodes.delete(result.nodeId)
+          if (result.status === 'completed') {
+            if (result.outputKey.length > 0) state[result.outputKey] = result.content
+            completedNodeIds.add(result.nodeId)
+          } else if (failedResult == null) {
+            failedResult = result
+          }
+          await enqueueSnapshot('working')
+        }),
+      )
+      if (failedResult != null) break
+    }
 
     if (failedResult != null) {
       await enqueueSnapshot(failedResult.status, failedResult.failedNode)
@@ -915,6 +958,8 @@ async function executeWorkflowAtomicNode(input: {
   executeAtomicNode?: (
     request: WorkflowAtomicNodeExecutionRequest,
   ) => Promise<WorkflowAtomicNodeExecutionReply>
+  /** M0：治理参数（loop 乘积上限 + 体內波宽/扇出/预算透传）。缺省不生效。 */
+  governance?: WorkflowExecutionGovernance
 }): Promise<WorkflowAtomicNodeResult> {
   const outputKey =
     typeof input.node.config.outputKey === 'string' ? input.node.config.outputKey.trim() : ''
@@ -1025,6 +1070,8 @@ async function executeWorkflowLoopNode(input: {
   executeAtomicNode?: (
     request: WorkflowAtomicNodeExecutionRequest,
   ) => Promise<WorkflowAtomicNodeExecutionReply>
+  /** M0：治理参数（乘积上限检查 + 体內波宽/扇出/预算透传）。缺省不生效。 */
+  governance?: WorkflowExecutionGovernance
 }): Promise<WorkflowAtomicNodeExecutionReply> {
   const bodyGraph = getWorkflowLoopBodyGraph(input.node)
   if (bodyGraph == null || bodyGraph.nodes.length === 0) {
@@ -1041,10 +1088,33 @@ async function executeWorkflowLoopNode(input: {
   if (validationError != null) {
     return { state: 'failed', content: '', error: validationError }
   }
+  const maxIterations = getWorkflowLoopMaxIterations(input.node)
+  // M0：循环×扇出乘积静态估算（maxIterations × 单次迭代最大派发路数，含 fanout 与
+  // retry 放大）。超限节点失败——对「50 次循环 × parallelism=16」类失控配置的运行前
+  // 硬顶（事故根因 #2/#4 的乘积放大）。估算取 body 内 dispatchable 节点每 attempt
+  // 派发路数之和（保守上界，高于真实波宽的最大 antichain），乘 maxIterations。
+  if (input.governance != null) {
+    const estimate = estimateWorkflowLoopDispatchBudget(
+      bodyGraph,
+      maxIterations,
+      input.governance.fanoutClamp,
+    )
+    if (estimate > input.governance.loopFanoutProductCap) {
+      return {
+        state: 'failed',
+        content: '',
+        error: {
+          code: 'workflow_loop_budget_exceeded',
+          message:
+            `Loop node ${input.node.id} dispatch budget exceeded: maxIterations(${maxIterations}) × per-iteration dispatches(${estimate / Math.max(maxIterations, 1)}) = ${estimate}, ` +
+            `above the cap of ${input.governance.loopFanoutProductCap}. Lower the loop maxIterations, reduce subagent parallelism, or simplify the loop body.`,
+        },
+      }
+    }
+  }
 
   const loopVar = getWorkflowLoopVar(input.node)
   const resultKey = getWorkflowLoopResultKey(input.node, bodyGraph)
-  const maxIterations = getWorkflowLoopMaxIterations(input.node)
   const collectAll = input.node.config.collectAll === true
   const breakCondition = normalizeWorkflowEdgeCondition(input.node.config.breakCondition)
   const iterationContents: string[] = []
@@ -1066,6 +1136,9 @@ async function executeWorkflowLoopNode(input: {
       initialState: iterationState,
       dispatch: input.dispatch,
       ...(input.executeAtomicNode != null ? { executeAtomicNode: input.executeAtomicNode } : {}),
+      // M0：治理透传进 loop 体（体內波宽分块/扇出钳制生效；派发预算经共享的
+      // wrapped dispatch 全 run 树计数；体內无嵌套 loop，乘积不重复检查）。
+      ...(input.governance != null ? { governance: input.governance } : {}),
     })
     if (result.status !== 'completed') {
       const failed = result.failedNode?.error
@@ -1178,6 +1251,8 @@ async function executeWorkflowAgentNode(input: {
   parallel: boolean
   fallbackAgentId?: string
   availableWorkerIds?: ReadonlySet<string>
+  /** M0：subagent 扇出钳制上限（缺省不钳制）。 */
+  fanoutClamp?: number
 }): Promise<WorkflowAgentNodeResult> {
   const node = input.node
   const agentId =
@@ -1251,7 +1326,11 @@ async function executeWorkflowAgentNode(input: {
   }
   // 任务 1：subagent.parallelism 真实 fan-out。仅 subagent 节点读取，agent 节点忽略（恒为 1）。
   // fan-out 是「同一 workerId 在单次 attempt 内并发 N 路独立 dispatch」，不是 N 个 worker。
-  const parallelism = node.kind === 'subagent' ? getWorkflowNodeParallelism(node) : 1
+  // M0：fanoutClamp 静默钳制（任意数值不再被无条件接受，事故根因 #2）。
+  const parallelism =
+    node.kind === 'subagent'
+      ? clampWorkflowNodeFanout(getWorkflowNodeParallelism(node), input.fanoutClamp)
+      : 1
   const maxAttempts = 1 + getWorkflowNodeRetryCount(node)
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = new Date().toISOString()
@@ -1330,6 +1409,104 @@ function getWorkflowNodeParallelism(node: NormalizedWorkflowNode): number {
   const raw = node.config.parallelism
   if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 1) return 1
   return Math.floor(raw)
+}
+
+// ─── M0 工作流治理帮助函数（governance 未传时全部为直通，行为逐字节不变） ────────
+
+/** dispatch 预算包装标记：loop 体递归复用同一 wrapped dispatch，防止计数器被重复包裹。 */
+const WORKFLOW_DISPATCH_BUDGET_STATE = Symbol('workflowDispatchBudgetState')
+
+interface WorkflowDispatchBudgetState {
+  used: number
+  maxDispatches: number
+}
+
+type BudgetedDispatch = ((
+  request: WorkflowAgentDispatchRequest,
+  options?: WorkflowAgentDispatchOptions,
+) => Promise<WorkflowAgentDispatchReply>) & {
+  [WORKFLOW_DISPATCH_BUDGET_STATE]?: WorkflowDispatchBudgetState
+}
+
+/**
+ * 单 run 派发总量预算：把 dispatch 包一层计数拦截，超限时不再真派发、直接返回
+ * 失败 reply（沿现有节点失败路径传导为 run 失败）。已包裹的 dispatch（loop 体
+ * 递归传入）原样复用，计数闭包全 run 树共享。
+ */
+function applyDispatchBudget(
+  dispatch: (
+    request: WorkflowAgentDispatchRequest,
+    options?: WorkflowAgentDispatchOptions,
+  ) => Promise<WorkflowAgentDispatchReply>,
+  governance: WorkflowExecutionGovernance | undefined,
+): BudgetedDispatch {
+  if (governance == null) return dispatch as BudgetedDispatch
+  const existing = dispatch as BudgetedDispatch
+  if (existing[WORKFLOW_DISPATCH_BUDGET_STATE] != null) return existing
+  const state: WorkflowDispatchBudgetState = {
+    used: 0,
+    maxDispatches: governance.maxDispatchesPerRun,
+  }
+  const wrapped: BudgetedDispatch = async (request, options) => {
+    state.used += 1
+    if (state.used > state.maxDispatches) {
+      return {
+        state: 'failed',
+        content: '',
+        error: {
+          code: 'workflow_dispatch_budget_exceeded',
+          message:
+            `Workflow dispatch budget exceeded: this run already dispatched ${state.maxDispatches} member task(s) ` +
+            '(including loop iterations and subagent fan-out branches). Split the workflow into smaller runs, lower loop maxIterations, or reduce subagent parallelism.',
+        },
+      }
+    }
+    return dispatch(request, options)
+  }
+  wrapped[WORKFLOW_DISPATCH_BUDGET_STATE] = state
+  return wrapped
+}
+
+/** 波宽分块：waveWidth 缺省/非正数 = 单块（全量并行，与旧版一致）。 */
+function chunkWorkflowNodes<T>(nodes: T[], waveWidth: number | undefined): T[][] {
+  if (nodes.length === 0) return []
+  if (waveWidth == null || !Number.isFinite(waveWidth) || waveWidth < 1) return [nodes]
+  const width = Math.floor(waveWidth)
+  if (width >= nodes.length) return [nodes]
+  const chunks: T[][] = []
+  for (let index = 0; index < nodes.length; index += width) {
+    chunks.push(nodes.slice(index, index + width))
+  }
+  return chunks
+}
+
+/** 扇出钳制：parallelism 超过 clamp 时静默钳到 clamp（fanoutClamp 缺省 = 不钳制）。 */
+function clampWorkflowNodeFanout(parallelism: number, fanoutClamp: number | undefined): number {
+  if (fanoutClamp == null || !Number.isFinite(fanoutClamp) || fanoutClamp < 1) return parallelism
+  const clamp = Math.floor(fanoutClamp)
+  if (parallelism <= clamp) return parallelism
+  return clamp
+}
+
+/**
+ * 循环×扇出乘积静态估算：maxIterations × 单次迭代最大派发路数。
+ * 单次迭代派发路数 = body 内 dispatchable 节点的 (attempt 数 × max(parallelism,1)) 之和
+ * ——attempt = 1 + retryCount（失败重试也各派发一路）。这是保守上界（高于按拓扑
+ * 分层的真实波宽），失控配置更早被拦。
+ */
+export function estimateWorkflowLoopDispatchBudget(
+  bodyGraph: NormalizedWorkflowGraph,
+  maxIterations: number,
+  fanoutClamp: number | undefined,
+): number {
+  let perIteration = 0
+  for (const node of bodyGraph.nodes) {
+    if (!isWorkflowDispatchableNode(node)) continue
+    const attempts = 1 + getWorkflowNodeRetryCount(node)
+    const fanout = clampWorkflowNodeFanout(getWorkflowNodeParallelism(node), fanoutClamp)
+    perIteration += attempts * Math.max(fanout, 1)
+  }
+  return perIteration * Math.max(maxIterations, 1)
 }
 
 function getDefaultAtomicNodeContent(node: NormalizedWorkflowNode, objective: string): string {

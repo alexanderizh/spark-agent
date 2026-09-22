@@ -27,6 +27,12 @@ import type {
   TeamThreadMessageDelivery,
 } from '@spark/storage'
 import { createLogger } from '@spark/shared'
+import type {
+  DispatchGatePermit,
+  DispatchGovernor,
+  DispatchSource,
+} from './dispatch-governor/dispatch-governor.js'
+import { DispatchGateError } from './dispatch-governor/dispatch-governor.js'
 
 const log = createLogger('team-dispatch')
 
@@ -100,6 +106,13 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   /** true = 这次 run 由同步 peer call 触发，使用 peerCallCountByTurn 而不是 host dispatch 预算。 */
   countAsPeerCall?: boolean
   /**
+   * 派发来源显式标记（additive，缺省 unspecified 行为不变）：供并发闸门诊断与
+   * M2 压力降级矩阵按来源分级，不靠 currentDepth/discussionId 启发式推断。
+   * host = 宿主工具面单发/批量；member = 成员嵌套派发；peer-call = 同步咨询；
+   * workflow = workflow_run 派发回调。
+   */
+  dispatchSource?: DispatchSource
+  /**
    * 自动 @ 转发的跳数（防级联爆炸）。缺省 0 = 原始 dispatch；recordPeerMessage 触发的
    * 执行为上一跳 +1。仅 hops=0 的成员回复会被解析正文 `@成员名` 做自动转发（一跳语义）：
    * auto/工具触发的目标回复不再自动转发，目标想继续对话可自己调 agent_message。
@@ -153,6 +166,15 @@ const MAX_DIRECTED_EXCHANGES_PER_PAIR_PER_ROUND = 8
 const MAX_SYNC_CONSULT_DEPTH = 3
 const PEER_CALL_DEADLINE_BUFFER_MS = 30_000
 
+/** 第 6 位构造参数（尾部追加，向后兼容：不传时行为与旧版逐字节一致）。 */
+export interface TeamDispatchServiceOptions {
+  /**
+   * M0 全局成员派发并发闸门。缺省 = 不挂闸门（既有行为完全不变）；
+   * 传入且 enabled=true 时 runMember 在执行前等待 permit（FIFO 跨会话公平）。
+   */
+  governor?: DispatchGovernor
+}
+
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
   private readonly dispatchCountByTurn = new Map<string, number>()
@@ -186,6 +208,8 @@ export class TeamDispatchService {
     private readonly maxMessagesPerDiscussion: number = DEFAULT_MAX_MESSAGES_PER_DISCUSSION,
     /** P3：同步 peer call 独立预算，不挤占 Host dispatch 预算 */
     private readonly maxPeerCallsPerTurn: number = DEFAULT_MAX_PEER_CALLS_PER_TURN,
+    /** M0：全局成员派发并发闸门（缺省 = 无闸门，行为不变）。 */
+    private readonly options: TeamDispatchServiceOptions = {},
   ) {}
 
   async run<M extends { id: string; name: string }>(
@@ -300,6 +324,80 @@ export class TeamDispatchService {
     ctx.signal?.addEventListener('abort', onParentAbort)
     // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
     const runMember = async (): Promise<TeamA2AReply> => {
+      // ── M0 并发闸门 ─────────────────────────────────────────────────────────
+      // runMember 最前等待 permit：串行路径排队期间行保持 pending（与「超时计时在
+      // permit 准入后才启动」的 pending→working 对齐机制一致）；peer call（发起者已
+      // 持 permit）与 depth>0 嵌套派发走嵌套池，消除主池死锁洞。
+      // 拒绝/取消沿用 peer-deadline 早退同款就地收尾模板（team-dispatch.service.ts
+      // §4.2 审查结论），绝不产生僵尸 pending/working 行。
+      let permit: DispatchGatePermit | null = null
+      if (this.options.governor != null) {
+        try {
+          permit = await this.options.governor.acquire({
+            dispatchId,
+            sessionId: ctx.sessionId,
+            turnId: ctx.turnId,
+            depth: ctx.currentDepth,
+            peerCall: ctx.countAsPeerCall === true,
+            dispatchSource:
+              ctx.countAsPeerCall === true && ctx.dispatchSource == null
+                ? 'peer-call'
+                : (ctx.dispatchSource ?? 'unspecified'),
+            signal: controller.signal,
+          })
+        } catch (err) {
+          const canceled = controller.signal.aborted
+          const gateError = err instanceof DispatchGateError ? err : null
+          const canceledBySignal = canceled || (gateError != null && gateError.kind === 'canceled')
+          const message = gateError?.message ?? (err instanceof Error ? err.message : String(err))
+          const reply: TeamA2AReply = canceledBySignal
+            ? {
+                taskId: task.taskId,
+                memberAgentId: member.id,
+                memberName: member.name,
+                state: 'canceled',
+                content: '',
+                error: {
+                  code: 'denied',
+                  message: 'Dispatch was canceled while waiting for a concurrency slot.',
+                },
+              }
+            : {
+                taskId: task.taskId,
+                memberAgentId: member.id,
+                memberName: member.name,
+                state: 'failed',
+                content: '',
+                error: { code: 'internal', message },
+              }
+          if (!canceledBySignal) {
+            log.warn('[dispatch-governor] dispatch rejected at gate', {
+              dispatchId,
+              memberAgentId: member.id,
+              turnId: ctx.turnId,
+              reason: gateError?.kind ?? 'error',
+            })
+          }
+          this.dispatches.update(dispatchId, {
+            state: reply.state,
+            replyJson: JSON.stringify(reply),
+            errorMessage: message,
+            endedAt: new Date().toISOString(),
+          })
+          ctx.emitEvent({
+            ...base(),
+            type: 'team_dispatch_completed',
+            dispatchId,
+            hostAgentId: ctx.hostAgentId,
+            memberAgentId: member.id,
+            reply,
+          })
+          this.controllers.delete(dispatchId)
+          ctx.signal?.removeEventListener('abort', onParentAbort)
+          ctx.onActivityChange?.(ctx.sessionId)
+          return reply
+        }
+      }
       // 出队后（串行路径）才从 pending → working，与超时计时器起点对齐；
       // parallel 路径创建时已是 working，无需迁移。
       if (queued) {
@@ -322,6 +420,9 @@ export class TeamDispatchService {
       if (ctx.countAsPeerCall === true && remainingMs < PEER_CALL_DEADLINE_BUFFER_MS) {
         // 剩余时间不足的同步咨询：在 try 外提前返回，需就地收尾 dispatch 行与
         // controller 注册，否则该行会永久停在创建态（僵尸 working）、controllers 泄漏。
+        // permit 已在上方 acquire 成功而此处尚未进入 try/finally 覆盖范围，
+        // 必须显式释放，否则嵌套池容量永久损失（governor 无超时回收机制）。
+        permit?.release()
         const reply = fail(
           'timeout',
           'Not enough time remains to consult a teammate synchronously. Use agent_message mode "note" or answer with the information you already have.',
@@ -543,6 +644,8 @@ export class TeamDispatchService {
         })
         return reply
       } finally {
+        // M0：permit 归还在最前——后续 abort/清理不受 permit 释放失败影响（release 幂等）。
+        permit?.release()
         clearTimeout(timer)
         // FR-B/0b 修复（审查 B-2）：dispatch 收尾（成功/失败/取消）统一 abort controller，
         // 触发传给 executeMemberTurn 的 signal 上的 abort 监听 → 回收嵌套资源（如 codex
@@ -739,6 +842,8 @@ export class TeamDispatchService {
     //  - parallel: true —— 绕过 turn 串行队列。发起者（成员）自身往往正占着队列
     //    槽位在执行，串行入队会形成「等自己结束」的死锁，直到 dispatch 超时。
     //  - autoMentionHops +1 —— 链深计数（MAX_AUTO_MENTION_HOPS 到顶后目标回复不再自动转发）。
+    // 并发闸门侧：countAsPeerCall=true 使该 run 走嵌套池（发起者已持 permit，
+    // 不能再回主池排队——饱和态会形成全成员互等的死锁洞，影响分析 §3.2-a）。
     const reply = await this.run(
       task,
       {
@@ -746,6 +851,7 @@ export class TeamDispatchService {
         currentDepth: 0,
         callerAgentId: args.senderAgentId,
         countAsPeerCall: true,
+        dispatchSource: 'peer-call',
         consultDepth: enforceConsultDepth ? (ctx.consultDepth ?? 0) + 1 : (ctx.consultDepth ?? 0),
         ...(ctx.deadlineAt != null ? { deadlineAt: ctx.deadlineAt } : {}),
         autoMentionHops: (ctx.autoMentionHops ?? 0) + 1,

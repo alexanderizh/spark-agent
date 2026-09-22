@@ -582,8 +582,17 @@ export class ScheduledTaskService {
                 error: 'Cancelled by new scheduled execution',
               })
             }
+          } else if (task.concurrency_policy === 'queue') {
+            // M0 修复（原注释与行为不符的存量 bug）：'queue' = 同任务串行排队。
+            // 上一执行仍在运行时不跳过也不取消，保持 due 状态（不创建 execution、
+            // 不推进 next_run_at），下次 tick 重查——运行结束后立即接上，形成真实
+            // 的串行排队语义。错过的时间不补偿（排队优先于触发密度）。
+            log.debug(`Task ${task.id} queued: previous execution still running`, {
+              taskId: task.id,
+              runningExecutions: runningExecutions.length,
+            })
+            continue
           }
-          // 'queue' policy: let the new execution start anyway
         }
 
         // Create execution record
