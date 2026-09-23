@@ -17,18 +17,23 @@ export function QuickReplySuggestions({
 
   return (
     <div className="composer-quick-replies" aria-label="快捷回复建议">
-      {replies.map((reply) => (
-        <button
-          key={reply}
-          type="button"
-          className="composer-quick-reply-chip"
-          disabled={disabled}
-          title={`发送：${reply}`}
-          onClick={() => onSelect(reply)}
-        >
-          {reply}
-        </button>
-      ))}
+      {/* 选项独立成组自由换行；关闭按钮不参与选项流，避免长选项把关闭按钮挤到单独一行左侧 */}
+      <div className="composer-quick-replies-chips">
+        {replies.map((reply) => (
+          <button
+            key={reply}
+            type="button"
+            className="composer-quick-reply-chip"
+            disabled={disabled}
+            title={`发送：${reply}`}
+            onClick={() => onSelect(reply)}
+          >
+            {/* inline-flex 下文本是匿名 flex item，text-overflow 不生效；
+                必须包一层真实元素，超长文案才会以省略号收尾而非被硬裁 */}
+            <span className="composer-quick-reply-chip-label">{reply}</span>
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         className="composer-quick-replies-dismiss"

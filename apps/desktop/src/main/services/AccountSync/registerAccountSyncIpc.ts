@@ -26,6 +26,10 @@ export function registerAccountSyncIpc(): void {
   typedIpcHandle('account-sync:list-history', async (request) =>
     getAccountSyncService().listHistory(request.page, request.pageSize),
   )
+  typedIpcHandle('account-sync:get-status', async () => getAccountSyncService().getStatus())
+  typedIpcHandle('account-sync:estimate-payload', async (request) =>
+    getAccountSyncService().estimatePayload(request),
+  )
 }
 
 export function __resetAccountSyncServiceForTesting(): void {

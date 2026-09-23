@@ -52,6 +52,7 @@ import {
   useSessionSidebar,
   type SessionSummary,
 } from './SessionSidebarContext'
+import { sortSessionsByPinned } from './sidebar-session-sort'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('SessionSidebarContext', () => {
@@ -1720,6 +1721,258 @@ describe('SessionSidebarContext', () => {
     })
     expect(latestCtxRef.current?.sessions[0]?.status).toBe('idle')
     expect(latestCtxRef.current?.sessionAgentStatuses['old-session']).toBeUndefined()
+  })
+
+  it('floats an activated historical session to the top when its new turn starts', async () => {
+    // 复现 #196：激活历史会话并发起新一轮对话后，该会话没有按最新运行时间浮到列表顶部。
+    // 关键前提：发送路径会立刻把本地 status 乐观置成 running（ChatView.handleUserSent），
+    // 早于执行器首个 agent_status 事件到达；旧实现此时提前 return，updatedAt 永不刷新，
+    // 而正常对话路径不会全量刷新列表，顺序就一直停在原地。
+    const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
+    const newerUpdatedAt = '2026-07-20T00:00:00.000Z'
+    let agentEventHandler: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'old-session',
+              title: 'Old session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: oldUpdatedAt,
+              updatedAt: oldUpdatedAt,
+              messageCount: 1,
+            },
+            {
+              id: 'newer-session',
+              title: 'Newer session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: newerUpdatedAt,
+              updatedAt: newerUpdatedAt,
+              messageCount: 1,
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:agent-event') agentEventHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(sortSessionsByPinned(latestCtxRef.current?.sessions ?? []).map((s) => s.id)).toEqual([
+      'newer-session',
+      'old-session',
+    ])
+
+    // 用户点「发送」：本地 status 先被乐观置成 running（不写 updatedAt）
+    const turnStartedAt = Date.now()
+    await act(async () => {
+      latestCtxRef.current?.updateSessionInList('old-session' as SessionId, { status: 'running' })
+    })
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+
+    // 执行器起跑后推来本轮首个非终态事件
+    await act(async () => {
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'old-session',
+        turnId: 'turn-1',
+        status: 'thinking',
+      })
+    })
+
+    expect(
+      new Date(
+        latestCtxRef.current?.sessions.find((s) => s.id === 'old-session')?.updatedAt ?? 0,
+      ).getTime(),
+    ).toBeGreaterThanOrEqual(turnStartedAt)
+    expect(sortSessionsByPinned(latestCtxRef.current?.sessions ?? []).map((s) => s.id)).toEqual([
+      'old-session',
+      'newer-session',
+    ])
+
+    // 同一轮的后续非终态事件不应再次改写 updatedAt（避免整列表反复重排）
+    const bumpedUpdatedAt = latestCtxRef.current?.sessions.find(
+      (s) => s.id === 'old-session',
+    )?.updatedAt
+    await act(async () => {
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'old-session',
+        turnId: 'turn-1',
+        status: 'waiting_permission',
+      })
+    })
+    expect(latestCtxRef.current?.sessions.find((s) => s.id === 'old-session')?.updatedAt).toBe(
+      bumpedUpdatedAt,
+    )
+
+    // 下一轮对话必须再次浮顶
+    await act(async () => {
+      agentEventHandler?.({
+        type: 'agent_status',
+        sessionId: 'old-session',
+        turnId: 'turn-2',
+        status: 'thinking',
+      })
+    })
+    expect(
+      new Date(
+        latestCtxRef.current?.sessions.find((s) => s.id === 'old-session')?.updatedAt ?? 0,
+      ).getTime(),
+    ).toBeGreaterThanOrEqual(new Date(bumpedUpdatedAt ?? 0).getTime())
+  })
+
+  it('floats a session to the top as soon as the user sends a message', async () => {
+    const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
+    const newerUpdatedAt = '2026-07-20T00:00:00.000Z'
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'old-session',
+              title: 'Old session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: oldUpdatedAt,
+              updatedAt: oldUpdatedAt,
+              messageCount: 1,
+            },
+            {
+              id: 'newer-session',
+              title: 'Newer session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: newerUpdatedAt,
+              updatedAt: newerUpdatedAt,
+              messageCount: 1,
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', { invoke, on: vi.fn(() => vi.fn()) })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    const sentAt = Date.now()
+    await act(async () => {
+      latestCtxRef.current?.bumpSessionActivity('old-session' as SessionId)
+    })
+
+    expect(
+      new Date(
+        latestCtxRef.current?.sessions.find((s) => s.id === 'old-session')?.updatedAt ?? 0,
+      ).getTime(),
+    ).toBeGreaterThanOrEqual(sentAt)
+    expect(sortSessionsByPinned(latestCtxRef.current?.sessions ?? []).map((s) => s.id)).toEqual([
+      'old-session',
+      'newer-session',
+    ])
   })
 
   it('does not let a host terminal event override an authoritative running team queue', async () => {

@@ -4,8 +4,10 @@ import {
   countAccountSyncPromptLibraryChars,
   type AccountSyncExecuteRequest,
   type AccountSyncExecuteResponse,
+  type AccountSyncPayloadEstimate,
   type AccountSyncPreviewResult,
   type AccountSyncPromptLibraryItemInput,
+  type AccountSyncStatus,
 } from '@spark/protocol'
 import { canvasApi } from '../canvas/canvas.api'
 import { getPromptCategory } from '../canvas/canvasPromptLibraryCategories'
@@ -105,6 +107,21 @@ export async function executeAccountSync(
   const promptLibraryItems = await promptLibraryItemsWhenEnabled(includePromptLibrary)
   return window.spark.invoke('account-sync:execute', {
     ...request,
+    ...(promptLibraryItems !== undefined ? { promptLibraryItems } : {}),
+  })
+}
+
+/** 同步余量状态（上限 / 上次同步数据 / 余量口径），服务端不可用时由主进程回退保守默认值 */
+export async function getAccountSyncStatus(): Promise<AccountSyncStatus> {
+  return window.spark.invoke('account-sync:get-status', {})
+}
+
+/** 本地预估本次同步请求体大小：只采集测量，不发送、不落库 */
+export async function estimateAccountSyncPayload(
+  includePromptLibrary: boolean,
+): Promise<AccountSyncPayloadEstimate> {
+  const promptLibraryItems = await promptLibraryItemsWhenEnabled(includePromptLibrary)
+  return window.spark.invoke('account-sync:estimate-payload', {
     ...(promptLibraryItems !== undefined ? { promptLibraryItems } : {}),
   })
 }

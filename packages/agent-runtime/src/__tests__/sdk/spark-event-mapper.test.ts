@@ -236,3 +236,92 @@ describe('SparkEventMapper M5：压缩与上下文计量', () => {
     expect(contextUsage).toMatchObject({ contextWindowTokens: 256_000 })
   })
 })
+
+describe('SparkEventMapper 自动重试可见性与段复位', () => {
+  const retryDelta = (overrides: Partial<Extract<LlmDelta, { type: 'retry' }>> = {}): LlmDelta =>
+    ({
+      type: 'retry',
+      routeId: 'primary',
+      attempt: 1,
+      maxRetries: 10,
+      delayMs: 2_000,
+      resetOutput: false,
+      error: { code: 'llm.transport_error', message: 'connection reset' },
+      ...overrides,
+    }) as LlmDelta
+
+  it('retry delta → runtime_signal(stream_reconnect)（含进度与失败原因）', () => {
+    const mapper = makeMapper()
+    const events = mapper.mapDelta(retryDelta({ attempt: 3, delayMs: 500 }))
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      type: 'runtime_signal',
+      signal: 'stream_reconnect',
+      level: 'info',
+      code: 'SPARK_LLM_RETRY',
+      retryable: false,
+      details: [
+        { label: '重试进度', value: '3/10' },
+        { label: '本次等待', value: '500ms' },
+        { label: '失败原因', value: 'llm.transport_error' },
+      ],
+    })
+    // 过程信号不产生终态，也不会被渲染成失败卡片。
+    expect(events.some((event) => event.type === 'agent_status')).toBe(false)
+  })
+
+  it('resetOutput=true 时先复位失败尝试的正文与思考段，再给重试提示', () => {
+    const mapper = makeMapper()
+    mapper.mapSparkEvent({ type: 'step.started' } as SparkAgentEvent)
+    const streamed = mapper.mapDelta({ type: 'text', text: '半截正文' } as LlmDelta)[0] as {
+      segmentId?: string
+    }
+    mapper.mapDelta({ type: 'thinking', text: '半截推理' } as LlmDelta)
+
+    const events = mapper.mapDelta(retryDelta({ resetOutput: true }))
+
+    expect(events).toHaveLength(3)
+    // 复位事件必须沿用失败尝试那一段的 segmentId，渲染层才会就地覆盖该段内容。
+    expect(events[0]).toMatchObject({
+      type: 'assistant_message',
+      mode: 'complete',
+      content: '',
+      segmentId: streamed.segmentId,
+    })
+    expect(events[1]).toMatchObject({
+      type: 'agent_thinking',
+      mode: 'complete',
+      content: '',
+      segmentId: streamed.segmentId,
+    })
+    expect(events[2]).toMatchObject({ type: 'runtime_signal', signal: 'stream_reconnect' })
+  })
+
+  it('resetOutput=false（无可丢弃输出）时不发复位事件', () => {
+    const mapper = makeMapper()
+    mapper.mapSparkEvent({ type: 'step.started' } as SparkAgentEvent)
+
+    const events = mapper.mapDelta(retryDelta({ resetOutput: false }))
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'runtime_signal', signal: 'stream_reconnect' })
+  })
+
+  it('复位后重放正文从空串重新累积，不会被判定为重复发送复位', () => {
+    const mapper = makeMapper()
+    mapper.mapSparkEvent({ type: 'step.started' } as SparkAgentEvent)
+    mapper.mapDelta({ type: 'text', text: '失败的正文' } as LlmDelta)
+    mapper.mapDelta(retryDelta({ resetOutput: true }))
+    // 复位标记只对「本次尝试」有效：重放期间没有新正文时不应重复发复位事件。
+    const second = mapper.mapDelta(retryDelta({ attempt: 2, resetOutput: true }))
+    expect(second).toHaveLength(1)
+    expect(second[0]).toMatchObject({ type: 'runtime_signal' })
+    // 重放的正文照常映射为 delta。
+    expect(mapper.mapDelta({ type: 'text', text: '重放正文' } as LlmDelta)[0]).toMatchObject({
+      type: 'assistant_message',
+      mode: 'delta',
+      content: '重放正文',
+    })
+  })
+})

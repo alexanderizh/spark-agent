@@ -24,6 +24,8 @@ import { AuthGate } from '../auth/AuthGate'
 import { AvatarImage } from '../components/AvatarImage'
 import { AvatarCropperModal } from '../components/AvatarCropperModal'
 import { PlatformModelAccountPanel } from './platform-model/PlatformModelAccountPanel'
+import { AccountSyncQuotaPanel } from './account-sync/AccountSyncQuotaMeter'
+import { useAccountSyncStatus } from './account-sync/useAccountSyncStatus'
 import './AccountCenterView.less'
 
 interface BindStatus {
@@ -55,6 +57,8 @@ function AccountCenter(): React.ReactElement {
   const auth = useAuth()
   const { t, setTweak, requestConfirm } = useApp()
   const { toast } = useToast()
+  const accountKey = auth.isAuthenticated ? String(auth.user?.id ?? '') : null
+  const { status: syncStatus, loading: syncStatusLoading } = useAccountSyncStatus(accountKey)
 
   const [bindStatus, setBindStatus] = useState<BindStatus | null>(null)
 
@@ -220,7 +224,11 @@ function AccountCenter(): React.ReactElement {
                   className="account-profile-avatar-image"
                 />
                 <span className="account-profile-avatar-overlay">
-                  {uploadingAvatar ? <Icons.Spinner size={16} className="spin" /> : <Icons.Upload size={16} />}
+                  {uploadingAvatar ? (
+                    <Icons.Spinner size={16} className="spin" />
+                  ) : (
+                    <Icons.Upload size={16} />
+                  )}
                 </span>
               </button>
 
@@ -340,6 +348,26 @@ function AccountCenter(): React.ReactElement {
           <section className="account-center-right">
             <PlatformModelAccountPanel />
 
+            {/* 账号同步：单次上限与余量，与设置页「账号同步」共用同一数据源 */}
+            <div className="account-panel account-sync-panel">
+              <div className="account-panel-head">
+                <div>
+                  <h4>账号同步</h4>
+                  <p>查看单次同步上限与剩余量，同步内容与记录在设置中管理。</p>
+                </div>
+                <Button
+                  type="text"
+                  onClick={() => {
+                    setTweak('view', 'settings')
+                    setTweak('settingsSection', 'account-sync')
+                  }}
+                >
+                  同步设置
+                </Button>
+              </div>
+              <AccountSyncQuotaPanel status={syncStatus} loading={syncStatusLoading} />
+            </div>
+
             {/* 退出登录 */}
             <div className="account-panel account-panel--danger">
               <div className="account-panel-head">
@@ -442,7 +470,9 @@ function ChangePasswordForm({
         <Input.Password />
       </Form.Item>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <Button type="text" onClick={onClose}>取消</Button>
+        <Button type="text" onClick={onClose}>
+          取消
+        </Button>
         <Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>
           确认
         </Button>

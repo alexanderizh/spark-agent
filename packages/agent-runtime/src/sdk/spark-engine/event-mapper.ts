@@ -20,6 +20,10 @@ import { resolveSoftContextLimitForWindow } from '@spark/shared'
  * - 压缩：context.compacted → ContextCompactionEvent（phase=completed，M5 接入）。
  */
 
+function formatRetryDelay(delayMs: number): string {
+  return delayMs >= 1_000 ? `${(delayMs / 1_000).toFixed(1)}s` : `${delayMs}ms`
+}
+
 export interface SparkEventMapperOptions {
   readonly sessionId: string
   readonly turnId: string
@@ -35,6 +39,13 @@ export class SparkEventMapper {
   readonly #provider: string
   #segmentCounter = 0
   #currentSegmentId: string | null = null
+  /**
+   * 本次 LLM 尝试是否已经流出过正文/思考。`retry` delta 带 resetOutput 时，
+   * 引擎会丢弃失败尝试的输出并重放请求：必须先把这些段复位，否则失败正文会
+   * 与重放正文在同一段里叠加（渲染层只在最终 complete 时才按包含关系收敛）。
+   */
+  #attemptTextEmitted = false
+  #attemptThinkingEmitted = false
   #usage = { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, cacheWriteTokens: 0 }
   readonly #toolNames = new Map<string, string>()
 
@@ -54,6 +65,8 @@ export class SparkEventMapper {
         if (event.type === 'step.started') {
           this.#segmentCounter += 1
           this.#currentSegmentId = `spark-seg-${this.#segmentCounter}`
+          this.#attemptTextEmitted = false
+          this.#attemptThinkingEmitted = false
         }
         return event.type === 'step.started' ? [this.#status('thinking')] : []
       case 'assistant.completed': {
@@ -112,6 +125,9 @@ export class SparkEventMapper {
             title: 'Spark 引擎轮次失败',
             message: event.error?.message ?? 'Unknown spark engine failure',
             retryable: event.error?.retryable ?? false,
+            // 引擎的 recoveryHint 是「下一步怎么办」的唯一权威来源，透传为
+            // actionHint 后错误卡片才能给出可执行建议（否则只剩错误码）。
+            ...(event.recoveryHint != null ? { actionHint: event.recoveryHint } : {}),
           },
           this.#status('error'),
         ]
@@ -138,9 +154,13 @@ export class SparkEventMapper {
   mapDelta(delta: LlmDelta): AgentEvent[] {
     switch (delta.type) {
       case 'text':
+        this.#attemptTextEmitted = true
         return [this.#assistantMessage('delta', delta.text, this.#currentSegmentId ?? undefined)]
       case 'thinking':
+        this.#attemptThinkingEmitted = true
         return [this.#agentThinking('delta', delta.text, this.#currentSegmentId ?? undefined)]
+      case 'retry':
+        return this.#retryEvents(delta)
       case 'tool_call':
       case 'usage':
       case 'continuation':
@@ -150,6 +170,47 @@ export class SparkEventMapper {
       default:
         return []
     }
+  }
+
+  /**
+   * `retry` delta → 事件序列：
+   * - resetOutput=true：先给失败尝试流出过的段发空 complete 复位，再让重放正文
+   *   从空串重新累积（渲染层 complete 会覆盖仍处于流式态的段内容）。
+   * - 可见性：映射为 runtime_signal(stream_reconnect)。前端按「信号 + 来源」聚合，
+   *   多次尝试只保留一行轻量提示并持续刷新进度，不会把会话渲染成红色失败卡片。
+   */
+  #retryEvents(delta: Extract<LlmDelta, { type: 'retry' }>): AgentEvent[] {
+    const events: AgentEvent[] = []
+    const segmentId = this.#currentSegmentId ?? undefined
+    if (delta.resetOutput) {
+      if (this.#attemptTextEmitted) {
+        events.push(this.#assistantMessage('complete', '', segmentId, false))
+      }
+      if (this.#attemptThinkingEmitted) {
+        events.push(this.#agentThinking('complete', '', segmentId))
+      }
+    }
+    this.#attemptTextEmitted = false
+    this.#attemptThinkingEmitted = false
+    events.push({
+      ...this.#base(),
+      type: 'runtime_signal',
+      signal: 'stream_reconnect',
+      level: 'info',
+      title: '模型调用中断，正在自动重试',
+      message: `等待 ${formatRetryDelay(delta.delayMs)} 后重试（第 ${delta.attempt}/${delta.maxRetries} 次）`,
+      code: 'SPARK_LLM_RETRY',
+      retryable: false,
+      details: [
+        { label: '重试进度', value: `${delta.attempt}/${delta.maxRetries}` },
+        { label: '本次等待', value: formatRetryDelay(delta.delayMs) },
+        {
+          label: '失败原因',
+          value: delta.error.code == null ? delta.error.message : delta.error.code,
+        },
+      ],
+    })
+    return events
   }
 
   #assistantMessage(

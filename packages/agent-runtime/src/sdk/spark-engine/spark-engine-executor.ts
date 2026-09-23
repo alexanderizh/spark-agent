@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 
 import { Agent, ModelRegistry, createDefaultEnvWithMcp } from '@spark/agent'
-import type { AgentSession, LlmService, SparkMcpServerConfig } from '@spark/agent'
+import type { AgentSession, LlmService, RuntimeLogger, SparkMcpServerConfig } from '@spark/agent'
 import type { AgentEvent } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 
 import type { EngineExecutor, PermissionModeAwareExecutor } from '../engine-executor.js'
 import type { SDKExecutorConfig } from '../types.js'
@@ -13,6 +14,30 @@ import {
   toSparkEnginePermissionMode,
   toSparkEngineReasoningEffort,
 } from './model-route.js'
+
+const log = createLogger('spark-engine')
+
+/**
+ * 引擎日志缝（RuntimeLogger）→ 本项目统一日志服务。
+ *
+ * spark-engine 缺省把诊断写到 stderr；在 Electron 主进程里 stderr 不落地，
+ * 「模型调用重试/放弃」这类关键诊断会直接丢失。这里把缝接回 @spark/shared
+ * 的 createLogger，与其它模块共用同一份日志文件与级别控制。
+ */
+const engineRuntimeLogger: RuntimeLogger = {
+  debug: (message) => {
+    log.debug(message)
+  },
+  info: (message) => {
+    log.info(message)
+  },
+  warn: (message) => {
+    log.warn(message)
+  },
+  error: (message) => {
+    log.error(message)
+  },
+}
 
 /**
  * 测试注入口：替换「渠道配置 → LlmService」的默认构造（registerHttp 路径），
@@ -139,7 +164,9 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
                 : { contextWindowTokens: config.contextWindowTokens }),
               ...(config.maxTokens == null ? {} : { maxOutputTokens: config.maxTokens }),
             })
-            return registry.createRoute([route.modelId])
+            // 重试/放弃决策必须落到统一日志：createRoute 不传 logger 时
+            // ResilientLlmService 静默重试，主进程日志里将看不到任何重试痕迹。
+            return registry.createRoute([route.modelId], { logger: engineRuntimeLogger })
           })()
 
     const workspaceRoot = config.workspaceRootPath
@@ -147,6 +174,8 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
     try {
       managedEnv = await createDefaultEnvWithMcp({
         cwd: workspaceRoot,
+        // 引擎内部（含 LLM 重试层）的诊断接入统一日志服务。
+        logger: engineRuntimeLogger,
         ...(config.sparkDataRoot != null ? { dataRoot: config.sparkDataRoot } : {}),
         llm,
         ...(config.approvalCallback != null

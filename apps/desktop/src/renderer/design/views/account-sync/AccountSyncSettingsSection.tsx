@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Pagination, Spin, Switch, Tag } from 'antd'
 import {
   ACCOUNT_SYNC_CATEGORIES,
+  formatAccountSyncPayloadSize,
   type AccountSyncExecuteResponse,
   type AccountSyncExecuteResult,
   type AccountSyncHistoryItem,
+  type AccountSyncPayloadEstimate,
   type AccountSyncPreferences,
   type AccountSyncUpdatePreferencesRequest,
 } from '@spark/protocol'
@@ -13,11 +15,13 @@ import { useApp } from '../../AppContext'
 import { useToast } from '../../components/Toast'
 import { applySyncedAppearanceLocally } from '../../hooks/useAppearance'
 import { AccountSyncConflictPanel } from './AccountSyncConflictPanel'
+import { AccountSyncQuotaInline } from './AccountSyncQuotaMeter'
 import { pickLocalAppearance } from './account-sync-appearance'
-import { executeAccountSync } from './account-sync-client'
+import { estimateAccountSyncPayload, executeAccountSync } from './account-sync-client'
 import { CATEGORY_META } from './account-sync-meta'
 import { formatTime } from './account-sync-format'
 import { translateSyncErrorCodes } from './sync-error-messages'
+import { useAccountSyncStatus } from './useAccountSyncStatus'
 import './AccountSyncSettingsSection.less'
 
 const PAGE_SIZE = 20
@@ -83,8 +87,12 @@ export function AccountSyncSettingsSection(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<AccountSyncExecuteResult | null>(null)
+  const [payloadEstimate, setPayloadEstimate] = useState<AccountSyncPayloadEstimate | null>(null)
+  const [estimating, setEstimating] = useState(false)
+  const estimateRequestRef = useRef(0)
   const historyRequestRef = useRef(0)
   const accountKey = auth.isAuthenticated ? String(auth.user?.id ?? '') : null
+  const { status: quotaStatus, refresh: refreshQuotaStatus } = useAccountSyncStatus(accountKey)
 
   const selectedCount = useMemo(
     () => ACCOUNT_SYNC_CATEGORIES.filter((category) => preferences.categories[category]).length,
@@ -122,6 +130,8 @@ export function AccountSyncSettingsSection(): React.ReactElement {
         await Promise.resolve()
         if (cancelled) return
         setLastResult(null)
+        setPayloadEstimate(null)
+        estimateRequestRef.current += 1
         setLoadError(null)
         setHistoryError(null)
         setInitialLoading(true)
@@ -163,6 +173,7 @@ export function AccountSyncSettingsSection(): React.ReactElement {
     (response: AccountSyncExecuteResponse): void => {
       const finishedAt = new Date().toISOString()
       setLastResult(response.result)
+      setPayloadEstimate(null)
       setPreferences((current) => ({
         ...current,
         lastOperation: {
@@ -182,9 +193,29 @@ export function AccountSyncSettingsSection(): React.ReactElement {
       else if (response.result.status === 'partial') toast.warning('账号同步部分完成，请查看结果')
       else toast.error('账号同步失败，请查看错误信息')
       void loadHistory(1)
+      void refreshQuotaStatus()
     },
-    [applySyncedAppearance, loadHistory, toast],
+    [applySyncedAppearance, loadHistory, refreshQuotaStatus, toast],
   )
+
+  /**
+   * 显式测量本次同步请求体大小：采集链路与 execute 一致，成本≈一次同步
+   * （提示词库封面需逐张压缩），因此只由用户点击触发，不在切换类别时自动跑。
+   */
+  const handleEstimatePayload = async (): Promise<void> => {
+    const requestId = ++estimateRequestRef.current
+    setEstimating(true)
+    try {
+      const estimate = await estimateAccountSyncPayload(preferences.categories.promptLibrary)
+      if (estimateRequestRef.current !== requestId) return
+      setPayloadEstimate(estimate)
+    } catch (error) {
+      if (estimateRequestRef.current !== requestId) return
+      toast.error(getErrorMessage(error, '本次同步数据测量失败'))
+    } finally {
+      if (estimateRequestRef.current === requestId) setEstimating(false)
+    }
+  }
 
   const handleSync = async (): Promise<void> => {
     setSyncing(true)
@@ -200,6 +231,10 @@ export function AccountSyncSettingsSection(): React.ReactElement {
 
   const [conflictSyncing, setConflictSyncing] = useState(false)
 
+  /** 本次待同步数据量：显式测量值优先，否则回落到本次同步的真实请求体大小 */
+  const pendingBytes = payloadEstimate?.bytes ?? lastResult?.payloadBytes ?? null
+  const payloadOverLimit = payloadEstimate?.exceeded === true
+
   const syncDisabled =
     !auth.isAuthenticated ||
     !preferences.enabled ||
@@ -207,7 +242,8 @@ export function AccountSyncSettingsSection(): React.ReactElement {
     initialLoading ||
     preferenceSaving ||
     syncing ||
-    conflictSyncing
+    conflictSyncing ||
+    payloadOverLimit
 
   return (
     <div className="settings-section account-sync-settings">
@@ -294,11 +330,29 @@ export function AccountSyncSettingsSection(): React.ReactElement {
                   ? `上次同步：${formatTime(preferences.lastOperation.finishedAt)} · ${STATUS_LABELS[preferences.lastOperation.status]}`
                   : '当前账号尚无本机同步结果'}
               </span>
+              <AccountSyncQuotaInline status={quotaStatus} pendingBytes={pendingBytes} />
+              <div className="account-sync-quota-actions">
+                <Button
+                  size="small"
+                  type="text"
+                  loading={estimating}
+                  disabled={estimating || syncDisabled || selectedCount === 0}
+                  onClick={() => void handleEstimatePayload()}
+                >
+                  {payloadEstimate == null ? '测量本次数据' : '重新测量'}
+                </Button>
+                {payloadOverLimit && (
+                  <span className="account-sync-quota-warning">
+                    已超出单次上限，请减少同步内容（例如提示词库封面）后再同步
+                  </span>
+                )}
+              </div>
             </div>
             <Button
               type="primary"
               loading={syncing}
               disabled={syncDisabled}
+              title={payloadOverLimit ? '本次同步数据超出单次上限' : undefined}
               onClick={() => void handleSync()}
             >
               立即同步
@@ -323,6 +377,9 @@ export function AccountSyncSettingsSection(): React.ReactElement {
                 <span>下载 {lastResult.stats.downloaded}</span>
                 <span>冲突 {lastResult.stats.conflicts}</span>
                 <span>跳过 {lastResult.stats.skipped}</span>
+                {lastResult.payloadBytes != null && (
+                  <span>数据 {formatAccountSyncPayloadSize(lastResult.payloadBytes)}</span>
+                )}
               </div>
               {lastResult.errorCodes.length > 0 && (
                 <div className="account-sync-error-codes">

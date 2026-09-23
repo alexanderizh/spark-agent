@@ -94,6 +94,16 @@ describe('AccountSyncSettingsSection', () => {
       if (channel === 'account-sync:list-history') {
         return { list: [], total: 0, page: 1, pageSize: 20 }
       }
+      if (channel === 'account-sync:get-status') {
+        return {
+          maxPayloadBytes: 20 * 1024 * 1024,
+          lastPayloadBytes: 3_565_158,
+          lastSyncAt: '2026-09-23T12:00:00.000Z',
+          lastStatus: 'success',
+          lastDeviceLabel: 'macOS #1111',
+          source: 'server',
+        }
+      }
       throw new Error(`Unexpected IPC: ${channel}`)
     })
     Object.defineProperty(window, 'spark', {
@@ -199,7 +209,8 @@ describe('AccountSyncSettingsSection', () => {
       root.render(<AccountSyncSettingsSection />)
       await flush()
     })
-    expect(mocks.invoke).toHaveBeenCalledTimes(2)
+    // 偏好 + 历史 + 同步余量状态
+    expect(mocks.invoke).toHaveBeenCalledTimes(3)
 
     mocks.userId = 202
     await act(async () => {
@@ -207,8 +218,172 @@ describe('AccountSyncSettingsSection', () => {
       await flush()
     })
 
-    expect(mocks.invoke).toHaveBeenCalledTimes(4)
-    expect(mocks.invoke).toHaveBeenNthCalledWith(3, 'account-sync:get-preferences', {})
+    expect(mocks.invoke).toHaveBeenCalledTimes(6)
+    expect(mocks.invoke).toHaveBeenNthCalledWith(4, 'account-sync:get-status', {})
+    expect(mocks.invoke).toHaveBeenNthCalledWith(5, 'account-sync:get-preferences', {})
+    expect(mocks.invoke).toHaveBeenNthCalledWith(6, 'account-sync:list-history', {
+      page: 1,
+      pageSize: 20,
+    })
+  })
+
+  it('shows the sync quota line with the measured remaining amount', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'account-sync:get-preferences') {
+        return { authenticated: true, preferences: enabledPreferences }
+      }
+      if (channel === 'account-sync:list-history') {
+        return { list: [], total: 0, page: 1, pageSize: 20 }
+      }
+      if (channel === 'account-sync:get-status') {
+        return {
+          maxPayloadBytes: 20 * 1024 * 1024,
+          lastPayloadBytes: 3_565_158,
+          lastSyncAt: '2026-09-23T12:00:00.000Z',
+          lastStatus: 'success',
+          lastDeviceLabel: 'macOS #1111',
+          source: 'server',
+        }
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+
+    await act(async () => {
+      root.render(<AccountSyncSettingsSection />)
+      await flush()
+    })
+
+    expect(container.textContent).toContain('单次同步上限 20 MiB')
+    expect(container.textContent).toContain('上次数据 3.4 MiB')
+    expect(container.textContent).toContain('余量 16.6 MiB')
+    expect(container.querySelector('.account-sync-quota-bar.is-ok')).not.toBeNull()
+  })
+
+  it('falls back to a conservative limit hint when the server has no status endpoint', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'account-sync:get-preferences') {
+        return { authenticated: true, preferences: enabledPreferences }
+      }
+      if (channel === 'account-sync:list-history') {
+        return { list: [], total: 0, page: 1, pageSize: 20 }
+      }
+      if (channel === 'account-sync:get-status') {
+        return {
+          maxPayloadBytes: 5 * 1024 * 1024,
+          lastPayloadBytes: null,
+          lastSyncAt: null,
+          lastStatus: null,
+          lastDeviceLabel: null,
+          source: 'fallback',
+        }
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+
+    await act(async () => {
+      root.render(<AccountSyncSettingsSection />)
+      await flush()
+    })
+
+    expect(container.textContent).toContain('单次同步上限 5 MiB')
+    expect(container.textContent).toContain('尚无同步记录')
+    expect(container.textContent).toContain('服务端版本较低，仅供参考')
+  })
+
+  it('measures the pending payload on demand and blocks sync when it exceeds the limit', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'account-sync:get-preferences') {
+        return { authenticated: true, preferences: enabledPreferences }
+      }
+      if (channel === 'account-sync:list-history') {
+        return { list: [], total: 0, page: 1, pageSize: 20 }
+      }
+      if (channel === 'account-sync:get-status') {
+        return {
+          maxPayloadBytes: 20 * 1024 * 1024,
+          lastPayloadBytes: null,
+          lastSyncAt: null,
+          lastStatus: null,
+          lastDeviceLabel: null,
+          source: 'server',
+        }
+      }
+      if (channel === 'account-sync:estimate-payload') {
+        return {
+          bytes: 25 * 1024 * 1024,
+          maxBytes: 20 * 1024 * 1024,
+          exceeded: true,
+          categories: ['appearance'],
+        }
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+
+    await act(async () => {
+      root.render(<AccountSyncSettingsSection />)
+      await flush()
+    })
+    expect(buttonByText('立即同步')?.disabled).toBe(false)
+
+    await act(async () => {
+      buttonByText('测量本次数据')?.click()
+      await flush()
+      await flush()
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith('account-sync:estimate-payload', {})
+    expect(container.textContent).toContain('本次待同步 25 MiB')
+    expect(container.textContent).toContain('已超出 5 MiB')
+    expect(container.textContent).toContain('请减少同步内容')
+    expect(container.querySelector('.account-sync-quota-inline.is-over')).not.toBeNull()
+    expect(buttonByText('立即同步')?.disabled).toBe(true)
+  })
+
+  it('reports the measured payload size in the sync result', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'account-sync:get-preferences') {
+        return { authenticated: true, preferences: enabledPreferences }
+      }
+      if (channel === 'account-sync:list-history') {
+        return { list: [], total: 0, page: 1, pageSize: 20 }
+      }
+      if (channel === 'account-sync:get-status') {
+        return {
+          maxPayloadBytes: 20 * 1024 * 1024,
+          lastPayloadBytes: 3_565_158,
+          lastSyncAt: null,
+          lastStatus: 'success',
+          lastDeviceLabel: 'macOS #1111',
+          source: 'server',
+        }
+      }
+      if (channel === 'account-sync:execute') {
+        return {
+          result: {
+            operationId: '11111111-1111-4111-8111-111111111111',
+            status: 'success',
+            categories: [],
+            stats: { uploaded: 1, downloaded: 1, conflicts: 0, skipped: 0 },
+            errorCodes: [],
+            payloadBytes: 3_565_158,
+          },
+        }
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+
+    await act(async () => {
+      root.render(<AccountSyncSettingsSection />)
+      await flush()
+    })
+    await act(async () => {
+      buttonByText('立即同步')?.click()
+      await flush()
+      await flush()
+    })
+
+    expect(container.textContent).toContain('数据 3.4 MiB')
+    expect(container.textContent).toContain('本次待同步 3.4 MiB')
   })
 
   it('shows local apply acknowledgement in history instead of cloud-only success', async () => {

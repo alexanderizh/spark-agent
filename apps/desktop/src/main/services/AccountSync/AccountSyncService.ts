@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { createLogger, SparkError } from '@spark/shared'
 import {
   ACCOUNT_SYNC_CATEGORIES,
+  ACCOUNT_SYNC_FALLBACK_MAX_PAYLOAD_BYTES,
+  formatAccountSyncPayloadSize,
   type AccountSyncCategory,
   type AccountSyncCategoryResult,
   type AccountSyncConflictDetail,
@@ -15,10 +17,12 @@ import {
   type AccountSyncHistoryItem,
   type AccountSyncItem,
   type AccountSyncListHistoryResponse,
+  type AccountSyncPayloadEstimate,
   type AccountSyncPromptLibraryItemInput,
   type AccountSyncPreferences,
   type AccountSyncPreviewRequest,
   type AccountSyncPreviewResult,
+  type AccountSyncStatus,
   type AccountSyncUpdatePreferencesRequest,
 } from '@spark/protocol'
 import { SettingsRepository, type SparkDatabase } from '@spark/storage'
@@ -125,6 +129,19 @@ function normalizeIsoDate(value: unknown, nullable = false): string | null {
   return new Date(value).toISOString()
 }
 
+/** 请求体 UTF-8 字节数，与服务端 `validateExecuteRequest` 的度量方式一致 */
+function measurePayloadBytes(body: AccountSyncExecuteRequestBody): number {
+  return Buffer.byteLength(JSON.stringify(body), 'utf8')
+}
+
+/** 可选 ISO 时间：缺失、null 或非法值一律归一为 null（余量展示不该被单字段异常击穿） */
+function optionalIsoDate(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+  const parsed = new Date(value)
+  if (!Number.isFinite(parsed.getTime())) return null
+  return parsed.toISOString()
+}
+
 export interface AccountSyncAuthGateway {
   getCurrentUserId(): string | null
   getEduClient(): { getBaseUrl(): string }
@@ -209,6 +226,74 @@ export class AccountSyncService {
     return promise
   }
 
+  /**
+   * 同步余量状态：设置页操作行、账号中心面板与 edu-web 个人中心共用同一数据源。
+   *
+   * 服务端不支持 `/desktop-sync/status`（旧版本）或请求失败时，返回保守默认上限
+   * 并标记 `source: 'fallback'`，界面据此提示「仅供参考」；本地预检则在无法确认
+   * 上限时直接跳过，交由服务端裁决，避免用错误上限阻断合法同步。
+   */
+  async getStatus(): Promise<AccountSyncStatus> {
+    const userId = this.requireUserId()
+    try {
+      const raw = await this.auth.platformGet<unknown>('/desktop-sync/status')
+      return this.normalizeStatus(raw, 'server')
+    } catch (error) {
+      log.warn(
+        `sync status unavailable user=${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+      return this.normalizeStatus(null, 'fallback')
+    }
+  }
+
+  /**
+   * 本地预估本次同步请求体大小：走与 execute 相同的采集链路，只测量不发送、不落库。
+   * 成本≈一次同步（提示词库封面需逐张压缩），因此由用户显式触发，不在切换类别时自动跑。
+   */
+  async estimatePayload(input?: AccountSyncExecuteRequest): Promise<AccountSyncPayloadEstimate> {
+    const userId = this.requireUserId()
+    const preferences = this.readPreferences(userId)
+    if (!preferences.enabled) {
+      throw new SparkError('VALIDATION_FAILED', '请先开启账号同步')
+    }
+    const selected = ACCOUNT_SYNC_CATEGORIES.filter((category) => preferences.categories[category])
+    if (selected.length === 0) {
+      throw new SparkError('VALIDATION_FAILED', '请至少选择一个同步类别')
+    }
+    this.assertSecureEndpoint()
+
+    const { collected, failures } = await this.collectAll(
+      userId,
+      selected,
+      randomUUID(),
+      new Date().toISOString(),
+      input?.promptLibraryItems,
+    )
+    if (collected.length === 0) {
+      throw new SparkError('UNKNOWN', '本地没有可测量的同步内容，请检查同步类别')
+    }
+    const request: AccountSyncExecuteRequestBody = {
+      operationId: randomUUID(),
+      device: this.getDeviceIdentity(),
+      categories: collected.map((item) => item.request),
+    }
+    const bytes = measurePayloadBytes(request)
+    const maxBytes = await this.resolveMaxPayloadBytes()
+    log.info(
+      `sync payload estimate bytes=${bytes} maxBytes=${maxBytes ?? 'unknown'} categories=${collected
+        .map((item) => item.category)
+        .join(',')} collectionFailures=${failures.length}`,
+    )
+    return {
+      bytes,
+      maxBytes: maxBytes ?? ACCOUNT_SYNC_FALLBACK_MAX_PAYLOAD_BYTES,
+      exceeded: maxBytes != null ? bytes > maxBytes : false,
+      categories: collected.map((item) => item.category),
+    }
+  }
+
   async listHistory(page = 1, pageSize = 20): Promise<AccountSyncListHistoryResponse> {
     this.requireUserId()
     const response = await this.auth.platformGet<unknown>(
@@ -273,15 +358,18 @@ export class AccountSyncService {
         : {}),
     }
 
+    const payloadBytes = measurePayloadBytes(request)
     log.info(
       `manual sync execute operation=${operationId} categories=${selected.join(',')} items=${request.categories.reduce(
         (count, category) => count + category.records.length,
         0,
-      )}`,
+      )} payloadBytes=${payloadBytes}`,
     )
+    await this.assertPayloadWithinLimit(request, operationId)
 
     let serverResult: AccountSyncExecuteResult
     let unsupportedServerCategory = false
+    let sentPayloadBytes = payloadBytes
     try {
       serverResult = await this.auth.platformPost<AccountSyncExecuteResult>(
         '/desktop-sync/execute',
@@ -303,13 +391,16 @@ export class AccountSyncService {
         log.warn(
           `server does not support promptLibrary category, retrying without it operation=${operationId}`,
         )
+        const retryRequest: AccountSyncExecuteRequestBody = {
+          operationId,
+          device: request.device,
+          categories: request.categories.filter((item) => item.category !== 'promptLibrary'),
+        }
+        sentPayloadBytes = measurePayloadBytes(retryRequest)
+        await this.assertPayloadWithinLimit(retryRequest, operationId)
         serverResult = await this.auth.platformPost<AccountSyncExecuteResult>(
           '/desktop-sync/execute',
-          {
-            operationId,
-            device: request.device,
-            categories: request.categories.filter((item) => item.category !== 'promptLibrary'),
-          },
+          retryRequest,
         )
       } else {
         throw error
@@ -323,6 +414,7 @@ export class AccountSyncService {
         ? collected.map((item) => item.category).filter((category) => category !== 'promptLibrary')
         : collected.map((item) => item.category),
     )
+    normalized.payloadBytes = sentPayloadBytes
     if (this.auth.getCurrentUserId() !== userId) {
       throw new SparkError('VALIDATION_FAILED', '同步期间账号已切换，请在当前账号下重新同步')
     }
@@ -487,7 +579,12 @@ export class AccountSyncService {
       mode: 'preview',
     }
 
-    log.info(`manual sync preview operation=${operationId} categories=${selected.join(',')}`)
+    log.info(
+      `manual sync preview operation=${operationId} categories=${selected.join(',')} payloadBytes=${measurePayloadBytes(
+        request,
+      )}`,
+    )
+    await this.assertPayloadWithinLimit(request, operationId)
 
     let serverResult: unknown
     try {
@@ -516,6 +613,84 @@ export class AccountSyncService {
       preview.status = 'partial'
     }
     return preview
+  }
+
+  /**
+   * 解析服务端单次同步上限。无法确认（服务端旧版本或请求失败）时返回 null，
+   * 调用方据此跳过本地预检，避免用错误上限阻断合法同步。
+   */
+  private async resolveMaxPayloadBytes(): Promise<number | null> {
+    try {
+      const status = await this.getStatus()
+      if (status.source !== 'server') return null
+      return Number.isFinite(status.maxPayloadBytes) && status.maxPayloadBytes > 0
+        ? status.maxPayloadBytes
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 发送前本地精确预检：请求体字节数超限时直接给出友好错误，
+   * 不再白发一次注定被服务端拒绝的请求。
+   */
+  private async assertPayloadWithinLimit(
+    request: AccountSyncExecuteRequestBody,
+    operationId: string,
+  ): Promise<void> {
+    const limit = await this.resolveMaxPayloadBytes()
+    if (limit == null) return
+    const bytes = measurePayloadBytes(request)
+    if (bytes <= limit) return
+    log.warn(`sync payload blocked locally operation=${operationId} bytes=${bytes} limit=${limit}`)
+    throw new SparkError(
+      'SYNC_PAYLOAD_TOO_LARGE',
+      `本次同步数据约 ${formatAccountSyncPayloadSize(bytes)}，超过单次上限 ${formatAccountSyncPayloadSize(
+        limit,
+      )}。可减少同步内容（例如提示词库封面）后重试。`,
+    )
+  }
+
+  /**
+   * 归一化同步余量状态。余量是非关键展示数据，单个字段异常不应让整体回退：
+   * 只有拿不到上限时才退回保守默认值，其余字段按缺失处理。
+   */
+  private normalizeStatus(value: unknown, source: AccountSyncStatus['source']): AccountSyncStatus {
+    const fallback: AccountSyncStatus = {
+      maxPayloadBytes: ACCOUNT_SYNC_FALLBACK_MAX_PAYLOAD_BYTES,
+      lastPayloadBytes: null,
+      lastSyncAt: null,
+      lastStatus: null,
+      lastDeviceLabel: null,
+      source,
+    }
+    if (!isRecord(value)) return fallback
+    const rawMax = value.maxPayloadBytes
+    const maxPayloadBytes =
+      typeof rawMax === 'number' && Number.isSafeInteger(rawMax) && rawMax > 0 ? rawMax : null
+    if (maxPayloadBytes == null) return fallback
+    const rawLast = value.lastPayloadBytes
+    const lastPayloadBytes =
+      typeof rawLast === 'number' && Number.isSafeInteger(rawLast) && rawLast >= 0 ? rawLast : null
+    const lastSyncAt = optionalIsoDate(value.lastSyncAt)
+    const rawStatus = value.lastStatus
+    const lastStatus =
+      rawStatus === 'success' || rawStatus === 'partial' || rawStatus === 'failed'
+        ? rawStatus
+        : null
+    const lastDeviceLabel =
+      typeof value.lastDeviceLabel === 'string' && value.lastDeviceLabel.trim().length > 0
+        ? value.lastDeviceLabel.slice(0, 64)
+        : null
+    return {
+      maxPayloadBytes,
+      lastPayloadBytes,
+      lastSyncAt,
+      lastStatus,
+      lastDeviceLabel,
+      source,
+    }
   }
 
   private finishCollectionFailure(

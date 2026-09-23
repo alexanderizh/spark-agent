@@ -115,6 +115,10 @@ const SYNC_ERROR_MESSAGES: Record<string, SyncErrorMessage> = {
     message: '提示词库同步需要新版服务端，其余内容已正常同步',
     severity: 'degraded',
   },
+  SYNC_PAYLOAD_TOO_LARGE: {
+    message: '本次同步数据超过单次上限，请减少同步内容（例如提示词库封面）后重试',
+    severity: 'failed',
+  },
 }
 
 const FALLBACK_MESSAGE: SyncErrorMessage = {

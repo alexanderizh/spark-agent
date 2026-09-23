@@ -1025,6 +1025,151 @@ describe('AccountSyncAdapters', () => {
   })
 })
 
+describe('AccountSyncService quota status and payload pre-check', () => {
+  let db: SparkDatabase
+  let testDir: string
+  let auth: FakeAuth
+  let service: AccountSyncService
+
+  beforeEach(() => {
+    testDir = join(
+      tmpdir(),
+      `spark-account-sync-quota-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
+    mkdirSync(testDir, { recursive: true })
+    db = new SparkDatabase(join(testDir, 'test.db'))
+    db.runMigrations(resolve(process.cwd(), '../../packages/storage/migrations'))
+    auth = new FakeAuth()
+    service = new AccountSyncService(db, auth)
+  })
+
+  afterEach(() => {
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  function enableAppearanceSync(): void {
+    service.updatePreferences({ enabled: true, categories: { appearance: true } })
+  }
+
+  it('normalizes the server status payload', async () => {
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      return {
+        maxPayloadBytes: 20 * 1024 * 1024,
+        lastPayloadBytes: 3_565_158,
+        lastSyncAt: '2026-09-23T12:00:00.000Z',
+        lastStatus: 'partial',
+        lastDeviceLabel: 'macOS #ab12',
+      } as T
+    }
+
+    await expect(service.getStatus()).resolves.toEqual({
+      maxPayloadBytes: 20 * 1024 * 1024,
+      lastPayloadBytes: 3_565_158,
+      lastSyncAt: '2026-09-23T12:00:00.000Z',
+      lastStatus: 'partial',
+      lastDeviceLabel: 'macOS #ab12',
+      source: 'server',
+    })
+    expect(auth.getCalls).toEqual(['/desktop-sync/status'])
+  })
+
+  it('falls back to the conservative limit when the status endpoint is unavailable', async () => {
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      throw new Error('请求失败 (404)')
+    }
+
+    const status = await service.getStatus()
+    expect(status.maxPayloadBytes).toBe(5 * 1024 * 1024)
+    expect(status.source).toBe('fallback')
+    expect(status.lastPayloadBytes).toBeNull()
+    expect(status.lastStatus).toBeNull()
+  })
+
+  it('requires an authenticated account before querying the status', async () => {
+    auth.userId = null
+    await expect(service.getStatus()).rejects.toThrow('请先登录 SparkWork 账号')
+    expect(auth.getCalls).toEqual([])
+  })
+
+  it('blocks an over-limit sync locally without sending the request', async () => {
+    enableAppearanceSync()
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      return { maxPayloadBytes: 1, lastPayloadBytes: null } as T
+    }
+
+    await expect(service.execute()).rejects.toThrow(/超过单次上限/)
+    expect(auth.postCalls).toEqual([])
+    expect(auth.getCalls).toEqual(['/desktop-sync/status'])
+  })
+
+  it('sends the request and reports the measured payload size when within the limit', async () => {
+    enableAppearanceSync()
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      return {
+        maxPayloadBytes: 20 * 1024 * 1024,
+        lastPayloadBytes: null,
+      } as T
+    }
+    auth.postHandler = async (path, body) =>
+      path === '/desktop-sync/execute' ? successResult(body as AccountSyncExecuteRequestBody) : body
+
+    const response = await service.execute()
+    expect(response.result.payloadBytes).toBe(
+      Buffer.byteLength(JSON.stringify(auth.postCalls[0]!.body), 'utf8'),
+    )
+    expect(auth.postCalls.map((call) => call.path)).toEqual([
+      '/desktop-sync/execute',
+      `/desktop-sync/operations/${response.result.operationId}/ack`,
+    ])
+  })
+
+  it('skips the local pre-check when the limit cannot be confirmed', async () => {
+    enableAppearanceSync()
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      throw new Error('网络不可用')
+    }
+    auth.postHandler = async (path, body) =>
+      path === '/desktop-sync/execute' ? successResult(body as AccountSyncExecuteRequestBody) : body
+
+    const response = await service.execute()
+    expect(response.result.status).toBe('success')
+    expect(auth.postCalls.map((call) => call.path)).toContain('/desktop-sync/execute')
+  })
+
+  it('measures the pending payload without sending or acknowledging anything', async () => {
+    enableAppearanceSync()
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      return { maxPayloadBytes: 20 * 1024 * 1024, lastPayloadBytes: 4_096 } as T
+    }
+
+    const estimate = await service.estimatePayload()
+    expect(estimate.categories).toEqual(['appearance'])
+    expect(estimate.bytes).toBeGreaterThan(0)
+    expect(estimate.maxBytes).toBe(20 * 1024 * 1024)
+    expect(estimate.exceeded).toBe(false)
+    expect(auth.postCalls).toEqual([])
+  })
+
+  it('flags an estimate that already exceeds the confirmed limit', async () => {
+    enableAppearanceSync()
+    auth.platformGet = async <T>(path: string): Promise<T> => {
+      auth.getCalls.push(path)
+      return { maxPayloadBytes: 256, lastPayloadBytes: null } as T
+    }
+
+    const estimate = await service.estimatePayload()
+    expect(estimate.exceeded).toBe(true)
+    expect(auth.postCalls).toEqual([])
+  })
+})
+
 describe('account sync local-path policy', () => {
   it.each([
     '/root/app/config.json',

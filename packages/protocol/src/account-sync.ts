@@ -92,6 +92,37 @@ export interface AccountSyncExecuteResult {
   }
   errorCodes: string[]
   replayed?: boolean
+  /** 本次同步请求体字节数（服务端新版本回传；旧版本缺失时由主进程本地测量补齐） */
+  payloadBytes?: number
+}
+
+/**
+ * 同步余量状态。
+ *
+ * 上限是「单次请求体」级限制，不是累计存储配额；余量按 `上限 − 上次同步数据` 估算。
+ * `source` 为 `fallback` 表示服务端不支持或读取失败，此时 `maxPayloadBytes`
+ * 为保守默认值，界面应提示「仅供参考」。
+ */
+export interface AccountSyncStatus {
+  maxPayloadBytes: number
+  /** 上一次同步的请求体字节数；从未同步为 null */
+  lastPayloadBytes: number | null
+  lastSyncAt: string | null
+  lastStatus: AccountSyncOperationStatus | null
+  lastDeviceLabel: string | null
+  source: 'server' | 'fallback'
+}
+
+/** 本地预估的本次同步请求体大小（只采集、不发送、不落库） */
+export interface AccountSyncPayloadEstimate {
+  /** 本次请求体字节数 */
+  bytes: number
+  /** 服务端单次上限字节数 */
+  maxBytes: number
+  /** 是否已超限（超限时同步会被拒绝，需减少内容） */
+  exceeded: boolean
+  /** 参与估算的类别 */
+  categories: AccountSyncCategory[]
 }
 
 export interface AccountSyncHistoryItem {
@@ -173,6 +204,9 @@ export interface AccountSyncExecuteRequest {
   promptLibraryItems?: AccountSyncPromptLibraryItemInput[]
 }
 
+/** 与 execute 同一份请求形态：预估只做本地采集与字节测量，不发送、不落库 */
+export type AccountSyncEstimatePayloadRequest = AccountSyncExecuteRequest
+
 export interface AccountSyncPromptLibraryItemInput {
   id: string
   title: string
@@ -221,6 +255,8 @@ export interface AccountSyncIpcChannelMap {
   'account-sync:execute': [AccountSyncExecuteRequest, AccountSyncExecuteResponse]
   'account-sync:preview': [AccountSyncPreviewRequest, AccountSyncPreviewResult]
   'account-sync:list-history': [AccountSyncListHistoryRequest, AccountSyncListHistoryResponse]
+  'account-sync:get-status': [{}, AccountSyncStatus]
+  'account-sync:estimate-payload': [AccountSyncEstimatePayloadRequest, AccountSyncPayloadEstimate]
 }
 
 const categorySelectionShape = {
@@ -259,6 +295,13 @@ const accountSyncPromptLibraryItemsSchema = z
     }
   })
 
+const accountSyncExecuteRequestSchema = z
+  .object({
+    conflictChoices: z.record(z.string().min(1), z.enum(['local', 'cloud'])).optional(),
+    promptLibraryItems: accountSyncPromptLibraryItemsSchema.optional(),
+  })
+  .strict()
+
 export const AccountSyncIpcSchemaRegistry = {
   'account-sync:get-preferences': z.object({}).strict(),
   'account-sync:update-preferences': z
@@ -271,12 +314,8 @@ export const AccountSyncIpcSchemaRegistry = {
       (value) => value.enabled !== undefined || value.categories !== undefined,
       '至少更新一个同步偏好字段',
     ),
-  'account-sync:execute': z
-    .object({
-      conflictChoices: z.record(z.string().min(1), z.enum(['local', 'cloud'])).optional(),
-      promptLibraryItems: accountSyncPromptLibraryItemsSchema.optional(),
-    })
-    .strict(),
+  'account-sync:execute': accountSyncExecuteRequestSchema,
+  'account-sync:estimate-payload': accountSyncExecuteRequestSchema,
   'account-sync:preview': z
     .object({
       promptLibraryItems: accountSyncPromptLibraryItemsSchema.optional(),
@@ -288,4 +327,5 @@ export const AccountSyncIpcSchemaRegistry = {
       pageSize: z.number().int().min(1).max(100).optional(),
     })
     .strict(),
+  'account-sync:get-status': z.object({}).strict(),
 } as const

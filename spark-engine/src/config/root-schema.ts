@@ -55,7 +55,8 @@ const AgentSchema = z
     permission_mode: PermissionModeSchema.optional(),
     reasoning_effort: ReasoningEffortSchema.optional(),
     failover: z.array(z.string().min(1)).default([]),
-    max_retries: z.number().int().min(0).max(10).default(2),
+    // 10 次重试 = 最多 11 次尝试；瞬时断连不再中断任务，终止条件只按次数。
+    max_retries: z.number().int().min(0).max(10).default(10),
     retry_initial_delay_ms: z.number().int().min(0).max(60_000).default(500),
     retry_max_delay_ms: z.number().int().min(0).max(300_000).default(60_000),
     retry_jitter_ratio: z.number().min(0).max(1).default(0.2),
@@ -63,7 +64,7 @@ const AgentSchema = z
   .strict()
   .default({
     failover: [],
-    max_retries: 2,
+    max_retries: 10,
     retry_initial_delay_ms: 500,
     retry_max_delay_ms: 60_000,
     retry_jitter_ratio: 0.2,

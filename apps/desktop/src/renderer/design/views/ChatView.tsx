@@ -79,10 +79,7 @@ import { GoalIterationDivider } from './chat/GoalIterationDivider'
 import { ScheduledWakeDivider } from './chat/ScheduledWakeDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
-import {
-  AutoRouterDecisionNotice,
-  AutoRouterTurnMetaTag,
-} from './chat/AutoRouterDecisionNotice'
+import { AutoRouterDecisionNotice, AutoRouterTurnMetaTag } from './chat/AutoRouterDecisionNotice'
 import type { AutoRouterDecisionEvent } from '@spark/protocol'
 import {
   ComputerActivityProvider,
@@ -1299,10 +1296,15 @@ export function ChatView({
   // 会话派生状态属于当前 active session，不能等 ChatStream 的异步历史加载 effect 才清空。
   // 否则切换到空会话时，首帧仍会把上一个会话的上下文账本传给 Composer，表现为「消息为空但
   // 对话历史仍有 token」。ChatStream 完成回放后会再次写入目标会话的真实值。
+  // activeMessages 同理：它是 ChatStream 内部消息的父级镜像，切换会话后、目标会话历史提交前
+  // 仍是上一个会话的消息（ChatStream 故意不清空内部消息以避免切换闪屏，但消息流本身只渲染
+  // 自己的内部 state，父级镜像只服务 Composer / Inspector 等派生 UI）。不清它的话，新会话的
+  // Composer 会把上一个会话的快捷回复建议解析出来继续展示，表现为「快捷回复跨会话残留」。
   useLayoutEffect(() => {
     if (previousDerivedSessionIdRef.current === active) return
     previousDerivedSessionIdRef.current = active
     setAgentStatus('')
+    setActiveMessages([])
     setContextInputTokens(0)
     setRuntimeContext(null)
     setSessionUsageData(createEmptySessionUsageData())
@@ -1485,6 +1487,9 @@ export function ChatView({
     (sessionId: SessionId, started = true) => {
       if (started) setSessionStatus(sessionId, 'running')
       sessionCtx.bumpSessionMessageCount(sessionId)
+      // 发送即最新活动：激活历史会话发起新一轮对话时，会话要立刻浮到列表顶部，
+      // 不能只等执行器的 agent_status 事件（那条路径还要和乐观 running 状态赛跑）。
+      sessionCtx.bumpSessionActivity(sessionId)
       setScrollToBottomTrigger((n) => n + 1)
       setResendRequest(null)
       setRevisionRequest(null)
@@ -2837,6 +2842,7 @@ export function ChatView({
     (sessionId: SessionId, started = true) => {
       if (started) setSessionStatus(sessionId, 'running')
       sessionCtx.bumpSessionMessageCount(sessionId)
+      sessionCtx.bumpSessionActivity(sessionId)
       setSideChatScrollToBottomTrigger((n) => n + 1)
     },
     [sessionCtx, setSessionStatus],
@@ -5180,7 +5186,9 @@ function ChatStream({
                     // （或降级/失配/首轮）才显示，连续同强度不刷屏。
                     const nextMsg = displayMessages[index + 1]
                     const nextDecision =
-                      nextMsg?.turnId != null && nextMsg.role === 'user' && msg.turnId !== nextMsg.turnId
+                      nextMsg?.turnId != null &&
+                      nextMsg.role === 'user' &&
+                      msg.turnId !== nextMsg.turnId
                         ? autoRouterDecisionByTurn.get(nextMsg.turnId)
                         : undefined
                     let showRouterNotice = nextDecision != null

@@ -46,6 +46,9 @@ export type ErrorCode =
   | 'IPC_INVALID_PAYLOAD'
   // 工具/任务执行
   | 'EXECUTION_FAILED'
+  // 账号同步
+  // 本地预检在发送前拦下超限请求时抛出，渲染层按同一套同步错误码翻译成用户文案。
+  | 'SYNC_PAYLOAD_TOO_LARGE'
 
 export class SparkError extends Error {
   readonly code: ErrorCode

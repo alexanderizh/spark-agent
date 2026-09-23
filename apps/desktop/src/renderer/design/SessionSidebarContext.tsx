@@ -244,6 +244,24 @@ const ACTIVE_AGENT_STATUSES = new Set<AgentStatusValue>([
 ])
 
 /**
+ * 记录并判断某个事件是否代表该会话的「新一轮活动」，同一 turnId 只认一次。
+ *
+ * 侧栏会话列表在正常对话路径不会全量刷新（只有工作流试跑等主进程路径会推
+ * stream:session:list-changed），会话能否浮到最新完全依赖乐观写进去的 updatedAt。
+ * 用 turnId 去重，既保证「激活历史会话后发新一轮消息必定浮顶」，又避免同一轮里
+ * thinking / waiting_permission 等连续非终态事件反复改写 updatedAt 造成整表重排。
+ */
+export function noteSessionActivityTurn(
+  seenTurns: Map<string, string>,
+  sessionId: string,
+  turnId: string,
+): boolean {
+  if (seenTurns.get(sessionId) === turnId) return false
+  seenTurns.set(sessionId, turnId)
+  return true
+}
+
+/**
  * 判断会话是否处于运行中状态。
  *
  * 用于所有「会破坏正在执行的任务」的破坏性操作：一键清空跳过、单个删除改用更重的
@@ -366,6 +384,8 @@ type SessionSidebarCtx = {
   refreshData: () => Promise<void>
   updateSessionInList: (sessionId: SessionId, patch: Partial<SessionSummary>) => void
   bumpSessionMessageCount: (sessionId: SessionId) => void
+  /** 把会话标记为「刚刚有活动」：刷新 updatedAt 让它在列表里浮到最新 */
+  bumpSessionActivity: (sessionId: SessionId) => void
 
   // Session actions
   handleNewSession: (
@@ -542,6 +562,8 @@ export function SessionSidebarProvider({
     sessionId: SessionId | null
     workspaceId: string | null
   } | null>(null)
+  // 每个会话最近一次已「浮过顶」的 turnId，供 noteSessionActivityTurn 去重。
+  const activityTurnRef = useRef(new Map<string, string>())
   const upsertSessionInList = useCallback((session: SessionSummary) => {
     setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
   }, [])
@@ -825,6 +847,14 @@ export function SessionSidebarProvider({
           status === 'completed' ||
           status === 'cancelled' ||
           status === 'error'
+        // 本轮首个非终态事件 = 该会话刚起跑一轮对话，必须浮到最新。这里不能再要求
+        // 「本地 status 尚不是 running」：发送路径早已把 status 乐观置成 running，
+        // 旧守卫会在这里提前 return，导致激活的历史会话发完消息不置顶（#196）。
+        const isNewActivityTurn = noteSessionActivityTurn(
+          activityTurnRef.current,
+          sessionId,
+          event.turnId,
+        )
         setSessions((prev) =>
           prev.map((item) => {
             if (item.id !== sessionId) return item
@@ -844,9 +874,13 @@ export function SessionSidebarProvider({
                 ? item
                 : next
             }
-            return item.status === 'running'
-              ? item
-              : { ...item, status: 'running', updatedAt: new Date().toISOString() }
+            // 同一轮的后续非终态事件只补 status，不再改 updatedAt（去重后 isNewActivityTurn 为 false）。
+            if (item.status === 'running' && !isNewActivityTurn) return item
+            return {
+              ...item,
+              status: 'running',
+              ...(isNewActivityTurn ? { updatedAt: new Date().toISOString() } : {}),
+            }
           }),
         )
         setSessionAgentStatuses((prev) => {
@@ -1045,6 +1079,20 @@ export function SessionSidebarProvider({
             }
           : item,
       ),
+    )
+  }, [])
+
+  /**
+   * 刷新会话的「最后活动时间」，让它在侧栏浮到所属分组最新位置。
+   *
+   * 发送消息即最新活动：调用方在发送成功后调用，不必等执行器起跑的事件。
+   * 后端在同一时刻也会写 sessions.updated_at，但正常对话路径不会全量刷新列表，
+   * 因此这里必须同步乐观更新，否则激活的历史会话发完消息仍停在原地（#196）。
+   */
+  const bumpSessionActivity = useCallback((sessionId: SessionId) => {
+    const now = new Date().toISOString()
+    setSessions((prev) =>
+      prev.map((item) => (item.id === sessionId ? { ...item, updatedAt: now } : item)),
     )
   }, [])
 
@@ -2197,6 +2245,7 @@ export function SessionSidebarProvider({
       refreshData,
       updateSessionInList,
       bumpSessionMessageCount,
+      bumpSessionActivity,
       handleNewSession,
       handleForkSession,
       handleToggleSessionPinned,
@@ -2262,6 +2311,7 @@ export function SessionSidebarProvider({
       refreshData,
       updateSessionInList,
       bumpSessionMessageCount,
+      bumpSessionActivity,
       handleNewSession,
       handleToggleSessionPinned,
       handleSetSessionLabel,

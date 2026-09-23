@@ -1,9 +1,16 @@
 .composer-quick-replies {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
   margin: 0 10px 8px;
+
+  // 选项区：内部自由换行，宽度占满整行
+  .composer-quick-replies-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
 
   .composer-quick-reply-chip {
     display: inline-flex;
@@ -24,6 +31,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
+
+    // 省略号必须落在真实元素上：flex item 默认 min-width:auto 会按 nowrap
+    // 文本全宽撑开，导致 button 被硬裁而不出省略号。
+    .composer-quick-reply-chip-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     transition:
       transform 0.12s ease,
       background-color 0.12s ease,
@@ -52,6 +69,8 @@
   .composer-quick-replies-dismiss {
     display: inline-grid;
     flex: 0 0 auto;
+    // 关闭按钮独处于选项区末尾（行尾右侧），不再被选项长度挤到左侧
+    align-self: flex-end;
     width: 25px;
     height: 25px;
     place-items: center;
@@ -86,4 +105,12 @@
       cursor: not-allowed;
     }
   }
+}
+
+// 浅色下 --text-muted 是 #b2a997，叠在近白胶囊底上对比度只有约 1.9:1，字几乎糊掉。
+// 只混入 20% 主文本色做极小幅度加深（刻意不加背景底色，避免整体变重）：
+// 更深的版本历史上试过，用户反馈过重不好看，这里保持克制。
+html[data-theme='light'] .composer-quick-replies .composer-quick-reply-chip,
+.app.theme-light .composer-quick-replies .composer-quick-reply-chip {
+  color: color-mix(in srgb, var(--text) 20%, var(--text-muted));
 }

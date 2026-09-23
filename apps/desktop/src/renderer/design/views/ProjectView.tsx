@@ -3,7 +3,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import type { AgentEvent, AgentStatusValue, SessionId, WorkspaceFileChangePayload, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
+import type {
+  AgentEvent,
+  AgentStatusValue,
+  SessionId,
+  WorkspaceFileChangePayload,
+  WorkspaceInfo,
+  WorkspaceTreeEntry,
+} from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -40,7 +47,10 @@ export function ProjectView() {
   const { invoke: stopWatch } = useIpcInvoke('workspace:watch-stop')
 
   // Track recent external change count for batched toast
-  const externalChangeBufferRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
+  const externalChangeBufferRef = useRef<{
+    count: number
+    timer: ReturnType<typeof setTimeout> | null
+  }>({ count: 0, timer: null })
   const workspaceId = workspace?.id
 
   useEffect(() => {
@@ -70,59 +80,71 @@ export function ProjectView() {
   }, [workspaceId])
 
   // Listen for file_change agent events at the top level
-  useIpcStream('stream:session:agent-event', (event: AgentEvent) => {
-    if (event.type !== 'file_change') return
-    if (workspace == null) return
-    const changeType = event.changeType as FileChangeStatus
-    const filePath = event.path
-    if (!filePath) return
+  useIpcStream(
+    'stream:session:agent-event',
+    (event: AgentEvent) => {
+      if (event.type !== 'file_change') return
+      if (workspace == null) return
+      const changeType = event.changeType as FileChangeStatus
+      const filePath = event.path
+      if (!filePath) return
 
-    setFileChanges((prev) => {
-      if (prev[filePath] === changeType) return prev
-      return { ...prev, [filePath]: changeType }
-    })
-  }, [workspace])
+      setFileChanges((prev) => {
+        if (prev[filePath] === changeType) return prev
+        return { ...prev, [filePath]: changeType }
+      })
+    },
+    [workspace],
+  )
 
   // Listen for external file changes from FileWatcherService (fs.watch)
-  useIpcStream('stream:workspace:file-change', (payload: WorkspaceFileChangePayload) => {
-    if (workspace == null) return
-    if (payload.workspaceId !== workspace.id) return
+  useIpcStream(
+    'stream:workspace:file-change',
+    (payload: WorkspaceFileChangePayload) => {
+      if (workspace == null) return
+      if (payload.workspaceId !== workspace.id) return
 
-    const changeType = payload.changeType as FileChangeStatus
-    const filePath = payload.path
+      const changeType = payload.changeType as FileChangeStatus
+      const filePath = payload.path
 
-    setFileChanges((prev) => {
-      if (prev[filePath] === changeType) return prev
-      return { ...prev, [filePath]: changeType }
-    })
+      setFileChanges((prev) => {
+        if (prev[filePath] === changeType) return prev
+        return { ...prev, [filePath]: changeType }
+      })
 
-    // Batched toast: accumulate external changes and show a summary
-    const buf = externalChangeBufferRef.current
-    buf.count++
+      // Batched toast: accumulate external changes and show a summary
+      const buf = externalChangeBufferRef.current
+      buf.count++
 
-    if (buf.timer != null) {
-      clearTimeout(buf.timer)
-    }
-
-    buf.timer = setTimeout(() => {
-      if (buf.count > 0) {
-        const label = changeType === 'create' ? '新建' : changeType === 'delete' ? '删除' : '修改'
-        if (buf.count === 1) {
-          toast.info(`文件${label}: ${filePath}`, { duration: 3000 })
-        } else {
-          toast.info(`${buf.count} 个文件发生外部变更`, { duration: 4000 })
-        }
-        buf.count = 0
+      if (buf.timer != null) {
+        clearTimeout(buf.timer)
       }
-      buf.timer = null
-    }, 500)
-  }, [workspace, toast])
+
+      buf.timer = setTimeout(() => {
+        if (buf.count > 0) {
+          const label = changeType === 'create' ? '新建' : changeType === 'delete' ? '删除' : '修改'
+          if (buf.count === 1) {
+            toast.info(`文件${label}: ${filePath}`, { duration: 3000 })
+          } else {
+            toast.info(`${buf.count} 个文件发生外部变更`, { duration: 4000 })
+          }
+          buf.count = 0
+        }
+        buf.timer = null
+      }, 500)
+    },
+    [workspace, toast],
+  )
 
   const totalFileChanges = Object.keys(fileChanges).length
 
   return (
     <div className="project-layout">
-      <ProjectExplorer workspace={workspace} fileChanges={fileChanges} onFileChangesChange={setFileChanges} />
+      <ProjectExplorer
+        workspace={workspace}
+        fileChanges={fileChanges}
+        onFileChangesChange={setFileChanges}
+      />
       <div className="project-center">
         <ProjectTabs />
         <div className="project-split">
@@ -139,7 +161,15 @@ export function ProjectView() {
   )
 }
 
-function ProjectExplorer({ workspace, fileChanges, onFileChangesChange }: { workspace: WorkspaceInfo | null; fileChanges: FileChangeMap; onFileChangesChange: (changes: FileChangeMap) => void }) {
+function ProjectExplorer({
+  workspace,
+  fileChanges,
+  onFileChangesChange,
+}: {
+  workspace: WorkspaceInfo | null
+  fileChanges: FileChangeMap
+  onFileChangesChange: (changes: FileChangeMap) => void
+}) {
   const [entries, setEntries] = useState<WorkspaceTreeEntry[]>([])
   const [error, setError] = useState('')
   const [sortMode, setSortMode] = useState<FileSortMode>('name')
@@ -218,11 +248,20 @@ function ProjectExplorer({ workspace, fileChanges, onFileChangesChange }: { work
         <span className="badge dot branch-info">main</span>
       </div>
       <div className="explorer-toolbar">
-        <button className="icon-btn explorer-btn-sm"><Icons.Plus size={12} /></button>
-        <button className="icon-btn explorer-btn-sm" onClick={refreshTree} disabled={workspace == null || loading} title="刷新文件树"><Icons.Refresh size={12} /></button>
+        <button className="icon-btn explorer-btn-sm">
+          <Icons.Plus size={12} />
+        </button>
+        <button
+          className="icon-btn explorer-btn-sm"
+          onClick={refreshTree}
+          disabled={workspace == null || loading}
+          title="刷新文件树"
+        >
+          <Icons.Refresh size={12} />
+        </button>
         <button
           className={`icon-btn explorer-btn-sm ${sortMode === 'modified' ? 'active' : ''}`}
-          onClick={() => setSortMode((prev) => prev === 'name' ? 'modified' : 'name')}
+          onClick={() => setSortMode((prev) => (prev === 'name' ? 'modified' : 'name'))}
           title={sortMode === 'name' ? '按修改时间排序' : '按名称排序'}
         >
           <Icons.Clock size={12} />
@@ -233,49 +272,70 @@ function ProjectExplorer({ workspace, fileChanges, onFileChangesChange }: { work
             {totalChanges}
           </span>
         )}
-        <button className="icon-btn explorer-btn-sm"><Icons.Search size={12} /></button>
+        <button className="icon-btn explorer-btn-sm">
+          <Icons.Search size={12} />
+        </button>
       </div>
       <div className="tree scroll">
         {workspace == null && (
           <div className="empty-compact">
-            <div className="empty-icon"><Icons.Folder size={18} /></div>
+            <div className="empty-icon">
+              <Icons.Folder size={18} />
+            </div>
             <div className="empty-title">未打开工作区</div>
             <div className="empty-desc">请先在 Home 或设置中打开一个项目</div>
           </div>
         )}
         {workspace != null && loading && entries.length === 0 && (
           <div className="empty-compact">
-            <div className="empty-icon"><Icons.Spinner size={18} /></div>
+            <div className="empty-icon">
+              <Icons.Spinner size={18} />
+            </div>
             <div className="empty-title">加载文件树...</div>
           </div>
         )}
         {workspace != null && error !== '' && (
           <div className="empty-compact">
-            <div className="empty-icon error-icon"><Icons.X size={18} /></div>
+            <div className="empty-icon error-icon">
+              <Icons.X size={18} />
+            </div>
             <div className="empty-desc error-desc">{error}</div>
           </div>
         )}
         {workspace != null && !loading && error === '' && entries.length === 0 && (
           <div className="empty-compact">
-            <div className="empty-icon"><Icons.Folder size={18} /></div>
+            <div className="empty-icon">
+              <Icons.Folder size={18} />
+            </div>
             <div className="empty-title">该目录为空</div>
           </div>
         )}
-        {workspace != null && error === '' && sortedEntries.map((entry) => {
-          const changeStatus = fileChanges[entry.path]
-          const statusLetter = changeStatus === 'create' ? 'A' : changeStatus === 'modify' ? 'M' : changeStatus === 'delete' ? 'D' : undefined
-          return (
-            <TreeRow
-              key={entry.path}
-              depth={entry.depth}
-              folder={entry.type === 'directory'}
-              expanded={entry.type === 'directory' && entry.depth < 3 && (entry.childrenCount ?? 0) > 0}
-              name={entry.name}
-              {...(entry.extension !== undefined && { ext: entry.extension })}
-              {...(statusLetter != null && { status: statusLetter })}
-            />
-          )
-        })}
+        {workspace != null &&
+          error === '' &&
+          sortedEntries.map((entry) => {
+            const changeStatus = fileChanges[entry.path]
+            const statusLetter =
+              changeStatus === 'create'
+                ? 'A'
+                : changeStatus === 'modify'
+                  ? 'M'
+                  : changeStatus === 'delete'
+                    ? 'D'
+                    : undefined
+            return (
+              <TreeRow
+                key={entry.path}
+                depth={entry.depth}
+                folder={entry.type === 'directory'}
+                expanded={
+                  entry.type === 'directory' && entry.depth < 3 && (entry.childrenCount ?? 0) > 0
+                }
+                name={entry.name}
+                {...(entry.extension !== undefined && { ext: entry.extension })}
+                {...(statusLetter != null && { status: statusLetter })}
+              />
+            )
+          })}
       </div>
     </div>
   )
@@ -304,13 +364,37 @@ function TreeRow({
     if (ext === 'json') return <span className="ico mono-sm file-ext-json">{'{ }'}</span>
     return <Icons.File className="ico" size={12} />
   }
-  const changeClass = status === 'A' ? 'is-created' : status === 'M' ? 'is-modified' : status === 'D' ? 'is-deleted' : ''
+  const changeClass =
+    status === 'A'
+      ? 'is-created'
+      : status === 'M'
+        ? 'is-modified'
+        : status === 'D'
+          ? 'is-deleted'
+          : ''
   return (
-    <div className={`tree-row ${active ? 'active' : ''} ${changeClass}`} style={{ paddingLeft: 6 + depth * 12 }} /* dynamic */>
-      {folder
-        ? (expanded ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />)
-        : <span className="tree-indent" />}
-      {folder ? <Icons.Folder className="ico" size={13} style={{ color: expanded ? 'var(--warning)' : 'var(--text-muted)' }} /* dynamic */ /> : fileIco(ext)}
+    <div
+      className={`tree-row ${active ? 'active' : ''} ${changeClass}`}
+      style={{ paddingLeft: 6 + depth * 12 }} /* dynamic */
+    >
+      {folder ? (
+        expanded ? (
+          <Icons.ChevronDown className="chev" size={12} />
+        ) : (
+          <Icons.ChevronRight className="chev" size={12} />
+        )
+      ) : (
+        <span className="tree-indent" />
+      )}
+      {folder ? (
+        <Icons.Folder
+          className="ico"
+          size={13}
+          style={{ color: expanded ? 'var(--warning)' : 'var(--text-muted)' }} /* dynamic */
+        />
+      ) : (
+        fileIco(ext)
+      )}
       <span className="nm">{name}</span>
       {status && <span className={`git-status git-${status.toLowerCase()}`}>{status}</span>}
     </div>
@@ -320,13 +404,40 @@ function TreeRow({
 function ProjectTabs() {
   return (
     <div className="project-tabs">
-      <div className="project-tab"><Icons.Chat className="ico" /> 会话 <span className="x"><Icons.X size={10} /></span></div>
-      <div className="project-tab active"><Icons.File className="ico" /> token.ts <span className="dirty" /> <span className="x"><Icons.X size={10} /></span></div>
-      <div className="project-tab"><Icons.File className="ico" /> pkce.ts <span className="x"><Icons.X size={10} /></span></div>
-      <div className="project-tab"><Icons.Terminal className="ico" /> terminal <span className="x"><Icons.X size={10} /></span></div>
-      <div className="project-tab"><Icons.GitBranch className="ico" /> 更改 (5) <span className="x"><Icons.X size={10} /></span></div>
+      <div className="project-tab">
+        <Icons.Chat className="ico" /> 会话{' '}
+        <span className="x">
+          <Icons.X size={10} />
+        </span>
+      </div>
+      <div className="project-tab active">
+        <Icons.File className="ico" /> token.ts <span className="dirty" />{' '}
+        <span className="x">
+          <Icons.X size={10} />
+        </span>
+      </div>
+      <div className="project-tab">
+        <Icons.File className="ico" /> pkce.ts{' '}
+        <span className="x">
+          <Icons.X size={10} />
+        </span>
+      </div>
+      <div className="project-tab">
+        <Icons.Terminal className="ico" /> terminal{' '}
+        <span className="x">
+          <Icons.X size={10} />
+        </span>
+      </div>
+      <div className="project-tab">
+        <Icons.GitBranch className="ico" /> 更改 (5){' '}
+        <span className="x">
+          <Icons.X size={10} />
+        </span>
+      </div>
       <div className="flex1"></div>
-      <button className="icon-btn" title="分屏"><Icons.PanelRight /></button>
+      <button className="icon-btn" title="分屏">
+        <Icons.PanelRight />
+      </button>
     </div>
   )
 }
@@ -339,16 +450,26 @@ function ProjectDiffPane() {
         <span className="faint mono-sm diff-line-count">· 412 行</span>
         <span className="badge warning dot diff-unsaved-badge">未保存</span>
         <div className="flex1"></div>
-        <span className="badge"><Icons.GitBranch size={10} /> feat/oauth-2.1</span>
-        <button className="btn ghost sm"><Icons.Refresh size={11} /> 撤销修改</button>
-        <button className="btn sm primary"><Icons.Check size={11} /> 接受全部</button>
+        <span className="badge">
+          <Icons.GitBranch size={10} /> feat/oauth-2.1
+        </span>
+        <button className="btn ghost sm">
+          <Icons.Refresh size={11} /> 撤销修改
+        </button>
+        <button className="btn sm primary">
+          <Icons.Check size={11} /> 接受全部
+        </button>
       </div>
       <div className="diff diff-container">
         <div className="diff-body scroll diff-body-fill">
           <DiffLine type="hunk" text="@@ -1,6 +1,9 @@ src/auth/token.ts" />
           <DiffLine type="ctx" ln="1" text='import { fetch } from "undici";' />
           <DiffLine type="ctx" ln="2" text='import { AuthError } from "./errors";' />
-          <DiffLine type="add" ln="3" text='import { generateVerifier, challengeFor } from "./pkce";' />
+          <DiffLine
+            type="add"
+            ln="3"
+            text='import { generateVerifier, challengeFor } from "./pkce";'
+          />
           <DiffLine type="ctx" ln="4" text="" />
           <DiffLine type="ctx" ln="5" text="export interface ExchangeOpts {" />
           <DiffLine type="ctx" ln="6" text="  code: string;" />
@@ -357,12 +478,20 @@ function ProjectDiffPane() {
           <DiffLine type="ctx" ln="9" text="  client_id: string;" />
           <DiffLine type="ctx" ln="10" text="}" />
           <DiffLine type="hunk" text="@@ -42,18 +45,22 @@ class TokenService {" />
-          <DiffLine type="ctx" ln="42" text="  async exchange(opts: ExchangeOpts): Promise<TokenSet> {" />
+          <DiffLine
+            type="ctx"
+            ln="42"
+            text="  async exchange(opts: ExchangeOpts): Promise<TokenSet> {"
+          />
           <DiffLine type="del" ln="43" text="    const body = {" />
           <DiffLine type="del" ln="44" text="      grant_type: 'authorization_code'," />
           <DiffLine type="del" ln="45" text="      code: opts.code," />
           <DiffLine type="add" ln="46" text="    if (!opts.verifier) {" />
-          <DiffLine type="add" ln="47" text="      throw new AuthError('PKCE verifier required (RFC 9700)');" />
+          <DiffLine
+            type="add"
+            ln="47"
+            text="      throw new AuthError('PKCE verifier required (RFC 9700)');"
+          />
           <DiffLine type="add" ln="48" text="    }" />
           <DiffLine type="add" ln="49" text="    const body = {" />
           <DiffLine type="add" ln="50" text="      grant_type: 'authorization_code'," />
@@ -376,12 +505,32 @@ function ProjectDiffPane() {
           <DiffLine type="ctx" ln="58" text="      body: new URLSearchParams(body)," />
           <DiffLine type="ctx" ln="59" text="    });" />
           <DiffLine type="hunk" text="@@ -112,9 +119,14 @@ class TokenService {" />
-          <DiffLine type="ctx" ln="112" text="  async refresh(refreshToken: string): Promise<TokenSet> {" />
+          <DiffLine
+            type="ctx"
+            ln="112"
+            text="  async refresh(refreshToken: string): Promise<TokenSet> {"
+          />
           <DiffLine type="del" ln="113" text="    // OAuth 2.0: refresh token is reusable" />
-          <DiffLine type="add" ln="120" text="    // OAuth 2.1: rotating refresh tokens — old one invalidated on use" />
-          <DiffLine type="add" ln="121" text="    // Compat window: previous token remains valid for 7d (see compat/oauth2-legacy)" />
-          <DiffLine type="ctx" ln="122" text="    const res = await this.exchangeRefresh(refreshToken);" />
-          <DiffLine type="add" ln="123" text="    await this.revokePrevious(refreshToken, { grace: '7d' });" />
+          <DiffLine
+            type="add"
+            ln="120"
+            text="    // OAuth 2.1: rotating refresh tokens — old one invalidated on use"
+          />
+          <DiffLine
+            type="add"
+            ln="121"
+            text="    // Compat window: previous token remains valid for 7d (see compat/oauth2-legacy)"
+          />
+          <DiffLine
+            type="ctx"
+            ln="122"
+            text="    const res = await this.exchangeRefresh(refreshToken);"
+          />
+          <DiffLine
+            type="add"
+            ln="123"
+            text="    await this.revokePrevious(refreshToken, { grace: '7d' });"
+          />
           <DiffLine type="ctx" ln="124" text="    return res;" />
         </div>
       </div>
@@ -415,7 +564,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
   const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { bumpSessionMessageCount } = useSessionSidebar()
+  const { bumpSessionMessageCount, bumpSessionActivity } = useSessionSidebar()
 
   useEffect(() => {
     let cancelled = false
@@ -446,7 +595,8 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
 
           const providersRes = await listProviders({})
           if (cancelled) return null
-          const provider = providersRes.profiles.find((profile) => profile.isDefault) ?? providersRes.profiles[0]
+          const provider =
+            providersRes.profiles.find((profile) => profile.isDefault) ?? providersRes.profiles[0]
           if (provider == null) {
             setNotice('尚未配置 Provider。请先在设置中添加 Provider 后再使用项目 Agent。')
             return null
@@ -476,7 +626,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
         .finally(() => {
           if (!cancelled) setLoading(false)
         })
-      })
+    })
 
     return () => {
       cancelled = true
@@ -484,12 +634,16 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
     }
   }, [workspaceId, listSessions, getHistory, listProviders, createSession])
 
-  useIpcStream('stream:session:agent-event', (event) => {
-    if (event.sessionId !== sessionId) return
-    builderRef.current.processEvent(event)
-    setMessages([...builderRef.current.getAllMessages()])
-    if (event.type === 'agent_status') setAgentStatus(event.status)
-  }, [sessionId])
+  useIpcStream(
+    'stream:session:agent-event',
+    (event) => {
+      if (event.sessionId !== sessionId) return
+      builderRef.current.processEvent(event)
+      setMessages([...builderRef.current.getAllMessages()])
+      if (event.type === 'agent_status') setAgentStatus(event.status)
+    },
+    [sessionId],
+  )
 
   useEffect(() => {
     if (scrollRef.current != null) {
@@ -505,11 +659,13 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
     try {
       await sendTurn({ sessionId, message: text })
       bumpSessionMessageCount(sessionId)
+      // 发送即最新活动：让该会话立刻浮到列表顶部（#196）
+      bumpSessionActivity(sessionId)
     } catch (err) {
       setNotice(err instanceof Error ? err.message : '发送失败')
       setInput(text)
     }
-  }, [input, sessionId, sendTurn, bumpSessionMessageCount])
+  }, [input, sessionId, sendTurn, bumpSessionMessageCount, bumpSessionActivity])
 
   const handleCancel = useCallback(async () => {
     if (sessionId == null) return
@@ -534,41 +690,61 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
         <span className="strong">SparkWork</span>
         {agentStatus === 'thinking' && <span className="badge info dot">思考中</span>}
         {agentStatus === 'calling_tool' && <span className="badge warning dot">调用工具</span>}
-        {agentStatus === 'waiting_permission' && <span className="badge warning dot">等待权限</span>}
+        {agentStatus === 'waiting_permission' && (
+          <span className="badge warning dot">等待权限</span>
+        )}
         {agentStatus === 'waiting_user' && <span className="badge warning dot">等待用户</span>}
         {agentStatus === 'completed' && <span className="badge success dot">完成</span>}
         {agentStatus === 'error' && <span className="badge danger dot">错误</span>}
         {agentStatus === 'cancelled' && <span className="badge dot">已停止</span>}
         <div className="flex1"></div>
-        <button className="icon-btn" onClick={handleCancel} disabled={sessionId == null} title="停止"><Icons.Stop size={12} /></button>
+        <button
+          className="icon-btn"
+          onClick={handleCancel}
+          disabled={sessionId == null}
+          title="停止"
+        >
+          <Icons.Stop size={12} />
+        </button>
       </div>
       <div ref={scrollRef} className="agent-pane-stream">
         <div className="agent-pane-stream-inner">
           {loading && (
             <div className="empty-state">
-              <div className="empty-icon"><Icons.Spinner size={24} /></div>
+              <div className="empty-icon">
+                <Icons.Spinner size={24} />
+              </div>
               <div className="empty-title">加载中...</div>
             </div>
           )}
           {!loading && notice && (
             <div className="empty-state">
-              <div className="empty-icon"><Icons.AlertTriangle size={24} /></div>
+              <div className="empty-icon">
+                <Icons.AlertTriangle size={24} />
+              </div>
               <div className="empty-title">无法启动 Agent</div>
               <div className="empty-desc">{notice}</div>
             </div>
           )}
           {!loading && !notice && visibleMessages.length === 0 && (
             <div className="empty-state">
-              <div className="empty-icon"><Icons.Sparkles size={24} /></div>
+              <div className="empty-icon">
+                <Icons.Sparkles size={24} />
+              </div>
               <div className="empty-title">开始对话</div>
               <div className="empty-desc">在此输入消息开始与 Agent 对话</div>
             </div>
           )}
-          {!loading && visibleMessages.map((message) => (
-            <MiniMsg key={message.id} user={message.role === 'user'} status={message.status === 'streaming' ? 'running' : undefined}>
-              {message.blocks.map((block, index) => renderBlock(block, index))}
-            </MiniMsg>
-          ))}
+          {!loading &&
+            visibleMessages.map((message) => (
+              <MiniMsg
+                key={message.id}
+                user={message.role === 'user'}
+                status={message.status === 'streaming' ? 'running' : undefined}
+              >
+                {message.blocks.map((block, index) => renderBlock(block, index))}
+              </MiniMsg>
+            ))}
         </div>
       </div>
       <div className="agent-pane-composer">
@@ -576,17 +752,27 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
           <textarea
             className="composer-input"
             rows={2}
-            placeholder={sessionId != null ? '给 Agent 发消息…  ⌘↵ 发送' : '请先打开工作区并配置 Provider'}
+            placeholder={
+              sessionId != null ? '给 Agent 发消息…  ⌘↵ 发送' : '请先打开工作区并配置 Provider'
+            }
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             disabled={sessionId == null}
           />
           <div className="composer-actions">
-            <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Plus /></button>
-            <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Wrench /></button>
+            <button className="icon-btn" style={{ width: 24, height: 24 }}>
+              <Icons.Plus />
+            </button>
+            <button className="icon-btn" style={{ width: 24, height: 24 }}>
+              <Icons.Wrench />
+            </button>
             <div className="flex1"></div>
-            <button className="btn primary sm" onClick={() => void handleSend()} disabled={!input.trim() || sessionId == null}>
+            <button
+              className="btn primary sm"
+              onClick={() => void handleSend()}
+              disabled={!input.trim() || sessionId == null}
+            >
               <Icons.Send size={11} />
             </button>
           </div>
@@ -611,11 +797,7 @@ function countBlockDiffLines(diff: string | undefined): { adds: number; dels: nu
 function renderBlock(block: UIBlock, index: number): ReactNode {
   switch (block.kind) {
     case 'text':
-      return (
-        <span key={index}>
-          {block.content}
-        </span>
-      )
+      return <span key={index}>{block.content}</span>
     case 'thinking':
       return (
         <details key={index} className="block-thinking">
@@ -660,7 +842,9 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
           <span className="badge block-change-type">{block.changeType}</span>
           <span className="mono-sm block-change-path">{block.path}</span>
           {block.diff != null && block.diff.trim().length > 0 && (
-            <span className="faint mono-sm block-change-path">+{diffCounts.adds} -{diffCounts.dels}</span>
+            <span className="faint mono-sm block-change-path">
+              +{diffCounts.adds} -{diffCounts.dels}
+            </span>
           )}
         </div>
       )
@@ -671,14 +855,18 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
           {block.stdout && <pre className="mono-sm block-stdout">{block.stdout}</pre>}
           {block.stderr && <pre className="mono-sm block-stderr">{block.stderr}</pre>}
           {block.isStreaming && <span className="faint block-term-status">运行中...</span>}
-          {block.exitCode !== undefined && <span className="faint block-term-status">退出码: {block.exitCode}</span>}
+          {block.exitCode !== undefined && (
+            <span className="faint block-term-status">退出码: {block.exitCode}</span>
+          )}
         </div>
       )
     case 'validation_suggestion':
       return (
         <div key={index} className="block-file-change">
           <span className="badge block-change-type">验证</span>
-          <span className="mono-sm block-change-path">{block.commands.map((command) => command.command).join(' · ')}</span>
+          <span className="mono-sm block-change-path">
+            {block.commands.map((command) => command.command).join(' · ')}
+          </span>
         </div>
       )
     default:
@@ -686,12 +874,18 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
   }
 }
 
-function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running' | undefined; children: ReactNode }) {
+function MiniMsg({
+  user,
+  status,
+  children,
+}: {
+  user?: boolean
+  status?: 'running' | undefined
+  children: ReactNode
+}) {
   return (
     <div className={`msg ${user ? 'user' : 'agent'} mini-msg`}>
-      <div className="msg-avatar">
-        {user ? 'U' : <Icons.Sparkles size={11} />}
-      </div>
+      <div className="msg-avatar">{user ? 'U' : <Icons.Sparkles size={11} />}</div>
       <div className="msg-body">
         <div className="msg-name">
           {user ? '你' : 'Agent'}
@@ -701,9 +895,7 @@ function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running
             </span>
           )}
         </div>
-        <div className="msg-content">
-          {children}
-        </div>
+        <div className="msg-content">{children}</div>
       </div>
     </div>
   )
@@ -735,7 +927,9 @@ function MiniTool({
         <span className="tool-icon">{icon[name] ?? <Icons.Wrench />}</span>
         <span className="tool-name">{name}</span>
         <span className="tool-arg">{arg}</span>
-        {(status === 'pending' || status === 'running') && <Icons.Spinner size={11} className="tool-status" />}
+        {(status === 'pending' || status === 'running') && (
+          <Icons.Spinner size={11} className="tool-status" />
+        )}
         {status === 'success' && <Icons.Check size={11} className="tool-status ok" />}
         {status === 'error' && <Icons.X size={11} className="tool-status err" />}
       </div>
@@ -745,18 +939,36 @@ function MiniTool({
   )
 }
 
-function ProjectBottomBar({ workspace, fileChangeCount }: { workspace: WorkspaceInfo | null; fileChangeCount: number }) {
+function ProjectBottomBar({
+  workspace,
+  fileChangeCount,
+}: {
+  workspace: WorkspaceInfo | null
+  fileChangeCount: number
+}) {
   return (
     <div className="project-bottombar">
-      <div className="seg"><Icons.Folder size={11} /> {workspace?.name ?? '未打开工作区'}</div>
+      <div className="seg">
+        <Icons.Folder size={11} /> {workspace?.name ?? '未打开工作区'}
+      </div>
       {fileChangeCount > 0 ? (
-        <div className="seg seg-changes"><Icons.Edit size={11} /> {fileChangeCount} 个文件已修改</div>
+        <div className="seg seg-changes">
+          <Icons.Edit size={11} /> {fileChangeCount} 个文件已修改
+        </div>
       ) : (
-        <div className="seg"><Icons.Edit size={11} /> 无文件变更</div>
+        <div className="seg">
+          <Icons.Edit size={11} /> 无文件变更
+        </div>
       )}
-      <div className="seg"><span className="dot-indicator green" /> Agent 就绪</div>
-      <div className="seg right"><Icons.Cpu size={11} /> 沙箱 L2</div>
-      <div className="seg"><Icons.Database size={11} /> 索引 100%</div>
+      <div className="seg">
+        <span className="dot-indicator green" /> Agent 就绪
+      </div>
+      <div className="seg right">
+        <Icons.Cpu size={11} /> 沙箱 L2
+      </div>
+      <div className="seg">
+        <Icons.Database size={11} /> 索引 100%
+      </div>
       <div className="seg mono-sm">UTF-8</div>
       <div className="seg mono-sm">TypeScript</div>
       <div className="seg mono-sm">Ln 47, Col 18</div>

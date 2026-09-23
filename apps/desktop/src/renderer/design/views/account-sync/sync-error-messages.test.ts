@@ -8,6 +8,7 @@ describe('translateSyncErrorCode', () => {
     expect(translateSyncErrorCode('SYNC_LOCAL_APPLY_FAILED').message).toContain('本地应用失败')
     expect(translateSyncErrorCode('SYNC_ENCRYPTION_KEY_MISSING').message).toContain('加密密钥')
     expect(translateSyncErrorCode('SYNC_CATEGORY_UNSUPPORTED').message).toContain('提示词库')
+    expect(translateSyncErrorCode('SYNC_PAYLOAD_TOO_LARGE').message).toContain('单次上限')
   })
 
   it('classifies severities for skipped / degraded / failed codes', () => {

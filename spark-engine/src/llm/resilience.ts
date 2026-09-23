@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { isAbortError } from '../kernel/cancellation.js'
 import { KernelError } from '../kernel/errors.js'
+import type { RuntimeLogger } from '../observability/logger.js'
 import type { LlmCallContext, LlmService } from '../seams.js'
 import { resolveOutputBudget } from './budget.js'
 import { safeDiagnosticText, safeDiagnosticValue } from './error-detail.js'
@@ -25,10 +26,27 @@ export interface ResilientLlmOptions {
   readonly random?: () => number
   readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>
   readonly modelBudget?: ModelBudget
+  /**
+   * Optional host logger. Retry attempts and give-up decisions are logged here
+   * so "the turn died in the middle" can be diagnosed from the host log instead
+   * of only from the failed turn's error event.
+   */
+  readonly logger?: RuntimeLogger
 }
 
+/**
+ * Default retry budget for transient LLM failures (dropped streams, network
+ * blips, 429/5xx, gateway hiccups).
+ *
+ * Ten retries (eleven attempts in total) so a short network interruption no
+ * longer ends the user's task. Termination is **count-only**: a provider
+ * `Retry-After` larger than `maxDelayMs` is clamped rather than treated as a
+ * reason to abandon the route early (see `retryDelay`). The delays stay
+ * bounded per attempt (exponential from 500ms up to `maxDelayMs`), so the
+ * whole sequence is finite without a wall-clock cutoff.
+ */
 const DEFAULT_RETRY: RetryPolicy = {
-  maxRetries: 2,
+  maxRetries: 10,
   initialDelayMs: 500,
   maxDelayMs: 60_000,
   jitterRatio: 0.2,
@@ -85,25 +103,11 @@ export class ResilientLlmService implements LlmService {
           }
           if (!isRetryable(error) && !isMalformedToolJson(error)) throw error
           if (attempt < this.#retry.maxRetries) {
+            // Termination is count-only: a provider Retry-After only decides how
+            // long the next wait is. An outsized value is clamped by retryDelay
+            // instead of ending this route's retries early, so a 429 that asks
+            // for a long cool-down still keeps the turn alive.
             const requestedDelayMs = retryAfterDelay(error)
-            if (requestedDelayMs !== undefined && requestedDelayMs > this.#retry.maxDelayMs) {
-              lastError = new KernelError(
-                'llm.retry_delay_exceeded',
-                `LLM route ${route.id} requested a ${requestedDelayMs}ms retry delay, exceeding the configured ${this.#retry.maxDelayMs}ms limit`,
-                {
-                  cause: error,
-                  detail: {
-                    routeId: route.id,
-                    routeIndex,
-                    attempt,
-                    requestedDelayMs,
-                    maxDelayMs: this.#retry.maxDelayMs,
-                    cause: errorDetail(error),
-                  },
-                },
-              )
-              break
-            }
             const delayMs = retryDelay(error, attempt, this.#retry, this.#options.random)
             yield {
               type: 'retry',
@@ -114,9 +118,11 @@ export class ResilientLlmService implements LlmService {
               resetOutput: output.hasMeaningfulOutput,
               error: retryErrorSummary(error),
             }
+            this.#logRetry(route.id, attempt + 1, delayMs, requestedDelayMs, output, error)
             await this.#sleep(delayMs, context.signal)
             continue
           }
+          this.#logGiveUp(route.id, attempt + 1, output, error)
           if (output.hasMeaningfulOutput) {
             throw partialStreamError(route.id, routeIndex, attempt, output, error)
           }
@@ -132,6 +138,35 @@ export class ResilientLlmService implements LlmService {
       return
     }
     await delay(milliseconds, undefined, { signal })
+  }
+
+  #logRetry(
+    routeId: string,
+    attempt: number,
+    delayMs: number,
+    requestedDelayMs: number | undefined,
+    output: StreamOutputState,
+    error: unknown,
+  ): void {
+    const logger = this.#options.logger
+    if (logger === undefined) return
+    const requested =
+      requestedDelayMs === undefined ? '' : `, provider requested ${requestedDelayMs}ms`
+    logger.warn(
+      `LLM route ${routeId}: transient failure, retry ${attempt}/${this.#retry.maxRetries} in ${delayMs}ms${requested} (${errorSummary(error)})`,
+    )
+    if (output.hasMeaningfulOutput) {
+      logger.warn(
+        `LLM route ${routeId}: discarding the failed attempt output before retry (${outputSummary(output)})`,
+      )
+    }
+  }
+
+  #logGiveUp(routeId: string, attempt: number, output: StreamOutputState, error: unknown): void {
+    this.#options.logger?.error(
+      `LLM route ${routeId}: no retry left after ${attempt} attempt(s) (${errorSummary(error)})` +
+        (output.hasMeaningfulOutput ? `; last attempt output ${outputSummary(output)}` : ''),
+    )
   }
 }
 
@@ -199,11 +234,16 @@ function partialStreamError(
     `LLM route ${routeId} failed after emitting output; automatic replay was suppressed`,
     {
       cause,
+      // Automatic replay is unsafe here (a settled tool call could be surfaced
+      // twice), but the failure is still transient: hosts must keep the turn
+      // manually retryable instead of showing a dead end.
+      retryable: true,
       detail: {
         routeId,
         routeIndex,
         attempt,
         output: output.detail(),
+        replaySuppressed: true,
         cause: errorDetail(cause),
       },
     },
@@ -247,6 +287,16 @@ function retryErrorSummary(error: unknown): { code?: string; message: string } {
   return { message: safeDiagnosticText(String(error), 512) }
 }
 
+function errorSummary(error: unknown): string {
+  const summary = retryErrorSummary(error)
+  return summary.code === undefined ? summary.message : `${summary.code}: ${summary.message}`
+}
+
+function outputSummary(output: StreamOutputState): string {
+  const detail = output.detail()
+  return `text=${detail.textCharacters}, thinking=${detail.thinkingCharacters}, toolCalls=${detail.toolCalls}`
+}
+
 function requestForRoute(request: LlmRequest, modelBudget: ModelBudget | undefined): LlmRequest {
   if (modelBudget === undefined) return request
   const resolved = resolveOutputBudget({
@@ -272,7 +322,11 @@ function retryDelay(
   random: (() => number) | undefined,
 ): number {
   const retryAfterMs = retryAfterDelay(error)
-  if (retryAfterMs !== undefined) return Math.max(0, retryAfterMs)
+  // Honor the provider's cool-down, but never wait past the configured ceiling:
+  // the retry budget (count), not the requested delay, decides when to stop.
+  if (retryAfterMs !== undefined) {
+    return Math.min(policy.maxDelayMs, Math.max(0, retryAfterMs))
+  }
   const base = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** attempt)
   const sample = Math.min(1, Math.max(0, (random ?? Math.random)()))
   const jitter = (sample * 2 - 1) * policy.jitterRatio
