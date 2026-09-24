@@ -1,16 +1,9 @@
 .composer-quick-replies {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  margin: 0 10px 8px;
-
-  // 选项区：内部自由换行，宽度占满整行
-  .composer-quick-replies-chips {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
+  margin: 0 0px 8px;
 
   .composer-quick-reply-chip {
     display: inline-flex;
@@ -69,8 +62,8 @@
   .composer-quick-replies-dismiss {
     display: inline-grid;
     flex: 0 0 auto;
-    // 关闭按钮独处于选项区末尾（行尾右侧），不再被选项长度挤到左侧
-    align-self: flex-end;
+    // 不吸附行尾，只作为最后一个「选项」跟在快捷回复后面自然排布：
+    // 一行放得下就并排在末尾，放不下就跟着选项一起换行。
     width: 25px;
     height: 25px;
     place-items: center;
