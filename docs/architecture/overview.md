@@ -1,6 +1,6 @@
 # SparkWork 运行架构
 
-> 状态: 已落地 | 最后核对: 2026-09-22
+> 状态: 已落地 | 最后核对: 2026-09-24
 
 这份文档是 SparkWork（仓库名 `spark-agent`）的工程事实入口。它描述当前代码已经形成的运行边界、启动顺序、一次 Agent 任务如何流转，以及新增功能应该落在哪一层。
 
@@ -36,17 +36,17 @@ SparkWork 是一个本地优先的 Electron 桌面应用：React 渲染器负责
 
 ## 进程与包边界
 
-| 层 | 代码位置 | 责任 | 不应该做什么 |
-| --- | --- | --- | --- |
-| 桌面壳 | `apps/desktop/src/main` | Electron 生命周期、窗口、IPC 注册、文件/终端/Git/系统集成、启动与退出清理 | 不在 renderer 里直接访问 Node 或数据库 |
-| 预加载桥 | `apps/desktop/src/preload` | 通过 `contextBridge` 暴露最小、可审计的 API | 不把 `ipcRenderer`、Node 全量对象或密钥暴露给页面 |
-| 界面 | `apps/desktop/src/renderer` | 对话、代码、终端、浏览器、画布、设置和审查视图 | 不自行实现持久化、Provider 调用或系统命令执行 |
-| Agent 编排 | `packages/agent-runtime` | 会话、轮次、执行器、Provider、MCP、Skills、权限、工作流、团队、调度、媒体任务 | 不直接操纵 Electron 窗口；通过服务接口和 IPC 使用宿主能力 |
-| 存储 | `packages/storage` | SQLite 连接、迁移、Repository、事件和领域数据 | 不在业务包里拼接未经约束的 SQL；凭据只保存引用 |
-| 共享契约 | `packages/protocol`、`packages/shared` | IPC/Event/领域 schema、错误、常量、日志、密钥/路径辅助 | 不放具体 UI 行为或平台特有实现 |
-| 执行内核 | `spark-engine` | turn machine、工具运行、权限、事件账本、调度、CLI/TUI 与 HTTP serve | 不依赖桌面 renderer；保持可独立构建和验证 |
-| 扩展 SDK | `packages/plugin-sdk`、`packages/tool-sdk` | 插件、工具包和外部扩展的类型/运行契约 | 不绕过宿主的权限、审计和版本边界 |
-| 官网与用户文档 | `apps/website` | 自有域名官网、下载页、用户文档、预渲染 SEO 内容 | 不把官网构建产物当作 GitHub Pages 的工程手册源 |
+| 层             | 代码位置                                   | 责任                                                                          | 不应该做什么                                              |
+| -------------- | ------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 桌面壳         | `apps/desktop/src/main`                    | Electron 生命周期、窗口、IPC 注册、文件/终端/Git/系统集成、启动与退出清理     | 不在 renderer 里直接访问 Node 或数据库                    |
+| 预加载桥       | `apps/desktop/src/preload`                 | 通过 `contextBridge` 暴露最小、可审计的 API                                   | 不把 `ipcRenderer`、Node 全量对象或密钥暴露给页面         |
+| 界面           | `apps/desktop/src/renderer`                | 对话、代码、终端、浏览器、画布、设置和审查视图                                | 不自行实现持久化、Provider 调用或系统命令执行             |
+| Agent 编排     | `packages/agent-runtime`                   | 会话、轮次、执行器、Provider、MCP、Skills、权限、工作流、团队、调度、媒体任务 | 不直接操纵 Electron 窗口；通过服务接口和 IPC 使用宿主能力 |
+| 存储           | `packages/storage`                         | SQLite 连接、迁移、Repository、事件和领域数据                                 | 不在业务包里拼接未经约束的 SQL；凭据只保存引用            |
+| 共享契约       | `packages/protocol`、`packages/shared`     | IPC/Event/领域 schema、错误、常量、日志、密钥/路径辅助                        | 不放具体 UI 行为或平台特有实现                            |
+| 执行内核       | `spark-engine`                             | turn machine、工具运行、权限、事件账本、调度、CLI/TUI 与 HTTP serve           | 不依赖桌面 renderer；保持可独立构建和验证                 |
+| 扩展 SDK       | `packages/plugin-sdk`、`packages/tool-sdk` | 插件、工具包和外部扩展的类型/运行契约                                         | 不绕过宿主的权限、审计和版本边界                          |
+| 官网与用户文档 | `apps/website`                             | 自有域名官网、下载页、用户文档、预渲染 SEO 内容                               | 不把官网构建产物当作 GitHub Pages 的工程手册源            |
 
 ## 桌面端启动顺序
 
@@ -101,14 +101,14 @@ IPC 事件 → Renderer 会话时间线、审查面板、任务面板和通知
 
 ## 数据与安全边界
 
-| 数据 | 默认位置/通道 | 规则 |
-| --- | --- | --- |
-| 会话、项目、Provider 元数据、工作流、任务 | 本机 SQLite | 通过 `@spark/storage` Repository 和迁移访问 |
-| API Key、登录凭据 | 系统 keychain / 加密凭据库 | SQLite 只保存 `keychain_ref` 等引用；日志、Issue、Wiki 不写入真实密钥 |
-| 项目文件和生成产物 | 用户 workspace、项目目录、资产目录 | 通过路径保护、权限策略和 checkpoint 管理 |
-| Agent 事件、用量和审计 | SQLite 事件/账本与运行时日志 | 需要支持恢复、追踪和问题排查 |
-| 可选大体积运行时 | 受完整性校验的能力目录 | 安装、修复、升级和卸载遵守版本/哈希/路径防护 |
-| 外部模型、MCP、连接器 | Provider/adapter + IPC 服务 | 不默认信任；超出本地边界的动作必须可见、可拒绝、可审计 |
+| 数据                                      | 默认位置/通道                      | 规则                                                                  |
+| ----------------------------------------- | ---------------------------------- | --------------------------------------------------------------------- |
+| 会话、项目、Provider 元数据、工作流、任务 | 本机 SQLite                        | 通过 `@spark/storage` Repository 和迁移访问                           |
+| API Key、登录凭据                         | 系统 keychain / 加密凭据库         | SQLite 只保存 `keychain_ref` 等引用；日志、Issue、Wiki 不写入真实密钥 |
+| 项目文件和生成产物                        | 用户 workspace、项目目录、资产目录 | 通过路径保护、权限策略和 checkpoint 管理                              |
+| Agent 事件、用量和审计                    | SQLite 事件/账本与运行时日志       | 需要支持恢复、追踪和问题排查                                          |
+| 可选大体积运行时                          | 受完整性校验的能力目录             | 安装、修复、升级和卸载遵守版本/哈希/路径防护                          |
+| 外部模型、MCP、连接器                     | Provider/adapter + IPC 服务        | 不默认信任；超出本地边界的动作必须可见、可拒绝、可审计                |
 
 三个不能被弱化的 Electron 安全约束：
 
@@ -121,7 +121,7 @@ IPC 事件 → Renderer 会话时间线、审查面板、任务面板和通知
 ```text
 spark-agent/
 ├── apps/desktop/       Electron 桌面端：main / preload / renderer
-├── apps/website/       自有域名官网、下载和用户文档
+├── apps/website/       旧官网（已停更，见 apps/website/DEPRECATED.md），新官网在 edu-web 仓库
 ├── packages/
 │   ├── agent-runtime/  Agent 会话与能力编排
 │   ├── protocol/       IPC、事件和领域 schema
@@ -135,28 +135,46 @@ spark-agent/
 └── .github/            CI、发布工作流、Issue/PR 模板和 Pages
 ```
 
+## 性能、并发与路由治理
+
+这一层横跨 `packages/agent-runtime` 与 `apps/desktop`，是「任务能跑完」与「整机不被拖垮」之间的边界。当前有三块：
+
+| 能力                                 | 落点                                                                           | 当前状态                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 资源监控（`resource-monitor/`）      | agent-runtime 服务 + `settings` 的 `performance` category + 设置 → 系统 → 性能 | 已落地：2 s 采样、六类判级指标、按宿主机内存与 CPU 核数换算的三档阈值、滞回、`resource_pressure_events` 持久化与推流 |
+| 派发闸门（`dispatch-governor/`）     | agent-runtime 服务，成员派发前 `acquire`                                       | 已落地：全局子进程预算、宿主封顶、成员槽下限、成员并发硬顶、嵌套池与逃生阀                                           |
+| 自动路由（`auto-router.service.ts`） | agent-runtime 服务 + `provider_profiles` 的 `provider_type = 'auto-router'`    | 已落地：分流器逐轮定强度 → 宿主在轮次前替换 provider/model，失败按 `timeout/http/schema/rule/no_executor` 降级       |
+
+必须知道的边界（写在这里以免再次误读代码）：
+
+- **压力级别目前只做观测与通知。** `DispatchGovernor.setPressureLevel` 的注释是「M2 预留：本轮只记录档位」，`acquire` 不读该字段；设置页里「按压力限流 / 暂停派发」的文案描述的是目标行为，**不是当前的准入实现**。
+- **真正生效的调控是固定并发上限**：预算是子进程数的物理上限，一个 permit = 一次成员执行 = 至多一个 CLI 子进程；容量收缩只影响新准入，不撤销在逃 permit。
+- 资源监控数据**不出网**，只落本机 SQLite 与内存环形缓冲。
+
+用户向说明见 edu-web 文档中心的「性能监控与保护」「自动路由」两篇（`src/pages/site-docs/content/`）。
+
 ## 新功能落位规则
 
-| 需求 | 首选落点 | 最少验证 |
-| --- | --- | --- |
-| 新的界面/面板 | `apps/desktop/src/renderer` | 组件测试、renderer typecheck、交互 smoke |
-| 新的桌面能力 | main service + typed IPC + preload API | IPC 契约测试、权限/路径测试、退出清理 |
-| 新的 Agent 行为 | `packages/agent-runtime` 或 `spark-engine` | 运行时单测、取消/重试/错误路径、事件恢复 |
-| 新的数据字段 | `packages/storage/src/migrations` + Repository | 迁移验证、旧数据库启动、回滚/备份路径 |
-| 新的模型/媒体渠道 | Provider/manifest/adapter 层 | 参数归一化、密钥投放、能力枚举和失败降级 |
-| 新的 MCP/Skill/插件 | 对应 SDK/registry/runtime 层 | 信任、权限、版本、导入/卸载和审计 |
-| 官网/用户文档 | `apps/website` | typecheck、build、GEO 检查、预览深链 |
-| 工程架构/治理文档 | `docs/architecture`、`docs/operations` | 更新状态行、核对日期和读者可执行性 |
+| 需求                | 首选落点                                       | 最少验证                                 |
+| ------------------- | ---------------------------------------------- | ---------------------------------------- |
+| 新的界面/面板       | `apps/desktop/src/renderer`                    | 组件测试、renderer typecheck、交互 smoke |
+| 新的桌面能力        | main service + typed IPC + preload API         | IPC 契约测试、权限/路径测试、退出清理    |
+| 新的 Agent 行为     | `packages/agent-runtime` 或 `spark-engine`     | 运行时单测、取消/重试/错误路径、事件恢复 |
+| 新的数据字段        | `packages/storage/src/migrations` + Repository | 迁移验证、旧数据库启动、回滚/备份路径    |
+| 新的模型/媒体渠道   | Provider/manifest/adapter 层                   | 参数归一化、密钥投放、能力枚举和失败降级 |
+| 新的 MCP/Skill/插件 | 对应 SDK/registry/runtime 层                   | 信任、权限、版本、导入/卸载和审计        |
+| 官网/用户文档       | `apps/website`                                 | typecheck、build、GEO 检查、预览深链     |
+| 工程架构/治理文档   | `docs/architecture`、`docs/operations`         | 更新状态行、核对日期和读者可执行性       |
 
 ## 构建与发布关系
 
-| 流程 | 入口 | 产物/目的 |
-| --- | --- | --- |
-| CI | `.github/workflows/ci.yml` | 类型检查、lint、文件大小、Spark engine 和包级验证 |
-| 桌面发布 | `publish-desktop-release.yml` | macOS/Windows/Linux 安装包与 GitHub Release |
-| CLI 发布 | `publish-spark-cli.yml` | `spark-cli-releases` 分支中的 tarball、安装器和 `latest.json` |
-| 自有官网 | `publish-website.yml` | `apps/website` Docker 镜像和自有服务器部署 |
-| 工程手册 Pages | `deploy-pages.yml` | `docs-site/` 静态 artifact，展示架构、治理和贡献流程 |
+| 流程           | 入口                          | 产物/目的                                                     |
+| -------------- | ----------------------------- | ------------------------------------------------------------- |
+| CI             | `.github/workflows/ci.yml`    | 类型检查、lint、文件大小、Spark engine 和包级验证             |
+| 桌面发布       | `publish-desktop-release.yml` | macOS/Windows/Linux 安装包与 GitHub Release                   |
+| CLI 发布       | `publish-spark-cli.yml`       | `spark-cli-releases` 分支中的 tarball、安装器和 `latest.json` |
+| 自有官网       | `publish-website.yml`         | `apps/website` Docker 镜像和自有服务器部署                    |
+| 工程手册 Pages | `deploy-pages.yml`            | `docs-site/` 静态 artifact，展示架构、治理和贡献流程          |
 
 GitHub Pages 与自有官网是两条有意分开的发布链：官网面向终端用户和下载，Pages 面向贡献者、维护者和仓库治理。不要把 Pages 的发布失败当成桌面安装包发布失败，也不要在 Pages 里复制版本中心的敏感配置。
 
