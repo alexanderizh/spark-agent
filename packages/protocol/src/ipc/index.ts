@@ -33,6 +33,7 @@ import type {
 } from '../image-process.js'
 import type { HookNode } from '../hooks.js'
 import type { ProviderModelSchedule } from '../provider-model-schedule.js'
+import type { ProviderQuotaRequest, ProviderQuotaResponse } from '../provider-quota.js'
 import type {
   ProviderMediaDefaults,
   MediaProviderKind,
@@ -7152,6 +7153,8 @@ export interface IpcChannelMap
   ]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
+  // 渠道限额查询（卡片限额胶囊；仅注册表内厂商支持，见 provider-quota.ts）
+  'provider:quota': [ProviderQuotaRequest, ProviderQuotaResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）

@@ -1,0 +1,72 @@
+/* 会话模型选择器「渠道行」悬浮用量卡片（portal 到 document.body，fixed 定位）。
+   头部渠道名 + 套餐档位，主体为限额胶囊（.pv_quota_chip 共享样式在
+   provider/quota-chip.less）。pointer-events: none —— 纯展示，不吃点击不挡滚动。 */
+
+.composer-provider-quota-card {
+  position: fixed;
+  z-index: 3600;
+  box-sizing: border-box;
+  max-width: 340px;
+  padding: 9px 12px 10px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  user-select: none;
+  animation: composer-provider-quota-card-in 0.12s ease-out both;
+}
+
+@keyframes composer-provider-quota-card-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-provider-quota-card {
+    animation: none;
+  }
+}
+
+.composer-provider-quota-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer-provider-quota-card-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-provider-quota-card-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.composer-provider-quota-card-hint,
+.composer-provider-quota-card-error {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}

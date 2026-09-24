@@ -3,22 +3,21 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AUTO_ROUTER_HOVER_OPEN_DELAY_MS, useAutoRouterHoverCard } from './useAutoRouterHoverCard'
-
+import { HOVER_REVEAL_OPEN_DELAY_MS, useHoverRevealCard } from './useHoverRevealCard'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function Harness({ enabled }: { enabled: boolean }) {
-  const { target, hover, leave, dismiss } = useAutoRouterHoverCard(enabled)
+  const { target, hover, leave, dismiss } = useHoverRevealCard(enabled)
   const anchorRef = React.useRef<HTMLDivElement | null>(null)
   return (
-    <div data-state={target == null ? 'idle' : `open:${target.routerId}`} data-enabled={enabled}>
+    <div data-state={target == null ? 'idle' : `open:${target.key}`} data-enabled={enabled}>
       <div ref={anchorRef} data-testid="anchor" />
-      <button className="hover" onClick={() => hover('router-1', anchorRef.current)}>
+      <button className="hover" onClick={() => hover('row-1', anchorRef.current)}>
         hover
       </button>
       <button
         className="hover-now"
-        onClick={() => hover('router-1', anchorRef.current, { immediate: true })}
+        onClick={() => hover('row-1', anchorRef.current, { immediate: true })}
       >
         hover-now
       </button>
@@ -32,7 +31,7 @@ function Harness({ enabled }: { enabled: boolean }) {
   )
 }
 
-describe('useAutoRouterHoverCard', () => {
+describe('useHoverRevealCard', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -63,20 +62,20 @@ describe('useAutoRouterHoverCard', () => {
     expect(state()).toBe('idle')
 
     act(() => {
-      vi.advanceTimersByTime(AUTO_ROUTER_HOVER_OPEN_DELAY_MS - 1)
+      vi.advanceTimersByTime(HOVER_REVEAL_OPEN_DELAY_MS - 1)
     })
     expect(state()).toBe('idle')
 
     act(() => {
       vi.advanceTimersByTime(1)
     })
-    expect(state()).toBe('open:router-1')
+    expect(state()).toBe('open:row-1')
   })
 
   it('opens immediately for keyboard focus and closes on leave', () => {
     act(() => root.render(<Harness enabled />))
     click('.hover-now')
-    expect(state()).toBe('open:router-1')
+    expect(state()).toBe('open:row-1')
 
     click('.leave')
     expect(state()).toBe('idle')
@@ -87,7 +86,7 @@ describe('useAutoRouterHoverCard', () => {
     click('.hover')
     click('.leave')
     act(() => {
-      vi.advanceTimersByTime(AUTO_ROUTER_HOVER_OPEN_DELAY_MS)
+      vi.advanceTimersByTime(HOVER_REVEAL_OPEN_DELAY_MS)
     })
     expect(state()).toBe('idle')
   })
@@ -101,7 +100,7 @@ describe('useAutoRouterHoverCard', () => {
   it('closes on menu scroll while open', () => {
     act(() => root.render(<Harness enabled />))
     click('.hover-now')
-    expect(state()).toBe('open:router-1')
+    expect(state()).toBe('open:row-1')
 
     act(() => {
       window.dispatchEvent(new Event('scroll'))
