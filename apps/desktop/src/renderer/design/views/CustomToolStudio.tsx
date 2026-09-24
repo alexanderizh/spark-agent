@@ -16,6 +16,8 @@ import {
   customToolImagePreviewUrl,
   isSupportedVisionProvider,
 } from './custom-tools-ui'
+import { CodeEditor } from '../components/code-editor/CodeEditor'
+import { JSON_TEMPLATE_LANGUAGE_ID } from '../components/code-editor/templateJsonLanguage'
 import { CustomToolSchemaEditor } from './CustomToolSchemaEditor'
 import { CustomToolCodeEditor } from './CustomToolCodeEditor'
 
@@ -226,11 +228,12 @@ export function CustomToolStudio({
                   </div>
                   <label className="ct_field">
                     <span>请求头 JSON</span>
-                    <TextArea
-                      className="ct_code_input"
+                    <CodeEditor
+                      language="json"
                       rows={5}
                       value={editor.headersJson}
-                      onChange={(event) => patch('headersJson', event.target.value)}
+                      ariaLabel="请求头 JSON"
+                      onChange={(value) => patch('headersJson', value)}
                     />
                     <small>
                       普通值用 valueTemplate；Authorization 等敏感头必须用 secretRef，例如
@@ -239,12 +242,13 @@ export function CustomToolStudio({
                   </label>
                   <label className="ct_field">
                     <span>JSON Body 模板（可选）</span>
-                    <TextArea
-                      className="ct_code_input"
+                    <CodeEditor
+                      language={JSON_TEMPLATE_LANGUAGE_ID}
                       rows={5}
                       value={editor.bodyJsonTemplate}
                       placeholder={'{"query":"{{query}}"}'}
-                      onChange={(event) => patch('bodyJsonTemplate', event.target.value)}
+                      ariaLabel="JSON Body 模板"
+                      onChange={(value) => patch('bodyJsonTemplate', value)}
                     />
                   </label>
                 </section>
@@ -278,11 +282,12 @@ export function CustomToolStudio({
                   </div>
                   <label className="ct_field">
                     <span>提取规则 JSON（可选）</span>
-                    <TextArea
-                      className="ct_code_input"
+                    <CodeEditor
+                      language="json"
                       rows={4}
                       value={editor.extractJson}
-                      onChange={(event) => patch('extractJson', event.target.value)}
+                      ariaLabel="提取规则 JSON"
+                      onChange={(value) => patch('extractJson', value)}
                     />
                     <small>{'格式：[ {"label":"标题","jsonPath":"$.items[*].title"} ]'}</small>
                   </label>
@@ -439,11 +444,12 @@ export function CustomToolStudio({
               {editor.kind !== 'provider-vision' ? (
                 <label className="ct_field">
                   <span>输入 JSON</span>
-                  <TextArea
-                    className="ct_code_input"
+                  <CodeEditor
+                    language="json"
                     rows={5}
                     value={editor.testInputJson}
-                    onChange={(event) => patch('testInputJson', event.target.value)}
+                    ariaLabel="测试输入 JSON"
+                    onChange={(value) => patch('testInputJson', value)}
                   />
                 </label>
               ) : (

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Button, Modal, TextArea } from '@lobehub/ui'
+import { Button, Modal } from '@lobehub/ui'
+import { CodeEditor } from '../components/code-editor/CodeEditor'
 import { parseCurlToEditorDraft, type CustomToolEditorDraft } from './custom-tools-model'
 
 interface CustomToolCurlImportModalProps {
@@ -44,13 +45,14 @@ export function CustomToolCurlImportModal({
           只解析常见 HTTP 参数，不执行命令。Authorization、API Key 等敏感 Header 会转为本机 Keychain
           字段，不写入草稿文件。
         </p>
-        <TextArea
-          className="ct_code_input"
+        <CodeEditor
+          language="shell"
           rows={10}
           value={source}
+          ariaLabel="cURL 命令"
           placeholder="curl https://api.example.com/v1/items -H 'Authorization: Bearer …'"
-          onChange={(event) => {
-            setSource(event.target.value)
+          onChange={(value) => {
+            setSource(value)
             setError(null)
           }}
         />

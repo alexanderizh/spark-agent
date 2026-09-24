@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Button, Input, Select, TextArea } from '@lobehub/ui'
+import { Button, Input, Select } from '@lobehub/ui'
 import { Switch } from 'antd'
 import type { CustomToolInputSchema, CustomToolParam, CustomToolParamType } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { classNames } from '../utils/class-names'
+import { CodeEditor } from '../components/code-editor/CodeEditor'
 
 interface CustomToolSchemaEditorProps {
   value: string
@@ -134,11 +135,12 @@ export function CustomToolSchemaEditor({ value, onChange }: CustomToolSchemaEdit
         </button>
       </div>
       {mode === 'json' ? (
-        <TextArea
-          className="ct_code_input"
+        <CodeEditor
+          language="json"
           rows={10}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          ariaLabel="输入参数 Schema JSON"
+          onChange={onChange}
         />
       ) : schema == null ? (
         <div className="ct_schema_error">

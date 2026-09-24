@@ -2,6 +2,7 @@ import { Select, TextArea } from '@lobehub/ui'
 import { InputNumber } from 'antd'
 import type { RuntimeEffect, RuntimeIdempotency, RuntimeRisk } from '@spark/protocol'
 import type { CustomToolEditorDraft } from './custom-tools-model'
+import { CodeEditor } from '../components/code-editor/CodeEditor'
 import { CustomToolSchemaEditor } from './CustomToolSchemaEditor'
 
 interface CustomToolCodeEditorProps {
@@ -43,20 +44,21 @@ export function CustomToolCodeEditor({ editor, onChange }: CustomToolCodeEditorP
       <section id="ct-section-execution" className="ct_editor_section">
         <div className="ct_editor_section_title">TypeScript 逻辑</div>
         <div className="ct_security_note">
-          代码运行在独立 Worker，不进入 Electron 或 Agent 进程。当前为“受信任本地代码”模式；请勿粘贴来源不明的第三方代码。
+          代码运行在独立 Worker，不进入 Electron 或 Agent
+          进程。当前为“受信任本地代码”模式；请勿粘贴来源不明的第三方代码。
         </div>
         <label className="ct_field">
           <span>工具源码</span>
-          <TextArea
-            className="ct_code_input ct_code_source"
+          <CodeEditor
+            language="typescript"
             rows={20}
             value={editor.codeSource}
-            spellCheck={false}
-            onChange={(event) => patch('codeSource', event.target.value)}
+            ariaLabel="工具源码"
+            onChange={(value) => patch('codeSource', value)}
           />
           <small>
-            导出 default async function(input, sdk)。外部能力统一通过
-            sdk.tools.call(toolId, input) 调用下方授权工具。
+            导出 default async function(input, sdk)。外部能力统一通过 sdk.tools.call(toolId, input)
+            调用下方授权工具。
           </small>
         </label>
         <div className="ct_field">

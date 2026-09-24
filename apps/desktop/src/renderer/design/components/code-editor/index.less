@@ -1,0 +1,40 @@
+/**
+ * code-editor 样式：外层是「输入框外壳」（边框 / 圆角 / 聚焦态），内层交给 Monaco 自绘。
+ * 不覆盖 Monaco 主题背景与 token 配色，保证与内置代码视图里的同一个 JSON / TS 长得一样。
+ */
+
+.code-editor-field {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.code-editor {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+
+  &:focus-within {
+    border-color: var(--primary);
+  }
+}
+
+.code-editor-loading {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.code-editor-diagnostic {
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

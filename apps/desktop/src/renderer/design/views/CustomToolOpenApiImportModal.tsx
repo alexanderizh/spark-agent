@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Button, Modal, TextArea } from '@lobehub/ui'
+import { Button, Modal } from '@lobehub/ui'
 import { Checkbox } from 'antd'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { CodeEditor } from '../components/code-editor/CodeEditor'
+import { detectStructuredTextLanguage } from '../components/code-editor/structuredTextLanguage'
 import { parseOpenApiToEditorDrafts, type OpenApiImportResult } from './openapi-custom-tool-import'
 import type { CustomToolEditorDraft } from './custom-tools-model'
 
@@ -116,13 +118,14 @@ export function CustomToolOpenApiImportModal({
           <Button onClick={() => void chooseFile()}>选择文件</Button>
         </div>
         {result == null ? (
-          <TextArea
-            className="ct_code_input"
+          <CodeEditor
+            language={detectStructuredTextLanguage(source)}
             rows={12}
             value={source}
+            ariaLabel="OpenAPI 规范"
             placeholder="粘贴 OpenAPI JSON 或 YAML"
-            onChange={(event) => {
-              setSource(event.target.value)
+            onChange={(value) => {
+              setSource(value)
               setError(null)
             }}
           />
