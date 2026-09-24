@@ -66,6 +66,10 @@ import { resolveTelemetryLogLevel } from './telemetry-settings.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { RemoteUserQuestionBridge } from './remote-user-question-bridge.js'
 import {
+  RemotePermissionApprovalBridge,
+  parseRemotePermissionApprovalCommand,
+} from './remote-permission-approval-bridge.js'
+import {
   buildDetachedQuestionContinuationMessage,
   recoverDetachedQuestionAttachments,
 } from './user-question-recovery.js'
@@ -251,6 +255,8 @@ import type {
 import type {
   CanvasAssetDownloadBatchResultItem,
   PermissionApprovalDecision,
+  PermissionApprovalRequest,
+  PermissionApprovalResolved,
   ProjectSkillSummaryItem,
   SessionAttachment,
   SessionListResponse,
@@ -381,6 +387,7 @@ import { registerImageProcessIpc } from './registerImageProcessIpc.js'
 import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
+import { formatRemoteConnectionCapabilityStatus } from '../services/remoteConnectionStatus.js'
 import { deliverRemoteTurnReply } from '../services/remoteTurnReply.js'
 import {
   canBindRemoteRouteSession,
@@ -2108,7 +2115,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
       )
       return
     }
-    registerRemoteTurn(turnId, target)
+    registerRemoteTurn(turnId, sessionId, target)
   }
 
   if (params.sessionId != null) {
@@ -2468,10 +2475,56 @@ function rememberRemoteTurnTarget(
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-const remoteTurnTargets = new Map<
-  string,
-  { connectionId: string; externalId: string; attachments: SessionAttachment[] }
->()
+type StoredRemoteTurnTarget = {
+  sessionId: string
+  connectionId: string
+  externalId: string
+  attachments: SessionAttachment[]
+}
+
+const remoteTurnTargets = new Map<string, StoredRemoteTurnTarget>()
+
+function findRemoteApprovalTarget(
+  request: PermissionApprovalRequest,
+): StoredRemoteTurnTarget | null {
+  if (request.turnId == null) return null
+  const target = remoteTurnTargets.get(request.turnId)
+  return target?.sessionId === request.sessionId ? target : null
+}
+
+const remotePermissionApprovalBridge = new RemotePermissionApprovalBridge({
+  resolveApproval: (requestId, decision) =>
+    getPermissionService().resolveApproval(requestId, decision),
+  sendReply: async (target, text) => {
+    await getRemoteConnectionService().sendReply(target.connectionId, target.externalId, text)
+  },
+})
+
+function forwardPermissionApprovalToRemote(request: PermissionApprovalRequest): void {
+  try {
+    const target = findRemoteApprovalTarget(request)
+    if (target == null) return
+    const connection = getRemoteConnectionService()
+      .list()
+      .connections.find((item) => item.id === target.connectionId)
+    if (connection == null || !connection.enabled) return
+    remotePermissionApprovalBridge.forwardRequest(
+      request,
+      { connectionId: target.connectionId, externalId: target.externalId },
+      {
+        enabled: connection.capabilities.approvePermissions,
+        commandPrefix: connection.commandPrefix,
+      },
+    )
+  } catch (error) {
+    // Remote delivery is best effort. A local approval must remain usable if routing fails.
+    log.warn('Failed to forward permission approval to remote connection', {
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
 
 async function recoverExistingDetachedQuestionAttachments(
   sessionId: string,
@@ -2518,9 +2571,10 @@ async function filterExistingSessionAttachments(
 
 function registerRemoteTurn(
   turnId: string,
+  sessionId: string,
   target: { connectionId: string; externalId: string },
-): { connectionId: string; externalId: string; attachments: SessionAttachment[] } {
-  const stored = { ...target, attachments: [] as SessionAttachment[] }
+): StoredRemoteTurnTarget {
+  const stored = { ...target, sessionId, attachments: [] as SessionAttachment[] }
   remoteTurnTargets.set(turnId, stored)
   getRemoteConnectionService().startTurnFeedback(turnId, target.connectionId, target.externalId)
   if (remoteTurnTargets.size > 500) {
@@ -2662,6 +2716,7 @@ function getSessionService(): SessionService {
         toolInput,
         (req) => {
           pushStreamEvent('stream:permission:approval-request', req)
+          forwardPermissionApprovalToRemote(req)
         },
         {
           ...permissionContext,
@@ -2679,13 +2734,16 @@ function getSessionService(): SessionService {
           // 点了也没用的审批卡（resolveApproval 已经找不到这个 requestId）。
           onExpire: (expired) => {
             pushStreamEvent('stream:permission:approval-resolved', expired)
+            remotePermissionApprovalBridge.notifyExpired(expired)
             // 写一条会话时间线记录：toast 10 秒就消失，但用户翻历史时需要看到
             // 「为什么 agent 跳过了这一步」的可追溯解释。
-            getSessionService().recordPermissionOutcome(expired.sessionId, {
-              reason: expired.reason,
-              toolName: expired.toolName ?? '',
-              ...(expired.timeoutMs != null ? { timeoutMs: expired.timeoutMs } : {}),
-            })
+            if (expired.reason === 'timeout' || expired.reason === 'cancelled') {
+              getSessionService().recordPermissionOutcome(expired.sessionId, {
+                reason: expired.reason,
+                toolName: expired.toolName ?? '',
+                ...(expired.timeoutMs != null ? { timeoutMs: expired.timeoutMs } : {}),
+              })
+            }
           },
         },
       )
@@ -3420,6 +3478,7 @@ async function executeRemoteCommand(
       ['Agent', ['agents', 'use-agent']],
       ['项目', ['projects', 'use-project', 'add-project']],
       ['运行配置', ['reasoning', 'use-reasoning', 'permissions', 'use-permission']],
+      ['权限审批', ['approve', 'deny']],
       ['远程桌面', ['screen', 'windows', 'focus', 'click', 'type', 'hotkey']],
       ['运行时', ['progress', 'queue', 'history', 'cancel', 'stop']],
       ['消息', ['send']],
@@ -3482,6 +3541,7 @@ async function executeRemoteCommand(
       title: connection.name,
       text: [
         `远程渠道：${connection.channel}`,
+        ...formatRemoteConnectionCapabilityStatus(connection),
         `状态：${connection.status}`,
         `配对设备：${connection.pairedDevices.length}`,
         `当前项目：${workspace?.label ?? workspaceId ?? '不使用项目'}`,
@@ -4226,7 +4286,7 @@ async function executeRemoteCommand(
         text: `用法：${formatRemoteCommand(connection, 'send', '<message>')}`,
       }
     }
-    const result = await getSessionService().sendTurn({
+    const result = await getSessionService().submitTurn({
       sessionId,
       message: text,
       ...(connection.defaultProviderProfileId != null
@@ -4235,6 +4295,11 @@ async function executeRemoteCommand(
       ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
       ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
     })
+    if (externalId != null) {
+      const target = { connectionId: connection.id, externalId }
+      registerRemoteTurn(result.turnId, sessionId, target)
+      rememberRemoteTurnTarget(sessionId, target)
+    }
     return {
       ok: true,
       title: result.started ? '已发送' : '已加入队列',
@@ -4292,6 +4357,33 @@ async function handleRemoteInboundMessage(
     ).sessionId
   }
   const isCommandMessage = trimmedText.startsWith(prefix)
+  const approvalReply = parseRemotePermissionApprovalCommand(trimmedText, prefix)
+  if (approvalReply != null) {
+    if (!message.connection.capabilities.approvePermissions) {
+      return {
+        title: '功能未授权',
+        text: '该连接未启用远程审批权限。请在桌面端处理权限请求，或在远程连接设置中启用该能力。',
+      }
+    }
+    if (approvalReply.kind === 'usage') {
+      return {
+        title: '远程权限审批',
+        text: `用法：${prefix}approve <审批码> 或 ${prefix}deny <审批码>。审批码仅对发起请求的远程聊天有效。`,
+      }
+    }
+    const reply = await remotePermissionApprovalBridge.respond(
+      { connectionId: message.connection.id, externalId: message.externalId },
+      approvalReply.command,
+    )
+    if (reply.ok && reply.requestId != null && reply.sessionId != null && reply.decision != null) {
+      pushStreamEvent('stream:permission:approval-resolved', {
+        requestId: reply.requestId,
+        sessionId: reply.sessionId,
+        reason: reply.decision === 'allow-once' ? 'remote-approved' : 'remote-denied',
+      })
+    }
+    return { title: reply.title, text: reply.text }
+  }
   // 远程问答桥：会话挂起待答问题时，非命令消息优先当作问题回答路由，
   // 避免远程发起的回合卡在 AskUserQuestion 上永久挂起。
   if (
@@ -4371,7 +4463,9 @@ async function handleRemoteInboundMessage(
 
   const activeRoute = remoteService.ensureRouteBinding(message.connection.id, message.externalId)
 
-  const result = await getSessionService().sendTurn({
+  // Durable submission schedules execution on the next tick, so the remote target
+  // is registered before the turn can request permission approval.
+  const result = await getSessionService().submitTurn({
     sessionId,
     ...createRemoteUserTurn(message.connection.channel, message.text, {
       canTransferFiles: message.connection.capabilities.transferFiles,
@@ -4387,7 +4481,7 @@ async function handleRemoteInboundMessage(
     connectionId: message.connection.id,
     externalId: message.externalId,
   }
-  const storedTarget = registerRemoteTurn(result.turnId, target)
+  const storedTarget = registerRemoteTurn(result.turnId, sessionId, target)
   rememberRemoteTurnTarget(sessionId, target)
   void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, storedTarget).catch((err) => {
     log.warn(`Failed to send remote reply from history: ${String(err)}`)
@@ -5025,6 +5119,29 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       log.error(
         `provider:health-check failed, id=${req.id}, error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
+  })
+
+  typedIpcHandle('provider:quota', async (req) => {
+    log.info(`provider:quota requested, id=${req.id}`)
+    try {
+      const result = await getProviderService().fetchQuota(req.id)
+      if (!result.supported) {
+        log.info(`provider:quota unsupported, id=${req.id}`)
+      } else if (result.errorMessage) {
+        log.warn(`provider:quota failed, id=${req.id}, error="${result.errorMessage}"`)
+      } else if (result.quota) {
+        log.info(
+          `provider:quota completed, id=${req.id}, vendor=${result.quota.vendor}, ` +
+            `plan=${result.quota.planLevel ?? 'n/a'}, limits=${result.quota.limits.length}`,
+        )
+      }
+      return result
+    } catch (err) {
+      log.error(
+        `provider:quota failed, id=${req.id}, error=${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
     }
@@ -9686,10 +9803,23 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('remote:create-bot-draft', async (req) => {
     const result = getRemoteConnectionService().createBotDraft(req.channel, req.name)
-    if (req.openConsole === true) {
+    if (req.openConsole === true && req.channel !== 'wechat') {
       await shell.openExternal(result.consoleUrl)
     }
     return result
+  })
+
+  typedIpcHandle('remote:wechat-login-start', async (req) => {
+    return getRemoteConnectionService().startWechatQrLogin(req.id)
+  })
+
+  typedIpcHandle('remote:wechat-login-poll', async (req) => {
+    return getRemoteConnectionService().pollWechatQrLogin(req.id, req.loginId, req.verifyCode)
+  })
+
+  typedIpcHandle('remote:wechat-login-cancel', async (req) => {
+    getRemoteConnectionService().cancelWechatQrLogin(req.id, req.loginId)
+    return { cancelled: true }
   })
 
   typedIpcHandle('remote:generate-pairing', async (req) => {

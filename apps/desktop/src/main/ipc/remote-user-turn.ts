@@ -4,6 +4,7 @@ const CHANNEL_LABEL: Record<RemoteChannelType, string> = {
   telegram: 'Telegram',
   feishu: '飞书',
   qq: 'QQ',
+  wechat: '微信',
   'wechat-claw': '微信',
 }
 
@@ -13,10 +14,13 @@ export function createRemoteUserTurn(
   options: { canTransferFiles?: boolean } = {},
 ): UserMessagePresentation & { message: string } {
   const label = CHANNEL_LABEL[channel]
+  const canTransferFiles = channel === 'wechat' ? false : options.canTransferFiles
   const fileInstruction =
-    options.canTransferFiles === false
-      ? '当前连接未启用“传输文件”能力，不能向远程端发送或接收图片/附件；不要调用文件展示工具，也绝不能声称文件已发送。若用户要求传文件，请明确告知需要先在 SparkWork 的远程连接设置中开启“传输文件”。'
-      : '若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；只有文件实际提交后才能说“已发送”，不能只在文字里声称“已发送/见上方”。'
+    channel === 'wechat'
+      ? '当前微信通道暂不支持图片/附件收发；不要调用文件展示工具，也绝不能声称文件已发送。若用户要求传文件，请明确告知微信通道尚未支持此能力。'
+      : canTransferFiles === false
+        ? '当前连接未启用“传输文件”能力，不能向远程端发送或接收图片/附件；不要调用文件展示工具，也绝不能声称文件已发送。若用户要求传文件，请明确告知需要先在 SparkWork 的远程连接设置中开启“传输文件”。'
+        : '若生成截图、图片或其他文件，请调用 mcp__spark_files__present_files 提交真实文件；只有文件实际提交后才能说“已发送”，不能只在文字里声称“已发送/见上方”。'
   return {
     message: `【本轮远程渠道：${label}】本轮消息来自 ${label}，回复只能发送回本轮渠道。历史消息中提到的 Telegram、QQ 或飞书不代表当前渠道；不要据此改变发送目标。${fileInstruction}\n\n${userMessage}`,
     turnSource: 'remote_user',

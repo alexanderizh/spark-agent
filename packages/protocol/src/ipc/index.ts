@@ -2021,6 +2021,8 @@ export type PermissionDecisionScope = 'project' | 'global'
 // Tool approval flow (main → renderer push, then renderer → main respond)
 export interface PermissionApprovalRequest {
   requestId: string
+  /** Session turn that produced this approval; used to route remote approvals safely. */
+  turnId?: string
   /** Claude SDK control_request id, retained for out-of-band audit/correlation. */
   sdkRequestId?: string
   sessionId: string
@@ -2055,14 +2057,12 @@ export interface PermissionApprovalRequest {
 /**
  * 一条审批请求已经有结果、渲染端应当收起卡片。
  *
- * `reason` 决定 UI 表现：
- *   - `timeout`  等待用户超时，已按拒绝处理 → 需要显式告知用户，否则 agent 的行为无法解释
- *   - `cancelled` 会话被取消/删除，审批随之作废 → 静默收起即可
+ * `reason` 决定 UI 表现。超时按拒绝处理；取消与远程决定需要收起卡片。
  */
 export interface PermissionApprovalResolved {
   requestId: string
   sessionId: string
-  reason: 'timeout' | 'cancelled'
+  reason: 'timeout' | 'cancelled' | 'remote-approved' | 'remote-denied'
   /** 超时阈值（毫秒），供 UI 说明「等待超过 N 分钟」 */
   timeoutMs?: number
   /** 触发审批的工具名，供主进程写时间线记录、渲染端展示更具体的提示 */
@@ -5969,7 +5969,7 @@ export interface TaskExecutionStatsResponse {
 
 // ─── Remote Connections Channels ────────────────────────────────────────────
 
-export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat-claw'
+export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat' | 'wechat-claw'
 export type RemoteConnectionStatus =
   | 'disabled'
   | 'draft'
@@ -5988,6 +5988,10 @@ export interface RemoteConnectionCredentials {
   qqBotSecret?: string
   clawEndpoint?: string
   clawAccessToken?: string
+  wechatBotToken?: string
+  wechatBotId?: string
+  wechatApiBaseUrl?: string
+  wechatAuthorizedUserId?: string
 }
 
 export interface RemoteConnectionCapabilities {
@@ -6022,6 +6026,8 @@ export const DEFAULT_TELEGRAM_REMOTE_COMMANDS = [
   'progress',
   'queue',
   'cancel',
+  'approve',
+  'deny',
 ] as const
 
 /**
@@ -6045,6 +6051,8 @@ export const DEFAULT_QQ_REMOTE_COMMANDS = [
   'progress',
   'queue',
   'cancel',
+  'approve',
+  'deny',
 ] as const
 
 export interface RemotePairedDevice {
@@ -6166,6 +6174,40 @@ export interface RemoteCreateBotDraftResponse {
   connection: RemoteConnectionConfig
   consoleUrl: string
   instructions: string[]
+}
+
+export interface RemoteWechatLoginStartRequest {
+  id: string
+}
+export interface RemoteWechatLoginStartResponse {
+  loginId: string
+  qrPayload: string
+  expiresAt: string
+}
+export type RemoteWechatLoginStatus =
+  | 'wait'
+  | 'scaned'
+  | 'need_verifycode'
+  | 'confirmed'
+  | 'expired'
+  | 'verify_code_blocked'
+  | 'binded_redirect'
+export interface RemoteWechatLoginPollRequest {
+  id: string
+  loginId: string
+  verifyCode?: string
+}
+export interface RemoteWechatLoginPollResponse {
+  status: RemoteWechatLoginStatus
+  message: string
+  connection?: RemoteConnectionConfig
+}
+export interface RemoteWechatLoginCancelRequest {
+  id: string
+  loginId: string
+}
+export interface RemoteWechatLoginCancelResponse {
+  cancelled: boolean
 }
 
 export interface RemoteGeneratePairingRequest {
@@ -7712,6 +7754,9 @@ export interface IpcChannelMap
   'remote:delete': [RemoteDeleteRequest, RemoteDeleteResponse]
   'remote:test': [RemoteTestRequest, RemoteTestResponse]
   'remote:create-bot-draft': [RemoteCreateBotDraftRequest, RemoteCreateBotDraftResponse]
+  'remote:wechat-login-start': [RemoteWechatLoginStartRequest, RemoteWechatLoginStartResponse]
+  'remote:wechat-login-poll': [RemoteWechatLoginPollRequest, RemoteWechatLoginPollResponse]
+  'remote:wechat-login-cancel': [RemoteWechatLoginCancelRequest, RemoteWechatLoginCancelResponse]
   'remote:generate-pairing': [RemoteGeneratePairingRequest, RemoteGeneratePairingResponse]
   'remote:confirm-pairing': [RemoteConfirmPairingRequest, RemoteConfirmPairingResponse]
   'remote:command-catalog': [RemoteCommandCatalogRequest, RemoteCommandCatalogResponse]
