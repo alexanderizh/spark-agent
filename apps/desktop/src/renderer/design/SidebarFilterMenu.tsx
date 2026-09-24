@@ -33,9 +33,12 @@ export type SidebarGroupBy = 'date' | 'project' | 'state' | 'none'
 export type SidebarScheduledTasksFilter = 'all' | 'attached' | 'none'
 export type SidebarCanvasProjectsFilter = 'show' | 'hide'
 
+/** Project filter option for sessions that have no workspace association. */
+export const SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID = '__ungrouped_sessions__'
+
 export interface SidebarFilterState {
   status: SidebarStatusFilter
-  /** 选中的项目（workspaceId）集合；空数组 = 全部项目 */
+  /** 选中的 workspaceId 集合，可包含未归属会话筛选项；空数组 = 全部项目 */
   projectIds: string[]
   lastActivity: SidebarLastActivityFilter
   scheduledTasks: SidebarScheduledTasksFilter
@@ -300,6 +303,10 @@ function FilterPopupContent({
   const projectOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; hint?: string }> = [
       { value: 'all', label: t('sidebar.filter.allProjects') },
+      {
+        value: SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID,
+        label: t('sidebar.ungroupedChats'),
+      },
     ]
     for (const w of workspaces) {
       const last = w.rootPath?.split(/[/\\]/).filter(Boolean).slice(-1)[0] ?? ''
@@ -314,7 +321,11 @@ function FilterPopupContent({
   // 行值文案：空选择=「全部」；单选显示项目名；多选显示「首个 +N」（悬停子菜单可见完整勾选）。
   const projectLabel = useMemo(() => {
     if (state.projectIds.length === 0) return t('sidebar.filter.all')
-    const names = state.projectIds.map((id) => workspaces.find((w) => w.id === id)?.name ?? id)
+    const names = state.projectIds.map((id) =>
+      id === SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID
+        ? t('sidebar.ungroupedChats')
+        : (workspaces.find((w) => w.id === id)?.name ?? id),
+    )
     const [first, ...rest] = names
     if (first == null) return t('sidebar.filter.all')
     if (rest.length === 0) return first
