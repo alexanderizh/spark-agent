@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   APP_SKINS,
@@ -44,6 +47,16 @@ describe('app skin registry', () => {
       expect(skin.scrim.light).toBeLessThanOrEqual(0.5)
       expect(skin.scrim.dark).toBeGreaterThanOrEqual(0.1)
       expect(skin.scrim.dark).toBeLessThanOrEqual(0.5)
+    }
+  })
+
+  it('ships every declared artwork file in the bundle', () => {
+    const skinAssetDir = fileURLToPath(new URL('../../../../public/skins/', import.meta.url))
+    for (const skin of APP_SKINS.filter((entry) => entry.id !== 'none')) {
+      for (const mode of ['light', 'dark'] as const) {
+        const declared = skin.backdrop[mode]
+        expect(existsSync(join(skinAssetDir, basename(declared))), `${declared} 未随包`).toBe(true)
+      }
     }
   })
 
