@@ -1,11 +1,13 @@
 /**
  * 应用皮肤注册表（PR-1）。
  *
- * 皮肤 = 明暗两版整窗插画 + 默认可读性遮罩浓度。这里只放"数据"，具体背景与
- * 纱层样式在 SkinBackdrop.less 按 [data-app-skin] 作用域声明；非法/旧版本持
- * 久化值由 isAppSkinId 守卫拒绝并回退默认皮肤（与 emptyHeroThemes 同模式）。
+ * 皮肤 = 明暗两版整窗插画 + 默认可读性遮罩浓度。这里只放"数据"，背景与纱层样式
+ * 将由 SkinBackdrop.less（后续任务）按 [data-app-skin] 作用域声明；非法/旧版本
+ * 持久化值先由 isAppSkinId 守卫拒绝，再由 getAppSkin 回退默认皮肤（同
+ * emptyHeroThemes 的回退思路）。
  *
- * 美术口径（v2 决策 D2）：所有皮肤必须经人工审美评审后才能入库，AI 只出候选。
+ * 美术口径（v2 决策 D2/D3、设计文档 §4.5）：AI 只出候选，皮肤必须经人工审美评审
+ * 后才能入库。
  */
 export const APP_SKIN_IDS = ['none', 'verdant', 'dawnmelt', 'deepspace'] as const
 
@@ -55,7 +57,7 @@ export const APP_SKINS: readonly AppSkin[] = [
     backdrop: { light: '/skins/deepspace-light.webp', dark: '/skins/deepspace-dark.webp' },
     scrim: { light: 0.22, dark: 0.3 },
   },
-] as const
+]
 
 export function isAppSkinId(value: unknown): value is AppSkinId {
   return typeof value === 'string' && (APP_SKIN_IDS as readonly string[]).includes(value)
