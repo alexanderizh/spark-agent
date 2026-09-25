@@ -21,6 +21,7 @@ import {
 import { Modal as AntdModal, Space, Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
+import { SkinPicker } from '../components/SkinPicker'
 import { useApp, PRIMARIES } from '../AppContext'
 import {
   DEFAULT_SHORTCUTS,
@@ -1822,6 +1823,9 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+
+      <div className="subsec-h">皮肤</div>
+      <SkinPicker value={t.appSkin} onChange={(id) => setTweak('appSkin', id)} />
 
       <div className="subsec-h">布局与字体</div>
       <div className="form-grid">
