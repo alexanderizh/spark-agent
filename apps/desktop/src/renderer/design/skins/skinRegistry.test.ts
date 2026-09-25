@@ -34,7 +34,7 @@ describe('app skin registry', () => {
       const skin = getAppSkin(id)
       expect(skin.id).toBe(id)
       if (id === 'none') {
-        // none 的空串是 SkinBackdrop「不渲染插画」的判定依据，改坏必须报警。
+        // none 的空串是 SkinBackdrop（后续任务）「不渲染插画」的判定依据，改坏必须报警。
         expect(skin.backdrop).toEqual({ light: '', dark: '' })
         continue
       }
@@ -48,7 +48,7 @@ describe('app skin registry', () => {
   })
 
   it('keeps the bundled artwork budget at 2.5MB total', () => {
-    // 这里只锁死产品红线数值；真实体积门禁由 scripts/prepare-skin-assets.mjs 执行。
+    // 这里只锁死产品红线数值；真实体积门禁由插画资产产线脚本执行（PR-1 Task 6 落地后回填路径）。
     expect(SKIN_ASSET_BUDGET_BYTES).toBe(2_500_000)
   })
 })
