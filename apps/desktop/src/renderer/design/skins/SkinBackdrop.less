@@ -1,0 +1,79 @@
+/*
+ * 皮肤背景层样式。所有规则必须挂在 .app-skin* 或 .app[data-app-skin] 之下，
+ * 不得进入 styles/views.css 等历史全局文件（style-architecture.test.ts 有门禁）。
+ *
+ * 层级设计：插画与纱层都是 pointer-events:none 的装饰层，内容面板维持既有
+ * 不透明/半透明表面 token，因此整窗插画不会降低长文可读性。
+ */
+.app-skin {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-skin-backdrop {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.app-skin-scrim {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+}
+
+.app.theme-dark .app-skin-scrim {
+  background: #0b0d12;
+}
+
+/*
+ * 皮肤生效时让外壳与主区容器底色透明，否则插画会被 .app 自身底色盖住。
+ * 只放开外壳层，消息卡、输入框、侧栏等表面保持既有 token 不变。
+ */
+.app[data-app-skin]:not([data-app-skin='none']) {
+  background: transparent;
+}
+
+.app[data-app-skin]:not([data-app-skin='none']) .main-content-area,
+.app[data-app-skin]:not([data-app-skin='none']) .main-with-browser,
+.app[data-app-skin]:not([data-app-skin='none']) .main,
+.app[data-app-skin]:not([data-app-skin='none']) .view-body {
+  background: transparent;
+}
+
+/* 插画加载失败时的同色相兜底底色（设计文档 §7）。 */
+.app[data-app-skin='verdant'] .app-skin-backdrop {
+  background-color: #f2f7f2;
+}
+
+.app[data-app-skin='dawnmelt'] .app-skin-backdrop {
+  background-color: #fbf5ec;
+}
+
+.app[data-app-skin='deepspace'] .app-skin-backdrop {
+  background-color: #101522;
+}
+
+/* 系统要求降低透明度：撤掉插画，纱层转不透明，回到纯色底。 */
+@media (prefers-reduced-transparency: reduce) {
+  .app-skin-backdrop {
+    display: none;
+  }
+
+  .app-skin-scrim {
+    opacity: 1;
+  }
+}
+
+/*
+ * 皮肤优先于空会话主题背景：两者同时挂载时以皮肤插画为准，
+ * 但仍保留空会话局部的卡片/输入框变量（见 ChatEmptyThemes.less）。
+ */
+.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main-empty[data-empty-theme]) {
+  --empty-session-backdrop: transparent;
+}

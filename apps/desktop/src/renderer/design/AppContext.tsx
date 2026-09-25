@@ -331,7 +331,7 @@ type AppCtx = {
   setHasUnsavedChanges: (value: boolean) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
-  /** 一次性将主题/主色/密度/空状态主题等视觉 tweak 重置为默认值。
+  /** 一次性将主题/主色/密度/空状态主题/整窗皮肤等视觉 tweak 重置为默认值。
    *  相比连调多次 setTweak，这里单条 persist 链避免远端 merge 竞态。 */
   resetVisualTweaks: () => void
   /** 原子应用来自账号同步的视觉设置，避免逐字段持久化产生覆盖竞态。 */
