@@ -15,6 +15,7 @@ import {
   isEmptyHeroThemeId,
   type EmptyHeroThemeId,
 } from './views/chat/emptyHeroThemes'
+import { DEFAULT_APP_SKIN, isAppSkinId, type AppSkinId } from './skins/skinRegistry'
 
 export type NavGuard = () => boolean | Promise<boolean>
 
@@ -86,6 +87,8 @@ export type Tweaks = {
   theme: ThemeMode
   /** 空会话页的视觉主题；与全局 light/dark 模式独立。 */
   emptyHeroTheme: EmptyHeroThemeId
+  /** 整窗皮肤（插画背景 + 可读性纱层）；与空会话主题、全局明暗相互独立。 */
+  appSkin: AppSkinId
   primary: string
   density: Density
   sidebar: SidebarState
@@ -119,6 +122,7 @@ export type Tweaks = {
 export const DEFAULT_TWEAKS: Tweaks = {
   theme: 'system',
   emptyHeroTheme: DEFAULT_EMPTY_HERO_THEME,
+  appSkin: DEFAULT_APP_SKIN,
   primary: '#3b82f6',
   density: 'regular',
   sidebar: 'collapsed',
@@ -154,7 +158,7 @@ const SIDEBAR_STYLE_KEY = 'spark-agent:sidebar-style'
 const WORKSPACE_MODE_KEY = 'spark-agent:workspace-mode'
 
 type PersistedVisualTweaks = Partial<
-  Pick<Tweaks, 'theme' | 'emptyHeroTheme' | 'primary' | 'density'>
+  Pick<Tweaks, 'theme' | 'emptyHeroTheme' | 'appSkin' | 'primary' | 'density'>
 >
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,6 +193,9 @@ function pickVisualTweaks(value: unknown): PersistedVisualTweaks {
   }
   if (isEmptyHeroThemeId(value.emptyHeroTheme)) {
     next.emptyHeroTheme = value.emptyHeroTheme
+  }
+  if (isAppSkinId(value.appSkin)) {
+    next.appSkin = value.appSkin
   }
   if (typeof value.primary === 'string' && PRIMARIES[value.primary] != null) {
     next.primary = value.primary
@@ -324,7 +331,7 @@ type AppCtx = {
   setHasUnsavedChanges: (value: boolean) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
-  /** 一次性将主题/主色/密度/空状态主题等视觉 tweak 重置为默认值。
+  /** 一次性将主题/主色/密度/空状态主题/整窗皮肤等视觉 tweak 重置为默认值。
    *  相比连调多次 setTweak，这里单条 persist 链避免远端 merge 竞态。 */
   resetVisualTweaks: () => void
   /** 原子应用来自账号同步的视觉设置，避免逐字段持久化产生覆盖竞态。 */
@@ -379,6 +386,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else if (key === 'emptyHeroTheme') {
       hasUserVisualChangeRef.current = true
       persistVisualTweaks({ emptyHeroTheme: val as EmptyHeroThemeId })
+    } else if (key === 'appSkin') {
+      hasUserVisualChangeRef.current = true
+      persistVisualTweaks({ appSkin: val as AppSkinId })
     } else if (key === 'primary') {
       hasUserVisualChangeRef.current = true
       persistVisualTweaks({ primary: val as string })
@@ -406,6 +416,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const patch: PersistedVisualTweaks = {
       theme: DEFAULT_TWEAKS.theme,
       emptyHeroTheme: DEFAULT_TWEAKS.emptyHeroTheme,
+      appSkin: DEFAULT_TWEAKS.appSkin,
       primary: DEFAULT_TWEAKS.primary,
       density: DEFAULT_TWEAKS.density,
     }

@@ -44,6 +44,7 @@ import { requestComposerPrefill } from './design/views/chat/composerAppControl'
 import { requestOpenBrowserPanel } from './design/views/chat/browserPanelNavigation'
 import { COMPOSER_APPEND_EXTERNAL_TEXT_EVENT } from './design/components/browser/browserChromeShared'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
+import { SkinBackdrop } from './design/skins/SkinBackdrop'
 import { OptionalCapabilityCenter } from './design/optional-capabilities/OptionalCapabilityCenter'
 import { ToolPackageSecretRequestHost } from './design/components/ToolPackageSecretRequestHost'
 
@@ -2090,6 +2091,7 @@ function Shell() {
       <SubAppSurfaceProvider>
         <div
           ref={scaleRef}
+          data-app-skin={t.appSkin}
           className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${sidebarOverlaysContent ? ' sidebar-overlay-mode' : ''}${sidebarOverlaysContent && !sidebarHidden ? ' sidebar-overlay-open' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
           style={
             {
@@ -2110,6 +2112,9 @@ function Shell() {
             </React.Suspense>
           ) : (
             <>
+              {/* 皮肤背景层：整窗插画 + 可读性纱层，纯装饰且不随内容滚动。
+                  引导页自带全屏不透明背景，故只在常规 shell 分支挂载，避免白拉一次插画。 */}
+              <SkinBackdrop skinId={t.appSkin} resolvedTheme={resolvedTheme} />
               {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
               {sidebarOverlaysContent && !sidebarHidden && (
                 <button
