@@ -8,7 +8,8 @@
 .app-skin {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  /* 取 -1 而非 0：保证装饰层稳定落在所有内容之下，不依赖 DOM 挂载顺序。 */
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
 }
@@ -32,17 +33,21 @@
 }
 
 /*
- * 皮肤生效时让外壳与主区容器底色透明，否则插画会被 .app 自身底色盖住。
- * 只放开外壳层，消息卡、输入框、侧栏等表面保持既有 token 不变。
+ * 皮肤生效时去掉外壳底色，否则插画会被 .app 自身底色盖住。
+ *
+ * 主区容器的去底色只限定在聊天主视图（:has(.chat-main)）：设置页、画布、
+ * 代码查看器等页面自带不透明表面，保持标准观感，这也是 v2 “壳层皮肤”的预定边界。
+ * Windows 浅色主题下 .main/.main-content-area 有显式 #fff，必须在这里去掉，
+ * 否则不透明块背景会盖住 z-index:-1 的插画层。
  */
 .app[data-app-skin]:not([data-app-skin='none']) {
   background: transparent;
 }
 
-.app[data-app-skin]:not([data-app-skin='none']) .main-content-area,
-.app[data-app-skin]:not([data-app-skin='none']) .main-with-browser,
-.app[data-app-skin]:not([data-app-skin='none']) .main,
-.app[data-app-skin]:not([data-app-skin='none']) .view-body {
+.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main) .main-content-area,
+.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main) .main-with-browser,
+.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main) .main,
+.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main) .view-body {
   background: transparent;
 }
 
@@ -71,9 +76,7 @@
 }
 
 /*
- * 皮肤优先于空会话主题背景：两者同时挂载时以皮肤插画为准，
- * 但仍保留空会话局部的卡片/输入框变量（见 ChatEmptyThemes.less）。
+ * 说明：空会话主题自己的背景变量（--empty-session-backdrop）目前在仓库内
+ * 没有任何 var() 消费点，因此皮肤与它不存在优先级冲突；皮肤插画统一由
+ * 本文件的 .app-skin-backdrop 直接绘制。
  */
-.app[data-app-skin]:not([data-app-skin='none']):has(.chat-main-empty[data-empty-theme]) {
-  --empty-session-backdrop: transparent;
-}

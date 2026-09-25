@@ -8,17 +8,6 @@ import { SkinBackdrop } from './SkinBackdrop'
 import type { AppSkinId } from './skinRegistry'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-function renderBackdrop(
-  skinId: AppSkinId,
-  resolvedTheme: 'light' | 'dark',
-  container: HTMLElement,
-) {
-  act(() => {
-    const root = createRoot(container)
-    root.render(<SkinBackdrop skinId={skinId} resolvedTheme={resolvedTheme} />)
-  })
-}
-
 describe('SkinBackdrop', () => {
   let container: HTMLDivElement
   let root: Root | null = null
@@ -38,14 +27,23 @@ describe('SkinBackdrop', () => {
     container.remove()
   })
 
+  function renderBackdrop(skinId: AppSkinId, resolvedTheme: 'light' | 'dark') {
+    act(() => {
+      const nextRoot = createRoot(container)
+      nextRoot.render(<SkinBackdrop skinId={skinId} resolvedTheme={resolvedTheme} />)
+      // 必须记到外层 root，否则 afterEach 的 unmount 抓不到实例、React root 会泄漏。
+      root = nextRoot
+    })
+  }
+
   it('renders nothing at all for the no-skin option', () => {
-    renderBackdrop('none', 'light', container)
+    renderBackdrop('none', 'light')
     expect(container.querySelector('.app-skin')).toBeNull()
     expect(container.querySelector('.app-skin-backdrop')).toBeNull()
   })
 
   it('paints the light artwork and the light scrim strength in light mode', () => {
-    renderBackdrop('verdant', 'light', container)
+    renderBackdrop('verdant', 'light')
     const backdrop = container.querySelector<HTMLElement>('.app-skin-backdrop')
     const scrim = container.querySelector<HTMLElement>('.app-skin-scrim')
     expect(backdrop?.style.backgroundImage).toContain('/skins/verdant-light.webp')
@@ -53,7 +51,7 @@ describe('SkinBackdrop', () => {
   })
 
   it('switches to the dark artwork and the dark scrim strength in dark mode', () => {
-    renderBackdrop('verdant', 'dark', container)
+    renderBackdrop('verdant', 'dark')
     const backdrop = container.querySelector<HTMLElement>('.app-skin-backdrop')
     const scrim = container.querySelector<HTMLElement>('.app-skin-scrim')
     expect(backdrop?.style.backgroundImage).toContain('/skins/verdant-dark.webp')
@@ -61,7 +59,7 @@ describe('SkinBackdrop', () => {
   })
 
   it('marks the layer decorative so screen readers skip the artwork', () => {
-    renderBackdrop('deepspace', 'light', container)
+    renderBackdrop('deepspace', 'light')
     expect(container.querySelector('.app-skin')?.getAttribute('aria-hidden')).toBe('true')
     expect(
       container.querySelector<HTMLElement>('.app-skin-backdrop')?.style.backgroundImage,
