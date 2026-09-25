@@ -2,7 +2,7 @@
  * 设置-外观「皮肤」选择器。卡片顺序即注册表顺序，预览面用插画缩略图。
  *
  * 本组件不持有状态：选中值与变更回调由外观设置传入，实际持久化走
- * AppContext 的 applyTweak('appSkin', id)，避免两处各存一份真相。
+ * AppContext 的 setTweak('appSkin', id)，避免两处各存一份真相。
  */
 import './SkinPicker.less'
 import { APP_SKINS, type AppSkinId } from '../skins/skinRegistry'

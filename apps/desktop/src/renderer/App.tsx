@@ -2102,8 +2102,6 @@ function Shell() {
             } as React.CSSProperties
           }
         >
-          {/* 皮肤背景层：整窗插画 + 可读性纱层，纯装饰且不随内容滚动。 */}
-          <SkinBackdrop skinId={t.appSkin} resolvedTheme={resolvedTheme} />
           {/* Onboarding is a full-screen takeover — it renders its own two-column
             layout and must be independent of the app's FloatingSidebar +
             main-content-area shell. Render it directly so it covers the whole
@@ -2114,6 +2112,9 @@ function Shell() {
             </React.Suspense>
           ) : (
             <>
+              {/* 皮肤背景层：整窗插画 + 可读性纱层，纯装饰且不随内容滚动。
+                  引导页自带全屏不透明背景，故只在常规 shell 分支挂载，避免白拉一次插画。 */}
+              <SkinBackdrop skinId={t.appSkin} resolvedTheme={resolvedTheme} />
               {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
               {sidebarOverlaysContent && !sidebarHidden && (
                 <button

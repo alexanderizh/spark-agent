@@ -51,7 +51,7 @@
   background: transparent;
 }
 
-/* 插画加载失败时的同色相兜底底色（设计文档 §7）。 */
+/* 插画加载中/加载失败时的同色相兜底底色（设计文档 §7），明暗各一套。 */
 .app[data-app-skin='verdant'] .app-skin-backdrop {
   background-color: #f2f7f2;
 }
@@ -61,6 +61,18 @@
 }
 
 .app[data-app-skin='deepspace'] .app-skin-backdrop {
+  background-color: #101522;
+}
+
+.app.theme-dark[data-app-skin='verdant'] .app-skin-backdrop {
+  background-color: #16211b;
+}
+
+.app.theme-dark[data-app-skin='dawnmelt'] .app-skin-backdrop {
+  background-color: #241d15;
+}
+
+.app.theme-dark[data-app-skin='deepspace'] .app-skin-backdrop {
   background-color: #101522;
 }
 

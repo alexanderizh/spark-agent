@@ -5,7 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SkinPicker } from './SkinPicker'
-import { APP_SKINS } from '../skins/skinRegistry'
+import { APP_SKINS, type AppSkinId } from '../skins/skinRegistry'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function click(element: Element) {
@@ -31,10 +31,10 @@ describe('SkinPicker', () => {
     container.remove()
   })
 
-  function renderPicker(value: string, onChange: (id: string) => void) {
+  function renderPicker(value: AppSkinId, onChange: (id: AppSkinId) => void) {
     act(() => {
       const nextRoot = createRoot(container)
-      nextRoot.render(<SkinPicker value={value as never} onChange={onChange as never} />)
+      nextRoot.render(<SkinPicker value={value} onChange={onChange} />)
       root = nextRoot
     })
   }
@@ -61,13 +61,17 @@ describe('SkinPicker', () => {
   it('marks only the active skin with aria-pressed', () => {
     renderPicker('dawnmelt', () => {})
     const pressed = cards().map((card) => card.getAttribute('aria-pressed'))
-    expect(pressed).toEqual(['false', 'false', 'true', 'false'])
+    // 只允许一个选中态，不写死注册表长度与位置。
+    expect(pressed.filter((state) => state === 'true')).toHaveLength(1)
+    const dawnmeltIndex = APP_SKINS.findIndex((skin) => skin.id === 'dawnmelt')
+    expect(cards()[dawnmeltIndex]?.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('reports the clicked skin id to the caller', () => {
     const onChange = vi.fn()
     renderPicker('none', onChange)
-    const target = cards()[2]
+    const dawnmeltIndex = APP_SKINS.findIndex((skin) => skin.id === 'dawnmelt')
+    const target = cards()[dawnmeltIndex]
     if (target == null) throw new Error('Dawnmelt card missing')
     act(() => {
       click(target)
