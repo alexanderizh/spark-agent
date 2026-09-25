@@ -125,4 +125,26 @@ describe('renderer style architecture', () => {
       .map((sheet) => relative(designDir, sheet))
     expect(unimported).toEqual([])
   })
+
+  it('keeps app skin styles scoped to the skin attribute and out of legacy bundles', () => {
+    const backdrop = readSource('./skins/SkinBackdrop.less')
+    const picker = readSource('./components/SkinPicker.less')
+    const views = readSource('./styles/views.css')
+    const base = readSource('./styles/styles.css')
+    const components = readSource('./styles/components.css')
+
+    // 背景层与纱层只能挂在 .app-skin* 或 .app[data-app-skin] 之下，不得裸选择器影响全局。
+    expect(backdrop).toMatch(/\.app-skin\s*\{/)
+    expect(backdrop).toMatch(/\.app-skin-backdrop\s*\{/)
+    expect(backdrop).toMatch(/\.app-skin-scrim\s*\{/)
+    expect(backdrop).toMatch(/\[data-app-skin\]:not\(\[data-app-skin='none'\]\)/)
+    expect(backdrop).toMatch(/prefers-reduced-transparency/)
+    expect(picker).toMatch(/\.skin-picker\s*\{/)
+    expect(picker).toMatch(/\.skin-picker-card\[aria-pressed='true'\]\s*\{/)
+
+    // 皮肤规则不得渗进历史全局层（views.css 只维护不增长）。
+    expect(views).not.toMatch(/data-app-skin|\.app-skin|\.skin-picker/)
+    expect(base).not.toMatch(/data-app-skin|\.app-skin|\.skin-picker/)
+    expect(components).not.toMatch(/data-app-skin|\.app-skin|\.skin-picker/)
+  })
 })
