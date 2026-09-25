@@ -1,0 +1,61 @@
+/* 限额胶囊共享样式（渠道卡片限额行 / 会话模型选择器悬浮用量卡共用）。
+   独立成文件：悬浮卡渲染在会话区（portal 到 body），不能依赖 ProvidersView
+   的视图样式是否已加载。 */
+
+.pv_quota_plan {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.pv_quota_chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+
+  .pv_quota_chip_label,
+  .pv_quota_chip_reset {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pv_quota_chip_reset {
+    font-size: 10px;
+    opacity: 0.72;
+  }
+
+  &.pv_quota_chip--ok {
+    color: #22a45d;
+    background: color-mix(in srgb, #22a45d 13%, transparent);
+  }
+
+  &.pv_quota_chip--warn {
+    color: #d97706;
+    background: color-mix(in srgb, #d97706 13%, transparent);
+  }
+
+  &.pv_quota_chip--danger {
+    color: #dc2626;
+    background: color-mix(in srgb, #dc2626 13%, transparent);
+  }
+
+  &.pv_quota_chip--loading {
+    color: var(--text-faint);
+    background: var(--panel);
+  }
+}

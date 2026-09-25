@@ -63,6 +63,7 @@ import {
   DEFAULT_SIDEBAR_FILTER,
   canReorderSidebarSessions,
   clearSidebarFilters,
+  SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID,
   type SidebarFilterState,
   type SidebarStatusFilter,
   type SidebarLastActivityFilter,
@@ -345,7 +346,13 @@ function filterByLastActivity(
 function filterByProject(sessions: SessionSummary[], projectIds: string[]): SessionSummary[] {
   if (projectIds.length === 0) return sessions
   const selected = new Set(projectIds)
-  return sessions.filter((s) => s.workspaceIds.some((workspaceId) => selected.has(workspaceId)))
+  const includeUngrouped = selected.has(SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID)
+  selected.delete(SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID)
+  return sessions.filter(
+    (s) =>
+      s.workspaceIds.some((workspaceId) => selected.has(workspaceId)) ||
+      (includeUngrouped && s.workspaceIds.length === 0),
+  )
 }
 
 function filterByScheduledTasks(
@@ -2332,8 +2339,10 @@ export function SidebarSessionList() {
       (group) => group.workspace?.id ?? noProjectWorkspace?.id ?? group.id,
       (group) => getProjectGroupPinnedAt(group, noProjectWorkspace) != null,
     )
+    const includeUngrouped =
+      selectedGroupIds == null || filter.projectIds.includes(SIDEBAR_UNGROUPED_SESSIONS_FILTER_ID)
     const ungroupedGroup: DisplayGroup[] =
-      ungrouped.length > 0
+      includeUngrouped && ungrouped.length > 0
         ? [{ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped }]
         : []
     return [...orderedProjects, ...ungroupedGroup]

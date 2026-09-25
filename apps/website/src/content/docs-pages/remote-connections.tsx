@@ -4,9 +4,10 @@ const Body = () => (
   <>
     <p>
       远程连接让你从手机或另一台设备继续与本地 SparkWork 里的 Agent 对话。当前真实支持{' '}
-      <strong>Telegram、飞书、QQ 三个通道</strong>：Telegram 走本地长轮询，飞书与 QQ 走官方
-      WebSocket 长连接，三者都<strong>不需要公网地址</strong>；同时保留一个本机 HTTP webhook 服务，
-      用于本地调试与自建网关（微信 Claw 协议类型仍在，但界面没有新建入口）。 所有配置存在{' '}
+      <strong>Telegram、飞书、QQ、微信 ClawBot 四个通道</strong>：Telegram 与微信走本机 HTTP
+      长轮询， 飞书与 QQ 走官方 WebSocket 长连接，均<strong>不需要公网地址</strong>
+      ；同时保留一个本机 HTTP webhook 服务，用于本地调试与自建网关。微信使用扫码授权，通过 iLink
+      收发文字消息；旧版 <code>wechat-claw</code> 自建网关协议仍保留兼容。所有配置存在{' '}
       <code>app_settings</code> 的 <code>remote-connections/data</code> 里， 配对、隔离与转发逻辑在{' '}
       <code>apps/desktop/src/main/services/RemoteConnectionService.ts</code>。
     </p>
@@ -66,6 +67,14 @@ const Body = () => (
         </tr>
         <tr>
           <td>
+            <code>wechat</code> 微信 ClawBot
+          </td>
+          <td>扫码授权后由 SparkWork 自动保存机器人凭据</td>
+          <td>iLink HTTP 长轮询与文字消息回复（回复使用微信上下文令牌）</td>
+          <td>设置 → 远程连接 → 微信机器人 → 扫码授权</td>
+        </tr>
+        <tr>
+          <td>
             <code>wechat-claw</code> 微信 Claw
           </td>
           <td>
@@ -76,15 +85,16 @@ const Body = () => (
             <code>/message</code>）
           </td>
           <td>
-            协议与解析器仍在，但新建连接的平台卡片里<strong>不提供该通道</strong>
+            旧版自建网关连接；新连接请使用 <code>wechat</code> 微信 ClawBot
           </td>
         </tr>
       </tbody>
     </table>
     <p>
-      可以同时配置并启用多个连接（每个 Telegram 连接是独立的 botToken 与独立轮询）；
-      界面上的平台入口只有三个：
-      <code>AVAILABLE_REMOTE_CHANNELS = ['telegram', 'feishu', 'qq']</code>。
+      可以同时配置并启用多个连接（每个 Telegram 连接是独立的 botToken 与独立轮询）； 界面可新建
+      Telegram、飞书、QQ、微信四种通道。微信连接通过扫码创建，不需要手动填写凭据。
+      此实现对接腾讯开源 ClawBot 通道插件使用的 iLink HTTP 协议，不依赖安装 OpenClaw；该协议文档注明
+      它来自客户端实现分析，不能视为完整的服务端公开契约。当前微信通道支持文字消息，暂不支持图片、语音、视频与文件。
     </p>
 
     <h2 id="model">2. 配置模型：字段、默认值与存储位置</h2>
@@ -290,7 +300,7 @@ const Body = () => (
           <td>
             <code>approvePermissions</code>
           </td>
-          <td>远程审批权限</td>
+          <td>允许在原始远程聊天中用审批码执行 /approve（仅本次）或 /deny</td>
           <td>
             <code>true</code>
           </td>
@@ -362,8 +372,8 @@ const Body = () => (
     <ul>
       <li>
         主进程注册远程连接 IPC 时会启动运行时：先跑 <code>startRuntime</code>（要求{' '}
-        <code>global.enabled</code> 为真），再按每条启用连接启动对应通道的接收端 （Telegram 轮询 /
-        飞书与 QQ 长连接）。
+        <code>global.enabled</code> 为真），再按每条启用连接启动对应通道的接收端 （Telegram /
+        微信轮询 / 飞书与 QQ 长连接）。
       </li>
       <li>
         本机 HTTP 服务监听 <code>127.0.0.1:&lt;localWebhookPort&gt;</code>，默认 32178；
@@ -514,7 +524,8 @@ const Body = () => (
             <code>approvePermissions</code>
           </td>
           <td>
-            <code>/permissions</code>、<code>/use-permission &lt;manual|auto|plan|full&gt;</code>
+            <code>/permissions</code>、<code>/use-permission &lt;manual|auto|plan|full&gt;</code>、
+            <code>/approve &lt;审批码&gt;</code>、<code>/deny &lt;审批码&gt;</code>
           </td>
         </tr>
         <tr>
@@ -648,6 +659,16 @@ const Body = () => (
         字符分片。
       </li>
       <li>
+        卡片按钮通过 <code>card.action.trigger</code> 事件处理；请在飞书应用后台订阅该事件和{' '}
+        <code>im.message.receive_v1</code>。卡片动作事件中的聊天 ID 位于{' '}
+        <code>context.open_chat_id</code>。
+      </li>
+      <li>
+        飞书原生机器人菜单在开放平台的「应用功能 → 机器人 →
+        自定义菜单」中配置；动作设为「发送消息」， 命令会由 SparkWork
+        解析。连接设置不会自动覆盖飞书应用后台已有的菜单。
+      </li>
+      <li>
         收到配对消息后给源消息加 <code>Typing</code> 表情反应。
       </li>
       <li>
@@ -683,16 +704,21 @@ const Body = () => (
       </li>
     </ul>
     <p>
-      三个渠道的入站图片都在配对鉴权之后下载，统一限制 20 MB，并按文件头（magic bytes）校验， 只接受
-      PNG / JPEG / WebP；不合法会报「仅支持 PNG、JPEG 或 WebP 图片」。 出站图片如果给的是网络
-      URL，会先做公开地址校验再下载。此能力需要连接里开启「传输文件」。
+      工具触发权限审批时，已启用「远程审批权限」的连接会把审批码发回发起该轮任务的聊天。发送{' '}
+      <code>/approve &lt;审批码&gt;</code> 只批准这一次，发送 <code>/deny &lt;审批码&gt;</code>{' '}
+      拒绝；审批码绑定到原始连接和聊天， 其他聊天不能使用。审批超时或会话取消也会向该聊天返回结果。
+    </p>
+    <p>
+      Telegram、飞书与 QQ 三个渠道的入站图片都在配对鉴权之后下载，统一限制 20 MB，并按文件头（magic
+      bytes）校验， 只接受 PNG / JPEG / WebP；不合法会报「仅支持 PNG、JPEG 或 WebP 图片」。
+      出站图片如果给的是网络 URL，会先做公开地址校验再下载。此能力需要连接里开启「传输文件」。
     </p>
 
     <h2 id="ui">8. 设置 UI 结构</h2>
     <ul>
       <li>
         <strong>入口</strong>：设置 → 远程连接（左栏「生态」分组）。页面说明文案是 「通过
-        Telegram、飞书、QQ 从远程桌面或移动端与 SparkWork 通信」。
+        Telegram、飞书、QQ、微信从远程桌面或移动端与 SparkWork 通信」。
       </li>
       <li>
         <strong>运行态条</strong>：左侧显示 <code>localBaseUrl</code>（未启动时显示「本地 webhook
@@ -701,8 +727,8 @@ const Body = () => (
         右上角徽标显示「运行中 / 未运行」与「已连接 / 总数」。右侧有「刷新」。
       </li>
       <li>
-        <strong>平台入口卡</strong>：Telegram / 飞书 / QQ
-        三个图标卡，点头部按钮会创建草稿并打开对应平台控制台。
+        <strong>平台入口卡</strong>：Telegram / 飞书 / QQ /
+        微信四个图标卡；微信入口创建草稿并显示授权二维码，其他平台入口会打开对应控制台。
       </li>
       <li>
         <strong>连接列表卡</strong>
@@ -777,16 +803,25 @@ const Body = () => (
         </tr>
         <tr>
           <td>
+            <code>wechat</code>
+          </td>
+          <td>微信机器人</td>
+          <td>二维码授权（无外部控制台）</td>
+          <td>扫码确认后由 SparkWork 保存凭据；再生成配对码并在微信中发送 /bind 配对码</td>
+        </tr>
+        <tr>
+          <td>
             <code>wechat-claw</code>
           </td>
           <td>微信 Claw</td>
           <td>远程连接文档页</td>
-          <td>自建网关协议，没有官方统一搭建入口（界面也不提供新建）</td>
+          <td>旧版自建网关协议，仅兼容已配置的连接</td>
         </tr>
       </tbody>
     </table>
     <p>
-      平台侧授权、审核与复制凭据仍然要你手动完成；「一键」只做本地草稿 + 打开控制台。
+      Telegram、飞书与 QQ
+      的平台侧授权、审核与复制凭据仍然要你手动完成；微信入口会创建本地草稿并直接开始扫码授权，其他平台入口会打开对应控制台。
       保存后务必点「测试配置」：它会校验必填字段是否齐全， 缺少字段会把状态置为 <code>error</code>
       、停用连接，并写入 <code>lastError</code>（形如「缺少字段：appId, appSecret」）。
     </p>
@@ -794,8 +829,8 @@ const Body = () => (
     <h2 id="pitfalls">10. 常见坑与排查</h2>
     <ul>
       <li>
-        <strong>需要公网 IP 吗？</strong>不需要。Telegram 是本机出站长轮询，飞书/QQ 是官方 WebSocket
-        长连接；本地 HTTP 服务只监听 <code>127.0.0.1</code>，用于本地调试与自建网关。
+        <strong>需要公网 IP 吗？</strong>不需要。Telegram 与微信使用本机出站长轮询，飞书/QQ 使用官方
+        WebSocket 长连接；本地 HTTP 服务只监听 <code>127.0.0.1</code>，用于本地调试与自建网关。
       </li>
       <li>
         <strong>发消息没反应</strong>：先看设置页顶部是否「运行中」，再看该连接状态是不是
@@ -831,9 +866,9 @@ const Body = () => (
         ）默认关闭，开启前请确认你信任这些聊天的使用者。
       </li>
       <li>
-        <strong>微信 Claw 找不到入口</strong>：协议类型与 webhook 解析仍然存在（
-        <code>clawEndpoint</code> + <code>clawAccessToken</code>），但当前界面白名单只有 Telegram /
-        飞书 / QQ；它依赖一个外部自建网关， 目前不在新建入口里暴露。
+        <strong>微信收不到非文字消息</strong>：当前微信 ClawBot
+        接入只处理文字消息；图片、语音、视频与文件尚未接入。 旧版 <code>wechat-claw</code>{' '}
+        通道仍用于已经配置的自建网关连接。
       </li>
     </ul>
   </>
@@ -857,7 +892,7 @@ export const remoteConnections: DocsPageContent = {
     {
       question: '需要公网 IP 或反向代理吗？',
       answer:
-        '不需要。Telegram 用本机 getUpdates 长轮询，飞书与 QQ 用官方 WebSocket 长连接；本地 HTTP 服务只监听 127.0.0.1（默认 32178，端口占用时退化为随机端口），供本地调试与自建网关使用。',
+        '不需要。Telegram 与微信用本机出站长轮询，飞书与 QQ 用官方 WebSocket 长连接；本地 HTTP 服务只监听 127.0.0.1（默认 32178，端口占用时退化为随机端口），供本地调试与自建网关使用。',
     },
     {
       question: '配对码怎么生成、多久过期？',
@@ -880,13 +915,16 @@ export const remoteConnections: DocsPageContent = {
         '远程连接的 botToken / AppSecret 以明文 JSON 存在 SQLite 的 app_settings（remote-connections/data）里，不在系统 Keychain 或加密 vault 中，设置页用的是普通文本输入框，已保存的值会明文显示。请确保只有你信任的人能访问这台机器的用户数据目录。',
     },
     {
-      question: '支持微信吗？',
+      question: '微信机器人怎么连接？',
       answer:
-        '协议里保留 wechat-claw（clawEndpoint + clawAccessToken，可经本地 webhook 收发），但当前新建连接的平台卡片只提供 Telegram / 飞书 / QQ，因为微信通道依赖一个尚未内置的自建网关。',
+        '在设置 → 远程连接创建微信机器人并扫码授权；SparkWork 使用 iLink 长轮询收发文字消息，不需要 OpenClaw 运行时或公网地址。授权后保存并启用连接，再生成配对码并在微信 ClawBot 对话中发送 /bind 配对码。',
     },
   ],
   quickReference: [
-    { key: '可新建通道', value: 'telegram / feishu / qq（wechat-claw 协议保留但无界面入口）' },
+    {
+      key: '可新建通道',
+      value: 'telegram / feishu / qq / wechat（旧 wechat-claw 网关连接继续兼容）',
+    },
     { key: '配置存储', value: 'app_settings → remote-connections/data（凭据为明文 JSON）' },
     { key: '本地服务', value: '127.0.0.1:32178（占用则随机端口），仅本机可访问' },
     { key: '端点', value: 'GET /remote/health · POST /remote/webhook/:channel/:connectionId' },
@@ -925,10 +963,10 @@ export const remoteConnections: DocsPageContent = {
     ],
   },
   aiSummary:
-    'SparkWork 远程连接支持三个可新建通道：Telegram（本机 getUpdates 长轮询，timeout=25，typed 输入每 4 秒续期，👀 反应确认，图片 20MB 且只接受 PNG/JPEG/WebP）、' +
+    'SparkWork 远程连接支持四个可新建通道：Telegram（本机 getUpdates 长轮询，timeout=25，typed 输入每 4 秒续期，👀 反应确认，图片 20MB 且只接受 PNG/JPEG/WebP）、' +
     '飞书（App ID/Secret 换 tenant_access_token，官方 WebSocket 长连接，im/v1/messages 交互卡片，Typing 表情，im/v1/images 上传图片）、' +
-    'QQ（bots.qq.com 取 token，官方 WebSocket 网关支持 Resume 与 intents 降级，频道/群聊/单聊三套消息 API，图片走 file_image 或 msg_type=7，命令注册为指令面板且单名超 14 字符跳过）；' +
-    'wechat-claw 协议保留但没有新建入口。配置存在 app_settings 的 remote-connections/data（global 默认 32178 端口、10 分钟配对码、requirePairing=true；connection 含 credentials、routeBindings、13 项 capabilities 等），凭据为明文 JSON。' +
+    'QQ（bots.qq.com 取 token，官方 WebSocket 网关支持 Resume 与 intents 降级，频道/群聊/单聊三套消息 API，图片走 file_image 或 msg_type=7，命令注册为指令面板且单名超 14 字符跳过），' +
+    '微信 ClawBot（iLink QR 扫码授权与 HTTP 长轮询，文字消息收发，回复使用会话上下文令牌；暂不支持媒体）；旧 wechat-claw 自建网关协议保留。配置存在 app_settings 的 remote-connections/data（global 默认 32178 端口、10 分钟配对码、requirePairing=true；connection 含 credentials、routeBindings、13 项 capabilities 等），凭据为明文 JSON。' +
     '本地运行时只监听 127.0.0.1，提供 GET /remote/health 与 POST /remote/webhook/:channel/:connectionId；配对用 6 位数字码或 spark-agent://remote-pair 二维码，外部聊天发送 /bind 加配对码完成。' +
     '内置命令按能力开关分组（sessions/use-session、models/use-model、projects/add-project、reasoning、permissions、screen/windows、click/type、confirm、send、status 等），每个聊天独立绑定会话与默认值，跨连接共享会话需双方显式开启 allowSharedSession。',
   Body,

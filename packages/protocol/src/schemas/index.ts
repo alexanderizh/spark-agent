@@ -105,7 +105,7 @@ export const SessionPermissionModeSchema = z.enum([
   // spark-bypass=完全访问；旧两值仅为已存储会话保留，UI 不再提供。
   'spark-auto',
 ])
-export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
+export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])
 export const OptionalCapabilityIdSchema = z.enum([
   'codex-runtime',
@@ -126,6 +126,10 @@ const RemoteCredentialsSchema = z.object({
   qqBotSecret: z.string().max(400).optional(),
   clawEndpoint: z.string().max(2000).optional(),
   clawAccessToken: z.string().max(400).optional(),
+  wechatBotToken: z.string().max(400).optional(),
+  wechatBotId: z.string().max(200).optional(),
+  wechatApiBaseUrl: z.string().url().max(2000).optional(),
+  wechatAuthorizedUserId: z.string().max(200).optional(),
 })
 
 const RemoteCapabilitiesSchema = z.object({
@@ -1689,6 +1693,16 @@ export const IpcSchemaRegistry = {
     channel: RemoteChannelTypeSchema,
     name: z.string().min(1).max(120).optional(),
     openConsole: z.boolean().optional(),
+  }),
+  'remote:wechat-login-start': z.object({ id: z.string().min(1).max(160) }),
+  'remote:wechat-login-poll': z.object({
+    id: z.string().min(1).max(160),
+    loginId: z.string().uuid(),
+    verifyCode: z.string().max(32).optional(),
+  }),
+  'remote:wechat-login-cancel': z.object({
+    id: z.string().min(1).max(160),
+    loginId: z.string().uuid(),
   }),
   'remote:generate-pairing': z.object({
     id: z.string().min(1).max(160),

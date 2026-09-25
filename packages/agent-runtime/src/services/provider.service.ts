@@ -13,6 +13,7 @@ import type {
   ProviderImportMode,
   ProviderImportResult,
   ProviderIconConfig,
+  ProviderQuotaResponse,
 } from '@spark/protocol'
 import {
   isMediaApiType,
@@ -44,6 +45,7 @@ import {
   filterBlockedModelIds,
   sanitizeModelSchedules,
   scheduledBlockedModelIds,
+  detectProviderQuotaVendor,
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
@@ -56,6 +58,7 @@ import {
   sanitizeRequestUrl,
 } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import { fetchZhipuQuota } from './providerQuota/zhipuQuota.js'
 
 const log = createLogger('provider.service')
 const execFileAsync = promisify(execFile)
@@ -1224,6 +1227,61 @@ export class ProviderService {
       ...(config.codexApiKind !== undefined ? { codexApiKind: config.codexApiKind } : {}),
       apiKey,
     })
+  }
+
+  /**
+   * 查询渠道限额（卡片限额胶囊数据源）。
+   *
+   * 厂商识别走共享注册表 detectProviderQuotaVendor（endpoint 优先、名称兜底），
+   * 目前仅智谱（bigmodel.cn）实现适配器；未命中/无 key/内置行一律返回
+   * supported=false，渲染端按同一注册表预判，正常不会对不支持渠道发起查询。
+   */
+  async fetchQuota(id: string): Promise<ProviderQuotaResponse> {
+    const row = this.repo.get(id)
+    if (!row) {
+      log.warn(`fetchQuota failed: provider not found, id=${id}`)
+      return { supported: false, errorMessage: `Provider not found: ${id}` }
+    }
+    // 内置 CLI / 受管 / AutoRouter 行没有厂商限额接口可查
+    if (
+      id === LOCAL_CLI_PROVIDER_ID ||
+      id === LOCAL_CODEX_CLI_PROVIDER_ID ||
+      row.provider_type === AUTO_ROUTER_PROVIDER_TYPE ||
+      isManagedProviderRow(row)
+    ) {
+      return { supported: false }
+    }
+
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    const vendor = detectProviderQuotaVendor({
+      name: row.name,
+      ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+    })
+    if (!vendor) {
+      log.debug(`fetchQuota unsupported vendor, id=${id}, name=${row.name}`)
+      return { supported: false }
+    }
+    if (!row.keystore_ref) {
+      return { supported: true, errorMessage: '未配置 API Key，无法查询限额' }
+    }
+    const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
+    if (!apiKey) {
+      log.warn(`fetchQuota failed: API key not found in keychain, id=${id}`)
+      return { supported: true, errorMessage: 'API Key 未在钥匙串中找到' }
+    }
+
+    try {
+      if (vendor.id === 'zhipu') {
+        const quota = await fetchZhipuQuota(id, apiKey)
+        return { supported: true, quota }
+      }
+      log.warn(`fetchQuota vendor registered but no adapter, vendor=${vendor.id}, id=${id}`)
+      return { supported: false }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`fetchQuota threw, vendor=${vendor.id}, id=${id}, error=${message}`)
+      return { supported: true, errorMessage: message }
+    }
   }
 
   async testConnection(params: {

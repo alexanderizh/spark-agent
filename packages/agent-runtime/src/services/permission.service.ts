@@ -556,6 +556,7 @@ export class PermissionService {
           ? { sdkRequestId: params.options.sdkRequestId }
           : {}),
         sessionId: params.sessionId,
+        ...(params.options.turnId != null ? { turnId: params.options.turnId } : {}),
         toolName: params.toolName,
         action: params.action,
         toolInput: params.toolInput,

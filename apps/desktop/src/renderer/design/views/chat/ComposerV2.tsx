@@ -60,6 +60,7 @@ import {
   VENDOR_CATALOG,
   type CliSparkOverride,
   isBuiltInLocalCliProvider,
+  detectProviderQuotaVendor,
   type CommandListItem,
   type ManagedAgent,
   type ManagedTeam,
@@ -103,9 +104,11 @@ import {
   supportsOpenAIFastModeProvider,
 } from './openai-fast-mode'
 import { AutoRouterHoverCard } from './AutoRouterHoverCard'
+import { ProviderQuotaHoverCard } from './ProviderQuotaHoverCard'
+import { useProviderQuotas } from '../provider/useProviderQuotas'
 import { buildAutoRouterHoverCardModel } from './auto-router-hover-card-model'
 import { ModelPickerMenuItem } from './ModelPickerMenuItem'
-import { useAutoRouterHoverCard } from './useAutoRouterHoverCard'
+import { useHoverRevealCard } from './useHoverRevealCard'
 import { resolvePinnedModelEntries, usePinnedModels } from './pinned-models'
 import {
   getProviderPickerLogoSize,
@@ -5632,7 +5635,30 @@ function ProviderModelPicker({
     hover: hoverAutoRouterRow,
     leave: leaveAutoRouterRow,
     dismiss: dismissAutoRouterHoverCard,
-  } = useAutoRouterHoverCard(open)
+  } = useHoverRevealCard(open)
+  // 「渠道行」悬浮用量卡片：同一状态机；限额数据按需查询（悬浮渠道时才发起）。
+  const {
+    target: providerQuotaHoverTarget,
+    hover: hoverProviderQuotaRow,
+    leave: leaveProviderQuotaRow,
+    dismiss: dismissProviderQuotaHoverCard,
+  } = useHoverRevealCard(open)
+  const providerQuotas = useProviderQuotas(providers, { auto: false })
+  const hoverQuotaProviderRow = (
+    provider: ProviderProfile,
+    anchorEl: HTMLElement | null,
+    options?: { immediate?: boolean },
+  ) => {
+    hoverProviderQuotaRow(provider.id, anchorEl, options)
+    // 无快照且不在查询中才发起（含错误重试：失败后再次悬浮会重新查一次）
+    if (
+      anchorEl != null &&
+      providerQuotas.quotaMap[provider.id] == null &&
+      !providerQuotas.pendingSet.has(provider.id)
+    ) {
+      void providerQuotas.refresh(provider.id)
+    }
+  }
   // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
   const normalizedSearch = search.trim().toLowerCase()
   const cliSparkProviderGroupsByPrimaryId = useMemo(() => {
@@ -5779,7 +5805,11 @@ function ProviderModelPicker({
   // 悬浮行仍可见时才构建卡片模型（菜单关闭、选项被过滤掉时直接不渲染）
   const hoveredAutoRouter =
     open && autoRouterHoverTarget != null
-      ? autoRouterProviders.find((router) => router.id === autoRouterHoverTarget.routerId)
+      ? autoRouterProviders.find((router) => router.id === autoRouterHoverTarget.key)
+      : undefined
+  const hoveredQuotaProvider =
+    open && providerQuotaHoverTarget != null
+      ? providers.find((provider) => provider.id === providerQuotaHoverTarget?.key)
       : undefined
   const autoRouterHoverModel =
     hoveredAutoRouter != null
@@ -5812,6 +5842,7 @@ function ProviderModelPicker({
           setSearch('')
           // 菜单关闭即丢弃悬浮卡片状态，避免下次打开时残留上一次的卡片
           dismissAutoRouterHoverCard()
+          dismissProviderQuotaHoverCard()
         }
       }}
       popupRender={() => (
@@ -5994,9 +6025,32 @@ function ProviderModelPicker({
                 )
               }
               const vendor = resolveProviderVendor(provider)
+              // 限额注册表命中的渠道：悬浮分组标题显示用量卡片（与卡片限额行同一数据源）
+              const quotaSupported =
+                detectProviderQuotaVendor({
+                  name: provider.name,
+                  apiEndpoint: provider.apiEndpoint,
+                }) != null
               return (
                 <div key={provider.id} className="composer-model-group">
-                  <div className="composer-model-group-title">
+                  <div
+                    className="composer-model-group-title"
+                    onMouseEnter={
+                      quotaSupported
+                        ? (event) => hoverQuotaProviderRow(provider, event.currentTarget)
+                        : undefined
+                    }
+                    onMouseLeave={quotaSupported ? leaveProviderQuotaRow : undefined}
+                    onFocus={
+                      quotaSupported
+                        ? (event) =>
+                            hoverQuotaProviderRow(provider, event.currentTarget, {
+                              immediate: true,
+                            })
+                        : undefined
+                    }
+                    onBlur={quotaSupported ? leaveProviderQuotaRow : undefined}
+                  >
                     {vendor && (
                       <span className="composer-model-group-icon">
                         <ProviderLogo
@@ -6034,6 +6088,15 @@ function ProviderModelPicker({
             <AutoRouterHoverCard
               model={autoRouterHoverModel}
               anchorEl={autoRouterHoverTarget.anchorEl}
+            />
+          )}
+          {hoveredQuotaProvider != null && providerQuotaHoverTarget != null && (
+            <ProviderQuotaHoverCard
+              providerName={hoveredQuotaProvider.name}
+              quota={providerQuotas.quotaMap[hoveredQuotaProvider.id]}
+              error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
+              loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
+              anchorEl={providerQuotaHoverTarget.anchorEl}
             />
           )}
         </div>

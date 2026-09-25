@@ -534,6 +534,7 @@
   &.pv_disabled {
     .pv_card_row_top,
     .pv_card_row_desc,
+    .pv_card_row_quota,
     .pv_card_row_models,
     .pv_card_kind {
       opacity: 0.55;
@@ -661,6 +662,36 @@
   line-height: 1.5;
   word-break: break-word;
   flex-grow: 1;
+}
+
+/* ─── 行 2.5：限额胶囊（套餐档位 + 各窗口限额） ─── */
+.pv_card_row_quota {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 限额胶囊（.pv_quota_plan / .pv_quota_chip）样式已迁移到
+   provider/quota-chip.less —— 会话模型选择器的悬浮用量卡共用同一组胶囊。 */
+
+.pv_quota_error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  background: var(--panel);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-muted);
+  }
 }
 
 /* ─── 行 3：支持的模型 pill 平铺，最多 3 行截断 ─── */

@@ -21,6 +21,8 @@ import type {
   SessionAttachment,
 } from '@spark/protocol'
 import { QqBotGateway } from './QqBotGateway.js'
+import { WeixinClawBotClient, type WeixinQrLoginResult } from './WeixinClawBotClient.js'
+import { RemoteWeixinChannel } from './remoteWeixinChannel.js'
 import { getAuthService } from './Auth/AuthService.js'
 import {
   downloadTelegramInboundImage,
@@ -153,9 +155,15 @@ type FeishuCardActionReceiveEvent = {
   action?: {
     value?: unknown
   }
+  context?: {
+    open_chat_id?: string
+    open_message_id?: string
+  }
   open_chat_id?: string
   chat_id?: string
   operator?: {
+    open_id?: string
+    user_id?: string
     operator_id?: {
       open_id?: string
       user_id?: string
@@ -342,6 +350,18 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
     capability: 'manageRuntime',
   },
   {
+    name: 'approve',
+    usage: '/approve <审批码>',
+    description: '仅本次批准远程权限请求',
+    capability: 'approvePermissions',
+  },
+  {
+    name: 'deny',
+    usage: '/deny <审批码>',
+    description: '拒绝远程权限请求',
+    capability: 'approvePermissions',
+  },
+  {
     name: 'stop',
     usage: '/stop',
     description: '停止当前远程任务（等同 /cancel）',
@@ -419,6 +439,8 @@ const CHANNEL_META: Record<
       '使用飞书 openclaw 快捷入口创建自建应用并预选机器人能力。',
       '复制 App ID 和 App Secret 到 SparkWork。',
       'SparkWork 会用飞书 WebSocket 长连接接收消息，无需公网 webhook。',
+      '在飞书开放平台的「应用功能 → 机器人 → 自定义菜单」中添加常用命令，动作选择「发送消息」，例如 /start、/help、/sessions、/projects、/channels、/models、/status。菜单由飞书应用后台管理，不会通过 App ID 和 App Secret 自动改写。',
+      '确认事件订阅包含 im.message.receive_v1 和 card.action.trigger；缺少 card.action.trigger 时，卡片按钮不会回调。',
     ],
   },
   qq: {
@@ -443,6 +465,16 @@ const CHANNEL_META: Record<
       '启动微信 Claw 网关，并确认 SparkWork 可访问网关地址。',
       '填入 Claw Endpoint 与 Access Token。',
       '生成配对码或二维码负载，在 Claw 会话内完成绑定。',
+    ],
+  },
+  wechat: {
+    defaultName: '微信机器人',
+    consoleUrl: 'https://github.com/Tencent/openclaw-weixin',
+    requiredFields: ['wechatBotToken'],
+    instructions: [
+      '点击扫码授权，用手机微信扫描微信 ClawBot 授权二维码。',
+      '授权后保存并启用连接，SparkWork 会通过 iLink 长轮询收取文字消息。',
+      '在微信 ClawBot 对话中发送 SparkWork 生成的 /bind 配对码，完成远程会话绑定。',
     ],
   },
 }
@@ -638,6 +670,7 @@ export function parseWebhookBody(
   | { kind: 'challenge'; responseBody: unknown }
   | { kind: 'ignore' } {
   if (!isRecord(body)) return { kind: 'ignore' }
+  if (channel === 'wechat') return { kind: 'ignore' }
 
   if (channel === 'telegram') {
     const callback = isRecord(body.callback_query) ? body.callback_query : undefined
@@ -825,6 +858,7 @@ function sanitizeConnection(input: unknown): RemoteConnectionConfig | null {
     channel !== 'telegram' &&
     channel !== 'feishu' &&
     channel !== 'qq' &&
+    channel !== 'wechat' &&
     channel !== 'wechat-claw'
   ) {
     return null
@@ -934,6 +968,8 @@ export class RemoteConnectionService {
   private pollingStates = new Map<string, TelegramPollingState>()
   private feishuWsStates = new Map<string, FeishuWsState>()
   private qqGateways = new Map<string, QqBotGateway>()
+  private readonly weixinBotClient = new WeixinClawBotClient()
+  private readonly weixinChannel: RemoteWeixinChannel
   private processedMessages = new Set<string>()
   private tokenCache = new Map<string, TokenCacheEntry>()
   private telegramCommandSignatures = new Map<string, string>()
@@ -954,6 +990,16 @@ export class RemoteConnectionService {
     private readonly settingsService: SettingsService,
     private readonly telegramAttachmentRoot?: string,
   ) {
+    this.weixinChannel = new RemoteWeixinChannel(
+      this.settingsService,
+      this.weixinBotClient,
+      (connection, message) => this.handleInboundMessage(connection, message),
+      {
+        listConnections: () => this.readStore().connections,
+        saveConnection: (connection) => this.save(connection),
+        syncRuntime: () => this.syncRuntime(),
+      },
+    )
     this.telegramTurnFeedback = new TelegramTurnFeedbackManager({
       sendTyping: async (connectionId, externalId) => {
         const connection = this.readStore().connections.find((item) => item.id === connectionId)
@@ -1074,6 +1120,8 @@ export class RemoteConnectionService {
     const next = store.connections.filter((item) => item.id !== id)
     this.writeStore({ ...store, connections: next })
     if (next.length !== store.connections.length) {
+      this.weixinBotClient.cancelQrLogin(id)
+      this.weixinChannel.deleteConnectionState(id)
       this.emitChange({ reason: 'connection-deleted', connectionId: id })
     }
     return next.length !== store.connections.length
@@ -1093,6 +1141,28 @@ export class RemoteConnectionService {
       consoleUrl: meta.consoleUrl,
       instructions: meta.instructions,
     }
+  }
+
+  async startWechatQrLogin(id: string): Promise<{
+    loginId: string
+    qrPayload: string
+    expiresAt: string
+  }> {
+    return this.weixinChannel.startQrLogin(id)
+  }
+
+  async pollWechatQrLogin(
+    id: string,
+    loginId: string,
+    verifyCode?: string,
+  ): Promise<
+    Pick<WeixinQrLoginResult, 'status' | 'message'> & { connection?: RemoteConnectionConfig }
+  > {
+    return this.weixinChannel.pollQrLogin(id, loginId, verifyCode)
+  }
+
+  cancelWechatQrLogin(id: string, loginId: string): void {
+    this.weixinChannel.cancelQrLogin(id, loginId)
   }
 
   test(id: string): RemoteTestResponse {
@@ -1362,6 +1432,9 @@ export class RemoteConnectionService {
     for (const connectionId of this.qqGateways.keys()) {
       this.stopQqGateway(connectionId)
     }
+    for (const { connectionId } of this.weixinBotClient.getPollingStatus()) {
+      this.weixinBotClient.stopPolling(connectionId)
+    }
     this.telegramCommandSignatures.clear()
     this.qqCommandSignatures.clear()
     if (this.server == null) return
@@ -1383,6 +1456,7 @@ export class RemoteConnectionService {
     const activeTelegramIds = new Set<string>()
     const activeFeishuIds = new Set<string>()
     const activeQqIds = new Set<string>()
+    const activeWeixinIds = new Set<string>()
     for (const connection of store.connections) {
       if (!connection.enabled) continue
       if (connection.channel === 'telegram') {
@@ -1404,6 +1478,24 @@ export class RemoteConnectionService {
         activeQqIds.add(connection.id)
         this.startQqGateway(connection, appId, clientSecret)
         this.queueQqCommandSync(connection, appId, clientSecret)
+      } else if (connection.channel === 'wechat') {
+        const token = readString(connection.credentials.wechatBotToken)
+        if (token == null) continue
+        activeWeixinIds.add(connection.id)
+        const baseUrl = readString(connection.credentials.wechatApiBaseUrl)
+        const cursor = this.weixinChannel.getCursor(connection.id)
+        this.weixinBotClient.startPolling(
+          connection.id,
+          {
+            token,
+            ...(baseUrl != null ? { baseUrl } : {}),
+            ...(cursor != null ? { cursor } : {}),
+          },
+          {
+            onMessage: (message) => this.weixinChannel.handleMessage(connection.id, message),
+            onCursor: (cursor) => this.weixinChannel.rememberCursor(connection.id, cursor),
+          },
+        )
       }
     }
 
@@ -1421,6 +1513,9 @@ export class RemoteConnectionService {
       if (!activeQqIds.has(connectionId)) {
         this.stopQqGateway(connectionId)
       }
+    }
+    for (const { connectionId } of this.weixinBotClient.getPollingStatus()) {
+      if (!activeWeixinIds.has(connectionId)) this.weixinBotClient.stopPolling(connectionId)
     }
   }
 
@@ -1440,11 +1535,13 @@ export class RemoteConnectionService {
       running: this.server != null,
       port: this.runtimePort,
       localBaseUrl: this.runtimePort != null ? `http://127.0.0.1:${this.runtimePort}` : null,
-      polling: Array.from(this.pollingStates.entries()).map(([connectionId, state]) => ({
-        connectionId,
-        running: state.running,
-        ...(state.lastError != null ? { lastError: state.lastError } : {}),
-      })),
+      polling: Array.from(this.pollingStates.entries())
+        .map(([connectionId, state]) => ({
+          connectionId,
+          running: state.running,
+          ...(state.lastError != null ? { lastError: state.lastError } : {}),
+        }))
+        .concat(this.weixinBotClient.getPollingStatus()),
       longConnections: [
         ...Array.from(this.feishuWsStates.entries()).map(([connectionId, state]) => ({
           connectionId,
@@ -1838,6 +1935,8 @@ export class RemoteConnectionService {
   private async runFeishuWs(connectionId: string, state: FeishuWsState): Promise<void> {
     try {
       const larkModule = await import('@larksuiteoapi/node-sdk')
+      const isCurrent = () => this.feishuWsStates.get(connectionId) === state
+      if (!isCurrent()) return
       const lark = (larkModule.default ?? larkModule) as {
         WSClient: new (options: {
           appId: string
@@ -1853,9 +1952,11 @@ export class RemoteConnectionService {
       }
       const dispatcher = new lark.EventDispatcher({}).register({
         'im.message.receive_v1': async (event) => {
+          if (!isCurrent()) return
           await this.handleFeishuWsEvent(connectionId, state, event as FeishuMessageReceiveEvent)
         },
         'card.action.trigger': async (event) => {
+          if (!isCurrent()) return
           await this.handleFeishuCardActionEvent(
             connectionId,
             event as FeishuCardActionReceiveEvent,
@@ -1866,19 +1967,23 @@ export class RemoteConnectionService {
         appId: state.appId,
         appSecret: state.appSecret,
         onReady: () => {
+          if (!isCurrent()) return
           state.running = true
           delete state.lastError
           this.emitChange({ reason: 'runtime-updated', connectionId })
         },
         onReconnecting: () => {
+          if (!isCurrent()) return
           state.running = false
         },
         onReconnected: () => {
+          if (!isCurrent()) return
           state.running = true
           delete state.lastError
           this.emitChange({ reason: 'runtime-updated', connectionId })
         },
         onError: (error) => {
+          if (!isCurrent()) return
           state.running = false
           state.lastError = error instanceof Error ? error.message : String(error)
           this.emitChange({ reason: 'runtime-updated', connectionId })
@@ -1886,10 +1991,19 @@ export class RemoteConnectionService {
       })
       state.client = client
       await client.start({ eventDispatcher: dispatcher })
+      if (!isCurrent()) {
+        try {
+          client.close()
+        } catch {
+          // 过期连接清理失败不影响当前连接状态。
+        }
+        return
+      }
       state.running = true
       delete state.lastError
       this.emitChange({ reason: 'runtime-updated', connectionId })
     } catch (err) {
+      if (this.feishuWsStates.get(connectionId) !== state) return
       state.running = false
       state.lastError = err instanceof Error ? err.message : String(err)
       this.emitChange({ reason: 'runtime-updated', connectionId })
@@ -1933,11 +2047,18 @@ export class RemoteConnectionService {
 
     const value = isRecord(event.action?.value) ? event.action.value : undefined
     const command = readString(value?.command)
-    const externalId = readString(event.open_chat_id) ?? readString(event.chat_id)
+    const externalId =
+      readString(event.context?.open_chat_id) ??
+      readString(event.open_chat_id) ??
+      readString(event.chat_id)
     if (command == null || externalId == null) return
     const operatorId = event.operator?.operator_id
     const senderName =
-      readString(operatorId?.open_id) ?? readString(operatorId?.user_id) ?? '飞书用户'
+      readString(event.operator?.open_id) ??
+      readString(event.operator?.user_id) ??
+      readString(operatorId?.open_id) ??
+      readString(operatorId?.user_id) ??
+      '飞书用户'
     await this.handleInboundMessage(connection, {
       externalId,
       senderName,
@@ -2264,6 +2385,10 @@ export class RemoteConnectionService {
     }
     if (connection.channel === 'qq') {
       await this.sendQqMessage(connection, externalId, outbound)
+      return
+    }
+    if (connection.channel === 'wechat') {
+      await this.weixinChannel.sendMessage(connection, externalId, outbound)
       return
     }
     await this.sendClawMessage(connection, externalId, formatRemoteOutboundText(outbound))
@@ -2830,7 +2955,11 @@ export class RemoteConnectionService {
   }
 
   private writeStore(store: RemoteConnectionStore): void {
-    this.settingsService.set(SETTINGS_CATEGORY, SETTINGS_KEY, store)
+    const raw = this.settingsService.get(SETTINGS_CATEGORY, SETTINGS_KEY)
+    this.settingsService.set(SETTINGS_CATEGORY, SETTINGS_KEY, {
+      ...(isRecord(raw) ? raw : {}),
+      ...store,
+    })
   }
 
   private emitChange(event: RemoteConnectionChangeEvent): void {

@@ -13,7 +13,7 @@ import './AutoRouterHoverCard.less'
  * 纯展示：卡片 `pointer-events: none`，不吃点击也不挡滚动，不需要"悬停接力"，
  * 指针离开行即关闭。定位走 portal + position: fixed（菜单容器有 overflow 裁剪，
  * 卡片必须挂到 document.body），层级 3600 高于 CLI 子菜单的 3500。
- * 开合状态见 ./useAutoRouterHoverCard。
+ * 开合状态见 ./useHoverRevealCard（与渠道限额用量卡共用同一状态机）。
  */
 
 export function AutoRouterHoverCard({

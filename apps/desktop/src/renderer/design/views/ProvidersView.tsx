@@ -30,6 +30,8 @@ import {
 } from './provider/ProviderContextWindowSlider'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
+import { ProviderQuotaSection } from './provider/ProviderQuotaSection'
+import { useProviderQuotas } from './provider/useProviderQuotas'
 import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
 import { appendCustomMediaModelRef } from './provider/providerCustomMediaModelRefs'
 import {
@@ -103,6 +105,7 @@ import type {
   ProviderIconConfig,
   ProviderIconStyle,
   ProviderModelSchedule,
+  ProviderQuotaSnapshot,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provider-card-actions'
@@ -992,6 +995,14 @@ function ProvidersView() {
   const { invoke: exportProvidersToFile } = useIpcInvoke('provider:export-to-file')
   const { invoke: importProvidersFromFile } = useIpcInvoke('provider:import-from-file')
 
+  // ─── 渠道限额（卡片限额胶囊；仅注册表命中的渠道会真实发起查询） ─────────
+  const {
+    quotaMap,
+    errorMap: quotaErrorMap,
+    pendingSet: quotaPendingSet,
+    refresh: refreshQuota,
+  } = useProviderQuotas(profiles)
+
   // 进入多选模式时，清空旧选择
   const enterMultiSelect = useCallback(() => {
     setMultiSelect(true)
@@ -1046,6 +1057,8 @@ function ProvidersView() {
     try {
       const r = await healthCheck({ id })
       setHealthMap((prev) => ({ ...prev, [id]: r }))
+      // 健康检查成功后顺带刷新该渠道限额，保持卡片数据新鲜
+      void refreshQuota(id)
       if (r.healthy) {
         toast.success(`连接成功${r.latencyMs != null ? ` · 延迟 ${r.latencyMs}ms` : ''}`)
       } else {
@@ -1566,6 +1579,10 @@ function ProvidersView() {
                     }}
                     onDelete={() => void handleDelete(p.id)}
                     onHealthCheck={() => void handleHealthCheck(p.id)}
+                    quota={quotaMap[p.id]}
+                    quotaError={quotaErrorMap[p.id]}
+                    quotaLoading={quotaPendingSet.has(p.id)}
+                    onQuotaRefresh={() => void refreshQuota(p.id)}
                     onEnabledChanged={(enabled) => {
                       setProfiles((current) =>
                         current.map((profile) =>
@@ -1863,6 +1880,10 @@ function ProviderCardX({
   onHealthCheck,
   onEnabledChanged,
   scheduledBlockedCount = 0,
+  quota,
+  quotaError,
+  quotaLoading = false,
+  onQuotaRefresh,
 }: {
   providerId: string
   vendor: VendorMeta | null
@@ -1897,6 +1918,14 @@ function ProviderCardX({
   onEnabledChanged?: (enabled: boolean) => void | Promise<void>
   /** 当前处于定时禁用时段内的模型数（峰谷定价规避；读取时判定快照）。 */
   scheduledBlockedCount?: number
+  /** 渠道限额快照（仅注册表命中的渠道有值）；无值且无加载/错误时不渲染限额行 */
+  quota?: ProviderQuotaSnapshot | undefined
+  /** 限额查询失败信息（渲染重试入口） */
+  quotaError?: string | undefined
+  /** 限额查询进行中 */
+  quotaLoading?: boolean | undefined
+  /** 手动重试限额查询 */
+  onQuotaRefresh?: (() => void) | undefined
 }) {
   const { visibleModelIds, hiddenModelIds } = limitProviderCardModelIds(modelIds)
 
@@ -2012,12 +2041,25 @@ function ProviderCardX({
               />
               <span className="ml-1">{statusLabel}</span>
             </Tag>
+            {quota?.planLabel != null && (
+              <span className="pv_quota_plan" title={`套餐档位：${quota.planLabel}`}>
+                {quota.planLabel}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
       {/* ─── 行 2：格式描述（Anthropic / OpenAI / 多媒体 + 默认模型） ─── */}
       <div className="pv_card_row pv_card_row_desc">{desc}</div>
+
+      {/* ─── 行 2.5：限额胶囊（套餐档位 + 各窗口限额；不支持限额查询的渠道不渲染） ─── */}
+      <ProviderQuotaSection
+        quota={quota}
+        error={quotaError}
+        loading={quotaLoading}
+        onRefresh={onQuotaRefresh}
+      />
 
       {/* ─── 行 3：支持的模型 pill 平铺，最多 3 行截断 ─── */}
       {(modelIds.length > 0 || scheduledBlockedCount > 0) && (
