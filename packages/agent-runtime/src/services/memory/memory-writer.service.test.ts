@@ -103,6 +103,96 @@ describe('MemoryWriterService', () => {
     })
   })
 
+  describe('场景 1b：【S2.5】置信度按更新类型重估（废除单调取最大）', () => {
+    it('V1 去重 merge：重复提及不升置信（频次非证据），保持既有值', async () => {
+      // 第一轮：0.65 落库
+      const first = JSON.stringify([
+        {
+          scope: 'user',
+          type: 'user',
+          name: 'coffee-preference',
+          description: '用户只喝拿铁',
+          body: '咖啡偏好：拿铁。',
+          confidence: 0.65,
+        },
+      ])
+      await new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => first,
+      ).maybeWriteFromTurn(basePayload)
+      expect(repo.listByScope('user', null)[0]!.confidence).toBe(0.65)
+
+      // 第二轮：同名候选 0.95，dedup 判定 merge —— 修复前 Math.max 会抬到 0.95
+      const second = JSON.stringify([
+        {
+          scope: 'user',
+          type: 'user',
+          name: 'coffee-preference',
+          description: '用户只喝拿铁（再次提到）',
+          body: '又提了一次拿铁。',
+          confidence: 0.95,
+        },
+      ])
+      await new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async (prompt: string) => {
+          if (prompt.includes('去重判定器')) return 'merge'
+          return second
+        },
+      ).maybeWriteFromTurn(basePayload)
+
+      const row = repo.listByScope('user', null)[0]!
+      expect(row.confidence).toBe(0.65) // 不升；正文仍合并（条数 1）
+      expect(row.version).toBe(2)
+    })
+
+    it('V1 去重 merge：更低置信的重复提及也不拉低既有值（不降级）', async () => {
+      const first = JSON.stringify([
+        {
+          scope: 'user',
+          type: 'user',
+          name: 'editor-choice',
+          description: '用户用 Neovim',
+          body: '编辑器：Neovim。',
+          confidence: 0.9,
+        },
+      ])
+      await new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => first,
+      ).maybeWriteFromTurn(basePayload)
+
+      const second = JSON.stringify([
+        {
+          scope: 'user',
+          type: 'user',
+          name: 'editor-choice',
+          description: '用户用 Neovim（弱信号重述）',
+          body: '又说用 Neovim。',
+          confidence: 0.55,
+        },
+      ])
+      await new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async (prompt: string) => {
+          if (prompt.includes('去重判定器')) return 'merge'
+          return second
+        },
+      ).maybeWriteFromTurn(basePayload)
+
+      // merge 语义 = 保持既有评估（新值不继承旧值是演化 UPDATE 的语义）
+      expect(repo.listByScope('user', null)[0]!.confidence).toBe(0.9)
+    })
+  })
+
   describe('场景 2：应丢 — 置信度 < 0.6', () => {
     it('should not write candidates with confidence < 0.6', async () => {
       const llmReturn = JSON.stringify([

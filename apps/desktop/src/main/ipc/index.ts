@@ -9149,6 +9149,8 @@ export function registerAllIpcHandlers(): void {
     invalidAt: r.invalid_at,
     supersededBy: r.superseded_by,
     version: r.version,
+    authorRole: r.author_role,
+    evidenceStatus: r.evidence_status,
   })
 
   let _memoryStore: MemoryStoreService | null = null

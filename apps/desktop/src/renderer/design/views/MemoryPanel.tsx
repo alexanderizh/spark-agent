@@ -41,6 +41,28 @@ const TYPE_OPTIONS: Array<{ label: string; value: TypeFilter }> = [
   { label: 'Reference', value: 'reference' },
 ]
 
+/** 【S2.5】可解释证据状态（补充计划 §3.1）：展示层用状态替代裸分数 */
+function memoryEvidenceState(entry: {
+  archived: boolean
+  invalidAt: number | null
+  evidenceStatus?: string | null
+  authorRole?: string | null
+}): string {
+  if (entry.invalidAt != null) return '已失效'
+  if (entry.archived) return '已归档'
+  if (entry.evidenceStatus === 'unavailable') return '证据不可用'
+  switch (entry.authorRole) {
+    case 'manual_user':
+      return '用户明确表达'
+    case 'consolidation':
+      return '整合推断'
+    case 'sync_import':
+      return '同步导入'
+    default:
+      return '模型推断'
+  }
+}
+
 export function MemoryPanel() {
   const { invoke: listMemory } = useIpcInvoke('memory:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
@@ -666,7 +688,8 @@ function MemoryDetail({
           scope: {entry.scope}/{entry.scopeRef ?? '∅'}
         </span>
         <span>类型: {entry.type}</span>
-        <span>置信度: {entry.confidence}</span>
+        <span>状态: {memoryEvidenceState(entry)}</span>
+        <span>legacy 置信: {entry.confidence}（仅参考）</span>
         <span>命中: {entry.hitCount}</span>
         <span>来源: {entry.sourceSessionId ?? '手工/对话'}</span>
         <span>创建: {new Date(entry.createdAt).toLocaleString()}</span>

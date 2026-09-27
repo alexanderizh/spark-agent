@@ -280,8 +280,11 @@ export class MemoryWriterService {
     await this.enforceQuota(candidate.scope, scopeRef)
 
     // 写入（【S1B.1】统一提交原语）；来源绑定（S2.1）：手工入口固定标记
-    // manual_user / manual —— 置信度 1.0 表达的是"用户保存意愿"，非证据强度
-    //（两概念拆分属 S2.5，此处先如实标注产生路径）。
+    // manual_user / manual。
+    // 【S2.5】"保存意愿"与"证据状态"拆分：legacy confidence 固定 1.0 只表达
+    // 用户明确要存（迁移期只读保留，不参与合并/比较）；证据的可解释状态由
+    // 展示层从 authorRole/evidenceStatus 派生（MemoryPanel），不再把 1.0
+    // 当作"100% 正确"的证据强度。
     const r = await this.commitService.commitWrite({
       scope: candidate.scope,
       scopeRef,
@@ -355,10 +358,10 @@ export class MemoryWriterService {
           decision === 'merge'
             ? `${await this.storeService.readFile(existing.file_path).catch(() => '')}\n\n---\n\n${candidate.body}`
             : candidate.body
-        const nextConfidence =
-          decision === 'merge'
-            ? Math.max(existing.confidence, candidate.confidence)
-            : candidate.confidence
+        // 【S2.5】置信度按更新类型重估（废除单调取最大）：
+        // merge = 同一断言的重复提及/转述 —— 频次不是证据，独立性不可识别
+        // 时不自动升级，保持既有值；replace = 新版本独立评估，用候选自身值
+        const nextConfidence = decision === 'merge' ? existing.confidence : candidate.confidence
         return this.commitDedupUpdate(existing, candidate, scopeRef, mergedBody, nextConfidence)
       }
       // skip
@@ -376,13 +379,9 @@ export class MemoryWriterService {
             decision === 'merge'
               ? `${await this.storeService.readFile(entry.file_path).catch(() => '')}\n\n---\n\n${candidate.body}`
               : candidate.body
-          return this.commitDedupUpdate(
-            entry,
-            candidate,
-            scopeRef,
-            mergedBody,
-            Math.max(entry.confidence, candidate.confidence),
-          )
+          // 【S2.5】同上：merge 不升置信（重复提及非独立证据）
+          const overlapConfidence = decision === 'merge' ? entry.confidence : candidate.confidence
+          return this.commitDedupUpdate(entry, candidate, scopeRef, mergedBody, overlapConfidence)
         }
       }
     }
@@ -624,7 +623,9 @@ export class MemoryWriterService {
       )
     }
 
-    const nextConfidence = Math.max(target.confidence, candidate.confidence)
+    // 【S2.5】演化 UPDATE 生成新版本：置信度独立评估、不继承旧值（用户
+    // 纠正/实质改写允许下降 —— 单调 max 会让错误的高分永远压过纠正）
+    const nextConfidence = candidate.confidence
     // 【S1B.1】统一提交原语：先写新快照文件，再 CAS 提交（expectedVersion 持
     // 读取时版本——演化决策期间的并发更新/归档/删除会失配丢弃，不覆盖当前状态）。
     const r = await this.commitService.commitWrite({

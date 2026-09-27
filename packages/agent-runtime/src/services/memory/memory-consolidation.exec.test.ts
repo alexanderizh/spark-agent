@@ -217,6 +217,28 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     expect(repo.countByScope('user', null)).toBe(before)
   })
 
+  it('【S2.5】MERGE 合并重复不升置信：keep 维持自身评估', async () => {
+    // keep 0.65，drop 0.95 —— 修复前 Math.max 抬到 0.95
+    const a = await seed('keep-low', '保留条目')
+    const b = await seed('drop-high', '被合并条目')
+    db.raw.prepare('UPDATE memory_entry SET confidence = ? WHERE id = ?').run(0.65, a)
+    db.raw.prepare('UPDATE memory_entry SET confidence = ? WHERE id = ?').run(0.95, b)
+    const raw = JSON.stringify([
+      {
+        action: 'MERGE',
+        keepId: a,
+        dropIds: [b],
+        mergedDescription: '合并后的描述',
+        reason: '同义',
+      },
+    ])
+    const svc = makeService(raw)
+    await svc.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+
+    expect(repo.getById(a)!.confidence).toBe(0.65)
+    expect(repo.getById(b)!.invalid_at).not.toBeNull()
+  })
+
   it('【S2.4】MERGE 产物含敏感信息 → 丢弃动作，keep/drops 均不写', async () => {
     const a = await seed('keep-sens', '保留条目')
     const b = await seed('drop-sens', '被合并条目')

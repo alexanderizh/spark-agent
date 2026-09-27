@@ -3811,6 +3811,10 @@ export interface MemoryEntry {
   supersededBy: string | null
   /** 【S2.4】当前版本号（编辑界面携带为 expectedVersion 做 CAS 条件更新） */
   version: number
+  /** 【S2.5】产生路径角色（manual_user/host_agent/consolidation/sync_import…）—— 展示层据此给可解释状态 */
+  authorRole?: string | null
+  /** 【S2.5】证据状态（available/unavailable）—— 来源不可用时不补造 */
+  evidenceStatus?: string | null
 }
 
 export interface MemoryListRequest {

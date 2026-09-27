@@ -208,7 +208,9 @@ export class MemoryConsolidationService {
       return
     }
 
-    const nextConfidence = Math.max(keep.confidence, ...drops.map((d) => d.confidence))
+    // 【S2.5】合并重复不升置信：多条同义条目合并成一个槽位是去重，不是
+    // 多份独立证据（"十篇转载不算十份独立证据"）；keep 维持自身评估
+    const nextConfidence = keep.confidence
     // 【审查修复】经提交原语 CAS 更新（先写文件后 CAS 的顺序不变，但失配时
     // 会尽力恢复被覆盖的权威正文——原实现直接 compareAndSwap 失配后 keep 的
     // 正文文件已被 mergedBody 覆盖，违反"旧权威版本仍完整"）。expectedVersion
