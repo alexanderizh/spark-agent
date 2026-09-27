@@ -17,6 +17,7 @@ import { createLogger } from '@spark/shared'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 import { upsertFtsRow, deleteFtsRow, ftsTableExists } from './memory-search.repository.js'
+import { FTS_PREPROCESSOR_VERSION, hashFtsInput } from './memory-index-hash.js'
 
 const log = createLogger('storage:memory')
 
@@ -205,6 +206,9 @@ export class MemoryRepository extends BaseRepository {
           description: next.description,
           body,
         })
+        // 【S1B.2 / E5】文本已变 → 向量语义过期：删向量行与索引元数据，
+        // 条目重新进入懒回填队列（旧实现只重建 FTS，向量永久滞留旧文本语义）
+        this.invalidateVecIndex(id)
       }
     })
     tx()
@@ -396,14 +400,76 @@ export class MemoryRepository extends BaseRepository {
       if (!this.ftsAvailable) return
       if (op === 'upsert' && fields != null) {
         upsertFtsRow(this.raw, entryId, fields)
+        // 【S1B.2】FTS 输入摘要落 memory_index_meta（无模型依赖，generation=0；
+        // 供迁移清单校验与"索引是否反映当前文本"诊断）
+        this.upsertFtsIndexMeta(entryId, fields)
       } else if (op === 'delete') {
         deleteFtsRow(this.raw, entryId)
+        this.deleteIndexMetaRow(entryId, 'fts')
       }
     } catch (err) {
       log.warn(
         `memory_fts maintenance failed (${op} ${entryId}): ${err instanceof Error ? err.message : String(err)}`,
       )
     }
+  }
+
+  private upsertFtsIndexMeta(
+    entryId: string,
+    fields: { name: string; description: string; body?: string },
+  ): void {
+    try {
+      this.raw
+        .prepare(
+          `INSERT INTO memory_index_meta
+             (memory_id, index_kind, input_hash, provider, model, model_revision,
+              preprocessor_version, config_generation, built_at)
+           VALUES (?, 'fts', ?, NULL, NULL, NULL, ?, 0, ?)
+           ON CONFLICT(memory_id, index_kind) DO UPDATE SET
+             input_hash = excluded.input_hash,
+             preprocessor_version = excluded.preprocessor_version,
+             built_at = excluded.built_at`,
+        )
+        .run(
+          entryId,
+          hashFtsInput(fields.name, fields.description, fields.body ?? ''),
+          FTS_PREPROCESSOR_VERSION,
+          Date.now(),
+        )
+    } catch (err) {
+      // meta 表由 migration 105 建；此处置信度低于 FTS 行本身，失败不阻断主流程
+      log.warn(
+        `memory_index_meta(fts) maintenance failed (${entryId}): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  private deleteIndexMetaRow(entryId: string, kind: 'vec' | 'fts'): void {
+    try {
+      this.raw
+        .prepare(`DELETE FROM memory_index_meta WHERE memory_id = ? AND index_kind = ?`)
+        .run(entryId, kind)
+    } catch {
+      /* memory_index_meta 表不存在（migration 105 未跑）→ 静默 */
+    }
+  }
+
+  /**
+   * 失效条目的向量索引（E5）：删向量行与 vec 索引元数据，使条目重新进入
+   * 懒回填队列。memory_vec 为运行时惰性建表，不存在时仅清 meta。
+   */
+  private invalidateVecIndex(entryId: string): void {
+    try {
+      const rowidRow = this.raw
+        .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
+        .get(entryId) as { rowid?: number | bigint } | undefined
+      if (rowidRow?.rowid != null) {
+        this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(rowidRow.rowid)
+      }
+    } catch {
+      /* memory_vec 表不存在（sqlite-vec 未加载 / 未 ensureVecTable）→ 跳过 */
+    }
+    this.deleteIndexMetaRow(entryId, 'vec')
   }
 
   /**
@@ -429,6 +495,9 @@ export class MemoryRepository extends BaseRepository {
     } catch {
       /* memory_vec 表不存在（sqlite-vec 未加载 / 未 ensureVecTable）→ 静默 */
     }
+    // 【S1B.2】索引元数据随索引一并清理（vec+fts；fts 行由 maintainFts('delete') 先删）
+    this.deleteIndexMetaRow(entryId, 'vec')
+    this.deleteIndexMetaRow(entryId, 'fts')
   }
 }
 

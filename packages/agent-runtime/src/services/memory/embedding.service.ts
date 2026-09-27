@@ -11,7 +11,8 @@
  */
 
 import { createLogger } from '@spark/shared'
-import type { MemorySearchRepository, MemoryEntryRow } from '@spark/storage'
+import type { MemorySearchRepository, MemoryEntryRow, VecIndexSource } from '@spark/storage'
+import { hashEmbeddingInput } from '@spark/storage'
 import type { ModelService, EmbedResult } from '../model.service.js'
 
 const log = createLogger('memory:embedding')
@@ -31,6 +32,16 @@ export class EmbeddingService {
     private readonly settingsGet: (category: string, key: string) => unknown | null,
   ) {}
 
+  /** 当前 embedding 配置的索引来源描述（ensureVecTable 代际比对用） */
+  private vecSource(): VecIndexSource {
+    const provider = this.settingsGet('memory', 'embeddingProviderId')
+    const model = this.settingsGet('memory', 'embeddingModel')
+    return {
+      provider: typeof provider === 'string' && provider.length > 0 ? provider : null,
+      model: typeof model === 'string' && model.length > 0 ? model : null,
+    }
+  }
+
   /**
    * 便宜的同步预探测：settings 是否配置了 embedding 模型。
    * 真正可用性（网络/key）在首次 embed 调用时确定。
@@ -38,7 +49,12 @@ export class EmbeddingService {
   isConfigured(): boolean {
     const providerId = this.settingsGet('memory', 'embeddingProviderId')
     const model = this.settingsGet('memory', 'embeddingModel')
-    return typeof providerId === 'string' && providerId.length > 0 && typeof model === 'string' && model.length > 0
+    return (
+      typeof providerId === 'string' &&
+      providerId.length > 0 &&
+      typeof model === 'string' &&
+      model.length > 0
+    )
   }
 
   /**
@@ -66,8 +82,9 @@ export class EmbeddingService {
         return null
       }
 
-      // 维度管理：首次确定写 settings；模型更换导致维度变化时重建 vec 表
-      this.searchRepo.ensureVecTable(result.dimension)
+      // 索引配置管理（S1B.2）：首次确定写 settings；provider/model/维度任一
+      // 变化（含同维度模型切换）时重建 vec 表并递增代际，旧向量整体失效
+      this.searchRepo.ensureVecTable(result.dimension, this.vecSource())
       return result.vectors
     } catch (err) {
       log.warn(`embedTexts failed (degrading): ${err instanceof Error ? err.message : String(err)}`)
@@ -94,6 +111,10 @@ export class EmbeddingService {
         const missing = this.searchRepo.listEntriesMissingVec(BACKFILL_BATCH_SIZE)
         if (missing.length === 0) break
 
+        // 【S1B.2 / E6】请求时捕获每条输入摘要：embed 是异步 IO，期间条目
+        // 文本可能被更新；写入时（upsertVec）比对当前摘要，失配丢弃不占位
+        const inputHashes = missing.map((e) => hashEmbeddingInput(e.name, e.description))
+
         // 事务外先算好全部向量（同步事务内禁 await）
         const vectors = await this.embedTexts(missing.map(embeddingTextOf))
         if (vectors == null) {
@@ -101,18 +122,34 @@ export class EmbeddingService {
           break
         }
 
+        let written = 0
+        let stale = 0
         for (let i = 0; i < missing.length; i++) {
-          this.searchRepo.upsertVec(missing[i]!.id, vectors[i]!)
+          const ok = this.searchRepo.upsertVec(missing[i]!.id, vectors[i]!, inputHashes[i])
+          if (ok) written++
+          else stale++
         }
-        total += missing.length
-        log.info(`vector backfill progress: +${missing.length} (total ${total})`)
+        total += written
+        log.info(
+          `vector backfill progress: +${written} (total ${total})` +
+            (stale > 0 ? `, ${stale} discarded (stale input, will re-embed next round)` : ''),
+        )
+
+        // 整批全部失配 = 有并发写者在持续更新条目：本轮终止（条目仍留在
+        // 回填队列，下轮触发时按新文本重算），避免同批条目反复空转
+        if (written === 0 && stale > 0) {
+          log.info('vector backfill stopped: whole batch stale (concurrent writes in progress)')
+          break
+        }
 
         // 让出事件循环，绝不阻塞主对话
         await new Promise((resolve) => setImmediate(resolve))
       }
       if (total > 0) log.info(`vector backfill complete: ${total} entries embedded`)
     } catch (err) {
-      log.warn(`vector backfill failed (will retry next trigger): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `vector backfill failed (will retry next trigger): ${err instanceof Error ? err.message : String(err)}`,
+      )
     } finally {
       this.backfillRunning = false
     }
@@ -145,10 +182,10 @@ export class EmbeddingService {
         log.warn(`rebuild skipped: embedding unavailable (${probe.reason})`)
         return { done: false, reason: `embedding unavailable: ${probe.reason}` }
       }
-      this.searchRepo.rebuildVecTable(probe.dimension)
+      this.searchRepo.rebuildVecTable(probe.dimension, this.vecSource())
       log.info(
-        `rebuild succeeded: vec table dropped+recreated with dimension=${probe.dimension}, `
-        + `backfill scheduled`,
+        `rebuild succeeded: vec table dropped+recreated with dimension=${probe.dimension}, ` +
+          `backfill scheduled`,
       )
       void this.backfillMissingVectors()
       return { done: true }

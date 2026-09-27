@@ -23,6 +23,7 @@ import type { SqliteDatabase } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 import type { MemoryEntryRow } from './memory.repository.js'
 import { segmentCjk, buildFtsMatchQuery } from '../segment-cjk.js'
+import { EMBEDDING_PREPROCESSOR_VERSION, hashEmbeddingInput } from './memory-index-hash.js'
 
 const log = createLogger('storage:memory-search')
 
@@ -64,9 +65,9 @@ export function upsertFtsRow(
   entryId: string,
   fields: { name: string; description: string; body?: string },
 ): void {
-  const rowidRow = raw
-    .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
-    .get(entryId) as { rowid: number | bigint } | undefined
+  const rowidRow = raw.prepare('SELECT rowid FROM memory_entry WHERE id = ?').get(entryId) as
+    | { rowid: number | bigint }
+    | undefined
   if (rowidRow == null) return
   raw.prepare('DELETE FROM memory_fts WHERE rowid = ?').run(rowidRow.rowid)
   raw
@@ -84,9 +85,9 @@ export function upsertFtsRow(
  * rowid 需在 memory_entry 行仍存在时预先取出，故接受 entryId 或显式 rowid。
  */
 export function deleteFtsRow(raw: SqliteDatabase, entryId: string): void {
-  const rowidRow = raw
-    .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
-    .get(entryId) as { rowid: number | bigint } | undefined
+  const rowidRow = raw.prepare('SELECT rowid FROM memory_entry WHERE id = ?').get(entryId) as
+    | { rowid: number | bigint }
+    | undefined
   if (rowidRow == null) return
   raw.prepare('DELETE FROM memory_fts WHERE rowid = ?').run(rowidRow.rowid)
 }
@@ -105,6 +106,27 @@ const FTS_BACKFILL_FLAG_CATEGORY = 'memory'
 const FTS_BACKFILL_FLAG_KEY = 'ftsBackfillDone'
 const VEC_DIMENSION_CATEGORY = 'memory'
 const VEC_DIMENSION_KEY = 'vecDimension'
+/** S1B.2：向量索引配置代际（JSON：dimension/provider/model/generation），取代仅记录维度 */
+const VEC_CONFIG_CATEGORY = 'memory'
+const VEC_CONFIG_KEY = 'vecConfig'
+
+/**
+ * 向量索引配置（S1B.2 索引新鲜度）。
+ * generation 单调递增：dimension / provider / model 任一变化即重建表并 +1，
+ * memory_index_meta 里的旧代际向量整体失效（同维度模型切换不混用旧向量）。
+ */
+export interface VecIndexConfig {
+  dimension: number
+  provider: string | null
+  model: string | null
+  generation: number
+}
+
+/** ensureVecTable / rebuildVecTable 的索引来源描述（当前 embedding 配置） */
+export interface VecIndexSource {
+  provider?: string | null
+  model?: string | null
+}
 
 export class MemorySearchRepository extends BaseRepository {
   private vecLoaded = false
@@ -251,84 +273,218 @@ export class MemorySearchRepository extends BaseRepository {
     return row != null
   }
 
-  /** 读取 settings 中记录的向量维度（未确定时 null） */
+  /** 读取 settings 中记录的向量维度（未确定时 null）。S1B.2 起仅供旧配置回退与诊断。 */
   getVecDimension(): number | null {
-    const row = this.raw
-      .prepare('SELECT value FROM app_settings WHERE category = ? AND key = ?')
-      .get(VEC_DIMENSION_CATEGORY, VEC_DIMENSION_KEY) as { value: string } | undefined
-    if (row == null) return null
-    const dim = Number(JSON.parse(row.value))
-    return Number.isFinite(dim) && dim > 0 ? dim : null
+    return this.getVecConfig()?.dimension ?? null
   }
 
   /**
-   * 确保 memory_vec 表存在且维度匹配。
+   * 读取向量索引配置（S1B.2）。
    *
-   * 维度首次确定时写入 settings；维度变化（更换 embedding 模型）时
-   * 重建表（rebuildVecTable），旧向量丢弃、由懒回填队列重新生成。
+   * 优先读 `app_settings(memory/vecConfig)` JSON；旧库无此键时回退读
+   * `vecDimension` 构造 {provider:null, model:null, generation:1}；
+   * 两者皆无（从未建过向量索引）返回 null。
+   */
+  getVecConfig(): VecIndexConfig | null {
+    const row = this.raw
+      .prepare('SELECT value FROM app_settings WHERE category = ? AND key = ?')
+      .get(VEC_CONFIG_CATEGORY, VEC_CONFIG_KEY) as { value: string } | undefined
+    if (row != null) {
+      try {
+        const parsed = JSON.parse(row.value) as Partial<VecIndexConfig>
+        if (
+          typeof parsed.dimension === 'number' &&
+          Number.isFinite(parsed.dimension) &&
+          parsed.dimension > 0 &&
+          typeof parsed.generation === 'number'
+        ) {
+          return {
+            dimension: Math.floor(parsed.dimension),
+            provider: typeof parsed.provider === 'string' ? parsed.provider : null,
+            model: typeof parsed.model === 'string' ? parsed.model : null,
+            generation: parsed.generation,
+          }
+        }
+      } catch {
+        /* 损坏的 JSON 走回退 */
+      }
+    }
+    // 旧配置回退：只有 vecDimension（S1B.2 之前的库）
+    const legacy = this.raw
+      .prepare('SELECT value FROM app_settings WHERE category = ? AND key = ?')
+      .get(VEC_DIMENSION_CATEGORY, VEC_DIMENSION_KEY) as { value: string } | undefined
+    if (legacy == null) return null
+    const dim = Number(JSON.parse(legacy.value))
+    return Number.isFinite(dim) && dim > 0
+      ? { dimension: Math.floor(dim), provider: null, model: null, generation: 1 }
+      : null
+  }
+
+  /**
+   * 确保 memory_vec 表存在且配置匹配（S1B.2：比代际+维度+来源，不再只比维度）。
+   *
+   * 首次建表写入配置（generation=1）；dimension / provider / model 任一变化
+   * （含同维度模型切换）→ rebuildVecTable 重建并递增 generation，旧向量整体
+   * 失效、由懒回填队列按新代际重新生成。
+   *
+   * source 缺省（未传 provider/model）时只比维度——与旧调用方兼容；
+   * 生产路径（EmbeddingService）总是传当前配置。
    *
    * 前置条件：loadVecExtension() 已成功。
    */
-  ensureVecTable(dimension: number): void {
-    const recorded = this.getVecDimension()
-    if (this.vecTableExists() && recorded === dimension) return
-    if (this.vecTableExists() && recorded !== dimension) {
-      log.warn(`vec dimension changed ${recorded} -> ${dimension}, rebuilding memory_vec`)
-      this.rebuildVecTable(dimension)
+  ensureVecTable(dimension: number, source?: VecIndexSource): void {
+    const recorded = this.getVecConfig()
+    const tableExists = this.vecTableExists()
+    if (!tableExists) {
+      this.createVecTable(dimension, source, 1)
       return
     }
-    this.createVecTable(dimension)
+    if (recorded == null) {
+      // 表存在但配置缺失（settings 被清）：重建并建立代际基线
+      log.warn('memory_vec exists but config missing, rebuilding to establish generation baseline')
+      this.rebuildVecTable(dimension, source)
+      return
+    }
+    const sourceChanged =
+      (source?.provider ?? null) !== recorded.provider || (source?.model ?? null) !== recorded.model
+    if (recorded.dimension === dimension && !sourceChanged) return
+    log.warn(
+      `vec config changed (dim ${recorded.dimension}->${dimension}, ` +
+        `provider ${recorded.provider}->${source?.provider ?? null}, ` +
+        `model ${recorded.model}->${source?.model ?? null}), rebuilding memory_vec`,
+    )
+    this.rebuildVecTable(dimension, source)
   }
 
   /**
-   * 重建 memory_vec 表（维度变化 / 数据修复入口）。
-   * 旧向量全部丢弃，调用方应随后触发懒回填。
+   * 重建 memory_vec 表（配置变化 / 人工数据修复入口）。
+   *
+   * 旧向量全部丢弃，generation 在当前配置基础上 +1（无当前配置则从 1 起），
+   * 并清空 memory_index_meta 的全部 vec 行（kind='fts' 的 FTS 摘要不受影响）。
+   * 调用方应随后触发懒回填。
    */
-  rebuildVecTable(dimension: number): void {
+  rebuildVecTable(dimension: number, source?: VecIndexSource): void {
+    const current = this.getVecConfig()
+    const nextGeneration = (current?.generation ?? 0) + 1
     const tx = this.raw.transaction(() => {
       this.raw.exec('DROP TABLE IF EXISTS memory_vec')
+      this.raw.prepare(`DELETE FROM memory_index_meta WHERE index_kind = 'vec'`).run()
     })
     tx()
-    this.createVecTable(dimension)
-    log.info(`memory_vec rebuilt with dimension ${dimension}`)
+    this.createVecTable(dimension, source, nextGeneration)
+    log.info(
+      `memory_vec rebuilt with dimension ${dimension}, generation ${nextGeneration}` +
+        ` (provider=${source?.provider ?? null}, model=${source?.model ?? null})`,
+    )
   }
 
-  private createVecTable(dimension: number): void {
-    this.raw.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(embedding float[${Math.floor(dimension)}])`)
+  private createVecTable(
+    dimension: number,
+    source: VecIndexSource | undefined,
+    generation: number,
+  ): void {
+    this.raw.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(embedding float[${Math.floor(dimension)}])`,
+    )
+    const config: VecIndexConfig = {
+      dimension: Math.floor(dimension),
+      provider: source?.provider ?? null,
+      model: source?.model ?? null,
+      generation,
+    }
     this.raw
       .prepare(
         `INSERT INTO app_settings (category, key, value, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(category, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       )
-      .run(VEC_DIMENSION_CATEGORY, VEC_DIMENSION_KEY, JSON.stringify(Math.floor(dimension)), new Date().toISOString())
+      .run(VEC_CONFIG_CATEGORY, VEC_CONFIG_KEY, JSON.stringify(config), new Date().toISOString())
+    // 兼容保留：旧维度键同步刷新（旧版本 CLI 读这个键判断表是否匹配）
+    this.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(category, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(
+        VEC_DIMENSION_CATEGORY,
+        VEC_DIMENSION_KEY,
+        JSON.stringify(Math.floor(dimension)),
+        new Date().toISOString(),
+      )
   }
 
   /**
    * 写入/更新一条向量（rowid 对齐 memory_entry rowid）。
    * 向量必须在事务外算好（embed 是异步 IO，事务内禁 await）。
+   *
+   * 【S1B.2 晚到防护（E6）】传入 inputHash（embed 请求时的输入摘要）时，
+   * 事务内先重读条目当前文本算哈希比对：失配（回填期间文本被更新）→
+   * 拒绝写入返回 false，晚到旧文本向量不占位，条目留在回填队列等下轮重算。
+   * 成功写入时同步 upsert memory_index_meta（kind=vec）记录输入摘要与
+   * 当前配置代际。inputHash 缺省时不做防护也不写 meta（旧调用兼容）。
    */
-  upsertVec(entryId: string, vector: number[]): void {
-    const rowidRow = this.raw
-      .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
-      .get(entryId) as { rowid: number | bigint } | undefined
-    if (rowidRow == null) return
-    const rowid = BigInt(rowidRow.rowid)
+  upsertVec(entryId: string, vector: number[], inputHash?: string): boolean {
+    const entryRow = this.raw
+      .prepare('SELECT rowid, name, description FROM memory_entry WHERE id = ?')
+      .get(entryId) as { rowid: number | bigint; name: string; description: string } | undefined
+    if (entryRow == null) return false
+    if (inputHash != null) {
+      const currentHash = hashEmbeddingInput(entryRow.name, entryRow.description)
+      if (currentHash !== inputHash) {
+        log.info(
+          `upsertVec rejected (stale input): id=${entryId} — embedding 请求时的文本已被更新，` +
+            `丢弃晚到向量，条目留在回填队列`,
+        )
+        return false
+      }
+    }
+    const rowid = BigInt(entryRow.rowid)
     const buf = Buffer.from(new Float32Array(vector).buffer)
+    const config = this.getVecConfig()
     const tx = this.raw.transaction(() => {
       this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(rowid)
       this.raw.prepare('INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)').run(rowid, buf)
+      if (inputHash != null) {
+        this.raw
+          .prepare(
+            `INSERT INTO memory_index_meta
+               (memory_id, index_kind, input_hash, provider, model, model_revision,
+                preprocessor_version, config_generation, built_at)
+             VALUES (?, 'vec', ?, ?, ?, NULL, ?, ?, ?)
+             ON CONFLICT(memory_id, index_kind) DO UPDATE SET
+               input_hash = excluded.input_hash, provider = excluded.provider,
+               model = excluded.model, model_revision = excluded.model_revision,
+               preprocessor_version = excluded.preprocessor_version,
+               config_generation = excluded.config_generation, built_at = excluded.built_at`,
+          )
+          .run(
+            entryId,
+            inputHash,
+            config?.provider ?? null,
+            config?.model ?? null,
+            EMBEDDING_PREPROCESSOR_VERSION,
+            config?.generation ?? 0,
+            Date.now(),
+          )
+      }
     })
     tx()
+    return true
   }
 
-  /** 删除一条向量（归档/失效/删除时调用；表不存在时静默跳过） */
+  /** 删除一条向量及其索引元数据（归档/失效/删除时调用；表不存在时静默跳过） */
   deleteVec(entryId: string): void {
     if (!this.vecTableExists()) return
     const rowidRow = this.raw
       .prepare('SELECT rowid FROM memory_entry WHERE id = ?')
       .get(entryId) as { rowid: number | bigint } | undefined
     if (rowidRow == null) return
-    this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(BigInt(rowidRow.rowid))
+    const tx = this.raw.transaction(() => {
+      this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(BigInt(rowidRow.rowid))
+      this.raw
+        .prepare(`DELETE FROM memory_index_meta WHERE memory_id = ? AND index_kind = 'vec'`)
+        .run(entryId)
+    })
+    tx()
   }
 
   /**
@@ -374,15 +530,25 @@ export class MemorySearchRepository extends BaseRepository {
 
     const hits: VecSearchHit[] = rows.map((r) => {
       const { __rowid, ...entry } = r
-      return { entry: entry as MemoryEntryRow, distance: distanceByRowid.get(String(__rowid)) ?? Number.MAX_VALUE }
+      return {
+        entry: entry as MemoryEntryRow,
+        distance: distanceByRowid.get(String(__rowid)) ?? Number.MAX_VALUE,
+      }
     })
     hits.sort((a, b) => a.distance - b.distance)
     return hits.slice(0, opts?.limit ?? 20)
   }
 
   /**
-   * 列出尚未向量化的有效条目（懒回填队列消费）。
-   * memory_vec 不存在时返回全部有效条目。
+   * 列出向量索引已过期/缺失的有效条目（懒回填队列消费，S1B.2 新鲜度判定）。
+   *
+   * 判定依据 memory_index_meta（kind=vec），一条记忆"缺向量"当且仅当：
+   *   1. 无 meta 行（从未建过 / 文本更新后被清理 / 重建后整体失效）；或
+   *   2. meta.input_hash ≠ 当前条目文本哈希（文本已变，旧向量语义过期，E5）；或
+   *   3. meta.config_generation ≠ 当前配置代际（模型切换/重建后旧代际向量，E9）。
+   * 哈希比对在 JS 侧完成（SQLite 无法算 SHA-256）；有效条目量级为配额上限
+   * （数百），全量取出再过滤无性能问题。
+   * memory_vec 表不存在时返回全部有效条目（与旧行为一致）。
    */
   listEntriesMissingVec(limit: number): MemoryEntryRow[] {
     if (!this.vecTableExists()) {
@@ -390,13 +556,24 @@ export class MemorySearchRepository extends BaseRepository {
         .prepare('SELECT * FROM memory_entry WHERE archived = 0 AND invalid_at IS NULL LIMIT ?')
         .all(limit) as MemoryEntryRow[]
     }
-    return this.raw
+    const generation = this.getVecConfig()?.generation ?? 1
+    const rows = this.raw
       .prepare(
-        `SELECT m.* FROM memory_entry m
-         LEFT JOIN memory_vec v ON v.rowid = m.rowid
-         WHERE m.archived = 0 AND m.invalid_at IS NULL AND v.rowid IS NULL
-         LIMIT ?`,
+        `SELECT m.*, meta.input_hash AS meta_input_hash, meta.config_generation AS meta_generation
+         FROM memory_entry m
+         LEFT JOIN memory_index_meta meta
+           ON meta.memory_id = m.id AND meta.index_kind = 'vec'
+         WHERE m.archived = 0 AND m.invalid_at IS NULL`,
       )
-      .all(limit) as MemoryEntryRow[]
+      .all() as Array<
+      MemoryEntryRow & { meta_input_hash: string | null; meta_generation: number | null }
+    >
+    return rows
+      .filter((r) => {
+        if (r.meta_input_hash == null) return true
+        if (r.meta_generation !== generation) return true
+        return r.meta_input_hash !== hashEmbeddingInput(r.name, r.description)
+      })
+      .slice(0, limit)
   }
 }

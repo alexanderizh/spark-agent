@@ -206,7 +206,7 @@ describe('MemorySearchRepository', () => {
     expect(searchRepo.searchKnn([1, 0, 0, 0], { limit: 5 })).toHaveLength(0)
   })
 
-  it('listEntriesMissingVec returns un-embedded entries; upsertVec clears them', async () => {
+  it('listEntriesMissingVec returns un-embedded entries; upsertVec with input hash clears them', async () => {
     await searchRepo.loadVecExtension()
     searchRepo.ensureVecTable(4)
     const a = repo.insert(makeEntry())
@@ -217,7 +217,10 @@ describe('MemorySearchRepository', () => {
         .map((e) => e.id)
         .sort(),
     ).toEqual([a.id, b.id].sort())
-    searchRepo.upsertVec(a.id, [0, 0, 0, 1])
+    // S1B.2 契约：upsertVec 需携带输入摘要（生产路径 EmbeddingService 必传）
+    // 才建立索引元数据并离开回填队列；不带摘要的裸写入（兼容路径）仍视为缺失
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+    searchRepo.upsertVec(a.id, [0, 0, 0, 1], hashEmbeddingInput(a.name, a.description))
     expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([b.id])
   })
 
@@ -238,28 +241,92 @@ describe('MemorySearchRepository', () => {
     expect(searchRepo.getVecDimension()).toBe(16)
   })
 
-  // ─── S0 反例固定（E5）：文本更新与向量新鲜度 ──────────────────────────
-  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.2：
-  // repo.update 在文本变化时只重建 FTS 行，vec 不失效 —— 条目 name/description
-  // 已变，但语义检索仍基于旧文本向量，且该条目不再出现在
-  // listEntriesMissingVec（已有向量），懒回填永远不会重算 → 永久滞后。
-  // 当前用 it.fails 固化"反例成立"；S1B.2 修复（记录 embedding 输入摘要，
-  // 变化即失效重排队）后反转为 it。
-  it.fails(
-    '条目文本（description）更新后旧向量应失效并重新进入回填队列（当前 vec 保留旧文本向量）',
-    async () => {
-      await searchRepo.loadVecExtension()
-      searchRepo.ensureVecTable(4)
+  // ─── S0 反例（E5）→ S1B.2 已修复（2026-09-27 反转） ─────────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.2。
+  // 原 fails 用例：repo.update 文本变化时只重建 FTS，vec 不失效 → 旧文本向量
+  // 永久滞留（条目不在回填队列）。S1B.2 修复（invalidateVecIndex：删向量行
+  // 与 memory_index_meta vec 行 → 重新排队）后反转为 it。
+  it('条目文本（description）更新后旧向量失效并重新进入回填队列（E5 反转）', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4)
 
-      const row = repo.insert(makeEntry({ description: 'vector entry original text' }))
-      searchRepo.upsertVec(row.id, [1, 0, 0, 0])
-      // 前置：已有向量，不在回填队列
-      expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([])
+    const row = repo.insert(makeEntry({ description: 'vector entry original text' }))
+    // 带输入摘要写入：建立 meta（input_hash 与当前文本一致）
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+    searchRepo.upsertVec(
+      row.id,
+      [1, 0, 0, 0],
+      hashEmbeddingInput(row.name, 'vector entry original text'),
+    )
+    // 前置：向量新鲜，不在回填队列
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([])
 
-      repo.update(row.id, { description: 'completely different text after edit' })
+    // S1A.3 契约：文本变更必须带 body
+    repo.update(row.id, { description: 'completely different text after edit' }, '正文内容')
 
-      // 修复目标：embedding 输入（name+description）已变，旧向量应失效 → 重新排队
-      expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
-    },
-  )
+    // 修复后：embedding 输入（name+description）已变，旧向量失效 → 重新排队
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+  })
+
+  // ─── S1B.2 新增：晚到防护（E6）与配置代际 ─────────────────────────────
+  it('upsertVec 携带的输入摘要与条目当前文本失配时拒绝写入（E6 晚到防护）', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4)
+
+    const row = repo.insert(makeEntry({ description: 'original text' }))
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+    // 请求时摘要（旧文本）；完成前条目文本被更新
+    const staleHash = hashEmbeddingInput(row.name, 'original text')
+    repo.update(row.id, { description: 'updated text' }, '正文内容')
+
+    const ok = searchRepo.upsertVec(row.id, [1, 0, 0, 0], staleHash)
+    expect(ok).toBe(false)
+    // 拒绝写入：向量表无行（KNN 无结果），条目仍在回填队列
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+
+    // 按新文本摘要写入成功，条目离开回填队列
+    const freshHash = hashEmbeddingInput(row.name, 'updated text')
+    expect(searchRepo.upsertVec(row.id, [0, 1, 0, 0], freshHash)).toBe(true)
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([])
+  })
+
+  it('同维度模型切换：配置变化触发重建并递增代际，旧代际向量整体失效', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4, { provider: 'prov-a', model: 'embed-v1' })
+    expect(searchRepo.getVecConfig()).toMatchObject({
+      dimension: 4,
+      provider: 'prov-a',
+      model: 'embed-v1',
+      generation: 1,
+    })
+
+    const row = repo.insert(makeEntry({ description: 'generation test' }))
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+    searchRepo.upsertVec(row.id, [1, 0, 0, 0], hashEmbeddingInput(row.name, 'generation test'))
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+
+    // 同维度切换模型（prov-a/embed-v1 → prov-b/embed-v2）：维度未变但来源变了
+    searchRepo.ensureVecTable(4, { provider: 'prov-b', model: 'embed-v2' })
+    const config = searchRepo.getVecConfig()
+    expect(config).toMatchObject({
+      dimension: 4,
+      provider: 'prov-b',
+      model: 'embed-v2',
+      generation: 2,
+    })
+    // 旧向量整体失效：条目重新进入回填队列（按新代际重建）
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+
+    // 新代际写入后再次新鲜
+    searchRepo.upsertVec(row.id, [1, 0, 0, 0], hashEmbeddingInput(row.name, 'generation test'))
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+  })
+
+  it('配置未变化时 ensureVecTable 不重建（generation 稳定）', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4, { provider: 'prov-a', model: 'embed-v1' })
+    const before = searchRepo.getVecConfig()
+    searchRepo.ensureVecTable(4, { provider: 'prov-a', model: 'embed-v1' })
+    expect(searchRepo.getVecConfig()).toEqual(before)
+  })
 })

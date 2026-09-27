@@ -37,6 +37,8 @@ describe('EmbeddingService', () => {
   }
 
   beforeEach(() => {
+    // 测试隔离：上一用例可能清空 settings.memory（未配置分支），每个用例重置
+    settings.memory = { embeddingProviderId: 'prov-1', embeddingModel: 'embed-model' }
     testDir = join(
       tmpdir(),
       `spark-embed-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -80,14 +82,13 @@ describe('EmbeddingService', () => {
     expect(result).toBeNull()
   })
 
-  // ─── S0 反例固定（E6）：晚到向量覆盖 ──────────────────────────────────
-  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.2/S1B.3：
-  // backfillMissingVectors 先读 missing 集合再 await embed，期间条目文本被
-  // update 修改后，晚到的旧文本向量仍被 upsertVec 占位 —— 该条目不再
-  // missing，永不重算（输入与索引永久不一致）。
-  // 当前用 it.fails 固化"反例成立"；S1B 修复（完成时校验输入摘要/版本，
-  // 失配丢弃或重排队）后反转为 it。
-  it.fails('回填期间条目文本被更新：晚到向量不得占位，应重新排队重算', async () => {
+  // ─── S0 反例（E6）→ S1B.2 已修复（2026-09-27 反转） ─────────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.2。
+  // 原 fails 用例：backfillMissingVectors 先读 missing 集合再 await embed，
+  // 期间条目文本被 update 修改后，晚到的旧文本向量仍被 upsertVec 占位 ——
+  // 条目不再 missing，永不重算。S1B.2 修复（请求时捕获输入摘要，upsertVec
+  // 完成时比对当前文本摘要，失配拒绝写入）后反转为 it。
+  it('回填期间条目文本被更新：晚到向量不得占位，应重新排队重算（E6 反转）', async () => {
     let seq = 0
     // deferred 模式：const 持有 resolve，规避闭包赋值的 CFA narrow 限制
     const firstEmbedGate = createDeferred<void>()
@@ -123,18 +124,23 @@ describe('EmbeddingService', () => {
       await new Promise((resolve) => setImmediate(resolve))
     }
 
-    // embed 在途：条目文本被修改（embedding 输入 = name + description 已变）
-    repo.update(row.id, { description: 'embedding input after mid-flight update' })
+    // embed 在途：条目文本被修改（embedding 输入 = name + description 已变；
+    // S1A.3 契约：文本变更必须带 body）
+    repo.update(row.id, { description: 'embedding input after mid-flight update' }, '正文内容')
 
     firstEmbedGate.resolve()
     await backfill
 
-    // 修复目标：晚到的旧输入向量不应占位 —— 再次触发回填时该条目应重算
+    // 修复后：晚到向量被拒（输入摘要失配），条目仍在回填队列
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+
+    // 再次触发回填：按新文本重算
     await embedding.backfillMissingVectors()
 
-    // 当前行为：第一次 upsertVec 后条目不再 missing，第二次回填不会调用 embed
-    //（输入已变但向量已是"旧的"）→ embedInputs.length 停在 1 → 断言失败。
     expect(embedInputs.length).toBeGreaterThanOrEqual(2)
-    expect(embedInputs[1]).toContain('embedding input after mid-flight update')
+    // embedding 输入是 name + '\n' + description 的拼接串
+    expect(embedInputs[1]!.join('\n')).toContain('embedding input after mid-flight update')
+    // 新文本向量已建立，条目离开回填队列
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
   })
 })

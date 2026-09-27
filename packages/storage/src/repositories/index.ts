@@ -362,6 +362,13 @@ export type {
 export { MemoryRepository, hashBodyForGuard } from './memory.repository.js'
 export type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
 export {
+  EMBEDDING_PREPROCESSOR_VERSION,
+  FTS_PREPROCESSOR_VERSION,
+  hashIndexInput,
+  hashEmbeddingInput,
+  hashFtsInput,
+} from './memory-index-hash.js'
+export {
   MemorySearchRepository,
   upsertFtsRow,
   deleteFtsRow,
@@ -372,6 +379,8 @@ export type {
   FtsSearchOptions,
   FtsSearchHit,
   VecSearchHit,
+  VecIndexConfig,
+  VecIndexSource,
 } from './memory-search.repository.js'
 export { MemoryEntityRepository, normalizeEntityName } from './memory-entity.repository.js'
 export type { MemoryEntityRow } from './memory-entity.repository.js'
