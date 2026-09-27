@@ -38,6 +38,8 @@ function makeEntry(id: string, overrides: Partial<MemoryEntryRow> = {}): MemoryE
     extraction_kind: null,
     extraction_model: null,
     evidence_status: 'available',
+    valid_until: null,
+    valid_until_meta: null,
     created_at: NOW,
     updated_at: NOW,
     valid_from: NOW,

@@ -25,6 +25,7 @@ import type {
 } from '@spark/storage'
 import { createLogger, estimateTokensWithOverhead } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
+import { describeValidUntil } from './memory-temporal.js'
 import type { MemorySearchService } from './memory-search.service.js'
 
 const log = createLogger('memory:reader')
@@ -313,6 +314,14 @@ export class MemoryReaderService {
         const superseded = entry.superseded_by != null ? `，已被 [${entry.superseded_by}] 取代` : ''
         return {
           content: `> ⚠️ 此记忆已于 ${when} 失效${superseded}。仅作历史参考，决策时请以取代条目或最新事实为准。\n\n${markdown}`,
+        }
+      }
+      // 【S2.6 / N10】有效期到期：不当当前事实，但按 id 历史读取时带时间标注
+      //（"事实过期但历史查询提到其有效时期 → 可返回历史标注"）；精度/时区
+      // 表达如实说明，不捏造准确时间（date 精度显示"按日"语义）
+      if (entry.valid_until != null && entry.valid_until < Date.now()) {
+        return {
+          content: `> ⏳ 此记忆的有效期已结束（${describeValidUntil(entry.valid_until, entry.valid_until_meta)}）。仅作历史参考 —— 当前的注入与检索已不包含它；如该信息重新适用，请更新或新建对应记忆。\n\n${markdown}`,
         }
       }
       return { content: markdown }

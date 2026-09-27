@@ -9151,6 +9151,8 @@ export function registerAllIpcHandlers(): void {
     version: r.version,
     authorRole: r.author_role,
     evidenceStatus: r.evidence_status,
+    validUntil: r.valid_until,
+    validUntilMeta: r.valid_until_meta,
   })
 
   let _memoryStore: MemoryStoreService | null = null
@@ -9265,6 +9267,16 @@ export function registerAllIpcHandlers(): void {
       body: req.body,
       scopeRef: req.scopeRef,
       ...(req.entities != null ? { entities: req.entities } : {}),
+      // 【S2.6 / N5】有效期透传（manualWrite 内规范化，非法输入结构化拒绝）
+      ...(req.validUntil != null && req.validUntil.trim() !== ''
+        ? {
+            validUntil: {
+              validUntil: req.validUntil,
+              precision: req.validUntilPrecision ?? 'date',
+              ...(req.validUntilTimezone != null ? { timezone: req.validUntilTimezone } : {}),
+            },
+          }
+        : {}),
     })
     if (req.entities != null && req.entities.length > 0) {
       try {

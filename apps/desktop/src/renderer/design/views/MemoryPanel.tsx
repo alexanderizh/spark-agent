@@ -690,6 +690,12 @@ function MemoryDetail({
         <span>类型: {entry.type}</span>
         <span>状态: {memoryEvidenceState(entry)}</span>
         <span>legacy 置信: {entry.confidence}（仅参考）</span>
+        {entry.validUntil != null && (
+          <span>
+            有效期至: {new Date(entry.validUntil).toLocaleString()}
+            {entry.validUntilMeta?.includes('"date"') === true ? '（按日精度）' : ''}
+          </span>
+        )}
         <span>命中: {entry.hitCount}</span>
         <span>来源: {entry.sourceSessionId ?? '手工/对话'}</span>
         <span>创建: {new Date(entry.createdAt).toLocaleString()}</span>
@@ -767,6 +773,8 @@ function MemoryCreate({
   const [desc, setDesc] = useState('')
   const [body, setBody] = useState('')
   const [entities, setEntities] = useState('')
+  // 【S2.6 / N5】有效期（可选，date 精度按本机时区；到期不再作为当前事实）
+  const [validUntil, setValidUntil] = useState('')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
@@ -788,6 +796,9 @@ function MemoryCreate({
         description: desc.trim(),
         body,
         ...(ents.length > 0 ? { entities: ents } : {}),
+        ...(validUntil.trim() !== ''
+          ? { validUntil: validUntil.trim(), validUntilPrecision: 'date' as const }
+          : {}),
       })
       message.success('已新增')
       onDone()
@@ -852,6 +863,14 @@ function MemoryCreate({
           value={body}
           onChange={(e) => setBody((e.target as HTMLTextAreaElement).value)}
           rows={6}
+        />
+      </div>
+      <div className="mp_field">
+        <label>有效期至（可选，YYYY-MM-DD：该日内仍适用，之后仅作历史参考）</label>
+        <LobeInput
+          value={validUntil}
+          onChange={(e) => setValidUntil((e.target as HTMLInputElement).value)}
+          placeholder="如 2026-10-31（留空 = 长期）"
         />
       </div>
       <div className="mp_field">

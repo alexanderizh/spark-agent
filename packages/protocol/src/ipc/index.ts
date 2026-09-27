@@ -3815,6 +3815,10 @@ export interface MemoryEntry {
   authorRole?: string | null
   /** 【S2.5】证据状态（available/unavailable）—— 来源不可用时不补造 */
   evidenceStatus?: string | null
+  /** 【S2.6】有效期结束（UTC ms，半开区间右端）；null = 长期 */
+  validUntil?: number | null
+  /** 【S2.6】精度/时区原始表达（JSON：{"precision":"date","timezone":...}） */
+  validUntilMeta?: string | null
 }
 
 export interface MemoryListRequest {
@@ -3842,6 +3846,11 @@ export interface MemoryCreateRequest {
   description: string
   body: string
   entities?: string[]
+  /** 【S2.6 / N5】有效期（可选）：instant = 完整 ISO 时间；date = YYYY-MM-DD（该日内仍适用） */
+  validUntil?: string
+  validUntilPrecision?: 'instant' | 'date'
+  /** date 精度的 IANA 时区（缺省本机时区） */
+  validUntilTimezone?: string
 }
 export interface MemoryCreateResponse {
   entry: MemoryEntry

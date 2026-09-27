@@ -154,8 +154,14 @@ export class MemorySearchRepository extends BaseRepository {
     const match = buildFtsMatchQuery(query)
     if (match == null) return []
 
-    const conditions: string[] = ['m.archived = 0', 'm.invalid_at IS NULL']
-    const values: unknown[] = [match]
+    // 【S2.6 / N5】到期条目不作为当前事实检索（半开区间，见 memory.repository）
+    const conditions: string[] = [
+      'm.archived = 0',
+      'm.invalid_at IS NULL',
+      '(m.valid_until IS NULL OR m.valid_until >= ?)',
+    ]
+    // 条件顺序 = 绑定顺序：valid_until 条件先于 scopes/type 取参
+    const values: unknown[] = [match, Date.now()]
 
     if (opts?.scopes != null && opts.scopes.length > 0) {
       const scopeClauses = opts.scopes.map(() => '(m.scope = ? AND m.scope_ref IS ?)')
@@ -534,8 +540,14 @@ export class MemorySearchRepository extends BaseRepository {
     for (const r of knnRows) distanceByRowid.set(String(r.rowid), r.distance)
 
     const placeholders = knnRows.map(() => '?').join(', ')
-    const conditions: string[] = ['m.archived = 0', 'm.invalid_at IS NULL']
-    const values: unknown[] = knnRows.map((r) => r.rowid)
+    // 【S2.6 / N5】到期条目不作为当前事实检索（半开区间，见 memory.repository）
+    const conditions: string[] = [
+      'm.archived = 0',
+      'm.invalid_at IS NULL',
+      '(m.valid_until IS NULL OR m.valid_until >= ?)',
+    ]
+    // 条件顺序 = 绑定顺序：rowid IN (...) 后先绑 valid_until 的 now
+    const values: unknown[] = [...knnRows.map((r) => r.rowid), Date.now()]
 
     if (opts?.scopes != null && opts.scopes.length > 0) {
       const scopeClauses = opts.scopes.map(() => '(m.scope = ? AND m.scope_ref IS ?)')
@@ -581,8 +593,12 @@ export class MemorySearchRepository extends BaseRepository {
   listEntriesMissingVec(limit: number): MemoryEntryRow[] {
     if (!this.vecTableExists()) {
       return this.raw
-        .prepare('SELECT * FROM memory_entry WHERE archived = 0 AND invalid_at IS NULL LIMIT ?')
-        .all(limit) as MemoryEntryRow[]
+        .prepare(
+          `SELECT * FROM memory_entry
+           WHERE archived = 0 AND invalid_at IS NULL
+             AND (valid_until IS NULL OR valid_until >= ?) LIMIT ?`,
+        )
+        .all(Date.now(), limit) as MemoryEntryRow[]
     }
     const generation = this.getVecConfig()?.generation ?? 1
     const rows = this.raw
@@ -591,9 +607,10 @@ export class MemorySearchRepository extends BaseRepository {
          FROM memory_entry m
          LEFT JOIN memory_index_meta meta
            ON meta.memory_id = m.id AND meta.index_kind = 'vec'
-         WHERE m.archived = 0 AND m.invalid_at IS NULL`,
+         WHERE m.archived = 0 AND m.invalid_at IS NULL
+           AND (m.valid_until IS NULL OR m.valid_until >= ?)`,
       )
-      .all() as Array<
+      .all(Date.now()) as Array<
       MemoryEntryRow & { meta_input_hash: string | null; meta_generation: number | null }
     >
     return rows

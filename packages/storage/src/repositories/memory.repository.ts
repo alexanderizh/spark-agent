@@ -51,6 +51,18 @@ export interface MemoryEntryRow {
   valid_from: number | null
   /** 事实失效时间；NULL = 仍有效。失效不删文件（M2 演化机制写入）。 */
   invalid_at: number | null
+  /**
+   * 有效期结束（S2.6 / N5，半开区间 [valid_from, valid_until)）。NULL = 长期。
+   * 到期 ≠ 失效：条目保留、历史可查（N10 标注），只是不再作为当前事实注入。
+   */
+  valid_until: number | null
+  /**
+   * valid_until 的精度/时区表达（S2.6，migration 110）：JSON
+   * {"precision":"instant"} 或 {"precision":"date","timezone":"Asia/Shanghai"}。
+   * NULL = instant（存量行语义）。date 精度写入侧已换算为本地日结束（exclusive）
+   * 的 UTC 瞬时，meta 保留原始表达供展示层如实说明。
+   */
+  valid_until_meta: string | null
   /** 被哪条记忆取代（memory_entry.id） */
   superseded_by: string | null
   /**
@@ -96,6 +108,8 @@ export type MemoryEntryInsert = Omit<
   | 'updated_at'
   | 'valid_from'
   | 'invalid_at'
+  | 'valid_until'
+  | 'valid_until_meta'
   | 'superseded_by'
   | 'version'
   | 'content_hash'
@@ -112,6 +126,8 @@ export type MemoryEntryInsert = Omit<
       MemoryEntryRow,
       | 'valid_from'
       | 'invalid_at'
+      | 'valid_until'
+      | 'valid_until_meta'
       | 'superseded_by'
       | 'source_event_id'
       | 'source_turn_id'
@@ -122,6 +138,12 @@ export type MemoryEntryInsert = Omit<
       | 'evidence_status'
     >
   >
+
+/**
+ * 到期未过条件（S2.6 / N5）：valid_until 为空 = 长期有效；否则须 >= 当前时刻。
+ * 半开区间 [valid_from, valid_until) —— 到期即不再作为当前事实返回。
+ */
+const NOT_EXPIRED_SQL = '(valid_until IS NULL OR valid_until >= ?)'
 
 export class MemoryRepository extends BaseRepository {
   /** memory_fts 表存在性缓存（migration 未跑到的旧库降级为不维护 FTS） */
@@ -146,11 +168,11 @@ export class MemoryRepository extends BaseRepository {
           `INSERT INTO memory_entry
            (id, scope, scope_ref, type, name, description, file_path,
             confidence, hit_count, last_hit_at, source_session_id,
-            archived, created_at, updated_at, valid_from, invalid_at, superseded_by,
-            version, content_hash,
+            archived, created_at, updated_at, valid_from, invalid_at, valid_until, valid_until_meta,
+            superseded_by, version, content_hash,
             source_event_id, source_turn_id, author_role, author_agent_id,
             extraction_kind, extraction_model, evidence_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           row.id,
@@ -169,6 +191,8 @@ export class MemoryRepository extends BaseRepository {
           now,
           row.valid_from ?? now,
           row.invalid_at ?? null,
+          row.valid_until ?? null,
+          row.valid_until_meta ?? null,
           row.superseded_by ?? null,
           body != null ? hashBodyForGuard(body) : null,
           row.source_event_id ?? null,
@@ -219,6 +243,8 @@ export class MemoryRepository extends BaseRepository {
       'archived',
       'valid_from',
       'invalid_at',
+      'valid_until',
+      'valid_until_meta',
       'superseded_by',
       // 来源绑定字段（source_event_id/author_role 等）原则不可变，不进手工
       // update 白名单；evidence_status 例外 —— 来源会话删除/恢复需要改写。
@@ -406,6 +432,10 @@ export class MemoryRepository extends BaseRepository {
     }
     if (!opts?.includeInvalid) {
       conditions.push('invalid_at IS NULL')
+      // 【S2.6 / N5】到期 ≠ 失效：默认同样不作为当前事实返回（含失效视图
+      // 供审计/历史查询 —— N7：旧临时约束到期后不自动恢复）
+      conditions.push(NOT_EXPIRED_SQL)
+      values.push(Date.now())
     }
 
     // 安全 LIMIT（审查 HIGH#8）：默认 500，防极端库（数千条）一次性载入打满 IPC / 渲染。

@@ -60,6 +60,13 @@ export interface CommitWriteInput {
   extractionKind?: string | null
   /** 实际调用的提取模型 id */
   extractionModel?: string | null
+  /**
+   * 【S2.6 / N5】有效期（半开区间右端，UTC ms）：到期不再作为当前事实，
+   * 条目保留可查历史。调用方经 memory-temporal.resolveValidUntil 规范化。
+   */
+  validUntil?: number | null
+  /** 精度/时区原始表达（JSON，见 ValidUntilMeta）；供展示层如实说明 */
+  validUntilMeta?: string | null
   links?: string[]
   /**
    * 【审查修复】更新时 revision 历史的收录分类（S2.2）：缺省 'update'；
@@ -148,6 +155,10 @@ export class MemoryCommitService {
           extraction_kind: input.extractionKind ?? null,
           extraction_model: input.extractionModel ?? null,
           evidence_status: 'available',
+          // 【S2.6 / N5】有效期与精度/时区表达（调用方经 resolveValidUntil 规范化）
+          ...(input.validUntil != null
+            ? { valid_until: input.validUntil, valid_until_meta: input.validUntilMeta ?? null }
+            : {}),
         },
         input.body,
       )

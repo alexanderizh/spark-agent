@@ -21,6 +21,7 @@ import type { MemoryEntryRow } from '@spark/storage'
 import { createLogger, SparkError } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
 import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
+import { resolveValidUntil } from './memory-temporal.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
 import { MemoryEvolutionService } from './memory-evolution.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
@@ -245,7 +246,11 @@ export class MemoryWriterService {
    * 跳过 LLM 抽取和置信度闸门，但仍走去重/配额/敏感词闸门。
    */
   async manualWrite(
-    input: Omit<MemoryCandidate, 'confidence'> & { scopeRef: string | null },
+    input: Omit<MemoryCandidate, 'confidence'> & {
+      scopeRef: string | null
+      /** 【S2.6 / N5】有效期输入（规范化见 memory-temporal）；缺省 = 长期 */
+      validUntil?: { validUntil: string; precision: 'instant' | 'date'; timezone?: string }
+    },
   ): Promise<MemoryEntryRow> {
     const candidate: MemoryCandidate = { ...input, confidence: 1.0 }
 
@@ -285,6 +290,17 @@ export class MemoryWriterService {
     // 用户明确要存（迁移期只读保留，不参与合并/比较）；证据的可解释状态由
     // 展示层从 authorRole/evidenceStatus 派生（MemoryPanel），不再把 1.0
     // 当作"100% 正确"的证据强度。
+    // 【S2.6 / N5】有效期规范化：非法输入结构化拒绝（不静默丢弃也不捏造）
+    let validUntilMs: number | null = null
+    let validUntilMetaJson: string | null = null
+    if (input.validUntil != null && input.validUntil.validUntil.trim() !== '') {
+      const resolved = resolveValidUntil(input.validUntil)
+      if (!resolved.ok) {
+        throw new SparkError('VALIDATION_FAILED', `有效期设置无效：${resolved.error}`)
+      }
+      validUntilMs = resolved.untilMs
+      validUntilMetaJson = JSON.stringify(resolved.meta)
+    }
     const r = await this.commitService.commitWrite({
       scope: candidate.scope,
       scopeRef,
@@ -295,6 +311,9 @@ export class MemoryWriterService {
       body: candidate.body,
       authorRole: 'manual_user',
       extractionKind: 'manual',
+      ...(validUntilMs != null
+        ? { validUntil: validUntilMs, validUntilMeta: validUntilMetaJson }
+        : {}),
       links: candidate.links ?? [],
     })
     if (!r.ok) {
