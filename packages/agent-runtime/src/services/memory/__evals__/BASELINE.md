@@ -90,3 +90,5 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/memory/__evals__
 ## 后续 prompt/逻辑改动须跑此集（S0 增补）
 
 S1A/S1B 各切片除上述集外，必须同步反转对应 `it.fails` 用例并在 todolist 进度日志记录；反转后全量重跑本表测试文件。
+
+**S2.1 完成（2026-09-27，commit `21bcc3bf5`）：** 来源绑定落地。迁移 107 `memory_entry` 七列（`source_event_id`/`source_turn_id`/`author_role`/`author_agent_id`/`extraction_kind`/`extraction_model`/`evidence_status`）。新增 `memory-source-attribution.test.ts` 7 用例：host/member 路径系统侧来源落库、**LLM candidate 夹带伪造来源字段不采信**（sourceEventId/authorRole/userConfirmed 等注入全被系统侧真实值覆盖——无注入点由消费侧保证，写入只读 TurnPayload）、无来源上下文如实为空不补造、手工入口固定 manual 标记、更新路径来源不可变（V1 merge 不改写首次创建来源）、`findLastEventIdByTurn` 锚点查询（含跨会话隔离）。consolidation ELEVATE 追加来源断言。storage 侧 session 删除语义反转（`repositories.test.ts`）：`source_session_id` 不再置 NULL，改标 `evidence_status='unavailable'` 保留引用。来源字段随同步协议传递（sync-policy 白名单 + 上行下行 + 旧云端条目标 `sync_import`）。memory 域 172/172、storage 全量 445/445、AccountSync 48/48、三包 typecheck 0 错。
