@@ -79,7 +79,11 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/memory/__evals__
 
 **S1B.1 主体完成（2026-09-27）：** 迁移 104 落地（version/content_hash）；`memory-commit.service.test.ts` 5 用例（CAS 语义）+ reader 守卫 2 用例（哈希失配拒绝/NULL 存量放行）通过。写入口 1/2/4 已统一经提交原语（先快照后 CAS），晚到/并发写入不再覆盖当前状态；读取侧哈希守卫拦截外部覆盖与孤儿快照。memory 域 155/155、storage 349/349。
 
-**S1B.2 完成（2026-09-27，commit `c68132a99`）：** E5（search repo 层 fails）与 E6（embedding 层 fails）已反转为 `it` 并通过——文本更新失效旧向量重新排队（`invalidateVecIndex`）、回填晚到向量按输入摘要比对拒绝占位（`upsertVec` 第三参）。新增 3 组用例：E6 防护（repo 层）、同维度模型切换重建+代际失效、代际稳定。既有 `listEntriesMissingVec` 用例按新契约更新（upsertVec 需带输入摘要才离开回填队列）。**顺带修正**：embedding.service.test 的 settings 跨用例污染——此前 E6 的 `it.fails` 通过实为超时假阳性（首个用例清空 settings.memory 未恢复，第二用例 embed 永不被调用而自旋超时；fails 语义把超时当"反例成立"），反转时暴露并修复测试隔离。storage 全量 442/442、memory 域 155/155。仍在 `fails` 状态：E3/F4/E1（文件与投影同步，待 S1B.4）。
+**S1B.2 完成（2026-09-27，commit `c68132a99`）：** E5（search repo 层 fails）与 E6（embedding 层 fails）已反转为 `it` 并通过——文本更新失效旧向量重新排队（`invalidateVecIndex`）、回填晚到向量按输入摘要比对拒绝占位（`upsertVec` 第三参）。新增 3 组用例：E6 防护（repo 层）、同维度模型切换重建+代际失效、代际稳定。既有 `listEntriesMissingVec` 用例按新契约更新（upsertVec 需带输入摘要才离开回填队列）。**顺带修正**：embedding.service.test 的 settings 跨用例污染——此前 E6 的 `it.fails` 通过实为超时假阳性（首个用例清空 settings.memory 未恢复，第二用例 embed 永不被调用而自旋超时；fails 语义把超时当"反例成立"），反转时暴露并修复测试隔离。storage 全量 442/442、memory 域 155/155。
+
+**S1B.3 完成（2026-09-27，commit `dab4969a0`）：** 无 fails 反转（本切片为新增防护而非反例修复）。`upsertVec` 升级为三重期望值事务内条件提交（终态 `archived=0 AND invalid_at IS NULL` + 输入摘要 + 索引代际，任一失配影响 0 行即丢弃/重排队）；`embedTexts` 改为请求时捕获 embedding 配置并返回 `{vectors, generation}`；整合防重入双升级（实例锁 → 进程级 static 互斥 + `lastConsolidationAt` 占坑前置至 LLM 前）。新增 7 用例：repo 层终态/代际拒绝 3 例、embedding 并发重建收敛 2 例、consolidation 占坑防重入 2 例。memory 域 159/159、storage 全量 445/445。
+
+**S1B.4 完成（2026-09-27，commit `72747df74`）：** E3（2 条）+ F4（2 条）+ E1（1 条）共 5 条 fails 已反转为 `it` 并通过（均改走 `MemoryLifecycleService` 序列）——至此 S0 固定的全部反例（E1–E7）已反转完毕。新增 6 用例：删除状态机走查、删除/归档幂等（not_found / 重复归档补写回）、清理失败置 failed 保留目标 + `retryFailed` 收敛、cleaning 中断恢复、屏障未设完恢复。迁移 106 `memory_operation` + `MemoryOperationRepository` + `MemoryLifecycleService`（删除/归档唯一收敛入口，scope 感知 store）。memory 域 165/165、storage 全量 445/445、四包 typecheck 0 错。UI 文案与 blocked_locally 状态分支经类型静态校验，未真机验证（真机验收按项目规则由用户手动完成）。
 
 ## 后续 prompt/逻辑改动须跑此集（S0 增补）
 
