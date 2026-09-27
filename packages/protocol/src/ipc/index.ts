@@ -3879,6 +3879,70 @@ export interface MemoryRebuildVectorsResponse {
   reason?: string
 }
 
+// ─── S2.2 revision 历史 / 显式 supersede / retract ─────────────────────
+
+export interface MemoryHistoryRequest {
+  id: string
+}
+/**
+ * S2.2 / N10：版本链 + 派生关系查询。coverage 如实说明记录起点
+ * （migration 108 之前的历史不存在，不补造）。
+ */
+export interface MemoryHistoryResponse {
+  ok: boolean
+  error?: string
+  entry?: {
+    id: string
+    name: string
+    scope: string
+    scopeRef: string | null
+    type: string
+    currentVersion: number
+    invalidAt: number | null
+    supersededBy: string | null
+  }
+  /** 版本链（旧 → 新），不含当前版本 */
+  revisions?: Array<{
+    version: number
+    name: string
+    description: string
+    body: string
+    confidence: number
+    authorRole: string | null
+    validFrom: number
+    supersededAt: number
+    supersedeKind: 'update' | 'merge' | 'supersede' | 'retract'
+    successorId: string | null
+    note: string | null
+  }>
+  /** 该条目派生出的下游（撤回来源时的待复核范围） */
+  derivationsFrom?: Array<{ sourceId: string; derivedId: string; kind: string; createdAt: number }>
+  /** 该条目的来源边（由哪些条目派生而来） */
+  derivationsOf?: Array<{ sourceId: string; derivedId: string; kind: string; createdAt: number }>
+  coverage?: { since: string; complete: boolean; note: string }
+}
+export interface MemorySupersedeRequest {
+  oldId: string
+  newId: string
+  note?: string
+}
+/** S2.2：显式替代（保留历史，与 delete 物理清除相对） */
+export interface MemorySupersedeResponse {
+  ok: boolean
+  status?: 'complete' | 'not_found' | 'conflict'
+  error?: string
+}
+export interface MemoryRetractRequest {
+  id: string
+  note?: string
+}
+/** S2.2：撤回作废（停止作为当前事实，历史可查，N10 历史标注） */
+export interface MemoryRetractResponse {
+  ok: boolean
+  status?: 'complete' | 'not_found' | 'conflict'
+  error?: string
+}
+
 /** 主动探测抽取配置是否可用（避免静默失败，审查 HIGH#6） */
 export interface MemoryTestExtractionRequest {}
 export interface MemoryTestExtractionResponse {
@@ -7500,6 +7564,9 @@ export interface IpcChannelMap
   'memory:delete': [MemoryDeleteRequest, MemoryDeleteResponse]
   'memory:rebuild-vectors': [MemoryRebuildVectorsRequest, MemoryRebuildVectorsResponse]
   'memory:test-extraction': [MemoryTestExtractionRequest, MemoryTestExtractionResponse]
+  'memory:history': [MemoryHistoryRequest, MemoryHistoryResponse]
+  'memory:supersede': [MemorySupersedeRequest, MemorySupersedeResponse]
+  'memory:retract': [MemoryRetractRequest, MemoryRetractResponse]
 
   // Settings
   'settings:get': [SettingsGetRequest, SettingsGetResponse]

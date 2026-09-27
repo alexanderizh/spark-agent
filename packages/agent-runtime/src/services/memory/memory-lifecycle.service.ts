@@ -27,7 +27,9 @@ import type {
   MemoryOperationRow,
   MemoryOperationRepository,
   MemoryRepository,
+  MemoryRevisionRepository,
 } from '@spark/storage'
+import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
 
 const log = createLogger('memory:lifecycle')
@@ -40,11 +42,23 @@ export interface LifecycleResult {
   error?: string
 }
 
+/** supersede/retract 操作结果（轻量语义操作，不走 memory_operation 状态机） */
+export interface SemanticsResult {
+  ok: boolean
+  status: 'complete' | 'not_found' | 'conflict'
+  error?: string
+}
+
 export class MemoryLifecycleService {
   constructor(
     private readonly memoryRepo: MemoryRepository,
     private readonly storeService: MemoryStoreService,
     private readonly opRepo: MemoryOperationRepository,
+    /**
+     * 【S2.2】revision 历史与派生边：supersede/retract 保留当前版本进历史、
+     * 记录派生边；delete 物理清理全部历史。缺省 null = 不记录（降级可用）。
+     */
+    private readonly revisionRepo?: MemoryRevisionRepository | null,
     /**
      * 按 scope 解析 store（project scope 的文件与投影在 workspace 目录下，
      * 需 per-workspace 构造；缺省统一用 storeService——user/agent 单例场景）。
@@ -88,8 +102,11 @@ export class MemoryLifecycleService {
     })
 
     // 1. 屏障：DB+FTS+vec 同事务清除（repo.delete 内含索引清理）。
-    // 晚到异步写入（回填/整合/去重）此后因目标行不存在被拒绝
+    // 晚到异步写入（回填/整合/去重）此后因目标行不存在被拒绝。
+    // 【S2.2】显式删除是物理清除意愿：revision 历史与派生边一并清理
+    //（与 supersede/retract 保留历史相对）
     this.memoryRepo.delete(entryId)
+    this.revisionRepo?.deleteAllForMemory(entryId)
     this.opRepo.updateStatus(op.id, 'barrier_set')
 
     // 2. 磁盘清理 + 投影刷新
@@ -135,6 +152,77 @@ export class MemoryLifecycleService {
     } catch (err) {
       return this.markFailed(op, err)
     }
+  }
+
+  /**
+   * 【S2.2】显式替代：oldEntry 的当前版本进 revision 历史（successor 指向
+   * newEntry）→ 置 invalid_at + superseded_by → 记派生边 → 投影刷新。
+   * 与 delete 的区别：条目与正文文件保留（历史可查），仅停止作为当前事实。
+   */
+  async supersedeEntry(oldId: string, newId: string, note?: string): Promise<SemanticsResult> {
+    const old = this.memoryRepo.getById(oldId)
+    if (old == null) return { ok: true, status: 'not_found' }
+    if (old.invalid_at != null || old.archived === 1) {
+      return { ok: false, status: 'conflict', error: 'entry already inactive' }
+    }
+    const successor = this.memoryRepo.getById(newId)
+    if (successor == null) {
+      return { ok: false, status: 'not_found', error: `successor entry not found: ${newId}` }
+    }
+
+    let oldBody = ''
+    try {
+      // 守卫哈希同款规范化，revision 正文口径统一
+      oldBody = normalizeBodyForGuard(
+        await this.storeFor(old.scope, old.scope_ref).readFile(old.file_path),
+      )
+    } catch {
+      log.warn(`supersede: 旧正文读取失败（历史版本以空正文入档）：${old.file_path}`)
+    }
+
+    this.memoryRepo.update(oldId, { invalid_at: Date.now(), superseded_by: newId }, undefined, {
+      oldBody,
+      kind: 'supersede',
+      successorId: newId,
+      note: note ?? 'explicit supersede',
+    })
+    this.revisionRepo?.insertDerivation(oldId, newId, 'supersede')
+    await this.refreshProjection(old.scope, old.scope_ref)
+    log.info(`supersede complete: ${oldId} → ${newId}`)
+    return { ok: true, status: 'complete' }
+  }
+
+  /**
+   * 【S2.2】撤回作废：条目停止作为当前事实使用（invalid_at，不指向替代者），
+   * 当前版本进 revision 历史（kind='retract'）+ 投影刷新。显式历史查询仍可
+   * 展示"已作废"（N10），不能以热度复活；正文文件保留。
+   */
+  async retractEntry(entryId: string, note?: string): Promise<SemanticsResult> {
+    const entry = this.memoryRepo.getById(entryId)
+    if (entry == null) return { ok: true, status: 'not_found' }
+    if (entry.invalid_at != null || entry.archived === 1) {
+      // 已失效/归档的重复撤回幂等成功（语义已达成）
+      return { ok: true, status: 'complete' }
+    }
+
+    let oldBody = ''
+    try {
+      // 守卫哈希同款规范化，revision 正文口径统一
+      oldBody = normalizeBodyForGuard(
+        await this.storeFor(entry.scope, entry.scope_ref).readFile(entry.file_path),
+      )
+    } catch {
+      log.warn(`retract: 正文读取失败（历史版本以空正文入档）：${entry.file_path}`)
+    }
+
+    this.memoryRepo.update(entryId, { invalid_at: Date.now() }, undefined, {
+      oldBody,
+      kind: 'retract',
+      note: note ?? 'explicit retract',
+    })
+    await this.refreshProjection(entry.scope, entry.scope_ref)
+    log.info(`retract complete: ${entryId}`)
+    return { ok: true, status: 'complete' }
   }
 
   /**
@@ -201,6 +289,7 @@ export class MemoryLifecycleService {
       // 屏障幂等：行已删时 delete 无害跳过；行仍在（屏障未设完即中断）则补删
       if (this.memoryRepo.getById(op.target_id) != null) {
         this.memoryRepo.delete(op.target_id)
+        this.revisionRepo?.deleteAllForMemory(op.target_id)
       }
       this.opRepo.updateStatus(op.id, 'barrier_set')
       await this.purgeLocalArtifacts(op.id, {

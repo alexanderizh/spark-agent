@@ -15,8 +15,14 @@
  *   - SettingsService (读取 memory 配置)
  */
 
-import { MemoryRepository, hashBodyForGuard } from '@spark/storage'
-import type { MemoryEntryRow, MemoryScopeFilter } from '@spark/storage'
+import { MemoryRepository, hashBodyForGuard, buildRevisionCoverage } from '@spark/storage'
+import type {
+  MemoryEntryRow,
+  MemoryRevisionRow,
+  MemoryDerivationRow,
+  MemoryRevisionRepository,
+  MemoryScopeFilter,
+} from '@spark/storage'
 import { createLogger, estimateTokensWithOverhead } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
 import type { MemorySearchService } from './memory-search.service.js'
@@ -59,6 +65,35 @@ export interface MemoryRecallAccess {
 }
 
 /**
+ * revision 历史查询结果（S2.2 / N10）。
+ * 历史版本仅返回元数据 + 正文 —— 供"当时的状态"追问与审计；
+ * coverage 如实说明记录起点，不伪造完整版本链（旧历史不补造）。
+ */
+export interface MemoryRevisionHistory {
+  entry: {
+    id: string
+    name: string
+    scope: string
+    scopeRef: string | null
+    type: string
+    currentVersion: number
+    invalidAt: number | null
+    supersededBy: string | null
+  }
+  /** 版本链（旧 → 新），不含当前版本（当前版本在 memory_entry 行 + 正文文件） */
+  revisions: MemoryRevisionRow[]
+  /** 该条目派生出的下游（撤回来源时的待复核范围） */
+  derivationsFrom: MemoryDerivationRow[]
+  /** 该条目的来源边（由哪些条目派生而来） */
+  derivationsOf: MemoryDerivationRow[]
+  /**
+   * 历史覆盖说明：revision 记录自 migration 108 启用（2026-09-27）起；
+   * 首条 revision 之前的版本不存在是已知事实，不是数据丢失。
+   */
+  coverage: { since: string; complete: boolean; note: string }
+}
+
+/**
  * 判断条目是否落在允许 scope 集合内（scope + scopeRef 双匹配；
  * null 与 undefined 归一比较）。读入口统一走本函数，不各自实现。
  */
@@ -82,6 +117,8 @@ export class MemoryReaderService {
      * 为 null/未提供时退回 V1 行为（全量 + type 优先级裁剪）。
      */
     private readonly searchService: MemorySearchService | null = null,
+    /** 【S2.2】revision 历史仓库（getRevisionHistory 用）；缺省 null 时历史查询返回空 + 说明 */
+    private readonly revisionRepo: MemoryRevisionRepository | null = null,
   ) {}
 
   /**
@@ -282,6 +319,52 @@ export class MemoryReaderService {
     } catch (err) {
       log.warn(`recall failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)
       return { content: '', error: `Failed to read memory file: ${id}` }
+    }
+  }
+
+  /**
+   * 【S2.2 / N10】revision 历史查询：一条记忆的版本链 + 派生关系。
+   *
+   * - 失效/归档条目仍可查历史（内容尚保留；与物理删除不同），返回的
+   *   revision 带 supersede_kind/valid_from 标注 —— 历史标注不当当前事实。
+   * - 访问上下文与 recall 同源校验（缺省拒绝、越范围拒绝）。
+   * - coverage 如实说明记录起点：migration 108 之前的版本不存在是已知事实。
+   */
+  async getRevisionHistory(
+    id: string,
+    access?: MemoryRecallAccess,
+  ): Promise<{ history?: MemoryRevisionHistory; error?: string }> {
+    const entry = this.memoryRepo.getById(id)
+    if (entry == null) {
+      return { error: `Memory not found: ${id}` }
+    }
+    if (access == null || access.allowedScopes.length === 0) {
+      return { error: `Memory access denied: history query requires an access context (id=${id})` }
+    }
+    if (!isEntryInScopes(entry, access.allowedScopes)) {
+      return { error: `Memory access denied: ${id} is outside the allowed scopes for this session` }
+    }
+
+    const revisions = this.revisionRepo?.listRevisions(id) ?? []
+    const derivationsFrom = this.revisionRepo?.listDerivationsFrom(id) ?? []
+    const derivationsOf = this.revisionRepo?.listDerivationsOf(id) ?? []
+    return {
+      history: {
+        entry: {
+          id: entry.id,
+          name: entry.name,
+          scope: entry.scope,
+          scopeRef: entry.scope_ref,
+          type: entry.type,
+          currentVersion: entry.version,
+          invalidAt: entry.invalid_at,
+          supersededBy: entry.superseded_by,
+        },
+        revisions,
+        derivationsFrom,
+        derivationsOf,
+        coverage: buildRevisionCoverage(entry, revisions),
+      },
     }
   }
 

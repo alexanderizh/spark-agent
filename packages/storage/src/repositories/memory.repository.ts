@@ -21,6 +21,17 @@ import { FTS_PREPROCESSOR_VERSION, hashFtsInput } from './memory-index-hash.js'
 
 const log = createLogger('storage:memory')
 
+/**
+ * update 时保留被覆盖版本到 memory_revision（S2.2）。
+ * oldBody 由调用方在写新正文快照之前读出（文件会被原子替换，事务内已读不到）。
+ */
+export interface UpdateRevisionCapture {
+  oldBody: string
+  kind: 'update' | 'merge' | 'supersede' | 'retract'
+  successorId?: string | null
+  note?: string | null
+}
+
 export interface MemoryEntryRow {
   id: string
   scope: 'user' | 'project' | 'agent'
@@ -186,6 +197,7 @@ export class MemoryRepository extends BaseRepository {
     id: string,
     patch: Partial<Omit<MemoryEntryRow, 'id' | 'created_at'>>,
     body?: string,
+    revision?: UpdateRevisionCapture,
   ): MemoryEntryRow {
     const existing = this.findById<MemoryEntryRow>(id)
     if (existing == null) throw new Error(`Memory entry not found: ${id}`)
@@ -241,6 +253,35 @@ export class MemoryRepository extends BaseRepository {
       ('description' in patch && patch.description !== existing.description)
 
     const tx = this.raw.transaction(() => {
+      // 【S2.2】同事务保留被覆盖版本（调用方在写新快照前已读出旧正文）。
+      // INSERT OR IGNORE 幂等：同版本重复保留（重试路径）静默跳过。
+      if (revision != null) {
+        this.raw
+          .prepare(
+            `INSERT OR IGNORE INTO memory_revision
+               (memory_id, version, type, name, description, body, content_hash, confidence,
+                author_role, source_event_id, valid_from, superseded_at, supersede_kind,
+                successor_id, note)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            existing.id,
+            existing.version,
+            existing.type,
+            existing.name,
+            existing.description,
+            revision.oldBody,
+            existing.content_hash ?? '',
+            existing.confidence,
+            existing.author_role,
+            existing.source_event_id,
+            existing.updated_at,
+            Date.now(),
+            revision.kind,
+            revision.successorId ?? null,
+            revision.note ?? null,
+          )
+      }
       this.raw.prepare(`UPDATE memory_entry SET ${fields.join(', ')} WHERE id = ?`).run(...values)
       if (becomesInactive) {
         this.maintainFts('delete', id)
@@ -291,6 +332,7 @@ export class MemoryRepository extends BaseRepository {
     expectedVersion: number,
     patch: Partial<Omit<MemoryEntryRow, 'id' | 'created_at'>>,
     body?: string,
+    revision?: UpdateRevisionCapture,
   ): MemoryEntryRow | null {
     const existing = this.findById<MemoryEntryRow>(id)
     if (existing == null) return null
@@ -305,7 +347,7 @@ export class MemoryRepository extends BaseRepository {
       )
       return null
     }
-    return this.update(id, patch, body)
+    return this.update(id, patch, body, revision)
   }
 
   /**
@@ -569,5 +611,13 @@ function sha256Hex(text: string): string {
  * renderMemoryFile 会在 body 后追加一个换行）共用本函数，保证两侧可比。
  */
 export function hashBodyForGuard(body: string): string {
-  return sha256Hex(body.replace(/\n+$/, ''))
+  return sha256Hex(normalizeBodyForGuard(body))
+}
+
+/**
+ * 正文守卫规范化口径（S2.2 起 revision 历史同口径）：去尾部换行。
+ * readFile 返回 render 追加的尾部 "\n"，写入侧哈希与历史正文都按本口径统一。
+ */
+export function normalizeBodyForGuard(body: string): string {
+  return body.replace(/\n+$/, '')
 }

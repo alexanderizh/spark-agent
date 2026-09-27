@@ -359,8 +359,12 @@ export type {
   ExecutionQueryOptions,
   ExecutionStats,
 } from './task-execution.repository.js'
-export { MemoryRepository, hashBodyForGuard } from './memory.repository.js'
-export type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
+export { MemoryRepository, hashBodyForGuard, normalizeBodyForGuard } from './memory.repository.js'
+export type {
+  MemoryEntryRow,
+  MemoryEntryInsert,
+  UpdateRevisionCapture,
+} from './memory.repository.js'
 export {
   EMBEDDING_PREPROCESSOR_VERSION,
   FTS_PREPROCESSOR_VERSION,
@@ -391,6 +395,15 @@ export type {
   MemoryOperationRow,
   InsertMemoryOperationParams,
 } from './memory-operation.repository.js'
+export { MemoryRevisionRepository, buildRevisionCoverage } from './memory-revision.repository.js'
+export type {
+  MemoryRevisionKind,
+  MemoryDerivationKind,
+  MemoryRevisionRow,
+  InsertMemoryRevisionParams,
+  MemoryDerivationRow,
+  RevisionCoverage,
+} from './memory-revision.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

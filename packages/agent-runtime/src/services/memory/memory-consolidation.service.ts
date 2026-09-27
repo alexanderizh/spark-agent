@@ -16,7 +16,13 @@
 
 import crypto from 'node:crypto'
 import { createLogger } from '@spark/shared'
-import type { MemoryRepository, MemoryEntityRepository, MemoryEntryRow } from '@spark/storage'
+import type {
+  MemoryRepository,
+  MemoryEntityRepository,
+  MemoryEntryRow,
+  MemoryRevisionRepository,
+} from '@spark/storage'
+import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
 import { buildConsolidationPrompt } from './memory-extraction.prompt.js'
@@ -53,6 +59,8 @@ export class MemoryConsolidationService {
     private readonly entityRepo: MemoryEntityRepository | null = null,
     /** 读/写 app_settings（lastConsolidationAt 标记）；默认走 memoryRepo.db 不便，故注入 */
     private readonly settingsSet?: (category: string, key: string, value: unknown) => void,
+    /** 【S2.2】revision 历史与派生边（MERGE/ELEVATE 保留旧版本与来源关系）；缺省不记录 */
+    private readonly revisionRepo: MemoryRevisionRepository | null = null,
   ) {}
 
   /** @visibleForTesting 复位进程级互斥（仅测试隔离用） */
@@ -152,14 +160,20 @@ export class MemoryConsolidationService {
     } catch {
       /* keep 无正文也能继续 */
     }
+    // 【S2.2】keep 的被覆盖版本正文（守卫哈希同款规范化，随 CAS 进 revision 历史）
+    const keepOldBody = normalizeBodyForGuard(mergedBody)
 
     const drops: MemoryEntryRow[] = []
+    const dropBodies = new Map<string, string>()
     for (const dropId of action.dropIds) {
       const drop = this.memoryRepo.getById(dropId)
       if (drop == null || drop.invalid_at != null || drop.id === keep.id) continue
       drops.push(drop)
       try {
-        const dropBody = await this.storeService.readFile(drop.file_path).catch(() => '')
+        const dropBody = normalizeBodyForGuard(
+          await this.storeService.readFile(drop.file_path).catch(() => ''),
+        )
+        dropBodies.set(drop.id, dropBody)
         if (dropBody.length > 0 || drop.description.length > 0) {
           // drop 随后会失效；这里必须保留全文，否则旧实现只取前 400 字会造成不可恢复的数据丢失。
           mergedBody += `\n\n## 合并自 ${drop.id}（${drop.name}）\n${drop.description}${dropBody.length > 0 ? '\n\n' + dropBody : ''}`
@@ -196,6 +210,8 @@ export class MemoryConsolidationService {
       keep.version,
       { description: action.mergedDescription, confidence: nextConfidence },
       mergedBody,
+      // 【S2.2】被覆盖的 keep 版本进 revision 历史（kind='merge'）
+      { oldBody: keepOldBody, kind: 'merge', successorId: null, note: 'consolidation merge' },
     )
     if (committed == null) {
       log.warn(
@@ -205,10 +221,18 @@ export class MemoryConsolidationService {
       return
     }
 
-    // dropIds 失效，指向 keep
+    // dropIds 失效，指向 keep。【S2.2】每个 drop 的当前版本进 revision 历史
+    // （kind='supersede'，successor 指向 keep）+ 记录派生边 drop → keep
+    //（来源撤回时可沿边找到派生条目，H2 纠正影响传播）
     const now = Date.now()
     for (const drop of drops) {
-      this.memoryRepo.update(drop.id, { invalid_at: now, superseded_by: keep.id })
+      this.memoryRepo.update(drop.id, { invalid_at: now, superseded_by: keep.id }, undefined, {
+        oldBody: dropBodies.get(drop.id) ?? '',
+        kind: 'supersede',
+        successorId: keep.id,
+        note: 'consolidation merge',
+      })
+      this.revisionRepo?.insertDerivation(drop.id, keep.id, 'merge')
     }
     log.debug(`consolidation MERGE: keep ${keep.id} ← drop ${drops.map((d) => d.id).join(',')}`)
   }
@@ -289,6 +313,11 @@ export class MemoryConsolidationService {
           `ELEVATE entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
         )
       }
+    }
+    // 【S2.2】派生边 source → 新条目（kind='elevate'）：撤回任一来源时可沿边
+    // 找到升华条目标记待复核（H2 纠正影响传播）
+    for (const src of validSources) {
+      this.revisionRepo?.insertDerivation(src.id, id, 'elevate')
     }
     log.debug(`consolidation ELEVATE: ${id} ← sources ${validSources.map((s) => s.id).join(',')}`)
   }

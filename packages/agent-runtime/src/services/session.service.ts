@@ -499,6 +499,7 @@ import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
 import { TurnPerfRepository } from '@spark/storage'
 import { MemoryEntityRepository } from '@spark/storage'
+import { MemoryRevisionRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -6408,6 +6409,7 @@ export class SessionService {
             memStore,
             memSettingsGet,
             memSearchService,
+            new MemoryRevisionRepository(this.db),
           )
           const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
           if (context.primaryWorkspaceId != null && context.primaryWorkspaceId.length > 0) {
@@ -6690,6 +6692,7 @@ export class SessionService {
             memCallLLM,
             memEntityRepo,
             (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
+            new MemoryRevisionRepository(this.db),
           )
           const consoScopes: Array<{
             scope: 'user' | 'project' | 'agent'
@@ -6714,6 +6717,7 @@ export class SessionService {
         memoryStore,
         settingsGet,
         memorySearchService,
+        new MemoryRevisionRepository(this.db),
       )
       const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
       const seedQuery = [runtimeAgent.name, runtimeAgent.description, wsName]

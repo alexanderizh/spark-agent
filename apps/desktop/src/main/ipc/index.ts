@@ -145,6 +145,8 @@ import {
   MemoryEntityRepository,
   MemorySearchRepository,
   MemoryOperationRepository,
+  MemoryRevisionRepository,
+  buildRevisionCoverage,
 } from '@spark/storage'
 import type {
   AgentItem as StorageAgentItem,
@@ -9164,6 +9166,7 @@ export function registerAllIpcHandlers(): void {
         new MemoryRepository(getDatabase()),
         getMemoryStore(),
         new MemoryOperationRepository(getDatabase()),
+        new MemoryRevisionRepository(getDatabase()),
         (scope, scopeRef) => getMemoryStore(resolveWorkspaceRootPath(scope, scopeRef)),
       )
     }
@@ -9329,6 +9332,81 @@ export function registerAllIpcHandlers(): void {
       ok: result.status !== 'blocked_locally',
       status: result.status,
       ...(result.operationId != null ? { operationId: result.operationId } : {}),
+      ...(result.error != null ? { error: result.error } : {}),
+    }
+  })
+
+  // ─── S2.2：revision 历史 / 显式 supersede / retract ─────────────────
+  // 历史查询是本机用户的管理入口（记忆面板），不经过会话 scope ——
+  // E7 的越权防护针对会话侧 recall（bridge/MCP），管理面板即数据主体本人。
+
+  typedIpcHandle('memory:history', async (req) => {
+    log.info(`memory:history requested, id=${req.id}`)
+    const db = getDatabase()
+    const repo = new MemoryRepository(db)
+    const revisionRepo = new MemoryRevisionRepository(db)
+    const entry = repo.getById(req.id)
+    if (entry == null) return { ok: false, error: `Memory not found: ${req.id}` }
+    const revisions = revisionRepo.listRevisions(req.id)
+    const derivationsFrom = revisionRepo.listDerivationsFrom(req.id)
+    const derivationsOf = revisionRepo.listDerivationsOf(req.id)
+    return {
+      ok: true,
+      entry: {
+        id: entry.id,
+        name: entry.name,
+        scope: entry.scope,
+        scopeRef: entry.scope_ref,
+        type: entry.type,
+        currentVersion: entry.version,
+        invalidAt: entry.invalid_at,
+        supersededBy: entry.superseded_by,
+      },
+      revisions: revisions.map((r) => ({
+        version: r.version,
+        name: r.name,
+        description: r.description,
+        body: r.body,
+        confidence: r.confidence,
+        authorRole: r.author_role,
+        validFrom: r.valid_from,
+        supersededAt: r.superseded_at,
+        supersedeKind: r.supersede_kind,
+        successorId: r.successor_id,
+        note: r.note,
+      })),
+      derivationsFrom: derivationsFrom.map((d) => ({
+        sourceId: d.source_id,
+        derivedId: d.derived_id,
+        kind: d.kind,
+        createdAt: d.created_at,
+      })),
+      derivationsOf: derivationsOf.map((d) => ({
+        sourceId: d.source_id,
+        derivedId: d.derived_id,
+        kind: d.kind,
+        createdAt: d.created_at,
+      })),
+      coverage: buildRevisionCoverage(entry, revisions),
+    }
+  })
+
+  typedIpcHandle('memory:supersede', async (req) => {
+    log.info(`memory:supersede requested, oldId=${req.oldId} newId=${req.newId}`)
+    const result = await getMemoryLifecycleService().supersedeEntry(req.oldId, req.newId, req.note)
+    return {
+      ok: result.ok,
+      status: result.status,
+      ...(result.error != null ? { error: result.error } : {}),
+    }
+  })
+
+  typedIpcHandle('memory:retract', async (req) => {
+    log.info(`memory:retract requested, id=${req.id}`)
+    const result = await getMemoryLifecycleService().retractEntry(req.id, req.note)
+    return {
+      ok: result.ok,
+      status: result.status,
       ...(result.error != null ? { error: result.error } : {}),
     }
   })

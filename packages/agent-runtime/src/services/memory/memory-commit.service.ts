@@ -23,7 +23,7 @@
 
 import { createLogger } from '@spark/shared'
 import type { MemoryEntryRow } from '@spark/storage'
-import { MemoryRepository } from '@spark/storage'
+import { MemoryRepository, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
 
@@ -178,6 +178,19 @@ export class MemoryCommitService {
     }
 
     const expected = input.expectedVersion ?? existing.version
+    // 【S2.2】新快照会原子替换旧文件 —— 被覆盖版本的正文必须在写新快照之前
+    // 读出，随 CAS 同事务进 memory_revision。读不到（文件缺失/损坏）时如实
+    // 以空正文入历史并在 note 标注，不中断提交。
+    let oldBody = ''
+    let oldBodyNote: string | null = null
+    try {
+      // 守卫哈希同款规范化（去 render 追加的尾部换行），revision 正文与 content_hash 口径一致
+      oldBody = normalizeBodyForGuard(await this.store.readFile(existing.file_path))
+    } catch {
+      oldBodyNote = 'previous body unreadable at commit time; archived empty'
+      log.warn(`commitUpdate: 旧正文读取失败（历史版本将以空正文入档）：${existing.file_path}`)
+    }
+
     const meta: MemoryFileMeta = {
       id: existing.id,
       scope: existing.scope,
@@ -198,7 +211,8 @@ export class MemoryCommitService {
     // 1. 先写新快照（原子替换旧文件）
     const filePath = await this.store.writeFile({ meta, body: input.body })
 
-    // 2. CAS 提交：版本失配（或写入间隙被归档/失效/删除）→ 不覆盖当前状态
+    // 2. CAS 提交：版本失配（或写入间隙被归档/失效/删除）→ 不覆盖当前状态。
+    //    成功路径同事务保留被覆盖版本（S2.2 revision 历史）。
     const next = this.repo.compareAndSwap(
       entryId,
       expected,
@@ -210,6 +224,7 @@ export class MemoryCommitService {
         confidence: input.confidence,
       },
       input.body,
+      { oldBody, kind: 'update', note: oldBodyNote },
     )
     if (next == null) {
       const current = this.repo.getById(entryId)
