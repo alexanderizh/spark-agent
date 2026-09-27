@@ -64,35 +64,32 @@ describe('Memory System — E2E', () => {
 
   /** 创建 writer */
   function createWriter(llm: LLMCallFn): MemoryWriterService {
-    return new MemoryWriterService(
-      repo,
-      store,
-      (cat, key) => settingsRepo.get(cat, key),
-      llm,
-    )
+    return new MemoryWriterService(repo, store, (cat, key) => settingsRepo.get(cat, key), llm)
   }
 
   /** 创建 reader */
   function createReader(): MemoryReaderService {
-    return new MemoryReaderService(
-      repo,
-      store,
-      (cat, key) => settingsRepo.get(cat, key),
-    )
+    return new MemoryReaderService(repo, store, (cat, key) => settingsRepo.get(cat, key))
   }
 
   // ─── Step 1~3: 首次对话产生 user 记忆 ───────────────────────────────
 
   describe('Step 1~3: 首次对话 → 产生 user 记忆', () => {
     it('should extract and persist user identity from first conversation', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user',
-        type: 'user',
-        name: 'java-engineer',
-        description: '用户是 Java 工程师，对 React 不熟，偏好先讨论再动手',
-        body: '用户身份：Java 工程师，对 React 不熟。\n\n**Why:** 首次提及。\n**How to apply:** 代码示例可偏 Java 风格，React 概念需解释。',
-        confidence: 0.95,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'java-engineer',
+              description: '用户是 Java 工程师，对 React 不熟，偏好先讨论再动手',
+              body: '用户身份：Java 工程师，对 React 不熟。\n\n**Why:** 首次提及。\n**How to apply:** 代码示例可偏 Java 风格，React 概念需解释。',
+              confidence: 0.95,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
         sessionId: 'sess-a',
@@ -122,16 +119,27 @@ describe('Memory System — E2E', () => {
   describe('Step 4~5: 新会话加载已有记忆', () => {
     it('should inject user memory into new session system prompt', async () => {
       // 先写入一条 user 记忆
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'user', name: 'java-engineer',
-        description: '用户是 Java 工程师',
-        body: 'Java 工程师。\n\n**Why:** 背景记录。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'java-engineer',
+              description: '用户是 Java 工程师',
+              body: 'Java 工程师。\n\n**Why:** 背景记录。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-a', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'I am Java engineer', assistantMessage: 'OK',
+        sessionId: 'sess-a',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'I am Java engineer',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
@@ -153,15 +161,25 @@ describe('Memory System — E2E', () => {
 
   describe('Step 6~7: 反馈写入与跨会话生效', () => {
     it('should write feedback and include it in subsequent sessions', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'feedback', name: 'no-console-log',
-        description: '禁止使用 console.log，统一用 logger',
-        body: '禁止使用 console.log。\n\n**Why:** 团队规范。\n**How to apply:** 用 logger 替代。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'feedback',
+              name: 'no-console-log',
+              description: '禁止使用 console.log，统一用 logger',
+              body: '禁止使用 console.log。\n\n**Why:** 团队规范。\n**How to apply:** 用 logger 替代。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-b', workspaceId: 'ws-1', agentId: 'agent-1',
+        sessionId: 'sess-b',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
         userMessage: '以后写代码不要加 console.log，统一用我们的 logger',
         assistantMessage: '好的，我会注意',
         recentSummary: '',
@@ -170,7 +188,8 @@ describe('Memory System — E2E', () => {
       // Session C: 新会话应加载 feedback
       const reader = createReader()
       const injection = await reader.loadForSession({
-        workspaceId: 'ws-1', agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
       })
 
       expect(injection.block).toContain('no-console-log')
@@ -182,23 +201,35 @@ describe('Memory System — E2E', () => {
 
   describe('Step 8: Workspace 隔离', () => {
     it('should not show project memories from other workspaces', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'project', type: 'project', name: 'team-mode-plan',
-        description: 'Team Mode Phase 1 进行中',
-        body: 'Team Mode Phase 1。\n\n**Why:** 项目规划。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'project',
+              type: 'project',
+              name: 'team-mode-plan',
+              description: 'Team Mode Phase 1 进行中',
+              body: 'Team Mode Phase 1。\n\n**Why:** 项目规划。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-c', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'Team Mode Phase 1 进行中', assistantMessage: 'OK',
+        sessionId: 'sess-c',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'Team Mode Phase 1 进行中',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
       // 在 ws-2 的新会话中，project 记忆不应出现
       const reader = createReader()
       const injection = await reader.loadForSession({
-        workspaceId: 'ws-2', agentId: 'agent-1',
+        workspaceId: 'ws-2',
+        agentId: 'agent-1',
       })
 
       expect(injection.block).not.toContain('team-mode-plan')
@@ -209,16 +240,27 @@ describe('Memory System — E2E', () => {
 
   describe('Step 10: 敏感词拦截', () => {
     it('should reject memory containing API key', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'reference', type: 'reference', name: 'api-key-note',
-        description: 'API key',
-        body: 'The key is api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'reference',
+              type: 'reference',
+              name: 'api-key-note',
+              description: 'API key',
+              body: 'The key is api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-d', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'note this key', assistantMessage: 'sure',
+        sessionId: 'sess-d',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'note this key',
+        assistantMessage: 'sure',
         recentSummary: '',
       })
 
@@ -227,12 +269,17 @@ describe('Memory System — E2E', () => {
 
     it('should reject manual write with sensitive content', async () => {
       const writer = createWriter(async () => '[]')
-      await expect(writer.manualWrite({
-        scope: 'user', scopeRef: null, type: 'reference',
-        name: 'leak', description: 'leak',
-        body: 'sk-fake1234567890abcdef1234567890',
-        links: [],
-      })).rejects.toThrow('敏感信息')
+      await expect(
+        writer.manualWrite({
+          scope: 'user',
+          scopeRef: null,
+          type: 'reference',
+          name: 'leak',
+          description: 'leak',
+          body: 'sk-fake1234567890abcdef1234567890',
+          links: [],
+        }),
+      ).rejects.toThrow('敏感信息')
     })
   })
 
@@ -241,16 +288,25 @@ describe('Memory System — E2E', () => {
   describe('Step 10.5: 瞬时数据拦截', () => {
     it('should reject transient memory (ISO date in name) — 场景:查天气存了今天日期', async () => {
       // 复现真实事故：用户问"今天天气"，agent 把"今天 2026-06-16"存进记忆
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'user',
-        name: 'today-2026-06-16',
-        description: '用户今天 2026-06-16 查询了天气',
-        body: '用户今天查询了上海天气。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'today-2026-06-16',
+              description: '用户今天 2026-06-16 查询了天气',
+              body: '用户今天查询了上海天气。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-tx', workspaceId: 'ws-1', agentId: 'agent-1',
+        sessionId: 'sess-tx',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
         userMessage: '今天上海天气怎么样？',
         assistantMessage: '今天上海晴，25 度。',
         recentSummary: '',
@@ -261,16 +317,25 @@ describe('Memory System — E2E', () => {
     })
 
     it('should reject transient memory (实时数据 + 中文日期)', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'user',
-        name: 'shanghai-weather',
-        description: '当前 2026年6月16日 上海实时温度 25 度',
-        body: '上海当前温度 25 度。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'shanghai-weather',
+              description: '当前 2026年6月16日 上海实时温度 25 度',
+              body: '上海当前温度 25 度。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-tx2', workspaceId: 'ws-1', agentId: 'agent-1',
+        sessionId: 'sess-tx2',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
         userMessage: '上海现在多少度？',
         assistantMessage: '上海现在 25 度。',
         recentSummary: '',
@@ -281,16 +346,25 @@ describe('Memory System — E2E', () => {
 
     it('should not affect stable long-term memory (java engineer)', async () => {
       // 正常反馈不应被 Gate 0 误伤
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'user',
-        name: 'java-engineer',
-        description: '用户是 Java 工程师',
-        body: '用户身份：Java 工程师。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'java-engineer',
+              description: '用户是 Java 工程师',
+              body: '用户身份：Java 工程师。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-stable', workspaceId: 'ws-1', agentId: 'agent-1',
+        sessionId: 'sess-stable',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
         userMessage: 'I am a Java engineer',
         assistantMessage: 'Got it.',
         recentSummary: '',
@@ -312,22 +386,39 @@ describe('Memory System — E2E', () => {
       const writer = createWriter(async () => '[]')
       for (let i = 0; i < 3; i++) {
         await writer.manualWrite({
-          scope: 'user', scopeRef: null, type: 'feedback',
-          name: `mem-${i}`, description: `Memory ${i}`,
-          body: `Body ${i}`, links: [],
+          scope: 'user',
+          scopeRef: null,
+          type: 'feedback',
+          name: `mem-${i}`,
+          description: `Memory ${i}`,
+          body: `Body ${i}`,
+          links: [],
         })
       }
       expect(repo.countByScope('user', null)).toBe(3)
 
       // 第 4 条应触发末位归档
-      const writeWithLLM = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'feedback', name: 'mem-4',
-        description: 'Memory 4', body: 'Body 4', confidence: 0.9,
-      }])]))
+      const writeWithLLM = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'feedback',
+              name: 'mem-4',
+              description: 'Memory 4',
+              body: 'Body 4',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writeWithLLM.maybeWriteFromTurn({
-        sessionId: 'sess-e', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'New feedback', assistantMessage: 'OK',
+        sessionId: 'sess-e',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'New feedback',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
@@ -347,15 +438,26 @@ describe('Memory System — E2E', () => {
     it('should return empty block and skip writing when disabled', async () => {
       settingsRepo.set('memory', 'enabled', false)
 
-      const writer = createWriter(async () => candidateResponse([{
-        scope: 'user', type: 'user', name: 'should-not-exist',
-        description: 'Should not exist', body: 'Body', confidence: 0.9,
-      }]))
+      const writer = createWriter(async () =>
+        candidateResponse([
+          {
+            scope: 'user',
+            type: 'user',
+            name: 'should-not-exist',
+            description: 'Should not exist',
+            body: 'Body',
+            confidence: 0.9,
+          },
+        ]),
+      )
 
       // 写入应被跳过
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-f', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'Something', assistantMessage: 'Response',
+        sessionId: 'sess-f',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'Something',
+        assistantMessage: 'Response',
         recentSummary: '',
       })
       expect(repo.countByScope('user', null)).toBe(0)
@@ -363,7 +465,8 @@ describe('Memory System — E2E', () => {
       // 读取应返回空
       const reader = createReader()
       const injection = await reader.loadForSession({
-        workspaceId: 'ws-1', agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
       })
       expect(injection.block).toBe('')
       expect(injection.injectedIds).toHaveLength(0)
@@ -374,16 +477,27 @@ describe('Memory System — E2E', () => {
 
   describe('recall_memory 工具', () => {
     it('should return full markdown body and bump hit_count', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'feedback', name: 'prefer-arco',
-        description: '偏好 Arco Design',
-        body: '新增 UI 组件统一用 @arco-design/web-react。\n\n**Why:** 历史包袱。\n**How to apply:** 禁止引入 @radix-ui/*。',
-        confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'feedback',
+              name: 'prefer-arco',
+              description: '偏好 Arco Design',
+              body: '新增 UI 组件统一用 @arco-design/web-react。\n\n**Why:** 历史包袱。\n**How to apply:** 禁止引入 @radix-ui/*。',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-g', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: '用 Arco 不要用 Radix', assistantMessage: 'OK',
+        sessionId: 'sess-g',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: '用 Arco 不要用 Radix',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
@@ -392,7 +506,15 @@ describe('Memory System — E2E', () => {
       const id = entries[0]!.id
 
       const reader = createReader()
-      const result = await reader.recall(id)
+      // S1A.2 起 recall 需访问上下文（e2e 用 Host 全量 scope）
+      const result = await reader.recall(id, {
+        allowedScopes: [
+          { scope: 'user', scopeRef: null },
+          { scope: 'project', scopeRef: 'ws-1' },
+          { scope: 'agent', scopeRef: 'agent-1' },
+        ],
+        caller: 'e2e:test',
+      })
 
       expect(result.error).toBeUndefined()
       expect(result.content).toContain('@arco-design/web-react')
@@ -411,21 +533,38 @@ describe('Memory System — E2E', () => {
     })
 
     it('should return error for archived id', async () => {
-      const writer = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'feedback', name: 'to-archive',
-        description: 'Will be archived', body: 'Body', confidence: 0.9,
-      }])]))
+      const writer = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'feedback',
+              name: 'to-archive',
+              description: 'Will be archived',
+              body: 'Body',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
 
       await writer.maybeWriteFromTurn({
-        sessionId: 'sess-h', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'Note', assistantMessage: 'OK', recentSummary: '',
+        sessionId: 'sess-h',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'Note',
+        assistantMessage: 'OK',
+        recentSummary: '',
       })
 
       const id = repo.listByScope('user', null)[0]!.id
       repo.archive(id)
 
       const reader = createReader()
-      const result = await reader.recall(id)
+      const result = await reader.recall(id, {
+        allowedScopes: [{ scope: 'user', scopeRef: null }],
+        caller: 'e2e:test',
+      })
       expect(result.error).toContain('archived')
     })
   })
@@ -435,42 +574,82 @@ describe('Memory System — E2E', () => {
   describe('三层记忆 XML 格式', () => {
     it('should render all three layers correctly', async () => {
       // 写 user 记忆
-      const writer1 = createWriter(mockLLM([candidateResponse([{
-        scope: 'user', type: 'user', name: 'user-who',
-        description: 'Java 工程师', body: 'Body', confidence: 0.9,
-      }])]))
+      const writer1 = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'user',
+              type: 'user',
+              name: 'user-who',
+              description: 'Java 工程师',
+              body: 'Body',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
       await writer1.maybeWriteFromTurn({
-        sessionId: 's1', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'I am Java engineer', assistantMessage: 'OK',
+        sessionId: 's1',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'I am Java engineer',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
       // 写 project 记忆
-      const writer2 = createWriter(mockLLM([candidateResponse([{
-        scope: 'project', type: 'project', name: 'proj-status',
-        description: 'Phase 1 进行中', body: 'Body', confidence: 0.9,
-      }])]))
+      const writer2 = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'project',
+              type: 'project',
+              name: 'proj-status',
+              description: 'Phase 1 进行中',
+              body: 'Body',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
       await writer2.maybeWriteFromTurn({
-        sessionId: 's2', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'Phase 1 starts', assistantMessage: 'OK',
+        sessionId: 's2',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'Phase 1 starts',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
       // 写 agent 记忆
-      const writer3 = createWriter(mockLLM([candidateResponse([{
-        scope: 'agent', type: 'feedback', name: 'agent-style',
-        description: 'Agent 风格偏好', body: 'Body', confidence: 0.9,
-      }])]))
+      const writer3 = createWriter(
+        mockLLM([
+          candidateResponse([
+            {
+              scope: 'agent',
+              type: 'feedback',
+              name: 'agent-style',
+              description: 'Agent 风格偏好',
+              body: 'Body',
+              confidence: 0.9,
+            },
+          ]),
+        ]),
+      )
       await writer3.maybeWriteFromTurn({
-        sessionId: 's3', workspaceId: 'ws-1', agentId: 'agent-1',
-        userMessage: 'Keep concise', assistantMessage: 'OK',
+        sessionId: 's3',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        userMessage: 'Keep concise',
+        assistantMessage: 'OK',
         recentSummary: '',
       })
 
       // 验证注入格式
       const reader = createReader()
       const injection = await reader.loadForSession({
-        workspaceId: 'ws-1', agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
       })
 
       expect(injection.block).toContain('<user-memory>')

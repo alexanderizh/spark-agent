@@ -65,7 +65,9 @@ export class MemoryConsolidationService {
         try {
           await this.consolidateIfDue(scope, scopeRef)
         } catch (err) {
-          log.warn(`consolidation failed for ${scope}/${scopeRef ?? '∅'} (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+          log.warn(
+            `consolidation failed for ${scope}/${scopeRef ?? '∅'} (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       }
     } finally {
@@ -106,11 +108,15 @@ export class MemoryConsolidationService {
         }
         applied += 1
       } catch (err) {
-        log.warn(`consolidation action failed (${action.action}): ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `consolidation action failed (${action.action}): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
     this.markConsolidated(scope, scopeRef)
-    log.info(`consolidation ${scope}/${scopeRef ?? '∅'}: ${applied}/${actions.length} actions applied (${active.length} entries reviewed)`)
+    log.info(
+      `consolidation ${scope}/${scopeRef ?? '∅'}: ${applied}/${actions.length} actions applied (${active.length} entries reviewed)`,
+    )
   }
 
   // ─── 动作执行 ─────────────────────────────────────────────────────────
@@ -128,7 +134,9 @@ export class MemoryConsolidationService {
     let mergedBody = ''
     try {
       mergedBody = await this.storeService.readFile(keep.file_path).catch(() => '')
-    } catch { /* keep 无正文也能继续 */ }
+    } catch {
+      /* keep 无正文也能继续 */
+    }
 
     const drops: MemoryEntryRow[] = []
     for (const dropId of action.dropIds) {
@@ -141,21 +149,46 @@ export class MemoryConsolidationService {
           // drop 随后会失效；这里必须保留全文，否则旧实现只取前 400 字会造成不可恢复的数据丢失。
           mergedBody += `\n\n## 合并自 ${drop.id}（${drop.name}）\n${drop.description}${dropBody.length > 0 ? '\n\n' + dropBody : ''}`
         }
-      } catch { /* 读不到也继续 */ }
+      } catch {
+        /* 读不到也继续 */
+      }
     }
     if (drops.length === 0) return // 没有有效 drop，不操作
 
     const nextConfidence = Math.max(keep.confidence, ...drops.map((d) => d.confidence))
-    // 先写文件（事实来源）再更新 DB+FTS（与 updateEntry 同样的稳健顺序）
+    // 先写文件（事实来源）再 CAS 更新 DB+FTS。【S1B.1】expectedVersion 持读取时
+    // 版本 —— 整合期间 keep 被并发更新/归档时失配丢弃，不覆盖当前状态；
+    // 晚到快照成为待清理孤儿（content_hash 失配可识别）。
     const meta: MemoryFileMeta = {
-      id: keep.id, scope: keep.scope, scopeRef: keep.scope_ref, type: keep.type,
-      name: keep.name, description: action.mergedDescription, confidence: nextConfidence,
-      createdAt: keep.created_at, updatedAt: Date.now(), hitCount: keep.hit_count,
-      lastHitAt: keep.last_hit_at, sourceSessionId: keep.source_session_id,
-      links: [], archived: false,
+      id: keep.id,
+      scope: keep.scope,
+      scopeRef: keep.scope_ref,
+      type: keep.type,
+      name: keep.name,
+      description: action.mergedDescription,
+      confidence: nextConfidence,
+      createdAt: keep.created_at,
+      updatedAt: Date.now(),
+      hitCount: keep.hit_count,
+      lastHitAt: keep.last_hit_at,
+      sourceSessionId: keep.source_session_id,
+      links: [],
+      archived: false,
     }
     await this.storeService.writeFile({ meta, body: mergedBody })
-    this.memoryRepo.update(keep.id, { description: action.mergedDescription, confidence: nextConfidence }, mergedBody)
+    const committed = this.memoryRepo.compareAndSwap(
+      keep.id,
+      keep.version,
+      { description: action.mergedDescription, confidence: nextConfidence },
+      mergedBody,
+    )
+    if (committed == null) {
+      log.warn(
+        `consolidation MERGE discarded (version conflict): keep=${keep.id} ` +
+          `expectedVersion=${keep.version}（并发写入/归档，不覆盖当前状态）`,
+      )
+      return
+    }
 
     // dropIds 失效，指向 keep
     const now = Date.now()
@@ -188,27 +221,53 @@ export class MemoryConsolidationService {
     const filePath = this.storeService.getFilePath(scope, scopeRef, id)
     const now = Date.now()
     const meta: MemoryFileMeta = {
-      id, scope, scopeRef, type: action.newMemory.type,
-      name: action.newMemory.name, description: action.newMemory.description,
+      id,
+      scope,
+      scopeRef,
+      type: action.newMemory.type,
+      name: action.newMemory.name,
+      description: action.newMemory.description,
       confidence: action.newMemory.confidence,
-      createdAt: now, updatedAt: now, hitCount: 0, lastHitAt: null,
-      sourceSessionId: SOURCE_TAG, links: [], archived: false,
+      createdAt: now,
+      updatedAt: now,
+      hitCount: 0,
+      lastHitAt: null,
+      sourceSessionId: SOURCE_TAG,
+      links: [],
+      archived: false,
     }
     const body = `${action.newMemory.body}\n\n## 升华来源\n${validSources.map((s) => `- [${s.id}] ${s.name}`).join('\n')}`
     // 先写文件（事实来源）再落库（与 writer 稳健顺序一致），insert 传 body 让 FTS 索引正文
     await this.storeService.writeFile({ meta, body })
-    this.memoryRepo.insert({
-      id, scope, scope_ref: scopeRef, type: action.newMemory.type,
-      name: action.newMemory.name, description: action.newMemory.description,
-      file_path: filePath, confidence: action.newMemory.confidence,
-      hit_count: 0, last_hit_at: null, source_session_id: SOURCE_TAG, archived: 0,
-    }, body)
+    this.memoryRepo.insert(
+      {
+        id,
+        scope,
+        scope_ref: scopeRef,
+        type: action.newMemory.type,
+        name: action.newMemory.name,
+        description: action.newMemory.description,
+        file_path: filePath,
+        confidence: action.newMemory.confidence,
+        hit_count: 0,
+        last_hit_at: null,
+        source_session_id: SOURCE_TAG,
+        archived: 0,
+      },
+      body,
+    )
     // 升华条目的实体落库（entityRepo 提供时；此前构造收下但未使用 → 死依赖，现接上）
-    if (this.entityRepo != null && action.newMemory.entities != null && action.newMemory.entities.length > 0) {
+    if (
+      this.entityRepo != null &&
+      action.newMemory.entities != null &&
+      action.newMemory.entities.length > 0
+    ) {
       try {
         this.entityRepo.upsertEntitiesForMemory(id, scope, scopeRef, action.newMemory.entities)
       } catch (err) {
-        log.warn(`ELEVATE entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `ELEVATE entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
     log.debug(`consolidation ELEVATE: ${id} ← sources ${validSources.map((s) => s.id).join(',')}`)
@@ -246,7 +305,9 @@ export class MemoryConsolidationService {
     try {
       this.settingsSet?.('memory', this.scopeKey(scope, scopeRef), Date.now())
     } catch (err) {
-      log.debug(`markConsolidated failed (will re-trigger next time): ${err instanceof Error ? err.message : String(err)}`)
+      log.debug(
+        `markConsolidated failed (will re-trigger next time): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 }
@@ -256,8 +317,26 @@ export class MemoryConsolidationService {
 type MemoryType = 'user' | 'feedback' | 'project' | 'reference'
 
 type ConsolidationAction =
-  | { action: 'MERGE'; keepId: string; dropIds: string[]; mergedDescription: string; reason: string }
-  | { action: 'ELEVATE'; sourceIds: string[]; newMemory: { name: string; description: string; body: string; type: MemoryType; confidence: number; entities?: string[] }; reason: string }
+  | {
+      action: 'MERGE'
+      keepId: string
+      dropIds: string[]
+      mergedDescription: string
+      reason: string
+    }
+  | {
+      action: 'ELEVATE'
+      sourceIds: string[]
+      newMemory: {
+        name: string
+        description: string
+        body: string
+        type: MemoryType
+        confidence: number
+        entities?: string[]
+      }
+      reason: string
+    }
 
 /**
  * 解析整合 LLM 输出。校验 id 都在 entries 列表内；非法动作丢弃。
@@ -278,29 +357,55 @@ export function parseActions(raw: string, entries: Array<{ id: string }>): Conso
       const obj = item as Record<string, unknown>
       if (obj.action === 'MERGE') {
         const keepId = typeof obj.keepId === 'string' ? obj.keepId : undefined
-        const dropIds = Array.isArray(obj.dropIds) ? obj.dropIds.filter((x): x is string => typeof x === 'string') : []
-        const mergedDescription = typeof obj.mergedDescription === 'string' ? obj.mergedDescription : ''
+        const dropIds = Array.isArray(obj.dropIds)
+          ? obj.dropIds.filter((x): x is string => typeof x === 'string')
+          : []
+        const mergedDescription =
+          typeof obj.mergedDescription === 'string' ? obj.mergedDescription : ''
         if (keepId == null || !validIds.has(keepId)) continue
         const validDrops = dropIds.filter((id) => validIds.has(id) && id !== keepId)
         if (validDrops.length === 0) continue
         out.push({
-          action: 'MERGE', keepId, dropIds: validDrops, mergedDescription: mergedDescription.slice(0, 200),
+          action: 'MERGE',
+          keepId,
+          dropIds: validDrops,
+          mergedDescription: mergedDescription.slice(0, 200),
           reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 200) : '',
         })
       } else if (obj.action === 'ELEVATE') {
-        const sourceIds = Array.isArray(obj.sourceIds) ? obj.sourceIds.filter((x): x is string => typeof x === 'string') : []
+        const sourceIds = Array.isArray(obj.sourceIds)
+          ? obj.sourceIds.filter((x): x is string => typeof x === 'string')
+          : []
         const validSources = sourceIds.filter((id) => validIds.has(id))
         const nm = obj.newMemory as Record<string, unknown> | undefined
         if (validSources.length < 2 || nm == null) continue
-        if (typeof nm.name !== 'string' || typeof nm.description !== 'string' || typeof nm.body !== 'string') continue
+        if (
+          typeof nm.name !== 'string' ||
+          typeof nm.description !== 'string' ||
+          typeof nm.body !== 'string'
+        )
+          continue
         const confidence = typeof nm.confidence === 'number' ? nm.confidence : 0.7
         const rawType = typeof nm.type === 'string' ? nm.type : 'feedback'
-        const type: MemoryType = rawType === 'user' || rawType === 'feedback' || rawType === 'project' || rawType === 'reference' ? rawType : 'feedback'
+        const type: MemoryType =
+          rawType === 'user' ||
+          rawType === 'feedback' ||
+          rawType === 'project' ||
+          rawType === 'reference'
+            ? rawType
+            : 'feedback'
         out.push({
-          action: 'ELEVATE', sourceIds: validSources,
+          action: 'ELEVATE',
+          sourceIds: validSources,
           newMemory: {
-            name: nm.name, description: nm.description, body: nm.body, type, confidence,
-            ...(Array.isArray(nm.entities) && nm.entities.every((e) => typeof e === 'string') ? { entities: nm.entities as string[] } : {}),
+            name: nm.name,
+            description: nm.description,
+            body: nm.body,
+            type,
+            confidence,
+            ...(Array.isArray(nm.entities) && nm.entities.every((e) => typeof e === 'string')
+              ? { entities: nm.entities as string[] }
+              : {}),
           },
           reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 200) : '',
         })

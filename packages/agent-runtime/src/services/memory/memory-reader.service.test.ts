@@ -200,7 +200,7 @@ describe('MemoryReaderService', () => {
     it('should return full markdown body and bump hit count', async () => {
       const id = await seedMemory('user', null, 'feedback', 'test-recall', 'Test recall')
 
-      const result = await reader.recall(id)
+      const result = await reader.recall(id, { allowedScopes: [{ scope: 'user', scopeRef: null }] })
       expect(result.error).toBeUndefined()
       expect(result.content).toContain('Body for test-recall')
 
@@ -218,8 +218,156 @@ describe('MemoryReaderService', () => {
       const id = await seedMemory('user', null, 'feedback', 'archived-mem', 'Archived')
       repo.archive(id)
 
-      const result = await reader.recall(id)
+      const result = await reader.recall(id, { allowedScopes: [{ scope: 'user', scopeRef: null }] })
       expect(result.error).toContain('archived')
+    })
+
+    // ─── S0 反例固定（E7）→ S1A.2 已修复（2026-09-27 反转） ──────────────
+    // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1A.2。
+    // 原 fails 用例：recall(id) 只拒 archived，任意会话可读任意 scope 条目。
+    // S1A.2 修复（accessContext 参数 + 缺省拒绝 + isEntryInScopes 统一校验）
+    // 后反转为 it。
+    describe('S1A.2 已修复（原 S0/E7 反例）：recall 访问上下文', () => {
+      it('无访问上下文时 recall 拒绝（缺省 deny）', async () => {
+        const id = await seedMemory('user', null, 'feedback', 'no-context-mem', 'No context')
+
+        const result = await reader.recall(id)
+        expect(result.error).toBeDefined()
+        expect(result.error).toContain('denied')
+        // 拒绝时不得计入命中
+        expect(repo.getById(id)!.hit_count).toBe(0)
+      })
+
+      it('以 user scope 身份 recall project scope 条目拒绝', async () => {
+        const projectId = await seedMemory(
+          'project',
+          'ws-a',
+          'project',
+          'cross-scope-mem',
+          'Cross scope',
+        )
+
+        // 模拟"非该项目会话"的调用：目标条目属 ws-a，调用方仅允许 user scope
+        const result = await reader.recall(projectId, {
+          allowedScopes: [{ scope: 'user', scopeRef: null }],
+          caller: 'test:user-only',
+        })
+        expect(result.error).toContain('denied')
+      })
+
+      it('以 B 项目身份 recall A 项目条目拒绝', async () => {
+        const idA = await seedMemory('project', 'ws-a', 'project', 'proj-a-mem', 'Project A')
+
+        const result = await reader.recall(idA, {
+          allowedScopes: [
+            { scope: 'user', scopeRef: null },
+            { scope: 'project', scopeRef: 'ws-b' },
+          ],
+          caller: 'test:ws-b',
+        })
+        expect(result.error).toContain('denied')
+      })
+
+      it('Host 允许范围（user+project+agent）内正常读取（验收矩阵：Team Member/Host 正常读取）', async () => {
+        const userId = await seedMemory('user', null, 'feedback', 'host-user-mem', 'User scope')
+        const prjId = await seedMemory(
+          'project',
+          'ws-a',
+          'project',
+          'host-prj-mem',
+          'Project scope',
+        )
+        const agtId = await seedMemory(
+          'agent',
+          'agent-1',
+          'feedback',
+          'host-agt-mem',
+          'Agent scope',
+        )
+        const hostScopes = [
+          { scope: 'user' as const, scopeRef: null },
+          { scope: 'project' as const, scopeRef: 'ws-a' },
+          { scope: 'agent' as const, scopeRef: 'agent-1' },
+        ]
+
+        for (const id of [userId, prjId, agtId]) {
+          const result = await reader.recall(id, { allowedScopes: hostScopes, caller: 'test:host' })
+          expect(result.error).toBeUndefined()
+        }
+        expect(repo.getById(userId)!.hit_count).toBe(1)
+      })
+
+      it('Member 以自身 agentId scope 读取自身记忆正常（不因 Host 身份丢失而误拒）', async () => {
+        const memberId = await seedMemory(
+          'agent',
+          'member-9',
+          'feedback',
+          'member-own-mem',
+          'Member own',
+        )
+
+        const result = await reader.recall(memberId, {
+          allowedScopes: [
+            { scope: 'user', scopeRef: null },
+            { scope: 'agent', scopeRef: 'member-9' },
+          ],
+          caller: 'test:member-9',
+        })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('Body for member-own-mem')
+      })
+
+      it('本 scope 正常读取并 bumpHit（正确行为固化，修复后不得回归）', async () => {
+        const id = await seedMemory('user', null, 'feedback', 'in-scope-mem', 'In scope')
+
+        const result = await reader.recall(id, {
+          allowedScopes: [{ scope: 'user', scopeRef: null }],
+        })
+        expect(result.error).toBeUndefined()
+        expect(result.content).toContain('Body for in-scope-mem')
+        expect(repo.getById(id)!.hit_count).toBe(1)
+      })
+    })
+
+    // ─── S1B.1 读取守卫（方案 B）：content_hash 校验 ──────────────────────
+    // 依据主计划 §3.1/§3.3：外部工具（旧 CLI）覆盖托管正文、或 CAS 失配留下的
+    // 孤儿快照，都会使文件正文与 DB content_hash 失配 —— recall 拒绝采信并报
+    // 不完整，不用任意同名 Markdown 冒充权威正文。
+    describe('S1B.1 读取守卫：正文哈希失配拒绝', () => {
+      it('文件被外部覆盖后 recall 拒绝（hash mismatch），不返回错配正文', async () => {
+        const id = await seedMemory('user', null, 'feedback', 'guard-mem', 'Guard')
+        // 建立守卫：经 repo.update（带 body）刷新 content_hash
+        const before = repo.getById(id)!
+        repo.update(id, { description: 'Guard desc' }, 'Body for guard-mem')
+        expect(repo.getById(id)!.content_hash).not.toBeNull()
+        expect(repo.getById(id)!.version).toBe(before.version + 1)
+
+        // 外部覆盖文件（旧 CLI 写入自己的格式）
+        const { writeFileSync } = await import('fs')
+        writeFileSync(
+          repo.getById(id)!.file_path,
+          '---\nid: hacked\n---\n\n被外部工具覆盖的内容',
+          'utf-8',
+        )
+
+        const result = await reader.recall(id, {
+          allowedScopes: [{ scope: 'user', scopeRef: null }],
+        })
+        expect(result.error).toContain('incomplete')
+        expect(result.content).toBe('')
+        // 拒绝时不得计入命中
+        expect(repo.getById(id)!.hit_count).toBe(0)
+      })
+
+      it('content_hash 为 NULL 的存量条目跳过校验（渐进建立守卫）', async () => {
+        const id = await seedMemory('user', null, 'feedback', 'legacy-mem', 'Legacy')
+        expect(repo.getById(id)!.content_hash).toBeNull()
+
+        const result = await reader.recall(id, {
+          allowedScopes: [{ scope: 'user', scopeRef: null }],
+        })
+        expect(result.error).toBeUndefined()
+      })
     })
   })
 })

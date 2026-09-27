@@ -28,6 +28,8 @@ function makeEntry(id: string, overrides: Partial<MemoryEntryRow> = {}): MemoryE
     last_hit_at: null,
     source_session_id: null,
     archived: 0,
+    version: 1,
+    content_hash: null,
     created_at: now,
     updated_at: now,
     valid_from: now,
@@ -106,6 +108,23 @@ describe('rerankByDecayAndConfidence', () => {
     const out = rerankByDecayAndConfidence([old], 0, now)
     expect(out[0]!.score).toBeCloseTo(0.5, 5)
   })
+
+  // ─── S0（E8）：新旧竞争口径固化（S3 校正基线，非缺陷） ────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/E8 与
+  // docs/plans/2026-09-26-memory-evidence-and-temporal-semantics.md §4：
+  // 本用例把"等龄排序不变"之外的新旧竞争现状口径固定下来 —— 默认
+  // lambda=0.01 下时间衰减主导（365 天 → exp(-3.65) ≈ 2.6%），置信度
+  // 乘子（0.6~1.0）的差异被完全掩盖。S3 分类型衰减/复核实验若调整口径，
+  // 应更新本断言并注明实验依据。
+  it('新旧竞争口径（S3 校正基线）：一年前高置信 vs 今天低置信，时间衰减主导、新条目胜出', () => {
+    const aged = hit('aged', { updated_at: now - 365 * 86_400_000, confidence: 1.0 }, 0.5)
+    const fresh = hit('fresh', { updated_at: now, confidence: 0.6 }, 0.5)
+    const out = rerankByDecayAndConfidence([aged, fresh], 0.01, now)
+    expect(out[0]!.entry.id).toBe('fresh')
+    // 口径记录：旧条目得分 0.5 × exp(-3.65) × 1.0 ≈ 0.0129，
+    // 置信度 1.0 不足以弥补一年时间衰减。
+    expect(out[1]!.score).toBeCloseTo(0.5 * Math.exp(-3.65), 5)
+  })
 })
 
 // ─── 检索路径（有/无向量） ────────────────────────────────────────────────
@@ -125,11 +144,7 @@ function makeService(opts: {
   const embeddingService = {
     embedTexts: vi.fn(async () => opts.vectors ?? null),
   }
-  const svc = new MemorySearchService(
-    searchRepo as never,
-    embeddingService as never,
-    () => null,
-  )
+  const svc = new MemorySearchService(searchRepo as never, embeddingService as never, () => null)
   return { svc, searchRepo, embeddingService }
 }
 
@@ -175,7 +190,11 @@ describe('MemorySearchService.search', () => {
       searchBm25: vi.fn(() => [{ entry: a, bm25: -1 }]),
       searchKnn: vi.fn(),
     }
-    const embeddingService = { embedTexts: vi.fn(async () => { throw new Error('provider 500') }) }
+    const embeddingService = {
+      embedTexts: vi.fn(async () => {
+        throw new Error('provider 500')
+      }),
+    }
     const svc = new MemorySearchService(searchRepo as never, embeddingService as never, () => null)
     const hits = await svc.search('query')
     expect(hits).not.toBeNull()

@@ -15,7 +15,7 @@
  *   - SettingsService (读取 memory 配置)
  */
 
-import { MemoryRepository } from '@spark/storage'
+import { MemoryRepository, hashBodyForGuard } from '@spark/storage'
 import type { MemoryEntryRow, MemoryScopeFilter } from '@spark/storage'
 import { createLogger, estimateTokensWithOverhead } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
@@ -41,6 +41,33 @@ export interface MemoryInjection {
   injectedIds: string[]
   /** 因 token 预算被裁掉的数量 */
   droppedCount: number
+}
+
+/**
+ * recall 的访问上下文（S1A.2）。
+ *
+ * recall(id) 是显式正文读取入口，历史上只拒 archived —— 任何会话可用已知 id
+ * 读取任意 scope 条目（评估反例 E7）。现在要求调用方传入其执行上下文允许的
+ * scope 集合（与 loadForSession/search 的 scopes 同源），缺省拒绝。
+ * caller 仅用于日志/审计，不参与判定。
+ */
+export interface MemoryRecallAccess {
+  /** 调用方执行上下文允许读取的 scope 集合（user 恒为 {scope:'user',scopeRef:null} 形态） */
+  allowedScopes: MemoryScopeFilter[]
+  /** 调用方身份标识（Host 会话 / team member / bridge），仅用于日志 */
+  caller?: string
+}
+
+/**
+ * 判断条目是否落在允许 scope 集合内（scope + scopeRef 双匹配；
+ * null 与 undefined 归一比较）。读入口统一走本函数，不各自实现。
+ */
+export function isEntryInScopes(
+  entry: { scope: string; scope_ref: string | null },
+  scopes: MemoryScopeFilter[],
+): boolean {
+  const ref = entry.scope_ref ?? null
+  return scopes.some((s) => s.scope === entry.scope && (s.scopeRef ?? null) === ref)
 }
 
 export class MemoryReaderService {
@@ -178,8 +205,13 @@ export class MemoryReaderService {
    *
    * 若条目已失效（invalid_at 非空，bi-temporal），正文前会插入醒目标注，
    * 但仍返回正文（供 agent 理解历史演变）；superseded_by 非空时一并提示被哪条取代。
+   *
+   * 【S1A.2】access 缺省或 allowedScopes 不含目标条目 scope 时拒绝（E7）。
    */
-  async recall(id: string): Promise<{ content: string; error?: string }> {
+  async recall(
+    id: string,
+    access?: MemoryRecallAccess,
+  ): Promise<{ content: string; error?: string }> {
     // recall_memory 工具调用日志：让"agent 是否真调了 recall"可见，对应 hitCount 增长。
     // 没这条日志时，用户只能从面板 hitCount 反推，无法从日志确认调用链。
     const entry = this.memoryRepo.getById(id)
@@ -191,12 +223,50 @@ export class MemoryReaderService {
       log.info(`【recall_memory】已归档拒绝：id=${id} (${entry.name})`)
       return { content: '', error: `Memory archived: ${id}` }
     }
+    // 【S1A.2】访问上下文校验：缺省拒绝；越范围拒绝。日志含调用方身份便于审计。
+    if (access == null || access.allowedScopes.length === 0) {
+      log.info(`【recall_memory】拒绝：无访问上下文 id=${id} caller=${access?.caller ?? '(none)'}`)
+      return {
+        content: '',
+        error: `Memory access denied: recall requires an access context (id=${id})`,
+      }
+    }
+    if (!isEntryInScopes(entry, access.allowedScopes)) {
+      log.info(
+        `【recall_memory】拒绝：越范围 id=${id} (${entry.scope}/${entry.scope_ref ?? 'global'}) ` +
+          `caller=${access.caller ?? '(unknown)'}`,
+      )
+      return {
+        content: '',
+        error: `Memory access denied: ${id} is outside the allowed scopes for this session`,
+      }
+    }
     log.info(
       `【recall_memory】命中读取：id=${id} (${entry.name}) [${entry.scope}/${entry.type}] → hitCount+1`,
     )
 
     try {
       const markdown = await this.storeService.readFile(entry.file_path)
+
+      // 【S1B.1 读取守卫（方案 B）】托管正文哈希校验：失配（旧 CLI 覆盖文件 /
+      // CAS 失配留下的孤儿快照 / 外部编辑）→ 拒绝采信并报不完整，不用任意
+      // 同名 Markdown 冒充权威正文。content_hash 为 NULL 的存量行跳过
+      // （首次经过写入路径时补齐守卫）。
+      if (entry.content_hash != null) {
+        const actualHash = hashBodyForGuard(markdown)
+        if (actualHash !== entry.content_hash) {
+          log.warn(
+            `【recall_memory】正文哈希失配拒绝采信：id=${id} (${entry.name}) ` +
+              `expected=${entry.content_hash.slice(0, 12)}… actual=${actualHash.slice(0, 12)}… ` +
+              `（文件可能被外部工具覆盖或存在待清理孤儿快照）`,
+          )
+          return {
+            content: '',
+            error: `Memory incomplete: body hash mismatch for ${id} (file was modified outside managed writes)`,
+          }
+        }
+      }
+
       // bumpHit
       this.memoryRepo.bumpHit(id)
 
