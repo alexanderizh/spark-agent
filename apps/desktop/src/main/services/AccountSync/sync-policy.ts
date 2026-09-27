@@ -53,6 +53,11 @@ const TOP_LEVEL_FIELDS: Record<AccountSyncCategory, ReadonlySet<string>> = {
     'body',
     'confidence',
     'isArchived',
+    // S1B.5：版本与失效语义随同步协议传递（字段缺失的旧云端条目仍放行——
+    // createSafeSyncItem 只拒绝白名单外的键与类型不符的键，不要求字段齐全）
+    'version',
+    'invalidAt',
+    'supersededBy',
     'createdAt',
     'updatedAt',
   ]),
@@ -155,6 +160,9 @@ const FIELD_TYPES: Record<AccountSyncCategory, Readonly<Record<string, SyncField
     body: 'string',
     confidence: 'number',
     isArchived: 'boolean',
+    version: 'number',
+    invalidAt: 'nullable-string',
+    supersededBy: 'nullable-string',
     createdAt: 'string',
     updatedAt: 'string',
   },
