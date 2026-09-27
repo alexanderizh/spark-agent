@@ -298,4 +298,52 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
     expect(r.reason).toBe('payload_unreadable')
     expect(repo.countByScope('user', null)).toBe(before)
   })
+
+  it('【审查修复】条目写入失败 → 候选回滚 pending 可重试，不留"已确认无条目"悬状态', async () => {
+    const { id, digest } = propose()
+    // 用写入必抛错的 store 构造会失败的 commitService（状态迁移后的 commitWrite 失败路径）
+    const badStore = {
+      getFilePath: () => '/nonexistent/x.md',
+      writeFile: async () => {
+        throw new Error('disk full (simulated)')
+      },
+      readFile: async () => {
+        throw new Error('unreadable (simulated)')
+      },
+      updateIndexFile: async () => {},
+    } as unknown as MemoryStoreService
+    const failingService = new MemoryCandidateService(
+      candidateRepo,
+      new MemoryCommitService(repo, badStore),
+      repo,
+      revisionRepo,
+      badStore,
+    )
+
+    const r = await failingService.confirm(id, digest)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('commit_failed')
+
+    // 悬状态回滚：候选恢复 pending（非 confirmed+entry_id=NULL）
+    const after = candidateRepo.getById(id)!
+    expect(after.status).toBe('pending')
+    expect(after.entry_id).toBeNull()
+    expect(repo.countByScope('user', null)).toBe(0)
+
+    // 恢复正常服务后重试同一候选可成功（用户不被锁死）
+    const retry = await service.confirm(id, digest)
+    expect(retry.ok).toBe(true)
+  })
+
+  it('【审查修复】回滚不误伤已晋级候选：entry_id 已回填的 confirmed 不回滚', async () => {
+    const { id, digest } = propose()
+    const ok = await service.confirm(id, digest)
+    expect(ok.ok).toBe(true)
+
+    // 已成功晋级（entry_id 回填）后，回滚原语必须不动作
+    const reverted = candidateRepo.revertToPendingIfUnattached(id)
+    expect(reverted).toBe(false)
+    expect(candidateRepo.getById(id)!.status).toBe('confirmed')
+  })
 })

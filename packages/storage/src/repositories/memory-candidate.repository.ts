@@ -270,6 +270,23 @@ export class MemoryCandidateRepository extends BaseRepository {
     return { ok: true, candidate: this.getById(id)! }
   }
 
+  /**
+   * 条件回滚为 pending（确认后条目写入失败时的悬状态恢复）：
+   * 仅当行处于 confirmed 且 entry_id 仍为 NULL（确认了但没条目）才回滚，
+   * 已成功晋级（entry_id 已回填）或用户已拒绝/过期的行不受影响。
+   * 回滚后用户可重试确认或拒绝 —— 不留"已确认但无条目"的死角。
+   */
+  revertToPendingIfUnattached(id: number): boolean {
+    const result = this.raw
+      .prepare(
+        `UPDATE memory_candidate
+         SET status = 'pending', decided_at = NULL, decided_via = NULL, confirmed_digest = NULL
+         WHERE id = ? AND status = 'confirmed' AND entry_id IS NULL`,
+      )
+      .run(id)
+    return result.changes > 0
+  }
+
   /** 用户拒绝（pending → rejected；非 pending 幂等返回当前行） */
   reject(id: number, now?: number): { ok: boolean; row: MemoryCandidateRow | null } {
     const at = now ?? Date.now()

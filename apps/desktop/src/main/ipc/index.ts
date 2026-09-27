@@ -9201,6 +9201,9 @@ export function registerAllIpcHandlers(): void {
         repo,
         new MemoryRevisionRepository(getDatabase()),
         getMemoryStore(),
+        // 【审查修复】漏传 entityRepo 会导致候选携带的实体在确认晋级后不落库
+        //（旧 ELEVATE 路径有实体落库，不能在确认入口退化）
+        new MemoryEntityRepository(getDatabase()),
       )
     }
     return _memoryCandidateService

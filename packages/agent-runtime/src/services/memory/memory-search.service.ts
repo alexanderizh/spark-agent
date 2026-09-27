@@ -58,6 +58,12 @@ export interface MemoryQueryResult {
   hits: MemorySearchHit[]
   /** degraded/disabled 的如实说明（通道级故障原因；empty/matched 不带） */
   note?: string
+  /**
+   * 【结构化故障标记】FTS 与向量两路皆异常（true = hits 为空是故障所致，
+   * 调用方应退回 V1 全量注入而非把空当结论）。兼容层 search() 据此判定
+   * 是否返回 null —— 不依赖 note 文案匹配。
+   */
+  allChannelsFailed?: boolean
 }
 
 export class MemorySearchService {
@@ -76,8 +82,9 @@ export class MemorySearchService {
   async search(query: string, opts?: MemorySearchOptions): Promise<MemorySearchHit[] | null> {
     const r = await this.searchWithStatus(query, opts)
     // 全通道故障（含禁用？否 —— 禁用对旧调用方按"无结果"处理，与 reader 的
-    // enabled 短路语义一致）→ null 触发 V1 fallback；degraded-but-served 正常返回
-    if (r.status === 'degraded' && r.hits.length === 0 && r.note?.includes('两路皆异常') === true) {
+    // enabled 短路语义一致）→ null 触发 V1 fallback；degraded-but-served 正常返回。
+    // 判定依据结构化字段 allChannelsFailed，不匹配 note 文案
+    if (r.status === 'degraded' && r.allChannelsFailed === true) {
       return null
     }
     return r.hits
@@ -147,6 +154,7 @@ export class MemorySearchService {
       return {
         status: 'degraded',
         hits: [],
+        allChannelsFailed: true,
         note: `两路皆异常（${ftsFailures.join('；') || 'vector 未配置且 FTS 异常'}）`,
       }
     }

@@ -266,7 +266,8 @@ export function MemoryPanel() {
             expired: '候选已过期',
             not_found: '候选不存在',
             payload_unreadable: '候选内容不可解析',
-            commit_failed: '保存失败（详见日志）',
+            sensitive_content: '内容含敏感信息（疑似密钥/凭证），已拒绝保存',
+            commit_failed: '保存失败（详见日志，候选已恢复待确认）',
           }
           message.warning(reasonText[res?.reason ?? ''] ?? '确认失败')
         }

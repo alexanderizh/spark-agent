@@ -81,7 +81,7 @@ export type CommitWriteResult =
   | { ok: true; row: MemoryEntryRow; created: boolean }
   | {
       ok: false
-      reason: 'version_conflict' | 'already_exists' | 'validation'
+      reason: 'version_conflict' | 'already_exists' | 'validation' | 'io_failed'
       message: string
       /** 当前行的实际版本（version_conflict 时供调用方重读重试） */
       currentVersion?: number
@@ -129,8 +129,16 @@ export class MemoryCommitService {
       archived: false,
     }
 
-    // 1. 先写正文快照（原子替换）；失败则中止，DB 不动
-    const filePath = await this.store.writeFile({ meta, body: input.body })
+    // 1. 先写正文快照（原子替换）；失败收敛为结构化 io_failed（DB 不动）——
+    //    调用方（候选确认回滚 / writer / IPC）按 {ok:false} 分支处理，不接异常
+    let filePath: string
+    try {
+      filePath = await this.store.writeFile({ meta, body: input.body })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`commitCreate 写文件失败（DB 未动）：${input.scope}/${input.name} — ${message}`)
+      return { ok: false, reason: 'io_failed', message: `正文快照写入失败：${message}` }
+    }
 
     // 2. DB 提交（同事务维护 FTS；insert 带 body 写入 content_hash）
     try {
@@ -227,8 +235,16 @@ export class MemoryCommitService {
       archived: false,
     }
 
-    // 1. 先写新快照（原子替换旧文件）
-    const filePath = await this.store.writeFile({ meta, body: input.body })
+    // 1. 先写新快照（原子替换旧文件）；失败收敛为结构化 io_failed —— 旧文件
+    //    未被触碰（writeFile 原子替换，失败即未发生），DB 维持旧状态
+    let filePath: string
+    try {
+      filePath = await this.store.writeFile({ meta, body: input.body })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`commitUpdate 写新快照失败（旧文件与 DB 未动）：${entryId} — ${message}`)
+      return { ok: false, reason: 'io_failed', message: `新快照写入失败：${message}` }
+    }
 
     // 2. CAS 提交：版本失配（或写入间隙被归档/失效/删除）→ 不覆盖当前状态。
     //    成功路径同事务保留被覆盖版本（S2.2 revision 历史）。

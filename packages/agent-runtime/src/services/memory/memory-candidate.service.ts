@@ -144,11 +144,21 @@ export class MemoryCandidateService {
       extractionKind: SOURCE_TAG,
     })
     if (!committed.ok) {
-      log.warn(`candidate promote commit failed (${committed.reason}): candidate=${candidateId}`)
+      // 【审查修复】条目写入失败时回滚候选状态：repo.confirm 已把状态迁移为
+      // confirmed，若不回滚会留下"已确认但无条目"（entry_id=NULL）的悬状态——
+      // 用户既不能重试（not_pending）也不能拒绝（reject 只对 pending）。
+      // 条件回滚只作用于 entry_id 未回填的 confirmed 行，不误伤已晋级候选。
+      const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
+      log.warn(
+        `candidate promote commit failed (${committed.reason}): candidate=${candidateId}` +
+          `${reverted ? '，已回滚为待确认（可重试）' : ''}`,
+      )
       return {
         ok: false,
         reason: 'commit_failed',
-        message: `晋级写入失败（${committed.reason}）：${committed.message}`,
+        message: `晋级写入失败（${committed.reason}）：${committed.message}${
+          reverted ? '；候选已恢复为待确认，可重试或忽略' : ''
+        }`,
       }
     }
 
