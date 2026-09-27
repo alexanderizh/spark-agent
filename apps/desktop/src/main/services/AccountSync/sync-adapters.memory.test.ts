@@ -258,6 +258,30 @@ describe('AccountSyncAdapters memory（S1B.5 版本与失效语义）', () => {
       expect(memories.getById('mem-replay')).toBeNull()
     })
 
+    it('【S2.4】同步条目含敏感信息 → 拒绝落库并计入 SYNC_MEMORY_SENSITIVE', async () => {
+      const result = await adapters.apply(
+        categoryResult([
+          safeItem('mem-clean', T2, memoryValue({ id: 'mem-clean', name: '干净记忆' })),
+          safeItem(
+            'mem-secret',
+            T2,
+            memoryValue({
+              id: 'mem-secret',
+              name: '含密钥记忆',
+              // 通用赋值形态：过 sync-policy 的 token 前缀扫描（sk-/ghp- 等），
+              // 但命中 sanitizer 的 password 赋值模式 —— 验证 applyMemory 二道防线
+              description: '数据库凭据 password=hunter2s3cret 请记住',
+            }),
+          ),
+        ]),
+        new Set(),
+      )
+
+      expect(result.errorCodes).toContain('SYNC_MEMORY_SENSITIVE')
+      expect(memories.getById('mem-clean')).not.toBeNull()
+      expect(memories.getById('mem-secret')).toBeNull()
+    })
+
     it('【审查修复】tombstone 删除同时物理清理 revision 历史与派生边（不留悬挂行）', async () => {
       await seedLocalEntry({ id: 'mem-hist', updatedAt: T1, version: 2 })
       // 模拟该条目曾更新过：预置一条 revision 历史与一条派生边

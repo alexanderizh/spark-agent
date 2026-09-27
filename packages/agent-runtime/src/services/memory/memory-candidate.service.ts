@@ -27,6 +27,7 @@ import type {
 } from '@spark/storage'
 import { hashCandidateContent, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryCommitService } from './memory-commit.service.js'
+import { isMemorySensitive } from './sanitizer.js'
 import type { MemoryStoreService } from './memory-store.service.js'
 
 const log = createLogger('memory:candidate')
@@ -40,6 +41,7 @@ export type ConfirmFailure =
   | 'expired'
   | 'digest_mismatch'
   | 'payload_unreadable'
+  | 'sensitive_content'
   | 'commit_failed'
 
 export type CandidateConfirmResult =
@@ -76,8 +78,41 @@ export class MemoryCandidateService {
     return this.candidateRepo.listByStatus('pending').map((row) => this.toViewRow(row))
   }
 
-  /** 确认晋级：结构化校验 → 按候选原文创建条目 → 派生边 → 投影刷新 */
+  /**
+   * 确认晋级：结构化校验（全部通过才做状态迁移）→ 按候选原文创建条目 →
+   * 派生边 → 投影刷新。校验失败时候选保持 pending（用户可拒绝处理），
+   * 不产生"已确认但无条目"的悬状态。
+   */
   async confirm(candidateId: number, expectedDigest: string): Promise<CandidateConfirmResult> {
+    // 前置校验（不迁移状态）：存在性 / 载荷可解析 / 敏感内容
+    const rowPre = this.candidateRepo.getById(candidateId)
+    if (rowPre == null) {
+      return { ok: false, reason: 'not_found', message: `候选不存在：${candidateId}` }
+    }
+    const payloadPre = this.candidateRepo.parsePayload(rowPre)
+    if (payloadPre == null) {
+      log.warn(`candidate payload unreadable, refusing to promote: id=${candidateId}`)
+      return {
+        ok: false,
+        reason: 'payload_unreadable',
+        message: `候选内容不可解析，未创建条目（可在候选区拒绝该条）`,
+      }
+    }
+    // 【S2.4 统一写入不变量】晋级落库前的敏感内容二道防线：用户确认不豁免
+    // 敏感闸门（密钥/凭证即使经确认也不落库）
+    if (isMemorySensitive(payloadPre.description, payloadPre.body)) {
+      log.warn(
+        `candidate confirm blocked (rejection_code=sensitive): id=${candidateId} — ` +
+          `载荷含敏感信息，拒绝晋级`,
+      )
+      return {
+        ok: false,
+        reason: 'sensitive_content',
+        message: '候选内容含敏感信息（疑似密钥/凭证），已拒绝保存。',
+      }
+    }
+
+    // 状态迁移（一次性；摘要双重比对见 repo.confirm）
     const confirmed = this.candidateRepo.confirm(candidateId, expectedDigest)
     if (!confirmed.ok) {
       const messages: Record<string, string> = {
@@ -93,16 +128,7 @@ export class MemoryCandidateService {
       }
     }
     const row = confirmed.candidate
-    const payload = this.candidateRepo.parsePayload(row)
-    if (payload == null) {
-      // 载荷不可解析：不按不可读内容创建条目，候选置回可拒绝态由用户处理
-      log.warn(`candidate payload unreadable, refusing to promote: id=${candidateId}`)
-      return {
-        ok: false,
-        reason: 'payload_unreadable',
-        message: `候选内容不可解析，未创建条目（可在候选区拒绝该条）`,
-      }
-    }
+    const payload = payloadPre
 
     const body = buildPromotedBody(payload)
     const committed = await this.commitService.commitWrite({

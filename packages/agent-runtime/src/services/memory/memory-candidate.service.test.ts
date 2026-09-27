@@ -264,6 +264,27 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
     expect(await service.isConfirmationCurrent(id)).toBe(false)
   })
 
+  it('【S2.4】确认不豁免敏感闸门：载荷含敏感信息拒绝晋级且保持 pending', async () => {
+    const payload = {
+      type: 'feedback' as const,
+      name: 'sensitive-candidate',
+      description: '包含 api_key=sk-abcdefghijklmnopqrstuvwxyz 的提议',
+      body: '正文内容',
+      confidence: 0.8,
+      sourceIds: [],
+    }
+    const { row } = candidateRepo.insertPending({ scope: 'user', scopeRef: null, payload })
+    const r = await service.confirm(row!.id, row!.content_digest)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('sensitive_content')
+    // 校验先于状态迁移：候选保持 pending（可拒绝处理），无"已确认无条目"悬状态
+    const after = candidateRepo.getById(row!.id)!
+    expect(after.status).toBe('pending')
+    expect(after.entry_id).toBeNull()
+    expect(repo.countByScope('user', null)).toBe(0)
+  })
+
   it('payload 不可解析：不创建条目，返回 payload_unreadable', async () => {
     const { id } = propose()
     db.raw.prepare(`UPDATE memory_candidate SET payload_json = ? WHERE id = ?`).run('{not-json', id)

@@ -506,6 +506,7 @@ export { MemoryWriterService } from './services/memory/memory-writer.service.js'
 export { MemoryLifecycleService } from './services/memory/memory-lifecycle.service.js'
 export { MemoryCandidateService } from './services/memory/memory-candidate.service.js'
 export { MemoryCommitService } from './services/memory/memory-commit.service.js'
+export { isMemorySensitive, containsSensitiveContent } from './services/memory/sanitizer.js'
 export type {
   CandidateConfirmResult,
   CandidateViewRow,

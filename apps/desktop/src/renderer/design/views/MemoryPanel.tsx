@@ -617,14 +617,19 @@ function MemoryDetail({
     try {
       const patch: { description?: string; body?: string } = {}
       if (desc !== entry.description) patch.description = desc
-      // body 与当前磁盘版本对比
+      // body 与当前磁盘版本对比（同时取当前 version 作 CAS 期望值——
+      // 保存期间被其他修改推进则后端返回冲突，本地提示刷新，不静默覆盖）
       const cur = await getMemory({ id })
       if (body !== (cur.body ?? '')) patch.body = body
       if (Object.keys(patch).length === 0) {
         message.info('无变更')
         return
       }
-      await updateMemory({ id, ...patch })
+      await updateMemory({
+        id,
+        ...patch,
+        ...(cur.entry?.version != null ? { expectedVersion: cur.entry.version } : {}),
+      })
       message.success('已保存')
       await load()
       onSaved()

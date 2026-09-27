@@ -21,6 +21,12 @@ export type GateOutcome =
   | 'rejected-transient' // 闸门0 瞬时数据拒绝
   | 'rejected-confidence' // 闸门1 置信度 < 0.6 拒绝
   | 'rejected-sensitive' // 闸门4 敏感词拒绝
+  // 【S2.4】结构化拒绝分类补全（闸门日志均带 rejection_code=<category>，
+  // 评估集按类别断言；以下类别用例待 gate-cases 补充时即可直接引用）
+  | 'rejected-quota' // 闸门3 配额满额拒绝（现状策略：满额自动归档末位，写入仍发生——
+  // 该类别预留给配额策略改为拒绝时的断言）
+  | 'merged' // V1 去重 merge：候选并入既有条目（不新增行）
+  | 'skipped-duplicate' // V1 去重 skip：同义候选被判定重复丢弃
 
 export interface GateExisting {
   row: MemoryEntryInsert

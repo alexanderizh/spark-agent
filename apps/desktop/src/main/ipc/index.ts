@@ -190,6 +190,7 @@ import {
   MemoryLifecycleService,
   MemoryCandidateService,
   MemoryCommitService,
+  isMemorySensitive,
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
@@ -9147,6 +9148,7 @@ export function registerAllIpcHandlers(): void {
     validFrom: r.valid_from,
     invalidAt: r.invalid_at,
     supersededBy: r.superseded_by,
+    version: r.version,
   })
 
   let _memoryStore: MemoryStoreService | null = null
@@ -9275,14 +9277,83 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('memory:update', async (req) => {
-    log.info(`memory:update requested, id=${req.id}`)
+    log.info(
+      `memory:update requested, id=${req.id}` +
+        `${req.expectedVersion != null ? ` (CAS v${req.expectedVersion})` : ''}`,
+    )
     const repo = new MemoryRepository(getDatabase())
     const existing = repo.getById(req.id)
     if (existing == null)
       throw new SparkError('NOT_FOUND', `记忆不存在：${req.id}（可能已被删除或归档）。`)
+
+    // 【S2.4 统一写入不变量】入口 3 敏感内容闸门：正文/描述编辑不得绕过
+    //（与入口 1/2/4/5 同一防线；手工输入不套自动抽取的日期/置信规则）
+    if (isMemorySensitive(req.description ?? '', req.body ?? '')) {
+      throw new SparkError(
+        'VALIDATION_FAILED',
+        '记忆内容含敏感信息（疑似密钥/凭证），已被拒绝保存。请去掉敏感内容后重试。',
+      )
+    }
+
     let bodyForUpdate: string | undefined
     if (req.body != null) {
       bodyForUpdate = req.body
+    } else if (req.description != null) {
+      // 【S1A.3】description-only 编辑（未传 body）：从当前权威文件读正文一并传入，
+      // 防止 repo.update 因文本变更缺 body 而 fail-loud（E4 修复后该形态被拒绝）。
+      // 文件缺失时明确失败 —— 不允许"描述已改但正文检索丢失"的静默降级。
+      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
+      try {
+        bodyForUpdate = await store.readFile(existing.file_path)
+      } catch (err) {
+        throw new SparkError(
+          'VALIDATION_FAILED',
+          `记忆正文文件缺失或不可读（${existing.file_path}），无法安全更新描述。` +
+            `请先在编辑框提供完整正文，或修复文件后重试。原始错误：${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    // 【S2.4 / S1B.1 遗留收编】带 expectedVersion → 统一提交原语（先写文件后
+    // CAS：版本失配不覆盖当前状态且恢复权威正文；同事务保留被覆盖版本进
+    // revision 历史）。缺省 → 旧直写路径（未升级前端兼容，无 CAS）。
+    if (req.expectedVersion != null) {
+      if (existing.archived === 1 || existing.invalid_at != null) {
+        throw new SparkError(
+          'CONFLICT',
+          `记忆已归档或失效（v${existing.version}），拒绝更新：${req.id}`,
+        )
+      }
+      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
+      const committed = await new MemoryCommitService(repo, store).commitWrite({
+        entryId: req.id,
+        expectedVersion: req.expectedVersion,
+        scope: existing.scope,
+        scopeRef: existing.scope_ref,
+        type: req.type ?? existing.type,
+        name: existing.name,
+        description: req.description ?? existing.description,
+        confidence: existing.confidence,
+        // 纯 type-only 编辑也走快照写（同内容重写）—— 版本与 revision 历史口径一致
+        body: bodyForUpdate ?? (await store.readFile(existing.file_path).catch(() => '')),
+      })
+      if (!committed.ok) {
+        if (committed.reason === 'version_conflict') {
+          throw new SparkError(
+            'CONFLICT',
+            `版本冲突：该记忆已被其他修改更新到 v${committed.currentVersion ?? '?'}，` +
+              `本次编辑基于 v${req.expectedVersion}。请刷新后重试（你的改动未保存）。`,
+          )
+        }
+        throw new SparkError(
+          'VALIDATION_FAILED',
+          `更新失败（${committed.reason}）：${committed.message}`,
+        )
+      }
+      return { entry: toMemoryDto(committed.row) }
+    }
+
+    if (req.body != null) {
       // 先写文件（事实来源），再更新 DB+FTS：writeFile 失败则整体中止（DB 维持旧状态，
       // 与 writer.updateEntry 契约一致——避免 DB 领先文件导致 recall 永久读不到正文）
       await getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref)).writeFile({
@@ -9304,20 +9375,6 @@ export function registerAllIpcHandlers(): void {
         },
         body: req.body,
       })
-    } else if (req.description != null) {
-      // 【S1A.3】description-only 编辑（未传 body）：从当前权威文件读正文一并传入，
-      // 防止 repo.update 因文本变更缺 body 而 fail-loud（E4 修复后该形态被拒绝）。
-      // 文件缺失时明确失败 —— 不允许"描述已改但正文检索丢失"的静默降级。
-      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
-      try {
-        bodyForUpdate = await store.readFile(existing.file_path)
-      } catch (err) {
-        throw new SparkError(
-          'VALIDATION_FAILED',
-          `记忆正文文件缺失或不可读（${existing.file_path}），无法安全更新描述。` +
-            `请先在编辑框提供完整正文，或修复文件后重试。原始错误：${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
     }
     const updated = repo.update(
       req.id,

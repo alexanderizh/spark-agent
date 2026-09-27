@@ -217,6 +217,49 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     expect(repo.countByScope('user', null)).toBe(before)
   })
 
+  it('【S2.4】MERGE 产物含敏感信息 → 丢弃动作，keep/drops 均不写', async () => {
+    const a = await seed('keep-sens', '保留条目')
+    const b = await seed('drop-sens', '被合并条目')
+    const raw = JSON.stringify([
+      {
+        action: 'MERGE',
+        keepId: a,
+        dropIds: [b],
+        mergedDescription: 'api_key=sk-abcdefghijklmnopqrstuvwxyz0 合并后的描述',
+        reason: '敏感',
+      },
+    ])
+    const svc = makeService(raw)
+    await svc.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+
+    // 敏感闸门：合并描述命中 → 整个动作丢弃，keep 描述不变、drop 未失效
+    expect(repo.getById(a)!.description).toBe('保留条目')
+    expect(repo.getById(b)!.invalid_at).toBeNull()
+  })
+
+  it('【S2.4】ELEVATE 提议含敏感信息 → 不进候选区', async () => {
+    const a = await seed('fb-s1', '来源一')
+    const b = await seed('fb-s2', '来源二')
+    const raw = JSON.stringify([
+      {
+        action: 'ELEVATE',
+        sourceIds: [a, b],
+        reason: '敏感提议',
+        newMemory: {
+          name: 'leaked-key-rule',
+          description: '把 token=ghp_abcdefghijklmnopqrstuvwxyz 存进记忆',
+          body: '正文',
+          type: 'feedback',
+          confidence: 0.9,
+        },
+      },
+    ])
+    const svc = makeService(raw)
+    await svc.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+
+    expect(candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })).toHaveLength(0)
+  })
+
   it('below threshold → no LLM call', async () => {
     await seed('only-one', '单条记忆')
     const svc = makeService('[]')

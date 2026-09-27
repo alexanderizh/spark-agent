@@ -26,6 +26,7 @@ import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
 import { buildConsolidationPrompt } from './memory-extraction.prompt.js'
+import { isMemorySensitive } from './sanitizer.js'
 
 const log = createLogger('memory:consolidation')
 
@@ -197,6 +198,16 @@ export class MemoryConsolidationService {
     }
     if (drops.length === 0) return // 没有有效 drop，不操作
 
+    // 【S2.4 统一写入不变量】入口 4 敏感内容闸门：整合产物（合并描述/正文）
+    // 不得绕过 —— 命中即丢弃本动作（code=sensitive，结构化日志按类别断言）
+    if (isMemorySensitive(action.mergedDescription, mergedBody)) {
+      log.info(
+        `consolidation MERGE dropped (rejection_code=sensitive): keep=${keep.id} — ` +
+          `合并产物含敏感信息，不写入`,
+      )
+      return
+    }
+
     const nextConfidence = Math.max(keep.confidence, ...drops.map((d) => d.confidence))
     // 【审查修复】经提交原语 CAS 更新（先写文件后 CAS 的顺序不变，但失配时
     // 会尽力恢复被覆盖的权威正文——原实现直接 compareAndSwap 失配后 keep 的
@@ -268,6 +279,16 @@ export class MemoryConsolidationService {
     // 撞名保护：提议名与现有有效条目撞（确认落库会撞唯一约束）→ 不征集
     if (this.memoryRepo.findByName(scope, scopeRef, action.newMemory.name) != null) {
       log.debug(`consolidation ELEVATE skipped (name collision): ${action.newMemory.name}`)
+      return
+    }
+
+    // 【S2.4】入口 4 敏感内容闸门：候选载荷含敏感信息不征集（确认侧另有
+    // 二道防线 —— 候选入库前与晋级落库前各查一次）
+    if (isMemorySensitive(action.newMemory.description, action.newMemory.body)) {
+      log.info(
+        `consolidation ELEVATE dropped (rejection_code=sensitive): ${action.newMemory.name} — ` +
+          `提议含敏感信息，不进候选区`,
+      )
       return
     }
 

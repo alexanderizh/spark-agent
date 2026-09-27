@@ -3809,6 +3809,8 @@ export interface MemoryEntry {
   validFrom: number | null
   invalidAt: number | null
   supersededBy: string | null
+  /** 【S2.4】当前版本号（编辑界面携带为 expectedVersion 做 CAS 条件更新） */
+  version: number
 }
 
 export interface MemoryListRequest {
@@ -3845,6 +3847,12 @@ export interface MemoryUpdateRequest {
   description?: string
   body?: string
   type?: MemoryType
+  /**
+   * 【S2.4】CAS 期望版本（可选）：传入时走提交原语条件更新 —— 版本失配
+   * 返回 CONFLICT（不覆盖当前状态）；缺省保持旧行为（无条件更新，兼容
+   * 未升级的旧前端）。编辑界面应携带打开条目时的 version。
+   */
+  expectedVersion?: number
 }
 export interface MemoryUpdateResponse {
   entry: MemoryEntry

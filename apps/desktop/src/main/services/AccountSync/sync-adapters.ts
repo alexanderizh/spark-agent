@@ -17,7 +17,7 @@ import {
   WorkspaceRepository,
   type SparkDatabase,
 } from '@spark/storage'
-import { MemoryLifecycleService, MemoryStoreService } from '@spark/agent-runtime'
+import { MemoryLifecycleService, MemoryStoreService, isMemorySensitive } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import {
   finalizeCollectedItems,
@@ -695,6 +695,13 @@ export class AccountSyncAdapters {
           `memory stale response skipped: ${item.id} ` +
             `(remote ${item.updatedAt} < local ${new Date(existing.updated_at).toISOString()})`,
         )
+        continue
+      }
+      // 【S2.4 统一写入不变量】入口 5 敏感内容闸门：同步导入不得绕过 ——
+      // 云端条目含密钥/凭证时拒绝落库（结构化错误码，计入本轮 errorCodes）
+      if (isMemorySensitive(asString(value.description), asString(value.body))) {
+        log.warn(`memory sync item dropped (SYNC_MEMORY_SENSITIVE): ${item.id}`)
+        errorCodes.push('SYNC_MEMORY_SENSITIVE')
         continue
       }
       const scope: 'user' | 'project' | 'agent' =
