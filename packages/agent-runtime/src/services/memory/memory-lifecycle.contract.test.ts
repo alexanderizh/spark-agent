@@ -1,32 +1,32 @@
 /**
  * @module memory-lifecycle.contract.test
  *
- * S0 反例固定（E3/F4）：删除/归档与文件系统、MEMORY.md 投影的同步契约。
+ * 记忆生命周期服务测试（S1B.4；原 S0 反例 E3/F4/E1 已全部反转，2026-09-27）。
  *
  * 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.4：
- * 桌面端 `memory:delete` / `memory:archive` handler
- * （apps/desktop/src/main/ipc/index.ts:9269/:9275）当前为纯 repository 调用
- * （delete 清 DB+FTS+vec；archive 只置 archived=1），不清理磁盘 markdown，
- * 也不刷新 MEMORY.md 投影 —— UI（MemoryPanel）却承诺"含 markdown 文件与索引"。
- *
- * 本文件用真实 MemoryRepository + MemoryStoreService 组合复现该序列并固化
- * "反例成立"（it.fails）。S1B.4 引入 memory-lifecycle.service.ts 后，本文件
- * 演进为生命周期服务的正式测试，fails 用例反转为 it。
+ * S0 时期桌面 `memory:delete` / `memory:archive` handler 是纯 repository 调用
+ * （delete 清 DB+FTS+vec；archive 只置 archived=1），不清理磁盘 markdown、
+ * 不刷新 MEMORY.md 投影、归档不写回文件 frontmatter（旧 CLI 跨端复活），
+ * 4 条 it.fails 固定反例。S1B.4 引入 MemoryLifecycleService（删除/归档唯一
+ * 收敛入口，memory_operation 状态机 + 重启恢复）后全部反转；本文件同时
+ * 覆盖状态机、幂等与中断恢复。
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { MemoryRepository, SparkDatabase } from '@spark/storage'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { MemoryRepository, MemoryOperationRepository, SparkDatabase } from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
+import { MemoryLifecycleService } from './memory-lifecycle.service.js'
 import { readFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, rmSync } from 'fs'
 import { join } from 'path'
-import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 
-describe('memory lifecycle contract（S0：E3/F4 反例固定）', () => {
+describe('memory lifecycle service（S1B.4：E3/F4/E1 反转 + 状态机）', () => {
   let db: SparkDatabase
   let repo: MemoryRepository
+  let opRepo: MemoryOperationRepository
   let store: MemoryStoreService
+  let lifecycle: MemoryLifecycleService
   let testDir: string
   let workspaceDir: string
 
@@ -40,7 +40,9 @@ describe('memory lifecycle contract（S0：E3/F4 反例固定）', () => {
     db = new SparkDatabase(join(testDir, 'test.db'))
     db.runMigrations(join(process.cwd(), '..', 'storage', 'migrations'))
     repo = new MemoryRepository(db)
+    opRepo = new MemoryOperationRepository(db)
     store = new MemoryStoreService(testDir, workspaceDir)
+    lifecycle = new MemoryLifecycleService(repo, store, opRepo)
   })
 
   afterEach(() => {
@@ -49,7 +51,7 @@ describe('memory lifecycle contract（S0：E3/F4 反例固定）', () => {
   })
 
   /** 建一条 user scope 记忆：文件 + DB + MEMORY.md 投影齐备 */
-  async function seedEntry(id: string): Promise<{ row: ReturnType<MemoryRepository['getById']> }> {
+  async function seedEntry(id: string): Promise<ReturnType<MemoryRepository['getById']>> {
     const filePath = store.getFilePath('user', null, id)
     await store.writeFile({
       meta: {
@@ -95,73 +97,172 @@ describe('memory lifecycle contract（S0：E3/F4 反例固定）', () => {
         .listByScope('user', null)
         .map((e) => ({ name: e.name, description: e.description, id: e.id })),
     )
-    return { row }
+    return row
   }
 
-  it.fails('repo.delete 后磁盘 markdown 应被清理（当前残留 — memory:delete 同序列）', async () => {
-    const { row } = await seedEntry('usr_lc001')
-    expect(existsSync(row!.file_path)).toBe(true)
-
-    // 等价于 ipc/index.ts:9275 memory:delete 的全部动作
-    repo.delete(row!.id)
-
-    expect(existsSync(row!.file_path)).toBe(false)
-  })
-
-  it.fails('repo.delete 后 MEMORY.md 投影应同步移除（当前残留）', async () => {
-    const { row } = await seedEntry('usr_lc002')
-
-    repo.delete(row!.id)
-
+  function readIndex(): Promise<string> {
     const indexPath = join(store.getScopeDir('user', null), 'MEMORY.md')
-    const content = existsSync(indexPath) ? await readFile(indexPath, 'utf-8') : ''
-    expect(content).not.toContain('name-usr_lc002')
+    return existsSync(indexPath) ? readFile(indexPath, 'utf-8') : Promise.resolve('')
+  }
+
+  // ─── S0 反例反转（E3/F4/E1）：lifecycle 收敛后全部为 it ────────────────
+
+  it('delete 后磁盘 markdown 被清理（E3 反转）', async () => {
+    const row = (await seedEntry('usr_lc001'))!
+    expect(existsSync(row.file_path)).toBe(true)
+
+    const result = await lifecycle.deleteEntry(row.id)
+
+    expect(result.status).toBe('complete')
+    expect(existsSync(row.file_path)).toBe(false)
   })
 
-  it.fails(
-    'repo.archive 后 MEMORY.md 投影应同步移除（当前残留 — memory:archive 同序列）',
-    async () => {
-      const { row } = await seedEntry('usr_lc003')
+  it('delete 后 MEMORY.md 投影同步移除（F4 反转）', async () => {
+    const row = (await seedEntry('usr_lc002'))!
 
-      // 等价于 ipc/index.ts:9269 memory:archive 的全部动作
-      repo.archive(row!.id)
+    await lifecycle.deleteEntry(row.id)
 
-      const indexPath = join(store.getScopeDir('user', null), 'MEMORY.md')
-      const content = existsSync(indexPath) ? await readFile(indexPath, 'utf-8') : ''
-      expect(content).not.toContain('name-usr_lc003')
-    },
-  )
-
-  // ─── S0 反例固定（E1/E2 根因·桌面侧）：跨端复活 ──────────────────────
-  // 独立 CLI（spark-engine FileMemoryStore）与桌面零共享代码，只扫共享目录
-  // 文件、以 frontmatter archived 为唯一归档信号（见 spark-engine
-  // src/memory/store.ts list() 的 entries.filter(!archived)）。桌面归档只改
-  // DB 不写回文件 → 残留文件的 frontmatter 仍是 archived:false → 旧 CLI 照常
-  // 加载注入（跨端复活）。S1B（归档状态写回或托管目录隔离）后反转。
-  it.fails(
-    'repo.archive 后归档状态应写回文件 frontmatter（当前仍为 archived:false，旧 CLI 跨端复活）',
-    async () => {
-      const { row } = await seedEntry('usr_lc004')
-
-      repo.archive(row!.id)
-
-      const content = existsSync(row!.file_path) ? await readFile(row!.file_path, 'utf-8') : ''
-      expect(content).toMatch(/^archived:\s*true$/m)
-    },
-  )
-
-  // ─── 正确行为固化（当前已正确，修复不得回归） ──────────────────────────
-
-  it('repo.delete 后 DB 与 FTS 即时不可查（正确行为固化）', async () => {
-    const { row } = await seedEntry('usr_lc101')
-    repo.delete(row!.id)
-    expect(repo.getById(row!.id)).toBeNull()
+    expect(await readIndex()).not.toContain('name-usr_lc002')
   })
 
-  it('repo.archive 后普通检索不返回、DB 行保留可恢复（正确行为固化）', async () => {
-    const { row } = await seedEntry('usr_lc102')
-    repo.archive(row!.id)
-    expect(repo.listByScope('user', null).map((e) => e.id)).not.toContain(row!.id)
-    expect(repo.getById(row!.id)).not.toBeNull()
+  it('archive 后 MEMORY.md 投影同步移除（F4 反转）', async () => {
+    const row = (await seedEntry('usr_lc003'))!
+
+    await lifecycle.archiveEntry(row.id)
+
+    expect(await readIndex()).not.toContain('name-usr_lc003')
+  })
+
+  it('archive 后归档状态写回文件 frontmatter，旧 CLI 不再跨端复活（E1 反转）', async () => {
+    const row = (await seedEntry('usr_lc004'))!
+
+    await lifecycle.archiveEntry(row.id)
+
+    const content = existsSync(row.file_path) ? await readFile(row.file_path, 'utf-8') : ''
+    expect(content).toMatch(/^archived:\s*true$/m)
+  })
+
+  // ─── 正确行为固化（S0 既有，修复不得回归） ─────────────────────────────
+
+  it('delete 后 DB 与 FTS 即时不可查', async () => {
+    const row = (await seedEntry('usr_lc101'))!
+    await lifecycle.deleteEntry(row.id)
+    expect(repo.getById(row.id)).toBeNull()
+  })
+
+  it('archive 后普通检索不返回、DB 行保留可恢复', async () => {
+    const row = (await seedEntry('usr_lc102'))!
+    await lifecycle.archiveEntry(row.id)
+    expect(repo.listByScope('user', null).map((e) => e.id)).not.toContain(row.id)
+    expect(repo.getById(row.id)).not.toBeNull()
+  })
+
+  // ─── S1B.4 状态机 / 幂等 / 中断恢复 ────────────────────────────────────
+
+  it('delete 成功路径：operation 走完 pending→barrier_set→cleaning→local_purge_complete', async () => {
+    const row = (await seedEntry('usr_lc201'))!
+    const result = await lifecycle.deleteEntry(row.id)
+
+    expect(result.status).toBe('complete')
+    const op = opRepo.getById(result.operationId!)!
+    expect(op.kind).toBe('delete')
+    expect(op.target_id).toBe(row.id)
+    expect(op.status).toBe('local_purge_complete')
+    expect(op.last_error).toBeNull()
+  })
+
+  it('delete 幂等：不存在的 id 返回 not_found，不产生操作记录', async () => {
+    const result = await lifecycle.deleteEntry('usr_nonexistent')
+    expect(result.status).toBe('not_found')
+    expect(opRepo.listUnfinished()).toEqual([])
+    expect(opRepo.listFailed()).toEqual([])
+  })
+
+  it('archive 幂等：已归档条目重复归档补齐文件写回与投影后仍 complete', async () => {
+    const row = (await seedEntry('usr_lc202'))!
+    await lifecycle.archiveEntry(row.id)
+    const again = await lifecycle.archiveEntry(row.id)
+    expect(again.status).toBe('complete')
+    const content = await readFile(row.file_path, 'utf-8')
+    expect(content).toMatch(/^archived:\s*true$/m)
+  })
+
+  it('清理失败：状态置 failed 并保留目标，listUnfinished/listFailed 可见（可重试）', async () => {
+    const row = (await seedEntry('usr_lc203'))!
+    // 注入文件清理失败（cleaning 阶段第一步：deleteFile 抛错，文件与投影均残留）
+    vi.spyOn(store, 'deleteFile').mockImplementation(async () => {
+      throw new Error('EACCES: file delete denied')
+    })
+
+    const result = await lifecycle.deleteEntry(row.id)
+
+    expect(result.status).toBe('blocked_locally')
+    expect(result.error).toContain('file delete denied')
+    const op = opRepo.getById(result.operationId!)!
+    expect(op.status).toBe('failed')
+    expect(op.last_error).toContain('file delete denied')
+    // DB 屏障已生效（行已删）；文件与投影残留 = 待清理，由重试收敛
+    expect(repo.getById(row.id)).toBeNull()
+    expect(existsSync(row.file_path)).toBe(true)
+    expect(await readIndex()).toContain('name-usr_lc203')
+
+    // 重试收敛：failed 是终态（重启不自动重试），显式 retryFailed 至终态
+    vi.restoreAllMocks()
+    expect(await lifecycle.resumeUnfinished()).toBe(0) // failed 不在未终态集合
+    await lifecycle.retryFailed()
+    expect(opRepo.getById(op.id)!.status).toBe('local_purge_complete')
+    expect(existsSync(row.file_path)).toBe(false)
+    expect(await readIndex()).not.toContain('name-usr_lc203')
+  })
+
+  it('重启恢复：cleaning 中断的 delete 操作幂等重试至 local_purge_complete', async () => {
+    const row = (await seedEntry('usr_lc204'))!
+    // 模拟进程中断：屏障已设（行已删）、cleaning 未开始（文件残留）
+    repo.delete(row.id)
+    opRepo.insert({
+      id: 'op_test_interrupted',
+      kind: 'delete',
+      targetId: row.id,
+      targetVersion: row.version,
+      targetsJson: JSON.stringify({
+        filePath: row.file_path,
+        scope: row.scope,
+        scopeRef: row.scope_ref,
+      }),
+    })
+    opRepo.updateStatus('op_test_interrupted', 'barrier_set')
+    opRepo.updateStatus('op_test_interrupted', 'cleaning')
+    expect(opRepo.listUnfinished()).toHaveLength(1)
+
+    const handled = await lifecycle.resumeUnfinished()
+
+    expect(handled).toBe(1)
+    expect(opRepo.listUnfinished()).toEqual([])
+    expect(opRepo.getById('op_test_interrupted')!.status).toBe('local_purge_complete')
+    expect(existsSync(row.file_path)).toBe(false)
+    expect(await readIndex()).not.toContain('name-usr_lc204')
+  })
+
+  it('重启恢复：屏障未设完即中断（行仍在）→ 补设屏障后完成', async () => {
+    const row = (await seedEntry('usr_lc205'))!
+    opRepo.insert({
+      id: 'op_test_no_barrier',
+      kind: 'delete',
+      targetId: row.id,
+      targetVersion: row.version,
+      targetsJson: JSON.stringify({
+        filePath: row.file_path,
+        scope: row.scope,
+        scopeRef: row.scope_ref,
+      }),
+    })
+    // status 停留在 pending：屏障与清理均未做
+    expect(repo.getById(row.id)).not.toBeNull()
+
+    await lifecycle.resumeUnfinished()
+
+    expect(repo.getById(row.id)).toBeNull()
+    expect(existsSync(row.file_path)).toBe(false)
+    expect(opRepo.getById('op_test_no_barrier')!.status).toBe('local_purge_complete')
   })
 })

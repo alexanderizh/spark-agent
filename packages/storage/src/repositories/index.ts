@@ -384,6 +384,13 @@ export type {
 } from './memory-search.repository.js'
 export { MemoryEntityRepository, normalizeEntityName } from './memory-entity.repository.js'
 export type { MemoryEntityRow } from './memory-entity.repository.js'
+export { MemoryOperationRepository } from './memory-operation.repository.js'
+export type {
+  MemoryOperationKind,
+  MemoryOperationStatus,
+  MemoryOperationRow,
+  InsertMemoryOperationParams,
+} from './memory-operation.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

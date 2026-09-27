@@ -144,6 +144,7 @@ import {
   MemoryRepository,
   MemoryEntityRepository,
   MemorySearchRepository,
+  MemoryOperationRepository,
 } from '@spark/storage'
 import type {
   AgentItem as StorageAgentItem,
@@ -183,6 +184,7 @@ import {
   resolveProfileMediaModels,
   MemoryStoreService,
   MemoryWriterService,
+  MemoryLifecycleService,
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
@@ -9150,6 +9152,32 @@ export function registerAllIpcHandlers(): void {
     if (_memoryStore == null) _memoryStore = new MemoryStoreService()
     return _memoryStore
   }
+
+  // S1B.4：生命周期协调服务（删除/归档唯一收敛入口）+ 重启恢复。
+  // 文件清理按行内绝对 file_path 直删；投影刷新与归档写回按 scope 解析
+  // store（project scope → per-workspace，user/agent → appHomeDir 单例）
+  let _memoryLifecycle: MemoryLifecycleService | null = null
+  let _memoryLifecycleResumed = false
+  const getMemoryLifecycleService = (): MemoryLifecycleService => {
+    if (_memoryLifecycle == null) {
+      _memoryLifecycle = new MemoryLifecycleService(
+        new MemoryRepository(getDatabase()),
+        getMemoryStore(),
+        new MemoryOperationRepository(getDatabase()),
+        (scope, scopeRef) => getMemoryStore(resolveWorkspaceRootPath(scope, scopeRef)),
+      )
+    }
+    // 首次使用时恢复中断的生命周期操作（fire-and-forget，不阻塞本次请求）
+    if (!_memoryLifecycleResumed) {
+      _memoryLifecycleResumed = true
+      void _memoryLifecycle.resumeUnfinished().catch((err) => {
+        log.warn(
+          `memory lifecycle resume failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+    }
+    return _memoryLifecycle
+  }
   /** project scope 时按 workspaceId 查 root_path；user/agent 返回 undefined */
   const resolveWorkspaceRootPath = (scope: string, scopeRef: string | null): string | undefined => {
     if (scope === 'project' && scopeRef != null && scopeRef.length > 0) {
@@ -9282,14 +9310,27 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('memory:archive', async (req) => {
     log.info(`memory:archive requested, id=${req.id}`)
-    new MemoryRepository(getDatabase()).archive(req.id)
-    return { ok: true }
+    // S1B.4：归档走生命周期协调（DB 屏障 + frontmatter 写回 + 投影刷新），
+    // 状态机与失败重试见 memory-lifecycle.service.ts
+    const result = await getMemoryLifecycleService().archiveEntry(req.id)
+    return {
+      ok: result.status !== 'blocked_locally',
+      status: result.status,
+      ...(result.operationId != null ? { operationId: result.operationId } : {}),
+      ...(result.error != null ? { error: result.error } : {}),
+    }
   })
 
   typedIpcHandle('memory:delete', async (req) => {
     log.info(`memory:delete requested, id=${req.id}`)
-    new MemoryRepository(getDatabase()).delete(req.id)
-    return { ok: true }
+    // S1B.4：删除走生命周期协调（DB 屏障 + 磁盘清理 + 投影刷新）
+    const result = await getMemoryLifecycleService().deleteEntry(req.id)
+    return {
+      ok: result.status !== 'blocked_locally',
+      status: result.status,
+      ...(result.operationId != null ? { operationId: result.operationId } : {}),
+      ...(result.error != null ? { error: result.error } : {}),
+    }
   })
 
   typedIpcHandle('memory:rebuild-vectors', async () => {

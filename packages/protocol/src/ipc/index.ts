@@ -3852,14 +3852,26 @@ export interface MemoryUpdateResponse {
 export interface MemoryArchiveRequest {
   id: string
 }
+/**
+ * S1B.4：归档经生命周期协调服务（DB 屏障 + frontmatter 写回 + 投影刷新）。
+ * status：complete=全部完成；blocked_locally=清理失败保持待清理（可重试）；
+ * not_found=目标不存在（幂等成功）。
+ */
 export interface MemoryArchiveResponse {
   ok: boolean
+  status?: 'complete' | 'blocked_locally' | 'not_found'
+  operationId?: string
+  error?: string
 }
 export interface MemoryDeleteRequest {
   id: string
 }
+/** S1B.4：删除经生命周期协调服务，语义同 MemoryArchiveResponse.status */
 export interface MemoryDeleteResponse {
   ok: boolean
+  status?: 'complete' | 'blocked_locally' | 'not_found'
+  operationId?: string
+  error?: string
 }
 export interface MemoryRebuildVectorsRequest {}
 export interface MemoryRebuildVectorsResponse {

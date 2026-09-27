@@ -135,20 +135,27 @@ export function MemoryPanel() {
       title: `批量删除 ${ids.length} 条记忆？`,
       okType: 'danger',
       content:
-        '删除后不可恢复（当前版本仅删除数据库记录与检索索引，markdown 文件会残留在磁盘，待后续版本清理）。归档比删除安全，建议优先归档。',
+        '删除后不可恢复：将一并移除数据库记录、检索索引、markdown 文件与 MEMORY.md 索引。归档比删除安全，建议优先归档。',
       onOk: async () => {
         let ok = 0
+        let blocked = 0
         for (const id of ids) {
           try {
-            await deleteMemory({ id })
-            ok++
+            // S1B.4：status 处理 —— blocked_locally = 清理未完成（可重试），
+            // 部分失败不得计入成功（S1A.4 状态如实化延续）
+            const res = await deleteMemory({ id })
+            if (res?.status === 'blocked_locally') blocked++
+            else ok++
           } catch {
             /* 单条失败不阻断，继续删下一条 */
           }
         }
-        // 【S1A.4 状态如实化】部分失败不得报纯成功
         if (ok === ids.length) message.success(`已删除 ${ok}/${ids.length} 条`)
-        else message.warning(`已删除 ${ok}/${ids.length} 条，${ids.length - ok} 条失败（详见日志）`)
+        else if (ok + blocked === ids.length && blocked > 0) {
+          message.warning(`已删除 ${ok} 条，${blocked} 条清理未完成（磁盘文件待重试，详见日志）`)
+        } else {
+          message.warning(`已删除 ${ok}/${ids.length} 条，${ids.length - ok} 条失败（详见日志）`)
+        }
         clearSelection()
         void refreshFn()
       },
@@ -157,15 +164,18 @@ export function MemoryPanel() {
   const batchArchive = async () => {
     const ids = [...selectedIds]
     let ok = 0
+    let blocked = 0
     for (const id of ids) {
       try {
-        await archiveMemory({ id })
-        ok++
+        const res = await archiveMemory({ id })
+        if (res?.status === 'blocked_locally') blocked++
+        else ok++
       } catch {
         /* 单条失败不阻断 */
       }
     }
-    message.success(`已归档 ${ok}/${ids.length} 条`)
+    if (blocked === 0) message.success(`已归档 ${ok}/${ids.length} 条`)
+    else message.warning(`已归档 ${ok} 条，${blocked} 条清理未完成（详见日志）`)
     clearSelection()
     void refreshFn()
   }
@@ -536,8 +546,13 @@ function MemoryDetail({
         <Button
           onClick={async () => {
             try {
-              await archiveMemory({ id })
-              message.success('已归档')
+              // S1B.4：返回 status（complete/blocked_locally/not_found）
+              const res = await archiveMemory({ id })
+              if (res?.status === 'blocked_locally') {
+                message.warning('已归档，但部分清理未完成（磁盘文件或索引待重试，详见日志）')
+              } else {
+                message.success('已归档')
+              }
               onArchivedOrDeleted()
             } catch (err) {
               message.error(`归档失败：${err instanceof Error ? err.message : String(err)}`)
@@ -553,11 +568,17 @@ function MemoryDetail({
               title: '永久删除该记忆？',
               okType: 'danger',
               content:
-                '删除后不可恢复（当前版本仅删除数据库记录与检索索引，markdown 文件会残留在磁盘，待后续版本清理）。',
+                '删除后不可恢复：将一并移除数据库记录、检索索引、markdown 文件与 MEMORY.md 索引。归档比删除安全，建议优先归档。',
               onOk: async () => {
                 try {
-                  await deleteMemory({ id })
-                  message.success('已删除')
+                  const res = await deleteMemory({ id })
+                  if (res?.status === 'blocked_locally') {
+                    message.warning(
+                      '已删除，但磁盘文件清理未完成（下次启动或重试时继续，详见日志）',
+                    )
+                  } else {
+                    message.success('已删除')
+                  }
                   onArchivedOrDeleted()
                 } catch (err) {
                   message.error(`删除失败：${err instanceof Error ? err.message : String(err)}`)
