@@ -143,4 +143,81 @@ describe('EmbeddingService', () => {
     // 新文本向量已建立，条目离开回填队列
     expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
   })
+
+  // ─── S1B.3 异步提交保护：请求时捕获配置 + 代际条件提交 ────────────────────
+  it('S1B.3: embed 在途切换配置 → 表按【请求时】配置建立，返回代际与向量所属配置一致', async () => {
+    const firstEmbedGate = createDeferred<void>()
+    let call = 0
+    embedFn.mockImplementation(async (texts: string[]) => {
+      call += 1
+      if (call === 1) await firstEmbedGate.promise
+      return makeEmbedResult(texts)
+    })
+
+    const p = embedding.embedTexts(['hello'])
+    await new Promise((resolve) => setImmediate(resolve)) // 等 embed 被调用挂起
+    // embed 在途：用户把配置切到另一模型
+    settings.memory = { embeddingProviderId: 'prov-2', embeddingModel: 'other-model' }
+    firstEmbedGate.resolve()
+    const embedded = await p
+
+    // 请求时捕获（S1B.3）：向量是请求时模型（embed-model）算的，表必须按
+    // 请求时配置记录——否则新代际表混入旧模型向量，且代际口径失真
+    expect(embedded).not.toBeNull()
+    expect(embedded!.vectors).toHaveLength(1)
+    expect(searchRepo.getVecConfig()).toMatchObject({ provider: 'prov-1', model: 'embed-model' })
+    expect(embedded!.generation).toBe(searchRepo.getVecConfig()?.generation)
+  })
+
+  it('S1B.3: 回填与手动重建并发 → 写入携带期望代际，最终按当前代际收敛', async () => {
+    // 预先建表（gen 1）——rebuild 需在已有表的状态下递增代际
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4, { provider: 'prov-1', model: 'embed-model' })
+    expect(searchRepo.getVecConfig()?.generation).toBe(1)
+
+    const firstEmbedGate = createDeferred<void>()
+    const embedInputs: string[][] = []
+    embedFn.mockImplementation(async (texts: string[]) => {
+      embedInputs.push(texts)
+      if (embedInputs.length === 1) await firstEmbedGate.promise
+      return makeEmbedResult(texts)
+    })
+
+    const row = repo.insert({
+      id: 'usr_s1b3_gen',
+      scope: 'user',
+      scope_ref: null,
+      type: 'user',
+      name: 's1b3-generation-guard',
+      description: 'generation guard before rebuild',
+      file_path: join(testDir, 'usr_s1b3_gen.md'),
+      confidence: 0.9,
+      hit_count: 0,
+      last_hit_at: null,
+      source_session_id: null,
+      archived: 0,
+    })
+
+    const backfill = embedding.backfillMissingVectors()
+    while (embedInputs.length < 1) {
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+
+    // embed 在途：用户手动重建向量表（rebuild 入口）→ 代际递增、旧向量清空。
+    // 回填批次的写入期望值取自 embedTexts 返回的当前代际（请求时配置校验后
+    // 同步读取），与 upsertVec 事务内代际原子比对——无论中间被拒或直接
+    // 通过，条目最终都按当前代际收敛，不留旧代际向量
+    searchRepo.rebuildVecTable(4, { provider: 'prov-1', model: 'embed-model' })
+    expect(searchRepo.getVecConfig()?.generation).toBeGreaterThan(1)
+
+    firstEmbedGate.resolve()
+    await backfill
+
+    // 交错结局有两种，均正确：①在途批次携带的期望代际与当前一致（rebuild
+    // 后配置未变）→ 直接写入新表；②期望失配 → 拒绝丢弃。无论哪种，条目
+    // 都按【当前代际】收敛：再触发一轮后队列清空、meta 记录当前代际
+    await embedding.backfillMissingVectors()
+    const stillMissing = searchRepo.listEntriesMissingVec(10)
+    expect(stillMissing).toEqual([])
+  })
 })

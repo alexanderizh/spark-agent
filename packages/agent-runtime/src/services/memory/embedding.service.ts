@@ -62,12 +62,19 @@ export class EmbeddingService {
    *
    * 首次成功时确定维度：写 settings + 建/校验 memory_vec 表
    * （维度变化时自动重建，旧向量由懒回填补齐）。
+   *
+   * 【S1B.3】返回本次向量所属的索引代际（调用方作为条件提交的期望值）。
+   * 配置捕获在 embed 请求之前：embed 期间用户切换模型时，本批向量仍按
+   * 请求时配置建表/记代际——写入侧比对代际后由下一次配置检测统一重建，
+   * 不让新代际表混入旧模型向量。
    */
-  async embedTexts(texts: string[]): Promise<number[][] | null> {
+  async embedTexts(texts: string[]): Promise<{ vectors: number[][]; generation: number } | null> {
     try {
-      if (texts.length === 0) return []
+      if (texts.length === 0) return { vectors: [], generation: this.currentGeneration() }
       if (!this.isConfigured()) return null
       if (Date.now() < this.unavailableUntil) return null
+
+      const requestSource = this.vecSource()
 
       const vecOk = await this.searchRepo.loadVecExtension()
       if (!vecOk) {
@@ -83,14 +90,20 @@ export class EmbeddingService {
       }
 
       // 索引配置管理（S1B.2）：首次确定写 settings；provider/model/维度任一
-      // 变化（含同维度模型切换）时重建 vec 表并递增代际，旧向量整体失效
-      this.searchRepo.ensureVecTable(result.dimension, this.vecSource())
-      return result.vectors
+      // 变化（含同维度模型切换）时重建 vec 表并递增代际，旧向量整体失效。
+      // 按【请求时】捕获的 source 校验（S1B.3），返回代际供写入侧条件提交
+      this.searchRepo.ensureVecTable(result.dimension, requestSource)
+      return { vectors: result.vectors, generation: this.currentGeneration() }
     } catch (err) {
       log.warn(`embedTexts failed (degrading): ${err instanceof Error ? err.message : String(err)}`)
       this.unavailableUntil = Date.now() + UNAVAILABLE_CACHE_MS
       return null
     }
+  }
+
+  /** 当前索引代际（表未建时为 0；与 upsertVec 的 expectedGeneration 口径一致） */
+  private currentGeneration(): number {
+    return this.searchRepo.getVecConfig()?.generation ?? 0
   }
 
   /**
@@ -111,21 +124,28 @@ export class EmbeddingService {
         const missing = this.searchRepo.listEntriesMissingVec(BACKFILL_BATCH_SIZE)
         if (missing.length === 0) break
 
-        // 【S1B.2 / E6】请求时捕获每条输入摘要：embed 是异步 IO，期间条目
-        // 文本可能被更新；写入时（upsertVec）比对当前摘要，失配丢弃不占位
+        // 【S1B.2 / E6】请求时捕获每条输入摘要；【S1B.3】同时捕获索引代际：
+        // embed 是异步 IO，期间条目文本可能被更新、表可能被重建（模型/维度
+        // 切换）；写入时（upsertVec）事务内比对全部期望值，失配丢弃不占位
         const inputHashes = missing.map((e) => hashEmbeddingInput(e.name, e.description))
 
         // 事务外先算好全部向量（同步事务内禁 await）
-        const vectors = await this.embedTexts(missing.map(embeddingTextOf))
-        if (vectors == null) {
+        const embedded = await this.embedTexts(missing.map(embeddingTextOf))
+        if (embedded == null) {
           log.debug('vector backfill paused: embedding unavailable')
           break
         }
+        const { vectors, generation } = embedded
 
         let written = 0
         let stale = 0
         for (let i = 0; i < missing.length; i++) {
-          const ok = this.searchRepo.upsertVec(missing[i]!.id, vectors[i]!, inputHashes[i])
+          const ok = this.searchRepo.upsertVec(
+            missing[i]!.id,
+            vectors[i]!,
+            inputHashes[i],
+            generation,
+          )
           if (ok) written++
           else stale++
         }

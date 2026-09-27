@@ -419,28 +419,56 @@ export class MemorySearchRepository extends BaseRepository {
    * 【S1B.2 晚到防护（E6）】传入 inputHash（embed 请求时的输入摘要）时，
    * 事务内先重读条目当前文本算哈希比对：失配（回填期间文本被更新）→
    * 拒绝写入返回 false，晚到旧文本向量不占位，条目留在回填队列等下轮重算。
+   *
+   * 【S1B.3 条件提交（CAS）】请求时捕获的三重期望值全部在事务内比对：
+   *   1. 终态：条目必须仍为 `archived=0 AND invalid_at IS NULL`——embed 期间
+   *      被归档/失效/删除的条目拒绝写入（归档条目不进回填队列，直接丢弃）；
+   *   2. 输入摘要：inputHash 与当前文本哈希一致（同上）；
+   *   3. 代际：expectedGeneration 与当前配置代际一致——embed 期间表被重建
+   *      （模型/维度切换）时旧代际向量拒绝写入，条目留下轮按新代际重算。
+   * 任一失配影响 0 行 → 返回 false（丢弃/重排队），绝不覆盖当前状态。
    * 成功写入时同步 upsert memory_index_meta（kind=vec）记录输入摘要与
    * 当前配置代际。inputHash 缺省时不做防护也不写 meta（旧调用兼容）。
    */
-  upsertVec(entryId: string, vector: number[], inputHash?: string): boolean {
-    const entryRow = this.raw
-      .prepare('SELECT rowid, name, description FROM memory_entry WHERE id = ?')
-      .get(entryId) as { rowid: number | bigint; name: string; description: string } | undefined
-    if (entryRow == null) return false
-    if (inputHash != null) {
-      const currentHash = hashEmbeddingInput(entryRow.name, entryRow.description)
-      if (currentHash !== inputHash) {
+  upsertVec(
+    entryId: string,
+    vector: number[],
+    inputHash?: string,
+    expectedGeneration?: number,
+  ): boolean {
+    const config = this.getVecConfig()
+    const tx = this.raw.transaction(() => {
+      const entryRow = this.raw
+        .prepare(
+          `SELECT rowid, name, description FROM memory_entry
+           WHERE id = ? AND archived = 0 AND invalid_at IS NULL`,
+        )
+        .get(entryId) as { rowid: number | bigint; name: string; description: string } | undefined
+      if (entryRow == null) {
         log.info(
-          `upsertVec rejected (stale input): id=${entryId} — embedding 请求时的文本已被更新，` +
-            `丢弃晚到向量，条目留在回填队列`,
+          `upsertVec rejected (terminal state): id=${entryId} — embed 期间条目被归档/失效/删除，丢弃晚到向量`,
         )
         return false
       }
-    }
-    const rowid = BigInt(entryRow.rowid)
-    const buf = Buffer.from(new Float32Array(vector).buffer)
-    const config = this.getVecConfig()
-    const tx = this.raw.transaction(() => {
+      if (inputHash != null) {
+        const currentHash = hashEmbeddingInput(entryRow.name, entryRow.description)
+        if (currentHash !== inputHash) {
+          log.info(
+            `upsertVec rejected (stale input): id=${entryId} — embedding 请求时的文本已被更新，` +
+              `丢弃晚到向量，条目留在回填队列`,
+          )
+          return false
+        }
+      }
+      if (expectedGeneration != null && (config?.generation ?? 0) !== expectedGeneration) {
+        log.info(
+          `upsertVec rejected (generation mismatch): id=${entryId} — expected=${expectedGeneration} ` +
+            `current=${config?.generation ?? 0}（embed 期间索引已重建，丢弃晚到向量，条目留下轮按新代际重算）`,
+        )
+        return false
+      }
+      const rowid = BigInt(entryRow.rowid)
+      const buf = Buffer.from(new Float32Array(vector).buffer)
       this.raw.prepare('DELETE FROM memory_vec WHERE rowid = ?').run(rowid)
       this.raw.prepare('INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)').run(rowid, buf)
       if (inputHash != null) {
@@ -466,9 +494,9 @@ export class MemorySearchRepository extends BaseRepository {
             Date.now(),
           )
       }
+      return true
     })
-    tx()
-    return true
+    return tx() as boolean
   }
 
   /** 删除一条向量及其索引元数据（归档/失效/删除时调用；表不存在时静默跳过） */

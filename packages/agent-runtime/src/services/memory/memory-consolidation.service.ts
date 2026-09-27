@@ -38,7 +38,12 @@ export interface ConsolidationScopeRef {
 }
 
 export class MemoryConsolidationService {
-  private running = false
+  /**
+   * 【S1B.3】进程级互斥（static）：实例每 turn 在 session.service 新建，
+   * 实例字段的锁形同虚设；static 让同进程内所有实例共享同一把锁。
+   * 跨进程/长窗口重入由 lastConsolidationAt 持久占坑（见 consolidateIfDue）兜底。
+   */
+  private static running = false
 
   constructor(
     private readonly memoryRepo: MemoryRepository,
@@ -50,16 +55,21 @@ export class MemoryConsolidationService {
     private readonly settingsSet?: (category: string, key: string, value: unknown) => void,
   ) {}
 
+  /** @visibleForTesting 复位进程级互斥（仅测试隔离用） */
+  static resetReentrancyForTest(): void {
+    MemoryConsolidationService.running = false
+  }
+
   /**
    * 检查并执行到期的 scope（fire-and-forget 入口）。
-   * 进程内防重入；任何异常仅 log。
+   * 进程级互斥 + 持久占坑双重防重入；任何异常仅 log。
    *
    * @param scopes 本次会话相关的 scope 组合（user + 当前 workspace + 当前 agent）
    */
   async maybeConsolidate(scopes: ConsolidationScopeRef[]): Promise<void> {
-    if (this.running) return
+    if (MemoryConsolidationService.running) return
     if (!this.isEnabled()) return
-    this.running = true
+    MemoryConsolidationService.running = true
     try {
       for (const { scope, scopeRef } of scopes) {
         try {
@@ -71,7 +81,7 @@ export class MemoryConsolidationService {
         }
       }
     } finally {
-      this.running = false
+      MemoryConsolidationService.running = false
     }
   }
 
@@ -86,6 +96,13 @@ export class MemoryConsolidationService {
     const intervalMs = this.getIntervalDays() * DAY_MS
     if (last != null && Date.now() - last < intervalMs) return // 未到间隔
 
+    // 【S1B.3】持久占坑：检查通过即写 lastConsolidationAt（LLM 调用前）。
+    // 实例每 turn 新建，实例锁无法防跨实例重入；本标记落在 app_settings，
+    // 任何后续实例/进程触发都会被上面的间隔条件挡住——LLM 调用进行中
+    // （可达数十秒）的窗口期不再产生重复整合。占坑后失败不回滚：整合是
+    // 幂等收益型操作，宁可等下个 interval 重试，不可重复执行。
+    this.markConsolidated(scope, scopeRef)
+
     const prompt = buildConsolidationPrompt(
       scope,
       active.map((e) => ({ id: e.id, name: e.name, type: e.type, description: e.description })),
@@ -94,7 +111,6 @@ export class MemoryConsolidationService {
     const actions = parseActions(raw, active)
     if (actions.length === 0) {
       log.debug(`consolidation: no actions for ${scope}/${scopeRef ?? '∅'}`)
-      this.markConsolidated(scope, scopeRef)
       return
     }
 
@@ -113,7 +129,6 @@ export class MemoryConsolidationService {
         )
       }
     }
-    this.markConsolidated(scope, scopeRef)
     log.info(
       `consolidation ${scope}/${scopeRef ?? '∅'}: ${applied}/${actions.length} actions applied (${active.length} entries reviewed)`,
     )

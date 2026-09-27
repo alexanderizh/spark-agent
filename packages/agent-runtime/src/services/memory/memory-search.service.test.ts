@@ -142,7 +142,10 @@ function makeService(opts: {
     searchKnn: vi.fn(() => (opts.knnResults ?? []).map((entry) => ({ entry, distance: 0.1 }))),
   }
   const embeddingService = {
-    embedTexts: vi.fn(async () => opts.vectors ?? null),
+    // S1B.3：embedTexts 返回 { vectors, generation }，检索路径只用向量
+    embedTexts: vi.fn(async () =>
+      opts.vectors != null ? { vectors: opts.vectors, generation: 1 } : null,
+    ),
   }
   const svc = new MemorySearchService(searchRepo as never, embeddingService as never, () => null)
   return { svc, searchRepo, embeddingService }

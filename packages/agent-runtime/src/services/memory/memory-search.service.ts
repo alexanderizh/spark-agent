@@ -76,13 +76,18 @@ export class MemorySearchService {
     let vectorEnabled = false
     if (this.embeddingService != null) {
       try {
-        const vectors = await this.embeddingService.embedTexts([query])
-        if (vectors != null && vectors.length > 0) {
+        // S1B.3：embedTexts 返回 { vectors, generation }，检索路径只用向量
+        const embedded = await this.embeddingService.embedTexts([query])
+        if (embedded != null && embedded.vectors.length > 0) {
           vectorEnabled = true
-          vecEntries = this.searchRepo.searchKnn(vectors[0]!, channelOpts).map((h) => h.entry)
+          vecEntries = this.searchRepo
+            .searchKnn(embedded.vectors[0]!, channelOpts)
+            .map((h) => h.entry)
         }
       } catch (err) {
-        log.warn(`vector search failed, degrading to FTS-only: ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `vector search failed, degrading to FTS-only: ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
     if (!vectorEnabled) {

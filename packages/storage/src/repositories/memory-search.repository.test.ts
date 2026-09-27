@@ -329,4 +329,62 @@ describe('MemorySearchRepository', () => {
     searchRepo.ensureVecTable(4, { provider: 'prov-a', model: 'embed-v1' })
     expect(searchRepo.getVecConfig()).toEqual(before)
   })
+
+  // ─── S1B.3 异步提交保护（CAS 条件提交）──────────────────────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S1 切片 3：
+  // 请求时捕获终态/输入摘要/索引代际三重期望值，完成时事务内条件提交，
+  // 影响 0 行即丢弃/重排队，不覆盖当前状态。
+  it('S1B.3: embed 期间条目被归档 → 晚到向量拒绝写入且不进回填队列', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4)
+    const row = repo.insert(makeEntry({ description: 'will be archived' }))
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+
+    // embed 请求后、写入前条目被归档
+    repo.archive(row.id)
+    const ok = searchRepo.upsertVec(
+      row.id,
+      [1, 0, 0, 0],
+      hashEmbeddingInput(row.name, 'will be archived'),
+    )
+    expect(ok).toBe(false)
+    // 归档条目不属于回填队列（listEntriesMissingVec 只看有效条目）
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+  })
+
+  it('S1B.3: embed 期间条目被失效（invalid_at）→ 晚到向量拒绝写入', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4)
+    const row = repo.insert(makeEntry({ description: 'will be invalidated' }))
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+
+    repo.update(row.id, { invalid_at: Date.now() })
+    const ok = searchRepo.upsertVec(
+      row.id,
+      [1, 0, 0, 0],
+      hashEmbeddingInput(row.name, 'will be invalidated'),
+    )
+    expect(ok).toBe(false)
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+  })
+
+  it('S1B.3: 期望代际与当前失配（embed 期间表被重建）→ 拒绝写入并留下轮重算', async () => {
+    await searchRepo.loadVecExtension()
+    searchRepo.ensureVecTable(4, { provider: 'prov-a', model: 'embed-v1' })
+    const row = repo.insert(makeEntry({ description: 'generation guard' }))
+    const { hashEmbeddingInput } = await import('./memory-index-hash.js')
+    const hash = hashEmbeddingInput(row.name, 'generation guard')
+
+    // 请求时捕获代际 1；embed 期间同维度切换模型 → 重建 → 代际 2
+    searchRepo.ensureVecTable(4, { provider: 'prov-b', model: 'embed-v2' })
+    expect(searchRepo.getVecConfig()?.generation).toBe(2)
+
+    expect(searchRepo.upsertVec(row.id, [1, 0, 0, 0], hash, 1)).toBe(false)
+    // 失配丢弃：条目留在回填队列，下轮按新代际重算
+    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+
+    // 按当前代际（2）写入成功，条目离开队列
+    expect(searchRepo.upsertVec(row.id, [1, 0, 0, 0], hash, 2)).toBe(true)
+    expect(searchRepo.listEntriesMissingVec(10)).toEqual([])
+  })
 })
