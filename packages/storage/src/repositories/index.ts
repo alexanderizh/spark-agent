@@ -396,6 +396,20 @@ export type {
   InsertMemoryOperationParams,
 } from './memory-operation.repository.js'
 export { MemoryRevisionRepository, buildRevisionCoverage } from './memory-revision.repository.js'
+export {
+  MemoryCandidateRepository,
+  candidateDigestOf,
+  hashCandidateContent,
+  MAX_PENDING_CANDIDATES_PER_SCOPE,
+  CANDIDATE_TTL_MS,
+} from './memory-candidate.repository.js'
+export type {
+  MemoryCandidateStatus,
+  MemoryCandidatePayload,
+  MemoryCandidateRow,
+  InsertMemoryCandidateParams,
+  ConfirmCandidateResult,
+} from './memory-candidate.repository.js'
 export type {
   MemoryRevisionKind,
   MemoryDerivationKind,

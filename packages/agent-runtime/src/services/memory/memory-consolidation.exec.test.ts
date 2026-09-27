@@ -6,7 +6,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { SparkDatabase, MemoryRepository, MemorySearchRepository } from '@spark/storage'
+import {
+  SparkDatabase,
+  MemoryRepository,
+  MemorySearchRepository,
+  MemoryRevisionRepository,
+  MemoryCandidateRepository,
+} from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
 import { MemoryConsolidationService } from './memory-consolidation.service.js'
 import { join } from 'path'
@@ -27,6 +33,8 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     db = new SparkDatabase(join(testDir, 'test.db'))
     db.runMigrations(join(process.cwd(), '..', 'storage', 'migrations'))
     repo = new MemoryRepository(db)
+    revisionRepo = new MemoryRevisionRepository(db)
+    candidateRepo = new MemoryCandidateRepository(db)
     store = new MemoryStoreService(testDir, join(testDir, 'ws'))
     settingsMap = { consolidationThreshold: 2, consolidationIntervalDays: 0.01 }
     llmCalls = 0
@@ -79,6 +87,9 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     return id
   }
 
+  let revisionRepo: MemoryRevisionRepository
+  let candidateRepo: MemoryCandidateRepository
+
   function makeService(llmRaw: string): MemoryConsolidationService {
     return new MemoryConsolidationService(
       repo,
@@ -92,6 +103,9 @@ describe('MemoryConsolidationService execution (real DB)', () => {
       (cat, key, val) => {
         if (cat === 'memory') settingsMap[key] = val
       },
+      revisionRepo,
+      undefined,
+      candidateRepo,
     )
   }
 
@@ -127,7 +141,7 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     expect(body).toContain('结尾不可丢')
   })
 
-  it('ELEVATE: new high-level feedback with source_session_id=consolidation', async () => {
+  it('ELEVATE（S2.3）：提议入候选区 pending，不直接写稳定 feedback', async () => {
     const a = await seed('fb1', '别在 views.css 加样式')
     const b = await seed('fb2', '组件样式放 .less')
     const raw = JSON.stringify([
@@ -141,6 +155,9 @@ describe('MemoryConsolidationService execution (real DB)', () => {
           body: '**Why:** 避免污染\n**How to apply:** 新样式写 .less',
           type: 'feedback',
           confidence: 0.85,
+          // N12：模型夹带的"用户已确认"标签 —— 不产生任何效力
+          userConfirmed: true,
+          scope: 'user',
         },
       },
     ])
@@ -148,18 +165,30 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     const before = repo.countByScope('user', null)
     await svc.maybeConsolidate([{ scope: 'user', scopeRef: null }])
 
-    expect(repo.countByScope('user', null)).toBe(before + 1)
-    const elevated = repo.listByScope('user', null).find((e) => e.name === 'css-convention')!
-    expect(elevated).toBeDefined()
-    expect(elevated.source_session_id).toBe('consolidation')
-    expect(elevated.confidence).toBe(0.85)
-    // 【S2.1】来源绑定：整合产生如实标注角色与提取类别
-    expect(elevated.author_role).toBe('consolidation')
-    expect(elevated.extraction_kind).toBe('consolidation')
-    expect(elevated.evidence_status).toBe('available')
-    // 源条目未被失效（ELEVATE 不动源）
+    // 不自动写入稳定 feedback（晋级须用户确认）
+    expect(repo.countByScope('user', null)).toBe(before)
+    expect(repo.listByScope('user', null).find((e) => e.name === 'css-convention')).toBeUndefined()
+
+    // 提议在候选区 pending，携带原文与来源
+    const pending = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
+    expect(pending).toHaveLength(1)
+    const payload = candidateRepo.parsePayload(pending[0]!)
+    expect(payload?.name).toBe('css-convention')
+    expect(payload?.confidence).toBe(0.85)
+    expect(payload?.sourceIds).toEqual([a, b])
+    // N12：夹带字段不进候选载荷（无确认效力）
+    expect(JSON.stringify(payload)).not.toContain('userConfirmed')
+
+    // 源条目未被失效（ELEVATE 不动源）；派生边待确认时建立
     expect(repo.getById(a)!.invalid_at).toBeNull()
     expect(repo.getById(b)!.invalid_at).toBeNull()
+    expect(revisionRepo.listDerivationsFrom(a)).toHaveLength(0)
+
+    // 同一提议再次整合 → 摘要去重，不累积候选（N1/N2）
+    settingsMap['lastConsolidationAt:user:∅'] = 0
+    const svc2 = makeService(raw)
+    await svc2.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+    expect(candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })).toHaveLength(1)
   })
 
   it('ELEVATE 撞名保护：newMemory.name 与现有有效条目撞 → 跳过，不抛 UNIQUE', async () => {

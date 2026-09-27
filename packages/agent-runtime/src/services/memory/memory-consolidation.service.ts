@@ -14,17 +14,16 @@
  * 全程 fire-and-forget + try/catch：任何失败仅 log，绝不阻塞主对话。
  */
 
-import crypto from 'node:crypto'
 import { createLogger } from '@spark/shared'
 import type {
   MemoryRepository,
   MemoryEntityRepository,
   MemoryEntryRow,
   MemoryRevisionRepository,
+  MemoryCandidateRepository,
 } from '@spark/storage'
 import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
-import type { MemoryFileMeta } from './memory-store.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
 import { buildConsolidationPrompt } from './memory-extraction.prompt.js'
 
@@ -34,8 +33,6 @@ const DEFAULT_THRESHOLD = 30
 const DEFAULT_INTERVAL_DAYS = 7
 const DAY_MS = 86_400_000
 const SOURCE_TAG = 'consolidation'
-
-const SCOPE_PREFIX: Record<string, string> = { user: 'usr', project: 'prj', agent: 'agt' }
 
 type Scope = 'user' | 'project' | 'agent'
 
@@ -67,6 +64,11 @@ export class MemoryConsolidationService {
      * 与 writer 全部更新路径同一不变量）；缺省内部构造，零破坏。
      */
     private readonly commitService: MemoryCommitService | null = null,
+    /**
+     * 【S2.3】候选确认区：ELEVATE 不再直接写入稳定 feedback，先入候选区
+     * 待真实用户结构化确认（缺省 null = 跳过 ELEVATE，不产生候选）。
+     */
+    private readonly candidateRepo: MemoryCandidateRepository | null = null,
   ) {
     this.commitSvc = commitService ?? new MemoryCommitService(memoryRepo, storeService)
   }
@@ -238,89 +240,64 @@ export class MemoryConsolidationService {
     log.debug(`consolidation MERGE: keep ${keep.id} ← drop ${drops.map((d) => d.id).join(',')}`)
   }
 
-  /** ELEVATE：新增一条高阶 feedback，source_session_id='consolidation' 标识来源。 */
+  /**
+   * ELEVATE（S2.3 重设计）：提议进候选区，不直接写入稳定 feedback。
+   *
+   * 晋级须真实用户经可信界面的结构化确认（candidate id + 内容摘要），
+   * 由 MemoryCandidateService.confirm 创建条目并记派生边 —— 模型自称
+   * 确认无可达通道（N12）。同 scope 同摘要的既有候选（任意状态，含已
+   * 拒绝）不重复征集（N1/N2：重复总结/整合不累积票数）。
+   */
   private async applyElevate(
     action: Extract<ConsolidationAction, { action: 'ELEVATE' }>,
     scope: Scope,
     scopeRef: string | null,
   ): Promise<void> {
-    // sourceIds 必须仍有效
+    if (this.candidateRepo == null) {
+      // 未接候选仓库（旧调用方）：ELEVATE 直接跳过 —— 宁可不晋级，
+      // 也不绕过确认入口自动写入稳定 feedback
+      log.debug('consolidation ELEVATE skipped (candidate repo not wired)')
+      return
+    }
+    // sourceIds 必须仍有效（>=2 条低阶证据才成候选）
     const validSources = action.sourceIds
       .map((id) => this.memoryRepo.getById(id))
       .filter((e): e is MemoryEntryRow => e != null && e.invalid_at == null)
     if (validSources.length < 2) return
 
-    // 撞名保护：新升华条目 name 若与现有有效条目撞（唯一约束 scope+scope_ref+name），
-    // insert 会抛 UNIQUE。此时跳过（升华非关键，宁可不做，避免 per-action catch 吞错后丢动作）。
+    // 撞名保护：提议名与现有有效条目撞（确认落库会撞唯一约束）→ 不征集
     if (this.memoryRepo.findByName(scope, scopeRef, action.newMemory.name) != null) {
       log.debug(`consolidation ELEVATE skipped (name collision): ${action.newMemory.name}`)
       return
     }
 
-    const id = generateId(scope)
-    const filePath = this.storeService.getFilePath(scope, scopeRef, id)
-    const now = Date.now()
-    const meta: MemoryFileMeta = {
-      id,
+    const { inserted, row } = this.candidateRepo.insertPending({
       scope,
       scopeRef,
-      type: action.newMemory.type,
-      name: action.newMemory.name,
-      description: action.newMemory.description,
-      confidence: action.newMemory.confidence,
-      createdAt: now,
-      updatedAt: now,
-      hitCount: 0,
-      lastHitAt: null,
-      sourceSessionId: SOURCE_TAG,
-      links: [],
-      archived: false,
-    }
-    const body = `${action.newMemory.body}\n\n## 升华来源\n${validSources.map((s) => `- [${s.id}] ${s.name}`).join('\n')}`
-    // 先写文件（事实来源）再落库（与 writer 稳健顺序一致），insert 传 body 让 FTS 索引正文
-    await this.storeService.writeFile({ meta, body })
-    this.memoryRepo.insert(
-      {
-        id,
-        scope,
-        scope_ref: scopeRef,
+      payload: {
         type: action.newMemory.type,
         name: action.newMemory.name,
         description: action.newMemory.description,
-        file_path: filePath,
+        body: action.newMemory.body,
         confidence: action.newMemory.confidence,
-        hit_count: 0,
-        last_hit_at: null,
-        source_session_id: SOURCE_TAG,
-        archived: 0,
-        // 来源绑定（S2.1）：整合产生，作者角色/提取类别如实标注；
-        // 正文「升华来源」段已列输入条目 id（S2.2 revision 历史的前身）
-        author_role: 'consolidation',
-        extraction_kind: 'consolidation',
-        evidence_status: 'available',
+        ...(action.newMemory.entities != null && action.newMemory.entities.length > 0
+          ? { entities: action.newMemory.entities }
+          : {}),
+        sourceIds: validSources.map((s) => s.id),
       },
-      body,
+    })
+    if (!inserted) {
+      // 同摘要既有候选（pending/confirmed/rejected/expired）—— 不重复征集
+      log.debug(
+        `consolidation ELEVATE deduped (digest exists, status=${row?.status ?? '?'}): ` +
+          action.newMemory.name,
+      )
+      return
+    }
+    log.info(
+      `consolidation ELEVATE proposed as candidate #${row?.id ?? '?'} ` +
+        `(${scope}/${scopeRef ?? '∅'} "${action.newMemory.name}") — 等待用户确认晋级`,
     )
-    // 升华条目的实体落库（entityRepo 提供时；此前构造收下但未使用 → 死依赖，现接上）
-    if (
-      this.entityRepo != null &&
-      action.newMemory.entities != null &&
-      action.newMemory.entities.length > 0
-    ) {
-      try {
-        this.entityRepo.upsertEntitiesForMemory(id, scope, scopeRef, action.newMemory.entities)
-      } catch (err) {
-        log.warn(
-          `ELEVATE entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
-    }
-    // 【S2.2】派生边 source → 新条目（kind='elevate'）：撤回任一来源时可沿边
-    // 找到升华条目标记待复核（H2 纠正影响传播）
-    for (const src of validSources) {
-      this.revisionRepo?.insertDerivation(src.id, id, 'elevate')
-    }
-    log.debug(`consolidation ELEVATE: ${id} ← sources ${validSources.map((s) => s.id).join(',')}`)
   }
 
   // ─── 配置 / 标记 ─────────────────────────────────────────────────────
@@ -466,9 +443,4 @@ export function parseActions(raw: string, entries: Array<{ id: string }>): Conso
     log.debug(`consolidation parse failed: ${raw.slice(0, 200)}`)
     return []
   }
-}
-
-function generateId(scope: string): string {
-  const prefix = SCOPE_PREFIX[scope] ?? 'mem'
-  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
 }

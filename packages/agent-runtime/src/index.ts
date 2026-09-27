@@ -504,6 +504,13 @@ export type {
 export { MemoryStoreService } from './services/memory/memory-store.service.js'
 export { MemoryWriterService } from './services/memory/memory-writer.service.js'
 export { MemoryLifecycleService } from './services/memory/memory-lifecycle.service.js'
+export { MemoryCandidateService } from './services/memory/memory-candidate.service.js'
+export { MemoryCommitService } from './services/memory/memory-commit.service.js'
+export type {
+  CandidateConfirmResult,
+  CandidateViewRow,
+  ConfirmFailure,
+} from './services/memory/memory-candidate.service.js'
 export { EmbeddingService } from './services/memory/embedding.service.js'
 
 export { SparkMcpOAuthProvider } from './mcp/oauth/oauth-provider.js'

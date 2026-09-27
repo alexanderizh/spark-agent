@@ -499,7 +499,7 @@ import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
 import { TurnPerfRepository } from '@spark/storage'
 import { MemoryEntityRepository } from '@spark/storage'
-import { MemoryRevisionRepository } from '@spark/storage'
+import { MemoryCandidateRepository, MemoryRevisionRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -6693,6 +6693,9 @@ export class SessionService {
             memEntityRepo,
             (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
             new MemoryRevisionRepository(this.db),
+            // commitService 缺省内部构造；候选仓库注入后 ELEVATE 进候选区（S2.3）
+            undefined,
+            new MemoryCandidateRepository(this.db),
           )
           const consoScopes: Array<{
             scope: 'user' | 'project' | 'agent'

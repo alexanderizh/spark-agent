@@ -146,6 +146,7 @@ import {
   MemorySearchRepository,
   MemoryOperationRepository,
   MemoryRevisionRepository,
+  MemoryCandidateRepository,
   buildRevisionCoverage,
 } from '@spark/storage'
 import type {
@@ -187,6 +188,8 @@ import {
   MemoryStoreService,
   MemoryWriterService,
   MemoryLifecycleService,
+  MemoryCandidateService,
+  MemoryCommitService,
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
@@ -9181,6 +9184,22 @@ export function registerAllIpcHandlers(): void {
     }
     return _memoryLifecycle
   }
+  // S2.3：候选确认服务（ELEVATE 晋级唯一确认入口，仅本 IPC 可达 —— N12）
+  let _memoryCandidateService: MemoryCandidateService | null = null
+  const getMemoryCandidateService = (): MemoryCandidateService => {
+    if (_memoryCandidateService == null) {
+      const repo = new MemoryRepository(getDatabase())
+      _memoryCandidateService = new MemoryCandidateService(
+        new MemoryCandidateRepository(getDatabase()),
+        new MemoryCommitService(repo, getMemoryStore()),
+        repo,
+        new MemoryRevisionRepository(getDatabase()),
+        getMemoryStore(),
+      )
+    }
+    return _memoryCandidateService
+  }
+
   /** project scope 时按 workspaceId 查 root_path；user/agent 返回 undefined */
   const resolveWorkspaceRootPath = (scope: string, scopeRef: string | null): string | undefined => {
     if (scope === 'project' && scopeRef != null && scopeRef.length > 0) {
@@ -9409,6 +9428,48 @@ export function registerAllIpcHandlers(): void {
       status: result.status,
       ...(result.error != null ? { error: result.error } : {}),
     }
+  })
+
+  typedIpcHandle('memory:candidate:list', async () => {
+    const rows = getMemoryCandidateService().listPending()
+    return {
+      ok: true,
+      candidates: rows.map((r) => ({
+        id: r.id,
+        scope: r.scope,
+        scopeRef: r.scopeRef,
+        createdAt: r.createdAt,
+        expiresAt: r.expiresAt,
+        contentDigest: r.contentDigest,
+        payload:
+          r.payload == null
+            ? null
+            : {
+                type: r.payload.type,
+                name: r.payload.name,
+                description: r.payload.description,
+                body: r.payload.body,
+                confidence: r.payload.confidence,
+                sourceIds: r.payload.sourceIds,
+              },
+      })),
+    }
+  })
+
+  typedIpcHandle('memory:candidate:confirm', async (req) => {
+    log.info(`memory:candidate:confirm requested, id=${req.id}`)
+    const result = await getMemoryCandidateService().confirm(req.id, req.contentDigest)
+    if (!result.ok) {
+      log.warn(`candidate confirm rejected (${result.reason}): id=${req.id} — ${result.message}`)
+      return { ok: false, reason: result.reason, error: result.message }
+    }
+    return { ok: true, entryId: result.entryId }
+  })
+
+  typedIpcHandle('memory:candidate:reject', async (req) => {
+    log.info(`memory:candidate:reject requested, id=${req.id}`)
+    const result = getMemoryCandidateService().reject(req.id)
+    return { ok: result.ok }
   })
 
   typedIpcHandle('memory:rebuild-vectors', async () => {

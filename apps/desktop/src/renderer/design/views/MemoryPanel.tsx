@@ -199,6 +199,81 @@ export function MemoryPanel() {
   }, [listMemory, scope, scopeRef, typeFilter, includeInvalid])
 
   const refreshFn = useRefreshable(refresh)
+
+  // S2.3 候选确认区：推断行为规则晋级须真实用户确认（N12 —— 模型自称确认不可达）
+  const { invoke: listCandidates } = useIpcInvoke('memory:candidate:list')
+  const { invoke: confirmCandidate } = useIpcInvoke('memory:candidate:confirm')
+  const { invoke: rejectCandidate } = useIpcInvoke('memory:candidate:reject')
+  const [candidates, setCandidates] = useState<
+    Array<{
+      id: number
+      scope: 'user' | 'project' | 'agent'
+      scopeRef: string | null
+      createdAt: number
+      expiresAt: number
+      contentDigest: string
+      payload: {
+        type: 'user' | 'feedback' | 'project' | 'reference'
+        name: string
+        description: string
+        body: string
+        confidence: number
+        sourceIds: string[]
+      } | null
+    }>
+  >([])
+  const [candidateBusy, setCandidateBusy] = useState<number | null>(null)
+  const refreshCandidates = useCallback(async () => {
+    try {
+      const res = await listCandidates({})
+      setCandidates(res?.candidates ?? [])
+    } catch {
+      /* 候选区加载失败不阻断主列表 */
+    }
+  }, [listCandidates])
+  const onConfirmCandidate = useCallback(
+    async (id: number, contentDigest: string) => {
+      setCandidateBusy(id)
+      try {
+        const res = await confirmCandidate({ id, contentDigest })
+        if (res?.ok) message.success('已确认并保存为正式记忆')
+        else {
+          const reasonText: Record<string, string> = {
+            digest_mismatch: '内容已变化，请重新查看后确认',
+            not_pending: '该候选已处理过',
+            expired: '候选已过期',
+            not_found: '候选不存在',
+            payload_unreadable: '候选内容不可解析',
+            commit_failed: '保存失败（详见日志）',
+          }
+          message.warning(reasonText[res?.reason ?? ''] ?? '确认失败')
+        }
+      } catch {
+        message.error('确认失败（IPC 异常）')
+      } finally {
+        setCandidateBusy(null)
+      }
+      void refreshCandidates()
+      void refreshFn()
+    },
+    [confirmCandidate, refreshCandidates, refreshFn],
+  )
+  const onRejectCandidate = useCallback(
+    async (id: number) => {
+      setCandidateBusy(id)
+      try {
+        const res = await rejectCandidate({ id })
+        if (res?.ok) message.success('已忽略该提议')
+        else message.warning('该候选不在待确认状态')
+      } catch {
+        message.error('操作失败（IPC 异常）')
+      } finally {
+        setCandidateBusy(null)
+      }
+      void refreshCandidates()
+    },
+    [rejectCandidate, refreshCandidates],
+  )
   // scopeRef 输入 debounce 300ms，避免每字符触发请求
   const [scopeRefInput, setScopeRefInput] = useState('')
   useEffect(() => {
@@ -210,6 +285,10 @@ export function MemoryPanel() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+  // 候选区与主列表同刷（候选不随 scope 过滤 —— 是全局待确认队列）
+  useEffect(() => {
+    void refreshCandidates()
+  }, [refreshCandidates])
 
   return (
     <div className="mp_root">
@@ -289,6 +368,55 @@ export function MemoryPanel() {
           allowClear
         />
       </div>
+
+      {candidates.length > 0 && (
+        <section className="mp_candidate_section">
+          <div className="mp_candidate_header">
+            <span className="mp_candidate_title">待确认提议</span>
+            <span className="mp_candidate_hint">
+              整合升华的行为规则候选 · 确认后才会保存为正式记忆（{candidates.length} 条待处理）
+            </span>
+          </div>
+          {candidates.map((c) => (
+            <div className="mp_candidate_row" key={c.id}>
+              <div className="mp_candidate_body">
+                <div className="mp_candidate_name">
+                  {c.payload?.name ?? '（内容不可解析）'}
+                  <Tag size="middle">{c.scope}</Tag>
+                  {c.payload != null && <Tag size="middle">{c.payload.type}</Tag>}
+                </div>
+                <div className="mp_candidate_desc">
+                  {c.payload?.description ?? '该候选内容无法解析，建议忽略'}
+                  {c.payload != null && c.payload.sourceIds.length > 0 && (
+                    <span className="mp_candidate_sources">
+                      {' '}
+                      · 依据 {c.payload.sourceIds.length} 条既有记忆
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="mp_candidate_actions">
+                <Button
+                  size="middle"
+                  type="primary"
+                  disabled={c.payload == null}
+                  loading={candidateBusy === c.id}
+                  onClick={() => void onConfirmCandidate(c.id, c.contentDigest)}
+                >
+                  确认保存
+                </Button>
+                <Button
+                  size="middle"
+                  loading={candidateBusy === c.id}
+                  onClick={() => void onRejectCandidate(c.id)}
+                >
+                  忽略
+                </Button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {selectedIds.size > 0 && (
         <div className="mp_batch_bar">

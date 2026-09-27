@@ -15,12 +15,14 @@ import {
   MemoryRepository,
   MemoryRevisionRepository,
   MemoryOperationRepository,
+  MemoryCandidateRepository,
 } from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
 import { MemoryCommitService } from './memory-commit.service.js'
 import { MemoryLifecycleService } from './memory-lifecycle.service.js'
 import { MemoryReaderService } from './memory-reader.service.js'
 import { MemoryConsolidationService } from './memory-consolidation.service.js'
+import { MemoryCandidateService } from './memory-candidate.service.js'
 import { mkdirSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -444,6 +446,7 @@ describe('S2.2 revision 历史（commit 保留 / supersede / retract / 派生边
       },
     ])
 
+    const candidateRepo = new MemoryCandidateRepository(db)
     const service = new MemoryConsolidationService(
       repo,
       store,
@@ -454,8 +457,26 @@ describe('S2.2 revision 历史（commit 保留 / supersede / retract / 派生边
         if (cat === 'memory') settingsMap[key] = val
       },
       revisionRepo,
+      undefined,
+      candidateRepo,
     )
     await service.maybeConsolidate([{ scope: 'user', scopeRef: null }])
+
+    // 【S2.3】ELEVATE 先入候选区，不直接落库
+    expect(repo.findByName('user', null, 'elevated-rule')).toBeNull()
+    const pending = candidateRepo.listByStatus('pending', { scope: 'user', scopeRef: null })
+    expect(pending).toHaveLength(1)
+
+    // 真实用户确认晋级后才创建条目 + 派生边（kind=elevate）
+    const candidateService = new MemoryCandidateService(
+      candidateRepo,
+      new MemoryCommitService(repo, store),
+      repo,
+      revisionRepo,
+      store,
+    )
+    const confirmed = await candidateService.confirm(pending[0]!.id, pending[0]!.content_digest)
+    expect(confirmed.ok).toBe(true)
 
     const elevated = repo.findByName('user', null, 'elevated-rule')
     expect(elevated).not.toBeNull()

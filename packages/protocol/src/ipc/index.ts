@@ -3943,6 +3943,49 @@ export interface MemoryRetractResponse {
   error?: string
 }
 
+/** S2.3 / N12：候选确认区。ELEVATE 提议入候选区，晋级须真实用户结构化确认。 */
+export interface MemoryCandidateListRequest {}
+export interface MemoryCandidateListResponse {
+  ok: boolean
+  error?: string
+  candidates?: Array<{
+    id: number
+    scope: 'user' | 'project' | 'agent'
+    scopeRef: string | null
+    createdAt: number
+    expiresAt: number
+    /** 展示与确认绑定：确认请求必须原样带回该摘要 */
+    contentDigest: string
+    payload: {
+      type: 'user' | 'feedback' | 'project' | 'reference'
+      name: string
+      description: string
+      body: string
+      confidence: number
+      sourceIds: string[]
+    } | null
+  }>
+}
+export interface MemoryCandidateConfirmRequest {
+  id: number
+  /** 候选内容摘要（列表返回值原样带回；失配 = 候选已被改写，拒绝） */
+  contentDigest: string
+}
+/** 确认晋级：失败 reason 结构化（not_pending/expired/digest_mismatch 等按类别提示） */
+export interface MemoryCandidateConfirmResponse {
+  ok: boolean
+  reason?: string
+  error?: string
+  entryId?: string
+}
+export interface MemoryCandidateRejectRequest {
+  id: number
+}
+export interface MemoryCandidateRejectResponse {
+  ok: boolean
+  error?: string
+}
+
 /** 主动探测抽取配置是否可用（避免静默失败，审查 HIGH#6） */
 export interface MemoryTestExtractionRequest {}
 export interface MemoryTestExtractionResponse {
@@ -7567,6 +7610,9 @@ export interface IpcChannelMap
   'memory:history': [MemoryHistoryRequest, MemoryHistoryResponse]
   'memory:supersede': [MemorySupersedeRequest, MemorySupersedeResponse]
   'memory:retract': [MemoryRetractRequest, MemoryRetractResponse]
+  'memory:candidate:list': [MemoryCandidateListRequest, MemoryCandidateListResponse]
+  'memory:candidate:confirm': [MemoryCandidateConfirmRequest, MemoryCandidateConfirmResponse]
+  'memory:candidate:reject': [MemoryCandidateRejectRequest, MemoryCandidateRejectResponse]
 
   // Settings
   'settings:get': [SettingsGetRequest, SettingsGetResponse]

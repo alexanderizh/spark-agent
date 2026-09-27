@@ -215,3 +215,60 @@
     line-height: 1.5;
   }
 }
+
+// S2.3 候选确认区：扁平分组（分割线 + 文字明暗分层，不使用盒子卡片）
+.mp_candidate_section {
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line-2, rgba(128, 128, 128, 0.18));
+}
+.mp_candidate_header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0 4px;
+}
+.mp_candidate_title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.mp_candidate_hint {
+  font-size: 12px;
+  opacity: 0.55;
+}
+.mp_candidate_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  &:not(:last-child) {
+    border-bottom: 1px dashed var(--line-1, rgba(128, 128, 128, 0.12));
+  }
+}
+.mp_candidate_body {
+  flex: 1;
+  min-width: 0;
+}
+.mp_candidate_name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mp_candidate_desc {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp_candidate_sources {
+  opacity: 0.8;
+}
+.mp_candidate_actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
