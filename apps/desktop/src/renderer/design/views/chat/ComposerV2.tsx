@@ -17,6 +17,7 @@ import { AvatarImage } from '../../components/AvatarImage'
 import { FileTypeIcon, getFileTypeBadge } from '../../components/FileDisplay'
 import { InlinePermissionApproval } from '../../components/InlinePermissionApproval'
 import { ProviderLogo } from '../../components/ProviderLogo'
+import { resolveVendorByKeywordHints } from '../provider-vendor-hints'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../../hooks/useAppearance'
@@ -6663,8 +6664,9 @@ export function isLocalCliProvider(provider: ProviderProfile | null | undefined)
  *
  * 1) 内置本地 CLI（codex / claude）走合成 vendor（与 ProvidersView 一致）
  * 2) 否则用 provider.name 在 VENDOR_CATALOG 里匹配（同 ProvidersView 的 guessVendorByName）
- * 3) 仍没匹配 → 按 provider 协议格式（anthropic/openai）渲染对应官方图标
- * 4) 兜底：合成首字母 vendor
+ * 3) 仍没匹配 → 按名称/模型 ID 关键词推断品牌（见 provider-vendor-hints.ts）
+ * 4) 仍没匹配 → 按 provider 协议格式（anthropic/openai）渲染对应官方图标
+ * 5) 兜底：合成首字母 vendor
  */
 const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
   id: 'local-claude-cli',
@@ -6723,7 +6725,12 @@ function resolveProviderVendor(provider: ProviderProfile | null | undefined): Ve
   for (const v of VENDOR_CATALOG) {
     if (name && (name.includes(v.name) || v.name.includes(name))) return v
   }
-  // 3) 按协议格式兜底（自定义供应商能渲染出官方彩色图标）
+  // 3) 关键词推断：名称不含品牌名的自定义供应商（自建中转 / 网关聚合站）
+  //    命中不了目录；若直接落到协议兜底，anthropic 协议会被画成 Anthropic
+  //    标，无法区分品牌。按名称/模型 ID 关键词推断品牌。
+  const hinted = resolveVendorByKeywordHints(provider.name, provider.modelIds)
+  if (hinted) return hinted
+  // 4) 按协议格式兜底（自定义供应商能渲染出官方彩色图标）
   const protocolVendor = PROTOCOL_VENDOR_MAP[provider.provider]
   if (protocolVendor) {
     return {
@@ -6732,7 +6739,7 @@ function resolveProviderVendor(provider: ProviderProfile | null | undefined): Ve
       name: name || protocolVendor.name,
     }
   }
-  // 4) 终极兜底：首字母合成 vendor
+  // 5) 终极兜底：首字母合成 vendor
   return {
     id: `custom-${provider.id}`,
     name: name || provider.id,
