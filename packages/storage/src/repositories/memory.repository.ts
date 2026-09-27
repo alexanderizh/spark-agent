@@ -12,6 +12,7 @@
  *   - agent   : scope_ref = agentId
  */
 
+import { createHash } from 'node:crypto'
 import { createLogger } from '@spark/shared'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
@@ -40,13 +41,30 @@ export interface MemoryEntryRow {
   invalid_at: number | null
   /** 被哪条记忆取代（memory_entry.id） */
   superseded_by: string | null
+  /**
+   * 单调递增版本号（S1B.1，migration 104）。每次有效写入 +1，存量回填 1。
+   * CAS 条件提交依据：UPDATE ... WHERE id=? AND version=expected。
+   */
+  version: number
+  /**
+   * 当前权威正文 SHA-256 hex（S1B.1）。NULL = 尚未建立守卫（存量行，
+   * 首次写入时补齐）。读取托管正文时校验，失配拒绝采信（方案 B 守卫）。
+   */
+  content_hash: string | null
 }
 
-/** insert 的入参：时间戳与 bi-temporal 列由 repository 自动填充 */
+/** insert 的入参：时间戳/bi-temporal/版本列由 repository 自动填充 */
 export type MemoryEntryInsert = Omit<
   MemoryEntryRow,
-  'created_at' | 'updated_at' | 'valid_from' | 'invalid_at' | 'superseded_by'
-> & Partial<Pick<MemoryEntryRow, 'valid_from' | 'invalid_at' | 'superseded_by'>>
+  | 'created_at'
+  | 'updated_at'
+  | 'valid_from'
+  | 'invalid_at'
+  | 'superseded_by'
+  | 'version'
+  | 'content_hash'
+> &
+  Partial<Pick<MemoryEntryRow, 'valid_from' | 'invalid_at' | 'superseded_by'>>
 
 export class MemoryRepository extends BaseRepository {
   /** memory_fts 表存在性缓存（migration 未跑到的旧库降级为不维护 FTS） */
@@ -71,8 +89,9 @@ export class MemoryRepository extends BaseRepository {
           `INSERT INTO memory_entry
            (id, scope, scope_ref, type, name, description, file_path,
             confidence, hit_count, last_hit_at, source_session_id,
-            archived, created_at, updated_at, valid_from, invalid_at, superseded_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            archived, created_at, updated_at, valid_from, invalid_at, superseded_by,
+            version, content_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
         )
         .run(
           row.id,
@@ -92,6 +111,7 @@ export class MemoryRepository extends BaseRepository {
           row.valid_from ?? now,
           row.invalid_at ?? null,
           row.superseded_by ?? null,
+          body != null ? hashBodyForGuard(body) : null,
         )
       this.maintainFts('upsert', row.id, {
         name: row.name,
@@ -119,9 +139,20 @@ export class MemoryRepository extends BaseRepository {
     const values: unknown[] = []
 
     const updatable = [
-      'scope', 'scope_ref', 'type', 'name', 'description', 'file_path',
-      'confidence', 'hit_count', 'last_hit_at', 'source_session_id', 'archived',
-      'valid_from', 'invalid_at', 'superseded_by',
+      'scope',
+      'scope_ref',
+      'type',
+      'name',
+      'description',
+      'file_path',
+      'confidence',
+      'hit_count',
+      'last_hit_at',
+      'source_session_id',
+      'archived',
+      'valid_from',
+      'invalid_at',
+      'superseded_by',
     ] as const
 
     for (const key of updatable) {
@@ -133,6 +164,12 @@ export class MemoryRepository extends BaseRepository {
 
     if (fields.length === 0) return existing
 
+    // 【S1B.1】每次有效写入版本 +1；带 body 时同步刷新正文守卫哈希
+    fields.push('version = version + 1')
+    if (body != null) {
+      fields.push('content_hash = ?')
+      values.push(hashBodyForGuard(body))
+    }
     fields.push('updated_at = ?')
     values.push(Date.now())
     values.push(id)
@@ -146,23 +183,68 @@ export class MemoryRepository extends BaseRepository {
       ('description' in patch && patch.description !== existing.description)
 
     const tx = this.raw.transaction(() => {
-      this.raw
-        .prepare(`UPDATE memory_entry SET ${fields.join(', ')} WHERE id = ?`)
-        .run(...values)
+      this.raw.prepare(`UPDATE memory_entry SET ${fields.join(', ')} WHERE id = ?`).run(...values)
       if (becomesInactive) {
         this.maintainFts('delete', id)
         this.cleanupIndexOnInactive(id)
       } else if (textChanged) {
+        // 【S1A.3 fail-loud】文本字段（name/description）变更必须带 body：
+        // contentless FTS 不支持部分更新，缺 body 的 upsert 会以空串重建行，
+        // 旧正文检索永久丢失（评估反例 E4）。调用方显式选择：
+        // ①改文本 → 必须传完整正文（name+description+body）；
+        // ②仅改元数据（confidence/hit_count/生命周期列等）→ 不动 FTS，无需 body。
+        if (body == null) {
+          throw new Error(
+            `MemoryRepository.update: 文本字段变更但未提供 body（id=${id}）——` +
+              `拒绝以空串重建 FTS 行（正文检索会丢失）。` +
+              `改 name/description 请同时传入完整正文；仅改元数据则不要传文本字段。`,
+          )
+        }
         this.maintainFts('upsert', id, {
           name: next.name,
           description: next.description,
-          ...(body != null ? { body } : {}),
+          body,
         })
       }
     })
     tx()
 
     return this.findById<MemoryEntryRow>(id)!
+  }
+
+  /**
+   * CAS 式条件更新（S1B.1）：仅当当前 version === expectedVersion 时应用 patch，
+   * 否则不动任何数据并返回 null（调用方据此丢弃或重新排队，不覆盖当前状态）。
+   *
+   * 语义与 update() 相同（含 S1A.3 fail-loud、FTS 维护、版本自增、哈希刷新），
+   * 额外要求：目标必须仍为有效条目（archived=0 且 invalid_at IS NULL）——
+   * 已归档/失效/删除的目标版本不提交（晚到结果保护，S1B.3 依赖）。
+   *
+   * 原子性依据：better-sqlite3 同步 API + Node 单线程 —— findById 检查与
+   * update 执行之间不存在 await，无并发交错窗口；SQLite 单写者保证事务串行。
+   *
+   * @returns 成功返回新行；版本失配/条目不存在/已失效返回 null。
+   */
+  compareAndSwap(
+    id: string,
+    expectedVersion: number,
+    patch: Partial<Omit<MemoryEntryRow, 'id' | 'created_at'>>,
+    body?: string,
+  ): MemoryEntryRow | null {
+    const existing = this.findById<MemoryEntryRow>(id)
+    if (existing == null) return null
+    if (
+      existing.version !== expectedVersion ||
+      existing.archived === 1 ||
+      existing.invalid_at != null
+    ) {
+      log.info(
+        `compareAndSwap miss: id=${id} expectedVersion=${expectedVersion} ` +
+          `actual=${existing.version} archived=${existing.archived} invalid=${existing.invalid_at != null}`,
+      )
+      return null
+    }
+    return this.update(id, patch, body)
   }
 
   /**
@@ -318,7 +400,9 @@ export class MemoryRepository extends BaseRepository {
         deleteFtsRow(this.raw, entryId)
       }
     } catch (err) {
-      log.warn(`memory_fts maintenance failed (${op} ${entryId}): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `memory_fts maintenance failed (${op} ${entryId}): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -346,4 +430,18 @@ export class MemoryRepository extends BaseRepository {
       /* memory_vec 表不存在（sqlite-vec 未加载 / 未 ensureVecTable）→ 静默 */
     }
   }
+}
+
+/** 正文内容哈希（S1B.1 守卫）：SHA-256 hex */
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf-8').digest('hex')
+}
+
+/**
+ * 守卫哈希的统一口径（S1B.1）：先去掉尾部换行再哈希。
+ * 写入侧（repo.insert/update 的 body）与读取侧（reader.readFile 的返回值，
+ * renderMemoryFile 会在 body 后追加一个换行）共用本函数，保证两侧可比。
+ */
+export function hashBodyForGuard(body: string): string {
+  return sha256Hex(body.replace(/\n+$/, ''))
 }

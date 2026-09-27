@@ -144,6 +144,7 @@ export {
   TaskExecutionRepository,
   MemoryRepository,
   MemorySearchRepository,
+  hashBodyForGuard,
   upsertFtsRow,
   deleteFtsRow,
   ftsTableExists,

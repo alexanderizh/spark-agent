@@ -359,7 +359,7 @@ export type {
   ExecutionQueryOptions,
   ExecutionStats,
 } from './task-execution.repository.js'
-export { MemoryRepository } from './memory.repository.js'
+export { MemoryRepository, hashBodyForGuard } from './memory.repository.js'
 export type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
 export {
   MemorySearchRepository,

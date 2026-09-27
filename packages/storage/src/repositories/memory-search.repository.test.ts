@@ -20,7 +20,10 @@ describe('MemorySearchRepository', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `spark-memsearch-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-memsearch-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     db = new SparkDatabase(join(testDir, 'test.db'))
     db.runMigrations(join(process.cwd(), 'migrations'))
@@ -80,7 +83,9 @@ describe('MemorySearchRepository', () => {
   })
 
   it('English and mixed-language queries work', () => {
-    repo.insert(makeEntry({ name: 'ui-pref', description: '用户偏好 Arco Design 组件库，禁止引入 radix' }))
+    repo.insert(
+      makeEntry({ name: 'ui-pref', description: '用户偏好 Arco Design 组件库，禁止引入 radix' }),
+    )
     repo.insert(makeEntry({ name: 'pkg-pref', description: 'prefers pnpm over npm for monorepo' }))
     expect(searchRepo.searchBm25('arco')).toHaveLength(1)
     expect(searchRepo.searchBm25('pnpm')).toHaveLength(1)
@@ -97,7 +102,8 @@ describe('MemorySearchRepository', () => {
 
   it('update re-indexes changed description', () => {
     const row = repo.insert(makeEntry({ description: '旧的描述内容' }))
-    repo.update(row.id, { description: '全新关键词内容' })
+    // S1A.3 起：文本变更必须带 body（fail-loud 契约）
+    repo.update(row.id, { description: '全新关键词内容' }, '正文内容')
     expect(searchRepo.searchBm25('旧的')).toHaveLength(0)
     expect(searchRepo.searchBm25('全新关键词')).toHaveLength(1)
   })
@@ -122,9 +128,20 @@ describe('MemorySearchRepository', () => {
   })
 
   it('scope and type filters apply', () => {
-    repo.insert(makeEntry({ scope: 'user', scope_ref: null, type: 'feedback', description: '过滤目标条目' }))
-    repo.insert(makeEntry({ scope: 'project', scope_ref: 'ws1', type: 'project', description: '过滤目标条目' }))
-    const userOnly = searchRepo.searchBm25('过滤目标', { scopes: [{ scope: 'user', scopeRef: null }] })
+    repo.insert(
+      makeEntry({ scope: 'user', scope_ref: null, type: 'feedback', description: '过滤目标条目' }),
+    )
+    repo.insert(
+      makeEntry({
+        scope: 'project',
+        scope_ref: 'ws1',
+        type: 'project',
+        description: '过滤目标条目',
+      }),
+    )
+    const userOnly = searchRepo.searchBm25('过滤目标', {
+      scopes: [{ scope: 'user', scopeRef: null }],
+    })
     expect(userOnly).toHaveLength(1)
     expect(userOnly[0]!.entry.scope).toBe('user')
     const feedbackOnly = searchRepo.searchBm25('过滤目标', { type: 'feedback' })
@@ -194,7 +211,12 @@ describe('MemorySearchRepository', () => {
     searchRepo.ensureVecTable(4)
     const a = repo.insert(makeEntry())
     const b = repo.insert(makeEntry())
-    expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id).sort()).toEqual([a.id, b.id].sort())
+    expect(
+      searchRepo
+        .listEntriesMissingVec(10)
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual([a.id, b.id].sort())
     searchRepo.upsertVec(a.id, [0, 0, 0, 1])
     expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([b.id])
   })
@@ -215,4 +237,29 @@ describe('MemorySearchRepository', () => {
     searchRepo.ensureVecTable(16)
     expect(searchRepo.getVecDimension()).toBe(16)
   })
+
+  // ─── S0 反例固定（E5）：文本更新与向量新鲜度 ──────────────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1B.2：
+  // repo.update 在文本变化时只重建 FTS 行，vec 不失效 —— 条目 name/description
+  // 已变，但语义检索仍基于旧文本向量，且该条目不再出现在
+  // listEntriesMissingVec（已有向量），懒回填永远不会重算 → 永久滞后。
+  // 当前用 it.fails 固化"反例成立"；S1B.2 修复（记录 embedding 输入摘要，
+  // 变化即失效重排队）后反转为 it。
+  it.fails(
+    '条目文本（description）更新后旧向量应失效并重新进入回填队列（当前 vec 保留旧文本向量）',
+    async () => {
+      await searchRepo.loadVecExtension()
+      searchRepo.ensureVecTable(4)
+
+      const row = repo.insert(makeEntry({ description: 'vector entry original text' }))
+      searchRepo.upsertVec(row.id, [1, 0, 0, 0])
+      // 前置：已有向量，不在回填队列
+      expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([])
+
+      repo.update(row.id, { description: 'completely different text after edit' })
+
+      // 修复目标：embedding 输入（name+description）已变，旧向量应失效 → 重新排队
+      expect(searchRepo.listEntriesMissingVec(10).map((e) => e.id)).toEqual([row.id])
+    },
+  )
 })
