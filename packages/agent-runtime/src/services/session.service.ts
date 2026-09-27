@@ -1699,8 +1699,11 @@ export class SessionService {
     const settingsRepo = new SettingsRepository(this.db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
     const repo = new MemoryRepository(this.db)
-    // 从 sessionId 解析 workspaceRootPath（recall 读 markdown 文件需要）
+    // 从 sessionId 解析 workspaceRootPath（recall 读 markdown 文件需要），
+    // 并构造该会话允许的 scope 集合（【S1A.2】E7：bridge recall 也要带访问上下文）。
+    // scopes 从 session 行派生（user + 首workspace + agent），不信任子进程传参。
     let workspaceRootPath: string | undefined
+    const allowedScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
     try {
       const sessionRepo = new SessionRepository(this.db)
       const session = sessionRepo.get(params.sessionId)
@@ -1713,6 +1716,7 @@ export class SessionService {
         }
         const workspaceId = workspaceIds[0]
         if (workspaceId != null && workspaceId.length > 0) {
+          allowedScopes.push({ scope: 'project', scopeRef: workspaceId })
           const wsRepo = new WorkspaceRepository(this.db)
           const workspace = wsRepo.get(workspaceId)
           workspaceRootPath =
@@ -1720,9 +1724,13 @@ export class SessionService {
               ? undefined
               : await ensureSessionWorkspaceRootPath(workspace, params.sessionId)
         }
+        const agentId = session.agent_id?.trim()
+        if (agentId != null && agentId.length > 0) {
+          allowedScopes.push({ scope: 'agent', scopeRef: agentId })
+        }
       }
     } catch {
-      // ignore → recall 用默认路径
+      // ignore → recall 用默认路径（scopes 仅剩 user）
     }
     const store = new MemoryStoreService(undefined, workspaceRootPath)
     const reader = new MemoryReaderService(
@@ -1731,7 +1739,10 @@ export class SessionService {
       settingsGet,
       null as unknown as MemorySearchService,
     )
-    const r = await reader.recall(params.id)
+    const r = await reader.recall(params.id, {
+      allowedScopes,
+      caller: `bridge:${params.sessionId}`,
+    })
     if (r.error != null) return { content: '', error: r.error }
     return { content: r.content }
   }
@@ -6468,7 +6479,11 @@ export class SessionService {
             args: Record<string, unknown>,
           ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
             const id = typeof args.id === 'string' ? args.id : ''
-            const r = await memReader.recall(id)
+            // 【S1A.2】recall 携带本会话 scope 集合（与 search/注入同源），越范围拒绝
+            const r = await memReader.recall(id, {
+              allowedScopes: memScopes,
+              caller: `session:${sessionId}`,
+            })
             const text = r.error != null ? `recall 失败：${r.error}` : r.content
             return { content: [{ type: 'text' as const, text }] }
           }

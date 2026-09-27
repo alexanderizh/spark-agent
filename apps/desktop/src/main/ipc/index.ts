@@ -9254,6 +9254,20 @@ export function registerAllIpcHandlers(): void {
         },
         body: req.body,
       })
+    } else if (req.description != null) {
+      // 【S1A.3】description-only 编辑（未传 body）：从当前权威文件读正文一并传入，
+      // 防止 repo.update 因文本变更缺 body 而 fail-loud（E4 修复后该形态被拒绝）。
+      // 文件缺失时明确失败 —— 不允许"描述已改但正文检索丢失"的静默降级。
+      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
+      try {
+        bodyForUpdate = await store.readFile(existing.file_path)
+      } catch (err) {
+        throw new SparkError(
+          'VALIDATION_FAILED',
+          `记忆正文文件缺失或不可读（${existing.file_path}），无法安全更新描述。` +
+            `请先在编辑框提供完整正文，或修复文件后重试。原始错误：${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
     }
     const updated = repo.update(
       req.id,

@@ -508,7 +508,9 @@ export const MEMORY_BEHAVIOR_SYSTEM_PROMPT = [
   '',
   'When the user asks you to remember something, in any language:',
   '- Interpret it as application memory by default. The application will extract it automatically after the turn.',
-  '- For application memory, say that it was noted or added to long-term memory. Do not claim that `CLAUDE.md` was updated.',
+  // 【S1A.4 措辞治理】后台提取是异步 fire-and-forget，且要过敏感/瞬时/配额闸门，
+  // 可能被拒或失败——模型不得提前宣称"已保存进长期记忆"。
+  '- For application memory, tell the user the memory request was received and is being processed in the background after this turn; it may still be rejected by gates (sensitive content, transient data, quota) or fail if no extraction model is configured. Do not state it is already saved or stored in long-term memory, and do not claim that `CLAUDE.md` was updated.',
   '- If you actually changed a project rule file, name the exact `AGENTS.md` or `CLAUDE.md` file you updated.',
   '',
   'Do not promise to remember dates or the current time, live data such as weather, prices, or exchange rates, one-off query results, temporary task state, or facts that can be derived from code or git history. Handle those in the current turn instead.',
@@ -576,7 +578,11 @@ export function resolveAutoRouterWorkerBinding(params: {
   config: AutoRouterConfig
   intensity: RouterIntensity
   /** 本轮分流已解析出的执行器（缺配置时的回落目标）。 */
-  fallback: { providerProfileId: string; modelId: string; reasoningEffort: SessionReasoningEffort | null }
+  fallback: {
+    providerProfileId: string
+    modelId: string
+    reasoningEffort: SessionReasoningEffort | null
+  }
 }): { providerProfileId: string; modelId: string; reasoningEffort: SessionReasoningEffort | null } {
   const executor = findExecutorByIntensity(params.config, params.intensity)
   if (executor != null) {
