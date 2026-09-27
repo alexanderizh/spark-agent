@@ -8,6 +8,7 @@ import {
   AgentRepository,
   MemoryOperationRepository,
   MemoryRepository,
+  MemoryRevisionRepository,
   RulesRepository,
   SettingsRepository,
   TeamDefinitionRepository,
@@ -665,6 +666,9 @@ export class AccountSyncAdapters {
               this.memories,
               this.createMemoryStore(undefined, workspaceRoot),
               this.operations,
+              // 【审查修复】同步删除同样要物理清理 revision 历史与派生边
+              //（S2.2 deleteEntry 契约；缺省 null 时会留悬挂行）
+              new MemoryRevisionRepository(this.db),
             )
             const result = await lifecycle.deleteEntry(item.id)
             if (result.status === 'blocked_locally') {

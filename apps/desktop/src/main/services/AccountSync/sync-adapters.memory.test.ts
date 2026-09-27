@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { AccountSyncCategoryResult, AccountSyncItem } from '@spark/protocol'
-import { MemoryRepository, SparkDatabase } from '@spark/storage'
+import { MemoryRepository, MemoryRevisionRepository, SparkDatabase } from '@spark/storage'
 import { MemoryStoreService } from '@spark/agent-runtime'
 import { AccountSyncAdapters } from './sync-adapters.js'
 import { createSafeSyncItem } from './sync-policy.js'
@@ -256,6 +256,49 @@ describe('AccountSyncAdapters memory（S1B.5 版本与失效语义）', () => {
       )
       expect(replay.errorCodes).toEqual([])
       expect(memories.getById('mem-replay')).toBeNull()
+    })
+
+    it('【审查修复】tombstone 删除同时物理清理 revision 历史与派生边（不留悬挂行）', async () => {
+      await seedLocalEntry({ id: 'mem-hist', updatedAt: T1, version: 2 })
+      // 模拟该条目曾更新过：预置一条 revision 历史与一条派生边
+      const revisions = new MemoryRevisionRepository(db)
+      revisions.insertRevision({
+        memoryId: 'mem-hist',
+        version: 1,
+        type: 'user',
+        name: '本地记忆',
+        description: '本地描述',
+        body: '被覆盖的旧正文',
+        contentHash: 'deadbeef',
+        confidence: 0.8,
+        authorRole: 'host_agent',
+        sourceEventId: null,
+        validFrom: T0,
+        supersededAt: T1,
+        kind: 'update',
+        successorId: null,
+        note: null,
+      })
+      revisions.insertDerivation('mem-hist', 'mem-other', 'elevate')
+
+      const result = await adapters.apply(
+        categoryResult([{ id: 'mem-hist', updatedAt: iso(T3), deleted: true }]),
+        new Set(),
+      )
+
+      expect(result.errorCodes).toEqual([])
+      expect(memories.getById('mem-hist')).toBeNull()
+      // 修复前：lifecycle 未接 revisionRepo，revision 与派生边残留为悬挂行
+      const revisionRows = db.raw
+        .prepare('SELECT COUNT(*) AS n FROM memory_revision WHERE memory_id = ?')
+        .get('mem-hist') as { n: number }
+      const derivationRows = db.raw
+        .prepare(
+          'SELECT COUNT(*) AS n FROM memory_derivation WHERE source_id = ? OR derived_id = ?',
+        )
+        .get('mem-hist', 'mem-hist') as { n: number }
+      expect(revisionRows.n).toBe(0)
+      expect(derivationRows.n).toBe(0)
     })
   })
 

@@ -25,6 +25,7 @@ import type {
 import { normalizeBodyForGuard } from '@spark/storage'
 import type { MemoryStoreService } from './memory-store.service.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
+import { MemoryCommitService } from './memory-commit.service.js'
 import { buildConsolidationPrompt } from './memory-extraction.prompt.js'
 
 const log = createLogger('memory:consolidation')
@@ -61,7 +62,17 @@ export class MemoryConsolidationService {
     private readonly settingsSet?: (category: string, key: string, value: unknown) => void,
     /** 【S2.2】revision 历史与派生边（MERGE/ELEVATE 保留旧版本与来源关系）；缺省不记录 */
     private readonly revisionRepo: MemoryRevisionRepository | null = null,
-  ) {}
+    /**
+     * 【审查修复】提交原语（MERGE 经 commitUpdate 走"CAS 失配恢复权威正文"，
+     * 与 writer 全部更新路径同一不变量）；缺省内部构造，零破坏。
+     */
+    private readonly commitService: MemoryCommitService | null = null,
+  ) {
+    this.commitSvc = commitService ?? new MemoryCommitService(memoryRepo, storeService)
+  }
+
+  /** 实际使用的提交原语（见构造器说明） */
+  private readonly commitSvc: MemoryCommitService
 
   /** @visibleForTesting 复位进程级互斥（仅测试隔离用） */
   static resetReentrancyForTest(): void {
@@ -160,8 +171,8 @@ export class MemoryConsolidationService {
     } catch {
       /* keep 无正文也能继续 */
     }
-    // 【S2.2】keep 的被覆盖版本正文（守卫哈希同款规范化，随 CAS 进 revision 历史）
-    const keepOldBody = normalizeBodyForGuard(mergedBody)
+    // 【S2.2】keep 的被覆盖版本正文由提交原语在写新快照前自行读取并随 CAS
+    // 进 revision 历史（kind='merge'），此处不再单独保留。
 
     const drops: MemoryEntryRow[] = []
     const dropBodies = new Map<string, string>()
@@ -185,37 +196,27 @@ export class MemoryConsolidationService {
     if (drops.length === 0) return // 没有有效 drop，不操作
 
     const nextConfidence = Math.max(keep.confidence, ...drops.map((d) => d.confidence))
-    // 先写文件（事实来源）再 CAS 更新 DB+FTS。【S1B.1】expectedVersion 持读取时
-    // 版本 —— 整合期间 keep 被并发更新/归档时失配丢弃，不覆盖当前状态；
-    // 晚到快照成为待清理孤儿（content_hash 失配可识别）。
-    const meta: MemoryFileMeta = {
-      id: keep.id,
+    // 【审查修复】经提交原语 CAS 更新（先写文件后 CAS 的顺序不变，但失配时
+    // 会尽力恢复被覆盖的权威正文——原实现直接 compareAndSwap 失配后 keep 的
+    // 正文文件已被 mergedBody 覆盖，违反"旧权威版本仍完整"）。expectedVersion
+    // 持读取时版本，整合期间 keep 被并发更新/归档时失配丢弃，不覆盖当前状态。
+    // 被覆盖的 keep 版本进 revision 历史（kind='merge'）。
+    const committed = await this.commitSvc.commitWrite({
+      entryId: keep.id,
+      expectedVersion: keep.version,
       scope: keep.scope,
       scopeRef: keep.scope_ref,
       type: keep.type,
       name: keep.name,
       description: action.mergedDescription,
       confidence: nextConfidence,
-      createdAt: keep.created_at,
-      updatedAt: Date.now(),
-      hitCount: keep.hit_count,
-      lastHitAt: keep.last_hit_at,
-      sourceSessionId: keep.source_session_id,
-      links: [],
-      archived: false,
-    }
-    await this.storeService.writeFile({ meta, body: mergedBody })
-    const committed = this.memoryRepo.compareAndSwap(
-      keep.id,
-      keep.version,
-      { description: action.mergedDescription, confidence: nextConfidence },
-      mergedBody,
-      // 【S2.2】被覆盖的 keep 版本进 revision 历史（kind='merge'）
-      { oldBody: keepOldBody, kind: 'merge', successorId: null, note: 'consolidation merge' },
-    )
-    if (committed == null) {
+      body: mergedBody,
+      preserveFrom: keep,
+      revisionKind: 'merge',
+    })
+    if (!committed.ok) {
       log.warn(
-        `consolidation MERGE discarded (version conflict): keep=${keep.id} ` +
+        `consolidation MERGE discarded (${committed.reason}): keep=${keep.id} ` +
           `expectedVersion=${keep.version}（并发写入/归档，不覆盖当前状态）`,
       )
       return

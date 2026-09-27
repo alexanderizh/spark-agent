@@ -23,7 +23,7 @@
 
 import { createLogger } from '@spark/shared'
 import type { MemoryEntryRow } from '@spark/storage'
-import { MemoryRepository, normalizeBodyForGuard } from '@spark/storage'
+import { MemoryRepository, hashBodyForGuard, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryStoreService } from './memory-store.service.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
 
@@ -61,6 +61,11 @@ export interface CommitWriteInput {
   /** 实际调用的提取模型 id */
   extractionModel?: string | null
   links?: string[]
+  /**
+   * 【审查修复】更新时 revision 历史的收录分类（S2.2）：缺省 'update'；
+   * 整合 MERGE 传 'merge'（consolidation 经本服务提交时区分）。
+   */
+  revisionKind?: 'update' | 'merge' | 'supersede'
   /** 保留字段（更新时延续旧行的命中统计等） */
   preserveFrom?: MemoryEntryRow
 }
@@ -162,6 +167,9 @@ export class MemoryCommitService {
    * CAS 更新托管条目。
    * expectedVersion 缺省时以"读到的当前版本"提交（等价无条件更新，供单线程
    * 本地路径使用）；显式传入时形成晚到保护（S1B.3）。
+   *
+   * 失配处理（审查修复）：先用读取时的旧正文尽力恢复被覆盖的权威文件
+   * （条件与限制见下方恢复注释），再返回 version_conflict。
    */
   async commitUpdate(entryId: string, input: CommitWriteInput): Promise<CommitWriteResult> {
     const existing = this.repo.getById(entryId)
@@ -224,15 +232,57 @@ export class MemoryCommitService {
         confidence: input.confidence,
       },
       input.body,
-      { oldBody, kind: 'update', note: oldBodyNote },
+      { oldBody, kind: input.revisionKind ?? 'update', note: oldBodyNote },
     )
     if (next == null) {
       const current = this.repo.getById(entryId)
       log.warn(
         `commitUpdate CAS 失配：id=${entryId} expected=${expected} ` +
-          `actual=${current?.version ?? '(gone)'} —— 新快照文件成为待清理孤儿（content_hash 失配，` +
-          `读取守卫将拒绝错配正文），待 S1B.4 删除协调枚举清理`,
+          `actual=${current?.version ?? '(gone)'} —— 尝试恢复被覆盖的权威正文`,
       )
+      // 【审查修复】CAS 失配恢复：写新快照时已原子替换旧文件，若不处理，
+      // DB 行仍持旧 content_hash 而文件是新正文 → 守卫拒绝 → 条目降级不可读
+      // 直到下次成功提交（旧实现把该状态称为"可识别孤儿"，但违反验收矩阵
+      // "文件修改、DB 提交失败 → 旧权威版本仍完整"——旧正文确实被覆盖了）。
+      // 恢复条件（保守）：行仍在，且行的 content_hash 与我们读取时的旧正文
+      // 一致（或 NULL 存量行无哈希）——说明我们覆盖的就是该版本的权威正文，
+      // 用读到的 oldBody 原样写回即恢复；行已被进一步推进（hash 不一致）时
+      // 我们没有该版本正文，无法安全恢复，保持守卫拒绝态待下次提交自愈。
+      // 旧正文读取失败（oldBodyNote 非空）不恢复——避免把空串写回清空文件。
+      if (
+        current != null &&
+        oldBodyNote == null &&
+        (current.content_hash == null || current.content_hash === hashBodyForGuard(oldBody))
+      ) {
+        try {
+          await this.store.writeFile({
+            meta: {
+              id: current.id,
+              scope: current.scope,
+              scopeRef: current.scope_ref,
+              type: current.type,
+              name: current.name,
+              description: current.description,
+              confidence: current.confidence,
+              createdAt: current.created_at,
+              updatedAt: current.updated_at,
+              hitCount: current.hit_count,
+              lastHitAt: current.last_hit_at,
+              sourceSessionId: current.source_session_id,
+              links: [],
+              // 归档状态如实写回（行与 frontmatter 一致，旧 CLI 不复活/不误删）
+              archived: current.archived === 1,
+            },
+            body: oldBody,
+          })
+          log.info(`commitUpdate CAS 失配后已恢复权威正文：${entryId}`)
+        } catch (restoreErr) {
+          log.warn(
+            `commitUpdate CAS 失配后恢复正文失败（守卫拒绝态待下次提交自愈）：${entryId} — ` +
+              `${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}`,
+          )
+        }
+      }
       return {
         ok: false,
         reason: 'version_conflict',
