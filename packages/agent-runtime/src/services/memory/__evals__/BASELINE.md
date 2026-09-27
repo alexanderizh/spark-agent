@@ -85,6 +85,8 @@ pnpm --filter @spark/agent-runtime exec vitest run src/services/memory/__evals__
 
 **S1B.4 完成（2026-09-27，commit `72747df74`）：** E3（2 条）+ F4（2 条）+ E1（1 条）共 5 条 fails 已反转为 `it` 并通过（均改走 `MemoryLifecycleService` 序列）——至此 S0 固定的全部反例（E1–E7）已反转完毕。新增 6 用例：删除状态机走查、删除/归档幂等（not_found / 重复归档补写回）、清理失败置 failed 保留目标 + `retryFailed` 收敛、cleaning 中断恢复、屏障未设完恢复。迁移 106 `memory_operation` + `MemoryOperationRepository` + `MemoryLifecycleService`（删除/归档唯一收敛入口，scope 感知 store）。memory 域 165/165、storage 全量 445/445、四包 typecheck 0 错。UI 文案与 blocked_locally 状态分支经类型静态校验，未真机验证（真机验收按项目规则由用户手动完成）。
 
+**S1B.5 完成（2026-09-27，commit `36b264a6c`）：** 写入口矩阵入口 5（同步导入）收编。无本仓 fails 反转（S0.7 的桌面侧 fails 已随 S1B.4/E1 反转；engine 侧 3 条 documenting 保留为读取语义证据链）。新增 `sync-adapters.memory.test.ts` 9 用例（desktop 侧）：上行停止 `isArchived` 折叠 `invalid_at`（version/invalidAt/supersededBy 独立传递 + 白名单放行）；tombstone 版本语义（早于本地最后写入保留待下轮决胜 / 晚于本地走 lifecycle 删行删文件刷投影 / 重放幂等）；旧响应 `updatedAt` 防御不覆盖；新条目失效语义恢复 + version 对齐收敛不变量；旧云端条目（缺新字段）兼容应用。覆盖 §6 矩阵"本地删除、远端离线/同步失败"（stale 保留 + 既有 pendingApply 重试链路）与"旧同步响应不覆盖当前状态"。AccountSync 全套 48/48、memory 域 166/166、desktop typecheck 0 错。同步语义依赖服务端 canonical 行为的端到端联调未做（本仓覆盖到 adapter 边界）。
+
 ## 后续 prompt/逻辑改动须跑此集（S0 增补）
 
 S1A/S1B 各切片除上述集外，必须同步反转对应 `it.fails` 用例并在 todolist 进度日志记录；反转后全量重跑本表测试文件。
