@@ -45,6 +45,21 @@ export interface CommitWriteInput {
   confidence: number
   body: string
   sourceSessionId?: string | null
+  /**
+   * 来源绑定（S2.1，migration 107）。全部由系统侧填充 —— 写入口的调用方
+   * （session.service / consolidation / IPC / sync）携带真实装配上下文；
+   * LLM candidate 中不存在任何来源字段，无注入点。
+   */
+  sourceEventId?: string | null
+  sourceTurnId?: string | null
+  /** 'host_agent' | 'team_member' | 'consolidation' | 'manual_user' | 'sync_import' */
+  authorRole?: string | null
+  /** 真实装配身份 id（host agentId / member.id） */
+  authorAgentId?: string | null
+  /** 'turn_extraction' | 'consolidation' | 'manual' | 'sync_import' */
+  extractionKind?: string | null
+  /** 实际调用的提取模型 id */
+  extractionModel?: string | null
   links?: string[]
   /** 保留字段（更新时延续旧行的命中统计等） */
   preserveFrom?: MemoryEntryRow
@@ -121,6 +136,13 @@ export class MemoryCommitService {
           last_hit_at: meta.lastHitAt,
           source_session_id: meta.sourceSessionId,
           archived: 0,
+          source_event_id: input.sourceEventId ?? null,
+          source_turn_id: input.sourceTurnId ?? null,
+          author_role: input.authorRole ?? null,
+          author_agent_id: input.authorAgentId ?? null,
+          extraction_kind: input.extractionKind ?? null,
+          extraction_model: input.extractionModel ?? null,
+          evidence_status: 'available',
         },
         input.body,
       )

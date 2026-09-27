@@ -153,6 +153,10 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     expect(elevated).toBeDefined()
     expect(elevated.source_session_id).toBe('consolidation')
     expect(elevated.confidence).toBe(0.85)
+    // 【S2.1】来源绑定：整合产生如实标注角色与提取类别
+    expect(elevated.author_role).toBe('consolidation')
+    expect(elevated.extraction_kind).toBe('consolidation')
+    expect(elevated.evidence_status).toBe('available')
     // 源条目未被失效（ELEVATE 不动源）
     expect(repo.getById(a)!.invalid_at).toBeNull()
     expect(repo.getById(b)!.invalid_at).toBeNull()

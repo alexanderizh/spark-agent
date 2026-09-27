@@ -527,6 +527,25 @@ export class EventRepository extends BaseRepository {
   }
 
   /**
+   * 取指定 turn 内最后一条指定类型事件 id（S2.1 记忆来源绑定锚点）。
+   *
+   * 记忆写入引用"承载本轮用户消息的事件"（member 路径引用 team_member_message
+   * 事件）作为真实 source event 引用 —— 由系统侧从事件流取得，不由 LLM 产出。
+   * 事件在写入前已落库（turn 收尾时 complete 行已持久化）。
+   */
+  findLastEventIdByTurn(sessionId: string, turnId: string, eventType: string): string | null {
+    const row = this.raw
+      .prepare(
+        `SELECT id FROM agent_events
+         WHERE session_id = ? AND turn_id = ? AND event_type = ?
+         ORDER BY seq DESC, created_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(sessionId, turnId, eventType) as { id: string } | undefined
+    return row?.id ?? null
+  }
+
+  /**
    * 从给定 seq 水位之后按正序读取最早一批对话事件。
    *
    * 连续性胶囊必须严格按水位推进，不能使用“最近 N 条”查询后把中间未处理区间

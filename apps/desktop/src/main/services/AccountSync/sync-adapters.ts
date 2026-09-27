@@ -381,6 +381,15 @@ export class AccountSyncAdapters {
             version: row.version,
             invalidAt: row.invalid_at != null ? new Date(row.invalid_at).toISOString() : null,
             supersededBy: row.superseded_by,
+            // 【S2.1】来源绑定随协议传递：多端保留来源标注。事件引用是本端
+            // agent_events 的 id（跨端不可解引用），保留作溯源记录，下行端
+            // 仅透传不校验；authorRole/extractionKind 是端无关枚举可如实恢复。
+            sourceEventId: row.source_event_id,
+            sourceTurnId: row.source_turn_id,
+            authorRole: row.author_role,
+            authorAgentId: row.author_agent_id,
+            extractionKind: row.extraction_kind,
+            extractionModel: row.extraction_model,
             createdAt: new Date(row.created_at).toISOString(),
             updatedAt: new Date(row.updated_at).toISOString(),
           },
@@ -746,6 +755,16 @@ export class AccountSyncAdapters {
               ...(invalidAt != null || supersededBy != null
                 ? { invalid_at: invalidAt, superseded_by: supersededBy }
                 : {}),
+              // 【S2.1】来源绑定：远端有则如实恢复（authorRole/extractionKind 等
+              // 端无关字段）；无（旧云端条目）标记 sync_import —— 产生路径
+              // 始终如实标注为同步导入，不补造来源
+              source_event_id: asNullableString(value.sourceEventId),
+              source_turn_id: asNullableString(value.sourceTurnId),
+              author_role: asNullableString(value.authorRole) ?? 'sync_import',
+              author_agent_id: asNullableString(value.authorAgentId),
+              extraction_kind: asNullableString(value.extractionKind) ?? 'sync_import',
+              extraction_model: asNullableString(value.extractionModel),
+              evidence_status: 'available',
             },
             asString(value.body),
           )

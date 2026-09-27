@@ -268,6 +268,11 @@ export class MemoryConsolidationService {
         last_hit_at: null,
         source_session_id: SOURCE_TAG,
         archived: 0,
+        // 来源绑定（S2.1）：整合产生，作者角色/提取类别如实标注；
+        // 正文「升华来源」段已列输入条目 id（S2.2 revision 历史的前身）
+        author_role: 'consolidation',
+        extraction_kind: 'consolidation',
+        evidence_status: 'available',
       },
       body,
     )

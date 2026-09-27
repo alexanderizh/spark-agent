@@ -52,6 +52,30 @@ export interface MemoryEntryRow {
    * 首次写入时补齐）。读取托管正文时校验，失配拒绝采信（方案 B 守卫）。
    */
   content_hash: string | null
+  /**
+   * 真实事件引用（S2.1，migration 107）：agent_events.id，承载来源对话的事件。
+   * 由系统侧从事件流取得，不进抽取 prompt —— LLM candidate 无来源注入点。
+   * NULL = 旧数据/无法确定（已知部分不补造）。
+   */
+  source_event_id: string | null
+  /** 来源 turn 引用（agent_events.turn_id）。同 turn 重试据此识别（N2 幂等基础）。 */
+  source_turn_id: string | null
+  /**
+   * 内容作者的真实装配角色（S2.1），枚举 'host_agent' | 'team_member' |
+   * 'consolidation' | 'manual_user' | 'sync_import'。与 LLM 自报无关。
+   */
+  author_role: string | null
+  /** 真实装配身份 id（host agentId / member.id），与 LLM 自报无关。 */
+  author_agent_id: string | null
+  /** 产生路径枚举（S2.1）：'turn_extraction' | 'consolidation' | 'manual' | 'sync_import'。 */
+  extraction_kind: string | null
+  /** 实际调用的提取模型 id（settings / fallback 真实值，S2.1）。 */
+  extraction_model: string | null
+  /**
+   * 证据状态（S2.1）：'available' | 'unavailable'。来源会话删除后置
+   * 'unavailable' 并保留 source_session_id 引用（不伪造"无来源"）。
+   */
+  evidence_status: string
 }
 
 /** insert 的入参：时间戳/bi-temporal/版本列由 repository 自动填充 */
@@ -64,8 +88,29 @@ export type MemoryEntryInsert = Omit<
   | 'superseded_by'
   | 'version'
   | 'content_hash'
+  | 'source_event_id'
+  | 'source_turn_id'
+  | 'author_role'
+  | 'author_agent_id'
+  | 'extraction_kind'
+  | 'extraction_model'
+  | 'evidence_status'
 > &
-  Partial<Pick<MemoryEntryRow, 'valid_from' | 'invalid_at' | 'superseded_by'>>
+  Partial<
+    Pick<
+      MemoryEntryRow,
+      | 'valid_from'
+      | 'invalid_at'
+      | 'superseded_by'
+      | 'source_event_id'
+      | 'source_turn_id'
+      | 'author_role'
+      | 'author_agent_id'
+      | 'extraction_kind'
+      | 'extraction_model'
+      | 'evidence_status'
+    >
+  >
 
 export class MemoryRepository extends BaseRepository {
   /** memory_fts 表存在性缓存（migration 未跑到的旧库降级为不维护 FTS） */
@@ -91,8 +136,10 @@ export class MemoryRepository extends BaseRepository {
            (id, scope, scope_ref, type, name, description, file_path,
             confidence, hit_count, last_hit_at, source_session_id,
             archived, created_at, updated_at, valid_from, invalid_at, superseded_by,
-            version, content_hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            version, content_hash,
+            source_event_id, source_turn_id, author_role, author_agent_id,
+            extraction_kind, extraction_model, evidence_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           row.id,
@@ -113,6 +160,13 @@ export class MemoryRepository extends BaseRepository {
           row.invalid_at ?? null,
           row.superseded_by ?? null,
           body != null ? hashBodyForGuard(body) : null,
+          row.source_event_id ?? null,
+          row.source_turn_id ?? null,
+          row.author_role ?? null,
+          row.author_agent_id ?? null,
+          row.extraction_kind ?? null,
+          row.extraction_model ?? null,
+          row.evidence_status ?? 'available',
         )
       this.maintainFts('upsert', row.id, {
         name: row.name,
@@ -154,6 +208,9 @@ export class MemoryRepository extends BaseRepository {
       'valid_from',
       'invalid_at',
       'superseded_by',
+      // 来源绑定字段（source_event_id/author_role 等）原则不可变，不进手工
+      // update 白名单；evidence_status 例外 —— 来源会话删除/恢复需要改写。
+      'evidence_status',
     ] as const
 
     for (const key of updatable) {

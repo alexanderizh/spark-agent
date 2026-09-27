@@ -37,6 +37,19 @@ export interface TurnPayload {
   userMessage: string
   assistantMessage: string
   recentSummary: string
+  /**
+   * 来源绑定（S2.1）。全部可选（旧调用/测试兼容），全部由系统侧
+   * （session.service 装配点）填充 —— 与 LLM 抽取结果无关，
+   * MemoryCandidate 中不存在任何来源字段，无 LLM 注入点。
+   */
+  /** 本轮 turn_id（agent_events.turn_id，同 turn 重试据此识别） */
+  turnId?: string
+  /** 真实事件引用（agent_events.id，承载本轮用户消息的事件） */
+  sourceEventId?: string | null
+  /** 作者角色：'host_agent' | 'team_member'（缺省按 agentId 有无推断为 host 路径） */
+  authorRole?: 'host_agent' | 'team_member'
+  /** 实际调用的提取模型 id（settings / fallback 真实值） */
+  extractionModel?: string | null
 }
 
 export interface MemoryCandidate {
@@ -55,6 +68,33 @@ export interface MemoryInjection {
   block: string
   injectedIds: string[]
   droppedCount: number
+}
+
+/**
+ * 来源绑定（S2.1）：从 TurnPayload（系统侧装配上下文）构造新建条目的来源。
+ * authorRole 未显式给出但 agentId 存在 → host 路径（member 路径总是显式传
+ * 'team_member'）；无 agentId 则角色未知（不补造）。
+ */
+function buildTurnSourceAttribution(payload: TurnPayload): {
+  turnId?: string
+  sourceEventId: string | null
+  authorRole?: string
+  authorAgentId: string | null
+  extractionKind: string
+  extractionModel: string | null
+} {
+  return {
+    ...(payload.turnId != null ? { turnId: payload.turnId } : {}),
+    sourceEventId: payload.sourceEventId ?? null,
+    ...(payload.authorRole != null
+      ? { authorRole: payload.authorRole }
+      : payload.agentId
+        ? { authorRole: 'host_agent' }
+        : {}),
+    authorAgentId: payload.agentId || null,
+    extractionKind: 'turn_extraction',
+    extractionModel: payload.extractionModel ?? null,
+  }
 }
 
 /** 默认配额 */
@@ -173,7 +213,12 @@ export class MemoryWriterService {
             `【记忆抽取】候选 "${candidate.name}" → scope=${candidate.scope} ` +
               `scopeRef=${scopeRef ?? '(null=user scope)'}`,
           )
-          await this.processCandidate(candidate, scopeRef, payload.sessionId)
+          await this.processCandidate(
+            candidate,
+            scopeRef,
+            payload.sessionId,
+            buildTurnSourceAttribution(payload),
+          )
         } catch (err) {
           log.warn(
             `【记忆抽取】候选 "${candidate.name}" 处理失败（已隔离，其余继续）：${err instanceof Error ? err.message : String(err)}`,
@@ -234,7 +279,9 @@ export class MemoryWriterService {
     // 配额闸门
     await this.enforceQuota(candidate.scope, scopeRef)
 
-    // 写入（【S1B.1】统一提交原语）
+    // 写入（【S1B.1】统一提交原语）；来源绑定（S2.1）：手工入口固定标记
+    // manual_user / manual —— 置信度 1.0 表达的是"用户保存意愿"，非证据强度
+    //（两概念拆分属 S2.5，此处先如实标注产生路径）。
     const r = await this.commitService.commitWrite({
       scope: candidate.scope,
       scopeRef,
@@ -243,6 +290,8 @@ export class MemoryWriterService {
       description: candidate.description,
       confidence: 1.0,
       body: candidate.body,
+      authorRole: 'manual_user',
+      extractionKind: 'manual',
       links: candidate.links ?? [],
     })
     if (!r.ok) {
@@ -406,6 +455,19 @@ export class MemoryWriterService {
     candidate: MemoryCandidate,
     scopeRef: string | null,
     sessionId: string,
+    /**
+     * 来源绑定（S2.1）：系统侧装配上下文，随新建落库。更新路径
+     * （演化 UPDATE / V1 merge）不带来源 —— 条目来源 = 首次创建来源，
+     * 更新来龙去脉由 revision 历史记录（S2.2）。
+     */
+    source?: {
+      turnId?: string
+      sourceEventId?: string | null
+      authorRole?: string
+      authorAgentId?: string | null
+      extractionKind: string
+      extractionModel?: string | null
+    },
   ): Promise<void> {
     // 闸门 0：瞬时数据（兜底，置于最前以省后续开销）
     if (!this.passTransientGate(candidate)) {
@@ -479,6 +541,13 @@ export class MemoryWriterService {
       confidence: candidate.confidence,
       body: candidate.body,
       sourceSessionId: sessionId,
+      // 来源绑定（S2.1）：仅新建落来源；LLM candidate 无来源字段，此处值全部来自系统侧
+      sourceEventId: source?.sourceEventId ?? null,
+      sourceTurnId: source?.turnId ?? null,
+      authorRole: source?.authorRole ?? null,
+      authorAgentId: source?.authorAgentId ?? null,
+      extractionKind: source?.extractionKind ?? null,
+      extractionModel: source?.extractionModel ?? null,
       links: candidate.links ?? [],
     })
     if (!committed.ok) {

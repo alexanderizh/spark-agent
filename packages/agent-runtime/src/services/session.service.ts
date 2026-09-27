@@ -4516,6 +4516,8 @@ export class SessionService {
     this.continuityCoordinator.schedule(sessionId, turnId, args.config.model)
 
     // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
+    // 来源绑定（S2.1）：真实 turnId + 本轮 user_message 事件锚点（系统侧从
+    // 事件流取得；此时刻 complete 行已持久化，事件可查）。
     void this.maybeWriteMemoryFromTurn(
       sessionId,
       args.options.primaryWorkspaceId ?? '',
@@ -4523,6 +4525,11 @@ export class SessionService {
       args.options.workspaceRootPath,
       args.message,
       assistantTurnText,
+      {
+        turnId,
+        sourceEventId: args.eventRepo.findLastEventIdByTurn(sessionId, turnId, 'user_message'),
+        authorRole: 'host_agent',
+      },
     ).catch(() => {
       /* swallow — never affect main flow */
     })
@@ -6156,6 +6163,16 @@ export class SessionService {
     workspaceRootPath: string | undefined,
     userMessage: string,
     assistantMessage: string,
+    /**
+     * 来源绑定（S2.1）：真实装配上下文。Host 路径传 turnId + user_message
+     * 事件锚点；member 路径传 team_member 身份。缺省时来源字段为空（如实
+     * 标注未知来源，不补造）。
+     */
+    source?: {
+      turnId: string
+      sourceEventId: string | null
+      authorRole: 'host_agent' | 'team_member'
+    },
   ): Promise<void> {
     // 入口日志（info）：让"抽取是否被触发"在默认日志级别下可见。审查反馈：用户配错
     // 抽取模型后只能从"记忆静默不生成"被动发现，根因是诊断日志都在 debug 级。
@@ -6219,6 +6236,21 @@ export class SessionService {
         userMessage,
         assistantMessage,
         recentSummary,
+        // 来源绑定（S2.1）：系统侧真实值。extractionModel 是本轮实际调用的
+        // 提取模型（settings 配置或 fallback），非 LLM 自报。
+        ...(source != null
+          ? {
+              turnId: source.turnId,
+              sourceEventId: source.sourceEventId,
+              authorRole: source.authorRole,
+              extractionModel:
+                typeof extractionModel === 'string'
+                  ? extractionModel
+                  : fallback != null
+                    ? fallback.model
+                    : null,
+            }
+          : {}),
       })
     } catch (err) {
       log.warn(
@@ -9061,6 +9093,13 @@ export class SessionService {
         workspaceRootPath,
         memberRouteMessage,
         content,
+        // 来源绑定（S2.1）：member 身份 + 本轮 member 消息事件锚点（emit 用
+        // host turnId 归属，见上方 makeBase；complete 行此时已持久化）。
+        {
+          turnId,
+          sourceEventId: eventRepo.findLastEventIdByTurn(sessionId, turnId, 'team_member_message'),
+          authorRole: 'team_member',
+        },
       ).catch(() => {
         /* swallow — never affect member dispatch flow */
       })
