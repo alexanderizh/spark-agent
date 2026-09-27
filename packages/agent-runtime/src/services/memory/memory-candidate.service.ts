@@ -27,6 +27,7 @@ import type {
 } from '@spark/storage'
 import { hashCandidateContent, normalizeBodyForGuard } from '@spark/storage'
 import { MemoryCommitService } from './memory-commit.service.js'
+import type { CommitWriteResult } from './memory-commit.service.js'
 import { isMemorySensitive } from './sanitizer.js'
 import type { MemoryStoreService } from './memory-store.service.js'
 
@@ -143,35 +144,53 @@ export class MemoryCandidateService {
       authorRole: SOURCE_TAG,
       extractionKind: SOURCE_TAG,
     })
-    if (!committed.ok) {
+    let entryId = committed.ok ? committed.row.id : null
+    // 可区分联合 narrow 后的失败视图（reason/message 仅失败分支存在）
+    const failure: Extract<CommitWriteResult, { ok: false }> | null = committed.ok
+      ? null
+      : committed
+    if (failure != null && failure.reason === 'already_exists') {
+      // 【审查修复·自愈】already_exists 的崩溃残留自愈：此前晋级 commit 成功
+      // 但 attach 前进程中断（或 attach 持续失败后用户重试），同名有效条目
+      // 已由本候选创建（同 scope 同名唯一索引保证命中即此前产物）。此时直接
+      // 补 attach 视为成功——若回滚 pending，重试将永远 already_exists 死锁。
+      const existing = this.memoryRepo.findByName(row.scope, row.scope_ref, payload.name)
+      if (existing != null) {
+        log.info(
+          `candidate promote 命中此前晋级产物，自愈 attach：candidate=${candidateId} → entry=${existing.id}`,
+        )
+        entryId = existing.id
+      }
+    }
+    if (entryId == null) {
       // 【审查修复】条目写入失败时回滚候选状态：repo.confirm 已把状态迁移为
       // confirmed，若不回滚会留下"已确认但无条目"（entry_id=NULL）的悬状态——
       // 用户既不能重试（not_pending）也不能拒绝（reject 只对 pending）。
       // 条件回滚只作用于 entry_id 未回填的 confirmed 行，不误伤已晋级候选。
       const reverted = this.candidateRepo.revertToPendingIfUnattached(candidateId)
       log.warn(
-        `candidate promote commit failed (${committed.reason}): candidate=${candidateId}` +
+        `candidate promote commit failed (${failure?.reason ?? 'unknown'}): candidate=${candidateId}` +
           `${reverted ? '，已回滚为待确认（可重试）' : ''}`,
       )
       return {
         ok: false,
         reason: 'commit_failed',
-        message: `晋级写入失败（${committed.reason}）：${committed.message}${
+        message: `晋级写入失败（${failure?.reason ?? 'unknown'}）：${failure?.message ?? ''}${
           reverted ? '；候选已恢复为待确认，可重试或忽略' : ''
         }`,
       }
     }
 
-    this.candidateRepo.attachEntry(candidateId, committed.row.id)
+    this.attachSafely(candidateId, entryId)
     // 派生边：来源条目 → 晋级条目（elevate）—— H2 纠正影响传播可沿边追溯
     for (const sourceId of payload.sourceIds) {
       try {
         if (this.memoryRepo.getById(sourceId) != null) {
-          this.revisionRepo?.insertDerivation(sourceId, committed.row.id, 'elevate')
+          this.revisionRepo?.insertDerivation(sourceId, entryId, 'elevate')
         }
       } catch (err) {
         log.warn(
-          `derivation edge insert failed (non-fatal): ${sourceId} → ${committed.row.id}: ` +
+          `derivation edge insert failed (non-fatal): ${sourceId} → ${entryId}: ` +
             `${err instanceof Error ? err.message : String(err)}`,
         )
       }
@@ -179,12 +198,7 @@ export class MemoryCandidateService {
     // 实体落库（ELEVATE 抽取结果随确认生效）
     if (this.entityRepo != null && Array.isArray(payload.entities)) {
       try {
-        this.entityRepo.upsertEntitiesForMemory(
-          committed.row.id,
-          row.scope,
-          row.scope_ref,
-          payload.entities,
-        )
+        this.entityRepo.upsertEntitiesForMemory(entryId, row.scope, row.scope_ref, payload.entities)
       } catch (err) {
         log.warn(
           `candidate entities upsert failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
@@ -193,13 +207,13 @@ export class MemoryCandidateService {
     }
     await this.refreshIndex(row.scope, row.scope_ref)
     log.info(
-      `candidate promoted: id=${candidateId} → entry=${committed.row.id} ` +
+      `candidate promoted: id=${candidateId} → entry=${entryId} ` +
         `(${row.scope}/${row.scope_ref ?? '∅'} "${payload.name}")`,
     )
     return {
       ok: true,
       candidate: this.candidateRepo.getById(candidateId)!,
-      entryId: committed.row.id,
+      entryId,
     }
   }
 
@@ -210,6 +224,27 @@ export class MemoryCandidateService {
       log.info(`candidate rejected by user: id=${candidateId}`)
     }
     return result
+  }
+
+  /**
+   * 【审查修复】attach 容错：entry_id 回填是幂等 UPDATE，但同步 DB 调用仍可能
+   * 抛瞬时异常——若放任传播，条目已创建而候选悬在 confirmed 无 entry_id。
+   * 失败重试一次；仍失败仅记日志（候选行保持 confirmed 无 entry_id，用户重试
+   * 确认会经 already_exists 自愈路径补齐 attach，不死锁）。
+   */
+  private attachSafely(candidateId: number, entryId: string): void {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        this.candidateRepo.attachEntry(candidateId, entryId)
+        return
+      } catch (err) {
+        log.warn(
+          `candidate attachEntry 失败（attempt ${attempt}/2，重试可经 already_exists 自愈）：` +
+            `candidate=${candidateId} entry=${entryId} — ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
   }
 
   /**

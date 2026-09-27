@@ -16,7 +16,7 @@
  *   - payload 不可解析：不创建条目（不按不可读内容晋级）
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   MemoryCandidateRepository,
   MemoryRepository,
@@ -345,5 +345,86 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
     const reverted = candidateRepo.revertToPendingIfUnattached(id)
     expect(reverted).toBe(false)
     expect(candidateRepo.getById(id)!.status).toBe('confirmed')
+  })
+
+  it('【审查修复·终审】already_exists 崩溃残留自愈：此前晋级产物直接补 attach，不死锁', async () => {
+    // 注：用 project scope（scope_ref 非 NULL）—— SQLite UNIQUE 索引对 NULL
+    // 不判重，user scope（scope_ref 恒 NULL）的同名条目从不触发 UNIQUE 冲突
+    // （既有边界，去重实际靠 writer 的 findByName 先查，见 BASELINE 记录）
+    const payload = {
+      type: 'feedback' as const,
+      name: 'code-review-convention',
+      description: '代码评审统一约定：先看测试再看实现',
+      body: '**Why:** 降低漏判\n**How to apply:** 评审从测试用例入手',
+      confidence: 0.8,
+      sourceIds: [],
+    }
+    const { row } = candidateRepo.insertPending({ scope: 'project', scopeRef: 'ws-x', payload })
+    // 模拟崩溃残留：条目已由此候选创建（如上次 commit 成功但 attach 前中断，
+    // 候选被回滚或重试）——库中存在同名有效条目，但候选 entry_id 未回填
+    const pre = await new MemoryCommitService(repo, store).commitWrite({
+      scope: 'project',
+      scopeRef: 'ws-x',
+      type: payload.type,
+      name: payload.name,
+      description: payload.description,
+      confidence: payload.confidence,
+      body: '**Why:** 降低漏判\n**How to apply:** 评审从测试用例入手',
+      sourceSessionId: 'consolidation',
+      authorRole: 'consolidation',
+      extractionKind: 'consolidation',
+    })
+    expect(pre.ok).toBe(true)
+
+    // 确认 → commitWrite 必返 already_exists → 自愈路径命中同名条目
+    const r = await service.confirm(row!.id, row!.content_digest)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // attach 到既有条目（不新建、不回滚、不死锁）
+    expect(r.entryId).toBe(pre.ok ? pre.row.id : '')
+    const after = candidateRepo.getById(row!.id)!
+    expect(after.status).toBe('confirmed')
+    expect(after.entry_id).toBe(pre.ok ? pre.row.id : null)
+    expect(repo.countByScope('project', 'ws-x')).toBe(1)
+  })
+
+  it('【审查修复·终审】attach 瞬时失败重试成功：异常不传播，晋级完整', async () => {
+    const { id, digest } = propose()
+    // 第一次 attach 抛瞬时异常，第二次成功（attachSafely 单次重试）
+    let calls = 0
+    const spy = vi
+      .spyOn(candidateRepo, 'attachEntry')
+      .mockImplementation((cid: number, eid: string) => {
+        calls++
+        if (calls === 1) throw new Error('transient db lock (simulated)')
+        return MemoryCandidateRepository.prototype.attachEntry.call(candidateRepo, cid, eid)
+      })
+
+    const r = await service.confirm(id, digest)
+    spy.mockRestore()
+    expect(r.ok).toBe(true)
+    expect(calls).toBe(2)
+    if (!r.ok) return
+    const after = candidateRepo.getById(id)!
+    expect(after.status).toBe('confirmed')
+    expect(after.entry_id).toBe(r.entryId)
+  })
+
+  it('【审查修复·终审】commitWrite 的 DB 异常收敛 io_failed：候选回滚不被异常跳过', async () => {
+    const { id, digest } = propose()
+    // 模拟 DB 提交异常（非 UNIQUE 的瞬时故障）：insert 抛错而非返回业务失败
+    const insertSpy = vi.spyOn(repo, 'insert').mockImplementation(() => {
+      throw new Error('database is locked (simulated)')
+    })
+
+    const r = await service.confirm(id, digest)
+    insertSpy.mockRestore()
+    // 不向上抛异常，而是结构化失败 + 回滚 pending（可重试）
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('commit_failed')
+    const after = candidateRepo.getById(id)!
+    expect(after.status).toBe('pending')
+    expect(after.entry_id).toBeNull()
   })
 })

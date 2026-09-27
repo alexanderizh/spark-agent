@@ -177,8 +177,11 @@ export class MemoryCommitService {
       if (msg.includes('uniq_mem_name') || msg.includes('UNIQUE')) {
         return { ok: false, reason: 'already_exists', message: msg }
       }
+      // 【审查修复】非业务性 DB 异常同样收敛为 io_failed（而非向上抛）——
+      // CommitWriteResult 承诺 {ok:false} 语义，抛出会跳过调用方的回滚逻辑
+      // （候选确认悬状态正是这样产生）。文件已写成功，成为待清理孤儿。
       log.warn(`commitCreate DB 提交失败（文件已写，成为待清理孤儿 ${filePath}）：${msg}`)
-      throw err
+      return { ok: false, reason: 'io_failed', message: `DB 提交失败（文件成待清理孤儿）：${msg}` }
     }
   }
 
@@ -248,19 +251,32 @@ export class MemoryCommitService {
 
     // 2. CAS 提交：版本失配（或写入间隙被归档/失效/删除）→ 不覆盖当前状态。
     //    成功路径同事务保留被覆盖版本（S2.2 revision 历史）。
-    const next = this.repo.compareAndSwap(
-      entryId,
-      expected,
-      {
-        type: input.type,
-        name: input.name,
-        description: input.description,
-        file_path: filePath,
-        confidence: input.confidence,
-      },
-      input.body,
-      { oldBody, kind: input.revisionKind ?? 'update', note: oldBodyNote },
-    )
+    //    【审查修复】DB 异常收敛为 io_failed：此时新快照已覆盖旧文件、DB 行
+    //    未推进（content_hash 仍旧值）→ 守卫拒绝错配正文，与 CAS 失配且无法
+    //    恢复的保守语义一致；向上抛会跳过调用方回滚逻辑，不例外放行。
+    let next: MemoryEntryRow | null
+    try {
+      next = this.repo.compareAndSwap(
+        entryId,
+        expected,
+        {
+          type: input.type,
+          name: input.name,
+          description: input.description,
+          file_path: filePath,
+          confidence: input.confidence,
+        },
+        input.body,
+        { oldBody, kind: input.revisionKind ?? 'update', note: oldBodyNote },
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(
+        `commitUpdate CAS 异常（新快照已写、DB 未推进，守卫拒绝态待下次提交自愈）：` +
+          `${entryId} — ${message}`,
+      )
+      return { ok: false, reason: 'io_failed', message: `DB CAS 提交失败：${message}` }
+    }
     if (next == null) {
       const current = this.repo.getById(entryId)
       log.warn(
