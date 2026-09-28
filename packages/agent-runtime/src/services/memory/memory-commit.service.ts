@@ -110,6 +110,49 @@ export class MemoryCommitService {
 
   /** 新建托管条目（版本 1 起点） */
   async commitCreate(input: CommitWriteInput): Promise<CommitWriteResult> {
+    // 【审查修复 D1】到期同名条目仍占 uniq_mem_name 唯一索引槽位（索引不感知
+    // valid_until）—— 新建前先失效过期同名条目释放槽位（"新事实顶替过期事实，
+    // 旧事实转历史"），否则同名新建会撞 UNIQUE 被误判为 already_exists。
+    // 失效走 repo.update 的 becomesInactive 路径，FTS/vec 索引随事务一并清理。
+    try {
+      const expired = this.repo.findExpiredByName(input.scope, input.scopeRef, input.name)
+      if (expired != null) {
+        this.repo.update(expired.id, { invalid_at: Date.now() }, undefined, undefined)
+        log.info(
+          `commitCreate 顶替过期同名条目（旧事实转历史）：${expired.id} ` +
+            `("${input.name}" valid_until=${expired.valid_until})`,
+        )
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`commitCreate 过期同名顶替失效失败：${message}`)
+      return { ok: false, reason: 'io_failed', message: `过期同名条目失效失败：${message}` }
+    }
+
+    // 【审查修复 F7】PK 撞 id（8 位 hex 截断，随历史条目累积概率上升）不是
+    // 业务性 already_exists —— 换 id 有界重试，不静默丢候选
+    let lastUniqueError: string | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const result = await this.commitCreateOnce(input, attempt > 1)
+      if (result.ok || result.reason !== 'already_exists') return result
+      // already_exists 仅在撞 uniq_mem_name（业务性）时成立；PK 撞 id 的 UNIQUE
+      // 报错指向 memory_entry.id —— 换 id 重试
+      if (!result.message.includes('memory_entry.id')) return result
+      lastUniqueError = result.message
+      log.warn(`commitCreate PK 撞 id（attempt ${attempt}/3），换 id 重试`)
+    }
+    return {
+      ok: false,
+      reason: 'io_failed',
+      message: `id 生成连续冲突（3 次换 id 仍撞）：${lastUniqueError ?? 'unknown'}`,
+    }
+  }
+
+  /** commitCreate 单次尝试（换 id 由外层循环控制） */
+  private async commitCreateOnce(
+    input: CommitWriteInput,
+    _isRetry: boolean,
+  ): Promise<CommitWriteResult> {
     const id = generateId(input.scope)
     const now = Date.now()
     const meta: MemoryFileMeta = {
@@ -173,7 +216,8 @@ export class MemoryCommitService {
       return { ok: true, row, created: true }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      // 唯一索引冲突（同 scope 同名有效条目）是最常见的业务性失败
+      // 唯一索引冲突（同 scope 同名有效条目）是最常见的业务性失败。
+      // PK 撞 id 同样报 UNIQUE 但指向 memory_entry.id —— 原样透出消息供外层区分。
       if (msg.includes('uniq_mem_name') || msg.includes('UNIQUE')) {
         return { ok: false, reason: 'already_exists', message: msg }
       }
@@ -298,27 +342,46 @@ export class MemoryCommitService {
         (current.content_hash == null || current.content_hash === hashBodyForGuard(oldBody))
       ) {
         try {
-          await this.store.writeFile({
-            meta: {
-              id: current.id,
-              scope: current.scope,
-              scopeRef: current.scope_ref,
-              type: current.type,
-              name: current.name,
-              description: current.description,
-              confidence: current.confidence,
-              createdAt: current.created_at,
-              updatedAt: current.updated_at,
-              hitCount: current.hit_count,
-              lastHitAt: current.last_hit_at,
-              sourceSessionId: current.source_session_id,
-              links: [],
-              // 归档状态如实写回（行与 frontmatter 一致，旧 CLI 不复活/不误删）
-              archived: current.archived === 1,
-            },
-            body: oldBody,
-          })
-          log.info(`commitUpdate CAS 失配后已恢复权威正文：${entryId}`)
+          // 【审查修复 F4】写回前重读当前文件，确认文件仍是"本提交刚写的新快照"
+          // （即失配后无并发写者推进过文件）。CAS 失配后文件的合法状态只有两种：
+          // ① 我们自己的新快照（hash == input.body）——恢复 oldBody 安全；
+          // ② 其他内容（并发者/跨进程写者已推进，或文件已不可读）——写回会
+          //    覆盖其新正文制造反向失配，放弃恢复（守卫拒绝态待其自身链路自愈）。
+          let fileNow: string | null = null
+          try {
+            fileNow = normalizeBodyForGuard(await this.store.readFile(current.file_path))
+          } catch {
+            fileNow = null
+          }
+          const fileIsOurSnapshot =
+            fileNow != null && hashBodyForGuard(fileNow) === hashBodyForGuard(input.body)
+          if (!fileIsOurSnapshot) {
+            log.info(
+              `commitUpdate CAS 失配后检测到文件非本提交快照（并发推进或不可读），放弃恢复：${entryId}`,
+            )
+          } else {
+            await this.store.writeFile({
+              meta: {
+                id: current.id,
+                scope: current.scope,
+                scopeRef: current.scope_ref,
+                type: current.type,
+                name: current.name,
+                description: current.description,
+                confidence: current.confidence,
+                createdAt: current.created_at,
+                updatedAt: current.updated_at,
+                hitCount: current.hit_count,
+                lastHitAt: current.last_hit_at,
+                sourceSessionId: current.source_session_id,
+                links: [],
+                // 归档状态如实写回（行与 frontmatter 一致，旧 CLI 不复活/不误删）
+                archived: current.archived === 1,
+              },
+              body: oldBody,
+            })
+            log.info(`commitUpdate CAS 失配后已恢复权威正文：${entryId}`)
+          }
         } catch (restoreErr) {
           log.warn(
             `commitUpdate CAS 失配后恢复正文失败（守卫拒绝态待下次提交自愈）：${entryId} — ` +

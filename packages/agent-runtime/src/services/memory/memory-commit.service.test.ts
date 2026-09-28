@@ -240,4 +240,52 @@ describe('MemoryCommitService（S1B.1）', () => {
     if (r.ok) return
     expect(r.reason).toBe('validation')
   })
+
+  it('【审查修复 D1】同名条目已到期 → commitCreate 顶替（旧条目失效释放唯一槽位，新事实落库）', async () => {
+    // 注：用 project scope（scope_ref 非 NULL）—— user scope 的 scope_ref 恒 NULL，
+    // SQLite UNIQUE 对 NULL 不判重，同名从不触发冲突（既有边界，见 BASELINE 记录）
+    const scopedInput = { ...baseInput, scope: 'project' as const, scopeRef: 'ws-x' }
+    // 预置未到期同名条目
+    const first = await commit.commitWrite({ ...scopedInput, validUntil: Date.now() + 60_000 })
+    expect(first.ok).toBe(true)
+    // 未到期阶段：同名新建撞唯一索引 → already_exists（现有语义不变）
+    const early = await commit.commitWrite({ ...scopedInput, body: '新事实正文' })
+    expect(early.ok).toBe(false)
+    if (!early.ok) expect(early.reason).toBe('already_exists')
+
+    // 推进到已过期（valid_until 回到过去 —— 到期但未失效未归档，仍占唯一槽位）
+    if (first.ok) {
+      db.raw
+        .prepare('UPDATE memory_entry SET valid_until = ? WHERE id = ?')
+        .run(Date.now() - 2000, first.row.id)
+    }
+    // 到期后：同名新事实 → 顶替（旧条目失效 + 新条目创建成功）
+    const r = await commit.commitWrite({ ...scopedInput, body: '新事实正文：地址已变更。' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const oldRow = repo.getById(first.ok ? first.row.id : '')!
+    expect(oldRow.invalid_at).not.toBeNull() // 旧事实转历史
+    expect(repo.findByName('project', 'ws-x', scopedInput.name)!.id).toBe(r.row.id) // 新事实占名
+    expect((await store.readFile(r.row.file_path)).replace(/\n$/, '')).toContain('地址已变更')
+  })
+
+  it('【审查修复 D1】findByName/findExpiredByName 到期口径：到期条目不再是"当前事实"', async () => {
+    const created = await commit.commitWrite({
+      ...baseInput,
+      validUntil: Date.now() - 1000,
+      validUntilMeta: null,
+    })
+    expect(created.ok).toBe(true)
+    // 到期 → findByName 不返回（新事实应走新建），findExpiredByName 返回（顶替目标）
+    expect(repo.findByName('user', null, baseInput.name)).toBeNull()
+    const expired = repo.findExpiredByName('user', null, baseInput.name)
+    expect(expired?.id).toBe(created.ok ? created.row.id : undefined)
+    // 未到期 → findByName 返回、findExpiredByName 为空
+    db.raw.prepare('UPDATE memory_entry SET valid_until = ? WHERE id = ?').run(
+      Date.now() + 60_000,
+      created.ok ? created.row.id : '',
+    )
+    expect(repo.findByName('user', null, baseInput.name)?.id).toBe(created.ok ? created.row.id : '')
+    expect(repo.findExpiredByName('user', null, baseInput.name)).toBeNull()
+  })
 })

@@ -41,6 +41,16 @@ const TYPE_OPTIONS: Array<{ label: string; value: TypeFilter }> = [
   { label: 'Reference', value: 'reference' },
 ]
 
+/** 【审查修复 C6】有效期是否按日精度（解析 meta，替代脆弱的 JSON 子串匹配） */
+function isDatePrecision(metaJson: string | null | undefined): boolean {
+  if (metaJson == null) return false
+  try {
+    return (JSON.parse(metaJson) as { precision?: unknown }).precision === 'date'
+  } catch {
+    return false
+  }
+}
+
 /** 【S2.5】可解释证据状态（补充计划 §3.1）：展示层用状态替代裸分数 */
 function memoryEvidenceState(entry: {
   archived: boolean
@@ -267,6 +277,8 @@ export function MemoryPanel() {
             not_found: '候选不存在',
             payload_unreadable: '候选内容不可解析',
             sensitive_content: '内容含敏感信息（疑似密钥/凭证），已拒绝保存',
+            // 【审查修复 F3】同名冲突：候选确认被拒的独立类别（含恢复路径）
+            name_collision: '已存在同名记忆且内容不符，未保存候选内容（可改名或拒绝）',
             commit_failed: '保存失败（详见日志，候选已恢复待确认）',
           }
           message.warning(reasonText[res?.reason ?? ''] ?? '确认失败')
@@ -618,11 +630,19 @@ function MemoryDetail({
   const [desc, setDesc] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // 【审查修复 C5】加载错误不再永久转圈：IPC 异常时给出错误态 + 关闭引导
+  //（条目可能刚被批量删除/同步清理，getMemory 抛错时 entry 恒 null）
+  const [loadError, setLoadError] = useState<string | null>(null)
   const load = useCallback(async () => {
-    const res = await getMemory({ id })
-    setEntry(res?.entry ?? null)
-    setBody(res?.body ?? '')
-    setDesc(res?.entry?.description ?? '')
+    setLoadError(null)
+    try {
+      const res = await getMemory({ id })
+      setEntry(res?.entry ?? null)
+      setBody(res?.body ?? '')
+      setDesc(res?.entry?.description ?? '')
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err))
+    }
   }, [getMemory, id])
   useEffect(() => {
     void load()
@@ -631,7 +651,14 @@ function MemoryDetail({
   if (entry == null)
     return (
       <div className="mp_list_loading">
-        <Spin />
+        {loadError != null ? (
+          <>
+            <div>详情加载失败：{loadError}</div>
+            <div style={{ marginTop: 8, opacity: 0.7 }}>该记忆可能已被删除或网络异常，请关闭后重试。</div>
+          </>
+        ) : (
+          <Spin />
+        )}
       </div>
     )
 
@@ -693,8 +720,14 @@ function MemoryDetail({
         <span>legacy 置信: {entry.confidence}（仅参考）</span>
         {entry.validUntil != null && (
           <span>
-            有效期至: {new Date(entry.validUntil).toLocaleString()}
-            {entry.validUntilMeta?.includes('"date"') === true ? '（按日精度）' : ''}
+            {/* 【审查修复 C6】valid_until 是半开区间右端（date 精度 = 次日 00:00）——
+                直接展示右端会让人误读成"多出一天"。按日精度展示"最后适用日"
+                （右端 -1ms 的本地日期），与后端 describeValidUntil 口径一致 */}
+            最后适用日:{' '}
+            {isDatePrecision(entry.validUntilMeta)
+              ? new Date(entry.validUntil - 1).toLocaleDateString()
+              : new Date(entry.validUntil).toLocaleString()}
+            {isDatePrecision(entry.validUntilMeta) ? '（该日内仍适用）' : '（精确时间点）'}
           </span>
         )}
         <span>命中: {entry.hitCount}</span>

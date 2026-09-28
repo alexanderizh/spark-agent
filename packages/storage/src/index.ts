@@ -162,6 +162,10 @@ export {
   MemoryCandidateRepository,
   candidateDigestOf,
   hashCandidateContent,
+  // 【审查修复 D6】常量与 coverage 类型补齐根导出（buildRevisionCoverage 已在根，
+  // 其返回类型与候选区容量/TTL 常量此前无法从 @spark/storage 根引用）
+  MAX_PENDING_CANDIDATES_PER_SCOPE,
+  CANDIDATE_TTL_MS,
   GoalRepository,
   CanvasProjectRepository,
   CanvasSnapshotRepository,
@@ -323,6 +327,7 @@ export type {
   MemoryDerivationRow,
   InsertMemoryRevisionParams,
   UpdateRevisionCapture,
+  RevisionCoverage,
   MemoryCandidateStatus,
   MemoryCandidatePayload,
   MemoryCandidateRow,

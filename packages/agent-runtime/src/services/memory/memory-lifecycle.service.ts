@@ -160,6 +160,11 @@ export class MemoryLifecycleService {
    * 与 delete 的区别：条目与正文文件保留（历史可查），仅停止作为当前事实。
    */
   async supersedeEntry(oldId: string, newId: string, note?: string): Promise<SemanticsResult> {
+    // 【审查修复】自引用防护：old === new 会把 superseded_by 指向自己并写
+    // 自引用派生边（IPC 层无参数校验，此处收敛）
+    if (oldId === newId) {
+      return { ok: false, status: 'conflict', error: 'cannot supersede an entry with itself' }
+    }
     const old = this.memoryRepo.getById(oldId)
     if (old == null) return { ok: true, status: 'not_found' }
     if (old.invalid_at != null || old.archived === 1) {

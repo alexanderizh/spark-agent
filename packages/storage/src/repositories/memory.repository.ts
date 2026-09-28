@@ -386,12 +386,30 @@ export class MemoryRepository extends BaseRepository {
   /**
    * Find an active (non-archived, non-invalidated) entry by exact (scope, scope_ref, name).
    * 失效条目释放唯一索引槽位（见 044 migration），findByName 不返回失效条目。
+   *
+   * 【审查修复 D1】已到期条目（valid_until <= now）同样不返回 —— 到期即不再是
+   * "当前事实"，不得占用去重/撞名判定：同名新事实应走新建（顶替语义，见
+   * findExpiredByName），而不是合入到期条目后随其一起对所有检索隐身。
    */
   findByName(scope: string, scopeRef: string | null, name: string): MemoryEntryRow | null {
     const stmt = this.raw.prepare(
-      `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0 AND invalid_at IS NULL`,
+      `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0
+         AND invalid_at IS NULL AND (valid_until IS NULL OR valid_until > ?)`,
     )
-    return (stmt.get(scope, scopeRef, name) as MemoryEntryRow | undefined) ?? null
+    return (stmt.get(scope, scopeRef, name, Date.now()) as MemoryEntryRow | undefined) ?? null
+  }
+
+  /**
+   * 【审查修复 D1】查同 scope 同名且已到期、但尚未失效/归档的条目 —— 唯一索引
+   * uniq_mem_name 不感知 valid_until，到期条目仍占槽位；新建同名前须先失效旧条目
+   * 释放槽位（"新事实顶替过期事实，旧事实转历史"），否则 insert 撞 UNIQUE。
+   */
+  findExpiredByName(scope: string, scopeRef: string | null, name: string): MemoryEntryRow | null {
+    const stmt = this.raw.prepare(
+      `SELECT * FROM memory_entry WHERE scope = ? AND scope_ref IS ? AND name = ? AND archived = 0
+         AND invalid_at IS NULL AND valid_until IS NOT NULL AND valid_until <= ?`,
+    )
+    return (stmt.get(scope, scopeRef, name, Date.now()) as MemoryEntryRow | undefined) ?? null
   }
 
   /**

@@ -186,6 +186,15 @@ describe('S2.2 revision 历史（commit 保留 / supersede / retract / 派生边
     expect(repo.getById(oldId)?.invalid_at).toBeNull()
   })
 
+  it('【审查修复 C7】supersedeEntry：old === new 自引用拒绝，不产生自指向与自引用派生边', async () => {
+    const oldId = await seedUpdatedToV2()
+    const r = await lifecycle.supersedeEntry(oldId, oldId)
+    expect(r.status).toBe('conflict')
+    expect(repo.getById(oldId)?.invalid_at).toBeNull()
+    expect(repo.getById(oldId)?.superseded_by).toBeNull()
+    expect(revisionRepo.listDerivationsFrom(oldId)).toHaveLength(0)
+  })
+
   it('retractEntry：当前版本入历史（kind=retract）+ 失效不指向替代者 + 幂等', async () => {
     const id = await seedUpdatedToV2()
     const r = await lifecycle.retractEntry(id, '证据撤回')

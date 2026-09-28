@@ -245,7 +245,11 @@ export class MemoryCandidateRepository extends BaseRepository {
       return { ok: false, reason: 'not_pending', candidate }
     }
     if (candidate.expires_at < at) {
-      this.raw.prepare(`UPDATE memory_candidate SET status = 'expired' WHERE id = ?`).run(id)
+      // 【审查修复 D5】过期标记同样限定 pending 行 —— 防并发下把刚 confirmed
+      // 的行（基于旧 pending 读数走此分支）覆盖回 expired，破坏一次性语义
+      this.raw
+        .prepare(`UPDATE memory_candidate SET status = 'expired' WHERE id = ? AND status = 'pending'`)
+        .run(id)
       return { ok: false, reason: 'expired', candidate: this.getById(id) ?? undefined }
     }
     const payload = this.parsePayload(candidate)

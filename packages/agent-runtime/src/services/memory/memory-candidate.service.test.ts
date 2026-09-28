@@ -347,7 +347,7 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
     expect(candidateRepo.getById(id)!.status).toBe('confirmed')
   })
 
-  it('【审查修复·终审】already_exists 崩溃残留自愈：此前晋级产物直接补 attach，不死锁', async () => {
+  it('【审查修复·全面审查 F3】pending 期间同名条目已存在 → name_collision 且不迁移状态（拒绝静默错绑）', async () => {
     // 注：用 project scope（scope_ref 非 NULL）—— SQLite UNIQUE 索引对 NULL
     // 不判重，user scope（scope_ref 恒 NULL）的同名条目从不触发 UNIQUE 冲突
     // （既有边界，去重实际靠 writer 的 findByName 先查，见 BASELINE 记录）
@@ -360,8 +360,7 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
       sourceIds: [],
     }
     const { row } = candidateRepo.insertPending({ scope: 'project', scopeRef: 'ws-x', payload })
-    // 模拟崩溃残留：条目已由此候选创建（如上次 commit 成功但 attach 前中断，
-    // 候选被回滚或重试）——库中存在同名有效条目，但候选 entry_id 未回填
+    // 模拟 pending 期间其他写入方建立了同名条目（自动抽取/手工创建/同步导入）
     const pre = await new MemoryCommitService(repo, store).commitWrite({
       scope: 'project',
       scopeRef: 'ws-x',
@@ -376,16 +375,99 @@ describe('MemoryCandidateService（S2.3 候选确认入口）', () => {
     })
     expect(pre.ok).toBe(true)
 
-    // 确认 → commitWrite 必返 already_exists → 自愈路径命中同名条目
+    // 新契约：同名预检在状态迁移前拦截 —— 候选保持 pending（用户可改名/拒绝），
+    // 不再走"撞唯一索引后自愈 attach"（那会静默错绑无关同名条目）
     const r = await service.confirm(row!.id, row!.content_digest)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('name_collision')
+    const after = candidateRepo.getById(row!.id)!
+    expect(after.status).toBe('pending')
+    expect(after.entry_id).toBeNull()
+    expect(repo.countByScope('project', 'ws-x')).toBe(1)
+  })
+
+  it('【审查修复·全面审查 F2】悬状态恢复：confirmed+entry_id=NULL 且同名条目内容匹配 → 补 attach 收尾', async () => {
+    const { id, digest, payload } = propose('dangling-recover')
+    // 模拟真崩溃：候选已迁移 confirmed 但 attach 前进程中断（行停在 confirmed+NULL）
+    const confirmedRow = candidateRepo.confirm(id, digest)
+    expect(confirmedRow.ok).toBe(true)
+    // 晋级产物已落库（正文 = 晋级规范格式 buildPromotedBody）
+    const promoted = await new MemoryCommitService(repo, store).commitWrite({
+      scope: 'user',
+      scopeRef: null,
+      type: payload.type,
+      name: payload.name,
+      description: payload.description,
+      confidence: payload.confidence,
+      body: `${payload.body}\n\n## 升华来源\n${payload.sourceIds.map((sid) => `- [${sid}]`).join('\n')}`,
+      sourceSessionId: 'consolidation',
+      authorRole: 'consolidation',
+      extractionKind: 'consolidation',
+    })
+    expect(promoted.ok).toBe(true)
+
+    // 重试确认：不再被 not_pending 挡死 —— 内容匹配 → 补 attach 返回 ok
+    const r = await service.confirm(id, digest)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    // attach 到既有条目（不新建、不回滚、不死锁）
-    expect(r.entryId).toBe(pre.ok ? pre.row.id : '')
-    const after = candidateRepo.getById(row!.id)!
+    expect(r.entryId).toBe(promoted.ok ? promoted.row.id : '')
+    const after = candidateRepo.getById(id)!
     expect(after.status).toBe('confirmed')
-    expect(after.entry_id).toBe(pre.ok ? pre.row.id : null)
-    expect(repo.countByScope('project', 'ws-x')).toBe(1)
+    expect(after.entry_id).toBe(promoted.ok ? promoted.row.id : null)
+    expect(repo.countByScope('user', null)).toBe(1)
+  })
+
+  it('【审查修复·全面审查 F2】悬状态恢复：同名条目内容不匹配 → 回滚 pending 返回 name_collision（不死锁）', async () => {
+    const { id, digest } = propose('dangling-mismatch')
+    candidateRepo.confirm(id, digest) // 迁移 confirmed（悬状态起点）
+    // 同名条目是他人内容（正文与候选晋级格式不符）
+    await seedSource('dangling-mismatch')
+
+    const r = await service.confirm(id, digest)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe('name_collision')
+    // 回滚 pending：用户可重试（将走 F3 预检）或拒绝，不再永久死锁
+    const after = candidateRepo.getById(id)!
+    expect(after.status).toBe('pending')
+    expect(after.entry_id).toBeNull()
+  })
+
+  it('【审查修复·全面审查 F1】project scope 候选确认经 resolveStore 工厂解析 workspace store', async () => {
+    // appHome 默认 store 对 project scope 抛 VALIDATION_FAILED —— 注入工厂后
+    // project 候选确认必须成功（终审缺陷：project 候选确认必失败）
+    let factoryCalls = 0
+    const serviceScoped = new MemoryCandidateService(
+      candidateRepo,
+      new MemoryCommitService(repo, store), // 默认 store（不应被 project 路径用到）
+      repo,
+      revisionRepo,
+      store,
+      null,
+      (scope) => {
+        factoryCalls++
+        // 工厂收到 project → 返回带 workspaceRootPath 的 store
+        expect(scope).toBe('project')
+        return new MemoryStoreService(undefined, join(testDir, 'ws'))
+      },
+    )
+    const payload = {
+      type: 'feedback' as const,
+      name: 'project-scoped-candidate',
+      description: '项目级候选确认',
+      body: '项目级候选正文',
+      confidence: 0.8,
+      sourceIds: [],
+    }
+    const { row } = candidateRepo.insertPending({ scope: 'project', scopeRef: 'ws-1', payload })
+    const r = await serviceScoped.confirm(row!.id, row!.content_digest)
+    expect(r.ok).toBe(true)
+    expect(factoryCalls).toBeGreaterThan(0)
+    if (!r.ok) return
+    const entry = repo.getById(r.entryId)!
+    expect(entry.scope).toBe('project')
+    expect(entry.file_path).toContain(join(testDir, 'ws'))
   })
 
   it('【审查修复·终审】attach 瞬时失败重试成功：异常不传播，晋级完整', async () => {

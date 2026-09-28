@@ -9204,6 +9204,10 @@ export function registerAllIpcHandlers(): void {
         // 【审查修复】漏传 entityRepo 会导致候选携带的实体在确认晋级后不落库
         //（旧 ELEVATE 路径有实体落库，不能在确认入口退化）
         new MemoryEntityRepository(getDatabase()),
+        // 【审查修复 F1】project scope 候选的正文文件在 workspace 目录下——
+        // 注入 scope 感知 store 工厂（与 lifecycle 服务同构），缺省 appHome
+        // 单例会让 project 候选确认必失败（store 抛 VALIDATION_FAILED）
+        (scope, scopeRef) => getMemoryStore(resolveWorkspaceRootPath(scope, scopeRef)),
       )
     }
     return _memoryCandidateService
@@ -9351,8 +9355,19 @@ export function registerAllIpcHandlers(): void {
         name: existing.name,
         description: req.description ?? existing.description,
         confidence: existing.confidence,
-        // 纯 type-only 编辑也走快照写（同内容重写）—— 版本与 revision 历史口径一致
-        body: bodyForUpdate ?? (await store.readFile(existing.file_path).catch(() => '')),
+        // 【审查修复 F9】纯 type-only 编辑（未传 body/description）同样需要正文
+        // 走快照写——读失败 fail-loud 而非静默以空串落库（空正文会清空文件、
+        // content_hash 变为 hash('')、revision 历史落空串，旧正文永久丢失；
+        // 与上方 description-only 分支同一防线，不容"描述没改所以无所谓"的例外）
+        body:
+          bodyForUpdate ??
+          (await store.readFile(existing.file_path).catch(() => {
+            throw new SparkError(
+              'VALIDATION_FAILED',
+              `记忆正文文件缺失或不可读（${existing.file_path}），无法安全完成更新。` +
+                `请先在编辑框提供完整正文，或修复文件后重试。`,
+            )
+          })),
       })
       if (!committed.ok) {
         if (committed.reason === 'version_conflict') {
