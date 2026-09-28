@@ -55,6 +55,16 @@ type PageDialogState =
   | { mode: 'rename'; pageId: string; title: string; kind: WikiPageKind }
   | null
 
+/**
+ * 新建页面的初始正文。
+ *
+ * WikiWriteService.createPage 拒绝空正文（"新建页面必须提供正文"：contentless FTS
+ * 不建空行、正文文件也不该是 0 字节），所以这里必须给一个非空种子。用单个换行而不是
+ * 占位文字：渲染后仍是空白页，WikiPagePanel 的「这一页还没有正文」引导态照常出现，
+ * 用户从编辑态写进去的就是自己的内容，不用先删掉模板。
+ */
+const NEW_PAGE_BODY_SEED = '\n'
+
 /** 空态主图形：三节点知识网络（扁平，无渐变无光晕，守项目扁平约定）。 */
 function WikiEmptyGraph() {
   return (
@@ -346,7 +356,7 @@ export function WikiView() {
           spaceId: activeSpaceId,
           title,
           kind: dialog.kind,
-          body: '',
+          body: NEW_PAGE_BODY_SEED,
           ...(dialog.parentId != null ? { parentId: dialog.parentId } : {}),
         })
         await refreshPages(activeSpaceId)
@@ -625,12 +635,9 @@ export function WikiView() {
     }
   }, [page, pages, handleArchive, handleRestore, handleDelete])
 
-  const startCreate = useCallback(
-    (parentId: string | null) => {
-      setDialog({ mode: 'create', parentId, title: '', kind: 'knowledge' })
-    },
-    [],
-  )
+  const startCreate = useCallback((parentId: string | null) => {
+    setDialog({ mode: 'create', parentId, title: '', kind: 'knowledge' })
+  }, [])
 
   const showSpaceEmpty = activeSpaceId == null
   const showFirstRunEmpty = !showSpaceEmpty && pages.length === 0 && page == null && hits == null
@@ -689,7 +696,9 @@ export function WikiView() {
           </div>
         </div>
 
-        <div className="wiki_rail_label">{archivedOnly ? '归档' : '页面'} · {pages.length}</div>
+        <div className="wiki_rail_label">
+          {archivedOnly ? '归档' : '页面'} · {pages.length}
+        </div>
 
         {pagesLoading ? (
           <div className="wiki_hint" style={{ padding: '8px 12px' }}>

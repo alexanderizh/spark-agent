@@ -290,6 +290,30 @@ describe('Wiki S1 e2e（写入闭环 / 双链 / 删除屏障 / 版本还原）',
     expect(stack.pageRepo.countActive(spaceId)).toBe(1)
   })
 
+  // ─── 新建页正文契约（渲染端「新建页面」依赖） ──────────────────────────
+
+  it('新建页允许纯空白正文：UI 的种子正文不会撞「必须提供正文」闸门', async () => {
+    const spaceId = await makeSpace()
+    // WikiView 新建页面传的是单个换行（NEW_PAGE_BODY_SEED）：既非空串以满足
+    // createPage 的非空校验，trim 后又为空以保留「这一页还没有正文」引导态。
+    // 这条契约若被收紧（例如改成拒绝纯空白），桌面端新建页面会整体失败。
+    const r = await stack.writeService.commitPage({
+      spaceId,
+      title: '空白起始页',
+      body: '\n',
+      authorRole: 'manual_user',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const full = await stack.pageService.readFull(r.row.id)
+    expect(full.ok).toBe(true)
+    if (!full.ok) return
+    expect(full.body.trim()).toBe('')
+    // 空正文也要能进检索索引（contentless FTS 建行），否则新建页永远搜不到
+    const hits = stack.searchService.search({ query: '空白起始页' })
+    expect(hits.items.map((h) => h.id)).toContain(r.row.id)
+  })
+
   // ─── 回执瘦身 / 预算裁剪 ─────────────────────────────────────────────
 
   it('写入回执不含正文（脱敏 + 预算）', async () => {

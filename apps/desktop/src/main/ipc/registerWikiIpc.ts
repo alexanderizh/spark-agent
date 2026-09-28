@@ -23,6 +23,7 @@ import {
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import { createWikiServiceStack, resolveWikiBudgetFromSettings } from '@spark/agent-runtime'
+import { estimateTokens } from '@spark/shared'
 import type {
   WikiPageMeta,
   WikiSpaceSummary,
@@ -166,7 +167,9 @@ export function registerWikiIpc(): void {
         body: r.body,
         truncated: false,
         nextOffset: null,
-        tokens: Math.max(1, Math.round(r.body.length / 3)),
+        // 与 WikiPageService.estimatePageTokens 同一把尺子（真实 tokenizer）：
+        // 中文正文约 1~2 字一 token，字符数/3 会低估 2~3 倍，预算展示会失真。
+        tokens: Math.max(1, estimateTokens(r.body)),
       },
     }
   })
@@ -235,7 +238,13 @@ export function registerWikiIpc(): void {
     }
   })
 
-  /** 目录树拖拽移动：只改 parent_id / sort_order，不触碰正文与版本。 */
+  /**
+   * 目录树拖拽移动：只改 parent_id / sort_order，不触碰正文与 FTS。
+   *
+   * 注意走的是统一写入原语，因此与普通编辑一样会推进 version 并留一条历史版本
+   * （change_kind='edit'，快照内容即移动前的正文）——移动不是「无痕」操作，
+   * 版本历史里能看到这次结构调整，CAS 也能挡住并发拖拽互相覆盖。
+   */
   typedIpcHandle('wiki:page:move', async (request) => {
     const s = stackForPage(request.pageId)
     if (s == null) throw new Error('页面不存在')
