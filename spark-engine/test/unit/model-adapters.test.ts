@@ -711,9 +711,9 @@ function sseResponse(value: string): Response {
  */
 function createRecordingFetcher(fixture: string): {
   fetcher: typeof fetch
-  requested: (Parameters<typeof fetch>[0])[]
+  requested: Parameters<typeof fetch>[0][]
 } {
-  const requested: (Parameters<typeof fetch>[0])[] = []
+  const requested: Parameters<typeof fetch>[0][] = []
   const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
     requested.push(input)
     return sseResponse(fixture)
@@ -746,9 +746,7 @@ describe('fullUrl（渠道完整地址开关）', () => {
       fetch: fetcher,
     })
     await consumeLlmStream(service.stream(baseRequest(), context))
-    expect(requested[0]).toBe(
-      'https://gw.example.com/api/coding/v3/v1/messages',
-    )
+    expect(requested[0]).toBe('https://gw.example.com/api/coding/v3/v1/messages')
   })
 
   it('openai responses：fullUrl=true 时原样请求完整地址，不补 /v1', async () => {
