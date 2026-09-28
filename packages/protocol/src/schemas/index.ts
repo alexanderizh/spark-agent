@@ -644,6 +644,31 @@ export const ProviderIconConfigSchema = z.object({
   style: ProviderIconStyleSchema.default('avatar'),
 })
 
+/**
+ * 模型级设置覆盖（key = modelId）：
+ * - reasoningEffort / hidden 落 modelSettings（存储形态）
+ * - contextWindow 由服务层拆写进 modelContextWindows 单一存储
+ * strict() 是刻意的：新增字段必须先更新本 schema，避免 IPC 层静默剥离
+ * （typedIpcHandle 会用本注册表 schema.parse，未知字段默认被丢弃）。
+ */
+const ProviderModelSettingOverridesSchema = z
+  .object({
+    reasoningEffort: SessionReasoningEffortSchema.optional(),
+    hidden: z.boolean().optional(),
+    contextWindow: z.number().int().min(1_024).max(10_000_000).optional(),
+  })
+  .strict()
+
+/** 模型级设置整表（undefined = 不修改；空对象 = 清除全部） */
+const ProviderModelSettingsRecordSchema = z
+  .record(z.string().min(1).max(200), ProviderModelSettingOverridesSchema)
+  .optional()
+
+/** 模型级上下文窗口整表（undefined = 不修改；空对象 = 清除全部） */
+const ProviderModelContextWindowsRecordSchema = z
+  .record(z.string().min(1).max(200), z.number().int().min(1_024).max(10_000_000))
+  .optional()
+
 export const ProviderCreateRequestSchema = z
   .object({
     name: z.string().min(1).max(100),
@@ -688,6 +713,8 @@ export const ProviderCreateRequestSchema = z
     mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
     /** 模型定时禁用时段；新建时随渠道一并落库 */
     modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
+    /** 模型级设置；新建时随渠道一并落库（语义同 update 同名字段） */
+    modelSettings: ProviderModelSettingsRecordSchema,
   })
   .superRefine((value, ctx) => {
     if ((value.defaultModel ?? value.model)?.trim().length) return
@@ -743,6 +770,10 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
   /** 模型定时禁用时段；传空数组清除全部时段 */
   modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
+  /** 模型级设置整表下发（key = modelId）；undefined 不修改，空对象清除全部 */
+  modelSettings: ProviderModelSettingsRecordSchema,
+  /** 模型级上下文窗口整表下发；undefined 不修改，空对象清除全部 */
+  modelContextWindows: ProviderModelContextWindowsRecordSchema,
 })
 
 export const ProviderGetApiKeyRequestSchema = z.object({

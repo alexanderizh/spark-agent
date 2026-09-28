@@ -1,0 +1,203 @@
+// 模型级「上下文窗口」控件：还原渠道级滑块设计（胶囊轨道 + 竖条手柄 + 对数刻度尺）。
+//
+// 布局稳定性（本控件的核心约束）：轨道右侧的「值 / 精确输入 / 恢复默认」三态共用同一个
+// 固定宽度槽，槽宽不随状态变化 → 拖拽/保存/恢复默认时轨道几何与手柄位置不跳动。
+// 因此这里所有尺寸都用固定变量表达，禁止出现会随内容变化的宽度（如 flex:1 + 条件文案）。
+.pv_mcw {
+  --pv-mcw-slot: 76px; // 值槽固定宽度（三态共用）
+  --pv-mcw-gap: 8px; // 轨道与值槽间距
+  --pv-mcw-track-h: 22px; // 命中区高度
+  --pv-mcw-bar-h: 6px; // 视觉轨道高度（细胶囊，居中于命中区）
+
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+
+  &.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .pv_mcw_row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--pv-mcw-gap);
+  }
+
+  // ─── 轨道（命中区 22px，视觉轨道 6px 居中）───
+  .pv_mcw_track {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: var(--pv-mcw-track-h);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+
+    &.is-dragging {
+      cursor: grabbing;
+    }
+
+    &:focus-visible {
+      border-radius: 4px;
+      outline: none;
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: calc((var(--pv-mcw-track-h) - var(--pv-mcw-bar-h)) / 2);
+      right: 0;
+      left: 0;
+      height: var(--pv-mcw-bar-h);
+      border-radius: calc(var(--pv-mcw-bar-h) / 2);
+      background: var(--bg-sunken);
+    }
+  }
+
+  .pv_mcw_fill {
+    position: absolute;
+    top: calc((var(--pv-mcw-track-h) - var(--pv-mcw-bar-h)) / 2);
+    left: 0;
+    height: var(--pv-mcw-bar-h);
+    border-radius: calc(var(--pv-mcw-bar-h) / 2);
+    background: var(--border-strong);
+    pointer-events: none;
+  }
+
+  // 竖条手柄：略高于轨道，标记当前值分界点
+  .pv_mcw_handle {
+    position: absolute;
+    top: 50%;
+    width: 4px;
+    height: 18px;
+    border-radius: 2px;
+    background: var(--primary);
+    box-shadow: var(--shadow-xs);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  // 未配置：填充与手柄半透明（与渠道级滑块同口径）
+  &.is-default {
+    .pv_mcw_fill,
+    .pv_mcw_handle {
+      opacity: 0.45;
+    }
+  }
+
+  // ─── 固定宽度槽：三态同宽 ───
+  .pv_mcw_slot {
+    display: flex;
+    width: var(--pv-mcw-slot);
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+  }
+
+  .pv_mcw_value {
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: text;
+    font-variant-numeric: tabular-nums;
+
+    &:hover:not(:disabled) {
+      color: var(--primary);
+    }
+  }
+
+  &.is-default .pv_mcw_value {
+    color: var(--text-muted);
+  }
+
+  .pv_mcw_reset {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-faint);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      color: var(--primary);
+      background: var(--bg-sunken);
+    }
+  }
+
+  .pv_mcw_input {
+    width: 100%;
+    height: 20px;
+    padding: 0 4px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    background: var(--bg-sunken);
+    font-size: 11px;
+    color: var(--text);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  // ─── 刻度尺：与轨道等宽（右侧让出值槽与间距）───
+  .pv_mcw_scale {
+    position: relative;
+    height: 14px;
+    margin-right: calc(var(--pv-mcw-slot) + var(--pv-mcw-gap));
+  }
+
+  .pv_mcw_tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 4px;
+    background: var(--border-strong);
+    opacity: 0.5;
+    transform: translateX(-50%);
+  }
+
+  .pv_mcw_scale_label {
+    position: absolute;
+    top: 5px;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--text-faint);
+    white-space: nowrap;
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+
+    &.is-start {
+      transform: none;
+    }
+
+    &.is-end {
+      transform: translateX(-100%);
+    }
+
+    &.is-active {
+      color: var(--text);
+      font-weight: 600;
+    }
+  }
+}

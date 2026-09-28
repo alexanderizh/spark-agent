@@ -51,6 +51,8 @@ import { normalizeEduAssetUrl, resolveModelContextWindowForProvider } from '@spa
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
 import { projectQueuedTurnsForDisplay } from './internal-turn-message-visibility'
 import { SessionWorkflowPicker } from './workflow/SessionWorkflowPicker'
+import { ModelSettingsModal } from '../provider/ModelSettingsModal'
+import { useAppOptional } from '../../AppContext'
 import { useNewSessionWorkflowDraft } from './workflow/useNewSessionWorkflowDraft'
 import {
   AUTO_ROUTER_PROVIDER_TYPE,
@@ -226,8 +228,10 @@ import {
 import { ComposerDropOverlay } from './ComposerDropOverlay'
 import {
   hasExecutableComposerModel,
+  isComposerModelHidden,
   resolveComposerModelVisibility,
 } from './composer-model-selection'
+import { REASONING_EFFORT_OPTIONS } from './reasoning-effort-options'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -3718,6 +3722,8 @@ export function ComposerV2({
     } else if (clearCliSparkOverride) {
       await persistRuntimePatch({ cliSparkOverride: null })
     }
+    // 切到该模型即应用它的默认推理强度（未配置默认值的模型保持会话现有档位）
+    await applyModelDefaultReasoning(provider, nextModel)
   }
 
   const handleProviderModelChange = async (providerId: string, modelId: string) => {
@@ -3768,6 +3774,8 @@ export function ComposerV2({
     } else if (clearCliSparkOverride) {
       await persistRuntimePatch({ cliSparkOverride: null })
     }
+    // 切到该模型即应用它的默认推理强度（未配置默认值的模型保持会话现有档位）
+    await applyModelDefaultReasoning(provider, nextModel)
   }
 
   const handleCliSparkModelChange = async (
@@ -3822,6 +3830,8 @@ export function ComposerV2({
     ) {
       onModelSwitch?.({ fromModel: previousModel, toModel: hostModelId, afterMessageId })
     }
+    // 实际执行渠道是 spark 子渠道，按它的模型默认推理强度生效
+    await applyModelDefaultReasoning(provider, nextModel)
   }
 
   const handleCliSparkClear = async () => {
@@ -4070,6 +4080,25 @@ export function ComposerV2({
     writeComposerPrefs({ reasoningEffort })
     writeAgentRuntimePrefs(effectiveAgentId, { reasoningEffort })
     if (session != null) await persistRuntimePatch({ reasoningEffort })
+  }
+
+  /**
+   * 应用「模型设置」中该模型配置的默认推理强度（未配置则不做任何事）。
+   *
+   * 生效时机只有两个（见设计文档 §3.3）：切换到该模型时、保存模型设置后。
+   * 其它时机不自动改写会话档位，避免用户显式选择被静默重置；也刻意不写
+   * agent 运行时偏好（那是用户对 Agent 的显式配置，不应被模型默认值覆盖）。
+   * runtime 侧另有兜底（headless 链路：定时任务 / 工作流）。
+   */
+  const applyModelDefaultReasoning = async (
+    provider: ProviderProfile | undefined,
+    modelId: string,
+  ) => {
+    const next = provider?.modelSettings?.[modelId]?.reasoningEffort
+    if (next == null || next === effectiveReasoning) return
+    setDraftReasoning(next)
+    writeComposerPrefs({ reasoningEffort: next })
+    if (session != null) await persistRuntimePatch({ reasoningEffort: next })
   }
 
   const handleFastModeChange = async (fastMode: boolean) => {
@@ -4600,6 +4629,10 @@ export function ComposerV2({
                   onCliSparkModelChange={handleCliSparkModelChange}
                   onCliSparkClear={handleCliSparkClear}
                   onChange={handleProviderModelChange}
+                  onModelSettingsSaved={() => {
+                    if (selectedProvider == null) return
+                    void applyModelDefaultReasoning(selectedProvider, effectiveModelId)
+                  }}
                 />
               )}
               {showProjectPicker && (
@@ -4781,7 +4814,7 @@ export function ComposerV2({
           />
           <ComposerReasoningControl
             value={effectiveReasoning}
-            options={getReasoningOptions(adapter)}
+            options={REASONING_EFFORT_OPTIONS}
             fastMode={effectiveFastMode}
             showFastMode={showFastMode}
             disabled={false}
@@ -5600,6 +5633,7 @@ export function ProviderModelPicker({
   onCliSparkModelChange,
   onCliSparkClear,
   onChange,
+  onModelSettingsSaved,
 }: {
   icon: ReactNode
   providers: ProviderProfile[]
@@ -5615,8 +5649,11 @@ export function ProviderModelPicker({
   ) => void | Promise<void>
   onCliSparkClear?: () => void | Promise<void>
   onChange: (providerId: string, modelId: string) => void | Promise<void>
+  /** 「模型设置」保存成功后回调：父级据此对当前选中模型立即应用推理默认 */
+  onModelSettingsSaved?: (() => void | Promise<void>) | undefined
 }) {
   const [open, setOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
@@ -5626,10 +5663,20 @@ export function ProviderModelPicker({
   // 选中任意项由 handleProviderModelChange 校准会话引擎（agentAdapter / 权限模式
   // 一并持久化）。跨引擎切换的上下文由 recovery 兜底组装保障，不在此处按引擎隐藏。
   // 多媒体生成渠道过滤与 router 行独立分组也收敛在该函数内。
-  const { conversationalProviders, autoRouterProviders } = useMemo(
+  const { conversationalProviders, autoRouterProviders, hiddenModelKeys } = useMemo(
     () => resolveComposerModelVisibility({ providers }),
     [providers],
   )
+  // 「模型设置」跳转渠道管理：不在 AppProvider 内（单测 / 独立浮层）时静默跳过
+  const app = useAppOptional()
+  // 弹窗内渠道分组图标：与选择器分组标题同一套 logo 解析
+  const renderSettingsProviderIcon = (provider: ProviderProfile) => {
+    const vendor = resolveProviderVendor(provider)
+    if (vendor == null) return null
+    return (
+      <ProviderLogo vendor={vendor} size={getProviderPickerLogoSize(provider)} shape="rounded" />
+    )
+  }
   // 「智能路由」行悬浮配置卡片：开合状态由 hook 管理（延迟打开、菜单关闭即清空）。
   const {
     target: autoRouterHoverTarget,
@@ -5669,11 +5716,14 @@ export function ProviderModelPicker({
         sparkProviders
           .filter(isCliSparkConversationProvider)
           .map((provider) => {
-            const configuredModels = provider.modelIds.length
-              ? provider.modelIds
-              : provider.defaultModel
-                ? [provider.defaultModel]
-                : []
+            const configuredModels = (
+              provider.modelIds.length
+                ? provider.modelIds
+                : provider.defaultModel
+                  ? [provider.defaultModel]
+                  : []
+            ).filter((modelId) => !isComposerModelHidden(hiddenModelKeys, provider.id, modelId))
+            if (configuredModels.length === 0) return { provider, models: [] }
             if (normalizedSearch === '') return { provider, models: configuredModels }
             const vendorName = resolveProviderVendor(provider)?.name ?? ''
             const providerMatches =
@@ -5695,7 +5745,7 @@ export function ProviderModelPicker({
       result.set(primaryId, groups)
     }
     return result
-  }, [cliSparkProvidersByPrimaryId, normalizedSearch])
+  }, [cliSparkProvidersByPrimaryId, hiddenModelKeys, normalizedSearch])
   const filteredProviderGroups = prioritizeManagedProviderGroups(
     conversationalProviders
       .map((provider) => {
@@ -5704,7 +5754,9 @@ export function ProviderModelPicker({
           : provider.defaultModel
             ? [provider.defaultModel]
             : []
-        const models = Array.from(new Set(configuredModels))
+        const models = Array.from(new Set(configuredModels)).filter(
+          (modelId) => !isComposerModelHidden(hiddenModelKeys, provider.id, modelId),
+        )
         if (normalizedSearch === '') return { provider, models }
         const vendorName = resolveProviderVendor(provider)?.name ?? ''
         const providerMatches =
@@ -5869,7 +5921,13 @@ export function ProviderModelPicker({
               <div className="composer-menu-empty">未配置</div>
             )}
             {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
-              <div className="composer-menu-empty">没有匹配结果</div>
+              <div className="composer-menu-empty">
+                {normalizedSearch !== ''
+                  ? '没有匹配结果'
+                  : hiddenModelKeys.size > 0
+                    ? '全部模型已在「模型设置」中隐藏'
+                    : '没有匹配结果'}
+              </div>
             )}
             {pinnedEntries.length > 0 && (
               <div className="composer-model-group pinned-composer-model-group">
@@ -6086,6 +6144,21 @@ export function ProviderModelPicker({
               )
             })}
           </div>
+          <button
+            type="button"
+            className="composer-model-manage"
+            onClick={() => {
+              // 关菜单、清搜索与悬浮卡片，再开「模型设置」弹窗（弹窗挂在 Dropdown 同级）
+              setOpen(false)
+              setSearch('')
+              dismissAutoRouterHoverCard()
+              dismissProviderQuotaHoverCard()
+              setSettingsOpen(true)
+            }}
+          >
+            <Icons.Settings size={13} />
+            <span>模型设置</span>
+          </button>
         </div>
       )}
     >
@@ -6132,6 +6205,22 @@ export function ProviderModelPicker({
         error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
         loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
         anchorEl={providerQuotaHoverTarget.anchorEl}
+      />
+    )}
+    {/* 仅在打开时挂载：弹窗内部使用 App 上下文（跳转渠道管理），未打开不触发 hook */}
+    {settingsOpen && (
+      <ModelSettingsModal
+        open={settingsOpen}
+        conversationalProviders={conversationalProviders}
+        cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
+        resolveModelLabel={getPickerModelDisplayLabel}
+        renderProviderIcon={renderSettingsProviderIcon}
+        onClose={() => setSettingsOpen(false)}
+        onManageChannels={() => {
+          setSettingsOpen(false)
+          app?.setTweak('view', 'providers')
+        }}
+        {...(onModelSettingsSaved != null ? { onSaved: onModelSettingsSaved } : {})}
       />
     )}
     </>
@@ -6788,35 +6877,4 @@ function getPickerModelDisplayLabel(
   modelId: string | null | undefined,
 ): string {
   return getModelDisplayLabel(provider, modelId)
-}
-
-function getReasoningOptions(
-  adapter: AgentAdapter,
-): Array<{ value: SessionReasoningEffort; label: string; description: string }> {
-  if (isClaudeAdapter(adapter)) {
-    return [
-      { value: 'minimal', label: '极低', description: '最低推理强度，优先缩短响应时间' },
-      { value: 'low', label: '低', description: '减少推理开销，适合明确而简单的任务' },
-      {
-        value: 'medium',
-        label: '平衡',
-        description: '速度与质量均衡，适合大多数日常任务',
-      },
-      { value: 'high', label: '高', description: '加强分析，适合有一定复杂度的任务' },
-      { value: 'xhigh', label: '超高', description: '进行更深入的推理，响应时间会更长' },
-      { value: 'max', label: 'Max', description: '使用最高推理强度处理最复杂的任务' },
-    ]
-  }
-  return [
-    { value: 'minimal', label: '极低', description: '最低推理强度，优先缩短响应时间' },
-    { value: 'low', label: '低', description: '减少推理开销，适合明确而简单的任务' },
-    {
-      value: 'medium',
-      label: '平衡',
-      description: '速度与质量均衡，适合大多数日常任务',
-    },
-    { value: 'high', label: '高', description: '加强分析，适合有一定复杂度的任务' },
-    { value: 'xhigh', label: '超高', description: '进行更深入的推理，响应时间会更长' },
-    { value: 'max', label: 'Max', description: '使用最高推理强度处理最复杂的任务' },
-  ]
 }

@@ -632,3 +632,11 @@ export function useApp(): AppCtx {
   if (!v) throw new Error('useApp must be inside <AppProvider>')
   return v
 }
+
+/**
+ * 可选 App 上下文：不在 <AppProvider> 内（如组件单测、独立挂载的浮层）时返回 null，
+ * 由调用方决定降级行为（例如「跳转渠道管理」这类增强入口直接隐藏/跳过）。
+ */
+export function useAppOptional(): AppCtx | null {
+  return useContext(Ctx) ?? null
+}

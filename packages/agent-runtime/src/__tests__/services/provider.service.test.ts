@@ -2038,4 +2038,191 @@ describe('ProviderService', () => {
     expect(repo.clearDefault).not.toHaveBeenCalled()
   })
 })
+
+describe('ProviderService · 模型级设置（modelSettings）', () => {
+  let repo: ReturnType<typeof makeRepo>
+  let service: ProviderService
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    repo = makeRepo()
+    service = new ProviderService(repo as never)
+  })
+
+  const createChannel = async (modelIds: string[] = ['glm-5.3', 'glm-5.3-flash']) =>
+    service.createProvider({
+      name: '模型设置渠道',
+      provider: 'openai',
+      defaultModel: modelIds[0] ?? 'glm-5.3',
+      modelIds,
+      apiKey: 'sk-model-settings',
+    })
+
+  const readConfig = (id: string) =>
+    JSON.parse(String(repo.rows.get(id)?.config_json ?? '{}')) as Record<string, unknown>
+
+  it('createProvider 落库 modelSettings（推理默认/显隐）并把上下文窗口拆写进 modelContextWindows', async () => {
+    const profile = await service.createProvider({
+      name: '新建渠道',
+      provider: 'openai',
+      defaultModel: 'm1',
+      modelIds: ['m1', 'm2'],
+      apiKey: 'sk-new',
+      modelSettings: {
+        m1: { reasoningEffort: 'high', hidden: true, contextWindow: 400_000 },
+        m2: { reasoningEffort: 'low' },
+      },
+    })
+
+    // 单一存储：modelSettings 不重复落 contextWindow
+    expect(profile.modelSettings).toEqual({
+      m1: { reasoningEffort: 'high', hidden: true },
+      m2: { reasoningEffort: 'low' },
+    })
+    expect(profile.modelContextWindows).toEqual({ m1: 400_000 })
+  })
+
+  it('updateProvider 写入推理默认与显隐，并通过 provider:list 的 profile 透出', async () => {
+    const created = await createChannel()
+    const updated = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { reasoningEffort: 'xhigh', hidden: true } },
+    })
+    expect(updated.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'xhigh', hidden: true } })
+
+    const listed = (await service.listProviders()).find((item) => item.id === created.id)
+    expect(listed?.modelSettings).toEqual({
+      'glm-5.3': { reasoningEffort: 'xhigh', hidden: true },
+    })
+  })
+
+  it('模型级上下文窗口写入 modelContextWindows（运行时消费链复用），并在重置时清除', async () => {
+    const created = await createChannel()
+    await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { contextWindow: 1_000_000 } },
+    })
+    expect(readConfig(created.id).modelContextWindows).toEqual({ 'glm-5.3': 1_000_000 })
+
+    // 恢复默认：空对象既清 modelSettings 项，也清模型级上下文窗口
+    const reset = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': {} },
+    })
+    expect(reset.modelSettings).toBeUndefined()
+    expect(reset.modelContextWindows).toBeUndefined()
+    expect(readConfig(created.id).modelContextWindows).toBeUndefined()
+  })
+
+  it('清洗孤儿键：不在可用模型列表中的覆盖与窗口都不落库', async () => {
+    const created = await createChannel(['glm-5.3'])
+    const updated = await service.updateProvider({
+      id: created.id,
+      modelSettings: {
+        'glm-5.3': { reasoningEffort: 'low' },
+        'removed-model': { reasoningEffort: 'high', contextWindow: 400_000 },
+      },
+    })
+    expect(updated.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'low' } })
+    expect(updated.modelContextWindows).toBeUndefined()
+  })
+
+  it('非法档位 / 空覆盖被丢弃，不落库也不报错', async () => {
+    const created = await createChannel()
+    const updated = await service.updateProvider({
+      id: created.id,
+      modelSettings: {
+        // 脏数据：非枚举档位
+        'glm-5.3': { reasoningEffort: 'ultra' as never, hidden: false },
+        'glm-5.3-flash': {},
+      },
+    })
+    expect(updated.modelSettings).toBeUndefined()
+  })
+
+  it('模型级上下文窗口边界：低于 1024 / 高于 10M 一律不落库', async () => {
+    const created = await createChannel()
+    const tooSmall = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { contextWindow: 512 } },
+    })
+    expect(tooSmall.modelContextWindows).toBeUndefined()
+
+    const tooLarge = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { contextWindow: 20_000_000 } },
+    })
+    expect(tooLarge.modelContextWindows).toBeUndefined()
+
+    const inRange = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { contextWindow: 10_000_000 } },
+    })
+    expect(inRange.modelContextWindows).toEqual({ 'glm-5.3': 10_000_000 })
+  })
+
+  it('整表替换语义：未下发的模型覆盖被清除（与 modelSchedules 一致）', async () => {
+    const created = await createChannel()
+    await service.updateProvider({
+      id: created.id,
+      modelSettings: {
+        'glm-5.3': { reasoningEffort: 'high' },
+        'glm-5.3-flash': { hidden: true },
+      },
+    })
+    const replaced = await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3-flash': { hidden: true } },
+    })
+    expect(replaced.modelSettings).toEqual({ 'glm-5.3-flash': { hidden: true } })
+  })
+
+  it('未传 modelSettings 时保持既有覆盖不变', async () => {
+    const created = await createChannel()
+    await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { reasoningEffort: 'high' } },
+    })
+    const untouched = await service.updateProvider({ id: created.id, name: '改名后' })
+    expect(untouched.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'high' } })
+  })
+
+  it('托管渠道放开模型级设置，但其它字段依旧拒绝编辑', async () => {
+    const managed = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4'],
+      apiKey: 'sk-platform-secret',
+    })
+    const updated = await service.updateProvider({
+      id: managed.id,
+      modelSettings: { 'glm-5': { reasoningEffort: 'low', contextWindow: 400_000 } },
+    })
+    expect(updated.modelSettings).toEqual({ 'glm-5': { reasoningEffort: 'low' } })
+    expect(updated.modelContextWindows).toEqual({ 'glm-5': 400_000 })
+
+    await expect(
+      service.updateProvider({ id: managed.id, apiEndpoint: 'https://evil.example' }),
+    ).rejects.toThrow('平台官方 Provider 由系统管理，不能手动编辑')
+  })
+
+  it('导出 / 导入保持模型级设置对称', async () => {
+    const created = await createChannel()
+    await service.updateProvider({
+      id: created.id,
+      modelSettings: { 'glm-5.3': { reasoningEffort: 'max', hidden: true, contextWindow: 400_000 } },
+    })
+    const exported = await service.exportProviders([created.id])
+    expect(exported.profiles[0]?.modelSettings).toEqual({
+      'glm-5.3': { reasoningEffort: 'max', hidden: true },
+    })
+    expect(exported.profiles[0]?.modelContextWindows).toEqual({ 'glm-5.3': 400_000 })
+
+    const importedRepo = makeRepo()
+    const importedService = new ProviderService(importedRepo as never)
+    await importedService.importProviders(exported, 'merge')
+    const imported = (await importedService.listProviders()).find((item) => item.name === created.name)
+    expect(imported?.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'max', hidden: true } })
+    expect(imported?.modelContextWindows).toEqual({ 'glm-5.3': 400_000 })
+  })
 })

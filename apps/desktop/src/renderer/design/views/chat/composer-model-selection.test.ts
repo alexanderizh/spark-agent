@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ProviderProfile } from '@spark/protocol'
 import { AUTO_ROUTER_PROVIDER_TYPE, createDefaultAutoRouterConfig } from '@spark/protocol'
 import {
+  composerModelKey,
   hasExecutableComposerModel,
+  isComposerModelHidden,
   resolveComposerModelVisibility,
 } from './composer-model-selection'
 
@@ -128,5 +130,47 @@ describe('resolveComposerModelVisibility', () => {
   it('停用的路由不可见', () => {
     const visibility = resolveComposerModelVisibility({ providers: allProviders })
     expect(visibleIds(visibility.autoRouterProviders)).not.toContain('router-disabled')
+  })
+})
+
+describe('resolveComposerModelVisibility · 隐藏模型（模型设置）', () => {
+  const hiddenChannel = profile({
+    id: 'ch-with-hidden',
+    name: '含隐藏模型的渠道',
+    modelIds: ['model-a', 'model-b', 'model-c'],
+    modelSettings: {
+      'model-b': { hidden: true },
+      'model-a': { hidden: false, reasoningEffort: 'high' },
+      'model-c': { reasoningEffort: 'low' },
+    },
+  })
+  const plainChannel = profile({ id: 'ch-plain', name: '普通渠道', modelIds: ['model-a'] })
+
+  it('只汇总 hidden === true 的模型键（hidden:false / 仅推理默认不算隐藏）', () => {
+    const visibility = resolveComposerModelVisibility({ providers: [hiddenChannel, plainChannel] })
+    expect(Array.from(visibility.hiddenModelKeys)).toEqual(['ch-with-hidden:model-b'])
+  })
+
+  it('渠道与模型仍完整保留在 conversationalProviders（隐藏只在渲染层过滤）', () => {
+    const visibility = resolveComposerModelVisibility({ providers: [hiddenChannel] })
+    expect(visibility.conversationalProviders[0]?.modelIds).toEqual([
+      'model-a',
+      'model-b',
+      'model-c',
+    ])
+  })
+
+  it('isComposerModelHidden 命中/未命中与 key 口径一致', () => {
+    const { hiddenModelKeys } = resolveComposerModelVisibility({ providers: [hiddenChannel] })
+    expect(composerModelKey('ch-with-hidden', 'model-b')).toBe('ch-with-hidden:model-b')
+    expect(isComposerModelHidden(hiddenModelKeys, 'ch-with-hidden', 'model-b')).toBe(true)
+    expect(isComposerModelHidden(hiddenModelKeys, 'ch-with-hidden', 'model-a')).toBe(false)
+    // 同名模型在不同渠道互不影响
+    expect(isComposerModelHidden(hiddenModelKeys, 'ch-plain', 'model-b')).toBe(false)
+  })
+
+  it('无 modelSettings 的渠道不产生隐藏键', () => {
+    const visibility = resolveComposerModelVisibility({ providers: [plainChannel] })
+    expect(visibility.hiddenModelKeys.size).toBe(0)
   })
 })

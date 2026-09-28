@@ -42,6 +42,9 @@ import {
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
   type ProviderModelSchedule,
+  type ProviderModelSettingOverrides,
+  type ProviderModelSettingStored,
+  type SessionReasoningEffort,
   filterBlockedModelIds,
   sanitizeModelSchedules,
   scheduledBlockedModelIds,
@@ -369,6 +372,7 @@ function rowToProfile(row: {
     ...(config.modelContextWindows !== undefined && {
       modelContextWindows: config.modelContextWindows,
     }),
+    ...(config.modelSettings !== undefined && { modelSettings: config.modelSettings }),
     ...(maxTokens !== undefined && { maxTokens }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -841,6 +845,8 @@ export class ProviderService {
     mediaModelRefs?: ProviderMediaModelRef[]
     /** 模型定时禁用时段；新建时随渠道 config 一并落库。 */
     modelSchedules?: ProviderModelSchedule[]
+    /** 模型级设置；新建时随渠道 config 一并落库（contextWindow 拆写进 modelContextWindows）。 */
+    modelSettings?: Record<string, ProviderModelSettingOverrides>
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -916,6 +922,27 @@ export class ProviderService {
         ...(params.modelSchedules !== undefined && {
           modelSchedules: sanitizeModelSchedules(params.modelSchedules),
         }),
+        // 模型级设置：新建随渠道一并落库；上下文窗口拆写进 modelContextWindows
+        ...(params.modelSettings !== undefined && {
+          modelSettings: sanitizeModelSettings(
+            params.modelSettings,
+            params.modelIds ?? [defaultModel],
+          ),
+        }),
+        ...(params.modelSettings !== undefined && {
+          modelContextWindows: Object.fromEntries(
+            Object.entries(params.modelSettings)
+              .map(([modelId, value]) => [modelId, value.contextWindow] as const)
+              .filter(
+                (entry): entry is [string, number] =>
+                  typeof entry[1] === 'number' &&
+                  Number.isFinite(entry[1]) &&
+                  entry[1] >= 1_024 &&
+                  entry[1] <= 10_000_000,
+              )
+              .map(([modelId, cw]) => [modelId, Math.floor(cw)] as const),
+          ),
+        }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -962,6 +989,13 @@ export class ProviderService {
     mediaModelRefs?: ProviderMediaModelRef[]
     /** 模型定时禁用时段；传空数组清除全部时段。 */
     modelSchedules?: ProviderModelSchedule[]
+    /**
+     * 模型级设置整表下发（key = modelId）：undefined 不修改；空对象清除全部。
+     * contextWindow 由本方法拆写进 modelContextWindows 存储。
+     */
+    modelSettings?: Record<string, ProviderModelSettingOverrides>
+    /** 模型级上下文窗口映射整表下发：undefined 不修改；空对象清除全部（1024–10M）。 */
+    modelContextWindows?: Record<string, number>
     apiKey?: string
     isDefault?: boolean
     enabled?: boolean
@@ -970,7 +1004,16 @@ export class ProviderService {
     if (!existing) throw new Error(`Provider not found: ${params.id}`)
     if (
       isManagedProviderRow(existing) &&
-      Object.keys(params).some((key) => key !== 'id' && key !== 'enabled')
+      Object.keys(params).some(
+        // 模型级设置（推理默认/显隐/模型级上下文）对托管渠道开放：
+        // 与渠道本体字段不同，它不破坏平台托管结构，且托管渠道模型同样需要
+        // 在「模型设置」弹窗中可配置（模型目录刷新会保留既有映射）。
+        (key) =>
+          key !== 'id' &&
+          key !== 'enabled' &&
+          key !== 'modelSettings' &&
+          key !== 'modelContextWindows',
+      )
     ) {
       throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
     }
@@ -1051,6 +1094,8 @@ export class ProviderService {
       params.imageProvider !== undefined ||
       params.imageApiType !== undefined ||
       params.modelSchedules !== undefined ||
+      params.modelSettings !== undefined ||
+      params.modelContextWindows !== undefined ||
       mediaTouched
         ? { ...existingConfig }
         : undefined
@@ -1113,6 +1158,39 @@ export class ProviderService {
       } else {
         delete newConfig.contextWindow
       }
+    }
+    // 模型级设置（推理默认/显隐 + 模型级上下文窗口）：在 modelIds 合并之后应用，
+    // 孤儿清洗以最终可用列表为准；上下文窗口单一存储于 modelContextWindows。
+    if (
+      newConfig !== undefined &&
+      (params.modelSettings !== undefined || params.modelContextWindows !== undefined)
+    ) {
+      const availableModelIds = newConfig.availableModelIds ?? newConfig.modelIds ?? []
+      // 起点：显式整表下发 > 既有值拷贝；写回前统一按可用列表过滤孤儿键
+      const baseWindows: Record<string, number> =
+        params.modelContextWindows !== undefined
+          ? normalizeModelContextWindows(params.modelContextWindows, availableModelIds)
+          : { ...(newConfig.modelContextWindows ?? {}) }
+      if (params.modelSettings !== undefined) {
+        const settings = sanitizeModelSettings(params.modelSettings, availableModelIds)
+        if (Object.keys(settings).length === 0) delete newConfig.modelSettings
+        else newConfig.modelSettings = settings
+        // 拆写：modelSettings 覆盖到的模型，contextWindow 以其为权威
+        // （缺省 = 回落渠道级 → 删除该键）；未覆盖的模型保留既有窗口。
+        for (const modelId of Object.keys(params.modelSettings)) {
+          delete baseWindows[modelId]
+          const cw = params.modelSettings[modelId]?.contextWindow
+          if (typeof cw === 'number' && Number.isFinite(cw) && cw >= 1_024 && cw <= 10_000_000) {
+            baseWindows[modelId] = Math.floor(cw)
+          }
+        }
+      }
+      const available = new Set(availableModelIds)
+      const cleanedWindows = Object.fromEntries(
+        Object.entries(baseWindows).filter(([modelId]) => available.has(modelId)),
+      )
+      if (Object.keys(cleanedWindows).length === 0) delete newConfig.modelContextWindows
+      else newConfig.modelContextWindows = cleanedWindows
     }
     if (newConfig !== undefined && params.maxTokens !== undefined) {
       if (params.maxTokens > 0) {
@@ -2113,6 +2191,11 @@ interface ProviderConfig {
   contextWindow?: number
   /** 模型级上下文窗口（tokens）。 */
   modelContextWindows?: Record<string, number>
+  /**
+   * 模型级设置覆盖（key = modelId；推理强度默认/选择器显隐）。
+   * 模型级上下文窗口单一存储于 modelContextWindows，不在此重复落库。
+   */
+  modelSettings?: Record<string, ProviderModelSettingStored>
   maxTokens?: number
   temperature?: number
   /** 档位映射；未配置则回落 defaultModel */
@@ -2182,6 +2265,41 @@ function normalizeModelContextWindows(
         available.has(modelId) && Number.isInteger(value) && value >= 1_024 && value <= 10_000_000,
     ),
   )
+}
+
+const MODEL_SETTING_EFFORTS = new Set<SessionReasoningEffort>([
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+
+/**
+ * 归一化模型级设置（modelSettings）：剔除无效档位与空覆盖项，并清洗不在
+ * 可用模型列表中的孤儿键。contextWindow 不在此处理——由调用方拆写进
+ * modelContextWindows（单一存储）。
+ */
+function sanitizeModelSettings(
+  values: Record<string, ProviderModelSettingOverrides>,
+  availableModelIds: string[],
+): Record<string, ProviderModelSettingStored> {
+  const available = new Set(availableModelIds)
+  const result: Record<string, ProviderModelSettingStored> = {}
+  for (const [modelId, value] of Object.entries(values)) {
+    if (!available.has(modelId) || value == null || typeof value !== 'object') continue
+    const reasoningEffort =
+      value.reasoningEffort != null && MODEL_SETTING_EFFORTS.has(value.reasoningEffort)
+        ? value.reasoningEffort
+        : undefined
+    const next: ProviderModelSettingStored = {}
+    if (reasoningEffort != null) next.reasoningEffort = reasoningEffort
+    if (value.hidden === true) next.hidden = true
+    // 全空覆盖（既无推理默认也未隐藏）不落库，避免语义上「配置了但等于没配」
+    if (Object.keys(next).length > 0) result[modelId] = next
+  }
+  return result
 }
 
 function normalizeProviderIcon(
@@ -2602,6 +2720,7 @@ function rowToExportProfile(
     ...(config.modelContextWindows !== undefined && {
       modelContextWindows: config.modelContextWindows,
     }),
+    ...(config.modelSettings !== undefined && { modelSettings: config.modelSettings }),
     ...(typeof config.maxTokens === 'number' &&
       config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     isDefault: row.is_default === 1,
@@ -2636,6 +2755,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   supportsMillionContext?: boolean
   contextWindow?: number
   modelContextWindows?: Record<string, number>
+  modelSettings?: Record<string, ProviderModelSettingStored>
   maxTokens?: number
   haikuModel?: string
   sonnetModel?: string
@@ -2661,6 +2781,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.modelContextWindows !== undefined && {
       modelContextWindows: profile.modelContextWindows,
     }),
+    ...(profile.modelSettings !== undefined && { modelSettings: profile.modelSettings }),
     ...(typeof profile.maxTokens === 'number' &&
       profile.maxTokens > 0 && { maxTokens: profile.maxTokens }),
     ...(profile.haikuModel != null &&

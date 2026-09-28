@@ -34,6 +34,7 @@ import type {
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import { resolveModelDefaultReasoningEffort } from './provider-model-settings.js'
 import { ensureSessionWorkspaceRootPath } from './session-workspace-root.js'
 import {
   SessionWorktreeStateService,
@@ -88,7 +89,11 @@ import type {
   SessionAbandonWorkflowRunResponse,
   BindingChangeBlocker,
 } from '@spark/protocol'
-import type { ProjectSkillSummaryItem, SessionPermissionMode } from '@spark/protocol'
+import type {
+  ProjectSkillSummaryItem,
+  ProviderModelSettingStored,
+  SessionPermissionMode,
+} from '@spark/protocol'
 import {
   COMMAND_FOLLOW_UP_TURN_PRESENTATION,
   GOAL_CONTRACT_DRAFT_TURN_PRESENTATION,
@@ -3071,6 +3076,8 @@ export class SessionService {
       supportsMillionContext?: boolean
       contextWindow?: number
       modelContextWindows?: Record<string, number>
+      /** 模型级设置覆盖（推理默认/选择器显隐）；模型级上下文见 modelContextWindows。 */
+      modelSettings?: Record<string, ProviderModelSettingStored>
       haikuModel?: string
       sonnetModel?: string
       opusModel?: string
@@ -3249,7 +3256,7 @@ export class SessionService {
     // 本轮生效推理强度：router 执行器显式配置最具体（用户在 router 里为该模型指定
     // 了思考深度），优先于会话 reasoning_effort；均缺省时走 SDK 默认（undefined）。
     // claude/spark/codex 三条执行路径的 config 组装点统一取该值（函数级作用域）。
-    const effectiveReasoningEffort =
+    let effectiveReasoningEffort =
       autoRouterReasoningEffort ??
       (session.reasoning_effort != null
         ? normalizeReasoningEffort(session.reasoning_effort)
@@ -3300,6 +3307,9 @@ export class SessionService {
 
     // 峰谷定时禁用硬校验：provider/model 至此定值（普通 / Auto Router / CLI override 分支均覆盖）。
     assertModelNotScheduledBlocked(provider.config_json, model)
+    // 模型级默认推理强度兜底：router 显式档位与会话级 reasoning_effort 均缺省时，用「模型设置」
+    // 中该模型的默认值（覆盖定时任务 / 工作流等不经过 Composer 的链路；Composer 切换模型另有即时应用）。
+    effectiveReasoningEffort ??= resolveModelDefaultReasoningEffort(config, model)
     const effectiveFastMode =
       getFastModeFromMetadata(session.metadata_json) &&
       supportsOpenAIFastMode({

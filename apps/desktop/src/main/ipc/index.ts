@@ -6276,9 +6276,7 @@ export function registerAllIpcHandlers(): void {
               apiKind,
               apiKey: chosen.apiKey,
               ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
-              ...(chosen.profile.apiEndpointFullUrl === true
-                ? { apiEndpointFullUrl: true }
-                : {}),
+              ...(chosen.profile.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
               model,
               system,
               prompt: runtimeRequest.prompt,

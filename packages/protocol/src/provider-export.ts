@@ -19,7 +19,11 @@ import {
   ProviderMediaDefaultsSchema,
 } from './media-config.js'
 import { ProviderMediaModelRefSchema } from './media-model-manifest.js'
-import { AUTO_ROUTER_PROVIDER_TYPE, AutoRouterConfigSchema } from './auto-router-config.js'
+import {
+  AUTO_ROUTER_PROVIDER_TYPE,
+  AutoRouterConfigSchema,
+  RouterReasoningEffortSchema,
+} from './auto-router-config.js'
 
 /** 当前 schema 版本。导入时校验；不匹配则拒绝 */
 export const PROVIDER_EXPORT_VERSION = 2 as const
@@ -72,6 +76,18 @@ export const ProviderExportProfileSchema = z.object({
   /** 模型级上下文窗口（tokens）；未配置模型回落到 contextWindow */
   modelContextWindows: z
     .record(z.string().min(1).max(200), z.number().int().min(1_024).max(10_000_000))
+    .optional(),
+  /** 模型级设置覆盖（推理强度默认/选择器显隐）；模型级上下文见 modelContextWindows */
+  modelSettings: z
+    .record(
+      z.string().min(1).max(200),
+      z
+        .object({
+          reasoningEffort: RouterReasoningEffortSchema.optional(),
+          hidden: z.boolean().optional(),
+        })
+        .strict(),
+    )
     .optional(),
   /** 文本任务默认最大输出 tokens */
   maxTokens: z.number().int().min(0).max(10_000_000).optional(),

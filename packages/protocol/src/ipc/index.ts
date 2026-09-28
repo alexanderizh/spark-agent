@@ -931,6 +931,31 @@ export interface ProviderIconConfig {
   style: ProviderIconStyle
 }
 
+/**
+ * 模型级设置覆盖（key = modelId）：仅存显式覆盖项，未覆盖项回落渠道级配置/引擎默认。
+ * reasoningEffort/hidden 存储于 config_json.modelSettings；contextWindow 由服务层
+ * 拆写进既有 modelContextWindows 映射（单一存储，运行时消费链复用既有优先级解析，
+ * 见 shared/model-capabilities）。整表下发时 contextWindow 缺省 = 该模型回落渠道级。
+ */
+export interface ProviderModelSettingOverrides {
+  /** 默认推理强度；未设置 = 跟随会话/引擎默认。 */
+  reasoningEffort?: SessionReasoningEffort
+  /** 在会话模型选择器中隐藏该模型；不影响已选会话继续使用与渠道管理展示。 */
+  hidden?: boolean
+  /** 模型级上下文窗口（tokens，1024–10M）；未设置 = 跟随渠道 contextWindow。 */
+  contextWindow?: number
+}
+
+/**
+ * 模型级设置的存储/展示形态（不含 contextWindow——模型级上下文单一存储于
+ * modelContextWindows）。属性显式允许 undefined 以兼容 zod infer 的导出类型
+ * （exactOptionalPropertyTypes 下两者可互相赋值）。
+ */
+export type ProviderModelSettingStored = {
+  reasoningEffort?: SessionReasoningEffort | undefined
+  hidden?: boolean | undefined
+}
+
 export interface ProviderProfile {
   id: string
   name: string
@@ -978,6 +1003,8 @@ export interface ProviderProfile {
   contextWindow?: number
   /** 模型级上下文窗口（tokens）；未配置模型回落到 contextWindow。 */
   modelContextWindows?: Record<string, number>
+  /** 模型级设置覆盖（推理强度默认/选择器显隐）；模型级上下文见 modelContextWindows。 */
+  modelSettings?: Record<string, ProviderModelSettingStored>
   /** 文本任务默认最大输出 tokens。<=0 / undefined 视为未配置。 */
   maxTokens?: number
   /** Haiku 档（子 agent / Task 工具默认）；为空时回落 defaultModel */
@@ -1202,6 +1229,8 @@ export interface ProviderCreateRequest {
   mediaModelRefs?: ProviderMediaModelRef[]
   /** 模型定时禁用时段；新建时随渠道一并落库 */
   modelSchedules?: ProviderModelSchedule[]
+  /** 模型级设置；新建时随渠道 config 一并落库（语义同 update 同名字段）。 */
+  modelSettings?: Record<string, ProviderModelSettingOverrides>
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -1291,6 +1320,17 @@ export interface ProviderUpdateRequest {
   mediaModelRefs?: ProviderMediaModelRef[]
   /** 模型定时禁用时段；传空数组清除全部时段。 */
   modelSchedules?: ProviderModelSchedule[]
+  /**
+   * 模型级设置整表下发（key = modelId）：undefined 不修改；空对象清除全部。
+   * 服务层负责清洗不在可用模型列表中的孤儿键；contextWindow 拆写进
+   * modelContextWindows 存储（该映射同样可随本参数整表下发）。
+   */
+  modelSettings?: Record<string, ProviderModelSettingOverrides>
+  /**
+   * 模型级上下文窗口映射整表下发（key = modelId）：undefined 不修改；空对象清除全部。
+   * 与 modelSettings[modelId].contextWindow 合并后落库（后者优先）；1024–10M。
+   */
+  modelContextWindows?: Record<string, number>
 }
 
 export interface ProviderUpdateResponse {

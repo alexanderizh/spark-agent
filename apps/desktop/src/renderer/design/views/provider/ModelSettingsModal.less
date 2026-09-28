@@ -1,0 +1,152 @@
+// 「模型设置」弹窗：扁平表格布局（表头吸顶 + 渠道分组 + 行内三控件），无卡片式分块
+.mv_settings_modal {
+  .mv_settings_title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .mv_settings_toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .mv_settings_search {
+    max-width: 320px;
+  }
+
+  .mv_settings_summary {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  // 表格栅格：模型名 / 思考强度 / 显示状态 / 上下文窗口
+  // 列宽固定（只允许模型名列弹性伸缩）：上下文列必须定宽，
+  // 否则单元格内容（值/恢复默认）变化会推动列宽、让滑块列左右位移。
+  --mv-settings-columns: minmax(160px, 1fr) 132px 80px minmax(240px, 300px);
+
+  .mv_settings_head,
+  .mv_settings_row {
+    display: grid;
+    grid-template-columns: var(--mv-settings-columns);
+    align-items: center;
+    column-gap: 12px;
+    min-width: 0;
+  }
+
+  .mv_settings_head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    // 上下对称留白 + 固定高度：文字垂直居中，不再贴着下边框（此前上 15px / 下 7px）
+    min-height: 40px;
+    padding: 11px 4px;
+    border-bottom: 1px solid var(--border-strong);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--text-muted);
+  }
+
+  .mv_settings_body {
+    // 行高因「轨道 + 刻度尺」变高（41px → 52px），同步放宽可视区，保证同屏行数不缩水
+    max-height: min(62vh, 640px);
+    overflow-y: auto;
+    padding-top: 2px;
+  }
+
+  .mv_settings_empty {
+    padding: 24px 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .mv_settings_group {
+    padding-top: 4px;
+  }
+
+  .mv_settings_group_title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 4px 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .mv_settings_group_icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+  }
+
+  .mv_settings_group_dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+
+  .mv_settings_group_name {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .mv_settings_group_parent {
+    color: var(--text-faint);
+  }
+
+  .mv_settings_row {
+    padding: 7px 4px;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    font-size: 13px;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background: var(--bg-sunken);
+    }
+  }
+
+  .mv_settings_model {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mv_settings_reasoning {
+    width: 116px;
+  }
+
+  // 显示状态只保留开关本身（隐藏态由开关的 off 表达），后面不再跟文案
+  .mv_settings_visibility {
+    display: flex;
+    align-items: center;
+  }
+
+  .mv_settings_footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mv_settings_footer_spacer {
+    flex: 1;
+  }
+}

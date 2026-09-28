@@ -28,6 +28,26 @@ export interface ComposerModelVisibility {
   conversationalProviders: ProviderProfile[]
   /** 「智能路由」分组的可见列表（仅启用中的 router 行）。 */
   autoRouterProviders: ProviderProfile[]
+  /**
+   * 在「模型设置」中被隐藏的模型键（`${providerId}:${modelId}`）。
+   *
+   * 只在选择器渲染层过滤：`provider:list` 数据保持完整，已选中被隐藏模型的会话
+   * 继续可用（与 modelSchedules 定时禁用的读取侧剔除语义不同，见设计文档 §2.3）。
+   */
+  hiddenModelKeys: Set<string>
+}
+
+export function composerModelKey(providerId: string, modelId: string): string {
+  return `${providerId}:${modelId}`
+}
+
+/** 模型是否在模型选择器中被隐藏（hiddenModelKeys 由 resolveComposerModelVisibility 产出）。 */
+export function isComposerModelHidden(
+  hiddenModelKeys: ReadonlySet<string>,
+  providerId: string,
+  modelId: string,
+): boolean {
+  return hiddenModelKeys.has(composerModelKey(providerId, modelId))
 }
 
 /**
@@ -40,12 +60,20 @@ export interface ComposerModelVisibility {
  * 见 conversation-summarizer 的 recoveryPrompt 与执行器 resumeFallback 链路。
  *
  * 本函数只负责：多媒体生成渠道与向量（Embeddings）渠道过滤、router 行独立分组、
- * 停用路由剔除。
+ * 停用路由剔除、隐藏模型键汇总（hiddenModelKeys，供渲染层剔除）。
  */
 export function resolveComposerModelVisibility(
   input: ComposerModelVisibilityInput,
 ): ComposerModelVisibility {
   const { providers } = input
+  const hiddenModelKeys = new Set<string>()
+  for (const provider of providers) {
+    const settings = provider.modelSettings
+    if (settings == null) continue
+    for (const [modelId, setting] of Object.entries(settings)) {
+      if (setting?.hidden === true) hiddenModelKeys.add(composerModelKey(provider.id, modelId))
+    }
+  }
   return {
     conversationalProviders: providers.filter(
       (provider) =>
@@ -57,5 +85,6 @@ export function resolveComposerModelVisibility(
       (provider) =>
         provider.providerType === AUTO_ROUTER_PROVIDER_TYPE && provider.enabled !== false,
     ),
+    hiddenModelKeys,
   }
 }
