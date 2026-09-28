@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from '../database.js'
 import { MemoryRepository } from './memory.repository.js'
 import type { MemoryEntryRow, MemoryEntryInsert } from './memory.repository.js'
+import { MemorySearchRepository } from './memory-search.repository.js'
 import { join } from 'path'
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -71,17 +72,27 @@ describe('MemoryRepository', () => {
       expect(user.scope).toBe('user')
       expect(user.scope_ref).toBeNull()
 
-      const project = repo.insert(makeEntry({
-        id: 'prj_001', scope: 'project', scope_ref: 'ws-123',
-        name: 'project-mem', file_path: join(testDir, 'prj_001.md'),
-      }))
+      const project = repo.insert(
+        makeEntry({
+          id: 'prj_001',
+          scope: 'project',
+          scope_ref: 'ws-123',
+          name: 'project-mem',
+          file_path: join(testDir, 'prj_001.md'),
+        }),
+      )
       expect(project.scope).toBe('project')
       expect(project.scope_ref).toBe('ws-123')
 
-      const agent = repo.insert(makeEntry({
-        id: 'agt_001', scope: 'agent', scope_ref: 'agent-456',
-        name: 'agent-mem', file_path: join(testDir, 'agt_001.md'),
-      }))
+      const agent = repo.insert(
+        makeEntry({
+          id: 'agt_001',
+          scope: 'agent',
+          scope_ref: 'agent-456',
+          name: 'agent-mem',
+          file_path: join(testDir, 'agt_001.md'),
+        }),
+      )
       expect(agent.scope).toBe('agent')
       expect(agent.scope_ref).toBe('agent-456')
     })
@@ -124,25 +135,51 @@ describe('MemoryRepository', () => {
     it('should update specified fields and refresh updated_at', () => {
       repo.insert(makeEntry())
       const before = Date.now()
-      const updated = repo.update('usr_test001', { description: 'Updated desc', confidence: 0.7 })
+      // S1A.3 起：description 变更必须带 body（fail-loud 契约）
+      const updated = repo.update(
+        'usr_test001',
+        { description: 'Updated desc', confidence: 0.7 },
+        'Updated body',
+      )
       expect(updated.description).toBe('Updated desc')
       expect(updated.confidence).toBe(0.7)
       expect(updated.updated_at).toBeGreaterThanOrEqual(before)
     })
 
     it('should throw for non-existent id', () => {
-      expect(() => repo.update('nonexistent', { description: 'x' })).toThrow('Memory entry not found')
+      expect(() => repo.update('nonexistent', { description: 'x' })).toThrow(
+        'Memory entry not found',
+      )
     })
   })
 
   describe('listByScope', () => {
     beforeEach(() => {
-      repo.insert(makeEntry({ id: 'usr_001', name: 'mem-1', type: 'feedback', file_path: join(testDir, 'usr_001.md') }))
-      repo.insert(makeEntry({ id: 'usr_002', name: 'mem-2', type: 'user', file_path: join(testDir, 'usr_002.md') }))
-      repo.insert(makeEntry({
-        id: 'prj_001', scope: 'project', scope_ref: 'ws-123',
-        name: 'mem-3', file_path: join(testDir, 'prj_001.md'),
-      }))
+      repo.insert(
+        makeEntry({
+          id: 'usr_001',
+          name: 'mem-1',
+          type: 'feedback',
+          file_path: join(testDir, 'usr_001.md'),
+        }),
+      )
+      repo.insert(
+        makeEntry({
+          id: 'usr_002',
+          name: 'mem-2',
+          type: 'user',
+          file_path: join(testDir, 'usr_002.md'),
+        }),
+      )
+      repo.insert(
+        makeEntry({
+          id: 'prj_001',
+          scope: 'project',
+          scope_ref: 'ws-123',
+          name: 'mem-3',
+          file_path: join(testDir, 'prj_001.md'),
+        }),
+      )
     })
 
     it('should list entries by scope', () => {
@@ -175,10 +212,15 @@ describe('MemoryRepository', () => {
     })
 
     it('should list all project entries when requested without a scope_ref filter', () => {
-      repo.insert(makeEntry({
-        id: 'prj_002', scope: 'project', scope_ref: 'ws-456',
-        name: 'mem-4', file_path: join(testDir, 'prj_002.md'),
-      }))
+      repo.insert(
+        makeEntry({
+          id: 'prj_002',
+          scope: 'project',
+          scope_ref: 'ws-456',
+          name: 'mem-4',
+          file_path: join(testDir, 'prj_002.md'),
+        }),
+      )
 
       const entries = repo.listByScope('project', null, { matchAnyScopeRef: true })
       // 不依赖顺序（同毫秒插入时 updated_at 相同，ORDER BY DESC 顺序不稳定），只验证都返回
@@ -230,14 +272,22 @@ describe('MemoryRepository', () => {
 
   describe('countByScope', () => {
     it('should count non-archived entries', () => {
-      repo.insert(makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }))
-      repo.insert(makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }))
+      repo.insert(
+        makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }),
+      )
+      repo.insert(
+        makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }),
+      )
       expect(repo.countByScope('user', null)).toBe(2)
     })
 
     it('should exclude archived', () => {
-      repo.insert(makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }))
-      repo.insert(makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }))
+      repo.insert(
+        makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }),
+      )
+      repo.insert(
+        makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }),
+      )
       repo.archive('usr_001')
       expect(repo.countByScope('user', null)).toBe(1)
     })
@@ -246,15 +296,25 @@ describe('MemoryRepository', () => {
   describe('findEvictionCandidates', () => {
     it('should return entries ordered by score ASC', () => {
       // Low score: low hit_count, low confidence
-      repo.insert(makeEntry({
-        id: 'usr_001', name: 'low-score',
-        confidence: 0.6, hit_count: 0, file_path: join(testDir, 'usr_001.md'),
-      }))
+      repo.insert(
+        makeEntry({
+          id: 'usr_001',
+          name: 'low-score',
+          confidence: 0.6,
+          hit_count: 0,
+          file_path: join(testDir, 'usr_001.md'),
+        }),
+      )
       // High score: high hit_count, high confidence
-      repo.insert(makeEntry({
-        id: 'usr_002', name: 'high-score',
-        confidence: 1.0, hit_count: 10, file_path: join(testDir, 'usr_002.md'),
-      }))
+      repo.insert(
+        makeEntry({
+          id: 'usr_002',
+          name: 'high-score',
+          confidence: 1.0,
+          hit_count: 10,
+          file_path: join(testDir, 'usr_002.md'),
+        }),
+      )
 
       const candidates = repo.findEvictionCandidates('user', null, 2)
       expect(candidates).toHaveLength(2)
@@ -262,12 +322,82 @@ describe('MemoryRepository', () => {
     })
 
     it('should respect limit', () => {
-      repo.insert(makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }))
-      repo.insert(makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }))
-      repo.insert(makeEntry({ id: 'usr_003', name: 'mem-3', file_path: join(testDir, 'usr_003.md') }))
+      repo.insert(
+        makeEntry({ id: 'usr_001', name: 'mem-1', file_path: join(testDir, 'usr_001.md') }),
+      )
+      repo.insert(
+        makeEntry({ id: 'usr_002', name: 'mem-2', file_path: join(testDir, 'usr_002.md') }),
+      )
+      repo.insert(
+        makeEntry({ id: 'usr_003', name: 'mem-3', file_path: join(testDir, 'usr_003.md') }),
+      )
 
       const candidates = repo.findEvictionCandidates('user', null, 1)
       expect(candidates).toHaveLength(1)
+    })
+  })
+
+  // ─── S0 反例固定（E4）→ S1A.3 已修复（2026-09-27 反转） ────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/S1A.3。
+  // 原 fails 用例：update 在 textChanged 且 body 缺失时以空串重建 FTS 行，
+  // 旧正文关键词检索丢失。S1A.3 修复（repo fail-loud + 全部调用方补传 body）
+  // 后反转为 it：文本变更缺 body 直接抛错；带 body 的 description-only 更新
+  // 保留旧正文检索。
+  describe('S1A.3 已修复（原 S0/E4 反例）：FTS 正文完整性', () => {
+    let searchRepo: MemorySearchRepository
+
+    beforeEach(() => {
+      searchRepo = new MemorySearchRepository(db)
+    })
+
+    it('update 仅改 description 但传入当前正文（调用方修复形态，如 memory:update IPC 读文件）时，旧正文关键词仍可检索', () => {
+      const body = '阿那亚图书馆位于秦皇岛北戴河新区，馆藏以建筑设计类图书为特色。'
+      const row = repo.insert(
+        makeEntry({ id: 'usr_e4a', name: 'e4-body-entry', description: '旧摘要' }),
+        body,
+      )
+      // 前置：insert 带 body，正文关键词已入索引
+      expect(searchRepo.searchBm25('阿那亚图书馆')).toHaveLength(1)
+
+      repo.update(row.id, { description: '新摘要：描述已变更' }, body)
+
+      const hits = searchRepo.searchBm25('阿那亚图书馆')
+      expect(hits).toHaveLength(1)
+      expect(hits[0]!.entry.id).toBe('usr_e4a')
+    })
+
+    it('update 在 textChanged 且 body 缺失时明确失败而非静默清空索引（fail-loud）', () => {
+      const row = repo.insert(makeEntry({ id: 'usr_e4b' }), '正文内容：独特关键词沙丘咖啡')
+      expect(searchRepo.searchBm25('沙丘咖啡')).toHaveLength(1)
+
+      expect(() => repo.update(row.id, { description: '仅元数据更新' })).toThrow(/未提供 body/)
+      // 失败后索引不被破坏
+      expect(searchRepo.searchBm25('沙丘咖啡')).toHaveLength(1)
+    })
+
+    it('update 传 body 时正文检索正常更新（正确行为固化）', () => {
+      const row = repo.insert(
+        makeEntry({ id: 'usr_e4c', description: '旧摘要' }),
+        '旧正文包含关键词候鸟驿站',
+      )
+      expect(searchRepo.searchBm25('候鸟驿站')).toHaveLength(1)
+
+      repo.update(row.id, { description: '新摘要' }, '新正文包含关键词孤独书局')
+
+      expect(searchRepo.searchBm25('候鸟驿站')).toHaveLength(0)
+      expect(searchRepo.searchBm25('孤独书局')).toHaveLength(1)
+    })
+
+    it('update 仅改非文本字段（如 confidence/hit_count）不动 FTS（正确行为固化）', () => {
+      const row = repo.insert(
+        makeEntry({ id: 'usr_e4d', description: '摘要稳定' }),
+        '正文关键词礼堂穹顶',
+      )
+      expect(searchRepo.searchBm25('礼堂穹顶')).toHaveLength(1)
+
+      repo.update(row.id, { confidence: 0.7 })
+
+      expect(searchRepo.searchBm25('礼堂穹顶')).toHaveLength(1)
     })
   })
 })

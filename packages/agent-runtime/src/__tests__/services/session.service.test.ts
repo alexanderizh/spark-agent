@@ -76,6 +76,15 @@ describe('SparkWork memory behavior prompt', () => {
     expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('in any language')
     expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).not.toMatch(/[\u3400-\u9fff]/u)
   })
+
+  // \u3010S1A.4\u3011\u540e\u53f0\u63d0\u53d6\u662f\u5f02\u6b65\u4e14\u53ef\u80fd\u88ab\u95f8\u95e8\u62d2\u7edd \u2014\u2014 prompt \u4e0d\u5f97\u8ba9\u6a21\u578b\u63d0\u524d\u5ba3\u79f0\u5df2\u4fdd\u5b58
+  it('memory request wording stays pending-not-saved (S1A.4)', () => {
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('being processed in the background')
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('may still be rejected')
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).not.toContain(
+      'say that it was noted or added to long-term memory',
+    )
+  })
 })
 
 function baseEvent(

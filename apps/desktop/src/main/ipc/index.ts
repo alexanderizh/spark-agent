@@ -144,6 +144,10 @@ import {
   MemoryRepository,
   MemoryEntityRepository,
   MemorySearchRepository,
+  MemoryOperationRepository,
+  MemoryRevisionRepository,
+  MemoryCandidateRepository,
+  buildRevisionCoverage,
 } from '@spark/storage'
 import type {
   AgentItem as StorageAgentItem,
@@ -183,6 +187,10 @@ import {
   resolveProfileMediaModels,
   MemoryStoreService,
   MemoryWriterService,
+  MemoryLifecycleService,
+  MemoryCandidateService,
+  MemoryCommitService,
+  isMemorySensitive,
   EmbeddingService,
   ensureSessionWorkspaceRootPath,
   NO_PROJECT_WORKSPACE_NAME,
@@ -9170,6 +9178,11 @@ export function registerAllIpcHandlers(): void {
     validFrom: r.valid_from,
     invalidAt: r.invalid_at,
     supersededBy: r.superseded_by,
+    version: r.version,
+    authorRole: r.author_role,
+    evidenceStatus: r.evidence_status,
+    validUntil: r.valid_until,
+    validUntilMeta: r.valid_until_meta,
   })
 
   let _memoryStore: MemoryStoreService | null = null
@@ -9180,6 +9193,56 @@ export function registerAllIpcHandlers(): void {
     if (_memoryStore == null) _memoryStore = new MemoryStoreService()
     return _memoryStore
   }
+
+  // S1B.4：生命周期协调服务（删除/归档唯一收敛入口）+ 重启恢复。
+  // 文件清理按行内绝对 file_path 直删；投影刷新与归档写回按 scope 解析
+  // store（project scope → per-workspace，user/agent → appHomeDir 单例）
+  let _memoryLifecycle: MemoryLifecycleService | null = null
+  let _memoryLifecycleResumed = false
+  const getMemoryLifecycleService = (): MemoryLifecycleService => {
+    if (_memoryLifecycle == null) {
+      _memoryLifecycle = new MemoryLifecycleService(
+        new MemoryRepository(getDatabase()),
+        getMemoryStore(),
+        new MemoryOperationRepository(getDatabase()),
+        new MemoryRevisionRepository(getDatabase()),
+        (scope, scopeRef) => getMemoryStore(resolveWorkspaceRootPath(scope, scopeRef)),
+      )
+    }
+    // 首次使用时恢复中断的生命周期操作（fire-and-forget，不阻塞本次请求）
+    if (!_memoryLifecycleResumed) {
+      _memoryLifecycleResumed = true
+      void _memoryLifecycle.resumeUnfinished().catch((err) => {
+        log.warn(
+          `memory lifecycle resume failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+    }
+    return _memoryLifecycle
+  }
+  // S2.3：候选确认服务（ELEVATE 晋级唯一确认入口，仅本 IPC 可达 —— N12）
+  let _memoryCandidateService: MemoryCandidateService | null = null
+  const getMemoryCandidateService = (): MemoryCandidateService => {
+    if (_memoryCandidateService == null) {
+      const repo = new MemoryRepository(getDatabase())
+      _memoryCandidateService = new MemoryCandidateService(
+        new MemoryCandidateRepository(getDatabase()),
+        new MemoryCommitService(repo, getMemoryStore()),
+        repo,
+        new MemoryRevisionRepository(getDatabase()),
+        getMemoryStore(),
+        // 【审查修复】漏传 entityRepo 会导致候选携带的实体在确认晋级后不落库
+        //（旧 ELEVATE 路径有实体落库，不能在确认入口退化）
+        new MemoryEntityRepository(getDatabase()),
+        // 【审查修复 F1】project scope 候选的正文文件在 workspace 目录下——
+        // 注入 scope 感知 store 工厂（与 lifecycle 服务同构），缺省 appHome
+        // 单例会让 project 候选确认必失败（store 抛 VALIDATION_FAILED）
+        (scope, scopeRef) => getMemoryStore(resolveWorkspaceRootPath(scope, scopeRef)),
+      )
+    }
+    return _memoryCandidateService
+  }
+
   /** project scope 时按 workspaceId 查 root_path；user/agent 返回 undefined */
   const resolveWorkspaceRootPath = (scope: string, scopeRef: string | null): string | undefined => {
     if (scope === 'project' && scopeRef != null && scopeRef.length > 0) {
@@ -9241,6 +9304,16 @@ export function registerAllIpcHandlers(): void {
       body: req.body,
       scopeRef: req.scopeRef,
       ...(req.entities != null ? { entities: req.entities } : {}),
+      // 【S2.6 / N5】有效期透传（manualWrite 内规范化，非法输入结构化拒绝）
+      ...(req.validUntil != null && req.validUntil.trim() !== ''
+        ? {
+            validUntil: {
+              validUntil: req.validUntil,
+              precision: req.validUntilPrecision ?? 'date',
+              ...(req.validUntilTimezone != null ? { timezone: req.validUntilTimezone } : {}),
+            },
+          }
+        : {}),
     })
     if (req.entities != null && req.entities.length > 0) {
       try {
@@ -9255,14 +9328,94 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('memory:update', async (req) => {
-    log.info(`memory:update requested, id=${req.id}`)
+    log.info(
+      `memory:update requested, id=${req.id}` +
+        `${req.expectedVersion != null ? ` (CAS v${req.expectedVersion})` : ''}`,
+    )
     const repo = new MemoryRepository(getDatabase())
     const existing = repo.getById(req.id)
     if (existing == null)
       throw new SparkError('NOT_FOUND', `记忆不存在：${req.id}（可能已被删除或归档）。`)
+
+    // 【S2.4 统一写入不变量】入口 3 敏感内容闸门：正文/描述编辑不得绕过
+    //（与入口 1/2/4/5 同一防线；手工输入不套自动抽取的日期/置信规则）
+    if (isMemorySensitive(req.description ?? '', req.body ?? '')) {
+      throw new SparkError(
+        'VALIDATION_FAILED',
+        '记忆内容含敏感信息（疑似密钥/凭证），已被拒绝保存。请去掉敏感内容后重试。',
+      )
+    }
+
     let bodyForUpdate: string | undefined
     if (req.body != null) {
       bodyForUpdate = req.body
+    } else if (req.description != null) {
+      // 【S1A.3】description-only 编辑（未传 body）：从当前权威文件读正文一并传入，
+      // 防止 repo.update 因文本变更缺 body 而 fail-loud（E4 修复后该形态被拒绝）。
+      // 文件缺失时明确失败 —— 不允许"描述已改但正文检索丢失"的静默降级。
+      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
+      try {
+        bodyForUpdate = await store.readFile(existing.file_path)
+      } catch (err) {
+        throw new SparkError(
+          'VALIDATION_FAILED',
+          `记忆正文文件缺失或不可读（${existing.file_path}），无法安全更新描述。` +
+            `请先在编辑框提供完整正文，或修复文件后重试。原始错误：${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    // 【S2.4 / S1B.1 遗留收编】带 expectedVersion → 统一提交原语（先写文件后
+    // CAS：版本失配不覆盖当前状态且恢复权威正文；同事务保留被覆盖版本进
+    // revision 历史）。缺省 → 旧直写路径（未升级前端兼容，无 CAS）。
+    if (req.expectedVersion != null) {
+      if (existing.archived === 1 || existing.invalid_at != null) {
+        throw new SparkError(
+          'CONFLICT',
+          `记忆已归档或失效（v${existing.version}），拒绝更新：${req.id}`,
+        )
+      }
+      const store = getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref))
+      const committed = await new MemoryCommitService(repo, store).commitWrite({
+        entryId: req.id,
+        expectedVersion: req.expectedVersion,
+        scope: existing.scope,
+        scopeRef: existing.scope_ref,
+        type: req.type ?? existing.type,
+        name: existing.name,
+        description: req.description ?? existing.description,
+        confidence: existing.confidence,
+        // 【审查修复 F9】纯 type-only 编辑（未传 body/description）同样需要正文
+        // 走快照写——读失败 fail-loud 而非静默以空串落库（空正文会清空文件、
+        // content_hash 变为 hash('')、revision 历史落空串，旧正文永久丢失；
+        // 与上方 description-only 分支同一防线，不容"描述没改所以无所谓"的例外）
+        body:
+          bodyForUpdate ??
+          (await store.readFile(existing.file_path).catch(() => {
+            throw new SparkError(
+              'VALIDATION_FAILED',
+              `记忆正文文件缺失或不可读（${existing.file_path}），无法安全完成更新。` +
+                `请先在编辑框提供完整正文，或修复文件后重试。`,
+            )
+          })),
+      })
+      if (!committed.ok) {
+        if (committed.reason === 'version_conflict') {
+          throw new SparkError(
+            'CONFLICT',
+            `版本冲突：该记忆已被其他修改更新到 v${committed.currentVersion ?? '?'}，` +
+              `本次编辑基于 v${req.expectedVersion}。请刷新后重试（你的改动未保存）。`,
+          )
+        }
+        throw new SparkError(
+          'VALIDATION_FAILED',
+          `更新失败（${committed.reason}）：${committed.message}`,
+        )
+      }
+      return { entry: toMemoryDto(committed.row) }
+    }
+
+    if (req.body != null) {
       // 先写文件（事实来源），再更新 DB+FTS：writeFile 失败则整体中止（DB 维持旧状态，
       // 与 writer.updateEntry 契约一致——避免 DB 领先文件导致 recall 永久读不到正文）
       await getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref)).writeFile({
@@ -9298,14 +9451,144 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('memory:archive', async (req) => {
     log.info(`memory:archive requested, id=${req.id}`)
-    new MemoryRepository(getDatabase()).archive(req.id)
-    return { ok: true }
+    // S1B.4：归档走生命周期协调（DB 屏障 + frontmatter 写回 + 投影刷新），
+    // 状态机与失败重试见 memory-lifecycle.service.ts
+    const result = await getMemoryLifecycleService().archiveEntry(req.id)
+    return {
+      ok: result.status !== 'blocked_locally',
+      status: result.status,
+      ...(result.operationId != null ? { operationId: result.operationId } : {}),
+      ...(result.error != null ? { error: result.error } : {}),
+    }
   })
 
   typedIpcHandle('memory:delete', async (req) => {
     log.info(`memory:delete requested, id=${req.id}`)
-    new MemoryRepository(getDatabase()).delete(req.id)
-    return { ok: true }
+    // S1B.4：删除走生命周期协调（DB 屏障 + 磁盘清理 + 投影刷新）
+    const result = await getMemoryLifecycleService().deleteEntry(req.id)
+    return {
+      ok: result.status !== 'blocked_locally',
+      status: result.status,
+      ...(result.operationId != null ? { operationId: result.operationId } : {}),
+      ...(result.error != null ? { error: result.error } : {}),
+    }
+  })
+
+  // ─── S2.2：revision 历史 / 显式 supersede / retract ─────────────────
+  // 历史查询是本机用户的管理入口（记忆面板），不经过会话 scope ——
+  // E7 的越权防护针对会话侧 recall（bridge/MCP），管理面板即数据主体本人。
+
+  typedIpcHandle('memory:history', async (req) => {
+    log.info(`memory:history requested, id=${req.id}`)
+    const db = getDatabase()
+    const repo = new MemoryRepository(db)
+    const revisionRepo = new MemoryRevisionRepository(db)
+    const entry = repo.getById(req.id)
+    if (entry == null) return { ok: false, error: `Memory not found: ${req.id}` }
+    const revisions = revisionRepo.listRevisions(req.id)
+    const derivationsFrom = revisionRepo.listDerivationsFrom(req.id)
+    const derivationsOf = revisionRepo.listDerivationsOf(req.id)
+    return {
+      ok: true,
+      entry: {
+        id: entry.id,
+        name: entry.name,
+        scope: entry.scope,
+        scopeRef: entry.scope_ref,
+        type: entry.type,
+        currentVersion: entry.version,
+        invalidAt: entry.invalid_at,
+        supersededBy: entry.superseded_by,
+      },
+      revisions: revisions.map((r) => ({
+        version: r.version,
+        name: r.name,
+        description: r.description,
+        body: r.body,
+        confidence: r.confidence,
+        authorRole: r.author_role,
+        validFrom: r.valid_from,
+        supersededAt: r.superseded_at,
+        supersedeKind: r.supersede_kind,
+        successorId: r.successor_id,
+        note: r.note,
+      })),
+      derivationsFrom: derivationsFrom.map((d) => ({
+        sourceId: d.source_id,
+        derivedId: d.derived_id,
+        kind: d.kind,
+        createdAt: d.created_at,
+      })),
+      derivationsOf: derivationsOf.map((d) => ({
+        sourceId: d.source_id,
+        derivedId: d.derived_id,
+        kind: d.kind,
+        createdAt: d.created_at,
+      })),
+      coverage: buildRevisionCoverage(entry, revisions),
+    }
+  })
+
+  typedIpcHandle('memory:supersede', async (req) => {
+    log.info(`memory:supersede requested, oldId=${req.oldId} newId=${req.newId}`)
+    const result = await getMemoryLifecycleService().supersedeEntry(req.oldId, req.newId, req.note)
+    return {
+      ok: result.ok,
+      status: result.status,
+      ...(result.error != null ? { error: result.error } : {}),
+    }
+  })
+
+  typedIpcHandle('memory:retract', async (req) => {
+    log.info(`memory:retract requested, id=${req.id}`)
+    const result = await getMemoryLifecycleService().retractEntry(req.id, req.note)
+    return {
+      ok: result.ok,
+      status: result.status,
+      ...(result.error != null ? { error: result.error } : {}),
+    }
+  })
+
+  typedIpcHandle('memory:candidate:list', async () => {
+    const rows = getMemoryCandidateService().listPending()
+    return {
+      ok: true,
+      candidates: rows.map((r) => ({
+        id: r.id,
+        scope: r.scope,
+        scopeRef: r.scopeRef,
+        createdAt: r.createdAt,
+        expiresAt: r.expiresAt,
+        contentDigest: r.contentDigest,
+        payload:
+          r.payload == null
+            ? null
+            : {
+                type: r.payload.type,
+                name: r.payload.name,
+                description: r.payload.description,
+                body: r.payload.body,
+                confidence: r.payload.confidence,
+                sourceIds: r.payload.sourceIds,
+              },
+      })),
+    }
+  })
+
+  typedIpcHandle('memory:candidate:confirm', async (req) => {
+    log.info(`memory:candidate:confirm requested, id=${req.id}`)
+    const result = await getMemoryCandidateService().confirm(req.id, req.contentDigest)
+    if (!result.ok) {
+      log.warn(`candidate confirm rejected (${result.reason}): id=${req.id} — ${result.message}`)
+      return { ok: false, reason: result.reason, error: result.message }
+    }
+    return { ok: true, entryId: result.entryId }
+  })
+
+  typedIpcHandle('memory:candidate:reject', async (req) => {
+    log.info(`memory:candidate:reject requested, id=${req.id}`)
+    const result = getMemoryCandidateService().reject(req.id)
+    return { ok: result.ok }
   })
 
   typedIpcHandle('memory:rebuild-vectors', async () => {

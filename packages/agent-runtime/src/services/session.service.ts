@@ -499,6 +499,7 @@ import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
 import { TurnPerfRepository } from '@spark/storage'
 import { MemoryEntityRepository } from '@spark/storage'
+import { MemoryCandidateRepository, MemoryRevisionRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -1699,8 +1700,11 @@ export class SessionService {
     const settingsRepo = new SettingsRepository(this.db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
     const repo = new MemoryRepository(this.db)
-    // 从 sessionId 解析 workspaceRootPath（recall 读 markdown 文件需要）
+    // 从 sessionId 解析 workspaceRootPath（recall 读 markdown 文件需要），
+    // 并构造该会话允许的 scope 集合（【S1A.2】E7：bridge recall 也要带访问上下文）。
+    // scopes 从 session 行派生（user + 首workspace + agent），不信任子进程传参。
     let workspaceRootPath: string | undefined
+    const allowedScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
     try {
       const sessionRepo = new SessionRepository(this.db)
       const session = sessionRepo.get(params.sessionId)
@@ -1713,6 +1717,7 @@ export class SessionService {
         }
         const workspaceId = workspaceIds[0]
         if (workspaceId != null && workspaceId.length > 0) {
+          allowedScopes.push({ scope: 'project', scopeRef: workspaceId })
           const wsRepo = new WorkspaceRepository(this.db)
           const workspace = wsRepo.get(workspaceId)
           workspaceRootPath =
@@ -1720,9 +1725,13 @@ export class SessionService {
               ? undefined
               : await ensureSessionWorkspaceRootPath(workspace, params.sessionId)
         }
+        const agentId = session.agent_id?.trim()
+        if (agentId != null && agentId.length > 0) {
+          allowedScopes.push({ scope: 'agent', scopeRef: agentId })
+        }
       }
     } catch {
-      // ignore → recall 用默认路径
+      // ignore → recall 用默认路径（scopes 仅剩 user）
     }
     const store = new MemoryStoreService(undefined, workspaceRootPath)
     const reader = new MemoryReaderService(
@@ -1731,7 +1740,10 @@ export class SessionService {
       settingsGet,
       null as unknown as MemorySearchService,
     )
-    const r = await reader.recall(params.id)
+    const r = await reader.recall(params.id, {
+      allowedScopes,
+      caller: `bridge:${params.sessionId}`,
+    })
     if (r.error != null) return { content: '', error: r.error }
     return { content: r.content }
   }
@@ -4505,6 +4517,8 @@ export class SessionService {
     this.continuityCoordinator.schedule(sessionId, turnId, args.config.model)
 
     // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
+    // 来源绑定（S2.1）：真实 turnId + 本轮 user_message 事件锚点（系统侧从
+    // 事件流取得；此时刻 complete 行已持久化，事件可查）。
     void this.maybeWriteMemoryFromTurn(
       sessionId,
       args.options.primaryWorkspaceId ?? '',
@@ -4512,6 +4526,11 @@ export class SessionService {
       args.options.workspaceRootPath,
       args.message,
       assistantTurnText,
+      {
+        turnId,
+        sourceEventId: args.eventRepo.findLastEventIdByTurn(sessionId, turnId, 'user_message'),
+        authorRole: 'host_agent',
+      },
     ).catch(() => {
       /* swallow — never affect main flow */
     })
@@ -6145,6 +6164,16 @@ export class SessionService {
     workspaceRootPath: string | undefined,
     userMessage: string,
     assistantMessage: string,
+    /**
+     * 来源绑定（S2.1）：真实装配上下文。Host 路径传 turnId + user_message
+     * 事件锚点；member 路径传 team_member 身份。缺省时来源字段为空（如实
+     * 标注未知来源，不补造）。
+     */
+    source?: {
+      turnId: string
+      sourceEventId: string | null
+      authorRole: 'host_agent' | 'team_member'
+    },
   ): Promise<void> {
     // 入口日志（info）：让"抽取是否被触发"在默认日志级别下可见。审查反馈：用户配错
     // 抽取模型后只能从"记忆静默不生成"被动发现，根因是诊断日志都在 debug 级。
@@ -6208,6 +6237,21 @@ export class SessionService {
         userMessage,
         assistantMessage,
         recentSummary,
+        // 来源绑定（S2.1）：系统侧真实值。extractionModel 是本轮实际调用的
+        // 提取模型（settings 配置或 fallback），非 LLM 自报。
+        ...(source != null
+          ? {
+              turnId: source.turnId,
+              sourceEventId: source.sourceEventId,
+              authorRole: source.authorRole,
+              extractionModel:
+                typeof extractionModel === 'string'
+                  ? extractionModel
+                  : fallback != null
+                    ? fallback.model
+                    : null,
+            }
+          : {}),
       })
     } catch (err) {
       log.warn(
@@ -6365,6 +6409,7 @@ export class SessionService {
             memStore,
             memSettingsGet,
             memSearchService,
+            new MemoryRevisionRepository(this.db),
           )
           const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
           if (context.primaryWorkspaceId != null && context.primaryWorkspaceId.length > 0) {
@@ -6468,7 +6513,11 @@ export class SessionService {
             args: Record<string, unknown>,
           ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
             const id = typeof args.id === 'string' ? args.id : ''
-            const r = await memReader.recall(id)
+            // 【S1A.2】recall 携带本会话 scope 集合（与 search/注入同源），越范围拒绝
+            const r = await memReader.recall(id, {
+              allowedScopes: memScopes,
+              caller: `session:${sessionId}`,
+            })
             const text = r.error != null ? `recall 失败：${r.error}` : r.content
             return { content: [{ type: 'text' as const, text }] }
           }
@@ -6643,6 +6692,10 @@ export class SessionService {
             memCallLLM,
             memEntityRepo,
             (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
+            new MemoryRevisionRepository(this.db),
+            // commitService 缺省内部构造；候选仓库注入后 ELEVATE 进候选区（S2.3）
+            undefined,
+            new MemoryCandidateRepository(this.db),
           )
           const consoScopes: Array<{
             scope: 'user' | 'project' | 'agent'
@@ -6667,6 +6720,7 @@ export class SessionService {
         memoryStore,
         settingsGet,
         memorySearchService,
+        new MemoryRevisionRepository(this.db),
       )
       const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
       const seedQuery = [runtimeAgent.name, runtimeAgent.description, wsName]
@@ -9046,6 +9100,13 @@ export class SessionService {
         workspaceRootPath,
         memberRouteMessage,
         content,
+        // 来源绑定（S2.1）：member 身份 + 本轮 member 消息事件锚点（emit 用
+        // host turnId 归属，见上方 makeBase；complete 行此时已持久化）。
+        {
+          turnId,
+          sourceEventId: eventRepo.findLastEventIdByTurn(sessionId, turnId, 'team_member_message'),
+          authorRole: 'team_member',
+        },
       ).catch(() => {
         /* swallow — never affect member dispatch flow */
       })

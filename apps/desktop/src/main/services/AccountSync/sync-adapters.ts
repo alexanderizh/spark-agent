@@ -6,7 +6,9 @@ import type {
 } from '@spark/protocol'
 import {
   AgentRepository,
+  MemoryOperationRepository,
   MemoryRepository,
+  MemoryRevisionRepository,
   RulesRepository,
   SettingsRepository,
   TeamDefinitionRepository,
@@ -15,7 +17,8 @@ import {
   WorkspaceRepository,
   type SparkDatabase,
 } from '@spark/storage'
-import { MemoryStoreService } from '@spark/agent-runtime'
+import { MemoryLifecycleService, MemoryStoreService, isMemorySensitive } from '@spark/agent-runtime'
+import { createLogger } from '@spark/shared'
 import {
   finalizeCollectedItems,
   hashSyncRuleFingerprint,
@@ -29,6 +32,8 @@ import {
   type PersistedPromptLibraryItem,
   type PersistedPromptLibraryState,
 } from '../CanvasPromptLibraryPersistence.js'
+
+const log = createLogger('account-sync')
 
 const APPEARANCE_FIELDS = [
   'theme',
@@ -167,14 +172,28 @@ export class AccountSyncAdapters {
   private readonly teams: TeamDefinitionRepository
   private readonly workflows: WorkflowRepository
   private readonly memories: MemoryRepository
+  private readonly operations: MemoryOperationRepository
 
-  constructor(private readonly db: SparkDatabase) {
+  constructor(
+    private readonly db: SparkDatabase,
+    /**
+     * 记忆文件 store 工厂（S1B.5 注入点）。
+     * 缺省 new MemoryStoreService(appHomeDir?, workspaceRoot?)——生产行为不变；
+     * 测试注入可控 home 目录，避免 collect/apply 触碰真实 ~/.spark-agent。
+     */
+    private readonly createMemoryStore: (
+      appHomeDir?: string,
+      workspaceRoot?: string,
+    ) => MemoryStoreService = (appHomeDir, workspaceRoot) =>
+      new MemoryStoreService(appHomeDir, workspaceRoot),
+  ) {
     this.settings = new SettingsRepository(db)
     this.rules = new RulesRepository(db)
     this.agents = new AgentRepository(db)
     this.teams = new TeamDefinitionRepository(db)
     this.workflows = new WorkflowRepository(db)
     this.memories = new MemoryRepository(db)
+    this.operations = new MemoryOperationRepository(db)
   }
 
   async collect(
@@ -340,7 +359,7 @@ export class AccountSyncAdapters {
     }> = []
     const skippedItems: AccountSyncCollectResult['skippedItems'] = []
     const seenIds = new Set<string>()
-    const store = new MemoryStoreService()
+    const store = this.createMemoryStore()
     for (const row of rows) {
       seenIds.add(row.id)
       try {
@@ -357,7 +376,21 @@ export class AccountSyncAdapters {
             description: row.description,
             body,
             confidence: row.confidence,
-            isArchived: row.archived === 1 || row.invalid_at != null,
+            // 【S1B.5】停止折叠：isArchived 只表达归档；失效（bi-temporal）与
+            // 取代关系独立传递，下行端不再把失效条目误恢复为"已归档"语义
+            isArchived: row.archived === 1,
+            version: row.version,
+            invalidAt: row.invalid_at != null ? new Date(row.invalid_at).toISOString() : null,
+            supersededBy: row.superseded_by,
+            // 【S2.1】来源绑定随协议传递：多端保留来源标注。事件引用是本端
+            // agent_events 的 id（跨端不可解引用），保留作溯源记录，下行端
+            // 仅透传不校验；authorRole/extractionKind 是端无关枚举可如实恢复。
+            sourceEventId: row.source_event_id,
+            sourceTurnId: row.source_turn_id,
+            authorRole: row.author_role,
+            authorAgentId: row.author_agent_id,
+            extractionKind: row.extraction_kind,
+            extractionModel: row.extraction_model,
             createdAt: new Date(row.created_at).toISOString(),
             updatedAt: new Date(row.updated_at).toISOString(),
           },
@@ -612,9 +645,35 @@ export class AccountSyncAdapters {
       const existing = this.memories.getById(item.id)
       if (item.deleted) {
         if (existing != null) {
+          // 【S1B.5】tombstone 版本语义：本地最后写入晚于服务端删除时刻
+          // （离线期间本地更新过）→ 保留本地状态，下轮上行由服务端决胜
+          const tombstoneAt = Date.parse(item.updatedAt)
+          if (Number.isFinite(tombstoneAt) && existing.updated_at > tombstoneAt) {
+            log.info(
+              `memory tombstone stale, keep local: ${item.id} ` +
+                `(local ${new Date(existing.updated_at).toISOString()} > tombstone ${item.updatedAt})`,
+            )
+            continue
+          }
+          // 走生命周期服务：DB 屏障 + 磁盘清理 + MEMORY.md 投影刷新。
+          // （旧实现的 deleteFile+delete 直删会漏投影刷新，E3 同类残留）
           try {
-            await new MemoryStoreService().deleteFile(existing.file_path)
-            this.memories.delete(item.id)
+            const workspaceRoot =
+              existing.scope === 'project' && existing.scope_ref != null
+                ? new WorkspaceRepository(this.db).get(existing.scope_ref)?.root_path
+                : undefined
+            const lifecycle = new MemoryLifecycleService(
+              this.memories,
+              this.createMemoryStore(undefined, workspaceRoot),
+              this.operations,
+              // 【审查修复】同步删除同样要物理清理 revision 历史与派生边
+              //（S2.2 deleteEntry 契约；缺省 null 时会留悬挂行）
+              new MemoryRevisionRepository(this.db),
+            )
+            const result = await lifecycle.deleteEntry(item.id)
+            if (result.status === 'blocked_locally') {
+              errorCodes.push('SYNC_MEMORY_DELETE_FAILED')
+            }
           } catch {
             errorCodes.push('SYNC_MEMORY_DELETE_FAILED')
           }
@@ -623,6 +682,28 @@ export class AccountSyncAdapters {
       }
       const value = itemValue(item)
       if (value == null) continue
+      // 【S1B.5】旧响应防御：canonical 时间早于本地最后写入 → 不覆盖当前状态
+      // （服务端重放/降级返回的旧快照不得回写；跳过是预期防御，不计入 errorCodes
+      //  避免把整轮同步降级为 partial 且 pendingApply 永不清除）
+      const remoteUpdatedAt = Date.parse(item.updatedAt)
+      if (
+        existing != null &&
+        Number.isFinite(remoteUpdatedAt) &&
+        remoteUpdatedAt < existing.updated_at
+      ) {
+        log.info(
+          `memory stale response skipped: ${item.id} ` +
+            `(remote ${item.updatedAt} < local ${new Date(existing.updated_at).toISOString()})`,
+        )
+        continue
+      }
+      // 【S2.4 统一写入不变量】入口 5 敏感内容闸门：同步导入不得绕过 ——
+      // 云端条目含密钥/凭证时拒绝落库（结构化错误码，计入本轮 errorCodes）
+      if (isMemorySensitive(asString(value.description), asString(value.body))) {
+        log.warn(`memory sync item dropped (SYNC_MEMORY_SENSITIVE): ${item.id}`)
+        errorCodes.push('SYNC_MEMORY_SENSITIVE')
+        continue
+      }
       const scope: 'user' | 'project' | 'agent' =
         value.scope === 'project' || value.scope === 'agent' ? value.scope : 'user'
       const scopeRef = typeof value.scopeRef === 'string' ? value.scopeRef : null
@@ -634,13 +715,21 @@ export class AccountSyncAdapters {
         errorCodes.push('SYNC_MEMORY_SCOPE_UNAVAILABLE')
         continue
       }
-      const store = new MemoryStoreService(undefined, workspaceRoot)
+      const store = this.createMemoryStore(undefined, workspaceRoot)
       const createdAt = Date.parse(asString(value.createdAt, item.updatedAt))
       const updatedAt = Date.parse(item.updatedAt)
       const memoryType: 'user' | 'feedback' | 'project' | 'reference' =
         value.type === 'feedback' || value.type === 'project' || value.type === 'reference'
           ? value.type
           : 'user'
+      // 【S1B.5】失效语义独立恢复：invalid_at（bi-temporal 失效时间）与
+      // superseded_by（被取代者）不再折叠进 isArchived。
+      // 旧云端条目无这两个字段 → 按有效处理（等价旧行为）。
+      const invalidAtIso = asNullableString(value.invalidAt)
+      const parsedInvalidAt = invalidAtIso != null ? Date.parse(invalidAtIso) : null
+      const invalidAt =
+        parsedInvalidAt != null && Number.isFinite(parsedInvalidAt) ? parsedInvalidAt : null
+      const supersededBy = asNullableString(value.supersededBy)
       const meta = {
         id: item.id,
         scope,
@@ -674,6 +763,19 @@ export class AccountSyncAdapters {
               last_hit_at: null,
               source_session_id: null,
               archived: meta.archived ? 1 : 0,
+              ...(invalidAt != null || supersededBy != null
+                ? { invalid_at: invalidAt, superseded_by: supersededBy }
+                : {}),
+              // 【S2.1】来源绑定：远端有则如实恢复（authorRole/extractionKind 等
+              // 端无关字段）；无（旧云端条目）标记 sync_import —— 产生路径
+              // 始终如实标注为同步导入，不补造来源
+              source_event_id: asNullableString(value.sourceEventId),
+              source_turn_id: asNullableString(value.sourceTurnId),
+              author_role: asNullableString(value.authorRole) ?? 'sync_import',
+              author_agent_id: asNullableString(value.authorAgentId),
+              extraction_kind: asNullableString(value.extractionKind) ?? 'sync_import',
+              extraction_model: asNullableString(value.extractionModel),
+              evidence_status: 'available',
             },
             asString(value.body),
           )
@@ -689,6 +791,8 @@ export class AccountSyncAdapters {
               file_path: filePath,
               confidence: meta.confidence,
               archived: meta.archived ? 1 : 0,
+              invalid_at: invalidAt,
+              superseded_by: supersededBy,
             },
             asString(value.body),
           )
@@ -696,6 +800,15 @@ export class AccountSyncAdapters {
         this.db.raw
           .prepare('UPDATE memory_entry SET created_at = ?, updated_at = ? WHERE id = ?')
           .run(meta.createdAt, meta.updatedAt, item.id)
+        // 【S1B.5】版本对齐：本地行 version 覆写为远端计数，保证「应用后再上行」
+        // 的 value 与服务端 canonical 哈希一致（收敛不变量；不对齐会每轮哈希失配
+        // 死循环重传）。旧云端条目无 version → 保留本地计数不动。
+        const remoteVersion = asNumber(value.version, 0)
+        if (remoteVersion >= 1) {
+          this.db.raw
+            .prepare('UPDATE memory_entry SET version = ? WHERE id = ?')
+            .run(remoteVersion, item.id)
+        }
       } catch {
         errorCodes.push('SYNC_MEMORY_APPLY_FAILED')
       }

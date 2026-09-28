@@ -26,6 +26,17 @@ function makeEntry(id: string, overrides: Partial<MemoryEntryRow> = {}): MemoryE
     last_hit_at: null,
     source_session_id: null,
     archived: 0,
+    version: 1,
+    content_hash: null,
+    source_event_id: null,
+    source_turn_id: null,
+    author_role: null,
+    author_agent_id: null,
+    extraction_kind: null,
+    extraction_model: null,
+    evidence_status: 'available',
+    valid_until: null,
+    valid_until_meta: null,
     created_at: NOW,
     updated_at: NOW,
     valid_from: NOW,
@@ -47,10 +58,10 @@ function makeCandidate(overrides: Partial<MemoryCandidate> = {}): MemoryCandidat
   }
 }
 
-function makeService(opts: {
-  ftsHits?: MemoryEntryRow[] | Error
-  llmRaw?: string | Error
-}): { svc: MemoryEvolutionService; llmCalls: number } {
+function makeService(opts: { ftsHits?: MemoryEntryRow[] | Error; llmRaw?: string | Error }): {
+  svc: MemoryEvolutionService
+  llmCalls: number
+} {
   const searchRepo = {
     searchBm25: vi.fn(() => {
       if (opts.ftsHits instanceof Error) throw opts.ftsHits

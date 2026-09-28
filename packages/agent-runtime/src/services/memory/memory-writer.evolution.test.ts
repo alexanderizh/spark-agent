@@ -34,7 +34,10 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `spark-writer-evo-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    testDir = join(
+      tmpdir(),
+      `spark-writer-evo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     mkdirSync(testDir, { recursive: true })
     db = new SparkDatabase(join(testDir, 'test.db'))
     db.runMigrations(join(process.cwd(), '..', 'storage', 'migrations'))
@@ -87,13 +90,52 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
       body: 'body',
       confidence: 0.9,
     }
-    await (writer as unknown as { processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void> })
-      .processCandidate(candidate, null, 'sess')
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
     expect(repo.countByScope('user', null)).toBe(0)
   })
 
+  it('【S2.5/N3】UPDATE verdict：新版本置信度独立评估，允许下降不继承旧高分', async () => {
+    // 旧条目 0.95（曾经的高置信），纠正候选 0.7 —— 修复前 Math.max 保持 0.95，
+    // 用户纠正的独立评估被旧分数淹没；修复后新版本 = 候选自身值 0.7
+    const target = repo.insert(
+      seedEntry({ name: 'deploy-target', description: '部署到 A 平台', confidence: 0.95 }),
+      '部署目标：A 平台。',
+    )
+    const writer = makeWriter({
+      decision: 'UPDATE',
+      targetId: target.id,
+      reason: '用户纠正：已迁到 B 平台',
+    })
+    const candidate: MemoryCandidate = {
+      scope: 'user',
+      type: 'user',
+      name: 'deploy-correction',
+      description: '部署到 B 平台（用户纠正）',
+      body: '部署目标改为 B。',
+      confidence: 0.7,
+    }
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
+
+    const updated = repo.getById(target.id)!
+    expect(updated.confidence).toBe(0.7) // 独立评估，不继承 0.95
+    expect(updated.version).toBe(2)
+    // 被覆盖版本已进 revision 历史（S2.2），纠正可追溯
+    expect(updated.description).toBe(candidate.description)
+  })
+
   it('DELETE verdict → target invalidated (invalid_at set), excluded from search', async () => {
-    const target = repo.insert(seedEntry({ name: 'old-stack', description: '项目用 webpack 构建' }), '项目用 webpack 构建的正文')
+    const target = repo.insert(
+      seedEntry({ name: 'old-stack', description: '项目用 webpack 构建' }),
+      '项目用 webpack 构建的正文',
+    )
     expect(searchRepo.searchBm25('webpack')).toHaveLength(1)
 
     const writer = makeWriter({ decision: 'DELETE', targetId: target.id, reason: '已迁到 vite' })
@@ -105,8 +147,11 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
       body: 'body',
       confidence: 0.9,
     }
-    await (writer as unknown as { processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void> })
-      .processCandidate(candidate, null, 'sess')
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
 
     // target 失效（不物理删除），FTS 移除
     const updated = repo.getById(target.id)!
@@ -125,15 +170,31 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
     const targetPath = store.getFilePath('user', null, targetId)
     await store.writeFile({
       meta: {
-        id: targetId, scope: 'user', scopeRef: null, type: 'user',
-        name: 'stack', description: '旧的描述 webpack', confidence: 0.9,
-        createdAt: Date.now(), updatedAt: Date.now(), hitCount: 7, lastHitAt: null,
-        sourceSessionId: null, links: [], archived: false,
+        id: targetId,
+        scope: 'user',
+        scopeRef: null,
+        type: 'user',
+        name: 'stack',
+        description: '旧的描述 webpack',
+        confidence: 0.9,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        hitCount: 7,
+        lastHitAt: null,
+        sourceSessionId: null,
+        links: [],
+        archived: false,
       },
       body: '旧的正文内容 webpack',
     })
     const target = repo.insert(
-      seedEntry({ id: targetId, name: 'stack', description: '旧的描述 webpack', hit_count: 7, file_path: targetPath }),
+      seedEntry({
+        id: targetId,
+        name: 'stack',
+        description: '旧的描述 webpack',
+        hit_count: 7,
+        file_path: targetPath,
+      }),
     )
     expect(searchRepo.searchBm25('webpack')).toHaveLength(1)
 
@@ -146,8 +207,11 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
       body: '全新正文 vite',
       confidence: 0.95,
     }
-    await (writer as unknown as { processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void> })
-      .processCandidate(candidate, null, 'sess')
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
 
     // 同 id，描述更新，hit_count/created_at 保留
     const updated = repo.getById(target.id)!
@@ -179,8 +243,11 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
       body: 'body',
       confidence: 0.9,
     }
-    await (writer as unknown as { processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void> })
-      .processCandidate(candidate, null, 'sess')
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
     expect(repo.countByScope('user', null)).toBe(1)
     expect(repo.listByScope('user', null)[0]!.name).toBe('new-fb')
   })
@@ -198,7 +265,10 @@ describe('MemoryWriterService evolution execution (real DB)', () => {
       confidence: 0.9,
     }
     // 不应抛错
-    await (writer as unknown as { processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void> })
-      .processCandidate(candidate, null, 'sess')
+    await (
+      writer as unknown as {
+        processCandidate: (c: MemoryCandidate, r: string | null, s: string) => Promise<void>
+      }
+    ).processCandidate(candidate, null, 'sess')
   })
 })

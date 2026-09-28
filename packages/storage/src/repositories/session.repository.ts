@@ -395,10 +395,15 @@ export class SessionRepository extends BaseRepository {
     this.raw.prepare('DELETE FROM run_usage_summaries WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM media_artifacts WHERE session_id = ?').run(id)
     this.raw.prepare('DELETE FROM task_executions WHERE session_id = ?').run(id)
-    // Memory 是跨会话长期数据；删除会话只解除来源引用，不能误删记忆本体。
+    // Memory 是跨会话长期数据；删除会话不能误删记忆本体。来源引用保留
+    // （source_session_id 不置 NULL —— 置 NULL 会伪造"无来源"），改为标记
+    // 证据不可用（S2.1：证据 unavailable，按保留策略处理，不伪造完整溯源）。
     this.raw
-      .prepare('UPDATE memory_entry SET source_session_id = NULL WHERE source_session_id = ?')
-      .run(id)
+      .prepare(
+        `UPDATE memory_entry SET evidence_status = 'unavailable', updated_at = ?
+         WHERE source_session_id = ? AND evidence_status = 'available'`,
+      )
+      .run(Date.now(), id)
     // Team Outcome Room ledger uses a deterministic session-scoped room id. Clean both
     // append-only events and rebuildable projection in the same deletion transaction.
     this.raw.prepare('DELETE FROM room_ledger_events WHERE room_id = ?').run(`team-room:${id}`)

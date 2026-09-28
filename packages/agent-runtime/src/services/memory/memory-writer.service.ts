@@ -16,15 +16,15 @@
  *   - SettingsService (读取 memory 配置)
  */
 
-import crypto from 'node:crypto'
 import { MemoryRepository } from '@spark/storage'
 import type { MemoryEntryRow } from '@spark/storage'
 import { createLogger, SparkError } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
 import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
+import { resolveValidUntil } from './memory-temporal.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
-import type { MemoryFileMeta } from './memory-store.service.js'
 import { MemoryEvolutionService } from './memory-evolution.service.js'
+import { MemoryCommitService } from './memory-commit.service.js'
 import type { MemoryEntityRepository } from '@spark/storage'
 
 const log = createLogger('memory:writer')
@@ -38,6 +38,19 @@ export interface TurnPayload {
   userMessage: string
   assistantMessage: string
   recentSummary: string
+  /**
+   * 来源绑定（S2.1）。全部可选（旧调用/测试兼容），全部由系统侧
+   * （session.service 装配点）填充 —— 与 LLM 抽取结果无关，
+   * MemoryCandidate 中不存在任何来源字段，无 LLM 注入点。
+   */
+  /** 本轮 turn_id（agent_events.turn_id，同 turn 重试据此识别） */
+  turnId?: string
+  /** 真实事件引用（agent_events.id，承载本轮用户消息的事件） */
+  sourceEventId?: string | null
+  /** 作者角色：'host_agent' | 'team_member'（缺省按 agentId 有无推断为 host 路径） */
+  authorRole?: 'host_agent' | 'team_member'
+  /** 实际调用的提取模型 id（settings / fallback 真实值） */
+  extractionModel?: string | null
 }
 
 export interface MemoryCandidate {
@@ -58,15 +71,35 @@ export interface MemoryInjection {
   droppedCount: number
 }
 
+/**
+ * 来源绑定（S2.1）：从 TurnPayload（系统侧装配上下文）构造新建条目的来源。
+ * authorRole 未显式给出但 agentId 存在 → host 路径（member 路径总是显式传
+ * 'team_member'）；无 agentId 则角色未知（不补造）。
+ */
+function buildTurnSourceAttribution(payload: TurnPayload): {
+  turnId?: string
+  sourceEventId: string | null
+  authorRole?: string
+  authorAgentId: string | null
+  extractionKind: string
+  extractionModel: string | null
+} {
+  return {
+    ...(payload.turnId != null ? { turnId: payload.turnId } : {}),
+    sourceEventId: payload.sourceEventId ?? null,
+    ...(payload.authorRole != null
+      ? { authorRole: payload.authorRole }
+      : payload.agentId
+        ? { authorRole: 'host_agent' }
+        : {}),
+    authorAgentId: payload.agentId || null,
+    extractionKind: 'turn_extraction',
+    extractionModel: payload.extractionModel ?? null,
+  }
+}
+
 /** 默认配额 */
 const DEFAULT_QUOTA = { user: 100, project: 200, agent: 50 }
-
-/** ID 前缀映射 */
-const SCOPE_PREFIX: Record<string, string> = {
-  user: 'usr',
-  project: 'prj',
-  agent: 'agt',
-}
 
 /** LLM 调用函数签名 */
 export type LLMCallFn = (prompt: string) => Promise<string>
@@ -88,6 +121,15 @@ export class MemoryWriterService {
      * V2 实体关联图 repo。提供时，ADD/UPDATE 落库候选的 entities；为 null 则跳过（旧测试兼容）。
      */
     private readonly entityRepo: MemoryEntityRepository | null = null,
+    /**
+     * 【S1B.1】托管提交原语。所有写入（新建/去重合并/演化更新/手工）统一走
+     * "先写新快照文件 → DB CAS 提交（version+content_hash）"。缺省由 repo+store
+     * 内部构造（现有测试/调用无需改构造）；可注入 mock 做提交语义测试。
+     */
+    private readonly commitService: MemoryCommitService = new MemoryCommitService(
+      memoryRepo,
+      storeService,
+    ),
   ) {}
 
   // ─── Public API ──────────────────────────────────────────────────────
@@ -104,9 +146,9 @@ export class MemoryWriterService {
       // 【全流程日志·节点1】payload 入参（让"抽取拿到什么"可见，含 workspaceId 是否传到位）
       log.debug(
         `【记忆抽取】开始处理 turn：session=${payload.sessionId} ` +
-        `workspace=${payload.workspaceId || '(无，非项目会话)'} ` +
-        `agent=${payload.agentId || '(无)'} ` +
-        `user=${payload.userMessage.length}字符 assistant=${payload.assistantMessage.length}字符`,
+          `workspace=${payload.workspaceId || '(无，非项目会话)'} ` +
+          `agent=${payload.agentId || '(无)'} ` +
+          `user=${payload.userMessage.length}字符 assistant=${payload.assistantMessage.length}字符`,
       )
 
       // 获取该 scope 下已有记忆（用于 prompt 去重和去重闸门）
@@ -122,8 +164,8 @@ export class MemoryWriterService {
       // 【全流程日志·节点2】已有记忆范围（让"去重池里有什么"可见）
       log.debug(
         `【记忆抽取】去重池：user=${existingUser.length}条 ` +
-        `project=${existingProject.length}条${payload.workspaceId ? `(workspace=${payload.workspaceId})` : '(未绑定)'} ` +
-        `agent=${existingAgent.length}条${payload.agentId ? `(agent=${payload.agentId})` : '(未绑定)'}`,
+          `project=${existingProject.length}条${payload.workspaceId ? `(workspace=${payload.workspaceId})` : '(未绑定)'} ` +
+          `agent=${existingAgent.length}条${payload.agentId ? `(agent=${payload.agentId})` : '(未绑定)'}`,
       )
       const existingSummary = allExisting
         .map((e) => `- [${e.scope}/${e.scope_ref ?? 'global'}] ${e.name}: ${e.description}`)
@@ -138,24 +180,28 @@ export class MemoryWriterService {
         workspaceId: payload.workspaceId,
         agentId: payload.agentId,
       })
-      log.info(
-        `【记忆抽取】buildExtractionPrompt ${prompt} `,
-      )
+      // 【S1A.1 日志治理】不再打印完整提取 prompt（含用户对话原文），
+      // 只记录长度；排查 prompt 问题时应临时下断点/写临时文件，不进默认日志。
+      log.info(`【记忆抽取】buildExtractionPrompt 完成：${prompt.length} 字符（内容不入日志）`)
       const rawResponse = await this.callLLM(prompt)
-      // 【全流程日志·节点3】LLM 返回（让"LLM 判断了什么"可见）
-      log.info(
-        `【记忆抽取】LLM 返回 ${rawResponse.length} 字符，预览=${rawResponse.slice(0, 150).replace(/\s+/g, ' ')}`,
-      )
+      // 【全流程日志·节点3】LLM 返回（让"LLM 判断了什么"可见）。
+      // 【S1A.1 日志治理】不再打印返回预览（候选 JSON 内嵌 name/description/body，
+      // 可能含用户原文与敏感片段；logger 的 sanitize 只作用于 args 不作用于 message）。
+      log.info(`【记忆抽取】LLM 返回 ${rawResponse.length} 字符（内容不入日志）`)
       const candidates = parseCandidates(rawResponse)
       // 【全流程日志·节点4】候选解析结果（每条的 scope/type/name，让"scope 归类"可审计）
       log.debug(
         `【记忆抽取】解析出 ${candidates.length} 条候选：` +
-        candidates.map((c) => `[${c.scope}/${c.type}] ${c.name}(conf=${c.confidence})`).join(' | ') || '（空）',
+          candidates
+            .map((c) => `[${c.scope}/${c.type}] ${c.name}(conf=${c.confidence})`)
+            .join(' | ') || '（空）',
       )
 
       if (candidates.length === 0) {
         // 提级到 info：让"LLM 主动判断无可记内容"在默认日志级别可见（区别于"抽取失败"）
-        log.info('【记忆抽取】本轮无可写入候选 — LLM 判断本次对话没有值得长期记住的内容（返回空或无法解析）')
+        log.info(
+          '【记忆抽取】本轮无可写入候选 — LLM 判断本次对话没有值得长期记住的内容（返回空或无法解析）',
+        )
         return
       }
 
@@ -166,11 +212,18 @@ export class MemoryWriterService {
           // 【全流程日志·节点5】每条候选的 scope 解析（让"project scope 是否拿到 workspaceId"可审计）
           log.debug(
             `【记忆抽取】候选 "${candidate.name}" → scope=${candidate.scope} ` +
-            `scopeRef=${scopeRef ?? '(null=user scope)'}`,
+              `scopeRef=${scopeRef ?? '(null=user scope)'}`,
           )
-          await this.processCandidate(candidate, scopeRef, payload.sessionId)
+          await this.processCandidate(
+            candidate,
+            scopeRef,
+            payload.sessionId,
+            buildTurnSourceAttribution(payload),
+          )
         } catch (err) {
-          log.warn(`【记忆抽取】候选 "${candidate.name}" 处理失败（已隔离，其余继续）：${err instanceof Error ? err.message : String(err)}`)
+          log.warn(
+            `【记忆抽取】候选 "${candidate.name}" 处理失败（已隔离，其余继续）：${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       }
 
@@ -193,7 +246,11 @@ export class MemoryWriterService {
    * 跳过 LLM 抽取和置信度闸门，但仍走去重/配额/敏感词闸门。
    */
   async manualWrite(
-    input: Omit<MemoryCandidate, 'confidence'> & { scopeRef: string | null },
+    input: Omit<MemoryCandidate, 'confidence'> & {
+      scopeRef: string | null
+      /** 【S2.6 / N5】有效期输入（规范化见 memory-temporal）；缺省 = 长期 */
+      validUntil?: { validUntil: string; precision: 'instant' | 'date'; timezone?: string }
+    },
   ): Promise<MemoryEntryRow> {
     const candidate: MemoryCandidate = { ...input, confidence: 1.0 }
 
@@ -209,7 +266,10 @@ export class MemoryWriterService {
 
     // 敏感词闸门
     if (isMemorySensitive(candidate.description, candidate.body)) {
-      throw new SparkError('VALIDATION_FAILED', '记忆内容含敏感信息，已被拒绝保存。请去掉密钥/凭证/个人隐私后重试。')
+      throw new SparkError(
+        'VALIDATION_FAILED',
+        '记忆内容含敏感信息，已被拒绝保存。请去掉密钥/凭证/个人隐私后重试。',
+      )
     }
 
     // 去重闸门
@@ -224,46 +284,51 @@ export class MemoryWriterService {
     // 配额闸门
     await this.enforceQuota(candidate.scope, scopeRef)
 
-    // 写入
-    const id = generateId(candidate.scope)
-    const filePath = this.storeService.getFilePath(candidate.scope, scopeRef, id)
-
-    const meta: MemoryFileMeta = {
-      id,
+    // 写入（【S1B.1】统一提交原语）；来源绑定（S2.1）：手工入口固定标记
+    // manual_user / manual。
+    // 【S2.5】"保存意愿"与"证据状态"拆分：legacy confidence 固定 1.0 只表达
+    // 用户明确要存（迁移期只读保留，不参与合并/比较）；证据的可解释状态由
+    // 展示层从 authorRole/evidenceStatus 派生（MemoryPanel），不再把 1.0
+    // 当作"100% 正确"的证据强度。
+    // 【S2.6 / N5】有效期规范化：非法输入结构化拒绝（不静默丢弃也不捏造）
+    let validUntilMs: number | null = null
+    let validUntilMetaJson: string | null = null
+    if (input.validUntil != null && input.validUntil.validUntil.trim() !== '') {
+      const resolved = resolveValidUntil(input.validUntil)
+      if (!resolved.ok) {
+        throw new SparkError('VALIDATION_FAILED', `有效期设置无效：${resolved.error}`)
+      }
+      validUntilMs = resolved.untilMs
+      validUntilMetaJson = JSON.stringify(resolved.meta)
+    }
+    const r = await this.commitService.commitWrite({
       scope: candidate.scope,
       scopeRef,
       type: candidate.type,
       name: candidate.name,
       description: candidate.description,
       confidence: 1.0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      hitCount: 0,
-      lastHitAt: null,
-      sourceSessionId: null,
+      body: candidate.body,
+      authorRole: 'manual_user',
+      extractionKind: 'manual',
+      ...(validUntilMs != null
+        ? { validUntil: validUntilMs, validUntilMeta: validUntilMetaJson }
+        : {}),
       links: candidate.links ?? [],
-      archived: false,
+    })
+    if (!r.ok) {
+      // 同名预检（上方 findByName）与唯一索引兜底之间的并发窗口
+      if (r.reason === 'already_exists') {
+        throw new SparkError(
+          'ALREADY_EXISTS',
+          `该 scope 下已存在同名记忆 "${candidate.name}"（并发写入）。请改名或稍后重试。`,
+        )
+      }
+      throw new Error(`commitWrite failed (${r.reason}): ${r.message}`)
     }
 
-    await this.storeService.writeFile({ meta, body: candidate.body })
-
-    const row = this.memoryRepo.insert({
-      id,
-      scope: candidate.scope,
-      scope_ref: scopeRef,
-      type: candidate.type,
-      name: candidate.name,
-      description: candidate.description,
-      file_path: filePath,
-      confidence: 1.0,
-      hit_count: 0,
-      last_hit_at: null,
-      source_session_id: null,
-      archived: 0,
-    }, candidate.body)
-
     await this.refreshIndex(candidate.scope, scopeRef)
-    return row
+    return r.row
   }
 
   // ─── Gates ───────────────────────────────────────────────────────────
@@ -277,7 +342,9 @@ export class MemoryWriterService {
   private passTransientGate(candidate: MemoryCandidate): boolean {
     const hit = detectTransientMemory(candidate.name, candidate.description)
     if (hit != null) {
-      log.debug(`Candidate dropped (transient: ${hit}): ${candidate.name} — desc="${candidate.description.slice(0, 60)}"`)
+      log.debug(
+        `Candidate dropped (transient: ${hit}): ${candidate.name} — desc="${candidate.description.slice(0, 60)}"`,
+      )
       return false
     }
     return true
@@ -302,37 +369,19 @@ export class MemoryWriterService {
     const existing = this.memoryRepo.findByName(candidate.scope, scopeRef, candidate.name)
     if (existing != null) {
       const decision = await this.llmDedupDecide(existing, candidate)
-      if (decision === 'replace') {
-        // 替换：删除旧文件，更新 SQLite
-        await this.storeService.deleteFile(existing.file_path)
-        this.memoryRepo.update(existing.id, {
-          description: candidate.description,
-          file_path: this.storeService.getFilePath(candidate.scope, scopeRef, existing.id),
-          confidence: candidate.confidence,
-        })
-        // 写入新文件
-        const meta = rowToMeta(existing, candidate)
-        await this.storeService.writeFile({
-          meta,
-          body: candidate.body,
-        })
-        return 'merge'
-      }
-      if (decision === 'merge') {
-        // 合并：保留旧 body + 追加
-        const existingBody = await this.storeService.readFile(existing.file_path).catch(() => '')
-        await this.storeService.deleteFile(existing.file_path)
-        this.memoryRepo.update(existing.id, {
-          description: candidate.description,
-          file_path: this.storeService.getFilePath(candidate.scope, scopeRef, existing.id),
-          confidence: Math.max(existing.confidence, candidate.confidence),
-        })
-        const meta = rowToMeta(existing, candidate)
-        await this.storeService.writeFile({
-          meta,
-          body: `${existingBody}\n\n---\n\n${candidate.body}`,
-        })
-        return 'merge'
+      if (decision === 'replace' || decision === 'merge') {
+        // 【S1B.1】去重合并/替换统一走提交原语（先快照后 CAS）：
+        // - body 带 E4 修复（FTS 正文完整）
+        // - expectedVersion 持读取时版本，写入间隙条目被归档/删除/他人更新时失配丢弃
+        const mergedBody =
+          decision === 'merge'
+            ? `${await this.storeService.readFile(existing.file_path).catch(() => '')}\n\n---\n\n${candidate.body}`
+            : candidate.body
+        // 【S2.5】置信度按更新类型重估（废除单调取最大）：
+        // merge = 同一断言的重复提及/转述 —— 频次不是证据，独立性不可识别
+        // 时不自动升级，保持既有值；replace = 新版本独立评估，用候选自身值
+        const nextConfidence = decision === 'merge' ? existing.confidence : candidate.confidence
+        return this.commitDedupUpdate(existing, candidate, scopeRef, mergedBody, nextConfidence)
       }
       // skip
       return 'skip'
@@ -345,27 +394,53 @@ export class MemoryWriterService {
         const decision = await this.llmDedupDecide(entry, candidate)
         if (decision === 'skip') return 'skip'
         if (decision === 'replace' || decision === 'merge') {
-          // 先读取旧正文（合并用），再删除旧文件
-          const existingBody = decision === 'merge'
-            ? await this.storeService.readFile(entry.file_path).catch(() => '')
-            : ''
-          await this.storeService.deleteFile(entry.file_path)
-          const meta = rowToMeta(entry, candidate)
-          this.memoryRepo.update(entry.id, {
-            description: candidate.description,
-            file_path: this.storeService.getFilePath(candidate.scope, scopeRef, entry.id),
-            confidence: Math.max(entry.confidence, candidate.confidence),
-          })
-          await this.storeService.writeFile({
-            meta,
-            body: decision === 'merge' ? `${existingBody}\n\n---\n\n${candidate.body}` : candidate.body,
-          })
-          return 'merge'
+          const mergedBody =
+            decision === 'merge'
+              ? `${await this.storeService.readFile(entry.file_path).catch(() => '')}\n\n---\n\n${candidate.body}`
+              : candidate.body
+          // 【S2.5】同上：merge 不升置信（重复提及非独立证据）
+          const overlapConfidence = decision === 'merge' ? entry.confidence : candidate.confidence
+          return this.commitDedupUpdate(entry, candidate, scopeRef, mergedBody, overlapConfidence)
         }
       }
     }
 
     return 'write'
+  }
+
+  /**
+   * 去重命中后的托管更新（【S1B.1】经 MemoryCommitService CAS 提交）。
+   * 版本失配（条目已被归档/删除/并发更新）→ 丢弃本候选并返回 'skip'，
+   * 不覆盖当前状态；晚到快照成为待清理孤儿（content_hash 失配可识别）。
+   */
+  private async commitDedupUpdate(
+    existing: MemoryEntryRow,
+    candidate: MemoryCandidate,
+    scopeRef: string | null,
+    body: string,
+    confidence: number,
+  ): Promise<'write' | 'merge' | 'skip'> {
+    const r = await this.commitService.commitWrite({
+      entryId: existing.id,
+      expectedVersion: existing.version,
+      scope: existing.scope,
+      scopeRef,
+      type: candidate.type,
+      name: existing.name,
+      description: candidate.description,
+      confidence,
+      body,
+      links: candidate.links ?? [],
+      preserveFrom: existing,
+    })
+    if (!r.ok) {
+      log.warn(
+        `dedup commit discarded (${r.reason}): id=${existing.id} name=${candidate.name} — ` +
+          `${r.message}（晚到/并发写入不覆盖当前状态）`,
+      )
+      return 'skip'
+    }
+    return 'merge'
   }
 
   /**
@@ -398,6 +473,19 @@ export class MemoryWriterService {
     candidate: MemoryCandidate,
     scopeRef: string | null,
     sessionId: string,
+    /**
+     * 来源绑定（S2.1）：系统侧装配上下文，随新建落库。更新路径
+     * （演化 UPDATE / V1 merge）不带来源 —— 条目来源 = 首次创建来源，
+     * 更新来龙去脉由 revision 历史记录（S2.2）。
+     */
+    source?: {
+      turnId?: string
+      sourceEventId?: string | null
+      authorRole?: string
+      authorAgentId?: string | null
+      extractionKind: string
+      extractionModel?: string | null
+    },
   ): Promise<void> {
     // 闸门 0：瞬时数据（兜底，置于最前以省后续开销）
     if (!this.passTransientGate(candidate)) {
@@ -420,21 +508,31 @@ export class MemoryWriterService {
     if (this.evolutionService != null) {
       const verdict = await this.evolutionService.decide(candidate, candidate.scope, scopeRef)
       if (verdict.decision === 'NOOP') {
-        log.debug(`Candidate NOOP (evolution): ${candidate.name} — ${verdict.reason}`)
+        // 【S1A.1 日志治理】演化 reason 是 LLM 自由文本、可能转述候选正文，
+        // 只落决策枚举与 reason 长度，不落内容。
+        log.debug(
+          `Candidate NOOP (evolution): ${candidate.name}（reason ${verdict.reason.length} 字符，内容不入日志）`,
+        )
         return
       }
       if (verdict.decision === 'DELETE' && verdict.targetId != null) {
         await this.invalidateEntry(verdict.targetId)
-        log.info(`Memory invalidated (evolution DELETE): ${verdict.targetId} ← "${candidate.name}" — ${verdict.reason}`)
+        log.info(
+          `Memory invalidated (evolution DELETE): ${verdict.targetId} ← "${candidate.name}"（reason ${verdict.reason.length} 字符，内容不入日志）`,
+        )
         return
       }
       if (verdict.decision === 'UPDATE' && verdict.targetId != null) {
         await this.updateEntry(verdict.targetId, candidate, scopeRef)
-        log.info(`Memory updated (evolution UPDATE): ${verdict.targetId} ← "${candidate.name}" — ${verdict.reason}`)
+        log.info(
+          `Memory updated (evolution UPDATE): ${verdict.targetId} ← "${candidate.name}"（reason ${verdict.reason.length} 字符，内容不入日志）`,
+        )
         return
       }
       // ADD：落到下面的配额 + 写入逻辑
-      log.debug(`Candidate ADD (evolution): ${candidate.name} — ${verdict.reason}`)
+      log.debug(
+        `Candidate ADD (evolution): ${candidate.name}（reason ${verdict.reason.length} 字符，内容不入日志）`,
+      )
     } else {
       // V1 回退：evolutionService 未注入（旧测试 / 未配检索栈）
       const dedupResult = await this.passDedupGate(candidate, scopeRef)
@@ -451,46 +549,38 @@ export class MemoryWriterService {
     // 闸门 3：配额
     await this.enforceQuota(candidate.scope, scopeRef)
 
-    // 写入
-    const id = generateId(candidate.scope)
-    const filePath = this.storeService.getFilePath(candidate.scope, scopeRef, id)
-
-    const meta: MemoryFileMeta = {
-      id,
+    // 写入（【S1B.1】统一提交原语：先写快照文件，DB insert 落 version=1 + content_hash）
+    const committed = await this.commitService.commitWrite({
       scope: candidate.scope,
       scopeRef,
       type: candidate.type,
       name: candidate.name,
       description: candidate.description,
       confidence: candidate.confidence,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      hitCount: 0,
-      lastHitAt: null,
+      body: candidate.body,
       sourceSessionId: sessionId,
+      // 来源绑定（S2.1）：仅新建落来源；LLM candidate 无来源字段，此处值全部来自系统侧
+      sourceEventId: source?.sourceEventId ?? null,
+      sourceTurnId: source?.turnId ?? null,
+      authorRole: source?.authorRole ?? null,
+      authorAgentId: source?.authorAgentId ?? null,
+      extractionKind: source?.extractionKind ?? null,
+      extractionModel: source?.extractionModel ?? null,
       links: candidate.links ?? [],
-      archived: false,
+    })
+    if (!committed.ok) {
+      if (committed.reason === 'already_exists') {
+        // 并发窗口内同 scope 同名条目已建立（唯一索引兜底）——按去重语义放弃本条
+        log.info(`Memory write skipped (concurrent duplicate): ${candidate.name}`)
+        return
+      }
+      throw new Error(`commitWrite failed (${committed.reason}): ${committed.message}`)
     }
 
-    await this.storeService.writeFile({ meta, body: candidate.body })
-
-    this.memoryRepo.insert({
-      id,
-      scope: candidate.scope,
-      scope_ref: scopeRef,
-      type: candidate.type,
-      name: candidate.name,
-      description: candidate.description,
-      file_path: filePath,
-      confidence: candidate.confidence,
-      hit_count: 0,
-      last_hit_at: null,
-      source_session_id: sessionId,
-      archived: 0,
-    }, candidate.body)
-
-    log.info(`Memory written: ${id} (${candidate.name}) [${candidate.scope}/${candidate.type}]`)
-    this.persistEntities(id, candidate, scopeRef)
+    log.info(
+      `Memory written: ${committed.row.id} (${candidate.name}) [${candidate.scope}/${candidate.type}]`,
+    )
+    this.persistEntities(committed.row.id, candidate, scopeRef)
   }
 
   /**
@@ -508,7 +598,9 @@ export class MemoryWriterService {
     try {
       this.entityRepo.upsertEntitiesForMemory(memoryId, candidate.scope, scopeRef, names)
     } catch (err) {
-      log.warn(`entity persistence failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `entity persistence failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -545,39 +637,36 @@ export class MemoryWriterService {
         newBody = `${candidate.body}\n\n## History\n\n### ${stamp}（被 "${candidate.name}" 更新）\n${oldExcerpt}${oldBody.length > 500 ? ' …' : ''}`
       }
     } catch (err) {
-      log.warn(`updateEntry: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `updateEntry: failed to read old body, overwriting: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
 
-    const nextConfidence = Math.max(target.confidence, candidate.confidence)
-    // 文件 frontmatter 同步（repo.update 不写文件，文件由 store 维护）
-    const meta: MemoryFileMeta = {
-      id: target.id,
+    // 【S2.5】演化 UPDATE 生成新版本：置信度独立评估、不继承旧值（用户
+    // 纠正/实质改写允许下降 —— 单调 max 会让错误的高分永远压过纠正）
+    const nextConfidence = candidate.confidence
+    // 【S1B.1】统一提交原语：先写新快照文件，再 CAS 提交（expectedVersion 持
+    // 读取时版本——演化决策期间的并发更新/归档/删除会失配丢弃，不覆盖当前状态）。
+    const r = await this.commitService.commitWrite({
+      entryId: targetId,
+      expectedVersion: target.version,
       scope: target.scope,
       scopeRef,
       type: candidate.type,
       name: target.name,
       description: candidate.description,
       confidence: nextConfidence,
-      createdAt: target.created_at,
-      updatedAt: Date.now(),
-      hitCount: target.hit_count,
-      lastHitAt: target.last_hit_at,
-      sourceSessionId: target.source_session_id,
+      body: newBody,
       links: candidate.links ?? [],
-      archived: false,
+      preserveFrom: target,
+    })
+    if (!r.ok) {
+      log.warn(
+        `evolution UPDATE discarded (${r.reason}): id=${targetId} ← "${candidate.name}" — ` +
+          `${r.message}（晚到/并发写入不覆盖当前状态）`,
+      )
+      return
     }
-    // 先写文件（建立事实来源），再更新 DB+FTS：若 writeFile 失败则 DB 保持旧状态，
-    // 避免 DB 领先于文件导致 recall 永久读不到正文。
-    await this.storeService.writeFile({ meta, body: newBody })
-    this.memoryRepo.update(
-      targetId,
-      {
-        description: candidate.description,
-        type: candidate.type,
-        confidence: nextConfidence,
-      },
-      newBody,
-    )
     this.persistEntities(targetId, candidate, scopeRef)
   }
 
@@ -596,22 +685,28 @@ export class MemoryWriterService {
       if (trimmed === 'replace') return 'replace'
       return 'skip'
     } catch (err) {
-      log.warn(`LLM dedup decide failed, defaulting to skip: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `LLM dedup decide failed, defaulting to skip: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return 'skip'
     }
   }
 
   private resolveScopeRef(scope: string, payload: TurnPayload): string | null {
     switch (scope) {
-      case 'user': return null
+      case 'user':
+        return null
       // 空串/undefined 归一为 null（防孤儿 project 记忆）：
       // 会话未绑定 workspace 时 payload.workspaceId 是 ''（primaryWorkspaceId ?? '' 链路），
       // 原样透传会写入 scope_ref=''（非 NULL 的第三态），DB 里既不是 NULL 也不是合法 UUID，
       // 永远查不到。归一为 null 后，下游 listByScope('project', null) 精确匹配 IS NULL，
       // 配合 reader.buildScopes 的"project 必须 workspaceId"约束，空候选会被自然过滤。
-      case 'project': return payload.workspaceId || null
-      case 'agent': return payload.agentId || null
-      default: return null
+      case 'project':
+        return payload.workspaceId || null
+      case 'agent':
+        return payload.agentId || null
+      default:
+        return null
     }
   }
 
@@ -629,7 +724,10 @@ export class MemoryWriterService {
     return DEFAULT_QUOTA[scope as keyof typeof DEFAULT_QUOTA] ?? 100
   }
 
-  private async refreshIndex(scope: 'user' | 'project' | 'agent', scopeRef: string | null): Promise<void> {
+  private async refreshIndex(
+    scope: 'user' | 'project' | 'agent',
+    scopeRef: string | null,
+  ): Promise<void> {
     try {
       const entries = this.memoryRepo.listByScope(scope, scopeRef)
       await this.storeService.updateIndexFile(
@@ -638,17 +736,14 @@ export class MemoryWriterService {
         entries.map((e) => ({ name: e.name, description: e.description, id: e.id })),
       )
     } catch (err) {
-      log.warn(`refreshIndex failed for ${scope}: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `refreshIndex failed for ${scope}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
-
-function generateId(scope: string): string {
-  const prefix = SCOPE_PREFIX[scope] ?? 'mem'
-  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
-}
 
 export function parseCandidates(raw: string): MemoryCandidate[] {
   // 尝试提取 JSON 部分（LLM 可能包裹在 ```json``` 中）
@@ -679,27 +774,32 @@ export function parseCandidates(raw: string): MemoryCandidate[] {
 
 /** 严格 JSON.parse 成功后的过滤 + entities 整形 */
 function filterAndShapeCandidates(parsed: unknown[]): MemoryCandidate[] {
-  return parsed.filter((item: unknown): item is MemoryCandidate => {
-    if (typeof item !== 'object' || item == null) return false
-    const obj = item as Record<string, unknown>
-    const scopeOk = obj.scope === 'user' || obj.scope === 'project' || obj.scope === 'agent'
-    const typeOk =
-      obj.type === 'user' || obj.type === 'feedback' || obj.type === 'project' || obj.type === 'reference'
-    return (
-      scopeOk &&
-      typeOk &&
-      typeof obj.name === 'string' &&
-      typeof obj.description === 'string' &&
-      typeof obj.body === 'string' &&
-      typeof obj.confidence === 'number'
-    )
-  }).map((item) => {
-    const ents = (item as unknown as { entities?: unknown }).entities
-    if (Array.isArray(ents) && ents.every((e) => typeof e === 'string')) {
-      return { ...item, entities: ents as string[] }
-    }
-    return item
-  })
+  return parsed
+    .filter((item: unknown): item is MemoryCandidate => {
+      if (typeof item !== 'object' || item == null) return false
+      const obj = item as Record<string, unknown>
+      const scopeOk = obj.scope === 'user' || obj.scope === 'project' || obj.scope === 'agent'
+      const typeOk =
+        obj.type === 'user' ||
+        obj.type === 'feedback' ||
+        obj.type === 'project' ||
+        obj.type === 'reference'
+      return (
+        scopeOk &&
+        typeOk &&
+        typeof obj.name === 'string' &&
+        typeof obj.description === 'string' &&
+        typeof obj.body === 'string' &&
+        typeof obj.confidence === 'number'
+      )
+    })
+    .map((item) => {
+      const ents = (item as unknown as { entities?: unknown }).entities
+      if (Array.isArray(ents) && ents.every((e) => typeof e === 'string')) {
+        return { ...item, entities: ents as string[] }
+      }
+      return item
+    })
 }
 
 /**
@@ -740,7 +840,9 @@ function extractCandidateLoose(block: string): MemoryCandidate | null {
     }
     if (endIdx === -1) {
       // 当前是最后一个字符串字段（body）：结束于 "}\s*$ 或 "\s*,\s*"(confidence|links|entities)"
-      const endMatch = block.slice(startIdx).match(/"\s*(?:,\s*"(?:confidence|links|entities)"|,?\s*\})/)
+      const endMatch = block
+        .slice(startIdx)
+        .match(/"\s*(?:,\s*"(?:confidence|links|entities)"|,?\s*\})/)
       endIdx = endMatch != null && endMatch.index != null ? startIdx + endMatch.index : block.length
     }
     return block.slice(startIdx, endIdx)
@@ -751,10 +853,12 @@ function extractCandidateLoose(block: string): MemoryCandidate | null {
   const name = get('name', 'description')
   const description = get('description', 'body')
   const body = get('body')
-  if (scope == null || type == null || name == null || description == null || body == null) return null
+  if (scope == null || type == null || name == null || description == null || body == null)
+    return null
   // 枚举校验（与严格路径一致）
   if (scope !== 'user' && scope !== 'project' && scope !== 'agent') return null
-  if (type !== 'user' && type !== 'feedback' && type !== 'project' && type !== 'reference') return null
+  if (type !== 'user' && type !== 'feedback' && type !== 'project' && type !== 'reference')
+    return null
   // confidence（数值字段，单独提）
   const confMatch = block.match(/"confidence"\s*:\s*([0-9]+\.?[0-9]*)/)
   const confidence = confMatch != null ? Number(confMatch[1]) : 0.7
@@ -766,7 +870,15 @@ function extractCandidateLoose(block: string): MemoryCandidate | null {
       entities.push(em[1]!)
     }
   }
-  return { scope, type, name, description, body, confidence, ...(entities.length > 0 ? { entities } : {}) }
+  return {
+    scope,
+    type,
+    name,
+    description,
+    body,
+    confidence,
+    ...(entities.length > 0 ? { entities } : {}),
+  }
 }
 
 /**
@@ -784,23 +896,4 @@ function keywordOverlap(a: string, b: string): number {
   }
   const union = new Set([...wordsA, ...wordsB]).size
   return union > 0 ? intersection / union : 0
-}
-
-function rowToMeta(row: MemoryEntryRow, candidate: MemoryCandidate): MemoryFileMeta {
-  return {
-    id: row.id,
-    scope: row.scope,
-    scopeRef: row.scope_ref,
-    type: candidate.type,
-    name: row.name,
-    description: candidate.description,
-    confidence: Math.max(row.confidence, candidate.confidence),
-    createdAt: row.created_at,
-    updatedAt: Date.now(),
-    hitCount: row.hit_count,
-    lastHitAt: row.last_hit_at,
-    sourceSessionId: row.source_session_id,
-    links: candidate.links ?? [],
-    archived: false,
-  }
 }

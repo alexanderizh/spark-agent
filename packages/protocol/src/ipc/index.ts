@@ -1548,6 +1548,11 @@ export interface WorkspaceGitStatusResponse {
   hasRemote: boolean
   remoteName: string | null
   remoteBranch: string | null
+  /**
+   * 当前分支是否已配置上游分支（@{u}）。
+   * false 表示本地新分支尚未发布到远端；remoteBranch 此时是兜底的远端默认分支，不能当作发布目标。
+   */
+  branchHasUpstream?: boolean
   pullRequestUrl: string | null
   stashEntries: WorkspaceGitStashEntry[]
   files: WorkspaceGitFileChange[]
@@ -3809,6 +3814,16 @@ export interface MemoryEntry {
   validFrom: number | null
   invalidAt: number | null
   supersededBy: string | null
+  /** 【S2.4】当前版本号（编辑界面携带为 expectedVersion 做 CAS 条件更新） */
+  version: number
+  /** 【S2.5】产生路径角色（manual_user/host_agent/consolidation/sync_import…）—— 展示层据此给可解释状态 */
+  authorRole?: string | null
+  /** 【S2.5】证据状态（available/unavailable）—— 来源不可用时不补造 */
+  evidenceStatus?: string | null
+  /** 【S2.6】有效期结束（UTC ms，半开区间右端）；null = 长期 */
+  validUntil?: number | null
+  /** 【S2.6】精度/时区原始表达（JSON：{"precision":"date","timezone":...}） */
+  validUntilMeta?: string | null
 }
 
 export interface MemoryListRequest {
@@ -3836,6 +3851,11 @@ export interface MemoryCreateRequest {
   description: string
   body: string
   entities?: string[]
+  /** 【S2.6 / N5】有效期（可选）：instant = 完整 ISO 时间；date = YYYY-MM-DD（该日内仍适用） */
+  validUntil?: string
+  validUntilPrecision?: 'instant' | 'date'
+  /** date 精度的 IANA 时区（缺省本机时区） */
+  validUntilTimezone?: string
 }
 export interface MemoryCreateResponse {
   entry: MemoryEntry
@@ -3845,6 +3865,12 @@ export interface MemoryUpdateRequest {
   description?: string
   body?: string
   type?: MemoryType
+  /**
+   * 【S2.4】CAS 期望版本（可选）：传入时走提交原语条件更新 —— 版本失配
+   * 返回 CONFLICT（不覆盖当前状态）；缺省保持旧行为（无条件更新，兼容
+   * 未升级的旧前端）。编辑界面应携带打开条目时的 version。
+   */
+  expectedVersion?: number
 }
 export interface MemoryUpdateResponse {
   entry: MemoryEntry
@@ -3852,19 +3878,138 @@ export interface MemoryUpdateResponse {
 export interface MemoryArchiveRequest {
   id: string
 }
+/**
+ * S1B.4：归档经生命周期协调服务（DB 屏障 + frontmatter 写回 + 投影刷新）。
+ * status：complete=全部完成；blocked_locally=清理失败保持待清理（可重试）；
+ * not_found=目标不存在（幂等成功）。
+ */
 export interface MemoryArchiveResponse {
   ok: boolean
+  status?: 'complete' | 'blocked_locally' | 'not_found'
+  operationId?: string
+  error?: string
 }
 export interface MemoryDeleteRequest {
   id: string
 }
+/** S1B.4：删除经生命周期协调服务，语义同 MemoryArchiveResponse.status */
 export interface MemoryDeleteResponse {
   ok: boolean
+  status?: 'complete' | 'blocked_locally' | 'not_found'
+  operationId?: string
+  error?: string
 }
 export interface MemoryRebuildVectorsRequest {}
 export interface MemoryRebuildVectorsResponse {
   ok: boolean
   reason?: string
+}
+
+// ─── S2.2 revision 历史 / 显式 supersede / retract ─────────────────────
+
+export interface MemoryHistoryRequest {
+  id: string
+}
+/**
+ * S2.2 / N10：版本链 + 派生关系查询。coverage 如实说明记录起点
+ * （migration 108 之前的历史不存在，不补造）。
+ */
+export interface MemoryHistoryResponse {
+  ok: boolean
+  error?: string
+  entry?: {
+    id: string
+    name: string
+    scope: string
+    scopeRef: string | null
+    type: string
+    currentVersion: number
+    invalidAt: number | null
+    supersededBy: string | null
+  }
+  /** 版本链（旧 → 新），不含当前版本 */
+  revisions?: Array<{
+    version: number
+    name: string
+    description: string
+    body: string
+    confidence: number
+    authorRole: string | null
+    validFrom: number
+    supersededAt: number
+    supersedeKind: 'update' | 'merge' | 'supersede' | 'retract'
+    successorId: string | null
+    note: string | null
+  }>
+  /** 该条目派生出的下游（撤回来源时的待复核范围） */
+  derivationsFrom?: Array<{ sourceId: string; derivedId: string; kind: string; createdAt: number }>
+  /** 该条目的来源边（由哪些条目派生而来） */
+  derivationsOf?: Array<{ sourceId: string; derivedId: string; kind: string; createdAt: number }>
+  coverage?: { since: string; complete: boolean; note: string }
+}
+export interface MemorySupersedeRequest {
+  oldId: string
+  newId: string
+  note?: string
+}
+/** S2.2：显式替代（保留历史，与 delete 物理清除相对） */
+export interface MemorySupersedeResponse {
+  ok: boolean
+  status?: 'complete' | 'not_found' | 'conflict'
+  error?: string
+}
+export interface MemoryRetractRequest {
+  id: string
+  note?: string
+}
+/** S2.2：撤回作废（停止作为当前事实，历史可查，N10 历史标注） */
+export interface MemoryRetractResponse {
+  ok: boolean
+  status?: 'complete' | 'not_found' | 'conflict'
+  error?: string
+}
+
+/** S2.3 / N12：候选确认区。ELEVATE 提议入候选区，晋级须真实用户结构化确认。 */
+export interface MemoryCandidateListRequest {}
+export interface MemoryCandidateListResponse {
+  ok: boolean
+  error?: string
+  candidates?: Array<{
+    id: number
+    scope: 'user' | 'project' | 'agent'
+    scopeRef: string | null
+    createdAt: number
+    expiresAt: number
+    /** 展示与确认绑定：确认请求必须原样带回该摘要 */
+    contentDigest: string
+    payload: {
+      type: 'user' | 'feedback' | 'project' | 'reference'
+      name: string
+      description: string
+      body: string
+      confidence: number
+      sourceIds: string[]
+    } | null
+  }>
+}
+export interface MemoryCandidateConfirmRequest {
+  id: number
+  /** 候选内容摘要（列表返回值原样带回；失配 = 候选已被改写，拒绝） */
+  contentDigest: string
+}
+/** 确认晋级：失败 reason 结构化（not_pending/expired/digest_mismatch 等按类别提示） */
+export interface MemoryCandidateConfirmResponse {
+  ok: boolean
+  reason?: string
+  error?: string
+  entryId?: string
+}
+export interface MemoryCandidateRejectRequest {
+  id: number
+}
+export interface MemoryCandidateRejectResponse {
+  ok: boolean
+  error?: string
 }
 
 /** 主动探测抽取配置是否可用（避免静默失败，审查 HIGH#6） */
@@ -7488,6 +7633,12 @@ export interface IpcChannelMap
   'memory:delete': [MemoryDeleteRequest, MemoryDeleteResponse]
   'memory:rebuild-vectors': [MemoryRebuildVectorsRequest, MemoryRebuildVectorsResponse]
   'memory:test-extraction': [MemoryTestExtractionRequest, MemoryTestExtractionResponse]
+  'memory:history': [MemoryHistoryRequest, MemoryHistoryResponse]
+  'memory:supersede': [MemorySupersedeRequest, MemorySupersedeResponse]
+  'memory:retract': [MemoryRetractRequest, MemoryRetractResponse]
+  'memory:candidate:list': [MemoryCandidateListRequest, MemoryCandidateListResponse]
+  'memory:candidate:confirm': [MemoryCandidateConfirmRequest, MemoryCandidateConfirmResponse]
+  'memory:candidate:reject': [MemoryCandidateRejectRequest, MemoryCandidateRejectResponse]
 
   // Settings
   'settings:get': [SettingsGetRequest, SettingsGetResponse]

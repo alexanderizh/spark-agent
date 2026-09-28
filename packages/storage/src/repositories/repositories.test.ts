@@ -488,13 +488,13 @@ describe('SessionRepository', () => {
         .get('sess-delete') as { count: number }
       expect(row.count, table).toBe(0)
     }
-    expect(
-      (
-        db.raw
-          .prepare('SELECT source_session_id FROM memory_entry WHERE id = ?')
-          .get('memory-keep') as { source_session_id: string | null }
-      ).source_session_id,
-    ).toBeNull()
+    // 【S2.1】删除会话不解除来源引用（置 NULL 会伪造"无来源"）——改为标记
+    // 证据不可用，source_session_id 保留供溯源
+    const memoryAfterDelete = db.raw
+      .prepare(`SELECT source_session_id, evidence_status FROM memory_entry WHERE id = ?`)
+      .get('memory-keep') as { source_session_id: string | null; evidence_status: string }
+    expect(memoryAfterDelete.source_session_id).toBe('sess-delete')
+    expect(memoryAfterDelete.evidence_status).toBe('unavailable')
   })
 
   it('should create a session with workspace ids', () => {

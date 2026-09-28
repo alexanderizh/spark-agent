@@ -19,18 +19,24 @@ import { useGitPanelActions } from './useGitPanelActions'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let currentSync: (() => Promise<boolean>) | null = null
+let currentPush: (() => Promise<boolean>) | null = null
+let currentPull: (() => Promise<boolean>) | null = null
 
 function Harness() {
-  const { sync } = useGitPanelActions({
+  const { sync, push, pull } = useGitPanelActions({
     workspaceId: 'workspace-1',
     onStatusApplied: vi.fn(),
   })
   useEffect(() => {
     currentSync = sync
+    currentPush = push
+    currentPull = pull
     return () => {
       currentSync = null
+      currentPush = null
+      currentPull = null
     }
-  }, [sync])
+  }, [sync, push, pull])
   return null
 }
 
@@ -71,6 +77,8 @@ describe('useGitPanelActions.sync', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     currentSync = null
+    currentPush = null
+    currentPull = null
     mocks.invoke.mockReset().mockResolvedValue({
       synchronized: true,
       mode: 'push',
@@ -104,5 +112,37 @@ describe('useGitPanelActions.sync', () => {
       workspaceId: 'workspace-1',
     })
     expect(mocks.success).toHaveBeenCalledWith('已推送新分支')
+  })
+
+  it('push 走 workspace:git-push（主进程对无上游新分支自动 push -u 发布）', async () => {
+    await act(async () => root.render(<Harness />))
+    if (currentPush == null) throw new Error('Push callback was not mounted')
+    const push = currentPush
+
+    await act(async () => {
+      await expect(push()).resolves.toBe(true)
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1)
+    expect(mocks.invoke).toHaveBeenCalledWith('workspace:git-push', { workspaceId: 'workspace-1' })
+    expect(mocks.success).toHaveBeenCalledWith('已推送')
+  })
+
+  it('pull 走 workspace:git-pull 并在失败时透出错误', async () => {
+    await act(async () => root.render(<Harness />))
+    if (currentPull == null) throw new Error('Pull callback was not mounted')
+    const pull = currentPull
+
+    await act(async () => {
+      await expect(pull()).resolves.toBe(true)
+    })
+    expect(mocks.invoke).toHaveBeenCalledWith('workspace:git-pull', { workspaceId: 'workspace-1' })
+    expect(mocks.success).toHaveBeenCalledWith('已拉取')
+
+    mocks.invoke.mockReset().mockRejectedValue(new Error('当前分支没有设置上游分支，无法拉取'))
+    await act(async () => {
+      await expect(pull()).resolves.toBe(false)
+    })
+    expect(mocks.error).toHaveBeenCalledWith('当前分支没有设置上游分支，无法拉取')
   })
 })

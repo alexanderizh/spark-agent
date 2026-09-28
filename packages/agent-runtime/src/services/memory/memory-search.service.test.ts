@@ -28,6 +28,17 @@ function makeEntry(id: string, overrides: Partial<MemoryEntryRow> = {}): MemoryE
     last_hit_at: null,
     source_session_id: null,
     archived: 0,
+    version: 1,
+    content_hash: null,
+    source_event_id: null,
+    source_turn_id: null,
+    author_role: null,
+    author_agent_id: null,
+    extraction_kind: null,
+    extraction_model: null,
+    evidence_status: 'available',
+    valid_until: null,
+    valid_until_meta: null,
     created_at: now,
     updated_at: now,
     valid_from: now,
@@ -106,6 +117,23 @@ describe('rerankByDecayAndConfidence', () => {
     const out = rerankByDecayAndConfidence([old], 0, now)
     expect(out[0]!.score).toBeCloseTo(0.5, 5)
   })
+
+  // ─── S0（E8）：新旧竞争口径固化（S3 校正基线，非缺陷） ────────────────
+  // 依据 docs/plans/2026-09-25-memory-lifecycle-hardening-plan.md S0/E8 与
+  // docs/plans/2026-09-26-memory-evidence-and-temporal-semantics.md §4：
+  // 本用例把"等龄排序不变"之外的新旧竞争现状口径固定下来 —— 默认
+  // lambda=0.01 下时间衰减主导（365 天 → exp(-3.65) ≈ 2.6%），置信度
+  // 乘子（0.6~1.0）的差异被完全掩盖。S3 分类型衰减/复核实验若调整口径，
+  // 应更新本断言并注明实验依据。
+  it('新旧竞争口径（S3 校正基线）：一年前高置信 vs 今天低置信，时间衰减主导、新条目胜出', () => {
+    const aged = hit('aged', { updated_at: now - 365 * 86_400_000, confidence: 1.0 }, 0.5)
+    const fresh = hit('fresh', { updated_at: now, confidence: 0.6 }, 0.5)
+    const out = rerankByDecayAndConfidence([aged, fresh], 0.01, now)
+    expect(out[0]!.entry.id).toBe('fresh')
+    // 口径记录：旧条目得分 0.5 × exp(-3.65) × 1.0 ≈ 0.0129，
+    // 置信度 1.0 不足以弥补一年时间衰减。
+    expect(out[1]!.score).toBeCloseTo(0.5 * Math.exp(-3.65), 5)
+  })
 })
 
 // ─── 检索路径（有/无向量） ────────────────────────────────────────────────
@@ -114,24 +142,123 @@ function makeService(opts: {
   ftsResults?: MemoryEntryRow[] | Error
   vectors?: number[][] | null
   knnResults?: MemoryEntryRow[]
+  knnThrows?: Error
+  enabled?: unknown
 }) {
   const searchRepo = {
     searchBm25: vi.fn(() => {
       if (opts.ftsResults instanceof Error) throw opts.ftsResults
       return (opts.ftsResults ?? []).map((entry) => ({ entry, bm25: -1 }))
     }),
-    searchKnn: vi.fn(() => (opts.knnResults ?? []).map((entry) => ({ entry, distance: 0.1 }))),
+    searchKnn: vi.fn(() => {
+      if (opts.knnThrows != null) throw opts.knnThrows
+      return (opts.knnResults ?? []).map((entry) => ({ entry, distance: 0.1 }))
+    }),
   }
   const embeddingService = {
-    embedTexts: vi.fn(async () => opts.vectors ?? null),
+    // S1B.3：embedTexts 返回 { vectors, generation }，检索路径只用向量
+    embedTexts: vi.fn(async () =>
+      opts.vectors != null ? { vectors: opts.vectors, generation: 1 } : null,
+    ),
+  }
+  const settings: Record<string, unknown> = {
+    enabled: opts.enabled === undefined ? null : opts.enabled,
   }
   const svc = new MemorySearchService(
     searchRepo as never,
     embeddingService as never,
-    () => null,
+    (cat: string, key: string) => (cat === 'memory' ? (settings[key] ?? null) : null),
   )
   return { svc, searchRepo, embeddingService }
 }
+
+describe('MemorySearchService.searchWithStatus（S3.1 四态接口）', () => {
+  it('matched：正常检索有命中', async () => {
+    const a = makeEntry('hit-1')
+    const { svc } = makeService({ ftsResults: [a], vectors: null })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('matched')
+    expect(r.hits.map((h) => h.entry.id)).toEqual(['hit-1'])
+    expect(r.note).toBeUndefined()
+  })
+
+  it('empty：正常检索无命中（FTS-only 属按设计运行，不算 degraded）', async () => {
+    const { svc } = makeService({ ftsResults: [], vectors: null })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('empty')
+    expect(r.hits).toEqual([])
+  })
+
+  it('degraded（单侧）：FTS 异常但向量服务中 → 结果可用但如实标注，不冒充 empty', async () => {
+    const a = makeEntry('vec-only-hit')
+    const { svc } = makeService({
+      ftsResults: new Error('fts5 table corrupted'),
+      vectors: [[0.1, 0.2]],
+      knnResults: [a],
+    })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('degraded')
+    expect(r.hits.map((h) => h.entry.id)).toEqual(['vec-only-hit'])
+    expect(r.note).toContain('fts')
+  })
+
+  it('degraded（单侧）：knn 异常但 FTS 服务中 → degraded（旧实现角落：此处曾误报为正常空/命中）', async () => {
+    const a = makeEntry('fts-only-hit')
+    const { svc } = makeService({
+      ftsResults: [a],
+      vectors: [[0.1, 0.2]],
+      knnThrows: new Error('vec0 virtual table error'),
+    })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('degraded')
+    expect(r.note).toContain('vector')
+  })
+
+  it('degraded（两路皆异常）：hits 空 + note 标注；旧签名 search() 映射为 null（V1 fallback 独立可测）', async () => {
+    const { svc } = makeService({
+      ftsResults: new Error('fts boom'),
+      vectors: [[0.1, 0.2]],
+      knnThrows: new Error('knn boom'),
+    })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('degraded')
+    expect(r.hits).toEqual([])
+    expect(r.note).toContain('两路皆异常')
+    // 故障 ≠ 空结果：旧签名 null 触发调用方退回 V1 全量注入
+    expect(await svc.search('query')).toBeNull()
+  })
+
+  it('disabled：memory.enabled=false → 不触碰检索通道', async () => {
+    const { svc, searchRepo, embeddingService } = makeService({
+      ftsResults: [makeEntry('x')],
+      vectors: [[0.1]],
+      enabled: false,
+    })
+    const r = await svc.searchWithStatus('query')
+    expect(r.status).toBe('disabled')
+    expect(r.hits).toEqual([])
+    expect(searchRepo.searchBm25).not.toHaveBeenCalled()
+    expect(embeddingService.embedTexts).not.toHaveBeenCalled()
+  })
+
+  it('旧签名兼容：matched/empty/degraded-served 均返回 hits 数组（不触发 null fallback）', async () => {
+    const a = makeEntry('ok')
+    const m = makeService({ ftsResults: [a], vectors: null })
+    const matched = await m.svc.search('query')
+    expect(matched).not.toBeNull()
+    expect(matched!.map((h) => h.entry.id)).toEqual(['ok'])
+    const e = makeService({ ftsResults: [], vectors: null })
+    expect(await e.svc.search('query')).toEqual([])
+    const d = makeService({
+      ftsResults: new Error('fts down'),
+      vectors: [[0.1]],
+      knnResults: [a],
+    })
+    const served = await d.svc.search('query')
+    expect(served).not.toBeNull()
+    expect(served!.map((h) => h.entry.id)).toEqual(['ok'])
+  })
+})
 
 describe('MemorySearchService.search', () => {
   it('no vector capability: FTS-only path returns results', async () => {
@@ -175,7 +302,11 @@ describe('MemorySearchService.search', () => {
       searchBm25: vi.fn(() => [{ entry: a, bm25: -1 }]),
       searchKnn: vi.fn(),
     }
-    const embeddingService = { embedTexts: vi.fn(async () => { throw new Error('provider 500') }) }
+    const embeddingService = {
+      embedTexts: vi.fn(async () => {
+        throw new Error('provider 500')
+      }),
+    }
     const svc = new MemorySearchService(searchRepo as never, embeddingService as never, () => null)
     const hits = await svc.search('query')
     expect(hits).not.toBeNull()

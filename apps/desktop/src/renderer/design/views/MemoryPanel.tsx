@@ -6,10 +6,25 @@
  * 仅 LobeHub + antd 组件，样式落 MemoryPanel.less（mp_ 前缀）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Tag, Tooltip, Drawer, Empty, Input as LobeInput, Select as LobeSelect, TextArea } from '@lobehub/ui'
+import {
+  Button,
+  Tag,
+  Tooltip,
+  Drawer,
+  Empty,
+  Input as LobeInput,
+  Select as LobeSelect,
+  TextArea,
+} from '@lobehub/ui'
 import { Switch, message, Modal, Segmented, Spin, Checkbox } from 'antd'
 import { Icons } from '../Icons'
-import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile, ManagedAgent } from '@spark/protocol'
+import type {
+  MemoryEntry,
+  MemoryScope,
+  MemoryType,
+  ProviderProfile,
+  ManagedAgent,
+} from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -26,6 +41,38 @@ const TYPE_OPTIONS: Array<{ label: string; value: TypeFilter }> = [
   { label: 'Reference', value: 'reference' },
 ]
 
+/** 【审查修复 C6】有效期是否按日精度（解析 meta，替代脆弱的 JSON 子串匹配） */
+function isDatePrecision(metaJson: string | null | undefined): boolean {
+  if (metaJson == null) return false
+  try {
+    return (JSON.parse(metaJson) as { precision?: unknown }).precision === 'date'
+  } catch {
+    return false
+  }
+}
+
+/** 【S2.5】可解释证据状态（补充计划 §3.1）：展示层用状态替代裸分数 */
+function memoryEvidenceState(entry: {
+  archived: boolean
+  invalidAt: number | null
+  evidenceStatus?: string | null
+  authorRole?: string | null
+}): string {
+  if (entry.invalidAt != null) return '已失效'
+  if (entry.archived) return '已归档'
+  if (entry.evidenceStatus === 'unavailable') return '证据不可用'
+  switch (entry.authorRole) {
+    case 'manual_user':
+      return '用户明确表达'
+    case 'consolidation':
+      return '整合推断'
+    case 'sync_import':
+      return '同步导入'
+    default:
+      return '模型推断'
+  }
+}
+
 export function MemoryPanel() {
   const { invoke: listMemory } = useIpcInvoke('memory:list')
   const { invoke: listAgents } = useIpcInvoke('agent:list')
@@ -37,14 +84,19 @@ export function MemoryPanel() {
     if (activeSessionId == null) return null
     return sessions.find((s) => s.id === activeSessionId)?.agentId ?? null
   }, [sessions, activeSessionId])
-  const getContextScopeRef = useCallback((next: ScopeFilter): string => {
-    if (next === 'project') return activeWorkspaceId ?? ''
-    if (next === 'agent') return activeAgentId ?? ''
-    return ''
-  }, [activeWorkspaceId, activeAgentId])
+  const getContextScopeRef = useCallback(
+    (next: ScopeFilter): string => {
+      if (next === 'project') return activeWorkspaceId ?? ''
+      if (next === 'agent') return activeAgentId ?? ''
+      return ''
+    },
+    [activeWorkspaceId, activeAgentId],
+  )
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   useEffect(() => {
-    void listAgents({}).then((r) => setAgents(r?.agents ?? [])).catch(() => {})
+    void listAgents({})
+      .then((r) => setAgents(r?.agents ?? []))
+      .catch(() => {})
   }, [listAgents])
   const [scope, setScope] = useState<ScopeFilter>('user')
   const [scopeRef, setScopeRef] = useState<string>('')
@@ -74,8 +126,8 @@ export function MemoryPanel() {
   const filteredEntries = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     if (q === '') return entries
-    return entries.filter((e) =>
-      e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
+    return entries.filter(
+      (e) => e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
     )
   }, [entries, searchText])
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -106,19 +158,36 @@ export function MemoryPanel() {
   }, [allSelected, visibleIds])
   const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
   // 切 scope/过滤维度时清空选择，避免跨批次误操作
-  useEffect(() => { clearSelection() }, [scope, scopeRef, typeFilter, includeInvalid, clearSelection])
+  useEffect(() => {
+    clearSelection()
+  }, [scope, scopeRef, typeFilter, includeInvalid, clearSelection])
   const batchDelete = async () => {
     const ids = [...selectedIds]
     Modal.confirm({
       title: `批量删除 ${ids.length} 条记忆？`,
       okType: 'danger',
-      content: '删除后不可恢复（含 markdown 文件与索引）。归档比删除安全，建议优先归档。',
+      content:
+        '删除后不可恢复：将一并移除数据库记录、检索索引、markdown 文件与 MEMORY.md 索引。归档比删除安全，建议优先归档。',
       onOk: async () => {
         let ok = 0
+        let blocked = 0
         for (const id of ids) {
-          try { await deleteMemory({ id }); ok++ } catch { /* 单条失败不阻断，继续删下一条 */ }
+          try {
+            // S1B.4：status 处理 —— blocked_locally = 清理未完成（可重试），
+            // 部分失败不得计入成功（S1A.4 状态如实化延续）
+            const res = await deleteMemory({ id })
+            if (res?.status === 'blocked_locally') blocked++
+            else ok++
+          } catch {
+            /* 单条失败不阻断，继续删下一条 */
+          }
         }
-        message.success(`已删除 ${ok}/${ids.length} 条`)
+        if (ok === ids.length) message.success(`已删除 ${ok}/${ids.length} 条`)
+        else if (ok + blocked === ids.length && blocked > 0) {
+          message.warning(`已删除 ${ok} 条，${blocked} 条清理未完成（磁盘文件待重试，详见日志）`)
+        } else {
+          message.warning(`已删除 ${ok}/${ids.length} 条，${ids.length - ok} 条失败（详见日志）`)
+        }
         clearSelection()
         void refreshFn()
       },
@@ -127,10 +196,18 @@ export function MemoryPanel() {
   const batchArchive = async () => {
     const ids = [...selectedIds]
     let ok = 0
+    let blocked = 0
     for (const id of ids) {
-      try { await archiveMemory({ id }); ok++ } catch { /* 单条失败不阻断 */ }
+      try {
+        const res = await archiveMemory({ id })
+        if (res?.status === 'blocked_locally') blocked++
+        else ok++
+      } catch {
+        /* 单条失败不阻断 */
+      }
     }
-    message.success(`已归档 ${ok}/${ids.length} 条`)
+    if (blocked === 0) message.success(`已归档 ${ok}/${ids.length} 条`)
+    else message.warning(`已归档 ${ok} 条，${blocked} 条清理未完成（详见日志）`)
     clearSelection()
     void refreshFn()
   }
@@ -154,6 +231,84 @@ export function MemoryPanel() {
   }, [listMemory, scope, scopeRef, typeFilter, includeInvalid])
 
   const refreshFn = useRefreshable(refresh)
+
+  // S2.3 候选确认区：推断行为规则晋级须真实用户确认（N12 —— 模型自称确认不可达）
+  const { invoke: listCandidates } = useIpcInvoke('memory:candidate:list')
+  const { invoke: confirmCandidate } = useIpcInvoke('memory:candidate:confirm')
+  const { invoke: rejectCandidate } = useIpcInvoke('memory:candidate:reject')
+  const [candidates, setCandidates] = useState<
+    Array<{
+      id: number
+      scope: 'user' | 'project' | 'agent'
+      scopeRef: string | null
+      createdAt: number
+      expiresAt: number
+      contentDigest: string
+      payload: {
+        type: 'user' | 'feedback' | 'project' | 'reference'
+        name: string
+        description: string
+        body: string
+        confidence: number
+        sourceIds: string[]
+      } | null
+    }>
+  >([])
+  const [candidateBusy, setCandidateBusy] = useState<number | null>(null)
+  const refreshCandidates = useCallback(async () => {
+    try {
+      const res = await listCandidates({})
+      setCandidates(res?.candidates ?? [])
+    } catch {
+      /* 候选区加载失败不阻断主列表 */
+    }
+  }, [listCandidates])
+  const onConfirmCandidate = useCallback(
+    async (id: number, contentDigest: string) => {
+      setCandidateBusy(id)
+      try {
+        const res = await confirmCandidate({ id, contentDigest })
+        if (res?.ok) message.success('已确认并保存为正式记忆')
+        else {
+          const reasonText: Record<string, string> = {
+            digest_mismatch: '内容已变化，请重新查看后确认',
+            not_pending: '该候选已处理过',
+            expired: '候选已过期',
+            not_found: '候选不存在',
+            payload_unreadable: '候选内容不可解析',
+            sensitive_content: '内容含敏感信息（疑似密钥/凭证），已拒绝保存',
+            // 【审查修复 F3】同名冲突：候选确认被拒的独立类别（含恢复路径）
+            name_collision: '已存在同名记忆且内容不符，未保存候选内容（可改名或拒绝）',
+            commit_failed: '保存失败（详见日志，候选已恢复待确认）',
+          }
+          message.warning(reasonText[res?.reason ?? ''] ?? '确认失败')
+        }
+      } catch {
+        message.error('确认失败（IPC 异常）')
+      } finally {
+        setCandidateBusy(null)
+      }
+      void refreshCandidates()
+      void refreshFn()
+    },
+    [confirmCandidate, refreshCandidates, refreshFn],
+  )
+  const onRejectCandidate = useCallback(
+    async (id: number) => {
+      setCandidateBusy(id)
+      try {
+        const res = await rejectCandidate({ id })
+        if (res?.ok) message.success('已忽略该提议')
+        else message.warning('该候选不在待确认状态')
+      } catch {
+        message.error('操作失败（IPC 异常）')
+      } finally {
+        setCandidateBusy(null)
+      }
+      void refreshCandidates()
+    },
+    [rejectCandidate, refreshCandidates],
+  )
   // scopeRef 输入 debounce 300ms，避免每字符触发请求
   const [scopeRefInput, setScopeRefInput] = useState('')
   useEffect(() => {
@@ -162,7 +317,13 @@ export function MemoryPanel() {
   }, [scopeRefInput])
   const createDefaultScopeRef = scopeRef || getContextScopeRef(scope)
   // 初始加载 + 任一过滤维度变化自动刷新（refresh 是 useCallback，依赖 scope/scopeRef/typeFilter/includeInvalid）
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+  // 候选区与主列表同刷（候选不随 scope 过滤 —— 是全局待确认队列）
+  useEffect(() => {
+    void refreshCandidates()
+  }, [refreshCandidates])
 
   return (
     <div className="mp_root">
@@ -178,7 +339,9 @@ export function MemoryPanel() {
               刷新
             </Button>
           </Tooltip>
-          <Button icon={<Icons.Sparkles size={16} />} onClick={() => setCreateOpen(true)}>新增</Button>
+          <Button icon={<Icons.Sparkles size={16} />} onClick={() => setCreateOpen(true)}>
+            新增
+          </Button>
           <Button onClick={() => setSettingsOpen(true)}>配置</Button>
         </div>
       </header>
@@ -215,11 +378,20 @@ export function MemoryPanel() {
             showSearch
           />
         )}
-        <LobeSelect value={typeFilter} onChange={(v) => setTypeFilter((v as TypeFilter) ?? 'all')} options={TYPE_OPTIONS} style={{ width: 140 }} allowClear />
+        <LobeSelect
+          value={typeFilter}
+          onChange={(v) => setTypeFilter((v as TypeFilter) ?? 'all')}
+          options={TYPE_OPTIONS}
+          style={{ width: 140 }}
+          allowClear
+        />
         <Segmented
           value={includeInvalid ? 'with-invalid' : 'active-only'}
           onChange={(v) => setIncludeInvalid(v === 'with-invalid')}
-          options={[{ label: '仅有效', value: 'active-only' }, { label: '含失效', value: 'with-invalid' }]}
+          options={[
+            { label: '仅有效', value: 'active-only' },
+            { label: '含失效', value: 'with-invalid' },
+          ]}
         />
         <LobeInput
           value={searchText}
@@ -232,18 +404,75 @@ export function MemoryPanel() {
         />
       </div>
 
+      {candidates.length > 0 && (
+        <section className="mp_candidate_section">
+          <div className="mp_candidate_header">
+            <span className="mp_candidate_title">待确认提议</span>
+            <span className="mp_candidate_hint">
+              整合升华的行为规则候选 · 确认后才会保存为正式记忆（{candidates.length} 条待处理）
+            </span>
+          </div>
+          {candidates.map((c) => (
+            <div className="mp_candidate_row" key={c.id}>
+              <div className="mp_candidate_body">
+                <div className="mp_candidate_name">
+                  {c.payload?.name ?? '（内容不可解析）'}
+                  <Tag size="middle">{c.scope}</Tag>
+                  {c.payload != null && <Tag size="middle">{c.payload.type}</Tag>}
+                </div>
+                <div className="mp_candidate_desc">
+                  {c.payload?.description ?? '该候选内容无法解析，建议忽略'}
+                  {c.payload != null && c.payload.sourceIds.length > 0 && (
+                    <span className="mp_candidate_sources">
+                      {' '}
+                      · 依据 {c.payload.sourceIds.length} 条既有记忆
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="mp_candidate_actions">
+                <Button
+                  size="middle"
+                  type="primary"
+                  disabled={c.payload == null}
+                  loading={candidateBusy === c.id}
+                  onClick={() => void onConfirmCandidate(c.id, c.contentDigest)}
+                >
+                  确认保存
+                </Button>
+                <Button
+                  size="middle"
+                  loading={candidateBusy === c.id}
+                  onClick={() => void onRejectCandidate(c.id)}
+                >
+                  忽略
+                </Button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {selectedIds.size > 0 && (
         <div className="mp_batch_bar">
           <span>已选 {selectedIds.size} 条</span>
-          <Button size="middle" onClick={batchArchive}>批量归档</Button>
-          <Button size="middle" danger onClick={batchDelete}>批量删除</Button>
-          <Button size="middle" type="link" onClick={clearSelection}>取消选择</Button>
+          <Button size="middle" onClick={batchArchive}>
+            批量归档
+          </Button>
+          <Button size="middle" danger onClick={batchDelete}>
+            批量删除
+          </Button>
+          <Button size="middle" type="link" onClick={clearSelection}>
+            取消选择
+          </Button>
         </div>
       )}
 
       <div className="mp_list">
         {loading ? (
-          <div className="mp_list_loading"><Spin /></div>
+          <div className="mp_list_loading">
+            <Spin />
+          </div>
         ) : filteredEntries.length === 0 ? (
           <Empty description={searchText.trim() ? '无匹配记忆' : '暂无记忆'} />
         ) : (
@@ -266,13 +495,47 @@ export function MemoryPanel() {
         )}
       </div>
 
-      <Drawer open={detailId != null} onClose={() => setDetailId(null)} title="记忆详情" width={560} destroyOnHidden>
-        {detailId != null && <MemoryDetail id={detailId} onArchivedOrDeleted={() => { setDetailId(null); void refreshFn() }} onSaved={refreshFn} />}
+      <Drawer
+        open={detailId != null}
+        onClose={() => setDetailId(null)}
+        title="记忆详情"
+        width={560}
+        destroyOnHidden
+      >
+        {detailId != null && (
+          <MemoryDetail
+            id={detailId}
+            onArchivedOrDeleted={() => {
+              setDetailId(null)
+              void refreshFn()
+            }}
+            onSaved={refreshFn}
+          />
+        )}
       </Drawer>
-      <Drawer open={createOpen} onClose={() => setCreateOpen(false)} title="手动新增记忆" width={520} destroyOnHidden>
-        <MemoryCreate defaultScope={scope} defaultScopeRef={createDefaultScopeRef} onDone={() => { setCreateOpen(false); void refreshFn() }} />
+      <Drawer
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="手动新增记忆"
+        width={520}
+        destroyOnHidden
+      >
+        <MemoryCreate
+          defaultScope={scope}
+          defaultScopeRef={createDefaultScopeRef}
+          onDone={() => {
+            setCreateOpen(false)
+            void refreshFn()
+          }}
+        />
       </Drawer>
-      <Drawer open={settingsOpen} onClose={() => setSettingsOpen(false)} title="记忆系统配置" width={560} destroyOnHidden>
+      <Drawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title="记忆系统配置"
+        width={560}
+        destroyOnHidden
+      >
         <MemorySettings />
       </Drawer>
     </div>
@@ -281,14 +544,23 @@ export function MemoryPanel() {
 
 function typeColor(type: MemoryType): string {
   switch (type) {
-    case 'feedback': return 'orange'
-    case 'user': return 'blue'
-    case 'project': return 'green'
-    case 'reference': return 'default'
+    case 'feedback':
+      return 'orange'
+    case 'user':
+      return 'blue'
+    case 'project':
+      return 'green'
+    case 'reference':
+      return 'default'
   }
 }
 
-function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
+function MemoryRow({
+  entry: e,
+  selected,
+  onToggleSelect,
+  onOpen,
+}: {
   entry: MemoryEntry
   selected: boolean
   onToggleSelect: () => void
@@ -299,15 +571,35 @@ function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
   // scopeRef 截断显示（project/agent scope 列出全部时，让用户能区分各条属于哪个项目/agent）
   const refTail = e.scopeRef != null && e.scopeRef.length > 8 ? e.scopeRef.slice(-8) : e.scopeRef
   return (
-    <div className={`mp_row${invalid ? ' mp_row_invalid' : ''}${selected ? ' mp_row_selected' : ''}`}>
-      <Checkbox checked={selected} onChange={onToggleSelect} onClick={(ev) => ev.stopPropagation()} />
+    <div
+      className={`mp_row${invalid ? ' mp_row_invalid' : ''}${selected ? ' mp_row_selected' : ''}`}
+    >
+      <Checkbox
+        checked={selected}
+        onChange={onToggleSelect}
+        onClick={(ev) => ev.stopPropagation()}
+      />
       <div className="mp_row_main" onClick={onOpen}>
         <div className="mp_row_title">
           <span className="mp_row_name">{e.name}</span>
-          <Tag size="middle" color={typeColor(e.type)}>{e.type}</Tag>
-          {e.scopeRef != null && <Tag size="middle" color="cyan">…{refTail}</Tag>}
-          {invalid && <Tag size="middle" color="red">失效</Tag>}
-          {isConsolidation && <Tag size="middle" color="purple">整合</Tag>}
+          <Tag size="middle" color={typeColor(e.type)}>
+            {e.type}
+          </Tag>
+          {e.scopeRef != null && (
+            <Tag size="middle" color="cyan">
+              …{refTail}
+            </Tag>
+          )}
+          {invalid && (
+            <Tag size="middle" color="red">
+              失效
+            </Tag>
+          )}
+          {isConsolidation && (
+            <Tag size="middle" color="purple">
+              整合
+            </Tag>
+          )}
           {e.archived && <Tag size="middle">归档</Tag>}
         </div>
         <div className="mp_row_desc">{e.description}</div>
@@ -320,7 +612,15 @@ function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
   )
 }
 
-function MemoryDetail({ id, onSaved, onArchivedOrDeleted }: { id: string; onSaved: () => void; onArchivedOrDeleted: () => void }) {
+function MemoryDetail({
+  id,
+  onSaved,
+  onArchivedOrDeleted,
+}: {
+  id: string
+  onSaved: () => void
+  onArchivedOrDeleted: () => void
+}) {
   const { invoke: getMemory } = useIpcInvoke('memory:get')
   const { invoke: updateMemory } = useIpcInvoke('memory:update')
   const { invoke: archiveMemory } = useIpcInvoke('memory:archive')
@@ -330,26 +630,56 @@ function MemoryDetail({ id, onSaved, onArchivedOrDeleted }: { id: string; onSave
   const [desc, setDesc] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // 【审查修复 C5】加载错误不再永久转圈：IPC 异常时给出错误态 + 关闭引导
+  //（条目可能刚被批量删除/同步清理，getMemory 抛错时 entry 恒 null）
+  const [loadError, setLoadError] = useState<string | null>(null)
   const load = useCallback(async () => {
-    const res = await getMemory({ id })
-    setEntry(res?.entry ?? null)
-    setBody(res?.body ?? '')
-    setDesc(res?.entry?.description ?? '')
+    setLoadError(null)
+    try {
+      const res = await getMemory({ id })
+      setEntry(res?.entry ?? null)
+      setBody(res?.body ?? '')
+      setDesc(res?.entry?.description ?? '')
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err))
+    }
   }, [getMemory, id])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+  }, [load])
 
-  if (entry == null) return <div className="mp_list_loading"><Spin /></div>
+  if (entry == null)
+    return (
+      <div className="mp_list_loading">
+        {loadError != null ? (
+          <>
+            <div>详情加载失败：{loadError}</div>
+            <div style={{ marginTop: 8, opacity: 0.7 }}>该记忆可能已被删除或网络异常，请关闭后重试。</div>
+          </>
+        ) : (
+          <Spin />
+        )}
+      </div>
+    )
 
   const save = async () => {
     setSaving(true)
     try {
       const patch: { description?: string; body?: string } = {}
       if (desc !== entry.description) patch.description = desc
-      // body 与当前磁盘版本对比
+      // body 与当前磁盘版本对比（同时取当前 version 作 CAS 期望值——
+      // 保存期间被其他修改推进则后端返回冲突，本地提示刷新，不静默覆盖）
       const cur = await getMemory({ id })
       if (body !== (cur.body ?? '')) patch.body = body
-      if (Object.keys(patch).length === 0) { message.info('无变更'); return }
-      await updateMemory({ id, ...patch })
+      if (Object.keys(patch).length === 0) {
+        message.info('无变更')
+        return
+      }
+      await updateMemory({
+        id,
+        ...patch,
+        ...(cur.entry?.version != null ? { expectedVersion: cur.entry.version } : {}),
+      })
       message.success('已保存')
       await load()
       onSaved()
@@ -364,7 +694,8 @@ function MemoryDetail({ id, onSaved, onArchivedOrDeleted }: { id: string; onSave
     <div className="mp_detail">
       {entry.invalidAt != null && (
         <div className="mp_warn">
-          此记忆已于 {new Date(entry.invalidAt).toLocaleString()} 失效{entry.supersededBy != null ? `，已被 ${entry.supersededBy} 取代` : ''}。仅作历史参考。
+          此记忆已于 {new Date(entry.invalidAt).toLocaleString()} 失效
+          {entry.supersededBy != null ? `，已被 ${entry.supersededBy} 取代` : ''}。仅作历史参考。
         </div>
       )}
       <div className="mp_field">
@@ -373,32 +704,101 @@ function MemoryDetail({ id, onSaved, onArchivedOrDeleted }: { id: string; onSave
       </div>
       <div className="mp_field">
         <label>正文（markdown）</label>
-        <TextArea value={body} onChange={(e) => setBody((e.target as HTMLTextAreaElement).value)} rows={14} />
+        <TextArea
+          value={body}
+          onChange={(e) => setBody((e.target as HTMLTextAreaElement).value)}
+          rows={14}
+        />
       </div>
       <div className="mp_meta_grid">
         <span>ID: {entry.id}</span>
-        <span>scope: {entry.scope}/{entry.scopeRef ?? '∅'}</span>
+        <span>
+          scope: {entry.scope}/{entry.scopeRef ?? '∅'}
+        </span>
         <span>类型: {entry.type}</span>
-        <span>置信度: {entry.confidence}</span>
+        <span>状态: {memoryEvidenceState(entry)}</span>
+        <span>legacy 置信: {entry.confidence}（仅参考）</span>
+        {entry.validUntil != null && (
+          <span>
+            {/* 【审查修复 C6】valid_until 是半开区间右端（date 精度 = 次日 00:00）——
+                直接展示右端会让人误读成"多出一天"。按日精度展示"最后适用日"
+                （右端 -1ms 的本地日期），与后端 describeValidUntil 口径一致 */}
+            最后适用日:{' '}
+            {isDatePrecision(entry.validUntilMeta)
+              ? new Date(entry.validUntil - 1).toLocaleDateString()
+              : new Date(entry.validUntil).toLocaleString()}
+            {isDatePrecision(entry.validUntilMeta) ? '（该日内仍适用）' : '（精确时间点）'}
+          </span>
+        )}
         <span>命中: {entry.hitCount}</span>
         <span>来源: {entry.sourceSessionId ?? '手工/对话'}</span>
         <span>创建: {new Date(entry.createdAt).toLocaleString()}</span>
         <span>更新: {new Date(entry.updatedAt).toLocaleString()}</span>
       </div>
       <div className="mp_detail_actions">
-        <Button type="primary" onClick={save} loading={saving}>保存</Button>
-        <Button onClick={async () => { await archiveMemory({ id }); message.success('已归档'); onArchivedOrDeleted() }}>归档</Button>
-        <Button danger onClick={() => Modal.confirm({
-          title: '永久删除该记忆？', okType: 'danger',
-          content: '删除后不可恢复（含 markdown 文件与索引）。',
-          onOk: async () => { await deleteMemory({ id }); message.success('已删除'); onArchivedOrDeleted() },
-        })}>删除</Button>
+        <Button type="primary" onClick={save} loading={saving}>
+          保存
+        </Button>
+        <Button
+          onClick={async () => {
+            try {
+              // S1B.4：返回 status（complete/blocked_locally/not_found）
+              const res = await archiveMemory({ id })
+              if (res?.status === 'blocked_locally') {
+                message.warning('已归档，但部分清理未完成（磁盘文件或索引待重试，详见日志）')
+              } else {
+                message.success('已归档')
+              }
+              onArchivedOrDeleted()
+            } catch (err) {
+              message.error(`归档失败：${err instanceof Error ? err.message : String(err)}`)
+            }
+          }}
+        >
+          归档
+        </Button>
+        <Button
+          danger
+          onClick={() =>
+            Modal.confirm({
+              title: '永久删除该记忆？',
+              okType: 'danger',
+              content:
+                '删除后不可恢复：将一并移除数据库记录、检索索引、markdown 文件与 MEMORY.md 索引。归档比删除安全，建议优先归档。',
+              onOk: async () => {
+                try {
+                  const res = await deleteMemory({ id })
+                  if (res?.status === 'blocked_locally') {
+                    message.warning(
+                      '已删除，但磁盘文件清理未完成（下次启动或重试时继续，详见日志）',
+                    )
+                  } else {
+                    message.success('已删除')
+                  }
+                  onArchivedOrDeleted()
+                } catch (err) {
+                  message.error(`删除失败：${err instanceof Error ? err.message : String(err)}`)
+                }
+              },
+            })
+          }
+        >
+          删除
+        </Button>
       </div>
     </div>
   )
 }
 
-function MemoryCreate({ defaultScope, defaultScopeRef, onDone }: { defaultScope: ScopeFilter; defaultScopeRef: string; onDone: () => void }) {
+function MemoryCreate({
+  defaultScope,
+  defaultScopeRef,
+  onDone,
+}: {
+  defaultScope: ScopeFilter
+  defaultScopeRef: string
+  onDone: () => void
+}) {
   const { invoke: createMemory } = useIpcInvoke('memory:create')
   const [cScope, setCScope] = useState<MemoryScope>(defaultScope)
   const [cScopeRef, setCScopeRef] = useState(defaultScopeRef)
@@ -407,17 +807,32 @@ function MemoryCreate({ defaultScope, defaultScopeRef, onDone }: { defaultScope:
   const [desc, setDesc] = useState('')
   const [body, setBody] = useState('')
   const [entities, setEntities] = useState('')
+  // 【S2.6 / N5】有效期（可选，date 精度按本机时区；到期不再作为当前事实）
+  const [validUntil, setValidUntil] = useState('')
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
-    if (!name.trim() || !desc.trim()) { message.warning('name 与 description 必填'); return }
+    if (!name.trim() || !desc.trim()) {
+      message.warning('name 与 description 必填')
+      return
+    }
     setSaving(true)
     try {
-      const ents = entities.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean)
+      const ents = entities
+        .split(/[,，\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
       await createMemory({
-        scope: cScope, scopeRef: cScope === 'user' ? null : cScopeRef.trim() || null, type,
-        name: name.trim(), description: desc.trim(), body,
+        scope: cScope,
+        scopeRef: cScope === 'user' ? null : cScopeRef.trim() || null,
+        type,
+        name: name.trim(),
+        description: desc.trim(),
+        body,
         ...(ents.length > 0 ? { entities: ents } : {}),
+        ...(validUntil.trim() !== ''
+          ? { validUntil: validUntil.trim(), validUntilPrecision: 'date' as const }
+          : {}),
       })
       message.success('已新增')
       onDone()
@@ -432,21 +847,45 @@ function MemoryCreate({ defaultScope, defaultScopeRef, onDone }: { defaultScope:
     <div className="mp_create">
       <div className="mp_field">
         <label>层级 scope</label>
-        <Segmented value={cScope} onChange={(v) => setCScope(v as MemoryScope)} options={[{ label: 'User', value: 'user' }, { label: 'Project', value: 'project' }, { label: 'Agent', value: 'agent' }]} />
+        <Segmented
+          value={cScope}
+          onChange={(v) => setCScope(v as MemoryScope)}
+          options={[
+            { label: 'User', value: 'user' },
+            { label: 'Project', value: 'project' },
+            { label: 'Agent', value: 'agent' },
+          ]}
+        />
       </div>
       {cScope !== 'user' && (
         <div className="mp_field">
           <label>{cScope === 'project' ? 'workspaceId' : 'agentId'}</label>
-          <LobeInput value={cScopeRef} onChange={(e) => setCScopeRef((e.target as HTMLInputElement).value)} />
+          <LobeInput
+            value={cScopeRef}
+            onChange={(e) => setCScopeRef((e.target as HTMLInputElement).value)}
+          />
         </div>
       )}
       <div className="mp_field">
         <label>type</label>
-        <Segmented value={type} onChange={(v) => setType(v as MemoryType)} options={[{ label: 'User', value: 'user' }, { label: 'Feedback', value: 'feedback' }, { label: 'Project', value: 'project' }, { label: 'Reference', value: 'reference' }]} />
+        <Segmented
+          value={type}
+          onChange={(v) => setType(v as MemoryType)}
+          options={[
+            { label: 'User', value: 'user' },
+            { label: 'Feedback', value: 'feedback' },
+            { label: 'Project', value: 'project' },
+            { label: 'Reference', value: 'reference' },
+          ]}
+        />
       </div>
       <div className="mp_field">
         <label>name（kebab-case，scope 内唯一）</label>
-        <LobeInput value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="如 prefer-arco-over-radix" />
+        <LobeInput
+          value={name}
+          onChange={(e) => setName((e.target as HTMLInputElement).value)}
+          placeholder="如 prefer-arco-over-radix"
+        />
       </div>
       <div className="mp_field">
         <label>description（≤80 字）</label>
@@ -454,13 +893,31 @@ function MemoryCreate({ defaultScope, defaultScopeRef, onDone }: { defaultScope:
       </div>
       <div className="mp_field">
         <label>正文 body（markdown，feedback/project 建议含 Why / How to apply）</label>
-        <TextArea value={body} onChange={(e) => setBody((e.target as HTMLTextAreaElement).value)} rows={6} />
+        <TextArea
+          value={body}
+          onChange={(e) => setBody((e.target as HTMLTextAreaElement).value)}
+          rows={6}
+        />
+      </div>
+      <div className="mp_field">
+        <label>有效期至（可选，YYYY-MM-DD：该日内仍适用，之后仅作历史参考）</label>
+        <LobeInput
+          value={validUntil}
+          onChange={(e) => setValidUntil((e.target as HTMLInputElement).value)}
+          placeholder="如 2026-10-31（留空 = 长期）"
+        />
       </div>
       <div className="mp_field">
         <label>实体（逗号分隔，可选）</label>
-        <LobeInput value={entities} onChange={(e) => setEntities((e.target as HTMLInputElement).value)} placeholder="如 Arco Design, vite, React" />
+        <LobeInput
+          value={entities}
+          onChange={(e) => setEntities((e.target as HTMLInputElement).value)}
+          placeholder="如 Arco Design, vite, React"
+        />
       </div>
-      <Button type="primary" onClick={submit} loading={saving}>创建</Button>
+      <Button type="primary" onClick={submit} loading={saving}>
+        创建
+      </Button>
     </div>
   )
 }
@@ -485,7 +942,8 @@ function MemorySettings() {
 
   const getStr = (k: string) => (typeof cfg[k] === 'string' ? (cfg[k] as string) : '')
   const getNum = (k: string) => (typeof cfg[k] === 'number' ? String(cfg[k]) : '')
-  const getBool = (k: string, dflt: boolean) => (typeof cfg[k] === 'boolean' ? (cfg[k] as boolean) : dflt)
+  const getBool = (k: string, dflt: boolean) =>
+    typeof cfg[k] === 'boolean' ? (cfg[k] as boolean) : dflt
   const set = (k: string, v: unknown) => {
     // 空字符串 / null / undefined 统一视为"未设置"：本地状态移除该 key，
     // IPC 发送 value=null 触发后端 repo.delete()。这样 Provider 下拉清除、
@@ -516,9 +974,16 @@ function MemorySettings() {
     return t === 'image' || t === 'voice' || t === 'video'
   }
   const extractionProviderOptions = useMemo(
-    () => providers
-      .filter((p) => !isResponsesApiProvider(p) && !isEmbeddingOnlyProvider(p) && !isMultimediaProvider(p))
-      .map((p) => ({ label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`, value: p.id })),
+    () =>
+      providers
+        .filter(
+          (p) =>
+            !isResponsesApiProvider(p) && !isEmbeddingOnlyProvider(p) && !isMultimediaProvider(p),
+        )
+        .map((p) => ({
+          label: `${p.name}（${p.provider}${isAnthropicProvider(p) ? ' · 原生 /v1/messages' : ' · OpenAI兼容'}）`,
+          value: p.id,
+        })),
     [providers],
   )
   // 向量 provider 必须显式声明 codexApiKind='embedding'（用户在 provider 编辑页选 Embeddings）。
@@ -527,9 +992,10 @@ function MemorySettings() {
   const isEmbeddingProvider = (p: ProviderProfile): boolean =>
     (p as ProviderProfile & { codexApiKind?: string }).codexApiKind === 'embedding'
   const embeddingProviderOptions = useMemo(
-    () => providers
-      .filter((p) => isOpenAICompatibleProvider(p) && isEmbeddingProvider(p))
-      .map((p) => ({ label: `${p.name}（${p.provider} · Embeddings）`, value: p.id })),
+    () =>
+      providers
+        .filter((p) => isOpenAICompatibleProvider(p) && isEmbeddingProvider(p))
+        .map((p) => ({ label: `${p.name}（${p.provider} · Embeddings）`, value: p.id })),
     [providers],
   )
   // 选中 provider 的可用模型（从 provider:list 返回的 modelIds 生成）
@@ -550,7 +1016,10 @@ function MemorySettings() {
     [providers, cfg.embeddingProviderId],
   )
   // 选 provider 时，若当前 model 不在新 provider 的 modelIds 里，清空 model（防跨 provider 串味）
-  const pickProvider = (key: 'extractionProviderId' | 'embeddingProviderId', providerId: string) => {
+  const pickProvider = (
+    key: 'extractionProviderId' | 'embeddingProviderId',
+    providerId: string,
+  ) => {
     const modelKey = key === 'extractionProviderId' ? 'extractionModel' : 'embeddingModel'
     const modelIds = providers.find((p) => p.id === providerId)?.modelIds ?? []
     const curModel = getStr(modelKey)
@@ -564,67 +1033,232 @@ function MemorySettings() {
     <div className="mp_settings">
       <section className="mp_settings_section">
         <h4>总开关</h4>
-        <div className="mp_settings_row"><span>启用长期记忆（关闭后注入/写入/整合全停）</span><Switch checked={getBool('enabled', true)} onChange={(v) => set('enabled', v)} /></div>
+        <div className="mp_settings_row">
+          <span>启用长期记忆（关闭后注入/写入/整合全停）</span>
+          <Switch checked={getBool('enabled', true)} onChange={(v) => set('enabled', v)} />
+        </div>
       </section>
       <section className="mp_settings_section">
-        <h4>抽取模型<span className="mp_section_hint">（写入必需；支持 anthropic 原生 + OpenAI 兼容 /chat，不支持 responses API）</span></h4>
-        <div className="mp_field"><label>Provider（可清除，清除后回退到对话模型）</label><LobeSelect value={getStr('extractionProviderId') || undefined} onChange={(v) => pickProvider('extractionProviderId', (v as string) ?? '')} options={extractionProviderOptions} placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）" allowClear showSearch /></div>
+        <h4>
+          抽取模型
+          <span className="mp_section_hint">
+            （写入必需；支持 anthropic 原生 + OpenAI 兼容 /chat，不支持 responses API）
+          </span>
+        </h4>
         <div className="mp_field">
-          <label>模型名{extractionModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写）'}</label>
+          <label>Provider（可清除，清除后回退到对话模型）</label>
+          <LobeSelect
+            value={getStr('extractionProviderId') || undefined}
+            onChange={(v) => pickProvider('extractionProviderId', (v as string) ?? '')}
+            options={extractionProviderOptions}
+            placeholder="选择抽取 provider（anthropic 或 OpenAI 兼容）"
+            allowClear
+            showSearch
+          />
+        </div>
+        <div className="mp_field">
+          <label>
+            模型名
+            {extractionModelOptions.length > 0
+              ? '（从该 provider 可用模型选）'
+              : '（该 provider 未预拉模型列表，手动填写）'}
+          </label>
           {extractionModelOptions.length > 0 ? (
-            <LobeSelect value={getStr('extractionModel') || undefined} onChange={(v) => set('extractionModel', (v as string) ?? '')} options={extractionModelOptions} placeholder="选择抽取模型" allowClear showSearch />
+            <LobeSelect
+              value={getStr('extractionModel') || undefined}
+              onChange={(v) => set('extractionModel', (v as string) ?? '')}
+              options={extractionModelOptions}
+              placeholder="选择抽取模型"
+              allowClear
+              showSearch
+            />
           ) : (
-            <LobeInput value={getStr('extractionModel')} onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)} placeholder="留空则回退到对话模型" />
+            <LobeInput
+              value={getStr('extractionModel')}
+              onChange={(e) => set('extractionModel', (e.target as HTMLInputElement).value)}
+              placeholder="留空则回退到对话模型"
+            />
           )}
         </div>
-        <div className="mp_settings_hint_inline">未配置时自动回退到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认模型）。</div>
-        <Button loading={testing} onClick={async () => {
-          setTesting(true)
-          try {
-            const r = await testExtraction({})
-            if (r?.ok) {
-              const via = r.source === 'fallback' ? '（回退到对话模型，settings 未配）' : `（settings 显式配置：${r.model ?? '?'}）`
-              message.success(`抽取配置可用${via}${r.sample != null ? `，返回：${r.sample.slice(0, 50)}` : ''}`)
-            } else {
-              message.warning(`抽取配置不可用：${r?.reason ?? '未知'}${r?.source === 'none' ? '（settings 未配且无对话模型回退上下文；会话中实际使用时会回退）' : ''}`)
+        <div className="mp_settings_hint_inline">
+          未配置时自动回退到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认模型）。
+        </div>
+        <Button
+          loading={testing}
+          onClick={async () => {
+            setTesting(true)
+            try {
+              const r = await testExtraction({})
+              if (r?.ok) {
+                const via =
+                  r.source === 'fallback'
+                    ? '（回退到对话模型，settings 未配）'
+                    : `（settings 显式配置：${r.model ?? '?'}）`
+                message.success(
+                  `抽取配置可用${via}${r.sample != null ? `，返回：${r.sample.slice(0, 50)}` : ''}`,
+                )
+              } else {
+                message.warning(
+                  `抽取配置不可用：${r?.reason ?? '未知'}${r?.source === 'none' ? '（settings 未配且无对话模型回退上下文；会话中实际使用时会回退）' : ''}`,
+                )
+              }
+            } catch (err) {
+              message.error(`测试失败：${err instanceof Error ? err.message : String(err)}`)
+            } finally {
+              setTesting(false)
             }
-          } catch (err) { message.error(`测试失败：${err instanceof Error ? err.message : String(err)}`) }
-          finally { setTesting(false) }
-        }}>测试抽取配置</Button>
+          }}
+        >
+          测试抽取配置
+        </Button>
       </section>
       <section className="mp_settings_section">
-        <h4>向量模型<span className="mp_section_hint">（可选，不配则 FTS-only；仅 OpenAI 兼容 /chat 风格，不支持 anthropic 与 responses API）</span></h4>
-        <div className="mp_field"><label>Provider（可清除）</label><LobeSelect value={getStr('embeddingProviderId') || undefined} onChange={(v) => pickProvider('embeddingProviderId', (v as string) ?? '')} options={embeddingProviderOptions} placeholder="选择 embedding provider" allowClear showSearch /></div>
+        <h4>
+          向量模型
+          <span className="mp_section_hint">
+            （可选，不配则 FTS-only；仅 OpenAI 兼容 /chat 风格，不支持 anthropic 与 responses API）
+          </span>
+        </h4>
         <div className="mp_field">
-          <label>模型名{embeddingModelOptions.length > 0 ? '（从该 provider 可用模型选）' : '（该 provider 未预拉模型列表，手动填写，如 text-embedding-3-small）'}</label>
+          <label>Provider（可清除）</label>
+          <LobeSelect
+            value={getStr('embeddingProviderId') || undefined}
+            onChange={(v) => pickProvider('embeddingProviderId', (v as string) ?? '')}
+            options={embeddingProviderOptions}
+            placeholder="选择 embedding provider"
+            allowClear
+            showSearch
+          />
+        </div>
+        <div className="mp_field">
+          <label>
+            模型名
+            {embeddingModelOptions.length > 0
+              ? '（从该 provider 可用模型选）'
+              : '（该 provider 未预拉模型列表，手动填写，如 text-embedding-3-small）'}
+          </label>
           {embeddingModelOptions.length > 0 ? (
-            <LobeSelect value={getStr('embeddingModel') || undefined} onChange={(v) => set('embeddingModel', (v as string) ?? '')} options={embeddingModelOptions} placeholder="选择 embedding 模型" allowClear showSearch />
+            <LobeSelect
+              value={getStr('embeddingModel') || undefined}
+              onChange={(v) => set('embeddingModel', (v as string) ?? '')}
+              options={embeddingModelOptions}
+              placeholder="选择 embedding 模型"
+              allowClear
+              showSearch
+            />
           ) : (
-            <LobeInput value={getStr('embeddingModel')} onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)} placeholder="留空则 FTS-only" />
+            <LobeInput
+              value={getStr('embeddingModel')}
+              onChange={(e) => set('embeddingModel', (e.target as HTMLInputElement).value)}
+              placeholder="留空则 FTS-only"
+            />
           )}
         </div>
-        <Button loading={rebuilding} onClick={async () => {
-          setRebuilding(true)
-          try {
-            const r = await rebuildVectors({})
-            if (r?.ok) message.success('向量表已重建，后台正按新模型回填全部记忆（条目多时可能持续几分钟，期间向量检索会逐步恢复）。')
-            else message.warning(`未重建：${r?.reason ?? '未知'}`)
-          } catch (err) { message.error(`重建失败：${err instanceof Error ? err.message : String(err)}`) }
-          finally { setRebuilding(false) }
-        }}>重建向量索引</Button>
+        <Button
+          loading={rebuilding}
+          onClick={async () => {
+            setRebuilding(true)
+            try {
+              const r = await rebuildVectors({})
+              if (r?.ok)
+                message.success(
+                  '向量表已重建，后台正按新模型回填全部记忆（条目多时可能持续几分钟，期间向量检索会逐步恢复）。',
+                )
+              else message.warning(`未重建：${r?.reason ?? '未知'}`)
+            } catch (err) {
+              message.error(`重建失败：${err instanceof Error ? err.message : String(err)}`)
+            } finally {
+              setRebuilding(false)
+            }
+          }}
+        >
+          重建向量索引
+        </Button>
       </section>
       <section className="mp_settings_section">
         <h4>整合 job</h4>
-        <div className="mp_settings_row"><span>启用整合</span><Switch checked={getBool('consolidationEnabled', true)} onChange={(v) => set('consolidationEnabled', v)} /></div>
-        <div className="mp_field"><label>触发阈值（条数，默认 30；真机测试可设 2；留空用默认）</label><LobeInput value={getNum('consolidationThreshold')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('consolidationThreshold', null); return } const n = Number(raw); if (Number.isFinite(n)) set('consolidationThreshold', n) }} placeholder="留空用默认 30" /></div>
-        <div className="mp_field"><label>触发间隔（天，默认 7；真机测试可设 0.01；留空用默认）</label><LobeInput value={getNum('consolidationIntervalDays')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('consolidationIntervalDays', null); return } const n = Number(raw); if (Number.isFinite(n)) set('consolidationIntervalDays', n) }} placeholder="留空用默认 7" /></div>
+        <div className="mp_settings_row">
+          <span>启用整合</span>
+          <Switch
+            checked={getBool('consolidationEnabled', true)}
+            onChange={(v) => set('consolidationEnabled', v)}
+          />
+        </div>
+        <div className="mp_field">
+          <label>触发阈值（条数，默认 30；真机测试可设 2；留空用默认）</label>
+          <LobeInput
+            value={getNum('consolidationThreshold')}
+            onChange={(e) => {
+              const raw = (e.target as HTMLInputElement).value
+              if (raw === '') {
+                set('consolidationThreshold', null)
+                return
+              }
+              const n = Number(raw)
+              if (Number.isFinite(n)) set('consolidationThreshold', n)
+            }}
+            placeholder="留空用默认 30"
+          />
+        </div>
+        <div className="mp_field">
+          <label>触发间隔（天，默认 7；真机测试可设 0.01；留空用默认）</label>
+          <LobeInput
+            value={getNum('consolidationIntervalDays')}
+            onChange={(e) => {
+              const raw = (e.target as HTMLInputElement).value
+              if (raw === '') {
+                set('consolidationIntervalDays', null)
+                return
+              }
+              const n = Number(raw)
+              if (Number.isFinite(n)) set('consolidationIntervalDays', n)
+            }}
+            placeholder="留空用默认 7"
+          />
+        </div>
       </section>
       <section className="mp_settings_section">
         <h4>检索调参（高级）</h4>
-        <div className="mp_field"><label>会话注入 token 上限（默认 4000；留空用默认）</label><LobeInput value={getNum('maxInjectTokens')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('maxInjectTokens', null); return } const n = Number(raw); if (Number.isFinite(n)) set('maxInjectTokens', n) }} placeholder="留空用默认 4000" /></div>
-        <div className="mp_field"><label>时间衰减 λ（默认 0.01；越大旧记忆沉降越快；留空用默认）</label><LobeInput value={getNum('timeDecayLambda')} onChange={(e) => { const raw = (e.target as HTMLInputElement).value; if (raw === '') { set('timeDecayLambda', null); return } const n = Number(raw); if (Number.isFinite(n)) set('timeDecayLambda', n) }} placeholder="留空用默认 0.01" /></div>
+        <div className="mp_field">
+          <label>会话注入 token 上限（默认 4000；留空用默认）</label>
+          <LobeInput
+            value={getNum('maxInjectTokens')}
+            onChange={(e) => {
+              const raw = (e.target as HTMLInputElement).value
+              if (raw === '') {
+                set('maxInjectTokens', null)
+                return
+              }
+              const n = Number(raw)
+              if (Number.isFinite(n)) set('maxInjectTokens', n)
+            }}
+            placeholder="留空用默认 4000"
+          />
+        </div>
+        <div className="mp_field">
+          <label>时间衰减 λ（默认 0.01；越大旧记忆沉降越快；留空用默认）</label>
+          <LobeInput
+            value={getNum('timeDecayLambda')}
+            onChange={(e) => {
+              const raw = (e.target as HTMLInputElement).value
+              if (raw === '') {
+                set('timeDecayLambda', null)
+                return
+              }
+              const n = Number(raw)
+              if (Number.isFinite(n)) set('timeDecayLambda', n)
+            }}
+            placeholder="留空用默认 0.01"
+          />
+        </div>
       </section>
-      <div className="mp_settings_hint">配置改完<b>下一个新会话生效</b>。抽取（extract）支持 <b>OpenAI 兼容 provider</b>（deepseek/openrouter/openai/自部署 vLLM）和 <b>anthropic 原生</b>（claude，provider_type=anthropic）；<b>未配置时自动回退</b>到当前会话 / @mention agent 的对话模型（团队主持 agent 用会话默认）。向量（embedding）仅支持 OpenAI 兼容（anthropic 本身不提供 embedding 模型）；不配向量则自动 FTS-only。</div>
+      <div className="mp_settings_hint">
+        配置改完<b>下一个新会话生效</b>。抽取（extract）支持 <b>OpenAI 兼容 provider</b>
+        （deepseek/openrouter/openai/自部署 vLLM）和 <b>anthropic 原生</b>
+        （claude，provider_type=anthropic）；<b>未配置时自动回退</b>到当前会话 / @mention agent
+        的对话模型（团队主持 agent 用会话默认）。向量（embedding）仅支持 OpenAI 兼容（anthropic
+        本身不提供 embedding 模型）；不配向量则自动 FTS-only。
+      </div>
     </div>
   )
 }

@@ -15,10 +15,7 @@ import type { MemorySearchService, MemorySearchHit } from './memory-search.servi
 
 const NOW = Date.now()
 
-function makeEntry(
-  id: string,
-  overrides: Partial<MemoryEntryRow> = {},
-): MemoryEntryRow {
+function makeEntry(id: string, overrides: Partial<MemoryEntryRow> = {}): MemoryEntryRow {
   return {
     id,
     scope: 'user',
@@ -32,6 +29,17 @@ function makeEntry(
     last_hit_at: null,
     source_session_id: null,
     archived: 0,
+    version: 1,
+    content_hash: null,
+    source_event_id: null,
+    source_turn_id: null,
+    author_role: null,
+    author_agent_id: null,
+    extraction_kind: null,
+    extraction_model: null,
+    evidence_status: 'available',
+    valid_until: null,
+    valid_until_meta: null,
     created_at: NOW,
     updated_at: NOW,
     valid_from: NOW,
@@ -42,9 +50,7 @@ function makeEntry(
 }
 
 /** 把 listByScope 的返回值按 (scope, scopeRef) 组织，支持 type 过滤 */
-function makeRepo(
-  byScope: Record<string, MemoryEntryRow[]>,
-): never {
+function makeRepo(byScope: Record<string, MemoryEntryRow[]>): never {
   const listByScope = (
     scope: string,
     scopeRef: string | null,
@@ -63,11 +69,17 @@ function makeSearch(hitsByQuery: Map<string, MemoryEntryRow[]>): {
 } {
   const calls: string[] = []
   const svc = {
-    search: async (query: string, _opts?: { scopes?: MemoryScopeFilter[]; limit?: number }):
-      Promise<MemorySearchHit[] | null> => {
+    search: async (
+      query: string,
+      _opts?: { scopes?: MemoryScopeFilter[]; limit?: number },
+    ): Promise<MemorySearchHit[] | null> => {
       calls.push(query)
       const hits = hitsByQuery.get(query) ?? []
-      return hits.map((entry, i) => ({ entry, score: 10 - i, sources: ['fts'] as Array<'fts' | 'vector'> }))
+      return hits.map((entry, i) => ({
+        entry,
+        score: 10 - i,
+        sources: ['fts'] as Array<'fts' | 'vector'>,
+      }))
     },
   } as never as MemorySearchService
   return { svc, calls }
@@ -75,7 +87,11 @@ function makeSearch(hitsByQuery: Map<string, MemoryEntryRow[]>): {
 
 describe('MemoryReaderService V2 injection (search-driven)', () => {
   it('feedback always injected even when search returns nothing for it', async () => {
-    const feedback = makeEntry('fb1', { type: 'feedback', hit_count: 5, description: '别用 console.log' })
+    const feedback = makeEntry('fb1', {
+      type: 'feedback',
+      hit_count: 5,
+      description: '别用 console.log',
+    })
     const repo = makeRepo({ 'user:': [feedback] })
     const { svc } = makeSearch(new Map([['seed', []]])) // search returns nothing
     const reader = new MemoryReaderService(repo, {} as never, () => null, svc)
@@ -113,7 +129,9 @@ describe('MemoryReaderService V2 injection (search-driven)', () => {
     const u1 = makeEntry('u1', { type: 'user' })
     const repo = makeRepo({ 'user:': [u1] })
     const throwingSearch = {
-      search: async () => { throw new Error('boom') },
+      search: async () => {
+        throw new Error('boom')
+      },
     } as never as MemorySearchService
     const reader = new MemoryReaderService(repo, {} as never, () => null, throwingSearch)
     const res = await reader.loadForSession({ workspaceId: 'ws', agentId: 'a1', seedQuery: 'seed' })
