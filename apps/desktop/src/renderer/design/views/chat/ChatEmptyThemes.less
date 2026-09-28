@@ -150,6 +150,72 @@
   line-height: 1.12;
   text-align: left;
 }
+
+/*
+ * 问候语旁的「换一句」按钮：极小、低干扰。默认直接用 --eh-muted（细线条图标
+ * 再叠 color-mix 淡化就会淡到看不见，实测过），hover / 键盘聚焦才提亮为主色；
+ * 刷新中转为 accent 色并做呼吸脉冲。
+ * 尺寸走控件小档（24px 命中区），与标题基线对齐（标题行已 align-items: flex-end）。
+ *
+ * 图标用 Sparkles：14px 实尺寸实测下，Refresh/RotateCw 的直角折线箭头糊成一团，
+ * Shuffle 的曲线糊掉只剩交叉主干、退化成「✕」（有误读成关闭的风险），
+ * 只有这个整体轮廓的图标在 14px 下仍能辨认 —— 这是被反馈「丑」的根因所在。
+ */
+.chat-main-empty[data-empty-theme] .single-empty-refresh {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 3px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--eh-muted);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-refresh:hover:not(:disabled),
+.chat-main-empty[data-empty-theme] .single-empty-refresh:focus-visible {
+  background: color-mix(in srgb, var(--eh-accent) 12%, transparent);
+  color: var(--eh-accent);
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-refresh:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--eh-accent) 42%, transparent);
+  outline-offset: 1px;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-refresh:disabled {
+  cursor: default;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-refresh.is-refreshing {
+  color: var(--eh-accent);
+}
+
+/* 呼吸脉冲而非自转：Sparkles 是四角星，旋转看不出方向感；脉冲在 13px 上也够醒目。 */
+.chat-main-empty[data-empty-theme] .single-empty-refresh.is-refreshing svg {
+  animation: empty-hero-refresh-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes empty-hero-refresh-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+}
 /* Composer surface stays functionally shared while the empty theme can tune its material. */
 .chat-main-empty[data-empty-theme] .composer-wrap {
   position: relative;
@@ -559,6 +625,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-main-empty[data-empty-theme] {
+    transition: none;
+  }
+
+  /* 呼吸脉冲也属于循环动效：尊重系统设置，改为只保留 accent 静态色反馈。 */
+  .chat-main-empty[data-empty-theme] .single-empty-refresh,
+  .chat-main-empty[data-empty-theme] .single-empty-refresh svg {
+    animation: none;
     transition: none;
   }
 }

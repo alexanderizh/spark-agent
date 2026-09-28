@@ -574,6 +574,14 @@ export const SessionExtractTitleRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
 
+/** 空会话 Hero 问候语：请求体全可选（空会话没有 sessionId 也必须能调）。 */
+export const EmptyHeroGreetingRequestSchema = z.object({
+  // 刻意不用 SessionIdSchema（uuid 强校验）：它只是可选的档位回退提示，
+  // 一旦被拒会让整条 IPC 报错、问候语直接降级；未知 id 由主进程安全忽略。
+  sessionId: z.string().min(1).max(200).optional(),
+  forceRefresh: z.boolean().optional(),
+})
+
 export const SessionSetMaxIterationsRequestSchema = z.object({
   sessionId: SessionIdSchema,
   maxIterations: z.number().int().min(1).max(1000).nullable(),
@@ -1090,6 +1098,7 @@ export const IpcSchemaRegistry = {
   'session:search': SessionSearchRequestSchema,
   'session:update': SessionUpdateRequestSchema,
   'session:extract-title': SessionExtractTitleRequestSchema,
+  'greeting:get': EmptyHeroGreetingRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
   'session:set-goal': SessionSetGoalRequestSchema,

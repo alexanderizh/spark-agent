@@ -613,6 +613,35 @@ export type SessionExtractTitleResponse =
   | { ok: true; title: string }
   | { ok: false; code: SessionExtractTitleFailureCode }
 
+/**
+ * 空会话 Hero 问候语：由模型生成的整句问候（如「早上好，愿你今日灵感如泉」），
+ * 与写死的「{时段}好，继续推进」互为兜底。
+ *
+ * 结果按 2 小时窗口缓存在 app_settings(greeting/emptyHero)，窗口内直接命中缓存，
+ * 不重复调用模型。任何失败（未配置模型 / 网络错误 / 响应为空）都返回 ok:false，
+ * 渲染端据此回退到本地写死文案 —— 模型调用绝不阻塞空会话首屏。
+ */
+export interface EmptyHeroGreetingRequest {
+  /** 当前会话 id（可选）：用于「当前会话模型」档位回退。纯空会话可省略。 */
+  sessionId?: string
+  /** 忽略 2 小时缓存强制重新生成（调试 / 手动刷新用）。 */
+  forceRefresh?: boolean
+}
+
+/** 文案来源：model = 本次模型生成；cache = 命中 2 小时缓存。 */
+export type EmptyHeroGreetingSource = 'model' | 'cache'
+
+export type EmptyHeroGreetingResponse =
+  | {
+      ok: true
+      text: string
+      source: EmptyHeroGreetingSource
+      /** 实际产出该文案的模型 id，便于排查「用的哪个档位」。 */
+      model?: string
+    }
+  /** 失败原因（稳定英文串，仅用于日志与排查，不直接展示给用户）。 */
+  | { ok: false; reason: string }
+
 export interface SessionDeleteRequest {
   sessionId: SessionId
 }
@@ -7352,6 +7381,8 @@ export interface IpcChannelMap
   'session:search': [SessionSearchRequest, SessionSearchResponse]
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
   'session:extract-title': [SessionExtractTitleRequest, SessionExtractTitleResponse]
+  // 空会话 Hero 问候语（模型生成 + 2 小时缓存 + 渲染端写死兜底）
+  'greeting:get': [EmptyHeroGreetingRequest, EmptyHeroGreetingResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
   'session:set-goal': [SessionSetGoalRequest, SessionGoalResponse]

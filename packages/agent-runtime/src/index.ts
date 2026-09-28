@@ -164,6 +164,20 @@ export {
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'
+export {
+  GreetingService,
+  sanitizeGreeting,
+  GREETING_SETTINGS_CATEGORY,
+  GREETING_SETTINGS_KEY,
+  GREETING_REFRESH_INTERVAL_MS,
+  GREETING_FAILURE_COOLDOWN_MS,
+  GREETING_MAX_CHARS,
+  type GreetingCompletion,
+  type GreetingCompletionResult,
+  type GreetingModelRef,
+  type GreetingModelSource,
+  type GreetingServiceDeps,
+} from './services/greeting.service.js'
 export { AutoRouterService } from './services/auto-router.service.js'
 export {
   McpService,

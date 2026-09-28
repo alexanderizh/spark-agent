@@ -1,0 +1,308 @@
+/**
+ * @module greeting.service
+ *
+ * 空会话 Hero 问候语生成：按 2 小时窗口缓存，向模型要一句整句问候
+ * （古诗词化用 / 鼓励话语 / 优美短句），失败一律降级 —— 由渲染端回退到
+ * 本地写死的「{时段}好，继续推进」，绝不阻塞空会话首屏。
+ *
+ * 协议无关：模型调用统一走注入的 complete()（即 ModelService.complete），
+ * 由它按 provider_type 分派两套差异化的调用方式：
+ *   - anthropic        → POST /v1/messages，x-api-key/Bearer 双投放 + anthropic-version，system 独立字段
+ *   - 其它（openai 兼容）→ POST /chat/completions，Authorization: Bearer，system 作为 messages[0]
+ * 本服务不感知协议细节，只负责「选哪个模型、写什么 prompt、怎么清洗、怎么缓存」。
+ */
+
+import type { EmptyHeroGreetingRequest, EmptyHeroGreetingResponse } from '@spark/protocol'
+import { createLogger, getLocalTimeGreeting } from '@spark/shared'
+
+const log = createLogger('greeting.service')
+
+/** 缓存落点：app_settings(greeting/emptyHero)，与其它 tweak 同构，零新增表。 */
+export const GREETING_SETTINGS_CATEGORY = 'greeting'
+export const GREETING_SETTINGS_KEY = 'emptyHero'
+
+/** 缓存保鲜窗口：窗口内直接复用，不再调用模型。 */
+export const GREETING_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000
+/**
+ * 失败冷却：生成失败后短时间内不再重试，避免空会话每次挂载都打一次
+ * 注定失败的请求（无网络 / key 失效时尤其明显）。
+ */
+export const GREETING_FAILURE_COOLDOWN_MS = 5 * 60 * 1000
+
+/** 文案总长上限（含「{时段}好，」前缀）。 */
+export const GREETING_MAX_CHARS = 24
+export const GREETING_MAX_OUTPUT_TOKENS = 256
+export const GREETING_REQUEST_TIMEOUT_MS = 12_000
+/**
+ * 生成型任务需要多样性：ModelService.complete 默认 temperature=0（确定性），
+ * 不显式抬高温度会导致每 2 小时产出完全相同的一句话。
+ */
+export const GREETING_TEMPERATURE = 0.9
+
+/** 模型返回了内容但清洗后不可用（只有前缀 / 纯标点）时的失败原因。 */
+const EMPTY_GREETING_REASON = 'empty greeting after sanitize'
+
+/** 模型档位，仅用于日志与排查「这句话是哪个档位产出的」。 */
+export type GreetingModelSource = 'extraction' | 'default-chat' | 'session'
+
+export interface GreetingModelRef {
+  providerId: string
+  model: string
+  source: GreetingModelSource
+}
+
+export type GreetingCompletionResult =
+  | { available: true; text: string }
+  | { available: false; reason: string }
+
+/** complete 的形状与 ModelService.complete 兼容（结构化直接传入即可）。 */
+export type GreetingCompletion = (
+  prompt: string,
+  opts: {
+    providerId: string
+    model: string
+    systemPrompt: string
+    maxTokens: number
+    timeoutMs: number
+    temperature: number
+  },
+) => Promise<GreetingCompletionResult>
+
+export interface GreetingServiceDeps {
+  /** 唯一的模型调用入口（ModelService.complete），自带协议分派与失败降级。 */
+  complete: GreetingCompletion
+  settingsGet: (category: string, key: string) => unknown | null
+  settingsSet: (category: string, key: string, value: unknown) => void
+  /** 二级档位：配置的默认对话模型（默认渠道的 defaultModel）。可异步（渠道服务为 async）。 */
+  getDefaultChatModel: () => GreetingModelRef | null | Promise<GreetingModelRef | null>
+  /** 三级档位：当前会话使用的模型（会话级 model_id）。 */
+  getSessionChatModel: (sessionId: string | undefined) => GreetingModelRef | null
+  /** 便于测试注入时间源。 */
+  now?: () => number
+}
+
+interface GreetingCacheRecord {
+  /** 上一次成功生成的文案。 */
+  text?: string
+  /** 该文案的生成时刻（epoch ms）。 */
+  generatedAt?: number
+  /** 产出该文案的模型 id。 */
+  model?: string
+  /** 最近一次尝试（成功或失败）的时刻（epoch ms）。 */
+  attemptAt?: number
+  /** 最近一次失败原因；成功时被清空。 */
+  lastError?: string
+}
+
+const GREETING_SYSTEM_PROMPT =
+  '你是 Spark 工作台的问候语撰写者。只输出问候语本身，不要解释、不加引号、不使用表情符号。'
+
+/** 风格轮换：与随机温度叠加，降低连续两次生成撞句的概率。 */
+const GREETING_STYLES = [
+  '化用一句古诗词的意境（不必逐字引用，取其凝练与画面感）',
+  '写一句朴素而温暖的鼓励',
+  '写一句有画面感的优美短句',
+  '写一句给长期写代码的人的打气话',
+]
+
+export class GreetingService {
+  private readonly now: () => number
+
+  constructor(private readonly deps: GreetingServiceDeps) {
+    this.now = deps.now ?? (() => Date.now())
+  }
+
+  /**
+   * 取空会话问候语。永不抛异常：
+   *   - 命中 2 小时缓存 → ok:true + source:'cache'
+   *   - 本次生成成功   → ok:true + source:'model'
+   *   - 生成失败 / 无可用模型 / 失败冷却中 → ok:false，渲染端回退写死文案
+   */
+  async getGreeting(input: EmptyHeroGreetingRequest = {}): Promise<EmptyHeroGreetingResponse> {
+    const now = this.now()
+    const cached = this.readCache()
+    const forceRefresh = input.forceRefresh === true
+
+    if (
+      !forceRefresh &&
+      cached != null &&
+      typeof cached.text === 'string' &&
+      cached.text.length > 0
+    ) {
+      const age = now - (cached.generatedAt ?? 0)
+      if (age >= 0 && age < GREETING_REFRESH_INTERVAL_MS) {
+        return {
+          ok: true,
+          text: cached.text,
+          source: 'cache',
+          ...(typeof cached.model === 'string' ? { model: cached.model } : {}),
+        }
+      }
+    }
+
+    // 失败冷却：窗口内不重试，直接让渲染端用写死文案。
+    const lastAttemptAt = cached?.attemptAt ?? 0
+    if (
+      !forceRefresh &&
+      cached?.lastError != null &&
+      now - lastAttemptAt < GREETING_FAILURE_COOLDOWN_MS
+    ) {
+      return { ok: false, reason: `cooldown: ${cached.lastError}` }
+    }
+
+    const resolved = await this.resolveModel(input.sessionId)
+    if (resolved == null) {
+      // 三级档位全空属于「用户还没配渠道」，无需冷却重试的语义，记日志即可。
+      log.info('问候语跳过：三级模型档位均不可用（记忆抽取模型 / 默认渠道 / 当前会话）')
+      return { ok: false, reason: 'no model available' }
+    }
+
+    const hour = new Date(now).getHours()
+    const prompt = buildGreetingPrompt(hour, now)
+    log.info(
+      `问候语生成开始：source=${resolved.source} provider=${resolved.providerId} model=${resolved.model}`,
+    )
+
+    try {
+      const result = await this.deps.complete(prompt, {
+        providerId: resolved.providerId,
+        model: resolved.model,
+        systemPrompt: GREETING_SYSTEM_PROMPT,
+        maxTokens: GREETING_MAX_OUTPUT_TOKENS,
+        timeoutMs: GREETING_REQUEST_TIMEOUT_MS,
+        temperature: GREETING_TEMPERATURE,
+      })
+      if (!result.available) {
+        this.recordFailure(cached, now, result.reason)
+        log.warn(`问候语生成失败（渲染端回退写死文案）：${result.reason}`)
+        return { ok: false, reason: result.reason }
+      }
+      const text = sanitizeGreeting(result.text, hour)
+      if (text.length === 0) {
+        this.recordFailure(cached, now, EMPTY_GREETING_REASON)
+        log.warn('问候语生成结果清洗后为空（渲染端回退写死文案）')
+        return { ok: false, reason: EMPTY_GREETING_REASON }
+      }
+      this.writeCache({ text, generatedAt: now, model: resolved.model, attemptAt: now })
+      log.info(`问候语生成成功：${text}（model=${resolved.model}）`)
+      return { ok: true, text, source: 'model', model: resolved.model }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      this.recordFailure(cached, now, reason)
+      log.warn(`问候语生成异常（渲染端回退写死文案）：${reason}`)
+      return { ok: false, reason }
+    }
+  }
+
+  /**
+   * 三级模型回退链（用户约定的优先级）：
+   *   1. 记忆抽取小模型（settings memory.extractionProviderId/Model，通常便宜且快）
+   *   2. 配置的默认对话模型（默认渠道的 defaultModel）
+   *   3. 当前会话模型（会话级 model_id）
+   * 全部落空 → null，由渲染端使用写死文案。
+   */
+  private async resolveModel(sessionId?: string): Promise<GreetingModelRef | null> {
+    const extraction = this.resolveExtractionModel()
+    if (extraction != null) return extraction
+    const defaultChat = await this.deps.getDefaultChatModel()
+    if (defaultChat != null) return defaultChat
+    return this.deps.getSessionChatModel(sessionId)
+  }
+
+  private resolveExtractionModel(): GreetingModelRef | null {
+    const providerId = this.deps.settingsGet('memory', 'extractionProviderId')
+    const model = this.deps.settingsGet('memory', 'extractionModel')
+    if (typeof providerId !== 'string' || providerId.trim().length === 0) return null
+    if (typeof model !== 'string' || model.trim().length === 0) return null
+    return { providerId: providerId.trim(), model: model.trim(), source: 'extraction' }
+  }
+
+  /** 失败时保留旧文案（只写 attemptAt/lastError），冷却期过后可就地重试。 */
+  private recordFailure(cached: GreetingCacheRecord | null, now: number, reason: string): void {
+    this.writeCache({ ...(cached ?? {}), attemptAt: now, lastError: reason })
+  }
+
+  private readCache(): GreetingCacheRecord | null {
+    try {
+      const raw = this.deps.settingsGet(GREETING_SETTINGS_CATEGORY, GREETING_SETTINGS_KEY)
+      if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null
+      return raw as GreetingCacheRecord
+    } catch (err) {
+      log.warn(
+        `读取问候语缓存失败（按未缓存处理）：${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    }
+  }
+
+  private writeCache(record: GreetingCacheRecord): void {
+    try {
+      this.deps.settingsSet(GREETING_SETTINGS_CATEGORY, GREETING_SETTINGS_KEY, record)
+    } catch (err) {
+      // 缓存写失败只影响「下次是否重算」，不影响本次展示，不阻断。
+      log.warn(
+        `写入问候语缓存失败（本次结果照常返回）：${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+}
+
+/** 依时段与随机风格拼 prompt；随机性让同温度下的输出也随时间变化。 */
+function buildGreetingPrompt(hour: number, nowMs: number): string {
+  const greeting = getLocalTimeGreeting(hour)
+  const period = greeting.replace(/好$/, '')
+  const style =
+    GREETING_STYLES[Math.floor(Math.random() * GREETING_STYLES.length)] ?? '写一句朴素而温暖的鼓励'
+  return [
+    `现在是${period}（当地 ${hour} 点，时间戳 ${nowMs}）。`,
+    `请以「${greeting}，」开头写一句问候语，对象是刚打开 Spark 工作台的开发者。`,
+    '要求：',
+    '- 一句完整的话，总长 10 到 22 个汉字',
+    `- 风格：${style}`,
+    '- 温暖、有力量、不油腻、不喊口号',
+    '- 不要引号、不要表情符号、不要换行、不要解释、不要任何前后缀',
+    '- 直接输出这一句话',
+  ].join('\n')
+}
+
+const LEADING_NOISE = /^[\s"'“”‘’`【「《（(]+/
+const TRAILING_NOISE = /[\s"'“”‘’`】」》）)，,。.!?！?；;、:：…~～\-—]+$/
+
+function stripTrailingNoise(value: string): string {
+  return value.replace(TRAILING_NOISE, '')
+}
+
+/**
+ * 清洗模型输出：取首个非空行、剥引号与「问候语：」这类前缀、强制
+ * 「{时段}好，」开头（保证与写死兜底语感一致）、限长。
+ * 返回空串表示这条结果不可用，调用方据此走失败降级。
+ */
+export function sanitizeGreeting(raw: string, hour: number = new Date().getHours()): string {
+  const firstLine =
+    raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? ''
+
+  let body = stripTrailingNoise(
+    firstLine
+      .replace(LEADING_NOISE, '')
+      .replace(/^(问候语|问候|greeting)[:：\s]*/i, '')
+      .trim(),
+  )
+
+  const greeting = getLocalTimeGreeting(hour)
+  // 模型守约（已以「早上好」开头）时只去重，不重复叠加前缀。
+  if (body.startsWith(greeting)) {
+    body = body.slice(greeting.length).replace(/^[，,、:：\s]+/, '')
+  }
+  body = stripTrailingNoise(body)
+  if (body.length === 0) return ''
+
+  const prefix = `${greeting}，`
+  if (prefix.length + body.length <= GREETING_MAX_CHARS) return `${prefix}${body}`
+
+  const clipped = stripTrailingNoise(body.slice(0, Math.max(1, GREETING_MAX_CHARS - prefix.length)))
+  if (clipped.length === 0) return ''
+  return `${prefix}${clipped}`
+}

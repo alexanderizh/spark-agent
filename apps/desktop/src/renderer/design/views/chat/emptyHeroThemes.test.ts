@@ -7,6 +7,7 @@ import {
   getEmptyHeroTheme,
   getLocalTimeGreeting,
   isEmptyHeroThemeId,
+  resolveEmptyHeroTitleLines,
 } from './emptyHeroThemes'
 
 describe('empty conversation themes', () => {
@@ -45,5 +46,17 @@ describe('empty conversation themes', () => {
     expect(getEmptyHeroTitleLines(20)).toEqual(['晚上好，继续推进'])
     expect(getEmptyHeroTitleLines(9)).toEqual(['早上好，继续推进'])
     expect(getEmptyHeroTitleLines(14)).toEqual(['下午好，继续推进'])
+  })
+
+  it('uses the model-generated greeting when available, fallback otherwise', () => {
+    // 整句替换：模型文案非空即原样展示。
+    expect(resolveEmptyHeroTitleLines(9, '早上好，愿你今日灵感如泉')).toEqual([
+      '早上好，愿你今日灵感如泉',
+    ])
+    // 未拿到 / 空串 / 纯空白 → 回退写死的时段问候。
+    expect(resolveEmptyHeroTitleLines(9, null)).toEqual(['早上好，继续推进'])
+    expect(resolveEmptyHeroTitleLines(9, undefined)).toEqual(['早上好，继续推进'])
+    expect(resolveEmptyHeroTitleLines(9, '   ')).toEqual(['早上好，继续推进'])
+    expect(resolveEmptyHeroTitleLines(20, '')).toEqual(['晚上好，继续推进'])
   })
 })

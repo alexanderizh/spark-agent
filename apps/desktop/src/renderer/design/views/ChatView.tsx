@@ -3160,7 +3160,7 @@ export function ChatView({
               />
             ) : (
               <div className="chat-empty-hero-stack">
-                <SingleAgentEmptyHero themeId={t.emptyHeroTheme} />
+                <SingleAgentEmptyHero themeId={t.emptyHeroTheme} sessionId={active} />
                 {/* 空会话恒为使用足迹热力图（有没有用量都展示，点击跳设置页看全量数据）。 */}
                 <HeroUsageHeatmap
                   dailyGroups={heroUsage.dailyGroups}

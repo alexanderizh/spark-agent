@@ -249,6 +249,11 @@ export class ModelService {
       model?: string
       /** system 提示词（分流器决策指令）；anthropic 走 system 字段，OpenAI 兼容走 system role */
       systemPrompt?: string
+      /**
+       * 采样温度。缺省 0（确定性，适用于记忆抽取等要求可复现的场景）。
+       * 生成型任务（如空会话问候语）需要多样性时显式传入，否则同 prompt 会得到同样输出。
+       */
+      temperature?: number
       /** 覆盖 HTTP 超时（默认 30s）；分流器传 8s 与轮次取消信号先到者为准 */
       timeoutMs?: number
       /** 调用方取消信号（轮次取消联动） */
@@ -379,6 +384,9 @@ export class ModelService {
             ? {
                 model,
                 max_tokens: maxTokens,
+                // 缺省不传 temperature：anthropic 扩展思考开启时只接受 temperature=1，
+                // 不显式下发可避免与渠道侧默认行为冲突。
+                ...(opts?.temperature != null ? { temperature: opts.temperature } : {}),
                 ...(disableGlmThinking ? { thinking: { type: 'disabled' } } : {}),
                 ...(opts?.systemPrompt ? { system: opts.systemPrompt } : {}),
                 messages: [{ role: 'user', content: prompt }],
@@ -390,7 +398,7 @@ export class ModelService {
                   { role: 'user', content: prompt },
                 ],
                 max_tokens: maxTokens,
-                temperature: 0,
+                temperature: opts?.temperature ?? 0,
               },
         ),
         timeoutMs: opts?.timeoutMs ?? COMPLETE_HTTP_TIMEOUT_MS,

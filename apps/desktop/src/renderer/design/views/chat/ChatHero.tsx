@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ManagedAgent } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
 import { AvatarImage } from '../../components/AvatarImage'
 import { formatShortcut } from '../../hooks/useKeyboard'
-import { getEmptyHeroTheme, getEmptyHeroTitleLines, type EmptyHeroThemeId } from './emptyHeroThemes'
+import {
+  getEmptyHeroTheme,
+  resolveEmptyHeroTitleLines,
+  type EmptyHeroThemeId,
+} from './emptyHeroThemes'
 
 export function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | undefined) {
   if (agentId == null || agentId.length === 0) return null
@@ -109,16 +113,90 @@ export function HeroTipsTicker() {
   )
 }
 
-export function SingleAgentEmptyHero({ themeId }: { themeId: EmptyHeroThemeId }) {
+export function SingleAgentEmptyHero({
+  themeId,
+  sessionId,
+}: {
+  themeId: EmptyHeroThemeId
+  /** 当前会话 id（可选）：仅用于主进程的「当前会话模型」档位回退。 */
+  sessionId?: string | null
+}) {
   const theme = getEmptyHeroTheme(themeId)
   const [localHour, setLocalHour] = useState(() => new Date().getHours())
+  /** 模型生成的整句问候；null / 空串代表使用写死兜底文案。 */
+  const [generatedGreeting, setGeneratedGreeting] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // 非 Electron 环境（浏览器预览 / 单测）没有 window.spark：此时隐藏手动刷新按钮，
+  // 免得点了一个必然无反应的按钮。
+  const greetingApi = typeof window === 'undefined' ? undefined : window.spark
+  const canRequestGreeting = greetingApi != null && typeof greetingApi.invoke === 'function'
+
+  // 卸载后不再 setState（StrictMode 双挂载下靠 effect body 重置为 true）。
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     const timer = window.setInterval(() => setLocalHour(new Date().getHours()), 60_000)
     return () => window.clearInterval(timer)
   }, [])
 
-  const titleLines = getEmptyHeroTitleLines(localHour)
+  /**
+   * 取问候语文本。主进程侧完成 3 级模型档位 + 2 小时缓存 + 协议分派；
+   * forceRefresh=true 时忽略缓存，用于用户手动「换一句」。
+   *
+   * 只负责取数、不碰组件状态（状态由调用方决定怎么写），失败 / 空一律返回 null ——
+   * 调用方据此保持当前文案不动，避免出现空白标题。永不抛异常。
+   */
+  const fetchGreeting = useCallback(
+    async (forceRefresh: boolean): Promise<string | null> => {
+      const api = typeof window === 'undefined' ? undefined : window.spark
+      if (api == null || typeof api.invoke !== 'function') return null
+      try {
+        const request = {
+          ...(sessionId != null && sessionId.length > 0 ? { sessionId } : {}),
+          ...(forceRefresh ? { forceRefresh: true } : {}),
+        }
+        const response = await api.invoke('greeting:get', request)
+        if (!response.ok) return null
+        const text = response.text.trim()
+        return text.length > 0 ? text : null
+      } catch {
+        return null
+      }
+    },
+    [sessionId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    // 静默失败：写死兜底文案已在标题渲染分支准备好，不打扰用户。
+    void fetchGreeting(false).then((text) => {
+      if (cancelled || text == null) return
+      setGeneratedGreeting(text)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [fetchGreeting])
+
+  const handleRefreshGreeting = useCallback(() => {
+    if (!canRequestGreeting) return
+    setRefreshing(true)
+    void fetchGreeting(true).then((text) => {
+      if (!isMountedRef.current) return
+      // 刷新失败不退回写死文案也不清空：旧的模型文案继续展示（主进程也保留缓存）。
+      if (text != null) setGeneratedGreeting(text)
+      setRefreshing(false)
+    })
+  }, [canRequestGreeting, fetchGreeting])
+
+  const titleLines = resolveEmptyHeroTitleLines(localHour, generatedGreeting)
 
   return (
     <section
@@ -135,6 +213,24 @@ export function SingleAgentEmptyHero({ themeId }: { themeId: EmptyHeroThemeId })
                 <span key={line}>{line}</span>
               ))}
             </h1>
+            {canRequestGreeting && (
+              <button
+                type="button"
+                className={`single-empty-refresh${refreshing ? ' is-refreshing' : ''}`}
+                onClick={handleRefreshGreeting}
+                disabled={refreshing}
+                title="换一句"
+                aria-label="换一句问候语"
+              >
+                {/* 图标选型是实测出来的（14px 实尺寸对比）：
+                    Refresh/RotateCw 的直角折线箭头糊成一团；Shuffle 两条曲线糊掉
+                    只剩交叉主干、退化成「✕」有误读成关闭的风险；只有 Sparkles 这种
+                    整体轮廓在 14px 下仍成立，语义也贴「让模型再生成一句」。
+                    描边从默认 1.6 提到 1.9：14px 下 1.6 折算线宽仅 ~0.93px，
+                    抗锯齿后会发虚（细线条图标在小尺寸下的通病）。 */}
+                <Icons.Sparkles size={14} strokeWidth={1.9} />
+              </button>
+            )}
           </div>
         </div>
       </div>

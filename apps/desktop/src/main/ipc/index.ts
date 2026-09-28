@@ -337,6 +337,7 @@ import { registerWorkflowBundleIpc } from './registerWorkflowBundleIpc.js'
 import { registerTeamAssetIpc } from './registerTeamAssetIpc.js'
 import { registerTeamRegistryIpc } from './registerTeamRegistryIpc.js'
 import { registerPastedTextIpc } from './registerPastedTextIpc.js'
+import { registerGreetingIpc } from './registerGreetingIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { registerSessionWorkflowBindingIpc } from './registerSessionWorkflowBindingIpc.js'
 import { registerExecutionContinuityIpc } from './registerExecutionContinuityIpc.js'
@@ -4571,6 +4572,8 @@ export function registerAllIpcHandlers(): void {
   registerPromptLibraryPackageIpc()
   registerWorkflowBundleIpc({ getMcpService })
   registerPastedTextIpc()
+  // 空会话 Hero 问候语（模型生成 + 2 小时缓存 + 渲染端写死兜底）。
+  registerGreetingIpc()
   registerSessionImageOptimizerIpc()
   registerExecutionContinuityIpc({
     getSessionService: () => {
