@@ -11,6 +11,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { useAppOptional } from '../AppContext'
 
 /* ---------- Types ---------- */
 
@@ -83,21 +84,51 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const error = this.state.error
 
     if (level === 'global') {
-      return <GlobalErrorFallback error={error} name={name} onRetry={this.handleRetry} onReport={this.handleReport} />
+      return (
+        <GlobalErrorFallback
+          error={error}
+          name={name}
+          onRetry={this.handleRetry}
+          onReport={this.handleReport}
+        />
+      )
     }
 
-    return <PageErrorFallback error={error} name={name} onRetry={this.handleRetry} onReport={this.handleReport} />
+    return (
+      <PageErrorFallback
+        error={error}
+        name={name}
+        onRetry={this.handleRetry}
+        onReport={this.handleReport}
+      />
+    )
   }
 }
 
 /* ---------- Fallback Components ---------- */
 
-function GlobalErrorFallback({ error, name, onRetry, onReport }: {
+function GlobalErrorFallback({
+  error,
+  name,
+  onRetry,
+  onReport,
+}: {
   error: Error | null
   name: string | undefined
   onRetry: () => void
   onReport: () => void
 }) {
+  const app = useAppOptional()
+
+  const handleGoHome = (): void => {
+    // 回到工作台首页：切回 workbench 模式主视图（chat），并清除错误状态重渲染。
+    if (app) {
+      app.setTweak('workspaceMode', 'workbench')
+      app.setTweak('view', 'chat')
+    }
+    onRetry()
+  }
+
   return (
     <div className="error-boundary-fallback error-boundary-global">
       <div className="error-boundary-drag-bar" aria-hidden />
@@ -109,13 +140,16 @@ function GlobalErrorFallback({ error, name, onRetry, onReport }: {
         <p className="error-boundary-desc">
           {name ? `[${name}] ` : ''}渲染过程中发生了未预期的错误。请尝试刷新页面。
         </p>
-        {error && (
-          <pre className="error-boundary-detail">{error.message}</pre>
-        )}
+        {error && <pre className="error-boundary-detail">{error.message}</pre>}
         <div className="error-boundary-actions">
           <button className="btn primary" onClick={onRetry}>
             <Icons.Refresh size={13} /> 重试
           </button>
+          {app && (
+            <button className="btn" onClick={handleGoHome} title="回到首页">
+              <Icons.Home size={13} /> 回到首页
+            </button>
+          )}
           <button className="btn" onClick={onReport}>
             <Icons.Copy size={13} /> 复制错误报告
           </button>
@@ -125,7 +159,12 @@ function GlobalErrorFallback({ error, name, onRetry, onReport }: {
   )
 }
 
-function PageErrorFallback({ error, name, onRetry, onReport }: {
+function PageErrorFallback({
+  error,
+  name,
+  onRetry,
+  onReport,
+}: {
   error: Error | null
   name: string | undefined
   onRetry: () => void
@@ -137,11 +176,12 @@ function PageErrorFallback({ error, name, onRetry, onReport }: {
         <Icons.AlertTriangle size={18} />
       </div>
       <div className="error-boundary-content">
-        <div className="error-boundary-title-sm">
-          页面渲染出错
-        </div>
+        <div className="error-boundary-title-sm">页面渲染出错</div>
         {error && (
-          <div className="error-boundary-desc-sm">{name ? `[${name}] ` : ''}{error.message}</div>
+          <div className="error-boundary-desc-sm">
+            {name ? `[${name}] ` : ''}
+            {error.message}
+          </div>
         )}
       </div>
       <div className="error-boundary-actions-sm">
