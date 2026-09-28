@@ -20,11 +20,16 @@ import type {
   SystemMemorySummary,
 } from '@spark/protocol'
 
-/** 共享 exec 助手：utf8 文本输出，超时/失败返回 null（绝不抛出）。 */
+/**
+ * 共享 exec 助手：utf8 文本输出，超时/失败返回 null（绝不抛出）。
+ * onError 可选回调只用于诊断埋点（超时/被 kill/spawn 失败的真实原因），
+ * 不影响返回值语义——调用方仍需按 null 走降级路径。
+ */
 export function execText(
   command: string,
   args: string[],
   timeoutMs: number,
+  onError?: (error: Error) => void,
 ): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
@@ -32,6 +37,7 @@ export function execText(
       args,
       { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, windowsHide: true },
       (error, stdout) => {
+        if (error != null) onError?.(error)
         resolve(error == null && stdout.length > 0 ? stdout : null)
       },
     )

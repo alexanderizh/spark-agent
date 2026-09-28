@@ -10,6 +10,7 @@
  * 隐私红线：只读 pid/ppid/rss/comm 四列，不读 argv/env/打开文件。
  */
 
+import { createLogger } from '@spark/shared'
 import { execText } from './collectors.js'
 import type {
   ChildProcessSample,
@@ -29,6 +30,8 @@ export interface PsRow {
   rssKb: number | null
   comm: string
 }
+
+const log = createLogger('resource-monitor')
 
 const GOVERNED_ANCESTORS: readonly TrackedProcessKind[] = GOVERNED_PROCESS_KINDS
 
@@ -77,8 +80,17 @@ export function parseWindowsProcessOutput(output: string): PsRow[] {
 }
 
 async function collectProcessRows(): Promise<PsRow[] | null> {
+  // 失败原因（超时 / 被 kill / spawn 失败 / 空输出）必须落日志：否则上层只
+  // 能看到「采集失败 + 退避」，无法定位真实原因。
+  let failureReason: string | null = null
+  const onError = (error: Error): void => {
+    failureReason = error.message
+  }
+
+  let output: string | null
+  let rows: PsRow[]
   if (process.platform === 'win32') {
-    const output = await execText(
+    output = await execText(
       'powershell.exe',
       [
         '-NoProfile',
@@ -87,11 +99,27 @@ async function collectProcessRows(): Promise<PsRow[] | null> {
         'Get-CimInstance Win32_Process | ForEach-Object { "{0} {1} {2} {3}" -f $_.ProcessId, $_.ParentProcessId, $_.WorkingSet64, $_.Name }',
       ],
       5_000,
+      onError,
     )
-    return output == null ? null : parseWindowsProcessOutput(output)
+    rows = output == null ? [] : parseWindowsProcessOutput(output)
+  } else {
+    output = await execText('ps', ['-axo', 'pid=,ppid=,rss=,comm='], 3_000, onError)
+    rows = output == null ? [] : parsePsOutput(output)
   }
-  const output = await execText('ps', ['-axo', 'pid=,ppid=,rss=,comm='], 3_000)
-  return output == null ? null : parsePsOutput(output)
+
+  if (output == null) {
+    log.warn(
+      '进程表采集失败（%s）：%s',
+      process.platform === 'win32' ? 'Get-CimInstance Win32_Process' : 'ps -axo',
+      failureReason ?? '命令未返回可用输出',
+    )
+    return null
+  }
+  if (rows.length === 0) {
+    log.warn('进程表采集解析结果为空（输出 %d 字节，可能被截断或格式变化）', output.length)
+    return null
+  }
+  return rows
 }
 
 function commBasename(comm: string): string {

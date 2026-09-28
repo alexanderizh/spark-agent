@@ -171,6 +171,30 @@ describe('采集失败退避与 stale 标记', () => {
     expect(snapshot?.staleFields).toContain('children')
     expect(snapshot?.children.governedCount).toBe(2)
   })
+
+  it('未到子进程扫描拍（正常节流）→ 沿用上次汇总但不标 stale（渲染端不报采集失败）', async () => {
+    // 采样 2s / 扫描 10s：多数采样拍都在节流窗口内，此处不能标 stale，
+    // 否则设置页会在采集完全健康时长期显示「子进程采集暂时失败」。
+    const fixture = makeFixture({
+      config: { sampleIntervalMs: 2_000, childScanIntervalMs: 10_000 },
+    })
+    await tickOnce(fixture)
+    expect(fixture.service.getSnapshot('summary').summary?.staleFields ?? []).not.toContain(
+      'children',
+    )
+
+    fixture.advance(2_000)
+    await tickOnce(fixture)
+    const throttled = fixture.service.getSnapshot('summary').summary
+    expect(throttled?.staleFields ?? []).not.toContain('children')
+    expect(throttled?.children.totalCount).toBe(2) // 数据仍为上次扫描结果
+
+    fixture.advance(10_000) // 越过扫描周期 → 重新扫描，依旧不标 stale
+    await tickOnce(fixture)
+    expect(fixture.service.getSnapshot('summary').summary?.staleFields ?? []).not.toContain(
+      'children',
+    )
+  })
 })
 
 describe('快照与历史', () => {

@@ -2,11 +2,14 @@
  * @module GovernanceMeters
  *
  * 活动治理（M3）：并发闸门占用表。真实数据结构为 dispatch-governor
- * 双池（主池 + 嵌套池），据此呈现两行占用 + 宿主在途计数；降级状态
- * pill 由当前压力级别推导（warning 限流 / critical 暂停 / emergency 熔断）。
+ * 双池（主池 + 嵌套池），两行只统计成员派发（团队 / 工作流子代理），
+ * 宿主会话不占槽位、仅计入主池预算；底部口径行区分「运行中会话」与
+ * 「计入并发预算的宿主占用」。降级状态 pill 由当前压力级别推导
+ * （warning 限流 / critical 暂停 / emergency 熔断）。
  */
 
 import type {
+  DispatchGovernorDiagnosticsSnapshot,
   DispatchGovernorGetDiagnosticsResponse,
   ResourceMonitorSummarySnapshot,
 } from '@spark/protocol'
@@ -39,6 +42,35 @@ function statePillForLevel(
     default:
       return null
   }
+}
+
+/**
+ * 底部口径行全文（悬停说明）。
+ * 「运行中会话」取自 turnRegistry 的活动执行器 + starting 过渡态采样；
+ * 「宿主封顶」= hostInflightCap，超出部分不再计入主池容量（主池容量 =
+ * 全局并发预算 − 计入的宿主占用，再取成员侧硬顶 maxMemberDispatches）。
+ */
+const HOST_USAGE_HINT =
+  '运行中会话：正在执行本轮任务的会话数（含即将开始的过渡态）。' +
+  '宿主封顶：宿主会话占用计入主池的上限，超出部分不再占用主池；' +
+  '主池容量 = 全局并发预算 − 计入的宿主占用，再取成员侧硬顶。' +
+  '数据为诊断快照：打开页面、每 30 秒、压力级别变更时刷新。'
+
+/**
+ * 底部口径行文本：区分「真实运行中会话数」与「计入主池预算的宿主占用」。
+ * 二者在未触顶时相等；触顶（宿主封顶或预算 − 成员下限预留）时如实标出差额，
+ * 避免把被截断后的占用误读为会话数（旧文案称「宿主在途」且只显示截断值）。
+ */
+function hostUsageText(snapshot: DispatchGovernorDiagnosticsSnapshot): string {
+  const inflight = snapshot.hostInflightCount
+  const effective = snapshot.hostEffectiveCount
+  const cap = snapshot.config.hostInflightCap
+  const budget = snapshot.config.totalAgentProcessBudget
+  const head =
+    inflight > effective
+      ? `运行中会话 ${inflight} · 计入并发预算 ${effective}（宿主封顶 ${cap}）`
+      : `运行中会话 ${inflight}（全部计入并发预算）`
+  return `${head} · 全局并发预算 ${budget}`
 }
 
 export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMetersProps) {
@@ -131,9 +163,8 @@ export function GovernanceMeters({ diagnostics, summary, loading }: GovernanceMe
         )
       })}
       <div className="meter-row" style={{ paddingTop: 8 }}>
-        <span className="m-sub" style={{ flex: 1 }}>
-          宿主在途 {snapshot.hostEffectiveCount}（上限 {snapshot.config.hostInflightCap}）·
-          全局并发预算 {snapshot.config.totalAgentProcessBudget} · 状态
+        <span className="m-sub" style={{ flex: 1 }} title={HOST_USAGE_HINT}>
+          {hostUsageText(snapshot)} · 状态
         </span>
         {pill != null ? (
           <span className={`state-pill ${pill.cls === 'warn' ? 'warn' : 'danger'}`}>

@@ -457,7 +457,9 @@ export class ResourceMonitorService {
     const cadence = pressureActive ? 0 : this.config.childScanIntervalMs
     const previous = this.latest?.children ?? null
     if (nowMs - this.lastChildrenScanAtMs < cadence) {
-      if (previous != null) staleFields.push('children')
+      // 未到扫描拍（采样 2s / 扫描 10s）：沿用上次扫描结果属于正常节流，
+      // 不是降级——staleFields 在渲染端等价于「采集失败」告警，这里不能标，
+      // 否则健康状态下也会长期显示「子进程采集暂时失败」。
       return previous
     }
     if (nowMs < this.childrenBackoffUntilMs) {

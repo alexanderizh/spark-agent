@@ -153,6 +153,9 @@ export function PerformanceSettingsSection() {
           />
 
           <div className="subsec-h">活动治理</div>
+          <div className="subsec-desc">
+            统计范围：团队 / 工作流子代理派发（普通会话不占闸门槽位，只计入下方并发预算）
+          </div>
           <GovernanceMeters diagnostics={diagnostics} summary={summary} loading={loading} />
 
           <div className="subsec-h">最近降级 / 恢复事件</div>

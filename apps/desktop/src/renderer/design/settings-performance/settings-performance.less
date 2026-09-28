@@ -19,6 +19,11 @@
     margin: 0 0 18px;
   }
 
+  /* 区块标题行（左标题 + 右分段控件/按钮）。上间距由行内标题的
+     margin-top 提供：标题是行首元素，其外边距在 flex 行内生效并把整行
+     推开；因此这里不能再对行内标题做 :first-child 上间距清零——否则
+     baseline 对齐下没有上外边距的右侧控件（.seg/按钮）会顶到行首，
+     与上方卡片底部贴死（历史趋势、性能保护两组行均受影响）。 */
   .subsec-row {
     display: flex;
     align-items: baseline;
@@ -34,10 +39,24 @@
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.07em;
+  }
 
-    &:first-child {
-      margin-top: 0;
-    }
+  /* 行首标题的上间距显式声明并提高权重：全局 `.subsec-h:first-child
+     { margin-top: 0 }` 与上面的 `.subsec-h` 同权重，打包顺序靠后时会覆盖
+     前者，使「历史趋势 / 性能保护」这类行首标题丢掉 20px 上间距，右侧
+     分段控件随即贴到上方卡片底部（见 .subsec-row 注释）。 */
+  .subsec-row > .subsec-h {
+    margin-top: 20px;
+  }
+
+  /* 区块标题下的一行说明（如「活动治理」的统计范围）。上边距取负值抵消
+     标题的 10px 下边距、压缩到 6px，使说明在视觉上归属标题而非游离在
+     标题与卡片之间；下边距与标题节奏一致（10px 接卡片）。 */
+  .subsec-desc {
+    margin: -4px 0 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-faint);
   }
 
   /* ---------- 卡片与行（单层） ---------- */
