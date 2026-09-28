@@ -111,6 +111,7 @@ import { ProviderQuotaHoverCard } from './ProviderQuotaHoverCard'
 import { useProviderQuotas } from '../provider/useProviderQuotas'
 import { buildAutoRouterHoverCardModel } from './auto-router-hover-card-model'
 import { ModelPickerMenuItem } from './ModelPickerMenuItem'
+import { shouldRecordModelSwitch } from './ModelSwitchMarkers'
 import { useHoverRevealCard } from './useHoverRevealCard'
 import { resolvePinnedModelEntries, usePinnedModels } from './pinned-models'
 import {
@@ -3716,7 +3717,7 @@ export function ComposerV2({
         ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
       })
       const afterMessageId = messages.at(-1)?.id
-      if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
+      if (afterMessageId != null && shouldRecordModelSwitch(previousModel, nextModel)) {
         onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
       }
     } else if (clearCliSparkOverride) {
@@ -3768,7 +3769,7 @@ export function ComposerV2({
         ...(clearCliSparkOverride ? { cliSparkOverride: null } : {}),
       })
       const afterMessageId = messages.at(-1)?.id
-      if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
+      if (afterMessageId != null && shouldRecordModelSwitch(previousModel, nextModel)) {
         onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
       }
     } else if (clearCliSparkOverride) {
@@ -3825,8 +3826,7 @@ export function ComposerV2({
     if (
       primaryProviderChanged &&
       afterMessageId != null &&
-      previousModel.length > 0 &&
-      previousModel !== hostModelId
+      shouldRecordModelSwitch(previousModel, hostModelId)
     ) {
       onModelSwitch?.({ fromModel: previousModel, toModel: hostModelId, afterMessageId })
     }
@@ -4069,7 +4069,7 @@ export function ComposerV2({
     if (session != null) {
       await persistRuntimePatch({ modelId })
       const afterMessageId = messages.at(-1)?.id
-      if (afterMessageId != null && previousModel.length > 0 && previousModel !== modelId) {
+      if (afterMessageId != null && shouldRecordModelSwitch(previousModel, modelId)) {
         onModelSwitch?.({ fromModel: previousModel, toModel: modelId, afterMessageId })
       }
     }
