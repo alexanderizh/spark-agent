@@ -870,6 +870,38 @@ describe('scheduled-task session filtering', () => {
   })
 })
 
+describe('unread session filtering', () => {
+  it('未读筛选只保留未归档且未查看完成的会话', () => {
+    const base = createSessions(1)[0]
+    if (base === undefined) throw new Error('Expected a base session fixture')
+    const sessions: SessionSummary[] = [
+      base,
+      { ...base, id: 'session-archived' as SessionId, archivedAt: '2026-07-29T09:00:00.000Z' },
+    ]
+    // 归档会话即使命中未读集合也不应出现
+    const unreadIds = new Set(['session-0', 'session-archived'])
+
+    expect(
+      applySessionFilters(
+        sessions,
+        { ...DEFAULT_SIDEBAR_FILTER, status: 'unread' },
+        {},
+        [],
+        unreadIds,
+      ).map((session) => session.id),
+    ).toEqual(['session-0'])
+  })
+
+  it('未传未读集合时未读筛选结果为空（向后兼容）', () => {
+    expect(
+      applySessionFilters(createSessions(2), {
+        ...DEFAULT_SIDEBAR_FILTER,
+        status: 'unread',
+      }),
+    ).toEqual([])
+  })
+})
+
 describe('canvas-project session filtering', () => {
   it('hides canvas sessions while preserving ordinary sessions', () => {
     const workspaces: WorkspaceInfo[] = [

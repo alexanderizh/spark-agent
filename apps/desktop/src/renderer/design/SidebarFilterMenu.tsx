@@ -23,6 +23,7 @@ import type { WorkspaceInfo } from '@spark/protocol'
 
 export type SidebarStatusFilter =
   | 'active'
+  | 'unread'
   | 'running'
   | 'completed'
   | 'cancelled'
@@ -97,6 +98,8 @@ export function canReorderSidebarSessions(
 
 const STATUS_OPTIONS: Array<{ value: SidebarStatusFilter; labelKey: string }> = [
   { value: 'active', labelKey: 'sidebar.filter.status.active' },
+  // 未读 = 完成后尚未查看（蓝点/Dock 角标来源），方便在大量会话中快速定位
+  { value: 'unread', labelKey: 'sidebar.filter.status.unread' },
   { value: 'running', labelKey: 'sidebar.filter.status.running' },
   { value: 'completed', labelKey: 'sidebar.filter.status.completed' },
   { value: 'cancelled', labelKey: 'sidebar.filter.status.cancelled' },

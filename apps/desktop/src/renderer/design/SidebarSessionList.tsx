@@ -302,9 +302,17 @@ function writeSidebarFilter(state: SidebarFilterState): void {
 }
 
 /* ─── Filter helpers ─── */
-function filterByStatus(sessions: SessionSummary[], status: SidebarStatusFilter): SessionSummary[] {
+function filterByStatus(
+  sessions: SessionSummary[],
+  status: SidebarStatusFilter,
+  unreadSessionIds: ReadonlySet<string>,
+): SessionSummary[] {
   if (status === 'all') return sessions
   if (status === 'archived') return sessions.filter((s) => s.archivedAt != null)
+  if (status === 'unread') {
+    // 未读 = 完成后尚未查看的会话（侧栏蓝点 / Dock 角标来源），只保留未归档
+    return sessions.filter((s) => s.archivedAt == null && unreadSessionIds.has(s.id))
+  }
   if (status === 'running') {
     return sessions.filter((s) => s.archivedAt == null && s.status === 'running')
   }
@@ -380,13 +388,17 @@ export function applySessionFilters(
   filter: SidebarFilterState,
   scheduleSummaries: SessionScheduleSummaries = {},
   workspaces: WorkspaceInfo[] = [],
+  unreadSessionIds: ReadonlySet<string> = new Set(),
 ): SessionSummary[] {
   const canvasVisibleSessions =
     filter.canvasProjects === 'show' ? sessions : filterCanvasSessions(sessions, workspaces)
   return filterByLastActivity(
     filterByScheduledTasks(
       filterByProject(
-        filterBySessionLabel(filterByStatus(canvasVisibleSessions, filter.status), filter.labels),
+        filterBySessionLabel(
+          filterByStatus(canvasVisibleSessions, filter.status, unreadSessionIds),
+          filter.labels,
+        ),
         filter.projectIds,
       ),
       filter.scheduledTasks,
@@ -2261,11 +2273,18 @@ export function SidebarSessionList() {
     // 与后端 SQL 对齐：置顶在前、未置顶按 updatedAt 倒序。
     // 乐观更新 pinnedAt 后由这里即时重排，覆盖 date/state/none 分组及 noProject/ungrouped。
     return sortSessionsByPinned(
-      applySessionFilters(source, filter, ctx.sessionScheduleSummaries, ctx.workspaces),
+      applySessionFilters(
+        source,
+        filter,
+        ctx.sessionScheduleSummaries,
+        ctx.workspaces,
+        ctx.unreviewedCompletedSessions,
+      ),
     )
   }, [
     ctx.sessionScheduleSummaries,
     ctx.sessions,
+    ctx.unreviewedCompletedSessions,
     ctx.workspaces,
     filter,
     searchQuery,

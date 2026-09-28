@@ -20,6 +20,12 @@ vi.mock('./i18n', () => ({
         'sidebar.filter.all': '全部',
         'sidebar.filter.allProjects': '全部项目',
         'sidebar.filter.rowStatus': '状态',
+        'sidebar.filter.status.active': '活跃',
+        'sidebar.filter.status.unread': '未读',
+        'sidebar.filter.status.running': '运行中',
+        'sidebar.filter.status.completed': '已完成',
+        'sidebar.filter.status.cancelled': '中止',
+        'sidebar.filter.status.archived': '已归档',
         'sidebar.filter.rowProject': '项目',
         'sidebar.filter.rowLastActivity': '最近活动',
         'sidebar.filter.rowScheduledTasks': '计划任务',
@@ -86,6 +92,55 @@ function findRowByLabel(label: string): HTMLElement {
   if (row == null) throw new Error(`row not found: ${label}`)
   return row
 }
+
+describe('SidebarFilterMenu 展开后的「状态」行', () => {
+  it('状态子菜单包含「未读」选项且位于「活跃」之后', async () => {
+    renderMenu(() => {})
+    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
+    act(() => {
+      trigger?.click()
+    })
+
+    const statusRow = findRowByLabel('状态')
+    expect(statusRow.textContent).toContain('活跃')
+
+    await act(async () => {
+      statusRow.dispatchEvent(
+        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    })
+
+    const texts = Array.from(
+      document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
+    ).map((el) => el.textContent?.trim())
+    expect(texts).toEqual(['活跃', '未读', '运行中', '已完成', '中止', '已归档', '全部'])
+  })
+
+  it('选择「未读」回调 status: unread', async () => {
+    const calls: SidebarFilterState[] = []
+    renderMenu((next) => calls.push(next))
+    const trigger = document.querySelector<HTMLButtonElement>('.sidebar-filter-btn')
+    act(() => {
+      trigger?.click()
+    })
+    const statusRow = findRowByLabel('状态')
+    await act(async () => {
+      statusRow.dispatchEvent(
+        new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    })
+    const target = Array.from(
+      document.querySelectorAll<HTMLElement>('.sidebar-filter-submenu-item'),
+    ).find((el) => el.textContent?.trim() === '未读')
+    expect(target).toBeDefined()
+    act(() => {
+      target?.click()
+    })
+    expect(calls.at(-1)?.status).toBe('unread')
+  })
+})
 
 describe('SidebarFilterMenu 展开后的「标记」行', () => {
   it('打开筛选弹层后能看到「标记」行并展开出 8 个选项', async () => {
