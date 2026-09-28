@@ -19,16 +19,7 @@ import type {
   SkillItem,
 } from '@spark/protocol'
 import { Icons } from '../Icons'
-import {
-  ActionIcon,
-  Button,
-  Empty,
-  Input,
-  SearchBar,
-  Select,
-  Tag,
-  TextArea,
-} from '@lobehub/ui'
+import { ActionIcon, Button, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { useApp } from '../AppContext'
 import { AgentsPickerModal } from '../components/AgentsPickerModal'
 import { SkillAssignHintModal } from '../components/SkillAssignHintModal'
@@ -75,10 +66,7 @@ function skillInstallProgressKey(source: 'catalog' | 'skillhub', slug: string): 
 
 function isSkillStoreTab(value: unknown): value is TabType {
   return (
-    value === 'installed' ||
-    value === 'create' ||
-    value === 'installable' ||
-    value === 'skillhub'
+    value === 'installed' || value === 'create' || value === 'installable' || value === 'skillhub'
   )
 }
 
@@ -2044,7 +2032,15 @@ function CreateTab({
         })
       }
     },
-    [installToApp, importDirectory, onCreated, onSkillReady, onPreviewSkill, refreshCandidates, toast],
+    [
+      installToApp,
+      importDirectory,
+      onCreated,
+      onSkillReady,
+      onPreviewSkill,
+      refreshCandidates,
+      toast,
+    ],
   )
 
   const handleBatchImport = useCallback(async () => {
@@ -2154,177 +2150,220 @@ function CreateTab({
       {importMode === 'none' ? (
         /* ── Manual Creation Form ── */
         <div className="create-skill-form">
-          <div className="create-form-section">
-            <div className="create-section-title">基本信息</div>
-            <div className="create-form-grid">
+          <section className="create-panel">
+            <div className="create-panel-head">
+              <span className="create-panel-icon">
+                <Icons.FileText size={15} />
+              </span>
+              <div className="create-panel-headings">
+                <div className="create-panel-title">基本信息</div>
+                <div className="create-panel-desc">
+                  名称、版本、作者与分类，用于在技能列表中标识这个 Skill。
+                </div>
+              </div>
+            </div>
+            <div className="create-panel-body">
+              <div className="create-form-grid">
+                <div className="form-field">
+                  <label className="form-label">
+                    名称 <span className="required">*</span>
+                  </label>
+                  <Input
+                    placeholder="例如：代码审查助手"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="form-label">版本</label>
+                  <Input
+                    placeholder="1.0.0"
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="form-label">作者</label>
+                  <Input
+                    placeholder="作者名称"
+                    value={author}
+                    onChange={(e) => setAuthor(e.target.value)}
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="form-label">分类</label>
+                  <Select
+                    value={category}
+                    onChange={(v) => setCategory(v)}
+                    options={[
+                      { label: '通用', value: 'utility' },
+                      { label: '代码生成', value: 'code-generation' },
+                      { label: '代码审查', value: 'code-review' },
+                      { label: '测试', value: 'testing' },
+                      { label: '文档', value: 'documentation' },
+                      { label: '数据分析', value: 'data-analysis' },
+                      { label: 'Web 开发', value: 'web-development' },
+                      { label: 'API 开发', value: 'api-development' },
+                      { label: 'DevOps', value: 'devops' },
+                      { label: '安全', value: 'security' },
+                      { label: 'AI/ML', value: 'ai-ml' },
+                      { label: '自动化', value: 'automation' },
+                      { label: '数据库', value: 'database' },
+                      { label: '前端', value: 'frontend' },
+                      { label: '后端', value: 'backend' },
+                    ]}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="create-panel">
+            <div className="create-panel-head">
+              <span className="create-panel-icon">
+                <Icons.Tag size={15} />
+              </span>
+              <div className="create-panel-headings">
+                <div className="create-panel-title">描述与标签</div>
+                <div className="create-panel-desc">
+                  描述决定 Agent 何时会选用这个 Skill，标签与所需工具用于检索与权限提示。
+                </div>
+              </div>
+            </div>
+            <div className="create-panel-body">
               <div className="form-field">
                 <label className="form-label">
-                  名称 <span className="required">*</span>
+                  简短描述 <span className="required">*</span>
                 </label>
-                <Input
-                  placeholder="例如：代码审查助手"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="form-field">
-                <label className="form-label">版本</label>
-                <Input
-                  placeholder="1.0.0"
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value)}
-                />
-              </div>
-              <div className="form-field">
-                <label className="form-label">作者</label>
-                <Input
-                  placeholder="作者名称"
-                  value={author}
-                  onChange={(e) => setAuthor(e.target.value)}
-                />
-              </div>
-              <div className="form-field">
-                <label className="form-label">分类</label>
-                <Select
-                  value={category}
-                  onChange={(v) => setCategory(v)}
-                  options={[
-                    { label: '通用', value: 'utility' },
-                    { label: '代码生成', value: 'code-generation' },
-                    { label: '代码审查', value: 'code-review' },
-                    { label: '测试', value: 'testing' },
-                    { label: '文档', value: 'documentation' },
-                    { label: '数据分析', value: 'data-analysis' },
-                    { label: 'Web 开发', value: 'web-development' },
-                    { label: 'API 开发', value: 'api-development' },
-                    { label: 'DevOps', value: 'devops' },
-                    { label: '安全', value: 'security' },
-                    { label: 'AI/ML', value: 'ai-ml' },
-                    { label: '自动化', value: 'automation' },
-                    { label: '数据库', value: 'database' },
-                    { label: '前端', value: 'frontend' },
-                    { label: '后端', value: 'backend' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="create-form-section">
-            <div className="create-section-title">描述与标签</div>
-            <div className="form-field">
-              <label className="form-label">
-                简短描述 <span className="required">*</span>
-              </label>
-              <TextArea
-                rows={3}
-                placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label">标签（逗号分隔）</label>
-              <Input
-                placeholder="code-review, security, quality"
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label">所需工具（逗号分隔）</label>
-              <Input
-                placeholder="例如：Bash, Read, Edit"
-                value={requiredTools}
-                onChange={(e) => setRequiredTools(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="create-form-section">
-            <div className="create-section-title">Skill 详细内容</div>
-            <div className="form-field">
-              <label className="form-label">
-                System Prompt / 指令内容 <span className="required">*</span>
-              </label>
-              {/* 编辑 / 预览 分段控件：写完指令立即看渲染效果，与详情页「预览|源码」同一范式 */}
-              <div className="create-content-mode" role="tablist" aria-label="内容查看方式">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={!contentPreview}
-                  className={`create-content-mode-btn ${!contentPreview ? 'is-active' : ''}`}
-                  onClick={() => setContentPreview(false)}
-                >
-                  <Icons.Edit size={12} />
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={contentPreview}
-                  className={`create-content-mode-btn ${contentPreview ? 'is-active' : ''}`}
-                  onClick={() => setContentPreview(true)}
-                  disabled={content.trim().length === 0}
-                  title={content.trim().length === 0 ? '先输入内容再预览' : '预览 Markdown 渲染效果'}
-                >
-                  <Icons.Eye size={12} />
-                  预览
-                </button>
-              </div>
-              {contentPreview ? (
-                <div className="create-content-preview">
-                  <MarkdownText content={content} />
-                </div>
-              ) : (
                 <TextArea
-                  className="form-textarea-lg"
-                  rows={12}
-                  placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
+                  rows={3}
+                  placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                 />
-              )}
-              <div className="form-hint">
-                支持 Markdown 格式。此内容将作为 Skill 的 System Prompt，在 Agent 运行时注入。
+              </div>
+              <div className="form-field">
+                <label className="form-label">标签（逗号分隔）</label>
+                <Input
+                  placeholder="code-review, security, quality"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">所需工具（逗号分隔）</label>
+                <Input
+                  placeholder="例如：Bash, Read, Edit"
+                  value={requiredTools}
+                  onChange={(e) => setRequiredTools(e.target.value)}
+                />
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="create-form-actions">
-            <Button type="text" onClick={resetForm}>
-              重置
-            </Button>
-            <Button
-              type="primary"
-              disabled={creating || !name.trim()}
-              loading={creating}
-              onClick={() => void handleCreate()}
-            >
-              创建 Skill
-            </Button>
-          </div>
+          <section className="create-panel">
+            <div className="create-panel-head">
+              <span className="create-panel-icon">
+                <Icons.Edit size={15} />
+              </span>
+              <div className="create-panel-headings">
+                <div className="create-panel-title">Skill 详细内容</div>
+                <div className="create-panel-desc">
+                  支持 Markdown。此内容会作为 System Prompt 在 Agent 运行时注入。
+                </div>
+              </div>
+            </div>
+            <div className="create-panel-body">
+              <div className="form-field">
+                <label className="form-label">
+                  System Prompt / 指令内容 <span className="required">*</span>
+                </label>
+                {/* 编辑 / 预览 分段控件：写完指令立即看渲染效果，与详情页「预览|源码」同一范式 */}
+                <div className="create-content-mode" role="tablist" aria-label="内容查看方式">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!contentPreview}
+                    className={`create-content-mode-btn ${!contentPreview ? 'is-active' : ''}`}
+                    onClick={() => setContentPreview(false)}
+                  >
+                    <Icons.Edit size={12} />
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={contentPreview}
+                    className={`create-content-mode-btn ${contentPreview ? 'is-active' : ''}`}
+                    onClick={() => setContentPreview(true)}
+                    disabled={content.trim().length === 0}
+                    title={
+                      content.trim().length === 0 ? '先输入内容再预览' : '预览 Markdown 渲染效果'
+                    }
+                  >
+                    <Icons.Eye size={12} />
+                    预览
+                  </button>
+                </div>
+                {contentPreview ? (
+                  <div className="create-content-preview">
+                    <MarkdownText content={content} />
+                  </div>
+                ) : (
+                  <TextArea
+                    className="form-textarea-lg"
+                    rows={12}
+                    placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                  />
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="create-panel">
+            <div className="create-panel-actions">
+              <Button type="text" onClick={resetForm}>
+                重置
+              </Button>
+              <Button
+                type="primary"
+                disabled={creating || !name.trim()}
+                loading={creating}
+                onClick={() => void handleCreate()}
+              >
+                创建 Skill
+              </Button>
+            </div>
+          </section>
         </div>
       ) : importMode === 'import' ? (
         /* ── File / Directory Import（合并）── */
-        <div className="create-import-panel">
-          <div className="import-panel-icon">
-            <Icons.Upload size={48} />
+        <section className="create-panel">
+          <div className="create-panel-head">
+            <span className="create-panel-icon">
+              <Icons.Upload size={15} />
+            </span>
+            <div className="create-panel-headings">
+              <div className="create-panel-title">导入 Skill（文件或目录）</div>
+              <div className="create-panel-desc">
+                选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>
+                。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地
+                Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。导入完成后可直接进入详情页预览与编辑。
+              </div>
+              <div className="create-panel-badges">
+                <span className="badge">SKILL.md</span>
+                <span className="badge">.md</span>
+                <span className="badge">目录</span>
+              </div>
+            </div>
           </div>
-          <div className="import-panel-title">导入 Skill（文件或目录）</div>
-          <div className="import-panel-desc">
-            选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>
-            。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地
-            Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。
-          </div>
-          <div className="import-panel-supported">
-            <span className="badge">SKILL.md</span>
-            <span className="badge">.md</span>
-            <span className="badge">目录</span>
-          </div>
-          <div className="import-panel-format">
-            <div className="import-format-title">文件格式 / 目录结构示例：</div>
-            <pre className="import-format-code">{`# 单文件
+
+          <div className="create-panel-body">
+            <div>
+              <div className="create-panel-field-title">文件格式 / 目录结构示例</div>
+              <pre className="create-panel-code">{`# 单文件
 ---
 name: 我的 Skill
 description: 描述文字
@@ -2337,18 +2376,10 @@ my-skill/
 ├── SKILL.md          ← 必须包含
 ├── scripts/helper.ts ← 辅助脚本
 └── templates/out.md  ← 模板文件`}</pre>
+            </div>
           </div>
-          <div className="row" style={{ gap: '8px', justifyContent: 'center' }}>
-            <Button
-              type="primary"
-              size="middle"
-              disabled={creating}
-              loading={creating}
-              icon={<Icons.File size={14} />}
-              onClick={() => void handleImportFile()}
-            >
-              选择文件
-            </Button>
+
+          <div className="create-panel-actions">
             <Button
               type="text"
               size="middle"
@@ -2359,37 +2390,70 @@ my-skill/
             >
               选择目录
             </Button>
+            <Button
+              type="primary"
+              size="middle"
+              disabled={creating}
+              loading={creating}
+              icon={<Icons.File size={14} />}
+              onClick={() => void handleImportFile()}
+            >
+              选择文件
+            </Button>
           </div>
-        </div>
+        </section>
       ) : importMode === 'detect' ? (
         /* ── Detect & Import Local Skills ── */
         <div>
-          <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
-            <Button
-              type="primary"
-              size="small"
-              onClick={() => void handleDetectLocal()}
-              disabled={detecting || isImporting}
-              loading={detecting}
-              icon={<Icons.Refresh size={12} />}
-            >
-              检测本地 Skill
-            </Button>
-            {dedupedCandidates.length > 0 && (
-              <span className="muted" style={{ lineHeight: '32px' }}>
-                检测到 {dedupedCandidates.length} 个本地 Skill
+          <div className="create-panel">
+            <div className="create-panel-head">
+              <span className="create-panel-icon">
+                <Icons.Refresh size={15} />
               </span>
-            )}
+              <div className="create-panel-headings">
+                <div className="create-panel-title">检测本地 Skill</div>
+                <div className="create-panel-desc">
+                  扫描宿主机 ~/.claude/skills、~/.codex/skills 等目录中包含 SKILL.md
+                  的技能，可单个或批量导入。
+                </div>
+              </div>
+              <div className="create-panel-head-actions">
+                {dedupedCandidates.length > 0 && (
+                  <span className="create-panel-hint-text">
+                    已检测到 {dedupedCandidates.length} 个
+                  </span>
+                )}
+                <Button
+                  type="primary"
+                  size="small"
+                  onClick={() => void handleDetectLocal()}
+                  disabled={detecting || isImporting}
+                  loading={detecting}
+                  icon={<Icons.Refresh size={12} />}
+                >
+                  {dedupedCandidates.length > 0 ? '重新检测' : '开始检测'}
+                </Button>
+              </div>
+            </div>
           </div>
 
           {dedupedCandidates.length > 0 && (
-            <div className="local-skill-panel">
-              <div className="local-skill-head">
-                <span className="local-skill-title">本地可导入 Skill</span>
-                <span className="badge">{dedupedCandidates.length}</span>
-                <div style={{ flex: 1 }} />
+            <section className="create-panel">
+              <div className="create-panel-head">
+                <span className="create-panel-icon">
+                  <Icons.Package size={15} />
+                </span>
+                <div className="create-panel-headings">
+                  <div className="create-panel-title">
+                    本地可导入 Skill
+                    <span className="badge">{dedupedCandidates.length}</span>
+                  </div>
+                  <div className="create-panel-desc">
+                    勾选后批量导入；已导入的技能可直接「预览」查看与编辑其文件。
+                  </div>
+                </div>
                 {importableCandidates.length > 0 && (
-                  <>
+                  <div className="create-panel-head-actions">
                     <Button
                       size="middle"
                       type="text"
@@ -2407,102 +2471,101 @@ my-skill/
                     >
                       {`导入所选 (${selectedIds.size})`}
                     </Button>
-                  </>
+                  </div>
                 )}
               </div>
 
-              {/* Search */}
-              <div className="local-skill-filter-bar">
-                <SearchBar
-                  placeholder="搜索本地 Skill..."
-                  value={candidateSearch}
-                  onInputChange={(value) => setCandidateSearch(value)}
-                  allowClear
-                  style={{ width: '220px' }}
-                />
-              </div>
+              <div className="create-panel-body create-panel-body--flush">
+                {/* Search */}
+                <div className="local-skill-filter-bar">
+                  <SearchBar
+                    placeholder="搜索本地 Skill..."
+                    value={candidateSearch}
+                    onInputChange={(value) => setCandidateSearch(value)}
+                    allowClear
+                    style={{ width: '240px' }}
+                  />
+                </div>
 
-              <div className="local-skill-list">
-                {searchFiltered.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      color: 'var(--text-muted)',
-                      fontSize: '12px',
-                    }}
-                  >
-                    未找到匹配的本地 Skill
-                  </div>
-                ) : (
-                  searchFiltered.map((candidate) => {
-                    const importing = importingIds.has(candidate.id)
-                    const selected = selectedIds.has(candidate.id)
-                    return (
-                      <div className="local-skill-row" key={candidate.id}>
-                        {candidate.installed ? (
-                          <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" checked disabled readOnly />
-                            <span className="checkmark" />
-                          </label>
-                        ) : (
-                          <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              disabled={importing}
-                              onChange={() => toggleSelect(candidate.id)}
-                            />
-                            <span className="checkmark" />
-                          </label>
-                        )}
-                        <div className="local-skill-icon">
-                          {candidate.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex1 min-w-0">
-                          <div className="strong truncate">{candidate.name}</div>
-                          <div className="muted truncate" title={candidate.rootPath}>
-                            {candidate.description || candidate.source} — {candidate.rootPath}
+                <div className="local-skill-list">
+                  {searchFiltered.length === 0 ? (
+                    <div className="create-panel-empty">未找到匹配的本地 Skill</div>
+                  ) : (
+                    searchFiltered.map((candidate) => {
+                      const importing = importingIds.has(candidate.id)
+                      const selected = selectedIds.has(candidate.id)
+                      return (
+                        <div className="local-skill-row" key={candidate.id}>
+                          {candidate.installed ? (
+                            <label
+                              className="local-skill-check"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input type="checkbox" checked disabled readOnly />
+                              <span className="checkmark" />
+                            </label>
+                          ) : (
+                            <label
+                              className="local-skill-check"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={importing}
+                                onChange={() => toggleSelect(candidate.id)}
+                              />
+                              <span className="checkmark" />
+                            </label>
+                          )}
+                          <div className="local-skill-icon">
+                            {candidate.name.charAt(0).toUpperCase()}
                           </div>
-                        </div>
-                        <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>
-                          {candidate.source}
-                        </span>
-                        {candidate.installed ? (
-                          <>
-                            <span className="badge success" style={{ flexShrink: 0 }}>
-                              已导入
-                            </span>
-                            {candidate.localSkillId != null && (
+                          {/* 中间信息列：flex + min-width:0，长描述单行省略，绝不挤压右侧操作列 */}
+                          <div className="local-skill-main">
+                            <div className="local-skill-name truncate" title={candidate.name}>
+                              {candidate.name}
+                            </div>
+                            <div className="local-skill-desc truncate" title={candidate.rootPath}>
+                              {candidate.description || candidate.source}
+                            </div>
+                          </div>
+                          {/* 右侧固定操作列：不参与收缩，粘在行尾 */}
+                          <div className="local-skill-actions">
+                            <span className="badge">{candidate.source}</span>
+                            {candidate.installed ? (
+                              <>
+                                <span className="badge success">已导入</span>
+                                {candidate.localSkillId != null && (
+                                  <Button
+                                    size="middle"
+                                    type="text"
+                                    icon={<Icons.Eye size={13} />}
+                                    onClick={() => onPreviewSkill(candidate.localSkillId as string)}
+                                  >
+                                    预览
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
                               <Button
                                 size="middle"
                                 type="text"
-                                icon={<Icons.Eye size={13} />}
-                                onClick={() => onPreviewSkill(candidate.localSkillId as string)}
-                                style={{ flexShrink: 0 }}
+                                onClick={() => void handleImportLocal(candidate)}
+                                disabled={importing}
+                                loading={importing}
                               >
-                                预览
+                                导入
                               </Button>
                             )}
-                          </>
-                        ) : (
-                          <Button
-                            size="middle"
-                            type="text"
-                            onClick={() => void handleImportLocal(candidate)}
-                            disabled={importing}
-                            loading={importing}
-                            style={{ flexShrink: 0 }}
-                          >
-                            导入
-                          </Button>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            </section>
           )}
 
           {localCandidates.length === 0 && !detecting && (
@@ -2510,7 +2573,7 @@ my-skill/
               <div className="empty-icon">
                 <Icons.Refresh />
               </div>
-              <div className="empty-title">点击上方按钮检测本地 Skill</div>
+              <div className="empty-title">点击上方「开始检测」扫描本地 Skill</div>
               <div className="empty-desc">扫描本地目录中包含 SKILL.md 的 Skill，一键批量导入</div>
             </div>
           )}
@@ -2584,7 +2647,7 @@ function LinkSkillPanel({
     } finally {
       setLinking(false)
     }
-  }, [linkTarget, linkName, linkSkill, onCreated, onSkillReady, getAppPaths, toast])
+  }, [linkTarget, linkName, linkSkill, onCreated, onPreviewSkill, onSkillReady, getAppPaths, toast])
 
   const handleBrowse = useCallback(async () => {
     try {
@@ -2619,80 +2682,120 @@ function LinkSkillPanel({
   )
 
   return (
-    <div className="create-import-panel">
-      <div className="import-panel-icon">
-        <Icons.ExternalLink size={48} />
-      </div>
-      <div className="import-panel-title">软链接技能目录</div>
-      <div className="import-panel-desc">
-        将宿主机上的技能目录通过软链接引入应用。链接后技能文件保持原位，应用自动读取最新内容。适用于开发中的技能，无需每次手动复制。
-      </div>
-      <div className="import-panel-supported">
-        <span className="badge">软链接</span>
-        <span className="badge">SKILL.md</span>
-      </div>
-
-      <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div className="form-field">
-          <label className="form-label">技能目录路径 *</label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <div style={{ flex: 1 }}>
-              <Input
-                placeholder="例如：/Users/you/.codex/skills/my-skill 或 /Users/you/.claude/skills/my-skill"
-                value={linkTarget}
-                onChange={(e) => setLinkTarget(e.target.value)}
-              />
+    <>
+      <section className="create-panel">
+        <div className="create-panel-head">
+          <span className="create-panel-icon">
+            <Icons.ExternalLink size={15} />
+          </span>
+          <div className="create-panel-headings">
+            <div className="create-panel-title">软链接技能目录</div>
+            <div className="create-panel-desc">
+              将宿主机上的技能目录通过软链接引入应用。链接后技能文件保持原位，应用自动读取最新内容。适用于开发中的技能，无需每次手动复制。
             </div>
-            <Button type="text" onClick={() => void handleBrowse()}>
-              浏览
-            </Button>
+            <div className="create-panel-badges">
+              <span className="badge">软链接</span>
+              <span className="badge">SKILL.md</span>
+              <span className="badge">实时同步</span>
+            </div>
           </div>
         </div>
-        <div className="form-field">
-          <label className="form-label">链接名称（可选，默认使用目录名）</label>
-          <Input
-            placeholder="my-skill"
-            value={linkName}
-            onChange={(e) => setLinkName(e.target.value)}
-          />
-        </div>
-        <Button
-          type="primary"
-          disabled={linking || !linkTarget.trim()}
-          loading={linking}
-          icon={<Icons.ExternalLink size={14} />}
-          onClick={() => void handleLink()}
-        >
-          创建软链接
-        </Button>
-      </div>
 
-      {appPaths && appPaths.linkedSkills.length > 0 && (
-        <div style={{ marginTop: '20px' }}>
-          <div className="create-section-title">已链接的技能</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-            {appPaths.linkedSkills.map((name) => (
-              <div key={name} className="local-skill-row">
-                <div className="local-skill-icon">{name.charAt(0).toUpperCase()}</div>
-                <div className="flex1 min-w-0">
-                  <div className="strong truncate">{name}</div>
-                </div>
-                <span className="badge">链接</span>
-                <Button size="middle" type="text" onClick={() => void handleUnlink(name)}>
-                  取消链接
-                </Button>
+        <div className="create-panel-body">
+          <div className="form-field">
+            <label className="form-label">技能目录路径 *</label>
+            <div className="create-panel-input-row">
+              <div className="create-panel-input">
+                <Input
+                  placeholder="例如：/Users/you/.claude/skills/my-skill"
+                  value={linkTarget}
+                  onChange={(e) => setLinkTarget(e.target.value)}
+                />
               </div>
-            ))}
+              <Button
+                type="text"
+                icon={<Icons.FolderOpen size={14} />}
+                onClick={() => void handleBrowse()}
+              >
+                浏览
+              </Button>
+            </div>
+          </div>
+          <div className="form-field">
+            <label className="form-label">链接名称（可选，默认使用目录名）</label>
+            <Input
+              placeholder="my-skill"
+              value={linkName}
+              onChange={(e) => setLinkName(e.target.value)}
+            />
           </div>
         </div>
-      )}
 
-      {appPaths && (
-        <div style={{ marginTop: '16px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          <div>链接目录：{appPaths.linksDir}</div>
-          <div>应用技能目录：{appPaths.userDir}</div>
+        <div className="create-panel-actions">
+          <Button
+            type="primary"
+            size="middle"
+            disabled={linking || !linkTarget.trim()}
+            loading={linking}
+            icon={<Icons.ExternalLink size={14} />}
+            onClick={() => void handleLink()}
+          >
+            创建软链接
+          </Button>
         </div>
-      )}
-    </div>
+      </section>
+
+      <section className="create-panel">
+        <div className="create-panel-head">
+          <span className="create-panel-icon">
+            <Icons.Link size={15} />
+          </span>
+          <div className="create-panel-headings">
+            <div className="create-panel-title">
+              已链接的技能
+              {appPaths != null && <span className="badge">{appPaths.linkedSkills.length}</span>}
+            </div>
+            <div className="create-panel-desc">
+              链接指向宿主机原始目录，取消链接只移除引用，不会删除源文件。
+            </div>
+          </div>
+        </div>
+
+        <div className="create-panel-body create-panel-body--flush">
+          {appPaths != null && appPaths.linkedSkills.length > 0 ? (
+            <div className="local-skill-list">
+              {appPaths.linkedSkills.map((name) => (
+                <div key={name} className="local-skill-row">
+                  <div className="local-skill-icon">{name.charAt(0).toUpperCase()}</div>
+                  <div className="local-skill-main">
+                    <div className="local-skill-name truncate" title={name}>
+                      {name}
+                    </div>
+                    <div className="local-skill-desc truncate" title={name}>
+                      宿主软链目录 · 文件实时同步
+                    </div>
+                  </div>
+                  <div className="local-skill-actions">
+                    <span className="badge">链接</span>
+                    <Button size="middle" type="text" onClick={() => void handleUnlink(name)}>
+                      取消链接
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="create-panel-empty">暂无已链接的技能</div>
+          )}
+        </div>
+
+        {appPaths != null && (
+          <div className="create-panel-footnote">
+            <span>链接目录：{appPaths.linksDir}</span>
+            <span>应用技能目录：{appPaths.userDir}</span>
+          </div>
+        )}
+      </section>
+    </>
   )
 }

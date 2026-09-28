@@ -76,7 +76,7 @@ describe('renderer style architecture', () => {
     expect(views).not.toMatch(/(^|\n)\.workflow-layout\s*\{/)
 
     expect(skillStore).toMatch(/\.create-skill-layout\s*\{/)
-    expect(skillStore).toMatch(/\.local-skill-panel\s*\{/)
+    expect(skillStore).toMatch(/\.create-panel\s*\{/)
     expect(views).not.toMatch(/(^|\n)\.store-tabbar\s*\{/)
     expect(views).not.toMatch(/(^|\n)\.create-skill-layout\s*\{/)
 
