@@ -153,6 +153,9 @@ export function ModelSettingsModal({
       }
       width="min(1080px, 94vw)"
       className="mv_settings_modal"
+      // lobehub Modal 的 body 水平 padding 内联固定 16px，1080px 宽弹窗下太贴边；
+      // 走官方 paddings prop 提到 28px（内联样式无法用 class 覆盖）
+      paddings={{ desktop: 28 }}
       onCancel={onClose}
       footer={
         <div className="mv_settings_footer">

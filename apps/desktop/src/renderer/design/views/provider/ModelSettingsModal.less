@@ -13,7 +13,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
   }
 
   .mv_settings_search {
@@ -31,6 +31,9 @@
   // 否则单元格内容（值/恢复默认）变化会推动列宽、让滑块列左右位移。
   --mv-settings-columns: minmax(160px, 1fr) 132px 80px minmax(240px, 300px);
 
+  // 水平留白基准：表头 / 组标题 / 行 / 空态必须一致，否则网格列错位
+  --mv-settings-gutter: 8px;
+
   .mv_settings_head,
   .mv_settings_row {
     display: grid;
@@ -40,16 +43,9 @@
     min-width: 0;
   }
 
+  // 表头不吸顶（不在滚动容器内），纯文字无背景无边框：差异色横条 + 边框均已移除
   .mv_settings_head {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    // 上下对称留白 + 固定高度：文字垂直居中，不再贴着下边框（此前上 15px / 下 7px）
-    min-height: 40px;
-    padding: 11px 4px;
-    border-bottom: 1px solid var(--border-strong);
-    border-radius: var(--r-sm);
-    background: var(--bg);
+    padding: 2px var(--mv-settings-gutter) 10px;
     font-size: 12px;
     line-height: 18px;
     color: var(--text-muted);
@@ -59,25 +55,25 @@
     // 行高因「轨道 + 刻度尺」变高（41px → 52px），同步放宽可视区，保证同屏行数不缩水
     max-height: min(62vh, 640px);
     overflow-y: auto;
-    padding-top: 2px;
   }
 
   .mv_settings_empty {
-    padding: 24px 4px;
+    padding: 24px var(--mv-settings-gutter);
     font-size: 13px;
     color: var(--text-muted);
     text-align: center;
   }
 
-  .mv_settings_group {
-    padding-top: 4px;
+  // 分组之间用留白分隔；组内行仍以 1px 淡线分隔
+  .mv_settings_group + .mv_settings_group {
+    margin-top: 8px;
   }
 
   .mv_settings_group_title {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 4px 4px;
+    padding: 8px var(--mv-settings-gutter) 6px;
     font-size: 12px;
     color: var(--text-muted);
   }
@@ -108,7 +104,7 @@
   }
 
   .mv_settings_row {
-    padding: 7px 4px;
+    padding: 9px var(--mv-settings-gutter);
     border-bottom: 1px solid var(--border);
     border-radius: var(--r-sm);
     font-size: 13px;
@@ -148,5 +144,10 @@
 
   .mv_settings_footer_spacer {
     flex: 1;
+  }
+
+  // lobehub 给 footer 的 class 规则是 padding: 16px；内容区水平已提到 28px，footer 对齐同一水平线
+  .ant-modal-footer {
+    padding: 16px 28px;
   }
 }
