@@ -22,6 +22,7 @@ import { ProviderConversationProtocolFields } from './provider/ProviderConversat
 import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotice'
 import { SparkExecutorSwitch } from './provider/SparkExecutorSwitch'
 import { sparkExecutorAvailability } from '../utils/sparkExecutorAvailability'
+import { isEmbeddingProviderProfile, isMediaProviderProfile } from '../utils/provider-model-kind'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import {
   ProviderContextWindowSlider,
@@ -2467,7 +2468,9 @@ export function ProviderEditPanel({
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
             apiKey,
-            isDefault: p.isDefault,
+            // 历史数据里非对话渠道可能仍带默认位：载入时归位为 false，避免保存时回写
+            isDefault:
+              isMediaProviderProfile(p) || isEmbeddingProviderProfile(p) ? false : p.isDefault,
             haikuModel: p.haikuModel ?? '',
             sonnetModel: p.sonnetModel ?? '',
             opusModel: p.opusModel ?? '',
@@ -3041,7 +3044,8 @@ export function ProviderEditPanel({
           defaultModel: effectiveDefaultModel,
           modelIds,
           providerIcon: form.providerIcon,
-          isDefault: form.isDefault,
+          // 非对话渠道不参与默认位竞争：即使表单残留历史 true 也不下发
+          isDefault: defaultProviderEligible ? form.isDefault : false,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
           // 始终显式下发 true/false：关闭即清除落库字段（读取侧只透出 true）
           apiEndpointFullUrl: effectiveEndpointFullUrl,
@@ -3071,7 +3075,7 @@ export function ProviderEditPanel({
           modelIds,
           providerIcon: form.providerIcon,
           apiKey: form.apiKey.trim(),
-          isDefault: form.isDefault,
+          isDefault: defaultProviderEligible ? form.isDefault : false,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
           ...(effectiveEndpointFullUrl && { apiEndpointFullUrl: true }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
@@ -3338,6 +3342,8 @@ export function ProviderEditPanel({
   // ── 模型类型只剩两大类：专职媒体类型（生图/语音/视频）与对话模型 ──
   const isDedicatedMediaType = isMediaProviderModelType(form.modelType)
   const isChatModel = form.modelType === 'multimodal'
+  // 默认 Provider 仅限对话渠道：多媒体生成 / 向量渠道不参与全局默认位竞争
+  const defaultProviderEligible = !isDedicatedMediaType && form.codexApiKind !== 'embedding'
   const mediaPanelVisible = isDedicatedMediaType || (isChatModel && form.mediaGenerationEnabled)
   // 专职多媒体模型必须始终提供适配器入口：新建 Provider 没有已有引用时，
   // 先从这里添加模型 ID，再进入「编辑协议」配置模板请求。
@@ -3687,16 +3693,18 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">
-                {isDedicatedMediaType ? '默认调用模型' : '默认 Provider'}
-              </label>
-              <div className="pv_form_control_inline">
-                <Switch
-                  size="middle"
-                  checked={form.isDefault}
-                  onChange={(checked: boolean) => set('isDefault', checked)}
-                />
-              </div>
+              {defaultProviderEligible && (
+                <>
+                  <label className="pv_form_label">默认 Provider</label>
+                  <div className="pv_form_control_inline">
+                    <Switch
+                      size="middle"
+                      checked={form.isDefault}
+                      onChange={(checked: boolean) => set('isDefault', checked)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -93,8 +93,12 @@ function makeRepo() {
       return true
     }),
     setDefault: vi.fn(),
+    clearDefault: vi.fn((id: string) => {
+      const current = rows.get(id)
+      if (current) rows.set(id, { ...current, is_default: 0 })
+    }),
     findByProviderType: vi.fn(() => []),
-    getDefault: vi.fn(() => null),
+    getDefault: vi.fn(() => [...rows.values()].find((row) => row.is_default === 1) ?? null),
   }
 }
 
@@ -1861,4 +1865,177 @@ describe('ProviderService', () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // ── 默认 Provider 仅限对话渠道（方案 A）──────────────────────────────
+
+  it('createProvider rejects setting a dedicated media provider as default', async () => {
+    await expect(
+      service.createProvider({
+        name: '本地生图',
+        provider: 'openai',
+        defaultModel: '文生图-ZImage',
+        apiKey: 'sk-image',
+        modelType: 'image',
+        isDefault: true,
+      }),
+    ).rejects.toThrow('默认 Provider 仅限对话渠道')
+    // 写库前拒绝：不留半成品渠道
+    expect(repo.rows.size).toBe(0)
+    expect(repo.setDefault).not.toHaveBeenCalled()
+  })
+
+  it('createProvider rejects setting an embedding provider as default', async () => {
+    await expect(
+      service.createProvider({
+        name: 'glm向量模型',
+        provider: 'openai',
+        defaultModel: 'embedding-3',
+        apiKey: 'sk-embed',
+        codexApiKind: 'embedding',
+        isDefault: true,
+      }),
+    ).rejects.toThrow('默认 Provider 仅限对话渠道')
+    expect(repo.rows.size).toBe(0)
+  })
+
+  it('createProvider still allows a chat provider with media generation as default', async () => {
+    const profile = await service.createProvider({
+      name: '混合渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+      modelType: 'multimodal',
+      mediaProvider: 'openai-images',
+      isDefault: true,
+    })
+    expect(profile.isDefault).toBe(true)
+  })
+
+  it('updateProvider rejects promoting an embedding provider to default', async () => {
+    const created = await service.createProvider({
+      name: 'glm向量模型',
+      provider: 'openai',
+      defaultModel: 'embedding-3',
+      apiKey: 'sk-embed',
+      codexApiKind: 'embedding',
+    })
+    await expect(service.updateProvider({ id: created.id, isDefault: true })).rejects.toThrow(
+      '默认 Provider 仅限对话渠道',
+    )
+    expect(repo.setDefault).not.toHaveBeenCalled()
+  })
+
+  it('updateProvider rejects default when modelType switches to image in the same update', async () => {
+    const created = await service.createProvider({
+      name: '切换类型',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    await expect(
+      service.updateProvider({ id: created.id, modelType: 'image', isDefault: true }),
+    ).rejects.toThrow('默认 Provider 仅限对话渠道')
+    expect(repo.setDefault).not.toHaveBeenCalled()
+    // 判定在写库前完成：拒绝时类型切换不应落库（不留「报错但已被改成生图」的半成品）
+    const rejectedRow = repo.rows.get(created.id)!
+    const rejectedConfig = JSON.parse(String(rejectedRow.config_json)) as { modelType?: string }
+    expect(rejectedConfig.modelType ?? 'multimodal').not.toBe('image')
+  })
+
+  it('updateProvider still sets default for a conversational provider', async () => {
+    const created = await service.createProvider({
+      name: '对话渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    await service.updateProvider({ id: created.id, isDefault: true })
+    expect(repo.setDefault).toHaveBeenCalledWith(created.id)
+  })
+
+  it('updateProvider clears the default flag when a default chat provider is converted to media', async () => {
+    const created = await service.createProvider({
+      name: '原对话渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    // 模拟它当前持有全局默认位
+    repo.rows.set(created.id, { ...repo.rows.get(created.id)!, is_default: 1 })
+
+    await service.updateProvider({ id: created.id, modelType: 'image' })
+
+    expect(repo.clearDefault).toHaveBeenCalledWith(created.id)
+    expect(repo.rows.get(created.id)!.is_default).toBe(0)
+  })
+
+  it('updateProvider clears the default flag when a default chat provider is converted to embedding', async () => {
+    const created = await service.createProvider({
+      name: '原对话渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    repo.rows.set(created.id, { ...repo.rows.get(created.id)!, is_default: 1 })
+
+    await service.updateProvider({ id: created.id, codexApiKind: 'embedding' })
+
+    expect(repo.clearDefault).toHaveBeenCalledWith(created.id)
+    expect(repo.rows.get(created.id)!.is_default).toBe(0)
+  })
+
+  it('updateProvider keeps the default flag when a conversational provider is edited', async () => {
+    const created = await service.createProvider({
+      name: '对话渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    repo.rows.set(created.id, { ...repo.rows.get(created.id)!, is_default: 1 })
+
+    await service.updateProvider({ id: created.id, name: '改名' })
+
+    expect(repo.clearDefault).not.toHaveBeenCalled()
+    expect(repo.rows.get(created.id)!.is_default).toBe(1)
+  })
+
+  it('ensureDefaultProviderEligible clears a legacy media provider holding the default flag', async () => {
+    const imageProvider = await service.createProvider({
+      name: '本地自部署图片',
+      provider: 'openai',
+      defaultModel: '文生图-ZImage',
+      apiKey: 'sk-image',
+      modelType: 'image',
+    })
+    // 模拟历史数据：直接把生图渠道置为全局默认（绕过新校验）
+    const row = repo.rows.get(imageProvider.id)!
+    repo.rows.set(imageProvider.id, { ...row, is_default: 1 })
+
+    service.ensureDefaultProviderEligible()
+
+    expect(repo.rows.get(imageProvider.id)!.is_default).toBe(0)
+    expect(repo.clearDefault).toHaveBeenCalledWith(imageProvider.id)
+  })
+
+  it('ensureDefaultProviderEligible keeps the default flag on a conversational provider', async () => {
+    const chatProvider = await service.createProvider({
+      name: '对话渠道',
+      provider: 'openai',
+      defaultModel: 'glm-4.7',
+      apiKey: 'sk-chat',
+    })
+    const row = repo.rows.get(chatProvider.id)!
+    repo.rows.set(chatProvider.id, { ...row, is_default: 1 })
+
+    service.ensureDefaultProviderEligible()
+
+    expect(repo.rows.get(chatProvider.id)!.is_default).toBe(1)
+    expect(repo.clearDefault).not.toHaveBeenCalled()
+  })
+
+  it('ensureDefaultProviderEligible is a no-op without any default provider', () => {
+    service.ensureDefaultProviderEligible()
+    expect(repo.clearDefault).not.toHaveBeenCalled()
+  })
+})
 })

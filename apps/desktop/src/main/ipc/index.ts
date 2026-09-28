@@ -568,8 +568,21 @@ function pushConfigChanged(
   })
 }
 
+/** 默认 Provider 资格矫正只需在数据库就绪后跑一次（幂等；失败不阻断渠道 IPC）。 */
+let defaultProviderEligibilityEnsured = false
+
 function getProviderService(): ProviderService {
-  return new ProviderService(new ProviderProfileRepository(getDatabase()))
+  const service = new ProviderService(new ProviderProfileRepository(getDatabase()))
+  if (!defaultProviderEligibilityEnsured) {
+    defaultProviderEligibilityEnsured = true
+    try {
+      // 默认仅限对话渠道：清理历史遗留的生图/向量渠道占用默认位的数据
+      service.ensureDefaultProviderEligible()
+    } catch (err) {
+      log.error(`Provider default eligibility ensure failed: ${String(err)}`)
+    }
+  }
+  return service
 }
 
 function getModelService(): ModelService {

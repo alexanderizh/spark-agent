@@ -224,6 +224,20 @@ export function isConversationalProviderCandidate(
   return true
 }
 
+/**
+ * 渠道是否有资格持有全局「默认 Provider」位（默认仅限对话渠道）。
+ *
+ * 与 isConversationalProviderCandidate 的口径差异：对话 + 媒体生成的混合渠道
+ * （modelType 为 text/multimodal 且挂媒体能力）仍能承接文本 turn，保留默认资格；
+ * 仅整条渠道为多媒体生成（modelType image/voice/video）或向量（embedding）时排除。
+ */
+export function canProviderHoldChatDefault(provider: ProviderEligibilityInput): boolean {
+  if (provider.modelType != null && NON_TEXT_MODEL_TYPES.has(provider.modelType)) {
+    return false
+  }
+  return provider.codexApiKind !== 'embedding'
+}
+
 const CODEX_TEXT_PROVIDER_TYPES: ReadonlySet<string> = new Set([
   'openai',
   'openai-compatible',

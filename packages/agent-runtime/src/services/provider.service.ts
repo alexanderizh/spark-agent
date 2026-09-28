@@ -30,6 +30,8 @@ import {
   AutoRouterConfigSchema,
   type AutoRouterExecutorRef,
   parseAutoRouterConfig,
+  canProviderHoldChatDefault,
+  type ProviderEligibilityInput,
   PROVIDER_EXPORT_VERSION,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CLI_PROVIDER_NAME,
@@ -413,6 +415,29 @@ function safeJsonParse(value: string): unknown {
     return JSON.parse(value)
   } catch {
     return null
+  }
+}
+
+/** 默认 Provider 资格拒绝文案（create / update / 矫正共用同一口径）。 */
+const DEFAULT_PROVIDER_ELIGIBILITY_MESSAGE =
+  '默认 Provider 仅限对话渠道：多媒体生成与向量渠道不能占用默认位'
+
+/**
+ * 默认资格判定输入收窄：原始值可能来自请求参数或 config_json，
+ * 只关心 modelType 是否多媒体生成、codexApiKind 是否向量，其余形态视为对话渠道。
+ */
+function toDefaultEligibilityInput(
+  modelType: unknown,
+  codexApiKind: unknown,
+): ProviderEligibilityInput {
+  return {
+    // 判定只依赖 modelType / codexApiKind；provider 字段为接口必填占位，不参与判定
+    provider: '',
+    modelType:
+      modelType === 'image' || modelType === 'voice' || modelType === 'video'
+        ? modelType
+        : undefined,
+    codexApiKind: codexApiKind === 'embedding' ? 'embedding' : undefined,
   }
 }
 
@@ -838,6 +863,14 @@ export class ProviderService {
       )
     }
 
+    // 默认 Provider 仅限对话渠道：多媒体生成 / 向量渠道在写库前拒绝，避免抢占全局默认位
+    if (
+      params.isDefault &&
+      !canProviderHoldChatDefault(toDefaultEligibilityInput(params.modelType, params.codexApiKind))
+    ) {
+      throw new Error(DEFAULT_PROVIDER_ELIGIBILITY_MESSAGE)
+    }
+
     if (params.isDefault) {
       // clear existing defaults first
       this.repo.listAll().forEach((r) => {
@@ -951,6 +984,24 @@ export class ProviderService {
       Object.keys(params).some((key) => key !== 'id' && key !== 'enabled')
     ) {
       throw new Error('自动路由只能在「渠道管理 → 自动路由」中修改')
+    }
+
+    const parsedExistingConfig = safeJsonParse(existing.config_json)
+    const existingRecord: Record<string, unknown> =
+      typeof parsedExistingConfig === 'object' && parsedExistingConfig != null
+        ? (parsedExistingConfig as Record<string, unknown>)
+        : {}
+    const postUpdateCanHoldDefault = canProviderHoldChatDefault(
+      toDefaultEligibilityInput(
+        params.modelType ?? existingRecord.modelType,
+        params.codexApiKind ?? existingRecord.codexApiKind,
+      ),
+    )
+    // 默认 Provider 仅限对话渠道：判定必须在写库之前，否则拒绝时 config 等字段已落库
+    // （调用方看到报错但数据已被改动）。判定基于更新后的形态：modelType / codexApiKind
+    // 可在同一次更新中切换，因此取 params 覆盖既有 config 的结果，堵住「先切成生图再设默认」的绕行。
+    if (params.isDefault && !postUpdateCanHoldDefault) {
+      throw new Error(DEFAULT_PROVIDER_ELIGIBILITY_MESSAGE)
     }
 
     // 协议格式切换（anthropic ↔ openai）：同步 provider_type，并让配置按新类型重新归一化。
@@ -1132,6 +1183,13 @@ export class ProviderService {
 
     if (params.isDefault) {
       this.repo.setDefault(params.id)
+    } else if (existing.is_default === 1 && !postUpdateCanHoldDefault) {
+      // 不变式维护：已持有默认位的渠道被改成多媒体/向量渠道时同步清位，
+      // 否则默认位会继续挂在不具备对话资格的渠道上，直到下次启动才被矫正。
+      this.repo.clearDefault(params.id)
+      log.info(
+        `Cleared default provider flag after type change: id=${params.id} name=${existing.name}`,
+      )
     }
 
     const updated = this.repo.get(params.id)!
@@ -1206,6 +1264,28 @@ export class ProviderService {
     }
     const rows = this.repo.listAll()
     return rowToAutoRouterProfile(this.repo.get(id)!, new Map(rows.map((row) => [row.id, row])))
+  }
+
+  /**
+   * 默认 Provider 仅限对话渠道：历史版本允许生图等非对话渠道占用 isDefault 单值位，
+   * 导致渠道管理徽标与新会话兜底语义错位。启动后调用一次清掉遗留的非对话默认位；
+   * 幂等：无默认或默认为对话渠道时不写库（AutoRouter 行无 modelType/codexApiKind，视为对话渠道）。
+   */
+  ensureDefaultProviderEligible(): void {
+    const current = this.repo.getDefault()
+    if (current == null) return
+    const parsed = safeJsonParse(current.config_json)
+    const record =
+      typeof parsed === 'object' && parsed != null ? (parsed as Record<string, unknown>) : {}
+    if (
+      canProviderHoldChatDefault(toDefaultEligibilityInput(record.modelType, record.codexApiKind))
+    ) {
+      return
+    }
+    this.repo.clearDefault(current.id)
+    log.info(
+      `Cleared non-conversational default provider flag: id=${current.id} name=${current.name}`,
+    )
   }
 
   async deleteProvider(id: string): Promise<void> {

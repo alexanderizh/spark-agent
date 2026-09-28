@@ -108,4 +108,9 @@ export class ProviderProfileRepository extends BaseRepository {
         .get() as ProviderProfileRow | undefined) ?? null
     )
   }
+
+  /** 清除单个渠道的默认位，不影响其他渠道（默认资格矫正用）。 */
+  clearDefault(id: string): void {
+    this.raw.prepare(`UPDATE provider_profiles SET is_default = 0 WHERE id = ?`).run(id)
+  }
 }
