@@ -32,7 +32,9 @@
   --font-lg: 14px;
 
   /* Settings navigation and its window-titlebar continuation must share one
-     width so the two surfaces stay visually aligned. */
+     width so the two surfaces stay visually aligned. 设置页的拖拽条会把用户
+     调过的宽度内联写到根节点上（见 views/settings-nav/settingsNavWidth.ts），
+     这里的 240px 只是「从未调整过」时的默认值。 */
   --settings-nav-width: 240px;
 
   /* Inline control height scale: --control-h-sm 对齐 lobehub size="small" / .btn.sm */

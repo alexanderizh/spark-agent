@@ -1,5 +1,5 @@
 /**
- * SettingsView — 多分类设置（通用/外观/快捷键/模型/规则/权限/MCP/工作流/遥测/存储/更新）
+ * SettingsView — 多分类设置（通用 / Agent / 生态 / 系统 四大分组）
  *
  * 包含：左侧分组导航 + 右侧多 section 内容。Profile 编辑使用 Modal。
  * 注意：Provider 配置 UI 已抽到 ProvidersView.tsx（侧边栏一级菜单）。
@@ -77,6 +77,7 @@ import { ComputerUseSettingsSection } from '../computer-use/ComputerUseSettingsS
 import { AccountSyncSettingsSection } from './account-sync/AccountSyncSettingsSection'
 import { UpdateReleaseNotesCard } from './UpdateReleaseNotesCard'
 import { HooksV2Section } from './hooks/HooksV2Section'
+import { SettingsNavResizer } from './settings-nav/SettingsNavResizer'
 import './SettingsView.less'
 import type {
   SessionAgentAdapter,
@@ -264,6 +265,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     if (initialSection) setTweak('settingsSection', initialSection)
   }, [initialSection, setTweak])
 
+  // 导航分组：常用项收拢到「通用」，其余按 Agent / 生态 / 系统 归类。
+  // 仅调整归属与顺序，各 section 的 id 与实现保持不变。
   const nav = [
     {
       group: '通用',
@@ -287,10 +290,34 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           keywords: ['云同步', '手动同步', '账号', '备份', '跨设备'],
         },
         {
-          id: 'shortcuts',
-          icon: <Icons.Command size={13} />,
-          label: '快捷键',
-          keywords: ['键盘', '绑定', '热键', 'shortcut'],
+          id: 'memory',
+          icon: <Icons.Brain size={13} />,
+          label: '记忆',
+          keywords: ['长期记忆', '记忆库', '记住'],
+        },
+        {
+          id: 'remote-connections',
+          icon: <Icons.Globe size={13} />,
+          label: '远程连接',
+          keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'],
+        },
+        {
+          id: 'performance',
+          icon: <Icons.Activity size={13} />,
+          label: '性能',
+          keywords: ['性能监控', '内存', '压力', '并发', '降级', '阈值', '资源占用', 'performance'],
+        },
+        {
+          id: 'integrity',
+          icon: <Icons.Shield size={13} />,
+          label: '完整性',
+          keywords: ['校验', '修复', 'Chromium', '下载', '完整性'],
+        },
+        {
+          id: 'hooks',
+          icon: <Icons.Bell size={13} />,
+          label: 'Hooks',
+          keywords: ['钩子', '回调', '事件', '钩子函数'],
         },
       ],
     },
@@ -316,12 +343,6 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           keywords: ['自动执行', '允许', '拒绝', '审批', '权限'],
         },
         {
-          id: 'memory',
-          icon: <Icons.Brain size={13} />,
-          label: '记忆',
-          keywords: ['长期记忆', '记忆库', '记住'],
-        },
-        {
           id: 'session-workflow',
           icon: <Icons.Workflow size={13} />,
           label: '会话工作流',
@@ -332,14 +353,26 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '生态',
       items: [
+        {
+          id: 'playwright',
+          icon: <Icons.Globe size={13} />,
+          label: '浏览器自动化',
+          keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'],
+        },
+        {
+          id: 'usage',
+          icon: <Icons.Activity size={13} />,
+          label: '用量统计',
+          keywords: ['token', '额度', '统计', '消耗'],
+        },
+        {
+          id: 'storage',
+          icon: <Icons.Database size={13} />,
+          label: '存储与备份',
+          keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'],
+        },
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
-        {
-          id: 'remote-connections',
-          icon: <Icons.Globe size={13} />,
-          label: '远程连接',
-          keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'],
-        },
         {
           id: 'team-registry',
           icon: <Icons.Users size={13} />,
@@ -364,52 +397,22 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       group: '系统',
       items: [
         {
+          id: 'shortcuts',
+          icon: <Icons.Command size={13} />,
+          label: '快捷键',
+          keywords: ['键盘', '绑定', '热键', 'shortcut'],
+        },
+        {
           id: 'computer-use',
           icon: <Icons.Monitor size={13} />,
           label: '电脑操作',
           keywords: ['辅助功能', '屏幕录制', '输入控制', '系统权限', 'computer use'],
         },
         {
-          id: 'performance',
-          icon: <Icons.Activity size={13} />,
-          label: '性能',
-          keywords: ['性能监控', '内存', '压力', '并发', '降级', '阈值', '资源占用', 'performance'],
-        },
-        {
-          id: 'integrity',
-          icon: <Icons.Shield size={13} />,
-          label: '完整性',
-          keywords: ['校验', '修复', 'Chromium', '下载', '完整性'],
-        },
-        {
-          id: 'playwright',
-          icon: <Icons.Globe size={13} />,
-          label: '浏览器自动化',
-          keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'],
-        },
-        {
-          id: 'usage',
-          icon: <Icons.Activity size={13} />,
-          label: '用量统计',
-          keywords: ['token', '额度', '统计', '消耗'],
-        },
-        {
           id: 'telemetry',
           icon: <Icons.Activity size={13} />,
           label: '本地日志',
           keywords: ['日志', '调试', 'telemetry'],
-        },
-        {
-          id: 'hooks',
-          icon: <Icons.Bell size={13} />,
-          label: 'Hooks',
-          keywords: ['钩子', '回调', '事件', '钩子函数'],
-        },
-        {
-          id: 'storage',
-          icon: <Icons.Database size={13} />,
-          label: '存储与备份',
-          keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'],
         },
         {
           id: 'archived',
@@ -534,6 +537,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           )}
         </div>
       </div>
+
+      <SettingsNavResizer />
 
       <div className="settings-content scroll">
         {isPlatformDarwin && (

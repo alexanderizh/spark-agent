@@ -1543,6 +1543,41 @@
   gap: 1px;
   overflow: hidden;
 }
+/* 导航宽度分隔条：1px 视觉线，用负外边距压在导航与内容的分界线上，因此不占用
+   任何布局宽度（.settings-content 的起始位置与不可拖拽时完全一致）。::before 向
+   两侧各扩 4px，把命中区撑到 9px，避免 1px 太难点。 */
+.settings-nav-resizer {
+  position: relative;
+  flex: none;
+  width: 1px;
+  height: 100%;
+  margin-left: -1px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  -webkit-app-region: no-drag;
+  background: color-mix(in srgb, var(--divider) 85%, transparent);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 -4px;
+  }
+
+  &:hover,
+  &:active,
+  &:focus-visible {
+    background: var(--primary);
+  }
+}
+body.settings-nav-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.settings-nav-resizing .settings-nav-resizer {
+  background: var(--primary);
+}
 .settings-nav-fixed {
   flex-shrink: 0;
   display: flex;
@@ -1640,6 +1675,11 @@
     padding: 8px;
     overflow: visible;
     border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
+  }
+
+  /* 窄屏下导航变为横向整行，宽度拖拽不再有意义 */
+  .settings-nav-resizer {
+    display: none;
   }
 
   .settings-nav-fixed {
