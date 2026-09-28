@@ -23,6 +23,11 @@ export type {
   DatabaseMigrationProgress,
   RunMigrationsOptions,
 } from './database.js'
+export type {
+  ExecutionStepCreateParams,
+  ExecutionEffectCreateParams,
+  ExecutionWaitCreateParams,
+} from './repositories/index.js'
 export {
   SubAppPackageService,
   validatePackageFiles,
@@ -37,6 +42,7 @@ export type {
 
 // CJK 逐字预分词（memory_fts 写入/查询两侧共用，禁止各自实现）
 export { segmentCjk, buildFtsMatchQuery } from './segment-cjk.js'
+export { stableJsonStringify } from './canonical-json.js'
 
 // Repository（向后兼容）
 export { BaseRepository } from './repository.js'
@@ -102,6 +108,13 @@ export {
   WorkspaceRepository,
   EventRepository,
   TurnRequestRepository,
+  ExecutionRunRepository,
+  ExecutionStepRepository,
+  ExecutionCheckpointRepository,
+  ExecutionEffectRepository,
+  ExecutionWaitRepository,
+  ExecutionOutboxRepository,
+  ExecutionRecoveryPlanRepository,
   ConnectorConnectionRepository,
   ConnectorAccountRepository,
   PluginRuntimeAuditRepository,

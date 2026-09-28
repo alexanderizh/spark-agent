@@ -440,3 +440,19 @@ export type {
   GoalStatus,
   GoalMode,
 } from './goal.repository.js'
+
+// 执行连续性子系统（execution continuity）
+export {
+  ExecutionRunRepository,
+  ExecutionStepRepository,
+  ExecutionCheckpointRepository,
+  ExecutionEffectRepository,
+  ExecutionWaitRepository,
+  ExecutionOutboxRepository,
+  ExecutionRecoveryPlanRepository,
+} from './execution/index.js'
+export type {
+  ExecutionStepCreateParams,
+  ExecutionEffectCreateParams,
+  ExecutionWaitCreateParams,
+} from './execution/index.js'

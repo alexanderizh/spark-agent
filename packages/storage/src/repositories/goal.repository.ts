@@ -106,6 +106,13 @@ export class GoalRepository extends BaseRepository {
     return row == null ? null : this.map(row)
   }
 
+  /** 全部处于活跃状态的 goal（执行连续性启动恢复扫描用；按更新时间倒序）。 */
+  listActiveGoals(): SessionGoal[] {
+    const placeholders = ACTIVE_STATUSES.map(() => '?').join(',')
+    const rows = this.raw.prepare(`SELECT * FROM session_goals WHERE status IN (${placeholders}) ORDER BY updated_at DESC`).all(...ACTIVE_STATUSES) as SessionGoalRow[]
+    return rows.map((row) => this.map(row))
+  }
+
   updateStatus(id: string, status: GoalStatus, patch: { lastError?: string | null; summary?: string } = {}): SessionGoal | null {
     const now = new Date().toISOString()
     this.raw.prepare(`UPDATE session_goals SET status = ?, last_error = COALESCE(?, last_error), updated_at = ?, completed_at = CASE WHEN ? IN ('completed','failed','cleared') THEN ? ELSE completed_at END WHERE id = ?`)
