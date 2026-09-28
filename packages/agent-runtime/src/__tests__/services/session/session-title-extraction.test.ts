@@ -452,6 +452,26 @@ describe('extractSessionTitle', () => {
     expect(result).toEqual({ ok: false, code: 'provider_no_api_key' })
   })
 
+  it('keystore_ref 有值但 Keychain 取不到 secret 时返回 provider_no_api_key', async () => {
+    new ProviderProfileRepository(db).create({
+      id: 'provider-extract',
+      providerType: 'openai',
+      name: 'Extract Provider',
+      config: { defaultModel: 'gpt-default', modelIds: ['gpt-default'] },
+      keystoreRef: 'key-extract',
+    })
+    seedSession({ providerProfileId: 'provider-extract', modelId: 'gpt-session' })
+    seedDialogue()
+    // 回归守卫：改造前两处精炼入口都有 `if (apiKey.length === 0) return`，
+    // 收敛到 resolveSessionTitleTarget 后不能丢——否则会带空 key 打必然 401 的请求。
+    keystoreGetSecret.mockResolvedValueOnce('')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: false, code: 'provider_no_api_key' })
+    expect(generateTitleMock).not.toHaveBeenCalled()
+  })
+
   it('会话没有可提取对话时返回 dialogue_empty', async () => {
     new ProviderProfileRepository(db).create({
       id: 'provider-extract',
@@ -479,5 +499,339 @@ describe('extractSessionTitle', () => {
 
     const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
     expect(result).toEqual({ ok: false, code: 'title_empty' })
+  })
+})
+
+/**
+ * 智能路由会话（2026-09-29）：router 行无可直连凭据、会话 model_id 恒为空，
+ * 标题模型按「分流器 → 兜底档执行器 → 任意启用执行器」逐候选校验后取用。
+ */
+describe('extractSessionTitle · auto-router', () => {
+  let db: SparkDatabase
+  let testDir: string
+
+  beforeEach(() => {
+    generateTitleMock.mockReset()
+    testDir = mkdtempSync(path.join(tmpdir(), 'spark-session-extract-title-router-'))
+    db = new SparkDatabase(path.join(testDir, 'test.db'))
+    db.runMigrations(path.join(process.cwd(), '..', 'storage', 'migrations'))
+  })
+
+  afterEach(() => {
+    try {
+      db.close()
+    } catch {
+      /* db already closed */
+    }
+    try {
+      rmSync(testDir, { recursive: true, force: true })
+    } catch {
+      /* Windows 句柄延迟释放时的残留目录交给系统临时区清理 */
+    }
+  })
+
+  function seedProvider(params: {
+    id: string
+    providerType?: string
+    keystoreRef?: string
+    defaultModel?: string
+  }): void {
+    new ProviderProfileRepository(db).create({
+      id: params.id,
+      providerType: params.providerType ?? 'openai',
+      name: params.id,
+      config: { defaultModel: params.defaultModel ?? 'provider-default', modelIds: [] },
+      keystoreRef: params.keystoreRef ?? `key-${params.id}`,
+    })
+  }
+
+  function seedRouter(config: Record<string, unknown>): void {
+    new ProviderProfileRepository(db).create({
+      id: 'router-main',
+      providerType: 'auto-router',
+      name: 'Main Router',
+      config,
+      // router 行只是配置容器：不进 Keychain，与 ProviderService 建行行为一致。
+      keystoreRef: '',
+    })
+  }
+
+  function seedRouterSession(): void {
+    // 智能路由会话 model_id 按协议恒为空串（每轮执行模型由分流器决定）。
+    new SessionRepository(db).create({
+      id: SESSION_ID,
+      kind: 'chat',
+      title: '新会话',
+      status: 'idle',
+      projectId: '',
+      providerProfileId: 'router-main',
+      modelId: '',
+    })
+  }
+
+  function seedDialogue(): void {
+    const eventRepo = new EventRepository(db)
+    eventRepo.insert({
+      id: 'evt-router-1',
+      sessionId: SESSION_ID,
+      turnId: 'turn-1',
+      eventType: 'user_message',
+      eventJson: JSON.stringify(userEvent({ seq: 1, content: '帮我把导出功能加上进度条' })),
+    })
+    eventRepo.insert({
+      id: 'evt-router-2',
+      sessionId: SESSION_ID,
+      turnId: 'turn-1',
+      eventType: 'assistant_message',
+      eventJson: JSON.stringify(assistantEvent(2, '已为导出流程补充进度反馈。')),
+    })
+  }
+
+  function executor(params: {
+    id: string
+    providerProfileId: string
+    modelId: string
+    intensity: 'high' | 'balanced' | 'low'
+    enabled?: boolean
+  }): Record<string, unknown> {
+    return {
+      id: params.id,
+      providerProfileId: params.providerProfileId,
+      modelId: params.modelId,
+      intensity: params.intensity,
+      enabled: params.enabled ?? true,
+    }
+  }
+
+  function firstTitleCall(): { model?: string; providerType?: string; apiKey?: string } {
+    return generateTitleMock.mock.calls[0]?.[0] as {
+      model?: string
+      providerType?: string
+      apiKey?: string
+    }
+  }
+
+  it('优先用分流器模型提取标题', async () => {
+    seedProvider({ id: 'provider-dispatcher', defaultModel: 'dispatcher-default' })
+    seedProvider({ id: 'provider-balanced', defaultModel: 'balanced-default' })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-dispatcher', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-balanced',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('导出进度条优化')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '导出进度条优化' })
+    expect(firstTitleCall().model).toBe('dispatcher-model')
+    expect(firstTitleCall().providerType).toBe('openai')
+    expect(firstTitleCall().apiKey).toBe('test-api-key')
+  })
+
+  it('分流器渠道缺失时回退兜底档执行器', async () => {
+    seedProvider({ id: 'provider-balanced', defaultModel: 'balanced-default' })
+    seedProvider({ id: 'provider-high', defaultModel: 'high-default' })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-gone', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-high',
+          providerProfileId: 'provider-high',
+          modelId: 'high-model',
+          intensity: 'high',
+        }),
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-balanced',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('兜底档标题')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '兜底档标题' })
+    expect(firstTitleCall().model).toBe('balanced-model')
+  })
+
+  it('分流器渠道被停用时跳过该候选', async () => {
+    seedProvider({ id: 'provider-dispatcher', defaultModel: 'dispatcher-default' })
+    seedProvider({ id: 'provider-balanced', defaultModel: 'balanced-default' })
+    new ProviderProfileRepository(db).update('provider-dispatcher', { enabled: false })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-dispatcher', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-balanced',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('停用回退标题')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '停用回退标题' })
+    expect(firstTitleCall().model).toBe('balanced-model')
+  })
+
+  it('分流器与兜底档都失效时用任意第一个启用执行器', async () => {
+    seedProvider({ id: 'provider-high', defaultModel: 'high-default' })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-gone', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-gone-2',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+        executor({
+          id: 'e-high',
+          providerProfileId: 'provider-high',
+          modelId: 'high-model',
+          intensity: 'high',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('任意执行器标题')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '任意执行器标题' })
+    expect(firstTitleCall().model).toBe('high-model')
+  })
+
+  it('执行器为本地 CLI（未配 key）时跳过，取下一个候选', async () => {
+    seedProvider({ id: 'provider-local-cli', keystoreRef: '' })
+    seedProvider({ id: 'provider-low', defaultModel: 'low-default' })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-gone', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-local-cli',
+          modelId: 'local-cli-model',
+          intensity: 'balanced',
+        }),
+        executor({
+          id: 'e-low',
+          providerProfileId: 'provider-low',
+          modelId: 'low-model',
+          intensity: 'low',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('跳过本地 CLI')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '跳过本地 CLI' })
+    expect(firstTitleCall().model).toBe('low-model')
+  })
+
+  it('分流器 secret 取不到时跳过该候选，回退执行器', async () => {
+    seedProvider({ id: 'provider-dispatcher', defaultModel: 'dispatcher-default' })
+    seedProvider({ id: 'provider-balanced', defaultModel: 'balanced-default' })
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-dispatcher', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-balanced',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+    generateTitleMock.mockResolvedValue('secret 缺失回退')
+    // keystore_ref 有值但 Keychain 里没有条目：分流器那次解析取到空 secret。
+    keystoreGetSecret.mockResolvedValueOnce('')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: 'secret 缺失回退' })
+    expect(firstTitleCall().model).toBe('balanced-model')
+    expect(firstTitleCall().apiKey).toBe('test-api-key')
+  })
+
+  it('所有候选都不可用时返回 router_unavailable', async () => {
+    seedRouter({
+      kind: 'auto-router',
+      version: 1,
+      adapter: 'codex',
+      dispatcher: { providerProfileId: 'provider-gone', modelId: 'dispatcher-model' },
+      executors: [
+        executor({
+          id: 'e-balanced',
+          providerProfileId: 'provider-gone-2',
+          modelId: 'balanced-model',
+          intensity: 'balanced',
+        }),
+      ],
+      fallbackIntensity: 'balanced',
+    })
+    seedRouterSession()
+    seedDialogue()
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+    expect(result).toEqual({ ok: false, code: 'router_unavailable' })
+    expect(generateTitleMock).not.toHaveBeenCalled()
+  })
+
+  it('router 配置无效时返回 router_unavailable', async () => {
+    seedRouter({ kind: 'auto-router', version: 99 })
+    seedRouterSession()
+    seedDialogue()
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+    expect(result).toEqual({ ok: false, code: 'router_unavailable' })
   })
 })

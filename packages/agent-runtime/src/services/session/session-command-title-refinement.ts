@@ -1,7 +1,7 @@
-import { ProviderProfileRepository, SessionRepository, type SparkDatabase } from '@spark/storage'
+import { SessionRepository, type SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
-import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import { generateSessionTitle } from '../session-title-generator.js'
+import { resolveSessionTitleTarget } from './session-title-target.js'
 import {
   deriveSessionTitle,
   isTitlePrefixOfMessage,
@@ -20,6 +20,9 @@ export interface InitializeCommandSessionTitleParams {
 /**
  * 首条命令若会继续启动 Agent turn，先用命令中的任务正文即时命名，再异步调用
  * 当前会话 Provider 做语义精炼。控制命令不会调用此入口。
+ *
+ * 智能路由会话（2026-09-29）：解析链走 resolveSessionTitleTarget，从 router
+ * 配置挑标题模型，不再因 router 行无直连凭据而静默放弃精炼。
  */
 export function initializeCommandSessionTitle(params: InitializeCommandSessionTitleParams): void {
   const userMessage = params.userMessage.trim()
@@ -49,28 +52,20 @@ async function refineCommandSessionTitleAsync(
 ): Promise<void> {
   try {
     const session = params.sessionRepo.get(params.sessionId)
-    if (session == null || session.provider_profile_id == null) return
+    if (session == null) return
 
-    const provider = new ProviderProfileRepository(params.db).get(session.provider_profile_id)
-    if (provider == null || provider.keystore_ref == null) return
-
-    const config = JSON.parse(provider.config_json) as {
-      apiEndpoint?: string
-      apiEndpointFullUrl?: boolean
-      defaultModel?: string
-    }
-    const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
-    if (model.length === 0) return
-
-    const apiKey = await resolveProviderApiKey(provider)
-    if (apiKey.length === 0) return
+    // 与 extractSessionTitle 同一套解析：普通渠道取会话模型 → Provider 默认模型，
+    // 智能路由从 router 配置挑标题模型。任何一环不可用都静默放弃精炼，
+    // 保留 initializeCommandSessionTitle 写入的本地派生标题。
+    const resolved = await resolveSessionTitleTarget({ db: params.db, session })
+    if (!resolved.ok) return
 
     const refinedTitle = await generateSessionTitle({
-      providerType: provider.provider_type,
-      apiKey,
-      ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
-      model,
+      providerType: resolved.target.providerType,
+      apiKey: resolved.target.apiKey,
+      ...(resolved.target.apiEndpoint != null ? { apiEndpoint: resolved.target.apiEndpoint } : {}),
+      ...(resolved.target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+      model: resolved.target.model,
       userMessage: params.userMessage,
       assistantMessage: '',
     })

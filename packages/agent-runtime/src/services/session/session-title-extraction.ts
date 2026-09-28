@@ -6,13 +6,11 @@
  * 再用会话中按轮次均匀取样的可见正文调 generateSessionTitle。
  * 与自动精炼的区别：结果只返回给渲染端填充输入框，不直接改会话标题，
  * 由用户在重命名弹窗里确认后才落库。
+ *
+ * 智能路由会话（2026-09-29）：router 行没有可直连凭据、会话 model_id 恒为空，
+ * 改由 resolveSessionTitleTarget 从 router 配置里挑标题模型（分流器优先）。
  */
-import {
-  EventRepository,
-  ProviderProfileRepository,
-  SessionRepository,
-  type SparkDatabase,
-} from '@spark/storage'
+import { EventRepository, SessionRepository, type SparkDatabase } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import type {
   AgentEvent,
@@ -22,8 +20,8 @@ import type {
   UserMessageEvent,
 } from '@spark/protocol'
 import { getLegacyRemoteUserDisplayContent } from '@spark/protocol'
-import { resolveProviderApiKey } from '../provider-credential-resolver.js'
 import { generateSessionTitle } from '../session-title-generator.js'
+import { resolveSessionTitleTarget } from './session-title-target.js'
 
 const log = createLogger('session-title-extraction')
 
@@ -223,22 +221,12 @@ export async function extractSessionTitle(params: {
     const session = new SessionRepository(params.db).get(params.sessionId)
     if (session == null) return { ok: false, code: 'session_not_found' }
 
-    // 与 refineCommandSessionTitleAsync 相同的解析链：会话模型 → Provider 默认模型。
-    // keystore_ref 为空的本地 CLI Provider（claude-sdk/codex 适配器）没有可直连的
-    // HTTP 端点，与自动精炼一致按不可用处理（空串与 null 都视为未配置 key）。
-    if (session.provider_profile_id == null) return { ok: false, code: 'provider_missing' }
-    const provider = new ProviderProfileRepository(params.db).get(session.provider_profile_id)
-    const keystoreRef = provider?.keystore_ref?.trim() ?? ''
-    if (provider == null || keystoreRef.length === 0) {
-      return { ok: false, code: 'provider_no_api_key' }
-    }
-    const config = JSON.parse(provider.config_json) as {
-      apiEndpoint?: string
-      apiEndpointFullUrl?: boolean
-      defaultModel?: string
-    }
-    const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
-    if (model.length === 0) return { ok: false, code: 'model_missing' }
+    // 与 refineCommandSessionTitleAsync 相同的解析链：会话模型 → Provider 默认模型；
+    // 智能路由会话从 router 配置挑标题模型（分流器优先）。本地 CLI Provider
+    // （claude-sdk/codex 适配器，keystore_ref 为空）没有可直连的 HTTP 端点，
+    // 与自动精炼一致按不可用处理。
+    const resolved = await resolveSessionTitleTarget({ db: params.db, session })
+    if (!resolved.ok) return { ok: false, code: resolved.code }
 
     const events = new EventRepository(params.db)
       .queryDialogueEvents(params.sessionId, 1_000)
@@ -247,11 +235,11 @@ export async function extractSessionTitle(params: {
     if (source == null) return { ok: false, code: 'dialogue_empty' }
 
     const title = await generateSessionTitle({
-      providerType: provider.provider_type,
-      apiKey: await resolveProviderApiKey(provider),
-      ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
-      model,
+      providerType: resolved.target.providerType,
+      apiKey: resolved.target.apiKey,
+      ...(resolved.target.apiEndpoint != null ? { apiEndpoint: resolved.target.apiEndpoint } : {}),
+      ...(resolved.target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+      model: resolved.target.model,
       userMessage: source.userMessage,
       assistantMessage: source.assistantMessage,
     })

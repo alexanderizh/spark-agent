@@ -35,6 +35,7 @@ import type {
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { resolveModelDefaultReasoningEffort } from './provider-model-settings.js'
+import { resolveSessionTitleTarget } from './session/session-title-target.js'
 import { ensureSessionWorkspaceRootPath } from './session-workspace-root.js'
 import {
   SessionWorktreeStateService,
@@ -7092,6 +7093,7 @@ export class SessionService {
   /**
    * goal 会话的标题精炼入口：用 goal objective 作为首条用户消息构造精炼上下文。
    * provider/apiKey 按会话当前配置解析；local CLI（无 keystore_ref）与配置缺失时静默跳过。
+   * 智能路由会话从 router 配置挑标题模型（2026-09-29，见 resolveSessionTitleTarget）。
    */
   private async refineGoalSessionTitleAsync(sessionId: string, objective: string): Promise<void> {
     try {
@@ -7099,26 +7101,16 @@ export class SessionService {
       const sessionRepo = new SessionRepository(this.db)
       const session = sessionRepo.get(sessionId)
       if (session == null) return
-      const provider =
-        session.provider_profile_id != null
-          ? new ProviderProfileRepository(this.db).get(session.provider_profile_id)
-          : null
-      if (provider == null || provider.keystore_ref == null) return
-      const config = JSON.parse(provider.config_json) as {
-        apiEndpoint?: string
-        defaultModel?: string
-      }
-      const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
-      if (model.length === 0) return
-      const apiKey = await resolveProviderApiKey(provider)
-      if (apiKey.length === 0) return
+      const resolved = await resolveSessionTitleTarget({ db: this.db, session })
+      if (!resolved.ok) return
       await this.refineSessionTitleAsync(sessionId, sessionRepo, {
-        providerType: provider.provider_type,
-        apiKey,
-        ...(config.apiEndpoint != null && config.apiEndpoint.length > 0
-          ? { apiEndpoint: config.apiEndpoint }
+        providerType: resolved.target.providerType,
+        apiKey: resolved.target.apiKey,
+        ...(resolved.target.apiEndpoint != null && resolved.target.apiEndpoint.length > 0
+          ? { apiEndpoint: resolved.target.apiEndpoint }
           : {}),
-        model,
+        ...(resolved.target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+        model: resolved.target.model,
         userMessage: objective,
         assistantMessage: '',
       })

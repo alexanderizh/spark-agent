@@ -97,6 +97,7 @@ const EXTRACT_TITLE_FAILURE_MESSAGE: Record<SessionExtractTitleFailureCode, stri
   provider_missing: 'session.extractTitleFailed.providerMissing',
   provider_no_api_key: 'session.extractTitleFailed.providerNoApiKey',
   model_missing: 'session.extractTitleFailed.modelMissing',
+  router_unavailable: 'session.extractTitleFailed.routerUnavailable',
   dialogue_empty: 'session.extractTitleFailed.dialogueEmpty',
   title_empty: 'session.extractTitleFailed.titleEmpty',
 }

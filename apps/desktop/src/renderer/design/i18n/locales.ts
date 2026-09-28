@@ -205,6 +205,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.extractTitleFailed.providerMissing': '会话未配置模型 Provider，无法提取标题',
     'session.extractTitleFailed.providerNoApiKey': '当前会话使用本地引擎，无法远程提取标题',
     'session.extractTitleFailed.modelMissing': '会话未配置可用模型，无法提取标题',
+    'session.extractTitleFailed.routerUnavailable':
+      '智能路由未配置可用的标题模型，请在渠道管理 → 自动路由中检查分流器与执行器',
     'session.extractTitleFailed.dialogueEmpty': '会话还没有可提取的对话内容',
     'session.extractTitleFailed.titleEmpty': '模型未返回有效标题，请稍后重试',
     'session.untitled': '未命名',
@@ -694,6 +696,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.extractTitleFailed.providerNoApiKey':
       'This session runs on a local engine; title cannot be extracted remotely',
     'session.extractTitleFailed.modelMissing': 'No usable model configured for this session',
+    'session.extractTitleFailed.routerUnavailable':
+      'The smart router has no usable title model; check its dispatcher and executors in Providers → Auto Router',
     'session.extractTitleFailed.dialogueEmpty':
       'This session has no dialogue to extract a title from',
     'session.extractTitleFailed.titleEmpty': 'The model returned no usable title, try again later',

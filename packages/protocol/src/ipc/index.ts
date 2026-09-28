@@ -606,6 +606,8 @@ export type SessionExtractTitleFailureCode =
   | 'provider_missing'
   | 'provider_no_api_key'
   | 'model_missing'
+  /** 智能路由（auto-router）没有可用的标题模型：分流器与执行器均缺失/停用/未配 key。 */
+  | 'router_unavailable'
   | 'dialogue_empty'
   | 'title_empty'
 
