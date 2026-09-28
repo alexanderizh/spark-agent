@@ -1329,6 +1329,19 @@ export interface WorkspaceInfo {
    * UI 不应通过目录名或项目名称猜测画布项目。
    */
   canvasProjectId?: string | null
+  /**
+   * 项目默认 Agent ID。null 表示未设置（新建会话回落全局偏好）。
+   * 旧版本主进程未提供时可能缺省，调用方按 null 处理；
+   * 悬空 ID（Agent 已删除/禁用）由消费方视为未设置。
+   */
+  defaultAgentId?: string | null
+  /**
+   * 项目可用 Agent 白名单（聊天/画布选择器过滤用）。
+   * null 或空数组表示未绑定（显示全部启用 Agent）；
+   * 平台默认助手始终可用，不受白名单限制。
+   * 旧版本主进程未提供时可能缺省，调用方按 null 处理。
+   */
+  allowedAgentIds?: string[] | null
   pinnedAt: string | null
   archivedAt: string | null
   createdAt: string
@@ -1378,6 +1391,10 @@ export interface WorkspaceUpdateRequest {
   name?: string
   pinned?: boolean
   archived?: boolean
+  /** 项目默认 Agent：Agent ID 或 null（清除，回落全局默认）；缺省表示不改动 */
+  defaultAgentId?: string | null
+  /** 项目可用 Agent 白名单：Agent ID 数组；null 或空数组=清除白名单；缺省表示不改动 */
+  allowedAgentIds?: string[] | null
 }
 
 export interface WorkspaceUpdateResponse {

@@ -99,19 +99,19 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const agentOptions = useMemo(
-    () => sessionCtx.agents.filter((agent) => agent.enabled).map((agent) => ({ label: agent.name, value: agent.name, id: agent.id })),
-    [sessionCtx.agents],
+    () => sessionCtx.selectableAgents.filter((agent) => agent.enabled).map((agent) => ({ label: agent.name, value: agent.name, id: agent.id })),
+    [sessionCtx.selectableAgents],
   )
 
   const resolveDefaults = useCallback((): QuickTaskDefaults => {
     const activeSession = sessionCtx.sessions.find((session) => session.id === sessionCtx.activeSessionId) ?? null
     const agent = activeSession?.agentId != null
-      ? sessionCtx.agents.find((item) => item.id === activeSession.agentId)
-      : sessionCtx.agents.find((item) => item.isDefault) ?? sessionCtx.agents[0]
+      ? sessionCtx.selectableAgents.find((item) => item.id === activeSession.agentId)
+      : sessionCtx.selectableAgents.find((item) => item.isDefault) ?? sessionCtx.selectableAgents[0]
     return {
-      processingAgent: t.view === 'chat' ? (agent?.name ?? '') : (sessionCtx.agents.find((item) => item.isDefault)?.name ?? ''),
+      processingAgent: t.view === 'chat' ? (agent?.name ?? '') : (sessionCtx.selectableAgents.find((item) => item.isDefault)?.name ?? ''),
     }
-  }, [sessionCtx.activeSessionId, sessionCtx.agents, sessionCtx.sessions, t.view])
+  }, [sessionCtx.activeSessionId, sessionCtx.selectableAgents, sessionCtx.sessions, t.view])
 
   useEffect(() => {
     if (!open) return
@@ -192,7 +192,7 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
         const projectGroups = sessionCtx.projectGroups.map((g) => ({
           workspace: { name: g.workspace.name, id: g.workspace.id },
         }))
-        const result = await executeTaskViaSession(createdTask, sessionCtx.agents, projectGroups)
+        const result = await executeTaskViaSession(createdTask, sessionCtx.selectableAgents, projectGroups)
         if (result) {
           sessionCtx.setActiveSession(result.sessionId as SessionId)
           setTweak('view', 'chat')

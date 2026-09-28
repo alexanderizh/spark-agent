@@ -283,3 +283,110 @@
 .session-hooks-actions {
   flex-shrink: 0;
 }
+
+/* 项目 Agent 作用域 */
+.project-agent-block .project-agent-select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.1));
+  color: inherit;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.3));
+}
+
+.project-agent-list-title {
+  margin-top: 12px;
+}
+
+.project-agent-list {
+  margin-top: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-agent-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.project-agent-option:hover {
+  background: var(--bg-soft, rgba(127, 127, 127, 0.12));
+}
+
+.project-agent-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-agent-option-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.7;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.project-agent-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.project-agent-search {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.1));
+  color: inherit;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.3));
+}
+
+.project-agent-search:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.project-agent-clear {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.3));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.project-agent-clear:hover {
+  background: var(--bg-soft, rgba(127, 127, 127, 0.12));
+}
+
+.project-agent-count {
+  margin-top: 4px;
+}
+
+.project-agent-empty {
+  margin-top: 6px;
+  padding: 12px 4px;
+  font-size: 12px;
+  opacity: 0.65;
+  text-align: center;
+}

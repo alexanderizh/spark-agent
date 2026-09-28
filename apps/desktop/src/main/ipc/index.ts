@@ -7168,8 +7168,38 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:update', async (req) => {
     log.info(`workspace:update requested, workspaceId=${req.workspaceId}`)
+    // 项目默认 Agent：写入前校验目标 agent 存在，避免项目长期挂着失效引用
+    if (req.defaultAgentId != null && req.defaultAgentId !== '') {
+      const agent = getAgentRepository().get(req.defaultAgentId)
+      if (agent == null) {
+        throw new Error(`Agent not found: ${req.defaultAgentId}`)
+      }
+    }
+    // 项目 Agent 白名单：逐个校验存在性，空数组/去重后为空视为清除
+    if (req.allowedAgentIds != null) {
+      const uniqueIds = Array.from(new Set(req.allowedAgentIds))
+      for (const agentId of uniqueIds) {
+        const agent = getAgentRepository().get(agentId)
+        if (agent == null) {
+          throw new Error(`Agent not found: ${agentId}`)
+        }
+      }
+    }
     const workspace = getWorkspaceService().updateWorkspace(req.workspaceId, {
       ...(req.name !== undefined ? { name: req.name } : {}),
+      // null=清除默认；'' 归一化为 null；undefined 不改动
+      ...(req.defaultAgentId !== undefined
+        ? { defaultAgentId: req.defaultAgentId === '' ? null : req.defaultAgentId }
+        : {}),
+      // null/空数组=清除白名单（显示全部）；undefined 不改动
+      ...(req.allowedAgentIds !== undefined
+        ? {
+            allowedAgentIds:
+              req.allowedAgentIds == null || req.allowedAgentIds.length === 0
+                ? null
+                : Array.from(new Set(req.allowedAgentIds)),
+          }
+        : {}),
       ...(req.pinned !== undefined
         ? { pinnedAt: req.pinned ? new Date().toISOString() : null }
         : {}),

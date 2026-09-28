@@ -12,6 +12,8 @@ type WorkspaceInfoRow = Pick<
   | 'pinned_at'
   | 'archived_at'
   | 'worktree_meta_json'
+  | 'default_agent_id'
+  | 'allowed_agent_ids_json'
 >
 
 /**
@@ -33,6 +35,18 @@ export function createWorkspaceInfoMapper(
     id: workspace.id,
     name: workspace.name,
     rootPath: workspace.root_path,
+    defaultAgentId: workspace.default_agent_id ?? null,
+    allowedAgentIds: (() => {
+      if (workspace.allowed_agent_ids_json == null) return null
+      try {
+        const parsed = JSON.parse(workspace.allowed_agent_ids_json) as unknown
+        return Array.isArray(parsed)
+          ? (parsed.filter((v): v is string => typeof v === 'string') as string[])
+          : null
+      } catch {
+        return null
+      }
+    })(),
     canvasProjectId: canvasProjectIdByRootPath.get(path.resolve(workspace.root_path)) ?? null,
     pinnedAt: workspace.pinned_at,
     archivedAt: workspace.archived_at,
