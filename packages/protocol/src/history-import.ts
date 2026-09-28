@@ -3,10 +3,14 @@
  *
  * 宿主机对话历史导入协议定义
  *
- * 支持检测并导入宿主机上已有的 Agent CLI 对话历史：
+ * 支持检测并导入宿主机上已有的 Agent CLI / 桌面 App 对话历史：
  *   - Claude Code：~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
  *   - Codex：~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
  *   - ZCode（桌面 App）：~/.zcode/v2/sessions/<workspace-hash>/<taskId>.json
+ *   - WorkBuddy（桌面 App）：~/.workbuddy/projects/<encoded-cwd>/<sessionId>.jsonl
+ *     （Claude Code 同族 transcript；会话标题/cwd 兜底元数据在 ~/.workbuddy/workbuddy.db）
+ *   - Qoder（桌面 App）：<userData>/main.sqlite（chat_sessions + chat_session_messages）
+ *     macOS 为 ~/Library/Application Support/com.qoder.app.stable/main.sqlite
  *   - ZCode（zcode CLI）：~/.zcode/cli/db/db.sqlite（session/message/part 三表）
  *     路径三平台统一（zcode 自身逻辑为 join(homedir(), ".zcode")，Windows 即
  *     C:\Users\<user>\.zcode；另支持 HOME 环境变量覆盖，扫描时做候选探测）
@@ -21,7 +25,7 @@
  */
 
 /** 对话历史来源 */
-export type HistoryImportSource = 'claude-code' | 'codex' | 'zcode'
+export type HistoryImportSource = 'claude-code' | 'codex' | 'zcode' | 'workbuddy' | 'qoder'
 
 /**
  * zcode 内部存储通道：
@@ -35,7 +39,8 @@ export interface HistoryImportMetadata {
   /** 来源 CLI */
   importedFrom: HistoryImportSource
   /**
-   * 导入候选 ID（Claude Code 的 sessionId / Codex 的 native thread ID；
+   * 导入候选 ID（Claude Code 的 sessionId / Codex 的 native thread ID /
+   * WorkBuddy 的 sessionId / Qoder 的 session_id；
    * Spark 生成的 Codex rollout 归并后为 spark-session:<Spark sessionId>），用于去重
    */
   sourceSessionId: string

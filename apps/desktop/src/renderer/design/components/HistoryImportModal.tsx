@@ -1,26 +1,18 @@
 /**
- * HistoryImportModal — 检测并导入宿主机 Claude Code / Codex 对话历史。
+ * HistoryImportModal — 检测并导入宿主机 Agent CLI / 桌面 App 对话历史。
  *
  * 交互阶段：
- *   1. 扫描中    —— 并行扫描各来源（codex / claude-code / zcode），展示来源状态与实时发现数量
+ *   1. 扫描中    —— 并行扫描各来源（codex / claude-code / zcode / workbuddy / qoder），
+ *                    展示来源状态与实时发现数量
  *   2. 选择      —— 虚拟列表 + 搜索/项目/时间筛选 + 完整对话预览
  *   3. 导入/完成 —— 进度反馈 + 完成汇总
  */
 
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
-import {
-  Block,
-  Button,
-  Checkbox,
-  Empty,
-  Modal,
-  SearchBar,
-  Segmented,
-  Select,
-  Tag,
-} from '@lobehub/ui'
+import { Block, Button, Checkbox, Empty, Modal, SearchBar, Select, Tag } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type { ReactNode } from 'react'
 import type {
   HistoryImportItem,
   HistoryImportPreviewMessage,
@@ -35,24 +27,37 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from './Toast'
 import { useI18n } from '../i18n'
 import { Icons } from '../Icons'
+import {
+  buildScanFlowCards,
+  scanCardTop,
+  scanLineGeometry,
+  type ScanSourceState,
+  type ScanStatus,
+} from './historyImportScanFlow'
 import './HistoryImportModal.less'
 
 type Phase = 'scanning' | 'select' | 'importing' | 'done'
 type TimeFilter = 'all' | '7' | '30' | '90'
-type ScanStatus = 'scanning' | 'done' | 'unavailable'
 
-type ScanSourceState = {
-  status: ScanStatus
-  count: number
+/**
+ * 导入来源元数据表：顺序即扫描卡片顺序、来源下拉顺序、默认来源优先级。
+ * rootPath 仅用于扫描态展示（真实路径由主进程扫描结果回填）。
+ */
+const HISTORY_IMPORT_SOURCES: Array<{
+  value: HistoryImportSource
+  label: string
   rootPath: string
-  error?: string
-}
+}> = [
+  { value: 'codex', label: 'Codex', rootPath: '~/.codex/sessions' },
+  { value: 'claude-code', label: 'Claude Code', rootPath: '~/.claude/projects' },
+  { value: 'zcode', label: 'ZCode', rootPath: '~/.zcode' },
+  { value: 'workbuddy', label: 'WorkBuddy', rootPath: '~/.workbuddy/projects' },
+  { value: 'qoder', label: 'Qoder', rootPath: 'Qoder 应用数据目录' },
+]
 
-const SOURCE_LABEL: Record<HistoryImportSource, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  zcode: 'ZCode',
-}
+const SOURCE_LABEL = Object.fromEntries(
+  HISTORY_IMPORT_SOURCES.map((entry) => [entry.value, entry.label]),
+) as Record<HistoryImportSource, string>
 
 /**
  * 条目唯一键：source + sourceSessionId。
@@ -74,18 +79,13 @@ const TIME_FILTER_OPTIONS = [
  */
 let scanCache: HistoryImportScanResponse | null = null
 
-const EMPTY_SCAN_STATE: Record<HistoryImportSource, ScanSourceState> = {
-  'claude-code': { status: 'scanning', count: 0, rootPath: '~/.claude/projects' },
-  codex: { status: 'scanning', count: 0, rootPath: '~/.codex/sessions' },
-  zcode: { status: 'scanning', count: 0, rootPath: '~/.zcode' },
-}
-
 function freshScanState(): Record<HistoryImportSource, ScanSourceState> {
-  return {
-    'claude-code': { ...EMPTY_SCAN_STATE['claude-code'] },
-    codex: { ...EMPTY_SCAN_STATE.codex },
-    zcode: { ...EMPTY_SCAN_STATE.zcode },
-  }
+  return Object.fromEntries(
+    HISTORY_IMPORT_SOURCES.map((entry) => [
+      entry.value,
+      { status: 'scanning' as ScanStatus, count: 0, rootPath: entry.rootPath },
+    ]),
+  ) as Record<HistoryImportSource, ScanSourceState>
 }
 
 function formatTime(iso: string | null): string {
@@ -145,11 +145,12 @@ function classNames(...values: Array<string | false | null | undefined>): string
   return values.filter(Boolean).join(' ')
 }
 
-/** 默认落在有条目的来源上（与 Tab 顺序一致：codex > claude-code > zcode） */
+/** 默认落在有条目的来源上（按 HISTORY_IMPORT_SOURCES 顺序取第一个非空来源） */
 function defaultSourceTab(items: HistoryImportItem[]): HistoryImportSource {
-  const codexCount = items.filter((item) => item.source === 'codex').length
-  const claudeCount = items.filter((item) => item.source === 'claude-code').length
-  return codexCount > 0 ? 'codex' : claudeCount > 0 ? 'claude-code' : 'zcode'
+  for (const entry of HISTORY_IMPORT_SOURCES) {
+    if (items.some((item) => item.source === entry.value)) return entry.value
+  }
+  return HISTORY_IMPORT_SOURCES[0]?.value ?? 'codex'
 }
 
 export function HistoryImportModal() {
@@ -255,11 +256,9 @@ export function HistoryImportModal() {
     }
 
     try {
-      const settled = await Promise.allSettled([
-        scanOne('claude-code'),
-        scanOne('codex'),
-        scanOne('zcode'),
-      ])
+      const settled = await Promise.allSettled(
+        HISTORY_IMPORT_SOURCES.map((entry) => scanOne(entry.value)),
+      )
       const responses = settled.flatMap((result) =>
         result.status === 'fulfilled' ? [result.value] : [],
       )
@@ -312,16 +311,12 @@ export function HistoryImportModal() {
   })
 
   const counts = useMemo(() => {
-    const result: Record<HistoryImportSource, number> = { 'claude-code': 0, codex: 0, zcode: 0 }
+    const result = Object.fromEntries(
+      HISTORY_IMPORT_SOURCES.map((entry) => [entry.value, 0]),
+    ) as Record<HistoryImportSource, number>
     for (const item of items) result[item.source]++
     return result
   }, [items])
-
-  const importableCount = useMemo(
-    () => items.filter((item) => !item.alreadyImported).length,
-    [items],
-  )
-  const importedCount = items.length - importableCount
 
   const projects = useMemo(
     () =>
@@ -336,11 +331,11 @@ export function HistoryImportModal() {
   )
 
   const sourceOptions = useMemo(
-    () => [
-      { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
-      { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
-      { label: `ZCode ${counts.zcode.toLocaleString()}`, value: 'zcode' },
-    ],
+    () =>
+      HISTORY_IMPORT_SOURCES.map((entry) => ({
+        label: `${entry.label} ${counts[entry.value].toLocaleString()}`,
+        value: entry.value,
+      })),
     [counts],
   )
 
@@ -519,15 +514,18 @@ export function HistoryImportModal() {
 
   const close = useCallback(() => ctx.setHistoryImportOpen(false), [ctx])
   const selectedCount = selected.size
-  const discoveredCount =
-    scanSources['claude-code'].count + scanSources.codex.count + scanSources.zcode.count
-  const scanningSource = (['codex', 'zcode', 'claude-code'] as HistoryImportSource[]).find(
-    (key) => scanSources[key].status === 'scanning',
+  const discoveredCount = HISTORY_IMPORT_SOURCES.reduce(
+    (sum, entry) => sum + scanSources[entry.value].count,
+    0,
   )
+  const scanFlowCards = buildScanFlowCards(HISTORY_IMPORT_SOURCES, scanSources)
+  const scanningSource = HISTORY_IMPORT_SOURCES.find(
+    (entry) => scanSources[entry.value].status === 'scanning',
+  )?.value
   const scanPathText =
     scanningSource != null
       ? `正在读取 ${scanSources[scanningSource].rootPath}/…`
-      : `正在整理 ${scanSources['claude-code'].rootPath}/…`
+      : `正在整理 ${scanSources[HISTORY_IMPORT_SOURCES[0]?.value ?? 'codex'].rootPath}/…`
   const importingPercent =
     progress != null && progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -568,27 +566,43 @@ export function HistoryImportModal() {
         <div className="hi-scan-state" aria-live="polite">
           <div className="hi-scan-heading">
             <h2>正在检索本机会话</h2>
-            <p>并行扫描 Codex、Claude Code 与 ZCode，本地解析后生成可预览列表</p>
+            <p>并行扫描 Codex、Claude Code、ZCode、WorkBuddy 与 Qoder，本地解析后生成可预览列表</p>
           </div>
           <div className="hi-scan-flow" aria-hidden="true">
-            <ScanSourceCard source="codex" state={scanSources.codex} />
-            <ScanSourceCard source="claude-code" state={scanSources['claude-code']} />
-            <ScanSourceCard source="zcode" state={scanSources.zcode} />
-            <div className="hi-scan-lines hi-scan-lines-top">
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="hi-scan-lines hi-scan-lines-middle">
-              <i />
-              <i />
-              <i />
-            </div>
-            <div className="hi-scan-lines hi-scan-lines-bottom">
-              <i />
-              <i />
-              <i />
-            </div>
+            {scanFlowCards.map((card, index) => (
+              <ScanSourceCard
+                key={card.key}
+                label={card.label}
+                state={card.state}
+                top={scanCardTop(index, scanFlowCards.length)}
+                sourceKey={card.kind === 'source' ? card.source : undefined}
+                variant={card.kind}
+                icon={card.kind === 'more' ? <Icons.Layers size={16} /> : undefined}
+                caption={
+                  card.kind === 'more'
+                    ? card.members.map((member) => SOURCE_LABEL[member]).join('、')
+                    : undefined
+                }
+              />
+            ))}
+            {scanFlowCards.map((card, index) => {
+              const geometry = scanLineGeometry(scanCardTop(index, scanFlowCards.length))
+              return (
+                <div
+                  key={`line-${card.key}`}
+                  className="hi-scan-lines"
+                  style={{
+                    top: `${geometry.top}px`,
+                    width: `${geometry.width}px`,
+                    transform: `rotate(${geometry.angle}deg)`,
+                  }}
+                >
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              )
+            })}
             <div className="hi-scan-collector">
               <span>
                 <Icons.Database size={27} />
@@ -610,9 +624,13 @@ export function HistoryImportModal() {
             <span />
           </div>
           <div className="hi-scan-statuses">
-            <ScanStatusLabel source="codex" state={scanSources.codex} />
-            <ScanStatusLabel source="claude-code" state={scanSources['claude-code']} />
-            <ScanStatusLabel source="zcode" state={scanSources.zcode} />
+            {HISTORY_IMPORT_SOURCES.map((entry) => (
+              <ScanStatusLabel
+                key={entry.value}
+                source={entry.value}
+                state={scanSources[entry.value]}
+              />
+            ))}
             <span>完成后自动进入选择页面</span>
           </div>
         </div>
@@ -628,7 +646,10 @@ export function HistoryImportModal() {
               <i />
             </div>
             <div className="hi-toolbar">
-              <Segmented
+              <Select
+                aria-label="来源筛选"
+                className="hi-filter-select hi-source-select"
+                size="middle"
                 value={sourceTab}
                 onChange={(value) => {
                   previewRequestRef.current++
@@ -957,27 +978,40 @@ export function HistoryImportModal() {
 }
 
 function ScanSourceCard({
-  source,
+  label,
   state,
+  top,
+  sourceKey,
+  caption,
+  icon,
+  variant = 'source',
 }: {
-  source: HistoryImportSource
+  label: string
   state: ScanSourceState
+  /** 卡片纵向偏移（由卡片索引与卡片总数计算，避免为每个来源写死定位） */
+  top: number
+  /** 具名来源；「更多」聚合卡没有具体来源，仅用于样式类名 */
+  sourceKey?: HistoryImportSource | undefined
+  /** 次要说明；缺省按扫描状态生成 */
+  caption?: string | undefined
+  /** 卡片图标；缺省为终端图标 */
+  icon?: ReactNode | undefined
+  variant?: 'source' | 'more'
 }) {
   return (
-    <div className={classNames('hi-scan-source', `hi-scan-source-${source}`)}>
+    <div
+      className={classNames(
+        'hi-scan-source',
+        sourceKey != null && `hi-scan-source-${sourceKey}`,
+        variant === 'more' && 'hi-scan-source-more',
+      )}
+      style={{ top }}
+    >
       <div className="hi-scan-source-head">
-        <span className="hi-scan-source-icon">
-          <Icons.Terminal size={16} />
-        </span>
+        <span className="hi-scan-source-icon">{icon ?? <Icons.Terminal size={16} />}</span>
         <span>
-          <strong>{SOURCE_LABEL[source]}</strong>
-          <small>
-            {state.status === 'scanning'
-              ? '扫描会话索引'
-              : state.status === 'done'
-                ? '扫描完成'
-                : '来源不可用'}
-          </small>
+          <strong>{label}</strong>
+          <small>{caption ?? scanStateCaption(state)}</small>
         </span>
         <b>{state.count > 0 ? state.count.toLocaleString() : '—'}</b>
       </div>
@@ -986,6 +1020,15 @@ function ScanSourceCard({
       </div>
     </div>
   )
+}
+
+/** 扫描卡片缺省次要说明：按来源扫描状态生成 */
+function scanStateCaption(state: ScanSourceState): string {
+  return state.status === 'scanning'
+    ? '扫描会话索引'
+    : state.status === 'done'
+      ? '扫描完成'
+      : '来源不可用'
 }
 
 function ScanStatusLabel({

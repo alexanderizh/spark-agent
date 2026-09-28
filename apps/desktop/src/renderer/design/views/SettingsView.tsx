@@ -3464,7 +3464,7 @@ function StorageSection() {
         />
         <SettingsRow
           title={tr('app.sidebar.importHistory')}
-          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
+          desc="检测并导入宿主机 Claude Code / Codex / ZCode / WorkBuddy / Qoder 对话历史"
           right={
             <Button
               size="middle"

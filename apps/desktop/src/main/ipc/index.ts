@@ -2891,6 +2891,9 @@ function getSessionService(): SessionService {
  *   codex       → 本地 Codex CLI provider（不可用则任一 openai / 默认 provider）
  *   zcode       → 按会话后端引擎（providerHint）：claude→claude 分支、codex→codex 分支、
  *                 glm / 未知→claude-sdk + anthropic fallback（GLM coding plan 兼容 anthropic 协议）
+ *   workbuddy / qoder → 均为 Claude Code 系 transcript（历史事件可被 claude-sdk 直接回放），
+ *                 续聊统一走 claude-sdk + anthropic fallback；不复用本地 Claude CLI provider，
+ *                 因其登录态与这两个 App 并不同源。
  */
 async function resolveImportProvider(
   source: HistoryImportSource,
@@ -2929,9 +2932,10 @@ async function resolveImportProvider(
     return { providerProfileId: profileId, agentAdapter: 'codex', permissionMode: 'codex-default' }
   }
 
-  // zcode 的 glm / 未知后端：续聊走 claude-sdk + anthropic 协议 fallback
-  // （GLM coding plan 的 anthropic 兼容端点是 zcode 的默认后端形态）。
-  // 不复用本地 Claude CLI provider——其登录态与 zcode 会话并不同源。
+  // zcode 的 glm / 未知后端，以及 WorkBuddy / Qoder：续聊走 claude-sdk + anthropic 协议
+  // fallback（zcode 的默认后端为 GLM coding plan 的 anthropic 兼容端点；WorkBuddy / Qoder
+  // 为 Claude Code 系 transcript，事件结构可直接被 claude-sdk 回放）。
+  // 不复用本地 Claude CLI provider——其登录态与这些来源的会话并不同源。
   const profileId = pickFallback('anthropic')?.id
   if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
   return { providerProfileId: profileId, agentAdapter: 'claude-sdk', permissionMode: 'claude-ask' }

@@ -40,6 +40,14 @@ import { extractZcodeV2Meta, parseZcodeV2Transcript } from './zcodeV2Parser.js'
 import { parseZcodeCliTranscript } from './zcodeCliParser.js'
 import { listZcodeCliSessions, loadZcodeCliSessionText } from './zcodeCliStore.js'
 import {
+  extractWorkbuddyMeta,
+  parseWorkbuddyTranscript,
+  type WorkbuddyFallbackMeta,
+} from './workbuddyParser.js'
+import { loadWorkbuddySessions, type WorkbuddySessionMeta } from './workbuddyStore.js'
+import { parseQoderTranscript } from './qoderParser.js'
+import { listQoderSessions, loadQoderSessionText } from './qoderStore.js'
+import {
   completeImportedTurns,
   deriveTitle,
   type ParsedTranscript,
@@ -174,10 +182,53 @@ export class HistoryImportService {
     return candidates
   }
 
+  /**
+   * WorkBuddy 数据根目录候选（默认 ~/.workbuddy，含 HOME 环境变量覆盖）。
+   * 会话正文在 <root>/projects/<encoded-cwd>/<sessionId>.jsonl，
+   * 标题/cwd 兜底元数据在 <root>/workbuddy.db。
+   */
+  private get workbuddyRootCandidates(): string[] {
+    const candidates = [path.join(this.home, '.workbuddy')]
+    const homeEnv = process.env.HOME?.trim()
+    if (homeEnv != null && homeEnv.length > 0) {
+      const alt = path.join(homeEnv, '.workbuddy')
+      if (!candidates.includes(alt)) candidates.push(alt)
+    }
+    return candidates
+  }
+
+  /**
+   * Qoder 数据目录候选（Electron userData，三平台路径不同）：
+   *   macOS   ~/Library/Application Support/com.qoder.app.stable/main.sqlite
+   *   Windows %APPDATA%\com.qoder.app.stable\main.sqlite
+   *   Linux   ~/.config/com.qoder.app.stable/main.sqlite
+   * 按当前平台优先排序，同时探测其它平台路径（HOME 环境变量覆盖场景）。
+   */
+  private get qoderRootCandidates(): string[] {
+    const macRoot = path.join(this.home, 'Library', 'Application Support', 'com.qoder.app.stable')
+    const linuxRoot = path.join(this.home, '.config', 'com.qoder.app.stable')
+    const appData = process.env.APPDATA?.trim()
+    const winRoot =
+      appData != null && appData.length > 0 ? path.join(appData, 'com.qoder.app.stable') : null
+    const preferred =
+      process.platform === 'win32'
+        ? [winRoot, macRoot, linuxRoot]
+        : process.platform === 'darwin'
+          ? [macRoot, linuxRoot, winRoot]
+          : [linuxRoot, macRoot, winRoot]
+    return preferred.filter((root): root is string => root != null)
+  }
+
+  private get qoderDefaultRoot(): string {
+    return this.qoderRootCandidates[0] ?? path.join(this.home, '.qoder')
+  }
+
   // ─── scan ──────────────────────────────────────────────────────────────
 
   async scan(sources?: HistoryImportSource[]): Promise<HistoryImportScanResponse> {
-    const want = new Set<HistoryImportSource>(sources ?? ['claude-code', 'codex', 'zcode'])
+    const want = new Set<HistoryImportSource>(
+      sources ?? ['claude-code', 'codex', 'zcode', 'workbuddy', 'qoder'],
+    )
     const importedIds = this.loadImportedSourceIds()
     const items: HistoryImportItem[] = []
     const sourceSummaries: HistoryImportScanResponse['sources'] = []
@@ -192,6 +243,14 @@ export class HistoryImportService {
     }
     if (want.has('zcode')) {
       const summary = await this.scanZcode(importedIds, items)
+      sourceSummaries.push(summary)
+    }
+    if (want.has('workbuddy')) {
+      const summary = await this.scanWorkbuddy(importedIds, items)
+      sourceSummaries.push(summary)
+    }
+    if (want.has('qoder')) {
+      const summary = await this.scanQoder(importedIds, items)
       sourceSummaries.push(summary)
     }
 
@@ -573,6 +632,164 @@ export class HistoryImportService {
     }
   }
 
+  // ─── scan: WorkBuddy / Qoder ────────────────────────────────────────────
+
+  /**
+   * 扫描 WorkBuddy 会话：<root>/projects/<encoded-cwd>/<sessionId>.jsonl。
+   * 有 workbuddy.db 时用它补齐标题 / cwd，并跳过 WorkBuddy 内已删除的会话
+   * （deleted_at 非空，仅剩残留 jsonl）。库缺失时退化为只看 jsonl。
+   */
+  private async scanWorkbuddy(
+    importedIds: Set<string>,
+    out: HistoryImportItem[],
+  ): Promise<HistoryImportScanResponse['sources'][number]> {
+    let count = 0
+    const errors: string[] = []
+    let rootPath = ''
+
+    for (const root of this.workbuddyRootCandidates) {
+      rootPath = rootPath || root
+      const projectsRoot = path.join(root, 'projects')
+      let dirs: Dirent[]
+      try {
+        dirs = await readdir(projectsRoot, { withFileTypes: true })
+      } catch {
+        // 目录不存在：该机器未安装 / 未使用 WorkBuddy
+        continue
+      }
+      const metaMap = loadWorkbuddySessions(path.join(root, 'workbuddy.db'))
+      const files: ScannedFile[] = []
+      for (const dir of dirs) {
+        if (!dir.isDirectory()) continue
+        const dirPath = path.join(projectsRoot, dir.name)
+        let entries
+        try {
+          entries = await readdir(dirPath, { withFileTypes: true })
+        } catch {
+          continue
+        }
+        for (const entry of entries) {
+          if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+          const filePath = path.join(dirPath, entry.name)
+          try {
+            const st = await stat(filePath)
+            files.push({ source: 'workbuddy', filePath, sizeBytes: st.size, mtime: st.mtime })
+          } catch {
+            // ignore
+          }
+        }
+      }
+      for (const file of files) {
+        const item = await this.buildWorkbuddyItem(file, metaMap, importedIds)
+        if (item != null) {
+          out.push(item)
+          count++
+        }
+      }
+    }
+
+    const fallbackRoot = path.join(this.home, '.workbuddy')
+    if (count > 0) {
+      return { source: 'workbuddy', available: true, count, rootPath: rootPath || fallbackRoot }
+    }
+    if (errors.length > 0) {
+      return {
+        source: 'workbuddy',
+        available: false,
+        count,
+        rootPath: rootPath || fallbackRoot,
+        error: errors.join('; '),
+      }
+    }
+    // 无可用会话（未安装或全部已删除）：标记不可用，便于 UI 显示为空
+    return { source: 'workbuddy', available: false, count, rootPath: rootPath || fallbackRoot }
+  }
+
+  private async buildWorkbuddyItem(
+    file: ScannedFile,
+    metaMap: Map<string, WorkbuddySessionMeta> | null,
+    importedIds: Set<string>,
+  ): Promise<HistoryImportItem | null> {
+    try {
+      const fallbackId = path.basename(file.filePath, '.jsonl')
+      const dbMeta = metaMap?.get(fallbackId)
+      // WorkBuddy 内已删除（仅剩残留 jsonl）的会话不作为导入候选
+      if (dbMeta != null && dbMeta.deletedAt != null) return null
+      const fallback: WorkbuddyFallbackMeta | undefined =
+        dbMeta != null ? { title: dbMeta.customTitle ?? dbMeta.title, cwd: dbMeta.cwd } : undefined
+      const text = await this.readForMeta(file.filePath, file.sizeBytes)
+      const meta = extractWorkbuddyMeta(text, fallbackId, fallback)
+      if (meta.messageCount === 0) return null
+      return this.toItem('workbuddy', file, meta, importedIds)
+    } catch (err) {
+      log.warn(`scan workbuddy file failed: ${file.filePath}: ${errMsg(err)}`)
+      return null
+    }
+  }
+
+  /**
+   * 扫描 Qoder 会话：<userData>/com.qoder.app.stable/main.sqlite（单库多会话）。
+   * 只取未删除的 standard 会话（排除侧聊 / 自动化执行），条目 filePath 指向库文件，
+   * 预览与导入按 sourceSessionId 从库中重组消息。
+   */
+  private async scanQoder(
+    importedIds: Set<string>,
+    out: HistoryImportItem[],
+  ): Promise<HistoryImportScanResponse['sources'][number]> {
+    let count = 0
+    const errors: string[] = []
+
+    for (const root of this.qoderRootCandidates) {
+      const dbPath = path.join(root, 'main.sqlite')
+      let st
+      try {
+        st = await stat(dbPath)
+      } catch {
+        // 该平台路径下没有 Qoder 库文件
+        continue
+      }
+      const sessions = listQoderSessions(dbPath)
+      if (sessions == null) {
+        log.warn(`read qoder sessions failed: ${dbPath}`)
+        errors.push(`无法读取 ${dbPath}`)
+        continue
+      }
+      for (const session of sessions) {
+        if (session.messageCount === 0) continue
+        const cwd = session.cwd.trim().length > 0 ? session.cwd : null
+        out.push({
+          source: 'qoder',
+          sourceSessionId: session.sessionId,
+          title: deriveTitle(session.title, `qoder-${session.sessionId.slice(0, 8)}`),
+          cwd,
+          project: projectName(cwd),
+          messageCount: session.messageCount,
+          firstTimestamp: msToIsoOrNull(session.createdAt),
+          lastTimestamp: msToIsoOrNull(session.updatedAt) ?? st.mtime.toISOString(),
+          sizeBytes: st.size,
+          filePath: dbPath,
+          alreadyImported: importedIds.has(session.sessionId),
+        })
+        count++
+      }
+    }
+
+    const fallbackRoot = this.qoderDefaultRoot
+    if (count > 0) {
+      return { source: 'qoder', available: true, count, rootPath: fallbackRoot }
+    }
+    if (errors.length > 0) {
+      return {
+        source: 'qoder',
+        available: false,
+        count,
+        rootPath: fallbackRoot,
+        error: errors.join('; '),
+      }
+    }
+    return { source: 'qoder', available: false, count, rootPath: fallbackRoot }
+  }
+
   private toItem(
     source: HistoryImportSource,
     file: ScannedFile,
@@ -773,6 +990,15 @@ export class HistoryImportService {
       if (text == null) throw new Error(`zcode CLI 会话不存在：${sourceSessionId}`)
       return text
     }
+    // Qoder 的 filePath 指向 main.sqlite（单库多会话），需按 sourceSessionId 重组
+    if (source === 'qoder') {
+      if (sourceSessionId == null || sourceSessionId.length === 0) {
+        throw new Error('Qoder 来源缺少 sourceSessionId，无法定位会话')
+      }
+      const text = loadQoderSessionText(filePath, sourceSessionId)
+      if (text == null) throw new Error(`Qoder 会话不存在：${sourceSessionId}`)
+      return text
+    }
     return readFile(filePath, 'utf-8')
   }
 
@@ -909,6 +1135,18 @@ export class HistoryImportService {
     if (source === 'claude-code') {
       const sourceSessionId = path.basename(filePath, '.jsonl')
       return parseClaudeCodeTranscript(text, { sessionId, sourceSessionId, fallbackTimestamp })
+    }
+    if (source === 'workbuddy') {
+      const sourceSessionId = opts?.sourceSessionId ?? path.basename(filePath, '.jsonl')
+      return parseWorkbuddyTranscript(text, {
+        sessionId,
+        sourceSessionId,
+        fallbackTimestamp,
+      })
+    }
+    if (source === 'qoder') {
+      const sourceSessionId = opts?.sourceSessionId ?? ''
+      return parseQoderTranscript(text, { sessionId, sourceSessionId, fallbackTimestamp })
     }
     if (source === 'zcode') {
       const sourceSessionId = opts?.sourceSessionId ?? path.basename(filePath, '.json')

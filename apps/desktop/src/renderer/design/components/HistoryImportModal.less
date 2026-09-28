@@ -151,8 +151,10 @@
   position: relative;
   width: 900px;
   max-width: 100%;
-  height: 310px;
-  flex: 0 0 310px;
+  // 4 张卡片（3 张具名来源 + 「更多」聚合卡）围绕汇聚圆心纵向居中
+  // （槽位 74px，卡高 64px），高度与渲染层的卡片偏移计算保持一致
+  height: 360px;
+  flex: 0 0 360px;
   margin: 22px auto 0;
 }
 
@@ -160,24 +162,12 @@
   position: absolute;
   left: 0;
   width: 238px;
-  padding: 15px 16px;
+  // top 由渲染层按来源索引计算（槽位 74px，卡高 64px），此处不再逐来源写死
+  padding: 12px 14px;
   border: 1px solid var(--border, #e4e4e7);
-  border-radius: 13px;
+  border-radius: 12px;
   background: var(--panel-elev, #fff);
   box-shadow: var(--shadow-sm);
-}
-
-// 三卡纵向排布（与 Tab 顺序一致：codex → claude-code → zcode），槽位 103px。
-// 连线起点对齐各卡纵向中心（卡高约 78px → center ≈ top + 39），
-// 终点汇聚到 collector 中心（top:77 + 83 ≈ y160）。
-.hi-scan-source-codex {
-  top: 9px;
-}
-.hi-scan-source-claude-code {
-  top: 112px;
-}
-.hi-scan-source-zcode {
-  top: 215px;
 }
 
 .hi-scan-source-head {
@@ -208,9 +198,9 @@
 }
 
 .hi-scan-source-icon {
-  width: 31px;
-  height: 31px;
-  flex: 0 0 31px;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -219,8 +209,8 @@
 }
 
 .hi-scan-source-progress {
-  height: 4px;
-  margin-top: 13px;
+  height: 3px;
+  margin-top: 10px;
   overflow: hidden;
   border-radius: 99px;
   background: var(--divider, #efede8);
@@ -250,10 +240,26 @@
   }
 }
 
+// 「更多」聚合卡：合并展示剩余来源，虚线边框 + 主色图标与其他来源卡区分
+.hi-scan-source-more {
+  border-style: dashed;
+
+  .hi-scan-source-icon {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .hi-scan-source-head > span:nth-child(2) small {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
 .hi-scan-lines {
   position: absolute;
-  left: 252px;
-  width: 295px;
+  // 起点贴卡片右边缘；top / width / rotate 由渲染层按卡片索引与汇聚圆心计算
+  left: 238px;
   height: 1px;
   overflow: visible;
   transform-origin: left;
@@ -282,25 +288,12 @@
   }
 }
 
-.hi-scan-lines-top {
-  top: 48px;
-  transform: rotate(22deg);
-}
-.hi-scan-lines-middle {
-  top: 151px;
-  transform: rotate(2deg);
-}
-.hi-scan-lines-bottom {
-  top: 254px;
-  transform: rotate(-18deg);
-}
-
 .hi-scan-collector {
   position: absolute;
-  left: 535px;
-  top: 77px;
-  width: 166px;
-  height: 166px;
+  left: 543px;
+  top: 105px;
+  width: 150px;
+  height: 150px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -331,11 +324,11 @@
 
   > span {
     z-index: 1;
-    width: 72px;
-    height: 72px;
+    width: 66px;
+    height: 66px;
     display: grid;
     place-items: center;
-    border-radius: 21px;
+    border-radius: 19px;
     background: var(--primary);
     color: var(--primary-fg, #fff);
     box-shadow: 0 12px 30px color-mix(in srgb, var(--primary) 28%, transparent);
@@ -344,9 +337,9 @@
 
 .hi-scan-result-line {
   position: absolute;
-  left: 690px;
-  top: 160px;
-  width: 48px;
+  left: 693px;
+  top: 180px;
+  width: 47px;
   height: 1px;
   background: color-mix(in srgb, var(--primary) 28%, var(--border));
 
@@ -365,7 +358,7 @@
 .hi-scan-results {
   position: absolute;
   right: 0;
-  top: 48px;
+  top: 83px;
   width: 160px;
 
   span {
@@ -566,7 +559,7 @@
 // ---------- 选择页 ----------
 .hi-select {
   flex: 1;
-  min-height: 0;
+  min-height: 500px;
   max-height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
@@ -622,10 +615,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
 
-  .ant-segmented {
-    flex: 0 0 auto;
-  }
+// 来源下拉（较项目/时间筛选更宽，容纳「Claude Code 1,748」文案）
+.hi-source-select {
+  flex: 0 0 148px;
 }
 
 .hi-search {

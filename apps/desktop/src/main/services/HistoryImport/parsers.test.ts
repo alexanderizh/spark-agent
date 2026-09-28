@@ -10,6 +10,12 @@ import { parseClaudeCodeTranscript, extractClaudeCodeMeta } from './claudeCodePa
 import { parseCodexRollout, extractCodexMeta } from './codexParser.js'
 import { parseZcodeV2Transcript, extractZcodeV2Meta } from './zcodeV2Parser.js'
 import { parseZcodeCliTranscript } from './zcodeCliParser.js'
+import {
+  parseWorkbuddyTranscript,
+  extractWorkbuddyMeta,
+  extractWorkbuddyUserText,
+} from './workbuddyParser.js'
+import { parseQoderTranscript, extractQoderMeta } from './qoderParser.js'
 
 const FALLBACK_TS = '2026-06-14T00:00:00.000Z'
 
@@ -885,5 +891,344 @@ describe('zcodeCliParser', () => {
       fallbackTimestamp: FALLBACK_TS,
     })
     expect(meta.providerHint).toBe('codex')
+  })
+})
+
+describe('workbuddyParser', () => {
+  const text = jsonl([
+    {
+      type: 'message',
+      id: 'u1',
+      role: 'user',
+      sessionId: 'wb-1',
+      cwd: '/Users/me/wb-proj',
+      timestamp: 1773414883361,
+      content: [
+        {
+          type: 'input_text',
+          text:
+            '<system-reminder data-role="user-context">\n<current_time>2026-04-30</current_time>\n</system-reminder>\n' +
+            '<user_query>帮我修复登录</user_query>',
+        },
+      ],
+    },
+    {
+      type: 'reasoning',
+      sessionId: 'wb-1',
+      timestamp: 1773414890000,
+      content: [],
+      rawContent: [{ type: 'reasoning_text', text: '先看代码' }],
+    },
+    {
+      type: 'function_call',
+      sessionId: 'wb-1',
+      timestamp: 1773414891000,
+      callId: 'call_1',
+      name: 'Read',
+      arguments: '{"file_path":"a.ts"}',
+      status: 'completed',
+    },
+    {
+      type: 'function_call_result',
+      sessionId: 'wb-1',
+      timestamp: 1773414892000,
+      callId: 'call_1',
+      name: 'Read',
+      status: 'completed',
+      output: { type: 'text', text: 'file content' },
+    },
+    {
+      type: 'message',
+      id: 'a1',
+      role: 'assistant',
+      sessionId: 'wb-1',
+      timestamp: 1773414900000,
+      content: [{ type: 'output_text', text: '我来看一下' }],
+      providerData: { model: 'auto' },
+    },
+    {
+      type: 'message',
+      id: 'a2',
+      role: 'assistant',
+      sessionId: 'wb-1',
+      timestamp: 1773414901000,
+      content: [{ type: 'output_text', text: '已修复' }],
+    },
+    {
+      type: 'message',
+      id: 'u2',
+      role: 'user',
+      sessionId: 'wb-1',
+      timestamp: 1773414910000,
+      content: [{ type: 'input_text', text: '谢谢' }],
+    },
+    {
+      type: 'message',
+      id: 'a3',
+      role: 'assistant',
+      sessionId: 'wb-1',
+      timestamp: 1773414911000,
+      content: [{ type: 'output_text', text: '不客气' }],
+    },
+    { type: 'custom-title', sessionId: 'wb-1', timestamp: 1773414920000, customTitle: '修复登录' },
+    { type: 'file-history-snapshot', sessionId: 'wb-1' },
+  ])
+
+  it('提取 <user_query>，剥离 system-reminder 注入上下文', () => {
+    expect(
+      extractWorkbuddyUserText(
+        '<system-reminder data-role="user-context">ctx</system-reminder>\n<user_query>你好</user_query>',
+      ),
+    ).toBe('你好')
+    // 无 user_query 时剥离上下文段；未闭合的注入块直接截断
+    expect(extractWorkbuddyUserText('<system-reminder>ctx</system-reminder>直接提问')).toBe(
+      '直接提问',
+    )
+    expect(extractWorkbuddyUserText('<system-reminder>ctx 未闭合')).toBe('')
+    // 附件引用（@image#N:file）剥离；纯图片消息保留占位
+    expect(extractWorkbuddyUserText('看下这个截图 @image#1:Clipboard_Screenshot.png')).toBe(
+      '看下这个截图',
+    )
+    expect(extractWorkbuddyUserText('@image#1:a.png @image#2:b.png')).toBe('[图片]')
+  })
+
+  it('映射事件序列：user → thinking → tool → result → text → text → user → text', () => {
+    const { events } = parseWorkbuddyTranscript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'wb-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    // 每个 turn 末尾由 completeImportedTurns 补一条 agent_status 终态
+    expect(events.map((e) => e.type)).toEqual([
+      'user_message',
+      'agent_thinking',
+      'tool_call',
+      'tool_result',
+      'assistant_message',
+      'assistant_message',
+      'agent_status',
+      'user_message',
+      'assistant_message',
+      'agent_status',
+    ])
+    const userMessages = events.filter((e) => e.type === 'user_message')
+    expect(userMessages[0]).toMatchObject({ content: '帮我修复登录' })
+    expect(userMessages[1]).toMatchObject({ content: '谢谢' })
+    const call = events.find((e) => e.type === 'tool_call')
+    expect(call).toMatchObject({
+      toolCallId: 'call_1',
+      toolName: 'Read',
+      toolInput: { file_path: 'a.ts' },
+    })
+    const result = events.find((e) => e.type === 'tool_result')
+    expect(result).toMatchObject({
+      toolCallId: 'call_1',
+      status: 'success',
+      output: 'file content',
+    })
+    // 毫秒时间戳 → ISO
+    expect(events[0]!.timestamp).toBe(new Date(1773414883361).toISOString())
+  })
+
+  it('同一 turn 内多段正文不互相覆盖（isFinal=false + segmentId 唯一）', () => {
+    const { events } = parseWorkbuddyTranscript(text, {
+      sessionId: 's1',
+      sourceSessionId: 'wb-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    const assistant = events.filter((e) => e.type === 'assistant_message')
+    expect(assistant).toHaveLength(3)
+    for (const message of assistant) {
+      expect(message).toMatchObject({ isFinal: false })
+    }
+    const segmentIds = assistant.map((e) => (e as { segmentId?: string }).segmentId)
+    expect(new Set(segmentIds).size).toBe(3)
+  })
+
+  it('meta：custom-title 优先、cwd 来自行内、消息计数与时间范围正确', () => {
+    const meta = extractWorkbuddyMeta(text, 'fallback-id')
+    expect(meta.sourceSessionId).toBe('wb-1')
+    expect(meta.title).toBe('修复登录')
+    expect(meta.cwd).toBe('/Users/me/wb-proj')
+    expect(meta.messageCount).toBe(5)
+    expect(meta.firstTimestamp).toBe(new Date(1773414883361).toISOString())
+    expect(meta.lastTimestamp).toBe(new Date(1773414920000).toISOString())
+  })
+
+  it('meta：jsonl 缺 cwd 时使用 workbuddy.db 兜底元数据', () => {
+    const bare = jsonl([
+      {
+        type: 'message',
+        id: 'u1',
+        role: 'user',
+        sessionId: 'wb-2',
+        timestamp: 1773414883361,
+        content: [{ type: 'input_text', text: '你好' }],
+      },
+    ])
+    const meta = extractWorkbuddyMeta(bare, 'wb-2', { title: 'db 标题', cwd: '/Users/me/db-proj' })
+    expect(meta.title).toBe('db 标题')
+    expect(meta.cwd).toBe('/Users/me/db-proj')
+  })
+})
+
+describe('qoderParser', () => {
+  const payload = {
+    meta: {
+      sessionId: 'qoder-1',
+      title: '这是什么项目',
+      cwd: '/Users/me/proj',
+      createdAt: 1790652106097,
+      updatedAt: 1790653157656,
+    },
+    messages: [
+      {
+        messageId: 'm1',
+        sequence: 1,
+        payload: {
+          id: 'm1',
+          role: 'user',
+          turnId: 't1',
+          text: 'hi，这是什么项目',
+          timestamp: '2026-09-29T03:21:46.124Z',
+          attachments: [],
+        },
+      },
+      {
+        messageId: 'm2',
+        sequence: 2,
+        payload: {
+          id: 'a1',
+          role: 'assistant',
+          turnId: 't1',
+          // parts 已提供正文时不再回落到整轮 text
+          text: '整轮汇总不应出现',
+          timestamp: '2026-09-29T03:21:47.000Z',
+          parts: [
+            { type: 'hook', hook: { id: 'h1', event: 'UserPromptSubmit', status: 'succeeded' } },
+            { type: 'thinking', text: '先看结构' },
+            {
+              type: 'tool',
+              tool: {
+                id: 'call_1',
+                name: 'Read',
+                input: { file_path: 'MEMORY.md' },
+                status: 'failed',
+                response: 'Error: File does not exist',
+              },
+            },
+            {
+              type: 'tool',
+              tool: {
+                id: 'call_2',
+                name: 'Bash',
+                input: { command: 'ls' },
+                status: 'completed',
+                response: 'total 0',
+              },
+            },
+            { type: 'text', text: '这是一个项目' },
+          ],
+        },
+      },
+      {
+        messageId: 'm3',
+        sequence: 3,
+        payload: {
+          id: 'm3',
+          role: 'user',
+          turnId: 't2',
+          text: '继续',
+          timestamp: '2026-09-29T03:30:00.000Z',
+        },
+      },
+    ],
+  }
+  const text = JSON.stringify(payload)
+
+  it('映射事件序列：user → thinking → tool×2 → text → user', () => {
+    const { events } = parseQoderTranscript(text, {
+      sessionId: 's2',
+      sourceSessionId: 'qoder-1',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(events.map((e) => e.type)).toEqual([
+      'user_message',
+      'agent_thinking',
+      'tool_call',
+      'tool_result',
+      'tool_call',
+      'tool_result',
+      'assistant_message',
+      'agent_status',
+      // 末尾 user 消息没有 assistant 活动，不补终态
+      'user_message',
+    ])
+    const results = events.filter((e) => e.type === 'tool_result')
+    expect(results[0]).toMatchObject({ toolCallId: 'call_1', status: 'error' })
+    expect(results[1]).toMatchObject({ toolCallId: 'call_2', status: 'success', output: 'total 0' })
+    const assistant = events.find((e) => e.type === 'assistant_message')
+    expect(assistant).toMatchObject({ content: '这是一个项目', isFinal: false })
+    // 两个 user 属于不同 turn
+    const userMessages = events.filter((e) => e.type === 'user_message')
+    expect(userMessages[0]!.turnId).not.toBe(userMessages[1]!.turnId)
+  })
+
+  it('parts 缺失时回落整轮 text 与 tools 列表', () => {
+    const legacy = JSON.stringify({
+      meta: { sessionId: 'qoder-2', title: '旧会话', cwd: '/Users/me/legacy' },
+      messages: [
+        {
+          messageId: 'm1',
+          sequence: 1,
+          payload: { id: 'm1', role: 'user', turnId: 't1', text: '问题', timestamp: FALLBACK_TS },
+        },
+        {
+          messageId: 'm2',
+          sequence: 2,
+          payload: {
+            id: 'a1',
+            role: 'assistant',
+            turnId: 't1',
+            text: '整轮正文',
+            timestamp: FALLBACK_TS,
+            tools: [
+              {
+                id: 'call_9',
+                name: 'Bash',
+                input: { command: 'pwd' },
+                status: 'completed',
+                response: '/Users/me/legacy',
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const { events } = parseQoderTranscript(legacy, {
+      sessionId: 's3',
+      sourceSessionId: 'qoder-2',
+      fallbackTimestamp: FALLBACK_TS,
+    })
+    expect(events.map((e) => e.type)).toEqual([
+      'user_message',
+      'assistant_message',
+      'tool_call',
+      'tool_result',
+      'agent_status',
+    ])
+    expect(events.find((e) => e.type === 'assistant_message')).toMatchObject({
+      content: '整轮正文',
+    })
+  })
+
+  it('meta：标题 / cwd / 消息数 / 时间', () => {
+    const meta = extractQoderMeta(text, 'fallback-id')
+    expect(meta.sourceSessionId).toBe('qoder-1')
+    expect(meta.title).toBe('这是什么项目')
+    expect(meta.cwd).toBe('/Users/me/proj')
+    expect(meta.messageCount).toBe(3)
+    expect(meta.firstTimestamp).toBe('2026-09-29T03:21:46.124Z')
+    expect(meta.lastTimestamp).toBe('2026-09-29T03:30:00.000Z')
   })
 })

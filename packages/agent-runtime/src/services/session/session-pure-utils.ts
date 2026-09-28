@@ -1136,7 +1136,9 @@ export function getImportedFromMetadata(
     if (
       meta.importedFrom === 'claude-code' ||
       meta.importedFrom === 'codex' ||
-      meta.importedFrom === 'zcode'
+      meta.importedFrom === 'zcode' ||
+      meta.importedFrom === 'workbuddy' ||
+      meta.importedFrom === 'qoder'
     )
       return meta.importedFrom
   } catch {
