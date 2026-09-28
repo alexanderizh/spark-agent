@@ -1,7 +1,7 @@
 /**
  * GitPanel —— 代码面板左侧栏的 Git 管理面板主容器。
  *
- * 结构（自上而下）：标题行（Git + 刷新）· 提交区（信息输入 + 提交已暂存）
+ * 结构（自上而下）：标题行（Git + 拉取 + 推送 + 刷新）· 提交区（信息输入 + 提交已暂存）
  * · 滚动区（已暂存 / 更改 / 贮藏 / 提交 四个分组）。
  * 分支同步 foot 栏已提升为左侧栏公用 footer（SidebarGitFooter），不再在此渲染。
  *
@@ -133,6 +133,26 @@ export function GitPanel({
 
   const headerSpinner = refreshing || loadingStatus
 
+  // 推/拉可用性：status 未加载（null）或非 Git 仓库时统一禁用，避免误报"没有远端"。
+  // 分离头指针下没有可推送的分支（主进程会拒绝），直接禁用并说明原因。
+  const noRemote = status == null || status.hasRemote !== true
+  const detachedHead = status?.detachedHead === true
+  const branchHasUpstream = status?.branchHasUpstream === true
+  const pushTitle = noRemote
+    ? '当前仓库没有配置远端'
+    : detachedHead
+      ? '分离头指针状态，无法推送'
+      : branchHasUpstream
+        ? '推送当前分支到远端'
+        : '推送并发布新分支到远端'
+  const pullTitle = noRemote
+    ? '当前仓库没有配置远端'
+    : detachedHead
+      ? '分离头指针状态，无法拉取'
+      : branchHasUpstream
+        ? '拉取远端更新'
+        : '当前分支没有上游分支，无法拉取'
+
   const renderHeader = (
     <div className="gp-header">
       <span className="gp-header-title">
@@ -147,6 +167,32 @@ export function GitPanel({
           onClick={() => setGitPanelViewMode(viewMode === 'list' ? 'tree' : 'list')}
         >
           {viewMode === 'list' ? <Icons.FolderClosed size={14} /> : <Icons.ListTodo size={14} />}
+        </button>
+        <button
+          type="button"
+          className="gp-icon-btn"
+          title={pullTitle}
+          disabled={noRemote || !branchHasUpstream || actions.busy != null}
+          onClick={() => void actions.pull()}
+        >
+          {actions.busy === 'pull' ? (
+            <Icons.Spinner size={13} className="gp-spin" />
+          ) : (
+            <Icons.Download size={13} />
+          )}
+        </button>
+        <button
+          type="button"
+          className="gp-icon-btn"
+          title={pushTitle}
+          disabled={noRemote || detachedHead || actions.busy != null}
+          onClick={() => void actions.push()}
+        >
+          {actions.busy === 'push' ? (
+            <Icons.Spinner size={13} className="gp-spin" />
+          ) : (
+            <Icons.Upload size={13} />
+          )}
         </button>
         <button type="button" className="gp-icon-btn" title="刷新" onClick={handleRefresh}>
           {headerSpinner ? (

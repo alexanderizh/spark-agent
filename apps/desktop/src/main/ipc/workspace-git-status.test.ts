@@ -110,6 +110,8 @@ describe('workspace Git status for an unpushed local branch', () => {
     expect(status.currentBranch).toBe('feature/local-review')
     expect(status.remoteName).toBe('origin')
     expect(status.remoteBranch).toBe('master')
+    // remoteBranch 是兜底的远端默认分支；本地新分支尚未发布，以 branchHasUpstream 为准
+    expect(status.branchHasUpstream).toBe(false)
     expect(status.ahead).toBe(1)
     expect(status.behind).toBe(0)
     expect(status.changedFiles).toBe(0)
@@ -222,6 +224,8 @@ describe('workspace git tags and detached HEAD', () => {
 
     expect(status.detachedHead).toBe(true)
     expect(status.currentBranch).toBe('v1.0.0')
+    // detached 下 @{u} 解析失败是预期事实；前端据 detachedHead 排除"发布"态。
+    expect(status.branchHasUpstream).toBe(false)
   })
 })
 
@@ -356,6 +360,11 @@ describe('pushWorkspaceBranch', () => {
   it('publishes a new local branch to a same-named remote branch', async () => {
     const workspacePath = await createUnpushedFeatureRepository()
 
+    // 发布前：本地新分支没有上游；发布后 branchHasUpstream 翻转为 true（footer 据此退出"发布"态）
+    await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
+      branchHasUpstream: false,
+    })
+
     await pushWorkspaceBranch(workspacePath)
 
     await expect(
@@ -367,6 +376,7 @@ describe('pushWorkspaceBranch', () => {
     await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
       remoteName: 'origin',
       remoteBranch: 'feature/local-review',
+      branchHasUpstream: true,
       ahead: 0,
       behind: 0,
     })
@@ -419,6 +429,7 @@ describe('syncWorkspaceBranch', () => {
     ).resolves.toContain('refs/heads/master')
     await expect(getWorkspaceGitStatus(workspacePath)).resolves.toMatchObject({
       remoteBranch: 'master',
+      branchHasUpstream: true,
       ahead: 0,
       behind: 0,
     })

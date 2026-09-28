@@ -1548,6 +1548,11 @@ export interface WorkspaceGitStatusResponse {
   hasRemote: boolean
   remoteName: string | null
   remoteBranch: string | null
+  /**
+   * 当前分支是否已配置上游分支（@{u}）。
+   * false 表示本地新分支尚未发布到远端；remoteBranch 此时是兜底的远端默认分支，不能当作发布目标。
+   */
+  branchHasUpstream?: boolean
   pullRequestUrl: string | null
   stashEntries: WorkspaceGitStashEntry[]
   files: WorkspaceGitFileChange[]

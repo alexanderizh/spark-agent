@@ -452,12 +452,13 @@ export function CodeViewerPanel({
                   />
                 )}
               </div>
-              {/* 公用 foot：分支 + 待同步数量 + 同步按钮（三个左侧面板共用；非 Git 仓库隐藏） */}
+              {/* 公用 foot：分支 + 待同步数量 + 同步/发布按钮（三个左侧面板共用；非 Git 仓库隐藏） */}
               {shouldShowSidebarGitFooter(gitStatus ?? null) && (
                 <SidebarGitFooter
                   status={gitStatus ?? null}
                   busy={gitSidebarSyncing}
                   onSync={() => void gitSidebarActions.sync()}
+                  onPublish={() => void gitSidebarActions.push()}
                 />
               )}
             </div>

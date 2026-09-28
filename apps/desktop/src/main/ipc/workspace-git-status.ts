@@ -23,6 +23,8 @@ type GitComparison = {
   ahead: number
   behind: number
   baseRef: string
+  /** 当前分支是否已配置上游分支（@{u}）；false 表示本地新分支尚未发布。 */
+  hasUpstream: boolean
   remoteBranch: string | null
   remoteName: string | null
   remoteUrl: string | null
@@ -176,6 +178,7 @@ function emptyGitStatus(state: WorkspaceGitState): WorkspaceGitStatusResponse {
     hasRemote: false,
     remoteName: null,
     remoteBranch: null,
+    branchHasUpstream: false,
     pullRequestUrl: null,
     stashEntries: [],
     files: [],
@@ -447,7 +450,15 @@ async function resolveGitComparison(rootPath: string): Promise<GitComparison> {
     behind = Number(behindRaw) || 0
   }
 
-  return { ahead, behind, baseRef, remoteBranch, remoteName, remoteUrl }
+  return {
+    ahead,
+    behind,
+    baseRef,
+    hasUpstream: upstream != null,
+    remoteBranch,
+    remoteName,
+    remoteUrl,
+  }
 }
 
 function buildGitHubCompareUrl(remoteUrl: string | null, branch: string | null): string | null {
@@ -577,6 +588,7 @@ export async function getWorkspaceGitStatus(rootPath: string): Promise<Workspace
       hasRemote: comparison.remoteName != null,
       remoteName: comparison.remoteName,
       remoteBranch: comparison.remoteBranch,
+      branchHasUpstream: comparison.hasUpstream,
       pullRequestUrl: buildGitHubCompareUrl(comparison.remoteUrl, branches.currentBranch),
       stashEntries: parseGitStashList(stashList ?? ''),
       files,
