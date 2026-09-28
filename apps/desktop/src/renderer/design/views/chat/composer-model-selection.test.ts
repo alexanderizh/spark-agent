@@ -75,6 +75,12 @@ const mediaChannel = profile({
   provider: 'openai',
   modelType: 'image',
 })
+const embeddingChannel = profile({
+  id: 'ch-embedding',
+  name: 'glm向量模型',
+  provider: 'openai',
+  codexApiKind: 'embedding',
+})
 const claudeRouter = routerProfile({ id: 'router-claude', name: 'Claude 路由' }, 'claude')
 const codexRouter = routerProfile({ id: 'router-codex', name: 'Codex 路由' }, 'codex')
 const disabledClaudeRouter = routerProfile(
@@ -86,6 +92,7 @@ const allProviders = [
   openaiResponsesChannel,
   openaiChatChannel,
   mediaChannel,
+  embeddingChannel,
   claudeRouter,
   codexRouter,
   disabledClaudeRouter,
@@ -110,6 +117,12 @@ describe('resolveComposerModelVisibility', () => {
     const visibility = resolveComposerModelVisibility({ providers: allProviders })
     expect(visibleIds(visibility.conversationalProviders)).not.toContain('ch-media')
     expect(visibleIds(visibility.autoRouterProviders)).not.toContain('ch-media')
+  })
+
+  it('向量（Embeddings）渠道被过滤，不进入对话渠道分组', () => {
+    const visibility = resolveComposerModelVisibility({ providers: allProviders })
+    expect(visibleIds(visibility.conversationalProviders)).not.toContain('ch-embedding')
+    expect(visibleIds(visibility.autoRouterProviders)).not.toContain('ch-embedding')
   })
 
   it('停用的路由不可见', () => {

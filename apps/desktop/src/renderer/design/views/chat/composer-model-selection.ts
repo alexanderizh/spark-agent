@@ -1,5 +1,9 @@
 import type { ProviderProfile } from '@spark/protocol'
 import { AUTO_ROUTER_PROVIDER_TYPE } from '@spark/protocol'
+import {
+  isEmbeddingProviderProfile,
+  isMediaProviderProfile,
+} from '../../utils/provider-model-kind'
 
 type ComposerProviderSelection = Pick<ProviderProfile, 'providerType' | 'autoRouterConfig'>
 
@@ -20,7 +24,7 @@ export interface ComposerModelVisibilityInput {
 }
 
 export interface ComposerModelVisibility {
-  /** 普通渠道分组（排除路由与多媒体生成渠道）。 */
+  /** 普通渠道分组（排除路由、多媒体生成渠道与向量渠道）。 */
   conversationalProviders: ProviderProfile[]
   /** 「智能路由」分组的可见列表（仅启用中的 router 行）。 */
   autoRouterProviders: ProviderProfile[]
@@ -35,7 +39,8 @@ export interface ComposerModelVisibility {
  * 时由 recovery 兜底组装（continuity capsule + 精确近期历史）注入新引擎，
  * 见 conversation-summarizer 的 recoveryPrompt 与执行器 resumeFallback 链路。
  *
- * 本函数只负责：多媒体生成渠道过滤、router 行独立分组、停用路由剔除。
+ * 本函数只负责：多媒体生成渠道与向量（Embeddings）渠道过滤、router 行独立分组、
+ * 停用路由剔除。
  */
 export function resolveComposerModelVisibility(
   input: ComposerModelVisibilityInput,
@@ -45,9 +50,8 @@ export function resolveComposerModelVisibility(
     conversationalProviders: providers.filter(
       (provider) =>
         provider.providerType !== AUTO_ROUTER_PROVIDER_TYPE &&
-        provider.modelType !== 'image' &&
-        provider.modelType !== 'voice' &&
-        provider.modelType !== 'video',
+        !isMediaProviderProfile(provider) &&
+        !isEmbeddingProviderProfile(provider),
     ),
     autoRouterProviders: providers.filter(
       (provider) =>

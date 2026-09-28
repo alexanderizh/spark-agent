@@ -77,4 +77,29 @@ describe('isProviderCompatibleWithAdapter', () => {
     const broken = profile({ id: 'broken', name: 'Broken', provider: 'auto-router', providerType: 'auto-router' })
     expect(isProviderCompatibleWithAdapter(broken, 'claude-sdk')).toBe(false)
   })
+
+  it('多媒体生成渠道对任何引擎都不兼容（isDefault 兜底不得把生图渠道选进新会话）', () => {
+    const imageProvider = profile({
+      id: 'ch-image',
+      name: '本地自部署图片',
+      provider: 'openai',
+      modelType: 'image',
+      isDefault: true,
+    })
+    expect(isProviderCompatibleWithAdapter(imageProvider, 'claude-sdk')).toBe(false)
+    expect(isProviderCompatibleWithAdapter(imageProvider, 'codex')).toBe(false)
+    expect(isProviderCompatibleWithAdapter(imageProvider, 'spark')).toBe(false)
+  })
+
+  it('向量（Embeddings）渠道对任何引擎都不兼容', () => {
+    const embeddingProvider = profile({
+      id: 'ch-embedding',
+      name: 'glm向量模型',
+      provider: 'openai',
+      codexApiKind: 'embedding',
+    })
+    expect(isProviderCompatibleWithAdapter(embeddingProvider, 'claude-sdk')).toBe(false)
+    expect(isProviderCompatibleWithAdapter(embeddingProvider, 'codex')).toBe(false)
+    expect(isProviderCompatibleWithAdapter(embeddingProvider, 'spark')).toBe(false)
+  })
 })

@@ -6,6 +6,7 @@ import {
   isLocalCodexCliProvider,
 } from '@spark/protocol'
 import { sparkExecutorAvailability } from './sparkExecutorAvailability'
+import { isEmbeddingProviderProfile, isMediaProviderProfile } from './provider-model-kind'
 
 export function isClaudeAdapter(adapter: SessionAgentAdapter): boolean {
   return adapter === 'claude' || adapter === 'claude-sdk'
@@ -19,6 +20,10 @@ export function isProviderCompatibleWithAdapter(
   provider: ProviderProfile,
   adapter: SessionAgentAdapter,
 ): boolean {
+  // 多媒体生成渠道（图像/语音/视频）与向量渠道不能承接文本 turn，任何会话引擎都不兼容。
+  // 否则引擎兜底（isDefault / 首个兼容渠道）会把这类渠道选进新会话——
+  // 例如唯一 isDefault 渠道是生图渠道时，新建会话会被绑到文生图模型上。
+  if (isMediaProviderProfile(provider) || isEmbeddingProviderProfile(provider)) return false
   if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
   if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
   // AutoRouter 行按其声明的引擎（autoRouterConfig.adapter）判定会话兼容性：
@@ -33,14 +38,8 @@ export function isProviderCompatibleWithAdapter(
   }
   if (isSparkAdapter(adapter)) {
     // spark 引擎不接管本地 CLI 内置渠道与 AutoRouter 元渠道；远程对话渠道按协议可映射性判定
+    // （多媒体/向量渠道已在函数入口统一排除）。
     if (provider.providerType === AUTO_ROUTER_PROVIDER_TYPE) return false
-    if (
-      provider.modelType === 'image' ||
-      provider.modelType === 'voice' ||
-      provider.modelType === 'video'
-    ) {
-      return false
-    }
     return sparkExecutorAvailability(
       provider.provider === 'anthropic' ? 'anthropic' : 'openai',
       provider.codexApiKind ?? null,
