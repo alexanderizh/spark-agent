@@ -28,8 +28,8 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
   const tooltipId = useId()
   const degraded = decision.fallbackUsed
   const mismatched = decision.adapterMismatch === true
-  const lead = degraded || mismatched ? '⚠' : '⚙'
   const action = mismatched ? '引擎不匹配回退' : degraded ? '分流降级' : '已路由'
+  const modelName = decision.modelDisplayName || decision.resolvedModelId
   return (
     <div className="model-switch-notice auto-router-notice" role="status">
       <span className="model-switch-notice-line" />
@@ -39,31 +39,31 @@ export function AutoRouterDecisionNotice({ decision }: { decision: AutoRouterDec
         ) : (
           <Shuffle aria-hidden size={16} strokeWidth={1.8} />
         )}
-        <span>
-          {lead} {action} →{' '}
-          <span
-            className="auto-router-notice-model"
-            style={{ color: INTENSITY_COLOR[decision.intensity] }}
-          >
-            ●{INTENSITY_LABEL[decision.intensity]} {decision.modelDisplayName || decision.resolvedModelId}
-          </span>
-          {decision.reason.length > 0 ? (
-            <span className="auto-router-notice-reason" title={decision.reason}>
-              {' '}
-              · {decision.reason}
+        <span className="auto-router-notice-detail" tabIndex={0} aria-describedby={tooltipId}>
+          <span className="auto-router-notice-summary">
+            {action} →{' '}
+            <span
+              className="auto-router-notice-model"
+              style={{ color: INTENSITY_COLOR[decision.intensity] }}
+            >
+              ●{INTENSITY_LABEL[decision.intensity]} {modelName}
             </span>
-          ) : null}
-        </span>
-        <span className="model-switch-notice-help" tabIndex={0} aria-describedby={tooltipId}>
+            {decision.reason.length > 0 ? (
+              <span className="auto-router-notice-reason"> · {decision.reason}</span>
+            ) : null}
+          </span>
           <span id={tooltipId} className="model-switch-notice-tooltip" role="tooltip">
-            路由器：{decision.routerName}｜强度：{INTENSITY_LABEL[decision.intensity]}
-            {decision.prevIntensity != null
-              ? `（上轮 ${INTENSITY_LABEL[decision.prevIntensity]}）`
-              : '（首轮）'}
-            ｜推理强度：{decision.reasoningEffort ?? '跟随会话'}
-            ｜分流耗时：{Math.round(decision.latencyMs)}ms
-            {decision.fallbackUsed ? `｜兜底：${decision.fallbackStage ?? 'unknown'}` : ''}
-            {decision.reason.length > 0 ? `｜原因：${decision.reason}` : ''}
+            {action} → ●{INTENSITY_LABEL[decision.intensity]} {modelName}
+            {decision.reason.length > 0 ? ` · ${decision.reason}` : ''}
+            <span className="auto-router-notice-tooltip-meta">
+              路由器：{decision.routerName}｜强度：{INTENSITY_LABEL[decision.intensity]}
+              {decision.prevIntensity != null
+                ? `（上轮 ${INTENSITY_LABEL[decision.prevIntensity]}）`
+                : '（首轮）'}
+              ｜推理强度：{decision.reasoningEffort ?? '跟随会话'}
+              ｜分流耗时：{Math.round(decision.latencyMs)}ms
+              {decision.fallbackUsed ? `｜兜底：${decision.fallbackStage ?? 'unknown'}` : ''}
+            </span>
           </span>
         </span>
       </span>

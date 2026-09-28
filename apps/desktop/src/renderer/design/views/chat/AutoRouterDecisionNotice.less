@@ -1,15 +1,66 @@
 /* AutoRouter 轮次边界提示条 / meta 标识。
    notice 复用 model-switch-notice 的分隔线视觉（同模式不同语义：路由条带 ⚙ 与强度色点）。 */
 
+.auto-router-notice {
+  min-width: 0;
+}
+
+.auto-router-notice .model-switch-notice-content {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 84px);
+}
+
+.auto-router-notice .model-switch-notice-content > svg {
+  flex: none;
+}
+
+.auto-router-notice-detail {
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+  outline: none;
+  cursor: help;
+}
+
+.auto-router-notice-detail:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.auto-router-notice-summary {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .auto-router-notice .auto-router-notice-model {
   font-weight: 600;
 }
 
-/* 降级原因摘要（可能含 HTTP 状态 + 业务错误信息）：截断展示，完整内容走 title/tooltip */
-.auto-router-notice .auto-router-notice-reason {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 340px;
+.auto-router-notice .model-switch-notice-tooltip {
+  width: min(520px, calc(100vw - 48px));
+  max-width: none;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.auto-router-notice-tooltip-meta {
+  display: block;
+  margin-top: 6px;
+  color: #c5c5c5;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.auto-router-notice-detail:hover .model-switch-notice-tooltip,
+.auto-router-notice-detail:focus-visible .model-switch-notice-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .auto-router-meta-tag {
