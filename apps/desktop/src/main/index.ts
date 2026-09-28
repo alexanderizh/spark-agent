@@ -201,6 +201,21 @@ process.on('unhandledRejection', (reason) => {
   log.error(`[main-uncaught] unhandledRejection: ${formatUncaughtError(reason)}`)
 })
 
+// [process-gone-forensics] 诊断「整应用无痕消失」：TerminateProcess / OOM 这类外部
+// 终止不触发 uncaughtException、不走 before-quit，连 window-all-closed 都来不及执行，
+// 事后无任何日志痕迹。这里把 Electron 子进程死亡事件与主进程 exit 一并落盘，前缀便于检索。
+app.on('render-process-gone', (_event, webContents, details) => {
+  log.error(
+    `[process-gone-forensics] render-process-gone: url=${webContents.getURL()} details=${JSON.stringify(details)}`,
+  )
+})
+app.on('child-process-gone', (_event, details) => {
+  log.error(`[process-gone-forensics] child-process-gone: ${JSON.stringify(details)}`)
+})
+process.on('exit', (code) => {
+  log.warn(`[process-gone-forensics] main exit; code=${code}; isQuitting=${String(isQuitting)}`)
+})
+
 // 退出取证：应用内主动退出只有托盘菜单/更新安装等少数入口，但 before-quit 事件
 // 本身不带来源信息。在退出关键节点记录窗口快照与触发事件，复发"整应用意外退出"
 // 时可直接从 main.log 还原退出时刻的窗口状态与先后顺序。前缀 [quit-forensics]。

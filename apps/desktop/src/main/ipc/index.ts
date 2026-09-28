@@ -1696,15 +1696,21 @@ function extractMcpOAuthStaticClient(configJson: string): {
   }
 }
 
+let _skillService: SkillService | null = null
 function getSkillService(): SkillService {
-  const { bundledDir } = getAppSkillsManager()
-  return new SkillService(new SkillRepository(getDatabase()), bundledDir)
+  if (_skillService == null) {
+    const { bundledDir } = getAppSkillsManager()
+    _skillService = new SkillService(new SkillRepository(getDatabase()), bundledDir)
+  }
+  return _skillService
 }
 
 /**
  * 用当前已启用的技能重建 SDK 原生托管插件目录。
  * 仅纳入磁盘上真实存在 SKILL.md 的技能（内置/用户/软链/已落盘市场技能）。
  */
+let _lastManagedPluginFingerprint: string | null = null
+
 export function rebuildManagedSkillsPlugin(): void {
   try {
     const manager = getAppSkillsManager()
@@ -1712,7 +1718,12 @@ export function rebuildManagedSkillsPlugin(): void {
       .listSkills()
       .filter((s) => s.enabled && s.rootPath != null && !s.rootPath.includes('://'))
       .map((s) => ({ name: s.name, rootPath: s.rootPath }))
+    // 托管插件目录内容只由 (name, rootPath) 的符号链接集合决定（SKILL.md 实时读盘）。
+    // 集合未变化时跳过重建，避免 skill:list 等高频入口反复 rmSync+symlinkSync 阻塞主进程。
+    const fingerprint = JSON.stringify(enabled)
+    if (fingerprint === _lastManagedPluginFingerprint) return
     manager.buildManagedPluginDir(enabled)
+    _lastManagedPluginFingerprint = fingerprint
   } catch (err) {
     log.warn(`rebuildManagedSkillsPlugin failed: ${String(err)}`)
   }
@@ -1721,6 +1732,22 @@ export function rebuildManagedSkillsPlugin(): void {
 /** 宿主技能增量发现的时间节流间隔（毫秒） */
 const HOST_SKILL_REFRESH_INTERVAL_MS = 30_000
 let _lastHostSkillRefreshAt = 0
+
+/** 内置技能同步的时间节流间隔（毫秒）：resources/ 内置目录与 TS 内置定义仅在应用升级后才会变化 */
+const BUILTIN_SKILLS_SYNC_INTERVAL_MS = 30_000
+let _lastBuiltinSkillsSyncAt = 0
+
+/**
+ * 高频入口（skill:list 等）用的内置技能同步：带时间节流。
+ * 启动时 initializeAppSkills 已全量同步过一次；运行期内置内容不变，
+ * 每次列技能都全量扫描 + 比对会白白阻塞主进程。
+ */
+function ensureBuiltInSkillsThrottled(): void {
+  const now = Date.now()
+  if (now - _lastBuiltinSkillsSyncAt < BUILTIN_SKILLS_SYNC_INTERVAL_MS) return
+  _lastBuiltinSkillsSyncAt = now
+  getSkillService().ensureBuiltInSkills()
+}
 
 /**
  * 应用启动时初始化技能系统：
@@ -1763,6 +1790,8 @@ export function initializeAppSkills(): void {
     )
     // 启动刚全量导入过，把节流窗口起点设在现在，避免启动后首次打开面板立即重扫
     _lastHostSkillRefreshAt = Date.now()
+    // 同理：内置技能启动时刚全量同步过，重置节流窗口
+    _lastBuiltinSkillsSyncAt = Date.now()
   } catch (err) {
     log.warn(`initializeAppSkills failed: ${String(err)}`)
   }
@@ -8312,7 +8341,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('skill:list', async (req) => {
     const svc = getSkillService()
-    svc.ensureBuiltInSkills()
+    // 内置技能同步（节流）：resources/ 与 TS 内置定义运行期不变，无需每次全量比对
+    ensureBuiltInSkillsThrottled()
     // 顺带增量发现宿主机新技能（节流），运行期间 agent 新建到 ~/.claude/skills
     // 等目录的技能无需重启即可出现在技能面板
     refreshHostSkillsIncrementally()

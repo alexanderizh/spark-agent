@@ -1,5 +1,3 @@
-import { execFile, exec } from 'node:child_process'
-import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { readdirSync } from 'node:fs'
@@ -59,10 +57,9 @@ import {
 } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { fetchZhipuQuota } from './providerQuota/zhipuQuota.js'
+import { runCliProbe, withDeadline } from './cli-probe-runner.js'
 
 const log = createLogger('provider.service')
-const execFileAsync = promisify(execFile)
-const execAsync = promisify(exec)
 const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
@@ -85,6 +82,12 @@ const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>([
 // CLI 安装状态很少在应用运行中变化。短 TTL 会让 Provider 列表刷新频繁拉起
 // login shell；采用与主流 Agent 凭据 helper 相近的 5 分钟缓存窗口。
 const LOCAL_CLI_CHECK_TTL_MS = 5 * 60_000
+// 单次 CLI 探测子进程的超时。必须配合 cli-probe-runner 的进程树击杀使用：
+// 单独的 timeout 只杀直接子进程，杀不掉握着 stdio 管道的孙进程。
+const CLI_PROBE_TIMEOUT_MS = 3_000
+// 探测整体死线：无论候选命令被安全软件拖成什么样，isLocalCliAvailable 都必须
+// 在此期限内 settle，provider:list 永不无限等待。
+const CLI_PROBE_OVERALL_DEADLINE_MS = 12_000
 const PROVIDER_HTTP_TIMEOUT_MS = 8_000
 const PROVIDER_CONNECTION_TIMEOUT_MS = 15_000
 const MODELS_ERROR_BODY_MAX_CHARS = 512
@@ -185,10 +188,7 @@ async function resolveCliFromLoginShell(binaryName: string): Promise<string | nu
       // -l: login shell (加载 ~/.zprofile / ~/.bash_profile)
       // -c: 执行完命令后退出
       // command -v <name>: shell 内建，等价于 which 但更可靠
-      const { stdout } = await execFileAsync(shell, ['-lc', `command -v ${binaryName}`], {
-        timeout: 4000,
-        windowsHide: true,
-      })
+      const { stdout } = await runCliProbe([shell, '-lc', `command -v ${binaryName}`], 4000)
       const first = stdout.split(/[\r\n]+/).find((line) => line.trim().length > 0)
       if (first) return first.trim()
     } catch {
@@ -222,10 +222,7 @@ async function resolveCodexCliPath(): Promise<string | null> {
 async function resolveCliPath(binaryName: string): Promise<string | null> {
   const finder = isWin ? 'where' : 'which'
   try {
-    const { stdout } = await execFileAsync(finder, [binaryName], {
-      timeout: 3000,
-      windowsHide: true,
-    })
+    const { stdout } = await runCliProbe([finder, binaryName], CLI_PROBE_TIMEOUT_MS)
     const first = stdout.split(/[\r\n]+/).find((line) => line.trim().length > 0)
     return first ? first.trim() : null
   } catch {
@@ -254,15 +251,16 @@ async function tryCliVersion(command: string): Promise<boolean> {
       // `where claude` 也检测不到。这里改走 cmd.exe；command 可能是带空格的完整
       // 路径，需自行加引号（--version 为静态参数，无注入风险）。
       const quoted = /[\s&|()<>^]/.test(command) ? `"${command}"` : command
-      await execAsync(`${quoted} --version`, {
-        timeout: 3000,
-        windowsHide: true,
-      })
+      // verbatim + 整串引号包裹，与 exec 的 cmd.exe 调用语义一致（exec 内部即
+      // windowsVerbatimArguments: true）；否则 Node 会对含空格参数二次转义，
+      // cmd 对 \" 的解析与预期不符。
+      await runCliProbe(
+        ['cmd.exe', '/d', '/s', '/c', `"${quoted} --version"`],
+        CLI_PROBE_TIMEOUT_MS,
+        { windowsVerbatimArguments: true },
+      )
     } else {
-      await execFileAsync(command, ['--version'], {
-        timeout: 3000,
-        windowsHide: true,
-      })
+      await runCliProbe([command, '--version'], CLI_PROBE_TIMEOUT_MS)
     }
     return true
   } catch {
@@ -600,9 +598,24 @@ export class ProviderService {
       return localCliAvailabilityCache.available
     }
     if (localCliAvailabilityCheck) return localCliAvailabilityCheck
+    // stale-while-revalidate：TTL 过期但已有旧值时，先返回旧值让 provider:list
+    // 立即完成，探测子进程放到后台跑，避免高频入口在 TTL 过期后重新阻塞。
+    if (options.forceRefresh !== true && localCliAvailabilityCache != null) {
+      void this.refreshLocalClaudeCliAvailability()
+      return localCliAvailabilityCache.available
+    }
+    return this.refreshLocalClaudeCliAvailability()
+  }
 
-    localCliAvailabilityCheck = checkClaudeCliAvailable()
-      .then((available) => {
+  private refreshLocalClaudeCliAvailability(): Promise<boolean> {
+    if (localCliAvailabilityCheck) return localCliAvailabilityCheck
+    const startedAt = Date.now()
+    localCliAvailabilityCheck = withDeadline(
+      checkClaudeCliAvailable().then((available) => {
+        const elapsedMs = Date.now() - startedAt
+        if (elapsedMs > 2000) {
+          log.warn(`Local claude CLI probe took ${elapsedMs}ms`)
+        }
         localCliAvailabilityCache = { checkedAt: Date.now(), available }
         if (!available) {
           log.warn(
@@ -611,6 +624,17 @@ export class ProviderService {
           )
         }
         return available
+      }),
+      CLI_PROBE_OVERALL_DEADLINE_MS,
+      'claude CLI probe',
+    )
+      .catch((error) => {
+        // 死线兜底：探测未在期限内完成时不得把「没测完」当「不可用」写进 5 分钟
+        // 缓存；返回 false 让本次 provider:list 立即完成，下次调用重新探测。
+        log.error(
+          `Local claude CLI probe failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return false
       })
       .finally(() => {
         localCliAvailabilityCheck = null
@@ -628,9 +652,23 @@ export class ProviderService {
       return localCodexCliAvailabilityCache.available
     }
     if (localCodexCliAvailabilityCheck) return localCodexCliAvailabilityCheck
+    // stale-while-revalidate：同 claude CLI，过期旧值先行、后台刷新
+    if (options.forceRefresh !== true && localCodexCliAvailabilityCache != null) {
+      void this.refreshLocalCodexCliAvailability()
+      return localCodexCliAvailabilityCache.available
+    }
+    return this.refreshLocalCodexCliAvailability()
+  }
 
-    localCodexCliAvailabilityCheck = checkCodexCliAvailable()
-      .then((available) => {
+  private refreshLocalCodexCliAvailability(): Promise<boolean> {
+    if (localCodexCliAvailabilityCheck) return localCodexCliAvailabilityCheck
+    const startedAt = Date.now()
+    localCodexCliAvailabilityCheck = withDeadline(
+      checkCodexCliAvailable().then((available) => {
+        const elapsedMs = Date.now() - startedAt
+        if (elapsedMs > 2000) {
+          log.warn(`Local codex CLI probe took ${elapsedMs}ms`)
+        }
         localCodexCliAvailabilityCache = { checkedAt: Date.now(), available }
         if (!available) {
           log.warn(
@@ -639,6 +677,16 @@ export class ProviderService {
           )
         }
         return available
+      }),
+      CLI_PROBE_OVERALL_DEADLINE_MS,
+      'codex CLI probe',
+    )
+      .catch((error) => {
+        // 死线兜底：同 claude CLI，不缓存「没测完」的结果。
+        log.error(
+          `Local codex CLI probe failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return false
       })
       .finally(() => {
         localCodexCliAvailabilityCheck = null
