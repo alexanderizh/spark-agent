@@ -46,6 +46,7 @@ export type ViewId =
   | 'sub-apps'
   | 'sub-app'
   | 'scheduled-tasks'
+  | 'recovery-center'
   | 'skills'
   | 'skill-store'
   | 'team-store'

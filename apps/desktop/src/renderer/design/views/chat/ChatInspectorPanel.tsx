@@ -1022,7 +1022,7 @@ export function ChatInspector({
 
         {checkpointAvailable && (
           <InspectorCollapsibleSection
-            title="代码还原点"
+            title="工作区快照"
             summary={
               checkpointEnabled ? <span className="badge success dot">已开启</span> : undefined
             }
@@ -1030,7 +1030,7 @@ export function ChatInspector({
             <div className="checkpoint-card">
               <p className="checkpoint-desc">
                 {checkpointEnabled
-                  ? '已按轮记录已跟踪文件状态，可在时间线中回溯还原。'
+                  ? '已按轮记录工作区文件状态，可在时间线中预览并还原文件。'
                   : '本轮未开启记录；打开时间线后可手动开启。'}
               </p>
               <button

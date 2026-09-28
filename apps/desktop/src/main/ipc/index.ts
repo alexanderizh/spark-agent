@@ -339,6 +339,7 @@ import { registerTeamRegistryIpc } from './registerTeamRegistryIpc.js'
 import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { registerSessionWorkflowBindingIpc } from './registerSessionWorkflowBindingIpc.js'
+import { registerExecutionContinuityIpc } from './registerExecutionContinuityIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
@@ -4553,6 +4554,13 @@ export function registerAllIpcHandlers(): void {
   registerWorkflowBundleIpc({ getMcpService })
   registerPastedTextIpc()
   registerSessionImageOptimizerIpc()
+  registerExecutionContinuityIpc({
+    getSessionService: () => {
+      const service = _sessionService
+      if (service == null) throw new Error('Session service not ready')
+      return service
+    },
+  })
   registerSessionWorkflowBindingIpc({
     getSessionService,
     onChanged: (sessionId, bindingInstanceId) => {
@@ -4946,7 +4954,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:list-checkpoints', async (req) => {
     log.info(`session:list-checkpoints requested, sessionId=${req.sessionId}`)
-    return { checkpoints: getSessionService().listCheckpoints(req.sessionId) }
+    // 带 restorable 验证：失效 ref / 引擎快照由 UI 置灰，不再提供不可用按钮。
+    const checkpoints = await getSessionService().listCheckpointsWithStatus(req.sessionId)
+    return { checkpoints }
   })
 
   typedIpcHandle('session:get-checkpoint-config', async (req) => {
@@ -4962,6 +4972,17 @@ export function registerAllIpcHandlers(): void {
       ok,
       enabled: ok ? req.enabled : getSessionService().getSessionCheckpointEnabled(req.sessionId),
     }
+  })
+
+  typedIpcHandle('session:preview-checkpoint-restore', async (req) => {
+    log.info(
+      `session:preview-checkpoint-restore requested, sessionId=${req.sessionId} checkpointId=${req.checkpointId}`,
+    )
+    return getSessionService().previewCheckpointRestore(req.sessionId, req.checkpointId)
+  })
+
+  typedIpcHandle('session:get-checkpoint-files', async (req) => {
+    return getSessionService().listCheckpointFiles(req.sessionId, req.checkpointId)
   })
 
   typedIpcHandle('session:delete-message', async (req) => {

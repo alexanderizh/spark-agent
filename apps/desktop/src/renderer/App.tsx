@@ -95,6 +95,10 @@ const AgentsView = React.lazy(async () => ({
 const BoardView = React.lazy(async () => ({
   default: (await import('./design/views/BoardView')).BoardView,
 }))
+const RecoveryCenterView = React.lazy(async () => ({
+  default: (await import('./design/views/execution-continuity/RecoveryCenterView'))
+    .RecoveryCenterView,
+}))
 const CanvasProjectsView = React.lazy(async () => ({
   default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView,
 }))
@@ -287,6 +291,7 @@ const NAV_ITEMS: Array<{
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
+  { id: 'recovery-center', labelKey: 'nav.recoveryCenter', icon: Icons.History },
   { id: 'sub-apps', labelKey: 'nav.subApps', icon: Icons.Grid },
 ]
 
@@ -1986,6 +1991,8 @@ function Shell() {
         return <AgentsView />
       case 'board':
         return <BoardView />
+      case 'recovery-center':
+        return <RecoveryCenterView />
       case 'canvas':
         return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
       case 'canvas-workflows':

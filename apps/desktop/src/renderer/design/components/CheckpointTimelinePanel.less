@@ -121,6 +121,16 @@
   display: flex;
   gap: 10px;
 
+  &.checkpoint-item-disabled {
+    .checkpoint-item-main {
+      opacity: 0.62;
+    }
+
+    .checkpoint-item-dot {
+      background: var(--text-faint);
+    }
+  }
+
   .checkpoint-item-rail {
     display: flex;
     flex-direction: column;
@@ -168,6 +178,33 @@
       padding: 2px 6px;
       border-radius: 999px;
       background: var(--bg-sunken);
+    }
+
+    .checkpoint-item-kind {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      flex: none;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+
+      &.engine {
+        color: var(--text-faint);
+        border-style: dashed;
+      }
+
+      &.invalid {
+        color: var(--danger);
+        border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+      }
+    }
+
+    .checkpoint-item-invalid-tag {
+      font-size: 11px;
+      color: var(--danger);
+      flex: none;
     }
 
     .checkpoint-item-label {
@@ -237,6 +274,11 @@
       font-size: 11px;
       color: var(--danger);
     }
+
+    .checkpoint-item-disabled-note {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
   }
 
   .checkpoint-item-restore {
@@ -299,4 +341,115 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--text-faint);
+}
+
+/* ── 还原预览（dry-run 分组） ── */
+
+.checkpoint-preview {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+
+  .checkpoint-preview-loading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+
+  .checkpoint-preview-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+}
+
+.checkpoint-preview-group {
+  margin-bottom: 6px;
+
+  &.warn .checkpoint-preview-group-title {
+    color: var(--danger);
+  }
+
+  &.ok .checkpoint-preview-group-title {
+    color: var(--text-muted);
+  }
+
+  .checkpoint-preview-group-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 3px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+
+    .checkpoint-preview-group-count {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+  }
+
+  .checkpoint-preview-files {
+    list-style: none;
+    margin: 2px 0 0;
+    padding: 4px 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+
+    li {
+      font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+      font-size: 10px;
+      color: var(--text-muted);
+      padding: 2px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      direction: rtl;
+      text-align: left;
+    }
+  }
+
+  .checkpoint-preview-more {
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+    font-size: 10px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+}
+
+.checkpoint-preview-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+
+  .checkpoint-preview-confirm-text {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-faint);
+    flex: 1;
+    min-width: 120px;
+  }
 }

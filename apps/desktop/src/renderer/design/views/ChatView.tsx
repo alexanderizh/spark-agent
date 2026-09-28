@@ -803,9 +803,9 @@ export function ChatView({
     })
   }, [clearHtmlPresentation, unifiedPanelOpen])
 
-  // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，入口在会话检查器内。
+  // 工作区快照时间线抽屉：把「按会话恢复文件状态」做成集中可预览/还原视图，入口在会话检查器内。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
-  // 代码还原点：会话开关（开/关样式）+ 可用性（仅 git 仓库可用，否则隐藏入口）。
+  // 工作区快照：会话开关（开/关样式）+ 可用性（任一 git 仓库工作区可用，否则隐藏入口）。
   const [checkpointEnabled, setCheckpointEnabled] = useState(false)
   const [checkpointAvailable, setCheckpointAvailable] = useState(false)
   const { invoke: getCheckpointConfigForButton } = useIpcInvoke('session:get-checkpoint-config')

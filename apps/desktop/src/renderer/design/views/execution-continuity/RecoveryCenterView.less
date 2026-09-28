@@ -1,0 +1,402 @@
+/* RecoveryCenterView — 恢复中心（执行连续性 Phase 1 UI）
+   扁平设计基线：无分块盒子/卡片分组；层级靠分割线、色点、文字明暗区分。 */
+
+.recovery-center-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* ── Header ── */
+.rc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+.rc-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rc-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.rc-subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 启动摘要（非弹窗、非卡片；左侧色点 + 一行文字） ── */
+.rc-startup-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rc-summary-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary, #4f6ef7);
+  flex-shrink: 0;
+}
+
+.rc-action-message {
+  padding: 6px 20px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── 列表主体 ── */
+.rc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 16px;
+}
+
+.rc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.rc-empty-note {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  max-width: 420px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ── 分组：分割线 + 色点 + 小标题，不使用盒子 ── */
+.rc-group {
+  &:not(:first-child) {
+    margin-top: 4px;
+  }
+}
+
+.rc-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.rc-group-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &-warn {
+    background: #f0a020;
+  }
+  &-run {
+    background: #3fb96f;
+  }
+  &-pause {
+    background: var(--text-tertiary);
+  }
+}
+
+.rc-group-count {
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+/* ── Run 行：单行信息 + 底部细分割线 ── */
+.rc-run-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+}
+
+.rc-run-row-expanded {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.rc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-tertiary);
+}
+
+.rc-status-running,
+.rc-status-recovering,
+.rc-status-accepted {
+  background: #3fb96f;
+}
+
+.rc-status-needs_attention,
+.rc-status-orphaned {
+  background: #f0a020;
+}
+
+.rc-status-paused,
+.rc-status-pausing,
+.rc-status-waiting {
+  background: #9aa4b2;
+}
+
+.rc-run-kind {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rc-run-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.rc-run-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+
+  &-needs_attention,
+  &-orphaned {
+    color: #f0a020;
+  }
+}
+
+.rc-run-level {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.rc-run-flag {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+
+  &-warn {
+    color: #f0a020;
+  }
+}
+
+.rc-run-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.rc-run-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.rc-run-chevron-open {
+  transform: rotate(90deg);
+}
+
+/* ── 详情：缩进展开区，同样不用盒子 ── */
+.rc-run-detail {
+  padding: 10px 20px 14px 38px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+
+.rc-detail-loading {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.rc-detail-section {
+  & + & {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+}
+
+.rc-detail-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+  letter-spacing: 0.03em;
+}
+
+.rc-detail-body {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.rc-detail-counts {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.rc-level-badge {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary, #4f6ef7);
+  margin-right: 6px;
+}
+
+.rc-level-note {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.rc-degradation-list {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+
+  li {
+    margin-bottom: 2px;
+  }
+}
+
+.rc-interruption {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.rc-effects {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rc-effect-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.rc-effect-phase {
+  flex-shrink: 0;
+  min-width: 92px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+
+  &-unknown,
+  &-dispatching {
+    color: #f0a020;
+  }
+  &-confirmed {
+    color: #3fb96f;
+  }
+}
+
+.rc-effect-tool {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+.rc-effect-policy {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.rc-effect-more {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.rc-checkpoints {
+  font-size: 12.5px;
+}
+
+.rc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+/* ── Footer 语义说明 ── */
+.rc-footer {
+  flex-shrink: 0;
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+/* 窄面板响应式：隐藏次要列 */
+@media (max-width: 720px) {
+  .rc-run-time,
+  .rc-run-flag {
+    display: none;
+  }
+  .rc-subtitle {
+    display: none;
+  }
+}
