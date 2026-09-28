@@ -2365,9 +2365,16 @@ function GateAwareShell(): React.ReactElement {
 
   // 与认证启动并行读取 SQLite 权威状态。判定完成前维持原生风格 splash，
   // 避免先加载/闪现 Chat，再切换到首次引导并浪费首屏 chunk。
+  // 限时兜底：判定 IPC 若异常悬挂（偶发渲染端挂载后 settings:get 未决），
+  // splash 不能永久驻留——超时按「无需引导」放行进主界面，宁可错过一次
+  // 首次引导也不让启动卡死；真实结果晚到时由 Promise.race 语义自然丢弃。
   useEffect(() => {
     let cancelled = false
-    void shouldShowOnboardingAsync().then((show) => {
+    const ONBOARDING_GATE_FALLBACK_MS = 8000
+    const fallback = new Promise<boolean>((resolve) => {
+      window.setTimeout(() => resolve(false), ONBOARDING_GATE_FALLBACK_MS)
+    })
+    void Promise.race([shouldShowOnboardingAsync(), fallback]).then((show) => {
       if (cancelled) return
       if (show) setTweak('view', 'onboarding')
       setOnboardingResolved(true)
