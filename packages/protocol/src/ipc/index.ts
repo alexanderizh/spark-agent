@@ -93,6 +93,7 @@ import type { TaskGraphIpcChannelMap } from '../task-graph.js'
 import type { DeliberationIpcChannelMap } from '../deliberation.js'
 import type { EvidenceCostIpcChannelMap } from '../evidence-cost.js'
 import type { ReplayPlaybookIpcChannelMap } from '../replay-playbook.js'
+import type { WikiIpcChannelMap } from '../wiki.js'
 import type {
   SessionAttachReferenceRequest,
   SessionAttachReferenceResponse,
@@ -7326,7 +7327,8 @@ export interface IpcChannelMap
     HookV2IpcChannelMap,
     AccountSyncIpcChannelMap,
     WorkflowBundleIpcChannelMap,
-    SessionWorkflowBindingIpcChannelMap {
+    SessionWorkflowBindingIpcChannelMap,
+    WikiIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

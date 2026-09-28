@@ -31,6 +31,7 @@ export interface SparkEngineMcpSources {
   readonly computerToolNames?: readonly string[]
   readonly debugServer?: SDKMcpServerConfig
   readonly memoryServer?: SDKMcpServerConfig
+  readonly wikiServer?: SDKMcpServerConfig
   readonly sessionServer?: SDKMcpServerConfig
   readonly toolResultServer?: SDKMcpServerConfig
 }
@@ -55,6 +56,7 @@ const SPARK_BUILTIN_SERVER_NAMES = new Set([
   'spark_computer',
   'spark_debug',
   'spark_memory',
+  'spark_wiki',
   'spark_session',
   'spark_tool_results',
 ])
@@ -100,6 +102,11 @@ export function buildSparkEngineMcpRuntime(sources: SparkEngineMcpSources): Spar
   addBuiltin(servers, allowedTools, 'spark_memory', sources.memoryServer, [
     'mcp__spark_memory__search_memory',
     'mcp__spark_memory__recall_memory',
+  ])
+  addBuiltin(servers, allowedTools, 'spark_wiki', sources.wikiServer, [
+    'mcp__spark_wiki__wiki_list_spaces',
+    'mcp__spark_wiki__wiki_search',
+    'mcp__spark_wiki__wiki_read',
   ])
   addBuiltin(servers, allowedTools, 'spark_session', sources.sessionServer, [
     'mcp__spark_session__set_worktree_state',

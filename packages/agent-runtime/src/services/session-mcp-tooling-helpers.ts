@@ -512,6 +512,10 @@ export function resolveSparkMemoryMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-memory-mcp-server.mjs')
 }
 
+export function resolveSparkWikiMcpServerPath(): string | null {
+  return resolveRuntimeToolPath('spark-wiki-mcp-server.mjs')
+}
+
 export function resolveSparkSessionMcpServerPath(): string | null {
   return resolveRuntimeToolPath('spark-session-mcp-server.mjs')
 }

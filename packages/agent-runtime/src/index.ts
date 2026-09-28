@@ -506,6 +506,42 @@ export { MemoryWriterService } from './services/memory/memory-writer.service.js'
 export { MemoryLifecycleService } from './services/memory/memory-lifecycle.service.js'
 export { MemoryCandidateService } from './services/memory/memory-candidate.service.js'
 export { MemoryCommitService } from './services/memory/memory-commit.service.js'
+// 知识库 / Wiki（S0）
+export { WikiStoreService } from './services/wiki/wiki-store.service.js'
+export { WikiSpaceService } from './services/wiki/wiki-space.service.js'
+export type { WikiSpaceScopeFilter, WikiSpaceListItem } from './services/wiki/wiki-space.service.js'
+export { WikiSearchService } from './services/wiki/wiki-search.service.js'
+export type { WikiSearchResult, WikiSearchResultItem } from './services/wiki/wiki-search.service.js'
+export { WikiPageService } from './services/wiki/wiki-page.service.js'
+export type { WikiPageReadResult } from './services/wiki/wiki-page.service.js'
+export { WikiWriteService, slugifyTitle } from './services/wiki/wiki-write.service.js'
+export type {
+  WikiWriteResult,
+  WikiSpaceWriteResult,
+  WikiPageWriteInput,
+} from './services/wiki/wiki-write.service.js'
+export {
+  resolveWikiBudget,
+  clampSummary,
+  clipBody,
+  chargeTurnWikiTokens,
+  resetTurnWikiBudget,
+  DEFAULT_WIKI_BUDGET,
+  WIKI_BUDGET_HARD_LIMITS,
+} from './services/wiki/wiki-context-budget.js'
+export type { WikiBudgetProfile, ClippedBody } from './services/wiki/wiki-context-budget.js'
+export {
+  SPARK_WIKI_MCP_SERVER_NAME,
+  WIKI_TOOL_PREFIX,
+  WIKI_READ_TOOL_NAMES,
+  WIKI_ALL_READ_TOOL_NAMES,
+  WIKI_WRITE_TOOL_NAMES,
+  WIKI_L0_PROMPT,
+  WIKI_TOOL_DEFINITIONS,
+  measureWikiResidentTokens,
+  measureS0ResidentTokens,
+  measureFullResidentTokens,
+} from './tools/wiki-tool-contract.js'
 export { isMemorySensitive, containsSensitiveContent } from './services/memory/sanitizer.js'
 export type {
   CandidateConfirmResult,

@@ -471,6 +471,28 @@ export interface PlatformBridgeDeps {
       error?: string
     }>
     /**
+     * 知识库桥（codex CLI / claude CLI 的 stdio spark_wiki MCP 子进程走这条
+     * 路径回到主进程）。scope 集合从 sessionId 派生，不信任子进程传参；
+     * 返回经 WikiContextBudget 服务端裁剪。
+     */
+    bridgeWikiListSpaces(params: {
+      sessionId: string
+    }): Promise<{
+      items: Array<{ id: string; name: string; spaceType: string; pageCount: number }>
+      truncated: boolean
+    }>
+    bridgeWikiSearch(params: {
+      sessionId: string
+      query: string
+      spaceId?: string
+      limit?: number
+    }): Promise<unknown>
+    bridgeWikiRead(params: {
+      sessionId: string
+      pageId: string
+      offset?: number
+    }): Promise<unknown>
+    /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
      */
@@ -912,6 +934,14 @@ export class PlatformBridgeService {
         return this.memorySearch(d, params)
       case 'memory.recall':
         return this.memoryRecall(d, params)
+
+      // ── Wiki（codex CLI / claude CLI 的 stdio spark_wiki 子进程走这条路径）──
+      case 'wiki.list_spaces':
+        return this.wikiListSpaces(d, params)
+      case 'wiki.search':
+        return this.wikiSearch(d, params)
+      case 'wiki.read':
+        return this.wikiRead(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
       case 'canvas.call_tool':
@@ -2004,6 +2034,41 @@ export class PlatformBridgeService {
   // 子进程通过 env 收到 sessionId，RPC 调用时带回来；SessionService 按 sessionId 解析
   // 该会话生效的 scope 集合（user/project/agent），底层复用与 claude SDK 路径相同的
   // MemorySearchService / MemoryReaderService，保证两条路径行为一致。
+
+  private async wikiListSpaces(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    return d.sessionService.bridgeWikiListSpaces({ sessionId })
+  }
+
+  private async wikiSearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const query = typeof params.query === 'string' ? params.query : ''
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!query) throw new Error('Missing parameter: query')
+    const spaceId = typeof params.spaceId === 'string' ? params.spaceId.trim() : ''
+    const limit =
+      typeof params.limit === 'number' && params.limit > 0 ? Math.min(params.limit, 20) : undefined
+    return d.sessionService.bridgeWikiSearch({
+      sessionId,
+      query,
+      ...(spaceId.length > 0 ? { spaceId } : {}),
+      ...(limit != null ? { limit } : {}),
+    })
+  }
+
+  private async wikiRead(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    const offset = typeof params.offset === 'number' && params.offset > 0 ? params.offset : undefined
+    return d.sessionService.bridgeWikiRead({
+      sessionId,
+      pageId,
+      ...(offset != null ? { offset } : {}),
+    })
+  }
 
   private async memorySearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const sessionId = String(params.sessionId ?? '')

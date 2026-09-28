@@ -340,6 +340,7 @@ import { registerPastedTextIpc } from './registerPastedTextIpc.js'
 import { registerSessionImageOptimizerIpc } from './registerSessionImageOptimizerIpc.js'
 import { registerSessionWorkflowBindingIpc } from './registerSessionWorkflowBindingIpc.js'
 import { registerExecutionContinuityIpc } from './registerExecutionContinuityIpc.js'
+import { registerWikiIpc } from './registerWikiIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
@@ -4578,6 +4579,7 @@ export function registerAllIpcHandlers(): void {
       return service
     },
   })
+  registerWikiIpc()
   registerSessionWorkflowBindingIpc({
     getSessionService,
     onChanged: (sessionId, bindingInstanceId) => {

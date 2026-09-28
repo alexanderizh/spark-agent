@@ -494,10 +494,7 @@ import {
   buildMemoryExtractionRecentContext,
 } from './conversation-summarizer.js'
 import { SessionContinuityCoordinator } from './session-continuity-coordinator.js'
-import {
-  ExecutionSupervisor,
-  type TurnRecoveryDelegate,
-} from './execution-continuity/index.js'
+import { ExecutionSupervisor, type TurnRecoveryDelegate } from './execution-continuity/index.js'
 import type { ExecutionRunRecord, RecoveryPlanV1 } from '@spark/protocol'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
@@ -505,6 +502,19 @@ import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
 import { TurnPerfRepository } from '@spark/storage'
 import { MemoryEntityRepository } from '@spark/storage'
 import { MemoryCandidateRepository, MemoryRevisionRepository } from '@spark/storage'
+import {
+  WikiSpaceRepository,
+  WikiPageRepository,
+  WikiSearchRepository,
+  WikiRevisionRepository,
+} from '@spark/storage'
+import { WikiStoreService } from './wiki/wiki-store.service.js'
+import { WikiSpaceService, type WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
+import { WikiSearchService } from './wiki/wiki-search.service.js'
+import { WikiPageService } from './wiki/wiki-page.service.js'
+import { WikiWriteService } from './wiki/wiki-write.service.js'
+import { resolveWikiBudget } from './wiki/wiki-context-budget.js'
+import { WIKI_TOOL_DEFINITIONS } from '../tools/wiki-tool-contract.js'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -531,6 +541,28 @@ import {
 export { buildMediaGenerationSystemPrompt } from './media/media-mcp-contract.js'
 
 const log = createLogger('session.service')
+
+/** wiki bridge 检索结果项（L2，与 spark-wiki-mcp-server.mjs 的 summarize 消费结构一致） */
+export interface WikiBridgeSearchItem {
+  id: string
+  title: string
+  kind: string
+  summary: string
+  tags: string[]
+  tokens: number
+}
+
+/** wiki bridge 正文读取结果（L3 分页；error 非空 = 读取失败，不含正文片段） */
+export interface WikiBridgeReadResult {
+  id?: string
+  title?: string
+  version?: number
+  body?: string
+  truncated?: boolean
+  nextOffset?: number | null
+  tokens?: number
+  error?: string
+}
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
@@ -1492,9 +1524,7 @@ export class SessionService {
         const providerProfileId = activeModel?.providerId ?? session.provider_profile_id
         return {
           engine: run.runtimeKind,
-          ...(providerProfileId != null && providerProfileId !== ''
-            ? { providerProfileId }
-            : {}),
+          ...(providerProfileId != null && providerProfileId !== '' ? { providerProfileId } : {}),
           modelId: activeModel?.model ?? session.model_id ?? undefined,
         }
       },
@@ -1752,6 +1782,130 @@ export class SessionService {
    * 这里复用与 claude SDK in-process MCP 完全相同的 scope 构造逻辑，保证两条路径
    * 的 agent 工具看到的记忆范围一致。
    */
+  // ─── Wiki（知识库）：服务栈构造 + bridge（CLI 子进程路径） ─────────────
+
+  /**
+   * 构造 wiki 服务栈（SDK in-process 与 bridge 两条路径共用，保证语义一致）。
+   * 设置键适配：方案文档的扁平键 wiki/budget/xxx 落到 (category='wiki',
+   * key='budget/xxx') 二元组——设置系统按 category 分组，语义不变。
+   */
+  private buildWikiServices(sessionId: string, workspaceRootPath?: string) {
+    const settingsRepo = new SettingsRepository(this.db)
+    const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
+    const budget = resolveWikiBudget({
+      readMaxTokens: settingsGet('wiki', 'budget/readMaxTokens'),
+      searchLimit: settingsGet('wiki', 'budget/searchLimit'),
+      summaryChars: settingsGet('wiki', 'budget/summaryChars'),
+      turnTotal: settingsGet('wiki', 'budget/turnTotal'),
+    })
+    const spaceRepo = new WikiSpaceRepository(this.db)
+    const pageRepo = new WikiPageRepository(this.db)
+    const searchRepo = new WikiSearchRepository(this.db)
+    const revisionRepo = new WikiRevisionRepository(this.db)
+    const store = new WikiStoreService(undefined, workspaceRootPath)
+    return {
+      budget,
+      scopes: this.resolveWikiScopesForSession(sessionId),
+      spaceService: new WikiSpaceService(spaceRepo),
+      searchService: new WikiSearchService(searchRepo, budget),
+      pageService: new WikiPageService(pageRepo, revisionRepo, store, budget),
+      writeService: new WikiWriteService(spaceRepo, pageRepo, revisionRepo, searchRepo, store),
+      spaceRepo,
+    }
+  }
+
+  /** wiki scope 集合与 memory 同源（user + 首workspace + agent），不信任子进程传参。 */
+  private resolveWikiScopesForSession(sessionId: string): WikiSpaceScopeFilter[] {
+    return this.resolveMemoryScopesForSession(sessionId).map((s) => ({
+      scope: s.scope,
+      scopeRef: s.scopeRef,
+    }))
+  }
+
+  /** 从 sessionId 解析 workspaceRootPath（wiki 正文文件读写需要）。 */
+  private async resolveWorkspaceRootForSession(sessionId: string): Promise<string | undefined> {
+    try {
+      const sessionRepo = new SessionRepository(this.db)
+      const session = sessionRepo.get(sessionId)
+      if (session == null) return undefined
+      let workspaceIds: string[] = []
+      try {
+        workspaceIds = session.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+      } catch {
+        // ignore
+      }
+      const workspaceId = workspaceIds[0]
+      if (workspaceId == null || workspaceId.length === 0) return undefined
+      const wsRepo = new WorkspaceRepository(this.db)
+      const workspace = wsRepo.get(workspaceId)
+      if (workspace == null) return undefined
+      return await ensureSessionWorkspaceRootPath(workspace, sessionId)
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * wiki 空间列表桥（CLI stdio spark_wiki 子进程）。L1 级：每空间一行。
+   */
+  async bridgeWikiListSpaces(params: { sessionId: string }): Promise<{
+    items: Array<{ id: string; name: string; spaceType: string; pageCount: number }>
+    truncated: boolean
+  }> {
+    const wiki = this.buildWikiServices(params.sessionId)
+    return wiki.spaceService.listSpacesForAgent(wiki.scopes)
+  }
+
+  /**
+   * wiki 检索桥。L2 级：只返回 id+摘要，不带正文；单轮总闸超限时返回 gateExceeded。
+   */
+  async bridgeWikiSearch(params: {
+    sessionId: string
+    query: string
+    spaceId?: string
+    limit?: number
+  }): Promise<
+    | { items: WikiBridgeSearchItem[]; total: number; truncated: boolean }
+    | { gateExceeded: true; usedTokens: number }
+  > {
+    const wiki = this.buildWikiServices(params.sessionId)
+    const spaceIds = this.resolveWikiSearchableSpaceIds(
+      wiki.spaceRepo.listByScopes(wiki.scopes).map((r) => r.id),
+      params.spaceId,
+    )
+    return wiki.searchService.searchForAgent({
+      sessionId: params.sessionId,
+      query: params.query,
+      spaceIds,
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    })
+  }
+
+  /**
+   * wiki 正文读取桥。L3 级：分页 + 守卫校验 + 单轮总闸。
+   */
+  async bridgeWikiRead(params: {
+    sessionId: string
+    pageId: string
+    offset?: number
+  }): Promise<WikiBridgeReadResult> {
+    const workspaceRootPath = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, workspaceRootPath)
+    const r = await wiki.pageService.readForAgent({
+      sessionId: params.sessionId,
+      pageId: params.pageId,
+      ...(params.offset != null ? { offset: params.offset } : {}),
+    })
+    if (r.ok) return { ...r.page }
+    return { error: r.message }
+  }
+
+  /** 检索空间收窄：显式 spaceId 必须在会话可见集合内（防越权探测）。 */
+  private resolveWikiSearchableSpaceIds(visible: string[], requested?: string): string[] {
+    if (requested == null || requested.length === 0) return visible
+    return visible.includes(requested) ? [requested] : []
+  }
+
   private resolveMemoryScopesForSession(
     sessionId: string,
     agentIdOverride?: string,
@@ -2039,8 +2193,7 @@ export class SessionService {
         // 执行连续性（Phase 1，方案 §14）：running 不再直接失败——
         // 先把关联 Run 标记为 orphaned，由 Supervisor 启动扫描做恢复规划：
         //   可证明未派发副作用 → 自动 L1 恢复 Turn；否则 needs_attention（恢复中心处理）。
-        const run = this.executionSupervisor
-          .getRunByRootTurnIdForRecovery(row.id)
+        const run = this.executionSupervisor.getRunByRootTurnIdForRecovery(row.id)
         repo.markFailed(row.id, 'Turn interrupted by application restart')
         if (run != null) {
           log.info('interrupted running turn routed to recovery planning', {
@@ -4423,6 +4576,9 @@ export class SessionService {
         workspaceRootPath,
         runtimeAgent.id,
       )
+      const sparkWikiMcpServer = await this.getMcpTooling()
+        .resolveSparkWikiMcpServer(sessionId)
+        .catch(() => null)
       const sparkSessionMcpServer = await this.resolveSparkSessionMcpServer(sessionId)
       const sparkToolResultServer = resolveToolResultReaderMcpServer(workspaceRootPath)
       const sparkMcpRuntime = buildSparkEngineMcpRuntime({
@@ -4461,6 +4617,7 @@ export class SessionService {
           : {}),
         ...(debugMcpServer != null ? { debugServer: debugMcpServer } : {}),
         ...(sparkMemoryMcpServer != null ? { memoryServer: sparkMemoryMcpServer } : {}),
+        ...(sparkWikiMcpServer != null ? { wikiServer: sparkWikiMcpServer } : {}),
         ...(sparkSessionMcpServer != null ? { sessionServer: sparkSessionMcpServer } : {}),
         ...(sparkToolResultServer != null ? { toolResultServer: sparkToolResultServer } : {}),
       })
@@ -5454,6 +5611,15 @@ export class SessionService {
       mcpServers,
     )
 
+    // spark_wiki（in-process 版，claude SDK 路径）：知识库只读三件套
+    // （list_spaces/search/read），返回经 WikiContextBudget 强制裁剪。
+    // CLI 路径在 tryStartCodexCliTurn 走 stdio 版（择一挂载）。
+    await this.attachSparkWikiMcpServer(
+      sessionId,
+      { workspaceRootPath: config.workspaceRootPath },
+      mcpServers,
+    )
+
     // spark_session（in-process 版）—— agent 上报引擎级 worktree 状态的工具
     await this.attachSparkSessionMcpServer(sessionId, mcpServers)
     mcpServers = governMcpServers(mcpServers, {
@@ -5960,6 +6126,18 @@ export class SessionService {
     } catch (err) {
       log.warn(
         `spark_memory stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    // spark_wiki（CLI 路径专用）—— stdio 子进程经 PlatformBridge RPC 回到
+    // bridgeWikiListSpaces / bridgeWikiSearch / bridgeWikiRead。claude SDK 路径
+    // （tryStartSDKTurn）用 in-process SDK MCP；两形态择一挂载，工具名/语义一致。
+    try {
+      const wikiServer = await this.getMcpTooling().resolveSparkWikiMcpServer(sessionId)
+      if (wikiServer != null) mcpServers.spark_wiki = wikiServer
+    } catch (err) {
+      log.warn(
+        `spark_wiki stdio MCP setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
       )
     }
 
@@ -6925,6 +7103,159 @@ export class SessionService {
         }`,
       )
     }
+  }
+
+  /**
+   * Attach spark_wiki MCP server（in-process 版，claude SDK 路径）：
+   * wiki_list_spaces / wiki_search / wiki_read 三只读工具（S0 集）。
+   *
+   * 所有返回经 WikiContextBudget 服务端裁剪（L1/L2/L3 渐进披露），正文
+   * 只在 wiki_read 分页出现。CLI 路径（codex / claude CLI）走 stdio
+   * resolveSparkWikiMcpServer → PlatformBridge → bridgeWiki*，同一套服务层。
+   */
+  private async attachSparkWikiMcpServer(
+    sessionId: string,
+    context: { workspaceRootPath: string },
+    mcpServers: Record<string, SDKMcpServerConfig>,
+  ): Promise<void> {
+    try {
+      const factory = await loadSdkMcpFactory()
+      if (factory == null) return
+      const { createSdkMcpServer, tool } = factory
+      const wiki = this.buildWikiServices(sessionId, context.workspaceRootPath)
+      const governanceOptions = {
+        workspaceRootPath: context.workspaceRootPath,
+        maxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
+      }
+
+      const listSpacesTool = tool(
+        'wiki_list_spaces',
+        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list_spaces')!.description,
+        {} as Record<string, unknown>,
+        async () =>
+          governInProcessToolResult(
+            {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: this.summarizeWikiListSpaces(await this.bridgeWikiListSpaces({ sessionId })),
+                },
+              ],
+            },
+            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_list_spaces' },
+          ),
+      )
+
+      const searchWikiTool = tool(
+        'wiki_search',
+        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_search')!.description,
+        {
+          query: z.string().min(1).max(500),
+          space_id: z.string().min(1).max(64).optional(),
+          limit: z.number().int().min(1).max(20).optional(),
+        } as Record<string, unknown>,
+        async (args: Record<string, unknown>) =>
+          governInProcessToolResult(
+            {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: this.summarizeWikiSearch(
+                    await this.bridgeWikiSearch({
+                      sessionId,
+                      query: typeof args.query === 'string' ? args.query : '',
+                      ...(typeof args.space_id === 'string' && args.space_id.length > 0
+                        ? { spaceId: args.space_id }
+                        : {}),
+                      ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+                    }),
+                  ),
+                },
+              ],
+            },
+            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_search' },
+          ),
+      )
+
+      const readWikiTool = tool(
+        'wiki_read',
+        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_read')!.description,
+        {
+          id: z.string().min(1).max(64),
+          offset: z.number().int().min(0).optional(),
+        } as Record<string, unknown>,
+        async (args: Record<string, unknown>) =>
+          governInProcessToolResult(
+            {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: this.summarizeWikiRead(
+                    await this.bridgeWikiRead({
+                      sessionId,
+                      pageId: typeof args.id === 'string' ? args.id : '',
+                      ...(typeof args.offset === 'number' && args.offset > 0
+                        ? { offset: args.offset }
+                        : {}),
+                    }),
+                  ),
+                },
+              ],
+            },
+            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_read' },
+          ),
+      )
+
+      mcpServers.spark_wiki = createSdkMcpServer({
+        name: 'spark_wiki',
+        version: '1.0.0',
+        tools: [listSpacesTool, searchWikiTool, readWikiTool],
+      })
+    } catch (err) {
+      log.warn(
+        `spark_wiki MCP server setup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
+  /** wiki 工具结果 → agent 可读文本（与 spark-wiki-mcp-server.mjs 的 summarize 同义）。 */
+  private summarizeWikiListSpaces(data: {
+    items: Array<{ id: string; name: string; spaceType: string; pageCount: number }>
+    truncated: boolean
+  }): string {
+    if (data.items.length === 0) return '当前会话没有可访问的知识库空间。'
+    const lines = data.items.map((s) => `- [${s.id}] ${s.name} (${s.spaceType}, ${s.pageCount} 页)`)
+    let text = lines.join('\n')
+    if (data.truncated) text += `\n（仅显示前 ${data.items.length} 个空间）`
+    return text
+  }
+
+  private summarizeWikiSearch(
+    data:
+      | { items: WikiBridgeSearchItem[]; total: number; truncated: boolean }
+      | { gateExceeded: true; usedTokens: number },
+  ): string {
+    if ('gateExceeded' in data) {
+      return `本会话 wiki 注入已达上限（已用 ${data.usedTokens} token），请先总结已读内容再继续检索。`
+    }
+    if (data.items.length === 0) return '没有匹配的知识页面。'
+    return data.items
+      .map(
+        (h) =>
+          `- [${h.id}] ${h.title} (${h.kind}): ${h.summary}${h.tags.length > 0 ? ` [${h.tags.join(',')}]` : ''}`,
+      )
+      .join('\n')
+  }
+
+  private summarizeWikiRead(data: WikiBridgeReadResult): string {
+    if ('error' in data && data.error != null) return `wiki_read 失败：${data.error}`
+    let text = data.body || '(空正文)'
+    if (data.truncated && data.nextOffset != null) {
+      text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`
+    }
+    return text
   }
 
   /**
@@ -9206,9 +9537,7 @@ export class SessionService {
       workspaceRootPath,
       permissionMode: effectiveMemberMode,
       ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
-      ...(providerConfig.apiEndpointFullUrl === true
-        ? { apiEndpointFullUrl: true }
-        : {}),
+      ...(providerConfig.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       // FR-0a：codex 扩展字段（useLocalConfig/codexApiKind/codexCliProvider）来自 memberProfile.extras。
       ...memberProfile.extras,
       ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
@@ -10804,7 +11133,11 @@ export class SessionService {
     const updated = repo.appendProgress(goal.id, progressPatch) ?? goal
     // 执行连续性（Phase 3B）：迭代结果提交（step committed + checkpoint）——
     // 与 progress append 同边界，预算/失败计数以 progressLog 持久事实为准。
-    this.executionSupervisor.onGoalIterationCommitted(goal.id, progressPatch.iteration, parsed.phase)
+    this.executionSupervisor.onGoalIterationCommitted(
+      goal.id,
+      progressPatch.iteration,
+      parsed.phase,
+    )
     this.emitGoalEvent(
       sessionId,
       updated,

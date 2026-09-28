@@ -57,6 +57,7 @@ import {
   resolvePlatformManagementMcpServerPath,
   resolveSparkCanvasMcpServerPath,
   resolveSparkMemoryMcpServerPath,
+  resolveSparkWikiMcpServerPath,
   resolveSubAppMcpServerPath,
   resolveWebSearchMcpServerPath,
 } from '../session-mcp-tooling-helpers.js'
@@ -385,6 +386,41 @@ export class SessionMcpTooling {
     } catch (err) {
       log.warn(
         `Failed to start spark_memory MCP server: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return null
+    }
+  }
+
+  /**
+   * 解析知识库 MCP server（spark_wiki）—— codex CLI / claude CLI 路径专用。
+   *
+   * claude SDK 路径用 in-process SDK MCP（attachSparkWikiMcpServer），CLI 是
+   * 独立子进程，消费不了 type='sdk' 的 server。这里给它们挂 stdio 子进程，
+   * 通过 PlatformBridgeService HTTP RPC 回到主进程的 bridgeWiki* —— 与 SDK
+   * 路径复用同一套 Wiki 服务层与 WikiContextBudget 裁剪，语义完全一致。
+   * 挂载形态择一（设计原则 4）：本方法与 attachSparkWikiMcpServer 不会在同
+   * 一会话同时生效（SDK 路径只调 attach，CLI 路径只调本方法）。
+   */
+  async resolveSparkWikiMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolveSparkWikiMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Spark wiki MCP server script not found')
+      return null
+    }
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: resolveMcpNodeRuntimeExecutable(),
+        args: [serverPath],
+        env: {
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_WIKI_SID: sessionId,
+        },
+      }
+    } catch (err) {
+      log.warn(
+        `Failed to start spark_wiki MCP server: ${err instanceof Error ? err.message : String(err)}`,
       )
       return null
     }

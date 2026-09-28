@@ -456,3 +456,38 @@ export type {
   ExecutionEffectCreateParams,
   ExecutionWaitCreateParams,
 } from './execution/index.js'
+
+// 知识库 / Wiki（AI-Native 知识库，S0）
+export {
+  WikiSpaceRepository,
+} from './wiki-space.repository.js'
+export type {
+  WikiScope,
+  WikiSpaceType,
+  WikiSpaceRow,
+  WikiSpaceInsert,
+} from './wiki-space.repository.js'
+export {
+  WikiPageRepository,
+  hashWikiBody,
+} from './wiki-page.repository.js'
+export type {
+  WikiPageKind,
+  WikiPageStatus,
+  WikiPageRow,
+  WikiPageInsert,
+  WikiPageUpdatePatch,
+} from './wiki-page.repository.js'
+export {
+  WikiSearchRepository,
+  upsertWikiFtsRow,
+  deleteWikiFtsRow,
+  wikiFtsTableExists,
+} from './wiki-search.repository.js'
+export type { WikiFtsSearchHit } from './wiki-search.repository.js'
+export { WikiRevisionRepository } from './wiki-revision.repository.js'
+export type {
+  WikiRevisionChangeKind,
+  WikiRevisionRow,
+  WikiRevisionInsert,
+} from './wiki-revision.repository.js'
