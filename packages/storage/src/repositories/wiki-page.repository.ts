@@ -53,10 +53,15 @@ export interface WikiPageRow {
 }
 
 /** insert 入参：version 从 1 起、时间戳与 content_hash 由仓储填充 */
-export type WikiPageInsert = Omit<WikiPageRow, 'created_at' | 'updated_at' | 'version' | 'content_hash'>
+export type WikiPageInsert = Omit<
+  WikiPageRow,
+  'created_at' | 'updated_at' | 'version' | 'content_hash'
+>
 
 /** update 时文本字段变更必须带 body（fail-loud，见模块注释） */
-export interface WikiPageUpdatePatch extends Partial<Omit<WikiPageRow, 'id' | 'created_at' | 'version' | 'content_hash'>> {}
+export interface WikiPageUpdatePatch extends Partial<
+  Omit<WikiPageRow, 'id' | 'created_at' | 'version' | 'content_hash'>
+> {}
 
 /** 正文守卫哈希口径：去尾部换行后 SHA-256（与 memory 的 hashBodyForGuard 同约定） */
 export function hashWikiBody(body: string): string {
@@ -222,17 +227,47 @@ export class WikiPageRepository extends BaseRepository {
   /** 按 slug 找空间内活跃页面（[[双链]] 解析键；归档释放槽位） */
   getBySlug(spaceId: string, slug: string): WikiPageRow | null {
     const row = this.raw
-      .prepare(
-        `SELECT * FROM wiki_page WHERE space_id = ? AND slug = ? AND status != 'archived'`,
-      )
+      .prepare(`SELECT * FROM wiki_page WHERE space_id = ? AND slug = ? AND status != 'archived'`)
       .get(spaceId, slug) as WikiPageRow | undefined
     return row ?? null
+  }
+
+  /**
+   * 按 slug 或标题找空间内活跃页面（[[双链]] 解析的兜底口径）。
+   *
+   * slugifyTitle 会小写并剥离标点，因此 [[FTS5 Contentless]] 能命中
+   * slug='fts5-contentless'；但用户也可能直接写 [[fts5-contentless]]，
+   * 或正文标题含 slug 无法表达的字符——两条口径都试，命中即返回。
+   */
+  findBySlugOrTitle(spaceId: string, slug: string, title: string): WikiPageRow | null {
+    const row = this.raw
+      .prepare(
+        `SELECT * FROM wiki_page
+         WHERE space_id = ? AND status != 'archived'
+           AND (LOWER(slug) = LOWER(?) OR LOWER(title) = LOWER(?))
+         ORDER BY (LOWER(slug) = LOWER(?)) DESC
+         LIMIT 1`,
+      )
+      .get(spaceId, slug, title, slug) as WikiPageRow | undefined
+    return row ?? null
+  }
+
+  /** 空间内全部活跃页面的 (id, slug, title) 轻量索引（批量解析双链用，避免 N 次查询）。 */
+  listLinkIndex(spaceId: string): Array<{ id: string; slug: string; title: string }> {
+    return this.raw
+      .prepare(`SELECT id, slug, title FROM wiki_page WHERE space_id = ? AND status != 'archived'`)
+      .all(spaceId) as Array<{ id: string; slug: string; title: string }>
   }
 
   /** 列出空间内页面（目录树/分页基础查询；Agent 侧输出必须再过预算裁剪层） */
   listBySpace(
     spaceId: string,
-    opts?: { parentId?: string | null; kind?: WikiPageKind; includeArchived?: boolean; limit?: number },
+    opts?: {
+      parentId?: string | null
+      kind?: WikiPageKind
+      includeArchived?: boolean
+      limit?: number
+    },
   ): WikiPageRow[] {
     const conditions: string[] = ['space_id = ?']
     const values: unknown[] = [spaceId]
@@ -256,10 +291,28 @@ export class WikiPageRepository extends BaseRepository {
       .all(...values) as WikiPageRow[]
   }
 
+  /** 批量统计子节点数（目录树 hasChildren 标记用，一次查询取全层）。 */
+  countChildrenByParent(spaceId: string, parentIds: readonly string[]): Map<string, number> {
+    const result = new Map<string, number>()
+    if (parentIds.length === 0) return result
+    const placeholders = parentIds.map(() => '?').join(', ')
+    const rows = this.raw
+      .prepare(
+        `SELECT parent_id, COUNT(*) AS count FROM wiki_page
+         WHERE space_id = ? AND status != 'archived' AND parent_id IN (${placeholders})
+         GROUP BY parent_id`,
+      )
+      .all(spaceId, ...parentIds) as Array<{ parent_id: string; count: number }>
+    for (const row of rows) result.set(row.parent_id, row.count)
+    return result
+  }
+
   /** 活跃页面计数（配额闸门用） */
   countActive(spaceId: string): number {
     const row = this.raw
-      .prepare(`SELECT COUNT(*) as count FROM wiki_page WHERE space_id = ? AND status != 'archived'`)
+      .prepare(
+        `SELECT COUNT(*) as count FROM wiki_page WHERE space_id = ? AND status != 'archived'`,
+      )
       .get(spaceId) as { count: number }
     return row.count
   }

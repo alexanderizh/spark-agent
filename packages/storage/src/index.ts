@@ -175,11 +175,12 @@ export {
   MemoryCandidateRepository,
   candidateDigestOf,
   hashCandidateContent,
-  // 知识库 / Wiki（S0）
+  // 知识库 / Wiki（S0 骨架 + S1 双链）
   WikiSpaceRepository,
   WikiPageRepository,
   WikiSearchRepository,
   WikiRevisionRepository,
+  WikiLinkRepository,
   hashWikiBody,
   upsertWikiFtsRow,
   deleteWikiFtsRow,
@@ -374,6 +375,9 @@ export type {
   WikiRevisionChangeKind,
   WikiRevisionRow,
   WikiRevisionInsert,
+  WikiLinkType,
+  WikiLinkRow,
+  WikiBacklinkHit,
   SessionGoal,
   GoalBudget,
   GoalValidation,

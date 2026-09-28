@@ -458,19 +458,14 @@ export type {
 } from './execution/index.js'
 
 // 知识库 / Wiki（AI-Native 知识库，S0）
-export {
-  WikiSpaceRepository,
-} from './wiki-space.repository.js'
+export { WikiSpaceRepository } from './wiki-space.repository.js'
 export type {
   WikiScope,
   WikiSpaceType,
   WikiSpaceRow,
   WikiSpaceInsert,
 } from './wiki-space.repository.js'
-export {
-  WikiPageRepository,
-  hashWikiBody,
-} from './wiki-page.repository.js'
+export { WikiPageRepository, hashWikiBody } from './wiki-page.repository.js'
 export type {
   WikiPageKind,
   WikiPageStatus,
@@ -485,6 +480,8 @@ export {
   wikiFtsTableExists,
 } from './wiki-search.repository.js'
 export type { WikiFtsSearchHit } from './wiki-search.repository.js'
+export { WikiLinkRepository } from './wiki-link.repository.js'
+export type { WikiLinkType, WikiLinkRow, WikiBacklinkHit } from './wiki-link.repository.js'
 export { WikiRevisionRepository } from './wiki-revision.repository.js'
 export type {
   WikiRevisionChangeKind,

@@ -520,7 +520,18 @@ export { MemoryWriterService } from './services/memory/memory-writer.service.js'
 export { MemoryLifecycleService } from './services/memory/memory-lifecycle.service.js'
 export { MemoryCandidateService } from './services/memory/memory-candidate.service.js'
 export { MemoryCommitService } from './services/memory/memory-commit.service.js'
-// 知识库 / Wiki（S0）
+// 知识库 / Wiki（S0 骨架 + S1 写入闭环）
+export {
+  createWikiServiceStack,
+  resolveWikiBudgetFromSettings,
+} from './services/wiki/wiki-service-stack.js'
+export type { WikiServiceStack, WikiServiceStackInput } from './services/wiki/wiki-service-stack.js'
+export { WikiLinkService, parseWikiLinks } from './services/wiki/wiki-link.service.js'
+export type {
+  WikiBacklinkItem,
+  WikiLinkSyncResult,
+  ParsedWikiLink,
+} from './services/wiki/wiki-link.service.js'
 export { WikiStoreService } from './services/wiki/wiki-store.service.js'
 export { WikiSpaceService } from './services/wiki/wiki-space.service.js'
 export type { WikiSpaceScopeFilter, WikiSpaceListItem } from './services/wiki/wiki-space.service.js'
@@ -533,6 +544,12 @@ export type {
   WikiWriteResult,
   WikiSpaceWriteResult,
   WikiPageWriteInput,
+  WikiRemoveResult,
+  WikiDeleteResult,
+} from './services/wiki/wiki-write.service.js'
+export {
+  scanSensitiveContent,
+  WIKI_PAGE_QUOTA_PER_SPACE,
 } from './services/wiki/wiki-write.service.js'
 export {
   resolveWikiBudget,
@@ -550,12 +567,22 @@ export {
   WIKI_READ_TOOL_NAMES,
   WIKI_ALL_READ_TOOL_NAMES,
   WIKI_WRITE_TOOL_NAMES,
+  WIKI_S3_TOOL_NAMES,
+  WIKI_CORE_TOOL_NAMES,
+  WIKI_DEFERRED_TOOL_NAMES,
+  WIKI_ADMIN_TOOL_NAME,
+  WIKI_S0_TOOL_NAMES,
   WIKI_L0_PROMPT,
   WIKI_TOOL_DEFINITIONS,
+  resolveWikiMountPlan,
   measureWikiResidentTokens,
+  measurePlanResidentTokens,
   measureS0ResidentTokens,
+  measureS1ResidentTokens,
+  measureSlimResidentTokens,
   measureFullResidentTokens,
 } from './tools/wiki-tool-contract.js'
+export type { WikiMountPlan, WikiToolDefinition } from './tools/wiki-tool-contract.js'
 export { isMemorySensitive, containsSensitiveContent } from './services/memory/sanitizer.js'
 export type {
   CandidateConfirmResult,

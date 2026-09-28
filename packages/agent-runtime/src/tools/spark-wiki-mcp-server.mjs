@@ -5,22 +5,31 @@
  * 存在意义：claude SDK 路径用 in-process SDK MCP（createSdkMcpServer，闭包直访 this.db），
  * 但 codex CLI / claude CLI 是独立子进程，消费不了 type='sdk' 的 server。本 server 是
  * **瘦桥接**：把 agent 的 wiki_* 工具调用代理到 PlatformBridgeService HTTP RPC
- * （wiki.search / wiki.read / wiki.list_spaces），bridge 再回调 SessionService 的
- * bridgeWiki* 方法 —— 与 claude SDK 路径复用同一套 Wiki 服务层与 WikiContextBudget
- * 裁剪，保证两条路径 agent 看到的范围、排序、降级语义完全一致。
+ * （wiki.* 系列），bridge 再回调 SessionService 的 bridgeWiki* 方法 —— 与 claude SDK
+ * 路径复用同一套 Wiki 服务层、统一写入原语与 WikiContextBudget 裁剪，保证两条路径
+ * agent 看到的范围、排序、降级语义完全一致。
  *
- * 工具定义与描述的单一事实源：wiki-tool-contract.ts（本文件保持同步复制）。
+ * 工具定义与描述的单一事实源：wiki-tool-contract.ts（本文件保持同步复制，改动须两处同步）。
  *
  * 配置来自环境变量（由 session.service 注入）：
- *   SPARK_PLATFORM_BRIDGE_PORT  PlatformBridgeService 端口（必需）
- *   SPARK_WIKI_SID              本对话对应的 spark 会话 id（必需，用于解析 scope 集合）
+ *   SPARK_PLATFORM_BRIDGE_PORT   PlatformBridgeService 端口（必需）
+ *   SPARK_WIKI_SID               本对话对应的 spark 会话 id（必需，用于解析 scope 集合）
+ *   SPARK_WIKI_HELP_DISCLOSURE   '1' = 低频工具收进 wiki_admin 二级入口（可选）
  */
 import readline from 'node:readline'
 
 const env = process.env
 const PORT = Number.parseInt(env.SPARK_PLATFORM_BRIDGE_PORT || '', 10) || 0
 const SID = (env.SPARK_WIKI_SID || '').trim()
+const HELP_DISCLOSURE = env.SPARK_WIKI_HELP_DISCLOSURE === '1'
 const BASE = PORT ? `http://127.0.0.1:${PORT}` : ''
+
+// ── 工具集划分（与 wiki-tool-contract.ts 同步）─────────────────────────────
+const CORE_TOOLS = ['wiki_list_spaces', 'wiki_search', 'wiki_read', 'wiki_list', 'wiki_write']
+const DEFERRED_TOOLS = ['wiki_update', 'wiki_backlinks', 'wiki_archive', 'wiki_delete', 'wiki_link']
+const ALL_TOOLS = [...CORE_TOOLS, ...DEFERRED_TOOLS]
+const ADMIN_TOOL = 'wiki_admin'
+const VISIBLE_TOOLS = HELP_DISCLOSURE ? CORE_TOOLS : ALL_TOOLS
 
 // ── JSON-RPC framing ───────────────────────────────────────────────────────
 function send(message) {
@@ -54,30 +63,104 @@ async function rpc(method, params) {
   return json.data
 }
 
+function str(v) {
+  return typeof v === 'string' ? v : ''
+}
+function optionalStr(v) {
+  return typeof v === 'string' && v.length > 0 ? v : undefined
+}
+function optionalNum(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
 // ── Tool implementations ────────────────────────────────────────────────────
-async function listSpaces() {
-  return rpc('wiki.list_spaces', { sessionId: SID })
-}
-
-async function searchWiki(args) {
-  const query = typeof args.query === 'string' ? args.query : ''
-  if (!query) throw new Error('query is required')
-  return rpc('wiki.search', {
-    sessionId: SID,
-    query,
-    ...(typeof args.space_id === 'string' && args.space_id ? { spaceId: args.space_id } : {}),
-    ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
-  })
-}
-
-async function readWiki(args) {
-  const id = typeof args.id === 'string' ? args.id : ''
-  if (!id) throw new Error('id is required')
-  return rpc('wiki.read', {
-    sessionId: SID,
-    pageId: id,
-    ...(typeof args.offset === 'number' && args.offset > 0 ? { offset: args.offset } : {}),
-  })
+const IMPL = {
+  async wiki_list_spaces() {
+    return rpc('wiki.list_spaces', { sessionId: SID })
+  },
+  async wiki_search(args) {
+    const query = str(args.query)
+    if (!query) throw new Error('query is required')
+    return rpc('wiki.search', {
+      sessionId: SID,
+      query,
+      ...(optionalStr(args.space_id) != null ? { spaceId: args.space_id } : {}),
+      ...(optionalNum(args.limit) != null ? { limit: args.limit } : {}),
+    })
+  },
+  async wiki_read(args) {
+    const id = str(args.id)
+    if (!id) throw new Error('id is required')
+    return rpc('wiki.read', {
+      sessionId: SID,
+      pageId: id,
+      ...(optionalNum(args.offset) != null && args.offset > 0 ? { offset: args.offset } : {}),
+    })
+  },
+  async wiki_list(args) {
+    const spaceId = str(args.space_id)
+    if (!spaceId) throw new Error('space_id is required')
+    return rpc('wiki.list', {
+      sessionId: SID,
+      spaceId,
+      ...(optionalStr(args.parent_id) != null ? { parentId: args.parent_id } : {}),
+    })
+  },
+  async wiki_backlinks(args) {
+    const id = str(args.id)
+    if (!id) throw new Error('id is required')
+    return rpc('wiki.backlinks', { sessionId: SID, pageId: id })
+  },
+  async wiki_write(args) {
+    const spaceId = str(args.space_id)
+    const title = str(args.title)
+    const body = str(args.body)
+    if (!spaceId || !title || !body) throw new Error('space_id / title / body are required')
+    return rpc('wiki.write', {
+      sessionId: SID,
+      spaceId,
+      title,
+      body,
+      ...(optionalStr(args.kind) != null ? { kind: args.kind } : {}),
+      ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
+      ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
+    })
+  },
+  async wiki_update(args) {
+    const id = str(args.id)
+    const expectedVersion = optionalNum(args.expected_version)
+    if (!id || expectedVersion == null) throw new Error('id / expected_version are required')
+    return rpc('wiki.update', {
+      sessionId: SID,
+      pageId: id,
+      expectedVersion,
+      ...(optionalStr(args.title) != null ? { title: args.title } : {}),
+      ...(optionalStr(args.body) != null ? { body: args.body } : {}),
+      ...(optionalStr(args.summary) != null ? { summary: args.summary } : {}),
+      ...(Array.isArray(args.tags) ? { tags: args.tags.filter((t) => typeof t === 'string') } : {}),
+    })
+  },
+  async wiki_archive(args) {
+    const id = str(args.id)
+    if (!id) throw new Error('id is required')
+    return rpc('wiki.archive', { sessionId: SID, pageId: id })
+  },
+  async wiki_delete(args) {
+    const id = str(args.id)
+    if (!id) throw new Error('id is required')
+    return rpc('wiki.delete', { sessionId: SID, pageId: id })
+  },
+  async wiki_link(args) {
+    const fromId = str(args.from_id)
+    const toId = str(args.to_id)
+    if (!fromId || !toId) throw new Error('from_id / to_id are required')
+    return rpc('wiki.link', {
+      sessionId: SID,
+      fromPageId: fromId,
+      toPageId: toId,
+      ...(args.remove === true ? { remove: true } : {}),
+    })
+  },
 }
 
 // ── Tool definitions（与 wiki-tool-contract.ts 同义同描述）──────────────────
@@ -115,7 +198,118 @@ const TOOLS = [
       required: ['id'],
     },
   },
+  {
+    name: 'wiki_list',
+    description:
+      '列出一个空间内的页面目录树（每节点一行：id+标题+类型+是否有子节点，无正文无摘要）。浏览知识结构时用。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: '空间 id。' },
+        parent_id: { type: 'string', description: '可选：只列该父节点的子层（缺省为根层）。' },
+      },
+      required: ['space_id'],
+    },
+  },
+  {
+    name: 'wiki_backlinks',
+    description: '查一个页面的反向链接（谁引用了它，每边一行）。追溯知识关联时用。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '页面 id。' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'wiki_write',
+    description: '在知识库新建页面。回执只含 id/title/version，不回显正文。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        space_id: { type: 'string', description: '目标空间 id。' },
+        title: { type: 'string', description: '页面标题（空间内唯一 slug 来源）。' },
+        body: { type: 'string', description: 'Markdown 正文。' },
+        kind: {
+          type: 'string',
+          enum: ['knowledge', 'experience', 'pattern', 'reference', 'note'],
+          description: '知识类型，默认 knowledge。',
+        },
+        summary: { type: 'string', description: '摘要（≤240 字，检索展示用）。' },
+        tags: { type: 'array', items: { type: 'string' }, description: '标签。' },
+      },
+      required: ['space_id', 'title', 'body'],
+    },
+  },
+  {
+    name: 'wiki_update',
+    description: '更新页面（CAS：带 expectedVersion，失配拒绝并回传当前版本）。回执不含正文。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '页面 id。' },
+        expected_version: { type: 'number', description: 'CAS 期望版本（当前 version）。' },
+        title: { type: 'string', description: '新标题（改标题必须同时带 body）。' },
+        body: { type: 'string', description: '新正文。' },
+        summary: { type: 'string', description: '新摘要（改摘要必须同时带 body）。' },
+        tags: { type: 'array', items: { type: 'string' }, description: '新标签。' },
+      },
+      required: ['id', 'expected_version'],
+    },
+  },
+  {
+    name: 'wiki_archive',
+    description: '归档页面（可恢复，非物理删除）。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '页面 id。' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'wiki_delete',
+    description: '物理删除页面（进入删除屏障，清理正文与版本快照；不可恢复）。仅在明确要求时使用。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '页面 id。' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'wiki_link',
+    description: '建立/移除两个页面的显式关联（reference 边）。正文内 [[标题]] 自动建 wiki 边。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from_id: { type: 'string', description: '来源页面 id。' },
+        to_id: { type: 'string', description: '目标页面 id。' },
+        remove: { type: 'boolean', description: 'true = 移除该关联。' },
+      },
+      required: ['from_id', 'to_id'],
+    },
+  },
 ]
+
+const ADMIN_TOOL_DEF = {
+  name: ADMIN_TOOL,
+  description:
+    '知识库低频入口（更新/关联/归档/删除）。tool 取 wiki_update(id,expected_version) / ' +
+    'wiki_backlinks(id) / wiki_archive(id) / wiki_delete(id) / wiki_link(from_id,to_id)；' +
+    'args 传该工具入参对象。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tool: { type: 'string', enum: DEFERRED_TOOLS },
+      args: { type: 'object' },
+    },
+    required: ['tool'],
+  },
+}
+
+function visibleTools() {
+  const tools = TOOLS.filter((t) => VISIBLE_TOOLS.includes(t.name))
+  if (HELP_DISCLOSURE) tools.push(ADMIN_TOOL_DEF)
+  return tools
+}
 
 // ── Summarize（结构化结果 → agent 可读文本）─────────────────────────────────
 function summarize(name, data) {
@@ -140,6 +334,16 @@ function summarize(name, data) {
       )
       .join('\n')
   }
+  if (name === 'wiki_list') {
+    const items = Array.isArray(data.items) ? data.items : []
+    if (items.length === 0) return '该层级下没有页面。'
+    const lines = items.map(
+      (p) => `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''})`,
+    )
+    let text = lines.join('\n')
+    if (data.truncated) text += `\n（该层共 ${data.total} 个节点，仅显示前 ${items.length} 个）`
+    return text
+  }
   if (name === 'wiki_read') {
     if (data.error) return `wiki_read 失败：${data.error}`
     let text = data.body || '(空正文)'
@@ -148,10 +352,60 @@ function summarize(name, data) {
     }
     return text
   }
+  if (name === 'wiki_backlinks') {
+    const items = Array.isArray(data.items) ? data.items : []
+    if (items.length === 0) return '没有页面引用该页。'
+    let text = items
+      .map(
+        (b) =>
+          `- [${b.id}] ${b.title} (${b.kind}${b.linkType === 'reference' ? ', 显式关联' : ''})`,
+      )
+      .join('\n')
+    if (data.truncated) text += `\n（共 ${data.total} 条引用，仅显示前 ${items.length} 条）`
+    return text
+  }
+  if (name === 'wiki_write' || name === 'wiki_update') {
+    if (data.ok === false || data.error)
+      return `${name} 失败：${data.error || data.message || '未知错误'}`
+    return `已写入 [${data.id}] ${data.title}（v${data.version}${data.indexReady === false ? '，检索索引未就绪' : ''}）`
+  }
+  if (name === 'wiki_archive') {
+    if (data.ok === false || data.error) return `wiki_archive 失败：${data.error || data.message}`
+    return `已归档 [${data.id}] ${data.title}${data.alreadyArchived ? '（此前已归档）' : ''}`
+  }
+  if (name === 'wiki_delete') {
+    if (data.ok === false || data.error) return `wiki_delete 失败：${data.error || data.message}`
+    const extra = [
+      data.fileCleaned === false ? '正文文件待清理' : null,
+      data.revisionsCleaned === false ? '版本快照待清理' : null,
+    ]
+      .filter(Boolean)
+      .join('、')
+    return `已删除 [${data.id}] ${data.title}${extra ? `（${extra}）` : ''}`
+  }
+  if (name === 'wiki_link') {
+    if (data.ok === false || data.error) return `wiki_link 失败：${data.error || data.message}`
+    return data.changed ? '关联已更新。' : '关联已是最新状态（无变化）。'
+  }
   return JSON.stringify(data)
 }
 
 // ── JSON-RPC dispatch ───────────────────────────────────────────────────────
+async function callTool(name, args) {
+  if (name === ADMIN_TOOL) {
+    const target = str(args.tool)
+    if (!DEFERRED_TOOLS.includes(target))
+      throw new Error(`Unknown admin tool: ${target || '(empty)'}`)
+    const inner = args.args != null && typeof args.args === 'object' ? args.args : {}
+    const data = await IMPL[target](inner)
+    return { data, summarizedAs: target }
+  }
+  const impl = IMPL[name]
+  if (impl == null) throw new Error(`Unknown tool: ${name}`)
+  const data = await impl(args)
+  return { data, summarizedAs: name }
+}
+
 async function handle(request) {
   const id = request.id
   try {
@@ -159,23 +413,19 @@ async function handle(request) {
       result(id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'spark_wiki', version: '1.0.0' },
+        serverInfo: { name: 'spark_wiki', version: '1.1.0' },
       })
       return
     }
     if (request.method === 'tools/list') {
-      result(id, { tools: TOOLS })
+      result(id, { tools: visibleTools() })
       return
     }
     if (request.method === 'tools/call') {
       const name = request.params?.name
       const args = request.params?.arguments || {}
-      let data
-      if (name === 'wiki_list_spaces') data = await listSpaces()
-      else if (name === 'wiki_search') data = await searchWiki(args)
-      else if (name === 'wiki_read') data = await readWiki(args)
-      else throw new Error(`Unknown tool: ${name}`)
-      result(id, { content: [{ type: 'text', text: summarize(name, data) }] })
+      const { data, summarizedAs } = await callTool(name, args)
+      result(id, { content: [{ type: 'text', text: summarize(summarizedAs, data) }] })
       return
     }
     if (id !== undefined) result(id, {})

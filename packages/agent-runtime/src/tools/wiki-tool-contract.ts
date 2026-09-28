@@ -8,9 +8,13 @@
  *   - L0 system prompt 片段（≤200 token，递进规则写进提示词作为行为契约）
  *   - 常驻 token 计量（L0 + L0′ ≤ 800 软目标，CI 断言基线）
  *
- * S0 挂载只读三件套（wiki_list_spaces / wiki_search / wiki_read）；
- * 写工具（write/update/archive/delete/link/propose_skill）契约已冻结，
- * S1 随写入闸门完整落地后挂载。同一会话内置 / MCP 择一挂载（设计原则 4）。
+ * 挂载集（S1）：5 只读 + 5 写 ——
+ *   只读 wiki_list_spaces / wiki_search / wiki_read / wiki_list / wiki_backlinks（免审批）
+ *   写入 wiki_write / wiki_update / wiki_archive / wiki_delete / wiki_link（走审批）
+ * wiki_propose_skill 属 S3（技能提议区落地后挂载）。
+ *
+ * 同一会话内置 / MCP 择一挂载（设计原则 4）；工具瘦身（wiki/budget/helpDisclosure）
+ * 开启时低频工具收进 wiki_admin 二级入口（§8.3），常驻 schema 只留核心六件套。
  */
 
 import { estimateTokens } from '@spark/shared'
@@ -21,25 +25,78 @@ export const SPARK_WIKI_MCP_SERVER_NAME = 'spark_wiki'
 /** 工具全名（挂载后 agent 看到的名字）前缀 */
 export const WIKI_TOOL_PREFIX = 'mcp__spark_wiki__'
 
-/** S0 挂载的只读工具集（免审批白名单成员） */
-export const WIKI_READ_TOOL_NAMES = ['wiki_list_spaces', 'wiki_search', 'wiki_read'] as const
-
-/** 只读工具全集（S1 补挂 wiki_list / wiki_backlinks 后至此） */
-export const WIKI_ALL_READ_TOOL_NAMES = [
-  ...WIKI_READ_TOOL_NAMES,
+/** 只读工具集（免审批白名单成员）——S0 挂载前三件套，S1 扩展为全 5 只读工具。 */
+export const WIKI_READ_TOOL_NAMES = [
+  'wiki_list_spaces',
+  'wiki_search',
+  'wiki_read',
   'wiki_list',
   'wiki_backlinks',
 ] as const
 
-/** S1 起挂载的写工具集（走 canUseTool 审批，不进白名单） */
+/** 只读工具全集（= 当前挂载的全部只读工具） */
+export const WIKI_ALL_READ_TOOL_NAMES = [...WIKI_READ_TOOL_NAMES] as const
+
+/** 写工具集（走 canUseTool 审批，不进白名单） */
 export const WIKI_WRITE_TOOL_NAMES = [
   'wiki_write',
   'wiki_update',
   'wiki_archive',
   'wiki_delete',
   'wiki_link',
-  'wiki_propose_skill',
 ] as const
+
+/** S3 起追加的写工具（技能提议区落地后挂载；契约已冻结） */
+export const WIKI_S3_TOOL_NAMES = ['wiki_propose_skill'] as const
+
+/**
+ * 核心工具（工具瘦身开启时仍常驻）—— 覆盖「找空间 → 找到 → 读 → 写 → 浏览」主链路。
+ *
+ * 组成 = 方案 §8.3 规定的首屏四件套（search / read / write / list）
+ *      + wiki_list_spaces（写入前必须知道目标空间 id，否则首屏不可用）
+ *      + wiki_admin（低频工具的二级入口，本身占一份 schema）。
+ * 预算校验见 wiki-context-budget.test.ts：该组合必须 ≤ 800 token 软目标。
+ */
+export const WIKI_CORE_TOOL_NAMES = [
+  'wiki_list_spaces',
+  'wiki_search',
+  'wiki_read',
+  'wiki_list',
+  'wiki_write',
+] as const
+
+/**
+ * 低频工具（工具瘦身开启时收进 wiki_admin 二级入口）。
+ * 能力不消失，只是不再各占一份常驻 schema。
+ */
+export const WIKI_DEFERRED_TOOL_NAMES = [
+  'wiki_update',
+  'wiki_backlinks',
+  'wiki_archive',
+  'wiki_delete',
+  'wiki_link',
+] as const
+
+/** 二级入口工具名（工具瘦身开启时挂载） */
+export const WIKI_ADMIN_TOOL_NAME = 'wiki_admin'
+
+export interface WikiMountPlan {
+  /** 直接挂载（对模型可见 schema）的工具名 */
+  toolNames: string[]
+  /** 是否挂载 wiki_admin 二级入口 */
+  admin: boolean
+}
+
+/**
+ * 根据设置档位决定挂载集（§8.3）。
+ * @param helpDisclosure wiki/budget/helpDisclosure（true = 低频工具收进二级入口）
+ */
+export function resolveWikiMountPlan(helpDisclosure: boolean): WikiMountPlan {
+  const all: string[] = [...WIKI_ALL_READ_TOOL_NAMES, ...WIKI_WRITE_TOOL_NAMES]
+  if (!helpDisclosure) return { toolNames: all, admin: false }
+  const core: readonly string[] = WIKI_CORE_TOOL_NAMES
+  return { toolNames: all.filter((n) => core.includes(n)), admin: true }
+}
 
 /**
  * L0 能力声明（system prompt 固定片段，≤200 token）。
@@ -201,6 +258,21 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
       required: ['name', 'purpose', 'source_page_ids', 'skill_draft'],
     },
   },
+  {
+    name: WIKI_ADMIN_TOOL_NAME,
+    description:
+      '知识库低频入口（更新/关联/归档/删除）。tool 取 wiki_update(id,expected_version) / ' +
+      'wiki_backlinks(id) / wiki_archive(id) / wiki_delete(id) / wiki_link(from_id,to_id)；' +
+      'args 传该工具入参对象。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', enum: [...WIKI_DEFERRED_TOOL_NAMES] },
+        args: { type: 'object' },
+      },
+      required: ['tool'],
+    },
+  },
 ] as const
 
 /**
@@ -225,12 +297,34 @@ export function measureWikiResidentTokens(toolNames: readonly string[]): {
   return { l0Prompt, l0Prime, total: l0Prompt + l0Prime }
 }
 
-/** S0 挂载集的常驻 token（≤800 断言用） */
+/** S0 挂载集（三只读）的常驻 token —— 历史基线，供回归对照 */
+export const WIKI_S0_TOOL_NAMES = ['wiki_list_spaces', 'wiki_search', 'wiki_read'] as const
+
 export function measureS0ResidentTokens(): number {
-  return measureWikiResidentTokens(WIKI_READ_TOOL_NAMES).total
+  return measureWikiResidentTokens(WIKI_S0_TOOL_NAMES).total
 }
 
-/** 全量 11 工具的常驻 token（helpDisclosure 开启时的对照组） */
+/** 按挂载计划计量常驻 token（含 wiki_admin 二级入口的 schema）。 */
+export function measurePlanResidentTokens(plan: WikiMountPlan): number {
+  const names = plan.admin ? [...plan.toolNames, WIKI_ADMIN_TOOL_NAME] : plan.toolNames
+  return measureWikiResidentTokens(names).total
+}
+
+/** S1 默认（全量挂载）的常驻 token */
+export function measureS1ResidentTokens(): number {
+  return measurePlanResidentTokens(resolveWikiMountPlan(false))
+}
+
+/** 工具瘦身开启时的常驻 token（与全量挂载对照，验证瘦身收益） */
+export function measureSlimResidentTokens(): number {
+  return measurePlanResidentTokens(resolveWikiMountPlan(true))
+}
+
+/** 全量挂载（含所有已冻结契约工具）的常驻 token —— 预算上界的参照 */
 export function measureFullResidentTokens(): number {
-  return measureWikiResidentTokens([...WIKI_ALL_READ_TOOL_NAMES, ...WIKI_WRITE_TOOL_NAMES]).total
+  return measureWikiResidentTokens([
+    ...WIKI_ALL_READ_TOOL_NAMES,
+    ...WIKI_WRITE_TOOL_NAMES,
+    ...WIKI_S3_TOOL_NAMES,
+  ]).total
 }

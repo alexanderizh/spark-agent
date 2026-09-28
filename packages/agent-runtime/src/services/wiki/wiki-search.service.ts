@@ -9,12 +9,12 @@
  *   - **绝不返回正文**——需要正文时必须走 wiki_read（L3），独立取用
  */
 
-import { estimateTokens } from '@spark/shared'
 import type { WikiPageKind } from '@spark/storage'
 import { WikiSearchRepository } from '@spark/storage'
 import {
   clampSummary,
   chargeTurnWikiTokens,
+  measureItemTokens,
   type WikiBudgetProfile,
 } from './wiki-context-budget.js'
 
@@ -76,7 +76,7 @@ export class WikiSearchService {
         tags: parseTags(h.page.tags_json),
         tokens: 0,
       }
-      item.tokens = estimateTokens(JSON.stringify(item))
+      item.tokens = measureItemTokens(item)
       return item
     })
     const totalTokens = items.reduce((s, i) => s + i.tokens, 0)
@@ -110,15 +110,18 @@ export class WikiSearchService {
       ...(input.kind != null ? { kind: input.kind } : {}),
       limit,
     })
-    const items = hits.map((h) => ({
-      id: h.page.id,
-      title: h.page.title,
-      kind: h.page.kind,
-      summary: clampSummary(h.page.summary, this.budget.summaryChars),
-      tags: parseTags(h.page.tags_json),
-      tokens: 0,
-    }))
-    for (const item of items) item.tokens = estimateTokens(JSON.stringify(item))
+    const items: WikiSearchResultItem[] = hits.map((h) => {
+      const item: WikiSearchResultItem = {
+        id: h.page.id,
+        title: h.page.title,
+        kind: h.page.kind,
+        summary: clampSummary(h.page.summary, this.budget.summaryChars),
+        tags: parseTags(h.page.tags_json),
+        tokens: 0,
+      }
+      item.tokens = measureItemTokens(item)
+      return item
+    })
     return { items, total: items.length, truncated: false }
   }
 }

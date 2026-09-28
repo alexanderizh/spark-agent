@@ -103,10 +103,13 @@ export function buildSparkEngineMcpRuntime(sources: SparkEngineMcpSources): Spar
     'mcp__spark_memory__search_memory',
     'mcp__spark_memory__recall_memory',
   ])
+  // 只读工具进白名单（免审批）；写工具刻意**不进**——由 canUseTool 走审批流。
   addBuiltin(servers, allowedTools, 'spark_wiki', sources.wikiServer, [
     'mcp__spark_wiki__wiki_list_spaces',
     'mcp__spark_wiki__wiki_search',
     'mcp__spark_wiki__wiki_read',
+    'mcp__spark_wiki__wiki_list',
+    'mcp__spark_wiki__wiki_backlinks',
   ])
   addBuiltin(servers, allowedTools, 'spark_session', sources.sessionServer, [
     'mcp__spark_session__set_worktree_state',

@@ -15,8 +15,14 @@ import { estimateTokens } from '@spark/shared'
 import type { WikiPageRow } from '@spark/storage'
 import { WikiPageRepository, WikiRevisionRepository, hashWikiBody } from '@spark/storage'
 import { WikiStoreService } from './wiki-store.service.js'
-import { clipBody, chargeTurnWikiTokens, type WikiBudgetProfile } from './wiki-context-budget.js'
-import type { WikiPageVersionEntry } from '@spark/protocol'
+import {
+  clipBody,
+  chargeTurnWikiTokens,
+  fitTitleToItemBudget,
+  WIKI_ITEM_TOKEN_TARGETS,
+  type WikiBudgetProfile,
+} from './wiki-context-budget.js'
+import type { WikiPageVersionEntry, WikiRevisionDetail } from '@spark/protocol'
 
 const log = createLogger('wiki:page')
 
@@ -72,7 +78,18 @@ export class WikiPageService {
     const offset = Math.max(0, Math.floor(input.offset ?? 0))
     const clipped = clipBody(body, this.budget.readMaxTokens, offset)
     if (clipped.tokens === 0 && offset === 0) {
-      return { ok: true, page: { id: page.id, title: page.title, version: page.version, body: '', truncated: false, nextOffset: null, tokens: 0 } }
+      return {
+        ok: true,
+        page: {
+          id: page.id,
+          title: page.title,
+          version: page.version,
+          body: '',
+          truncated: false,
+          nextOffset: null,
+          tokens: 0,
+        },
+      }
     }
 
     const charge = chargeTurnWikiTokens(input.sessionId, clipped.tokens, this.budget.turnTotal)
@@ -99,8 +116,56 @@ export class WikiPageService {
     }
   }
 
+  /**
+   * Agent 目录树读取（L1）：每节点 ≤ 20 token（id + title + kind + hasChildren），
+   * **不返回正文与摘要**——层级导航必须便宜，内容要靠 wiki_search / wiki_read 取。
+   *
+   * 分页语义：按父节点逐层展开（parentId 缺省 = 根层），单次最多 maxNodes 个节点，
+   * 超出回传 truncated + nextCursor（父节点 id），Agent 据此决定是否继续下钻。
+   */
+  listForAgent(input: { spaceId: string; parentId?: string | null; maxNodes?: number }): {
+    items: Array<{ id: string; title: string; kind: string; hasChildren: boolean; tokens: number }>
+    total: number
+    truncated: boolean
+    tokens: number
+  } {
+    // 每节点 ≤30 token，默认 40 节点 ⇒ 单次上限约 1200 token（§8 L1 体量）
+    const maxNodes = Math.min(Math.max(input.maxNodes ?? 40, 1), 120)
+    const parentId = input.parentId === undefined ? null : input.parentId
+    const siblings = this.pageRepo.listBySpace(input.spaceId, { parentId })
+    const sliced = siblings.slice(0, maxNodes)
+    const childCounts = this.pageRepo.countChildrenByParent(
+      input.spaceId,
+      sliced.map((r) => r.id),
+    )
+    const items = sliced.map((row) => {
+      // 每节点 ≤ listNode 目标（服务端强制）：标题是唯一可变长字段，超预算按
+      // token 截断并加省略号；id + kind + 布尔标记构成约 18 token 的地板。
+      const hasChildren = (childCounts.get(row.id) ?? 0) > 0
+      const fitted = fitTitleToItemBudget(
+        { id: row.id, title: row.title, kind: row.kind as string, hasChildren },
+        WIKI_ITEM_TOKEN_TARGETS.listNode,
+      )
+      return {
+        id: row.id,
+        title: fitted.value,
+        kind: row.kind as string,
+        hasChildren,
+        tokens: fitted.tokens,
+      }
+    })
+    return {
+      items,
+      total: siblings.length,
+      truncated: siblings.length > items.length,
+      tokens: items.reduce((sum, i) => sum + i.tokens, 0),
+    }
+  }
+
   /** IPC 正文读取（渲染端，全量不分页——用户浏览不受 Agent 预算约束，但受守卫约束）。 */
-  async readFull(pageId: string): Promise<
+  async readFull(
+    pageId: string,
+  ): Promise<
     | { ok: true; page: WikiPageRow; body: string }
     | { ok: false; error: 'not_found' | 'guard_mismatch'; message: string }
   > {
@@ -112,6 +177,42 @@ export class WikiPageService {
       return { ok: false, error: 'guard_mismatch', message: '正文与索引指纹失配' }
     }
     return { ok: true, page, body }
+  }
+
+  /**
+   * 读取某个历史版本的快照正文（版本预览 / diff 用）。
+   *
+   * 快照缺失时**如实返回 null 并给出原因**，绝不回退到当前正文冒充历史
+   * （那会让用户以为"这个版本就是这样"，属于编造事实）。
+   */
+  async readRevision(pageId: string, version: number): Promise<WikiRevisionDetail | null> {
+    const row = this.revisionRepo.getByVersion(pageId, version)
+    if (row == null) return null
+    let body: string | null = null
+    let unavailableReason: string | null = null
+    if (row.body_snapshot_path == null) {
+      unavailableReason = '该版本没有正文快照'
+    } else {
+      try {
+        body = await this.store.readBody(row.body_snapshot_path)
+      } catch {
+        body = null
+        unavailableReason = '正文快照文件已被清理'
+      }
+    }
+    return {
+      pageId,
+      version: row.version,
+      title: row.title,
+      summary: row.summary,
+      contentHash: row.content_hash,
+      changeKind: row.change_kind,
+      changeNote: row.change_note,
+      actor: row.actor,
+      createdAt: row.created_at,
+      body,
+      unavailableReason,
+    }
   }
 
   /** 版本历史（渲染端）。 */

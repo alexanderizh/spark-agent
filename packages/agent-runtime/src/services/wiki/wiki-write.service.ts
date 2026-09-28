@@ -20,13 +20,20 @@
  *   - wiki_revision 只记录「被替代」的版本（旧正文快照），head 不在表内；
  *   - UNIQUE(page_id, version) + INSERT OR IGNORE 保证重试路径幂等。
  *
- * S0 范围：空间创建 + 页面 create/update（CAS）+ CAS 失配回滚。S1 补全敏感词
- * 闸门、配额、归档/删除屏障与 [[双链]] 解析。
+ * S1 补全：归档 / 物理删除（删除屏障）/ 版本还原 / 配额 / 敏感内容闸门 /
+ * [[双链]] 同步。全部写入口仍只经 commitPage 与下方同族方法 —— 不允许调用方
+ * 直写 repository 绕过闸门。
  */
 
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '@spark/shared'
-import type { WikiScope, WikiSpaceRow, WikiSpaceType, WikiPageKind, WikiPageRow } from '@spark/storage'
+import type {
+  WikiScope,
+  WikiSpaceRow,
+  WikiSpaceType,
+  WikiPageKind,
+  WikiPageRow,
+} from '@spark/storage'
 import {
   WikiSpaceRepository,
   WikiPageRepository,
@@ -34,15 +41,31 @@ import {
   WikiSearchRepository,
   hashWikiBody,
 } from '@spark/storage'
+import type { WikiRevisionChangeKind } from '@spark/storage'
 import { WikiStoreService } from './wiki-store.service.js'
+import { WikiLinkService } from './wiki-link.service.js'
 
 const log = createLogger('wiki:write')
 
 export type WikiWriteResult =
-  | { ok: true; row: WikiPageRow; created: boolean; indexReady: boolean }
+  | {
+      ok: true
+      row: WikiPageRow
+      created: boolean
+      indexReady: boolean
+      /** [[双链]] 派生边是否同步成功（false = 图谱缺该页出边，正文本身已落库） */
+      linksReady: boolean
+    }
   | {
       ok: false
-      reason: 'version_conflict' | 'slug_conflict' | 'not_found' | 'validation' | 'io_failed'
+      reason:
+        | 'version_conflict'
+        | 'slug_conflict'
+        | 'not_found'
+        | 'validation'
+        | 'io_failed'
+        | 'quota_exceeded'
+        | 'sensitive_content'
       message: string
       /** version_conflict 时当前实际版本（供调用方重读重试） */
       currentVersion?: number
@@ -66,15 +89,68 @@ export interface WikiPageWriteInput {
   /** 正文（新建必填；更新时缺省 = 不改正文） */
   body?: string
   tags?: string[]
+  /** 目录树排序位（move 时使用；不改则保持原值） */
+  sortOrder?: number
   status?: 'draft' | 'published'
   /** 'manual_user' | 'agent' | 'extraction' | 'import'（真实装配角色，不信任 LLM 自报） */
   authorRole?: string
   sourceSessionId?: string | null
+  /** 版本记录语义：普通编辑 'edit'；版本还原 'restore'（默认 edit） */
+  changeKind?: 'edit' | 'restore'
+  /** 版本记录的说明文字（如「由 v2 还原」），会写进被替代版本的历史行 */
+  changeNote?: string | null
 }
+
+/** 归档 / 删除结果（删除是破坏性操作，回执显式区分"已删"与"本就不存在"） */
+export type WikiRemoveResult =
+  | { ok: true; row: WikiPageRow; alreadyArchived: boolean }
+  | { ok: false; reason: 'not_found' | 'io_failed'; message: string }
+
+/** 物理删除结果：fileCleaned / revisionsCleaned 如实标注，不谎报清理完成 */
+export type WikiDeleteResult =
+  | { ok: true; id: string; title: string; fileCleaned: boolean; revisionsCleaned: boolean }
+  | { ok: false; reason: 'not_found'; message: string }
 
 /** id 生成：前缀 + uuid 前 8 hex（与 memory generateId 同约定） */
 function generateId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 8)}`
+}
+
+/** 单空间活跃页面配额（防单空间无限膨胀；超限返回 quota_exceeded） */
+export const WIKI_PAGE_QUOTA_PER_SPACE = 5000
+
+/**
+ * 敏感内容模式（凭据/私钥类）。
+ *
+ * 只对**非人工**写入生效（Agent / 抽取 / 导入）：模型从会话轨迹里捞出的密钥、
+ * token 不应被自动沉淀成长期知识。用户经可信界面手写的正文由用户自己负责，
+ * 不做拦截（知识库记录「如何配置密钥」是正当用途，硬拦会误伤真实文档）。
+ *
+ * 命中后**只回传模式名称**，绝不回显匹配到的文本片段（脱敏纪律）。
+ */
+const SENSITIVE_PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  { name: 'openai_key', re: /\bsk-[A-Za-z0-9_-]{20,}\b/ },
+  { name: 'anthropic_key', re: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/ },
+  { name: 'aws_access_key', re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: 'github_token', re: /\bgh[pousr]_[A-Za-z0-9]{30,}\b/ },
+  { name: 'google_api_key', re: /\bAIza[0-9A-Za-z_-]{35}\b/ },
+  { name: 'slack_token', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
+  { name: 'private_key_block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: 'jwt', re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/ },
+]
+
+/** 扫描敏感内容，返回命中的模式名（不含匹配文本）。 */
+export function scanSensitiveContent(body: string): string[] {
+  const hits: string[] = []
+  for (const p of SENSITIVE_PATTERNS) {
+    if (p.re.test(body)) hits.push(p.name)
+  }
+  return hits
+}
+
+/** 是否人工写入（用户经可信 UI 手写）——人工写入不受敏感内容闸门约束 */
+function isHumanAuthor(authorRole: string | undefined): boolean {
+  return authorRole == null || authorRole === 'manual_user'
 }
 
 /** title → slug：空格转连字符、去非安全字符、小写；中文保留（slug 语义为双链键）。 */
@@ -93,6 +169,8 @@ export class WikiWriteService {
     private readonly revisionRepo: WikiRevisionRepository,
     private readonly searchRepo: WikiSearchRepository,
     private readonly store: WikiStoreService,
+    /** 双链服务（派生数据；未注入时跳过图谱同步，仅测试/降级路径会出现） */
+    private readonly linkService?: WikiLinkService,
   ) {}
 
   // ─── 空间 ─────────────────────────────────────────────────────────────
@@ -162,6 +240,15 @@ export class WikiWriteService {
     if (space == null || space.archived === 1) {
       return { ok: false, reason: 'not_found', message: '目标空间不存在或已归档' }
     }
+    const sensitive = this.gateSensitive(input.body, input.authorRole)
+    if (sensitive != null) return sensitive
+    if (this.pageRepo.countActive(space.id) >= WIKI_PAGE_QUOTA_PER_SPACE) {
+      return {
+        ok: false,
+        reason: 'quota_exceeded',
+        message: `空间页面数已达上限 ${WIKI_PAGE_QUOTA_PER_SPACE}，请先归档或删除不再需要的页面`,
+      }
+    }
     let slug = slugifyTitle(title)
     if (slug.length === 0) slug = generateId('wp').slice(3) // 纯符号标题兜底
     if (this.pageRepo.getBySlug(input.spaceId, slug) != null) {
@@ -226,8 +313,9 @@ export class WikiWriteService {
     // UNIQUE(page_id, version) 而被 INSERT OR IGNORE 吞掉，导致 v1 的快照
     // 路径永久丢失、且 v2 之后再无任何版本记录。
     const indexReady = this.isIndexReady()
+    const linksReady = this.syncLinksAfterWrite(space.id, row, pageBody)
     log.info(`wiki page created: id=${row.id} space=${row.space_id} version=${row.version}`)
-    return { ok: true, row, created: true, indexReady }
+    return { ok: true, row, created: true, indexReady, linksReady }
   }
 
   private async updatePage(pageId: string, input: WikiPageWriteInput): Promise<WikiWriteResult> {
@@ -244,6 +332,10 @@ export class WikiWriteService {
     }
 
     const body = input.body ?? null
+    if (body != null) {
+      const sensitive = this.gateSensitive(body, input.authorRole)
+      if (sensitive != null) return sensitive
+    }
     const title = input.title?.trim() ?? existing.title
     const summary = input.summary ?? existing.summary
     const textChanged = body != null || title !== existing.title || summary !== existing.summary
@@ -278,13 +370,7 @@ export class WikiWriteService {
     // 读取守卫会拒绝采信 → 页面降级不可读直到下一次成功提交。
     let newFilePath = existing.file_path
     if (body != null) {
-      newFilePath = await this.store.writeBody(
-        space.scope,
-        space.scope_ref,
-        space.id,
-        pageId,
-        body,
-      )
+      newFilePath = await this.store.writeBody(space.scope, space.scope_ref, space.id, pageId, body)
     }
 
     const patch: Parameters<WikiPageRepository['compareAndSwap']>[2] = {
@@ -293,6 +379,7 @@ export class WikiWriteService {
       ...(summary !== existing.summary ? { summary } : {}),
       ...(input.tags != null ? { tags_json: JSON.stringify(input.tags) } : {}),
       ...(input.parentId !== undefined ? { parent_id: input.parentId } : {}),
+      ...(input.sortOrder != null ? { sort_order: input.sortOrder } : {}),
       ...(input.status != null ? { status: input.status } : {}),
       ...(newFilePath !== existing.file_path ? { file_path: newFilePath } : {}),
     }
@@ -325,10 +412,250 @@ export class WikiWriteService {
       oldBody,
       oldBodyReadFailed,
       actor: input.authorRole ?? 'manual_user',
+      changeKind: input.changeKind ?? 'edit',
+      changeNote: input.changeNote ?? null,
     })
     const ready = this.isIndexReady()
+    // 双链重建用「本次实际生效的正文」：未改正文时用旧正文（边集合不变，
+    // 但目标页可能在此期间创建/改名，重建可顺带修好解析）。
+    const effectiveBody = body ?? oldBody ?? ''
+    const linksReady = this.syncLinksAfterWrite(space.id, next, effectiveBody, {
+      titleChanged: next.title !== existing.title,
+      previousSlug: existing.slug,
+    })
     log.info(`wiki page updated: id=${pageId} version=${next.version}`)
-    return { ok: true, row: next, created: false, indexReady: ready }
+    return { ok: true, row: next, created: false, indexReady: ready, linksReady }
+  }
+
+  // ─── 归档 / 删除（删除屏障） ────────────────────────────────────────────
+
+  /**
+   * 归档页面（可恢复，非物理删除）。
+   * 图谱处理：出边删除（内容退出图谱）+ 入边降级为红链（保留文本引用）。
+   */
+  async archivePage(pageId: string): Promise<WikiRemoveResult> {
+    const existing = this.pageRepo.getById(pageId)
+    if (existing == null) {
+      return { ok: false, reason: 'not_found', message: '页面不存在' }
+    }
+    if (existing.status === 'archived') {
+      return { ok: true, row: existing, alreadyArchived: true }
+    }
+    try {
+      this.pageRepo.archive(pageId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`wiki page archive 失败：id=${pageId} — ${msg}`)
+      return { ok: false, reason: 'io_failed', message: `归档失败：${msg}` }
+    }
+    this.linkService?.onPageArchived(pageId)
+    const row = this.pageRepo.getById(pageId) ?? { ...existing, status: 'archived' as const }
+    log.info(`wiki page archived: id=${pageId}`)
+    return { ok: true, row, alreadyArchived: false }
+  }
+
+  /**
+   * 物理删除页面（删除屏障，不可恢复）。
+   *
+   * 清理顺序（先断图、再删索引与行、最后清文件），全部按「不可逆但可幂等重试」设计：
+   *   1. 图谱边（双向）—— 不保留已删页面的标题副本，避免内容经 to_title 泄漏；
+   *   2. wiki_fts（随 pageRepo.delete 同事务）与 wiki_page 行；
+   *   3. wiki_revision 版本记录 —— 快照里的旧正文同属被删内容；
+   *   4. 正文文件与版本快照目录。
+   *
+   * 脱敏纪律：本方法**不读取**正文，也不把任何正文片段写进日志或返回值。
+   * 文件清理失败不回滚 DB（行已删则页面已不可见），如实回传清理状态供上层提示。
+   */
+  async deletePage(pageId: string): Promise<WikiDeleteResult> {
+    const existing = this.pageRepo.getById(pageId)
+    if (existing == null) {
+      return { ok: false, reason: 'not_found', message: '页面不存在（可能已被删除）' }
+    }
+    try {
+      this.linkService?.onPageDeleted(pageId)
+      this.pageRepo.delete(pageId)
+      this.revisionRepo.deleteByPage(pageId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`wiki page delete DB 阶段失败：id=${pageId} — ${msg}`)
+      return { ok: false, reason: 'not_found', message: `删除失败：${msg}` }
+    }
+
+    let fileCleaned = true
+    let revisionsCleaned = true
+    try {
+      await this.store.deleteBody(existing.file_path)
+    } catch (err) {
+      fileCleaned = false
+      log.warn(
+        `wiki 删除后正文文件清理失败（页面已不可见，文件可再手动清理）：id=${pageId} — ` +
+          (err instanceof Error ? err.message : String(err)),
+      )
+    }
+    try {
+      await this.store.deleteRevisions(pageId)
+    } catch (err) {
+      revisionsCleaned = false
+      log.warn(
+        `wiki 删除后版本快照清理失败：id=${pageId} — ` +
+          (err instanceof Error ? err.message : String(err)),
+      )
+    }
+    log.info(
+      `wiki page deleted（删除屏障）: id=${pageId} fileCleaned=${fileCleaned} revisionsCleaned=${revisionsCleaned}`,
+    )
+    return { ok: true, id: pageId, title: existing.title, fileCleaned, revisionsCleaned }
+  }
+
+  /**
+   * 取消归档：恢复为可编辑的 published 状态，并重建 [[双链]] 图谱。
+   *
+   * 与归档对称：归档时出边删除、入边降级为红链；还原时按正文重建出边，
+   * 并让空间内指向本页的红链重新连上（所以归档期间别人写的引用不会丢）。
+   */
+  async restoreFromArchive(pageId: string): Promise<WikiWriteResult> {
+    const existing = this.pageRepo.getById(pageId)
+    if (existing == null) {
+      return { ok: false, reason: 'not_found', message: '页面不存在' }
+    }
+    if (existing.status !== 'archived') {
+      return {
+        ok: true,
+        row: existing,
+        created: false,
+        indexReady: this.isIndexReady(),
+        linksReady: true,
+      }
+    }
+    const space = this.spaceRepo.getById(existing.space_id)
+    if (space == null) {
+      return { ok: false, reason: 'not_found', message: '页面所属空间不存在' }
+    }
+    const body = await this.store.readBody(existing.file_path).catch(() => null)
+    if (body == null) {
+      return {
+        ok: false,
+        reason: 'not_found',
+        message: '正文文件缺失，无法还原（归档期间文件被外部删除）',
+      }
+    }
+    let next: WikiPageRow
+    try {
+      next = this.pageRepo.update(pageId, { status: 'published' }, body)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`wiki 取消归档失败：id=${pageId} — ${msg}`)
+      return { ok: false, reason: 'io_failed', message: `还原失败：${msg}` }
+    }
+    const linksReady = this.syncLinksAfterWrite(space.id, next, body)
+    log.info(`wiki page restored from archive: id=${pageId} version=${next.version}`)
+    return { ok: true, row: next, created: false, indexReady: this.isIndexReady(), linksReady }
+  }
+
+  // ─── 版本还原 ─────────────────────────────────────────────────────────
+
+  /**
+   * 把某个历史版本还原为当前版本（CAS 保护，自身也产生一条新版本）。
+   *
+   * 语义：还原 = 用历史正文/标题/摘要做一次普通提交，因此不破坏历史链
+   * （v_n+1 取代 v_n，v_n 进版本表并标注 change_kind='restore'）。
+   * 快照缺失或与记录的指纹不符时拒绝还原，不拿不确定的内容覆盖权威正文。
+   */
+  async restoreVersion(input: {
+    pageId: string
+    version: number
+    expectedVersion?: number
+    actor?: string
+  }): Promise<WikiWriteResult> {
+    const page = this.pageRepo.getById(input.pageId)
+    if (page == null) return { ok: false, reason: 'not_found', message: '页面不存在' }
+    const revision = this.revisionRepo.getByVersion(input.pageId, input.version)
+    if (revision == null || revision.body_snapshot_path == null) {
+      return {
+        ok: false,
+        reason: 'not_found',
+        message: `版本 v${input.version} 不在可还原的历史中（当前版本直接读取正文即可）`,
+      }
+    }
+    // 声明不带初始化：try 成功时赋读取结果、抛错时 catch 置 null，
+    // 两条路径都赋值，预置的 null 永不被读（no-useless-assignment）。
+    let body: string | null
+    try {
+      body = await this.store.readBody(revision.body_snapshot_path)
+    } catch {
+      body = null
+    }
+    if (body == null) {
+      return { ok: false, reason: 'not_found', message: `版本 v${input.version} 的正文快照已缺失` }
+    }
+    // 指纹校验：快照写入时旧正文可能不可读（留空 + 标注），此时不能拿空串覆盖权威正文
+    if (hashWikiBody(body) !== revision.content_hash && body.trim().length === 0) {
+      return {
+        ok: false,
+        reason: 'validation',
+        message: `版本 v${input.version} 的正文快照在写入时不可读，无法还原`,
+      }
+    }
+    return this.updatePage(input.pageId, {
+      body,
+      title: revision.title,
+      summary: revision.summary,
+      ...(input.expectedVersion != null ? { expectedVersion: input.expectedVersion } : {}),
+      authorRole: input.actor ?? 'manual_user',
+      changeKind: 'restore',
+      changeNote: `由 v${input.version} 还原`,
+    })
+  }
+
+  // ─── 写入闸门（内部） ──────────────────────────────────────────────────
+
+  /**
+   * 敏感内容闸门：Agent / 抽取 / 导入来源的正文命中凭据模式时拒绝落库。
+   * 人工写入（manual_user，含用户经 IPC 与可信 UI 的写入）不受约束 —— 知识库
+   * 记录「如何配置某某密钥」是正当用途，硬拦会误伤真实文档。
+   */
+  private gateSensitive(
+    body: string,
+    authorRole: string | undefined,
+  ): { ok: false; reason: 'sensitive_content'; message: string } | null {
+    if (isHumanAuthor(authorRole)) return null
+    const hits = scanSensitiveContent(body)
+    if (hits.length === 0) return null
+    log.warn(
+      `wiki 写入被敏感内容闸门拦截：authorRole=${authorRole ?? 'unknown'} 命中类型=[${hits.join(',')}]（正文未落库，未记录任何片段）`,
+    )
+    return {
+      ok: false,
+      reason: 'sensitive_content',
+      message: `正文疑似包含凭据（${hits.join(',')}），已拦截。请移除密钥后重试，或由用户在知识库界面中手动写入。`,
+    }
+  }
+
+  /**
+   * 提交成功后的 [[双链]] 重建 + 红链回填（派生数据，失败只降级不抛）。
+   * @returns 图谱写就是否成功（写进回执的 linksReady）
+   */
+  private syncLinksAfterWrite(
+    spaceId: string,
+    row: WikiPageRow,
+    body: string,
+    _opts?: { titleChanged?: boolean; previousSlug?: string },
+  ): boolean {
+    if (this.linkService == null) return false
+    const sync = this.linkService.syncPageLinks({
+      spaceId,
+      pageId: row.id,
+      title: row.title,
+      body,
+    })
+    // 本页可能正是别人正文里 [[标题]] 指向的红链目标 —— 建页 / 改名后回填。
+    this.linkService.claimRedLinks({
+      spaceId,
+      pageId: row.id,
+      slug: row.slug,
+      title: row.title,
+    })
+    return sync.ok
   }
 
   /** FTS 索引就绪判定：表存在即就绪（同事务维护）；不存在 = 降级未索引。 */
@@ -357,6 +684,8 @@ export class WikiWriteService {
     oldBody: string | null
     oldBodyReadFailed: boolean
     actor: string
+    changeKind: WikiRevisionChangeKind
+    changeNote: string | null
   }): Promise<void> {
     const { pageId, existing, nextVersion, oldBody, oldBodyReadFailed, actor } = input
     if (nextVersion === existing.version) return
@@ -373,8 +702,8 @@ export class WikiWriteService {
         title: existing.title,
         summary: existing.summary,
         body_snapshot_path: snapshotPath,
-        change_kind: 'edit',
-        change_note: oldBodyReadFailed ? '前一版正文在提交时不可读，快照留空' : null,
+        change_kind: input.changeKind,
+        change_note: oldBodyReadFailed ? '前一版正文在提交时不可读，快照留空' : input.changeNote,
         actor,
       })
     } catch (err) {
@@ -416,16 +745,15 @@ export class WikiWriteService {
     if (current == null) return
     if (current.content_hash != null && current.content_hash !== hashWikiBody(oldBody)) return
 
-    let fileNow: string | null = null
+    // 同 restoreRevision：声明不带初始化，try/catch 两条路径都赋值。
+    let fileNow: string | null
     try {
       fileNow = await this.store.readBody(current.file_path)
     } catch {
       fileNow = null
     }
     if (fileNow == null || hashWikiBody(fileNow) !== hashWikiBody(newBody)) {
-      log.info(
-        `wiki CAS 失配后检测到文件非本提交快照（并发推进或不可读），放弃回滚：id=${pageId}`,
-      )
+      log.info(`wiki CAS 失配后检测到文件非本提交快照（并发推进或不可读），放弃回滚：id=${pageId}`)
       return
     }
     try {

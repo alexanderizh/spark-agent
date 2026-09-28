@@ -104,6 +104,40 @@ export interface WikiWriteReceipt {
   indexReady: boolean
 }
 
+/** 反向链接条目（L4 / 详情页右栏） */
+export interface WikiBacklinkEntry {
+  fromPage: string
+  fromTitle: string
+  fromKind: WikiPageKind
+  linkType: 'wiki' | 'reference'
+  createdAt: number
+}
+
+/** 历史版本正文（版本预览 / diff 用；正文只在用户显式请求时返回） */
+export interface WikiRevisionDetail {
+  pageId: string
+  version: number
+  title: string
+  summary: string
+  contentHash: string
+  changeKind: 'create' | 'edit' | 'restore' | 'delete'
+  changeNote: string | null
+  actor: string | null
+  createdAt: number
+  /** 快照正文；快照缺失时为 null（如实告知，不假装有内容） */
+  body: string | null
+  unavailableReason: string | null
+}
+
+/** 物理删除回执（删除屏障：如实标注文件与快照是否清理完成） */
+export interface WikiDeleteReceipt {
+  ok: boolean
+  id: string
+  title: string
+  fileCleaned: boolean
+  revisionsCleaned: boolean
+}
+
 export interface WikiPageVersionEntry {
   version: number
   contentHash: string
@@ -136,9 +170,13 @@ export interface WikiIpcChannelMap {
     WikiWriteReceipt & { spaceId: string },
   ]
   'wiki:space:archive': [{ spaceId: string }, WikiWriteReceipt]
+  'wiki:space:update': [
+    { spaceId: string; name?: string; description?: string; icon?: string | null },
+    { space: WikiSpaceSummary },
+  ]
 
   'wiki:page:list': [
-    { spaceId: string; parentId?: string | null; kind?: WikiPageKind },
+    { spaceId: string; parentId?: string | null; kind?: WikiPageKind; includeArchived?: boolean },
     { pages: WikiPageMeta[] },
   ]
   'wiki:page:get': [{ pageId: string }, { page: WikiPageDetail }]
@@ -170,7 +208,23 @@ export interface WikiIpcChannelMap {
     WikiWriteReceipt,
   ]
   'wiki:page:archive': [{ pageId: string }, WikiWriteReceipt]
+  'wiki:page:restore': [{ pageId: string }, WikiWriteReceipt]
+  'wiki:page:delete': [{ pageId: string }, WikiDeleteReceipt]
+  'wiki:page:move': [
+    { pageId: string; parentId: string | null; sortOrder?: number; expectedVersion: number },
+    WikiWriteReceipt,
+  ]
   'wiki:page:history': [{ pageId: string }, { versions: WikiPageVersionEntry[] }]
+  'wiki:page:revision:read': [{ pageId: string; version: number }, { revision: WikiRevisionDetail }]
+  'wiki:page:revision:restore': [
+    { pageId: string; version: number; expectedVersion: number },
+    WikiWriteReceipt,
+  ]
+  'wiki:page:backlinks': [{ pageId: string }, { items: WikiBacklinkEntry[]; total: number }]
+  'wiki:page:link': [
+    { fromPageId: string; toPageId: string; remove?: boolean },
+    { ok: boolean; changed: boolean },
+  ]
 
   'wiki:search': [
     { query: string; spaceIds?: string[]; kind?: WikiPageKind; limit?: number },
@@ -205,10 +259,18 @@ export const WikiIpcSchemaRegistry = {
     spaceId: z.string().min(1).max(64),
   }),
 
+  'wiki:space:update': z.object({
+    spaceId: z.string().min(1).max(64),
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().max(400).optional(),
+    icon: z.string().max(64).nullable().optional(),
+  }),
+
   'wiki:page:list': z.object({
     spaceId: z.string().min(1).max(64),
     parentId: z.string().nullable().optional(),
     kind: WikiPageKindSchema.optional(),
+    includeArchived: z.boolean().optional(),
   }),
   'wiki:page:get': z.object({
     pageId: z.string().min(1).max(64),
@@ -237,8 +299,37 @@ export const WikiIpcSchemaRegistry = {
   'wiki:page:archive': z.object({
     pageId: z.string().min(1).max(64),
   }),
+  'wiki:page:restore': z.object({
+    pageId: z.string().min(1).max(64),
+  }),
+  'wiki:page:delete': z.object({
+    pageId: z.string().min(1).max(64),
+  }),
+  'wiki:page:move': z.object({
+    pageId: z.string().min(1).max(64),
+    parentId: z.string().min(1).max(64).nullable(),
+    sortOrder: z.number().int().min(0).max(100000).optional(),
+    expectedVersion: z.number().int().min(1),
+  }),
   'wiki:page:history': z.object({
     pageId: z.string().min(1).max(64),
+  }),
+  'wiki:page:revision:read': z.object({
+    pageId: z.string().min(1).max(64),
+    version: z.number().int().min(1),
+  }),
+  'wiki:page:revision:restore': z.object({
+    pageId: z.string().min(1).max(64),
+    version: z.number().int().min(1),
+    expectedVersion: z.number().int().min(1),
+  }),
+  'wiki:page:backlinks': z.object({
+    pageId: z.string().min(1).max(64),
+  }),
+  'wiki:page:link': z.object({
+    fromPageId: z.string().min(1).max(64),
+    toPageId: z.string().min(1).max(64),
+    remove: z.boolean().optional(),
   }),
 
   'wiki:search': z.object({

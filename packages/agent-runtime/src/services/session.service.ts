@@ -513,13 +513,19 @@ import {
   WikiSearchRepository,
   WikiRevisionRepository,
 } from '@spark/storage'
-import { WikiStoreService } from './wiki/wiki-store.service.js'
-import { WikiSpaceService, type WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
-import { WikiSearchService } from './wiki/wiki-search.service.js'
-import { WikiPageService } from './wiki/wiki-page.service.js'
-import { WikiWriteService } from './wiki/wiki-write.service.js'
-import { resolveWikiBudget } from './wiki/wiki-context-budget.js'
-import { WIKI_TOOL_DEFINITIONS } from '../tools/wiki-tool-contract.js'
+import type { WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
+import {
+  createWikiServiceStack,
+  resolveWikiBudgetFromSettings,
+} from './wiki/wiki-service-stack.js'
+import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
+import {
+  WIKI_ADMIN_TOOL_NAME,
+  WIKI_DEFERRED_TOOL_NAMES,
+  WIKI_L0_PROMPT,
+  WIKI_TOOL_DEFINITIONS,
+  resolveWikiMountPlan,
+} from '../tools/wiki-tool-contract.js'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
@@ -566,6 +572,34 @@ export interface WikiBridgeReadResult {
   truncated?: boolean
   nextOffset?: number | null
   tokens?: number
+  error?: string
+}
+
+/** wiki bridge 目录树结果项（L1：id + title + kind + hasChildren，无摘要无正文） */
+export interface WikiBridgeListItem {
+  id: string
+  title: string
+  kind: string
+  hasChildren: boolean
+  tokens: number
+}
+
+/** wiki bridge 反向链接结果项（L4） */
+export interface WikiBridgeBacklinkItem {
+  id: string
+  title: string
+  kind: string
+  linkType: 'wiki' | 'reference'
+  tokens: number
+}
+
+/** wiki bridge 写入回执（不含正文；error 非空 = 结构化失败原因） */
+export interface WikiBridgeWriteReceipt {
+  ok: boolean
+  id?: string
+  title?: string
+  version?: number
+  indexReady?: boolean
   error?: string
 }
 
@@ -1797,25 +1831,17 @@ export class SessionService {
   private buildWikiServices(sessionId: string, workspaceRootPath?: string) {
     const settingsRepo = new SettingsRepository(this.db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
-    const budget = resolveWikiBudget({
-      readMaxTokens: settingsGet('wiki', 'budget/readMaxTokens'),
-      searchLimit: settingsGet('wiki', 'budget/searchLimit'),
-      summaryChars: settingsGet('wiki', 'budget/summaryChars'),
-      turnTotal: settingsGet('wiki', 'budget/turnTotal'),
+    // 服务栈统一由工厂装配（保证双链服务等派生依赖不会在某条路径漏接）
+    const stack = createWikiServiceStack({
+      db: this.db,
+      budget: resolveWikiBudgetFromSettings(settingsGet),
+      ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
     })
-    const spaceRepo = new WikiSpaceRepository(this.db)
-    const pageRepo = new WikiPageRepository(this.db)
-    const searchRepo = new WikiSearchRepository(this.db)
-    const revisionRepo = new WikiRevisionRepository(this.db)
-    const store = new WikiStoreService(undefined, workspaceRootPath)
     return {
-      budget,
+      ...stack,
       scopes: this.resolveWikiScopesForSession(sessionId),
-      spaceService: new WikiSpaceService(spaceRepo),
-      searchService: new WikiSearchService(searchRepo, budget),
-      pageService: new WikiPageService(pageRepo, revisionRepo, store, budget),
-      writeService: new WikiWriteService(spaceRepo, pageRepo, revisionRepo, searchRepo, store),
-      spaceRepo,
+      /** 本会话的 wiki 工具挂载计划（工具瘦身档位来自设置，逐 turn 读取即时生效） */
+      mountPlan: resolveWikiMountPlan(settingsGet('wiki', 'budget/helpDisclosure') === true),
     }
   }
 
@@ -1903,6 +1929,183 @@ export class SessionService {
     })
     if (r.ok) return { ...r.page }
     return { error: r.message }
+  }
+
+  /**
+   * wiki 目录树桥（L1）。每节点 ≤ 20 token，无摘要无正文 —— 层级导航必须便宜。
+   * 越权防线：spaceId 必须落在会话可见空间集合内，否则返回空（不探测、不报错泄漏）。
+   */
+  async bridgeWikiList(params: {
+    sessionId: string
+    spaceId: string
+    parentId?: string
+  }): Promise<{ items: WikiBridgeListItem[]; total: number; truncated: boolean }> {
+    const wiki = this.buildWikiServices(params.sessionId)
+    const visible = this.resolveWikiVisibleSpaceIds(wiki.scopes)
+    if (!visible.includes(params.spaceId)) {
+      log.warn(`wiki list 拒绝越权空间：session=${params.sessionId} space=${params.spaceId}`)
+      return { items: [], total: 0, truncated: false }
+    }
+    return wiki.pageService.listForAgent({
+      spaceId: params.spaceId,
+      ...(params.parentId !== undefined ? { parentId: params.parentId } : {}),
+    })
+  }
+
+  /** wiki 反向链接桥（L4）。每边 ≤ 20 token；不可见页面一律返回空。 */
+  async bridgeWikiBacklinks(params: {
+    sessionId: string
+    pageId: string
+  }): Promise<{ items: WikiBridgeBacklinkItem[]; total: number; truncated: boolean }> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { items: [], total: 0, truncated: false }
+    }
+    return wiki.linkService.backlinksForAgent(params.pageId)
+  }
+
+  /**
+   * wiki 新建页面桥（Agent 路径）。
+   * 写入一律经 WikiWriteService 统一原语（CAS/配额/敏感闸门/索引就绪回执），
+   * authorRole 固定 'agent' —— 由宿主装配，不信任子进程自报。
+   */
+  async bridgeWikiWrite(params: {
+    sessionId: string
+    spaceId: string
+    title: string
+    body: string
+    kind?: string
+    summary?: string
+    tags?: string[]
+  }): Promise<WikiBridgeWriteReceipt> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.resolveWikiVisibleSpaceIds(wiki.scopes).includes(params.spaceId)) {
+      log.warn(`wiki write 拒绝越权空间：session=${params.sessionId} space=${params.spaceId}`)
+      return { ok: false, error: '目标空间不在本会话可见范围内' }
+    }
+    const result = await wiki.writeService.commitPage({
+      spaceId: params.spaceId,
+      title: params.title,
+      body: params.body,
+      ...(params.kind != null ? { kind: params.kind as never } : {}),
+      ...(params.summary != null ? { summary: params.summary } : {}),
+      ...(params.tags != null ? { tags: params.tags } : {}),
+      authorRole: 'agent',
+    })
+    if (!result.ok) return { ok: false, error: result.message }
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  }
+
+  /** wiki 更新页面桥（CAS）。失配时回传当前版本，供 Agent 重读后重试。 */
+  async bridgeWikiUpdate(params: {
+    sessionId: string
+    pageId: string
+    expectedVersion: number
+    title?: string
+    body?: string
+    summary?: string
+    tags?: string[]
+  }): Promise<WikiBridgeWriteReceipt> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const result = await wiki.writeService.commitPage({
+      pageId: params.pageId,
+      expectedVersion: params.expectedVersion,
+      ...(params.title != null ? { title: params.title } : {}),
+      ...(params.body != null ? { body: params.body } : {}),
+      ...(params.summary != null ? { summary: params.summary } : {}),
+      ...(params.tags != null ? { tags: params.tags } : {}),
+      authorRole: 'agent',
+    })
+    if (!result.ok) return { ok: false, error: result.message }
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  }
+
+  /** wiki 归档页面桥（可恢复）。 */
+  async bridgeWikiArchive(params: {
+    sessionId: string
+    pageId: string
+  }): Promise<WikiBridgeWriteReceipt> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const result = await wiki.writeService.archivePage(params.pageId)
+    if (!result.ok) return { ok: false, error: result.message }
+    return { ok: true, id: result.row.id, title: result.row.title, version: result.row.version }
+  }
+
+  /** wiki 物理删除页面桥（删除屏障，不可恢复）。 */
+  async bridgeWikiDelete(params: {
+    sessionId: string
+    pageId: string
+  }): Promise<{ ok: boolean; id?: string; title?: string; error?: string }> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const result = await wiki.writeService.deletePage(params.pageId)
+    if (!result.ok) return { ok: false, error: result.message }
+    return { ok: true, id: result.id, title: result.title }
+  }
+
+  /** wiki 显式关联桥（reference 边）。 */
+  async bridgeWikiLink(params: {
+    sessionId: string
+    fromPageId: string
+    toPageId: string
+    remove?: boolean
+  }): Promise<{ ok: boolean; changed?: boolean; error?: string }> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (
+      !this.isWikiPageVisible(wiki, params.fromPageId) ||
+      !this.isWikiPageVisible(wiki, params.toPageId)
+    ) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const result = wiki.linkService.setReference({
+      fromPageId: params.fromPageId,
+      toPageId: params.toPageId,
+      ...(params.remove === true ? { remove: true } : {}),
+    })
+    if (!result.ok) return { ok: false, error: result.message }
+    return { ok: true, changed: result.changed }
+  }
+
+  /** 会话可见空间 id 集合（读/写共用的越权防线）。 */
+  private resolveWikiVisibleSpaceIds(scopes: WikiSpaceScopeFilter[]): string[] {
+    const repo = new WikiSpaceRepository(this.db)
+    return repo.listByScopes(scopes).map((r) => r.id)
+  }
+
+  /** 页面是否落在会话可见空间内（页面本身不存在时同样返回 false）。 */
+  private isWikiPageVisible(
+    wiki: { pageRepo: WikiPageRepository; scopes: WikiSpaceScopeFilter[] },
+    pageId: string,
+  ): boolean {
+    const page = wiki.pageRepo.getById(pageId)
+    if (page == null) return false
+    return this.resolveWikiVisibleSpaceIds(wiki.scopes).includes(page.space_id)
   }
 
   /** 检索空间收窄：显式 spaceId 必须在会话可见集合内（防越权探测）。 */
@@ -2888,6 +3091,8 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+    // 单轮 wiki 注入记账按 turn 归零（总闸防的是"单轮失控"，不跨轮累计）
+    resetTurnWikiBudget(sessionId)
     // 吞吐口径落库（turn_perf_metrics，每 turn 一行）：provider/model 在下方解析，
     // 回调触发（终态）时闭包变量已定值；写入失败不阻塞事件流（非致命）。
     // 显式 undefined 初始化：变量在模型定值处唯一一次覆盖（闭包在终态时读取）。
@@ -4036,6 +4241,9 @@ export class SessionService {
       memoryBlock,
       MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       MEMORY_PROVENANCE_SYSTEM_PROMPT,
+      // 知识库 L0 能力声明：只说明"有这么一个可检索知识库以及取用顺序"，
+      // 不含任何知识内容（§8 零预注入第一原则）。所有知识仍须 wiki_* 主动取用。
+      WIKI_L0_PROMPT,
       // decomposed（Phase 3）：分流决策预填的子任务派发建议（仅 router 拆分轮次注入）
       autoRouterDispatchPrompt,
       conversationHistoryPrompt,
@@ -4050,6 +4258,7 @@ export class SessionService {
       memoryBlock,
       MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       MEMORY_PROVENANCE_SYSTEM_PROMPT,
+      WIKI_L0_PROMPT,
       ...trailingSystemPromptSections,
     )
     const composedSkillSystemPrompt = joinDistinctPromptSections(
@@ -5621,9 +5830,10 @@ export class SessionService {
       mcpServers,
     )
 
-    // spark_wiki（in-process 版，claude SDK 路径）：知识库只读三件套
-    // （list_spaces/search/read），返回经 WikiContextBudget 强制裁剪。
-    // CLI 路径在 tryStartCodexCliTurn 走 stdio 版（择一挂载）。
+    // spark_wiki（in-process 版，claude SDK 路径）：S1 挂载集 = 5 只读 + 5 写
+    // （只读免审批、写入走 canUseTool），返回经 WikiContextBudget 强制裁剪；
+    // 工具瘦身开启时低频工具收进 wiki_admin 二级入口（逐轮按设置解析）。
+    // CLI 路径在 tryStartCodexCliTurn 走 stdio 版（择一挂载，绝不同时挂两份）。
     await this.attachSparkWikiMcpServer(
       sessionId,
       { workspaceRootPath: config.workspaceRootPath },
@@ -7116,12 +7326,18 @@ export class SessionService {
   }
 
   /**
-   * Attach spark_wiki MCP server（in-process 版，claude SDK 路径）：
-   * wiki_list_spaces / wiki_search / wiki_read 三只读工具（S0 集）。
+   * Attach spark_wiki MCP server（in-process 版，claude SDK 路径）。
    *
-   * 所有返回经 WikiContextBudget 服务端裁剪（L1/L2/L3 渐进披露），正文
-   * 只在 wiki_read 分页出现。CLI 路径（codex / claude CLI）走 stdio
-   * resolveSparkWikiMcpServer → PlatformBridge → bridgeWiki*，同一套服务层。
+   * 挂载集由设置的「工具瘦身」档位决定（§8.3）：
+   *   - 关闭（默认）：5 只读 + 5 写全部挂载；
+   *   - 开启：核心六件套常驻，低频工具（backlinks/archive/delete/link）收进 wiki_admin。
+   * 写工具**不进 allowedTools**，因此由 SDK 走 canUseTool 审批；只读工具在
+   * spark-engine-runtime 的白名单里免审批。
+   *
+   * 所有返回经 WikiContextBudget 服务端裁剪（L1/L2/L3/L4 渐进披露），正文只在
+   * wiki_read 分页出现；写入一律经 WikiWriteService 统一原语。CLI 路径
+   * （codex / claude CLI）走 stdio resolveSparkWikiMcpServer → PlatformBridge →
+   * bridgeWiki*，同一套服务层。
    */
   private async attachSparkWikiMcpServer(
     sessionId: string,
@@ -7133,93 +7349,222 @@ export class SessionService {
       if (factory == null) return
       const { createSdkMcpServer, tool } = factory
       const wiki = this.buildWikiServices(sessionId, context.workspaceRootPath)
+      const plan = wiki.mountPlan
       const governanceOptions = {
         workspaceRootPath: context.workspaceRootPath,
         maxChars: this.getInProcessToolResultGovernance().inProcessMaxChars,
       }
 
-      const listSpacesTool = tool(
-        'wiki_list_spaces',
-        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list_spaces')!.description,
-        {} as Record<string, unknown>,
-        async () =>
-          governInProcessToolResult(
-            {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: this.summarizeWikiListSpaces(await this.bridgeWikiListSpaces({ sessionId })),
-                },
-              ],
-            },
-            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_list_spaces' },
-          ),
-      )
+      type ToolRunner = (args: Record<string, unknown>) => Promise<string>
+      const runners: Record<string, { description: string; schema: Record<string, unknown>; run: ToolRunner }> = {
+        wiki_list_spaces: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list_spaces')!.description,
+          schema: {},
+          run: async () => this.summarizeWikiListSpaces(await this.bridgeWikiListSpaces({ sessionId })),
+        },
+        wiki_list: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list')!.description,
+          schema: {
+            space_id: z.string().min(1).max(64),
+            parent_id: z.string().min(1).max(64).optional(),
+          },
+          run: async (args) =>
+            this.summarizeWikiList(
+              await this.bridgeWikiList({
+                sessionId,
+                spaceId: typeof args.space_id === 'string' ? args.space_id : '',
+                ...(typeof args.parent_id === 'string' && args.parent_id.length > 0
+                  ? { parentId: args.parent_id }
+                  : {}),
+              }),
+            ),
+        },
+        wiki_search: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_search')!.description,
+          schema: {
+            query: z.string().min(1).max(500),
+            space_id: z.string().min(1).max(64).optional(),
+            limit: z.number().int().min(1).max(20).optional(),
+          },
+          run: async (args) =>
+            this.summarizeWikiSearch(
+              await this.bridgeWikiSearch({
+                sessionId,
+                query: typeof args.query === 'string' ? args.query : '',
+                ...(typeof args.space_id === 'string' && args.space_id.length > 0
+                  ? { spaceId: args.space_id }
+                  : {}),
+                ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+              }),
+            ),
+        },
+        wiki_read: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_read')!.description,
+          schema: { id: z.string().min(1).max(64), offset: z.number().int().min(0).optional() },
+          run: async (args) =>
+            this.summarizeWikiRead(
+              await this.bridgeWikiRead({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+                ...(typeof args.offset === 'number' && args.offset > 0 ? { offset: args.offset } : {}),
+              }),
+            ),
+        },
+        wiki_backlinks: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_backlinks')!.description,
+          schema: { id: z.string().min(1).max(64) },
+          run: async (args) =>
+            this.summarizeWikiBacklinks(
+              await this.bridgeWikiBacklinks({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+              }),
+            ),
+        },
+        wiki_write: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_write')!.description,
+          schema: {
+            space_id: z.string().min(1).max(64),
+            title: z.string().min(1).max(200),
+            body: z.string().min(1),
+            kind: z.enum(['knowledge', 'experience', 'pattern', 'reference', 'note']).optional(),
+            summary: z.string().max(600).optional(),
+            tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+          },
+          run: async (args) =>
+            this.summarizeWikiWriteReceipt(
+              'wiki_write',
+              await this.bridgeWikiWrite({
+                sessionId,
+                spaceId: typeof args.space_id === 'string' ? args.space_id : '',
+                title: typeof args.title === 'string' ? args.title : '',
+                body: typeof args.body === 'string' ? args.body : '',
+                ...(typeof args.kind === 'string' ? { kind: args.kind } : {}),
+                ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
+                ...(Array.isArray(args.tags)
+                  ? { tags: args.tags.filter((t): t is string => typeof t === 'string') }
+                  : {}),
+              }),
+            ),
+        },
+        wiki_update: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_update')!.description,
+          schema: {
+            id: z.string().min(1).max(64),
+            expected_version: z.number().int().min(1),
+            title: z.string().min(1).max(200).optional(),
+            body: z.string().optional(),
+            summary: z.string().max(600).optional(),
+            tags: z.array(z.string().min(1).max(40)).max(20).optional(),
+          },
+          run: async (args) =>
+            this.summarizeWikiWriteReceipt(
+              'wiki_update',
+              await this.bridgeWikiUpdate({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+                expectedVersion: typeof args.expected_version === 'number' ? args.expected_version : 0,
+                ...(typeof args.title === 'string' ? { title: args.title } : {}),
+                ...(typeof args.body === 'string' ? { body: args.body } : {}),
+                ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
+                ...(Array.isArray(args.tags)
+                  ? { tags: args.tags.filter((t): t is string => typeof t === 'string') }
+                  : {}),
+              }),
+            ),
+        },
+        wiki_archive: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_archive')!.description,
+          schema: { id: z.string().min(1).max(64) },
+          run: async (args) =>
+            this.summarizeWikiWriteReceipt(
+              'wiki_archive',
+              await this.bridgeWikiArchive({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+              }),
+            ),
+        },
+        wiki_delete: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_delete')!.description,
+          schema: { id: z.string().min(1).max(64) },
+          run: async (args) => {
+            const receipt = await this.bridgeWikiDelete({
+              sessionId,
+              pageId: typeof args.id === 'string' ? args.id : '',
+            })
+            if (!receipt.ok) return `wiki_delete 失败：${receipt.error ?? '未知错误'}`
+            return `已删除 [${receipt.id}] ${receipt.title}`
+          },
+        },
+        wiki_link: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_link')!.description,
+          schema: {
+            from_id: z.string().min(1).max(64),
+            to_id: z.string().min(1).max(64),
+            remove: z.boolean().optional(),
+          },
+          run: async (args) => {
+            const receipt = await this.bridgeWikiLink({
+              sessionId,
+              fromPageId: typeof args.from_id === 'string' ? args.from_id : '',
+              toPageId: typeof args.to_id === 'string' ? args.to_id : '',
+              ...(args.remove === true ? { remove: true } : {}),
+            })
+            if (!receipt.ok) return `wiki_link 失败：${receipt.error ?? '未知错误'}`
+            return receipt.changed ? '关联已更新。' : '关联已是最新状态（无变化）。'
+          },
+        },
+      }
 
-      const searchWikiTool = tool(
-        'wiki_search',
-        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_search')!.description,
-        {
-          query: z.string().min(1).max(500),
-          space_id: z.string().min(1).max(64).optional(),
-          limit: z.number().int().min(1).max(20).optional(),
-        } as Record<string, unknown>,
-        async (args: Record<string, unknown>) =>
-          governInProcessToolResult(
-            {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: this.summarizeWikiSearch(
-                    await this.bridgeWikiSearch({
-                      sessionId,
-                      query: typeof args.query === 'string' ? args.query : '',
-                      ...(typeof args.space_id === 'string' && args.space_id.length > 0
-                        ? { spaceId: args.space_id }
-                        : {}),
-                      ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
-                    }),
-                  ),
-                },
-              ],
-            },
-            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_search' },
-          ),
-      )
+      const mounted = plan.toolNames.map((name) => {
+        const runner = runners[name]
+        if (runner == null) throw new Error(`未知的 wiki 工具定义：${name}`)
+        return tool(
+          name,
+          runner.description,
+          runner.schema as Record<string, unknown>,
+          async (args: Record<string, unknown>) =>
+            governInProcessToolResult(
+              { content: [{ type: 'text' as const, text: await runner.run(args) }] },
+              { ...governanceOptions, toolName: `mcp__spark_wiki__${name}` },
+            ),
+        )
+      })
 
-      const readWikiTool = tool(
-        'wiki_read',
-        WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_read')!.description,
-        {
-          id: z.string().min(1).max(64),
-          offset: z.number().int().min(0).optional(),
-        } as Record<string, unknown>,
-        async (args: Record<string, unknown>) =>
-          governInProcessToolResult(
+      // 工具瘦身：低频工具收进单一二级入口（能力不消失，只是不再各占常驻 schema）
+      if (plan.admin) {
+        mounted.push(
+          tool(
+            WIKI_ADMIN_TOOL_NAME,
+            WIKI_TOOL_DEFINITIONS.find((d) => d.name === WIKI_ADMIN_TOOL_NAME)!.description,
             {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: this.summarizeWikiRead(
-                    await this.bridgeWikiRead({
-                      sessionId,
-                      pageId: typeof args.id === 'string' ? args.id : '',
-                      ...(typeof args.offset === 'number' && args.offset > 0
-                        ? { offset: args.offset }
-                        : {}),
-                    }),
-                  ),
-                },
-              ],
+              tool: z.enum(WIKI_DEFERRED_TOOL_NAMES as unknown as [string, ...string[]]),
+              args: z.record(z.string(), z.unknown()).optional(),
+            } as Record<string, unknown>,
+            async (args: Record<string, unknown>) => {
+              const target = typeof args.tool === 'string' ? args.tool : ''
+              const runner = runners[target]
+              if (runner == null) {
+                return { content: [{ type: 'text' as const, text: `未知的 wiki 低频工具：${target}` }] }
+              }
+              const inner =
+                args.args != null && typeof args.args === 'object'
+                  ? (args.args as Record<string, unknown>)
+                  : {}
+              return governInProcessToolResult(
+                { content: [{ type: 'text' as const, text: await runner.run(inner) }] },
+                { ...governanceOptions, toolName: `mcp__spark_wiki__${target}` },
+              )
             },
-            { ...governanceOptions, toolName: 'mcp__spark_wiki__wiki_read' },
           ),
-      )
+        )
+      }
 
       mcpServers.spark_wiki = createSdkMcpServer({
         name: 'spark_wiki',
-        version: '1.0.0',
-        tools: [listSpacesTool, searchWikiTool, readWikiTool],
+        version: '1.1.0',
+        tools: mounted,
       })
     } catch (err) {
       log.warn(
@@ -7266,6 +7611,49 @@ export class SessionService {
       text += `\n\n[truncated] 正文超单页上限，已返回前 ${data.tokens} token；续读请传 offset=${data.nextOffset}`
     }
     return text
+  }
+
+  private summarizeWikiList(data: {
+    items: WikiBridgeListItem[]
+    total: number
+    truncated: boolean
+  }): string {
+    if (data.items.length === 0) return '该层级下没有页面。'
+    const lines = data.items.map(
+      (p) => `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''})`,
+    )
+    let text = lines.join('\n')
+    if (data.truncated) text += `\n（该层共 ${data.total} 个节点，仅显示前 ${data.items.length} 个）`
+    return text
+  }
+
+  private summarizeWikiBacklinks(data: {
+    items: WikiBridgeBacklinkItem[]
+    total: number
+    truncated: boolean
+  }): string {
+    if (data.items.length === 0) return '没有页面引用该页。'
+    let text = data.items
+      .map(
+        (b) =>
+          `- [${b.id}] ${b.title} (${b.kind}${b.linkType === 'reference' ? ', 显式关联' : ''})`,
+      )
+      .join('\n')
+    if (data.truncated) text += `\n（共 ${data.total} 条引用，仅显示前 ${data.items.length} 条）`
+    return text
+  }
+
+  /**
+   * 写入类回执的 agent 可读文本。回执**只含 id/标题/版本/索引状态**，
+   * 绝不复述正文（§7.2 回执瘦身 ≤40 token）。
+   */
+  private summarizeWikiWriteReceipt(kind: string, receipt: WikiBridgeWriteReceipt): string {
+    if (!receipt.ok) return `${kind} 失败：${receipt.error ?? '未知错误'}`
+    const indexNote = receipt.indexReady === false ? '，检索索引未就绪' : ''
+    if (kind === 'wiki_archive') {
+      return `已归档 [${receipt.id}] ${receipt.title}`
+    }
+    return `已写入 [${receipt.id}] ${receipt.title}（v${receipt.version}${indexNote}）`
   }
 
   /**

@@ -172,7 +172,8 @@ export class SessionMcpTooling {
       })
     await pluginManager.initialize()
     const skillLoader = new SkillLoader(skillRepo)
-    const { TeamRegistryConfigStore, TeamRegistryService } = await import('../team-registry/index.js')
+    const { TeamRegistryConfigStore, TeamRegistryService } =
+      await import('../team-registry/index.js')
     const skillRegistryService = new SkillRegistryService(
       this.db,
       this.host.getUserSkillsDir() ?? undefined,
@@ -416,6 +417,11 @@ export class SessionMcpTooling {
         env: {
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_WIKI_SID: sessionId,
+          // 工具瘦身档位（wiki/budget/helpDisclosure）：逐轮读取，设置保存即生效
+          SPARK_WIKI_HELP_DISCLOSURE:
+            new SettingsRepository(this.db).get('wiki', 'budget/helpDisclosure') === true
+              ? '1'
+              : '0',
         },
       }
     } catch (err) {

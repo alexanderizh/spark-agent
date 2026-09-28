@@ -19,15 +19,45 @@
  */
 
 import { estimateTokens } from '@spark/shared'
+import { WIKI_SETTING_BY_KEY } from '@spark/protocol'
 
-/** 服务端硬上限（设置不可超越，防误设导致上下文爆炸） */
+/** 读取 protocol 定义的默认值（缺失时用兜底） */
+function protoDefault(key: string, fallback: number): number {
+  const def = WIKI_SETTING_BY_KEY.get(key)
+  return typeof def?.default === 'number' ? def.default : fallback
+}
+
+/** 读取 protocol 定义的 UI 可用下限（缺省回退） */
+function protoMin(key: string, fallback: number): number {
+  const def = WIKI_SETTING_BY_KEY.get(key)
+  return typeof def?.min === 'number' ? def.min : fallback
+}
+
+/** 读取 protocol 定义的 UI 可用上限（缺省回退） */
+function protoMax(key: string, fallback: number): number {
+  const def = WIKI_SETTING_BY_KEY.get(key)
+  return typeof def?.max === 'number' ? def.max : fallback
+}
+
+/**
+ * 服务端硬上限（设置不可超越，防误设导致上下文爆炸）。
+ *
+ * 数值来自 protocol 的设置定义（单一事实源），此处只做「取不到定义时的兜底」，
+ * 保证 @spark/protocol 与运行时永不漂移。
+ */
+function protoNumber(key: string, fallback: number): number {
+  const def = WIKI_SETTING_BY_KEY.get(key)
+  const v = def?.type === 'number' ? (def.hardMax ?? def.max) : undefined
+  return typeof v === 'number' ? v : fallback
+}
+
 export const WIKI_BUDGET_HARD_LIMITS = {
   /** wiki_read 单页 token 硬上限 */
-  readMaxTokens: 8000,
+  readMaxTokens: protoNumber('budget/readMaxTokens', 8000),
   /** 单轮 wiki 注入总闸硬上限 */
-  turnTotal: 20000,
+  turnTotal: protoNumber('budget/turnTotal', 20000),
   /** wiki_search top-K 硬上限 */
-  searchLimit: 20,
+  searchLimit: protoNumber('budget/searchLimit', 20),
 } as const
 
 /** 预算档（全部来自设置或默认值，已在本层钳制到硬上限内） */
@@ -42,11 +72,12 @@ export interface WikiBudgetProfile {
   turnTotal: number
 }
 
+/** 默认预算档：取自 protocol 设置定义的 default（单一事实源） */
 export const DEFAULT_WIKI_BUDGET: WikiBudgetProfile = {
-  readMaxTokens: 3000,
-  searchLimit: 8,
-  summaryChars: 240,
-  turnTotal: 8000,
+  readMaxTokens: protoDefault('budget/readMaxTokens', 3000),
+  searchLimit: protoDefault('budget/searchLimit', 8),
+  summaryChars: protoDefault('budget/summaryChars', 240),
+  turnTotal: protoDefault('budget/turnTotal', 8000),
 }
 
 /** 从设置读取构建预算档：未知/越界值回退默认并钳制到硬上限。 */
@@ -65,23 +96,111 @@ export function resolveWikiBudget(raw: {
     readMaxTokens: clampInt(
       raw.readMaxTokens,
       DEFAULT_WIKI_BUDGET.readMaxTokens,
-      1000,
+      protoMin('budget/readMaxTokens', 1000),
       WIKI_BUDGET_HARD_LIMITS.readMaxTokens,
     ),
     searchLimit: clampInt(
       raw.searchLimit,
       DEFAULT_WIKI_BUDGET.searchLimit,
-      3,
+      protoMin('budget/searchLimit', 3),
       WIKI_BUDGET_HARD_LIMITS.searchLimit,
     ),
-    summaryChars: clampInt(raw.summaryChars, DEFAULT_WIKI_BUDGET.summaryChars, 60, 600),
+    summaryChars: clampInt(
+      raw.summaryChars,
+      DEFAULT_WIKI_BUDGET.summaryChars,
+      protoMin('budget/summaryChars', 60),
+      protoMax('budget/summaryChars', 600),
+    ),
     turnTotal: clampInt(
       raw.turnTotal,
       DEFAULT_WIKI_BUDGET.turnTotal,
-      1000,
+      protoMin('budget/turnTotal', 1000),
       WIKI_BUDGET_HARD_LIMITS.turnTotal,
     ),
   }
+}
+
+/**
+ * 列表 / 检索类返回项的 token 目标（§7.2：每节点、每条命中的上下文预算）。
+ *
+ * 为什么要有地板概念：条目里 id + kind + 布尔/枚举字段是结构化骨架，约 18 token，
+ * 只有 title/summary 是可压缩的。因此「服务端强制裁剪」的可执行含义是
+ * **把可变字段压到目标内**，而不是把条目删到只剩 id（那会让导航失去意义）。
+ * 地板本身超过目标时如实返回地板值，不做"删字段凑数"这种自欺裁剪。
+ */
+export const WIKI_ITEM_TOKEN_TARGETS = {
+  /**
+   * L1 目录树节点：id + title + kind + hasChildren。
+   *
+   * 方案 §7.2 起草时写的是 20，但实测**结构地板**（空标题时的 id + kind +
+   * 布尔字段，JSON 形态）已是 22 token，20 在该字段集下不可达；而把标题压到
+   * 空或只剩省略号会让目录树失去导航价值。故取 30：地板 22 + 约 8 token 的
+   * 标题余量（≈4~8 个中日韩字符）。这是"先给足、再按观测收紧"原则下的实测取值，
+   * 不是放宽约束——超长标题仍被服务端强制截断（见下方 fitTitleToItemBudget）。
+   */
+  listNode: 30,
+  /** L4 反向链接边：id + title + kind + linkType（地板同 L1，取 30 同理） */
+  backlinkEdge: 30,
+  /** L2 检索命中：id + title + kind + summary + tags */
+  searchHit: 60,
+} as const
+
+/**
+ * 计量一个返回项的上下文成本。
+ *
+ * 刻意**排除 `tokens` 字段本身**：它是我们自己的仪表字段，把它算进去会形成
+ * 自指（写入 tokens 会改变测量值），也让"裁剪到目标内"失去确定解。
+ */
+export function measureItemTokens(payload: object): number {
+  const { tokens: _instrumentation, ...rest } = payload as Record<string, unknown>
+  return estimateTokens(JSON.stringify(rest))
+}
+
+/**
+ * 把条目的 title 裁剪到 token 目标内（二分收敛，超限加省略号）。
+ *
+ * title 是列表/关联类条目里唯一的自由文本字段，也是最容易把上下文撑爆的
+ * 部分（模型写的标题可以很长）。返回的 tokens 是裁剪后的实测成本。
+ *
+ * 两条不可逾越的下限：
+ *   1. **不清空标题**：宁可多花 1~2 token 保留完整短标题，也不返回空标题的
+ *      条目——空标题的目录节点对导航毫无价值，属于"为省 token 牺牲可用性"。
+ *   2. **不伪造裁剪**：结构化地板本身高于目标时，如实返回实际成本，由调用方
+ *      （与预算断言）决定是否要调目标；不在测量上做手脚。
+ */
+export function fitTitleToItemBudget<T extends { title: string }>(
+  payload: T,
+  maxTokens: number,
+): { value: string; tokens: number } {
+  const full = measureItemTokens(payload)
+  if (full <= maxTokens) return { value: payload.title, tokens: full }
+
+  const title = payload.title
+  // 实际可用上限 = max(目标, 地板 + 1 个字符的余量)：保证至少能放下一个字符
+  // 加省略号，避免出现"裁到空"这种比不裁更差的结果。
+  const floorTokens = measureItemTokens({ ...payload, title: '' } as T)
+  const budget = Math.max(maxTokens, floorTokens + estimateTokens(title.charAt(0) || 'x'))
+
+  let lo = 0
+  let hi = title.length
+  let best = ''
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    const candidate = `${title.slice(0, mid)}…`
+    const cost = measureItemTokens({ ...payload, title: candidate } as T)
+    if (cost <= budget) {
+      best = candidate
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  if (best === '') {
+    // 连一个字符都放不下：保留原标题（结构地板已注定超目标，此时唯一正确的
+    // 做法是让条目可读，并把真实成本如实回传）。
+    return { value: title, tokens: full }
+  }
+  return { value: best, tokens: measureItemTokens({ ...payload, title: best } as T) }
 }
 
 /** 摘要硬截断：超长追加省略号（落库侧与返回侧共用同一口径）。 */

@@ -486,6 +486,41 @@ export interface PlatformBridgeDeps {
       limit?: number
     }): Promise<unknown>
     bridgeWikiRead(params: { sessionId: string; pageId: string; offset?: number }): Promise<unknown>
+    /** L1 目录树：id + 标题 + 是否有子节点，无摘要无正文 */
+    bridgeWikiList(params: {
+      sessionId: string
+      spaceId: string
+      parentId?: string
+    }): Promise<unknown>
+    /** L4 反向链接：每边 ≤20 token */
+    bridgeWikiBacklinks(params: { sessionId: string; pageId: string }): Promise<unknown>
+    /** 写入路径（新建 / CAS 更新 / 归档 / 删除 / 显式关联），回执不含正文 */
+    bridgeWikiWrite(params: {
+      sessionId: string
+      spaceId: string
+      title: string
+      body: string
+      kind?: string
+      summary?: string
+      tags?: string[]
+    }): Promise<unknown>
+    bridgeWikiUpdate(params: {
+      sessionId: string
+      pageId: string
+      expectedVersion: number
+      title?: string
+      body?: string
+      summary?: string
+      tags?: string[]
+    }): Promise<unknown>
+    bridgeWikiArchive(params: { sessionId: string; pageId: string }): Promise<unknown>
+    bridgeWikiDelete(params: { sessionId: string; pageId: string }): Promise<unknown>
+    bridgeWikiLink(params: {
+      sessionId: string
+      fromPageId: string
+      toPageId: string
+      remove?: boolean
+    }): Promise<unknown>
     /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
@@ -936,6 +971,20 @@ export class PlatformBridgeService {
         return this.wikiSearch(d, params)
       case 'wiki.read':
         return this.wikiRead(d, params)
+      case 'wiki.list':
+        return this.wikiList(d, params)
+      case 'wiki.backlinks':
+        return this.wikiBacklinks(d, params)
+      case 'wiki.write':
+        return this.wikiWrite(d, params)
+      case 'wiki.update':
+        return this.wikiUpdate(d, params)
+      case 'wiki.archive':
+        return this.wikiArchive(d, params)
+      case 'wiki.delete':
+        return this.wikiDelete(d, params)
+      case 'wiki.link':
+        return this.wikiLink(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
       case 'canvas.call_tool':
@@ -2062,6 +2111,113 @@ export class PlatformBridgeService {
       sessionId,
       pageId,
       ...(offset != null ? { offset } : {}),
+    })
+  }
+
+  // 写入类桥接一律不做业务校验之外的"宽松解释"：缺参直接报错，不猜默认值——
+  // 子进程只是传输层，任何静默兜底都会让 Agent 误以为写入按自己的意图生效。
+
+  private async wikiList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const spaceId = String(params.spaceId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!spaceId) throw new Error('Missing parameter: spaceId')
+    const parentId = typeof params.parentId === 'string' ? params.parentId : undefined
+    return d.sessionService.bridgeWikiList({
+      sessionId,
+      spaceId,
+      ...(parentId != null ? { parentId } : {}),
+    })
+  }
+
+  private async wikiBacklinks(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    return d.sessionService.bridgeWikiBacklinks({ sessionId, pageId })
+  }
+
+  private async wikiWrite(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const spaceId = String(params.spaceId ?? '')
+    const title = typeof params.title === 'string' ? params.title : ''
+    const body = typeof params.body === 'string' ? params.body : ''
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!spaceId) throw new Error('Missing parameter: spaceId')
+    if (!title) throw new Error('Missing parameter: title')
+    if (!body) throw new Error('Missing parameter: body')
+    const kind = typeof params.kind === 'string' ? params.kind : undefined
+    const summary = typeof params.summary === 'string' ? params.summary : undefined
+    const tags = Array.isArray(params.tags)
+      ? params.tags.filter((t): t is string => typeof t === 'string')
+      : undefined
+    return d.sessionService.bridgeWikiWrite({
+      sessionId,
+      spaceId,
+      title,
+      body,
+      ...(kind != null ? { kind } : {}),
+      ...(summary != null ? { summary } : {}),
+      ...(tags != null ? { tags } : {}),
+    })
+  }
+
+  private async wikiUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    const expectedVersion =
+      typeof params.expectedVersion === 'number' ? params.expectedVersion : NaN
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    if (!Number.isFinite(expectedVersion) || expectedVersion < 1) {
+      throw new Error('Missing or invalid parameter: expectedVersion')
+    }
+    const title = typeof params.title === 'string' ? params.title : undefined
+    const body = typeof params.body === 'string' ? params.body : undefined
+    const summary = typeof params.summary === 'string' ? params.summary : undefined
+    const tags = Array.isArray(params.tags)
+      ? params.tags.filter((t): t is string => typeof t === 'string')
+      : undefined
+    return d.sessionService.bridgeWikiUpdate({
+      sessionId,
+      pageId,
+      expectedVersion,
+      ...(title != null ? { title } : {}),
+      ...(body != null ? { body } : {}),
+      ...(summary != null ? { summary } : {}),
+      ...(tags != null ? { tags } : {}),
+    })
+  }
+
+  private async wikiArchive(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    return d.sessionService.bridgeWikiArchive({ sessionId, pageId })
+  }
+
+  private async wikiDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    return d.sessionService.bridgeWikiDelete({ sessionId, pageId })
+  }
+
+  private async wikiLink(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const fromPageId = String(params.fromPageId ?? '')
+    const toPageId = String(params.toPageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!fromPageId) throw new Error('Missing parameter: fromPageId')
+    if (!toPageId) throw new Error('Missing parameter: toPageId')
+    return d.sessionService.bridgeWikiLink({
+      sessionId,
+      fromPageId,
+      toPageId,
+      ...(params.remove === true ? { remove: true } : {}),
     })
   }
 
