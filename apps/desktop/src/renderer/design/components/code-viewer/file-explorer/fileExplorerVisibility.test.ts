@@ -48,10 +48,16 @@ describe('文件树默认宽度', () => {
     expect(getCodeExplorerWidth()).toBe(200)
   })
 
-  it('把旧的偏宽缓存一次性迁移为收窄后的默认宽度', () => {
+  it('把旧的偏宽缓存收敛为收窄后的默认宽度', () => {
     stubLocalStorage(new Map([['spark-agent:code-explorer-width', '460']]))
     resetCodeExplorerSettingsForTest()
     expect(getCodeExplorerWidth()).toBe(200)
+  })
+
+  it('用户自己调窄过的偏好不会被迁移拉宽', () => {
+    stubLocalStorage(new Map([['spark-agent:code-explorer-width', '170']]))
+    resetCodeExplorerSettingsForTest()
+    expect(getCodeExplorerWidth()).toBe(170)
   })
 
   it('迁移之后尊重用户手动拖拽的宽度（并 clamp 到新上限 400）', () => {

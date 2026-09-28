@@ -13,7 +13,8 @@ import { toggleGitPanel } from '../git-panel/gitPanelVisibility'
 const VISIBLE_KEY = 'spark-agent:code-search-panel-visible'
 const WIDTH_KEY = 'spark-agent:code-search-panel-width'
 // 宽度偏好 schema 版本：v2 收窄默认值（380 → 300）与上限（640 → 560）。
-// 搜索结果列表本身很窄（图标 + 文件名 + 高亮片段），旧默认宽度会把编辑器挤得过小。
+// 搜索结果列表本身很窄（图标 + 文件名 + 高亮片段），旧默认宽度会把右侧编辑器挤得过小。
+// 迁移只收敛「比新默认更宽」的旧偏好，用户自己调窄过的保留。
 const WIDTH_SCHEMA_KEY = 'spark-agent:code-search-panel-width-schema'
 const WIDTH_SCHEMA_VERSION = 2
 
@@ -49,21 +50,23 @@ function clampWidth(v: number): number {
 
 function readWidth(): number {
   if (typeof window === 'undefined') return DEFAULT_WIDTH
+  let width = DEFAULT_WIDTH
   try {
+    const raw = window.localStorage.getItem(WIDTH_KEY)
+    if (raw != null) width = clampWidth(Number(raw))
     const version = Number(window.localStorage.getItem(WIDTH_SCHEMA_KEY) ?? '0')
     if (version < WIDTH_SCHEMA_VERSION) {
-      persistWidth(DEFAULT_WIDTH)
-      return DEFAULT_WIDTH
+      // 迁移：只把偏宽的旧偏好收敛到新默认，比新默认窄的按原样保留并落盘
+      width = Math.min(width, DEFAULT_WIDTH)
+      persistWidth(width)
     }
-    const raw = window.localStorage.getItem(WIDTH_KEY)
-    if (raw != null) return clampWidth(Number(raw))
   } catch {
     /* localStorage 不可用时退回内存默认值 */
   }
-  return DEFAULT_WIDTH
+  return width
 }
 
-/** 写入宽度偏好并同步 schema 版本（避免下一次启动被迁移逻辑再重置一次） */
+/** 写入宽度偏好并同步 schema 版本（避免下一次启动被迁移逻辑再改写一次） */
 function persistWidth(next: number): void {
   try {
     window.localStorage.setItem(WIDTH_KEY, String(next))

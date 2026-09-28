@@ -189,7 +189,11 @@ import {
   UnifiedSidePanelPicker,
   type UnifiedSidePanelKind,
 } from './chat/ChatSidePanels'
-import { resolveRestoredSidePanelTabs } from './chat/side-panel-restore'
+import {
+  describeCodePanelTabState,
+  resolveRestoredSidePanelTabs,
+  type CodePanelTabState,
+} from './chat/side-panel-restore'
 import { BrowserChrome } from '../components/browser/BrowserChrome'
 import { panelBrowserTabsStore } from '../components/browser/browserTabsStore'
 import {
@@ -707,23 +711,23 @@ export function ChatView({
     activeCodePath: string | null
     codeViewMode: CodeViewMode
     codeExplorerExpandedDirs: string[]
-    /** 切换前「代码」tab 是否处于打开状态（同项目切会话后据此把面板维持展开） */
-    codeTabOpen: boolean
-    /** 切换前「代码」tab 是否为当前激活 tab */
-    codeTabActive: boolean
+    /** 切换前「代码」面板的形态（closed/collapsed/open/active），见 describeCodePanelTabState */
+    codeTabState: CodePanelTabState
   }
   const emptyCodePanelSnapshot: CodePanelSnapshot = {
     codeFiles: [],
     activeCodePath: null,
     codeViewMode: 'source',
     codeExplorerExpandedDirs: [],
-    codeTabOpen: false,
-    codeTabActive: false,
+    codeTabState: 'closed',
   }
   // 各 session 的面板快照（仅内存）
   const panelStateBySessionRef = useRef<Map<string, PanelSnapshot>>(new Map())
   // 各「项目」的代码面板快照（仅内存）
   const codeStateByProjectRef = useRef<Map<string, CodePanelSnapshot>>(new Map())
+  // 当前代码面板状态所属的项目键：每次切换后更新，用于会话已查不到（被删/列表未刷新）时兜底。
+  // 有了它，「查不到 → 跳过存盘 → 同项目却被判成跨项目做了一次陈旧恢复」不会发生。
+  const codeStateOwnerProjectRef = useRef<string | null>(null)
   // 上一个 active id，用于切换时把旧会话状态存盘
   const prevActiveRef = useRef<string | null>(active)
   // 始终镜像当前面板状态；render 写、effect 读，保证 effect 拿到切换前的真实值
@@ -731,14 +735,22 @@ export function ChatView({
   // 同上，镜像当前代码面板状态（项目级）
   const latestCodeStateRef = useRef<CodePanelSnapshot>(emptyCodePanelSnapshot)
   /**
-   * 解析会话所属「项目」键（用于代码面板的项目级快照）：
-   * 优先会话绑定的第一个工作区，其次当前选中工作区；都没有则返回 null（不参与项目级记忆）。
+   * 解析某个会话所属「项目」键（代码面板的项目级快照按它归档）。
+   *
+   * 已知会话只认它自己 `workspaceIds[0]` 绑定的工作区；取不到时按 `fallbackToActiveWorkspace` 分流：
+   *  - 存盘侧（上一个会话）必须传 false：切会话与切项目同时发生时，回落值是新项目，
+   *    会把上一个项目的代码面板状态错存到新项目名下、污染那个项目的快照；
+   *  - 恢复侧（目标会话）可传 true：项目就是 UI 正在展示的工作区，回落安全且更合适。
+   * 无会话（新建任务 hero / 退到无会话）一律用当前选中工作区。
    */
   const resolveProjectKey = useCallback(
-    (sessionId: string | null): string | null => {
-      if (sessionId == null) return activeWorkspaceId ?? null
-      const session = sessions.find((item) => item.id === sessionId)
-      return session?.workspaceIds[0] ?? activeWorkspaceId ?? null
+    (sessionId: string | null, fallbackToActiveWorkspace = false): string | null => {
+      if (sessionId != null) {
+        const own = sessions.find((item) => item.id === sessionId)?.workspaceIds[0]
+        if (own != null) return own
+        if (!fallbackToActiveWorkspace) return null
+      }
+      return activeWorkspaceId ?? null
     },
     [sessions, activeWorkspaceId],
   )
@@ -1089,7 +1101,9 @@ export function ChatView({
   // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / 会话级面板，
   // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
   // 切换会话：会话级面板状态存给上一个会话、加载目标会话快照（无则收起）；
-  // 「代码」面板例外 —— 它按项目维度维护，同项目切会话保持同一实例（见 CodePanelSnapshot）。
+  // 「代码」面板例外 —— 它按项目维度维护（见 CodePanelSnapshot），同项目切会话原地保持；
+  // 它同时参与容器展开态的决策：刚在看的代码面板会被强制带回来，用户主动收起过则不强行拉开
+  // （四态规则见 resolveRestoredSidePanelTabs）。
   // 后端长驻任务（终端 PTY / side-chat session）不在此处理 —— 切回时各组件重新挂载/订阅
   // 即可接回原本在跑的任务（PTY 不杀、side-chat session 在后端继续运行）。
   useEffect(() => {
@@ -1103,16 +1117,19 @@ export function ChatView({
     }
     // 存盘上一个项目的代码面板状态。同项目时这份快照就是当前状态，下面直接跳过恢复，
     // 于是「同项目切会话」原地保持编辑器不变；跨项目才换成本项目自己那一份。
-    const prevProjectKey = resolveProjectKey(prevId)
+    // 上一个会话查不到（被删 / 列表未刷新）时用 codeStateOwnerProjectRef 兜底，
+    // 避免跳过存盘后把「同项目」误判成「跨项目」，做一次陈旧恢复把用户开着的文件洗掉。
+    const prevProjectKey = resolveProjectKey(prevId) ?? codeStateOwnerProjectRef.current
     if (prevProjectKey != null) {
       codeStateByProjectRef.current.set(prevProjectKey, latestCodeStateRef.current)
     }
 
     // ── 代码面板：按目标项目恢复（同项目则原地保持，不做任何状态写入）──
-    const projectKey = resolveProjectKey(active)
+    const projectKey = resolveProjectKey(active, true)
+    codeStateOwnerProjectRef.current = projectKey
     const codeSnap = projectKey != null ? codeStateByProjectRef.current.get(projectKey) : undefined
     const nextCode = codeSnap ?? emptyCodePanelSnapshot
-    if (!(prevProjectKey != null && prevProjectKey === projectKey)) {
+    if (prevProjectKey !== projectKey) {
       setCodeFiles(nextCode.codeFiles)
       setActiveCodePath(nextCode.activeCodePath)
       setCodeViewMode(nextCode.codeViewMode)
@@ -1121,7 +1138,7 @@ export function ChatView({
 
     // ── 会话级面板：按目标会话快照恢复，再并入项目级「代码」tab（见 resolveRestoredSidePanelTabs）──
     const snap = active != null ? panelStateBySessionRef.current.get(active) : undefined
-    const restored = resolveRestoredSidePanelTabs(snap, nextCode)
+    const restored = resolveRestoredSidePanelTabs(snap, nextCode.codeTabState)
     setShowInspector(snap?.showInspector ?? false)
     setShowConfigPanel(snap?.showConfigPanel ?? false)
     setShowTerminalPanel(snap?.showTerminalPanel ?? false)
@@ -1425,14 +1442,17 @@ export function ChatView({
     sideChatSessionId,
     activeHtmlPanelBlockId,
   }
-  // 同上，镜像代码面板状态（项目级快照；codeTabOpen/Active 由统一面板 tab 状态推导）
+  // 同上，镜像代码面板状态（项目级快照；codeTabState 由统一面板的即时状态归纳）
   latestCodeStateRef.current = {
     codeFiles,
     activeCodePath,
     codeViewMode,
     codeExplorerExpandedDirs: Array.from(codeExplorerExpandedDirs),
-    codeTabOpen: unifiedPanelOpen && unifiedSideTabs.includes('code'),
-    codeTabActive: unifiedPanelOpen && activeUnifiedSideTab === 'code',
+    codeTabState: describeCodePanelTabState({
+      unifiedSideTabs,
+      unifiedPanelOpen,
+      activeUnifiedSideTab,
+    }),
   }
 
   // ── IPC hooks (only those NOT duplicated in context) ──

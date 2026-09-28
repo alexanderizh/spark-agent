@@ -10,8 +10,9 @@ import { useSyncExternalStore } from 'react'
 
 const VISIBLE_KEY = 'spark-agent:code-explorer-visible'
 const WIDTH_KEY = 'spark-agent:code-explorer-width'
-// 宽度偏好的 schema 版本：v2 收窄默认值（240 → 200）与上限（460 → 400），
-// 让老用户缓存里那份「偏宽」的旧偏好一次性重置为新默认；此后尊重用户手动拖拽的结果。
+// 宽度偏好 schema 版本：v2 收窄默认值（240 → 200）与上限（460 → 400）。
+// 存储里存在宽度值只可能是用户拖拽过（未改动时不会写入），所以迁移只收敛「比新默认更宽」的旧偏好，
+// 用户自己调窄过的保留 —— 避免把有意为之的窄栏强行拉宽。
 const WIDTH_SCHEMA_KEY = 'spark-agent:code-explorer-width-schema'
 const WIDTH_SCHEMA_VERSION = 2
 
@@ -34,12 +35,28 @@ function clampWidth(v: number): number {
   return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(v)))
 }
 
+function readWidth(): number {
+  if (typeof window === 'undefined') return DEFAULT_WIDTH
+  let width = DEFAULT_WIDTH
+  try {
+    const raw = window.localStorage.getItem(WIDTH_KEY)
+    if (raw != null) width = clampWidth(Number(raw))
+    const version = Number(window.localStorage.getItem(WIDTH_SCHEMA_KEY) ?? '0')
+    if (version < WIDTH_SCHEMA_VERSION) {
+      // 迁移：只把偏宽的旧偏好收敛到新默认，比新默认窄的按原样保留并落盘
+      width = Math.min(width, DEFAULT_WIDTH)
+      persistWidth(width)
+    }
+  } catch {
+    /* localStorage 不可用时退回内存默认值 */
+  }
+  return width
+}
+
 function readSettings(): ExplorerSettings {
   // 默认展开文件树；仅当用户显式收起过（localStorage 存了 'false'）才保持收起
-  const fallback: ExplorerSettings = { visible: true, width: DEFAULT_WIDTH }
-  if (typeof window === 'undefined') return fallback
+  if (typeof window === 'undefined') return { visible: true, width: DEFAULT_WIDTH }
   let visible = true
-  let width = DEFAULT_WIDTH
   try {
     const raw = window.localStorage.getItem(VISIBLE_KEY)
     // 仅在用户显式操作过（存了 'true'/'false'）时才覆盖默认值；
@@ -48,21 +65,10 @@ function readSettings(): ExplorerSettings {
   } catch {
     /* localStorage 不可用时退回内存默认值 */
   }
-  try {
-    const version = Number(window.localStorage.getItem(WIDTH_SCHEMA_KEY) ?? '0')
-    if (version < WIDTH_SCHEMA_VERSION) {
-      persistWidth(DEFAULT_WIDTH)
-      return { visible, width: DEFAULT_WIDTH }
-    }
-    const raw = window.localStorage.getItem(WIDTH_KEY)
-    if (raw != null) width = clampWidth(Number(raw))
-  } catch {
-    /* 同上 */
-  }
-  return { visible, width }
+  return { visible, width: readWidth() }
 }
 
-/** 写入宽度偏好并同步 schema 版本（避免下一次启动被迁移逻辑再重置一次） */
+/** 写入宽度偏好并同步 schema 版本（避免下一次启动被迁移逻辑再改写一次） */
 function persistWidth(next: number): void {
   try {
     window.localStorage.setItem(WIDTH_KEY, String(next))

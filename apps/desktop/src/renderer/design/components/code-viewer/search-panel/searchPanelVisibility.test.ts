@@ -8,6 +8,7 @@ import {
 } from '../file-explorer/fileExplorerVisibility'
 import {
   getGitPanelVisible,
+  getGitPanelWidth,
   resetGitPanelSettingsForTest,
   toggleGitPanel,
 } from '../git-panel/gitPanelVisibility'
@@ -50,16 +51,35 @@ describe('searchPanelVisibility', () => {
     expect(localStorage.getItem('spark-agent:code-search-panel-width')).toBe('560')
   })
 
-  it('把旧版偏宽的缓存一次性迁移为收窄后的默认宽度', () => {
+  it('把旧版偏宽的缓存收敛为收窄后的默认宽度', () => {
     localStorage.clear()
     localStorage.setItem('spark-agent:code-search-panel-width', '640')
     resetSearchPanelSettingsForTest()
     expect(getSearchPanelWidth()).toBe(300)
   })
 
+  it('用户自己调窄过的偏好不会被迁移拉宽', () => {
+    localStorage.clear()
+    localStorage.setItem('spark-agent:code-search-panel-width', '240')
+    resetSearchPanelSettingsForTest()
+    expect(getSearchPanelWidth()).toBe(240)
+  })
+
   it('迁移之后尊重用户手动拖拽的宽度', () => {
     setSearchPanelWidth(420)
     resetSearchPanelSettingsForTest()
     expect(getSearchPanelWidth()).toBe(420)
+  })
+
+  it('Git 面板同样迁移：旧上限 520 收敛到新默认 260，调窄过的保留', () => {
+    localStorage.clear()
+    localStorage.setItem('spark-agent:code-git-panel-width', '520')
+    resetGitPanelSettingsForTest()
+    expect(getGitPanelWidth()).toBe(260)
+
+    localStorage.clear()
+    localStorage.setItem('spark-agent:code-git-panel-width', '200')
+    resetGitPanelSettingsForTest()
+    expect(getGitPanelWidth()).toBe(200)
   })
 })
