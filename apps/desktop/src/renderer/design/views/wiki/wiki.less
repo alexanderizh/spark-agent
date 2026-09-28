@@ -1,0 +1,1270 @@
+/**
+ * 知识库 / Wiki 视图样式（wiki_ 前缀，仅作用域内，不污染全局）。
+ *
+ * 视觉规范（重设计稿 v3，2026-09-29）：
+ *   - 布局：左栏 252px 纸面（空间切换器 + 过滤框 + 层级树 + 底部固定入口），
+ *     主区画布底色 + 46px 顶栏（面包屑 + 检索框 + 行内操作），正文度量 720px；
+ *   - 选择语言全应用统一：填充 = 选中（主色浅底 + 主色文字），实心主色 = 主动作，
+ *     中性描边 = 次动作；不再混用左侧竖线 / 黑实心 / 蓝 pill；
+ *   - 扁平：不用卡片盒子分组，层级靠分割线、色点与文字明暗；
+ *   - 次级文字一律用 color-mix 从 --text 派生（对比度回到 4.6:1 以上，且深浅色
+ *     自动适配），不再引用全局暖米色 token（--text-muted / --text-faint 在白底
+ *     上只有 2.2:1 / 3.0:1），也不引用不存在的 --text-secondary / --text-tertiary；
+ *   - 密度：树行 28px、控件 28px、圆角 6 / 8px，紧凑模式由全局 --pad 覆盖；
+ *   - 动效：仅 120 / 160 / 240ms 因果动效，reduced-motion 下关闭。
+ *
+ * 注意：本文件头部注释内禁止出现块注释结束序列与路径通配写法，
+ * 否则会提前闭合注释、把说明文字当 CSS 解析（历史事故，见任务记录）。
+ */
+
+.wiki_root {
+  /* 局部派生 token：全部从全局语义 token 派生，深色模式自动生效，零额外覆写 */
+  --wiki-divider: color-mix(in srgb, var(--text) 9%, transparent);
+  --wiki-border: color-mix(in srgb, var(--text) 12%, transparent);
+  --wiki-t2: color-mix(in srgb, var(--text) 74%, transparent);
+  --wiki-t3: color-mix(in srgb, var(--text) 55%, transparent);
+  --wiki-t4: color-mix(in srgb, var(--text) 36%, transparent);
+  --wiki-hover: color-mix(in srgb, var(--text) 5%, transparent);
+  --wiki-sunken: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --wiki-press: color-mix(in srgb, var(--text) 7%, transparent);
+  --wiki-act: color-mix(in srgb, var(--text) 11%, transparent);
+  /* 五档字体锚点（设计稿 v3）：标题 24 / 区块 15 / 正文 13.5 / 元信息 12.5 / 标签 10.5 */
+  --wiki-fs-title: 24px;
+  --wiki-fs-sec: 15px;
+  --wiki-fs-body: 13.5px;
+  --wiki-fs-meta: 12.5px;
+  --wiki-fs-cap: 10.5px;
+  /* 知识类型色点：reference 用紫色（全局无紫色语义 token，仅作用于 6px 色点） */
+  --wiki-kind-reference: #8b5cf6;
+  --wiki-rail-w: 252px;
+  --wiki-topbar-h: 46px;
+  --wiki-row-h: 28px;
+  --wiki-measure: 720px;
+
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--font-base);
+}
+
+/* 深色下提高紫色点亮度，保持与背景的对比 */
+html[data-theme='dark'] .wiki_root,
+.app.theme-dark .wiki_root {
+  --wiki-kind-reference: #a78bfa;
+}
+
+/* ── 左栏：空间切换 + 过滤 + 层级树 + 底部入口 ───────────────────── */
+
+.wiki_rail {
+  display: flex;
+  flex-direction: column;
+  width: var(--wiki-rail-w);
+  flex: 0 0 auto;
+  min-height: 0;
+  border-right: 1px solid var(--wiki-divider);
+  background: var(--bg-soft);
+}
+
+.wiki_rail_head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 10px 10px 12px;
+  min-height: 44px;
+}
+
+.wiki_rail_icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.wiki_rail_name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+
+.wiki_rail_arrow {
+  display: flex;
+  align-items: center;
+  color: var(--wiki-t3);
+  flex: 0 0 auto;
+}
+
+/* 空间切换热区：名称 + 箭头整块可点，展开空间列表 */
+.wiki_rail_switcher {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+  padding: 3px 5px;
+  margin: -3px -5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wiki_rail_switcher:hover {
+  background: var(--wiki-hover);
+}
+
+.wiki_rail_spacer {
+  flex: 1;
+}
+
+/* 左栏顶部图标按钮（新建空间）。空间切换只有名称+箭头一个入口，
+   见 WikiView 的 wiki_rail_switcher，不要再加第二个触发器。 */
+.wiki_rail_ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wiki-t3);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.wiki_rail_ib:hover {
+  background: var(--wiki-press);
+  color: var(--text);
+}
+
+.wiki_rail_ib_pri {
+  color: var(--primary);
+}
+
+.wiki_rail_ib_pri:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* 过滤框：常规态近乎无形，focus 才出主色描边 */
+.wiki_rail_filter {
+  padding: 2px 10px 8px;
+}
+
+.wiki_search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--wiki-row-h);
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--wiki-sunken);
+  border: 1px solid transparent;
+  color: var(--wiki-t3);
+  transition: border-color 120ms, background 120ms;
+}
+
+.wiki_search:hover {
+  border-color: var(--wiki-border);
+}
+
+.wiki_search:focus-within {
+  border-color: var(--primary);
+  background: var(--bg-soft);
+}
+
+.wiki_search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: var(--wiki-fs-meta);
+  font-family: inherit;
+}
+
+.wiki_search input::placeholder {
+  color: var(--wiki-t4);
+}
+
+.wiki_kbd {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 4px;
+  color: var(--wiki-t4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--wiki-fs-cap);
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.wiki_rail_label {
+  padding: 10px 12px 4px;
+  color: var(--wiki-t4);
+  font-size: var(--wiki-fs-cap);
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* ── 目录树 ───────────────────────────────────────────────────────── */
+
+.wiki_tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 8px;
+}
+
+.wiki_tree_node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--wiki-row-h);
+  padding-right: 4px;
+  border-radius: 6px;
+  color: var(--wiki-t2);
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wiki_tree_node:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
+/* 选中态统一为「填充」：主色浅底 + 主色文字（全应用同一套选择语言） */
+.wiki_tree_node.is-active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 归档页在树上弱化呈现，与活跃页一眼区分 */
+.wiki_tree_node.is-archived {
+  opacity: 0.62;
+}
+
+.wiki_tree_node.is-drop-inside {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.wiki_tree_twist {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--wiki-t4);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), background 120ms, color 120ms;
+}
+
+.wiki_tree_twist:hover {
+  background: var(--wiki-act);
+  color: var(--text);
+}
+
+.wiki_tree_twist.is-open {
+  transform: rotate(90deg);
+}
+
+.wiki_tree_twist.is-leaf {
+  visibility: hidden;
+}
+
+.wiki_tree_dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--wiki-t4);
+}
+
+.wiki_tree_dot.k-knowledge {
+  background: var(--primary);
+}
+
+.wiki_tree_dot.k-experience {
+  background: var(--success);
+}
+
+.wiki_tree_dot.k-pattern {
+  background: var(--warning);
+}
+
+.wiki_tree_dot.k-reference {
+  background: var(--wiki-kind-reference);
+}
+
+.wiki_tree_label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--wiki-fs-meta);
+  color: inherit;
+}
+
+.wiki_tree_label mark {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 2px;
+}
+
+.wiki_tree_count {
+  flex: 0 0 auto;
+  color: var(--wiki-t4);
+  font-size: var(--wiki-fs-cap);
+  font-variant-numeric: tabular-nums;
+}
+
+.wiki_tree_acts {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.wiki_tree_node:hover .wiki_tree_acts {
+  display: inline-flex;
+}
+
+/* hover 出行内操作时让位给按钮，计数不双占位 */
+.wiki_tree_node:hover .wiki_tree_count {
+  display: none;
+}
+
+.wiki_tree_act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wiki-t3);
+  cursor: pointer;
+}
+
+.wiki_tree_act:hover {
+  background: var(--wiki-act);
+  color: var(--text);
+}
+
+/* 层级缩进引导线：1px 竖线替代纯缩进，子层级一眼可辨 */
+.wiki_tree_kids {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--wiki-divider);
+}
+
+/* ── 左栏底部固定入口 ─────────────────────────────────────────────── */
+
+.wiki_rail_foot {
+  border-top: 1px solid var(--wiki-divider);
+  padding: 5px 6px;
+}
+
+.wiki_rail_foot_row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: var(--wiki-row-h);
+  padding: 0 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wiki-t2);
+  font-size: var(--wiki-fs-meta);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.wiki_rail_foot_row:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
+.wiki_rail_foot_row .wiki_tree_count {
+  margin-left: auto;
+}
+
+/* ── 主区 ─────────────────────────────────────────────────────────── */
+
+.wiki_main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wiki_topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--wiki-topbar-h);
+  flex: 0 0 auto;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+/* 面包屑：分段 + 斜杠分隔，当前页加粗 */
+.wiki_crumb {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--wiki-fs-meta);
+  color: var(--wiki-t3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wiki_crumb_seg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki_crumb_seg.is-end {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wiki_crumb_sep {
+  flex: 0 0 auto;
+  color: var(--wiki-t4);
+}
+
+.wiki_topsearch {
+  width: 250px;
+  flex: 0 0 auto;
+}
+
+.wiki_actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* 顶栏图标按钮（历史 / 更多） */
+.wiki_top_ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wiki-t3);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.wiki_top_ib:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
+.wiki_body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+/* ── 空态 ─────────────────────────────────────────────────────────── */
+
+.wiki_empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 240px;
+  padding: 32px 40px 40px;
+  text-align: center;
+}
+
+.wiki_empty_graph {
+  margin-bottom: 20px;
+}
+
+.wiki_empty_title {
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+}
+
+.wiki_empty_desc {
+  max-width: 400px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--wiki-t3);
+}
+
+.wiki_empty_cta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.wiki_btn_primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 15px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+  transition: background 120ms;
+}
+
+.wiki_btn_primary:hover {
+  background: var(--primary-hover);
+}
+
+.wiki_btn_ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wiki-t2);
+  font-size: 13px;
+  font-weight: 550;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.wiki_btn_ghost:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
+.wiki_empty_hr {
+  width: 380px;
+  max-width: 100%;
+  height: 1px;
+  margin: 26px 0 18px;
+  background: var(--wiki-divider);
+}
+
+.wiki_feats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 26px;
+}
+
+.wiki_feat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--wiki-t3);
+}
+
+.wiki_feat .wiki_tree_dot {
+  flex: 0 0 auto;
+}
+
+/* ── 阅读态 ───────────────────────────────────────────────────────── */
+
+.wiki_article {
+  max-width: var(--wiki-measure);
+  margin: 0 auto;
+  padding: 26px 44px 0;
+}
+
+.wiki_title {
+  margin: 0;
+  font-size: var(--wiki-fs-title);
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.wiki_tagrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: var(--wiki-sunken);
+  color: var(--wiki-t2);
+  font-size: 11.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.wiki_tag .wiki_tree_dot {
+  width: 5px;
+  height: 5px;
+}
+
+.wiki_tag.is-kind {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.wiki_tag.is-ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.wiki_tag.is-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.wiki_tag.is-draft {
+  background: var(--wiki-sunken);
+  color: var(--wiki-t3);
+}
+
+/* 元信息行：版本 / 时间 / 引用数，用竖线分隔不占横向 gap */
+.wiki_meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  color: var(--wiki-t4);
+  font-size: 11.5px;
+}
+
+.wiki_meta_item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-left: 1px solid var(--wiki-divider);
+}
+
+.wiki_meta_item:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.wiki_article_body {
+  padding: 20px 0 0;
+  font-size: var(--wiki-fs-body);
+  line-height: 1.78;
+  color: var(--wiki-t2);
+}
+
+.wiki_article_body h3 {
+  margin: 22px 0 8px;
+  font-size: var(--wiki-fs-sec);
+  font-weight: 650;
+  letter-spacing: -0.008em;
+  color: var(--text);
+}
+
+.wiki_article_body p {
+  margin-bottom: 12px;
+}
+
+.wiki_article_body strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wiki_article_body code {
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: var(--wiki-sunken);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.wiki_article_body blockquote {
+  margin: 14px 0;
+  padding: 2px 0 2px 13px;
+  border-left: 2px solid var(--primary);
+  color: var(--wiki-t3);
+  font-size: 13px;
+}
+
+.wiki_article_body ul {
+  margin: 0 0 12px;
+  padding-left: 17px;
+}
+
+.wiki_article_body li {
+  margin-bottom: 5px;
+}
+
+/* ── 编辑态 ───────────────────────────────────────────────────────── */
+
+.wiki_editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.wiki_editor_head {
+  padding: 20px 44px 0;
+}
+
+.wiki_editor_title {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: var(--wiki-fs-title);
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  font-family: inherit;
+}
+
+.wiki_editor_title::placeholder {
+  color: var(--wiki-t4);
+}
+
+/* 摘要 / 标签与标题同一基线区块，底部一条分割线 */
+.wiki_editor_meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_editor_field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wiki_editor_field_label {
+  flex: 0 0 52px;
+  color: var(--wiki-t4);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.wiki_editor_input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: var(--wiki-fs-meta);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 120ms;
+}
+
+.wiki_editor_input:focus {
+  border-color: var(--primary);
+}
+
+.wiki_editor_input::placeholder {
+  color: var(--wiki-t4);
+}
+
+textarea.wiki_editor_input {
+  resize: vertical;
+  min-height: 44px;
+  line-height: 1.6;
+}
+
+/* 正文编辑区：独立纸面，与上方标题区有分割线 */
+.wiki_editor_body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  margin-top: 14px;
+  border-top: 1px solid var(--wiki-divider);
+  background: var(--bg-soft);
+}
+
+.wiki_editor_body > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 底部操作条：未保存指示 + 保存 / 取消 */
+.wiki_editor_foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0 16px;
+  border-top: 1px solid var(--wiki-divider);
+  background: var(--bg);
+}
+
+.wiki_dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.wiki_dirty_dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.wiki_editor_foot .wiki_rail_spacer {
+  flex: 1;
+}
+
+/* ── 检索结果 ─────────────────────────────────────────────────────── */
+
+.wiki_results {
+  padding: 0 12px 12px;
+}
+
+.wiki_results_head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 20px 10px;
+  font-size: 12px;
+  color: var(--wiki-t3);
+}
+
+.wiki_results_head b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wiki_result_row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wiki_result_row:hover {
+  background: var(--wiki-sunken);
+}
+
+.wiki_result_row + .wiki_result_row {
+  border-top: 1px solid var(--wiki-divider);
+}
+
+.wiki_result_head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wiki_result_title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wiki_result_title mark {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.wiki_result_summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--wiki-fs-meta);
+  line-height: 1.65;
+  color: var(--wiki-t3);
+}
+
+.wiki_result_summary mark {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 2px;
+}
+
+.wiki_result_meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--wiki-t4);
+}
+
+/* ── 通用提示 / 错误 ──────────────────────────────────────────────── */
+
+.wiki_hint {
+  color: var(--wiki-t4);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.wiki_error {
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* ── 版本历史弹层 ─────────────────────────────────────────────────── */
+
+.wiki_history_list {
+  display: flex;
+  flex-direction: column;
+  max-height: 52vh;
+  overflow: auto;
+}
+
+.wiki_history_row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_history_ver {
+  min-width: 56px;
+  color: var(--wiki-t4);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wiki_history_main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wiki_history_title {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki_history_sub {
+  margin-top: 2px;
+  color: var(--wiki-t4);
+  font-size: 11.5px;
+}
+
+.wiki_history_item {
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_history_item .wiki_history_row {
+  border-bottom: none;
+}
+
+.wiki_history_actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.wiki_history_preview {
+  padding: 4px 0 12px 68px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--wiki-t2);
+  max-height: 280px;
+  overflow: auto;
+}
+
+/* ── 反向链接区块 ─────────────────────────────────────────────────── */
+
+.wiki_backlinks {
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--wiki-divider);
+}
+
+.wiki_backlinks_head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wiki-t4);
+}
+
+.wiki_backlinks_empty {
+  font-size: 12px;
+  color: var(--wiki-t4);
+}
+
+.wiki_backlinks_list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wiki_backlink_item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--wiki-fs-meta);
+  color: var(--wiki-t2);
+  font-family: inherit;
+  transition: background 120ms;
+}
+
+.wiki_backlink_item:hover {
+  background: var(--wiki-hover);
+  color: var(--text);
+}
+
+.wiki_backlink_title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 双链 / 显式关联色点 */
+.wiki_dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--wiki-t4);
+}
+
+.wiki_dot.is-reference {
+  background: var(--primary);
+}
+
+/* ── 设置面板 ─────────────────────────────────────────────────────── */
+
+.wiki_set_root {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px 20px 48px;
+  max-width: 760px;
+}
+
+.wiki_set_group {
+  display: flex;
+  flex-direction: column;
+}
+
+.wiki_set_group_head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_set_group_title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: var(--wiki-fs-sec);
+  font-weight: 650;
+}
+
+.wiki_set_group_desc {
+  margin-top: 3px;
+  color: var(--wiki-t4);
+  font-size: var(--wiki-fs-meta);
+  line-height: 1.6;
+}
+
+.wiki_set_row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--wiki-divider);
+}
+
+.wiki_set_row:last-child {
+  border-bottom: none;
+}
+
+.wiki_set_row.is-pending .wiki_set_label {
+  color: var(--wiki-t3);
+}
+
+.wiki_set_main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wiki_set_label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.wiki_set_desc {
+  margin-top: 3px;
+  color: var(--wiki-t4);
+  font-size: var(--wiki-fs-meta);
+  line-height: 1.6;
+}
+
+.wiki_set_phase {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--wiki-sunken);
+  color: var(--wiki-t3);
+  font-size: var(--wiki-fs-cap);
+}
+
+.wiki_set_control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.wiki_set_unit {
+  color: var(--wiki-t4);
+  font-size: 11.5px;
+}
+
+.wiki_text_input {
+  min-width: 220px;
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--wiki-fs-meta);
+  resize: vertical;
+  outline: none;
+  transition: border-color 120ms;
+}
+
+.wiki_text_input:focus {
+  border-color: var(--primary);
+}
+
+.wiki_text_input:disabled {
+  color: var(--wiki-t4);
+  cursor: not-allowed;
+}
+
+.wiki_set_error {
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+/* ── 响应式与动效 ─────────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  .wiki_root {
+    --wiki-rail-w: 208px;
+    --wiki-topsearch-w: 160px;
+  }
+
+  .wiki_article {
+    padding: 22px 24px 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .wiki_topsearch {
+    width: 140px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wiki_root * {
+    transition: none !important;
+  }
+}

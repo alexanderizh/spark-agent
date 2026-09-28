@@ -54,6 +54,7 @@ export type ViewId =
   | 'plugins'
   | 'providers'
   | 'memory'
+  | 'wiki'
   | 'settings'
   | 'lobe-preview'
   | 'account-center'

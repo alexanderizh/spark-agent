@@ -277,6 +277,8 @@ import {
   migrateMediaModelManifestToV2,
   createScheduledTaskTurnPresentation,
   validateMediaModelManifestSemantics,
+  WIKI_SETTINGS_CATEGORY,
+  validateWikiSettingValue,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -9717,6 +9719,18 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('settings:set', async (req) => {
+    // 知识库设置走协议层的单一事实源校验（方案 §12.2）：越界/未知键一律拒绝，
+    // 而不是静默钳制——静默钳制会让用户以为设置生效了。value === null（清除）
+    // 例外：允许删除该键回落到默认值。
+    if (req.category === WIKI_SETTINGS_CATEGORY && req.value !== null) {
+      const check = validateWikiSettingValue(req.key, req.value)
+      if (!check.ok) {
+        log.warn(`wiki setting rejected: ${req.key} (${check.message ?? 'invalid'})`)
+        throw new Error(check.message ?? `知识库设置项取值无效：${req.key}`)
+      }
+      getSettingsService().set(req.category, req.key, check.value)
+      return { ok: true }
+    }
     // value === null 视为"清除该 key"：调 repo.delete() 而非写入字面量 null。
     // 前端 MemoryPanel 等表单用 set(key, null) 表达"未设置"语义（触发默认/回退逻辑）。
     if (req.value === null) {

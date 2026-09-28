@@ -1,41 +1,34 @@
 /**
  * @module registerWikiIpc
  *
- * 知识库 / Wiki IPC — 空间与页面 CRUD 骨架 + 检索（S0）。
+ * 知识库 / Wiki IPC — 空间与页面 CRUD + 版本历史 + 双链（S1 完整闭环）。
  *
  * 设计约束：
- *   - 写入一律经 agent-runtime 的 WikiWriteService（统一写入原语：先文件后 DB、
- *     CAS、版本记录、FTS 同事务、indexReady 回执）——本文件不直写 repository。
+ *   - **写入一律经 agent-runtime 的 WikiWriteService**（统一写入原语：先文件后 DB、
+ *     CAS、版本记录、FTS 同事务、双链重建、indexReady 回执）——本文件不直写
+ *     repository。这与 memory IPC 直用 repo 的历史风格不同，是方案设计原则 5
+ *     的硬要求（memory 曾因 6 处入口不一致付出代价）。
+ *   - 服务组合一律经 `createWikiServiceStack` 装配，避免漏接派生依赖（双链）。
  *   - 全部 handler 落本文件，ipc/index.ts 仅一行调用（主文件已 1.19 万行）。
- *   - S0 骨架面向 user scope 完整闭环；project scope 正文路径按空间所属
- *     workspace 的 root_path 解析。设置项复用 settings:get/set（键前缀 wiki/），
- *     预算档从 (category='wiki', key='budget/xxx') 读取。
+ *   - 正文文件路径按空间所属 scope 解析（project scope 需要 workspace root）。
+ *   - 设置项复用 settings:get/set（category='wiki'），预算档逐次读取 → 保存即生效。
  */
 
 import {
-  WikiSpaceRepository,
-  WikiPageRepository,
-  WikiSearchRepository,
-  WikiRevisionRepository,
   WorkspaceRepository,
   SettingsRepository,
+  type WikiScope,
+  type WikiSpaceType,
+  type WikiPageKind,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import {
-  WikiStoreService,
-  WikiSpaceService,
-  WikiSearchService,
-  WikiPageService,
-  WikiWriteService,
-  resolveWikiBudget,
-} from '@spark/agent-runtime'
+import { createWikiServiceStack, resolveWikiBudgetFromSettings } from '@spark/agent-runtime'
 import type {
-  WikiScope,
-  WikiSpaceType,
-  WikiPageKind,
   WikiPageMeta,
   WikiSpaceSummary,
   WikiPageVersionEntry,
+  WikiBacklinkEntry,
+  WikiRevisionDetail,
 } from '@spark/protocol'
 import { typedIpcHandle } from './typed-ipc.js'
 import { getDatabase } from '../db.js'
@@ -47,34 +40,38 @@ export function registerWikiIpc(): void {
   const db: SparkDatabase = getDatabase()
   const settingsRepo = new SettingsRepository(db)
 
-  const getBudget = () =>
-    resolveWikiBudget({
-      readMaxTokens: settingsRepo.get('wiki', 'budget/readMaxTokens'),
-      searchLimit: settingsRepo.get('wiki', 'budget/searchLimit'),
-      summaryChars: settingsRepo.get('wiki', 'budget/summaryChars'),
-      turnTotal: settingsRepo.get('wiki', 'budget/turnTotal'),
-    })
+  const getBudget = () => resolveWikiBudgetFromSettings((c, k) => settingsRepo.get(c, k))
 
-  /** 按空间行解析 WikiStoreService（project scope 需要 workspace root）。 */
-  const storeForSpace = async (spaceScope: WikiScope, scopeRef: string | null) => {
-    let workspaceRootPath: string | undefined
-    if (spaceScope === 'project' && scopeRef != null) {
-      try {
-        const workspace = new WorkspaceRepository(db).get(scopeRef)
-        workspaceRootPath = workspace?.root_path ?? undefined
-      } catch {
-        // workspace 不在 → store 落 home 侧 orphan 路径（写入前校验会拒绝）
-      }
+  /** 按 scope 解析 workspace root（project scope 的正文文件要落仓库内）。 */
+  const resolveWorkspaceRoot = (scope: WikiScope, scopeRef: string | null): string | undefined => {
+    if (scope !== 'project' || scopeRef == null) return undefined
+    try {
+      return new WorkspaceRepository(db).get(scopeRef)?.root_path ?? undefined
+    } catch {
+      return undefined
     }
-    return new WikiStoreService(undefined, workspaceRootPath)
   }
 
-  const spaceRepo = new WikiSpaceRepository(db)
-  const pageRepo = new WikiPageRepository(db)
-  const searchRepo = new WikiSearchRepository(db)
-  const revisionRepo = new WikiRevisionRepository(db)
-  const spaceService = new WikiSpaceService(spaceRepo)
-  const searchService = () => new WikiSearchService(searchRepo, getBudget())
+  /** 服务栈（按 scope 决定正文根路径）。 */
+  const stack = (scope: WikiScope = 'user', scopeRef: string | null = null) => {
+    const workspaceRootPath = resolveWorkspaceRoot(scope, scopeRef)
+    return createWikiServiceStack({
+      db,
+      budget: getBudget(),
+      ...(workspaceRootPath != null ? { workspaceRootPath } : {}),
+    })
+  }
+
+  const base = stack()
+
+  /** 页面所属空间 → 服务栈（页面不存在时返回 null）。 */
+  const stackForPage = (pageId: string) => {
+    const page = base.pageRepo.getById(pageId)
+    if (page == null) return null
+    const space = base.spaceRepo.getById(page.space_id)
+    if (space == null) return null
+    return stack(space.scope, space.scope_ref)
+  }
 
   // ─── 空间 ─────────────────────────────────────────────────────────────
 
@@ -86,7 +83,7 @@ export function registerWikiIpc(): void {
           // 全部视图：project 空间按任意 scope_ref 匹配（渲染端列表）
           ...listAllProjectScopes(db),
         ]
-    const rows = spaceService.listSpaces(scopes, {
+    const rows = base.spaceService.listSpaces(scopes, {
       ...(request.spaceType != null ? { spaceType: request.spaceType } : {}),
     })
     const spaces: WikiSpaceSummary[] = rows.map(toSpaceSummary)
@@ -94,14 +91,7 @@ export function registerWikiIpc(): void {
   })
 
   typedIpcHandle('wiki:space:create', async (request) => {
-    const writeService = new WikiWriteService(
-      spaceRepo,
-      pageRepo,
-      revisionRepo,
-      searchRepo,
-      new WikiStoreService(),
-    )
-    const result = await writeService.createSpace({
+    const result = await base.writeService.createSpace({
       scope: request.scope,
       scopeRef: request.scopeRef ?? null,
       ...(request.spaceType != null ? { spaceType: request.spaceType } : {}),
@@ -120,10 +110,36 @@ export function registerWikiIpc(): void {
     }
   })
 
+  typedIpcHandle('wiki:space:update', async (request) => {
+    const existing = base.spaceRepo.getById(request.spaceId)
+    if (existing == null) throw new Error('空间不存在')
+    if (request.name != null) {
+      const name = request.name.trim()
+      if (name.length === 0) throw new Error('空间名称不能为空')
+      const conflict = base.spaceRepo.findByName(
+        existing.scope,
+        existing.scope_ref,
+        existing.space_type,
+        name,
+      )
+      if (conflict != null && conflict.id !== existing.id) {
+        throw new Error(`同名空间已存在：${name}`)
+      }
+    }
+    const updated = base.spaceRepo.update(request.spaceId, {
+      ...(request.name != null ? { name: request.name.trim() } : {}),
+      ...(request.description != null ? { description: request.description.slice(0, 400) } : {}),
+      ...(request.icon !== undefined ? { icon: request.icon } : {}),
+    })
+    const counts = base.spaceRepo.countActivePagesBySpace([updated.id])
+    log.info(`wiki space updated: ${updated.id}`)
+    return { space: toSpaceSummary({ ...updated, pageCount: counts.get(updated.id) ?? 0 }) }
+  })
+
   typedIpcHandle('wiki:space:archive', async (request) => {
-    const space = spaceRepo.getById(request.spaceId)
+    const space = base.spaceRepo.getById(request.spaceId)
     if (space == null) throw new Error('空间不存在')
-    spaceRepo.archive(request.spaceId)
+    base.spaceRepo.archive(request.spaceId)
     log.info(`wiki space archived: ${request.spaceId}`)
     return { ok: true, id: request.spaceId, title: space.name, version: 1, indexReady: true }
   })
@@ -131,21 +147,18 @@ export function registerWikiIpc(): void {
   // ─── 页面 ─────────────────────────────────────────────────────────────
 
   typedIpcHandle('wiki:page:list', async (request) => {
-    const pages = pageRepo.listBySpace(request.spaceId, {
+    const pages = base.pageRepo.listBySpace(request.spaceId, {
       ...(request.parentId !== undefined ? { parentId: request.parentId } : {}),
       ...(request.kind != null ? { kind: request.kind } : {}),
+      ...(request.includeArchived === true ? { includeArchived: true } : {}),
     })
     return { pages: pages.map(toPageMeta) }
   })
 
   typedIpcHandle('wiki:page:get', async (request) => {
-    const page = pageRepo.getById(request.pageId)
-    if (page == null) throw new Error('页面不存在')
-    const space = spaceRepo.getById(page.space_id)
-    if (space == null) throw new Error('页面所属空间不存在')
-    const store = await storeForSpace(space.scope, space.scope_ref)
-    const pageService = new WikiPageService(pageRepo, revisionRepo, store, getBudget())
-    const r = await pageService.readFull(request.pageId)
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const r = await s.pageService.readFull(request.pageId)
     if (!r.ok) throw new Error(r.message)
     return {
       page: {
@@ -153,17 +166,16 @@ export function registerWikiIpc(): void {
         body: r.body,
         truncated: false,
         nextOffset: null,
-        tokens: WikiPageService.estimatePageTokens(r.body),
+        tokens: Math.max(1, Math.round(r.body.length / 3)),
       },
     }
   })
 
   typedIpcHandle('wiki:page:create', async (request) => {
-    const space = spaceRepo.getById(request.spaceId)
+    const space = base.spaceRepo.getById(request.spaceId)
     if (space == null) throw new Error('目标空间不存在')
-    const store = await storeForSpace(space.scope, space.scope_ref)
-    const writeService = new WikiWriteService(spaceRepo, pageRepo, revisionRepo, searchRepo, store)
-    const result = await writeService.commitPage({
+    const s = stack(space.scope, space.scope_ref)
+    const result = await s.writeService.commitPage({
       spaceId: request.spaceId,
       ...(request.parentId != null ? { parentId: request.parentId } : {}),
       ...(request.kind != null ? { kind: request.kind } : {}),
@@ -185,17 +197,27 @@ export function registerWikiIpc(): void {
   })
 
   typedIpcHandle('wiki:page:update', async (request) => {
-    const existing = pageRepo.getById(request.pageId)
-    if (existing == null) throw new Error('页面不存在')
-    const space = spaceRepo.getById(existing.space_id)
-    if (space == null) throw new Error('页面所属空间不存在')
-    const store = await storeForSpace(space.scope, space.scope_ref)
-    const writeService = new WikiWriteService(spaceRepo, pageRepo, revisionRepo, searchRepo, store)
-    const result = await writeService.commitPage({
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const existing = s.pageRepo.getById(request.pageId)!
+    const wantsMetaChange = request.title != null || request.summary != null
+    const wantsTextChange =
+      (request.title != null && request.title !== existing.title) ||
+      (request.summary != null && request.summary !== existing.summary)
+    // 文本字段（标题/摘要）变更必须带完整正文（contentless FTS 不支持部分更新）。
+    // UI 的编辑器总会带正文；仅改元数据的调用方（如重命名入口）由服务端补全：
+    // 从权威文件读取并过守卫校验，避免用空串重建索引而丢掉检索能力。
+    let body = request.body
+    if (body == null && (wantsTextChange || wantsMetaChange)) {
+      const current = await s.pageService.readFull(request.pageId)
+      if (!current.ok) throw new Error(current.message)
+      body = current.body
+    }
+    const result = await s.writeService.commitPage({
       pageId: request.pageId,
       expectedVersion: request.expectedVersion,
-      ...(request.title != null ? { title: request.title } : { title: existing.title }),
-      ...(request.body != null ? { body: request.body } : {}),
+      ...(request.title != null ? { title: request.title } : {}),
+      ...(body != null ? { body } : {}),
       ...(request.summary != null ? { summary: request.summary } : {}),
       ...(request.tags != null ? { tags: request.tags } : {}),
       ...(request.kind != null ? { kind: request.kind } : {}),
@@ -213,35 +235,176 @@ export function registerWikiIpc(): void {
     }
   })
 
+  /** 目录树拖拽移动：只改 parent_id / sort_order，不触碰正文与版本。 */
+  typedIpcHandle('wiki:page:move', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const existing = s.pageRepo.getById(request.pageId)!
+    if (request.parentId === request.pageId) throw new Error('不能把页面移动到自己下面')
+    if (request.parentId != null) {
+      const parent = s.pageRepo.getById(request.parentId)
+      if (parent == null) throw new Error('目标父页面不存在')
+      if (parent.space_id !== existing.space_id) throw new Error('不能跨空间移动页面')
+      // 防环：目标父节点不能是自己的后代（否则该子树从树上脱落）
+      if (isDescendant(s, existing.space_id, request.parentId, existing.id)) {
+        throw new Error('不能把页面移动到它自己的子页面下')
+      }
+    }
+    const result = await s.writeService.commitPage({
+      pageId: request.pageId,
+      expectedVersion: request.expectedVersion,
+      parentId: request.parentId,
+      ...(request.sortOrder != null ? { sortOrder: request.sortOrder } : {}),
+      authorRole: 'manual_user',
+    })
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  })
+
   typedIpcHandle('wiki:page:archive', async (request) => {
-    const page = pageRepo.getById(request.pageId)
-    if (page == null) throw new Error('页面不存在')
-    pageRepo.archive(request.pageId)
-    log.info(`wiki page archived: ${request.pageId}`)
-    return { ok: true, id: page.id, title: page.title, version: page.version, indexReady: true }
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const result = await s.writeService.archivePage(request.pageId)
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: true,
+    }
+  })
+
+  /** 取消归档：恢复为 published 并重建双链（正文未动，仅状态与图谱）。 */
+  typedIpcHandle('wiki:page:restore', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const result = await s.writeService.restoreFromArchive(request.pageId)
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  })
+
+  typedIpcHandle('wiki:page:delete', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const result = await s.writeService.deletePage(request.pageId)
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.id,
+      title: result.title,
+      fileCleaned: result.fileCleaned,
+      revisionsCleaned: result.revisionsCleaned,
+    }
   })
 
   typedIpcHandle('wiki:page:history', async (request) => {
-    const store = new WikiStoreService()
-    const pageService = new WikiPageService(pageRepo, revisionRepo, store, getBudget())
-    const versions: WikiPageVersionEntry[] = pageService.history(request.pageId)
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const versions: WikiPageVersionEntry[] = s.pageService.history(request.pageId)
     return { versions }
+  })
+
+  typedIpcHandle('wiki:page:revision:read', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const revision = await s.pageService.readRevision(request.pageId, request.version)
+    if (revision == null) throw new Error(`版本 v${request.version} 不存在`)
+    const detail: WikiRevisionDetail = revision
+    return { revision: detail }
+  })
+
+  typedIpcHandle('wiki:page:revision:restore', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const result = await s.writeService.restoreVersion({
+      pageId: request.pageId,
+      version: request.version,
+      expectedVersion: request.expectedVersion,
+      actor: 'manual_user',
+    })
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  })
+
+  typedIpcHandle('wiki:page:backlinks', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const rows = s.linkService.listBacklinksForUi(request.pageId)
+    const items: WikiBacklinkEntry[] = rows.map((r) => ({
+      fromPage: r.fromPage,
+      fromTitle: r.fromTitle,
+      fromKind: r.fromKind as WikiPageKind,
+      linkType: r.linkType,
+      createdAt: r.createdAt,
+    }))
+    return { items, total: items.length }
+  })
+
+  typedIpcHandle('wiki:page:link', async (request) => {
+    const s = stackForPage(request.fromPageId)
+    if (s == null) throw new Error('来源页面不存在')
+    const result = s.linkService.setReference({
+      fromPageId: request.fromPageId,
+      toPageId: request.toPageId,
+      ...(request.remove === true ? { remove: true } : {}),
+    })
+    if (!result.ok) throw new Error(result.message)
+    return { ok: true, changed: result.changed }
   })
 
   // ─── 检索 ─────────────────────────────────────────────────────────────
 
   typedIpcHandle('wiki:search', async (request) => {
-    const result = searchService().search({
+    return base.searchService.search({
       query: request.query,
       ...(request.spaceIds != null ? { spaceIds: request.spaceIds } : {}),
       ...(request.kind != null ? { kind: request.kind } : {}),
       ...(request.limit != null ? { limit: request.limit } : {}),
     })
-    return result
   })
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * 目标节点是否位于 candidate 子树内（move 防环）。
+ * 逐层向上回溯父链，深度上限兜底防脏数据死循环。
+ */
+function isDescendant(
+  s: { pageRepo: { getById(id: string): { parent_id: string | null; space_id: string } | null } },
+  spaceId: string,
+  candidateId: string,
+  ancestorId: string,
+): boolean {
+  let cursor = candidateId
+  for (let depth = 0; depth < 64; depth += 1) {
+    const row = s.pageRepo.getById(cursor)
+    if (row == null || row.space_id !== spaceId) return false
+    if (row.parent_id == null) return false
+    if (row.parent_id === ancestorId) return true
+    cursor = row.parent_id
+  }
+  return false
+}
 
 /** 全部 project scope（scope_ref 任意）—— 渲染端"全部"视图用。 */
 function listAllProjectScopes(db: SparkDatabase): Array<{ scope: WikiScope; scopeRef: string }> {

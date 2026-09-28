@@ -63,6 +63,7 @@ import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
 // 仍能通过原路径 import。
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
+import { WikiSettingsPanel } from './wiki/WikiSettingsPanel'
 import { SettingsLogViewer } from './SettingsLogViewer'
 import { RemoteConnectionsSection } from './SettingsRemoteConnections'
 import { SubAppRuntimeSettingsCard } from '../sub-app/SubAppRuntimeSettingsCard'
@@ -296,6 +297,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           keywords: ['长期记忆', '记忆库', '记住'],
         },
         {
+          id: 'wiki',
+          icon: <Icons.Book size={13} />,
+          label: '知识库',
+          keywords: ['wiki', '知识库', '知识', '沉淀', '检索', '上下文预算'],
+        },
+        {
           id: 'remote-connections',
           icon: <Icons.Globe size={13} />,
           label: '远程连接',
@@ -480,6 +487,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     // MemoryPanel，导致其内部 state（scope tab、新增/配置 Drawer 的 open）全部丢失：
     // 表现为「tab 切换几秒后自动跳回 User」「新增/配置弹窗打不开」。
     memory: MemoryPanel,
+    wiki: WikiSettingsPanel,
     about: AboutSection,
   }
   const SectionBody = Section[section]

@@ -137,6 +137,10 @@ const AccountCenterView = React.lazy(async () => ({
   default: (await import('./design/views/AccountCenterView')).AccountCenterView,
 }))
 const ProvidersView = React.lazy(() => import('./design/views/ProvidersView'))
+const WikiView = React.lazy(async () => ({
+  default: (await import('./design/views/wiki/WikiView')).WikiView,
+}))
+
 const LobePreviewView = React.lazy(async () => ({
   default: (await import('./design/theme/LobePreviewView')).LobePreviewView,
 }))
@@ -291,6 +295,7 @@ const NAV_ITEMS: Array<{
   { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
   { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
+  { id: 'wiki', labelKey: 'nav.wiki', icon: Icons.Book },
   { id: 'recovery-center', labelKey: 'nav.recoveryCenter', icon: Icons.History },
   { id: 'sub-apps', labelKey: 'nav.subApps', icon: Icons.Grid },
 ]
@@ -299,7 +304,7 @@ const NAV_ITEMS: Array<{
 // canvas 由顶部模式切换器承担，不再作为 nav item 渲染（仍保留在 NAV_ITEMS
 // 供全局搜索派生）。
 // L2 工作台上下文工具：随 workbench 模式显示。pin 偏好仍对其生效。
-const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'scheduled-tasks', 'sub-apps']
+const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'wiki', 'scheduled-tasks', 'sub-apps']
 // 测试期功能入口：侧栏导航文字后渲染「测试版」小标签（.nav-beta-tag），
 // 代替此前直接拼在文案里的「 -Beta」文本后缀。
 const BETA_NAV_IDS = new Set(['workflows', 'sub-apps'])
@@ -333,6 +338,7 @@ const MODE_OWNED_VIEWS: Record<WorkspaceMode, ReadonlySet<ViewId>> = {
     'chat',
     'workflows',
     'board',
+    'wiki',
     'scheduled-tasks',
     'sub-apps',
     'sub-app',
@@ -1993,6 +1999,8 @@ function Shell() {
         return <BoardView />
       case 'recovery-center':
         return <RecoveryCenterView />
+      case 'wiki':
+        return <WikiView />
       case 'canvas':
         return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
       case 'canvas-workflows':
