@@ -13,10 +13,14 @@ import { setCodeExplorerVisible } from '../file-explorer/fileExplorerVisibility'
 const VISIBLE_KEY = 'spark-agent:code-git-panel-visible'
 const WIDTH_KEY = 'spark-agent:code-git-panel-width'
 const VIEW_KEY = 'spark-agent:code-git-panel-view'
+// 宽度偏好 schema 版本：v2 收窄默认值（300 → 260）与上限（520 → 440），
+// 把空间让给右侧编辑器内容区（内容比文件树更有价值）。
+const WIDTH_SCHEMA_KEY = 'spark-agent:code-git-panel-width-schema'
+const WIDTH_SCHEMA_VERSION = 2
 
-const MIN_WIDTH = 200
-const MAX_WIDTH = 520
-const DEFAULT_WIDTH = 300
+const MIN_WIDTH = 180
+const MAX_WIDTH = 440
+const DEFAULT_WIDTH = 260
 
 /** 更改列表显示方式：平铺（默认，同名自动消歧）或树形目录 */
 export type GitPanelViewMode = 'list' | 'tree'
@@ -45,12 +49,27 @@ function clampWidth(v: number): number {
 function readWidth(): number {
   if (typeof window === 'undefined') return DEFAULT_WIDTH
   try {
+    const version = Number(window.localStorage.getItem(WIDTH_SCHEMA_KEY) ?? '0')
+    if (version < WIDTH_SCHEMA_VERSION) {
+      persistWidth(DEFAULT_WIDTH)
+      return DEFAULT_WIDTH
+    }
     const raw = window.localStorage.getItem(WIDTH_KEY)
     if (raw != null) return clampWidth(Number(raw))
   } catch {
     /* localStorage 不可用时退回内存默认值 */
   }
   return DEFAULT_WIDTH
+}
+
+/** 写入宽度偏好并同步 schema 版本（避免下一次启动被迁移逻辑再重置一次） */
+function persistWidth(next: number): void {
+  try {
+    window.localStorage.setItem(WIDTH_KEY, String(next))
+    window.localStorage.setItem(WIDTH_SCHEMA_KEY, String(WIDTH_SCHEMA_VERSION))
+  } catch {
+    /* 受限渲染上下文仍可使用内存偏好 */
+  }
 }
 
 function readViewMode(): GitPanelViewMode {
@@ -101,11 +120,7 @@ export function setGitPanelWidth(next: number): void {
   const clamped = clampWidth(next)
   if (width === clamped) return
   width = clamped
-  try {
-    window.localStorage.setItem(WIDTH_KEY, String(clamped))
-  } catch {
-    /* 同上 */
-  }
+  persistWidth(clamped)
   emit()
 }
 

@@ -186,14 +186,15 @@ export function maxSideChatWidthForViewport(): number {
   return Math.floor(window.innerWidth * 0.85)
 }
 
-// 默认宽度按窗口宽度分档：大屏更宽，小屏保底 500。
+// 默认宽度按窗口宽度分档：大屏更宽（侧栏里要同时容纳文件树 + 编辑器，留足内容区）。
 // 仅作为 lazy initial state 在挂载时取一次，用户手动拖过后保留，不会被 resize 冲掉。
 export function defaultUnifiedSidePanelWidth(): number {
-  if (typeof window === 'undefined') return 560
+  if (typeof window === 'undefined') return 640
   const vw = window.innerWidth
-  if (vw >= 1700) return 600
-  if (vw >= 1280) return 560
-  return 500
+  if (vw >= 2200) return 760
+  if (vw >= 1700) return 680
+  if (vw >= 1280) return 620
+  return 540
 }
 
 export function UnifiedSessionSidePanel({

@@ -419,8 +419,10 @@ export function CodeViewerPanel({
             >
               <div className="cv-explorer-body">
                 {explorerVisible ? (
+                  // key 只含 workspaceId：同一项目下切会话不重挂载文件树，
+                  // 展开/选中/滚动等内部状态保持一致（会话只影响 IPC 的 sessionId 入参）。
                   <FileExplorerPanel
-                    key={`${workspaceId}:${sessionId ?? ''}`}
+                    key={workspaceId}
                     workspaceId={workspaceId}
                     sessionId={sessionId ?? null}
                     workspaceRootPath={workspaceRootPath ?? null}
@@ -433,8 +435,9 @@ export function CodeViewerPanel({
                     onOpenSearch={() => openSearchPanel()}
                   />
                 ) : searchPanelVisible ? (
+                  // 同上：搜索面板按项目复用，切会话不重置查询/布局/结果滚动
                   <SearchPanel
-                    key={`${workspaceId}:${sessionId ?? ''}`}
+                    key={workspaceId}
                     workspaceId={workspaceId}
                     sessionId={sessionId ?? null}
                     onOpenFile={onOpenFileFromSearch}

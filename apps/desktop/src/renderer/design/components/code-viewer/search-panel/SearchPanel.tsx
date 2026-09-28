@@ -49,8 +49,9 @@ export function SearchPanel({
   onOpenFile,
 }: SearchPanelProps): React.ReactNode {
   const mode = useSearchPanelMode()
-  const workspaceScopeId =
-    workspaceId == null ? null : `${workspaceId}${sessionId == null ? '' : `:${sessionId}`}`
+  // 搜索上下文（查询 / 大小写 / 结果布局）按项目隔离：同一项目下切会话沿用同一份，
+  // 与「代码」面板的项目级维护保持一致（sessionId 仍传给后端搜索 IPC 做权限/范围判定）。
+  const workspaceScopeId = workspaceId
   const [workspaceState, setWorkspaceState] = useState<SearchPanelWorkspaceState>(() =>
     readSearchPanelWorkspaceState(workspaceScopeId),
   )

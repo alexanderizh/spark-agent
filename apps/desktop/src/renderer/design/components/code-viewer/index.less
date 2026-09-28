@@ -571,6 +571,9 @@
   min-height: 0;
   overflow: hidden;
   background: var(--cv-bg-2);
+  /* 比例安全阀：左侧栏（文件树 / 搜索 / Git）最多占面板宽度的 52%，
+     保证右侧编辑器内容区始终有可读空间（面板被拖窄时自动收窄左栏）。 */
+  max-width: 52%;
 }
 /* 面板本体（文件树 / 搜索 / Git 三选一），公用 foot 栏（.gp-footer）贴在其下 */
 .cv-explorer-body {

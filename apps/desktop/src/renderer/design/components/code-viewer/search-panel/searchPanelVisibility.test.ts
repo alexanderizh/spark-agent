@@ -46,7 +46,20 @@ describe('searchPanelVisibility', () => {
 
   it('clamps and persists its independent width', () => {
     setSearchPanelWidth(10_000)
-    expect(getSearchPanelWidth()).toBe(640)
-    expect(localStorage.getItem('spark-agent:code-search-panel-width')).toBe('640')
+    expect(getSearchPanelWidth()).toBe(560)
+    expect(localStorage.getItem('spark-agent:code-search-panel-width')).toBe('560')
+  })
+
+  it('把旧版偏宽的缓存一次性迁移为收窄后的默认宽度', () => {
+    localStorage.clear()
+    localStorage.setItem('spark-agent:code-search-panel-width', '640')
+    resetSearchPanelSettingsForTest()
+    expect(getSearchPanelWidth()).toBe(300)
+  })
+
+  it('迁移之后尊重用户手动拖拽的宽度', () => {
+    setSearchPanelWidth(420)
+    resetSearchPanelSettingsForTest()
+    expect(getSearchPanelWidth()).toBe(420)
   })
 })

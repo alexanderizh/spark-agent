@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getCodeExplorerVisible, resetCodeExplorerSettingsForTest } from './fileExplorerVisibility'
+import {
+  getCodeExplorerVisible,
+  getCodeExplorerWidth,
+  resetCodeExplorerSettingsForTest,
+  setCodeExplorerWidth,
+} from './fileExplorerVisibility'
 
 // node 环境 stub window.localStorage；resetForTest 触发 readSettings() 重新读取
 
@@ -33,5 +38,31 @@ describe('文件树默认可见性', () => {
     stubLocalStorage(new Map([['spark-agent:code-explorer-visible', 'true']]))
     resetCodeExplorerSettingsForTest()
     expect(getCodeExplorerVisible()).toBe(true)
+  })
+})
+
+describe('文件树默认宽度', () => {
+  it('未写入过偏好时用收窄后的默认宽度 200', () => {
+    stubLocalStorage(new Map())
+    resetCodeExplorerSettingsForTest()
+    expect(getCodeExplorerWidth()).toBe(200)
+  })
+
+  it('把旧的偏宽缓存一次性迁移为收窄后的默认宽度', () => {
+    stubLocalStorage(new Map([['spark-agent:code-explorer-width', '460']]))
+    resetCodeExplorerSettingsForTest()
+    expect(getCodeExplorerWidth()).toBe(200)
+  })
+
+  it('迁移之后尊重用户手动拖拽的宽度（并 clamp 到新上限 400）', () => {
+    const store = new Map<string, string>()
+    stubLocalStorage(store)
+    resetCodeExplorerSettingsForTest()
+    setCodeExplorerWidth(320)
+    resetCodeExplorerSettingsForTest()
+    expect(getCodeExplorerWidth()).toBe(320)
+
+    setCodeExplorerWidth(9_999)
+    expect(getCodeExplorerWidth()).toBe(400)
   })
 })
