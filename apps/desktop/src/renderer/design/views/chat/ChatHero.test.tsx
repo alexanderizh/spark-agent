@@ -121,26 +121,25 @@ describe('SingleAgentEmptyHero', () => {
         root.render(<SingleAgentEmptyHero themeId="celestial" />)
       })
       await act(async () => {})
-      expect(container.querySelector('.single-empty-title')?.textContent).toBe(
-        '早上好，愿你今日灵感如泉',
-      )
+      const title = () => container.querySelector('.single-empty-title')?.textContent
+      expect(title()).toBe('早上好，愿你今日灵感如泉')
 
       const button = container.querySelector<HTMLButtonElement>('.single-empty-refresh')
       expect(button).not.toBeNull()
       expect(button?.getAttribute('aria-label')).toBe('换一句问候语')
       expect(button?.title).toBe('换一句')
+      expect(button?.disabled).toBe(false)
 
+      // 点击刷新：必须绕过主进程的 2 小时缓存。
       await act(async () => {
         button?.click()
       })
       await act(async () => {})
 
       expect(calls).toHaveLength(2)
-      // 手动刷新必须绕过主进程的 2 小时缓存。
+      expect(calls[1]?.channel).toBe('greeting:get')
       expect(calls[1]?.req).toEqual({ forceRefresh: true })
-      expect(container.querySelector('.single-empty-title')?.textContent).toBe(
-        '早上好，山高路远，行则将至',
-      )
+      expect(title()).toBe('早上好，山高路远，行则将至')
       // 刷新结束后按钮恢复可用。
       expect(container.querySelector<HTMLButtonElement>('.single-empty-refresh')?.disabled).toBe(
         false,
@@ -176,9 +175,12 @@ describe('SingleAgentEmptyHero', () => {
       })
       await act(async () => {})
 
-      // 刷新失败不把已有文案清成空白，也不退回写死文案。
+      // 刷新失败不把已有文案清成空白，也不退回写死文案，且按钮解除忙碌态。
       expect(container.querySelector('.single-empty-title')?.textContent).toBe(
         '早上好，愿你今日灵感如泉',
+      )
+      expect(container.querySelector<HTMLButtonElement>('.single-empty-refresh')?.disabled).toBe(
+        false,
       )
     } finally {
       if (original === undefined) delete win.spark

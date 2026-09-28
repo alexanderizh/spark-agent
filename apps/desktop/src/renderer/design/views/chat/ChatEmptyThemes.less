@@ -139,41 +139,48 @@
   content: '';
 }
 
+/*
+ * 问候语字号刻意调小：模型生成的问候语比原写死的「早上好，继续推进」长得多
+ * （上限 24 字），38px 会把空会话首屏撑得很高、挤占下方热力图与输入区。
+ * 注意：下方的 @media (max-width: 1100px) 与 (max-height: 760px) 分支里各有一份
+ * 字号覆盖，改这里时务必同步，否则常见窗口宽度下会被它们盖回去（踩过）。
+ */
 .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
   display: grid;
   gap: 1px;
+  max-width: 34em;
   color: var(--eh-ink);
   font-family: var(--font-sans);
-  font-size: clamp(28px, 2.75vw, 38px);
+  font-size: clamp(22px, 2.2vw, 28px);
   font-weight: 650;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 /*
  * 问候语旁的「换一句」按钮：极小、低干扰。默认直接用 --eh-muted（细线条图标
  * 再叠 color-mix 淡化就会淡到看不见，实测过），hover / 键盘聚焦才提亮为主色；
- * 刷新中转为 accent 色并做呼吸脉冲。
- * 尺寸走控件小档（24px 命中区），与标题基线对齐（标题行已 align-items: flex-end）。
+ * 生成中转为 accent 色并做呼吸脉冲。尺寸走控件小档（24px 命中区）。
  *
- * 图标用 Sparkles：14px 实尺寸实测下，Refresh/RotateCw 的直角折线箭头糊成一团，
- * Shuffle 的曲线糊掉只剩交叉主干、退化成「✕」（有误读成关闭的风险），
- * 只有这个整体轮廓的图标在 14px 下仍能辨认 —— 这是被反馈「丑」的根因所在。
+ * 图标 = RotateCw + 描边 2.2：14px 原生像素实测下单圈箭头清晰锐利。
+ * 加粗是关键 —— 描边 1.6 ÷ viewBox 24 × 14px ≈ 0.93px 实际线宽，抗锯齿后发虚。
  */
 .chat-main-empty[data-empty-theme] .single-empty-refresh {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-bottom: 3px;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 2px;
   padding: 0;
   border: none;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-xs);
   background: transparent;
-  color: var(--eh-muted);
+  /* 比 muted 更淡一档：它是装饰性小控件，不该和标题抢注意力（hover 时才提亮）。 */
+  color: color-mix(in srgb, var(--eh-muted) 62%, transparent);
   cursor: pointer;
   transition:
     background-color 160ms ease,
@@ -195,12 +202,12 @@
   cursor: default;
 }
 
-.chat-main-empty[data-empty-theme] .single-empty-refresh.is-refreshing {
+.chat-main-empty[data-empty-theme] .single-empty-refresh.is-busy {
   color: var(--eh-accent);
 }
 
-/* 呼吸脉冲而非自转：Sparkles 是四角星，旋转看不出方向感；脉冲在 13px 上也够醒目。 */
-.chat-main-empty[data-empty-theme] .single-empty-refresh.is-refreshing svg {
+/* 呼吸脉冲而非自转：14px 下旋转方向感弱，脉冲更醒目也更适合「正在生成」。 */
+.chat-main-empty[data-empty-theme] .single-empty-refresh.is-busy svg {
   animation: empty-hero-refresh-pulse 1.15s ease-in-out infinite;
 }
 
@@ -600,7 +607,8 @@
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
-    font-size: clamp(27px, 8.5vw, 38px);
+    /* 与基础规则同步调小（此处覆盖 ≤1100px 的常见窗口宽度）。 */
+    font-size: clamp(20px, 2.4vw, 25px);
   }
 
   .hero-tips-wrap {
@@ -619,7 +627,8 @@
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {
-    font-size: 31px;
+    /* 矮窗口：与基础规则同步调小（原 31px）。 */
+    font-size: 24px;
   }
 }
 

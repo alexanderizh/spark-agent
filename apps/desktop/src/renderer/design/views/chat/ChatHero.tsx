@@ -147,7 +147,7 @@ export function SingleAgentEmptyHero({
   }, [])
 
   /**
-   * 取问候语文本。主进程侧完成 3 级模型档位 + 2 小时缓存 + 协议分派；
+   * 取问候语文本。主进程侧完成模型档位逐档降级 + 2 小时缓存 + 协议分派；
    * forceRefresh=true 时忽略缓存，用于用户手动「换一句」。
    *
    * 只负责取数、不碰组件状态（状态由调用方决定怎么写），失败 / 空一律返回 null ——
@@ -190,7 +190,7 @@ export function SingleAgentEmptyHero({
     setRefreshing(true)
     void fetchGreeting(true).then((text) => {
       if (!isMountedRef.current) return
-      // 刷新失败不退回写死文案也不清空：旧的模型文案继续展示（主进程也保留缓存）。
+      // 失败不退回写死文案也不清空：旧的模型文案继续展示（主进程也保留缓存）。
       if (text != null) setGeneratedGreeting(text)
       setRefreshing(false)
     })
@@ -216,19 +216,17 @@ export function SingleAgentEmptyHero({
             {canRequestGreeting && (
               <button
                 type="button"
-                className={`single-empty-refresh${refreshing ? ' is-refreshing' : ''}`}
+                className={`single-empty-refresh${refreshing ? ' is-busy' : ''}`}
                 onClick={handleRefreshGreeting}
                 disabled={refreshing}
                 title="换一句"
                 aria-label="换一句问候语"
               >
-                {/* 图标选型是实测出来的（14px 实尺寸对比）：
-                    Refresh/RotateCw 的直角折线箭头糊成一团；Shuffle 两条曲线糊掉
-                    只剩交叉主干、退化成「✕」有误读成关闭的风险；只有 Sparkles 这种
-                    整体轮廓在 14px 下仍成立，语义也贴「让模型再生成一句」。
-                    描边从默认 1.6 提到 1.9：14px 下 1.6 折算线宽仅 ~0.93px，
-                    抗锯齿后会发虚（细线条图标在小尺寸下的通病）。 */}
-                <Icons.Sparkles size={14} strokeWidth={1.9} />
+                {/* 图标 = RotateCw + 描边 2.2。选型依据是 14px 原生像素实测：
+                    单圈箭头在该尺寸/描边下清晰锐利，且是与被否掉的旧双箭头 Refresh
+                    明显不同的另一种刷新画法；Dice 等多点/多段图形在 14px 下会糊。
+                    为保证描边换算线宽（2.2 ÷ 24 × 13 ≈ 1.19px）不发虚，尺寸收到 13。 */}
+                <Icons.RotateCw size={13} strokeWidth={2.2} />
               </button>
             )}
           </div>
