@@ -6,6 +6,8 @@ export type TurnSource =
   | 'goal_contract_draft'
   | 'goal_iteration'
   | 'command_follow_up'
+  /** 执行连续性恢复 Turn（应用重启后按恢复计划自动继续）。 */
+  | 'system_continuity'
 
 /** 用户消息正文在产品时间线中的呈现策略；不影响持久化或模型上下文。 */
 export type UserMessageVisibility = 'visible' | 'hidden'

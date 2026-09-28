@@ -529,7 +529,15 @@ export interface PresentedFilesEvent extends BaseEvent {
   }>
 }
 
-/** Checkpoint metadata emitted by SDK-backed agent turns. */
+/**
+ * Checkpoint metadata emitted by SDK-backed agent turns and host workspace snapshots.
+ *
+ * `checkpointKind` 区分两种来源（Phase 0 语义拆分，见
+ * docs/spark-work开发相关/plans/2026-09-10-长程任务断点继续与执行连续性重构方案.md §12.1）：
+ * - `workspace_snapshot`：宿主 Git 工作区快照（CheckpointGitService，可预览/可还原）；
+ * - `provider_sdk`：引擎原生 checkpoint（仅上下文锚点，宿主不提供还原按钮）。
+ * 旧事件无此字段，读取侧按 `sdkSessionId` 是否存在推断。
+ */
 export interface CheckpointEvent extends BaseEvent {
   type: 'checkpoint'
   checkpointId: string
@@ -538,6 +546,13 @@ export interface CheckpointEvent extends BaseEvent {
   filePaths?: string[]
   /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId) 用。 */
   sdkSessionId?: string
+  checkpointKind?: 'workspace_snapshot' | 'provider_sdk'
+  /** workspace_snapshot：快照对应的 Spark workspace id（多工作区会话逐工作区发事件）。 */
+  workspaceId?: string
+  /** workspace_snapshot：快照 tree SHA（审计与还原后校验基线）。 */
+  treeSha?: string
+  /** workspace_snapshot：快照内受控文件总数（完整清单按需从 git ref 拉取，不写入事件）。 */
+  fileCount?: number
 }
 
 export interface ValidationCommandSuggestion {

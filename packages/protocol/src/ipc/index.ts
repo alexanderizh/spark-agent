@@ -87,6 +87,7 @@ import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
 import type { PluginIpcChannelMap } from '../plugin.js'
 import type { PluginRuntimeIpcChannelMap } from '../plugin-runtime.js'
 import type { OutcomeRoomIpcChannelMap } from '../outcome-room.js'
+import type { ExecutionContinuityIpcChannelMap } from '../execution-continuity.js'
 import type { TeamP1IpcChannelMap } from '../team-p1.js'
 import type { TaskGraphIpcChannelMap } from '../task-graph.js'
 import type { DeliberationIpcChannelMap } from '../deliberation.js'
@@ -628,27 +629,39 @@ export interface SessionClearEventsResponse {
 }
 
 /**
- * 会话还原点（代码检查点）。由 Claude SDK 文件检查点机制在改动文件的 turn 后产生。
- * 用于「按会话撤回代码」的时间线视图与一键还原。
+ * 会话还原点（工作区快照）。宿主 Git 工作区快照在每轮改动文件前产生；
+ * 引擎原生 checkpoint（provider_sdk）仅作为上下文锚点展示，不提供宿主还原。
+ * 用于「工作区快照」时间线视图与预览后还原。
  */
 export interface SessionCheckpoint {
   checkpointId: string
   label?: string
   /** 快照目录（相对工作区），还原时把其中文件拷回工作区 */
   path?: string
-  /** 该检查点记录的受影响文件路径 */
+  /** 该检查点记录的受影响文件路径（provider_sdk 或旧数据；workspace_snapshot 按需拉取） */
   filePaths?: string[]
   /** ISO 时间戳 */
   timestamp?: string
+  sdkSessionId?: string
+  /** 快照种类；旧数据由读取侧按 sdkSessionId 推断 */
+  checkpointKind?: 'workspace_snapshot' | 'provider_sdk'
+  /** workspace_snapshot：快照对应的 Spark workspace id */
+  workspaceId?: string
+  /** workspace_snapshot：快照 tree SHA */
+  treeSha?: string
+  /** workspace_snapshot：快照内受控文件总数 */
+  fileCount?: number
+  /** 后端验证快照 ref 仍存在且可还原；provider_sdk 恒为 false */
+  restorable?: boolean
 }
 
 export interface SessionGetCheckpointConfigRequest {
   sessionId: SessionId
 }
 export interface SessionGetCheckpointConfigResponse {
-  /** 会话是否开启代码还原点（默认 false） */
+  /** 会话是否开启工作区快照（默认 false） */
   enabled: boolean
-  /** 功能是否可用：仅当工作区是 git 仓库时为 true（非 git 前端隐藏入口） */
+  /** 功能是否可用：任一工作区是 git 仓库时为 true（非 git 前端隐藏入口） */
   available: boolean
 }
 export interface SessionSetCheckpointConfigRequest {
@@ -667,6 +680,40 @@ export interface SessionListCheckpointsRequest {
 export interface SessionListCheckpointsResponse {
   /** 倒序（最近在前）的还原点列表 */
   checkpoints: SessionCheckpoint[]
+}
+
+export interface SessionPreviewCheckpointRestoreRequest {
+  sessionId: SessionId
+  checkpointId: string
+}
+
+/**
+ * 还原预览（dry-run）：把「应用该工作区快照会发生什么」按组展示，
+ * 用户确认后才真正还原。非破坏性语义：快照后新增文件不会被删除。
+ */
+export interface SessionPreviewCheckpointRestoreResponse {
+  checkpointId: string
+  /** 快照对应的 workspace（单工作区会话可缺省） */
+  workspaceId?: string
+  /** 内容与快照不同、将被覆盖回快照内容的文件 */
+  modifiedFiles: string[]
+  /** 快照中存在但当前已缺失、将被重建的文件 */
+  recreatedFiles: string[]
+  /** 与快照一致、不会被触碰的文件 */
+  unchangedFiles: string[]
+  /** 快照之后新增、不受还原影响的文件 */
+  newFilesKept: string[]
+}
+
+export interface SessionGetCheckpointFilesRequest {
+  sessionId: SessionId
+  checkpointId: string
+}
+
+export interface SessionGetCheckpointFilesResponse {
+  checkpointId: string
+  /** 快照 ref 内的完整受控文件清单（相对工作区根；多工作区聚合） */
+  filePaths: string[]
 }
 
 export interface SessionDeleteMessageRequest {
@@ -7254,6 +7301,7 @@ export interface IpcChannelMap
     PluginIpcChannelMap,
     PluginRuntimeIpcChannelMap,
     OutcomeRoomIpcChannelMap,
+    ExecutionContinuityIpcChannelMap,
     TeamP1IpcChannelMap,
     TaskGraphIpcChannelMap,
     DeliberationIpcChannelMap,
@@ -7305,6 +7353,14 @@ export interface IpcChannelMap
   'session:set-checkpoint-config': [
     SessionSetCheckpointConfigRequest,
     SessionSetCheckpointConfigResponse,
+  ]
+  'session:preview-checkpoint-restore': [
+    SessionPreviewCheckpointRestoreRequest,
+    SessionPreviewCheckpointRestoreResponse,
+  ]
+  'session:get-checkpoint-files': [
+    SessionGetCheckpointFilesRequest,
+    SessionGetCheckpointFilesResponse,
   ]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
   'session:rewind-last-turn': [SessionRewindLastTurnRequest, SessionRewindLastTurnResponse]
@@ -8226,6 +8282,12 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
 export interface IpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
+  /** 执行连续性 Run 状态变化（恢复中心刷新；payload 为最新启动扫描/状态摘要） */
+  'stream:execution:runs-changed': {
+    runId: string | null
+    eventType: string
+    summary: import('../execution-continuity.js').StartupScanSummary | null
+  }
   /** 资源压力级别变更（M1）：无论有无订阅恒推。 */
   'stream:resource-monitor:pressure-changed': ResourcePressureChangedPayload
   /** 资源快照周期推送（M1）：订阅制节流（50/60/120s 档），无订阅不推。 */
