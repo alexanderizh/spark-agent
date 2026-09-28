@@ -8,6 +8,10 @@
 import { useEffect, useState } from 'react'
 import { useIpcInvoke } from './useIpc'
 
+/** 聚焦触发的最小刷新间隔：每次 refresh 是 6 个 IPC（5 个走团队注册中心网络），
+ * 频繁 alt-tab 不应每次都打满；30s 内的聚焦复用上次结果（90s 轮询仍是保底节奏）。 */
+const FOCUS_REFRESH_MIN_INTERVAL_MS = 30_000
+
 export function useTeamStoreBadge(): number {
   const { invoke: getConfig } = useIpcInvoke('team-registry:config-get')
   const { invoke: listAssetUpdates } = useIpcInvoke('team-registry:list-asset-updates')
@@ -18,8 +22,10 @@ export function useTeamStoreBadge(): number {
   useEffect(() => {
     let alive = true
     let busy = false
-    const refresh = async () => {
+    let lastRefreshAt = 0
+    const refresh = async (trigger: 'mount' | 'poll' | 'focus') => {
       if (busy) return
+      if (trigger === 'focus' && Date.now() - lastRefreshAt < FOCUS_REFRESH_MIN_INTERVAL_MS) return
       busy = true
       try {
         const cfg = await getConfig({})
@@ -45,11 +51,12 @@ export function useTeamStoreBadge(): number {
         // 角标是增强信息：失败保持上次值
       } finally {
         busy = false
+        lastRefreshAt = Date.now()
       }
     }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 90_000)
-    const onFocus = () => void refresh()
+    void refresh('mount')
+    const timer = window.setInterval(() => void refresh('poll'), 90_000)
+    const onFocus = () => void refresh('focus')
     window.addEventListener('focus', onFocus)
     return () => {
       alive = false

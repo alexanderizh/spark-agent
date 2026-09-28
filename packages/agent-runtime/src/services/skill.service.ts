@@ -242,11 +242,11 @@ export class SkillService {
     // ── 0. 收集所有当前有效的内置 Skill ID ────────────────────────────────
     const validIds = new Set<string>()
 
-    // 来自文件系统
-    if (this.bundledSkillsDir) {
-      for (const candidate of detectBundledSkills(this.bundledSkillsDir)) {
-        validIds.add(candidate.id)
-      }
+    // 来自文件系统（只扫描一次，加载阶段复用，避免重复目录遍历）
+    const bundledCandidates =
+      this.bundledSkillsDir != null ? detectBundledSkills(this.bundledSkillsDir) : []
+    for (const candidate of bundledCandidates) {
+      validIds.add(candidate.id)
     }
     // 来自 TS 硬编码
     for (const def of BUILTIN_SKILLS) {
@@ -269,53 +269,65 @@ export class SkillService {
     }
 
     // ── 3. 从文件系统加载内置技能 ──────────────────────────────────────
-    if (this.bundledSkillsDir) {
-      const candidates = detectBundledSkills(this.bundledSkillsDir)
-      for (const candidate of candidates) {
-        try {
-          const payload = importLocalSkillDirectory(candidate.rootPath, 'bundled')
-          const existing = this.repo.get(payload.id)
-          if (existing != null) {
-            // 已存在 → 更新内容（应用升级后技能文件可能变化）
+    for (const candidate of bundledCandidates) {
+      try {
+        const payload = importLocalSkillDirectory(candidate.rootPath, 'bundled')
+        const existing = this.repo.get(payload.id)
+        if (existing != null) {
+          // 已存在 → 仅在内容确有变化时更新（应用升级后技能文件可能变化）。
+          // skill:list 是高频入口，无条件 UPDATE 会让每次列技能都产生 N 次 SQLite 写。
+          if (
+            existing.name !== payload.name ||
+            existing.version !== payload.version ||
+            existing.root_path !== payload.rootPath ||
+            existing.manifest_json !== payload.manifestJson
+          ) {
             this.repo.update(existing.id, {
               name: payload.name,
               version: payload.version,
               rootPath: payload.rootPath,
               manifestJson: payload.manifestJson,
             })
-          } else {
-            this.repo.create(payload)
           }
-        } catch (err) {
-          // 内置技能加载失败不应阻塞启动，记录日志即可
-          console.warn(
-            `[SkillService] Failed to load bundled skill from ${candidate.rootPath}:`,
-            err,
-          )
+        } else {
+          this.repo.create(payload)
         }
+      } catch (err) {
+        // 内置技能加载失败不应阻塞启动，记录日志即可
+        console.warn(
+          `[SkillService] Failed to load bundled skill from ${candidate.rootPath}:`,
+          err,
+        )
       }
     }
 
     // ── 4. 从硬编码 TS 定义加载（已全部迁移到文件系统，此处为空循环） ──
     for (const def of BUILTIN_SKILLS) {
+      const manifestJson = JSON.stringify({
+        desc: def.description,
+        source: '内置',
+        author: def.author,
+        category: def.category,
+        tags: def.tags,
+        systemPrompt: def.systemPrompt,
+        requiredTools: def.requiredTools,
+        parameters: def.parameters,
+      })
       const existing = this.repo.get(def.id)
       if (existing != null) {
-        // 已存在 → 更新（代码升级后内容可能变化）
-        this.repo.update(def.id, {
-          name: def.name,
-          version: def.version,
-          rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
-          manifestJson: JSON.stringify({
-            desc: def.description,
-            source: '内置',
-            author: def.author,
-            category: def.category,
-            tags: def.tags,
-            systemPrompt: def.systemPrompt,
-            requiredTools: def.requiredTools,
-            parameters: def.parameters,
-          }),
-        })
+        // 已存在 → 仅在内容确有变化时更新（代码升级后内容可能变化）
+        if (
+          existing.name !== def.name ||
+          existing.version !== def.version ||
+          existing.manifest_json !== manifestJson
+        ) {
+          this.repo.update(def.id, {
+            name: def.name,
+            version: def.version,
+            rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
+            manifestJson,
+          })
+        }
         continue
       }
       this.repo.create({
@@ -324,16 +336,7 @@ export class SkillService {
         name: def.name,
         version: def.version,
         rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
-        manifestJson: JSON.stringify({
-          desc: def.description,
-          source: '内置',
-          author: def.author,
-          category: def.category,
-          tags: def.tags,
-          systemPrompt: def.systemPrompt,
-          requiredTools: def.requiredTools,
-          parameters: def.parameters,
-        }),
+        manifestJson,
         enabled: true,
       })
     }
