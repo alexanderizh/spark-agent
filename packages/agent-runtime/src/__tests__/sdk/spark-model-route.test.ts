@@ -59,7 +59,14 @@ describe('resolveSparkModelRoute', () => {
       modelId: 'spark-openai-responses-gpt-test',
       apiKey: 'sk-test',
       baseUrl: 'https://example.com/v1',
+      fullUrl: false,
     })
+  })
+
+  it('渠道声明完整 URL → fullUrl=true 透传给引擎原样请求', () => {
+    const route = resolveSparkModelRoute({ ...base, apiEndpointFullUrl: true })
+    expect(route.ok).toBe(true)
+    if (route.ok) expect(route.fullUrl).toBe(true)
   })
 
   it('apiEndpoint 空白 → baseUrl undefined（引擎回落官方默认端点）', () => {

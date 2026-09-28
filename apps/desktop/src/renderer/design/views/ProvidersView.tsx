@@ -679,6 +679,17 @@ function isMediaProviderModelType(modelType: ProviderModelType): boolean {
   return modelType === 'image' || modelType === 'voice' || modelType === 'video'
 }
 
+/**
+ * 「完整 URL」开关只作用于文本链路；媒体渠道地址本就原样拼接，任何载荷/落库一律按 false 处理。
+ * 保存、测试连接、拉模型共用此口径，避免「文本模式开开关→切媒体类型→不保存」的表单残留值泄进请求。
+ */
+function isEndpointFullUrlEffective(
+  modelType: ProviderModelType,
+  endpointFullUrl: boolean,
+): boolean {
+  return !isMediaProviderModelType(modelType) && endpointFullUrl
+}
+
 function supportsMediaConfigModelType(modelType: ProviderModelType): boolean {
   return isMediaProviderModelType(modelType) || modelType === 'multimodal'
 }
@@ -3018,9 +3029,10 @@ export function ProviderEditPanel({
       const sparkExecutorEligible =
         isChatModel && sparkExecutorAvailability(form.provider, form.codexApiKind).available
       const effectiveUseSparkExecutor = sparkExecutorEligible && form.useSparkExecutor
-      // 「完整 URL」只作用于文本链路；媒体渠道的地址本就原样拼接，落库保持 false
-      const effectiveEndpointFullUrl =
-        !isMediaProviderModelType(form.modelType) && form.endpointFullUrl
+      const effectiveEndpointFullUrl = isEndpointFullUrlEffective(
+        form.modelType,
+        form.endpointFullUrl,
+      )
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
@@ -3093,7 +3105,10 @@ export function ProviderEditPanel({
     ...(profileId ? { id: profileId } : {}),
     provider: form.provider,
     apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
-    ...(form.endpointFullUrl && { apiEndpointFullUrl: true }),
+    // 媒体模式下残留的开关值不进测试载荷（与落库口径一致）
+    ...(isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl) && {
+      apiEndpointFullUrl: true,
+    }),
     defaultModel: form.defaultModel.trim(),
     ...(form.provider === 'openai' ? { codexApiKind: form.codexApiKind } : {}),
     ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
@@ -3137,7 +3152,9 @@ export function ProviderEditPanel({
         apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
         // 渠道「完整 URL」时 endpoint 是最终请求地址，models 地址无法可靠派生：
         // 走 isFullUrl 候选探测（服务端同时会读已保存渠道的同名开关）。
-        ...(form.endpointFullUrl && { isFullUrl: true }),
+        ...(isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl) && {
+          isFullUrl: true,
+        }),
         ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
       })
       return applyFetchedProviderModels(result.models, options)
@@ -3148,6 +3165,8 @@ export function ProviderEditPanel({
       fetchProviderModels,
       form.apiKey,
       form.endpoint,
+      form.endpointFullUrl,
+      form.modelType,
       form.provider,
       profileId,
     ],
@@ -3155,7 +3174,7 @@ export function ProviderEditPanel({
 
   const autoFetchApiKey = form.apiKey
   const autoFetchEndpoint = form.endpoint
-  const autoFetchEndpointFullUrl = form.endpointFullUrl
+  const autoFetchEndpointFullUrl = isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl)
   const autoFetchModelType = form.modelType
   const autoFetchPresetId = form.presetId
   const autoFetchProvider = form.provider
@@ -3552,9 +3571,7 @@ export function ProviderEditPanel({
                   )}
                 </span>
                 <span className="pv_form_sub">
-                  {form.endpointFullUrl
-                    ? '完整请求地址，调用时原样发送'
-                    : '服务基础地址'}
+                  {form.endpointFullUrl ? '完整请求地址，调用时原样发送' : '服务基础地址'}
                 </span>
               </div>
               <div className="pv_field_stack">
@@ -3573,13 +3590,15 @@ export function ProviderEditPanel({
                     </code>
                   </div>
                 )}
-                {form.endpointFullUrl && form.provider === 'anthropic' && !form.useSparkExecutor && (
-                  <div className="pv_endpoint_full_url_warning" role="note">
-                    Claude
-                    适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages 结尾才能自洽；非标准尾缀（如
-                    …/v3/messages）请开启「执行引擎（Spark）」以原样直连。
-                  </div>
-                )}
+                {form.endpointFullUrl &&
+                  form.provider === 'anthropic' &&
+                  !form.useSparkExecutor && (
+                    <div className="pv_endpoint_full_url_warning" role="note">
+                      Claude 适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages
+                      结尾才能自洽；非标准尾缀（如
+                      …/v3/messages）请开启「执行引擎（Spark）」以原样直连。
+                    </div>
+                  )}
               </div>
 
               {form.provider === 'openai' && isChatModel && (
