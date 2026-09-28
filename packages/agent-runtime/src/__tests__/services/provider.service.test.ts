@@ -754,6 +754,28 @@ describe('ProviderService', () => {
     })
   })
 
+  it('updateProvider applies apiEndpointFullUrl standalone (without other config fields)', async () => {
+    repo.rows.set('id-full-url', {
+      id: 'id-full-url',
+      provider_type: 'openai',
+      name: 'FullUrl',
+      config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1"]}',
+      enabled: 1,
+      keystore_ref: 'openai-id-full-url',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    // 单独开开关（不带 defaultModel/apiEndpoint 等其他 config 字段）：必须触发 config 写入
+    await service.updateProvider({ id: 'id-full-url', apiEndpointFullUrl: true })
+    expect(repo.rows.get('id-full-url')?.config_json).toContain('"apiEndpointFullUrl":true')
+
+    // 单独关开关：字段被清除（落库缺省 = 关）
+    await service.updateProvider({ id: 'id-full-url', apiEndpointFullUrl: false })
+    expect(repo.rows.get('id-full-url')?.config_json).not.toContain('apiEndpointFullUrl')
+  })
+
   it('updateProvider updates codexApiKind without changing model config', async () => {
     repo.rows.set('id-codex', {
       id: 'id-codex',

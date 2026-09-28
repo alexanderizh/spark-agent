@@ -988,6 +988,8 @@ export class ProviderService {
       params.modelIds !== undefined ||
       params.providerIcon !== undefined ||
       params.apiEndpoint !== undefined ||
+      // 单独下发「完整 URL」开关也必须触发 config 写入，否则该字段被静默忽略。
+      params.apiEndpointFullUrl !== undefined ||
       params.codexApiKind !== undefined ||
       params.useSparkExecutor !== undefined ||
       params.supportsMillionContext !== undefined ||
