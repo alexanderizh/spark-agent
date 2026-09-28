@@ -704,10 +704,27 @@ function sseResponse(value: string): Response {
   })
 }
 
+/**
+ * fetch 替身：记录每次请求的目标地址。
+ * 入参在替身内部被真正使用（本包 lint 不忽略未使用参数），断言直接比较记录值，
+ * 避免对 string | URL | Request 联合类型做 String() 转换而触发 no-base-to-string。
+ */
+function createRecordingFetcher(fixture: string): {
+  fetcher: typeof fetch
+  requested: (Parameters<typeof fetch>[0])[]
+} {
+  const requested: (Parameters<typeof fetch>[0])[] = []
+  const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+    requested.push(input)
+    return sseResponse(fixture)
+  })
+  return { fetcher, requested }
+}
+
 describe('fullUrl（渠道完整地址开关）', () => {
   it('anthropic：fullUrl=true 时原样请求完整地址，不改写尾缀', async () => {
     const fixture = await loadFixture('anthropic-tool.sse')
-    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const { fetcher, requested } = createRecordingFetcher(fixture)
     const service = new AnthropicMessagesService({
       apiKey: 'secret',
       model: 'claude-test',
@@ -716,12 +733,12 @@ describe('fullUrl（渠道完整地址开关）', () => {
       fetch: fetcher,
     })
     await consumeLlmStream(service.stream(baseRequest(), context))
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/messages')
+    expect(requested[0]).toBe('https://gw.example.com/api/coding/v3/messages')
   })
 
   it('anthropic：fullUrl 未开启时非标 /messages 仍收敛为 /v1/messages（旧行为不变）', async () => {
     const fixture = await loadFixture('anthropic-tool.sse')
-    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const { fetcher, requested } = createRecordingFetcher(fixture)
     const service = new AnthropicMessagesService({
       apiKey: 'secret',
       model: 'claude-test',
@@ -729,14 +746,14 @@ describe('fullUrl（渠道完整地址开关）', () => {
       fetch: fetcher,
     })
     await consumeLlmStream(service.stream(baseRequest(), context))
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+    expect(requested[0]).toBe(
       'https://gw.example.com/api/coding/v3/v1/messages',
     )
   })
 
   it('openai responses：fullUrl=true 时原样请求完整地址，不补 /v1', async () => {
     const fixture = await loadFixture('openai-tool.sse')
-    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const { fetcher, requested } = createRecordingFetcher(fixture)
     const service = new OpenAiResponsesService({
       apiKey: 'secret',
       model: 'gpt-test',
@@ -745,12 +762,12 @@ describe('fullUrl（渠道完整地址开关）', () => {
       fetch: fetcher,
     })
     await consumeLlmStream(service.stream(baseRequest(), context))
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/responses')
+    expect(requested[0]).toBe('https://gw.example.com/api/coding/v3/responses')
   })
 
   it('openai responses：fullUrl 未开启时保持补 /v1/responses 的旧行为', async () => {
     const fixture = await loadFixture('openai-tool.sse')
-    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const { fetcher, requested } = createRecordingFetcher(fixture)
     const service = new OpenAiResponsesService({
       apiKey: 'secret',
       model: 'gpt-test',
@@ -758,6 +775,6 @@ describe('fullUrl（渠道完整地址开关）', () => {
       fetch: fetcher,
     })
     await consumeLlmStream(service.stream(baseRequest(), context))
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/v1/responses')
+    expect(requested[0]).toBe('https://gw.example.com/api/coding/v3/v1/responses')
   })
 })
