@@ -246,9 +246,7 @@ export function registerWikiIpc(): void {
 /** 全部 project scope（scope_ref 任意）—— 渲染端"全部"视图用。 */
 function listAllProjectScopes(db: SparkDatabase): Array<{ scope: WikiScope; scopeRef: string }> {
   try {
-    const rows = db.raw
-      .prepare(`SELECT id FROM workspaces`)
-      .all() as Array<{ id: string }>
+    const rows = db.raw.prepare(`SELECT id FROM workspaces`).all() as Array<{ id: string }>
     return rows.map((r) => ({ scope: 'project' as const, scopeRef: r.id }))
   } catch {
     return []

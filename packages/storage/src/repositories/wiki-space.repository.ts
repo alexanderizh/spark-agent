@@ -101,7 +101,9 @@ export class WikiSpaceRepository extends BaseRepository {
     opts?: { spaceType?: WikiSpaceType; includeArchived?: boolean },
   ): WikiSpaceRow[] {
     if (scopes.length === 0) return []
-    const conditions: string[] = [`(${scopes.map(() => '(scope = ? AND scope_ref IS ?)').join(' OR ')})`]
+    const conditions: string[] = [
+      `(${scopes.map(() => '(scope = ? AND scope_ref IS ?)').join(' OR ')})`,
+    ]
     const values: unknown[] = []
     for (const s of scopes) {
       values.push(s.scope, s.scopeRef)

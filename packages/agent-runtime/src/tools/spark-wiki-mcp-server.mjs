@@ -35,7 +35,8 @@ function error(id, code, message) {
 
 // ── HTTP bridge to PlatformBridgeService ────────────────────────────────────
 async function rpc(method, params) {
-  if (!BASE) throw new Error('Platform bridge port not configured (SPARK_PLATFORM_BRIDGE_PORT missing)')
+  if (!BASE)
+    throw new Error('Platform bridge port not configured (SPARK_PLATFORM_BRIDGE_PORT missing)')
   if (!SID) throw new Error('Session id not configured (SPARK_WIKI_SID missing)')
   const res = await fetch(`${BASE}/rpc`, {
     method: 'POST',
@@ -133,7 +134,10 @@ function summarize(name, data) {
     const items = Array.isArray(data.items) ? data.items : []
     if (items.length === 0) return '没有匹配的知识页面。'
     return items
-      .map((h) => `- [${h.id}] ${h.title} (${h.kind}): ${h.summary}${h.tags.length > 0 ? ` [${h.tags.join(',')}]` : ''}`)
+      .map(
+        (h) =>
+          `- [${h.id}] ${h.title} (${h.kind}): ${h.summary}${h.tags.length > 0 ? ` [${h.tags.join(',')}]` : ''}`,
+      )
       .join('\n')
   }
   if (name === 'wiki_read') {

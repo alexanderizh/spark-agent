@@ -45,7 +45,9 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
     background: var(--bg-soft, rgba(0, 0, 0, 0.04));
@@ -448,7 +450,9 @@
   padding: 3px 10px;
   border-radius: var(--r-xs, 4px);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 
   &:hover:not(:disabled) {
     color: var(--text-strong);
@@ -529,8 +533,8 @@
     max-height: 100%;
     object-fit: contain;
     border-radius: var(--r-md, 8px);
-    background:
-      repeating-conic-gradient(var(--bg-sunken) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+    background: repeating-conic-gradient(var(--bg-sunken) 0% 25%, transparent 0% 50%) 50% / 16px
+      16px;
   }
 }
 

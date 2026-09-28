@@ -77,7 +77,12 @@ describe('file type and size helpers', () => {
 describe('sortSkillNodes', () => {
   it('pins SKILL.md first, then directories, then files', () => {
     const sorted = sortSkillNodes(TREE)
-    expect(sorted.map((node) => node.name)).toEqual(['SKILL.md', 'assets', 'references', 'notes.txt'])
+    expect(sorted.map((node) => node.name)).toEqual([
+      'SKILL.md',
+      'assets',
+      'references',
+      'notes.txt',
+    ])
   })
 })
 

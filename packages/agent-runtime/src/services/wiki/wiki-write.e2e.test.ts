@@ -72,7 +72,9 @@ describe('Wiki S0 e2e（创建→写入→检索→读取）', () => {
       spaceId,
       title: 'FTS5 contentless 写入注意',
       summary: '迁移到 vite 后 FTS 分词的注意事项与修复方案',
-      body: '# FTS5 contentless\n\n迁移到 vite 之后，contentless 表的部分更新需要先删后插。'.repeat(20),
+      body: '# FTS5 contentless\n\n迁移到 vite 之后，contentless 表的部分更新需要先删后插。'.repeat(
+        20,
+      ),
       tags: ['sqlite', 'fts'],
       kind: 'experience',
       authorRole: 'manual_user',
@@ -194,7 +196,10 @@ describe('Wiki S0 e2e（创建→写入→检索→读取）', () => {
     const space = await writeService.createSpace({ scope: 'user', name: '长文库' })
     expect(space.ok).toBe(true)
     if (!space.ok) return
-    const longBody = Array.from({ length: 1500 }, (_, i) => `第${i}段：这是一段较长的中文知识正文。`).join('\n')
+    const longBody = Array.from(
+      { length: 1500 },
+      (_, i) => `第${i}段：这是一段较长的中文知识正文。`,
+    ).join('\n')
     const created = await writeService.commitPage({
       spaceId: space.row.id,
       title: '长文页',
@@ -217,7 +222,9 @@ describe('Wiki S0 e2e（创建→写入→检索→读取）', () => {
       })
       expect(page2.ok).toBe(true)
       if (page2.ok) {
-        expect(page1.page.body + page2.page.body).toBe(longBody.slice(0, (page1.page.body + page2.page.body).length))
+        expect(page1.page.body + page2.page.body).toBe(
+          longBody.slice(0, (page1.page.body + page2.page.body).length),
+        )
       }
     }
   })

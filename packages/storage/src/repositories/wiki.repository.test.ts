@@ -24,10 +24,7 @@ describe('Wiki repositories (S0)', () => {
   let testDir: string
 
   beforeEach(() => {
-    testDir = join(
-      tmpdir(),
-      `spark-wiki-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    )
+    testDir = join(tmpdir(), `spark-wiki-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
     mkdirSync(testDir, { recursive: true })
     db = new SparkDatabase(join(testDir, 'test.db'))
     db.runMigrations(join(process.cwd(), 'migrations'))
@@ -155,9 +152,9 @@ describe('Wiki repositories (S0)', () => {
       summary: '旧摘要',
     })
     pageRepo.update(page.id, { title: '新标题迁移指南' }, '新正文：迁移相关内容')
-    expect(searchRepo.searchBm25('迁移指南', { spaceIds: [space.id] }).map((h) => h.page.id)).toContain(
-      page.id,
-    )
+    expect(
+      searchRepo.searchBm25('迁移指南', { spaceIds: [space.id] }).map((h) => h.page.id),
+    ).toContain(page.id)
 
     pageRepo.archive(page.id)
     expect(searchRepo.searchBm25('迁移指南', { spaceIds: [space.id] })).toHaveLength(0)

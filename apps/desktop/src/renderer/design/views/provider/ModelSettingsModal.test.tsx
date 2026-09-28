@@ -176,7 +176,9 @@ describe('ModelSettingsModal', () => {
   let container: HTMLDivElement
   let root: Root
 
-  const renderModal = async (props: Partial<React.ComponentProps<typeof ModelSettingsModal>> = {}) => {
+  const renderModal = async (
+    props: Partial<React.ComponentProps<typeof ModelSettingsModal>> = {},
+  ) => {
     const onClose = vi.fn()
     const onManageChannels = vi.fn()
     const onSaved = vi.fn()
@@ -243,7 +245,9 @@ describe('ModelSettingsModal', () => {
 
   it('修改推理强度后保存：整表下发该渠道并回调 onSaved', async () => {
     const { onClose, onSaved } = await renderModal()
-    const selects = container.querySelectorAll<HTMLSelectElement>('[data-testid="reasoning-select"]')
+    const selects = container.querySelectorAll<HTMLSelectElement>(
+      '[data-testid="reasoning-select"]',
+    )
     // 第 2 行 = 渠道 A 的 glm-5.3-flash（默认 → low）
     await act(async () => {
       const target = selects[1]

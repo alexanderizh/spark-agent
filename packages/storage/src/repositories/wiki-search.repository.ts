@@ -148,9 +148,7 @@ export class WikiSearchRepository extends BaseRepository {
     if (flag != null && flag.value === 'true') return 0
 
     const pages = this.raw
-      .prepare(
-        `SELECT id, title, summary, file_path FROM wiki_page WHERE status != 'archived'`,
-      )
+      .prepare(`SELECT id, title, summary, file_path FROM wiki_page WHERE status != 'archived'`)
       .all() as Array<{ id: string; title: string; summary: string; file_path: string }>
 
     const tx = this.raw.transaction(() => {

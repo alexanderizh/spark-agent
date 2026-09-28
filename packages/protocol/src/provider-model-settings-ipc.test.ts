@@ -41,13 +41,22 @@ describe('provider IPC schema · 模型级设置', () => {
 
   it('provider:update 拒绝非法档位 / 越界窗口 / 未知子字段（strict）', () => {
     expect(() =>
-      update.parse({ id: '11111111-1111-4111-8111-111111111111', modelSettings: { m: { reasoningEffort: 'ultra' } } }),
+      update.parse({
+        id: '11111111-1111-4111-8111-111111111111',
+        modelSettings: { m: { reasoningEffort: 'ultra' } },
+      }),
     ).toThrow()
     expect(() =>
-      update.parse({ id: '11111111-1111-4111-8111-111111111111', modelSettings: { m: { contextWindow: 512 } } }),
+      update.parse({
+        id: '11111111-1111-4111-8111-111111111111',
+        modelSettings: { m: { contextWindow: 512 } },
+      }),
     ).toThrow()
     expect(() =>
-      update.parse({ id: '11111111-1111-4111-8111-111111111111', modelSettings: { m: { unexpected: true } } }),
+      update.parse({
+        id: '11111111-1111-4111-8111-111111111111',
+        modelSettings: { m: { unexpected: true } },
+      }),
     ).toThrow()
   })
 

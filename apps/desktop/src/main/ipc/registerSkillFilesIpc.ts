@@ -63,7 +63,10 @@ async function resolveSkillRoot(skill: SkillItem): Promise<string | null> {
   return root
 }
 
-function isReadOnlySkill(skill: SkillItem, root: string | null): { readOnly: boolean; reason?: string } {
+function isReadOnlySkill(
+  skill: SkillItem,
+  root: string | null,
+): { readOnly: boolean; reason?: string } {
   if (skill.id.startsWith('builtin:')) {
     return { readOnly: true, reason: '内置技能为只读，应用升级时会被覆盖' }
   }
@@ -83,7 +86,10 @@ function isReadOnlySkill(skill: SkillItem, root: string | null): { readOnly: boo
 
 export function registerSkillFilesIpc(deps: { getSkillService: () => SkillService }): void {
   const findSkill = (id: string): SkillItem | null =>
-    deps.getSkillService().listSkills().find((s) => s.id === id) ?? null
+    deps
+      .getSkillService()
+      .listSkills()
+      .find((s) => s.id === id) ?? null
 
   typedIpcHandle('skill:files', async (req): Promise<SkillFilesResponse> => {
     const skill = findSkill(req.id)

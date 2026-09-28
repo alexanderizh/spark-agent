@@ -154,7 +154,9 @@ function SkillTreeNode({
         }}
         title={node.path}
       >
-        <span className={`skill-detail-tree-caret ${isDirectory ? '' : 'is-hidden'} ${isOpen ? 'is-open' : ''}`}>
+        <span
+          className={`skill-detail-tree-caret ${isDirectory ? '' : 'is-hidden'} ${isOpen ? 'is-open' : ''}`}
+        >
           {isDirectory && <Icons.ChevronRight size={11} />}
         </span>
         <VscodeFileIcon

@@ -55,7 +55,9 @@ describe('设置导航宽度分隔条', () => {
 
   it('拖拽按水平位移调宽（右移变宽），松手后失效', () => {
     act(() => {
-      handle().dispatchEvent(pointerEvent('pointerdown', { button: 0, clientX: 100, bubbles: true }))
+      handle().dispatchEvent(
+        pointerEvent('pointerdown', { button: 0, clientX: 100, bubbles: true }),
+      )
     })
     expect(document.body.classList.contains('settings-nav-resizing')).toBe(true)
 
@@ -78,7 +80,9 @@ describe('设置导航宽度分隔条', () => {
 
   it('拖拽被 clamp 在允许区间内', () => {
     act(() => {
-      handle().dispatchEvent(pointerEvent('pointerdown', { button: 0, clientX: 100, bubbles: true }))
+      handle().dispatchEvent(
+        pointerEvent('pointerdown', { button: 0, clientX: 100, bubbles: true }),
+      )
     })
     act(() => {
       window.dispatchEvent(pointerEvent('pointermove', { clientX: 10_000 }))

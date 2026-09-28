@@ -63,7 +63,9 @@ export function formatContextWindowTokens(value: number): string {
 
 /** 数值是否落在模型级上下文窗口的合法区间（1024 – 10M，与后端 zod 一致） */
 export function isContextWindowInRange(value: number): boolean {
-  return Number.isFinite(value) && value >= CONTEXT_WINDOW_HARD_MIN && value <= CONTEXT_WINDOW_HARD_MAX
+  return (
+    Number.isFinite(value) && value >= CONTEXT_WINDOW_HARD_MIN && value <= CONTEXT_WINDOW_HARD_MAX
+  )
 }
 
 /** 合法则取整返回，否则 undefined（调用方据此决定「恢复默认」还是报错） */

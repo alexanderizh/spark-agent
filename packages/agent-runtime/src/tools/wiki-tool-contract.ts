@@ -22,11 +22,7 @@ export const SPARK_WIKI_MCP_SERVER_NAME = 'spark_wiki'
 export const WIKI_TOOL_PREFIX = 'mcp__spark_wiki__'
 
 /** S0 挂载的只读工具集（免审批白名单成员） */
-export const WIKI_READ_TOOL_NAMES = [
-  'wiki_list_spaces',
-  'wiki_search',
-  'wiki_read',
-] as const
+export const WIKI_READ_TOOL_NAMES = ['wiki_list_spaces', 'wiki_search', 'wiki_read'] as const
 
 /** 只读工具全集（S1 补挂 wiki_list / wiki_backlinks 后至此） */
 export const WIKI_ALL_READ_TOOL_NAMES = [
@@ -116,8 +112,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   },
   {
     name: 'wiki_backlinks',
-    description:
-      '查一个页面的反向链接（谁引用了它，每边一行）。追溯知识关联时用。',
+    description: '查一个页面的反向链接（谁引用了它，每边一行）。追溯知识关联时用。',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: '页面 id。' } },
@@ -147,8 +142,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   },
   {
     name: 'wiki_update',
-    description:
-      '更新页面（CAS：带 expectedVersion，失配拒绝并回传当前版本）。回执不含正文。',
+    description: '更新页面（CAS：带 expectedVersion，失配拒绝并回传当前版本）。回执不含正文。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -195,8 +189,7 @@ export const WIKI_TOOL_DEFINITIONS: readonly WikiToolDefinition[] = [
   },
   {
     name: 'wiki_propose_skill',
-    description:
-      '从知识页提议一个技能（写入提议区，不直接创建技能；须经用户在界面确认）。',
+    description: '从知识页提议一个技能（写入提议区，不直接创建技能；须经用户在界面确认）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -222,7 +215,11 @@ export function measureWikiResidentTokens(toolNames: readonly string[]): {
   const l0Prompt = estimateTokens(WIKI_L0_PROMPT)
   const definitions = WIKI_TOOL_DEFINITIONS.filter((d) => toolNames.includes(d.name))
   const l0Prime = definitions.reduce(
-    (sum, d) => sum + estimateTokens(JSON.stringify({ name: d.name, description: d.description, inputSchema: d.inputSchema })),
+    (sum, d) =>
+      sum +
+      estimateTokens(
+        JSON.stringify({ name: d.name, description: d.description, inputSchema: d.inputSchema }),
+      ),
     0,
   )
   return { l0Prompt, l0Prime, total: l0Prompt + l0Prime }
@@ -235,8 +232,5 @@ export function measureS0ResidentTokens(): number {
 
 /** 全量 11 工具的常驻 token（helpDisclosure 开启时的对照组） */
 export function measureFullResidentTokens(): number {
-  return measureWikiResidentTokens([
-    ...WIKI_ALL_READ_TOOL_NAMES,
-    ...WIKI_WRITE_TOOL_NAMES,
-  ]).total
+  return measureWikiResidentTokens([...WIKI_ALL_READ_TOOL_NAMES, ...WIKI_WRITE_TOOL_NAMES]).total
 }

@@ -226,8 +226,7 @@ export function SkillDetailPage({
 
   const fileCount = useMemo(() => countFiles(nodes), [nodes])
   const readOnly = filesState.readOnly || (virtual && isBuiltin)
-  const readOnlyReason =
-    filesState.readOnlyReason || (virtual && isBuiltin ? '内置技能为只读' : '')
+  const readOnlyReason = filesState.readOnlyReason || (virtual && isBuiltin ? '内置技能为只读' : '')
 
   // ── 3. 选中文件：文件树变化后校正选中项 ──────────────────────────────
   useEffect(() => {
@@ -355,10 +354,7 @@ export function SkillDetailPage({
   }, [readOnly, readOnlyReason, fileState.error, fileState.content, selectedPath, toast])
 
   const canEditFile =
-    selectedPath != null &&
-    !readOnly &&
-    !isImageFile(selectedPath) &&
-    fileState.error.length === 0
+    selectedPath != null && !readOnly && !isImageFile(selectedPath) && fileState.error.length === 0
 
   const handleCancelEdit = useCallback(async () => {
     if (!(await confirmDiscard())) return
@@ -386,7 +382,8 @@ export function SkillDetailPage({
           author: parsed.author || base.author || '',
           category: parsed.category || base.category || '',
           tags: parsed.tags,
-          requiredTools: parsed.requiredTools.length > 0 ? parsed.requiredTools : base.requiredTools,
+          requiredTools:
+            parsed.requiredTools.length > 0 ? parsed.requiredTools : base.requiredTools,
           systemPrompt: parsed.body,
         }
         const nextName = parsed.name.trim() || skill.name
@@ -619,7 +616,12 @@ export function SkillDetailPage({
               <span className={`skill-detail-dirty ${dirty ? 'is-dirty' : ''}`}>
                 {dirty ? '有未保存的修改' : '无修改'}
               </span>
-              <Button size="small" type="text" disabled={saving} onClick={() => void handleCancelEdit()}>
+              <Button
+                size="small"
+                type="text"
+                disabled={saving}
+                onClick={() => void handleCancelEdit()}
+              >
                 取消
               </Button>
               <Button
@@ -651,7 +653,9 @@ export function SkillDetailPage({
                 size="small"
                 icon={<Icons.Pencil size={14} />}
                 disabled={!canEditFile}
-                title={readOnly ? readOnlyReason || '该技能为只读' : `编辑 ${selectedNode?.name ?? ''}`}
+                title={
+                  readOnly ? readOnlyReason || '该技能为只读' : `编辑 ${selectedNode?.name ?? ''}`
+                }
                 onClick={handleStartEdit}
               >
                 编辑

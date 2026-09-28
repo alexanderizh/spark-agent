@@ -29,7 +29,9 @@ if (!(globalThis as { matchMedia?: unknown }).matchMedia) {
   })
 }
 
-const { updateProvider } = vi.hoisted(() => ({ updateProvider: vi.fn(async () => ({ profile: null })) }))
+const { updateProvider } = vi.hoisted(() => ({
+  updateProvider: vi.fn(async () => ({ profile: null })),
+}))
 // 该测试只挂载 ProviderModelPicker（不含 AppProvider/ToastProvider），
 // 用桩替换 useToast，聚焦验证入口与弹窗挂载位置。
 vi.mock('../../components/Toast', () => ({

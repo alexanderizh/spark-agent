@@ -70,9 +70,7 @@ export class WikiRevisionRepository extends BaseRepository {
   /** 某页面的版本历史（新→旧）。 */
   listByPage(pageId: string, limit = 50): WikiRevisionRow[] {
     return this.raw
-      .prepare(
-        `SELECT * FROM wiki_revision WHERE page_id = ? ORDER BY version DESC LIMIT ?`,
-      )
+      .prepare(`SELECT * FROM wiki_revision WHERE page_id = ? ORDER BY version DESC LIMIT ?`)
       .all(pageId, limit) as WikiRevisionRow[]
   }
 

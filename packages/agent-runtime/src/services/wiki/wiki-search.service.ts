@@ -12,7 +12,11 @@
 import { estimateTokens } from '@spark/shared'
 import type { WikiPageKind } from '@spark/storage'
 import { WikiSearchRepository } from '@spark/storage'
-import { clampSummary, chargeTurnWikiTokens, type WikiBudgetProfile } from './wiki-context-budget.js'
+import {
+  clampSummary,
+  chargeTurnWikiTokens,
+  type WikiBudgetProfile,
+} from './wiki-context-budget.js'
 
 export interface WikiSearchResultItem {
   id: string
@@ -97,7 +101,10 @@ export class WikiSearchService {
     if (query.length === 0 || (input.spaceIds != null && input.spaceIds.length === 0)) {
       return { items: [], total: 0, truncated: false }
     }
-    const limit = Math.min(Math.max(input.limit ?? this.budget.searchLimit, 1), this.budget.searchLimit)
+    const limit = Math.min(
+      Math.max(input.limit ?? this.budget.searchLimit, 1),
+      this.budget.searchLimit,
+    )
     const hits = this.searchRepo.searchBm25(query, {
       ...(input.spaceIds != null ? { spaceIds: input.spaceIds } : {}),
       ...(input.kind != null ? { kind: input.kind } : {}),

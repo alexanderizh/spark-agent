@@ -47,9 +47,9 @@ describe('ProviderModelContextWindowField', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
-      TRACK_RECT as DOMRect,
-    )
+    rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue(TRACK_RECT as DOMRect)
     setPointerCapture = vi.fn()
     hasPointerCapture = vi.fn(() => false)
     Element.prototype.setPointerCapture =

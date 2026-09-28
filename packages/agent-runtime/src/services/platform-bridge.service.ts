@@ -475,9 +475,7 @@ export interface PlatformBridgeDeps {
      * 路径回到主进程）。scope 集合从 sessionId 派生，不信任子进程传参；
      * 返回经 WikiContextBudget 服务端裁剪。
      */
-    bridgeWikiListSpaces(params: {
-      sessionId: string
-    }): Promise<{
+    bridgeWikiListSpaces(params: { sessionId: string }): Promise<{
       items: Array<{ id: string; name: string; spaceType: string; pageCount: number }>
       truncated: boolean
     }>
@@ -487,11 +485,7 @@ export interface PlatformBridgeDeps {
       spaceId?: string
       limit?: number
     }): Promise<unknown>
-    bridgeWikiRead(params: {
-      sessionId: string
-      pageId: string
-      offset?: number
-    }): Promise<unknown>
+    bridgeWikiRead(params: { sessionId: string; pageId: string; offset?: number }): Promise<unknown>
     /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
@@ -2062,7 +2056,8 @@ export class PlatformBridgeService {
     const pageId = String(params.pageId ?? '')
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!pageId) throw new Error('Missing parameter: pageId')
-    const offset = typeof params.offset === 'number' && params.offset > 0 ? params.offset : undefined
+    const offset =
+      typeof params.offset === 'number' && params.offset > 0 ? params.offset : undefined
     return d.sessionService.bridgeWikiRead({
       sessionId,
       pageId,
