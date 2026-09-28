@@ -17,14 +17,17 @@ export function projectAssistantTurnCollapse(
   blocks: readonly UIBlock[],
 ): AssistantTurnCollapseProjection {
   const summaryBlocks = findFinalSummaryBlocks(blocks)
+  const summaryBlockSet = new Set(summaryBlocks)
   const canCollapse =
-    status === 'completed' && summaryBlocks.length > 0 && !blocks.some(blocksAutomaticTurnCollapse)
+    status === 'completed' &&
+    summaryBlocks.length > 0 &&
+    !blocks.some(blocksAutomaticTurnCollapse) &&
+    hasCollapsibleProcessContent(blocks, summaryBlockSet)
 
   if (!canCollapse) {
     return { canCollapse: false, collapsedBlocks: blocks }
   }
 
-  const summaryBlockSet = new Set(summaryBlocks)
   const visibleResultBlocks = blocks.filter(
     (block) => summaryBlockSet.has(block) || isVisibleTeamMemberResultBlock(block),
   )
@@ -43,6 +46,32 @@ export function projectAssistantTurnCollapse(
  */
 function isVisibleTeamMemberResultBlock(block: UIBlock): boolean {
   return block.kind === 'team_member_message' && block.content.trim().length > 0
+}
+
+/** 与 ChatView 的 isHiddenTimelineBlock 对齐：主时间线不渲染的 agent_dispatch 调用。 */
+function isHiddenDispatchToolCall(block: UIBlock): boolean {
+  return block.kind === 'tool_call' && block.toolName === 'mcp__spark_team__agent_dispatch'
+}
+
+/**
+ * 折叠条只在确实存在会被收起的过程内容时才出现：纯正文轮次（无思考、工具日志、
+ * 系统过程块）展开前后内容完全一致，显示「耗时 Xs」切换条只会误导用户点击。
+ * 折叠后仍可见的块（最终正文、成员回复、交付卡片）与两个状态下都不渲染的
+ * 不可见块（快捷回复、present_files/agent_dispatch 调用、terminal）不算可收起内容。
+ */
+function hasCollapsibleProcessContent(
+  blocks: readonly UIBlock[],
+  summaryBlockSet: ReadonlySet<UIBlock>,
+): boolean {
+  return blocks.some((block) => {
+    if (summaryBlockSet.has(block)) return false
+    if (isVisibleTeamMemberResultBlock(block)) return false
+    if (isArtifactPresentationBlock(block)) return false
+    if (isTimelineInvisibleBlock(block)) return false
+    if (isHiddenDispatchToolCall(block)) return false
+    if (block.kind === 'terminal') return false
+    return true
+  })
 }
 
 /**

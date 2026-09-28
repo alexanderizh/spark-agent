@@ -129,8 +129,9 @@ describe('projectAssistantTurnCollapse', () => {
     ])
   })
 
-  it('keeps the whole marked run when only invisible quick replies sit between segments', () => {
-    // 无过程边界的纯正文 + 快捷回复：mapper 已为 Claude 补齐 final 标记，filter 后应完整保留。
+  it('shows no toggle when only invisible quick replies sit between pure body blocks', () => {
+    // 无过程边界的纯正文 + 快捷回复：mapper 已为 Claude 补齐 final 标记；
+    // 没有可收起的过程内容时不应产生折叠投影（切换条整行不渲染）。
     const bodyPartOne = text('完整答复主体。', { final: true })
     const bodyPartTwo = text('选好方向我就开工。', { final: true })
     const blocks: UIBlock[] = [
@@ -139,10 +140,50 @@ describe('projectAssistantTurnCollapse', () => {
       bodyPartTwo,
     ]
 
-    expect(projectAssistantTurnCollapse('completed', blocks).collapsedBlocks).toEqual([
-      bodyPartOne,
-      bodyPartTwo,
-    ])
+    expect(projectAssistantTurnCollapse('completed', blocks)).toEqual({
+      canCollapse: false,
+      collapsedBlocks: blocks,
+    })
+  })
+
+  it('shows no toggle for a plain final-answer turn without any process content', () => {
+    // 截图反馈的场景：纯文本回答轮次没有思考/工具日志，展开后无任何额外内容，
+    // 「耗时 Xs」折叠条不应出现。
+    const final = text('主人好呀～', { final: true })
+
+    expect(projectAssistantTurnCollapse('completed', [final])).toEqual({
+      canCollapse: false,
+      collapsedBlocks: [final],
+    })
+  })
+
+  it('shows no toggle when delivery cards accompany a process-free answer', () => {
+    // 交付卡片折叠后本就保持可见，没有过程块时同样不产生折叠投影。
+    const final = text('文件已交付。', { final: true })
+    const presentedFiles: Extract<UIBlock, { kind: 'presented_files' }> = {
+      kind: 'presented_files',
+      files: [
+        { path: '/workspace/output/demo.mp4' },
+        { path: '/workspace/output/report.md', title: '报告' },
+      ],
+    }
+    const blocks: UIBlock[] = [presentedFiles, final]
+
+    expect(projectAssistantTurnCollapse('completed', blocks)).toEqual({
+      canCollapse: false,
+      collapsedBlocks: blocks,
+    })
+  })
+
+  it('falls back to the trailing continuous body when legacy history has no process block', () => {
+    const summaryPartOne = text('旧历史总结第一段')
+    const summaryPartTwo = text('旧历史总结第二段')
+
+    // 旧历史纯正文同样没有可收起内容：不产生折叠投影，blocks 原样保留。
+    expect(projectAssistantTurnCollapse('completed', [summaryPartOne, summaryPartTwo])).toEqual({
+      canCollapse: false,
+      collapsedBlocks: [summaryPartOne, summaryPartTwo],
+    })
   })
 
   it('falls back to the trailing host summary after the last process block', () => {
@@ -169,15 +210,6 @@ describe('projectAssistantTurnCollapse', () => {
       summaryPartOne,
       summaryPartTwo,
     ])
-  })
-
-  it('falls back to the trailing continuous body when legacy history has no process block', () => {
-    const summaryPartOne = text('旧历史总结第一段')
-    const summaryPartTwo = text('旧历史总结第二段')
-
-    expect(
-      projectAssistantTurnCollapse('completed', [summaryPartOne, summaryPartTwo]).collapsedBlocks,
-    ).toEqual([summaryPartOne, summaryPartTwo])
   })
 
   it('does not treat pre-tool legacy prose as a final summary when no body follows', () => {
