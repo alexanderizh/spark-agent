@@ -296,7 +296,10 @@ vi.mock('../../sdk/spark-engine/spark-engine-executor.js', async () => {
   }
 })
 
-vi.mock('@spark/storage', () => {
+vi.mock('@spark/storage', async (importOriginal) => {
+  // 部分模拟：执行连续性（Execution* 仓储等）使用真实导出 —— 仓储构造零依赖，
+  // 运行期失败由 ExecutionSupervisor 入口的 fail-safe 兜底；重型仓储仍用下方 stub 覆盖。
+  const actual = await importOriginal<typeof import('@spark/storage')>()
   const now = () => '2026-05-28T00:00:00.000Z'
 
   class RoomLedgerService {
@@ -1483,6 +1486,7 @@ vi.mock('@spark/storage', () => {
   }
 
   return {
+    ...actual,
     CustomToolRepository: SessionRuntimeConfigCustomToolRepositoryStub,
     SessionHistoryRepository: SessionRuntimeConfigSessionHistoryRepositoryStub,
     ToolInvocationRepository: SessionRuntimeConfigToolInvocationRepositoryStub,

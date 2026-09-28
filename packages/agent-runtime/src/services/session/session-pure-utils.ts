@@ -222,12 +222,19 @@ export function listSessionCheckpointsFromEvents(
     try {
       const event = JSON.parse(row.event_json) as AgentEvent
       if (event.type !== 'checkpoint') continue
+      // 旧事件无 checkpointKind：带 sdkSessionId 的是引擎原生 checkpoint，否则视为宿主工作区快照。
+      const checkpointKind =
+        event.checkpointKind ?? (event.sdkSessionId != null ? 'provider_sdk' : 'workspace_snapshot')
       checkpoints.push({
         checkpointId: event.checkpointId,
         ...(event.label != null ? { label: event.label } : {}),
         ...(event.path != null ? { path: event.path } : {}),
         ...(event.filePaths != null ? { filePaths: event.filePaths } : {}),
         ...(event.sdkSessionId != null ? { sdkSessionId: event.sdkSessionId } : {}),
+        checkpointKind,
+        ...(event.workspaceId != null ? { workspaceId: event.workspaceId } : {}),
+        ...(event.treeSha != null ? { treeSha: event.treeSha } : {}),
+        ...(event.fileCount != null ? { fileCount: event.fileCount } : {}),
         timestamp: event.timestamp,
       })
     } catch {

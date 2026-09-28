@@ -104,6 +104,30 @@ export interface WorkflowRunCoordinatorHooks {
     request: { nodeId: string; kind: WorkflowNodeKind; config: Record<string, unknown> },
     content: string,
   ): Promise<WorkflowAtomicNodeExecutionReply>
+  /**
+   * 执行连续性（Phase 3A 剩余，可选注入）：workflow Run 的建档/节点提交/终态收口
+   * 与图版本漂移检测。缺省 undefined = 不接入（行为与旧版一致）。
+   */
+  executionContinuity?: {
+    ensureWorkflowRun(params: {
+      workflowRunId: string
+      sessionId: string
+      turnId: string
+      workflowId: string
+      graphDigest: string
+      nameSnapshot?: string | undefined
+      versionSnapshot?: string | undefined
+    }): void
+    /** 当前 workflow 定义的 graph digest（定义已删除时 null）；供漂移检测。 */
+    currentWorkflowGraphDigest(workflowId: string): string | null
+    noteWorkflowGraphDrift(workflowRunId: string, frozenDigest: string, currentDigest: string | null): void
+    onWorkflowNodeCommitted(workflowRunId: string, nodeId: string): void
+    onWorkflowTerminal(
+      workflowRunId: string,
+      status: 'completed' | 'failed' | 'cancelled',
+      reason: string | null,
+    ): void
+  } | null
 }
 
 export interface WorkflowRunCoordinatorInput {
@@ -226,6 +250,36 @@ export class WorkflowRunCoordinator {
               runId,
               skipped: initialCompletedNodeIds?.length ?? 0,
             })
+            // 执行连续性（Phase 3A）：续跑建档 + 图版本漂移检测（方案 §11.2——
+            // 续跑使用 Run 冻结图是既有语义；漂移只记录不阻断，恢复中心可见）。
+            if (hooks.executionContinuity != null && ctx.workflowGraphDigest != null) {
+              hooks.executionContinuity.ensureWorkflowRun({
+                workflowRunId: runId,
+                sessionId: ctx.sessionId,
+                turnId: ctx.turnId,
+                workflowId: ctx.workflowId ?? '',
+                graphDigest: ctx.workflowGraphDigest,
+                ...(ctx.workflowNameSnapshot != null
+                  ? { nameSnapshot: ctx.workflowNameSnapshot }
+                  : {}),
+                ...(ctx.workflowVersionSnapshot != null
+                  ? { versionSnapshot: ctx.workflowVersionSnapshot }
+                  : {}),
+              })
+              const currentDigest =
+                ctx.workflowId != null
+                  ? hooks.executionContinuity.currentWorkflowGraphDigest(ctx.workflowId)
+                  : null
+              hooks.executionContinuity.noteWorkflowGraphDrift(
+                runId,
+                ctx.workflowGraphDigest,
+                currentDigest,
+              )
+              // 恢复节点的 step 补提交（幂等；workflow_runs 已完成的节点本进程未登记过）。
+              for (const nodeId of initialCompletedNodeIds ?? []) {
+                hooks.executionContinuity.onWorkflowNodeCommitted(runId, nodeId)
+              }
+            }
           } else {
             runId = runRepo.create({
               sessionId: ctx.sessionId,
@@ -254,6 +308,22 @@ export class WorkflowRunCoordinator {
               workflowId: ctx.workflowId,
               runId,
             })
+            // 执行连续性（Phase 3A）：新建 Run 时建档（definitionFingerprint = 冻结图 digest）。
+            if (hooks.executionContinuity != null && ctx.workflowGraphDigest != null) {
+              hooks.executionContinuity.ensureWorkflowRun({
+                workflowRunId: runId,
+                sessionId: ctx.sessionId,
+                turnId: ctx.turnId,
+                workflowId: ctx.workflowId ?? '',
+                graphDigest: ctx.workflowGraphDigest,
+                ...(ctx.workflowNameSnapshot != null
+                  ? { nameSnapshot: ctx.workflowNameSnapshot }
+                  : {}),
+                ...(ctx.workflowVersionSnapshot != null
+                  ? { versionSnapshot: ctx.workflowVersionSnapshot }
+                  : {}),
+              })
+            }
           }
         }
 
@@ -263,6 +333,8 @@ export class WorkflowRunCoordinator {
         const snapshotWrites = new WorkflowSnapshotWriteThrottle({
           intervalMs: memoryGovernance.snapshotMinIntervalMs,
         })
+        // 执行连续性：本进程已向 execution 子系统提交过的节点集合（快照 diff 用）。
+        const committedNodeTracker = new Set<string>()
         const persistSnapshot = (snap: WorkflowRunSnapshot): void => {
           if (runId == null) return
           runRepo.updateSnapshot(runId, {
@@ -275,6 +347,16 @@ export class WorkflowRunCoordinator {
             ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
             ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
           })
+          // 执行连续性（Phase 3A）：completed 集合增量 → 节点粒度 step 提交（§6.2
+          // 每节点独立提交；重启后续跑只重跑未提交节点）。
+          if (hooks.executionContinuity != null) {
+            for (const nodeId of snap.completedNodeIds) {
+              if (!committedNodeTracker.has(nodeId)) {
+                committedNodeTracker.add(nodeId)
+                hooks.executionContinuity.onWorkflowNodeCommitted(runId, nodeId)
+              }
+            }
+          }
         }
 
         let result: WorkflowAgentPlanResult
@@ -443,6 +525,20 @@ export class WorkflowRunCoordinator {
         } finally {
           // 兜底：异常路径终态快照未到达时写出 trailing 待写（正常路径终态已立即落库）。
           snapshotWrites.dispose()
+        }
+        // 执行连续性（Phase 3A）：workflow Run 终态收口。
+        if (runId != null && hooks.executionContinuity != null) {
+          const terminalStatus =
+            result.status === 'completed'
+              ? ('completed' as const)
+              : result.status === 'canceled'
+                ? ('cancelled' as const)
+                : ('failed' as const)
+          hooks.executionContinuity.onWorkflowTerminal(
+            runId,
+            terminalStatus,
+            result.failedNode?.error.message ?? null,
+          )
         }
         const workflowRunLog = result.status === 'completed' ? log.info : log.warn
         workflowRunLog('workflow run: ' + result.status, {

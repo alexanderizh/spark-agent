@@ -92,14 +92,24 @@ export interface CheckpointSnapshot {
   path?: string
   filePaths?: string[]
   timestamp?: string
-  /** SDK 会话 id：restore 时 resume 出 Query 调 rewindFiles(checkpointId)。有此值即可还原。 */
+  /** SDK 会话 id：provider_sdk 快照的引擎会话锚点（宿主不提供还原）。 */
   sdkSessionId?: string
+  /** 快照种类；旧数据由读取侧按 sdkSessionId 推断。 */
+  checkpointKind?: 'workspace_snapshot' | 'provider_sdk'
+  /** workspace_snapshot：快照对应的 Spark workspace id。 */
+  workspaceId?: string
+  /** workspace_snapshot：快照 tree SHA。 */
+  treeSha?: string
+  /** workspace_snapshot：快照内受控文件总数。 */
+  fileCount?: number
 }
 
 export interface CheckpointRestoreResult {
   checkpointId: string
   restoredFiles: string[]
   missingFiles: string[]
+  /** 还原后校验：快照内文件是否已全部与 ref tree 一致（多工作区取全真）。 */
+  verified?: boolean
 }
 
 /** 命令定义（三层架构统一接口） */
@@ -165,7 +175,12 @@ export interface CommandDeps {
     id: string,
   ) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
   listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
-  restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
+  /** 还原工作区快照；force=true 时允许在还原前自动备份失败后继续（用户显式强制）。 */
+  restoreCheckpoint?: (
+    sessionId: string,
+    checkpointRef: string,
+    opts?: { force?: boolean },
+  ) => Promise<CheckpointRestoreResult>
   getCheckpointEnabled?: (sessionId: string) => boolean
   setCheckpointEnabled?: (sessionId: string, enabled: boolean) => boolean
   listSkills?: (
@@ -943,7 +958,7 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     description: '管理会话快照',
     scope: 'session',
     risk: 'high',
-    usage: '/checkpoint <on|off|status|list|restore> [checkpoint-id]',
+    usage: '/checkpoint <on|off|status|list|restore> [checkpoint-id] [--force]',
     hasSubcommands: true,
     handler: async (cmd, ctx, deps) => {
       const action = cmd.args[0]?.toLowerCase() ?? 'list'
@@ -956,8 +971,8 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           success: true,
           message:
             action === 'on'
-              ? '已开启代码还原点：之后每当工作区发生文件变更，会在改动前自动快照（仅变更时）。'
-              : '已关闭代码还原点（不再新建快照；已有快照保留）。',
+              ? '已开启工作区快照：之后每当工作区发生文件变更，会在改动前自动快照（仅变更时）。快照只恢复文件，不代表任务断点。'
+              : '已关闭工作区快照（不再新建快照；已有快照保留）。',
         }
       }
       if (action === 'status') {
@@ -965,42 +980,52 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
         const count = deps.listSessionCheckpoints?.(ctx.sessionId)?.length ?? 0
         return {
           success: true,
-          message: `代码还原点：${enabled ? '已开启' : '未开启'}；当前 ${count} 个快照。${enabled ? '' : '\n用 `/checkpoint on` 开启。'}`,
+          message: `工作区快照：${enabled ? '已开启' : '未开启'}；当前 ${count} 个快照。${enabled ? '' : '\n用 `/checkpoint on` 开启。'}`,
         }
       }
       if (action === 'list') {
         const checkpoints = deps.listSessionCheckpoints?.(ctx.sessionId) ?? []
         if (checkpoints.length === 0) {
-          return { success: true, message: '当前会话还没有可用 checkpoint。' }
+          return { success: true, message: '当前会话还没有可用快照。' }
         }
         const lines = checkpoints
           .slice(-10)
           .reverse()
           .map((checkpoint) => {
-            const files = checkpoint.filePaths?.length ?? 0
+            const files = checkpoint.filePaths?.length ?? checkpoint.fileCount ?? 0
             const filePreview = checkpoint.filePaths?.slice(0, 3).join(', ')
             const label = checkpoint.label != null ? ` ${checkpoint.label}` : ''
-            const source = checkpoint.path != null ? ` · ${checkpoint.path}` : ''
+            const kind =
+              checkpoint.checkpointKind === 'provider_sdk' ||
+              (checkpoint.checkpointKind == null && checkpoint.sdkSessionId != null)
+                ? '引擎快照'
+                : '工作区快照'
             const fileText =
               filePreview != null && filePreview.length > 0 ? ` · ${filePreview}` : ''
-            return `- \`${checkpoint.checkpointId}\`${label} · ${files} files${fileText}${source}`
+            return `- \`${checkpoint.checkpointId}\`${label} · ${kind} · ${files} files${fileText}`
           })
         return { success: true, message: ['**Checkpoints**', '', ...lines].join('\n') }
       }
 
       if (action !== 'restore' && action !== 'rollback') {
-        return { success: false, message: '用法: /checkpoint <list|restore> [checkpoint-id]' }
+        return { success: false, message: '用法: /checkpoint <list|restore> [checkpoint-id] [--force]' }
       }
 
-      const checkpointRef = cmd.args[1]
+      // `--force` 由解析器归入 flags（布尔风格 'true'），位置参数只取非 -- 前缀防御。
+      const positionalArgs = cmd.args.slice(1).filter((arg) => !arg.startsWith('--'))
+      const force = cmd.flags.force != null
+      const checkpointRef = positionalArgs[0]
       if (checkpointRef == null || checkpointRef.trim().length === 0) {
-        return { success: false, message: '用法: /checkpoint restore <checkpoint-id>' }
+        return {
+          success: false,
+          message: '用法: /checkpoint restore <checkpoint-id> [--force]',
+        }
       }
       if (deps.restoreCheckpoint == null) {
         return { success: false, message: '当前运行时不支持 checkpoint restore。' }
       }
 
-      const result = await deps.restoreCheckpoint(ctx.sessionId, checkpointRef)
+      const result = await deps.restoreCheckpoint(ctx.sessionId, checkpointRef, { force })
       const restored =
         result.restoredFiles.length > 0
           ? result.restoredFiles.map((file) => `- ${file}`).join('\n')
@@ -1009,13 +1034,18 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
         result.missingFiles.length > 0
           ? `\n\nMissing files:\n${result.missingFiles.map((file) => `- ${file}`).join('\n')}`
           : ''
+      const verifyNote =
+        result.verified === false
+          ? '\n\n⚠️ 还原后校验未通过：部分快照内文件与快照不一致，请检查工作区。'
+          : ''
       return {
         success: result.missingFiles.length === 0,
-        message: `Restored checkpoint \`${result.checkpointId}\`:\n${restored}${missing}`,
+        message: `Restored checkpoint \`${result.checkpointId}\`:\n${restored}${missing}${verifyNote}`,
         data: {
           checkpointId: result.checkpointId,
           restoredFiles: result.restoredFiles,
           missingFiles: result.missingFiles,
+          verified: result.verified,
         },
       }
     },

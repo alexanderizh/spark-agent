@@ -661,3 +661,34 @@ export {
   collectGraphDependencies,
   rewriteGraphReferences,
 } from './services/workflow-bundle/index.js'
+
+// 执行连续性子系统（execution continuity）
+export {
+  ExecutionSupervisor,
+  CheckpointWriter,
+  EffectJournal,
+  normalizeRequestHash,
+  RecoveryPlanner,
+  RECOVERY_PLANNER_VERSION,
+  RecoveryValidator,
+  computeEnvironmentFingerprint,
+  inspectTurnSideEffects,
+  getToolRecoveryPolicy,
+  mayHaveExternalSideEffect,
+  DEFAULT_EXECUTION_CONTINUITY_CONFIG,
+  getExecutionContinuityConfig,
+  setExecutionContinuityConfig,
+  ADAPTER_DECLARATIONS,
+  supportsNativeResumeFor,
+} from './services/execution-continuity/index.js'
+export type {
+  TurnRecoveryDelegate,
+  EffectPrepareInput,
+  PreparedEffect,
+  PlanRecoveryInput,
+  PlanRecoveryResult,
+  SideEffectProof,
+  CheckpointValidationResult,
+  EnvironmentComparison,
+  EnvironmentFingerprintInput,
+} from './services/execution-continuity/index.js'

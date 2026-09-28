@@ -494,6 +494,11 @@ import {
   buildMemoryExtractionRecentContext,
 } from './conversation-summarizer.js'
 import { SessionContinuityCoordinator } from './session-continuity-coordinator.js'
+import {
+  ExecutionSupervisor,
+  type TurnRecoveryDelegate,
+} from './execution-continuity/index.js'
+import type { ExecutionRunRecord, RecoveryPlanV1 } from '@spark/protocol'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
@@ -1053,6 +1058,8 @@ export class SessionService {
   private memorySearchRepo?: MemorySearchRepository
   private memoryEmbeddingService?: EmbeddingService
   private readonly continuityCoordinator: SessionContinuityCoordinator
+  /** 执行连续性编排（Phase 1）：Run 生命周期、租约、启动扫描与恢复调度。 */
+  private readonly executionSupervisor: ExecutionSupervisor
 
   /**
    * Increments whenever any MCP server is created/updated/deleted/started/stopped/
@@ -1071,7 +1078,21 @@ export class SessionService {
         new TeamDiscussionRepository(this.db),
         undefined,
         undefined,
-        { governor: this.getDispatchGovernor() },
+        {
+          governor: this.getDispatchGovernor(),
+          // 执行连续性（Phase 3B §11.3）：派发边界在父 Run 上登记 durable
+          // waiting 的 subagent step（重启后随 Run 可见；恢复语义由父 Run 规划决定）。
+          executionContinuity: this.executionSupervisor.config.enabled
+            ? {
+                onDispatchOpened: (params) => {
+                  this.executionSupervisor.onSubagentDispatchOpened(params)
+                },
+                onDispatchSettled: (dispatchId, outcome) => {
+                  this.executionSupervisor.onSubagentDispatchSettled(dispatchId, outcome)
+                },
+              }
+            : null,
+        },
       )
     }
     return this.teamDispatchService
@@ -1394,6 +1415,9 @@ export class SessionService {
         this.emitAndPersist(sessionId, turnId, event, eventRepo),
       (sessionId) => this.activeChatModelBySession.get(sessionId) ?? null,
     )
+    // 执行连续性（Phase 1）：Supervisor 持有恢复编排，SessionService 只保留薄接线。
+    this.executionSupervisor = new ExecutionSupervisor(db)
+    this.executionSupervisor.bindTurnDelegate(this.buildTurnRecoveryDelegate())
     this.mcpService.onChange((_event: McpChangeEvent) => {
       this.mcpVersion += 1
     })
@@ -1403,6 +1427,143 @@ export class SessionService {
   }
 
   private hookLifecycleBridge: HookLifecycleBridge | undefined
+
+  /** 暴露执行连续性 Supervisor 供 IPC（恢复中心）调用；不参与会话执行链路。 */
+  getExecutionSupervisor(): ExecutionSupervisor {
+    return this.executionSupervisor
+  }
+
+  /** 引擎口径 → 执行连续性 runtimeKind（与 adapters 声明的 key 对齐）。 */
+  private resolveContinuityRuntimeKind(adapter: AgentAdapterKind | null): string {
+    const engine = resolveEngineKind(normalizeAgentAdapter(adapter))
+    switch (engine) {
+      case 'codex':
+        return 'codex'
+      case 'spark':
+        return 'spark-engine'
+      default:
+        return 'claude'
+    }
+  }
+
+  /**
+   * Turn 恢复委托（方案 §14-Phase 1 L1）：
+   * 用 continuity capsule + 中断事实构造恢复上下文，作为新的内部 Turn 排队执行。
+   * 恢复 Turn 一定是新 turnId（原 turn 已终态收口），上下文由 capsule/事件尾提供。
+   */
+  private buildTurnRecoveryDelegate(): TurnRecoveryDelegate {
+    return {
+      hasContinuityCapsule: (sessionId) => {
+        try {
+          return new SessionSummaryRepository(this.db).getLatest(sessionId) != null
+        } catch {
+          return false
+        }
+      },
+      resumeTurnRun: (run, plan) => {
+        try {
+          this.enqueueExecutionRecoveryTurn(run, plan)
+        } catch (error) {
+          log.warn('execution recovery turn enqueue failed', {
+            runId: run.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      },
+      resumeGoalLoop: (sessionId) => {
+        try {
+          const goal = new GoalRepository(this.db).getCurrent(sessionId)
+          if (goal == null || goal.status !== 'active' || goal.mode !== 'spark-loop') {
+            return false
+          }
+          void this.startGoalLoop(sessionId)
+          return true
+        } catch {
+          return false
+        }
+      },
+      environmentFor: (run) => {
+        if (run.sessionId == null) return { engine: run.runtimeKind }
+        const session = new SessionRepository(this.db).get(run.sessionId)
+        if (session == null) return { engine: run.runtimeKind }
+        const activeModel = this.activeChatModelBySession.get(run.sessionId)
+        const providerProfileId = activeModel?.providerId ?? session.provider_profile_id
+        return {
+          engine: run.runtimeKind,
+          ...(providerProfileId != null && providerProfileId !== ''
+            ? { providerProfileId }
+            : {}),
+          modelId: activeModel?.model ?? session.model_id ?? undefined,
+        }
+      },
+    }
+  }
+
+  /** 构造并排队 L1 恢复 Turn（隐藏用户消息 + 明确的恢复说明，不伪装为精确续接）。 */
+  private enqueueExecutionRecoveryTurn(run: ExecutionRunRecord, plan: RecoveryPlanV1): void {
+    if (run.sessionId == null || run.rootTurnId == null) return
+    const sessionId = run.sessionId
+    const summary = new SessionSummaryRepository(this.db).getLatest(sessionId)
+    const capsuleText =
+      summary?.summary_text != null && summary.summary_text.length > 0
+        ? summary.summary_text
+        : '（无可用上下文摘要）'
+    const levelNote =
+      plan.achievedLevel >= 2
+        ? '将尽量续接原生会话上下文'
+        : '将以上下文摘要方式继续（精确续接不可用）'
+    const message = [
+      '（系统恢复任务）上一次执行被应用重启中断，现按恢复计划继续。',
+      `恢复方式：${plan.recoveryMethod}；恢复等级：L${plan.achievedLevel}（${levelNote}）。`,
+      run.interruptionReason != null ? `中断原因：${run.interruptionReason}。` : '',
+      '',
+      '上次任务上下文摘要：',
+      capsuleText,
+      '',
+      '请基于以上上下文继续完成原任务；已完成的工作不要重复执行。',
+    ]
+      .filter((line) => line !== '')
+      .join('\n')
+    const turnId = crypto.randomUUID()
+    const pendingTurn = this.makePendingTurn(
+      turnId,
+      message,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        userMessageVisibility: 'hidden',
+        turnSource: 'system_continuity',
+        userMessageDisplayContent: '（系统恢复任务）上次执行被中断，正在按恢复计划继续',
+      },
+    )
+    // 恢复 Turn 走持久接受边界（与用户 Turn 同等 RPO 保证），排队最前。
+    new TurnRequestRepository(this.db).create({
+      id: turnId,
+      sessionId,
+      payloadJson: JSON.stringify(pendingTurn),
+      createdAt: new Date().toISOString(),
+    })
+    this.executionSupervisor.ensureTurnRun({
+      turnId,
+      sessionId,
+      runtimeKind: run.runtimeKind,
+      runtimeBinding: run.runtimeBindingJson as Record<string, unknown> | undefined,
+      inputRef: run.inputRef,
+      // 恢复 Turn 挂到原崩溃 Run 之下：恢复 Turn 终态时随结果闭环原 Run。
+      parentRunId: run.id,
+    })
+    this.enqueueTurn(sessionId, { ...pendingTurn, turnId }, 'front')
+    log.info('execution recovery turn enqueued', {
+      runId: run.id,
+      newTurnId: turnId,
+      method: plan.recoveryMethod,
+      level: plan.achievedLevel,
+    })
+    setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+  }
 
   /**
    * 注入 Hook 生命周期桥（主进程组装 HookEventEmitter/Dispatcher/Worker 后调用一次）。
@@ -1873,7 +2034,20 @@ export class SessionService {
     const sessionsToStart = new Set<string>()
     for (const row of repo.listRecoverable()) {
       if (row.status === 'running') {
+        // 执行连续性（Phase 1，方案 §14）：running 不再直接失败——
+        // 先把关联 Run 标记为 orphaned，由 Supervisor 启动扫描做恢复规划：
+        //   可证明未派发副作用 → 自动 L1 恢复 Turn；否则 needs_attention（恢复中心处理）。
+        const run = this.executionSupervisor
+          .getRunByRootTurnIdForRecovery(row.id)
         repo.markFailed(row.id, 'Turn interrupted by application restart')
+        if (run != null) {
+          log.info('interrupted running turn routed to recovery planning', {
+            turnId: row.id,
+            runId: run.id,
+          })
+        } else {
+          // 功能开启前的存量 running 请求（无 Run 记录）：保持旧的失败语义。
+        }
         continue
       }
       try {
@@ -1903,6 +2077,77 @@ export class SessionService {
         )
       }
       setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+    }
+    // 执行连续性启动扫描：过期租约 → orphaned、恢复规划、媒体任务投影。
+    // auto_resume 的 Run 经委托生成恢复 Turn；needs_attention 留给恢复中心。
+    try {
+      this.executionSupervisor.startupScan({
+        replayAcceptedTurn: () => undefined,
+      })
+    } catch (error) {
+      log.warn('execution continuity startup scan failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    // 执行连续性（Phase 3B，方案 §11.1）：恢复 active Goal —— 不再等用户再发消息。
+    try {
+      this.recoverActiveGoals()
+    } catch (error) {
+      log.warn('active goal recovery failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  /**
+   * 启动时恢复 active Goal（Phase 3B，方案 §11.1）：
+   *   - 为每个 active goal 建/复用 goal Run（迭代水位 = 已提交 step / progressLog）；
+   *   - spark-loop 且无中断迭代 → 重新泵迭代（预算计数来自持久 progressLog，不重复计）；
+   *   - 存在中断迭代（迭代 turn Run 非终态）→ goal Run 标 needs_attention，
+   *     由恢复中心处理迭代后再继续（不自动叠加新一轮迭代）。
+   *   - paused/stopped_by_budget/pending_contract 只登记 Run，不自动泵（用户显式恢复）。
+   */
+  private recoverActiveGoals(): void {
+    if (!this.executionSupervisor.config.enabled) return
+    const repo = new GoalRepository(this.db)
+    for (const goal of repo.listActiveGoals()) {
+      try {
+        const run = this.executionSupervisor.ensureGoalRun({
+          goalId: goal.id,
+          sessionId: goal.sessionId,
+          objective: goal.objective,
+          mode: goal.mode,
+        })
+        if (run == null) continue
+        const hasInterruptedIteration = this.executionSupervisor.hasNonTerminalChildRuns(run.id)
+        if (hasInterruptedIteration) {
+          this.executionSupervisor.markGoalRunNeedsAttention(goal.id, 'goal_iteration_interrupted')
+          log.info('active goal awaits recovery of interrupted iteration', {
+            goalId: goal.id,
+            sessionId: goal.sessionId,
+          })
+          continue
+        }
+        if (
+          goal.status === 'active' &&
+          goal.mode === 'spark-loop' &&
+          // 与 turn/media 同口径：goal 自动恢复受 autoRecoveryKinds 白名单灰度控制
+          //（方案 §14-Phase 4）；不在白名单时登记 Run 但不自动泵，用户经恢复中心/对话继续。
+          this.executionSupervisor.config.autoRecoveryKinds.includes('goal')
+        ) {
+          log.info('active goal resumed at startup', {
+            goalId: goal.id,
+            sessionId: goal.sessionId,
+            committedIterations: goal.progressLog.length,
+          })
+          void this.startGoalLoop(goal.sessionId)
+        }
+      } catch (error) {
+        log.warn('goal recovery entry failed', {
+          goalId: goal.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
 
@@ -2209,6 +2454,38 @@ export class SessionService {
           turnRequestRepository.createInTransaction(request)
         } else {
           turnRequestRepository.create(request)
+        }
+        // 执行连续性（Phase 1）：与 turn_request 同事务登记 execution_run，
+        // 保证 accepted 之后强杀不丢任务（RPO 0）。
+        try {
+          const session = new SessionRepository(this.db).get(sessionId)
+          const runtimeKind =
+            params.agentAdapter != null
+              ? this.resolveContinuityRuntimeKind(params.agentAdapter)
+              : session != null
+                ? this.resolveContinuityRuntimeKind(
+                    normalizeAgentAdapter(session.agent_adapter as AgentAdapterKind | null),
+                  )
+                : 'claude'
+          this.executionSupervisor.ensureTurnRun({
+            turnId,
+            sessionId,
+            runtimeKind,
+            runtimeBinding: {
+              engine: runtimeKind,
+              ...(session?.provider_profile_id != null && session.provider_profile_id !== ''
+                ? { providerProfileId: session.provider_profile_id }
+                : {}),
+              ...(session?.model_id != null ? { modelId: session.model_id } : {}),
+            },
+            inputRef: `turn_request:${turnId}`,
+          })
+        } catch (error) {
+          // Run 登记失败不阻断用户消息接受（turn_request 已是接受边界）。
+          log.warn('execution run registration failed', {
+            turnId,
+            error: error instanceof Error ? error.message : String(error),
+          })
         }
       }
     }
@@ -3962,8 +4239,32 @@ export class SessionService {
                 context: SDKPermissionRequestContext,
               ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+                // 执行连续性（Phase 3A）：权限请求先落 execution_waits 再推 UI（方案 §11.4）。
+                const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                  turnId,
+                  'permission',
+                  { toolName, requestId: context.requestId ?? null },
+                  `permission:${toolName}`,
+                )
                 try {
-                  return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
+                  const decision = await this.onApproval!(sid, toolName, toolInput, {
+                    ...context,
+                    turnId,
+                  })
+                  if (continuityWaitId != null) {
+                    const denied =
+                      decision === false ||
+                      (decision != null &&
+                        typeof decision === 'object' &&
+                        (('behavior' in decision && decision.behavior === 'deny') ||
+                          ('allowed' in decision && decision.allowed === false)))
+                    this.executionSupervisor.recordWaitAnswered(
+                      continuityWaitId,
+                      denied ? 'denied' : 'answered',
+                      { toolName, decision: decision as unknown },
+                    )
+                  }
+                  return decision
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -3988,8 +4289,26 @@ export class SessionService {
                     description: question.question,
                   })),
                 })
+                // 执行连续性（Phase 3A）：提问先落 execution_waits 再推 UI；
+                // 回答先落库（幂等去重）再由原控制流唤醒（方案 §6.5/§11.4）。
+                const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                  turnId,
+                  'question',
+                  {
+                    questionId: context.questionId ?? null,
+                    requestId: context.requestId ?? null,
+                    questions,
+                  },
+                )
                 try {
-                  return await this.onQuestion!(sid, questions, { ...context, turnId })
+                  const answers = await this.onQuestion!(sid, questions, { ...context, turnId })
+                  if (continuityWaitId != null) {
+                    this.executionSupervisor.recordWaitAnswered(continuityWaitId, 'answered', {
+                      questionId: context.questionId ?? null,
+                      answers: answers as unknown,
+                    })
+                  }
+                  return answers
                 } finally {
                   releaseQuestionGate()
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
@@ -4190,6 +4509,16 @@ export class SessionService {
             }),
           )
         },
+        // 执行连续性（Phase 2 深化 / L3）：账本重放后按三态证据精确调和 Effect
+        // （confirmed / unknown / 未派发跳过），替代纯保守的人工确认。作用域为
+        // 会话级 —— 崩溃 Run 与本次恢复 Turn 是不同 turnId，必须按会话定位目标。
+        sparkLedgerRecoveredObserver: (evidence) => {
+          this.executionSupervisor.reconcileEffectsFromEngineLedger(sessionId, {
+            resultCallIds: evidence.resultCallIds,
+            orphanIntentCallIds: evidence.orphanIntentCallIds,
+            undeliveredCallIds: evidence.undeliveredCallIds,
+          })
+        },
         ...(this.onApproval != null
           ? {
               // 审批桥（M3）：与 claude 分支同构——弹卡等待前后切换 waiting_permission
@@ -4201,8 +4530,32 @@ export class SessionService {
                 context: SDKPermissionRequestContext,
               ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+                // 执行连续性（Phase 3A）：权限请求先落 execution_waits 再推 UI（方案 §11.4）。
+                const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                  turnId,
+                  'permission',
+                  { toolName, requestId: context.requestId ?? null },
+                  `permission:${toolName}`,
+                )
                 try {
-                  return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
+                  const decision = await this.onApproval!(sid, toolName, toolInput, {
+                    ...context,
+                    turnId,
+                  })
+                  if (continuityWaitId != null) {
+                    const denied =
+                      decision === false ||
+                      (decision != null &&
+                        typeof decision === 'object' &&
+                        (('behavior' in decision && decision.behavior === 'deny') ||
+                          ('allowed' in decision && decision.allowed === false)))
+                    this.executionSupervisor.recordWaitAnswered(
+                      continuityWaitId,
+                      denied ? 'denied' : 'answered',
+                      { toolName, decision: decision as unknown },
+                    )
+                  }
+                  return decision
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -4363,7 +4716,33 @@ export class SessionService {
               toolName: string,
               toolInput: Record<string, unknown>,
               context: SDKPermissionRequestContext,
-            ) => this.onApproval!(sid, toolName, toolInput, { ...context, turnId }),
+            ) => {
+              // 执行连续性（Phase 3A）：codex app-server 审批先落 execution_waits。
+              const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                turnId,
+                'permission',
+                { toolName, requestId: context.requestId ?? null },
+                `permission:${toolName}`,
+              )
+              const decision = await this.onApproval!(sid, toolName, toolInput, {
+                ...context,
+                turnId,
+              })
+              if (continuityWaitId != null) {
+                const denied =
+                  decision === false ||
+                  (decision != null &&
+                    typeof decision === 'object' &&
+                    (('behavior' in decision && decision.behavior === 'deny') ||
+                      ('allowed' in decision && decision.allowed === false)))
+                this.executionSupervisor.recordWaitAnswered(
+                  continuityWaitId,
+                  denied ? 'denied' : 'answered',
+                  { toolName, decision: decision as unknown },
+                )
+              }
+              return decision
+            },
           }
         : {}),
     }
@@ -7809,6 +8188,32 @@ export class SessionService {
           this.runWorkflowToolInvocationNode(request, spec, dispatch, invocationContext),
         finalizeArtifactContent: (request, content) =>
           this.finalizeWorkflowArtifactContent(request, content, ctx.workspaceRootPath),
+        // 执行连续性（Phase 3A 剩余）：workflow Run 建档/节点提交/终态/图漂移。
+        executionContinuity: this.executionSupervisor.config.enabled
+          ? {
+              ensureWorkflowRun: (params) => {
+                this.executionSupervisor.ensureWorkflowRun(params)
+              },
+              currentWorkflowGraphDigest: (workflowId) => {
+                try {
+                  const definition = new WorkflowRepository(this.db).get(workflowId)
+                  if (definition == null) return null
+                  return digestNormalizedWorkflowGraph(normalizeWorkflowGraph(definition.graph))
+                } catch {
+                  return null
+                }
+              },
+              noteWorkflowGraphDrift: (workflowRunId, frozen, current) => {
+                this.executionSupervisor.noteWorkflowGraphDrift(workflowRunId, frozen, current)
+              },
+              onWorkflowNodeCommitted: (workflowRunId, nodeId) => {
+                this.executionSupervisor.onWorkflowNodeCommitted(workflowRunId, nodeId)
+              },
+              onWorkflowTerminal: (workflowRunId, status, reason) => {
+                this.executionSupervisor.onWorkflowTerminal(workflowRunId, status, reason)
+              },
+            }
+          : null,
       },
     }).buildToolDefinition()
 
@@ -8896,8 +9301,32 @@ export class SessionService {
               context: SDKPermissionRequestContext,
             ) => {
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
+              // 执行连续性（Phase 3A）：权限请求先落 execution_waits 再推 UI。
+              const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                turnId,
+                'permission',
+                { toolName, requestId: context.requestId ?? null },
+                `permission:${toolName}`,
+              )
               try {
-                return await this.onApproval!(sid, toolName, toolInput, { ...context, turnId })
+                const decision = await this.onApproval!(sid, toolName, toolInput, {
+                  ...context,
+                  turnId,
+                })
+                if (continuityWaitId != null) {
+                  const denied =
+                    decision === false ||
+                    (decision != null &&
+                      typeof decision === 'object' &&
+                      (('behavior' in decision && decision.behavior === 'deny') ||
+                        ('allowed' in decision && decision.allowed === false)))
+                  this.executionSupervisor.recordWaitAnswered(
+                    continuityWaitId,
+                    denied ? 'denied' : 'answered',
+                    { toolName, decision: decision as unknown },
+                  )
+                }
+                return decision
               } finally {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
               }
@@ -8922,8 +9351,25 @@ export class SessionService {
                   description: question.question,
                 })),
               })
+              // 执行连续性（Phase 3A）：提问先落 execution_waits 再推 UI（方案 §6.5）。
+              const continuityWaitId = this.executionSupervisor.recordWaitOpened(
+                turnId,
+                'question',
+                {
+                  questionId: context.questionId ?? null,
+                  requestId: context.requestId ?? null,
+                  questions,
+                },
+              )
               try {
-                return await this.onQuestion!(sid, questions, { ...context, turnId })
+                const answers = await this.onQuestion!(sid, questions, { ...context, turnId })
+                if (continuityWaitId != null) {
+                  this.executionSupervisor.recordWaitAnswered(continuityWaitId, 'answered', {
+                    questionId: context.questionId ?? null,
+                    answers: answers as unknown,
+                  })
+                }
+                return answers
               } finally {
                 releaseQuestionGate()
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
@@ -9364,6 +9810,14 @@ export class SessionService {
       }
       throw err
     }
+    // 执行连续性（Phase 2）：统一工具事件入口的副作用信封（仅 tool 事件有开销）。
+    // 必须在持久化 try 之外：信封记录失败只降级日志，不得中断事件管线。
+    if (event.type === 'tool_call' || event.type === 'tool_result') {
+      this.executionSupervisor.recordToolEffectFromEvent(
+        turnId,
+        event as unknown as { type: string } & Record<string, unknown>,
+      )
+    }
     if (event.type === 'usage_update') {
       this.usageLedger.recordUpdate(sessionId, turnId, event)
     }
@@ -9380,10 +9834,14 @@ export class SessionService {
       const turnRequests = new TurnRequestRepository(this.db)
       if (status === 'completed' || status === 'idle') {
         turnRequests.markCompleted(turnId)
+        // 执行连续性（Phase 1）：Run 终态收口（Effect→unknown 调和、Wait 关闭、outbox）。
+        this.executionSupervisor.onTurnTerminal(turnId, 'completed', null)
       } else if (status === 'cancelled') {
         turnRequests.cancel(turnId)
+        this.executionSupervisor.onTurnTerminal(turnId, 'cancelled', event.message ?? null)
       } else if (status === 'error') {
         turnRequests.markFailed(turnId, event.message ?? 'Turn failed')
+        this.executionSupervisor.onTurnTerminal(turnId, 'failed', event.message ?? 'Turn failed')
       }
       if (status === 'completed') {
         this.onHookTrigger?.(sessionId, 'session_end', {
@@ -9473,6 +9931,15 @@ export class SessionService {
     if (this.disposePromise != null) return this.disposePromise
     this.disposing = true
     this.disposePromise = (async () => {
+      // 执行连续性（Phase 1，方案 §10.1）：先 drain — 写 shutdown Checkpoint、
+      // 活跃 Run 转 paused/needs_attention、释放租约；再取消执行器。
+      try {
+        this.executionSupervisor.drainSync('app_shutdown')
+      } catch (error) {
+        log.warn('execution continuity drain failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       const trackedExecutions = this.turnRegistry.trackedExecutions()
       const executions = new Set<ActiveExecution>([
         ...trackedExecutions.map((tracked) => tracked.executor),
@@ -9525,6 +9992,8 @@ export class SessionService {
       }
       await getTeamMcpHttpBridge().dispose()
       await this.pluginRuntimeMcpBridge?.dispose()
+      // 执行连续性：Supervisor 心跳定时器与租约缓存随服务关停。
+      this.executionSupervisor.dispose()
     })()
     return this.disposePromise
   }
@@ -9882,6 +10351,29 @@ export class SessionService {
       this.emitQueueChanged(sessionId)
       setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
       return
+    }
+    // 执行连续性（Phase 1）：Run → running + 租约 + accepted checkpoint。
+    if (durableRequest != null) {
+      try {
+        const session = new SessionRepository(this.db).get(sessionId)
+        this.executionSupervisor.onTurnStarted(next.turnId, {
+          engine:
+            session != null
+              ? this.resolveContinuityRuntimeKind(
+                  normalizeAgentAdapter(session.agent_adapter as AgentAdapterKind | null),
+                )
+              : 'claude',
+          ...(session?.provider_profile_id != null && session.provider_profile_id !== ''
+            ? { providerProfileId: session.provider_profile_id }
+            : {}),
+          ...(session?.model_id != null ? { modelId: session.model_id } : {}),
+        })
+      } catch (error) {
+        log.warn('execution run start hook failed', {
+          turnId: next.turnId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
     this.turnRegistry.beginStarting(sessionId, next.turnId)
     this.emitQueueChanged(sessionId)
@@ -10295,6 +10787,9 @@ export class SessionService {
       ...(parsed.nextStep != null ? { nextStep: parsed.nextStep } : {}),
     }
     const updated = repo.appendProgress(goal.id, progressPatch) ?? goal
+    // 执行连续性（Phase 3B）：迭代结果提交（step committed + checkpoint）——
+    // 与 progress append 同边界，预算/失败计数以 progressLog 持久事实为准。
+    this.executionSupervisor.onGoalIterationCommitted(goal.id, progressPatch.iteration, parsed.phase)
     this.emitGoalEvent(
       sessionId,
       updated,
@@ -10311,12 +10806,15 @@ export class SessionService {
     )
     if (parsed.status === 'completed') {
       const done = repo.updateStatus(goal.id, 'completed') ?? updated
+      this.executionSupervisor.onGoalTerminal(goal.id, 'completed')
       this.emitGoalEvent(sessionId, done, 'goal_completed', 'completed', parsed.summary)
     } else if (parsed.status === 'failed') {
       const failed = repo.updateStatus(goal.id, 'failed', { lastError: parsed.summary }) ?? updated
+      this.executionSupervisor.onGoalTerminal(goal.id, 'failed')
       this.emitGoalEvent(sessionId, failed, 'goal_failed', 'failed', parsed.summary)
     } else if (parsed.status === 'blocked') {
       const paused = repo.updateStatus(goal.id, 'paused', { lastError: parsed.summary }) ?? updated
+      this.executionSupervisor.onGoalTerminal(goal.id, 'paused')
       this.emitGoalEvent(sessionId, paused, 'goal_paused', 'paused', parsed.summary)
     }
   }
@@ -10505,6 +11003,7 @@ export class SessionService {
     }
     if (params.action === 'pause') {
       const updated = repo.updateStatus(goal.id, 'paused')
+      this.executionSupervisor.onGoalTerminal(goal.id, 'paused')
       this.emitGoalEvent(
         params.sessionId,
         updated ?? goal,
@@ -10532,6 +11031,7 @@ export class SessionService {
     }
     if (params.action === 'complete') {
       const updated = repo.updateStatus(goal.id, 'completed')
+      this.executionSupervisor.onGoalTerminal(goal.id, 'completed')
       this.emitGoalEvent(
         params.sessionId,
         updated ?? goal,
@@ -10543,6 +11043,7 @@ export class SessionService {
     }
     this.turnRegistry.executorFor(params.sessionId)?.cancel()
     const updated = repo.clearCurrent(params.sessionId)
+    this.executionSupervisor.onGoalTerminal(goal.id, 'cleared')
     this.emitGoalEvent(
       params.sessionId,
       updated ?? goal,
@@ -10753,6 +11254,7 @@ export class SessionService {
     summary: string,
   ): void {
     const stopped = repo.updateStatus(goal.id, 'stopped_by_budget') ?? goal
+    this.executionSupervisor.onGoalTerminal(goal.id, 'stopped_by_budget')
     this.emitGoalEvent(sessionId, stopped, 'goal_budget_stopped', 'stopped_by_budget', summary)
     // 预算停止发生在 startGoalLoop 内（continueGoalOrQueue 派发它后直接 return），
     // 若队列还压着 goal 运行期间排队的用户消息，没有任何后续泵会来排空——
@@ -10895,6 +11397,31 @@ export class SessionService {
     const goalAttachments = attachments ?? this.findGoalSourceAttachments(sessionId, goal.objective)
     const supplementaryUserMessages = this.drainQueuedUserTurnsForGoalIteration(sessionId)
     const prompt = buildGoalIterationPrompt(goal, supplementaryUserMessages, cycleStartMs)
+    // 执行连续性（Phase 3B）：goal 根 Run 建档 + 本轮迭代 step（stableKey=
+    // goal_iteration:N，崩溃重启后迭代水位可从 step/progressLog 恢复，§11.1），
+    // 并为迭代 turn 建 kind=turn Run —— 否则迭代内工具副作用没有信封归属。
+    if (this.executionSupervisor.config.enabled) {
+      const goalSession = new SessionRepository(this.db).get(sessionId)
+      const goalRuntime =
+        goalSession != null
+          ? this.resolveContinuityRuntimeKind(
+              normalizeAgentAdapter(goalSession.agent_adapter as AgentAdapterKind | null),
+            )
+          : 'claude'
+      this.executionSupervisor.ensureGoalRun({
+        goalId: goal.id,
+        sessionId,
+        objective: goal.objective,
+        mode: goal.mode,
+      })
+      this.executionSupervisor.ensureTurnRun({
+        turnId,
+        sessionId,
+        runtimeKind: goalRuntime,
+      })
+      this.executionSupervisor.onTurnStarted(turnId)
+      this.executionSupervisor.onGoalIterationStarted(goal.id, goal.progressLog.length + 1, turnId)
+    }
     // 启动只发事件、不写 progressLog：真实进度条目唯一来源是 turn 结束时解析的
     // spark-goal-status 块。此前每轮先 append 一条固定 nextStep 的"启动占位条目"，
     // 导致 progressLog 每轮 +2——迭代计数双倍（maxIterations 减半生效）、
@@ -11544,6 +12071,18 @@ export class SessionService {
     return this.getCheckpointManager().listCheckpoints(sessionId)
   }
 
+  async listCheckpointsWithStatus(sessionId: string) {
+    return this.getCheckpointManager().listCheckpointsWithStatus(sessionId)
+  }
+
+  async previewCheckpointRestore(sessionId: string, checkpointRef: string) {
+    return this.getCheckpointManager().previewCheckpointRestore(sessionId, checkpointRef)
+  }
+
+  async listCheckpointFiles(sessionId: string, checkpointRef: string) {
+    return this.getCheckpointManager().listCheckpointFiles(sessionId, checkpointRef)
+  }
+
   getSessionCheckpointEnabled(sessionId: string): boolean {
     return this.getCheckpointManager().getSessionCheckpointEnabled(sessionId)
   }
@@ -11559,8 +12098,9 @@ export class SessionService {
   async restoreCheckpointViaSnapshot(
     sessionId: string,
     checkpointRef: string,
+    opts?: { force?: boolean },
   ): Promise<CheckpointRestoreResult> {
-    return this.getCheckpointManager().restoreCheckpointViaSnapshot(sessionId, checkpointRef)
+    return this.getCheckpointManager().restoreCheckpointViaSnapshot(sessionId, checkpointRef, opts)
   }
 
   private async maybeCaptureCheckpoint(

@@ -854,6 +854,26 @@ export interface SDKExecutorConfig {
    * codexNativeThreadBindingObserver 先例）。
    */
   sparkSessionIdObserver?: ((sparkSessionId: string) => void | Promise<void>) | undefined
+  /**
+   * Spark 引擎：账本恢复证据回调（执行连续性 Phase 2 深化 — L3 精确调和）。
+   * openSession 重放完成后上报：孤儿意图（有 intent 无 result = 已派发、结果未知）
+   * 与已收口调用（有 result）。Host 侧 EffectJournal 据此三态精确调和：
+   *   - Effect dispatching/unknown + 有 result      → confirmed（崩溃窗口 D）
+   *   - Effect dispatching/unknown + 孤儿 intent    → unknown（真未知，维持）
+   *   - Effect dispatching       + 仅 call 无 intent → 未派发，标记 failed（安全跳过）
+   * 只在续跑（openSession）路径触发；newSession 不回调。
+   */
+  sparkLedgerRecoveredObserver?:
+    | ((evidence: {
+        sparkSessionId: string
+        /** 有 tool.result 的 callId → 证据确认为已发生且已收口。 */
+        resultCallIds: ReadonlySet<string>
+        /** 孤儿意图（tool.intent 已写入、tool.result 缺失）的 callId。 */
+        orphanIntentCallIds: ReadonlySet<string>
+        /** 账本中出现过 tool.call 但未到达 intent 的 callId（未派发）。 */
+        undeliveredCallIds: ReadonlySet<string>
+      }) => void | Promise<void>)
+    | undefined
   codexCliProvider?: CodexCliModelProviderConfig | undefined
   /** Spark-managed model catalog path used to prevent Codex fallback metadata for custom models. */
   codexModelCatalogPath?: string | undefined

@@ -9,6 +9,7 @@ import type { EngineExecutor, PermissionModeAwareExecutor } from '../engine-exec
 import type { SDKExecutorConfig } from '../types.js'
 import { HostBridgeApprover } from './approver-bridge.js'
 import { SparkEventMapper } from './event-mapper.js'
+import { buildLedgerReconciliationEvidence } from './ledger-recovery.js'
 import {
   resolveSparkModelRoute,
   toSparkEnginePermissionMode,
@@ -211,6 +212,11 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
       if (resumeCandidate != null && resumeCandidate.length > 0) {
         try {
           session = await agent.openSession(resumeCandidate)
+          if (session != null) {
+            // 执行连续性 L3：账本恢复证据上报（见 SDKExecutorConfig 注释）。
+            // 异步执行不阻塞 turn；回调异常不影响恢复本身（账本重放已完成）。
+            void this.#reportLedgerRecovery(session, config)
+          }
         } catch {
           session = undefined
         }
@@ -256,6 +262,36 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
   /** mapper 已产出终态（completed/cancelled/error 的 agent_status）即视为兜底豁免。 */
   get #terminalEmitted(): boolean {
     return this.#sawTerminalStatus
+  }
+
+  /**
+   * 扫描恢复会话的账本工具事件，构建三态证据集合并回调 Host（L3 精确调和）。
+   * 成本与 openSession 自身的账本重放同数量级，且只在续跑路径发生一次。
+   */
+  async #reportLedgerRecovery(
+    session: AgentSession,
+    config: SDKExecutorConfig,
+  ): Promise<void> {
+    const observer = config.sparkLedgerRecoveredObserver
+    if (observer == null) return
+    try {
+      const events: Array<{ type: string; callId?: unknown }> = []
+      for await (const event of session.events()) {
+        events.push(event)
+      }
+      const evidence = buildLedgerReconciliationEvidence(events)
+      await observer({
+        sparkSessionId: session.sessionId,
+        resultCallIds: evidence.resultCallIds,
+        orphanIntentCallIds: evidence.orphanIntentCallIds,
+        undeliveredCallIds: evidence.undeliveredCallIds,
+      })
+    } catch (error) {
+      log.warn('spark ledger recovery report failed', {
+        sessionId: session.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   #sawTerminalStatus = false

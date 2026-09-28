@@ -1346,6 +1346,8 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
       ...baseEvent(ctx),
       type: 'checkpoint',
       checkpointId,
+      // 引擎原生 checkpoint 仅作上下文锚点展示；宿主还原能力只作用于 workspace_snapshot。
+      checkpointKind: 'provider_sdk',
       ...(checkpoint?.label ? { label: checkpoint.label } : {}),
       ...(checkpoint?.path ? { path: checkpoint.path } : {}),
       ...(checkpointFilePaths != null ? { filePaths: checkpointFilePaths } : {}),

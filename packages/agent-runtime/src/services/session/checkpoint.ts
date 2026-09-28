@@ -317,8 +317,8 @@ export class SessionCheckpointManager {
   }
 
   /**
-   * 列出会话的所有还原点（代码检查点），最近在前。
-   * 供 Checkpoint 时间线面板的「按会话撤回代码」视图使用。
+   * 列出会话的所有还原点（工作区快照），最近在前。
+   * 供 Checkpoint 时间线面板的「工作区快照」视图使用。
    */
   listCheckpoints(sessionId: string): CheckpointSnapshot[] {
     const eventRepo = new EventRepository(this.db)
@@ -326,10 +326,39 @@ export class SessionCheckpointManager {
     return listSessionCheckpointsFromEvents(eventRepo, sessionId)
   }
 
+  /**
+   * 列出会话还原点并标注可还原性（IPC 专用，异步验证 git ref 仍存在）。
+   * - provider_sdk（引擎快照）不可经宿主还原，restorable=false；
+   * - workspace_snapshot 逐项验证 Spark ref，失效项 restorable=false 由 UI 置灰；
+   * - 无 git 工作区（如全部快照引用已随仓库移除）不在此处报错，仅全部置 false。
+   */
+  async listCheckpointsWithStatus(
+    sessionId: string,
+  ): Promise<Array<CheckpointSnapshot & { restorable: boolean }>> {
+    const checkpoints = this.listCheckpoints(sessionId)
+    if (checkpoints.length === 0) return []
+    const svc = this.getCheckpointGitService()
+    const roots = this.resolveSessionWorkspaceRoots(sessionId)
+    return Promise.all(
+      checkpoints.map(async (cp) => {
+        if (cp.checkpointKind === 'provider_sdk') return { ...cp, restorable: false }
+        const target = this.resolveCheckpointWorkspaceRoot(cp, roots)
+        const restorable =
+          target != null &&
+          (await svc.isGitRepo(target.rootPath)) &&
+          (await svc.hasCheckpoint(target.rootPath, sessionId, cp.checkpointId))
+        return { ...cp, restorable }
+      }),
+    )
+  }
+
   // ── Checkpoint（git 方案：尊重 .gitignore、还原非破坏性，替代失效的 SDK rewindFiles）──
   // （原 restoreCheckpointViaRewind —— resume + Query.rewindFiles 的 SDK 还原路径 —— 已被
   //   git 方案整体替代且无任何调用方，W2-D4 清理删除；其 new ClaudeSDKExecutor() 的
   //   硬编码正是绕过 engineRegistry 的侧门遗留。）
+  // Phase 0（2026-09-28）：语义拆分为 workspace_snapshot / provider_sdk；多工作区逐一
+  // 快照与还原；还原前 dry-run 预览；自动备份失败默认终止（fail-closed，--force 逃生门）；
+  // 还原后校验并审计。见 2026-09-10 长程任务断点继续方案 §12。
 
   private getCheckpointGitService(): CheckpointGitService {
     if (this.checkpointGitService == null) this.checkpointGitService = new CheckpointGitService()
@@ -338,10 +367,23 @@ export class SessionCheckpointManager {
 
   /** 解析会话的工作区根目录（无则返回 null）。 */
   private resolveSessionWorkspaceRoot(sessionId: string): string | null {
+    const roots = this.resolveSessionWorkspaceRoots(sessionId)
+    return roots[0]?.rootPath ?? null
+  }
+
+  /** 解析会话全部工作区（Phase 0 §12.2：多 Workspace 逐一处理，不再只取第一个）。 */
+  private resolveSessionWorkspaceRoots(
+    sessionId: string,
+  ): Array<{ workspaceId: string; rootPath: string }> {
     const workspaceIds = new SessionRepository(this.db).getWorkspaceIds(sessionId)
-    if (workspaceIds.length === 0) return null
-    const ws = new WorkspaceRepository(this.db).get(workspaceIds[0] ?? '')
-    return ws == null ? null : ensureSessionWorkspaceRootPathSync(ws, sessionId)
+    const repo = new WorkspaceRepository(this.db)
+    const roots: Array<{ workspaceId: string; rootPath: string }> = []
+    for (const workspaceId of workspaceIds) {
+      const ws = repo.get(workspaceId)
+      if (ws == null) continue
+      roots.push({ workspaceId, rootPath: ensureSessionWorkspaceRootPathSync(ws, sessionId) })
+    }
+    return roots
   }
 
   /** 读会话 checkpoint 开关（metadata.checkpointEnabled，默认关）。 */
@@ -349,11 +391,13 @@ export class SessionCheckpointManager {
     return new SessionRepository(this.db).getMetadata(sessionId).checkpointEnabled === true
   }
 
-  /** 功能可用性：仅 git 仓库工作区可用（非 git 前端隐藏入口）。 */
+  /** 功能可用性：任一工作区是 git 仓库即可用（非 git 前端隐藏入口）。 */
   async getSessionCheckpointAvailable(sessionId: string): Promise<boolean> {
-    const root = this.resolveSessionWorkspaceRoot(sessionId)
-    if (root == null) return false
-    return this.getCheckpointGitService().isGitRepo(root)
+    const svc = this.getCheckpointGitService()
+    for (const { rootPath } of this.resolveSessionWorkspaceRoots(sessionId)) {
+      if (await svc.isGitRepo(rootPath)) return true
+    }
+    return false
   }
 
   /** 设置会话 checkpoint 开关（写 metadata，浅合并）。 */
@@ -367,7 +411,9 @@ export class SessionCheckpointManager {
   }
 
   /**
-   * 智能采集：会话开启 checkpoint 且工作区为 git 仓库时，在本轮（改文件前）尝试快照。
+   * 智能采集：会话开启 checkpoint 时，在本轮（改文件前）对每个 git 仓库工作区逐一快照
+   * （每个工作区独立 checkpointId + 一条事件，带 workspaceId/treeSha/fileCount；
+   * 独立 ID 保证按 checkpointId 的定位/预览/还原唯一命中对应工作区）。
    * git 按 tree SHA 去重：工作区相对上个 checkpoint 无变化则不新建。失败不阻塞 turn。
    */
   async maybeCaptureCheckpoint(
@@ -380,28 +426,51 @@ export class SessionCheckpointManager {
     try {
       if (!this.getSessionCheckpointEnabled(sessionId)) return
       const svc = this.getCheckpointGitService()
-      if (!(await svc.isGitRepo(workspaceRootPath))) return
-      const checkpointId = crypto.randomUUID()
-      const snap = await svc.snapshot(workspaceRootPath, sessionId, checkpointId, label)
-      if (!snap.created) return // 无变化，跳过
-      this.host.emitCheckpointEvent(
-        sessionId,
-        turnId,
-        {
-          id: crypto.randomUUID(),
-          type: 'checkpoint',
+      let roots = this.resolveSessionWorkspaceRoots(sessionId)
+      if (roots.length === 0 && workspaceRootPath.length > 0) {
+        // 防御：会话未登记工作区但执行器带根目录（理论不可达），保留旧行为。
+        roots = [{ workspaceId: '', rootPath: workspaceRootPath }]
+      }
+      let captured = 0
+      for (const { workspaceId, rootPath } of roots) {
+        if (!(await svc.isGitRepo(rootPath))) continue
+        const checkpointId = crypto.randomUUID()
+        const snap = await svc.snapshot(rootPath, sessionId, checkpointId, label)
+        if (!snap.created) continue // 该工作区无变化，跳过
+        captured += 1
+        this.host.emitCheckpointEvent(
           sessionId,
           turnId,
-          timestamp: new Date().toISOString(),
-          seq: 0,
+          {
+            id: crypto.randomUUID(),
+            type: 'checkpoint',
+            sessionId,
+            turnId,
+            timestamp: new Date().toISOString(),
+            seq: 0,
+            checkpointId,
+            label: label.slice(0, 80),
+            checkpointKind: 'workspace_snapshot',
+            ...(workspaceId.length > 0 ? { workspaceId } : {}),
+            treeSha: snap.treeSha,
+            fileCount: snap.fileCount,
+          },
+          eventRepo,
+        )
+        log.info('checkpoint captured', {
+          sessionId,
           checkpointId,
-          label: label.slice(0, 80),
-        },
-        eventRepo,
-      )
-      log.info('checkpoint captured', { sessionId, checkpointId, files: snap.fileCount })
+          workspaceId,
+          files: snap.fileCount,
+        })
+      }
+      if (captured === 0) return
       const ids = listSessionCheckpointsFromEvents(eventRepo, sessionId).map((c) => c.checkpointId)
-      await svc.prune(workspaceRootPath, sessionId, ids.slice(0, MAX_CHECKPOINTS_PER_SESSION))
+      const keep = Array.from(new Set(ids.slice(0, MAX_CHECKPOINTS_PER_SESSION)))
+      for (const { rootPath } of roots) {
+        if (!(await svc.isGitRepo(rootPath))) continue
+        await svc.prune(rootPath, sessionId, keep)
+      }
     } catch (err) {
       log.warn('checkpoint capture failed (non-fatal)', {
         sessionId,
@@ -410,81 +479,241 @@ export class SessionCheckpointManager {
     }
   }
 
-  /** 用 git 还原 checkpoint：安全拦截（同工作区有其他会话在跑则阻止）+ 还原前自动备份 + 非破坏性 restore。 */
+  /**
+   * 定位某条快照记录对应的工作区根目录。
+   * 新事件带 workspaceId 精确匹配；旧事件（无 workspaceId）回退主工作区（第一个）。
+   */
+  private resolveCheckpointWorkspaceRoot(
+    checkpoint: CheckpointSnapshot,
+    roots: Array<{ workspaceId: string; rootPath: string }>,
+  ): { workspaceId: string; rootPath: string } | null {
+    if (checkpoint.workspaceId != null) {
+      const match = roots.find((r) => r.workspaceId === checkpoint.workspaceId)
+      if (match != null) return match
+    }
+    return roots[0] ?? null
+  }
+
+  /** 找出 checkpoint 事件（含同 id 多工作区条目）对应的全部去重工作区根。 */
+  private resolveCheckpointWorkspaceRoots(
+    checkpoints: CheckpointSnapshot[],
+    sessionId: string,
+  ): Array<{ workspaceId: string; rootPath: string }> {
+    const roots = this.resolveSessionWorkspaceRoots(sessionId)
+    const resolved: Array<{ workspaceId: string; rootPath: string }> = []
+    const seen = new Set<string>()
+    for (const checkpoint of checkpoints) {
+      const target = this.resolveCheckpointWorkspaceRoot(checkpoint, roots)
+      if (target == null || seen.has(target.rootPath)) continue
+      seen.add(target.rootPath)
+      resolved.push(target)
+    }
+    return resolved
+  }
+
+  /**
+   * 按需拉取快照的完整受控文件清单（多工作区聚合）。
+   * 事件只存 fileCount 不存全量清单，UI 展开时经此接口从 git ref 实时读取。
+   */
+  async listCheckpointFiles(
+    sessionId: string,
+    checkpointRef: string,
+  ): Promise<{ checkpointId: string; filePaths: string[] }> {
+    const eventRepo = new EventRepository(this.db)
+    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
+    const matched = checkpoints.filter(
+      (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+    )
+    const checkpoint = matched[0]
+    if (checkpoint == null) throw new Error(`Checkpoint not found: ${checkpointRef}`)
+    const svc = this.getCheckpointGitService()
+    const targets = this.resolveCheckpointWorkspaceRoots(matched, sessionId)
+    const filePaths: string[] = []
+    for (const { rootPath } of targets) {
+      if (!(await svc.isGitRepo(rootPath))) continue
+      filePaths.push(
+        ...(await svc.listSnapshotFiles(rootPath, sessionId, checkpoint.checkpointId)),
+      )
+    }
+    return { checkpointId: checkpoint.checkpointId, filePaths }
+  }
+
+  /**
+   * 还原预览（dry-run）：对快照涉及的每个工作区执行 previewRestore 并聚合分组。
+   * 供 UI 在确认还原前展示「将修改/重建/保留/不影响」四组文件。
+   */
+  async previewCheckpointRestore(
+    sessionId: string,
+    checkpointRef: string,
+  ): Promise<{
+    checkpointId: string
+    workspaceId?: string
+    modifiedFiles: string[]
+    recreatedFiles: string[]
+    unchangedFiles: string[]
+    newFilesKept: string[]
+  }> {
+    const eventRepo = new EventRepository(this.db)
+    const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
+    const matched = checkpoints.filter(
+      (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
+    )
+    const checkpoint = matched[0]
+    if (checkpoint == null) throw new Error(`Checkpoint not found: ${checkpointRef}`)
+    if (checkpoint.checkpointKind === 'provider_sdk') {
+      throw new Error('引擎原生快照不支持宿主还原，请使用工作区快照。')
+    }
+    const svc = this.getCheckpointGitService()
+    const targets = this.resolveCheckpointWorkspaceRoots(matched, sessionId)
+    if (targets.length === 0) throw new Error('会话没有打开的工作区，无法预览还原。')
+
+    const merged = {
+      checkpointId: checkpoint.checkpointId,
+      ...(checkpoint.workspaceId != null ? { workspaceId: checkpoint.workspaceId } : {}),
+      modifiedFiles: [] as string[],
+      recreatedFiles: [] as string[],
+      unchangedFiles: [] as string[],
+      newFilesKept: [] as string[],
+    }
+    for (const { rootPath } of targets) {
+      if (!(await svc.isGitRepo(rootPath))) {
+        throw new Error('当前工作区不是 git 仓库，工作区快照不可用。')
+      }
+      if (!(await svc.hasCheckpoint(rootPath, sessionId, checkpoint.checkpointId))) {
+        throw new Error(`还原点已失效或被清理：${checkpoint.checkpointId}`)
+      }
+      const preview = await svc.previewRestore(rootPath, sessionId, checkpoint.checkpointId)
+      merged.modifiedFiles.push(...preview.modifiedFiles)
+      merged.recreatedFiles.push(...preview.recreatedFiles)
+      merged.unchangedFiles.push(...preview.unchangedFiles)
+      merged.newFilesKept.push(...preview.newFilesKept)
+    }
+    return merged
+  }
+
+  /**
+   * 用 git 还原工作区快照：安全拦截（同工作区有其他会话在跑则阻止）+ 还原前自动备份
+   * + 非破坏性 restore + 还原后校验。
+   * Phase 0 §12.2：自动备份失败默认终止还原（fail-closed）；opts.force=true 时用户
+   * 显式强制才继续。多工作区快照逐一还原，任一失败即中止并报告。
+   */
   async restoreCheckpointViaSnapshot(
     sessionId: string,
     checkpointRef: string,
+    opts?: { force?: boolean },
   ): Promise<CheckpointRestoreResult> {
-    log.info('checkpoint restore: attempt', { sessionId, checkpointRef })
+    const force = opts?.force === true
+    log.info('checkpoint restore: attempt', { sessionId, checkpointRef, force })
     const eventRepo = new EventRepository(this.db)
     const checkpoints = listSessionCheckpointsFromEvents(eventRepo, sessionId)
-    const checkpoint = checkpoints.find(
+    const matched = checkpoints.filter(
       (item) => item.checkpointId === checkpointRef || item.checkpointId.endsWith(checkpointRef),
     )
+    const checkpoint = matched[0]
     if (checkpoint == null) throw new Error(`Checkpoint not found: ${checkpointRef}`)
+    if (checkpoint.checkpointKind === 'provider_sdk') {
+      throw new Error('引擎原生快照不支持宿主还原，请使用工作区快照。')
+    }
 
-    const workspaceRootPath = this.resolveSessionWorkspaceRoot(sessionId)
-    if (workspaceRootPath == null) throw new Error('会话没有打开的工作区，无法还原。')
+    const targets = this.resolveCheckpointWorkspaceRoots(matched, sessionId)
+    if (targets.length === 0) throw new Error('会话没有打开的工作区，无法还原。')
     const svc = this.getCheckpointGitService()
-    if (!(await svc.isGitRepo(workspaceRootPath))) {
-      throw new Error('当前工作区不是 git 仓库，代码还原点不可用。')
-    }
-    if (!(await svc.hasCheckpoint(workspaceRootPath, sessionId, checkpoint.checkpointId))) {
-      throw new Error(`还原点已失效或被清理：${checkpoint.checkpointId}`)
+    for (const { rootPath } of targets) {
+      if (!(await svc.isGitRepo(rootPath))) {
+        throw new Error('当前工作区不是 git 仓库，工作区快照不可用。')
+      }
+      if (!(await svc.hasCheckpoint(rootPath, sessionId, checkpoint.checkpointId))) {
+        throw new Error(`还原点已失效或被清理：${checkpoint.checkpointId}`)
+      }
     }
 
-    // 安全拦截（#4）：同一工作区若有其他会话正在跑 turn，阻止还原以免影响它们。
-    const conflicting = this.findOtherActiveSessionsOnWorkspace(sessionId, workspaceRootPath)
-    if (conflicting.length > 0) {
-      throw new Error(
-        `已阻止还原：同一项目目录下有其他会话正在运行（${conflicting.length} 个）。还原会改动共享文件、影响它们。请先停止这些会话再还原。`,
-      )
+    // 安全拦截（#4）：任一涉及工作区若有其他会话正在跑 turn，阻止还原以免影响它们。
+    for (const { rootPath } of targets) {
+      const conflicting = this.findOtherActiveSessionsOnWorkspace(sessionId, rootPath)
+      if (conflicting.length > 0) {
+        throw new Error(
+          `已阻止还原：同一项目目录下有其他会话正在运行（${conflicting.length} 个）。还原会改动共享文件、影响它们。请先停止这些会话再还原。`,
+        )
+      }
     }
 
     // 还原前自动备份当前态，使本次还原可被再次还原（撤销）。
-    try {
-      const undoId = crypto.randomUUID()
-      const undo = await svc.snapshot(
-        workspaceRootPath,
-        sessionId,
-        undoId,
-        `还原前自动备份（${new Date().toLocaleString()}）`,
-      )
-      if (undo.created) {
-        const undoTurnId = crypto.randomUUID()
-        this.host.emitCheckpointEvent(
+    // fail-closed：备份失败默认终止，用户显式 --force 才继续（Phase 0 §12.2）。
+    const backupFailedRoots: string[] = []
+    for (const { workspaceId, rootPath } of targets) {
+      try {
+        const undoId = crypto.randomUUID()
+        const undo = await svc.snapshot(
+          rootPath,
           sessionId,
-          undoTurnId,
-          {
-            id: crypto.randomUUID(),
-            type: 'checkpoint',
-            sessionId,
-            turnId: undoTurnId,
-            timestamp: new Date().toISOString(),
-            seq: 0,
-            checkpointId: undoId,
-            label: '还原前自动备份',
-          },
-          eventRepo,
+          undoId,
+          `还原前自动备份（${new Date().toLocaleString()}）`,
         )
+        if (undo.created) {
+          const undoTurnId = crypto.randomUUID()
+          this.host.emitCheckpointEvent(
+            sessionId,
+            undoTurnId,
+            {
+              id: crypto.randomUUID(),
+              type: 'checkpoint',
+              sessionId,
+              turnId: undoTurnId,
+              timestamp: new Date().toISOString(),
+              seq: 0,
+              checkpointId: undoId,
+              label: '还原前自动备份',
+              checkpointKind: 'workspace_snapshot',
+              ...(workspaceId.length > 0 ? { workspaceId } : {}),
+              treeSha: undo.treeSha,
+              fileCount: undo.fileCount,
+            },
+            eventRepo,
+          )
+        }
+      } catch (err) {
+        backupFailedRoots.push(rootPath)
+        log.warn('checkpoint pre-restore backup failed', {
+          sessionId,
+          rootPath,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
-    } catch (err) {
-      log.warn('checkpoint pre-restore backup failed (non-fatal)', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      })
+    }
+    if (backupFailedRoots.length > 0 && !force) {
+      throw new Error(
+        `还原前自动备份失败（${backupFailedRoots.length} 个工作区），已终止还原以保证可撤销。` +
+          '可稍后重试，或使用 `/checkpoint restore <id> --force` 显式跳过备份强制还原。',
+      )
     }
 
-    const outcome = await svc.restore(workspaceRootPath, sessionId, checkpoint.checkpointId)
+    // 逐一还原并聚合；任一工作区还原失败即中止（后续工作区保持原状，便于重试）。
+    const restoredFiles: string[] = []
+    let verified = true
+    for (const { workspaceId, rootPath } of targets) {
+      const outcome = await svc.restore(rootPath, sessionId, checkpoint.checkpointId)
+      restoredFiles.push(...outcome.restoredFiles)
+      verified = verified && outcome.verified
+      log.info('checkpoint restore: workspace done', {
+        sessionId,
+        checkpointId: checkpoint.checkpointId,
+        workspaceId,
+        restored: outcome.restoredFiles.length,
+        verified: outcome.verified,
+      })
+    }
     log.info('checkpoint restore: done', {
       sessionId,
       checkpointId: checkpoint.checkpointId,
-      restored: outcome.restoredFiles.length,
+      restored: restoredFiles.length,
+      verified,
+      forced: backupFailedRoots.length > 0,
     })
     return {
       checkpointId: checkpoint.checkpointId,
-      restoredFiles: outcome.restoredFiles,
+      restoredFiles,
       missingFiles: [],
+      verified,
     }
   }
 
@@ -496,7 +725,12 @@ export class SessionCheckpointManager {
     const result: string[] = []
     for (const otherId of this.host.listActiveSessionIds()) {
       if (otherId === sessionId) continue
-      if (this.resolveSessionWorkspaceRoot(otherId) === workspaceRootPath) result.push(otherId)
+      for (const { rootPath } of this.resolveSessionWorkspaceRoots(otherId)) {
+        if (rootPath === workspaceRootPath) {
+          result.push(otherId)
+          break
+        }
+      }
     }
     return result
   }

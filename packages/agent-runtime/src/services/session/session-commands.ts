@@ -153,6 +153,7 @@ export interface SessionCommandHost {
   restoreCheckpointViaSnapshot(
     sessionId: string,
     checkpointRef: string,
+    opts?: { force?: boolean },
   ): Promise<CheckpointRestoreResult>
   getSessionCheckpointEnabled(sessionId: string): boolean
   setSessionCheckpointEnabled(sessionId: string, enabled: boolean): boolean
@@ -577,8 +578,8 @@ export class SessionCommandController {
       },
       getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
-      restoreCheckpoint: async (id, checkpointRef) =>
-        this.host.restoreCheckpointViaSnapshot(id, checkpointRef),
+      restoreCheckpoint: async (id, checkpointRef, opts) =>
+        this.host.restoreCheckpointViaSnapshot(id, checkpointRef, opts),
       getCheckpointEnabled: (id) => this.host.getSessionCheckpointEnabled(id),
       setCheckpointEnabled: (id, enabled) => this.host.setSessionCheckpointEnabled(id, enabled),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),

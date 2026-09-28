@@ -748,12 +748,29 @@ describe('Built-in commands', () => {
       checkpointId: 'chk_123456',
       restoredFiles: ['src/app.ts'],
       missingFiles: [],
+      verified: true,
     }))
     const deps = makeDeps({ restoreCheckpoint })
     const result = await registry.execute(parse('/checkpoint restore chk_123456'), ctx, deps)
     expect(result.success).toBe(true)
-    expect(restoreCheckpoint).toHaveBeenCalledWith('sess-1', 'chk_123456')
-    expect(result.data).toMatchObject({ restoredFiles: ['src/app.ts'] })
+    expect(restoreCheckpoint).toHaveBeenCalledWith('sess-1', 'chk_123456', { force: false })
+    expect(result.data).toMatchObject({ restoredFiles: ['src/app.ts'], verified: true })
+  })
+
+  it('/checkpoint restore --force passes force flag through', async () => {
+    const restoreCheckpoint = vi.fn(async () => ({
+      checkpointId: 'chk_123456',
+      restoredFiles: [],
+      missingFiles: [],
+    }))
+    const deps = makeDeps({ restoreCheckpoint })
+    const result = await registry.execute(
+      parse('/checkpoint restore chk_123456 --force'),
+      ctx,
+      deps,
+    )
+    expect(result.success).toBe(true)
+    expect(restoreCheckpoint).toHaveBeenCalledWith('sess-1', 'chk_123456', { force: true })
   })
 })
 

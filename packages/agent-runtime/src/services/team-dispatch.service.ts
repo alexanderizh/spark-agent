@@ -173,6 +173,19 @@ export interface TeamDispatchServiceOptions {
    * 传入且 enabled=true 时 runMember 在执行前等待 permit（FIFO 跨会话公平）。
    */
   governor?: DispatchGovernor
+  /**
+   * 执行连续性（Phase 3B §11.3，可选注入）：派发开始时在父 Run 上登记
+   * durable waiting 的 subagent step，结束时收口。缺省不接入（行为与旧版一致）。
+   */
+  executionContinuity?: {
+    onDispatchOpened(params: {
+      turnId: string
+      dispatchId: string
+      memberAgentId: string
+      parallel: boolean
+    }): void
+    onDispatchSettled(dispatchId: string, outcome: 'completed' | 'failed' | 'cancelled'): void
+  } | null
 }
 
 export class TeamDispatchService {
@@ -457,7 +470,18 @@ export class TeamDispatchService {
       }, timeoutMs)
       const startedAt = Date.now()
 
+      // 执行连续性（Phase 3B §11.3）：真正越过派发边界（permit + deadline 检查
+      // 已通过）时在父 Run 登记 durable waiting 的 subagent step；finally 收口。
+      // undefined = 尚未收口（如 catch 自身在记录 usage 时抛错）—— 此时 step 保持
+      // waiting，交由恢复语义处理，不伪造收口。
+      let continuityOutcome: 'completed' | 'failed' | 'cancelled' | undefined
       try {
+        this.options.executionContinuity?.onDispatchOpened({
+          turnId: ctx.turnId,
+          dispatchId,
+          memberAgentId: member.id,
+          parallel: options.parallel === true,
+        })
         if (controller.signal.aborted) {
           throw new Error('Dispatch was canceled.')
         }
@@ -526,6 +550,7 @@ export class TeamDispatchService {
             state: reply.state,
             error: reply.error?.message,
           })
+          continuityOutcome = reply.state === 'canceled' ? 'cancelled' : 'failed'
           return reply
         }
 
@@ -590,6 +615,7 @@ export class TeamDispatchService {
         // 自动 @ 转发（一跳）：回复正文出现 `@成员名`/`@成员id` 时直接触发我们的定向
         // peer message，不依赖模型正确选工具；没写 @ 则不干预（交给模型自主选择）。
         await this.maybeAutoDispatchMentions(reply, ctx)
+        continuityOutcome = 'completed'
         return reply
       } catch (err) {
         const durationMs = Date.now() - startedAt
@@ -642,11 +668,16 @@ export class TeamDispatchService {
           state: reply.state,
           error: reply.error?.message,
         })
+        continuityOutcome = reply.state === 'canceled' ? 'cancelled' : 'failed'
         return reply
       } finally {
         // M0：permit 归还在最前——后续 abort/清理不受 permit 释放失败影响（release 幂等）。
         permit?.release()
         clearTimeout(timer)
+        // 执行连续性（Phase 3B）：dispatch 收口（所有出口统一经 finally）。
+        if (continuityOutcome != null) {
+          this.options.executionContinuity?.onDispatchSettled(dispatchId, continuityOutcome)
+        }
         // FR-B/0b 修复（审查 B-2）：dispatch 收尾（成功/失败/取消）统一 abort controller，
         // 触发传给 executeMemberTurn 的 signal 上的 abort 监听 → 回收嵌套资源（如 codex
         // HTTP 桥接 handle 的 close）。abort() 幂等，已超时/已取消路径无副作用。
