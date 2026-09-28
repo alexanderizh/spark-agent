@@ -5,7 +5,7 @@
  * 已安装 Tab：Cursor-style 卡片列表 + 详情双页布局
  * 创建 Tab：手动创建 / 文件导入 / 目录导入 / 检测导入本地 Skill
  */
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { Suspense, lazy, useState, useCallback, useMemo, useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { ReactNode } from 'react'
 import { Modal, Pagination, Spin, Switch } from 'antd'
@@ -55,6 +55,14 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import './SkillStoreView.less'
 
+/**
+ * 技能详情页按需加载：它依赖 Monaco（源码视图），同步 import 会把编辑器塞进
+ * 技能管理首屏 chunk。懒加载后只有真正进入详情页才拉取编辑器与样式。
+ */
+const SkillDetailPage = lazy(() =>
+  import('./skill-detail/SkillDetailPage').then((mod) => ({ default: mod.SkillDetailPage })),
+)
+
 // ─── Main View ────────────────────────────────────────────────────────
 type TabType = 'installed' | 'create' | 'installable' | 'skillhub'
 type SkillInstallProgress = { downloaded: number; total: number }
@@ -86,6 +94,12 @@ export function SkillStoreView() {
   const [activeTab, setActiveTab] = useState<TabType>(readInitialSkillStoreTab)
   const [refreshKey, setRefreshKey] = useState(0)
   const [installProgress, setInstallProgress] = useState<Record<string, SkillInstallProgress>>({})
+  /**
+   * 技能详情页目标技能 id。
+   * 放在这一层（而非 InstalledTab 内部）是为了：刷新列表时 InstalledTab 会因 key 变化
+   * 重新挂载，若详情状态在子组件里就会被重置回列表 —— 保存文件后刷新正是这种场景。
+   */
+  const [detailSkillId, setDetailSkillId] = useState<string | null>(null)
   const { invoke: listInstallStatus } = useIpcInvoke('skill:install-status')
 
   const handleRefresh = useCallback(() => {
@@ -141,6 +155,7 @@ export function SkillStoreView() {
       const tab = (event as CustomEvent<{ tab?: unknown }>).detail?.tab
       if (!isSkillStoreTab(tab)) return
       window.localStorage.removeItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY)
+      setDetailSkillId(null)
       setActiveTab(tab)
     }
     window.addEventListener(SKILL_STORE_TARGET_TAB_EVENT, handleTargetTab)
@@ -322,27 +337,41 @@ export function SkillStoreView() {
     [agents],
   )
 
+  /** 进入某个技能的详情页（导入 / 创建完成后也会调用，便于立即预览与编辑） */
+  const openSkillDetail = useCallback((skillId: string) => {
+    setActiveTab('installed')
+    setDetailSkillId(skillId)
+  }, [])
+
+  const detailOpen = activeTab === 'installed' && detailSkillId != null
+
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="skills-view">
-        <div className="skill-store-tabs">
-          {(['skillhub', 'installable', 'installed', 'create'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`skill-store-tab ${activeTab === tab ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab === 'installed'
-                ? '已安装'
-                : tab === 'installable'
-                  ? '精选推荐'
-                  : tab === 'skillhub'
-                    ? '在线市场'
-                    : '创建'}
-            </button>
-          ))}
-        </div>
+        {/* 详情页占满内容区（自带返回入口），此时隐藏 Tab 切换条避免层级混乱 */}
+        {!detailOpen && (
+          <div className="skill-store-tabs">
+            {(['skillhub', 'installable', 'installed', 'create'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                className={`skill-store-tab ${activeTab === tab ? 'is-active' : ''}`}
+                onClick={() => {
+                  setDetailSkillId(null)
+                  setActiveTab(tab)
+                }}
+              >
+                {tab === 'installed'
+                  ? '已安装'
+                  : tab === 'installable'
+                    ? '精选推荐'
+                    : tab === 'skillhub'
+                      ? '在线市场'
+                      : '创建'}
+              </button>
+            ))}
+          </div>
+        )}
         {activeTab === 'installed' ? (
           <InstalledTab
             key={`installed-${refreshKey}`}
@@ -351,6 +380,9 @@ export function SkillStoreView() {
             agents={agents}
             onAssignToAgents={openAssignPicker}
             onJumpToAgent={handleJumpToAgent}
+            detailSkillId={detailSkillId}
+            onOpenDetail={openSkillDetail}
+            onCloseDetail={() => setDetailSkillId(null)}
           />
         ) : activeTab === 'installable' ? (
           <InstallableTab
@@ -374,6 +406,7 @@ export function SkillStoreView() {
             onCreated={handleRefresh}
             onBack={() => setActiveTab('installed')}
             onSkillReady={notifySkillReady}
+            onPreviewSkill={openSkillDetail}
           />
         )}
       </div>
@@ -406,21 +439,28 @@ function InstalledTab({
   agents,
   onAssignToAgents,
   onJumpToAgent,
+  detailSkillId,
+  onOpenDetail,
+  onCloseDetail,
 }: {
   onCreate: () => void
   onRefresh: () => void
   agents: ManagedAgent[]
   onAssignToAgents: (skill: { id: string; name: string }) => void
   onJumpToAgent: (agentId: string) => void
+  /** 当前打开详情页的技能 id（null = 停留在列表） */
+  detailSkillId: string | null
+  onOpenDetail: (skillId: string) => void
+  onCloseDetail: () => void
 }) {
-  const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount } = useSkills()
+  const { skills, loading, error, refresh, toggleSkill, deleteSkill, total, enabledCount } =
+    useSkills()
   const { requestConfirm } = useApp()
   const { invoke: getSkillDetail } = useIpcInvoke('skill:detail')
   const [search, setSearch] = useState('')
   const [managementMode, setManagementMode] = useState(false)
   const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
-  const [preferredSkillId, setPreferredSkillId] = useState<string | null>(null)
   const [detailState, setDetailState] = useState<{
     skillId: string | null
     detail: SkillDetailInfo | null
@@ -430,9 +470,18 @@ function InstalledTab({
     detail: null,
     error: '',
   })
-  const [detailOpen, setDetailOpen] = useState(false)
+  /** 详情页保存后递增 —— 让下方 getSkillDetail effect 重新拉取，避免整表重挂载 */
+  const [detailVersion, setDetailVersion] = useState(0)
+  /** 「技能概览」弹窗（沿用原有详情弹窗，用于查看完整定义 / 参数 / 分发情况） */
+  const [overviewOpen, setOverviewOpen] = useState(false)
   const [publishSkill, setPublishSkill] = useState<SkillItem | null>(null)
   const { toast } = useToast()
+  // 详情页保存后刷新：只重拉列表与详情，不做整表 key 重挂载。
+  // 整表重挂载会把详情页的选中文件 / 预览态 / 编辑态全部重置，保存后立刻闪回列表态。
+  const handleChanged = useCallback(() => {
+    refresh()
+    setDetailVersion((v) => v + 1)
+  }, [refresh])
 
   const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
   const filteredSkills = useMemo(() => {
@@ -452,13 +501,12 @@ function InstalledTab({
     ].filter((section) => section.skills.length > 0)
   }, [filteredSkills])
 
+  // 详情页 / 概览弹窗的数据源：优先详情页目标技能，否则列表首项
   const activeSkillId = useMemo(() => {
+    if (detailSkillId != null) return detailSkillId
     if (filteredSkills.length === 0) return null
-    if (preferredSkillId != null && filteredSkills.some((skill) => skill.id === preferredSkillId)) {
-      return preferredSkillId
-    }
     return filteredSkills[0]?.id ?? null
-  }, [filteredSkills, preferredSkillId])
+  }, [filteredSkills, detailSkillId])
 
   useEffect(() => {
     if (activeSkillId == null) return
@@ -485,7 +533,7 @@ function InstalledTab({
     return () => {
       cancelled = true
     }
-  }, [activeSkillId, getSkillDetail])
+  }, [activeSkillId, getSkillDetail, detailVersion])
 
   const enterManagement = useCallback(() => {
     setManagementMode(true)
@@ -561,12 +609,25 @@ function InstalledTab({
     }
   }, [selectedDeleteIds, requestConfirm, deleteSkill, exitManagement, toast])
 
-  const openSkillDetail = useCallback((skill: SkillItem) => {
-    setPreferredSkillId(skill.id)
-    setDetailOpen(true)
-  }, [])
+  const openSkillDetail = useCallback(
+    (skill: SkillItem) => {
+      onOpenDetail(skill.id)
+    },
+    [onOpenDetail],
+  )
 
-  const selectedSkill = filteredSkills.find((skill) => skill.id === activeSkillId) ?? null
+  const detailSkill = useMemo(
+    () => (detailSkillId != null ? (skills.find((s) => s.id === detailSkillId) ?? null) : null),
+    [skills, detailSkillId],
+  )
+  // 列表已拉过一轮但仍找不到 → 判定为已被删除；列表为空时视为仍在加载（下方始终提供返回入口）
+  const detailMissing =
+    detailSkillId != null &&
+    detailSkill == null &&
+    !loading &&
+    (skills.length > 0 || error.length > 0)
+  const selectedSkill =
+    detailSkill ?? filteredSkills.find((skill) => skill.id === activeSkillId) ?? null
   const detailLoading = activeSkillId != null && detailState.skillId !== activeSkillId
   const selectedDetail = detailState.skillId === activeSkillId ? detailState.detail : null
   const detailError = detailState.skillId === activeSkillId ? detailState.error : ''
@@ -576,6 +637,129 @@ function InstalledTab({
     if (selectedSkill == null) return []
     return agents.filter((a) => a.skillIds.includes(selectedSkill.id)).map((a) => a.id)
   }, [agents, selectedSkill])
+
+  const overviewModal = (
+    <Modal
+      className="skill-detail-modal"
+      open={overviewOpen}
+      title={null}
+      width="min(680px, 92vw)"
+      centered
+      destroyOnClose
+      onCancel={() => setOverviewOpen(false)}
+      footer={
+        <div className="skill-detail-modal-footer">
+          <div className="skill-detail-modal-footer-left">
+            {selectedSkill && !selectedSkill.id.startsWith('builtin:') && (
+              <Button
+                size="small"
+                type="text"
+                danger
+                onClick={() => {
+                  const id = selectedSkill.id
+                  void handleDeleteSkill(id).then(() => {
+                    setOverviewOpen(false)
+                    onCloseDetail()
+                  })
+                }}
+              >
+                卸载
+              </Button>
+            )}
+          </div>
+          <div className="skill-detail-modal-footer-right">
+            {selectedSkill && !selectedSkill.id.startsWith('builtin:') && (
+              <Button
+                size="small"
+                icon={<Icons.Users size={14} />}
+                onClick={() => selectedSkill && setPublishSkill(selectedSkill)}
+              >
+                发布到团队
+              </Button>
+            )}
+            <Button
+              size="small"
+              type="primary"
+              icon={<Icons.Bot size={14} />}
+              onClick={() => {
+                if (selectedSkill)
+                  onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
+              }}
+            >
+              安装给 Agent
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <SkillDetailPanel
+        skill={selectedSkill}
+        detail={selectedDetail}
+        loading={detailLoading}
+        error={detailError}
+        assignedAgentIds={assignedAgentIds}
+        agents={agents}
+        onToggle={() => {
+          if (selectedSkill) void toggleSkill(selectedSkill)
+        }}
+        onJumpToAgent={onJumpToAgent}
+      />
+    </Modal>
+  )
+
+  // ── 详情页分支：整页替换列表 ─────────────────────────────────────────
+  if (detailSkillId != null) {
+    return (
+      <>
+        <div className="skill-store-page skill-store-page--installed">
+          {detailSkill != null ? (
+            <Suspense
+              fallback={
+                <div className="skill-store-loading">
+                  <Spin />
+                  <span>正在打开技能…</span>
+                </div>
+              }
+            >
+              <SkillDetailPage
+                skill={detailSkill}
+                detail={selectedDetail}
+                detailLoading={detailLoading}
+                agents={agents}
+                onBack={onCloseDetail}
+                onChanged={handleChanged}
+                onOpenOverview={() => setOverviewOpen(true)}
+                onAssignToAgents={() =>
+                  onAssignToAgents({ id: detailSkill.id, name: detailSkill.name })
+                }
+                onPublishToTeam={() => setPublishSkill(detailSkill)}
+                onJumpToAgent={onJumpToAgent}
+              />
+            </Suspense>
+          ) : (
+            <div className="skill-store-loading">
+              {!detailMissing && <Spin />}
+              <span>{detailMissing ? '未找到该 Skill，可能已被删除。' : '正在打开技能…'}</span>
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.ArrowLeft size={14} />}
+                onClick={onCloseDetail}
+              >
+                返回列表
+              </Button>
+            </div>
+          )}
+        </div>
+        {overviewModal}
+        <PublishSkillToTeamModal
+          open={publishSkill != null}
+          skill={publishSkill}
+          onClose={() => setPublishSkill(null)}
+        />
+      </>
+    )
+  }
 
   return (
     <>
@@ -701,69 +885,7 @@ function InstalledTab({
         skill={publishSkill}
         onClose={() => setPublishSkill(null)}
       />
-      <Modal
-        className="skill-detail-modal"
-        open={detailOpen}
-        title={null}
-        width="min(680px, 92vw)"
-        centered
-        destroyOnClose
-        onCancel={() => setDetailOpen(false)}
-        footer={
-          <div className="skill-detail-modal-footer">
-            <div className="skill-detail-modal-footer-left">
-              {selectedSkill && !selectedSkill.id.startsWith('builtin:') && (
-                <Button
-                  size="small"
-                  type="text"
-                  danger
-                  onClick={() => {
-                    const id = selectedSkill.id
-                    void handleDeleteSkill(id).then(() => setDetailOpen(false))
-                  }}
-                >
-                  卸载
-                </Button>
-              )}
-            </div>
-            <div className="skill-detail-modal-footer-right">
-              {selectedSkill && !selectedSkill.id.startsWith('builtin:') && (
-                <Button
-                  size="small"
-                  icon={<Icons.Users size={14} />}
-                  onClick={() => selectedSkill && setPublishSkill(selectedSkill)}
-                >
-                  发布到团队
-                </Button>
-              )}
-              <Button
-                size="small"
-                type="primary"
-                icon={<Icons.Bot size={14} />}
-                onClick={() => {
-                  if (selectedSkill)
-                    onAssignToAgents({ id: selectedSkill.id, name: selectedSkill.name })
-                }}
-              >
-                安装给 Agent
-              </Button>
-            </div>
-          </div>
-        }
-      >
-        <SkillDetailPanel
-          skill={selectedSkill}
-          detail={selectedDetail}
-          loading={detailLoading}
-          error={detailError}
-          assignedAgentIds={assignedAgentIds}
-          agents={agents}
-          onToggle={() => {
-            if (selectedSkill) void toggleSkill(selectedSkill)
-          }}
-          onJumpToAgent={onJumpToAgent}
-        />
-      </Modal>
+      {overviewModal}
     </>
   )
 }
@@ -1644,10 +1766,13 @@ function CreateTab({
   onCreated,
   onBack,
   onSkillReady,
+  onPreviewSkill,
 }: {
   onCreated: () => void
   onBack: () => void
   onSkillReady: (skill: { id: string; name: string }) => void
+  /** 创建 / 导入成功 → 直接进入技能详情页，便于立即预览与编辑 */
+  onPreviewSkill: (skillId: string) => void
 }) {
   // ── Manual creation form state ──
   const [name, setName] = useState('')
@@ -1659,6 +1784,8 @@ function CreateTab({
   const [content, setContent] = useState('')
   const [requiredTools, setRequiredTools] = useState('')
   const [creating, setCreating] = useState(false)
+  /** 指令内容区的 编辑 / 预览 切换（预览用 MarkdownText 渲染，便于写完即看效果） */
+  const [contentPreview, setContentPreview] = useState(false)
   // 检测导入放在第一位，作为创建页默认入口
   const [importMode, setImportMode] = useState<ImportMode>('detect')
   const { toast } = useToast()
@@ -1704,6 +1831,7 @@ function CreateTab({
     setTagsInput('')
     setContent('')
     setRequiredTools('')
+    setContentPreview(false)
   }, [])
 
   // ── Manual creation ──
@@ -1757,6 +1885,7 @@ function CreateTab({
       toast.success(`Skill「${name.trim()}」创建成功`)
       resetForm()
       onCreated()
+      onPreviewSkill(res.skill.id)
       onSkillReady({ id: res.skill.id, name: res.skill.name })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '创建失败')
@@ -1776,6 +1905,7 @@ function CreateTab({
     toast,
     resetForm,
     onCreated,
+    onPreviewSkill,
     onSkillReady,
   ])
 
@@ -1793,6 +1923,7 @@ function CreateTab({
         const res = await importFile({ filePath: picked.filePath })
         toast.success(`已导入 Skill：${res.skill.name}`)
         onCreated()
+        onPreviewSkill(res.skill.id)
         onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '导入文件失败')
@@ -1802,7 +1933,7 @@ function CreateTab({
     } catch {
       // dialog cancelled
     }
-  }, [openFileDialog, importFile, toast, onCreated, onSkillReady])
+  }, [openFileDialog, importFile, toast, onCreated, onPreviewSkill, onSkillReady])
 
   // ── Directory import ──
   const handleImportDirectory = useCallback(async () => {
@@ -1829,6 +1960,8 @@ function CreateTab({
               name: skill.name,
               ...(res.skills.length > 1 ? { extraCount: res.skills.length - 1 } : {}),
             })
+            // 单技能目录导入：直接进入详情页预览/编辑；多技能交给「已安装」列表逐个处理
+            if (res.skills.length === 1) onPreviewSkill(skill.id)
           }
         }
       } catch (err) {
@@ -1839,7 +1972,7 @@ function CreateTab({
     } catch {
       // dialog cancelled
     }
-  }, [openDirectoryDialog, importDirectory, toast, onCreated, onSkillReady])
+  }, [openDirectoryDialog, importDirectory, toast, onCreated, onSkillReady, onPreviewSkill])
 
   // ── Detect local skills ──
   const handleDetectLocal = useCallback(async () => {
@@ -1896,7 +2029,10 @@ function CreateTab({
         }
         toast.success(`已安装 ${candidate.name}`)
         onCreated()
-        if (readySkill) onSkillReady(readySkill)
+        if (readySkill) {
+          onSkillReady(readySkill)
+          onPreviewSkill(readySkill.id)
+        }
         await refreshCandidates()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
@@ -1908,7 +2044,7 @@ function CreateTab({
         })
       }
     },
-    [installToApp, importDirectory, onCreated, onSkillReady, refreshCandidates, toast],
+    [installToApp, importDirectory, onCreated, onSkillReady, onPreviewSkill, refreshCandidates, toast],
   )
 
   const handleBatchImport = useCallback(async () => {
@@ -2111,13 +2247,44 @@ function CreateTab({
               <label className="form-label">
                 System Prompt / 指令内容 <span className="required">*</span>
               </label>
-              <TextArea
-                className="form-textarea-lg"
-                rows={12}
-                placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-              />
+              {/* 编辑 / 预览 分段控件：写完指令立即看渲染效果，与详情页「预览|源码」同一范式 */}
+              <div className="create-content-mode" role="tablist" aria-label="内容查看方式">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!contentPreview}
+                  className={`create-content-mode-btn ${!contentPreview ? 'is-active' : ''}`}
+                  onClick={() => setContentPreview(false)}
+                >
+                  <Icons.Edit size={12} />
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={contentPreview}
+                  className={`create-content-mode-btn ${contentPreview ? 'is-active' : ''}`}
+                  onClick={() => setContentPreview(true)}
+                  disabled={content.trim().length === 0}
+                  title={content.trim().length === 0 ? '先输入内容再预览' : '预览 Markdown 渲染效果'}
+                >
+                  <Icons.Eye size={12} />
+                  预览
+                </button>
+              </div>
+              {contentPreview ? (
+                <div className="create-content-preview">
+                  <MarkdownText content={content} />
+                </div>
+              ) : (
+                <TextArea
+                  className="form-textarea-lg"
+                  rows={12}
+                  placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                />
+              )}
               <div className="form-hint">
                 支持 Markdown 格式。此内容将作为 Skill 的 System Prompt，在 Agent 运行时注入。
               </div>
@@ -2302,9 +2469,22 @@ my-skill/
                           {candidate.source}
                         </span>
                         {candidate.installed ? (
-                          <span className="badge success" style={{ flexShrink: 0 }}>
-                            已导入
-                          </span>
+                          <>
+                            <span className="badge success" style={{ flexShrink: 0 }}>
+                              已导入
+                            </span>
+                            {candidate.localSkillId != null && (
+                              <Button
+                                size="middle"
+                                type="text"
+                                icon={<Icons.Eye size={13} />}
+                                onClick={() => onPreviewSkill(candidate.localSkillId as string)}
+                                style={{ flexShrink: 0 }}
+                              >
+                                预览
+                              </Button>
+                            )}
+                          </>
                         ) : (
                           <Button
                             size="middle"
@@ -2337,7 +2517,11 @@ my-skill/
         </div>
       ) : (
         /* ── Link Host Skill Directory ── */
-        <LinkSkillPanel onCreated={onCreated} onSkillReady={onSkillReady} />
+        <LinkSkillPanel
+          onCreated={onCreated}
+          onSkillReady={onSkillReady}
+          onPreviewSkill={onPreviewSkill}
+        />
       )}
     </div>
   )
@@ -2347,9 +2531,11 @@ my-skill/
 function LinkSkillPanel({
   onCreated,
   onSkillReady,
+  onPreviewSkill,
 }: {
   onCreated: () => void
   onSkillReady: (skill: { id: string; name: string }) => void
+  onPreviewSkill: (skillId: string) => void
 }) {
   const [linkTarget, setLinkTarget] = useState('')
   const [linkName, setLinkName] = useState('')
@@ -2387,6 +2573,7 @@ function LinkSkillPanel({
       setLinkTarget('')
       setLinkName('')
       onCreated()
+      onPreviewSkill(res.skill.id)
       onSkillReady({ id: res.skill.id, name: res.skill.name })
       // 刷新路径信息
       getAppPaths({})

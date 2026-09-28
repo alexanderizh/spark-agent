@@ -2623,6 +2623,69 @@ export interface SkillDetailResponse {
   detail: SkillDetailInfo | null
 }
 
+// ─── Skill Files（技能详情页：文件树 / 预览 / 编辑） ─────────────────────
+
+/** 技能目录内的文件树节点 */
+export interface SkillFileNode {
+  /** 相对技能根目录的 posix 路径，如 "SKILL.md"、"references/docs.md" */
+  path: string
+  /** 文件 / 目录名 */
+  name: string
+  type: 'file' | 'directory'
+  /** 文件字节数（目录不返回） */
+  size?: number
+  /** 子节点（仅目录可能非空） */
+  children?: SkillFileNode[]
+}
+
+export interface SkillFilesRequest {
+  id: string
+}
+
+export interface SkillFilesResponse {
+  /** 技能磁盘根目录；纯代码内置技能（builtin:// 虚拟记录）为 null */
+  rootPath: string | null
+  /** 目录优先、名称排序后的文件树 */
+  files: SkillFileNode[]
+  /** 是否只读（内置技能不可编辑） */
+  readOnly: boolean
+  /** 只读原因，供 UI 直接提示 */
+  readOnlyReason?: string
+  /** 文件数量过多被截断（仅展示部分） */
+  truncated?: boolean
+  /** 目录不存在 / 读取失败时的提示 */
+  error?: string
+}
+
+export interface SkillReadFileRequest {
+  id: string
+  /** 相对技能根目录的 posix 路径 */
+  path: string
+}
+
+export interface SkillReadFileResponse {
+  content: string
+  /** 文件字节数 */
+  size: number
+  /** 超过单文件上限，内容已截断 */
+  truncated?: boolean
+  /** 二进制 / 不支持的文本编码等，内容为空 */
+  error?: string
+}
+
+export interface SkillWriteFileRequest {
+  id: string
+  path: string
+  content: string
+}
+
+export interface SkillWriteFileResponse {
+  success: boolean
+  /** 写入后的字节数 */
+  size: number
+  error?: string
+}
+
 export interface SkillToggleRequest {
   id: string
 }
@@ -7598,6 +7661,9 @@ export interface IpcChannelMap
   'skill:search': [SkillSearchRequest, SkillSearchResponse]
   'skill:execute': [SkillExecuteRequest, SkillExecuteResponse]
   'skill:detect-local': [SkillDetectLocalRequest, SkillDetectLocalResponse]
+  'skill:files': [SkillFilesRequest, SkillFilesResponse]
+  'skill:read-file': [SkillReadFileRequest, SkillReadFileResponse]
+  'skill:write-file': [SkillWriteFileRequest, SkillWriteFileResponse]
   'skill-config:get': [SkillConfigGetRequest, SkillConfigGetResponse]
   'skill-config:update': [SkillConfigUpdateRequest, SkillConfigUpdateResponse]
   'prompt-config:get': [PromptConfigGetRequest, PromptConfigGetResponse]

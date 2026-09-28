@@ -1,0 +1,607 @@
+/* ── SkillDetailPage — 技能详情页（左文件树 + 右文件面板） ──
+ *
+ * 只使用 design/styles/styles.css 的项目级 CSS 变量（--bg / --panel / --border /
+ * --text-* / --primary-*），保证亮暗主题自动跟随，不引入新的视觉语言。
+ */
+
+.skill-detail-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--pad-sm, 8px);
+}
+
+/* ── 头部 ── */
+.skill-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pad-md, 12px);
+  flex-shrink: 0;
+  padding-bottom: var(--pad-sm, 8px);
+  border-bottom: 1px solid var(--divider, var(--border));
+}
+
+.skill-detail-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-sm, 8px);
+  min-width: 0;
+  flex: 1;
+}
+
+.skill-detail-back {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+    color: var(--text-strong);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+.skill-detail-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.skill-detail-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 16px;
+}
+
+.skill-detail-crumbs-root {
+  color: var(--text-muted);
+}
+
+.skill-detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 1px;
+}
+
+.skill-detail-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-detail-badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 10px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid transparent;
+}
+
+.skill-detail-badge.is-muted {
+  background: var(--bg-sunken, rgba(0, 0, 0, 0.06));
+  color: var(--text-muted);
+}
+
+.skill-detail-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.skill-detail-subtitle-label {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.skill-detail-subtitle-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-detail-dot {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.skill-detail-assign-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.skill-detail-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  color: var(--warning, #f59e0b);
+}
+
+.skill-detail-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.skill-detail-dirty {
+  font-size: 11px;
+  color: var(--text-faint);
+
+  &.is-dirty {
+    color: var(--warning, #f59e0b);
+  }
+}
+
+/* ── 只读提示条 ── */
+.skill-detail-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-md, 8px);
+  background: var(--warning-bg, rgba(245, 158, 11, 0.12));
+  color: var(--warning, #f59e0b);
+  font-size: 12px;
+}
+
+/* ── 主体：左文件树 + 右文件面板 ── */
+.skill-detail-body {
+  display: grid;
+  grid-template-columns: minmax(0, 264px) minmax(0, 1fr);
+  gap: var(--pad-md, 12px);
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 860px) {
+  .skill-detail-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 180px) minmax(0, 1fr);
+  }
+}
+
+/* ── 左栏：文件树 ── */
+.skill-detail-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.skill-detail-rail-head {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--divider, var(--border));
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--bg-soft, rgba(0, 0, 0, 0.03));
+  }
+}
+
+.skill-detail-rail-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &.is-collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
+.skill-detail-rail-root {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-detail-rail-count {
+  flex-shrink: 0;
+  padding: 0 5px;
+  height: 15px;
+  line-height: 15px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--bg-sunken, rgba(0, 0, 0, 0.06));
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.skill-detail-rail-subtitle {
+  flex-shrink: 0;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--text-faint);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skill-detail-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 6px 8px;
+}
+
+.skill-detail-tree-hint {
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.skill-detail-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding-right: 6px;
+  border-radius: var(--r-sm, 6px);
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  }
+
+  &.is-selected {
+    background: var(--primary-soft, rgba(59, 130, 246, 0.12));
+    color: var(--primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+  }
+}
+
+.skill-detail-tree-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &.is-hidden {
+    visibility: hidden;
+  }
+
+  &.is-open {
+    transform: rotate(90deg);
+  }
+}
+
+.skill-detail-tree-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-detail-tree-dirty {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning, #f59e0b);
+}
+
+.skill-detail-tree-size {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 右栏：文件查看器 ── */
+.skill-file-viewer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.skill-file-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm, 8px);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--divider, var(--border));
+  flex-shrink: 0;
+}
+
+.skill-file-viewer-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.skill-file-viewer-title-label {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.skill-file-viewer-title-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.skill-file-viewer-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm, 8px);
+  flex-shrink: 0;
+}
+
+.skill-file-viewer-size {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-file-viewer-mode {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+}
+
+.skill-file-viewer-mode-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--r-xs, 4px);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    color: var(--text-strong);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &.is-active {
+    background: var(--panel);
+    color: var(--primary);
+    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.06));
+  }
+}
+
+.skill-file-viewer-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #fafafa);
+}
+
+.skill-file-viewer-body .monaco-editor {
+  width: 100%;
+  height: 100%;
+}
+
+.skill-file-viewer-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.skill-file-viewer-markdown {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  font-size: 13px;
+  line-height: 1.72;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.skill-file-viewer-truncated {
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: var(--r-md, 8px);
+  background: var(--warning-bg, rgba(245, 158, 11, 0.12));
+  color: var(--warning, #f59e0b);
+  font-size: 12px;
+}
+
+.skill-file-viewer-image {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: var(--r-md, 8px);
+    background:
+      repeating-conic-gradient(var(--bg-sunken) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  }
+}
+
+.skill-file-viewer-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.skill-file-viewer-saving {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-md, 8px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.08));
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.skill-file-viewer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-sm, 8px);
+  padding: 5px 10px;
+  border-top: 1px solid var(--divider, var(--border));
+  flex-shrink: 0;
+  background: var(--panel);
+}
+
+.skill-file-viewer-foot-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.skill-file-viewer-foot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── 页脚提示 / 错误 ── */
+.skill-detail-error {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-md, 8px);
+  background: var(--danger-bg, rgba(239, 68, 68, 0.12));
+  color: var(--danger, #ef4444);
+  font-size: 12px;
+}
+
+.skill-detail-note {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.skill-detail-foot-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
