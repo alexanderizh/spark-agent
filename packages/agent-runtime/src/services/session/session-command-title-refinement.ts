@@ -56,6 +56,7 @@ async function refineCommandSessionTitleAsync(
 
     const config = JSON.parse(provider.config_json) as {
       apiEndpoint?: string
+      apiEndpointFullUrl?: boolean
       defaultModel?: string
     }
     const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
@@ -68,6 +69,7 @@ async function refineCommandSessionTitleAsync(
       providerType: provider.provider_type,
       apiKey,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       model,
       userMessage: params.userMessage,
       assistantMessage: '',

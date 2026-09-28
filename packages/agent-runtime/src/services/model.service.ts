@@ -119,14 +119,19 @@ export class ModelService {
       const apiKey = await resolveProviderApiKey(provider)
 
       let apiEndpoint: string | undefined
+      let apiEndpointFullUrl: boolean | undefined
       try {
-        const config = JSON.parse(provider.config_json) as { apiEndpoint?: string }
+        const config = JSON.parse(provider.config_json) as {
+          apiEndpoint?: string
+          apiEndpointFullUrl?: boolean
+        }
         apiEndpoint = config.apiEndpoint
+        apiEndpointFullUrl = config.apiEndpointFullUrl
       } catch {
         // config 解析失败按无自定义端点处理
       }
 
-      const url = getEmbeddingsEndpoint(apiEndpoint)
+      const url = getEmbeddingsEndpoint(apiEndpoint, apiEndpointFullUrl)
       // D-15：embed 是幂等的（同样输入 → 同样向量），用 shared.fetchJson 加 1 次重试，
       // 抵抗瞬时网络/5xx 错误。
       let json: {
@@ -325,9 +330,14 @@ export class ModelService {
       const apiKey = await resolveProviderApiKey(provider)
 
       let apiEndpoint: string | undefined
+      let apiEndpointFullUrl: boolean | undefined
       try {
-        const config = JSON.parse(provider.config_json) as { apiEndpoint?: string }
+        const config = JSON.parse(provider.config_json) as {
+          apiEndpoint?: string
+          apiEndpointFullUrl?: boolean
+        }
         apiEndpoint = config.apiEndpoint
+        apiEndpointFullUrl = config.apiEndpointFullUrl
       } catch {
         // config 解析失败按无自定义端点处理
       }
@@ -336,8 +346,8 @@ export class ModelService {
       const maxTokens = opts?.maxTokens ?? 1024
       // URL 提前算（让"开始"日志就含接口地址，测试时一眼能看到请求打到哪里）
       const url = isAnthropic
-        ? getAnthropicMessagesEndpoint(apiEndpoint)
-        : getChatEndpoint(apiEndpoint)
+        ? getAnthropicMessagesEndpoint(apiEndpoint, apiEndpointFullUrl)
+        : getChatEndpoint(apiEndpoint, apiEndpointFullUrl)
       // 【入口日志】记录使用的模型与接口，但绝不把凭据内容或片段写进日志。
       const keyDesc = apiKey.length > 0 ? 'credential=configured' : 'credential=empty'
       log.info(
@@ -475,9 +485,11 @@ function isGlmModel(model: string): boolean {
  * 从 provider 配置的 base endpoint 推导 /embeddings URL。
  * 端点归一化规则与 provider.service 的 chat/models 端点推导一致：
  * 已带版本段（/v1、/v2…）直接拼；否则补 /v1。
+ * 渠道声明「完整 URL」（fullUrl=true）时原样请求，不做任何拼裁。
  */
-function getEmbeddingsEndpoint(apiEndpoint?: string): string {
+function getEmbeddingsEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint ?? 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/embeddings')) return base
   if (/\/v\d+$/.test(base)) return `${base}/embeddings`
   return `${base}/v1/embeddings`
@@ -487,8 +499,9 @@ function getEmbeddingsEndpoint(apiEndpoint?: string): string {
  * 从 provider 配置的 base endpoint 推导 /chat/completions URL（记忆抽取用）。
  * 规则与 getEmbeddingsEndpoint 一致。
  */
-function getChatEndpoint(apiEndpoint?: string): string {
+function getChatEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint ?? 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/chat/completions')) return base
   if (/\/v\d+$/.test(base)) return `${base}/chat/completions`
   return `${base}/v1/chat/completions`
@@ -498,8 +511,9 @@ function getChatEndpoint(apiEndpoint?: string): string {
  * anthropic 原生 /v1/messages 端点（记忆抽取用）。
  * 默认 https://api.anthropic.com；与 getChatEndpoint 同规则归一化。
  */
-function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
+function getAnthropicMessagesEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint ?? 'https://api.anthropic.com').trim().replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/v1/messages')) return base
   if (base.endsWith('/messages')) return `${base.slice(0, -'/messages'.length)}/v1/messages`
   if (/\/v\d+$/.test(base)) return `${base}/messages`

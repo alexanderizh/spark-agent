@@ -9,6 +9,8 @@ export interface OpenAiResponsesOptions {
   readonly apiKey: string
   readonly model: string
   readonly baseUrl?: string
+  /** baseUrl 是完整请求地址（含 /responses 路径）：跳过自动拼裁，原样请求。 */
+  readonly fullUrl?: boolean
   readonly fetch?: FetchLike
 }
 
@@ -25,7 +27,7 @@ export class OpenAiResponsesService implements LlmService {
     const startedAt = Date.now()
     const opened = await openSse({
       provider: 'openai',
-      url: `${normalizeBaseUrl(this.#options.baseUrl ?? 'https://api.openai.com/v1')}/responses`,
+      url: responsesEndpoint(this.#options.baseUrl ?? 'https://api.openai.com/v1', this.#options.fullUrl === true),
       headers: {
         ...clientIdentityHeaders(request.metadata.sessionId),
         authorization: `Bearer ${this.#options.apiKey}`,
@@ -390,4 +392,11 @@ function token(value: unknown): number {
 function normalizeBaseUrl(value: string): string {
   const normalized = value.replace(/\/+$/u, '')
   return normalized.endsWith('/v1') ? normalized : `${normalized}/v1`
+}
+
+/** 渠道声明「完整 URL」时原样请求；否则按 base 追加 /responses（自动补 /v1）。 */
+function responsesEndpoint(value: string, fullUrl?: boolean): string {
+  const normalized = value.replace(/\/+$/u, '')
+  if (fullUrl === true) return normalized
+  return `${normalizeBaseUrl(normalized)}/responses`
 }

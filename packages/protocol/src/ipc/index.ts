@@ -926,6 +926,11 @@ export interface ProviderProfile {
   providerIcon?: ProviderIconConfig
   /** 自定义 API Endpoint */
   apiEndpoint?: string
+  /**
+   * 渠道声明的 apiEndpoint 是完整请求地址（不做任何自动拼裁，原样请求）。
+   * 旧数据缺省 = false，按各调用点原有归一化逻辑处理（增量向后兼容）。
+   */
+  apiEndpointFullUrl?: boolean
   /** 多媒体调用专用 Endpoint；平台受管模型可与文本 Endpoint 分开。 */
   mediaApiEndpoint?: string
   /** OpenAI/Codex provider API style. */
@@ -1135,6 +1140,8 @@ export interface ProviderCreateRequest {
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
+  /** apiEndpoint 是完整请求地址时启用：调用时不再做任何自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** 使用 Spark 执行器作为该渠道会话默认引擎；协议无法映射的渠道由表单层置灰不下发。 */
   useSparkExecutor?: boolean
@@ -1219,6 +1226,8 @@ export interface ProviderUpdateRequest {
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
+  /** apiEndpoint 是完整请求地址（不做自动拼裁）；始终显式下发 true/false，语义见 ProviderProfile 同名字段。 */
+  apiEndpointFullUrl?: boolean
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** 使用 Spark 执行器；显式传 false 清除（协议无法映射的渠道由表单层强制下发 false）。 */
   useSparkExecutor?: boolean
@@ -1281,6 +1290,8 @@ export interface ProviderConnectionTestRequest {
   id?: string
   provider: string
   apiEndpoint?: string | null
+  /** apiEndpoint 是完整请求地址时启用：测试连接原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   defaultModel: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   apiKey?: string

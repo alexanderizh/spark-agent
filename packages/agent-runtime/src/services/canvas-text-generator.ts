@@ -75,6 +75,8 @@ export interface GenerateCanvasTextParams {
   apiKind?: 'chat' | 'responses' | undefined
   apiKey: string
   apiEndpoint?: string | undefined
+  /** 渠道声明的 apiEndpoint 是完整请求地址：原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean | undefined
   model: string
   /** 系统提示词（角色/约束） */
   system?: string
@@ -217,7 +219,7 @@ async function callAnthropic(
   params: GenerateCanvasTextParams,
   prompt: string,
 ): Promise<ProviderCallResult> {
-  const url = getAnthropicMessagesEndpoint(params.apiEndpoint)
+  const url = getAnthropicMessagesEndpoint(params.apiEndpoint, params.apiEndpointFullUrl === true)
   const imageBlocks = (params.images ?? [])
     .map(toAnthropicImageBlock)
     .filter((block): block is AnthropicImageBlock => block !== null)
@@ -338,7 +340,7 @@ async function callOpenAIChatCompletions(
   params: GenerateCanvasTextParams,
   prompt: string,
 ): Promise<ProviderCallResult> {
-  const url = getOpenAiChatCompletionsEndpoint(params.apiEndpoint)
+  const url = getOpenAiChatCompletionsEndpoint(params.apiEndpoint, params.apiEndpointFullUrl === true)
   type OpenAiContentPart =
     | { type: 'text'; text: string }
     | { type: 'image_url'; image_url: { url: string } }
@@ -420,7 +422,7 @@ async function callOpenAIResponses(
   params: GenerateCanvasTextParams,
   prompt: string,
 ): Promise<ProviderCallResult> {
-  const url = getOpenAiResponsesEndpoint(params.apiEndpoint)
+  const url = getOpenAiResponsesEndpoint(params.apiEndpoint, params.apiEndpointFullUrl === true)
   const reasoningEffort = toOpenAIResponsesReasoningEffort(params.reasoningEffort)
   const body: Record<string, unknown> = {
     model: params.model,
@@ -513,15 +515,18 @@ function extractResponsesText(data: {
   return typeof text === 'string' ? text : null
 }
 
-function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
+function getAnthropicMessagesEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = normalizeEndpoint(apiEndpoint, ANTHROPIC_DEFAULT_ENDPOINT)
+  // 渠道声明「完整 URL」：所填地址即最终请求地址，仅去尾部斜杠，不做任何拼裁。
+  if (fullUrl === true) return base.replace(/\/+$/, '')
   if (base.endsWith('/v1/messages')) return base
   if (base.endsWith('/v1')) return `${base}/messages`
   return `${base}/v1/messages`
 }
 
-function getOpenAiChatCompletionsEndpoint(apiEndpoint?: string): string {
+function getOpenAiChatCompletionsEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = normalizeEndpoint(apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
+  if (fullUrl === true) return base.replace(/\/+$/, '')
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
   if (endsWithVersionSegment(base)) return `${base}/chat/completions`
@@ -529,8 +534,9 @@ function getOpenAiChatCompletionsEndpoint(apiEndpoint?: string): string {
   return `${base}/v1/chat/completions`
 }
 
-function getOpenAiResponsesEndpoint(apiEndpoint?: string): string {
+function getOpenAiResponsesEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = normalizeEndpoint(apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
+  if (fullUrl === true) return base.replace(/\/+$/, '')
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/responses`

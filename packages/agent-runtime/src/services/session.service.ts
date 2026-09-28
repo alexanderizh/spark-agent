@@ -593,6 +593,8 @@ interface FirstTurnTitleContext {
   providerType: string
   apiKey: string
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：标题精炼原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   model: string
   userMessage: string
 }
@@ -2907,6 +2909,8 @@ export class SessionService {
       model?: string
       modelIds?: string[]
       apiEndpoint?: string
+      /** 渠道声明的 apiEndpoint 是完整请求地址：执行链路跳过自动拼裁，原样请求。 */
+      apiEndpointFullUrl?: boolean
       maxTokens?: number
       temperature?: number
       /** 'chat' (default, chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
@@ -4158,6 +4162,7 @@ export class SessionService {
           : {}),
         permissionMode,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         ...(config.haikuModel != null ? { haikuModel: config.haikuModel } : {}),
         ...(config.sonnetModel != null ? { sonnetModel: config.sonnetModel } : {}),
         ...(config.opusModel != null ? { opusModel: config.opusModel } : {}),
@@ -4341,6 +4346,7 @@ export class SessionService {
           apiKey,
           model,
           ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+          ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
           userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
         }
       }
@@ -4496,6 +4502,7 @@ export class SessionService {
             }
           : {}),
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         sparkUpstreamProtocol: sparkRoute.protocol,
         ...(sparkLedgerSessionId != null
           ? { sdkSessionId: sparkLedgerSessionId, continueSession: true }
@@ -4580,6 +4587,7 @@ export class SessionService {
           apiKey,
           model,
           ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+          ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
           userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
         }
       }
@@ -4623,6 +4631,7 @@ export class SessionService {
       workspaceRootPath,
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
       ...(openAIChatTools.length > 0 ? { openAIChatTools } : {}),
       ...(activeCliSparkOverride != null || (!isLocalCli && provider.provider_type !== 'anthropic')
@@ -6664,6 +6673,7 @@ export class SessionService {
         providerType: ctx.providerType,
         apiKey: ctx.apiKey,
         ...(ctx.apiEndpoint != null ? { apiEndpoint: ctx.apiEndpoint } : {}),
+        ...(ctx.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         model: ctx.model,
         userMessage: ctx.userMessage,
         assistantMessage: ctx.assistantMessage,
@@ -8678,6 +8688,8 @@ export class SessionService {
       model?: string
       modelIds?: string[]
       apiEndpoint?: string
+      /** 渠道声明的 apiEndpoint 是完整请求地址：执行链路跳过自动拼裁，原样请求。 */
+      apiEndpointFullUrl?: boolean
       /** 'chat' (chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
       /** SDK resume 灰度开关（默认关）：显式 true 时允许第三方 Anthropic 兼容端点续会话。 */
@@ -9194,6 +9206,9 @@ export class SessionService {
       workspaceRootPath,
       permissionMode: effectiveMemberMode,
       ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      ...(providerConfig.apiEndpointFullUrl === true
+        ? { apiEndpointFullUrl: true }
+        : {}),
       // FR-0a：codex 扩展字段（useLocalConfig/codexApiKind/codexCliProvider）来自 memberProfile.extras。
       ...memberProfile.extras,
       ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),

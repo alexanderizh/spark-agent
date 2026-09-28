@@ -22,6 +22,8 @@ export type SparkModelRouteResolution =
       modelId: string
       apiKey: string
       baseUrl: string | undefined
+      /** 渠道声明的 baseUrl 是完整请求地址：引擎上游跳过自动拼裁，原样请求。 */
+      fullUrl: boolean
     }
   | { ok: false; reason: string }
 
@@ -49,7 +51,10 @@ export function resolveSparkUpstreamProtocol(
 
 /** executor 侧路由解析：校验并归一 registerHttp 所需参数。 */
 export function resolveSparkModelRoute(
-  config: Pick<SDKExecutorConfig, 'apiKey' | 'model' | 'apiEndpoint' | 'sparkUpstreamProtocol'>,
+  config: Pick<
+    SDKExecutorConfig,
+    'apiKey' | 'model' | 'apiEndpoint' | 'apiEndpointFullUrl' | 'sparkUpstreamProtocol'
+  >,
 ): SparkModelRouteResolution {
   if (config.sparkUpstreamProtocol == null) {
     return { ok: false, reason: 'sparkUpstreamProtocol 未配置（session.service 组装缺失）' }
@@ -66,6 +71,7 @@ export function resolveSparkModelRoute(
     modelId: `spark-${config.sparkUpstreamProtocol}-${config.model}`,
     apiKey: config.apiKey,
     baseUrl: config.apiEndpoint?.trim() ? config.apiEndpoint.trim() : undefined,
+    fullUrl: config.apiEndpointFullUrl === true,
   }
 }
 

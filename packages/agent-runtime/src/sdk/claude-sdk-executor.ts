@@ -247,6 +247,7 @@ function buildIsolatedRuntimeEnv(
   apiKey: string,
   model: string,
   apiEndpoint?: string,
+  apiEndpointFullUrl?: boolean,
   tierModels?: {
     haiku?: string | undefined
     sonnet?: string | undefined
@@ -291,7 +292,12 @@ function buildIsolatedRuntimeEnv(
   // SDK 自己会在 base URL 后追加 /v1/messages：渠道配置里若填的是完整 messages
   // 地址（…/v1/messages）或 …/v1，必须先归一化，否则请求会打到
   // …/v1/messages/v1/messages 直接 404。
-  const anthropicBaseUrl = apiEndpoint != null ? resolveAnthropicBaseUrl(apiEndpoint) : null
+  // 渠道声明「完整 URL」时仅摘标准 /v1/messages 尾缀（标准形态自洽）；非标尾缀
+  // （如 …/v3/messages）Claude SDK 无法原样请求，此类渠道应配合 Spark 引擎使用。
+  const anthropicBaseUrl =
+    apiEndpoint != null
+      ? resolveAnthropicBaseUrl(apiEndpoint, { fullUrl: apiEndpointFullUrl === true })
+      : null
   if (anthropicBaseUrl != null) env.ANTHROPIC_BASE_URL = anthropicBaseUrl
   log.debug(
     `Anthropic credential injection: mode=${resolveAnthropicAuthMode(apiEndpoint, apiKey)}, ` +
@@ -720,6 +726,7 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
       config.apiKey,
       config.model,
       config.apiEndpoint,
+      config.apiEndpointFullUrl === true,
       {
         haiku: config.haikuModel,
         sonnet: config.sonnetModel,

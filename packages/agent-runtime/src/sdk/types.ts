@@ -839,6 +839,14 @@ export interface SDKExecutorConfig {
   /** Opus 档（Plan/Review 等高能力 agent）；缺省回落 model */
   opusModel?: string | undefined
   apiEndpoint?: string | undefined
+  /**
+   * 渠道声明的 apiEndpoint 是完整请求地址：各执行链路跳过自动拼裁，原样请求。
+   * - Spark 引擎：anthropic-messages / openai-responses 上游按完整地址直连。
+   * - Claude 适配器（SDK 子进程）：SDK 固定追加 /v1/messages，仅摘标准尾缀；
+   *   非标尾缀渠道需配合 Spark 引擎使用。
+   * - Codex chat 适配器（openai SDK）：SDK 追加 /chat/completions，摘能力尾缀后自洽。
+   */
+  apiEndpointFullUrl?: boolean | undefined
   codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
   /**
    * Spark 引擎（adapter 'spark'）：上游 wire 协议。由 session.service 按渠道协议

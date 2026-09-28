@@ -6252,6 +6252,9 @@ export function registerAllIpcHandlers(): void {
               apiKind,
               apiKey: chosen.apiKey,
               ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
+              ...(chosen.profile.apiEndpointFullUrl === true
+                ? { apiEndpointFullUrl: true }
+                : {}),
               model,
               system,
               prompt: runtimeRequest.prompt,
@@ -11787,6 +11790,7 @@ async function resolveWorktreeBranchName(req: {
             providerType: profile.provider,
             apiKey,
             ...(profile.apiEndpoint != null ? { apiEndpoint: profile.apiEndpoint } : {}),
+            ...(profile.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
             model,
             taskText,
           })

@@ -644,6 +644,8 @@ export const ProviderCreateRequestSchema = z
     providerIcon: ProviderIconConfigSchema.optional(),
     model: z.string().min(1).max(200).optional(),
     apiEndpoint: z.string().min(1).max(500).optional(),
+    /** apiEndpoint 是完整请求地址时启用：调用时不再做任何自动拼裁。 */
+    apiEndpointFullUrl: z.boolean().optional(),
     codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
     useSparkExecutor: z.boolean().optional(),
     apiKey: z.string().min(1).max(500),
@@ -699,6 +701,8 @@ export const ProviderUpdateRequestSchema = z.object({
   providerIcon: ProviderIconConfigSchema.nullable().optional(),
   model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
+  /** apiEndpoint 是完整请求地址（不做自动拼裁）；始终显式下发 true/false。 */
+  apiEndpointFullUrl: z.boolean().optional(),
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   useSparkExecutor: z.boolean().optional(),
   apiKey: z.string().min(1).max(500).optional(),
@@ -744,6 +748,8 @@ export const ProviderConnectionTestRequestSchema = z.object({
   id: ProfileIdSchema.optional(),
   provider: ProviderKindSchema,
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
+  /** apiEndpoint 是完整请求地址时启用：测试连接原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl: z.boolean().optional(),
   defaultModel: z.string().min(1).max(200),
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
   useSparkExecutor: z.boolean().optional(),

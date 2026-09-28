@@ -21,6 +21,12 @@ export const DEFAULT_ANTHROPIC_ENDPOINT = 'https://api.anthropic.com'
 const MESSAGES_SUFFIX = '/v1/messages'
 const BARE_MESSAGES_SUFFIX = '/messages'
 
+/** 渠道「完整 URL」开关：endpoint 视为最终请求地址，跳过自动拼裁。 */
+export interface AnthropicEndpointOptions {
+  /** true = 渠道声明的 endpoint 是完整地址，不做任何自动拼裁处理。 */
+  fullUrl?: boolean
+}
+
 /** 去掉首尾空白与尾部斜杠；空值回落官方默认端点。 */
 export function normalizeAnthropicEndpoint(endpoint?: string | null): string {
   const trimmed = endpoint?.trim()
@@ -33,16 +39,35 @@ export function normalizeAnthropicEndpoint(endpoint?: string | null): string {
 /**
  * 归一化为 `ANTHROPIC_BASE_URL` 可用的根地址：依次摘掉 `/v1/messages`、`/messages`、
  * 末尾版本段（`/v1`、`/v2` …），保证 SDK 追加一次 `/v1/messages` 后路径不重复。
+ *
+ * `fullUrl: true` 时仅摘标准 `/v1/messages` 尾缀（SDK 固定追加该后缀，标准形态
+ * 自洽）；其余形态原样返回——非标尾缀（如 `…/v3/messages`）Claude SDK 天然无法
+ * 原样请求，这类渠道应配合 Spark 引擎使用。
  */
-export function resolveAnthropicBaseUrl(endpoint?: string | null): string {
-  let base = normalizeAnthropicEndpoint(endpoint)
-  if (base.endsWith(MESSAGES_SUFFIX)) base = base.slice(0, -MESSAGES_SUFFIX.length)
-  else if (base.endsWith(BARE_MESSAGES_SUFFIX)) base = base.slice(0, -BARE_MESSAGES_SUFFIX.length)
-  else if (/\/v\d+$/u.test(base)) base = base.replace(/\/v\d+$/u, '')
-  return base.replace(/\/+$/u, '')
+export function resolveAnthropicBaseUrl(
+  endpoint?: string | null,
+  opts?: AnthropicEndpointOptions,
+): string {
+  const base = normalizeAnthropicEndpoint(endpoint)
+  if (opts?.fullUrl === true) {
+    return base.endsWith(MESSAGES_SUFFIX) ? base.slice(0, -MESSAGES_SUFFIX.length) : base
+  }
+  let resolved = base
+  if (resolved.endsWith(MESSAGES_SUFFIX)) resolved = resolved.slice(0, -MESSAGES_SUFFIX.length)
+  else if (resolved.endsWith(BARE_MESSAGES_SUFFIX))
+    resolved = resolved.slice(0, -BARE_MESSAGES_SUFFIX.length)
+  else if (/\/v\d+$/u.test(resolved)) resolved = resolved.replace(/\/v\d+$/u, '')
+  return resolved.replace(/\/+$/u, '')
 }
 
-/** 归一化为恰好一个 `/v1/messages` 后缀的完整 messages 地址（直连 HTTP 调用用）。 */
-export function resolveAnthropicMessagesUrl(endpoint?: string | null): string {
+/**
+ * 归一化为恰好一个 `/v1/messages` 后缀的完整 messages 地址（直连 HTTP 调用用）。
+ * `fullUrl: true` 时视为完整地址，仅去空白与尾部斜杠，原样返回。
+ */
+export function resolveAnthropicMessagesUrl(
+  endpoint?: string | null,
+  opts?: AnthropicEndpointOptions,
+): string {
+  if (opts?.fullUrl === true) return normalizeAnthropicEndpoint(endpoint)
   return `${resolveAnthropicBaseUrl(endpoint)}${MESSAGES_SUFFIX}`
 }

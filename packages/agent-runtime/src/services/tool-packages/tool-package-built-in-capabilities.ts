@@ -815,6 +815,8 @@ type ProviderRow = NonNullable<ReturnType<ProviderProfileRepository['get']>>
 
 interface ProviderConfig {
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   defaultModel?: string
   modelIds?: string[]
 }
@@ -888,8 +890,8 @@ async function invokeModel(
   const anthropic = provider.provider_type === 'anthropic'
   const openAiResponseFormat = buildOpenAiResponseFormat(request.responseFormat)
   const endpoint = anthropic
-    ? anthropicMessagesEndpoint(config.apiEndpoint)
-    : openAiChatEndpoint(config.apiEndpoint)
+    ? anthropicMessagesEndpoint(config.apiEndpoint, config.apiEndpointFullUrl)
+    : openAiChatEndpoint(config.apiEndpoint, config.apiEndpointFullUrl)
   const response = await fetchJson<{
     content?: Array<{ type?: string; text?: string }>
     choices?: Array<{ message?: { content?: string } }>
@@ -980,8 +982,10 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
 }
 
-function openAiChatEndpoint(apiEndpoint?: string): string {
+function openAiChatEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '')
+  // 渠道声明「完整 URL」：所填地址即最终请求地址，不做任何拼裁。
+  if (fullUrl === true) return base
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
   if (/\/v\d+$/i.test(base)) return `${base}/chat/completions`
@@ -1024,8 +1028,10 @@ function parseModelJsonOutput(text: string): { value: unknown; error?: string } 
   }
 }
 
-function anthropicMessagesEndpoint(apiEndpoint?: string): string {
+function anthropicMessagesEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint?.trim() || 'https://api.anthropic.com').replace(/\/+$/, '')
+  // 渠道声明「完整 URL」：所填地址即最终请求地址，不做任何拼裁。
+  if (fullUrl === true) return base
   if (base.endsWith('/messages')) return base
   if (/\/v\d+$/i.test(base)) return `${base}/messages`
   return `${base}/v1/messages`

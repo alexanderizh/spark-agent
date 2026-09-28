@@ -33,6 +33,8 @@ export interface GenerateTitleParams {
   providerType: string
   apiKey: string
   apiEndpoint?: string | undefined
+  /** 渠道声明的 apiEndpoint 是完整请求地址：原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean | undefined
   model: string
   userMessage: string
   assistantMessage: string
@@ -80,8 +82,11 @@ function buildPrompt(userMessage: string, assistantMessage: string): string {
 
 async function callAnthropic(params: GenerateTitleParams, prompt: string): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, ANTHROPIC_DEFAULT_ENDPOINT)
-  // 渠道配置允许填完整 messages 地址，统一归一化后再用，避免 /v1/messages 重复。
-  const url = resolveAnthropicMessagesUrl(endpoint)
+  // 渠道配置允许填完整 messages 地址，统一归一化后再用，避免 /v1/messages 重复；
+  // 渠道声明「完整 URL」时原样请求，不做任何拼裁。
+  const url = resolveAnthropicMessagesUrl(endpoint, {
+    fullUrl: params.apiEndpointFullUrl === true,
+  })
   const body = {
     model: params.model,
     max_tokens: TITLE_MAX_OUTPUT_TOKENS,
@@ -119,7 +124,9 @@ async function callOpenAICompatible(
   prompt: string,
 ): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
-  const url = `${endpoint}/chat/completions`
+  // 渠道声明「完整 URL」时原样请求（用户填的已是最终 chat 地址），否则拼接后缀。
+  const url =
+    params.apiEndpointFullUrl === true ? endpoint : `${endpoint}/chat/completions`
   const baseBody = {
     model: params.model,
     temperature: 0.3,

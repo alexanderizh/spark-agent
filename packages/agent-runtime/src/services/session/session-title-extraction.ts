@@ -234,6 +234,7 @@ export async function extractSessionTitle(params: {
     }
     const config = JSON.parse(provider.config_json) as {
       apiEndpoint?: string
+      apiEndpointFullUrl?: boolean
       defaultModel?: string
     }
     const model = session.model_id?.trim() || config.defaultModel?.trim() || ''
@@ -249,6 +250,7 @@ export async function extractSessionTitle(params: {
       providerType: provider.provider_type,
       apiKey: await resolveProviderApiKey(provider),
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       model,
       userMessage: source.userMessage,
       assistantMessage: source.assistantMessage,

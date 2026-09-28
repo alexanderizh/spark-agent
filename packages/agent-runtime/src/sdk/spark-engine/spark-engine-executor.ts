@@ -159,6 +159,7 @@ export class SparkEngineExecutor implements EngineExecutor, PermissionModeAwareE
               protocol: route.protocol,
               model: config.model,
               ...(route.baseUrl != null ? { baseUrl: route.baseUrl } : {}),
+              ...(route.fullUrl ? { fullUrl: true } : {}),
               apiKey: route.apiKey,
               ...(config.contextWindowTokens == null
                 ? {}

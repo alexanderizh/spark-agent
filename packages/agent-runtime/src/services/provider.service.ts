@@ -357,6 +357,7 @@ function rowToProfile(row: {
     ...(config.availableModelIds !== undefined && { availableModelIds: config.availableModelIds }),
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
+    ...(config.apiEndpointFullUrl === true && { apiEndpointFullUrl: true }),
     ...(config.mediaApiEndpoint !== undefined && { mediaApiEndpoint: config.mediaApiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     ...(config.useSparkExecutor === true && { useSparkExecutor: true }),
@@ -794,6 +795,8 @@ export class ProviderService {
     providerIcon?: ProviderIconConfig
     model?: string
     apiEndpoint?: string
+    /** apiEndpoint 是完整请求地址时启用：调用时不再做任何自动拼裁。 */
+    apiEndpointFullUrl?: boolean
     codexApiKind?: 'chat' | 'responses' | 'embedding'
     /** 使用 Spark 执行器作为该渠道会话的默认引擎。 */
     useSparkExecutor?: boolean
@@ -851,6 +854,7 @@ export class ProviderService {
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.providerIcon !== undefined && { providerIcon: params.providerIcon }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
+        ...(params.apiEndpointFullUrl === true && { apiEndpointFullUrl: true }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
         ...(params.useSparkExecutor !== undefined && { useSparkExecutor: params.useSparkExecutor }),
         ...(params.supportsMillionContext !== undefined && {
@@ -902,6 +906,8 @@ export class ProviderService {
     model?: string
     apiEndpoint?: string | null
     codexApiKind?: 'chat' | 'responses' | 'embedding'
+    /** apiEndpoint 完整地址开关；始终显式下发 true/false，undefined 视为不修改。 */
+    apiEndpointFullUrl?: boolean
     /** 使用 Spark 执行器开关；undefined 不修改。 */
     useSparkExecutor?: boolean
     supportsMillionContext?: boolean
@@ -1032,6 +1038,11 @@ export class ProviderService {
       } else {
         newConfig.apiEndpoint = params.apiEndpoint
       }
+    }
+    // 完整地址开关：false（含关闭）即删除字段，落库缺省 = 关，读取侧只透出 true。
+    if (newConfig !== undefined && params.apiEndpointFullUrl !== undefined) {
+      if (params.apiEndpointFullUrl) newConfig.apiEndpointFullUrl = true
+      else delete newConfig.apiEndpointFullUrl
     }
     if (newConfig !== undefined && params.codexApiKind !== undefined) {
       newConfig.codexApiKind = params.codexApiKind
@@ -1336,6 +1347,8 @@ export class ProviderService {
     id?: string
     provider: string
     apiEndpoint?: string | null
+    /** apiEndpoint 是完整请求地址时启用：测试连接原样请求，不做自动拼裁。 */
+    apiEndpointFullUrl?: boolean
     defaultModel: string
     codexApiKind?: 'chat' | 'responses' | 'embedding'
     apiKey?: string
@@ -1354,6 +1367,7 @@ export class ProviderService {
     }
 
     const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
+    const fullUrl = await this.resolveProviderEndpointFullUrl(params.id, params.apiEndpointFullUrl)
     const defaultModel = params.defaultModel.trim()
     if (!defaultModel) {
       log.warn(
@@ -1374,12 +1388,13 @@ export class ProviderService {
 
     try {
       await (providerType === 'anthropic'
-        ? fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel)
+        ? fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel, fullUrl)
         : fetchOpenAiCompatiblePing(
             endpoint ?? getDefaultEndpointBase(providerType),
             apiKey,
             defaultModel,
             params.codexApiKind ?? 'chat',
+            fullUrl,
           ))
       const latencyMs = Date.now() - start
       log.info(
@@ -1423,10 +1438,13 @@ export class ProviderService {
     }
 
     const endpoint = await this.resolveProviderEndpoint(params.id, params.apiEndpoint)
+    // 渠道声明「完整 URL」时，endpoint 是最终请求地址，models 地址无法可靠派生：
+    // 与显式 isFullUrl 一样走候选探测逻辑（用户可用 modelsUrl 精确覆写）。
+    const savedFullUrl = await this.resolveProviderEndpointFullUrl(params.id, undefined)
     const baseUrl = endpoint ?? getDefaultEndpointBase(providerType)
     const candidates = getModelsUrlCandidates(
       baseUrl,
-      params.isFullUrl === true,
+      params.isFullUrl === true || savedFullUrl,
       params.modelsUrl ?? null,
     )
     if (candidates.length === 0) {
@@ -1713,6 +1731,26 @@ export class ProviderService {
   }
 
   /**
+   * 「完整 URL」开关解析：请求显式传入优先（草稿测试场景）；否则回落已保存渠道
+   * 配置里的 apiEndpointFullUrl。与 resolveProviderEndpoint 的优先级语义对齐。
+   */
+  private async resolveProviderEndpointFullUrl(
+    id: string | undefined,
+    fullUrl: boolean | undefined,
+  ): Promise<boolean> {
+    if (fullUrl !== undefined) return fullUrl
+    if (!id) return false
+    const row = this.repo.get(id)
+    if (!row) return false
+    try {
+      const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+      return config.apiEndpointFullUrl === true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * 导出 provider 配置为 ExportPayload（含 apiKey）。
    *
    * - ids 为空时导出全部
@@ -1882,8 +1920,9 @@ function fetchAnthropicMessagesPing(
   apiEndpoint: string | undefined,
   apiKey: string,
   model: string,
+  fullUrl?: boolean,
 ): Promise<unknown> {
-  return fetchJson(getAnthropicMessagesEndpoint(apiEndpoint), {
+  return fetchJson(getAnthropicMessagesEndpoint(apiEndpoint, fullUrl), {
     method: 'POST',
     headers: {
       // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
@@ -1908,11 +1947,12 @@ function fetchOpenAiCompatiblePing(
   apiKey: string,
   model: string,
   codexApiKind: 'chat' | 'responses' | 'embedding',
+  fullUrl?: boolean,
 ): Promise<unknown> {
   // embedding 模型（如智谱 embedding-3、OpenAI text-embedding-3）不支持 chat/responses，
   // 必须用 /embeddings 端点 ping，否则会被服务端拒绝为 4xx，导致健康检查误判为不健康。
   if (codexApiKind === 'embedding') {
-    return fetchJson(getOpenAiEmbeddingsEndpoint(apiEndpoint), {
+    return fetchJson(getOpenAiEmbeddingsEndpoint(apiEndpoint, fullUrl), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -1926,8 +1966,8 @@ function fetchOpenAiCompatiblePing(
   }
   const endpoint =
     codexApiKind === 'responses'
-      ? getOpenAiResponsesEndpoint(apiEndpoint)
-      : getOpenAiChatCompletionsEndpoint(apiEndpoint)
+      ? getOpenAiResponsesEndpoint(apiEndpoint, fullUrl)
+      : getOpenAiChatCompletionsEndpoint(apiEndpoint, fullUrl)
   const body =
     codexApiKind === 'responses'
       ? {
@@ -1980,6 +2020,8 @@ interface ProviderConfig {
   modelIds?: string[]
   availableModelIds?: string[]
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：各调用点跳过自动拼裁，原样请求。 */
+  apiEndpointFullUrl?: boolean
   mediaApiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** 使用 Spark 执行器（自研 spark-engine）作为该渠道会话的默认引擎。 */
@@ -2280,15 +2322,17 @@ function getDefaultEndpointBase(providerType: string): string {
   }
 }
 
-function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
+function getAnthropicMessagesEndpoint(apiEndpoint?: string, fullUrl?: boolean): string {
   const base = (apiEndpoint ?? 'https://api.anthropic.com').replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/v1/messages')) return base
   if (base.endsWith('/v1')) return `${base}/messages`
   return `${base}/v1/messages`
 }
 
-function getOpenAiChatCompletionsEndpoint(apiEndpoint: string): string {
+function getOpenAiChatCompletionsEndpoint(apiEndpoint: string, fullUrl?: boolean): string {
   const base = apiEndpoint.replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
   if (endsWithVersionSegment(base)) return `${base}/chat/completions`
@@ -2296,8 +2340,9 @@ function getOpenAiChatCompletionsEndpoint(apiEndpoint: string): string {
   return `${base}/v1/chat/completions`
 }
 
-function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
+function getOpenAiResponsesEndpoint(apiEndpoint: string, fullUrl?: boolean): string {
   const base = apiEndpoint.replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/responses`
@@ -2306,8 +2351,9 @@ function getOpenAiResponsesEndpoint(apiEndpoint: string): string {
   return `${base}/v1/responses`
 }
 
-function getOpenAiEmbeddingsEndpoint(apiEndpoint: string): string {
+function getOpenAiEmbeddingsEndpoint(apiEndpoint: string, fullUrl?: boolean): string {
   const base = apiEndpoint.replace(/\/+$/, '')
+  if (fullUrl === true) return base
   if (base.endsWith('/embeddings')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/embeddings`

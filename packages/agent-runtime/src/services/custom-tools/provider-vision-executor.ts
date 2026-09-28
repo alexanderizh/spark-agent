@@ -17,6 +17,8 @@ interface ProviderVisionExecutorContext extends ExecutorContext {
 
 interface ProviderVisionConfig {
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：原样请求，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   defaultModel?: string
   modelIds?: string[]
   modelType?: string
@@ -38,8 +40,10 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024
 const MAX_PROVIDER_RESPONSE_BYTES = 1_048_576
 
-function chatCompletionsEndpoint(apiEndpoint: string): string {
+function chatCompletionsEndpoint(apiEndpoint: string, fullUrl?: boolean): string {
   const base = apiEndpoint.trim().replace(/\/+$/, '')
+  // 渠道声明「完整 URL」：所填地址即最终请求地址，不做任何拼裁。
+  if (fullUrl === true) return base
   if (base.endsWith('/chat/completions')) return base
   if (base.endsWith('/responses')) return `${base.slice(0, -'/responses'.length)}/chat/completions`
   if (/\/v\d+$/i.test(base)) return `${base}/chat/completions`
@@ -166,7 +170,7 @@ export async function executeProviderVisionTool(
   if (!config.apiEndpoint?.trim()) {
     throw new CustomToolError('INVALID_INPUT', '图像理解 Provider 未配置 API 地址')
   }
-  const endpoint = chatCompletionsEndpoint(config.apiEndpoint)
+  const endpoint = chatCompletionsEndpoint(config.apiEndpoint, config.apiEndpointFullUrl)
   let targetOrigin: string
   try {
     targetOrigin = new URL(endpoint).origin

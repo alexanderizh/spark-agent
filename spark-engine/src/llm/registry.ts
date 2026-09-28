@@ -23,6 +23,11 @@ export interface HttpModelRegistration {
   readonly protocol: ModelProtocol;
   readonly model: string;
   readonly baseUrl?: string;
+  /**
+   * Host 渠道声明的 baseUrl 是完整请求地址（anthropic-messages 含 /messages 路径、
+   * openai-responses 含 /responses 路径）：协议实现跳过自动拼裁，原样请求。
+   */
+  readonly fullUrl?: boolean;
   readonly apiKey: string;
   readonly capabilities?: Partial<ModelCapabilities>;
   readonly contextWindowTokens?: number;
@@ -72,6 +77,7 @@ export class ModelRegistry {
           apiKey: options.apiKey,
           model: options.model,
           baseUrl,
+          ...(options.fullUrl === true ? { fullUrl: true } : {}),
           promptCaching: descriptor.capabilities.promptCaching,
           ...(options.fetch ? { fetch: options.fetch } : {}),
         });
@@ -80,6 +86,7 @@ export class ModelRegistry {
         apiKey: options.apiKey,
         model: options.model,
         baseUrl,
+        ...(options.fullUrl === true ? { fullUrl: true } : {}),
         ...(options.fetch ? { fetch: options.fetch } : {}),
       });
     });

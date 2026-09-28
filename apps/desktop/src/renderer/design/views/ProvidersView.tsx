@@ -153,6 +153,8 @@ type ProviderForm = {
   /** 模型定时禁用时段（峰谷定价规避）；空数组 = 清除全部 */
   modelSchedules: ProviderModelSchedule[]
   endpoint: string
+  /** 渠道声明的 BaseURL 是完整请求地址：调用时不再做任何自动拼裁 */
+  endpointFullUrl: boolean
   codexApiKind: 'chat' | 'responses' | 'embedding'
   /** 该渠道会话默认走 spark 引擎；协议无法映射时提交层强制 false */
   useSparkExecutor: boolean
@@ -235,6 +237,7 @@ function buildRequestEndpointPreview(
     | 'mediaCapabilities'
     | 'defaultModel'
     | 'endpoint'
+    | 'endpointFullUrl'
     | 'codexApiKind'
   >,
 ): EndpointPreview | null {
@@ -242,6 +245,10 @@ function buildRequestEndpointPreview(
   if (isMediaProviderModelType(form.modelType)) {
     const mediaProvider = form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
     return { label: '实际请求地址', url: getMediaRequestPreviewUrl(baseUrl, form, mediaProvider) }
+  }
+  // 「完整 URL」开启：所填地址即最终请求地址，预览原样展示。
+  if (form.endpointFullUrl) {
+    return { label: '实际请求地址（原样请求）', url: baseUrl }
   }
   if (form.provider === 'anthropic') {
     return { label: '实际请求地址', url: getAnthropicMessagesPreviewUrl(baseUrl) }
@@ -338,14 +345,22 @@ function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
 }
 
 function buildAutoFetchModelsSignature(
-  form: Pick<ProviderForm, 'apiKey' | 'endpoint' | 'modelType' | 'presetId' | 'provider'>,
+  form: Pick<
+    ProviderForm,
+    'apiKey' | 'endpoint' | 'endpointFullUrl' | 'modelType' | 'presetId' | 'provider'
+  >,
 ): string | null {
   if (form.modelType !== 'multimodal') return null
   const apiKey = form.apiKey.trim()
   if (apiKey.length < 8) return null
-  return [form.presetId, form.provider, form.endpoint.trim(), apiKey.length, apiKey.slice(-6)].join(
-    '|',
-  )
+  return [
+    form.presetId,
+    form.provider,
+    form.endpoint.trim(),
+    form.endpointFullUrl ? '1' : '0',
+    apiKey.length,
+    apiKey.slice(-6),
+  ].join('|')
 }
 
 function endsWithVersionSegment(value: string): boolean {
@@ -2182,6 +2197,7 @@ export function ProviderEditPanel({
     modelIds: [],
     modelSchedules: [],
     endpoint: '',
+    endpointFullUrl: false,
     codexApiKind: 'chat',
     useSparkExecutor: false,
     supportsMillionContext: false,
@@ -2345,6 +2361,7 @@ export function ProviderEditPanel({
               modelIds: [preset.defaultModel],
               modelSchedules: [],
               endpoint: preset.apiEndpoint,
+              endpointFullUrl: false,
               codexApiKind: resolveCodexApiKind(
                 preset.provider,
                 preset.apiEndpoint,
@@ -2380,6 +2397,7 @@ export function ProviderEditPanel({
           modelIds: [],
           modelSchedules: [],
           endpoint: '',
+          endpointFullUrl: false,
           codexApiKind: 'chat',
           useSparkExecutor: false,
           supportsMillionContext: false,
@@ -2428,6 +2446,7 @@ export function ProviderEditPanel({
             modelIds: uniqPreserveOrder(p.modelIds),
             modelSchedules: p.modelSchedules ?? [],
             endpoint: p.apiEndpoint ?? '',
+            endpointFullUrl: p.apiEndpointFullUrl === true,
             codexApiKind: resolveCodexApiKind(
               normalizeProviderKind(p.provider),
               p.apiEndpoint,
@@ -2999,6 +3018,9 @@ export function ProviderEditPanel({
       const sparkExecutorEligible =
         isChatModel && sparkExecutorAvailability(form.provider, form.codexApiKind).available
       const effectiveUseSparkExecutor = sparkExecutorEligible && form.useSparkExecutor
+      // 「完整 URL」只作用于文本链路；媒体渠道的地址本就原样拼接，落库保持 false
+      const effectiveEndpointFullUrl =
+        !isMediaProviderModelType(form.modelType) && form.endpointFullUrl
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
@@ -3009,6 +3031,8 @@ export function ProviderEditPanel({
           providerIcon: form.providerIcon,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
+          // 始终显式下发 true/false：关闭即清除落库字段（读取侧只透出 true）
+          apiEndpointFullUrl: effectiveEndpointFullUrl,
           supportsMillionContext: form.supportsMillionContext,
           contextWindow: form.contextWindow > 0 ? form.contextWindow : 0,
           // 始终下发：string 设置；空串 → null 清除
@@ -3037,6 +3061,7 @@ export function ProviderEditPanel({
           apiKey: form.apiKey.trim(),
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
+          ...(effectiveEndpointFullUrl && { apiEndpointFullUrl: true }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
           ...(effectiveUseSparkExecutor && { useSparkExecutor: true }),
           supportsMillionContext: form.supportsMillionContext,
@@ -3068,6 +3093,7 @@ export function ProviderEditPanel({
     ...(profileId ? { id: profileId } : {}),
     provider: form.provider,
     apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+    ...(form.endpointFullUrl && { apiEndpointFullUrl: true }),
     defaultModel: form.defaultModel.trim(),
     ...(form.provider === 'openai' ? { codexApiKind: form.codexApiKind } : {}),
     ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
@@ -3109,6 +3135,9 @@ export function ProviderEditPanel({
         ...(profileId ? { id: profileId } : {}),
         provider: form.provider,
         apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+        // 渠道「完整 URL」时 endpoint 是最终请求地址，models 地址无法可靠派生：
+        // 走 isFullUrl 候选探测（服务端同时会读已保存渠道的同名开关）。
+        ...(form.endpointFullUrl && { isFullUrl: true }),
         ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
       })
       return applyFetchedProviderModels(result.models, options)
@@ -3126,6 +3155,7 @@ export function ProviderEditPanel({
 
   const autoFetchApiKey = form.apiKey
   const autoFetchEndpoint = form.endpoint
+  const autoFetchEndpointFullUrl = form.endpointFullUrl
   const autoFetchModelType = form.modelType
   const autoFetchPresetId = form.presetId
   const autoFetchProvider = form.provider
@@ -3134,11 +3164,19 @@ export function ProviderEditPanel({
       buildAutoFetchModelsSignature({
         apiKey: autoFetchApiKey,
         endpoint: autoFetchEndpoint,
+        endpointFullUrl: autoFetchEndpointFullUrl,
         modelType: autoFetchModelType,
         presetId: autoFetchPresetId,
         provider: autoFetchProvider,
       }),
-    [autoFetchApiKey, autoFetchEndpoint, autoFetchModelType, autoFetchPresetId, autoFetchProvider],
+    [
+      autoFetchApiKey,
+      autoFetchEndpoint,
+      autoFetchEndpointFullUrl,
+      autoFetchModelType,
+      autoFetchPresetId,
+      autoFetchProvider,
+    ],
   )
 
   useEffect(() => {
@@ -3266,6 +3304,7 @@ export function ProviderEditPanel({
       defaultModel: preset.defaultModel,
       modelIds: [preset.defaultModel],
       endpoint: preset.apiEndpoint,
+      endpointFullUrl: false,
       codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
       supportsMillionContext: false,
       contextWindow: 0,
@@ -3495,10 +3534,29 @@ export function ProviderEditPanel({
                 placeholder="例：Anthropic · Claude"
               />
 
-              <label className="pv_form_label">
-                BaseURL
-                <span className="pv_form_sub">服务基础地址</span>
-              </label>
+              <div className="pv_form_label">
+                <span className="pv_form_label_row">
+                  BaseURL
+                  {!isMediaProviderModelType(form.modelType) && (
+                    <span
+                      className="pv_endpoint_full_url_toggle"
+                      title="开启后所填地址视为完整请求地址，调用时不再做任何自动拼裁（如补 /v1、摘版本段等）"
+                    >
+                      <Switch
+                        size="small"
+                        checked={form.endpointFullUrl}
+                        onChange={(checked: boolean) => set('endpointFullUrl', checked)}
+                      />
+                      <span className="pv_endpoint_full_url_toggle_text">完整 URL</span>
+                    </span>
+                  )}
+                </span>
+                <span className="pv_form_sub">
+                  {form.endpointFullUrl
+                    ? '完整请求地址，调用时原样发送'
+                    : '服务基础地址'}
+                </span>
+              </div>
               <div className="pv_field_stack">
                 <Input
                   value={form.endpoint}
@@ -3513,6 +3571,13 @@ export function ProviderEditPanel({
                     <code className="pv_endpoint_inline_hint_code">
                       {requestEndpointPreview.url}
                     </code>
+                  </div>
+                )}
+                {form.endpointFullUrl && form.provider === 'anthropic' && !form.useSparkExecutor && (
+                  <div className="pv_endpoint_full_url_warning" role="note">
+                    Claude
+                    适配器（SDK）会固定追加 /v1/messages：地址需以 /v1/messages 结尾才能自洽；非标准尾缀（如
+                    …/v3/messages）请开启「执行引擎（Spark）」以原样直连。
                   </div>
                 )}
               </div>

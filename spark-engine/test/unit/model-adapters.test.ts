@@ -703,3 +703,61 @@ function sseResponse(value: string): Response {
     headers: { 'content-type': 'text/event-stream', 'request-id': 'request-1' },
   })
 }
+
+describe('fullUrl（渠道完整地址开关）', () => {
+  it('anthropic：fullUrl=true 时原样请求完整地址，不改写尾缀', async () => {
+    const fixture = await loadFixture('anthropic-tool.sse')
+    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const service = new AnthropicMessagesService({
+      apiKey: 'secret',
+      model: 'claude-test',
+      baseUrl: 'https://gw.example.com/api/coding/v3/messages',
+      fullUrl: true,
+      fetch: fetcher,
+    })
+    await consumeLlmStream(service.stream(baseRequest(), context))
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/messages')
+  })
+
+  it('anthropic：fullUrl 未开启时非标 /messages 仍收敛为 /v1/messages（旧行为不变）', async () => {
+    const fixture = await loadFixture('anthropic-tool.sse')
+    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const service = new AnthropicMessagesService({
+      apiKey: 'secret',
+      model: 'claude-test',
+      baseUrl: 'https://gw.example.com/api/coding/v3/messages',
+      fetch: fetcher,
+    })
+    await consumeLlmStream(service.stream(baseRequest(), context))
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      'https://gw.example.com/api/coding/v3/v1/messages',
+    )
+  })
+
+  it('openai responses：fullUrl=true 时原样请求完整地址，不补 /v1', async () => {
+    const fixture = await loadFixture('openai-tool.sse')
+    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const service = new OpenAiResponsesService({
+      apiKey: 'secret',
+      model: 'gpt-test',
+      baseUrl: 'https://gw.example.com/api/coding/v3/responses',
+      fullUrl: true,
+      fetch: fetcher,
+    })
+    await consumeLlmStream(service.stream(baseRequest(), context))
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/responses')
+  })
+
+  it('openai responses：fullUrl 未开启时保持补 /v1/responses 的旧行为', async () => {
+    const fixture = await loadFixture('openai-tool.sse')
+    const fetcher = vi.fn(async () => sseResponse(fixture))
+    const service = new OpenAiResponsesService({
+      apiKey: 'secret',
+      model: 'gpt-test',
+      baseUrl: 'https://gw.example.com/api/coding/v3',
+      fetch: fetcher,
+    })
+    await consumeLlmStream(service.stream(baseRequest(), context))
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://gw.example.com/api/coding/v3/v1/responses')
+  })
+})

@@ -48,6 +48,8 @@ export interface SparkCliProviderProfile {
   defaultModel: string
   modelIds: string[]
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：上游请求原样发送，不做自动拼裁。 */
+  apiEndpointFullUrl?: boolean
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   contextWindow?: number
   modelContextWindows?: Record<string, number>
@@ -498,8 +500,13 @@ function upstreamUrl(
   if (protocol === 'anthropic-messages') {
     // 渠道配置允许填根地址 / …/v1 / 完整 …/v1/messages；共享归一化保证恰好一个
     // /v1/messages 后缀（裸 /messages 也要收敛，否则会拼成 …/messages/v1/messages）。
-    return resolveAnthropicMessagesUrl(provider.apiEndpoint?.trim() || fallback)
+    // 渠道声明「完整 URL」时原样请求，不做任何拼裁。
+    return resolveAnthropicMessagesUrl(provider.apiEndpoint?.trim() || fallback, {
+      fullUrl: provider.apiEndpointFullUrl === true,
+    })
   }
+  // openai-responses：渠道声明「完整 URL」时原样请求（仅去尾部斜杠）。
+  if (provider.apiEndpointFullUrl === true) return base
   if (base.endsWith('/responses')) return base
   if (base.endsWith('/chat/completions'))
     return `${base.slice(0, -'/chat/completions'.length)}/responses`

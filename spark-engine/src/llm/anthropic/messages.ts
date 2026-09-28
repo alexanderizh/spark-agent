@@ -10,6 +10,8 @@ export interface AnthropicMessagesOptions {
   readonly apiKey: string
   readonly model: string
   readonly baseUrl?: string
+  /** baseUrl 是完整请求地址（含 /messages 路径）：跳过自动拼裁，原样请求。 */
+  readonly fullUrl?: boolean
   readonly version?: string
   readonly fetch?: FetchLike
   readonly promptCaching?: boolean
@@ -28,7 +30,10 @@ export class AnthropicMessagesService implements LlmService {
     const startedAt = Date.now()
     const opened = await openSse({
       provider: 'anthropic',
-      url: messagesEndpoint(this.#options.baseUrl ?? 'https://api.anthropic.com'),
+      url: messagesEndpoint(
+        this.#options.baseUrl ?? 'https://api.anthropic.com',
+        this.#options.fullUrl === true,
+      ),
       headers: {
         ...clientIdentityHeaders(request.metadata.sessionId),
         // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，按端点形态投放。
@@ -471,8 +476,10 @@ function cacheCreationTokens(value: unknown): number {
   return Object.values(record ?? {}).reduce<number>((sum, item) => sum + token(item), 0)
 }
 
-function messagesEndpoint(value: string): string {
+function messagesEndpoint(value: string, fullUrl?: boolean): string {
   const normalized = value.replace(/\/+$/u, '')
+  // 渠道声明「完整 URL」：所填地址即最终请求地址，仅去尾部斜杠，不做任何拼裁。
+  if (fullUrl === true) return normalized
   // 渠道配置允许填完整 messages 地址；直接追加会拼成 …/v1/messages/v1/messages（404）。
   if (normalized.endsWith('/v1/messages')) return normalized
   if (normalized.endsWith('/messages')) return normalized.replace(/\/messages$/u, '/v1/messages')
