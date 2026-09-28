@@ -84,3 +84,4 @@ This project is indexed by GitNexus as **spark-agent** (97991 symbols, 184699 re
 - 后续涉及多媒体 Provider、MediaModelManifest、模型参数枚举或自定义渠道时，先阅读该记忆文档，再按其中的分层流程定位改动范围。
 - Anthropic 兼容渠道（Claude 适配器 / spark 引擎 anthropic 路由 / 渠道探测 / 标题与分支名生成）的端点归一化与凭据投放经验，见 `.agents/memory/anthropic-compatible-channel-endpoints-and-credentials.md`。
 - 后续涉及 `ANTHROPIC_BASE_URL`、`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`、anthropic 端点拼路径或渠道 401/404 排查时，先阅读该记忆文档。
+- React 浮层（portal 到 body）不要放进 Dropdown/Menu 的 `popupRender`，以及该做法导致浮层关闭后永久残留的根因，见 `.agents/memory/react-portal-floating-layer-inside-dropdown-popup.md`。

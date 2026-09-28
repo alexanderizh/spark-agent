@@ -5589,7 +5589,7 @@ function AgentPicker({
   )
 }
 
-function ProviderModelPicker({
+export function ProviderModelPicker({
   icon,
   providers,
   selectedProviderId,
@@ -5822,6 +5822,7 @@ function ProviderModelPicker({
       : null
 
   return (
+    <>
     <Dropdown
       menu={{ items: [] }}
       open={open}
@@ -6085,21 +6086,6 @@ function ProviderModelPicker({
               )
             })}
           </div>
-          {autoRouterHoverModel != null && autoRouterHoverTarget != null && (
-            <AutoRouterHoverCard
-              model={autoRouterHoverModel}
-              anchorEl={autoRouterHoverTarget.anchorEl}
-            />
-          )}
-          {hoveredQuotaProvider != null && providerQuotaHoverTarget != null && (
-            <ProviderQuotaHoverCard
-              providerName={hoveredQuotaProvider.name}
-              quota={providerQuotas.quotaMap[hoveredQuotaProvider.id]}
-              error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
-              loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
-              anchorEl={providerQuotaHoverTarget.anchorEl}
-            />
-          )}
         </div>
       )}
     >
@@ -6126,6 +6112,29 @@ function ProviderModelPicker({
         </button>
       </div>
     </Dropdown>
+    {/*
+       * 悬浮卡片必须渲染在 Dropdown popup 之外。
+       * 卡片是 portal 到 document.body 的定位浮层，一旦放在 popupRender 内，
+       * popup 关闭时其 React 子树不再随宿主状态更新（rc-motion 缓存 children），
+       * 卡片就会永久残留在屏幕上；放在 Dropdown 同级由宿主常规渲染控制，
+       * 菜单关闭（open=false / target 清空）即立刻卸载。
+       */}
+    {autoRouterHoverModel != null && autoRouterHoverTarget != null && (
+      <AutoRouterHoverCard
+        model={autoRouterHoverModel}
+        anchorEl={autoRouterHoverTarget.anchorEl}
+      />
+    )}
+    {hoveredQuotaProvider != null && providerQuotaHoverTarget != null && (
+      <ProviderQuotaHoverCard
+        providerName={hoveredQuotaProvider.name}
+        quota={providerQuotas.quotaMap[hoveredQuotaProvider.id]}
+        error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
+        loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
+        anchorEl={providerQuotaHoverTarget.anchorEl}
+      />
+    )}
+    </>
   )
 }
 
