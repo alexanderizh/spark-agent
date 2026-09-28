@@ -109,6 +109,7 @@ import type {
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provider-card-actions'
+import { resolveVendorByKeywordHints } from './provider-vendor-hints'
 import {
   useProviderCardFilters,
   type ProviderCardEnabledFilter,
@@ -1508,7 +1509,7 @@ function ProvidersView() {
                   : (resolveManagedPlatformVendor(p) ??
                     resolveBuiltinLocalCliVendor(p) ??
                     vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
-                    guessVendorByName(p.name, getUniqueVendorIds()) ??
+                    guessVendorByName(p.name, getUniqueVendorIds(), p.modelIds) ??
                     (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META))
                 const builtin = isBuiltInLocalCliProvider(p)
                 const builtinDesc = isLocalCodexCliProvider(p)
@@ -1699,9 +1700,15 @@ function ProvidersView() {
  * 名称匹配的优先级：
  *   1. 精确匹配 vendor.name
  *   2. 否则取 catalog 中 name 包含 / 被包含 的第一项
- *   3. 否则返回 null（fallback 到字母）
+ *   3. 否则按名称/模型 ID 关键词推断品牌（目录匹配不到的自定义供应商，
+ *      见 provider-vendor-hints.ts）
+ *   4. 否则返回 null（fallback 到字母）
  */
-function guessVendorByName(name: string, vendorIds: string[]): VendorMeta | null {
+function guessVendorByName(
+  name: string,
+  vendorIds: string[],
+  modelIds?: readonly string[],
+): VendorMeta | null {
   for (const id of vendorIds) {
     const meta = getVendorMeta(id)
     if (!meta) continue
@@ -1712,7 +1719,7 @@ function guessVendorByName(name: string, vendorIds: string[]): VendorMeta | null
     if (!meta) continue
     if (name.includes(meta.name) || meta.name.includes(name)) return meta
   }
-  return null
+  return resolveVendorByKeywordHints(name, modelIds)
 }
 
 /**
@@ -2489,7 +2496,7 @@ export function ProviderEditPanel({
       }
     }
     // 自定义模式：尝试按 name 反推 vendor
-    const guessed = guessVendorByName(form.name, getUniqueVendorIds())
+    const guessed = guessVendorByName(form.name, getUniqueVendorIds(), form.modelIds)
     if (guessed) {
       // 仅当该 vendor 在当前协议格式下存在预设时才采用；
       // 否则可能是从另一种格式切换过来遗留的名称（如 anthropic → openai），
