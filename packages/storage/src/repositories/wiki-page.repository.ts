@@ -41,6 +41,8 @@ export interface WikiPageRow {
   version: number
   content_hash: string | null
   sort_order: number
+  /** 置顶标记（0/1）：纯展示元数据，toggle 不推进 version、不留历史版本 */
+  pinned: number
   source_type: string | null
   source_session_id: string | null
   author_role: string | null
@@ -52,10 +54,10 @@ export interface WikiPageRow {
   updated_at: number
 }
 
-/** insert 入参：version 从 1 起、时间戳与 content_hash 由仓储填充 */
+/** insert 入参：version 从 1 起、时间戳与 content_hash 由仓储填充；pinned 走列默认 0 */
 export type WikiPageInsert = Omit<
   WikiPageRow,
-  'created_at' | 'updated_at' | 'version' | 'content_hash'
+  'created_at' | 'updated_at' | 'version' | 'content_hash' | 'pinned'
 >
 
 /** update 时文本字段变更必须带 body（fail-loud，见模块注释） */
@@ -196,6 +198,19 @@ export class WikiPageRepository extends BaseRepository {
     })
     tx()
     return this.findById<WikiPageRow>(id)!
+  }
+
+  /**
+   * 置顶开关：直接列更新，不推进 version、不写历史版本、不触发 FTS，
+   * 也不刷新 updated_at（置顶不是内容更新，不应扰动「最近更新」排序）。
+   * 页面不存在时返回 null（调用方转结构化错误，不抛裸异常）。
+   */
+  setPinned(id: string, pinned: boolean): WikiPageRow | null {
+    const existing = this.findById<WikiPageRow>(id)
+    if (existing == null) return null
+    if (existing.pinned === (pinned ? 1 : 0)) return existing
+    this.raw.prepare('UPDATE wiki_page SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id)
+    return this.findById<WikiPageRow>(id)
   }
 
   /**

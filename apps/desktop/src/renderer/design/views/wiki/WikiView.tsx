@@ -38,6 +38,9 @@ import {
   filterArchivedTree,
   filterWikiTree,
   findAncestorIds,
+  sortWikiNodes,
+  type WikiMoveHint,
+  type WikiTreeSort,
 } from './WikiPageTree'
 import { WikiVersionHistory } from './WikiVersionHistory'
 import { WikiCandidatePanel } from './WikiCandidatePanel'
@@ -52,6 +55,24 @@ const KIND_OPTIONS: Array<{ value: WikiPageKind; label: string }> = [
   { value: 'reference', label: '参考' },
   { value: 'note', label: '随笔' },
 ]
+
+/** 目录树排序方式（对齐会话侧栏：置顶段恒在最前，段内按所选方式排）。 */
+const TREE_SORT_OPTIONS: Array<{ value: WikiTreeSort; label: string }> = [
+  { value: 'manual', label: '手动排序' },
+  { value: 'title', label: '按标题' },
+  { value: 'updated', label: '最近更新' },
+]
+
+const TREE_SORT_STORAGE_KEY = 'spark.wiki.treeSort'
+
+function loadTreeSort(): WikiTreeSort {
+  try {
+    const raw = localStorage.getItem(TREE_SORT_STORAGE_KEY)
+    return raw === 'title' || raw === 'updated' ? raw : 'manual'
+  } catch {
+    return 'manual'
+  }
+}
 
 type PageDialogState =
   | { mode: 'create'; parentId: string | null; title: string; kind: WikiPageKind }
@@ -106,6 +127,8 @@ export function WikiView() {
   const { invoke: readRevision } = useIpcInvoke('wiki:page:revision:read')
   const { invoke: restoreRevision } = useIpcInvoke('wiki:page:revision:restore')
   const { invoke: pageBacklinks } = useIpcInvoke('wiki:page:backlinks')
+  const { invoke: movePage } = useIpcInvoke('wiki:page:move')
+  const { invoke: pinPage } = useIpcInvoke('wiki:page:pin')
   const { invoke: searchWiki } = useIpcInvoke('wiki:search')
   const { invoke: listCandidates } = useIpcInvoke('wiki:candidate:list')
   const { invoke: listSkillProposals } = useIpcInvoke('wiki:skill:list')
@@ -151,6 +174,17 @@ export function WikiView() {
   >([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // 目录树排序：视图级偏好，localStorage 持久化（不占全局设置键位）
+  const [treeSort, setTreeSort] = useState<WikiTreeSort>(loadTreeSort)
+  /** 标签编辑弹层（树右键「编辑标签…」入口，走既有 update 通道 + CAS）。 */
+  const [tagDialog, setTagDialog] = useState<{ pageId: string; tagsText: string } | null>(null)
+  /** 面板脏态上提：预览/编辑切换时用来拦截「未保存修改被静默丢弃」。 */
+  const [panelDirty, setPanelDirty] = useState(false)
+  /** 丢弃草稿信号：递增时 WikiPagePanel 重置本地草稿（配合切换确认弹窗）。 */
+  const [discardSignal, setDiscardSignal] = useState(0)
+  /** 阅读区容器：右键「全选」的范围 + 选中态判定。 */
+  const articleBodyRef = useRef<HTMLDivElement>(null)
+  const [hasSelection, setHasSelection] = useState(false)
 
   const activeSpace = useMemo(
     () => spaces.find((s) => s.id === activeSpaceId) ?? null,
@@ -351,15 +385,29 @@ export function WikiView() {
     })
   }, [activePageId, pages])
 
-  /** 树数据：构建 → 标题过滤 →（可选）归档视图过滤。 */
+  useEffect(() => {
+    try {
+      localStorage.setItem(TREE_SORT_STORAGE_KEY, treeSort)
+    } catch {
+      // 隐私模式等场景写入失败：排序降级为会话内记忆，不影响功能
+    }
+  }, [treeSort])
+
+  /** 树数据：构建 → 同级排序 → 标题过滤 →（可选）归档视图过滤。 */
   const { nodes: treeNodes, matchedIds } = useMemo(() => {
     const built = buildWikiTree(pages)
-    const filtered = filterWikiTree(built, treeQuery)
+    const sorted = sortWikiNodes(built, treeSort)
+    const filtered = filterWikiTree(sorted, treeQuery)
     return {
       nodes: archivedOnly ? filterArchivedTree(filtered.nodes) : filtered.nodes,
       matchedIds: filtered.matchedIds,
     }
-  }, [pages, treeQuery, archivedOnly])
+  }, [pages, treeQuery, archivedOnly, treeSort])
+
+  /** 拖拽态：归档视图 / 过滤命中时列表不是全集，重排容易误操作，一律禁拖。 */
+  const dragEnabled = !archivedOnly && treeQuery.trim().length === 0
+  /** 前后插重排只在手动排序下有意义；其余模式仍可「移入为子页」做结构调整。 */
+  const reorderEnabled = dragEnabled && treeSort === 'manual'
 
   const archivedCount = useMemo(() => pages.filter((p) => p.status === 'archived').length, [pages])
 
@@ -576,6 +624,220 @@ export function WikiView() {
       })
     },
     [deletePage, refreshPages, activeSpaceId, activePageId, toast],
+  )
+
+  /** 同级分组的展示序（与树渲染同一把尺：置顶段在前 + 当前排序方式）。 */
+  const orderGroup = useCallback(
+    (group: readonly WikiPageMeta[]): WikiPageMeta[] =>
+      sortWikiNodes(
+        group.map((page) => ({ page, children: [] })),
+        treeSort,
+      ).map((node) => node.page),
+    [treeSort],
+  )
+
+  /**
+   * 目录树拖拽落库：把落点提示解析为 (新父级, 插入下标)，按展示序重编号同级
+   * 分组后只提交真正变化的页面。move 走统一写入原语（每次推进 version、留
+   * 历史快照——结构调整在版本历史里可见），防环在本地预检一道、主进程还有
+   * 一道（isDescendant）双保险。
+   */
+  const handleMove = useCallback(
+    async (pageId: string, hint: WikiMoveHint) => {
+      if (activeSpaceId == null) return
+      const byId = new Map(pages.map((p) => [p.id, p]))
+      const dragged = byId.get(pageId)
+      if (dragged == null) return
+
+      let parentId: string | null
+      let index: number
+      if (hint.kind === 'root-end') {
+        parentId = null
+        index = Number.MAX_SAFE_INTEGER
+      } else {
+        const target = byId.get(hint.pageId)
+        if (target == null || target.status === 'archived') return
+        if (hint.kind === 'into') {
+          parentId = hint.pageId
+          index = Number.MAX_SAFE_INTEGER
+        } else {
+          parentId = target.parentId ?? null
+          const group = orderGroup(pages.filter((p) => p.parentId === parentId && p.id !== pageId))
+          const at = group.findIndex((p) => p.id === hint.pageId)
+          index = hint.kind === 'before' ? at : at + 1
+        }
+      }
+
+      // 防环预检：新父级链上出现自己 = 把自己拖进了自己的子树
+      if (parentId === pageId) return
+      let cursor = parentId
+      while (cursor != null) {
+        if (cursor === pageId) {
+          toast.warning('不能把页面移动到它自己的子页面下')
+          return
+        }
+        cursor = byId.get(cursor)?.parentId ?? null
+      }
+
+      const group = orderGroup(pages.filter((p) => p.parentId === parentId && p.id !== pageId))
+      const clamped = Math.min(index, group.length)
+      const ordered = [...group.slice(0, clamped), dragged, ...group.slice(clamped)]
+      const moves = ordered
+        .map((page, desired) => ({ page, desired }))
+        .filter(
+          ({ page, desired }) =>
+            (page.id === pageId && page.parentId !== parentId) || page.sortOrder !== desired,
+        )
+        .map(({ page, desired }) => ({
+          pageId: page.id,
+          parentId: page.id === pageId ? parentId : (page.parentId ?? null),
+          sortOrder: desired,
+          expectedVersion: page.version,
+        }))
+      if (moves.length === 0) return
+      try {
+        await Promise.all(moves.map((m) => movePage(m)))
+        await refreshPages(activeSpaceId)
+        if (parentId != null) {
+          setExpandedIds((prev) => new Set(prev).add(parentId))
+        }
+        toast.success('已移动')
+      } catch (err) {
+        toast.error(`移动失败：${errorText(err)}`)
+        void refreshPages(activeSpaceId)
+      }
+    },
+    [pages, activeSpaceId, movePage, refreshPages, orderGroup, toast],
+  )
+
+  /** 置顶开关：纯展示元数据（不推进版本、不留历史），失败如实报错。 */
+  const handleTogglePin = useCallback(
+    async (target: WikiPageMeta) => {
+      try {
+        await pinPage({ pageId: target.id, pinned: !target.pinned })
+        if (activeSpaceId != null) await refreshPages(activeSpaceId)
+      } catch (err) {
+        toast.error(`置顶设置失败：${errorText(err)}`)
+      }
+    },
+    [pinPage, refreshPages, activeSpaceId, toast],
+  )
+
+  /** 标签编辑弹层提交（复用 update 通道 + CAS，与编辑器内标签同一落库路径）。 */
+  const submitTagDialog = useCallback(async () => {
+    if (tagDialog == null) return
+    const target = pages.find((p) => p.id === tagDialog.pageId)
+    if (target == null) {
+      setTagDialog(null)
+      return
+    }
+    const tags = tagDialog.tagsText
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+    try {
+      setSaving(true)
+      await updatePage({ pageId: target.id, expectedVersion: target.version, tags })
+      if (activeSpaceId != null) await refreshPages(activeSpaceId)
+      if (activePageId === target.id) await loadPage(target.id)
+      setTagDialog(null)
+      toast.success('标签已更新')
+    } catch (err) {
+      toast.error(`标签更新失败：${errorText(err)}`)
+    } finally {
+      setSaving(false)
+    }
+  }, [tagDialog, pages, updatePage, refreshPages, activeSpaceId, activePageId, loadPage, toast])
+
+  /** 预览/编辑切换到预览侧：有未保存草稿时先确认再丢弃（不静默吞掉用户输入）。 */
+  const switchToPreview = useCallback(() => {
+    if (panelEditing && panelDirty) {
+      Modal.confirm({
+        title: '切换到预览？',
+        content: '有未保存的修改，切换后将放弃这些修改。',
+        okText: '放弃并切换',
+        cancelText: '继续编辑',
+        onOk: () => {
+          setDiscardSignal((n) => n + 1)
+          setPanelEditing(false)
+        },
+      })
+      return
+    }
+    setPanelEditing(false)
+  }, [panelEditing, panelDirty])
+
+  // 阅读区选中态跟踪：右键菜单「复制选中文字」的可用性依据。
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const sel = document.getSelection()
+      const next =
+        sel != null &&
+        !sel.isCollapsed &&
+        sel.anchorNode != null &&
+        articleBodyRef.current?.contains(sel.anchorNode) === true
+      setHasSelection((prev) => (prev === next ? prev : next))
+    }
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => document.removeEventListener('selectionchange', onSelectionChange)
+  }, [])
+
+  /** 阅读区右键菜单：选中操作（复制/全选）+ 页面级操作，与顶栏「更多」同源。 */
+  const articleMenu = useMemo<MenuProps | null>(() => {
+    if (page == null) return null
+    const target = pages.find((p) => p.id === page.id)
+    const archived = page.status === 'archived'
+    return {
+      items: [
+        { key: 'copy-sel', label: '复制选中文字', disabled: !hasSelection },
+        { key: 'select-all', label: '全选' },
+        { type: 'divider' },
+        { key: 'edit', label: '编辑此页', disabled: archived },
+        { key: 'copy-link', label: '复制双链' },
+        archived ? { key: 'restore', label: '取消归档' } : { key: 'archive', label: '归档' },
+        { key: 'delete', label: '删除', danger: true },
+      ],
+      onClick: ({ key }) => {
+        if (key === 'copy-sel') {
+          const text = document.getSelection()?.toString() ?? ''
+          if (text.length > 0) void navigator.clipboard?.writeText(text)
+        } else if (key === 'select-all') {
+          const el = articleBodyRef.current
+          if (el != null) {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            const sel = document.getSelection()
+            sel?.removeAllRanges()
+            sel?.addRange(range)
+          }
+        } else if (key === 'edit') {
+          setPanelEditing(true)
+        } else if (key === 'copy-link') {
+          void navigator.clipboard?.writeText(`[[${page.title}]]`)
+        } else if (target == null) {
+          return
+        } else if (key === 'archive') {
+          handleArchive(target)
+        } else if (key === 'restore') {
+          handleRestore(target)
+        } else if (key === 'delete') {
+          handleDelete(target)
+        }
+      },
+    }
+  }, [page, pages, hasSelection, handleArchive, handleRestore, handleDelete])
+
+  /** 目录树排序菜单（视图级偏好，选中的方式立即生效并持久化）。 */
+  const sortMenu = useMemo<MenuProps>(
+    () => ({
+      items: TREE_SORT_OPTIONS.map((opt) => ({ key: opt.value, label: opt.label })),
+      selectable: true,
+      selectedKeys: [treeSort],
+      onClick: ({ key }) => {
+        if (key === 'manual' || key === 'title' || key === 'updated') setTreeSort(key)
+      },
+    }),
+    [treeSort],
   )
 
   const openHistory = useCallback(async () => {
@@ -831,7 +1093,15 @@ export function WikiView() {
             ) : (
               <>
                 <div className="wiki_rail_label">
-                  {archivedOnly ? '归档' : '页面'} · {pages.length}
+                  <span>
+                    {archivedOnly ? '归档' : '页面'} · {pages.length}
+                  </span>
+                  <Dropdown menu={sortMenu} trigger={['click']} placement="bottomLeft">
+                    <button type="button" className="wiki_rail_sort" title="排序方式">
+                      {TREE_SORT_OPTIONS.find((o) => o.value === treeSort)?.label ?? '手动排序'}
+                      <Icons.ChevronDown size={10} />
+                    </button>
+                  </Dropdown>
                 </div>
 
                 {pagesLoading ? (
@@ -853,6 +1123,8 @@ export function WikiView() {
                     expandedIds={expandedIds}
                     matchedIds={matchedIds}
                     query={treeQuery}
+                    dragEnabled={dragEnabled}
+                    reorderEnabled={reorderEnabled}
                     onToggle={(id) =>
                       setExpandedIds((prev) => {
                         const next = new Set(prev)
@@ -878,9 +1150,14 @@ export function WikiView() {
                         kind: target.kind,
                       })
                     }
+                    onEditTags={(target) =>
+                      setTagDialog({ pageId: target.id, tagsText: target.tags.join(', ') })
+                    }
                     onArchive={handleArchive}
                     onRestore={handleRestore}
                     onDelete={handleDelete}
+                    onTogglePin={(target) => void handleTogglePin(target)}
+                    onMove={(pageId, hint) => void handleMove(pageId, hint)}
                   />
                 )}
               </>
@@ -980,8 +1257,28 @@ export function WikiView() {
                 />
               </div>
               {searchBusy && <span className="wiki_hint">检索中…</span>}
-              {!candidateView && !skillView && page != null && (
+              {!candidateView && !skillView && hits == null && page != null && (
                 <div className="wiki_actions">
+                  {/* 预览/编辑分段开关：胶囊容器 + 主色选中滑块（对齐 diff 视图切换语言） */}
+                  <div className="wiki_mode_switch" role="group" aria-label="视图模式">
+                    <button
+                      type="button"
+                      className={`wiki_mode_seg${!panelEditing ? ' is-on' : ''}`}
+                      aria-pressed={!panelEditing}
+                      onClick={switchToPreview}
+                    >
+                      预览
+                    </button>
+                    <button
+                      type="button"
+                      className={`wiki_mode_seg${panelEditing ? ' is-on' : ''}`}
+                      aria-pressed={panelEditing}
+                      disabled={page.status === 'archived'}
+                      onClick={() => setPanelEditing(true)}
+                    >
+                      编辑
+                    </button>
+                  </div>
                   <button
                     type="button"
                     className="wiki_top_ib"
@@ -1167,18 +1464,26 @@ export function WikiView() {
                 </div>
               </div>
             ) : (
-              <div className="wiki_body">
-                <WikiPagePanel
-                  page={page}
-                  saving={saving}
-                  error={pageError}
-                  editing={panelEditing}
-                  onEditingChange={setPanelEditing}
-                  onSave={handleSave}
-                  backlinks={backlinks}
-                  onOpenBacklink={(pageId) => setActivePageId(pageId)}
-                />
-              </div>
+              <Dropdown
+                menu={articleMenu ?? { items: [] }}
+                trigger={['contextMenu']}
+                disabled={articleMenu == null}
+              >
+                <div className="wiki_body" ref={articleBodyRef}>
+                  <WikiPagePanel
+                    page={page}
+                    saving={saving}
+                    error={pageError}
+                    editing={panelEditing}
+                    onEditingChange={setPanelEditing}
+                    onSave={handleSave}
+                    backlinks={backlinks}
+                    onOpenBacklink={(pageId) => setActivePageId(pageId)}
+                    onDirtyChange={setPanelDirty}
+                    discardSignal={discardSignal}
+                  />
+                </div>
+              </Dropdown>
             )}
           </div>
         </div>
@@ -1211,6 +1516,30 @@ export function WikiView() {
           onChange={(e) => setSpaceName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void submitSpace()
+          }}
+        />
+      </Modal>
+
+      <Modal
+        open={tagDialog != null}
+        title="编辑标签"
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={saving}
+        onOk={() => void submitTagDialog()}
+        onCancel={() => setTagDialog(null)}
+      >
+        <input
+          className="wiki_editor_input"
+          style={{ width: '100%' }}
+          value={tagDialog?.tagsText ?? ''}
+          placeholder="逗号分隔，如 sqlite, fts, cjk"
+          aria-label="页面标签"
+          onChange={(e) =>
+            setTagDialog((prev) => (prev == null ? prev : { ...prev, tagsText: e.target.value }))
+          }
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void submitTagDialog()
           }}
         />
       </Modal>

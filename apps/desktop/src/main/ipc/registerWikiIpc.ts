@@ -312,6 +312,24 @@ export function registerWikiIpc(): void {
     }
   })
 
+  /**
+   * 置顶开关：纯展示元数据——不推进 version、不写历史版本、不动 FTS，
+   * 所以 receipt 里返回的 version 是当前值（未 +1）、indexReady 恒为 true。
+   */
+  typedIpcHandle('wiki:page:pin', async (request) => {
+    const s = stackForPage(request.pageId)
+    if (s == null) throw new Error('页面不存在')
+    const result = await s.writeService.setPagePinned(request.pageId, request.pinned)
+    if (!result.ok) throw new Error(result.message)
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: true,
+    }
+  })
+
   typedIpcHandle('wiki:page:archive', async (request) => {
     const s = stackForPage(request.pageId)
     if (s == null) throw new Error('页面不存在')
@@ -620,6 +638,7 @@ function toPageMeta(row: {
   status: 'draft' | 'published' | 'archived'
   version: number
   sort_order: number
+  pinned: number
   source_type: string | null
   author_role: string | null
   hit_count: number
@@ -645,6 +664,7 @@ function toPageMeta(row: {
     status: row.status,
     version: row.version,
     sortOrder: row.sort_order,
+    pinned: row.pinned === 1,
     sourceType: row.source_type,
     authorRole: row.author_role,
     hitCount: row.hit_count,

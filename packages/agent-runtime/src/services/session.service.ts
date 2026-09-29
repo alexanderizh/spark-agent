@@ -2052,6 +2052,33 @@ export class SessionService {
     return { ok: true, id: result.row.id, title: result.row.title, version: result.row.version }
   }
 
+  /**
+   * wiki 取消归档桥（归档态 → published，并重建 [[双链]]）。
+   *
+   * 与 archive 对称：归档时出边删除、入边降级为红链；还原时按正文重建出边，
+   * 并让空间内指向本页的红链重新连上（归档期间别人写的引用不会丢）。
+   * 可见性仍按空间成员判定（getById 不滤状态），所以归档页也能被还原。
+   */
+  async bridgeWikiRestore(params: {
+    sessionId: string
+    pageId: string
+  }): Promise<WikiBridgeWriteReceipt> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    if (!this.isWikiPageVisible(wiki, params.pageId)) {
+      return { ok: false, error: '页面不在本会话可见范围内' }
+    }
+    const result = await wiki.writeService.restoreFromArchive(params.pageId)
+    if (!result.ok) return { ok: false, error: result.message }
+    return {
+      ok: true,
+      id: result.row.id,
+      title: result.row.title,
+      version: result.row.version,
+      indexReady: result.indexReady,
+    }
+  }
+
   /** wiki 物理删除页面桥（删除屏障，不可恢复）。 */
   async bridgeWikiDelete(params: {
     sessionId: string
@@ -7382,8 +7409,8 @@ export class SessionService {
    * Attach spark_wiki MCP server（in-process 版，claude SDK 路径）。
    *
    * 挂载集由设置的「工具瘦身」档位决定（§8.3）：
-   *   - 关闭（默认）：5 只读 + 5 写全部挂载；
-   *   - 开启：核心六件套常驻，低频工具（backlinks/archive/delete/link）收进 wiki_admin。
+   *   - 关闭（默认）：5 只读 + 6 写全部挂载；
+   *   - 开启：核心六件套常驻，低频工具（backlinks/archive/restore/delete/link）收进 wiki_admin。
    * 写工具**不进 allowedTools**，因此由 SDK 走 canUseTool 审批；只读工具在
    * spark-engine-runtime 的白名单里免审批。
    *
@@ -7541,6 +7568,18 @@ export class SessionService {
             this.summarizeWikiWriteReceipt(
               'wiki_archive',
               await this.bridgeWikiArchive({
+                sessionId,
+                pageId: typeof args.id === 'string' ? args.id : '',
+              }),
+            ),
+        },
+        wiki_restore: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_restore')!.description,
+          schema: { id: z.string().min(1).max(64) },
+          run: async (args) =>
+            this.summarizeWikiWriteReceipt(
+              'wiki_restore',
+              await this.bridgeWikiRestore({
                 sessionId,
                 pageId: typeof args.id === 'string' ? args.id : '',
               }),
@@ -7748,6 +7787,9 @@ export class SessionService {
     const indexNote = receipt.indexReady === false ? '，检索索引未就绪' : ''
     if (kind === 'wiki_archive') {
       return `已归档 [${receipt.id}] ${receipt.title}`
+    }
+    if (kind === 'wiki_restore') {
+      return `已取消归档 [${receipt.id}] ${receipt.title}（v${receipt.version}${indexNote}）`
     }
     return `已写入 [${receipt.id}] ${receipt.title}（v${receipt.version}${indexNote}）`
   }

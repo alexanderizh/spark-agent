@@ -483,6 +483,26 @@ export class WikiWriteService {
   }
 
   /**
+   * 置顶开关（目录树「置顶」）。纯展示元数据：不推进 version、不写历史版本、
+   * 不触碰正文与 FTS——所以不走 commitPage 内容提交路径，而是仓储直接列更新。
+   * 前端 receipt 沿用 WikiWriteReceipt 形状，indexReady 恒为 true（索引未动）。
+   */
+  async setPagePinned(
+    pageId: string,
+    pinned: boolean,
+  ): Promise<{ ok: true; row: WikiPageRow } | { ok: false; message: string }> {
+    try {
+      const row = this.pageRepo.setPinned(pageId, pinned)
+      if (row == null) return { ok: false, message: '页面不存在' }
+      return { ok: true, row }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn(`wiki page pin 失败：id=${pageId} pinned=${pinned} — ${msg}`)
+      return { ok: false, message: `置顶设置失败：${msg}` }
+    }
+  }
+
+  /**
    * 物理删除页面（删除屏障，不可恢复）。
    *
    * 清理顺序（先断图、再删索引与行、最后清文件），全部按「不可逆但可幂等重试」设计：

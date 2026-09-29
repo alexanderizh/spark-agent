@@ -96,4 +96,14 @@ describe('Wiki IPC 契约（S2/S3/S4 通道）', () => {
       }).success,
     ).toBe(true)
   })
+
+  it('置顶通道：pinned 必须是显式布尔（不接受 0/1 宽松入参）', () => {
+    const schema = WikiIpcSchemaRegistry['wiki:page:pin']
+    expect(schema.safeParse({ pageId: 'wp_x', pinned: true }).success).toBe(true)
+    expect(schema.safeParse({ pageId: 'wp_x', pinned: false }).success).toBe(true)
+    // SQLite 落 0/1，但 IPC 边界收紧为布尔：宽松数值会让调用方语义漂移
+    expect(schema.safeParse({ pageId: 'wp_x', pinned: 1 }).success).toBe(false)
+    expect(schema.safeParse({ pageId: 'wp_x' }).success).toBe(false)
+    expect(schema.safeParse({ pageId: '', pinned: true }).success).toBe(false)
+  })
 })

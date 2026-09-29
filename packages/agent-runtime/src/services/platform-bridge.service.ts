@@ -514,6 +514,7 @@ export interface PlatformBridgeDeps {
       tags?: string[]
     }): Promise<unknown>
     bridgeWikiArchive(params: { sessionId: string; pageId: string }): Promise<unknown>
+    bridgeWikiRestore(params: { sessionId: string; pageId: string }): Promise<unknown>
     bridgeWikiDelete(params: { sessionId: string; pageId: string }): Promise<unknown>
     bridgeWikiLink(params: {
       sessionId: string
@@ -990,6 +991,8 @@ export class PlatformBridgeService {
         return this.wikiUpdate(d, params)
       case 'wiki.archive':
         return this.wikiArchive(d, params)
+      case 'wiki.restore':
+        return this.wikiRestore(d, params)
       case 'wiki.delete':
         return this.wikiDelete(d, params)
       case 'wiki.link':
@@ -2207,6 +2210,14 @@ export class PlatformBridgeService {
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!pageId) throw new Error('Missing parameter: pageId')
     return d.sessionService.bridgeWikiArchive({ sessionId, pageId })
+  }
+
+  private async wikiRestore(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const pageId = String(params.pageId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!pageId) throw new Error('Missing parameter: pageId')
+    return d.sessionService.bridgeWikiRestore({ sessionId, pageId })
   }
 
   private async wikiDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {

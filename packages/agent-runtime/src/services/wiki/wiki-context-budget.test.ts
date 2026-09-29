@@ -144,15 +144,21 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
 
   it('契约完整性：工具定义齐备、命名规范、读写集互斥', () => {
     const names = WIKI_TOOL_DEFINITIONS.map((d) => d.name)
-    // 10 个 S1 工具 + S3 的技能提议 + 二级入口
-    expect(names).toHaveLength(12)
+    // 10 个 S1 工具 + S3 的技能提议 + 取消归档 + 二级入口
+    expect(names).toHaveLength(13)
     expect(names).toContain('wiki_propose_skill')
+    expect(names).toContain('wiki_restore')
     expect(names).toContain(WIKI_ADMIN_TOOL_NAME)
     expect(WIKI_S0_TOOL_NAMES).toHaveLength(3)
     expect(WIKI_ALL_READ_TOOL_NAMES).toHaveLength(5)
-    expect(WIKI_WRITE_TOOL_NAMES).toHaveLength(5)
+    expect(WIKI_WRITE_TOOL_NAMES).toHaveLength(6)
     expect(WIKI_S3_TOOL_NAMES).toHaveLength(1)
     expect(WIKI_READ_TOOL_NAMES).toEqual(WIKI_ALL_READ_TOOL_NAMES)
+    // archive 与 restore 必须成对出现，且 archive 的描述要指向还原入口
+    // （否则 Agent 读到"可恢复"却找不到还原手段，等于误导）
+    expect(names).toContain('wiki_archive')
+    const archive = WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_archive')!
+    expect(archive.description).toContain('wiki_restore')
     for (const n of [
       ...WIKI_ALL_READ_TOOL_NAMES,
       ...WIKI_WRITE_TOOL_NAMES,
@@ -165,6 +171,8 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
       (WIKI_WRITE_TOOL_NAMES as readonly string[]).includes(n),
     )
     expect(overlap).toEqual([])
+    // restore 是低频写：必须落在二级入口可达集合里（工具瘦身时能力不丢）
+    expect(WIKI_DEFERRED_TOOL_NAMES).toContain('wiki_restore')
     // L0 提示词含递进规则关键词（行为契约写入）
     expect(WIKI_L0_PROMPT).toContain('wiki_search')
     expect(WIKI_L0_PROMPT).toContain('不要一次读多页')
@@ -173,9 +181,10 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
   it('挂载计划：默认全量；工具瘦身只留核心 + 二级入口（能力不丢失）', () => {
     const full = resolveWikiMountPlan(false)
     expect(full.admin).toBe(false)
-    // 5 只读 + 5 写 + S3 技能提议（低频但首屏可见，默认能力优先）
-    expect(full.toolNames).toHaveLength(11)
+    // 5 只读 + 6 写 + S3 技能提议（低频但首屏可见，默认能力优先）
+    expect(full.toolNames).toHaveLength(12)
     expect(full.toolNames).toContain('wiki_delete')
+    expect(full.toolNames).toContain('wiki_restore')
     expect(full.toolNames).toContain('wiki_propose_skill')
     expect(full.toolNames).not.toContain(WIKI_ADMIN_TOOL_NAME)
     expect(full.toolNames).toEqual(

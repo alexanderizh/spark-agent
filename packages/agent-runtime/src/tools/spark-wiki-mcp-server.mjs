@@ -30,6 +30,7 @@ const DEFERRED_TOOLS = [
   'wiki_update',
   'wiki_backlinks',
   'wiki_archive',
+  'wiki_restore',
   'wiki_delete',
   'wiki_link',
   // S3：技能提议是偶发决策，与更新/删除同级收进二级入口
@@ -153,6 +154,11 @@ const IMPL = {
     if (!id) throw new Error('id is required')
     return rpc('wiki.archive', { sessionId: SID, pageId: id })
   },
+  async wiki_restore(args) {
+    const id = str(args.id)
+    if (!id) throw new Error('id is required')
+    return rpc('wiki.restore', { sessionId: SID, pageId: id })
+  },
   async wiki_delete(args) {
     const id = str(args.id)
     if (!id) throw new Error('id is required')
@@ -204,9 +210,9 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '检索关键词或语义描述（1-500 字符）。' },
-        space_id: { type: 'string', description: '可选：限定检索的空间 id。' },
-        limit: { type: 'number', description: '返回条数上限（默认 8，最大 20）。' },
+        query: { type: 'string', description: '检索关键词（1-500 字符）。' },
+        space_id: { type: 'string', description: '限定检索的空间 id。' },
+        limit: { type: 'number', description: '条数上限，默认 8，最大 20。' },
       },
       required: ['query'],
     },
@@ -218,8 +224,8 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: '页面 id（wiki_search 返回的 id）。' },
-        offset: { type: 'number', description: '续读偏移（上一页的 nextOffset）。' },
+        id: { type: 'string', description: '页面 id。' },
+        offset: { type: 'number', description: '续读偏移。' },
       },
       required: ['id'],
     },
@@ -232,7 +238,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '空间 id。' },
-        parent_id: { type: 'string', description: '只列该父节点的子层（缺省根层）。' },
+        parent_id: { type: 'string', description: '父节点 id（缺省根层）。' },
       },
       required: ['space_id'],
     },
@@ -258,9 +264,9 @@ const TOOLS = [
         kind: {
           type: 'string',
           enum: ['knowledge', 'experience', 'pattern', 'reference', 'note'],
-          description: '类型，默认 knowledge。',
+          description: '默认 knowledge。',
         },
-        summary: { type: 'string', description: '摘要（检索展示用）。' },
+        summary: { type: 'string', description: '摘要。' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签。' },
       },
       required: ['space_id', 'title', 'body'],
@@ -274,9 +280,9 @@ const TOOLS = [
       properties: {
         id: { type: 'string', description: '页面 id。' },
         expected_version: { type: 'number', description: 'CAS 期望版本。' },
-        title: { type: 'string', description: '新标题（须同时带 body）。' },
+        title: { type: 'string', description: '新标题（须带 body）。' },
         body: { type: 'string', description: '新正文。' },
-        summary: { type: 'string', description: '新摘要（须同时带 body）。' },
+        summary: { type: 'string', description: '新摘要（须带 body）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '新标签。' },
       },
       required: ['id', 'expected_version'],
@@ -284,7 +290,16 @@ const TOOLS = [
   },
   {
     name: 'wiki_archive',
-    description: '归档页面（可恢复，非物理删除）。',
+    description: '归档页面（可恢复，非物理删除；经 wiki_restore 还原）。',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: '页面 id。' } },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'wiki_restore',
+    description: '取消归档：恢复为 published 并重建双链。',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: '页面 id。' } },
@@ -315,12 +330,12 @@ const TOOLS = [
   },
   {
     name: 'wiki_propose_skill',
-    description: '从知识页提议一个技能（只写提议区，不创建技能；须经用户确认）。',
+    description: '从知识页提议技能（只写提议区，不创建；须经用户确认）。',
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: '技能名称。' },
-        purpose: { type: 'string', description: '为何创建 / 解决哪个问题。' },
+        purpose: { type: 'string', description: '创建目的与要解决的问题。' },
         source_page_ids: { type: 'array', items: { type: 'string' }, description: '溯源页面 id。' },
         skill_draft: { type: 'string', description: 'SKILL.md 草稿。' },
       },
@@ -334,7 +349,7 @@ const ADMIN_TOOL_DEF = {
   description:
     '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
     'wiki_update(id,expected_version)、wiki_backlinks(id)、wiki_archive(id)、' +
-    'wiki_delete(id)、wiki_link(from_id,to_id)、' +
+    'wiki_restore(id)、wiki_delete(id)、wiki_link(from_id,to_id)、' +
     'wiki_propose_skill(name,purpose,source_page_ids,skill_draft)。',
   inputSchema: {
     type: 'object',
@@ -413,6 +428,11 @@ function summarize(name, data) {
   if (name === 'wiki_archive') {
     if (data.ok === false || data.error) return `wiki_archive 失败：${data.error || data.message}`
     return `已归档 [${data.id}] ${data.title}${data.alreadyArchived ? '（此前已归档）' : ''}`
+  }
+  if (name === 'wiki_restore') {
+    if (data.ok === false || data.error) return `wiki_restore 失败：${data.error || data.message}`
+    const note = data.indexReady === false ? '，检索索引未就绪' : ''
+    return `已取消归档 [${data.id}] ${data.title}（v${data.version}${note}）`
   }
   if (name === 'wiki_delete') {
     if (data.ok === false || data.error) return `wiki_delete 失败：${data.error || data.message}`

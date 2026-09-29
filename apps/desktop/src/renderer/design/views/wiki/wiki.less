@@ -39,7 +39,8 @@
   --wiki-rail-w: 252px;
   --wiki-topbar-h: 46px;
   --wiki-row-h: 28px;
-  --wiki-measure: 720px;
+  /* 正文度量：自适应加宽——720px 下限保阅读舒适，最宽 1160px 吃掉两侧留白 */
+  --wiki-measure: clamp(720px, 76%, 1160px);
 
   /* 纵向骨架：顶层 Tab 横条在上，workspace（左栏 + 主区）在下。
      若丢失 flex-direction: column，Tab 条会被压成竖条、目录树被挤到第二列。 */
@@ -234,12 +235,41 @@ html[data-theme='dark'] .wiki_root,
 }
 
 .wiki_rail_label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 12px 4px;
   color: var(--wiki-t4);
   font-size: var(--wiki-fs-cap);
   font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+
+  > span:first-child {
+    flex: 1;
+  }
+}
+
+/* 排序方式切换（rail_label 行右端的小下拉触发器） */
+.wiki_rail_sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wiki-t3);
+  font-size: 10.5px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  text-transform: none;
+
+  &:hover {
+    background: var(--wiki-hover);
+    color: var(--text);
+  }
 }
 
 /* ── 目录树 ───────────────────────────────────────────────────────── */
@@ -262,6 +292,42 @@ html[data-theme='dark'] .wiki_root,
   cursor: pointer;
   user-select: none;
   transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── 拖拽落点指示（文件树心智模型：上/下边线=前插/后插，虚线框=移入） ── */
+  &.is-dragging {
+    opacity: 0.45;
+  }
+
+  &.is-drop-before {
+    box-shadow: inset 0 2px 0 0 var(--primary);
+  }
+
+  &.is-drop-after {
+    box-shadow: inset 0 -2px 0 0 var(--primary);
+  }
+
+  &.is-drop-into {
+    outline: 1.5px dashed var(--primary);
+    outline-offset: -1.5px;
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+  }
+}
+
+/* 根级落区：树容器底部空白 = 移到根级末尾 */
+.wiki_tree.is-drop-root {
+  box-shadow: inset 0 -2px 0 0 var(--primary);
+}
+
+/* 置顶标记：常驻小图标（主色着色，不占 hover 态） */
+.wiki_tree_pin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--primary);
+  flex: none;
+}
+
+.wiki_tree_act.is-pinned {
+  color: var(--primary);
 }
 
 .wiki_tree_node:hover {
@@ -367,7 +433,7 @@ html[data-theme='dark'] .wiki_root,
 .wiki_tree_acts {
   display: none;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   flex: 0 0 auto;
 }
 
@@ -384,8 +450,8 @@ html[data-theme='dark'] .wiki_root,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 19px;
-  height: 19px;
+  width: 22px;
+  height: 22px;
   border: none;
   border-radius: 5px;
   background: transparent;
@@ -496,6 +562,49 @@ html[data-theme='dark'] .wiki_root,
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+}
+
+/* ── 预览/编辑分段开关（对齐 diff 视图切换语言：胶囊容器 + 主色选中滑块） ── */
+.wiki_mode_switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--wiki-sunken);
+  margin-right: 6px;
+}
+
+.wiki_mode_seg {
+  height: 22px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wiki-t3);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &:hover:not(.is-on):not(:disabled) {
+    color: var(--text);
+  }
+
+  &.is-on {
+    background: var(--primary);
+    color: #fff;
+    cursor: default;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
 /* 顶栏图标按钮（历史 / 更多） */

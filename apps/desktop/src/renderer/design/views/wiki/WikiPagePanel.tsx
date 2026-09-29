@@ -17,7 +17,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { WikiBacklinkEntry, WikiPageDetail, WikiPageKind } from '@spark/protocol'
-import { Icons } from '../../Icons'
 import { MarkdownText } from '../chat/ChatMarkdown'
 import { CodeEditor } from '../../components/code-editor/CodeEditor'
 
@@ -57,7 +56,7 @@ export interface WikiPagePanelProps {
   page: WikiPageDetail
   saving: boolean
   error: string
-  /** 编辑态由 WikiView 持有（顶栏「编辑」入口与面板快捷键共用同一状态）。 */
+  /** 编辑态由 WikiView 持有（顶栏分段开关与面板快捷键共用同一状态）。 */
   editing: boolean
   onEditingChange: (editing: boolean) => void
   onSave: (patch: WikiPagePatch) => Promise<boolean>
@@ -65,6 +64,10 @@ export interface WikiPagePanelProps {
   backlinks: readonly WikiBacklinkEntry[] | undefined
   /** 点反向链接跳转（切换到来源页） */
   onOpenBacklink: (pageId: string) => void
+  /** 草稿脏态上提：预览/编辑切换时由 WikiView 拦截「未保存修改被静默丢弃」。 */
+  onDirtyChange?: (dirty: boolean) => void
+  /** 丢弃草稿信号：递增时重置本地草稿（配合切换确认弹窗的「放弃并切换」）。 */
+  discardSignal?: number
 }
 
 /**
@@ -122,6 +125,8 @@ export function WikiPagePanel({
   onSave,
   backlinks,
   onOpenBacklink,
+  onDirtyChange,
+  discardSignal,
 }: WikiPagePanelProps) {
   const [title, setTitle] = useState(page.title)
   const [summary, setSummary] = useState(page.summary)
@@ -152,6 +157,18 @@ export function WikiPagePanel({
       tagsText !== page.tags.join(', '),
     [title, summary, body, tagsText, page],
   )
+
+  // 脏态上提（预览/编辑切换的丢弃确认依据）与草稿丢弃信号（确认后重置）
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    if (discardSignal != null && discardSignal > 0) {
+      resetDraft()
+      onDirtyChange?.(false)
+    }
+  }, [discardSignal, resetDraft, onDirtyChange])
 
   // 编辑器撑满「标题区之下、操作条之上」的剩余空间：CodeEditor 只接受数值高度，
   // 这里用 ResizeObserver 测量容器实际高度回填（窄屏 / 密度切换都能自适应）。

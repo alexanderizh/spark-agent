@@ -200,6 +200,26 @@ describe('Wiki repositories (S0)', () => {
     expect(updated.version).toBe(2)
   })
 
+  it('置顶开关：不推进 version、不刷 updated_at、幂等；不存在页返回 null', () => {
+    const space = makeSpace()
+    const page = makePage(space.id)
+    expect(page.pinned).toBe(0)
+
+    const before = pageRepo.getById(page.id)!
+    const pinned = pageRepo.setPinned(page.id, true)
+    expect(pinned?.pinned).toBe(1)
+    // 展示元数据语义：版本与更新时间都不动（否则会扰动「最近更新」排序）
+    expect(pinned?.version).toBe(before.version)
+    expect(pinned?.updated_at).toBe(before.updated_at)
+    // 版本历史不落置顶痕迹
+    expect(revisionRepo.listByPage(page.id, 10)).toHaveLength(0)
+
+    // 幂等：重复置同值原样返回；取消置顶回落
+    expect(pageRepo.setPinned(page.id, true)?.pinned).toBe(1)
+    expect(pageRepo.setPinned(page.id, false)?.pinned).toBe(0)
+    expect(pageRepo.setPinned('wp_missing00', true)).toBeNull()
+  })
+
   // ─── 版本记录 ─────────────────────────────────────────────────────────
 
   it('revision：按版本倒序，幂等插入', () => {

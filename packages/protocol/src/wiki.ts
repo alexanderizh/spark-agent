@@ -65,6 +65,8 @@ export interface WikiPageMeta {
   status: WikiPageStatus
   version: number
   sortOrder: number
+  /** 置顶：同级分组内浮到最前（纯展示元数据，toggle 不推进 version） */
+  pinned: boolean
   sourceType: string | null
   authorRole: string | null
   hitCount: number
@@ -347,6 +349,7 @@ export interface WikiIpcChannelMap {
     { pageId: string; parentId: string | null; sortOrder?: number; expectedVersion: number },
     WikiWriteReceipt,
   ]
+  'wiki:page:pin': [{ pageId: string; pinned: boolean }, WikiWriteReceipt]
   'wiki:page:history': [{ pageId: string }, { versions: WikiPageVersionEntry[] }]
   'wiki:page:revision:read': [{ pageId: string; version: number }, { revision: WikiRevisionDetail }]
   'wiki:page:revision:restore': [
@@ -495,6 +498,10 @@ export const WikiIpcSchemaRegistry = {
     parentId: z.string().min(1).max(64).nullable(),
     sortOrder: z.number().int().min(0).max(100000).optional(),
     expectedVersion: z.number().int().min(1),
+  }),
+  'wiki:page:pin': z.object({
+    pageId: z.string().min(1).max(64),
+    pinned: z.boolean(),
   }),
   'wiki:page:history': z.object({
     pageId: z.string().min(1).max(64),
