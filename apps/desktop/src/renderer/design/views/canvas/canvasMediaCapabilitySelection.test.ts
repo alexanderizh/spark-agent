@@ -112,6 +112,20 @@ describe('selectCanvasMediaCapability', () => {
     ).toBe('audio.music')
   })
 
+  it('falls back to audio.speech for text-to-audio when the model only exposes speech', () => {
+    // 智谱 GLM-TTS 这类纯语音合成渠道：capabilityForOperation('text_to_audio') 把
+    // audio.music 排在候选首位，但模型只声明 audio.speech。此处必须按候选顺序回退到
+    // 模型实际拥有的能力，而不是取候选首位后判定不可用（否则画布会认为无可用模型）。
+    expect(
+      selectCanvasMediaCapability({
+        operation: 'text_to_audio',
+        model: { ...multiDomainModel, capabilities: [capability('audio.speech')] },
+        selectedInputNodeIds: [],
+        mediaInputOptions: [],
+      })?.id,
+    ).toBe('audio.speech')
+  })
+
   it('uses reference-to-video for multiple unassigned images', () => {
     expect(
       selectCanvasMediaCapability({

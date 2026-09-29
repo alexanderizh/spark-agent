@@ -2284,6 +2284,7 @@ export function ProviderEditPanel({
   )
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
+  const { invoke: syncMediaVoices } = useIpcInvoke('provider:media:sync-voices')
 
   // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -3254,6 +3255,28 @@ export function ProviderEditPanel({
     }
   }
 
+  const [syncingVoices, setSyncingVoices] = useState(false)
+
+  // 同步厂商音色目录（当前仅智谱开放平台）：结果写入已保存 profile 的动态参数候选，
+  // 画布 / 快速创作通过共享 manifest 解析自动继承，因此必须已有 profileId。
+  const handleSyncVoices = async () => {
+    if (!profileId) {
+      toast.warning('请先保存渠道，再同步音色目录')
+      return
+    }
+    setSyncingVoices(true)
+    try {
+      const result = await syncMediaVoices({ providerId: profileId })
+      toast.success(
+        `已同步 ${result.options.length} 个音色（官方 ${result.officialCount} · 复刻 ${result.privateCount}）`,
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '同步音色失败')
+    } finally {
+      setSyncingVoices(false)
+    }
+  }
+
   const handleFetchModels = async () => {
     if (!profileId && !form.apiKey.trim()) {
       setError('获取模型列表需要先填写 API Key')
@@ -3931,6 +3954,27 @@ export function ProviderEditPanel({
                         }}
                       >
                         配置自定义适配器
+                      </Button>
+                    </div>
+                  )}
+                  {form.mediaProvider === 'zhipu' && (
+                    <div className="pv_custom_adapter_entry">
+                      <div>
+                        <strong>音色目录</strong>
+                        <span>
+                          从智谱开放平台同步系统音色与复刻音色；画布与快速创作的音色候选会自动继承
+                        </span>
+                      </div>
+                      <Button
+                        icon={<Icons.Refresh size={13} />}
+                        loading={syncingVoices}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void handleSyncVoices()
+                        }}
+                      >
+                        同步音色
                       </Button>
                     </div>
                   )}

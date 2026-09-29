@@ -23,6 +23,7 @@ export type MediaProviderKind =
   | 'bailian'
   | 'volcengine-ark'
   | 'volcengine-speech'
+  | 'zhipu'
   | 'kling'
   | 'pixverse'
   | 'minimax-hailuo'
@@ -92,6 +93,7 @@ export const MEDIA_PROVIDER_KINDS = [
   'bailian',
   'volcengine-ark',
   'volcengine-speech',
+  'zhipu',
   'kling',
   'pixverse',
   'minimax-hailuo',
@@ -206,6 +208,61 @@ export interface ProviderMediaConfig {
   mediaApiType?: MediaApiType
   mediaCapabilities?: MediaCapabilityId[]
   mediaDefaults?: ProviderMediaDefaults
+  /**
+   * 从厂商动态同步来的参数候选（如智谱 `GET /voice/list` 的音色目录）。
+   *
+   * 结构为 `manifestId → 参数名 → 候选列表`。读取时并入对应 manifest 参数 schema 的
+   * `examples`，因此画布 / 快速创作等消费端不必感知"同步"机制，就能用上最新候选；
+   * 缺省表示尚未同步，此时沿用 manifest 内置的静态 examples。
+   */
+  mediaDynamicParamOptions?: MediaDynamicParamOptions | undefined
+}
+
+/** 单个动态参数候选：value 是提交给厂商的值，label 是人类可读名（缺省回退 value）。 */
+export interface MediaDynamicParamOption {
+  value: string
+  label?: string | undefined
+}
+
+/** manifestId → 参数名 → 候选列表。 */
+export type MediaDynamicParamOptions = Record<string, Record<string, MediaDynamicParamOption[]>>
+
+/**
+ * 把动态候选并入某个参数 schema 的 examples。
+ *
+ * 只覆盖已由 manifest 声明过的参数（不新增字段），用 `examples` 承载候选值、
+ * 用 `x-template-labels` 承载可读名；未同步或参数未声明时原样返回，保持向后兼容。
+ *
+ * 标签刻意复用平台既有的 `x-template-labels`（`schemaFields` → `field.enumLabels`
+ * → 画布参数控件与快速创作的选项标签），而不是另起一个 key：该约定已在前端两端
+ * 消费，直接复用才能让「human 可读音色名」真正显示出来。
+ */
+export function mergeDynamicParamOptions(
+  paramSchema: Record<string, unknown>,
+  overrides: Record<string, MediaDynamicParamOption[]> | undefined,
+): Record<string, unknown> {
+  if (!overrides) return paramSchema
+  const entries = Object.entries(overrides).filter(([, options]) => options.length > 0)
+  if (entries.length === 0) return paramSchema
+  const properties = paramSchema.properties
+  if (properties == null || typeof properties !== 'object') return paramSchema
+  let changed = false
+  const nextProperties: Record<string, unknown> = { ...(properties as Record<string, unknown>) }
+  for (const [paramName, options] of entries) {
+    const spec = nextProperties[paramName]
+    if (spec == null || typeof spec !== 'object') continue
+    const labels: Record<string, string> = {}
+    for (const option of options) {
+      if (option.label && option.label !== option.value) labels[option.value] = option.label
+    }
+    nextProperties[paramName] = {
+      ...(spec as Record<string, unknown>),
+      examples: options.map((option) => option.value),
+      ...(Object.keys(labels).length > 0 ? { 'x-template-labels': labels } : {}),
+    }
+    changed = true
+  }
+  return changed ? { ...paramSchema, properties: nextProperties } : paramSchema
 }
 
 // ─── zod schema ──────────────────────────────────────────────────────────────
@@ -256,11 +313,22 @@ export const ProviderMediaDefaultsSchema = z.object({
 })
 
 /** Provider 多媒体能力 schema —— 用于 create/update/import 校验 */
+export const MediaDynamicParamOptionSchema = z.object({
+  value: z.string().min(1).max(200),
+  label: z.string().min(1).max(200).optional(),
+})
+
+export const MediaDynamicParamOptionsSchema = z.record(
+  z.string().min(1).max(200),
+  z.record(z.string().min(1).max(80), z.array(MediaDynamicParamOptionSchema).max(500)),
+)
+
 export const ProviderMediaConfigSchema = z.object({
   mediaProvider: MediaProviderKindSchema.optional(),
   mediaApiType: MediaApiTypeSchema.optional(),
   mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
+  mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.optional(),
 })
 
 /**

@@ -260,6 +260,8 @@ import type {
   RemoteConnectionConfig,
   UserQuestionRequest,
 } from '@spark/protocol'
+// 值导入：把渠道同步到的动态参数候选并入下发的参数 schema。
+import { mergeDynamicParamOptions, type MediaDynamicParamOption } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
   PermissionApprovalDecision,
@@ -1247,6 +1249,7 @@ function toCanvasMediaModelSummary(
     effectiveModelId?: string
     defaults?: Record<string, unknown>
     enabled?: boolean
+    dynamicParamOptions?: Record<string, MediaDynamicParamOption[]>
   },
 ): CanvasMediaModelSummary {
   const capabilities = manifest.capabilities.map((capability) => {
@@ -1256,7 +1259,8 @@ function toCanvasMediaModelSummary(
       input: capability.input,
       ...(capability.rolePolicy ? { rolePolicy: capability.rolePolicy } : {}),
       output: capability.output,
-      paramSchema: capability.paramSchema,
+      // 渠道同步到的动态候选（如音色目录）在此并入 examples，消费端无需感知来源。
+      paramSchema: mergeDynamicParamOptions(capability.paramSchema, options?.dynamicParamOptions),
     }
     if (capability.defaults !== undefined) item.defaults = capability.defaults
     return item
@@ -1297,6 +1301,8 @@ function profileMediaModelSummaries(
       enabled: resolved.enabled,
     }
     if (resolved.defaults !== undefined) options.defaults = resolved.defaults
+    const dynamicParamOptions = profile.mediaDynamicParamOptions?.[resolved.manifest.id]
+    if (dynamicParamOptions !== undefined) options.dynamicParamOptions = dynamicParamOptions
     return toCanvasMediaModelSummary(resolved.manifest, options)
   })
 }
@@ -5469,6 +5475,27 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       log.error(
         `provider:quota failed, id=${req.id}, error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
+  })
+
+  // 渠道音色目录同步：拉取厂商音色清单并写入 profile 的动态参数候选，
+  // 画布 / 快速创作等端随后通过共享 manifest 解析自动继承（当前仅智谱支持）。
+  typedIpcHandle('provider:media:sync-voices', async (req) => {
+    log.info(`provider:media:sync-voices requested, id=${req.providerId}`)
+    try {
+      const result = await getProviderService().syncMediaVoiceCatalog(req.providerId)
+      log.info(
+        `provider:media:sync-voices completed, id=${req.providerId}, ` +
+          `total=${result.options.length}, official=${result.officialCount}, ` +
+          `private=${result.privateCount}`,
+      )
+      return result
+    } catch (err) {
+      log.warn(
+        `provider:media:sync-voices failed, id=${req.providerId}, ` +
+          `error=${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
     }

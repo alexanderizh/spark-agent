@@ -24,6 +24,7 @@ import {
 import { XAI_TTS_PARAM_SCHEMA, XAI_VIDEO_15_MANIFESTS } from './xai-media-model-manifests.js'
 import { VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS } from './volcengine-ark-media-model-manifests.js'
 import { VOLCENGINE_SPEECH_MEDIA_MODEL_MANIFESTS } from './volcengine-speech-media-model-manifests.js'
+import { ZHIPU_MEDIA_MODEL_MANIFESTS } from './zhipu-media-model-manifests.js'
 import { BAILIAN_MEDIA_MODEL_MANIFESTS } from './bailian-media-model-manifests.js'
 import { OPENAI_MEDIA_MODEL_MANIFESTS } from './openai-media-model-manifests.js'
 import { GOOGLE_MEDIA_MODEL_MANIFESTS } from './google-media-model-manifests.js'
@@ -3234,6 +3235,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   },
   ...VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS,
   ...VOLCENGINE_SPEECH_MEDIA_MODEL_MANIFESTS,
+  ...ZHIPU_MEDIA_MODEL_MANIFESTS,
   ...TENCENT_TOKENHUB_MEDIA_MODEL_MANIFESTS,
   ...[
     {

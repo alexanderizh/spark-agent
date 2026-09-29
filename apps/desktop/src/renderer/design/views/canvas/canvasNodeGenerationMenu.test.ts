@@ -86,16 +86,17 @@ describe('canvasNodeGenerationMenu', () => {
     ])
   })
 
-  it('hides audio from the current right-click menu without deleting its definitions', () => {
+  it('exposes the audio group in the right-click menu now that audio channels exist', () => {
     expect(CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toEqual([
       'text',
       'image',
       'video',
+      'audio',
     ])
     expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toContain('audio')
   })
 
-  it('flattens visible image and video operations for the right-click menu', () => {
+  it('flattens visible text, image, video and audio operations for the right-click menu', () => {
     expect(canvasVisibleBaseCreateOperations().map((item) => item.operation)).toEqual([
       'text_generate',
       'text_to_image',
@@ -104,6 +105,8 @@ describe('canvasNodeGenerationMenu', () => {
       'video_depth_map',
       'extract_audio',
       'extract_first_last_frames',
+      'text_to_audio',
+      'audio_transcribe',
     ])
   })
 
@@ -118,6 +121,8 @@ describe('canvasNodeGenerationMenu', () => {
       'text_to_image',
       'image_prompt_reverse',
       'text_to_video',
+      'text_to_audio',
+      'audio_transcribe',
     ])
   })
 })

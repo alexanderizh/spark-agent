@@ -1772,10 +1772,41 @@ async function downloadMedia(config, url, kind, filename) {
   const parsed = path.parse(
     filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   )
-  const name = `${parsed.name}${parsed.ext || (kind === 'audio' ? '.mp3' : '.mp4')}`
+  const name = `${parsed.name}${parsed.ext || dataUrlAudioExtension(url) || (kind === 'audio' ? '.mp3' : '.mp4')}`
   const file = path.join(dir, name)
   await writeFile(file, buffer)
   return file
+}
+
+const DATA_URL_AUDIO_EXTENSIONS = {
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/wave': '.wav',
+  'audio/vnd.wave': '.wav',
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/opus': '.opus',
+  'audio/aac': '.aac',
+  'audio/flac': '.flac',
+  'audio/x-flac': '.flac',
+  'audio/pcm': '.pcm',
+  'audio/l16': '.pcm',
+}
+
+/**
+ * 从 data: URL 的 MIME 推导音频扩展名。
+ *
+ * 二进制音频响应没有文件名，扩展名只能由协商好的编码决定。调用方会按 manifest
+ * capability 的 defaults 构造 data: URL（如智谱 GLM-TTS 默认 audio/wav），这里据此
+ * 落成 .wav；缺失 MIME 或非 data: URL（远程 http 产物）时返回 null，沿用原缺省。
+ */
+function dataUrlAudioExtension(url) {
+  if (typeof url !== 'string' || !url.startsWith('data:')) return null
+  const comma = url.indexOf(',')
+  if (comma === -1) return null
+  const mime = url.slice(5, comma).split(';')[0]?.trim().toLowerCase()
+  if (!mime) return null
+  return DATA_URL_AUDIO_EXTENSIONS[mime] ?? null
 }
 
 async function writeBinaryAsset(config, buffer, kind, filename, extension) {
@@ -1839,7 +1870,7 @@ function resolveManifestForTool(config, toolName, args) {
   const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
   if (candidates.length === 0) return null
   const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
-  const manifests = requestedModel
+  const scoped = requestedModel
     ? config.manifests.filter(
         (manifest) =>
           manifest.id === requestedModel ||
@@ -1850,11 +1881,22 @@ function resolveManifestForTool(config, toolName, args) {
         (manifest) =>
           !config.model || manifest.modelId === config.model || manifest.id === config.model,
       )
-  const pool = manifests.length > 0 ? manifests : config.manifests
-  for (const capabilityId of candidates) {
-    for (const manifest of pool) {
-      const capability = (manifest.capabilities || []).find((item) => item?.id === capabilityId)
-      if (capability) return { manifest, capability, capabilityId }
+  // args.model 是调用方显式指定，只在该模型范围内查找，找不到就让上层走兜底/报错。
+  // config.model 是渠道默认「首选」而非硬约束：多能力渠道的默认模型常常只覆盖其中
+  // 一项能力（如默认模型是 TTS、转写由同渠道的 ASR 模型承担）。若只在默认模型范围内
+  // 查找，转写会解析不到 manifest 而错误降级到 legacy 分支，用默认模型去请求转写端点
+  // 并必然失败。因此默认模型范围内找不到所需能力时，回退到该渠道全量清单继续查找。
+  const pools = requestedModel
+    ? [scoped]
+    : scoped.length > 0
+      ? [scoped, config.manifests]
+      : [config.manifests]
+  for (const pool of pools) {
+    for (const capabilityId of candidates) {
+      for (const manifest of pool) {
+        const capability = (manifest.capabilities || []).find((item) => item?.id === capabilityId)
+        if (capability) return { manifest, capability, capabilityId }
+      }
     }
   }
   return null
@@ -2502,7 +2544,11 @@ async function materializeManifestResult(config, responseSpec, raw, capability, 
       const image = { kind: 'base64', value: raw.toString('base64'), mimeType: 'image/png' }
       return { files: [await materializeImage(config, image, filename, 0, 1)] }
     }
-    const dataUrl = `data:${defaultMime(outputKind, args)};base64,${raw.toString('base64')}`
+    // 落盘扩展名必须与请求实际协商的音频编码一致。capability.defaults 里的 format
+    // 会经 aliases 写进请求体（如智谱 response_format=wav），若只读 args.format，
+    // 调用方未显式传参时会把厂商实际返回的 wav 落成 .mp3。以 defaults 兜底、args 优先。
+    const formatSource = { ...(capability?.defaults || {}), ...args }
+    const dataUrl = `data:${defaultMime(outputKind, formatSource)};base64,${raw.toString('base64')}`
     return {
       files: [
         await downloadMedia(config, dataUrl, outputKind === 'audio' ? 'audio' : 'video', filename),

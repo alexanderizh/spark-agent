@@ -780,6 +780,35 @@ describe('ProviderService', () => {
     expect(repo.rows.get('id-full-url')?.config_json).not.toContain('apiEndpointFullUrl')
   })
 
+  it('updateProvider persists mediaDynamicParamOptions standalone (voice catalog sync)', async () => {
+    repo.rows.set('id-voices', {
+      id: 'id-voices',
+      provider_type: 'openai',
+      name: '智谱开放平台语音',
+      config_json: '{"defaultModel":"glm-tts","modelIds":["glm-tts"]}',
+      enabled: 1,
+      keystore_ref: 'openai-id-voices',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    // 音色同步只带这一个字段调用（见 ProviderService.syncMediaVoiceCatalog）。
+    // 若 mediaTouched 漏判该字段，newConfig 会保持 undefined、写入分支被整体跳过，
+    // 接口照样返回成功但候选没落库 —— 这条用例锁住该回归。
+    await service.updateProvider({
+      id: 'id-voices',
+      mediaDynamicParamOptions: {
+        'zhipu:glm-tts': { voice: [{ value: 'tongtong', label: '彤彤' }] },
+      },
+    })
+    expect(repo.rows.get('id-voices')?.config_json).toContain('"tongtong"')
+
+    // 传 null 表示清空（换渠道后旧音色目录失效）
+    await service.updateProvider({ id: 'id-voices', mediaDynamicParamOptions: null })
+    expect(repo.rows.get('id-voices')?.config_json).not.toContain('mediaDynamicParamOptions')
+  })
+
   it('updateProvider updates codexApiKind without changing model config', async () => {
     repo.rows.set('id-codex', {
       id: 'id-codex',

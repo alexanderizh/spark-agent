@@ -12,6 +12,7 @@ import type {
   ProviderImportResult,
   ProviderIconConfig,
   ProviderQuotaResponse,
+  ProviderMediaSyncVoicesResponse,
 } from '@spark/protocol'
 import {
   isMediaApiType,
@@ -20,6 +21,7 @@ import {
   type MediaProviderKind,
   type MediaApiType,
   type MediaCapabilityId,
+  type MediaDynamicParamOptions,
   type ProviderMediaDefaults,
   type ProviderMediaModelRef,
   ProviderMediaModelRefSchema,
@@ -62,6 +64,7 @@ import {
 } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { fetchZhipuQuota } from './providerQuota/zhipuQuota.js'
+import { fetchZhipuVoiceCatalog } from './media/zhipu-voice-catalog.js'
 import { runCliProbe, withDeadline } from './cli-probe-runner.js'
 
 const log = createLogger('provider.service')
@@ -385,6 +388,9 @@ function rowToProfile(row: {
     ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
     ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
     ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
+    ...(config.mediaDynamicParamOptions !== undefined && {
+      mediaDynamicParamOptions: config.mediaDynamicParamOptions,
+    }),
     ...(config.managed === true && { managed: true }),
     ...(config.managedType !== undefined && { managedType: config.managedType }),
     ...(config.managedOwnerUserId !== undefined && {
@@ -843,6 +849,8 @@ export class ProviderService {
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
     mediaModelRefs?: ProviderMediaModelRef[]
+    /** 从厂商同步到的动态参数候选（如音色目录）。 */
+    mediaDynamicParamOptions?: MediaDynamicParamOptions
     /** 模型定时禁用时段；新建时随渠道 config 一并落库。 */
     modelSchedules?: ProviderModelSchedule[]
     /** 模型级设置；新建时随渠道 config 一并落库（contextWindow 拆写进 modelContextWindows）。 */
@@ -919,6 +927,9 @@ export class ProviderService {
         }),
         ...(params.mediaDefaults !== undefined && { mediaDefaults: params.mediaDefaults }),
         ...(params.mediaModelRefs !== undefined && { mediaModelRefs: params.mediaModelRefs }),
+        ...(params.mediaDynamicParamOptions != null && {
+          mediaDynamicParamOptions: params.mediaDynamicParamOptions,
+        }),
         ...(params.modelSchedules !== undefined && {
           modelSchedules: sanitizeModelSchedules(params.modelSchedules),
         }),
@@ -987,6 +998,8 @@ export class ProviderService {
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
     mediaModelRefs?: ProviderMediaModelRef[]
+    /** 从厂商同步到的动态参数候选（如音色目录）；传 null 清空。 */
+    mediaDynamicParamOptions?: MediaDynamicParamOptions | null
     /** 模型定时禁用时段；传空数组清除全部时段。 */
     modelSchedules?: ProviderModelSchedule[]
     /**
@@ -1076,7 +1089,11 @@ export class ProviderService {
       params.mediaApiType !== undefined ||
       params.mediaCapabilities !== undefined ||
       params.mediaDefaults !== undefined ||
-      params.mediaModelRefs !== undefined
+      params.mediaModelRefs !== undefined ||
+      // 单独下发同步到的动态参数候选（如音色目录）也必须触发 config 写入：
+      // 音色同步只带这一个字段调用，漏判会让 newConfig 保持 undefined，
+      // 下面的写入分支被整体跳过 —— 接口返回成功、候选却没落库。
+      params.mediaDynamicParamOptions !== undefined
     const newConfig =
       nextDefaultModel !== undefined ||
       params.modelIds !== undefined ||
@@ -1245,6 +1262,14 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.mediaModelRefs !== undefined) {
       newConfig.mediaModelRefs = params.mediaModelRefs
+    }
+    if (newConfig !== undefined && params.mediaDynamicParamOptions !== undefined) {
+      // null 表示清空同步结果（例如更换渠道后旧音色目录已失效）。
+      if (params.mediaDynamicParamOptions === null) {
+        delete newConfig.mediaDynamicParamOptions
+      } else {
+        newConfig.mediaDynamicParamOptions = params.mediaDynamicParamOptions
+      }
     }
     // 重新走 normalize，确保 image→media 同步、能力兜底、枚举校验一致
     if (newConfig !== undefined) {
@@ -1500,6 +1525,60 @@ export class ProviderService {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`fetchQuota threw, vendor=${vendor.id}, id=${id}, error=${message}`)
       return { supported: true, errorMessage: message }
+    }
+  }
+
+  /**
+   * 同步渠道音色目录到动态参数候选（当前仅智谱开放平台支持）。
+   *
+   * 智谱音色是动态资源（内置系统音色 + 用户复刻音色），静态 manifest examples
+   * 覆盖不了。这里拉取 `GET /paas/v4/voice/list`，写入该渠道 profile 的
+   * `mediaDynamicParamOptions[manifestId].voice`；画布 / 快速创作等端通过共享的
+   * manifest 解析自动继承，无需各端适配。
+   *
+   * 与 fetchQuota 不同，失败时直接抛错：同步是用户显式触发的动作，需要明确
+   * 反馈失败原因，而不是静默降级。
+   */
+  async syncMediaVoiceCatalog(id: string): Promise<ProviderMediaSyncVoicesResponse> {
+    const row = this.repo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    if (config.mediaProvider !== 'zhipu') {
+      throw new Error('当前渠道不支持音色目录同步（仅智谱开放平台提供音色列表接口）')
+    }
+    if (!row.keystore_ref) throw new Error('未配置 API Key，无法同步音色')
+    const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
+    if (!apiKey) throw new Error('API Key 未在钥匙串中找到')
+
+    const catalog = await fetchZhipuVoiceCatalog({
+      apiEndpoint: config.mediaApiEndpoint ?? config.apiEndpoint ?? '',
+      apiKey,
+      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+    })
+
+    // 音色候选固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）。
+    const manifestId = 'zhipu:glm-tts'
+    const paramName = 'voice'
+    const mediaDynamicParamOptions = {
+      ...(config.mediaDynamicParamOptions ?? {}),
+      [manifestId]: {
+        ...(config.mediaDynamicParamOptions?.[manifestId] ?? {}),
+        [paramName]: catalog.options,
+      },
+    }
+    await this.updateProvider({ id, mediaDynamicParamOptions })
+    log.info(
+      `syncMediaVoiceCatalog completed, id=${id}, total=${catalog.options.length}, ` +
+        `official=${catalog.officialCount}, private=${catalog.privateCount}`,
+    )
+
+    return {
+      providerId: id,
+      options: catalog.options,
+      officialCount: catalog.officialCount,
+      privateCount: catalog.privateCount,
+      manifestId,
+      paramName,
     }
   }
 
@@ -2215,6 +2294,8 @@ interface ProviderConfig {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 从厂商同步到的动态参数候选（manifestId → 参数名 → 候选列表，如音色目录）。 */
+  mediaDynamicParamOptions?: MediaDynamicParamOptions
   /** 模型定时禁用时段（峰谷定价规避）；空/缺省视为无定时。 */
   modelSchedules?: ProviderModelSchedule[]
   /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */

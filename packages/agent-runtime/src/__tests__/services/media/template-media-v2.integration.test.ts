@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { MediaCapabilityId, MediaModelManifest } from '@spark/protocol'
+import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '@spark/protocol'
 import {
   MediaRouterService,
   type MediaProviderProfile,
@@ -266,5 +267,61 @@ describe('TemplateMediaAdapter V2 integration', () => {
     if (!downloadedAsset?.filePath) throw new Error('expected a downloaded artifact file')
     expect(readFileSync(downloadedAsset.filePath).length).toBe(8)
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('sends the built-in zhipu ASR manifest as a multipart file part and stores the transcript', async () => {
+    // 智谱 GLM-ASR-2512 走 Contract V2 multipart 文件上传。legacy contentType:'multipart'
+    // 只会产出 text parts、永远不上传文件，所以这里断言真实请求体里存在带 filename 的
+    // 文件段；同时渠道默认模型是 glm-tts（仅 speech），用来验证 router 按能力匹配到 ASR。
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), 'spark-template-v2-zhipu-asr-'))
+    tempDirs.push(outputDir)
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((item) => item.id === 'zhipu:glm-asr-2512')
+    if (!manifest) throw new Error('zhipu ASR manifest missing from builtin catalog')
+
+    const audioPath = path.join(outputDir, 'sample.wav')
+    writeFileSync(audioPath, Buffer.from('RIFF....WAVEfmt '))
+
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(String(input)).toBe('https://open.bigmodel.cn/api/paas/v4/audio/transcriptions')
+      expect(init?.method).toBe('POST')
+      const headers = init?.headers as Record<string, string>
+      expect(headers.authorization).toBe('Bearer zhipu-key')
+      expect(String(headers['content-type'])).toContain('multipart/form-data; boundary=')
+      const body = Buffer.from(init?.body as Buffer).toString('latin1')
+      expect(body).toContain('name="file"; filename="sample.wav"')
+      expect(body).toContain('name="model"')
+      expect(body).toContain('glm-asr-2512')
+      expect(body).toContain('name="stream"')
+      return new Response(JSON.stringify({ text: '智谱转写结果' }), { status: 200 })
+    })
+
+    const result = await new MediaRouterService().invoke(
+      {
+        operation: 'audio_transcribe',
+        capability: 'audio.transcription',
+        inputFiles: [{ type: 'audio', path: audioPath, role: 'input' }],
+        modelParams: {},
+        outputDir,
+      },
+      {
+        providers: [
+          {
+            id: 'zhipu-audio',
+            name: '智谱开放平台语音',
+            defaultModel: 'glm-tts',
+            apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+            mediaProvider: 'zhipu',
+            mediaCapabilities: ['audio.speech', 'audio.transcription'],
+            mediaModelManifests: [manifest],
+            apiKey: 'zhipu-key',
+          },
+        ],
+        fetch: fetchMock as unknown as typeof fetch,
+      },
+    )
+
+    expect(result.output.assets).toHaveLength(1)
+    expect(result.output.assets[0]?.contentText).toBe('智谱转写结果')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

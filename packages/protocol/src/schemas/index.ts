@@ -14,6 +14,7 @@ import {
   MediaProviderKindSchema,
   MediaApiTypeSchema,
   MediaCapabilityIdSchema,
+  MediaDynamicParamOptionsSchema,
   ProviderMediaDefaultsSchema,
 } from '../media-config.js'
 import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
@@ -711,6 +712,8 @@ export const ProviderCreateRequestSchema = z
     mediaDefaults: ProviderMediaDefaultsSchema.optional(),
     /** 启用的多媒体模型 manifest 引用 */
     mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+    /** 从厂商同步到的动态参数候选（如音色目录） */
+    mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.optional(),
     /** 模型定时禁用时段；新建时随渠道一并落库 */
     modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
     /** 模型级设置；新建时随渠道一并落库（语义同 update 同名字段） */
@@ -768,6 +771,8 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+  /** 从厂商同步到的动态参数候选（如音色目录）；传 null 清空 */
+  mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.nullable().optional(),
   /** 模型定时禁用时段；传空数组清除全部时段 */
   modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
   /** 模型级设置整表下发（key = modelId）；undefined 不修改，空对象清除全部 */

@@ -112,4 +112,53 @@ describe('provider presets', () => {
       mediaDefaults: { audio: { voice: 'eve', format: 'mp3' } },
     })
   })
+
+  it('wires zhipu audio to both speech and transcription manifests on one channel', () => {
+    // 一个渠道同时承载 TTS 与 ASR：router / MCP 按 capability 匹配 manifest，
+    // 因此两个模型必须都在 refs 里且启用，否则另一项能力会解析不到模型。
+    expect(getProviderPresetById('zhipu-audio')).toMatchObject({
+      vendorId: 'zhipu-open-platform',
+      modelType: 'voice',
+      mediaProvider: 'zhipu',
+      apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+      defaultModel: 'glm-tts',
+      mediaCapabilities: ['audio.speech', 'audio.transcription'],
+      mediaModelRefs: [
+        { manifestId: 'zhipu:glm-tts', modelId: 'glm-tts', enabled: true },
+        { manifestId: 'zhipu:glm-asr-2512', modelId: 'glm-asr-2512', enabled: true },
+      ],
+      mediaDefaults: { audio: { voice: 'tongtong', format: 'wav', speed: 1 } },
+    })
+  })
+
+  it('declares the zhipu speech manifest with a playable wav default and custom-capable voice', () => {
+    const speech = BUILTIN_MEDIA_MODEL_MANIFESTS.find((manifest) => manifest.id === 'zhipu:glm-tts')
+    if (!speech) throw new Error('zhipu speech manifest not found')
+    // 官方默认 pcm 是无头裸流，内置默认必须是可播放的 wav。
+    expect(speech.capabilities[0]?.defaults).toMatchObject({ format: 'wav', voice: 'tongtong' })
+    expect(speech.invocation.response).toEqual({ kind: 'binary_response' })
+    const properties = speech.capabilities[0]?.paramSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined
+    const voiceSchema = properties?.voice
+    // voice 必须用 examples + x-allow-custom：写成 enum 会让校验器硬拒复刻音色。
+    expect(voiceSchema?.enum).toBeUndefined()
+    expect(voiceSchema?.['x-allow-custom']).toBe(true)
+    expect(voiceSchema?.examples).toContain('tongtong')
+  })
+
+  it('declares the zhipu transcription manifest with an uploadable multipart file part', () => {
+    const asr = BUILTIN_MEDIA_MODEL_MANIFESTS.find((manifest) => manifest.id === 'zhipu:glm-asr-2512')
+    if (!asr) throw new Error('zhipu ASR manifest not found')
+    // legacy contentType:'multipart' 只产出 text parts、永远不上传文件，
+    // 因此 V2 request.body 必须显式声明 file 段，否则转写会发出没有文件的请求。
+    expect(asr.invocation.request?.body).toMatchObject({
+      kind: 'multipart',
+      parts: expect.arrayContaining([
+        expect.objectContaining({ name: 'file', kind: 'file', value: '{{audio}}' }),
+      ]),
+    })
+    expect(asr.invocation.response).toEqual({ kind: 'url', jsonPaths: ['text'], download: false })
+    expect(asr.capabilities[0]?.output.types).toEqual(['text'])
+  })
 })

@@ -151,6 +151,20 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     apiKeyUrl: 'https://bigmodel.cn/apikey/platform',
   },
   {
+    /* 智谱开放平台：GLM-TTS / GLM-ASR-2512 等音频能力所在产品线。
+       与 Coding Plan 分开是因为两者 API 基底不同（音频在 /api/paas/v4），
+       且一个 Provider profile 只能配置一个 apiEndpoint。品牌 logo 与 Key
+       管理页共用智谱同一套。 */
+    id: 'zhipu-open-platform',
+    name: '智谱开放平台',
+    emoji: 'ZP',
+    color: '#3b5cff',
+    desc: 'GLM-TTS 语音合成 / GLM-ASR 语音转文本',
+    logoPath: 'providers/zhipu-glm-coding-plan.png',
+    purchaseUrl: 'https://bigmodel.cn/',
+    apiKeyUrl: 'https://bigmodel.cn/apikey/platform',
+  },
+  {
     id: 'qwen-standard',
     name: '通义千问',
     emoji: 'QW',
@@ -2651,6 +2665,37 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     // seed-audio-1.0 speaker 可选（music.md：speaker/audio_data/audio_url 三选一）。
     mediaDefaults: { audio: { format: 'wav' } },
     sourceUrls: ['https://www.volcengine.com/docs/6561/2550782'],
+  },
+
+  /* ─── 智谱开放平台音频（GLM-TTS / GLM-ASR-2512，同步）─── */
+  /* 与「智谱 GLM Coding Plan」分开：音频在 /api/paas/v4，Coding Plan 在
+     /api/anthropic 与 /api/coding/paas/v4，一个 profile 只能有一个 apiEndpoint。
+     两个模型共用一个渠道，router/MCP 按 capability 匹配 manifest：
+     glm-tts 只声明 audio.speech，glm-asr-2512 只声明 audio.transcription。 */
+  {
+    id: 'zhipu-audio',
+    vendorId: 'zhipu-open-platform',
+    name: '智谱开放平台语音',
+    provider: 'openai',
+    apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    defaultModel: 'glm-tts',
+    modelIds: ['glm-tts', 'glm-asr-2512'],
+    modelType: 'voice',
+    mediaProvider: 'zhipu',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech', 'audio.transcription'],
+    mediaModelRefs: [
+      { manifestId: 'zhipu:glm-tts', modelId: 'glm-tts', enabled: true },
+      // 语音识别：语音助手「云端识别引擎」可选渠道，router 按能力匹配选中。
+      { manifestId: 'zhipu:glm-asr-2512', modelId: 'glm-asr-2512', enabled: true },
+    ],
+    // 官方默认音色 tongtong（彤彤）。format 用 wav 而非官方默认的 pcm：
+    // pcm 是无头裸流，播放器无法直接播放。
+    mediaDefaults: { audio: { voice: 'tongtong', format: 'wav', speed: 1 } },
+    sourceUrls: [
+      'https://docs.bigmodel.cn/api-reference/模型-api/文本转语音',
+      'https://docs.bigmodel.cn/api-reference/模型-api/语音转文本',
+    ],
   },
 
   /* ─── 腾讯云 TokenHub 多媒体（图片 + 视频）─── */

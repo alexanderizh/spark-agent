@@ -427,6 +427,37 @@ describe('spark_media MCP server', () => {
         res.end(Buffer.from('video'))
         return
       }
+      if (req.method === 'POST' && req.url === '/zhipu/audio/transcriptions') {
+        // 智谱 GLM-ASR-2512：Contract V2 multipart 文件上传，响应 JSON { text }。
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedPath = req.url ?? ''
+          postedHeaders = req.headers
+          postedRawBody = Buffer.concat(chunks).toString('latin1')
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ text: '智谱转写结果' }))
+        })
+        return
+      }
+      if (req.method === 'POST' && req.url === '/zhipu/audio/speech') {
+        // 智谱 GLM-TTS：JSON 请求，响应 audio/wav 二进制裸流（binary_response）。
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedPath = req.url ?? ''
+          postedHeaders = req.headers
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'audio/wav' })
+          // 最小 RIFF/WAVE 头，足以让落盘逻辑产出 .wav 资产。
+          res.end(
+            Buffer.from([
+              0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
+            ]),
+          )
+        })
+        return
+      }
       res.writeHead(404)
       res.end()
     })
@@ -1976,6 +2007,112 @@ describe('spark_media MCP server', () => {
       output_format: { codec: 'mp3' },
       speed: 1.1,
     })
+  })
+
+  it('routes zhipu transcription to the ASR manifest even when the channel default model only covers speech', async () => {
+    // 真实智谱渠道形态：defaultModel 是 glm-tts（只声明 audio.speech），转写由同渠道的
+    // glm-asr-2512 承担。若候选清单被收窄到默认模型，transcribe_audio 会解析不到 manifest
+    // 而错误降级到 legacy 分支，用 glm-tts 去请求转写端点并必然失败。
+    const zhipuManifests = BUILTIN_MEDIA_MODEL_MANIFESTS.filter(
+      (manifest) => manifest.providerKind === 'zhipu',
+    )
+    expect(zhipuManifests.map((manifest) => manifest.modelId).sort()).toEqual([
+      'glm-asr-2512',
+      'glm-tts',
+    ])
+
+    const audioPath = path.join(tmpDir, 'zhipu-sample.wav')
+    writeFileSync(audioPath, Buffer.from('RIFF....WAVEfmt '))
+
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify([
+          {
+            id: 'zhipu-audio',
+            name: '智谱开放平台语音',
+            apiKey: 'zhipu-key',
+            provider: 'zhipu',
+            model: 'glm-tts',
+            mode: 'sync',
+            baseUrl: `${baseUrl}/zhipu`,
+            manifests: zhipuManifests,
+          },
+        ]),
+      },
+    })
+
+    const transcribed = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'transcribe_audio', arguments: { audioFile: audioPath } },
+    })
+
+    expect(transcribed.error).toBeUndefined()
+    expect(postedPath).toBe('/zhipu/audio/transcriptions')
+    // Contract V2 multipart 必须真的带上文件段；legacy contentType:'multipart'
+    // 只产出 text parts，会发出一个没有文件的请求。
+    expect(String(postedHeaders['content-type'])).toContain('multipart/form-data')
+    expect(postedRawBody).toContain('name="file"')
+    expect(postedRawBody).toContain('filename=')
+    // 关键断言：走的是 ASR 模型，而不是渠道默认的 glm-tts。
+    expect(postedRawBody).toContain('glm-asr-2512')
+    expect(postedRawBody).not.toContain('glm-tts')
+    expect(transcribed.result.structuredContent.text).toBe('智谱转写结果')
+  })
+
+  it('routes zhipu generate_audio to the TTS manifest and writes a wav artifact', async () => {
+    const zhipuManifests = BUILTIN_MEDIA_MODEL_MANIFESTS.filter(
+      (manifest) => manifest.providerKind === 'zhipu',
+    )
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify([
+          {
+            id: 'zhipu-audio',
+            name: '智谱开放平台语音',
+            apiKey: 'zhipu-key',
+            provider: 'zhipu',
+            model: 'glm-tts',
+            mode: 'sync',
+            baseUrl: `${baseUrl}/zhipu`,
+            manifests: zhipuManifests,
+          },
+        ]),
+      },
+    })
+
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'generate_audio',
+        arguments: { text: '你好，世界', voice: 'chuichui', speed: 1.2 },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedPath).toBe('/zhipu/audio/speech')
+    expect(postedHeaders.authorization).toBe('Bearer zhipu-key')
+    expect(postedBody).toMatchObject({
+      model: 'glm-tts',
+      input: '你好，世界',
+      voice: 'chuichui',
+      // aliases 把 canonical format 映射到官方 response_format；默认 wav 而非官方 pcm。
+      response_format: 'wav',
+      speed: 1.2,
+    })
+    const files = generated.result.structuredContent.files as string[]
+    expect(files).toHaveLength(1)
+    expect(files[0]).toMatch(/\.wav$/)
+    expect(existsSync(files[0]!)).toBe(true)
   })
 })
 

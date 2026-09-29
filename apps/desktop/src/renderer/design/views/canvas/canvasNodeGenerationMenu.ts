@@ -66,9 +66,15 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
   },
 ]
 
-/** 右键菜单当前开放的基础任务分组；音频能力保留定义，待生成链路支持后再显示。 */
-export const CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS =
-  CANVAS_BASE_CREATE_OPERATION_GROUPS.filter((group) => group.id !== 'audio')
+/**
+ * 右键菜单当前开放的基础任务分组。
+ *
+ * 音频分组曾因「平台无可用音频渠道」被隐藏（保留定义待生成链路支持后再显示）。
+ * 智谱 GLM-TTS / GLM-ASR 音频渠道接入后，文生音频与语音转写已具备可执行目标，
+ * 因此全部开放。归入「特色功能」的三项由 CANVAS_FEATURE_CREATE_OPERATION_IDS
+ * 单独承载，与这里不冲突（该集合不含 audio 两项）。
+ */
+export const CANVAS_VISIBLE_BASE_CREATE_OPERATION_GROUPS = CANVAS_BASE_CREATE_OPERATION_GROUPS
 
 /** 右键菜单使用的扁平基础任务列表；保留分组定义供其他入口按类别展示。 */
 export function canvasVisibleBaseCreateOperations(): CanvasNodeGenerationMenuItem[] {

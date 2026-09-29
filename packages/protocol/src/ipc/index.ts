@@ -35,6 +35,10 @@ import type { HookNode } from '../hooks.js'
 import type { ProviderModelSchedule } from '../provider-model-schedule.js'
 import type { ProviderQuotaRequest, ProviderQuotaResponse } from '../provider-quota.js'
 import type {
+  ProviderMediaSyncVoicesRequest,
+  ProviderMediaSyncVoicesResponse,
+} from '../provider-media-voices.js'
+import type {
   ProviderMediaDefaults,
   MediaProviderKind,
   MediaApiType,
@@ -42,6 +46,7 @@ import type {
   CanvasOperationType,
   MediaRequestCall,
   MediaInputMetadata,
+  MediaDynamicParamOptions,
 } from '../media-config.js'
 import type {
   MediaInvocationRequest,
@@ -1049,6 +1054,11 @@ export interface ProviderProfile {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用，用于 schema 驱动的参数面板和工具描述 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /**
+   * 从厂商同步到的动态参数候选（manifestId → 参数名 → 候选列表）。
+   * 读取时并入对应 manifest 参数 schema 的 examples，供画布 / 快速创作等端继承。
+   */
+  mediaDynamicParamOptions?: MediaDynamicParamOptions
   /** 模型定时禁用时段（峰谷定价规避），持久化于 config_json.modelSchedules。 */
   modelSchedules?: ProviderModelSchedule[]
   /** 当前时刻处于定时禁用时段的模型 ID 快照（本机时区）；供 UI 置灰与「禁用中」徽标。 */
@@ -7565,6 +7575,8 @@ export interface IpcChannelMap
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
   // 渠道限额查询（卡片限额胶囊；仅注册表内厂商支持，见 provider-quota.ts）
   'provider:quota': [ProviderQuotaRequest, ProviderQuotaResponse]
+  // 渠道音色目录同步（动态参数候选；当前仅智谱支持，见 zhipu-voice-catalog.ts）
+  'provider:media:sync-voices': [ProviderMediaSyncVoicesRequest, ProviderMediaSyncVoicesResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
