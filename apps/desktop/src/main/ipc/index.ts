@@ -5501,6 +5501,47 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  // 渠道音色复刻闭环（当前仅智谱支持）：上传示例音频 → 复刻 → 自动刷新候选；
+  // 以及删除复刻音色。两者都返回刷新后的候选快照，UI 无需再拉一次列表。
+  typedIpcHandle('provider:media:clone-voice', async (req) => {
+    log.info(
+      `provider:media:clone-voice requested, id=${req.providerId}, name=${req.voiceName}, ` +
+        `sample=${req.samplePath}`,
+    )
+    try {
+      const result = await getProviderService().cloneMediaVoice(req)
+      log.info(
+        `provider:media:clone-voice completed, id=${req.providerId}, voice=${result.voice}, ` +
+          `total=${result.options.length}, private=${result.privateCount}`,
+      )
+      return result
+    } catch (err) {
+      log.warn(
+        `provider:media:clone-voice failed, id=${req.providerId}, ` +
+          `error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
+  })
+
+  typedIpcHandle('provider:media:delete-voice', async (req) => {
+    log.info(`provider:media:delete-voice requested, id=${req.providerId}, voice=${req.voice}`)
+    try {
+      const result = await getProviderService().deleteMediaVoice(req)
+      log.info(
+        `provider:media:delete-voice completed, id=${req.providerId}, voice=${result.voice}, ` +
+          `total=${result.options.length}, private=${result.privateCount}`,
+      )
+      return result
+    } catch (err) {
+      log.warn(
+        `provider:media:delete-voice failed, id=${req.providerId}, ` +
+          `error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      throw err
+    }
+  })
+
   typedIpcHandle('provider:test-connection', async (req) => {
     log.info(
       `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +

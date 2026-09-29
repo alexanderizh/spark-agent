@@ -16,10 +16,9 @@
 
 import { createLogger } from '@spark/shared'
 import type { MediaDynamicParamOption } from '@spark/protocol'
+import { requestZhipuVoiceJson } from './zhipu-voice-api.js'
 
 const log = createLogger('zhipu:voice-catalog')
-
-const REQUEST_TIMEOUT_MS = 20_000
 
 /** 官方 voice/list 的单条音色（字段名保持厂商原始语义）。 */
 export interface ZhipuVoiceEntry {
@@ -50,6 +49,13 @@ export interface FetchZhipuVoiceCatalogInput {
 export interface ZhipuVoiceCatalog {
   /** 已排序的候选：官方音色在前、复刻音色在后。 */
   options: MediaDynamicParamOption[]
+  /**
+   * 仅复刻音色（官方 `voice_type === 'PRIVATE'`），供「删除音色」UI 列出可删项。
+   *
+   * 单独回传而不是让调用方「用候选减去系统音色」推断：官方音色集合会扩充，
+   * 靠差集推断会把新增的官方音色误判成可删的复刻音色。
+   */
+  privateVoices: MediaDynamicParamOption[]
   officialCount: number
   privateCount: number
 }
@@ -64,37 +70,14 @@ export interface ZhipuVoiceCatalog {
 export async function fetchZhipuVoiceCatalog(
   input: FetchZhipuVoiceCatalogInput,
 ): Promise<ZhipuVoiceCatalog> {
-  if (input.apiEndpointFullUrl === true) {
-    throw new Error(
-      '该渠道配置为「完整 URL」模式，无法推导音色列表地址；请改用标准 API Base URL 后再同步',
-    )
-  }
-  const base = input.apiEndpoint.trim().replace(/\/+$/, '')
-  if (!base) throw new Error('渠道未配置 API 地址，无法同步音色')
-
-  const url = new URL(`${base}/voice/list`)
-  if (input.voiceType) url.searchParams.set('voiceType', input.voiceType)
-
-  const doFetch = input.fetchImpl ?? fetch
+  const query = input.voiceType ? `?voiceType=${encodeURIComponent(input.voiceType)}` : ''
   const startedAt = Date.now()
-  const response = await doFetch(url.toString(), {
-    method: 'GET',
-    headers: { authorization: `Bearer ${input.apiKey}` },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    log.warn('Zhipu voice list request failed', {
-      status: response.status,
-      detail: detail.slice(0, 200),
-    })
-    throw new Error(
-      `音色列表请求失败：HTTP ${response.status}${detail ? ` · ${detail.slice(0, 200)}` : ''}`,
-    )
-  }
-
-  const payload = (await response.json()) as { voice_list?: unknown }
-  const raw = Array.isArray(payload.voice_list) ? payload.voice_list : []
+  const payload = await requestZhipuVoiceJson<{ voice_list?: unknown }>(
+    input,
+    '音色列表',
+    `/voice/list${query}`,
+  )
+  const raw = Array.isArray(payload?.voice_list) ? payload.voice_list : []
   const entries = raw
     .map((item) => parseVoiceEntry(item))
     .filter((entry): entry is ZhipuVoiceEntry => entry != null)
@@ -109,7 +92,12 @@ export async function fetchZhipuVoiceCatalog(
     private: privateVoices.length,
     durationMs: Date.now() - startedAt,
   })
-  return { options, officialCount: official.length, privateCount: privateVoices.length }
+  return {
+    options,
+    privateVoices: privateVoices.map((entry) => toOption(entry)),
+    officialCount: official.length,
+    privateCount: privateVoices.length,
+  }
 }
 
 function parseVoiceEntry(raw: unknown): ZhipuVoiceEntry | null {

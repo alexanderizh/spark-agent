@@ -2285,6 +2285,8 @@ export function ProviderEditPanel({
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
   const { invoke: syncMediaVoices } = useIpcInvoke('provider:media:sync-voices')
+  const { invoke: cloneMediaVoice } = useIpcInvoke('provider:media:clone-voice')
+  const { invoke: deleteMediaVoice } = useIpcInvoke('provider:media:delete-voice')
 
   // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -3267,6 +3269,7 @@ export function ProviderEditPanel({
     setSyncingVoices(true)
     try {
       const result = await syncMediaVoices({ providerId: profileId })
+      setClonedVoices(result.privateVoices)
       toast.success(
         `已同步 ${result.options.length} 个音色（官方 ${result.officialCount} · 复刻 ${result.privateCount}）`,
       )
@@ -3274,6 +3277,79 @@ export function ProviderEditPanel({
       toast.error(e instanceof Error ? e.message : '同步音色失败')
     } finally {
       setSyncingVoices(false)
+    }
+  }
+
+  // ── 音色复刻（当前仅智谱开放平台）────────────────────────────────────
+  const [clonePanelOpen, setClonePanelOpen] = useState(false)
+  const [cloningVoice, setCloningVoice] = useState(false)
+  const [deletingVoice, setDeletingVoice] = useState<string | null>(null)
+  const [samplePath, setSamplePath] = useState('')
+  const [voiceName, setVoiceName] = useState('')
+  const [sampleText, setSampleText] = useState('')
+  const [previewText, setPreviewText] = useState('')
+  /** 已复刻音色（厂商标注为私有），仅用于列出可删项；由同步 / 复刻响应回填。 */
+  const [clonedVoices, setClonedVoices] = useState<
+    { value: string; label?: string | undefined }[]
+  >([])
+
+  const handlePickVoiceSample = async () => {
+    const picked = await window.spark.invoke('dialog:open-file', {
+      title: '选择音色复刻示例音频',
+      multiple: false,
+      filters: [{ name: '音频', extensions: ['mp3', 'wav'] }],
+    })
+    const pickedPath = picked.filePaths?.[0] ?? picked.filePath
+    if (pickedPath) setSamplePath(pickedPath)
+  }
+
+  const handleCloneVoice = async () => {
+    if (!profileId) {
+      toast.warning('请先保存渠道，再复刻音色')
+      return
+    }
+    if (!samplePath) {
+      toast.warning('请选择示例音频文件')
+      return
+    }
+    if (!voiceName.trim()) {
+      toast.warning('请填写音色名称')
+      return
+    }
+    setCloningVoice(true)
+    try {
+      const result = await cloneMediaVoice({
+        providerId: profileId,
+        samplePath,
+        voiceName: voiceName.trim(),
+        ...(previewText.trim() ? { previewText: previewText.trim() } : {}),
+        ...(sampleText.trim() ? { sampleText: sampleText.trim() } : {}),
+      })
+      // 复刻动作已顺带刷新候选，这里直接采纳，用户即可在画布/快速创作里选到新音色。
+      setClonedVoices(result.privateVoices)
+      setSamplePath('')
+      setVoiceName('')
+      setSampleText('')
+      setPreviewText('')
+      toast.success(`音色「${result.voiceName}」复刻完成，已加入音色候选`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '音色复刻失败')
+    } finally {
+      setCloningVoice(false)
+    }
+  }
+
+  const handleDeleteVoice = async (voice: string) => {
+    if (!profileId) return
+    setDeletingVoice(voice)
+    try {
+      const result = await deleteMediaVoice({ providerId: profileId, voice })
+      setClonedVoices(result.privateVoices)
+      toast.success('已删除该复刻音色')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除音色失败')
+    } finally {
+      setDeletingVoice(null)
     }
   }
 
@@ -3958,26 +4034,124 @@ export function ProviderEditPanel({
                     </div>
                   )}
                   {form.mediaProvider === 'zhipu' && (
-                    <div className="pv_custom_adapter_entry">
-                      <div>
-                        <strong>音色目录</strong>
-                        <span>
-                          从智谱开放平台同步系统音色与复刻音色；画布与快速创作的音色候选会自动继承
-                        </span>
+                    <>
+                      <div className="pv_custom_adapter_entry">
+                        <div>
+                          <strong>音色目录</strong>
+                          <span>
+                            从智谱开放平台同步系统音色与复刻音色；画布与快速创作的音色候选会自动继承
+                          </span>
+                        </div>
+                        <Button
+                          icon={<Icons.Refresh size={13} />}
+                          loading={syncingVoices}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void handleSyncVoices()
+                          }}
+                        >
+                          同步音色
+                        </Button>
                       </div>
-                      <Button
-                        icon={<Icons.Refresh size={13} />}
-                        loading={syncingVoices}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          void handleSyncVoices()
-                        }}
-                      >
-                        同步音色
-                      </Button>
-                    </div>
+                      <div className="pv_custom_adapter_entry">
+                        <div>
+                          <strong>音色复刻</strong>
+                          <span>
+                            上传 3–30 秒示例音频复刻专属音色（mp3 / wav，≤10MB），并可管理已复刻音色
+                          </span>
+                        </div>
+                        <Button
+                          icon={<Icons.Mic size={13} />}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            setClonePanelOpen(true)
+                          }}
+                        >
+                          复刻音色
+                        </Button>
+                      </div>
+                    </>
                   )}
+
+                  <Modal
+                    open={clonePanelOpen}
+                    title="音色复刻"
+                    footer={null}
+                    width={520}
+                    onCancel={() => setClonePanelOpen(false)}
+                  >
+                    <div className="pv_voice_clone">
+                      <label className="pv_form_label">
+                        示例音频
+                        <span className="pv_voice_clone_path" title={samplePath}>
+                          {samplePath || '尚未选择文件'}
+                        </span>
+                      </label>
+                      <div className="pv_voice_clone_row">
+                        <Button onClick={() => void handlePickVoiceSample()}>选择文件</Button>
+                        <small>支持 mp3 / wav，≤10MB，建议时长 3–30 秒</small>
+                      </div>
+
+                      <label className="pv_form_label">
+                        音色名称
+                        <Input
+                          value={voiceName}
+                          placeholder="例如：我的播报音色"
+                          onChange={(event) => setVoiceName(event.target.value)}
+                        />
+                      </label>
+
+                      <label className="pv_form_label">
+                        示例音频文本（选填）
+                        <Input
+                          value={sampleText}
+                          placeholder="示例音频里朗读的内容，填写可提升复刻质量"
+                          onChange={(event) => setSampleText(event.target.value)}
+                        />
+                      </label>
+
+                      <label className="pv_form_label">
+                        试听文本（选填）
+                        <Input
+                          value={previewText}
+                          placeholder="留空使用平台默认试听句"
+                          onChange={(event) => setPreviewText(event.target.value)}
+                        />
+                      </label>
+
+                      <Button
+                        type="primary"
+                        block
+                        loading={cloningVoice}
+                        onClick={() => void handleCloneVoice()}
+                      >
+                        开始复刻
+                      </Button>
+
+                      {clonedVoices.length > 0 && (
+                        <div className="pv_voice_clone_list">
+                          <label className="pv_form_label">已复刻音色</label>
+                          {clonedVoices.map((voice) => (
+                            <div key={voice.value} className="pv_voice_clone_item">
+                              <span className="pv_voice_clone_name">
+                                {voice.label || voice.value}
+                              </span>
+                              <Button
+                                size="small"
+                                type="text"
+                                loading={deletingVoice === voice.value}
+                                onClick={() => void handleDeleteVoice(voice.value)}
+                              >
+                                删除
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Modal>
 
                   <label className="pv_form_label">模型清单</label>
                   <div className="pv_media_model_refs">

@@ -1973,3 +1973,56 @@
     margin-left: 0;
   }
 }
+
+/* ── 音色复刻弹窗（当前仅智谱开放平台）────────────────────────────
+   扁平分层：字段用间距分隔，已复刻音色列表用分割线区分，不做卡片盒子。 */
+.pv_voice_clone {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pv_voice_clone_path {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv_voice_clone_row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  small {
+    color: var(--text-muted);
+  }
+}
+
+.pv_voice_clone_list {
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.pv_voice_clone_item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+
+  & + & {
+    border-top: 1px solid var(--border);
+  }
+}
+
+.pv_voice_clone_name {
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

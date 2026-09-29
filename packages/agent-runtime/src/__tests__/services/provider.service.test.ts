@@ -51,6 +51,21 @@ vi.mock('../../services/cli-probe-runner.js', async (importOriginal) => {
   }
 })
 
+// 音色目录 / 复刻的网络调用在 service 层之外，这里 mock 边界模块，
+// 以便验证「解析渠道 → 调厂商 → 刷新候选并落库」的编排而不发真实请求。
+const zhipuVoiceMock = vi.hoisted(() => ({
+  fetchZhipuVoiceCatalog: vi.fn(),
+  cloneZhipuVoice: vi.fn(),
+  deleteZhipuVoice: vi.fn(),
+}))
+vi.mock('../../services/media/zhipu-voice-catalog.js', () => ({
+  fetchZhipuVoiceCatalog: zhipuVoiceMock.fetchZhipuVoiceCatalog,
+}))
+vi.mock('../../services/media/zhipu-voice-clone.client.js', () => ({
+  cloneZhipuVoice: zhipuVoiceMock.cloneZhipuVoice,
+  deleteZhipuVoice: zhipuVoiceMock.deleteZhipuVoice,
+}))
+
 import * as keystore from '@spark/shared/keystore'
 
 function makeRepo() {
@@ -807,6 +822,84 @@ describe('ProviderService', () => {
     // 传 null 表示清空（换渠道后旧音色目录失效）
     await service.updateProvider({ id: 'id-voices', mediaDynamicParamOptions: null })
     expect(repo.rows.get('id-voices')?.config_json).not.toContain('mediaDynamicParamOptions')
+  })
+
+  it('cloneMediaVoice 复刻成功后回传音色并把刷新后的候选落库', async () => {
+    repo.rows.set('id-zhipu', {
+      id: 'id-zhipu',
+      provider_type: 'openai',
+      name: '智谱开放平台语音',
+      config_json:
+        '{"defaultModel":"glm-tts","modelIds":["glm-tts"],' +
+        '"mediaProvider":"zhipu","apiEndpoint":"https://open.bigmodel.cn/api/paas/v4"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-zhipu',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-zhipu' as never)
+    zhipuVoiceMock.cloneZhipuVoice.mockResolvedValue({
+      voice: 'voice_clone_9',
+      sampleFileId: 'file_sample_9',
+    })
+    zhipuVoiceMock.fetchZhipuVoiceCatalog.mockResolvedValue({
+      options: [{ value: 'tongtong' }, { value: 'voice_clone_9', label: '我的音色' }],
+      privateVoices: [{ value: 'voice_clone_9', label: '我的音色' }],
+      officialCount: 1,
+      privateCount: 1,
+    })
+
+    const result = await service.cloneMediaVoice({
+      providerId: 'id-zhipu',
+      samplePath: '/tmp/sample.mp3',
+      voiceName: '我的音色',
+    })
+
+    // 复刻中间结果（音色 id）与刷新后的候选一并回传，UI 无需再拉一次列表
+    expect(result.voice).toBe('voice_clone_9')
+    expect(result.voiceName).toBe('我的音色')
+    expect(result.privateVoices).toEqual([{ value: 'voice_clone_9', label: '我的音色' }])
+    // 复刻动作必须把新音色写进动态参数候选，否则画布/快速创作看不到它
+    expect(repo.rows.get('id-zhipu')?.config_json).toContain('voice_clone_9')
+    expect(zhipuVoiceMock.cloneZhipuVoice).toHaveBeenCalledWith(
+      expect.objectContaining({ samplePath: '/tmp/sample.mp3', voiceName: '我的音色' }),
+    )
+  })
+
+  it('deleteMediaVoice 删除后按最新目录刷新候选', async () => {
+    repo.rows.set('id-zhipu-del', {
+      id: 'id-zhipu-del',
+      provider_type: 'openai',
+      name: '智谱开放平台语音',
+      config_json:
+        '{"defaultModel":"glm-tts","modelIds":["glm-tts"],' +
+        '"mediaProvider":"zhipu","apiEndpoint":"https://open.bigmodel.cn/api/paas/v4"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-zhipu-del',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-zhipu' as never)
+    zhipuVoiceMock.fetchZhipuVoiceCatalog.mockResolvedValue({
+      options: [{ value: 'tongtong' }],
+      privateVoices: [],
+      officialCount: 1,
+      privateCount: 0,
+    })
+
+    const result = await service.deleteMediaVoice({
+      providerId: 'id-zhipu-del',
+      voice: 'voice_clone_9',
+    })
+
+    expect(zhipuVoiceMock.deleteZhipuVoice).toHaveBeenCalledWith(
+      expect.objectContaining({ voice: 'voice_clone_9' }),
+    )
+    expect(result.voice).toBe('voice_clone_9')
+    expect(result.privateVoices).toEqual([])
+    expect(repo.rows.get('id-zhipu-del')?.config_json).not.toContain('voice_clone_9')
   })
 
   it('updateProvider updates codexApiKind without changing model config', async () => {

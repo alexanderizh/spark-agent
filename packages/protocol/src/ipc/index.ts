@@ -35,6 +35,10 @@ import type { HookNode } from '../hooks.js'
 import type { ProviderModelSchedule } from '../provider-model-schedule.js'
 import type { ProviderQuotaRequest, ProviderQuotaResponse } from '../provider-quota.js'
 import type {
+  ProviderMediaCloneVoiceRequest,
+  ProviderMediaCloneVoiceResponse,
+  ProviderMediaDeleteVoiceRequest,
+  ProviderMediaDeleteVoiceResponse,
   ProviderMediaSyncVoicesRequest,
   ProviderMediaSyncVoicesResponse,
 } from '../provider-media-voices.js'
@@ -7577,6 +7581,13 @@ export interface IpcChannelMap
   'provider:quota': [ProviderQuotaRequest, ProviderQuotaResponse]
   // 渠道音色目录同步（动态参数候选；当前仅智谱支持，见 zhipu-voice-catalog.ts）
   'provider:media:sync-voices': [ProviderMediaSyncVoicesRequest, ProviderMediaSyncVoicesResponse]
+  // 渠道音色复刻闭环（当前仅智谱支持，见 zhipu-voice-clone.client.ts）：
+  // 上传示例音频 → 复刻 → 自动刷新候选；以及删除复刻音色
+  'provider:media:clone-voice': [ProviderMediaCloneVoiceRequest, ProviderMediaCloneVoiceResponse]
+  'provider:media:delete-voice': [
+    ProviderMediaDeleteVoiceRequest,
+    ProviderMediaDeleteVoiceResponse,
+  ]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）

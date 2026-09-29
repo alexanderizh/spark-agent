@@ -12,6 +12,10 @@ import type {
   ProviderImportResult,
   ProviderIconConfig,
   ProviderQuotaResponse,
+  ProviderMediaCloneVoiceRequest,
+  ProviderMediaCloneVoiceResponse,
+  ProviderMediaDeleteVoiceRequest,
+  ProviderMediaDeleteVoiceResponse,
   ProviderMediaSyncVoicesResponse,
 } from '@spark/protocol'
 import {
@@ -65,6 +69,8 @@ import {
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { fetchZhipuQuota } from './providerQuota/zhipuQuota.js'
 import { fetchZhipuVoiceCatalog } from './media/zhipu-voice-catalog.js'
+import { cloneZhipuVoice, deleteZhipuVoice } from './media/zhipu-voice-clone.client.js'
+import type { ZhipuVoiceApiTarget } from './media/zhipu-voice-api.js'
 import { runCliProbe, withDeadline } from './cli-probe-runner.js'
 
 const log = createLogger('provider.service')
@@ -1540,41 +1546,107 @@ export class ProviderService {
    * 反馈失败原因，而不是静默降级。
    */
   async syncMediaVoiceCatalog(id: string): Promise<ProviderMediaSyncVoicesResponse> {
+    const target = await this.resolveZhipuVoiceChannel(id, '音色目录同步')
+    return { providerId: id, ...(await this.refreshZhipuVoiceCatalog(id, target)) }
+  }
+
+  /**
+   * 复刻音色：上传示例音频 → `POST /voice/clone` → 立即刷新候选。
+   *
+   * 复刻成功后必须同步一次候选，否则用户看不到刚创建的音色；刷新失败不吞掉
+   * 复刻结果（音色已在厂商侧创建成功），而是照实抛错让用户重试同步。
+   */
+  async cloneMediaVoice(
+    params: ProviderMediaCloneVoiceRequest,
+  ): Promise<ProviderMediaCloneVoiceResponse> {
+    const target = await this.resolveZhipuVoiceChannel(params.providerId, '音色复刻')
+    const cloned = await cloneZhipuVoice({
+      ...target,
+      samplePath: params.samplePath,
+      voiceName: params.voiceName,
+      ...(params.previewText ? { previewText: params.previewText } : {}),
+      ...(params.sampleText ? { sampleText: params.sampleText } : {}),
+    })
+    const snapshot = await this.refreshZhipuVoiceCatalog(params.providerId, target)
+    return {
+      providerId: params.providerId,
+      ...snapshot,
+      voice: cloned.voice,
+      voiceName: params.voiceName.trim(),
+    }
+  }
+
+  /** 删除复刻音色（官方只按 `voice` 删除），随后刷新候选让列表立刻反映删除结果。 */
+  async deleteMediaVoice(
+    params: ProviderMediaDeleteVoiceRequest,
+  ): Promise<ProviderMediaDeleteVoiceResponse> {
+    const target = await this.resolveZhipuVoiceChannel(params.providerId, '删除音色')
+    await deleteZhipuVoice({ ...target, voice: params.voice })
+    const snapshot = await this.refreshZhipuVoiceCatalog(params.providerId, target)
+    return { providerId: params.providerId, ...snapshot, voice: params.voice.trim() }
+  }
+
+  /**
+   * 解析智谱音频渠道的调用目标（同步 / 复刻 / 删除共用）。
+   *
+   * 三个动作对渠道的前置要求一致：必须是智谱渠道、必须已配置 API Key，
+   * 且端点必须能推导出音色子路径（「完整 URL」渠道由 client 侧拒绝）。
+   */
+  private async resolveZhipuVoiceChannel(id: string, action: string): Promise<ZhipuVoiceApiTarget> {
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
     if (config.mediaProvider !== 'zhipu') {
-      throw new Error('当前渠道不支持音色目录同步（仅智谱开放平台提供音色列表接口）')
+      throw new Error(`当前渠道不支持${action}（仅智谱开放平台提供音色接口）`)
     }
-    if (!row.keystore_ref) throw new Error('未配置 API Key，无法同步音色')
+    if (!row.keystore_ref) throw new Error(`未配置 API Key，无法${action}`)
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
     if (!apiKey) throw new Error('API Key 未在钥匙串中找到')
-
-    const catalog = await fetchZhipuVoiceCatalog({
+    return {
       apiEndpoint: config.mediaApiEndpoint ?? config.apiEndpoint ?? '',
       apiKey,
       ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
-    })
+    }
+  }
 
-    // 音色候选固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）。
+  /**
+   * 拉取音色目录并写入 profile 的动态参数候选，返回落库后的候选快照。
+   *
+   * 候选固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）。
+   * 合并基准在写入前重新读取，避免用动作开始前的旧快照覆盖期间的其他配置写入。
+   */
+  private async refreshZhipuVoiceCatalog(
+    id: string,
+    target: ZhipuVoiceApiTarget,
+  ): Promise<{
+    options: ProviderMediaSyncVoicesResponse['options']
+    privateVoices: ProviderMediaSyncVoicesResponse['privateVoices']
+    officialCount: number
+    privateCount: number
+    manifestId: string
+    paramName: string
+  }> {
+    const catalog = await fetchZhipuVoiceCatalog(target)
     const manifestId = 'zhipu:glm-tts'
     const paramName = 'voice'
+    const row = this.repo.get(id)
+    const existing =
+      row == null
+        ? undefined
+        : normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+            .mediaDynamicParamOptions
     const mediaDynamicParamOptions = {
-      ...(config.mediaDynamicParamOptions ?? {}),
-      [manifestId]: {
-        ...(config.mediaDynamicParamOptions?.[manifestId] ?? {}),
-        [paramName]: catalog.options,
-      },
+      ...(existing ?? {}),
+      [manifestId]: { ...(existing?.[manifestId] ?? {}), [paramName]: catalog.options },
     }
     await this.updateProvider({ id, mediaDynamicParamOptions })
     log.info(
-      `syncMediaVoiceCatalog completed, id=${id}, total=${catalog.options.length}, ` +
+      `refreshZhipuVoiceCatalog completed, id=${id}, total=${catalog.options.length}, ` +
         `official=${catalog.officialCount}, private=${catalog.privateCount}`,
     )
-
     return {
-      providerId: id,
       options: catalog.options,
+      privateVoices: catalog.privateVoices,
       officialCount: catalog.officialCount,
       privateCount: catalog.privateCount,
       manifestId,
