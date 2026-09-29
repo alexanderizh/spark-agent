@@ -231,6 +231,47 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # @electron/get 的下载缓存（macOS: ~/Library/Caches/electron；Linux:
+      # ~/.cache/electron；Windows: ~\AppData\Local\electron\Cache）。
+      # 不存在的平台路径会被 cache action 忽略。命中后预热步骤零网络依赖。
+      - name: Cache Electron download cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/.cache/electron
+            ~\AppData\Local\electron\Cache
+          key: electron-download-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # pnpm 在 store 全缓存命中时会跳过 electron 的 install 脚本，导致
+      # node_modules/electron/dist 缺失；首次调用 electron CLI 才隐式在线下载，
+      # 一次网络抖动（fetch failed）就会炸掉整个构建。这里显式预热并带重试，
+      # 后续 ABI 校验与 electron-builder 均直接命中 @electron/get 缓存。
+      - name: Ensure Electron binary downloaded (retry transient network)
+        shell: bash
+        run: |
+          set -euo pipefail
+          electron_dir="$(node -p "require('node:path').dirname(require.resolve('electron/package.json'))")"
+          if [ -d "${electron_dir}/dist" ]; then
+            echo "[electron-binary] already present; skip"
+            exit 0
+          fi
+          install_js="${electron_dir}/install.js"
+          for attempt in 1 2 3; do
+            echo "[electron-binary] install.js attempt ${attempt}/3"
+            if node "$install_js"; then
+              echo "[electron-binary] downloaded on attempt ${attempt}"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              pause=$((attempt * 10))
+              echo "[electron-binary] attempt ${attempt} failed; retrying in ${pause}s"
+              sleep "$pause"
+            fi
+          done
+          echo "[electron-binary] download failed after 3 attempts"
+          exit 1
+
       - name: Verify Codex App Server protocol compatibility
         run: pnpm run check:codex-protocol
 
@@ -322,12 +363,13 @@ jobs:
               #   1) DMG 卸载撞上 'Resource busy'
               #   2) Apple 侧联网核验/公证的瞬时网络错误
               #   3) 公证上传/等待的瞬时网络错误
+              #   4) Electron 二进制等下载点的瞬时网络错误（undici 'fetch failed'）
               # 其余失败（签名不符、公证被拒、脚本错误）必须原样上报，不做无谓重建。
               retry_reason=""
               if grep -q "Command failed: hdiutil detach" "$log_file" \
                 && grep -q "Resource busy" "$log_file"; then
                 retry_reason="dmg-detach"
-              elif grep -qE "NSURLError|The request timed out|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|HTTP 50[234]" "$log_file"; then
+              elif grep -qE "NSURLError|The request timed out|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|HTTP 50[234]|fetch failed|Electron failed to install correctly" "$log_file"; then
                 retry_reason="apple-network"
               fi
 

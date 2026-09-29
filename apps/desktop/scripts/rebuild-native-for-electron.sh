@@ -170,8 +170,37 @@ if [ "${#_STAGED[@]}" -gt 0 ]; then
 fi
 ok "Native modules rebuilt for Electron ($TARGET_ARCH)"
 
+# CI 上 pnpm 全 store 缓存命中时不会执行 electron 的 install 脚本，
+# node_modules/electron/dist 缺失会让首次 `electron` CLI 调用触发隐式在线下载，
+# 一次网络抖动（fetch failed）就炸掉整个构建。这里显式补装并带重试。
+ensure_electron_binary() {
+  local electron_dir
+  electron_dir="$(node -p "require('node:path').dirname(require.resolve('electron/package.json'))")"
+  if [ -d "${electron_dir}/dist" ]; then
+    ok "Electron binary already present: ${electron_dir}/dist"
+    return 0
+  fi
+
+  warn "Electron binary missing under ${electron_dir}; downloading with retry"
+  local attempt
+  for attempt in 1 2 3; do
+    echo "  [electron-binary] install.js attempt ${attempt}/3"
+    if node "${electron_dir}/install.js"; then
+      ok "Electron binary downloaded on attempt ${attempt}"
+      return 0
+    fi
+    if [ "$attempt" -lt 3 ]; then
+      local pause=$((attempt * 10))
+      warn "  [electron-binary] attempt ${attempt} failed; retrying in ${pause}s"
+      sleep "$pause"
+    fi
+  done
+  fail "Electron binary download failed after 3 attempts (see logs above)"
+}
+
 if [ "$TARGET_ARCH" = "$HOST_ARCH" ]; then
   step "Electron native module ABI verification"
+  ensure_electron_binary
   # Same verify-deps-before-run hazard as above: staged dirs still exist here.
   pnpm --config.verify-deps-before-run=false run native:verify
   ok "Native modules load under Electron"
