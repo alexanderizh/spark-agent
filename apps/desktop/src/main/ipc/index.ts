@@ -313,6 +313,7 @@ import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import {
+  getVoiceAssistantService,
   handleVoiceAssistantTurnEvent,
   registerVoiceAssistantIpc,
 } from './registerVoiceAssistantIpc.js'

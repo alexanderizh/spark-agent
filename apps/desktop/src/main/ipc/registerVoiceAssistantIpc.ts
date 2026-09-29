@@ -71,6 +71,8 @@ export interface RegisterVoiceAssistantIpcDeps {
   listWorkspaces(): Promise<Array<{ id: string; name: string }>>
   /** M2 语音命令：某工作区最近会话 */
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
+  /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
+  resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
   /** 应用关闭清理登记 */
   registerCleanup(cleanup: () => void): void
   /** 状态变化通知（托盘刷新等；在状态广播后调用） */
@@ -171,6 +173,7 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     listRecentSessions: deps.listRecentSessions,
     listWorkspaces: deps.listWorkspaces,
     findLatestSessionIdInWorkspace: deps.findLatestSessionIdInWorkspace,
+    resolveApproval: deps.resolveApproval,
   })
 
   // 识别事件桥接：VoiceRecognitionService 内部会话（ownerId=-1）事件 → 编排服务
@@ -235,8 +238,9 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     // 路由门必须同时放行对话采集会话与 KWS 常驻采集会话：
     // KWS 会话 id 为固定值，不在 captureSessionId 内（standby 态 captureSessionId 为 null）
     if (
-      !voiceAssistantService?.ownsCaptureSession(sessionId) &&
-      sessionId !== VOICE_ASSISTANT_KWS_SESSION_ID
+      voiceAssistantService == null ||
+      (!voiceAssistantService.ownsCaptureSession(sessionId) &&
+        sessionId !== VOICE_ASSISTANT_KWS_SESSION_ID)
     ) {
       return
     }

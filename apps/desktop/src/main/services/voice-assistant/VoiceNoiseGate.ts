@@ -169,7 +169,7 @@ interface SpeechSpan {
 
 export class VoiceNoiseGate {
   private readonly mode: VoiceFocusMode
-  private readonly onSpeechActivity?: (active: boolean) => void
+  private readonly onSpeechActivity?: ((active: boolean) => void) | undefined
   private readonly useSilero: boolean
 
   private baselineDb: number | null = null

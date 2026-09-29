@@ -180,7 +180,7 @@ describe('silero 确认层', () => {
   it('段 drain 进时间轴 + coverageRatio 区间计算', async () => {
     const gate = new VoiceNoiseGate({ mode: 'standard' })
     gate.reset()
-    const vad = MockVad.instances[0]
+    const vad = MockVad.instances[0]!
     expect(vad).toBeDefined()
     // 模拟 silero 检出 [16000, 32000) 的人声段（1s–2s）
     vad.emitSegment(16000, 16000)
@@ -196,7 +196,7 @@ describe('silero 确认层', () => {
   it('shouldAcceptFinal 按档位阈值拦截（standard 35% / strict 55%）', () => {
     const gate = new VoiceNoiseGate({ mode: 'standard' })
     gate.reset()
-    const vad = MockVad.instances[0]
+    const vad = MockVad.instances[0]!
     vad.emitSegment(16000, 16000)
     gate.flushSilero()
     // 30% 覆盖：standard 拦截
@@ -206,7 +206,7 @@ describe('silero 确认层', () => {
 
     const strictGate = new VoiceNoiseGate({ mode: 'strict' })
     strictGate.reset()
-    const strictVad = MockVad.instances[0]
+    const strictVad = MockVad.instances[0]!
     strictVad.emitSegment(0, 16000)
     strictGate.flushSilero()
     // 60% 覆盖：strict 放行；45% 覆盖：strict 拦截、standard 会放行
@@ -217,7 +217,7 @@ describe('silero 确认层', () => {
   it('reset 隔离会话状态：段时间轴与底噪基线清空', () => {
     const gate = new VoiceNoiseGate({ mode: 'standard' })
     gate.reset()
-    const vad = MockVad.instances[0]
+    const vad = MockVad.instances[0]!
     vad.emitSegment(0, 16000)
     gate.flushSilero()
     expect(gate.coverageRatio(0, 16000)).toBe(1)

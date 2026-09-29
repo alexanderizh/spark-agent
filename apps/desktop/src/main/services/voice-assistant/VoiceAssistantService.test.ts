@@ -60,18 +60,23 @@ vi.mock('./WakeWordDetector.js', () => ({
 const kwsFeedMock = kwsMocks.feed
 
 import { VoiceAssistantService } from './VoiceAssistantService.js'
-import type { VoiceAssistantRouteBinding } from './VoiceRouteBinding.js'
+import type { VoiceAssistantRouteBinding } from '@spark/protocol'
+import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 
 interface Harness {
   service: VoiceAssistantService
   stateEvents: VoiceAssistantStateEvent[]
   captureCommands: VoiceAssistantCaptureCommand[]
   playCommands: VoiceAssistantPlayCommand[]
-  submitted: Array<{ sessionId: string; message: string; display: string }>
+  submitted: Array<{ sessionId: string; message: string; userMessageDisplayContent: string }>
   cancelledSessions: string[]
   recovered: Array<{ sessionId: string; turnId: string }>
   createdSessions: string[]
-  route: VoiceAssistantRouteBinding
+  listedRecent: number[]
+  listedWorkspaces: number[]
+  bindingUpdates: Array<Record<string, unknown>>
+  approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }>
+  route: VoiceRouteBinding
   installCalls: number[]
   setInstallImpl: (
     impl: () => Promise<{
@@ -121,18 +126,18 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     ...settingsPatch,
   }
 
-  const route: VoiceAssistantRouteBinding = {
+  const route: VoiceRouteBinding = {
     current: { defaultSessionId: 'session-voice-1' },
     ensureSession: async () => ({ sessionId: 'session-voice-1', created: false }),
     createNewSession: async () => {
       createdSessions.push('session-voice-new')
       return { sessionId: 'session-voice-new' }
     },
-    updateBinding: (patch) => {
+    updateBinding: (patch: Partial<VoiceAssistantRouteBinding>) => {
       bindingUpdates.push(patch as Record<string, unknown>)
     },
     clearSession: () => undefined,
-  } as unknown as VoiceAssistantRouteBinding
+  } as unknown as VoiceRouteBinding
 
   let turnCounter = 0
   const service = new VoiceAssistantService({

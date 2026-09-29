@@ -296,6 +296,69 @@ export function VoiceAssistantSettingsCard() {
             />
           </div>
         </div>
+        <div className="settings-card-row">
+          <div className="flex1 min-w-0">
+            <div className="row-title">音量</div>
+            <div className="row-desc">0–10，1.0 为默认；仅 MiniMax 等支持音量参数的渠道生效。</div>
+          </div>
+          <div className="row-action" style={{ minWidth: 180 }}>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              step={0.5}
+              value={settings.ttsVol}
+              style={{ width: '100%' }}
+              onChange={(e) => setSettings({ ...settings, ttsVol: Number(e.target.value) })}
+              onMouseUp={() => void update({})}
+              onTouchEnd={() => void update({})}
+            />
+          </div>
+        </div>
+        <div className="settings-card-row">
+          <div className="flex1 min-w-0">
+            <div className="row-title">音调</div>
+            <div className="row-desc">-12–12，0 为默认；仅支持音调参数的渠道生效。</div>
+          </div>
+          <div className="row-action" style={{ minWidth: 180 }}>
+            <input
+              type="range"
+              min={-12}
+              max={12}
+              step={1}
+              value={settings.ttsPitch}
+              style={{ width: '100%' }}
+              onChange={(e) => setSettings({ ...settings, ttsPitch: Number(e.target.value) })}
+              onMouseUp={() => void update({})}
+              onTouchEnd={() => void update({})}
+            />
+          </div>
+        </div>
+        <div className="settings-card-row">
+          <div className="flex1 min-w-0">
+            <div className="row-title">情绪</div>
+            <div className="row-desc">合成情绪倾向（MiniMax voice_setting.emotion 语义），默认不指定。</div>
+          </div>
+          <div className="row-action" style={{ minWidth: 180 }}>
+            <Select
+              value={settings.ttsEmotion === '' ? 'default' : settings.ttsEmotion}
+              onChange={(v) => {
+                setSettings({ ...settings, ttsEmotion: v === 'default' ? '' : String(v) })
+                void update({})
+              }}
+              options={[
+                { label: '默认（不指定）', value: 'default' },
+                { label: '开心 happy', value: 'happy' },
+                { label: '悲伤 sad', value: 'sad' },
+                { label: '愤怒 angry', value: 'angry' },
+                { label: '恐惧 fearful', value: 'fearful' },
+                { label: '厌恶 disgusted', value: 'disgusted' },
+                { label: '惊讶 surprised', value: 'surprised' },
+                { label: '平静 calm', value: 'calm' },
+              ]}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="settings-card" style={{ marginBottom: 10 }}>

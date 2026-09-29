@@ -190,6 +190,9 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
     ttsModelId,
     ttsVoice: typeof source.ttsVoice === 'string' ? source.ttsVoice.slice(0, 200) : '',
     ttsSpeed: readNumber(source.ttsSpeed, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsSpeed, 0.5, 2.0),
+    ttsVol: readNumber(source.ttsVol, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsVol, 0, 10),
+    ttsPitch: readNumber(source.ttsPitch, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsPitch, -12, 12),
+    ttsEmotion: readString(source.ttsEmotion, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsEmotion, 40),
     sessionPermissionMode: permissionMode,
     voiceSystemPrompt: readBool(
       source.voiceSystemPrompt,

@@ -86,7 +86,11 @@ export class VoiceRouteBinding {
     return { sessionId }
   }
 
-  updateBinding(patch: Partial<VoiceAssistantRouteBinding>): void {
+  updateBinding(
+    patch: {
+      [K in keyof VoiceAssistantRouteBinding]?: VoiceAssistantRouteBinding[K] | undefined
+    },
+  ): void {
     // exactOptionalPropertyTypes：patch 中显式传 undefined 的键按「清除」处理
     const merged: Record<string, unknown> = { ...this.deps.readBinding() }
     for (const [key, value] of Object.entries(patch)) {

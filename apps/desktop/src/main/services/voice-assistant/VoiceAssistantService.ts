@@ -53,7 +53,7 @@ import {
   parseVoiceCommand,
 } from './voiceCommands.js'
 import { buildVoiceUserMessage } from './voiceUserMessage.js'
-import type { VoiceAssistantRouteBinding } from './VoiceRouteBinding.js'
+import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 
 const log = createLogger('voice-assistant')
 
@@ -106,7 +106,7 @@ export interface VoiceAssistantDeps {
   /** completed 先于 isFinal 时的历史回捞（照抄远程链路 300ms 兜底模式） */
   recoverFinalFromHistory(sessionId: string, turnId: string): Promise<string | null>
   /** 会话绑定（惰性建会话/改绑） */
-  route: VoiceAssistantRouteBinding
+  route: VoiceRouteBinding
   /** 三条 stream 通道的推送（主窗口 webContents） */
   sendCaptureCommand(command: VoiceAssistantCaptureCommand): void
   sendPlayCommand(command: VoiceAssistantPlayCommand): void
@@ -160,7 +160,7 @@ export class VoiceAssistantService {
   private armedAccelerator: string | null = null
   private disposed = false
   private readonly pipeline: VoiceTtsPipeline
-  private readonly route: VoiceAssistantRouteBinding
+  private readonly route: VoiceRouteBinding
   // ── M2 常驻聆听（KWS） ──
   private kwsDetector: WakeWordDetector | null = null
   /** 渲染端 KWS 常驻采集是否在线（在线时对话复用该采集流，不重起 getUserMedia） */
@@ -800,6 +800,8 @@ export class VoiceAssistantService {
     sessionId: string
     text?: string
     message?: string
+    /** speech-activity 事件携带：门控是否检出人声（空转计时重置依据） */
+    speechActive?: boolean
   }): void {
     const isClosingSession =
       this.closingAsrSessionId != null && event.sessionId === this.closingAsrSessionId
@@ -1462,6 +1464,23 @@ export class VoiceAssistantService {
     const settings = this.settings
     const modelParams: Record<string, unknown> = { speed: settings.ttsSpeed }
     if (settings.ttsVoice.trim().length > 0) modelParams.voice = settings.ttsVoice.trim()
+    // MiniMax 专有参数（vol/pitch/emotion）仅对 minimax-hailuo 渠道下发：
+    // 其他渠道 manifest 若开启透传会把未知字段传给供应商引发 400，缺失时编译器回落渠道默认。
+    const chosenProvider =
+      settings.ttsProviderProfileId != null
+        ? providers.find((provider) => provider.id === settings.ttsProviderProfileId)
+        : providers.find(
+            (provider) =>
+              (provider.mediaCapabilities ?? []).includes('audio.speech') ||
+              (provider.mediaModelManifests ?? []).some((manifest) =>
+                manifest.capabilities.some((capability) => capability.id === 'audio.speech'),
+              ),
+          )
+    if (chosenProvider?.mediaProvider === 'minimax-hailuo') {
+      if (settings.ttsVol !== 1) modelParams.vol = settings.ttsVol
+      if (settings.ttsPitch !== 0) modelParams.pitch = settings.ttsPitch
+      if (settings.ttsEmotion.trim().length > 0) modelParams.emotion = settings.ttsEmotion.trim()
+    }
     const startedAt = Date.now()
     const { output } = await this.deps.mediaRouter.invoke(
       {
