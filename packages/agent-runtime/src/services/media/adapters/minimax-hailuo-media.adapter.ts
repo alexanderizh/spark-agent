@@ -64,9 +64,14 @@ const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.image_to_video',
   'video.reference_to_video',
 ]
-// 音频（speech-2.8-hd/turbo 文生语音、music-2.6 文生音乐），均走 v1 通道（HTTP 恒 200 + base_resp 业务码）。
+// 音频（speech-2.8-hd/turbo 文生语音、music-2.6 文生音乐、asr-1.0 语音识别），均走 v1 通道。
+// speech/music：HTTP 恒 200 + base_resp 业务码；asr：普通 HTTP 状态码 + {text} 响应。
 // 来源：docs/integrations/minimax/speech-music.md §1（T2A HTTP）/ §6（Music Generation）。
-const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = ['audio.speech', 'audio.music']
+const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = [
+  'audio.speech',
+  'audio.music',
+  'audio.transcription',
+]
 
 /** V2(H3) content[] 元素（简化类型，仅描述发送形态）。 */
 type MinimaxV2ContentItem =
@@ -88,6 +93,40 @@ const V2_SUCCEEDED_STATUS = 'succeeded'
 // V2 终态失败：failed（生成失败）/ expired（超 7 天保留期）/ cancelled（用户或系统取消）。
 // cancelled 也是终态，必须终止轮询，否则会一直 pending 直到超时（来源 video-models-v2.md §5.3）。
 const V2_FAILED_STATUSES = ['failed', 'expired', 'cancelled']
+
+/** 构造 multipart/form-data（asr-1.0 文件上传用；与 openai-compatible adapter 同一实现思路）。 */
+function buildMultipartForm(
+  fields: Record<string, string>,
+  files: Array<{ field: string; filename: string; content: Buffer }>,
+): { body: Buffer; contentType: string } {
+  const boundary = `----sparkminimax${Math.random().toString(16).slice(2)}`
+  const parts: Buffer[] = []
+  const sep = Buffer.from(`--${boundary}\r\n`)
+  for (const [name, value] of Object.entries(fields)) {
+    parts.push(sep)
+    parts.push(Buffer.from(`Content-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+  }
+  for (const file of files) {
+    parts.push(sep)
+    parts.push(
+      Buffer.from(
+        `Content-Disposition: form-data; name="${file.field}"; filename="${file.filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+      ),
+    )
+    parts.push(file.content)
+    parts.push(Buffer.from('\r\n'))
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`))
+  return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
+}
+
+/** 由输入文件的扩展名/MIME 推导上传文件名（MiniMax 按容器格式识别，不支持裸 PCM）。 */
+function minimaxAsrUploadFilename(file: { path?: string | null; mimeType?: string | null }): string {
+  const fromPath = file.path && file.path.includes('.') ? file.path.split('.').pop() : undefined
+  const fromMime = file.mimeType ? file.mimeType.split('/').pop() : undefined
+  const ext = (fromPath ?? fromMime ?? '').toLowerCase()
+  return /^[a-z0-9]{2,5}$/.test(ext) ? `audio.${ext}` : 'audio.dat'
+}
 
 export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
   readonly id: MediaProviderKind = 'minimax-hailuo'
@@ -205,7 +244,69 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
   ): Promise<MediaGenerateOutput> {
     const capability = input.capability as MediaCapabilityId
     if (capability === 'audio.music') return this.generateMusic(input, ctx)
+    if (capability === 'audio.transcription') return this.transcribeAudio(input, ctx)
     return this.generateSpeech(input, ctx)
+  }
+
+  // ─── 语音识别（asr-1.0，POST /v1/speech_to_text，multipart 同步）─────────────
+  // 文档：platform.minimax.cn/docs/api-reference/speech-to-text。必填 model + file；
+  // 响应 { text, duration, trace_id }。注意：该接口不是「HTTP 恒 200 + base_resp」模式，
+  // HTTP 4xx（400 超 500s / 401 鉴权 / 413 超 50MB）由 fetchJson 直接抛出；若 body 携带
+  // base_resp（部分错误形态）仍走 assertMinimaxBaseResp 归一。
+
+  private async transcribeAudio(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const capability = 'audio.transcription' as MediaCapabilityId
+    const file = (input.inputFiles ?? []).find((f) => f.type === 'audio' || f.type === 'file')
+    if (!file) {
+      throw new MediaProviderError('invalid_input', 'MiniMax 语音识别需要音频文件输入')
+    }
+    const buffer = file.dataUrl
+      ? Buffer.from(file.dataUrl.split(',')[1] ?? '', 'base64')
+      : file.path
+        ? await this.artifact.readLocalFile(file.path)
+        : null
+    if (!buffer || buffer.length === 0) {
+      throw new MediaProviderError('invalid_input', 'transcription input must be dataUrl/path')
+    }
+    const model = ctx.defaultModel
+    const base = baseEndpoint(ctx)
+    const form = buildMultipartForm(
+      { model, response_format: 'json' },
+      [{ field: 'file', filename: minimaxAsrUploadFilename(file), content: buffer }],
+    )
+    const url = `${base}/v1/speech_to_text`
+    logMediaCall({
+      provider: this.id,
+      capability,
+      model,
+      method: 'POST',
+      url,
+      body: { model, response_format: 'json', file: `[multipart ${buffer.length} bytes]` },
+      extra: { source: file.dataUrl ? 'dataUrl' : 'path', bytes: buffer.length },
+    })
+    const resp = await fetchJson(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.apiKey}`, 'content-type': form.contentType },
+      body: form.body,
+      fetchImpl: ctx.fetch,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
+    })
+    assertMinimaxBaseResp(resp)
+    const textRaw = (resp as { text?: unknown } | null | undefined)?.text
+    const text = typeof textRaw === 'string' ? textRaw.trim() : ''
+    if (text.length === 0) {
+      throw new MediaProviderError('provider_http_error', 'MiniMax 语音识别未返回文本')
+    }
+    const asset = await this.artifact.writeTextAsset(
+      text,
+      input.outputDir,
+      filenameHelper(input, 'transcript', 0, 1),
+    )
+    logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1 })
+    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: resp }
   }
 
   // ─── 文生语音 T2A（speech-2.8-hd/turbo，POST /v1/t2a_v2，同步）──────────────

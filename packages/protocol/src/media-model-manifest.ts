@@ -3582,6 +3582,42 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 10000 },
   })),
   {
+    /* MiniMax 语音识别（asr-1.0，POST /v1/speech_to_text，multipart 同步）。
+       实际请求由 MinimaxHailuoMediaAdapter 转写分支组装（multipart 文件上传，响应 {text,duration}），
+       manifest 承载能力声明与契约展示。router 按能力匹配 manifest 选模型，因此与 speech-2.8
+       共存于同一渠道时 ASR 仍会正确选中 asr-1.0。
+       约束（来源官方文档）：wav/aiff/flac/alac(m4a)/mp3/aac/opus/ogg，≤500s、≤50MB，不支持裸 PCM。 */
+    id: 'minimax:asr-1.0',
+    providerKind: 'minimax-hailuo',
+    modelId: 'asr-1.0',
+    displayName: 'MiniMax Speech-to-Text',
+    domains: ['audio'] as MediaDomain[],
+    capabilities: [
+      {
+        id: 'audio.transcription',
+        label: '语音转文本',
+        input: { required: ['audio'] as MediaManifestInputKind[] },
+        output: {
+          types: ['text'] as MediaManifestOutputKind[],
+          mimeTypes: ['text/plain'],
+        },
+        // 官方必填仅 model+file；response_format 固定 json（verbose_json/srt/vtt 会启用
+        // 说话人分离且与 stream 互斥，桌面转写只需要 text），不开放用户可调参数。
+        paramSchema: { type: 'object', additionalProperties: false, properties: {} },
+        defaults: {},
+      },
+    ],
+    invocation: {
+      mode: 'sync' as MediaInvocationMode,
+      endpoint: '/v1/speech_to_text',
+      method: 'POST' as const,
+      contentType: 'multipart' as const,
+      requestTemplate: { model: '{{modelId}}' },
+      response: { kind: 'url' as const, jsonPaths: ['text'], download: false },
+    },
+    docs: { sourceUrls: ['https://platform.minimax.cn/docs/api-reference/speech-to-text'] },
+  },
+  {
     id: 'minimax:music-2.6',
     providerKind: 'minimax-hailuo',
     modelId: 'music-2.6',

@@ -2492,20 +2492,23 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://api.minimaxi.com',
     defaultModel: 'speech-2.8-hd',
-    modelIds: ['speech-2.8-hd', 'speech-2.8-turbo'],
+    modelIds: ['speech-2.8-hd', 'speech-2.8-turbo', 'asr-1.0'],
     modelType: 'voice',
     mediaProvider: 'minimax-hailuo',
     mediaApiType: 'sync',
-    mediaCapabilities: ['audio.speech'],
+    mediaCapabilities: ['audio.speech', 'audio.transcription'],
     mediaModelRefs: [
       { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
       { manifestId: 'minimax:speech-2.8-turbo', modelId: 'speech-2.8-turbo', enabled: true },
+      // 语音识别（asr-1.0）：语音助手「云端识别引擎」可选渠道，router 按能力匹配选中。
+      { manifestId: 'minimax:asr-1.0', modelId: 'asr-1.0', enabled: true },
     ],
     // voice 兜底用官方示例音色 male-qn-qingse（§2.2），用户可在 provider 管理页改。
     mediaDefaults: { audio: { voice: 'male-qn-qingse', format: 'mp3', speed: 1 } },
     sourceUrls: [
       'https://platform.minimaxi.com/docs/api-reference/speech-t2a-http',
       'https://platform.minimaxi.com/docs/api-reference/api-overview',
+      'https://platform.minimax.cn/docs/api-reference/speech-to-text',
     ],
   },
 
