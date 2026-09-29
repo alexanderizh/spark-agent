@@ -33,13 +33,21 @@ export const AUDIO_CAPABILITIES: MediaCapabilityId[] = ['audio.speech']
  */
 export const TRANSCRIBE_CAPABILITIES: MediaCapabilityId[] = ['audio.transcription']
 
+/**
+ * 音乐生成候选能力。协议层 `capabilityForOperation('text_to_audio')` 的候选顺序是
+ * `audio.music` 在前、`audio.speech` 在后，音乐模式必须显式锁定 audio.music，
+ * 否则「重放既有记录」或路由推导都可能落到语音合成上。
+ */
+export const MUSIC_CAPABILITIES: MediaCapabilityId[] = ['audio.music']
+
 /** 按模式与输入素材推导画布 operation（不含模型上下文）。 */
 export function operationFor(
   mode: QuickCreateMode,
   inputs: readonly QuickCreateInput[],
 ): CanvasOperationType {
   if (mode === 'reverse') return 'image_prompt_reverse'
-  if (mode === 'audio') return 'text_to_audio'
+  // 语音与音乐共用 text_to_audio 操作，能力由 capabilityFor 显式锁定区分。
+  if (mode === 'audio' || mode === 'music') return 'text_to_audio'
   if (mode === 'transcribe') return 'audio_transcribe'
   if (mode === 'image') return inputs.length > 0 ? 'image_edit' : 'text_to_image'
   if (inputs.some((input) => input.type === 'video')) return 'video_edit'
@@ -88,6 +96,7 @@ export function capabilityFor(
  */
 export function lockedCapabilityFor(mode: QuickCreateMode): MediaCapabilityId | undefined {
   if (mode === 'audio') return AUDIO_CAPABILITIES[0]
+  if (mode === 'music') return MUSIC_CAPABILITIES[0]
   if (mode === 'transcribe') return TRANSCRIBE_CAPABILITIES[0]
   return undefined
 }
@@ -102,7 +111,7 @@ export function operationForSubmission(
   inputs: readonly QuickCreateInput[],
   capability: MediaCapabilityId | undefined,
 ): CanvasOperationType {
-  if (mode === 'audio') return 'text_to_audio'
+  if (mode === 'audio' || mode === 'music') return 'text_to_audio'
   if (mode === 'transcribe') return 'audio_transcribe'
   if (capability === 'video.reference_to_video') return 'text_to_video'
   return operationFor(mode, inputs)

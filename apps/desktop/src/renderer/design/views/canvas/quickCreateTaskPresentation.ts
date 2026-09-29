@@ -14,6 +14,7 @@ export const MODE_ITEMS: Array<{
   { id: 'reverse', label: '反推' },
   { id: 'video', label: '视频' },
   { id: 'audio', label: '语音' },
+  { id: 'music', label: '音乐' },
   { id: 'transcribe', label: '识别' },
 ]
 
@@ -52,7 +53,8 @@ export function selectQuickCreateInputPaths(
   filePaths: readonly string[],
   mode: QuickCreateMode,
 ): string[] {
-  if (mode === 'audio') return []
+  // 语音 / 音乐都是纯文本输入，没有参考素材语义。
+  if (mode === 'audio' || mode === 'music') return []
   const extensions =
     mode === 'video'
       ? [...IMAGE_INPUT_EXTENSIONS, ...VIDEO_INPUT_EXTENSIONS]
@@ -78,7 +80,15 @@ export function titleForPrompt(prompt: string, mode: QuickCreateMode): string {
   // 识别任务提示词可选，为空时标题用音频文件名之外的通用兜底，避免出现「识别提示词」误导。
   return (
     firstLine?.slice(0, 40) ||
-    `${modeLabel(mode)}${mode === 'audio' ? '文稿' : mode === 'transcribe' ? '任务' : '提示词'}`
+    `${modeLabel(mode)}${
+      mode === 'audio'
+        ? '文稿'
+        : mode === 'transcribe'
+          ? '任务'
+          : mode === 'music'
+            ? '描述'
+            : '提示词'
+    }`
   )
 }
 

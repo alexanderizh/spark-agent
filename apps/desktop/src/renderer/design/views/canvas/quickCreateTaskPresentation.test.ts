@@ -66,16 +66,25 @@ describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
 })
 
 describe('quickCreateTaskPresentation 模式清单', () => {
-  it('模式 rail 与历史筛选共用同一份清单，语音/识别排在视频之后', () => {
+  it('模式 rail 与历史筛选共用同一份清单，语音/音乐/识别排在视频之后', () => {
     expect(MODE_ITEMS.map((item) => item.id)).toEqual([
       'image',
       'reverse',
       'video',
       'audio',
+      'music',
       'transcribe',
     ])
     expect(MODE_ITEMS.find((item) => item.id === 'audio')?.label).toBe('语音')
+    expect(MODE_ITEMS.find((item) => item.id === 'music')?.label).toBe('音乐')
     expect(MODE_ITEMS.find((item) => item.id === 'transcribe')?.label).toBe('识别')
+  })
+
+  it('音乐模式同样不接受素材路径，且空提示词标题为「音乐描述」', () => {
+    expect(selectQuickCreateInputPaths(['/Users/a/pic.png', '/Users/a/clip.mp4'], 'music')).toEqual(
+      [],
+    )
+    expect(titleForPrompt('', 'music')).toBe('音乐描述')
   })
 })
 

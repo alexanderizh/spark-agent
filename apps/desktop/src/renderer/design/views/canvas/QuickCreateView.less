@@ -790,34 +790,49 @@
 .quick-create-history-head {
   display: flex;
   min-height: 58px;
+  /* 右侧窄时「状态/统计」与「筛选 + 视图切换」各自换行，而不是互相压缩变形 */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  row-gap: 6px;
   border-bottom: 1px solid var(--divider);
 }
 
 .quick-create-history-overview {
   display: flex;
   min-width: 0;
+  /* 两段文案各自成块，放不下时整段换到下一行，避免「已完成」被拆成「已/完成」 */
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 10px;
+  row-gap: 2px;
 }
 
 .quick-create-history-overview strong {
   color: var(--text-strong);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .quick-create-history-overview span {
+  /* 统计文案单行显示，极端窄容器下退化为省略号而不是逐字折行 */
+  overflow: hidden;
   color: var(--text-faint);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quick-create-history-filters {
   display: flex;
+  /* 让筛选条吃掉剩余宽度并允许换行：窄面板下所有页签都完整可见
+     （原来的 overflow-x: auto 在桌面端没有滚动条提示，末位页签看着像被裁切） */
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  overflow-x: auto;
 }
 
 .quick-create-history-filters button {
@@ -1612,9 +1627,12 @@
 }
 
 .quick-create-section-head strong {
+  /* 标题固定占位不参与收缩：否则窄面板下同行的长说明会把「输入音频」这类标题挤成两行 */
+  flex: 0 0 auto;
   color: var(--text-strong);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .quick-create-section-head span {
@@ -1730,8 +1748,11 @@
 }
 
 .quick-create-prompt-head strong {
+  /* 同上：标题单行固定宽度，剩余宽度让给说明（说明自身已有 ellipsis） */
+  flex: 0 0 auto;
   color: var(--text-strong);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .quick-create-prompt-head span {
@@ -2086,8 +2107,11 @@
 
 .quick-create-form-pane .quick-create-mode-rail {
   display: flex;
+  /* 模式段是固定宽度（6 个模式约 292px），窄面板下没有空间留给右侧说明：
+     放不下时让说明整行换到下一行完整显示，而不是压成省略号；一行放得下时保持原样 */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 10px 14px;
   border-bottom: 0;
 }
@@ -2133,7 +2157,9 @@
 
 .quick-create-mode-note {
   min-width: 0;
-  flex: 1;
+  /* 最长说明约 24 个汉字（≈235px）：剩余宽度不足一整句时换行独占一行，
+     换行后仍右对齐，保持「左切换 / 右说明」的原始视觉关系 */
+  flex: 1 1 240px;
   overflow: hidden;
   color: var(--text-faint);
   font-size: 10px;

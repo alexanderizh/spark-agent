@@ -159,3 +159,25 @@ describe('operationForSubmission', () => {
     )
   })
 })
+
+describe('音乐模式（music）能力推导', () => {
+  const MUSIC_MODEL = model(['audio.music'])
+  const SPEECH_MODEL = model(['audio.speech'])
+
+  it('operation 与语音合成共用 text_to_audio', () => {
+    expect(operationFor('music', [])).toBe('text_to_audio')
+    expect(operationForSubmission('music', [], 'audio.music')).toBe('text_to_audio')
+  })
+
+  it('无论模型声明什么，能力锁定 audio.music（不会回退到语音合成）', () => {
+    expect(lockedCapabilityFor('music')).toBe('audio.music')
+    expect(capabilityFor('music', [], MUSIC_MODEL)).toBe('audio.music')
+    expect(capabilityFor('music', [], SPEECH_MODEL)).toBe('audio.music')
+    expect(capabilityFor('music', [], undefined)).toBe('audio.music')
+  })
+
+  it('只声明 audio.speech 的模型不会通过音乐模式的兼容过滤', () => {
+    const candidate = capabilityFor('music', [], SPEECH_MODEL)
+    expect(SPEECH_MODEL.capabilities.some((item) => item.id === candidate)).toBe(false)
+  })
+})

@@ -22,6 +22,7 @@ import type {
 import {
   AUDIO_CAPABILITIES,
   IMAGE_CAPABILITIES,
+  MUSIC_CAPABILITIES,
   TRANSCRIBE_CAPABILITIES,
   VIDEO_CAPABILITIES,
   capabilityFor,
@@ -30,6 +31,7 @@ import {
   operationForSubmission,
   type QuickCreateInput,
 } from './quickCreateCapability'
+import { quickCreateModeCopy } from './quickCreateModeCopy'
 import { Icons } from '../../Icons'
 import { SidebarExpandButton } from '../../SidebarExpandButton'
 import { WindowControls } from '../../components/WindowControls'
@@ -70,7 +72,6 @@ import { mediaModelKey } from './canvasModelPickerModel'
 import { QuickCreateOutputPanel } from './QuickCreateOutputPanel'
 import { QuickCreateTaskHistory } from './QuickCreateTaskHistory'
 import {
-  MODE_ITEMS,
   modeLabel,
   promptCoverFromTaskAssets,
   quickInputKindForPath,
@@ -78,6 +79,11 @@ import {
   selectQuickCreateInputPaths,
   titleForPrompt,
 } from './quickCreateTaskPresentation'
+import {
+  isQuickCreateModeAvailable,
+  quickCreateModeItems,
+  resolveAvailableQuickCreateMode,
+} from './quickCreateModeAvailability'
 import {
   quickCreateParamScope,
   readQuickCreateCustomSizeHistory,
@@ -116,6 +122,7 @@ const QUICK_CREATE_MAX_INPUT_BYTES = 72 * 1024 * 1024
  */
 function inputRejectMessage(mode: QuickCreateMode, source: 'pick' | 'drop'): string {
   if (mode === 'audio') return '语音模式只需输入文稿，不支持添加素材'
+  if (mode === 'music') return '音乐模式只需输入描述，不支持添加素材'
   if (mode === 'transcribe') return source === 'drop' ? '仅支持拖入音频文件' : '请选择音频文件'
   if (mode === 'video')
     return source === 'drop' ? '仅支持拖入图片或视频素材' : '请选择图片或视频素材'
@@ -665,7 +672,13 @@ export function QuickCreateView() {
   const isSidebarHidden = t.sidebarHidden || isStandaloneWindow
   const [savedPreferences] = useState<QuickCreatePreferences>(() => readQuickCreatePreferences())
   const [activeTab, setActiveTab] = useState<'compose' | 'tasks'>('compose')
-  const [mode, setMode] = useState<QuickCreateMode>(savedPreferences?.mode ?? 'image')
+  // 未对外开放的模式（如暂未放开的音乐）不允许成为当前模式：初始偏好、模式切换与
+  // 历史任务复用这三条入口都收窄到可见模式，界面上不会出现「没有页签高亮」的隐形模式。
+  const [mode, setMode] = useState<QuickCreateMode>(() =>
+    resolveAvailableQuickCreateMode(savedPreferences?.mode),
+  )
+  // 模式相关的全部文案与交互开关，唯一事实来源见 quickCreateModeCopy。
+  const modeCopy = quickCreateModeCopy(mode)
   const [prompt, setPrompt] = useState('')
   const [inputs, setInputs] = useState<QuickInput[]>([])
   const [tasks, setTasks] = useState<QuickCreateTaskRecord[]>(readQuickCreateTasks)
@@ -835,6 +848,12 @@ export function QuickCreateView() {
           canvasApi.listMediaModels({ capability, enabledOnly: true }),
         ),
       ),
+      // 音乐生成（audio.music）与语音合成（audio.speech）是不同能力，分开拉取
+      Promise.all(
+        MUSIC_CAPABILITIES.map((capability) =>
+          canvasApi.listMediaModels({ capability, enabledOnly: true }),
+        ),
+      ),
       // 识别模式使用 audio.transcription 能力的模型，与 TTS（audio.speech）分开拉取
       Promise.all(
         TRANSCRIBE_CAPABILITIES.map((capability) =>
@@ -849,6 +868,7 @@ export function QuickCreateView() {
           imageResults,
           videoResults,
           audioResults,
+          musicResults,
           transcribeResults,
           providerResult,
           library,
@@ -858,6 +878,7 @@ export function QuickCreateView() {
             ...imageResults,
             ...videoResults,
             ...audioResults,
+            ...musicResults,
             ...transcribeResults,
           ]
             .flatMap((result) => result.models)
@@ -1112,14 +1133,14 @@ export function QuickCreateView() {
         item.type.startsWith('image/'),
       )
       if (imageItems.length === 0) return
-      // 语音模式没有素材入口；识别模式只收本地音频文件：都拦下粘贴并说明，
+      // 语音 / 音乐没有素材入口；识别模式只收本地音频文件：都拦下粘贴并说明，
       // 避免图片静默进入输入列表或被误当作识别输入。
-      if (mode === 'audio' || mode === 'transcribe') {
+      if (!quickCreateModeCopy(mode).acceptsInputMaterials || mode === 'transcribe') {
         event.preventDefault()
         message.warning(
-          mode === 'audio'
-            ? inputRejectMessage(mode, 'pick')
-            : '语音识别暂不支持粘贴，请选择音频文件',
+          mode === 'transcribe'
+            ? '语音识别暂不支持粘贴，请选择音频文件'
+            : inputRejectMessage(mode, 'pick'),
         )
         return
       }
@@ -1208,7 +1229,8 @@ export function QuickCreateView() {
   }, [handleChooseFiles, mode])
 
   const handleModeChange = (nextMode: QuickCreateMode) => {
-    setMode(nextMode)
+    // 页签只会渲染对外开放的模式，这里再兜一层，避免调用方传入被隐藏的模式
+    setMode(resolveAvailableQuickCreateMode(nextMode))
     setPrompt('')
     setInputs([])
     setPromptPickerOpen(false)
@@ -1297,6 +1319,12 @@ export function QuickCreateView() {
       const taskId =
         source?.id ?? `quick-create-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const taskMode = source?.mode ?? mode
+      // 未对外开放的模式（如暂未放开的音乐）：历史记录的「重试 / 重新生成」不允许把请求
+      // 重新送进隐藏模式，否则隐藏入口会被历史行绕过（记录本身仍可查看产物与复用提示词）。
+      if (!isQuickCreateModeAvailable(taskMode)) {
+        message.warning(`${modeLabel(taskMode)}模式暂未对外开放`)
+        return
+      }
       const taskPrompt = source?.prompt ?? prompt.trim()
       const taskInputs: Array<QuickInput | CanvasMediaTaskInputFile> =
         source?.inputFiles ?? requestInputs
@@ -1541,6 +1569,20 @@ export function QuickCreateView() {
 
   const handleReuseTask = useCallback(
     (task: QuickCreateTaskRecord) => {
+      const targetMode = resolveAvailableQuickCreateMode(task.mode)
+      if (targetMode !== task.mode) {
+        // 该任务所属模式当前未对外开放（如暂未放开的音乐）：只回填提示词，
+        // 不搬运模型与参数，避免把人带进看不见的模式或留下模式/模型错配的草稿。
+        setMode(targetMode)
+        setPrompt(task.prompt)
+        setInputs([])
+        setPromptPickerOpen(false)
+        setFocusedTaskId(null)
+        setActiveTab('compose')
+        setExpandedTaskId(null)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
       setMode(task.mode)
       setPrompt(task.prompt)
       setInputs(task.inputFiles.map(quickInputFromTaskFile))
@@ -1696,7 +1738,7 @@ export function QuickCreateView() {
           >
             <div className="quick-create-mode-rail" role="tablist" aria-label="创作模式">
               <div className="quick-create-mode-segment">
-                {MODE_ITEMS.map((item) => (
+                {quickCreateModeItems().map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -1709,25 +1751,13 @@ export function QuickCreateView() {
                   </button>
                 ))}
               </div>
-              <span className="quick-create-mode-note">
-                {mode === 'reverse'
-                  ? '上传 1 张图片，可补充文字要求，反推可编辑提示词'
-                  : mode === 'audio'
-                    ? '输入文稿，选择合适的音色后合成语音'
-                    : mode === 'transcribe'
-                      ? '选择 1 个音频文件，转写为可复制的文本'
-                      : mode === 'image'
-                        ? inputs.length > 0
-                          ? '已添加参考素材，当前按图像编辑处理'
-                          : '添加参考素材后自动切换为图像编辑'
-                        : '可添加首帧或参考素材生成视频'}
-              </span>
+              <span className="quick-create-mode-note">{modeCopy.note(inputs.length)}</span>
             </div>
 
             {/* 粘贴监听挂在整个表单：焦点在提示词、素材区或任意控件时粘贴图片都能作为素材加入 */}
             <div className="quick-create-form" onPaste={(event) => void handlePasteInput(event)}>
-              {/* 语音（TTS）是纯文本输入，没有参考素材语义，整个素材区在语音模式下不渲染 */}
-              {mode !== 'audio' && (
+              {/* 语音（TTS）/ 音乐是纯文本输入，没有参考素材语义，整个素材区不渲染 */}
+              {modeCopy.acceptsInputMaterials && (
                 <section className="quick-create-reference-section" aria-label="参考素材">
                   <div className="quick-create-section-head">
                     <div>
@@ -1811,26 +1841,8 @@ export function QuickCreateView() {
               <div className="quick-create-prompt-wrap">
                 <div className="quick-create-prompt-head">
                   <div>
-                    <strong>
-                      {mode === 'reverse'
-                        ? '反推要求'
-                        : mode === 'audio'
-                          ? '文稿'
-                          : mode === 'transcribe'
-                            ? '补充说明'
-                            : '提示词'}
-                    </strong>
-                    <span>
-                      {mode === 'reverse'
-                        ? '可选 · 补充反推侧重点'
-                        : mode === 'audio'
-                          ? '这里填写要朗读的内容本身，不做提示词改写'
-                          : mode === 'transcribe'
-                            ? '可选 · 纠正专有名词的拼写提示，帮助提高识别准确率'
-                            : mode === 'video'
-                              ? '描述主体、动作、镜头与氛围'
-                              : '描述主体、构图、光线与风格'}
-                    </span>
+                    <strong>{modeCopy.promptTitle}</strong>
+                    <span>{modeCopy.promptHint}</span>
                   </div>
                   {mode !== 'reverse' && (
                     <div className="quick-create-prompt-tools">
@@ -1854,37 +1866,11 @@ export function QuickCreateView() {
                   className="quick-create-prompt"
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  aria-label={
-                    mode === 'reverse'
-                      ? '反推补充要求'
-                      : mode === 'audio'
-                        ? '语音文稿'
-                        : mode === 'transcribe'
-                          ? '识别补充说明'
-                          : '提示词'
-                  }
-                  placeholder={
-                    mode === 'reverse'
-                      ? '可选：补充反推侧重点，例如「重点描述人物服装与光线」，留空则输出完整提示词'
-                      : mode === 'audio'
-                        ? '输入要转换为语音的文稿，例如：欢迎收听今天的早间资讯，我们先看一条来自产品团队的消息…'
-                        : mode === 'transcribe'
-                          ? '可选：纠正专有名词提示，例如「包含产品名 SparkWork 与人名张阳」，留空直接识别'
-                          : mode === 'video'
-                            ? '描述主体、动作、镜头运动和时长，例如：雨夜街头，霓虹倒影，镜头缓慢推进…'
-                            : '描述主体、构图、光线和风格，例如：清晨窗边的产品静物，柔和侧光…'
-                  }
+                  aria-label={modeCopy.promptAriaLabel}
+                  placeholder={modeCopy.promptPlaceholder}
                 />
                 <div className="quick-create-prompt-meta">
-                  <span>
-                    {mode === 'reverse'
-                      ? '补充要求会与固定反推指令一起发送'
-                      : mode === 'audio'
-                        ? '文稿会原样送入语音合成，标点与换行会影响停顿'
-                        : mode === 'transcribe'
-                          ? '补充说明仅用于纠正识别结果中的专有名词，不影响音频内容'
-                          : '建议先写清主体，再补充环境、构图和风格'}
-                  </span>
+                  <span>{modeCopy.promptMeta}</span>
                   <small>{prompt.length} 字</small>
                 </div>
               </div>
@@ -1991,17 +1977,11 @@ export function QuickCreateView() {
                       )}
                     </div>
                     {!modelsLoading && !selectedModel && (
-                      <span className="quick-create-capability-hint">
-                        {mode === 'audio'
-                          ? '暂无已启用的语音模型，请先配置 TTS 渠道'
-                          : mode === 'transcribe'
-                            ? '暂无已启用的语音识别模型，请先配置语音识别渠道'
-                            : '暂无匹配的已启用模型，请先到模型服务配置'}
-                      </span>
+                      <span className="quick-create-capability-hint">{modeCopy.noModelHint}</span>
                     )}
                     {!modelsLoading &&
                       !selectedModel &&
-                      (mode === 'audio' || mode === 'transcribe') &&
+                      modeCopy.offersChannelSetup &&
                       !isStandaloneWindow && (
                         <button
                           type="button"
@@ -2042,20 +2022,17 @@ export function QuickCreateView() {
                     className="quick-create-generate-button"
                     disabled={
                       modelsLoading ||
-                      (mode === 'reverse' || mode === 'transcribe'
-                        ? inputs.length !== 1
-                        : !prompt.trim())
+                      (modeCopy.requiresSingleInput ? inputs.length !== 1 : !prompt.trim())
                     }
                     onClick={() => void submitTask()}
                   >
-                    <Icons.Play size={13} />{' '}
-                    {mode === 'audio' ? '生成语音' : mode === 'transcribe' ? '开始识别' : '生成'}
+                    <Icons.Play size={13} /> {modeCopy.generateLabel}
                   </Button>
                 </div>
               </div>
             </div>
-            {/* 语音模式不接受任何素材：不弹「松开以添加素材」，避免承诺一个做不到的动作 */}
-            {dragOverForm && mode !== 'audio' && (
+            {/* 语音 / 音乐不接受任何素材：不弹「松开以添加素材」，避免承诺一个做不到的动作 */}
+            {dragOverForm && modeCopy.acceptsInputMaterials && (
               <div className="quick-create-drop-hint" aria-hidden="true">
                 <span>松开以添加素材</span>
               </div>

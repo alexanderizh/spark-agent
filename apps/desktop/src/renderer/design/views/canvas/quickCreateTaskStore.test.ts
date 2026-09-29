@@ -64,3 +64,33 @@ describe('quickCreateTaskStore 模式白名单', () => {
     expect(unknown?.operation).toBe('text_to_image')
   })
 })
+
+describe('quickCreateTaskStore 音乐模式', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('music 是受支持的模式', () => {
+    expect(QUICK_CREATE_MODES).toContain('music')
+    expect(isQuickCreateMode('music')).toBe(true)
+  })
+
+  it('音乐任务写入后读回仍是 music + text_to_audio（不被强转/丢弃）', () => {
+    writeQuickCreateTasks([
+      { ...audioTask(), id: 'quick-create-music', mode: 'music', prompt: '夏日海边电子流行' },
+    ])
+
+    const [restored] = readQuickCreateTasks()
+    expect(restored?.mode).toBe('music')
+    expect(restored?.operation).toBe('text_to_audio')
+  })
+
+  it('缺失 operation 的音乐任务按 text_to_audio 兜底', () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([{ id: 'm', mode: 'music', prompt: '夏日海边电子流行' }]),
+    )
+
+    expect(readQuickCreateTasks()[0]?.operation).toBe('text_to_audio')
+  })
+})

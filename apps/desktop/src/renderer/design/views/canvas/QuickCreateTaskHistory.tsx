@@ -20,7 +20,6 @@ import {
 import { useArrowPaging } from '../../hooks/useArrowPaging'
 import { copyTextToClipboard } from './canvasClipboard'
 import {
-  MODE_ITEMS,
   copyableTaskPrompt,
   modeLabel,
   statusLabel,
@@ -29,6 +28,7 @@ import {
   textOutputCopyMeta,
   titleForPrompt,
 } from './quickCreateTaskPresentation'
+import { isQuickCreateModeAvailable, quickCreateModeItems } from './quickCreateModeAvailability'
 import {
   buildQuickCreateTaskMenuItems,
   outputKeyOf,
@@ -220,9 +220,12 @@ export function QuickCreateTaskHistory({
   onGenerateImage,
   onEditImage,
 }: HistoryProps) {
-  const [filter, setFilter] = useState<QuickCreateMode | 'all'>(
-    () => readQuickCreatePreferences().taskFilter ?? 'all',
-  )
+  const [filter, setFilter] = useState<QuickCreateMode | 'all'>(() => {
+    // 未对外开放的模式（如暂未放开的音乐）没有筛选页签，历史偏好里残留的筛选值同样要收窄，
+    // 否则会出现「筛选项看不见但记录被过滤掉」的空列表。
+    const saved = readQuickCreatePreferences().taskFilter ?? 'all'
+    return saved === 'all' || isQuickCreateModeAvailable(saved) ? saved : 'all'
+  })
   const [view, setView] = useState<QuickCreateTaskViewMode>(
     () => readQuickCreatePreferences().taskView ?? 'list',
   )
@@ -508,7 +511,7 @@ export function QuickCreateTaskHistory({
             >
               全部 <small>{tasks.length}</small>
             </button>
-            {MODE_ITEMS.map((item) => (
+            {quickCreateModeItems().map((item) => (
               <button
                 key={item.id}
                 type="button"

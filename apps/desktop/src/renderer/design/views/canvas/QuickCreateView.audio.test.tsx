@@ -30,6 +30,7 @@ vi.mock('@lobehub/ui', () => ({
 }))
 
 import { QuickCreateView } from './QuickCreateView'
+import { setQuickCreateMusicModeEnabled } from './quickCreateModeAvailability'
 
 /** TTS 模型清单：只有语音模式才会用到。 */
 const AUDIO_MODEL = {
@@ -55,10 +56,38 @@ const AUDIO_MODEL = {
   enabled: true,
 }
 
+/** 音乐模型清单：只有音乐模式才会用到。 */
+const MUSIC_MODEL = {
+  manifestId: 'music-manifest',
+  providerProfileId: 'music-provider',
+  providerName: '音乐渠道',
+  providerKind: 'minimax-hailuo',
+  modelId: 'music-2.6',
+  effectiveModelId: 'music-2.6',
+  displayName: 'MiniMax Music 2.6',
+  domains: ['audio'],
+  invocationMode: 'sync',
+  capabilities: [
+    {
+      id: 'audio.music',
+      label: '文生音乐',
+      input: { required: ['prompt'], maxImages: 0 },
+      output: { types: ['audio'] },
+      paramSchema: {},
+    },
+  ],
+  sourceUrls: [],
+  enabled: true,
+}
+
 /** 记录每个 IPC 通道的调用参数，供断言「语音模式只查 audio.speech」。 */
 let invocations: Array<{ channel: string; payload: unknown }> = []
 
-function installSparkBridge(audioModels: unknown[], transcribeModels: unknown[] = []) {
+function installSparkBridge(
+  audioModels: unknown[],
+  transcribeModels: unknown[] = [],
+  musicModels: unknown[] = [],
+) {
   invocations = []
   Object.defineProperty(window, 'spark', {
     configurable: true,
@@ -69,6 +98,7 @@ function installSparkBridge(audioModels: unknown[], transcribeModels: unknown[] 
           const capability = (payload as { capability?: string } | undefined)?.capability
           if (capability === 'audio.speech') return { models: audioModels }
           if (capability === 'audio.transcription') return { models: transcribeModels }
+          if (capability === 'audio.music') return { models: musicModels }
           return { models: [] }
         }
         if (channel === 'provider:list') return { profiles: [] }
@@ -421,6 +451,142 @@ describe('QuickCreateView 识别模式', () => {
     // 提示词可留空：输入补充说明不解除 disabled，只有音频文件才解除
     const promptArea = document.querySelector<HTMLTextAreaElement>('#quick-create-prompt')
     expect(promptArea?.placeholder).toContain('可选')
+    warning.mockRestore()
+  })
+})
+
+describe('QuickCreateView 音乐模式', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  // 音乐模式入口默认不对外开放（见 quickCreateModeAvailability）。
+  // 本组用例验证的是已落地的音乐模式实现，所以在这里显式打开入口开关，
+  // 而不是让 UI 用例去假设页签一定可见。
+  beforeEach(() => {
+    setQuickCreateMusicModeEnabled(true)
+    window.localStorage.clear()
+    window.history.replaceState({}, '', '/')
+    installSparkBridge([], [], [MUSIC_MODEL])
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(async () => {
+    act(() => root.unmount())
+    container.remove()
+    document.body.innerHTML = ''
+    setQuickCreateMusicModeEnabled(false)
+    await act(async () => {})
+  })
+
+  function modeButton(label: string): HTMLButtonElement | undefined {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>('.quick-create-mode')).find(
+      (button) => button.textContent === label,
+    )
+  }
+
+  it('模式 rail 提供「音乐」，切过去后隐藏素材区并改为音乐描述', async () => {
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+
+    expect(modeButton('音乐')).not.toBeUndefined()
+    await act(async () => modeButton('音乐')?.click())
+    await flush()
+
+    expect(document.querySelector('.quick-create-reference-section')).toBeNull()
+    expect(document.body.textContent).toContain('音乐描述')
+    expect(document.body.textContent).toContain('输入描述与歌词，生成可直接播放的音乐')
+    expect(document.querySelector('#quick-create-prompt')?.getAttribute('placeholder')).toContain(
+      '轻快的电子流行',
+    )
+    expect(document.body.textContent).toContain('生成音乐')
+  })
+
+  it('音乐模式按 audio.music 查询模型并进入候选', async () => {
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+    await act(async () => modeButton('音乐')?.click())
+    await flush()
+
+    const capabilityQueries = invocations
+      .filter((item) => item.channel === 'canvas:media-models:list')
+      .map((item) => (item.payload as { capability?: string }).capability)
+    expect(capabilityQueries).toContain('audio.music')
+    expect(document.body.textContent).not.toContain('暂无已启用的音乐模型')
+  })
+
+  it('未配置音乐模型时显示音乐专属空态与「去配置」入口', async () => {
+    installSparkBridge([], [], [])
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+    await act(async () => modeButton('音乐')?.click())
+    await flush()
+
+    expect(document.body.textContent).toContain('暂无已启用的音乐模型')
+  })
+
+  it('提交音乐任务携带 audio.music（不会被推导成语音合成）', async () => {
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+    await act(async () => modeButton('音乐')?.click())
+    await flush()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('#quick-create-prompt')
+    await act(async () => {
+      if (!textarea) return
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(textarea, '夏日海边的轻快电子流行')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const generateButton = () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes('生成音乐'),
+      )
+    await act(async () => generateButton()?.click())
+    await flush()
+
+    const submit = invocations.find((item) => item.channel === 'canvas:task:create-media')
+    const payload = submit?.payload as { capabilityId?: string; operation?: string } | undefined
+    expect(payload?.capabilityId).toBe('audio.music')
+    expect(payload?.operation).toBe('text_to_audio')
+  })
+
+  it('音乐模式下粘贴图片被拦下并给出音乐专属提示', async () => {
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+    await act(async () => modeButton('音乐')?.click())
+    await flush()
+
+    const warning = vi.spyOn(message, 'warning').mockImplementation(() => undefined as never)
+    const form = document.querySelector('.quick-create-form')
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: {
+        items: [
+          { type: 'image/png', getAsFile: () => new File(['x'], 'a.png', { type: 'image/png' }) },
+        ],
+      },
+    })
+    await act(async () => {
+      form?.dispatchEvent(pasteEvent)
+    })
+
+    expect(warning).toHaveBeenCalledWith('音乐模式只需输入描述，不支持添加素材')
     warning.mockRestore()
   })
 })
