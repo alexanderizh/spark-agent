@@ -37,4 +37,23 @@ describe('saveDialogPresentation', () => {
     expect(saveDialogKindOf('  /tmp/A/Clip.MP4 ')).toBe('video')
     expect(saveDialogKindOf('/tmp/A/Voice.FLAC')).toBe('audio')
   })
+
+  it('识别类型与过滤器清单同源：产物自身扩展名必然出现在对应过滤器里', () => {
+    // 只要 saveDialogKindOf 把某扩展名归到某个产物类型，该类型的过滤器就必须包含它，
+    // 否则系统保存对话框会改掉/追加扩展名（heic/avif/tiff 曾如此）。
+    for (const path of [
+      '/tmp/a.PNG',
+      '/tmp/scan.heic',
+      '/tmp/pic.avif',
+      '/tmp/raw.tiff',
+      '/tmp/clip.MP4',
+      '/tmp/voice.mp3',
+      '/tmp/sound.aiff',
+    ]) {
+      const presentation = saveDialogPresentation(path)
+      const extension = path.split('.').pop()?.toLowerCase() ?? ''
+      expect(presentation.kind).not.toBe('file')
+      expect(presentation.filters[0]?.extensions).toContain(extension)
+    }
+  })
 })

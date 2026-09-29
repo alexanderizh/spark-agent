@@ -66,10 +66,9 @@ export function saveDialogPresentation(filePath: string): SaveDialogPresentation
     return {
       kind,
       title: '保存图片',
-      filters: [
-        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
-        ALL_FILES_FILTER,
-      ],
+      // 图片过滤器与 saveDialogKindOf 的图片清单同源：heic/avif/tiff 等产物若被识别成图片、
+      // 过滤器却不含自身扩展名，系统保存对话框会改掉/追加扩展名，保存结果与源文件不符。
+      filters: [{ name: '图片', extensions: IMAGE_EXTENSIONS }, ALL_FILES_FILTER],
     }
   }
   if (kind === 'video') {
