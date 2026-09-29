@@ -152,6 +152,24 @@ import type {
   VoiceStopResponse,
 } from '../voice.js'
 import type {
+  VoiceAssistantCaptureCommand,
+  VoiceAssistantGetSettingsRequest,
+  VoiceAssistantGetSettingsResponse,
+  VoiceAssistantGetStatusRequest,
+  VoiceAssistantGetStatusResponse,
+  VoiceAssistantInterruptRequest,
+  VoiceAssistantInterruptResponse,
+  VoiceAssistantPlayCommand,
+  VoiceAssistantResetRouteRequest,
+  VoiceAssistantResetRouteResponse,
+  VoiceAssistantStateEvent,
+  VoiceAssistantStatus,
+  VoiceAssistantTriggerRequest,
+  VoiceAssistantTriggerResponse,
+  VoiceAssistantUpdateSettingsRequest,
+  VoiceAssistantUpdateSettingsResponse,
+} from '../voice-assistant.js'
+import type {
   OptionalCapabilityCheckRequest,
   OptionalCapabilityCheckResponse,
   OptionalCapabilityListRequest,
@@ -8143,6 +8161,22 @@ export interface IpcChannelMap
   ]
   'voice:start': [VoiceStartRequest, VoiceStartResponse]
   'voice:stop': [VoiceStopRequest, VoiceStopResponse]
+  // Voice Assistant 语音助手（唤醒 + 语音对话，M1 快捷键 / M2 KWS）
+  'voice-assistant:get-settings': [
+    VoiceAssistantGetSettingsRequest,
+    VoiceAssistantGetSettingsResponse,
+  ]
+  'voice-assistant:update-settings': [
+    VoiceAssistantUpdateSettingsRequest,
+    VoiceAssistantUpdateSettingsResponse,
+  ]
+  'voice-assistant:get-status': [VoiceAssistantGetStatusRequest, VoiceAssistantGetStatusResponse]
+  'voice-assistant:trigger': [VoiceAssistantTriggerRequest, VoiceAssistantTriggerResponse]
+  'voice-assistant:interrupt': [VoiceAssistantInterruptRequest, VoiceAssistantInterruptResponse]
+  'voice-assistant:reset-route': [
+    VoiceAssistantResetRouteRequest,
+    VoiceAssistantResetRouteResponse,
+  ]
   'video:probe': [VideoProcessRequest, VideoProcessResponse]
   'video:process': [VideoProcessRequest, VideoProcessResponse]
   'image:probe': [ImageProcessRequest, ImageProcessResponse]
@@ -8629,6 +8663,14 @@ export interface IpcStreamChannelMap {
   'stream:voice:install-progress': VoiceInstallProgress
   /** Voice 流式识别事件推送（partial / final / error） */
   'stream:voice:recognition': VoiceRecognitionEvent
+  /** Voice Assistant 状态机迁移事件（HUD 展示与调试） */
+  'stream:voice-assistant:state': VoiceAssistantStateEvent
+  /** Voice Assistant 采集起停指令（主进程 → 渲染端麦克风采集桥） */
+  'stream:voice-assistant:capture': VoiceAssistantCaptureCommand
+  /** Voice Assistant TTS 播放指令（主进程 → 渲染端播放队列） */
+  'stream:voice-assistant:play': VoiceAssistantPlayCommand
+  /** Voice Assistant 当前状态快照（设置页/调试） */
+  'stream:voice-assistant:status': VoiceAssistantStatus
   /** FFmpeg 下载安装进度推送 */
   'stream:ffmpeg:install-progress': FfmpegInstallProgress
   /** 视频处理进度推送（按 requestId 关联请求）*/

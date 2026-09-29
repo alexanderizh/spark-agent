@@ -15,10 +15,10 @@
 // ─── 完整性 ─────────────────────────────────────────────────────────────────
 
 /**
- * 语音包组件：跨平台 native 推理模块 + 流式识别模型 + 可选离线精修模型。
- * refine 为可选增强（说完后整段重识别替换流式结果），缺失时语音输入回退纯流式，不影响 ready。
+ * 语音包组件：跨平台 native 推理模块 + 流式识别模型 + 可选离线精修模型 + 可选唤醒词模型。
+ * refine / kws 为可选增强（精修替换流式结果 / 常驻唤醒词检测），缺失时语音输入回退纯流式，不影响 ready。
  */
-export type VoicePackComponent = 'native' | 'model' | 'refine'
+export type VoicePackComponent = 'native' | 'model' | 'refine' | 'kws'
 
 export type VoicePackState = 'missing' | 'downloading' | 'ready' | 'error'
 
@@ -182,7 +182,9 @@ export function isVoiceAudioChunkPayload(payload: unknown): payload is VoiceAudi
   const candidate = payload as Partial<VoiceAudioChunkPayload>
   return (
     typeof candidate.sessionId === 'string' &&
-    /^voice-\d+-\d+$/.test(candidate.sessionId) &&
+    // 普通语音输入会话（voice-<pid>-<n>）或语音助手采集会话（voice-assistant:*）
+    (/^voice-\d+-\d+$/.test(candidate.sessionId) ||
+      /^voice-assistant:(dialogue:[A-Za-z0-9_-]{1,64}|kws)$/.test(candidate.sessionId)) &&
     candidate.sessionId.length <= 120 &&
     candidate.samples instanceof Int16Array &&
     candidate.samples.length > 0 &&

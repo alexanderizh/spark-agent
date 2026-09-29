@@ -8,6 +8,8 @@ export type TurnSource =
   | 'command_follow_up'
   /** 执行连续性恢复 Turn（应用重启后按恢复计划自动继续）。 */
   | 'system_continuity'
+  /** 语音助手 Turn（快捷键/唤醒词唤起，转写文本进入会话，回复走 TTS 播报）。 */
+  | 'voice'
 
 /** 用户消息正文在产品时间线中的呈现策略；不影响持久化或模型上下文。 */
 export type UserMessageVisibility = 'visible' | 'hidden'

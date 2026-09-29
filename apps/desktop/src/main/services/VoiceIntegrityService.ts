@@ -24,6 +24,7 @@ const log = createLogger('voice-integrity')
 const VOICE_NATIVE_ID_PREFIX = 'voice.native.'
 const VOICE_MODEL_ID_PREFIX = 'voice.model.'
 const VOICE_REFINE_ID_PREFIX = 'voice.refine.'
+const VOICE_KWS_ID_PREFIX = 'voice.kws.'
 /** 识别模型约 219MB，弱网下不能沿用通用归档的 2 分钟超时。 */
 const VOICE_ARCHIVE_DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -62,6 +63,10 @@ export function getVoiceRefineDir(): string {
   return join(getVoiceRootPath(), 'refine')
 }
 
+export function getVoiceKwsDir(): string {
+  return join(getVoiceRootPath(), 'kws')
+}
+
 interface VoiceStateNative {
   version: string
   platformKey: string
@@ -75,10 +80,15 @@ interface VoiceStateRefine {
   version: string
   artifactId: string
 }
+interface VoiceStateKws {
+  version: string
+  artifactId: string
+}
 interface VoiceState {
   native?: VoiceStateNative
   model?: VoiceStateModel
   refine?: VoiceStateRefine
+  kws?: VoiceStateKws
   updatedAt?: string
 }
 
@@ -211,9 +221,97 @@ function isRefineInstalled(state: VoiceState): boolean {
   return existsSync(join(dir, 'refine-package.json'))
 }
 
+function isKwsInstalled(state: VoiceState): boolean {
+  if (!state.kws) return false
+  if (typeof state.kws.version !== 'string' || !isSafeVersion(state.kws.version)) return false
+  const dir = join(getVoiceKwsDir(), state.kws.version)
+  if (!existsSync(dir)) return false
+  return existsSync(join(dir, 'kws-package.json'))
+}
+
 function isVoiceRefineVersionInstalled(version: string): boolean {
   if (!isSafeVersion(version)) return false
   return existsSync(join(getVoiceRefineDir(), version, 'refine-package.json'))
+}
+
+function isVoiceKwsVersionInstalled(version: string): boolean {
+  if (!isSafeVersion(version)) return false
+  return existsSync(join(getVoiceKwsDir(), version, 'kws-package.json'))
+}
+
+/** 已安装的唤醒词模型（可选组件）解析结果 */
+export interface VoiceKwsPaths {
+  version: string
+  encoderPath: string
+  decoderPath: string
+  joinerPath: string
+  tokensPath: string
+  phonePath: string | null
+  /** 包内默认 keywords.txt（含全部预设唤醒词） */
+  keywordsPath: string | null
+}
+
+/**
+ * 解析已安装的唤醒词模型；未安装或描述无效时返回 null（语音助手常驻聆听不可用，
+ * 快捷键唤醒不受影响）。kws-package.json 结构：
+ * { version, kind: 'kws', encoder, decoder, joiner, tokens, phone?, keywords? }
+ */
+export function resolveVoiceKwsPaths(): VoiceKwsPaths | null {
+  const state = readVoiceState()
+  if (!state.kws || !isKwsInstalled(state)) return null
+  const dir = join(getVoiceKwsDir(), state.kws.version)
+  try {
+    const pkgPath = join(dir, 'kws-package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+      version?: unknown
+      kind?: unknown
+      encoder?: unknown
+      decoder?: unknown
+      joiner?: unknown
+      tokens?: unknown
+      phone?: unknown
+      keywords?: unknown
+    }
+    if (pkg.kind !== 'kws') return null
+    if (
+      typeof pkg.encoder !== 'string' ||
+      typeof pkg.decoder !== 'string' ||
+      typeof pkg.joiner !== 'string' ||
+      typeof pkg.tokens !== 'string'
+    ) {
+      return null
+    }
+    const encoderPath = resolveContainedPath(dir, pkg.encoder)
+    const decoderPath = resolveContainedPath(dir, pkg.decoder)
+    const joinerPath = resolveContainedPath(dir, pkg.joiner)
+    const tokensPath = resolveContainedPath(dir, pkg.tokens)
+    if (
+      !encoderPath ||
+      !decoderPath ||
+      !joinerPath ||
+      !tokensPath ||
+      !existsSync(encoderPath) ||
+      !existsSync(decoderPath) ||
+      !existsSync(joinerPath) ||
+      !existsSync(tokensPath)
+    ) {
+      return null
+    }
+    const phonePath = typeof pkg.phone === 'string' ? resolveContainedPath(dir, pkg.phone) : null
+    const keywordsPath =
+      typeof pkg.keywords === 'string' ? resolveContainedPath(dir, pkg.keywords) : null
+    return {
+      version: typeof pkg.version === 'string' ? pkg.version : state.kws.version,
+      encoderPath,
+      decoderPath,
+      joinerPath,
+      tokensPath,
+      phonePath: phonePath != null && existsSync(phonePath) ? phonePath : null,
+      keywordsPath: keywordsPath != null && existsSync(keywordsPath) ? keywordsPath : null,
+    }
+  } catch {
+    return null
+  }
 }
 
 function isVoiceModelVersionInstalled(version: string): boolean {
@@ -270,12 +368,26 @@ export function selectVoiceRefineArtifact(
   return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
 }
 
+/** 唤醒词模型为可选组件，manifest 未提供时允许静默缺失 */
+export function selectVoiceKwsArtifact(
+  artifacts: SparkInstallArtifact[],
+): SparkInstallArtifact | undefined {
+  const candidates = artifacts.filter((a) => {
+    if (a.type !== 'voice') return false
+    if (!a.id.startsWith(VOICE_KWS_ID_PREFIX)) return false
+    if (!isSafeVersion(a.version)) return false
+    return true
+  })
+  return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
+}
+
 export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIntegrityStatus> {
   const platformKey = voicePlatformKey()
   const state = readVoiceState()
   const nativeInstalled = isNativeInstalled(state, platformKey)
   const modelInstalled = isModelInstalled(state)
   const refineInstalled = isRefineInstalled(state)
+  const kwsInstalled = isKwsInstalled(state)
 
   const components: VoiceComponentStatus[] = [
     {
@@ -305,6 +417,15 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
       percent: null,
       message: refineInstalled ? null : '未安装离线精修模型（可选，用于说完后整段优化）',
     },
+    {
+      component: 'kws',
+      state: kwsInstalled ? 'ready' : 'missing',
+      installedVersion: state.kws?.version ?? null,
+      latestVersion: null,
+      artifactId: state.kws?.artifactId ?? null,
+      percent: null,
+      message: kwsInstalled ? null : '未安装唤醒词模型（可选，用于语音助手常驻聆听）',
+    },
   ]
 
   const status: VoiceIntegrityStatus = {
@@ -324,9 +445,11 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
     const nativeArtifact = selectVoiceNativeArtifact(manifest.artifacts)
     const modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
     const refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
+    const kwsArtifact = selectVoiceKwsArtifact(manifest.artifacts)
     const nativeComp = components.find((c) => c.component === 'native')
     const modelComp = components.find((c) => c.component === 'model')
     const refineComp = components.find((c) => c.component === 'refine')
+    const kwsComp = components.find((c) => c.component === 'kws')
     if (nativeArtifact && nativeComp) {
       nativeComp.latestVersion = nativeArtifact.version
       nativeComp.artifactId = nativeArtifact.id
@@ -338,6 +461,10 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
     if (refineArtifact && refineComp) {
       refineComp.latestVersion = refineArtifact.version
       refineComp.artifactId = refineArtifact.id
+    }
+    if (kwsArtifact && kwsComp) {
+      kwsComp.latestVersion = kwsArtifact.version
+      kwsComp.artifactId = kwsArtifact.id
     }
   } catch (err) {
     status.lastError = err instanceof Error ? err.message : String(err)
@@ -463,6 +590,7 @@ export async function installVoicePack(
   let modelArtifact: SparkInstallArtifact | undefined
   let nativeArtifact: SparkInstallArtifact | undefined
   let refineArtifact: SparkInstallArtifact | undefined
+  let kwsArtifact: SparkInstallArtifact | undefined
   let activeComponent: VoicePackComponent = 'model'
 
   try {
@@ -478,6 +606,7 @@ export async function installVoicePack(
     nativeArtifact = selectVoiceNativeArtifact(manifest.artifacts)
     modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
     refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
+    kwsArtifact = selectVoiceKwsArtifact(manifest.artifacts)
 
     if (!nativeArtifact || !modelArtifact) {
       const missing = [!nativeArtifact && '运行时', !modelArtifact && '模型']
@@ -500,15 +629,17 @@ export async function installVoicePack(
     const nativeIsCurrent = isVoiceNativeVersionInstalled(nativeArtifact.version, platformKey)
     const refineIsCurrent =
       refineArtifact != null && isVoiceRefineVersionInstalled(refineArtifact.version)
+    const kwsIsCurrent = kwsArtifact != null && isVoiceKwsVersionInstalled(kwsArtifact.version)
     const installModel = force || !modelIsCurrent
     const installNative = force || !nativeIsCurrent
     const installRefine = refineArtifact != null && (force || !refineIsCurrent)
+    const installKws = kwsArtifact != null && (force || !kwsIsCurrent)
 
-    // 非强制且核心组件已就绪、精修模型也无需补装：直接返回。
-    // 精修模型是可选增强，云端未提供（refineArtifact 为空）时不算缺失。
+    // 非强制且核心组件已就绪、可选组件也无需补装：直接返回。
+    // 精修/唤醒词模型是可选增强，云端未提供时不算缺失。
     if (!force) {
       const current = await checkVoiceIntegrity(false)
-      if (current.ready && !installRefine) {
+      if (current.ready && !installRefine && !installKws) {
         return { success: true, message: '语音包已就绪', status: current }
       }
     }
@@ -563,8 +694,22 @@ export async function installVoicePack(
       await writeVoiceState(nextState)
     }
 
-    const refineOnly = !installModel && !installNative && installRefine
-    const message = refineOnly ? '语音精修模型安装成功' : '语音包安装成功'
+    if (kwsArtifact && installKws) {
+      activeComponent = 'kws'
+      await installComponent({
+        component: 'kws',
+        artifact: kwsArtifact,
+        destFinal: join(getVoiceKwsDir(), kwsArtifact.version),
+        stagingRoot,
+        manifest,
+        report,
+      })
+      nextState.kws = { version: kwsArtifact.version, artifactId: kwsArtifact.id }
+      await writeVoiceState(nextState)
+    }
+
+    const optionalOnly = !installModel && !installNative && (installRefine || installKws)
+    const message = optionalOnly ? '语音可选组件安装成功' : '语音包安装成功'
     report({
       component: activeComponent,
       state: 'done',
@@ -575,7 +720,8 @@ export async function installVoicePack(
     })
     log.info(
       `Voice pack installed: native ${nativeArtifact.version}, model ${modelArtifact.version}` +
-        (refineArtifact && installRefine ? `, refine ${refineArtifact.version}` : ''),
+        (refineArtifact && installRefine ? `, refine ${refineArtifact.version}` : '') +
+        (kwsArtifact && installKws ? `, kws ${kwsArtifact.version}` : ''),
     )
     return { success: true, message, status: await checkVoiceIntegrity(false) }
   } catch (err) {

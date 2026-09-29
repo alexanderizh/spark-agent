@@ -73,6 +73,7 @@ import { shouldOverlaySidebar } from './sidebarResponsiveLayout'
 import { resolveSidebarNavVisibility } from './sidebarNavVisibility'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
 import { PressureNoticeHost } from './design/settings-performance/PressureNoticeHost'
+import { VoiceAssistantHost } from './design/voice-assistant/VoiceAssistantHost'
 import sparkLogo from './assets/spark-logo.png'
 import {
   enqueueUserQuestions,
@@ -2320,6 +2321,7 @@ export function App() {
                 <GateAwareShell />
                 <AppDialogHost />
                 <ToolPackageSecretRequestHost />
+                <VoiceAssistantHost />
               </CanvasProjectSelectionProvider>
             </SessionSidebarProvider>
           </ToastProvider>

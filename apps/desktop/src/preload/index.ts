@@ -22,6 +22,10 @@ import type {
   IpcStreamPayload,
 } from '@spark/protocol'
 import { VOICE_AUDIO_CHUNK_CHANNEL, type VoiceAudioChunkPayload } from '@spark/protocol/voice'
+import {
+  VOICE_ASSISTANT_RENDERER_EVENT_CHANNEL,
+  type VoiceAssistantRendererEvent,
+} from '@spark/protocol/voice-assistant'
 
 /**
  * IPC 调用结果格式（与主进程 typed-ipc.ts 中的 IpcResult 匹配）
@@ -91,6 +95,11 @@ export interface SparkApi {
    * OnlineRecognizer 做增量解码。
    */
   sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload) => void
+
+  /**
+   * 语音助手渲染端反馈（fire-and-forget）：采集起停/失败、播放起止/失败。
+   */
+  sendVoiceAssistantRendererEvent: (payload: VoiceAssistantRendererEvent) => void
 
   /**
    * 取拖拽/选择得到的 File 在磁盘上的真实路径。
@@ -163,6 +172,11 @@ contextBridge.exposeInMainWorld('spark', {
   // 语音音频 chunk 流：fire-and-forget，主进程 ipcMain.on 接收
   sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload): void => {
     ipcRenderer.send(VOICE_AUDIO_CHUNK_CHANNEL, payload)
+  },
+
+  // 语音助手渲染端反馈：采集/播放状态回传（fire-and-forget）
+  sendVoiceAssistantRendererEvent: (payload: VoiceAssistantRendererEvent): void => {
+    ipcRenderer.send(VOICE_ASSISTANT_RENDERER_EVENT_CHANNEL, payload)
   },
 
   // 拖拽/文件选择 → 磁盘真实路径（Electron 32+ 唯一受支持方式，详见 SparkApi 定义）

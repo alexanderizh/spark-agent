@@ -24,12 +24,13 @@ import { Icons } from '../Icons'
 import { useVoiceIntegrity } from './useVoiceIntegrity'
 import './voice.less'
 
-const COMPONENT_ORDER: readonly VoicePackComponent[] = ['native', 'model', 'refine'] as const
+const COMPONENT_ORDER: readonly VoicePackComponent[] = ['native', 'model', 'refine', 'kws'] as const
 
 const COMPONENT_LABEL: Record<VoicePackComponent, string> = {
   native: '推理引擎 (native)',
   model: '识别模型 (model)',
   refine: '精修模型 (refine)',
+  kws: '唤醒词模型 (kws)',
 }
 
 const COMPONENT_DESC: Record<VoicePackComponent, string> = {
@@ -38,6 +39,8 @@ const COMPONENT_DESC: Record<VoicePackComponent, string> = {
   model: 'Paraformer 流式中文 ASR 模型 + silero VAD，下载包约 210 MB。',
   refine:
     'SenseVoice 离线整段识别模型（可选，下载包约 150 MB），说完后重识别整段音频以提升准确率并补齐标点。',
+  kws:
+    '唤醒词检测模型（可选，下载包约 5 MB），供语音助手「常驻聆听」本地检测唤醒词；不安装不影响语音输入与快捷键唤醒。',
 }
 
 const PROGRESS_STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {

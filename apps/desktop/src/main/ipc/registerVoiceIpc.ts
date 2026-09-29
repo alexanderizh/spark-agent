@@ -9,6 +9,8 @@ import {
   resetVoiceEngineCache,
 } from '../services/VoiceRecognitionService.js'
 import { requestVoiceMicrophonePermission } from '../services/VoiceCapturePermissionService.js'
+import { routeVoiceAssistantRecognitionEvent } from '../services/voice-assistant/recognitionBridge.js'
+import { VOICE_ASSISTANT_INTERNAL_OWNER_ID } from '@spark/protocol/voice-assistant'
 import { VOICE_AUDIO_CHUNK_CHANNEL, isVoiceAudioChunkPayload } from '@spark/protocol/voice'
 
 let emitterInstalled = false
@@ -17,6 +19,11 @@ export function registerVoiceIpc(): void {
   // 识别事件 -> 渲染进程流式推送（仅安装一次）
   if (!emitterInstalled) {
     setVoiceEventEmitter((event, ownerId) => {
+      // 语音助手「内部会话」事件回调主进程编排服务，不推 webContents
+      if (ownerId === VOICE_ASSISTANT_INTERNAL_OWNER_ID) {
+        routeVoiceAssistantRecognitionEvent(event)
+        return
+      }
       const target = webContents.fromId(ownerId)
       if (target && !target.isDestroyed()) {
         target.send('stream:voice:recognition', event)

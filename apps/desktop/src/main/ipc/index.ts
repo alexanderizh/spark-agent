@@ -312,6 +312,26 @@ import { registerVideoChannelTaskIpc } from './registerVideoChannelTaskIpc.js'
 import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
+import {
+  handleVoiceAssistantTurnEvent,
+  registerVoiceAssistantIpc,
+} from './registerVoiceAssistantIpc.js'
+import type { CreateVoiceSessionOptions } from '../services/voice-assistant/VoiceRouteBinding.js'
+import { installVoicePack } from '../services/VoiceIntegrityService.js'
+import { registerAppShutdownCleanup } from '../app-shutdown.js'
+
+// 语音助手状态 → 托盘刷新桥（托盘菜单在 main/index.ts；由其注入回调避免循环依赖）
+let voiceAssistantTrayRefreshHandler: (() => void) | null = null
+export function setVoiceAssistantTrayRefreshHandler(handler: (() => void) | null): void {
+  voiceAssistantTrayRefreshHandler = handler
+}
+function scheduleVoiceAssistantTrayRefresh(): void {
+  try {
+    voiceAssistantTrayRefreshHandler?.()
+  } catch {
+    // 托盘刷新失败不影响语音助手
+  }
+}
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerWorkflowRunIpc } from './registerWorkflowRunIpc.js'
 import { registerWorkflowTestRunIpc } from './registerWorkflowTestRunIpc.js'
@@ -430,6 +450,7 @@ import {
   parseRemotePage,
   parseRemoteSessionFilter,
   REMOTE_REASONING_ROWS,
+  resolveRemoteEffectiveModelSelection,
   resolveRemoteSelection,
 } from './remote-command-utils.js'
 import type {
@@ -2582,6 +2603,31 @@ function forwardPermissionApprovalToRemote(request: PermissionApprovalRequest): 
   }
 }
 
+/**
+ * 语音审批桥：语音轮次进行中的审批请求旁路给 VoiceAssistantService
+ * （TTS 念问题 → 聆听「同意/拒绝」→ resolveApproval）。接手失败时本地审批卡
+ * 仍然可用（stream 事件已推送），不阻塞任何路径。
+ */
+function forwardPermissionApprovalToVoiceAssistant(request: PermissionApprovalRequest): void {
+  try {
+    const service = getVoiceAssistantService()
+    if (service == null) return
+    service.handleApprovalRequest({
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      toolName: request.toolName,
+      action: request.action,
+      riskLevel: request.riskLevel,
+    })
+  } catch (error) {
+    log.warn('Failed to forward permission approval to voice assistant', {
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 async function recoverExistingDetachedQuestionAttachments(
   sessionId: string,
   sourceTurnId: string | undefined,
@@ -2756,6 +2802,7 @@ function getSessionService(): SessionService {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
       handleRemoteTurnEvent(event)
+      handleVoiceAssistantTurnEvent(event)
       if (event.type === 'agent_status' && event.status === 'error') {
         _scheduledTaskService?.handleSessionError(event.sessionId, event.message)
       }
@@ -2773,6 +2820,7 @@ function getSessionService(): SessionService {
         (req) => {
           pushStreamEvent('stream:permission:approval-request', req)
           forwardPermissionApprovalToRemote(req)
+          forwardPermissionApprovalToVoiceAssistant(req)
         },
         {
           ...permissionContext,
@@ -2791,6 +2839,12 @@ function getSessionService(): SessionService {
           onExpire: (expired) => {
             pushStreamEvent('stream:permission:approval-resolved', expired)
             remotePermissionApprovalBridge.notifyExpired(expired)
+            // 语音审批桥：清除语音侧挂起态，防止劫持后续对话轮次
+            try {
+              getVoiceAssistantService()?.handleApprovalExpired()
+            } catch {
+              // 语音桥通知失败不影响过期流程
+            }
             // 写一条会话时间线记录：toast 10 秒就消失，但用户翻历史时需要看到
             // 「为什么 agent 跳过了这一步」的可追溯解释。
             if (expired.reason === 'timeout' || expired.reason === 'cancelled') {
@@ -3336,6 +3390,74 @@ async function createRemoteSession(
 }
 
 const REMOTE_SESSION_QUERY_LIMIT = 1000
+
+/**
+ * 语音助手惰性建会话：权限/适配器校验与远程链路一致
+ * （getRemotePermissionRows 校验设置的权限模式，不支持时回落 adapter 的 auto 等价）。
+ */
+async function createVoiceAssistantSession(
+  options: CreateVoiceSessionOptions,
+): Promise<{ sessionId: string }> {
+  const providers = await getProviderService().listProviders()
+  const provider =
+    options.providerProfileId != null
+      ? providers.find((item) => item.id === options.providerProfileId)
+      : (providers.find((item) => item.isDefault) ?? providers[0])
+  if (provider == null) {
+    throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
+  }
+  const effectiveModelId =
+    options.modelId != null && provider.modelIds.includes(options.modelId)
+      ? options.modelId
+      : provider.defaultModel
+  await ensureNoProjectDirectoryExists()
+  const configuredAgent =
+    options.agentId != null ? getAgentRepository().get(options.agentId) : undefined
+  const configuredAdapter = configuredAgent?.agentAdapter
+  const defaults = getRuntimePermissionDefaults()
+  const agentAdapter: SessionAgentAdapter =
+    configuredAdapter === 'claude' ||
+    configuredAdapter === 'claude-sdk' ||
+    configuredAdapter === 'codex' ||
+    configuredAdapter === 'spark'
+      ? configuredAdapter
+      : defaults.agentAdapter
+  const permissionRows = getRemotePermissionRows(agentAdapter)
+  const permissionMode = permissionRows.some((row) => row.id === options.permissionMode)
+    ? (options.permissionMode as SessionPermissionMode)
+    : defaultRemotePermissionMode(agentAdapter)
+  const created = await getSessionService().createSession({
+    providerProfileId: provider.id,
+    ...(effectiveModelId.length > 0 ? { modelId: effectiveModelId } : {}),
+    ...(options.agentId != null ? { agentId: options.agentId } : {}),
+    agentAdapter,
+    permissionMode,
+    ...(options.workspaceId != null ? { workspaceId: options.workspaceId } : {}),
+    title: '语音会话',
+  })
+  pushStreamEvent('stream:session:created', {
+    sessionId: created.sessionId,
+    session: created.session,
+  })
+  return { sessionId: created.sessionId }
+}
+
+/** 语音轮次 completed 先于 isFinal 时的历史回捞（与远程链路同模式） */
+async function recoverVoiceAssistantFinal(
+  sessionId: string,
+  turnId: string,
+): Promise<string | null> {
+  const history = await getSessionService().getHistory({ sessionId, limit: 200 })
+  const final = history.events.find(
+    (event) =>
+      event.turnId === turnId &&
+      event.type === 'assistant_message' &&
+      event.isFinal &&
+      event.content.trim().length > 0,
+  )
+  return final != null && final.type === 'assistant_message' ? final.content : null
+}
+
 function formatRemoteSessionStatus(status: RemoteSessionStatus): string {
   if (status === 'running') return '运行中'
   if (status === 'error') return '错误'
@@ -3395,18 +3517,26 @@ async function resolveRemoteContextSummary(
       : withRemoteRouteDefaults(base, service.ensureRouteBinding(connectionId, externalId))
   const session = await getRemoteSession(preferredSessionId ?? connection.defaultSessionId)
   const providers = await getProviderService().listProviders()
-  const providerId = session?.providerProfileId ?? connection.defaultProviderProfileId
-  const provider = providers.find((item) => item.id === providerId)
+  const selection = resolveRemoteEffectiveModelSelection(
+    session,
+    {
+      defaultProviderProfileId: connection.defaultProviderProfileId,
+      defaultModelId: connection.defaultModelId,
+    },
+    providers,
+  )
+  const provider = selection.providerId != null
+    ? providers.find((item) => item.id === selection.providerId)
+    : undefined
   const workspaceId = session?.workspaceIds[0] ?? connection.defaultWorkspaceId
   const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
-  const modelId = session?.modelId ?? connection.defaultModelId ?? provider?.defaultModel
   return {
     ...(workspaceId != null ? { workspaceId } : {}),
     ...(workspace?.label != null ? { workspaceName: workspace.label } : {}),
     ...(session != null ? { sessionId: session.id, sessionTitle: session.title || '新会话' } : {}),
-    ...(providerId != null ? { providerId } : {}),
+    ...(selection.providerId != null ? { providerId: selection.providerId } : {}),
     ...(provider != null ? { providerName: provider.name, providerKind: provider.provider } : {}),
-    ...(modelId != null ? { modelId } : {}),
+    ...(selection.modelId != null ? { modelId: selection.modelId } : {}),
   }
 }
 
@@ -3484,7 +3614,7 @@ async function executeRemoteCommand(
       capability === 'switchSession'
         ? `请在设置中启用会话切换能力；启用后可使用 ${formatRemoteCommand(connection, 'sessions')} 和 ${formatRemoteCommand(connection, 'use-session')}。`
         : capability === 'switchModel'
-          ? `请在设置中启用模型切换能力；启用后可使用 ${formatRemoteCommand(connection, 'channels')}、${formatRemoteCommand(connection, 'models')} 和 ${formatRemoteCommand(connection, 'use-model')}。`
+          ? `请在设置中启用模型切换能力；启用后可使用 ${formatRemoteCommand(connection, 'channels')}、${formatRemoteCommand(connection, 'models')}、${formatRemoteCommand(connection, 'use-model')} 和 ${formatRemoteCommand(connection, 'reasoning')}。`
           : capability === 'switchAgent'
             ? `请在设置中启用 Agent 切换能力；启用后可使用 ${formatRemoteCommand(connection, 'agents')} 和 ${formatRemoteCommand(connection, 'use-agent')}。`
             : `请在设置中启用对应能力，或发送 ${formatRemoteCommand(connection, 'help')} 查看当前连接可用命令。`
@@ -3534,10 +3664,10 @@ async function executeRemoteCommand(
     const commands = remoteService.getCommandCatalog()
     const grouped = [
       ['会话', ['sessions', 'use-session', 'new-session']],
-      ['渠道与模型', ['channels', 'use-channel', 'models', 'use-model']],
+      ['渠道与模型', ['channels', 'use-channel', 'models', 'use-model', 'reasoning', 'use-reasoning']],
       ['Agent', ['agents', 'use-agent']],
       ['项目', ['projects', 'use-project', 'add-project']],
-      ['运行配置', ['reasoning', 'use-reasoning', 'permissions', 'use-permission']],
+      ['运行配置', ['permissions', 'use-permission']],
       ['权限审批', ['approve', 'deny']],
       ['远程桌面', ['screen', 'windows', 'focus', 'click', 'type', 'hotkey']],
       ['运行时', ['progress', 'queue', 'history', 'cancel', 'stop']],
@@ -3581,9 +3711,18 @@ async function executeRemoteCommand(
   if (command.name === 'status') {
     const providers = await getProviderService().listProviders()
     const session = await getRemoteSession(sessionId)
-    const providerId = session?.providerProfileId ?? connection.defaultProviderProfileId
-    const provider = providers.find((item) => item.id === providerId)
-    const modelId = session?.modelId ?? connection.defaultModelId ?? provider?.defaultModel
+    // 展示口径 = 执行口径：绑定会话时完全跟随会话记录；连接级默认只描述未绑定会话时的兜底。
+    const selection = resolveRemoteEffectiveModelSelection(
+      session,
+      {
+        defaultProviderProfileId: connection.defaultProviderProfileId,
+        defaultModelId: connection.defaultModelId,
+      },
+      providers,
+    )
+    const provider = selection.providerId != null
+      ? providers.find((item) => item.id === selection.providerId)
+      : undefined
     const workspaceId = connection.defaultWorkspaceId ?? session?.workspaceIds[0]
     const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
     const agent =
@@ -3596,6 +3735,38 @@ async function executeRemoteCommand(
           )
     const intentionallyShared =
       otherSessionBindings.length > 0 && canShareRemoteSession(connection, otherSessionBindings)
+    const statusActions = [
+      {
+        label: '会话',
+        command: formatRemoteCommand(connection, 'sessions'),
+        capability: 'switchSession' as const,
+      },
+      {
+        label: '项目',
+        command: formatRemoteCommand(connection, 'projects'),
+        capability: 'manageWorkspace' as const,
+      },
+      {
+        label: '渠道',
+        command: formatRemoteCommand(connection, 'channels'),
+        capability: 'switchModel' as const,
+      },
+      {
+        label: '模型',
+        command: formatRemoteCommand(connection, 'models'),
+        capability: 'switchModel' as const,
+      },
+      {
+        label: '推理强度',
+        command: formatRemoteCommand(connection, 'reasoning'),
+        capability: 'switchModel' as const,
+      },
+      {
+        label: '权限模式',
+        command: formatRemoteCommand(connection, 'permissions'),
+        capability: 'approvePermissions' as const,
+      },
+    ].filter((item) => connection.capabilities[item.capability] === true)
     return {
       ok: true,
       title: connection.name,
@@ -3607,20 +3778,13 @@ async function executeRemoteCommand(
         `当前项目：${workspace?.label ?? workspaceId ?? '不使用项目'}`,
         `默认会话：${session?.title ?? connection.defaultSessionId ?? '未设置'}`,
         `会话隔离：${intentionallyShared ? `与 ${otherSessionBindings.map((item) => item.name).join('、')} 显式共享` : '独立'}`,
-        `模型渠道：${provider != null ? `${provider.name} (${provider.provider})` : (providerId ?? '未设置')}`,
-        `当前模型：${modelId ?? '未设置'}`,
+        `模型渠道：${provider != null ? `${provider.name} (${provider.provider})` : (selection.providerId ?? '未设置')}`,
+        `当前模型：${selection.modelId ?? '未设置'}`,
         `推理强度：${session?.reasoningEffort ?? connection.defaultReasoningEffort ?? 'max'}`,
         `权限模式：${session?.permissionMode ?? connection.defaultPermissionMode ?? '自动审批（新建远程会话默认）'}`,
         `默认 Agent：${agent != null ? `${agent.name} (${agent.id})` : (connection.defaultAgentId ?? '未设置')}`,
       ].join('\n'),
-      actions: [
-        { label: '会话', command: formatRemoteCommand(connection, 'sessions') },
-        { label: '项目', command: formatRemoteCommand(connection, 'projects') },
-        { label: '渠道', command: formatRemoteCommand(connection, 'channels') },
-        { label: '模型', command: formatRemoteCommand(connection, 'models') },
-        { label: '推理强度', command: formatRemoteCommand(connection, 'reasoning') },
-        { label: '权限模式', command: formatRemoteCommand(connection, 'permissions') },
-      ],
+      actions: statusActions,
     }
   }
 
@@ -3706,7 +3870,17 @@ async function executeRemoteCommand(
         text: `该会话绑定到“${conflicts.map((item) => item.name).join('、')}”。请选择其他会话；如确需共享，请先在所有相关连接中开启“跨连接共享会话”。`,
       }
     }
-    updateDefaults({ defaultSessionId: resolved.row.id })
+    // 同步该会话自身的渠道/模型/推理强度为连接/路由默认：后续远程新建会话从当前会话的配置出发，
+    // 避免更早遗留的路由默认（可能是其他会话切换过的渠道）在新建会话时悄悄复活。
+    const boundSession = await getRemoteSession(resolved.row.id)
+    updateDefaults({
+      defaultSessionId: resolved.row.id,
+      ...(boundSession?.providerProfileId
+        ? { defaultProviderProfileId: boundSession.providerProfileId }
+        : {}),
+      ...(boundSession?.modelId ? { defaultModelId: boundSession.modelId } : {}),
+      ...(boundSession?.reasoningEffort ? { defaultReasoningEffort: boundSession.reasoningEffort } : {}),
+    })
     const context = await resolveRemoteContextSummary(connection.id, resolved.row.id, externalId)
     return {
       ok: true,
@@ -3729,16 +3903,22 @@ async function executeRemoteCommand(
     if ('error' in parsedPage) return { ok: false, title: '页码无效', text: parsedPage.error }
     const currentSession = await getRemoteSession(sessionId)
     const providers = await getProviderService().listProviders()
-    const providerId = currentSession?.providerProfileId ?? connection.defaultProviderProfileId
+    const selection = resolveRemoteEffectiveModelSelection(
+      currentSession,
+      {
+        defaultProviderProfileId: connection.defaultProviderProfileId,
+        defaultModelId: connection.defaultModelId,
+      },
+      providers,
+    )
     const provider =
-      providers.find((item) => item.id === providerId) ??
+      providers.find((item) => item.id === selection.providerId) ??
       providers.find((item) => item.isDefault) ??
       providers[0]
     if (provider == null) {
       return { ok: false, title: '暂无模型渠道', text: '请先在桌面端添加 Provider。' }
     }
-    const selectedModelId =
-      currentSession?.modelId ?? connection.defaultModelId ?? provider.defaultModel
+    const selectedModelId = selection.modelId ?? provider.defaultModel
     const rows = buildRemoteProviderModelRows(provider)
     const page = paginateRemoteSelection(rows, parsedPage.page)
     cacheRemoteSelection(selectionScope, 'models', page.rows)
@@ -3776,8 +3956,15 @@ async function executeRemoteCommand(
     const page = paginateRemoteSelection(rows, parsedPage.page)
     cacheRemoteSelection(selectionScope, 'providers', page.rows)
     const currentSession = await getRemoteSession(sessionId)
-    const selectedProviderId =
-      currentSession?.providerProfileId ?? connection.defaultProviderProfileId
+    const channelSelection = resolveRemoteEffectiveModelSelection(
+      currentSession,
+      {
+        defaultProviderProfileId: connection.defaultProviderProfileId,
+        defaultModelId: connection.defaultModelId,
+      },
+      providers,
+    )
+    const selectedProviderId = channelSelection.providerId
     const interactive = supportsRemoteInteractiveLists(connection)
     return {
       ok: true,
@@ -4141,7 +4328,9 @@ async function executeRemoteCommand(
   }
 
   if (command.name === 'reasoning' || command.name === 'use-reasoning') {
-    const blocked = requireCapability('manageRuntime')
+    // 推理强度与模型选择同一能力位：存量连接 switchModel 默认开启，推理强度开箱即用；
+    // manageRuntime 继续只管 /progress、/queue、/history、/cancel、/stop。
+    const blocked = requireCapability('switchModel')
     if (blocked != null) return blocked
     const currentSession = await getRemoteSession(sessionId)
     if (command.name === 'reasoning' || command.args.length === 0) {
@@ -4346,14 +4535,12 @@ async function executeRemoteCommand(
         text: `用法：${formatRemoteCommand(connection, 'send', '<message>')}`,
       }
     }
+    // 不携带连接/路由级 provider/model/agent 覆盖：绑定会话自身的记录就是执行依据
+    // （/use-channel、/use-model、桌面端切换都会同步该记录）。带默认覆盖会在
+    // “会话记录 ≠ 路由默认”时造成 status 展示与实际执行模型不一致（远程 400 协议错误根因）。
     const result = await getSessionService().submitTurn({
       sessionId,
       message: text,
-      ...(connection.defaultProviderProfileId != null
-        ? { providerProfileId: connection.defaultProviderProfileId }
-        : {}),
-      ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
-      ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
     })
     if (externalId != null) {
       const target = { connectionId: connection.id, externalId }
@@ -4521,20 +4708,30 @@ async function handleRemoteInboundMessage(
     (await createRemoteSession(message.connection.id, undefined, message.externalId)).sessionId
   await ensureSessionWorkspacePaths(sessionId)
 
-  const activeRoute = remoteService.ensureRouteBinding(message.connection.id, message.externalId)
+  // ensureRouteBinding 兼具副作用：不存在时落库路由绑定，供后续默认值与回执路由使用。
+  remoteService.ensureRouteBinding(message.connection.id, message.externalId)
 
   // Durable submission schedules execution on the next tick, so the remote target
   // is registered before the turn can request permission approval.
+  // 不携带连接/路由级 provider/model/agent 覆盖：绑定会话自身的记录就是执行依据
+  // （/use-channel、/use-model、桌面端切换都会同步该记录；未绑定会话时新建会话
+  // 已把默认烘进记录）。此前把路由默认作为 runtimePatch 传入会覆盖会话记录，
+  // 造成 /status 展示模型与实际执行模型不一致（例如展示 glm-5.3、实际跑 opencode
+  // 而报 400 Model does not support this protocol）。
+  const remoteTurnSession = await getRemoteSession(sessionId)
+  log.info('remote inbound turn follows session-bound model selection', {
+    connectionId: message.connection.id,
+    externalId: message.externalId,
+    sessionId,
+    providerProfileId: remoteTurnSession?.providerProfileId || null,
+    modelId: remoteTurnSession?.modelId || null,
+    reasoningEffort: remoteTurnSession?.reasoningEffort ?? null,
+  })
   const result = await getSessionService().submitTurn({
     sessionId,
     ...createRemoteUserTurn(message.connection.channel, message.text, {
       canTransferFiles: message.connection.capabilities.transferFiles,
     }),
-    ...(activeRoute.defaultProviderProfileId != null
-      ? { providerProfileId: activeRoute.defaultProviderProfileId }
-      : {}),
-    ...(activeRoute.defaultModelId != null ? { modelId: activeRoute.defaultModelId } : {}),
-    ...(activeRoute.defaultAgentId != null ? { agentId: activeRoute.defaultAgentId } : {}),
     ...(message.attachments != null ? { attachments: message.attachments } : {}),
   })
   const target = {
@@ -4599,6 +4796,50 @@ export function registerAllIpcHandlers(): void {
   })
   registerFontAssetIpc()
   registerVoiceIpc()
+  // 语音助手（唤醒 + 语音对话）：必须在 registerVoiceIpc 之后装配
+  // （识别事件分发器已安装，语音助手内部会话事件才能被正确桥接）
+  registerVoiceAssistantIpc({
+    settingsStore: getSettingsService(),
+    isSessionAlive: async (sessionId) =>
+      new SessionRepository(getDatabase()).get(sessionId) != null,
+    createSession: createVoiceAssistantSession,
+    submitTurn: (params) =>
+      getSessionService().submitTurn({
+        sessionId: params.sessionId,
+        message: params.message,
+        turnSource: 'voice',
+        userMessageDisplayContent: params.userMessageDisplayContent,
+      }),
+    cancelTurn: (sessionId) => getSessionService().cancelTurn(sessionId),
+    recoverFinal: recoverVoiceAssistantFinal,
+    resolveMediaProviders: resolveCanvasMediaProviders,
+    mediaRouter: getMediaRouterService(),
+    getMainWindowWebContents: () => getMainWindow()?.webContents ?? null,
+    ttsDir: path.join(app.getPath('userData'), 'voice-assistant', 'tts'),
+    runtimeDir: path.join(app.getPath('userData'), 'voice-assistant'),
+    installVoicePack: () => installVoicePack(false),
+    listRecentSessions: async (limit) => {
+      const { sessions } = new SessionRepository(getDatabase()).list({ limit })
+      return sessions.map((session) => ({ id: session.id, title: session.title }))
+    },
+    listWorkspaces: async () =>
+      new WorkspaceRepository(getDatabase())
+        .listAll(100, 0)
+        .map((workspace) => ({ id: workspace.id, name: workspace.name })),
+    findLatestSessionIdInWorkspace: async (workspaceId) => {
+      const { sessions } = new SessionRepository(getDatabase()).list({
+        workspaceId,
+        limit: 1,
+      })
+      return sessions[0]?.id ?? null
+    },
+    resolveApproval: (requestId, decision) =>
+      getPermissionService().resolveApproval(requestId, decision === 'allow' ? 'allow-once' : 'deny'),
+    registerCleanup: (cleanup) => {
+      registerAppShutdownCleanup('voice-assistant', cleanup)
+    },
+    onStatusChanged: scheduleVoiceAssistantTrayRefresh,
+  })
   registerCanvasWorkflowIpc()
   registerWorkflowRunIpc()
   registerWorkflowTestRunIpc({

@@ -1,0 +1,1478 @@
+/**
+ * VoiceAssistantService — 语音助手常驻编排服务（主进程单例）
+ *
+ * 状态机：Idle →(快捷键 M1/KWS M2)→ Listening →(VAD final)→ Thinking
+ *        →(首句 delta)→ Speaking →(队列播完)→ Idle
+ *
+ * 职责：
+ * - 全局快捷键注册与再武装（设置变更时热更新）
+ * - 对话采集生命周期（指令渲染端起停麦克风 + 内部 ASR 会话）
+ * - 转写文本：语音命令匹配 → submitTurn(turnSource:'voice')
+ * - 轮次事件旁路消费（ipc/index.ts onEvent 链路调入 handleTurnEvent）
+ * - 逐句 TTS 流水线驱动与打断
+ *
+ * 渲染进程只做「麦克风搬运工 + 扬声器执行器」；所有编排在主进程。
+ * 约束：采集链路由 AudioWorklet 音频回调驱动，本服务不得在采集路径引入
+ * timer 驱动逻辑（Chromium 后台节流只影响 timer，不影响音频回调）。
+ */
+
+import { mkdir, rm, unlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { createLogger } from '@spark/shared'
+import type {
+  AgentEvent,
+  VoiceAssistantCaptureCommand,
+  VoiceAssistantPlayCommand,
+  VoiceAssistantRendererEvent,
+  VoiceAssistantSettings,
+  VoiceAssistantState,
+  VoiceAssistantStateEvent,
+  VoiceAssistantStatus,
+} from '@spark/protocol'
+import {
+  VOICE_ASSISTANT_DIALOGUE_SESSION_PREFIX,
+  VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+  VOICE_ASSISTANT_KWS_SESSION_ID,
+  normalizeVoiceAssistantSettings,
+} from '@spark/protocol'
+import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
+import {
+  feedVoiceAudio,
+  startVoiceSession,
+  stopVoiceSession,
+  type VoiceSessionHandle,
+} from '../VoiceRecognitionService.js'
+import { VoiceTtsPipeline } from './VoiceTtsPipeline.js'
+import { WakeWordDetector, isWakeWordModelAvailable } from './WakeWordDetector.js'
+import {
+  buildApprovalSpeech,
+  buildSessionSelectionSpeech,
+  parseApprovalDecision,
+  parseVoiceCommand,
+} from './voiceCommands.js'
+import { buildVoiceUserMessage } from './voiceUserMessage.js'
+import type { VoiceAssistantRouteBinding } from './VoiceRouteBinding.js'
+
+const log = createLogger('voice-assistant')
+
+/** listening 无任何有效转写时的兜底超时 */
+const LISTENING_TIMEOUT_MS = 15_000
+/** VAD 句尾静音阈值（对齐语音输入默认，略放宽换气停顿） */
+const ASR_VAD_SILENCE_MS = 1200
+/** M3 连续对话：播报到续听的间隔（等 TTS 尾音消散，防录进自己的播报） */
+const CONTINUOUS_LISTEN_DELAY_MS = 800
+/** 外部入口安装在途时的等待轮询间隔 */
+const KWS_INSTALL_WAIT_INTERVAL_MS = 5_000
+/** 等待轮询上限（120 × 5s = 10 分钟，覆盖全量语音包慢速下载） */
+const KWS_INSTALL_WAIT_MAX_ATTEMPTS = 120
+
+export interface VoiceAssistantSubmitResult {
+  turnId: string
+  started: boolean
+}
+
+export interface VoiceAssistantDeps {
+  /** 设置原始值读取（app_settings，脏数据由 normalize 收敛） */
+  readSettings(): unknown
+  writeSettings(value: VoiceAssistantSettings): void
+  /** 全局快捷键注册器（globalShortcut 适配） */
+  shortcutRegistrar: {
+    register(accelerator: string, callback: () => void): boolean
+    unregister(accelerator: string): void
+  }
+  /** TTS 渠道解析（带 API key 的 provider 列表） */
+  resolveMediaProviders(): Promise<MediaProviderProfile[]>
+  /** 媒体路由（TTS 合成） */
+  mediaRouter: MediaRouterService
+  /** 提交语音轮次（返回 turnId） */
+  submitVoiceTurn(params: {
+    sessionId: string
+    message: string
+    userMessageDisplayContent: string
+  }): Promise<VoiceAssistantSubmitResult>
+  /** 打断会话当前活跃 turn */
+  cancelSessionTurn(sessionId: string): Promise<unknown>
+  /** completed 先于 isFinal 时的历史回捞（照抄远程链路 300ms 兜底模式） */
+  recoverFinalFromHistory(sessionId: string, turnId: string): Promise<string | null>
+  /** 会话绑定（惰性建会话/改绑） */
+  route: VoiceAssistantRouteBinding
+  /** 三条 stream 通道的推送（主窗口 webContents） */
+  sendCaptureCommand(command: VoiceAssistantCaptureCommand): void
+  sendPlayCommand(command: VoiceAssistantPlayCommand): void
+  broadcastState(event: VoiceAssistantStateEvent): void
+  broadcastStatus(status: VoiceAssistantStatus): void
+  /** 应用关闭清理登记 */
+  registerCleanup(cleanup: () => void): void
+  /** TTS 产物根目录（userData/voice-assistant/tts，safe-file 白名单内） */
+  ttsDir: string
+  /** 语音助手运行时目录（userData/voice-assistant，存放 KWS runtime keywords） */
+  runtimeDir: string
+  /** 按需安装语音包（含可选 KWS 组件；开启常驻聆听时模型缺失自动补装）。
+   *  status.downloading=true 表示另一入口已有安装在途（互斥快速返回），调用方应等待而非报错。 */
+  installVoicePack(): Promise<{
+    success: boolean
+    message: string
+    status?: { downloading?: boolean }
+  }>
+  /** M2 语音命令：最近会话列表（标题用于播报与名称匹配） */
+  listRecentSessions(limit: number): Promise<Array<{ id: string; title: string }>>
+  /** M2 语音命令：工作区列表 */
+  listWorkspaces(): Promise<Array<{ id: string; name: string }>>
+  /** M2 语音命令：某工作区下最近的会话（无则新建） */
+  findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
+  /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
+  resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
+}
+
+export class VoiceAssistantService {
+  private settings: VoiceAssistantSettings
+  private state: VoiceAssistantState = 'idle'
+  /** 当前对话采集会话（voice-assistant:dialogue:*，渲染端 chunk 携带） */
+  private captureSessionId: string | null = null
+  /** 当前活跃 ASR 会话（VoiceRecognitionService 生成） */
+  private asrSessionId: string | null = null
+  /** 停止中的 ASR 会话（stopVoiceSession flush 期间仍会吐 final/session-stopped） */
+  private closingAsrSessionId: string | null = null
+  private captureCounter = 0
+  private listeningTimer: ReturnType<typeof setTimeout> | null = null
+  private partialText = ''
+  private collectedFinals: string[] = []
+  /** 已命中 VAD final / 超时，正在等 ASR 收尾 */
+  private handoffPending = false
+  /** 说完确认窗口定时器：VAD final 后再静默 utteranceConfirmMs 才真正收口提交 */
+  private handoffConfirmTimer: ReturnType<typeof setTimeout> | null = null
+  private activeTurn: { turnId: string; sessionId: string } | null = null
+  /** 非轮次播报（命令确认/错误提示）进行中 */
+  private announcing = false
+  private armedAccelerator: string | null = null
+  private disposed = false
+  private readonly pipeline: VoiceTtsPipeline
+  private readonly route: VoiceAssistantRouteBinding
+  // ── M2 常驻聆听（KWS） ──
+  private kwsDetector: WakeWordDetector | null = null
+  /** 渲染端 KWS 常驻采集是否在线（在线时对话复用该采集流，不重起 getUserMedia） */
+  private kwsCaptureActive = false
+  /** KWS 采集断流自愈重试定时器 */
+  private kwsRestartTimer: ReturnType<typeof setTimeout> | null = null
+  /** KWS 采集重试次数（成功后清零） */
+  private kwsRestartAttempts = 0
+  /** 模型缺失自动安装是否进行中（防重入） */
+  private kwsInstallInFlight = false
+  /** 外部入口安装在途的等待轮询定时器（等其完成后再启动 standby） */
+  private kwsInstallWaitTimer: ReturnType<typeof setTimeout> | null = null
+  /** 安装等待轮询次数（就绪/取消时清零，超上限提示手动处理） */
+  private kwsInstallWaitAttempts = 0
+  /** M2-4：挂起的会话选择态（念出列表后等待用户说序号/名称） */
+  private awaitingSessionCandidates: Array<{ id: string; title: string }> | null = null
+  /** M3 连续对话续听定时器 */
+  private continuousListenTimer: ReturnType<typeof setTimeout> | null = null
+  /** M3 语音审批：挂起的审批请求（念问题 → 听同意/拒绝 → resolveApproval） */
+  private pendingApproval: { requestId: string; sessionId: string; retries: number } | null = null
+  /** M3 云转写：聆听期间缓存的原始 PCM（cloud 引擎整段上传转写） */
+  private cloudPcmChunks: Int16Array[] = []
+  private cloudTotalSamples = 0
+  /** 轮次令牌：interrupt/dispose 时自增，提交链 await 恢复点校验防「打断复活」 */
+  private turnEpoch = 0
+  /** 对话进行中请求开启常驻聆听 → 延迟到对话收尾再起（避免抢走对话麦克风） */
+  private standbyPending = false
+
+  constructor(private readonly deps: VoiceAssistantDeps) {
+    this.settings = normalizeVoiceAssistantSettings(deps.readSettings())
+    this.route = deps.route
+    this.pipeline = new VoiceTtsPipeline({
+      synthesize: (sentence) => this.synthesizeSentence(sentence),
+      sendPlay: (command) => deps.sendPlayCommand(command),
+      onAllPlayed: () => this.handleAllPlayed(),
+      shouldPlayCues: () => this.settings.soundCues,
+    })
+    deps.registerCleanup(() => this.dispose())
+  }
+
+  // ─── 生命周期 ─────────────────────────────────────────────────────────────
+
+  /** 应用就绪后调用：武装快捷键 + 清扫残留 TTS 文件 + 按设置启动常驻聆听 */
+  async initialize(): Promise<void> {
+    this.rearmShortcut()
+    await this.sweepTtsDir()
+    if (this.settings.enabled && this.settings.alwaysListening) {
+      void this.startStandby()
+    }
+    log.info(
+      `[voice-assistant] service initialized (enabled=${this.settings.enabled}, shortcut=${this.settings.wakeShortcut}, alwaysListening=${this.settings.alwaysListening})`,
+    )
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.turnEpoch += 1
+    this.disarmShortcut()
+    this.stopStandby()
+    if (this.kwsRestartTimer != null) {
+      clearTimeout(this.kwsRestartTimer)
+      this.kwsRestartTimer = null
+    }
+    if (this.continuousListenTimer != null) {
+      clearTimeout(this.continuousListenTimer)
+      this.continuousListenTimer = null
+    }
+    this.teardownListening()
+    this.pipeline.cancel()
+    try {
+      stopVoiceSession(undefined, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
+    } catch {
+      // 关闭路径忽略
+    }
+  }
+
+  private async sweepTtsDir(): Promise<void> {
+    try {
+      if (!existsSync(this.deps.ttsDir)) return
+      await rm(this.deps.ttsDir, { recursive: true, force: true })
+    } catch (error) {
+      log.warn(`[voice-assistant] tts dir sweep failed: ${String(error)}`)
+    }
+  }
+
+  // ─── 设置 ─────────────────────────────────────────────────────────────────
+
+  getSettings(): VoiceAssistantSettings {
+    return this.settings
+  }
+
+  updateSettings(next: VoiceAssistantSettings): VoiceAssistantSettings {
+    const normalized = normalizeVoiceAssistantSettings(next)
+    const shortcutChanged =
+      normalized.enabled !== this.settings.enabled ||
+      normalized.wakeShortcut !== this.settings.wakeShortcut
+    const standbyConfigChanged =
+      normalized.alwaysListening !== this.settings.alwaysListening ||
+      normalized.wakeWord !== this.settings.wakeWord ||
+      normalized.wakeThreshold !== this.settings.wakeThreshold ||
+      normalized.wakeBoost !== this.settings.wakeBoost
+    this.settings = normalized
+    this.deps.writeSettings(normalized)
+    if (shortcutChanged) this.rearmShortcut()
+    if (standbyConfigChanged) this.applyAlwaysListeningSetting()
+    log.info(
+      `[voice-assistant] settings updated (shortcut rearm=${shortcutChanged}, standby reconfig=${standbyConfigChanged})`,
+    )
+    return normalized
+  }
+
+  /** 常驻聆听设置应用：开启→启动 standby；关闭→停止并释放麦克风 */
+  private applyAlwaysListeningSetting(): void {
+    if (this.disposed || !this.settings.enabled) {
+      this.stopStandby()
+      return
+    }
+    if (this.settings.alwaysListening) {
+      void this.startStandby()
+    } else {
+      this.stopStandby()
+    }
+  }
+
+  private rearmShortcut(): void {
+    this.disarmShortcut()
+    if (!this.settings.enabled) return
+    const accelerator = this.settings.wakeShortcut.trim()
+    if (accelerator.length === 0) return
+    try {
+      const ok = this.deps.shortcutRegistrar.register(accelerator, () => {
+        this.wake()
+      })
+      if (ok) {
+        this.armedAccelerator = accelerator
+        log.info(`[voice-assistant] wake shortcut armed: ${accelerator}`)
+      } else {
+        log.warn(`[voice-assistant] failed to arm wake shortcut: ${accelerator}`)
+      }
+    } catch (error) {
+      log.warn(`[voice-assistant] wake shortcut register error: ${String(error)}`)
+    }
+  }
+
+  private disarmShortcut(): void {
+    if (this.armedAccelerator == null) return
+    try {
+      this.deps.shortcutRegistrar.unregister(this.armedAccelerator)
+    } catch {
+      // 注销失败不阻断
+    }
+    this.armedAccelerator = null
+  }
+
+  // ─── 状态查询 ─────────────────────────────────────────────────────────────
+
+  getStatus(): VoiceAssistantStatus {
+    return {
+      state: this.state,
+      captureSessionId: this.captureSessionId,
+      partialText: this.partialText,
+      speakingProgress:
+        this.state === 'speaking'
+          ? {
+              played: this.pipeline.getPlayedCount(),
+              pending: this.pipeline.getPendingCount(),
+            }
+          : null,
+      lastError: null,
+      boundSessionId: this.route.current.defaultSessionId ?? null,
+    }
+  }
+
+  // ─── 唤醒入口（快捷键 / HUD 手动触发） ────────────────────────────────────
+
+  wake(): { ok: boolean; message: string } {
+    if (this.disposed) return { ok: false, message: '服务已停止' }
+    if (!this.settings.enabled) return { ok: false, message: '语音助手未启用' }
+    switch (this.state) {
+      case 'idle':
+      case 'standby':
+        void this.startListening('wake')
+        return { ok: true, message: '正在聆听' }
+      case 'listening':
+        // 再按一次 = 取消本轮聆听
+        this.teardownListening()
+        this.transition('idle', 'cancelled')
+        return { ok: true, message: '已取消聆听' }
+      case 'thinking':
+      case 'speaking':
+        this.interrupt()
+        return { ok: true, message: '已打断' }
+      default:
+        return { ok: false, message: '当前状态不可用' }
+    }
+  }
+
+  /** 手动打断（HUD 按钮 / IPC）：任何活跃态立即回到 idle */
+  interrupt(): void {
+    this.turnEpoch += 1
+    if (this.continuousListenTimer != null) {
+      clearTimeout(this.continuousListenTimer)
+      this.continuousListenTimer = null
+    }
+    if (this.state === 'listening') {
+      this.teardownListening()
+      this.transition('idle', 'cancelled')
+      return
+    }
+    if (this.activeTurn != null) {
+      const { sessionId } = this.activeTurn
+      this.activeTurn = null
+      void this.deps
+        .cancelSessionTurn(sessionId)
+        .catch((error) => log.warn(`[voice-assistant] cancelTurn failed: ${String(error)}`))
+    }
+    this.announcing = false
+    this.pendingApproval = null // 打断语音审批：卡片保留给应用内手动处理
+    this.pipeline.cancel() // 同步停播 + 清队列 + 删未播文件 + 推送 stop
+    this.transition('idle', 'cancelled')
+  }
+
+  // ─── M2 常驻聆听（standby / KWS） ─────────────────────────────────────────
+
+  /**
+   * 启动常驻唤醒词聆听：加载 KWS 模型（缺失时自动补装一次）→ 请求渲染端常驻采集。
+   * 对话期间复用同一采集流（kwsCaptureActive），命中唤醒词后不再重起 getUserMedia。
+   * waitingInstall=true 为安装等待轮询的再入口：只检查就绪，不再次主动发起安装。
+   */
+  private async startStandby(waitingInstall = false): Promise<void> {
+    if (this.disposed) return
+    // 对话进行中不抢麦克风：标记待起，收尾 idle 后由 transition 自动接管
+    if (this.state === 'listening' || this.state === 'thinking' || this.state === 'speaking') {
+      this.standbyPending = true
+      return
+    }
+    // 本服务已有安装或安装等待进行中：直接返回，避免重入期间误报「模型未安装」
+    if (this.kwsInstallInFlight || this.kwsInstallWaitTimer != null) return
+    if (!isWakeWordModelAvailable()) {
+      let externallyInFlight = false
+      if (!waitingInstall) {
+        this.kwsInstallInFlight = true
+        try {
+          log.info('[voice-assistant] kws model missing, installing voice pack on demand')
+          const result = await this.deps.installVoicePack()
+          if (!result.success) {
+            if (result.status?.downloading === true) {
+              // 另一入口（设置→完整性页 / 语音输入触发的全量安装）正在安装：
+              // 等待其完成后自动启动 standby，而不是把「正在安装中」当失败误报。
+              externallyInFlight = true
+              log.info('[voice-assistant] voice pack install already in flight, waiting')
+            } else {
+              log.warn(`[voice-assistant] kws model install failed: ${result.message}`)
+            }
+          }
+        } catch (error) {
+          log.warn(`[voice-assistant] kws model install error: ${String(error)}`)
+        } finally {
+          this.kwsInstallInFlight = false
+        }
+      }
+      if (!isWakeWordModelAvailable()) {
+        if (externallyInFlight || waitingInstall) {
+          this.scheduleKwsInstallWait()
+          return
+        }
+        this.transition(
+          'idle',
+          'error',
+          '唤醒词模型未安装：请先在设置 → 完整性中安装语音包（含唤醒词组件）',
+        )
+        return
+      }
+    }
+    this.clearKwsInstallWait()
+    if (this.kwsDetector == null) {
+      this.kwsDetector = new WakeWordDetector({
+        onHit: (keyword) => this.onWakeWordHit(keyword),
+        onError: (message) => {
+          log.warn(`[voice-assistant] kws detector error: ${message}`)
+          // 推理异常不致命：停 standby 回 idle，快捷键唤醒仍可用
+          this.stopStandby()
+          this.transition('idle', 'error', `唤醒词检测异常：${shortError(message)}`)
+        },
+        runtimeDir: this.deps.runtimeDir,
+      })
+    }
+    if (!this.kwsDetector.isActive()) {
+      try {
+        await this.kwsDetector.start({
+          wakeWord: this.settings.wakeWord,
+          threshold: this.settings.wakeThreshold,
+          boost: this.settings.wakeBoost,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.warn(`[voice-assistant] kws start failed: ${message}`)
+        this.kwsDetector = null
+        this.transition('idle', 'error', `常驻聆听启动失败：${shortError(message)}`)
+        return
+      }
+    }
+    // 请求渲染端常驻采集（已在线则跳过）
+    if (!this.kwsCaptureActive) {
+      this.deps.sendCaptureCommand({
+        action: 'start',
+        sessionId: VOICE_ASSISTANT_KWS_SESSION_ID,
+        mode: 'kws',
+      })
+    }
+    if (this.state === 'idle' || this.state === 'standby') {
+      this.transition('standby', 'standby-on')
+    }
+  }
+
+  /** 外部安装在途的等待轮询：5s 一次，上限 10 分钟，超时提示手动处理 */
+  private scheduleKwsInstallWait(): void {
+    if (this.disposed || this.kwsInstallWaitTimer != null) return
+    if (this.kwsInstallWaitAttempts >= KWS_INSTALL_WAIT_MAX_ATTEMPTS) {
+      this.kwsInstallWaitAttempts = 0
+      log.warn('[voice-assistant] voice pack install wait timed out')
+      this.transition(
+        'idle',
+        'error',
+        '语音包安装等待超时：请在设置 → 完整性中检查语音包状态后重试',
+      )
+      return
+    }
+    this.kwsInstallWaitAttempts += 1
+    this.kwsInstallWaitTimer = setTimeout(
+      () => {
+        this.kwsInstallWaitTimer = null
+        void this.startStandby(true)
+      },
+      KWS_INSTALL_WAIT_INTERVAL_MS,
+    )
+  }
+
+  /** 模型就绪/关闭常驻聆听时清掉等待轮询与计数 */
+  private clearKwsInstallWait(): void {
+    if (this.kwsInstallWaitTimer != null) {
+      clearTimeout(this.kwsInstallWaitTimer)
+      this.kwsInstallWaitTimer = null
+    }
+    this.kwsInstallWaitAttempts = 0
+  }
+
+  /** 停止常驻聆听：释放 KWS 推理与渲染端常驻采集（对话进行中则仅停推理） */
+  private stopStandby(): void {
+    this.standbyPending = false
+    this.clearKwsInstallWait()
+    this.kwsDetector?.stop()
+    if (this.kwsRestartTimer != null) {
+      clearTimeout(this.kwsRestartTimer)
+      this.kwsRestartTimer = null
+    }
+    this.kwsRestartAttempts = 0
+    if (this.kwsCaptureActive) {
+      this.kwsCaptureActive = false
+      // 对话进行中（listening）时保留采集流供 ASR，结束后由收尾逻辑停采集；
+      // 其余状态立即停止渲染端采集释放麦克风。
+      if (this.state !== 'listening') {
+        this.deps.sendCaptureCommand({
+          action: 'stop',
+          sessionId: VOICE_ASSISTANT_KWS_SESSION_ID,
+          mode: 'kws',
+        })
+      }
+    }
+    if (this.state === 'standby') {
+      this.transition('idle', 'standby-off')
+    }
+  }
+
+  /** 唤醒词命中：进入对话聆听（复用常驻采集流） */
+  private onWakeWordHit(_keyword: string): void {
+    if (this.disposed) return
+    if (this.state === 'standby' || (this.state === 'idle' && this.kwsCaptureActive)) {
+      // 播放/思考期间 KWS 已被路由层挂起（handleAudioChunk 丢弃），此处不会触发
+      this.playCue('wake')
+      void this.startListening('wake')
+    }
+  }
+
+  /** KWS 常驻采集断流自愈：短退避重试（渲染端设备切换/系统休眠唤醒等场景） */
+  private scheduleKwsCaptureRestart(): void {
+    if (!this.settings.alwaysListening || this.disposed) return
+    if (this.kwsRestartTimer != null) return
+    if (this.kwsRestartAttempts >= 10) {
+      log.warn('[voice-assistant] kws capture restart attempts exhausted, standby disabled')
+      this.transition('idle', 'error', '常驻采集多次重试失败，已暂停常驻聆听')
+      this.stopStandby()
+      return
+    }
+    const delay = Math.min(2_000 * 2 ** this.kwsRestartAttempts, 30_000)
+    this.kwsRestartAttempts += 1
+    log.info(
+      `[voice-assistant] kws capture down, restarting in ${delay}ms (attempt ${this.kwsRestartAttempts})`,
+    )
+    this.kwsRestartTimer = setTimeout(() => {
+      this.kwsRestartTimer = null
+      this.kwsCaptureActive = false
+      // 走完整 startStandby：检测器可能也已停止（onError 路径），只重发采集会变「假待命」
+      void this.startStandby()
+    }, delay)
+  }
+
+  // ─── Listening 阶段 ───────────────────────────────────────────────────────
+
+  private async startListening(reason: VoiceAssistantStateEvent['reason']): Promise<void> {
+    if (this.state === 'listening' || this.state === 'thinking' || this.state === 'speaking') {
+      return
+    }
+    this.captureCounter += 1
+    const captureSessionId = `${VOICE_ASSISTANT_DIALOGUE_SESSION_PREFIX}${Date.now()}-${this.captureCounter}`
+    // 安装/等待在途时给准确的引导文案，而非「请先安装语音包」误导正在下载的用户
+    const installPending =
+      this.kwsInstallInFlight || this.kwsInstallWaitTimer != null
+        ? '语音包正在安装中，请稍候再试'
+        : null
+    // 1. 先起主进程 ASR（失败则无需惊动渲染端采集）
+    let handle: VoiceSessionHandle
+    try {
+      handle = startVoiceSession(
+        {
+          sampleRate: 16000,
+          language: 'auto',
+          enableVad: true,
+          vadSilenceMs: ASR_VAD_SILENCE_MS,
+        },
+        VOICE_ASSISTANT_INTERNAL_OWNER_ID,
+      )
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      const message = installPending ?? rawMessage
+      log.warn(`[voice-assistant] asr start failed: ${rawMessage}`)
+      this.playCue('fail')
+      this.transition('idle', 'error', message)
+      return
+    }
+    if (!handle.success || handle.sessionId == null) {
+      this.playCue('fail')
+      this.transition('idle', 'error', installPending ?? handle.error ?? '语音识别启动失败')
+      return
+    }
+    this.captureSessionId = captureSessionId
+    this.asrSessionId = handle.sessionId
+    this.closingAsrSessionId = null
+    this.partialText = ''
+    this.collectedFinals = []
+    this.handoffPending = false
+    this.cloudPcmChunks = []
+    this.cloudTotalSamples = 0
+    this.transition('listening', reason)
+    this.playCue('wake')
+    // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）
+    if (!this.kwsCaptureActive) {
+      this.deps.sendCaptureCommand({
+        action: 'start',
+        sessionId: captureSessionId,
+        mode: 'dialogue',
+      })
+    }
+    // 3. 15s 兜底超时（timer 只做兜底，不在采集关键路径）
+    this.listeningTimer = setTimeout(() => {
+      this.onListeningTimeout()
+    }, LISTENING_TIMEOUT_MS)
+  }
+
+  private onListeningTimeout(): void {
+    if (this.state !== 'listening') return
+    log.info('[voice-assistant] listening timeout, closing capture')
+    // 注意不置 handoffPending：该标记表示「已收到转写」，超时路径无转写，
+    // 收口时应报告 timeout 而非 empty
+    this.stopCaptureAndAsr()
+    // stopVoiceSession(flush) 补尾部 padding 后经 session-stopped 事件统一收口
+  }
+
+  /** 停止渲染端采集 + 结束 ASR 会话（flush 模式刷出残余 final）；常驻采集在线时保留麦克风 */
+  private stopCaptureAndAsr(): void {
+    if (this.listeningTimer != null) {
+      clearTimeout(this.listeningTimer)
+      this.listeningTimer = null
+    }
+    this.cancelHandoffConfirm()
+    if (this.captureSessionId != null && !this.kwsCaptureActive) {
+      this.deps.sendCaptureCommand({
+        action: 'stop',
+        sessionId: this.captureSessionId,
+        mode: 'dialogue',
+      })
+    }
+    if (this.asrSessionId != null) {
+      const asrSessionId = this.asrSessionId
+      this.asrSessionId = null
+      this.closingAsrSessionId = asrSessionId
+      try {
+        stopVoiceSession(asrSessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, 'flush')
+      } catch (error) {
+        log.warn(`[voice-assistant] asr stop error: ${String(error)}`)
+        this.closingAsrSessionId = null
+        this.finishAfterListeningClosed()
+      }
+    } else {
+      this.finishAfterListeningClosed()
+    }
+  }
+
+  private teardownListening(): void {
+    if (this.listeningTimer != null) {
+      clearTimeout(this.listeningTimer)
+      this.listeningTimer = null
+    }
+    if (this.handoffConfirmTimer != null) {
+      clearTimeout(this.handoffConfirmTimer)
+      this.handoffConfirmTimer = null
+    }
+    if (this.captureSessionId != null) {
+      // 常驻采集在线时保留麦克风流（stopStandby/收尾逻辑负责停采集）
+      if (!this.kwsCaptureActive) {
+        this.deps.sendCaptureCommand({
+          action: 'stop',
+          sessionId: this.captureSessionId,
+          mode: 'dialogue',
+        })
+      }
+      this.captureSessionId = null
+    }
+    for (const sessionId of [this.asrSessionId, this.closingAsrSessionId]) {
+      if (sessionId == null) continue
+      try {
+        stopVoiceSession(sessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, 'flush')
+      } catch {
+        // 已在停止路径，忽略
+      }
+    }
+    this.asrSessionId = null
+    this.closingAsrSessionId = null
+    this.partialText = ''
+    this.collectedFinals = []
+    this.handoffPending = false
+  }
+
+  // ─── 音频 chunk 与识别事件（由 registerVoiceAssistantIpc 路由进来） ────────
+
+  /** 该 captureSessionId 是否属于本服务当前对话采集 */
+  ownsCaptureSession(sessionId: string): boolean {
+    return this.captureSessionId != null && sessionId === this.captureSessionId
+  }
+
+  /** 渲染端 chunk 到达（已通过 voice-assistant 前缀校验） */
+  handleAudioChunk(sessionId: string, samples: Int16Array): void {
+    // 常驻 KWS 采集流：按状态机路由（idle/standby→唤醒词检测；listening→对话 ASR；
+    // thinking/speaking→丢弃，播放期间挂起检测防 TTS 回声自触发）
+    if (sessionId === VOICE_ASSISTANT_KWS_SESSION_ID) {
+      if (this.state === 'standby' || this.state === 'idle') {
+        this.kwsDetector?.feed(samples)
+      } else if (this.state === 'listening' && this.asrSessionId != null) {
+        this.bufferCloudPcm(samples)
+        feedVoiceAudio(this.asrSessionId, samples, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
+      }
+      return
+    }
+    if (this.asrSessionId == null || sessionId !== this.captureSessionId) return
+    this.bufferCloudPcm(samples)
+    feedVoiceAudio(this.asrSessionId, samples, VOICE_ASSISTANT_INTERNAL_OWNER_ID)
+  }
+
+  /** cloud 引擎：聆听期间缓存整段 PCM 供说完后整体上传转写 */
+  private bufferCloudPcm(samples: Int16Array): void {
+    if (this.settings.recognitionEngine !== 'cloud') return
+    // 上限 60s：超长只保留尾段（云转写本就面向短指令）
+    const maxSamples = 16000 * 60
+    this.cloudPcmChunks.push(samples)
+    this.cloudTotalSamples += samples.length
+    while (this.cloudTotalSamples > maxSamples && this.cloudPcmChunks.length > 1) {
+      const dropped = this.cloudPcmChunks.shift()
+      this.cloudTotalSamples -= dropped?.length ?? 0
+    }
+  }
+
+  /**
+   * VoiceRecognitionService 内部会话事件（经 registerVoiceIpc 分发器桥接）。
+   * 同时覆盖活跃会话（listening）与停止中会话（flush 收尾）两种归属。
+   */
+  handleRecognitionEvent(event: {
+    type: string
+    sessionId: string
+    text?: string
+    message?: string
+  }): void {
+    const isClosingSession =
+      this.closingAsrSessionId != null && event.sessionId === this.closingAsrSessionId
+    const isActiveSession =
+      this.asrSessionId != null && event.sessionId === this.asrSessionId
+    if (!isClosingSession && !isActiveSession) return
+    switch (event.type) {
+      case 'partial': {
+        if (!isActiveSession || this.state !== 'listening') return
+        // 确认窗口内用户继续开口：撤销本次收口，继续聆听拼接
+        this.cancelHandoffConfirm()
+        this.partialText = event.text ?? ''
+        this.deps.broadcastState({
+          state: 'listening',
+          previous: 'listening',
+          reason: 'wake',
+          detail: this.partialText,
+        })
+        return
+      }
+      case 'final': {
+        const text = (event.text ?? '').trim()
+        if (text.length === 0) return
+        if (isActiveSession && this.state === 'listening') {
+          this.collectedFinals.push(text)
+          log.info(
+            `[voice-assistant] vad final captured (${text.length} chars), entering utterance confirm window`,
+          )
+          this.scheduleHandoffConfirm()
+        } else if (isClosingSession) {
+          // flush 尾句（VAD final 之后残留的短句）并入本轮转写
+          this.collectedFinals.push(text)
+        }
+        return
+      }
+      case 'session-stopped': {
+        if (isClosingSession) {
+          this.closingAsrSessionId = null
+          this.finishAfterListeningClosed()
+          return
+        }
+        if (isActiveSession) {
+          // 活跃会话被外部终止（如语音包安装触发 resetVoiceEngineCache）
+          log.warn('[voice-assistant] active asr session stopped unexpectedly')
+          this.asrSessionId = null
+          this.teardownListening()
+          this.playCue('fail')
+          this.transition('idle', 'error', '语音识别会话已中断')
+        }
+        return
+      }
+      case 'error': {
+        const message = event.message ?? '语音识别错误'
+        log.warn(`[voice-assistant] recognition error: ${message}`)
+        this.asrSessionId = null
+        this.closingAsrSessionId = null
+        this.teardownListening()
+        this.playCue('error')
+        this.transition('idle', 'error', message)
+        return
+      }
+      default:
+        return
+    }
+  }
+
+  /**
+   * 说完确认窗口（防抖）：VAD 句尾静音 ≠ 整轮说完——换气、思考措辞的停顿同样
+   * 会触发 VAD final。final 后保持采集与 ASR 继续运行，再持续静默
+   * utteranceConfirmMs 才真正收口提交；窗口内用户继续说话（partial/新 final）
+   * 即撤销收口继续拼接，给用户完整的说话空间。
+   */
+  private scheduleHandoffConfirm(): void {
+    if (this.handoffConfirmTimer != null) clearTimeout(this.handoffConfirmTimer)
+    this.handoffConfirmTimer = setTimeout(() => {
+      this.handoffConfirmTimer = null
+      if (this.state !== 'listening' || this.asrSessionId == null) return
+      log.info('[voice-assistant] utterance confirmed silent, handing off to thinking')
+      this.handoffPending = true
+      this.transition('thinking', 'wake')
+      this.stopCaptureAndAsr()
+    }, this.settings.utteranceConfirmMs)
+    // 窗口期告知用户：可以继续说，静默后自动发送
+    this.deps.broadcastState({
+      state: 'listening',
+      previous: 'listening',
+      reason: 'confirm',
+      detail: [...this.collectedFinals, this.partialText].filter(Boolean).join(' '),
+    })
+  }
+
+  /** 确认窗口内检测到继续说话：撤销本次收口，继续聆听 */
+  private cancelHandoffConfirm(): void {
+    if (this.handoffConfirmTimer == null) return
+    clearTimeout(this.handoffConfirmTimer)
+    this.handoffConfirmTimer = null
+    log.info('[voice-assistant] speech resumed within confirm window, keep listening')
+  }
+
+  /** ASR 会话结束（flush 完成）后的统一收口 */
+  private finishAfterListeningClosed(): void {
+    const wasHandoff = this.handoffPending
+    this.captureSessionId = null
+    this.handoffPending = false
+    if (this.state !== 'listening' && this.state !== 'thinking') return
+    const transcript = this.collectedFinals.join(' ').trim()
+    this.collectedFinals = []
+    this.partialText = ''
+    // 审批聆听优先于普通提交（挂起审批等待「同意/拒绝」）
+    if (this.pendingApproval != null) {
+      if (transcript.length > 0) {
+        void this.settleApprovalFromTranscript(transcript)
+        return
+      }
+      this.playCue('fail')
+      // 审批聆听超时/空转：追问一次（保持挂起）
+      const pending = this.pendingApproval
+      if (pending.retries < 1) {
+        pending.retries += 1
+        this.announceSpeech('没有听到答复。请明确说「同意」或「拒绝」。')
+        return
+      }
+      this.pendingApproval = null
+      this.announceSpeech('未收到语音答复，请在应用中点击审批卡处理。')
+      return
+    }
+    if (transcript.length > 0) {
+      if (this.settings.recognitionEngine === 'cloud') {
+        // 云转写：整段上传（本地流式结果仅作 VAD 断句与兜底）
+        void this.submitCloudTranscript(transcript)
+        return
+      }
+      void this.submitTranscript(transcript)
+      return
+    }
+    this.playCue('fail')
+    this.transition('idle', wasHandoff ? 'empty' : 'timeout')
+  }
+
+  /**
+   * M3 云转写提交：把缓存的整段 PCM 写 WAV → transcribe（whisper 类渠道）→
+   * 用云端文本提交；失败回落本地流式转写。云转写延迟高（1–3s），追求准确率时选用。
+   */
+  private async submitCloudTranscript(localFallback: string): Promise<void> {
+    const epoch = this.turnEpoch
+    const totalSamples = this.cloudTotalSamples
+    const chunks = this.cloudPcmChunks
+    this.cloudPcmChunks = []
+    this.cloudTotalSamples = 0
+    let transcript = localFallback
+    if (totalSamples >= 16000 * 0.3) {
+      try {
+        const wavPath = await this.writePcmWav(chunks, totalSamples)
+        try {
+          const providers = await this.deps.resolveMediaProviders()
+          if (providers.length === 0) throw new Error('未配置支持语音转写的多媒体渠道')
+          const { output } = await this.deps.mediaRouter.invoke(
+            {
+              operation: 'audio_transcribe',
+              capability: 'audio.transcription',
+              inputFiles: [{ type: 'audio', path: wavPath, role: 'input' }],
+              outputDir: this.deps.ttsDir,
+            },
+            { providers },
+          )
+          const text = output.assets.find((asset) => asset.contentText != null)?.contentText ?? ''
+          const cleaned = text.trim()
+          if (cleaned.length > 0) transcript = cleaned
+        } finally {
+          unlink(wavPath).catch(() => undefined)
+        }
+      } catch (error) {
+        log.warn(
+          `[voice-assistant] cloud transcription failed, falling back to local: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        )
+      }
+    }
+    // 云转写 await 期间被打断则放弃（submitTranscript 内部再做二次校验）
+    if (epoch !== this.turnEpoch || this.disposed) return
+    await this.submitTranscript(transcript)
+  }
+
+  /** PCM16 mono 16k → WAV 文件（44 字节 RIFF 头 + 数据） */
+  private async writePcmWav(chunks: Int16Array[], totalSamples: number): Promise<string> {
+    await mkdir(this.deps.runtimeDir, { recursive: true })
+    const dataBytes = totalSamples * 2
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0)
+    header.writeUInt32LE(36 + dataBytes, 4)
+    header.write('WAVE', 8)
+    header.write('fmt ', 12)
+    header.writeUInt32LE(16, 16)
+    header.writeUInt16LE(1, 20) // PCM
+    header.writeUInt16LE(1, 22) // mono
+    header.writeUInt32LE(16000, 24)
+    header.writeUInt32LE(32000, 28) // byte rate
+    header.writeUInt16LE(2, 32) // block align
+    header.writeUInt16LE(16, 34) // bits per sample
+    header.write('data', 36)
+    header.writeUInt32LE(dataBytes, 40)
+    const pcm = Buffer.alloc(dataBytes)
+    let offset = 0
+    for (const chunk of chunks) {
+      if (offset + chunk.length * 2 > pcm.length) break
+      Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length * 2).copy(pcm, offset)
+      offset += chunk.length * 2
+    }
+    const filePath = join(this.deps.runtimeDir, `cloud-asr-${Date.now()}.wav`)
+    await writeFile(filePath, Buffer.concat([header, pcm]))
+    return filePath
+  }
+
+  // ─── 渲染端反馈 ───────────────────────────────────────────────────────────
+
+  handleRendererEvent(event: VoiceAssistantRendererEvent): void {
+    switch (event.type) {
+      case 'capture-started': {
+        if (event.sessionId === VOICE_ASSISTANT_KWS_SESSION_ID) {
+          this.kwsCaptureActive = true
+          this.kwsRestartAttempts = 0
+          log.info('[voice-assistant] renderer kws capture online')
+          if (this.state === 'idle' && this.settings.alwaysListening) {
+            this.transition('standby', 'standby-on')
+          }
+          return
+        }
+        log.info(`[voice-assistant] renderer capture started (${event.sessionId})`)
+        return
+      }
+      case 'capture-stopped': {
+        if (event.sessionId === VOICE_ASSISTANT_KWS_SESSION_ID) {
+          log.info('[voice-assistant] renderer kws capture stopped')
+          this.kwsCaptureActive = false
+          if (this.state === 'standby') {
+            this.transition('idle', 'standby-off')
+            this.scheduleKwsCaptureRestart()
+          } else if (this.state === 'idle') {
+            this.scheduleKwsCaptureRestart()
+          }
+          return
+        }
+        // 渲染端采集意外停止（设备断开等）：按听写结束收口
+        if (this.state === 'listening' && event.sessionId === this.captureSessionId) {
+          log.info('[voice-assistant] renderer capture stopped unexpectedly, closing listening')
+          this.handoffPending = this.collectedFinals.length > 0
+          this.stopCaptureAndAsr()
+        }
+        return
+      }
+      case 'capture-failed': {
+        if (event.sessionId === VOICE_ASSISTANT_KWS_SESSION_ID || this.kwsCaptureActive) {
+          this.kwsCaptureActive = false
+          log.warn(`[voice-assistant] renderer kws capture failed: ${event.message}`)
+          if (this.state === 'standby') this.transition('idle', 'standby-off')
+          if (this.state === 'idle') this.scheduleKwsCaptureRestart()
+          return
+        }
+        if (this.state !== 'listening') return
+        log.warn(`[voice-assistant] renderer capture failed: ${event.message}`)
+        this.teardownListening()
+        this.playCue('fail')
+        this.transition('idle', 'error', event.message)
+        return
+      }
+      case 'playback-ended':
+        this.pipeline.onPlaybackEnded(event.sentenceId)
+        return
+      case 'playback-error':
+        this.pipeline.onPlaybackFailed(event.sentenceId)
+        return
+      default:
+        return
+    }
+  }
+
+  // ─── 转写提交（Thinking 阶段） ────────────────────────────────────────────
+
+  private async submitTranscript(transcript: string): Promise<void> {
+    const epoch = this.turnEpoch
+    // 语音命令优先：命中则不走会话（M2 起会话/工作区命令开放）
+    const command = parseVoiceCommand(transcript, {
+      enableSessionCommands: true,
+      awaitingSessionSelection: this.awaitingSessionCandidates != null,
+    })
+    if (command != null) {
+      switch (command.kind) {
+        case 'stop-listening':
+          this.awaitingSessionCandidates = null
+          this.transition('idle', 'cancelled')
+          return
+        case 'new-session':
+          this.awaitingSessionCandidates = null
+          await this.handleNewSessionCommand()
+          return
+        case 'switch-session':
+          await this.handleSwitchSessionCommand()
+          return
+        case 'select-session':
+          await this.handleSelectSessionCommand(command.index, command.name)
+          return
+        case 'switch-workspace':
+          await this.handleSwitchWorkspaceCommand(command.name)
+          return
+        default:
+          break
+      }
+    }
+    this.awaitingSessionCandidates = null
+    let session: { sessionId: string }
+    try {
+      session = await this.route.ensureSession()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn(`[voice-assistant] ensure voice session failed: ${message}`)
+      if (epoch === this.turnEpoch && !this.disposed) {
+        this.announceSpeech(`语音会话创建失败。${shortError(message)}`)
+      }
+      return
+    }
+    // await 恢复点：打断/dispose 后不再提交（防「打断复活」）
+    if (epoch !== this.turnEpoch || this.disposed) return
+    try {
+      const result = await this.deps.submitVoiceTurn({
+        sessionId: session.sessionId,
+        message: buildVoiceUserMessage(transcript, this.settings.voiceSystemPrompt),
+        userMessageDisplayContent: transcript,
+      })
+      this.activeTurn = { turnId: result.turnId, sessionId: session.sessionId }
+      if (epoch !== this.turnEpoch || this.disposed) {
+        // 提交完成瞬间被打断：立即撤销该轮次，保持打断语义
+        this.activeTurn = null
+        void this.deps
+          .cancelSessionTurn(session.sessionId)
+          .catch(() => undefined)
+        return
+      }
+      this.pipeline.beginTurn()
+      log.info(
+        `[voice-assistant] voice turn submitted (${result.turnId}, session ${session.sessionId}, started=${result.started})`,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn(`[voice-assistant] submitTurn failed: ${message}`)
+      if (epoch === this.turnEpoch && !this.disposed) {
+        this.announceSpeech(`抱歉，语音请求发送失败。${shortError(message)}`)
+      }
+    }
+  }
+
+  private async handleNewSessionCommand(): Promise<void> {
+    try {
+      await this.route.createNewSession()
+      this.announceSpeech('已为你新建会话。')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.announceSpeech(`新建会话失败。${shortError(message)}`)
+    }
+  }
+
+  /** 「切换会话」：念最近 5 个会话，挂起选择态等下一句序号/名称 */
+  private async handleSwitchSessionCommand(): Promise<void> {
+    try {
+      const sessions = await this.deps.listRecentSessions(5)
+      if (sessions.length === 0) {
+        this.announceSpeech('最近没有其他会话，已保留当前会话。')
+        return
+      }
+      this.awaitingSessionCandidates = sessions
+      this.announceSpeech(buildSessionSelectionSpeech(sessions.map((s) => s.title)))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.announceSpeech(`读取会话列表失败。${shortError(message)}`)
+    }
+  }
+
+  /** 选择态回应：按序号或名称匹配候选会话并改绑 */
+  private async handleSelectSessionCommand(
+    index: number | null,
+    name: string | null,
+  ): Promise<void> {
+    const candidates = this.awaitingSessionCandidates
+    if (candidates == null || candidates.length === 0) {
+      this.announceSpeech('当前没有待选择的会话列表。')
+      return
+    }
+    let matched: { id: string; title: string } | undefined
+    if (index != null) {
+      matched = candidates[index - 1]
+    } else if (name != null) {
+      const needle = name.trim().toLowerCase()
+      matched = candidates.find(
+        (candidate) =>
+          candidate.title.toLowerCase().includes(needle) ||
+          needle.includes(candidate.title.toLowerCase()),
+      )
+    }
+    this.awaitingSessionCandidates = null
+    if (matched == null) {
+      this.announceSpeech('没有匹配的会话，如需再选请说「切换会话」。')
+      return
+    }
+    this.route.updateBinding({ defaultSessionId: matched.id })
+    const label = matched.title.length > 20 ? `${matched.title.slice(0, 20)}…` : matched.title
+    this.announceSpeech(`已切换到会话：${label}。`)
+    log.info(`[voice-assistant] voice route switched to session ${matched.id}`)
+  }
+
+  /** 「切换到 XX 工作区」：找该工作区最近会话则改绑，否则在其中新建 */
+  private async handleSwitchWorkspaceCommand(name: string | null): Promise<void> {
+    try {
+      const workspaces = await this.deps.listWorkspaces()
+      if (workspaces.length === 0) {
+        this.announceSpeech('当前没有已登记的工作区。')
+        return
+      }
+      let matched: { id: string; name: string } | undefined
+      if (name != null && name.length > 0) {
+        const needle = name.trim().toLowerCase()
+        matched = workspaces.find(
+          (candidate) =>
+            candidate.name.toLowerCase().includes(needle) ||
+            needle.includes(candidate.name.toLowerCase()),
+        )
+      } else if (workspaces.length === 1) {
+        matched = workspaces[0]
+      }
+      if (matched == null) {
+        this.announceSpeech(
+          `没有找到该工作区。已登记的有：${workspaces
+            .slice(0, 3)
+            .map((w) => w.name)
+            .join('、')}。`,
+        )
+        return
+      }
+      const existingSessionId = await this.deps.findLatestSessionIdInWorkspace(matched.id)
+      if (existingSessionId != null) {
+        this.route.updateBinding({
+          defaultWorkspaceId: matched.id,
+          defaultSessionId: existingSessionId,
+        })
+        this.announceSpeech(`已切换到工作区 ${matched.name}，继续最近的会话。`)
+      } else {
+        this.route.updateBinding({ defaultWorkspaceId: matched.id, defaultSessionId: undefined })
+        await this.route.createNewSession()
+        this.announceSpeech(`已切换到工作区 ${matched.name}，并新建了会话。`)
+      }
+      log.info(`[voice-assistant] voice route switched to workspace ${matched.id}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.announceSpeech(`切换工作区失败。${shortError(message)}`)
+    }
+  }
+
+  // ─── M3 语音审批桥（挂起-收听-消费环） ─────────────────────────────────────
+
+  /**
+   * 权限审批请求入口（ipc/index.ts onApproval 链路旁路调入）。
+   * 仅在语音轮次进行中（activeTurn 匹配）且无挂起审批时接手：
+   * TTS 念问题 → 聆听「同意/拒绝」→ resolveApproval 消费；其余情况交还本地审批卡。
+   */
+  handleApprovalRequest(request: {
+    requestId: string
+    sessionId: string
+    toolName: string
+    action: string
+    riskLevel: string
+  }): boolean {
+    if (this.disposed || this.pendingApproval != null) return false
+    if (this.activeTurn == null || this.activeTurn.sessionId !== request.sessionId) return false
+    this.pendingApproval = { requestId: request.requestId, sessionId: request.sessionId, retries: 0 }
+    log.info(
+      `[voice-assistant] voice approval bridge engaged (${request.toolName}, risk=${request.riskLevel})`,
+    )
+    this.announceSpeech(buildApprovalSpeech(request.toolName, request.action, request.riskLevel))
+    return true
+  }
+
+  /** 审批卡过期/被外部处理：清除语音挂起态（轮次交还 SDK 按未批准处理） */
+  handleApprovalExpired(): void {
+    if (this.pendingApproval == null) return
+    log.info('[voice-assistant] voice approval expired externally')
+    this.pendingApproval = null
+  }
+
+  /** 审批聆听收口：解析同意/拒绝 → resolveApproval；模糊则追问一次 */
+  private async settleApprovalFromTranscript(transcript: string): Promise<void> {
+    const pending = this.pendingApproval
+    if (pending == null) return
+    const decision = parseApprovalDecision(transcript)
+    if (decision != null) {
+      this.pendingApproval = null
+      let ok = false
+      try {
+        ok = this.deps.resolveApproval(pending.requestId, decision)
+      } catch (error) {
+        log.warn(`[voice-assistant] resolveApproval failed: ${String(error)}`)
+      }
+      log.info(
+        `[voice-assistant] voice approval ${decision} (requestId=${pending.requestId}, ok=${ok})`,
+      )
+      this.announceSpeech(
+        !ok
+          ? '该审批已失效，请在应用中查看结果。'
+          : decision === 'allow'
+            ? '已同意，继续执行。'
+            : '已拒绝该操作。',
+      )
+      // agent 恢复执行后 delta 流会驱动 speaking；此处保持 idle 等事件
+      return
+    }
+    if (pending.retries < 1) {
+      pending.retries += 1
+      this.announceSpeech('没听清。请明确说「同意」或「拒绝」。')
+      return
+    }
+    this.pendingApproval = null
+    this.announceSpeech('未识别到明确答复，请在应用中点击审批卡处理。')
+  }
+
+  // ─── 轮次事件（ipc/index.ts onEvent 链路调入） ─────────────────────────────
+
+  handleTurnEvent(event: AgentEvent): void {
+    if (this.activeTurn == null || event.turnId !== this.activeTurn.turnId) return
+    if (event.type === 'assistant_message') {
+      if (event.isFinal) {
+        // 权威全文：flush 尾句；若 delta 全丢则以全文兜底
+        this.pipeline.finalize(event.content ?? '')
+        this.maybeTransitionSpeaking()
+        return
+      }
+      if (event.mode === 'delta' && event.content.length > 0) {
+        this.pipeline.pushDelta(event.content)
+        this.maybeTransitionSpeaking()
+      }
+      return
+    }
+    if (event.type === 'agent_status') {
+      if (event.status === 'completed') {
+        // 轮次终结时挂起的语音审批必已失效（超时/已处理），清掉防劫持后续对话
+        if (this.pendingApproval != null) {
+          log.info('[voice-assistant] voice approval dropped on turn completion')
+          this.pendingApproval = null
+        }
+        // 终态可能先于 isFinal：300ms 后历史回捞兜底（照抄远程链路模式）
+        const { turnId, sessionId } = this.activeTurn
+        setTimeout(() => {
+          if (this.activeTurn?.turnId !== turnId) return
+          void (async () => {
+            try {
+              const recovered = await this.deps.recoverFinalFromHistory(sessionId, turnId)
+              if (recovered != null) this.pipeline.finalize(recovered)
+            } catch (error) {
+              log.warn(`[voice-assistant] final recovery failed: ${String(error)}`)
+            } finally {
+              this.pipeline.turnDone()
+            }
+          })()
+        }, 300)
+        return
+      }
+      if (event.status === 'cancelled') {
+        this.activeTurn = null
+        this.pendingApproval = null
+        this.pipeline.cancel()
+        this.transition('idle', 'cancelled')
+        return
+      }
+      if (event.status === 'error') {
+        this.activeTurn = null
+        this.pendingApproval = null
+        this.pipeline.cancel()
+        this.announceSpeech(`任务出错了。${shortError(event.message ?? '请查看会话详情')}`)
+        return
+      }
+      return
+    }
+    if (event.type === 'agent_error') {
+      this.activeTurn = null
+      this.pendingApproval = null
+      this.pipeline.cancel()
+      this.announceSpeech(`任务出错了。${shortError(event.message ?? '请查看会话详情')}`)
+    }
+  }
+
+  private maybeTransitionSpeaking(): void {
+    if (this.state === 'thinking') this.transition('speaking', 'wake')
+  }
+
+  private handleAllPlayed(): void {
+    // announcing（审批问题/命令确认）优先于轮次收尾判定：
+    // 审批播报时轮次仍活跃（agent 挂起等批准），不能误判为轮次完成
+    if (this.announcing) {
+      this.announcing = false
+      this.transition('idle', 'completed')
+      // 挂起审批：问题念完 → 进入聆听收「同意/拒绝」
+      // idle 可能已被常驻在线自动顶成 standby，两态都要放行（与连续对话回调对齐）
+      if (
+        this.pendingApproval != null &&
+        !this.disposed &&
+        (this.state === 'idle' || this.state === 'standby')
+      ) {
+        void this.startListening('manual')
+      }
+      return
+    }
+    if (this.activeTurn != null) {
+      this.activeTurn = null
+      this.transition('idle', 'completed')
+      this.maybeStartContinuousListening()
+    }
+  }
+
+  /**
+   * M3 连续对话模式：轮次播报完 → 短暂停顿（等 TTS 尾音消散 + AEC 收敛）→
+   * 自动回聆听。期间发生打断/新唤醒则取消。
+   */
+  private maybeStartContinuousListening(): void {
+    if (!this.settings.continuousMode || this.disposed) return
+    if (this.continuousListenTimer != null) clearTimeout(this.continuousListenTimer)
+    this.continuousListenTimer = setTimeout(() => {
+      this.continuousListenTimer = null
+      if (this.disposed || this.state !== 'idle') return
+      // idle 可能已自动转 standby（常驻在线）；两态都可续听
+      if (this.state === 'idle' || this.state === 'standby') {
+        void this.startListening('completed')
+      }
+    }, CONTINUOUS_LISTEN_DELAY_MS)
+  }
+
+  // ─── TTS 合成与播报 ───────────────────────────────────────────────────────
+
+  /**
+   * 非轮次播报（命令确认/错误提示）：复用流水线，播完回 idle。
+   * announce 期间不持有 activeTurn（announcing 标记驱动收尾）。
+   */
+  private announceSpeech(text: string): void {
+    this.announcing = true
+    this.pipeline.beginTurn()
+    this.pipeline.finalize(text)
+    if (this.state !== 'speaking') this.transition('speaking', 'command')
+  }
+
+  private async synthesizeSentence(sentence: string): Promise<{ filePath: string }> {
+    await mkdir(this.deps.ttsDir, { recursive: true })
+    const providers = await this.deps.resolveMediaProviders()
+    if (providers.length === 0) {
+      throw new Error('未配置支持语音合成的多媒体渠道')
+    }
+    const settings = this.settings
+    const modelParams: Record<string, unknown> = { speed: settings.ttsSpeed }
+    if (settings.ttsVoice.trim().length > 0) modelParams.voice = settings.ttsVoice.trim()
+    const startedAt = Date.now()
+    const { output } = await this.deps.mediaRouter.invoke(
+      {
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        prompt: sentence,
+        modelParams,
+        outputDir: this.deps.ttsDir,
+      },
+      {
+        providers,
+        ...(settings.ttsProviderProfileId != null
+          ? { providerProfileId: settings.ttsProviderProfileId }
+          : {}),
+        ...(settings.ttsModelId != null ? { modelId: settings.ttsModelId } : {}),
+      },
+    )
+    const filePath = output.assets.find((asset) => asset.filePath != null)?.filePath
+    if (filePath == null) {
+      throw new Error(`TTS 无文件产物 (provider=${output.provider})`)
+    }
+    log.info(
+      `[voice-assistant] tts synthesized in ${Date.now() - startedAt}ms (${output.provider}, ${
+        filePath.split('/').pop() ?? ''
+      })`,
+    )
+    return { filePath }
+  }
+
+  private playCue(cue: 'wake' | 'fail' | 'error'): void {
+    if (!this.settings.soundCues) return
+    this.deps.sendPlayCommand({ kind: 'cue', cue })
+  }
+
+  // ─── 状态机 ───────────────────────────────────────────────────────────────
+
+  private transition(
+    next: VoiceAssistantState,
+    reason: VoiceAssistantStateEvent['reason'],
+    detail?: string,
+  ): void {
+    const previous = this.state
+    if (previous === next) {
+      // 同态重复迁移只更新 detail（listening 的 partial 刷新）
+      if (detail != null) {
+        this.deps.broadcastState({ state: next, previous, reason, detail })
+      }
+      return
+    }
+    this.state = next
+    log.info(`[voice-assistant] state ${previous} -> ${next} (${reason})`)
+    this.deps.broadcastState({
+      state: next,
+      previous,
+      reason,
+      ...(detail != null ? { detail } : {}),
+    })
+    this.deps.broadcastStatus(this.getStatus())
+    // 对话结束回 idle 后：常驻采集在线直接回 standby；否则有挂起的常驻请求则补启动
+    if (next === 'idle' && this.settings.alwaysListening && !this.disposed) {
+      if (
+        this.kwsCaptureActive &&
+        this.kwsDetector != null &&
+        this.kwsDetector.isActive()
+      ) {
+        this.state = 'standby'
+        log.info('[voice-assistant] state idle -> standby (resident listening online)')
+        this.deps.broadcastState({ state: 'standby', previous: 'idle', reason: 'standby-on' })
+        this.deps.broadcastStatus(this.getStatus())
+      } else if (this.standbyPending) {
+        this.standbyPending = false
+        void this.startStandby()
+      }
+    }
+  }
+}
+
+/** 错误信息压缩为可朗读的短句 */
+function shortError(message: string): string {
+  const cleaned = message.replace(/\s+/g, ' ').trim()
+  return cleaned.length > 60 ? `${cleaned.slice(0, 60)}…` : cleaned
+}

@@ -48,6 +48,7 @@ import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { UsageRankingCard } from './UsageRankingCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
+import { VoiceAssistantSettingsCard } from '../voice-assistant/VoiceAssistantSettingsCard'
 import { OptionalCapabilitiesSettingsCard } from '../optional-capabilities/OptionalCapabilitiesSettingsCard'
 import { CodexRuntimeDiagnosticsCard } from '../optional-capabilities/CodexRuntimeDiagnosticsCard'
 import { PerformanceSettingsSection } from '../settings-performance/PerformanceSettingsSection'
@@ -309,6 +310,12 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
           keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'],
         },
         {
+          id: 'voice-assistant',
+          icon: <Icons.Monitor size={13} />,
+          label: '语音助手',
+          keywords: ['语音', '唤醒', '快捷键', 'TTS', '播报', '麦克风', '语音对话'],
+        },
+        {
           id: 'performance',
           icon: <Icons.Activity size={13} />,
           label: '性能',
@@ -468,6 +475,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     // MCP 设置暂未完全实现，隐藏
     // 'mcp-settings': McpSection,
     'remote-connections': RemoteConnectionsSection,
+    // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）
+    'voice-assistant': VoiceAssistantSettingsCard,
     'team-registry': TeamRegistrySection,
     'system-prompt': SystemPromptSection,
     // 直接引用模块级组件，不要包箭头函数（同 MemoryPanel 的教训）

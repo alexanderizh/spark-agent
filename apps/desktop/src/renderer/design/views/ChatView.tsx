@@ -77,6 +77,7 @@ import { PlanSummary } from './chat/PlanSummary'
 import { GoalContractCard } from './chat/GoalContractCard'
 import { GoalIterationDivider } from './chat/GoalIterationDivider'
 import { ScheduledWakeDivider } from './chat/ScheduledWakeDivider'
+import { VoiceTurnDivider } from './chat/VoiceTurnDivider'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import { AutoRouterDecisionNotice, AutoRouterTurnMetaTag } from './chat/AutoRouterDecisionNotice'
@@ -5304,6 +5305,7 @@ function ChatStream({
                         {msg.turnSource === 'scheduled_task' ? (
                           <ScheduledWakeDivider timestamp={msg.timestamp} />
                         ) : null}
+                        {msg.turnSource === 'voice' ? <VoiceTurnDivider /> : null}
                         <UserMsg
                           timestamp={msg.timestamp}
                           blocks={msg.blocks}

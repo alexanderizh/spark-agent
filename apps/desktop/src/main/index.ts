@@ -153,7 +153,11 @@ import {
   type StartupGuidanceUpdate,
 } from './startup-guidance.js'
 import { getDatabase } from './db.js'
-import { getRecentSessionsForTray } from './ipc/index.js'
+import { getRecentSessionsForTray, setVoiceAssistantTrayRefreshHandler } from './ipc/index.js'
+import {
+  getVoiceAssistantService,
+  isVoiceAssistantStandbyCapable,
+} from './ipc/registerVoiceAssistantIpc.js'
 import { createLogger, initFileLogger } from '@spark/shared'
 import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
 import { ProviderService, resolveProviderApiKey, SettingsService } from '@spark/agent-runtime'
@@ -588,6 +592,8 @@ function createTray(): void {
   unsubscribeComputerControlStatus ??= computerUse.sessions.subscribeStatus(
     scheduleComputerControlTrayRefresh,
   )
+  // 语音助手状态变化 → 防抖刷新托盘菜单（状态/打断项）
+  setVoiceAssistantTrayRefreshHandler(scheduleVoiceAssistantTrayRefresh)
   refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on init', err))
   tray.on('click', () => {
     // 每次点击前刷新菜单（最近会话变化），再展示主窗口
@@ -657,6 +663,10 @@ async function refreshTrayMenu(): Promise<void> {
         label: 'Computer Use',
         submenu: computerControlSubmenu,
       },
+      {
+        label: '语音助手',
+        submenu: buildVoiceAssistantSubmenu(),
+      },
       { type: 'separator' },
       {
         label: '打开内部控制台',
@@ -688,6 +698,75 @@ function scheduleComputerControlTrayRefresh(): void {
     )
   }, 100)
   computerControlTrayRefreshTimer.unref()
+}
+
+// 语音助手状态 → 托盘刷新（500ms 防抖，状态广播频繁时避免重建菜单风暴）
+let voiceAssistantTrayRefreshTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleVoiceAssistantTrayRefresh(): void {
+  if (voiceAssistantTrayRefreshTimer != null) return
+  voiceAssistantTrayRefreshTimer = setTimeout(() => {
+    voiceAssistantTrayRefreshTimer = null
+    void refreshTrayMenu().catch((error) =>
+      log.warn('Failed to refresh voice assistant tray status', error),
+    )
+  }, 500)
+  voiceAssistantTrayRefreshTimer.unref()
+}
+
+const VOICE_ASSISTANT_STATE_LABEL: Record<string, string> = {
+  idle: '空闲',
+  standby: '待命（常驻聆听）',
+  listening: '聆听中',
+  thinking: '思考中',
+  speaking: '播报中',
+}
+
+function buildVoiceAssistantSubmenu(): MenuItemConstructorOptions[] {
+  const service = getVoiceAssistantService()
+  if (service == null) return [{ label: '（未初始化）', enabled: false }]
+  let settings: ReturnType<typeof service.getSettings>
+  let status: ReturnType<typeof service.getStatus>
+  try {
+    settings = service.getSettings()
+    status = service.getStatus()
+  } catch {
+    return [{ label: '（未初始化）', enabled: false }]
+  }
+  const items: MenuItemConstructorOptions[] = [
+    { label: `状态：${VOICE_ASSISTANT_STATE_LABEL[status.state] ?? status.state}`, enabled: false },
+  ]
+  if (isVoiceAssistantStandbyCapable()) {
+    items.push({
+      label: settings.alwaysListening ? '关闭常驻聆听' : '开启常驻聆听',
+      click: () => {
+        try {
+          service.updateSettings({
+            ...service.getSettings(),
+            alwaysListening: !settings.alwaysListening,
+          })
+          void refreshTrayMenu()
+        } catch (error) {
+          log.warn('Failed to toggle voice assistant standby', error)
+        }
+      },
+    })
+  } else {
+    items.push({ label: '常驻聆听（需先安装语音包）', enabled: false })
+  }
+  if (status.state === 'listening' || status.state === 'thinking' || status.state === 'speaking') {
+    items.push({
+      label: '打断当前语音',
+      click: () => {
+        service.interrupt()
+        void refreshTrayMenu()
+      },
+    })
+  }
+  items.push({
+    label: `唤醒快捷键：${settings.enabled ? settings.wakeShortcut : '（已停用）'}`,
+    enabled: false,
+  })
+  return items
 }
 
 function buildComputerControlSubmenu(): MenuItemConstructorOptions[] {

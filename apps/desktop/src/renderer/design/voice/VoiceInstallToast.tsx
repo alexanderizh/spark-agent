@@ -23,6 +23,7 @@ const COMPONENT_NAME: Record<VoiceInstallProgress['component'], string> = {
   native: '推理引擎',
   model: '识别模型',
   refine: '精修模型',
+  kws: '唤醒词模型',
 }
 
 /**
