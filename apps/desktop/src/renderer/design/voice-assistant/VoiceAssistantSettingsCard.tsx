@@ -1,7 +1,7 @@
 /**
  * VoiceAssistantSettingsCard — 语音助手设置分区
  *
- * M1：快捷键唤醒（开关/键位）、提示音、语音系统提示、TTS 音色/语速、
+ * M1：快捷键唤醒（开关/键位）、提示音、语音系统提示、TTS 渠道/模型/音色/语速、
  *     语音会话权限模式、状态展示与「试一试」。
  * M2（本卡片内预告，暂锁定）：常驻唤醒词聆听、唤醒词选择、识别引擎。
  *
@@ -12,11 +12,12 @@
  * 右侧控件统一 200px 宽度右缘对齐（见 voiceAssistant.less）。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Select } from '@lobehub/ui'
+import { AutoComplete, Select } from '@lobehub/ui'
 import { Switch, Tooltip } from 'antd'
 import type {
+  CanvasMediaModelSummary,
   SessionAgentAdapter,
   SessionReasoningEffort,
   VoiceAssistantSessionAgentInfo,
@@ -25,6 +26,14 @@ import type {
 } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 import { getPermissionModeOptions, getValidPermissionMode } from '../utils/permission-options'
+import { mediaModelDefaultVoice } from '../utils/mediaParamOptions'
+import {
+  resolveTtsChannelId,
+  resolveTtsModel,
+  ttsChannelModels,
+  ttsChannelOptions,
+  ttsVoiceOptions,
+} from './voiceAssistantTtsOptions'
 import { Icons } from '../Icons'
 
 const ADAPTER_LABEL: Record<SessionAgentAdapter, string> = {
@@ -42,6 +51,13 @@ const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: SessionReasoningEff
   { label: '很高', value: 'xhigh' },
   { label: '最高', value: 'max' },
 ]
+
+/**
+ * 下拉哨兵值：antd Select 对空串值渲染的是占位符而非选项文案，直接存 null 会让
+ * 「自动 / 渠道默认模型」显示成空白控件。哨兵不可能与渠道 id（UUID）或模型 id 冲突。
+ */
+const TTS_AUTO_CHANNEL_VALUE = '__auto__'
+const TTS_DEFAULT_MODEL_VALUE = '__default__'
 
 const STATE_LABEL: Record<string, string> = {
   idle: '空闲',
@@ -82,6 +98,7 @@ export function VoiceAssistantSettingsCard() {
   const [status, setStatus] = useState<VoiceAssistantStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [ttsModels, setTtsModels] = useState<CanvasMediaModelSummary[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -101,6 +118,16 @@ export function VoiceAssistantSettingsCard() {
         if (!cancelled) setStatus(statusRes.status)
       } catch {
         /* 状态读取失败不阻塞设置 */
+      }
+      try {
+        // 播报渠道 / 模型 / 音色候选：与主进程 TTS 同一份「已配置渠道 + 已启用模型」口径。
+        const modelsRes = await window.spark.invoke('canvas:media-models:list', {
+          capability: 'audio.speech',
+          enabledOnly: true,
+        })
+        if (!cancelled) setTtsModels(modelsRes.models)
+      } catch {
+        /* 渠道列举失败不阻塞设置读取：候选为空时音色回落手输 */
       }
     })()
     const off = window.spark.on('stream:voice-assistant:status', (next) => {
@@ -127,6 +154,69 @@ export function VoiceAssistantSettingsCard() {
       }
     },
     [settings],
+  )
+
+  // ── TTS 渠道 / 模型 / 音色候选（纯推导，口径与主进程合成链路一致）──────────
+  const effectiveTtsChannelId = useMemo(
+    () => resolveTtsChannelId(ttsModels, settings.ttsProviderProfileId),
+    [ttsModels, settings.ttsProviderProfileId],
+  )
+  const effectiveTtsChannelModels = useMemo(
+    () => ttsChannelModels(ttsModels, effectiveTtsChannelId),
+    [ttsModels, effectiveTtsChannelId],
+  )
+  const effectiveTtsModel = useMemo(
+    () => resolveTtsModel(ttsModels, effectiveTtsChannelId, settings.ttsModelId),
+    [ttsModels, effectiveTtsChannelId, settings.ttsModelId],
+  )
+  const ttsVoiceCandidates = useMemo(
+    () => ttsVoiceOptions(ttsModels, effectiveTtsChannelId, settings.ttsModelId),
+    [ttsModels, effectiveTtsChannelId, settings.ttsModelId],
+  )
+  const ttsChannelSelectOptions = useMemo(() => {
+    const base = [
+      { label: '自动（第一个可用语音渠道）', value: TTS_AUTO_CHANNEL_VALUE },
+      ...ttsChannelOptions(ttsModels).map((option) => ({
+        label: option.label,
+        value: option.value,
+      })),
+    ]
+    const current = settings.ttsProviderProfileId
+    // 已保存渠道可能已删除或停用：补一条占位项，避免下拉直接暴露裸 id。
+    if (current == null || base.some((option) => option.value === current)) return base
+    return [...base, { label: '当前渠道（不在语音渠道列表）', value: current }]
+  }, [ttsModels, settings.ttsProviderProfileId])
+  const ttsModelSelectOptions = useMemo(() => {
+    const base = [
+      { label: '渠道默认模型', value: TTS_DEFAULT_MODEL_VALUE },
+      ...effectiveTtsChannelModels.map((model) => ({
+        label: model.displayName,
+        value: model.modelId,
+      })),
+    ]
+    const current = settings.ttsModelId
+    if (current == null || base.some((option) => option.value === current)) return base
+    return [...base, { label: '当前模型（不在渠道模型列表）', value: current }]
+  }, [effectiveTtsChannelModels, settings.ttsModelId])
+  const ttsDefaultVoice = mediaModelDefaultVoice(effectiveTtsModel)
+
+  const handleTtsChannelChange = useCallback(
+    (value: string) => {
+      const nextChannel = value === TTS_AUTO_CHANNEL_VALUE ? null : value
+      // 换渠道后原模型多半不属于新渠道：仅当它仍属于新渠道时保留，否则回落到渠道默认。
+      const keepModel =
+        nextChannel != null &&
+        settings.ttsModelId != null &&
+        ttsModels.some(
+          (model) =>
+            model.providerProfileId === nextChannel && model.modelId === settings.ttsModelId,
+        )
+      void update({
+        ttsProviderProfileId: nextChannel,
+        ...(keepModel ? {} : { ttsModelId: null }),
+      })
+    },
+    [settings.ttsModelId, ttsModels, update],
   )
 
   const handleTryWake = useCallback(async () => {
@@ -282,16 +372,73 @@ export function VoiceAssistantSettingsCard() {
           }
         />
         <SettingsRow
-          title="音色"
-          tip="语音播报（TTS）的合成音色；留空使用渠道默认音色（如 alloy、t030、narrator 等）。合成渠道默认自动选择第一个可用的语音渠道。"
+          title="播报渠道"
+          tip="语音播报（TTS）使用的渠道；默认自动选择第一个可用的语音渠道。选定后可在下方指定模型与音色。"
           right={
-            <input
-              className="input"
-              value={settings.ttsVoice}
-              placeholder="默认音色"
-              onChange={(e) => setSettings({ ...settings, ttsVoice: e.target.value })}
-              onBlur={() => void update({})}
+            <Select
+              value={settings.ttsProviderProfileId ?? TTS_AUTO_CHANNEL_VALUE}
+              onChange={(value) => handleTtsChannelChange(String(value))}
+              options={ttsChannelSelectOptions}
             />
+          }
+        />
+        <SettingsRow
+          title="播报模型"
+          tip="该渠道下用于语音合成的模型；「渠道默认模型」由渠道自身决定。需先选定播报渠道。"
+          right={
+            <Select
+              value={settings.ttsModelId ?? TTS_DEFAULT_MODEL_VALUE}
+              onChange={(value) => {
+                const next = String(value)
+                void update({ ttsModelId: next === TTS_DEFAULT_MODEL_VALUE ? null : next })
+              }}
+              options={ttsModelSelectOptions}
+              disabled={
+                settings.ttsProviderProfileId == null || effectiveTtsChannelModels.length === 0
+              }
+            />
+          }
+        />
+        <SettingsRow
+          title="音色"
+          tip={`语音播报（TTS）的合成音色；留空使用渠道默认音色${
+            ttsDefaultVoice != null ? `（当前为 ${ttsDefaultVoice}）` : ''
+          }。候选来自所选渠道 / 模型声明的音色，也可直接输入未列出的音色 ID（如复刻音色）。`}
+          right={
+            ttsVoiceCandidates.length > 0 ? (
+              <AutoComplete
+                value={settings.ttsVoice || undefined}
+                allowClear
+                options={ttsVoiceCandidates}
+                placeholder={ttsDefaultVoice != null ? `默认（${ttsDefaultVoice}）` : '默认音色'}
+                onChange={(value) =>
+                  setSettings({ ...settings, ttsVoice: value == null ? '' : String(value) })
+                }
+                onSelect={(value) => {
+                  // 选中即持久化：onBlur 只在离开输入框时触发，单靠它会让「选完就走」丢失。
+                  const next = String(value)
+                  setSettings({ ...settings, ttsVoice: next })
+                  void update({ ttsVoice: next })
+                }}
+                onBlur={() => void update({})}
+                filterOption={(input, option) => {
+                  const query = String(input ?? '').toLowerCase()
+                  return [option?.value, option?.label].some((candidate) =>
+                    String(candidate ?? '')
+                      .toLowerCase()
+                      .includes(query),
+                  )
+                }}
+              />
+            ) : (
+              <input
+                className="input"
+                value={settings.ttsVoice}
+                placeholder="默认音色"
+                onChange={(e) => setSettings({ ...settings, ttsVoice: e.target.value })}
+                onBlur={() => void update({})}
+              />
+            )
           }
         />
         <SettingsRow
