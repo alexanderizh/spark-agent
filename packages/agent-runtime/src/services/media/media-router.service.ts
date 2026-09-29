@@ -201,7 +201,44 @@ export class MediaRouterService {
       })
       if (supportsReferenceInput) return 'video.reference_to_video'
     }
+    // 调用方钉死了 model/manifest 时，候选能力里优先取该模型真正声明的那个：
+    // text_to_audio 同时给出 audio.music 与 audio.speech，只按全局候选顺序推导会把
+    // 语音合成推到音乐能力，与所选 TTS 模型 manifest 不匹配后直接抛 capability_not_supported。
+    const declared = this.capabilityDeclaredBySelection(input.operation, options)
+    if (declared) return declared
     return this.resolveCapability(input.operation, options.providers)
+  }
+
+  /**
+   * 钉死 model/manifest 的调用里，按候选顺序取该模型 manifest 真正声明的能力。
+   *
+   * 音乐模型声明 audio.music、TTS 模型声明 audio.speech，因此同一个 text_to_audio
+   * 操作在两种模型上都能选到正确能力；未钉死模型（或模型未声明任何候选）时返回
+   * null，由调用方回退到既有的全局候选推导。
+   */
+  private capabilityDeclaredBySelection(
+    operation: CanvasOperationType,
+    options: Pick<InvokeOptions, 'providers' | 'providerProfileId' | 'modelId' | 'manifestId'>,
+  ): MediaCapabilityId | null {
+    if (options.modelId == null && options.manifestId == null) return null
+    const candidates = capabilityForOperation(operation)
+    if (candidates.length === 0) return null
+    const providers = options.providerProfileId
+      ? options.providers.filter((provider) => provider.id === options.providerProfileId)
+      : options.providers
+    for (const candidate of candidates) {
+      const declared = providers.some((provider) =>
+        (provider.mediaModelManifests ?? []).some((manifest) => {
+          const matchesSelection =
+            options.manifestId != null
+              ? manifest.id === options.manifestId
+              : manifest.modelId === options.modelId
+          return matchesSelection && manifest.capabilities.some((item) => item.id === candidate)
+        }),
+      )
+      if (declared) return candidate
+    }
+    return null
   }
 
   /** 检查某 provider profile 是否声明支持某 capability（且 adapter 也支持） */
