@@ -14,6 +14,7 @@ import {
   acquireVoiceMediaStream,
   detectAudioInputDevices,
   voiceCaptureErrorMessage,
+  type VoiceCaptureProcessing,
 } from '../voice/voiceCapture'
 import {
   getVoiceWorkletUrl,
@@ -46,7 +47,7 @@ export class AssistantCaptureController {
   }
 
   /** 主进程指令：启动采集（并发不同 sessionId 时排队串行，不吞请求） */
-  start(sessionId: string): Promise<void> {
+  start(sessionId: string, processing?: VoiceCaptureProcessing): Promise<void> {
     if (this.active != null) {
       if (this.active.sessionId === sessionId) return Promise.resolve()
       // 换会话：先释放旧采集（主进程串行指令下罕见，防御处理）
@@ -57,13 +58,13 @@ export class AssistantCaptureController {
       this.pendingStartSessionId = sessionId
       return this.starting
     }
-    this.starting = this.runStart(sessionId)
+    this.starting = this.runStart(sessionId, processing)
     return this.starting
   }
 
-  private async runStart(sessionId: string): Promise<void> {
+  private async runStart(sessionId: string, processing?: VoiceCaptureProcessing): Promise<void> {
     try {
-      await this.startInternal(sessionId)
+      await this.startInternal(sessionId, processing)
     } finally {
       this.starting = null
       const next = this.pendingStartSessionId
@@ -81,16 +82,19 @@ export class AssistantCaptureController {
     this.release()
   }
 
-  private async startInternal(sessionId: string): Promise<void> {
+  private async startInternal(
+    sessionId: string,
+    processing?: VoiceCaptureProcessing,
+  ): Promise<void> {
     try {
       // 1. 系统麦克风授权（macOS 由主进程触发系统弹窗）
       const permission = await window.spark.invoke('voice:request-microphone-permission', {})
       if (!permission.granted) {
         throw new Error(permission.message ?? '系统未授予麦克风访问权限。')
       }
-      // 2. 设备枚举 + 取流
+      // 2. 设备枚举 + 取流（processing 含语音助手的降噪/声源隔离处理）
       const devices = await detectAudioInputDevices()
-      const stream = await acquireVoiceMediaStream(devices)
+      const stream = await acquireVoiceMediaStream(devices, processing)
       // 3. 音频管线：AudioContext + Worklet（音频回调驱动，隐藏窗口不受节流影响）
       const AudioContextCtor: typeof AudioContext =
         window.AudioContext ??
@@ -120,8 +124,7 @@ export class AssistantCaptureController {
       this.active = { sessionId, context, stream, source, node, onTrackEnded, audioTrack }
       window.spark.sendVoiceAssistantRendererEvent({ type: 'capture-started', sessionId })
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : voiceCaptureErrorMessage(error)
+      const message = error instanceof Error ? error.message : voiceCaptureErrorMessage(error)
       // 清理半建立的管线
       this.release()
       window.spark.sendVoiceAssistantRendererEvent({

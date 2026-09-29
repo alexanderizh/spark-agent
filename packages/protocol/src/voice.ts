@@ -15,10 +15,10 @@
 // ─── 完整性 ─────────────────────────────────────────────────────────────────
 
 /**
- * 语音包组件：跨平台 native 推理模块 + 流式识别模型 + 可选离线精修模型 + 可选唤醒词模型。
- * refine / kws 为可选增强（精修替换流式结果 / 常驻唤醒词检测），缺失时语音输入回退纯流式，不影响 ready。
+ * 语音包组件：跨平台 native 推理模块 + 流式识别模型 + 可选离线精修模型 + 可选唤醒词模型 + 可选人声检测模型。
+ * refine / kws / vad 为可选增强（精修替换流式结果 / 常驻唤醒词检测 / 环境噪音人声门控），缺失时语音输入回退纯流式，不影响 ready。
  */
-export type VoicePackComponent = 'native' | 'model' | 'refine' | 'kws'
+export type VoicePackComponent = 'native' | 'model' | 'refine' | 'kws' | 'vad'
 
 export type VoicePackState = 'missing' | 'downloading' | 'ready' | 'error'
 
@@ -116,6 +116,12 @@ export interface VoiceStartRequest {
   enableVad?: boolean
   /** VAD 句尾静音阈值（ms），缺省 800 */
   vadSilenceMs?: number
+  /**
+   * 环境噪音门控（语音助手用）：非人声/远场低能量音频在喂入识别前被静音替换，
+   * 并用 silero VAD 段信息校验 final 的人声覆盖率（低覆盖的 final 丢弃）。
+   * off = 关闭（默认，语音输入保持旧行为）；standard/strict = 门限与覆盖率要求递增。
+   */
+  noiseGate?: 'off' | 'standard' | 'strict'
 }
 
 export interface VoiceStartResponse {
@@ -146,6 +152,7 @@ export type VoiceRecognitionEventType =
   | 'refined'
   | 'session-stopped'
   | 'error'
+  | 'speech-activity'
 
 export interface VoiceRecognitionEvent {
   type: VoiceRecognitionEventType
@@ -154,11 +161,13 @@ export interface VoiceRecognitionEvent {
    * partial: 当前句的实时识别结果（整体替换上一帧 partial，非追加）
    * final: VAD 句尾锁定后的完整句（由 UI 追加到已确认区）
    * refined: 离线精修后的整段文本（由 UI 整体替换本次会话流式写入的内容）
-   * session-started / session-stopped / error: 空字符串
+   * session-started / session-stopped / error / speech-activity: 空字符串
    */
   text?: string
   /** type==='error' 时的错误信息 */
   message?: string
+  /** type==='speech-activity' 时的实时人声活动状态（能量门控判定） */
+  speechActive?: boolean
 }
 
 // ─── 音频 chunk 通道（渲染 -> 主进程，高频流式，不走 invoke/response）──────────

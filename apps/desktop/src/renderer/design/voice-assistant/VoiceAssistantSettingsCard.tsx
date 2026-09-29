@@ -13,10 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Select } from '@lobehub/ui'
 import { Switch } from 'antd'
-import type {
-  VoiceAssistantSettings,
-  VoiceAssistantStatus,
-} from '@spark/protocol'
+import type { VoiceAssistantSettings, VoiceAssistantStatus } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 
 const PERMISSION_OPTIONS = [
@@ -46,9 +43,7 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
 }
 
 export function VoiceAssistantSettingsCard() {
-  const [settings, setSettings] = useState<VoiceAssistantSettings>(
-    DEFAULT_VOICE_ASSISTANT_SETTINGS,
-  )
+  const [settings, setSettings] = useState<VoiceAssistantSettings>(DEFAULT_VOICE_ASSISTANT_SETTINGS)
   const [status, setStatus] = useState<VoiceAssistantStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -127,7 +122,9 @@ export function VoiceAssistantSettingsCard() {
         <SettingsRow
           title="启用快捷键唤醒"
           desc={`在任意应用中按下唤醒快捷键即可开始语音对话（默认 ${DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeShortcut}）。再按一次取消聆听 / 打断播报。`}
-          right={<Switch checked={settings.enabled} onChange={(v) => void update({ enabled: v })} />}
+          right={
+            <Switch checked={settings.enabled} onChange={(v) => void update({ enabled: v })} />
+          }
         />
         <div className="settings-card-row">
           <div className="flex1 min-w-0">
@@ -229,7 +226,41 @@ export function VoiceAssistantSettingsCard() {
             />
           </div>
         </div>
-        <SettingsRow title="语音播报（TTS）" desc="回复逐句合成播放；合成渠道默认自动选择第一个可用的语音渠道。" />
+        <SettingsRow
+          title="浏览器降噪"
+          desc="采集源头开启系统级降噪与人声隔离，过滤风扇/空调/键盘等稳态噪音。输入框语音输入不受影响（保持原始人声）。"
+          right={
+            <Switch
+              checked={settings.browserDenoise}
+              onChange={(v) => void update({ browserDenoise: v })}
+            />
+          }
+        />
+        <div className="settings-card-row">
+          <div className="flex1 min-w-0">
+            <div className="row-title">人声聚焦</div>
+            <div className="row-desc">
+              尽量只保留你本人的近场人声：低能量远场声音（电视/旁人/音乐）在识别前被
+              静音，噪音硬解出的句子也会被本地人声检测否决。首次开启自动下载人声检测 模型（约
+              0.5MB）。「严格」过滤更强，但离麦克风远时可能误杀。
+            </div>
+          </div>
+          <div className="row-action" style={{ minWidth: 160 }}>
+            <Select
+              value={settings.voiceFocus}
+              onChange={(v) => void update({ voiceFocus: v })}
+              options={[
+                { label: '标准（推荐）', value: 'standard' },
+                { label: '严格', value: 'strict' },
+                { label: '关闭', value: 'off' },
+              ]}
+            />
+          </div>
+        </div>
+        <SettingsRow
+          title="语音播报（TTS）"
+          desc="回复逐句合成播放；合成渠道默认自动选择第一个可用的语音渠道。"
+        />
         <div className="settings-card-row">
           <div className="flex1 min-w-0">
             <div className="row-title">音色</div>
@@ -334,7 +365,8 @@ export function VoiceAssistantSettingsCard() {
           <div className="flex1 min-w-0">
             <div className="row-title">唤醒灵敏度（阈值）</div>
             <div className="row-desc">
-              越低越容易唤醒（也越易误触发）。默认 0.10 已按「嘿 Spark」实测校准；真人声可微调 0.08–0.15。
+              越低越容易唤醒（也越易误触发）。默认 0.10 已按「嘿 Spark」实测校准；真人声可微调
+              0.08–0.15。
             </div>
           </div>
           <div className="row-action" style={{ minWidth: 160 }}>
@@ -345,9 +377,7 @@ export function VoiceAssistantSettingsCard() {
               step={0.01}
               value={settings.wakeThreshold}
               style={{ width: '100%' }}
-              onChange={(e) =>
-                setSettings({ ...settings, wakeThreshold: Number(e.target.value) })
-              }
+              onChange={(e) => setSettings({ ...settings, wakeThreshold: Number(e.target.value) })}
               onMouseUp={() => void update({})}
               onTouchEnd={() => void update({})}
             />

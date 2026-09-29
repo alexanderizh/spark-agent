@@ -107,12 +107,19 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
   const bindingUpdates: Array<Record<string, unknown>> = []
   const approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }> = []
   const installCalls: number[] = []
-  let installImpl: (() => Promise<{
-    success: boolean
-    message: string
-    status?: { downloading?: boolean }
-  }>) | null = null
-  let settings: VoiceAssistantSettings = { ...DEFAULT_VOICE_ASSISTANT_SETTINGS, ...settingsPatch }
+  let installImpl:
+    | (() => Promise<{
+        success: boolean
+        message: string
+        status?: { downloading?: boolean }
+      }>)
+    | null = null
+  let settings: VoiceAssistantSettings = {
+    ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+    // 状态机测试不涉及门控；显式关闭避免触发 vad 模型后台补装（多调 installVoicePack）
+    voiceFocus: 'off',
+    ...settingsPatch,
+  }
 
   const route: VoiceAssistantRouteBinding = {
     current: { defaultSessionId: 'session-voice-1' },
@@ -137,9 +144,8 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
       register: () => true,
       unregister: () => undefined,
     },
-    resolveMediaProviders: async () => [
-      { id: 'p1', name: 'fake-tts', defaultModel: 'tts-1', apiKey: 'k' },
-    ] as never,
+    resolveMediaProviders: async () =>
+      [{ id: 'p1', name: 'fake-tts', defaultModel: 'tts-1', apiKey: 'k' }] as never,
     mediaRouter: {
       invoke: async () => ({
         output: {
@@ -179,9 +185,7 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     runtimeDir: '/tmp/voice-assistant-test-runtime',
     installVoicePack: async () => {
       installCalls.push(1)
-      return installImpl != null
-        ? installImpl()
-        : { success: true, message: 'ok' }
+      return installImpl != null ? installImpl() : { success: true, message: 'ok' }
     },
     listRecentSessions: async (limit) => {
       listedRecent.push(limit)
@@ -215,7 +219,11 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     route,
     installCalls,
     setInstallImpl: (
-      impl: () => Promise<{ success: boolean; message: string; status?: { downloading?: boolean } }>,
+      impl: () => Promise<{
+        success: boolean
+        message: string
+        status?: { downloading?: boolean }
+      }>,
     ) => {
       installImpl = impl
     },
@@ -242,7 +250,11 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.playCommands[0]).toEqual({ kind: 'cue', cue: 'wake' })
 
     // VAD final → 进入说完确认窗口（防抖：不立即收口，仍可继续说）
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '今天天气怎么样' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
     expect(h.service.getStatus().state).toBe('listening')
     expect(h.stateEvents.some((e) => e.reason === 'confirm')).toBe(true)
     // 确认窗口内持续静默 → 到期收口 → thinking → flush 收尾
@@ -250,7 +262,11 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.service.getStatus().state).toBe('thinking')
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(true)
     // flush 尾句并入
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '适合出行吗' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '适合出行吗',
+    })
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
 
@@ -325,14 +341,26 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.wake()
     // 第一段说完（VAD final）→ 进入确认窗口
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '帮我查一下' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '帮我查一下',
+    })
     expect(h.service.getStatus().state).toBe('listening') // 仍聆听，未收口
     expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(false) // 采集未停
     // 窗口内用户继续开口（partial）→ 撤销收口
-    h.service.handleRecognitionEvent({ type: 'partial', sessionId: 'voice-100-1', text: '明天北京的' })
+    h.service.handleRecognitionEvent({
+      type: 'partial',
+      sessionId: 'voice-100-1',
+      text: '明天北京的',
+    })
     expect(h.service.getStatus().state).toBe('listening')
     // 第二段说完 → 窗口重新计时
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '明天北京的天气' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '明天北京的天气',
+    })
     // 推进 800ms（不到 1200ms 窗口）→ 仍未收口
     await vi.advanceTimersByTimeAsync(800)
     expect(h.service.getStatus().state).toBe('listening')
@@ -376,10 +404,10 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.submitted.length).toBe(1)
   })
 
-  it('15s 无转写 → 超时收口 + 失效提示音', async () => {
+  it('20s 空转无转写 → 超时收口 + 失效提示音', async () => {
     const h = createHarness()
     h.service.wake()
-    await vi.advanceTimersByTimeAsync(15_100)
+    await vi.advanceTimersByTimeAsync(20_100)
     // stopVoiceSession(flush) 后需送 session-stopped 才收口
     await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
@@ -389,10 +417,56 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.submitted.length).toBe(0)
   })
 
+  it('speech-activity 重置空转计时：19s 后有语音活动 → 20s 空转不触发', async () => {
+    const h = createHarness()
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(19_000)
+    // 门控检出人声（如用户在想措辞后开口，ASR 尚未解出文本）
+    h.service.handleRecognitionEvent({
+      type: 'speech-activity',
+      sessionId: 'voice-100-1',
+      speechActive: true,
+    })
+    await vi.advanceTimersByTimeAsync(19_500)
+    expect(h.service.getStatus().state).toBe('listening')
+    // 总时长越过原 20s 空转窗口仍未超时；到 40s（重置后再满 20s）才收口
+    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'timeout' })
+  })
+
+  it('listening 硬上限：持续活动不断重置空转计时，120s 强制收口', async () => {
+    const h = createHarness()
+    h.service.wake()
+    // 模拟持续噪音场景：每 15s 一次 speech-activity，空转计时永远不满
+    for (let round = 0; round < 7; round += 1) {
+      await vi.advanceTimersByTimeAsync(15_000)
+      h.service.handleRecognitionEvent({
+        type: 'speech-activity',
+        sessionId: 'voice-100-1',
+        speechActive: true,
+      })
+    }
+    // 105s 已过仍 listening；推进越过 120s 硬上限 → 强制收口
+    expect(h.service.getStatus().state).toBe('listening')
+    await vi.advanceTimersByTimeAsync(20_000)
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'timeout' })
+    expect(h.submitted.length).toBe(0)
+  })
+
   it('speaking 态打断 → cancelTurn + 停播 + idle(cancelled)', async () => {
     const h = createHarness()
     h.service.wake()
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '随便说点什么' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '随便说点什么',
+    })
     await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
@@ -448,6 +522,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.updateSettings({
       ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
       wakeShortcut: 'CommandOrControl+Shift+V',
     })
     // 无异常且设置生效即可（注册器为 fake）
@@ -458,6 +533,7 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     h.service.updateSettings({
       ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
       alwaysListening: true,
     })
     await vi.advanceTimersByTimeAsync(10)
@@ -473,27 +549,31 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.handleAudioChunk('voice-assistant:kws', new Int16Array(1600))
     expect(kwsFeedMock).toHaveBeenCalledTimes(1)
     // 关闭常驻 → 停采集 + idle
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: false })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: false,
+    })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.service.getStatus().state).toBe('idle')
     expect(
-      h.captureCommands.some(
-        (c) => c.sessionId === 'voice-assistant:kws' && c.action === 'stop',
-      ),
+      h.captureCommands.some((c) => c.sessionId === 'voice-assistant:kws' && c.action === 'stop'),
     ).toBe(true)
   })
 
   it('M2 常驻对话收尾后自动回 standby', async () => {
     const h = createHarness()
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: true })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleRendererEvent({ type: 'capture-started', sessionId: 'voice-assistant:kws' })
     // 快捷键唤醒（复用常驻采集，不应对话采集 start）
     h.service.wake()
     expect(h.service.getStatus().state).toBe('listening')
-    expect(
-      h.captureCommands.some((c) => c.action === 'start' && c.mode === 'dialogue'),
-    ).toBe(false)
+    expect(h.captureCommands.some((c) => c.action === 'start' && c.mode === 'dialogue')).toBe(false)
     // 说话 → 提交 → isFinal → 播完
     h.service.handleRecognitionEvent({
       type: 'final',
@@ -558,14 +638,19 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.listedWorkspaces.length).toBe(1)
     expect(
       h.bindingUpdates.some(
-        (patch) => patch.defaultWorkspaceId === 'ws-1' && patch.defaultSessionId === 'session-in-ws1',
+        (patch) =>
+          patch.defaultWorkspaceId === 'ws-1' && patch.defaultSessionId === 'session-in-ws1',
       ),
     ).toBe(true)
   })
 
   it('M2 KWS 采集断流 → 自动重试重启', async () => {
     const h = createHarness({ alwaysListening: true })
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: true })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
     await vi.advanceTimersByTimeAsync(10)
     h.service.handleRendererEvent({ type: 'capture-started', sessionId: 'voice-assistant:kws' })
     // 采集意外停止 → idle + 2s 后重发 start
@@ -589,7 +674,11 @@ describe('VoiceAssistantService 状态机', () => {
       message: '语音包正在安装中，请稍候',
       status: { downloading: true },
     }))
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: true })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
     await vi.advanceTimersByTimeAsync(10)
     // 在途：不得报「唤醒词模型未安装」错误
     expect(h.stateEvents.some((e) => e.reason === 'error')).toBe(false)
@@ -616,7 +705,11 @@ describe('VoiceAssistantService 状态机', () => {
       message: '语音包正在安装中，请稍候',
       status: { downloading: true },
     }))
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: true })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
     await vi.advanceTimersByTimeAsync(10)
     await vi.advanceTimersByTimeAsync(120 * 5_000 + 10)
     const errEvents = h.stateEvents.filter((e) => e.reason === 'error')
@@ -632,11 +725,19 @@ describe('VoiceAssistantService 状态机', () => {
       message: '语音包正在安装中，请稍候',
       status: { downloading: true },
     }))
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: true })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: true,
+    })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.installCalls.length).toBe(1)
     // 等待期间关闭常驻聆听
-    h.service.updateSettings({ ...DEFAULT_VOICE_ASSISTANT_SETTINGS, alwaysListening: false })
+    h.service.updateSettings({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      voiceFocus: 'off',
+      alwaysListening: false,
+    })
     await vi.advanceTimersByTimeAsync(10)
     // 模型随后就绪：等待已被取消，不自动进 standby
     kwsMocks.available = true
@@ -651,7 +752,11 @@ describe('VoiceAssistantService 状态机', () => {
     const h = createHarness()
     // 建立语音轮次
     h.service.wake()
-    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '删掉那个文件' })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '删掉那个文件',
+    })
     await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)

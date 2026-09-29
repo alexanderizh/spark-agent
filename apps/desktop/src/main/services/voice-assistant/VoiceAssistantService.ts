@@ -45,6 +45,7 @@ import {
 } from '../VoiceRecognitionService.js'
 import { VoiceTtsPipeline } from './VoiceTtsPipeline.js'
 import { WakeWordDetector, isWakeWordModelAvailable } from './WakeWordDetector.js'
+import { resolveVoiceVadPaths } from '../VoiceIntegrityService.js'
 import {
   buildApprovalSpeech,
   buildSessionSelectionSpeech,
@@ -56,8 +57,17 @@ import type { VoiceAssistantRouteBinding } from './VoiceRouteBinding.js'
 
 const log = createLogger('voice-assistant')
 
-/** listening 无任何有效转写时的兜底超时 */
-const LISTENING_TIMEOUT_MS = 15_000
+/**
+ * listening 空转兜底超时：检测不到人声活动（门控 speech-activity）时保持收音的
+ * 最长等待。期间用户可随时手动取消（HUD 停止按钮 / 再按快捷键）；检测到人声
+ * 活动即重置计时，说话后的收口由说完确认窗口负责。
+ */
+const EMPTY_SPEECH_TIMEOUT_MS = 20_000
+/**
+ * listening 硬上限：持续说话（防抖窗口不断被撤销）或持续噪音（空转计时不断被
+ * speech-activity 重置）时的强制收口兜底，防会话无限滞留。
+ */
+const LISTENING_HARD_LIMIT_MS = 120_000
 /** VAD 句尾静音阈值（对齐语音输入默认，略放宽换气停顿） */
 const ASR_VAD_SILENCE_MS = 1200
 /** M3 连续对话：播报到续听的间隔（等 TTS 尾音消散，防录进自己的播报） */
@@ -136,6 +146,8 @@ export class VoiceAssistantService {
   private closingAsrSessionId: string | null = null
   private captureCounter = 0
   private listeningTimer: ReturnType<typeof setTimeout> | null = null
+  /** listening 硬上限定时器（与空转计时独立，不受人声活动重置影响） */
+  private listeningHardTimer: ReturnType<typeof setTimeout> | null = null
   private partialText = ''
   private collectedFinals: string[] = []
   /** 已命中 VAD final / 超时，正在等 ASR 收尾 */
@@ -159,6 +171,8 @@ export class VoiceAssistantService {
   private kwsRestartAttempts = 0
   /** 模型缺失自动安装是否进行中（防重入） */
   private kwsInstallInFlight = false
+  /** vad 人声检测模型后台补装进行中（防重入） */
+  private vadInstallInFlight = false
   /** 外部入口安装在途的等待轮询定时器（等其完成后再启动 standby） */
   private kwsInstallWaitTimer: ReturnType<typeof setTimeout> | null = null
   /** 安装等待轮询次数（就绪/取消时清零，超上限提示手动处理） */
@@ -255,10 +269,32 @@ export class VoiceAssistantService {
     this.deps.writeSettings(normalized)
     if (shortcutChanged) this.rearmShortcut()
     if (standbyConfigChanged) this.applyAlwaysListeningSetting()
+    // 人声聚焦开启但 silero 模型未装：后台静默补装（不阻塞，失败只记日志，
+    // 期间门控自动降级为纯能量层）
+    if (normalized.voiceFocus !== 'off') void this.ensureVadModelInstalled()
     log.info(
       `[voice-assistant] settings updated (shortcut rearm=${shortcutChanged}, standby reconfig=${standbyConfigChanged})`,
     )
     return normalized
+  }
+
+  /** vad 人声检测模型后台补装（installVoicePack 全量互斥语义，在途时快速返回） */
+  private async ensureVadModelInstalled(): Promise<void> {
+    if (this.disposed || this.vadInstallInFlight) return
+    if (resolveVoiceVadPaths() != null) return
+    this.vadInstallInFlight = true
+    try {
+      const result = await this.deps.installVoicePack()
+      if (result.success) {
+        log.info('[voice-assistant] vad model installed for voice focus')
+      } else if (!result.status?.downloading) {
+        log.warn(`[voice-assistant] vad model install failed: ${result.message}`)
+      }
+    } catch (error) {
+      log.warn(`[voice-assistant] vad model install error: ${String(error)}`)
+    } finally {
+      this.vadInstallInFlight = false
+    }
   }
 
   /** 常驻聆听设置应用：开启→启动 standby；关闭→停止并释放麦克风 */
@@ -479,13 +515,10 @@ export class VoiceAssistantService {
       return
     }
     this.kwsInstallWaitAttempts += 1
-    this.kwsInstallWaitTimer = setTimeout(
-      () => {
-        this.kwsInstallWaitTimer = null
-        void this.startStandby(true)
-      },
-      KWS_INSTALL_WAIT_INTERVAL_MS,
-    )
+    this.kwsInstallWaitTimer = setTimeout(() => {
+      this.kwsInstallWaitTimer = null
+      void this.startStandby(true)
+    }, KWS_INSTALL_WAIT_INTERVAL_MS)
   }
 
   /** 模型就绪/关闭常驻聆听时清掉等待轮询与计数 */
@@ -579,6 +612,8 @@ export class VoiceAssistantService {
           language: 'auto',
           enableVad: true,
           vadSilenceMs: ASR_VAD_SILENCE_MS,
+          // 人声聚焦门控（off 时省略，走识别服务旧行为）
+          ...(this.settings.voiceFocus !== 'off' ? { noiseGate: this.settings.voiceFocus } : {}),
         },
         VOICE_ASSISTANT_INTERNAL_OWNER_ID,
       )
@@ -605,23 +640,40 @@ export class VoiceAssistantService {
     this.cloudTotalSamples = 0
     this.transition('listening', reason)
     this.playCue('wake')
-    // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）
+    // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）；
+    //    对话采集按设置下发浏览器级降噪（远场对话优先保噪音免疫）
     if (!this.kwsCaptureActive) {
       this.deps.sendCaptureCommand({
         action: 'start',
         sessionId: captureSessionId,
         mode: 'dialogue',
+        ...(this.settings.browserDenoise
+          ? { audioProcessing: { noiseSuppression: true, voiceIsolation: true } }
+          : {}),
       })
     }
-    // 3. 15s 兜底超时（timer 只做兜底，不在采集关键路径）
+    // 3. 空转兜底超时（检测到人声活动会重置；说话后的收口由确认窗口负责）
+    this.armEmptySpeechTimeout()
+    // 4. 硬上限兜底（持续说话/持续噪音时的强制收口，不受活动重置影响）
+    if (this.listeningHardTimer != null) clearTimeout(this.listeningHardTimer)
+    this.listeningHardTimer = setTimeout(() => {
+      this.listeningHardTimer = null
+      log.info('[voice-assistant] listening hard limit reached, closing capture')
+      this.onListeningTimeout()
+    }, LISTENING_HARD_LIMIT_MS)
+  }
+
+  /** 空转超时布防：speech-activity 命中时重调以重新计时 */
+  private armEmptySpeechTimeout(): void {
+    if (this.listeningTimer != null) clearTimeout(this.listeningTimer)
     this.listeningTimer = setTimeout(() => {
       this.onListeningTimeout()
-    }, LISTENING_TIMEOUT_MS)
+    }, EMPTY_SPEECH_TIMEOUT_MS)
   }
 
   private onListeningTimeout(): void {
     if (this.state !== 'listening') return
-    log.info('[voice-assistant] listening timeout, closing capture')
+    log.info('[voice-assistant] empty speech timeout, closing capture')
     // 注意不置 handoffPending：该标记表示「已收到转写」，超时路径无转写，
     // 收口时应报告 timeout 而非 empty
     this.stopCaptureAndAsr()
@@ -633,6 +685,10 @@ export class VoiceAssistantService {
     if (this.listeningTimer != null) {
       clearTimeout(this.listeningTimer)
       this.listeningTimer = null
+    }
+    if (this.listeningHardTimer != null) {
+      clearTimeout(this.listeningHardTimer)
+      this.listeningHardTimer = null
     }
     this.cancelHandoffConfirm()
     if (this.captureSessionId != null && !this.kwsCaptureActive) {
@@ -662,6 +718,10 @@ export class VoiceAssistantService {
     if (this.listeningTimer != null) {
       clearTimeout(this.listeningTimer)
       this.listeningTimer = null
+    }
+    if (this.listeningHardTimer != null) {
+      clearTimeout(this.listeningHardTimer)
+      this.listeningHardTimer = null
     }
     if (this.handoffConfirmTimer != null) {
       clearTimeout(this.handoffConfirmTimer)
@@ -743,10 +803,16 @@ export class VoiceAssistantService {
   }): void {
     const isClosingSession =
       this.closingAsrSessionId != null && event.sessionId === this.closingAsrSessionId
-    const isActiveSession =
-      this.asrSessionId != null && event.sessionId === this.asrSessionId
+    const isActiveSession = this.asrSessionId != null && event.sessionId === this.asrSessionId
     if (!isClosingSession && !isActiveSession) return
     switch (event.type) {
+      case 'speech-activity': {
+        // 门控检出人声活动：重置空转兜底计时，给用户完整的说话空间
+        if (isActiveSession && this.state === 'listening' && event.speechActive === true) {
+          this.armEmptySpeechTimeout()
+        }
+        return
+      }
       case 'partial': {
         if (!isActiveSession || this.state !== 'listening') return
         // 确认窗口内用户继续开口：撤销本次收口，继续聆听拼接
@@ -1073,9 +1139,7 @@ export class VoiceAssistantService {
       if (epoch !== this.turnEpoch || this.disposed) {
         // 提交完成瞬间被打断：立即撤销该轮次，保持打断语义
         this.activeTurn = null
-        void this.deps
-          .cancelSessionTurn(session.sessionId)
-          .catch(() => undefined)
+        void this.deps.cancelSessionTurn(session.sessionId).catch(() => undefined)
         return
       }
       this.pipeline.beginTurn()
@@ -1212,7 +1276,11 @@ export class VoiceAssistantService {
   }): boolean {
     if (this.disposed || this.pendingApproval != null) return false
     if (this.activeTurn == null || this.activeTurn.sessionId !== request.sessionId) return false
-    this.pendingApproval = { requestId: request.requestId, sessionId: request.sessionId, retries: 0 }
+    this.pendingApproval = {
+      requestId: request.requestId,
+      sessionId: request.sessionId,
+      retries: 0,
+    }
     log.info(
       `[voice-assistant] voice approval bridge engaged (${request.toolName}, risk=${request.riskLevel})`,
     )
@@ -1454,11 +1522,7 @@ export class VoiceAssistantService {
     this.deps.broadcastStatus(this.getStatus())
     // 对话结束回 idle 后：常驻采集在线直接回 standby；否则有挂起的常驻请求则补启动
     if (next === 'idle' && this.settings.alwaysListening && !this.disposed) {
-      if (
-        this.kwsCaptureActive &&
-        this.kwsDetector != null &&
-        this.kwsDetector.isActive()
-      ) {
+      if (this.kwsCaptureActive && this.kwsDetector != null && this.kwsDetector.isActive()) {
         this.state = 'standby'
         log.info('[voice-assistant] state idle -> standby (resident listening online)')
         this.deps.broadcastState({ state: 'standby', previous: 'idle', reason: 'standby-on' })

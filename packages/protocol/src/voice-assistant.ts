@@ -56,6 +56,12 @@ export interface VoiceAssistantSettings {
   ttsVoice: string
   /** TTS 语速（0.5–2.0，1.0 原速） */
   ttsSpeed: number
+  /** TTS 音量（0–10，1.0 默认；MiniMax voice_setting.vol 语义，其他渠道自动忽略） */
+  ttsVol: number
+  /** TTS 音调（-12–12，0 默认；MiniMax voice_setting.pitch 语义，其他渠道自动忽略） */
+  ttsPitch: number
+  /** TTS 情绪（空串 = 不指定；MiniMax：happy/sad/angry/fearful/disgusted/surprised/calm 等） */
+  ttsEmotion: string
   /** 语音会话默认权限模式（默认 claude-auto，与远程连接一致） */
   sessionPermissionMode: SessionPermissionMode
   /** 注入语音系统提示（要求 Agent 口语化简短回复），默认开 */
@@ -67,6 +73,18 @@ export interface VoiceAssistantSettings {
    * 期间检测到继续说话则撤销收口继续拼接收听（防换气/思考停顿被误截断）。
    */
   utteranceConfirmMs: number
+  /**
+   * 浏览器级降噪（默认开）：采集时开启 Chromium 降噪与人声隔离（voiceIsolation），
+   * 过滤风扇/空调/键盘等稳态噪音。旧语音输入保持原始人声（字头轻辅音更准），
+   * 语音助手是远场对话场景，优先保噪音免疫。
+   */
+  browserDenoise: boolean
+  /**
+   * 人声聚焦（默认 standard）：主进程双层门控，尽量只保留用户本人的近场人声——
+   * 能量层按自适应底噪门限把远场低能量音频静音（近场优先），silero 层校验
+   * final 的人声覆盖率丢弃噪音硬解的句子。off = 关闭（门控与校验都不做）。
+   */
+  voiceFocus: 'off' | 'standard' | 'strict'
 }
 
 export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
@@ -83,10 +101,15 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   ttsModelId: null,
   ttsVoice: '',
   ttsSpeed: 1.0,
+  ttsVol: 1.0,
+  ttsPitch: 0,
+  ttsEmotion: '',
   sessionPermissionMode: 'claude-auto',
   voiceSystemPrompt: true,
   soundCues: true,
   utteranceConfirmMs: 1200,
+  browserDenoise: true,
+  voiceFocus: 'standard',
 }
 
 function readBool(raw: unknown, fallback: boolean): boolean {
@@ -111,9 +134,7 @@ function readString(raw: unknown, fallback: string, maxLength: number): string {
  */
 export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSettings {
   const source = raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const wakeWord = VOICE_ASSISTANT_WAKE_WORDS.includes(
-    source.wakeWord as VoiceAssistantWakeWord,
-  )
+  const wakeWord = VOICE_ASSISTANT_WAKE_WORDS.includes(source.wakeWord as VoiceAssistantWakeWord)
     ? (source.wakeWord as VoiceAssistantWakeWord)
     : DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeWord
   const permissionMode =
@@ -141,7 +162,10 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeShortcut,
       120,
     ),
-    alwaysListening: readBool(source.alwaysListening, DEFAULT_VOICE_ASSISTANT_SETTINGS.alwaysListening),
+    alwaysListening: readBool(
+      source.alwaysListening,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.alwaysListening,
+    ),
     continuousMode: readBool(
       source.continuousMode,
       DEFAULT_VOICE_ASSISTANT_SETTINGS.continuousMode,
@@ -153,22 +177,18 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       0.01,
       0.9,
     ),
-    wakeBoost: readNumber(
-      source.wakeBoost,
-      DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeBoost,
-      0.5,
-      10,
-    ),
+    wakeBoost: readNumber(source.wakeBoost, DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeBoost, 0.5, 10),
     recognitionEngine:
-      source.recognitionEngine === 'cloud' ? 'cloud' : DEFAULT_VOICE_ASSISTANT_SETTINGS.recognitionEngine,
+      source.recognitionEngine === 'cloud'
+        ? 'cloud'
+        : DEFAULT_VOICE_ASSISTANT_SETTINGS.recognitionEngine,
     refineTranscript: readBool(
       source.refineTranscript,
       DEFAULT_VOICE_ASSISTANT_SETTINGS.refineTranscript,
     ),
     ttsProviderProfileId,
     ttsModelId,
-    ttsVoice:
-      typeof source.ttsVoice === 'string' ? source.ttsVoice.slice(0, 200) : '',
+    ttsVoice: typeof source.ttsVoice === 'string' ? source.ttsVoice.slice(0, 200) : '',
     ttsSpeed: readNumber(source.ttsSpeed, DEFAULT_VOICE_ASSISTANT_SETTINGS.ttsSpeed, 0.5, 2.0),
     sessionPermissionMode: permissionMode,
     voiceSystemPrompt: readBool(
@@ -182,6 +202,14 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       300,
       5000,
     ),
+    browserDenoise: readBool(
+      source.browserDenoise,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.browserDenoise,
+    ),
+    voiceFocus:
+      source.voiceFocus === 'off' || source.voiceFocus === 'strict'
+        ? source.voiceFocus
+        : DEFAULT_VOICE_ASSISTANT_SETTINGS.voiceFocus,
   }
 }
 
@@ -281,6 +309,15 @@ export interface VoiceAssistantCaptureCommand {
    * kws = M2 常驻采集（持续推流，主进程本地 KWS 检测）
    */
   mode: 'dialogue' | 'kws'
+  /**
+   * 浏览器级音频处理（dialogue 且设置 browserDenoise 开启时下发）：
+   * 降噪 + 人声隔离在采集源头上压制稳态噪音与远场串音。
+   * kws 常驻采集不下发（保持与唤醒词检测一致的原始灵敏度假设）。
+   */
+  audioProcessing?: {
+    noiseSuppression: boolean
+    voiceIsolation: boolean
+  }
 }
 
 // ─── TTS 播放指令（stream 主→渲染） ────────────────────────────────────────
@@ -313,7 +350,9 @@ export type VoiceAssistantRendererEvent =
   | { type: 'playback-ended'; sentenceId: string }
   | { type: 'playback-error'; sentenceId: string; message?: string }
 
-export function isVoiceAssistantRendererEvent(value: unknown): value is VoiceAssistantRendererEvent {
+export function isVoiceAssistantRendererEvent(
+  value: unknown,
+): value is VoiceAssistantRendererEvent {
   if (value == null || typeof value !== 'object') return false
   const candidate = value as { type?: unknown; sessionId?: unknown; sentenceId?: unknown }
   switch (candidate.type) {

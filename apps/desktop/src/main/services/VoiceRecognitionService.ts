@@ -4,6 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import { createLogger } from '@spark/shared'
 import type { VoiceLanguage, VoiceRecognitionEvent, VoiceStartRequest } from '@spark/protocol'
 import { resolveVoiceModelPaths, resolveVoiceRefinePaths } from './VoiceIntegrityService.js'
+import { VoiceNoiseGate, resetVoiceNoiseGateVad } from './voice-assistant/VoiceNoiseGate.js'
 
 const log = createLogger('voice-recognition')
 
@@ -109,6 +110,10 @@ interface VoiceSession {
   /** 录音期间缓存的原始 PCM chunk（IPC 结构化克隆产物，可安全持有），供停止后整段精修 */
   pcmChunks: Int16Array[]
   totalSamples: number
+  /** 环境噪音门控（语音助手人声聚焦；语音输入会话为 null 走旧行为） */
+  noiseGate: VoiceNoiseGate | null
+  /** 上一个已接受 final 的音频结束偏移（silero 覆盖率校验区间的起点） */
+  lastFinalEndSample: number
 }
 
 type VoiceEventEmitter = (event: VoiceRecognitionEvent, ownerId: number) => void
@@ -379,6 +384,17 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
     const mod = loadSherpaModule()
     const { recognizer } = getOrCreateRecognizer(mod, params)
     const stream = recognizer.createStream()
+    // 人声聚焦门控：会话启动时创建并复位（silero 单例跨会话复用，reset 隔离状态）
+    let noiseGate: VoiceNoiseGate | null = null
+    if (params.noiseGate === 'standard' || params.noiseGate === 'strict') {
+      noiseGate = new VoiceNoiseGate({
+        mode: params.noiseGate,
+        onSpeechActivity: (active) => {
+          emitPending({ type: 'speech-activity', sessionId, speechActive: active }, ownerId)
+        },
+      })
+      noiseGate.reset()
+    }
     const session: VoiceSession = {
       sessionId,
       ownerId,
@@ -390,10 +406,14 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
       finals: [],
       pcmChunks: [],
       totalSamples: 0,
+      noiseGate,
+      lastFinalEndSample: 0,
     }
     sessions.set(sessionId, session)
     emitPending({ type: 'session-started', sessionId, text: '' }, ownerId)
-    log.info(`Voice session started: ${sessionId}`)
+    log.info(
+      `Voice session started: ${sessionId}${noiseGate ? ` (noise-gate ${params.noiseGate})` : ''}`,
+    )
     return { success: true, sessionId, error: null }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -406,11 +426,13 @@ export function startVoiceSession(params: VoiceStartRequest, ownerId: number): V
 export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: number): void {
   const session = sessions.get(sessionId)
   if (!session || session.ownerId !== ownerId) return
+  // 门控先于一切：低能量/非人声 chunk 置零（长度不变，时间推进保留），噪音内容不进识别与精修
+  const gated = session.noiseGate?.process(samples) ?? samples
   // PCM 缓存优先于流式解码：即使解码抛错也保留整段音频供停止后精修
-  session.pcmChunks.push(samples)
-  session.totalSamples += samples.length
+  session.pcmChunks.push(gated)
+  session.totalSamples += gated.length
   try {
-    const float32 = int16ToFloat32(samples)
+    const float32 = int16ToFloat32(gated)
     session.stream.acceptWaveform({ samples: float32, sampleRate: session.sampleRate })
     while (session.recognizer.isReady(session.stream)) {
       session.recognizer.decode(session.stream)
@@ -425,7 +447,7 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: 
     // 句尾：endpoint 触发，先补静音解码逼出滞留的尾部 token，再锁定 final 并 reset stream
     if (session.recognizer.isEndpoint(session.stream)) {
       const finalText = flushTailTokens(session)
-      if (finalText) {
+      if (finalText && acceptFinalByCoverage(session)) {
         session.finals.push(finalText)
         emitPending({ type: 'final', sessionId, text: finalText }, session.ownerId)
       }
@@ -437,6 +459,23 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: 
     log.error(`Voice feed error (${sessionId}): ${message}`)
     emitPending({ type: 'error', sessionId, message }, session.ownerId)
   }
+}
+
+/**
+ * final 人声覆盖率校验（噪音门控会话）：final 音频区间的 silero 人声段覆盖率
+ * 低于档位阈值判为噪音硬解，丢弃不 emit。区间起点 = 上一个已接受 final 的
+ * 结束偏移；门控关闭（语音输入会话）时恒放行。
+ */
+function acceptFinalByCoverage(session: VoiceSession): boolean {
+  if (session.noiseGate == null) return true
+  const accepted = session.noiseGate.shouldAcceptFinal(
+    session.lastFinalEndSample,
+    session.totalSamples,
+  )
+  if (accepted) {
+    session.lastFinalEndSample = session.totalSamples
+  }
+  return accepted
 }
 
 // feedVoiceAudio 是同步高频调用，emit 通过外部注入避免循环依赖
@@ -480,7 +519,10 @@ export function stopVoiceSession(
   if (!session) return false
   if (ownerId != null && session.ownerId !== ownerId) return false
   try {
-    // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final
+    // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final。
+    // 覆盖率校验区间只算真实音频（padding 是合成静音，先快照真实结束偏移）
+    const realEndSample = session.totalSamples
+    session.noiseGate?.flushSilero()
     const tail = new Float32Array(Math.floor(session.sampleRate * STOP_TAIL_PADDING_SECONDS))
     session.stream.acceptWaveform({ samples: tail, sampleRate: session.sampleRate })
     while (session.recognizer.isReady(session.stream)) {
@@ -493,8 +535,13 @@ export function stopVoiceSession(
     const result = session.recognizer.getResult(session.stream)
     const tailText = (result.text ?? '').trim()
     if (tailText) {
-      session.finals.push(tailText)
-      emitPending({ type: 'final', sessionId, text: tailText }, session.ownerId)
+      const accepted =
+        session.noiseGate == null ||
+        session.noiseGate.shouldAcceptFinal(session.lastFinalEndSample, realEndSample)
+      if (accepted) {
+        session.finals.push(tailText)
+        emitPending({ type: 'final', sessionId, text: tailText }, session.ownerId)
+      }
     }
   } catch (err) {
     log.warn(
@@ -554,4 +601,5 @@ export function resetVoiceEngineCache(): void {
   cachedRecognizer = null
   cachedRefineRecognizer = null
   cachedModule = null
+  resetVoiceNoiseGateVad()
 }

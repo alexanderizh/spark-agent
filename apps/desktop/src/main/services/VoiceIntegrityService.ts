@@ -25,6 +25,7 @@ const VOICE_NATIVE_ID_PREFIX = 'voice.native.'
 const VOICE_MODEL_ID_PREFIX = 'voice.model.'
 const VOICE_REFINE_ID_PREFIX = 'voice.refine.'
 const VOICE_KWS_ID_PREFIX = 'voice.kws.'
+const VOICE_VAD_ID_PREFIX = 'voice.vad.'
 /** 识别模型约 219MB，弱网下不能沿用通用归档的 2 分钟超时。 */
 const VOICE_ARCHIVE_DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -67,6 +68,10 @@ export function getVoiceKwsDir(): string {
   return join(getVoiceRootPath(), 'kws')
 }
 
+export function getVoiceVadDir(): string {
+  return join(getVoiceRootPath(), 'vad')
+}
+
 interface VoiceStateNative {
   version: string
   platformKey: string
@@ -84,11 +89,16 @@ interface VoiceStateKws {
   version: string
   artifactId: string
 }
+interface VoiceStateVad {
+  version: string
+  artifactId: string
+}
 interface VoiceState {
   native?: VoiceStateNative
   model?: VoiceStateModel
   refine?: VoiceStateRefine
   kws?: VoiceStateKws
+  vad?: VoiceStateVad
   updatedAt?: string
 }
 
@@ -239,6 +249,19 @@ function isVoiceKwsVersionInstalled(version: string): boolean {
   return existsSync(join(getVoiceKwsDir(), version, 'kws-package.json'))
 }
 
+function isVadInstalled(state: VoiceState): boolean {
+  if (!state.vad) return false
+  if (typeof state.vad.version !== 'string' || !isSafeVersion(state.vad.version)) return false
+  const dir = join(getVoiceVadDir(), state.vad.version)
+  if (!existsSync(dir)) return false
+  return existsSync(join(dir, 'vad-package.json'))
+}
+
+function isVoiceVadVersionInstalled(version: string): boolean {
+  if (!isSafeVersion(version)) return false
+  return existsSync(join(getVoiceVadDir(), version, 'vad-package.json'))
+}
+
 /** 已安装的唤醒词模型（可选组件）解析结果 */
 export interface VoiceKwsPaths {
   version: string
@@ -314,6 +337,41 @@ export function resolveVoiceKwsPaths(): VoiceKwsPaths | null {
   }
 }
 
+/** 已安装的 silero VAD 人声检测模型（可选组件）解析结果 */
+export interface VoiceVadPaths {
+  version: string
+  /** silero_vad.onnx 绝对路径 */
+  modelPath: string
+}
+
+/**
+ * 解析已安装的人声检测模型；未安装或描述无效时返回 null（噪音门控降级为纯能量层）。
+ * vad-package.json 结构：{ version, kind: 'silero-vad', model }
+ */
+export function resolveVoiceVadPaths(): VoiceVadPaths | null {
+  const state = readVoiceState()
+  if (!state.vad || !isVadInstalled(state)) return null
+  const dir = join(getVoiceVadDir(), state.vad.version)
+  try {
+    const pkgPath = join(dir, 'vad-package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+      version?: unknown
+      kind?: unknown
+      model?: unknown
+    }
+    if (pkg.kind !== 'silero-vad') return null
+    if (typeof pkg.model !== 'string') return null
+    const modelPath = resolveContainedPath(dir, pkg.model)
+    if (modelPath == null || !existsSync(modelPath)) return null
+    return {
+      version: typeof pkg.version === 'string' ? pkg.version : state.vad.version,
+      modelPath,
+    }
+  } catch {
+    return null
+  }
+}
+
 function isVoiceModelVersionInstalled(version: string): boolean {
   if (!isSafeVersion(version)) return false
   return existsSync(join(getVoiceModelDir(), version, 'model-package.json'))
@@ -381,6 +439,19 @@ export function selectVoiceKwsArtifact(
   return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
 }
 
+/** silero VAD 人声检测模型为可选组件，manifest 未提供时允许静默缺失 */
+export function selectVoiceVadArtifact(
+  artifacts: SparkInstallArtifact[],
+): SparkInstallArtifact | undefined {
+  const candidates = artifacts.filter((a) => {
+    if (a.type !== 'voice') return false
+    if (!a.id.startsWith(VOICE_VAD_ID_PREFIX)) return false
+    if (!isSafeVersion(a.version)) return false
+    return true
+  })
+  return candidates.sort((a, b) => compareVersions(b.version, a.version))[0]
+}
+
 export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIntegrityStatus> {
   const platformKey = voicePlatformKey()
   const state = readVoiceState()
@@ -388,6 +459,7 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
   const modelInstalled = isModelInstalled(state)
   const refineInstalled = isRefineInstalled(state)
   const kwsInstalled = isKwsInstalled(state)
+  const vadInstalled = isVadInstalled(state)
 
   const components: VoiceComponentStatus[] = [
     {
@@ -426,6 +498,15 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
       percent: null,
       message: kwsInstalled ? null : '未安装唤醒词模型（可选，用于语音助手常驻聆听）',
     },
+    {
+      component: 'vad',
+      state: vadInstalled ? 'ready' : 'missing',
+      installedVersion: state.vad?.version ?? null,
+      latestVersion: null,
+      artifactId: state.vad?.artifactId ?? null,
+      percent: null,
+      message: vadInstalled ? null : '未安装人声检测模型（可选，用于语音助手噪音过滤）',
+    },
   ]
 
   const status: VoiceIntegrityStatus = {
@@ -446,10 +527,12 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
     const modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
     const refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
     const kwsArtifact = selectVoiceKwsArtifact(manifest.artifacts)
+    const vadArtifact = selectVoiceVadArtifact(manifest.artifacts)
     const nativeComp = components.find((c) => c.component === 'native')
     const modelComp = components.find((c) => c.component === 'model')
     const refineComp = components.find((c) => c.component === 'refine')
     const kwsComp = components.find((c) => c.component === 'kws')
+    const vadComp = components.find((c) => c.component === 'vad')
     if (nativeArtifact && nativeComp) {
       nativeComp.latestVersion = nativeArtifact.version
       nativeComp.artifactId = nativeArtifact.id
@@ -465,6 +548,10 @@ export async function checkVoiceIntegrity(checkLatest: boolean): Promise<VoiceIn
     if (kwsArtifact && kwsComp) {
       kwsComp.latestVersion = kwsArtifact.version
       kwsComp.artifactId = kwsArtifact.id
+    }
+    if (vadArtifact && vadComp) {
+      vadComp.latestVersion = vadArtifact.version
+      vadComp.artifactId = vadArtifact.id
     }
   } catch (err) {
     status.lastError = err instanceof Error ? err.message : String(err)
@@ -492,7 +579,16 @@ async function installComponent(params: InstallComponentParams): Promise<void> {
   const { component, artifact, destFinal, stagingRoot, manifest, report } = params
   const manifestTotal = artifact.size ?? 0
   const stagingDir = join(stagingRoot, component)
-  const label = component === 'native' ? '运行时' : component === 'refine' ? '精修模型' : '模型'
+  const label =
+    component === 'native'
+      ? '运行时'
+      : component === 'refine'
+        ? '精修模型'
+        : component === 'kws'
+          ? '唤醒词模型'
+          : component === 'vad'
+            ? '人声检测模型'
+            : '模型'
   const progressBase = { component, artifactId: artifact.id, version: artifact.version }
 
   const sha256 = artifact.sha256
@@ -591,6 +687,7 @@ export async function installVoicePack(
   let nativeArtifact: SparkInstallArtifact | undefined
   let refineArtifact: SparkInstallArtifact | undefined
   let kwsArtifact: SparkInstallArtifact | undefined
+  let vadArtifact: SparkInstallArtifact | undefined
   let activeComponent: VoicePackComponent = 'model'
 
   try {
@@ -607,6 +704,7 @@ export async function installVoicePack(
     modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
     refineArtifact = selectVoiceRefineArtifact(manifest.artifacts)
     kwsArtifact = selectVoiceKwsArtifact(manifest.artifacts)
+    vadArtifact = selectVoiceVadArtifact(manifest.artifacts)
 
     if (!nativeArtifact || !modelArtifact) {
       const missing = [!nativeArtifact && '运行时', !modelArtifact && '模型']
@@ -630,16 +728,18 @@ export async function installVoicePack(
     const refineIsCurrent =
       refineArtifact != null && isVoiceRefineVersionInstalled(refineArtifact.version)
     const kwsIsCurrent = kwsArtifact != null && isVoiceKwsVersionInstalled(kwsArtifact.version)
+    const vadIsCurrent = vadArtifact != null && isVoiceVadVersionInstalled(vadArtifact.version)
     const installModel = force || !modelIsCurrent
     const installNative = force || !nativeIsCurrent
     const installRefine = refineArtifact != null && (force || !refineIsCurrent)
     const installKws = kwsArtifact != null && (force || !kwsIsCurrent)
+    const installVad = vadArtifact != null && (force || !vadIsCurrent)
 
     // 非强制且核心组件已就绪、可选组件也无需补装：直接返回。
-    // 精修/唤醒词模型是可选增强，云端未提供时不算缺失。
+    // 精修/唤醒词/人声检测模型是可选增强，云端未提供时不算缺失。
     if (!force) {
       const current = await checkVoiceIntegrity(false)
-      if (current.ready && !installRefine && !installKws) {
+      if (current.ready && !installRefine && !installKws && !installVad) {
         return { success: true, message: '语音包已就绪', status: current }
       }
     }
@@ -708,7 +808,22 @@ export async function installVoicePack(
       await writeVoiceState(nextState)
     }
 
-    const optionalOnly = !installModel && !installNative && (installRefine || installKws)
+    if (vadArtifact && installVad) {
+      activeComponent = 'vad'
+      await installComponent({
+        component: 'vad',
+        artifact: vadArtifact,
+        destFinal: join(getVoiceVadDir(), vadArtifact.version),
+        stagingRoot,
+        manifest,
+        report,
+      })
+      nextState.vad = { version: vadArtifact.version, artifactId: vadArtifact.id }
+      await writeVoiceState(nextState)
+    }
+
+    const optionalOnly =
+      !installModel && !installNative && (installRefine || installKws || installVad)
     const message = optionalOnly ? '语音可选组件安装成功' : '语音包安装成功'
     report({
       component: activeComponent,
@@ -721,7 +836,8 @@ export async function installVoicePack(
     log.info(
       `Voice pack installed: native ${nativeArtifact.version}, model ${modelArtifact.version}` +
         (refineArtifact && installRefine ? `, refine ${refineArtifact.version}` : '') +
-        (kwsArtifact && installKws ? `, kws ${kwsArtifact.version}` : ''),
+        (kwsArtifact && installKws ? `, kws ${kwsArtifact.version}` : '') +
+        (vadArtifact && installVad ? `, vad ${vadArtifact.version}` : ''),
     )
     return { success: true, message, status: await checkVoiceIntegrity(false) }
   } catch (err) {

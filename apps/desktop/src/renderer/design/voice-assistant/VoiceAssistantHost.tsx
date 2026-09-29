@@ -15,10 +15,7 @@ import { getAssistantCaptureController } from './AssistantCaptureController'
 import { getVoicePlaybackController } from './VoicePlaybackController'
 import './voiceAssistant.less'
 
-const STATE_META: Record<
-  string,
-  { label: string; icon: string }
-> = {
+const STATE_META: Record<string, { label: string; icon: string }> = {
   listening: { label: '正在聆听…', icon: '🎙' },
   thinking: { label: '思考中…', icon: '✻' },
   speaking: { label: '播报中', icon: '🔊' },
@@ -41,7 +38,7 @@ export function VoiceAssistantHost(): React.ReactNode {
 
     const offCapture = window.spark.on('stream:voice-assistant:capture', (command) => {
       if (command.action === 'start') {
-        void capture.start(command.sessionId)
+        void capture.start(command.sessionId, command.audioProcessing)
       } else {
         capture.stop(command.sessionId)
       }

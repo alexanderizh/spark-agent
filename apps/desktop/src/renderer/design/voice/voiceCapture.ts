@@ -26,6 +26,35 @@ const PREFERRED_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: { ideal: 1 },
 }
 
+/**
+ * MediaTrackConstraints 的扩展：voiceIsolation 是 Chromium 124+ 的声源隔离处理
+ * 约束，TypeScript DOM lib 尚未收录，本地补充声明（ideal 软约束，不支持的平台
+ * 由 Chromium 静默忽略）。
+ */
+interface ProcessedMediaTrackConstraints extends MediaTrackConstraints {
+  voiceIsolation?: ConstrainBoolean
+}
+
+/**
+ * 语音助手场景的采集处理（远场对话优先保噪音免疫）：
+ * - 降噪（RNNoise 类）过滤风扇/空调/键盘等稳态噪音；
+ * - voiceIsolation（Chromium 124+ 声源隔离）突出最显著的人声、压制旁串音。
+ *   两者都用 ideal 约束（平台不支持时静默降级，不会 OverconstrainedError）。
+ */
+const ASSISTANT_PROCESSED_CONSTRAINTS: ProcessedMediaTrackConstraints = {
+  echoCancellation: { ideal: true },
+  noiseSuppression: { ideal: true },
+  voiceIsolation: { ideal: true },
+  autoGainControl: { ideal: true },
+  channelCount: { ideal: 1 },
+}
+
+/** 语音助手按设置下发的采集处理开关（browserDenoise） */
+export interface VoiceCaptureProcessing {
+  noiseSuppression: boolean
+  voiceIsolation: boolean
+}
+
 function errorName(error: unknown): string {
   if (error && typeof error === 'object' && 'name' in error) {
     const name = (error as { name?: unknown }).name
@@ -125,10 +154,21 @@ function stopStream(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop()
 }
 
-function deviceConstraints(deviceId?: string): MediaStreamConstraints {
+function deviceConstraints(
+  deviceId?: string,
+  processing?: VoiceCaptureProcessing,
+): MediaStreamConstraints {
+  const base: MediaTrackConstraints =
+    processing != null && (processing.noiseSuppression || processing.voiceIsolation)
+      ? {
+          ...ASSISTANT_PROCESSED_CONSTRAINTS,
+          ...(processing.noiseSuppression ? {} : { noiseSuppression: { exact: false } }),
+          ...(processing.voiceIsolation ? {} : { voiceIsolation: { exact: false } }),
+        }
+      : PREFERRED_AUDIO_CONSTRAINTS
   return {
     audio: {
-      ...PREFERRED_AUDIO_CONSTRAINTS,
+      ...base,
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     },
   }
@@ -137,8 +177,12 @@ function deviceConstraints(deviceId?: string): MediaStreamConstraints {
 /**
  * 获取真实可读的音频流。先使用系统默认设备；若底层驱动以 AbortError/NotReadableError
  * 拒绝默认设备，再逐个尝试枚举到的其他输入设备（常见于蓝牙设备切换过程中）。
+ * processing 提供时启用语音助手的降噪/声源隔离处理（远场对话场景）。
  */
-export async function acquireVoiceMediaStream(devices: MediaDeviceInfo[]): Promise<MediaStream> {
+export async function acquireVoiceMediaStream(
+  devices: MediaDeviceInfo[],
+  processing?: VoiceCaptureProcessing,
+): Promise<MediaStream> {
   const mediaDevices = getMediaDevices()
   const alternateDeviceIds = Array.from(
     new Set(
@@ -152,7 +196,7 @@ export async function acquireVoiceMediaStream(devices: MediaDeviceInfo[]): Promi
 
   for (const deviceId of candidates) {
     try {
-      const stream = await mediaDevices.getUserMedia(deviceConstraints(deviceId))
+      const stream = await mediaDevices.getUserMedia(deviceConstraints(deviceId, processing))
       if (hasLiveAudioTrack(stream)) return stream
       stopStream(stream)
       lastError = new VoiceCaptureError(
