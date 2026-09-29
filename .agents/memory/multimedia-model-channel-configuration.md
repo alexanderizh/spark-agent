@@ -231,3 +231,17 @@ paramPolicy: {
 - `voice_id` 必填但不硬枚举（300+ 系统音色 + 动态复刻/文生音色）：schema 字段名用 `voice`（description 引导），adapter 映射到官方 `voice_setting.voice_id`；缺失时用 provider `mediaDefaults.audio.voice`（preset 默认 `male-qn-qingse`，官方示例音色）兜底，再缺失则 `invalid_input` 报错。
 - base_resp 错误码子集按接口不同：T2A HTTP 不含 1008 余额、1026 敏感（含 1004/1039/1042/2013）；Music 含 1008/1026。统一走 `MINIMAX_V1_ERROR_MAP` 归一，未覆盖码兜底 `provider_http_error`。`1042`（非法字符>10%）尚未映射，可后续补 `invalid_parameter_value`。
 - manifest capability `defaults.output_format` 与 schema `default` 必须一致（统一 `url`），否则编辑器回显与运行时默认分歧。music 的 `audio_setting.format` 仅 `mp3/wav/pcm`（无 flac），与 T2A 的 `mp3/pcm/flac/wav/pcmu_raw/pcmu_wav/opus` 不同。
+
+## 十三、渠道「完整 URL」开关（文本 + 多媒体）
+
+- 渠道配置 `apiEndpointFullUrl`（默认关闭，旧数据缺省即 false）语义：**开启后该渠道声明的地址本身就是最终请求地址，主调用原样发送，不再自动拼裁**，增量向后兼容。文本链路（anthropic / openai）与多媒体链路（图片 / 语音 / 视频）共用这一个字段与这一套语义。
+- 多媒体侧的边界是「主调用 vs 从属请求」：**首个「非 GET 且未被从属语义命中」的请求**按主调用原样发到所填地址；上传、下载、异步轮询、取件、任务恢复等从属请求继续按该地址派生路径。异步任务型渠道（视频）开启后轮询可能失效，表单已就地提示；同步渠道（图片、语音合成）不受影响。
+- **POST 轮询陷阱（已修，务必别再踩）**：早期实现按「非 GET = 主调用」判断，于是腾讯 TokenHub 的 query（POST + body）与声明 POST poll 的 V2 模板，其**轮询请求被改写到刚提交的地址**，拿回提交响应导致任务状态误判（腾讯链路上表现为轮询约 5s 超时后失败）。修法：改写器持有「已改写的主调用源地址」状态——只改写首个非 GET 非从属请求，**同一地址的重发（网络 / 429 重试）仍改写**，其余（含同一次调用内的 POST 轮询）一律保持适配器派生的原始地址。排查同类问题时，先看 `media-main-request-endpoint-override` 日志的改写次数：一次 capability 调用只应出现一次。
+- 从属请求也可能走**独立入口**（如画布 repoll 走 `recoverMediaTask`，不传 fetch）——这类链路本就不经过改写器，天然保持派生语义，不要为它们额外加改写。
+- 实现落点：
+  - MCP 子进程：`tools/media-generation-mcp-server.mjs` 内 10 处主调用统一走 `services/media/media-main-request-endpoint.mjs` 的 `resolveMainRequestUrl(config, defaultUrl)`；`.mjs` 全文件只有一个 `fetch(` 调用点（`fetchJson`），改动必须落在「URL 组装」处而不是 fetch 处。
+  - TS / 画布：`media-router.service.ts` 的主调用端点改写器（原 NewAPI 专用 `createManagedNewApiImageFetch`）已泛化为两模式：`managed-newapi`（只改 POST + 同 origin 补鉴权头，逐字未动）与 `full-url`（首个非 GET 主调用原样、不代劳鉴权，且一次调用只改写一次）。14 个 adapter（含 `tencent-tokenhub` 这类原生适配器）全部经 `ctx.fetch`，因此在 router 一层改写即可覆盖，不需要逐个 adapter 改路径拼接。
+  - 画像透传：`MediaProviderProfile.apiEndpointFullUrl`；画布主进程 `resolveCanvasMediaProviders`、自定义渠道诊断链路都要显式透出，漏一处就会「会话生效、画布/诊断失效」。
+- 关键陷阱：**不能把完整 URL 当作 `apiEndpoint` 传给 `resolveUrl(base, endpoint)` 之类的拼接器**——相对 endpoint 会被二次拼接（`.../generate/images/generations`）。正确做法是保留 base 语义给从属请求，只在最终主调用处替换整个 URL。
+- `normalizeProviderConfig`（MCP 子进程）里 bailian 的 base 改写（补 `/services/aigc`）等渠道级归一化，在「完整 URL」模式下必须跳过，否则用户填的原文会被改写。
+- 拉取模型列表在「完整 URL」下无法可靠派生 `/models` 地址，走既有 `isFullUrl` 候选探测；表单保存、测试连接、拉模型、自动拉取四处载荷必须共用同一个 effective 值（`isEndpointFullUrlEffective`），避免「文本模式开开关→切媒体类型→不保存」的残留值泄进请求。
