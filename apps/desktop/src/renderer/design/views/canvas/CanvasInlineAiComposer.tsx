@@ -449,6 +449,8 @@ export function CanvasInlineAiComposer({
   const selectedCapabilityId = capabilityIdForCanvasMediaInputMode(
     effectiveMediaInputMode,
     unifiedMediaModeOptions,
+    // 音频类能力没有输入模式分支，回退到按模型解析出的能力，避免提交/裁剪丢 capabilityId
+    selectedCapability,
   )
   const selectedMediaInputIssue = selectedMediaInputModeOption
     ? canvasMediaInputModeIssue(selectedMediaInputModeOption, selectedMediaBindings)

@@ -193,11 +193,24 @@ export function canvasMediaInputModeIssue(
   return undefined
 }
 
+/**
+ * 当前生效的目标能力 id：优先输入模式选择器给出的能力。
+ *
+ * 没有输入模式分支的能力（音频类 audio.speech / audio.music / audio.transcription）拿不到
+ * option，必须由调用方传入按模型解析出的回退能力，否则提交载荷会缺 capabilityId：
+ * text_to_audio 的协议候选顺序是 [audio.music, audio.speech]，缺了它就会被推成音乐能力，
+ * 同时该次提交的参数裁剪、参数校验与任务落库都会丢掉能力信息。
+ */
 export function capabilityIdForCanvasMediaInputMode(
   mode: CanvasMediaInputMode | undefined,
   options: readonly CanvasMediaInputModeOption[],
+  fallbackCapability?: CanvasMediaModelCapabilitySummary | null | undefined,
 ): MediaCapabilityId | undefined {
-  return options.find((option) => option.mode === mode)?.capabilityId
+  const fromOption = options.find((option) => option.mode === mode)?.capabilityId
+  if (fromOption) return fromOption
+  // 协议里 capability.id 是 string，这里与本文件其它分支一样按 MediaCapabilityId 收窄
+  // （来源就是同一份 manifest 能力）。
+  return fallbackCapability ? (fallbackCapability.id as MediaCapabilityId) : undefined
 }
 
 /**

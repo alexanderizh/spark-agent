@@ -1274,6 +1274,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const selectedCapabilityId = capabilityIdForCanvasMediaInputMode(
     effectiveMediaInputMode,
     mediaInputModeOptions,
+    // 音频类能力没有输入模式分支，回退到按模型解析出的能力，避免提交/裁剪丢 capabilityId
+    selectedCapability,
   )
   const modelScopedOperationPreset = useMemo(
     () =>

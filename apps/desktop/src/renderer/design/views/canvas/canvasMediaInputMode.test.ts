@@ -677,6 +677,26 @@ describe('canvasMediaInputMode — image unification', () => {
       }),
     ).toBe('reference')
   })
+  it('音频能力没有输入模式分支：能力 id 必须由调用方按模型回退，否则提交会丢 capabilityId', () => {
+    // audio.speech / audio.music / audio.transcription 目前都没有 mode 分支，
+    // canvasMediaInputModeOptions 会返回空数组；此时若只依赖 options 查能力，
+    // 提交载荷与参数裁剪都会丢 capabilityId，text_to_audio 会被推成 audio.music。
+    const speech = capability('audio.speech', {})
+    const options = canvasMediaInputModeOptions('text_to_audio', model([speech]))
+    expect(options).toEqual([])
+    expect(capabilityIdForCanvasMediaInputMode(undefined, options)).toBeUndefined()
+    expect(capabilityIdForCanvasMediaInputMode(undefined, options, speech)).toBe('audio.speech')
+  })
+
+  it('存在输入模式分支时仍以模式选项为准，回退能力不参与', () => {
+    const options = canvasMediaInputModeOptions(
+      'text_to_video',
+      model([capability('video.generate', {})]),
+    )
+    expect(
+      capabilityIdForCanvasMediaInputMode('text', options, capability('audio.speech', {})),
+    ).toBe('video.generate')
+  })
 })
 
 function model(capabilities: CanvasMediaModelSummary['capabilities']): CanvasMediaModelSummary {
