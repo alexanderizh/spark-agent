@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { ComponentType } from 'react'
 import {
   ActionIcon,
+  AutoComplete,
   Button,
   Tag,
   Checkbox,
@@ -23,6 +24,7 @@ import { ProviderCodexRuntimeNotice } from './provider/ProviderCodexRuntimeNotic
 import { SparkExecutorSwitch } from './provider/SparkExecutorSwitch'
 import { sparkExecutorAvailability } from '../utils/sparkExecutorAvailability'
 import { isEmbeddingProviderProfile, isMediaProviderProfile } from '../utils/provider-model-kind'
+import { mediaParamOptions, VOICE_PARAM_FIELD_NAMES } from '../utils/mediaParamOptions'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import {
   ProviderContextWindowSlider,
@@ -766,43 +768,6 @@ function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
 function mediaProviderDisplayName(kind: string | undefined): string {
   if (!kind) return '多媒体适配器'
   return MEDIA_PROVIDER_LABELS[kind as MediaProviderKind] ?? kind
-}
-
-function enumOptionsFromModels(
-  models: CanvasMediaModelSummary[],
-  fieldNames: string[],
-): Array<{ label: string; value: string }> {
-  const values = new Set<string>()
-  for (const model of models) {
-    for (const capability of model.capabilities) {
-      const properties = capability.paramSchema?.properties
-      if (!properties || typeof properties !== 'object' || Array.isArray(properties)) continue
-      for (const name of fieldNames) {
-        const spec = (properties as Record<string, unknown>)[name]
-        if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue
-        const rawEnum = (spec as Record<string, unknown>).enum
-        if (Array.isArray(rawEnum)) {
-          rawEnum
-            .filter(
-              (value) =>
-                typeof value === 'string' ||
-                typeof value === 'number' ||
-                typeof value === 'boolean',
-            )
-            .forEach((value) => values.add(String(value)))
-        }
-        const defaultValue = (spec as Record<string, unknown>).default
-        if (
-          typeof defaultValue === 'string' ||
-          typeof defaultValue === 'number' ||
-          typeof defaultValue === 'boolean'
-        ) {
-          values.add(String(defaultValue))
-        }
-      }
-    }
-  }
-  return [...values].map((value) => ({ label: value, value }))
 }
 
 /**
@@ -2604,27 +2569,29 @@ export function ProviderEditPanel({
   )
   const mediaDefaultOptionSets = useMemo(
     () => ({
-      imageSize: enumOptionsFromModels(selectedMediaCatalogModels, [
+      imageSize: mediaParamOptions(selectedMediaCatalogModels, [
         'size',
         'aspectRatio',
         'aspect_ratio',
       ]),
-      imageQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality']),
-      audioFormat: enumOptionsFromModels(selectedMediaCatalogModels, [
+      imageQuality: mediaParamOptions(selectedMediaCatalogModels, ['quality']),
+      audioFormat: mediaParamOptions(selectedMediaCatalogModels, [
         'format',
         'output_format',
         'response_format',
       ]),
-      videoAspectRatio: enumOptionsFromModels(selectedMediaCatalogModels, [
+      // 音色候选走 useLabels：渠道同步的音色目录带可读名（彤彤而非 tongtong），
+      // 与画布/快速创作显示一致。
+      audioVoice: mediaParamOptions(selectedMediaCatalogModels, VOICE_PARAM_FIELD_NAMES, {
+        useLabels: true,
+      }),
+      videoAspectRatio: mediaParamOptions(selectedMediaCatalogModels, [
         'aspectRatio',
         'aspect_ratio',
         'size',
       ]),
-      videoDuration: enumOptionsFromModels(selectedMediaCatalogModels, [
-        'durationSeconds',
-        'duration',
-      ]),
-      videoQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality', 'resolution']),
+      videoDuration: mediaParamOptions(selectedMediaCatalogModels, ['durationSeconds', 'duration']),
+      videoQuality: mediaParamOptions(selectedMediaCatalogModels, ['quality', 'resolution']),
     }),
     [selectedMediaCatalogModels],
   )
@@ -3291,9 +3258,9 @@ export function ProviderEditPanel({
   const [sampleText, setSampleText] = useState('')
   const [previewText, setPreviewText] = useState('')
   /** 已复刻音色（厂商标注为私有），仅用于列出可删项；由同步 / 复刻响应回填。 */
-  const [clonedVoices, setClonedVoices] = useState<
-    { value: string; label?: string | undefined }[]
-  >([])
+  const [clonedVoices, setClonedVoices] = useState<{ value: string; label?: string | undefined }[]>(
+    [],
+  )
 
   const handlePickVoiceSample = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
@@ -4398,11 +4365,33 @@ export function ProviderEditPanel({
                         )}
                         {form.modelType === 'voice' && (
                           <>
-                            <Input
-                              value={form.mediaAudioVoice}
-                              onChange={(e) => set('mediaAudioVoice', e.target.value)}
-                              placeholder="语音 voice (alloy / nova)"
-                            />
+                            {/* 音色：manifest 声明 x-allow-custom 时把 examples（含渠道同步的音色目录）
+                                作为候选，但必须保留手输能力（复刻音色 id 不在候选内）。 */}
+                            {mediaDefaultOptionSets.audioVoice.length > 0 ? (
+                              <AutoComplete
+                                value={form.mediaAudioVoice || undefined}
+                                allowClear
+                                options={mediaDefaultOptionSets.audioVoice}
+                                onChange={(value) =>
+                                  set('mediaAudioVoice', value == null ? '' : String(value))
+                                }
+                                placeholder="语音音色（可选可输入）"
+                                filterOption={(input, option) => {
+                                  const query = input.toLowerCase()
+                                  return [option?.value, option?.label].some((candidate) =>
+                                    String(candidate ?? '')
+                                      .toLowerCase()
+                                      .includes(query),
+                                  )
+                                }}
+                              />
+                            ) : (
+                              <Input
+                                value={form.mediaAudioVoice}
+                                onChange={(e) => set('mediaAudioVoice', e.target.value)}
+                                placeholder="语音 voice (alloy / nova)"
+                              />
+                            )}
                             {(mediaDefaultOptionSets.audioFormat.length > 0 ||
                               form.mediaAudioFormat) &&
                               (mediaDefaultOptionSets.audioFormat.length > 0 ? (
