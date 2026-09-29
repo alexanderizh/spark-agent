@@ -25,6 +25,7 @@ import {
   modeLabel,
   statusLabel,
   taskOutputUrl,
+  taskTextOutput,
   textOutputCopyMeta,
   titleForPrompt,
 } from './quickCreateTaskPresentation'
@@ -665,8 +666,10 @@ export function QuickCreateTaskHistory({
                         </span>
                       ) : firstOutput ? (
                         <video src={firstOutput.url} muted />
-                      ) : task.text ? (
-                        <span className="quick-create-text-preview">{task.text.slice(0, 80)}</span>
+                      ) : taskTextOutput(task) ? (
+                        <span className="quick-create-text-preview">
+                          {taskTextOutput(task).slice(0, 80)}
+                        </span>
                       ) : (
                         <span className="quick-create-task-placeholder">
                           <Icons.Clock size={15} />
@@ -691,9 +694,9 @@ export function QuickCreateTaskHistory({
                           <span>进度 {Math.round(task.progress)}%</span>
                         )}
                       </div>
-                      {task.text && (
+                      {taskTextOutput(task) && (
                         <DetailPrompt
-                          prompt={task.text}
+                          prompt={taskTextOutput(task)}
                           label={textMeta.label}
                           doneMessage={textMeta.doneMessage}
                           clamp

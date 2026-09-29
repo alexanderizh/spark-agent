@@ -66,9 +66,16 @@ describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
 })
 
 describe('quickCreateTaskPresentation 模式清单', () => {
-  it('模式 rail 与历史筛选共用同一份清单，语音模式排在视频之后', () => {
-    expect(MODE_ITEMS.map((item) => item.id)).toEqual(['image', 'reverse', 'video', 'audio'])
+  it('模式 rail 与历史筛选共用同一份清单，语音/识别排在视频之后', () => {
+    expect(MODE_ITEMS.map((item) => item.id)).toEqual([
+      'image',
+      'reverse',
+      'video',
+      'audio',
+      'transcribe',
+    ])
     expect(MODE_ITEMS.find((item) => item.id === 'audio')?.label).toBe('语音')
+    expect(MODE_ITEMS.find((item) => item.id === 'transcribe')?.label).toBe('识别')
   })
 })
 
@@ -161,6 +168,27 @@ describe('quickCreateTaskPresentation 可复制的提示词', () => {
   it('反推任务既无产物也无要求时不给复制入口', () => {
     expect(copyableTaskPrompt({ mode: 'reverse', prompt: '' })).toBeNull()
     expect(copyableTaskPrompt({ mode: 'image', prompt: '   ' })).toBeNull()
+  })
+
+  it('识别任务优先复制转写文本（text 资产），无资产时回退 task.text', () => {
+    expect(
+      copyableTaskPrompt({
+        mode: 'transcribe',
+        prompt: '纠正专有名词',
+        text: '',
+        assets: [{ type: 'text', contentText: '欢迎收听今天的早间资讯' }],
+      }),
+    ).toEqual({
+      label: '复制转写文本',
+      doneMessage: '转写文本已复制',
+      text: '欢迎收听今天的早间资讯',
+    })
+
+    // 兼容不带 assets 的调用方（旧记录 / 测试构造）：回退 task.text，不崩溃。
+    expect(copyableTaskPrompt({ mode: 'transcribe', prompt: '', text: '回退文本' })?.text).toBe(
+      '回退文本',
+    )
+    expect(copyableTaskPrompt({ mode: 'transcribe', prompt: '', text: '' })).toBeNull()
   })
 
   it('无提示词的语音任务用「语音文稿」作为兜底标题', () => {

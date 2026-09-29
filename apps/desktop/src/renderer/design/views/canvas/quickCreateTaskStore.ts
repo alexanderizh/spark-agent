@@ -32,7 +32,7 @@ const VALID_OPERATIONS = new Set<CanvasOperationType>([
  * 快速创作支持的模式。这里是唯一事实来源：任务存储、偏好白名单与模式推导都从这里取，
  * 避免新增模式时漏改某处白名单导致记录被静默丢弃或强转。
  */
-export const QUICK_CREATE_MODES = ['image', 'reverse', 'video', 'audio'] as const
+export const QUICK_CREATE_MODES = ['image', 'reverse', 'video', 'audio', 'transcribe'] as const
 
 export type QuickCreateMode = (typeof QUICK_CREATE_MODES)[number]
 
@@ -152,7 +152,9 @@ function normalizeTask(value: unknown): QuickCreateTaskRecord | null {
             ? 'image_prompt_reverse'
             : mode === 'audio'
               ? 'text_to_audio'
-              : 'text_to_image',
+              : mode === 'transcribe'
+                ? 'audio_transcribe'
+                : 'text_to_image',
     prompt: value.prompt,
     ...(typeof value.negativePrompt === 'string' ? { negativePrompt: value.negativePrompt } : {}),
     inputFiles: Array.isArray(value.inputFiles)

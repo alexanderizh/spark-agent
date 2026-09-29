@@ -27,6 +27,12 @@ export const VIDEO_CAPABILITIES: MediaCapabilityId[] = [
  */
 export const AUDIO_CAPABILITIES: MediaCapabilityId[] = ['audio.speech']
 
+/**
+ * 语音识别（STT）候选能力。识别只有 audio.transcription 一个能力，
+ * 固定锁定即可，无需按模型声明做候选回退。
+ */
+export const TRANSCRIBE_CAPABILITIES: MediaCapabilityId[] = ['audio.transcription']
+
 /** 按模式与输入素材推导画布 operation（不含模型上下文）。 */
 export function operationFor(
   mode: QuickCreateMode,
@@ -34,6 +40,7 @@ export function operationFor(
 ): CanvasOperationType {
   if (mode === 'reverse') return 'image_prompt_reverse'
   if (mode === 'audio') return 'text_to_audio'
+  if (mode === 'transcribe') return 'audio_transcribe'
   if (mode === 'image') return inputs.length > 0 ? 'image_edit' : 'text_to_image'
   if (inputs.some((input) => input.type === 'video')) return 'video_edit'
   return inputs.length > 0 ? 'image_to_video' : 'text_to_video'
@@ -55,6 +62,9 @@ export function capabilityFor(
   // 语音只有 text_to_audio 一个操作，且必须固定在 audio.speech 上：
   // 不做「模型未声明则回退候选首项」推导，避免回退到 audio.music。
   if (mode === 'audio') return AUDIO_CAPABILITIES[0]
+  // 识别同样只有 audio.transcription 一个能力，固定锁定，
+  // 兼容模型过滤只保留真正声明了转写能力的模型。
+  if (mode === 'transcribe') return TRANSCRIBE_CAPABILITIES[0]
   const candidates: MediaCapabilityId[] =
     mode === 'image'
       ? inputs.length > 0
@@ -81,6 +91,7 @@ export function operationForSubmission(
   capability: MediaCapabilityId | undefined,
 ): CanvasOperationType {
   if (mode === 'audio') return 'text_to_audio'
+  if (mode === 'transcribe') return 'audio_transcribe'
   if (capability === 'video.reference_to_video') return 'text_to_video'
   return operationFor(mode, inputs)
 }

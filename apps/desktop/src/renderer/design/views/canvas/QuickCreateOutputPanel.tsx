@@ -6,7 +6,7 @@ import { ImagePreviewModal, type LightboxImage } from '../../components/ImagePre
 import { MediaArtifactViewer } from '../../components/MediaArtifactViewer'
 import { copyTextToClipboard } from './canvasClipboard'
 import { resolveMediaDisplayUrl } from './canvas-safe-file'
-import { textOutputCopyMeta } from './quickCreateTaskPresentation'
+import { taskTextOutput, textOutputCopyMeta } from './quickCreateTaskPresentation'
 import type { QuickCreateTaskRecord } from './quickCreateTaskStore'
 import './QuickCreateOutputPanel.less'
 
@@ -103,6 +103,8 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
   }
 
   const textOutput = textOutputCopyMeta(task.mode)
+  // 反推产物落在 task.text，识别产物落在 text 资产的 contentText；统一从这里取。
+  const textResult = taskTextOutput(task)
 
   return (
     <section className="quick-create-output-panel" aria-label="输出预览">
@@ -182,8 +184,9 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
             </div>
           )}
         </>
-      ) : task.text ? (
-        // 反推任务的产物就是提示词，直接给出可复制入口，避免用户手动选中长文本
+      ) : textResult ? (
+        // 反推/识别任务的产物就是文本（提示词/转写文本），直接给出可复制入口，
+        // 避免用户手动选中长文本。
         <div className="quick-create-output-text-block">
           <div className="quick-create-output-text-head">
             <span>{textOutput.label}</span>
@@ -194,13 +197,13 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
                 icon={<Icons.Copy size={13} />}
                 aria-label={`复制${textOutput.label}`}
                 title={`复制${textOutput.label}`}
-                onClick={() => void copyTextOutput(task.text ?? '', textOutput.doneMessage)}
+                onClick={() => void copyTextOutput(textResult, textOutput.doneMessage)}
               >
                 复制
               </Button>
             </Tooltip>
           </div>
-          <pre className="quick-create-output-text">{task.text}</pre>
+          <pre className="quick-create-output-text">{textResult}</pre>
         </div>
       ) : task.status === 'running' ? (
         <div className="quick-create-output-pending">

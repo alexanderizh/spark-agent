@@ -80,6 +80,14 @@ describe('capabilityFor', () => {
     // 回退项固定为 speech，音乐模型会在兼容过滤阶段被剔除，不会误路由
     expect(capabilityFor('audio', [], model(['audio.music']))).toBe('audio.speech')
   })
+
+  it('识别模式锁定 audio.transcription：TTS 模型不会误入识别模式', () => {
+    expect(capabilityFor('transcribe', [], model(['audio.transcription']))).toBe(
+      'audio.transcription',
+    )
+    // 固定锁定 transcription，纯 TTS 模型在兼容过滤阶段被剔除
+    expect(capabilityFor('transcribe', [], model(['audio.speech']))).toBe('audio.transcription')
+  })
 })
 
 describe('operationFor', () => {
@@ -92,6 +100,11 @@ describe('operationFor', () => {
   it('语音模式恒为 text_to_audio，不受输入素材影响', () => {
     expect(operationFor('audio', [])).toBe('text_to_audio')
     expect(operationFor('audio', [input('image')])).toBe('text_to_audio')
+  })
+
+  it('识别模式恒为 audio_transcribe，不受输入素材影响', () => {
+    expect(operationFor('transcribe', [])).toBe('audio_transcribe')
+    expect(operationFor('transcribe', [input('audio')])).toBe('audio_transcribe')
   })
 })
 
@@ -114,5 +127,14 @@ describe('operationForSubmission', () => {
   it('语音模式提交恒为 text_to_audio，历史重试能还原同一操作', () => {
     expect(operationForSubmission('audio', [], 'audio.speech')).toBe('text_to_audio')
     expect(operationForSubmission('audio', [], undefined)).toBe('text_to_audio')
+  })
+
+  it('识别模式提交恒为 audio_transcribe，历史重试能还原同一操作', () => {
+    expect(operationForSubmission('transcribe', [input('audio')], 'audio.transcription')).toBe(
+      'audio_transcribe',
+    )
+    expect(operationForSubmission('transcribe', [input('audio')], undefined)).toBe(
+      'audio_transcribe',
+    )
   })
 })

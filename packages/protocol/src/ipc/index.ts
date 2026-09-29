@@ -5932,7 +5932,7 @@ export interface FilePrepareImagePreviewResponse {
 /** 把用户通过原生文件选择器选中的媒体复制到应用安全目录，供媒体任务输入使用。 */
 export interface FilePrepareMediaInputRequest {
   sourcePath: string
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
 }
 
 export interface FilePrepareMediaInputResponse {

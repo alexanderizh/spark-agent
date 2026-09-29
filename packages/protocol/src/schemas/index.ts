@@ -392,7 +392,7 @@ export const FilePrepareImagePreviewRequestSchema = z.object({
 
 export const FilePrepareMediaInputRequestSchema = z.object({
   sourcePath: z.string().min(1),
-  kind: z.enum(['image', 'video']),
+  kind: z.enum(['image', 'video', 'audio']),
 })
 
 export const FilePrepareSessionImagesRequestSchema = z.object({

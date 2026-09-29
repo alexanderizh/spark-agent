@@ -11431,15 +11431,17 @@ export function registerAllIpcHandlers(): void {
     const sourceStat = await fs.stat(resolvedSource)
     if (!sourceStat.isFile()) throw new Error('输入媒体不是文件')
     if (sourceStat.size > 72 * 1024 * 1024) {
-      throw new Error('输入视频或图片不能超过 72MB')
+      throw new Error('输入素材不能超过 72MB')
     }
     const inputRoot = path.join(
       getDefaultCanvasMediaDir(),
       'quick-create-inputs',
-      req.kind === 'video' ? 'videos' : 'images',
+      req.kind === 'video' ? 'videos' : req.kind === 'audio' ? 'audios' : 'images',
     )
     await fs.mkdir(inputRoot, { recursive: true })
-    const extension = path.extname(resolvedSource) || (req.kind === 'video' ? '.mp4' : '.png')
+    const fallbackExtension =
+      req.kind === 'video' ? '.mp4' : req.kind === 'audio' ? '.mp3' : '.png'
+    const extension = path.extname(resolvedSource) || fallbackExtension
     const baseName = path
       .basename(resolvedSource, path.extname(resolvedSource))
       .replace(/[^a-zA-Z0-9._-]+/g, '-')

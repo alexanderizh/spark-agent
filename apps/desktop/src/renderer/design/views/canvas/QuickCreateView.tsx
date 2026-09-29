@@ -22,6 +22,7 @@ import type {
 import {
   AUDIO_CAPABILITIES,
   IMAGE_CAPABILITIES,
+  TRANSCRIBE_CAPABILITIES,
   VIDEO_CAPABILITIES,
   capabilityFor,
   operationFor,
@@ -114,6 +115,7 @@ const QUICK_CREATE_MAX_INPUT_BYTES = 72 * 1024 * 1024
  */
 function inputRejectMessage(mode: QuickCreateMode, source: 'pick' | 'drop'): string {
   if (mode === 'audio') return '语音模式只需输入文稿，不支持添加素材'
+  if (mode === 'transcribe') return source === 'drop' ? '仅支持拖入音频文件' : '请选择音频文件'
   if (mode === 'video')
     return source === 'drop' ? '仅支持拖入图片或视频素材' : '请选择图片或视频素材'
   return source === 'drop' ? '仅支持拖入图片素材' : '请选择图片素材'
@@ -564,7 +566,7 @@ function now(): string {
   return new Date().toISOString()
 }
 
-function guessMimeType(filePath: string, kind: 'image' | 'video'): string {
+function guessMimeType(filePath: string, kind: 'image' | 'video' | 'audio'): string {
   const extension = filePath.split('.').pop()?.toLowerCase()
   const byExtension: Record<string, string> = {
     jpg: 'image/jpeg',
@@ -576,18 +578,31 @@ function guessMimeType(filePath: string, kind: 'image' | 'video'): string {
     mov: 'video/quicktime',
     webm: 'video/webm',
     m4v: 'video/x-m4v',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    flac: 'audio/flac',
+    ogg: 'audio/ogg',
+    opus: 'audio/opus',
+    aiff: 'audio/aiff',
+    aif: 'audio/aiff',
+    wma: 'audio/x-ms-wma',
   }
   return byExtension[extension ?? ''] ?? `${kind}/*`
 }
 
-async function prepareInputFile(filePath: string, kind: 'image' | 'video'): Promise<QuickInput> {
+async function prepareInputFile(
+  filePath: string,
+  kind: 'image' | 'video' | 'audio',
+): Promise<QuickInput> {
   const mimeType = guessMimeType(filePath, kind)
   const saved = await window.spark.invoke('file:prepare-media-input', {
     sourcePath: filePath,
     kind,
   })
   if (saved.sizeBytes > QUICK_CREATE_MAX_INPUT_BYTES) {
-    throw new Error('输入视频或图片不能超过 72MB')
+    throw new Error('输入素材不能超过 72MB')
   }
   return {
     id: `${Date.now()}-${saved.filePath}`,
@@ -717,13 +732,15 @@ export function QuickCreateView() {
             ? index === 0
               ? ('input' as const)
               : ('reference' as const)
-            : capabilityId === 'video.reference_to_video' || capabilityId === 'video.generate'
-              ? ('reference' as const)
-              : input.type === 'video'
-                ? ('input' as const)
-                : index === 0
-                  ? ('first_frame' as const)
-                  : ('reference' as const)
+            : mode === 'transcribe' || input.type === 'audio'
+              ? ('input' as const)
+              : capabilityId === 'video.reference_to_video' || capabilityId === 'video.generate'
+                ? ('reference' as const)
+                : input.type === 'video'
+                  ? ('input' as const)
+                  : index === 0
+                    ? ('first_frame' as const)
+                    : ('reference' as const)
         return { ...input, role }
       }),
     [capabilityId, inputs, mode],
@@ -817,29 +834,49 @@ export function QuickCreateView() {
           canvasApi.listMediaModels({ capability, enabledOnly: true }),
         ),
       ),
+      // 识别模式使用 audio.transcription 能力的模型，与 TTS（audio.speech）分开拉取
+      Promise.all(
+        TRANSCRIBE_CAPABILITIES.map((capability) =>
+          canvasApi.listMediaModels({ capability, enabledOnly: true }),
+        ),
+      ),
       window.spark.invoke('provider:list', { includeDisabled: false }),
       readGlobalPromptLibrary(),
     ])
-      .then(([imageResults, videoResults, audioResults, providerResult, library]) => {
-        if (cancelled) return
-        const nextModels = [...imageResults, ...videoResults, ...audioResults]
-          .flatMap((result) => result.models)
-          .filter(
-            (model, index, list) =>
-              list.findIndex((candidate) => mediaModelKey(candidate) === mediaModelKey(model)) ===
-              index,
+      .then(
+        ([
+          imageResults,
+          videoResults,
+          audioResults,
+          transcribeResults,
+          providerResult,
+          library,
+        ]) => {
+          if (cancelled) return
+          const nextModels = [
+            ...imageResults,
+            ...videoResults,
+            ...audioResults,
+            ...transcribeResults,
+          ]
+            .flatMap((result) => result.models)
+            .filter(
+              (model, index, list) =>
+                list.findIndex((candidate) => mediaModelKey(candidate) === mediaModelKey(model)) ===
+                index,
+            )
+          setModels(nextModels)
+          setTextProviders(
+            providerResult.profiles.filter(
+              (provider) =>
+                provider.enabled !== false &&
+                Boolean(provider.keystoreRef) &&
+                provider.modelType === 'multimodal',
+            ),
           )
-        setModels(nextModels)
-        setTextProviders(
-          providerResult.profiles.filter(
-            (provider) =>
-              provider.enabled !== false &&
-              Boolean(provider.keystoreRef) &&
-              provider.modelType === 'multimodal',
-          ),
-        )
-        setPromptLibrary(library.items)
-      })
+          setPromptLibrary(library.items)
+        },
+      )
       .catch((error) => {
         if (!cancelled) {
           setModels([])
@@ -963,7 +1000,11 @@ export function QuickCreateView() {
         message.warning('图片反推仅支持一张输入图片')
         return
       }
-      const limit = mode === 'reverse' ? 1 : 6
+      if (mode === 'transcribe' && selectedPaths.length > 1) {
+        message.warning('语音识别一次只支持一个音频文件')
+        return
+      }
+      const limit = mode === 'reverse' || mode === 'transcribe' ? 1 : 6
       try {
         const prepared = await Promise.all(
           selectedPaths
@@ -971,7 +1012,9 @@ export function QuickCreateView() {
             .map((filePath) => prepareInputFile(filePath, quickInputKindForPath(filePath))),
         )
         setInputs((current) =>
-          mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, limit),
+          mode === 'reverse' || mode === 'transcribe'
+            ? prepared.slice(0, 1)
+            : [...current, ...prepared].slice(0, limit),
         )
         if (mode !== 'reverse') message.success(`已添加 ${prepared.length} 个素材`)
       } catch (error) {
@@ -981,7 +1024,7 @@ export function QuickCreateView() {
     [mode],
   )
 
-  /** 拖入素材与粘贴同一语义：反推整组替换，其余模式追加并封顶 6 个 */
+  /** 拖入素材与粘贴同一语义：反推/识别整组替换（单文件），其余模式追加并封顶 6 个 */
   const handleDropInput = useCallback(
     async (filePaths: string[]) => {
       const selectedPaths = selectQuickCreateInputPaths(filePaths, mode)
@@ -993,7 +1036,11 @@ export function QuickCreateView() {
         message.warning('图片反推仅支持一张输入图片')
         return
       }
-      const limit = mode === 'reverse' ? 1 : 6
+      if (mode === 'transcribe' && selectedPaths.length > 1) {
+        message.warning('语音识别一次只支持一个音频文件')
+        return
+      }
+      const limit = mode === 'reverse' || mode === 'transcribe' ? 1 : 6
       try {
         const prepared = await Promise.all(
           selectedPaths
@@ -1001,7 +1048,9 @@ export function QuickCreateView() {
             .map((filePath) => prepareInputFile(filePath, quickInputKindForPath(filePath))),
         )
         setInputs((current) =>
-          mode === 'reverse' ? prepared.slice(0, 1) : [...current, ...prepared].slice(0, limit),
+          mode === 'reverse' || mode === 'transcribe'
+            ? prepared.slice(0, 1)
+            : [...current, ...prepared].slice(0, limit),
         )
         message.success(`已添加 ${prepared.length} 个素材`)
       } catch (error) {
@@ -1062,10 +1111,15 @@ export function QuickCreateView() {
         item.type.startsWith('image/'),
       )
       if (imageItems.length === 0) return
-      // 语音模式没有素材入口：拦下粘贴并说明，避免图片静默进入输入列表
-      if (mode === 'audio') {
+      // 语音模式没有素材入口；识别模式只收本地音频文件：都拦下粘贴并说明，
+      // 避免图片静默进入输入列表或被误当作识别输入。
+      if (mode === 'audio' || mode === 'transcribe') {
         event.preventDefault()
-        message.warning(inputRejectMessage(mode, 'pick'))
+        message.warning(
+          mode === 'audio'
+            ? inputRejectMessage(mode, 'pick')
+            : '语音识别暂不支持粘贴，请选择音频文件',
+        )
         return
       }
       event.preventDefault()
@@ -1092,8 +1146,13 @@ export function QuickCreateView() {
   const handlePickFiles = useCallback(async () => {
     try {
       const picked = await window.spark.invoke('dialog:open-file', {
-        title: mode === 'video' ? '选择图片或视频素材' : '选择输入图片',
-        multiple: mode !== 'reverse',
+        title:
+          mode === 'video'
+            ? '选择图片或视频素材'
+            : mode === 'transcribe'
+              ? '选择音频文件'
+              : '选择输入图片',
+        multiple: mode !== 'reverse' && mode !== 'transcribe',
         filters:
           mode === 'video'
             ? [
@@ -1115,12 +1174,30 @@ export function QuickCreateView() {
                   ],
                 },
               ]
-            : [
-                {
-                  name: '图片',
-                  extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic', 'heif'],
-                },
-              ],
+            : mode === 'transcribe'
+              ? [
+                  {
+                    name: '音频',
+                    extensions: [
+                      'mp3',
+                      'wav',
+                      'm4a',
+                      'aac',
+                      'flac',
+                      'ogg',
+                      'opus',
+                      'aiff',
+                      'aif',
+                      'wma',
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    name: '图片',
+                    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic', 'heif'],
+                  },
+                ],
       })
       const paths = picked.filePaths ?? (picked.filePath ? [picked.filePath] : [])
       if (!picked.canceled && paths.length > 0) await handleChooseFiles(paths)
@@ -1234,7 +1311,15 @@ export function QuickCreateView() {
         message.warning('图片反推需要先选择一张图片')
         return
       }
-      if (taskMode !== 'reverse' && !taskPrompt) {
+      if (
+        taskMode === 'transcribe' &&
+        taskInputs.filter((input) => input.type === 'audio').length !== 1
+      ) {
+        message.warning('语音识别需要先选择一个音频文件')
+        return
+      }
+      // 识别的提示词是可选补充（对应 STT 的 prompt 参数），不强制输入
+      if (taskMode !== 'reverse' && taskMode !== 'transcribe' && !taskPrompt) {
         message.warning('请先输入提示词')
         return
       }
@@ -1626,11 +1711,13 @@ export function QuickCreateView() {
                   ? '上传 1 张图片，可补充文字要求，反推可编辑提示词'
                   : mode === 'audio'
                     ? '输入文稿，选择合适的音色后合成语音'
-                    : mode === 'image'
-                      ? inputs.length > 0
-                        ? '已添加参考素材，当前按图像编辑处理'
-                        : '添加参考素材后自动切换为图像编辑'
-                      : '可添加首帧或参考素材生成视频'}
+                    : mode === 'transcribe'
+                      ? '选择 1 个音频文件，转写为可复制的文本'
+                      : mode === 'image'
+                        ? inputs.length > 0
+                          ? '已添加参考素材，当前按图像编辑处理'
+                          : '添加参考素材后自动切换为图像编辑'
+                        : '可添加首帧或参考素材生成视频'}
               </span>
             </div>
 
@@ -1641,15 +1728,23 @@ export function QuickCreateView() {
                 <section className="quick-create-reference-section" aria-label="参考素材">
                   <div className="quick-create-section-head">
                     <div>
-                      <strong>{mode === 'reverse' ? '输入图片' : '参考素材'}</strong>
+                      <strong>
+                        {mode === 'reverse'
+                          ? '输入图片'
+                          : mode === 'transcribe'
+                            ? '输入音频'
+                            : '参考素材'}
+                      </strong>
                       <span>
                         {mode === 'reverse'
                           ? '支持粘贴或从本地选择，反推可编辑提示词'
-                          : '可选 · 支持粘贴或从本地选择'}
+                          : mode === 'transcribe'
+                            ? '必选 · 仅支持 1 个音频文件，从本地选择'
+                            : '可选 · 支持粘贴或从本地选择'}
                       </span>
                     </div>
                     <small>
-                      {inputs.length}/{mode === 'reverse' ? 1 : 6}
+                      {inputs.length}/{mode === 'reverse' || mode === 'transcribe' ? 1 : 6}
                     </small>
                   </div>
                   <div
@@ -1658,7 +1753,9 @@ export function QuickCreateView() {
                     aria-label={
                       mode === 'reverse'
                         ? '输入图片，仅支持 1 张，可直接粘贴'
-                        : '参考素材，可选，可直接粘贴图片'
+                        : mode === 'transcribe'
+                          ? '输入音频，仅支持 1 个文件'
+                          : '参考素材，可选，可直接粘贴图片'
                     }
                   >
                     <div className="quick-create-input-list">
@@ -1666,6 +1763,10 @@ export function QuickCreateView() {
                         <div className="quick-create-input-chip" key={input.id}>
                           {input.type === 'video' ? (
                             <video src={input.previewUrl} muted />
+                          ) : input.type === 'audio' ? (
+                            <span className="quick-create-input-audio-glyph" aria-hidden="true">
+                              <Icons.AudioLines size={15} />
+                            </span>
                           ) : (
                             <img src={input.previewUrl} alt={input.name} />
                           )}
@@ -1681,17 +1782,24 @@ export function QuickCreateView() {
                           </button>
                         </div>
                       ))}
-                      {(mode !== 'reverse' || inputs.length === 0) && (
-                        <button
-                          type="button"
-                          className="quick-create-input-add"
-                          aria-label="添加素材，也可直接粘贴"
-                          onClick={() => void handlePickFiles()}
-                        >
-                          <Icons.ImagePlus size={17} />
-                          <span>添加素材</span>
-                        </button>
-                      )}
+                      {(mode !== 'reverse' || inputs.length === 0) &&
+                        (mode !== 'transcribe' || inputs.length === 0) && (
+                          <button
+                            type="button"
+                            className="quick-create-input-add"
+                            aria-label={
+                              mode === 'transcribe' ? '选择音频文件' : '添加素材，也可直接粘贴'
+                            }
+                            onClick={() => void handlePickFiles()}
+                          >
+                            {mode === 'transcribe' ? (
+                              <Icons.AudioLines size={17} />
+                            ) : (
+                              <Icons.ImagePlus size={17} />
+                            )}
+                            <span>{mode === 'transcribe' ? '选择音频' : '添加素材'}</span>
+                          </button>
+                        )}
                     </div>
                   </div>
                 </section>
@@ -1701,16 +1809,24 @@ export function QuickCreateView() {
                 <div className="quick-create-prompt-head">
                   <div>
                     <strong>
-                      {mode === 'reverse' ? '反推要求' : mode === 'audio' ? '文稿' : '提示词'}
+                      {mode === 'reverse'
+                        ? '反推要求'
+                        : mode === 'audio'
+                          ? '文稿'
+                          : mode === 'transcribe'
+                            ? '补充说明'
+                            : '提示词'}
                     </strong>
                     <span>
                       {mode === 'reverse'
                         ? '可选 · 补充反推侧重点'
                         : mode === 'audio'
                           ? '这里填写要朗读的内容本身，不做提示词改写'
-                          : mode === 'video'
-                            ? '描述主体、动作、镜头与氛围'
-                            : '描述主体、构图、光线与风格'}
+                          : mode === 'transcribe'
+                            ? '可选 · 纠正专有名词的拼写提示，帮助提高识别准确率'
+                            : mode === 'video'
+                              ? '描述主体、动作、镜头与氛围'
+                              : '描述主体、构图、光线与风格'}
                     </span>
                   </div>
                   {mode !== 'reverse' && (
@@ -1736,16 +1852,24 @@ export function QuickCreateView() {
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   aria-label={
-                    mode === 'reverse' ? '反推补充要求' : mode === 'audio' ? '语音文稿' : '提示词'
+                    mode === 'reverse'
+                      ? '反推补充要求'
+                      : mode === 'audio'
+                        ? '语音文稿'
+                        : mode === 'transcribe'
+                          ? '识别补充说明'
+                          : '提示词'
                   }
                   placeholder={
                     mode === 'reverse'
                       ? '可选：补充反推侧重点，例如「重点描述人物服装与光线」，留空则输出完整提示词'
                       : mode === 'audio'
                         ? '输入要转换为语音的文稿，例如：欢迎收听今天的早间资讯，我们先看一条来自产品团队的消息…'
-                        : mode === 'video'
-                          ? '描述主体、动作、镜头运动和时长，例如：雨夜街头，霓虹倒影，镜头缓慢推进…'
-                          : '描述主体、构图、光线和风格，例如：清晨窗边的产品静物，柔和侧光…'
+                        : mode === 'transcribe'
+                          ? '可选：纠正专有名词提示，例如「包含产品名 SparkWork 与人名张阳」，留空直接识别'
+                          : mode === 'video'
+                            ? '描述主体、动作、镜头运动和时长，例如：雨夜街头，霓虹倒影，镜头缓慢推进…'
+                            : '描述主体、构图、光线和风格，例如：清晨窗边的产品静物，柔和侧光…'
                   }
                 />
                 <div className="quick-create-prompt-meta">
@@ -1754,7 +1878,9 @@ export function QuickCreateView() {
                       ? '补充要求会与固定反推指令一起发送'
                       : mode === 'audio'
                         ? '文稿会原样送入语音合成，标点与换行会影响停顿'
-                        : '建议先写清主体，再补充环境、构图和风格'}
+                        : mode === 'transcribe'
+                          ? '补充说明仅用于纠正识别结果中的专有名词，不影响音频内容'
+                          : '建议先写清主体，再补充环境、构图和风格'}
                   </span>
                   <small>{prompt.length} 字</small>
                 </div>
@@ -1865,12 +1991,14 @@ export function QuickCreateView() {
                       <span className="quick-create-capability-hint">
                         {mode === 'audio'
                           ? '暂无已启用的语音模型，请先配置 TTS 渠道'
-                          : '暂无匹配的已启用模型，请先到模型服务配置'}
+                          : mode === 'transcribe'
+                            ? '暂无已启用的语音识别模型，请先配置语音识别渠道'
+                            : '暂无匹配的已启用模型，请先到模型服务配置'}
                       </span>
                     )}
                     {!modelsLoading &&
                       !selectedModel &&
-                      mode === 'audio' &&
+                      (mode === 'audio' || mode === 'transcribe') &&
                       !isStandaloneWindow && (
                         <button
                           type="button"
@@ -1910,11 +2038,15 @@ export function QuickCreateView() {
                     type="primary"
                     className="quick-create-generate-button"
                     disabled={
-                      modelsLoading || (mode === 'reverse' ? inputs.length !== 1 : !prompt.trim())
+                      modelsLoading ||
+                      (mode === 'reverse' || mode === 'transcribe'
+                        ? inputs.length !== 1
+                        : !prompt.trim())
                     }
                     onClick={() => void submitTask()}
                   >
-                    <Icons.Play size={13} /> {mode === 'audio' ? '生成语音' : '生成'}
+                    <Icons.Play size={13} />{' '}
+                    {mode === 'audio' ? '生成语音' : mode === 'transcribe' ? '开始识别' : '生成'}
                   </Button>
                 </div>
               </div>
