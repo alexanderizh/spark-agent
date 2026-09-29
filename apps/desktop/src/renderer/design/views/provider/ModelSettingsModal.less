@@ -1,39 +1,69 @@
-// 「模型设置」弹窗：扁平表格布局（表头吸顶 + 渠道分组 + 行内三控件），无卡片式分块
+// 「模型设置」弹窗：扁平表格布局（表头吸顶 + 渠道分组 + 行内三控件），无卡片式分块。
+//
+// 分层：
+//   header  = 标题 + 搜索（关闭按钮由 antd 绝对定位在右上）
+//   body    = 唯一滚动容器，表头 sticky 吸顶，footer 独立固定
+//   footer  = 左侧说明 + 右侧操作，与内容区同一条 24px 水平基准
+//
+// 水平基准（关键约束）：表头、组标题内容、行内容三者左边界必须同为
+// --mv-settings-inset(24px)。行 = 6px 外边距 + 18px 内边距 = 24px，任何一处
+// 只改一边都会让网格列错位。
 .mv_settings_modal {
-  .mv_settings_title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  // 表格栅格：模型名 / 思考强度 / 显示状态 / 上下文窗口
+  // 模型名列封顶后把余量让给上下文列（滑块轨道更长 = 拖拽更精细）；
+  // 两列都封顶/定宽，单元格内容（值 / 恢复默认 / 长模型名省略号）不会推动列宽，
+  // 滑块列几何在任何状态变化下都不位移。
+  --mv-settings-columns: minmax(160px, 380px) 128px 68px minmax(236px, 1fr);
+  --mv-settings-inset: 24px;
+
+  // ─── Header：左对齐标题 + 右侧搜索 ───────────────────────────────────
+  // lobehub 默认把 header 内容居中（justify-content: center），这里改成左对齐。
+  // 关闭按钮由 antd 绝对定位在右上（约占最右 44px），不与 header 的 padding 联动：
+  // 间距由 `.mv_settings_search` 的 margin-inline-end 给，即使本段被上游样式盖掉，
+  // 搜索框也不会压到关闭按钮上。
+  [class*='ant-modal-header'] {
+    justify-content: flex-start;
+    padding-inline: var(--mv-settings-inset);
+  }
+
+  .ant-modal-title {
+    min-width: 0;
+    flex: 1;
     font-size: 14px;
     font-weight: 600;
+    color: var(--text-strong);
   }
 
-  .mv_settings_toolbar {
+  .mv_settings_header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: 8px;
+    min-width: 0;
   }
 
+  .mv_settings_header_icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-faint);
+  }
+
+  .mv_settings_header_title {
+    flex: none;
+    color: var(--text-strong);
+    letter-spacing: 0.01em;
+  }
+
+  // 搜索框推到标题行最右；右侧 36px 是给 antd 关闭按钮留的位置
   .mv_settings_search {
-    max-width: 320px;
+    width: 260px;
+    max-width: 38%;
+    flex: none;
+    margin-inline: auto 36px;
   }
 
-  .mv_settings_summary {
-    flex-shrink: 0;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  // 表格栅格：模型名 / 思考强度 / 显示状态 / 上下文窗口
-  // 列宽固定（只允许模型名列弹性伸缩）：上下文列必须定宽，
-  // 否则单元格内容（值/恢复默认）变化会推动列宽、让滑块列左右位移。
-  --mv-settings-columns: minmax(160px, 1fr) 132px 80px minmax(240px, 300px);
-
-  // 水平留白基准：表头 / 组标题 / 行 / 空态必须一致，否则网格列错位
-  --mv-settings-gutter: 8px;
-
+  // ─── 表头（吸顶）────────────────────────────────────────────────────
+  // body 内边距已清零，所以这里能铺满整宽：滚动时不会从两侧透出行内容。
+  // 底色必须取弹窗底色（LobeThemeProvider: colorBgContainer = --panel）。
   .mv_settings_head,
   .mv_settings_row {
     display: grid;
@@ -43,48 +73,40 @@
     min-width: 0;
   }
 
-  // 表头不吸顶（不在滚动容器内），纯文字无背景无边框：差异色横条 + 边框均已移除
   .mv_settings_head {
-    padding: 2px var(--mv-settings-gutter) 10px;
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    padding: 0 var(--mv-settings-inset) 9px;
+    border-bottom: 1px solid var(--divider);
+    background: var(--panel);
+    color: var(--text-faint);
     font-size: 12px;
     line-height: 18px;
-    color: var(--text-muted);
+    letter-spacing: 0.01em;
   }
 
-  .mv_settings_body {
-    // 行高因「轨道 + 刻度尺」变高（41px → 52px），同步放宽可视区，保证同屏行数不缩水
-    max-height: min(62vh, 640px);
-    overflow-y: auto;
-  }
-
-  .mv_settings_empty {
-    padding: 24px var(--mv-settings-gutter);
-    font-size: 13px;
-    color: var(--text-muted);
-    text-align: center;
-  }
-
-  // 分组之间用留白分隔；组内行仍以 1px 淡线分隔
   .mv_settings_group + .mv_settings_group {
-    margin-top: 8px;
+    margin-top: 12px;
+    border-top: 1px solid var(--divider);
   }
 
   .mv_settings_group_title {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px var(--mv-settings-gutter) 6px;
+    gap: 8px;
+    padding: 16px var(--mv-settings-inset) 6px;
+    color: var(--text-faint);
     font-size: 12px;
-    color: var(--text-muted);
   }
 
   .mv_settings_group_icon {
     display: inline-flex;
-    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    flex: none;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
   }
 
   .mv_settings_group_dot {
@@ -95,26 +117,25 @@
   }
 
   .mv_settings_group_name {
-    font-weight: 600;
     color: var(--text);
+    font-weight: 600;
   }
 
   .mv_settings_group_parent {
     color: var(--text-faint);
   }
 
+  // ─── 行 ─────────────────────────────────────────────────────────────
+  // 去掉行间 1px 淡线（分组线已承担结构分隔），改用更大的行距 + hover 圆角；
+  // 行内容左边界 = 6px 外边距 + 18px 内边距 = 24px，与表头 / 组标题齐平。
   .mv_settings_row {
-    padding: 9px var(--mv-settings-gutter);
-    border-bottom: 1px solid var(--border);
-    border-radius: var(--r-sm);
+    margin: 0 6px;
+    padding: 9px 18px;
+    border-radius: var(--r-md);
     font-size: 13px;
 
-    &:last-child {
-      border-bottom: none;
-    }
-
     &:hover {
-      background: var(--bg-sunken);
+      background: var(--hover);
     }
   }
 
@@ -122,6 +143,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--text);
+    font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -136,18 +158,46 @@
     align-items: center;
   }
 
+  .mv_settings_empty {
+    padding: 36px var(--mv-settings-inset);
+    color: var(--text-faint);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  // ─── Footer：左说明 + 右操作 ────────────────────────────────────────
   .mv_settings_footer {
     display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .mv_settings_footer_hint {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mv_settings_footer_sep {
+    margin: 0 5px;
+    opacity: 0.6;
+  }
+
+  .mv_settings_footer_actions {
+    display: flex;
+    flex: none;
     align-items: center;
     gap: 8px;
   }
 
-  .mv_settings_footer_spacer {
-    flex: 1;
-  }
-
-  // lobehub 给 footer 的 class 规则是 padding: 16px；内容区水平已提到 28px，footer 对齐同一水平线
+  // lobehub 给 footer 的 padding 是 16px；与内容区 24px 基准对齐，并补一条分隔线
   .ant-modal-footer {
-    padding: 16px 28px;
+    margin: 0;
+    padding: 14px var(--mv-settings-inset);
+    border-top: 1px solid var(--divider);
   }
 }

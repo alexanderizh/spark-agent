@@ -142,57 +142,73 @@ export function ModelSettingsModal({
     }
   }
 
+  const summaryLabel =
+    customizedCount > 0 ? `${customizedCount} 个模型已自定义` : '全部模型使用默认设置'
+
   return (
     <Modal
       open={open}
+      // 标题 + 搜索共用一行（搜索靠右、关闭按钮由 antd 绝对定位在右上），
+      // 省掉原「工具栏」整行，弹窗更紧凑
       title={
-        <div className="mv_settings_title">
-          <Icons.Settings size={16} />
-          <span>模型设置</span>
+        <div className="mv_settings_header">
+          <span className="mv_settings_header_icon" aria-hidden="true">
+            <Icons.Settings size={15} />
+          </span>
+          <span className="mv_settings_header_title">模型设置</span>
+          <Input
+            className="mv_settings_search"
+            size="middle"
+            value={search}
+            placeholder="搜索模型或渠道"
+            allowClear
+            prefix={<Icons.Search size={13} />}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
       }
-      width="min(1080px, 94vw)"
+      width="min(1000px, 92vw)"
+      // 内容区上限：原 62vh/640px 在高分屏上几乎铺满整屏，收到 520px 量级
+      height="min(58dvh, 520px)"
       className="mv_settings_modal"
-      // lobehub Modal 的 body 水平 padding 内联固定 16px，1080px 宽弹窗下太贴边；
-      // 走官方 paddings prop 提到 28px（内联样式无法用 class 覆盖）
-      paddings={{ desktop: 28 }}
+      // body 内边距清零：水平留白改由「表头 / 组标题 / 行」按同一个 24px 基准自己给，
+      // 这样表头吸顶时背景能铺满整宽、滚动条区不露底
+      paddings={{ desktop: 0 }}
       onCancel={onClose}
       footer={
         <div className="mv_settings_footer">
-          <Button size="small" icon={<Icons.Link size={14} />} onClick={onManageChannels}>
-            管理模型渠道
-          </Button>
-          <div className="mv_settings_footer_spacer" />
-          <Button size="small" disabled={saving} onClick={onClose}>
-            取消
-          </Button>
-          <Button
-            size="small"
-            type="primary"
-            loading={saving}
-            disabled={!hasChanges && !saving}
-            onClick={() => void handleSave()}
-          >
-            保存设置
-          </Button>
+          <span className="mv_settings_footer_hint">
+            {summaryLabel}
+            <span className="mv_settings_footer_sep" aria-hidden="true">
+              ·
+            </span>
+            运行中的回复保持当前设置，下一轮生效
+          </span>
+          <div className="mv_settings_footer_actions">
+            <Button
+              size="small"
+              variant="text"
+              icon={<Icons.Link size={14} />}
+              onClick={onManageChannels}
+            >
+              管理模型渠道
+            </Button>
+            <Button size="small" disabled={saving} onClick={onClose}>
+              取消
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              loading={saving}
+              disabled={!hasChanges && !saving}
+              onClick={() => void handleSave()}
+            >
+              保存设置
+            </Button>
+          </div>
         </div>
       }
     >
-      <div className="mv_settings_toolbar">
-        <Input
-          className="mv_settings_search"
-          size="middle"
-          value={search}
-          placeholder="搜索模型或渠道"
-          allowClear
-          prefix={<Icons.Search size={13} />}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <span className="mv_settings_summary">
-          {customizedCount > 0 ? `${customizedCount} 个模型已自定义` : '全部模型使用默认设置'}
-        </span>
-      </div>
-
       <div className="mv_settings_head" aria-hidden="true">
         <span>模型名称</span>
         <span>思考强度</span>
