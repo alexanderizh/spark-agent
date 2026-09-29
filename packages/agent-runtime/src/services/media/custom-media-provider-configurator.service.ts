@@ -199,6 +199,8 @@ export class CustomMediaProviderConfiguratorService {
     modelId?: string
     domain?: 'image' | 'video' | 'audio'
     mode?: 'sync' | 'async_polling'
+    /** 语音渠道勾选的 audio.* 能力；决定起始合同走 TTS / 识别 / 音乐哪一份契约。 */
+    capabilities?: readonly string[] | undefined
   }): Record<string, unknown> {
     const domain = input?.domain ?? 'image'
     const modelId = input?.modelId?.trim() || 'replace-with-real-model-id'
@@ -229,8 +231,9 @@ export class CustomMediaProviderConfiguratorService {
         'manifest.providerKind 应为 custom，adapterMode 应为 template。',
         'API Key 只传给 configure/diagnose，工具不会在返回值或日志中回显明文。',
         '文档没有声明的参数、枚举、轮询状态和结果路径不得臆造。',
+        '一个 manifest 只有一份请求契约：语音渠道的合成（/audio/speech 二进制流）、识别（/audio/transcriptions multipart）与音乐生成（厂商 JSON 合同）互不兼容，同一模型需要多个时请拆成多个 manifest（modelId 相同、能力不同）。',
       ],
-      starterManifest: createStarterManifest(modelId, domain, mode),
+      starterManifest: createStarterManifest(modelId, domain, mode, input?.capabilities),
     }
   }
 
@@ -848,50 +851,23 @@ function createStarterManifest(
   modelId: string,
   domain: 'image' | 'video' | 'audio',
   mode: 'sync' | 'async_polling',
+  capabilities?: readonly string[] | undefined,
 ): MediaModelManifest {
-  if (domain !== 'audio') {
-    return {
-      ...createBasicCustomMediaManifest({ modelId, modelType: domain, mode }),
-      contractVersion: 2,
-      adapterMode: 'template',
-    }
-  }
-  const id = createCustomMediaManifestId(modelId)
-  const requestTemplate = { model: '{{modelId}}', input: '{{text}}' }
+  // audio 域与 image/video 走同一口径：复用渠道创建与运行时解析所用的
+  // createBasicCustomMediaManifest，语音能力按 capabilities 取主能力生成
+  // （/audio/speech 二进制流、/audio/transcriptions multipart、或音乐 JSON 合同）。
+  // 此前这里是手写的 /audio/generations + json 合同：端点既不是 OpenAI 兼容规范端，
+  // 也与渠道创建产物不一致，agent 照抄起始合同会直接 404，且转录/音乐无路可走。
   return {
-    id,
-    baseTemplate: 'custom',
+    ...createBasicCustomMediaManifest({
+      modelId,
+      // 域到构造分支的映射：audio 域在基础构造器里走 'voice' 分支。
+      modelType: domain === 'audio' ? 'voice' : domain,
+      mode,
+      ...(domain === 'audio' && capabilities != null ? { audioCapabilities: capabilities } : {}),
+    }),
     contractVersion: 2,
     adapterMode: 'template',
-    providerKind: 'custom',
-    modelId,
-    displayName: modelId,
-    domains: ['audio'],
-    capabilities: [
-      {
-        id: 'audio.speech',
-        label: '文本转语音',
-        input: { required: ['prompt'] },
-        output: { types: ['audio'], mimeTypes: ['audio/mpeg'] },
-        paramSchema: { type: 'object', additionalProperties: true, properties: {} },
-        paramPolicy: { strict: false, passthrough: { enabled: true, allowScalarsOnly: true } },
-      },
-    ],
-    invocation: {
-      mode: 'sync',
-      endpoint: '/audio/generations',
-      method: 'POST',
-      contentType: 'json',
-      requestTemplate,
-      request: {
-        method: 'POST',
-        endpoint: '/audio/generations',
-        auth: { kind: 'bearer', credentialRef: 'apiKey' },
-        body: { kind: 'json', template: requestTemplate },
-      },
-      response: { kind: 'binary_response' },
-    },
-    docs: { sourceUrls: [] },
   }
 }
 

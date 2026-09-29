@@ -1557,12 +1557,16 @@ export class PlatformBridgeService {
     d: PlatformBridgeDeps,
     params: Record<string, unknown>,
   ): Record<string, unknown> {
+    const capabilities = Array.isArray(params.capabilities)
+      ? params.capabilities.filter((item): item is string => typeof item === 'string')
+      : undefined
     return this.customMediaProviderConfigurator(d).createGuide({
       ...(typeof params.modelId === 'string' ? { modelId: params.modelId } : {}),
       ...(params.domain === 'image' || params.domain === 'video' || params.domain === 'audio'
         ? { domain: params.domain }
         : {}),
       ...(params.mode === 'sync' || params.mode === 'async_polling' ? { mode: params.mode } : {}),
+      ...(capabilities && capabilities.length > 0 ? { capabilities } : {}),
     })
   }
 

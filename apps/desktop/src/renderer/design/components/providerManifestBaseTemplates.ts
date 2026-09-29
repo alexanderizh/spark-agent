@@ -55,7 +55,15 @@ export function applyAdapterBaseTemplate(
 }
 
 function customBase(manifest: MediaModelManifest): MediaModelManifest {
-  const capability = basicCapabilityForDomain(manifest.domains[0] ?? 'image')
+  const domain = manifest.domains[0] ?? 'image'
+  // 与 asyncJsonBase 同一口径：manifest 已经声明了同域能力（例如用户手写的
+  // audio.music 音乐合同）时保留它，否则套用「完全自定义」基底会把能力悄悄改回
+  // 该域的默认能力（audio 会被改回 audio.speech），音乐模型因此从候选里消失。
+  const existingCapability = manifest.capabilities[0]
+  const capability =
+    existingCapability?.id.startsWith(`${domain}.`) === true
+      ? existingCapability
+      : basicCapabilityForDomain(domain)
   return {
     ...manifest,
     baseTemplate: 'custom',
@@ -85,11 +93,14 @@ function openAiCompatibleBase(manifest: MediaModelManifest): MediaModelManifest 
   const domain = manifest.domains[0] ?? 'image'
   if (domain === 'video') return openAiVideoBase(manifest)
   if (domain === 'audio') {
-    // 语音域按当前能力分化：识别模型生成 transcriptions 合同，其余生成 TTS 合同。
+    // 语音域按当前能力分化：识别模型生成 transcriptions 合同，语音合成生成 TTS 合同。
     // 与 openAiImageBase 按 image.edit 分化的模式一致。
-    return manifest.capabilities[0]?.id === 'audio.transcription'
-      ? openAiAudioTranscriptionBase(manifest)
-      : openAiAudioBase(manifest)
+    // 音乐生成没有 OpenAI 兼容端点（各厂商协议差异大），套用 OpenAI 基底会把音乐模型
+    // 悄悄变成 TTS 合同，这里退回「完全自定义」基底并保留 audio.music 能力声明。
+    const capabilityId = manifest.capabilities[0]?.id
+    if (capabilityId === 'audio.transcription') return openAiAudioTranscriptionBase(manifest)
+    if (capabilityId === 'audio.music') return customBase(manifest)
+    return openAiAudioBase(manifest)
   }
   return openAiImageBase(manifest)
 }
@@ -398,6 +409,14 @@ function openAiAudioTranscriptionBase(manifest: MediaModelManifest): MediaModelM
           title: '音频语言',
           description: 'ISO-639-1 语言代码（如 zh、en）；留空由服务端自动检测',
         },
+        // 画布识别节点的通用兜底字段一直提供 response_format，但基底合同里没有对应
+        // multipart 段，用户选中后会被静默丢弃；此处补上声明与投放，留空时编译器跳过该段。
+        response_format: {
+          type: 'string',
+          title: '返回格式',
+          enum: ['json', 'verbose_json', 'srt', 'vtt'],
+          description: 'OpenAI 兼容取值；留空用服务端默认。是否为渠道支持以厂商文档为准',
+        },
       },
     },
     defaults: {},
@@ -430,6 +449,7 @@ function openAiAudioTranscriptionBase(manifest: MediaModelManifest): MediaModelM
             // 留空时编译器自动跳过该段。
             { name: 'prompt', kind: 'text', value: '{{prompt}}' },
             { name: 'language', kind: 'text', value: '{{params.language}}' },
+            { name: 'response_format', kind: 'text', value: '{{params.response_format}}' },
           ],
         },
       },

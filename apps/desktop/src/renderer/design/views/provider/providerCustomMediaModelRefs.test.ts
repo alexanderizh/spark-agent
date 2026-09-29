@@ -86,4 +86,38 @@ describe('appendCustomMediaModelRef', () => {
       response: { kind: 'binary_response' },
     })
   })
+
+  it('generates the capability-specific contract for custom voice models', () => {
+    const [speech] = appendCustomMediaModelRef([], {
+      mediaApiType: 'sync',
+      mediaProvider: 'custom',
+      modelId: 'my-custom-tts-2',
+      modelType: 'voice',
+      audioCapabilities: ['audio.speech'],
+    })
+    const [music] = appendCustomMediaModelRef([], {
+      mediaApiType: 'sync',
+      mediaProvider: 'custom',
+      modelId: 'my-custom-music',
+      modelType: 'voice',
+      audioCapabilities: ['audio.music'],
+    })
+    const [asr] = appendCustomMediaModelRef([], {
+      mediaApiType: 'sync',
+      mediaProvider: 'custom',
+      modelId: 'my-custom-asr',
+      modelType: 'voice',
+      audioCapabilities: ['audio.transcription'],
+    })
+
+    expect(speech?.manifest?.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.speech',
+    ])
+    expect(music?.manifest?.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.music',
+    ])
+    expect(asr?.manifest?.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.transcription',
+    ])
+  })
 })

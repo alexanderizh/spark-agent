@@ -217,11 +217,11 @@ describe('MinimaxHailuoMediaAdapter', () => {
       new MinimaxHailuoMediaAdapter().invoke(
         makeInput({ outputDir: tmpDir, modelParams: { width: 1537, height: 1024 } }),
         makeContext({
-        defaultModel: manifest.modelId,
-        fetch: fetchImpl,
-        mediaManifest: manifest,
-        mediaManifestCapability: cap,
-      }),
+          defaultModel: manifest.modelId,
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
       ),
     ).rejects.toThrow('8 的倍数')
   })
@@ -388,11 +388,11 @@ describe('MinimaxHailuoMediaAdapter', () => {
       new MinimaxHailuoMediaAdapter().invoke(
         makeInput({ outputDir: tmpDir }),
         makeContext({
-        defaultModel: manifest.modelId,
-        fetch: fetchImpl,
-        mediaManifest: manifest,
-        mediaManifestCapability: cap,
-      }),
+          defaultModel: manifest.modelId,
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
       ),
     ).rejects.toMatchObject({
       name: 'MediaProviderError',
@@ -1206,11 +1206,11 @@ describe('MinimaxHailuoMediaAdapter', () => {
           outputDir: tmpDir,
         }),
         makeContext({
-        defaultModel: manifest.modelId,
-        fetch: fetchImpl,
-        mediaManifest: manifest,
-        mediaManifestCapability: cap,
-      }),
+          defaultModel: manifest.modelId,
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
       ),
     ).rejects.toMatchObject({ name: 'MediaProviderError', code: 'invalid_input' })
   })
@@ -1362,5 +1362,284 @@ describe('MinimaxHailuoMediaAdapter', () => {
       name: 'MediaProviderError',
       normalized: { code: 'invalid_parameter_value', providerCode: '2013' },
     })
+  })
+
+  // 真机案例回归：自建 OpenAI 兼容语音端点（/audio/speech 返回 WAV 裸流）+ MiniMax 协议，
+  // fetchJson 解析 JSON 失败会把字节当字符串返回，data.audio 必然缺失。
+  // 旧行为把整串二进制 JSON.stringify 进错误消息（约 800 字符乱码上屏并落库）。
+  it('audio.speech(T2A) 收到音频裸流（非 JSON）: 报错可读且不回显二进制字节', async () => {
+    const manifest = findManifest('minimax:speech-2.8-hd')
+    const cap = manifest.capabilities.find((c) => c.id === 'audio.speech')!
+    const wavHead = 'RIFF\u0000\u0001\u0000\u0000WAVEfmt \u0010\u0000\u0000\u0000data'
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/t2a_v2')) return rawJsonRes(`${wavHead}${'x'.repeat(64)}`)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const invoke = () =>
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_audio',
+          capability: 'audio.speech',
+          prompt: '你好，你是什么狗吧',
+          modelParams: { voice: 'male-qn-qingse' },
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          defaultModel: manifest.modelId,
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
+      )
+
+    const error = (await invoke().catch((err: unknown) => err)) as Error
+    expect(error).toBeInstanceOf(MediaProviderError)
+    expect(error.message).toContain('二进制音频响应')
+    // 修复指引必须在消息里（用户据此把渠道改成自定义协议）
+    expect(error.message).toContain('自定义')
+    // 关键：不再回显原始字节（RIFF 头与转义 NUL 都不应出现）
+    expect(error.message).not.toContain('RIFF')
+    expect(error.message).not.toContain('\\u0000')
+    expect(error.message.length).toBeLessThan(400)
+  })
+
+  // ─── 语音识别（asr-1.0）参数投放 ────────────────────────────────────────────
+  // 画布识别节点的通用兜底字段与 MCP transcribe_audio 都会给 language / response_format，
+  // 但 manifest 原先 paramSchema 为空且 additionalProperties:false（strict 裁剪），参数会被
+  // 静默丢弃；这组用例锁住「声明了的参数必须真的投递到正确位置」。
+
+  function asrSetup(): {
+    manifest: MediaModelManifest
+    capability: NonNullable<MediaModelManifest['capabilities'][number]>
+    audioPath: string
+  } {
+    const manifest = findManifest('minimax:asr-1.0')
+    const capability = manifest.capabilities.find((c) => c.id === 'audio.transcription')
+    if (!capability) throw new Error('asr capability not found')
+    const audioPath = path.join(tmpDir, 'sample.wav')
+    writeFileSync(audioPath, Buffer.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00]))
+    return { manifest, capability, audioPath }
+  }
+
+  function multipartBodyText(body: unknown): string {
+    if (typeof body === 'string') return body
+    if (body instanceof Uint8Array) return Buffer.from(body).toString('utf8')
+    return ''
+  }
+
+  /** 取 multipart 文本段的取值（file 段带 filename/Content-Type，不会被误匹配）。 */
+  function multipartFieldValue(text: string, name: string): string | undefined {
+    return text.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`))?.[1]
+  }
+
+  function asrContext(
+    setup: ReturnType<typeof asrSetup>,
+    fetchImpl: FetchMock,
+  ): MediaProviderContext {
+    return makeContext({
+      defaultModel: setup.manifest.modelId,
+      fetch: fetchImpl,
+      mediaManifest: setup.manifest,
+      mediaManifestCapability: setup.capability,
+    })
+  }
+
+  function asrInput(
+    setup: ReturnType<typeof asrSetup>,
+    modelParams?: Record<string, unknown>,
+  ): MediaGenerateInput {
+    return makeInput({
+      operation: 'audio_transcribe',
+      capability: 'audio.transcription',
+      inputFiles: [{ type: 'audio', path: setup.audioPath }],
+      outputDir: tmpDir,
+      ...(modelParams ? { modelParams } : {}),
+    })
+  }
+
+  it('asr-1.0 manifest 用 canonical 键声明 language / responseFormat / timestamp_level', () => {
+    // additionalProperties:false 会在 strict 裁剪下丢弃未声明参数，因此声明是投放的前提；
+    // 且键名必须是 canonical —— compiler/MCP 都先在 canonical 空间归一，用原生键声明
+    // 会让 strict 裁剪把归一后的 responseFormat 当未声明字段丢掉（audit 有硬门禁）。
+    const setup = asrSetup()
+    const properties = (setup.capability.paramSchema as { properties?: Record<string, unknown> })
+      .properties
+    expect(Object.keys(properties ?? {}).sort()).toEqual([
+      'language',
+      'responseFormat',
+      'timestamp_level',
+    ])
+    // aliases 负责把 canonical 映射回 provider 原生字段，缺了它请求体里不会有 response_format。
+    expect(setup.capability.aliases).toMatchObject({ responseFormat: 'response_format' })
+  })
+
+  it('asr-1.0 两种拼写都能落到原生 form 字段（canvas 提交 canonical）', async () => {
+    // canvas 读 manifest schema 渲染字段，提交的是 canonical 名；MCP / 旧调用方写原生名。
+    // 两条路径必须都能到达 provider。
+    const setup = asrSetup()
+    const callWith = async (modelParams: Record<string, unknown>) => {
+      const fetchImpl = mockFetch(async (url) => {
+        if (url.endsWith('/v1/speech_to_text'))
+          return rawJsonRes('00:00:00.000 --> 00:00:01.000\n嗨')
+        throw new Error(`unexpected fetch ${url}`)
+      })
+      await new MinimaxHailuoMediaAdapter().invoke(
+        asrInput(setup, modelParams),
+        asrContext(setup, fetchImpl),
+      )
+      const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/speech_to_text'))?.[1]
+      return multipartBodyText(post?.body)
+    }
+
+    expect(multipartFieldValue(await callWith({ responseFormat: 'srt' }), 'response_format')).toBe(
+      'srt',
+    )
+    expect(multipartFieldValue(await callWith({ response_format: 'vtt' }), 'response_format')).toBe(
+      'vtt',
+    )
+    // 两种拼写同时出现（画布参数历史残留旧键）时以 canonical 为准，且与属性顺序无关。
+    expect(
+      multipartFieldValue(
+        await callWith({ response_format: 'vtt', responseFormat: 'srt' }),
+        'response_format',
+      ),
+    ).toBe('srt')
+    expect(
+      multipartFieldValue(
+        await callWith({ responseFormat: 'srt', response_format: 'vtt' }),
+        'response_format',
+      ),
+    ).toBe('srt')
+  })
+
+  it('asr-1.0 未传可选参数时保持历史请求：json + stream=false，不发 language 头', async () => {
+    const setup = asrSetup()
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/speech_to_text')) {
+        return jsonRes({ text: '你好世界', duration: 1.25, trace_id: 't1' })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      asrInput(setup),
+      asrContext(setup, fetchImpl),
+    )
+
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/speech_to_text'))?.[1]
+    const headers = (post?.headers ?? {}) as Record<string, string>
+    expect(headers.language).toBeUndefined()
+    const body = multipartBodyText(post?.body)
+    expect(multipartFieldValue(body, 'model')).toBe('asr-1.0')
+    expect(multipartFieldValue(body, 'response_format')).toBe('json')
+    expect(multipartFieldValue(body, 'stream')).toBe('false')
+    // language 官方定义为请求头，绝不能出现在 form 里
+    expect(body).not.toContain('name="language"')
+    expect(body).not.toContain('name="timestamp_level"')
+    expect(out.assets[0]?.contentText).toBe('你好世界')
+    expect(out.assets[0]?.filePath?.endsWith('.txt')).toBe(true)
+  })
+
+  it('asr-1.0 的 language 走请求头而非 form 字段，auto / 空值不发头', async () => {
+    const setup = asrSetup()
+    const callWith = async (language?: string) => {
+      const fetchImpl = mockFetch(async (url) => {
+        if (url.endsWith('/v1/speech_to_text')) return jsonRes({ text: 'ok' })
+        throw new Error(`unexpected fetch ${url}`)
+      })
+      await new MinimaxHailuoMediaAdapter().invoke(
+        asrInput(setup, language === undefined ? undefined : { language }),
+        asrContext(setup, fetchImpl),
+      )
+      const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/speech_to_text'))?.[1]
+      return {
+        headers: (post?.headers ?? {}) as Record<string, string>,
+        body: multipartBodyText(post?.body),
+      }
+    }
+
+    const zh = await callWith('zh')
+    expect(zh.headers.language).toBe('zh')
+    expect(zh.body).not.toContain('name="language"')
+
+    // auto / 空值 = 不指定语言，由服务端做混合语言识别（历史行为）
+    expect((await callWith('auto')).headers.language).toBeUndefined()
+    expect((await callWith('')).headers.language).toBeUndefined()
+  })
+
+  it('asr-1.0 的 response_format 与 timestamp_level 进 form，仅非 json 才发时间戳粒度', async () => {
+    const setup = asrSetup()
+    const callWith = async (modelParams: Record<string, unknown>) => {
+      const fetchImpl = mockFetch(async (url) => {
+        if (url.endsWith('/v1/speech_to_text')) {
+          return jsonRes({ text: '分段结果', segments: [] })
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      })
+      const out = await new MinimaxHailuoMediaAdapter().invoke(
+        asrInput(setup, modelParams),
+        asrContext(setup, fetchImpl),
+      )
+      const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/speech_to_text'))?.[1]
+      return { body: multipartBodyText(post?.body), out }
+    }
+
+    const verbose = await callWith({ response_format: 'verbose_json', timestamp_level: 'word' })
+    expect(multipartFieldValue(verbose.body, 'response_format')).toBe('verbose_json')
+    expect(multipartFieldValue(verbose.body, 'timestamp_level')).toBe('word')
+    expect(verbose.out.assets[0]?.contentText).toBe('分段结果')
+
+    // json 下官方会忽略 timestamp_level，直接不发，保持请求最小
+    const json = await callWith({ response_format: 'json', timestamp_level: 'word' })
+    expect(json.body).not.toContain('name="timestamp_level"')
+  })
+
+  it('asr-1.0 的 srt 返回是 text/plain 裸文本，按字幕扩展名落盘', async () => {
+    const setup = asrSetup()
+    const srt = '1\n00:00:00,100 --> 00:00:01,660\n嘎嘎会，可以，这把稳了。\n'
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/speech_to_text')) return rawJsonRes(srt)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      asrInput(setup, { response_format: 'srt' }),
+      asrContext(setup, fetchImpl),
+    )
+
+    expect(out.assets[0]?.contentText).toBe(srt.trim())
+    expect(out.assets[0]?.filePath?.endsWith('.srt')).toBe(true)
+    expect(readFileSync(out.assets[0]?.filePath ?? '', 'utf8')).toBe(srt.trim())
+  })
+
+  it('asr-1.0 在 json 契约下拿到非 JSON 响应时报错，不把脏响应当转写结果落盘', async () => {
+    const setup = asrSetup()
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/speech_to_text')) return rawJsonRes('<html>gateway error</html>')
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    const error = (await new MinimaxHailuoMediaAdapter()
+      .invoke(asrInput(setup), asrContext(setup, fetchImpl))
+      .catch((err: unknown) => err)) as Error
+
+    expect(error).toBeInstanceOf(MediaProviderError)
+    expect(error.message).toContain('非 JSON 响应')
+  })
+
+  it('asr-1.0 收到契约外的 response_format 时回落 json，不把请求打成 400', async () => {
+    const setup = asrSetup()
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/speech_to_text')) return jsonRes({ text: 'ok' })
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    await new MinimaxHailuoMediaAdapter().invoke(
+      asrInput(setup, { response_format: 'text' }),
+      asrContext(setup, fetchImpl),
+    )
+
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/speech_to_text'))?.[1]
+    expect(multipartFieldValue(multipartBodyText(post?.body), 'response_format')).toBe('json')
   })
 })

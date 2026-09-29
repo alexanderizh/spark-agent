@@ -245,3 +245,26 @@ paramPolicy: {
 - 关键陷阱：**不能把完整 URL 当作 `apiEndpoint` 传给 `resolveUrl(base, endpoint)` 之类的拼接器**——相对 endpoint 会被二次拼接（`.../generate/images/generations`）。正确做法是保留 base 语义给从属请求，只在最终主调用处替换整个 URL。
 - `normalizeProviderConfig`（MCP 子进程）里 bailian 的 base 改写（补 `/services/aigc`）等渠道级归一化，在「完整 URL」模式下必须跳过，否则用户填的原文会被改写。
 - 拉取模型列表在「完整 URL」下无法可靠派生 `/models` 地址，走既有 `isFullUrl` 候选探测；表单保存、测试连接、拉模型、自动拉取四处载荷必须共用同一个 effective 值（`isEndpointFullUrlEffective`），避免「文本模式开开关→切媒体类型→不保存」的残留值泄进请求。
+
+## 十四、自建语音渠道：协议与端点必须匹配（真机案例）
+
+- 症状：快速创作「语音」模式任务失败，任务详情里刷出 `No audio in MiniMax response:` + 约 800 字符乱码（内容其实是 WAV 裸流的 `RIFF/WAVE/fmt/data` 头被按 UTF-8 解码）。
+- 根因链：dev 里建的「自建文字转语音」渠道 `mediaProvider = minimax-hailuo` + `apiEndpointFullUrl = true`，端点填的是自建网关的 OpenAI 兼容 `/v1/audio/speech`（直返音频裸流）。主调用确实原样打到了该地址，但请求体与响应解析都按 MiniMax T2A 走：`fetchJson` 对非 JSON 响应返回**字符串**，`data.audio` 必然缺失 → adapter 抛错。即「协议按 MiniMax 发 JSON、端点按 OpenAI 收二进制」的错配。
+- 正确配法：自建 / 中转的 OpenAI 兼容语音端点要用**「自定义」协议**（`custom` + 语音合成能力），生成的内联 manifest 端点就是 `/audio/speech`、响应 `binary_response`（见 `custom-media-manifest.ts` 的 `basicCustomVoiceManifest`），不需要「完整 URL」开关。MiniMax 官方 T2A 是 `/v1/t2a_v2`、Music 是 `/v1/music_generation`、ASR 是 `/v1/speech_to_text`。
+- 本轮修的两处（避免同类误配再被误导 / 再糊一屏二进制）：
+  - `providerMediaConfig.ts` 的 voice 分支补上按协议的「实际请求地址」映射：minimax-hailuo → `/v1/t2a_v2`（music / asr 分别 `/v1/music_generation`、`/v1/speech_to_text`）、volcengine-speech → `/api/v3/tts/unidirectional`（speech）/ `/api/v3/tts/create`（music）、xai → `/tts`；自定义 / OpenAI 兼容仍为 `/audio/speech`。缺这条分支时预览会把所有语音渠道都显示成 `/audio/speech`。
+  - `minimax-hailuo-media.adapter.ts` 的 `describeNonJsonAudioBody`：非 JSON body 落库 / 上屏前先判定是否二进制（RIFF/OggS/fLaC/ID3 签名、C0 控制字符、U+FFFD），是则只输出「类型 + 约 N 字节 + 改用自定义协议的指引」，不再 `JSON.stringify` 回显字节。
+- 判定口径：拿不准渠道该用哪个协议时，先看表单里的「实际请求地址」预览是否等于网关真实端点；预览与网关协议不一致就是配错协议了。
+
+## 十五、渠道 IPC 的错误必须在边界转成 SparkError，否则用户只看到通用文案
+
+- 症状：渠道页操作失败，toast 永远是「操作未完成，请稍后重试或查看详情。」，真实原因（`音色复刻失败：HTTP 400 · 1210 参数错误`、`示例音频仅支持 mp3 / wav 格式`、`未配置 API Key，无法音色目录同步`）只落在主进程日志里。
+- 根因：`apps/desktop/src/main/ipc/typed-ipc.ts` 的 `handleIpcError` 只识别 `SparkError`（`isSparkError` 就是 `instanceof SparkError`）。多媒体链路抛的 `MediaProviderError extends Error`（**不是** SparkError），服务层前置校验抛的也是普通 `Error`——两者都会落到最后的「未知错误」分支，message 被替换成固定文案。
+- 这条坑已出现三次，每次都是新通道照抄旧通道的 `throw err` 写法：
+  - `registerProviderFilesIpc.ts` 的 `runFilesTask`（窄：只转 MediaProviderError，并按 HTTP 状态 / 错误码归类）
+  - `registerTeamRegistryIpc.ts` 的 `runTeamRegistryTask`（宽：任何 Error 都透传 message）
+  - `registerVideoChannelTaskIpc.ts` 的 `runVideoTask`（同 Files）
+- 约定：**新增任何会抛 MediaProviderError 或业务 Error 的 IPC 通道，必须包一层转换**。推荐组合两家之长：MediaProviderError 按状态码归类，SparkError 原样透传，其余 Error 透传 message；非 Error 抛出物才退回固定文案（避免把 `[object Object]` 透给渲染层）。
+- 状态码只补一次：client 常已把 `HTTP 400` 写进 message，再无条件追加 `（HTTP 400）` 会得到「HTTP 400 · 1210 参数错误（HTTP 400）」这种重复文案。
+- 参考实现与用例：`apps/desktop/src/main/ipc/registerProviderVoiceIpc.ts`（`runVoiceTask` + 独立测试文件，覆盖 6 种映射分支）。
+- 传输层失败也要归一：`AbortSignal.timeout` 抛的是 `DOMException: The operation was aborted due to timeout`，Node fetch 断网抛 `TypeError: fetch failed`，都不经过非 2xx 分支。它们原样冒到渠道页同样没有信息量，应在 HTTP 客户端里就转成 MediaProviderError（超时给中文秒数，网络失败复用 `@spark/shared` 的 `describeNetworkError`）。

@@ -1,6 +1,8 @@
 /** Shared provider schemas extracted from the built-in manifest catalog. */
 
 import type { MediaErrorContract, MediaModelParamPolicy } from './media-model-contract.js'
+// 仅类型导入（编译期擦除），不会形成运行时循环依赖。
+import type { MediaInvocationRequest } from './media-model-manifest.js'
 
 /**
  * Google Generative AI (Gemini / Veo) 错误响应归一规则。
@@ -261,7 +263,8 @@ export const minimaxSpeechSchema = {
     voice: {
       type: 'string',
       title: '音色 ID',
-      description: '映射到 MiniMax voice_setting.voice_id。完整列表见 platform.minimaxi.com/docs/faq/system-voice-id',
+      description:
+        '映射到 MiniMax voice_setting.voice_id。完整列表见 platform.minimaxi.com/docs/faq/system-voice-id',
       // 精选高频系统音色（来源：系统音色列表 FAQ，327 个里取中文高频 8 个）。
       // x-allow-custom 让画布渲染为 AutoComplete：既可选推荐值，也可输入复刻/文生音色 ID。
       examples: [
@@ -282,7 +285,17 @@ export const minimaxSpeechSchema = {
     emotion: {
       type: 'string',
       title: '情绪',
-      enum: ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm', 'fluent', 'whisper'],
+      enum: [
+        'happy',
+        'sad',
+        'angry',
+        'fearful',
+        'disgusted',
+        'surprised',
+        'calm',
+        'fluent',
+        'whisper',
+      ],
       description: 'fluent/whisper 仅 speech-2.6 系生效；speech-2.8 系不支持 whisper（来源 §1.2）',
     },
     language_boost: {
@@ -310,7 +323,13 @@ export const minimaxSpeechSchema = {
     },
     // output_format 是 adapter 内部落盘策略（url=下载链接/hex=base64 内联），
     // 非用户可调参数，标记 x-hidden 在参数面板隐藏。
-    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'url', 'x-hidden': true },
+    output_format: {
+      type: 'string',
+      title: '输出格式',
+      enum: ['url', 'hex'],
+      default: 'url',
+      'x-hidden': true,
+    },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
     subtitle_enable: { type: 'boolean', title: '字幕', default: false },
     subtitle_type: {
@@ -328,7 +347,13 @@ export const minimaxMusicSchema = {
   additionalProperties: true,
   properties: {
     lyrics: { type: 'string', title: '歌词' },
-    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex', 'x-hidden': true },
+    output_format: {
+      type: 'string',
+      title: '输出格式',
+      enum: ['url', 'hex'],
+      default: 'hex',
+      'x-hidden': true,
+    },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
     lyrics_optimizer: { type: 'boolean', title: '歌词优化', default: false },
     is_instrumental: { type: 'boolean', title: '纯音乐', default: false },
@@ -339,6 +364,106 @@ export const minimaxMusicSchema = {
       default: 'mp3',
       description: '音乐生成仅支持 mp3/wav/pcm（来源 §6.1 audio_setting.format）',
     },
+  },
+}
+
+/**
+ * MiniMax 语音识别（asr-1.0）参数 schema。
+ * 来源 platform.minimax.cn/docs/api-reference/speech-to-text（2026-09-30 核对）。
+ *
+ * 三个字段的**投放位置各不相同**，是本接口最易接错的地方：
+ * - `language` 官方定义为**请求头**（请求头章节，不是 form 字段），由 adapter 单独投放；
+ * - `responseFormat` / `timestamp_level` 是 multipart form 字段；
+ * - `timestamp_level` 仅在 responseFormat ∈ {verbose_json, srt, vtt} 时生效（json 下传了会被忽略）。
+ *
+ * 键名遵循内置 manifest 约定：`properties` 与 `defaults` 用 **canonical** 键
+ * （responseFormat，见 CANONICAL_ALIASES_FALLBACK），provider 原生名 `response_format`
+ * 只出现在 capability.aliases 右侧；`language` / `timestamp_level` 无归一映射，本身即 canonical。
+ * 用原生键写 schema 会在 strict 裁剪下被静默丢弃（audit: media-manifest-parameter-audit）。
+ *
+ * `stream` 不开放：官方流式是 SSE（text/event-stream），媒体层暂无对应响应通道，
+ * adapter 固定按 stream=false 同步调用。
+ */
+export const minimaxAsrParamSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    language: {
+      type: 'string',
+      title: '音频语言',
+      // 官方仅用它「提示音频中的主要语言」，留空/auto 启用混合语言识别（历史默认行为）。
+      // x-allow-custom 让画布渲染为 AutoComplete：既可选推荐值，也可填官方后续新增的语言标签。
+      examples: [
+        'zh',
+        'yue',
+        'en',
+        'ja',
+        'ko',
+        'th',
+        'vi',
+        'id',
+        'ms',
+        'fil',
+        'ar',
+        'tr',
+        'fr',
+        'de',
+        'es',
+        'it',
+        'pt',
+        'pl',
+        'ru',
+        'uk',
+      ],
+      'x-allow-custom': true,
+      description: 'BCP-47 语言标签；留空或 auto 时由服务端做混合语言识别。',
+    },
+    responseFormat: {
+      type: 'string',
+      title: '返回格式',
+      enum: ['json', 'verbose_json', 'srt', 'vtt'],
+      default: 'json',
+      description:
+        'json=纯文本；verbose_json=附分段/时间戳/说话人数；srt / vtt=字幕文本（映射到原生 response_format）。',
+    },
+    timestamp_level: {
+      type: 'string',
+      title: '时间戳粒度',
+      // 官方「空值或 sentence」等价，因此不列空串选项（否则画布会多出一个空白项）；
+      // 不选即不投递该字段。
+      enum: ['sentence', 'word'],
+      description: '仅在返回格式为 verbose_json / srt / vtt 时生效；word 为字/词级时间戳。',
+    },
+  },
+} as const
+
+/**
+ * MiniMax 语音识别（asr-1.0）的 Contract V2 请求合同（POST /v1/speech_to_text，multipart）。
+ *
+ * 必须显式声明 file 段：只靠 legacy `contentType:'multipart'` 只会产出 text parts，
+ * 会发出「没有文件」的请求并必然被渠道拒绝 —— MCP 的 transcribe_audio 正是按这份
+ * request 编译（专用 adapter 走自己的拼装，不读这里）。
+ *
+ * - `language` 官方定义为**请求头**而非 form 字段，故只在 headers 出现、绝不落 form；
+ *   空值时两侧渲染都会跳过该头，回落官方「混合语言识别」。
+ * - `responseFormat` 是 canonical 键，由 capability.aliases 映射回原生 `response_format`。
+ * - `timestamp_level` 仅对 verbose_json / srt / vtt 生效（json 下官方忽略）。
+ * - `stream=false` 显式投递：官方默认即 false，避免上游默认值变化时静默切成 SSE。
+ */
+export const minimaxAsrInvocationRequest: MediaInvocationRequest = {
+  method: 'POST',
+  endpoint: '/v1/speech_to_text',
+  auth: { kind: 'inherit' },
+  headers: { language: '{{params.language}}' },
+  body: {
+    kind: 'multipart',
+    parts: [
+      { name: 'file', kind: 'file', value: '{{audio}}' },
+      { name: 'model', kind: 'text', value: '{{modelId}}' },
+      { name: 'response_format', kind: 'text', value: '{{params.responseFormat}}' },
+      { name: 'timestamp_level', kind: 'text', value: '{{params.timestamp_level}}' },
+      { name: 'stream', kind: 'text', value: 'false' },
+    ],
   },
 }
 
@@ -384,7 +509,8 @@ export const bailianQwenTtsSchema = {
     instructions: {
       type: 'string',
       title: '指令',
-      description: '设置指令，控制合成效果。最大 1600 Token，仅中/英，仅 qwen3-tts-instruct-flash 系（§2.4）',
+      description:
+        '设置指令，控制合成效果。最大 1600 Token，仅中/英，仅 qwen3-tts-instruct-flash 系（§2.4）',
     },
     optimize_instructions: {
       type: 'boolean',
@@ -408,7 +534,8 @@ export const bailianCosyvoiceTtsSchema = {
     voice: {
       type: 'string',
       title: '音色',
-      description: 'CosyVoice 不支持系统音色，须用声音复刻/声音设计音色 ID。完整列表见百炼控制台「语音技术 > 声音复刻」（§3.4）',
+      description:
+        'CosyVoice 不支持系统音色，须用声音复刻/声音设计音色 ID。完整列表见百炼控制台「语音技术 > 声音复刻」（§3.4）',
       // longanhuan_v3.6 为文档官方复刻音色示例（来源 bailian/tts.md）。
       // CosyVoice 明确不支持系统音色（§8），仅可用复刻/设计音色 ID。
       examples: ['longanhuan_v3.6'],
@@ -478,7 +605,24 @@ export const bailianCosyvoiceTtsSchema = {
       title: '目标语言',
       items: {
         type: 'string',
-        enum: ['zh', 'en', 'fr', 'de', 'ja', 'ko', 'ru', 'pt', 'th', 'id', 'vi', 'es', 'it', 'ms', 'fil', 'ar'],
+        enum: [
+          'zh',
+          'en',
+          'fr',
+          'de',
+          'ja',
+          'ko',
+          'ru',
+          'pt',
+          'th',
+          'id',
+          'vi',
+          'es',
+          'it',
+          'ms',
+          'fil',
+          'ar',
+        ],
       },
       description: '目标语言数组，当前版本仅处理第一个元素（§3.4）',
     },
@@ -496,7 +640,10 @@ export const bailianCosyvoiceTtsSchema = {
 export const volcengineAudioSchema = {
   type: 'object',
   properties: {
-    text_prompt: { type: 'string', description: '自然语言音频生成提示词（必选），描述音效/人声/配乐' },
+    text_prompt: {
+      type: 'string',
+      description: '自然语言音频生成提示词（必选），描述音效/人声/配乐',
+    },
     speaker: {
       type: 'string',
       description: '音色 ID；与 audio_data/audio_url 三者互斥，仅填其一。完整列表见控制台 > 音色库',

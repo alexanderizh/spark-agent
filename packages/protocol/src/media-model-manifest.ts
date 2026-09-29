@@ -38,6 +38,8 @@ import {
   minimaxImage01LiveSchema,
   minimaxSpeechSchema,
   minimaxMusicSchema,
+  minimaxAsrParamSchema,
+  minimaxAsrInvocationRequest,
   minimaxHailuoVideoSchema,
   minimaxH3VideoSchema,
   minimaxH3VideoT2VSchema,
@@ -3603,18 +3605,29 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           types: ['text'] as MediaManifestOutputKind[],
           mimeTypes: ['text/plain'],
         },
-        // 官方必填仅 model+file；response_format 固定 json（verbose_json/srt/vtt 会启用
-        // 说话人分离且与 stream 互斥，桌面转写只需要 text），不开放用户可调参数。
-        paramSchema: { type: 'object', additionalProperties: false, properties: {} },
+        /* 官方必填仅 model+file，其余为可选。language / responseFormat / timestamp_level
+           已开放（见 minimaxAsrParamSchema）；注意 language 官方定义为请求头而非 form 字段，
+           由 adapter 单独投放。stream 不开放（SSE 无承载通道）。
+
+           aliases 把 canonical 参数名映射回 provider 原生字段：schema 与 defaults 按内置
+           manifest 约定用 canonical 键，而无 strict 裁剪的调用方（canvas 预编译、MCP prune）
+           都先在 canonical 空间归一，缺了这条映射就会出现「schema 声明了但请求里没有」。 */
+        paramSchema: minimaxAsrParamSchema as unknown as Record<string, unknown>,
         defaults: {},
+        aliases: { responseFormat: 'response_format' },
       },
     ],
     invocation: {
       mode: 'sync' as MediaInvocationMode,
       endpoint: '/v1/speech_to_text',
       method: 'POST' as const,
+      // legacy 镜像字段：承载契约展示与调试链路；真实请求由下方 request 编译。
       contentType: 'multipart' as const,
       requestTemplate: { model: '{{modelId}}' },
+      /* Contract V2 请求合同见共享部件（minimaxAsrInvocationRequest）；
+         language 是请求头而非 form 字段，MCP 只读 legacy invocation.headers，故在此镜像一份。 */
+      request: minimaxAsrInvocationRequest,
+      headers: { language: '{{params.language}}' },
       response: { kind: 'url' as const, jsonPaths: ['text'], download: false },
     },
     docs: { sourceUrls: ['https://platform.minimax.cn/docs/api-reference/speech-to-text'] },

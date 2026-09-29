@@ -2201,6 +2201,152 @@ describe('ProviderEditPanel 渠道动态音色候选', () => {
   })
 })
 
+describe('ProviderEditPanel 自定义语音模型', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  const customVoiceProfile = {
+    id: 'provider-custom-voice',
+    name: '自建语音',
+    provider: 'openai',
+    modelType: 'voice',
+    defaultModel: '',
+    modelIds: [],
+    apiEndpoint: 'http://127.0.0.1:8000/v1',
+    mediaProvider: 'custom',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [],
+    supportsMillionContext: false,
+    isDefault: false,
+    enabled: true,
+    keystoreRef: 'custom-provider-voice',
+    createdAt: '',
+    updatedAt: '',
+  }
+
+  async function renderPanel(profileId: string, profile: Record<string, unknown>) {
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-voice-key' })),
+    )
+    // 保存用的 spy 必须在 render 之前注册：组件在每次 render 时取当前 invoke，
+    // 渲染后再替换会让点击「保存」沿用旧的桩函数（调用不会被记录）。
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible profileId={profileId} onClose={() => undefined} />)
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    return { updateProvider }
+  }
+
+  function setInputValue(input: HTMLInputElement, value: string) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  beforeEach(() => {
+    mocks.invokers.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    if (root) act(() => root?.unmount())
+    root = null
+    container.remove()
+  })
+
+  it('offers the manual custom model input for voice channels', async () => {
+    const { updateProvider } = await renderPanel('provider-custom-voice', customVoiceProfile)
+
+    // 回归：语音渠道此前不渲染该区块，用户无处填写自定义模型名。
+    expect(container.textContent).toContain('自定义模型 / 适配器')
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[placeholder="输入模型 ID 后按 Enter 添加"]',
+    )
+    expect(input).not.toBeNull()
+    act(() => {
+      setInputValue(input!, 'my-tts-v1')
+    })
+    const addButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '添加',
+    )
+    expect(addButton).toBeDefined()
+
+    await act(async () => {
+      addButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const request = updateProvider.mock.calls[0]?.[0] as
+      | { mediaModelRefs?: Array<Record<string, unknown>> }
+      | undefined
+    const refs = request?.mediaModelRefs ?? []
+    expect(refs).toHaveLength(1)
+    expect(refs[0]?.['modelId']).toBe('my-tts-v1')
+    const manifest = refs[0]?.['manifest'] as { capabilities?: Array<{ id: string }> } | undefined
+    expect(manifest?.capabilities?.map((capability) => capability.id)).toEqual(['audio.speech'])
+  })
+
+  it('MiniMax 语音渠道可同步音色目录（复刻入口仍仅智谱）', async () => {
+    const profile = {
+      ...customVoiceProfile,
+      id: 'provider-minimax-voice',
+      name: 'MiniMax 语音',
+      mediaProvider: 'minimax-hailuo',
+      mediaModelRefs: [
+        { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
+      ],
+      defaultModel: 'speech-2.8-hd',
+      modelIds: ['speech-2.8-hd'],
+      keystoreRef: 'minimax-provider-voice',
+    }
+    await renderPanel('provider-minimax-voice', profile)
+
+    expect(container.textContent).toContain('音色目录')
+    expect(container.textContent).toContain('同步音色')
+    expect(container.textContent).not.toContain('音色复刻')
+  })
+
+  it('adds a ref for a hand-typed default model instead of silently rewriting it', async () => {
+    const profile = { ...customVoiceProfile, defaultModel: 'my-tts-v2', modelIds: ['my-tts-v2'] }
+    const { updateProvider } = await renderPanel('provider-custom-voice', profile)
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const request = updateProvider.mock.calls[0]?.[0] as
+      | { defaultModel?: string; mediaModelRefs?: Array<Record<string, unknown>> }
+      | undefined
+    // 手填的默认模型必须原样保留，并被补进模型清单（否则主进程解析不到、快速创作选不到）。
+    expect(request?.defaultModel).toBe('my-tts-v2')
+    const refs = request?.mediaModelRefs ?? []
+    expect(refs).toHaveLength(1)
+    expect(refs[0]?.['modelId']).toBe('my-tts-v2')
+    expect(refs[0]?.['manifest']).toBeDefined()
+  })
+})
+
 /**
  * 智谱音色复刻弹窗的回归用例。
  *

@@ -69,11 +69,39 @@ import {
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import { fetchZhipuQuota } from './providerQuota/zhipuQuota.js'
 import { fetchZhipuVoiceCatalog } from './media/zhipu-voice-catalog.js'
+import { fetchMinimaxVoiceCatalog } from './media/minimax-voice-catalog.js'
 import { cloneZhipuVoice, deleteZhipuVoice } from './media/zhipu-voice-clone.client.js'
 import type { ZhipuVoiceApiTarget } from './media/zhipu-voice-api.js'
 import { runCliProbe, withDeadline } from './cli-probe-runner.js'
 
 const log = createLogger('provider.service')
+
+/**
+ * 音色目录同步支持的厂商。
+ *
+ * 只有提供「音色列表接口」的厂商才能接入：智谱（`GET /paas/v4/voice/list`）与
+ * MiniMax（`POST /v1/get_voice`）。其余 TTS 厂商（百炼 / 火山 / xAI 等）音色是固定
+ * 枚举、官方未提供可查询列表，因此不在这里登记（登记了也只会拿到静态 examples）。
+ */
+const VOICE_CATALOG_VENDORS = {
+  zhipu: { label: '智谱开放平台', manifests: ['zhipu:glm-tts'] },
+  'minimax-hailuo': {
+    label: 'MiniMax',
+    // 两个 Speech 2.8 档位都声明 audio.speech，候选需同时落盘，用户换档位后仍可选到音色。
+    manifests: ['minimax:speech-2.8-hd', 'minimax:speech-2.8-turbo'],
+  },
+} as const satisfies Record<string, { label: string; manifests: readonly string[] }>
+
+type VoiceCatalogVendor = keyof typeof VOICE_CATALOG_VENDORS
+
+const VOICE_CATALOG_VENDOR_LABELS = Object.values(VOICE_CATALOG_VENDORS).map(
+  (vendor) => vendor.label,
+)
+
+function voiceCatalogVendorOf(mediaProvider: string | null | undefined): VoiceCatalogVendor | null {
+  if (mediaProvider == null) return null
+  return mediaProvider in VOICE_CATALOG_VENDORS ? (mediaProvider as VoiceCatalogVendor) : null
+}
 const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
@@ -1546,8 +1574,8 @@ export class ProviderService {
    * 反馈失败原因，而不是静默降级。
    */
   async syncMediaVoiceCatalog(id: string): Promise<ProviderMediaSyncVoicesResponse> {
-    const target = await this.resolveZhipuVoiceChannel(id, '音色目录同步')
-    return { providerId: id, ...(await this.refreshZhipuVoiceCatalog(id, target)) }
+    const resolved = await this.resolveVoiceChannel(id, '音色目录同步')
+    return { providerId: id, ...(await this.refreshVoiceCatalog(id, resolved)) }
   }
 
   /**
@@ -1567,7 +1595,7 @@ export class ProviderService {
       ...(params.previewText ? { previewText: params.previewText } : {}),
       ...(params.sampleText ? { sampleText: params.sampleText } : {}),
     })
-    const snapshot = await this.refreshZhipuVoiceCatalog(params.providerId, target)
+    const snapshot = await this.refreshVoiceCatalog(params.providerId, { vendor: 'zhipu', target })
     return {
       providerId: params.providerId,
       ...snapshot,
@@ -1582,42 +1610,65 @@ export class ProviderService {
   ): Promise<ProviderMediaDeleteVoiceResponse> {
     const target = await this.resolveZhipuVoiceChannel(params.providerId, '删除音色')
     await deleteZhipuVoice({ ...target, voice: params.voice })
-    const snapshot = await this.refreshZhipuVoiceCatalog(params.providerId, target)
+    const snapshot = await this.refreshVoiceCatalog(params.providerId, { vendor: 'zhipu', target })
     return { providerId: params.providerId, ...snapshot, voice: params.voice.trim() }
   }
 
   /**
-   * 解析智谱音频渠道的调用目标（同步 / 复刻 / 删除共用）。
+   * 解析智谱音频渠道的调用目标（复刻 / 删除专用）。
    *
-   * 三个动作对渠道的前置要求一致：必须是智谱渠道、必须已配置 API Key，
-   * 且端点必须能推导出音色子路径（「完整 URL」渠道由 client 侧拒绝）。
+   * 这两个动作依赖智谱的音色上传 / 复刻接口，其他厂商没有等价实现，
+   * 因此仍然硬校验智谱渠道；只做「目录同步」的厂商请走 `resolveVoiceChannel`。
    */
   private async resolveZhipuVoiceChannel(id: string, action: string): Promise<ZhipuVoiceApiTarget> {
+    const resolved = await this.resolveVoiceChannel(id, action)
+    if (resolved.vendor !== 'zhipu') {
+      throw new Error(`当前渠道不支持${action}（仅智谱开放平台提供音色复刻接口）`)
+    }
+    return resolved.target
+  }
+
+  /**
+   * 解析「支持音色目录同步」的渠道目标。
+   *
+   * 前置要求：必须是已接入音色列表接口的厂商、必须已配置 API Key，
+   * 且端点必须能推导出音色子路径（「完整 URL」渠道由各 client 侧拒绝）。
+   */
+  private async resolveVoiceChannel(
+    id: string,
+    action: string,
+  ): Promise<{ vendor: VoiceCatalogVendor; target: ZhipuVoiceApiTarget }> {
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
-    if (config.mediaProvider !== 'zhipu') {
-      throw new Error(`当前渠道不支持${action}（仅智谱开放平台提供音色接口）`)
+    const vendor = voiceCatalogVendorOf(config.mediaProvider)
+    if (!vendor) {
+      throw new Error(
+        `当前渠道不支持${action}（已接入音色接口的厂商：${VOICE_CATALOG_VENDOR_LABELS.join('、')}）`,
+      )
     }
     if (!row.keystore_ref) throw new Error(`未配置 API Key，无法${action}`)
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
     if (!apiKey) throw new Error('API Key 未在钥匙串中找到')
     return {
-      apiEndpoint: config.mediaApiEndpoint ?? config.apiEndpoint ?? '',
-      apiKey,
-      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+      vendor,
+      target: {
+        apiEndpoint: config.mediaApiEndpoint ?? config.apiEndpoint ?? '',
+        apiKey,
+        ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+      },
     }
   }
 
   /**
-   * 拉取音色目录并写入 profile 的动态参数候选，返回落库后的候选快照。
+   * 拉取音色目录并写入 profile 的动态参数候选（按厂商选择接口与落点）。
    *
-   * 候选固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）。
-   * 合并基准在写入前重新读取，避免用动作开始前的旧快照覆盖期间的其他配置写入。
+   * 智谱固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）；
+   * MiniMax 同时挂到两个 Speech 2.8 模型上，避免用户选的档位（hd / turbo）拿不到候选。
    */
-  private async refreshZhipuVoiceCatalog(
+  private async refreshVoiceCatalog(
     id: string,
-    target: ZhipuVoiceApiTarget,
+    resolved: { vendor: VoiceCatalogVendor; target: ZhipuVoiceApiTarget },
   ): Promise<{
     options: ProviderMediaSyncVoicesResponse['options']
     privateVoices: ProviderMediaSyncVoicesResponse['privateVoices']
@@ -1626,8 +1677,11 @@ export class ProviderService {
     manifestId: string
     paramName: string
   }> {
-    const catalog = await fetchZhipuVoiceCatalog(target)
-    const manifestId = 'zhipu:glm-tts'
+    const snapshot =
+      resolved.vendor === 'zhipu'
+        ? await fetchZhipuVoiceCatalog(resolved.target)
+        : await fetchMinimaxVoiceCatalog(resolved.target)
+    const manifestIds = VOICE_CATALOG_VENDORS[resolved.vendor].manifests
     const paramName = 'voice'
     const row = this.repo.get(id)
     const existing =
@@ -1635,21 +1689,27 @@ export class ProviderService {
         ? undefined
         : normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
             .mediaDynamicParamOptions
-    const mediaDynamicParamOptions = {
+    const mediaDynamicParamOptions: Record<string, Record<string, typeof snapshot.options>> = {
       ...(existing ?? {}),
-      [manifestId]: { ...(existing?.[manifestId] ?? {}), [paramName]: catalog.options },
+    }
+    for (const manifestId of manifestIds) {
+      mediaDynamicParamOptions[manifestId] = {
+        ...(existing?.[manifestId] ?? {}),
+        [paramName]: snapshot.options,
+      }
     }
     await this.updateProvider({ id, mediaDynamicParamOptions })
     log.info(
-      `refreshZhipuVoiceCatalog completed, id=${id}, total=${catalog.options.length}, ` +
-        `official=${catalog.officialCount}, private=${catalog.privateCount}`,
+      `refreshVoiceCatalog completed, id=${id}, vendor=${resolved.vendor}, ` +
+        `manifestIds=${manifestIds.join(',')}, total=${snapshot.options.length}, ` +
+        `official=${snapshot.officialCount}, private=${snapshot.privateCount}`,
     )
     return {
-      options: catalog.options,
-      privateVoices: catalog.privateVoices,
-      officialCount: catalog.officialCount,
-      privateCount: catalog.privateCount,
-      manifestId,
+      options: snapshot.options,
+      privateVoices: snapshot.privateVoices,
+      officialCount: snapshot.officialCount,
+      privateCount: snapshot.privateCount,
+      manifestId: manifestIds[0] as string,
       paramName,
     }
   }

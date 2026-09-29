@@ -142,6 +142,7 @@ export function synthesizeMediaManifestForRef(
         modelType: 'voice',
         mode: 'sync',
         manifestId: ref.manifestId,
+        ...audioCapabilitiesOf(profile),
       })
     }
     return null
@@ -223,7 +224,12 @@ export function resolveProfileMediaModels(
           ref.capabilityOverrides,
         )
       : null
-    if (!effectiveManifest || !capabilityMatches(effectiveManifest) || !providerKindMatches(effectiveManifest)) continue
+    if (
+      !effectiveManifest ||
+      !capabilityMatches(effectiveManifest) ||
+      !providerKindMatches(effectiveManifest)
+    )
+      continue
     if (seen.has(effectiveManifest.id)) continue
     seen.add(effectiveManifest.id)
     const synthesized =
@@ -267,7 +273,47 @@ export function resolveProfileMediaModels(
       })
     }
   }
+  // 兜底：custom 渠道在目录里没有任何基底 manifest（providerKind='custom' 不在内置目录），
+  // 上面的回退循环对它必然空手而归。这类渠道（含 Agent 代建、旧数据）可能只填了
+  // defaultModel / modelIds 而未配置 mediaModelRefs——若不合成，模型在画布、快速创作、
+  // 语音助手里就彻底不可见。仅在「一个都没解析到」时兜底，不会混入用户没选的内置模型。
+  if (resolved.length === 0) {
+    const domain = mediaDomainForProfile(profile)
+    if (domain != null && mediaProviderKindCandidates(profile).includes('custom')) {
+      const modelType: 'image' | 'video' | 'voice' =
+        domain === 'image' ? 'image' : domain === 'video' ? 'video' : 'voice'
+      for (const modelId of modelIds) {
+        const manifest = createBasicCustomMediaManifest({
+          modelId,
+          modelType,
+          mode: modelType === 'video' ? 'async_polling' : 'sync',
+          ...(modelType === 'voice' ? audioCapabilitiesOf(profile) : {}),
+        })
+        if (seen.has(manifest.id)) continue
+        if (!capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
+        seen.add(manifest.id)
+        resolved.push({
+          manifest,
+          effectiveModelId: modelId,
+          enabled: true,
+          defaults: undefined,
+          synthesized: true,
+        })
+      }
+    }
+  }
   return resolved
+}
+
+/**
+ * 渠道勾选的 audio.* 能力，交给 `createBasicCustomMediaManifest` 决定语音契约
+ * （语音合成 / 音乐生成 / 语音识别）。未声明时不传，由其回退历史默认 audio.speech。
+ */
+function audioCapabilitiesOf(profile: MediaProfileLike): { audioCapabilities?: string[] } {
+  const capabilities = (profile.mediaCapabilities ?? []).filter((capability) =>
+    capability.startsWith('audio.'),
+  )
+  return capabilities.length > 0 ? { audioCapabilities: capabilities } : {}
 }
 
 /**
@@ -293,7 +339,9 @@ function applyCapabilityOverrides(
     }
     if (isRecord(raw.aliases)) {
       const aliases = Object.fromEntries(
-        Object.entries(raw.aliases).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        Object.entries(raw.aliases).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
       )
       next.aliases = { ...(capability.aliases ?? {}), ...aliases }
       changed = true
@@ -380,7 +428,9 @@ function overlayRefDefaults(
   if (!isRecord(defaults) || Object.keys(defaults).length === 0) return manifest
   let changed = false
   const capabilities = manifest.capabilities.map((capability) => {
-    const properties = isRecord(capability.paramSchema.properties) ? capability.paramSchema.properties : {}
+    const properties = isRecord(capability.paramSchema.properties)
+      ? capability.paramSchema.properties
+      : {}
     const declared = new Set(Object.keys(properties))
     const applicable = Object.entries(defaults).filter(([key]) => declared.has(key))
     if (applicable.length === 0) return capability

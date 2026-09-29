@@ -11,6 +11,11 @@ interface AppendCustomMediaModelRefInput {
   mediaProvider: MediaProviderKind | ''
   modelId: string
   modelType: ProviderModelType
+  /**
+   * 语音渠道勾选的 audio.* 能力。自定义语音模型的 manifest 契约按主能力生成
+   * （见 `primaryCustomAudioCapability`），缺省 audio.speech。
+   */
+  audioCapabilities?: readonly string[] | undefined
 }
 
 /**
@@ -39,7 +44,14 @@ export function appendCustomMediaModelRef(
   const manifest =
     input.mediaProvider === 'custom' &&
     (input.modelType === 'image' || input.modelType === 'video' || input.modelType === 'voice')
-      ? createBasicCustomMediaManifest({ modelId, modelType: input.modelType, mode })
+      ? createBasicCustomMediaManifest({
+          modelId,
+          modelType: input.modelType,
+          mode,
+          ...(input.modelType === 'voice' && input.audioCapabilities != null
+            ? { audioCapabilities: input.audioCapabilities }
+            : {}),
+        })
       : undefined
   const manifestId = manifest?.id ?? createCustomMediaManifestId(modelId)
 

@@ -274,6 +274,44 @@ function EditorOverview({ manifest, onChange }: ProviderManifestContractEditorPr
             />
           </>
         )}
+        {baseTemplate === 'openai-compatible' && domain === 'audio' && (
+          <>
+            <span>语音接口</span>
+            <Select
+              value={
+                manifest.capabilities[0]?.id === 'audio.transcription' ||
+                manifest.capabilities[0]?.id === 'audio.music'
+                  ? manifest.capabilities[0].id
+                  : 'audio.speech'
+              }
+              options={[
+                { label: '语音合成（/audio/speech）', value: 'audio.speech' },
+                { label: '语音识别（/audio/transcriptions）', value: 'audio.transcription' },
+                { label: '音乐生成（完全自定义合同）', value: 'audio.music' },
+              ]}
+              onChange={(value) => {
+                const capabilityId = String(value)
+                const capability = createEditorCapability(capabilityId)
+                // 音乐生成没有 OpenAI 兼容端点：落到「完全自定义」基底，能力声明保留
+                // audio.music，端点与字段由用户按厂商文档填写（否则会被悄悄改成 TTS 合同）。
+                onChange(
+                  applyAdapterBaseTemplate(
+                    {
+                      ...manifest,
+                      capabilities: [
+                        {
+                          ...capability,
+                          label: capabilityDisplayName(capabilityId),
+                        },
+                      ],
+                    },
+                    capabilityId === 'audio.music' ? 'custom' : 'openai-compatible',
+                  ),
+                )
+              }}
+            />
+          </>
+        )}
         <span className="pv_adapter_hint">
           选择后会替换当前协议字段并立即回显；保留模型 ID、显示名称和 Provider API Key。
         </span>

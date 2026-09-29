@@ -1068,7 +1068,7 @@ function toolDefinitions() {
     {
       name: 'providers_media_guide',
       description:
-        '获取自定义多媒体渠道的生产级配置流程、能力枚举和一个带唯一 Manifest ID 的起始合同。开始读取渠道文档前先调用；之后必须用 spark_search 搜索/抓取官方文档并据实修改合同。',
+        '获取自定义多媒体渠道的生产级配置流程、能力枚举和一个带唯一 Manifest ID 的起始合同。开始读取渠道文档前先调用；之后必须用 spark_search 搜索/抓取官方文档并据实修改合同。语音渠道请传 capabilities（audio.speech / audio.music / audio.transcription），起始合同会按主能力生成对应契约。',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -1079,6 +1079,12 @@ function toolDefinitions() {
             type: 'string',
             enum: ['sync', 'async_polling'],
             description: '同步返回或异步轮询',
+          },
+          capabilities: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              '可选，该模型需要的媒体能力（如 ["audio.transcription"]）。audio 域按 speech > music > transcription 取主能力生成起始合同，缺省 audio.speech；一个 manifest 只承载一份请求契约，多能力请拆多个 manifest。',
           },
         },
       },

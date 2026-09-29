@@ -440,6 +440,19 @@ describe('spark_media MCP server', () => {
         })
         return
       }
+      if (req.method === 'POST' && req.url === '/minimax/v1/speech_to_text') {
+        // MiniMax asr-1.0：Contract V2 multipart 文件上传，响应 JSON { text }。
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedPath = req.url ?? ''
+          postedHeaders = req.headers
+          postedRawBody = Buffer.concat(chunks).toString('latin1')
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ text: 'MiniMax 转写结果' }))
+        })
+        return
+      }
       if (req.method === 'POST' && req.url === '/zhipu/audio/speech') {
         // 智谱 GLM-TTS：JSON 请求，响应 audio/wav 二进制裸流（binary_response）。
         const chunks: Buffer[] = []
@@ -451,9 +464,7 @@ describe('spark_media MCP server', () => {
           res.writeHead(200, { 'content-type': 'audio/wav' })
           // 最小 RIFF/WAVE 头，足以让落盘逻辑产出 .wav 资产。
           res.end(
-            Buffer.from([
-              0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
-            ]),
+            Buffer.from([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45]),
           )
         })
         return
@@ -2062,6 +2073,74 @@ describe('spark_media MCP server', () => {
     expect(postedRawBody).toContain('glm-asr-2512')
     expect(postedRawBody).not.toContain('glm-tts')
     expect(transcribed.result.structuredContent.text).toBe('智谱转写结果')
+  })
+
+  it('routes MiniMax transcription with a Contract V2 multipart file part', async () => {
+    // 内置 minimax:asr-1.0 原先只有 legacy contentType:'multipart' + requestTemplate{model}：
+    // MCP 编译出的 multipart 没有文件段，渠道必然拒绝。此处用真实内置 manifest 跑通 MCP 链路，
+    // 锁住 file 段与「canonical 参数 → provider 原生字段」的投放。
+    const asrManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'minimax:asr-1.0',
+    )
+    if (!asrManifest) throw new Error('minimax:asr-1.0 manifest not found')
+
+    const audioPath = path.join(tmpDir, 'minimax-sample.wav')
+    writeFileSync(audioPath, Buffer.from('RIFF....WAVEfmt '))
+
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify([
+          {
+            id: 'minimax-asr',
+            name: 'MiniMax 语音识别',
+            apiKey: 'minimax-key',
+            provider: 'minimax-hailuo',
+            model: 'asr-1.0',
+            mode: 'sync',
+            baseUrl: `${baseUrl}/minimax`,
+            manifests: [asrManifest],
+          },
+        ]),
+      },
+    })
+
+    const transcribed = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'transcribe_audio',
+        arguments: {
+          audioFile: audioPath,
+          responseFormat: 'verbose_json',
+          language: 'zh',
+          extraJson: { timestamp_level: 'word' },
+        },
+      },
+    })
+
+    expect(transcribed.error).toBeUndefined()
+    expect(postedPath).toBe('/minimax/v1/speech_to_text')
+    expect(String(postedHeaders['content-type'])).toContain('multipart/form-data')
+    // 核心：V2 request 的 file 段必须真的带上文件。
+    expect(postedRawBody).toContain('name="file"')
+    expect(postedRawBody).toContain('filename=')
+    expect(postedRawBody).toContain('name="model"')
+    expect(postedRawBody).toContain('asr-1.0')
+    // canonical responseFormat → provider 原生 response_format（capability.aliases 生效）；
+    // timestamp_level 经 extraJson 全链路投放。
+    expect(postedRawBody).toContain('name="response_format"')
+    expect(postedRawBody).toContain('verbose_json')
+    expect(postedRawBody).toContain('name="timestamp_level"')
+    expect(postedRawBody).toContain('word')
+    expect(postedRawBody).toContain('name="stream"')
+    // language 官方是请求头，绝不能落成 form 字段。
+    expect(postedHeaders.language).toBe('zh')
+    expect(postedRawBody).not.toContain('name="language"')
+    expect(transcribed.result.structuredContent.text).toBe('MiniMax 转写结果')
   })
 
   it('routes zhipu generate_audio to the TTS manifest and writes a wav artifact', async () => {

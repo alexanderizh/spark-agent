@@ -157,6 +157,29 @@ export function getMediaRequestPreviewUrl(
     if (mediaProvider === 'google-generative-ai' && capabilities.has('audio.music')) {
       return `${baseUrl}/interactions`
     }
+    // 音频端点不通用：各协议按「真实主调用」映射。缺这些分支时，MiniMax / 火山语音 / xAI
+    // 语音渠道会被预览成 OpenAI 兼容的 /audio/speech，用户照着预览填端点就会得到
+    // 「协议按 MiniMax 发 JSON、端点按 OpenAI 收二进制」的错配（真机已复现）。
+    // 路径来源：minimax-hailuo-media.adapter.ts（/v1/t2a_v2、/v1/music_generation、
+    // /v1/speech_to_text）、VOLCENGINE_SPEECH_MEDIA_MODEL_MANIFESTS、xai:grok-tts manifest。
+    if (mediaProvider === 'minimax-hailuo') {
+      if (capabilities.has('audio.music')) {
+        return resolveMinimaxEndpoint(baseUrl, '/v1/music_generation')
+      }
+      if (capabilities.has('audio.transcription') && !capabilities.has('audio.speech')) {
+        return resolveMinimaxEndpoint(baseUrl, '/v1/speech_to_text')
+      }
+      return resolveMinimaxEndpoint(baseUrl, '/v1/t2a_v2')
+    }
+    if (mediaProvider === 'volcengine-speech') {
+      // seed-tts-2.0（audio.speech）走单向流；seed-audio-1.0（audio.music）走 create。
+      return capabilities.has('audio.speech')
+        ? `${baseUrl}/api/v3/tts/unidirectional`
+        : `${baseUrl}/api/v3/tts/create`
+    }
+    if (mediaProvider === 'xai' && capabilities.has('audio.speech')) {
+      return `${baseUrl}/tts`
+    }
     if (capabilities.has('audio.transcription') && !capabilities.has('audio.speech')) {
       return `${baseUrl}/audio/transcriptions`
     }

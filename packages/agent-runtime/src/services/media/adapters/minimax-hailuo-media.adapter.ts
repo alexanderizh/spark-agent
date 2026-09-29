@@ -120,12 +120,124 @@ function buildMultipartForm(
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
 }
 
+/**
+ * 非 JSON 音频响应的可读描述（返回 null 表示 body 是普通文本，按原样进错误消息）。
+ *
+ * 背景：自建 / 中转的 OpenAI 兼容语音端点（`/audio/speech`）会直接返回音频裸流
+ * （HTTP 200 + `audio/*`），而 `fetchJson` 在 JSON.parse 失败时会把原始字节当字符串返回。
+ * 此时 MiniMax 的 `data.audio` 必然缺失，若把整串二进制塞进错误消息，会在任务详情里
+ * 倾倒约 800 字符乱码并原样落库（真机案例：自建 TTS 渠道 + minimax 协议）。
+ * 这里只保留「类型 + 体量 + 修复指引」，不再回显字节内容。
+ */
+function looksLikeBinaryAudioBody(body: string): boolean {
+  // 容器签名（RIFF/WAVE、OggS、fLaC、ID3）是最直接的证据。
+  if (/^(RIFF|OggS|fLaC|ID3)/.test(body)) return true
+  // 否则看采样段里的 C0 控制字符或 UTF-8 替换符（U+FFFD）：文本错误页不会出现，
+  // 二进制被按 UTF-8 解码后必然出现。逐字符扫描而不是正则，避免 no-control-regex。
+  const sample = body.slice(0, 512)
+  for (let index = 0; index < sample.length; index += 1) {
+    const code = sample.charCodeAt(index)
+    if (code === 0xfffd) return true
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) return true
+  }
+  return false
+}
+
+function describeNonJsonAudioBody(body: string): string | null {
+  if (body.length === 0 || !looksLikeBinaryAudioBody(body)) return null
+  const bytes = Buffer.byteLength(body, 'utf8')
+  return `渠道返回了非 JSON 的二进制音频响应（约 ${bytes} 字节，没有 MiniMax 的 data.audio / data.url 字段）`
+}
+
 /** 由输入文件的扩展名/MIME 推导上传文件名（MiniMax 按容器格式识别，不支持裸 PCM）。 */
-function minimaxAsrUploadFilename(file: { path?: string | null; mimeType?: string | null }): string {
+function minimaxAsrUploadFilename(file: {
+  path?: string | null
+  mimeType?: string | null
+}): string {
   const fromPath = file.path && file.path.includes('.') ? file.path.split('.').pop() : undefined
   const fromMime = file.mimeType ? file.mimeType.split('/').pop() : undefined
   const ext = (fromPath ?? fromMime ?? '').toLowerCase()
   return /^[a-z0-9]{2,5}$/.test(ext) ? `audio.${ext}` : 'audio.dat'
+}
+
+/** 官方 response_format 取值（platform.minimax.cn/docs/api-reference/speech-to-text）。 */
+const MINIMAX_ASR_RESPONSE_FORMATS = ['json', 'verbose_json', 'srt', 'vtt'] as const
+type MinimaxAsrResponseFormat = (typeof MINIMAX_ASR_RESPONSE_FORMATS)[number]
+
+/** 契约外的取值一律回落 json（历史行为），避免脏参数把请求打成 400。 */
+function minimaxAsrResponseFormat(value: unknown): MinimaxAsrResponseFormat {
+  const raw = stringVal(value)?.toLowerCase()
+  return MINIMAX_ASR_RESPONSE_FORMATS.find((item) => item === raw) ?? 'json'
+}
+
+/**
+ * 时间戳粒度只在 verbose_json / srt / vtt 生效；json（含流式）下官方会忽略该字段，
+ * 因此 json 时直接不发，保持请求最小。
+ */
+function minimaxAsrTimestampLevel(
+  value: unknown,
+  format: MinimaxAsrResponseFormat,
+): 'sentence' | 'word' | undefined {
+  if (format === 'json') return undefined
+  const raw = stringVal(value)?.toLowerCase()
+  return raw === 'sentence' || raw === 'word' ? raw : undefined
+}
+
+/** 语言提示走请求头；留空 / auto 表示不指定，由服务端做混合语言识别（历史行为）。 */
+function minimaxAsrLanguage(value: unknown): string | undefined {
+  const raw = stringVal(value)
+  if (!raw || raw.toLowerCase() === 'auto') return undefined
+  return raw
+}
+
+/**
+ * 归一到 provider 原生键后读取转写参数。
+ *
+ * manifest 的 schema / defaults 按内置约定用 canonical 键（responseFormat），而调用方
+ * 到达 adapter 时可能是 canonical 也可能是原生（canvas 提交 canonical、MCP 透传原生、
+ * 旧调用方写 response_format），因此统一按 capability.aliases 收敛到别名右侧再读，
+ * 与 buildMinimaxSpeechParams 的归一方式一致，避免「声明了却读不到」。
+ *
+ * 两种拼写**同时出现**时以 canonical 为准（画布参数历史里可能残留旧的原生键）：
+ * 把 canonical 键延后写入，结果与对象属性顺序无关，行为确定。
+ */
+function minimaxAsrProviderParams(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+): Record<string, unknown> {
+  const aliases = ctx.mediaManifestCapability?.aliases
+  const native: Record<string, unknown> = {}
+  const canonical: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(removeBlankParams(input.modelParams))) {
+    const providerKey = aliases?.[key]
+    if (providerKey) canonical[providerKey] = value
+    else native[key] = value
+  }
+  return { ...native, ...canonical }
+}
+
+/**
+ * 解析转写文本：json / verbose_json 是 JSON `{text}`；srt / vtt 是 text/plain 裸文本
+ * （fetchJson 在 JSON.parse 失败时原样返回字符串）。
+ */
+function minimaxAsrTranscriptText(resp: unknown, format: MinimaxAsrResponseFormat): string {
+  if (typeof resp === 'string') {
+    // 只有 srt / vtt 允许非 JSON；其余格式拿到字符串说明响应不符合契约，不能当转写结果落盘。
+    if (format === 'srt' || format === 'vtt') return resp.trim()
+    throw new MediaProviderError(
+      'provider_http_error',
+      `MiniMax 语音识别返回了非 JSON 响应（response_format=${format}）`,
+    )
+  }
+  const textRaw = (resp as { text?: unknown } | null | undefined)?.text
+  return typeof textRaw === 'string' ? textRaw.trim() : ''
+}
+
+/** 字幕格式补上对应扩展名落盘（纯文本沿用历史 transcript_*.txt）。 */
+function minimaxAsrArtifactName(base: string, format: MinimaxAsrResponseFormat): string {
+  if (format !== 'srt' && format !== 'vtt') return base
+  // filenameHelper 会在用户自定义文件名后追加时间戳，因此扩展名只能在此处补，不能做前缀。
+  return base.toLowerCase().endsWith(`.${format}`) ? base : `${base}.${format}`
 }
 
 export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
@@ -250,9 +362,12 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
 
   // ─── 语音识别（asr-1.0，POST /v1/speech_to_text，multipart 同步）─────────────
   // 文档：platform.minimax.cn/docs/api-reference/speech-to-text。必填 model + file；
-  // 响应 { text, duration, trace_id }。注意：该接口不是「HTTP 恒 200 + base_resp」模式，
-  // HTTP 4xx（400 超 500s / 401 鉴权 / 413 超 50MB）由 fetchJson 直接抛出；若 body 携带
-  // base_resp（部分错误形态）仍走 assertMinimaxBaseResp 归一。
+  // json / verbose_json 响应 { text, duration, trace_id }，srt / vtt 为 text/plain 裸文本。
+  // 两个易错点：① `language` 官方定义为请求头，不是 form 字段；② `stream` 流式是 SSE
+  // （text/event-stream），媒体层暂无对应响应通道，因此固定 stream=false 同步调用。
+  // 注意：该接口不是「HTTP 恒 200 + base_resp」模式，HTTP 4xx（400 超 500s / 401 鉴权 /
+  // 413 超 50MB）由 fetchJson 直接抛出；若 body 携带 base_resp（部分错误形态）仍走
+  // assertMinimaxBaseResp 归一。
 
   private async transcribeAudio(
     input: MediaGenerateInput,
@@ -273,8 +388,18 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
     }
     const model = ctx.defaultModel
     const base = baseEndpoint(ctx)
+    const params = minimaxAsrProviderParams(input, ctx)
+    const format = minimaxAsrResponseFormat(params.response_format)
+    const timestampLevel = minimaxAsrTimestampLevel(params.timestamp_level, format)
+    const language = minimaxAsrLanguage(params.language)
     const form = buildMultipartForm(
-      { model, response_format: 'json' },
+      {
+        model,
+        response_format: format,
+        // 官方默认即 false；显式投递，避免上游默认值变化时静默转成 SSE 而解析失败。
+        stream: 'false',
+        ...(timestampLevel ? { timestamp_level: timestampLevel } : {}),
+      },
       [{ field: 'file', filename: minimaxAsrUploadFilename(file), content: buffer }],
     )
     const url = `${base}/v1/speech_to_text`
@@ -284,26 +409,36 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
       model,
       method: 'POST',
       url,
-      body: { model, response_format: 'json', file: `[multipart ${buffer.length} bytes]` },
+      body: {
+        model,
+        response_format: format,
+        ...(timestampLevel ? { timestamp_level: timestampLevel } : {}),
+        ...(language ? { language: `[header] ${language}` } : {}),
+        file: `[multipart ${buffer.length} bytes]`,
+      },
       extra: { source: file.dataUrl ? 'dataUrl' : 'path', bytes: buffer.length },
     })
     const resp = await fetchJson(url, {
       method: 'POST',
-      headers: { authorization: `Bearer ${ctx.apiKey}`, 'content-type': form.contentType },
+      headers: {
+        authorization: `Bearer ${ctx.apiKey}`,
+        'content-type': form.contentType,
+        // 官方把语言提示放在请求头（BCP-47）；留空即混合语言识别。
+        ...(language ? { language } : {}),
+      },
       body: form.body,
       fetchImpl: ctx.fetch,
       timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
     })
     assertMinimaxBaseResp(resp)
-    const textRaw = (resp as { text?: unknown } | null | undefined)?.text
-    const text = typeof textRaw === 'string' ? textRaw.trim() : ''
+    const text = minimaxAsrTranscriptText(resp, format)
     if (text.length === 0) {
       throw new MediaProviderError('provider_http_error', 'MiniMax 语音识别未返回文本')
     }
     const asset = await this.artifact.writeTextAsset(
       text,
       input.outputDir,
-      filenameHelper(input, 'transcript', 0, 1),
+      minimaxAsrArtifactName(filenameHelper(input, 'transcript', 0, 1), format),
     )
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: 1 })
     return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: resp }
@@ -468,9 +603,14 @@ export class MinimaxHailuoMediaAdapter implements MediaProviderAdapter {
   ): Promise<MediaGeneratedAsset> {
     const audioRaw = readPath(resp, 'data', 'audio') ?? readPath(resp, 'data', 'url')
     if (typeof audioRaw !== 'string' || audioRaw.length === 0) {
+      // 二进制裸流命中时给出可执行的修复指引（协议与端点不匹配是最常见的成因），
+      // 其余情况（JSON 缺字段 / 普通文本错误页）保持原有消息形态。
+      const binaryBody = typeof resp === 'string' ? describeNonJsonAudioBody(resp) : null
       throw new MediaProviderError(
         'provider_http_error',
-        `No audio in MiniMax response: ${JSON.stringify(resp).slice(0, 800)}`,
+        binaryBody
+          ? `${binaryBody}：MiniMax T2A / Music 要求 JSON 响应，请确认该渠道协议与端点匹配。自建或中转的 OpenAI 兼容语音端点请在渠道里改用「自定义」协议；MiniMax 官方端点为 /v1/t2a_v2（T2A）与 /v1/music_generation（Music）。`
+          : `No audio in MiniMax response: ${JSON.stringify(resp).slice(0, 800)}`,
       )
     }
     const filename = filenameHelper(input, filePrefix, 0, 1)

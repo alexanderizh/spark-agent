@@ -37,6 +37,7 @@ import { ProviderQuotaSection } from './provider/ProviderQuotaSection'
 import { useProviderQuotas } from './provider/useProviderQuotas'
 import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
 import { appendCustomMediaModelRef } from './provider/providerCustomMediaModelRefs'
+import { ensureMediaDefaultModelRef } from './provider/providerDefaultMediaModelRef'
 import {
   MEDIA_CAPABILITY_LABELS,
   MEDIA_PROVIDER_LABELS,
@@ -768,6 +769,23 @@ function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
 function mediaProviderDisplayName(kind: string | undefined): string {
   if (!kind) return '多媒体适配器'
   return MEDIA_PROVIDER_LABELS[kind as MediaProviderKind] ?? kind
+}
+
+/**
+ * 支持「音色目录同步」的厂商。
+ *
+ * 判定依据是厂商是否提供可查询的音色列表接口（与主进程
+ * `provider.service.ts` 的 VOICE_CATALOG_VENDORS 保持一致）：
+ *   - 智谱开放平台：GET /paas/v4/voice/list
+ *   - MiniMax：POST /v1/get_voice
+ * 其余 TTS 厂商音色是固定枚举，没有可同步的列表，因此不展示该入口。
+ */
+const VOICE_CATALOG_SYNC_VENDORS: readonly MediaProviderKind[] = ['zhipu', 'minimax-hailuo']
+
+const VOICE_CATALOG_SYNC_HINTS: Partial<Record<MediaProviderKind, string>> = {
+  zhipu: '从智谱开放平台同步系统音色与复刻音色；画布与快速创作的音色候选会自动继承',
+  'minimax-hailuo':
+    '从 MiniMax 同步系统音色与账号私有音色（复刻 / 文生音色）；画布与快速创作的音色候选会自动继承',
 }
 
 /**
@@ -2723,6 +2741,8 @@ export function ProviderEditPanel({
         mediaProvider: prev.mediaProvider,
         modelId,
         modelType: prev.modelType,
+        // 语音：按渠道勾选的能力决定 inline manifest 契约（语音合成 / 音乐 / 识别）
+        ...(prev.modelType === 'voice' ? { audioCapabilities: prev.mediaCapabilities } : {}),
       })
       const capabilitySet = new Set([
         ...prev.mediaCapabilities,
@@ -2741,17 +2761,21 @@ export function ProviderEditPanel({
   }
 
   const openCustomManifestEditor = (ref: ProviderMediaModelRef) => {
+    // 语音同样要能打开协议编辑器：存量裸 custom: 语音 ref 没有 inline manifest，
+    // 这里按渠道勾选的能力补一份基础契约（TTS / 语音识别 / 音乐），用户即可在其上改写。
+    const editableMediaTypes = ['image', 'video', 'voice'] as const
     const fallback =
-      form.modelType === 'image' || form.modelType === 'video'
+      form.modelType === 'image' || form.modelType === 'video' || form.modelType === 'voice'
         ? createBasicCustomMediaManifest({
             modelId: ref.modelId ?? ref.manifestId.replace(/^custom:/, ''),
-            modelType: form.modelType,
+            modelType: form.modelType as (typeof editableMediaTypes)[number],
             manifestId: ref.manifestId,
             mode:
               form.mediaApiType === 'async' ||
               (form.mediaApiType === 'auto' && form.modelType === 'video')
                 ? 'async_polling'
                 : 'sync',
+            ...(form.modelType === 'voice' ? { audioCapabilities: form.mediaCapabilities } : {}),
           })
         : null
     const manifest = ref.manifest
@@ -2766,14 +2790,20 @@ export function ProviderEditPanel({
   }
 
   const openNewCustomManifestEditor = () => {
-    if (form.modelType !== 'image' && form.modelType !== 'video') return
+    if (form.modelType !== 'image' && form.modelType !== 'video' && form.modelType !== 'voice')
+      return
     const modelId = form.defaultModel.trim() || `${form.modelType}-model`
     const mode =
       form.mediaApiType === 'async' || (form.mediaApiType === 'auto' && form.modelType === 'video')
         ? 'async_polling'
         : 'sync'
     const manifest = migrateMediaModelManifestToV2(
-      createBasicCustomMediaManifest({ modelId, modelType: form.modelType, mode }),
+      createBasicCustomMediaManifest({
+        modelId,
+        modelType: form.modelType as 'image' | 'video' | 'voice',
+        mode,
+        ...(form.modelType === 'voice' ? { audioCapabilities: form.mediaCapabilities } : {}),
+      }),
     )
     const ref: ProviderMediaModelRef = {
       manifestId: manifest.id,
@@ -3016,12 +3046,32 @@ export function ProviderEditPanel({
           .filter((id) => id.length > 0)
       : []
     const typedDefault = form.defaultModel.trim()
+    // 手填的默认模型如果不在模型清单里，补一条 ref，而不是静默改写成 refs[0]：
+    // 静默改写会让用户填的自定义模型名既不进清单、也不出现在画布 / 快速创作 / 语音助手的
+    // 模型候选里（主进程解析只认 mediaModelRefs）。
+    const ensuredDefaultRef =
+      isMedia && typedDefault.length > 0 && !enabledRefModelIds.includes(typedDefault)
+        ? ensureMediaDefaultModelRef(
+            form.mediaModelRefs,
+            typedDefault,
+            {
+              mediaApiType: form.mediaApiType,
+              mediaProvider: form.mediaProvider,
+              modelType: form.modelType,
+              mediaCapabilities: form.mediaCapabilities,
+            },
+            mediaCatalogForForm,
+          )
+        : null
+    const mediaModelRefsForSave = ensuredDefaultRef?.refs ?? form.mediaModelRefs
     const effectiveDefaultModel =
-      isMedia && enabledRefModelIds.length > 0
-        ? enabledRefModelIds.includes(typedDefault)
-          ? typedDefault
-          : (enabledRefModelIds[0] as string)
+      isMedia &&
+      enabledRefModelIds.length > 0 &&
+      !enabledRefModelIds.includes(typedDefault) &&
+      ensuredDefaultRef?.added !== true
+        ? (enabledRefModelIds[0] as string)
         : typedDefault
+    const mediaFormForSave = { ...form, mediaModelRefs: mediaModelRefsForSave }
 
     if (!form.name.trim() || !effectiveDefaultModel) {
       setError('名称和默认模型 ID 不能为空')
@@ -3070,7 +3120,7 @@ export function ProviderEditPanel({
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
-          ...buildMediaUpdateFields(form),
+          ...buildMediaUpdateFields(mediaFormForSave),
           // 定时禁用时段整体下发（空数组 = 清除全部）；服务端先应用时段，再做被禁模型的写保护合并
           modelSchedules,
         }
@@ -3100,13 +3150,19 @@ export function ProviderEditPanel({
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
-          ...buildMediaUpdateFields(form),
+          ...buildMediaUpdateFields(mediaFormForSave),
           // 定时禁用时段随创建一并落库（此前 create 链路缺失导致新建配置丢失）
           modelSchedules,
         })
       }
       onClose()
-      toast.success(profileId ? 'Provider 已更新' : 'Provider 已创建')
+      toast.success(
+        ensuredDefaultRef?.added === true
+          ? `Provider 已保存，并已把「${typedDefault}」加入模型清单`
+          : profileId
+            ? 'Provider 已更新'
+            : 'Provider 已创建',
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败')
       toast.error(e instanceof Error ? e.message : '保存失败')
@@ -3273,7 +3329,7 @@ export function ProviderEditPanel({
 
   const [syncingVoices, setSyncingVoices] = useState(false)
 
-  // 同步厂商音色目录（当前仅智谱开放平台）：结果写入已保存 profile 的动态参数候选，
+  // 同步厂商音色目录（智谱开放平台 / MiniMax）：结果写入已保存 profile 的动态参数候选，
   // 画布 / 快速创作通过共享 manifest 解析自动继承，因此必须已有 profileId。
   const handleSyncVoices = async () => {
     if (!profileId) {
@@ -3287,7 +3343,9 @@ export function ProviderEditPanel({
       // 同步写的是 profile 的动态参数候选，刷新一次让「参数默认值 → 音色」立即用上新目录。
       void reloadProfileMediaModels()
       toast.success(
-        `已同步 ${result.options.length} 个音色（官方 ${result.officialCount} · 复刻 ${result.privateCount}）`,
+        // 用「系统 / 私有」而非「官方 / 复刻」：MiniMax 的私有音色来自快速复刻与文生音色，
+        // 「复刻」不足以覆盖，两家厂商共用同一句反馈。
+        `已同步 ${result.options.length} 个音色（系统 ${result.officialCount} · 私有 ${result.privateCount}）`,
       )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '同步音色失败')
@@ -3508,7 +3566,10 @@ export function ProviderEditPanel({
   // 专职多媒体模型必须始终提供适配器入口：新建 Provider 没有已有引用时，
   // 先从这里添加模型 ID，再进入「编辑协议」配置模板请求。
   // 对话模型的附加生图能力仍沿用内置目录，避免改变原有配置流程。
-  const showCustomMediaModelInput = form.modelType === 'image' || form.modelType === 'video'
+  // 语音也要能手填自定义模型：自定义 TTS / ASR / 音乐渠道的模型 ID 只存在于渠道侧，
+  // 内置目录里没有对应条目，只能靠这里添加（否则主进程解析不到、快速创作选不到）。
+  const showCustomMediaModelInput =
+    form.modelType === 'image' || form.modelType === 'video' || form.modelType === 'voice'
 
   return (
     <Drawer
@@ -4101,27 +4162,30 @@ export function ProviderEditPanel({
                       </Button>
                     </div>
                   )}
+                  {VOICE_CATALOG_SYNC_VENDORS.includes(effectiveMediaProvider) && (
+                    <div className="pv_custom_adapter_entry">
+                      <div>
+                        <strong>音色目录</strong>
+                        <span>
+                          {VOICE_CATALOG_SYNC_HINTS[effectiveMediaProvider] ??
+                            '从渠道同步系统音色与账号私有音色；画布与快速创作的音色候选会自动继承'}
+                        </span>
+                      </div>
+                      <Button
+                        icon={<Icons.Refresh size={13} />}
+                        loading={syncingVoices}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          void handleSyncVoices()
+                        }}
+                      >
+                        同步音色
+                      </Button>
+                    </div>
+                  )}
                   {form.mediaProvider === 'zhipu' && (
                     <>
-                      <div className="pv_custom_adapter_entry">
-                        <div>
-                          <strong>音色目录</strong>
-                          <span>
-                            从智谱开放平台同步系统音色与复刻音色；画布与快速创作的音色候选会自动继承
-                          </span>
-                        </div>
-                        <Button
-                          icon={<Icons.Refresh size={13} />}
-                          loading={syncingVoices}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            void handleSyncVoices()
-                          }}
-                        >
-                          同步音色
-                        </Button>
-                      </div>
                       <div className="pv_custom_adapter_entry">
                         <div>
                           <strong>音色复刻</strong>
@@ -4333,7 +4397,9 @@ export function ProviderEditPanel({
                               </div>
                             </div>
                             <div className="pv_media_manifest_actions">
-                              {(form.modelType === 'image' || form.modelType === 'video') && (
+                              {(form.modelType === 'image' ||
+                                form.modelType === 'video' ||
+                                form.modelType === 'voice') && (
                                 <Button
                                   size="small"
                                   type="text"
@@ -4436,6 +4502,13 @@ export function ProviderEditPanel({
                           </Checkbox>
                         ))}
                       </div>
+                      {form.modelType === 'voice' && (
+                        <div className="pv_form_hint">
+                          这里勾选的能力决定「自定义模型」生成的协议：语音合成 → /audio/speech，
+                          语音识别 → /audio/transcriptions，音乐生成 → 完全自定义 JSON 合同；
+                          添加模型后仍可在「编辑协议」里改写。
+                        </div>
+                      )}
                     </>
                   )}
 

@@ -30,6 +30,21 @@ describe('custom media Platform bridge', () => {
       starterManifest: { modelId: 'bridge-image-model', adapterMode: 'template' },
     })
 
+    // 语音渠道：RPC 的 capabilities 必须透传到起始合同（否则 ASR 只能拿到 TTS 契约）。
+    const audioGuide = await callRpc(port, 'providers.media_guide', {
+      modelId: 'bridge-asr-model',
+      domain: 'audio',
+      capabilities: ['audio.transcription'],
+    })
+    expect(audioGuide.ok).toBe(true)
+    expect(audioGuide.data).toMatchObject({
+      starterManifest: {
+        modelId: 'bridge-asr-model',
+        capabilities: [expect.objectContaining({ id: 'audio.transcription' })],
+        invocation: { endpoint: '/audio/transcriptions', contentType: 'multipart' },
+      },
+    })
+
     const manifest = {
       ...createBasicCustomMediaManifest({
         modelId: 'bridge-image-model',

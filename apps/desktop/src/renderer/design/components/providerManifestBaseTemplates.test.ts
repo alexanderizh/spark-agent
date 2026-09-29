@@ -115,12 +115,23 @@ describe('provider manifest base templates', () => {
     expectValid(manifest)
     expect(manifest.capabilities.map((item) => item.id)).toEqual(['audio.transcription'])
     expect(manifest.invocation.request?.endpoint).toBe('/audio/transcriptions')
-    expect(manifest.invocation.response).toEqual({ kind: 'url', jsonPaths: ['text'], download: false })
+    expect(manifest.invocation.response).toEqual({
+      kind: 'url',
+      jsonPaths: ['text'],
+      download: false,
+    })
     const body = manifest.invocation.request?.body
     expect(body?.kind).toBe('multipart')
     if (body?.kind !== 'multipart') throw new Error('expected a multipart body')
     const filePart = body.parts.find((part) => part.kind === 'file')
     expect(filePart).toMatchObject({ name: 'file', value: '{{audio}}' })
+    // 画布识别节点的通用兜底字段会提供 response_format；基底合同必须真的投递它，
+    // 否则用户选中后参数被静默丢弃（留空时编译器自动跳过该段）。
+    const formatPart = body.parts.find((part) => part.name === 'response_format')
+    expect(formatPart).toMatchObject({ kind: 'text', value: '{{params.response_format}}' })
+    expect(manifest.capabilities[0]?.paramSchema).toMatchObject({
+      properties: { language: expect.anything(), response_format: expect.anything() },
+    })
   })
 
   it('infers old presets only for display and persists new selections explicitly', () => {

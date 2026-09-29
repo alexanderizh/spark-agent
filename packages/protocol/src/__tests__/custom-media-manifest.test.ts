@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createBasicCustomMediaManifest,
   createCustomMediaManifestId,
+  primaryCustomAudioCapability,
 } from '../custom-media-manifest.js'
 import { validateMediaModelManifestSemantics } from '../media-model-manifest-validation.js'
 
@@ -82,5 +83,83 @@ describe('createBasicCustomMediaManifest', () => {
     ])
     expect(validateMediaModelManifestSemantics(image)).toEqual([])
     expect(validateMediaModelManifestSemantics(video)).toEqual([])
+  })
+
+  it('keeps the OpenAI TTS contract for custom voice models by default', () => {
+    const manifest = createBasicCustomMediaManifest({
+      modelId: 'studio-tts-v1',
+      modelType: 'voice',
+      mode: 'sync',
+    })
+
+    expect(manifest.capabilities.map((capability) => capability.id)).toEqual(['audio.speech'])
+    expect(manifest.invocation).toMatchObject({
+      mode: 'sync',
+      endpoint: '/audio/speech',
+      response: { kind: 'binary_response' },
+    })
+    expect(validateMediaModelManifestSemantics(manifest)).toEqual([])
+  })
+
+  it('builds the transcriptions contract when the channel only selected speech recognition', () => {
+    const manifest = createBasicCustomMediaManifest({
+      modelId: 'studio-asr-v1',
+      modelType: 'voice',
+      mode: 'sync',
+      audioCapabilities: ['audio.transcription'],
+    })
+
+    expect(manifest.baseTemplate).toBe('openai-compatible')
+    expect(manifest.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.transcription',
+    ])
+    expect(manifest.invocation.endpoint).toBe('/audio/transcriptions')
+    // 上传音频必须靠 V2 multipart 的 file 段；legacy multipart 迁移只产出文本 parts。
+    const body = manifest.invocation.request?.body
+    expect(body?.kind).toBe('multipart')
+    expect(
+      body?.kind === 'multipart' ? body.parts.find((part) => part.kind === 'file')?.value : null,
+    ).toBe('{{audio}}')
+    // 画布识别节点的通用兜底字段会提供 response_format；合同必须真的投递它，
+    // 否则用户选中后参数被静默丢弃（留空时编译器自动跳过该段）。
+    expect(
+      body?.kind === 'multipart'
+        ? body.parts.find((part) => part.name === 'response_format')
+        : null,
+    ).toMatchObject({ kind: 'text', value: '{{params.response_format}}' })
+    const capability = manifest.capabilities[0]
+    const properties = (capability?.paramSchema as { properties?: Record<string, unknown> })
+      .properties
+    expect(properties).toMatchObject({
+      language: expect.anything(),
+      response_format: expect.anything(),
+    })
+    expect(validateMediaModelManifestSemantics(manifest)).toEqual([])
+  })
+
+  it('builds an editable music contract for custom music models', () => {
+    const manifest = createBasicCustomMediaManifest({
+      modelId: 'studio-music-v1',
+      modelType: 'voice',
+      mode: 'sync',
+      audioCapabilities: ['audio.music'],
+    })
+
+    expect(manifest.baseTemplate).toBe('custom')
+    expect(manifest.capabilities.map((capability) => capability.id)).toEqual(['audio.music'])
+    expect(manifest.invocation).toMatchObject({
+      mode: 'sync',
+      endpoint: '/v1/music_generation',
+      response: { kind: 'url', download: true },
+    })
+    expect(validateMediaModelManifestSemantics(manifest)).toEqual([])
+  })
+
+  it('picks the primary audio capability by fixed priority and falls back to speech', () => {
+    expect(primaryCustomAudioCapability(['audio.music', 'audio.speech'])).toBe('audio.speech')
+    expect(primaryCustomAudioCapability(['audio.transcription', 'audio.music'])).toBe('audio.music')
+    expect(primaryCustomAudioCapability(['audio.unknown'])).toBe('audio.speech')
+    expect(primaryCustomAudioCapability([])).toBe('audio.speech')
+    expect(primaryCustomAudioCapability(undefined)).toBe('audio.speech')
   })
 })

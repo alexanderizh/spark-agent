@@ -764,4 +764,56 @@ describe('ProviderManifestContractEditor', () => {
     expect(changes.at(-1)?.capabilities[0]?.label).toBe('Image Generate')
     expect(changes.at(-1)?.capabilities[1]?.label).toBe('图生图（已配置）')
   })
+
+  it('switches the visible audio interface across speech, transcription and music', () => {
+    const changes: MediaModelManifest[] = []
+    const manifest = buildManifest({
+      baseTemplate: 'openai-compatible',
+      domains: ['audio'],
+      capabilities: [
+        {
+          ...buildManifest().capabilities[0]!,
+          id: 'audio.speech',
+          label: '语音合成',
+          output: { types: ['audio'] },
+        },
+      ],
+    })
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ProviderManifestContractEditor
+          manifest={manifest}
+          onChange={(next) => changes.push(next)}
+        />,
+      )
+    })
+
+    const audioSelect = container.querySelector<HTMLSelectElement>(
+      'select option[value="audio.transcription"]',
+    )?.parentElement as HTMLSelectElement | null
+    expect(audioSelect).not.toBeNull()
+    expect(audioSelect?.value).toBe('audio.speech')
+
+    act(() => {
+      audioSelect!.value = 'audio.transcription'
+      audioSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const transcription = changes.at(-1)
+    expect(transcription?.capabilities.map((item) => item.id)).toEqual(['audio.transcription'])
+    expect(transcription?.invocation.request).toMatchObject({
+      endpoint: '/audio/transcriptions',
+      body: { kind: 'multipart' },
+    })
+
+    act(() => {
+      audioSelect!.value = 'audio.music'
+      audioSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const music = changes.at(-1)
+    // 音乐生成没有 OpenAI 兼容端点：落回完全自定义基底，但能力声明必须保持 audio.music，
+    // 否则模型会被当成 TTS 合同、从快速创作的音乐候选里消失。
+    expect(music?.baseTemplate).toBe('custom')
+    expect(music?.capabilities.map((item) => item.id)).toEqual(['audio.music'])
+  })
 })

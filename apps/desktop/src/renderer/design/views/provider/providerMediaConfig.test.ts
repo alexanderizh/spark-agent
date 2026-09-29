@@ -89,4 +89,68 @@ describe('provider media configuration', () => {
       ),
     ).toBe(`${BASE_URL}/interactions`)
   })
+
+  // 音频端点不通用：预览必须给出该协议的真实主调用路径，否则用户会照预览把
+  // MiniMax 协议渠道指向 OpenAI 兼容的 /audio/speech（真机已复现的错配）。
+  it('voice 预览按协议给出真实音频端点', () => {
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        {
+          modelType: 'voice',
+          defaultModel: 'speech-2.8-hd',
+          mediaCapabilities: ['audio.speech'],
+        },
+        'minimax-hailuo',
+      ),
+    ).toBe(`${BASE_URL}/v1/t2a_v2`)
+    // BaseURL 已带 /v1 时不重复拼接版本段
+    expect(
+      getMediaRequestPreviewUrl(
+        `${BASE_URL}/v1`,
+        {
+          modelType: 'voice',
+          defaultModel: 'speech-2.8-hd',
+          mediaCapabilities: ['audio.speech'],
+        },
+        'minimax-hailuo',
+      ),
+    ).toBe(`${BASE_URL}/v1/t2a_v2`)
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        { modelType: 'voice', defaultModel: 'music-2.6', mediaCapabilities: ['audio.music'] },
+        'minimax-hailuo',
+      ),
+    ).toBe(`${BASE_URL}/v1/music_generation`)
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        { modelType: 'voice', defaultModel: 'asr-1.0', mediaCapabilities: ['audio.transcription'] },
+        'minimax-hailuo',
+      ),
+    ).toBe(`${BASE_URL}/v1/speech_to_text`)
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        { modelType: 'voice', defaultModel: 'seed-tts-2.0', mediaCapabilities: ['audio.speech'] },
+        'volcengine-speech',
+      ),
+    ).toBe(`${BASE_URL}/api/v3/tts/unidirectional`)
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        { modelType: 'voice', defaultModel: 'grok-tts', mediaCapabilities: ['audio.speech'] },
+        'xai',
+      ),
+    ).toBe(`${BASE_URL}/tts`)
+    // 自定义 / OpenAI 兼容语音渠道保持 /audio/speech（二进制裸流协议）
+    expect(
+      getMediaRequestPreviewUrl(
+        BASE_URL,
+        { modelType: 'voice', defaultModel: 'auk-flash', mediaCapabilities: ['audio.speech'] },
+        'custom',
+      ),
+    ).toBe(`${BASE_URL}/audio/speech`)
+  })
 })

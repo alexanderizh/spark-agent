@@ -27,6 +27,66 @@ describe('CustomMediaProviderConfiguratorService', () => {
     )
   })
 
+  it('generates the audio starter contract from the requested capability instead of one fixed TTS endpoint', () => {
+    const service = new CustomMediaProviderConfiguratorService(store())
+    const starter = (input: Parameters<typeof service.createGuide>[0]): MediaModelManifest =>
+      service.createGuide(input).starterManifest as MediaModelManifest
+
+    // 缺省仍是 TTS，但端点为 OpenAI 规范端；此前手写的 /audio/generations 无人认领。
+    const speech = starter({ modelId: 'voice-model', domain: 'audio' })
+    expect(speech.capabilities[0]?.id).toBe('audio.speech')
+    expect(speech.invocation.endpoint).toBe('/audio/speech')
+
+    const transcription = starter({
+      modelId: 'asr-model',
+      domain: 'audio',
+      capabilities: ['audio.transcription'],
+    })
+    expect(transcription.capabilities[0]?.id).toBe('audio.transcription')
+    expect(transcription.invocation.endpoint).toBe('/audio/transcriptions')
+    expect(transcription.invocation.contentType).toBe('multipart')
+    // 文件段必须存在：legacy multipart 只会产出 text parts，音频传不上去。
+    expect(transcription.invocation.request?.body).toMatchObject({
+      kind: 'multipart',
+      parts: expect.arrayContaining([
+        expect.objectContaining({ name: 'file', kind: 'file', value: '{{audio}}' }),
+      ]),
+    })
+
+    const music = starter({
+      modelId: 'music-model',
+      domain: 'audio',
+      capabilities: ['audio.music'],
+    })
+    expect(music.capabilities[0]?.id).toBe('audio.music')
+    expect(music.baseTemplate).toBe('custom')
+  })
+
+  it('lets the guide audio starter contract pass validation once documentation urls are recorded', async () => {
+    const service = new CustomMediaProviderConfiguratorService(store())
+    const starter = service.createGuide({
+      modelId: 'asr-model',
+      domain: 'audio',
+      capabilities: ['audio.transcription'],
+    }).starterManifest as MediaModelManifest
+
+    const result = await service.validate({
+      name: '语音识别渠道',
+      apiEndpoint: 'https://channel.example/v1',
+      defaultModel: 'asr-model',
+      models: [
+        {
+          modelId: 'asr-model',
+          manifest: { ...starter, docs: { sourceUrls: ['https://channel.example/docs/asr'] } },
+        },
+      ],
+    })
+
+    expect(result.summary).toMatchObject({ domains: ['audio'] })
+    expect(result.resolvedModels[0]?.manifestId).toMatch(/^custom:asr-model:[a-z0-9-]{8,}$/)
+    expect(result.valid).toBe(true)
+  })
+
   it('validates and previews a manifest without exposing the placeholder credential', async () => {
     const service = new CustomMediaProviderConfiguratorService(store())
     const result = await service.validate(draft())

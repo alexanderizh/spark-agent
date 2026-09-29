@@ -66,3 +66,88 @@ describe('media-model-resolver 语音渠道存量兜底', () => {
     expect(manifest).toBeNull()
   })
 })
+
+describe('media-model-resolver 空 refs 的 defaultModel 兜底', () => {
+  it('synthesizes the declared default model for a custom voice channel without refs', () => {
+    const resolved = resolveProfileMediaModels(
+      {
+        modelType: 'voice',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['audio.speech'],
+        defaultModel: 'my-custom-tts',
+        modelIds: ['my-custom-tts'],
+      },
+      emptyCatalog(),
+    )
+
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.synthesized).toBe(true)
+    expect(resolved[0]?.effectiveModelId).toBe('my-custom-tts')
+    expect(resolved[0]?.manifest.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.speech',
+    ])
+  })
+
+  it('honours the channel audio capability selection for the synthesized contract', () => {
+    const resolved = resolveProfileMediaModels(
+      {
+        modelType: 'voice',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['audio.music'],
+        defaultModel: 'my-custom-music',
+      },
+      emptyCatalog(),
+    )
+
+    expect(resolved[0]?.manifest.capabilities.map((capability) => capability.id)).toEqual([
+      'audio.music',
+    ])
+  })
+
+  it('keeps the synthesized model invisible when the filter asks for an undeclared capability', () => {
+    const resolved = resolveProfileMediaModels(
+      {
+        modelType: 'voice',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['audio.speech'],
+        defaultModel: 'my-custom-tts',
+      },
+      emptyCatalog(),
+      { capability: 'audio.transcription' },
+    )
+
+    expect(resolved).toEqual([])
+  })
+
+  it('does not synthesize for non-custom providers with no catalog match', () => {
+    const resolved = resolveProfileMediaModels(
+      {
+        modelType: 'voice',
+        mediaProvider: 'zhipu',
+        mediaCapabilities: ['audio.speech'],
+        defaultModel: 'glm-tts',
+      },
+      emptyCatalog(),
+    )
+
+    expect(resolved).toEqual([])
+  })
+
+  it('still treats configured refs as the single source of truth', () => {
+    // refs 存在但解析不出（非 audio 裸 ref + 空目录）：不得因为 defaultModel 又冒出模型来。
+    const resolved = resolveProfileMediaModels(
+      {
+        modelType: 'image',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['image.generate'],
+        defaultModel: 'legacy-image-model',
+        mediaModelRefs: [
+          { manifestId: 'custom:legacy-image-model', modelId: 'legacy-image-model' },
+        ],
+      },
+      emptyCatalog(),
+    )
+
+    expect(resolved).toEqual([])
+  })
+})
