@@ -57,6 +57,7 @@ import {
   mapCanvasMediaTaskInputFiles,
   validateCanvasMediaTaskParams,
 } from './canvasMediaTaskValidation.js'
+import { saveDialogPresentation } from './saveFileDialogPresentation.js'
 import {
   CANVAS_TASK_LOG_NAMESPACE_PREFIXES,
   canvasTaskLogger,
@@ -11188,8 +11189,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── File Save Image Handler ──────────────────────────────────────────
   //
-  // 让用户把生成的图片（路径在 userData 或 workspace 的 .spark-artifacts 下）另存到本地。
-  // 源文件必须在 safe-file 白名单目录下，与 safe-file 协议保持一致的安全约束。
+  // 让用户把生成的产物（图片 / 视频 / 音频，路径在 userData 或 workspace 的
+  // .spark-artifacts 下）另存到本地。源文件必须在 safe-file 白名单目录下，
+  // 与 safe-file 协议保持一致的安全约束；对话框标题与过滤器按产物类型给出。
 
   typedIpcHandle('file:save-image', async (req) => {
     const sourcePath = req.sourcePath
@@ -11216,13 +11218,12 @@ export function registerAllIpcHandlers(): void {
     const suggestedName = req.suggestedFileName ?? sourceBaseName
     const defaultDir = req.defaultDirectory ?? app.getPath('downloads')
 
+    // 产物类型决定标题与过滤器：同一条链路同时承载图片 / 视频 / 音频产物。
+    const savePresentation = saveDialogPresentation(sourcePath)
     const result = await showTrackedSaveDialog({
-      title: '保存图片',
+      title: savePresentation.title,
       defaultPath: path.join(defaultDir, suggestedName),
-      filters: [
-        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
-        { name: '所有文件', extensions: ['*'] },
-      ],
+      filters: savePresentation.filters,
     })
 
     if (result.canceled || !result.filePath) {
