@@ -4,23 +4,24 @@
  * 压力降级通知（M2 收尾 / M3 挂载）：监听 stream:resource-monitor:pressure-changed。
  * 2026-09-23 产品决策：常态使用完全静默——warning（限流）/ critical（暂停新派发）
  * 不再弹任何提示（状态在性能页可见），只有 emergency（即将溢出，已熔断全部派发）
- * 才通知用户：应用内常驻横幅 + 一条系统通知；压力降回 emergency 以下横幅消失，
- * 完全恢复（nominal）时补一条「电脑资源已恢复」。页面加载前已发生的级别不补发
- * （历史回看走性能页事件列表）。
- * 文案导向（同日用户反馈）：主语必须是「电脑资源压力」而非「应用性能」——
+ * 才通知用户：右上角常驻消息弹窗（带「查看性能」）+ 一条系统通知；压力降回
+ * emergency 以下即关闭弹窗，完全恢复（nominal）时补一条「电脑资源已恢复」。
+ * 页面加载前已发生的级别不补发（历史回看走性能页事件列表）。
+ *
+ * 2026-09-30 改造：原先自绘的顶部常驻横幅（`.perf-notice*`）改为走统一消息弹窗
+ * （useToast，右上角）。根因是那套样式只随懒加载的「设置」页 chunk 下发，冷启动
+ * 未进设置页时横幅完全没有样式，退化成文档流块被排到窗口底部、压住会话输入区。
+ * 统一走 Toast 后样式随主包常驻，位置也与其他应用内提示一致。
+ *
+ * 文案导向（2026-09-23 用户反馈）：主语必须是「电脑资源压力」而非「应用性能」——
  * 这是系统资源保护机制的说辞，避免用户误以为应用本身出了故障。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { OctagonAlert, X } from 'lucide-react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { PressureLevel, ResourcePressureChangedPayload } from '@spark/protocol'
 import { useToast } from '../components/Toast'
+import type { ToastFn } from '../components/Toast'
 import { useApp } from '../AppContext'
-
-interface BannerState {
-  changedAt: string
-  triggeredBy: string[]
-}
 
 /**
  * 触发指标 → 用户视角的现象描述（2026-09-23 文案决策：主语是「电脑」，
@@ -45,11 +46,15 @@ function describePhenomena(keys: string[]): string {
   return seen.size > 0 ? [...seen].join('、') : '资源占用接近饱和'
 }
 
-function bannerBody(keys: string[]): string {
-  return `检测到电脑整体${describePhenomena(keys)}。为避免电脑进一步变慢，Spark 已主动暂停新任务派发——这是系统资源保护机制，不是应用故障。进行中的任务不受影响；关闭闲置应用或会话、释放电脑资源后，会自动恢复派发。`
+/**
+ * 常驻弹窗正文（比原横幅短：弹窗宽度有限，长文会折成高密度文字块；
+ * 「不是应用故障」「进行中的任务不受影响」是 2026-09-23 定下的关键安抚信息，保留）。
+ */
+function noticeMessage(keys: string[]): string {
+  return `检测到电脑整体${describePhenomena(keys)}，Spark 已暂停新任务派发以保护系统流畅。这是资源保护机制而非应用故障，进行中的任务不受影响；释放电脑资源后会自动恢复。`
 }
 
-/** emergency 系统通知（Electron 渲染层 web Notification；失败静默——横幅仍在）。 */
+/** emergency 系统通知（Electron 渲染层 web Notification；失败静默——弹窗仍在）。 */
 function sendSystemNotice(keys: string[]): void {
   try {
     if (typeof Notification === 'undefined') return
@@ -60,14 +65,17 @@ function sendSystemNotice(keys: string[]): void {
       notice.close()
     }
   } catch {
-    /* 横幅仍在，系统通知失败可接受 */
+    /* 弹窗仍在，系统通知失败可接受 */
   }
 }
 
 export function PressureNoticeHost() {
-  const toastCtx = useToast()
+  const { toast, dismiss } = useToast()
   const { setTweak } = useApp()
-  const [banner, setBanner] = useState<BannerState | null>(null)
+  /** 当前常驻弹窗 id（null = 没有正在展示的弹窗）。 */
+  const noticeIdRef = useRef<string | null>(null)
+  /** 当前弹窗文案：长时间停在 emergency 时只有现象变化才重建，避免无谓的重建动画。 */
+  const noticeTextRef = useRef<string | null>(null)
   /** 页面加载标记（首个 effect 填充）：早于挂载的流事件不弹通知，避免每次切页补报。 */
   const mountedAtRef = useRef<number>(0)
 
@@ -76,9 +84,30 @@ export function PressureNoticeHost() {
     setTweak('settingsSection', 'performance')
   }, [setTweak])
 
+  const hideNotice = useCallback((): void => {
+    const id = noticeIdRef.current
+    noticeIdRef.current = null
+    noticeTextRef.current = null
+    if (id != null) dismiss(id)
+  }, [dismiss])
+
+  const showNotice = useCallback((triggeredBy: string[]): void => {
+    const text = noticeMessage(triggeredBy)
+    if (noticeIdRef.current != null && noticeTextRef.current === text) return
+    hideNotice()
+    noticeIdRef.current = toast.warning(text, {
+      sticky: true,
+      actions: [{ label: '查看性能', onClick: navigateToPerformance }],
+    })
+    noticeTextRef.current = text
+  }, [hideNotice, navigateToPerformance, toast])
+
   useEffect(() => {
     mountedAtRef.current = Date.now()
   }, [])
+
+  // 卸载（应用退出）时清掉常驻弹窗，避免残留 id 被后续消息重建。
+  useEffect(() => () => hideNotice(), [hideNotice])
 
   useEffect(() => {
     const off = window.spark.on(
@@ -86,65 +115,43 @@ export function PressureNoticeHost() {
       (payload: ResourcePressureChangedPayload) => {
         const changedAtMs = Date.parse(payload.changedAt)
         if (Number.isFinite(changedAtMs) && changedAtMs < mountedAtRef.current) return
-        handleLevelChange(
-          toastCtx.toast,
-          setBanner,
-          payload.previousLevel,
-          payload.level,
-          payload.triggeredBy,
-        )
+        handleLevelChange(payload.previousLevel, payload.level, payload.triggeredBy, {
+          toast,
+          showNotice,
+          hideNotice,
+        })
       },
     )
     return off
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [hideNotice, showNotice, toast])
 
-  return (
-    <div className="perf-notice-host">
-      {banner != null && (
-        <div className="perf-notice lvl-e">
-          <span className="n-ic">
-            <OctagonAlert size={17} />
-          </span>
-          <div className="n-c">
-            <div className="n-title">电脑资源压力较高，已暂停新任务</div>
-            <div className="n-body">{bannerBody(banner.triggeredBy)}</div>
-            <div className="n-actions">
-              <button className="n-link" onClick={navigateToPerformance}>
-                查看性能
-              </button>
-            </div>
-          </div>
-          <button className="n-x" title="关闭" aria-label="关闭" onClick={() => setBanner(null)}>
-            <X size={12} />
-          </button>
-        </div>
-      )}
-    </div>
-  )
+  return null
 }
 
-type SetBanner = React.Dispatch<React.SetStateAction<BannerState | null>>
-type ToastApi = ReturnType<typeof useToast>['toast']
+type NoticeApi = {
+  toast: ToastFn
+  showNotice: (triggeredBy: string[]) => void
+  hideNotice: () => void
+}
 
 function handleLevelChange(
-  toast: ToastApi,
-  setBanner: SetBanner,
   previousLevel: PressureLevel,
   level: PressureLevel,
   triggeredBy: string[],
+  api: NoticeApi,
 ): void {
   // emergency 以下全部静默（2026-09-23 产品决策）：warning/critical 仅内部
-  // 限流/暂停派发，性能页可见；弹窗提示只留给即将溢出的 emergency。
+  // 限流/暂停派发，性能页可见；消息弹窗只留给即将溢出的 emergency。
   if (level !== 'emergency') {
-    setBanner(null)
+    api.hideNotice()
     if (level === 'nominal' && previousLevel === 'emergency') {
-      toast.success('电脑资源已恢复，任务派发已继续', { duration: 4000 })
+      api.toast.success('电脑资源已恢复，任务派发已继续', { duration: 4000 })
     }
     return
   }
 
-  setBanner({ changedAt: new Date().toISOString(), triggeredBy })
+  api.showNotice(triggeredBy)
+  // 只在升级到 emergency 时补系统通知；长时间停在 emergency 不重复打扰。
   if (rank(level) > rank(previousLevel)) {
     sendSystemNotice(triggeredBy)
   }
