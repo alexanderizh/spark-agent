@@ -9,14 +9,31 @@ function formatMsgTime(timestamp?: string): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   const abs = `${hh}:${mm}`
+  const now = new Date()
+  // 非当天消息按日历差逐级补充日期：同月补「日」、同年补「月」、跨年补「年」
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (!sameDay) {
+    const sameYear = d.getFullYear() === now.getFullYear()
+    const sameMonth = sameYear && d.getMonth() === now.getMonth()
+    let datePart: string
+    if (!sameYear) {
+      datePart = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    } else if (!sameMonth) {
+      datePart = `${d.getMonth() + 1}月${d.getDate()}日`
+    } else {
+      datePart = `${d.getDate()}日`
+    }
+    return `${datePart} ${abs}`
+  }
   const fmt = readAppearance().timestampFormat
   if (fmt === 'abs') return abs
-  const now = Date.now()
-  const diffMs = now - d.getTime()
+  const diffMs = now.getTime() - d.getTime()
   if (diffMs < 60_000) return '刚刚'
   if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)} 分钟前`
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)} 小时前`
-  return abs
+  return `${Math.floor(diffMs / 3_600_000)} 小时前`
 }
 
 /** 消息悬浮操作栏：时间、复制、重发、分叉和删除，放在气泡底部。 */
