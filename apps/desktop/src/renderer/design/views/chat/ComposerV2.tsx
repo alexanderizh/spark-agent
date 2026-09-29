@@ -23,6 +23,7 @@ import { useIpcInvoke } from '../../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../../hooks/useAppearance'
 import { formatShortcut } from '../../hooks/useKeyboard'
 import { useToast } from '../../components/Toast'
+import { notifyQueuedSend } from './queued-send-notice'
 import {
   buildComposerAttachmentsFromPaths,
   getDataTransferFilePaths,
@@ -2109,6 +2110,8 @@ export function ComposerV2({
             settleOptimisticUserSend(optimisticSend, sendRes)
             if (!sendRes.started) {
               setQueueVisible(true)
+              // 队列面板在输入框上方，用户视线在对话区时容易漏看，补一条消息弹窗。
+              notifyQueuedSend(toast, sendRes)
             } else if (queuedMessages.length === 0) {
               setQueueVisible(false)
             }
@@ -2124,6 +2127,7 @@ export function ComposerV2({
             // 会话运行中：命令已进入会话队列，等当前 turn 结束后出队执行。
             // 队列面板立即给出可见反馈，草稿也在此刻清掉（消息已被接受）。
             setQueueVisible(true)
+            notifyQueuedSend(toast, res)
             onSent(commandSessionId, false)
             clearSentDraft([draftBucketKey, commandSessionId, NEW_SESSION_DRAFT_BUCKET])
           } else if (res.started === true) {
@@ -2212,6 +2216,8 @@ export function ComposerV2({
         settleOptimisticUserSend(optimisticSend, res)
         if (!res.started) {
           setQueueVisible(true)
+          // 会话已在跑：本次消息只入队未起跑，弹窗说明「不是发送失败」。
+          notifyQueuedSend(toast, res)
         } else if (queuedMessages.length === 0) {
           setQueueVisible(false)
         }
@@ -5875,262 +5881,89 @@ export function ProviderModelPicker({
 
   return (
     <>
-    <Dropdown
-      menu={{ items: [] }}
-      open={open}
-      trigger={['click']}
-      placement={placement}
-      getPopupContainer={(triggerNode) =>
-        triggerNode.closest<HTMLElement>('.chat-main-empty[data-empty-theme]') ?? document.body
-      }
-      onOpenChange={(nextOpen) => {
-        if (
-          disabled ||
-          (conversationalProviders.length === 0 && autoRouterProviders.length === 0)
-        ) {
-          setOpen(false)
-          return
+      <Dropdown
+        menu={{ items: [] }}
+        open={open}
+        trigger={['click']}
+        placement={placement}
+        getPopupContainer={(triggerNode) =>
+          triggerNode.closest<HTMLElement>('.chat-main-empty[data-empty-theme]') ?? document.body
         }
-        setOpen(nextOpen)
-        if (!nextOpen) {
-          setSearch('')
-          // 菜单关闭即丢弃悬浮卡片状态，避免下次打开时残留上一次的卡片
-          dismissAutoRouterHoverCard()
-          dismissProviderQuotaHoverCard()
-        }
-      }}
-      popupRender={() => (
-        <div
-          className={`composer-dropdown-menu composer-model-menu${
-            placement === 'topRight' ? ' is-right' : ''
-          }`}
-        >
-          {conversationalProviders.length > 0 && (
-            <div className="composer-model-search">
-              <Icons.Search size={13} />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索模型或供应商"
-                autoFocus
-              />
-            </div>
-          )}
-          <div className="composer-model-list">
-            {conversationalProviders.length === 0 && autoRouterProviders.length === 0 && (
-              <div className="composer-menu-empty">未配置</div>
-            )}
-            {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
-              <div className="composer-menu-empty">
-                {normalizedSearch !== ''
-                  ? '没有匹配结果'
-                  : hiddenModelKeys.size > 0
-                    ? '全部模型已在「模型设置」中隐藏'
-                    : '没有匹配结果'}
+        onOpenChange={(nextOpen) => {
+          if (
+            disabled ||
+            (conversationalProviders.length === 0 && autoRouterProviders.length === 0)
+          ) {
+            setOpen(false)
+            return
+          }
+          setOpen(nextOpen)
+          if (!nextOpen) {
+            setSearch('')
+            // 菜单关闭即丢弃悬浮卡片状态，避免下次打开时残留上一次的卡片
+            dismissAutoRouterHoverCard()
+            dismissProviderQuotaHoverCard()
+          }
+        }}
+        popupRender={() => (
+          <div
+            className={`composer-dropdown-menu composer-model-menu${
+              placement === 'topRight' ? ' is-right' : ''
+            }`}
+          >
+            {conversationalProviders.length > 0 && (
+              <div className="composer-model-search">
+                <Icons.Search size={13} />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="搜索模型或供应商"
+                  autoFocus
+                />
               </div>
             )}
-            {pinnedEntries.length > 0 && (
-              <div className="composer-model-group pinned-composer-model-group">
-                <div className="composer-model-group-title">
-                  <span className="composer-model-group-icon">
-                    <Icons.PinFill size={12} />
-                  </span>
-                  <span>常用</span>
+            <div className="composer-model-list">
+              {conversationalProviders.length === 0 && autoRouterProviders.length === 0 && (
+                <div className="composer-menu-empty">未配置</div>
+              )}
+              {conversationalProviders.length > 0 && filteredProviderGroups.length === 0 && (
+                <div className="composer-menu-empty">
+                  {normalizedSearch !== ''
+                    ? '没有匹配结果'
+                    : hiddenModelKeys.size > 0
+                      ? '全部模型已在「模型设置」中隐藏'
+                      : '没有匹配结果'}
                 </div>
-                {pinnedEntries.map(({ provider, modelId }) => {
-                  const vendor = resolveProviderVendor(provider)
-                  return (
-                    <ModelPickerMenuItem
-                      key={`pinned:${provider.id}:${modelId}`}
-                      label={getPickerModelDisplayLabel(provider, modelId)}
-                      active={
-                        provider.id === resolvedSelectedProviderId && modelId === selectedModelId
-                      }
-                      pinned
-                      // 「常用」组混合了多个供应商，同名模型要靠 logo 区分来源
-                      leading={
-                        vendor ? (
-                          <ProviderLogo
-                            style={{ minWidth: 14 }}
-                            vendor={vendor}
-                            size={getProviderPickerLogoSize(provider)}
-                            shape="rounded"
-                          />
-                        ) : undefined
-                      }
-                      onSelect={() => {
-                        setOpen(false)
-                        setSearch('')
-                        void onChange(provider.id, modelId)
-                      }}
-                      onTogglePin={() => togglePinned(provider.id, modelId)}
-                    />
-                  )
-                })}
-              </div>
-            )}
-            {autoRouterProviders.length > 0 && (
-              <div className="composer-model-group composer-auto-router-group">
-                <div className="composer-model-group-title">
-                  <span className="composer-model-group-icon">
-                    <Icons.Shuffle size={12} />
-                  </span>
-                  <span>智能路由</span>
-                </div>
-                {autoRouterProviders.map((router) => {
-                  const config = router.autoRouterConfig
-                  return (
-                    <div
-                      key={`auto-router:${router.id}`}
-                      className="composer-auto-router-row"
-                      // 悬浮配置卡片（替代原生 title：卡片是唯一提示源，避免双重提示）
-                      onMouseEnter={(event) => hoverAutoRouterRow(router.id, event.currentTarget)}
-                      onMouseLeave={leaveAutoRouterRow}
-                      onFocus={(event) =>
-                        hoverAutoRouterRow(router.id, event.currentTarget, { immediate: true })
-                      }
-                      onBlur={leaveAutoRouterRow}
-                    >
-                      <ModelPickerMenuItem
-                        label={router.name}
-                        active={router.id === resolvedSelectedProviderId}
-                        pinned={false}
-                        showPin={false}
-                        onTogglePin={() => undefined}
-                        trailing={
-                          config != null ? (
-                            <span className="composer-auto-router-dots" aria-hidden>
-                              {(['high', 'balanced', 'low'] as const).map((intensity) => (
-                                <span
-                                  key={intensity}
-                                  className={`badge dot ${
-                                    intensity === 'high'
-                                      ? 'danger'
-                                      : intensity === 'balanced'
-                                        ? 'success'
-                                        : 'info'
-                                  }${config.executors.some((e) => e.enabled && e.intensity === intensity) ? '' : ' is-empty'}`}
-                                />
-                              ))}
-                            </span>
-                          ) : undefined
-                        }
-                        onSelect={() => {
-                          dismissAutoRouterHoverCard()
-                          setOpen(false)
-                          setSearch('')
-                          // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
-                          void onChange(router.id, '')
-                        }}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            {filteredProviderGroups.map(({ provider, models }) => {
-              const cliSparkGroups = cliSparkProviderGroupsByPrimaryId.get(provider.id)
-              if (
-                isBuiltInLocalCliProvider(provider) &&
-                cliSparkGroups != null &&
-                cliSparkGroups.length > 0
-              ) {
-                const primaryModelId = models[0] ?? getProviderDefaultModel(provider)
-                const sparkProvider =
-                  provider.id === resolvedSelectedProviderId && cliSparkOverride != null
-                    ? cliSparkProvidersByPrimaryId
-                        ?.get(provider.id)
-                        ?.find((item) => item.id === cliSparkOverride.providerProfileId)
-                    : undefined
-                const sparkModelLabel =
-                  sparkProvider != null && cliSparkOverride != null
-                    ? getPickerModelDisplayLabel(sparkProvider, cliSparkOverride.modelId)
-                    : undefined
-                return (
-                  <CliProviderModelMenu
-                    key={provider.id}
-                    primaryProvider={provider}
-                    primaryModelId={primaryModelId}
-                    primaryModelLabel={
-                      sparkModelLabel != null
-                        ? `${getPickerModelDisplayLabel(provider, primaryModelId)} · ${sparkModelLabel}`
-                        : getPickerModelDisplayLabel(provider, primaryModelId)
-                    }
-                    primarySelected={provider.id === resolvedSelectedProviderId}
-                    sparkOverride={cliSparkOverride ?? null}
-                    providerGroups={cliSparkGroups}
-                    disabled={disabled === true}
-                    isPinned={isPinned}
-                    togglePinned={togglePinned}
-                    resolveVendor={resolveProviderVendor}
-                    getModelLabel={(sparkProvider, modelId) =>
-                      getPickerModelDisplayLabel(sparkProvider, modelId)
-                    }
-                    onSelectPrimaryModel={() => {
-                      setOpen(false)
-                      setSearch('')
-                      void onChange(provider.id, primaryModelId)
-                    }}
-                    onSelectSparkModel={(sparkProviderId, modelId) => {
-                      setOpen(false)
-                      setSearch('')
-                      void onCliSparkModelChange?.(provider.id, sparkProviderId, modelId)
-                    }}
-                    onClearSparkOverride={() => {
-                      setOpen(false)
-                      setSearch('')
-                      void onCliSparkClear?.()
-                    }}
-                  />
-                )
-              }
-              const vendor = resolveProviderVendor(provider)
-              // 限额注册表命中的渠道：悬浮分组标题显示用量卡片（与卡片限额行同一数据源）
-              const quotaSupported =
-                detectProviderQuotaVendor({
-                  name: provider.name,
-                  apiEndpoint: provider.apiEndpoint,
-                }) != null
-              return (
-                <div key={provider.id} className="composer-model-group">
-                  <div
-                    className="composer-model-group-title"
-                    onMouseEnter={
-                      quotaSupported
-                        ? (event) => hoverQuotaProviderRow(provider, event.currentTarget)
-                        : undefined
-                    }
-                    onMouseLeave={quotaSupported ? leaveProviderQuotaRow : undefined}
-                    onFocus={
-                      quotaSupported
-                        ? (event) =>
-                            hoverQuotaProviderRow(provider, event.currentTarget, {
-                              immediate: true,
-                            })
-                        : undefined
-                    }
-                    onBlur={quotaSupported ? leaveProviderQuotaRow : undefined}
-                  >
-                    {vendor && (
-                      <span className="composer-model-group-icon">
-                        <ProviderLogo
-                          vendor={vendor}
-                          size={getProviderPickerLogoSize(provider)}
-                          shape="rounded"
-                        />
-                      </span>
-                    )}
-                    <span>{provider.name}</span>
+              )}
+              {pinnedEntries.length > 0 && (
+                <div className="composer-model-group pinned-composer-model-group">
+                  <div className="composer-model-group-title">
+                    <span className="composer-model-group-icon">
+                      <Icons.PinFill size={12} />
+                    </span>
+                    <span>常用</span>
                   </div>
-                  {models.map((modelId) => {
-                    const active =
-                      provider.id === resolvedSelectedProviderId && modelId === selectedModelId
+                  {pinnedEntries.map(({ provider, modelId }) => {
+                    const vendor = resolveProviderVendor(provider)
                     return (
                       <ModelPickerMenuItem
-                        key={`${provider.id}:${modelId}`}
+                        key={`pinned:${provider.id}:${modelId}`}
                         label={getPickerModelDisplayLabel(provider, modelId)}
-                        active={active}
-                        pinned={isPinned(provider.id, modelId)}
+                        active={
+                          provider.id === resolvedSelectedProviderId && modelId === selectedModelId
+                        }
+                        pinned
+                        // 「常用」组混合了多个供应商，同名模型要靠 logo 区分来源
+                        leading={
+                          vendor ? (
+                            <ProviderLogo
+                              style={{ minWidth: 14 }}
+                              vendor={vendor}
+                              size={getProviderPickerLogoSize(provider)}
+                              shape="rounded"
+                            />
+                          ) : undefined
+                        }
                         onSelect={() => {
                           setOpen(false)
                           setSearch('')
@@ -6141,88 +5974,261 @@ export function ProviderModelPicker({
                     )
                   })}
                 </div>
-              )
-            })}
+              )}
+              {autoRouterProviders.length > 0 && (
+                <div className="composer-model-group composer-auto-router-group">
+                  <div className="composer-model-group-title">
+                    <span className="composer-model-group-icon">
+                      <Icons.Shuffle size={12} />
+                    </span>
+                    <span>智能路由</span>
+                  </div>
+                  {autoRouterProviders.map((router) => {
+                    const config = router.autoRouterConfig
+                    return (
+                      <div
+                        key={`auto-router:${router.id}`}
+                        className="composer-auto-router-row"
+                        // 悬浮配置卡片（替代原生 title：卡片是唯一提示源，避免双重提示）
+                        onMouseEnter={(event) => hoverAutoRouterRow(router.id, event.currentTarget)}
+                        onMouseLeave={leaveAutoRouterRow}
+                        onFocus={(event) =>
+                          hoverAutoRouterRow(router.id, event.currentTarget, { immediate: true })
+                        }
+                        onBlur={leaveAutoRouterRow}
+                      >
+                        <ModelPickerMenuItem
+                          label={router.name}
+                          active={router.id === resolvedSelectedProviderId}
+                          pinned={false}
+                          showPin={false}
+                          onTogglePin={() => undefined}
+                          trailing={
+                            config != null ? (
+                              <span className="composer-auto-router-dots" aria-hidden>
+                                {(['high', 'balanced', 'low'] as const).map((intensity) => (
+                                  <span
+                                    key={intensity}
+                                    className={`badge dot ${
+                                      intensity === 'high'
+                                        ? 'danger'
+                                        : intensity === 'balanced'
+                                          ? 'success'
+                                          : 'info'
+                                    }${config.executors.some((e) => e.enabled && e.intensity === intensity) ? '' : ' is-empty'}`}
+                                  />
+                                ))}
+                              </span>
+                            ) : undefined
+                          }
+                          onSelect={() => {
+                            dismissAutoRouterHoverCard()
+                            setOpen(false)
+                            setSearch('')
+                            // 选中 router 即完成全部配置：modelId 恒为空，由分流器决定执行模型
+                            void onChange(router.id, '')
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {filteredProviderGroups.map(({ provider, models }) => {
+                const cliSparkGroups = cliSparkProviderGroupsByPrimaryId.get(provider.id)
+                if (
+                  isBuiltInLocalCliProvider(provider) &&
+                  cliSparkGroups != null &&
+                  cliSparkGroups.length > 0
+                ) {
+                  const primaryModelId = models[0] ?? getProviderDefaultModel(provider)
+                  const sparkProvider =
+                    provider.id === resolvedSelectedProviderId && cliSparkOverride != null
+                      ? cliSparkProvidersByPrimaryId
+                          ?.get(provider.id)
+                          ?.find((item) => item.id === cliSparkOverride.providerProfileId)
+                      : undefined
+                  const sparkModelLabel =
+                    sparkProvider != null && cliSparkOverride != null
+                      ? getPickerModelDisplayLabel(sparkProvider, cliSparkOverride.modelId)
+                      : undefined
+                  return (
+                    <CliProviderModelMenu
+                      key={provider.id}
+                      primaryProvider={provider}
+                      primaryModelId={primaryModelId}
+                      primaryModelLabel={
+                        sparkModelLabel != null
+                          ? `${getPickerModelDisplayLabel(provider, primaryModelId)} · ${sparkModelLabel}`
+                          : getPickerModelDisplayLabel(provider, primaryModelId)
+                      }
+                      primarySelected={provider.id === resolvedSelectedProviderId}
+                      sparkOverride={cliSparkOverride ?? null}
+                      providerGroups={cliSparkGroups}
+                      disabled={disabled === true}
+                      isPinned={isPinned}
+                      togglePinned={togglePinned}
+                      resolveVendor={resolveProviderVendor}
+                      getModelLabel={(sparkProvider, modelId) =>
+                        getPickerModelDisplayLabel(sparkProvider, modelId)
+                      }
+                      onSelectPrimaryModel={() => {
+                        setOpen(false)
+                        setSearch('')
+                        void onChange(provider.id, primaryModelId)
+                      }}
+                      onSelectSparkModel={(sparkProviderId, modelId) => {
+                        setOpen(false)
+                        setSearch('')
+                        void onCliSparkModelChange?.(provider.id, sparkProviderId, modelId)
+                      }}
+                      onClearSparkOverride={() => {
+                        setOpen(false)
+                        setSearch('')
+                        void onCliSparkClear?.()
+                      }}
+                    />
+                  )
+                }
+                const vendor = resolveProviderVendor(provider)
+                // 限额注册表命中的渠道：悬浮分组标题显示用量卡片（与卡片限额行同一数据源）
+                const quotaSupported =
+                  detectProviderQuotaVendor({
+                    name: provider.name,
+                    apiEndpoint: provider.apiEndpoint,
+                  }) != null
+                return (
+                  <div key={provider.id} className="composer-model-group">
+                    <div
+                      className="composer-model-group-title"
+                      onMouseEnter={
+                        quotaSupported
+                          ? (event) => hoverQuotaProviderRow(provider, event.currentTarget)
+                          : undefined
+                      }
+                      onMouseLeave={quotaSupported ? leaveProviderQuotaRow : undefined}
+                      onFocus={
+                        quotaSupported
+                          ? (event) =>
+                              hoverQuotaProviderRow(provider, event.currentTarget, {
+                                immediate: true,
+                              })
+                          : undefined
+                      }
+                      onBlur={quotaSupported ? leaveProviderQuotaRow : undefined}
+                    >
+                      {vendor && (
+                        <span className="composer-model-group-icon">
+                          <ProviderLogo
+                            vendor={vendor}
+                            size={getProviderPickerLogoSize(provider)}
+                            shape="rounded"
+                          />
+                        </span>
+                      )}
+                      <span>{provider.name}</span>
+                    </div>
+                    {models.map((modelId) => {
+                      const active =
+                        provider.id === resolvedSelectedProviderId && modelId === selectedModelId
+                      return (
+                        <ModelPickerMenuItem
+                          key={`${provider.id}:${modelId}`}
+                          label={getPickerModelDisplayLabel(provider, modelId)}
+                          active={active}
+                          pinned={isPinned(provider.id, modelId)}
+                          onSelect={() => {
+                            setOpen(false)
+                            setSearch('')
+                            void onChange(provider.id, modelId)
+                          }}
+                          onTogglePin={() => togglePinned(provider.id, modelId)}
+                        />
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              className="composer-model-manage"
+              onClick={() => {
+                // 关菜单、清搜索与悬浮卡片，再开「模型设置」弹窗（弹窗挂在 Dropdown 同级）
+                setOpen(false)
+                setSearch('')
+                dismissAutoRouterHoverCard()
+                dismissProviderQuotaHoverCard()
+                setSettingsOpen(true)
+              }}
+            >
+              <Icons.Settings size={13} />
+              <span>模型设置</span>
+            </button>
           </div>
+        )}
+      >
+        <div
+          ref={rootRef}
+          className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
+          title={disabled ? '会话运行中不可切换' : label}
+        >
+          <span className="composer-select-icon">
+            {selectedVendor ? (
+              <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" />
+            ) : (
+              icon
+            )}
+          </span>
           <button
             type="button"
-            className="composer-model-manage"
-            onClick={() => {
-              // 关菜单、清搜索与悬浮卡片，再开「模型设置」弹窗（弹窗挂在 Dropdown 同级）
-              setOpen(false)
-              setSearch('')
-              dismissAutoRouterHoverCard()
-              dismissProviderQuotaHoverCard()
-              setSettingsOpen(true)
-            }}
+            className="composer-select-trigger"
+            disabled={disabled || conversationalProviders.length === 0}
+            title={disabled ? '会话运行中不可切换' : undefined}
           >
-            <Icons.Settings size={13} />
-            <span>模型设置</span>
+            <span>{label}</span>
+            <Icons.ChevronDown size={12} />
           </button>
         </div>
-      )}
-    >
-      <div
-        ref={rootRef}
-        className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
-        title={disabled ? '会话运行中不可切换' : label}
-      >
-        <span className="composer-select-icon">
-          {selectedVendor ? (
-            <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" />
-          ) : (
-            icon
-          )}
-        </span>
-        <button
-          type="button"
-          className="composer-select-trigger"
-          disabled={disabled || conversationalProviders.length === 0}
-          title={disabled ? '会话运行中不可切换' : undefined}
-        >
-          <span>{label}</span>
-          <Icons.ChevronDown size={12} />
-        </button>
-      </div>
-    </Dropdown>
-    {/*
+      </Dropdown>
+      {/*
        * 悬浮卡片必须渲染在 Dropdown popup 之外。
        * 卡片是 portal 到 document.body 的定位浮层，一旦放在 popupRender 内，
        * popup 关闭时其 React 子树不再随宿主状态更新（rc-motion 缓存 children），
        * 卡片就会永久残留在屏幕上；放在 Dropdown 同级由宿主常规渲染控制，
        * 菜单关闭（open=false / target 清空）即立刻卸载。
        */}
-    {autoRouterHoverModel != null && autoRouterHoverTarget != null && (
-      <AutoRouterHoverCard
-        model={autoRouterHoverModel}
-        anchorEl={autoRouterHoverTarget.anchorEl}
-      />
-    )}
-    {hoveredQuotaProvider != null && providerQuotaHoverTarget != null && (
-      <ProviderQuotaHoverCard
-        providerName={hoveredQuotaProvider.name}
-        quota={providerQuotas.quotaMap[hoveredQuotaProvider.id]}
-        error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
-        loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
-        anchorEl={providerQuotaHoverTarget.anchorEl}
-      />
-    )}
-    {/* 仅在打开时挂载：弹窗内部使用 App 上下文（跳转渠道管理），未打开不触发 hook */}
-    {settingsOpen && (
-      <ModelSettingsModal
-        open={settingsOpen}
-        conversationalProviders={conversationalProviders}
-        cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
-        resolveModelLabel={getPickerModelDisplayLabel}
-        renderProviderIcon={renderSettingsProviderIcon}
-        onClose={() => setSettingsOpen(false)}
-        onManageChannels={() => {
-          setSettingsOpen(false)
-          app?.setTweak('view', 'providers')
-        }}
-        {...(onModelSettingsSaved != null ? { onSaved: onModelSettingsSaved } : {})}
-      />
-    )}
+      {autoRouterHoverModel != null && autoRouterHoverTarget != null && (
+        <AutoRouterHoverCard
+          model={autoRouterHoverModel}
+          anchorEl={autoRouterHoverTarget.anchorEl}
+        />
+      )}
+      {hoveredQuotaProvider != null && providerQuotaHoverTarget != null && (
+        <ProviderQuotaHoverCard
+          providerName={hoveredQuotaProvider.name}
+          quota={providerQuotas.quotaMap[hoveredQuotaProvider.id]}
+          error={providerQuotas.errorMap[hoveredQuotaProvider.id]}
+          loading={providerQuotas.pendingSet.has(hoveredQuotaProvider.id)}
+          anchorEl={providerQuotaHoverTarget.anchorEl}
+        />
+      )}
+      {/* 仅在打开时挂载：弹窗内部使用 App 上下文（跳转渠道管理），未打开不触发 hook */}
+      {settingsOpen && (
+        <ModelSettingsModal
+          open={settingsOpen}
+          conversationalProviders={conversationalProviders}
+          cliSparkProvidersByPrimaryId={cliSparkProvidersByPrimaryId}
+          resolveModelLabel={getPickerModelDisplayLabel}
+          renderProviderIcon={renderSettingsProviderIcon}
+          onClose={() => setSettingsOpen(false)}
+          onManageChannels={() => {
+            setSettingsOpen(false)
+            app?.setTweak('view', 'providers')
+          }}
+          {...(onModelSettingsSaved != null ? { onSaved: onModelSettingsSaved } : {})}
+        />
+      )}
     </>
   )
 }
