@@ -10,7 +10,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { VoiceAssistantStateEvent } from '@spark/protocol'
+import type { SessionId } from '@spark/protocol'
+import type { VoiceAssistantSessionFocusEvent, VoiceAssistantStateEvent } from '@spark/protocol'
+import { VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL } from '@spark/protocol'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import { getAssistantCaptureController } from './AssistantCaptureController'
 import { getVoicePlaybackController } from './VoicePlaybackController'
 import './voiceAssistant.less'
@@ -31,6 +34,27 @@ export function VoiceAssistantHost(): React.ReactNode {
     reason?: VoiceAssistantStateEvent['reason']
   } | null>(null)
   const dismissTimerRef = useRef<number | null>(null)
+  const { setActiveSession, revealSession } = useSessionSidebar()
+
+  // 语音活动发生时 UI 跳转到语音绑定会话（选中 + 侧栏定位，对齐命令面板行为）。
+  // setActiveSession 幂等；跨工作区会话由侧栏上下文的联动 effect 自动切换工作区。
+  useEffect(() => {
+    return (
+      window.spark.on(
+        VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL,
+        (event: VoiceAssistantSessionFocusEvent) => {
+          if (event == null || typeof event.sessionId !== 'string' || event.sessionId.length === 0) {
+            return
+          }
+          // 协议 sessionId 为普通 string，侧栏上下文使用 branded SessionId（与
+          // stream:session:created 处理一致的窄化）
+          const target = event.sessionId as SessionId
+          setActiveSession(target)
+          revealSession(target)
+        },
+      ) ?? (() => {})
+    )
+  }, [setActiveSession, revealSession])
 
   useEffect(() => {
     const capture = getAssistantCaptureController()

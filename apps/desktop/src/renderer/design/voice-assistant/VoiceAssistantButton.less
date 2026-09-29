@@ -1,0 +1,44 @@
+// 侧栏用户底栏「语音对话」按钮
+// 扁平风格：默认与设置/通知按钮同形同色（复用 .sidebar-user-settings 的 28×28 透明底
+// 与其 `color: var(--text)`），只有「正在聆听 / 思考 / 播报」才用主色 + 主色软底表达活跃。
+//
+// 刻意不给 is-standby（常驻聆听待命）上色：常驻开启时图标若单染主色，会与同为中性色的
+// 通知铃铛、设置齿轮在底栏里割裂，且视觉上像「正在对话」；而待命是可长驻数小时的常态。
+// 待命区分交给 tooltip 文案（「语音对话（常驻待命）」），颜色保持与邻位图标完全一致。
+
+.va-button {
+  // 聆听/思考/播报：主色软底 + 呼吸感提示麦克风/播报在途
+  &.is-active {
+    background: var(--primary-soft);
+    color: var(--primary);
+    animation: va-button-breathe 1.6s ease-in-out infinite;
+
+    &:hover {
+      background: color-mix(in srgb, var(--primary) 20%, transparent);
+      color: var(--primary);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
+@keyframes va-button-breathe {
+  0%,
+  100% {
+    background: var(--primary-soft);
+  }
+
+  50% {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+}
+
+// 尊重系统的减弱动效偏好：保留颜色高亮，去掉呼吸动画
+@media (prefers-reduced-motion: reduce) {
+  .va-button.is-active {
+    animation: none;
+  }
+}

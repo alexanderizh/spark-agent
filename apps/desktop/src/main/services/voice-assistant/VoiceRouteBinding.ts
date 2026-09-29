@@ -12,6 +12,7 @@
 import { createLogger } from '@spark/shared'
 import type {
   SessionPermissionMode,
+  SessionReasoningEffort,
   VoiceAssistantRouteBinding,
   VoiceAssistantSettings,
 } from '@spark/protocol'
@@ -26,6 +27,8 @@ export interface CreateVoiceSessionOptions {
   modelId?: string
   agentId?: string
   permissionMode?: SessionPermissionMode
+  /** 语音会话推理档位：思考开关开启时以固定档建会话（快问快答），缺省走 agent 默认 */
+  reasoningEffort?: SessionReasoningEffort
 }
 
 export interface VoiceRouteBindingDeps {
@@ -67,6 +70,22 @@ export class VoiceRouteBinding {
     return { sessionId, created: true }
   }
 
+  /**
+   * 只读窥探：绑定存在且存活时返回其 sessionId，否则返回 null。
+   * 供唤醒时的 UI 预跳使用——不创建、不改绑，失败静默（预跳是锦上添花）。
+   */
+  async peekAliveSessionId(): Promise<string | null> {
+    const binding = this.deps.readBinding()
+    if (binding.defaultSessionId == null) return null
+    try {
+      return (await this.deps.isSessionAlive(binding.defaultSessionId))
+        ? binding.defaultSessionId
+        : null
+    } catch {
+      return null
+    }
+  }
+
   /** 新建会话并改绑（语音命令「新开会话」/ 惰性创建共用） */
   async createNewSession(): Promise<{ sessionId: string }> {
     const binding = this.deps.readBinding()
@@ -79,6 +98,11 @@ export class VoiceRouteBinding {
       ...(binding.defaultModelId != null ? { modelId: binding.defaultModelId } : {}),
       ...(binding.defaultAgentId != null ? { agentId: binding.defaultAgentId } : {}),
       permissionMode: binding.defaultPermissionMode ?? settings.sessionPermissionMode,
+      // 语音会话思考：开启时以固定推理档创建（turn 级参数未接线 submitTurn 链路，
+      // 会话级是已验证的生效通路），追求快问快答；关闭时缺省走 agent 档位
+      ...(settings.sessionThinkingEnabled
+        ? { reasoningEffort: settings.sessionThinkingEffort }
+        : {}),
     })
     this.updateBinding({ defaultSessionId: sessionId })
     this.deps.onSessionCreated(sessionId)

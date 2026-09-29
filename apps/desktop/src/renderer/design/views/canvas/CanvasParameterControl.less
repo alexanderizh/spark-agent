@@ -14,9 +14,15 @@
 }
 
 .canvas-parameter-control-head > span {
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
+  /* 标签禁止换行与收缩：长描述（nowrap）会按 flex 收缩权重把中文标签
+     压到 min-content，导致「音色 ID」这类标签一字一行竖排（快速创作语音模式）。 */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .canvas-parameter-required-mark {
@@ -28,11 +34,13 @@
 }
 
 .canvas-parameter-control-head small {
+  min-width: 0;
   overflow: hidden;
   color: var(--text-faint);
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 1;
 }
 
 .canvas-aspect-ratio-grid {

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   VoiceAssistantCaptureCommand,
   VoiceAssistantPlayCommand,
+  VoiceAssistantSessionFocusEvent,
   VoiceAssistantSettings,
   VoiceAssistantStateEvent,
 } from '@spark/protocol'
@@ -59,6 +60,24 @@ vi.mock('./WakeWordDetector.js', () => ({
 }))
 const kwsFeedMock = kwsMocks.feed
 
+// 完整性服务的模型路径解析走可控 mock：真实实现查 userData 文件系统，
+// 测试机是否装过 vad/refine 模型会让 installVoicePack 调用数不确定（flaky）
+const integrityMocks = vi.hoisted(() => ({
+  vadAvailable: true,
+  refineAvailable: true,
+}))
+vi.mock('../VoiceIntegrityService.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../VoiceIntegrityService.js')>()
+  return {
+    ...actual,
+    resolveVoiceVadPaths: () =>
+      integrityMocks.vadAvailable ? { modelPath: '/virtual/vad.onnx' } : null,
+    resolveVoiceRefinePaths: () =>
+      integrityMocks.refineAvailable ? { model: '/virtual/refine.onnx' } : null,
+  }
+})
+
 import { VoiceAssistantService } from './VoiceAssistantService.js'
 import type { VoiceAssistantRouteBinding } from '@spark/protocol'
 import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
@@ -66,6 +85,7 @@ import type { VoiceRouteBinding } from './VoiceRouteBinding.js'
 interface Harness {
   service: VoiceAssistantService
   stateEvents: VoiceAssistantStateEvent[]
+  sessionFocusEvents: VoiceAssistantSessionFocusEvent[]
   captureCommands: VoiceAssistantCaptureCommand[]
   playCommands: VoiceAssistantPlayCommand[]
   submitted: Array<{ sessionId: string; message: string; userMessageDisplayContent: string }>
@@ -78,6 +98,12 @@ interface Harness {
   approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }>
   route: VoiceRouteBinding
   installCalls: number[]
+  /** setSessionReasoningEffort 调用记录（语音会话思考档位对齐断言用） */
+  reasoningEffortSyncs: Array<{ sessionId: string; effort: string | null }>
+  /** writeSettings 全量记录（迁移回写断言用） */
+  settingsWrites: VoiceAssistantSettings[]
+  /** 覆盖唤醒预跳窥探结果（null = 无存活绑定，不发预跳事件） */
+  setPeekAliveSessionId(id: string | null): void
   setInstallImpl: (
     impl: () => Promise<{
       success: boolean
@@ -87,12 +113,14 @@ interface Harness {
   ) => void
 }
 
-function flushAsync(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Harness {
+function createHarness(
+  settingsPatch: Partial<VoiceAssistantSettings> = {},
+  /** 模拟 v1 存量设置：初始对象不含 noisePipelineMigrated 字段（迁移回写分支） */
+  legacyV1 = false,
+): Harness {
   const stateEvents: VoiceAssistantStateEvent[] = []
+  const sessionFocusEvents: VoiceAssistantSessionFocusEvent[] = []
+  let peekAliveSessionId: string | null = 'session-voice-1'
   const captureCommands: VoiceAssistantCaptureCommand[] = []
   const playCommands: VoiceAssistantPlayCommand[] = []
   const submitted: Harness['submitted'] = []
@@ -112,6 +140,8 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
   const bindingUpdates: Array<Record<string, unknown>> = []
   const approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }> = []
   const installCalls: number[] = []
+  const settingsWrites: VoiceAssistantSettings[] = []
+  const reasoningEffortSyncs: Harness['reasoningEffortSyncs'] = []
   let installImpl:
     | (() => Promise<{
         success: boolean
@@ -125,10 +155,15 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     voiceFocus: 'off',
     ...settingsPatch,
   }
+  if (legacyV1) {
+    delete (settings as { noisePipelineMigrated?: boolean }).noisePipelineMigrated
+    delete (settings as { refineTranscriptMigrated?: boolean }).refineTranscriptMigrated
+  }
 
   const route: VoiceRouteBinding = {
     current: { defaultSessionId: 'session-voice-1' },
     ensureSession: async () => ({ sessionId: 'session-voice-1', created: false }),
+    peekAliveSessionId: async () => peekAliveSessionId,
     createNewSession: async () => {
       createdSessions.push('session-voice-new')
       return { sessionId: 'session-voice-new' }
@@ -144,6 +179,7 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     readSettings: () => settings,
     writeSettings: (value) => {
       settings = value
+      settingsWrites.push(value)
     },
     shortcutRegistrar: {
       register: () => true,
@@ -185,6 +221,9 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
       stateEvents.push(event)
     },
     broadcastStatus: () => undefined,
+    emitSessionFocus: (event) => {
+      sessionFocusEvents.push(event)
+    },
     registerCleanup: () => undefined,
     ttsDir: '/tmp/voice-assistant-test-tts',
     runtimeDir: '/tmp/voice-assistant-test-runtime',
@@ -206,11 +245,17 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
       approvals.push({ requestId, decision })
       return true
     },
+    setSessionReasoningEffort: async (sessionId, effort) => {
+      reasoningEffortSyncs.push({ sessionId, effort })
+    },
+    resolveAgentInfo: (agentId) =>
+      agentId != null ? { adapter: 'codex', agentName: `agent-${agentId}` } : null,
   })
 
   return {
     service,
     stateEvents,
+    sessionFocusEvents,
     captureCommands,
     playCommands,
     submitted,
@@ -223,6 +268,11 @@ function createHarness(settingsPatch: Partial<VoiceAssistantSettings> = {}): Har
     approvals,
     route,
     installCalls,
+    settingsWrites,
+    reasoningEffortSyncs,
+    setPeekAliveSessionId: (id: string | null) => {
+      peekAliveSessionId = id
+    },
     setInstallImpl: (
       impl: () => Promise<{
         success: boolean
@@ -330,6 +380,77 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'completed' })
   })
 
+  it('识别精修：refined 全文整体替换流式拼接后提交', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
+    // 确认窗口静默到期 → thinking → stop（refine 模式）
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.service.getStatus().state).toBe('thinking')
+    // flush 尾句并入流式拼接
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '适合出行吗',
+    })
+    // SenseVoice 精修全文到达：流式两句的漏字/错字修复版，整体替换
+    h.service.handleRecognitionEvent({
+      type: 'refined',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样？适合出行吗？',
+    })
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(h.submitted.length).toBe(1)
+    // 提交的是精修全文，而非流式拼接（"今天天气怎么样 适合出行吗"）
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('今天天气怎么样？适合出行吗？')
+  })
+
+  it('v1→v2 噪音管线迁移：存量默认组合自动回退新默认并回写持久化', () => {
+    // 模拟 v1 存量：上一版默认 browserDenoise=true + voiceFocus=standard，
+    // 且设置文件里没有迁移标记字段
+    const h = createHarness({ browserDenoise: true, voiceFocus: 'standard' }, true)
+    expect(h.service.getSettings().browserDenoise).toBe(false)
+    expect(h.service.getSettings().voiceFocus).toBe('off')
+    expect(h.service.getSettings().refineTranscript).toBe(true)
+    expect(h.service.getSettings().noisePipelineMigrated).toBe(true)
+    // 迁移结果立即回写持久化（防止每次启动重复迁移/用户显式开启后被重置）
+    expect(h.settingsWrites.length).toBe(1)
+    expect(h.settingsWrites[0]?.noisePipelineMigrated).toBe(true)
+    expect(h.settingsWrites[0]?.browserDenoise).toBe(false)
+  })
+
+  it('v1→v2 迁移：用户显式组合不回退（只置迁移标记）', () => {
+    // 用户只开了降噪（voiceFocus=off）：非 v1 默认组合，视为显式选择保留
+    const h = createHarness({ browserDenoise: true, voiceFocus: 'off' }, true)
+    expect(h.service.getSettings().browserDenoise).toBe(true)
+    expect(h.service.getSettings().voiceFocus).toBe('off')
+    expect(h.service.getSettings().noisePipelineMigrated).toBe(true)
+  })
+
+  it('识别精修迁移：v1 死字段持久化的 false 自动翻回默认开并回写', () => {
+    // v1 时代 refineTranscript 是无 UI 死字段（默认 false 被整体保存持久化），
+    // 升级后首次构造即迁移回开（精修对识别率提升显著），并立即回写防重复迁移
+    const h = createHarness({ refineTranscript: false }, true)
+    expect(h.service.getSettings().refineTranscript).toBe(true)
+    expect(h.service.getSettings().refineTranscriptMigrated).toBe(true)
+    expect(h.settingsWrites.length).toBe(1)
+    expect(h.settingsWrites[0]?.refineTranscript).toBe(true)
+    expect(h.settingsWrites[0]?.refineTranscriptMigrated).toBe(true)
+  })
+
+  it('识别精修迁移：已迁移后用户显式关闭被尊重', () => {
+    const h = createHarness({ refineTranscript: false, refineTranscriptMigrated: true })
+    expect(h.service.getSettings().refineTranscript).toBe(false)
+    // 标记已存在 → 构造时不发生迁移回写
+    expect(h.settingsWrites.length).toBe(0)
+  })
+
   it('listening 态再按快捷键 → 取消并回 idle', () => {
     const h = createHarness()
     h.service.wake()
@@ -340,6 +461,42 @@ describe('VoiceAssistantService 状态机', () => {
     expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'cancelled' })
     // 未提交任何会话
     expect(h.submitted.length).toBe(0)
+  })
+
+  it('回归：聆听中取消 → 自发 session-stopped 不得被误判为 error', async () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    expect(h.service.getStatus().state).toBe('listening')
+
+    // 还原真实 stopVoiceSession 行为：flush 收尾会**同步**经 recognitionBridge 回调
+    // session-stopped。若归属未先摘除，这个自发停止会被当成「外部终止」→ 用户点
+    // 「取消聆听」却弹「语音识别会话已中断」红色报错（本用例锁死该回归）。
+    const { stopVoiceSession } = await import('../VoiceRecognitionService.js')
+    vi.mocked(stopVoiceSession).mockImplementation((sessionId?: string) => {
+      if (sessionId != null) {
+        h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId })
+      }
+      return false
+    })
+    try {
+      expect(h.service.wake().message).toContain('取消')
+    } finally {
+      // clearAllMocks 不还原实现，必须显式复位避免污染后续用例
+      vi.mocked(stopVoiceSession).mockImplementation(() => false)
+    }
+
+    expect(h.service.getStatus().state).toBe('idle')
+    expect(h.stateEvents.some((e) => e.reason === 'error')).toBe(false)
+    expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'cancelled' })
+    expect(h.submitted.length).toBe(0)
+  })
+
+  it('回归：外部终止活跃识别会话仍报 error（与主动取消区分）', () => {
+    const h = createHarness()
+    expect(h.service.wake().ok).toBe(true)
+    // 非本服务发起的停止（如语音包安装触发引擎缓存重置）仍须暴露为错误
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    expect(h.stateEvents.at(-1)).toMatchObject({ state: 'idle', reason: 'error' })
   })
 
   it('防抖：final 后确认窗口内继续说话 → 撤销收口拼接，多段合并提交', async () => {
@@ -407,6 +564,116 @@ describe('VoiceAssistantService 状态机', () => {
     h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
     await vi.advanceTimersByTimeAsync(10)
     expect(h.submitted.length).toBe(1)
+  })
+
+  it('HUD 不重复：final 定稿后清掉同句 partial，确认窗口播报文本不含两遍', async () => {
+    const h = createHarness()
+    h.service.wake()
+    // 实时识别流：partial 是当前句的实时全文（覆盖语义）
+    h.service.handleRecognitionEvent({
+      type: 'partial',
+      sessionId: 'voice-100-1',
+      text: '你能干什么',
+    })
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '你能干什么',
+    })
+    // 确认窗口广播的 detail 必须只有一遍（partialText 已随 final 清空）
+    const confirmEvent = h.stateEvents.find((e) => e.reason === 'confirm')
+    expect(confirmEvent?.detail).toBe('你能干什么')
+    // 窗口到期正常提交一遍
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('你能干什么')
+  })
+
+  it('纯标点不提交：噪音硬解出的句号不算输入，确认窗口到期继续聆听', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '。。' })
+    // 确认窗口到期 → 无有效正文 → 不收口、不停采集、继续聆听
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.service.getStatus().state).toBe('listening')
+    expect(h.captureCommands.some((c) => c.action === 'stop')).toBe(false)
+    expect(h.submitted.length).toBe(0)
+    expect(h.stateEvents.some((e) => e.state === 'thinking')).toBe(false)
+    // 用户随后开口说有效内容 → 正常收口提交
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '现在帮你查询',
+    })
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.service.getStatus().state).toBe('thinking')
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(1)
+    expect(h.submitted[0]?.userMessageDisplayContent).toBe('现在帮你查询')
+  })
+
+  it('收口兜底：精修后仅剩标点 → 恢复聆听而非提交', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '嗯，啊' })
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(h.service.getStatus().state).toBe('thinking')
+    // 精修整体替换为纯标点（噪音段的典型精修产出）
+    h.service.handleRecognitionEvent({ type: 'refined', sessionId: 'voice-100-1', text: '。' })
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    // 不提交；自动恢复聆听（新采集会话已下发）
+    expect(h.submitted.length).toBe(0)
+    expect(h.service.getStatus().state).toBe('listening')
+    expect(h.captureCommands.filter((c) => c.action === 'start').length).toBe(2)
+  })
+
+  it('语音会话思考：开关/档位切换 → 同步绑定会话推理档位', async () => {
+    const h = createHarness()
+    expect(h.reasoningEffortSyncs.length).toBe(0)
+    // 关闭思考 → 对齐为 agent 档位（null）
+    h.service.updateSettings({
+      ...h.service.getSettings(),
+      sessionThinkingEnabled: false,
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.reasoningEffortSyncs).toEqual([{ sessionId: 'session-voice-1', effort: null }])
+    // 与思考无关的设置变更不触发同步
+    h.service.updateSettings({ ...h.service.getSettings(), ttsSpeed: 1.5 })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.reasoningEffortSyncs.length).toBe(1)
+    // 重新开启（默认 minimal 档）→ 再次同步
+    h.service.updateSettings({
+      ...h.service.getSettings(),
+      sessionThinkingEnabled: true,
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.reasoningEffortSyncs).toEqual([
+      { sessionId: 'session-voice-1', effort: null },
+      { sessionId: 'session-voice-1', effort: 'minimal' },
+    ])
+    // 档位切换（开关不动）也触发同步，且同步所选档位
+    h.service.updateSettings({
+      ...h.service.getSettings(),
+      sessionThinkingEffort: 'low',
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.reasoningEffortSyncs.at(-1)).toEqual({ sessionId: 'session-voice-1', effort: 'low' })
+  })
+
+  it('describeSessionAgent：透传绑定 Agent 的适配器信息', () => {
+    const h = createHarness()
+    // harness 默认绑定只有 defaultSessionId、未绑定 Agent → null（UI 回落默认选项）
+    expect(h.service.describeSessionAgent()).toBeNull()
+    // 绑定 Agent 后 → 透传解析结果（mock：非空 id → codex + 名称）
+    h.route.current.defaultAgentId = 'agent-voice-1'
+    expect(h.service.describeSessionAgent()).toEqual({
+      adapter: 'codex',
+      agentName: 'agent-agent-voice-1',
+    })
   })
 
   it('20s 空转无转写 → 超时收口 + 失效提示音', async () => {
@@ -645,6 +912,90 @@ describe('VoiceAssistantService 状态机', () => {
       h.bindingUpdates.some(
         (patch) =>
           patch.defaultWorkspaceId === 'ws-1' && patch.defaultSessionId === 'session-in-ws1',
+      ),
+    ).toBe(true)
+  })
+
+  it('会话聚焦：唤醒预跳 + 提交轮次 → emitSessionFocus 驱动 UI 跳转', async () => {
+    const h = createHarness()
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(10)
+    // 唤醒即预跳绑定会话（说话时转写直接出现在眼前）
+    expect(h.sessionFocusEvents).toEqual([{ sessionId: 'session-voice-1', cause: 'wake' }])
+
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(1)
+    expect(
+      h.sessionFocusEvents.some(
+        (e) => e.cause === 'turn' && e.sessionId === 'session-voice-1',
+      ),
+    ).toBe(true)
+  })
+
+  it('会话聚焦：无存活绑定（首次使用）唤醒不预跳，提交轮次时才跳', async () => {
+    const h = createHarness()
+    h.setPeekAliveSessionId(null)
+    h.service.wake()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.sessionFocusEvents.filter((e) => e.cause === 'wake')).toHaveLength(0)
+
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '你好' })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.sessionFocusEvents.some((e) => e.cause === 'turn')).toBe(true)
+  })
+
+  it('会话聚焦：语音命令新开会话/选择会话/切工作区 → 跳转到改绑后的会话', async () => {
+    const h = createHarness()
+    // 新开会话 → command-new
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '新开会话' })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(
+      h.sessionFocusEvents.some(
+        (e) => e.cause === 'command-new' && e.sessionId === 'session-voice-new',
+      ),
+    ).toBe(true)
+
+    // 切换会话 → 念列表 → 第1个（session-a）→ command-switch
+    h.service.wake() // speaking 态唤醒 = 打断，回 idle
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换会话' })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    h.service.wake() // speaking 打断 → idle
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第1个' })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(
+      h.sessionFocusEvents.some(
+        (e) => e.cause === 'command-switch' && e.sessionId === 'session-a',
+      ),
+    ).toBe(true)
+
+    // 切换工作区 → 绑定其最近会话（session-in-ws1）→ command-workspace
+    h.service.wake()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '切换到Spark工作区',
+    })
+    await vi.advanceTimersByTimeAsync(1250)
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(
+      h.sessionFocusEvents.some(
+        (e) => e.cause === 'command-workspace' && e.sessionId === 'session-in-ws1',
       ),
     ).toBe(true)
   })

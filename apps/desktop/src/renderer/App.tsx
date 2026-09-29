@@ -60,6 +60,7 @@ import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { CanvasProjectSidebarList } from './design/CanvasProjectSidebarList'
 import { NotificationBell } from './design/components/notifications/NotificationBell'
+import { VoiceAssistantButton } from './design/voice-assistant/VoiceAssistantButton'
 import { UserMenuDropdown } from './design/components/user-menu/UserMenuDropdown'
 import type { AccountSyncOutcome } from './design/components/user-menu/userMenuModel'
 import { Icons } from './design/Icons'
@@ -1281,6 +1282,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </button>
           </UserMenuDropdown>
           <NotificationBell />
+          <VoiceAssistantButton />
           <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
             <button
               className="sidebar-user-settings"

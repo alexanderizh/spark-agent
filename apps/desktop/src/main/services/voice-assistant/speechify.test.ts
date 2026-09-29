@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   cleanInlineMarkdown,
+  hasMeaningfulVoiceText,
   SentenceSplitter,
   speechifyText,
   splitSentences,
@@ -125,5 +126,22 @@ describe('splitSentences', () => {
     const out = splitSentences('**重点**如下：\n```js\nx()\n```\n完成。')
     expect(out).toContain('重点如下：')
     expect(out).toContain('（代码已省略，请在应用中查看）')
+  })
+})
+
+describe('hasMeaningfulVoiceText', () => {
+  it('纯标点/空白/符号判为无正文（噪音硬解的典型产出）', () => {
+    expect(hasMeaningfulVoiceText('。')).toBe(false)
+    expect(hasMeaningfulVoiceText('，。！？…—')).toBe(false)
+    expect(hasMeaningfulVoiceText('  \n\t ')).toBe(false)
+    expect(hasMeaningfulVoiceText('')).toBe(false)
+  })
+
+  it('含字母/数字/文字即有效（含混合标点）', () => {
+    expect(hasMeaningfulVoiceText('嗯。')).toBe(true)
+    expect(hasMeaningfulVoiceText('。你好')).toBe(true)
+    expect(hasMeaningfulVoiceText('hello world')).toBe(true)
+    expect(hasMeaningfulVoiceText('3.14 是圆周率')).toBe(true)
+    expect(hasMeaningfulVoiceText('。。。嗯。')).toBe(true)
   })
 })

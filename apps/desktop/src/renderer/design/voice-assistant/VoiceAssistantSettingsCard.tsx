@@ -13,13 +13,30 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Select } from '@lobehub/ui'
 import { Switch } from 'antd'
-import type { VoiceAssistantSettings, VoiceAssistantStatus } from '@spark/protocol'
+import type {
+  SessionAgentAdapter,
+  SessionReasoningEffort,
+  VoiceAssistantSessionAgentInfo,
+  VoiceAssistantSettings,
+  VoiceAssistantStatus,
+} from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
+import { getPermissionModeOptions, getValidPermissionMode } from '../utils/permission-options'
 
-const PERMISSION_OPTIONS = [
-  { label: '自动执行（claude-auto，推荐）', value: 'claude-auto' },
-  { label: '自动编辑（claude-auto-edits）', value: 'claude-auto-edits' },
-  { label: '每次询问（claude-ask）', value: 'claude-ask' },
+const ADAPTER_LABEL: Record<SessionAgentAdapter, string> = {
+  claude: 'Claude',
+  'claude-sdk': 'Claude',
+  codex: 'Codex',
+  spark: 'Spark',
+}
+
+const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: SessionReasoningEffort }> = [
+  { label: '最低 ≈ 不思考（最快）', value: 'minimal' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' },
+  { label: '很高', value: 'xhigh' },
+  { label: '最高', value: 'max' },
 ]
 
 const STATE_LABEL: Record<string, string> = {
@@ -44,6 +61,7 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
 
 export function VoiceAssistantSettingsCard() {
   const [settings, setSettings] = useState<VoiceAssistantSettings>(DEFAULT_VOICE_ASSISTANT_SETTINGS)
+  const [sessionAgent, setSessionAgent] = useState<VoiceAssistantSessionAgentInfo | null>(null)
   const [status, setStatus] = useState<VoiceAssistantStatus | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -55,6 +73,7 @@ export function VoiceAssistantSettingsCard() {
         const res = await window.spark.invoke('voice-assistant:get-settings', {})
         if (!cancelled) {
           setSettings(res.settings)
+          setSessionAgent(res.sessionAgent ?? null)
           setLoaded(true)
         }
       } catch {
@@ -227,8 +246,18 @@ export function VoiceAssistantSettingsCard() {
           </div>
         </div>
         <SettingsRow
+          title="识别精修"
+          desc="说完后用离线模型重识别整段音频并整体替换流式结果（与输入框语音输入同链路），显著减少漏字错字；代价是发送前多等约 1–3 秒。识别率优先建议保持开启。"
+          right={
+            <Switch
+              checked={settings.refineTranscript}
+              onChange={(v) => void update({ refineTranscript: v })}
+            />
+          }
+        />
+        <SettingsRow
           title="浏览器降噪"
-          desc="采集源头开启系统级降噪与人声隔离，过滤风扇/空调/键盘等稳态噪音。输入框语音输入不受影响（保持原始人声）。"
+          desc="采集源头开启系统级降噪与人声隔离，过滤风扇/空调等稳态噪音。注意：降噪会削掉部分字头轻辅音，可能造成漏字——识别率优先请保持关闭，仅嘈杂环境开启。"
           right={
             <Switch
               checked={settings.browserDenoise}
@@ -241,8 +270,9 @@ export function VoiceAssistantSettingsCard() {
             <div className="row-title">人声聚焦</div>
             <div className="row-desc">
               尽量只保留你本人的近场人声：低能量远场声音（电视/旁人/音乐）在识别前被
-              静音，噪音硬解出的句子也会被本地人声检测否决。首次开启自动下载人声检测 模型（约
-              0.5MB）。「严格」过滤更强，但离麦克风远时可能误杀。
+              静音，噪音硬解出的句子也会被本地人声检测否决。门控有轻微吃字头/字尾的
+              风险（已尽量优化），识别率优先建议关闭，仅噪音大的环境开启。首次开启
+              自动下载人声检测模型（约 0.5MB）。
             </div>
           </div>
           <div className="row-action" style={{ minWidth: 160 }}>
@@ -250,9 +280,9 @@ export function VoiceAssistantSettingsCard() {
               value={settings.voiceFocus}
               onChange={(v) => void update({ voiceFocus: v })}
               options={[
-                { label: '标准（推荐）', value: 'standard' },
+                { label: '关闭（推荐）', value: 'off' },
+                { label: '标准', value: 'standard' },
                 { label: '严格', value: 'strict' },
-                { label: '关闭', value: 'off' },
               ]}
             />
           </div>
@@ -363,8 +393,36 @@ export function VoiceAssistantSettingsCard() {
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
+          title="语音会话思考"
+          desc="开启后语音会话以固定推理档运行，大幅缩短回复等待（思考会显著拉长首字时间）。仅影响语音会话，普通对话的推理设置不受影响；关闭后跟随语音 Agent 的默认档位。切换即时生效并同步已绑定的语音会话。"
+          right={
+            <Switch
+              checked={settings.sessionThinkingEnabled}
+              onChange={(v) => void update({ sessionThinkingEnabled: v })}
+            />
+          }
+        />
+        <div className="settings-card-row">
+          <div className="flex1 min-w-0">
+            <div className="row-title">思考强度</div>
+            <div className="row-desc">
+              语音会话使用的推理档位（各适配器映射到自身最近档位）；思考开关关闭时不生效。
+            </div>
+          </div>
+          <div className="row-action" style={{ minWidth: 200 }}>
+            <Select
+              value={settings.sessionThinkingEffort}
+              onChange={(v) => void update({ sessionThinkingEffort: v })}
+              options={THINKING_EFFORT_OPTIONS}
+              disabled={!settings.sessionThinkingEnabled}
+            />
+          </div>
+        </div>
+        <SettingsRow
           title="语音会话权限模式"
-          desc="语音新建会话使用的权限模式；已有绑定会话沿用其自身设置。"
+          desc={`语音新建会话使用的权限模式；已有绑定会话沿用其自身设置。当前语音 Agent：${
+            sessionAgent?.agentName ?? '默认 Agent'
+          }（${ADAPTER_LABEL[sessionAgent?.adapter ?? 'claude-sdk']} 适配器），选项随适配器自动切换；不适配的旧值在新建会话时自动回退推荐档。`}
         />
         <div className="settings-card-row">
           <div className="flex1 min-w-0">
@@ -372,9 +430,14 @@ export function VoiceAssistantSettingsCard() {
           </div>
           <div className="row-action" style={{ minWidth: 240 }}>
             <Select
-              value={settings.sessionPermissionMode}
+              value={getValidPermissionMode(
+                settings.sessionPermissionMode,
+                sessionAgent?.adapter ?? 'claude-sdk',
+              )}
               onChange={(v) => void update({ sessionPermissionMode: v })}
-              options={PERMISSION_OPTIONS}
+              options={getPermissionModeOptions(sessionAgent?.adapter ?? 'claude-sdk').map(
+                (option) => ({ label: option.label, value: option.value }),
+              )}
             />
           </div>
         </div>

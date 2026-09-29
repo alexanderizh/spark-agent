@@ -90,17 +90,12 @@ beforeEach(() => {
 })
 
 describe('能量层门控', () => {
-  it('预热期不激活：输出置零且不触发 speech-activity', () => {
-    const activities: boolean[] = []
-    const gate = new VoiceNoiseGate({
-      mode: 'standard',
-      onSpeechActivity: (active) => activities.push(active),
-    })
+  it('预热期直通：高能量也原样放行（唤醒后立即开口不吃字头）', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard', disableSilero: true })
     gate.reset()
-    // 预热期喂高能量也不激活（防唤醒提示音残留误判）
+    // 预热期高能量直通——识别率优先，300ms 预热窗口不能切掉立即开口的字头
     const out = gate.process(tone(0.5))
-    expect(isAllZero(out)).toBe(true)
-    expect(activities).toEqual([])
+    expect(isAllZero(out)).toBe(false)
   })
 
   it('高能量人声放行 + 静音置零（长度不变）', () => {
@@ -116,27 +111,46 @@ describe('能量层门控', () => {
     expect(outSilence.length).toBe(CHUNK)
   })
 
-  it('hangover：语音结束后短窗口内低能量仍放行（防字尾轻音被切）', () => {
+  it('起音迟滞：字头爬坡期（门限-4dB 以上）持续放行不关门', () => {
+    const gate = new VoiceNoiseGate({ mode: 'standard', disableSilero: true })
+    gate.reset()
+    // 预热期在 -45dB 环境收敛 baseline → threshold=-39dB，attack 门限 -43dB
+    for (let i = 0; i < 3; i += 1) gate.process(tone(0.0084)) // ≈ -45dB
+    // 字头轻辅音 ≈ -41dB：低于关门门限(-39)但高于起音门限(-43)。
+    // 旧逻辑（无迟滞）会在 6 个 hangover chunk 后关门置零；新逻辑持续放行
+    const consonant = tone(0.0133) // ≈ -41dB
+    for (let i = 0; i < 8; i += 1) {
+      expect(isAllZero(gate.process(consonant))).toBe(false)
+    }
+    // 远低于起音门限的静音仍在 hangover 后被门控（关门语义不变）
+    const faint = tone(0.0001) // ≈ -85dB
+    for (let i = 0; i < 6; i += 1) gate.process(faint) // hangover 6 chunk 放行
+    expect(isAllZero(gate.process(faint))).toBe(true)
+  })
+
+  it('hangover：语音结束后 6 chunk 内低能量仍放行（防字尾轻音被切）', () => {
     const gate = new VoiceNoiseGate({ mode: 'standard', disableSilero: true })
     gate.reset()
     warmUp(gate)
     gate.process(tone(0.5))
-    const faint = tone(0.002) // 远低于门限的尾音
-    // hangover 3 chunk 内放行（非全零）
-    expect(isAllZero(gate.process(faint))).toBe(false)
-    expect(isAllZero(gate.process(faint))).toBe(false)
-    expect(isAllZero(gate.process(faint))).toBe(false)
-    // 第 4 chunk 起门控生效（置零）
+    const faint = tone(0.0001) // 远低于门限的尾音
+    // hangover 6 chunk 内放行（非全零）
+    for (let i = 0; i < 6; i += 1) {
+      expect(isAllZero(gate.process(faint))).toBe(false)
+    }
+    // 第 7 chunk 起门控生效（置零）
     expect(isAllZero(gate.process(faint))).toBe(true)
   })
 
   it('底噪自适应：预热于真实底噪的门限压住同强度噪音，人声放行', () => {
     const gate = new VoiceNoiseGate({ mode: 'standard', disableSilero: true })
     gate.reset()
-    // 预热期直接暴露在环境底噪中（唤醒时环境已有电视声，amp 0.02 ≈ -38dB）
+    // 预热期直接暴露在环境底噪中（唤醒时环境已有电视声，amp 0.02 ≈ -37dB）
     const ambient = tone(0.02)
     for (let i = 0; i < 3; i += 1) gate.process(ambient)
-    // 预热后同强度音频被判为底噪（置零）
+    // 预热后同强度音频还有 hangover 缓冲（warmup 直通把 quiet 计数清零），
+    // 6 个 chunk 后同强度底噪被判为底噪（置零）
+    for (let i = 0; i < 6; i += 1) gate.process(ambient)
     expect(isAllZero(gate.process(ambient))).toBe(true)
     // 显著更强的近场人声仍放行
     expect(isAllZero(gate.process(tone(0.5)))).toBe(false)
@@ -147,9 +161,9 @@ describe('能量层门控', () => {
     gate.reset()
     warmUp(gate) // 安静环境唤醒
     const ambient = tone(0.02)
-    // 前 8s：门限还停在安静基线，噪音全放行（宁可放行不误杀）。
-    // 第 80 个 chunk 触发重校准（重校准发生在本 chunk 判定之后，本 chunk 仍放行）；
-    // 随后还有 3 个 chunk 的尾音保持窗口
+    // warmup 直通把重校准提前 3 个 chunk（第 80 个），hangover 加长 3 个（6 chunk），
+    // 两者抵消：仍放行到第 86 个 chunk（循环 83 次 = warmup 后第 83 个 ambient），
+    // 第 87 个起门控恢复
     for (let i = 0; i < 83; i += 1) {
       expect(isAllZero(gate.process(ambient))).toBe(false)
     }
@@ -169,9 +183,8 @@ describe('能量层门控', () => {
     gate.reset()
     warmUp(gate)
     gate.process(tone(0.5))
-    // hangover 3 chunk 后回落
-    for (let i = 0; i < 4; i += 1) gate.process(silence())
-    gate.process(silence())
+    // hangover 6 chunk 后回落（第 7 个静音 chunk 翻转 false）
+    for (let i = 0; i < 7; i += 1) gate.process(silence())
     expect(activities).toEqual([true, false])
   })
 })
@@ -193,25 +206,53 @@ describe('silero 确认层', () => {
     expect(gate.coverageRatio(32000, 48000)).toBe(0)
   })
 
-  it('shouldAcceptFinal 按档位阈值拦截（standard 35% / strict 55%）', () => {
+  it('shouldAcceptFinal 按放行样本覆盖率拦截，门控静音不稀释分母', () => {
     const gate = new VoiceNoiseGate({ mode: 'standard' })
     gate.reset()
+    // 构造时间轴：3 warmup 静音（直通）+ 4 个高能量 chunk + 6 个 hangover 静音
+    // → 连续 active span [0, 13*1600)，之后静音被置零
+    warmUp(gate)
+    for (let i = 0; i < 4; i += 1) gate.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate.process(silence())
+    for (let i = 0; i < 3; i += 1) gate.process(silence()) // 置零段
     const vad = MockVad.instances[0]!
-    vad.emitSegment(16000, 16000)
+    const activeEnd = 13 * 1600
+    // silero 只确认 [1600, 5600) 是人声：放行样本 20800 中覆盖 4000 ≈ 19%
+    vad.emitSegment(1600, 4000)
     gate.flushSilero()
-    // 30% 覆盖：standard 拦截
-    expect(gate.shouldAcceptFinal(0, 53333)).toBe(false)
-    // 60% 覆盖：standard 放行
-    expect(gate.shouldAcceptFinal(0, 26666)).toBe(true)
+    // 19% < standard 30% → 噪音硬解拦截；分母不含置零静音（否则稀释成 4000/25600≈16%，
+    // 旧语义下长停顿句子会被误杀——正是本修正要防的）
+    expect(gate.shouldAcceptFinal(0, 20 * 1600)).toBe(false)
+    // 同一区间若 silero 确认大部分放行段为人声 → 放行
+    const gate2 = new VoiceNoiseGate({ mode: 'standard' })
+    gate2.reset()
+    warmUp(gate2)
+    for (let i = 0; i < 4; i += 1) gate2.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) gate2.process(silence())
+    const vad2 = MockVad.instances[MockVad.instances.length - 1]!
+    vad2.emitSegment(0, activeEnd - 3200) // 覆盖放行段 20800 中的 17600 ≈ 85%
+    gate2.flushSilero()
+    expect(gate2.shouldAcceptFinal(0, 20 * 1600)).toBe(true)
 
+    // strict 档：45% 阈值
     const strictGate = new VoiceNoiseGate({ mode: 'strict' })
     strictGate.reset()
-    const strictVad = MockVad.instances[0]!
-    strictVad.emitSegment(0, 16000)
+    warmUp(strictGate)
+    for (let i = 0; i < 4; i += 1) strictGate.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) strictGate.process(silence())
+    const strictVad = MockVad.instances[MockVad.instances.length - 1]!
+    strictVad.emitSegment(0, 11200) // 覆盖 20800 中的 11200 ≈ 54%：strict 放行
     strictGate.flushSilero()
-    // 60% 覆盖：strict 放行；45% 覆盖：strict 拦截、standard 会放行
-    expect(strictGate.shouldAcceptFinal(0, 26666)).toBe(true)
-    expect(strictGate.shouldAcceptFinal(0, 35555)).toBe(false)
+    expect(strictGate.shouldAcceptFinal(0, 20 * 1600)).toBe(true)
+    const strictGate2 = new VoiceNoiseGate({ mode: 'strict' })
+    strictGate2.reset()
+    warmUp(strictGate2)
+    for (let i = 0; i < 4; i += 1) strictGate2.process(tone(0.5))
+    for (let i = 0; i < 6; i += 1) strictGate2.process(silence())
+    const strictVad2 = MockVad.instances[MockVad.instances.length - 1]!
+    strictVad2.emitSegment(0, 8000) // 覆盖 20800 中的 8000 ≈ 38%：strict 拦截、standard 放行
+    strictGate2.flushSilero()
+    expect(strictGate2.shouldAcceptFinal(0, 20 * 1600)).toBe(false)
   })
 
   it('reset 隔离会话状态：段时间轴与底噪基线清空', () => {

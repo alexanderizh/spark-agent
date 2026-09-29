@@ -207,3 +207,12 @@ export function splitSentences(text: string): string[] {
   const tail = splitter.flush()
   return tail.length > 0 ? [...sentences, tail] : sentences
 }
+
+/**
+ * 转写文本是否含有效正文（字母/数字/文字）。
+ * 环境噪音经 ASR 硬解常产出「。」「，」等纯标点——无正文的转写不是用户输入，
+ * 不应提交给 agent，也不应触发收口。
+ */
+export function hasMeaningfulVoiceText(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text)
+}

@@ -171,6 +171,7 @@ import type {
   VoiceAssistantPlayCommand,
   VoiceAssistantResetRouteRequest,
   VoiceAssistantResetRouteResponse,
+  VoiceAssistantSessionFocusEvent,
   VoiceAssistantStateEvent,
   VoiceAssistantStatus,
   VoiceAssistantTriggerRequest,
@@ -8688,6 +8689,8 @@ export interface IpcStreamChannelMap {
   'stream:voice:recognition': VoiceRecognitionEvent
   /** Voice Assistant 状态机迁移事件（HUD 展示与调试） */
   'stream:voice-assistant:state': VoiceAssistantStateEvent
+  /** Voice Assistant 会话聚焦事件（语音活动时 UI 跳转到语音绑定会话） */
+  'stream:voice-assistant:session-focus': VoiceAssistantSessionFocusEvent
   /** Voice Assistant 采集起停指令（主进程 → 渲染端麦克风采集桥） */
   'stream:voice-assistant:capture': VoiceAssistantCaptureCommand
   /** Voice Assistant TTS 播放指令（主进程 → 渲染端播放队列） */

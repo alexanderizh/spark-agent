@@ -992,6 +992,10 @@ body.floating-sidebar-resizing * {
   font-size: var(--font-sm);
   font-weight: 600;
   color: var(--sidebar-text, var(--text));
+  /* 底栏右侧常驻图标变多（通知/语音/设置），窄侧栏下长用户名须省略而非压到图标上 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sidebar-user-info .meta {
   font-size: 10px;

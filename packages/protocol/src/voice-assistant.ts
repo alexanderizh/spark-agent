@@ -11,7 +11,28 @@
  *   fire-and-forget 渲染→主：播放反馈与采集反馈（VOICE_ASSISTANT_RENDERER_EVENT_CHANNEL）
  */
 
-import type { SessionPermissionMode } from './ipc/index.js'
+import type {
+  SessionAgentAdapter,
+  SessionPermissionMode,
+  SessionReasoningEffort,
+} from './ipc/index.js'
+
+/** 语音会话推理档位全集（normalize 白名单用） */
+export const VOICE_ASSISTANT_THINKING_EFFORTS: readonly SessionReasoningEffort[] = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+
+/** 语音会话所属 Agent 的适配器信息（设置页按适配器展示权限/推理选项） */
+export interface VoiceAssistantSessionAgentInfo {
+  adapter: SessionAgentAdapter
+  /** Agent 显示名；未解析到具体 Agent（走运行时默认）时为 null */
+  agentName: string | null
+}
 
 // ─── 设置 ───────────────────────────────────────────────────────────────────
 
@@ -46,7 +67,11 @@ export interface VoiceAssistantSettings {
   wakeBoost: number
   /** 识别引擎：本地 Paraformer（默认）；云 whisper 为 M3 预留 */
   recognitionEngine: 'local' | 'cloud'
-  /** 停止后离线精修（SenseVoice，延迟换准确率，默认关） */
+  /**
+   * 停止后离线精修（SenseVoice 重识别整段音频，延迟 1–3s 换准确率）。
+   * 与会话语音输入同链路，默认开——实测纯流式 Paraformer 漏字明显，精修后
+   * 整体替换流式结果，识别率显著提升。云引擎下不生效（云转写本就是整段识别）。
+   */
   refineTranscript: boolean
   /** TTS 渠道（null = 自动取第一个支持 audio.speech 的已配置渠道） */
   ttsProviderProfileId: string | null
@@ -74,17 +99,44 @@ export interface VoiceAssistantSettings {
    */
   utteranceConfirmMs: number
   /**
-   * 浏览器级降噪（默认开）：采集时开启 Chromium 降噪与人声隔离（voiceIsolation），
-   * 过滤风扇/空调/键盘等稳态噪音。旧语音输入保持原始人声（字头轻辅音更准），
-   * 语音助手是远场对话场景，优先保噪音免疫。
+   * 浏览器级降噪（默认关）：采集时开启 Chromium 降噪与人声隔离（voiceIsolation），
+   * 过滤稳态噪音。代价是削字头轻辅音（RNNoise 类处理的固有行为），实测明显
+   * 伤 ASR 识别率——与旧语音输入保持一致默认关闭，仅在嘈杂环境手动开启。
    */
   browserDenoise: boolean
   /**
-   * 人声聚焦（默认 standard）：主进程双层门控，尽量只保留用户本人的近场人声——
+   * 人声聚焦（默认 off）：主进程双层门控，尽量只保留用户本人的近场人声——
    * 能量层按自适应底噪门限把远场低能量音频静音（近场优先），silero 层校验
-   * final 的人声覆盖率丢弃噪音硬解的句子。off = 关闭（门控与校验都不做）。
+   * final 的人声覆盖率丢弃噪音硬解的句子。门控会轻微影响字头/字尾的完整性
+   * （已用起音迟滞与加长尾音保持把影响压到最低），识别率优先场景保持 off。
    */
   voiceFocus: 'off' | 'standard' | 'strict'
+  /**
+   * 噪音管线一次性迁移标记：v1 默认 browserDenoise=true + voiceFocus=standard
+   * 实测严重伤害识别率（降噪削字头 + 门控切字尾 + 覆盖率误杀整句），v2 起默认
+   * 关闭。存量设置若仍是 v1 默认组合（用户从未显式调整）则自动迁移回新默认；
+   * 用户已是其他组合说明显式选择过，仅置标记不再迁移。
+   */
+  noisePipelineMigrated: boolean
+  /**
+   * 识别精修一次性迁移标记：refineTranscript 在 v1 是无 UI 的死字段（默认 false
+   * 且会被整体保存持久化），用户不可能显式关闭过；v2 默认翻转 true 后，存量
+   * false 一律视为旧默认产物自动迁移回开。迁移后用户显式关闭（false + 标记
+   * 已置）则尊重选择不再重置。
+   */
+  refineTranscriptMigrated: boolean
+  /**
+   * 语音会话思考开关（默认开）：开启时语音会话以固定推理档运行（见
+   * sessionThinkingEffort），大幅降低响应延迟——思考会显著拉长首字时间，
+   * 语音对话追求快问快答。仅影响语音会话，普通对话不受影响（仍走
+   * agent/会话的推理配置）；关闭后跟随会话所属 Agent 的默认档位。
+   */
+  sessionThinkingEnabled: boolean
+  /**
+   * 语音会话推理档位（默认 minimal ≈ 不思考，最快出字）。开关开启时生效，
+   * 各适配器映射到自身最近档位（codex/spark 同样支持六档语义）。
+   */
+  sessionThinkingEffort: SessionReasoningEffort
 }
 
 export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
@@ -96,7 +148,6 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   wakeThreshold: 0.1,
   wakeBoost: 3.0,
   recognitionEngine: 'local',
-  refineTranscript: false,
   ttsProviderProfileId: null,
   ttsModelId: null,
   ttsVoice: '',
@@ -108,8 +159,13 @@ export const DEFAULT_VOICE_ASSISTANT_SETTINGS: VoiceAssistantSettings = {
   voiceSystemPrompt: true,
   soundCues: true,
   utteranceConfirmMs: 1200,
-  browserDenoise: true,
-  voiceFocus: 'standard',
+  browserDenoise: false,
+  voiceFocus: 'off',
+  noisePipelineMigrated: false,
+  refineTranscriptMigrated: false,
+  refineTranscript: true,
+  sessionThinkingEnabled: true,
+  sessionThinkingEffort: 'minimal',
 }
 
 function readBool(raw: unknown, fallback: boolean): boolean {
@@ -155,7 +211,7 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
     source.ttsModelId.length <= 300
       ? source.ttsModelId
       : null
-  return {
+  const settings: VoiceAssistantSettings = {
     enabled: readBool(source.enabled, DEFAULT_VOICE_ASSISTANT_SETTINGS.enabled),
     wakeShortcut: readString(
       source.wakeShortcut,
@@ -210,10 +266,53 @@ export function normalizeVoiceAssistantSettings(raw: unknown): VoiceAssistantSet
       DEFAULT_VOICE_ASSISTANT_SETTINGS.browserDenoise,
     ),
     voiceFocus:
-      source.voiceFocus === 'off' || source.voiceFocus === 'strict'
+      source.voiceFocus === 'off' ||
+      source.voiceFocus === 'standard' ||
+      source.voiceFocus === 'strict'
         ? source.voiceFocus
         : DEFAULT_VOICE_ASSISTANT_SETTINGS.voiceFocus,
+    noisePipelineMigrated: readBool(
+      source.noisePipelineMigrated,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.noisePipelineMigrated,
+    ),
+    refineTranscriptMigrated: readBool(
+      source.refineTranscriptMigrated,
+      DEFAULT_VOICE_ASSISTANT_SETTINGS.refineTranscriptMigrated,
+    ),
+    sessionThinkingEnabled:
+      typeof source.sessionThinkingEnabled === 'boolean'
+        ? source.sessionThinkingEnabled
+        : // 一次性迁移：旧版「轻量思考」布尔（v1 默认 true=minimal 档）。
+          // 显式关闭过轻量思考（= 想跟随 Agent 档位）迁移为思考开关关闭；
+          // 其余情况（开启/从未设置）迁移为新默认（开 + minimal）。
+          source.lightweightThinking === false
+          ? false
+          : DEFAULT_VOICE_ASSISTANT_SETTINGS.sessionThinkingEnabled,
+    sessionThinkingEffort: VOICE_ASSISTANT_THINKING_EFFORTS.includes(
+      source.sessionThinkingEffort as SessionReasoningEffort,
+    )
+      ? (source.sessionThinkingEffort as SessionReasoningEffort)
+      : DEFAULT_VOICE_ASSISTANT_SETTINGS.sessionThinkingEffort,
   }
+  // v1→v2 噪音管线一次性迁移：存量设置仍是 v1 默认组合（browserDenoise=true +
+  // voiceFocus=standard，均为 v1 发布默认值而非用户显式选择）时回退识别率优先的
+  // 新默认。迁移后置标记，由调用方回写持久化；用户已调整过其他组合则只置标记。
+  if (!settings.noisePipelineMigrated) {
+    if (settings.browserDenoise && settings.voiceFocus === 'standard') {
+      settings.browserDenoise = false
+      settings.voiceFocus = 'off'
+    }
+    settings.noisePipelineMigrated = true
+  }
+  // 识别精修独立迁移：v1 死字段（无 UI 开关）时代持久化的 false 是默认值产物
+  // 而非用户选择，首次经过本函数时统一翻回新默认 true；此后显式关闭不再重置。
+  if (!settings.refineTranscriptMigrated) {
+    if (!settings.refineTranscript) {
+      settings.refineTranscript = true
+    }
+    settings.refineTranscriptMigrated = true
+  }
+  return settings
 }
 
 // ─── voice route 绑定 ────────────────────────────────────────────────────────
@@ -301,6 +400,21 @@ export interface VoiceAssistantStateEvent {
   detail?: string
 }
 
+/**
+ * 会话聚焦事件（stream 主→渲染）：语音活动发生时通知 UI 跳转到语音绑定会话，
+ * 对齐命令面板切会话的行为（选中 + 侧栏定位）。渲染端据此调用 setActiveSession。
+ */
+export interface VoiceAssistantSessionFocusEvent {
+  /** 语音绑定的会话 id */
+  sessionId: string
+  /**
+   * 触发时机：
+   * wake=唤醒进入聆听（绑定已存在时的预跳） turn=轮次提交
+   * command-new/command-switch/command-workspace=语音命令改绑后
+   */
+  cause: 'wake' | 'turn' | 'command-new' | 'command-switch' | 'command-workspace'
+}
+
 // ─── 采集指令（stream 主→渲染） ─────────────────────────────────────────────
 
 export interface VoiceAssistantCaptureCommand {
@@ -385,6 +499,9 @@ export function isVoiceAssistantRendererEvent(
  */
 export const VOICE_ASSISTANT_INTERNAL_OWNER_ID = -1
 
+/** 会话聚焦事件通道（主→渲染，UI 跟随语音会话跳转） */
+export const VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL = 'stream:voice-assistant:session-focus'
+
 /** 对话模式采集 sessionId 前缀（主进程生成，渲染端只透传） */
 export const VOICE_ASSISTANT_DIALOGUE_SESSION_PREFIX = 'voice-assistant:dialogue:'
 /** M2 常驻 KWS 采集 sessionId（固定值） */
@@ -403,6 +520,11 @@ export interface VoiceAssistantGetSettingsRequest extends Record<string, never> 
 
 export interface VoiceAssistantGetSettingsResponse {
   settings: VoiceAssistantSettings
+  /**
+   * 语音会话当前解析到的 Agent 适配器信息（绑定 Agent 优先，缺省走默认 Agent）：
+   * 设置页按适配器展示对应的权限模式与推理档位选项；解析失败为 null（UI 回落 claude 选项）。
+   */
+  sessionAgent: VoiceAssistantSessionAgentInfo | null
 }
 
 export interface VoiceAssistantUpdateSettingsRequest {

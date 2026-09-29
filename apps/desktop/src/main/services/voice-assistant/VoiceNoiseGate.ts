@@ -59,18 +59,27 @@ interface SherpaVadConfig {
 export type VoiceFocusMode = 'standard' | 'strict'
 
 /** 近场增益门限（高于自适应底噪的 dB 数）：strict 只保留贴近麦克风的人声 */
-const ENERGY_GAIN_DB: Record<VoiceFocusMode, number> = { standard: 10, strict: 16 }
-/** silero 人声覆盖率下限：final 区间低于该比例判为噪音硬解并丢弃 */
-const SILERO_COVERAGE_MIN: Record<VoiceFocusMode, number> = { standard: 0.35, strict: 0.55 }
+const ENERGY_GAIN_DB: Record<VoiceFocusMode, number> = { standard: 6, strict: 12 }
+/**
+ * 起音迟滞（dB）：开门门限比关门门限低该值——字头轻辅音的能量爬坡期
+ * （未达全门限）即开始放行，避免字头被切导致 ASR 漏字。关门仍以全门限 +
+ * hangover 判定，不会因此提前关门。
+ */
+const ENERGY_ATTACK_RELAX_DB = 4
+/**
+ * silero 人声覆盖率下限：分母只算能量层放行（真正喂给 ASR）的样本，
+ * 正常语句覆盖率 >0.6、远场噪音硬解接近 0，该阈值有充分区分度。
+ */
+const SILERO_COVERAGE_MIN: Record<VoiceFocusMode, number> = { standard: 0.3, strict: 0.45 }
 
 /** 绝对下限（dBFS）：低于此必为底噪，防止极安静环境下门限退化过低 */
 const ABSOLUTE_FLOOR_DB = -55
 /** 底噪基线 EMA 系数（chunk ≈100ms，时间常数约 2s） */
 const BASELINE_EMA_ALPHA = 0.05
-/** 开场预热：前若干 chunk 快速收敛底噪估计 */
+/** 开场预热：前若干 chunk 收敛底噪估计（预热期音频直通，不吃字头） */
 const WARMUP_CHUNKS = 3
-/** 语音结束后的保持放行时长，防字尾轻音被切 */
-const HANGOVER_CHUNKS = 3
+/** 语音结束后的保持放行时长，防字尾轻音与停顿后的字头被切 */
+const HANGOVER_CHUNKS = 6
 /**
  * 连续活跃重校准上限（chunk ≈100ms）：持续 8s 无间断的高能量几乎必是稳态噪音
  * （真实语音有词间停顿，hangover 只保 300ms），此时把底噪基线重校准到当前
@@ -184,6 +193,12 @@ export class VoiceNoiseGate {
   /** silero 确认的人声段时间轴（会话内采样偏移，升序） */
   private speechSpans: SpeechSpan[] = []
   private lastSpanEnd = 0
+  /** 能量层放行（active）的样本时间段：覆盖率校验的分母只算这些真正喂给 ASR 的样本 */
+  private activeSpans: SpeechSpan[] = []
+  /** 进行中的 active span 起点（-1 = 当前不在 span 中） */
+  private activeStart = -1
+  /** 最近一个 active chunk 的结束偏移（span 收尾用） */
+  private activePendingEnd = 0
 
   constructor(options: VoiceNoiseGateOptions) {
     this.mode = options.mode
@@ -214,14 +229,17 @@ export class VoiceNoiseGate {
 
     let active: boolean
     if (this.chunksSinceStart < WARMUP_CHUNKS) {
-      // 预热期：快速收敛底噪估计（唤醒提示音刚落、用户尚未开口的窗口）
-      this.baselineDb = this.baselineDb == null ? db : this.baselineDb * 0.7 + db * 0.3
-      active = false
-    } else if (db >= threshold) {
+      // 预热期：音频直通（唤醒后立即开口的字头不能吃），底噪估计取最小值——
+      // 用户已开口时人声能量不会抬高等效门限，baseline 偏低只会更宽松，方向安全
+      this.baselineDb = Math.min(this.baselineDb ?? Infinity, db)
+      active = true
+      this.quietChunks = 0
+    } else if (db >= threshold - ENERGY_ATTACK_RELAX_DB) {
+      // 起音迟滞：能量爬坡到门限-迟滞量即放行，字头轻辅音不再被切
       active = true
       this.quietChunks = 0
     } else if (this.quietChunks < HANGOVER_CHUNKS) {
-      // 尾音保持：防字尾轻辅音被切（计数只在能量达标时归零，否则会无限保持）
+      // 尾音保持：防字尾轻辅音与词间停顿后的下一个字头被切
       active = true
       this.quietChunks += 1
     } else {
@@ -248,6 +266,14 @@ export class VoiceNoiseGate {
     }
 
     this.chunksSinceStart += 1
+    // 能量层放行段记录（覆盖率校验分母——只统计真正喂给 ASR 的样本）
+    if (active) {
+      if (this.activeStart < 0) this.activeStart = this.fedSamples
+      this.activePendingEnd = this.fedSamples + samples.length
+    } else if (this.activeStart >= 0) {
+      this.activeSpans.push({ start: this.activeStart, end: this.activePendingEnd })
+      this.activeStart = -1
+    }
     if (active !== this.speechActive) {
       this.speechActive = active
       try {
@@ -294,7 +320,37 @@ export class VoiceNoiseGate {
     if (this.fedSamples > TIMELINE_MAX_SAMPLES) {
       const cutoff = this.fedSamples - TIMELINE_MAX_SAMPLES
       this.speechSpans = this.speechSpans.filter((span) => span.end > cutoff)
+      this.activeSpans = this.activeSpans.filter((span) => span.end > cutoff)
     }
+  }
+
+  /** 收尾仍在进行中的 active span（stop flush 后的覆盖率查询需要完整时间轴） */
+  private closeActiveSpan(): void {
+    if (this.activeStart >= 0) {
+      this.activeSpans.push({ start: this.activeStart, end: this.activePendingEnd })
+      this.activeStart = -1
+    }
+  }
+
+  /** 两段升序时间轴在 [start,end) 内的交集样本数 */
+  private intersectSpans(
+    primary: SpeechSpan[],
+    secondary: SpeechSpan[],
+    start: number,
+    end: number,
+  ): number {
+    let total = 0
+    for (const x of primary) {
+      const xs = Math.max(x.start, start)
+      const xe = Math.min(x.end, end)
+      if (xs >= xe) continue
+      for (const y of secondary) {
+        if (y.end <= xs) continue
+        if (y.start >= xe) break
+        total += Math.min(y.end, xe) - Math.max(y.start, xs)
+      }
+    }
+    return total
   }
 
   /**
@@ -316,13 +372,35 @@ export class VoiceNoiseGate {
     return Math.min(1, covered / span)
   }
 
-  /** final 是否放行：silero 覆盖率低于档位阈值判为噪音硬解 */
+  /**
+   * 放行样本人声覆盖率：final 区间内「能量层放行（真正喂给 ASR）的样本」被
+   * silero 人声段覆盖的比例。分母不含门控静音段——慢语速/多停顿的语句不再被
+   * 静音稀释误杀；真正的噪音硬解（能量达标放行但 silero 判非人声）覆盖率
+   * 接近 0，仍被有效拦截。放行样本为空时保守放行（能量层都拦下了，不该有 final）。
+   */
+  coverageRatioOverActive(startSample: number, endSample: number): number {
+    if (!this.useSilero) return 1
+    const vad = loadVad()
+    if (vad == null) return 1
+    const unit: SpeechSpan[] = [{ start: startSample, end: endSample }]
+    // 进行中的 active span（用户仍在说）临时并入，流式 final 校验时它尚未收尾
+    const activeSpans =
+      this.activeStart >= 0
+        ? [...this.activeSpans, { start: this.activeStart, end: this.activePendingEnd }]
+        : this.activeSpans
+    const activeTotal = this.intersectSpans(activeSpans, unit, startSample, endSample)
+    if (activeTotal === 0) return 1
+    const covered = this.intersectSpans(activeSpans, this.speechSpans, startSample, endSample)
+    return Math.min(1, covered / activeTotal)
+  }
+
+  /** final 是否放行：放行样本的 silero 人声覆盖率低于档位阈值判为噪音硬解 */
   shouldAcceptFinal(startSample: number, endSample: number): boolean {
-    const ratio = this.coverageRatio(startSample, endSample)
+    const ratio = this.coverageRatioOverActive(startSample, endSample)
     const accept = ratio >= SILERO_COVERAGE_MIN[this.mode]
     if (!accept) {
       log.info(
-        `[voice-gate] final dropped: silero coverage ${(ratio * 100).toFixed(0)}% below ${SILERO_COVERAGE_MIN[this.mode] * 100}%`,
+        `[voice-gate] final dropped: speech coverage of admitted audio ${(ratio * 100).toFixed(0)}% below ${SILERO_COVERAGE_MIN[this.mode] * 100}%`,
       )
     }
     return accept
@@ -330,6 +408,7 @@ export class VoiceNoiseGate {
 
   /** 停止收音时逼出 silero 未确认段（stop flush 的 final 校验需要完整时间轴） */
   flushSilero(): void {
+    this.closeActiveSpan()
     if (!this.useSilero) return
     const vad = loadVad()
     if (vad == null) return
@@ -351,6 +430,9 @@ export class VoiceNoiseGate {
     this.fedSamples = 0
     this.speechSpans = []
     this.lastSpanEnd = 0
+    this.activeSpans = []
+    this.activeStart = -1
+    this.activePendingEnd = 0
     if (this.useSilero) {
       const vad = loadVad()
       try {

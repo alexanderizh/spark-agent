@@ -1,7 +1,10 @@
 /**
  * voice-assistant 协议设置解析测试
  *
- * 重点：新增字段（browserDenoise / voiceFocus）的旧数据兼容与脏数据收敛。
+ * 重点：噪音管线字段（browserDenoise / voiceFocus / noisePipelineMigrated）的
+ * 旧数据兼容、脏数据收敛与 v1→v2 一次性迁移（v1 默认降噪+门控实测伤识别率，
+ * v2 起识别率优先默认关闭，未迁移的 v1 默认组合自动回退）；识别精修
+ * （refineTranscript，v1 无 UI 死字段默认 false）的一次性翻回默认开。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -11,11 +14,50 @@ import {
 } from './voice-assistant'
 
 describe('normalizeVoiceAssistantSettings', () => {
-  it('空输入收敛为默认值（含新增噪音过滤字段）', () => {
+  it('空输入收敛为默认值（噪音管线识别率优先 + 迁移标记就位）', () => {
     const normalized = normalizeVoiceAssistantSettings({})
-    expect(normalized).toEqual(DEFAULT_VOICE_ASSISTANT_SETTINGS)
-    expect(normalized.browserDenoise).toBe(true)
-    expect(normalized.voiceFocus).toBe('standard')
+    expect(normalized).toEqual({
+      ...DEFAULT_VOICE_ASSISTANT_SETTINGS,
+      noisePipelineMigrated: true,
+      refineTranscriptMigrated: true,
+    })
+    expect(normalized.browserDenoise).toBe(false)
+    expect(normalized.voiceFocus).toBe('off')
+    expect(normalized.refineTranscript).toBe(true)
+    expect(normalized.sessionThinkingEnabled).toBe(true)
+    expect(normalized.sessionThinkingEffort).toBe('minimal')
+  })
+
+  it('语音会话思考：缺省开 + minimal；旧版轻量思考布尔一次性迁移；档位白名单', () => {
+    // 缺省：开 + minimal（与旧版轻量思考默认行为一致）
+    expect(normalizeVoiceAssistantSettings({}).sessionThinkingEnabled).toBe(true)
+    expect(normalizeVoiceAssistantSettings({}).sessionThinkingEffort).toBe('minimal')
+    // 旧版显式关闭轻量思考（= 想跟随 Agent 档位）→ 迁移为思考开关关闭
+    expect(
+      normalizeVoiceAssistantSettings({ lightweightThinking: false }).sessionThinkingEnabled,
+    ).toBe(false)
+    // 旧版开启/非布尔脏数据 → 保持新默认（开）
+    expect(
+      normalizeVoiceAssistantSettings({ lightweightThinking: true }).sessionThinkingEnabled,
+    ).toBe(true)
+    expect(
+      normalizeVoiceAssistantSettings({ lightweightThinking: 'off' }).sessionThinkingEnabled,
+    ).toBe(true)
+    // 新字段显式设置优先于旧字段迁移
+    expect(
+      normalizeVoiceAssistantSettings({
+        sessionThinkingEnabled: false,
+        lightweightThinking: true,
+      }).sessionThinkingEnabled,
+    ).toBe(false)
+    // 档位白名单：非法值回落默认，合法档位透传
+    expect(
+      normalizeVoiceAssistantSettings({ sessionThinkingEffort: 'ultra' })
+        .sessionThinkingEffort,
+    ).toBe('minimal')
+    expect(
+      normalizeVoiceAssistantSettings({ sessionThinkingEffort: 'high' }).sessionThinkingEffort,
+    ).toBe('high')
   })
 
   it('旧版本数据（缺新字段）回落默认值，既有字段保留', () => {
@@ -26,8 +68,46 @@ describe('normalizeVoiceAssistantSettings', () => {
     })
     expect(normalized.wakeShortcut).toBe('CommandOrControl+Shift+V')
     expect(normalized.utteranceConfirmMs).toBe(2000)
+    expect(normalized.browserDenoise).toBe(false)
+    expect(normalized.voiceFocus).toBe('off')
+  })
+
+  it('v1 存量默认组合（denoise+standard 且无标记）一次性迁移回新默认', () => {
+    const normalized = normalizeVoiceAssistantSettings({
+      browserDenoise: true,
+      voiceFocus: 'standard',
+    })
+    expect(normalized.browserDenoise).toBe(false)
+    expect(normalized.voiceFocus).toBe('off')
+    expect(normalized.noisePipelineMigrated).toBe(true)
+  })
+
+  it('v1 存量但用户显式组合不回退（只置迁移标记）', () => {
+    const onlyDenoise = normalizeVoiceAssistantSettings({
+      browserDenoise: true,
+      voiceFocus: 'off',
+    })
+    expect(onlyDenoise.browserDenoise).toBe(true)
+    expect(onlyDenoise.voiceFocus).toBe('off')
+    expect(onlyDenoise.noisePipelineMigrated).toBe(true)
+
+    const withStrict = normalizeVoiceAssistantSettings({
+      browserDenoise: true,
+      voiceFocus: 'strict',
+    })
+    expect(withStrict.browserDenoise).toBe(true)
+    expect(withStrict.voiceFocus).toBe('strict')
+  })
+
+  it('已迁移的显式开启不再被重置', () => {
+    const normalized = normalizeVoiceAssistantSettings({
+      browserDenoise: true,
+      voiceFocus: 'standard',
+      noisePipelineMigrated: true,
+    })
     expect(normalized.browserDenoise).toBe(true)
     expect(normalized.voiceFocus).toBe('standard')
+    expect(normalized.noisePipelineMigrated).toBe(true)
   })
 
   it('显式关闭/严格档位保留', () => {
@@ -39,13 +119,36 @@ describe('normalizeVoiceAssistantSettings', () => {
     expect(normalized.voiceFocus).toBe('strict')
   })
 
-  it('非法 voiceFocus 收敛为 standard', () => {
-    const normalized = normalizeVoiceAssistantSettings({ voiceFocus: 'ultra' })
-    expect(normalized.voiceFocus).toBe('standard')
+  it('识别精修：v1 死字段持久化的 false 一次性迁移回默认开', () => {
+    // v1 时代 refineTranscript 是无 UI 的死字段（默认 false，整体保存时被持久化），
+    // 存量 false 不是用户显式选择 → 首次经过 normalize 统一翻回开
+    const migrated = normalizeVoiceAssistantSettings({ refineTranscript: false })
+    expect(migrated.refineTranscript).toBe(true)
+    expect(migrated.refineTranscriptMigrated).toBe(true)
   })
 
-  it('非布尔 browserDenoise（脏数据）收敛为默认 true', () => {
+  it('识别精修：已迁移后用户显式关闭被尊重，不再重置', () => {
+    const respected = normalizeVoiceAssistantSettings({
+      refineTranscript: false,
+      refineTranscriptMigrated: true,
+    })
+    expect(respected.refineTranscript).toBe(false)
+    expect(respected.refineTranscriptMigrated).toBe(true)
+  })
+
+  it('识别精修：存量 true 只置标记不改值', () => {
+    const kept = normalizeVoiceAssistantSettings({ refineTranscript: true })
+    expect(kept.refineTranscript).toBe(true)
+    expect(kept.refineTranscriptMigrated).toBe(true)
+  })
+
+  it('非法 voiceFocus 收敛为 off（新默认）', () => {
+    const normalized = normalizeVoiceAssistantSettings({ voiceFocus: 'ultra' })
+    expect(normalized.voiceFocus).toBe('off')
+  })
+
+  it('非布尔 browserDenoise（脏数据）收敛为默认 false', () => {
     const normalized = normalizeVoiceAssistantSettings({ browserDenoise: 'yes' })
-    expect(normalized.browserDenoise).toBe(true)
+    expect(normalized.browserDenoise).toBe(false)
   })
 })

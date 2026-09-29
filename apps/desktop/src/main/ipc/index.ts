@@ -3441,6 +3441,9 @@ async function createVoiceAssistantSession(
     agentAdapter,
     permissionMode,
     ...(options.workspaceId != null ? { workspaceId: options.workspaceId } : {}),
+    // 语音会话思考：以固定推理档创建（createSession 的 params.reasoningEffort
+    // 优先于 agent 档位），缺省走 agent 默认
+    ...(options.reasoningEffort != null ? { reasoningEffort: options.reasoningEffort } : {}),
     title: '语音会话',
   })
   pushStreamEvent('stream:session:created', {
@@ -3448,6 +3451,30 @@ async function createVoiceAssistantSession(
     session: created.session,
   })
   return { sessionId: created.sessionId }
+}
+
+/**
+ * 语音会话 Agent 适配器解析（设置页按适配器展示权限/推理选项）：
+ * 绑定 Agent 优先，未绑定/已删除时回落默认 Agent 与运行时默认适配器，
+ * 与 createVoiceAssistantSession 的建会话解析保持一致。
+ */
+function resolveVoiceAssistantAgentInfo(agentId: string | null): {
+  adapter: SessionAgentAdapter
+  agentName: string | null
+} {
+  const agentRepo = getAgentRepository()
+  const configuredAgent =
+    agentId != null && agentId.length > 0 ? agentRepo.get(agentId) : undefined
+  const configuredAdapter = configuredAgent?.agentAdapter
+  const defaults = getRuntimePermissionDefaults()
+  const agentAdapter: SessionAgentAdapter =
+    configuredAdapter === 'claude' ||
+    configuredAdapter === 'claude-sdk' ||
+    configuredAdapter === 'codex' ||
+    configuredAdapter === 'spark'
+      ? configuredAdapter
+      : defaults.agentAdapter
+  return { adapter: agentAdapter, agentName: configuredAgent?.name ?? null }
 }
 
 /** 语音轮次 completed 先于 isFinal 时的历史回捞（与远程链路同模式） */
@@ -4811,6 +4838,26 @@ export function registerAllIpcHandlers(): void {
     isSessionAlive: async (sessionId) =>
       new SessionRepository(getDatabase()).get(sessionId) != null,
     createSession: createVoiceAssistantSession,
+    setSessionReasoningEffort: async (sessionId, effort) => {
+      const repo = new SessionRepository(getDatabase())
+      const session = repo.get(sessionId)
+      if (session == null) return
+      if (effort != null) {
+        repo.updateRuntime(sessionId, { reasoningEffort: effort })
+        return
+      }
+      // 思考开关关闭：恢复会话所属 agent 的推理档位（agent 缺省 max）
+      const agent =
+        session.agent_id != null && session.agent_id.length > 0
+          ? getAgentRepository().get(session.agent_id)
+          : null
+      const restored =
+        agent?.reasoningEffort != null && agent.reasoningEffort.length > 0
+          ? agent.reasoningEffort
+          : 'max'
+      repo.updateRuntime(sessionId, { reasoningEffort: restored })
+    },
+    resolveAgentInfo: (agentId) => resolveVoiceAssistantAgentInfo(agentId),
     submitTurn: (params) =>
       getSessionService().submitTurn({
         sessionId: params.sessionId,

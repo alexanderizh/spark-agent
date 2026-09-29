@@ -10,11 +10,16 @@
  */
 
 import { ipcMain, globalShortcut, type WebContents } from 'electron'
-import type { AgentEvent } from '@spark/protocol'
+import type {
+  AgentEvent,
+  SessionReasoningEffort,
+  VoiceAssistantSessionAgentInfo,
+} from '@spark/protocol'
 import {
   VOICE_ASSISTANT_KWS_SESSION_ID,
   VOICE_ASSISTANT_RENDERER_EVENT_CHANNEL,
   VOICE_ASSISTANT_ROUTE_KEY,
+  VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL,
   VOICE_ASSISTANT_SETTINGS_CATEGORY,
   VOICE_ASSISTANT_SETTINGS_KEY,
   isVoiceAssistantRendererEvent,
@@ -40,6 +45,16 @@ export interface RegisterVoiceAssistantIpcDeps {
   isSessionAlive(sessionId: string): Promise<boolean>
   /** 创建语音会话（含权限校验与 stream:session:created 广播） */
   createSession(options: CreateVoiceSessionOptions): Promise<{ sessionId: string }>
+  /**
+   * 同步语音绑定会话的推理档位（思考开关切换/启动对齐时调用）：
+   * effort 非空 → 写入该档位；null → 恢复会话所属 agent 的档位
+   */
+  setSessionReasoningEffort(
+    sessionId: string,
+    effort: SessionReasoningEffort | null,
+  ): Promise<void>
+  /** 解析 Agent 适配器信息（agentId 为空取默认 Agent），供设置页按适配器出选项 */
+  resolveAgentInfo(agentId: string | null): VoiceAssistantSessionAgentInfo | null
   /** 提交语音轮次 */
   submitTurn(params: {
     sessionId: string
@@ -154,10 +169,14 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     submitVoiceTurn: deps.submitTurn,
     cancelSessionTurn: deps.cancelTurn,
     recoverFinalFromHistory: deps.recoverFinal,
+    setSessionReasoningEffort: deps.setSessionReasoningEffort,
+    resolveAgentInfo: deps.resolveAgentInfo,
     route,
     sendCaptureCommand: (command) => sendToMainWindow('stream:voice-assistant:capture', command),
     sendPlayCommand: (command) => sendToMainWindow('stream:voice-assistant:play', command),
     broadcastState: (event) => pushStreamEvent('stream:voice-assistant:state', event),
+    emitSessionFocus: (event) =>
+      pushStreamEvent(VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL, event),
     broadcastStatus: (status) => {
       pushStreamEvent('stream:voice-assistant:status', status)
       try {
@@ -188,7 +207,9 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
   }
 
   typedIpcHandle('voice-assistant:get-settings', async () => {
-    return { settings: service().getSettings() }
+    // sessionAgent：语音会话当前适配器（绑定 Agent 优先），设置页据此展示
+    // 对应的权限模式与推理档位选项（claude/codex/spark 三系互斥）
+    return { settings: service().getSettings(), sessionAgent: service().describeSessionAgent() }
   })
 
   typedIpcHandle('voice-assistant:update-settings', async (request) => {

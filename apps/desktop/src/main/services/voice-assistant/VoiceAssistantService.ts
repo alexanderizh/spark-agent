@@ -22,9 +22,12 @@ import { join } from 'node:path'
 import { createLogger } from '@spark/shared'
 import type {
   AgentEvent,
+  SessionReasoningEffort,
   VoiceAssistantCaptureCommand,
   VoiceAssistantPlayCommand,
   VoiceAssistantRendererEvent,
+  VoiceAssistantSessionAgentInfo,
+  VoiceAssistantSessionFocusEvent,
   VoiceAssistantSettings,
   VoiceAssistantState,
   VoiceAssistantStateEvent,
@@ -37,6 +40,7 @@ import {
   normalizeVoiceAssistantSettings,
 } from '@spark/protocol'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
+import { hasMeaningfulVoiceText } from './speechify.js'
 import {
   feedVoiceAudio,
   startVoiceSession,
@@ -45,7 +49,7 @@ import {
 } from '../VoiceRecognitionService.js'
 import { VoiceTtsPipeline } from './VoiceTtsPipeline.js'
 import { WakeWordDetector, isWakeWordModelAvailable } from './WakeWordDetector.js'
-import { resolveVoiceVadPaths } from '../VoiceIntegrityService.js'
+import { resolveVoiceRefinePaths, resolveVoiceVadPaths } from '../VoiceIntegrityService.js'
 import {
   buildApprovalSpeech,
   buildSessionSelectionSpeech,
@@ -112,6 +116,8 @@ export interface VoiceAssistantDeps {
   sendPlayCommand(command: VoiceAssistantPlayCommand): void
   broadcastState(event: VoiceAssistantStateEvent): void
   broadcastStatus(status: VoiceAssistantStatus): void
+  /** 会话聚焦推送：语音活动发生时 UI 跳转到语音绑定会话 */
+  emitSessionFocus(event: VoiceAssistantSessionFocusEvent): void
   /** 应用关闭清理登记 */
   registerCleanup(cleanup: () => void): void
   /** TTS 产物根目录（userData/voice-assistant/tts，safe-file 白名单内） */
@@ -133,6 +139,13 @@ export interface VoiceAssistantDeps {
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
   resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
+  /** 同步语音绑定会话推理档位（固定档 → 写入该档位；null → 恢复 agent 档位） */
+  setSessionReasoningEffort(
+    sessionId: string,
+    effort: SessionReasoningEffort | null,
+  ): Promise<void>
+  /** 解析 Agent 适配器信息（agentId 为空时取默认 Agent），供设置页按适配器出选项 */
+  resolveAgentInfo(agentId: string | null): VoiceAssistantSessionAgentInfo | null
 }
 
 export class VoiceAssistantService {
@@ -173,6 +186,7 @@ export class VoiceAssistantService {
   private kwsInstallInFlight = false
   /** vad 人声检测模型后台补装进行中（防重入） */
   private vadInstallInFlight = false
+  private refineInstallInFlight = false
   /** 外部入口安装在途的等待轮询定时器（等其完成后再启动 standby） */
   private kwsInstallWaitTimer: ReturnType<typeof setTimeout> | null = null
   /** 安装等待轮询次数（就绪/取消时清零，超上限提示手动处理） */
@@ -192,7 +206,30 @@ export class VoiceAssistantService {
   private standbyPending = false
 
   constructor(private readonly deps: VoiceAssistantDeps) {
-    this.settings = normalizeVoiceAssistantSettings(deps.readSettings())
+    const rawSettings = deps.readSettings()
+    this.settings = normalizeVoiceAssistantSettings(rawSettings)
+    // v1→v2 噪音管线迁移回写：normalize 已把 v1 默认组合（browserDenoise+standard
+    // 门控，实测严重伤识别率）回退为新默认并置标记，立即持久化防止每次启动重复
+    // 迁移；此后用户显式开启降噪/门控不会再被重置
+    const rawSettingsRecord =
+      rawSettings != null && typeof rawSettings === 'object' ? (rawSettings as Record<string, unknown>) : null
+    const noisePipelineMigratedNow =
+      this.settings.noisePipelineMigrated && !(rawSettingsRecord != null && 'noisePipelineMigrated' in rawSettingsRecord)
+    // 识别精修迁移回写：v1 死字段默认 false 被存量持久化的，normalize 已统一翻回
+    // 默认开（SenseVoice 精修对识别率提升显著），同样立即落盘防重复迁移
+    const refineTranscriptMigratedNow =
+      this.settings.refineTranscriptMigrated && !(rawSettingsRecord != null && 'refineTranscriptMigrated' in rawSettingsRecord)
+    if (noisePipelineMigratedNow || refineTranscriptMigratedNow) {
+      deps.writeSettings(this.settings)
+      if (noisePipelineMigratedNow) {
+        log.info(
+          '[voice-assistant] noise pipeline migrated to v2 defaults (denoise/focus off, refine on)',
+        )
+      }
+      if (refineTranscriptMigratedNow) {
+        log.info('[voice-assistant] transcript refine migrated to default on')
+      }
+    }
     this.route = deps.route
     this.pipeline = new VoiceTtsPipeline({
       synthesize: (sentence) => this.synthesizeSentence(sentence),
@@ -212,6 +249,11 @@ export class VoiceAssistantService {
     if (this.settings.enabled && this.settings.alwaysListening) {
       void this.startStandby()
     }
+    // 精修模型预装：refineTranscript 默认开启，模型缺失时启动即后台补装，
+    // 避免首次对话因模型未装静默退化为纯流式（识别率劣化）
+    if (this.settings.refineTranscript) void this.ensureRefineModelInstalled()
+    // 存量绑定会话的推理档位对齐（轻量思考开关只对新会话即时生效的补齐）
+    void this.syncSessionReasoningEffort()
     log.info(
       `[voice-assistant] service initialized (enabled=${this.settings.enabled}, shortcut=${this.settings.wakeShortcut}, alwaysListening=${this.settings.alwaysListening})`,
     )
@@ -255,6 +297,18 @@ export class VoiceAssistantService {
     return this.settings
   }
 
+  /**
+   * 语音会话当前解析到的 Agent 适配器信息（设置页按适配器展示权限/推理选项）：
+   * 绑定的 Agent 优先，未绑定走默认 Agent；与 createNewSession 的建会话解析一致。
+   */
+  describeSessionAgent(): VoiceAssistantSessionAgentInfo | null {
+    try {
+      return this.deps.resolveAgentInfo(this.route.current.defaultAgentId ?? null)
+    } catch {
+      return null
+    }
+  }
+
   updateSettings(next: VoiceAssistantSettings): VoiceAssistantSettings {
     const normalized = normalizeVoiceAssistantSettings(next)
     const shortcutChanged =
@@ -265,17 +319,50 @@ export class VoiceAssistantService {
       normalized.wakeWord !== this.settings.wakeWord ||
       normalized.wakeThreshold !== this.settings.wakeThreshold ||
       normalized.wakeBoost !== this.settings.wakeBoost
+    const sessionThinkingChanged =
+      normalized.sessionThinkingEnabled !== this.settings.sessionThinkingEnabled ||
+      normalized.sessionThinkingEffort !== this.settings.sessionThinkingEffort
     this.settings = normalized
     this.deps.writeSettings(normalized)
     if (shortcutChanged) this.rearmShortcut()
     if (standbyConfigChanged) this.applyAlwaysListeningSetting()
+    if (sessionThinkingChanged) void this.syncSessionReasoningEffort()
     // 人声聚焦开启但 silero 模型未装：后台静默补装（不阻塞，失败只记日志，
     // 期间门控自动降级为纯能量层）
     if (normalized.voiceFocus !== 'off') void this.ensureVadModelInstalled()
+    // 转写精修开启但 SenseVoice 模型未装：同样静默补装（缺失时停止退化为纯流式）
+    if (normalized.refineTranscript) void this.ensureRefineModelInstalled()
     log.info(
       `[voice-assistant] settings updated (shortcut rearm=${shortcutChanged}, standby reconfig=${standbyConfigChanged})`,
     )
     return normalized
+  }
+
+  /**
+   * 语音会话思考设置的档位对齐：把语音绑定会话的推理档位刷成与设置一致
+   * （开关开 → 固定档 sessionThinkingEffort；关 → 恢复 agent 档位）。
+   * 新建会话在 createNewSession 时自带档位，这里覆盖存量绑定会话与切换两种
+   * 场景；会话不存在时静默跳过。
+   */
+  private async syncSessionReasoningEffort(): Promise<void> {
+    if (this.disposed) return
+    const sessionId = await this.route.peekAliveSessionId()
+    if (sessionId == null) return
+    const effort: SessionReasoningEffort | null = this.settings.sessionThinkingEnabled
+      ? this.settings.sessionThinkingEffort
+      : null
+    try {
+      await this.deps.setSessionReasoningEffort(sessionId, effort)
+      log.info(
+        `[voice-assistant] session reasoning effort synced (effort=${effort ?? 'agent-default'}, session=${sessionId})`,
+      )
+    } catch (error) {
+      log.warn(
+        `[voice-assistant] session reasoning effort sync failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
   }
 
   /** vad 人声检测模型后台补装（installVoicePack 全量互斥语义，在途时快速返回） */
@@ -294,6 +381,25 @@ export class VoiceAssistantService {
       log.warn(`[voice-assistant] vad model install error: ${String(error)}`)
     } finally {
       this.vadInstallInFlight = false
+    }
+  }
+
+  /** SenseVoice 精修模型后台补装（refineTranscript 开启时的识别质量依赖） */
+  private async ensureRefineModelInstalled(): Promise<void> {
+    if (this.disposed || this.refineInstallInFlight) return
+    if (resolveVoiceRefinePaths() != null) return
+    this.refineInstallInFlight = true
+    try {
+      const result = await this.deps.installVoicePack()
+      if (result.success) {
+        log.info('[voice-assistant] refine model installed for transcript refine')
+      } else if (!result.status?.downloading) {
+        log.warn(`[voice-assistant] refine model install failed: ${result.message}`)
+      }
+    } catch (error) {
+      log.warn(`[voice-assistant] refine model install error: ${String(error)}`)
+    } finally {
+      this.refineInstallInFlight = false
     }
   }
 
@@ -359,6 +465,34 @@ export class VoiceAssistantService {
     }
   }
 
+  // ─── 会话聚焦（UI 跟随语音会话跳转） ─────────────────────────────────────
+
+  /**
+   * 通知 UI 跳转到语音绑定会话（渲染端 setActiveSession + revealSession，
+   * 对齐命令面板切会话行为）。渲染端处理幂等，重复推送无害。
+   */
+  private focusSession(sessionId: string, cause: VoiceAssistantSessionFocusEvent['cause']): void {
+    if (this.disposed || sessionId.length === 0) return
+    try {
+      this.deps.emitSessionFocus({ sessionId, cause })
+    } catch (error) {
+      log.warn(`[voice-assistant] emit session focus failed: ${String(error)}`)
+    }
+  }
+
+  /**
+   * 唤醒预跳：绑定会话存在且存活时让 UI 提前就位（说话时转写直接出现在眼前）。
+   * 只读窥探不创建不改绑；首次使用（无绑定）不跳，等轮次提交时再跳。
+   */
+  private prefocusOnWake(): void {
+    void this.route
+      .peekAliveSessionId()
+      .then((sessionId) => {
+        if (sessionId != null && !this.disposed) this.focusSession(sessionId, 'wake')
+      })
+      .catch(() => undefined)
+  }
+
   // ─── 唤醒入口（快捷键 / HUD 手动触发） ────────────────────────────────────
 
   wake(): { ok: boolean; message: string } {
@@ -367,6 +501,7 @@ export class VoiceAssistantService {
     switch (this.state) {
       case 'idle':
       case 'standby':
+        this.prefocusOnWake()
         void this.startListening('wake')
         return { ok: true, message: '正在聆听' }
       case 'listening':
@@ -630,6 +765,10 @@ export class VoiceAssistantService {
       this.transition('idle', 'error', installPending ?? handle.error ?? '语音识别启动失败')
       return
     }
+    // 采集/识别管线组合落日志：排查识别率问题时据此确认实际生效的处理链
+    log.info(
+      `[voice-assistant] asr pipeline: denoise=${this.settings.browserDenoise}, focus=${this.settings.voiceFocus}, refine=${this.settings.refineTranscript}, engine=${this.settings.recognitionEngine}, vadSilence=${ASR_VAD_SILENCE_MS}ms`,
+    )
     this.captureSessionId = captureSessionId
     this.asrSessionId = handle.sessionId
     this.closingAsrSessionId = null
@@ -703,7 +842,14 @@ export class VoiceAssistantService {
       this.asrSessionId = null
       this.closingAsrSessionId = asrSessionId
       try {
-        stopVoiceSession(asrSessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, 'flush')
+        // refine：停止后 SenseVoice 离线重识别整段音频（与会话语音输入同链路），
+        // refined 事件整体替换流式结果后经 session-stopped 统一收口——识别率
+        // 显著高于纯流式；模型缺失/时长不符时内部自动退化为 flush
+        const mode =
+          this.settings.refineTranscript && this.settings.recognitionEngine === 'local'
+            ? 'refine'
+            : 'flush'
+        stopVoiceSession(asrSessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, mode)
       } catch (error) {
         log.warn(`[voice-assistant] asr stop error: ${String(error)}`)
         this.closingAsrSessionId = null
@@ -738,7 +884,15 @@ export class VoiceAssistantService {
       }
       this.captureSessionId = null
     }
-    for (const sessionId of [this.asrSessionId, this.closingAsrSessionId]) {
+    // 主动释放前先摘掉会话归属：stopVoiceSession 会**同步**回调 session-stopped
+    // （内部识别事件经 recognitionBridge 直接进 handleRecognitionEvent）。归属还挂在
+    // asrSessionId 上时，这个自发的停止会被 session-stopped 分支误判为「外部终止」，
+    // 把用户主动取消变成 idle(error)——现象就是点「取消聆听」却弹「语音识别会话已中断」。
+    // 先置空归属，此后到达的收尾事件（tail final / session-stopped / error）按取消丢弃。
+    const stoppingSessions = new Set<string | null>([this.asrSessionId, this.closingAsrSessionId])
+    this.asrSessionId = null
+    this.closingAsrSessionId = null
+    for (const sessionId of stoppingSessions) {
       if (sessionId == null) continue
       try {
         stopVoiceSession(sessionId, VOICE_ASSISTANT_INTERNAL_OWNER_ID, 'flush')
@@ -746,8 +900,6 @@ export class VoiceAssistantService {
         // 已在停止路径，忽略
       }
     }
-    this.asrSessionId = null
-    this.closingAsrSessionId = null
     this.partialText = ''
     this.collectedFinals = []
     this.handoffPending = false
@@ -831,6 +983,9 @@ export class VoiceAssistantService {
       case 'final': {
         const text = (event.text ?? '').trim()
         if (text.length === 0) return
+        // partial 是「当前句实时全文」、final 是同句定稿：final 落定后必须清掉
+        // partialText，否则确认窗口的 HUD 广播把两者拼接，同一句话显示两遍
+        this.partialText = ''
         if (isActiveSession && this.state === 'listening') {
           this.collectedFinals.push(text)
           log.info(
@@ -841,6 +996,20 @@ export class VoiceAssistantService {
           // flush 尾句（VAD final 之后残留的短句）并入本轮转写
           this.collectedFinals.push(text)
         }
+        return
+      }
+      case 'refined': {
+        // SenseVoice 精修全文（整轮重识别）：整体替换流式拼接，漏字/错字在这里修复
+        const text = (event.text ?? '').trim()
+        if (text.length === 0) return
+        const streamingChars = [...this.collectedFinals, this.partialText]
+          .filter(Boolean)
+          .join(' ').length
+        this.collectedFinals = [text]
+        this.partialText = ''
+        log.info(
+          `[voice-assistant] transcript refined: ${text.length} chars replaces ${streamingChars} streaming chars`,
+        )
         return
       }
       case 'session-stopped': {
@@ -885,6 +1054,18 @@ export class VoiceAssistantService {
     this.handoffConfirmTimer = setTimeout(() => {
       this.handoffConfirmTimer = null
       if (this.state !== 'listening' || this.asrSessionId == null) return
+      // 纯标点/无正文的转写（环境噪音硬解的典型产出）不是用户输入：
+      // 不收口、清空已收集文本，继续聆听（采集与 ASR 未停，零切换成本）
+      if (!hasMeaningfulVoiceText([...this.collectedFinals, this.partialText].join(''))) {
+        log.info(
+          `[voice-assistant] transcript has no meaningful text (${this.collectedFinals.length} finals), keep listening`,
+        )
+        this.collectedFinals = []
+        this.partialText = ''
+        this.armEmptySpeechTimeout()
+        this.deps.broadcastState({ state: 'listening', previous: 'listening', reason: 'wake', detail: '' })
+        return
+      }
       log.info('[voice-assistant] utterance confirmed silent, handing off to thinking')
       this.handoffPending = true
       this.transition('thinking', 'wake')
@@ -916,9 +1097,9 @@ export class VoiceAssistantService {
     const transcript = this.collectedFinals.join(' ').trim()
     this.collectedFinals = []
     this.partialText = ''
-    // 审批聆听优先于普通提交（挂起审批等待「同意/拒绝」）
+    // 审批聆听优先于普通提交（挂起审批等待「同意/拒绝」）；纯标点当未听到处理
     if (this.pendingApproval != null) {
-      if (transcript.length > 0) {
+      if (hasMeaningfulVoiceText(transcript)) {
         void this.settleApprovalFromTranscript(transcript)
         return
       }
@@ -934,13 +1115,20 @@ export class VoiceAssistantService {
       this.announceSpeech('未收到语音答复，请在应用中点击审批卡处理。')
       return
     }
-    if (transcript.length > 0) {
+    if (hasMeaningfulVoiceText(transcript)) {
       if (this.settings.recognitionEngine === 'cloud') {
         // 云转写：整段上传（本地流式结果仅作 VAD 断句与兜底）
         void this.submitCloudTranscript(transcript)
         return
       }
       void this.submitTranscript(transcript)
+      return
+    }
+    // 有字符但无正文（纯标点，多为 refine 后兜底路径命中）：继续聆听而非报错退出
+    if (transcript.length > 0) {
+      log.info('[voice-assistant] closed transcript has no meaningful text, resuming listening')
+      this.transition('idle', 'empty')
+      void this.startListening('wake')
       return
     }
     this.playCue('fail')
@@ -1131,6 +1319,8 @@ export class VoiceAssistantService {
     }
     // await 恢复点：打断/dispose 后不再提交（防「打断复活」）
     if (epoch !== this.turnEpoch || this.disposed) return
+    // UI 跳转到语音会话：转写与回复都发生在该会话，提前让用户看到
+    this.focusSession(session.sessionId, 'turn')
     try {
       const result = await this.deps.submitVoiceTurn({
         sessionId: session.sessionId,
@@ -1159,7 +1349,8 @@ export class VoiceAssistantService {
 
   private async handleNewSessionCommand(): Promise<void> {
     try {
-      await this.route.createNewSession()
+      const { sessionId } = await this.route.createNewSession()
+      this.focusSession(sessionId, 'command-new')
       this.announceSpeech('已为你新建会话。')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1210,6 +1401,7 @@ export class VoiceAssistantService {
       return
     }
     this.route.updateBinding({ defaultSessionId: matched.id })
+    this.focusSession(matched.id, 'command-switch')
     const label = matched.title.length > 20 ? `${matched.title.slice(0, 20)}…` : matched.title
     this.announceSpeech(`已切换到会话：${label}。`)
     log.info(`[voice-assistant] voice route switched to session ${matched.id}`)
@@ -1249,10 +1441,12 @@ export class VoiceAssistantService {
           defaultWorkspaceId: matched.id,
           defaultSessionId: existingSessionId,
         })
+        this.focusSession(existingSessionId, 'command-workspace')
         this.announceSpeech(`已切换到工作区 ${matched.name}，继续最近的会话。`)
       } else {
         this.route.updateBinding({ defaultWorkspaceId: matched.id, defaultSessionId: undefined })
-        await this.route.createNewSession()
+        const { sessionId } = await this.route.createNewSession()
+        this.focusSession(sessionId, 'command-workspace')
         this.announceSpeech(`已切换到工作区 ${matched.name}，并新建了会话。`)
       }
       log.info(`[voice-assistant] voice route switched to workspace ${matched.id}`)
