@@ -91,7 +91,6 @@ function prepared(nodeId: string): PreparedCanvasOperationSubmission {
 }
 
 function setup(input?: {
-  skipConfirmation?: boolean
   skipParameterValidation?: boolean
   nodes?: CanvasNode[]
   edges?: CanvasEdge[]
@@ -137,7 +136,6 @@ function setup(input?: {
     async ({ node }: { node: CanvasNode }, options?: { skipParameterValidation?: boolean }) =>
       input?.prepare ? input.prepare(node.id, options, current) : prepared(node.id),
   )
-  const writeSkipConfirmation = vi.fn()
   const writeSkipParameterValidation = vi.fn()
   const controller = createCanvasBatchTaskController({
     getSnapshot: () => current,
@@ -145,8 +143,6 @@ function setup(input?: {
     runOperationNode,
     waitForTask,
     prepareSubmission,
-    readSkipConfirmation: () => input?.skipConfirmation ?? false,
-    writeSkipConfirmation,
     readSkipParameterValidation: () => input?.skipParameterValidation ?? false,
     writeSkipParameterValidation,
     ...(input?.confirmParameterValidation
@@ -163,7 +159,6 @@ function setup(input?: {
     runOperationNode,
     waitForTask,
     prepareSubmission,
-    writeSkipConfirmation,
     writeSkipParameterValidation,
     replaceNode: (nodeId: string, replace: (node: CanvasNode) => CanvasNode) => {
       current = {
@@ -204,7 +199,6 @@ describe('useCanvasBatchTasks controller', () => {
     ])
     const { controller, runOperationNode, writeSkipParameterValidation, prepareSubmission } = setup(
       {
-        skipConfirmation: true,
         prepare: async (nodeId, options) => {
           if (nodeId === 'node-2' && !options?.skipParameterValidation) throw validationError
           return prepared(nodeId)
@@ -237,28 +231,23 @@ describe('useCanvasBatchTasks controller', () => {
     expect(runOperationNode).toHaveBeenCalledTimes(2)
   })
 
-  it('opens confirmation and persists skip only after explicit confirmation', async () => {
-    const { controller, runOperationNode, writeSkipConfirmation } = setup()
+  it('always requires an explicit confirmation before batch execution', async () => {
+    const { controller, runOperationNode } = setup()
 
     await controller.openSubmit(['node-1', 'node-2'])
-    expect(controller.getState().mode).toBe('confirm')
-    controller.setSkipNextConfirmation(true)
-    controller.backToConfigure()
-    expect(writeSkipConfirmation).not.toHaveBeenCalled()
 
-    await controller.submit()
-    controller.setSkipNextConfirmation(true)
+    expect(controller.getState().mode).toBe('confirm')
+    expect(runOperationNode).not.toHaveBeenCalled()
+
     await controller.confirmSubmit()
 
-    expect(writeSkipConfirmation).toHaveBeenCalledWith(true)
-    expect(runOperationNode).toHaveBeenCalledTimes(2)
     expect(controller.getState().mode).toBe('result')
+    expect(runOperationNode).toHaveBeenCalledTimes(2)
   })
 
   it('keeps successful results and retries only failed nodes', async () => {
     let nodeTwoAttempts = 0
     const { controller, runOperationNode } = setup({
-      skipConfirmation: true,
       run: async (nodeId) => {
         if (nodeId === 'node-2' && nodeTwoAttempts++ === 0) {
           throw new Error('network error')
@@ -267,6 +256,7 @@ describe('useCanvasBatchTasks controller', () => {
     })
 
     await controller.openSubmit(['node-1', 'node-2'])
+    await controller.confirmSubmit()
 
     expect(controller.getState().results).toEqual([
       { nodeId: 'node-1', batchId: 'batch-1', status: 'succeeded' },
@@ -294,7 +284,6 @@ describe('useCanvasBatchTasks controller', () => {
   it('runs connected selected tasks layer by layer after upstream outputs settle', async () => {
     const events: string[] = []
     const { controller, runOperationNode, waitForTask } = setup({
-      skipConfirmation: true,
       nodes: [operationNode('node-1', 'text_to_image'), operationNode('node-2', 'image_to_video')],
       edges: [edge('node-1', 'node-2')],
       prepare: async (nodeId, _options, current) => {
@@ -319,6 +308,7 @@ describe('useCanvasBatchTasks controller', () => {
     })
 
     await controller.openSubmit(['node-1', 'node-2'])
+    await controller.confirmSubmit()
 
     expect(events).toEqual([
       'prepare:node-1:none',
@@ -340,7 +330,6 @@ describe('useCanvasBatchTasks controller', () => {
     let nodeOneAttempts = 0
     const events: string[] = []
     const { controller } = setup({
-      skipConfirmation: true,
       nodes: [operationNode('node-1', 'text_to_image'), operationNode('node-2', 'image_to_video')],
       edges: [edge('node-1', 'node-2')],
       prepare: async (nodeId, _options, current) => {
@@ -366,6 +355,7 @@ describe('useCanvasBatchTasks controller', () => {
     })
 
     await controller.openSubmit(['node-1', 'node-2'])
+    await controller.confirmSubmit()
 
     expect(controller.getState().results).toEqual([
       {
@@ -419,11 +409,11 @@ describe('useCanvasBatchTasks controller', () => {
       releaseRun = resolve
     })
     const { controller } = setup({
-      skipConfirmation: true,
       run: async () => runPending,
     })
 
-    const submitting = controller.openSubmit(['node-1', 'node-2'])
+    await controller.openSubmit(['node-1', 'node-2'])
+    const submitting = controller.confirmSubmit()
     await vi.waitFor(() => expect(controller.getState().mode).toBe('submitting'))
     controller.close()
     releaseRun?.()

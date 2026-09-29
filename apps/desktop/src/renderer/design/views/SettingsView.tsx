@@ -57,7 +57,6 @@ import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './onboarding-state'
 import { clearUsageHeatmapCache } from './usageHeatmapCache'
 import { canvasApi } from './canvas/canvas.api'
-import { CanvasBatchSubmitPreferenceSetting } from './canvas/CanvasBatchSubmitPreferenceSetting'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
@@ -643,7 +642,6 @@ function GeneralSection() {
             </button>
           }
         />
-        <CanvasBatchSubmitPreferenceSetting />
       </div>
 
       <UsageHeatmap />

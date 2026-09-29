@@ -40,7 +40,6 @@ export type CanvasBatchTaskPanelProps = {
   onSubmit: () => Promise<void>
   onConfirmSubmit: () => Promise<void>
   onRetryFailed: () => Promise<void>
-  onSkipNextConfirmationChange: (skip: boolean) => void
   onSkipParameterValidationChange: (skip: boolean) => void
   onBackToConfigure: () => void
   onClose: () => void
@@ -54,7 +53,6 @@ export function CanvasBatchTaskPanel({
   onSubmit,
   onConfirmSubmit,
   onRetryFailed,
-  onSkipNextConfirmationChange,
   onSkipParameterValidationChange,
   onBackToConfigure,
   onClose,
@@ -175,10 +173,8 @@ export function CanvasBatchTaskPanel({
       {state.mode === 'confirm' ? (
         <ConfirmView
           entries={entries}
-          skip={state.skipNextConfirmation}
           skipParameterValidation={state.skipParameterValidation}
           validationWarnings={state.validationWarnings}
-          onSkipChange={onSkipNextConfirmationChange}
           onSkipParameterValidationChange={onSkipParameterValidationChange}
           onBack={onBackToConfigure}
           onConfirm={onConfirmSubmit}
@@ -557,19 +553,15 @@ function BatchConfigurationEditor({
 
 function ConfirmView({
   entries,
-  skip,
   skipParameterValidation,
   validationWarnings,
-  onSkipChange,
   onSkipParameterValidationChange,
   onBack,
   onConfirm,
 }: {
   entries: CanvasBatchTaskEntry[]
-  skip: boolean
   skipParameterValidation: boolean
   validationWarnings: CanvasBatchTaskState['validationWarnings']
-  onSkipChange: (skip: boolean) => void
   onSkipParameterValidationChange: (skip: boolean) => void
   onBack: () => void
   onConfirm: () => Promise<void>
@@ -607,15 +599,6 @@ function ConfirmView({
           ))}
         </div>
       )}
-      <div className="canvas-batch-confirm-preference">
-        <Checkbox
-          checked={skip}
-          onChange={(event) => onSkipChange(event.target.checked)}
-        >
-          下次不再确认，校验通过后直接提交
-        </Checkbox>
-        <p>该偏好对当前用户的所有项目生效，可在设置中恢复。</p>
-      </div>
       {validationWarnings.length > 0 && (
         <div className="canvas-batch-confirm-parameter-preference">
           <Checkbox

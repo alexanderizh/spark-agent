@@ -9017,7 +9017,6 @@ export function CanvasWorkspaceView({
             onSubmit={batchTasks.controller.submit}
             onConfirmSubmit={batchTasks.controller.confirmSubmit}
             onRetryFailed={batchTasks.controller.retryFailed}
-            onSkipNextConfirmationChange={batchTasks.controller.setSkipNextConfirmation}
             onSkipParameterValidationChange={batchTasks.controller.setSkipParameterValidation}
             onBackToConfigure={batchTasks.controller.backToConfigure}
             onClose={batchTasks.controller.close}

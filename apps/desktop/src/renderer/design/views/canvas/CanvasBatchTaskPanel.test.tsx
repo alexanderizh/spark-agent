@@ -210,7 +210,6 @@ function state(mode: CanvasBatchTaskState['mode']): CanvasBatchTaskState {
     issues: [],
     validationWarnings: [],
     results: [],
-    skipNextConfirmation: false,
     skipParameterValidation: false,
     saving: false,
   }
@@ -232,7 +231,6 @@ async function render(
     onSubmit: vi.fn(async () => undefined),
     onConfirmSubmit: vi.fn(async () => undefined),
     onRetryFailed: vi.fn(async () => undefined),
-    onSkipNextConfirmationChange: vi.fn(),
     onSkipParameterValidationChange: vi.fn(),
     onBackToConfigure: vi.fn(),
     onClose: vi.fn(),
@@ -388,21 +386,16 @@ describe('CanvasBatchTaskPanel', () => {
   it('does not confirm when the user returns to edit', async () => {
     const onConfirmSubmit = vi.fn(async () => undefined)
     const onBackToConfigure = vi.fn()
-    const onSkipNextConfirmationChange = vi.fn()
     const { container } = await render(state('confirm'), {
       onConfirmSubmit,
       onBackToConfigure,
-      onSkipNextConfirmationChange,
     })
 
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-    await act(async () => checkbox.click())
     const back = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === '返回修改',
     )!
     await act(async () => back.click())
 
-    expect(onSkipNextConfirmationChange).toHaveBeenCalledWith(true)
     expect(onBackToConfigure).toHaveBeenCalledTimes(1)
     expect(onConfirmSubmit).not.toHaveBeenCalled()
   })

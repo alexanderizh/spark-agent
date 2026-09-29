@@ -12,10 +12,6 @@ import {
   type CanvasBatchTaskSession,
 } from './canvasBatchTaskModel'
 import {
-  readSkipCanvasBatchSubmitConfirmation,
-  writeSkipCanvasBatchSubmitConfirmation,
-} from './canvasBatchSubmitPreferences'
-import {
   readSkipCanvasParameterValidation,
   writeSkipCanvasParameterValidation,
 } from './canvasParameterValidationPreferences'
@@ -54,7 +50,6 @@ export type CanvasBatchTaskState = {
   issues: CanvasBatchValidationIssue[]
   validationWarnings: CanvasBatchValidationIssue[]
   results: CanvasBatchSubmitResult[]
-  skipNextConfirmation: boolean
   skipParameterValidation: boolean
   saving: boolean
 }
@@ -73,8 +68,6 @@ export type CanvasBatchTaskControllerDependencies = {
     input: Parameters<typeof prepareSavedCanvasOperationSubmission>[0],
     options?: { skipParameterValidation?: boolean },
   ) => Promise<PreparedCanvasOperationSubmission>
-  readSkipConfirmation?: () => boolean
-  writeSkipConfirmation?: (skip: boolean) => void
   readSkipParameterValidation?: () => boolean
   writeSkipParameterValidation?: (skip: boolean) => void
   confirmParameterValidation?: typeof confirmCanvasTaskValidation
@@ -90,7 +83,6 @@ const INITIAL_STATE: CanvasBatchTaskState = {
   issues: [],
   validationWarnings: [],
   results: [],
-  skipNextConfirmation: false,
   skipParameterValidation: false,
   saving: false,
 }
@@ -295,27 +287,12 @@ export function createCanvasBatchTaskController(
       return
     }
     preparedSubmissions = results.flatMap((result) => (result.prepared ? [result.prepared] : []))
-    if (dependencies.readSkipConfirmation()) {
-      if (validationWarnings.length > 0) {
-        setState({
-          ...state,
-          mode: 'confirm',
-          issues: [],
-          validationWarnings,
-          skipNextConfirmation: false,
-          skipParameterValidation: false,
-        })
-        return
-      }
-      await executePrepared(preparedSubmissions, dependencies.createBatchId(), generation)
-      return
-    }
+    // 批量提交不再提供「跳过确认」偏好，校验通过后统一进入确认面板。
     setState({
       ...state,
       mode: 'confirm',
       issues: [],
       validationWarnings,
-      skipNextConfirmation: false,
       skipParameterValidation: false,
     })
   }
@@ -494,7 +471,6 @@ export function createCanvasBatchTaskController(
       })
       return
     }
-    if (state.skipNextConfirmation) dependencies.writeSkipConfirmation(true)
     if (state.skipParameterValidation) dependencies.writeSkipParameterValidation(true)
     await executePrepared(preparedSubmissions, dependencies.createBatchId(), generation)
   }
@@ -585,7 +561,6 @@ export function createCanvasBatchTaskController(
     confirmSubmit,
     retryFailed,
     runSingle,
-    setSkipNextConfirmation: (skip: boolean) => setState({ ...state, skipNextConfirmation: skip }),
     setSkipParameterValidation: (skip: boolean) =>
       setState({ ...state, skipParameterValidation: skip }),
     backToConfigure: () => setState({ ...state, mode: 'configure' }),
@@ -637,10 +612,6 @@ function withDefaults(
     prepareSubmission:
       dependencies.prepareSubmission ??
       ((input, options) => prepareSavedCanvasOperationSubmission(input, undefined, options)),
-    readSkipConfirmation:
-      dependencies.readSkipConfirmation ?? readSkipCanvasBatchSubmitConfirmation,
-    writeSkipConfirmation:
-      dependencies.writeSkipConfirmation ?? writeSkipCanvasBatchSubmitConfirmation,
     readSkipParameterValidation:
       dependencies.readSkipParameterValidation ?? readSkipCanvasParameterValidation,
     writeSkipParameterValidation:
