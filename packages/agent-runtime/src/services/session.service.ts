@@ -4791,18 +4791,18 @@ export class SessionService {
         ...(userMessageAlreadyPersisted ? { userMessageAlreadyPersisted: true } : {}),
         ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       }
-      // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
-      // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
+      // 首轮标题精炼：远程渠道直接用当前凭据；本地 CLI 渠道（宿主 OAuth 无直连
+      // key）借 resolveSessionTitleTarget 的默认渠道回退链出标题，无可用渠道则跳过。
       // Mention turn 不参与首轮标题精炼（会话已有上下文）。
-      if (shouldGenerateSessionTitle && !isLocalCli && !isMentionTurn) {
-        turnOptions.firstTurnTitleContext = {
-          providerType: provider.provider_type,
+      if (shouldGenerateSessionTitle && !isMentionTurn) {
+        const titleCtx = await this.buildFirstTurnTitleContext({
+          provider,
+          config,
           apiKey,
           model,
-          ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-          ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
           userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
-        }
+        })
+        if (titleCtx != null) turnOptions.firstTurnTitleContext = titleCtx
       }
       await this.tryStartSDKTurn(
         sessionId,
@@ -5040,14 +5040,14 @@ export class SessionService {
         ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
       }
       if (shouldGenerateSessionTitle && !isMentionTurn) {
-        sparkTurnOptions.firstTurnTitleContext = {
-          providerType: provider.provider_type,
+        const titleCtx = await this.buildFirstTurnTitleContext({
+          provider,
+          config,
           apiKey,
           model,
-          ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-          ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
           userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
-        }
+        })
+        if (titleCtx != null) sparkTurnOptions.firstTurnTitleContext = titleCtx
       }
       await this.tryStartSparkEngineTurn(
         sessionId,
@@ -5224,15 +5224,16 @@ export class SessionService {
       ...(sessionReferences != null && sessionReferences.length > 0 ? { sessionReferences } : {}),
     }
     // 与 claude 分支同款首轮标题精炼上下文（W2-D3 行为补齐：此前仅 claude 路径
-    // 携带，codex 会话首轮永远拿不到 LLM 精炼标题）。
-    if (shouldGenerateSessionTitle && !isLocalCli && !isMentionTurn) {
-      codexTurnOptions.firstTurnTitleContext = {
-        providerType: provider.provider_type,
+    // 携带，codex 会话首轮永远拿不到 LLM 精炼标题）。本地 CLI 渠道借默认渠道。
+    if (shouldGenerateSessionTitle && !isMentionTurn) {
+      const titleCtx = await this.buildFirstTurnTitleContext({
+        provider,
+        config,
         apiKey,
         model,
-        ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         userMessage: resolveUserMessageDisplayText(userMessagePresentation, message),
-      }
+      })
+      if (titleCtx != null) codexTurnOptions.firstTurnTitleContext = titleCtx
     }
     await this.tryStartCodexCliTurn(
       sessionId,
@@ -5432,9 +5433,21 @@ export class SessionService {
     eventRepo: EventRepository
     emitUnpresentedMedia: () => void
     settleTerminalStatus: () => AgentStatusEvent['status'] | null
+    /**
+     * 首轮标题上下文：cancelled/error 终态不跑成功后处理，精炼从未发起；
+     * 登记进 pendingTitleRefinements，下一次 turn 成功完成时补精炼。
+     */
+    firstTurnTitleContext?: FirstTurnTitleContext | undefined
+    /** 已收尾的 assistant 事件（被取消的首轮常为空数组，允许缺省）。 */
+    completeAssistantEvents?: AssistantMessageEvent[] | undefined
   }): void {
     args.emitUnpresentedMedia()
     this.revokeComputerUseSession(args.sessionId)
+    this.registerTitleRefinementForRetry(
+      args.sessionId,
+      args.firstTurnTitleContext,
+      args.completeAssistantEvents,
+    )
     const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
     const terminalStatus = ownsSession ? args.settleTerminalStatus() : null
     if (ownsSession && terminalStatus == null) {
@@ -5499,9 +5512,17 @@ export class SessionService {
     eventRepo: EventRepository
     emitUnpresentedMedia: () => void
     settleTerminalStatus: () => AgentStatusEvent['status'] | null
+    /** 首轮标题上下文：executor 异常同样登记补偿重试，语义与 cancelled/error 终态一致。 */
+    firstTurnTitleContext?: FirstTurnTitleContext | undefined
+    completeAssistantEvents?: AssistantMessageEvent[] | undefined
   }): void {
     args.emitUnpresentedMedia()
     this.revokeComputerUseSession(args.sessionId)
+    this.registerTitleRefinementForRetry(
+      args.sessionId,
+      args.firstTurnTitleContext,
+      args.completeAssistantEvents,
+    )
     const ownsSession = this.turnRegistry.isActiveExecutor(args.sessionId, args.executor)
     const terminalStatus = ownsSession ? args.settleTerminalStatus() : null
     if (ownsSession && terminalStatus == null) {
@@ -6225,6 +6246,8 @@ export class SessionService {
             eventRepo,
             emitUnpresentedMedia,
             settleTerminalStatus: settlePendingTerminalStatus,
+            firstTurnTitleContext: options.firstTurnTitleContext,
+            completeAssistantEvents,
           })
           return
         }
@@ -6253,6 +6276,8 @@ export class SessionService {
           eventRepo,
           emitUnpresentedMedia,
           settleTerminalStatus: settlePendingTerminalStatus,
+          firstTurnTitleContext: options.firstTurnTitleContext,
+          completeAssistantEvents,
         })
       })
       .finally(() => {
@@ -6729,6 +6754,8 @@ export class SessionService {
             eventRepo,
             emitUnpresentedMedia,
             settleTerminalStatus: settlePendingTerminalStatus,
+            firstTurnTitleContext: options.firstTurnTitleContext,
+            completeAssistantEvents,
           })
           return
         }
@@ -6756,6 +6783,8 @@ export class SessionService {
           eventRepo,
           emitUnpresentedMedia,
           settleTerminalStatus: settlePendingTerminalStatus,
+          firstTurnTitleContext: options.firstTurnTitleContext,
+          completeAssistantEvents,
         })
       })
       .finally(() => {
@@ -6995,6 +7024,8 @@ export class SessionService {
             eventRepo,
             emitUnpresentedMedia: () => {},
             settleTerminalStatus: settlePendingTerminalStatus,
+            firstTurnTitleContext: options.firstTurnTitleContext,
+            completeAssistantEvents,
           })
           return
         }
@@ -7021,6 +7052,8 @@ export class SessionService {
           eventRepo,
           emitUnpresentedMedia: () => {},
           settleTerminalStatus: settlePendingTerminalStatus,
+          firstTurnTitleContext: options.firstTurnTitleContext,
+          completeAssistantEvents,
         })
       })
       .finally(() => {
@@ -7133,6 +7166,70 @@ export class SessionService {
         `maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
       )
     }
+  }
+
+  /**
+   * 首轮标题精炼上下文构造（claude / spark / codex 三引擎共用）。
+   * - 远程渠道（apiKey 已解析）：直接用当前 provider 凭据同步构造，零额外开销；
+   * - 本地 CLI 渠道（apiKey 为空，走宿主 OAuth 无直连凭据）：借
+   *   resolveSessionTitleTarget 的默认渠道回退链解析标题模型（消耗默认渠道
+   *   token，见 session-title-target）；无任何可用渠道时返回 null，跳过精炼、
+   *   保留本地派生标题。同时收口三引擎的 apiEndpointFullUrl 透传（历史上
+   *   codex 分支漏传导致「完整 URL」渠道标题必 404）。
+   */
+  private async buildFirstTurnTitleContext(args: {
+    provider: ProviderProfileRow
+    config: { apiEndpoint?: string; apiEndpointFullUrl?: boolean }
+    apiKey: string
+    model: string
+    userMessage: string
+  }): Promise<FirstTurnTitleContext | null> {
+    if (args.apiKey.length > 0) {
+      return {
+        providerType: args.provider.provider_type,
+        apiKey: args.apiKey,
+        model: args.model,
+        ...(args.config.apiEndpoint != null ? { apiEndpoint: args.config.apiEndpoint } : {}),
+        ...(args.config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+        userMessage: args.userMessage,
+      }
+    }
+    const resolved = await resolveSessionTitleTarget({
+      db: this.db,
+      session: { provider_profile_id: args.provider.id, model_id: args.model },
+    })
+    if (!resolved.ok) return null
+    return {
+      providerType: resolved.target.providerType,
+      apiKey: resolved.target.apiKey,
+      ...(resolved.target.apiEndpoint != null ? { apiEndpoint: resolved.target.apiEndpoint } : {}),
+      ...(resolved.target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+      model: resolved.target.model,
+      userMessage: args.userMessage,
+    }
+  }
+
+  /**
+   * cancelled/error 终态的首轮标题补偿登记：首轮 turn 没跑到成功后处理
+   * （runTurnPostProcessing），LLM 精炼从未发起；把上下文挂进
+   * pendingTitleRefinements，待该会话下一次任意 turn 成功完成时由
+   * maybeRetrySessionTitleRefinement 补跑。用户手动改名仍由
+   * refineSessionTitleAsync 内部守卫拦截，不会被覆盖。
+   */
+  private registerTitleRefinementForRetry(
+    sessionId: string,
+    titleCtx: FirstTurnTitleContext | undefined,
+    assistantEvents: AssistantMessageEvent[] | undefined,
+  ): void {
+    if (titleCtx == null) return
+    this.pendingTitleRefinements.set(sessionId, {
+      ctx: {
+        ...titleCtx,
+        assistantMessage:
+          assistantEvents != null ? collectCompleteAssistantTurnText(assistantEvents) : '',
+      },
+      retries: 0,
+    })
   }
 
   /**

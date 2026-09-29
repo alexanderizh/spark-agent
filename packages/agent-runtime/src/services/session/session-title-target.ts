@@ -16,6 +16,11 @@
  *   3. 任意第一个启用执行器。
  * 逐个校验（渠道存在、启用、已配 key、modelId 非空），取第一个通过的；
  * 全部不可用返回 router_unavailable，由调用方决定提示文案。
+ *
+ * 默认渠道借道（2026-09-30）：普通渠道不可直连（provider_no_api_key，
+ * 典型为本地 CLI 渠道走宿主 OAuth、无直发 key）时，回退尝试平台默认渠道
+ * （is_default=1）出标题——否则本地 CLI 会话永远只有本地派生截断标题。
+ * 借道会消耗默认渠道 token，成功时打 info 日志留痕。
  */
 import {
   AUTO_ROUTER_PROVIDER_TYPE,
@@ -81,7 +86,49 @@ export async function resolveSessionTitleTarget(params: {
   if (provider.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
     return resolveAutoRouterTitleTarget(providerRepo, provider)
   }
-  return resolveDirectTitleTarget(provider, params.session.model_id)
+  const direct = await resolveDirectTitleTarget(provider, params.session.model_id)
+  if (direct.ok || direct.code !== 'provider_no_api_key') return direct
+  // 渠道不可直连（本地 CLI 走宿主 OAuth / 凭据取不到）：借默认渠道出标题。
+  return resolveDefaultProviderTitleTarget(providerRepo, provider)
+}
+
+/**
+ * 默认渠道借道：仅当默认渠道存在、启用、可直连且不是原渠道自身时生效。
+ * 默认渠道若是智能路由，按 router 候选链解析（dispatcher → fallback → 任意启用执行器）。
+ * 借道消耗的是默认渠道的 token，成功时 info 留痕（渠道切换是成本相关决策）。
+ */
+async function resolveDefaultProviderTitleTarget(
+  providerRepo: ProviderProfileRepository,
+  originalProvider: ProviderProfileRow,
+): Promise<SessionTitleTargetResolution> {
+  const fallbackRow = providerRepo.getDefault()
+  if (fallbackRow == null || fallbackRow.id === originalProvider.id) {
+    return { ok: false, code: 'provider_no_api_key' }
+  }
+  if (fallbackRow.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
+    const routed = await resolveAutoRouterTitleTarget(providerRepo, fallbackRow)
+    if (routed.ok) {
+      log.info(
+        'title target borrowed from default auto-router provider (original provider has no direct credentials)',
+        { originalProviderId: originalProvider.id, routerId: fallbackRow.id },
+      )
+    }
+    return routed
+  }
+  if (fallbackRow.enabled !== 1) return { ok: false, code: 'provider_no_api_key' }
+  if ((fallbackRow.keystore_ref?.trim() ?? '').length === 0) {
+    return { ok: false, code: 'provider_no_api_key' }
+  }
+  const fallbackConfig = parseProviderConfig(fallbackRow.config_json)
+  const fallbackModel = fallbackConfig.defaultModel?.trim() ?? ''
+  if (fallbackModel.length === 0) return { ok: false, code: 'model_missing' }
+  const target = await buildTitleTarget(fallbackRow, fallbackModel)
+  if (target == null) return { ok: false, code: 'provider_no_api_key' }
+  log.info(
+    'title target borrowed from default provider (original provider has no direct credentials)',
+    { originalProviderId: originalProvider.id, fallbackProviderId: fallbackRow.id },
+  )
+  return { ok: true, target }
 }
 
 async function resolveDirectTitleTarget(

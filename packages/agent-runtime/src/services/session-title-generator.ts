@@ -22,8 +22,10 @@ const REQUEST_TIMEOUT_MS = 15_000
 /**
  * 输出 token 预算。思考型模型（如 GLM）的思考 token 计入该预算：
  * 64 会被思考耗尽导致正文为空 → 标题精炼静默失败，因此给足余量。
+ * 512 仍不够（生产库观测：思考一长正文即空，且按实际生成计费、上限不增加成本），
+ * 与 wiki-extraction-model 的 4096 对齐。
  */
-const TITLE_MAX_OUTPUT_TOKENS = 512
+const TITLE_MAX_OUTPUT_TOKENS = 4096
 
 const ANTHROPIC_DEFAULT_ENDPOINT = 'https://api.anthropic.com'
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1'
@@ -106,10 +108,20 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
       maxRetries: 1,
     })
     const text = data.content?.find((item) => item.type === 'text')?.text
-    return typeof text === 'string' ? text : null
+    if (typeof text !== 'string' || text.length === 0) {
+      // 与 OpenAI 兼容路径对称：空正文（思考耗尽预算 / 渠道异常响应）必须留 WARN，
+      // 否则失败被静默吞掉、无任何日志可查（2026-09 标题失败排查的观测缺口）。
+      log.warn(
+        `Anthropic title response had no usable text content (model may have spent the token budget on reasoning): ${describeTarget(url)}`,
+      )
+      return null
+    }
+    return text
   } catch (err) {
     if (err instanceof HttpError) {
-      log.warn(`Anthropic title request failed: HTTP ${err.statusCode} ${describeTarget(url)}`)
+      log.warn(
+        `Anthropic title request failed: HTTP ${err.statusCode} ${describeTarget(url)} ${summarizeErrorDetail(err)}`,
+      )
     } else {
       log.warn(
         `Anthropic title request failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -125,8 +137,7 @@ async function callOpenAICompatible(
 ): Promise<string | null> {
   const endpoint = normalizeEndpoint(params.apiEndpoint, OPENAI_DEFAULT_ENDPOINT)
   // 渠道声明「完整 URL」时原样请求（用户填的已是最终 chat 地址），否则拼接后缀。
-  const url =
-    params.apiEndpointFullUrl === true ? endpoint : `${endpoint}/chat/completions`
+  const url = params.apiEndpointFullUrl === true ? endpoint : `${endpoint}/chat/completions`
   const baseBody = {
     model: params.model,
     temperature: 0.3,
@@ -173,7 +184,7 @@ async function callOpenAICompatible(
   } catch (err) {
     if (err instanceof HttpError) {
       log.warn(
-        `OpenAI-compatible title request failed: HTTP ${err.statusCode} ${describeTarget(url)}`,
+        `OpenAI-compatible title request failed: HTTP ${err.statusCode} ${describeTarget(url)} ${summarizeErrorDetail(err)}`,
       )
     } else {
       log.warn(
@@ -182,6 +193,16 @@ async function callOpenAICompatible(
     }
     return null
   }
+}
+
+/**
+ * HttpError.message 形如 `HTTP 400: {响应体前 800 字符}`（fetchJson 统一构造），
+ * 而此前 WARN 只打状态码 + host，400 的具体原因（鉴权 / 参数 / 模型名）无从查起。
+ * 这里取 message 的脱敏摘要（仅截短，不额外打印请求头/凭据），保留排查线索。
+ */
+function summarizeErrorDetail(err: HttpError): string {
+  const detail = err.message.slice(0, 300).replace(/\s+/g, ' ').trim()
+  return detail.length > 0 ? `detail=${detail}` : ''
 }
 
 function describeTarget(url: string): string {

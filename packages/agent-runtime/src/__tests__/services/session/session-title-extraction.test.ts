@@ -835,3 +835,211 @@ describe('extractSessionTitle · auto-router', () => {
     expect(result).toEqual({ ok: false, code: 'router_unavailable' })
   })
 })
+
+describe('extractSessionTitle · 默认渠道借道（本地 CLI）', () => {
+  let db: SparkDatabase
+  let testDir: string
+
+  beforeEach(() => {
+    generateTitleMock.mockReset()
+    testDir = mkdtempSync(path.join(tmpdir(), 'spark-session-extract-title-cli-'))
+    db = new SparkDatabase(path.join(testDir, 'test.db'))
+    db.runMigrations(path.join(process.cwd(), '..', 'storage', 'migrations'))
+  })
+
+  afterEach(() => {
+    try {
+      db.close()
+    } catch {
+      /* db already closed */
+    }
+    try {
+      rmSync(testDir, { recursive: true, force: true })
+    } catch {
+      /* 同上：临时目录交给系统清理 */
+    }
+  })
+
+  function seedProviders(params: {
+    cliIsDefault?: boolean
+    withDefaultRemote?: boolean
+    defaultRouter?: boolean
+  }): void {
+    const providerRepo = new ProviderProfileRepository(db)
+    // 本地 CLI 渠道：宿主 OAuth，无 keystore_ref、不可直连。
+    providerRepo.create({
+      id: 'local-cli',
+      providerType: 'openai',
+      name: '本地 Codex CLI',
+      config: { defaultModel: 'gpt-local-cli', modelIds: [] },
+      keystoreRef: '',
+      ...(params.cliIsDefault ? { isDefault: true } : {}),
+    })
+    if (params.withDefaultRemote === true) {
+      providerRepo.create({
+        id: 'default-remote',
+        providerType: 'anthropic',
+        name: '默认远程渠道',
+        config: { defaultModel: 'default-remote-model', modelIds: [] },
+        keystoreRef: 'key-default-remote',
+        isDefault: true,
+      })
+    }
+  }
+
+  function seedRouterDefault(): void {
+    new ProviderProfileRepository(db).create({
+      id: 'default-router',
+      providerType: 'auto-router',
+      name: 'Default Router',
+      config: {
+        kind: 'auto-router',
+        version: 1,
+        adapter: 'codex',
+        dispatcher: { providerProfileId: 'router-dispatcher', modelId: 'router-dispatcher-model' },
+        executors: [],
+        fallbackIntensity: 'balanced',
+      },
+      keystoreRef: '',
+      isDefault: true,
+    })
+    new ProviderProfileRepository(db).create({
+      id: 'router-dispatcher',
+      providerType: 'openai',
+      name: 'Router Dispatcher',
+      config: { defaultModel: 'dispatcher-default', modelIds: [] },
+      keystoreRef: 'key-router-dispatcher',
+    })
+  }
+
+  function seedCliSession(): void {
+    new SessionRepository(db).create({
+      id: SESSION_ID,
+      kind: 'chat',
+      title: '新会话',
+      status: 'idle',
+      projectId: '',
+      providerProfileId: 'local-cli',
+      modelId: 'gpt-local-cli',
+    })
+  }
+
+  function seedDialogueForCli(): void {
+    const eventRepo = new EventRepository(db)
+    eventRepo.insert({
+      id: 'evt-cli-1',
+      sessionId: SESSION_ID,
+      turnId: 'turn-1',
+      eventType: 'user_message',
+      eventJson: JSON.stringify(userEvent({ seq: 1, content: '帮我把日志面板加上筛选' })),
+    })
+    eventRepo.insert({
+      id: 'evt-cli-2',
+      sessionId: SESSION_ID,
+      turnId: 'turn-1',
+      eventType: 'assistant_message',
+      eventJson: JSON.stringify(assistantEvent(2, '已补充筛选能力。')),
+    })
+  }
+
+  it('本地 CLI 渠道借默认远程渠道出标题', async () => {
+    seedProviders({ withDefaultRemote: true })
+    seedCliSession()
+    seedDialogueForCli()
+    generateTitleMock.mockResolvedValue('日志面板筛选优化')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '日志面板筛选优化' })
+    const call = generateTitleMock.mock.calls[0]?.[0] as {
+      model?: string
+      providerType?: string
+      apiKey?: string
+    }
+    // 标题模型来自默认渠道（defaultModel），不再是本地 CLI 的模型名。
+    expect(call.model).toBe('default-remote-model')
+    expect(call.providerType).toBe('anthropic')
+    expect(call.apiKey).toBe('test-api-key')
+  })
+
+  it('本地 CLI 自己是默认渠道时不借道，维持 provider_no_api_key', async () => {
+    seedProviders({ cliIsDefault: true })
+    seedCliSession()
+    seedDialogueForCli()
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+    expect(result).toEqual({ ok: false, code: 'provider_no_api_key' })
+    expect(generateTitleMock).not.toHaveBeenCalled()
+  })
+
+  it('没有默认渠道时维持 provider_no_api_key', async () => {
+    seedProviders({})
+    seedCliSession()
+    seedDialogueForCli()
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+    expect(result).toEqual({ ok: false, code: 'provider_no_api_key' })
+    expect(generateTitleMock).not.toHaveBeenCalled()
+  })
+
+  it('默认渠道是智能路由时走 router 候选链（分流器模型）', async () => {
+    seedProviders({})
+    seedRouterDefault()
+    seedCliSession()
+    seedDialogueForCli()
+    generateTitleMock.mockResolvedValue('路由借道标题')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '路由借道标题' })
+    const call = generateTitleMock.mock.calls[0]?.[0] as { model?: string }
+    expect(call.model).toBe('router-dispatcher-model')
+  })
+
+  it('远程渠道（有 key）不借道，仍用会话自身模型', async () => {
+    const providerRepo = new ProviderProfileRepository(db)
+    providerRepo.create({
+      id: 'remote-main',
+      providerType: 'openai',
+      name: '远程主渠道',
+      config: { defaultModel: 'remote-main-default', modelIds: [] },
+      keystoreRef: 'key-remote-main',
+    })
+    providerRepo.create({
+      id: 'default-remote',
+      providerType: 'anthropic',
+      name: '默认远程渠道',
+      config: { defaultModel: 'default-remote-model', modelIds: [] },
+      keystoreRef: 'key-default-remote',
+      isDefault: true,
+    })
+    new SessionRepository(db).create({
+      id: SESSION_ID,
+      kind: 'chat',
+      title: '新会话',
+      status: 'idle',
+      projectId: '',
+      providerProfileId: 'remote-main',
+      modelId: 'session-model-x',
+    })
+    const eventRepo = new EventRepository(db)
+    eventRepo.insert({
+      id: 'evt-remote-1',
+      sessionId: SESSION_ID,
+      turnId: 'turn-1',
+      eventType: 'user_message',
+      eventJson: JSON.stringify(userEvent({ seq: 1, content: '远程渠道正常出标题' })),
+    })
+    generateTitleMock.mockResolvedValue('远程渠道标题')
+
+    const result = await extractSessionTitle({ db, sessionId: SESSION_ID })
+
+    expect(result).toEqual({ ok: true, title: '远程渠道标题' })
+    const call = generateTitleMock.mock.calls[0]?.[0] as {
+      model?: string
+      providerType?: string
+    }
+    expect(call.model).toBe('session-model-x')
+    expect(call.providerType).toBe('openai')
+  })
+})

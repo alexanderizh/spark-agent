@@ -54,7 +54,7 @@ describe('generateSessionTitle（OpenAI 兼容路径）', () => {
       string,
       unknown
     >
-    expect(body.max_tokens).toBe(512)
+    expect(body.max_tokens).toBe(4096)
   })
 
   it('max_tokens 400 且服务端提示 max_completion_tokens 时换参重发成功', async () => {
@@ -73,7 +73,7 @@ describe('generateSessionTitle（OpenAI 兼容路径）', () => {
       string,
       unknown
     >
-    expect(retryBody.max_completion_tokens).toBe(512)
+    expect(retryBody.max_completion_tokens).toBe(4096)
     expect(retryBody.max_tokens).toBeUndefined()
   })
 
@@ -151,6 +151,32 @@ describe('generateSessionTitle（Anthropic 路径）', () => {
 
   it('HTTP 失败打 warn（生产日志可见）', async () => {
     fetchJsonMock.mockRejectedValueOnce(httpError(401, 'invalid api key'))
+    const title = await generateSessionTitle({ ...BASE_PARAMS, providerType: 'anthropic' })
+    expect(title).toBeNull()
+    expect(warnMock).toHaveBeenCalled()
+  })
+
+  it('HTTP 失败 warn 携带响应体摘要（400 具体原因可查）', async () => {
+    fetchJsonMock.mockRejectedValueOnce(
+      httpError(400, 'HTTP 400: {"error":{"message":"max_tokens is too large: 4096"}}'),
+    )
+    await generateSessionTitle({ ...BASE_PARAMS, providerType: 'anthropic' })
+    expect(warnMock).toHaveBeenCalled()
+    const message = String(warnMock.mock.calls[0]?.[0] ?? '')
+    expect(message).toContain('HTTP 400')
+    expect(message).toContain('max_tokens is too large')
+  })
+
+  it('content 无 text block（思考耗尽预算）返回 null 且打 warn，与 OpenAI 路径对称', async () => {
+    // 思考型模型思考 token 计入输出预算：预算被耗尽时 content 里只有 thinking block。
+    fetchJsonMock.mockResolvedValueOnce({ content: [{ type: 'thinking', thinking: '...' }] })
+    const title = await generateSessionTitle({ ...BASE_PARAMS, providerType: 'anthropic' })
+    expect(title).toBeNull()
+    expect(warnMock).toHaveBeenCalled()
+  })
+
+  it('content 为空数组同样返回 null 且打 warn', async () => {
+    fetchJsonMock.mockResolvedValueOnce({ content: [] })
     const title = await generateSessionTitle({ ...BASE_PARAMS, providerType: 'anthropic' })
     expect(title).toBeNull()
     expect(warnMock).toHaveBeenCalled()
