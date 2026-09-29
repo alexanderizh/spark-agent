@@ -3,7 +3,7 @@ import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from './media-config.js'
 
 export interface BasicCustomMediaManifestInput {
   modelId: string
-  modelType: 'image' | 'video'
+  modelType: 'image' | 'video' | 'voice'
   mode: 'sync' | 'async_polling'
   /** Persisted id for editing legacy manifests. Omit when creating a new manifest. */
   manifestId?: string
@@ -27,6 +27,9 @@ export function createBasicCustomMediaManifest(
 ): MediaModelManifest {
   const modelId = input.modelId.trim()
   const id = input.manifestId?.trim() || createCustomMediaManifestId(modelId)
+  // 语音（TTS）基础合同走 OpenAI 兼容 /audio/speech：响应是二进制音频裸流，
+  // 与 image/video 的 JSON→URL 提取完全不同，单独走一个构造分支。
+  if (input.modelType === 'voice') return basicCustomVoiceManifest(modelId, id)
   const capabilities = customCapabilitiesForType(input.modelType)
   const endpoint = input.modelType === 'image' ? '/images/generations' : '/videos/generations'
   const requestTemplate = { model: '{{modelId}}', prompt: '{{prompt}}' }
@@ -117,6 +120,53 @@ function customCapabilitiesForType(modelType: 'image' | 'video'): MediaModelCapa
     videoEditCapability(),
     videoExtendCapability(),
   ]
+}
+
+/**
+ * 自定义语音（TTS）渠道的基础 manifest：OpenAI 兼容 POST /audio/speech。
+ * 响应是二进制音频裸流（非 JSON），因此用 binary_response 直接落盘。
+ * 语音识别（audio.transcription）端点不同（/audio/transcriptions），不在
+ * 基础 manifest 里混入——需要时由契约编辑器基底模板生成（见 providerManifestBaseTemplates）。
+ */
+function basicCustomVoiceManifest(modelId: string, id: string): MediaModelManifest {
+  return {
+    id,
+    baseTemplate: 'openai-compatible',
+    providerKind: 'custom',
+    modelId,
+    displayName: modelId,
+    domains: ['audio'],
+    capabilities: [
+      {
+        id: 'audio.speech',
+        label: '文本转语音',
+        input: { required: ['prompt'] },
+        output: { types: ['audio'], mimeTypes: ['audio/mpeg', 'audio/wav'] },
+        paramSchema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            voice: { type: 'string', title: '音色' },
+            speed: { type: 'number', title: '语速', minimum: 0.25, maximum: 4, default: 1 },
+          },
+        },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/audio/speech',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: '{{prompt}}',
+        voice: '{{params.voice}}',
+        speed: '{{params.speed}}',
+      },
+      response: { kind: 'binary_response' },
+    },
+    docs: { sourceUrls: [] },
+  }
 }
 
 function imageGenerateCapability(): MediaModelCapabilityManifest {

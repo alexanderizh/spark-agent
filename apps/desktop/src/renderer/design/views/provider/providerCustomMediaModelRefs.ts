@@ -33,8 +33,12 @@ export function appendCustomMediaModelRef(
     input.mediaApiType === 'async' || (input.mediaApiType === 'auto' && input.modelType === 'video')
       ? 'async_polling'
       : 'sync'
+  // 自定义 image/video/voice 渠道都生成 inline manifest：没有 manifest 的裸 custom: ref
+  // 在主进程解析时会因内置目录无 providerKind='custom' 的合成基底而被丢弃（表现为
+  // 快速创作里看不到该模型）。voice 固定 sync（TTS 是同步二进制响应）。
   const manifest =
-    input.mediaProvider === 'custom' && (input.modelType === 'image' || input.modelType === 'video')
+    input.mediaProvider === 'custom' &&
+    (input.modelType === 'image' || input.modelType === 'video' || input.modelType === 'voice')
       ? createBasicCustomMediaManifest({ modelId, modelType: input.modelType, mode })
       : undefined
   const manifestId = manifest?.id ?? createCustomMediaManifestId(modelId)

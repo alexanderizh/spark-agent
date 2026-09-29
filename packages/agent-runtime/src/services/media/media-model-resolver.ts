@@ -22,7 +22,11 @@ import type {
   MediaModelParamPolicy,
   ProviderMediaModelRef,
 } from '@spark/protocol'
-import { CUSTOM_IMAGE_MODEL_SIZE_EXAMPLES, CUSTOM_IMAGE_MODEL_SIZE_PATTERN } from '@spark/protocol'
+import {
+  CUSTOM_IMAGE_MODEL_SIZE_EXAMPLES,
+  CUSTOM_IMAGE_MODEL_SIZE_PATTERN,
+  createBasicCustomMediaManifest,
+} from '@spark/protocol'
 import type { MediaModelCatalogService } from './media-model-catalog.service.js'
 
 /** 解析所需的 profile 字段子集（与 ProviderProfile 兼容）。 */
@@ -124,7 +128,24 @@ export function synthesizeMediaManifestForRef(
       bases.push(base)
     }
   }
-  if (bases.length === 0) return null
+  if (bases.length === 0) {
+    // 语音渠道的存量裸 custom: ref（voice 支持 inline manifest 之前保存）没有任何
+    // providerKind='custom' 的目录基底可克隆，这里用基础 TTS manifest 兜底合成，
+    // manifestId 沿用 ref.manifestId 保持身份稳定，用户无需重新配置。
+    // 仅限 audio 域：image/video 的自定义模型一直携带 inline manifest，不走此兜底。
+    if (
+      mediaDomainForProfile(profile) === 'audio' &&
+      ref.manifestId.startsWith(CUSTOM_MANIFEST_PREFIX)
+    ) {
+      return createBasicCustomMediaManifest({
+        modelId,
+        modelType: 'voice',
+        mode: 'sync',
+        manifestId: ref.manifestId,
+      })
+    }
+    return null
+  }
 
   const preferredDomain = mediaDomainForProfile(profile)
   const domainPool = preferredDomain

@@ -2638,8 +2638,10 @@ export function ProviderEditPanel({
   const templateConfigured = form.presetId !== 'custom'
   const effectiveMediaProvider = (form.mediaProvider ||
     mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+  // voice 也纳入自定义媒体渠道：否则语音渠道的「添加自定义模型」区块不展示，
+  // 模型 ref 只存裸 custom: id（无 manifest），主进程解析时被丢弃、快速创作不可见。
   const isCustomMediaChannel =
-    (form.modelType === 'image' || form.modelType === 'video') &&
+    (form.modelType === 'image' || form.modelType === 'video' || form.modelType === 'voice') &&
     effectiveMediaProvider === 'custom'
   const showMediaDefaults = useMemo(() => {
     if (form.modelType === 'image') return true

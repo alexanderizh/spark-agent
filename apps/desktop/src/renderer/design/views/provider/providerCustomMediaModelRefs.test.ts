@@ -62,4 +62,28 @@ describe('appendCustomMediaModelRef', () => {
       providerKind: 'custom',
     })
   })
+
+  it('generates an inline TTS manifest for fully custom voice providers', () => {
+    // 回归：语音渠道此前只存裸 custom: id（无 manifest），主进程解析时被丢弃，
+    // 表现为快速创作里看不到自定义语音模型。
+    const [ref] = appendCustomMediaModelRef([], {
+      mediaApiType: 'sync',
+      mediaProvider: 'custom',
+      modelId: 'my-custom-tts',
+      modelType: 'voice',
+    })
+    if (!ref) throw new Error('Expected the custom voice model reference to be created')
+
+    expect(ref.manifest).toMatchObject({
+      id: ref.manifestId,
+      modelId: 'my-custom-tts',
+      providerKind: 'custom',
+      domains: ['audio'],
+    })
+    expect(ref.manifest?.capabilities.map((capability) => capability.id)).toEqual(['audio.speech'])
+    expect(ref.manifest?.invocation).toMatchObject({
+      endpoint: '/audio/speech',
+      response: { kind: 'binary_response' },
+    })
+  })
 })

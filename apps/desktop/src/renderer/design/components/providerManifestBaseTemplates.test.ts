@@ -96,6 +96,33 @@ describe('provider manifest base templates', () => {
     expect(manifest.invocation.response).toMatchObject({ kind: 'binary_response' })
   })
 
+  it('creates a valid OpenAI audio transcription contract when the capability is audio.transcription', () => {
+    // 用户在契约编辑器把能力切到语音识别后，基底模板应生成 /audio/transcriptions 合同：
+    // Contract V2 multipart request.body 显式声明 file 段（legacy contentType:'multipart'
+    // 分支不会上传文件），响应从 JSON { text } 提取且不落盘。
+    const input = base('audio')
+    input.capabilities = [
+      {
+        id: 'audio.transcription',
+        label: '语音转文本',
+        input: { required: ['audio'], maxAudios: 1 },
+        output: { types: ['text'], mimeTypes: ['text/plain'] },
+        paramSchema: { type: 'object', additionalProperties: false, properties: {} },
+        defaults: {},
+      },
+    ]
+    const manifest = applyAdapterBaseTemplate(input, 'openai-compatible')
+    expectValid(manifest)
+    expect(manifest.capabilities.map((item) => item.id)).toEqual(['audio.transcription'])
+    expect(manifest.invocation.request?.endpoint).toBe('/audio/transcriptions')
+    expect(manifest.invocation.response).toEqual({ kind: 'url', jsonPaths: ['text'], download: false })
+    const body = manifest.invocation.request?.body
+    expect(body?.kind).toBe('multipart')
+    if (body?.kind !== 'multipart') throw new Error('expected a multipart body')
+    const filePart = body.parts.find((part) => part.kind === 'file')
+    expect(filePart).toMatchObject({ name: 'file', value: '{{audio}}' })
+  })
+
   it('infers old presets only for display and persists new selections explicitly', () => {
     const legacyToApis = base()
     delete legacyToApis.baseTemplate

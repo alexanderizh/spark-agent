@@ -84,7 +84,13 @@ function customBase(manifest: MediaModelManifest): MediaModelManifest {
 function openAiCompatibleBase(manifest: MediaModelManifest): MediaModelManifest {
   const domain = manifest.domains[0] ?? 'image'
   if (domain === 'video') return openAiVideoBase(manifest)
-  if (domain === 'audio') return openAiAudioBase(manifest)
+  if (domain === 'audio') {
+    // 语音域按当前能力分化：识别模型生成 transcriptions 合同，其余生成 TTS 合同。
+    // 与 openAiImageBase 按 image.edit 分化的模式一致。
+    return manifest.capabilities[0]?.id === 'audio.transcription'
+      ? openAiAudioTranscriptionBase(manifest)
+      : openAiAudioBase(manifest)
+  }
   return openAiImageBase(manifest)
 }
 
@@ -366,6 +372,73 @@ function openAiVideoBase(manifest: MediaModelManifest): MediaModelManifest {
         'https://developers.openai.com/api/reference/resources/videos/methods/download_content',
       ],
       lastCheckedAt: '2026-08-08',
+    },
+    safety: { ...manifest.safety, allowLocalFiles: true },
+  }
+}
+
+/**
+ * OpenAI 兼容语音识别（/audio/transcriptions）基底：multipart 文件上传，响应 JSON { text }。
+ * 必须用 Contract V2 request.body 声明 kind:'file' 段——legacy contentType:'multipart'
+ * 分支只产出 text parts，不会上传文件（见 media-invocation-compiler.ts）。
+ * 先例：zhipu:glm-asr-2512 与 minimax:asr-1.0。
+ */
+function openAiAudioTranscriptionBase(manifest: MediaModelManifest): MediaModelManifest {
+  const capability: MediaModelCapabilityManifest = {
+    id: 'audio.transcription',
+    label: '语音转文本',
+    input: { required: ['audio'], maxAudios: 1 },
+    output: { types: ['text'], mimeTypes: ['text/plain'] },
+    paramSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        language: {
+          type: 'string',
+          title: '音频语言',
+          description: 'ISO-639-1 语言代码（如 zh、en）；留空由服务端自动检测',
+        },
+      },
+    },
+    defaults: {},
+  }
+  return {
+    ...manifest,
+    baseTemplate: 'openai-compatible',
+    contractVersion: 2,
+    adapterMode: 'template',
+    providerKind: 'custom',
+    domains: ['audio'],
+    capabilities: [capability],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/audio/transcriptions',
+      method: 'POST',
+      // legacy 镜像字段：承载契约展示；真实请求由下方 request 编译（必须含 file 段）。
+      contentType: 'multipart',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      request: {
+        method: 'POST',
+        endpoint: '/audio/transcriptions',
+        auth: { kind: 'bearer', credentialRef: 'apiKey' },
+        body: {
+          kind: 'multipart',
+          parts: [
+            { name: 'file', kind: 'file', value: '{{audio}}' },
+            { name: 'model', kind: 'text', value: '{{modelId}}' },
+            // STT 的 prompt 官方语义即「专有名词纠正提示」，与快速创作识别模式的补充说明对应；
+            // 留空时编译器自动跳过该段。
+            { name: 'prompt', kind: 'text', value: '{{prompt}}' },
+            { name: 'language', kind: 'text', value: '{{params.language}}' },
+          ],
+        },
+      },
+      response: { kind: 'url', jsonPaths: ['text'], download: false },
+    },
+    error: openAiErrorContract(),
+    docs: {
+      sourceUrls: ['https://developers.openai.com/api/docs/models/whisper-1'],
+      lastCheckedAt: '2026-09-30',
     },
     safety: { ...manifest.safety, allowLocalFiles: true },
   }
