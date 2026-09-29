@@ -40,6 +40,39 @@ export function buildRemoteProviderModelRows(
   }))
 }
 
+/**
+ * 解析远程视角当前生效的渠道/模型（供 /status、上下文摘要、模型与渠道列表选中态使用）。
+ *
+ * 已绑定会话时完全跟随会话记录——远程 turn 提交（submitTurn）不携带路由/连接级默认覆盖，
+ * 会话记录就是实际执行依据；仅在未绑定会话时才回落连接级默认（描述“下次新建会话”的兜底）。
+ * 这样展示与执行永远同一口径，避免“status 显示 A 模型、实际跑 B 模型”的误导。
+ *
+ * 注意：会话列表里 providerProfileId 缺省时是空串（`?? ''`），这里统一按未设置处理。
+ */
+export function resolveRemoteEffectiveModelSelection(
+  session:
+    | { providerProfileId: string; modelId: string | null | undefined }
+    | undefined,
+  connectionDefaults: {
+    defaultProviderProfileId?: string | undefined
+    defaultModelId?: string | undefined
+  },
+  providers: ReadonlyArray<Pick<ProviderProfile, 'id' | 'defaultModel'>>,
+): { providerId?: string; modelId?: string } {
+  const sessionProviderId = session?.providerProfileId || undefined
+  const sessionModelId = session?.modelId || undefined
+  const providerId = sessionProviderId ?? connectionDefaults.defaultProviderProfileId
+  const provider = providers.find((item) => item.id === providerId)
+  const modelId =
+    sessionModelId ??
+    (session != null ? undefined : connectionDefaults.defaultModelId) ??
+    provider?.defaultModel
+  return {
+    ...(providerId != null ? { providerId } : {}),
+    ...(modelId != null && modelId.length > 0 ? { modelId } : {}),
+  }
+}
+
 export const REMOTE_REASONING_ROWS: Array<RemoteSelectionRow & { id: SessionReasoningEffort }> = [
   { id: 'minimal', label: '最低' },
   { id: 'low', label: '低' },

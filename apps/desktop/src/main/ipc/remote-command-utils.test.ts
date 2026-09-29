@@ -12,6 +12,7 @@ import {
   paginateRemoteSelection,
   parseRemotePage,
   parseRemoteSessionFilter,
+  resolveRemoteEffectiveModelSelection,
   resolveRemoteSelection,
   type RemoteSelectionRow,
 } from './remote-command-utils.js'
@@ -27,6 +28,65 @@ describe('buildRemoteProviderModelRows', () => {
       { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna', meta: '渠道默认' },
       { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
     ])
+  })
+})
+
+describe('resolveRemoteEffectiveModelSelection', () => {
+  const providers = [
+    { id: 'prov-glm', defaultModel: 'glm-5.3' },
+    { id: 'prov-opencode', defaultModel: 'opencode-x' },
+  ]
+  const connectionDefaults = {
+    defaultProviderProfileId: 'prov-opencode',
+    defaultModelId: 'opencode-x',
+  }
+
+  it('follows the bound session record and ignores stale connection defaults', () => {
+    // 回归：路由默认残留 opencode、会话记录是 glm-5.3 时，展示必须跟会话记录一致
+    // （远程 turn 不再携带路由默认覆盖，会话记录就是执行依据）。
+    expect(
+      resolveRemoteEffectiveModelSelection(
+        { providerProfileId: 'prov-glm', modelId: 'glm-5.3' },
+        connectionDefaults,
+        providers,
+      ),
+    ).toEqual({ providerId: 'prov-glm', modelId: 'glm-5.3' })
+  })
+
+  it('treats an empty session provider id as unset and still trusts the session model', () => {
+    expect(
+      resolveRemoteEffectiveModelSelection(
+        { providerProfileId: '', modelId: 'glm-5.3' },
+        connectionDefaults,
+        providers,
+      ),
+    ).toEqual({ providerId: 'prov-opencode', modelId: 'glm-5.3' })
+  })
+
+  it('falls back to connection defaults only when no session is bound', () => {
+    expect(
+      resolveRemoteEffectiveModelSelection(undefined, connectionDefaults, providers),
+    ).toEqual({ providerId: 'prov-opencode', modelId: 'opencode-x' })
+  })
+
+  it('uses the provider default model when the bound session has no model', () => {
+    expect(
+      resolveRemoteEffectiveModelSelection(
+        { providerProfileId: 'prov-glm', modelId: null },
+        connectionDefaults,
+        providers,
+      ),
+    ).toEqual({ providerId: 'prov-glm', modelId: 'glm-5.3' })
+  })
+
+  it('omits model when unknown and renders provider id without a matching row', () => {
+    expect(
+      resolveRemoteEffectiveModelSelection(
+        { providerProfileId: 'prov-deleted', modelId: null },
+        {},
+        providers,
+      ),
+    ).toEqual({ providerId: 'prov-deleted' })
   })
 })
 

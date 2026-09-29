@@ -1372,7 +1372,7 @@ const REMOTE_CAPABILITY_LABELS: Record<keyof RemoteConnectionCapabilities, strin
 
 const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string> = {
   sendMessages: '允许远程端向当前聊天绑定的会话提交 /send 或普通消息',
-  switchModel: '允许 /models、/providers、/use-model、/use-provider',
+  switchModel: '允许 /models、/providers、/use-model、/use-provider、/reasoning',
   switchSession: '允许 /sessions 与 /use-session',
   switchAgent: '允许 /agents 与 /use-agent',
   manageWorkspace: '允许 /workspaces 查看项目入口',

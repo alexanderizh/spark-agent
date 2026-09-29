@@ -299,13 +299,13 @@ const COMMAND_CATALOG: RemoteCommandDefinition[] = [
     name: 'reasoning',
     usage: '/reasoning',
     description: '选择推理强度',
-    capability: 'manageRuntime',
+    capability: 'switchModel',
   },
   {
     name: 'use-reasoning',
     usage: '/use-reasoning <minimal|low|medium|high|xhigh|max>',
     description: '切换推理强度',
-    capability: 'manageRuntime',
+    capability: 'switchModel',
   },
   {
     name: 'permissions',
