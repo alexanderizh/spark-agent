@@ -277,4 +277,53 @@ describe('OptionalCapabilityCenter', () => {
     )
     expect(installButton?.hasAttribute('disabled')).toBe(true)
   })
+
+  it('hides dedicated integrity card capabilities from the manual install dialog', async () => {
+    mocks.snapshot.capabilities = [
+      {
+        id: 'codex-runtime',
+        displayName: 'Codex 本地运行环境',
+        description: 'Codex native runtime',
+        state: 'ready',
+        installedVersion: '0.153.4',
+        targetVersion: '0.153.4',
+        downloadSize: 200_000_000,
+        installedSize: 200_000_000,
+        autoUpdate: false,
+      },
+      {
+        id: 'voice-pack',
+        displayName: '语音输入资源',
+        description: 'Voice pack',
+        state: 'ready',
+        installedVersion: '1.0.0',
+        targetVersion: '1.0.0',
+        downloadSize: 50_000_000,
+        installedSize: 50_000_000,
+        autoUpdate: true,
+      },
+      {
+        id: 'office-viewer',
+        displayName: '离线 Office 预览',
+        description: 'Office resources',
+        state: 'ready',
+        installedVersion: '2.2.3-1',
+        targetVersion: '2.2.3-1',
+        downloadSize: 10_000_000,
+        installedSize: 20_000_000,
+        autoUpdate: true,
+      },
+    ] as typeof mocks.snapshot.capabilities
+
+    await act(async () => root.render(<OptionalCapabilityCenter />))
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('spark:open-optional-capability-center'))
+    })
+
+    expect(document.body.textContent).toContain('离线 Office 预览')
+    expect(document.body.textContent).not.toContain('Codex 本地运行环境')
+    expect(document.body.textContent).not.toContain('语音输入资源')
+    // 过滤后的列表全部为已安装，摘要应按可见组件判断。
+    expect(document.body.textContent).toContain('所有可用组件均已安装')
+  })
 })

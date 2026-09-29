@@ -8,6 +8,7 @@ import type {
 import { useApp } from '../AppContext'
 import { useOptionalCapabilities } from './useOptionalCapabilities'
 import { OPEN_OPTIONAL_CAPABILITY_CENTER_EVENT } from './optionalCapabilityNavigation'
+import { settingsCardCapabilities } from './capabilityDisplayPolicy'
 import {
   isPromptWorthyCapability,
   shouldShowCapabilityPrompt,
@@ -32,6 +33,12 @@ export function OptionalCapabilityCenter() {
     () => snapshot?.capabilities.filter(isPromptWorthyCapability) ?? [],
     [snapshot],
   )
+  // 手动打开的批量安装弹窗与完整性页「可选功能组件」保持同一展示口径：
+  // 由专属卡片管理的能力（Codex runtime / FFmpeg / 语音包）不在此重复出现。
+  const manualItems = useMemo(
+    () => settingsCardCapabilities(snapshot?.capabilities ?? []),
+    [snapshot],
+  )
   const shouldOpenPrompt = useMemo(
     () => snapshot != null && shouldShowCapabilityPrompt(snapshot, readPromptPreference()),
     [snapshot],
@@ -39,7 +46,7 @@ export function OptionalCapabilityCenter() {
 
   const startupPromptOpen = shouldOpenPrompt && !promptDismissed
   const promptMode = manualOpen ? 'manual' : 'startup'
-  const promptItems = promptMode === 'manual' ? (snapshot?.capabilities ?? []) : installable
+  const promptItems = promptMode === 'manual' ? manualItems : installable
   const selectedInstallable = selected.filter((id) => installable.some((item) => item.id === id))
   const selectedDownloadSize = installable
     .filter((item) => selectedInstallable.includes(item.id))
@@ -204,7 +211,7 @@ export function OptionalCapabilityCenter() {
             {selectedInstallable.length > 0
               ? `已选择 ${selectedInstallable.length} 项`
               : promptMode === 'manual'
-                ? manualSelectionSummary(snapshot?.capabilities)
+                ? manualSelectionSummary(manualItems)
                 : '尚未选择组件'}
           </span>
           {selectedDownloadSize > 0 && <strong>共 {formatBytes(selectedDownloadSize)}</strong>}

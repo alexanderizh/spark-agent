@@ -5,6 +5,7 @@ import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
 import { useOptionalCapabilities } from './useOptionalCapabilities'
 import { openOptionalCapabilityCenter } from './optionalCapabilityNavigation'
+import { settingsCardCapabilities } from './capabilityDisplayPolicy'
 
 export function OptionalCapabilitiesSettingsCard() {
   const { requestConfirm } = useApp()
@@ -48,7 +49,7 @@ export function OptionalCapabilitiesSettingsCard() {
       <div className="voice-integrity-header">
         <div className="voice-integrity-heading">
           <h3>可选功能组件</h3>
-          <p>Codex、Office、视频处理、浏览器和语音资源按需安装，不占用基础安装包空间。</p>
+          <p>Office 预览、本地深度处理和浏览器自动化资源按需安装，不占用基础安装包空间。</p>
         </div>
         <Button loading={actions.loading} onClick={() => void refresh()}>
           检查更新
@@ -56,7 +57,7 @@ export function OptionalCapabilitiesSettingsCard() {
       </div>
       {error && <div className="integrity-banner error">{error}</div>}
       <div className="settings-card integrity-sdk-card">
-        {actions.snapshot?.capabilities.map((item, index) => {
+        {settingsCardCapabilities(actions.snapshot?.capabilities ?? []).map((item, index) => {
           const progress = actions.progress[item.id]
           return (
             <div key={item.id} className={`integrity-sdk-row ${index > 0 ? 'bordered' : ''}`}>
@@ -119,7 +120,7 @@ export function OptionalCapabilitiesSettingsCard() {
         </span>
         <span className="optional-capability-open-copy">
           <strong>选择并安装可选功能</strong>
-          <span>重新打开批量安装弹窗，查看全部组件状态</span>
+          <span>重新打开批量安装弹窗，查看可安装的组件状态</span>
         </span>
         <span className="optional-capability-open-action">
           打开
