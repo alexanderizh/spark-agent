@@ -107,4 +107,39 @@ describe('fetchZhipuVoiceCatalog', () => {
       }),
     ).rejects.toThrow(/HTTP 400/)
   })
+
+  // 传输层失败没有响应，不会走非 2xx 分支；不在这里归一的话，
+  // DOMException 的英文原文会直接冒到渠道页。
+  it('maps a request timeout to a readable hint instead of leaking the DOMException', async () => {
+    const timeoutError = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+    })
+    const fetchMock = vi.fn(async () => {
+      throw timeoutError
+    })
+
+    await expect(
+      fetchZhipuVoiceCatalog({
+        apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+        apiKey: 'zhipu-key',
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow('音色列表超时（>20s），请检查网络、代理或接口地址后重试')
+  })
+
+  it('maps a network failure to the shared network hint instead of bare "fetch failed"', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error('getaddrinfo ENOTFOUND open.bigmodel.cn'),
+      })
+    })
+
+    await expect(
+      fetchZhipuVoiceCatalog({
+        apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+        apiKey: 'zhipu-key',
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow(/音色列表失败：GET .* 网络请求失败：getaddrinfo ENOTFOUND/)
+  })
 })

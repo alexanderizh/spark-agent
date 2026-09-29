@@ -13,7 +13,7 @@
  * 官方错误体统一为 `{ error: { code, message } }`。
  */
 
-import { createLogger } from '@spark/shared'
+import { createLogger, describeNetworkError } from '@spark/shared'
 import { MediaProviderError } from './media-adapter.types.js'
 
 const log = createLogger('zhipu:voice-api')
@@ -72,6 +72,41 @@ async function readErrorDetail(response: Response): Promise<string> {
 }
 
 /**
+ * 把 fetch 的传输层失败归一成 `MediaProviderError`。
+ *
+ * 这类失败不会经过非 2xx 分支（根本没有响应），若不在这里归一，
+ * `AbortSignal.timeout` 抛出的 `DOMException: The operation was aborted due to timeout`
+ * 与 Node fetch 的 `TypeError: fetch failed` 会原样冒到渠道页，对用户毫无信息量。
+ * 网络原因复用 shared 的 `describeNetworkError`，与「测试连接」保持同一套措辞。
+ */
+function toZhipuTransportError(
+  error: unknown,
+  action: string,
+  method: string,
+  url: string,
+  timeoutMs: number,
+): MediaProviderError {
+  // 已归一过的错误不重复包装。跨打包/模块实例时 instanceof 不可靠，
+  // 按项目既有约定用 name 收窄。
+  if (error instanceof Error && error.name === 'MediaProviderError') {
+    return error as MediaProviderError
+  }
+  const name = error instanceof Error ? error.name : ''
+  const message = error instanceof Error ? error.message : String(error)
+  if (name === 'TimeoutError' || /aborted due to timeout|timed out/i.test(message)) {
+    const seconds = Math.ceil(timeoutMs / 1000)
+    log.warn(`zhipu voice request timed out, action=${action}, timeoutMs=${timeoutMs}`)
+    return new MediaProviderError(
+      'task_timeout',
+      `${action}超时（>${seconds}s），请检查网络、代理或接口地址后重试`,
+    )
+  }
+  const detail = describeNetworkError(error, method, url) ?? message
+  log.warn(`zhipu voice request transport failed, action=${action}, detail=${detail}`)
+  return new MediaProviderError('provider_http_error', `${action}失败：${detail}`)
+}
+
+/**
  * 带 Bearer 鉴权与超时的请求；非 2xx 抛 `MediaProviderError`。
  *
  * 消息里保留厂商原文（`HTTP 400 · 1210 参数错误`），与 manifest 的
@@ -85,16 +120,27 @@ async function sendZhipuVoiceRequest(
   init: { method: 'GET' | 'POST'; body?: RequestInit['body']; contentType?: string },
 ): Promise<Response> {
   const base = resolveZhipuApiBase(target, action)
+  const url = `${base}${path}`
+  const timeoutMs = target.timeoutMs ?? REQUEST_TIMEOUT_MS
   const doFetch = target.fetchImpl ?? fetch
-  const response = await doFetch(`${base}${path}`, {
-    method: init.method,
-    headers: {
-      authorization: `Bearer ${target.apiKey}`,
-      ...(init.contentType ? { 'content-type': init.contentType } : {}),
-    },
-    ...(init.body !== undefined ? { body: init.body } : {}),
-    signal: AbortSignal.timeout(target.timeoutMs ?? REQUEST_TIMEOUT_MS),
-  })
+  let response: Response
+  try {
+    response = await doFetch(url, {
+      method: init.method,
+      headers: {
+        authorization: `Bearer ${target.apiKey}`,
+        ...(init.contentType ? { 'content-type': init.contentType } : {}),
+      },
+      ...(init.body !== undefined ? { body: init.body } : {}),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (error) {
+    // 传输层失败（超时 / DNS / 连接被拒）不会走到下面的非 2xx 分支，
+    // 归一成 MediaProviderError 才能让 IPC 层把可读原因透传出去：
+    // DOMException 的 "The operation was aborted due to timeout"、fetch 的
+    // "fetch failed" 对用户都没有信息量。
+    throw toZhipuTransportError(error, action, init.method, url, timeoutMs)
+  }
   if (!response.ok) {
     const detail = await readErrorDetail(response)
     log.warn(

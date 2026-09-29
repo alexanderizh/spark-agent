@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '../media-model-manifest.js'
 import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '../media-config.js'
 import { getProviderPresetById, PROVIDER_PRESETS } from '../provider-presets.js'
+import { ZHIPU_SYSTEM_VOICES } from '../zhipu-media-model-manifests.js'
 
 describe('provider presets', () => {
   it('gives every video-capable preset and manifest at least the 30 minute default timeout', () => {
@@ -145,6 +146,11 @@ describe('provider presets', () => {
     expect(voiceSchema?.enum).toBeUndefined()
     expect(voiceSchema?.['x-allow-custom']).toBe(true)
     expect(voiceSchema?.examples).toContain('tongtong')
+    // 未同步音色目录的新渠道靠这份静态标签显示中文名（同步后由接口的
+    // voice_name 覆盖）；7 个系统音色少一个标签就会在候选里退回裸 ID。
+    const labels = voiceSchema?.['x-template-labels'] as Record<string, string> | undefined
+    expect(Object.keys(labels ?? {}).sort()).toEqual([...ZHIPU_SYSTEM_VOICES].sort())
+    expect(labels?.tongtong).toBe('彤彤（默认）')
   })
 
   it('declares the zhipu transcription manifest with an uploadable multipart file part', () => {

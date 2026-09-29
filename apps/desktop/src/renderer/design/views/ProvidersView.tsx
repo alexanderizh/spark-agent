@@ -2163,6 +2163,9 @@ export function ProviderEditPanel({
   onClose: () => void
 }) {
   const { toast } = useToast()
+  // 删除复刻音色是不可逆的厂商侧操作，必须走全局确认弹窗
+  //（GLOBAL_DIALOG_Z_INDEX 保证它盖在音色复刻弹窗之上）。
+  const { requestConfirm } = useApp()
   const [form, setForm] = useState<ProviderForm>({
     presetId: 'custom',
     name: '',
@@ -3305,6 +3308,16 @@ export function ProviderEditPanel({
   const [clonedVoices, setClonedVoices] = useState<{ value: string; label?: string | undefined }[]>(
     [],
   )
+  /** 预取/刷新列表的加载态与就地错误（预取失败不弹 toast，见 loadClonedVoices）。 */
+  const [loadingClonedVoices, setLoadingClonedVoices] = useState(false)
+  const [clonedVoicesError, setClonedVoicesError] = useState('')
+
+  // 已复刻音色是「按渠道」的：换渠道或换平台适配器后必须清空，否则上一家厂商的
+  // 私有音色会留在智谱弹窗里，点删除会拿别家的 voice id 去调智谱接口。
+  useEffect(() => {
+    setClonedVoices([])
+    setClonedVoicesError('')
+  }, [profileId, form.mediaProvider])
 
   const handlePickVoiceSample = async () => {
     const picked = await window.spark.invoke('dialog:open-file', {
@@ -3355,6 +3368,14 @@ export function ProviderEditPanel({
 
   const handleDeleteVoice = async (voice: string) => {
     if (!profileId) return
+    // 厂商侧删除不可逆（本地无从恢复，只能重新上传示例音频复刻），先确认再动手。
+    const confirmed = await requestConfirm({
+      title: '删除该复刻音色？',
+      description: '将从厂商账号中删除，删除后无法恢复，只能重新上传示例音频复刻。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     setDeletingVoice(voice)
     try {
       const result = await deleteMediaVoice({ providerId: profileId, voice })
@@ -3366,6 +3387,38 @@ export function ProviderEditPanel({
     } finally {
       setDeletingVoice(null)
     }
+  }
+
+  /**
+   * 预取已复刻音色。
+   *
+   * 平台没有只读的音色清单接口——私有音色来自 `voice/list`，而同步动作本身是幂等的
+   * （顺带写入候选）。不预取的话，「已复刻音色」区块只有点过「同步音色」才有内容，
+   * 入口承诺的「可管理已复刻音色」名不副实。
+   */
+  const loadClonedVoices = async () => {
+    if (!profileId) {
+      setClonedVoicesError('请先保存渠道，再查看已复刻音色')
+      return
+    }
+    setLoadingClonedVoices(true)
+    setClonedVoicesError('')
+    try {
+      const result = await syncMediaVoices({ providerId: profileId })
+      setClonedVoices(result.privateVoices)
+      void reloadProfileMediaModels()
+    } catch (e) {
+      // 预取失败不弹 toast（用户没主动点同步，打断不合理），在列表区就地说明。
+      setClonedVoicesError(e instanceof Error ? e.message : '已复刻音色加载失败')
+    } finally {
+      setLoadingClonedVoices(false)
+    }
+  }
+
+  /** 打开复刻弹窗：顺带预取一次私有音色，让「已复刻音色」区块有内容。 */
+  const handleOpenClonePanel = () => {
+    setClonePanelOpen(true)
+    void loadClonedVoices()
   }
 
   const handleFetchModels = async () => {
@@ -4081,7 +4134,7 @@ export function ProviderEditPanel({
                           onClick={(event) => {
                             event.preventDefault()
                             event.stopPropagation()
-                            setClonePanelOpen(true)
+                            handleOpenClonePanel()
                           }}
                         >
                           复刻音色
@@ -4106,15 +4159,24 @@ export function ProviderEditPanel({
                       </label>
                       <div className="pv_voice_clone_row">
                         <Button onClick={() => void handlePickVoiceSample()}>选择文件</Button>
+                        {samplePath && (
+                          <Button type="text" size="small" onClick={() => setSamplePath('')}>
+                            清除
+                          </Button>
+                        )}
                         <small>支持 mp3 / wav，≤10MB，建议时长 3–30 秒</small>
                       </div>
 
                       <label className="pv_form_label">
                         音色名称
+                        {/* maxLength 与协议上限（provider-media-voices.ts）保持一致：
+                            否则超限会走 zod 分支，用户看到的是英文内部报错。 */}
                         <Input
                           value={voiceName}
+                          maxLength={120}
                           placeholder="例如：我的播报音色"
                           onChange={(event) => setVoiceName(event.target.value)}
+                          onPressEnter={() => void handleCloneVoice()}
                         />
                       </label>
 
@@ -4122,8 +4184,10 @@ export function ProviderEditPanel({
                         示例音频文本（选填）
                         <Input
                           value={sampleText}
+                          maxLength={2000}
                           placeholder="示例音频里朗读的内容，填写可提升复刻质量"
                           onChange={(event) => setSampleText(event.target.value)}
+                          onPressEnter={() => void handleCloneVoice()}
                         />
                       </label>
 
@@ -4131,8 +4195,10 @@ export function ProviderEditPanel({
                         试听文本（选填）
                         <Input
                           value={previewText}
+                          maxLength={400}
                           placeholder="留空使用平台默认试听句"
                           onChange={(event) => setPreviewText(event.target.value)}
+                          onPressEnter={() => void handleCloneVoice()}
                         />
                       </label>
 
@@ -4140,15 +4206,26 @@ export function ProviderEditPanel({
                         type="primary"
                         block
                         loading={cloningVoice}
+                        disabled={!samplePath || !voiceName.trim()}
                         onClick={() => void handleCloneVoice()}
                       >
                         开始复刻
                       </Button>
 
-                      {clonedVoices.length > 0 && (
-                        <div className="pv_voice_clone_list">
-                          <label className="pv_form_label">已复刻音色</label>
-                          {clonedVoices.map((voice) => (
+                      {/* 三态常显：只按 length>0 渲染时，首次打开弹窗是一片空白，
+                          用户分不清「没有音色」还是「没加载」，也找不到删除入口。 */}
+                      <div className="pv_voice_clone_list">
+                        <label className="pv_form_label">已复刻音色</label>
+                        {loadingClonedVoices ? (
+                          <div className="pv_voice_clone_hint">正在获取已复刻音色…</div>
+                        ) : clonedVoicesError ? (
+                          <div className="pv_voice_clone_hint">{clonedVoicesError}</div>
+                        ) : clonedVoices.length === 0 ? (
+                          <div className="pv_voice_clone_hint">
+                            暂无复刻音色，上传示例音频即可创建第一个
+                          </div>
+                        ) : (
+                          clonedVoices.map((voice) => (
                             <div key={voice.value} className="pv_voice_clone_item">
                               <span className="pv_voice_clone_name">
                                 {voice.label || voice.value}
@@ -4156,15 +4233,20 @@ export function ProviderEditPanel({
                               <Button
                                 size="small"
                                 type="text"
+                                danger
+                                // deletingVoice 是单值：删除进行中禁用其余行，
+                                // 否则并发删除会互相清掉 loading 指示。
+                                disabled={deletingVoice != null && deletingVoice !== voice.value}
                                 loading={deletingVoice === voice.value}
+                                aria-label={`删除音色 ${voice.label || voice.value}`}
                                 onClick={() => void handleDeleteVoice(voice.value)}
                               >
                                 删除
                               </Button>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          ))
+                        )}
+                      </div>
                     </div>
                   </Modal>
 

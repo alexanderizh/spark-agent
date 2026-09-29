@@ -311,6 +311,7 @@ import { detectExternalTools, openProjectInTool } from '../services/ExternalTool
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
+import { registerProviderVoiceIpc } from './registerProviderVoiceIpc.js'
 import { registerVideoChannelTaskIpc } from './registerVideoChannelTaskIpc.js'
 import { registerCanvasMediaRepollIpc } from './registerCanvasMediaRepollIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
@@ -5528,67 +5529,8 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
-  // 渠道音色目录同步：拉取厂商音色清单并写入 profile 的动态参数候选，
-  // 画布 / 快速创作等端随后通过共享 manifest 解析自动继承（当前仅智谱支持）。
-  typedIpcHandle('provider:media:sync-voices', async (req) => {
-    log.info(`provider:media:sync-voices requested, id=${req.providerId}`)
-    try {
-      const result = await getProviderService().syncMediaVoiceCatalog(req.providerId)
-      log.info(
-        `provider:media:sync-voices completed, id=${req.providerId}, ` +
-          `total=${result.options.length}, official=${result.officialCount}, ` +
-          `private=${result.privateCount}`,
-      )
-      return result
-    } catch (err) {
-      log.warn(
-        `provider:media:sync-voices failed, id=${req.providerId}, ` +
-          `error=${err instanceof Error ? err.message : String(err)}`,
-      )
-      throw err
-    }
-  })
-
-  // 渠道音色复刻闭环（当前仅智谱支持）：上传示例音频 → 复刻 → 自动刷新候选；
-  // 以及删除复刻音色。两者都返回刷新后的候选快照，UI 无需再拉一次列表。
-  typedIpcHandle('provider:media:clone-voice', async (req) => {
-    log.info(
-      `provider:media:clone-voice requested, id=${req.providerId}, name=${req.voiceName}, ` +
-        `sample=${req.samplePath}`,
-    )
-    try {
-      const result = await getProviderService().cloneMediaVoice(req)
-      log.info(
-        `provider:media:clone-voice completed, id=${req.providerId}, voice=${result.voice}, ` +
-          `total=${result.options.length}, private=${result.privateCount}`,
-      )
-      return result
-    } catch (err) {
-      log.warn(
-        `provider:media:clone-voice failed, id=${req.providerId}, ` +
-          `error=${err instanceof Error ? err.message : String(err)}`,
-      )
-      throw err
-    }
-  })
-
-  typedIpcHandle('provider:media:delete-voice', async (req) => {
-    log.info(`provider:media:delete-voice requested, id=${req.providerId}, voice=${req.voice}`)
-    try {
-      const result = await getProviderService().deleteMediaVoice(req)
-      log.info(
-        `provider:media:delete-voice completed, id=${req.providerId}, voice=${result.voice}, ` +
-          `total=${result.options.length}, private=${result.privateCount}`,
-      )
-      return result
-    } catch (err) {
-      log.warn(
-        `provider:media:delete-voice failed, id=${req.providerId}, ` +
-          `error=${err instanceof Error ? err.message : String(err)}`,
-      )
-      throw err
-    }
-  })
+  // 渠道音色通道（目录同步 / 复刻 / 删除）已抽到 registerProviderVoiceIpc：
+  // 本文件超 3000 行红线，且该模块需要统一的错误透传处理（见其文件头注释）。
 
   typedIpcHandle('provider:test-connection', async (req) => {
     log.info(
@@ -11928,6 +11870,8 @@ export function registerAllIpcHandlers(): void {
       (await getProviderService().listProviders()).find((profile) => profile.id === id),
     getApiKey: async (id) => getProviderService().getProviderApiKey(id),
   })
+
+  registerProviderVoiceIpc({ getProviderService })
 
   registerCanvasMediaRepollIpc({
     getProfile: async (id) =>

@@ -18,6 +18,9 @@ import { canHealthCheckProviderCardKind } from './provider-card-actions'
 
 const mocks = vi.hoisted(() => ({
   invokers: new Map<string, ReturnType<typeof vi.fn>>(),
+  // 删除复刻音色走全局确认弹窗（requestConfirm）。默认「取消」，
+  // 用例要走到真删除时显式 mockResolvedValueOnce(true)。
+  requestConfirm: vi.fn(async () => false),
 }))
 
 vi.mock('@lobehub/ui', async () => {
@@ -259,7 +262,7 @@ vi.mock('../components/Toast', () => ({
 
 vi.mock('../AppContext', () => ({
   useApp: () => ({
-    requestConfirm: vi.fn(),
+    requestConfirm: mocks.requestConfirm,
     setTweak: vi.fn(),
     t: { showProviderEdit: false },
   }),
@@ -2195,5 +2198,194 @@ describe('ProviderEditPanel 渠道动态音色候选', () => {
     expect(clonedOption?.textContent).toBe('我的复刻音色')
     // 静态系统音色仍在候选里，没有被动态列表整体替换。
     expect(container.querySelector('[data-option-value="tongtong"]')).not.toBeNull()
+  })
+})
+
+/**
+ * 智谱音色复刻弹窗的回归用例。
+ *
+ * 独立成块、自带夹具：这块最初是追加在上方「自定义语音模型」describe 里的，
+ * 但两者归属与夹具来源不同（那份是渠道泛化的改造），耦合会让两边都难以单独演进。
+ *
+ * 覆盖四条踩过的坑：打开弹窗不预取导致列表永远为空、删除厂商侧音色无二次确认、
+ * 换渠道后残留上一家的私有音色、以及输入超协议上限时直出 zod 英文报错。
+ */
+describe('ProviderEditPanel 音色复刻闭环', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  const ZHIPU_VOICE_PROFILE_ID = 'provider-zhipu-voice'
+  const zhipuVoiceProfile = {
+    id: ZHIPU_VOICE_PROFILE_ID,
+    name: '智谱语音',
+    provider: 'openai',
+    modelType: 'voice',
+    defaultModel: 'glm-tts',
+    modelIds: ['glm-tts', 'glm-asr-2512'],
+    apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    mediaProvider: 'zhipu',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech', 'audio.transcription'],
+    mediaModelRefs: [
+      { manifestId: 'zhipu:glm-tts', modelId: 'glm-tts', enabled: true },
+      { manifestId: 'zhipu:glm-asr-2512', modelId: 'glm-asr-2512', enabled: true },
+    ],
+    supportsMillionContext: false,
+    isDefault: false,
+    enabled: true,
+    keystoreRef: 'zhipu-provider-voice',
+  }
+
+  async function renderPanel(profileId: string, profile: Record<string, unknown>) {
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-voice-key' })),
+    )
+    mocks.invokers.set(
+      'provider:update',
+      vi.fn(async () => ({ profile })),
+    )
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<ProviderEditPanel visible profileId={profileId} onClose={() => undefined} />)
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+  }
+
+  /** 打开音色复刻弹窗：点击入口，并让预取请求落地。 */
+  async function openClonePanel() {
+    const openButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '复刻音色',
+    )
+    if (!openButton) throw new Error('未找到「复刻音色」入口')
+    await act(async () => {
+      openButton.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+  }
+
+  function syncVoicesResponse(privateVoices: Array<{ value: string; label?: string }>) {
+    return {
+      providerId: ZHIPU_VOICE_PROFILE_ID,
+      options: privateVoices,
+      privateVoices,
+      officialCount: 7,
+      privateCount: privateVoices.length,
+      manifestId: 'zhipu:glm-tts',
+      paramName: 'voice',
+    }
+  }
+
+  beforeEach(() => {
+    mocks.invokers.clear()
+    mocks.requestConfirm.mockReset()
+    mocks.requestConfirm.mockImplementation(async () => false)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    if (root) act(() => root?.unmount())
+    root = null
+    container.remove()
+  })
+
+  it('打开复刻弹窗即预取已复刻音色并列出，无需先点同步', async () => {
+    const syncVoices = vi.fn(async () =>
+      syncVoicesResponse([{ value: 'voice_clone_001', label: '我的音色' }]),
+    )
+    mocks.invokers.set('provider:media:sync-voices', syncVoices)
+    await renderPanel(ZHIPU_VOICE_PROFILE_ID, zhipuVoiceProfile)
+    await openClonePanel()
+
+    // 入口承诺「可管理已复刻音色」，因此打开就得有内容，不能等用户先点同步。
+    expect(syncVoices).toHaveBeenCalledWith({ providerId: ZHIPU_VOICE_PROFILE_ID })
+    expect(container.textContent).toContain('已复刻音色')
+    expect(container.textContent).toContain('我的音色')
+  })
+
+  it('没有复刻音色时给出空态文案而不是整块消失', async () => {
+    mocks.invokers.set(
+      'provider:media:sync-voices',
+      vi.fn(async () => syncVoicesResponse([])),
+    )
+    await renderPanel(ZHIPU_VOICE_PROFILE_ID, zhipuVoiceProfile)
+    await openClonePanel()
+
+    expect(container.textContent).toContain('已复刻音色')
+    expect(container.textContent).toContain('暂无复刻音色')
+  })
+
+  it('删除复刻音色需二次确认：取消则不调用删除通道', async () => {
+    mocks.invokers.set(
+      'provider:media:sync-voices',
+      vi.fn(async () => syncVoicesResponse([{ value: 'voice_clone_001', label: '我的音色' }])),
+    )
+    const deleteVoice = vi.fn(async () => syncVoicesResponse([]))
+    mocks.invokers.set('provider:media:delete-voice', deleteVoice)
+    // 取消：requestConfirm 默认解析为 false（见 beforeEach）
+    await renderPanel(ZHIPU_VOICE_PROFILE_ID, zhipuVoiceProfile)
+    await openClonePanel()
+
+    const deleteButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="删除音色"]',
+    )
+    expect(deleteButton).not.toBeNull()
+    await act(async () => {
+      deleteButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(mocks.requestConfirm).toHaveBeenCalled()
+    expect(deleteVoice).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('我的音色')
+  })
+
+  it('确认后删除并采纳返回的候选快照', async () => {
+    mocks.invokers.set(
+      'provider:media:sync-voices',
+      vi.fn(async () => syncVoicesResponse([{ value: 'voice_clone_001', label: '我的音色' }])),
+    )
+    const deleteVoice = vi.fn(async () => syncVoicesResponse([]))
+    mocks.invokers.set('provider:media:delete-voice', deleteVoice)
+    mocks.requestConfirm.mockResolvedValueOnce(true)
+    await renderPanel(ZHIPU_VOICE_PROFILE_ID, zhipuVoiceProfile)
+    await openClonePanel()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label^="删除音色"]')?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(deleteVoice).toHaveBeenCalledWith({
+      providerId: ZHIPU_VOICE_PROFILE_ID,
+      voice: 'voice_clone_001',
+    })
+    expect(container.textContent).toContain('暂无复刻音色')
+  })
+
+  it('未选文件或未填名称时「开始复刻」保持禁用，输入框带协议上限', async () => {
+    mocks.invokers.set(
+      'provider:media:sync-voices',
+      vi.fn(async () => syncVoicesResponse([])),
+    )
+    await renderPanel(ZHIPU_VOICE_PROFILE_ID, zhipuVoiceProfile)
+    await openClonePanel()
+
+    const submit = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '开始复刻',
+    )
+    expect(submit?.disabled).toBe(true)
+
+    // maxLength 与协议上限对齐（provider-media-voices.ts: 120 / 2000 / 400），
+    // 否则超限会走 zod 分支、用户看到英文内部报错。
+    const limits = Array.from(container.querySelectorAll('input'))
+      .map((input) => input.maxLength)
+      .filter((value) => Number.isFinite(value) && value > 0)
+    expect(limits).toEqual(expect.arrayContaining([120, 2000, 400]))
   })
 })

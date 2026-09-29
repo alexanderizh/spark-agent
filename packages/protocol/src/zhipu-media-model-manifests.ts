@@ -43,6 +43,24 @@ export const ZHIPU_SYSTEM_VOICES = [
 ] as const
 
 /**
+ * 系统音色的官方可读名（逐字核对自 OpenAPI `AudioSpeechRequest.voice` 的 description）。
+ *
+ * 用 `x-template-labels` 承载：`schemaFields` 取为 `field.enumLabels`，
+ * 画布参数控件与快速创作的候选下拉即显示「彤彤」而不是 `tongtong`。
+ * 同步过音色目录的渠道会被接口返回的 `voice_name` 覆盖（走 mediaDynamicParamOptions
+ * 合并），未同步时靠这里兜底——否则新渠道一打开就是 7 个裸 ID。
+ */
+export const ZHIPU_SYSTEM_VOICE_LABELS: Record<(typeof ZHIPU_SYSTEM_VOICES)[number], string> = {
+  tongtong: '彤彤（默认）',
+  chuichui: '锤锤',
+  xiaochen: '小陈',
+  jam: '动动动物圈 jam',
+  kazi: '动动动物圈 kazi',
+  douji: '动动动物圈 douji',
+  luodo: '动动动物圈 luodo',
+}
+
+/**
  * 官方错误体统一为 `{ error: { code, message } }`。
  *
  * 刻意**不写 mappings / retryableCodes**：智谱错误码（如 `1210`）没有可核对的
@@ -79,6 +97,7 @@ export const ZHIPU_SPEECH_PARAM_SCHEMA = {
       description:
         '系统音色（彤彤/锤锤/小陈等）或复刻音色 ID。复刻音色在开放平台创建后直接填入音色 ID。',
       examples: [...ZHIPU_SYSTEM_VOICES],
+      'x-template-labels': ZHIPU_SYSTEM_VOICE_LABELS,
       'x-allow-custom': true,
     },
     format: {

@@ -2026,3 +2026,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 空态 / 加载中 / 预取失败共用：与列表项同高，切换时区块不跳动。 */
+.pv_voice_clone_hint {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
