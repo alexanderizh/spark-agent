@@ -23,6 +23,7 @@ import {
 import { SubAppIcon } from './design/sub-app/SubAppIcon'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
+import { lazyView } from './design/utils/lazy-view'
 import { AvatarImage } from './design/components/AvatarImage'
 import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
 import { getGuestAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
@@ -80,87 +81,87 @@ import {
 } from './user-question-queue'
 import './app.less'
 
-const ChatView = React.lazy(async () => ({
+const ChatView = lazyView(async () => ({
   default: (await import('./design/views/ChatView')).ChatView,
 }))
-const ProjectView = React.lazy(async () => ({
+const ProjectView = lazyView(async () => ({
   default: (await import('./design/views/ProjectView')).ProjectView,
 }))
-const WorkflowView = React.lazy(async () => ({
+const WorkflowView = lazyView(async () => ({
   default: (await import('./design/views/WorkflowView')).WorkflowView,
 }))
-const AgentsView = React.lazy(async () => ({
+const AgentsView = lazyView(async () => ({
   default: (await import('./design/views/AgentsView')).AgentsView,
 }))
-const BoardView = React.lazy(async () => ({
+const BoardView = lazyView(async () => ({
   default: (await import('./design/views/BoardView')).BoardView,
 }))
-const RecoveryCenterView = React.lazy(async () => ({
+const RecoveryCenterView = lazyView(async () => ({
   default: (await import('./design/views/execution-continuity/RecoveryCenterView'))
     .RecoveryCenterView,
 }))
-const CanvasProjectsView = React.lazy(async () => ({
+const CanvasProjectsView = lazyView(async () => ({
   default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView,
 }))
-const CanvasWorkflowLibraryView = React.lazy(async () => ({
+const CanvasWorkflowLibraryView = lazyView(async () => ({
   default: (await import('./design/views/canvas/CanvasWorkflowLibraryView'))
     .CanvasWorkflowLibraryView,
 }))
-const CanvasPromptLibraryView = React.lazy(async () => ({
+const CanvasPromptLibraryView = lazyView(async () => ({
   default: (await import('./design/views/canvas/CanvasPromptLibraryView')).CanvasPromptLibraryView,
 }))
-const QuickCreateView = React.lazy(async () => ({
+const QuickCreateView = lazyView(async () => ({
   default: (await import('./design/views/canvas/QuickCreateView')).QuickCreateView,
 }))
-const CanvasVideoTasksView = React.lazy(async () => ({
+const CanvasVideoTasksView = lazyView(async () => ({
   default: (await import('./design/views/canvas/CanvasVideoTasksView')).CanvasVideoTasksView,
 }))
-const ScheduledTasksView = React.lazy(async () => ({
+const ScheduledTasksView = lazyView(async () => ({
   default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView,
 }))
-const SubAppsView = React.lazy(async () => ({
+const SubAppsView = lazyView(async () => ({
   default: (await import('./design/views/SubAppsView')).SubAppsView,
 }))
-const SubAppRunView = React.lazy(async () => ({
+const SubAppRunView = lazyView(async () => ({
   default: (await import('./design/views/SubAppRunView')).SubAppRunView,
 }))
-const McpView = React.lazy(async () => ({
+const McpView = lazyView(async () => ({
   default: (await import('./design/views/McpView')).McpView,
 }))
-const SkillStoreView = React.lazy(async () => ({
+const SkillStoreView = lazyView(async () => ({
   default: (await import('./design/views/SkillStoreView')).SkillStoreView,
 }))
-const SettingsView = React.lazy(async () => ({
+const SettingsView = lazyView(async () => ({
   default: (await import('./design/views/SettingsView')).SettingsView,
 }))
-const AccountCenterView = React.lazy(async () => ({
+const AccountCenterView = lazyView(async () => ({
   default: (await import('./design/views/AccountCenterView')).AccountCenterView,
 }))
-const ProvidersView = React.lazy(() => import('./design/views/ProvidersView'))
-const WikiView = React.lazy(async () => ({
+const ProvidersView = lazyView(() => import('./design/views/ProvidersView'))
+const WikiView = lazyView(async () => ({
   default: (await import('./design/views/wiki/WikiView')).WikiView,
 }))
 
-const LobePreviewView = React.lazy(async () => ({
+const LobePreviewView = lazyView(async () => ({
   default: (await import('./design/theme/LobePreviewView')).LobePreviewView,
 }))
-const PlatformQuotaGuideModal = React.lazy(async () => ({
+const PlatformQuotaGuideModal = lazyView(async () => ({
   default: (await import('./design/views/platform-model/PlatformQuotaGuideModal'))
     .PlatformQuotaGuideModal,
 }))
-const CommandPalette = React.lazy(async () => ({
+const CommandPalette = lazyView(async () => ({
   default: (await import('./design/views/overlays')).CommandPalette,
 }))
-const PermissionModal = React.lazy(async () => ({
+const PermissionModal = lazyView(async () => ({
   default: (await import('./design/views/overlays')).PermissionModal,
 }))
-const OnboardingView = React.lazy(async () => ({
+const OnboardingView = lazyView(async () => ({
   default: (await import('./design/views/OnboardingView')).OnboardingView,
 }))
-const GlobalQuickTaskModal = React.lazy(async () => ({
+const GlobalQuickTaskModal = lazyView(async () => ({
   default: (await import('./design/components/GlobalQuickTaskModal')).GlobalQuickTaskModal,
 }))
-const HistoryImportModal = React.lazy(async () => ({
+const HistoryImportModal = lazyView(async () => ({
   default: (await import('./design/components/HistoryImportModal')).HistoryImportModal,
 }))
 

@@ -12,6 +12,7 @@ import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useAppOptional } from '../AppContext'
+import { isDynamicImportFetchError } from '../utils/lazy-view'
 
 /* ---------- Types ---------- */
 
@@ -52,6 +53,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   handleRetry = (): void => {
+    // 动态导入失败（dev server 重启空窗 / 产物缺失）时，React.lazy 会永久缓存
+    // rejected promise，仅重置边界状态只会把同一错误再抛一次；整页 reload
+    // 是这类错误唯一可靠的恢复手段。
+    if (isDynamicImportFetchError(this.state.error)) {
+      window.location.reload()
+      return
+    }
     this.setState({ hasError: false, error: null })
   }
 

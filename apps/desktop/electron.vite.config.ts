@@ -176,6 +176,14 @@ export default defineConfig({
     optimizeDeps: {
       include: ['exceljs', 'mammoth'],
     },
+    server: {
+      warmup: {
+        // 视图全部经 React.lazy 懒加载，其依赖若在页面请求时才被发现，会触发 optimizeDeps
+        // 重优化窗口：预构建 chunk 失效 → 动态 import 报 "Failed to fetch dynamically
+        // imported module"。启动时预热懒加载视图，把依赖发现挪到页面加载之前。
+        clientFiles: ['./App.tsx', './design/views/**/*.tsx'],
+      },
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer'),
