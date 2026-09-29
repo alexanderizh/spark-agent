@@ -2,7 +2,7 @@
  * 快速创作任务右键菜单：条目构造 + 产物定位。
  *
  * 菜单分两组，中间一条分割线：
- *   - 产物组：直接对着图片 / 视频复制、去图编辑、另存为、定位文件
+ *   - 产物组：直接对着图片 / 视频 / 音频查看、复制、去图编辑、另存为、定位文件
  *   - 任务组：查看详情、复制提示词、复用配置、重试、存入提示词库、删除任务
  *
  * 目标用「任务 id + 产物 key」描述而不是数组下标：任务刷新或产物顺序变化后
@@ -15,7 +15,7 @@ import type { ContextMenuEntry } from '../../components/contextMenuModel'
 import { copyableTaskPrompt, taskOutputUrl } from './quickCreateTaskPresentation'
 import type { QuickCreateTaskRecord } from './quickCreateTaskStore'
 
-/** 可独立查看 / 操作的产物：已解析出展示 URL 的图片或视频 */
+/** 可独立查看 / 操作的产物：已解析出展示 URL 的图片、视频或音频 */
 export type QuickCreateViewableOutput = {
   asset: CanvasMediaTaskAsset
   url: string
@@ -32,7 +32,8 @@ export function viewableOutputsOf(task: QuickCreateTaskRecord): QuickCreateViewa
   return task.assets
     .map((asset) => {
       const url = taskOutputUrl(asset)
-      const viewable = url !== '' && (asset.type === 'image' || asset.type === 'video')
+      const viewable =
+        url !== '' && (asset.type === 'image' || asset.type === 'video' || asset.type === 'audio')
       return viewable ? { asset, url } : null
     })
     .filter((item): item is QuickCreateViewableOutput => item != null)
@@ -71,11 +72,19 @@ export function buildQuickCreateTaskMenuItems(
   const output = outputIndex >= 0 ? (outputs[outputIndex] ?? null) : null
 
   if (output) {
-    const isImage = output.asset.type !== 'video'
+    // 三类产物只有图片支持复制 / 去图编辑，视频与音频只提供查看与文件动作
+    const isImage = output.asset.type === 'image'
+    const isAudio = output.asset.type === 'audio'
     items.push({
       key: 'view_output',
-      label: isImage ? '查看大图' : '查看视频',
-      icon: isImage ? <Icons.Maximize size={14} /> : <Icons.Play size={14} />,
+      label: isImage ? '查看大图' : isAudio ? '播放语音' : '查看视频',
+      icon: isImage ? (
+        <Icons.Maximize size={14} />
+      ) : isAudio ? (
+        <Icons.AudioLines size={14} />
+      ) : (
+        <Icons.Play size={14} />
+      ),
       onClick: () => handlers.onViewOutput(task, outputIndex),
     })
     if (isImage) {

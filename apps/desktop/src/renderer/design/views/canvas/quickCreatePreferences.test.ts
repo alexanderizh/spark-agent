@@ -54,6 +54,17 @@ describe('quickCreatePreferences', () => {
     })
   })
 
+  it('语音模式与语音筛选都能持久化并读回（白名单不得把 audio 丢掉）', () => {
+    writeQuickCreatePreferences({ mode: 'audio', taskFilter: 'audio' })
+
+    expect(readQuickCreatePreferences()).toEqual({
+      mode: 'audio',
+      taskFilter: 'audio',
+      paramsByScope: {},
+      customSizeHistoryByScope: {},
+    })
+  })
+
   it('忽略无效的偏好字段，损坏存储不会阻断页面初始化', () => {
     window.localStorage.setItem(
       'spark-canvas:quick-create-preferences:v1',

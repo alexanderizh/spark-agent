@@ -206,6 +206,64 @@ describe('QuickCreateOutputPanel', () => {
     expect(writeText).toHaveBeenCalledWith(reverseText)
   })
 
+  it('语音任务的音频产物渲染原生播放器，不再显示「暂无输出」', () => {
+    act(() =>
+      root.render(
+        <QuickCreateOutputPanel
+          task={{
+            ...TASK,
+            id: 'quick-output-audio-test',
+            mode: 'audio',
+            operation: 'text_to_audio',
+            prompt: '欢迎收听今天的早间资讯',
+            inputFiles: [],
+            assets: [
+              {
+                type: 'audio',
+                filePath: '/tmp/output.mp3',
+                url: 'safe-file:///tmp/output.mp3',
+                mimeType: 'audio/mpeg',
+              },
+            ],
+          }}
+        />,
+      ),
+    )
+
+    expect(document.querySelector('.media-artifact-audio audio')).not.toBeNull()
+    expect(document.body.textContent).not.toContain('暂无输出')
+    expect(document.body.textContent).toContain('1 个输出')
+    // 音频不参与缩放 / 对比 / 复制图片
+    expect(document.querySelector('.media-artifact-viewer-zoom')).toBeNull()
+    expect(document.querySelector('[title="复制图片"]')).toBeNull()
+  })
+
+  it('多产物时音频用图标占位缩略图，不会把音频塞进 <video>', () => {
+    act(() =>
+      root.render(
+        <QuickCreateOutputPanel
+          task={{
+            ...TASK,
+            id: 'quick-output-audio-multi',
+            mode: 'audio',
+            operation: 'text_to_audio',
+            inputFiles: [],
+            assets: [
+              { type: 'audio', filePath: '/tmp/a.mp3', url: 'safe-file:///tmp/a.mp3' },
+              { type: 'audio', filePath: '/tmp/b.mp3', url: 'safe-file:///tmp/b.mp3' },
+            ],
+          }}
+        />,
+      ),
+    )
+
+    const thumbs = document.querySelectorAll('.quick-create-output-thumbs button')
+    expect(thumbs.length).toBe(2)
+    expect(document.querySelectorAll('.quick-create-output-thumb-audio').length).toBe(2)
+    expect(document.querySelector('.quick-create-output-thumbs video')).toBeNull()
+    expect(document.querySelector('.quick-create-output-thumbs img')).toBeNull()
+  })
+
   it('空输出只显示下一步提示，不渲染装饰性营销内容', () => {
     act(() => root.render(<QuickCreateOutputPanel />))
 

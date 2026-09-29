@@ -80,6 +80,11 @@ function outputFileName(asset: CanvasMediaTaskAsset, fallback: string): string {
   return asset.filePath?.split(/[\\/]/).pop() || fallback
 }
 
+/** 产物类型对应的兜底扩展名，避免音频产物被另存成 .png */
+function outputFileExtension(asset: CanvasMediaTaskAsset): string {
+  return asset.type === 'video' ? 'mp4' : asset.type === 'audio' ? 'mp3' : 'png'
+}
+
 /** 右键菜单里的图片复制：与查看器同一套公用动作，成功/失败都给出明确反馈 */
 async function copyTaskImage(url: string) {
   try {
@@ -94,10 +99,7 @@ async function saveTaskOutput(asset: CanvasMediaTaskAsset) {
   try {
     const result = await saveMediaArtifact({
       filePath: asset.filePath,
-      fileName: outputFileName(
-        asset,
-        `quick-create-output.${asset.type === 'video' ? 'mp4' : 'png'}`,
-      ),
+      fileName: outputFileName(asset, `quick-create-output.${outputFileExtension(asset)}`),
     })
     if (result.saved && result.savedPath) message.success(`已保存到 ${result.savedPath}`)
     else if (result.error) message.error(`保存失败：${result.error}`)
@@ -657,6 +659,10 @@ export function QuickCreateTaskHistory({
                       </span>
                       {firstOutput && firstOutput.asset.type === 'image' ? (
                         <img src={firstOutput.url} alt="生成结果预览" />
+                      ) : firstOutput?.asset.type === 'audio' ? (
+                        <span className="quick-create-task-audio-thumb" aria-hidden="true">
+                          <Icons.AudioLines size={15} />
+                        </span>
                       ) : firstOutput ? (
                         <video src={firstOutput.url} muted />
                       ) : task.text ? (
@@ -701,11 +707,19 @@ export function QuickCreateTaskHistory({
                         >
                           {firstOutput.asset.type === 'image' ? (
                             <img src={firstOutput.url} alt="生成结果缩略图" />
+                          ) : firstOutput.asset.type === 'audio' ? (
+                            <span className="quick-create-task-audio-thumb" aria-hidden="true">
+                              <Icons.AudioLines size={15} />
+                            </span>
                           ) : (
                             <video src={firstOutput.url} muted />
                           )}
                           <span>
-                            {firstOutput.asset.type === 'video' ? '查看视频' : '查看大图'}
+                            {firstOutput.asset.type === 'video'
+                              ? '查看视频'
+                              : firstOutput.asset.type === 'audio'
+                                ? '播放语音'
+                                : '查看大图'}
                           </span>
                         </button>
                       )}
@@ -779,11 +793,15 @@ export function QuickCreateTaskHistory({
               <button
                 type="button"
                 className="quick-create-detail-media"
-                aria-label="查看大图"
+                aria-label={detailOutputs[0]?.asset.type === 'audio' ? '播放语音' : '查看大图'}
                 onClick={() => setViewer({ taskId: detailTask.id, outputIndex: 0 })}
               >
                 {detailOutputs[0]?.asset.type === 'video' ? (
                   <video src={detailOutputs[0]?.url} muted />
+                ) : detailOutputs[0]?.asset.type === 'audio' ? (
+                  <span className="quick-create-task-audio-thumb" aria-hidden="true">
+                    <Icons.AudioLines size={20} />
+                  </span>
                 ) : (
                   <img src={detailOutputs[0]?.url} alt="生成结果" />
                 )}
@@ -796,12 +814,12 @@ export function QuickCreateTaskHistory({
             ) : detailTask.status === 'running' ? (
               <div className="quick-create-detail-pending">
                 <Icons.Clock size={16} />
-                <span>任务处理中，完成后这里会显示产物图片。</span>
+                <span>任务处理中，完成后这里会显示产物内容。</span>
               </div>
             ) : (
               <div className="quick-create-detail-pending">
                 <Icons.Image size={16} />
-                <span>这条任务没有产物图片。</span>
+                <span>这条任务没有产物内容。</span>
               </div>
             )}
             {/* 弹窗提示词默认 2 行折叠；展开后固定高度内部滚动，产物图区域不被长提示词挤压 */}
@@ -839,9 +857,14 @@ export function QuickCreateTaskHistory({
                 alt: viewerOutput.asset.title ?? '生成结果',
                 fileName:
                   viewerOutput.asset.filePath?.split(/[\\/]/).pop() ||
-                  `quick-create-output.${viewerOutput.asset.type === 'video' ? 'mp4' : 'png'}`,
+                  `quick-create-output.${outputFileExtension(viewerOutput.asset)}`,
                 ...(viewerOutput.asset.filePath ? { filePath: viewerOutput.asset.filePath } : {}),
-                type: viewerOutput.asset.type === 'video' ? 'video' : 'image',
+                type:
+                  viewerOutput.asset.type === 'video'
+                    ? 'video'
+                    : viewerOutput.asset.type === 'audio'
+                      ? 'audio'
+                      : 'image',
               }}
               pagination={
                 viewerSequence.length > 1

@@ -300,6 +300,52 @@ describe('MediaArtifactViewer', () => {
     expect(document.querySelector('[title="打开全屏大图预览"]')).toBeNull()
   })
 
+  it('音频产物回退为原生播放器，不提供缩放、对比、复制图片与全屏大图', () => {
+    act(() =>
+      root.render(
+        <MediaArtifactViewer
+          media={{ ...MEDIA, type: 'audio', src: 'safe-file:///tmp/out.mp3' }}
+          inputImage={{ src: 'safe-file:///tmp/input.png' }}
+          onOpenFullscreen={vi.fn()}
+        />,
+      ),
+    )
+
+    expect(document.querySelector('.media-artifact-audio audio')).not.toBeNull()
+    expect(document.querySelector('.media-artifact-viewer-zoom')).toBeNull()
+    expect(document.querySelector('[title="并排查看输入与输出"]')).toBeNull()
+    expect(document.querySelector('[title="复制图片"]')).toBeNull()
+    expect(document.querySelector('[title="打开全屏大图预览"]')).toBeNull()
+    // 音频同样不参与缩放：↑/↓ 不产生缩放控件
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' })))
+    expect(document.querySelector('.media-artifact-viewer-zoom')).toBeNull()
+    // 本地文件仍在，保留下载与定位
+    expect(document.querySelector('[title="下载到本地"]')).not.toBeNull()
+    expect(document.querySelector('[title="打开产物所在文件夹"]')).not.toBeNull()
+  })
+
+  it('音频产物的右键菜单只有文件动作，不出现复制图片', () => {
+    act(() =>
+      root.render(
+        <MediaArtifactViewer
+          media={{ ...MEDIA, src: 'safe-file:///tmp/out.mp3', type: 'audio' }}
+          onOpenFullscreen={vi.fn()}
+        />,
+      ),
+    )
+
+    act(() =>
+      document
+        .querySelector('.media-artifact-viewer-stage')
+        ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 })),
+    )
+
+    expect(Array.from(contextMenuElement().children).map((child) => child.textContent)).toEqual([
+      '另存为…',
+      '打开所在文件夹',
+    ])
+  })
+
   it('舞台右键给出产物动作，调用方追加的任务动作排在分割线之后', () => {
     const onOpenFullscreen = vi.fn()
     const onDelete = vi.fn()

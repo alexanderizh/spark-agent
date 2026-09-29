@@ -1,4 +1,4 @@
-import type { QuickCreateMode } from './quickCreateTaskStore'
+import { isQuickCreateMode, type QuickCreateMode } from './quickCreateTaskStore'
 
 const STORAGE_KEY = 'spark-canvas:quick-create-preferences:v1'
 const MAX_CUSTOM_SIZE_VALUES = 8
@@ -66,9 +66,7 @@ export function readQuickCreatePreferences(): QuickCreatePreferences {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')
     if (!isRecord(parsed)) return {}
     return {
-      ...(parsed.mode === 'image' || parsed.mode === 'reverse' || parsed.mode === 'video'
-        ? { mode: parsed.mode }
-        : {}),
+      ...(isQuickCreateMode(parsed.mode) ? { mode: parsed.mode } : {}),
       ...(typeof parsed.modelKey === 'string' ? { modelKey: parsed.modelKey } : {}),
       ...(typeof parsed.textProviderId === 'string'
         ? { textProviderId: parsed.textProviderId }
@@ -77,10 +75,7 @@ export function readQuickCreatePreferences(): QuickCreatePreferences {
       ...(parsed.taskView === 'list' || parsed.taskView === 'grid'
         ? { taskView: parsed.taskView }
         : {}),
-      ...(parsed.taskFilter === 'all' ||
-      parsed.taskFilter === 'image' ||
-      parsed.taskFilter === 'reverse' ||
-      parsed.taskFilter === 'video'
+      ...(isQuickCreateMode(parsed.taskFilter) || parsed.taskFilter === 'all'
         ? { taskFilter: parsed.taskFilter }
         : {}),
       paramsByScope: normalizeParams(parsed.paramsByScope),

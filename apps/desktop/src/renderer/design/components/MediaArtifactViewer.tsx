@@ -13,6 +13,7 @@
  *   - 舞台右键菜单：内置图片 / 视频动作（复制、另存为、所在文件夹、大图），
  *     调用方可用 contextMenuExtraItems 追加自己的动作（如「删除这条任务」）
  *   - 视频产物回退为原生播放器，不提供缩放
+ *   - 音频产物回退为原生 `<audio controls>` 播放器，同样不提供缩放 / 对比 / 复制图片
  *
  * 该组件不感知任务概念，可被输出面板、详情弹层等任何产物展示场景复用。
  */
@@ -40,7 +41,7 @@ export type MediaArtifactViewSource = {
   fileName?: string
   /** 本地绝对路径；下载与「打开所在文件夹」依赖它 */
   filePath?: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
 }
 
 type MediaArtifactViewerProps = {
@@ -103,8 +104,11 @@ export function MediaArtifactViewer({
   const { scale, offset } = view
 
   const isVideo = media.type === 'video'
+  const isAudio = media.type === 'audio'
+  /** 只有图片参与缩放 / 对比 / 复制图片，视频与音频都走原生播放器 */
+  const isImage = !isVideo && !isAudio
   const canCompare = Boolean(inputImage?.src)
-  const compareActive = canCompare && compareOpen && !isVideo
+  const compareActive = canCompare && compareOpen && isImage
 
   // 键盘翻页与工具栏翻页共用同一组回调；单页或显式关闭时不注册监听
   useArrowPaging({
@@ -182,7 +186,7 @@ export function MediaArtifactViewer({
 
   useArrowZoom({
     rootRef: viewerRef,
-    enabled: keyboardZoom && !isVideo && !compareActive,
+    enabled: keyboardZoom && isImage && !compareActive,
     onZoomIn: () => zoomByKeyboard(ZOOM_STEP),
     onZoomOut: () => zoomByKeyboard(1 / ZOOM_STEP),
   })
@@ -190,7 +194,7 @@ export function MediaArtifactViewer({
   // React 的 onWheel 在根节点是 passive 的，无法 preventDefault；这里用原生监听接管滚轮缩放
   useEffect(() => {
     const stage = stageRef.current
-    if (!stage || isVideo || compareActive) return
+    if (!stage || !isImage || compareActive) return
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
       const factor = Math.exp(-event.deltaY * 0.0016)
@@ -198,10 +202,10 @@ export function MediaArtifactViewer({
     }
     stage.addEventListener('wheel', onWheel, { passive: false })
     return () => stage.removeEventListener('wheel', onWheel)
-  }, [compareActive, isVideo, scale, zoomAt])
+  }, [compareActive, isImage, scale, zoomAt])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (isVideo || compareActive || scale <= 1) return
+    if (!isImage || compareActive || scale <= 1) return
     event.preventDefault()
     void event.currentTarget.setPointerCapture(event.pointerId)
     dragStateRef.current = {
@@ -229,7 +233,7 @@ export function MediaArtifactViewer({
   }
 
   const handleDoubleClick = () => {
-    if (isVideo || compareActive) return
+    if (!isImage || compareActive) return
     if (scale > 1) resetView()
     else zoomAt(DOUBLE_CLICK_SCALE)
   }
@@ -278,7 +282,7 @@ export function MediaArtifactViewer({
   // 舞台右键菜单：内置动作与工具栏一致，调用方追加的任务级动作排在分割线之后
   const stageMenu = useContextMenu<void>()
   const stageMenuItems: ContextMenuEntry[] = []
-  if (!isVideo) {
+  if (isImage) {
     stageMenuItems.push({
       key: 'copy',
       label: '复制图片',
@@ -286,7 +290,7 @@ export function MediaArtifactViewer({
       onClick: () => void handleCopy(),
     })
   }
-  if (onOpenFullscreen && !isVideo) {
+  if (onOpenFullscreen && isImage) {
     stageMenuItems.push({
       key: 'fullscreen',
       label: '全屏大图预览',
@@ -334,6 +338,11 @@ export function MediaArtifactViewer({
           </>
         ) : isVideo ? (
           <video key={media.src} src={media.src} controls className="media-artifact-video" />
+        ) : isAudio ? (
+          <div className="media-artifact-audio">
+            <Icons.AudioLines size={22} />
+            <audio key={media.src} src={media.src} controls preload="metadata" />
+          </div>
         ) : (
           <div
             className={`media-artifact-canvas${scale > 1 ? ' is-zoomed' : ''}`}
@@ -386,7 +395,7 @@ export function MediaArtifactViewer({
         )}
 
         <div className="media-artifact-viewer-actions">
-          {canCompare && !isVideo && (
+          {canCompare && isImage && (
             <button
               type="button"
               className={compareActive ? 'is-active' : ''}
@@ -397,7 +406,7 @@ export function MediaArtifactViewer({
               <span>{compareActive ? '退出对比' : '对比'}</span>
             </button>
           )}
-          {!isVideo && (
+          {isImage && (
             <div className="media-artifact-viewer-zoom">
               <button
                 type="button"
@@ -427,13 +436,13 @@ export function MediaArtifactViewer({
               </button>
             </div>
           )}
-          {!isVideo && onOpenFullscreen && (
+          {isImage && onOpenFullscreen && (
             <button type="button" onClick={onOpenFullscreen} title="打开全屏大图预览">
               <Icons.Maximize size={14} />
               <span>大图</span>
             </button>
           )}
-          {!isVideo && (
+          {isImage && (
             <button type="button" onClick={() => void handleCopy()} title="复制图片">
               {copied ? <Icons.Check size={14} /> : <Icons.Copy size={14} />}
               <span>{copied ? '已复制' : '复制'}</span>

@@ -20,6 +20,7 @@ import type {
   ProviderProfile,
 } from '@spark/protocol'
 import {
+  AUDIO_CAPABILITIES,
   IMAGE_CAPABILITIES,
   VIDEO_CAPABILITIES,
   capabilityFor,
@@ -106,6 +107,17 @@ import './QuickCreateWindow.less'
 type QuickInput = QuickCreateInput
 
 const QUICK_CREATE_MAX_INPUT_BYTES = 72 * 1024 * 1024
+
+/**
+ * 素材入口的拒绝提示文案。语音模式是纯文本输入，没有素材语义，
+ * 单独给一句说明，避免用户看到「请选择图片素材」时误以为模式坏了。
+ */
+function inputRejectMessage(mode: QuickCreateMode, source: 'pick' | 'drop'): string {
+  if (mode === 'audio') return '语音模式只需输入文稿，不支持添加素材'
+  if (mode === 'video')
+    return source === 'drop' ? '仅支持拖入图片或视频素材' : '请选择图片或视频素材'
+  return source === 'drop' ? '仅支持拖入图片素材' : '请选择图片素材'
+}
 
 function readBlobAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -632,7 +644,7 @@ function quickInputFromTaskFile(file: CanvasMediaTaskInputFile, index: number): 
 }
 
 export function QuickCreateView() {
-  const { t } = useApp()
+  const { t, setTweak } = useApp()
   const isStandaloneWindow = isQuickCreateWindowMode()
   const isSidebarHidden = t.sidebarHidden || isStandaloneWindow
   const [savedPreferences] = useState<QuickCreatePreferences>(() => readQuickCreatePreferences())
@@ -800,12 +812,17 @@ export function QuickCreateView() {
           canvasApi.listMediaModels({ capability, enabledOnly: true }),
         ),
       ),
+      Promise.all(
+        AUDIO_CAPABILITIES.map((capability) =>
+          canvasApi.listMediaModels({ capability, enabledOnly: true }),
+        ),
+      ),
       window.spark.invoke('provider:list', { includeDisabled: false }),
       readGlobalPromptLibrary(),
     ])
-      .then(([imageResults, videoResults, providerResult, library]) => {
+      .then(([imageResults, videoResults, audioResults, providerResult, library]) => {
         if (cancelled) return
-        const nextModels = [...imageResults, ...videoResults]
+        const nextModels = [...imageResults, ...videoResults, ...audioResults]
           .flatMap((result) => result.models)
           .filter(
             (model, index, list) =>
@@ -939,7 +956,7 @@ export function QuickCreateView() {
     async (filePaths: string[]) => {
       const selectedPaths = selectQuickCreateInputPaths(filePaths, mode)
       if (selectedPaths.length === 0) {
-        message.warning(mode === 'video' ? '请选择图片或视频素材' : '请选择图片素材')
+        message.warning(inputRejectMessage(mode, 'pick'))
         return
       }
       if (mode === 'reverse' && selectedPaths.length > 1) {
@@ -969,7 +986,7 @@ export function QuickCreateView() {
     async (filePaths: string[]) => {
       const selectedPaths = selectQuickCreateInputPaths(filePaths, mode)
       if (selectedPaths.length === 0) {
-        message.warning(mode === 'video' ? '仅支持拖入图片或视频素材' : '仅支持拖入图片素材')
+        message.warning(inputRejectMessage(mode, 'drop'))
         return
       }
       if (mode === 'reverse' && selectedPaths.length > 1) {
@@ -1045,6 +1062,12 @@ export function QuickCreateView() {
         item.type.startsWith('image/'),
       )
       if (imageItems.length === 0) return
+      // 语音模式没有素材入口：拦下粘贴并说明，避免图片静默进入输入列表
+      if (mode === 'audio') {
+        event.preventDefault()
+        message.warning(inputRejectMessage(mode, 'pick'))
+        return
+      }
       event.preventDefault()
       try {
         const pasted = await Promise.all(
@@ -1601,84 +1624,93 @@ export function QuickCreateView() {
               <span className="quick-create-mode-note">
                 {mode === 'reverse'
                   ? '上传 1 张图片，可补充文字要求，反推可编辑提示词'
-                  : mode === 'image'
-                    ? inputs.length > 0
-                      ? '已添加参考素材，当前按图像编辑处理'
-                      : '添加参考素材后自动切换为图像编辑'
-                    : '可添加首帧或参考素材生成视频'}
+                  : mode === 'audio'
+                    ? '输入文稿，选择合适的音色后合成语音'
+                    : mode === 'image'
+                      ? inputs.length > 0
+                        ? '已添加参考素材，当前按图像编辑处理'
+                        : '添加参考素材后自动切换为图像编辑'
+                      : '可添加首帧或参考素材生成视频'}
               </span>
             </div>
 
             {/* 粘贴监听挂在整个表单：焦点在提示词、素材区或任意控件时粘贴图片都能作为素材加入 */}
             <div className="quick-create-form" onPaste={(event) => void handlePasteInput(event)}>
-              <section className="quick-create-reference-section" aria-label="参考素材">
-                <div className="quick-create-section-head">
-                  <div>
-                    <strong>{mode === 'reverse' ? '输入图片' : '参考素材'}</strong>
-                    <span>
-                      {mode === 'reverse'
-                        ? '支持粘贴或从本地选择，反推可编辑提示词'
-                        : '可选 · 支持粘贴或从本地选择'}
-                    </span>
+              {/* 语音（TTS）是纯文本输入，没有参考素材语义，整个素材区在语音模式下不渲染 */}
+              {mode !== 'audio' && (
+                <section className="quick-create-reference-section" aria-label="参考素材">
+                  <div className="quick-create-section-head">
+                    <div>
+                      <strong>{mode === 'reverse' ? '输入图片' : '参考素材'}</strong>
+                      <span>
+                        {mode === 'reverse'
+                          ? '支持粘贴或从本地选择，反推可编辑提示词'
+                          : '可选 · 支持粘贴或从本地选择'}
+                      </span>
+                    </div>
+                    <small>
+                      {inputs.length}/{mode === 'reverse' ? 1 : 6}
+                    </small>
                   </div>
-                  <small>
-                    {inputs.length}/{mode === 'reverse' ? 1 : 6}
-                  </small>
-                </div>
-                <div
-                  className="quick-create-input-zone"
-                  role="group"
-                  aria-label={
-                    mode === 'reverse'
-                      ? '输入图片，仅支持 1 张，可直接粘贴'
-                      : '参考素材，可选，可直接粘贴图片'
-                  }
-                >
-                  <div className="quick-create-input-list">
-                    {inputs.map((input) => (
-                      <div className="quick-create-input-chip" key={input.id}>
-                        {input.type === 'video' ? (
-                          <video src={input.previewUrl} muted />
-                        ) : (
-                          <img src={input.previewUrl} alt={input.name} />
-                        )}
-                        <span>{input.name}</span>
+                  <div
+                    className="quick-create-input-zone"
+                    role="group"
+                    aria-label={
+                      mode === 'reverse'
+                        ? '输入图片，仅支持 1 张，可直接粘贴'
+                        : '参考素材，可选，可直接粘贴图片'
+                    }
+                  >
+                    <div className="quick-create-input-list">
+                      {inputs.map((input) => (
+                        <div className="quick-create-input-chip" key={input.id}>
+                          {input.type === 'video' ? (
+                            <video src={input.previewUrl} muted />
+                          ) : (
+                            <img src={input.previewUrl} alt={input.name} />
+                          )}
+                          <span>{input.name}</span>
+                          <button
+                            type="button"
+                            aria-label={`移除 ${input.name}`}
+                            onClick={() =>
+                              setInputs((current) => current.filter((item) => item.id !== input.id))
+                            }
+                          >
+                            <Icons.X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {(mode !== 'reverse' || inputs.length === 0) && (
                         <button
                           type="button"
-                          aria-label={`移除 ${input.name}`}
-                          onClick={() =>
-                            setInputs((current) => current.filter((item) => item.id !== input.id))
-                          }
+                          className="quick-create-input-add"
+                          aria-label="添加素材，也可直接粘贴"
+                          onClick={() => void handlePickFiles()}
                         >
-                          <Icons.X size={12} />
+                          <Icons.ImagePlus size={17} />
+                          <span>添加素材</span>
                         </button>
-                      </div>
-                    ))}
-                    {(mode !== 'reverse' || inputs.length === 0) && (
-                      <button
-                        type="button"
-                        className="quick-create-input-add"
-                        aria-label="添加素材，也可直接粘贴"
-                        onClick={() => void handlePickFiles()}
-                      >
-                        <Icons.ImagePlus size={17} />
-                        <span>添加素材</span>
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              )}
 
               <div className="quick-create-prompt-wrap">
                 <div className="quick-create-prompt-head">
                   <div>
-                    <strong>{mode === 'reverse' ? '反推要求' : '提示词'}</strong>
+                    <strong>
+                      {mode === 'reverse' ? '反推要求' : mode === 'audio' ? '文稿' : '提示词'}
+                    </strong>
                     <span>
                       {mode === 'reverse'
                         ? '可选 · 补充反推侧重点'
-                        : mode === 'video'
-                          ? '描述主体、动作、镜头与氛围'
-                          : '描述主体、构图、光线与风格'}
+                        : mode === 'audio'
+                          ? '这里填写要朗读的内容本身，不做提示词改写'
+                          : mode === 'video'
+                            ? '描述主体、动作、镜头与氛围'
+                            : '描述主体、构图、光线与风格'}
                     </span>
                   </div>
                   {mode !== 'reverse' && (
@@ -1703,20 +1735,26 @@ export function QuickCreateView() {
                   className="quick-create-prompt"
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  aria-label={mode === 'reverse' ? '反推补充要求' : '提示词'}
+                  aria-label={
+                    mode === 'reverse' ? '反推补充要求' : mode === 'audio' ? '语音文稿' : '提示词'
+                  }
                   placeholder={
                     mode === 'reverse'
                       ? '可选：补充反推侧重点，例如「重点描述人物服装与光线」，留空则输出完整提示词'
-                      : mode === 'video'
-                        ? '描述主体、动作、镜头运动和时长，例如：雨夜街头，霓虹倒影，镜头缓慢推进…'
-                        : '描述主体、构图、光线和风格，例如：清晨窗边的产品静物，柔和侧光…'
+                      : mode === 'audio'
+                        ? '输入要转换为语音的文稿，例如：欢迎收听今天的早间资讯，我们先看一条来自产品团队的消息…'
+                        : mode === 'video'
+                          ? '描述主体、动作、镜头运动和时长，例如：雨夜街头，霓虹倒影，镜头缓慢推进…'
+                          : '描述主体、构图、光线和风格，例如：清晨窗边的产品静物，柔和侧光…'
                   }
                 />
                 <div className="quick-create-prompt-meta">
                   <span>
                     {mode === 'reverse'
                       ? '补充要求会与固定反推指令一起发送'
-                      : '建议先写清主体，再补充环境、构图和风格'}
+                      : mode === 'audio'
+                        ? '文稿会原样送入语音合成，标点与换行会影响停顿'
+                        : '建议先写清主体，再补充环境、构图和风格'}
                   </span>
                   <small>{prompt.length} 字</small>
                 </div>
@@ -1825,9 +1863,23 @@ export function QuickCreateView() {
                     </div>
                     {!modelsLoading && !selectedModel && (
                       <span className="quick-create-capability-hint">
-                        暂无匹配的已启用模型，请先到模型服务配置
+                        {mode === 'audio'
+                          ? '暂无已启用的语音模型，请先配置 TTS 渠道'
+                          : '暂无匹配的已启用模型，请先到模型服务配置'}
                       </span>
                     )}
+                    {!modelsLoading &&
+                      !selectedModel &&
+                      mode === 'audio' &&
+                      !isStandaloneWindow && (
+                        <button
+                          type="button"
+                          className="quick-create-capability-action"
+                          onClick={() => setTweak('view', 'providers')}
+                        >
+                          去配置
+                        </button>
+                      )}
                   </div>
                   <QuickCreateParameterPanel
                     fields={fields}
@@ -1862,7 +1914,7 @@ export function QuickCreateView() {
                     }
                     onClick={() => void submitTask()}
                   >
-                    <Icons.Play size={13} /> 生成
+                    <Icons.Play size={13} /> {mode === 'audio' ? '生成语音' : '生成'}
                   </Button>
                 </div>
               </div>

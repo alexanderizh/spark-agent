@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { decodeCanvasSafeFileUrl } from './canvas-safe-file'
 import {
+  MODE_ITEMS,
   copyableTaskPrompt,
   isLocalInputPath,
   promptCoverFromTaskAssets,
@@ -8,6 +9,7 @@ import {
   retryTaskRecord,
   selectQuickCreateInputPaths,
   textOutputCopyMeta,
+  titleForPrompt,
 } from './quickCreateTaskPresentation'
 
 describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
@@ -35,6 +37,12 @@ describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
     expect(selected).toEqual(['/Users/a/real.png'])
   })
 
+  it('语音模式不接受任何素材路径（TTS 是纯文本输入）', () => {
+    expect(selectQuickCreateInputPaths(['/Users/a/pic.png', '/Users/a/clip.mp4'], 'audio')).toEqual(
+      [],
+    )
+  })
+
   it('反推模式与图片模式共用同一套扩展名约束', () => {
     const selected = selectQuickCreateInputPaths(
       ['/Users/a/clip.mp4', '/Users/a/pic.webp'],
@@ -54,6 +62,13 @@ describe('quickCreateTaskPresentation 输入素材路径过滤', () => {
     expect(quickInputKindForPath('/a/clip.mp4')).toBe('video')
     expect(quickInputKindForPath('/a/clip.WEBM')).toBe('video')
     expect(quickInputKindForPath('/a/pic.png')).toBe('image')
+  })
+})
+
+describe('quickCreateTaskPresentation 模式清单', () => {
+  it('模式 rail 与历史筛选共用同一份清单，语音模式排在视频之后', () => {
+    expect(MODE_ITEMS.map((item) => item.id)).toEqual(['image', 'reverse', 'video', 'audio'])
+    expect(MODE_ITEMS.find((item) => item.id === 'audio')?.label).toBe('语音')
   })
 })
 
@@ -146,6 +161,11 @@ describe('quickCreateTaskPresentation 可复制的提示词', () => {
   it('反推任务既无产物也无要求时不给复制入口', () => {
     expect(copyableTaskPrompt({ mode: 'reverse', prompt: '' })).toBeNull()
     expect(copyableTaskPrompt({ mode: 'image', prompt: '   ' })).toBeNull()
+  })
+
+  it('无提示词的语音任务用「语音文稿」作为兜底标题', () => {
+    expect(titleForPrompt('', 'audio')).toBe('语音文稿')
+    expect(titleForPrompt('欢迎收听今天的早间资讯', 'audio')).toBe('欢迎收听今天的早间资讯')
   })
 
   it('文本产物块的标题与复制提示按模式区分', () => {

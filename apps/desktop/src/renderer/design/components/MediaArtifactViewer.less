@@ -91,6 +91,20 @@
   object-fit: contain;
 }
 
+/* 音频产物：居中一列「图标 + 原生播放器」，与视频一样不做缩放与对比 */
+.media-artifact-audio {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-faint);
+}
+
+.media-artifact-audio audio {
+  width: min(420px, 82%);
+}
+
 .media-artifact-viewer-toolbar {
   display: flex;
   min-height: 34px;

@@ -20,6 +20,12 @@ export const VIDEO_CAPABILITIES: MediaCapabilityId[] = [
   'video.reference_to_video',
   'video.edit',
 ]
+/**
+ * 语音（TTS）候选能力。协议层 capabilityForOperation('text_to_audio') 会同时给出
+ * audio.music 与 audio.speech，且 music 排在前面；不显式携带 capabilityId 时
+ * media-router 可能按候选顺序路由到音乐模型，因此语音模式必须锁定 audio.speech。
+ */
+export const AUDIO_CAPABILITIES: MediaCapabilityId[] = ['audio.speech']
 
 /** 按模式与输入素材推导画布 operation（不含模型上下文）。 */
 export function operationFor(
@@ -27,6 +33,7 @@ export function operationFor(
   inputs: readonly QuickCreateInput[],
 ): CanvasOperationType {
   if (mode === 'reverse') return 'image_prompt_reverse'
+  if (mode === 'audio') return 'text_to_audio'
   if (mode === 'image') return inputs.length > 0 ? 'image_edit' : 'text_to_image'
   if (inputs.some((input) => input.type === 'video')) return 'video_edit'
   return inputs.length > 0 ? 'image_to_video' : 'text_to_video'
@@ -45,6 +52,9 @@ export function capabilityFor(
   model?: CanvasMediaModelSummary,
 ): MediaCapabilityId | undefined {
   if (mode === 'reverse') return undefined
+  // 语音只有 text_to_audio 一个操作，且必须固定在 audio.speech 上：
+  // 不做「模型未声明则回退候选首项」推导，避免回退到 audio.music。
+  if (mode === 'audio') return AUDIO_CAPABILITIES[0]
   const candidates: MediaCapabilityId[] =
     mode === 'image'
       ? inputs.length > 0
@@ -70,6 +80,7 @@ export function operationForSubmission(
   inputs: readonly QuickCreateInput[],
   capability: MediaCapabilityId | undefined,
 ): CanvasOperationType {
+  if (mode === 'audio') return 'text_to_audio'
   if (capability === 'video.reference_to_video') return 'text_to_video'
   return operationFor(mode, inputs)
 }

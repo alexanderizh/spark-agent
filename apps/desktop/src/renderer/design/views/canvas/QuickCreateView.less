@@ -654,6 +654,23 @@
   white-space: nowrap;
 }
 
+/* 空态引导的跳转入口：纯文字按钮，保持扁平，不引入卡片/描边 */
+.quick-create-capability-action {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  color: var(--quick-accent);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.quick-create-capability-action:hover,
+.quick-create-capability-action:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
 .quick-create-text-model-row > label {
   width: auto;
   flex-shrink: 0;
@@ -924,6 +941,36 @@
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+/* 音频产物没有画面：列表行 / 展开缩略 / 详情弹层统一用图标占位 */
+.quick-create-task-audio-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  background: var(--quick-field);
+}
+
+.quick-create-task-main > .quick-create-task-audio-thumb {
+  width: 92px;
+  height: 54px;
+  border-radius: 6px;
+}
+
+/* 展开态缩略图的父级按钮会把内部 span 绝对定位成角标，这里显式还原为占位块 */
+.quick-create-history-output-thumb .quick-create-task-audio-thumb,
+.quick-create-detail-media .quick-create-task-audio-thumb {
+  position: static;
+  width: 100%;
+  min-height: 92px;
+  color: var(--text-faint);
+  background: var(--quick-field);
+}
+
+.quick-create-history-output-thumb .quick-create-task-audio-thumb {
+  border-radius: 0;
+  padding: 0;
 }
 
 .quick-create-task-placeholder {

@@ -45,6 +45,16 @@ const VIDEO_TASK: QuickCreateTaskRecord = {
   assets: [{ type: 'video', filePath: '/tmp/output.mp4' }],
 }
 
+const AUDIO_TASK: QuickCreateTaskRecord = {
+  ...IMAGE_TASK,
+  id: 'task-audio',
+  mode: 'audio',
+  operation: 'text_to_audio',
+  prompt: '欢迎收听今天的早间资讯',
+  modelParams: { voice: 'Cherry' },
+  assets: [{ type: 'audio', filePath: '/tmp/output.mp3', mimeType: 'audio/mpeg' }],
+}
+
 const RUNNING_TASK: QuickCreateTaskRecord = {
   ...IMAGE_TASK,
   id: 'task-running',
@@ -251,6 +261,54 @@ describe('QuickCreateTaskHistory', () => {
 
     expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
     expect(document.querySelector('.media-artifact-video')).not.toBeNull()
+  })
+
+  it('语音任务在列表与详情中出现，缩略图用图标占位而不是 <video>', () => {
+    renderHistory(root, { tasks: [AUDIO_TASK], expandedTaskId: AUDIO_TASK.id })
+
+    expect(document.body.textContent).toContain('欢迎收听今天的早间资讯')
+    expect(document.body.textContent).toContain('语音')
+    // 列表行 + 展开详情两处占位，均不渲染 video 缩略图
+    expect(
+      document.querySelectorAll('.quick-create-task-audio-thumb').length,
+    ).toBeGreaterThanOrEqual(2)
+    expect(document.querySelector('.quick-create-task-main video')).toBeNull()
+    expect(document.querySelector('.quick-create-history-output-thumb video')).toBeNull()
+  })
+
+  it('语音任务的产物以独立弹层查看并提供音频播放器', () => {
+    renderHistory(root, { tasks: [AUDIO_TASK], expandedTaskId: AUDIO_TASK.id })
+
+    act(() =>
+      document.querySelector<HTMLButtonElement>('.quick-create-history-output-thumb')?.click(),
+    )
+
+    expect(document.querySelector('.quick-create-media-viewer-modal')).not.toBeNull()
+    expect(document.querySelector('.media-artifact-audio audio')).not.toBeNull()
+    expect(document.querySelector('.media-artifact-viewer-zoom')).toBeNull()
+  })
+
+  it('语音筛选 tab 按模式过滤出语音任务', () => {
+    renderHistory(root, { tasks: [IMAGE_TASK, AUDIO_TASK] })
+
+    const audioTab = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.quick-create-history-filters button'),
+    ).find((button) => button.textContent?.startsWith('语音'))
+    expect(audioTab).not.toBeUndefined()
+    act(() => audioTab?.click())
+
+    expect(document.body.textContent).toContain('欢迎收听今天的早间资讯')
+    expect(document.body.textContent).not.toContain('清晨窗边的静物')
+  })
+
+  it('语音任务列表行右键给出「播放语音」而不是「查看大图」', () => {
+    renderHistory(root, { tasks: [AUDIO_TASK] })
+
+    openContextMenu(document.querySelector('.quick-create-task-main'))
+
+    expect(menuLabels()).toContain('播放语音')
+    expect(menuLabels()).not.toContain('查看大图')
+    expect(menuLabels()).not.toContain('复制图片')
   })
 
   it('列表视图点击任务行仍触发行激活回调', () => {

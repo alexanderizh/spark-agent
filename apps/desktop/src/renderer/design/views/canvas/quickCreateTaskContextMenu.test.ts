@@ -117,6 +117,63 @@ describe('buildQuickCreateTaskMenuItems', () => {
     expect(labelsOf(items)).not.toContain('查看大图')
   })
 
+  it('音频产物给「播放语音」与文件动作，不给复制图片与去图编辑', () => {
+    const audioTask: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-audio',
+      mode: 'audio',
+      operation: 'text_to_audio',
+      assets: [{ type: 'audio', filePath: '/tmp/output.mp3' }],
+    }
+    const items = buildQuickCreateTaskMenuItems(
+      audioTask,
+      { taskId: audioTask.id, assetRef: '/tmp/output.mp3' },
+      handlers({ onEditImage: vi.fn() }),
+    )
+
+    expect(labelsOf(items)).toEqual([
+      '播放语音',
+      '另存为…',
+      '打开所在文件夹',
+      '---',
+      '查看详情',
+      '复制提示词',
+      '复用配置',
+      '重新生成',
+      '存入提示词库',
+      '---',
+      '删除任务',
+    ])
+
+    const h = handlers()
+    const items2 = buildQuickCreateTaskMenuItems(
+      audioTask,
+      { taskId: audioTask.id, assetRef: '/tmp/output.mp3' },
+      h,
+    )
+    findByLabel(items2, '播放语音').onClick?.()
+    expect(h.onViewOutput).toHaveBeenCalledWith(audioTask, 0)
+  })
+
+  it('音频只读产物（无本地文件）仍可查看，不显示另存为', () => {
+    const remoteAudio: QuickCreateTaskRecord = {
+      ...IMAGE_TASK,
+      id: 'task-audio-remote',
+      mode: 'audio',
+      operation: 'text_to_audio',
+      assets: [{ type: 'audio', url: 'https://cdn.example.com/a.mp3' }],
+    }
+    const items = buildQuickCreateTaskMenuItems(
+      remoteAudio,
+      { taskId: remoteAudio.id, assetRef: 'https://cdn.example.com/a.mp3' },
+      handlers(),
+    )
+
+    expect(labelsOf(items)).toContain('播放语音')
+    expect(labelsOf(items)).not.toContain('另存为…')
+    expect(labelsOf(items)).not.toContain('复制图片')
+  })
+
   it('产物没有本地文件时不显示「另存为…」与「打开所在文件夹」', () => {
     const remoteTask: QuickCreateTaskRecord = {
       ...IMAGE_TASK,

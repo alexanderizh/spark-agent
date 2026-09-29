@@ -28,7 +28,18 @@ const VALID_OPERATIONS = new Set<CanvasOperationType>([
   'extract_first_last_frames',
 ])
 
-export type QuickCreateMode = 'image' | 'reverse' | 'video'
+/**
+ * 快速创作支持的模式。这里是唯一事实来源：任务存储、偏好白名单与模式推导都从这里取，
+ * 避免新增模式时漏改某处白名单导致记录被静默丢弃或强转。
+ */
+export const QUICK_CREATE_MODES = ['image', 'reverse', 'video', 'audio'] as const
+
+export type QuickCreateMode = (typeof QUICK_CREATE_MODES)[number]
+
+export function isQuickCreateMode(value: unknown): value is QuickCreateMode {
+  return typeof value === 'string' && (QUICK_CREATE_MODES as readonly string[]).includes(value)
+}
+
 export type QuickCreateTaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export type QuickCreateTaskRecord = {
@@ -115,7 +126,7 @@ function normalizeAsset(value: unknown): CanvasMediaTaskAsset | null {
 function normalizeTask(value: unknown): QuickCreateTaskRecord | null {
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.prompt !== 'string')
     return null
-  const mode = value.mode === 'reverse' || value.mode === 'video' ? value.mode : 'image'
+  const mode = isQuickCreateMode(value.mode) ? value.mode : 'image'
   const status =
     value.status === 'succeeded' || value.status === 'failed' || value.status === 'cancelled'
       ? value.status
@@ -139,7 +150,9 @@ function normalizeTask(value: unknown): QuickCreateTaskRecord | null {
           ? 'text_to_video'
           : mode === 'reverse'
             ? 'image_prompt_reverse'
-            : 'text_to_image',
+            : mode === 'audio'
+              ? 'text_to_audio'
+              : 'text_to_image',
     prompt: value.prompt,
     ...(typeof value.negativePrompt === 'string' ? { negativePrompt: value.negativePrompt } : {}),
     inputFiles: Array.isArray(value.inputFiles)

@@ -28,6 +28,15 @@ function fileName(value: string | undefined, fallback: string): string {
   return value?.split(/[\\/]/).pop() || fallback
 }
 
+/**
+ * 产物没有原始文件名时的兜底名：按产物类型给扩展名，
+ * 否则音频产物会被命名成 .png（下载与另存都会带错后缀）。
+ */
+function defaultOutputFileName(asset: CanvasMediaTaskAsset | undefined, baseName: string): string {
+  const extension = asset?.type === 'video' ? 'mp4' : asset?.type === 'audio' ? 'mp3' : 'png'
+  return `${baseName}.${extension}`
+}
+
 function statusLabel(status: QuickCreateTaskRecord['status']): string {
   return { running: '处理中', succeeded: '已完成', failed: '未完成', cancelled: '已取消' }[status]
 }
@@ -53,7 +62,10 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
   const [previewOpen, setPreviewOpen] = useState(false)
 
   const outputs = useMemo(
-    () => task?.assets.filter((asset) => asset.type === 'image' || asset.type === 'video') ?? [],
+    () =>
+      task?.assets.filter(
+        (asset) => asset.type === 'image' || asset.type === 'video' || asset.type === 'audio',
+      ) ?? [],
     [task?.assets],
   )
   const safeOutputIndex = Math.min(outputIndex, Math.max(outputs.length - 1, 0))
@@ -115,9 +127,17 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
               media={{
                 src: currentUrl,
                 alt: currentOutput.title ?? '生成结果',
-                fileName: fileName(currentOutput.filePath, 'quick-create-output.png'),
+                fileName: fileName(
+                  currentOutput.filePath,
+                  defaultOutputFileName(currentOutput, 'quick-create-output'),
+                ),
                 ...(currentOutput.filePath ? { filePath: currentOutput.filePath } : {}),
-                type: currentOutput.type === 'video' ? 'video' : 'image',
+                type:
+                  currentOutput.type === 'video'
+                    ? 'video'
+                    : currentOutput.type === 'audio'
+                      ? 'audio'
+                      : 'image',
               }}
               {...(inputImageUrl ? { inputImage: { src: inputImageUrl } } : {})}
               pagination={{
@@ -149,6 +169,10 @@ export function QuickCreateOutputPanel({ task }: { task?: QuickCreateTaskRecord 
                   >
                     {asset.type === 'video' ? (
                       <video src={url} muted />
+                    ) : asset.type === 'audio' ? (
+                      <span className="quick-create-output-thumb-audio" aria-hidden="true">
+                        <Icons.AudioLines size={15} />
+                      </span>
                     ) : (
                       <img src={url} alt={asset.title ?? `输出 ${index + 1}`} loading="lazy" />
                     )}

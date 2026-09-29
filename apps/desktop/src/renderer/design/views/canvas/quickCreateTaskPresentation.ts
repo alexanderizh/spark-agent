@@ -13,6 +13,7 @@ export const MODE_ITEMS: Array<{
   { id: 'image', label: '生图' },
   { id: 'reverse', label: '反推' },
   { id: 'video', label: '视频' },
+  { id: 'audio', label: '语音' },
 ]
 
 export function modeLabel(mode: QuickCreateMode): string {
@@ -27,11 +28,17 @@ export function isLocalInputPath(filePath: string): boolean {
   return filePath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(filePath)
 }
 
-/** 按模式过滤可接收的输入素材路径；视频模式额外接收视频文件。 */
+/**
+ * 按模式过滤可接收的输入素材路径；视频模式额外接收视频文件。
+ *
+ * 语音（TTS）是纯文本输入，没有参考素材语义，这里返回空集合把住「文件选择」与
+ * 「拖拽」两个入口（粘贴图片由视图层的 handlePasteInput 单独拦截）。
+ */
 export function selectQuickCreateInputPaths(
   filePaths: readonly string[],
   mode: QuickCreateMode,
 ): string[] {
+  if (mode === 'audio') return []
   const extensions =
     mode === 'video'
       ? [...IMAGE_INPUT_EXTENSIONS, ...VIDEO_INPUT_EXTENSIONS]
@@ -51,7 +58,7 @@ export function titleForPrompt(prompt: string, mode: QuickCreateMode): string {
     .split(/\r?\n/)
     .find((line) => line.trim())
     ?.trim()
-  return firstLine?.slice(0, 40) || `${modeLabel(mode)}提示词`
+  return firstLine?.slice(0, 40) || `${modeLabel(mode)}${mode === 'audio' ? '文稿' : '提示词'}`
 }
 
 /**
