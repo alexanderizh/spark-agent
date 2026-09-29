@@ -315,6 +315,12 @@ export interface AutoRouterMemberDisplayInfo {
   modelDisplayName: string
   /** 子任务摘要（分流器给出的 subtask.summary）。 */
   summary: string
+  /**
+   * worker 显示名（member.name，形如「子任务N」）。worker 每轮临时合成、
+   * 不入 Agent 表，渲染端无法反查，随事件下发；缺省时渲染端按 id 尾段
+   * 序号回退推导（兼容历史事件）。
+   */
+  workerName?: string
 }
 
 export interface TeamMemberEventContext {

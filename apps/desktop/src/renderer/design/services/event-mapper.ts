@@ -374,6 +374,7 @@ export type UIBlock =
         intensity: RouterIntensity
         modelDisplayName: string
         summary: string
+        workerName?: string
       }
     }
   | {

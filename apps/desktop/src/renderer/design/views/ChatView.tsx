@@ -41,6 +41,12 @@ import { ActivityLogSummaryIcon } from './chat/ChatToolbar'
 import { UserQuestionDock } from './chat/UserQuestionDock'
 import type { UserQuestionData } from './chat/UserQuestionUtils'
 import {
+  getBlockTeamMemberContext,
+  isHostActivityRunning,
+  isHiddenTimelineBlock,
+  splitAssistantMessageBlocks,
+} from './chat/ChatTeamTimelineSegments'
+import {
   buildQuestionAnswerSummaries,
   getQuestionAnswerCacheKey,
   persistQuestionAnswerSummaries,
@@ -394,7 +400,17 @@ import {
   isClaudeAdapter,
   isProviderCompatibleWithAdapter,
 } from '../utils/provider-adapter'
-import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../avatar'
+import {
+  createBuiltinAvatar,
+  getAgentAvatarConfig,
+  hasCustomAvatar,
+  resolveAvatarSrc,
+  type SparkAvatarConfig,
+} from '../avatar'
+import {
+  resolveAutoRouterWorkerAvatarId,
+  resolveAutoRouterWorkerName,
+} from '../utils/auto-router-display'
 import type {
   UIMessage,
   UIBlock,
@@ -431,7 +447,6 @@ import type {
   ManagedTeam,
   SessionAttachment,
   TeamModeConfig,
-  TeamMemberEventContext,
 } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
@@ -6085,11 +6100,37 @@ function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
 }
 
 /** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
+function resolveTeamMemberDisplayIdentity(args: {
+  member: ManagedAgent | undefined
+  memberAgentId: string
+  /** 事件携带的 AutoRouter worker 显示名（team_member_message.autoRouter.workerName）。 */
+  workerName?: string | undefined
+}): { name: string; avatar: SparkAvatarConfig } {
+  const { member, memberAgentId } = args
+  if (member != null) {
+    return {
+      name: member.name,
+      avatar: getAgentAvatarConfig(member.metadata, member.id, member.name),
+    }
+  }
+  // AutoRouter 一次性 worker：不入 Agent 表，按 id 序号回退「子任务 N」+ 内置头像分配。
+  const workerName = resolveAutoRouterWorkerName(memberAgentId, args.workerName)
+  const workerAvatarId = resolveAutoRouterWorkerAvatarId(memberAgentId)
+  if (workerName != null && workerAvatarId != null) {
+    return { name: workerName, avatar: createBuiltinAvatar(workerAvatarId) }
+  }
+  return {
+    name: memberAgentId,
+    avatar: getAgentAvatarConfig(undefined, memberAgentId, memberAgentId),
+  }
+}
+
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
   const member = agents.find((a) => a.id === block.memberAgentId)
-  const memberName = member?.name ?? block.memberAgentId
-  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  const identity = resolveTeamMemberDisplayIdentity({ member, memberAgentId: block.memberAgentId })
+  const memberName = identity.name
+  const avatar = identity.avatar
   return (
     <TeamDispatchCard
       task={block.task}
@@ -6270,8 +6311,13 @@ function TeamMemberMessageBlockView({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null)
   const member = agents.find((a) => a.id === block.memberAgentId)
-  const memberName = member?.name ?? block.memberAgentId
-  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  const identity = resolveTeamMemberDisplayIdentity({
+    member,
+    memberAgentId: block.memberAgentId,
+    workerName: block.autoRouter?.workerName,
+  })
+  const memberName = identity.name
+  const avatar = identity.avatar
   const running = block.isStreaming
   const empty = block.content.trim().length === 0
 
@@ -6458,8 +6504,6 @@ function TeamMemberActivityBlockView({
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const member = agents.find((a) => a.id === memberAgentId)
-  const memberName = member?.name ?? memberAgentId
-  const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
   const showActivityLogs = useTeamActivityLogsVisible()
 
   // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
@@ -6491,6 +6535,14 @@ function TeamMemberActivityBlockView({
     }
     return undefined
   }, [blocks])
+
+  const identity = resolveTeamMemberDisplayIdentity({
+    member,
+    memberAgentId,
+    workerName: routerMeta?.workerName,
+  })
+  const memberName = identity.name
+  const avatar = identity.avatar
 
   if (!hasVisibleTeamMemberActivityBlocks(blocks, showActivityLogs)) return null
 
@@ -6618,15 +6670,6 @@ function isTeamMemberLogBlock(block: UIBlock): boolean {
     block.kind === 'terminal' ||
     block.kind === 'file_change'
   )
-}
-
-function isTeamMemberActivityRunning(blocks: UIBlock[]): boolean {
-  return blocks.some((block) => {
-    if (block.kind === 'team_member_message') return block.isStreaming
-    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
-    if (block.kind === 'terminal') return block.isStreaming
-    return false
-  })
 }
 
 function ValidationSuggestionCard({
@@ -8084,148 +8127,6 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
     </>
   )
 }, assistantRowsPropsAreEqual)
-
-type AssistantMessageSegment =
-  | { kind: 'agent'; blocks: UIBlock[] }
-  | { kind: 'team'; blocks: UIBlock[] }
-  | { kind: 'team_peer'; block: Extract<UIBlock, { kind: 'team_peer_message' }> }
-  | { kind: 'team_round_divider'; block: Extract<UIBlock, { kind: 'team_round_divider' }> }
-  | { kind: 'team_discussion_status'; block: Extract<UIBlock, { kind: 'team_discussion_status' }> }
-  | {
-      kind: 'team_member_activity'
-      memberContext: TeamMemberEventContext
-      blocks: UIBlock[]
-      running: boolean
-    }
-
-function splitAssistantMessageBlocks(blocks: readonly UIBlock[]): AssistantMessageSegment[] {
-  const segments: AssistantMessageSegment[] = []
-  const latestTeamMemberSegments = new Map<
-    string,
-    Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
-  >()
-  const runningDispatches = new Set<string>()
-  const terminalDispatches = new Set<string>()
-  // Preserve timeline order: host/member blocks only merge while they remain contiguous.
-  // This keeps host follow-up after member output visible as a new bubble at the bottom.
-  const ensureAgentSegment = () => {
-    const previous = segments.at(-1)
-    if (previous?.kind === 'agent') {
-      return previous
-    }
-    const segment: Extract<AssistantMessageSegment, { kind: 'agent' }> = {
-      kind: 'agent',
-      blocks: [],
-    }
-    segments.push(segment)
-    return segment
-  }
-
-  for (const block of blocks) {
-    if (isHiddenTimelineBlock(block)) continue
-    if (block.kind === 'team_dispatch') {
-      const key = teamMemberContextKey({
-        dispatchId: block.dispatchId,
-        memberAgentId: block.memberAgentId,
-      })
-      const isRunning = block.state === 'pending' || block.state === 'working'
-      if (isRunning) {
-        runningDispatches.add(key)
-        terminalDispatches.delete(key)
-      } else {
-        runningDispatches.delete(key)
-        terminalDispatches.add(key)
-      }
-      const segment = latestTeamMemberSegments.get(key)
-      if (segment != null)
-        segment.running =
-          isRunning || (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
-      segments.push({ kind: 'team', blocks: [block] })
-      continue
-    }
-    if (block.kind === 'team_peer_message') {
-      segments.push({ kind: 'team_peer', block })
-      continue
-    }
-    if (block.kind === 'team_round_divider') {
-      segments.push({ kind: 'team_round_divider', block })
-      continue
-    }
-    if (block.kind === 'team_discussion_status') {
-      segments.push({ kind: 'team_discussion_status', block })
-      continue
-    }
-    const memberContext = getBlockTeamMemberContext(block)
-    if (memberContext != null) {
-      const key = teamMemberContextKey(memberContext)
-      const previous = segments.at(-1)
-      let segment =
-        previous?.kind === 'team_member_activity' &&
-        teamMemberContextKey(previous.memberContext) === key
-          ? previous
-          : null
-      if (segment == null) {
-        segment = {
-          kind: 'team_member_activity',
-          memberContext,
-          blocks: [],
-          running: runningDispatches.has(key),
-        }
-        segments.push(segment)
-      }
-      latestTeamMemberSegments.set(key, segment)
-      segment.blocks.push(block)
-      segment.running =
-        runningDispatches.has(key) ||
-        (!terminalDispatches.has(key) && isTeamMemberActivityRunning(segment.blocks))
-      continue
-    }
-    ensureAgentSegment().blocks.push(block)
-  }
-  return segments
-}
-
-function teamMemberContextKey(context: TeamMemberEventContext): string {
-  return `${context.dispatchId}:${context.memberAgentId}`
-}
-
-function isHiddenTimelineBlock(block: UIBlock): boolean {
-  return (
-    block.kind === 'tool_call' &&
-    (block.toolName === 'mcp__spark_team__agent_dispatch' ||
-      block.toolName.toLowerCase().endsWith('present_files'))
-  )
-}
-
-function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {
-  if (block.kind === 'team_member_message') {
-    return {
-      dispatchId: block.dispatchId,
-      memberAgentId: block.memberAgentId,
-      ...(block.autoRouter != null ? { autoRouter: block.autoRouter } : {}),
-    }
-  }
-  if (
-    block.kind === 'thinking' ||
-    block.kind === 'tool_call' ||
-    block.kind === 'terminal' ||
-    block.kind === 'file_change'
-  ) {
-    return block.teamMemberContext
-  }
-  return undefined
-}
-
-function isHostActivityRunning(blocks: UIBlock[]): boolean {
-  return blocks.some((block) => {
-    if (getBlockTeamMemberContext(block) != null) return false
-    if (block.kind === 'text' || block.kind === 'thinking') return block.isStreaming
-    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
-    if (block.kind === 'terminal') return block.isStreaming
-    if (block.kind === 'subagent') return block.status === 'running'
-    return false
-  })
-}
 
 const AgentMsg = React.memo(function AgentMsg({
   sessionId,

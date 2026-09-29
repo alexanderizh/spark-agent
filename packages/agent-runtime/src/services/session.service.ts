@@ -13148,6 +13148,8 @@ function buildAutoRouterMemberDisplayInfo(member: AgentItem): AutoRouterMemberDi
     intensity: metadata.autoRouterIntensity ?? 'balanced',
     modelDisplayName: member.modelId ?? '',
     summary: metadata.autoRouterSubtaskSummary ?? '',
+    // worker 名（「子任务N」）随事件下发：worker 不入 Agent 表，渲染端无法反查
+    workerName: member.name,
   }
 }
 

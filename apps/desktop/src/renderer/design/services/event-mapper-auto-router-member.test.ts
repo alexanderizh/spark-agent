@@ -32,27 +32,33 @@ function memberBlocks(builder: MessageBuilder): UIBlock[] {
 }
 
 describe('event-mapper · AutoRouter 子任务块', () => {
-  it('worker 事件携带 autoRouter → 块上保留强度/模型名/摘要', () => {
+  it('worker 事件携带 autoRouter → 块上保留强度/模型名/摘要/worker 名', () => {
     const builder = new MessageBuilder()
     builder.processEvent(
       memberMessage({
         id: 'e1',
-        autoRouter: { intensity: 'low', modelDisplayName: 'haiku-4-5', summary: '检索资料' },
+        autoRouter: {
+          intensity: 'low',
+          modelDisplayName: 'haiku-4-5',
+          summary: '检索资料',
+          workerName: '子任务1',
+        },
       }) as AgentEvent,
     )
 
     const block = memberBlocks(builder).find((item) => item.kind === 'team_member_message')
     expect(block).toBeDefined()
-    expect(
-      block?.kind === 'team_member_message' ? block.autoRouter : undefined,
-    ).toEqual({ intensity: 'low', modelDisplayName: 'haiku-4-5', summary: '检索资料' })
+    expect(block?.kind === 'team_member_message' ? block.autoRouter : undefined).toEqual({
+      intensity: 'low',
+      modelDisplayName: 'haiku-4-5',
+      summary: '检索资料',
+      workerName: '子任务1',
+    })
   })
 
   it('普通团队成员事件（无 autoRouter）→ 块上不出现该字段', () => {
     const builder = new MessageBuilder()
-    builder.processEvent(
-      memberMessage({ id: 'e2', memberAgentId: 'member-1' }) as AgentEvent,
-    )
+    builder.processEvent(memberMessage({ id: 'e2', memberAgentId: 'member-1' }) as AgentEvent)
 
     const block = memberBlocks(builder).find((item) => item.kind === 'team_member_message')
     expect(block?.kind === 'team_member_message' ? block.autoRouter : 'missing').toBeUndefined()
