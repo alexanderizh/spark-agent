@@ -15,6 +15,10 @@ public struct NativeCapturedWindow: Equatable, Sendable {
 public enum NativeHostPlatformError: Error, Equatable, Sendable {
   case screenPermissionDenied
   case windowNotFound
+  /// The requested window exists but is minimized, so it cannot be captured.
+  /// Distinct from `.windowNotFound` because the recovery differs: the window is
+  /// still there and the user can restore it, whereas a missing window is gone.
+  case windowMinimized
   case invalidWindowGeometry
   case captureFailed
   case resourceLimitExceeded
@@ -28,6 +32,12 @@ public enum NativeHostPlatformError: Error, Equatable, Sendable {
   case actionNoop
   case sessionCanceled
   case userTakeover
+  /// The user physically interacted with the bound target window (pointer-down
+  /// inside it, or a keystroke while it was frontmost) while our action was in
+  /// flight. Distinct from `userTakeover` (an explicit Esc stop): this one is a
+  /// pacing event, not a command to halt the task, so it is reported as a
+  /// retryable "the world moved under you" condition instead of `handoff_required`.
+  case userInteractionDetected
   case screenLocked
 }
 
@@ -273,6 +283,19 @@ public actor NativeHostRequestHandler {
         message: "The requested window is no longer available",
         retryable: true
       )
+    case .windowMinimized:
+      // Measured: observing a minimized window surfaced as "The foreground
+      // application identity changed", which describes nothing that happened and
+      // sent diagnosis the wrong way. The code stays `focus_mismatch` — the
+      // established contract for "re-target and retry" (`.windowNotFound` uses it
+      // too) — but the message now says what actually blocks the observation.
+      return try NativeHostResponseEncoder.error(
+        requestID: requestID,
+        code: "focus_mismatch",
+        message:
+          "The target window is minimized: restore it, or observe another window of the same application",
+        retryable: true
+      )
     case .invalidWindowGeometry, .captureFailed, .resourceLimitExceeded:
       return try NativeHostResponseEncoder.error(
         requestID: requestID,
@@ -320,6 +343,16 @@ public actor NativeHostRequestHandler {
       return try NativeHostResponseEncoder.error(
         requestID: requestID, code: "handoff_required",
         message: "The user took control of the target window", retryable: false)
+    case .userInteractionDetected:
+      // Reuses the retryable "the world moved under the action" code so the
+      // caller re-observes and retries instead of ending the task. The message
+      // carries the precise cause; `handoff_required` is now reserved for a real
+      // Esc takeover so the model is never told to stop for a stray click.
+      return try NativeHostResponseEncoder.error(
+        requestID: requestID, code: "focus_mismatch",
+        message:
+          "The user interacted with the target window while the action was in progress; the action was aborted before it could conflict. Re-observe and continue.",
+        retryable: true)
     case .screenLocked:
       return try NativeHostResponseEncoder.error(
         requestID: requestID, code: "screen_locked",

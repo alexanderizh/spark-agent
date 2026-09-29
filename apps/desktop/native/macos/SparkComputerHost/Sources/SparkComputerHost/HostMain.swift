@@ -9,7 +9,7 @@ struct SparkComputerHostMain {
     do {
       try ParentProcessAuthorizer.authorize()
     } catch {
-      writeDiagnostic("parent process authorization failed")
+      writeDiagnostic("parent process authorization failed: \(error)")
       exit(EX_NOPERM)
     }
 
@@ -25,7 +25,9 @@ struct SparkComputerHostMain {
       do {
         try await run()
       } catch {
-        writeDiagnostic("fatal native host protocol failure")
+        // Carry the underlying error: a bare "protocol failure" line told the
+        // caller nothing about which request or which check failed.
+        writeDiagnostic("fatal native host protocol failure: \(error)")
         exit(EX_PROTOCOL)
       }
       exit(0)
@@ -45,7 +47,20 @@ struct SparkComputerHostMain {
     for await chunk in inputChunks.chunks {
       for frame in try decoder.append(chunk) {
         guard frame.kind == .json else { throw NativeHostProtocolError.invalidJSON }
-        let request = try requestDecoder.decode(frame.payload)
+        let request: NativeHostRequest
+        do {
+          request = try requestDecoder.decode(frame.payload)
+        } catch let error as NativeHostProtocolError {
+          // One malformed request must not end the session: the frame boundary
+          // was honored, so the stream is still in sync. Answer and keep going
+          // (see NativeHostRequestDecoding).
+          try output.write(
+            contentsOf: NativeFrameCodec.encode(
+              kind: .json,
+              payload: try NativeHostRequestDecoding.errorReply(
+                for: frame.payload, error: error)))
+          continue
+        }
         let reply = try await handler.handle(request)
         try output.write(contentsOf: NativeFrameCodec.encode(kind: .json, payload: reply.json))
         if let binary = reply.binary {

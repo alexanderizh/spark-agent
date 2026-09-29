@@ -96,6 +96,19 @@ export const AtomicSelectTextSchema = z
 
 export const AtomicSecondaryActionSchema = z.object({ at: AtSchema }).strict()
 
+/**
+ * Optional target for `screenshot`. Without a target the session keeps its
+ * sticky binding (i.e. whatever it already controls); with `app`/`windowId` the
+ * session is re-bound to that window first, so the returned tree is both the
+ * one the model sees AND the frame its next action resolves against.
+ */
+export const AtomicScreenshotSchema = z
+  .object({
+    app: z.string().trim().min(1).max(300).optional(),
+    windowId: z.string().trim().min(1).max(256).optional(),
+  })
+  .strict()
+
 export const ATOMIC_TOOL_NAMES = [
   'click',
   'type_text',
@@ -233,7 +246,12 @@ export class ComputerAtomicToolHandlers {
   ): Promise<Record<string, unknown>> {
     switch (toolName) {
       case 'screenshot': {
-        const observation = await this.atomic.observe(sessionId, turnId)
+        const request = parse(AtomicScreenshotSchema, args ?? {})
+        const target = await this.resolveObservationTarget(request)
+        const observation =
+          target == null
+            ? await this.atomic.observe(sessionId, turnId)
+            : await this.atomic.observe(sessionId, turnId, target)
         return this.result('screenshot', sessionId, {
           observation,
           noop: false,
@@ -563,6 +581,60 @@ export class ComputerAtomicToolHandlers {
       tree: observation.tree.text,
       ...(screenshot == null ? { screenshotUnavailable: true } : { screenshot }),
     }
+  }
+
+  /**
+   * Resolves an optional `app` / `windowId` selector to a concrete window using
+   * the live inventory. Deliberately a pure lookup (no launch / raise): a
+   * screenshot is a read, and launching an app as a side effect of a read would
+   * surprise the user. Matching is exact against id / name / bundle id, the same
+   * contract `list_windows` documents.
+   */
+  private async resolveObservationTarget(request: {
+    app?: string | undefined
+    windowId?: string | undefined
+  }): Promise<{ appId: string; windowId: string } | null> {
+    if (request.app == null && request.windowId == null) return null
+    if (request.app != null && request.windowId != null) {
+      throw invalidArguments('Provide at most one of app or windowId')
+    }
+    const windows = (await this.services.backend.listWindows()).filter(
+      (candidate) => !candidate.minimized,
+    )
+    if (request.windowId != null) {
+      const match = windows.find((candidate) => candidate.window.id === request.windowId)
+      if (match == null) {
+        throw new ComputerUseBrokerError(
+          'focus_mismatch',
+          `No controllable window with id ${request.windowId}`,
+          undefined,
+          { retryable: true },
+        )
+      }
+      return { appId: match.app.id, windowId: match.window.id }
+    }
+    const expected = (request.app as string).trim().toLocaleLowerCase()
+    const matches = windows.filter((candidate) =>
+      [candidate.app.id, candidate.app.name, candidate.app.bundleId]
+        .filter((value): value is string => typeof value === 'string')
+        .some((value) => value.trim().toLocaleLowerCase() === expected),
+    )
+    const chosen =
+      matches.find((candidate) => candidate.focused) ??
+      [...matches].sort(
+        (left, right) =>
+          right.window.bounds.width * right.window.bounds.height -
+          left.window.bounds.width * left.window.bounds.height,
+      )[0]
+    if (chosen == null) {
+      throw new ComputerUseBrokerError(
+        'focus_mismatch',
+        `No controllable window found for application ${request.app}`,
+        undefined,
+        { retryable: true },
+      )
+    }
+    return { appId: chosen.app.id, windowId: chosen.window.id }
   }
 
   private async readScreenshot(

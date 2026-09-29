@@ -245,11 +245,7 @@ export class ComputerUseAgentController {
       }
       case 'get_app_state': {
         const request = parseGetAppState(args)
-        const result = await this.createDesktopState(services.backend).getAppState({
-          launchIfNeeded: request.launchIfNeeded,
-          ...(request.app == null ? {} : { app: request.app }),
-          ...(request.windowId == null ? {} : { windowId: request.windowId }),
-        })
+        const result = await this.resolveAppStateObservation(services, sessionId, request)
         if (!request.includeSnapshot) return { ...result, snapshot: null }
         const context = this.sessionContexts.get(sessionId)
         if (context == null || services.snapshots == null) {
@@ -301,21 +297,51 @@ export class ComputerUseAgentController {
         return this.waitForCompletion(services, computerSession, timeoutMs)
       }
       case 'bind_target': {
-        const computerSession = this.requireOwnedSession(services, sessionId, args)
-        if (computerSession.status !== 'paused') {
-          throw new ComputerUseBrokerError(
-            'action_not_allowed',
-            'Pause the Computer Use task before changing its bound target window',
+        const request = parseBindTarget(args)
+        const owned =
+          request.computerSessionId == null
+            ? null
+            : this.requireOwnedSession(services, sessionId, args)
+        if (owned != null) {
+          if (request.targetWindowId == null) throw invalidArguments()
+          if (owned.status !== 'paused') {
+            throw new ComputerUseBrokerError(
+              'action_not_allowed',
+              'Pause the Computer Use task before changing its bound target window',
+            )
+          }
+          const target = requireTargetWindowById(
+            await services.backend.listWindows(),
+            request.targetWindowId,
           )
+          services.backend.bindSessionTarget?.({
+            computerSessionId: owned.id,
+            appId: target.app.id,
+            windowId: target.window.id,
+          })
+          return { computerSession: owned, targetWindowId: target.window.id }
         }
-        const targetWindowId = readTargetWindowId(args)
-        const target = requireTargetWindowById(await services.backend.listWindows(), targetWindowId)
-        services.backend.bindSessionTarget?.({
-          computerSessionId: computerSession.id,
-          appId: target.app.id,
-          windowId: target.window.id,
-        })
-        return { computerSession, targetWindowId: target.window.id }
+        // No delegated task: bind the IMPLICIT atomic session instead. The old
+        // contract made rebinding depend on a paused start_task, so the atomic
+        // path had no supported way to say "work on this app" — it could only
+        // adopt whatever happened to be frontmost on the first call.
+        const context = this.sessionContexts.get(sessionId)
+        if (context == null) throw unavailable('Agent turn context is unavailable')
+        const target = await this.resolveBindTarget(services, request)
+        const observation = await this.atomicBundleFor(services).service.observe(
+          sessionId,
+          context.turnId,
+          { appId: target.app.id, windowId: target.window.id },
+        )
+        return {
+          bound: {
+            appId: target.app.id,
+            appName: target.app.name,
+            windowId: target.window.id,
+            windowTitle: target.window.title,
+          },
+          observation,
+        }
       }
       case 'pause': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
@@ -636,6 +662,90 @@ export class ComputerUseAgentController {
     }
   }
 
+  /**
+   * Resolves an app-state request into a result whose tree IS the frame the
+   * atomic tools will act against.
+   *
+   * When an Agent turn is live the observation is taken through the implicit
+   * atomic session (bound to the requested window first) instead of the
+   * standalone desktop-state read. That single change removes the worst
+   * model-facing failure of the atomic path: `get_app_state` and the atomic
+   * action tools used to capture their own frames, so the element ids the model
+   * had just been shown resolved against a different tree (usually the frontmost
+   * window of the first call) and every second step failed with `stale_tree`.
+   */
+  private async resolveAppStateObservation(
+    services: ComputerUseServices,
+    sessionId: string,
+    request: {
+      app?: string | undefined
+      windowId?: string | undefined
+      launchIfNeeded?: boolean | undefined
+    },
+  ): Promise<Awaited<ReturnType<ComputerDesktopStateService['getAppState']>>> {
+    const desktopState = this.createDesktopState(services.backend)
+    const selector: {
+      app?: string
+      windowId?: string
+      launchIfNeeded?: boolean
+    } = {
+      ...(request.app == null ? {} : { app: request.app }),
+      ...(request.windowId == null ? {} : { windowId: request.windowId }),
+      ...(request.launchIfNeeded == null ? {} : { launchIfNeeded: request.launchIfNeeded }),
+    }
+    const context = this.sessionContexts.get(sessionId)
+    if (context == null) {
+      return desktopState.getAppState(selector)
+    }
+    const resolved = await desktopState.getAppState({ ...selector, includeObservation: false })
+    try {
+      const observation = await this.atomicBundleFor(services).service.observe(
+        sessionId,
+        context.turnId,
+        { appId: resolved.target.app.id, windowId: resolved.target.window.id },
+      )
+      return { ...resolved, observation }
+    } catch (error) {
+      // The window metadata is still useful; degrade to the direct read rather
+      // than failing the whole observation because the atomic session could not
+      // be armed (e.g. the desktop input lane is held by another agent).
+      log.warn('get_app_state could not adopt the implicit atomic frame', {
+        sessionId,
+        appId: resolved.target.app.id,
+        windowId: resolved.target.window.id,
+        error,
+      })
+      return desktopState.getAppState({
+        launchIfNeeded: false,
+        windowId: resolved.target.window.id,
+      })
+    }
+  }
+
+  /** Resolves a bind_target request (app selector or window id) to a live window. */
+  private async resolveBindTarget(
+    services: ComputerUseServices,
+    request: { targetApp?: string | undefined; targetWindowId?: string | undefined },
+  ): Promise<NativeWindowDescriptor> {
+    if ((request.targetApp == null) === (request.targetWindowId == null)) {
+      throw new ComputerUseBrokerError(
+        'action_not_allowed',
+        'bind_target needs exactly one of targetApp or targetWindowId',
+      )
+    }
+    if (request.targetWindowId != null) {
+      return requireTargetWindowById(await services.backend.listWindows(), request.targetWindowId)
+    }
+    const target = await this.appTargetResolver.resolve(
+      request.targetApp as string,
+      services.backend,
+    )
+    if (target == null) {
+      throw unavailable(`Application ${request.targetApp} is not available on this desktop`)
+    }
+    return target
+  }
+
   private requireOwnedSession(
     services: ComputerUseServices,
     sessionId: string,
@@ -876,13 +986,39 @@ function readComputerSessionId(args: unknown): string {
   return value
 }
 
-function readTargetWindowId(args: unknown): string {
+interface BindTargetRequest {
+  computerSessionId?: string
+  targetWindowId?: string
+  targetApp?: string
+}
+
+/** Lenient, additive parse: the legacy {computerSessionId, targetWindowId} form still works. */
+function parseBindTarget(args: unknown): BindTargetRequest {
   if (args == null || typeof args !== 'object' || Array.isArray(args)) throw invalidArguments()
-  const value = (args as Record<string, unknown>).targetWindowId
-  if (typeof value !== 'string' || value.trim() === '' || value.length > 256) {
+  const record = args as Record<string, unknown>
+  const read = (key: string, max: number): string | undefined => {
+    const value = record[key]
+    if (value == null) return undefined
+    if (typeof value !== 'string' || value.trim() === '' || value.length > max) {
+      throw invalidArguments()
+    }
+    return value
+  }
+  const request: BindTargetRequest = {}
+  const computerSessionId = read('computerSessionId', 200)
+  const targetWindowId = read('targetWindowId', 256)
+  const targetApp = read('targetApp', 300)
+  if (computerSessionId != null) request.computerSessionId = computerSessionId
+  if (targetWindowId != null) request.targetWindowId = targetWindowId
+  if (targetApp != null) request.targetApp = targetApp
+  if (
+    request.computerSessionId == null &&
+    request.targetWindowId == null &&
+    request.targetApp == null
+  ) {
     throw invalidArguments()
   }
-  return value
+  return request
 }
 
 function invalidArguments(): ComputerUseBrokerError {

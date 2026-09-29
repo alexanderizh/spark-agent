@@ -10,7 +10,10 @@ let sparkComputerInjectedEventTag: Int64 = 0x5350_4152_4B43_5553
 final class MacUserInputMonitor: @unchecked Sendable {
   private let lock = NSLock()
   private var bindings: [String: UserInputBinding] = [:]
-  private var takeoverSessions: Set<String> = []
+  /// Per-session action window deciding whether a physical interaction must abort
+  /// the action that is currently in flight. See `NativeTakeoverWindow` for why the
+  /// decision is scoped to the action instead of being a sticky session flag.
+  private var takeoverWindows: [String: NativeTakeoverWindow] = [:]
   /// Timestamp of the last physical input that actually targets a bound
   /// process/window. User activity in OTHER applications must not stall the
   /// agent (Codex semantics): only target-directed input resets the idle wait.
@@ -36,6 +39,25 @@ final class MacUserInputMonitor: @unchecked Sendable {
     start()
   }
 
+  /// Arms the takeover window for a new action of `sessionID`: any interaction
+  /// recorded BEFORE this call belongs to a previous action (or to the user's own
+  /// work between actions) and must not abort this one. Called once per action,
+  /// right after the interruption token is armed.
+  func beginAction(sessionID: String) {
+    let now = Date.timeIntervalSinceReferenceDate
+    lock.withLock {
+      takeoverWindows[sessionID, default: NativeTakeoverWindow()].begin(at: now)
+    }
+  }
+
+  /// Disarms a finished action so a later request for the same session cannot be
+  /// cancelled by an interaction that landed after the action completed.
+  func endAction(sessionID: String) {
+    lock.withLock {
+      takeoverWindows[sessionID]?.end()
+    }
+  }
+
   func bind(sessionID: String, processID: pid_t, bounds: NativeRect) {
     // Every action binds its target here — the natural moment to retry a tap
     // that failed to start (TCC race at launch) or was lost entirely. Without
@@ -46,7 +68,7 @@ final class MacUserInputMonitor: @unchecked Sendable {
       let isNewBinding = bindings[sessionID] == nil
       bindings[sessionID] = UserInputBinding(processID: processID, bounds: bounds)
       if isNewBinding {
-        takeoverSessions.remove(sessionID)
+        takeoverWindows.removeValue(forKey: sessionID)
       }
     }
   }
@@ -54,12 +76,14 @@ final class MacUserInputMonitor: @unchecked Sendable {
   func unbind(sessionID: String) {
     lock.withLock {
       bindings.removeValue(forKey: sessionID)
-      takeoverSessions.remove(sessionID)
+      takeoverWindows.removeValue(forKey: sessionID)
     }
   }
 
+  /// True only when the user interacted with the bound target WHILE the current
+  /// action was in flight. A session with no armed action never reports one.
   func takeoverDetected(sessionID: String) -> Bool {
-    lock.withLock { takeoverSessions.contains(sessionID) }
+    lock.withLock { takeoverWindows[sessionID]?.detectsTakeover() ?? false }
   }
 
   func waitForUserInputIdle(
@@ -71,14 +95,19 @@ final class MacUserInputMonitor: @unchecked Sendable {
     let deadline = clock.now.advanced(by: maximumWait)
     let idleSeconds = durationSeconds(idleFor)
     while clock.now < deadline {
-      if takeoverDetected(sessionID: sessionID) { throw NativeHostPlatformError.userTakeover }
+      if takeoverDetected(sessionID: sessionID) {
+        throw NativeHostPlatformError.userInteractionDetected
+      }
       let lastInput = lock.withLock { lastTargetInputAt }
       if Date.timeIntervalSinceReferenceDate - lastInput >= idleSeconds { return }
       try await Task.sleep(for: .milliseconds(25))
     }
     // Continuous input in another application must not cancel the bound task. Only a
-    // target-window interaction recorded in `takeoverSessions` is an explicit takeover.
-    if takeoverDetected(sessionID: sessionID) { throw NativeHostPlatformError.userTakeover }
+    // target-window interaction recorded while an action was in flight is an explicit
+    // yield to the user (see NativeTakeoverWindow).
+    if takeoverDetected(sessionID: sessionID) {
+      throw NativeHostPlatformError.userInteractionDetected
+    }
   }
 
   private func start() {
@@ -176,7 +205,7 @@ final class MacUserInputMonitor: @unchecked Sendable {
       var targetsBoundProcess = false
       if let keyboardProcessID {
         for (sessionID, binding) in bindings where binding.processID == keyboardProcessID {
-          takeoverSessions.insert(sessionID)
+          takeoverWindows[sessionID, default: NativeTakeoverWindow()].recordInteraction(at: now)
           targetsBoundProcess = true
         }
       }
@@ -193,7 +222,7 @@ final class MacUserInputMonitor: @unchecked Sendable {
       for (sessionID, binding) in bindings
       where binding.processID == pointerProcessID && contains(point, in: binding.bounds)
       {
-        takeoverSessions.insert(sessionID)
+        takeoverWindows[sessionID, default: NativeTakeoverWindow()].recordInteraction(at: now)
       }
     }
   }

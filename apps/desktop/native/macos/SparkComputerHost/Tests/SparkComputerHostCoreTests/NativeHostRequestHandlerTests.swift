@@ -43,6 +43,24 @@ final class NativeHostRequestHandlerTests: XCTestCase {
       )
     )
     XCTAssertEqual(try responseErrorCode(unsupported.json), "environment_unavailable")
+
+    // A minimized target window keeps the established `focus_mismatch` contract
+    // (the same code already carries "the requested window is no longer
+    // available") but must say what actually blocks the observation: the old
+    // message claimed the foreground application identity changed, which is not
+    // what happened and pointed diagnosis the wrong way.
+    let minimizedProvider = FakePlatformProvider(captureError: .windowMinimized)
+    let minimizedHandler = NativeHostRequestHandler(provider: minimizedProvider)
+    let minimized = try await minimizedHandler.handle(
+      .captureWindow(requestID: "request-3", snapshotID: "snapshot-1", windowID: "window-1")
+    )
+    XCTAssertEqual(try responseErrorCode(minimized.json), "focus_mismatch")
+    let minimizedError = try XCTUnwrap(
+      try responseObject(minimized.json)["error"] as? [String: Any])
+    let message = try XCTUnwrap(minimizedError["message"] as? String)
+    XCTAssertTrue(message.contains("minimized"), message)
+    XCTAssertTrue(message.contains("restore"), message)
+    XCTAssertEqual(minimizedError["retryable"] as? Bool, true)
   }
 
   func testReturnsObservationWithAdjacentPngAndExecutesBoundAction() async throws {

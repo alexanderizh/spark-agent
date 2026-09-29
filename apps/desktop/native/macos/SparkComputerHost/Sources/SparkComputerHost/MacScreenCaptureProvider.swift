@@ -179,6 +179,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     }
   }
 
+
   func observe(
     snapshotID: String,
     appID: String,
@@ -193,6 +194,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     guard !NativeLockScreen.isLocked() else {
       throw NativeHostPlatformError.screenLocked
     }
+    let tStart = DispatchTime.now()
     // Follow-enabled: a dead requested window rebinds to the app's live window
     // instead of erroring, so Electron window churn never wedges the session.
     let before = try await resolvingFocusedTarget(
@@ -204,11 +206,15 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       before.identity.executableIdentity ?? "",
       before.identity.signingIdentity ?? "",
     ].joined(separator: "|")
+    traceMark("resolve-before", tStart)
+    let tCapture = DispatchTime.now()
     let captured = try await captureObservedWindow(
       id: before.identity.windowID,
       bindingKey: captureBindingKey,
       persistent: persistentCapture
     )
+    traceMark("capture", tCapture)
+    let tTree = DispatchTime.now()
     let tree = accessibilityOrVisualTree(
       processID: before.processID,
       windowBounds: before.identity.windowBounds,
@@ -216,16 +222,31 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       previousTreeVersion: previousTreeVersion,
       fullTree: fullTree
     )
-    let after: FocusedTarget
+    traceMark("tree(elements=\(tree.elements.count))", tTree)
+    // Identity re-confirmation for the captured frame. The lightweight check
+    // (CGWindowList + pid + bounds, no SCShareableContent and no SecCode work)
+    // covers exactly what this guard needs — "is the window still the one we
+    // captured" — and mirrors the action path. Measured on Finder: the full
+    // inventory cost ~7 s per observation, i.e. more than the AX traversal it
+    // was guarding.
+    let tAfter = DispatchTime.now()
     do {
-      after = try await resolvingFocusedTarget(
-        appID: appID, windowID: before.identity.windowID, allowWindowFollow: true)
-      try NativeInputPolicy.validateApplicationIdentity(
-        expected: before.identity, current: after.identity)
+      if let lightweight = lightweightFocusedTarget(expected: before.identity) {
+        try NativeInputPolicy.validateApplicationIdentity(
+          expected: before.identity, current: lightweight.identity)
+        traceMark("revalidate(lightweight)", tAfter)
+      } else {
+        let after = try await resolvingFocusedTarget(
+          appID: appID, windowID: before.identity.windowID, allowWindowFollow: true)
+        try NativeInputPolicy.validateApplicationIdentity(
+          expected: before.identity, current: after.identity)
+        traceMark("revalidate(full)", tAfter)
+      }
     } catch {
       await stopPersistentCapture()
       throw error
     }
+    traceMark("total", tStart)
     let capturedDate = Date()
     let capturedAt = ISO8601DateFormatter().string(from: capturedDate)
     var frameHasher = SHA256()
@@ -275,6 +296,13 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     // Arm the global Esc-cancel bus for THIS action (drops stale requests from
     // previous actions); injection loops poll it between synthesized events.
     NativeInterruptionToken.shared.begin()
+    // Arm the per-action takeover window with the same "only this action counts"
+    // semantics: interactions the user performed before this action started (or
+    // between actions, while they were simply using the machine) must never abort
+    // it. Without this the takeover flag was sticky per session and turned every
+    // later background action into a bogus `handoff_required`.
+    userInput.beginAction(sessionID: envelope.computerSessionID)
+    defer { userInput.endAction(sessionID: envelope.computerSessionID) }
     let result = try await executeActionCore(envelope)
     guard envelope.includeSkyshot, result.execution.executionChannel != nil else {
       return result.execution
@@ -310,7 +338,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     // validateTarget polled the monitor), so a user who had just taken over
     // still ate one stray click/keystroke before the abort surfaced.
     guard !userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
-      throw NativeHostPlatformError.userTakeover
+      throw NativeHostPlatformError.userInteractionDetected
     }
 
     if envelope.executionLane == .foregroundInput,
@@ -434,7 +462,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     return NativeAXTreeSnapshot(
       treeVersion: version,
       mode: .full,
-      text: visualText,
+      text: Self.visualFallbackNotice(reason: nil) + "\n" + visualText,
       elements: [],
       sensitiveRegions: []
     )
@@ -715,7 +743,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     before: FocusedTarget
   ) async throws -> NativeActionExecution {
     if userInput.takeoverDetected(sessionID: envelope.computerSessionID) {
-      throw NativeHostPlatformError.userTakeover
+      throw NativeHostPlatformError.userInteractionDetected
     }
     if envelope.executionLane == .foregroundInput {
       try await userInput.waitForUserInputIdle(sessionID: envelope.computerSessionID)
@@ -810,7 +838,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       // user takeover; only the expected target identity check is relaxed after the action
       // so the broker can re-observe the newly focused window.
       guard !userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
-        throw NativeHostPlatformError.userTakeover
+        throw NativeHostPlatformError.userInteractionDetected
       }
     } else {
       try await confirmActionTarget(
@@ -925,12 +953,21 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     windowID: String,
     allowWindowFollow: Bool
   ) async throws -> FocusedTarget {
-    var matches = try await listWindows().filter {
+    let inventory = try await listWindows()
+    var matches = inventory.filter {
       !$0.minimized && $0.app.id == appID && $0.window.id == windowID
+    }
+    // The requested window exists but is minimized: it cannot be captured, and
+    // silently rebinding to another window of the same application would answer
+    // a request for window A with window B.
+    if matches.isEmpty,
+      inventory.contains(where: { $0.minimized && $0.app.id == appID && $0.window.id == windowID })
+    {
+      throw NativeHostPlatformError.windowMinimized
     }
     if matches.isEmpty, allowWindowFollow {
       // Self-heal: any live window of the same validated application.
-      let appWindows = try await listWindows().filter { !$0.minimized && $0.app.id == appID }
+      let appWindows = inventory.filter { !$0.minimized && $0.app.id == appID }
       if let focused = appWindows.first(where: { $0.focused }) { matches = [focused] }
       else if let largest = appWindows.max(by: {
         $0.window.bounds.width * $0.window.bounds.height
@@ -1016,20 +1053,31 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     previousTreeVersion: String?,
     fullTree: Bool
   ) -> NativeAXTreeSnapshot {
-    if accessibility.isAvailable,
-      let snapshot = try? accessibility.observe(
-        processID: processID,
-        preferredWindowBounds: windowBounds,
-        previousTreeVersion: previousTreeVersion,
-        fullTree: fullTree
-      )
-    {
-      return snapshot
+    var accessibilityFailure: String?
+    if accessibility.isAvailable {
+      do {
+        return try accessibility.observe(
+          processID: processID,
+          preferredWindowBounds: windowBounds,
+          previousTreeVersion: previousTreeVersion,
+          fullTree: fullTree
+        )
+      } catch {
+        accessibilityFailure = describeAccessibilityFailure(error)
+      }
+    } else {
+      accessibilityFailure = "accessibility_permission_unavailable"
     }
 
     // Electron, Canvas and custom-rendered applications frequently expose no
     // usable AX window. Keep the screenshot-coordinate control path available
-    // with an empty tree instead of failing the entire task.
+    // with an empty tree instead of failing the entire task — but say so: a
+    // silent fallback used to hand the model OCR noise with no way to tell that
+    // the accessibility tree was missing (measured: a 43 s failed traversal
+    // reported as an ordinary observation).
+    writeHostDiagnostic(
+      "accessibility_observation_failed pid=\(processID) reason=\(accessibilityFailure ?? "unknown")"
+    )
     let digest = SHA256.hash(data: captured.bytes).prefix(16).map {
       String(format: "%02x", $0)
     }.joined()
@@ -1039,10 +1087,25 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     return NativeAXTreeSnapshot(
       treeVersion: version,
       mode: canDiff ? .diff : .full,
-      text: canDiff ? #"{"changed":[],"removed":[]}"# : visualText,
+      text: canDiff
+        ? #"{"changed":[],"removed":[]}"#
+        : Self.visualFallbackNotice(reason: accessibilityFailure) + "\n" + visualText,
       elements: [],
       sensitiveRegions: []
     )
+  }
+
+  /// One-line marker prepended to an OCR-only tree so neither the model nor a
+  /// log reader can mistake it for a real accessibility tree.
+  static func visualFallbackNotice(reason: String?) -> String {
+    "[accessibility tree unavailable: \(reason ?? "unknown"); this is OCR text with no element ids — use coordinates]"
+  }
+
+  private func describeAccessibilityFailure(_ error: Error) -> String {
+    if let platformError = error as? NativeHostPlatformError {
+      return "\(platformError)"
+    }
+    return "\(error)"
   }
 
   private func focusWindow(processID: pid_t) throws -> NativeActionStatus {
@@ -1408,4 +1471,22 @@ private func copyAXAttribute<Value>(
     let value
   else { return nil }
   return value as? Value
+}
+
+/// Temporary development tracing (enabled with SPARK_COMPUTER_TRACE=1).
+func traceMark(_ label: String, _ since: DispatchTime) {
+  guard ProcessInfo.processInfo.environment["SPARK_COMPUTER_TRACE"] == "1" else { return }
+  let ms = Double(DispatchTime.now().uptimeNanoseconds - since.uptimeNanoseconds) / 1_000_000
+  FileHandle.standardError.write(Data("[trace] \(label) \(String(format: "%.0f", ms)) ms\n".utf8))
+}
+
+/// Structured diagnostics from the native host.
+///
+/// stderr is forwarded to the application log by the host supervisor
+/// (`NativeHostClient` logs it at `warn` level), so a line written here is what
+/// a developer sees in main.log when the host decides to degrade — for example
+/// when the accessibility tree cannot be read and the observation falls back to
+/// OCR text.
+func writeHostDiagnostic(_ message: String) {
+  FileHandle.standardError.write(Data("[spark-computer-host] \(message)\n".utf8))
 }

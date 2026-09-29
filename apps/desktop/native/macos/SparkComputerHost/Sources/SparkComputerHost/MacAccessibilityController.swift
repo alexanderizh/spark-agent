@@ -17,6 +17,18 @@ final class MacAccessibilityController: @unchecked Sendable {
   private var cachedProcessID: pid_t = 0
   private var cachedWindow: AXUIElement?
   private var lastTraversalUptime: TimeInterval = 0
+  /// Process whose Chromium web-content tree has already been read once.
+  /// Chromium builds that tree asynchronously after the `AXManualAccessibility`
+  /// handshake and keeps it afterwards, so the bounded wait is only worth paying
+  /// before the first successful read **of this process** — a second Chromium
+  /// app in the same session starts from scratch. See `NativeWebTreeReadiness`.
+  private var webTreeSeenForProcessID: pid_t?
+  /// Windows of this process whose web-content tree never converged even after
+  /// the bounded wait. Retrying the full schedule on every observation would
+  /// make a genuine shell-only window (Electron tray popups, helper windows)
+  /// cost ~1.8 s each time, so a window that already exhausted the wait is
+  /// served immediately on later observations.
+  private var exhaustedWebTreeWindows: Set<CFHashCode> = []
   private var observer: AXObserver?
   private var observerSource: CFRunLoopSource?
   private let dirtyLock = NSLock()
@@ -42,7 +54,7 @@ final class MacAccessibilityController: @unchecked Sendable {
     // restart). Non-Chromium apps reject them, which we ignore. This is the
     // single biggest reason competitors can read an Electron app's structure
     // tree while we previously saw an almost-empty tree.
-    activateChromiumAccessibility(application)
+    let lazyWebTree = activateChromiumAccessibility(application)
     let window = try selectAXWindow(
       application: application,
       processID: processID,
@@ -64,37 +76,75 @@ final class MacAccessibilityController: @unchecked Sendable {
       age: ProcessInfo.processInfo.systemUptime - lastTraversalUptime,
       maxAge: 1
     ) {
-      let snapshot = try publishCached(
-        cachedRawElements,
-        previousTreeVersion: previousTreeVersion,
-        fullTree: fullTree
+      let snapshot = applyingNotices(
+        try publishCached(
+          cachedRawElements,
+          previousTreeVersion: previousTreeVersion,
+          fullTree: fullTree
+        ),
+        webTreePending: false,
+        traversalTruncated: cachedRawElements.count >= Self.maxElements
       )
       recordPublishedSnapshot(snapshot)
       return snapshot
     }
 
+    let tCollect = DispatchTime.now()
     var raw: [NativeAXRawElement] = []
     var elements: [String: AXUIElement] = [:]
     let windowFrame = elementBounds(window)
     try collect(
       window, path: "window", depth: 0, windowFrame: windowFrame, output: &raw,
       elements: &elements)
-    // Chromium populates the web-content tree asynchronously after we flip
-    // AXManualAccessibility. A near-empty first pass on a real window usually
-    // means the tree is still being built — wait briefly and retry a couple
-    // of times before giving up. Bounded and only triggered when the tree is
-    // suspiciously small.
-    if raw.count <= 3 {
-      for _ in 0..<2 {
-        Thread.sleep(forTimeInterval: 0.15)
+
+    // Chromium populates the web-content tree asynchronously after the
+    // handshake above, and a backgrounded renderer can take seconds to answer.
+    // Converge on "the document container exists and has content" instead of on
+    // a raw element count, then wait with backoff — bounded, and skipped for
+    // windows that already exhausted the wait. See NativeWebTreeReadiness for
+    // the measurements behind this policy.
+    let windowKey = CFHash(window)
+    let webTreeSeenForProcess = webTreeSeenForProcessID == processID
+    let firstPassCount = raw.count
+    var attempts = 0
+    var webTreePending = false
+    if !exhaustedWebTreeWindows.contains(windowKey) {
+      while NativeWebTreeReadiness.shouldRetry(
+        acceptsManualAccessibility: lazyWebTree,
+        elements: raw,
+        attempts: attempts,
+        webTreeSeenForProcess: webTreeSeenForProcess)
+      {
+        let delayMs = NativeWebTreeReadiness.retryDelaysMs[attempts]
+        attempts += 1
+        // The delays are pure waiting for the renderer, so never let the
+        // traversal itself run with a stale element cache in between.
+        if delayMs > 0 { Thread.sleep(forTimeInterval: Double(delayMs) / 1_000) }
         raw.removeAll(keepingCapacity: true)
         elements.removeAll(keepingCapacity: true)
         try collect(
           window, path: "window", depth: 0, windowFrame: windowFrame, output: &raw,
           elements: &elements)
-        if raw.count > 3 { break }
+        if NativeWebTreeReadiness.hasWebContent(raw) { break }
+      }
+      let stillPending = lazyWebTree && !NativeWebTreeReadiness.hasWebContent(raw)
+      webTreePending =
+        stillPending && raw.count <= NativeWebTreeReadiness.shellElementBudget
+      if stillPending, attempts >= NativeWebTreeReadiness.retryDelaysMs.count {
+        exhaustedWebTreeWindows.insert(windowKey)
+      }
+      if attempts > 0 || webTreePending {
+        // Log both ends of the convergence: the first pass is what a host
+        // without this loop would have published, so the line doubles as the
+        // before/after evidence in main.log.
+        writeHostDiagnostic(
+          "ax_web_tree_readiness pid=\(processID) lazy_tree=\(lazyWebTree) "
+            + "first_pass=\(firstPassCount) final=\(raw.count) attempts=\(attempts) "
+            + "ready=\(!stillPending)"
+        )
       }
     }
+    if NativeWebTreeReadiness.hasWebContent(raw) { webTreeSeenForProcessID = processID }
     // Open menus / native dropdown lists are owned by the APPLICATION, not the
     // window, so a window-rooted traversal never sees them — after the agent
     // opens a menu the model would face a tree with zero menu items. Codex
@@ -104,21 +154,123 @@ final class MacAccessibilityController: @unchecked Sendable {
     // semantic actions all cover the menu items). Defensive by design: any
     // miss simply leaves the tree unchanged.
     mergeOpenMenus(application: application, raw: &raw, elements: &elements)
-    let snapshot = try publishCached(
-      raw,
+    // Resolve "where input actually goes" before publishing: the tree is what
+    // the model sees, and a wrong focus marker sends it to the wrong control.
+    let focusedRaw = markTrueFocus(raw, elements: elements, processID: processID)
+    dumpRawIfRequested(focusedRaw)
+    traceMark("  collect(raw=\(raw.count))", tCollect)
+    let tPublish = DispatchTime.now()
+    let published = try publishCached(
+      focusedRaw,
       previousTreeVersion: previousTreeVersion,
       fullTree: fullTree
     )
+    // Say what the model is looking at: a shell-only tree is a transient state
+    // of a lazy (Chromium) tree, not a small interface. Prepending the marker
+    // keeps the element ids and their order untouched.
+    let snapshot = applyingNotices(
+      published,
+      webTreePending: webTreePending,
+      traversalTruncated: raw.count >= Self.maxElements
+    )
+    traceMark("  publish(lines=\(snapshot.text.split(separator: "\n").count))", tPublish)
     elementsByRuntimeID = elements
     boundsByElementID = Dictionary(
       uniqueKeysWithValues: snapshot.elements.map { ($0.id, $0.bounds) })
     recordPublishedSnapshot(snapshot)
-    cachedRawElements = raw
+    if webTreePending {
+      // Never cache an unfinished tree: the cache is exactly what turned a
+      // single mistimed first traversal into a persistently empty Electron
+      // target for the following second.
+      cachedRawElements.removeAll(keepingCapacity: true)
+      lastTraversalUptime = 0
+    } else {
+      cachedRawElements = focusedRaw
+      lastTraversalUptime = ProcessInfo.processInfo.systemUptime
+    }
     cachedProcessID = processID
     cachedWindow = window
-    lastTraversalUptime = ProcessInfo.processInfo.systemUptime
     cachedGeneration = generation
     return snapshot
+  }
+
+  /// Say what the model is NOT looking at.
+  ///
+  /// Two independent cuts can hide part of a window, and both used to be
+  /// invisible in the published outline:
+  ///  - a lazy Chromium tree that has not been built yet
+  ///    (`NativeWebTreeReadiness.pendingNotice`), and
+  ///  - a traversal that stopped at `maxElements` — measured on the packaged
+  ///    SparkWork, which produced exactly 2000 elements with no marker at all, so
+  ///    the outline simply appeared to end.
+  /// Prepending/appending the markers keeps element ids and their order intact.
+  private func applyingNotices(
+    _ published: NativeAXTreeSnapshot,
+    webTreePending: Bool,
+    traversalTruncated: Bool
+  ) -> NativeAXTreeSnapshot {
+    var parts: [String] = []
+    if webTreePending { parts.append(NativeWebTreeReadiness.pendingNotice) }
+    parts.append(published.text)
+    if traversalTruncated {
+      parts.append(NativeAXTreeRenderer.traversalLimitNotice(limit: Self.maxElements))
+    }
+    guard parts.count > 1 else { return published }
+    return NativeAXTreeSnapshot(
+      treeVersion: published.treeVersion,
+      mode: published.mode,
+      text: parts.joined(separator: "\n"),
+      elements: published.elements,
+      sensitiveRegions: published.sensitiveRegions)
+  }
+
+  /// Development aid: `SPARK_CU_DUMP_AX_RAW=<path>` writes the raw pre-order AX
+  /// list (depth, role, role description, name, value, actions, flags, bounds)
+  /// so tree-quality decisions can be measured against real applications instead
+  /// of guessed — the published snapshot has no depth and drops every folded
+  /// node, which is exactly the information needed to judge a folding rule.
+  /// Unset in production; an unwritable path is ignored rather than fatal.
+  private func dumpRawIfRequested(_ elements: [NativeAXRawElement]) {
+    guard let path = ProcessInfo.processInfo.environment["SPARK_CU_DUMP_AX_RAW"],
+      !path.isEmpty
+    else { return }
+    try? NativeAXRawDump.render(elements).write(
+      toFile: path, atomically: true, encoding: .utf8)
+  }
+
+  /// Keeps `[focused]` on the element the application reports as its focused UI
+  /// element, and only there.
+  ///
+  /// Per-element `AXFocused` is not trustworthy: measured on a Finder sidebar,
+  /// 24 of 24 `AXCell`s reported `AXFocused = true` while `AXList` reported it
+  /// too — 25 claims of focus for a single keyboard focus. The model uses the
+  /// marker to decide where typing lands, so a wrong marker is worse than no
+  /// marker. Fails open: if the focused element cannot be resolved, the
+  /// collected flags are left untouched.
+  private func markTrueFocus(
+    _ raw: [NativeAXRawElement], elements: [String: AXUIElement], processID: pid_t
+  ) -> [NativeAXRawElement] {
+    guard raw.contains(where: \.focused) else { return raw }
+    let application = AXUIElementCreateApplication(processID)
+    AXUIElementSetMessagingTimeout(application, 2)
+    guard var node: AXUIElement = copyAttribute(application, kAXFocusedUIElementAttribute) else {
+      return raw
+    }
+    var targetRuntimeID: String?
+    for _ in 0..<8 {
+      if let match = elements.first(where: { CFEqual($0.value, node) })?.key {
+        targetRuntimeID = match
+        break
+      }
+      guard let parent: AXUIElement = copyAttribute(node, kAXParentAttribute) else { break }
+      node = parent
+    }
+    guard let targetRuntimeID else { return raw }
+    return raw.map { element in
+      element.focused == (element.runtimeID == targetRuntimeID)
+        ? element
+        : element.replacingFocused(element.runtimeID == targetRuntimeID)
+    }
   }
 
   /// Collects the app's currently open menu (menu-bar menus and native
@@ -154,11 +306,21 @@ final class MacAccessibilityController: @unchecked Sendable {
   /// Electron app is essentially empty (only the native chrome), which is
   /// the root cause of "we cannot read the structure tree". Idempotent and
   /// harmless for non-Chromium apps, which simply reject the attributes.
-  private func activateChromiumAccessibility(_ application: AXUIElement) {
-    _ = AXUIElementSetAttributeValue(
-      application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+  /// - Returns: `true` when the app accepted `AXManualAccessibility`, i.e. it is
+  ///   Chromium-derived and builds its web-content tree on demand. Native AppKit
+  ///   apps answer `AXError.attributeUnsupported` (measured on Finder:
+  ///   -25205), which makes this a precise "lazy tree" flag instead of a
+  ///   bundle-identifier guess.
+  @discardableResult
+  private func activateChromiumAccessibility(_ application: AXUIElement) -> Bool {
+    let accepted =
+      AXUIElementSetAttributeValue(
+        application, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
+    // Not implemented by Chromium today (measured: -25208), harmless for the
+    // other renderers and kept for the engines that do answer it.
     _ = AXUIElementSetAttributeValue(
       application, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+    return accepted
   }
 
   /// Resolve the AX window we should traverse. Electron apps frequently own
@@ -431,6 +593,8 @@ final class MacAccessibilityController: @unchecked Sendable {
     cachedProcessID = 0
     cachedWindow = nil
     lastTraversalUptime = 0
+    webTreeSeenForProcessID = nil
+    exhaustedWebTreeWindows.removeAll(keepingCapacity: true)
     removeObserver()
     markDirty()
   }
@@ -526,6 +690,49 @@ final class MacAccessibilityController: @unchecked Sendable {
     return element
   }
 
+  /// Reads a set of attributes in ONE XPC round trip.
+  ///
+  /// Falls back to per-attribute reads if the batched call is unavailable or
+  /// answers with an unexpected shape — a single misbehaving app must never
+  /// degrade the tree it can otherwise serve.
+  private func readAttributes(
+    _ element: AXUIElement, _ names: [String]
+  ) -> NativeAXAttributeReader {
+    var raw: CFArray?
+    if AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &raw) == .success,
+      let list = raw as? [Any], list.count == names.count
+    {
+      return NativeAXAttributeReader(
+        names: names, values: NativeAXAttributeBatch.normalize(list))
+    }
+    let values: [Any?] = names.map { name in
+      var value: CFTypeRef?
+      guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
+        return nil
+      }
+      return value
+    }
+    return NativeAXAttributeReader(names: names, values: values)
+  }
+
+  /// Children of a container: `AXChildren` first (already read with the identity
+  /// batch), then the role-specific fallback documented in `NativeAXChildSources`
+  /// (`AXRows` for table/outline style containers). The fallback only runs when
+  /// the primary list is empty, so it never costs a round trip for well-behaved
+  /// containers.
+  private func childElements(
+    _ element: AXUIElement, identity: NativeAXAttributeReader, role: String
+  ) -> [AXUIElement] {
+    let primary = identity.elements(NativeAXChildSources.primaryAttribute)
+    guard primary.isEmpty else { return primary }
+    for attribute in NativeAXChildSources.candidates(forRole: role)
+    where attribute != NativeAXChildSources.primaryAttribute {
+      let fallback: [AXUIElement] = copyAttribute(element, attribute) ?? []
+      if !fallback.isEmpty { return fallback }
+    }
+    return []
+  }
+
   private func collect(
     _ element: AXUIElement,
     path: String,
@@ -535,62 +742,64 @@ final class MacAccessibilityController: @unchecked Sendable {
     elements: inout [String: AXUIElement]
   ) throws {
     guard depth <= Self.maxDepth, output.count < Self.maxElements else { return }
-    let role: String = copyAttribute(element, kAXRoleAttribute) ?? "unknown"
-    let subrole: String = copyAttribute(element, kAXSubroleAttribute) ?? ""
-    let identifier: String = copyAttribute(element, kAXIdentifierAttribute) ?? ""
+    let identity = readAttributes(element, NativeAXAttributeBatch.identityAttributes)
+    let role = identity.string("AXRole") ?? "unknown"
+    let subrole = identity.string("AXSubrole") ?? ""
+    let identifier = identity.string("AXIdentifier") ?? ""
     let runtimeID = "\(path)|\(role)|\(identifier)"
-    let secure = isSecure(element, role: role, subrole: subrole)
-    let name = firstNonempty([
-      copyAttribute(element, kAXTitleAttribute),
-      copyAttribute(element, kAXDescriptionAttribute),
-      copyAttribute(element, kAXHelpAttribute),
-    ])
-    let value: String?
-    if secure {
-      value = nil
-    } else if let string: String = copyAttribute(element, kAXValueAttribute) {
-      value = string
-    } else if let number: NSNumber = copyAttribute(element, kAXValueAttribute) {
-      value = number.stringValue
-    } else {
-      value = nil
-    }
-    let enabled: Bool =
-      (copyAttribute(element, kAXEnabledAttribute) as NSNumber?)?.boolValue ?? true
-    let focused: Bool =
-      (copyAttribute(element, kAXFocusedAttribute) as NSNumber?)?.boolValue ?? false
-    let bounds = elementBounds(element)
-    // Offscreen pruning: a fully offscreen subtree (native table views expose
-    // every row, on- and offscreen alike) is invisible to the model and only
-    // burns traversal budget. Conservative — degenerate (0-size) elements are
-    // kept because web layouts report them with live children, and the margin
-    // absorbs shadows/popovers that poke outside the window frame.
+    let bounds = elementBounds(position: identity.axValue("AXPosition"), size: identity.axValue("AXSize"))
+    // Offscreen pruning runs BEFORE the content attributes are fetched: a pruned
+    // subtree then costs two round trips instead of twenty. Conservative —
+    // degenerate (0-size) elements are kept because web layouts report them with
+    // live children, and the margin absorbs shadows/popovers that poke outside
+    // the window frame.
     if depth > 0, let windowFrame,
       bounds.width > 0, bounds.height > 0,
       !intersects(bounds, expanded: windowFrame, margin: Self.offscreenMargin)
     {
       return
     }
-    let actions = supportedActions(element, secure: secure)
-    // Targeted extra attributes — fetched only for roles that can use them so
-    // the per-element XPC cost stays bounded on 2000-element trees.
-    let roleDescription: String? = copyAttribute(element, kAXRoleDescriptionAttribute)
-    let placeholder: String?
-    if Self.placeholderRoles.contains(role), name.isEmpty, (value ?? "").isEmpty {
-      placeholder = copyAttribute(element, "AXPlaceholderValue")
+    let children = childElements(element, identity: identity, role: role)
+    let content = readAttributes(element, NativeAXAttributeBatch.contentAttributes)
+    let secure = isSecure(
+      content.bool("AXProtectedContent") ?? false, role: role, subrole: subrole)
+    let name = firstNonempty([
+      content.string("AXTitle"), content.string("AXDescription"), content.string("AXHelp"),
+    ])
+    let value: String?
+    if secure {
+      value = nil
+    } else if let string = content.string("AXValue") {
+      value = string
+    } else if let number = content.number("AXValue") {
+      value = number.stringValue
     } else {
-      placeholder = nil
+      value = nil
     }
-    let selected: Bool =
-      Self.selectableRoles.contains(role)
-      ? (copyAttribute(element, "AXSelected") as NSNumber?)?.boolValue ?? false : false
-    let children: [AXUIElement] = copyAttribute(element, kAXChildrenAttribute) ?? []
+    let enabled = content.bool("AXEnabled") ?? true
+    let focused = content.bool("AXFocused") ?? false
+    let actions = supportedActions(element, secure: secure, role: role, hasChildren: !children.isEmpty)
+    // Targeted extra attributes — fetched only for roles that can use them so
+    // the per-element round-trip count stays bounded on 2000-element trees.
+    var placeholder: String?
+    if Self.placeholderRoles.contains(role), name.isEmpty, (value ?? "").isEmpty {
+      placeholder = readAttributes(element, NativeAXAttributeBatch.placeholderAttributes)
+        .string("AXPlaceholderValue")
+    }
+    let selected: Bool
+    if Self.selectableRoles.contains(role) {
+      selected = readAttributes(element, NativeAXAttributeBatch.selectionAttributes)
+        .bool("AXSelected") ?? false
+    } else {
+      selected = false
+    }
     output.append(
       NativeAXRawElement(
-        runtimeID: runtimeID, role: role, name: name, value: value, bounds: bounds,
+        runtimeID: runtimeID, role: role, subrole: subrole, name: name, value: value,
+        bounds: bounds,
         enabled: enabled, focused: focused, actions: actions, secure: secure, depth: depth,
-        roleDescription: roleDescription, placeholder: placeholder, selected: selected,
-        childCount: children.count
+        roleDescription: content.string("AXRoleDescription"), placeholder: placeholder,
+        selected: selected, childCount: children.count
       )
     )
     elements[runtimeID] = element
@@ -606,13 +815,19 @@ final class MacAccessibilityController: @unchecked Sendable {
   private static let placeholderRoles: Set<String> = [
     "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox",
   ]
+  /// Roles for which `AXSelectedTextRange` describes a real text selection.
+  private static let textSelectionRoles: Set<String> = [
+    "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox",
+  ]
   private static let selectableRoles: Set<String> = [
     "AXRow", "AXCell", "AXColumn", "AXTab", "AXMenuItem", "AXMenuItemMarker", "AXListItem",
     "AXOutlineItem",
   ]
   private static let offscreenMargin: Double = 96
 
-  private func supportedActions(_ element: AXUIElement, secure: Bool) -> [String] {
+  private func supportedActions(
+    _ element: AXUIElement, secure: Bool, role: String, hasChildren: Bool
+  ) -> [String] {
     var rawNames: CFArray?
     let names: [String]
     if AXUIElementCopyActionNames(element, &rawNames) == .success,
@@ -630,11 +845,21 @@ final class MacAccessibilityController: @unchecked Sendable {
     if isSettable(element, kAXFocusedAttribute) || names.contains(kAXRaiseAction as String) {
       result.append("focus")
     }
-    if isSettable(element, kAXExpandedAttribute) {
+    // Expanding a childless element is meaningless, so the probe is skipped
+    // (one round trip saved on every leaf).
+    if hasChildren, isSettable(element, kAXExpandedAttribute) {
       result.append(contentsOf: ["expand", "collapse"])
     }
     if !secure, isSettable(element, kAXValueAttribute) { result.append("set_value") }
-    if !secure, isSettable(element, kAXSelectedTextRangeAttribute) { result.append("select") }
+    // AXSelectedTextRange is about a TEXT selection range: probing it on
+    // containers is meaningless (AppKit and Chromium both answer true for plain
+    // layout groups), and the resulting "select" capability is what made
+    // coordinate clicks resolve to non-clickable wrappers.
+    if !secure, Self.textSelectionRoles.contains(role),
+      isSettable(element, kAXSelectedTextRangeAttribute)
+    {
+      result.append("select")
+    }
     if names.contains(where: { $0.hasPrefix("AXScroll") }) { result.append("scroll") }
     return Array(Set(result)).sorted()
   }
@@ -748,6 +973,19 @@ private func firstNonempty(_ values: [String?]) -> String {
   values.compactMap { $0 }.first { !$0.isEmpty } ?? ""
 }
 
+private func elementBounds(position: AXValue?, size: AXValue?) -> NativeRect {
+  var origin = CGPoint.zero
+  var dimensions = CGSize(width: 1, height: 1)
+  if let position, AXValueGetType(position) == .cgPoint {
+    AXValueGetValue(position, .cgPoint, &origin)
+  }
+  if let size, AXValueGetType(size) == .cgSize {
+    AXValueGetValue(size, .cgSize, &dimensions)
+  }
+  return NativeRect(
+    x: origin.x, y: origin.y, width: max(1, dimensions.width), height: max(1, dimensions.height))
+}
+
 private func elementBounds(_ element: AXUIElement) -> NativeRect {
   var origin = CGPoint.zero
   var size = CGSize(width: 1, height: 1)
@@ -765,12 +1003,22 @@ private func elementBounds(_ element: AXUIElement) -> NativeRect {
     x: origin.x, y: origin.y, width: max(1, size.width), height: max(1, size.height))
 }
 
+/// Convenience wrapper for call sites that only have the element: reads the
+/// three attributes it needs (three round trips, so hot paths use the
+/// value-based overload instead).
+private func isSecure(_ element: AXUIElement) -> Bool {
+  let role: String = copyAttribute(element, kAXRoleAttribute) ?? ""
+  let subrole: String = copyAttribute(element, kAXSubroleAttribute) ?? ""
+  let protectedContent = (copyAttribute(element, "AXProtectedContent") as NSNumber?)?.boolValue ?? false
+  return isSecure(protectedContent, role: role, subrole: subrole)
+}
+
 private func isSecure(
-  _ element: AXUIElement, role: String? = nil, subrole: String? = nil
+  _ protectedContent: Bool, role: String, subrole: String
 ) -> Bool {
-  let role = role ?? copyAttribute(element, kAXRoleAttribute) ?? ""
-  let subrole = subrole ?? copyAttribute(element, kAXSubroleAttribute) ?? ""
-  let protected = (copyAttribute(element, "AXProtectedContent") as NSNumber?)?.boolValue ?? false
+  let role = role
+  let subrole = subrole
+  let protected = protectedContent
   let marker = "\(role) \(subrole)".lowercased()
   return protected || marker.contains("securetextfield") || marker.contains("password")
 }

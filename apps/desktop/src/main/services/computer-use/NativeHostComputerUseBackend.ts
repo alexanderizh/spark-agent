@@ -488,6 +488,19 @@ export class NativeHostComputerUseBackend
         } catch (error) {
           // The channel is unknown when the Host failed before choosing one (or on an
           // older host that does not report it); keep the failure visible under 'unset'.
+          // Log the real cause HERE as well: 'unset' alone is unactionable, and the
+          // single biggest past misdiagnosis was a stale host-side takeover latch
+          // surfacing as `handoff_required` with no trace of where it came from.
+          const normalized = error instanceof ComputerUseBrokerError ? error : null
+          log.warn('Computer native action failed before an execution channel was chosen', {
+            computerSessionId: input.envelope.computerSessionId,
+            action: describeComputerActionForLog(input.envelope.action),
+            target: `${input.envelope.targetAppId}/${input.envelope.targetWindowId}`,
+            observedFrameId: input.envelope.observedFrameId,
+            code: normalized?.code ?? 'unknown',
+            retryable: normalized?.retryable ?? false,
+            message: normalized?.message ?? String(error),
+          })
           this.metrics?.recordExecutionOutcome('unset', false)
           throw error
         }

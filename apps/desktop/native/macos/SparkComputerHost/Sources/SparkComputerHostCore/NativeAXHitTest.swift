@@ -110,10 +110,14 @@ public enum NativeBackgroundActionPolicy {
   /// the protection the error represents (session authority, secure-input guard,
   /// user takeover). `userTakeover` covers the Esc interruption token — swallowing
   /// it here made an Esc-cancelled action replay in full on the foreground path.
-  /// `screenLocked` aborts because no channel can deliver input to a locked display.
+  /// `userInteractionDetected` aborts for the same reason: the user's hand is on the
+  /// target window, so degrading to the foreground HID path would both steal focus
+  /// and fight the user for the same controls. `screenLocked` aborts because no
+  /// channel can deliver input to a locked display.
   public static func mustAbort(_ error: NativeHostPlatformError) -> Bool {
     switch error {
-    case .sessionCanceled, .sensitiveInputBlocked, .userTakeover, .screenLocked:
+    case .sessionCanceled, .sensitiveInputBlocked, .userTakeover, .userInteractionDetected,
+      .screenLocked:
       return true
     default:
       return false

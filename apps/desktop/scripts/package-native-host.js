@@ -101,13 +101,11 @@ async function packageMacNativeHost(context) {
       cwd: packageRoot,
     },
   )
-  const sourceExecutable = path.join(
+  const sourceExecutable = await resolveMacNativeHostExecutable({
     packageRoot,
-    '.build',
-    `${swiftArchitecture}-apple-macosx`,
-    'release',
-    EXECUTABLE_NAME,
-  )
+    configuration: 'release',
+    swiftArchitecture,
+  })
   const appName = context.packager.appInfo.productFilename
   const appPath = path.join(context.appOutDir, `${appName}.app`)
   const { destinationExecutable, manifestPath } = macNativeHostDestinationPaths(
@@ -206,6 +204,71 @@ async function resolveSigningIdentity(requestedTrustMode = resolveMacNativeHostT
   return /"([^"]*Developer ID Application[^"]*)"/.exec(result.stdout)?.[1] ?? null
 }
 
+/**
+ * Product directory reported by `swift build --show-bin-path`.
+ *
+ * The command may print build progress lines before the path, so take the last
+ * non-empty line; anything that is not an absolute path means the toolchain
+ * answered something we do not understand and the caller must fail loudly rather
+ * than fall back to a guessed directory.
+ */
+function parseSwiftBinPathOutput(stdout) {
+  const binPath = String(stdout)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .pop()
+  if (binPath == null || !path.isAbsolute(binPath)) {
+    throw new Error(
+      `swift build --show-bin-path did not report a product directory: ${String(stdout).trim() || '<empty>'}`,
+    )
+  }
+  return binPath
+}
+
+/**
+ * Absolute path of the built macOS Native Host executable.
+ *
+ * Ask SwiftPM for the product directory (`--show-bin-path`) instead of composing
+ * `.build/<arch>-apple-macosx/<config>` by hand. Newer toolchains moved products
+ * to `.build/out/Products/<Config>` and left the old directory behind as a stale
+ * leftover, so the composed path silently returned a binary from a **previous**
+ * toolchain generation: measured on 2026-09-30 with Swift 6.4, the dev host
+ * deployed into Electron's Resources had been built 2026-09-07 and contained none
+ * of the fixes made since (the takeover-window and tree-rendering symbols were
+ * absent from it), which made every dev-mode Computer Use test run against old
+ * code. Asking SwiftPM is layout-agnostic and correct for both the current and
+ * the previous directory shape.
+ */
+async function resolveMacNativeHostExecutable({
+  packageRoot,
+  configuration,
+  swiftArchitecture,
+  swiftArguments = [],
+}) {
+  const result = await runCommand(
+    'swift',
+    [
+      'build',
+      '-c',
+      configuration,
+      '--arch',
+      swiftArchitecture,
+      '--show-bin-path',
+      ...swiftArguments,
+    ],
+    { cwd: packageRoot },
+  )
+  const binPath = parseSwiftBinPathOutput(result.stdout)
+  const executable = path.join(binPath, EXECUTABLE_NAME)
+  try {
+    await fs.access(executable)
+  } catch {
+    throw new Error(`Native Host executable is missing at the SwiftPM product path: ${executable}`)
+  }
+  return executable
+}
+
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -251,6 +314,8 @@ module.exports = {
   createNativeHostManifest,
   createLocalNativeHostManifest,
   packageMacNativeHost,
+  parseSwiftBinPathOutput,
+  resolveMacNativeHostExecutable,
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
   macNativeHostDestinationPaths,

@@ -138,18 +138,64 @@ export class ComputerAtomicActionService {
     return this.states.get(sessionId)?.computerSessionId ?? null
   }
 
-  /** Observes the bound/frontmost window and refreshes the cached observation. */
-  async observe(sessionId: string, turnId: string): Promise<ComputerObservation> {
+  /**
+   * Observes a window and refreshes the cached observation.
+   *
+   * `target` binds the implicit session to a specific app/window BEFORE the
+   * observe, which is what makes a multi-app session work: the session contract
+   * is "sticky app binding", so once bound, later observes and actions stay on
+   * THAT app even while the user clicks around elsewhere. Passing an explicit
+   * target is also how an observation tool (`get_app_state`, `screenshot
+   * app=...`) hands its frame to the atomic tools: the tree the model is shown
+   * is then literally the frame the next action resolves against, instead of two
+   * independently-captured frames that disagree and surface as `stale_tree`.
+   */
+  async observe(
+    sessionId: string,
+    turnId: string,
+    target?: { appId: string; windowId: string },
+  ): Promise<ComputerObservation> {
     // Disarm on entry: a timer armed by the previous call must never abort an
     // in-flight observe/dispatch (slow reasoning models routinely think longer
     // than the idle window — the timer fired mid-action surfaced as a bogus
     // session_canceled).
     this.clearIdleTimer(sessionId)
     const state = await this.ensureSession(sessionId, turnId)
+    if (target != null) this.bindTarget(state, target)
     const observation = await this.services.broker.observe(state.computerSessionId, true)
     state.lastObservation = observation
     this.armIdleTimer(sessionId)
     return observation
+  }
+
+  /**
+   * Explicitly binds the implicit session to an app/window and drops the cached
+   * frame so the next action re-observes the new target. This is the atomic
+   * counterpart of `bind_target`, available without a delegated task: without it
+   * the only way to change which app an atomic session controls was to let the
+   * implicit session lapse and re-acquire whatever happened to be frontmost.
+   */
+  private bindTarget(state: AtomicSessionState, target: { appId: string; windowId: string }): void {
+    this.services.backend.bindSessionTarget?.({
+      computerSessionId: state.computerSessionId,
+      appId: target.appId,
+      windowId: target.windowId,
+    })
+    if (state.lastObservation?.foreground.window.id !== target.windowId) {
+      state.lastObservation = null
+    }
+  }
+
+  /** Binds by agent session id, arming the implicit session if needed. */
+  async bindAgentSessionTarget(
+    sessionId: string,
+    turnId: string,
+    target: { appId: string; windowId: string },
+  ): Promise<void> {
+    this.clearIdleTimer(sessionId)
+    const state = await this.ensureSession(sessionId, turnId)
+    this.bindTarget(state, target)
+    this.armIdleTimer(sessionId)
   }
 
   /**

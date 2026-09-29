@@ -21,8 +21,10 @@ import Foundation
 ///    version they were rendered in. The model always acts on the freshest
 ///    tree, so cross-frame id stability is unnecessary while short ids keep
 ///    the outline compact and cheap to reference.
-///  - Invisible leaf noise (unnamed, valueless, non-actionable leaves) is
-///    dropped; containers are kept because they carry the hierarchy.
+///  - Pure structure is folded away first (`NativeAXTreeStructure`): single-child
+///    wrappers collapse, a nameless container adopts the label of its label-only
+///    child, decoration (scrollbar internals, value indicators) is pruned, and
+///    subtrees that offer nothing at all are dropped.
 ///  - Line-level budgets (name/value length, total text) bound the payload so
 ///    a huge tree degrades into a truncation marker instead of a prompt bomb.
 public enum NativeAXTreeRenderer {
@@ -50,6 +52,34 @@ public enum NativeAXTreeRenderer {
     }
   }
 
+  /// Marker for an outline cut by the text budget.
+  ///
+  /// The cut is positional (document order), and document order runs down the
+  /// window: measured on the packaged SparkWork, a long conversation produced
+  /// 1822 elements, the outline stopped at 1019 lines with 804 omitted, and the
+  /// message input (`AXTextArea`, raw index 1752 of 1822) never appeared — the
+  /// model could not see the one control the whole task needed, and nothing in
+  /// the tree said why. The marker therefore states what is missing and the
+  /// recovery that actually works: the screenshot is delivered in full, so a
+  /// control the outline dropped is still addressable by coordinate.
+  public static func budgetMarker(omitted: Int) -> String {
+    "[truncated: \(omitted) elements omitted — the outline stops part-way down this window, "
+      + "so controls near its bottom may be missing; the screenshot is complete, "
+      + "address a missing control by coordinate]"
+  }
+
+  /// Marker appended when the *traversal* stopped at the element limit, as
+  /// opposed to `[truncated: N elements omitted]`, which says the rendered text
+  /// hit its own budget. Both are silent cuts of the model's view of a window,
+  /// but they need different recoveries: a text-budget cut is still the same
+  /// interface, while a traversal cut means part of the window was never read —
+  /// measured on the packaged SparkWork, whose window produced exactly 2000
+  /// elements (the cap) with no marker at all, so the tree simply appeared to end.
+  public static func traversalLimitNotice(limit: Int) -> String {
+    "[truncated: this window has more than \(limit) elements — only the first \(limit) were read; "
+      + "scroll its own container and observe again to reach the rest]"
+  }
+
   /// Per-line budgets in UTF-16 units.
   public static let maxNameUTF16 = 160
   public static let maxValueUTF16 = 240
@@ -67,16 +97,17 @@ public enum NativeAXTreeRenderer {
   private static let maxIndentDepth = 24
 
   public static func render(_ elements: [NativeAXRawElement]) -> RenderedTree {
+    let structure = NativeAXTreeStructure.analyze(elements)
+    let nodes = structure.nodes
     var lines: [RenderedLine] = []
     var textSegments: [String] = []
     var textUnits = 0
-    var omitted = 0
+    var omitted = structure.prunedCount
     var budgetExhausted = false
 
-    for (index, element) in elements.enumerated() {
-      let isLeaf = index + 1 >= elements.count
-        || elements[index + 1].depth <= element.depth
-      if isNoise(element, isLeaf: isLeaf) {
+    for (index, node) in nodes.enumerated() {
+      let isLeaf = index + 1 >= nodes.count || nodes[index + 1].depth <= node.depth
+      if isLeaf, !NativeAXTreeStructure.hasOutlineValue(node.element, name: node.element.name) {
         omitted += 1
         continue
       }
@@ -85,7 +116,7 @@ public enum NativeAXTreeRenderer {
         continue
       }
       let elementID = "\(lines.count + 1)"
-      let line = renderLine(element, elementID: elementID)
+      let line = renderLine(node, elementID: elementID)
       let lineUnits = line.utf16.count
       let separatorUnits = textSegments.isEmpty ? 0 : 1
       // Exact budget including the "\n" separators of the joined text: a line
@@ -97,31 +128,22 @@ public enum NativeAXTreeRenderer {
         continue
       }
       lines.append(
-        RenderedLine(elementID: elementID, text: line, runtimeID: element.runtimeID))
+        RenderedLine(elementID: elementID, text: line, runtimeID: node.element.runtimeID))
       textSegments.append(line)
       textUnits += separatorUnits + lineUnits
     }
 
     var text = textSegments.joined(separator: "\n")
     if budgetExhausted {
-      let marker = "[truncated: \(omitted) elements omitted]"
+      let marker = NativeAXTreeRenderer.budgetMarker(omitted: omitted)
       text += text.isEmpty ? marker : "\n" + marker
     }
     return RenderedTree(lines: lines, text: text, omittedCount: omitted)
   }
 
-  /// Leaf elements that carry no information the model can act on: no name,
-  /// no value, no actions, not focused. Dropping them routinely removes more
-  /// than half of a real AX tree (layout padders, empty groups, image shells).
-  private static func isNoise(_ element: NativeAXRawElement, isLeaf: Bool) -> Bool {
-    guard isLeaf else { return false }
-    let emptyName = element.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let emptyValue = (element.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    return emptyName && emptyValue && element.actions.isEmpty && !element.focused
-  }
-
-  private static func renderLine(_ element: NativeAXRawElement, elementID: String) -> String {
-    let indent = String(repeating: "  ", count: min(element.depth, maxIndentDepth))
+  private static func renderLine(_ node: NativeAXTreeStructure.Node, elementID: String) -> String {
+    let element = node.element
+    let indent = String(repeating: "  ", count: min(node.depth, maxIndentDepth))
     var parts: [String] = ["- \(roleWord(element))"]
     let name = inline(shortenedURL(element.name), limit: maxNameUTF16)
     if !name.isEmpty {
@@ -150,8 +172,11 @@ public enum NativeAXTreeRenderer {
     if element.focused {
       parts.append("[focused]")
     }
-    if element.childCount > maxChildrenPerContainer {
-      parts.append("(\(element.childCount) items, first \(maxChildrenPerContainer) shown)")
+    // Report the largest child count we know: the app's raw list may be longer
+    // than what survived flattening, and the note must never understate it.
+    let declaredChildren = max(element.childCount, node.childCount)
+    if declaredChildren > maxChildrenPerContainer {
+      parts.append("(\(declaredChildren) items, first \(maxChildrenPerContainer) shown)")
     }
     parts.append("[\(elementID)]")
     return indent + parts.joined(separator: " ")
@@ -172,9 +197,14 @@ public enum NativeAXTreeRenderer {
 
   /// Prefer the app's own human wording (AXRoleDescription, e.g. "push
   /// button") over the raw AXRole; fall back to the camel-cased role.
+  ///
+  /// Some apps echo the raw role as its own description (measured: Chromium
+  /// reports `AXListMarker` as the role description of a list marker), which
+  /// would leak the API token into the model-facing outline — those fall back to
+  /// the camel-cased role word like any element without a description.
   private static func roleWord(_ element: NativeAXRawElement) -> String {
     if let described = element.roleDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !described.isEmpty
+      !described.isEmpty, described != element.role
     {
       return inline(described, limit: 60)
     }

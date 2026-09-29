@@ -800,10 +800,30 @@ if (approvalCallback == null) return denyTool('Permission check failed', ...)`}<
       ，而不是内容策略。
     </p>
     <p>
-      另外 <code>focus_mismatch</code> 在原子路径上几乎不会出现， 因为 envelope 的{' '}
+      另外 <code>focus_mismatch</code> 在原子路径上几乎不会由策略层产生， 因为 envelope 的{' '}
       <code>targetAppId</code> 就是 <code>observation.foreground.app.id</code>（
-      <code>ComputerAtomicActionService.ts:208</code>），<strong>必然自洽</strong>。
+      <code>ComputerAtomicActionService.ts</code>），<strong>必然自洽</strong>。
       实际抛这个码的是原生宿主与快照服务，不是策略层。
+    </p>
+    <p>
+      <strong>
+        宿主侧的 <code>focus_mismatch</code> 现在还有第二个来源：用户中途上手。
+      </strong>
+      如果某个动作正在执行时，用户在受控窗口里按下鼠标（且该点在最上层窗口确实属于受控进程），
+      或者受控应用正好在最前台而用户敲了键盘，宿主会<strong>立即中止该动作</strong>并返回&#10;
+      <code>focus_mismatch</code>（<code>retryable: true</code>，
+      文案明确指出是「用户与目标窗口发生了交互」）。 这是<strong>节奏让位</strong>，不是命令停工：
+      原子路径会按既有的 <code>STALE_ERROR_CODES</code> 逻辑重新观测并重试一次。 真正的「停下」只有{' '}
+      <code>Esc</code>（见 9.x 中断令牌），它才返回不可重试的 <code>handoff_required</code>。
+    </p>
+    <p>
+      <strong>接管判定是按「动作窗口」而非按会话的</strong>（<code>NativeTakeoverWindow</code>
+      ，仅原生宿主侧）：动作开始时 <code>begin</code> 会丢掉此前 记录的一切交互，动作结束时{' '}
+      <code>end</code> 清空窗口，因此
+      <strong>用户在两次动作之间使用电脑 永远不会中止后续动作</strong>。
+      这一点曾长期失守——早前的实现把「用户碰过受控窗口」记成会话级
+      粘滞标志，一次误触就让该会话之后每个后台动作都返回 <code>handoff_required</code>，
+      而系统提示词又要求模型「不要重试」，于是整块电脑操作能力看起来完全不可用。
     </p>
 
     <h3 id="task-contract">4.3 任务契约里哪些字段真的生效</h3>
@@ -1432,8 +1452,22 @@ case 'takeover': {                                 // :334-340
       <strong>
         必须设置私有属性 <code>AXManualAccessibility</code> 才会暴露内容树
       </strong>
-      ， 否则只能读到一个几乎空的树 （<code>MacAccessibilityController.swift:42-44</code>
+      ， 否则只能读到一个几乎空的树 （<code>MacAccessibilityController.swift</code>
       ，注释把这件事称作「竞争对手能读到 Electron 应用结构树而我们之前只看到空树」的最大原因）。
+    </p>
+    <p>
+      这条握手还有<strong>第二个坑：它是异步的</strong>。属性设置成功只代表应用接受了请求，
+      渲染进程把内容树建好并通过 IPC 发布出去需要时间，被系统节流的后台渲染进程可能要几秒。
+      实测（2026-09-30）：刚启动的 Electron 应用 174 ms 就能读到 400 个节点； 长时间闲置的 Electron
+      应用连续 2.3 s 的三次遍历都只有 9-10 个节点、且没有 <code>AXWebArea</code>，
+      等树建好后同样的调用拿到 503 个节点。 所以宿主现在
+      <strong>以「文档容器是否存在且有内容」为收敛判据</strong>（
+      <code>NativeWebTreeReadiness.swift</code>），带退避地重复遍历（总追加等待约 1.75 s）， 并且
+      <strong>绝不缓存没收敛的树</strong>。 仍然没就绪时，树文本首行会带一条{' '}
+      <code>[accessibility: … only the window shell is shown …]</code> 标记， 同时往 stderr 写一行{' '}
+      <code>ax_web_tree_readiness</code> 诊断（含首次遍历与收敛后的节点数）。 原生 AppKit 应用会以{' '}
+      <code>AXError.attributeUnsupported</code> 拒绝这个属性，
+      因此「是否接受握手」本身就是精确的「这个应用是否懒建树」判据，不需要猜 bundle id。
     </p>
 
     <h3 id="trust">9.2 双向签名校验</h3>
@@ -1542,6 +1576,34 @@ case 'takeover': {                                 // :334-340
       <code>observation</code>、<code>action_result</code>、<code>ack</code>、<code>pong</code>、
       <code>error</code>。 协议版本 <code>1</code>，三处常量一致（<code>native-version.ts:3</code>、{' '}
       <code>NativeHostProtocol.swift:4</code>、<code>protocol.rs:9</code>）。
+    </p>
+    <p>
+      错误响应还有一条<strong>「报错本身不许致命」</strong>
+      的约束。宿主先前的实现会对错误码与文案做严格校验，
+      不合法就抛异常——而异常会从请求处理器一路逃到宿主顶层，被当成协议失败处理、
+      <strong>整个宿主进程退出</strong>。同类问题还有一处：<strong>请求级</strong>校验失败
+      （字段缺失/类型不对）原先也走同一条致命路径，而帧边界早已被解码器接受、流是同步的。
+      实测（2026-09-30）：探针发一个缺 <code>appId</code>/<code>windowId</code> 的{' '}
+      <code>observe</code>，宿主 <code>exit(76)</code> 且调用方一直干等到超时——生产里这等于把
+      会话仅有的 1 次重启预算烧在一次畸形请求上。现在请求级解码失败只回一个{' '}
+      <code>invalid_request</code> 错误响应并继续服务 （<code>NativeHostRequestDecoding</code>
+      ），只有<strong>帧层</strong>错误
+      （长度/类型非法、流已失步）才终止进程。新码必须同时登记到客户端的协议枚举，
+      否则「不再杀死宿主」会变成「杀死客户端」——因此新增跨语言契约测试
+      <code>native-error-code-parity.test.ts</code>：读取宿主 <code>allowedErrorCodes</code>
+      并断言每个码都在 <code>ComputerUseErrorCodeSchema</code> 里（该测试已用「先删码、必须失败」
+      的方式验证过不是空跑）。
+    </p>
+    <p>
+      错误响应还有一条<strong>「报错本身不许致命」</strong>
+      的约束。宿主先前的实现会对错误码与文案做严格校验，
+      不合法就抛异常——而异常会从请求处理器一路逃到宿主顶层，被当成协议失败处理、
+      <strong>整个宿主进程退出</strong>。实测（2026-09-30）：锁屏时观测返回的错误码{' '}
+      <code>screen_locked</code> 恰好不在那张合法码表里，于是「锁屏」变成了宿主死亡 +
+      烧掉本会话唯一一次重启预算。现在错误编码器不再抛异常：不认识的错误码降级为{' '}
+      <code>environment_unavailable</code> 并把原始码写进消息（<code>[screen_locked] …</code>），
+      超长文案被截断到 4000 字符，非法 requestId 回填为 <code>unknown</code>， 并且
+      <strong>有单测锁住「宿主发出的每个错误码都在合法表里」这条不变量</strong>。
     </p>
     <p>超时与取消是这个协议里最容易误解的部分：</p>
     <table>
@@ -1723,12 +1785,75 @@ case 'takeover': {                                 // :334-340
     <p>渲染时会做几类取舍：</p>
     <ul>
       <li>
-        <strong>丢弃「噪声叶子」</strong>：无名称、无值、无可用动作、也未聚焦的叶子节点 （
-        <code>NativeAXTreeRenderer.swift:116-120</code>）。
+        <strong>先做结构折叠再渲染</strong>（<code>NativeAXTreeStructure.swift</code>），六条规则：
+        <ol>
+          <li>
+            没有名称/值/占位符、未聚焦未选中、也没有真实按压动作的
+            <strong>单子节点包装层被折叠</strong>
+            （Chromium 会在网页内容外面套一长串空 <code>AXGroup</code>）；
+          </li>
+          <li>
+            无名称容器可<strong>采纳子节点的文本</strong>（ARIA 的 name-from-content）：既包括
+            cell/row/button 这类「标签在子节点里」的角色，也包括
+            <strong>任何可按压的无名容器</strong>
+            ——实测会话列表每一行都是「无名 <code>AXGroup</code> + <code>invoke</code> + 一个标题文本
+            子节点」，不采纳就只能渲染成 <code>- 组 [58]</code>。多个候选时优先文本角色，
+            且只从文本/图标类子节点取名（从 <code>AXCell</code>{' '}
+            取名会把「一行两格」的表格读成「一行一格」）；
+          </li>
+          <li>
+            <strong>无名布局盒被提升掉</strong>：无名称/值/动作、未聚焦未选中、角色属于纯布局 （
+            <code>AXGroup</code>/<code>AXUnknown</code>/<code>AXGenericElement</code>/…）的多子节点
+            容器不再占一行也不占一级缩进，子节点提升到上一层。结构角色（<code>AXDialog</code>、
+            <code>AXSheet</code>、<code>AXScrollArea</code>、<code>AXTable</code>、
+            <code>AXRow</code>、<code>AXCell</code>、<code>AXList</code>、<code>AXTabGroup</code>、
+            <code>AXToolbar</code>） 一律保留；
+          </li>
+          <li>
+            <strong>被影子化的按压包装被丢弃</strong>：自身可按压、唯一子节点也可按压且矩形完全一致
+            （±1pt）时，两者是同一个点击目标的两个名字。子节点不可按压时<strong>绝不</strong>折叠——
+            否则会删掉该矩形里唯一的点击目标；
+          </li>
+          <li>
+            装饰整棵剪掉：<code>AXValueIndicator</code>、<code>AXScrollBar</code>{' '}
+            内部的箭头/页码按钮， 以及只画符号的列表标记（"•"）；有序列表编号（"1."）是内容，保留；
+          </li>
+          <li>整棵子树都没有任何可用信息时才丢弃。</li>
+        </ol>
+        注意 <code>focus</code>/<code>select</code>/<code>set_value</code> <strong>不算</strong>
+        「有内容」——Chromium 对普通布局组也会把它们报成 true，
+        计入就等于把所有包装层留在树里；同样地 <code>scroll</code> 也<strong>不算</strong>，
+        而且证据更硬：实测两个 Electron 应用里 847/850 与 843/847 个元素都报 <code>scroll</code>
+        （连 <code>AXImage</code>、<code>AXStaticText</code> 都报），真滚动容器改用角色
+        <code>AXScrollArea</code> 判定。<code>AXSubrole</code> 则用来保留语义容器：
+        <code>AXLandmarkNavigation</code>/<code>AXLandmarkRegion</code>/
+        <code>AXApplicationStatus</code>/<code>AXUserInterfaceTooltip</code>{' '}
+        会占一行，而行内文本样式组 （<code>AXCodeStyleGroup</code>/<code>AXStrongStyleGroup</code>
+        ）不会——它标注的是一段文本， 文本本身会作为提升后的子节点留下。
       </li>
       <li>
-        <strong>超预算即截断并留标记</strong>：超出文本预算时输出{' '}
-        <code>[truncated: N elements omitted]</code>（<code>:94-107</code>）。
+        <strong>
+          只保留一个 <code>[focused]</code>
+        </strong>
+        ：逐元素的 <code>AXFocused</code> 不可信（实测 Finder 侧栏 24 个 <code>AXCell</code> 全部报
+        true，加上 <code>AXList</code> 共 25 个「焦点」），宿主改为读取应用级{' '}
+        <code>AXFocusedUIElement</code> 并只标记该元素。
+      </li>
+      <li>
+        <strong>超预算即截断并留标记</strong>：超出文本预算时输出
+        <code>[truncated: N elements omitted — …]</code>（<code>:94-107</code>）。 截断是
+        <strong>位置性</strong>的 （按文档顺序，也就是沿窗口自上而下），实测（2026-09-30，打包版
+        SparkWork 长会话）：原始树 1822 个元素、渲染到 1019 行就截断，而消息输入框（
+        <code>AXTextArea</code>，原始序号 1752）
+        根本没有出现在树里——模型看不到整件事最需要的那个控件。标记因此写清「少了什么」与
+        「怎么办」：<strong>截图永远是完整下发的，树里没有的控件可以按坐标动作</strong>。
+      </li>
+      <li>
+        <strong>遍历被元素上限截断也会留标记</strong>：collector 在{' '}
+        <code>maxNativeTreeElements</code>（2000）处停止递归，此前完全无声——实测打包版 SparkWork
+        正好产出 2000 个元素，树看起来就是「窗口到此为止」。现在树尾追加
+        <code>[truncated: this window has more than 2000 elements …]</code>，与上面那条
+        「渲染预算」标记区分开：一个是<strong>没读</strong>，一个是<strong>没展开</strong>。
       </li>
       <li>
         <strong>容器子元素过多时只显示前若干个</strong>并标注总数 （<code>:153-154</code>）。
@@ -2604,6 +2729,41 @@ list-apps  approve-action  deny-action  get-verification`}</code>
       </thead>
       <tbody>
         <tr>
+          <td>
+            观测/操作报 <code>focus_mismatch</code>
+          </td>
+          <td>
+            <code>error.message</code> 原文
+          </td>
+          <td>
+            这个码在宿主里承担三种含义，靠消息区分：<strong>请求的窗口已被最小化</strong>
+            （「The target window is minimized…」，窗口还在，恢复它或改观测同应用的另一个窗口）、
+            请求的窗口已不存在（「…no longer available」）、前台应用身份真的变了。
+            实测曾把「最小化」错报成第三种，现已区分（9.3 / 10.1）
+          </td>
+        </tr>
+        <tr>
+          <td>
+            报 <code>invalid_request</code>
+          </td>
+          <td>请求字段是否缺项/类型不符</td>
+          <td>
+            帧边界合法但载荷不合契约：宿主回一个错误响应后<strong>继续服务</strong>， 不再
+            exit（9.3）
+          </td>
+        </tr>
+        <tr>
+          <td>树看起来「就这样结束了」</td>
+          <td>
+            树尾是否有 <code>[truncated: …]</code> 标记
+          </td>
+          <td>
+            两种截断要分清：渲染预算截断（<code>N elements omitted</code>
+            ，树没展开完）与遍历上限截断 （<code>more than 2000 elements</code>
+            ，根本没读）。后者此前完全无声（10.1）
+          </td>
+        </tr>
+        <tr>
           <td>设置页显示「尚未就绪」</td>
           <td>
             两行授权状态 + <code>unavailableReason</code> 原文
@@ -2655,6 +2815,26 @@ list-apps  approve-action  deny-action  get-verification`}</code>
           </td>
           <td>重新读一次状态，用新元素 id 重试</td>
           <td>元素 id 是行号、跨帧不可复用；不要原样重复调用（10.2）</td>
+        </tr>
+        <tr>
+          <td>Electron/Chromium 窗口只读到标题栏按钮，树里没有网页内容</td>
+          <td>
+            树文本首行是否有 <code>[accessibility: … only the window shell is shown …]</code>；
+            日志里的 <code>ax_web_tree_readiness</code>
+          </td>
+          <td>
+            内容树是异步建的，后台渲染进程还会被节流；再观测一次通常就完整了，宿主已带退避重试（9.1）
+          </td>
+        </tr>
+        <tr>
+          <td>
+            锁屏后报 <code>screen_locked</code>
+          </td>
+          <td>会话是否已解锁</td>
+          <td>
+            锁屏时观测与动作都不可用，应等待用户解锁而不是重试。该错误码曾经不在宿主的合法错误码表里，
+            会让宿主直接退出并烧掉重启预算（9.3）
+          </td>
         </tr>
         <tr>
           <td>

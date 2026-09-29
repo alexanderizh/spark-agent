@@ -357,6 +357,58 @@ public struct NativeBinaryPayloadDescriptor: Codable, Equatable, Sendable {
   }
 }
 
+/// Answers a request that parsed as JSON but failed the wire contract.
+///
+/// The frame boundary was honored (`NativeFrameDecoder` accepted the frame), so
+/// the stream is still in sync: exactly one bad REQUEST reached the host. Until
+/// this existed, `HostMain` let the decode error escape into its outer
+/// `catch`, which exits the process — measured with a probe that omitted
+/// `appId`/`windowId`: the host died silently, the caller waited for its 180 s
+/// timeout, and in production the supervisor would have spent its one restart
+/// for the session on a single malformed request. A client bug must cost one
+/// error response, not the session.
+public enum NativeHostRequestDecoding {
+  /// Request id for the error reply, best effort: a reply needs an id even when
+  /// the request was malformed, and an unusable one is answered as "unknown"
+  /// (the encoder applies the same rule).
+  public static func requestID(in payload: Data) -> String {
+    guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+      let requestID = object["requestId"] as? String, isValidIdentifier(requestID)
+    else { return "unknown" }
+    return requestID
+  }
+
+  /// Error reply for a payload-level decode failure. Never throws upward for a
+  /// reason the caller cannot handle: the encoder degrades unknown codes itself.
+  public static func errorReply(
+    for payload: Data, error: NativeHostProtocolError
+  ) throws -> Data {
+    try NativeHostResponseEncoder.error(
+      requestID: requestID(in: payload),
+      code: "invalid_request",
+      message: message(for: error),
+      retryable: false
+    )
+  }
+
+  static func message(for error: NativeHostProtocolError) -> String {
+    switch error {
+    case .invalidJSON:
+      return "The request payload is not a JSON object"
+    case .invalidProtocolVersion:
+      return "Unsupported protocol version"
+    case .invalidRequestID:
+      return "Missing or malformed requestId"
+    case .invalidRequestType:
+      return "Missing or unknown request type"
+    case .invalidRequestFields:
+      return "The request fields failed contract validation"
+    case .invalidResponse:
+      return "The request produced an invalid response"
+    }
+  }
+}
+
 public enum NativeHostResponseEncoder {
   public static func capabilities(
     requestID: String,
@@ -464,27 +516,45 @@ public enum NativeHostResponseEncoder {
     try simple(requestID: requestID, type: "pong")
   }
 
+  /// Builds an error reply.
+  ///
+  /// This path must never be able to throw: the caller is already reporting a
+  /// failure, and a throw here escapes `NativeHostRequestHandler.handle` into
+  /// the host's top level, which treats it as a protocol failure and **exits the
+  /// process** (measured: a locked screen produced `code: "screen_locked"`, which
+  /// was missing from `allowedErrorCodes`, so the observation killed the host
+  /// instead of reporting the lock). Unknown codes therefore degrade to a valid
+  /// code that names the original one, and an over-long message is clamped.
   public static func error(
     requestID: String,
     code: String,
     message: String,
     retryable: Bool
   ) throws -> Data {
-    guard isValidIdentifier(requestID), allowedErrorCodes.contains(code),
-      !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      message.count <= 4_000
-    else {
-      throw NativeHostProtocolError.invalidResponse
+    let safeRequestID = isValidIdentifier(requestID) ? requestID : "unknown"
+    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedCode = allowedErrorCodes.contains(code) ? code : fallbackErrorCode
+    var resolvedMessage = trimmed.isEmpty ? "(no detail provided by the native host)" : message
+    if !allowedErrorCodes.contains(code) {
+      resolvedMessage = "[\(code)] " + resolvedMessage
+    }
+    if resolvedMessage.count > maxErrorMessageCharacters {
+      resolvedMessage = String(resolvedMessage.prefix(maxErrorMessageCharacters))
     }
     return try encode(
       ErrorResponse(
         protocolVersion: nativeHostProtocolVersion,
-        requestId: requestID,
+        requestId: safeRequestID,
         type: "error",
-        error: ErrorBody(code: code, message: message, retryable: retryable)
+        error: ErrorBody(code: resolvedCode, message: resolvedMessage, retryable: retryable)
       )
     )
   }
+
+  /// Longest error text the wire contract accepts.
+  public static let maxErrorMessageCharacters = 4_000
+  /// Code used when the caller produced one the contract does not know.
+  public static let fallbackErrorCode = "environment_unavailable"
 
   private static func simple(requestID: String, type: String) throws -> Data {
     try encode(
@@ -680,7 +750,12 @@ private func strictBoolean(_ value: Any?) -> Bool? {
   return number.boolValue
 }
 
-private let allowedErrorCodes: Set<String> = [
+/// Every code the host is allowed to put on the wire. Mirrors
+/// `ComputerUseErrorCodeSchema` in `packages/protocol/src/computer-use/errors.ts`;
+/// a code the host emits but this set does not contain used to be fatal (see
+/// `error(requestID:code:message:retryable:)`).
+public let allowedErrorCodes: Set<String> = [
+  "invalid_request",
   "computer_disabled", "environment_unavailable", "native_host_missing",
   "native_host_incompatible", "native_host_untrusted", "screen_permission_denied",
   "accessibility_permission_denied", "app_not_allowed", "domain_not_allowed",
@@ -689,4 +764,5 @@ private let allowedErrorCodes: Set<String> = [
   "action_timeout", "sensitive_input_blocked", "approval_required", "approval_expired",
   "approval_mismatch", "prompt_injection_suspected", "verification_failed",
   "verification_inconclusive", "handoff_required", "session_paused", "session_canceled",
+  "screen_locked",
 ]

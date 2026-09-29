@@ -2,7 +2,10 @@ const { execFile } = require('node:child_process')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { promisify } = require('node:util')
-const { createLocalNativeHostManifest } = require('./package-native-host.js')
+const {
+  createLocalNativeHostManifest,
+  resolveMacNativeHostExecutable,
+} = require('./package-native-host.js')
 const { createLocalWindowsNativeHostManifest } = require('./package-windows-native-host.js')
 
 const execFileAsync = promisify(execFile)
@@ -37,13 +40,15 @@ async function prepareComputerUseHost() {
     const packageRoot = path.resolve(__dirname, '../native/macos/SparkComputerHost')
     const swiftArchitecture = process.arch === 'x64' ? 'x86_64' : 'arm64'
     await run('swift', ['build', '-c', 'debug', '--arch', swiftArchitecture], packageRoot)
-    sourceExecutable = path.join(
+    // Resolved through SwiftPM (`--show-bin-path`), never composed by hand: the
+    // hand-composed `.build/<arch>-apple-macosx/debug` path went stale and this
+    // script silently deployed a host built weeks earlier. See
+    // `resolveMacNativeHostExecutable`.
+    sourceExecutable = await resolveMacNativeHostExecutable({
       packageRoot,
-      '.build',
-      `${swiftArchitecture}-apple-macosx`,
-      'debug',
-      executableName,
-    )
+      configuration: 'debug',
+      swiftArchitecture,
+    })
     const destinationExecutable = path.join(destinationDirectory, executableName)
     await fs.copyFile(sourceExecutable, destinationExecutable)
     await fs.chmod(destinationExecutable, 0o755)

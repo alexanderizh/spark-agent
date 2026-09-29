@@ -324,3 +324,140 @@ final class NativeSkyshotProtocolTests: XCTestCase {
     XCTAssertNil(object?["payload"])
   }
 }
+
+/// Regression cover for "an error reply must never be able to kill the host".
+///
+/// Measured failure: a locked screen produced `code: "screen_locked"` from the
+/// platform-error mapper, `NativeHostResponseEncoder.error` rejected it (the code
+/// was missing from the allow-list) and threw, the throw escaped
+/// `NativeHostRequestHandler.handle`, and `HostMain` treated it as a protocol
+/// failure and exited the process — burning the session's single host-restart
+/// budget instead of reporting a lock the model could wait out.
+final class NativeHostRequestDecodingTests: XCTestCase {
+  private func payload(_ json: String) -> Data { Data(json.utf8) }
+
+  func testAnswersAMalformedRequestWithoutEndingTheSession() throws {
+    // Measured: a probe that omitted appId/windowId made the host exit(76) and
+    // the caller wait for its timeout. The frame boundary was honored, so the
+    // only correct reaction is one error reply and a live host.
+    let data = payload(#"{"protocolVersion":1,"requestId":"r7","type":"observe"}"#)
+    let reply = try NativeHostRequestDecoding.errorReply(
+      for: data, error: .invalidRequestFields)
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: reply) as? [String: Any])
+    XCTAssertEqual(object["type"] as? String, "error")
+    XCTAssertEqual(object["requestId"] as? String, "r7")
+    let body = try XCTUnwrap(object["error"] as? [String: Any])
+    XCTAssertEqual(body["code"] as? String, "invalid_request")
+    XCTAssertEqual(body["retryable"] as? Bool, false)
+    XCTAssertTrue(
+      allowedErrorCodes.contains("invalid_request"),
+      "a code the host can emit must be in the contract's allowed set")
+  }
+
+  func testUsesTheRequestIDEvenWhenTheFieldsAreWrong() {
+    XCTAssertEqual(
+      NativeHostRequestDecoding.requestID(
+        in: payload(#"{"protocolVersion":9,"requestId":"abc-1","type":"ping"}"#)),
+      "abc-1")
+  }
+
+  func testFallsBackToUnknownWhenTheRequestIDIsUnusable() {
+    // No requestId, an unusable one, and plain garbage all have to produce a
+    // reply the caller can parse.
+    XCTAssertEqual(NativeHostRequestDecoding.requestID(in: payload("{}")), "unknown")
+    XCTAssertEqual(
+      NativeHostRequestDecoding.requestID(in: payload(#"{"requestId":"   "}"#)), "unknown")
+    XCTAssertEqual(NativeHostRequestDecoding.requestID(in: payload("not json")), "unknown")
+    XCTAssertEqual(NativeHostRequestDecoding.requestID(in: payload("[1,2,3]")), "unknown")
+    // The encoder clamps an over-long id to something reply-safe.
+    let huge = String(repeating: "a", count: 500)
+    XCTAssertEqual(
+      NativeHostRequestDecoding.requestID(in: payload(#"{"requestId":"\#(huge)"}"#)), "unknown")
+    let reply = try? NativeHostRequestDecoding.errorReply(
+      for: payload("not json"), error: .invalidJSON)
+    XCTAssertNotNil(reply, "even an unparseable payload must yield a reply")
+  }
+
+  func testEveryProtocolErrorExplainsItself() {
+    for error: NativeHostProtocolError in [
+      .invalidJSON, .invalidProtocolVersion, .invalidRequestID, .invalidRequestType,
+      .invalidRequestFields, .invalidResponse,
+    ] {
+      XCTAssertFalse(NativeHostRequestDecoding.message(for: error).isEmpty)
+    }
+  }
+}
+
+final class NativeHostErrorEncodingTests: XCTestCase {
+  func testEveryCodeTheHostCanEmitIsOnTheWireContract() {
+    // The literal codes the Swift host passes to the encoder. Keep in sync with
+    // `grep -rho 'code: "[a-z_]*"' Sources/`.
+    let emitted = [
+      "accessibility_permission_denied", "action_noop", "action_not_allowed",
+      "environment_unavailable", "focus_mismatch", "handoff_required",
+      "native_host_incompatible", "screen_locked", "screen_permission_denied",
+      "sensitive_input_blocked", "session_canceled", "stale_frame", "stale_tree",
+    ]
+    for code in emitted {
+      XCTAssertTrue(
+        allowedErrorCodes.contains(code),
+        "\(code) is emitted by the host but missing from allowedErrorCodes — the host would exit instead of reporting it")
+    }
+  }
+
+  func testLockedScreenIsReportableAsItsOwnCode() throws {
+    let data = try NativeHostResponseEncoder.error(
+      requestID: "request-lock",
+      code: "screen_locked",
+      message: "The display is locked.",
+      retryable: true
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let body = try XCTUnwrap(object["error"] as? [String: Any])
+    XCTAssertEqual(body["code"] as? String, "screen_locked")
+    XCTAssertEqual(body["retryable"] as? Bool, true)
+  }
+
+  func testUnknownCodeDegradesInsteadOfThrowing() throws {
+    let data = try NativeHostResponseEncoder.error(
+      requestID: "request-unknown",
+      code: "some_future_code",
+      message: "Something new failed",
+      retryable: false
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let body = try XCTUnwrap(object["error"] as? [String: Any])
+    XCTAssertEqual(body["code"] as? String, NativeHostResponseEncoder.fallbackErrorCode)
+    // The original code stays visible to the client and in the logs.
+    XCTAssertEqual(body["message"] as? String, "[some_future_code] Something new failed")
+  }
+
+  func testOversizedMessageIsClampedNotFatal() throws {
+    let data = try NativeHostResponseEncoder.error(
+      requestID: "request-long",
+      code: "action_noop",
+      message: String(repeating: "x", count: 10_000),
+      retryable: false
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let body = try XCTUnwrap(object["error"] as? [String: Any])
+    let message = try XCTUnwrap(body["message"] as? String)
+    XCTAssertEqual(message.count, NativeHostResponseEncoder.maxErrorMessageCharacters)
+    XCTAssertEqual(body["code"] as? String, "action_noop")
+  }
+
+  func testEmptyMessageAndInvalidRequestIDAreRepaired() throws {
+    let data = try NativeHostResponseEncoder.error(
+      // 201 characters: over the 200-character identifier bound.
+      requestID: String(repeating: "r", count: 201),
+      code: "action_noop",
+      message: "   ",
+      retryable: false
+    )
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(object["requestId"] as? String, "unknown")
+    let body = try XCTUnwrap(object["error"] as? [String: Any])
+    XCTAssertFalse((body["message"] as? String ?? "").isEmpty)
+  }
+}

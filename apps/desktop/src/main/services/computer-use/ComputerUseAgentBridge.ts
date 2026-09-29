@@ -431,8 +431,15 @@ const MCP_TOOLS = [
   {
     name: 'screenshot',
     description:
-      'Re-observe the current target window: full-resolution screenshot + the complete Markdown element tree with [n] ids. Use after the UI changed for reasons outside your actions, or when element ids went stale.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'Re-observe a window: full-resolution screenshot + the complete Markdown element tree with [n] ids. Without arguments it re-observes the window this session already controls. Pass `app` (display name, bundle id, or stable app id) or `windowId` to bind the session to a DIFFERENT window first — the returned tree is then the exact frame your next action resolves against, so element ids from this response are always actionable (no stale_tree between two independently captured frames). Use after the UI changed for reasons outside your actions, or when element ids went stale.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        app: { type: 'string', minLength: 1, maxLength: 300 },
+        windowId: { type: 'string', minLength: 1, maxLength: 256 },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: 'start_task',
@@ -514,14 +521,14 @@ const MCP_TOOLS = [
   {
     name: 'bind_target',
     description:
-      'Explicitly bind an owned Computer Use task to a new window whose strong application identity is already allowed by the task contract.',
+      'Point the desktop session at the window you want to work on and return its fresh tree. Pass `targetApp` (display name, bundle id, or stable app id) or `targetWindowId` — that works for ordinary atomic control at any time and is the supported way to say "switch to this app". Pass `computerSessionId` only to rebind a delegated start_task run, which must be paused first.',
     inputSchema: {
       type: 'object',
       properties: {
         computerSessionId: { type: 'string', minLength: 1, maxLength: 200 },
         targetWindowId: { type: 'string', minLength: 1, maxLength: 256 },
+        targetApp: { type: 'string', minLength: 1, maxLength: 300 },
       },
-      required: ['computerSessionId', 'targetWindowId'],
       additionalProperties: false,
     },
   },

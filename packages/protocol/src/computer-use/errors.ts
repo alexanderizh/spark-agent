@@ -18,6 +18,12 @@ export const ComputerUseErrorCodeSchema = z.enum([
   'stale_frame',
   'stale_tree',
   'focus_mismatch',
+  /**
+   * Emitted by the macOS host when a request passes frame decoding but fails the
+   * wire contract (a missing or wrongly typed field). The host answers it and
+   * stays alive, so the client must be able to parse it.
+   */
+  'invalid_request',
   'display_topology_changed',
   'privilege_mismatch',
   'action_noop',

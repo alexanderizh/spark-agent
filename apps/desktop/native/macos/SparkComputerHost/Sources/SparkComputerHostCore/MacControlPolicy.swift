@@ -132,6 +132,11 @@ public enum NativeInputPolicy {
 public struct NativeAXRawElement: Equatable, Sendable {
   public let runtimeID: String
   public let role: String
+  /// `AXSubrole`, e.g. `AXStandardWindow`, `AXLandmarkNavigation`,
+  /// `AXCodeStyleGroup`. Unlike `AXRoleDescription` this is a stable,
+  /// non-localized token, which is why the tree structure uses it to tell a
+  /// semantic container (a landmark region) from a plain layout `AXGroup`.
+  public let subrole: String
   public let name: String
   public let value: String?
   public let bounds: NativeRect
@@ -155,13 +160,14 @@ public struct NativeAXRawElement: Equatable, Sendable {
   public let childCount: Int
 
   public init(
-    runtimeID: String, role: String, name: String, value: String?, bounds: NativeRect,
-    enabled: Bool, focused: Bool, actions: [String], secure: Bool, depth: Int = 0,
-    roleDescription: String? = nil, placeholder: String? = nil, selected: Bool = false,
-    childCount: Int = 0
+    runtimeID: String, role: String, subrole: String = "", name: String, value: String?,
+    bounds: NativeRect, enabled: Bool, focused: Bool, actions: [String], secure: Bool,
+    depth: Int = 0, roleDescription: String? = nil, placeholder: String? = nil,
+    selected: Bool = false, childCount: Int = 0
   ) {
     self.runtimeID = runtimeID
     self.role = role
+    self.subrole = subrole
     self.name = name
     self.value = value
     self.bounds = bounds
@@ -306,6 +312,7 @@ public struct NativeAXTreeState: Sendable {
     NativeAXRawElement(
       runtimeID: element.runtimeID.isEmpty ? "unknown" : element.runtimeID,
       role: boundedString(element.role, max: 120, fallback: "unknown"),
+      subrole: boundedString(element.subrole, max: 120),
       name: boundedString(element.name, max: 2_000),
       value: element.secure
         ? nil : element.value.map { boundedString($0, max: maxNativeTextUTF16Units) },
