@@ -653,7 +653,7 @@ export const docsTopics: DocsTopicMeta[] = [
       'V2 开关',
     ],
     readTime: 26,
-    updatedAt: '2026-09-19',
+    updatedAt: '2026-09-30',
     icon: 'AppWindow',
     relatedSlugs: ['governance', 'mcp-skills', 'builtin-tools', 'sub-apps', 'code-development'],
   },

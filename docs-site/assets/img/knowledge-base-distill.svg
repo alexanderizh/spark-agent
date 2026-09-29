@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 546" width="960" height="546" role="img" aria-label="知识库三条管道：对话沉淀、技能提议与 Repo Wiki">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .w { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .v { fill: #f7f4ff; stroke: #7c4dff; stroke-width: 1; }
+      .c { fill: #f2fbff; stroke: #35c6ff; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .w { fill: #1c2040; stroke: #6b7bff; }
+        .v { fill: #221a3d; stroke: #9b7dff; }
+        .c { fill: #12242e; stroke: #4fb6e6; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="546"/>
+
+  <text class="h1" x="40" y="38">知识库 · 三条沉淀管道</text>
+  <text class="sub" x="40" y="60">对话、技能、代码仓库都能长出知识页；三条管道都是「先出草案，再人工确认」，不会自己往库里写</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- Pipeline 1 -->
+  <text class="band" x="40" y="102">① 对话沉淀：会话 → 候选 → 知识页</text>
+  <rect class="w" x="40" y="114" width="150" height="72" rx="10"/>
+  <text class="tt" x="54" y="142">会话对话事件</text>
+  <text class="bd" x="54" y="162">增量选取，不重扫</text>
+
+  <rect class="w" x="214" y="114" width="150" height="72" rx="10"/>
+  <text class="tt" x="228" y="142">增量采样</text>
+  <text class="bd" x="228" y="160">水位线防重复抽取</text>
+  <text class="bd" x="228" y="176">本地噪声过滤</text>
+
+  <rect class="w" x="388" y="114" width="150" height="72" rx="10"/>
+  <text class="tt" x="402" y="142">抽取模型</text>
+  <text class="bd" x="402" y="160">可配独立小模型</text>
+  <text class="bd" x="402" y="176">严格 JSON 解析</text>
+
+  <rect class="w" x="562" y="114" width="150" height="72" rx="10"/>
+  <text class="tt" x="576" y="142">候选区</text>
+  <text class="bd" x="576" y="160">默认保留 14 天</text>
+  <text class="bd" x="576" y="176">上限 200 条</text>
+
+  <rect class="w" x="736" y="114" width="184" height="72" rx="10"/>
+  <text class="tt" x="750" y="142">知识页落库</text>
+  <text class="bd" x="750" y="160">按目标空间重建服务栈</text>
+  <text class="bd" x="750" y="176">带轮次与依据片段溯源</text>
+
+  <path class="arrow" d="M190 150 H208"/>
+  <path class="arrow" d="M364 150 H382"/>
+  <path class="arrow" d="M538 150 H556"/>
+  <path class="arrow" d="M712 150 H730"/>
+
+  <!-- Pipeline 2 -->
+  <text class="band" x="40" y="232">② 技能提议：知识页 → 技能草案 → 确认安装</text>
+  <rect class="v" x="40" y="244" width="210" height="72" rx="10"/>
+  <text class="tt" x="54" y="272">知识页</text>
+  <text class="bd" x="54" y="292">已经过人工确认的成篇知识</text>
+
+  <rect class="v" x="274" y="244" width="210" height="72" rx="10"/>
+  <text class="tt" x="288" y="272">技能提议草案</text>
+  <text class="bd" x="288" y="290">生成 SKILL.md 与 PURPOSE.md</text>
+  <text class="bd" x="288" y="306">回写来源页，便于追溯</text>
+
+  <rect class="v" x="508" y="244" width="210" height="72" rx="10"/>
+  <text class="tt" x="522" y="272">人工确认 / 拒绝</text>
+  <text class="bd" x="522" y="290">拒绝可填原因，回填到来源页</text>
+  <text class="bd" x="522" y="306">未确认不会落盘</text>
+
+  <rect class="v" x="742" y="244" width="178" height="72" rx="10"/>
+  <text class="tt" x="756" y="272">安装为技能</text>
+  <text class="bd" x="756" y="290">进入技能库，可随时停用</text>
+
+  <path class="arrow" d="M250 280 H268"/>
+  <path class="arrow" d="M484 280 H502"/>
+  <path class="arrow" d="M718 280 H736"/>
+
+  <!-- Pipeline 3 -->
+  <text class="band" x="40" y="362">③ Repo Wiki：本地仓库 → 结构化知识页</text>
+  <rect class="c" x="40" y="374" width="210" height="72" rx="10"/>
+  <text class="tt" x="54" y="402">仓库扫描</text>
+  <text class="bd" x="54" y="420">扫描树 / 渲染 / 编排三层</text>
+  <text class="bd" x="54" y="436">按 ignore 规则跳过依赖目录</text>
+
+  <rect class="c" x="274" y="374" width="210" height="72" rx="10"/>
+  <text class="tt" x="288" y="402">结构化页面</text>
+  <text class="bd" x="288" y="420">总览 / 目录 / 技术栈三件套</text>
+
+  <rect class="c" x="508" y="374" width="210" height="72" rx="10"/>
+  <text class="tt" x="522" y="402">漂移检测</text>
+  <text class="bd" x="522" y="420">对照 git 提交数判断是否过期</text>
+  <text class="bd" x="522" y="436">过期可一键重建</text>
+
+  <rect class="c" x="742" y="374" width="178" height="72" rx="10"/>
+  <text class="tt" x="756" y="402">归属三态</text>
+  <text class="bd" x="756" y="420">可重建 / 人工接管</text>
+  <text class="bd" x="756" y="436">/ 已忽略</text>
+
+  <path class="arrow" d="M250 410 H268"/>
+  <path class="arrow" d="M484 410 H502"/>
+  <path class="arrow" d="M718 410 H736"/>
+
+  <rect class="card" x="40" y="466" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="488" font-size="11">人工接管过的页面不会被重建覆盖，重建只处理仍标记为「可重建」的页面。</text>
+  <text class="bd" x="60" y="506" font-size="11">沉淀管道首期只保留「显式沉淀」与「里程碑收尾」两条人审路径，不做每轮实时抽取。</text>
+</svg>

@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 648" width="960" height="648" role="img" aria-label="自动路由一轮分流时序与分流失败时的降级阶梯">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 11px; fill: #33415c; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .num { font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .div { stroke: #dde3f1; stroke-width: 1.5; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .st { fill: #c3cad8; } .bd { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="648"/>
+
+  <text class="h1" x="40" y="38">自动路由 · 一轮是怎么被分流的</text>
+  <text class="sub" x="40" y="60">分流是轮次级替换：宿主在跑这一轮之前把 provider 与 model 换掉，执行模型本身不需要知道 AutoRouter 的存在</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 轮次分流时序</text>
+  <line class="div" x1="60" y1="126" x2="60" y2="438"/>
+
+  <circle cx="60" cy="134" r="13" fill="#5b6cff"/><text class="num" x="60" y="139" text-anchor="middle">1</text>
+  <rect class="card" x="84" y="112" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="139">用户发消息，本轮开始</text>
+
+  <circle cx="60" cy="186" r="13" fill="#5b6cff"/><text class="num" x="60" y="191" text-anchor="middle">2</text>
+  <rect class="card" x="84" y="164" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="191">加载 router 配置，筛出 enabled 的执行模型</text>
+
+  <circle cx="60" cy="238" r="13" fill="#5b6cff"/><text class="num" x="60" y="243" text-anchor="middle">3</text>
+  <rect class="card" x="84" y="216" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="243">调用分流器：当轮消息 + 事件数 + 估算 token + 最近两轮用户消息摘要</text>
+
+  <circle cx="60" cy="290" r="13" fill="#5b6cff"/><text class="num" x="60" y="295" text-anchor="middle">4</text>
+  <rect class="card" x="84" y="268" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="295">zod 严格解析决策 JSON：intensity / decompose / subtasks / reason</text>
+
+  <circle cx="60" cy="342" r="13" fill="#5b6cff"/><text class="num" x="60" y="347" text-anchor="middle">5</text>
+  <rect class="card" x="84" y="320" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="347">强度粘性判定：上轮同强度且执行器未变则沿用，避免相邻轮横跳</text>
+
+  <circle cx="60" cy="394" r="13" fill="#5b6cff"/><text class="num" x="60" y="399" text-anchor="middle">6</text>
+  <rect class="card" x="84" y="372" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="399">宿主替换本轮 provider / model，并落一条 auto_router_decision 事件</text>
+
+  <circle cx="60" cy="446" r="13" fill="#16a34a"/><text class="num" x="60" y="451" text-anchor="middle">7</text>
+  <rect class="card" x="84" y="424" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="451">本轮按选中的执行模型跑完</text>
+
+  <text class="band" x="580" y="100">② 分流失败时的降级阶梯</text>
+
+  <rect class="soft" x="580" y="112" width="340" height="150" rx="10"/>
+  <text class="tt" x="600" y="140">从异常到收口</text>
+  <text class="bd" x="600" y="164">分流超时 / HTTP 错误 / JSON 不合法</text>
+  <text class="bd" x="600" y="184">→ 一律交给规则兜底分类器</text>
+  <text class="bd" x="600" y="204">规则兜底也不可用 → 用兜底强度</text>
+  <text class="bd" x="600" y="224">一个可用执行模型都没有</text>
+  <text class="bd" x="600" y="244">→ 本轮无法执行，报错并指向渠道管理</text>
+
+  <rect class="soft" x="580" y="274" width="340" height="160" rx="10"/>
+  <text class="tt" x="600" y="302">规则兜底怎么判（顺序敏感）</text>
+  <text class="bd" x="600" y="326">① 估算 token &gt; 30000 → high</text>
+  <text class="bd" x="600" y="346">② 低强度正则（好的 / 继续 / 翻译）→ low</text>
+  <text class="bd" x="600" y="366">③ 高强度正则（重构 / 架构 / 全链路）→ high</text>
+  <text class="bd" x="600" y="386">④ 都不命中 → balanced</text>
+  <text class="bd" x="600" y="408">token 阈值先于正则，所以很长的「总结一句」仍判 high</text>
+
+  <rect class="soft" x="580" y="446" width="340" height="100" rx="10"/>
+  <text class="tt" x="600" y="474">重试策略</text>
+  <text class="bd" x="600" y="498">最多重试一次</text>
+  <text class="bd" x="600" y="518">确定性 4xx（鉴权 / 权限 / 模型不存在）立即收口</text>
+  <text class="bd" x="600" y="538">429 视作可能瞬时限流，保留一次重试</text>
+
+  <rect class="soft" x="40" y="566" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="588" font-size="11">界面上能看到：轮次边界提示条（仅当本轮模型与上轮不同时出现）、轮次 meta 行的强度色点、悬停查看路由器名与兜底阶段。</text>
+  <text class="bd" x="60" y="606" font-size="11">决策事件 auto_router_decision 会持久化，重进会话或换设备都还在；引擎不匹配时回退默认渠道并标注「引擎不匹配回退」。</text>
+</svg>

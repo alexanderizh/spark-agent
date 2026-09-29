@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SparkWork 四条能力线的架构图解：长期记忆的生命周期与检索注入、知识库的空间与上下文预算、自动路由的轮次分流与降级、性能保护的四档分级与双池闸门。"
+    />
+    <title>能力架构 · SparkWork</title>
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">S</span
+          ><span class="brand-copy"
+            ><strong>SparkWork</strong><span>capability architecture</span></span
+          ></a
+        >
+        <nav class="nav" aria-label="主导航">
+          <a href="index.html">总览</a><a href="architecture.html">运行架构</a
+          ><a aria-current="page" href="capabilities.html">能力架构</a
+          ><a href="operations.html">项目运维</a
+          ><a href="https://github.com/alexanderizh/spark-agent/wiki">Wiki</a
+          ><a href="https://github.com/alexanderizh/spark-agent">GitHub</a>
+        </nav>
+      </header>
+
+      <main class="article">
+        <div class="eyebrow">capabilities / memory · wiki · auto router · performance</div>
+        <h1>四条能力线：记住、查得到、花得值、跑得稳。</h1>
+        <p class="meta-line">
+          事实源：<code>packages/agent-runtime</code> · <code>packages/protocol</code> ·
+          <code>packages/storage/migrations</code> · 最后核对 2026-09-30
+        </p>
+        <p class="quote">
+          SparkWork 把 Agent 的“记忆”拆成三条互相独立的线：长期记忆回答“它记得你”，知识库回答“它读得懂你的资料”，自动路由回答“这轮该花多少成本”，而性能保护回答“后台任务再多也别把电脑拖死”。
+        </p>
+
+        <h2>一、长期记忆：每轮写、每轮读</h2>
+        <p>
+          记忆以 markdown 文件为事实来源、以本地 SQLite 为索引。写入发生在
+          <strong>每一轮对话结束之后</strong>（异步、失败只写日志，不影响主对话），注入发生在
+          <strong>每一轮对话开始之前</strong>（不是每个会话只注入一次）。
+        </p>
+
+        <div class="figure-grid">
+          <figure class="figure">
+            <img
+              src="assets/img/long-term-memory-pipeline.svg"
+              alt="长期记忆一轮对话的写入与读取闭环"
+              loading="lazy"
+            />
+            <figcaption>
+              写入过五道闸门后落三处；读取走 FTS5 与向量双路、RRF 融合与时间衰减，再按 token
+              预算裁剪。 <a href="assets/img/long-term-memory-pipeline.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+          <figure class="figure">
+            <img
+              src="assets/img/long-term-memory-lifecycle.svg"
+              alt="长期记忆生命周期与自动进化"
+              loading="lazy"
+            />
+            <figcaption>
+              候选 → 有效 → 失效 → 归档 → 删除。旧记忆只标失效不删除，整合任务产出的候选必须人工确认才生效。
+              <a href="assets/img/long-term-memory-lifecycle.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3>三个必须知道的事实</h3>
+        <ul>
+          <li>
+            <strong>三层作用域</strong>：<code>user</code> 跨项目共享、<code>project</code> 跟随工作区（正文落在仓库目录里）、<code>agent</code>
+            按角色隔离。三者互不可见。
+          </li>
+          <li>
+            <strong>五道写入闸门</strong>：瞬时数据、置信度低于 0.6、去重合并判定、超配额、命中敏感内容，任一不过即丢弃，不落盘也不建索引。
+          </li>
+          <li>
+            <strong>Agent 没有写记忆的工具</strong>：记忆写入只来自后台抽取，增删改只在「设置 → Agent → 记忆」面板里由人完成，避免 Agent
+            把临时信息固化成长期事实。
+          </li>
+        </ul>
+
+        <h2>二、知识库：零预注入，按预算取用</h2>
+        <p>
+          知识库把方案、教程和踩坑记录写成可检索、可双链、可回看版本的页面。它和记忆最大的差别是
+          <strong>零预注入</strong>：知识库内容从不进常驻上下文，Agent 必须先检索、再按需读取。
+        </p>
+
+        <div class="figure-grid">
+          <figure class="figure">
+            <img
+              src="assets/img/knowledge-base-budget.svg"
+              alt="知识库上下文预算分层"
+              loading="lazy"
+            />
+            <figcaption>
+              四层预算：常驻约 800 token、检索 top 8、正文 3000 token 每页、单轮总闸 8000；均带服务端硬上限。
+              <a href="assets/img/knowledge-base-budget.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+          <figure class="figure">
+            <img
+              src="assets/img/knowledge-base-distill.svg"
+              alt="知识库三条沉淀管道"
+              loading="lazy"
+            />
+            <figcaption>
+              对话沉淀、技能提议与 Repo Wiki 都能长出知识页，但三条管道都先出草案再人工确认，不会自己往库里写。
+              <a href="assets/img/knowledge-base-distill.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3>写入与读取的边界</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>面向</th>
+                <th>共 12 个工具（<code>mcp__spark_wiki__</code>）</th>
+                <th>是否走审批</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>只读</td>
+                <td>
+                  <code>wiki_list_spaces</code> · <code>wiki_search</code> · <code>wiki_read</code> ·
+                  <code>wiki_list</code> · <code>wiki_backlinks</code>
+                </td>
+                <td>免审批</td>
+              </tr>
+              <tr>
+                <td>写入</td>
+                <td>
+                  <code>wiki_write</code> · <code>wiki_update</code> · <code>wiki_archive</code> ·
+                  <code>wiki_delete</code> · <code>wiki_restore</code> · <code>wiki_link</code>
+                </td>
+                <td>走 <code>canUseTool</code></td>
+              </tr>
+              <tr>
+                <td>技能提议</td>
+                <td><code>wiki_propose_skill</code></td>
+                <td>产出草案，仍需人工确认</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          所有写入收敛到同一套写入原语：<code>expectedVersion</code> CAS 乐观锁、正文先写临时文件再
+          <code>rename</code> 原子落盘、FTS 与主表同事务、失败回滚，回执带 <code>indexReady</code>。
+        </p>
+
+        <h2>三、自动路由：轮次级替换模型</h2>
+        <p>
+          一个 router 由 <strong>1 个分流器 + N 个按强度分档的执行模型</strong> 组成。分流不发生在本轮运行过程中，而是
+          <strong>在轮次开始前</strong>由宿主把 provider 与 model 换掉，所以执行模型本身不需要知道 AutoRouter 存在。
+        </p>
+
+        <div class="figure-grid">
+          <figure class="figure">
+            <img
+              src="assets/img/auto-router-compose.svg"
+              alt="自动路由的组成：分流器与三档执行模型"
+              loading="lazy"
+            />
+            <figcaption>
+              分流器只做轻量分类；执行模型按 high / balanced / low 分档，每条可单独指定推理强度。
+              <a href="assets/img/auto-router-compose.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+          <figure class="figure">
+            <img
+              src="assets/img/auto-router-flow.svg"
+              alt="自动路由一轮分流时序与降级阶梯"
+              loading="lazy"
+            />
+            <figcaption>
+              分流失败分四类降级，一律不抛错；只有「一个可用执行模型都没有」才让本轮失败并给出可操作报错。
+              <a href="assets/img/auto-router-flow.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3>降级与兜底</h3>
+        <ul>
+          <li>
+            <code>timeout</code> / <code>http</code> / <code>schema</code> 三类失败统一走
+            <strong>规则兜底分类器</strong>：先看估算 token（&gt; 30000 直接 high），再匹配高低强度正则，都不命中则
+            <code>balanced</code>。
+          </li>
+          <li>
+            <strong>重试最多一次</strong>：确定性 4xx（鉴权、权限、模型不存在、请求非法）立即收口，429
+            视作可能瞬时限流保留一次重试。
+          </li>
+          <li>
+            <code>adapter</code> 与会话引擎不一致时回退默认渠道并标注
+            <code>adapterMismatch</code>，存量会话换引擎后不会突然跑不动。
+          </li>
+        </ul>
+
+        <h2>四、性能保护：四档分级 + 双池闸门</h2>
+        <p>
+          这一节解决的是另一类问题：不是「Agent
+          会不会做错」，而是<b>整机被后台子进程拖到失去响应</b>。它由两个互相独立的部分组成——<strong>资源监控</strong>负责观测与分级，<strong>派发闸门</strong>负责把并发真正收敛住。
+        </p>
+
+        <div class="figure-grid">
+          <figure class="figure">
+            <img
+              src="assets/img/performance-pressure-levels.svg"
+              alt="性能监控：采样、定级与四档滞回"
+              loading="lazy"
+            />
+            <figcaption>
+              2 秒采样六类指标，逐项与自己的三档阈值比对后取最高档；升级快、降级慢，一次只降一级。
+              <a href="assets/img/performance-pressure-levels.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+          <figure class="figure">
+            <img
+              src="assets/img/performance-dispatch-gate.svg"
+              alt="派发闸门：主池与嵌套防死锁池"
+              loading="lazy"
+            />
+            <figcaption>
+              成员派发按形态分主池与嵌套防死锁池；全局并发预算与成员并发硬顶两个旋钮，超出部分排队而不是同时启动。
+              <a href="assets/img/performance-dispatch-gate.svg" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+          <figure class="figure">
+            <img
+              src="assets/img/settings-performance.png"
+              alt="性能页全貌：档位提示条、资源指标卡、历史趋势、活动治理与降级恢复事件"
+              loading="lazy"
+            />
+            <figcaption>
+              设置 → 系统 → 性能：顶部是当前档位提示条，中间是资源指标与趋势，底部是活动治理与最近降级 / 恢复事件。
+              <a href="assets/img/settings-performance.png" target="_blank" rel="noopener">查看原图 ↗</a>
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3>三个必须守住的边界</h3>
+        <ul>
+          <li>
+            <strong>阈值不写死绝对值</strong>：配置与持久化里只有百分比与核数推导系数，运行时按宿主机规格基线（总内存 + CPU
+            核数）换算出 GB 等价值，判定以百分比直比为准，字节数只用于展示与日志。
+          </li>
+          <li>
+            <strong>只有危急档会打扰你</strong>：warning / critical 完全静默（状态在性能页可查），emergency 才弹一条右上角消息 +
+            一条系统通知，完全恢复时补一条；页面挂载前已发生的级别不补发。
+          </li>
+          <li>
+            <strong>闸门不依赖压力级别</strong>：级别已由装配层灌进闸门（含监控晚于闸门创建时的补灌），但闸门内目前只记录档位、不参与准入判定——真正在保护整机的是与压力级别无关的固定双池并发上限。所以活动治理区的「限流中 / 已暂停派发 / 已熔断」是状态呈现，不是已执行的限流动作。
+          </li>
+        </ul>
+
+        <h2>四条能力线的代码落点</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>能力</th>
+                <th>服务与协议</th>
+                <th>存储</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>长期记忆</td>
+                <td><code>packages/agent-runtime</code>（记忆服务与工具）</td>
+                <td>
+                  markdown 事实源 + <code>memory_entry</code> / <code>memory_fts</code> /
+                  <code>memory_vec</code> / <code>memory_entity</code>（迁移 107–110）
+                </td>
+              </tr>
+              <tr>
+                <td>知识库</td>
+                <td>
+                  <code>packages/agent-runtime/src/services/wiki</code>；
+                  <code>packages/protocol/src/wiki*.ts</code>
+                </td>
+                <td>
+                  markdown 正文 + <code>wiki_space</code> / <code>wiki_page</code> /
+                  <code>wiki_link</code> / <code>wiki_revision</code> / <code>wiki_fts</code> /
+                  <code>wiki_candidate</code>（迁移 112–114）
+                </td>
+              </tr>
+              <tr>
+                <td>自动路由</td>
+                <td>
+                  <code>packages/protocol/src/auto-router-config.ts</code>；会话执行路径的分流编排
+                </td>
+                <td>
+                  <code>provider_profiles</code>（<code>provider_type = auto-router</code>）+
+                  <code>auto_router_decision</code> 事件
+                </td>
+              </tr>
+              <tr>
+                <td>性能保护</td>
+                <td>
+                  <code>packages/agent-runtime</code> 的 <code>resource-monitor</code>（采样与判级）与
+                  <code>dispatch-governor</code>（双池并发闸门）
+                </td>
+                <td>
+                  <code>resource_pressure_events</code>（迁移 103，保留 7 天）+ 分钟级指标的内存环形缓冲（默认不落库）
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>容易混淆的边界</h2>
+        <div class="split">
+          <div class="panel">
+            <h3>记忆 vs 知识库</h3>
+            <ul>
+              <li>记忆每轮自动注入摘要；知识库零预注入，要检索才进来。</li>
+              <li>记忆粒度是一条事实；知识库粒度是一篇成体系的知识页。</li>
+              <li>记忆 Agent 只读；知识库 Agent 可写但走审批。</li>
+              <li>判断标准：几乎每轮都该知道的放记忆，需要时去查的放知识库。</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>档位 vs 推理强度</h3>
+            <ul>
+              <li>强度档位（<code>intensity</code>）决定派给哪个执行模型。</li>
+              <li>推理强度（<code>reasoningEffort</code>）决定该模型想多深。</li>
+              <li>两者正交：low 档也可以开高推理强度。</li>
+              <li>分流决策是轮次级的，改配置影响下一轮而不是正在跑的这轮。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="panel">
+            <h3>档位标记 vs 真实限流</h3>
+            <ul>
+              <li>活动治理区的「限流中 / 已暂停派发 / 已熔断」由当前压力级别推导，是状态呈现。</li>
+              <li>闸门目前不会按档位拒绝准入，<code>setPressureLevel</code> 只记录档位。</li>
+              <li>真正让任务排队的是固定的并发上限：全局并发预算、成员并发硬顶、嵌套池配额。</li>
+              <li>需要立刻限流：直接调小全局并发预算或成员并发硬顶，热更新即时生效。</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>主池 vs 嵌套池</h3>
+            <ul>
+              <li>主池：<code>depth = 0</code> 且不是同步 peer call 的成员派发，严格 FIFO，超时 120 秒拒绝。</li>
+              <li>嵌套池：<code>depth &gt; 0</code> 或同步 peer call，独立配额，15 秒兜底放行防死锁。</li>
+              <li>宿主会话不占池槽位，但会被计入主池预算（有封顶与成员槽下限保护）。</li>
+              <li>一个许可 = 一次成员执行 = 至多一个 CLI 子进程。</li>
+            </ul>
+          </div>
+        </div>
+
+        <p>
+          面向使用者的完整说明见
+          <a href="https://www.yiqibyte.com/docs">官网文档中心</a>；本页只描述当前已经存在的机制与边界。
+        </p>
+      </main>
+
+      <footer class="footer">
+        <p>SparkWork / capability map</p>
+        <p>
+          <a href="architecture.html">← 运行架构</a> · <a href="operations.html">项目运维 →</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

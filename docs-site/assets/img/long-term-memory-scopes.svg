@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 484" width="960" height="484" role="img" aria-label="长期记忆三层作用域：user / project / agent 共用同一套 markdown 事实源与 SQLite 索引">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .ch { font-size: 12.5px; font-weight: 600; fill: #ffffff; }
+      .lb { font-size: 10px; fill: #8794b8; letter-spacing: .08em; }
+      .bd { font-size: 12px; fill: #465789; }
+      .h2b { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10.5px; fill: #465789; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .h2b { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #aab2c3; } .lb { fill: #78808f; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="484"/>
+
+  <text class="h1" x="40" y="38">长期记忆 · 三层作用域</text>
+  <text class="sub" x="40" y="60">scope 决定「谁能看到」，scope_ref 决定「属于谁」——三层共用同一套写入、检索与注入</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- Card 1: user -->
+  <rect class="card" x="40" y="92" width="272" height="252" rx="12"/>
+  <rect x="58" y="110" width="84" height="26" rx="13" fill="#5b6cff"/>
+  <text class="ch" x="100" y="127.5" text-anchor="middle">user</text>
+  <text class="lb" x="58" y="160">可见范围</text>
+  <text class="bd" x="58" y="180">所有项目 · 所有 Agent 共享</text>
+  <text class="lb" x="58" y="212">scope_ref</text>
+  <text class="mo" x="58" y="232">NULL</text>
+  <text class="lb" x="58" y="264">markdown 落盘</text>
+  <text class="mo" x="58" y="284">~/.spark-agent/memory/user/</text>
+  <text class="bd" x="58" y="318" font-size="11">身份、跨项目偏好</text>
+
+  <!-- Card 2: project -->
+  <rect class="card" x="344" y="92" width="272" height="252" rx="12"/>
+  <rect x="362" y="110" width="84" height="26" rx="13" fill="#7c4dff"/>
+  <text class="ch" x="404" y="127.5" text-anchor="middle">project</text>
+  <text class="lb" x="362" y="160">可见范围</text>
+  <text class="bd" x="362" y="180">仅该工作区 · 跟随代码目录</text>
+  <text class="lb" x="362" y="212">scope_ref</text>
+  <text class="mo" x="362" y="232">workspaceId</text>
+  <text class="lb" x="362" y="264">markdown 落盘</text>
+  <text class="mo" x="362" y="284">&lt;workspace&gt;/.spark-agent/memory/</text>
+  <text class="bd" x="362" y="318" font-size="11">项目决策、技术选型</text>
+
+  <!-- Card 3: agent -->
+  <rect class="card" x="648" y="92" width="272" height="252" rx="12"/>
+  <rect x="666" y="110" width="84" height="26" rx="13" fill="#35c6ff"/>
+  <text class="ch" x="708" y="127.5" text-anchor="middle">agent</text>
+  <text class="lb" x="666" y="160">可见范围</text>
+  <text class="bd" x="666" y="180">仅该 Agent 角色（含成员）</text>
+  <text class="lb" x="666" y="212">scope_ref</text>
+  <text class="mo" x="666" y="232">agentId</text>
+  <text class="lb" x="666" y="264">markdown 落盘</text>
+  <text class="mo" x="666" y="284">~/.spark-agent/memory/agent/&lt;id&gt;/</text>
+  <text class="bd" x="666" y="318" font-size="11">角色行为守则、专属约定</text>
+
+  <path class="arrow" d="M176 346 V 370"/>
+  <path class="arrow" d="M480 346 V 370"/>
+  <path class="arrow" d="M784 346 V 370"/>
+
+  <!-- Storage band -->
+  <rect class="soft" x="40" y="374" width="880" height="82" rx="12"/>
+  <line class="div" x1="480" y1="392" x2="480" y2="438"/>
+  <text class="h2b" x="64" y="404">markdown 文件 · 事实来源</text>
+  <text class="bd" x="64" y="426" font-size="11.5">可读可编辑 · project 级随代码目录迁移 · 先写 .tmp 再 rename 原子落盘</text>
+  <text class="h2b" x="504" y="404">SQLite 索引 · 检索与元数据</text>
+  <text class="mo" x="504" y="426">memory_entry · memory_fts · memory_vec · memory_entity</text>
+</svg>

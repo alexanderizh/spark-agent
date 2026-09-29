@@ -1,6 +1,6 @@
 # 项目运维
 
-> 状态: 已落地 | 最后核对: 2026-09-22
+> 状态: 已落地 | 最后核对: 2026-09-30
 
 ## GitHub Project
 
@@ -14,12 +14,21 @@ Inbox → Planned → In Progress → In Review → Blocked → Done
 
 ## GitHub Pages
 
-工程手册由主仓库的 `docs-site/` 发布，workflow 是 `.github/workflows/deploy-pages.yml`。它与 `apps/website` 的自有域名发布独立：
+工程手册由主仓库的 `docs-site/` 发布，workflow 是 `.github/workflows/deploy-pages.yml`。它与自有域名官网的发布完全独立：
 
 - Pages：贡献者、维护者和仓库治理；无服务器 secrets。
 - 官网：用户文档、下载、产品内容；Docker + 自有服务器。
 
-入口：[GitHub Pages 工程手册](https://alexanderizh.github.io/spark-agent/)。
+手册现有三个页面，入口：[GitHub Pages 工程手册](https://alexanderizh.github.io/spark-agent/)。
+
+| 页面                | 内容                                                                        |
+| ------------------- | --------------------------------------------------------------------------- |
+| `index.html`        | 总览：四条阅读入口与运行时边界图                                            |
+| `architecture.html` | 运行架构：五个边界、启动顺序、任务流、仓库落点、安全不变量                  |
+| `capabilities.html` | 能力架构：长期记忆 / 知识库 / 自动路由 / 性能保护四条能力线的图解与代码落点 |
+| `operations.html`   | 项目运维：GitHub Project、Pages、发布矩阵与维护节奏                         |
+
+新增手册页面时，除 HTML 与样式外还要同步更新 `.github/workflows/deploy-pages.yml` 的静态校验清单（该步骤会 `test -s` 逐个检查文件存在且非空）。
 
 ## 发布链路
 

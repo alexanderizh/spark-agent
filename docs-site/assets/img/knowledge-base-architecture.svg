@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 534" width="960" height="534" role="img" aria-label="知识库 Wiki 总体架构：访问面、领域模型、存储与统一写入原语">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #465789; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .w { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .g { fill: #f2fbf7; stroke: #16a34a; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .st { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #97a0b3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .w { fill: #1c2040; stroke: #6b7bff; }
+        .g { fill: #16241f; stroke: #2f9e6b; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="534"/>
+
+  <text class="h1" x="40" y="38">知识库（Wiki）· 总体架构</text>
+  <text class="sub" x="40" y="60">空间 / 页面 / 双链 / 版本四件套；正文是 markdown 文件，索引与元数据在本地 SQLite，全部写入收敛到统一写入原语</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- Band A -->
+  <text class="band" x="40" y="104">① 访问面：人和 Agent 读的是同一份知识，只是权限不同</text>
+  <rect class="w" x="40" y="116" width="430" height="80" rx="10"/>
+  <text class="tt" x="60" y="140">人 · 知识库视图</text>
+  <text class="bd" x="60" y="160">页面树 + Markdown 编辑器 + 版本历史回看</text>
+  <text class="bd" x="60" y="178">候选区 · 技能提议区 · Repo Wiki 三个独立视图</text>
+
+  <rect class="g" x="490" y="116" width="430" height="80" rx="10"/>
+  <text class="tt" x="510" y="140">Agent · mcp__spark_wiki__ 工具面</text>
+  <text class="bd" x="510" y="160">5 个只读免审批 + 6 个写入走审批 + 1 个技能提议</text>
+  <text class="bd" x="510" y="178">双引擎一致挂载：SDK 进程内 MCP 与 CLI 瘦桥接</text>
+
+  <path class="arrow" d="M255 196 V 220"/>
+  <path class="arrow" d="M705 196 V 220"/>
+
+  <!-- Band B -->
+  <text class="band" x="40" y="216">② 领域模型</text>
+  <rect class="card" x="40" y="228" width="210" height="66" rx="10"/>
+  <text class="st" x="56" y="254">空间 Space</text>
+  <text class="bd" x="56" y="274">scope 隔离，可按需自动创建</text>
+
+  <rect class="card" x="263" y="228" width="210" height="66" rx="10"/>
+  <text class="st" x="279" y="254">页面 Page</text>
+  <text class="bd" x="279" y="274">树结构 · 置顶 · 归档 · CAS 版本</text>
+
+  <rect class="card" x="486" y="228" width="210" height="66" rx="10"/>
+  <text class="st" x="502" y="254">双链 Link</text>
+  <text class="bd" x="502" y="274">正向出链 + 反向链接查询</text>
+
+  <rect class="card" x="709" y="228" width="211" height="66" rx="10"/>
+  <text class="st" x="725" y="254">版本 Revision</text>
+  <text class="bd" x="725" y="274">正文快照，可回看历史</text>
+
+  <path class="arrow" d="M480 294 V 318"/>
+
+  <!-- Band C -->
+  <text class="band" x="40" y="316">③ 存储与统一写入原语：expectedVersion CAS + 正文原子落盘 + 失败回滚</text>
+  <rect class="soft" x="40" y="328" width="430" height="110" rx="10"/>
+  <text class="tt" x="60" y="352">markdown 正文 · 事实来源</text>
+  <text class="bd" x="60" y="374">project 空间正文落在仓库内，随代码目录一起走</text>
+  <text class="bd" x="60" y="393">user / agent 空间落在 ~/.spark-agent 下</text>
+  <text class="bd" x="60" y="412">先写 .tmp 再 rename，避免出现半截文件</text>
+
+  <rect class="soft" x="490" y="328" width="430" height="110" rx="10"/>
+  <text class="tt" x="510" y="352">SQLite 索引与元数据</text>
+  <text class="mo" x="510" y="374">wiki_space · wiki_page · wiki_link · wiki_revision</text>
+  <text class="mo" x="510" y="393">wiki_fts（contentless，CJK 逐字预分词）</text>
+  <text class="mo" x="510" y="412">wiki_candidate · wiki_skill_proposal · wiki_extraction_state</text>
+
+  <!-- Callout -->
+  <rect class="card" x="40" y="458" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="480" font-size="11.5">零预注入：知识库内容从不进常驻上下文，Agent 侧每一次读取都要经过服务端预算层裁剪后才返回。</text>
+  <text class="bd" x="60" y="498" font-size="11.5">空间语义：project 空间跟随仓库、user 空间跨项目共享、agent 空间按角色隔离，三者互不可见。</text>
+</svg>

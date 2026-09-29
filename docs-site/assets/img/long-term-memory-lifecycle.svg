@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 536" width="960" height="536" role="img" aria-label="长期记忆生命周期：候选到有效到失效到归档到删除，以及整合进化、有效期与人工保护">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .sm { font-size: 10.5px; fill: #6675a3; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #6675a3; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .ok { fill: #f2fbf7; stroke: #16a34a; stroke-width: 1; }
+      .off { fill: #fbf5f5; stroke: #dc2626; stroke-width: 1; }
+      .w { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .st { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .sm { fill: #8b93a6; } .mo { fill: #8b93a6; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .ok { fill: #16241f; stroke: #2f9e6b; }
+        .off { fill: #251a1c; stroke: #b4453f; }
+        .w { fill: #1c2040; stroke: #6b7bff; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="536"/>
+
+  <text class="h1" x="40" y="38">长期记忆 · 生命周期与自动进化</text>
+  <text class="sub" x="40" y="60">旧记忆不删除、只标失效；零散反馈被整合升华后，仍要人工确认才晋级为正式记忆</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- Left: state machine -->
+  <rect class="w" x="40" y="96" width="230" height="56" rx="10"/>
+  <text class="st" x="60" y="120">候选 pending</text>
+  <text class="sm" x="60" y="138">整合产出，挂在候选区等确认</text>
+
+  <rect class="ok" x="40" y="182" width="230" height="56" rx="10"/>
+  <text class="st" x="60" y="206">有效 valid</text>
+  <text class="sm" x="60" y="224">参与检索与每轮注入</text>
+
+  <rect class="card" x="40" y="268" width="230" height="56" rx="10"/>
+  <text class="st" x="60" y="292">失效 invalid</text>
+  <text class="mo" x="60" y="310">invalid_at · superseded_by</text>
+
+  <rect class="card" x="40" y="354" width="230" height="56" rx="10"/>
+  <text class="st" x="60" y="378">归档 archived</text>
+  <text class="sm" x="60" y="396">退出检索，文件保留</text>
+
+  <rect class="off" x="40" y="440" width="230" height="56" rx="10"/>
+  <text class="st" x="60" y="464">删除</text>
+  <text class="sm" x="60" y="482">数据库行与 markdown 一起清理</text>
+
+  <path class="arrow" d="M155 152 V 176"/>
+  <text class="bd" x="176" y="170">人工确认晋级</text>
+  <path class="arrow" d="M155 238 V 262"/>
+  <text class="bd" x="176" y="256">新事实冲突 / 有效期到期</text>
+  <path class="arrow" d="M155 324 V 348"/>
+  <text class="bd" x="176" y="342">归档</text>
+  <path class="arrow" d="M155 410 V 434"/>
+  <text class="bd" x="176" y="428">删除</text>
+
+  <!-- Right: panels -->
+  <rect class="soft" x="500" y="96" width="420" height="124" rx="10"/>
+  <text class="tt" x="520" y="120">整合 job · 记忆自动进化</text>
+  <text class="bd" x="520" y="142">触发：该层条数 ≥ 30 且距上次整合 &gt; 7 天（三层各自计时）</text>
+  <text class="bd" x="520" y="161">MERGE：语义重复的多条合并为一条，减少冗余</text>
+  <text class="bd" x="520" y="180">ELEVATE：零散反馈升华为通用守则，产出候选</text>
+  <text class="mo" x="520" y="199">候选正文附「## 升华来源」，指向原始条目便于追溯</text>
+
+  <rect class="soft" x="500" y="240" width="420" height="124" rx="10"/>
+  <text class="tt" x="520" y="264">有效期与到期顶替</text>
+  <text class="bd" x="520" y="286">有效期按「最后适用日」口径，当天仍适用</text>
+  <text class="bd" x="520" y="305">到期后退出检索与注入，条目保留、详情可查</text>
+  <text class="bd" x="520" y="324">新事实写入顶替旧条目：旧条目自动转失效并留警示</text>
+  <text class="bd" x="520" y="343">失效条目用 recall_memory 仍能读到正文，理解当初为何这么定</text>
+
+  <rect class="soft" x="500" y="384" width="420" height="112" rx="10"/>
+  <text class="tt" x="520" y="408">人工操作与并发保护</text>
+  <text class="bd" x="520" y="430">面板：新增 / 编辑 / 归档 / 删除 / 批量操作</text>
+  <text class="bd" x="520" y="449">CAS 版本冲突：并发编辑后保存被拒并提示刷新，不覆盖他人改动</text>
+  <text class="bd" x="520" y="468">人工确认候选时同样过敏感内容闸门，密钥类内容即使确认也不落库</text>
+</svg>

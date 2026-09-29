@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 690" width="960" height="690" role="img" aria-label="性能监控：从采样、六类指标定级、四档滞回，到各档在界面与通知上的表现">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .ct { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #6675a3; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .ok { fill: #f2fbf7; stroke: #16a34a; stroke-width: 1; }
+      .warn { fill: #fff9ec; stroke: #f59e0b; stroke-width: 1; }
+      .crit { fill: #fdf3ec; stroke: #ea7c2f; stroke-width: 1; }
+      .danger { fill: #fbf1f1; stroke: #dc2626; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .ct { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #8b93a6; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .ok { fill: #16241f; stroke: #2f9e6b; }
+        .warn { fill: #2a2313; stroke: #d9a33a; }
+        .crit { fill: #2b2015; stroke: #d9793a; }
+        .danger { fill: #2a1719; stroke: #c8524c; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="fig" x="0" y="0" width="960" height="690"/>
+
+  <text class="h1" x="40" y="38">性能监控 · 采样、定级与四档滞回</text>
+  <text class="sub" x="40" y="60">设置 → 系统 → 性能。数据 2 秒采样、只存本地；阈值只写百分比，GB 是按本机基线换算出来的展示值</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 采样</text>
+  <rect class="card" x="40" y="110" width="300" height="68" rx="10"/>
+  <text class="tt" x="58" y="136">每 2 秒采样一轮</text>
+  <text class="bd" x="58" y="158">总开关关闭时不采样、不推送，无副作用</text>
+
+  <rect class="card" x="360" y="110" width="560" height="68" rx="10"/>
+  <text class="tt" x="378" y="134">六类判级指标</text>
+  <text class="bd" x="378" y="154">系统内存 · 应用足迹 · 宿主内存 RSS · 子进程内存 RSS · 子进程数 · 事件循环延迟</text>
+  <text class="bd" x="378" y="171">CPU 占用只做展示，不参与判级</text>
+
+  <text class="band" x="40" y="204">② 定级</text>
+  <rect class="card" x="40" y="214" width="430" height="84" rx="10"/>
+  <text class="tt" x="58" y="238">每个指标与自己的三档阈值比</text>
+  <text class="bd" x="58" y="260">越过哪一档就判到哪一档，逐项独立判定</text>
+  <text class="bd" x="58" y="278">缺测指标本轮不参与定级，不按 0 处理</text>
+
+  <rect class="card" x="490" y="214" width="430" height="84" rx="10"/>
+  <text class="tt" x="508" y="238">整体级别 = 各项取最大（max-of-levels）</text>
+  <text class="bd" x="508" y="260">单一指标爆表不会被其他正常指标稀释</text>
+  <text class="bd" x="508" y="278">阈值只存百分比，GB 仅用于展示与日志</text>
+
+  <text class="band" x="40" y="322">③ 四档滞回：升级快、降级慢</text>
+  <rect class="card" x="40" y="332" width="880" height="124" rx="10"/>
+  <rect class="ok" x="158" y="348" width="140" height="40" rx="8"/>
+  <text class="ct" x="228" y="373" text-anchor="middle">正常</text>
+  <path class="arrow" d="M298 368 H322"/>
+  <rect class="warn" x="326" y="348" width="140" height="40" rx="8"/>
+  <text class="ct" x="396" y="373" text-anchor="middle">警告</text>
+  <path class="arrow" d="M466 368 H490"/>
+  <rect class="crit" x="494" y="348" width="140" height="40" rx="8"/>
+  <text class="ct" x="564" y="373" text-anchor="middle">严重</text>
+  <path class="arrow" d="M634 368 H658"/>
+  <rect class="danger" x="662" y="348" width="140" height="40" rx="8"/>
+  <text class="ct" x="732" y="373" text-anchor="middle">危急</text>
+  <text class="bd" x="60" y="416">升级：连续 2 轮确认；其中危急档 1 轮立即升档（宁可误停不可溢出），允许跳级</text>
+  <text class="bd" x="60" y="438">降级：连续 6 轮 + 最短驻留 30 秒，且一次只降一级——避免在阈值边缘反复抖动</text>
+
+  <text class="band" x="40" y="476">④ 各档你会看到什么</text>
+  <rect class="ok" x="40" y="488" width="205" height="100" rx="10"/>
+  <text class="ct" x="56" y="512">正常</text>
+  <text class="bd" x="56" y="534">页头显示「资源充裕 · 正常调度」</text>
+  <text class="bd" x="56" y="554">不打扰</text>
+  <text class="bd" x="56" y="574">从加压回落时补一条恢复提示</text>
+
+  <rect class="warn" x="258" y="488" width="205" height="100" rx="10"/>
+  <text class="ct" x="274" y="512">警告</text>
+  <text class="bd" x="274" y="534">活动治理区标「限流中」</text>
+  <text class="bd" x="274" y="554">只在性能页可见</text>
+  <text class="bd" x="274" y="574">不发通知</text>
+
+  <rect class="crit" x="476" y="488" width="205" height="100" rx="10"/>
+  <text class="ct" x="492" y="512">严重</text>
+  <text class="bd" x="492" y="534">活动治理区标「已暂停派发」</text>
+  <text class="bd" x="492" y="554">只在性能页可见</text>
+  <text class="bd" x="492" y="574">不发通知</text>
+
+  <rect class="danger" x="694" y="488" width="226" height="100" rx="10"/>
+  <text class="ct" x="710" y="512">危急</text>
+  <text class="bd" x="710" y="534">活动治理区标「已熔断」</text>
+  <text class="bd" x="710" y="554">右上角消息弹窗 + 一条系统通知</text>
+  <text class="bd" x="710" y="574">恢复后补一条「电脑资源已恢复」</text>
+
+  <rect class="soft" x="40" y="612" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="634" font-size="11">性能页提示条上的动作文案（限流新任务 / 暂停新派发 / 暂停全部新任务派发）描述的是这套分级矩阵的预期动作。</text>
+  <text class="bd" x="60" y="652" font-size="11">当前真正把并发物理收敛住的是与压力级别无关的固定闸门，见「派发闸门」那张图。</text>
+</svg>

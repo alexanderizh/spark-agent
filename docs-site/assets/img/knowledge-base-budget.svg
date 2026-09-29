@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 512" width="960" height="512" role="img" aria-label="知识库上下文预算四层：常驻层、检索层、正文层与单轮总闸">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .nv { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .nm { font-size: 10px; fill: #6675a3; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .nv { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .nm { fill: #8b93a6; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="512"/>
+
+  <text class="h1" x="40" y="38">知识库 · 上下文预算分层</text>
+  <text class="sub" x="40" y="60">「知识库不撑爆上下文」的四道闸门——裁剪是服务端强制行为，不依赖模型自觉</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- L0 -->
+  <rect class="card" x="40" y="100" width="880" height="64" rx="10"/>
+  <rect x="40" y="100" width="6" height="64" rx="3" fill="#5b6cff"/>
+  <text class="tt" x="66" y="126">L0 · 常驻层（每一轮都在）</text>
+  <text class="bd" x="66" y="148">能力声明 ≤ 200 token + 工具 schema；开启「工具瘦身」后实测常驻从 1086 降到约 780</text>
+  <rect class="soft" x="690" y="112" width="210" height="40" rx="8"/>
+  <text class="nv" x="795" y="130" text-anchor="middle">常驻 ≤ 800 token</text>
+  <text class="nm" x="795" y="146" text-anchor="middle">告警阈值，硬上限 4000</text>
+
+  <!-- L1 -->
+  <rect class="card" x="40" y="186" width="880" height="64" rx="10"/>
+  <rect x="40" y="186" width="6" height="64" rx="3" fill="#7c4dff"/>
+  <text class="tt" x="66" y="212">L1 · 检索层（wiki_search）</text>
+  <text class="bd" x="66" y="234">只返回 id 与摘要行，不回正文；摘要超出字数上限直接硬截断</text>
+  <rect class="soft" x="690" y="198" width="210" height="40" rx="8"/>
+  <text class="nv" x="795" y="216" text-anchor="middle">top 8 · 摘要 240 字</text>
+  <text class="nm" x="795" y="232" text-anchor="middle">硬上限 top 20 · 1000 字</text>
+
+  <!-- L2 -->
+  <rect class="card" x="40" y="272" width="880" height="64" rx="10"/>
+  <rect x="40" y="272" width="6" height="64" rx="3" fill="#35c6ff"/>
+  <text class="tt" x="66" y="298">L2 · 正文层（wiki_read）</text>
+  <text class="bd" x="66" y="320">单页正文超出上限时返回 truncated 与 nextOffset，按需续读，避免一次读多页</text>
+  <rect class="soft" x="690" y="284" width="210" height="40" rx="8"/>
+  <text class="nv" x="795" y="302" text-anchor="middle">3000 token / 页</text>
+  <text class="nm" x="795" y="318" text-anchor="middle">硬上限 8000</text>
+
+  <!-- L3 -->
+  <rect class="card" x="40" y="358" width="880" height="64" rx="10"/>
+  <rect x="40" y="358" width="6" height="64" rx="3" fill="#f59e0b"/>
+  <text class="tt" x="66" y="384">L3 · 单轮总闸（同一轮内所有 wiki 工具注入之和）</text>
+  <text class="bd" x="66" y="406">超过软上限时拒绝继续读取并提示先总结，防止一个会话被知识库吃满上下文</text>
+  <rect class="soft" x="690" y="370" width="210" height="40" rx="8"/>
+  <text class="nv" x="795" y="388" text-anchor="middle">8000 token / 轮</text>
+  <text class="nm" x="795" y="404" text-anchor="middle">硬上限 20000</text>
+
+  <rect class="soft" x="40" y="444" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="466" font-size="11.5">设置里能调，但调不出服务端硬上限：越界是「拒绝写入」而不是静默钳制，避免你以为改大了其实没生效。</text>
+  <text class="bd" x="60" y="484" font-size="11.5">其余可调项：摘要字数、噪声告警比、工具瘦身开关、候选保留天数与上限。</text>
+</svg>

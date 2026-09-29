@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 490" width="960" height="490" role="img" aria-label="自动路由：一个分流器加 N 个按强度分档的执行模型，以及关键配置项">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .ct { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #6675a3; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .h { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .m { fill: #f7f4ff; stroke: #7c4dff; stroke-width: 1; }
+      .l { fill: #f2fbff; stroke: #35c6ff; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .ct { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #8b93a6; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .h { fill: #1c2040; stroke: #6b7bff; }
+        .m { fill: #221a3d; stroke: #9b7dff; }
+        .l { fill: #12242e; stroke: #4fb6e6; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="490"/>
+
+  <text class="h1" x="40" y="38">自动路由 · 一个 router 的组成</text>
+  <text class="sub" x="40" y="60">router = 1 个分流器 + N 个按强度分档的执行模型；它不是虚拟 Provider，而是渠道表里的一行真实记录</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 组成：先分类，再换模型</text>
+
+  <rect class="card" x="40" y="112" width="230" height="124" rx="10"/>
+  <text class="tt" x="60" y="138">分流器 Dispatcher</text>
+  <text class="bd" x="60" y="160">渠道 + 模型（只做轻量分类）</text>
+  <text class="bd" x="60" y="180">建议选快且便宜的非思考模型</text>
+  <text class="mo" x="60" y="202">dispatcher.timeoutMs</text>
+  <text class="mo" x="60" y="220">默认 30000，上限 120000</text>
+
+  <path class="arrow" d="M270 174 H 336"/>
+  <text class="bd" x="278" y="166" font-size="10">每轮先分类</text>
+
+  <rect class="soft" x="340" y="112" width="580" height="124" rx="10"/>
+  <text class="ct" x="360" y="134">执行模型 Executors（同一强度可配多条，取第一条有效）</text>
+
+  <rect class="h" x="360" y="146" width="180" height="76" rx="8"/>
+  <text class="ct" x="374" y="170">high · 高强度</text>
+  <text class="bd" x="374" y="190">渠道 + 模型</text>
+  <text class="bd" x="374" y="207">推理强度留空则跟随会话</text>
+
+  <rect class="m" x="560" y="146" width="180" height="76" rx="8"/>
+  <text class="ct" x="574" y="170">balanced · 中强度</text>
+  <text class="bd" x="574" y="190">渠道 + 模型</text>
+  <text class="bd" x="574" y="207">每条可单独指定推理强度</text>
+
+  <rect class="l" x="760" y="146" width="160" height="76" rx="8"/>
+  <text class="ct" x="774" y="170">low · 低强度</text>
+  <text class="bd" x="774" y="190">渠道 + 模型</text>
+  <text class="bd" x="774" y="207">条目可单独启停</text>
+
+  <text class="band" x="40" y="268">② 关键配置与默认值</text>
+
+  <rect class="card" x="40" y="280" width="205" height="112" rx="10"/>
+  <text class="ct" x="56" y="304">兜底强度</text>
+  <text class="mo" x="56" y="326">fallbackIntensity</text>
+  <text class="bd" x="56" y="348">默认 balanced</text>
+  <text class="bd" x="56" y="366">分流失败时用哪一档收口</text>
+
+  <rect class="card" x="258" y="280" width="205" height="112" rx="10"/>
+  <text class="ct" x="274" y="304">子任务拆分</text>
+  <text class="mo" x="274" y="326">allowDecomposition</text>
+  <text class="bd" x="274" y="348">默认开，并发上限默认 3</text>
+  <text class="bd" x="274" y="366">范围 1 到 10，受派发预算约束</text>
+
+  <rect class="card" x="476" y="280" width="205" height="112" rx="10"/>
+  <text class="ct" x="492" y="304">子代理档位映射</text>
+  <text class="mo" x="492" y="326">subagentIntensityMapping</text>
+  <text class="bd" x="492" y="348">默认开，仅 claude 引擎生效</text>
+  <text class="bd" x="492" y="366">让原生子代理也按强度分级</text>
+
+  <rect class="card" x="694" y="280" width="226" height="112" rx="10"/>
+  <text class="ct" x="710" y="304">落库与绑定</text>
+  <text class="mo" x="710" y="326">provider_profiles</text>
+  <text class="mo" x="710" y="344">provider_type = auto-router</text>
+  <text class="bd" x="710" y="366">adapter 决定走 claude 还是 codex 渠道</text>
+
+  <rect class="soft" x="40" y="412" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="434" font-size="11">两件容易混的事：档位 intensity 决定「派给哪个模型」，推理强度 reasoningEffort 决定「该模型想多深」，两者正交。</text>
+  <text class="bd" x="60" y="452" font-size="11">早期的魔法 provider id（claude-auto-router / codex-auto-router）已于 2026-09 下线，仅保留识别存量会话的逻辑。</text>
+</svg>

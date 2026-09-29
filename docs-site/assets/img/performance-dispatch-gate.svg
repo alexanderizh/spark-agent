@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 570" width="960" height="570" role="img" aria-label="派发闸门：按派发形态分主池与嵌套池，双旋钮收敛并发">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .ct { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #6675a3; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .main { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .nested { fill: #f7f4ff; stroke: #7c4dff; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .ct { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #8b93a6; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .main { fill: #1c2040; stroke: #6b7bff; }
+        .nested { fill: #221a3d; stroke: #9b7dff; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="fig" x="0" y="0" width="960" height="570"/>
+
+  <text class="h1" x="40" y="38">派发闸门 · 真正把并发收敛住的那一层</text>
+  <text class="sub" x="40" y="60">所有后台子进程派发都要先拿一次许可；闸门不依赖压力级别，靠固定上限保护整机</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 先看这是一次什么派发</text>
+  <rect class="card" x="40" y="110" width="200" height="74" rx="10"/>
+  <text class="tt" x="58" y="140">一次成员派发</text>
+  <text class="bd" x="58" y="162">团队成员 / 工作流子代理</text>
+
+  <path class="arrow" d="M240 147 H256"/>
+  <rect class="card" x="260" y="110" width="660" height="74" rx="10"/>
+  <text class="tt" x="278" y="138">按派发形态判池：depth = 0 且不是同步 peer call → 主池</text>
+  <text class="bd" x="278" y="160">depth &gt; 0 或属于同步 peer call → 嵌套池；两池配额互相独立</text>
+
+  <path class="arrow" d="M270 184 V 216"/>
+  <path class="arrow" d="M720 184 V 216"/>
+
+  <text class="band" x="40" y="210">② 两个池，各自排队</text>
+  <rect class="main" x="40" y="220" width="460" height="130" rx="10"/>
+  <text class="tt" x="58" y="246">主池 · 成员派发</text>
+  <text class="bd" x="58" y="270">容量 = min(全局并发预算 − 宿主有效占用, 成员并发硬顶)</text>
+  <text class="mo" x="58" y="290">宿主有效占用 = min(在途会话, 宿主封顶, 预算 − 成员槽下限)</text>
+  <text class="bd" x="58" y="312">严格 FIFO 排队，超过 120 秒仍未拿到就拒绝并给建议</text>
+  <text class="bd" x="58" y="334">成员槽下限保证宿主占用最多压到「预算 − 该值」</text>
+
+  <rect class="nested" x="520" y="220" width="400" height="130" rx="10"/>
+  <text class="tt" x="538" y="246">嵌套池 · 防死锁</text>
+  <text class="bd" x="538" y="270">独立配额（默认 2 槽），与主池隔离</text>
+  <text class="bd" x="538" y="292">排队 15 秒仍拿不到 → 强制放行</text>
+  <text class="bd" x="538" y="314">全局同时在飞的兜底许可 ≤ 2</text>
+  <text class="bd" x="538" y="336">避免 A 等 B、B 等 A 互相等死</text>
+
+  <text class="band" x="40" y="376">③ 可调旋钮</text>
+  <rect class="soft" x="40" y="386" width="280" height="84" rx="10"/>
+  <text class="ct" x="58" y="410">全局并发预算</text>
+  <text class="mo" x="58" y="430">totalAgentProcessBudget</text>
+  <text class="bd" x="58" y="450">默认 8，可调 4–32，唯一权威上限</text>
+
+  <rect class="soft" x="336" y="386" width="280" height="84" rx="10"/>
+  <text class="ct" x="354" y="410">成员并发硬顶</text>
+  <text class="mo" x="354" y="430">maxMemberDispatches</text>
+  <text class="bd" x="354" y="450">默认 6，可调 1–32</text>
+
+  <rect class="soft" x="632" y="386" width="288" height="84" rx="10"/>
+  <text class="ct" x="650" y="410">工作流波宽</text>
+  <text class="mo" x="650" y="430">waveWidth</text>
+  <text class="bd" x="650" y="450">默认 4，可调 1–16；独立于闸门</text>
+
+  <rect class="card" x="40" y="494" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="516" font-size="11">一个许可 = 一次成员执行 = 至多一个 CLI 子进程，所以预算就是子进程数的物理上限。</text>
+  <text class="bd" x="60" y="534" font-size="11">容量收缩只影响新准入，不撤销在飞的许可——已经在跑的任务不会被中途掐掉，释放时按 FIFO 唤醒等待者。</text>
+</svg>

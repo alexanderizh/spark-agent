@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 534" width="960" height="534" role="img" aria-label="长期记忆闭环：轮次结束时后台抽取写入，轮次开始时混合检索并注入">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 11px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #465789; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .inner { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .w { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .r { fill: #f2fbf7; stroke: #16a34a; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .inner { fill: #191c23; stroke: #384050; }
+        .w { fill: #1c2040; stroke: #6b7bff; }
+        .r { fill: #16241f; stroke: #2f9e6b; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="534"/>
+
+  <text class="h1" x="40" y="38">长期记忆 · 一轮对话的写入与读取闭环</text>
+  <text class="sub" x="40" y="60">每一轮结束写、每一轮开始读；写入完全异步，不占用主对话也不抢它的模型</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- Row A -->
+  <text class="band" x="40" y="106">① 轮次结束 · 后台写入（fire-and-forget，异常只写日志）</text>
+
+  <rect class="card" x="40" y="120" width="140" height="108" rx="10"/>
+  <text class="tt" x="110" y="164" text-anchor="middle">对话轮次结束</text>
+  <text class="bd" x="110" y="184" text-anchor="middle">助手产生非空文本</text>
+  <text class="bd" x="110" y="202" text-anchor="middle">团队成员各自触发</text>
+
+  <rect class="card" x="204" y="120" width="170" height="108" rx="10"/>
+  <text class="tt" x="289" y="164" text-anchor="middle">抽取模型</text>
+  <text class="bd" x="289" y="184" text-anchor="middle">记忆专用小模型</text>
+  <text class="bd" x="289" y="202" text-anchor="middle">未配置则回退对话模型</text>
+
+  <rect class="card" x="398" y="120" width="280" height="108" rx="10"/>
+  <text class="tt" x="414" y="142">五道闸门 · 任一不过即丢弃</text>
+  <text class="bd" x="414" y="164">瞬时数据（今天 / 这次 / 临时）</text>
+  <text class="bd" x="414" y="182">置信度 ≥ 0.6</text>
+  <text class="bd" x="414" y="200">去重合并 ADD / UPDATE / DELETE / NOOP</text>
+  <text class="bd" x="414" y="218">配额 user 100 / project 200 / agent 50 · 敏感内容</text>
+
+  <rect class="card" x="702" y="120" width="218" height="108" rx="10"/>
+  <text class="tt" x="718" y="142">落地三处（按序）</text>
+  <text class="bd" x="718" y="164">① markdown 文件（事实源）</text>
+  <text class="bd" x="718" y="182">② SQLite 行与全文索引</text>
+  <text class="bd" x="718" y="200">③ 刷新 MEMORY.md 索引</text>
+  <text class="bd" x="718" y="218">抽取实体写入实体关联图</text>
+
+  <path class="arrow" d="M180 174 H198"/>
+  <path class="arrow" d="M374 174 H392"/>
+  <path class="arrow" d="M678 174 H696"/>
+
+  <!-- Row B -->
+  <text class="band" x="40" y="258">② 轮次开始 · 混合检索与注入（不是每个会话只注入一次）</text>
+
+  <rect class="card" x="40" y="274" width="130" height="112" rx="10"/>
+  <text class="tt" x="105" y="316" text-anchor="middle">种子查询</text>
+  <text class="bd" x="105" y="340" text-anchor="middle">Agent 名称</text>
+  <text class="bd" x="105" y="357" text-anchor="middle">+ 描述 + 工作区目录名</text>
+
+  <rect class="card" x="194" y="274" width="210" height="112" rx="10"/>
+  <rect class="inner" x="208" y="288" width="182" height="40" rx="8"/>
+  <text class="bd" x="299" y="305" text-anchor="middle">FTS5 全文检索</text>
+  <text class="mo" x="299" y="320" text-anchor="middle">bm25() · 中文逐字预分词</text>
+  <rect class="inner" x="208" y="336" width="182" height="40" rx="8"/>
+  <text class="bd" x="299" y="353" text-anchor="middle">向量检索 · sqlite-vec</text>
+  <text class="mo" x="299" y="368" text-anchor="middle">KNN · 缺 embedding 时降级</text>
+
+  <rect class="card" x="428" y="274" width="160" height="112" rx="10"/>
+  <text class="tt" x="508" y="298" text-anchor="middle">RRF 融合 + 重排</text>
+  <text class="mo" x="508" y="322" text-anchor="middle">Σ 1 / (60 + rank)</text>
+  <text class="mo" x="508" y="342" text-anchor="middle">× exp(-λ × 距今天数)</text>
+  <text class="mo" x="508" y="362" text-anchor="middle">× confidence</text>
+
+  <rect class="card" x="612" y="274" width="308" height="112" rx="10"/>
+  <text class="tt" x="628" y="296">注入到 system prompt</text>
+  <text class="bd" x="628" y="318">feedback 类型全量注入，不靠检索命中</text>
+  <text class="bd" x="628" y="337">其余类型按相关度取子集</text>
+  <text class="bd" x="628" y="356">token 预算默认 4000，超出按优先级裁剪</text>
+  <text class="bd" x="628" y="375">只注入摘要行，正文要 recall 才取</text>
+
+  <path class="arrow" d="M170 330 H188"/>
+  <path class="arrow" d="M404 330 H422"/>
+  <path class="arrow" d="M588 330 H606"/>
+
+  <!-- Footnote -->
+  <rect class="w" x="40" y="406" width="880" height="44" rx="10"/>
+  <text class="bd" x="60" y="424" font-size="11.5">注入结构：&lt;user-memory&gt; / &lt;project-memory workspace="..."&gt; / &lt;agent-memory&gt;</text>
+  <text class="bd" x="60" y="441" font-size="11.5">并附 [Memory Provenance] 约束：记忆摘要可能由模型生成，与用户当前明确说法冲突时以当前为准</text>
+
+  <!-- Row C -->
+  <rect class="r" x="40" y="462" width="880" height="42" rx="10"/>
+  <text class="bd" x="60" y="488" font-size="11.5">③ Agent 主动深挖：search_memory（返回 id + 摘要）· recall_memory（返回正文，+1 命中计数）——两个工具都只读，Agent 没有写入或删除记忆的权限</text>
+</svg>
