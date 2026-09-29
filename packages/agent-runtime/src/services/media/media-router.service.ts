@@ -48,7 +48,7 @@ import { OpenAiOfficialMediaAdapter } from './adapters/openai-official-media.ada
 import { MidjourneyMediaAdapter } from './adapters/midjourney-media.adapter.js'
 import { TencentTokenhubMediaAdapter } from './adapters/tencent-tokenhub-media.adapter.js'
 import { MinimaxHailuoMediaAdapter } from './adapters/minimax-hailuo-media.adapter.js'
-import { compactForLog } from './media-debug-log.js'
+import { compactForLog, logMediaDiag } from './media-debug-log.js'
 import {
   logCanvasBlockEnd,
   logCanvasBlockStart,
@@ -68,6 +68,11 @@ export interface MediaProviderProfile {
   defaultModel: string
   modelIds?: string[]
   apiEndpoint?: string
+  /**
+   * apiEndpoint 是完整请求地址：主调用（提交/生成）原样发送，不做任何路径拼接；
+   * 上传/下载/轮询/取件等从属请求仍按 apiEndpoint 派生，保持既有行为。
+   */
+  apiEndpointFullUrl?: boolean
   mediaProvider?: MediaProviderKind | null
   mediaApiType?: 'sync' | 'async' | 'auto' | null
   mediaCapabilities?: MediaCapabilityId[]
@@ -329,11 +334,15 @@ export class MediaRouterService {
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
     // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
     const capture = createRequestCapture(options.fetch)
-    const requestEndpointOverride = managedNewApiImageEndpoint(chosen, capability)
-    const routedFetch = createManagedNewApiImageFetch(
+    const managedNewApiEndpoint = managedNewApiImageEndpoint(chosen, capability)
+    // 用户自填「完整 URL」：主调用地址即所填原文，平台不再做任何拼接。
+    const fullUrlEndpoint = fullUrlMainEndpoint(chosen)
+    const requestEndpointOverride = managedNewApiEndpoint ?? fullUrlEndpoint
+    const routedFetch = createMainRequestEndpointFetch(
       requestEndpointOverride,
       chosen.apiKey,
       capture.fetch,
+      managedNewApiEndpoint != null ? 'managed-newapi' : 'full-url',
     )
     const onTaskSubmitted = options.onTaskSubmitted
       ? (submission: MediaTaskSubmission): void => {
@@ -521,32 +530,101 @@ export class MediaRouterService {
   }
 }
 
-function createManagedNewApiImageFetch(
+/**
+ * 主调用端点改写模式。
+ *
+ * - `managed-newapi`：平台受管渠道的固定图片端点，只改写 POST 主请求，并给同 origin 的
+ *   从属请求补鉴权头（这些渠道的 key 由平台代管，适配器不会自行带上）。
+ * - `full-url`：用户自填「完整 URL」渠道。首个非 GET 主调用请求原样发到所填地址，
+ *   不代劳鉴权注入；上传/下载/轮询等从属请求（含同一次调用内的 POST 轮询）保持既有派生逻辑。
+ *
+ * 主调用识别（full-url 模式）：一次 capability 调用只会提交一次主调用，因此只改写
+ * 首个「非 GET 且未被从属语义命中」的请求；同一地址的重发（网络/限流重试）仍按主调用
+ * 处理，之后的 POST/PUT/PATCH（含同一次调用内的 POST 轮询，如腾讯 TokenHub 的 query、
+ * 声明 POST poll 的 V2 模板）一律保持适配器派生的原始地址，不再被改写。
+ */
+type MainRequestEndpointMode = 'managed-newapi' | 'full-url'
+
+function createMainRequestEndpointFetch(
   endpoint: string | null,
   apiKey: string,
   fetchImpl: typeof fetch,
+  mode: MainRequestEndpointMode,
 ): typeof fetch {
   if (!endpoint) return fetchImpl
+  const isFullUrlMode = mode === 'full-url'
+  // 「完整 URL」下已改写的主调用源地址：用于把「同一主调用的重发」与「后续从属请求」
+  // （如同一次调用内的 POST 轮询）区分开，避免轮询被误改写成提交地址。
+  let mainRequestSourceUrl: string | null = null
 
   return async (input, init) => {
     const method = (init?.method ?? 'GET').toUpperCase()
     const requestUrl = input instanceof Request ? input.url : String(input)
-    if (method !== 'POST') {
-      const endpointOrigin = safeUrlOrigin(endpoint)
-      const requestOrigin = safeUrlOrigin(requestUrl)
-      if (endpointOrigin && requestOrigin === endpointOrigin) {
-        const headers = new Headers(input instanceof Request ? input.headers : undefined)
-        new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
-        if (!headers.has('authorization')) headers.set('authorization', `Bearer ${apiKey}`)
-        return fetchImpl(input, { ...init, headers })
+    // 「完整 URL」下 manifest 主调用可能是 PUT/PATCH，因此按「非 GET」判定主调用。
+    const isMainRequest = isFullUrlMode ? method !== 'GET' : method === 'POST'
+    if (!isMainRequest) {
+      if (!isFullUrlMode) {
+        const endpointOrigin = safeUrlOrigin(endpoint)
+        const requestOrigin = safeUrlOrigin(requestUrl)
+        if (endpointOrigin && requestOrigin === endpointOrigin) {
+          const headers = new Headers(input instanceof Request ? input.headers : undefined)
+          new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
+          if (!headers.has('authorization')) headers.set('authorization', `Bearer ${apiKey}`)
+          return fetchImpl(input, { ...init, headers })
+        }
       }
       return fetchImpl(input, init)
     }
-    if (isAuxiliaryMediaRequest(requestUrl)) {
+    // 从属请求判定：`full-url` 模式下主调用地址本身就是所填原文，若其路径含
+    // `/tasks`、`/files` 这类片段，直接对整串判定会把主调用误判成从属请求而跳过改写；
+    // 因此由该端点派生出来的请求只判定适配器追加的后缀部分。
+    const auxiliaryTarget = isFullUrlMode
+      ? (derivedRequestRemainder(requestUrl, endpoint) ?? requestUrl)
+      : requestUrl
+    if (isAuxiliaryMediaRequest(auxiliaryTarget)) {
       return fetchImpl(input, init)
+    }
+    if (isFullUrlMode) {
+      if (mainRequestSourceUrl === null) {
+        mainRequestSourceUrl = requestUrl
+      } else if (mainRequestSourceUrl !== requestUrl) {
+        // 非首个主调用地址：判定为从属请求（同一次调用内的 POST 轮询等），保持派生地址，
+        // 否则轮询会被改写成刚提交过的主调用地址，拿回提交响应而误判任务状态。
+        return fetchImpl(input, init)
+      }
+    }
+    if (requestUrl !== endpoint) {
+      // 主调用被改写必须留痕：适配器自身日志仍打印派生地址，这里补上真实目标。
+      logMediaDiag('media-main-request-endpoint-override', {
+        mode,
+        from: requestUrl,
+        to: endpoint,
+      })
     }
     return fetchImpl(endpoint, init)
   }
+}
+
+/**
+ * url 相对 base 的后缀（含前导 `/` 或 `?`）；不是由 base 派生时返回 null。
+ * 用于区分「适配器在主调用地址后追加的路径」与「用户填写的地址自身」，避免把
+ * 所填地址里出现的 `/tasks`、`/files` 片段误判成从属请求。
+ */
+function derivedRequestRemainder(url: string, base: string): string | null {
+  for (const candidate of [base, base.replace(/\/+$/, '')]) {
+    if (candidate === '' || !url.startsWith(candidate)) continue
+    const remainder = url.slice(candidate.length)
+    if (remainder === '' || remainder.startsWith('/') || remainder.startsWith('?')) return remainder
+  }
+  return null
+}
+
+/** 用户勾选「完整 URL」时的主调用端点；未勾选或地址为空则返回 null（保持既有逻辑）。 */
+function fullUrlMainEndpoint(
+  profile: Pick<MediaProviderProfile, 'apiEndpoint' | 'apiEndpointFullUrl'>,
+): string | null {
+  if (profile.apiEndpointFullUrl !== true) return null
+  return profile.apiEndpoint?.trim() || null
 }
 
 function safeUrlOrigin(value: string): string | null {
