@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AutoComplete, Select } from '@lobehub/ui'
-import { Switch, Tooltip } from 'antd'
+import { Input, Switch, Tooltip } from 'antd'
 import type {
   CanvasMediaModelSummary,
   SessionAgentAdapter,
@@ -256,15 +256,12 @@ export function VoiceAssistantSettingsCard() {
           title="唤醒快捷键"
           tip="Electron accelerator 写法，如 Alt+Space、CommandOrControl+Shift+V。修改后立即生效；注册失败会回退原键位。"
           right={
-            <input
-              className="input"
+            <Input
               value={settings.wakeShortcut}
               spellCheck={false}
               onChange={(e) => setSettings({ ...settings, wakeShortcut: e.target.value })}
               onBlur={() => void update({})}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void update({})
-              }}
+              onPressEnter={() => void update({})}
             />
           }
         />
@@ -431,12 +428,12 @@ export function VoiceAssistantSettingsCard() {
                 }}
               />
             ) : (
-              <input
-                className="input"
+              <Input
                 value={settings.ttsVoice}
                 placeholder="默认音色"
                 onChange={(e) => setSettings({ ...settings, ttsVoice: e.target.value })}
                 onBlur={() => void update({})}
+                onPressEnter={() => void update({})}
               />
             )
           }

@@ -118,12 +118,37 @@
 
 .voice-settings-control {
   flex: none;
+  display: flex;
+  // 小控件（开关 / 按钮）不占满列宽，靠右贴齐与下拉 / 输入框同一右缘；
+  // 撑满型控件（下拉 / 输入框 / 滑杆）由下方 width:100% 占满整列。
+  justify-content: flex-end;
   width: 200px;
 
   .ant-select,
-  input.input,
+  .ant-input,
   input[type='range'] {
     width: 100%;
+  }
+
+  // 设置页全局覆盖（SettingsView.less）会把 .ant-input 强制为「透明边框 + bg-sunken 背景」，
+  // 与卡片背景（同为 --bg-sunken）完全同色导致输入框隐形（antd v6 Select 边框在根节点不受影响）。
+  // 此处按 HUD 同款 color-mix 边框方案恢复可见性，深浅色模式均与背景保持对比。
+  .ant-input,
+  .ant-input:hover,
+  .ant-input:focus,
+  .ant-input-focused {
+    border-color: color-mix(in srgb, var(--text) 18%, transparent) !important;
+    background: var(--panel) !important;
+    box-shadow: none !important;
+  }
+
+  .ant-input:hover {
+    border-color: color-mix(in srgb, var(--text) 32%, transparent) !important;
+  }
+
+  .ant-input:focus,
+  .ant-input-focused {
+    border-color: var(--primary) !important;
   }
 }
 

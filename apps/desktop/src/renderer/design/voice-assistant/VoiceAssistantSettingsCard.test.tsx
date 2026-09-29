@@ -136,18 +136,22 @@ describe('VoiceAssistantSettingsCard', () => {
     expect(selectionText('播报模型')).toBe('渠道默认模型')
     // 未指定渠道时模型选择锁定，避免模型脱离渠道后被误用。
     expect(rowFor('播报模型').querySelector('.ant-select-disabled')).not.toBeNull()
-    // 音色：候选存在 → AutoComplete（带渠道默认音色提示），不再是手输降级 input。
-    const voiceInput = rowFor('音色').querySelector('input')
-    expect(voiceInput?.getAttribute('placeholder')).toBe('默认（tongtong）')
-    expect(voiceInput?.classList.contains('input')).toBe(false)
+    // 音色：候选存在 → AutoComplete（提示生效渠道的默认音色），不再是手输降级 input。
+    // antd v6 的占位文案渲染为独立节点，不落在 input 的 placeholder 属性上。
+    const voiceRow = rowFor('音色')
+    expect(voiceRow.querySelector('.ant-select-auto-complete')).not.toBeNull()
+    expect(voiceRow.querySelector('.ant-select-placeholder')?.textContent).toBe(
+      '默认（male-qn-qingse）',
+    )
+    expect(voiceRow.querySelector('input.ant-input')).toBeNull()
   })
 
   it('无语音渠道时回落：音色为手输框，模型选择为空且禁用', async () => {
     stubSpark([])
     await renderCard()
 
-    const voiceInput = rowFor('音色').querySelector('input')
-    expect(voiceInput?.classList.contains('input')).toBe(true)
+    const voiceInput = rowFor('音色').querySelector('input.ant-input')
+    expect(voiceInput).not.toBeNull()
     expect(voiceInput?.getAttribute('placeholder')).toBe('默认音色')
     expect(rowFor('播报模型').querySelector('.ant-select-disabled')).not.toBeNull()
   })
@@ -164,7 +168,7 @@ describe('VoiceAssistantSettingsCard', () => {
     })
     await renderCard()
 
-    expect(rowFor('音色').querySelector('input')?.classList.contains('input')).toBe(true)
+    expect(rowFor('音色').querySelector('input.ant-input')).not.toBeNull()
   })
 
   it('已保存的渠道已失效时补占位项，不暴露裸 provider id', async () => {
