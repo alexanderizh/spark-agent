@@ -7,12 +7,15 @@
  *
  * 设置经 voice-assistant:get-settings / update-settings IPC 读写
  * （主进程 normalize 收敛 + 快捷键热更新），不走 localStorage。
+ *
+ * 展示约定：行内只留标题 + 右侧控件；详细解释收进标题旁 ⓘ 悬浮提示，
+ * 右侧控件统一 200px 宽度右缘对齐（见 voiceAssistant.less）。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Select } from '@lobehub/ui'
-import { Switch } from 'antd'
+import { Switch, Tooltip } from 'antd'
 import type {
   SessionAgentAdapter,
   SessionReasoningEffort,
@@ -22,6 +25,7 @@ import type {
 } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 import { getPermissionModeOptions, getValidPermissionMode } from '../utils/permission-options'
+import { Icons } from '../Icons'
 
 const ADAPTER_LABEL: Record<SessionAgentAdapter, string> = {
   claude: 'Claude',
@@ -47,14 +51,27 @@ const STATE_LABEL: Record<string, string> = {
   standby: '待命（常驻聆听）',
 }
 
-function SettingsRow({ title, desc, right }: { title: string; desc?: string; right?: ReactNode }) {
+function SettingsRow({
+  title,
+  tip,
+  right,
+}: {
+  title: ReactNode
+  /** 详细解释，悬浮在标题旁 ⓘ 图标上展示 */
+  tip?: ReactNode
+  right?: ReactNode
+}) {
   return (
     <div className="settings-card-row">
-      <div className="flex1 min-w-0">
-        <div className="row-title">{title}</div>
-        {desc && <div className="row-desc">{desc}</div>}
+      <div className="flex1 min-w-0 voice-settings-label">
+        <span className="row-title">{title}</span>
+        {tip != null && (
+          <Tooltip title={tip} overlayStyle={{ maxWidth: 340 }}>
+            <Icons.HelpCircle className="voice-settings-help" size={13} />
+          </Tooltip>
+        )}
       </div>
-      <div className="row-action">{right}</div>
+      {right != null && <div className="row-action voice-settings-control">{right}</div>}
     </div>
   )
 }
@@ -140,23 +157,17 @@ export function VoiceAssistantSettingsCard() {
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
           title="启用快捷键唤醒"
-          desc={`在任意应用中按下唤醒快捷键即可开始语音对话（默认 ${DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeShortcut}）。再按一次取消聆听 / 打断播报。`}
+          tip={`在任意应用中按下唤醒快捷键即可开始语音对话（默认 ${DEFAULT_VOICE_ASSISTANT_SETTINGS.wakeShortcut}）。再按一次取消聆听 / 打断播报。`}
           right={
             <Switch checked={settings.enabled} onChange={(v) => void update({ enabled: v })} />
           }
         />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">唤醒快捷键</div>
-            <div className="row-desc">
-              Electron accelerator 写法，如 Alt+Space、CommandOrControl+Shift+V。
-              修改后立即生效；注册失败会回退原键位。
-            </div>
-          </div>
-          <div className="row-action">
+        <SettingsRow
+          title="唤醒快捷键"
+          tip="Electron accelerator 写法，如 Alt+Space、CommandOrControl+Shift+V。修改后立即生效；注册失败会回退原键位。"
+          right={
             <input
               className="input"
-              style={{ width: 180 }}
               value={settings.wakeShortcut}
               spellCheck={false}
               onChange={(e) => setSettings({ ...settings, wakeShortcut: e.target.value })}
@@ -165,18 +176,18 @@ export function VoiceAssistantSettingsCard() {
                 if (e.key === 'Enter') void update({})
               }}
             />
-          </div>
-        </div>
+          }
+        />
         <SettingsRow
           title="唤醒提示音"
-          desc="聆听开始 / 转写为空 / 出错时的短提示音。"
+          tip="聆听开始 / 转写为空 / 出错时的短提示音。"
           right={
             <Switch checked={settings.soundCues} onChange={(v) => void update({ soundCues: v })} />
           }
         />
         <SettingsRow
           title="连续对话模式"
-          desc="播报完自动回到聆听（约 1 秒间隔），无需再按唤醒快捷键即可继续说；期间随时可按快捷键打断。"
+          tip="播报完自动回到聆听（约 1 秒间隔），无需再按唤醒快捷键即可继续说；期间随时可按快捷键打断。"
           right={
             <Switch
               checked={settings.continuousMode}
@@ -186,7 +197,7 @@ export function VoiceAssistantSettingsCard() {
         />
         <SettingsRow
           title="口语化回复提示"
-          desc="语音轮次自动要求 Agent 用简短口语回复，避免朗读代码块与表格。"
+          tip="语音轮次自动要求 Agent 用简短口语回复，避免朗读代码块与表格。"
           right={
             <Switch
               checked={settings.voiceSystemPrompt}
@@ -196,7 +207,7 @@ export function VoiceAssistantSettingsCard() {
         />
         <SettingsRow
           title="试一试"
-          desc="立即触发一次唤醒（与按下快捷键等效）。"
+          tip="立即触发一次唤醒（与按下快捷键等效）。"
           right={
             <button type="button" className="btn" onClick={() => void handleTryWake()}>
               开始语音对话
@@ -206,15 +217,10 @@ export function VoiceAssistantSettingsCard() {
       </div>
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">识别引擎</div>
-            <div className="row-desc">
-              本地 Paraformer：流式实时（推荐）。云端 whisper：说完后整段上传转写，
-              准确率更高但延迟增加 1–3 秒，且音频会上传到所配置的渠道。
-            </div>
-          </div>
-          <div className="row-action" style={{ minWidth: 160 }}>
+        <SettingsRow
+          title="识别引擎"
+          tip="本地 Paraformer：流式实时（推荐）。云端 whisper：说完后整段上传转写，准确率更高但延迟增加 1–3 秒，且音频会上传到所配置的渠道。"
+          right={
             <Select
               value={settings.recognitionEngine}
               onChange={(v) => void update({ recognitionEngine: v })}
@@ -223,17 +229,12 @@ export function VoiceAssistantSettingsCard() {
                 { label: '云端（whisper）', value: 'cloud' },
               ]}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">说完判定</div>
-            <div className="row-desc">
-              检测到停顿后再等待一段静默确认才发送，期间继续说话会自动拼接，
-              防止换气/思考停顿把话截断。「从容」适合说话慢或爱停顿的场景。
-            </div>
-          </div>
-          <div className="row-action" style={{ minWidth: 160 }}>
+          }
+        />
+        <SettingsRow
+          title="说完判定"
+          tip="检测到停顿后再等待一段静默确认才发送，期间继续说话会自动拼接，防止换气/思考停顿把话截断。「从容」适合说话慢或爱停顿的场景。"
+          right={
             <Select
               value={String(settings.utteranceConfirmMs)}
               onChange={(v) => void update({ utteranceConfirmMs: Number(v) })}
@@ -243,11 +244,11 @@ export function VoiceAssistantSettingsCard() {
                 { label: '从容（2 秒）', value: '2000' },
               ]}
             />
-          </div>
-        </div>
+          }
+        />
         <SettingsRow
           title="识别精修"
-          desc="说完后用离线模型重识别整段音频并整体替换流式结果（与输入框语音输入同链路），显著减少漏字错字；代价是发送前多等约 1–3 秒。识别率优先建议保持开启。"
+          tip="说完后用离线模型重识别整段音频并整体替换流式结果（与输入框语音输入同链路），显著减少漏字错字；代价是发送前多等约 1–3 秒。识别率优先建议保持开启。"
           right={
             <Switch
               checked={settings.refineTranscript}
@@ -257,7 +258,7 @@ export function VoiceAssistantSettingsCard() {
         />
         <SettingsRow
           title="浏览器降噪"
-          desc="采集源头开启系统级降噪与人声隔离，过滤风扇/空调等稳态噪音。注意：降噪会削掉部分字头轻辅音，可能造成漏字——识别率优先请保持关闭，仅嘈杂环境开启。"
+          tip="采集源头开启系统级降噪与人声隔离，过滤风扇/空调等稳态噪音。注意：降噪会削掉部分字头轻辅音，可能造成漏字——识别率优先请保持关闭，仅嘈杂环境开启。"
           right={
             <Switch
               checked={settings.browserDenoise}
@@ -265,17 +266,10 @@ export function VoiceAssistantSettingsCard() {
             />
           }
         />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">人声聚焦</div>
-            <div className="row-desc">
-              尽量只保留你本人的近场人声：低能量远场声音（电视/旁人/音乐）在识别前被
-              静音，噪音硬解出的句子也会被本地人声检测否决。门控有轻微吃字头/字尾的
-              风险（已尽量优化），识别率优先建议关闭，仅噪音大的环境开启。首次开启
-              自动下载人声检测模型（约 0.5MB）。
-            </div>
-          </div>
-          <div className="row-action" style={{ minWidth: 160 }}>
+        <SettingsRow
+          title="人声聚焦"
+          tip="尽量只保留你本人的近场人声：低能量远场声音（电视/旁人/音乐）在识别前被静音，噪音硬解出的句子也会被本地人声检测否决。门控有轻微吃字头/字尾的风险（已尽量优化），识别率优先建议关闭，仅噪音大的环境开启。首次开启自动下载人声检测模型（约 0.5MB）。"
+          right={
             <Select
               value={settings.voiceFocus}
               onChange={(v) => void update({ voiceFocus: v })}
@@ -285,91 +279,73 @@ export function VoiceAssistantSettingsCard() {
                 { label: '严格', value: 'strict' },
               ]}
             />
-          </div>
-        </div>
-        <SettingsRow
-          title="语音播报（TTS）"
-          desc="回复逐句合成播放；合成渠道默认自动选择第一个可用的语音渠道。"
+          }
         />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">音色</div>
-            <div className="row-desc">留空使用渠道默认音色（如 alloy、t030、narrator 等）。</div>
-          </div>
-          <div className="row-action">
+        <SettingsRow
+          title="音色"
+          tip="语音播报（TTS）的合成音色；留空使用渠道默认音色（如 alloy、t030、narrator 等）。合成渠道默认自动选择第一个可用的语音渠道。"
+          right={
             <input
               className="input"
-              style={{ width: 180 }}
               value={settings.ttsVoice}
               placeholder="默认音色"
               onChange={(e) => setSettings({ ...settings, ttsVoice: e.target.value })}
               onBlur={() => void update({})}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">语速</div>
-            <div className="row-desc">0.5–2.0，1.0 为原速。</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 180 }}>
+          }
+        />
+        <SettingsRow
+          title="语速"
+          tip="语音播报语速，0.5–2.0，1.0 为原速。"
+          right={
             <input
               type="range"
               min={0.5}
               max={2}
               step={0.05}
               value={settings.ttsSpeed}
-              style={{ width: '100%' }}
               onChange={(e) => setSettings({ ...settings, ttsSpeed: Number(e.target.value) })}
               onMouseUp={() => void update({})}
               onTouchEnd={() => void update({})}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">音量</div>
-            <div className="row-desc">0–10，1.0 为默认；仅 MiniMax 等支持音量参数的渠道生效。</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 180 }}>
+          }
+        />
+        <SettingsRow
+          title="音量"
+          tip="语音播报音量，0–10，1.0 为默认；仅 MiniMax 等支持音量参数的渠道生效。"
+          right={
             <input
               type="range"
               min={0}
               max={10}
               step={0.5}
               value={settings.ttsVol}
-              style={{ width: '100%' }}
               onChange={(e) => setSettings({ ...settings, ttsVol: Number(e.target.value) })}
               onMouseUp={() => void update({})}
               onTouchEnd={() => void update({})}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">音调</div>
-            <div className="row-desc">-12–12，0 为默认；仅支持音调参数的渠道生效。</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 180 }}>
+          }
+        />
+        <SettingsRow
+          title="音调"
+          tip="语音播报音调，-12–12，0 为默认；仅支持音调参数的渠道生效。"
+          right={
             <input
               type="range"
               min={-12}
               max={12}
               step={1}
               value={settings.ttsPitch}
-              style={{ width: '100%' }}
               onChange={(e) => setSettings({ ...settings, ttsPitch: Number(e.target.value) })}
               onMouseUp={() => void update({})}
               onTouchEnd={() => void update({})}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">情绪</div>
-            <div className="row-desc">合成情绪倾向（MiniMax voice_setting.emotion 语义），默认不指定。</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 180 }}>
+          }
+        />
+        <SettingsRow
+          title="情绪"
+          tip="合成情绪倾向（MiniMax voice_setting.emotion 语义），默认不指定。"
+          right={
             <Select
               value={settings.ttsEmotion === '' ? 'default' : settings.ttsEmotion}
               onChange={(v) => {
@@ -387,14 +363,14 @@ export function VoiceAssistantSettingsCard() {
                 { label: '平静 calm', value: 'calm' },
               ]}
             />
-          </div>
-        </div>
+          }
+        />
       </div>
 
       <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
           title="语音会话思考"
-          desc="开启后语音会话以固定推理档运行，大幅缩短回复等待（思考会显著拉长首字时间）。仅影响语音会话，普通对话的推理设置不受影响；关闭后跟随语音 Agent 的默认档位。切换即时生效并同步已绑定的语音会话。"
+          tip="开启后语音会话以固定推理档运行，大幅缩短回复等待（思考会显著拉长首字时间）。仅影响语音会话，普通对话的推理设置不受影响；关闭后跟随语音 Agent 的默认档位。切换即时生效并同步已绑定的语音会话。"
           right={
             <Switch
               checked={settings.sessionThinkingEnabled}
@@ -402,33 +378,24 @@ export function VoiceAssistantSettingsCard() {
             />
           }
         />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">思考强度</div>
-            <div className="row-desc">
-              语音会话使用的推理档位（各适配器映射到自身最近档位）；思考开关关闭时不生效。
-            </div>
-          </div>
-          <div className="row-action" style={{ minWidth: 200 }}>
+        <SettingsRow
+          title="思考强度"
+          tip="语音会话使用的推理档位（各适配器映射到自身最近档位）；思考开关关闭时不生效。"
+          right={
             <Select
               value={settings.sessionThinkingEffort}
               onChange={(v) => void update({ sessionThinkingEffort: v })}
               options={THINKING_EFFORT_OPTIONS}
               disabled={!settings.sessionThinkingEnabled}
             />
-          </div>
-        </div>
+          }
+        />
         <SettingsRow
           title="语音会话权限模式"
-          desc={`语音新建会话使用的权限模式；已有绑定会话沿用其自身设置。当前语音 Agent：${
+          tip={`语音新建会话使用的权限模式；已有绑定会话沿用其自身设置。当前语音 Agent：${
             sessionAgent?.agentName ?? '默认 Agent'
           }（${ADAPTER_LABEL[sessionAgent?.adapter ?? 'claude-sdk']} 适配器），选项随适配器自动切换；不适配的旧值在新建会话时自动回退推荐档。`}
-        />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">默认权限</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 240 }}>
+          right={
             <Select
               value={getValidPermissionMode(
                 settings.sessionPermissionMode,
@@ -439,11 +406,11 @@ export function VoiceAssistantSettingsCard() {
                 (option) => ({ label: option.label, value: option.value }),
               )}
             />
-          </div>
-        </div>
+          }
+        />
         <SettingsRow
           title="重置语音会话绑定"
-          desc="解绑当前语音会话；下次唤醒将新建会话（原会话保留在会话列表）。"
+          tip="解绑当前语音会话；下次唤醒将新建会话（原会话保留在会话列表）。"
           right={
             <button
               type="button"
@@ -461,7 +428,7 @@ export function VoiceAssistantSettingsCard() {
       <div className="settings-card">
         <SettingsRow
           title="常驻唤醒词聆听"
-          desc="类似「嘿 Siri」：麦克风持续采集，唤醒词检测完全在本地推理（音频不出本机），音频不发送到任何服务器。开启后 macOS 麦克风指示灯会常亮；唤醒词模型未安装时会自动下载（约 5MB）。"
+          tip="类似「嘿 Siri」：麦克风持续采集，唤醒词检测完全在本地推理（音频不出本机），音频不发送到任何服务器。开启后 macOS 麦克风指示灯会常亮；唤醒词模型未安装时会自动下载（约 5MB）。"
           right={
             <Switch
               checked={settings.alwaysListening}
@@ -469,12 +436,10 @@ export function VoiceAssistantSettingsCard() {
             />
           }
         />
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">唤醒词</div>
-            <div className="row-desc">说「嘿 Spark」或中文备选词唤醒；检测完全本地。</div>
-          </div>
-          <div className="row-action" style={{ minWidth: 200 }}>
+        <SettingsRow
+          title="唤醒词"
+          tip="说「嘿 Spark」或中文备选词唤醒；检测完全本地。"
+          right={
             <Select
               value={settings.wakeWord}
               onChange={(v) => void update({ wakeWord: v })}
@@ -485,30 +450,24 @@ export function VoiceAssistantSettingsCard() {
                 { label: '小星小星', value: 'xiaoxing-xiaoxing' },
               ]}
             />
-          </div>
-        </div>
-        <div className="settings-card-row">
-          <div className="flex1 min-w-0">
-            <div className="row-title">唤醒灵敏度（阈值）</div>
-            <div className="row-desc">
-              越低越容易唤醒（也越易误触发）。默认 0.10 已按「嘿 Spark」实测校准；真人声可微调
-              0.08–0.15。
-            </div>
-          </div>
-          <div className="row-action" style={{ minWidth: 160 }}>
+          }
+        />
+        <SettingsRow
+          title="唤醒灵敏度（阈值）"
+          tip="越低越容易唤醒（也越易误触发）。默认 0.10 已按「嘿 Spark」实测校准；真人声可微调 0.08–0.15。"
+          right={
             <input
               type="range"
               min={0.05}
               max={0.3}
               step={0.01}
               value={settings.wakeThreshold}
-              style={{ width: '100%' }}
               onChange={(e) => setSettings({ ...settings, wakeThreshold: Number(e.target.value) })}
               onMouseUp={() => void update({})}
               onTouchEnd={() => void update({})}
             />
-          </div>
-        </div>
+          }
+        />
       </div>
 
       {saveError != null ? (
