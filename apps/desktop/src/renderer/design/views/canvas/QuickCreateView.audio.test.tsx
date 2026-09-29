@@ -73,6 +73,17 @@ function installSparkBridge(audioModels: unknown[], transcribeModels: unknown[] 
         }
         if (channel === 'provider:list') return { profiles: [] }
         if (channel === 'settings:get') return { value: null }
+        if (channel === 'canvas:task:create-media') {
+          // 与主进程返回同形：assets 是契约必填字段，缺了会让结果面板拿不到产物数组。
+          return {
+            status: 'succeeded',
+            providerProfileId: 'tts-provider',
+            provider: '语音渠道',
+            model: 'qwen3-tts-flash',
+            mode: 'sync',
+            assets: [],
+          }
+        }
         return {}
       }),
       // 视图内的 media/text 进度订阅要求返回退订函数
@@ -86,6 +97,19 @@ async function flush() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+/** 语音任务的提交载荷：capabilityId 必须锁在 audio.speech，否则会路由到音乐能力。 */
+function audioSubmitPayload(): { capabilityId?: string; operation?: string } | undefined {
+  const submit = invocations.find((item) => item.channel === 'canvas:task:create-media')
+  return submit?.payload as { capabilityId?: string; operation?: string } | undefined
+}
+
+/** 取「创作历史」标签页按钮。 */
+function historyTab(): HTMLButtonElement | undefined {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>('.quick-create-result-tabs button'),
+  ).find((button) => button.textContent?.includes('创作历史'))
 }
 
 describe('QuickCreateView 语音模式', () => {
@@ -193,15 +217,52 @@ describe('QuickCreateView 语音模式', () => {
     const textarea = document.querySelector<HTMLTextAreaElement>('#quick-create-prompt')
     await act(async () => {
       if (!textarea) return
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLTextAreaElement.prototype,
-        'value',
-      )?.set
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(textarea, '欢迎收听今天的早间资讯')
       textarea.dispatchEvent(new Event('input', { bubbles: true }))
     })
 
     expect(generateButton()?.disabled).toBe(false)
+  })
+
+  it('首次提交与重试已完成的语音任务都携带 audio.speech，不被路由推到音乐能力', async () => {
+    await act(async () => root.render(<QuickCreateView />))
+    await flush()
+    await act(async () => modeButton('语音')?.click())
+    await flush()
+
+    // 首次提交
+    const textarea = document.querySelector<HTMLTextAreaElement>('#quick-create-prompt')
+    await act(async () => {
+      if (!textarea) return
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(textarea, '欢迎收听今天的早间资讯')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const generateButton = () =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes('生成语音'),
+      )
+    await act(async () => generateButton()?.click())
+    await flush()
+
+    expect(audioSubmitPayload()?.capabilityId).toBe('audio.speech')
+    expect(audioSubmitPayload()?.operation).toBe('text_to_audio')
+
+    // 重试已完成的语音任务：记录里已有 operation，但 capabilityId 不能省
+    invocations = []
+    await act(async () => historyTab()?.click())
+    await flush()
+
+    const retryButton = document.querySelector<HTMLButtonElement>(
+      '.quick-create-list-actions [aria-label="重新生成"]',
+    )
+    expect(retryButton).not.toBeNull()
+    await act(async () => retryButton?.click())
+    await flush()
+
+    expect(audioSubmitPayload()?.capabilityId).toBe('audio.speech')
+    expect(audioSubmitPayload()?.operation).toBe('text_to_audio')
   })
 
   it('语音模式下粘贴图片被拦下并给出专门提示，不进入素材列表', async () => {

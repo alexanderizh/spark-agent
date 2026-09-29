@@ -25,6 +25,7 @@ import {
   TRANSCRIBE_CAPABILITIES,
   VIDEO_CAPABILITIES,
   capabilityFor,
+  lockedCapabilityFor,
   operationFor,
   operationForSubmission,
   type QuickCreateInput,
@@ -1299,8 +1300,10 @@ export function QuickCreateView() {
       const taskPrompt = source?.prompt ?? prompt.trim()
       const taskInputs: Array<QuickInput | CanvasMediaTaskInputFile> =
         source?.inputFiles ?? requestInputs
+      // 重放已有记录（重试 / 重新生成）时能力不能省：语音/识别的能力与模型无关且必须锁定
+      // （text_to_audio 的协议候选顺序 audio.music 在前），交给路由推导会推到音乐能力。
       const taskCapability = source?.operation
-        ? undefined
+        ? lockedCapabilityFor(taskMode)
         : capabilityFor(taskMode, taskInputs as QuickInput[], selectedModel)
       // operation 需与能力一致（参考视频生视频记为 text_to_video），否则历史重试会按
       // video_edit 重新推导出 video.edit，导致仅支持参考能力的模型重试时无可路由能力。
@@ -2051,7 +2054,8 @@ export function QuickCreateView() {
                 </div>
               </div>
             </div>
-            {dragOverForm && (
+            {/* 语音模式不接受任何素材：不弹「松开以添加素材」，避免承诺一个做不到的动作 */}
+            {dragOverForm && mode !== 'audio' && (
               <div className="quick-create-drop-hint" aria-hidden="true">
                 <span>松开以添加素材</span>
               </div>

@@ -594,6 +594,20 @@
   opacity: 0.85;
 }
 
+/* 音频素材没有画面：整块素材位用居中图标占位。
+   必须写成 span.xxx 覆盖下面的通用 span 规则——那条规则是给图片/视频上的文件名做
+   白色叠字（color:#fff + text-shadow），音频图标命中后会变成浅底上的白字图标而看不见。 */
+.quick-create-input-chip span.quick-create-input-audio-glyph {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  background: var(--quick-field);
+}
+
 .quick-create-input-chip span {
   position: relative;
   z-index: 1;

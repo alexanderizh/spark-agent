@@ -59,12 +59,10 @@ export function capabilityFor(
   model?: CanvasMediaModelSummary,
 ): MediaCapabilityId | undefined {
   if (mode === 'reverse') return undefined
-  // 语音只有 text_to_audio 一个操作，且必须固定在 audio.speech 上：
-  // 不做「模型未声明则回退候选首项」推导，避免回退到 audio.music。
-  if (mode === 'audio') return AUDIO_CAPABILITIES[0]
-  // 识别同样只有 audio.transcription 一个能力，固定锁定，
-  // 兼容模型过滤只保留真正声明了转写能力的模型。
-  if (mode === 'transcribe') return TRANSCRIBE_CAPABILITIES[0]
+  // 语音/识别的能力与模型无关，直接取锁定值；不做「模型未声明则回退候选首项」推导，
+  // 避免语音回退到 audio.music。
+  const locked = lockedCapabilityFor(mode)
+  if (locked) return locked
   const candidates: MediaCapabilityId[] =
     mode === 'image'
       ? inputs.length > 0
@@ -78,6 +76,20 @@ export function capabilityFor(
   return (
     candidates.find((id) => model?.capabilities.some((item) => item.id === id)) ?? candidates[0]
   )
+}
+
+/**
+ * 与模型无关的锁定能力。
+ *
+ * 语音（TTS）与语音识别各自只有唯一能力，但协议层 `capabilityForOperation('text_to_audio')`
+ * 的候选顺序是 `audio.music` 在前，交给路由按 operation 推导就会落到音乐能力上。
+ * 因此凡是「重放已存在配置」的请求（重试 / 重新生成）也必须继续显式携带，
+ * 不能因为记录里已有 operation 就省略 capabilityId。
+ */
+export function lockedCapabilityFor(mode: QuickCreateMode): MediaCapabilityId | undefined {
+  if (mode === 'audio') return AUDIO_CAPABILITIES[0]
+  if (mode === 'transcribe') return TRANSCRIBE_CAPABILITIES[0]
+  return undefined
 }
 
 /**

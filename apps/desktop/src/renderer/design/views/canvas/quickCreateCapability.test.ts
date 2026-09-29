@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasMediaModelSummary, MediaCapabilityId } from '@spark/protocol'
 import {
   capabilityFor,
+  lockedCapabilityFor,
   operationFor,
   operationForSubmission,
   type QuickCreateInput,
@@ -105,6 +106,26 @@ describe('operationFor', () => {
   it('识别模式恒为 audio_transcribe，不受输入素材影响', () => {
     expect(operationFor('transcribe', [])).toBe('audio_transcribe')
     expect(operationFor('transcribe', [input('audio')])).toBe('audio_transcribe')
+  })
+})
+
+describe('lockedCapabilityFor', () => {
+  it('语音/识别返回与模型无关的锁定能力', () => {
+    expect(lockedCapabilityFor('audio')).toBe('audio.speech')
+    expect(lockedCapabilityFor('transcribe')).toBe('audio.transcription')
+  })
+
+  it('图片/视频/反推没有锁定能力（仍按模型与素材推导）', () => {
+    expect(lockedCapabilityFor('image')).toBeUndefined()
+    expect(lockedCapabilityFor('video')).toBeUndefined()
+    expect(lockedCapabilityFor('reverse')).toBeUndefined()
+  })
+
+  it('不传模型时语音能力依然可用：重试路径靠它避免回退到 audio.music', () => {
+    // 协议层 capabilityForOperation('text_to_audio') 是 [audio.music, audio.speech]，
+    // 重试若省掉 capabilityId，路由会推到 audio.music 并报能力不支持。
+    expect(capabilityFor('audio', [], undefined)).toBe('audio.speech')
+    expect(capabilityFor('transcribe', [input('audio')], undefined)).toBe('audio.transcription')
   })
 })
 
