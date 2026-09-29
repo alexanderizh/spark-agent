@@ -26,10 +26,18 @@ import './wiki.less'
 
 type SettingValue = boolean | number | string
 
+/**
+ * 当前已落地的分片。S1（写入/设置面板）/ S2（抽取沉淀）/ S3（技能提议）
+ * / S4（Repo Wiki）均已交付，因此不再有"待生效"标注；保留 phase 机制是为了
+ * 后续分片新增设置项时能自动标注，不必改这里。
+ */
+const CURRENT_PHASE: WikiSettingDefinition['phase'] = 'S4'
+
 const PHASE_LABEL: Record<WikiSettingDefinition['phase'], string> = {
   S1: '',
-  S2: '随自动沉淀（S2）启用',
-  S4: '随 Repo Wiki（S4）启用',
+  S2: '',
+  S3: '随技能提议（S3）启用',
+  S4: '',
 }
 
 function defaultValue(def: WikiSettingDefinition): SettingValue {
@@ -139,8 +147,11 @@ export function WikiSettingsPanel() {
     <div className="wiki_set_root">
       {groups.map(({ group, defs }) => {
         if (defs.length === 0) return null
-        // 分组级待生效标记：S1 已生效，S2/S4 分组整体标注（与逐项 def.phase 同源）
-        const pending = group.phase !== 'S1'
+        // 分组级待生效标记：与逐项 def.phase 同源（当前分片之后的分组才标注）
+        const pending = !isWikiSettingActive(
+          { phase: group.phase } as WikiSettingDefinition,
+          CURRENT_PHASE,
+        )
         return (
           <div className="wiki_set_group" key={group.id}>
             <div className="wiki_set_group_head">
@@ -151,7 +162,7 @@ export function WikiSettingsPanel() {
               <div className="wiki_set_group_desc">{group.description}</div>
             </div>
             {defs.map((def) => {
-              const active = isWikiSettingActive(def, 'S1')
+              const active = isWikiSettingActive(def, CURRENT_PHASE)
               const value = values[def.key] ?? defaultValue(def)
               return (
                 <div className={`wiki_set_row${active ? '' : ' is-pending'}`} key={def.key}>

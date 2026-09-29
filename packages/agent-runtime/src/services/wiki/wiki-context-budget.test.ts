@@ -173,8 +173,10 @@ describe('WikiContextBudget（服务端强制裁剪）', () => {
   it('挂载计划：默认全量；工具瘦身只留核心 + 二级入口（能力不丢失）', () => {
     const full = resolveWikiMountPlan(false)
     expect(full.admin).toBe(false)
-    expect(full.toolNames).toHaveLength(10)
+    // 5 只读 + 5 写 + S3 技能提议（低频但首屏可见，默认能力优先）
+    expect(full.toolNames).toHaveLength(11)
     expect(full.toolNames).toContain('wiki_delete')
+    expect(full.toolNames).toContain('wiki_propose_skill')
     expect(full.toolNames).not.toContain(WIKI_ADMIN_TOOL_NAME)
     expect(full.toolNames).toEqual(
       expect.arrayContaining([...WIKI_CORE_TOOL_NAMES, ...WIKI_DEFERRED_TOOL_NAMES]),

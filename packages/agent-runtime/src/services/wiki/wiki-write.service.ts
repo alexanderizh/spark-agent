@@ -85,6 +85,14 @@ export interface WikiPageWriteInput {
   kind?: WikiPageKind
   /** 标题（新建必填；更新缺省 = 不改标题） */
   title?: string
+  /**
+   * 显式 slug（新建时覆盖标题派生值）。
+   *
+   * Repo Wiki 依赖它做**稳定身份键**：rebuild 按 slug 定位页面，仓库改名后
+   * 仍能更新同一批页面；否则标题一变就产生新 slug，旧页成为永久孤儿
+   * （既不被更新也不会被清理）。
+   */
+  slug?: string
   summary?: string
   /** 正文（新建必填；更新时缺省 = 不改正文） */
   body?: string
@@ -95,6 +103,12 @@ export interface WikiPageWriteInput {
   /** 'manual_user' | 'agent' | 'extraction' | 'import'（真实装配角色，不信任 LLM 自报） */
   authorRole?: string
   sourceSessionId?: string | null
+  /**
+   * 覆盖 source_type 派生值（缺省按 authorRole 派生 'skill' / 'manual'）。
+   * Repo Wiki 用它标记所有权：'repo-scan'（可重建）/ 'repo-scan-manual'（人工接管）
+   * / 'repo-scan-ignored'（重建时跳过）。扫描只认 'repo-scan'，其余一律不覆写。
+   */
+  sourceType?: string
   /** 版本记录语义：普通编辑 'edit'；版本还原 'restore'（默认 edit） */
   changeKind?: 'edit' | 'restore'
   /** 版本记录的说明文字（如「由 v2 还原」），会写进被替代版本的历史行 */
@@ -183,12 +197,17 @@ export class WikiWriteService {
     description?: string
     icon?: string | null
     createdBy?: string
+    /** 关联仓库路径（spaceType='repo' 必填：rebuild 与漂移检测都依赖它） */
+    repoPath?: string | null
   }): Promise<WikiSpaceWriteResult> {
     const name = input.name.trim()
     if (name.length === 0) {
       return { ok: false, reason: 'validation', message: '空间名称不能为空' }
     }
     const spaceType = input.spaceType ?? 'manual'
+    if (spaceType === 'repo' && (input.repoPath == null || input.repoPath.trim().length === 0)) {
+      return { ok: false, reason: 'validation', message: 'Repo Wiki 空间必须提供仓库路径' }
+    }
     const existing = this.spaceRepo.findByName(input.scope, input.scopeRef ?? null, spaceType, name)
     if (existing != null) {
       return { ok: false, reason: 'name_conflict', message: `同名空间已存在：${name}` }
@@ -202,7 +221,7 @@ export class WikiWriteService {
       description: input.description?.slice(0, 400) ?? '',
       icon: input.icon ?? null,
       visibility: 'private',
-      repo_path: null,
+      repo_path: input.repoPath ?? null,
       repo_rev: null,
       created_by: input.createdBy ?? 'user',
       archived: 0,
@@ -249,7 +268,7 @@ export class WikiWriteService {
         message: `空间页面数已达上限 ${WIKI_PAGE_QUOTA_PER_SPACE}，请先归档或删除不再需要的页面`,
       }
     }
-    let slug = slugifyTitle(title)
+    let slug = slugifyTitle(input.slug?.trim() || title)
     if (slug.length === 0) slug = generateId('wp').slice(3) // 纯符号标题兜底
     if (this.pageRepo.getBySlug(input.spaceId, slug) != null) {
       return { ok: false, reason: 'slug_conflict', message: `空间内已存在同名 slug：${slug}` }
@@ -281,7 +300,7 @@ export class WikiWriteService {
           status: input.status ?? 'published',
           confidence: 1.0,
           sort_order: 0,
-          source_type: input.authorRole === 'agent' ? 'skill' : 'manual',
+          source_type: input.sourceType ?? (input.authorRole === 'agent' ? 'skill' : 'manual'),
           source_session_id: input.sourceSessionId ?? null,
           author_role: input.authorRole ?? 'manual_user',
           hit_count: 0,
@@ -381,6 +400,15 @@ export class WikiWriteService {
       ...(input.parentId !== undefined ? { parent_id: input.parentId } : {}),
       ...(input.sortOrder != null ? { sort_order: input.sortOrder } : {}),
       ...(input.status != null ? { status: input.status } : {}),
+      // source_type 是**所有权标记**，更新时默认保留既有值：若按 authorRole
+      // 重新派生，用户一次普通编辑就会把 'repo-scan-manual' 冲成 'manual'，
+      // 于是 rebuild 又能覆写他手写的内容（所有权被静默销毁）。
+      // 显式传入才改写（Repo Wiki 的"转人工维护 / 忽略 / 恢复生成"入口）。
+      ...(input.sourceType != null
+        ? { source_type: input.sourceType }
+        : existing.source_type != null
+          ? { source_type: existing.source_type }
+          : {}),
       ...(newFilePath !== existing.file_path ? { file_path: newFilePath } : {}),
     }
     const expected = input.expectedVersion ?? existing.version

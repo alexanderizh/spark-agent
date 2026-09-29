@@ -72,9 +72,7 @@ export function findAncestorIds(pages: readonly WikiPageMeta[], pageId: string):
  * 归档视图过滤：只保留已归档页（其非归档后代一并保留，避免归档父页时
  * 子页从归档视图里「消失」得无法处理）。query 为空时原样返回。
  */
-export function filterArchivedTree(
-  nodes: readonly WikiTreeNode[],
-): WikiTreeNode[] {
+export function filterArchivedTree(nodes: readonly WikiTreeNode[]): WikiTreeNode[] {
   const walk = (list: readonly WikiTreeNode[]): WikiTreeNode[] => {
     const kept: WikiTreeNode[] = []
     for (const node of list) {
@@ -245,9 +243,7 @@ export function WikiPageTree({
               </span>
             </div>
           </Dropdown>
-          {open && (
-            <div className="wiki_tree_kids">{renderNodes(children, depth + 1)}</div>
-          )}
+          {open && <div className="wiki_tree_kids">{renderNodes(children, depth + 1)}</div>}
         </React.Fragment>
       )
     })

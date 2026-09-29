@@ -10,7 +10,8 @@
  *   - Agent 工具返回结构（mcp__spark_wiki__ 命名空间）与 IPC 结构共用本模块类型，
  *     保证内置 / MCP 两形态语义一致。
  *
- * 契约冻结于 S0（方案 §5）；变更须显式说明原因与影响。
+ * 契约冻结于 S0（方案 §5）；S1 扩页面写入口，S2 扩候选确认区与抽取回执；
+ * 变更须显式说明原因与影响。
  */
 
 import { z } from 'zod'
@@ -150,6 +151,138 @@ export interface WikiPageVersionEntry {
 }
 
 /* ------------------------------------------------------------------ */
+/* 候选确认区（S2 抽取管道）                                             */
+/* ------------------------------------------------------------------ */
+
+/** 候选状态（与 storage 的 CHECK 约束一致） */
+export type WikiCandidateStatus = 'pending' | 'confirmed' | 'rejected' | 'expired'
+
+/** 候选依据片段（强制溯源：无来源不入库） */
+export interface WikiCandidateSourceView {
+  sessionId: string
+  /** 对话内第几轮（从 1 开始） */
+  turnIndex: number
+  /** 依据片段（不复制整段轨迹） */
+  excerpt: string
+}
+
+/** 候选区条目（payload 已解析；UI 只读展示 + 结构化确认） */
+export interface WikiCandidateItem {
+  id: number
+  scope: WikiScope
+  scopeRef: string | null
+  /** 目标空间（null = 确认时由用户选择 / 新建） */
+  spaceId: string | null
+  kind: WikiPageKind
+  title: string
+  summary: string
+  body: string
+  tags: string[]
+  /** 模型自评分 0~1（低置信在 UI 标注"模型推断"） */
+  confidence: number
+  /** 入选理由（UI 展示，不作为知识内容） */
+  rationale: string | null
+  sources: WikiCandidateSourceView[]
+  status: WikiCandidateStatus
+  createdAt: number
+  expiresAt: number
+  /** 展示内容摘要（确认时必须回传，绑定"所见即所存"） */
+  digest: string
+  /** 已晋级创建的页面 id */
+  pageId: string | null
+}
+
+/** 抽取触发方式（进日志与回执，便于成本归因） */
+export type WikiExtractionTrigger = 'manual' | 'milestone' | 'idle' | 'schedule'
+
+/** 抽取结果回执（不含正文片段：只报计数与失败原因） */
+export interface WikiExtractionReceipt {
+  ok: boolean
+  /** 采样轮次数（成本归因） */
+  sampledTurns: number
+  /** 新增候选条数 */
+  inserted: number
+  /** 被同摘要去重跳过的条数 */
+  duplicates: number
+  /** 失败时原因（machine readable） */
+  reason?:
+    | 'disabled'
+    | 'no_provider'
+    | 'dialogue_empty'
+    | 'model_failed'
+    | 'quota'
+    | 'invalid_output'
+  message?: string
+}
+
+/* ------------------------------------------------------------------ */
+/* 技能提议区（S3：知识 → 技能，带溯源）                                  */
+/* ------------------------------------------------------------------ */
+
+/** 提议状态（与 storage 的 CHECK 约束一致） */
+export type WikiSkillProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded'
+
+/** 提议区条目（草稿已解析；UI 只读展示 + 结构化决策） */
+export interface WikiSkillProposalItem {
+  id: string
+  scope: WikiScope
+  scopeRef: string | null
+  name: string
+  /** PURPOSE：为何创建 / 解决哪个 pattern */
+  purpose: string
+  /** SKILL.md 草稿全文 */
+  skillMd: string
+  description: string
+  triggers: string[]
+  /** 溯源：来自哪些 wiki_page（至少一个） */
+  sourcePageIds: string[]
+  status: WikiSkillProposalStatus
+  /** 被拒原因（知识保留；下一轮提议可读，避免重蹈） */
+  rejectReason: string | null
+  /** 接受后生成的 skills.id */
+  skillId: string | null
+  createdAt: number
+  decidedAt: number | null
+  /** 溯源页面标题（UI 展示用，一次查询取全，避免 N+1） */
+  sourcePages: Array<{ id: string; title: string; kind: WikiPageKind }>
+}
+
+/* ------------------------------------------------------------------ */
+/* Repo Wiki（S4：代码仓库 → 结构化知识页，可重建）                       */
+/* ------------------------------------------------------------------ */
+
+/** 扫描回执（计数如实回报：截断/跳过都不静默） */
+export interface WikiRepoScanReceipt {
+  ok: boolean
+  spaceId?: string
+  /** 本次扫描记录的代码版本（漂移检测基线） */
+  repoRev?: string | null
+  pagesCreated: number
+  pagesUpdated: number
+  /** 被跳过（人工接管 / 已忽略）的页面数 */
+  pagesSkipped: number
+  filesScanned: number
+  /** 是否因文件数上限截断 */
+  truncated: boolean
+  message?: string
+}
+
+/** 页面所有权（决定重建时是否覆写） */
+export type WikiRepoPageOwnership = 'generated' | 'manual' | 'ignored'
+
+/** 漂移状态（生成版本 vs 当前 HEAD） */
+export interface WikiRepoDriftStatus {
+  spaceId: string
+  repoPath: string | null
+  generatedRev: string | null
+  currentRev: string | null
+  /** generatedRev 落后 currentRev 多少个提交（无法判定时为 null） */
+  commitsBehind: number | null
+  stale: boolean
+  threshold: number
+}
+
+/* ------------------------------------------------------------------ */
 /* IPC 契约（S0 骨架：空间 + 页面核心闭环 + 检索；S1-S4 逐步扩展）          */
 /* ------------------------------------------------------------------ */
 
@@ -229,6 +362,58 @@ export interface WikiIpcChannelMap {
   'wiki:search': [
     { query: string; spaceIds?: string[]; kind?: WikiPageKind; limit?: number },
     WikiSearchResponse,
+  ]
+
+  'wiki:candidate:list': [
+    { scope?: WikiScope; scopeRef?: string | null; status?: WikiCandidateStatus },
+    { items: WikiCandidateItem[]; pendingTotal: number },
+  ]
+
+  'wiki:candidate:confirm': [
+    { id: number; digest: string; spaceId?: string | null },
+    (
+      | { ok: true; pageId: string; title: string; indexReady: boolean }
+      | { ok: false; message: string }
+    ),
+  ]
+
+  'wiki:candidate:reject': [{ id: number }, { ok: boolean; message?: string }]
+
+  'wiki:extract:distill': [
+    {
+      sessionId: string
+      trigger?: WikiExtractionTrigger
+      scope?: WikiScope
+      scopeRef?: string | null
+      spaceId?: string | null
+    },
+    WikiExtractionReceipt,
+  ]
+
+  'wiki:skill:list': [
+    { scope?: WikiScope; scopeRef?: string | null; status?: WikiSkillProposalStatus },
+    { items: WikiSkillProposalItem[]; pendingTotal: number },
+  ]
+
+  'wiki:skill:accept': [
+    { id: string },
+    { ok: true; skillId: string; name: string; rootPath: string } | { ok: false; message: string },
+  ]
+
+  'wiki:skill:reject': [{ id: string; reason: string }, { ok: boolean; message?: string }]
+
+  'wiki:repo:scan': [
+    { repoPath: string; spaceId?: string; ignoreGlobs?: string[]; maxFiles?: number },
+    WikiRepoScanReceipt,
+  ]
+
+  'wiki:repo:rebuild': [{ spaceId: string }, WikiRepoScanReceipt]
+
+  'wiki:repo:status': [{ spaceId: string }, WikiRepoDriftStatus]
+
+  'wiki:repo:page:ownership': [
+    { pageId: string; ownership: WikiRepoPageOwnership },
+    { ok: boolean; message?: string },
   ]
 }
 
@@ -337,5 +522,57 @@ export const WikiIpcSchemaRegistry = {
     spaceIds: z.array(z.string().min(1).max(64)).max(50).optional(),
     kind: WikiPageKindSchema.optional(),
     limit: z.number().int().min(1).max(20).optional(),
+  }),
+
+  'wiki:candidate:list': z.object({
+    scope: WikiScopeSchema.optional(),
+    scopeRef: z.string().nullable().optional(),
+    status: z.enum(['pending', 'confirmed', 'rejected', 'expired']).optional(),
+  }),
+  'wiki:candidate:confirm': z.object({
+    id: z.number().int().positive(),
+    digest: z.string().min(8).max(64),
+    spaceId: z.string().min(1).max(64).nullable().optional(),
+  }),
+  'wiki:candidate:reject': z.object({
+    id: z.number().int().positive(),
+  }),
+  'wiki:extract:distill': z.object({
+    sessionId: z.string().min(1).max(64),
+    trigger: z.enum(['manual', 'milestone', 'idle', 'schedule']).optional(),
+    scope: WikiScopeSchema.optional(),
+    scopeRef: z.string().nullable().optional(),
+    spaceId: z.string().min(1).max(64).nullable().optional(),
+  }),
+
+  'wiki:skill:list': z.object({
+    scope: WikiScopeSchema.optional(),
+    scopeRef: z.string().nullable().optional(),
+    status: z.enum(['pending', 'accepted', 'rejected', 'superseded']).optional(),
+  }),
+  'wiki:skill:accept': z.object({
+    id: z.string().min(1).max(64),
+  }),
+  'wiki:skill:reject': z.object({
+    id: z.string().min(1).max(64),
+    // 拒绝原因必填：这是留给下一轮提议的唯一反馈信号
+    reason: z.string().min(1).max(500),
+  }),
+
+  'wiki:repo:scan': z.object({
+    repoPath: z.string().min(1).max(1000),
+    spaceId: z.string().min(1).max(64).optional(),
+    ignoreGlobs: z.array(z.string().min(1).max(200)).max(100).optional(),
+    maxFiles: z.number().int().min(1).max(200_000).optional(),
+  }),
+  'wiki:repo:rebuild': z.object({
+    spaceId: z.string().min(1).max(64),
+  }),
+  'wiki:repo:status': z.object({
+    spaceId: z.string().min(1).max(64),
+  }),
+  'wiki:repo:page:ownership': z.object({
+    pageId: z.string().min(1).max(64),
+    ownership: z.enum(['generated', 'manual', 'ignored']),
   }),
 } as const

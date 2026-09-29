@@ -26,7 +26,7 @@ export const WIKI_SETTING_GROUPS: ReadonlyArray<{
   label: string
   description: string
   /** 该分组功能在哪个分片生效；早于当前分片的分组在 UI 上标注"随 XX 启用" */
-  phase: 'S1' | 'S2' | 'S4'
+  phase: WikiSettingPhase
   /**
    * 该分组允许的 key 前缀。多数分组是 1:1（group 名即前缀），但方案 §12.1
    * 把候选策略（`candidate/*`）与存储位置（`store/*`）归入相邻分组，因此这里
@@ -105,8 +105,14 @@ export interface WikiSettingDefinition {
   /** select 型的可选项 */
   options?: WikiSettingOption[]
   /** 该设置实际生效的分片（用于 UI 标注未生效项） */
-  phase: 'S1' | 'S2' | 'S4'
+  phase: WikiSettingPhase
 }
+
+/**
+ * 设置项生效分片。与 isWikiSettingActive 的入参保持同一联合，避免渲染端
+ * 为了标注"随 XX 启用"而写类型断言。
+ */
+export type WikiSettingPhase = 'S1' | 'S2' | 'S3' | 'S4'
 
 /**
  * 全部知识库设置项。
@@ -216,7 +222,8 @@ export const WIKI_SETTING_DEFINITIONS: ReadonlyArray<WikiSettingDefinition> = [
     key: 'extract/enabled',
     group: 'extract',
     label: '自动沉淀总开关',
-    description: '关闭时只支持手动沉淀，不进行任何自动抽取。',
+    description:
+      '控制后台自动沉淀（空闲异步 / 定时批处理）。关闭时仍保留"显式沉淀"与"里程碑收尾"两条需你确认的路径。',
     type: 'boolean',
     default: false,
     phase: 'S2',
@@ -394,22 +401,14 @@ export const WIKI_SETTING_DEFINITIONS: ReadonlyArray<WikiSettingDefinition> = [
     key: 'repo/mode',
     group: 'repo',
     label: '生成方式',
-    description: '手动触发更省资源；随代码变更会在代码提交后自动增量更新。',
+    description:
+      '手动：只在点「重建」时更新。自动：打开 Repo Wiki 时若检测到代码已漂移则自动重建。',
     type: 'select',
     default: 'manual',
     options: [
       { value: 'manual', label: '手动触发（推荐）' },
-      { value: 'auto', label: '随代码变更' },
+      { value: 'auto', label: '漂移后自动重建' },
     ],
-    phase: 'S4',
-  },
-  {
-    key: 'repo/modelProfile',
-    group: 'repo',
-    label: '生成模型档位',
-    description: '用于生成仓库知识页的模型档位；留空表示跟随默认配置。',
-    type: 'text',
-    default: '',
     phase: 'S4',
   },
   {
@@ -537,10 +536,7 @@ export function validateWikiSettingValue(key: string, raw: unknown): WikiSetting
 }
 
 /** 该设置当前分片是否已生效（渲染端用于标注"随 XX 启用"）。 */
-export function isWikiSettingActive(
-  def: WikiSettingDefinition,
-  phase: 'S1' | 'S2' | 'S3' | 'S4',
-): boolean {
-  const order: Record<'S1' | 'S2' | 'S3' | 'S4', number> = { S1: 1, S2: 2, S3: 3, S4: 4 }
+export function isWikiSettingActive(def: WikiSettingDefinition, phase: WikiSettingPhase): boolean {
+  const order: Record<WikiSettingPhase, number> = { S1: 1, S2: 2, S3: 3, S4: 4 }
   return order[def.phase] <= order[phase]
 }

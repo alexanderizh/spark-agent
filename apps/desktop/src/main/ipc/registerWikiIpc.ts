@@ -17,6 +17,7 @@
 import {
   WorkspaceRepository,
   SettingsRepository,
+  SkillRepository,
   type WikiScope,
   type WikiSpaceType,
   type WikiPageKind,
@@ -30,9 +31,11 @@ import type {
   WikiPageVersionEntry,
   WikiBacklinkEntry,
   WikiRevisionDetail,
+  WikiSkillProposalStatus,
 } from '@spark/protocol'
 import { typedIpcHandle } from './typed-ipc.js'
 import { getDatabase } from '../db.js'
+import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('ipc.wiki')
@@ -63,6 +66,35 @@ export function registerWikiIpc(): void {
     })
   }
 
+  /**
+   * 带 S3 技能落地能力的服务栈（共享 SkillRepository 实例，保证技能管理界面
+   * 与 Wiki 提议区看到同一份数据）。技能目录来自 AppSkillsManager ——
+   * 不猜路径，未配置时接受会被服务层明确拒绝。
+   */
+  const skillStack = () => {
+    let skillsRootDir: string | undefined
+    try {
+      skillsRootDir = getAppSkillsManager().userDir
+    } catch {
+      skillsRootDir = undefined
+    }
+    return createWikiServiceStack({
+      db,
+      budget: getBudget(),
+      skillRepo: new SkillRepository(db),
+      ...(skillsRootDir != null ? { skillsRootDir } : {}),
+    })
+  }
+
+  /** 漂移阈值从设置读取（category='wiki', key='repo/staleCommits'）。 */
+  const getStaleCommits = (): number => {
+    const raw = settingsRepo.get('wiki', 'repo/staleCommits')
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 20
+  }
+
+  const repoStack = () =>
+    createWikiServiceStack({ db, budget: getBudget(), staleCommits: getStaleCommits() })
+
   const base = stack()
 
   /** 页面所属空间 → 服务栈（页面不存在时返回 null）。 */
@@ -81,6 +113,10 @@ export function registerWikiIpc(): void {
       ? [{ scope: request.scope, scopeRef: request.scopeRef ?? null }]
       : [
           { scope: 'user', scopeRef: null },
+          // 未绑定 workspace 的 project 空间（Repo Wiki 扫描即以此身份建空间：
+          // 触发时没有会话上下文，repo_path 已足够定位仓库）。少了这一条，
+          // 扫完生成的空间不会出现在任何列表里。
+          { scope: 'project', scopeRef: null },
           // 全部视图：project 空间按任意 scope_ref 匹配（渲染端列表）
           ...listAllProjectScopes(db),
         ]
@@ -389,6 +425,119 @@ export function registerWikiIpc(): void {
       ...(request.kind != null ? { kind: request.kind } : {}),
       ...(request.limit != null ? { limit: request.limit } : {}),
     })
+  })
+
+  // ─── 候选确认区（S2 抽取管道） ─────────────────────────────────────────
+
+  typedIpcHandle('wiki:candidate:list', async (request) => {
+    const scope =
+      request.scope != null
+        ? { scope: request.scope, scopeRef: request.scopeRef ?? null }
+        : undefined
+    return base.candidateService.list(request.status ?? 'pending', scope)
+  })
+
+  typedIpcHandle('wiki:candidate:confirm', async (request) => {
+    // 目标空间决定正文落盘根路径（project scope），因此按空间重建服务栈。
+    const space = request.spaceId != null ? base.spaceRepo.getById(request.spaceId) : null
+    const activeStack = space != null ? stack(space.scope, space.scope_ref) : base
+    const result = await activeStack.candidateService.confirm({
+      id: request.id,
+      digest: request.digest,
+      ...(request.spaceId != null ? { spaceId: request.spaceId } : {}),
+    })
+    if (!result.ok || result.pageId == null || result.title == null) {
+      throw new Error(result.message ?? '确认失败')
+    }
+    return {
+      ok: true as const,
+      pageId: result.pageId,
+      title: result.title,
+      indexReady: result.indexReady === true,
+    }
+  })
+
+  typedIpcHandle('wiki:candidate:reject', async (request) => {
+    return base.candidateService.reject(request.id)
+  })
+
+  // ─── 抽取管道（S2：对话 → 候选） ───────────────────────────────────────
+
+  typedIpcHandle('wiki:extract:distill', async (request) => {
+    // 抽取需要读设置闸门与候选策略，因此用带 settingsGet 的栈（预算档同源）。
+    const distiller = createWikiServiceStack({
+      db,
+      budget: getBudget(),
+      settingsGet: (category, key) => settingsRepo.get(category, key),
+    }).extractionService
+    return distiller.distill({
+      sessionId: request.sessionId,
+      trigger: request.trigger ?? 'manual',
+      ...(request.scope != null ? { scope: request.scope } : {}),
+      ...(request.scopeRef !== undefined ? { scopeRef: request.scopeRef } : {}),
+      ...(request.spaceId != null ? { spaceId: request.spaceId } : {}),
+    })
+  })
+
+  // ─── 技能提议区（S3：知识 → 技能，带溯源） ─────────────────────────────
+
+  typedIpcHandle('wiki:skill:list', async (request) => {
+    const scope =
+      request.scope != null
+        ? { scope: request.scope, scopeRef: request.scopeRef ?? null }
+        : undefined
+    return skillStack().skillProposerService.list(request.status ?? 'pending', scope)
+  })
+
+  /**
+   * 接受提议 → 落地技能（SKILL.md + PURPOSE.md + skills 表登记）。
+   * 只能来自本可信界面；模型自称"用户已同意"无法触达本通道。
+   */
+  typedIpcHandle('wiki:skill:accept', async (request) => {
+    const result = await skillStack().skillProposerService.accept(request.id)
+    if (!result.ok || result.skillId == null || result.name == null || result.rootPath == null) {
+      throw new Error(result.message ?? '接受失败')
+    }
+    return {
+      ok: true as const,
+      skillId: result.skillId,
+      name: result.name,
+      rootPath: result.rootPath,
+    }
+  })
+
+  typedIpcHandle('wiki:skill:reject', async (request) => {
+    const result = skillStack().skillProposerService.reject(request.id, request.reason)
+    if (!result.ok) throw new Error(result.message ?? '拒绝失败')
+    return { ok: true }
+  })
+
+  // ─── Repo Wiki（S4：代码仓库 → 结构化知识页，可重建） ──────────────────
+
+  typedIpcHandle('wiki:repo:scan', async (request) => {
+    // 仓库归属 project scope：正文落仓库内（与人工知识同域但独立空间）
+    return repoStack().repoScanService.scan({
+      repoPath: request.repoPath,
+      ...(request.spaceId != null ? { spaceId: request.spaceId } : {}),
+      ...(request.ignoreGlobs != null ? { ignoreGlobs: request.ignoreGlobs } : {}),
+      ...(request.maxFiles != null ? { maxFiles: request.maxFiles } : {}),
+    })
+  })
+
+  typedIpcHandle('wiki:repo:rebuild', async (request) => {
+    return repoStack().repoScanService.rebuild(request.spaceId)
+  })
+
+  typedIpcHandle('wiki:repo:status', async (request) => {
+    const status = await repoStack().repoScanService.status(request.spaceId)
+    if (status == null) throw new Error('空间不存在')
+    return status
+  })
+
+  typedIpcHandle('wiki:repo:page:ownership', async (request) => {
+    const result = repoStack().repoScanService.setOwnership(request.pageId, request.ownership)
+    if (!result.ok) throw new Error(result.message ?? '切换所有权失败')
+    return { ok: true }
   })
 }
 

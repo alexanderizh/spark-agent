@@ -21,6 +21,7 @@ import {
   WIKI_ALL_READ_TOOL_NAMES,
   WIKI_CORE_TOOL_NAMES,
   WIKI_DEFERRED_TOOL_NAMES,
+  WIKI_S3_TOOL_NAMES,
   WIKI_TOOL_DEFINITIONS,
   WIKI_WRITE_TOOL_NAMES,
 } from './wiki-tool-contract.js'
@@ -107,7 +108,8 @@ describe('Wiki 工具面（S1）', () => {
     const expected = WIKI_TOOL_DEFINITIONS.filter(
       (d) =>
         WIKI_ALL_READ_TOOL_NAMES.includes(d.name as never) ||
-        WIKI_WRITE_TOOL_NAMES.includes(d.name as never),
+        WIKI_WRITE_TOOL_NAMES.includes(d.name as never) ||
+        WIKI_S3_TOOL_NAMES.includes(d.name as never),
     )
     expect(tools.map((t) => t.name).sort()).toEqual(expected.map((d) => d.name).sort())
     for (const def of expected) {
@@ -138,7 +140,11 @@ describe('Wiki 工具面（S1）', () => {
     const core: readonly string[] = WIKI_CORE_TOOL_NAMES
     const deferred: readonly string[] = WIKI_DEFERRED_TOOL_NAMES
     expect(core.filter((n) => deferred.includes(n))).toEqual([])
-    const mounted: readonly string[] = [...WIKI_ALL_READ_TOOL_NAMES, ...WIKI_WRITE_TOOL_NAMES]
+    const mounted: readonly string[] = [
+      ...WIKI_ALL_READ_TOOL_NAMES,
+      ...WIKI_WRITE_TOOL_NAMES,
+      ...WIKI_S3_TOOL_NAMES,
+    ]
     expect([...core, ...deferred].sort()).toEqual([...mounted].sort())
   })
 })

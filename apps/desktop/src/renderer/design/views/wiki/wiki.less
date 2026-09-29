@@ -41,7 +41,10 @@
   --wiki-row-h: 28px;
   --wiki-measure: 720px;
 
+  /* 纵向骨架：顶层 Tab 横条在上，workspace（左栏 + 主区）在下。
+     若丢失 flex-direction: column，Tab 条会被压成竖条、目录树被挤到第二列。 */
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   height: 100%;
   min-height: 0;
@@ -49,6 +52,14 @@
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--font-base);
+}
+
+/* 知识库工作区：纵向骨架下的横向层（左栏 252px + 主区自适应） */
+.wiki_workspace {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 深色下提高紫色点亮度，保持与背景的对比 */
@@ -147,7 +158,9 @@ html[data-theme='dark'] .wiki_root,
   background: transparent;
   color: var(--wiki-t3);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 
 .wiki_rail_ib:hover {
@@ -179,7 +192,9 @@ html[data-theme='dark'] .wiki_root,
   background: var(--wiki-sunken);
   border: 1px solid transparent;
   color: var(--wiki-t3);
-  transition: border-color 120ms, background 120ms;
+  transition:
+    border-color 120ms,
+    background 120ms;
 }
 
 .wiki_search:hover {
@@ -283,7 +298,10 @@ html[data-theme='dark'] .wiki_root,
   color: var(--wiki-t4);
   border-radius: 4px;
   cursor: pointer;
-  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), background 120ms, color 120ms;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 120ms,
+    color 120ms;
 }
 
 .wiki_tree_twist:hover {
@@ -492,7 +510,9 @@ html[data-theme='dark'] .wiki_root,
   background: transparent;
   color: var(--wiki-t3);
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 
 .wiki_top_ib:hover {
@@ -582,7 +602,9 @@ html[data-theme='dark'] .wiki_root,
   font-weight: 550;
   font-family: inherit;
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 
 .wiki_btn_ghost:hover {
@@ -1266,5 +1288,442 @@ textarea.wiki_editor_input {
 @media (prefers-reduced-motion: reduce) {
   .wiki_root * {
     transition: none !important;
+  }
+}
+
+/* ── 候选确认区（S2 抽取管道） ───────────────────────────────────── */
+
+/* 底部入口选中态：与全应用一致的「填充 = 选中」语言 */
+.wiki_rail_foot_row.is-active {
+  background: var(--wiki-sunken);
+  color: var(--text);
+}
+
+/* 待确认 Badge：主色浅底 + 主色文字（不用红点，数量本身就是信息） */
+.wiki_cand_badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.wiki_rail_foot_row.is-active .wiki_cand_badge {
+  margin-left: auto;
+}
+
+/* 候选视图下左栏的说明（替代目录树，避免一屏两套主内容） */
+.wiki_rail_note {
+  padding: 4px 12px 12px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t4);
+}
+
+.wiki_cand_list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 20px 24px;
+}
+
+.wiki_cand_row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 2px 12px;
+}
+
+.wiki_cand_row + .wiki_cand_row {
+  border-top: 1px solid var(--wiki-divider);
+}
+
+.wiki_cand_head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wiki_cand_title {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.wiki_cand_kind {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--wiki-sunken);
+  color: var(--wiki-t3);
+  font-size: 10.5px;
+}
+
+/* 低置信标注：模型自评不足时显式提示，不放过大模型自信 */
+.wiki_cand_lowconf {
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--wiki-border);
+  color: var(--wiki-t3);
+  font-size: 10.5px;
+}
+
+.wiki_cand_summary {
+  font-size: var(--wiki-fs-meta);
+  line-height: 1.7;
+  color: var(--wiki-t2);
+}
+
+.wiki_cand_meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--wiki-t4);
+}
+
+.wiki_cand_detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--wiki-sunken);
+}
+
+.wiki_cand_detail_label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wiki-t4);
+}
+
+/* 正文预览：复用 MarkdownText 管线，限高可滚动，避免长正文把列表顶飞 */
+.wiki_cand_preview {
+  max-height: 320px;
+  overflow: auto;
+  font-size: var(--wiki-fs-body);
+  line-height: 1.78;
+  color: var(--text);
+}
+
+.wiki_cand_sources {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wiki_cand_sources li {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t3);
+}
+
+.wiki_cand_source_turn {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--wiki-act);
+  color: var(--wiki-t2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wiki_cand_rationale {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t4);
+}
+
+.wiki_cand_actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.wiki_cand_modal_desc {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--wiki-t3);
+}
+
+/* ─── S3 技能提议区 ─────────────────────────────────────────────────────── */
+
+.wiki_skill_icon {
+  color: var(--primary);
+  flex: none;
+}
+
+.wiki_skill_purpose {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--wiki-t3);
+  padding: 8px 10px;
+  border-left: 2px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.wiki_skill_src_id {
+  font-family: var(--font-code, monospace);
+  font-size: 10.5px;
+  color: var(--wiki-t4);
+  margin-right: 6px;
+}
+
+.wiki_skill_triggers {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--wiki-t3);
+}
+
+.wiki_skill_created {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t3);
+}
+
+.wiki_skill_created code {
+  font-family: var(--font-code, monospace);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  word-break: break-all;
+}
+
+.wiki_skill_reject_tip {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--wiki-t3);
+}
+
+.wiki_skill_reason {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 6px;
+  background: var(--bg-sunken, transparent);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.wiki_skill_reason:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.wiki_skill_reason_count {
+  margin-top: 4px;
+  text-align: right;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--wiki-t4);
+}
+
+/* ─── S4 Repo Wiki ──────────────────────────────────────────────────────── */
+
+.wiki_tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--wiki-divider);
+  /* 与画布同色（继承 --bg），靠分割线分层；不可改用 --bg-sunken 等异色
+     造成 tab 栏与下方工作区的色带割裂（与 .wiki_topbar 同一设计语言） */
+  background: transparent;
+}
+
+.wiki_tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wiki-t3);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.wiki_tab:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+/* 选中 = 填充（与全应用选择语言一致：主色浅底 + 主色文字） */
+.wiki_tab.is-active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+.wiki_tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.wiki_repo {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wiki_repo_rail {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 252px;
+  min-height: 0;
+  border-right: 1px solid var(--wiki-divider);
+  /* --bg-paper 是未定义 token（fallback #fff 会在暗色下纯白），与 .wiki_rail 统一用 --bg-soft */
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+
+.wiki_repo_drift {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--wiki-t3);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  white-space: nowrap;
+}
+
+.wiki_repo_drift.is-stale {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.wiki_repo_badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--wiki-t3);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.wiki_repo_badge.is-manual,
+.wiki_repo_badge.is-ignored {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.wiki_repo_title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.wiki_repo_summary {
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--wiki-t3);
+}
+
+.wiki_repo_page {
+  max-width: 720px;
+  padding-bottom: 24px;
+}
+
+.wiki_repo_note {
+  max-width: 720px;
+  margin-top: 18px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t3);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.wiki_repo_form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wiki_repo_field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wiki_repo_label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.wiki_repo_field input,
+.wiki_repo_field textarea {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 6px;
+  background: var(--bg-sunken, transparent);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.wiki_repo_field input:focus,
+.wiki_repo_field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.wiki_repo_tip {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--wiki-t4);
+}
+
+/* 窄屏：Repo Wiki 左栏收窄，避免主区被压碎 */
+@media (max-width: 900px) {
+  .wiki_repo_rail {
+    width: 200px;
   }
 }

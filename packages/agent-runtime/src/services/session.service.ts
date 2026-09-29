@@ -515,15 +515,13 @@ import {
   WikiRevisionRepository,
 } from '@spark/storage'
 import type { WikiSpaceScopeFilter } from './wiki/wiki-space.service.js'
-import {
-  createWikiServiceStack,
-  resolveWikiBudgetFromSettings,
-} from './wiki/wiki-service-stack.js'
+import { createWikiServiceStack, resolveWikiBudgetFromSettings } from './wiki/wiki-service-stack.js'
 import { resetTurnWikiBudget } from './wiki/wiki-context-budget.js'
 import {
   WIKI_ADMIN_TOOL_NAME,
   WIKI_DEFERRED_TOOL_NAMES,
   WIKI_L0_PROMPT,
+  WIKI_READ_TOOL_NAMES,
   WIKI_TOOL_DEFINITIONS,
   resolveWikiMountPlan,
 } from '../tools/wiki-tool-contract.js'
@@ -2091,6 +2089,62 @@ export class SessionService {
     })
     if (!result.ok) return { ok: false, error: result.message }
     return { ok: true, changed: result.changed }
+  }
+
+  /**
+   * 技能提议（S3）。只写 wiki_skill_proposal 草案 —— 不创建技能、不改动知识页。
+   * 越权防线：source_page_ids 必须全部落在本会话可见范围内（防止模型引用
+   * 别的空间的页面造出"看似有溯源"的提议）。
+   */
+  async bridgeWikiProposeSkill(params: {
+    sessionId: string
+    name: string
+    purpose: string
+    skillDraft: string
+    sourcePageIds: string[]
+    description?: string
+    triggers?: string[]
+  }): Promise<{
+    ok: boolean
+    id?: string
+    name?: string
+    superseded?: string[]
+    rejectionHistory?: string[]
+    error?: string
+  }> {
+    const root = await this.resolveWorkspaceRootForSession(params.sessionId)
+    const wiki = this.buildWikiServices(params.sessionId, root)
+    const scopes = wiki.scopes
+    const visibleSpaceIds = new Set(this.resolveWikiVisibleSpaceIds(scopes))
+    const pageIds = params.sourcePageIds.filter((id) => this.isWikiPageVisible(wiki, id))
+    if (pageIds.length === 0) {
+      return { ok: false, error: '没有可用的溯源页面（页面不在本会话可见范围内）' }
+    }
+    if (pageIds.length !== params.sourcePageIds.length) {
+      // 部分越权：不静默丢弃（那会让溯源集合与模型申报的不一致）
+      return { ok: false, error: '部分溯源页面不在本会话可见范围内，已拒绝整条提议' }
+    }
+    void visibleSpaceIds
+    const result = wiki.skillProposerService.propose({
+      scope: scopes[0]?.scope ?? 'user',
+      scopeRef: scopes[0]?.scopeRef ?? null,
+      name: params.name,
+      purpose: params.purpose,
+      skillMd: params.skillDraft,
+      ...(params.description != null ? { description: params.description } : {}),
+      ...(params.triggers != null ? { triggers: params.triggers } : {}),
+      sourcePageIds: pageIds,
+    })
+    if (!result.ok || result.id == null) {
+      return { ok: false, error: result.message ?? '提议失败' }
+    }
+    return {
+      ok: true,
+      id: result.id,
+      name: params.name,
+      superseded: result.superseded ?? [],
+      rejectionHistory: result.rejectionHistory ?? [],
+    }
   }
 
   /** 会话可见空间 id 集合（读/写共用的越权防线）。 */
@@ -6081,6 +6135,13 @@ export class SessionService {
     if (mcpServers.spark_tool_results != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, TOOL_RESULT_TOOL_NAMES)
     }
+    if (mcpServers.spark_wiki != null) {
+      // 只读工具免审批（与 spark_memory 同范式）；写工具不进白名单 → 走 canUseTool 审批。
+      sdkAllowedTools = mergeUniqueStrings(
+        sdkAllowedTools,
+        WIKI_READ_TOOL_NAMES.map((name) => `mcp__spark_wiki__${name}`),
+      )
+    }
     if (config.debugMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)
     }
@@ -7348,11 +7409,16 @@ export class SessionService {
       }
 
       type ToolRunner = (args: Record<string, unknown>) => Promise<string>
-      const runners: Record<string, { description: string; schema: Record<string, unknown>; run: ToolRunner }> = {
+      const runners: Record<
+        string,
+        { description: string; schema: Record<string, unknown>; run: ToolRunner }
+      > = {
         wiki_list_spaces: {
-          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list_spaces')!.description,
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list_spaces')!
+            .description,
           schema: {},
-          run: async () => this.summarizeWikiListSpaces(await this.bridgeWikiListSpaces({ sessionId })),
+          run: async () =>
+            this.summarizeWikiListSpaces(await this.bridgeWikiListSpaces({ sessionId })),
         },
         wiki_list: {
           description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_list')!.description,
@@ -7398,7 +7464,9 @@ export class SessionService {
               await this.bridgeWikiRead({
                 sessionId,
                 pageId: typeof args.id === 'string' ? args.id : '',
-                ...(typeof args.offset === 'number' && args.offset > 0 ? { offset: args.offset } : {}),
+                ...(typeof args.offset === 'number' && args.offset > 0
+                  ? { offset: args.offset }
+                  : {}),
               }),
             ),
         },
@@ -7455,7 +7523,8 @@ export class SessionService {
               await this.bridgeWikiUpdate({
                 sessionId,
                 pageId: typeof args.id === 'string' ? args.id : '',
-                expectedVersion: typeof args.expected_version === 'number' ? args.expected_version : 0,
+                expectedVersion:
+                  typeof args.expected_version === 'number' ? args.expected_version : 0,
                 ...(typeof args.title === 'string' ? { title: args.title } : {}),
                 ...(typeof args.body === 'string' ? { body: args.body } : {}),
                 ...(typeof args.summary === 'string' ? { summary: args.summary } : {}),
@@ -7507,6 +7576,38 @@ export class SessionService {
             return receipt.changed ? '关联已更新。' : '关联已是最新状态（无变化）。'
           },
         },
+        wiki_propose_skill: {
+          description: WIKI_TOOL_DEFINITIONS.find((d) => d.name === 'wiki_propose_skill')!
+            .description,
+          schema: {
+            name: z.string().min(1).max(120),
+            purpose: z.string().min(1).max(4000),
+            source_page_ids: z.array(z.string().min(1).max(64)).min(1).max(50),
+            skill_draft: z.string().min(1).max(200_000),
+          },
+          run: async (args) => {
+            const receipt = await this.bridgeWikiProposeSkill({
+              sessionId,
+              name: typeof args.name === 'string' ? args.name : '',
+              purpose: typeof args.purpose === 'string' ? args.purpose : '',
+              skillDraft: typeof args.skill_draft === 'string' ? args.skill_draft : '',
+              sourcePageIds: Array.isArray(args.source_page_ids)
+                ? args.source_page_ids.filter((v): v is string => typeof v === 'string')
+                : [],
+            })
+            if (!receipt.ok || receipt.id == null) {
+              return `wiki_propose_skill 失败：${receipt.error ?? '未知错误'}`
+            }
+            // 回执必须讲清"这只是草案"：不能让模型以为技能已经创建成功
+            const lines = [
+              `已记录技能提议 [${receipt.id}]「${receipt.name}」（待用户在界面确认）。`,
+            ]
+            if (receipt.rejectionHistory != null && receipt.rejectionHistory.length > 0) {
+              lines.push(`该名称此前被拒，原因：${receipt.rejectionHistory.join('；')}`)
+            }
+            return lines.join('\n')
+          },
+        },
       }
 
       const mounted = plan.toolNames.map((name) => {
@@ -7538,7 +7639,9 @@ export class SessionService {
               const target = typeof args.tool === 'string' ? args.tool : ''
               const runner = runners[target]
               if (runner == null) {
-                return { content: [{ type: 'text' as const, text: `未知的 wiki 低频工具：${target}` }] }
+                return {
+                  content: [{ type: 'text' as const, text: `未知的 wiki 低频工具：${target}` }],
+                }
               }
               const inner =
                 args.args != null && typeof args.args === 'object'
@@ -7615,7 +7718,8 @@ export class SessionService {
       (p) => `- [${p.id}] ${p.title} (${p.kind}${p.hasChildren ? ', 含子页面' : ''})`,
     )
     let text = lines.join('\n')
-    if (data.truncated) text += `\n（该层共 ${data.total} 个节点，仅显示前 ${data.items.length} 个）`
+    if (data.truncated)
+      text += `\n（该层共 ${data.total} 个节点，仅显示前 ${data.items.length} 个）`
     return text
   }
 

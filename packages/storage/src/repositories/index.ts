@@ -488,3 +488,35 @@ export type {
   WikiRevisionRow,
   WikiRevisionInsert,
 } from './wiki-revision.repository.js'
+export {
+  WikiCandidateRepository,
+  hashWikiCandidateContent,
+  WIKI_DEFAULT_MAX_PENDING,
+  WIKI_DEFAULT_TTL_MS,
+} from './wiki-candidate.repository.js'
+export type {
+  WikiCandidateStatus,
+  WikiCandidatePayload,
+  WikiCandidateSource,
+  WikiCandidateRow,
+  InsertWikiCandidateParams,
+  WikiConfirmCandidateResult,
+} from './wiki-candidate.repository.js'
+export { WikiSourceRepository, WIKI_SOURCE_EXCERPT_MAX_CHARS } from './wiki-source.repository.js'
+export type { WikiSourceInsert, WikiSourceRow } from './wiki-source.repository.js'
+export { WikiExtractionStateRepository } from './wiki-extraction-state.repository.js'
+export type {
+  WikiExtractionStateRow,
+  WikiExtractionTriggerKind,
+} from './wiki-extraction-state.repository.js'
+export {
+  WikiSkillProposalRepository,
+  generateWikiSkillProposalId,
+  normalizeSkillName,
+} from './wiki-skill-proposal.repository.js'
+export type {
+  WikiSkillProposalStatus,
+  WikiSkillProposalDraft,
+  WikiSkillProposalRow,
+  InsertWikiSkillProposalParams,
+} from './wiki-skill-proposal.repository.js'

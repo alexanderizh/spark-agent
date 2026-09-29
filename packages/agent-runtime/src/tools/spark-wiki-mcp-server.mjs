@@ -26,7 +26,15 @@ const BASE = PORT ? `http://127.0.0.1:${PORT}` : ''
 
 // ── 工具集划分（与 wiki-tool-contract.ts 同步）─────────────────────────────
 const CORE_TOOLS = ['wiki_list_spaces', 'wiki_search', 'wiki_read', 'wiki_list', 'wiki_write']
-const DEFERRED_TOOLS = ['wiki_update', 'wiki_backlinks', 'wiki_archive', 'wiki_delete', 'wiki_link']
+const DEFERRED_TOOLS = [
+  'wiki_update',
+  'wiki_backlinks',
+  'wiki_archive',
+  'wiki_delete',
+  'wiki_link',
+  // S3：技能提议是偶发决策，与更新/删除同级收进二级入口
+  'wiki_propose_skill',
+]
 const ALL_TOOLS = [...CORE_TOOLS, ...DEFERRED_TOOLS]
 const ADMIN_TOOL = 'wiki_admin'
 const VISIBLE_TOOLS = HELP_DISCLOSURE ? CORE_TOOLS : ALL_TOOLS
@@ -161,6 +169,24 @@ const IMPL = {
       ...(args.remove === true ? { remove: true } : {}),
     })
   },
+  async wiki_propose_skill(args) {
+    const name = str(args.name)
+    const purpose = str(args.purpose)
+    const skillDraft = str(args.skill_draft)
+    const pageIds = Array.isArray(args.source_page_ids)
+      ? args.source_page_ids.filter((v) => typeof v === 'string')
+      : []
+    if (!name || !purpose || !skillDraft) {
+      throw new Error('name / purpose / skill_draft are required')
+    }
+    return rpc('wiki.propose_skill', {
+      sessionId: SID,
+      name,
+      purpose,
+      skillDraft,
+      sourcePageIds: pageIds,
+    })
+  },
 }
 
 // ── Tool definitions（与 wiki-tool-contract.ts 同义同描述）──────────────────
@@ -174,7 +200,7 @@ const TOOLS = [
   {
     name: 'wiki_search',
     description:
-      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要（≤240字）+标签，不返回正文；需要全文时再用 wiki_read。',
+      '按关键词检索知识库页面（FTS 全文，中英文均可）。只返回 id+标题+摘要+标签，不返回正文；需要全文时再用 wiki_read。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -193,7 +219,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         id: { type: 'string', description: '页面 id（wiki_search 返回的 id）。' },
-        offset: { type: 'number', description: '续读偏移（token 数，上一页返回的 nextOffset）。' },
+        offset: { type: 'number', description: '续读偏移（上一页的 nextOffset）。' },
       },
       required: ['id'],
     },
@@ -201,12 +227,12 @@ const TOOLS = [
   {
     name: 'wiki_list',
     description:
-      '列出一个空间内的页面目录树（每节点一行：id+标题+类型+是否有子节点，无正文无摘要）。浏览知识结构时用。',
+      '列出一个空间内的页面目录树（每节点 id+标题+类型+有无子节点，无正文摘要）。浏览结构时用。',
     inputSchema: {
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '空间 id。' },
-        parent_id: { type: 'string', description: '可选：只列该父节点的子层（缺省为根层）。' },
+        parent_id: { type: 'string', description: '只列该父节点的子层（缺省根层）。' },
       },
       required: ['space_id'],
     },
@@ -227,14 +253,14 @@ const TOOLS = [
       type: 'object',
       properties: {
         space_id: { type: 'string', description: '目标空间 id。' },
-        title: { type: 'string', description: '页面标题（空间内唯一 slug 来源）。' },
+        title: { type: 'string', description: '页面标题。' },
         body: { type: 'string', description: 'Markdown 正文。' },
         kind: {
           type: 'string',
           enum: ['knowledge', 'experience', 'pattern', 'reference', 'note'],
-          description: '知识类型，默认 knowledge。',
+          description: '类型，默认 knowledge。',
         },
-        summary: { type: 'string', description: '摘要（≤240 字，检索展示用）。' },
+        summary: { type: 'string', description: '摘要（检索展示用）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签。' },
       },
       required: ['space_id', 'title', 'body'],
@@ -247,10 +273,10 @@ const TOOLS = [
       type: 'object',
       properties: {
         id: { type: 'string', description: '页面 id。' },
-        expected_version: { type: 'number', description: 'CAS 期望版本（当前 version）。' },
-        title: { type: 'string', description: '新标题（改标题必须同时带 body）。' },
+        expected_version: { type: 'number', description: 'CAS 期望版本。' },
+        title: { type: 'string', description: '新标题（须同时带 body）。' },
         body: { type: 'string', description: '新正文。' },
-        summary: { type: 'string', description: '新摘要（改摘要必须同时带 body）。' },
+        summary: { type: 'string', description: '新摘要（须同时带 body）。' },
         tags: { type: 'array', items: { type: 'string' }, description: '新标签。' },
       },
       required: ['id', 'expected_version'],
@@ -282,9 +308,23 @@ const TOOLS = [
       properties: {
         from_id: { type: 'string', description: '来源页面 id。' },
         to_id: { type: 'string', description: '目标页面 id。' },
-        remove: { type: 'boolean', description: 'true = 移除该关联。' },
+        remove: { type: 'boolean', description: 'true = 移除。' },
       },
       required: ['from_id', 'to_id'],
+    },
+  },
+  {
+    name: 'wiki_propose_skill',
+    description: '从知识页提议一个技能（只写提议区，不创建技能；须经用户确认）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '技能名称。' },
+        purpose: { type: 'string', description: '为何创建 / 解决哪个问题。' },
+        source_page_ids: { type: 'array', items: { type: 'string' }, description: '溯源页面 id。' },
+        skill_draft: { type: 'string', description: 'SKILL.md 草稿。' },
+      },
+      required: ['name', 'purpose', 'source_page_ids', 'skill_draft'],
     },
   },
 ]
@@ -292,9 +332,10 @@ const TOOLS = [
 const ADMIN_TOOL_DEF = {
   name: ADMIN_TOOL,
   description:
-    '知识库低频入口（更新/关联/归档/删除）。tool 取 wiki_update(id,expected_version) / ' +
-    'wiki_backlinks(id) / wiki_archive(id) / wiki_delete(id) / wiki_link(from_id,to_id)；' +
-    'args 传该工具入参对象。',
+    '知识库低频入口。tool 取 enum 中的子工具名，args 传其入参：' +
+    'wiki_update(id,expected_version)、wiki_backlinks(id)、wiki_archive(id)、' +
+    'wiki_delete(id)、wiki_link(from_id,to_id)、' +
+    'wiki_propose_skill(name,purpose,source_page_ids,skill_draft)。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -386,6 +427,17 @@ function summarize(name, data) {
   if (name === 'wiki_link') {
     if (data.ok === false || data.error) return `wiki_link 失败：${data.error || data.message}`
     return data.changed ? '关联已更新。' : '关联已是最新状态（无变化）。'
+  }
+  if (name === 'wiki_propose_skill') {
+    if (data.ok === false || data.error) {
+      return `wiki_propose_skill 失败：${data.error || data.message || '未知错误'}`
+    }
+    // 提议只是草案：回执必须讲清"还需用户确认"，不能让模型以为技能已创建
+    const lines = [`已记录技能提议 [${data.id}]「${data.name}」（待用户在界面确认）。`]
+    if (Array.isArray(data.rejectionHistory) && data.rejectionHistory.length > 0) {
+      lines.push(`注意：该名称此前的提议被拒，原因 —— ${data.rejectionHistory.join('；')}`)
+    }
+    return lines.join('\n')
   }
   return JSON.stringify(data)
 }

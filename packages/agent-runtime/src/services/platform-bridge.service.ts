@@ -521,6 +521,15 @@ export interface PlatformBridgeDeps {
       toPageId: string
       remove?: boolean
     }): Promise<unknown>
+    bridgeWikiProposeSkill(params: {
+      sessionId: string
+      name: string
+      purpose: string
+      skillDraft: string
+      sourcePageIds: string[]
+      description?: string
+      triggers?: string[]
+    }): Promise<unknown>
     /**
      * 会话 worktree 状态桥（codex / claude CLI 的 stdio spark_session MCP 子进程
      * 走这条路径回到主进程，复用 setSessionRuntimeWorktree 的校验与持久化）。
@@ -985,6 +994,8 @@ export class PlatformBridgeService {
         return this.wikiDelete(d, params)
       case 'wiki.link':
         return this.wikiLink(d, params)
+      case 'wiki.propose_skill':
+        return this.wikiProposeSkill(d, params)
 
       // ── Canvas（codex CLI / claude CLI 的 stdio spark_canvas 子进程走这条路径）──
       case 'canvas.call_tool':
@@ -2218,6 +2229,25 @@ export class PlatformBridgeService {
       fromPageId,
       toPageId,
       ...(params.remove === true ? { remove: true } : {}),
+    })
+  }
+
+  private async wikiProposeSkill(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const name = String(params.name ?? '')
+    const purpose = String(params.purpose ?? '')
+    const skillDraft = String(params.skillDraft ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!name) throw new Error('Missing parameter: name')
+    if (!purpose) throw new Error('Missing parameter: purpose')
+    if (!skillDraft) throw new Error('Missing parameter: skillDraft')
+    const rawPageIds = Array.isArray(params.sourcePageIds) ? params.sourcePageIds : []
+    return d.sessionService.bridgeWikiProposeSkill({
+      sessionId,
+      name,
+      purpose,
+      skillDraft,
+      sourcePageIds: rawPageIds.filter((v): v is string => typeof v === 'string'),
     })
   }
 

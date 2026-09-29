@@ -11,10 +11,15 @@
 
 import type { SparkDatabase } from '@spark/storage'
 import {
+  SkillRepository,
+  WikiCandidateRepository,
+  WikiExtractionStateRepository,
   WikiLinkRepository,
   WikiPageRepository,
   WikiRevisionRepository,
   WikiSearchRepository,
+  WikiSkillProposalRepository,
+  WikiSourceRepository,
   WikiSpaceRepository,
 } from '@spark/storage'
 import { WikiStoreService } from './wiki-store.service.js'
@@ -23,6 +28,14 @@ import { WikiPageService } from './wiki-page.service.js'
 import { WikiSearchService } from './wiki-search.service.js'
 import { WikiSpaceService } from './wiki-space.service.js'
 import { WikiWriteService } from './wiki-write.service.js'
+import { WikiCandidateService } from './wiki-candidate.service.js'
+import { WikiSkillProposerService } from './wiki-skill-proposer.service.js'
+import { WikiRepoScanService } from './wiki-repo-scan.service.js'
+import {
+  WikiExtractionService,
+  type WikiExtractionModelCall,
+  type WikiExtractionTargetResolver,
+} from './wiki-extraction.service.js'
 import { resolveWikiBudget, type WikiBudgetProfile } from './wiki-context-budget.js'
 
 export interface WikiServiceStackInput {
@@ -33,6 +46,21 @@ export interface WikiServiceStackInput {
   workspaceRootPath?: string
   /** 应用 home 目录（测试可注入临时目录） */
   appHomeDir?: string
+  /** 设置读取（(category, key) 二元组）；抽取管道据此读触发闸门与候选策略 */
+  settingsGet?: (category: string, key: string) => unknown
+  /** 抽取模型调用注入（测试用；缺省真实 HTTP 调用） */
+  extractionCallModel?: WikiExtractionModelCall
+  /** 抽取渠道解析注入（测试用；缺省走真实解析链，含 Keychain） */
+  extractionResolveTarget?: WikiExtractionTargetResolver
+  /**
+   * 技能仓储注入（S3 提议接受时登记技能）。缺省时内部新建一个
+   * （桌面侧传入共享实例，保证与技能管理界面看到同一份数据）。
+   */
+  skillRepo?: SkillRepository
+  /** 用户技能落盘根目录（AppSkillsManager.userDir）；S3 接受时写 SKILL.md/PURPOSE.md */
+  skillsRootDir?: string
+  /** 漂移提示阈值（落后多少个提交提示重建；方案 §12 D 组 wiki/repo/staleCommits） */
+  staleCommits?: number
 }
 
 export interface WikiServiceStack {
@@ -41,6 +69,10 @@ export interface WikiServiceStack {
   searchRepo: WikiSearchRepository
   revisionRepo: WikiRevisionRepository
   linkRepo: WikiLinkRepository
+  candidateRepo: WikiCandidateRepository
+  sourceRepo: WikiSourceRepository
+  extractionStateRepo: WikiExtractionStateRepository
+  skillProposalRepo: WikiSkillProposalRepository
   store: WikiStoreService
   budget: WikiBudgetProfile
   spaceService: WikiSpaceService
@@ -48,6 +80,10 @@ export interface WikiServiceStack {
   pageService: WikiPageService
   linkService: WikiLinkService
   writeService: WikiWriteService
+  candidateService: WikiCandidateService
+  extractionService: WikiExtractionService
+  skillProposerService: WikiSkillProposerService
+  repoScanService: WikiRepoScanService
 }
 
 /** 从设置读取构建预算档（(category='wiki', key='budget/xxx') 二元组契约）。 */
@@ -66,14 +102,46 @@ export function createWikiServiceStack(input: WikiServiceStackInput): WikiServic
   const { db } = input
   const budget = input.budget ?? resolveWikiBudget({})
   const store = new WikiStoreService(input.appHomeDir, input.workspaceRootPath)
+  const skillRepo = input.skillRepo ?? new SkillRepository(db)
 
   const spaceRepo = new WikiSpaceRepository(db)
   const pageRepo = new WikiPageRepository(db)
   const searchRepo = new WikiSearchRepository(db)
   const revisionRepo = new WikiRevisionRepository(db)
   const linkRepo = new WikiLinkRepository(db)
+  const candidateRepo = new WikiCandidateRepository(db)
+  const sourceRepo = new WikiSourceRepository(db)
+  const extractionStateRepo = new WikiExtractionStateRepository(db)
+  const skillProposalRepo = new WikiSkillProposalRepository(db)
 
   const linkService = new WikiLinkService(pageRepo, linkRepo)
+  const writeService = new WikiWriteService(
+    spaceRepo,
+    pageRepo,
+    revisionRepo,
+    searchRepo,
+    store,
+    linkService,
+  )
+  const candidateService = new WikiCandidateService(
+    candidateRepo,
+    sourceRepo,
+    spaceRepo,
+    writeService,
+  )
+  const extractionService = new WikiExtractionService(
+    candidateRepo,
+    extractionStateRepo,
+    spaceRepo,
+    {
+      db,
+      ...(input.settingsGet != null ? { settingsGet: input.settingsGet } : {}),
+      ...(input.extractionCallModel != null ? { callModel: input.extractionCallModel } : {}),
+      ...(input.extractionResolveTarget != null
+        ? { resolveTarget: input.extractionResolveTarget }
+        : {}),
+    },
+  )
 
   return {
     spaceRepo,
@@ -81,19 +149,24 @@ export function createWikiServiceStack(input: WikiServiceStackInput): WikiServic
     searchRepo,
     revisionRepo,
     linkRepo,
+    candidateRepo,
+    sourceRepo,
+    extractionStateRepo,
+    skillProposalRepo,
     store,
     budget,
     spaceService: new WikiSpaceService(spaceRepo),
     searchService: new WikiSearchService(searchRepo, budget),
     pageService: new WikiPageService(pageRepo, revisionRepo, store, budget),
     linkService,
-    writeService: new WikiWriteService(
-      spaceRepo,
-      pageRepo,
-      revisionRepo,
-      searchRepo,
-      store,
-      linkService,
-    ),
+    writeService,
+    candidateService,
+    extractionService,
+    skillProposerService: new WikiSkillProposerService(skillProposalRepo, pageRepo, skillRepo, {
+      ...(input.skillsRootDir != null ? { skillsRootDir: input.skillsRootDir } : {}),
+    }),
+    repoScanService: new WikiRepoScanService(spaceRepo, pageRepo, writeService, {
+      ...(input.staleCommits != null ? { staleCommits: input.staleCommits } : {}),
+    }),
   }
 }

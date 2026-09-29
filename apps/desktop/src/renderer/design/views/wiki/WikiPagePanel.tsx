@@ -99,7 +99,9 @@ function BacklinksSection({
                 onClick={() => onOpen(link.fromPage)}
                 title={link.fromTitle}
               >
-                <span className={`wiki_dot${link.linkType === 'reference' ? ' is-reference' : ''}`} />
+                <span
+                  className={`wiki_dot${link.linkType === 'reference' ? ' is-reference' : ''}`}
+                />
                 <span className="wiki_backlink_title">{link.fromTitle}</span>
                 {link.linkType === 'reference' && <span className="wiki_tag">关联</span>}
               </button>
@@ -271,7 +273,12 @@ export function WikiPagePanel({
           )}
           <span className="wiki_rail_spacer" />
           <span className="wiki_hint">⌘/Ctrl + S 保存 · Esc 取消</span>
-          <button type="button" className="wiki_btn_ghost" disabled={saving} onClick={cancelEditing}>
+          <button
+            type="button"
+            className="wiki_btn_ghost"
+            disabled={saving}
+            onClick={cancelEditing}
+          >
             取消
           </button>
           <button

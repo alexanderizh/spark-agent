@@ -2,14 +2,14 @@
  * WikiView — 知识库 / Wiki 主视图（重设计稿 v3）。
  *
  * 布局：
- *   ┌ 左栏 252px：空间切换器（名称 + 箭头 + 图标双入口）→ 过滤框（⌘K）→
+ *   顶部 Tab：知识库 | Repo Wiki（space_type 分流；repo/enabled 关闭时隐藏）
+ *   ┌ 左栏 252px：空间切换器（名称 + 箭头）→ 过滤框（⌘K）→
  *   │             层级树（1px 引导线 / 类型色点 / hover 行内操作）→
- *   │             底部固定：归档 · 知识库设置
+ *   │             底部固定：归档 · 候选区 · 技能提议 · 知识库设置
  *   └ 主区：46px 单顶栏（面包屑 + 检索框 + 历史 + 更多）→ 检索结果 / 空态 /
- *            阅读态（WikiPagePanel）
+ *            阅读态（WikiPagePanel）| 候选区 | 技能提议区 | Repo Wiki 面板
  *
  * 选择语言（全应用统一）：填充 = 选中，实心主色 = 主动作，中性描边 = 次动作。
- * Repo Wiki 属后续批次，未启用不渲染死控件。
  *
  * 写入纪律：全部写操作走 wiki:* IPC → 主进程 WikiWriteService（统一写入原语：
  * CAS + 版本记录 + FTS 同事务 + indexReady 回执），渲染端不自行拼装存储语义。
@@ -40,6 +40,9 @@ import {
   findAncestorIds,
 } from './WikiPageTree'
 import { WikiVersionHistory } from './WikiVersionHistory'
+import { WikiCandidatePanel } from './WikiCandidatePanel'
+import { WikiSkillPanel } from './WikiSkillPanel'
+import { WikiRepoPanel } from './WikiRepoPanel'
 import './wiki.less'
 
 const KIND_OPTIONS: Array<{ value: WikiPageKind; label: string }> = [
@@ -104,6 +107,9 @@ export function WikiView() {
   const { invoke: restoreRevision } = useIpcInvoke('wiki:page:revision:restore')
   const { invoke: pageBacklinks } = useIpcInvoke('wiki:page:backlinks')
   const { invoke: searchWiki } = useIpcInvoke('wiki:search')
+  const { invoke: listCandidates } = useIpcInvoke('wiki:candidate:list')
+  const { invoke: listSkillProposals } = useIpcInvoke('wiki:skill:list')
+  const { invoke: listSessions } = useIpcInvoke('session:list')
 
   const [spaces, setSpaces] = useState<WikiSpaceSummary[]>([])
   const [spacesLoading, setSpacesLoading] = useState(true)
@@ -132,6 +138,18 @@ export function WikiView() {
   /** 面板编辑态提升到此处：顶栏「更多 → 编辑」与面板内 ⌘S / Esc 共用。 */
   const [panelEditing, setPanelEditing] = useState(false)
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false)
+  // 顶层 Tab：知识库（manual 空间）| Repo Wiki（space_type='repo'，S4）
+  const [repoEnabled, setRepoEnabled] = useState(true)
+  const [mainTab, setMainTab] = useState<'wiki' | 'repo'>('wiki')
+  // 知识库 Tab 内的三种互斥视图：页面 / 候选区（S2）/ 技能提议区（S3）
+  const [candidateView, setCandidateView] = useState(false)
+  const [skillView, setSkillView] = useState(false)
+  const [candidateCount, setCandidateCount] = useState(0)
+  const [skillCount, setSkillCount] = useState(0)
+  const [sessions, setSessions] = useState<
+    Array<{ id: string; title: string; turnCount?: number }>
+  >([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const activeSpace = useMemo(
@@ -142,7 +160,9 @@ export function WikiView() {
   /** 空间加载：空库时按设置 space/autoCreate 自动建「我的知识库」。 */
   const refreshSpaces = useCallback(
     async (autoCreateAllowed: boolean): Promise<WikiSpaceSummary[]> => {
-      const res = await listSpaces({})
+      // 只取 manual 空间：repo 空间由 Repo Wiki Tab 自己按 spaceType 过滤加载，
+      // 混在一起会让"我的知识库"里出现一堆代码仓库条目。
+      const res = await listSpaces({ spaceType: 'manual' })
       if (res.spaces.length > 0 || !autoCreateAllowed) {
         setSpaces(res.spaces)
         return res.spaces
@@ -224,6 +244,73 @@ export function WikiView() {
       }
     })()
   }, [activeSpaceId, refreshPages, toast])
+
+  /** 候选区待确认数量（导航 Badge；确认 / 拒绝 / 沉淀后由调用方刷新）。 */
+  const refreshCandidateCount = useCallback(async () => {
+    try {
+      const res = await listCandidates({ status: 'pending' })
+      setCandidateCount(res.pendingTotal)
+    } catch {
+      // Badge 是辅助信息，加载失败不影响主流程
+    }
+  }, [listCandidates])
+
+  useEffect(() => {
+    void refreshCandidateCount()
+  }, [refreshCandidateCount])
+
+  /** 技能提议待确认数量（S3 Badge）。 */
+  const refreshSkillCount = useCallback(async () => {
+    try {
+      const res = await listSkillProposals({ status: 'pending' })
+      setSkillCount(res.pendingTotal)
+    } catch {
+      // Badge 是辅助信息，加载失败不影响主流程
+    }
+  }, [listSkillProposals])
+
+  useEffect(() => {
+    void refreshSkillCount()
+  }, [refreshSkillCount])
+
+  /** repo/enabled 关闭时隐藏 Repo Wiki Tab（设置项即时生效，不做假开关）。 */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await window.spark.invoke('settings:get', {
+          category: 'wiki',
+          key: 'repo/enabled',
+        })
+        if (cancelled) return
+        if (typeof res.value === 'boolean') setRepoEnabled(res.value)
+      } catch {
+        // 设置不可读时按默认（启用）继续
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /** 会话列表（「从对话沉淀」选择器用；按需加载，不进常驻路径）。 */
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true)
+    try {
+      const res = await listSessions({ limit: 50 })
+      setSessions(
+        res.sessions.map((s) => ({
+          id: s.id,
+          title: s.title,
+          ...(s.turnCount != null ? { turnCount: s.turnCount } : {}),
+        })),
+      )
+    } catch (err) {
+      toast.error(`会话列表加载失败：${errorText(err)}`)
+    } finally {
+      setSessionsLoading(false)
+    }
+  }, [listSessions, toast])
 
   const loadPage = useCallback(
     async (pageId: string) => {
@@ -644,340 +731,458 @@ export function WikiView() {
 
   return (
     <div className="wiki_root">
-      {/* ── 左栏 ─────────────────────────────────────────────── */}
-      <div className="wiki_rail">
-        <div className="wiki_rail_head">
-          <span className="wiki_rail_icon">
-            <Icons.Book size={12} />
-          </span>
-          {/* 空间切换唯一入口：名称 + 箭头整块可点。不可再并第二个触发器——
-              两个 Dropdown 共享同一 open 状态会同时弹出两份菜单。 */}
-          <Dropdown
-            open={spaceMenuOpen}
-            onOpenChange={setSpaceMenuOpen}
-            menu={spaceMenu}
-            trigger={['click']}
-          >
-            <button
-              type="button"
-              className="wiki_rail_switcher"
-              title="切换知识库空间"
-              aria-label="切换知识库空间"
-            >
-              <span className="wiki_rail_name">
-                {spacesLoading ? '加载中…' : (activeSpace?.name ?? '选择空间')}
-              </span>
-              <span className="wiki_rail_arrow">
-                <Icons.ChevronDown size={12} />
-              </span>
-            </button>
-          </Dropdown>
+      {/* ── 顶层 Tab：知识库 | Repo Wiki ────────────────────────── */}
+      <div className="wiki_tabs" role="tablist" aria-label="知识库视图">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mainTab === 'wiki'}
+          className={`wiki_tab${mainTab === 'wiki' ? ' is-active' : ''}`}
+          onClick={() => setMainTab('wiki')}
+        >
+          <Icons.Book size={13} />
+          知识库
+        </button>
+        {repoEnabled && (
           <button
             type="button"
-            className="wiki_rail_ib wiki_rail_ib_pri"
-            title="新建空间"
-            aria-label="新建空间"
-            onClick={() => setSpaceDialogOpen(true)}
+            role="tab"
+            aria-selected={mainTab === 'repo'}
+            className={`wiki_tab${mainTab === 'repo' ? ' is-active' : ''}`}
+            onClick={() => setMainTab('repo')}
           >
-            <Icons.Plus size={15} />
+            <Icons.Branch size={13} />
+            Repo Wiki
           </button>
-        </div>
-
-        <div className="wiki_rail_filter">
-          <div className="wiki_search">
-            <Icons.Search size={13} />
-            <input
-              value={treeQuery}
-              placeholder="过滤页面"
-              aria-label="过滤页面"
-              onChange={(e) => setTreeQuery(e.target.value)}
-            />
-            <span className="wiki_kbd">⌘K</span>
-          </div>
-        </div>
-
-        <div className="wiki_rail_label">
-          {archivedOnly ? '归档' : '页面'} · {pages.length}
-        </div>
-
-        {pagesLoading ? (
-          <div className="wiki_hint" style={{ padding: '8px 12px' }}>
-            加载页面…
-          </div>
-        ) : treeNodes.length === 0 ? (
-          <div className="wiki_hint" style={{ padding: '26px 12px', textAlign: 'center' }}>
-            {archivedOnly
-              ? '没有已归档的页面'
-              : treeQuery.trim().length > 0
-                ? '未找到匹配页面'
-                : '还没有页面，从右侧创建第一页'}
-          </div>
-        ) : (
-          <WikiPageTree
-            nodes={treeNodes}
-            activeId={activePageId}
-            expandedIds={expandedIds}
-            matchedIds={matchedIds}
-            query={treeQuery}
-            onToggle={(id) =>
-              setExpandedIds((prev) => {
-                const next = new Set(prev)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
-                return next
-              })
-            }
-            onSelect={(target) => setActivePageId(target.id)}
-            onCreateChild={(target) =>
-              setDialog({ mode: 'create', parentId: target.id, title: '', kind: 'knowledge' })
-            }
-            onRename={(target) =>
-              setDialog({
-                mode: 'rename',
-                pageId: target.id,
-                title: target.title,
-                kind: target.kind,
-              })
-            }
-            onArchive={handleArchive}
-            onRestore={handleRestore}
-            onDelete={handleDelete}
-          />
         )}
-
-        <div className="wiki_rail_foot">
-          <button
-            type="button"
-            className="wiki_rail_foot_row"
-            onClick={() => setArchivedOnly((prev) => !prev)}
-          >
-            <Icons.Archive size={14} />
-            <span>{archivedOnly ? '返回全部页面' : '归档'}</span>
-            <span className="wiki_tree_count">{archivedCount}</span>
-          </button>
-          <button type="button" className="wiki_rail_foot_row" onClick={openWikiSettings}>
-            <Icons.Settings size={14} />
-            <span>知识库设置</span>
-          </button>
-        </div>
       </div>
 
-      {/* ── 主区 ─────────────────────────────────────────────── */}
-      <div className="wiki_main">
-        <div className="wiki_topbar">
-          <div className="wiki_crumb">
-            {crumbSegments.length === 0 ? (
-              <span className="wiki_crumb_seg">知识库</span>
-            ) : (
-              crumbSegments.map((seg, i) => (
-                <span key={`${i}-${seg}`} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {i > 0 && (
-                    <span className="wiki_crumb_sep">
-                      <Icons.ChevronRight size={11} />
-                    </span>
-                  )}
-                  <span
-                    className={`wiki_crumb_seg${i === crumbSegments.length - 1 ? ' is-end' : ''}`}
-                  >
-                    {seg}
-                  </span>
-                </span>
-              ))
-            )}
-          </div>
-          <span className="wiki_rail_spacer" />
-          <div className="wiki_search wiki_topsearch">
-            <Icons.Search size={13} />
-            <input
-              ref={searchInputRef}
-              value={searchQuery}
-              placeholder="检索知识（回车）"
-              aria-label="检索知识"
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void runSearch()
-              }}
-            />
-          </div>
-          {searchBusy && <span className="wiki_hint">检索中…</span>}
-          {page != null && (
-            <div className="wiki_actions">
-              <button
-                type="button"
-                className="wiki_top_ib"
-                title="版本历史"
-                aria-label="版本历史"
-                onClick={() => void openHistory()}
+      {mainTab === 'repo' ? (
+        <WikiRepoPanel
+          onChanged={() => {
+            void refreshSpaces(false)
+          }}
+        />
+      ) : (
+        <div className="wiki_workspace">
+          {/* ── 左栏 ─────────────────────────────────────────────── */}
+          <div className="wiki_rail">
+            <div className="wiki_rail_head">
+              <span className="wiki_rail_icon">
+                <Icons.Book size={12} />
+              </span>
+              {/* 空间切换唯一入口：名称 + 箭头整块可点。不可再并第二个触发器——
+              两个 Dropdown 共享同一 open 状态会同时弹出两份菜单。 */}
+              <Dropdown
+                open={spaceMenuOpen}
+                onOpenChange={setSpaceMenuOpen}
+                menu={spaceMenu}
+                trigger={['click']}
               >
-                <Icons.History size={15} />
-              </button>
-              {pageMenu != null && (
-                <Dropdown menu={pageMenu} trigger={['click']} placement="bottomRight">
-                  <button type="button" className="wiki_top_ib" title="更多" aria-label="更多操作">
-                    <Icons.More size={15} />
-                  </button>
-                </Dropdown>
-              )}
-            </div>
-          )}
-        </div>
-
-        {hits != null ? (
-          <div className="wiki_body">
-            <div className="wiki_results_head">
-              检索「<b>{searchQuery.trim()}</b>」命中 {hits.length} 条
-              <span className="wiki_rail_spacer" />
+                <button
+                  type="button"
+                  className="wiki_rail_switcher"
+                  title="切换知识库空间"
+                  aria-label="切换知识库空间"
+                >
+                  <span className="wiki_rail_name">
+                    {spacesLoading ? '加载中…' : (activeSpace?.name ?? '选择空间')}
+                  </span>
+                  <span className="wiki_rail_arrow">
+                    <Icons.ChevronDown size={12} />
+                  </span>
+                </button>
+              </Dropdown>
               <button
                 type="button"
-                className="wiki_btn_ghost"
-                style={{ height: 26 }}
+                className="wiki_rail_ib wiki_rail_ib_pri"
+                title="新建空间"
+                aria-label="新建空间"
+                onClick={() => setSpaceDialogOpen(true)}
+              >
+                <Icons.Plus size={15} />
+              </button>
+            </div>
+
+            <div className="wiki_rail_filter">
+              <div className="wiki_search">
+                <Icons.Search size={13} />
+                <input
+                  value={treeQuery}
+                  placeholder="过滤页面"
+                  aria-label="过滤页面"
+                  onChange={(e) => setTreeQuery(e.target.value)}
+                />
+                <span className="wiki_kbd">⌘K</span>
+              </div>
+            </div>
+
+            {candidateView || skillView ? (
+              <>
+                <div className="wiki_rail_label">
+                  {skillView ? '技能提议区' : '候选区'} · {skillView ? skillCount : candidateCount}
+                </div>
+                <div className="wiki_rail_note">
+                  {skillView
+                    ? 'Agent 认为某几页知识可固化成技能时，会把草案提到这里。你确认后才生成 SKILL.md 与 PURPOSE.md。'
+                    : '抽取产物先落在候选区。在右侧确认后才会成为知识页， 并带上来源轮次与依据片段。'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="wiki_rail_label">
+                  {archivedOnly ? '归档' : '页面'} · {pages.length}
+                </div>
+
+                {pagesLoading ? (
+                  <div className="wiki_hint" style={{ padding: '8px 12px' }}>
+                    加载页面…
+                  </div>
+                ) : treeNodes.length === 0 ? (
+                  <div className="wiki_hint" style={{ padding: '26px 12px', textAlign: 'center' }}>
+                    {archivedOnly
+                      ? '没有已归档的页面'
+                      : treeQuery.trim().length > 0
+                        ? '未找到匹配页面'
+                        : '还没有页面，从右侧创建第一页'}
+                  </div>
+                ) : (
+                  <WikiPageTree
+                    nodes={treeNodes}
+                    activeId={activePageId}
+                    expandedIds={expandedIds}
+                    matchedIds={matchedIds}
+                    query={treeQuery}
+                    onToggle={(id) =>
+                      setExpandedIds((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(id)) next.delete(id)
+                        else next.add(id)
+                        return next
+                      })
+                    }
+                    onSelect={(target) => setActivePageId(target.id)}
+                    onCreateChild={(target) =>
+                      setDialog({
+                        mode: 'create',
+                        parentId: target.id,
+                        title: '',
+                        kind: 'knowledge',
+                      })
+                    }
+                    onRename={(target) =>
+                      setDialog({
+                        mode: 'rename',
+                        pageId: target.id,
+                        title: target.title,
+                        kind: target.kind,
+                      })
+                    }
+                    onArchive={handleArchive}
+                    onRestore={handleRestore}
+                    onDelete={handleDelete}
+                  />
+                )}
+              </>
+            )}
+
+            <div className="wiki_rail_foot">
+              <button
+                type="button"
+                className="wiki_rail_foot_row"
+                onClick={() => setArchivedOnly((prev) => !prev)}
+              >
+                <Icons.Archive size={14} />
+                <span>{archivedOnly ? '返回全部页面' : '归档'}</span>
+                <span className="wiki_tree_count">{archivedCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`wiki_rail_foot_row${candidateView ? ' is-active' : ''}`}
+                aria-pressed={candidateView}
                 onClick={() => {
                   setHits(null)
                   setSearchQuery('')
+                  setSkillView(false)
+                  setCandidateView((prev) => !prev)
                 }}
               >
-                清除
+                <Icons.Sparkles size={14} />
+                <span>候选区</span>
+                {candidateCount > 0 && (
+                  <span className="wiki_cand_badge">
+                    {candidateCount > 99 ? '99+' : candidateCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`wiki_rail_foot_row${skillView ? ' is-active' : ''}`}
+                aria-pressed={skillView}
+                onClick={() => {
+                  setHits(null)
+                  setSearchQuery('')
+                  setCandidateView(false)
+                  setSkillView((prev) => !prev)
+                }}
+              >
+                <Icons.Skills size={14} />
+                <span>技能提议</span>
+                {skillCount > 0 && (
+                  <span className="wiki_cand_badge">{skillCount > 99 ? '99+' : skillCount}</span>
+                )}
+              </button>
+              <button type="button" className="wiki_rail_foot_row" onClick={openWikiSettings}>
+                <Icons.Settings size={14} />
+                <span>知识库设置</span>
               </button>
             </div>
-            {hits.length === 0 ? (
-              <div className="wiki_empty" style={{ minHeight: 200 }}>
-                <div className="wiki_empty_title">没有命中</div>
-                <div className="wiki_empty_desc">
-                  换一个关键词；或先在左侧新建一页把你需要的内容沉淀下来。
-                </div>
-              </div>
-            ) : (
-              <div className="wiki_results">
-                {hits.map((hit) => (
-                  <div
-                    key={hit.id}
-                    className="wiki_result_row"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openResult(hit)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') openResult(hit)
-                    }}
-                  >
-                    <div className="wiki_result_head">
-                      <span className={`wiki_tree_dot k-${hit.kind}`} aria-hidden />
-                      <span className="wiki_result_title">{hit.title}</span>
-                    </div>
-                    {hit.summary.length > 0 && (
-                      <div className="wiki_result_summary">{hit.summary}</div>
-                    )}
-                    <div className="wiki_result_meta">
-                      {hit.tags.length > 0 && <span>{hit.tags.join(' · ')}</span>}
-                      {hit.tokens > 0 && <span>约 {hit.tokens} token</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        ) : showSpaceEmpty ? (
-          <div className="wiki_body">
-            <div className="wiki_empty">
-              <WikiEmptyGraph />
-              <div className="wiki_empty_title">创建你的第一座知识库</div>
-              <div className="wiki_empty_desc">
-                知识库用来沉淀可检索、可复用、会随版本演进的知识：Agent 只在需要时按需检索，
-                不会常驻占用上下文。
+
+          {/* ── 主区 ─────────────────────────────────────────────── */}
+          <div className="wiki_main">
+            <div className="wiki_topbar">
+              <div className="wiki_crumb">
+                {crumbSegments.length === 0 ? (
+                  <span className="wiki_crumb_seg">知识库</span>
+                ) : (
+                  crumbSegments.map((seg, i) => (
+                    <span
+                      key={`${i}-${seg}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                    >
+                      {i > 0 && (
+                        <span className="wiki_crumb_sep">
+                          <Icons.ChevronRight size={11} />
+                        </span>
+                      )}
+                      <span
+                        className={`wiki_crumb_seg${i === crumbSegments.length - 1 ? ' is-end' : ''}`}
+                      >
+                        {seg}
+                      </span>
+                    </span>
+                  ))
+                )}
               </div>
-              <div className="wiki_empty_cta">
-                <button
-                  type="button"
-                  className="wiki_btn_primary"
-                  onClick={() => setSpaceDialogOpen(true)}
-                >
-                  <Icons.Plus size={14} />
-                  新建知识库
-                </button>
+              <span className="wiki_rail_spacer" />
+              <div className="wiki_search wiki_topsearch">
+                <Icons.Search size={13} />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  placeholder="检索知识（回车）"
+                  aria-label="检索知识"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void runSearch()
+                  }}
+                />
               </div>
-            </div>
-          </div>
-        ) : showFirstRunEmpty ? (
-          <div className="wiki_body">
-            <div className="wiki_empty">
-              <WikiEmptyGraph />
-              <div className="wiki_empty_title">把经验沉淀成可检索的知识</div>
-              <div className="wiki_empty_desc">
-                每一页都是一条独立知识。写完后 Agent 会按需检索，不会常驻占用上下文。
-              </div>
-              <div className="wiki_empty_cta">
-                <button
-                  type="button"
-                  className="wiki_btn_primary"
-                  onClick={() => startCreate(null)}
-                >
-                  <Icons.Plus size={14} />
-                  新建第一页
-                </button>
-              </div>
-              <div className="wiki_empty_hr" />
-              <div className="wiki_feats">
-                <span className="wiki_feat">
-                  <span className="wiki_tree_dot k-knowledge" />
-                  Markdown 正文
-                </span>
-                <span className="wiki_feat">
-                  <span className="wiki_tree_dot k-reference" />
-                  双链与反向链接
-                </span>
-                <span className="wiki_feat">
-                  <span className="wiki_tree_dot k-pattern" />
-                  版本历史可回滚
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : pageLoading && page == null ? (
-          <div className="wiki_body">
-            <div className="wiki_empty" style={{ minHeight: 200 }}>
-              <span className="wiki_hint">加载页面…</span>
-            </div>
-          </div>
-        ) : page == null ? (
-          <div className="wiki_body">
-            <div className="wiki_empty">
-              <WikiEmptyGraph />
-              <div className="wiki_empty_title">
-                {archivedOnly ? '归档是空的' : '选择一个页面开始'}
-              </div>
-              <div className="wiki_empty_desc">
-                {archivedOnly
-                  ? '归档页会保留历史版本与正文文件，可随时取消归档。'
-                  : '从左侧目录树选择页面；也可以新建一页，或把对话中的经验沉淀进来。'}
-              </div>
-              {!archivedOnly && (
-                <div className="wiki_empty_cta">
+              {searchBusy && <span className="wiki_hint">检索中…</span>}
+              {!candidateView && !skillView && page != null && (
+                <div className="wiki_actions">
                   <button
                     type="button"
-                    className="wiki_btn_primary"
-                    onClick={() => startCreate(null)}
+                    className="wiki_top_ib"
+                    title="版本历史"
+                    aria-label="版本历史"
+                    onClick={() => void openHistory()}
                   >
-                    <Icons.Plus size={14} />
-                    新建页面
+                    <Icons.History size={15} />
                   </button>
+                  {pageMenu != null && (
+                    <Dropdown menu={pageMenu} trigger={['click']} placement="bottomRight">
+                      <button
+                        type="button"
+                        className="wiki_top_ib"
+                        title="更多"
+                        aria-label="更多操作"
+                      >
+                        <Icons.More size={15} />
+                      </button>
+                    </Dropdown>
+                  )}
                 </div>
               )}
             </div>
+
+            {candidateView ? (
+              <WikiCandidatePanel
+                spaces={spaces}
+                sessions={sessions}
+                sessionsLoading={sessionsLoading}
+                onRefreshSessions={() => void loadSessions()}
+                onPromoted={() => {
+                  void refreshCandidateCount()
+                  if (activeSpaceId != null) void refreshPages(activeSpaceId)
+                }}
+              />
+            ) : skillView ? (
+              <WikiSkillPanel
+                onDecided={() => {
+                  void refreshSkillCount()
+                  if (activeSpaceId != null) void refreshPages(activeSpaceId)
+                }}
+              />
+            ) : hits != null ? (
+              <div className="wiki_body">
+                <div className="wiki_results_head">
+                  检索「<b>{searchQuery.trim()}</b>」命中 {hits.length} 条
+                  <span className="wiki_rail_spacer" />
+                  <button
+                    type="button"
+                    className="wiki_btn_ghost"
+                    style={{ height: 26 }}
+                    onClick={() => {
+                      setHits(null)
+                      setSearchQuery('')
+                    }}
+                  >
+                    清除
+                  </button>
+                </div>
+                {hits.length === 0 ? (
+                  <div className="wiki_empty" style={{ minHeight: 200 }}>
+                    <div className="wiki_empty_title">没有命中</div>
+                    <div className="wiki_empty_desc">
+                      换一个关键词；或先在左侧新建一页把你需要的内容沉淀下来。
+                    </div>
+                  </div>
+                ) : (
+                  <div className="wiki_results">
+                    {hits.map((hit) => (
+                      <div
+                        key={hit.id}
+                        className="wiki_result_row"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openResult(hit)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') openResult(hit)
+                        }}
+                      >
+                        <div className="wiki_result_head">
+                          <span className={`wiki_tree_dot k-${hit.kind}`} aria-hidden />
+                          <span className="wiki_result_title">{hit.title}</span>
+                        </div>
+                        {hit.summary.length > 0 && (
+                          <div className="wiki_result_summary">{hit.summary}</div>
+                        )}
+                        <div className="wiki_result_meta">
+                          {hit.tags.length > 0 && <span>{hit.tags.join(' · ')}</span>}
+                          {hit.tokens > 0 && <span>约 {hit.tokens} token</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : showSpaceEmpty ? (
+              <div className="wiki_body">
+                <div className="wiki_empty">
+                  <WikiEmptyGraph />
+                  <div className="wiki_empty_title">创建你的第一座知识库</div>
+                  <div className="wiki_empty_desc">
+                    知识库用来沉淀可检索、可复用、会随版本演进的知识：Agent 只在需要时按需检索，
+                    不会常驻占用上下文。
+                  </div>
+                  <div className="wiki_empty_cta">
+                    <button
+                      type="button"
+                      className="wiki_btn_primary"
+                      onClick={() => setSpaceDialogOpen(true)}
+                    >
+                      <Icons.Plus size={14} />
+                      新建知识库
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : showFirstRunEmpty ? (
+              <div className="wiki_body">
+                <div className="wiki_empty">
+                  <WikiEmptyGraph />
+                  <div className="wiki_empty_title">把经验沉淀成可检索的知识</div>
+                  <div className="wiki_empty_desc">
+                    每一页都是一条独立知识。写完后 Agent 会按需检索，不会常驻占用上下文。
+                  </div>
+                  <div className="wiki_empty_cta">
+                    <button
+                      type="button"
+                      className="wiki_btn_primary"
+                      onClick={() => startCreate(null)}
+                    >
+                      <Icons.Plus size={14} />
+                      新建第一页
+                    </button>
+                  </div>
+                  <div className="wiki_empty_hr" />
+                  <div className="wiki_feats">
+                    <span className="wiki_feat">
+                      <span className="wiki_tree_dot k-knowledge" />
+                      Markdown 正文
+                    </span>
+                    <span className="wiki_feat">
+                      <span className="wiki_tree_dot k-reference" />
+                      双链与反向链接
+                    </span>
+                    <span className="wiki_feat">
+                      <span className="wiki_tree_dot k-pattern" />
+                      版本历史可回滚
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : pageLoading && page == null ? (
+              <div className="wiki_body">
+                <div className="wiki_empty" style={{ minHeight: 200 }}>
+                  <span className="wiki_hint">加载页面…</span>
+                </div>
+              </div>
+            ) : page == null ? (
+              <div className="wiki_body">
+                <div className="wiki_empty">
+                  <WikiEmptyGraph />
+                  <div className="wiki_empty_title">
+                    {archivedOnly ? '归档是空的' : '选择一个页面开始'}
+                  </div>
+                  <div className="wiki_empty_desc">
+                    {archivedOnly
+                      ? '归档页会保留历史版本与正文文件，可随时取消归档。'
+                      : '从左侧目录树选择页面；也可以新建一页，或把对话中的经验沉淀进来。'}
+                  </div>
+                  {!archivedOnly && (
+                    <div className="wiki_empty_cta">
+                      <button
+                        type="button"
+                        className="wiki_btn_primary"
+                        onClick={() => startCreate(null)}
+                      >
+                        <Icons.Plus size={14} />
+                        新建页面
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="wiki_body">
+                <WikiPagePanel
+                  page={page}
+                  saving={saving}
+                  error={pageError}
+                  editing={panelEditing}
+                  onEditingChange={setPanelEditing}
+                  onSave={handleSave}
+                  backlinks={backlinks}
+                  onOpenBacklink={(pageId) => setActivePageId(pageId)}
+                />
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="wiki_body">
-            <WikiPagePanel
-              page={page}
-              saving={saving}
-              error={pageError}
-              editing={panelEditing}
-              onEditingChange={setPanelEditing}
-              onSave={handleSave}
-              backlinks={backlinks}
-              onOpenBacklink={(pageId) => setActivePageId(pageId)}
-            />
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <WikiVersionHistory
         open={historyOpen}
