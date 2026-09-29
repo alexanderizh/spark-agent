@@ -268,6 +268,7 @@ import {
   getBasename,
   getProviderContextInputUpdate,
   getRuntimeContextSnapshotUpdate,
+  resolveAutoRouterDisplayExecutor,
   type RuntimeContextSnapshotState,
 } from './chat/ChatViewUtils'
 import {
@@ -613,6 +614,11 @@ export function ChatView({
   const [sideChatContextInputTokens, setSideChatContextInputTokens] = useState(0)
   const [sideChatRuntimeContext, setSideChatRuntimeContext] =
     useState<RuntimeContextSnapshotState | null>(null)
+  // 侧聊会话的 turn_prompt_snapshot 列表：auto-router 侧聊会话的上下文窗口显示
+  // 需要「最近一轮实际执行渠道」，与主会话同链路（见 resolveAutoRouterDisplayExecutor）。
+  const [sideChatTurnPromptSnapshots, setSideChatTurnPromptSnapshots] = useState<
+    TurnPromptSnapshotEvent[]
+  >([])
   const [sideChatContextUsage, setSideChatContextUsage] = useState<ContextUsageState | null>(null)
   const [sideChatContextLedger, setSideChatContextLedger] = useState<ContextLedgerState | null>(
     null,
@@ -1171,6 +1177,7 @@ export function ChatView({
       setSideChatMessages([])
       setSideChatContextInputTokens(0)
       setSideChatRuntimeContext(null)
+      setSideChatTurnPromptSnapshots([])
       setSideChatContextUsage(null)
       setSideChatContextLedger(null)
       setSideChatAgentStatus('')
@@ -1877,11 +1884,26 @@ export function ChatView({
   // 同步 workspace root 到 ref，供「代码」tab 的 resolveAbsCodePath/openInCodeTab 使用
   workspaceRootRef.current = activeSessionWorkspaceRootPath ?? activeWorkspace?.rootPath ?? null
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
+  // Auto-router 会话的上下文窗口显示必须取「最近一轮实际执行渠道」：router 行自身没有
+  // 上下文配置，直接解析会掉进 256K 兜底，而真实生效窗口由每轮分流出的执行器决定。
+  // 快照 providerProfileId 就是运行时 executor swap 后的真实执行器（见 ChatViewUtils）。
+  const activeAutoRouterExecutor = resolveAutoRouterDisplayExecutor({
+    displayProvider: activeProvider,
+    providers,
+    snapshots: turnPromptSnapshots,
+  })
+  const activeDisplayProvider = activeAutoRouterExecutor?.provider ?? activeProvider
+  const activeDisplayModelId =
+    activeAutoRouterExecutor?.modelId ??
+    (activeSession?.modelId != null && activeSession.modelId.trim().length > 0
+      ? activeSession.modelId
+      : undefined) ??
+    activeDisplayProvider?.defaultModel
   const activeProviderContextWindow = resolveModelContextWindowForProvider(
-    activeSession?.modelId ?? activeProvider?.defaultModel,
-    activeProvider?.supportsMillionContext === true,
-    activeProvider?.contextWindow,
-    activeProvider?.modelContextWindows,
+    activeDisplayModelId,
+    activeDisplayProvider?.supportsMillionContext === true,
+    activeDisplayProvider?.contextWindow,
+    activeDisplayProvider?.modelContextWindows,
   )
   // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
   // 历史加载中不显示，避免老会话进入时先闪一下空会话。
@@ -2809,6 +2831,7 @@ export function ChatView({
       setSideChatMessages([])
       setSideChatContextInputTokens(0)
       setSideChatRuntimeContext(null)
+      setSideChatTurnPromptSnapshots([])
       setSideChatContextUsage(null)
       setSideChatContextLedger(null)
       setSideChatAgentStatus('')
@@ -2865,6 +2888,7 @@ export function ChatView({
         setSideChatMessages([])
         setSideChatContextInputTokens(0)
         setSideChatRuntimeContext(null)
+        setSideChatTurnPromptSnapshots([])
         setSideChatContextUsage(null)
         setSideChatAgentStatus('')
       }
@@ -2976,6 +3000,7 @@ export function ChatView({
         branchState={branchState}
         contextInputTokens={contextInputTokens}
         runtimeContext={runtimeContext}
+        turnPromptSnapshots={turnPromptSnapshots}
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
@@ -3041,6 +3066,7 @@ export function ChatView({
         branchState={branchState}
         contextInputTokens={contextInputTokens}
         runtimeContext={runtimeContext}
+        turnPromptSnapshots={turnPromptSnapshots}
         contextUsage={contextUsage}
         contextLedger={contextLedger}
         isWorking={composerIsWorking}
@@ -3410,7 +3436,7 @@ export function ChatView({
           contextInputTokens={contextInputTokens}
           runtimeContext={runtimeContext}
           providerContextWindow={activeProviderContextWindow}
-          providerId={activeProvider?.provider}
+          providerId={activeDisplayProvider?.provider}
           turnPromptSnapshots={turnPromptSnapshots}
           runningTeamAgentIds={extractRunningTeamMemberIds(
             activeMessages,
@@ -3643,7 +3669,7 @@ export function ChatView({
                         onContextLedgerChange={setSideChatContextLedger}
                         onProjectContextChange={() => {}}
                         onPlanProposed={() => {}}
-                        onTurnPromptSnapshotsChange={() => {}}
+                        onTurnPromptSnapshotsChange={setSideChatTurnPromptSnapshots}
                         stopTrigger={sessionStopTriggers[sideChatSessionId] ?? 0}
                         scrollToBottomTrigger={sideChatScrollToBottomTrigger}
                         teamConfig={teamConfig}
@@ -3663,6 +3689,7 @@ export function ChatView({
                       branchState={branchState}
                       contextInputTokens={sideChatContextInputTokens}
                       runtimeContext={sideChatRuntimeContext}
+                      turnPromptSnapshots={sideChatTurnPromptSnapshots}
                       contextUsage={sideChatContextUsage}
                       contextLedger={sideChatContextLedger}
                       isWorking={isComposerSessionWorking(sideChatSession.status)}

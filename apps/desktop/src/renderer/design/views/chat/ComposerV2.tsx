@@ -70,6 +70,7 @@ import {
   type ManagedTeam,
   type PermissionApprovalRequest,
   type ProviderProfile,
+  type TurnPromptSnapshotEvent,
   type SessionChatMode,
   type SessionId,
   type SessionReasoningEffort,
@@ -159,6 +160,7 @@ import {
 import type { UIMessage } from '../../services/event-mapper'
 import {
   formatTokenCount,
+  resolveAutoRouterDisplayExecutor,
   resolveContextUsedTokens,
   resolveDisplayedContextWindow,
   resolveMatchingRuntimeContextSnapshot,
@@ -777,6 +779,7 @@ export function ComposerV2({
   onOptimisticQueueTurnCancelled,
   onModelSwitch,
   paletteCommandRequest = null,
+  turnPromptSnapshots = [],
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -893,6 +896,8 @@ export function ComposerV2({
   onOptimisticQueueTurnCancelled?: (sessionId: SessionId, turnId: string) => void
   onModelSwitch?: (change: { fromModel: string; toModel: string; afterMessageId: string }) => void
   paletteCommandRequest?: { id: number; commandText: string } | null
+  /** 时间升序的 turn_prompt_snapshot 列表：auto-router 会话解析「最近一轮实际执行渠道」用。 */
+  turnPromptSnapshots?: TurnPromptSnapshotEvent[]
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -1166,11 +1171,21 @@ export function ComposerV2({
     }
     cliSparkCacheHydratedSessionRef.current = hydrationKey
   }, [cliSparkProviders, selectedProvider, session?.cliSparkOverride, session?.id])
+  // Auto-router 会话的上下文窗口显示取「最近一轮实际执行渠道」：router 行自身没有
+  // 上下文配置（256K 兜底会误导），真实生效窗口由每轮分流出的执行器决定；快照
+  // providerProfileId 即运行时 executor swap 后的真实执行器（见 ChatViewUtils）。
+  const autoRouterExecutor = resolveAutoRouterDisplayExecutor({
+    displayProvider: selectedProvider,
+    providers,
+    snapshots: turnPromptSnapshots,
+  })
+  const contextDisplayProvider = autoRouterExecutor?.provider ?? selectedProvider
   const configuredContextWindow = resolveModelContextWindowForProvider(
-    sessionModelId || draftModelId || selectedProvider?.defaultModel,
-    selectedProvider?.supportsMillionContext === true,
-    selectedProvider?.contextWindow,
-    selectedProvider?.modelContextWindows,
+    autoRouterExecutor?.modelId ??
+      (sessionModelId || draftModelId || contextDisplayProvider?.defaultModel),
+    contextDisplayProvider?.supportsMillionContext === true,
+    contextDisplayProvider?.contextWindow,
+    contextDisplayProvider?.modelContextWindows,
   )
   const matchingRuntimeContext = resolveMatchingRuntimeContextSnapshot(
     runtimeContext,
@@ -1255,7 +1270,9 @@ export function ComposerV2({
       ? pendingQuickReplies
       : null
   const contextUsedTokens = resolveContextUsedTokens({
-    provider: selectedProvider?.provider,
+    // auto-router 会话用执行器渠道的 provider 语义：claude 执行器的 input+cache
+    // 才是真实 prompt 规模，router 行的 'auto-router' 语义会让真实值退回估算兜底。
+    provider: contextDisplayProvider?.provider,
     ledgerEstimatedTokens: contextLedger?.totalEstimatedTokens,
     turnEstimatedTokens: contextUsage?.estimatedTokens,
     providerInputTokens: contextInputTokens,

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, TurnPromptSnapshotEvent, TurnRuntimeMetrics } from '@spark/protocol'
+import type {
+  AgentEvent,
+  ProviderProfile,
+  TurnPromptSnapshotEvent,
+  TurnRuntimeMetrics,
+} from '@spark/protocol'
 import type { UsageSnapshot } from './ChatUsageTypes'
 import {
   buildSessionPerf,
@@ -13,6 +18,7 @@ import {
   getLatestRuntimeContextSnapshot,
   getProviderContextInputUpdate,
   getRuntimeContextSnapshotUpdate,
+  resolveAutoRouterDisplayExecutor,
   resolveContextUsedTokens,
   resolveDisplayedContextWindow,
   resolveMatchingRuntimeContextSnapshot,
@@ -582,6 +588,98 @@ describe('ChatViewUtils', () => {
       // TTFT 仍可展示（行数据保留），只是不进统计
       expect(perf.rows.every((row) => row.ttftMs != null)).toBe(true)
       expect(perf.rows.every((row) => row.status === 'unknown')).toBe(true)
+    })
+  })
+
+  describe('resolveAutoRouterDisplayExecutor', () => {
+    const executorProfile = (partial: Partial<ProviderProfile> & Pick<ProviderProfile, 'id'>) =>
+      ({
+        name: partial.id,
+        provider: 'anthropic',
+        defaultModel: '',
+        modelIds: [],
+        ...partial,
+      }) as ProviderProfile
+
+    const snapshot = (
+      turnId: string,
+      providerProfileId?: string,
+      model = 'deepseek-v4.1-flash',
+    ): TurnPromptSnapshotEvent =>
+      ({
+        id: `snap-${turnId}`,
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session-1',
+        turnId,
+        timestamp: new Date(0).toISOString(),
+        seq: 0,
+        userMessage: '',
+        systemPromptSections: [],
+        model,
+        adapterKind: 'claude-sdk',
+        permissionMode: 'default',
+        toolCount: 0,
+        ...(providerProfileId != null ? { providerProfileId } : {}),
+      }) as TurnPromptSnapshotEvent
+
+    const router = executorProfile({ id: 'router-1', providerType: 'auto-router' })
+    const executor = executorProfile({
+      id: 'opencode-1',
+      supportsMillionContext: true,
+      contextWindow: 1_000_000,
+    })
+
+    it('returns null for non auto-router display providers', () => {
+      const plain = executorProfile({ id: 'plain-1' })
+      expect(
+        resolveAutoRouterDisplayExecutor({
+          displayProvider: plain,
+          providers: [plain, executor],
+          snapshots: [snapshot('t1', 'opencode-1')],
+        }),
+      ).toBeNull()
+    })
+
+    it('resolves the latest executor provider and its turn model', () => {
+      const secondExecutor = executorProfile({ id: 'opencode-2', supportsMillionContext: true })
+      const resolved = resolveAutoRouterDisplayExecutor({
+        displayProvider: router,
+        providers: [router, executor, secondExecutor],
+        snapshots: [snapshot('t1', 'opencode-1'), snapshot('t2', 'opencode-2', 'glm-5.2')],
+      })
+      expect(resolved?.provider.id).toBe('opencode-2')
+      expect(resolved?.modelId).toBe('glm-5.2')
+    })
+
+    it('skips snapshots pointing back at the router row or missing providers', () => {
+      const resolved = resolveAutoRouterDisplayExecutor({
+        displayProvider: router,
+        providers: [router, executor],
+        snapshots: [
+          snapshot('t1', 'opencode-1'),
+          snapshot('t2', 'router-1'),
+          snapshot('t3', 'deleted-provider'),
+        ],
+      })
+      expect(resolved?.provider.id).toBe('opencode-1')
+      expect(resolved?.modelId).toBe('deepseek-v4.1-flash')
+    })
+
+    it('returns null when no usable snapshot exists (fresh session / legacy history)', () => {
+      expect(
+        resolveAutoRouterDisplayExecutor({
+          displayProvider: router,
+          providers: [router, executor],
+          snapshots: [],
+        }),
+      ).toBeNull()
+      expect(
+        resolveAutoRouterDisplayExecutor({
+          displayProvider: router,
+          providers: [router],
+          snapshots: [snapshot('t1', 'opencode-1')],
+        }),
+      ).toBeNull()
     })
   })
 })

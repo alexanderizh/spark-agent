@@ -1,4 +1,9 @@
-import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
+import {
+  AUTO_ROUTER_PROVIDER_TYPE,
+  type AgentEvent,
+  type ProviderProfile,
+  type TurnPromptSnapshotEvent,
+} from '@spark/protocol'
 import { providerPromptWindowTokens } from '@spark/shared'
 import type { SessionUsageData, TurnUsageRow, UsageSnapshot } from './ChatUsageTypes'
 
@@ -131,6 +136,46 @@ export function resolveDisplayedContextWindow(
 ): number {
   const runtimeWindow = runtimeSnapshot?.contextWindowTokens
   return runtimeWindow != null && runtimeWindow > 0 ? runtimeWindow : configuredContextWindow
+}
+
+/** Auto-router 会话显示层的「最近一轮实际执行渠道」：执行器渠道 + 该轮实际模型。 */
+export type AutoRouterDisplayExecutor = {
+  provider: ProviderProfile
+  /** 该轮执行器实际使用的模型；快照缺省时为 null，调用方回落渠道 defaultModel。 */
+  modelId: string | null
+}
+
+/**
+ * Auto-router 会话的显示层执行渠道解析。
+ *
+ * 会话绑定的 router 行（providerType='auto-router'）没有 supportsMillionContext /
+ * contextWindow / modelContextWindows 任何上下文字段，直接用它解析上下文窗口会
+ * 掉进 256K 兜底；而真实生效窗口由每轮「executor swap」分流出的执行器渠道决定
+ * （主进程 session.service 的 effectiveRuntimeProviderProfileId）。turn_prompt_snapshot
+ * 的 providerProfileId 记录的正是 swap 后的真实执行器，取最近一条可解析快照作为
+ * 「最近一轮实际执行渠道」。没有可用快照（新会话未发过轮次 / 旧版本历史数据）时
+ * 返回 null，调用方保持原有回退行为（256K 兜底）。
+ */
+export function resolveAutoRouterDisplayExecutor(params: {
+  /** 当前展示用渠道（会话绑定渠道）；非 auto-router 行时直接返回 null。 */
+  displayProvider: ProviderProfile | undefined
+  providers: ProviderProfile[]
+  /** 时间升序的 turn_prompt_snapshot 列表（渲染层已有的 turnPromptSnapshots state）。 */
+  snapshots: readonly TurnPromptSnapshotEvent[]
+}): AutoRouterDisplayExecutor | null {
+  if (params.displayProvider?.providerType !== AUTO_ROUTER_PROVIDER_TYPE) return null
+  for (let index = params.snapshots.length - 1; index >= 0; index -= 1) {
+    const snapshot = params.snapshots[index]
+    if (snapshot == null) continue
+    const executorId = snapshot.providerProfileId?.trim() ?? ''
+    // 快照指向 router 自己（防御旧数据）或渠道已被删除时跳过，继续找更早一轮。
+    if (executorId.length === 0 || executorId === params.displayProvider.id) continue
+    const executor = params.providers.find((item) => item.id === executorId)
+    if (executor == null || executor.providerType === AUTO_ROUTER_PROVIDER_TYPE) continue
+    const modelId = snapshot.model?.trim() ?? ''
+    return { provider: executor, modelId: modelId.length > 0 ? modelId : null }
+  }
+  return null
 }
 
 export function createEmptySessionUsageData(): SessionUsageData {
