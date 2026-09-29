@@ -1009,9 +1009,23 @@
   line-height: 1.5;
 }
 
-/* BaseURL 标签行右侧「完整 URL」小开关 */
+/* BaseURL 输入框 + 右侧「完整 URL」小开关：开关固定宽度，输入框吃满剩余空间 */
+.pv_endpoint_input_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pv_endpoint_input_row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* BaseURL 输入框右侧「完整 URL」小开关 */
 .pv_endpoint_full_url_toggle {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   white-space: nowrap;

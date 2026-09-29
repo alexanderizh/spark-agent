@@ -41,6 +41,8 @@ import {
 // Contract V2 裁剪：MCP 子进程独立纯 JS 实现，与 TS 编译器同语义。
 // 多余字段不会到达 provider；describe_model 也能告诉 agent 字段约束。
 import { pruneModelParamsByManifest } from '../services/media/media-request-compiler.mjs'
+// 「完整 URL」渠道的主调用地址解析：与 TS 侧 media-router 同语义，见模块头注释。
+import { resolveMainRequestUrl } from '../services/media/media-main-request-endpoint.mjs'
 import {
   buildMcpMultipart,
   googleMcpImagePart,
@@ -1170,6 +1172,8 @@ function normalizeProviderConfig(value, outputDir) {
     .toLowerCase()
   const configuredBaseUrl = String(value.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
   const adapterFromManifest = value.adapterFromManifest === true
+  // 「完整 URL」渠道：baseUrl 即主调用最终地址，任何渠道级改写都必须让位，否则用户填的原文会被拼坏。
+  const apiEndpointFullUrl = value.apiEndpointFullUrl === true
   return {
     id: String(value.id || '').trim(),
     name: String(value.name || '').trim(),
@@ -1178,9 +1182,10 @@ function normalizeProviderConfig(value, outputDir) {
     model: String(value.model || ''),
     mode: String(value.mode || 'auto'),
     baseUrl:
-      provider === 'bailian' && !adapterFromManifest
-        ? bailianMediaBaseUrl(configuredBaseUrl)
-        : configuredBaseUrl,
+      apiEndpointFullUrl || provider !== 'bailian' || adapterFromManifest
+        ? configuredBaseUrl
+        : bailianMediaBaseUrl(configuredBaseUrl),
+    apiEndpointFullUrl,
     outputDir,
     mediaDefaults:
       value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
@@ -2230,7 +2235,7 @@ async function handleManifestTool(config, toolName, args, match) {
   const endpoint =
     managedNewApiImageEndpoint(config, capability.id) ??
     renderTemplateString(manifest.invocation.endpoint || '', variables)
-  const url = resolveManifestUrl(config.baseUrl, endpoint)
+  const url = resolveMainRequestUrl(config, resolveManifestUrl(config.baseUrl, endpoint))
   const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
   if (manifest.providerKind === 'openai-images' && capability.id === 'image.edit') {
     return handleOpenAiManifestImageEdit(config, args, manifest, capability, variables, prune, url)
@@ -2956,7 +2961,7 @@ async function handleGenerateImage(config, args) {
           ...(args.extraJson || {}),
         }),
   }
-  const url = `${config.baseUrl}/images/generations`
+  const url = resolveMainRequestUrl(config, `${config.baseUrl}/images/generations`)
   const data = await fetchJson(
     url,
     { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
@@ -3020,7 +3025,7 @@ async function handleEditImage(config, args) {
       storage_options: xaiStorageOptions(args, 'png'),
     }
     const data = await fetchJson(
-      `${config.baseUrl}/images/edits`,
+      resolveMainRequestUrl(config, `${config.baseUrl}/images/edits`),
       { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
       interfaceTimeoutMs(config, 120_000),
     )
@@ -3042,7 +3047,7 @@ async function handleEditImage(config, args) {
     ...(args.size ? { size: args.size } : {}),
     ...(args.extraJson || {}),
   }
-  const url = `${config.baseUrl}/images/edits`
+  const url = resolveMainRequestUrl(config, `${config.baseUrl}/images/edits`)
   const data = await fetchJson(
     url,
     { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
@@ -3075,7 +3080,7 @@ async function handleGenerateAudio(config, args) {
       ...(args.speed != null ? { speed: args.speed } : {}),
     }
     const audio = await fetchJson(
-      `${config.baseUrl}/tts`,
+      resolveMainRequestUrl(config, `${config.baseUrl}/tts`),
       {
         method: 'POST',
         headers: authHeaders(config),
@@ -3102,7 +3107,7 @@ async function handleGenerateAudio(config, args) {
     ...(args.speed != null ? { speed: args.speed } : {}),
     ...(args.extraJson || {}),
   }
-  const url = `${config.baseUrl}/audio/speech`
+  const url = resolveMainRequestUrl(config, `${config.baseUrl}/audio/speech`)
   const buffer = await fetchJson(
     url,
     { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
@@ -3128,7 +3133,7 @@ async function handleTranscribeAudio(config, args) {
   const manifestMatch = resolveManifestForTool(config, 'transcribe_audio', args)
   if (manifestMatch) return handleManifestTool(config, 'transcribe_audio', args, manifestMatch)
   if (!config.model) throw new Error('No media model configured')
-  const url = `${config.baseUrl}/audio/transcriptions`
+  const url = resolveMainRequestUrl(config, `${config.baseUrl}/audio/transcriptions`)
   let data
   if (args.audioUrl) {
     data = await fetchJson(
@@ -3312,7 +3317,10 @@ async function handleVolcengineVideoManifestTool(config, args, match) {
     ...providerParams,
     ...(searchEnabled ? { tools: [{ type: 'web_search' }] } : {}),
   }
-  const url = resolveManifestUrl(config.baseUrl, manifest.invocation.endpoint)
+  const url = resolveMainRequestUrl(
+    config,
+    resolveManifestUrl(config.baseUrl, manifest.invocation.endpoint),
+  )
   const responseSpec = manifest.invocation.response
   let raw
   try {
@@ -3499,7 +3507,7 @@ async function handleGenerateVideo(config, args) {
     if (wantsExtend && !video && !explicitVideoFileId)
       throw new Error('xAI video extend requires videoUrl/videoFile/videoFileId/inputVideos')
     const data = await fetchJson(
-      `${config.baseUrl}${endpoint}`,
+      resolveMainRequestUrl(config, `${config.baseUrl}${endpoint}`),
       { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },
       interfaceTimeoutMs(config, 60_000),
     )
@@ -3559,7 +3567,7 @@ async function handleGenerateVideo(config, args) {
     ...(args.editStrength != null ? { edit_strength: args.editStrength } : {}),
     ...(args.extraJson || {}),
   }
-  const url = `${config.baseUrl}/videos/generations`
+  const url = resolveMainRequestUrl(config, `${config.baseUrl}/videos/generations`)
   const data = await fetchJson(
     url,
     { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) },

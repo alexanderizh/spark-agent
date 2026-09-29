@@ -746,6 +746,7 @@ export class CustomMediaProviderConfiguratorService {
       defaultModel: profile.defaultModel,
       ...(profile.modelIds.length > 0 ? { modelIds: profile.modelIds } : {}),
       apiEndpoint: profile.apiEndpoint ?? '',
+      ...(profile.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       mediaProvider: 'custom',
       mediaApiType: profile.mediaApiType ?? 'auto',
       ...(profile.mediaCapabilities !== undefined

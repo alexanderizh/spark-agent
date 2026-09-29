@@ -137,7 +137,9 @@ describe('spark_media MCP server', () => {
           req.url === '/images/generations' ||
           req.url === '/images/edits' ||
           req.url === '/provider-a/images' ||
-          req.url === '/provider-b/images')
+          req.url === '/provider-b/images' ||
+          req.url === '/full/url/generate' ||
+          req.url === '/full/url/generate/images')
       ) {
         const chunks: Buffer[] = []
         req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
@@ -525,6 +527,98 @@ describe('spark_media MCP server', () => {
     })
     expect(generated.error).toBeUndefined()
     expect(postedHeaders.authorization).toBe('Bearer sk-test')
+  })
+
+  it('sends the configured full URL as the main call without appending the manifest endpoint', async () => {
+    const manifest = {
+      id: 'custom:full-url-image',
+      providerKind: 'custom',
+      modelId: 'full-url-image',
+      displayName: 'Full URL Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const writeConfig = (apiEndpointFullUrl: boolean): string => {
+      const configPath = path.join(tmpDir, `runtime-config-full-url-${apiEndpointFullUrl}.json`)
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          outputDir: tmpDir,
+          providers: [
+            {
+              id: 'full-url-provider',
+              name: 'Full URL Provider',
+              apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
+              provider: 'custom',
+              model: 'full-url-image',
+              mode: 'sync',
+              // 用户所填地址本身就是一个完整端点，manifest 只保留相对端点。
+              baseUrl: `${baseUrl}/full/url/generate`,
+              apiEndpointFullUrl,
+              mediaDefaults: {},
+              manifests: [manifest],
+            },
+          ],
+        }),
+      )
+      return configPath
+    }
+    const spawnWithConfig = (apiEndpointFullUrl: boolean): ChildProcessWithoutNullStreams =>
+      spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+        cwd: path.resolve('..', 'agent-runtime'),
+        env: {
+          ...process.env,
+          SPARK_MEDIA_API_KEY_0: 'sk-test',
+          SPARK_MEDIA_CONFIG_FILE: writeConfig(apiEndpointFullUrl),
+        },
+      })
+
+    // 开关关闭：保持既有拼接行为（baseUrl 是推导 base，尾部拼 manifest 端点）。
+    child = spawnWithConfig(false)
+    const derived = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'custom:full-url-image', prompt: 'derived endpoint' },
+      },
+    })
+    expect(derived.error).toBeUndefined()
+    expect(postedPath).toBe('/full/url/generate/images')
+    child.kill()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // 开关打开：主调用原样发送完整地址，不再追加 manifest 端点。
+    child = spawnWithConfig(true)
+    const exact = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'custom:full-url-image', prompt: 'exact endpoint' },
+      },
+    })
+    expect(exact.error).toBeUndefined()
+    expect(postedPath).toBe('/full/url/generate')
   })
 
   it('routes a platform alias through the adapter declared by its manifest', async () => {

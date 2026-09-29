@@ -1222,6 +1222,7 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
         ...((profile.mediaApiEndpoint ?? profile.apiEndpoint)
           ? { apiEndpoint: profile.mediaApiEndpoint ?? profile.apiEndpoint }
           : {}),
+        ...(profile.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         mediaProvider: profile.mediaProvider ?? null,
         mediaApiType: profile.mediaApiType ?? 'auto',
         mediaCapabilities: caps,

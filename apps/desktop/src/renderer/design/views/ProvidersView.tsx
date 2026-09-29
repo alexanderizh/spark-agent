@@ -243,13 +243,13 @@ function buildRequestEndpointPreview(
   >,
 ): EndpointPreview | null {
   const baseUrl = (form.endpoint.trim() || getProviderBaseUrlPlaceholder(form)).replace(/\/+$/, '')
+  // 「完整 URL」开启：所填地址即主调用最终地址，文本与图片/语音/视频一律原样展示。
+  if (form.endpointFullUrl) {
+    return { label: '实际请求地址（原样请求）', url: baseUrl }
+  }
   if (isMediaProviderModelType(form.modelType)) {
     const mediaProvider = form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
     return { label: '实际请求地址', url: getMediaRequestPreviewUrl(baseUrl, form, mediaProvider) }
-  }
-  // 「完整 URL」开启：所填地址即最终请求地址，预览原样展示。
-  if (form.endpointFullUrl) {
-    return { label: '实际请求地址（原样请求）', url: baseUrl }
   }
   if (form.provider === 'anthropic') {
     return { label: '实际请求地址', url: getAnthropicMessagesPreviewUrl(baseUrl) }
@@ -681,14 +681,12 @@ function isMediaProviderModelType(modelType: ProviderModelType): boolean {
 }
 
 /**
- * 「完整 URL」开关只作用于文本链路；媒体渠道地址本就原样拼接，任何载荷/落库一律按 false 处理。
- * 保存、测试连接、拉模型共用此口径，避免「文本模式开开关→切媒体类型→不保存」的表单残留值泄进请求。
+ * 「完整 URL」开关的生效值。文本链路与图片/语音/视频链路共用同一字段与同一口径：
+ * 开启后主调用按所填地址原样发送，关闭时各调用点走原有拼裁逻辑。
+ * 保存、测试连接、拉模型共用此口径，避免表单残留值在不同请求间产生分歧。
  */
-function isEndpointFullUrlEffective(
-  modelType: ProviderModelType,
-  endpointFullUrl: boolean,
-): boolean {
-  return !isMediaProviderModelType(modelType) && endpointFullUrl
+function isEndpointFullUrlEffective(endpointFullUrl: boolean): boolean {
+  return endpointFullUrl
 }
 
 function supportsMediaConfigModelType(modelType: ProviderModelType): boolean {
@@ -3032,10 +3030,7 @@ export function ProviderEditPanel({
       const sparkExecutorEligible =
         isChatModel && sparkExecutorAvailability(form.provider, form.codexApiKind).available
       const effectiveUseSparkExecutor = sparkExecutorEligible && form.useSparkExecutor
-      const effectiveEndpointFullUrl = isEndpointFullUrlEffective(
-        form.modelType,
-        form.endpointFullUrl,
-      )
+      const effectiveEndpointFullUrl = isEndpointFullUrlEffective(form.endpointFullUrl)
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
@@ -3109,8 +3104,7 @@ export function ProviderEditPanel({
     ...(profileId ? { id: profileId } : {}),
     provider: form.provider,
     apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
-    // 媒体模式下残留的开关值不进测试载荷（与落库口径一致）
-    ...(isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl) && {
+    ...(isEndpointFullUrlEffective(form.endpointFullUrl) && {
       apiEndpointFullUrl: true,
     }),
     defaultModel: form.defaultModel.trim(),
@@ -3156,7 +3150,7 @@ export function ProviderEditPanel({
         apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
         // 渠道「完整 URL」时 endpoint 是最终请求地址，models 地址无法可靠派生：
         // 走 isFullUrl 候选探测（服务端同时会读已保存渠道的同名开关）。
-        ...(isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl) && {
+        ...(isEndpointFullUrlEffective(form.endpointFullUrl) && {
           isFullUrl: true,
         }),
         ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
@@ -3170,7 +3164,6 @@ export function ProviderEditPanel({
       form.apiKey,
       form.endpoint,
       form.endpointFullUrl,
-      form.modelType,
       form.provider,
       profileId,
     ],
@@ -3178,7 +3171,7 @@ export function ProviderEditPanel({
 
   const autoFetchApiKey = form.apiKey
   const autoFetchEndpoint = form.endpoint
-  const autoFetchEndpointFullUrl = isEndpointFullUrlEffective(form.modelType, form.endpointFullUrl)
+  const autoFetchEndpointFullUrl = isEndpointFullUrlEffective(form.endpointFullUrl)
   const autoFetchModelType = form.modelType
   const autoFetchPresetId = form.presetId
   const autoFetchProvider = form.provider
@@ -3560,32 +3553,30 @@ export function ProviderEditPanel({
               />
 
               <div className="pv_form_label">
-                <span className="pv_form_label_row">
-                  BaseURL
-                  {!isMediaProviderModelType(form.modelType) && (
-                    <span
-                      className="pv_endpoint_full_url_toggle"
-                      title="开启后所填地址视为完整请求地址，调用时不再做任何自动拼裁（如补 /v1、摘版本段等）"
-                    >
-                      <Switch
-                        size="small"
-                        checked={form.endpointFullUrl}
-                        onChange={(checked: boolean) => set('endpointFullUrl', checked)}
-                      />
-                      <span className="pv_endpoint_full_url_toggle_text">完整 URL</span>
-                    </span>
-                  )}
-                </span>
+                BaseURL
                 <span className="pv_form_sub">
                   {form.endpointFullUrl ? '完整请求地址，调用时原样发送' : '服务基础地址'}
                 </span>
               </div>
               <div className="pv_field_stack">
-                <Input
-                  value={form.endpoint}
-                  onChange={(e) => set('endpoint', e.target.value)}
-                  placeholder={getProviderBaseUrlPlaceholder(form)}
-                />
+                <div className="pv_endpoint_input_row">
+                  <Input
+                    value={form.endpoint}
+                    onChange={(e) => set('endpoint', e.target.value)}
+                    placeholder={getProviderBaseUrlPlaceholder(form)}
+                  />
+                  <span
+                    className="pv_endpoint_full_url_toggle"
+                    title="开启后所填地址视为完整请求地址，主调用原样发送，不再自动拼裁（补 /v1、接 images/generations 等）"
+                  >
+                    <Switch
+                      size="small"
+                      checked={form.endpointFullUrl}
+                      onChange={(checked: boolean) => set('endpointFullUrl', checked)}
+                    />
+                    <span className="pv_endpoint_full_url_toggle_text">完整 URL</span>
+                  </span>
+                </div>
                 {requestEndpointPreview && (
                   <div className="pv_endpoint_inline_hint" role="note" aria-live="polite">
                     <span className="pv_endpoint_inline_hint_label">
@@ -3605,6 +3596,12 @@ export function ProviderEditPanel({
                       …/v3/messages）请开启「执行引擎（Spark）」以原样直连。
                     </div>
                   )}
+                {form.endpointFullUrl && isMediaProviderModelType(form.modelType) && (
+                  <div className="pv_endpoint_full_url_warning" role="note">
+                    生成/提交请求按所填地址原样发送；上传、下载与异步任务轮询仍基于该地址派生路径。
+                    视频等异步渠道开启后可能查不到任务结果，同步渠道（图片、语音合成）不受影响。
+                  </div>
+                )}
               </div>
 
               {form.provider === 'openai' && isChatModel && (

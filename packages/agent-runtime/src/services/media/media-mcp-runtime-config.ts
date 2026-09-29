@@ -41,6 +41,8 @@ type MediaProviderConfig = {
   model?: string
   modelIds?: string[]
   apiEndpoint?: string
+  /** 渠道声明的 apiEndpoint 是完整请求地址：主调用原样发送，不做路径拼接。 */
+  apiEndpointFullUrl?: boolean
   mediaApiEndpoint?: string
   modelType?: string
   imageProvider?: string | null
@@ -61,6 +63,8 @@ export type MediaMcpProviderRoute = {
   model: string
   mode: string
   baseUrl?: string
+  /** baseUrl 是完整请求地址：spark_media 主调用原样发送，不做路径拼接。 */
+  apiEndpointFullUrl?: boolean
   mediaDefaults: Record<string, unknown>
   capabilities: string[]
   manifests: MediaModelManifest[]
@@ -170,6 +174,7 @@ export async function resolveMediaMcpProviderRoutes(
       model: mediaModel,
       mode: config.mediaApiType ?? config.imageApiType ?? 'auto',
       ...(baseUrl ? { baseUrl } : {}),
+      ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
       mediaDefaults: config.mediaDefaults ?? {},
       capabilities: collectCapabilities(config, manifests),
       manifests,

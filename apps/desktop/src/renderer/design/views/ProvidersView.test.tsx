@@ -429,6 +429,134 @@ describe('ProviderEditPanel progressive configuration', () => {
     )
   })
 
+  it('keeps the full-URL switch inside the BaseURL input row and persists it', async () => {
+    const profile = {
+      id: 'provider-full-url-switch',
+      name: 'Full URL Provider',
+      provider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-20250514',
+      modelIds: ['claude-sonnet-4-20250514'],
+      apiEndpoint: 'https://api.anthropic.com',
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: 'anthropic-provider-full-url-switch',
+      createdAt: '',
+      updatedAt: '',
+    }
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-ant-saved' })),
+    )
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel
+          visible
+          profileId="provider-full-url-switch"
+          onClose={() => undefined}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    // 开关必须落在 BaseURL 输入框同一行内（而不是标签行右侧）。
+    const inputRow = container.querySelector('.pv_endpoint_input_row')
+    expect(inputRow).not.toBeNull()
+    expect(inputRow?.querySelector('input')).not.toBeNull()
+    const toggle = inputRow?.querySelector('[role="switch"]') as HTMLButtonElement | null
+    expect(toggle).not.toBeNull()
+    expect(toggle?.getAttribute('aria-checked')).toBe('false')
+
+    act(() => toggle?.click())
+    expect(toggle?.getAttribute('aria-checked')).toBe('true')
+    // 开启后预览让位给「原样请求」，不再展示派生地址。
+    expect(container.textContent).toContain('实际请求地址（原样请求）')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ id: 'provider-full-url-switch', apiEndpointFullUrl: true }),
+    )
+  })
+
+  it('exposes the full-URL switch for image models and persists it', async () => {
+    const profile = {
+      id: 'provider-image-full-url',
+      name: 'Image Provider',
+      provider: 'openai',
+      modelType: 'image',
+      defaultModel: 'gpt-image-1',
+      modelIds: ['gpt-image-1'],
+      apiEndpoint: 'https://images.example.com/v1',
+      mediaProvider: 'openai-compatible',
+      mediaApiType: 'sync',
+      mediaCapabilities: ['image.generate'],
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: 'openai-provider-image-full-url',
+      createdAt: '',
+      updatedAt: '',
+    }
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [profile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-image' })),
+    )
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible profileId="provider-image-full-url" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    const inputRow = container.querySelector('.pv_endpoint_input_row')
+    const toggle = inputRow?.querySelector('[role="switch"]') as HTMLButtonElement | null
+    expect(toggle).not.toBeNull()
+
+    act(() => toggle?.click())
+    expect(container.textContent).toContain('生成/提交请求按所填地址原样发送')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ id: 'provider-image-full-url', apiEndpointFullUrl: true }),
+    )
+  })
+
   it('saves a manually selected provider icon and keeps it while other fields change', async () => {
     await act(async () => {
       root = createRoot(container)
