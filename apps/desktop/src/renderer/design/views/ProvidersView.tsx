@@ -2190,6 +2190,9 @@ export function ProviderEditPanel({
   const [apiKeyDirty, setApiKeyDirty] = useState(false)
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
+  // 渠道动态候选（如智谱同步 / 复刻的音色目录）只挂在「按 profile 解析」的模型上：
+  // catalogOnly 目录没有渠道上下文，故编辑已保存渠道时另取一份 profile 模型补候选。
+  const [profileMediaModels, setProfileMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [customModelInput, setCustomModelInput] = useState('')
   const [editingCustomManifestId, setEditingCustomManifestId] = useState<string | null>(null)
   const [customManifestDraft, setCustomManifestDraft] = useState('')
@@ -2473,6 +2476,32 @@ export function ProviderEditPanel({
     return () => window.clearTimeout(id)
   }, [listMediaModels, visible])
 
+  /**
+   * 拉取当前渠道的模型摘要（带渠道动态候选），仅用于补全参数候选项，不参与模型清单渲染。
+   * `enabledOnly: false`：候选补全与启用状态无关，禁用中的 model ref 也要能补到音色目录；
+   * 未保存的渠道没有 profileId，此时候选只有 manifest 静态值（同步入口本身也要求先保存）。
+   */
+  const reloadProfileMediaModels = useCallback(async () => {
+    if (!profileId) {
+      setProfileMediaModels([])
+      return
+    }
+    try {
+      const res = await listMediaModels({ providerProfileId: profileId, enabledOnly: false })
+      setProfileMediaModels(res.models)
+    } catch {
+      setProfileMediaModels([])
+    }
+  }, [listMediaModels, profileId])
+
+  useEffect(() => {
+    if (!visible) return
+    const id = window.setTimeout(() => {
+      void reloadProfileMediaModels()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [reloadProfileMediaModels, visible])
+
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
   const currentVendor: VendorMeta | null = useMemo(() => {
     if (
@@ -2563,9 +2592,22 @@ export function ProviderEditPanel({
       ),
     [form.mediaModelRefs],
   )
+  /** manifestId → 带渠道动态候选的模型；同 id 取先出现者，避免重复 manifest 抖动候选。 */
+  const profileMediaModelsById = useMemo(() => {
+    const map = new Map<string, CanvasMediaModelSummary>()
+    for (const model of profileMediaModels) {
+      if (!map.has(model.manifestId)) map.set(model.manifestId, model)
+    }
+    return map
+  }, [profileMediaModels])
   const selectedMediaCatalogModels = useMemo(
-    () => mediaCatalogForForm.filter((model) => selectedManifestIds.has(model.manifestId)),
-    [mediaCatalogForForm, selectedManifestIds],
+    () =>
+      mediaCatalogForForm
+        .filter((model) => selectedManifestIds.has(model.manifestId))
+        // 目录条目只有静态 examples；同 manifestId 的 profile 模型带渠道同步的音色目录，
+        // 优先采用它，让「同步 / 复刻」的结果直接出现在参数候选中。
+        .map((model) => profileMediaModelsById.get(model.manifestId) ?? model),
+    [mediaCatalogForForm, selectedManifestIds, profileMediaModelsById],
   )
   const mediaDefaultOptionSets = useMemo(
     () => ({
@@ -3239,6 +3281,8 @@ export function ProviderEditPanel({
     try {
       const result = await syncMediaVoices({ providerId: profileId })
       setClonedVoices(result.privateVoices)
+      // 同步写的是 profile 的动态参数候选，刷新一次让「参数默认值 → 音色」立即用上新目录。
+      void reloadProfileMediaModels()
       toast.success(
         `已同步 ${result.options.length} 个音色（官方 ${result.officialCount} · 复刻 ${result.privateCount}）`,
       )
@@ -3296,6 +3340,7 @@ export function ProviderEditPanel({
       })
       // 复刻动作已顺带刷新候选，这里直接采纳，用户即可在画布/快速创作里选到新音色。
       setClonedVoices(result.privateVoices)
+      void reloadProfileMediaModels()
       setSamplePath('')
       setVoiceName('')
       setSampleText('')
@@ -3314,6 +3359,7 @@ export function ProviderEditPanel({
     try {
       const result = await deleteMediaVoice({ providerId: profileId, voice })
       setClonedVoices(result.privateVoices)
+      void reloadProfileMediaModels()
       toast.success('已删除该复刻音色')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除音色失败')

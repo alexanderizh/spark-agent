@@ -49,6 +49,31 @@ vi.mock('@lobehub/ui', async () => {
     allowClear: _allowClear,
     ...props
   }: React.InputHTMLAttributes<HTMLInputElement> & { allowClear?: boolean }) => <input {...props} />
+  // 音色 / 参数默认值用 AutoComplete 渲染候选，测试里把候选项摊平成可查询节点。
+  const AutoComplete = ({
+    value,
+    options = [],
+    placeholder,
+    onChange,
+  }: {
+    value?: string
+    options?: Array<{ label?: React.ReactNode; value: string }>
+    placeholder?: string
+    onChange?: (value: string) => void
+  }) => (
+    <div data-testid="auto-complete">
+      <input
+        value={value ?? ''}
+        placeholder={placeholder}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+      {options.map((option) => (
+        <div key={option.value} data-option-value={option.value}>
+          {option.label}
+        </div>
+      ))}
+    </div>
+  )
   const InputPassword = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input type="password" {...props} />
   )
@@ -113,6 +138,7 @@ vi.mock('@lobehub/ui', async () => {
   return {
     ActionIcon,
     Alert,
+    AutoComplete,
     Button,
     Checkbox,
     Drawer,
@@ -2055,5 +2081,119 @@ describe('ProvidersView 卡片筛选缓存', () => {
     expect(
       JSON.parse(window.localStorage.getItem('spark-agent:provider-card-filters') ?? '{}'),
     ).toEqual({ search: '', kind: 'all', enabled: 'all', sortBy: 'default' })
+  })
+})
+
+describe('ProviderEditPanel 渠道动态音色候选', () => {
+  let container: HTMLDivElement
+  let root: Root | null = null
+
+  /**
+   * 智谱 GLM-TTS 摘要：目录版只有静态系统音色；profile 版带「同步 / 复刻」写入的候选
+   * 与可读名（主进程 mergeDynamicParamOptions 的产物）。
+   */
+  const glmTtsSummary = (voiceExamples: string[]) => ({
+    manifestId: 'zhipu:glm-tts',
+    providerKind: 'zhipu',
+    modelId: 'glm-tts',
+    effectiveModelId: 'glm-tts',
+    displayName: 'GLM-TTS',
+    domains: ['audio'],
+    invocationMode: 'sync',
+    capabilities: [
+      {
+        id: 'audio.speech',
+        label: '语音合成',
+        input: {},
+        output: {},
+        defaults: { voice: 'tongtong' },
+        paramSchema: {
+          type: 'object',
+          properties: {
+            voice: {
+              type: 'string',
+              default: 'tongtong',
+              examples: voiceExamples,
+              'x-allow-custom': true,
+              ...(voiceExamples.includes('my_cloned_voice')
+                ? { 'x-template-labels': { my_cloned_voice: '我的复刻音色' } }
+                : {}),
+            },
+          },
+        },
+      },
+    ],
+    sourceUrls: [],
+    enabled: true,
+  })
+
+  const voiceProfile = {
+    id: 'provider-zhipu-voice',
+    name: '智谱语音',
+    provider: 'openai',
+    modelType: 'voice',
+    defaultModel: 'glm-tts',
+    modelIds: ['glm-tts'],
+    apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    mediaProvider: 'zhipu',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [{ manifestId: 'zhipu:glm-tts', modelId: 'glm-tts', enabled: true }],
+    supportsMillionContext: false,
+    isDefault: false,
+    enabled: true,
+    keystoreRef: 'zhipu-provider-voice',
+    createdAt: '',
+    updatedAt: '',
+  }
+
+  beforeEach(() => {
+    mocks.invokers.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    if (root) act(() => root?.unmount())
+    root = null
+    container.remove()
+  })
+
+  it('把渠道同步 / 复刻的音色补进「参数默认值 → 音色」候选', async () => {
+    mocks.invokers.set(
+      'provider:list',
+      vi.fn(async () => ({ profiles: [voiceProfile] })),
+    )
+    mocks.invokers.set(
+      'provider:get-api-key',
+      vi.fn(async () => ({ apiKey: 'sk-zhipu' })),
+    )
+    const listMediaModels = vi.fn(async (req: { catalogOnly?: boolean }) =>
+      req.catalogOnly === true
+        ? { models: [glmTtsSummary(['tongtong', 'chuichui'])] }
+        : { models: [glmTtsSummary(['tongtong', 'chuichui', 'my_cloned_voice'])] },
+    )
+    mocks.invokers.set('canvas:media-models:list', listMediaModels)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible profileId="provider-zhipu-voice" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    // 目录路径不带渠道上下文，动态候选只能来自按 profile 解析的那一次拉取。
+    expect(listMediaModels).toHaveBeenCalledWith(
+      expect.objectContaining({ providerProfileId: 'provider-zhipu-voice' }),
+    )
+
+    const clonedOption = container.querySelector('[data-option-value="my_cloned_voice"]')
+    expect(clonedOption).not.toBeNull()
+    expect(clonedOption?.textContent).toBe('我的复刻音色')
+    // 静态系统音色仍在候选里，没有被动态列表整体替换。
+    expect(container.querySelector('[data-option-value="tongtong"]')).not.toBeNull()
   })
 })
