@@ -54,13 +54,15 @@ describe('resolveProfileMediaModels', () => {
       modelId: 'studio-video-v1',
       displayName: 'Studio Video',
       domains: ['video'],
-      capabilities: [{
-        id: 'video.generate',
-        label: '文生视频',
-        input: { required: ['prompt'] },
-        output: { types: ['video'], mimeTypes: ['video/mp4'] },
-        paramSchema: { type: 'object', properties: { duration: { type: 'integer' } } },
-      }],
+      capabilities: [
+        {
+          id: 'video.generate',
+          label: '文生视频',
+          input: { required: ['prompt'] },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: { type: 'object', properties: { duration: { type: 'integer' } } },
+        },
+      ],
       invocation: {
         mode: 'async_polling',
         endpoint: '/jobs',
@@ -156,8 +158,12 @@ describe('resolveProfileMediaModels', () => {
 
     expect(models).toHaveLength(1)
     const capabilities = models[0]?.manifest.capabilities ?? []
-    expect(capabilities.find((cap) => cap.id === 'image.generate')?.defaults).toEqual({ size: '16:9' })
-    expect(capabilities.find((cap) => cap.id === 'image.edit')?.defaults).toEqual({ editStrength: 0.8 })
+    expect(capabilities.find((cap) => cap.id === 'image.generate')?.defaults).toEqual({
+      size: '16:9',
+    })
+    expect(capabilities.find((cap) => cap.id === 'image.edit')?.defaults).toEqual({
+      editStrength: 0.8,
+    })
   })
 
   it('解析自定义 ref（目录查不到）：合成同 providerKind 的 manifest，列表只含配置的那个', () => {
@@ -171,7 +177,11 @@ describe('resolveProfileMediaModels', () => {
         modelIds: ['gpt-image-2', 'gpt-image-1', 'imagen-4.0-apimart', 'gpt-image-2-official'],
         mediaCapabilities: ['image.generate', 'image.edit'],
         mediaModelRefs: [
-          { manifestId: 'custom:gpt-image-2-official', modelId: 'gpt-image-2-official', enabled: true },
+          {
+            manifestId: 'custom:gpt-image-2-official',
+            modelId: 'gpt-image-2-official',
+            enabled: true,
+          },
         ],
       },
       catalog,
@@ -195,7 +205,11 @@ describe('resolveProfileMediaModels', () => {
         defaultModel: 'gpt-image-2',
         modelIds: ['gpt-image-2', 'gpt-image-1', 'imagen-4.0-apimart'],
         mediaModelRefs: [
-          { manifestId: 'custom:gpt-image-2-official', modelId: 'gpt-image-2-official', enabled: true },
+          {
+            manifestId: 'custom:gpt-image-2-official',
+            modelId: 'gpt-image-2-official',
+            enabled: true,
+          },
         ],
       },
       catalog,
@@ -268,6 +282,37 @@ describe('resolveProfileMediaModels', () => {
 
     expect(models.map((model) => model.manifest.modelId)).toContain('gpt-image-2')
   })
+
+  it('custom 渠道无 refs 时兜底合成模型，且 manifestId 在同 profile 内保持稳定', () => {
+    const catalog = newCatalog()
+    const profile = {
+      id: 'provider-custom-tts',
+      mediaProvider: 'custom',
+      modelType: 'voice',
+      defaultModel: 'my-custom-tts',
+      modelIds: ['my-custom-tts'],
+      mediaCapabilities: ['audio.speech'],
+    }
+
+    const first = resolveProfileMediaModels(profile, catalog)
+    const second = resolveProfileMediaModels(profile, catalog)
+
+    expect(first).toHaveLength(1)
+    expect(first[0]?.synthesized).toBe(true)
+    expect(first[0]?.effectiveModelId).toBe('my-custom-tts')
+    // 画布节点选中模型 / dynamicParamOptions / describe 都按 manifestId 精确匹配，
+    // 同一次配置两次解析必须得到同一个 id（此前的随机 UUID 会让它们全部失配）。
+    expect(first[0]?.manifest.id).toBe(second[0]?.manifest.id)
+    expect(first[0]?.manifest.id).toBe('custom:my-custom-tts:provider-custom-tts')
+
+    // 另一条渠道的同名模型不应与它撞 id。
+    const other = resolveProfileMediaModels({ ...profile, id: 'provider-other-tts' }, catalog)
+    expect(other[0]?.manifest.id).not.toBe(first[0]?.manifest.id)
+
+    // 无 id 的旧调用方仍能解析，只是退回固定 instance。
+    const noId = resolveProfileMediaModels({ ...profile, id: undefined }, catalog)
+    expect(noId[0]?.manifest.id).toBe('custom:my-custom-tts:synthesized')
+  })
 })
 
 describe('synthesizeMediaManifestForRef', () => {
@@ -305,7 +350,14 @@ describe('synthesizeMediaManifestForRef', () => {
       const examples = properties?.size?.examples as string[] | undefined
       expect(examples?.[0]).toBe('auto')
       // 覆盖截图中的全部新增画幅比（纵向/横向成对）
-      for (const value of ['1024x1024', '576x1024', '1024x576', '768x1536', '1152x896', '896x1152']) {
+      for (const value of [
+        '1024x1024',
+        '576x1024',
+        '1024x576',
+        '768x1536',
+        '1152x896',
+        '896x1152',
+      ]) {
         expect(examples).toContain(value)
       }
     }
@@ -349,13 +401,23 @@ function createRepo(): MediaModelManifestRepository {
 
   const repo = {
     ensureSchema(): void {},
-    list(filters?: { providerKind?: string; enabledOnly?: boolean; builtIn?: boolean }): MediaModelManifestRow[] {
+    list(filters?: {
+      providerKind?: string
+      enabledOnly?: boolean
+      builtIn?: boolean
+    }): MediaModelManifestRow[] {
       return [...manifests.values()]
-        .filter((row) => filters?.providerKind == null || row.provider_kind === filters.providerKind)
+        .filter(
+          (row) => filters?.providerKind == null || row.provider_kind === filters.providerKind,
+        )
         .filter((row) => filters?.enabledOnly !== true || row.enabled === 1)
-        .filter((row) => filters?.builtIn === undefined || row.built_in === (filters.builtIn ? 1 : 0))
-        .sort((left, right) =>
-          left.provider_kind.localeCompare(right.provider_kind) || left.display_name.localeCompare(right.display_name),
+        .filter(
+          (row) => filters?.builtIn === undefined || row.built_in === (filters.builtIn ? 1 : 0),
+        )
+        .sort(
+          (left, right) =>
+            left.provider_kind.localeCompare(right.provider_kind) ||
+            left.display_name.localeCompare(right.display_name),
         )
     },
     getById(id: string): MediaModelManifestRow | null {
@@ -382,7 +444,9 @@ function createRepo(): MediaModelManifestRepository {
       return row
     },
     listProviderModels(providerProfileId: string): MediaProviderModelRow[] {
-      return [...providerModels.values()].filter((row) => row.provider_profile_id === providerProfileId)
+      return [...providerModels.values()].filter(
+        (row) => row.provider_profile_id === providerProfileId,
+      )
     },
     upsertProviderModel(params: UpsertMediaProviderModelParams): MediaProviderModelRow {
       const key = `${params.providerProfileId}:${params.manifestId}`

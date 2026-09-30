@@ -26,11 +26,17 @@ import {
   CUSTOM_IMAGE_MODEL_SIZE_EXAMPLES,
   CUSTOM_IMAGE_MODEL_SIZE_PATTERN,
   createBasicCustomMediaManifest,
+  createCustomMediaManifestId,
 } from '@spark/protocol'
 import type { MediaModelCatalogService } from './media-model-catalog.service.js'
 
 /** 解析所需的 profile 字段子集（与 ProviderProfile 兼容）。 */
 export interface MediaProfileLike {
+  /**
+   * Provider profile id。仅用于给「兜底合成的自定义模型」派生一个稳定 identity
+   * （见 resolveProfileMediaModels 的兜底分支）；缺省时退回固定 instance。
+   */
+  id?: string | undefined
   mediaModelRefs?: ProviderMediaModelRef[] | undefined
   modelIds?: string[] | undefined
   defaultModel?: string | undefined
@@ -287,6 +293,11 @@ export function resolveProfileMediaModels(
           modelId,
           modelType,
           mode: modelType === 'video' ? 'async_polling' : 'sync',
+          // 身份必须确定性：兜底合成没有可持久化的 ref.manifestId，若沿用默认的
+          // randomUUID，每次解析都会得到一个新 id —— 画布节点按 manifestId 精确匹配
+          // 选中模型（失配即回落列表首项）、mediaDynamicParamOptions 按 manifestId
+          // 取音色候选、canvas:media-models:describe/prune 的 manifest 查找都会失效。
+          manifestId: createCustomMediaManifestId(modelId, profile.id ?? 'synthesized'),
           ...(modelType === 'voice' ? audioCapabilitiesOf(profile) : {}),
         })
         if (seen.has(manifest.id)) continue
