@@ -209,19 +209,45 @@ final class MacAccessibilityController: @unchecked Sendable {
     webTreePending: Bool,
     traversalTruncated: Bool
   ) -> NativeAXTreeSnapshot {
-    var parts: [String] = []
-    if webTreePending { parts.append(NativeWebTreeReadiness.pendingNotice) }
-    parts.append(published.text)
+    var head: [String] = []
+    if webTreePending { head.append(NativeWebTreeReadiness.pendingNotice) }
+    var tail: [String] = []
     if traversalTruncated {
-      parts.append(NativeAXTreeRenderer.traversalLimitNotice(limit: Self.maxElements))
+      tail.append(NativeAXTreeRenderer.traversalLimitNotice(limit: Self.maxElements))
     }
-    guard parts.count > 1 else { return published }
+    guard !head.isEmpty || !tail.isEmpty else { return published }
+    // The renderer's budget covers the outline plus its own truncation marker,
+    // but these notices are joined afterwards — on a large window the joined
+    // text can cross the TS-side hard cap (`MAX_TREE_PROMPT_CHARS`, same 48k),
+    // which slices from the head and would drop the very notice that explains
+    // the cut. Clamp the outline instead, on a line boundary, so the notices
+    // always survive inside the same budget the client enforces.
+    let separators = head.count + tail.count
+    let noticeUnits = (head + tail).reduce(0) { $0 + $1.utf16.count } + separators
+    let bodyBudget = max(0, NativeAXTreeRenderer.maxTotalUTF16 - noticeUnits)
+    var body = published.text
+    if body.utf16.count > bodyBudget { body = Self.outlineClamped(body, to: bodyBudget) }
     return NativeAXTreeSnapshot(
       treeVersion: published.treeVersion,
       mode: published.mode,
-      text: parts.joined(separator: "\n"),
+      text: (head + [body] + tail).joined(separator: "\n"),
       elements: published.elements,
       sensitiveRegions: published.sensitiveRegions)
+  }
+
+  /// Trims an outline to `limit` UTF-16 units on line boundaries, so the kept
+  /// text never ends mid-line and the `[n]` element ids stay referenceable.
+  private static func outlineClamped(_ text: String, to limit: Int) -> String {
+    guard limit > 0 else { return "" }
+    var units = 0
+    var lines: [Substring] = []
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+      let lineUnits = line.utf16.count + (lines.isEmpty ? 0 : 1)
+      if units + lineUnits > limit { break }
+      units += lineUnits
+      lines.append(line)
+    }
+    return lines.joined(separator: "\n")
   }
 
   /// Development aid: `SPARK_CU_DUMP_AX_RAW=<path>` writes the raw pre-order AX

@@ -651,7 +651,14 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   ) async throws {
     if enforceTakeover {
       guard !userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
-        throw NativeHostPlatformError.userTakeover
+        // `takeoverDetected` means the user physically touched the target window
+        // (pointer-down inside it, or a keystroke while it was frontmost), NOT an
+        // explicit Esc stop — that one is carried by `NativeInterruptionToken`.
+        // Reporting `userTakeover` here would map to the non-retryable
+        // `handoff_required` and end the whole task for a stray click, which is
+        // exactly what the other two call sites (precheck in executeActionCore
+        // and the postcheck below) already avoid by using this error.
+        throw NativeHostPlatformError.userInteractionDetected
       }
     }
     if lightweightFocusedTarget(expected: binding.target) != nil { return }

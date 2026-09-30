@@ -396,6 +396,7 @@ final class NativeHostErrorEncodingTests: XCTestCase {
     let emitted = [
       "accessibility_permission_denied", "action_noop", "action_not_allowed",
       "environment_unavailable", "focus_mismatch", "handoff_required",
+      "invalid_request",
       "native_host_incompatible", "screen_locked", "screen_permission_denied",
       "sensitive_input_blocked", "session_canceled", "stale_frame", "stale_tree",
     ]

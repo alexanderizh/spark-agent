@@ -22,13 +22,17 @@ public enum NativeAXAttributeBatch {
   /// it sits. Read first for every element so offscreen subtrees can be pruned
   /// before the (more expensive) content attributes are fetched.
   public static let identityAttributes: [String] = [
-    "AXRole", "AXSubrole", "AXPosition", "AXSize", "AXChildren",
+    // AXIdentifier belongs here: the collector builds `runtimeID` as
+    // `path|role|identifier` and reads it from this batch, so leaving it in the
+    // content batch (fetched later, only for kept elements) made that component
+    // silently empty.
+    "AXRole", "AXSubrole", "AXIdentifier", "AXPosition", "AXSize", "AXChildren",
   ]
 
   /// Attributes that describe what the element says and does.
   public static let contentAttributes: [String] = [
     "AXTitle", "AXDescription", "AXHelp", "AXValue", "AXEnabled", "AXFocused",
-    "AXIdentifier", "AXRoleDescription", "AXProtectedContent",
+    "AXRoleDescription", "AXProtectedContent",
   ]
 
   /// Read only for text-ish roles whose name/value are both empty.

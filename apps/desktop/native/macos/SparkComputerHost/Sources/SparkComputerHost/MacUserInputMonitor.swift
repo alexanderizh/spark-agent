@@ -65,11 +65,13 @@ final class MacUserInputMonitor: @unchecked Sendable {
     // process lifetime and takeover/Esc detection silently never fires.
     ensureStarted()
     lock.withLock {
-      let isNewBinding = bindings[sessionID] == nil
+      // Deliberately does NOT touch `takeoverWindows`: that value is the
+      // per-ACTION window armed by `beginAction` and disarmed by `endAction`.
+      // Clearing it here (as the previous sticky `takeoverSessions` set did)
+      // would wipe the window this same action just armed, so the first action
+      // of every session would never detect a user takeover at all. `unbind`
+      // and `beginAction` already handle the stale-window cases.
       bindings[sessionID] = UserInputBinding(processID: processID, bounds: bounds)
-      if isNewBinding {
-        takeoverWindows.removeValue(forKey: sessionID)
-      }
     }
   }
 
