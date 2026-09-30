@@ -1446,6 +1446,29 @@ export function assertModelNotScheduledBlocked(configJson: string, modelId: stri
   }
 }
 
+/**
+ * Codex 引擎 × Anthropic 协议渠道硬校验：Codex 只会说 OpenAI 系 wire 协议
+ * （chat completions / responses），无法执行 Anthropic 协议渠道。历史上该组合
+ * 可经主进程惰性建会话入口（语音/远程）进入——渲染端有引擎↔协议兼容性约束，
+ * 这些入口没有；执行时 Codex app-server 会把渠道端点当 OpenAI 默认 provider 的
+ * base_url，请求 <端点>/responses 得到误导性 403（如火山方舟 Coding Plan 报
+ * 「Unsupported zti authentication method」）。这里在 turn 起点快速失败并给出
+ * 可操作指引，替代远端的 403。本地 CLI 会话与 CLI 覆写不会进入该组合
+ * （本地 CLI 行的 provider_type 不是 anthropic；isCliSparkOverrideCompatible
+ * 已拒绝不兼容覆写），auto-router 在引擎复算前已换成执行器渠道。
+ */
+export function assertCodexEngineProviderCompatible(args: {
+  adapterKind: string
+  providerType: string
+  providerName: string
+}): void {
+  if (args.adapterKind === 'codex' && args.providerType === 'anthropic') {
+    throw new Error(
+      `当前会话引擎为 Codex（仅支持 OpenAI 协议渠道），但渠道「${args.providerName}」是 Anthropic 协议接口，二者不兼容。请在会话中切换引擎（Claude）或改用 OpenAI 协议渠道。`,
+    )
+  }
+}
+
 export function buildCodexCliModelProviderConfig(params: {
   providerProfileId: string
   providerName: string

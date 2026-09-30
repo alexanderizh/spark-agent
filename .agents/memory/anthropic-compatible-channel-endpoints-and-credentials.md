@@ -100,7 +100,32 @@ CLI 与桌面端走的是**不同**的两条 anthropic 调用链，但缺陷形�
   `<base>/v1/messages` 且同时带 `x-api-key` 与 `Authorization`（见
   `spark-engine/test/unit/model-config.test.ts`）。
 
-## 五、阶跃星辰预设端点（易错点）
+## 五、Codex 引擎 × Anthropic 协议渠道：注定 403 的组合（2026-09-30 修复）
+
+- 现象：语音会话报 `403 Unsupported zti authentication method ... url: …/api/coding/responses`
+  ——URL 以 `/responses` 结尾即 OpenAI Responses API 风格，说明 Codex 引擎在打 Anthropic 协议渠道。
+- 根因链：主进程惰性建会话入口（语音 `createVoiceAssistantSession`、远程连接）各自独立解析
+  「渠道（默认渠道优先）」与「引擎（绑定 agent → 运行时默认）」，**不经过渲染端
+  `isProviderCompatibleWithAdapter` 的引擎↔协议约束**；运行时默认引擎为 codex 时即产出
+  codex+anthropic 会话。执行侧 `session.service` codex 分支对 anthropic 渠道**跳过**
+  `codexCliProvider`（知道不可行）却仍把 `apiEndpoint` 写成 `openai_base_url`，Codex
+  app-server 落到内置 OpenAI provider（wire_api=responses）→ 请求 `<端点>/responses`。
+- 修复（2026-09-30）分三层：
+  1. 主进程新增 `apps/desktop/src/main/services/session-adapter-compat.ts`
+     （`resolveCompatibleSessionAdapter`，语义与渲染端 provider-adapter.ts 一致），
+     语音/远程建会话按渠道协议校准引擎（anthropic → claude-sdk）；
+     `resolveVoiceAssistantAgentInfo` 展示口径同步。
+  2. `session-pure-utils.ts` 新增 `assertCodexEngineProviderCompatible`：Host 主循环与
+     member 派发在引擎定值后硬校验，throw 会经 `handleQueuedTurnStartFailure` 转成
+     带修复指引的 agent_error（替代误导性 403）。
+  3. 判定要点：本地 CLI 行 provider_type 不是 anthropic、CLI 覆写有
+     `isCliSparkOverrideCompatible` 拦截、auto-router 在引擎复算前已换执行器渠道，
+     因此 turn 起点的 codex+anthropic 必为脏组合，可放心硬拦。
+- 排查入口：语音 turn 报错先查 `agent_events`（turn_prompt_snapshot 的
+  `adapterKind`/`permissionMode` 即创建时定格的引擎）；`app_settings` 的
+  `runtime-permissions.defaults` 有 updated_at，可核对「当时」的默认引擎。
+
+## 六、阶跃星辰预设端点（易错点）
 
 - 无 Key 探测**无法**区分路径对错：`https://api.stepfun.com/v1/messages` 与
   `https://api.stepfun.com/step_plan/v1/messages` 都只回 401 `invalid_api_key`，

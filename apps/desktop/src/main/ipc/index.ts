@@ -89,6 +89,10 @@ import { openHtmlInExternalBrowser, openHtmlViewerWindow } from '../services/Htm
 import { getSubAppBrowserService } from '../services/SubAppBrowserService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
 import {
+  resolveCompatibleSessionAdapter,
+  type AdapterCompatProviderInput,
+} from '../services/session-adapter-compat.js'
+import {
   isSessionServiceShutdownStarted,
   registerSessionServiceForShutdown,
 } from '../session-service-shutdown.js'
@@ -282,6 +286,10 @@ import {
   validateMediaModelManifestSemantics,
   WIKI_SETTINGS_CATEGORY,
   validateWikiSettingValue,
+  parseAutoRouterConfig,
+  normalizeVoiceAssistantRouteBinding,
+  VOICE_ASSISTANT_ROUTE_KEY,
+  VOICE_ASSISTANT_SETTINGS_CATEGORY,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -3360,13 +3368,24 @@ async function createRemoteSession(
       ? getAgentRepository().get(connection.defaultAgentId)
       : undefined
   const configuredAdapter = configuredAgent?.agentAdapter
-  const agentAdapter: SessionAgentAdapter =
+  const preferredAdapter: SessionAgentAdapter =
     configuredAdapter === 'claude' ||
     configuredAdapter === 'claude-sdk' ||
     configuredAdapter === 'codex' ||
     configuredAdapter === 'spark'
       ? configuredAdapter
       : defaults.agentAdapter
+  // 与语音建会话同规则：引擎按渠道协议校准，防止 codex 引擎 + Anthropic 协议渠道
+  // 这类注定 403 的组合（远程连接与语音一样不经渲染端兼容性校验）。
+  const agentAdapter = resolveCompatibleSessionAdapter(
+    toAdapterCompatProvider(provider),
+    preferredAdapter,
+  )
+  if (agentAdapter !== preferredAdapter) {
+    log.info(
+      `[remote] session adapter ${preferredAdapter} incompatible with provider ${provider.name} (${provider.providerType ?? provider.provider}); remapped to ${agentAdapter}`,
+    )
+  }
   const permissionRows = getRemotePermissionRows(agentAdapter)
   const configuredPermission = permissionRows.some(
     (row) => row.id === connection.defaultPermissionMode,
@@ -3401,9 +3420,29 @@ async function createRemoteSession(
 
 const REMOTE_SESSION_QUERY_LIMIT = 1000
 
+/** listProviders 的 ProviderProfile → 兼容性判定所需的最小渠道信息。 */
+function toAdapterCompatProvider(profile: {
+  id: string
+  provider: string
+  providerType?: string | undefined
+  codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
+  autoRouterConfig?: { adapter?: 'claude' | 'codex' } | undefined
+}): AdapterCompatProviderInput {
+  return {
+    id: profile.id,
+    providerType: profile.providerType ?? profile.provider,
+    ...(profile.codexApiKind != null ? { codexApiKind: profile.codexApiKind } : {}),
+    ...(profile.autoRouterConfig?.adapter != null
+      ? { autoRouterAdapter: profile.autoRouterConfig.adapter }
+      : {}),
+  }
+}
+
 /**
  * 语音助手惰性建会话：权限/适配器校验与远程链路一致
  * （getRemotePermissionRows 校验设置的权限模式，不支持时回落 adapter 的 auto 等价）。
+ * 适配器还要按渠道协议校准（codex 引擎无法执行 Anthropic 协议渠道），
+ * 不兼容时按渠道落到正确引擎，防止建出注定 403 的会话。
  */
 async function createVoiceAssistantSession(
   options: CreateVoiceSessionOptions,
@@ -3425,13 +3464,22 @@ async function createVoiceAssistantSession(
     options.agentId != null ? getAgentRepository().get(options.agentId) : undefined
   const configuredAdapter = configuredAgent?.agentAdapter
   const defaults = getRuntimePermissionDefaults()
-  const agentAdapter: SessionAgentAdapter =
+  const preferredAdapter: SessionAgentAdapter =
     configuredAdapter === 'claude' ||
     configuredAdapter === 'claude-sdk' ||
     configuredAdapter === 'codex' ||
     configuredAdapter === 'spark'
       ? configuredAdapter
       : defaults.agentAdapter
+  const agentAdapter = resolveCompatibleSessionAdapter(
+    toAdapterCompatProvider(provider),
+    preferredAdapter,
+  )
+  if (agentAdapter !== preferredAdapter) {
+    log.info(
+      `[voice-assistant] session adapter ${preferredAdapter} incompatible with provider ${provider.name} (${provider.providerType ?? provider.provider}); remapped to ${agentAdapter}`,
+    )
+  }
   const permissionRows = getRemotePermissionRows(agentAdapter)
   const permissionMode = permissionRows.some((row) => row.id === options.permissionMode)
     ? (options.permissionMode as SessionPermissionMode)
@@ -3458,25 +3506,73 @@ async function createVoiceAssistantSession(
 /**
  * 语音会话 Agent 适配器解析（设置页按适配器展示权限/推理选项）：
  * 绑定 Agent 优先，未绑定/已删除时回落默认 Agent 与运行时默认适配器，
- * 与 createVoiceAssistantSession 的建会话解析保持一致。
+ * 再按语音会话实际渠道协议校准引擎，与 createVoiceAssistantSession 的
+ * 建会话解析保持一致（渠道解析为同步读行；本地 CLI 可用性探测是异步的，
+ * 展示口径不重复探测，与创建口径允许存在该项差异）。
  */
 function resolveVoiceAssistantAgentInfo(agentId: string | null): {
   adapter: SessionAgentAdapter
   agentName: string | null
 } {
   const agentRepo = getAgentRepository()
-  const configuredAgent =
-    agentId != null && agentId.length > 0 ? agentRepo.get(agentId) : undefined
+  const configuredAgent = agentId != null && agentId.length > 0 ? agentRepo.get(agentId) : undefined
   const configuredAdapter = configuredAgent?.agentAdapter
   const defaults = getRuntimePermissionDefaults()
-  const agentAdapter: SessionAgentAdapter =
+  const preferredAdapter: SessionAgentAdapter =
     configuredAdapter === 'claude' ||
     configuredAdapter === 'claude-sdk' ||
     configuredAdapter === 'codex' ||
     configuredAdapter === 'spark'
       ? configuredAdapter
       : defaults.agentAdapter
+  const provider = resolveVoiceSessionProviderCompatInput()
+  const agentAdapter =
+    provider != null
+      ? resolveCompatibleSessionAdapter(provider, preferredAdapter)
+      : preferredAdapter
   return { adapter: agentAdapter, agentName: configuredAgent?.name ?? null }
+}
+
+/** 渠道行 config_json 中兼容性判定关心的字段（宽松解析，失败按缺省处理）。 */
+interface ProviderRowConfigJson {
+  codexApiKind?: 'chat' | 'responses' | 'embedding'
+}
+
+/**
+ * 同步解析语音会话将使用的渠道（兼容性判定所需的最小信息）：
+ * 绑定渠道 > 默认渠道 > 第一个启用渠道，与 createVoiceAssistantSession
+ * 的渠道解析优先级一致。无可用渠道时返回 null（展示层保留偏好引擎）。
+ */
+function resolveVoiceSessionProviderCompatInput(): AdapterCompatProviderInput | null {
+  const rows = new ProviderProfileRepository(getDatabase())
+    .listAll()
+    .filter((row) => row.enabled === 1)
+  if (rows.length === 0) return null
+  const binding = normalizeVoiceAssistantRouteBinding(
+    getSettingsService().get(VOICE_ASSISTANT_SETTINGS_CATEGORY, VOICE_ASSISTANT_ROUTE_KEY),
+  )
+  const row =
+    (binding.defaultProviderProfileId != null
+      ? rows.find((item) => item.id === binding.defaultProviderProfileId)
+      : undefined) ??
+    rows.find((item) => item.is_default === 1) ??
+    rows[0]
+  if (row == null) return null
+  let config: ProviderRowConfigJson | null = null
+  try {
+    config = JSON.parse(row.config_json) as ProviderRowConfigJson
+  } catch {
+    // 宽松解析：config_json 损坏时保持缺省 null（无 codexApiKind 口径）。
+  }
+  // router 行的 config_json 即配置对象本体（kind/version/adapter/...）。
+  const autoRouter =
+    row.provider_type === AUTO_ROUTER_PROVIDER_TYPE ? parseAutoRouterConfig(config) : null
+  return {
+    id: row.id,
+    providerType: row.provider_type,
+    ...(config?.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
+    ...(autoRouter?.adapter != null ? { autoRouterAdapter: autoRouter.adapter } : {}),
+  }
 }
 
 /** 语音轮次 completed 先于 isFinal 时的历史回捞（与远程链路同模式） */
@@ -3562,9 +3658,10 @@ async function resolveRemoteContextSummary(
     },
     providers,
   )
-  const provider = selection.providerId != null
-    ? providers.find((item) => item.id === selection.providerId)
-    : undefined
+  const provider =
+    selection.providerId != null
+      ? providers.find((item) => item.id === selection.providerId)
+      : undefined
   const workspaceId = session?.workspaceIds[0] ?? connection.defaultWorkspaceId
   const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
   return {
@@ -3701,7 +3798,10 @@ async function executeRemoteCommand(
     const commands = remoteService.getCommandCatalog()
     const grouped = [
       ['会话', ['sessions', 'use-session', 'new-session']],
-      ['渠道与模型', ['channels', 'use-channel', 'models', 'use-model', 'reasoning', 'use-reasoning']],
+      [
+        '渠道与模型',
+        ['channels', 'use-channel', 'models', 'use-model', 'reasoning', 'use-reasoning'],
+      ],
       ['Agent', ['agents', 'use-agent']],
       ['项目', ['projects', 'use-project', 'add-project']],
       ['运行配置', ['permissions', 'use-permission']],
@@ -3757,9 +3857,10 @@ async function executeRemoteCommand(
       },
       providers,
     )
-    const provider = selection.providerId != null
-      ? providers.find((item) => item.id === selection.providerId)
-      : undefined
+    const provider =
+      selection.providerId != null
+        ? providers.find((item) => item.id === selection.providerId)
+        : undefined
     const workspaceId = connection.defaultWorkspaceId ?? session?.workspaceIds[0]
     const workspace = listRemoteWorkspaceRows().find((item) => item.id === workspaceId)
     const agent =
@@ -3916,7 +4017,9 @@ async function executeRemoteCommand(
         ? { defaultProviderProfileId: boundSession.providerProfileId }
         : {}),
       ...(boundSession?.modelId ? { defaultModelId: boundSession.modelId } : {}),
-      ...(boundSession?.reasoningEffort ? { defaultReasoningEffort: boundSession.reasoningEffort } : {}),
+      ...(boundSession?.reasoningEffort
+        ? { defaultReasoningEffort: boundSession.reasoningEffort }
+        : {}),
     })
     const context = await resolveRemoteContextSummary(connection.id, resolved.row.id, externalId)
     return {
@@ -4891,7 +4994,10 @@ export function registerAllIpcHandlers(): void {
       return sessions[0]?.id ?? null
     },
     resolveApproval: (requestId, decision) =>
-      getPermissionService().resolveApproval(requestId, decision === 'allow' ? 'allow-once' : 'deny'),
+      getPermissionService().resolveApproval(
+        requestId,
+        decision === 'allow' ? 'allow-once' : 'deny',
+      ),
     registerCleanup: (cleanup) => {
       registerAppShutdownCleanup('voice-assistant', cleanup)
     },
@@ -11382,8 +11488,7 @@ export function registerAllIpcHandlers(): void {
       req.kind === 'video' ? 'videos' : req.kind === 'audio' ? 'audios' : 'images',
     )
     await fs.mkdir(inputRoot, { recursive: true })
-    const fallbackExtension =
-      req.kind === 'video' ? '.mp4' : req.kind === 'audio' ? '.mp3' : '.png'
+    const fallbackExtension = req.kind === 'video' ? '.mp4' : req.kind === 'audio' ? '.mp3' : '.png'
     const extension = path.extname(resolvedSource) || fallbackExtension
     const baseName = path
       .basename(resolvedSource, path.extname(resolvedSource))

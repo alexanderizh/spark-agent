@@ -315,6 +315,7 @@ import {
   prepareTurnAttachments,
   getProviderUseSparkExecutor,
   assertModelNotScheduledBlocked,
+  assertCodexEngineProviderCompatible,
   readSessionTeamConfig,
   resolveOrchestrationSource,
   resolveAutoRouterWorkerBinding,
@@ -3625,6 +3626,13 @@ export class SessionService {
       getProviderUseSparkExecutor(provider.config_json),
     )
     const adapterKind = resolveEngineKind(agentAdapter)
+    // 引擎×协议硬校验：codex 引擎无法执行 Anthropic 协议渠道（组合只会得到
+    // 误导性的 /responses 403），在 turn 起点快速失败并给出修复指引。
+    assertCodexEngineProviderCompatible({
+      adapterKind,
+      providerType: provider.provider_type,
+      providerName: provider.name,
+    })
     const resumeProviderProfileId =
       activeCliSparkOverride != null
         ? `${cliProvider.id}::${effectiveRuntimeProviderProfileId}`
@@ -9792,6 +9800,12 @@ export class SessionService {
       provider.provider_type,
       getProviderUseSparkExecutor(provider.config_json),
     )
+    // 引擎×协议硬校验（与 Host 主循环同款）：codex 成员无法执行 Anthropic 协议渠道。
+    assertCodexEngineProviderCompatible({
+      adapterKind: memberAdapter,
+      providerType: provider.provider_type,
+      providerName: provider.name,
+    })
     // FR-0a：按 adapter 解析执行器档位 + codex sdkConfig 扩展字段（抽纯函数
     // resolveCodexMemberExecutionProfile 便于单测、防 Host/member 漂移）。
     const memberProfile = resolveCodexMemberExecutionProfile({
