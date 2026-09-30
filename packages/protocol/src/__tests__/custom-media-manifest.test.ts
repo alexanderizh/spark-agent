@@ -126,14 +126,19 @@ describe('createBasicCustomMediaManifest', () => {
       body?.kind === 'multipart'
         ? body.parts.find((part) => part.name === 'response_format')
         : null,
-    ).toMatchObject({ kind: 'text', value: '{{params.response_format}}' })
+    ).toMatchObject({ kind: 'text', value: '{{params.responseFormat}}' })
     const capability = manifest.capabilities[0]
     const properties = (capability?.paramSchema as { properties?: Record<string, unknown> })
       .properties
+    // schema 与模板引用都必须是 canonical 键：编译器裁剪前会把 provider 原生名
+    // `response_format` 归一成 canonical，用原生名声明会被 strict 丢弃、
+    // `{{params.*}}` 也取不到值（用户选的返回格式会静默失效）。
     expect(properties).toMatchObject({
       language: expect.anything(),
-      response_format: expect.anything(),
+      responseFormat: expect.anything(),
     })
+    expect(properties).not.toHaveProperty('response_format')
+    expect(capability?.aliases).toEqual({ responseFormat: 'response_format' })
     expect(validateMediaModelManifestSemantics(manifest)).toEqual([])
   })
 
@@ -152,6 +157,16 @@ describe('createBasicCustomMediaManifest', () => {
       endpoint: '/v1/music_generation',
       response: { kind: 'url', download: true },
     })
+    // 音乐合同同样是 canonical 键 + aliases：`output_format` 会被编译器归一成
+    // `outputFormat`，模板引用写原生名会在请求里渲染成空值。
+    const musicCapability = manifest.capabilities[0]
+    const musicProperties = (
+      musicCapability?.paramSchema as { properties?: Record<string, unknown> }
+    ).properties
+    expect(musicProperties).toMatchObject({ outputFormat: expect.anything() })
+    expect(musicCapability?.aliases).toEqual({ outputFormat: 'output_format' })
+    const template = manifest.invocation.requestTemplate as Record<string, unknown> | undefined
+    expect(template?.['output_format']).toBe('{{params.outputFormat}}')
     expect(validateMediaModelManifestSemantics(manifest)).toEqual([])
   })
 

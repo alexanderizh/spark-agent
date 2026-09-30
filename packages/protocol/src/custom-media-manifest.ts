@@ -195,7 +195,7 @@ function basicCustomVoiceManifest(
               { name: 'file', kind: 'file', value: '{{audio}}' },
               { name: 'model', kind: 'text', value: '{{modelId}}' },
               { name: 'language', kind: 'text', value: '{{params.language}}' },
-              { name: 'response_format', kind: 'text', value: '{{params.response_format}}' },
+              { name: 'response_format', kind: 'text', value: '{{params.responseFormat}}' },
             ],
           },
         },
@@ -222,7 +222,7 @@ function basicCustomVoiceManifest(
           model: '{{modelId}}',
           prompt: '{{prompt}}',
           lyrics: '{{params.lyrics}}',
-          output_format: '{{params.output_format}}',
+          output_format: '{{params.outputFormat}}',
           is_instrumental: '{{params.is_instrumental}}',
         },
         response: {
@@ -308,7 +308,11 @@ function customAudioMusicCapability(): MediaModelCapabilityManifest {
       additionalProperties: true,
       properties: {
         lyrics: { type: 'string', title: '歌词（留空则按提示词生成）' },
-        output_format: {
+        // 键名必须用 canonical `outputFormat`：编译器在裁剪前会把 provider 原生名
+        // `output_format` 无条件归一成 canonical（CANONICAL_ALIASES_FALLBACK），
+        // 用原生名声明会与归一后的参数对不上，`{{params.outputFormat}}` 也就渲染不出
+        // 用户选择。回写 provider 原生字段由 aliases 负责（与内置 manifest 同一约定）。
+        outputFormat: {
           type: 'string',
           title: '返回形式',
           enum: ['url', 'hex'],
@@ -317,6 +321,7 @@ function customAudioMusicCapability(): MediaModelCapabilityManifest {
         is_instrumental: { type: 'boolean', title: '纯音乐', default: false },
       },
     },
+    aliases: { outputFormat: 'output_format' },
   }
 }
 
@@ -335,9 +340,11 @@ function customAudioTranscriptionCapability(): MediaModelCapabilityManifest {
           title: '音频语言',
           description: 'ISO-639-1 语言代码（如 zh、en）；留空由服务端自动检测',
         },
-        // 画布识别节点的通用兜底字段一直提供 response_format，但合同里没有对应 multipart
-        // 段，用户选中后会被静默丢弃；此处补上声明与投放，留空时编译器自动跳过该段。
-        response_format: {
+        // 画布识别节点的通用兜底字段会提供 response_format；键名按内置 manifest 约定写
+        // canonical `responseFormat`（编译器先把 `response_format` 归一成 canonical 再裁剪，
+        // 用原生名声明会被 strict 判为未声明字段而丢弃）。multipart 段名由 request 显式给出，
+        // 回写 provider 原生字段由 aliases 负责。留空时编译器自动跳过该段。
+        responseFormat: {
           type: 'string',
           title: '返回格式',
           enum: ['json', 'verbose_json', 'srt', 'vtt'],
@@ -345,6 +352,7 @@ function customAudioTranscriptionCapability(): MediaModelCapabilityManifest {
         },
       },
     },
+    aliases: { responseFormat: 'response_format' },
     defaults: {},
   }
 }
