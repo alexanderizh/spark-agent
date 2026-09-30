@@ -1256,12 +1256,14 @@ textarea.wiki_editor_input {
 
 /* ── 设置面板 ─────────────────────────────────────────────────────── */
 
+/* 宽度行为不在此处定义：根节点同时挂 `.settings-section`（见 WikiSettingsPanel），
+   直接复用设置页统一分区的「居中 + 980 封顶 + 窄屏（≤980px）铺满」逻辑，
+   与通用 / 外观 / 记忆等其他设置页随窗口宽度的变化完全一致。 */
 .wiki_set_root {
   display: flex;
   flex-direction: column;
   gap: 24px;
   padding: 16px 20px 48px;
-  max-width: 760px;
 }
 
 .wiki_set_group {
@@ -1283,11 +1285,16 @@ textarea.wiki_editor_input {
   font-weight: 650;
 }
 
-.wiki_set_group_desc {
-  margin-top: 3px;
+/* 标题旁的 ⓘ 悬浮说明：与 voice-settings-help 同款，默认弱化、悬浮提亮 */
+.wiki_set_help {
+  flex: none;
   color: var(--wiki-t4);
-  font-size: var(--wiki-fs-meta);
-  line-height: 1.6;
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
 }
 
 .wiki_set_row {
@@ -1317,13 +1324,6 @@ textarea.wiki_editor_input {
   gap: 6px;
   color: var(--text);
   font-size: 13px;
-}
-
-.wiki_set_desc {
-  margin-top: 3px;
-  color: var(--wiki-t4);
-  font-size: var(--wiki-fs-meta);
-  line-height: 1.6;
 }
 
 .wiki_set_phase {

@@ -7,11 +7,16 @@
  * 写入纪律（方案 §12.2）：保存即生效；越界值在客户端先拦（避免无谓 IPC），
  * 主进程 settings:set 侧同一校验兜底——两条路径共用 validateWikiSettingValue。
  * 尚未生效分组（S2/S4）标注「随 XX 启用」并禁用控件，不制造假开关。
+ *
+ * 展示约定（对齐语音助手设置）：行内只留标题 + 标题旁 ⓘ 悬浮详情 + 右侧控件，
+ * 分组与设置项的说明文字全部收进 Tooltip，不再平铺在标题下方。
+ * 宽度行为复用设置页统一分区类 `.settings-section`（居中 + 980 封顶 + 窄屏铺满），
+ * 不在本文件另写一套 max-width，避免和其他设置页的宽度变化逻辑漂移。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@lobehub/ui'
-import { InputNumber, Select, Spin, Switch } from 'antd'
+import { InputNumber, Select, Spin, Switch, Tooltip } from 'antd'
 import {
   WIKI_SETTING_DEFINITIONS,
   WIKI_SETTING_GROUPS,
@@ -42,6 +47,18 @@ const PHASE_LABEL: Record<WikiSettingDefinition['phase'], string> = {
 
 function defaultValue(def: WikiSettingDefinition): SettingValue {
   return def.default
+}
+
+/**
+ * 标题旁的 ⓘ 悬浮说明：与语音助手设置（VoiceAssistantSettingsCard）同一套约定 ——
+ * 标题后跟一个问号图标，鼠标悬浮时以浮窗展示完整解释，行内不再平铺描述文字。
+ */
+function SettingHelp({ tip }: { tip: string }) {
+  return (
+    <Tooltip title={tip} overlayStyle={{ maxWidth: 340 }}>
+      <Icons.HelpCircle className="wiki_set_help" size={13} />
+    </Tooltip>
+  )
 }
 
 export function WikiSettingsPanel() {
@@ -137,14 +154,14 @@ export function WikiSettingsPanel() {
 
   if (loading) {
     return (
-      <div className="wiki_set_root">
+      <div className="wiki_set_root settings-section">
         <Spin />
       </div>
     )
   }
 
   return (
-    <div className="wiki_set_root">
+    <div className="wiki_set_root settings-section">
       {groups.map(({ group, defs }) => {
         if (defs.length === 0) return null
         // 分组级待生效标记：与逐项 def.phase 同源（当前分片之后的分组才标注）
@@ -157,9 +174,9 @@ export function WikiSettingsPanel() {
             <div className="wiki_set_group_head">
               <div className="wiki_set_group_title">
                 {group.label}
+                <SettingHelp tip={group.description} />
                 {pending && <span className="wiki_set_phase"> {PHASE_LABEL[group.phase]}</span>}
               </div>
-              <div className="wiki_set_group_desc">{group.description}</div>
             </div>
             {defs.map((def) => {
               const active = isWikiSettingActive(def, CURRENT_PHASE)
@@ -169,9 +186,9 @@ export function WikiSettingsPanel() {
                   <div className="wiki_set_main">
                     <div className="wiki_set_label">
                       {def.label}
+                      <SettingHelp tip={def.description} />
                       {!active && <span className="wiki_set_phase">{PHASE_LABEL[def.phase]}</span>}
                     </div>
-                    <div className="wiki_set_desc">{def.description}</div>
                   </div>
                   <div className="wiki_set_control">
                     {def.type === 'boolean' && (
