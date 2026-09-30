@@ -153,7 +153,9 @@ export function buildDialogueEntries(
       continue
     const turn = getTurn(event.turnId)
     if (event.type === 'turn_prompt_snapshot') {
-      const userMessage = event.userMessage.trim()
+      // 旧版本写入的快照可能没有 userMessage 键（该字段后期才加入，JSON 里直接缺省），
+      // 持久化数据不守类型契约，读取边界按空处理（与 runtimeLog 关闭时写入 '' 的语义一致）。
+      const userMessage = (event.userMessage ?? '').trim()
       if (userMessage.length > 0) turn.snapshotUserMessage = userMessage
       continue
     }

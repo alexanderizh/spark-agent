@@ -49,6 +49,37 @@ describe('session-history-helpers', () => {
     ).toBe(400_000)
   })
 
+  it('tolerates legacy turn_prompt_snapshot events without the userMessage key', () => {
+    // 旧版本写入的快照没有 userMessage 字段（该字段后期才加入）；持久化数据
+    // 反序列化后不守 TurnPromptSnapshotEvent 的必填契约，读取必须按缺省处理。
+    const legacySnapshot = {
+      id: 'legacy-snapshot',
+      type: 'turn_prompt_snapshot',
+      sessionId: 's1',
+      turnId: 't1',
+      timestamp: '2026-09-12T17:31:14.350Z',
+      seq: 2,
+      model: 'glm-5.3-flash',
+      adapterKind: 'claude-sdk',
+      permissionMode: 'claude-auto',
+      toolCount: 12,
+      systemPromptSections: [],
+    } as unknown as AgentEvent
+    const userMessage: AgentEvent = {
+      id: 'u1',
+      type: 'user_message',
+      sessionId: 's1',
+      turnId: 't1',
+      timestamp: '2026-09-12T17:31:14.000Z',
+      seq: 1,
+      content: 'hi',
+    }
+
+    const entries = buildDialogueEntries([userMessage, legacySnapshot])
+
+    expect(entries).toEqual([{ role: 'User', content: 'hi', turnId: 't1' }])
+  })
+
   it('clips each entry before applying the total history budget', () => {
     const transcript = formatDialogueEntriesWithinTokenBudget(
       [{ role: 'User', content: `START-${'x'.repeat(100_000)}-END` }],
