@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-10-01
+
+### 修复
+
+- **计算机使用（Computer Use）同 bundle 应用误绑**：dev Electron 与其它 `com.github.Electron` 应用共享同一个 app id，旧消歧只按 app id 去重，两个实例被折叠成一个候选，`open_app` / 重新绑窗会命中错误实例。消歧键改为 `appId:pid`，`preferredProcessId` 贯穿目标解析、桌面状态、原子会话与控制器：会话已绑定的 pid 优先于当前焦点，歧义报错按「bundle 是否共享」分别给出「用 window id 区分」或「指定 bundle id」的提示；桌面状态聚合同样按 `appId:pid` 分组，同 bundle 邻居的窗口不再泄漏进当前应用。
+- **计算机使用一次性读窗污染会话绑定**：常驻宿主上执行 `get_app_state` 等一次性窗口检查会清空会话的 observation 绑定，失败时还会停掉常驻流，表现为任务中途 `staleFrame` / `focusMismatch` 重试。`observe` 新增 `recordBinding`（缺省 `true` 保持历史语义），一次性检查传 `false`，不再改写绑定状态与常驻流。
+- **Mac 原生宿主慢捕获被误杀**：`capture_window` / `observe` 叠加 SCShareableContent 枚举、SCStream 首帧预热与 Chromium web 树就绪预算后可能越过 20s 默认超时，宿主被 SIGKILL。抓取类请求超时提升到 45s。
+- **代码编辑器中文正文满屏歧义字符高亮**：Monaco 对中文全角标点误判为歧义 Unicode 字符并画警告框，关闭 `unicodeHighlight.ambiguousCharacters`。
+- **workflow bundle `schemaVersion` 用例**：合法集合是 `{1, 2}`，原用例用 2 断言抛错与 schema 不符，改为 3。
+
+### 改进
+
+- **计算机使用常驻捕获**：会话取消不再拆除常驻 SCStream 与 AX 基线，改由帧空闲 300s 自动 park（对齐客户端原子会话 idle release，可用 `SPARK_COMPUTER_HOST_CAPTURE_IDLE_SECONDS` 覆盖，取值收敛在 30s~1h），任务边界不再重复付 SCStream 重启与屏幕共享指示器闪烁的代价；`captureWindow` 命中常驻流时走 `snapshotFrame` 快照快路径（0.25s 宽限等待更新帧，缺席时回退最新帧），不再每次重新枚举后单帧截图。
+- **SCShareableContent 枚举缓存**：新增 1.5s TTL 缓存，窗口查找 miss 时强制刷新一次，避免单轮内重复支付秒级枚举开销。
+- **一次性读窗复用常驻宿主连接**：活动会话期间 `get_app_state` 不再为每次调用另起宿主进程（连带第二个屏幕共享指示器与握手开销），改为复用监督连接。
+- **wiki 视图去掉自身底色**，背景交由外层容器决定。
+
 ## [0.14.4] - 2026-10-01
 
 ### 新增
