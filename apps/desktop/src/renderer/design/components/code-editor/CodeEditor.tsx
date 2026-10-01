@@ -159,6 +159,10 @@ export function CodeEditor({
       guides: { bracketPairs: 'active', indentation: true },
       // 表单字段里自动弹出的补全建议只会挡视线；Ctrl+Space 仍可手动唤起
       quickSuggestions: false,
+      // Monaco 默认给「歧义 Unicode 字符」画琥珀色警告框，而其 locale 匹配缺陷
+      // 导致中文全角标点（，！？：；（））与 ASCII 混排时永远命中兜底表——
+      // 中文正文里满屏误报，视觉上像错误标记；整体关闭歧义高亮
+      unicodeHighlight: { ambiguousCharacters: false },
       fixedOverflowWidgets: true,
       scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
     }
