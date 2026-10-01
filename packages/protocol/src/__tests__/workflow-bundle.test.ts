@@ -41,8 +41,9 @@ describe('WorkflowBundleManifestSchema', () => {
   })
 
   it('拒绝错误的 schemaVersion', () => {
+    // 合法集合是 {1, 2}（v2 起兼容旧包），3 才是真正未定义的版本
     expect(() =>
-      WorkflowBundleManifestSchema.parse({ ...validManifestInput(), schemaVersion: 2 }),
+      WorkflowBundleManifestSchema.parse({ ...validManifestInput(), schemaVersion: 3 }),
     ).toThrow()
   })
 
