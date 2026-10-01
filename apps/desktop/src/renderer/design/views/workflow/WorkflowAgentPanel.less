@@ -1,17 +1,10 @@
-/* 工作流 Agent 浮层面板（E2-2，M1；对称 CanvasAgentPicker.less 的关键样式） */
+/* 工作流 Agent 面板（E2-2；范式 1 后住进右侧轨道 tab，不再悬浮） */
 .workflow-agent-panel {
-  position: fixed;
-  right: 24px;
-  top: 72px;
-  bottom: 24px;
-  width: min(560px, calc(100vw - 48px));
+  /* 跟随 .wf-rail-body 布局（flex:1 由父级 > * 规则提供）；背景透明，视觉归轨道统一管理。 */
   display: flex;
   flex-direction: column;
-  background: var(--bg-secondary, #1c1c1e);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  z-index: 1200;
+  min-height: 0;
+  background: transparent;
   overflow: hidden;
 }
 
@@ -20,7 +13,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-bottom: 1px solid var(--border);
 }
 
 .workflow-agent-panel-title {
@@ -29,7 +22,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary, #f0f0f0);
+  color: var(--text-strong, var(--text));
 }
 
 .workflow-agent-panel-undo {
@@ -37,16 +30,16 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
   font-size: 11px;
-  color: var(--text-secondary, #9a9a9e);
+  color: var(--text-faint, var(--text));
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-    color: var(--text-primary, #f0f0f0);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text-strong, var(--text));
   }
 
   &:disabled {
@@ -64,12 +57,12 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-secondary, #9a9a9e);
+  color: var(--text-faint, var(--text));
   cursor: pointer;
 
   &:hover {
-    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-    color: var(--text-primary, #f0f0f0);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text-strong, var(--text));
   }
 }
 
@@ -80,19 +73,19 @@
   border: 1px solid transparent;
 
   &.is-attached {
-    color: var(--status-green, #4ade80);
-    border-color: var(--status-green, #4ade80);
+    color: var(--success, #4d9f74);
+    border-color: var(--success, #4d9f74);
   }
 
   &.is-attaching,
   &.is-detached {
-    color: var(--text-secondary, #9a9a9e);
-    border-color: var(--border-color, rgba(255, 255, 255, 0.12));
+    color: var(--text-faint, var(--text));
+    border-color: var(--border);
   }
 
   &.is-error {
-    color: var(--status-red, #f87171);
-    border-color: var(--status-red, #f87171);
+    color: var(--danger);
+    border-color: var(--danger);
   }
 }
 

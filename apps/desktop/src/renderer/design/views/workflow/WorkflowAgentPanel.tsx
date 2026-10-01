@@ -20,7 +20,10 @@ import type {
 } from '@spark/protocol'
 import { ChatPanel } from '../../components/ChatPanel'
 import { Icons } from '../../Icons'
-import { isProviderCompatibleWithAdapter } from '../../utils/provider-adapter'
+import {
+  getPreferredProviderWithAdapterFallback,
+  getProviderAdapterKind,
+} from '../../utils/provider-adapter'
 import {
   buildWorkflowTurnPrefix,
   circuitBrokenResponse,
@@ -59,6 +62,41 @@ const CONNECTION_LABELS: Record<string, string> = {
   detached: '等待连接',
 }
 
+/**
+ * 跨视图会话持久化：切到左侧任务列表再回来（编辑器整个重建）时，
+ * 从 localStorage 恢复上次的生成会话，对话记录不丢。按工作流 id 键控。
+ * localStorage 不可用时静默降级（保活退化为单次挂载内）。
+ */
+const agentSessionStorageKey = (workflowId: string): string =>
+  `spark-agent:workflow-agent-session:${workflowId}`
+
+const readPersistedAgentSession = (workflowId: string | null): string | null => {
+  if (workflowId == null) return null
+  try {
+    const raw = localStorage.getItem(agentSessionStorageKey(workflowId))
+    return raw != null && raw.length > 0 ? raw : null
+  } catch {
+    return null
+  }
+}
+
+const writePersistedAgentSession = (workflowId: string, sid: string): void => {
+  try {
+    localStorage.setItem(agentSessionStorageKey(workflowId), sid)
+  } catch {
+    // 静默降级
+  }
+}
+
+const clearPersistedAgentSession = (workflowId: string | null): void => {
+  if (workflowId == null) return
+  try {
+    localStorage.removeItem(agentSessionStorageKey(workflowId))
+  } catch {
+    // 静默降级
+  }
+}
+
 export function WorkflowAgentPanel({
   open,
   onClose,
@@ -68,13 +106,24 @@ export function WorkflowAgentPanel({
   onWorkflowCreated,
   onRestoreGraph,
 }: Props): React.ReactNode | null {
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const initialWorkflowId = editorState?.workflowId ?? null
+  // 跨视图保活：重建时从持久化恢复上次会话（切任务列表再回来的场景）
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    readPersistedAgentSession(initialWorkflowId),
+  )
   const [creating, setCreating] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [draftInput, setDraftInput] = useState('')
   const editorStateRef = useRef<WorkflowEditorState | null>(editorState)
-  /** 修复熔断（E2-3）：同轮内 validate 连续失败 ≥3 次后暂停校验/落库，新 turn 重置 */
-  const validateCircuit = useRef(createValidateCircuit(3)).current
+  /**
+   * 当前会话归属的工作流 id（面板常驻后需显式换绑）：
+   * 用户切到另一条工作流时旧会话上下文属于旧图，必须重置；
+   * 恢复的持久化会话天然归属 initialWorkflowId（key 即按它存储）。
+   */
+  const sessionOwnerRef = useRef<string | null>(initialWorkflowId)
+  /** 修复熔断（E2-3）：同轮内 validate 连续失败 ≥3 次后暂停校验/落库，新 turn 重置。
+   * 用 useState 惰性持有可变对象（引用稳定），避开 useRef(...).current 的渲染期解构。 */
+  const [validateCircuit] = useState(() => createValidateCircuit(3))
   /** 每轮回滚快照（turnId → 提交前的图深拷贝），供「撤销本轮」恢复 */
   const turnSnapshotsRef = useRef(new Map<string, WorkflowGraph>())
   const [canUndoTurn, setCanUndoTurn] = useState(false)
@@ -84,22 +133,66 @@ export function WorkflowAgentPanel({
     editorStateRef.current = editorState
   }, [editorState])
 
+  // 换绑守卫：编辑器已切到另一条工作流而会话仍归属旧图时，重置会话与本轮快照。
+  const boundWorkflowId = editorState?.workflowId ?? null
+  useEffect(() => {
+    if (sessionId == null) return
+    if (sessionOwnerRef.current === boundWorkflowId) return
+    clearPersistedAgentSession(sessionOwnerRef.current)
+    setSessionId(null)
+    sessionOwnerRef.current = null
+    turnSnapshotsRef.current.clear()
+    setCanUndoTurn(false)
+    validateCircuit.reset()
+  }, [boundWorkflowId, sessionId, validateCircuit])
+
+  // 会话持久化：会话或归属变化即写入（AI 生成新图认领后 boundWorkflowId 跟进，写入新 key）
+  useEffect(() => {
+    if (sessionId == null) return
+    const owner = sessionOwnerRef.current
+    if (owner == null) return
+    writePersistedAgentSession(owner, sessionId)
+  }, [sessionId, boundWorkflowId])
+
+  /**
+   * 延迟装载恢复：重建后编辑器 workflowId 异步到达（WorkflowView 的 activeId 首帧为 null，
+   * workflow:list 返回后才 set），持久化会话不能只赌 useState 初始化器读到真实 id——
+   * 否则真实重建路径（切任务列表再回来）会随首帧 null 永久丢失会话（2026-09-25 GUI 实测）。
+   * 只在 null→id 过渡补读一次；编辑器内换绑（id→id）仍由换绑守卫全权重置，语义不变。
+   */
+  const prevBoundWorkflowIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevBoundWorkflowIdRef.current
+    prevBoundWorkflowIdRef.current = boundWorkflowId
+    if (prev !== null || boundWorkflowId == null) return
+    if (sessionId != null) return
+    const restored = readPersistedAgentSession(boundWorkflowId)
+    if (restored == null) return
+    setSessionId(restored)
+    sessionOwnerRef.current = boundWorkflowId
+  }, [boundWorkflowId, sessionId])
+
   // M1 无选择器 UI：优先内置工作流 agent，未找到时回退平台管理 agent（普通推导，成本可忽略）
   const resolvedAgentId = agents.some((agent) => agent.id === DEFAULT_WORKFLOW_AGENT_ID)
     ? DEFAULT_WORKFLOW_AGENT_ID
     : FALLBACK_WORKFLOW_AGENT_ID
 
-  const selectedProvider = useMemo<ProviderProfile | null>(() => {
-    return (
-      providers.find((provider) => isProviderCompatibleWithAdapter(provider, 'claude-sdk')) ?? null
-    )
-  }, [providers])
+  // M1 无选择器 UI：助手不设固定引擎——claude-sdk 优先，无匹配渠道时跨引擎回退
+  // （OpenAI 格式渠道如 DeepSeek 走 codex 档；会话侧会按选中 provider 自动校准引擎）。
+  // 曾因只认 claude-sdk 导致 OpenAI 格式渠道永远报「尚未找到可用模型渠道」（2026-09-25 实测暴露）。
+  const selectedProvider = useMemo<ProviderProfile | null>(
+    () => getPreferredProviderWithAdapterFallback(providers, undefined, 'claude-sdk') ?? null,
+    [providers],
+  )
 
   const toolContext = useMemo<WorkflowToolContext>(
     () => ({
       getEditorState: () => editorStateRef.current,
       createWorkflow: async ({ name, graph }) => {
         const res = await window.spark.invoke('workflow:create', { name, graph })
+        // 新图即本会话产物：落库瞬间就认领归属，不依赖调用方记得回调 onWorkflowCreated，
+        // 否则编辑器随后切到新 id 会被换绑守卫误清会话。归属变更后由持久化 effect 写入新 key。
+        sessionOwnerRef.current = res.workflow.id
         return { workflowId: res.workflow.id, updatedAt: res.workflow.updatedAt }
       },
       updateWorkflow: async ({ id, name, graph }) => {
@@ -121,7 +214,11 @@ export function WorkflowAgentPanel({
         validateCircuit.record(result.ok)
         return result
       },
-      onWorkflowCreated: (workflowId) => onWorkflowCreated(workflowId),
+      onWorkflowCreated: (workflowId) => {
+        // 首轮会话常建于落库前（workflowId 为 null），新图生成后由本回调认领，避免换绑守卫误清会话。
+        sessionOwnerRef.current = workflowId
+        onWorkflowCreated(workflowId)
+      },
     }),
     [onWorkflowCreated, validateCircuit],
   )
@@ -146,11 +243,15 @@ export function WorkflowAgentPanel({
           const sessionRes = await window.spark.invoke('session:create', {
             providerProfileId: selectedProvider.id,
             agentId: resolvedAgentId,
+            // 按选中渠道的引擎显式指定 adapter：DeepSeek 等 OpenAI 格式渠道走 codex 档。
+            // 缺省回退 agent 默认引擎（claude）会导致 CLAUDE_MODEL_NOT_FOUND（2026-09-25 实测暴露）。
+            agentAdapter: getProviderAdapterKind(selectedProvider),
             chatMode: 'agent',
             title: `工作流助手 · ${editorStateRef.current.name}`,
           })
           sid = sessionRes.sessionId
           setSessionId(sid)
+          sessionOwnerRef.current = editorStateRef.current?.workflowId ?? null
         }
         // 强制绑定 workflow-architect 技能（对称画布 syncSessionSkills：session 级替换）
         await window.spark.invoke('skill-config:update', {
@@ -271,6 +372,7 @@ ${text}`
         toolNamePrefixFilter={WORKFLOW_TOOL_PREFIX}
         toolCallDisplay="summary"
         placeholder="描述你想生成或修改的工作流…"
+        voiceInput
       />
     </div>
   )

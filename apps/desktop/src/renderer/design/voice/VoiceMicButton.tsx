@@ -19,6 +19,12 @@ export interface VoiceMicButtonProps {
   unsupported: boolean
   /** 父级禁用（如发送中） */
   disabled?: boolean
+  /**
+   * 是否展示「快捷键」提示气泡（absolute 定位，会被 overflow:hidden 的宿主容器裁剪）。
+   * 未接快捷键的宿主（如 ChatPanel 语音）应传 false；false 时按钮改用原生 title 兜底。
+   * 默认 true（ComposerV2 现状）。
+   */
+  shortcutHint?: boolean
   onClick: () => void
 }
 
@@ -40,6 +46,7 @@ export function VoiceMicButton({
   downloading,
   unsupported,
   disabled,
+  shortcutHint = true,
   onClick,
 }: VoiceMicButtonProps) {
   const starting = status === 'starting'
@@ -85,7 +92,8 @@ export function VoiceMicButton({
           .join(' ')}
         aria-label={title}
         aria-keyshortcuts={VOICE_INPUT_ARIA_SHORTCUT}
-        aria-describedby="composer-voice-shortcut-hint"
+        aria-describedby={shortcutHint ? 'composer-voice-shortcut-hint' : undefined}
+        title={shortcutHint ? undefined : title}
         disabled={isDisabled}
         onClick={onClick}
       >
@@ -113,13 +121,15 @@ export function VoiceMicButton({
           </>
         )}
       </button>
-      <span
-        id="composer-voice-shortcut-hint"
-        className="composer-voice-shortcut-hint"
-        role="tooltip"
-      >
-        快捷键 <kbd>{VOICE_INPUT_SHORTCUT_LABEL}</kbd>
-      </span>
+      {shortcutHint && (
+        <span
+          id="composer-voice-shortcut-hint"
+          className="composer-voice-shortcut-hint"
+          role="tooltip"
+        >
+          快捷键 <kbd>{VOICE_INPUT_SHORTCUT_LABEL}</kbd>
+        </span>
+      )}
     </span>
   )
 }

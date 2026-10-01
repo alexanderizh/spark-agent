@@ -33,6 +33,7 @@ import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { InlinePermissionApproval } from './InlinePermissionApproval'
+import { useComposerVoice } from '../voice/useComposerVoice'
 import { ComposerActionsMenu } from './ComposerActionsMenu'
 import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
 import { ChatPanelToolActivity } from './ChatPanelToolActivity'
@@ -100,6 +101,8 @@ export interface ChatPanelProps {
   initialInput?: string
   /** 可选：输入文本变化通知（父组件据此持久化草稿） */
   onDraftChange?: (text: string) => void
+  /** 可选：启用语音输入（ASR，复用 voice 体系：麦克风按钮 + 语音包安装引导；默认 false） */
+  voiceInput?: boolean
   /** 可选：宿主提供的一次性发送请求，复用本输入区的建会、乐观消息和错误恢复流程。 */
   externalSubmitRequest?: { id: number; text: string } | null
   /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
@@ -174,6 +177,7 @@ export function ChatPanel({
   onSend,
   initialInput,
   onDraftChange,
+  voiceInput,
   externalSubmitRequest,
   composer,
   composerBelow,
@@ -1103,6 +1107,9 @@ export function ChatPanel({
               }}
               rows={1}
             />
+            {voiceInput && (
+              <ChatPanelVoice getInput={() => input} applyInput={applyInput} disabled={disabled} />
+            )}
             <button
               type="button"
               className={`chat-panel-send-btn${isWorking ? ' is-stop' : ''}`}
@@ -1148,6 +1155,34 @@ export function ChatPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 语音输入子组件：仅 voiceInput=true 的宿主挂载。
+ * 独立成组件的原因：useComposerVoice 链路依赖 AppProvider（下载确认/toast），
+ * 在 ChatPanel 里无条件调用会给所有存量使用方与单元测试新增 Provider 依赖；
+ * 条件挂载让默认用法（voiceInput 缺省 false）零新增依赖。
+ */
+function ChatPanelVoice({
+  getInput,
+  applyInput,
+  disabled,
+}: {
+  getInput: () => string
+  applyInput: (next: string) => void
+  disabled: boolean
+}): React.ReactElement {
+  const setInputByUpdater = useCallback(
+    (updater: (prev: string) => string) => applyInput(updater(getInput())),
+    [applyInput, getInput],
+  )
+  const voice = useComposerVoice({ setValue: setInputByUpdater, disabled })
+  return (
+    <>
+      {voice.micButton}
+      {voice.installToast}
+    </>
   )
 }
 

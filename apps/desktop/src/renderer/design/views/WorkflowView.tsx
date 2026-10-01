@@ -243,12 +243,11 @@ function WorkflowViewInner() {
   const flowWrapRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<SparkFlowNode, Edge> | null>(null)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
-  // 运行历史面板（按当前工作流查 workflow_runs 持久化快照）。
-  const [runHistoryOpen, setRunHistoryOpen] = useState(false)
-  // 试跑面板（workflow:test-run：真实会话执行 + 轮询 run-detail 展示节点级进度）。
-  const [testRunOpen, setTestRunOpen] = useState(false)
-  // 编辑器内嵌 Agent 浮层面板（E2-2）：对话式生成/修改当前工作流。
-  const [agentPanelOpen, setAgentPanelOpen] = useState(false)
+  // 右侧轨道（范式 1：tab 为唯一入口，顶部不再有 AI助手/试跑/历史按钮）；可整体折叠成图标条。
+  const [railTab, setRailTab] = useState<'inspector' | 'test-run' | 'history' | 'agent'>(
+    'inspector',
+  )
+  const [railCollapsed, setRailCollapsed] = useState(false)
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -266,10 +265,22 @@ function WorkflowViewInner() {
   const [exportModal, setExportModal] = useState<{ ids: string[] } | null>(null)
 
   const loadGraphIntoCanvas = useCallback(
-    (graph: WorkflowGraph, selectedNodeId?: string | null) => {
+    (graph: WorkflowGraph, selectedNodeId?: string | null, options?: { animate?: boolean }) => {
       // 旧数据没有 orientation 字段：其坐标按横向排布存储，故回退到横向以正确显示布局。
       setOrientation(graph.orientation ?? 'horizontal')
       const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(graph)
+      if (options?.animate === true && flowNodes.length > 0) {
+        // AI 生成落图入场：按编排主方向分批“长出”（scale+fade），让等待有视觉回报。
+        // 用独立 scale 属性而非 transform——React Flow 用 transform 定位节点，不可覆盖。
+        const axis = (graph.orientation ?? 'horizontal') === 'vertical' ? 'y' : 'x'
+        const sorted = [...flowNodes].sort(
+          (a, b) => (a.position?.[axis] ?? 0) - (b.position?.[axis] ?? 0),
+        )
+        sorted.forEach((node, index) => {
+          node.className = [node.className, 'wf-enter'].filter(Boolean).join(' ')
+          node.style = { ...node.style, animationDelay: `${Math.min(index, 14) * 90}ms` }
+        })
+      }
       setNodes(flowNodes)
       setEdges(flowEdges)
       setSelectedNodeId(selectedNodeId ?? flowNodes[0]?.id ?? null)
@@ -281,7 +292,7 @@ function WorkflowViewInner() {
   )
 
   const loadWorkflowIntoCanvas = useCallback(
-    (workflow: WorkflowItem | null) => {
+    (workflow: WorkflowItem | null, options?: { animate?: boolean }) => {
       setDraft(workflow)
       draftIdRef.current = workflow?.id ?? null
       setSavedSnapshot(serializeSavedWorkflow(workflow))
@@ -294,7 +305,7 @@ function WorkflowViewInner() {
         setOrientation('vertical')
         return
       }
-      loadGraphIntoCanvas(workflow.graph)
+      loadGraphIntoCanvas(workflow.graph, null, options)
     },
     [loadGraphIntoCanvas, setEdges, setNodes],
   )
@@ -404,6 +415,9 @@ function WorkflowViewInner() {
   const selectedEdge =
     selectedEdgeId != null ? (edges.find((edge) => edge.id === selectedEdgeId) ?? null) : null
   const editingLoopBody = editorScope.kind === 'loop-body'
+  // 右侧轨道 tab 的可用性（沿用原工具栏按钮的显示条件）。
+  const canTestRun = !editingLoopBody && workflows.some((item) => item.id === draft?.id)
+  const canUseAgentPanel = !editingLoopBody
   const disabledNodeKinds = useMemo<ReadonlySet<WorkflowNodeKind>>(
     () => (editingLoopBody ? new Set(['loop']) : new Set()),
     [editingLoopBody],
@@ -448,13 +462,13 @@ function WorkflowViewInner() {
   )
 
   const openWorkflow = useCallback(
-    (workflow: WorkflowItem) => {
+    (workflow: WorkflowItem, options?: { animate?: boolean }) => {
       void runWithLeaveGuard(async () => {
         screenRef.current = 'detail'
         activeIdRef.current = workflow.id
         setScreen('detail')
         setActiveId(workflow.id)
-        loadWorkflowIntoCanvas(workflow)
+        loadWorkflowIntoCanvas(workflow, options)
       })
     },
     [loadWorkflowIntoCanvas, runWithLeaveGuard],
@@ -871,15 +885,19 @@ function WorkflowViewInner() {
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const nodeId = params.nodes[0]?.id ?? null
     const edgeId = params.edges[0]?.id ?? null
-    // 节点优先；边与节点互斥，点空白处保留上一次的节点选中（沿用原行为）。
+    // 节点优先；边与节点互斥。选中即展开轨道并切到检查器 tab——点节点/边的意图就是编辑。
     if (nodeId != null) {
       setSelectedNodeId(nodeId)
       setSelectedEdgeId(null)
+      setRailCollapsed(false)
+      setRailTab('inspector')
       return
     }
     if (edgeId != null) {
       setSelectedEdgeId(edgeId)
       setSelectedNodeId(null)
+      setRailCollapsed(false)
+      setRailTab('inspector')
       return
     }
     setSelectedEdgeId(null)
@@ -1121,7 +1139,10 @@ function WorkflowViewInner() {
   }
 
   return (
-    <div className="workflow-layout workflow-builder workflow-builder-v2">
+    <div
+      className="workflow-layout workflow-builder workflow-builder-v2"
+      data-rail-collapsed={railCollapsed ? 'true' : 'false'}
+    >
       <div className="wf-stage">
         <div className="wf-toolbar">
           {editorScope.kind === 'loop-body' ? (
@@ -1183,45 +1204,6 @@ function WorkflowViewInner() {
           >
             {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
           </Button>
-          {!editingLoopBody && (
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.Sparkles size={12} />}
-              onClick={() => setAgentPanelOpen((open) => !open)}
-              title="AI 助手：用自然语言生成或修改当前工作流（整图提交，保存闸门自动校验）"
-            >
-              AI 助手
-            </Button>
-          )}
-          {!editingLoopBody && workflows.some((item) => item.id === draft.id) && (
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.Play size={12} />}
-              onClick={() => {
-                setRunHistoryOpen(false)
-                setTestRunOpen((open) => !open)
-              }}
-              title="在编辑器内试跑这个工作流（执行已保存版本，真实会话运行，节点级进度与失败原因）"
-            >
-              试跑
-            </Button>
-          )}
-          {!editingLoopBody && workflows.some((item) => item.id === draft.id) && (
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.History size={12} />}
-              onClick={() => {
-                setTestRunOpen(false)
-                setRunHistoryOpen((open) => !open)
-              }}
-              title="查看这个工作流的历史运行（含节点输出、失败原因与耗时）"
-            >
-              历史
-            </Button>
-          )}
           {!editingLoopBody && (
             <Button
               size="middle"
@@ -1319,97 +1301,236 @@ function WorkflowViewInner() {
         </div>
       </div>
 
-      {selectedEdge != null ? (
-        <WorkflowEdgeInspector
-          edge={selectedEdge}
-          nodes={nodes}
-          onPatchCondition={patchSelectedEdgeCondition}
-          onDelete={() => removeEdge(selectedEdge.id)}
-        />
-      ) : (
-        <WorkflowInspector
-          node={selectedNode}
-          providers={providers}
-          providerModelIndex={providerModelIndex}
-          allModelIds={allModelIds}
-          skills={skills}
-          rules={rules}
-          mcpServers={mcpServers}
-          agents={agents}
-          currentWorkflowId={draft.id}
-          editingLoopBody={editingLoopBody}
-          upstreamOutputKeys={Array.from(
-            new Set(
-              edges
-                .filter((edge) => edge.target === selectedNodeId)
-                .flatMap((edge) => {
-                  const upstream = nodes.find((node) => node.id === edge.source)
-                  const key =
-                    typeof upstream?.data.config.outputKey === 'string'
-                      ? upstream.data.config.outputKey.trim()
-                      : ''
-                  return key.length > 0 ? [key] : []
-                }),
-            ),
+      {/* 右侧轨道：tab 为这四个面板的唯一入口（范式 1）；整体可折叠成图标条，画布随之用满。 */}
+      <aside className={`wf-rail${railCollapsed ? ' is-collapsed' : ''}`}>
+        <div className="wf-rail-bar" aria-hidden={!railCollapsed}>
+          <button
+            type="button"
+            className="wf-rail-bar-btn"
+            title="展开面板区"
+            aria-label="展开面板区"
+            onClick={() => setRailCollapsed(false)}
+          >
+            <Icons.PanelRight size={16} />
+          </button>
+          <div className="wf-rail-bar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className={`wf-rail-bar-btn${railTab === 'inspector' ? ' is-on' : ''}`}
+            title="检查器"
+            aria-label="检查器"
+            onClick={() => {
+              setRailCollapsed(false)
+              setRailTab('inspector')
+            }}
+          >
+            <Icons.Sliders size={16} />
+          </button>
+          {canTestRun && (
+            <button
+              type="button"
+              className={`wf-rail-bar-btn${railTab === 'test-run' ? ' is-on' : ''}`}
+              title="试跑"
+              aria-label="试跑"
+              onClick={() => {
+                setRailCollapsed(false)
+                setRailTab('test-run')
+              }}
+            >
+              <Icons.Play size={16} />
+            </button>
           )}
-          onOpenLoopBody={openLoopBodyEditor}
-          onResetLoopBody={(loopNodeId) => void resetLoopBody(loopNodeId)}
-          onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
-          onPatch={(patch) =>
-            patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
-          }
-          onPatchConfig={(patch) =>
-            patchSelectedNodeData((node) => ({
-              ...node,
-              data: { ...node.data, config: { ...node.data.config, ...patch } },
-            }))
-          }
-        />
-      )}
-      {runHistoryOpen && (
-        <WorkflowRunHistory workflowId={draft.id} onClose={() => setRunHistoryOpen(false)} />
-      )}
-      {agentPanelOpen && (
-        <WorkflowAgentPanel
-          open={agentPanelOpen}
-          onClose={() => setAgentPanelOpen(false)}
-          editorState={{
-            workflowId: activeId,
-            name: draft?.name ?? '未命名工作流',
-            graph: completeRootGraph,
-          }}
-          providers={providers}
-          agents={agents}
-          onWorkflowCreated={(workflowId) => {
-            void window.spark
-              .invoke('workflow:get', { id: workflowId })
-              .then((res) => {
-                if (res.workflow != null) openWorkflow(res.workflow)
-              })
-              .catch((error) => {
-                toast.error(error instanceof Error ? error.message : '打开新生成的工作流失败。')
-              })
-          }}
-          onRestoreGraph={(graph) => loadGraphIntoCanvas(graph)}
-        />
-      )}
-      {testRunOpen && (
-        <WorkflowTestRunPanel
-          workflowId={draft.id}
-          workflowDescription={draft.description ?? ''}
-          onClose={() => setTestRunOpen(false)}
-          onOpenSession={(sessionId) => {
-            void openWorkflowTestRunSession({
-              sessionId,
-              refreshSessionData,
-              showChatView: () => setTweak('view', 'chat'),
-              setActiveSession,
-            }).catch((error) => {
-              toast.error(error instanceof Error ? error.message : '试跑会话打开失败。')
-            })
-          }}
-        />
-      )}
+          {canTestRun && (
+            <button
+              type="button"
+              className={`wf-rail-bar-btn${railTab === 'history' ? ' is-on' : ''}`}
+              title="历史"
+              aria-label="历史"
+              onClick={() => {
+                setRailCollapsed(false)
+                setRailTab('history')
+              }}
+            >
+              <Icons.History size={16} />
+            </button>
+          )}
+          <div className="wf-rail-bar-divider" aria-hidden="true" />
+          {canUseAgentPanel && (
+            <button
+              type="button"
+              className={`wf-rail-bar-btn is-featured${railTab === 'agent' ? ' is-on' : ''}`}
+              title="AI 助手：自然语言生成或修改工作流"
+              aria-label="AI 助手"
+              onClick={() => {
+                setRailCollapsed(false)
+                setRailTab('agent')
+              }}
+            >
+              <Icons.Sparkles size={16} />
+            </button>
+          )}
+        </div>
+        <div className="wf-rail-panel">
+          <div className="wf-rail-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={railTab === 'inspector'}
+              className={`wf-rail-tab${railTab === 'inspector' ? ' is-on' : ''}`}
+              onClick={() => setRailTab('inspector')}
+            >
+              <Icons.Sliders size={12} />
+              检查器
+            </button>
+            {canTestRun && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={railTab === 'test-run'}
+                className={`wf-rail-tab${railTab === 'test-run' ? ' is-on' : ''}`}
+                onClick={() => setRailTab('test-run')}
+              >
+                <Icons.Play size={12} />
+                试跑
+              </button>
+            )}
+            {canTestRun && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={railTab === 'history'}
+                className={`wf-rail-tab${railTab === 'history' ? ' is-on' : ''}`}
+                onClick={() => setRailTab('history')}
+              >
+                <Icons.History size={12} />
+                历史
+              </button>
+            )}
+            <div className="wf-rail-tab-divider" aria-hidden="true" />
+            {canUseAgentPanel && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={railTab === 'agent'}
+                className={`wf-rail-tab is-featured${railTab === 'agent' ? ' is-on' : ''}`}
+                onClick={() => setRailTab('agent')}
+              >
+                <Icons.Sparkles size={12} />
+                AI 助手
+              </button>
+            )}
+            <button
+              type="button"
+              className="wf-rail-tab wf-rail-collapse"
+              title="折叠面板区（画布全宽）"
+              aria-label="折叠面板区"
+              onClick={() => setRailCollapsed(true)}
+            >
+              <Icons.PanelRight size={14} />
+            </button>
+          </div>
+          <div className="wf-rail-body">
+            {railTab === 'inspector' &&
+              (selectedEdge != null ? (
+                <WorkflowEdgeInspector
+                  edge={selectedEdge}
+                  nodes={nodes}
+                  onPatchCondition={patchSelectedEdgeCondition}
+                  onDelete={() => removeEdge(selectedEdge.id)}
+                />
+              ) : (
+                <WorkflowInspector
+                  node={selectedNode}
+                  providers={providers}
+                  providerModelIndex={providerModelIndex}
+                  allModelIds={allModelIds}
+                  skills={skills}
+                  rules={rules}
+                  mcpServers={mcpServers}
+                  agents={agents}
+                  currentWorkflowId={draft.id}
+                  editingLoopBody={editingLoopBody}
+                  upstreamOutputKeys={Array.from(
+                    new Set(
+                      edges
+                        .filter((edge) => edge.target === selectedNodeId)
+                        .flatMap((edge) => {
+                          const upstream = nodes.find((node) => node.id === edge.source)
+                          const key =
+                            typeof upstream?.data.config.outputKey === 'string'
+                              ? upstream.data.config.outputKey.trim()
+                              : ''
+                          return key.length > 0 ? [key] : []
+                        }),
+                    ),
+                  )}
+                  onOpenLoopBody={openLoopBodyEditor}
+                  onResetLoopBody={(loopNodeId) => void resetLoopBody(loopNodeId)}
+                  onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
+                  onPatch={(patch) =>
+                    patchSelectedNodeData((node) => ({
+                      ...node,
+                      data: { ...node.data, ...patch },
+                    }))
+                  }
+                  onPatchConfig={(patch) =>
+                    patchSelectedNodeData((node) => ({
+                      ...node,
+                      data: { ...node.data, config: { ...node.data.config, ...patch } },
+                    }))
+                  }
+                />
+              ))}
+            {railTab === 'test-run' && (
+              <WorkflowTestRunPanel
+                workflowId={draft.id}
+                workflowDescription={draft.description ?? ''}
+                onClose={() => setRailTab('inspector')}
+                onOpenSession={(sessionId) => {
+                  void openWorkflowTestRunSession({
+                    sessionId,
+                    refreshSessionData,
+                    showChatView: () => setTweak('view', 'chat'),
+                    setActiveSession,
+                  }).catch((error) => {
+                    toast.error(error instanceof Error ? error.message : '试跑会话打开失败。')
+                  })
+                }}
+              />
+            )}
+            {railTab === 'history' && (
+              <WorkflowRunHistory workflowId={draft.id} onClose={() => setRailTab('inspector')} />
+            )}
+            {/*
+              AI 助手常驻挂载：放在 body 内且不受 railTab 条件卸载——折叠只是 CSS 隐藏祖先，
+              组件实例始终存活，生成会话/回滚快照/熔断计数不丢失。open 由 tab 驱动显隐。
+            */}
+            <WorkflowAgentPanel
+              open={railTab === 'agent'}
+              onClose={() => setRailTab('inspector')}
+              editorState={{
+                workflowId: activeId,
+                name: draft?.name ?? '未命名工作流',
+                graph: completeRootGraph,
+              }}
+              providers={providers}
+              agents={agents}
+              onWorkflowCreated={(workflowId) => {
+                void window.spark
+                  .invoke('workflow:get', { id: workflowId })
+                  .then((res) => {
+                    // AI 新建生成：落图播放入场动画（编辑/修改路径不播，避免整图闪动）
+                    if (res.workflow != null) openWorkflow(res.workflow, { animate: true })
+                  })
+                  .catch((error) => {
+                    toast.error(error instanceof Error ? error.message : '打开新生成的工作流失败。')
+                  })
+              }}
+              onRestoreGraph={(graph) => loadGraphIntoCanvas(graph)}
+            />
+          </div>
+        </div>
+      </aside>
     </div>
   )
 }

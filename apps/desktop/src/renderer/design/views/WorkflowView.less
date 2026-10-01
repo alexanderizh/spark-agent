@@ -185,7 +185,7 @@
 }
 
 .wf-inspector {
-  width: 320px;
+  width: 100%;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--bg);
@@ -703,8 +703,11 @@
   background: var(--bg-soft);
 }
 .workflow-builder.workflow-builder-v2 {
+  /* 右侧轨道宽（grid 第二列，单一事实源）：检查器/试跑/历史/AI 助手四 tab 共用。
+   * 浮层时代它用于避让，tab 化（范式 1）后它就是轨道本身的宽度。 */
+  --wf-side-rail-width: 420px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) var(--wf-side-rail-width);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -725,17 +728,23 @@
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   min-height: 48px;
+  /* 按钮组己占满一行时允许换行兜底，避免末尾「保存」溢出压住检查器头部。 */
+  flex-wrap: wrap;
 }
 .workflow-builder-v2 .wf-toolbar-spacer {
   flex: 1;
 }
 .workflow-builder-v2 .wf-title-input {
   position: static;
-  width: 240px;
+  /* 窄屏优先收缩标题框（保留可读宽度），不让它挤走操作按钮。 */
+  flex: 0 1 240px;
+  min-width: 140px;
   font-weight: 650;
 }
 .workflow-builder-v2 .wf-status-select {
   width: 110px;
+  flex: 0 1 110px;
+  min-width: 88px;
 }
 .workflow-builder-v2 .wf-canvas-wrap {
   flex: 1;
@@ -1175,23 +1184,155 @@
   }
 }
 
-/* ─── 运行历史面板（右侧抽屉，覆盖在 1fr|360px 网格之上） ─────────────────── */
+/* 折叠时整个轨道收成 40px 图标条，画布列自动用满 */
+.workflow-builder-v2[data-rail-collapsed='true'] {
+  grid-template-columns: minmax(0, 1fr) 40px;
+}
+
+/* ─── 右侧轨道：tab 唯一入口（范式 1）+ 整体折叠 ─────────────────── */
+.wf-rail {
+  display: flex;
+  min-height: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+}
+.wf-rail-bar {
+  display: none;
+  width: 40px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  background: var(--bg-soft);
+}
+.wf-rail.is-collapsed .wf-rail-bar {
+  display: flex;
+  flex: 1;
+}
+.wf-rail.is-collapsed .wf-rail-panel {
+  display: none;
+}
+.wf-rail-bar-divider {
+  width: 20px;
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.wf-rail-bar-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wf-rail-bar-btn:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+.wf-rail-bar-btn.is-on {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+/* 推荐功能（AI 助手）常驻主题色：折叠竖条里它应是视觉主角 */
+.wf-rail-bar-btn.is-featured {
+  color: var(--primary);
+}
+.wf-rail-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wf-rail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.wf-rail-tab {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.wf-rail-tab:hover {
+  color: var(--text);
+}
+.wf-rail-tab.is-on {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+/* 推荐功能（AI 助手）常驻主题色，与折叠竖条一致 */
+.wf-rail-tab.is-featured {
+  color: var(--primary);
+}
+.wf-rail-tab-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  align-self: center;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.wf-rail-collapse {
+  margin-left: auto;
+  width: 26px;
+  padding: 4px 0;
+}
+/* ─── AI 生成落图入场动画（loadGraphIntoCanvas options.animate 驱动） ── */
+/* 用独立 scale 属性而非 transform：React Flow 以 transform 定位节点，动画不可覆盖定位。 */
+@keyframes wf-node-enter {
+  from {
+    opacity: 0;
+    scale: 0.85;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+.react-flow__node.wf-enter {
+  animation: wf-node-enter 0.3s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
+}
+
+.wf-rail-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wf-rail-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ─── 运行历史 / 试跑面板（轨道 tab 化后不再覆盖网格） ──────────────── */
 
 .workflow-builder-v2 {
   position: relative;
 }
 .workflow-builder-v2 .wf-run-history {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(400px, 88vw);
-  z-index: 40;
+  /* 作为 .wf-rail-body 的 flex 子项撑满所在 tab；不再有 absolute 覆盖与阴影。 */
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background: var(--bg);
-  border-left: 1px solid var(--border);
-  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.14);
 }
 .workflow-builder-v2 .wf-run-history-head {
   display: flex;
