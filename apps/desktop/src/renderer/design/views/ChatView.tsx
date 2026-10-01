@@ -549,7 +549,8 @@ export function ChatView({
   const sessions = sessionCtx.sessions
   const workspaces = sessionCtx.workspaces
   const providers = sessionCtx.providers
-  const agents = sessionCtx.agents
+  // 项目 Agent 白名单过滤视图：Composer 选择器/空会话启动器/团队 Host 解析共用
+  const agents = sessionCtx.selectableAgents
   const selectedProviderId = sessionCtx.selectedProviderId
   const setSelectedProviderId = sessionCtx.setSelectedProviderId
 

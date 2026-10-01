@@ -10,6 +10,8 @@ const workspaceRow = {
   pinned_at: null,
   archived_at: null,
   worktree_meta_json: null,
+  default_agent_id: null,
+  allowed_agent_ids_json: null,
 }
 
 describe('createWorkspaceInfoMapper', () => {
@@ -29,6 +31,35 @@ describe('createWorkspaceInfoMapper', () => {
         ...workspaceRow,
         name: 'looks-like-canvas_project_123',
       }).canvasProjectId,
+    ).toBeNull()
+  })
+
+  it('maps project agent scope fields with safe JSON parsing', () => {
+    const mapWorkspaceInfo = createWorkspaceInfoMapper([])
+
+    expect(
+      mapWorkspaceInfo({
+        ...workspaceRow,
+        default_agent_id: 'agent-1',
+        allowed_agent_ids_json: '["agent-1","agent-2"]',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        defaultAgentId: 'agent-1',
+        allowedAgentIds: ['agent-1', 'agent-2'],
+      }),
+    )
+
+    expect(
+      mapWorkspaceInfo({
+        ...workspaceRow,
+        default_agent_id: null,
+        allowed_agent_ids_json: 'not-json',
+      }).allowedAgentIds,
+    ).toBeNull()
+
+    expect(
+      mapWorkspaceInfo({ ...workspaceRow, allowed_agent_ids_json: null }).allowedAgentIds,
     ).toBeNull()
   })
 })

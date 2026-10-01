@@ -12,6 +12,7 @@ import { InspectorCollapsibleSection } from '../../components/InspectorCollapsib
 import { WorktreePanel } from '../../components/WorktreePanel'
 import { useToast } from '../../components/Toast'
 import { useIpcInvoke } from '../../hooks/useIpc'
+import { useSessionSidebar } from '../../SessionSidebarContext'
 import {
   buildTurnUsageRows,
   buildUsageDataFromEvents,
@@ -199,6 +200,27 @@ export function ChatConfigPanel({
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
   const { invoke: getEnvConfig } = useIpcInvoke('env-config:get')
   const { invoke: updateEnvConfig } = useIpcInvoke('env-config:update')
+  // 项目 Agent 作用域：默认 Agent + 白名单（workspace:update 持久化，悬空 ID 由主进程校验）
+  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
+  const sessionCtx = useSessionSidebar()
+  const allAgents = sessionCtx.agents
+  const [agentScopeCollapsed, setAgentScopeCollapsed] = useState(false)
+  const [projectDefaultAgentDraft, setProjectDefaultAgentDraft] = useState('')
+  const [allowedAgentDrafts, setAllowedAgentDrafts] = useState<Set<string>>(new Set())
+  const [agentFilter, setAgentFilter] = useState('')
+  const [savingAgentScope, setSavingAgentScope] = useState(false)
+  // 白名单列表视图：按名称搜索（不影响勾选）+ 已选置顶，Agent 多时便于查找
+  const normalizedAgentFilter = agentFilter.trim().toLowerCase()
+  const visibleAgents = allAgents
+    .filter(
+      (agent) =>
+        normalizedAgentFilter === '' ||
+        agent.name.toLowerCase().includes(normalizedAgentFilter),
+    )
+    .sort(
+      (a, b) =>
+        Number(allowedAgentDrafts.has(b.id)) - Number(allowedAgentDrafts.has(a.id)),
+    )
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
 
@@ -231,6 +253,31 @@ export function ChatConfigPanel({
     }
     void loadRuntimeConfig()
   }, [loadRuntimeConfig, sessionId, workspaceId])
+
+  // workspace 变化（含保存后 refreshData 重拉）时同步项目 Agent 草稿
+  useEffect(() => {
+    setProjectDefaultAgentDraft(workspace?.defaultAgentId ?? '')
+    setAllowedAgentDrafts(new Set(workspace?.allowedAgentIds ?? []))
+  }, [workspace?.id, workspace?.defaultAgentId, workspace?.allowedAgentIds])
+
+  const saveAgentScope = useCallback(async () => {
+    if (workspaceId == null) return
+    setSavingAgentScope(true)
+    try {
+      await updateWorkspace({
+        workspaceId,
+        // '' 归一化为清除（null）；主进程写入前校验 Agent 存在性
+        defaultAgentId: projectDefaultAgentDraft !== '' ? projectDefaultAgentDraft : null,
+        allowedAgentIds: allowedAgentDrafts.size > 0 ? Array.from(allowedAgentDrafts) : null,
+      })
+      await sessionCtx.refreshData()
+      toast.success('项目 Agent 设置已保存')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '项目 Agent 设置保存失败')
+    } finally {
+      setSavingAgentScope(false)
+    }
+  }, [workspaceId, projectDefaultAgentDraft, allowedAgentDrafts, updateWorkspace, sessionCtx, toast])
 
   const savePromptLayer = useCallback(
     async (scope: 'project' | 'session', scopeRef: string, content: string) => {
@@ -590,6 +637,115 @@ export function ChatConfigPanel({
                   </div>
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* 项目 Agent：项目内新会话默认绑定 + 聊天选择器白名单 */}
+        {workspaceId != null && workspace != null && (
+          <div className="inspector-section">
+            <h4 className="config-panel-header">
+              <button
+                type="button"
+                className="session-panel-toggle"
+                aria-expanded={!agentScopeCollapsed}
+                onClick={() => setAgentScopeCollapsed(!agentScopeCollapsed)}
+              >
+                <Icons.Bot size={11} />
+                项目 Agent
+                <span className="spacer" />
+                <Icons.ChevronRight
+                  size={10}
+                  className={`chev ${agentScopeCollapsed ? '' : 'chev-open'}`}
+                />
+              </button>
+            </h4>
+            {!agentScopeCollapsed && (
+              <div className="runtime-prompt-block project-agent-block">
+                <div className="runtime-prompt-title">项目默认 Agent</div>
+                <div className="session-panel-caption">
+                  在本项目内新建会话时优先使用；清除后回落全局「上次使用」与平台默认助手。
+                </div>
+                <select
+                  className="project-agent-select"
+                  aria-label="项目默认 Agent"
+                  value={projectDefaultAgentDraft}
+                  onChange={(event) => setProjectDefaultAgentDraft(event.target.value)}
+                >
+                  <option value="">（未设置）</option>
+                  {allAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="runtime-prompt-title project-agent-list-title">项目可用 Agent</div>
+                <div className="project-agent-toolbar">
+                  <input
+                    className="project-agent-search"
+                    type="text"
+                    value={agentFilter}
+                    onChange={(event) => setAgentFilter(event.target.value)}
+                    placeholder={`搜索 ${allAgents.length} 个 Agent…`}
+                    aria-label="搜索 Agent"
+                  />
+                  {allowedAgentDrafts.size > 0 ? (
+                    <button
+                      type="button"
+                      className="project-agent-clear"
+                      onClick={() => setAllowedAgentDrafts(new Set())}
+                    >
+                      清空已选
+                    </button>
+                  ) : null}
+                </div>
+                <div className="session-panel-caption project-agent-count">
+                  {allowedAgentDrafts.size > 0
+                    ? `已选 ${allowedAgentDrafts.size}/${allAgents.length}，本项目聊天选择器只显示勾选项（平台默认助手始终保留）`
+                    : `未限制，显示全部 ${allAgents.length} 个 Agent；勾选后聊天选择器只显示勾选项`}
+                </div>
+                {visibleAgents.length > 0 ? (
+                  <div className="project-agent-list">
+                    {visibleAgents.map((agent) => {
+                      const checked = allowedAgentDrafts.has(agent.id)
+                      return (
+                        <label key={agent.id} className="project-agent-option">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setAllowedAgentDrafts((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(agent.id)) {
+                                  next.delete(agent.id)
+                                } else {
+                                  next.add(agent.id)
+                                }
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="project-agent-option-name">{agent.name}</span>
+                          {agent.builtIn ? (
+                            <span className="project-agent-option-tag">内置</span>
+                          ) : null}
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="project-agent-empty">没有匹配「{agentFilter.trim()}」的 Agent</div>
+                )}
+                <button
+                  type="button"
+                  className="btn ghost sm runtime-save-btn"
+                  disabled={savingAgentScope}
+                  onClick={() => void saveAgentScope()}
+                >
+                  <Save size={12} />
+                  保存项目
+                </button>
+              </div>
             )}
           </div>
         )}

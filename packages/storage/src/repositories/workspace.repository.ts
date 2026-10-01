@@ -22,6 +22,8 @@ export interface WorkspaceRow {
   project_kind: string
   relocated_from_json: string | null
   worktree_meta_json: string | null
+  default_agent_id: string | null
+  allowed_agent_ids_json: string | null
   pinned_at: string | null
   archived_at: string | null
   created_at: string
@@ -151,7 +153,17 @@ export class WorkspaceRepository extends BaseRepository {
   }
 
   /** 更新工作区元数据 */
-  update(id: string, params: { name?: string; projectKind?: string; pinnedAt?: string | null; archivedAt?: string | null }): void {
+  update(
+    id: string,
+    params: {
+      name?: string
+      projectKind?: string
+      defaultAgentId?: string | null
+      allowedAgentIds?: string[] | null
+      pinnedAt?: string | null
+      archivedAt?: string | null
+    },
+  ): void {
     const fields: string[] = []
     const values: unknown[] = []
 
@@ -163,6 +175,22 @@ export class WorkspaceRepository extends BaseRepository {
     if (params.projectKind !== undefined) {
       fields.push('project_kind = ?')
       values.push(params.projectKind)
+    }
+
+    // defaultAgentId：null=清除（回落全局默认），undefined=不改动
+    if (params.defaultAgentId !== undefined) {
+      fields.push('default_agent_id = ?')
+      values.push(params.defaultAgentId)
+    }
+
+    // allowedAgentIds：null/空数组=清除白名单（显示全部），undefined=不改动
+    if (params.allowedAgentIds !== undefined) {
+      fields.push('allowed_agent_ids_json = ?')
+      values.push(
+        params.allowedAgentIds == null || params.allowedAgentIds.length === 0
+          ? null
+          : this.toJson(params.allowedAgentIds),
+      )
     }
 
     if (params.pinnedAt !== undefined) {

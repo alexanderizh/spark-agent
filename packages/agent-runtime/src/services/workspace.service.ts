@@ -77,6 +77,10 @@ export async function detectProjectKind(rootPath: string): Promise<string> {
 export interface UpdateWorkspaceParams {
   name?: string
   projectKind?: string
+  /** 项目默认 Agent ID；null=清除（回落全局默认），undefined=不改动 */
+  defaultAgentId?: string | null
+  /** 项目可用 Agent 白名单；null/空数组=未绑定（显示全部），undefined=不改动 */
+  allowedAgentIds?: string[] | null
   pinnedAt?: string | null
   archivedAt?: string | null
 }

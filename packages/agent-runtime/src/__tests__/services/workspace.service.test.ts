@@ -21,6 +21,8 @@ function makeWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
     project_kind: 'unknown',
     relocated_from_json: null,
     worktree_meta_json: null,
+    default_agent_id: null,
+    allowed_agent_ids_json: null,
     pinned_at: null,
     archived_at: null,
     created_at: now,

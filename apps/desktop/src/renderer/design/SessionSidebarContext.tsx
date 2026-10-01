@@ -53,6 +53,10 @@ import {
 } from './session-schedule-summary'
 import { readAgentRuntimePrefs } from './views/chat/composerAgentRuntimePrefs'
 import { NO_PROJECT_WORKSPACE_NAME } from './session-workspace-root'
+import {
+  filterAgentsByProjectScope,
+  resolveProjectDefaultAgentId,
+} from './utils/project-agent-scope'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -349,6 +353,8 @@ type SessionSidebarCtx = {
   workspaces: WorkspaceInfo[]
   providers: ProviderProfile[]
   agents: ManagedAgent[]
+  /** 项目绑定 Agent 白名单后的聊天可选列表（未绑定=全量；平台默认助手始终保留） */
+  selectableAgents: ManagedAgent[]
 
   // Active state
   activeSessionId: SessionId | null
@@ -492,6 +498,15 @@ export function SessionSidebarProvider({
   const revealSession = useCallback((id: SessionId) => setRevealSessionId(id), [])
   const clearRevealSession = useCallback(() => setRevealSessionId(null), [])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  const activeWorkspace = useMemo(
+    () => workspaces.find((w) => w.id === activeWorkspaceId) ?? null,
+    [workspaces, activeWorkspaceId],
+  )
+  // 项目 Agent 白名单过滤视图：聊天/画布选择器与新建会话回退链消费
+  const selectableAgents = useMemo(
+    () => filterAgentsByProjectScope(agents, activeWorkspace),
+    [agents, activeWorkspace],
+  )
   const [sessionScheduleTargetId, setSessionScheduleTargetId] = useState<SessionId | null>(null)
   const [sessionScheduleSummaries, setSessionScheduleSummaries] =
     useState<SessionScheduleSummaries>({})
@@ -1175,12 +1190,18 @@ export function SessionSidebarProvider({
         const optionProviderProfileId = nonEmptyString(options.providerProfileId)
         const selectedProvider = nonEmptyString(selectedProviderId)
         const optionModelId = nonEmptyString(options.modelId)
-        const defaultAgent = agents.find((a) => a.isDefault && a.enabled)
+        // 项目级 Agent 作用域：默认 Agent 优先于全局「上次使用」；白名单过滤选择池。
+        // 悬空 ID / 过滤后为空均视为未绑定（utils/project-agent-scope）。
+        const projectWorkspace = workspaces.find((w) => w.id === wsId) ?? null
+        const projectDefaultAgentId = resolveProjectDefaultAgentId(agents, projectWorkspace)
+        const scopedAgents = filterAgentsByProjectScope(agents, projectWorkspace)
+        const defaultAgent = scopedAgents.find((a) => a.isDefault && a.enabled)
         const selectedAgent =
-          agents.find((a) => a.id === optionAgentId) ??
-          agents.find((a) => a.id === prefsAgentId) ??
+          scopedAgents.find((a) => a.id === optionAgentId) ??
+          scopedAgents.find((a) => a.id === projectDefaultAgentId) ??
+          scopedAgents.find((a) => a.id === prefsAgentId) ??
           defaultAgent ??
-          agents[0]
+          scopedAgents[0]
         const preferredAdapter =
           (options.agentAdapter as SessionAgentAdapter) ??
           prefs.adapter ??
@@ -1379,6 +1400,7 @@ export function SessionSidebarProvider({
       agents,
       createSession,
       createWorktree,
+      workspaces,
       ensureNoProjectWorkspace,
       listProviders,
       persistTeamConfig,
@@ -2223,6 +2245,7 @@ export function SessionSidebarProvider({
       workspaces,
       providers,
       agents,
+      selectableAgents,
       activeSessionId: active,
       activeWorkspaceId,
       setActiveSession: setActive,

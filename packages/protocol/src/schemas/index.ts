@@ -923,6 +923,10 @@ export const WorkspaceUpdateRequestSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   pinned: z.boolean().optional(),
   archived: z.boolean().optional(),
+  /** 项目默认 Agent：Agent ID 或 null（清除，回落全局默认）；缺省表示不改动。非 UUID（如内置 platform-manager-agent）合法 */
+  defaultAgentId: z.string().min(1).max(200).nullable().optional(),
+  /** 项目可用 Agent 白名单：Agent ID 数组；null 或空数组=清除白名单（显示全部）；缺省表示不改动 */
+  allowedAgentIds: z.array(z.string().min(1).max(200)).max(50).nullable().optional(),
 })
 
 export const WorkspaceDeleteRequestSchema = z.object({
