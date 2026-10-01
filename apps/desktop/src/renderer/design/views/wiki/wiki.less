@@ -1266,14 +1266,22 @@ textarea.wiki_editor_input {
   padding: 16px 20px 48px;
 }
 
+/* 模块卡：与全局 .settings-card 同款扁平灰底（--bg-sunken）+ 圆角，
+   标题条在卡内用 --bg-soft 提一档（同 .rule-layer 的分组模块样式），
+   行分隔继续走 --wiki-divider。 */
 .wiki_set_group {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 .wiki_set_group_head {
-  padding-bottom: 8px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--wiki-divider);
+  background: var(--bg-soft);
 }
 
 .wiki_set_group_title {
@@ -1301,7 +1309,7 @@ textarea.wiki_editor_input {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--wiki-divider);
 }
 
@@ -1311,6 +1319,26 @@ textarea.wiki_editor_input {
 
 .wiki_set_row.is-pending .wiki_set_label {
   color: var(--wiki-t3);
+}
+
+/* 灰底上的 InputNumber：设置页全局（SettingsView.less）把 .ant-input-number 强制为
+   「透明边框 + bg-sunken 背景」，与卡片灰底同色会整体隐形；
+   此处按语音助手设置同款方案恢复白底 + 可见边框，深浅色模式均保持对比。
+   选择器 .ant-select 的边框在根节点不受全局规则影响，无需处理。 */
+.wiki_set_root .wiki_set_control .ant-input-number,
+.wiki_set_root .wiki_set_control .ant-input-number:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, transparent) !important;
+  background: var(--panel) !important;
+  box-shadow: none !important;
+}
+
+.wiki_set_root .wiki_set_control .ant-input-number:hover {
+  border-color: color-mix(in srgb, var(--text) 32%, transparent) !important;
+}
+
+.wiki_set_root .wiki_set_control .ant-input-number-focused,
+.wiki_set_root .wiki_set_control .ant-input-number:focus-within {
+  border-color: var(--primary) !important;
 }
 
 .wiki_set_main {

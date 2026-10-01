@@ -22,11 +22,38 @@
   color: var(--text-faint);
 }
 
+/* 连接表单改为与全局 .settings-card 同款的扁平灰底模块（--bg-sunken + 圆角） */
 .team-registry-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px 16px;
   margin-bottom: 16px;
+  overflow: hidden;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+
+/* 灰底上的 antd 输入框：设置页全局（SettingsView.less）把 .ant-input /
+   .ant-input-affix-wrapper 强制为「透明边框 + bg-sunken 背景」，与卡片灰底同色会整体隐形；
+   按语音助手设置同款方案恢复白底 + 可见边框，深浅色模式均保持对比。 */
+.team-registry-section .team-registry-form .ant-input,
+.team-registry-section .team-registry-form .ant-input-affix-wrapper {
+  border-color: color-mix(in srgb, var(--text) 18%, transparent) !important;
+  background: var(--panel) !important;
+  box-shadow: none !important;
+}
+
+.team-registry-section .team-registry-form .ant-input:hover,
+.team-registry-section .team-registry-form .ant-input-affix-wrapper:hover {
+  border-color: color-mix(in srgb, var(--text) 32%, transparent) !important;
+}
+
+.team-registry-section .team-registry-form .ant-input:focus,
+.team-registry-section .team-registry-form .ant-input-focused,
+.team-registry-section .team-registry-form .ant-input-affix-wrapper-focused {
+  border-color: var(--primary) !important;
 }
 
 .team-registry-field {

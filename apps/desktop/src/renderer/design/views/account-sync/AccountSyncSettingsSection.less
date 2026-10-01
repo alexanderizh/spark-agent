@@ -51,9 +51,15 @@
   color: var(--danger);
 }
 
+/* 同步配置 / 同步记录两个行分组模块：改为与全局 .settings-card 同款的扁平灰底
+   （--bg-sunken + 圆角），行分隔沿用 --account-sync-line，行内左右各留 16px。 */
 .account-sync-block,
 .account-sync-history {
-  border-top: 1px solid var(--account-sync-line);
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 .account-sync-master-row,
@@ -69,7 +75,7 @@
 
 .account-sync-master-row {
   min-height: 72px;
-  padding: 12px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--account-sync-line);
 }
 
@@ -91,7 +97,7 @@
 
 .account-sync-category-row {
   min-height: 64px;
-  padding: 10px 0 10px 18px;
+  padding: 10px 16px 10px 18px;
   border-bottom: 1px solid var(--account-sync-line);
 }
 
@@ -115,7 +121,7 @@
 }
 
 .account-sync-action-row {
-  padding: 18px 0 22px;
+  padding: 18px 16px 22px;
 }
 
 .account-sync-action-copy {
@@ -197,7 +203,7 @@
 
 .account-sync-history-heading {
   min-height: 70px;
-  padding: 12px 0;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--account-sync-line);
 }
 
@@ -209,8 +215,12 @@
 .account-sync-history-row {
   justify-content: flex-start;
   min-height: 64px;
-  padding: 9px 0;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--account-sync-line);
+}
+
+.account-sync-history-row:last-child {
+  border-bottom: none;
 }
 
 .account-sync-state-dot {

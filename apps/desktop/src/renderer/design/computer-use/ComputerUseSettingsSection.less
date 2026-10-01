@@ -60,8 +60,13 @@
   line-height: 1.6;
 }
 
+/* 授权列表 / 诊断块改为与全局 .settings-card 同款的扁平灰底模块（--bg-sunken + 圆角），
+   行分隔沿用原 --line，左侧不再有行首空隙。 */
 .computer-use-permission-list {
-  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  overflow: hidden;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 .computer-use-permission-row,
@@ -70,8 +75,12 @@
   align-items: center;
   gap: 12px;
   min-height: 68px;
-  padding: 10px 0;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+}
+
+.computer-use-permission-row:last-child {
+  border-bottom: none;
 }
 
 .computer-use-permission-icon {
@@ -125,8 +134,11 @@
 
 .computer-use-diagnostic {
   align-items: flex-start;
+  overflow: hidden;
   padding-block: 14px;
-  border-top: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
 }
 
 .computer-use-diagnostic-actions {
