@@ -26,12 +26,28 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   private var canceledSessionOrder: [String] = []
   private var persistentCapture: MacPersistentWindowCapture?
   private var persistentCaptureBindingKey: String?
-  /// Parks the persistent stream when no observation has requested frames for
-  /// a while (client finished its task without cancelling, or crashed). A live
-  /// SCStream keeps the macOS "screen sharing" indicator on the captured
-  /// window; parking closes it, and the next observe restarts the stream.
+  /// Window id the resident stream is bound to, for the `captureWindow` fast
+  /// path (snapshots reuse the live stream instead of a one-shot capture).
+  private var persistentCaptureWindowID: String?
+  /// SCShareableContent snapshot cache. A full enumeration measures multiple
+  /// seconds on a loaded system, yet a single agent turn routinely needs it
+  /// twice (list_windows + a one-shot capture). The host request loop is
+  /// strictly serial, so a plain TTL cache suffices — no in-flight dedup.
+  /// Window-lookup misses bypass it with a force refresh so a just-created
+  /// window is still found on the first try.
+  private var shareableContentCache: (content: SCShareableContent, loadedAt: TimeInterval)?
+  private static let shareableContentCacheTTL: TimeInterval = 1.5
+  /// Parks the persistent stream when no client has requested frames for a
+  /// while. The stream deliberately OUTLIVES the session that created it
+  /// (Codex-style resident sharing): cancelSession keeps it alive so
+  /// back-to-back tasks reuse it instead of paying SCStream restart churn and
+  /// re-lighting the macOS "screen sharing" indicator on every task boundary.
+  /// The timeout aligns with the client-side atomic session idle release
+  /// (300s), so a live task with long thinking gaps never trips it — only an
+  /// abandoned stream parks. Override: SPARK_COMPUTER_HOST_CAPTURE_IDLE_SECONDS.
   private var persistentCaptureIdleWatchTask: Task<Void, Never>?
-  private static let persistentCaptureIdleTimeout: TimeInterval = 90
+  private static let persistentCaptureIdleTimeout: TimeInterval =
+    residentCaptureIdleTimeoutFromEnvironment()
 
   func capabilityManifest() -> NativeCapabilityManifest {
     let permission: String
@@ -129,7 +145,17 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   }
 
   func captureWindow(id: String) async throws -> NativeCapturedWindow {
-    try await captureWindowOnce(id: id)
+    // Fast path: a resident stream already bound to this window serves the
+    // snapshot without the one-shot SCScreenshotManager round, which
+    // re-enumerates SCShareableContent and pulses the screen-sharing
+    // indicator on every capture_app_snapshot / wait_for call.
+    if persistentCapture != nil, persistentCaptureWindowID == id,
+      let capture = persistentCapture,
+      let frame = try? await capture.snapshotFrame()
+    {
+      return frame
+    }
+    return try await captureWindowOnce(id: id)
   }
 
   private func captureWindowOnce(id: String) async throws -> NativeCapturedWindow {
@@ -137,7 +163,12 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     guard let windowID = NativeWindowIDParser.parse(id) else {
       throw NativeHostPlatformError.windowNotFound
     }
-    let content = try await loadShareableContent()
+    var content = try await loadShareableContent()
+    if content.windows.first(where: { $0.windowID == windowID }) == nil {
+      // The cached list can lag a just-created window by up to the cache TTL —
+      // re-enumerate once before declaring the window gone.
+      content = try await loadShareableContent(forceRefresh: true)
+    }
     guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
       throw NativeHostPlatformError.windowNotFound
     }
@@ -186,9 +217,17 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     windowID: String,
     previousTreeVersion: String?,
     fullTree: Bool,
-    persistentCapture: Bool
+    persistentCapture: Bool,
+    recordBinding: Bool = true
   ) async throws -> NativeObservedWindow {
-    observation = nil
+    // `recordBinding: false` marks a one-shot window inspection riding the
+    // resident host BESIDE an active governed session: it must leave the
+    // session's binding state (`observation`) and its resident stream alone —
+    // the session's next action validates against both. Mutating them here
+    // surfaced as staleFrame / focusMismatch retry loops mid-task.
+    if recordBinding {
+      observation = nil
+    }
     // A locked display renders nothing and swallows all input — fail fast with
     // the dedicated code so the model reports it instead of retrying blind.
     guard !NativeLockScreen.isLocked() else {
@@ -244,7 +283,12 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
         traceMark("revalidate(full)", tAfter)
       }
     } catch {
-      await stopPersistentCapture()
+      // Only the binding-owning session observe self-heals the resident
+      // stream here; a one-shot inspection that failed revalidation must not
+      // tear down a governed session's stream.
+      if recordBinding {
+        await stopPersistentCapture()
+      }
       throw error
     }
     traceMark("total", tStart)
@@ -262,10 +306,12 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       + frameHasher.finalize().prefix(16).map {
         String(format: "%02x", $0)
       }.joined()
-    observation = ObservationBinding(
-      frameID: frameID, treeVersion: tree.treeVersion, target: before.identity,
-      screenshotDigest: SHA256.hash(data: captured.bytes).map { String(format: "%02x", $0) }
-        .joined())
+    if recordBinding {
+      observation = ObservationBinding(
+        frameID: frameID, treeVersion: tree.treeVersion, target: before.identity,
+        screenshotDigest: SHA256.hash(data: captured.bytes).map { String(format: "%02x", $0) }
+          .joined())
+    }
     return NativeObservedWindow(
       frameID: frameID,
       treeVersion: tree.treeVersion,
@@ -870,8 +916,13 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       canceledSessions.remove(oldest)
     }
     userInput.unbind(sessionID: id)
-    invalidateObservation()
-    await stopPersistentCapture()
+    // Resident capture: releasing the session KEEPS the persistent stream and
+    // the AX baseline warm for the next task on the same window — the idle
+    // watch parks the stream once nobody has requested frames for a while.
+    // Tearing both down here is what forced every task boundary into a full
+    // SCStream restart (screen-sharing indicator churn) plus a cold AX
+    // traversal that re-paid the Chromium web-tree readiness budget.
+    invalidateObservation(preserveAccessibilityBaseline: true)
   }
 
   private func captureObservedWindow(
@@ -880,7 +931,13 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     persistent: Bool
   ) async throws -> NativeCapturedWindow {
     guard persistent else {
-      await stopPersistentCapture()
+      // One-shot reads must NEVER touch the resident stream. Concurrent
+      // window inspections (get_app_state over the shared connection) run
+      // through this branch while a governed session is streaming the same
+      // host — stopping here would tear that session's stream down and force
+      // an SCStream restart (screen-sharing indicator pulse) on its next
+      // frame. The stream's lifecycle belongs to binding switches and the
+      // idle watch, not to one-shot readers.
       return try await captureWindowOnce(id: id)
     }
     let requestedAt = ProcessInfo.processInfo.systemUptime
@@ -890,7 +947,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
         guard let windowID = NativeWindowIDParser.parse(id) else {
           throw NativeHostPlatformError.windowNotFound
         }
-        let content = try await loadShareableContent()
+        var content = try await loadShareableContent()
+        if content.windows.first(where: { $0.windowID == windowID }) == nil {
+          content = try await loadShareableContent(forceRefresh: true)
+        }
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
           throw NativeHostPlatformError.windowNotFound
         }
@@ -903,6 +963,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
           scaleFactor: scaleFactor
         )
         persistentCaptureBindingKey = bindingKey
+        persistentCaptureWindowID = id
         startPersistentCaptureIdleWatch()
       }
       guard let persistentCapture else { throw NativeHostPlatformError.captureFailed }
@@ -919,13 +980,15 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     let capture = persistentCapture
     persistentCapture = nil
     persistentCaptureBindingKey = nil
+    persistentCaptureWindowID = nil
     await capture?.stop()
   }
 
   /// Watch loop runs while a persistent capture exists; it parks the stream
   /// after `persistentCaptureIdleTimeout` without a frame request. Because
-  /// `nextFrame` refreshes the idle clock on every observe, an active task
-  /// never trips it — only an abandoned stream does.
+  /// `nextFrame`/`snapshotFrame` refresh the idle clock on every request, an
+  /// active task never trips it — the timeout only reaps streams abandoned by
+  /// a finished or crashed client (sessions themselves no longer stop it).
   private func startPersistentCaptureIdleWatch() {
     let timeout = Self.persistentCaptureIdleTimeout
     persistentCaptureIdleWatchTask = Task { [weak self] in
@@ -1192,12 +1255,22 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     if !preserveAccessibilityBaseline { accessibility.invalidate() }
   }
 
-  private func loadShareableContent() async throws -> SCShareableContent {
+  private func loadShareableContent(forceRefresh: Bool = false) async throws
+    -> SCShareableContent
+  {
+    let now = ProcessInfo.processInfo.systemUptime
+    if !forceRefresh, let cache = shareableContentCache,
+      now - cache.loadedAt < Self.shareableContentCacheTTL
+    {
+      return cache.content
+    }
     do {
-      return try await SCShareableContent.excludingDesktopWindows(
+      let content = try await SCShareableContent.excludingDesktopWindows(
         false,
         onScreenWindowsOnly: false
       )
+      shareableContentCache = (content, ProcessInfo.processInfo.systemUptime)
+      return content
     } catch {
       if !CGPreflightScreenCaptureAccess() {
         screenPermissionWasDenied = true
@@ -1232,6 +1305,19 @@ private func actionMayChangeFocusedWindow(_ action: NativeComputerAction) -> Boo
   }
 }
 
+/// Resident-capture idle park timeout. Default aligns with the client-side
+/// atomic session idle release (300s) so the session teardown and the stream
+/// park happen together; clamped to [30s, 1h].
+private func residentCaptureIdleTimeoutFromEnvironment() -> TimeInterval {
+  let fallback: TimeInterval = 300
+  guard
+    let raw = ProcessInfo.processInfo.environment["SPARK_COMPUTER_HOST_CAPTURE_IDLE_SECONDS"]
+  else { return fallback }
+  let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard let seconds = TimeInterval(trimmed), seconds.isFinite else { return fallback }
+  return min(max(seconds, 30), 3_600)
+}
+
 private final class MacPersistentWindowCapture: NSObject, SCStreamOutput, SCStreamDelegate,
   @unchecked Sendable
 {
@@ -1246,8 +1332,8 @@ private final class MacPersistentWindowCapture: NSObject, SCStreamOutput, SCStre
   private var terminalError = false
   /// Last time a client asked for a frame. The provider parks the stream when
   /// nobody has requested one for a while — a live SCStream keeps macOS
-  /// showing the per-window "screen sharing" indicator long after the task
-  /// ended, which reads as a leak to the user.
+  /// showing the per-window "screen sharing" indicator, so it must eventually
+  /// clear even though the stream now outlives individual sessions.
   private var lastRequestAt = ProcessInfo.processInfo.systemUptime
 
   static func start(window: SCWindow, scaleFactor: CGFloat) async throws
@@ -1302,6 +1388,42 @@ private final class MacPersistentWindowCapture: NSObject, SCStreamOutput, SCStre
       try await Task.sleep(for: .milliseconds(25))
     }
     throw NativeHostPlatformError.captureFailed
+  }
+
+  /// Snapshot semantics (vs `nextFrame`'s post-action freshness): return the
+  /// freshest frame available — briefly wait for one newer than the request,
+  /// then fall back to `latest`. The stream only emits frames on damage, so
+  /// an absent newer frame means the window still matches `latest`.
+  func snapshotFrame() async throws -> NativeCapturedWindow {
+    markRequested()
+    let requestedAt = ProcessInfo.processInfo.systemUptime
+    let graceDeadline = requestedAt + 0.25
+    var fallback: (image: CGImage, capturedAt: TimeInterval)?
+    while ProcessInfo.processInfo.systemUptime < graceDeadline {
+      let state = lock.withLock { (latest, terminalError) }
+      if state.1 { throw NativeHostPlatformError.captureFailed }
+      if let latest = state.0 {
+        if latest.capturedAt >= requestedAt {
+          return NativeCapturedWindow(
+            bytes: try encodePNG(latest.image),
+            width: latest.image.width,
+            height: latest.image.height
+          )
+        }
+        fallback = latest
+      }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let state = lock.withLock { (latest, terminalError) }
+    if state.1 { throw NativeHostPlatformError.captureFailed }
+    guard let latest = state.0 ?? fallback else {
+      throw NativeHostPlatformError.captureFailed
+    }
+    return NativeCapturedWindow(
+      bytes: try encodePNG(latest.image),
+      width: latest.image.width,
+      height: latest.image.height
+    )
   }
 
   func stop() async {

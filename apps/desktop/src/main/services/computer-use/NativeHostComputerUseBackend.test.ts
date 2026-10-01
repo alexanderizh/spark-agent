@@ -212,22 +212,25 @@ describe('NativeHostComputerUseBackend', () => {
     await expect(
       backend.inspectWindow({ appId: 'app-1', windowId: 'window-1', fullTree: true }),
     ).resolves.toEqual(OBSERVATION)
+    // recordBinding: false — a one-shot inspection must not touch the governed
+    // session's binding state or resident stream on the shared host.
     expect(connection.observe).toHaveBeenCalledWith({
       snapshotId: 'snapshot-1',
       appId: 'app-1',
       windowId: 'window-1',
       previousTreeVersion: null,
       fullTree: true,
+      recordBinding: false,
     })
   })
 
-  it('isolates app-state inspection from an active task Host connection', async () => {
-    const taskConnection = createControlConnection([OBSERVATION])
-    const inspectionConnection = createControlConnection([OBSERVATION])
-    const connect = vi
-      .fn()
-      .mockResolvedValueOnce(taskConnection)
-      .mockResolvedValueOnce(inspectionConnection)
+  it('reuses the resident Host connection for app-state inspection beside an active task', async () => {
+    // A previous transient mode spawned a second host process per inspect call
+    // whenever a governed session was active. Resident capture means the
+    // inspection rides the SAME supervisor connection (and its warm capture
+    // stream) instead of paying spawn + handshake + teardown every call.
+    const connection = createControlConnection([OBSERVATION])
+    const connect = vi.fn(async () => connection)
     const backend = new NativeHostComputerUseBackend({
       platform: 'macos',
       connect,
@@ -243,9 +246,9 @@ describe('NativeHostComputerUseBackend', () => {
     await expect(
       backend.inspectWindow({ appId: 'app-1', windowId: 'window-1', fullTree: true }),
     ).resolves.toEqual(OBSERVATION)
-    expect(connect).toHaveBeenCalledTimes(2)
-    expect(inspectionConnection.close).toHaveBeenCalledOnce()
-    expect(taskConnection.close).not.toHaveBeenCalled()
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(connection.observe).toHaveBeenCalledTimes(2)
+    expect(connection.close).not.toHaveBeenCalled()
   })
 
   it('transparently retries idempotent listWindows when the Host reports a recoverable failure', async () => {

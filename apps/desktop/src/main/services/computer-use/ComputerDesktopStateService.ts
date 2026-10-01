@@ -9,6 +9,7 @@ import {
 import {
   ComputerApplicationTargetResolver,
   findApplicationWindow,
+  type ApplicationTargetPreference,
 } from './ComputerApplicationTargetResolver.js'
 import {
   ComputerApplicationCatalog,
@@ -49,8 +50,10 @@ export class ComputerDesktopStateService {
       'resolve'
     > = new ComputerApplicationTargetResolver(),
     private readonly now: () => Date = () => new Date(),
-    private readonly applicationCatalog: Pick<ComputerApplicationCatalog, 'listInstalled'> =
-      new ComputerApplicationCatalog(),
+    private readonly applicationCatalog: Pick<
+      ComputerApplicationCatalog,
+      'listInstalled'
+    > = new ComputerApplicationCatalog(),
   ) {}
 
   async listWindows(
@@ -124,6 +127,12 @@ export class ComputerDesktopStateService {
      * the candidate matching this id wins instead of whoever holds focus.
      */
     preferredAppId?: string
+    /**
+     * Process id of the app the caller's session already controls. Same-bundle
+     * applications collapse to one app id, so the pid is the only reliable
+     * disambiguator between them.
+     */
+    preferredProcessId?: number
   }): Promise<{
     target: NativeWindowDescriptor
     state: DesktopApplicationState
@@ -131,7 +140,12 @@ export class ComputerDesktopStateService {
   }> {
     const target = await this.resolveTarget(input)
     const windows = await this.readWindows()
-    const appWindows = windows.filter((candidate) => candidate.app.id === target.app.id)
+    // Match the process too: a same-bundle neighbour's windows must not leak
+    // into this app's state (windowCount / windows list).
+    const appWindows = windows.filter(
+      (candidate) =>
+        candidate.app.id === target.app.id && candidate.app.processId === target.app.processId,
+    )
     const state = aggregateApps(appWindows, true)[0]
     if (state == null) throw targetUnavailable()
     const observation =
@@ -145,12 +159,23 @@ export class ComputerDesktopStateService {
     return { target, state, observation }
   }
 
-  async openApp(app: string): Promise<{
+  async openApp(
+    app: string,
+    preference?: Pick<ApplicationTargetPreference, 'preferredAppId' | 'preferredProcessId'>,
+  ): Promise<{
     target: NativeWindowDescriptor
     state: DesktopApplicationState
     observation: ComputerObservation | null
   }> {
-    return this.getAppState({ app, launchIfNeeded: true, includeObservation: false })
+    return this.getAppState({
+      app,
+      launchIfNeeded: true,
+      includeObservation: false,
+      ...(preference?.preferredAppId == null ? {} : { preferredAppId: preference.preferredAppId }),
+      ...(preference?.preferredProcessId == null
+        ? {}
+        : { preferredProcessId: preference.preferredProcessId }),
+    })
   }
 
   private async resolveTarget(input: {
@@ -158,6 +183,7 @@ export class ComputerDesktopStateService {
     windowId?: string
     launchIfNeeded?: boolean
     preferredAppId?: string
+    preferredProcessId?: number
   }): Promise<NativeWindowDescriptor> {
     if ((input.app == null) === (input.windowId == null)) {
       throw new ComputerUseBrokerError(
@@ -173,8 +199,10 @@ export class ComputerDesktopStateService {
       return target
     }
     const app = input.app as string
-    const preference =
-      input.preferredAppId == null ? {} : { preferredAppId: input.preferredAppId }
+    const preference: ApplicationTargetPreference = {
+      ...(input.preferredAppId == null ? {} : { preferredAppId: input.preferredAppId }),
+      ...(input.preferredProcessId == null ? {} : { preferredProcessId: input.preferredProcessId }),
+    }
     if (input.launchIfNeeded !== false) {
       const target = await this.targetResolver.resolve(app, this.inventory, preference)
       if (target != null) return target
@@ -229,11 +257,15 @@ function aggregateApps(
   windows: NativeWindowDescriptor[],
   includeWindows: boolean,
 ): DesktopApplicationState[] {
+  // Group by app id AND process id: same-bundle neighbours (dev Electron vs
+  // another com.github.Electron app) share an app id but are distinct
+  // applications — merging them hides the ambiguity from the model entirely.
   const grouped = new Map<string, NativeWindowDescriptor[]>()
   for (const window of windows) {
-    const current = grouped.get(window.app.id) ?? []
+    const key = `${window.app.id}:${window.app.processId ?? '?'}`
+    const current = grouped.get(key) ?? []
     current.push(window)
-    grouped.set(window.app.id, current)
+    grouped.set(key, current)
   }
   return [...grouped.values()]
     .map((appWindows): DesktopApplicationState => {

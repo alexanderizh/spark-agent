@@ -24,6 +24,14 @@ import {
 } from './NativeHostFrameCodec.js'
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000
+/**
+ * Capture-heavy requests (capture_window / observe) stack SCShareableContent
+ * enumeration (~7s measured on loaded systems), ScreenCaptureKit first-frame
+ * warm-up and the Chromium web-tree readiness budget (~4.7s) inside one call;
+ * the default 20s budget gets blown on large Electron windows, which then
+ * SIGKILLs the whole host for what is merely a slow capture.
+ */
+const CAPTURE_REQUEST_TIMEOUT_MS = 45_000
 const CAPABILITY_REFRESH_INTERVAL_MS = 1_000
 const ACTION_TIMEOUT_GRACE_MS = 5_000
 const MAX_REQUEST_TIMEOUT_MS = 180_000
@@ -232,6 +240,7 @@ export class NativeHostClient {
         { type: 'capture_window', snapshotId: input.snapshotId, windowId: input.windowId },
         'capture_result',
         input.signal,
+        CAPTURE_REQUEST_TIMEOUT_MS,
       )
       if (result.response.snapshotId !== input.snapshotId || result.bytes == null) {
         throw this.protocolFailure('Native Host capture response does not match its request')
@@ -247,6 +256,11 @@ export class NativeHostClient {
     previousTreeVersion: string | null
     fullTree: boolean
     persistentCapture?: boolean
+    /**
+     * false = one-shot window inspection: the host must not touch the governed
+     * session's binding state or its resident stream (absent = owns them).
+     */
+    recordBinding?: boolean
     signal?: AbortSignal
   }): Promise<NativeHostBinaryResponse<Extract<NativeHostResponse, { type: 'observation' }>>> {
     return this.runExclusive(async () => {
@@ -259,9 +273,11 @@ export class NativeHostClient {
           previousTreeVersion: input.previousTreeVersion,
           fullTree: input.fullTree,
           ...(input.persistentCapture === true ? { persistentCapture: true } : {}),
+          ...(input.recordBinding === false ? { recordBinding: false } : {}),
         },
         'observation',
         input.signal,
+        CAPTURE_REQUEST_TIMEOUT_MS,
       )
       if (result.bytes == null)
         throw this.protocolFailure('Native Host observation omitted its image')

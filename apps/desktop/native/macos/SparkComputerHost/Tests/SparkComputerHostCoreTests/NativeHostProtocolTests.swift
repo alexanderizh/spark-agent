@@ -29,12 +29,25 @@ final class NativeHostProtocolTests: XCTestCase {
     XCTAssertEqual(
       try decoder.decode(
         json(
-          #"{"protocolVersion":1,"requestId":"request-observe","type":"observe","snapshotId":"snapshot-1","appId":"app-1","windowId":"window-1","previousTreeVersion":null,"fullTree":false,"persistentCapture":true}"#
+          #"{"protocolVersion":1,"requestId":"request-observe","type":"observe","snapshotId":"snapshot-1","appId":"app-1","windowId":"window-1","previousTreeVersion":null,"fullTree":false,"persistentCapture":true,"recordBinding":false}"#
         )),
       .observe(
         requestID: "request-observe", snapshotID: "snapshot-1", appID: "app-1",
         windowID: "window-1", previousTreeVersion: nil, fullTree: false,
-        persistentCapture: true
+        persistentCapture: true, recordBinding: false
+      )
+    )
+    // One-shot inspection form: recordBinding alone (no persistentCapture) is a
+    // valid combination, and its absence still defaults to owning the binding.
+    XCTAssertEqual(
+      try decoder.decode(
+        json(
+          #"{"protocolVersion":1,"requestId":"request-observe","type":"observe","snapshotId":"snapshot-1","appId":"app-1","windowId":"window-1","previousTreeVersion":null,"fullTree":false,"recordBinding":false}"#
+        )),
+      .observe(
+        requestID: "request-observe", snapshotID: "snapshot-1", appID: "app-1",
+        windowID: "window-1", previousTreeVersion: nil, fullTree: false,
+        persistentCapture: false, recordBinding: false
       )
     )
     XCTAssertThrowsError(

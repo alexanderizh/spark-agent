@@ -82,7 +82,7 @@ describe('ComputerUseAgentController', () => {
       app: 'Editor',
       launchIfNeeded: true,
     })
-    expect(openApp).toHaveBeenCalledWith('Editor')
+    expect(openApp).toHaveBeenCalledWith('Editor', {})
   })
 
   it('waits on session status events instead of polling get_status', async () => {

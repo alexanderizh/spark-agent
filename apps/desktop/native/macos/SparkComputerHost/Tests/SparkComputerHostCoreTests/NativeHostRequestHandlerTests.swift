@@ -39,7 +39,7 @@ final class NativeHostRequestHandlerTests: XCTestCase {
       .observe(
         requestID: "request-2", snapshotID: "snapshot-1", appID: "app-1",
         windowID: "window-1", previousTreeVersion: nil, fullTree: true,
-        persistentCapture: false
+        persistentCapture: false, recordBinding: true
       )
     )
     XCTAssertEqual(try responseErrorCode(unsupported.json), "environment_unavailable")
@@ -70,7 +70,7 @@ final class NativeHostRequestHandlerTests: XCTestCase {
       .observe(
         requestID: "request-observe", snapshotID: "snapshot-1", appID: "app-1",
         windowID: "window-1", previousTreeVersion: nil, fullTree: true,
-        persistentCapture: false
+        persistentCapture: false, recordBinding: true
       )
     )
     XCTAssertEqual(observed.binary, Data("png".utf8))
@@ -207,7 +207,7 @@ final class NativeHostRequestHandlerTests: XCTestCase {
       .observe(
         requestID: "request-invalid-observation", snapshotID: "snapshot-1", appID: "app-1",
         windowID: "window-1", previousTreeVersion: nil, fullTree: true,
-        persistentCapture: false
+        persistentCapture: false, recordBinding: true
       )
     )
     XCTAssertEqual(try responseErrorCode(result.json), "native_host_incompatible")
@@ -220,7 +220,7 @@ final class NativeHostRequestHandlerTests: XCTestCase {
       .observe(
         requestID: "request-mismatched-observation", snapshotID: "snapshot-1", appID: "app-1",
         windowID: "window-1", previousTreeVersion: nil, fullTree: true,
-        persistentCapture: false
+        persistentCapture: false, recordBinding: true
       )
     )
     XCTAssertEqual(try responseErrorCode(result.json), "focus_mismatch")
@@ -299,7 +299,8 @@ private actor FakePlatformProvider: NativeHostPlatformProviding {
 
   func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool,
+    recordBinding: Bool
   ) async throws -> NativeObservedWindow {
     guard controlAvailable else { throw NativeHostPlatformError.environmentUnavailable }
     let app = NativeAppIdentity(

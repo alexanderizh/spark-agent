@@ -44,8 +44,10 @@ const REUSABLE_STATUSES: ReadonlySet<ComputerSessionStatus> = new Set([
  * Generous on purpose: reasoning models routinely think for minutes between
  * tool calls, and a short timer visibly tears the task card down and up
  * mid-task ("断断续续") while forcing a stream restart on every call. The
- * macOS capture stream has its own 90s frame-idle park that clears the screen
- * sharing indicator without disturbing session continuity.
+ * macOS capture stream outlives the session and parks on its own frame-idle
+ * timeout (300s, aligned with this release window) — it clears the screen
+ * sharing indicator in lockstep with the session teardown instead of
+ * restarting mid-task.
  */
 const IDLE_RELEASE_MS = 300_000
 
@@ -146,6 +148,15 @@ export class ComputerAtomicActionService {
    */
   boundAppIdFor(sessionId: string): string | null {
     return this.states.get(sessionId)?.lastObservation?.foreground.app.id ?? null
+  }
+
+  /**
+   * Process id of the app the implicit session is observing, when armed.
+   * Same-bundle applications (dev Electron vs another com.github.Electron
+   * app) share one app id — the pid is the disambiguator that never misses.
+   */
+  boundProcessIdFor(sessionId: string): number | null {
+    return this.states.get(sessionId)?.lastObservation?.foreground.app.processId ?? null
   }
 
   /**

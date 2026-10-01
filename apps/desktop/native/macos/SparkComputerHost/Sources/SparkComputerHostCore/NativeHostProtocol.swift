@@ -20,7 +20,8 @@ public enum NativeHostRequest: Equatable, Sendable {
     windowID: String,
     previousTreeVersion: String?,
     fullTree: Bool,
-    persistentCapture: Bool
+    persistentCapture: Bool,
+    recordBinding: Bool
   )
   case executeAction(requestID: String, envelope: NativeComputerActionEnvelope)
   case cancelSession(requestID: String, computerSessionID: String)
@@ -32,7 +33,7 @@ public enum NativeHostRequest: Equatable, Sendable {
       .requestPermissions(let requestID, _),
       .listWindows(let requestID),
       .captureWindow(let requestID, _, _),
-      .observe(let requestID, _, _, _, _, _, _),
+      .observe(let requestID, _, _, _, _, _, _, _),
       .executeAction(let requestID, _),
       .cancelSession(let requestID, _),
       .ping(let requestID):
@@ -116,7 +117,15 @@ public struct NativeHostRequestDecoder: Sendable {
         "protocolVersion", "requestId", "type", "snapshotId", "appId", "windowId",
         "previousTreeVersion", "fullTree",
       ]
-      guard Set(object.keys) == observeKeys || Set(object.keys) == observeKeys.union(["persistentCapture"])
+      // `persistentCapture` (stream reuse) and `recordBinding` (who owns the
+      // session binding state) are independent opt-outs; each may appear alone.
+      let allowedKeySets: [Set<String>] = [
+        observeKeys,
+        observeKeys.union(["persistentCapture"]),
+        observeKeys.union(["recordBinding"]),
+        observeKeys.union(["persistentCapture", "recordBinding"]),
+      ]
+      guard allowedKeySets.contains(Set(object.keys))
       else { throw NativeHostProtocolError.invalidRequestFields }
       let previousTreeVersion: String?
       if object["previousTreeVersion"] is NSNull {
@@ -135,6 +144,18 @@ public struct NativeHostRequestDecoder: Sendable {
       } else {
         throw NativeHostProtocolError.invalidRequestFields
       }
+      // Absent `recordBinding` keeps the historical behavior (this observe
+      // owns the binding state). One-shot window inspections send false: they
+      // ride the resident host beside an active governed session and must not
+      // clobber its binding (the session's next action validates against it).
+      let recordBinding: Bool
+      if object["recordBinding"] == nil {
+        recordBinding = true
+      } else if let parsed = strictBoolean(object["recordBinding"]) {
+        recordBinding = parsed
+      } else {
+        throw NativeHostProtocolError.invalidRequestFields
+      }
       return .observe(
         requestID: requestID,
         snapshotID: try requireIdentifier(object["snapshotId"]),
@@ -142,7 +163,8 @@ public struct NativeHostRequestDecoder: Sendable {
         windowID: try requireIdentifier(object["windowId"]),
         previousTreeVersion: previousTreeVersion,
         fullTree: fullTree,
-        persistentCapture: persistentCapture
+        persistentCapture: persistentCapture,
+        recordBinding: recordBinding
       )
     case "execute_action":
       try requireKeys(

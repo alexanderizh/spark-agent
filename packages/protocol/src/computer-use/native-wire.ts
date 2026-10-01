@@ -192,6 +192,9 @@ export const NativeHostRequestSchema = z.discriminatedUnion('type', [
       previousTreeVersion: ComputerUseIdentifierSchema.nullable(),
       fullTree: z.boolean(),
       persistentCapture: z.boolean().optional(),
+      // false = one-shot inspection: the host must not touch the governed
+      // session's binding state or its resident capture stream.
+      recordBinding: z.boolean().optional(),
     })
     .strict(),
   z

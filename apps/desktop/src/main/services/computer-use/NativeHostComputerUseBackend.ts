@@ -127,6 +127,8 @@ export interface NativeHostConnection {
     previousTreeVersion: string | null
     fullTree: boolean
     persistentCapture?: boolean
+    /** false = one-shot inspection; absent = owns the session binding state. */
+    recordBinding?: boolean
     signal?: AbortSignal
   }): Promise<{
     response: Extract<NativeHostResponse, { type: 'observation' }>
@@ -326,10 +328,13 @@ export class NativeHostComputerUseBackend
     fullTree: boolean
     signal?: AbortSignal
   }): Promise<ComputerObservation> {
-    const transient = this.observationSessions.size > 0
-    let connection: NativeHostConnection | null = null
+    // Shares the supervisor's resident connection. A previous transient mode
+    // spawned a whole second host process per call whenever a governed session
+    // was active — paying artifact verification + handshake + its OWN capture
+    // stream (a second screen-sharing indicator) on every get_app_state
+    // fallback read. The resident host keeps capture/AX warm across calls.
+    const connection = await this.getConnection()
     try {
-      connection = transient ? await this.connect() : await this.getConnection()
       const manifest = await connection.getCapabilities()
       if (
         !manifest.features.captureWindow ||
@@ -345,6 +350,9 @@ export class NativeHostComputerUseBackend
         windowId: input.windowId,
         previousTreeVersion: null,
         fullTree: input.fullTree,
+        // One-shot inspection beside a governed session: leave the session's
+        // binding state and resident stream untouched on the shared host.
+        recordBinding: false,
         ...(input.signal == null ? {} : { signal: input.signal }),
       })
       const observation = ComputerObservationSchema.parse(result.response.observation)
@@ -362,8 +370,6 @@ export class NativeHostComputerUseBackend
       return observation
     } catch (error) {
       throw normalizeBackendError(error)
-    } finally {
-      if (transient && connection != null) await connection.close().catch(() => undefined)
     }
   }
 
@@ -1099,6 +1105,8 @@ function selectFollowTarget(
   const focused = controllable.filter((window) => window.focused)
   if (focused.length > 0) return largestWindow(focused)
   if (controllable.length > 0) return largestWindow(controllable)
-  log.warn('Computer follow-focus target lost (focus_mismatch); desktop has no controllable windows')
+  log.warn(
+    'Computer follow-focus target lost (focus_mismatch); desktop has no controllable windows',
+  )
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
 }

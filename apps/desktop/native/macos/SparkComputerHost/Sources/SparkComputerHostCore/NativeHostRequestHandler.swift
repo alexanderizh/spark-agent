@@ -122,7 +122,8 @@ public protocol NativeHostPlatformProviding: Sendable {
   func captureWindow(id: String) async throws -> NativeCapturedWindow
   func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool,
+    recordBinding: Bool
   ) async throws -> NativeObservedWindow
   func executeAction(_ envelope: NativeComputerActionEnvelope) async throws -> NativeActionExecution
   func cancelSession(id: String) async
@@ -137,7 +138,8 @@ extension NativeHostPlatformProviding {
 
   public func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool,
+    recordBinding: Bool
   ) async throws -> NativeObservedWindow {
     throw NativeHostPlatformError.environmentUnavailable
   }
@@ -218,12 +220,13 @@ public actor NativeHostRequestHandler {
         return NativeHostReply(json: try NativeHostResponseEncoder.pong(requestID: requestID))
       case .observe(
         let requestID, let snapshotID, let appID, let windowID,
-        let previousTreeVersion, let fullTree, let persistentCapture
+        let previousTreeVersion, let fullTree, let persistentCapture,
+        let recordBinding
       ):
         let observed = try await provider.observe(
           snapshotID: snapshotID, appID: appID, windowID: windowID,
           previousTreeVersion: previousTreeVersion, fullTree: fullTree,
-          persistentCapture: persistentCapture
+          persistentCapture: persistentCapture, recordBinding: recordBinding
         )
         // App-level contract: the provider self-heals onto the app's live
         // window when the requested one died (Electron window churn), and the

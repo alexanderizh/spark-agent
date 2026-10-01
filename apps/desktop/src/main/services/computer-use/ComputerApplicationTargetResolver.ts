@@ -57,6 +57,14 @@ export interface ApplicationTargetPreference {
    * dev build even while the packaged install sits next to it.
    */
   preferredAppId?: string
+  /**
+   * Process id the session is already bound to. Two applications can share
+   * ONE bundle id (the dev Electron build and another com.github.Electron
+   * app): their app ids collapse to the same value, and `/usr/bin/open -b`
+   * cannot target a pid, so the process id is the only disambiguator that
+   * reliably picks the right instance.
+   */
+  preferredProcessId?: number
 }
 
 export function findApplicationWindow(
@@ -75,23 +83,43 @@ export function findApplicationWindow(
   // Same display name owned by SEVERAL applications (packaged SparkWork vs the
   // dev Electron build, two browsers): resolving by "whoever is focused" is how
   // a task bound for one build ended up driving the other while focus bounced.
-  // Prefer the session's bound application when it is among the candidates;
-  // otherwise surface the ambiguity with the concrete ids instead of guessing —
-  // the caller re-specifies by bundle id or window id.
-  const candidateAppIds = [...new Set(matches.map((candidate) => candidate.app.id))]
-  if (candidateAppIds.length > 1) {
-    const preferred = preference?.preferredAppId
-    const preferredMatches =
-      preferred == null ? [] : matches.filter((candidate) => candidate.app.id === preferred)
+  // The identity key includes the process id because same-bundle applications
+  // (dev Electron + any other com.github.Electron app) collapse to one app id.
+  // Prefer the session's bound application/process when it is among the
+  // candidates; otherwise surface the ambiguity with the concrete ids instead
+  // of guessing — the caller re-specifies by app name or window id.
+  const candidateKeys = [...new Set(matches.map(applicationIdentityKey))]
+  if (candidateKeys.length > 1) {
+    const preferredMatches = matches.filter((candidate) => matchesPreference(candidate, preference))
     if (preferredMatches.length > 0) return pickWindowWithinApp(preferredMatches)
     throw ambiguousApplication(requestedApplication, matches)
   }
   return pickWindowWithinApp(matches)
 }
 
-function pickWindowWithinApp(
-  matches: NativeWindowDescriptor[],
-): NativeWindowDescriptor {
+function applicationIdentityKey(candidate: NativeWindowDescriptor): string {
+  return `${candidate.app.id}:${candidate.app.processId ?? '?'}`
+}
+
+function matchesPreference(
+  candidate: NativeWindowDescriptor,
+  preference?: ApplicationTargetPreference,
+): boolean {
+  if (preference == null) return false
+  if (preference.preferredAppId == null && preference.preferredProcessId == null) return false
+  if (preference.preferredAppId != null && candidate.app.id !== preference.preferredAppId) {
+    return false
+  }
+  if (
+    preference.preferredProcessId != null &&
+    candidate.app.processId !== preference.preferredProcessId
+  ) {
+    return false
+  }
+  return true
+}
+
+function pickWindowWithinApp(matches: NativeWindowDescriptor[]): NativeWindowDescriptor {
   // Electron apps (e.g. Bilibili) frequently own a tiny tray/status/widget
   // window that the system reports as focused. Binding to that 66x20 window
   // ruins the task. Prefer real main windows; only fall back to a sub-min
@@ -114,7 +142,7 @@ function ambiguousApplication(
   const seen = new Set<string>()
   const candidates = matches
     .filter((candidate) => {
-      const key = candidate.app.id
+      const key = applicationIdentityKey(candidate)
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -122,12 +150,22 @@ function ambiguousApplication(
     .map(
       (candidate) =>
         `${candidate.app.name} (appId=${candidate.app.id}` +
-        `${candidate.app.bundleId == null ? '' : `, bundleId=${candidate.app.bundleId}`})`,
+        `${candidate.app.bundleId == null ? '' : `, bundleId=${candidate.app.bundleId}`}` +
+        `${candidate.app.processId == null ? '' : `, pid=${candidate.app.processId}`})`,
     )
+  // Same-bundle neighbours cannot be told apart by bundle id — only a window
+  // id separates them. Different-bundle collisions (dev vs packaged build)
+  // ARE separable by bundle id, so keep that hint instead of sending the
+  // model back to the display name that just collided.
+  const bundleKeys = new Set(matches.map((candidate) => candidate.app.bundleId ?? candidate.app.id))
+  const hint =
+    bundleKeys.size === 1
+      ? 'Their bundle id is shared, so disambiguate with a window id.'
+      : 'Specify the exact bundle id, or a window id.'
   return new ComputerUseBrokerError(
     'focus_mismatch',
     `Application "${requestedApplication}" matches ${candidates.length} different applications: ` +
-      `${candidates.join(' ; ')}. Specify the exact bundle id / appId, or a window id.`,
+      `${candidates.join(' ; ')}. ${hint}`,
     undefined,
     { retryable: true },
   )

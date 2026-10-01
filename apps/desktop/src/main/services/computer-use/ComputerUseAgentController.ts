@@ -241,7 +241,17 @@ export class ComputerUseAgentController {
       }
       case 'open_app': {
         const request = parseOpenApp(args)
-        return this.createDesktopState(services.backend).openApp(request.app)
+        // Same-bundle collisions (dev Electron vs another com.github.Electron
+        // app): `/usr/bin/open -b` cannot target a pid and both instances
+        // share one app id, so the session's bound process id must steer the
+        // resolution to the instance this session actually controls.
+        const atomic = this.atomicBundleFor(services).service
+        const preferredAppId = sessionId == null ? null : atomic.boundAppIdFor(sessionId)
+        const preferredProcessId = sessionId == null ? null : atomic.boundProcessIdFor(sessionId)
+        return this.createDesktopState(services.backend).openApp(request.app, {
+          ...(preferredAppId == null ? {} : { preferredAppId }),
+          ...(preferredProcessId == null ? {} : { preferredProcessId }),
+        })
       }
       case 'get_app_state': {
         const request = parseGetAppState(args)
@@ -689,6 +699,7 @@ export class ComputerUseAgentController {
       windowId?: string
       launchIfNeeded?: boolean
       preferredAppId?: string
+      preferredProcessId?: number
     } = {
       ...(request.app == null ? {} : { app: request.app }),
       ...(request.windowId == null ? {} : { windowId: request.windowId }),
@@ -698,12 +709,16 @@ export class ComputerUseAgentController {
     if (context == null) {
       return desktopState.getAppState(selector)
     }
-    // Same-name resolution keeps the app the session already controls (dev vs
-    // packaged build) instead of adopting whoever currently holds focus.
-    const preferredAppId = this.atomicBundleFor(services).service.boundAppIdFor(sessionId)
+    // Same-name/same-bundle resolution keeps the app the session already
+    // controls (dev vs packaged build, dev Electron vs other com.github.Electron
+    // apps) instead of adopting whoever currently holds focus.
+    const atomic = this.atomicBundleFor(services).service
+    const preferredAppId = atomic.boundAppIdFor(sessionId)
+    const preferredProcessId = atomic.boundProcessIdFor(sessionId)
     const resolved = await desktopState.getAppState({
       ...selector,
       ...(preferredAppId == null ? {} : { preferredAppId }),
+      ...(preferredProcessId == null ? {} : { preferredProcessId }),
       includeObservation: false,
     })
     try {
@@ -745,14 +760,20 @@ export class ComputerUseAgentController {
     if (request.targetWindowId != null) {
       return requireTargetWindowById(await services.backend.listWindows(), request.targetWindowId)
     }
-    // Re-binding by display name: among same-named applications (dev vs
-    // packaged build) the one this session already controls wins.
-    const preferredAppId =
-      sessionId == null ? null : this.atomicBundleFor(services).service.boundAppIdFor(sessionId)
+    // Re-binding by display name: among same-named/same-bundle applications
+    // (dev vs packaged build) the one this session already controls wins.
+    const atomic = this.atomicBundleFor(services).service
+    const preferredAppId = sessionId == null ? null : atomic.boundAppIdFor(sessionId)
+    const preferredProcessId = sessionId == null ? null : atomic.boundProcessIdFor(sessionId)
     const target = await this.appTargetResolver.resolve(
       request.targetApp as string,
       services.backend,
-      preferredAppId == null ? {} : { preferredAppId },
+      preferredAppId == null && preferredProcessId == null
+        ? {}
+        : {
+            ...(preferredAppId == null ? {} : { preferredAppId }),
+            ...(preferredProcessId == null ? {} : { preferredProcessId }),
+          },
     )
     if (target == null) {
       throw unavailable(`Application ${request.targetApp} is not available on this desktop`)

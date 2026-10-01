@@ -82,7 +82,11 @@ describe('findApplicationWindow', () => {
 
   it('reports same-name ambiguity across different applications instead of picking by focus', () => {
     const packaged = {
-      app: { id: 'com.spark-agent.desktop', name: 'SparkWork', bundleId: 'com.spark-agent.desktop' },
+      app: {
+        id: 'com.spark-agent.desktop',
+        name: 'SparkWork',
+        bundleId: 'com.spark-agent.desktop',
+      },
       window: {
         id: 'window-packaged',
         title: 'SparkWork',
@@ -103,9 +107,10 @@ describe('findApplicationWindow', () => {
       focused: false,
       minimized: false,
     } as NativeWindowDescriptor
-    // The previously-focused packaged build must NOT silently win.
+    // The previously-focused packaged build must NOT silently win. Distinct
+    // bundle ids CAN separate the candidates, so the hint must point there.
     expect(() => findApplicationWindow([packaged, dev], 'SparkWork')).toThrow(
-      /matches 2 different applications:.*com\.spark-agent\.desktop.*com\.github\.Electron/s,
+      /matches 2 different applications:.*com\.spark-agent\.desktop.*com\.github\.Electron.*Specify the exact bundle id, or a window id\./s,
     )
     // A session already bound to the dev build keeps resolving to it.
     expect(
@@ -117,7 +122,11 @@ describe('findApplicationWindow', () => {
 
   it('keeps the same-name preference when the bound application is no longer running', () => {
     const packaged = {
-      app: { id: 'com.spark-agent.desktop', name: 'SparkWork', bundleId: 'com.spark-agent.desktop' },
+      app: {
+        id: 'com.spark-agent.desktop',
+        name: 'SparkWork',
+        bundleId: 'com.spark-agent.desktop',
+      },
       window: {
         id: 'window-packaged',
         title: 'SparkWork',
@@ -135,5 +144,61 @@ describe('findApplicationWindow', () => {
     expect(
       findApplicationWindow([packaged], 'SparkWork', { preferredAppId: 'com.github.Electron' }),
     ).toEqual(packaged)
+  })
+
+  it('disambiguates same-BUNDLE processes by pid (shared app id collapses them)', () => {
+    // Real E2E case: the dev build and WeChat DevTools both declare
+    // com.github.Electron, so both windows share ONE app id. The old guard
+    // (keyed by app id alone) never fired and open_app raised the wrong app.
+    const sparkDev = {
+      app: {
+        id: 'com.github.Electron',
+        name: 'Electron',
+        bundleId: 'com.github.Electron',
+        processId: 48445,
+      },
+      window: {
+        id: 'window-dev',
+        title: 'SparkWork',
+        bounds: { x: 0, y: 0, width: 1440, height: 900 },
+      },
+      display: { id: 'display-1', scaleFactor: 2 },
+      focused: false,
+      minimized: false,
+    } as NativeWindowDescriptor
+    const wechatDevtools = {
+      app: {
+        id: 'com.github.Electron',
+        name: 'wechatwebdevtools',
+        bundleId: 'com.github.Electron',
+        processId: 55263,
+      },
+      window: {
+        id: 'window-wechat',
+        title: '微信开发者工具',
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+      },
+      display: { id: 'display-1', scaleFactor: 2 },
+      focused: true,
+      minimized: false,
+    } as NativeWindowDescriptor
+    const windows = [sparkDev, wechatDevtools]
+    // Without a binding the ambiguity must surface — with both pids so the
+    // caller can re-specify — instead of silently picking the focused one.
+    // A SHARED bundle id cannot separate them, so the hint must say so.
+    expect(() => findApplicationWindow(windows, 'com.github.Electron')).toThrow(
+      /pid=48445.*pid=55263.*bundle id is shared, so disambiguate with a window id\./s,
+    )
+    // The session's bound pid steers to the right instance even while the
+    // wrong one holds focus.
+    expect(
+      findApplicationWindow(windows, 'com.github.Electron', { preferredProcessId: 48445 }),
+    ).toEqual(sparkDev)
+    expect(
+      findApplicationWindow(windows, 'com.github.Electron', {
+        preferredAppId: 'com.github.Electron',
+        preferredProcessId: 55263,
+      }),
+    ).toEqual(wechatDevtools)
   })
 })
