@@ -149,7 +149,8 @@ describe('ComputerDesktopStateService', () => {
     await expect(service.openApp('哔哩哔哩')).resolves.toMatchObject({
       target: { app: { id: 'app-bilibili' } },
     })
-    expect(resolve).toHaveBeenCalledWith('哔哩哔哩', inventory)
+    // No session preference in play: the resolver gets an empty preference bag.
+    expect(resolve).toHaveBeenCalledWith('哔哩哔哩', inventory, {})
     expect(inventory.listWindows).toHaveBeenCalled()
   })
 })

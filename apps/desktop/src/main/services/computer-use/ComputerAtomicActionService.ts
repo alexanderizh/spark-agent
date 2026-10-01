@@ -139,6 +139,16 @@ export class ComputerAtomicActionService {
   }
 
   /**
+   * The application the implicit session is currently observing, when armed.
+   * Used as the resolution preference when the model re-binds by display name:
+   * among same-named applications (dev vs packaged build) the one the session
+   * already controls must win instead of whoever happens to hold focus.
+   */
+  boundAppIdFor(sessionId: string): string | null {
+    return this.states.get(sessionId)?.lastObservation?.foreground.app.id ?? null
+  }
+
+  /**
    * Observes a window and refreshes the cached observation.
    *
    * `target` binds the implicit session to a specific app/window BEFORE the

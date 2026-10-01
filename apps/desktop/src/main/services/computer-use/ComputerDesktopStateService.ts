@@ -118,6 +118,12 @@ export class ComputerDesktopStateService {
     windowId?: string
     launchIfNeeded?: boolean
     includeObservation?: boolean
+    /**
+     * Application id the caller's session already controls. When several
+     * applications share the requested display name (dev vs packaged build),
+     * the candidate matching this id wins instead of whoever holds focus.
+     */
+    preferredAppId?: string
   }): Promise<{
     target: NativeWindowDescriptor
     state: DesktopApplicationState
@@ -151,6 +157,7 @@ export class ComputerDesktopStateService {
     app?: string
     windowId?: string
     launchIfNeeded?: boolean
+    preferredAppId?: string
   }): Promise<NativeWindowDescriptor> {
     if ((input.app == null) === (input.windowId == null)) {
       throw new ComputerUseBrokerError(
@@ -166,11 +173,13 @@ export class ComputerDesktopStateService {
       return target
     }
     const app = input.app as string
+    const preference =
+      input.preferredAppId == null ? {} : { preferredAppId: input.preferredAppId }
     if (input.launchIfNeeded !== false) {
-      const target = await this.targetResolver.resolve(app, this.inventory)
+      const target = await this.targetResolver.resolve(app, this.inventory, preference)
       if (target != null) return target
     }
-    const target = findApplicationWindow(await this.readWindows(), app)
+    const target = findApplicationWindow(await this.readWindows(), app, preference)
     if (target == null) throw targetUnavailable()
     return target
   }

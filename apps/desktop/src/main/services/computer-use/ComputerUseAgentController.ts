@@ -327,7 +327,7 @@ export class ComputerUseAgentController {
         // adopt whatever happened to be frontmost on the first call.
         const context = this.sessionContexts.get(sessionId)
         if (context == null) throw unavailable('Agent turn context is unavailable')
-        const target = await this.resolveBindTarget(services, request)
+        const target = await this.resolveBindTarget(services, request, sessionId)
         const observation = await this.atomicBundleFor(services).service.observe(
           sessionId,
           context.turnId,
@@ -688,6 +688,7 @@ export class ComputerUseAgentController {
       app?: string
       windowId?: string
       launchIfNeeded?: boolean
+      preferredAppId?: string
     } = {
       ...(request.app == null ? {} : { app: request.app }),
       ...(request.windowId == null ? {} : { windowId: request.windowId }),
@@ -697,7 +698,14 @@ export class ComputerUseAgentController {
     if (context == null) {
       return desktopState.getAppState(selector)
     }
-    const resolved = await desktopState.getAppState({ ...selector, includeObservation: false })
+    // Same-name resolution keeps the app the session already controls (dev vs
+    // packaged build) instead of adopting whoever currently holds focus.
+    const preferredAppId = this.atomicBundleFor(services).service.boundAppIdFor(sessionId)
+    const resolved = await desktopState.getAppState({
+      ...selector,
+      ...(preferredAppId == null ? {} : { preferredAppId }),
+      includeObservation: false,
+    })
     try {
       const observation = await this.atomicBundleFor(services).service.observe(
         sessionId,
@@ -726,6 +734,7 @@ export class ComputerUseAgentController {
   private async resolveBindTarget(
     services: ComputerUseServices,
     request: { targetApp?: string | undefined; targetWindowId?: string | undefined },
+    sessionId?: string,
   ): Promise<NativeWindowDescriptor> {
     if ((request.targetApp == null) === (request.targetWindowId == null)) {
       throw new ComputerUseBrokerError(
@@ -736,9 +745,14 @@ export class ComputerUseAgentController {
     if (request.targetWindowId != null) {
       return requireTargetWindowById(await services.backend.listWindows(), request.targetWindowId)
     }
+    // Re-binding by display name: among same-named applications (dev vs
+    // packaged build) the one this session already controls wins.
+    const preferredAppId =
+      sessionId == null ? null : this.atomicBundleFor(services).service.boundAppIdFor(sessionId)
     const target = await this.appTargetResolver.resolve(
       request.targetApp as string,
       services.backend,
+      preferredAppId == null ? {} : { preferredAppId },
     )
     if (target == null) {
       throw unavailable(`Application ${request.targetApp} is not available on this desktop`)

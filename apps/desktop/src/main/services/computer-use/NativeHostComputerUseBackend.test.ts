@@ -819,6 +819,44 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('keeps the observed application after an unbound action even when focus moved to another app', async () => {
+    // The drift killer: the session already controls app-1, focus bounced onto a
+    // same-named OTHER install (app-2). The post-action observation must stay on
+    // app-1's live window instead of adopting the globally focused stranger.
+    const stillAliveWindow = { ...FOCUSED_WINDOW, focused: false }
+    const foreignFocusedWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'app-2', name: 'SparkWork' },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Other build' },
+      focused: true,
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValue([stillAliveWindow, foreignFocusedWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    const envelope = {
+      computerSessionId: 'computer-1',
+      actionId: 'action-1',
+      targetAppId: 'app-1',
+      targetWindowId: 'window-1',
+      action: { type: 'keypress', keys: ['META', 'TAB'] },
+    } as ComputerActionEnvelope
+
+    await backend.execute({ envelope, observation: OBSERVATION, signal })
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
+    )
+  })
+
   it('trusts an executed Host action even when its immediate visual evidence is unchanged', async () => {
     const unchanged = {
       ...OBSERVATION,

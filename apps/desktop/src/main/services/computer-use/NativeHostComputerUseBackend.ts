@@ -512,11 +512,14 @@ export class NativeHostComputerUseBackend
             actionResult.status === 'executed',
           )
         }
-        // An unbound task is explicitly allowed to follow the foreground desktop. A click,
-        // semantic invoke, or keyboard shortcut can open a dialog, switch an application, or
-        // move focus to another window. Re-observe the newly focused target instead of forcing
-        // the post-action capture back onto the pre-action window. Explicitly bound sessions
-        // keep their single-window contract and therefore retain the old target.
+        // An unbound task follows focus WITHIN the application it already observed (a click
+        // that opened a dialog or moved focus to a sibling window re-observes the newly
+        // focused window of the SAME app). It no longer adopts the desktop's global focused
+        // window: that behavior is what let a task's target drift between same-named
+        // installs (dev vs packaged build) whenever focus bounced, silently retargeting the
+        // session onto an application nobody asked for. Explicitly bound sessions keep
+        // their single-window contract; cross-app moves go through explicit focus_window /
+        // launcher navigation.
         const followsForeground =
           !this.targetBindings.has(envelope.computerSessionId) &&
           actionMayChangeFocusedWindow(envelope.action)
@@ -557,9 +560,12 @@ export class NativeHostComputerUseBackend
         // observation. Re-listing every desktop window here adds a Native Host round-trip to
         // every click/type step without improving target safety; captureObservation still
         // fails closed if that window vanished. Only unbound focus-changing actions need a
-        // fresh inventory to follow the newly focused app/window.
+        // fresh inventory — resolved app-scoped, see selectFollowTarget.
         const target = followsForeground
-          ? selectControllableWindow(await connection.listWindows(input.signal))
+          ? selectFollowTarget(await connection.listWindows(input.signal), {
+              appId: input.observation.foreground.app.id,
+              windowId: input.observation.foreground.window.id,
+            })
           : input.observation.foreground
         const observation = await this.measure('action_post_observation_ms', () =>
           this.captureObservation({
@@ -795,6 +801,18 @@ export class NativeHostComputerUseBackend
         'native_host_incompatible',
         'Native Host observation does not match its focused-window request',
       )
+    }
+    // The rebound above is legitimate but must never be silent: the host also
+    // logs its side (`window_follow_rebound`), and this line ties it to the
+    // session so a task that suddenly acts on a different window is diagnosable
+    // from the app log alone.
+    if (observation.foreground.window.id !== input.windowId) {
+      log.info('Computer observation rebound to a live window of the same application', {
+        computerSessionId: input.computerSessionId,
+        requestedWindowId: input.windowId,
+        observedWindowId: observation.foreground.window.id,
+        observedWindowTitle: observation.foreground.window.title.slice(0, 80),
+      })
     }
     if (input.signal.aborted) throw sessionCanceled()
     await this.evidenceSink?.persist({
@@ -1051,4 +1069,36 @@ function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescripto
       right.window.bounds.width * right.window.bounds.height -
       left.window.bounds.width * left.window.bounds.height,
   )[0] as NativeWindowDescriptor
+}
+
+/**
+ * Follow-focus target for an UNBOUND session, scoped to the application it
+ * already observed: the previous app's focused window first (focus moved to a
+ * sibling window/dialog of the same app), then the previously observed window,
+ * then any live window of that app. Only when that app has NO live windows
+ * does the session fall back to the desktop's focused window (the action really
+ * closed the app or handed focus elsewhere).
+ *
+ * The previous behavior — "pick the focused window of the WHOLE desktop" — is
+ * what let a task's target drift between same-named installs (dev vs packaged
+ * build) whenever focus bounced. The Swift host already resolves windows
+ * strictly within the bound application (`resolvingFocusedTarget`), so this
+ * aligns the TS side with the host's app-scoped session contract.
+ */
+function selectFollowTarget(
+  windows: NativeWindowDescriptor[],
+  previous: { appId: string; windowId: string },
+): NativeWindowDescriptor {
+  const controllable = windows.filter((window) => !window.minimized)
+  const appWindows = controllable.filter((window) => window.app.id === previous.appId)
+  const focusedAppWindow = appWindows.find((window) => window.focused)
+  if (focusedAppWindow != null) return focusedAppWindow
+  const previousWindow = appWindows.find((window) => window.window.id === previous.windowId)
+  if (previousWindow != null) return previousWindow
+  if (appWindows.length > 0) return largestWindow(appWindows)
+  const focused = controllable.filter((window) => window.focused)
+  if (focused.length > 0) return largestWindow(focused)
+  if (controllable.length > 0) return largestWindow(controllable)
+  log.warn('Computer follow-focus target lost (focus_mismatch); desktop has no controllable windows')
+  throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
 }

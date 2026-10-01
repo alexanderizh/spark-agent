@@ -24,9 +24,10 @@ export class ComputerApplicationTargetResolver {
   async resolve(
     application: string,
     inventory: ComputerWindowInventory,
+    preference?: ApplicationTargetPreference,
   ): Promise<NativeWindowDescriptor | null> {
     const requested = normalizeApplicationName(application)
-    const existing = findApplicationWindow(await inventory.listWindows(), requested)
+    const existing = findApplicationWindow(await inventory.listWindows(), requested, preference)
     if (this.platform !== 'darwin') return existing
 
     try {
@@ -38,7 +39,7 @@ export class ComputerApplicationTargetResolver {
     }
     const deadline = this.now() + this.timeoutMs
     do {
-      const target = findApplicationWindow(await inventory.listWindows(), requested)
+      const target = findApplicationWindow(await inventory.listWindows(), requested, preference)
       if (target != null) return target
       await this.wait(this.pollIntervalMs)
     } while (this.now() < deadline)
@@ -48,9 +49,20 @@ export class ComputerApplicationTargetResolver {
 
 const MIN_USABLE_WINDOW_SIDE = 120
 
+export interface ApplicationTargetPreference {
+  /**
+   * Application id the session is already bound to. When several applications
+   * share the requested display name, a candidate matching this id wins
+   * outright — this is how a task aimed at the dev build keeps resolving to the
+   * dev build even while the packaged install sits next to it.
+   */
+  preferredAppId?: string
+}
+
 export function findApplicationWindow(
   windows: NativeWindowDescriptor[],
   requestedApplication: string,
+  preference?: ApplicationTargetPreference,
 ): NativeWindowDescriptor | null {
   const requested = requestedApplication.trim().toLocaleLowerCase()
   const matches = windows.filter((candidate) => {
@@ -60,6 +72,26 @@ export function findApplicationWindow(
       .some((value) => value.trim().toLocaleLowerCase() === requested)
   })
   if (matches.length === 0) return null
+  // Same display name owned by SEVERAL applications (packaged SparkWork vs the
+  // dev Electron build, two browsers): resolving by "whoever is focused" is how
+  // a task bound for one build ended up driving the other while focus bounced.
+  // Prefer the session's bound application when it is among the candidates;
+  // otherwise surface the ambiguity with the concrete ids instead of guessing —
+  // the caller re-specifies by bundle id or window id.
+  const candidateAppIds = [...new Set(matches.map((candidate) => candidate.app.id))]
+  if (candidateAppIds.length > 1) {
+    const preferred = preference?.preferredAppId
+    const preferredMatches =
+      preferred == null ? [] : matches.filter((candidate) => candidate.app.id === preferred)
+    if (preferredMatches.length > 0) return pickWindowWithinApp(preferredMatches)
+    throw ambiguousApplication(requestedApplication, matches)
+  }
+  return pickWindowWithinApp(matches)
+}
+
+function pickWindowWithinApp(
+  matches: NativeWindowDescriptor[],
+): NativeWindowDescriptor {
   // Electron apps (e.g. Bilibili) frequently own a tiny tray/status/widget
   // window that the system reports as focused. Binding to that 66x20 window
   // ruins the task. Prefer real main windows; only fall back to a sub-min
@@ -73,6 +105,32 @@ export function findApplicationWindow(
       left.window.bounds.width * left.window.bounds.height
     )
   })[0] as NativeWindowDescriptor
+}
+
+function ambiguousApplication(
+  requestedApplication: string,
+  matches: NativeWindowDescriptor[],
+): ComputerUseBrokerError {
+  const seen = new Set<string>()
+  const candidates = matches
+    .filter((candidate) => {
+      const key = candidate.app.id
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map(
+      (candidate) =>
+        `${candidate.app.name} (appId=${candidate.app.id}` +
+        `${candidate.app.bundleId == null ? '' : `, bundleId=${candidate.app.bundleId}`})`,
+    )
+  return new ComputerUseBrokerError(
+    'focus_mismatch',
+    `Application "${requestedApplication}" matches ${candidates.length} different applications: ` +
+      `${candidates.join(' ; ')}. Specify the exact bundle id / appId, or a window id.`,
+    undefined,
+    { retryable: true },
+  )
 }
 
 function isUsableMainWindow(window: NativeWindowDescriptor): boolean {
