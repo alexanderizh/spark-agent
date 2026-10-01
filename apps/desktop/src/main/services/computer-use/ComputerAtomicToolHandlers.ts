@@ -6,6 +6,7 @@ import type {
 } from './ComputerAtomicActionService.js'
 import type { ComputerUseServices } from './ComputerUseServices.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import { isTreeSufficient } from './ComputerTreeSufficiency.js'
 
 /**
  * Reference to a target: the element id from the latest tree, or a pixel
@@ -568,7 +569,17 @@ export class ComputerAtomicToolHandlers {
     outcome: AtomicDispatchResult,
   ): Promise<Record<string, unknown>> {
     const observation = outcome.observation
-    const screenshot = await this.readScreenshot(sessionId, observation)
+    // P0-A token policy: with a sufficient tree the outline already carries the
+    // element ids the next action needs, so a fresh image on EVERY action result
+    // (~300 KB each) was the largest per-step cost on the MCP path. Pixels are
+    // still attached for the explicit `screenshot` tool, for a noop action (the
+    // model's plan did not land — extra visual evidence helps it re-strategize),
+    // and whenever the tree is a shell/OCR fallback.
+    const includeScreenshot =
+      toolName === 'screenshot' || outcome.noop || !isTreeSufficient(observation)
+    const screenshot = includeScreenshot
+      ? await this.readScreenshot(sessionId, observation)
+      : null
     return {
       action: toolName,
       status: outcome.noop ? 'noop' : 'executed',
@@ -579,7 +590,11 @@ export class ComputerAtomicToolHandlers {
       treeVersion: observation.treeVersion,
       elementCount: observation.tree.elementCount,
       tree: observation.tree.text,
-      ...(screenshot == null ? { screenshotUnavailable: true } : { screenshot }),
+      ...(screenshot == null
+        ? includeScreenshot
+          ? { screenshotUnavailable: true }
+          : { screenshotOmitted: 'tree_sufficient' }
+        : { screenshot }),
     }
   }
 

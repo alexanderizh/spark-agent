@@ -105,6 +105,93 @@ describe('GenericComputerDecisionAdapter', () => {
     expect(params?.system).toContain('decision component')
   })
 
+  it('goes tree-first (no image) when the accessibility tree is sufficient', async () => {
+    // A sufficient tree (element count above the shell budget, no pending/OCR
+    // notice) is the primary interface: the first attempt must be text-only and
+    // the vision candidates only serve as the recovery path.
+    const sufficientObservation: ComputerObservation = {
+      ...OBSERVATION,
+      tree: {
+        mode: 'full',
+        text: '- window "SparkWork" [1]\n  - button "通用" [17]',
+        elementCount: 240,
+      },
+    }
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Open settings',
+        action: { type: 'invoke_element', elementId: '17', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Open the settings page',
+      successCriteria: [],
+      observation: sufficientObservation,
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+    })
+
+    expect(generate).toHaveBeenCalledOnce()
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+    // The tree itself must still be in the prompt.
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      prompt: expect.stringContaining('button "通用" [17]'),
+    })
+  })
+
+  it('recovers with a vision attempt after a failed tree-first attempt', async () => {
+    const sufficientObservation: ComputerObservation = {
+      ...OBSERVATION,
+      tree: { mode: 'full', text: '- window "SparkWork" [1]', elementCount: 240 },
+    }
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'not json at all' })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Click the visible button',
+          action: { type: 'click', point: { x: 0.5, y: 0.5 } },
+        }),
+      })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Click the button',
+        successCriteria: [],
+        observation: sufficientObservation,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({ type: 'action', action: { type: 'click' } })
+
+    expect(generate.mock.calls[0]?.[0]).not.toHaveProperty('images')
+    expect(generate.mock.calls[1]?.[0]).toMatchObject({
+      images: [{ dataUrl: 'data:image/png;base64,cG5n', mimeType: 'image/png' }],
+    })
+  })
+
   it('falls back from combined visual planning to accessibility-only planning', async () => {
     const generate = vi
       .fn()

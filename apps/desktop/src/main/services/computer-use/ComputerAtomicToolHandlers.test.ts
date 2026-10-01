@@ -225,6 +225,73 @@ describe('ComputerAtomicToolHandlers', () => {
       height: OBSERVATION.screenshot.height,
     })
   })
+
+  it('omits the per-action screenshot when the tree is sufficient, and keeps it for noop', async () => {
+    const sufficient: ComputerObservation = {
+      ...OBSERVATION,
+      tree: {
+        mode: 'full',
+        text: '- window "Shopping list" [1]\n  - button "Add item" [7]',
+        elementCount: 180,
+      },
+    }
+    const readLatestImage = vi.fn(async () => ({
+      bytes: Buffer.from('png'),
+      width: sufficient.screenshot.width,
+      height: sufficient.screenshot.height,
+      mimeType: 'image/png' as const,
+    }))
+    const sufficientServices = {
+      sessions: services.sessions,
+      broker: {
+        observe: vi.fn(async () => sufficient),
+        dispatch: vi.fn(async (envelope: { action: unknown; intent: string }) => ({
+          observation: sufficient,
+          noop: false,
+          executionChannel: 'background_ax',
+        })),
+        stop: vi.fn(async () => undefined),
+      },
+      coordinator: services.coordinator,
+      evidence: { readLatestImage },
+    } as unknown as ComputerUseServices
+    const tool = new ComputerAtomicToolHandlers(
+      new ComputerAtomicActionService(sufficientServices),
+      sufficientServices,
+    )
+
+    const result = (await tool.handle('click', 'agent-1', 'turn-1', {
+      at: { elementId: '7' },
+    })) as Record<string, unknown>
+    // Tree sufficient + executed: pixels are deliberately withheld.
+    expect(result['tree']).toBe(sufficient.tree.text)
+    expect(result['screenshotOmitted']).toBe('tree_sufficient')
+    expect(result['screenshot']).toBeUndefined()
+    expect(readLatestImage).not.toHaveBeenCalled()
+
+    // A noop outcome re-attaches the image so the model can re-strategize.
+    const noopServices = {
+      ...sufficientServices,
+      broker: {
+        observe: vi.fn(async () => sufficient),
+        dispatch: vi.fn(async () => ({
+          observation: sufficient,
+          noop: true,
+          executionChannel: 'background_ax',
+        })),
+        stop: vi.fn(async () => undefined),
+      },
+    } as unknown as ComputerUseServices
+    const noopTool = new ComputerAtomicToolHandlers(
+      new ComputerAtomicActionService(noopServices),
+      noopServices,
+    )
+    const noopResult = (await noopTool.handle('click', 'agent-1', 'turn-1', {
+      at: { elementId: '7' },
+    })) as Record<string, unknown>
+    expect(noopResult['status']).toBe('noop')
+    expect(noopResult['screenshot']).toMatchObject({ data: 'cG5n' })
+  })
 })
 
 describe('ComputerAtomicActionService stale recovery', () => {
