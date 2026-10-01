@@ -29,8 +29,21 @@ public enum NativeWebTreeReadiness {
 
   /// Delays before each extra traversal, in milliseconds. The first extra pass
   /// is nearly free (the attribute flip has just landed) and the tail is long
-  /// enough for a throttled renderer to answer; total added wait is ~1.75 s.
-  public static let retryDelaysMs: [Int] = [120, 240, 480, 900]
+  /// enough for a throttled renderer to answer. Total added wait is ~4.7 s:
+  /// the measured throttled-renderer convergence was ~2.3 s, and the previous
+  /// ~1.75 s budget lost that race by half a second — the first traversal then
+  /// published (and cached) the window shell, which is exactly how Electron
+  /// targets ended up looking permanently empty.
+  public static let retryDelaysMs: [Int] = [120, 240, 480, 900, 1_500, 1_500]
+
+  /// How long a window that exhausted the retry schedule is served without
+  /// waiting again. The exhaustion record is a COOLDOWN, not a blacklist: a
+  /// genuinely shell-only window (Electron tray popups, helper windows) still
+  /// must not cost the full schedule on every observation, but a later
+  /// observation is allowed to re-arm the wait — the tree may simply have been
+  /// slow once. A permanent blacklist turned one mistimed first traversal into
+  /// a whole session of shell-only observations.
+  public static let exhaustedWindowCooldownSeconds: TimeInterval = 15
 
   /// A tree this small that also has no web content is an unfinished build
   /// rather than a genuinely tiny window: the window shell alone (frame, title

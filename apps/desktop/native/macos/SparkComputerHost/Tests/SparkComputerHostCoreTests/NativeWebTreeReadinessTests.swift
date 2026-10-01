@@ -113,6 +113,23 @@ final class NativeWebTreeReadinessTests: XCTestCase {
         webTreeSeenForProcess: false))
   }
 
+  func testRetryScheduleCoversThrottledRendererConvergence() {
+    // Measured (2026-09-30): a throttled Electron renderer converges at ~2.3 s;
+    // the previous ~1.75 s budget lost that race by half a second and the shell
+    // tree got published (and then cached) as final. The schedule must
+    // comfortably exceed the measurement.
+    let total = NativeWebTreeReadiness.retryDelaysMs.reduce(0, +)
+    XCTAssertGreaterThanOrEqual(total, 4_000)
+  }
+
+  func testExhaustedWindowCooldownIsBounded() {
+    // A cooldown, not a blacklist: fresh enough to protect genuine shell-only
+    // windows (tray popups) from paying the full schedule on every observation,
+    // short enough that a once-slow window gets another chance soon.
+    XCTAssertGreaterThan(NativeWebTreeReadiness.exhaustedWindowCooldownSeconds, 0)
+    XCTAssertLessThanOrEqual(NativeWebTreeReadiness.exhaustedWindowCooldownSeconds, 60)
+  }
+
   private func element(role: String, name: String, depth: Int) -> NativeAXRawElement {
     NativeAXRawElement(
       runtimeID: "\(role)-\(name)-\(depth)", role: role, name: name, value: nil,

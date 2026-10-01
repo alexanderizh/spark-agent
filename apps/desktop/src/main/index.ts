@@ -62,6 +62,18 @@ app.commandLine.appendSwitch(
   'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter,OverlayScrollbarWinStyle',
 )
 
+// ─── Renderer accessibility (Computer Use self-control) ────────────────────
+// Chromium 默认懒构建渲染进程无障碍树：只有 assistive client 发起
+// AXManualAccessibility 握手后才开始异步构建，renderer 被节流时实测 ~2.3s
+// （SparkComputerHost NativeWebTreeReadiness 有实测记录），这正是 Computer Use
+// 操作本应用时退化为「窗口壳树 → 截图兜底」的根因。SparkWork 自身是 Computer
+// Use 的高频操作目标（自控测试 / 用户让 agent 操作 dev 应用），强制常开渲染
+// 无障碍后 AX 树即时可用，彻底绕开握手竞态。排查渲染性能问题可设
+// SPARK_DISABLE_RENDERER_A11Y=1 退出。
+if (process.env.SPARK_DISABLE_RENDERER_A11Y !== '1') {
+  app.commandLine.appendSwitch('force-renderer-accessibility')
+}
+
 // ─── Dev userData isolation ────────────────────────────────────────────────
 // 必须在任何 userData 消费者（单实例锁、数据库、各服务）之前执行：
 // dev 运行时把数据目录切到 @spark/desktop-dev，避免开发构建与生产安装包

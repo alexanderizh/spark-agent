@@ -217,6 +217,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     let tTree = DispatchTime.now()
     let tree = accessibilityOrVisualTree(
       processID: before.processID,
+      cgWindowID: NativeWindowIDParser.parse(before.identity.windowID),
       windowBounds: before.identity.windowBounds,
       captured: captured,
       previousTreeVersion: previousTreeVersion,
@@ -395,7 +396,9 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       persistent: persistentCaptureBindingKey == captureBindingKey
     )
     async let axTreeFuture = currentAXTree(
-      processID: before.processID, windowBounds: before.identity.windowBounds)
+      processID: before.processID,
+      cgWindowID: NativeWindowIDParser.parse(envelope.targetWindowID),
+      windowBounds: before.identity.windowBounds)
     let captured = try await capturedFuture
     let tree: NativeAXTreeSnapshot
     if let axTree = await axTreeFuture {
@@ -439,13 +442,14 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
 
   /// Concurrently-safe AX read for the skyshot path; nil when accessibility is
   /// unavailable so the caller falls back to the visual tree.
-  private func currentAXTree(processID: pid_t, windowBounds: NativeRect) async
-    -> NativeAXTreeSnapshot?
-  {
+  private func currentAXTree(
+    processID: pid_t, cgWindowID: CGWindowID?, windowBounds: NativeRect
+  ) async -> NativeAXTreeSnapshot? {
     guard accessibility.isAvailable else { return nil }
     return try? accessibility.observe(
       processID: processID,
       preferredWindowBounds: windowBounds,
+      cgWindowID: cgWindowID,
       previousTreeVersion: nil,
       fullTree: true
     )
@@ -589,6 +593,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       let refreshed = try? accessibility.observe(
         processID: current.target.processID,
         preferredWindowBounds: current.target.windowBounds,
+        cgWindowID: NativeWindowIDParser.parse(current.target.windowID),
         previousTreeVersion: nil,
         fullTree: true
       )
@@ -991,6 +996,15 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       !NativeInputPolicy.isSensitiveTarget(
         appName: descriptor.app.name, bundleID: descriptor.app.bundleId)
     else { throw NativeHostPlatformError.sensitiveInputBlocked }
+    // Self-healing onto a different window must be visible in the logs, not
+    // silent: the model (and anyone reading main.log) needs to see that the
+    // session moved, otherwise an action aimed at the dead window looks like it
+    // landed somewhere arbitrary.
+    if descriptor.window.id != windowID {
+      writeHostDiagnostic(
+        "window_follow_rebound app=\(appID) from=\(windowID) to=\(descriptor.window.id) "
+          + "title=\(descriptor.window.title.prefix(80))")
+    }
     return FocusedTarget(
       descriptor: descriptor,
       identity: NativeTargetIdentity(
@@ -1055,6 +1069,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
 
   private func accessibilityOrVisualTree(
     processID: pid_t,
+    cgWindowID: CGWindowID?,
     windowBounds: NativeRect,
     captured: NativeCapturedWindow,
     previousTreeVersion: String?,
@@ -1066,6 +1081,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
         return try accessibility.observe(
           processID: processID,
           preferredWindowBounds: windowBounds,
+          cgWindowID: cgWindowID,
           previousTreeVersion: previousTreeVersion,
           fullTree: fullTree
         )

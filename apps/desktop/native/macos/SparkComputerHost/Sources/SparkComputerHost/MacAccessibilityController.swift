@@ -1,12 +1,18 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 import SparkComputerHostCore
 
 final class MacAccessibilityController: @unchecked Sendable {
   private static let maxDepth = 48
   private static let maxElements = maxNativeTreeElements
+  /// `_AXUIElementGetWindow` — HIServices SPI resolved with dlsym (present on
+  /// every shipping macOS, absent from the public SDK headers), same pattern as
+  /// `MacFocusForger`'s `_AXUIElementPostNotification`. Maps an AXWindow to its
+  /// exact CGWindowID so tree and screenshot provably describe the same window.
+  private static let axGetWindowSPI: AXGetWindowFn? = resolveAXGetWindowSPI()
 
   private var tree = NativeAXTreeState()
   private var elementsByRuntimeID: [String: AXUIElement] = [:]
@@ -23,12 +29,15 @@ final class MacAccessibilityController: @unchecked Sendable {
   /// before the first successful read **of this process** — a second Chromium
   /// app in the same session starts from scratch. See `NativeWebTreeReadiness`.
   private var webTreeSeenForProcessID: pid_t?
-  /// Windows of this process whose web-content tree never converged even after
-  /// the bounded wait. Retrying the full schedule on every observation would
-  /// make a genuine shell-only window (Electron tray popups, helper windows)
-  /// cost ~1.8 s each time, so a window that already exhausted the wait is
-  /// served immediately on later observations.
-  private var exhaustedWebTreeWindows: Set<CFHashCode> = []
+  /// Windows whose web-content tree exhausted the retry schedule, with the
+  /// uptime when that happened. An entry is a COOLDOWN
+  /// (`NativeWebTreeReadiness.exhaustedWindowCooldownSeconds`), not a
+  /// blacklist: while it is fresh the window is served immediately (a genuine
+  /// shell-only window must not cost the full schedule on every observation),
+  /// and once it expires the wait re-arms — the tree may simply have been slow
+  /// once. The previous permanent blacklist turned one mistimed first traversal
+  /// into a whole session of shell-only Electron observations.
+  private var exhaustedWebTreeWindows: [CFHashCode: TimeInterval] = [:]
   private var observer: AXObserver?
   private var observerSource: CFRunLoopSource?
   private let dirtyLock = NSLock()
@@ -42,6 +51,7 @@ final class MacAccessibilityController: @unchecked Sendable {
   func observe(
     processID: pid_t,
     preferredWindowBounds: NativeRect?,
+    cgWindowID: CGWindowID?,
     previousTreeVersion: String?,
     fullTree: Bool
   ) throws -> NativeAXTreeSnapshot {
@@ -58,7 +68,8 @@ final class MacAccessibilityController: @unchecked Sendable {
     let window = try selectAXWindow(
       application: application,
       processID: processID,
-      preferredBounds: preferredWindowBounds
+      preferredBounds: preferredWindowBounds,
+      preferredCGWindowID: cgWindowID
     )
 
     let sameWindow = cachedProcessID == processID
@@ -100,15 +111,20 @@ final class MacAccessibilityController: @unchecked Sendable {
     // Chromium populates the web-content tree asynchronously after the
     // handshake above, and a backgrounded renderer can take seconds to answer.
     // Converge on "the document container exists and has content" instead of on
-    // a raw element count, then wait with backoff — bounded, and skipped for
-    // windows that already exhausted the wait. See NativeWebTreeReadiness for
-    // the measurements behind this policy.
+    // a raw element count, then wait with backoff — bounded, and skipped while
+    // a window that exhausted the schedule is inside its cooldown. See
+    // NativeWebTreeReadiness for the measurements behind this policy.
     let windowKey = CFHash(window)
     let webTreeSeenForProcess = webTreeSeenForProcessID == processID
     let firstPassCount = raw.count
     var attempts = 0
     var webTreePending = false
-    if !exhaustedWebTreeWindows.contains(windowKey) {
+    let exhaustedAgo = exhaustedWebTreeWindows[windowKey].map {
+      ProcessInfo.processInfo.systemUptime - $0
+    }
+    let windowInCooldown =
+      exhaustedAgo != nil && exhaustedAgo! < NativeWebTreeReadiness.exhaustedWindowCooldownSeconds
+    if !windowInCooldown {
       while NativeWebTreeReadiness.shouldRetry(
         acceptsManualAccessibility: lazyWebTree,
         elements: raw,
@@ -120,6 +136,10 @@ final class MacAccessibilityController: @unchecked Sendable {
         // The delays are pure waiting for the renderer, so never let the
         // traversal itself run with a stale element cache in between.
         if delayMs > 0 { Thread.sleep(forTimeInterval: Double(delayMs) / 1_000) }
+        // Re-issue the handshake before every re-traversal: a throttled
+        // renderer can drop the first flip, and re-setting is idempotent and
+        // free for apps that already accepted it.
+        _ = activateChromiumAccessibility(application)
         raw.removeAll(keepingCapacity: true)
         elements.removeAll(keepingCapacity: true)
         try collect(
@@ -131,7 +151,7 @@ final class MacAccessibilityController: @unchecked Sendable {
       webTreePending =
         stillPending && raw.count <= NativeWebTreeReadiness.shellElementBudget
       if stillPending, attempts >= NativeWebTreeReadiness.retryDelaysMs.count {
-        exhaustedWebTreeWindows.insert(windowKey)
+        exhaustedWebTreeWindows[windowKey] = ProcessInfo.processInfo.systemUptime
       }
       if attempts > 0 || webTreePending {
         // Log both ends of the convergence: the first pass is what a host
@@ -352,12 +372,18 @@ final class MacAccessibilityController: @unchecked Sendable {
   /// Resolve the AX window we should traverse. Electron apps frequently own
   /// a tiny tray/status/widget window that the system reports as focused;
   /// naively reading kAXFocusedWindowAttribute binds us to that 66x20 window.
-  /// Prefer the window matching the bound CG window bounds, then a usable
-  /// focused window, then the largest usable window.
+  /// Resolution order:
+  /// 1. the AX window whose `_AXUIElementGetWindow` id equals the bound CG
+  ///    window id (EXACT — screenshot and tree then provably describe the same
+  ///    window; the bounds heuristic below can mis-pick among same-sized
+  ///    windows of one app);
+  /// 2. the window matching the bound CG window bounds (≤24pt heuristic);
+  /// 3. a usable focused window, then the largest usable window.
   private func selectAXWindow(
     application: AXUIElement,
     processID: pid_t,
-    preferredBounds: NativeRect?
+    preferredBounds: NativeRect?,
+    preferredCGWindowID: CGWindowID?
   ) throws -> AXUIElement {
     let windows: [AXUIElement] = copyAttribute(application, kAXWindowsAttribute) ?? []
     var usable: [(window: AXUIElement, bounds: NativeRect, focused: Bool)] = []
@@ -367,6 +393,16 @@ final class MacAccessibilityController: @unchecked Sendable {
       let focused =
         (copyAttribute(candidate, kAXFocusedAttribute) as NSNumber?)?.boolValue ?? false
       usable.append((candidate, bounds, focused))
+    }
+    if let preferredID = preferredCGWindowID,
+      let spi = Self.axGetWindowSPI
+    {
+      for candidate in usable {
+        var mapped: CGWindowID = 0
+        if spi(candidate.window, &mapped) == AXError.success.rawValue, mapped == preferredID {
+          return candidate.window
+        }
+      }
     }
     if let preferred = preferredBounds,
       let best = usable.min(by: {
@@ -971,6 +1007,25 @@ private func macAccessibilityObserverCallback(
     .fromOpaque(refcon)
     .takeUnretainedValue()
     .markDirty()
+}
+
+/// `(element, outWindowID) -> AXError` — the classic SPI shape behind
+/// `_AXUIElementGetWindow`.
+private typealias AXGetWindowFn = @convention(c) (
+  AXUIElement, UnsafeMutablePointer<CGWindowID>?
+) -> Int32
+
+private func resolveAXGetWindowSPI() -> AXGetWindowFn? {
+  let symbol = "_AXUIElementGetWindow"
+  let handle = dlopen(
+    "/System/Library/Frameworks/ApplicationServices.framework/Frameworks/HIServices.framework/HIServices",
+    RTLD_LAZY)
+  defer { if let handle { dlclose(handle) } }
+  for source in [handle, UnsafeMutableRawPointer(bitPattern: -2)] {
+    guard let source, let raw = dlsym(source, symbol) else { continue }
+    return unsafeBitCast(raw, to: AXGetWindowFn.self)
+  }
+  return nil
 }
 
 private func copyAttribute<Value>(
