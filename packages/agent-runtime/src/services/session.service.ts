@@ -315,7 +315,7 @@ import {
   prepareTurnAttachments,
   getProviderUseSparkExecutor,
   assertModelNotScheduledBlocked,
-  assertCodexEngineProviderCompatible,
+  assertEngineProviderCompatible,
   readSessionTeamConfig,
   resolveOrchestrationSource,
   resolveAutoRouterWorkerBinding,
@@ -3323,10 +3323,14 @@ export class SessionService {
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
-        throw new Error(`Provider profile not found: ${providerProfileId}`)
+        throw new Error(
+          `会话绑定的渠道已不存在（id=${providerProfileId}），可能已被删除。请在会话中重新选择渠道后重试。`,
+        )
       }
       if (row.enabled === 0) {
-        throw new Error(`Provider profile is disabled: ${providerProfileId}`)
+        throw new Error(
+          `会话绑定的渠道「${row.name}」已被停用，请在渠道管理中启用它，或在会话中切换其他渠道。`,
+        )
       }
       return row
     }
@@ -3626,9 +3630,9 @@ export class SessionService {
       getProviderUseSparkExecutor(provider.config_json),
     )
     const adapterKind = resolveEngineKind(agentAdapter)
-    // 引擎×协议硬校验：codex 引擎无法执行 Anthropic 协议渠道（组合只会得到
-    // 误导性的 /responses 403），在 turn 起点快速失败并给出修复指引。
-    assertCodexEngineProviderCompatible({
+    // 引擎×协议硬校验：codex×Anthropic 会得到误导性的 /responses 403，
+    // claude×OpenAI 系会得到 404/401 噪声；在 turn 起点快速失败并给出修复指引。
+    assertEngineProviderCompatible({
       adapterKind,
       providerType: provider.provider_type,
       providerName: provider.name,
@@ -9800,8 +9804,9 @@ export class SessionService {
       provider.provider_type,
       getProviderUseSparkExecutor(provider.config_json),
     )
-    // 引擎×协议硬校验（与 Host 主循环同款）：codex 成员无法执行 Anthropic 协议渠道。
-    assertCodexEngineProviderCompatible({
+    // 引擎×协议硬校验（与 Host 主循环同款）：成员引擎与渠道协议不匹配的组合
+    // 在派发起点快速失败，替代远端协议错误。
+    assertEngineProviderCompatible({
       adapterKind: memberAdapter,
       providerType: provider.provider_type,
       providerName: provider.name,
@@ -11573,7 +11578,13 @@ export class SessionService {
     }
     sessionRepo.updateStatus(sessionId, 'error')
     new TurnRequestRepository(this.db).markFailed(turn.turnId, message)
-    log.error('queued turn failed to start', { sessionId, turnId: turn.turnId, error: message })
+    // stack 一并落日志：同步崩溃类错误（如 undefined.trim()）只有拿到堆栈才能定位。
+    log.error('queued turn failed to start', {
+      sessionId,
+      turnId: turn.turnId,
+      error: message,
+      ...(error instanceof Error && error.stack != null ? { stack: error.stack } : {}),
+    })
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {

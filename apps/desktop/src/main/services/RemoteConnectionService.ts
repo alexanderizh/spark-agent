@@ -1376,6 +1376,48 @@ export class RemoteConnectionService {
     return next
   }
 
+  /**
+   * 渠道删除级联清理：移除所有连接默认值与路由绑定中指向已删渠道的
+   * defaultProviderProfileId 引用（悬空引用会让下一次远程建会话误报
+   * 「没有可用 Provider」，或建出绑定死渠道的会话）。defaultModelId 不动——
+   * 它在建会话时会按新渠道的 modelIds 重新校验，天然回落渠道默认模型。
+   * 返回受影响的连接数与路由数，供调用方落日志。
+   */
+  clearDeletedProviderReferences(providerProfileId: string): {
+    connections: number
+    routes: number
+  } {
+    const store = this.readStore()
+    let touchedConnections = 0
+    let touchedRoutes = 0
+    const connections = store.connections.map((connection) => {
+      let routeHits = 0
+      const routeBindings = connection.routeBindings?.map((route) => {
+        if (route.defaultProviderProfileId !== providerProfileId) return route
+        routeHits += 1
+        touchedRoutes += 1
+        const { defaultProviderProfileId: _removed, ...rest } = route
+        return rest as typeof route
+      })
+      const connectionHit = connection.defaultProviderProfileId === providerProfileId
+      // 未命中的连接保持原对象引用：不写字段，不引入 undefined 形状变化。
+      if (!connectionHit && routeHits === 0) return connection
+      touchedConnections += connectionHit ? 1 : 0
+      const { defaultProviderProfileId: _removed, ...rest } = connection
+      if (routeHits === 0) return rest as RemoteConnectionConfig
+      return {
+        ...(connectionHit ? rest : connection),
+        routeBindings,
+      } as RemoteConnectionConfig
+    })
+    if (touchedConnections === 0 && touchedRoutes === 0) {
+      return { connections: 0, routes: 0 }
+    }
+    this.writeStore({ ...store, connections })
+    this.emitChange({ reason: 'connection-saved' })
+    return { connections: touchedConnections, routes: touchedRoutes }
+  }
+
   async sendReply(
     connectionId: string,
     externalId: string,

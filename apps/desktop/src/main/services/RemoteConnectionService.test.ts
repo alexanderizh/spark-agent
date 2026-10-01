@@ -710,3 +710,37 @@ describe('remote command coverage', () => {
     expect(service.ensureRouteBinding(draft.id, 'chat-b').defaultSessionId).toBeUndefined()
   })
 })
+
+describe('clearDeletedProviderReferences', () => {
+  it('清除连接与路由绑定中指向已删渠道的默认渠道引用，未命中时不写库', () => {
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const service = new RemoteConnectionService(settings as never)
+    const draft = service.createBotDraft('telegram').connection
+    service.save({ ...draft, allowedChatIds: ['chat-a'] })
+    service.updateConnectionDefaults(draft.id, { defaultProviderProfileId: 'deleted-p' })
+    service.ensureRouteBinding(draft.id, 'chat-a')
+    // 路由绑定继承连接默认渠道，两条引用都指向 deleted-p。
+
+    const result = service.clearDeletedProviderReferences('deleted-p')
+    expect(result).toEqual({ connections: 1, routes: 1 })
+    const connection = service
+      .list()
+      .connections.find((item) => item.id === draft.id) as RemoteConnectionConfig
+    expect(connection.defaultProviderProfileId).toBeUndefined()
+    expect(
+      connection.routeBindings?.find((item) => item.externalId === 'chat-a')
+        ?.defaultProviderProfileId,
+    ).toBeUndefined()
+    // defaultModelId 等其余默认值不受影响（建会话时会按新渠道重新校验）。
+
+    // 未命中不写库、零计数。
+    const miss = service.clearDeletedProviderReferences('not-exist')
+    expect(miss).toEqual({ connections: 0, routes: 0 })
+  })
+})

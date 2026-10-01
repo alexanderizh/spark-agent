@@ -307,6 +307,28 @@ export class SessionRepository extends BaseRepository {
     return { sessions, total: countRow.count }
   }
 
+  /**
+   * 渠道删除级联重绑用：查所有 provider_profile_id 指向指定渠道的会话
+   * （含已归档），只取重绑所需的最小字段（modelId/agentAdapter 供引擎校准）。
+   * 返回按 id 升序，保证级联顺序稳定。
+   */
+  listByProviderProfileId(providerProfileId: string): Array<{
+    id: string
+    modelId: string | null
+    agentAdapter: string
+  }> {
+    const stmt = this.raw.prepare(
+      `SELECT id, model_id AS modelId, agent_adapter AS agentAdapter FROM sessions
+       WHERE provider_profile_id = ?
+       ORDER BY id ASC`,
+    )
+    return stmt.all(providerProfileId) as Array<{
+      id: string
+      modelId: string | null
+      agentAdapter: string
+    }>
+  }
+
   /** 获取 workspace_ids_json 解析后的数组 */
   getWorkspaceIds(sessionId: string): string[] {
     const row = this.get(sessionId)

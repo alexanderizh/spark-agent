@@ -90,8 +90,10 @@ import { getSubAppBrowserService } from '../services/SubAppBrowserService.js'
 import { fetchLinkMetadata } from '../services/LinkMetadataService.js'
 import {
   resolveCompatibleSessionAdapter,
+  isSameEngineKind,
   type AdapterCompatProviderInput,
 } from '../services/session-adapter-compat.js'
+import { resolveProviderRebindPlan } from '../services/provider-delete-cascade.js'
 import {
   isSessionServiceShutdownStarted,
   registerSessionServiceForShutdown,
@@ -290,6 +292,7 @@ import {
   normalizeVoiceAssistantRouteBinding,
   VOICE_ASSISTANT_ROUTE_KEY,
   VOICE_ASSISTANT_SETTINGS_CATEGORY,
+  isConversationalProviderCandidate,
 } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
@@ -3349,7 +3352,11 @@ async function createRemoteSession(
     externalId == null
       ? base
       : withRemoteRouteDefaults(base, remoteService.ensureRouteBinding(connectionId, externalId))
-  const providers = await getProviderService().listProviders()
+  // 只在对话渠道中解析（与渲染端选择器同口径）：连接默认值若是多媒体/向量渠道
+  // （历史遗留或删除级联前的旧数据），建出的远程会话 turn 必然失败。
+  const providers = (await getProviderService().listProviders()).filter(
+    isConversationalProviderCandidate,
+  )
   const provider =
     connection.defaultProviderProfileId != null
       ? providers.find((item) => item.id === connection.defaultProviderProfileId)
@@ -3439,6 +3446,52 @@ function toAdapterCompatProvider(profile: {
 }
 
 /**
+ * 渠道删除级联：重绑名下会话到可用对话渠道 + 清理远程连接默认值中的悬空引用。
+ * 此前删除渠道不处理引用方，绑定会话在远程/本地下一轮 turn 直接报
+ * 「Provider profile not found」，远程默认值悬空则误报「没有可用 Provider」。
+ */
+async function cascadeProviderDeletion(deletedProviderId: string): Promise<void> {
+  try {
+    const providers = await getProviderService().listProviders()
+    const sessionRepo = new SessionRepository(getDatabase())
+    const dangling = sessionRepo.listByProviderProfileId(deletedProviderId)
+    const plan = resolveProviderRebindPlan({ sessions: dangling, providers })
+    for (const rebind of plan.rebinds) {
+      sessionRepo.updateRuntime(rebind.sessionId, {
+        providerProfileId: rebind.providerProfileId,
+        modelId: rebind.modelId,
+        // 重绑后引擎与新渠道协议不匹配时一并校准（否则下一轮 turn 撞引擎守卫）。
+        ...(rebind.agentAdapter != null
+          ? {
+              agentAdapter: rebind.agentAdapter,
+              permissionMode: defaultRemotePermissionMode(rebind.agentAdapter),
+            }
+          : {}),
+      })
+    }
+    const remoteCleanup = getRemoteConnectionService().clearDeletedProviderReferences(
+      deletedProviderId,
+    )
+    if (dangling.length > 0 || remoteCleanup.connections > 0 || remoteCleanup.routes > 0) {
+      log.info('provider delete cascade applied', {
+        deletedProviderId,
+        danglingSessions: dangling.length,
+        reboundSessions: plan.rebinds.length,
+        fallbackProviderId: plan.fallback?.id ?? null,
+        remoteConnections: remoteCleanup.connections,
+        remoteRoutes: remoteCleanup.routes,
+      })
+    }
+  } catch (error) {
+    // 级联是删除的收尾动作：失败不让删除报错，但必须落日志暴露。
+    log.error('provider delete cascade failed', {
+      deletedProviderId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+/**
  * 语音助手惰性建会话：权限/适配器校验与远程链路一致
  * （getRemotePermissionRows 校验设置的权限模式，不支持时回落 adapter 的 auto 等价）。
  * 适配器还要按渠道协议校准（codex 引擎无法执行 Anthropic 协议渠道），
@@ -3447,7 +3500,11 @@ function toAdapterCompatProvider(profile: {
 async function createVoiceAssistantSession(
   options: CreateVoiceSessionOptions,
 ): Promise<{ sessionId: string }> {
-  const providers = await getProviderService().listProviders()
+  // 只在对话渠道中解析（与渲染端选择器同口径）：默认位/绑定值若是多媒体/向量
+  // 渠道，语音会话会被绑到生图或 Embedding 模型上，turn 必然失败。
+  const providers = (await getProviderService().listProviders()).filter(
+    isConversationalProviderCandidate,
+  )
   const provider =
     options.providerProfileId != null
       ? providers.find((item) => item.id === options.providerProfileId)
@@ -4345,8 +4402,16 @@ async function executeRemoteCommand(
     let resolved: { ok: true; row: RemoteSelectionRow } | { ok: false; title: string; text: string }
     let selectedProviderDefaultModel: string | undefined
     let selectedAgentAdapter: SessionAgentAdapter | undefined
+    // 换渠道后按新渠道协议校准出的会话引擎（不兼容时改落可用引擎，防建出
+    // claude×OpenAI / codex×Anthropic 这类注定协议报错的组合）。
+    let channelSwitchAdapter: SessionAgentAdapter | undefined
     if (command.name === 'use-channel') {
-      const rows = (await getProviderService().listProviders()).map((item) => ({
+      // 渠道列表只列对话渠道：多媒体生成/向量渠道承接不了文本 turn，
+      // 远程 /channels 与渲染端渠道选择器保持同一口径。
+      const providers = (await getProviderService().listProviders()).filter(
+        isConversationalProviderCandidate,
+      )
+      const rows = providers.map((item) => ({
         id: item.id,
         label: item.name,
         meta: item.provider,
@@ -4358,9 +4423,25 @@ async function executeRemoteCommand(
       })
       if (resolved.ok) {
         const selectedProviderId = resolved.row.id
-        selectedProviderDefaultModel = (await getProviderService().listProviders()).find(
-          (item) => item.id === selectedProviderId,
-        )?.defaultModel
+        const selectedProvider = providers.find((item) => item.id === selectedProviderId)
+        selectedProviderDefaultModel = selectedProvider?.defaultModel
+        if (selectedProvider != null && sessionId != null) {
+          const currentSession = await getRemoteSession(sessionId)
+          if (currentSession != null) {
+            const calibrated = resolveCompatibleSessionAdapter(
+              toAdapterCompatProvider(selectedProvider),
+              currentSession.agentAdapter,
+            )
+            // 仅在当前引擎确实不能执行新渠道时才改写（连带权限模式回落）；
+            // 兼容时保持会话原引擎与权限，不做归一化改写。
+            if (!isSameEngineKind(calibrated, currentSession.agentAdapter)) {
+              log.info(
+                `[remote] use-channel adapter ${currentSession.agentAdapter} incompatible with provider ${selectedProvider.name}; remapped to ${calibrated}`,
+              )
+              channelSwitchAdapter = calibrated
+            }
+          }
+        }
       }
     } else if (command.name === 'use-model') {
       const currentSession = await getRemoteSession(sessionId)
@@ -4399,6 +4480,28 @@ async function executeRemoteCommand(
         ) {
           selectedAgentAdapter = adapter
         }
+        // 换 Agent 后按会话当前渠道协议校准引擎：codex Agent + Anthropic 渠道
+        // （或反向）只会得到协议级报错；与建会话同规则改落可用引擎。
+        if (selectedAgentAdapter != null && sessionId != null) {
+          const currentSession = await getRemoteSession(sessionId)
+          if (currentSession?.providerProfileId != null) {
+            const sessionProvider = (await getProviderService().listProviders()).find(
+              (item) => item.id === currentSession.providerProfileId,
+            )
+            if (sessionProvider != null) {
+              const calibrated = resolveCompatibleSessionAdapter(
+                toAdapterCompatProvider(sessionProvider),
+                selectedAgentAdapter,
+              )
+              if (!isSameEngineKind(calibrated, selectedAgentAdapter)) {
+                log.info(
+                  `[remote] use-agent adapter ${selectedAgentAdapter} incompatible with provider ${sessionProvider.name}; remapped to ${calibrated}`,
+                )
+                selectedAgentAdapter = calibrated
+              }
+            }
+          }
+        }
       }
     }
     if (!resolved.ok) return resolved
@@ -4411,6 +4514,12 @@ async function executeRemoteCommand(
               providerProfileId: resolved.row.id,
               ...(selectedProviderDefaultModel != null
                 ? { modelId: selectedProviderDefaultModel }
+                : {}),
+              ...(channelSwitchAdapter != null
+                ? {
+                    agentAdapter: channelSwitchAdapter,
+                    permissionMode: defaultRemotePermissionMode(channelSwitchAdapter),
+                  }
                 : {}),
             }
           : {}),
@@ -5589,6 +5698,7 @@ export function registerAllIpcHandlers(): void {
     await getProviderService().deleteProvider(req.id)
     getCanvasTextOutputCapabilityCache().clearProvider(req.id)
     pushConfigChanged('provider', 'delete', req.id)
+    await cascadeProviderDeletion(req.id)
     return { deleted: true }
   })
 

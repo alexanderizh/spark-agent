@@ -1447,24 +1447,34 @@ export function assertModelNotScheduledBlocked(configJson: string, modelId: stri
 }
 
 /**
- * Codex 引擎 × Anthropic 协议渠道硬校验：Codex 只会说 OpenAI 系 wire 协议
- * （chat completions / responses），无法执行 Anthropic 协议渠道。历史上该组合
- * 可经主进程惰性建会话入口（语音/远程）进入——渲染端有引擎↔协议兼容性约束，
- * 这些入口没有；执行时 Codex app-server 会把渠道端点当 OpenAI 默认 provider 的
- * base_url，请求 <端点>/responses 得到误导性 403（如火山方舟 Coding Plan 报
- * 「Unsupported zti authentication method」）。这里在 turn 起点快速失败并给出
- * 可操作指引，替代远端的 403。本地 CLI 会话与 CLI 覆写不会进入该组合
- * （本地 CLI 行的 provider_type 不是 anthropic；isCliSparkOverrideCompatible
- * 已拒绝不兼容覆写），auto-router 在引擎复算前已换成执行器渠道。
+ * 引擎 × 渠道协议硬校验（turn 起点最后防线）：
+ * - Codex 引擎只会说 OpenAI 系 wire 协议（chat completions / responses），无法执行
+ *   Anthropic 协议渠道——历史上该组合可经主进程惰性建会话入口（语音/远程）进入，
+ *   执行时 Codex app-server 会把渠道端点当 OpenAI 默认 provider 的 base_url，请求
+ *   <端点>/responses 得到误导性 403（如火山方舟 Coding Plan 报「Unsupported zti
+ *   authentication method」）。
+ * - 反向同理：Claude 引擎只会说 Anthropic wire 协议，绑到 OpenAI 系渠道只会得到
+ *   404/401 级噪声（远程 /use-channel 换渠道曾不校准引擎，是另一条进入路径）。
+ * 这里在 turn 起点快速失败并给出可操作指引，替代远端协议错误。本地 CLI 会话与
+ * CLI 覆写不会进入不兼容组合（本地 CLI 行按自家引擎定型 provider_type；
+ * isCliSparkOverrideCompatible 已拒绝不兼容覆写），auto-router 在该守卫前已换成
+ * 执行器渠道（执行器按 router 引擎过滤过协议），spark 引擎走 CLI 桥可双协议。
  */
-export function assertCodexEngineProviderCompatible(args: {
+export function assertEngineProviderCompatible(args: {
   adapterKind: string
   providerType: string
   providerName: string
 }): void {
+  const isClaudeKindAdapter =
+    args.adapterKind === 'claude' || args.adapterKind === 'claude-sdk'
   if (args.adapterKind === 'codex' && args.providerType === 'anthropic') {
     throw new Error(
       `当前会话引擎为 Codex（仅支持 OpenAI 协议渠道），但渠道「${args.providerName}」是 Anthropic 协议接口，二者不兼容。请在会话中切换引擎（Claude）或改用 OpenAI 协议渠道。`,
+    )
+  }
+  if (isClaudeKindAdapter && args.providerType !== 'anthropic') {
+    throw new Error(
+      `当前会话引擎为 Claude（仅支持 Anthropic 协议渠道），但渠道「${args.providerName}」是 OpenAI 系协议接口，二者不兼容。请在会话中切换引擎（Codex）或改用 Anthropic 协议渠道。`,
     )
   }
 }

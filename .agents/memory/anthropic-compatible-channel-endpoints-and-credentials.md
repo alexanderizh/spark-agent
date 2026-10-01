@@ -136,3 +136,26 @@ CLI 与桌面端走的是**不同**的两条 anthropic 调用链，但缺陷形�
   若以后确认通用 API 的 Key 也能在裸根 `/v1/messages` 工作，再按实测结果调整预设。
 - 同类预设都要遵守「给根地址、由调用点补 `/v1/messages`」的约定，不要直接写完整
   messages 地址（虽然现在也能跑，但会让每次 review 都要重新确认一遍）。
+
+## 七、远程会话「设置不同步」类故障（2026-10-01 修复）
+
+- 现象（dev 库远程 Telegram 会话 `7d8fd9e8`）：连发三 "hi" 三连败——
+  ①`Provider profile not found`（渠道被删后会话悬空）②两连
+  `Cannot read properties of undefined (reading 'trim')`（turn 起点同步崩溃，堆栈
+  未落日志暂无法定位——已在 `handleQueuedTurnStartFailure` 补 stack 记录，复现即可定位）。
+- 根因是**主进程远程链路与渲染端约束系统性脱节**（同类缺口共四处，均已收敛）：
+  1. `deleteProvider` 不处理引用方 → provider:delete 现做级联：会话重绑默认对话渠道
+     （`provider-delete-cascade.ts` 纯函数 + `SessionRepository.listByProviderProfileId`），
+     引擎不匹配连带校准；远程默认值由 `RemoteConnectionService.clearDeletedProviderReferences` 清理。
+  2. 远程 `/use-channel` 可把会话切到任意渠道（含多媒体/向量/协议不匹配）→ 现按
+     `isConversationalProviderCandidate` 过滤 + 引擎校准（`isSameEngineKind` 防归一化误伤权限）。
+  3. 远程 `/use-agent` 换引擎不校验会话渠道协议 → 同规则校准。
+  4. 语音/远程建会话可在多媒体渠道上解析 → 同口径过滤。
+- turn 起点守卫升级为双向：`assertEngineProviderCompatible`（原
+  `assertCodexEngineProviderCompatible`），claude×OpenAI 系同样快速失败；
+  CLI 覆写因 `isCliSparkOverrideCompatible` 预校验、auto-router 因执行器按引擎过滤，
+  均不会误伤（守卫点在 provider 定值后、CLI 覆写换 provider 后）。
+- 排查经验：远程报错先查 `agent_events`（user_message 带「本轮远程渠道」横幅）+
+  `sessions` 行的 provider/adapter/effort 快照；`turn_requests.error_message` 也有留痕。
+- 遗留：`.trim()` 崩溃精确行待复现（stack 日志已就位）；桌面端会话 UI 若正打开，
+  级联重绑后列表展示可能滞后到下次刷新（DB 为事实源，未推事件，影响可忽略）。

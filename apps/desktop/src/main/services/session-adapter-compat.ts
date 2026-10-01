@@ -39,6 +39,17 @@ function isClaudeKind(adapter: SessionAgentAdapter): boolean {
 }
 
 /**
+ * 引擎类别是否实质相同（claude/claude-sdk 同类；归一化差异不算引擎切换）。
+ * 远程 use-channel/use-agent 与渠道删除级联重绑共用：只有类别真正变化才
+ * 连带重置权限模式，避免兼容场景下误伤用户已选的权限。
+ */
+export function isSameEngineKind(a: SessionAgentAdapter, b: SessionAgentAdapter): boolean {
+  const aSpark = a === 'spark'
+  const bSpark = b === 'spark'
+  return isClaudeKind(a) === isClaudeKind(b) && aSpark === bSpark
+}
+
+/**
  * 按渠道协议校准会话引擎：preferred 兼容则原样保留，不兼容时落到该渠道
  * 可用的引擎（anthropic → claude-sdk；openai 系 → codex；spark 按可映射性保留）。
  */
