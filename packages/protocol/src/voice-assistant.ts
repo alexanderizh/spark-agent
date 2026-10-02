@@ -578,8 +578,13 @@ export interface VoiceAssistantTtsSynthesizeRequest {
 }
 
 export interface VoiceAssistantTtsSynthesizeResponse {
-  /** 本地音频文件绝对路径（渲染端经 safe-file:// 协议读取） */
+  /** 本地音频文件绝对路径（渲染端经 safe-file:// 协议读取；缓存命中时为缓存文件） */
   filePath: string
+  /**
+   * 是否命中 TTS 磁盘缓存：命中时本轮未请求 TTS 渠道（零费用），文件由主进程
+   * LRU 管理生命周期，渲染端不得删除；false 时为临时产物，播完需清理。
+   */
+  cached: boolean
 }
 
 /** 消息语音播报：删除合成产物。filePath 必须位于语音助手 TTS 目录内，否则拒绝。 */

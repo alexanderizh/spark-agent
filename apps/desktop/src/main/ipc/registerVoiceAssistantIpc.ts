@@ -38,6 +38,7 @@ import {
   removeTtsArtifactWithin,
   synthesizeSpeechText,
 } from '../services/voice-assistant/ttsSynthesis.js'
+import { createTtsSpeechCache } from '../services/voice-assistant/ttsSpeechCache.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('voice-assistant-ipc')
@@ -76,6 +77,12 @@ export interface RegisterVoiceAssistantIpcDeps {
   getMainWindowWebContents(): WebContents | null
   /** TTS 产物目录 */
   ttsDir: string
+  /**
+   * 消息播报 TTS 磁盘缓存目录（userData/voice-assistant/tts-cache，safe-file 白名单内）。
+   * 内容寻址免重复计费：同渠道/模型/音色/参数的同一句子重播命中本地文件、零请求。
+   * 生命周期由 ttsSpeechCache 的 LRU 容量控制管理，与临时目录 ttsDir（启动全删）隔离。
+   */
+  ttsCacheDir: string
   /** 语音助手运行时目录（KWS runtime keywords 等） */
   runtimeDir: string
   /** 按需安装语音包（含可选 KWS 组件；status.downloading=true 表示另一入口安装在途） */
@@ -245,7 +252,16 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
 
   // 消息语音播报：无状态复用语音助手 TTS 设置（现读现归一，设置热更新即时生效）。
   // 渲染端逐句调用、边合边播；文件落在 ttsDir（safe-file 白名单内），
-  // 播完由渲染端 cleanup 删除，应用启动另有 sweepTtsDir 清扫兜底。
+  // 未命中缓存的产物播完由渲染端 cleanup 删除，应用启动另有 sweepTtsDir 清扫兜底；
+  // 命中的缓存文件由 ttsSpeechCache 的 LRU 管理生命周期，渲染端不参与清理。
+  //
+  // 缓存启动即扫盘建索引（fire-and-forget）：未就绪期间恒 miss、行为与无缓存一致，
+  // 不会阻塞注册或首次播报。
+  const ttsSpeechCache = createTtsSpeechCache({ cacheDir: deps.ttsCacheDir })
+  void ttsSpeechCache.initialize().catch((error) => {
+    log.warn(`[voice-assistant] tts cache init error: ${String(error)}`)
+  })
+
   typedIpcHandle('voice-assistant:tts-synthesize', async (request) => {
     const text = request.text.trim()
     if (text.length === 0) throw new Error('播报文本为空')
@@ -256,10 +272,12 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
         resolveMediaProviders: () => deps.resolveMediaProviders(),
         mediaRouter: deps.mediaRouter,
         outputDir: deps.ttsDir,
+        useCache: true,
+        speechCache: ttsSpeechCache,
       },
       text,
     )
-    return { filePath: result.filePath }
+    return { filePath: result.filePath, cached: result.cached }
   })
 
   typedIpcHandle('voice-assistant:tts-cleanup', async (request) => {

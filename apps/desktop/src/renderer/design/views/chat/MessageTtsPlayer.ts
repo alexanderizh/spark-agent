@@ -4,7 +4,12 @@
  * 会话消息底部播报按钮的执行内核：
  * 正文清洗切句（speechify，5000 字上限）→ 逐句 voice-assistant:tts-synthesize
  * （复用语音助手 TTS 渠道/模型/音色设置，边合边播压首句延迟）→ safe-file 读取 +
- * decodeAudioData（解码完成即删文件）→ WebAudio 顺序播放。
+ * decodeAudioData → WebAudio 顺序播放。
+ *
+ * 产物生命周期按主进程返回的 cached 标记分流：
+ * - cached=false（新合成）：解码完成即删临时文件，stop 时 pendingFiles 补删兜底
+ * - cached=true（缓存命中）：文件由主进程 ttsSpeechCache LRR 管理，渲染端不删不管，
+ *   同内容重播直接再命中（零渠道请求、零重复计费）
  *
  * 全局同时只允许一条播报：点另一条消息自动停前一条；再次点击同一条即停。
  * 与语音助手播报链路（VoicePlaybackController）互不接管，系统级混音共存。
@@ -112,15 +117,22 @@ class MessageTtsPlayer {
     try {
       for (const sentence of sentences) {
         if (this.token !== token) return
-        const { filePath } = await window.spark.invoke('voice-assistant:tts-synthesize', {
+        const { filePath, cached } = await window.spark.invoke('voice-assistant:tts-synthesize', {
           text: sentence,
         })
-        // 合成返回即登记在途产物：此后无论走正常清理还是被 stop 补删，都保证删到
-        this.pendingFiles.add(filePath)
+        // cached=true 的缓存文件由主进程 LRU 管理生命周期：不登记在途（stop 补删
+        // 不会误删）、解码后也不清理，下次/刷新后重播同一内容直接再命中。
+        // 命中/请求的区分日志以主进程统一日志服务为准（tts cache hit / tts synthesized）。
+        if (!cached) {
+          // 合成返回即登记在途产物：此后无论走正常清理还是被 stop 补删，都保证删到
+          this.pendingFiles.add(filePath)
+        }
         const buffer = await this.fetchAndDecode(filePath)
-        // 解码完成即删文件：音频已在内存，磁盘产物没有存留价值（打断路径同理）
-        void this.cleanupFile(filePath)
-        this.pendingFiles.delete(filePath)
+        if (!cached) {
+          // 解码完成即删文件：音频已在内存，磁盘产物没有存留价值（打断路径同理）
+          void this.cleanupFile(filePath)
+          this.pendingFiles.delete(filePath)
+        }
         if (this.token !== token || buffer == null) return
         this.setActive(key, 'playing')
         const ended = this.playBuffer(buffer)

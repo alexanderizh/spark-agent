@@ -2,17 +2,26 @@
  * ttsSynthesis 共享内核单测
  *
  * 覆盖：渠道自动选路（mediaRouter.supports 同源口径）、显式渠道/模型透传、
- * MiniMax 专有参数仅对 minimax-hailuo 下发、超长文本兜底限长、产物清理的
- * ttsDir 路径逃逸防护。
+ * MiniMax 专有参数仅对 minimax-hailuo 下发、超长文本兜底限长、ttsSpeechCache
+ * 磁盘缓存（命中零 invoke / miss 后落盘 / 配置变化重新合成 / put 失败回退）、
+ * 产物清理的 ttsDir 路径逃逸防护。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 
+// ttsSpeechCache.ts 由 ttsSynthesis 引入（computeTtsCacheKey 为运行时导入），模块
+// 加载时其 import 的 fs API 需在本 mock 中齐全（本文件用内存假缓存，不触发真实 IO）。
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   unlink: vi.fn(async () => undefined),
+  readdir: vi.fn(async () => []),
+  rename: vi.fn(async () => undefined),
+  copyFile: vi.fn(async () => undefined),
+  rm: vi.fn(async () => undefined),
+  stat: vi.fn(async () => ({ isFile: () => true, size: 8, mtimeMs: 0 })),
+  utimes: vi.fn(async () => undefined),
 }))
 
 import { unlink } from 'node:fs/promises'
@@ -21,6 +30,7 @@ import {
   removeTtsArtifactWithin,
   synthesizeSpeechText,
 } from './ttsSynthesis.js'
+import { computeTtsCacheKey } from './ttsSpeechCache.js'
 
 const unlinkMock = vi.mocked(unlink)
 
@@ -186,6 +196,141 @@ describe('synthesizeSpeechText', () => {
     await expect(synthesizeSpeechText(makeTarget(noAsset), '你好。')).rejects.toThrow(
       'TTS 无文件产物',
     )
+  })
+})
+
+/** 内存假缓存：Map<key, destPath> 模拟 put/get 闭环 */
+function makeFakeCache(
+  stored = new Map<string, string>(),
+  onPut?: (key: string, src: string) => string | null,
+) {
+  return {
+    initialize: vi.fn(async () => undefined),
+    get: vi.fn(async (key: string) => stored.get(key) ?? null),
+    put: vi.fn(async (key: string, src: string) => {
+      if (onPut != null) return onPut(key, src)
+      const dest = `/virtual/cache/${key}.wav`
+      stored.set(key, dest)
+      return dest
+    }),
+  }
+}
+
+describe('synthesizeSpeechText 缓存分支', () => {
+  const sentence = '你好。'
+
+  it('默认（未启用缓存）：行为不变，cached=false', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const result = await synthesizeSpeechText(makeTarget(harness), sentence)
+    expect(result).toEqual({
+      filePath: '/virtual/tts/a.wav',
+      provider: 'provider-a',
+      cached: false,
+    })
+    expect(harness.mediaRouter.invoke).toHaveBeenCalledOnce()
+  })
+
+  it('miss → 合成 → put 落盘：返回缓存路径，cached=false', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    const result = await synthesizeSpeechText(
+      { ...makeTarget(harness), useCache: true, speechCache: cache },
+      sentence,
+    )
+    expect(result.cached).toBe(false)
+    expect(result.filePath).toBe(
+      `/virtual/cache/${computeTtsCacheKey({
+        providerId: 'provider-tts',
+        modelId: 'speech-1',
+        params: { speed: 1.0 },
+        text: sentence,
+      })}.wav`,
+    )
+    expect(cache.put).toHaveBeenCalledOnce()
+  })
+
+  it('同键二次调用：命中缓存零 invoke、cached=true、返回缓存文件', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    const target = { ...makeTarget(harness), useCache: true, speechCache: cache }
+    await synthesizeSpeechText(target, sentence)
+    expect(harness.mediaRouter.invoke).toHaveBeenCalledOnce()
+
+    const second = await synthesizeSpeechText(target, sentence)
+    expect(second.cached).toBe(true)
+    expect(harness.mediaRouter.invoke).toHaveBeenCalledOnce() // 未再请求
+  })
+
+  it('命中预置缓存：invoke 完全不被调用', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const stored = new Map<string, string>()
+    stored.set(
+      computeTtsCacheKey({
+        providerId: 'provider-tts',
+        modelId: 'speech-1',
+        params: { speed: 1.0 },
+        text: sentence,
+      }),
+      '/virtual/cache/preset.wav',
+    )
+    const cache = makeFakeCache(stored)
+    const result = await synthesizeSpeechText(
+      { ...makeTarget(harness), useCache: true, speechCache: cache },
+      sentence,
+    )
+    expect(result).toEqual({
+      filePath: '/virtual/cache/preset.wav',
+      provider: 'provider-tts',
+      cached: true,
+    })
+    expect(harness.mediaRouter.invoke).not.toHaveBeenCalled()
+    expect(cache.put).not.toHaveBeenCalled()
+  })
+
+  it('配置变化（音色）→ 键变化 → 重新合成，不错命中旧音频', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    await synthesizeSpeechText(
+      { ...makeTarget(harness), useCache: true, speechCache: cache },
+      sentence,
+    )
+    await synthesizeSpeechText(
+      { ...makeTarget(harness, { ttsVoice: 'female-shaonv' }), useCache: true, speechCache: cache },
+      sentence,
+    )
+    expect(harness.mediaRouter.invoke).toHaveBeenCalledTimes(2)
+    expect(cache.put).toHaveBeenCalledTimes(2)
+  })
+
+  it('put 失败（返回 null）：回退临时产物路径，播放不受影响', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache(new Map(), () => null)
+    const result = await synthesizeSpeechText(
+      { ...makeTarget(harness), useCache: true, speechCache: cache },
+      sentence,
+    )
+    expect(result).toEqual({
+      filePath: '/virtual/tts/a.wav',
+      provider: 'provider-a',
+      cached: false,
+    })
+  })
+
+  it('渠道/模型解析不出（显式渠道不在列表且无显式模型）：跳过缓存保命', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    const result = await synthesizeSpeechText(
+      {
+        ...makeTarget(harness, { ttsProviderProfileId: 'ghost' }),
+        useCache: true,
+        speechCache: cache,
+      },
+      sentence,
+    )
+    // 键与实际路由不同源，宁可 miss 也不冒错命中风险
+    expect(cache.get).not.toHaveBeenCalled()
+    expect(cache.put).not.toHaveBeenCalled()
+    expect(result.cached).toBe(false)
   })
 })
 

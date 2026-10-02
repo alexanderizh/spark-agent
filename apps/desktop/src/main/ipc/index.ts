@@ -5148,6 +5148,7 @@ export function registerAllIpcHandlers(): void {
     mediaRouter: getMediaRouterService(),
     getMainWindowWebContents: () => getMainWindow()?.webContents ?? null,
     ttsDir: path.join(app.getPath('userData'), 'voice-assistant', 'tts'),
+    ttsCacheDir: path.join(app.getPath('userData'), 'voice-assistant', 'tts-cache'),
     runtimeDir: path.join(app.getPath('userData'), 'voice-assistant'),
     installVoicePack: () => installVoicePack(false),
     listRecentSessions: async (limit) => {

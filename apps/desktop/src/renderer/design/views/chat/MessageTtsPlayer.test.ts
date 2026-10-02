@@ -87,6 +87,7 @@ describe('MessageTtsPlayer', () => {
     }))
     synthesizeMock.mockImplementation(async (request?: { text?: string }) => ({
       filePath: `/virtual/tts/${encodeURIComponent(request?.text ?? 'x')}.wav`,
+      cached: false,
     }))
     cleanupMock.mockResolvedValue({ ok: true })
     player = getMessageTtsPlayer()
@@ -166,5 +167,47 @@ describe('MessageTtsPlayer', () => {
     player.toggle('m1', '！！！？？？')
     await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('off'))
     expect(synthesizeMock).not.toHaveBeenCalled()
+  })
+
+  it('缓存命中（cached=true）：播完不 cleanup，文件留给主进程 LRU', async () => {
+    synthesizeMock.mockResolvedValue({
+      filePath: '/virtual/cache/hit.wav',
+      cached: true,
+    })
+    player.toggle('m1', '缓存句子。')
+    await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
+
+    activeContext.finishCurrent()
+    await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('off'))
+    expect(cleanupMock).not.toHaveBeenCalled()
+  })
+
+  it('缓存命中被打断：stop 补删不波及缓存文件', async () => {
+    synthesizeMock.mockResolvedValue({
+      filePath: '/virtual/cache/hit.wav',
+      cached: true,
+    })
+    player.toggle('m1', '缓存句子。')
+    await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
+
+    player.stop()
+    expect(player.getStatusFor('m1')).toBe('off')
+    expect(cleanupMock).not.toHaveBeenCalled()
+  })
+
+  it('混合缓存：只清理新合成产物，缓存文件原样保留', async () => {
+    synthesizeMock
+      .mockResolvedValueOnce({ filePath: '/virtual/tts/fresh.wav', cached: false })
+      .mockResolvedValueOnce({ filePath: '/virtual/cache/hit.wav', cached: true })
+    player.toggle('m1', '新合成句。缓存句。')
+
+    await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('playing'))
+    activeContext.finishCurrent()
+    await vi.waitFor(() => expect(synthesizeMock).toHaveBeenCalledTimes(2))
+    activeContext.finishCurrent()
+    await vi.waitFor(() => expect(player.getStatusFor('m1')).toBe('off'))
+
+    expect(cleanupMock).toHaveBeenCalledTimes(1)
+    expect(cleanupMock).toHaveBeenCalledWith({ filePath: '/virtual/tts/fresh.wav' })
   })
 })

@@ -3,12 +3,15 @@
  *
  * 从 VoiceAssistantService.synthesizeSentence 抽出的渠道/模型/音色决策与媒体路由
  * 调用，供两条链路复用：
- * - 语音助手流式播报（服务内持 Live settings）
- * - 消息语音播报按钮（IPC 无状态调用，现读现用语音助手设置）
+ * - 语音助手流式播报（服务内持 Live settings，不走缓存：句子重复率极低）
+ * - 消息语音播报按钮（IPC 无状态调用，现读现用语音助手设置，走 ttsSpeechCache）
  *
  * 渠道/模型/音色口径：显式指定（ttsProviderProfileId/ttsModelId/ttsVoice）优先；
  * 未指定时取第一个支持 audio.speech 的渠道与渠道默认模型/音色，MiniMax 专有参数
  * 仅对 minimax-hailuo 渠道下发。另含 TTS 产物清理（路径逃逸防护）。
+ *
+ * 缓存键与合成同源：resolveTtsRoute 一次解析出「实际参数 + 实际渠道/模型」，
+ * 同一份 route 既驱动 invoke 也驱动缓存键，杜绝「设置变了命中旧音频」。
  */
 
 import { mkdir, unlink } from 'node:fs/promises'
@@ -16,6 +19,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { createLogger } from '@spark/shared'
 import type { VoiceAssistantSettings } from '@spark/protocol'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
+import { computeTtsCacheKey, type TtsSpeechCache } from './ttsSpeechCache.js'
 
 const log = createLogger('voice-assistant')
 
@@ -31,15 +35,68 @@ export interface TtsSynthesisTarget {
   mediaRouter: MediaRouterService
   /** 音频产物输出目录 */
   outputDir: string
+  /** 是否启用 ttsSpeechCache 磁盘缓存（消息播报开启；流式链路默认关闭） */
+  useCache?: boolean
+  /** useCache=true 时必填；命中零请求，未命中合成后落盘 */
+  speechCache?: TtsSpeechCache
 }
 
 export interface TtsSynthesisResult {
   filePath: string
   provider: string
+  /** 是否来自磁盘缓存（命中时本轮未请求渠道，调用方不得删除该文件） */
+  cached: boolean
+}
+
+export interface TtsResolvedRoute {
+  /** 解析到的渠道 profile id（显式设置优先，取不到回落 null，缓存跳过） */
+  providerId: string | null
+  /** 解析后的实际模型 id（显式 ttsModelId 优先，否则渠道默认模型；取不到为 null） */
+  modelId: string | null
+  /** 实际下发给渠道的合成参数（speed/voice/vol/pitch/emotion） */
+  modelParams: Record<string, unknown>
+  /** 下发给 invoke 的渠道锁定（仅显式设置时下发） */
+  invokeProviderProfileId: string | null
+}
+
+/**
+ * 解析 TTS 合成路线（纯函数）：渠道/模型/音色决策一次成型，invoke 与缓存键共用，
+ * 保证「配置变化 → 键变化」与「实际请求参数」完全同源。
+ */
+export function resolveTtsRoute(
+  settings: VoiceAssistantSettings,
+  providers: MediaProviderProfile[],
+  supports: (provider: MediaProviderProfile, capability: 'audio.speech') => boolean,
+): TtsResolvedRoute {
+  const modelParams: Record<string, unknown> = { speed: settings.ttsSpeed }
+  if (settings.ttsVoice.trim().length > 0) modelParams.voice = settings.ttsVoice.trim()
+  // MiniMax 专有参数（vol/pitch/emotion）仅对 minimax-hailuo 渠道下发：
+  // 其他渠道 manifest 若开启透传会把未知字段传给供应商引发 400，缺失时编译器回落渠道默认。
+  // 自动选路必须复用 mediaRouter.supports（内部经 profileSupportsMediaCapability 以模型级
+  // manifest 声明优先，无 manifest 旧渠道回退渠道级声明 + adapter）：与 invoke 内部的渠道
+  // 选择完全同源，避免渠道级误声明 audio.speech 的 ASR 渠道在此抢先命中、与实际路由到的
+  // TTS 渠道不一致（MiniMax 专有参数会错发给另一家渠道）。
+  const chosen =
+    settings.ttsProviderProfileId != null
+      ? providers.find((provider) => provider.id === settings.ttsProviderProfileId)
+      : providers.find((provider) => supports(provider, 'audio.speech'))
+  if (chosen?.mediaProvider === 'minimax-hailuo') {
+    if (settings.ttsVol !== 1) modelParams.vol = settings.ttsVol
+    if (settings.ttsPitch !== 0) modelParams.pitch = settings.ttsPitch
+    if (settings.ttsEmotion.trim().length > 0) modelParams.emotion = settings.ttsEmotion.trim()
+  }
+  return {
+    providerId: chosen?.id ?? settings.ttsProviderProfileId ?? null,
+    modelId: settings.ttsModelId ?? chosen?.defaultModel ?? null,
+    modelParams,
+    invokeProviderProfileId: settings.ttsProviderProfileId ?? null,
+  }
 }
 
 /**
  * 合成一段文本为音频文件。抛错由调用方决定降级策略（流水线跳句 / IPC 错误响应）。
+ * 启用缓存时：命中直接返回缓存文件（零请求）；未命中合成后移入缓存并返回缓存路径，
+ * 失败（put 返回 null）时回退临时产物路径。
  */
 export async function synthesizeSpeechText(
   target: TtsSynthesisTarget,
@@ -51,22 +108,32 @@ export async function synthesizeSpeechText(
     throw new Error('未配置支持语音合成的多媒体渠道')
   }
   const settings = target.settings
-  const modelParams: Record<string, unknown> = { speed: settings.ttsSpeed }
-  if (settings.ttsVoice.trim().length > 0) modelParams.voice = settings.ttsVoice.trim()
-  // MiniMax 专有参数（vol/pitch/emotion）仅对 minimax-hailuo 渠道下发：
-  // 其他渠道 manifest 若开启透传会把未知字段传给供应商引发 400，缺失时编译器回落渠道默认。
-  // 自动选路必须复用 mediaRouter.supports（内部经 profileSupportsMediaCapability 以模型级
-  // manifest 声明优先，无 manifest 旧渠道回退渠道级声明 + adapter）：与 invoke 内部的渠道
-  // 选择完全同源，避免渠道级误声明 audio.speech 的 ASR 渠道在此抢先命中、与实际路由到的
-  // TTS 渠道不一致（MiniMax 专有参数会错发给另一家渠道）。
-  const chosenProvider =
-    settings.ttsProviderProfileId != null
-      ? providers.find((provider) => provider.id === settings.ttsProviderProfileId)
-      : providers.find((provider) => target.mediaRouter.supports(provider, 'audio.speech'))
-  if (chosenProvider?.mediaProvider === 'minimax-hailuo') {
-    if (settings.ttsVol !== 1) modelParams.vol = settings.ttsVol
-    if (settings.ttsPitch !== 0) modelParams.pitch = settings.ttsPitch
-    if (settings.ttsEmotion.trim().length > 0) modelParams.emotion = settings.ttsEmotion.trim()
+  const route = resolveTtsRoute(settings, providers, (provider, capability) =>
+    target.mediaRouter.supports(provider, capability),
+  )
+  // 渠道/模型任一解析不出（如显式渠道不在列表且无显式模型）时跳过缓存：
+  // 键与实际路由不同源，宁可 miss 也不冒错命中风险
+  const cache =
+    target.useCache === true && target.speechCache != null && route.modelId != null
+      ? target.speechCache
+      : null
+  const cacheKey =
+    route.providerId != null && cache != null
+      ? computeTtsCacheKey({
+          providerId: route.providerId,
+          modelId: route.modelId ?? '',
+          params: route.modelParams,
+          text: sentence,
+        })
+      : null
+  if (cache != null && cacheKey != null) {
+    const cached = await cache.get(cacheKey)
+    if (cached != null) {
+      log.info(
+        `[voice-assistant] tts cache hit (key=${cacheKey.slice(0, 8)}…, text=${sentence.slice(0, 16)}…)`,
+      )
+      return { filePath: cached, provider: route.providerId ?? 'unknown', cached: true }
+    }
   }
   const startedAt = Date.now()
   const { output } = await target.mediaRouter.invoke(
@@ -74,13 +141,13 @@ export async function synthesizeSpeechText(
       operation: 'text_to_audio',
       capability: 'audio.speech',
       prompt: sentence.slice(0, TTS_SYNTHESIS_MAX_TEXT_CHARS),
-      modelParams,
+      modelParams: route.modelParams,
       outputDir: target.outputDir,
     },
     {
       providers,
-      ...(settings.ttsProviderProfileId != null
-        ? { providerProfileId: settings.ttsProviderProfileId }
+      ...(route.invokeProviderProfileId != null
+        ? { providerProfileId: route.invokeProviderProfileId }
         : {}),
       ...(settings.ttsModelId != null ? { modelId: settings.ttsModelId } : {}),
     },
@@ -94,7 +161,13 @@ export async function synthesizeSpeechText(
       filePath.split('/').pop() ?? ''
     })`,
   )
-  return { filePath, provider: output.provider }
+  // put 内部 rename：成功后原 temp 产物即缓存文件本身；失败回落原路径（sweep 兜底清理）
+  if (cache != null && cacheKey != null) {
+    const cachedPath = await cache.put(cacheKey, filePath)
+    if (cachedPath != null)
+      return { filePath: cachedPath, provider: output.provider, cached: false }
+  }
+  return { filePath, provider: output.provider, cached: false }
 }
 
 /**
