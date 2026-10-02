@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 668" width="960" height="668" role="img" aria-label="知识库架构：三条生成管道经统一写入原语落到 markdown 与 SQLite，读取侧零预注入、先检索再按需取正文">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12.5px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 11.5px; font-weight: 600; fill: #10162f; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .mo { font-family: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace; font-size: 10px; fill: #465789; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .w { fill: #f3f5ff; stroke: #5b6cff; stroke-width: 1; }
+      .v { fill: #f7f4ff; stroke: #7c4dff; stroke-width: 1; }
+      .c { fill: #f2fbff; stroke: #35c6ff; stroke-width: 1; }
+      .arrow { stroke: #aab5d1; stroke-width: 1.5; fill: none; marker-end: url(#arw); }
+      .arwhead { fill: #aab5d1; }
+      .div { stroke: #dde3f1; stroke-width: 1; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .st { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .bd { fill: #aab2c3; } .mo { fill: #97a0b3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .w { fill: #1c2040; stroke: #6b7bff; }
+        .v { fill: #221a3d; stroke: #9b7dff; }
+        .c { fill: #12242e; stroke: #4fb6e6; }
+        .arrow { stroke: #556075; } .arwhead { fill: #556075; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+    <marker id="arw" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arwhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="668"/>
+
+  <text class="h1" x="40" y="38">知识库 · 从生成到读取的架构</text>
+  <text class="sub" x="40" y="60">三条生成管道都先出草案、再人工确认，写入收敛到同一原语；读取零预注入，人机同源、Agent 侧按预算取用</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <!-- ① 生成 -->
+  <text class="band" x="40" y="100">① 生成：三条沉淀管道，产物一律 pending —— 模型自称「已确认」不作数</text>
+
+  <rect class="w" x="40" y="112" width="286" height="98" rx="10"/>
+  <rect x="40" y="112" width="4" height="98" rx="2" fill="#5b6cff"/>
+  <text class="tt" x="56" y="136">对话沉淀：会话 → 知识页</text>
+  <text class="bd" x="56" y="158">增量采样：只喂水位线之后的新轮次</text>
+  <text class="bd" x="56" y="176">本地滤噪 → 小模型抽取（严格 JSON）</text>
+  <text class="bd" x="56" y="194">候选区 pending → 人工确认 → 知识页</text>
+
+  <rect class="v" x="337" y="112" width="286" height="98" rx="10"/>
+  <rect x="337" y="112" width="4" height="98" rx="2" fill="#7c4dff"/>
+  <text class="tt" x="353" y="136">技能提议：知识页 → 技能</text>
+  <text class="bd" x="353" y="158">以已确认知识页生成技能草案文档</text>
+  <text class="bd" x="353" y="176">人工接受才安装；拒绝要填原因</text>
+  <text class="bd" x="353" y="194">提议只写草案：知识永不随技能回滚</text>
+
+  <rect class="c" x="634" y="112" width="286" height="98" rx="10"/>
+  <rect x="634" y="112" width="4" height="98" rx="2" fill="#35c6ff"/>
+  <text class="tt" x="650" y="136">Repo Wiki：代码 → 知识页</text>
+  <text class="bd" x="650" y="158">扫描树 / 渲染 / 编排三层，跳过依赖</text>
+  <text class="bd" x="650" y="176">总览 / 目录 / 技术栈页，可随代码重建</text>
+  <text class="bd" x="650" y="194">漂移检测提示重建；转人工后不覆写</text>
+
+  <path class="arrow" d="M183 210 V 256"/>
+  <path class="arrow" d="M480 210 V 256"/>
+  <path class="arrow" d="M777 210 V 256"/>
+
+  <!-- ② 写入原语 -->
+  <rect class="w" x="40" y="262" width="880" height="64" rx="10"/>
+  <rect x="40" y="262" width="5" height="64" rx="2.5" fill="#5b6cff"/>
+  <text class="tt" x="62" y="288">② 统一写入原语 —— 人工界面 / Agent 工具 / 抽取确认 / 扫描重建，所有写入口只此一条通道</text>
+  <text class="bd" x="62" y="308">expectedVersion CAS 乐观锁 · 正文 tmp → rename 原子落盘 · 同一事务维护 FTS 与版本快照 · 失败条件回滚</text>
+
+  <path class="arrow" d="M480 326 V 352"/>
+
+  <!-- ③ 存储 -->
+  <text class="band" x="40" y="370">③ 存储：markdown 是唯一事实源，SQLite 只做索引、元数据与图谱</text>
+
+  <rect class="soft" x="40" y="380" width="434" height="92" rx="10"/>
+  <rect x="40" y="380" width="4" height="92" rx="2" fill="#6675a3"/>
+  <text class="st" x="58" y="404">markdown 正文 · 唯一事实源</text>
+  <text class="bd" x="58" y="426">project 空间随仓库走：&lt;workspace&gt;/.spark-agent/wiki/</text>
+  <text class="bd" x="58" y="444">user / agent 空间落在 ~/.spark-agent 下，原子写盘</text>
+  <text class="bd" x="58" y="462">版本快照存 revisions/&lt;page_id&gt;/&lt;version&gt;.md，可回退</text>
+
+  <rect class="soft" x="486" y="380" width="434" height="92" rx="10"/>
+  <rect x="486" y="380" width="4" height="92" rx="2" fill="#6675a3"/>
+  <text class="st" x="504" y="404">SQLite 索引与元数据（与正文同事务维护）</text>
+  <text class="mo" x="504" y="426">wiki_space · wiki_page · wiki_link · wiki_revision</text>
+  <text class="mo" x="504" y="444">wiki_fts（contentless，CJK 逐字分词，写入同事务）</text>
+  <text class="mo" x="504" y="462">wiki_candidate · wiki_skill_proposal · wiki_extraction_state</text>
+
+  <path class="arrow" d="M480 472 V 498"/>
+
+  <!-- ④ 读取 -->
+  <text class="band" x="40" y="516">④ 读取：零预注入 —— 内容不进常驻上下文，人机同源；Agent 先检索、再按需取正文</text>
+
+  <rect class="card" x="40" y="526" width="211" height="100" rx="10"/>
+  <rect x="40" y="526" width="4" height="100" rx="2" fill="#5b6cff"/>
+  <text class="st" x="56" y="550">L0 · 常驻</text>
+  <text class="bd" x="56" y="572">能力声明 + 工具 schema</text>
+  <text class="bd" x="56" y="590">5 只读免审批 · 6 写走审批</text>
+  <text class="bd" x="56" y="608">1 技能提议（瘦身 ≈ 780）</text>
+
+  <rect class="card" x="263" y="526" width="211" height="100" rx="10"/>
+  <rect x="263" y="526" width="4" height="100" rx="2" fill="#7c4dff"/>
+  <text class="st" x="279" y="550">L1 · 检索 wiki_search</text>
+  <text class="bd" x="279" y="572">只回 id + 摘要，绝不回正文</text>
+  <text class="bd" x="279" y="590">默认 top-8，硬上限 top-20</text>
+  <text class="bd" x="279" y="608">摘要 240 字，超限硬截断</text>
+
+  <rect class="card" x="486" y="526" width="211" height="100" rx="10"/>
+  <rect x="486" y="526" width="4" height="100" rx="2" fill="#35c6ff"/>
+  <text class="st" x="502" y="550">L2 · 正文 wiki_read</text>
+  <text class="bd" x="502" y="572">单页 3000 token，硬顶 8000</text>
+  <text class="bd" x="502" y="590">超限 truncated + nextOffset</text>
+  <text class="bd" x="502" y="608">按需续读，不一次读多页</text>
+
+  <rect class="card" x="709" y="526" width="211" height="100" rx="10"/>
+  <rect x="709" y="526" width="4" height="100" rx="2" fill="#f59e0b"/>
+  <text class="st" x="725" y="550">L3 · 单轮总闸</text>
+  <text class="bd" x="725" y="572">同一轮内 wiki 注入合计</text>
+  <text class="bd" x="725" y="590">默认 8000，硬上限 20000</text>
+  <text class="bd" x="725" y="608">超限拒绝读取并提示先总结</text>
+</svg>

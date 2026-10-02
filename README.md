@@ -47,11 +47,11 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 </td>
 <td width="50%" valign="top">
 
-**知识库：零预注入与四层预算**
+**知识库：从生成到读取的架构**
 
-内容从不常驻上下文，读取要过四层预算：常驻约 800 token、检索 top 8、正文 3000 token 每页、单轮总闸 8000。
+三条生成管道（对话沉淀 / 技能提议 / Repo Wiki）都先出草案、再人工确认，写入收敛到同一原语；读取零预注入，人机同源，先检索、再按需取正文。
 
-![知识库上下文预算分层](docs-site/assets/img/knowledge-base-budget.svg)
+![知识库从生成到读取的架构：三条生成管道经统一写入原语落到 markdown 与 SQLite，读取侧零预注入](docs-site/assets/img/knowledge-base-lifecycle.svg)
 
 </td>
 </tr>
