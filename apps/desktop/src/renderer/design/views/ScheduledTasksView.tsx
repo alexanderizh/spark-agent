@@ -229,6 +229,10 @@ export function ScheduledTasksView() {
     [tasks, selectedId],
   )
 
+  // 筛选/搜索命中为空 ≠ 从未创建过任务：两者空状态文案与提示需要区分，
+  // 否则「一个任务都没有」时才该出现的会话计划任务引导会误伤筛选无结果场景。
+  const hasActiveFilter = filter !== 'all' || searchQuery.trim().length > 0
+
   // ─── Actions ──────────────────────────────────────────────────────────────
 
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
@@ -680,7 +684,13 @@ export function ScheduledTasksView() {
           </div>
         ) : tasks.length === 0 ? (
           <div className="st-empty">
-            <Empty description="暂无定时任务" />
+            <Empty
+              description={
+                hasActiveFilter
+                  ? '没有匹配的定时任务'
+                  : '此处为应用级定时任务，您也可在会话内创建「计划任务」，以直接在固定会话内执行！'
+              }
+            />
             <Button type="primary" onClick={handleCreate} style={{ marginTop: 16 }}>
               创建第一个任务
             </Button>
@@ -1005,9 +1015,7 @@ function TaskFormPage({
         setTeams(teamRes.teams ?? [])
         // 定时任务执行的是文本 turn，多媒体渠道（图像/语音/视频）的模型不能进入候选：
         // 主进程会按 modelId 反查渠道，选中多媒体模型会把 turn 落到图像/视频渠道上。
-        setProviders(
-          filterConversationalProviders(providerRes.profiles ?? []),
-        )
+        setProviders(filterConversationalProviders(providerRes.profiles ?? []))
         setWorkspaces(workspaceRes.workspaces ?? [])
       })
       .catch(console.error)
