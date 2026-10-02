@@ -277,16 +277,6 @@ export function VoiceAssistantSettingsCard() {
           }
         />
         <SettingsRow
-          title="连续对话模式"
-          tip="播报完自动回到聆听（约 1 秒间隔），无需再按唤醒快捷键即可继续说；期间随时可按快捷键打断。"
-          right={
-            <Switch
-              checked={settings.continuousMode}
-              onChange={(v) => void update({ continuousMode: v })}
-            />
-          }
-        />
-        <SettingsRow
           title="口语化回复提示"
           tip="语音轮次自动要求 Agent 用简短口语回复，避免朗读代码块与表格。"
           right={
@@ -589,7 +579,7 @@ export function VoiceAssistantSettingsCard() {
               onChange={(v) => void update({ wakeWord: v })}
               options={[
                 { label: '嘿 Spark', value: 'hey-spark' },
-                { label: '你好星火', value: 'nihao-xinghuo' },
+                { label: '你好，星火', value: 'nihao-xinghuo' },
                 { label: '星火星火', value: 'xinghuo-xinghuo' },
                 { label: '小星小星', value: 'xiaoxing-xiaoxing' },
               ]}

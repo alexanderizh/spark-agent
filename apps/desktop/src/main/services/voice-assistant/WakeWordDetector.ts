@@ -78,7 +78,7 @@ const WAKE_WORD_PRESETS: Record<VoiceAssistantWakeWord, WakeWordPreset> = {
     defaultThreshold: 0.1,
   },
   'nihao-xinghuo': {
-    label: '你好星火',
+    label: '你好，星火',
     tokens: 'n ǐ h ǎo x īng h uǒ',
     defaultBoost: 1.5,
     defaultThreshold: 0.15,
@@ -177,8 +177,10 @@ export class WakeWordDetector {
         debug: false,
       },
       maxActivePaths: 4,
-      // 叠词唤醒词 token 重叠多，官方建议调大尾部 blank 数防抖
-      numTrailingBlanks: 8,
+      // 尾部 blank 数 = 命中收口所需的连续尾静音帧数（10ms/帧）。sherpa 默认 1；
+      // 此前取 8（80ms）导致唤醒词后无停顿直接连说指令时命中被延迟甚至吞掉
+      // （漏唤醒主因之一）。2 保留叠词防抖（星火×2 token 重叠）同时压低收口门槛。
+      numTrailingBlanks: 2,
       keywordsFile,
     })
     try {

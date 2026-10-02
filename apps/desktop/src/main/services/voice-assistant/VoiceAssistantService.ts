@@ -507,9 +507,10 @@ export class VoiceAssistantService {
         void this.startListening('wake')
         return { ok: true, message: '正在聆听' }
       case 'listening':
-        // 再按一次 = 取消本轮聆听
+        // 再按一次 = 取消本轮聆听（用户显式结束对话循环）
         this.teardownListening()
         this.transition('idle', 'cancelled')
+        this.logDialogueExit('manual-cancel')
         return { ok: true, message: '已取消聆听' }
       case 'thinking':
       case 'speaking':
@@ -520,7 +521,7 @@ export class VoiceAssistantService {
     }
   }
 
-  /** 手动打断（HUD 按钮 / IPC）：任何活跃态立即回到 idle */
+  /** 手动打断（HUD 按钮 / IPC）：任何活跃态立即回到 idle（用户显式结束对话循环） */
   interrupt(): void {
     this.turnEpoch += 1
     if (this.continuousListenTimer != null) {
@@ -530,6 +531,7 @@ export class VoiceAssistantService {
     if (this.state === 'listening') {
       this.teardownListening()
       this.transition('idle', 'cancelled')
+      this.logDialogueExit('interrupted')
       return
     }
     if (this.activeTurn != null) {
@@ -543,6 +545,7 @@ export class VoiceAssistantService {
     this.pendingApproval = null // 打断语音审批：卡片保留给应用内手动处理
     this.pipeline.cancel() // 同步停播 + 清队列 + 删未播文件 + 推送 stop
     this.transition('idle', 'cancelled')
+    this.logDialogueExit('interrupted')
   }
 
   // ─── M2 常驻聆听（standby / KWS） ─────────────────────────────────────────
@@ -781,6 +784,11 @@ export class VoiceAssistantService {
     this.cloudTotalSamples = 0
     this.transition('listening', reason)
     this.playCue('wake')
+    // 对话循环进入日志（与 dialogue loop ended 成对）：排查「一轮后退出」时
+    // 据此确认每轮续听是否真的拉起
+    log.info(
+      `[voice-assistant] dialogue listening started (reason=${reason}, capture=${captureSessionId})`,
+    )
     // 2. 请求渲染端起采集（常驻 KWS 采集在线时复用同一流，不重起 getUserMedia）；
     //    对话采集按设置下发浏览器级降噪（远场对话优先保噪音免疫）
     if (!this.kwsCaptureActive) {
@@ -810,6 +818,11 @@ export class VoiceAssistantService {
     this.listeningTimer = setTimeout(() => {
       this.onListeningTimeout()
     }, EMPTY_SPEECH_TIMEOUT_MS)
+  }
+
+  /** 对话循环退出统一日志（与 dialogue listening started 成对）：reason 说明退出归属 */
+  private logDialogueExit(reason: string): void {
+    log.info(`[voice-assistant] dialogue loop ended (reason=${reason})`)
   }
 
   private onListeningTimeout(): void {
@@ -1616,13 +1629,16 @@ export class VoiceAssistantService {
         (this.state === 'idle' || this.state === 'standby')
       ) {
         void this.startListening('manual')
+        return
       }
+      // 命令确认/错误提示等非轮次播报同样续听：对话循环只由用户显式结束
+      this.scheduleNextRoundListening()
       return
     }
     if (this.activeTurn != null) {
       this.activeTurn = null
       this.transition('idle', 'completed')
-      this.maybeStartContinuousListening()
+      this.scheduleNextRoundListening()
     }
   }
 
@@ -1642,19 +1658,23 @@ export class VoiceAssistantService {
   }
 
   /**
-   * M3 连续对话模式：轮次播报完 → 短暂停顿（等 TTS 尾音消散 + AEC 收敛）→
-   * 自动回聆听。期间发生打断/新唤醒则取消。
+   * 播报完短暂停顿（等 TTS 尾音消散 + AEC 收敛）→ 自动回聆听。
+   * 常驻语音对话是默认行为：空闲 = 继续等待下一轮，只有用户显式结束
+   * （再按唤醒键取消/打断、「停止聆听」语音命令、轮次取消、关闭应用）才退出循环。
+   * 原 continuousMode 开关不再参与控制（语义与常驻语音冲突，字段仅存量兼容）；
+   * 修复点：常驻唤醒在线时收尾会被 transition 自动顶成 standby，旧实现先按
+   * `state !== 'idle'` 拦截导致 standby 分支永远走不到——续听在常驻场景整轮失效。
    */
-  private maybeStartContinuousListening(): void {
-    if (!this.settings.continuousMode || this.disposed) return
+  private scheduleNextRoundListening(): void {
+    if (this.disposed) return
     if (this.continuousListenTimer != null) clearTimeout(this.continuousListenTimer)
     this.continuousListenTimer = setTimeout(() => {
       this.continuousListenTimer = null
-      if (this.disposed || this.state !== 'idle') return
-      // idle 可能已自动转 standby（常驻在线）；两态都可续听
-      if (this.state === 'idle' || this.state === 'standby') {
-        void this.startListening('completed')
-      }
+      if (this.disposed || !this.settings.enabled) return
+      // idle 与 standby（常驻在线自动顶替的待命态）都可续听；其余状态说明已有
+      // 新的聆听/思考/播报在途，不应再拉起
+      if (this.state !== 'idle' && this.state !== 'standby') return
+      void this.startListening('completed')
     }, CONTINUOUS_LISTEN_DELAY_MS)
   }
 
