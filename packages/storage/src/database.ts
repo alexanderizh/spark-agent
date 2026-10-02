@@ -98,6 +98,59 @@ function getMigrationFiles(dir = defaultMigrationsDir()): MigrationFile[] {
   return files
 }
 
+interface AppliedMigrationRow {
+  version: number
+  name: string
+}
+
+/** 去掉 migration 文件名的序号前缀，留下描述部分（如 "workspace_default_agent.sql"）。 */
+function extractMigrationSlug(filename: string): string {
+  return basename(filename).replace(/^\d+_/, '')
+}
+
+/**
+ * 计算"编号对账"修正：migration 文件重命名（改号）后，旧库里按旧号记录的
+ * applied 记录会错位——同号新文件被误判已执行而永远缺表，改号文件被误判
+ * 未执行而重跑（ALTER TABLE ADD COLUMN 重跑即 duplicate column 崩库）。
+ *
+ * 对账规则：改号会连文件名前缀一起变，因此按"去序号的描述部分"（slug）比对：
+ * applied 记录的 slug 命中唯一一个现文件且其 version 与记录的 version 不同，
+ * 说明该文件只是改了号，记录应修正到现号。slug 不唯一或无命中的记录保持原样，
+ * 不做破坏性操作。
+ */
+function computeMigrationRenumbers(
+  appliedRows: AppliedMigrationRow[],
+  files: MigrationFile[],
+): Array<{ from: number; to: number; name: string }> {
+  const versionBySlug = new Map<string, number>()
+  const ambiguousSlugs = new Set<string>()
+  for (const file of files) {
+    const slug = extractMigrationSlug(file.name)
+    if (versionBySlug.has(slug)) {
+      ambiguousSlugs.add(slug)
+      continue
+    }
+    versionBySlug.set(slug, file.version)
+  }
+  for (const slug of ambiguousSlugs) versionBySlug.delete(slug)
+
+  const occupiedVersions = new Set(appliedRows.map((row) => row.version))
+  const corrections: Array<{ from: number; to: number; name: string }> = []
+  for (const row of appliedRows) {
+    const currentVersion = versionBySlug.get(extractMigrationSlug(row.name))
+    if (currentVersion == null || currentVersion === row.version) continue
+    if (occupiedVersions.has(currentVersion)) {
+      // 目标号已被其他 applied 记录占用，改写会撞主键；保守放弃并留痕。
+      log.warn(
+        `Migration renumber conflict: "${row.name}" ${row.version} -> ${currentVersion} 目标号已被占用，跳过对账`,
+      )
+      continue
+    }
+    corrections.push({ from: row.version, to: currentVersion, name: row.name })
+  }
+  return corrections
+}
+
 function notifyMigrationProgress(
   onProgress: RunMigrationsOptions['onProgress'],
   progress: DatabaseMigrationProgress,
@@ -128,10 +181,13 @@ export function inspectPendingMigrations(
       .get() as { name: string } | undefined
     const appliedVersions = new Set<number>()
     if (migrationsTable != null) {
-      const rows = db.prepare('SELECT version FROM schema_migrations').all() as Array<{
-        version: number
-      }>
-      for (const row of rows) appliedVersions.add(row.version)
+      const rows = db
+        .prepare('SELECT version, name FROM schema_migrations')
+        .all() as AppliedMigrationRow[]
+      const toByName = new Map(
+        computeMigrationRenumbers(rows, files).map(({ name, to }) => [name, to] as const),
+      )
+      for (const row of rows) appliedVersions.add(toByName.get(row.name) ?? row.version)
     }
     const pendingMigrations = files
       .filter((file) => !appliedVersions.has(file.version))
@@ -205,6 +261,7 @@ export class SparkDatabase {
     `)
 
     const files = getMigrationFiles(migrationsDir)
+    this.reconcileMigrationRenumbers(files)
     const pendingFiles = files.filter((file) => !this.isMigrationApplied(file.version))
 
     for (const [index, file] of pendingFiles.entries()) {
@@ -255,6 +312,31 @@ export class SparkDatabase {
       .prepare('SELECT version FROM schema_migrations WHERE version = ?')
       .get(version) as { version: number } | undefined
     return row != null
+  }
+
+  /**
+   * 执行编号对账写库：把因文件改号而错位的 applied 记录修正到文件现号。
+   * 必须在 pending 计算之前完成——否则旧号记录会挡住同号新文件（永远缺表），
+   * 改号文件会被误判未执行而重跑（ALTER ADD COLUMN 重跑即崩库）。
+   */
+  private reconcileMigrationRenumbers(files: MigrationFile[]): void {
+    const rows = this.db
+      .prepare('SELECT version, name FROM schema_migrations')
+      .all() as AppliedMigrationRow[]
+    const corrections = computeMigrationRenumbers(rows, files)
+    if (corrections.length === 0) return
+
+    const update = this.db.prepare(
+      'UPDATE schema_migrations SET version = ? WHERE version = ? AND name = ?',
+    )
+    this.db.transaction(() => {
+      for (const { from, to, name } of corrections) {
+        update.run(to, from, name)
+      }
+    })()
+    for (const { from, to, name } of corrections) {
+      log.info(`Migration renumber reconciled: ${name} ${from} -> ${to}`)
+    }
   }
 
   /**
