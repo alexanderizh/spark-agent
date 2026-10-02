@@ -126,6 +126,9 @@ public protocol NativeHostPlatformProviding: Sendable {
     recordBinding: Bool
   ) async throws -> NativeObservedWindow
   func executeAction(_ envelope: NativeComputerActionEnvelope) async throws -> NativeActionExecution
+  /// Toggles the agent-visible virtual cursor overlay for subsequent actions.
+  /// Platform providers without such an overlay keep the default no-op.
+  func setVirtualCursorEnabled(_ enabled: Bool) async
   func cancelSession(id: String) async
 }
 
@@ -149,6 +152,8 @@ extension NativeHostPlatformProviding {
   ) async throws -> NativeActionExecution {
     throw NativeHostPlatformError.environmentUnavailable
   }
+
+  public func setVirtualCursorEnabled(_ enabled: Bool) async {}
 }
 
 public struct NativeHostReply: Equatable, Sendable {
@@ -241,7 +246,7 @@ public actor NativeHostRequestHandler {
           json: try NativeHostResponseEncoder.observation(requestID: requestID, observed: observed),
           binary: observed.capture.bytes
         )
-      case .executeAction(let requestID, let envelope):
+      case .executeAction(let requestID, let envelope, let showVirtualCursor):
         guard !canceledSessions.contains(envelope.computerSessionID) else {
           return NativeHostReply(
             json: try NativeHostResponseEncoder.error(
@@ -250,6 +255,7 @@ public actor NativeHostRequestHandler {
             )
           )
         }
+        await provider.setVirtualCursorEnabled(showVirtualCursor)
         let execution = try await provider.executeAction(envelope)
         return NativeHostReply(
           json: try NativeHostResponseEncoder.actionResult(

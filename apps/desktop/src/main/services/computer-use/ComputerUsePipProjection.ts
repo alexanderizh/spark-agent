@@ -12,6 +12,8 @@ export interface ComputerUsePipSessionState {
   readonly status: PipStatus
   readonly lastSummary: string | null
   readonly lastEventAt: string
+  /** Present while an action is gated on user approval (PIP approve/deny). */
+  readonly pendingApproval: { approvalId: string; riskLevel: 'L2' | 'L3' } | null
 }
 
 export type PipStatus =
@@ -71,7 +73,21 @@ export class ComputerUsePipProjection {
         )
         break
       case 'computer_approval_requested':
-        this.patch(event.computerSessionId, { status: 'awaiting_approval' }, event.timestamp)
+        this.patch(
+          event.computerSessionId,
+          {
+            status: 'awaiting_approval',
+            pendingApproval: { approvalId: event.approvalId, riskLevel: event.riskLevel },
+          },
+          event.timestamp,
+        )
+        break
+      case 'computer_approval_resolved':
+        this.patch(
+          event.computerSessionId,
+          { status: 'running', pendingApproval: null },
+          event.timestamp,
+        )
         break
       case 'computer_handoff_required':
         this.patch(event.computerSessionId, { status: 'stopped' }, event.timestamp)
@@ -123,7 +139,7 @@ export class ComputerUsePipProjection {
 
   private patch(
     computerSessionId: string,
-    change: Partial<Pick<ComputerUsePipSessionState, 'status' | 'lastSummary'>>,
+    change: Partial<Pick<ComputerUsePipSessionState, 'status' | 'lastSummary' | 'pendingApproval'>>,
     timestamp: string,
   ): void {
     const current = this.sessions.get(computerSessionId)
@@ -138,6 +154,10 @@ export class ComputerUsePipProjection {
       status: change.status ?? current?.status ?? 'running',
       lastSummary:
         change.lastSummary !== undefined ? change.lastSummary : (current?.lastSummary ?? null),
+      pendingApproval:
+        change.pendingApproval !== undefined
+          ? change.pendingApproval
+          : (current?.pendingApproval ?? null),
       lastEventAt: timestamp,
     }
     this.sessions.set(computerSessionId, next)

@@ -33,6 +33,7 @@ export const ComputerUseErrorCodeSchema = z.enum([
   'approval_required',
   'approval_expired',
   'approval_mismatch',
+  'approval_denied',
   'prompt_injection_suspected',
   'verification_failed',
   'verification_inconclusive',

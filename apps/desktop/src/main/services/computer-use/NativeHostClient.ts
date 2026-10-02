@@ -288,13 +288,20 @@ export class NativeHostClient {
   async executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
+    options: { showVirtualCursor?: boolean } = {},
   ): Promise<{
     response: Extract<NativeHostResponse, { type: 'action_result' }>
     bytes: Buffer | null
   }> {
     return this.runExclusive(async () => {
       const result = await this.sendTypedRequest(
-        { type: 'execute_action', envelope },
+        {
+          type: 'execute_action',
+          envelope,
+          // Only send the flag when the overlay is disabled: absent keeps the
+          // historical shown behaviour and stays valid against older hosts.
+          ...(options.showVirtualCursor === false ? { showVirtualCursor: false } : {}),
+        },
         'action_result',
         signal,
         // Skyshot requests carry settle + capture + tree traversal inside the

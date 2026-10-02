@@ -11,6 +11,7 @@ import {
   type SparkDatabase,
 } from '@spark/storage'
 import { ComputerApprovalService } from './ComputerApprovalService.js'
+import { ComputerActionApprovalGate } from './ComputerActionApprovalGate.js'
 import { ComputerControlBroker } from './ComputerControlBroker.js'
 import {
   ComputerKillSwitchService,
@@ -63,6 +64,8 @@ export interface ComputerUseServices {
   readonly killSwitch: ComputerKillSwitchService
   readonly appControlBridge: AppControlBridge
   readonly coordinator: ComputerDesktopExecutionCoordinator
+  /** Per-action human approval gate for L2/L3 actions on gated sessions. */
+  readonly approvalGate: ComputerActionApprovalGate
   /** Optional live PIP panel; present only when the pipPanel flag is enabled. */
   readonly pip?: ComputerUsePipService
   readonly evidence?: NativeObservationEvidenceSink & {
@@ -75,6 +78,12 @@ export interface ComputerUseServices {
       height: number
       mimeType: 'image/png' | 'image/jpeg'
     }>
+    peekLatestImage(computerSessionId: string): {
+      bytes: Buffer
+      width: number
+      height: number
+      mimeType: 'image/png' | 'image/jpeg'
+    } | null
     clearSession(computerSessionId: string): void
     flushPendingWritesOrThrow?(computerSessionId: string): Promise<void>
   }
@@ -127,6 +136,7 @@ export function createComputerUseServices(
   const approvals = new ComputerApprovalService({
     repository: new ComputerApprovalRepository(database),
   })
+  const approvalGate = new ComputerActionApprovalGate({ approvals, timeline })
   const verifications = new ComputerVerificationRepository(database)
   const appControlBridge =
     options.appControlBridge ??
@@ -154,6 +164,8 @@ export function createComputerUseServices(
     evidence != null &&
     'readLatestImage' in evidence &&
     typeof evidence.readLatestImage === 'function' &&
+    'peekLatestImage' in evidence &&
+    typeof evidence.peekLatestImage === 'function' &&
     'clearSession' in evidence &&
     typeof evidence.clearSession === 'function'
       ? (evidence as NonNullable<ComputerUseServices['evidence']>)
@@ -166,6 +178,7 @@ export function createComputerUseServices(
     observer: backend,
     executor,
     timeline,
+    approvalGate,
     rollout: computerUseV2RolloutController,
     ...(usableEvidence?.flushPendingWritesOrThrow == null
       ? {}
@@ -185,6 +198,22 @@ export function createComputerUseServices(
   const pip = getComputerUseV2FlagStore().isEnabled('pipPanel')
     ? new ComputerUsePipService({
         timeline,
+        ...(usableEvidence == null
+          ? {}
+          : {
+              evidence: {
+                peekLatestImage: (computerSessionId: string) =>
+                  usableEvidence.peekLatestImage(computerSessionId),
+              },
+            }),
+        onCommand: (verb, computerSessionId) =>
+          dispatchPipCommand({
+            verb,
+            computerSessionId,
+            broker,
+            coordinator,
+            approvalGate,
+          }),
         projection: new ComputerUsePipProjection({
           sessions: {
             listLabeled: () =>
@@ -218,13 +247,15 @@ export function createComputerUseServices(
     killSwitch,
     appControlBridge,
     coordinator,
+    approvalGate,
     ...(pip == null ? {} : { pip }),
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>
       killSwitch.arm(accelerator, async () => {
+        const activeIds = sessions.listActiveSessionIds()
         const results = await Promise.allSettled(
-          sessions.listActiveSessionIds().map(async (computerSessionId) => {
+          activeIds.map(async (computerSessionId) => {
             try {
               await broker.killSwitch(computerSessionId)
             } finally {
@@ -235,6 +266,7 @@ export function createComputerUseServices(
         const failures = results
           .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
           .map((result) => result.reason)
+        notifyKillSwitchTriggered(activeIds.length, failures.length)
         if (failures.length > 0) {
           throw new AggregateError(failures, 'One or more Computer Use sessions failed to stop')
         }
@@ -326,6 +358,35 @@ export async function disposeComputerUseServices(): Promise<void> {
 const FAIL_CLOSED_SHORTCUT_REGISTRAR: ComputerGlobalShortcutRegistrar = {
   register: () => false,
   unregister: () => undefined,
+}
+
+/** Executes a PIP panel command against the same runtime the IPC surface uses. */
+function dispatchPipCommand(input: {
+  verb: 'pause' | 'takeover' | 'stop' | 'approve' | 'deny'
+  computerSessionId: string
+  broker: ComputerControlBroker
+  coordinator: ComputerDesktopExecutionCoordinator
+  approvalGate: ComputerActionApprovalGate
+}): Promise<unknown> {
+  const { verb, computerSessionId, broker, coordinator, approvalGate } = input
+  if (verb === 'approve' || verb === 'deny') {
+    return Promise.resolve(approvalGate.resolveFromPanel(computerSessionId, verb === 'approve'))
+  }
+  if (verb === 'pause' || verb === 'takeover') {
+    return broker.pause(computerSessionId).finally(() => coordinator.release(computerSessionId))
+  }
+  return broker.stop(computerSessionId).finally(() => coordinator.release(computerSessionId))
+}
+
+/** Pushes the kill-switch outcome so the renderer can toast the user (P1). */
+function notifyKillSwitchTriggered(stoppedCount: number, failureCount: number): void {
+  const window = getMainWindow()
+  if (window == null || window.isDestroyed()) return
+  window.webContents.send('stream:computer-use:kill-switch-triggered', {
+    stoppedCount,
+    failureCount,
+    triggeredAt: new Date().toISOString(),
+  })
 }
 
 function isDisposableBackend(

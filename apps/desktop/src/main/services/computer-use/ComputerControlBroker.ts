@@ -72,6 +72,21 @@ export interface ComputerControlBrokerOptions {
   executor: ComputerExecutorBackend
   /** Optional live timeline sink. Absent keeps broker behavior unchanged. */
   timeline?: ComputerUseTimelineSink
+  /**
+   * Optional per-action human approval gate. Only sessions the gate has a
+   * registered (non full-access) permission mode for ever block here; absent
+   * keeps broker behavior unchanged.
+   */
+  approvalGate?: {
+    requiresApproval(computerSessionId: string, riskLevel: 'L0' | 'L1' | 'L2' | 'L3'): boolean
+    awaitApproval(input: {
+      envelope: ComputerActionEnvelope
+      riskLevel: Extract<ComputerRiskLevel, 'L2' | 'L3'>
+      sessionId: string
+      turnId: string
+      summary: string
+    }): Promise<ComputerApprovalTicket | null>
+  }
   /** Flushes the current before-frame only for L2/L3 actions before ticket consumption. */
   flushHighRiskEvidence?: (computerSessionId: string) => Promise<void>
   rollout?: Pick<ComputerUseV2RolloutController, 'recordAction' | 'recordTakeoverStop'>
@@ -86,6 +101,7 @@ export class ComputerControlBroker {
   private readonly observer: ComputerObserverBackend
   private readonly executor: ComputerExecutorBackend
   private readonly timeline: ComputerUseTimelineSink | undefined
+  private readonly approvalGate: ComputerControlBrokerOptions['approvalGate']
   private readonly rollout:
     | Pick<ComputerUseV2RolloutController, 'recordAction' | 'recordTakeoverStop'>
     | undefined
@@ -101,6 +117,7 @@ export class ComputerControlBroker {
     this.observer = options.observer
     this.executor = options.executor
     this.timeline = options.timeline
+    this.approvalGate = options.approvalGate
     this.rollout = options.rollout
     this.now = options.now ?? (() => new Date())
   }
@@ -208,7 +225,41 @@ export class ComputerControlBroker {
       })
       throw new ComputerUseBrokerError(errorCode, 'Computer action was denied by policy')
     }
-    if (this.actions.startExecuting(envelope.actionId, null) == null) {
+    let approvalTicketId: string | null = null
+    if (
+      this.approvalGate != null &&
+      (policyDecision.riskLevel === 'L2' || policyDecision.riskLevel === 'L3') &&
+      this.approvalGate.requiresApproval(envelope.computerSessionId, policyDecision.riskLevel)
+    ) {
+      const ticket = await this.approvalGate.awaitApproval({
+        envelope,
+        riskLevel: policyDecision.riskLevel,
+        sessionId: context.session.sessionId,
+        turnId: context.session.turnId,
+        summary,
+      })
+      if (ticket == null) {
+        this.blockAction(actionRow.id, 'approval_denied')
+        this.timeline?.record({
+          type: 'computer_action_blocked',
+          sessionId: context.session.sessionId,
+          turnId: context.session.turnId,
+          computerSessionId: envelope.computerSessionId,
+          actionId: envelope.actionId,
+          errorCode: 'approval_denied',
+          summary,
+        })
+        throw new ComputerUseBrokerError(
+          'approval_denied',
+          'Computer action was denied by the user',
+        )
+      }
+      // Consume before execution: a replayed or failed action can never ride
+      // an already-used approval, so the worst case asks the user again.
+      this.approvals.consume(ticket, envelope, policyDecision.riskLevel)
+      approvalTicketId = ticket.id
+    }
+    if (this.actions.startExecuting(envelope.actionId, approvalTicketId) == null) {
       throw new ComputerUseBrokerError(
         'action_not_allowed',
         'Computer action is no longer executable',

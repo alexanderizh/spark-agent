@@ -23,7 +23,8 @@ public enum NativeHostRequest: Equatable, Sendable {
     persistentCapture: Bool,
     recordBinding: Bool
   )
-  case executeAction(requestID: String, envelope: NativeComputerActionEnvelope)
+  case executeAction(
+    requestID: String, envelope: NativeComputerActionEnvelope, showVirtualCursor: Bool)
   case cancelSession(requestID: String, computerSessionID: String)
   case ping(requestID: String)
 
@@ -34,7 +35,7 @@ public enum NativeHostRequest: Equatable, Sendable {
       .listWindows(let requestID),
       .captureWindow(let requestID, _, _),
       .observe(let requestID, _, _, _, _, _, _, _),
-      .executeAction(let requestID, _),
+      .executeAction(let requestID, _, _),
       .cancelSession(let requestID, _),
       .ping(let requestID):
       return requestID
@@ -167,13 +168,22 @@ public struct NativeHostRequestDecoder: Sendable {
         recordBinding: recordBinding
       )
     case "execute_action":
-      try requireKeys(
-        object,
-        exactly: ["protocolVersion", "requestId", "type", "envelope"]
-      )
+      // Absent `showVirtualCursor` keeps the overlay on (historical behaviour).
+      let executeKeys: Set<String> = ["protocolVersion", "requestId", "type", "envelope"]
+      let showVirtualCursor: Bool
+      if object["showVirtualCursor"] == nil {
+        try requireKeys(object, exactly: executeKeys)
+        showVirtualCursor = true
+      } else if let parsed = strictBoolean(object["showVirtualCursor"]) {
+        try requireKeys(object, exactly: executeKeys.union(["showVirtualCursor"]))
+        showVirtualCursor = parsed
+      } else {
+        throw NativeHostProtocolError.invalidRequestFields
+      }
       return .executeAction(
         requestID: requestID,
-        envelope: try decodeComputerActionEnvelope(object["envelope"])
+        envelope: try decodeComputerActionEnvelope(object["envelope"]),
+        showVirtualCursor: showVirtualCursor
       )
     case "cancel_session":
       try requireKeys(

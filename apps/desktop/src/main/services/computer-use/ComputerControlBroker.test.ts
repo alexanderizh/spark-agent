@@ -1,6 +1,7 @@
 import type {
   ComputerActionEnvelope,
   ComputerActuatorLease,
+  ComputerApprovalTicket,
   ComputerObservation,
   ComputerSession,
 } from '@spark/protocol'
@@ -251,6 +252,16 @@ function createHarness(
       recordAction(erroneous: boolean): void
       recordTakeoverStop(durationMs: number): void
     }
+    approvalGate?: {
+      requiresApproval(computerSessionId: string, riskLevel: 'L0' | 'L1' | 'L2' | 'L3'): boolean
+      awaitApproval(input: {
+        envelope: ComputerActionEnvelope
+        riskLevel: 'L2' | 'L3'
+        sessionId: string
+        turnId: string
+        summary: string
+      }): Promise<ComputerApprovalTicket | null>
+    }
     now?: () => Date
   } = {},
 ) {
@@ -278,6 +289,7 @@ function createHarness(
     observer,
     executor,
     ...(options.timeline == null ? {} : { timeline: options.timeline }),
+    ...(options.approvalGate == null ? {} : { approvalGate: options.approvalGate }),
     ...(options.flushHighRiskEvidence == null
       ? {}
       : { flushHighRiskEvidence: options.flushHighRiskEvidence }),
@@ -291,6 +303,7 @@ function createHarness(
     approvals,
     observer,
     executor,
+    ...(options.approvalGate == null ? {} : { approvalGate: options.approvalGate }),
     ...(options.timeline == null ? {} : { timeline: options.timeline }),
   }
 }
@@ -591,6 +604,100 @@ describe('ComputerControlBroker', () => {
     // 运行时硬上限已按产品设计移除：即使超过 createdAt + maxRuntimeMs，动作仍正常下发，
     // 任务生命周期完全交由 agent（stop）或用户（ESC）决定。
     await expect(broker.dispatch(envelope())).resolves.toBeDefined()
+    expect(executor.execute).toHaveBeenCalled()
+  })
+
+  it('gates L2 actions through the approval gate and executes once approved', async () => {
+    const ticket = {
+      id: 'ticket-1',
+      computerSessionId: session.id,
+      actionId: 'action-1',
+      riskLevel: 'L2' as const,
+      actionDigest: 'd',
+      targetDigest: 't',
+      dataClassDigest: null,
+      approvedBy: 'local_user' as const,
+      approverId: 'spark-pip-panel',
+      approvedAt: '2026-07-28T05:00:01.000Z',
+      expiresAt: '2026-07-28T05:05:00.000Z',
+      nonce: 'n',
+      usedAt: null,
+    }
+    const awaitApproval = vi.fn(async () => ticket)
+    const requiresApproval = vi.fn(() => true)
+    const { broker, actions, approvals, executor } = createHarness({
+      approvalGate: { requiresApproval, awaitApproval },
+    })
+    await broker.observe(session.id, true)
+
+    // external_write effect ⇒ L2 risk, allow decision.
+    const result = await broker.dispatch(
+      envelope({
+        policyContext: {
+          effect: 'external_write',
+          target: { kind: 'element', id: 'document-editor' },
+          dataClasses: [],
+        },
+      }),
+    )
+    expect(result.observation).toEqual(afterObservation)
+    expect(executor.execute).toHaveBeenCalled()
+    expect(awaitApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ riskLevel: 'L2', sessionId: 'chat-session-1' }),
+    )
+    expect(approvals.consume).toHaveBeenCalledWith(
+      ticket,
+      expect.objectContaining({ actionId: 'action-1' }),
+      'L2',
+    )
+    expect(actions.get('action-1')).toMatchObject({
+      status: 'executed',
+      approval_ticket_id: 'ticket-1',
+      risk_level: 'L2',
+    })
+  })
+
+  it('blocks a gated L2 action with approval_denied when the user refuses', async () => {
+    const awaitApproval = vi.fn(async () => null)
+    const timeline: ComputerUseTimelineSink = { record: vi.fn() }
+    const { broker, actions, executor } = createHarness({
+      approvalGate: { requiresApproval: () => true, awaitApproval },
+      timeline,
+    })
+    await broker.observe(session.id, true)
+
+    await expect(
+      broker.dispatch(
+        envelope({
+          policyContext: {
+            effect: 'external_write',
+            target: { kind: 'element', id: 'document-editor' },
+            dataClasses: [],
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'approval_denied' })
+    expect(executor.execute).not.toHaveBeenCalled()
+    expect(actions.get('action-1')).toMatchObject({
+      status: 'blocked',
+      error_code: 'approval_denied',
+    })
+    expect(timeline.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'computer_action_blocked', errorCode: 'approval_denied' }),
+    )
+  })
+
+  it('skips the gate entirely for L1 actions on gated sessions', async () => {
+    const requiresApproval = vi.fn(() => true)
+    const awaitApproval = vi.fn(async () => null)
+    const { broker, executor } = createHarness({
+      approvalGate: { requiresApproval, awaitApproval },
+    })
+    await broker.observe(session.id, true)
+
+    await expect(broker.dispatch(envelope())).resolves.toBeDefined()
+    expect(requiresApproval).not.toHaveBeenCalled()
+    expect(awaitApproval).not.toHaveBeenCalled()
     expect(executor.execute).toHaveBeenCalled()
   })
 })

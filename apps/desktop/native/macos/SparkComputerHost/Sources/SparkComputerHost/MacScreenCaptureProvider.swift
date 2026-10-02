@@ -905,6 +905,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     return NativeActionExecution(status: status, executionChannel: executionChannel)
   }
 
+  func setVirtualCursorEnabled(_ enabled: Bool) async {
+    MacVirtualCursor.setEnabled(enabled)
+  }
+
   func cancelSession(id: String) async {
     canceledSessions.insert(id)
     canceledSessionOrder.append(id)

@@ -186,6 +186,7 @@ describe('ComputerUseAgentController', () => {
       broker: { stop: vi.fn(async () => current) },
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
     const controller = new ComputerUseAgentController({
@@ -418,6 +419,7 @@ describe('ComputerUseAgentController', () => {
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       appControlBridge: { cancelSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
@@ -537,6 +539,7 @@ describe('ComputerUseAgentController', () => {
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
     const controller = new ComputerUseAgentController({
@@ -613,6 +616,7 @@ describe('ComputerUseAgentController', () => {
       broker: { stop },
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       appControlBridge: { cancelSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
@@ -683,6 +687,7 @@ describe('ComputerUseAgentController', () => {
         ),
       },
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       appControlBridge: { cancelSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => false) },
     }
@@ -731,6 +736,7 @@ describe('ComputerUseAgentController', () => {
         readLatestImage: vi.fn(),
         clearSession: vi.fn(),
       },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       killSwitch: { isArmed: vi.fn(() => true) },
     }
     const run = vi.fn(async (_input: unknown) => ({ status: 'completed' as const }))
@@ -999,6 +1005,7 @@ describe('ComputerUseAgentController', () => {
         },
         approvals: {},
         evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
+        approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
         killSwitch: { isArmed: vi.fn(() => true) },
       }
       const controller = new ComputerUseAgentController({
@@ -1054,6 +1061,7 @@ describe('ComputerUseAgentController', () => {
       },
       broker: { stop },
       evidence: { clearSession },
+      approvalGate: { registerPermissionMode: vi.fn(), forgetSession: vi.fn() },
       coordinator: { claim: vi.fn(async () => undefined), release: vi.fn() },
     }
     const controller = new ComputerUseAgentController({

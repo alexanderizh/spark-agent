@@ -545,6 +545,12 @@ export class ComputerUseAgentController {
     const token = {}
     this.runTokens.set(session.id, token)
     this.runs.set(session.id, { status: 'running' })
+    // Gate L2/L3 actions on a human approval for non full-access agent turns;
+    // sessions without a bound context stay ungated (legacy behaviour).
+    const agentContext = this.sessionContexts.get(session.sessionId)
+    if (agentContext != null) {
+      services.approvalGate.registerPermissionMode(session.id, agentContext.permissionMode)
+    }
     const run = operator.run({ session, adapter })
     const completion = run.then(
       async (result) => {
@@ -594,6 +600,7 @@ export class ComputerUseAgentController {
     outcome: 'finished' | 'failed',
   ): Promise<void> {
     services.evidence?.clearSession(computerSessionId)
+    services.approvalGate.forgetSession(computerSessionId)
     services.appControlBridge?.cancelSession(computerSessionId)
     if (services.backend == null || typeof services.backend.cancelSession !== 'function') return
     await services.backend.cancelSession(computerSessionId).catch((error) =>

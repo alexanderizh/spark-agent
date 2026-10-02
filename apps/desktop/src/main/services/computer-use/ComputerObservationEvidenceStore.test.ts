@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { ComputerObservation } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
@@ -248,5 +249,51 @@ describe('ComputerObservationEvidenceStore', () => {
       mimeType: 'image/png',
     })
   })
+
+  it('peekLatestImage returns the newest frame without snapshot pinning', async () => {
+    const repository = { createWithBlobs: vi.fn(() => undefined as never) }
+    const vault = { writeManyRegistered: vi.fn(async () => undefined as never) }
+    const store = new ComputerObservationEvidenceStore({
+      repository,
+      vault,
+      imageProcessor: vi.fn(() => ({
+        bytes: Buffer.from('preview'),
+        perceptualHash: 'a'.repeat(16),
+      })),
+    })
+
+    expect(store.peekLatestImage('computer-1')).toBeNull()
+
+    await store.persist({
+      computerSessionId: 'computer-1',
+      kind: 'execution_before',
+      observation: OBSERVATION,
+      payload: { kind: 'image_png', byteLength: 3, sha256: PNG_SHA256 },
+      bytes: Buffer.from('png'),
+    })
+    expect(store.peekLatestImage('computer-1')).toMatchObject({
+      bytes: Buffer.from('preview'),
+      mimeType: 'image/png',
+    })
+
+    // A newer frame replaces the cached one; peek follows without a snapshotId.
+    await store.persist({
+      computerSessionId: 'computer-1',
+      kind: 'execution_after',
+      observation: {
+        ...OBSERVATION,
+        screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-after' },
+      },
+      payload: { kind: 'image_png', byteLength: 3, sha256: PNG_SHA256 },
+      bytes: Buffer.from('png'),
+    })
+    // readLatestImage is pinned to the snapshot; peek is not.
+    await expect(store.readLatestImage('computer-1', 'snapshot-1')).rejects.toMatchObject({
+      code: 'stale_frame',
+    })
+    expect(store.peekLatestImage('computer-1')).toMatchObject({ bytes: Buffer.from('preview') })
+
+    store.clearSession('computer-1')
+    expect(store.peekLatestImage('computer-1')).toBeNull()
+  })
 })
-import { createHash } from 'node:crypto'

@@ -7602,10 +7602,7 @@ export interface IpcChannelMap
   // 渠道音色复刻闭环（当前仅智谱支持，见 zhipu-voice-clone.client.ts）：
   // 上传示例音频 → 复刻 → 自动刷新候选；以及删除复刻音色
   'provider:media:clone-voice': [ProviderMediaCloneVoiceRequest, ProviderMediaCloneVoiceResponse]
-  'provider:media:delete-voice': [
-    ProviderMediaDeleteVoiceRequest,
-    ProviderMediaDeleteVoiceResponse,
-  ]
+  'provider:media:delete-voice': [ProviderMediaDeleteVoiceRequest, ProviderMediaDeleteVoiceResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
@@ -8214,10 +8211,7 @@ export interface IpcChannelMap
   'voice-assistant:get-status': [VoiceAssistantGetStatusRequest, VoiceAssistantGetStatusResponse]
   'voice-assistant:trigger': [VoiceAssistantTriggerRequest, VoiceAssistantTriggerResponse]
   'voice-assistant:interrupt': [VoiceAssistantInterruptRequest, VoiceAssistantInterruptResponse]
-  'voice-assistant:reset-route': [
-    VoiceAssistantResetRouteRequest,
-    VoiceAssistantResetRouteResponse,
-  ]
+  'voice-assistant:reset-route': [VoiceAssistantResetRouteRequest, VoiceAssistantResetRouteResponse]
   'video:probe': [VideoProcessRequest, VideoProcessResponse]
   'video:process': [VideoProcessRequest, VideoProcessResponse]
   'image:probe': [ImageProcessRequest, ImageProcessResponse]
@@ -8521,6 +8515,12 @@ export interface IpcStreamChannelMap {
   'stream:resource-monitor:snapshot': ResourceMonitorSnapshotStreamPayload
   /** Computer Use 操作时间线（回放与实时事件按 computerSessionId + seq 合并） */
   'stream:computer-use:activity-event': ComputerUseEvent
+  /** 电脑操作全局急停触发结果（⌘⇧Esc），renderer 右上角 toast 反馈 */
+  'stream:computer-use:kill-switch-triggered': {
+    stoppedCount: number
+    failureCount: number
+    triggeredAt: string
+  }
   /** Authenticated main-process request for a whitelisted SparkWork UI command. */
   'stream:computer-use:app-command': AppControlCommandRequest
   /** Session 后端排队状态变化 */

@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import os
 
 /// Agent-visible virtual cursor: a transparent always-on-top overlay window
 /// that draws where the agent is about to act, mirroring the reverse-
@@ -14,23 +15,43 @@ import Foundation
 /// block or fail an action, and without a running AppKit loop (tests,
 /// headless CI) every call is a harmless no-op.
 enum MacVirtualCursor {
+  /// Master switch for the overlay (the client's visibleControlIndicator
+  /// flag, carried per execute_action request). Guarded: requests decode
+  /// off-main while overlay calls hop to the main queue.
+  private static let enabledFlag = OSAllocatedUnfairLock(initialState: true)
+
+  /// False hides the overlay for subsequent actions (input injection is
+  /// unaffected — only the visual indicator disappears).
+  static func setEnabled(_ value: Bool) {
+    enabledFlag.withLock { $0 = value }
+    if !value { hide() }
+  }
+
+  static func isEnabled() -> Bool {
+    enabledFlag.withLock { $0 }
+  }
+
   /// Move the cursor to a CGGlobalPoint (top-left origin) and show it.
   static func move(to point: CGPoint) {
+    guard isEnabled() else { return }
     state?.move(to: point)
   }
 
   /// Press feedback — call on mouse down.
   static func pressDown() {
+    guard isEnabled() else { return }
     state?.pressDown()
   }
 
   /// Release feedback — call on mouse up; overshoots slightly back to 1.
   static func pressUp() {
+    guard isEnabled() else { return }
     state?.pressUp()
   }
 
   /// Drag path — reposition along the interpolated CGGlobalPoints.
   static func drag(to point: CGPoint) {
+    guard isEnabled() else { return }
     state?.drag(to: point)
   }
 

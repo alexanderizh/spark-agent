@@ -137,6 +137,7 @@ export interface NativeHostConnection {
   executeAction(
     envelope: ComputerActionEnvelope,
     signal?: AbortSignal,
+    options?: { showVirtualCursor?: boolean },
   ): Promise<{
     response: Extract<NativeHostResponse, { type: 'action_result' }>
     bytes: Buffer | null
@@ -486,10 +487,16 @@ export class NativeHostComputerUseBackend
         let actionBytes: Buffer | null = null
         try {
           actionResult = await this.measure('action_execute_ms', () =>
-            connection.executeAction(envelope, input.signal).then((result) => {
-              actionBytes = result.bytes
-              return result.response
-            }),
+            connection
+              .executeAction(envelope, input.signal, {
+                // The visibleControlIndicator rollback flag rides the action
+                // request; absent keeps the overlay shown on older hosts.
+                showVirtualCursor: getComputerUseV2FlagStore().isEnabled('visibleControlIndicator'),
+              })
+              .then((result) => {
+                actionBytes = result.bytes
+                return result.response
+              }),
           )
         } catch (error) {
           // The channel is unknown when the Host failed before choosing one (or on an

@@ -202,6 +202,10 @@ export const NativeHostRequestSchema = z.discriminatedUnion('type', [
       ...NativeRequestBase,
       type: z.literal('execute_action'),
       envelope: ComputerActionEnvelopeSchema,
+      // false hides the agent-visible virtual cursor overlay for this action
+      // (the visibleControlIndicator rollback flag). Absent = shown, so older
+      // hosts keep today's behaviour.
+      showVirtualCursor: z.boolean().optional(),
     })
     .strict(),
   z

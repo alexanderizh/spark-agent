@@ -592,10 +592,12 @@ describe('NativeHostComputerUseBackend', () => {
       executionChannel: null,
     })
     // Skyshot (v2) is requested on every platform: the macOS and Windows
-    // hosts both learned the optional envelope field.
+    // hosts both learned the optional envelope field. The visible cursor flag
+    // (visibleControlIndicator default) rides along as the third argument.
     expect(connection.executeAction).toHaveBeenCalledWith(
       { ...envelope, includeSkyshot: true },
       signal,
+      { showVirtualCursor: true },
     )
     expect(connection.observe).toHaveBeenLastCalledWith({
       snapshotId: 'snapshot-2',

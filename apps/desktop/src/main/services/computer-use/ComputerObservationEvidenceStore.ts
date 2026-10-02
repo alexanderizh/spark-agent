@@ -317,6 +317,27 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     }
   }
 
+  /**
+   * Best-effort read of whatever frame is cached for the session right now,
+   * for live preview surfaces (PIP). Unlike {@link readLatestImage} there is
+   * no snapshot pinning: the caller accepts whatever is newest at poll time.
+   */
+  peekLatestImage(computerSessionId: string): {
+    bytes: Buffer
+    width: number
+    height: number
+    mimeType: 'image/png' | 'image/jpeg'
+  } | null {
+    const image = this.latestImages.get(computerSessionId)
+    if (image == null) return null
+    return {
+      bytes: Buffer.from(image.bytes),
+      width: image.width,
+      height: image.height,
+      mimeType: image.mimeType,
+    }
+  }
+
   clearSession(computerSessionId: string): void {
     this.cachedBytes -= this.latestImages.get(computerSessionId)?.bytes.length ?? 0
     this.latestImages.delete(computerSessionId)

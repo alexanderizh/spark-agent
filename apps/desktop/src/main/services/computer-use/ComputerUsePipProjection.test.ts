@@ -100,4 +100,34 @@ describe('ComputerUsePipProjection', () => {
     sessions = []
     expect(projection.prune()).toHaveLength(0)
   })
+
+  it('carries the pending approval while awaiting and clears it on resolve', () => {
+    const projection = makeProjection()
+    projection.record(event('computer_session_started', { environment: 'my_desktop' }))
+    const awaiting = projection.record(
+      event('computer_approval_requested', {
+        approvalId: 'ap-1',
+        actionId: 'act-1',
+        riskLevel: 'L3',
+      }),
+    )
+    expect(awaiting[0]?.status).toBe('awaiting_approval')
+    expect(awaiting[0]?.pendingApproval).toEqual({ approvalId: 'ap-1', riskLevel: 'L3' })
+
+    const resolved = projection.record(
+      event('computer_approval_resolved', {
+        approvalId: 'ap-1',
+        actionId: 'act-1',
+        decision: 'approved',
+      }),
+    )
+    expect(resolved[0]?.status).toBe('running')
+    expect(resolved[0]?.pendingApproval).toBeNull()
+  })
+
+  it('keeps pendingApproval null outside an approval window', () => {
+    const projection = makeProjection()
+    const state = projection.record(event('computer_session_started'))
+    expect(state[0]?.pendingApproval).toBeNull()
+  })
 })

@@ -142,7 +142,7 @@ final class NativeHostProtocolTests: XCTestCase {
 
     for (index, action) in actions.enumerated() {
       let request = try decoder.decode(actionRequest(action, requestID: "request-\(index)"))
-      guard case .executeAction(_, let envelope) = request else {
+      guard case .executeAction(_, let envelope, _) = request else {
         return XCTFail("expected execute_action")
       }
       XCTAssertEqual(envelope.action.type, actionType(action))
@@ -265,7 +265,39 @@ final class NativeHostProtocolTests: XCTestCase {
   private func json(_ value: String) -> Data {
     Data(value.utf8)
   }
+
+  func testDecodesShowVirtualCursorFlagWithDefault() throws {
+    let decoder = NativeHostRequestDecoder()
+    let envelope =
+      #"{"computerSessionId":"cs","actionId":"a1","actuatorLeaseId":"lease","observedFrameId":"f1","observedTreeVersion":"t1","targetAppId":"app","targetWindowId":"win","action":{"type":"click","point":{"x":0.5,"y":0.5}},"policyContext":{"effect":"reversible_local","target":{"kind":"window","id":"win"},"dataClasses":["public"]},"intent":"click"}"#
+
+    // Absent flag keeps the historical shown behaviour.
+    let absent = try decoder.decode(
+      json(#"{"protocolVersion":1,"requestId":"r1","type":"execute_action","envelope":\#(envelope)}"#))
+    guard case .executeAction(_, _, let showAbsent) = absent else {
+      return XCTFail("expected execute_action request")
+    }
+    XCTAssertTrue(showAbsent)
+
+    // Explicit false hides the overlay for this action.
+    let hidden = try decoder.decode(
+      json(
+        #"{"protocolVersion":1,"requestId":"r2","type":"execute_action","showVirtualCursor":false,"envelope":\#(envelope)}"#
+      ))
+    guard case .executeAction(_, _, let showHidden) = hidden else {
+      return XCTFail("expected execute_action request")
+    }
+    XCTAssertFalse(showHidden)
+
+    // Non-boolean values are rejected.
+    XCTAssertThrowsError(
+      try decoder.decode(
+        json(
+          #"{"protocolVersion":1,"requestId":"r3","type":"execute_action","showVirtualCursor":"no","envelope":\#(envelope)}"#
+        )))
+  }
 }
+
 
 final class NativeSkyshotProtocolTests: XCTestCase {
   private func json(_ value: String) -> Data {
@@ -278,7 +310,7 @@ final class NativeSkyshotProtocolTests: XCTestCase {
       json(
         #"{"protocolVersion":1,"requestId":"r1","type":"execute_action","envelope":{"computerSessionId":"cs","actionId":"a1","actuatorLeaseId":"lease","observedFrameId":"f1","observedTreeVersion":"t1","targetAppId":"app","targetWindowId":"win","action":{"type":"click","point":{"x":0.5,"y":0.5}},"policyContext":{"effect":"reversible_local","target":{"kind":"window","id":"win"},"dataClasses":["public"]},"intent":"click the button","includeSkyshot":true}}"#
       ))
-    guard case .executeAction(_, let envelope) = request else {
+    guard case .executeAction(_, let envelope, _) = request else {
       return XCTFail("expected execute_action request")
     }
     XCTAssertTrue(envelope.includeSkyshot)
