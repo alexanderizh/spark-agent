@@ -6,9 +6,24 @@
 
 ## [Unreleased]
 
+## [0.14.8] - 2026-10-02
+
+### 新增
+
+- **渠道音色目录获取通用化（厂商模板 + 覆盖项配置）**：音色目录同步此前按厂商硬编码在主进程（「支持同步的厂商」白名单各绑一个专用 client），新增渠道都要改代码。新增 `provider-media-voice-catalog` 协议模块把「怎么取音色」变成可配置：按厂商推断内置模板（含火山引擎离线音色静态表），用户可覆盖请求地址 / 鉴权 / 参数映射，`templateId: 'custom'` 支持完全自定义请求；未配置或未填覆盖项时走内置实现，行为与改造前完全一致（向后兼容）。请求头 `{{apiKey}}` 占位由主进程替换为 Keychain 真实密钥，密钥不落渠道配置、不回显渲染端。渠道表单同步重构为独立的 ProviderVoiceSection（目录预览 / 手动同步 / 自定义适配器入口），画布 / 快速创作 / 语音助手经共享 manifest 解析自动继承同一份候选，前后端共用 `VOICE_CATALOG_PARAM_ALIASES` 消除「写入哪个参数」与「界面显示哪个参数」的清单漂移。
+- **会话消息语音播报**：会话消息 hover 栏新增播报按钮——`MessageTtsPlayer` 单例播放器 + `useMessageTtsAvailable` 能力探测，播报中主色提示「再点即停」，复用语音助手 TTS 渠道 / 音色设置与产物目录，离开会话自动清理临时音频。支撑侧：speechify 从 desktop 主进程下沉 `packages/shared`（语音助手与消息播报两条链路共用，参数化增强向后兼容）；抽出 `ttsSynthesis` 共享合成模块（复用 media-router 的渠道音色能力判定），新增 `voice-assistant:tts-synthesize` / `tts-cleanup` IPC 通道。
+
 ### 修复
 
 - **渠道导入导出补齐请求地址与执行链路字段**：「完整 URL」开关（`apiEndpointFullUrl`）、Spark 执行器开关（`useSparkExecutor`）与模型定时禁用时段（`modelSchedules`）此前不在导入导出 schema 内，导出再导入会静默丢字段——非标端点渠道导入后请求地址被自动拼裁成 `…/v1/messages`（直连 404，且用户看不到任何提示），定时禁用时段则整组消失。导出格式升到 v3：新版仍可导入 v1 / v2 旧文件，而旧版 App 读 v3 文件会在 version 校验处直接失败（需要先升级再导入，不会静默丢字段）。三个字段随渠道一起导出并在导入端还原，导入预览无字段级变化的渠道行为与迁移前完全一致。同时导出时跳过内置「本地 Claude CLI / 本地 Codex CLI」：此前「导出全部」会把这两条写进文件，跨机导入造出等名假渠道，覆盖模式还会改写内置行，现在与平台受管渠道一致跳过，导入端也拒绝覆盖内置行。
+- **音色获取三处审查修复（完整 URL 引导、无 audio.speech 落点、空数组覆盖）**：完整 URL 渠道（中转 / 反代）未填音色获取地址时，原先落到厂商内置 client 只会抛「请改用标准 API Base URL」，而这类渠道恰恰改不了 Base URL——解析层前置拦截，改抛「请在『音色获取』里填写完整请求地址后重试」并记 warn。没有 `audio.speech` 能力的渠道（纯识别 / 音乐 / 视频）不再展示「音色获取」入口：旧回落表会把候选写进该渠道根本没启用的 manifest，界面报「同步成功」而一处都用不到，回落表收窄为完全没有 mediaModelRefs 的历史渠道，落点判定前置于取数避免白跑厂商请求。覆盖项清洗不再把显式空数组当覆盖项：`privateListPaths: []` 曾清空模板默认的 voice_cloning / voice_generation 能力声明，与「有无覆盖项」判定口径相反。
+- **voice 制品发布脚本拒绝内嵌仓库前缀的 release url**：release manifest 的 `entry.url` 必须是相对 `artifact-repository/v1/` 的路径，内嵌仓库前缀会让应用 / 审计按 baseUrl+url 拼出双前缀 404（2026-10-02 voice.vad.silero-1.0 线上事故）；kws / refine / vad 三个发布脚本在 validateReleaseEntry 前置校验并直接拒绝发布。
+- **文件预览 Markdown 换用 react-markdown 完整渲染管线**：原文件预览复用聊天侧流式正则解析器，文档级语法全线失真——内嵌 HTML 被当纯文本吐出、嵌套图片链接碎裂、表格对齐 / 嵌套列表 / 脚注 / 自动链接缺失。新建 FileMarkdownView：react-markdown + remark-gfm + rehype-raw + rehype-sanitize（白名单过滤，预览任意仓库的 md 属不可信输入），复用既有 Markdown 图片 / 代码块 / 链接 / 图表渲染组件，标题生成锚点支持中文标题平滑跳转；测试含 XSS 剥除用例与真实 README 全文渲染冒烟。
+- **下拉回显容错过滤（音色下拉与画布参数下拉）**：AutoComplete 选中后输入框回显已选值，旧 filterOption 把回显值当搜索词，再次展开时候选被过滤得只剩已选项自身，看似「丢了选中」。抽出 `autoCompleteEchoFilter` 工具——搜索词恰为已选值时放行全部候选，输入变化即恢复正常 value/label 包含匹配；语音助手设置卡音色下拉、渠道管理「语音音色」与画布参数 / 快速创作下拉统一接入，选中后重开恢复全量候选。
+
+### 改进
+
+- **SDK 升级与适配**：codex-sdk 0.155.1→0.160.0（协议对账无 schema 漂移，锁定版本与完整性断言同步更新）；claude-agent-sdk 0.3.278→0.3.287——rewind 会话发起控制请求时显式传 `permissionMode`（新版省略该字段时第三方 provider 会话会以 auto 启动，破坏手动审批语义，无活跃 turn 时兜底保持旧行为）；新增 `verbatimPrompts` 配置链路（types 声明与 executor / session 三处透传，agent metadata 显式开启才生效，默认不传保持现状）。
 
 ## [0.14.7] - 2026-10-02
 
