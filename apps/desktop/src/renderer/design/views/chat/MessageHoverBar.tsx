@@ -101,7 +101,16 @@ export function MessageHoverBar({
           {speechStatus === 'loading' ? (
             <Icons.Spinner size={12} className="spin" />
           ) : speechStatus === 'playing' ? (
-            <Icons.VolumeX size={12} />
+            /* 播报中：12×12 声波条跳动（与图标同尺寸，不改变按钮盒）；hover 淡入 VolumeX 提示再点即停 */
+            <span className="speech-playing-visual" aria-hidden="true">
+              <span className="speech-waves">
+                <span className="speech-wave" />
+                <span className="speech-wave" />
+                <span className="speech-wave" />
+                <span className="speech-wave" />
+              </span>
+              <Icons.VolumeX size={12} className="speech-stop-hint" />
+            </span>
           ) : (
             <Icons.Volume2 size={12} />
           )}

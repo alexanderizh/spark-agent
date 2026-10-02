@@ -1250,11 +1250,109 @@ body.sidebar-resizing {
 }
 
 .msg-hover-speech.is-playing {
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .msg-hover-speech.is-playing:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+/* 播报中视觉：锁死 12×12 与 size=12 图标等 footprint，按钮盒(16×16)与栏内 6px 间距均不变 */
+.speech-playing-visual {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  animation: speech-visual-fade-in 0.18s ease;
+}
+
+/* 四根声波条错峰跳动（equalizer 心智）；scaleY 动画不触发布局重排 */
+.speech-waves {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5px;
+  width: 12px;
+  height: 12px;
+  transition: opacity 0.12s ease;
+}
+
+.speech-wave {
+  width: 1.5px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--primary);
+  transform-origin: center;
+  animation: speech-wave-bounce 0.9s ease-in-out infinite;
+}
+
+.speech-wave:nth-child(1) {
+  height: 6px;
+  animation-delay: 0s;
+}
+
+.speech-wave:nth-child(2) {
+  height: 11px;
+  animation-delay: -0.225s;
+}
+
+.speech-wave:nth-child(3) {
+  height: 8px;
+  animation-delay: -0.45s;
+}
+
+.speech-wave:nth-child(4) {
+  height: 9px;
+  animation-delay: -0.675s;
+}
+
+@keyframes speech-wave-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes speech-visual-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* hover 时声波淡出、VolumeX 淡入，提示「再点即停」；绝对定位不影响布局 */
+.speech-stop-hint {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.msg-hover-speech.is-playing:hover .speech-waves {
+  opacity: 0;
+}
+
+.msg-hover-speech.is-playing:hover .speech-stop-hint {
+  opacity: 1;
+}
+
+/* 系统减弱动效：声波定格为静态波形，不再跳动 */
+@media (prefers-reduced-motion: reduce) {
+  .speech-playing-visual,
+  .speech-wave {
+    animation: none;
+  }
+
+  .speech-wave {
+    transform: none;
+  }
 }
 
 .msg-hover-fork {

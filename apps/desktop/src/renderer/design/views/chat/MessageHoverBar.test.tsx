@@ -135,7 +135,7 @@ describe('MessageHoverBar 语音播报按钮', () => {
     expect(button?.classList.contains('is-playing')).toBe(false)
   })
 
-  it('playing 态切停止图标与「停止播报」标题并带高亮态', () => {
+  it('playing 态切声波跳动视觉与「停止播报」标题并带高亮态', () => {
     act(() => {
       root.render(
         <MessageHoverBar
@@ -149,6 +149,14 @@ describe('MessageHoverBar 语音播报按钮', () => {
     const button = container.querySelector<HTMLButtonElement>('.msg-hover-speech')
     expect(button?.getAttribute('aria-label')).toBe('停止播报')
     expect(button?.classList.contains('is-playing')).toBe(true)
+    // 声波视觉容器锁死 12×12（与图标等 footprint，不改变按钮盒与两侧间距）
+    expect(button?.querySelectorAll('.speech-wave').length).toBe(4)
+    expect(button?.querySelector('.speech-playing-visual')).not.toBeNull()
+    // 停止提示图标存在（hover 时经 CSS 淡入），且视觉容器对读屏隐藏、aria-label 由按钮承担
+    expect(button?.querySelector('.speech-stop-hint')).not.toBeNull()
+    expect(button?.querySelector('.speech-playing-visual')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
   })
 
   it('按钮顺序：播报紧随复制、位于编辑/分叉之前', () => {
