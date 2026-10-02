@@ -90,6 +90,10 @@ export interface RegisterVoiceAssistantIpcDeps {
   listWorkspaces(): Promise<Array<{ id: string; name: string }>>
   /** M2 语音命令：某工作区最近会话 */
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
+  /** M4 语音命令：会话当前渠道的可选模型（与远程 /models 同源 buildRemoteProviderModelRows） */
+  listSessionModels(sessionId: string): Promise<string[]>
+  /** M4 语音命令：切换会话模型（转发 SessionService.updateSession） */
+  updateSessionModel(sessionId: string, modelId: string): Promise<void>
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
   resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
   /** 应用关闭清理登记 */
@@ -195,6 +199,8 @@ export function registerVoiceAssistantIpc(deps: RegisterVoiceAssistantIpcDeps): 
     listRecentSessions: deps.listRecentSessions,
     listWorkspaces: deps.listWorkspaces,
     findLatestSessionIdInWorkspace: deps.findLatestSessionIdInWorkspace,
+    listSessionModels: deps.listSessionModels,
+    updateSessionModel: deps.updateSessionModel,
     resolveApproval: deps.resolveApproval,
   })
 

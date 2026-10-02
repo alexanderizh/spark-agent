@@ -93,6 +93,10 @@ interface Harness {
   createdSessions: string[]
   listedRecent: number[]
   listedWorkspaces: number[]
+  /** M4 模型候选查询的 sessionId 记录 */
+  listedModels: string[]
+  /** M4 updateSessionModel 调用记录 */
+  modelUpdates: Array<{ sessionId: string; modelId: string }>
   bindingUpdates: Array<Record<string, unknown>>
   approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }>
   route: VoiceRouteBinding
@@ -141,6 +145,8 @@ function createHarness(
   ]
   const listedRecent: number[] = []
   const listedWorkspaces: number[] = []
+  const listedModels: string[] = []
+  const modelUpdates: Harness['modelUpdates'] = []
   const bindingUpdates: Array<Record<string, unknown>> = []
   const approvals: Array<{ requestId: string; decision: 'allow' | 'deny' }> = []
   const installCalls: number[] = []
@@ -249,6 +255,13 @@ function createHarness(
     },
     findLatestSessionIdInWorkspace: async (workspaceId) =>
       workspaceId === 'ws-1' ? 'session-in-ws1' : null,
+    listSessionModels: async (sessionId) => {
+      listedModels.push(sessionId)
+      return ['claude-sonnet-4-5', 'gpt-4o-mini']
+    },
+    updateSessionModel: async (sessionId, modelId) => {
+      modelUpdates.push({ sessionId, modelId })
+    },
     resolveApproval: (requestId, decision) => {
       approvals.push({ requestId, decision })
       return true
@@ -272,6 +285,8 @@ function createHarness(
     createdSessions,
     listedRecent,
     listedWorkspaces,
+    listedModels,
+    modelUpdates,
     bindingUpdates,
     approvals,
     route,
@@ -1033,6 +1048,135 @@ describe('VoiceAssistantService 状态机', () => {
           patch.defaultWorkspaceId === 'ws-1' && patch.defaultSessionId === 'session-in-ws1',
       ),
     ).toBe(true)
+  })
+
+  it('M4 语音命令：切换模型 → 念候选 → 序号选择 → 更新会话模型', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(0) // 命中命令不进会话
+    expect(h.listedModels).toEqual(['session-voice-1']) // 候选取自语音绑定会话
+    expect(h.service.getStatus().state).toBe('speaking') // 念候选列表
+    // 选择态回应「第2个」
+    h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第2个' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'gpt-4o-mini' }])
+    expect(h.submitted.length).toBe(0) // 选择命中仍不进会话
+  })
+
+  it('M4 语音命令：切换到指定模型（带名直选，ASR 丢连字符也能宽松匹配）', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '切换到claude sonnet 4 5模型',
+    })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'claude-sonnet-4-5' }])
+    expect(h.submitted.length).toBe(0)
+    expect(
+      h.sessionFocusEvents.some(
+        (e) => e.cause === 'command-switch' && e.sessionId === 'session-voice-1',
+      ),
+    ).toBe(true)
+  })
+
+  it('M4 语音命令：切换项目（无名称）→ 念候选 → 名称选择 → 切到该项目', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换项目' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(0)
+    expect(h.bindingUpdates.length).toBe(0) // 只念列表，未改绑
+    expect(h.service.getStatus().state).toBe('speaking')
+    // 选择态回应项目名称「个人项目」（ws-2 无最近会话 → 新建）
+    h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '个人项目' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.bindingUpdates.some((patch) => patch.defaultWorkspaceId === 'ws-2')).toBe(true)
+    expect(h.createdSessions).toEqual(['session-voice-new'])
+    expect(h.submitted.length).toBe(0)
+  })
+
+  it('M4 语音命令：切换到指定会话（带名直选，未念列表直接改绑）', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '切换到画布功能的会话',
+    })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(0)
+    expect(h.bindingUpdates.some((patch) => patch.defaultSessionId === 'session-b')).toBe(true)
+    expect(
+      h.sessionFocusEvents.some((e) => e.cause === 'command-switch' && e.sessionId === 'session-b'),
+    ).toBe(true)
+  })
+
+  it('M4 挂起选择态：打断播报不作废候选，说序号仍完成选择', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
+    h.service.interrupt() // 打断 TTS 只停播，不作废挂起候选（打断后说序号仍可选择）
+    expect(h.service.getStatus().state).toBe('idle')
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '第2个' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.modelUpdates).toEqual([{ sessionId: 'session-voice-1', modelId: 'gpt-4o-mini' }])
+    expect(h.submitted.length).toBe(0) // 选择命中不进会话
+  })
+
+  it('M4 挂起选择态：说「算了」作废候选，下一句回普通对话', async () => {
+    const h = createHarness()
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '切换模型' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.service.getStatus().state).toBe('speaking') // 候选列表播报中（挂起态已建立）
+    h.service.wake() // speaking 态唤醒 = 打断，回到 idle 后再听
+    h.service.wake()
+    h.service.handleRecognitionEvent({ type: 'final', sessionId: 'voice-100-1', text: '算了' })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.submitted.length).toBe(0) // 「算了」= stop-listening 命令，清挂起态
+    h.service.wake()
+    h.service.handleRecognitionEvent({
+      type: 'final',
+      sessionId: 'voice-100-1',
+      text: '今天天气怎么样',
+    })
+    await vi.advanceTimersByTimeAsync(1250) // 说完确认窗口到期
+    h.service.handleRecognitionEvent({ type: 'session-stopped', sessionId: 'voice-100-1' })
+    await vi.advanceTimersByTimeAsync(10)
+    // 挂起态已清，不再被解析成 select-model，正常提交轮次
+    expect(h.submitted.length).toBe(1)
+    expect(h.modelUpdates).toEqual([])
   })
 
   it('会话聚焦：唤醒预跳 + 提交轮次 → emitSessionFocus 驱动 UI 跳转', async () => {

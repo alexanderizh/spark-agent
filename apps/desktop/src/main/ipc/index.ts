@@ -5165,6 +5165,21 @@ export function registerAllIpcHandlers(): void {
       })
       return sessions[0]?.id ?? null
     },
+    // M4 语音「切换模型」：候选与远程 /models 同源（会话渠道 → buildRemoteProviderModelRows，
+    // 渠道缺省回落默认渠道），保证语音念出的列表与会话实际可切换的模型同一口径
+    listSessionModels: async (sessionId) => {
+      const session = new SessionRepository(getDatabase()).get(sessionId)
+      const providers = await getProviderService().listProviders()
+      const provider =
+        providers.find((item) => item.id === (session?.provider_profile_id ?? '')) ??
+        providers.find((item) => item.isDefault) ??
+        providers[0]
+      if (provider == null) return []
+      return buildRemoteProviderModelRows(provider).map((row) => row.id)
+    },
+    updateSessionModel: async (sessionId, modelId) => {
+      await getSessionService().updateSession({ sessionId, modelId })
+    },
     resolveApproval: (requestId, decision) =>
       getPermissionService().resolveApproval(
         requestId,

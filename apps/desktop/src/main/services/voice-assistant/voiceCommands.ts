@@ -32,6 +32,9 @@ const SWITCH_SESSION_PATTERNS: RegExp[] = [
   /^切个(会话|对话)[吧了。!！?？\s]*$/u,
 ]
 
+/** 礼貌前缀 + 祈使「切换会话」（M4）：比列表语义更窄，避免吞掉「帮我看看会话列表」类普通聊天 */
+const POLITE_SWITCH_SESSION_PATTERN = /^(切换|切|换)(一下)?(会话|对话)[吧了。!！?？\s]*$/u
+
 /** 「切换到 XX 会话」（M4 带名直选；未命中候选时上层回落为念列表） */
 const SWITCH_SESSION_NAMED_PATTERN = /^(切换|切|换)到?(成|到)?(.{1,40}?)的?会话[吧了。!！?？\s]*$/u
 
@@ -157,13 +160,13 @@ export function parseVoiceCommand(
     for (const pattern of SWITCH_SESSION_PATTERNS) {
       if (pattern.test(normalized)) return { kind: 'switch-session', name: null }
     }
-    // M4 新意图：剥礼貌前缀后的口语容错（请/帮我/给我/麻烦…）
+    // M4 新意图：剥礼貌前缀后的口语容错（请/帮我/给我/麻烦…）。
+    // 会话列表的「看看/列出」类不剥前缀（维持 M2「帮我看看会话列表」不算命令的约定），
+    // 仅祈使「切换会话」允许礼貌前缀（「帮我切换会话」→ 念候选列表）。
     const polite = normalizeTranscript(normalized.replace(POLITENESS_PREFIX_PATTERN, ''))
     const subject = polite.length > 0 ? polite : normalized
-    if (polite !== normalized) {
-      for (const pattern of SWITCH_SESSION_PATTERNS) {
-        if (pattern.test(polite)) return { kind: 'switch-session', name: null }
-      }
+    if (polite !== normalized && POLITE_SWITCH_SESSION_PATTERN.test(polite)) {
+      return { kind: 'switch-session', name: null }
     }
     const sessionName = extractPatternName(SWITCH_SESSION_NAMED_PATTERN, subject)
     if (sessionName !== undefined) return { kind: 'switch-session', name: sessionName }

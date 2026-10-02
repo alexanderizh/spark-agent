@@ -51,7 +51,9 @@ import { WakeWordDetector, isWakeWordModelAvailable } from './WakeWordDetector.j
 import { resolveVoiceRefinePaths, resolveVoiceVadPaths } from '../VoiceIntegrityService.js'
 import {
   buildApprovalSpeech,
+  buildCandidateSelectionSpeech,
   buildSessionSelectionSpeech,
+  matchCandidateIndexByName,
   parseApprovalDecision,
   parseVoiceCommand,
 } from './voiceCommands.js'
@@ -137,6 +139,10 @@ export interface VoiceAssistantDeps {
   listWorkspaces(): Promise<Array<{ id: string; name: string }>>
   /** M2 语音命令：某工作区下最近的会话（无则新建） */
   findLatestSessionIdInWorkspace(workspaceId: string): Promise<string | null>
+  /** M4 语音命令：会话当前渠道的可选模型（与远程 /models 同源 buildRemoteProviderModelRows） */
+  listSessionModels(sessionId: string): Promise<string[]>
+  /** M4 语音命令：切换会话模型（转发 SessionService.updateSession） */
+  updateSessionModel(sessionId: string, modelId: string): Promise<void>
   /** M3 语音审批：回应挂起的权限审批（转发 PermissionService.resolveApproval） */
   resolveApproval(requestId: string, decision: 'allow' | 'deny'): boolean
   /** 同步语音绑定会话推理档位（固定档 → 写入该档位；null → 恢复 agent 档位） */
@@ -190,6 +196,10 @@ export class VoiceAssistantService {
   private kwsInstallWaitAttempts = 0
   /** M2-4：挂起的会话选择态（念出列表后等待用户说序号/名称） */
   private awaitingSessionCandidates: Array<{ id: string; title: string }> | null = null
+  /** M4：挂起的模型选择态（念出候选后等待用户说序号/名称，与 session/project 互斥） */
+  private awaitingModelCandidates: string[] | null = null
+  /** M4：挂起的项目选择态（念出工作区候选后等待用户说序号/名称） */
+  private awaitingProjectCandidates: Array<{ id: string; name: string }> | null = null
   /** M3 连续对话续听定时器 */
   private continuousListenTimer: ReturnType<typeof setTimeout> | null = null
   /** M3 语音审批：挂起的审批请求（念问题 → 听同意/拒绝 → resolveApproval） */
@@ -543,6 +553,8 @@ export class VoiceAssistantService {
     }
     this.announcing = false
     this.pendingApproval = null // 打断语音审批：卡片保留给应用内手动处理
+    // 挂起选择态不清：打断播报（抢话）后说序号/名称仍要能选——
+    // 「切换模型 → 嫌列表啰嗦按快捷键打断 → 直接说第2个」是合法主流程
     this.pipeline.cancel() // 同步停播 + 清队列 + 删未播文件 + 推送 stop
     this.transition('idle', 'cancelled')
     this.logDialogueExit('interrupted')
@@ -1297,35 +1309,47 @@ export class VoiceAssistantService {
 
   private async submitTranscript(transcript: string): Promise<void> {
     const epoch = this.turnEpoch
-    // 语音命令优先：命中则不走会话（M2 起会话/工作区命令开放）
+    // 语音命令优先：命中则不走会话（M2 起会话/工作区命令开放；M4 起模型/项目/带名会话）
     const command = parseVoiceCommand(transcript, {
       enableSessionCommands: true,
       awaitingSessionSelection: this.awaitingSessionCandidates != null,
+      awaitingModelSelection: this.awaitingModelCandidates != null,
+      awaitingProjectSelection: this.awaitingProjectCandidates != null,
     })
     if (command != null) {
+      log.info(`[voice-assistant] voice command hit: ${JSON.stringify(command)}`)
       switch (command.kind) {
         case 'stop-listening':
-          this.awaitingSessionCandidates = null
+          this.clearPendingSelections()
           this.transition('idle', 'cancelled')
           return
         case 'new-session':
-          this.awaitingSessionCandidates = null
+          this.clearPendingSelections()
           await this.handleNewSessionCommand()
           return
         case 'switch-session':
-          await this.handleSwitchSessionCommand()
+          await this.handleSwitchSessionCommand(command.name)
           return
         case 'select-session':
           await this.handleSelectSessionCommand(command.index, command.name)
           return
+        case 'switch-model':
+          await this.handleSwitchModelCommand(command.name)
+          return
+        case 'select-model':
+          await this.handleSelectModelCommand(command.index, command.name)
+          return
         case 'switch-workspace':
           await this.handleSwitchWorkspaceCommand(command.name)
+          return
+        case 'select-project':
+          await this.handleSelectProjectCommand(command.index, command.name)
           return
         default:
           break
       }
     }
-    this.awaitingSessionCandidates = null
+    this.clearPendingSelections()
     let session: { sessionId: string }
     try {
       session = await this.route.ensureSession()
@@ -1378,16 +1402,43 @@ export class VoiceAssistantService {
     }
   }
 
-  /** 「切换会话」：念最近 5 个会话，挂起选择态等下一句序号/名称 */
-  private async handleSwitchSessionCommand(): Promise<void> {
+  /**
+   * 「切换会话」：带名直选（在最近会话池按名称匹配，未命中回落念列表）；
+   * 无名称时念最近 5 个会话，挂起选择态等下一句序号/名称。
+   */
+  private async handleSwitchSessionCommand(name: string | null): Promise<void> {
     try {
-      const sessions = await this.deps.listRecentSessions(5)
+      // 带名直选用更大的池子（念列表仍只念前 5 个，序号语义与播报对齐）
+      const sessions = await this.deps.listRecentSessions(20)
       if (sessions.length === 0) {
         this.announceSpeech('最近没有其他会话，已保留当前会话。')
         return
       }
-      this.awaitingSessionCandidates = sessions
-      this.announceSpeech(buildSessionSelectionSpeech(sessions.map((s) => s.title)))
+      if (name != null && name.length > 0) {
+        const matchedIndex = matchCandidateIndexByName(
+          sessions.map((s) => s.title),
+          name,
+        )
+        const matched = matchedIndex != null ? sessions[matchedIndex] : undefined
+        if (matched != null) {
+          log.info(
+            `[voice-assistant] voice session named match: ${name} -> ${matched.id} (${matched.title})`,
+          )
+          this.clearPendingSelections()
+          this.route.updateBinding({ defaultSessionId: matched.id })
+          this.focusSession(matched.id, 'command-switch')
+          const label = matched.title.length > 20 ? `${matched.title.slice(0, 20)}…` : matched.title
+          this.announceSpeech(`已切换到会话：${label}。`)
+          return
+        }
+        log.info(
+          `[voice-assistant] voice session named match missed: ${name}, falling back to list`,
+        )
+      }
+      const head = sessions.slice(0, 5)
+      this.clearPendingSelections()
+      this.awaitingSessionCandidates = head
+      this.announceSpeech(buildSessionSelectionSpeech(head.map((s) => s.title)))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.announceSpeech(`读取会话列表失败。${shortError(message)}`)
@@ -1427,7 +1478,102 @@ export class VoiceAssistantService {
     log.info(`[voice-assistant] voice route switched to session ${matched.id}`)
   }
 
-  /** 「切换到 XX 工作区」：找该工作区最近会话则改绑，否则在其中新建 */
+  /**
+   * 「切换模型」（M4）：带名直选当前渠道模型；无名称/未命中时念候选列表，
+   * 挂起选择态等下一句序号/名称。模型候选取自语音绑定会话的渠道。
+   */
+  private async handleSwitchModelCommand(name: string | null): Promise<void> {
+    try {
+      const sessionId = await this.route.peekAliveSessionId()
+      if (sessionId == null) {
+        this.announceSpeech('当前没有语音会话，先说一句话或新开会话后再切换模型。')
+        return
+      }
+      const models = await this.deps.listSessionModels(sessionId)
+      if (models.length === 0) {
+        this.announceSpeech('当前渠道没有配置可选模型。')
+        return
+      }
+      if (name != null && name.length > 0) {
+        const matchedIndex = this.matchModelCandidate(models, name)
+        const modelId = matchedIndex != null ? models[matchedIndex] : undefined
+        if (modelId != null) {
+          log.info(`[voice-assistant] voice model named match: ${name} -> ${modelId}`)
+          await this.applySessionModel(sessionId, modelId)
+          return
+        }
+        log.info(`[voice-assistant] voice model named match missed: ${name}, falling back to list`)
+      }
+      this.clearPendingSelections()
+      this.awaitingModelCandidates = models
+      this.announceSpeech(buildCandidateSelectionSpeech('模型', models))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.announceSpeech(`读取模型列表失败。${shortError(message)}`)
+    }
+  }
+
+  /** 模型选择态回应：按序号或名称匹配候选并切换会话模型 */
+  private async handleSelectModelCommand(index: number | null, name: string | null): Promise<void> {
+    const candidates = this.awaitingModelCandidates
+    if (candidates == null || candidates.length === 0) {
+      this.announceSpeech('当前没有待选择的模型列表。')
+      return
+    }
+    let modelId: string | undefined
+    if (index != null) {
+      modelId = candidates[index - 1]
+    } else if (name != null) {
+      const matchedIndex = this.matchModelCandidate(candidates, name)
+      modelId = matchedIndex != null ? candidates[matchedIndex] : undefined
+    }
+    this.awaitingModelCandidates = null
+    if (modelId == null) {
+      this.announceSpeech('没有匹配的模型，如需再选请说「切换模型」。')
+      return
+    }
+    const sessionId = await this.route.peekAliveSessionId()
+    if (sessionId == null) {
+      this.announceSpeech('语音绑定会话已失效，请先说一句话再切换模型。')
+      return
+    }
+    await this.applySessionModel(sessionId, modelId)
+  }
+
+  /**
+   * 模型名称匹配：先按原文本双向包含；未命中再按剥离空白与符号的宽松匹配
+   * （ASR 念模型 ID 常丢连字符与点号，如 claude-sonnet-4.5 →「claude sonnet 4 5」）。
+   */
+  private matchModelCandidate(models: string[], name: string): number | null {
+    const direct = matchCandidateIndexByName(models, name)
+    if (direct != null) return direct
+    const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const needle = normalize(name)
+    if (needle.length === 0) return null
+    const index = models.findIndex((model) => {
+      const target = normalize(model)
+      return target.includes(needle) || needle.includes(target)
+    })
+    return index >= 0 ? index : null
+  }
+
+  /** 执行会话模型切换并播报结果（执行通道：SessionService.updateSession） */
+  private async applySessionModel(sessionId: string, modelId: string): Promise<void> {
+    try {
+      await this.deps.updateSessionModel(sessionId, modelId)
+      this.focusSession(sessionId, 'command-switch')
+      this.announceSpeech(`已切换模型：${modelId}。`)
+      log.info(`[voice-assistant] voice model switched to ${modelId} (session ${sessionId})`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.announceSpeech(`切换模型失败。${shortError(message)}`)
+    }
+  }
+
+  /**
+   * 「切换到 XX 工作区/项目」：带名直选（未找到时念已登记项）；
+   * 无名称时（M4「切换项目」）念项目候选挂起选择态；仅一个工作区时保持直切。
+   */
   private async handleSwitchWorkspaceCommand(name: string | null): Promise<void> {
     try {
       const workspaces = await this.deps.listWorkspaces()
@@ -1437,16 +1583,27 @@ export class VoiceAssistantService {
       }
       let matched: { id: string; name: string } | undefined
       if (name != null && name.length > 0) {
-        const needle = name.trim().toLowerCase()
-        matched = workspaces.find(
-          (candidate) =>
-            candidate.name.toLowerCase().includes(needle) ||
-            needle.includes(candidate.name.toLowerCase()),
+        const matchedIndex = matchCandidateIndexByName(
+          workspaces.map((w) => w.name),
+          name,
         )
+        matched = matchedIndex != null ? workspaces[matchedIndex] : undefined
       } else if (workspaces.length === 1) {
         matched = workspaces[0]
       }
       if (matched == null) {
+        if (name == null || name.length === 0) {
+          // M4 无名称：念项目候选，挂起选择态等序号/名称
+          this.clearPendingSelections()
+          this.awaitingProjectCandidates = workspaces
+          this.announceSpeech(
+            buildCandidateSelectionSpeech(
+              '项目',
+              workspaces.map((w) => w.name),
+            ),
+          )
+          return
+        }
         this.announceSpeech(
           `没有找到该工作区。已登记的有：${workspaces
             .slice(0, 3)
@@ -1455,25 +1612,65 @@ export class VoiceAssistantService {
         )
         return
       }
-      const existingSessionId = await this.deps.findLatestSessionIdInWorkspace(matched.id)
-      if (existingSessionId != null) {
-        this.route.updateBinding({
-          defaultWorkspaceId: matched.id,
-          defaultSessionId: existingSessionId,
-        })
-        this.focusSession(existingSessionId, 'command-workspace')
-        this.announceSpeech(`已切换到工作区 ${matched.name}，继续最近的会话。`)
-      } else {
-        this.route.updateBinding({ defaultWorkspaceId: matched.id, defaultSessionId: undefined })
-        const { sessionId } = await this.route.createNewSession()
-        this.focusSession(sessionId, 'command-workspace')
-        this.announceSpeech(`已切换到工作区 ${matched.name}，并新建了会话。`)
-      }
-      log.info(`[voice-assistant] voice route switched to workspace ${matched.id}`)
+      await this.performSwitchToWorkspace(matched)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.announceSpeech(`切换工作区失败。${shortError(message)}`)
     }
+  }
+
+  /** 项目选择态回应：按序号或名称匹配候选工作区并执行切换 */
+  private async handleSelectProjectCommand(
+    index: number | null,
+    name: string | null,
+  ): Promise<void> {
+    const candidates = this.awaitingProjectCandidates
+    if (candidates == null || candidates.length === 0) {
+      this.announceSpeech('当前没有待选择的项目列表。')
+      return
+    }
+    let matched: { id: string; name: string } | undefined
+    if (index != null) {
+      matched = candidates[index - 1]
+    } else if (name != null) {
+      const matchedIndex = matchCandidateIndexByName(
+        candidates.map((c) => c.name),
+        name,
+      )
+      matched = matchedIndex != null ? candidates[matchedIndex] : undefined
+    }
+    this.awaitingProjectCandidates = null
+    if (matched == null) {
+      this.announceSpeech('没有匹配的项目，如需再选请说「切换项目」。')
+      return
+    }
+    await this.performSwitchToWorkspace(matched)
+  }
+
+  /** 切换到目标工作区：有最近会话则改绑续聊，否则在其中新建会话 */
+  private async performSwitchToWorkspace(matched: { id: string; name: string }): Promise<void> {
+    const existingSessionId = await this.deps.findLatestSessionIdInWorkspace(matched.id)
+    if (existingSessionId != null) {
+      this.route.updateBinding({
+        defaultWorkspaceId: matched.id,
+        defaultSessionId: existingSessionId,
+      })
+      this.focusSession(existingSessionId, 'command-workspace')
+      this.announceSpeech(`已切换到工作区 ${matched.name}，继续最近的会话。`)
+    } else {
+      this.route.updateBinding({ defaultWorkspaceId: matched.id, defaultSessionId: undefined })
+      const { sessionId } = await this.route.createNewSession()
+      this.focusSession(sessionId, 'command-workspace')
+      this.announceSpeech(`已切换到工作区 ${matched.name}，并新建了会话。`)
+    }
+    log.info(`[voice-assistant] voice route switched to workspace ${matched.id}`)
+  }
+
+  /** 清空三类挂起选择态（命令落空/新命令/打断取消时统一收口，防旧候选劫持下一句） */
+  private clearPendingSelections(): void {
+    this.awaitingSessionCandidates = null
+    this.awaitingModelCandidates = null
+    this.awaitingProjectCandidates = null
   }
 
   // ─── M3 语音审批桥（挂起-收听-消费环） ─────────────────────────────────────
