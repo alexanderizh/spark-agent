@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { APP_SKINS } from './skins/skinRegistry'
 
 function readSource(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8')
@@ -124,5 +125,36 @@ describe('renderer style architecture', () => {
       .filter((sheet) => !referenced.has(sheet))
       .map((sheet) => relative(designDir, sheet))
     expect(unimported).toEqual([])
+  })
+
+  it('keeps app skin styles scoped to the skin attribute and out of legacy bundles', () => {
+    const backdrop = readSource('./skins/SkinBackdrop.less')
+    const picker = readSource('./components/SkinPicker.less')
+
+    // 背景层与纱层只能挂在 .app-skin* 或 .app[data-app-skin] 之下，不得裸选择器影响全局。
+    // 选择器后紧跟 {/空格/冒号，避免 .app-skinFoo 这类近似名蒙过去。
+    expect(backdrop).toMatch(/\.app-skin(?=[\s,{:])/)
+    expect(backdrop).toMatch(/\.app-skin-backdrop(?=[\s,{:])/)
+    expect(backdrop).toMatch(/\.app-skin-scrim(?=[\s,{:])/)
+    expect(backdrop).toMatch(/\[data-app-skin\]:not\(\[data-app-skin='none'\]\)/)
+    expect(backdrop).toMatch(/prefers-reduced-transparency/)
+    expect(picker).toMatch(/\.skin-picker(?=[\s,{:])/)
+    expect(picker).toMatch(/\.skin-picker-card\[aria-pressed='true'\](?=[\s,{:])/)
+
+    // 注册表驱动：每套已注册皮肤都必须有整窗明暗兜底色与缩略图占位，新增皮肤漏写即红。
+    for (const skin of APP_SKINS.filter((entry) => entry.id !== 'none')) {
+      expect(backdrop).toContain(`[data-app-skin='${skin.id}']`)
+      expect(backdrop).toContain(`.app.theme-dark[data-app-skin='${skin.id}']`)
+      expect(picker).toContain(`.skin-picker-thumb-${skin.id}`)
+    }
+
+    // 皮肤规则不得渗进 styles/ 下任何历史全局层（不只 views.css）。
+    const legacyStylesDir = fileURLToPath(new URL('./styles/', import.meta.url))
+    for (const entry of readdirSync(legacyStylesDir)) {
+      if (!entry.endsWith('.css')) continue
+      expect(readSource(`./styles/${entry}`)).not.toMatch(
+        /data-app-skin|\.app-skin(?=[\s,{:])|\.skin-picker(?=[\s,{:])|\.skin-picker-/,
+      )
+    }
   })
 })

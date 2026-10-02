@@ -163,6 +163,115 @@ describe('AppContext visual tweak persistence', () => {
     expect(localStorage.getItem('spark-agent:theme')).toBe('dark')
   })
 
+  it('hydrates appSkin from persisted appearance settings', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'settings:get') {
+        return { value: { theme: 'dark', appSkin: 'deepspace' } }
+      }
+      return { ok: true }
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    function AppSkinHarness() {
+      const { t } = useApp()
+      return <span data-testid="app-skin">{t.appSkin}</span>
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <AppSkinHarness />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="app-skin"]')?.textContent).toBe('deepspace')
+  })
+
+  it('falls back to the default skin when a retired appSkin has been persisted', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'settings:get') {
+        return { value: { appSkin: 'retired-skin' } }
+      }
+      return { ok: true }
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    function AppSkinHarness() {
+      const { t } = useApp()
+      return <span data-testid="app-skin">{t.appSkin}</span>
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <AppSkinHarness />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="app-skin"]')?.textContent).toBe('verdant')
+  })
+
+  it('persists appSkin through the appearance settings channel', async () => {
+    const invoke = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    function AppSkinSwitcher() {
+      const { t, setTweak } = useApp()
+      return (
+        <>
+          <button type="button" onClick={() => setTweak('appSkin', 'dawnmelt')}>
+            Dawnmelt
+          </button>
+          <span data-testid="app-skin">{t.appSkin}</span>
+        </>
+      )
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <AppSkinSwitcher />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      const button = container.querySelector('button')
+      if (button == null) throw new Error('Button missing')
+      click(button)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="app-skin"]')?.textContent).toBe('dawnmelt')
+    expect(invoke).toHaveBeenCalledWith('settings:set', {
+      category: 'appearance',
+      key: 'data',
+      value: expect.objectContaining({
+        appSkin: 'dawnmelt',
+      }),
+    })
+  })
+
   it('persists visual tweak changes without dropping existing appearance fields', async () => {
     let getCount = 0
     let resolvePostClickGet: ((value: { value: Record<string, unknown> }) => void) | null = null
