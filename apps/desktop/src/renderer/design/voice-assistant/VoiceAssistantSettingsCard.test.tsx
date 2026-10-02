@@ -7,6 +7,7 @@ import type { CanvasMediaModelSummary, VoiceAssistantSettings } from '@spark/pro
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 
 import { VoiceAssistantSettingsCard } from './VoiceAssistantSettingsCard'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
  * 覆盖设置卡的 TTS 候选链路：`canvas:media-models:list` 的响应驱动
@@ -114,6 +115,15 @@ describe('VoiceAssistantSettingsCard', () => {
     rowFor(title).querySelector('.ant-select-content')?.textContent?.trim()
 
   beforeEach(() => {
+    // 真实 AutoComplete 展开下拉会挂 rc-virtual-list（resize-observer），jsdom 无该全局对象
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     container = document.createElement('div')
     document.body.appendChild(container)
   })
@@ -176,5 +186,62 @@ describe('VoiceAssistantSettingsCard', () => {
     await renderCard()
 
     expect(selectionText('播报渠道')).toBe('当前渠道（不在语音渠道列表）')
+  })
+
+  it('音色选中后再展开，候选不被输入框回显的已选值过滤成只剩一项', async () => {
+    // 多候选模型：只有 ≥2 个候选才能区分「全量」与「只剩已选项」。
+    const multiVoice = speechModel(
+      'p-minimax',
+      '自建 MiniMax',
+      'speech-2.6-hd',
+      'MiniMax Speech 2.6 HD',
+      {
+        type: 'string',
+        examples: ['male-qn-qingse', 'female-shaonv', 'cute_boy'],
+        'x-allow-custom': true,
+      },
+      { voice: 'male-qn-qingse' },
+    )
+    const { updateSettings } = stubSpark([multiVoice])
+    await renderCard()
+
+    /** jsdom 下驱动 rc-select：mousedown 展开，mousedown+click 选中候选。 */
+    const press = async (el: EventTarget, type: string): Promise<void> => {
+      await act(async () => {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }))
+      })
+    }
+    const optionNodes = (): HTMLElement[] =>
+      [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].filter(
+        (node) => node.textContent !== '',
+      )
+    const voiceInput = rowFor('音色').querySelector('input')
+    expect(voiceInput).not.toBeNull()
+
+    // 首次展开：全部候选可见。
+    await press(voiceInput!, 'mousedown')
+    expect(optionNodes()).toHaveLength(3)
+
+    // 选中 female-shaonv：即持久化。
+    const target = optionNodes().find((node) => node.textContent === 'female-shaonv')
+    expect(target).toBeDefined()
+    await press(target!, 'mousedown')
+    await press(target!, 'click')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ ttsVoice: 'female-shaonv' }),
+      }),
+    )
+
+    // 回归点：再次展开，输入框回填已选值，但候选必须是全量 3 项而非只剩已选项。
+    await press(voiceInput!, 'mousedown')
+    expect(optionNodes().map((node) => node.textContent)).toEqual([
+      'male-qn-qingse',
+      'female-shaonv',
+      'cute_boy',
+    ])
   })
 })

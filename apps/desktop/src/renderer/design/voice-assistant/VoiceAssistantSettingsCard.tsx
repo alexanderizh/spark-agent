@@ -28,6 +28,10 @@ import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 import { getPermissionModeOptions, getValidPermissionMode } from '../utils/permission-options'
 import { mediaModelDefaultVoice } from '../utils/mediaParamOptions'
 import {
+  createEchoTolerantFilterOption,
+  matchesValueOrLabel,
+} from '../utils/autoCompleteEchoFilter'
+import {
   resolveTtsChannelId,
   resolveTtsModel,
   ttsChannelModels,
@@ -418,14 +422,10 @@ export function VoiceAssistantSettingsCard() {
                   void update({ ttsVoice: next })
                 }}
                 onBlur={() => void update({})}
-                filterOption={(input, option) => {
-                  const query = String(input ?? '').toLowerCase()
-                  return [option?.value, option?.label].some((candidate) =>
-                    String(candidate ?? '')
-                      .toLowerCase()
-                      .includes(query),
-                  )
-                }}
+                filterOption={createEchoTolerantFilterOption(
+                  () => settings.ttsVoice ?? '',
+                  matchesValueOrLabel,
+                )}
               />
             ) : (
               <Input
