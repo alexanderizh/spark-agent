@@ -12,20 +12,20 @@
  *   作为文案；默认保持 label = value，不改动既有下拉的展示。
  */
 
-import type { CanvasMediaModelSummary } from '@spark/protocol'
+import { VOICE_CATALOG_PARAM_ALIASES, type CanvasMediaModelSummary } from '@spark/protocol'
 
 export interface MediaParamOption {
   value: string
   label: string
 }
 
-/** 音色参数在各渠道 manifest 里的字段名（OpenAI / MiniMax / 火山 / xAI / 智谱各不相同）。 */
-export const VOICE_PARAM_FIELD_NAMES: readonly string[] = [
-  'voice',
-  'voice_id',
-  'voiceId',
-  'speaker',
-]
+/**
+ * 音色参数在各渠道 manifest 里的字段名（OpenAI / MiniMax / 火山 / xAI / 智谱各不相同）。
+ *
+ * 与后端共用 `@spark/protocol` 的同一份清单：音色同步写入哪个参数，
+ * 这里就显示哪个参数的候选，避免两端各维护一份后漂移。
+ */
+export const VOICE_PARAM_FIELD_NAMES: readonly string[] = VOICE_CATALOG_PARAM_ALIASES
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null

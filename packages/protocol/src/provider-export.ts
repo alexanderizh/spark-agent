@@ -18,6 +18,7 @@ import {
   MediaCapabilityIdSchema,
   ProviderMediaDefaultsSchema,
 } from './media-config.js'
+import { ProviderMediaVoiceCatalogConfigSchema } from './provider-media-voice-catalog.js'
 import { ProviderMediaModelRefSchema } from './media-model-manifest.js'
 import {
   AUTO_ROUTER_PROVIDER_TYPE,
@@ -141,6 +142,8 @@ export const ProviderExportProfileSchema = z.object({
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
+  /** 渠道「音色获取」配置（模板 + 覆盖项） */
+  mediaVoiceCatalog: ProviderMediaVoiceCatalogConfigSchema.optional(),
   /** AutoRouter 行专用：完整路由配置（dispatcher + executors）。 */
   autoRouterConfig: AutoRouterConfigSchema.optional(),
   /**

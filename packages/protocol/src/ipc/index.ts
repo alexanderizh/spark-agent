@@ -33,6 +33,7 @@ import type {
 } from '../image-process.js'
 import type { HookNode } from '../hooks.js'
 import type { ProviderModelSchedule } from '../provider-model-schedule.js'
+import type { ProviderMediaVoiceCatalogConfig } from '../provider-media-voice-catalog.js'
 import type { ProviderQuotaRequest, ProviderQuotaResponse } from '../provider-quota.js'
 import type {
   ProviderMediaCloneVoiceRequest,
@@ -1064,6 +1065,8 @@ export interface ProviderProfile {
    * 读取时并入对应 manifest 参数 schema 的 examples，供画布 / 快速创作等端继承。
    */
   mediaDynamicParamOptions?: MediaDynamicParamOptions
+  /** 渠道「音色获取」配置（模板 + 覆盖项）。 */
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig
   /** 模型定时禁用时段（峰谷定价规避），持久化于 config_json.modelSchedules。 */
   modelSchedules?: ProviderModelSchedule[]
   /** 当前时刻处于定时禁用时段的模型 ID 快照（本机时区）；供 UI 置灰与「禁用中」徽标。 */
@@ -1262,6 +1265,8 @@ export interface ProviderCreateRequest {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 渠道「音色获取」配置（模板 + 覆盖项）；传 null 等同于未配置。 */
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig | null
   /** 模型定时禁用时段；新建时随渠道一并落库 */
   modelSchedules?: ProviderModelSchedule[]
   /** 模型级设置；新建时随渠道 config 一并落库（语义同 update 同名字段）。 */
@@ -1353,6 +1358,8 @@ export interface ProviderUpdateRequest {
   mediaDefaults?: ProviderMediaDefaults
   /** 启用的多媒体模型 manifest 引用 */
   mediaModelRefs?: ProviderMediaModelRef[]
+  /** 渠道「音色获取」配置；传 null 恢复「按厂商推断模板」。 */
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig | null
   /** 模型定时禁用时段；传空数组清除全部时段。 */
   modelSchedules?: ProviderModelSchedule[]
   /**

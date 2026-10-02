@@ -1,0 +1,158 @@
+/**
+ * 渠道编辑页「语音操作行」样式。
+ *
+ * 扁平一行式：行间 1px 分割线，不做描边盒子 —— 与项目其它设置页
+ *（知识库设置、语音助手设置）保持同一套层级表达。
+ */
+.pv_voice_rows {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  &:not(:empty) {
+    margin: 4px 0 10px;
+    border-top: 1px solid var(--divider, var(--border));
+  }
+}
+
+.pv_voice_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 0;
+
+  & + & {
+    border-top: 1px solid var(--divider, var(--border));
+  }
+}
+
+.pv_voice_row_label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pv_voice_row_title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pv_voice_row_help {
+  flex: none;
+  color: var(--text-muted);
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.pv_voice_row_meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.pv_voice_row_actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ── 音色获取配置弹层 ── */
+.pv_voice_modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pv_voice_modal_intro {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.pv_voice_modal_field {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pv_voice_modal_field_label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.pv_voice_modal_hint {
+  margin: -4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+
+  a {
+    color: var(--primary);
+    word-break: break-all;
+  }
+}
+
+.pv_voice_modal_hint--builtin {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.pv_voice_modal_error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--red, #e5484d);
+}
+
+.pv_voice_modal_footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.pv_voice_modal_footer_right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 窄面板：字段标签与输入竖排，避免 110px 标签把控件挤成一条 */
+@media (max-width: 720px) {
+  .pv_voice_modal_field {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .pv_voice_row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pv_voice_row_actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

@@ -12,6 +12,11 @@
 
 import { z } from 'zod'
 
+import {
+  ProviderMediaVoiceCatalogConfigSchema,
+  type ProviderMediaVoiceCatalogConfig,
+} from './provider-media-voice-catalog.js'
+
 /** 多媒体平台 adapter 种类 */
 export type MediaProviderKind =
   | 'apimart'
@@ -216,6 +221,13 @@ export interface ProviderMediaConfig {
    * 缺省表示尚未同步，此时沿用 manifest 内置的静态 examples。
    */
   mediaDynamicParamOptions?: MediaDynamicParamOptions | undefined
+  /**
+   * 渠道「音色获取」配置（模板 + 覆盖项）。
+   *
+   * 缺省时按渠道厂商推断模板并走内置实现，与改造前行为一致；
+   * 见 `provider-media-voice-catalog.ts`。
+   */
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig | undefined
 }
 
 /** 单个动态参数候选：value 是提交给厂商的值，label 是人类可读名（缺省回退 value）。 */
@@ -329,6 +341,7 @@ export const ProviderMediaConfigSchema = z.object({
   mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.optional(),
+  mediaVoiceCatalog: ProviderMediaVoiceCatalogConfigSchema.optional(),
 })
 
 /**

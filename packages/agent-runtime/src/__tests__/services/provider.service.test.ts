@@ -39,9 +39,7 @@ const cliProbeMock = vi.hoisted(() => ({
   resolve: (_command: string[]): boolean => false,
 }))
 vi.mock('../../services/cli-probe-runner.js', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('../../services/cli-probe-runner.js')
-  >()
+  const actual = await importOriginal<typeof import('../../services/cli-probe-runner.js')>()
   return {
     ...actual,
     runCliProbe: async (command: string[]) => {
@@ -904,6 +902,123 @@ describe('ProviderService', () => {
     expect(repo.rows.get('id-zhipu-del')?.config_json).not.toContain('voice_clone_9')
   })
 
+  it('火山语音走内置静态音色表，落到 speaker 参数且不发网络请求', async () => {
+    repo.rows.set('id-volc', {
+      id: 'id-volc',
+      provider_type: 'openai',
+      name: '火山豆包语音合成',
+      config_json: JSON.stringify({
+        defaultModel: 'seed-tts-2.0',
+        modelIds: ['seed-tts-2.0'],
+        mediaProvider: 'volcengine-speech',
+        apiEndpoint: 'https://openspeech.bytedance.com',
+        mediaModelRefs: [{ manifestId: 'volcengine-speech:seed-tts-2.0', enabled: true }],
+      }),
+      enabled: 1,
+      keystore_ref: 'openai-id-volc',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-volc' as never)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.syncMediaVoiceCatalog('id-volc')
+
+    // 官方音色列表接口走火山 OpenAPI AK/SK 签名，渠道只有 X-Api-Key，因此默认离线静态表：
+    // 不能因为「拿不到接口」就发一个必然 401 的请求。
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.manifestId).toBe('volcengine-speech:seed-tts-2.0')
+    expect(result.paramName).toBe('speaker')
+    expect(result.privateCount).toBe(0)
+    expect(result.options.length).toBeGreaterThan(50)
+    const stored = JSON.parse(String(repo.rows.get('id-volc')?.config_json)) as {
+      mediaDynamicParamOptions: Record<string, Record<string, unknown[]>>
+    }
+    expect(stored.mediaDynamicParamOptions['volcengine-speech:seed-tts-2.0']?.speaker).toHaveLength(
+      result.options.length,
+    )
+  })
+
+  it('自定义媒体渠道按「音色获取」配置发请求，并写入 inline manifest 的 voice 参数', async () => {
+    const manifest = createBasicCustomMediaManifest({
+      modelId: 'my-tts',
+      modelType: 'voice',
+      mode: 'sync',
+    })
+    repo.rows.set('id-custom-voice', {
+      id: 'id-custom-voice',
+      provider_type: 'openai',
+      name: '自定义语音',
+      config_json: JSON.stringify({
+        defaultModel: 'my-tts',
+        modelIds: ['my-tts'],
+        mediaProvider: 'custom',
+        // 用户痛点场景：渠道按「完整 URL」配置（中转），改造前音色同步会被直接拒绝。
+        apiEndpoint: 'https://relay.example.com/v1/audio/speech',
+        apiEndpointFullUrl: true,
+        mediaModelRefs: [{ manifestId: manifest.id, enabled: true, manifest }],
+        mediaVoiceCatalog: {
+          templateId: 'custom',
+          url: 'https://relay.example.com/voices',
+          method: 'GET',
+          listPath: 'data.items',
+          valueField: 'id',
+          labelField: 'name',
+        },
+      }),
+      enabled: 1,
+      keystore_ref: 'openai-id-custom-voice',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-custom' as never)
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: { items: [{ id: 'v1', name: '音色一' }] } }), {
+          status: 200,
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.syncMediaVoiceCatalog('id-custom-voice')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(result.manifestId).toBe(manifest.id)
+    expect(result.paramName).toBe('voice')
+    const stored = JSON.parse(String(repo.rows.get('id-custom-voice')?.config_json)) as {
+      mediaDynamicParamOptions: Record<string, Record<string, unknown[]>>
+    }
+    expect(stored.mediaDynamicParamOptions[manifest.id]?.voice).toEqual([
+      { value: 'v1', label: '音色一' },
+    ])
+  })
+
+  it('既没有模板也没有自定义地址时给出可执行引导，而不是静默失败', async () => {
+    repo.rows.set('id-no-voice', {
+      id: 'id-no-voice',
+      provider_type: 'openai',
+      name: '无音色能力渠道',
+      config_json: JSON.stringify({
+        defaultModel: 'some-model',
+        modelIds: ['some-model'],
+        mediaProvider: 'custom',
+        apiEndpoint: 'https://relay.example.com/v1/audio/speech',
+      }),
+      enabled: 1,
+      keystore_ref: 'openai-id-no-voice',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-none' as never)
+    await expect(service.syncMediaVoiceCatalog('id-no-voice')).rejects.toThrow(
+      /请在「音色获取」里选择内置模板/,
+    )
+  })
+
   it('updateProvider updates codexApiKind without changing model config', async () => {
     repo.rows.set('id-codex', {
       id: 'id-codex',
@@ -1490,7 +1605,9 @@ describe('ProviderService', () => {
       const available = await fresh.isLocalCliAvailable()
 
       expect(available).toBe(true)
-      expect(seen.some((command) => command[0] === 'claude' && command[1] === '--version')).toBe(true)
+      expect(seen.some((command) => command[0] === 'claude' && command[1] === '--version')).toBe(
+        true,
+      )
       expect(seen.some((command) => command.some((arg) => arg.includes('claude.cmd')))).toBe(false)
     })
 
@@ -2334,7 +2451,9 @@ describe('ProviderService · 模型级设置（modelSettings）', () => {
     const created = await createChannel()
     await service.updateProvider({
       id: created.id,
-      modelSettings: { 'glm-5.3': { reasoningEffort: 'max', hidden: true, contextWindow: 400_000 } },
+      modelSettings: {
+        'glm-5.3': { reasoningEffort: 'max', hidden: true, contextWindow: 400_000 },
+      },
     })
     const exported = await service.exportProviders([created.id])
     expect(exported.profiles[0]?.modelSettings).toEqual({
@@ -2345,7 +2464,9 @@ describe('ProviderService · 模型级设置（modelSettings）', () => {
     const importedRepo = makeRepo()
     const importedService = new ProviderService(importedRepo as never)
     await importedService.importProviders(exported, 'merge')
-    const imported = (await importedService.listProviders()).find((item) => item.name === created.name)
+    const imported = (await importedService.listProviders()).find(
+      (item) => item.name === created.name,
+    )
     expect(imported?.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'max', hidden: true } })
     expect(imported?.modelContextWindows).toEqual({ 'glm-5.3': 400_000 })
   })

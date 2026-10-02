@@ -52,6 +52,13 @@ vi.mock('@lobehub/ui', async () => {
     allowClear: _allowClear,
     ...props
   }: React.InputHTMLAttributes<HTMLInputElement> & { allowClear?: boolean }) => <input {...props} />
+  // 音色获取弹层里的请求头 / 请求体用 TextArea：测试里当普通多行输入框即可（autoSize 不参与断言）。
+  const TextArea = ({
+    autoSize: _autoSize,
+    ...props
+  }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { autoSize?: unknown }) => (
+    <textarea {...props} />
+  )
   // 音色 / 参数默认值用 AutoComplete 渲染候选，测试里把候选项摊平成可查询节点。
   const AutoComplete = ({
     value,
@@ -152,12 +159,16 @@ vi.mock('@lobehub/ui', async () => {
     SearchBar,
     Select,
     Tag,
+    TextArea,
   }
 })
 
 vi.mock('antd', () => ({
   Badge: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   Popconfirm: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  // 语音操作行的 ⓘ 说明用 antd Tooltip（与其它设置页一致）：这里只渲染 children，
+  // 悬浮内容不参与断言。
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   Select: ({
     value,
     options = [],
@@ -850,7 +861,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     expect(container.textContent).toContain('暂无匹配的内置模型清单')
-    expect(container.textContent).toContain('配置自定义适配器')
+    expect(container.textContent).toContain('配置适配器')
 
     const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
     expect(apiKeyInput).not.toBeNull()
@@ -913,14 +924,14 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const configureButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === '配置自定义适配器',
+      (button) => button.textContent?.trim() === '配置适配器',
     )
     expect(configureButton).toBeDefined()
     act(() => configureButton?.click())
     expect(container.textContent).toContain('① 路由与模型')
     expect(container.textContent).toContain('③ 鉴权与提交')
     expect(container.textContent).toContain('⑥ 参数定义')
-    expect(container.textContent).toContain('配置自定义适配器')
+    expect(container.textContent).toContain('配置适配器')
   })
 
   it('syncs the parent call mode from an async custom adapter manifest', async () => {
@@ -954,7 +965,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     })
 
     const configureButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === '配置自定义适配器',
+      (button) => button.textContent?.trim() === '配置适配器',
     )
     act(() => configureButton?.click())
 
@@ -2318,9 +2329,57 @@ describe('ProviderEditPanel 自定义语音模型', () => {
     }
     await renderPanel('provider-minimax-voice', profile)
 
-    expect(container.textContent).toContain('音色目录')
+    expect(container.textContent).toContain('音色获取')
     expect(container.textContent).toContain('同步音色')
     expect(container.textContent).not.toContain('音色复刻')
+  })
+
+  it('火山语音渠道开箱即用：展示音色获取入口，且不带音色复刻（仅智谱有该接口）', async () => {
+    const profile = {
+      ...customVoiceProfile,
+      id: 'provider-volc-voice',
+      name: '火山豆包语音合成',
+      mediaProvider: 'volcengine-speech',
+      apiEndpoint: 'https://openspeech.bytedance.com',
+      mediaModelRefs: [
+        { manifestId: 'volcengine-speech:seed-tts-2.0', modelId: 'seed-tts-2.0', enabled: true },
+      ],
+      defaultModel: 'seed-tts-2.0',
+      modelIds: ['seed-tts-2.0'],
+      keystoreRef: 'volc-provider-voice',
+    }
+    await renderPanel('provider-volc-voice', profile)
+
+    expect(container.textContent).toContain('音色获取')
+    expect(container.textContent).toContain('同步音色')
+    expect(container.textContent).not.toContain('音色复刻')
+  })
+
+  it('打开「音色获取设置」弹层可看到模板选择与字段映射入口', async () => {
+    await renderPanel('provider-minimax-voice-2', {
+      ...customVoiceProfile,
+      id: 'provider-minimax-voice-2',
+      name: 'MiniMax 语音',
+      mediaProvider: 'minimax-hailuo',
+      mediaModelRefs: [
+        { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
+      ],
+      defaultModel: 'speech-2.8-hd',
+      modelIds: ['speech-2.8-hd'],
+      keystoreRef: 'minimax-provider-voice-2',
+    })
+
+    const openButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '音色获取设置',
+    )
+    expect(openButton).toBeDefined()
+    act(() => openButton?.click())
+
+    const text = container.textContent ?? ''
+    // 模板 / 请求地址 / 字段映射三类可配置项都要能看到，否则用户改不了「取不到音色」的接口
+    expect(text).toContain('请求地址')
+    expect(text).toContain('音色列表路径')
+    expect(text).toContain('音色值字段')
   })
 
   it('adds a ref for a hand-typed default model instead of silently rewriting it', async () => {

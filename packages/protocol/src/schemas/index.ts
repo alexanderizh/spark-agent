@@ -17,6 +17,7 @@ import {
   MediaDynamicParamOptionsSchema,
   ProviderMediaDefaultsSchema,
 } from '../media-config.js'
+import { ProviderMediaVoiceCatalogConfigSchema } from '../provider-media-voice-catalog.js'
 import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
@@ -714,6 +715,8 @@ export const ProviderCreateRequestSchema = z
     mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
     /** 从厂商同步到的动态参数候选（如音色目录） */
     mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.optional(),
+    /** 渠道「音色获取」配置（模板 + 覆盖项）；传 null 等同于未配置 */
+    mediaVoiceCatalog: ProviderMediaVoiceCatalogConfigSchema.nullable().optional(),
     /** 模型定时禁用时段；新建时随渠道一并落库 */
     modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
     /** 模型级设置；新建时随渠道一并落库（语义同 update 同名字段） */
@@ -773,6 +776,8 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
   /** 从厂商同步到的动态参数候选（如音色目录）；传 null 清空 */
   mediaDynamicParamOptions: MediaDynamicParamOptionsSchema.nullable().optional(),
+  /** 渠道「音色获取」配置；传 null 恢复「按厂商推断模板」 */
+  mediaVoiceCatalog: ProviderMediaVoiceCatalogConfigSchema.nullable().optional(),
   /** 模型定时禁用时段；传空数组清除全部时段 */
   modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
   /** 模型级设置整表下发（key = modelId）；undefined 不修改，空对象清除全部 */

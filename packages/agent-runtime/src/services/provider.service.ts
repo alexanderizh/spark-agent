@@ -26,9 +26,19 @@ import {
   type MediaApiType,
   type MediaCapabilityId,
   type MediaDynamicParamOptions,
+  type MediaModelManifest,
   type ProviderMediaDefaults,
   type ProviderMediaModelRef,
   ProviderMediaModelRefSchema,
+  type ProviderMediaVoiceCatalogConfig,
+  ProviderMediaVoiceCatalogConfigSchema,
+  BUILTIN_MEDIA_MODEL_MANIFESTS,
+  VOLCENGINE_SPEECH_VOICE_TABLE,
+  VOICE_CATALOG_PARAM_ALIASES,
+  VOICE_CATALOG_TEMPLATES,
+  type VoiceCatalogBuiltinKind,
+  type VoiceCatalogTemplateId,
+  inferVoiceCatalogTemplate,
 } from '@spark/protocol'
 import {
   AUTO_ROUTER_PROVIDER_TYPE,
@@ -72,35 +82,91 @@ import { fetchZhipuVoiceCatalog } from './media/zhipu-voice-catalog.js'
 import { fetchMinimaxVoiceCatalog } from './media/minimax-voice-catalog.js'
 import { cloneZhipuVoice, deleteZhipuVoice } from './media/zhipu-voice-clone.client.js'
 import type { ZhipuVoiceApiTarget } from './media/zhipu-voice-api.js'
+import {
+  fetchVoiceCatalogByPlan,
+  hasVoiceCatalogOverrides,
+  resolveVoiceCatalogRequest,
+  type VoiceCatalogRequestPlan,
+} from './media/media-voice-catalog.client.js'
 import { runCliProbe, withDeadline } from './cli-probe-runner.js'
 
 const log = createLogger('provider.service')
 
 /**
- * 音色目录同步支持的厂商。
+ * 音色落点回落表（渠道没有可解析的 `mediaModelRefs` 时使用，等价于改造前的硬编码行为）。
  *
- * 只有提供「音色列表接口」的厂商才能接入：智谱（`GET /paas/v4/voice/list`）与
- * MiniMax（`POST /v1/get_voice`）。其余 TTS 厂商（百炼 / 火山 / xAI 等）音色是固定
- * 枚举、官方未提供可查询列表，因此不在这里登记（登记了也只会拿到静态 examples）。
+ * - 智谱：`GET /paas/v4/voice/list`；
+ * - MiniMax：`POST /v1/get_voice`，两个 Speech 2.8 档位都声明 audio.speech，需同时落盘；
+ * - 火山语音：官方音色列表接口走 OpenAPI AK/SK 签名（与渠道的 X-Api-Key 不同源），
+ *   因此内置实现是一份离线静态表，落点是 `speaker` 参数。
  */
-const VOICE_CATALOG_VENDORS = {
-  zhipu: { label: '智谱开放平台', manifests: ['zhipu:glm-tts'] },
-  'minimax-hailuo': {
-    label: 'MiniMax',
-    // 两个 Speech 2.8 档位都声明 audio.speech，候选需同时落盘，用户换档位后仍可选到音色。
-    manifests: ['minimax:speech-2.8-hd', 'minimax:speech-2.8-turbo'],
-  },
-} as const satisfies Record<string, { label: string; manifests: readonly string[] }>
+const VOICE_CATALOG_FALLBACK_TARGETS: Partial<
+  Record<VoiceCatalogTemplateId, readonly { manifestId: string; paramName: string }[]>
+> = {
+  zhipu: [{ manifestId: 'zhipu:glm-tts', paramName: 'voice' }],
+  minimax: [
+    { manifestId: 'minimax:speech-2.8-hd', paramName: 'voice' },
+    { manifestId: 'minimax:speech-2.8-turbo', paramName: 'voice' },
+  ],
+  'volcengine-speech': [{ manifestId: 'volcengine-speech:seed-tts-2.0', paramName: 'speaker' }],
+}
 
-type VoiceCatalogVendor = keyof typeof VOICE_CATALOG_VENDORS
-
-const VOICE_CATALOG_VENDOR_LABELS = Object.values(VOICE_CATALOG_VENDORS).map(
-  (vendor) => vendor.label,
+/** 「内置模板」文案（用于不支持时的引导，不包含自定义请求）。 */
+const VOICE_CATALOG_TEMPLATE_LABELS = (['zhipu', 'minimax', 'volcengine-speech'] as const).map(
+  (id) => VOICE_CATALOG_TEMPLATES[id].label,
 )
 
-function voiceCatalogVendorOf(mediaProvider: string | null | undefined): VoiceCatalogVendor | null {
-  if (mediaProvider == null) return null
-  return mediaProvider in VOICE_CATALOG_VENDORS ? (mediaProvider as VoiceCatalogVendor) : null
+/** 解析结果：内置实现 / 内置静态表 / 通用请求三选一。 */
+interface ResolvedVoiceCatalogSource {
+  templateId: VoiceCatalogTemplateId
+  builtin: VoiceCatalogBuiltinKind
+  plan?: VoiceCatalogRequestPlan
+  staticOptions?: { value: string; label?: string }[]
+  target: ZhipuVoiceApiTarget
+}
+
+/**
+ * 找出 manifest 里承载音色的参数名。
+ *
+ * 各厂商字段名不同（火山 `speaker`、MiniMax/智谱 `voice`），写错参数会让候选
+ * 落在界面上看不到的位置；按能力声明查找比全局写死 `voice` 更可靠。
+ */
+function voiceCatalogParamNameOf(manifest: MediaModelManifest): string | null {
+  const capability = manifest.capabilities.find((item) => item.id === 'audio.speech')
+  if (!capability) return null
+  const schema = capability.paramSchema
+  const properties =
+    schema != null && typeof schema === 'object'
+      ? (schema as { properties?: unknown }).properties
+      : undefined
+  if (properties == null || typeof properties !== 'object') return null
+  for (const alias of VOICE_CATALOG_PARAM_ALIASES) {
+    if (alias in (properties as Record<string, unknown>)) return alias
+  }
+  return 'voice'
+}
+
+/** 写入前清洗：全空配置视为未配置，避免把空对象持久化进 profile。 */
+function sanitizeVoiceCatalogConfig(raw: unknown): ProviderMediaVoiceCatalogConfig | undefined {
+  const parsed = ProviderMediaVoiceCatalogConfigSchema.safeParse(raw)
+  if (!parsed.success) return undefined
+  const value = parsed.data
+  const hasScalar = [
+    value.templateId,
+    value.url,
+    value.method,
+    value.body,
+    value.listPath,
+    value.valueField,
+    value.labelField,
+    value.privateFlagField,
+  ].some((item) => typeof item === 'string' && item.trim().length > 0)
+  const hasAny =
+    hasScalar ||
+    (value.headers != null && Object.keys(value.headers).length > 0) ||
+    (value.privateListPaths ?? []).some((item) => item.trim().length > 0) ||
+    (value.privateFlagValues ?? []).some((item) => item.trim().length > 0)
+  return hasAny ? value : undefined
 }
 const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
@@ -424,6 +490,9 @@ function rowToProfile(row: {
     ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
     ...(config.mediaDynamicParamOptions !== undefined && {
       mediaDynamicParamOptions: config.mediaDynamicParamOptions,
+    }),
+    ...(config.mediaVoiceCatalog !== undefined && {
+      mediaVoiceCatalog: config.mediaVoiceCatalog,
     }),
     ...(config.managed === true && { managed: true }),
     ...(config.managedType !== undefined && { managedType: config.managedType }),
@@ -885,6 +954,8 @@ export class ProviderService {
     mediaModelRefs?: ProviderMediaModelRef[]
     /** 从厂商同步到的动态参数候选（如音色目录）。 */
     mediaDynamicParamOptions?: MediaDynamicParamOptions
+    /** 渠道「音色获取」配置（模板 + 覆盖项）；null 等同于未配置。 */
+    mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig | null
     /** 模型定时禁用时段；新建时随渠道 config 一并落库。 */
     modelSchedules?: ProviderModelSchedule[]
     /** 模型级设置；新建时随渠道 config 一并落库（contextWindow 拆写进 modelContextWindows）。 */
@@ -964,6 +1035,9 @@ export class ProviderService {
         ...(params.mediaDynamicParamOptions != null && {
           mediaDynamicParamOptions: params.mediaDynamicParamOptions,
         }),
+        ...(params.mediaVoiceCatalog != null && {
+          mediaVoiceCatalog: params.mediaVoiceCatalog,
+        }),
         ...(params.modelSchedules !== undefined && {
           modelSchedules: sanitizeModelSchedules(params.modelSchedules),
         }),
@@ -1034,6 +1108,8 @@ export class ProviderService {
     mediaModelRefs?: ProviderMediaModelRef[]
     /** 从厂商同步到的动态参数候选（如音色目录）；传 null 清空。 */
     mediaDynamicParamOptions?: MediaDynamicParamOptions | null
+    /** 渠道「音色获取」配置；传 null 恢复「按厂商推断模板」。 */
+    mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig | null
     /** 模型定时禁用时段；传空数组清除全部时段。 */
     modelSchedules?: ProviderModelSchedule[]
     /**
@@ -1124,6 +1200,8 @@ export class ProviderService {
       params.mediaCapabilities !== undefined ||
       params.mediaDefaults !== undefined ||
       params.mediaModelRefs !== undefined ||
+      // 单独下发「音色获取」配置也要触发 config 写入（用户可能只改这一项）。
+      params.mediaVoiceCatalog !== undefined ||
       // 单独下发同步到的动态参数候选（如音色目录）也必须触发 config 写入：
       // 音色同步只带这一个字段调用，漏判会让 newConfig 保持 undefined，
       // 下面的写入分支被整体跳过 —— 接口返回成功、候选却没落库。
@@ -1296,6 +1374,14 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.mediaModelRefs !== undefined) {
       newConfig.mediaModelRefs = params.mediaModelRefs
+    }
+    if (newConfig !== undefined && params.mediaVoiceCatalog !== undefined) {
+      // null 表示恢复「按厂商推断模板」；用户选的模板与覆盖项原样落库。
+      if (params.mediaVoiceCatalog === null) {
+        delete newConfig.mediaVoiceCatalog
+      } else {
+        newConfig.mediaVoiceCatalog = params.mediaVoiceCatalog
+      }
     }
     if (newConfig !== undefined && params.mediaDynamicParamOptions !== undefined) {
       // null 表示清空同步结果（例如更换渠道后旧音色目录已失效）。
@@ -1574,8 +1660,8 @@ export class ProviderService {
    * 反馈失败原因，而不是静默降级。
    */
   async syncMediaVoiceCatalog(id: string): Promise<ProviderMediaSyncVoicesResponse> {
-    const resolved = await this.resolveVoiceChannel(id, '音色目录同步')
-    return { providerId: id, ...(await this.refreshVoiceCatalog(id, resolved)) }
+    const source = await this.resolveVoiceCatalogSource(id, '音色目录同步')
+    return { providerId: id, ...(await this.refreshVoiceCatalog(id, source)) }
   }
 
   /**
@@ -1595,7 +1681,11 @@ export class ProviderService {
       ...(params.previewText ? { previewText: params.previewText } : {}),
       ...(params.sampleText ? { sampleText: params.sampleText } : {}),
     })
-    const snapshot = await this.refreshVoiceCatalog(params.providerId, { vendor: 'zhipu', target })
+    const snapshot = await this.refreshVoiceCatalog(params.providerId, {
+      templateId: 'zhipu',
+      builtin: 'zhipu',
+      target,
+    })
     return {
       providerId: params.providerId,
       ...snapshot,
@@ -1610,48 +1700,32 @@ export class ProviderService {
   ): Promise<ProviderMediaDeleteVoiceResponse> {
     const target = await this.resolveZhipuVoiceChannel(params.providerId, '删除音色')
     await deleteZhipuVoice({ ...target, voice: params.voice })
-    const snapshot = await this.refreshVoiceCatalog(params.providerId, { vendor: 'zhipu', target })
+    const snapshot = await this.refreshVoiceCatalog(params.providerId, {
+      templateId: 'zhipu',
+      builtin: 'zhipu',
+      target,
+    })
     return { providerId: params.providerId, ...snapshot, voice: params.voice.trim() }
   }
 
   /**
-   * 解析智谱音频渠道的调用目标（复刻 / 删除专用）。
+   * 读取渠道的配置与密钥（音色相关动作的公共前置）。
    *
-   * 这两个动作依赖智谱的音色上传 / 复刻接口，其他厂商没有等价实现，
-   * 因此仍然硬校验智谱渠道；只做「目录同步」的厂商请走 `resolveVoiceChannel`。
+   * 与「音色获取模板」无关：模板只描述音色列表怎么取，密钥与端点是渠道自身的属性。
+   * 因此这里单独抽出来，避免「用户把音色列表改成自定义请求」就丢掉复刻 / 删除能力。
    */
-  private async resolveZhipuVoiceChannel(id: string, action: string): Promise<ZhipuVoiceApiTarget> {
-    const resolved = await this.resolveVoiceChannel(id, action)
-    if (resolved.vendor !== 'zhipu') {
-      throw new Error(`当前渠道不支持${action}（仅智谱开放平台提供音色复刻接口）`)
-    }
-    return resolved.target
-  }
-
-  /**
-   * 解析「支持音色目录同步」的渠道目标。
-   *
-   * 前置要求：必须是已接入音色列表接口的厂商、必须已配置 API Key，
-   * 且端点必须能推导出音色子路径（「完整 URL」渠道由各 client 侧拒绝）。
-   */
-  private async resolveVoiceChannel(
+  private async requireVoiceChannelCredentials(
     id: string,
     action: string,
-  ): Promise<{ vendor: VoiceCatalogVendor; target: ZhipuVoiceApiTarget }> {
+  ): Promise<{ config: NormalizedProviderConfig; target: ZhipuVoiceApiTarget }> {
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
-    const vendor = voiceCatalogVendorOf(config.mediaProvider)
-    if (!vendor) {
-      throw new Error(
-        `当前渠道不支持${action}（已接入音色接口的厂商：${VOICE_CATALOG_VENDOR_LABELS.join('、')}）`,
-      )
-    }
     if (!row.keystore_ref) throw new Error(`未配置 API Key，无法${action}`)
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
     if (!apiKey) throw new Error('API Key 未在钥匙串中找到')
     return {
-      vendor,
+      config,
       target: {
         apiEndpoint: config.mediaApiEndpoint ?? config.apiEndpoint ?? '',
         apiKey,
@@ -1661,14 +1735,120 @@ export class ProviderService {
   }
 
   /**
-   * 拉取音色目录并写入 profile 的动态参数候选（按厂商选择接口与落点）。
+   * 解析智谱音频渠道的调用目标（复刻 / 删除专用）。
    *
-   * 智谱固定挂在 GLM-TTS 的 voice 参数上（该渠道唯一声明 audio.speech 的模型）；
-   * MiniMax 同时挂到两个 Speech 2.8 模型上，避免用户选的档位（hd / turbo）拿不到候选。
+   * 这两个动作依赖智谱的音色上传 / 复刻接口，其他厂商没有等价实现，
+   * 因此按**渠道厂商**硬校验（而不是按音色获取模板：模板被改成自定义请求时，
+   * 复刻能力不该跟着失效）。
+   */
+  private async resolveZhipuVoiceChannel(id: string, action: string): Promise<ZhipuVoiceApiTarget> {
+    const { config, target } = await this.requireVoiceChannelCredentials(id, action)
+    if (config.mediaProvider !== 'zhipu') {
+      throw new Error(`当前渠道不支持${action}（仅智谱开放平台提供音色复刻接口）`)
+    }
+    return target
+  }
+
+  /**
+   * 解析「音色获取」的取数来源：内置实现 / 内置静态表 / 通用请求三选一。
+   *
+   * 顺序上先看用户配置的模板（未配置则按渠道厂商推断），再分三种情形：
+   *   1. 未填任何覆盖项 → 走模板的内置实现（厂商专用 client 或内置静态表），
+   *      与改造前行为一致，既有渠道升级后不受影响；
+   *   2. 内置静态表且未覆盖 `url` → 直接返回静态候选，不发网络请求；
+   *   3. 其余 → 组装通用请求计划（改过地址 / 字段映射，或自定义媒体渠道）。
+   *
+   * 前置要求：渠道必须已配置 API Key。
+   */
+  private async resolveVoiceCatalogSource(
+    id: string,
+    action: string,
+  ): Promise<ResolvedVoiceCatalogSource> {
+    // 模板先于凭据解析：没有可用模板时给出「去哪配」的引导，比「未配置 Key」更可执行。
+    const row = this.repo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    const rawConfig = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    const voiceConfig = rawConfig.mediaVoiceCatalog
+    const templateId = voiceConfig?.templateId ?? inferVoiceCatalogTemplate(rawConfig.mediaProvider)
+    if (!templateId) {
+      throw new Error(
+        `当前渠道不支持${action}：请在「音色获取」里选择内置模板（${VOICE_CATALOG_TEMPLATE_LABELS.join('、')}）或填写自定义请求地址`,
+      )
+    }
+    const { target } = await this.requireVoiceChannelCredentials(id, action)
+    const defaults = VOICE_CATALOG_TEMPLATES[templateId]
+    const overrides = hasVoiceCatalogOverrides(voiceConfig)
+    if (defaults.builtin === 'volcengine-speech-static') {
+      // 内置音色表：没填 url 时就是「用内置静态表」，其它映射覆盖项只对请求方式有意义，
+      // 因此只在用户显式给了 url 时才改走通用请求（不发无谓的网络请求）。
+      if (!voiceConfig?.url?.trim()) {
+        return {
+          templateId,
+          builtin: defaults.builtin,
+          staticOptions: VOLCENGINE_SPEECH_VOICE_TABLE.map((entry) => ({ ...entry })),
+          target,
+        }
+      }
+    } else if (defaults.builtin != null && !overrides) {
+      return { templateId, builtin: defaults.builtin, target }
+    }
+    return {
+      templateId,
+      builtin: null,
+      plan: resolveVoiceCatalogRequest({
+        templateId,
+        defaults,
+        config: voiceConfig,
+        apiEndpoint: target.apiEndpoint,
+        ...(target.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
+        action,
+      }),
+      target,
+    }
+  }
+
+  /**
+   * 解析音色候选的落点：写进哪些 manifest 的哪个参数。
+   *
+   * 优先按渠道真实声明的 `mediaModelRefs` 解析（这样自定义媒体的 inline manifest
+   * 也能拿到候选，火山会正确落到 `speaker`）；解析不到时回落到内置落点表，
+   * 保持改造前「智谱写 zhipu:glm-tts、MiniMax 写两个 Speech 2.8」的行为。
+   */
+  private resolveVoiceCatalogTargets(
+    id: string,
+    templateId: VoiceCatalogTemplateId,
+  ): { manifestId: string; paramName: string }[] {
+    const row = this.repo.get(id)
+    const config =
+      row == null
+        ? undefined
+        : normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    const builtinById = new Map(BUILTIN_MEDIA_MODEL_MANIFESTS.map((item) => [item.id, item]))
+    const resolved: { manifestId: string; paramName: string }[] = []
+    const seen = new Set<string>()
+    for (const ref of config?.mediaModelRefs ?? []) {
+      if (ref.enabled === false) continue
+      if (seen.has(ref.manifestId)) continue
+      const manifest = ref.manifest ?? builtinById.get(ref.manifestId)
+      if (!manifest) continue
+      const paramName = voiceCatalogParamNameOf(manifest)
+      if (!paramName) continue
+      seen.add(ref.manifestId)
+      resolved.push({ manifestId: ref.manifestId, paramName })
+    }
+    if (resolved.length > 0) return resolved
+    return (VOICE_CATALOG_FALLBACK_TARGETS[templateId] ?? []).map((item) => ({ ...item }))
+  }
+
+  /**
+   * 拉取音色目录并写入 profile 的动态参数候选。
+   *
+   * 落点由 `resolveVoiceCatalogTargets` 决定；写不出任何落点时直接抛错 ——
+   * 「同步成功但没写入任何候选」是最难排查的静默失败。
    */
   private async refreshVoiceCatalog(
     id: string,
-    resolved: { vendor: VoiceCatalogVendor; target: ZhipuVoiceApiTarget },
+    source: ResolvedVoiceCatalogSource,
   ): Promise<{
     options: ProviderMediaSyncVoicesResponse['options']
     privateVoices: ProviderMediaSyncVoicesResponse['privateVoices']
@@ -1677,12 +1857,13 @@ export class ProviderService {
     manifestId: string
     paramName: string
   }> {
-    const snapshot =
-      resolved.vendor === 'zhipu'
-        ? await fetchZhipuVoiceCatalog(resolved.target)
-        : await fetchMinimaxVoiceCatalog(resolved.target)
-    const manifestIds = VOICE_CATALOG_VENDORS[resolved.vendor].manifests
-    const paramName = 'voice'
+    const snapshot = await this.fetchVoiceCatalogSnapshot(source)
+    const targets = this.resolveVoiceCatalogTargets(id, source.templateId)
+    if (targets.length === 0) {
+      throw new Error(
+        '该渠道没有声明语音合成模型，无法写入音色候选：请先在渠道里添加声明 audio.speech 的模型',
+      )
+    }
     const row = this.repo.get(id)
     const existing =
       row == null
@@ -1692,26 +1873,50 @@ export class ProviderService {
     const mediaDynamicParamOptions: Record<string, Record<string, typeof snapshot.options>> = {
       ...(existing ?? {}),
     }
-    for (const manifestId of manifestIds) {
-      mediaDynamicParamOptions[manifestId] = {
-        ...(existing?.[manifestId] ?? {}),
-        [paramName]: snapshot.options,
+    for (const target of targets) {
+      mediaDynamicParamOptions[target.manifestId] = {
+        ...(existing?.[target.manifestId] ?? {}),
+        [target.paramName]: snapshot.options,
       }
     }
     await this.updateProvider({ id, mediaDynamicParamOptions })
     log.info(
-      `refreshVoiceCatalog completed, id=${id}, vendor=${resolved.vendor}, ` +
-        `manifestIds=${manifestIds.join(',')}, total=${snapshot.options.length}, ` +
-        `official=${snapshot.officialCount}, private=${snapshot.privateCount}`,
+      `refreshVoiceCatalog completed, id=${id}, template=${source.templateId}, ` +
+        `targets=${targets.map((item) => `${item.manifestId}#${item.paramName}`).join(',')}, ` +
+        `total=${snapshot.options.length}, official=${snapshot.officialCount}, ` +
+        `private=${snapshot.privateCount}`,
     )
     return {
       options: snapshot.options,
       privateVoices: snapshot.privateVoices,
       officialCount: snapshot.officialCount,
       privateCount: snapshot.privateCount,
-      manifestId: manifestIds[0] as string,
-      paramName,
+      manifestId: targets[0]?.manifestId ?? '',
+      paramName: targets[0]?.paramName ?? 'voice',
     }
+  }
+
+  /** 按解析结果取一次音色快照（内置静态表 / 厂商内置 client / 通用请求）。 */
+  private async fetchVoiceCatalogSnapshot(source: ResolvedVoiceCatalogSource): Promise<{
+    options: ProviderMediaSyncVoicesResponse['options']
+    privateVoices: ProviderMediaSyncVoicesResponse['privateVoices']
+    officialCount: number
+    privateCount: number
+  }> {
+    if (source.staticOptions) {
+      return {
+        options: source.staticOptions,
+        privateVoices: [],
+        officialCount: source.staticOptions.length,
+        privateCount: 0,
+      }
+    }
+    if (source.builtin === 'zhipu') return await fetchZhipuVoiceCatalog(source.target)
+    if (source.builtin === 'minimax') return await fetchMinimaxVoiceCatalog(source.target)
+    if (!source.plan) {
+      throw new Error('音色获取配置不完整：缺少请求计划，请重新保存渠道配置后重试')
+    }
+    return await fetchVoiceCatalogByPlan(source.plan, { apiKey: source.target.apiKey })
   }
 
   async testConnection(params: {
@@ -2403,6 +2608,8 @@ interface ProviderConfig {
   /** 渠道声明的 apiEndpoint 是完整请求地址：各调用点跳过自动拼裁，原样请求。 */
   apiEndpointFullUrl?: boolean
   mediaApiEndpoint?: string
+  /** 渠道「音色获取」配置（模板 + 覆盖项）。 */
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** 使用 Spark 执行器（自研 spark-engine）作为该渠道会话的默认引擎。 */
   useSparkExecutor?: boolean
@@ -2634,6 +2841,10 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   } else {
     delete normalized.mediaDefaults
   }
+  // 音色获取配置：非法或全空一律视为未配置（未配置 = 按厂商推断模板，行为与改造前一致）。
+  const voiceCatalog = sanitizeVoiceCatalogConfig(config.mediaVoiceCatalog)
+  if (voiceCatalog !== undefined) normalized.mediaVoiceCatalog = voiceCatalog
+  else delete normalized.mediaVoiceCatalog
   if (Array.isArray(config.mediaModelRefs)) {
     normalized.mediaModelRefs = config.mediaModelRefs
       .filter(
@@ -2963,6 +3174,9 @@ function rowToExportProfile(
     ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
     ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
     ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
+    ...(config.mediaVoiceCatalog !== undefined && {
+      mediaVoiceCatalog: config.mediaVoiceCatalog,
+    }),
     ...(apiKey && apiKey.length > 0 && { apiKey }),
   }
 }
@@ -2998,6 +3212,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   mediaCapabilities?: MediaCapabilityId[]
   mediaDefaults?: ProviderMediaDefaults
   mediaModelRefs?: ProviderMediaModelRef[]
+  mediaVoiceCatalog?: ProviderMediaVoiceCatalogConfig
 } {
   // 与 rowToExportProfile 共用同一清洗口径，非法时段在导入侧直接被丢弃。
   const modelSchedules = sanitizeModelSchedules(profile.modelSchedules)
@@ -3036,6 +3251,9 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     }),
     ...(profile.mediaDefaults !== undefined && { mediaDefaults: profile.mediaDefaults }),
     ...(profile.mediaModelRefs !== undefined && { mediaModelRefs: profile.mediaModelRefs }),
+    ...(profile.mediaVoiceCatalog !== undefined && {
+      mediaVoiceCatalog: profile.mediaVoiceCatalog,
+    }),
   }
 }
 

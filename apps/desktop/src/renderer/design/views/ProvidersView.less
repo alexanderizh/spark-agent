@@ -911,6 +911,26 @@
   }
 }
 
+/* 标题旁 ⓘ：与语音操作行（ProviderVoiceSection）同一套约定 */
+.pv_form_label_help {
+  flex: none;
+  margin-left: 4px;
+  vertical-align: -2px;
+  color: var(--text-muted);
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.pv_form_label_title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .pv_form_label {
   font-size: 12px;
   font-weight: 500;

@@ -20,12 +20,7 @@ import type {
   MediaModelCapabilityManifest,
   MediaRequestCall,
 } from '@spark/protocol'
-import {
-  capabilityForOperation,
-  isMediaCapabilityId,
-  isMediaProviderKind,
-  mediaManifestCapabilities,
-} from '@spark/protocol'
+import { capabilityForOperation, isMediaProviderKind } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
 import type {
   MediaGenerateInput,
@@ -257,16 +252,14 @@ export class MediaRouterService {
   }
 
   supports(profile: MediaProviderProfile, capability: MediaCapabilityId): boolean {
+    const declaration = profileSupportsMediaCapability(profile, capability)
+    // 模型级 manifest 数据给出明确答案时以声明为准，不再看 adapter；
+    // 'provider'（渠道级声明命中、无模型级数据）与 'none'（未声明任何能力）沿用
+    // 「渠道级声明 + adapter」/「信任 adapter」的既有匹配，旧渠道/内置渠道不受影响。
+    if (declaration === 'model') return true
+    if (declaration === 'unsupported') return false
     const kind = effectiveProviderKind(profile)
     const adapter = kind ? this.adapters.get(kind) : undefined
-    const declared = mediaCapabilitiesForProfile(profile)
-    // 声明了能力列表就以列表为准；未声明则信任 adapter
-    if (declared.length > 0) {
-      return (
-        declared.includes(capability) &&
-        (Boolean(adapter?.supports(capability)) || hasManifestCapability(profile, capability))
-      )
-    }
     return Boolean(adapter?.supports(capability))
   }
 
@@ -865,14 +858,30 @@ function attachCapturedRequest(
   if (captured && !err.requestCall) err.requestCall = captured
 }
 
-function mediaCapabilitiesForProfile(
+/** profile 声明层的能力判定结果（router 与桌面端语音播报等调用方共享同一语义）。 */
+export type MediaCapabilityDeclaration = 'model' | 'provider' | 'none' | 'unsupported'
+
+/**
+ * 判定 provider profile 的声明层是否支持某媒体能力：
+ *
+ * - 有 mediaModelManifests 的渠道以模型级声明为准，必须存在至少一个模型声明该能力，
+ *   渠道级声明不再单独放行——否则 ASR 渠道在渠道级误声明 audio.speech（其模型只有
+ *   audio.transcription）时会凭原生 adapter 抢走 TTS 自动路由。
+ * - 没有任何模型级 manifest 数据的旧渠道/内置渠道回退渠道级 mediaCapabilities 声明。
+ *
+ * adapter 层判定不在此函数内：'provider' 与 'none' 结果由调用方结合 adapter 回退
+ * （supports() 的既有语义）。导出给桌面端等复用，避免各自复制判定逻辑。
+ */
+export function profileSupportsMediaCapability(
   profile: Pick<MediaProviderProfile, 'mediaCapabilities' | 'mediaModelManifests'>,
-): MediaCapabilityId[] {
+  capability: MediaCapabilityId,
+): MediaCapabilityDeclaration {
+  if ((profile.mediaModelManifests ?? []).length > 0) {
+    return hasManifestCapability(profile, capability) ? 'model' : 'unsupported'
+  }
   const declared = profile.mediaCapabilities ?? []
-  const fromManifests = (profile.mediaModelManifests ?? [])
-    .flatMap((manifest) => mediaManifestCapabilities(manifest))
-    .filter(isMediaCapabilityId)
-  return Array.from(new Set([...declared, ...fromManifests]))
+  if (declared.length === 0) return 'none'
+  return declared.includes(capability) ? 'provider' : 'unsupported'
 }
 
 function hasManifestCapability(

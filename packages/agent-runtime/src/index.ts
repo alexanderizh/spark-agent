@@ -21,7 +21,11 @@ export {
   type GenerateCanvasTextParams,
   type GenerateCanvasTextResult,
 } from './services/canvas-text-generator.js'
-export { MediaRouterService } from './services/media/media-router.service.js'
+export {
+  MediaRouterService,
+  profileSupportsMediaCapability,
+  type MediaCapabilityDeclaration,
+} from './services/media/media-router.service.js'
 export { XAI_MAX_FILE_BYTES, XaiFilesClient } from './services/media/xai-files.client.js'
 export type { XaiFileObject, XaiFilesPage } from './services/media/xai-files.client.js'
 export {
