@@ -11,6 +11,7 @@
  */
 
 import type { VoiceAssistantPlayCommand } from '@spark/protocol'
+import { getAssistantPlaybackLevelSink } from './voiceAssistantLevels'
 
 interface QueuedSentence {
   sentenceId: string
@@ -61,6 +62,10 @@ export class VoicePlaybackController {
   private decodeInFlight = false
   /** 已入队的最大 sequence（保证顺序） */
   private lastEnqueuedSequence = 0
+  /** TTS 实时电平分析（HUD 声波条播报态数据源；常连 destination，不输出音频） */
+  private analyser: AnalyserNode | null = null
+  private levelTimer: number | null = null
+  private levelBuffer: Uint8Array<ArrayBuffer> | null = null
 
   private ensureContext(): AudioContext | null {
     if (this.context != null) {
@@ -73,7 +78,38 @@ export class VoicePlaybackController {
     if (Ctor == null) return null
     this.context = new Ctor()
     if (this.context.state === 'suspended') void this.context.resume().catch(() => undefined)
+    this.analyser = this.context.createAnalyser()
+    this.analyser.fftSize = 256
+    this.levelBuffer = new Uint8Array(new ArrayBuffer(this.analyser.fftSize))
     return this.context
+  }
+
+  /** 10Hz 采样 AnalyserNode 时域 RMS → 播放电平 store（HUD 声波条播报态） */
+  private startLevelSampling(): void {
+    if (this.levelTimer != null) return
+    this.levelTimer = window.setInterval(() => {
+      const analyser = this.analyser
+      const buffer = this.levelBuffer
+      if (analyser == null || buffer == null) return
+      analyser.getByteTimeDomainData(buffer)
+      let sum = 0
+      for (let i = 0; i < buffer.length; i++) {
+        // 128 = 时域中心（静音）；越界防御回落静音，不影响 RMS 量级
+        const v = ((buffer[i] ?? 128) - 128) / 128
+        sum += v * v
+      }
+      const rms = Math.sqrt(sum / buffer.length)
+      // 语音 RMS 偏小（典型 0.05~0.25），增益拉开动态后夹紧到 0~1；release 平滑由 store 承担
+      getAssistantPlaybackLevelSink().push(Math.min(1, rms * 2.2))
+    }, 100)
+  }
+
+  private stopLevelSampling(): void {
+    if (this.levelTimer != null) {
+      window.clearInterval(this.levelTimer)
+      this.levelTimer = null
+    }
+    getAssistantPlaybackLevelSink().reset()
   }
 
   /** 主进程播放指令入口 */
@@ -123,7 +159,11 @@ export class VoicePlaybackController {
   private drainQueue(): void {
     if (this.current != null || this.decodeInFlight) return
     const next = this.queue.shift()
-    if (next == null) return
+    if (next == null) {
+      // 队列排空且无在播句子：播报结束，停采样并清电平
+      if (this.current == null) this.stopLevelSampling()
+      return
+    }
     const context = this.ensureContext()
     if (context == null) {
       sendRendererEvent({ type: 'playback-error', sentenceId: next.sentenceId })
@@ -132,7 +172,10 @@ export class VoicePlaybackController {
     const source = context.createBufferSource()
     source.buffer = next.buffer
     source.connect(context.destination)
+    // 分析支路：不输出音频，仅供 HUD 声波条读实时电平
+    if (this.analyser != null) source.connect(this.analyser)
     this.current = { source, sentenceId: next.sentenceId }
+    this.startLevelSampling()
     source.onended = () => {
       // 正常播完与 stop() 主动停止都会触发 onended；stop 场景 current 已被清空
       const current = this.current
@@ -151,6 +194,7 @@ export class VoicePlaybackController {
     const current = this.current
     this.current = null
     this.queue = []
+    this.stopLevelSampling()
     if (current != null) {
       try {
         current.source.onended = null

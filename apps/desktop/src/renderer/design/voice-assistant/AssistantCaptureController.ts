@@ -21,6 +21,7 @@ import {
   VOICE_WORKLET_PROCESSOR_NAME,
   type VoiceWorkletChunk,
 } from '../voice/voiceCaptureWorklet'
+import { getAssistantCaptureLevelSink } from './voiceAssistantLevels'
 
 interface ActiveCapture {
   sessionId: string
@@ -104,10 +105,13 @@ export class AssistantCaptureController {
       await context.audioWorklet.addModule(getVoiceWorkletUrl())
       const source = context.createMediaStreamSource(stream)
       const node = new AudioWorkletNode(context, VOICE_WORKLET_PROCESSOR_NAME)
+      const levelStore = getAssistantCaptureLevelSink()
       node.port.onmessage = (e: MessageEvent<VoiceWorkletChunk | Int16Array>) => {
         const data = e.data
         const samples = data instanceof Int16Array ? data : data.samples
         window.spark.sendVoiceAudioChunk({ sessionId, samples })
+        // chunk 自带 0~1 RMS 电平（裸 Int16Array 旧格式无 level，跳过）；HUD 声波条消费
+        if (!(data instanceof Int16Array)) levelStore.push(data.level)
       }
       source.connect(node)
       node.connect(context.destination)
@@ -138,6 +142,8 @@ export class AssistantCaptureController {
   private release(): void {
     const active = this.active
     this.active = null
+    // 采集停止即清电平（HUD 声波条回落到基线，避免残留旧值）
+    getAssistantCaptureLevelSink().reset()
     if (active == null) return
     try {
       active.audioTrack.removeEventListener('ended', active.onTrackEnded)

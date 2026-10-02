@@ -8,7 +8,7 @@
  * 3. 卸载兜底：释放采集与播放资源。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@spark/protocol'
 import type { VoiceAssistantSessionFocusEvent, VoiceAssistantStateEvent } from '@spark/protocol'
@@ -16,12 +16,18 @@ import { VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL } from '@spark/protocol'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { getAssistantCaptureController } from './AssistantCaptureController'
 import { getVoicePlaybackController } from './VoicePlaybackController'
+import { VoiceHudWaveform, type VoiceHudWaveformState } from './VoiceHudWaveform'
 import './voiceAssistant.less'
 
-const STATE_META: Record<string, { label: string; icon: string }> = {
-  listening: { label: '正在聆听…', icon: '🎙' },
-  thinking: { label: '思考中…', icon: '✻' },
-  speaking: { label: '播报中', icon: '🔊' },
+const STATE_META: Record<VoiceHudWaveformState, string> = {
+  listening: '正在聆听…',
+  thinking: '思考中…',
+  speaking: '播报中',
+}
+
+/** 声波条可呈现的活跃态（HUD 只在这三态显示；idle 后保留片刻即隐藏） */
+function isWaveformState(state: VoiceAssistantStateEvent['state']): state is VoiceHudWaveformState {
+  return state === 'listening' || state === 'thinking' || state === 'speaking'
 }
 
 /** idle 后浮层保留一小段时间展示收尾状态（完成/已取消），随后隐藏 */
@@ -32,6 +38,8 @@ export function VoiceAssistantHost(): React.ReactNode {
     state: VoiceAssistantStateEvent['state']
     detail?: string
     reason?: VoiceAssistantStateEvent['reason']
+    /** 声波条唤醒弹跳：非活跃 → listening 跳变时置位，播完由波形组件回调清理 */
+    wake?: boolean
   } | null>(null)
   const dismissTimerRef = useRef<number | null>(null)
   const { setActiveSession, revealSession } = useSessionSidebar()
@@ -43,7 +51,11 @@ export function VoiceAssistantHost(): React.ReactNode {
       window.spark.on(
         VOICE_ASSISTANT_SESSION_FOCUS_CHANNEL,
         (event: VoiceAssistantSessionFocusEvent) => {
-          if (event == null || typeof event.sessionId !== 'string' || event.sessionId.length === 0) {
+          if (
+            event == null ||
+            typeof event.sessionId !== 'string' ||
+            event.sessionId.length === 0
+          ) {
             return
           }
           // 协议 sessionId 为普通 string，侧栏上下文使用 branded SessionId（与
@@ -86,10 +98,13 @@ export function VoiceAssistantHost(): React.ReactNode {
         const carriedDetail =
           previous?.state === event.state && previous?.detail != null ? previous.detail : undefined
         const detail = event.detail ?? carriedDetail
+        // 唤醒词或手动触发进入聆听：给声波条一次弹跳反馈（confirm 等同态续说不触发）
+        const wake = event.state === 'listening' && !isWaveformState(event.previous)
         return {
           state: event.state,
           ...(detail != null ? { detail } : {}),
           reason: event.reason,
+          ...(wake ? { wake: true } : {}),
         }
       })
     })
@@ -104,9 +119,12 @@ export function VoiceAssistantHost(): React.ReactNode {
     }
   }, [])
 
-  if (hud == null) return null
-  const meta = STATE_META[hud.state]
-  if (meta == null) return null
+  const handleWakeDone = useCallback((): void => {
+    // 无 wake 标记时保持原引用，避免无谓重渲染
+    setHud((previous) => (previous?.wake ? { ...previous, wake: false } : previous))
+  }, [])
+
+  if (hud == null || !isWaveformState(hud.state)) return null
 
   const handleInterrupt = (): void => {
     void window.spark.invoke('voice-assistant:interrupt', {}).catch(() => undefined)
@@ -114,14 +132,12 @@ export function VoiceAssistantHost(): React.ReactNode {
 
   return createPortal(
     <div className={`voice-assistant-hud is-${hud.state}`} role="status">
-      <span className="voice-assistant-hud-icon" aria-hidden="true">
-        {meta.icon}
-      </span>
+      <VoiceHudWaveform state={hud.state} wake={hud.wake === true} onWakeDone={handleWakeDone} />
       <div className="voice-assistant-hud-body">
         <span className="voice-assistant-hud-label">
           {hud.state === 'listening' && hud.reason === 'confirm'
             ? '请继续说，停顿后将自动发送'
-            : meta.label}
+            : STATE_META[hud.state]}
         </span>
         {hud.state === 'listening' && hud.detail != null && hud.detail.length > 0 ? (
           <span className="voice-assistant-hud-partial">{hud.detail}</span>
