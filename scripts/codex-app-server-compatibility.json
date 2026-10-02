@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lockedSdkVersion": "0.155.1",
+  "lockedSdkVersion": "0.160.0",
   "minimumRuntimeVersion": "0.144.5",
   "testedRuntimeVersions": [
     {
@@ -22,6 +22,11 @@
       "version": "0.155.1",
       "support": "locked",
       "evidence": "2026-09-20 generate-ts schema keeps every required request/notification/field/sandbox variant; drift versus 0.153.4 verified additive-only via check:codex-protocol before locking."
+    },
+    {
+      "version": "0.160.0",
+      "support": "locked",
+      "evidence": "2026-10-02 check:codex-protocol passed against installed 0.160.0 CLI via app-server generate-ts: every required request/notification/turn-start field/thread field/sandbox variant still present, no drift reported."
     }
   ],
   "requiredRequests": [

@@ -507,6 +507,10 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
           : {}),
         resume: params.sdkSessionId,
         enableFileCheckpointing: true,
+        // 0.3.286+ 省略 permissionMode 时第三方 provider 会话会以 auto 启动；
+        // rewind 只恢复会话发起控制请求、不跑 turn，显式传会话当前 mode
+        // （无活跃 turn 时兜底 claude-ask → SDK 'default' 手动审批）保持旧行为。
+        permissionMode: mapPermissionMode(this.livePermissionMode ?? 'claude-ask').permissionMode,
       }
 
       // Do NOT iterate the generator — that would execute a turn. We only issue
@@ -860,6 +864,9 @@ export class ClaudeSDKExecutor implements PermissionModeAwareExecutor, RewindCap
         ...(config.reasoningBudgetTokens != null && config.reasoningBudgetTokens > 0
           ? { thinking: { type: 'enabled' as const, budgetTokens: config.reasoningBudgetTokens } }
           : {}),
+        // SDK 0.3.280+ verbatimPrompts：显式开启时提示词原样投递（不展开 @path、
+        // 不分发斜杠命令、不附带环境附件）；默认不传保持现状。
+        ...(config.verbatimPrompts === true ? { verbatimPrompts: true } : {}),
         ...(resumeExistingSession ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
         ...(config.additionalDirectories != null && config.additionalDirectories.length > 0
           ? { additionalDirectories: config.additionalDirectories }

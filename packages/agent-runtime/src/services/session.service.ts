@@ -4693,6 +4693,8 @@ export class SessionService {
               ),
             }
           : {}),
+        // SDK 0.3.280+ verbatimPrompts：metadata 显式 true 才透传，默认不传保持现状。
+        ...(agent.metadata.verbatimPrompts === true ? { verbatimPrompts: true } : {}),
         ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
         ...(attachmentDirectories.length > 0
           ? { additionalDirectories: attachmentDirectories }
@@ -4971,6 +4973,8 @@ export class SessionService {
               ),
             }
           : {}),
+        // SDK 0.3.280+ verbatimPrompts：metadata 显式 true 才透传，默认不传保持现状。
+        ...(agent.metadata.verbatimPrompts === true ? { verbatimPrompts: true } : {}),
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         ...(config.apiEndpointFullUrl === true ? { apiEndpointFullUrl: true } : {}),
         sparkUpstreamProtocol: sparkRoute.protocol,
@@ -10236,6 +10240,8 @@ export class SessionService {
             ),
           }
         : {}),
+      // SDK 0.3.280+ verbatimPrompts：metadata 显式 true 才透传，默认不传保持现状。
+      ...(member.metadata.verbatimPrompts === true ? { verbatimPrompts: true } : {}),
       // 三轮功能逻辑审查修复（产品逻辑维度）：member dispatch 必须有 iteration limit。
       // SDK 默认 maxTurns=200，单个 member dispatch 跑 200 turn 会消耗巨量 token，
       // 且 dispatch timeout 限制总时间但不限制 iterations。设 maxTurnCount=30 让单个

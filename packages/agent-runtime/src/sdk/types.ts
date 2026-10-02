@@ -6,7 +6,7 @@
  * When the SDK is not installed the runtime fails fast with SDK_REQUIRED.
  *
  * Source: https://code.claude.com/docs/en/agent-sdk/typescript
- * Package: @anthropic-ai/claude-agent-sdk 0.3.278
+ * Package: @anthropic-ai/claude-agent-sdk 0.3.287
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
@@ -680,6 +680,11 @@ export interface SDKQueryOptions {
    * 读取而非 cwd——配置不随 worktree 分支漂移。绝对路径；缺省不传。
    */
   projectConfigRoot?: string | undefined
+  /**
+   * 提示词原样投递（0.3.280+）：不展开 `@path` 文件引用、不分发斜杠命令、
+   * 不附带环境附件；需 Claude Code 2.1.248+，旧 CLI 忽略。缺省不传。
+   */
+  verbatimPrompts?: boolean | undefined
   debug?: boolean | undefined
   stderr?: ((data: string) => void) | undefined
   includePartialMessages?: boolean | undefined
@@ -926,6 +931,13 @@ export interface SDKExecutorConfig {
    * Codex/OpenAI 路径目前没有等价字段，会忽略此值。
    */
   reasoningBudgetTokens?: number | undefined
+  /**
+   * Claude SDK 0.3.280+ `Options.verbatimPrompts`：提示词原样投递 —— 不展开
+   * `@path` 文件引用、不分发斜杠命令、不附带环境附件。默认不传（false），
+   * 保持 SDK 现状行为；仅会话/agent 显式开启时透传 true。
+   * 需 Claude Code 2.1.248+，旧 CLI 会忽略该字段。仅 Claude executor 消费。
+   */
+  verbatimPrompts?: boolean | undefined
   /** Codex sandbox network access. Defaults to false. */
   networkAccessEnabled?: boolean | undefined
   /** Codex built-in web search mode. Defaults to disabled. */
