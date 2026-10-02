@@ -67,6 +67,10 @@ import {
   readCanvasParameterHistory,
   recordCanvasCustomParameterHistory,
 } from './canvasParameterHistory'
+import {
+  createEchoTolerantFilterOption,
+  matchesValueOrLabel,
+} from '../../utils/autoCompleteEchoFilter'
 import { resolveMediaDisplayUrl } from './canvas-safe-file'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { QuickCreateOutputPanel } from './QuickCreateOutputPanel'
@@ -407,11 +411,7 @@ function QuickCreateSizeControl({
                   allowClear
                   placeholder="输入自定义尺寸，如 1536x1024"
                   onChange={(next) => onChange(next == null ? '' : String(next))}
-                  filterOption={(input, option) =>
-                    String(option?.value ?? option?.label ?? '')
-                      .toLowerCase()
-                      .includes(input.toLowerCase())
-                  }
+                  filterOption={createEchoTolerantFilterOption(() => value, matchesValueOrLabel)}
                 />
               )}
               {historyOptions.length > 0 && (

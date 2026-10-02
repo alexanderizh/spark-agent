@@ -7,6 +7,10 @@ import {
   type CanvasParameterPresentation,
 } from './canvasParameterPresentation'
 import { readCanvasParameterHistory } from './canvasParameterHistory'
+import {
+  createEchoTolerantFilterOption,
+  matchesValueOrLabel,
+} from '../../utils/autoCompleteEchoFilter'
 import './CanvasParameterControl.less'
 
 export type CanvasParameterControlProps = {
@@ -128,11 +132,13 @@ function CustomAspectRatioInput({
         placeholder={presentation.field.placeholder ?? '输入自定义比例或尺寸'}
         allowClear
         onChange={(next) => onChange(next == null ? '' : String(next))}
-        filterOption={(input, option) =>
-          String(option?.value ?? '')
-            .toLowerCase()
-            .includes(input.toLowerCase())
-        }
+        filterOption={createEchoTolerantFilterOption(
+          () => value,
+          (query, option) =>
+            String(option.value ?? '')
+              .toLowerCase()
+              .includes(query),
+        )}
       />
       {preview && (
         <div className="canvas-parameter-custom-ratio-preview" aria-label={`预览比例 ${value}`}>
@@ -332,14 +338,7 @@ export function CanvasParameterControl({
         placeholder={field.placeholder}
         allowClear
         onChange={(next) => onChange(next == null ? '' : String(next))}
-        filterOption={(input, option) => {
-          const query = input.toLowerCase()
-          return [option?.value, option?.label].some((candidate) =>
-            String(candidate ?? '')
-              .toLowerCase()
-              .includes(query),
-          )
-        }}
+        filterOption={createEchoTolerantFilterOption(() => value, matchesValueOrLabel)}
       />
     )
   } else if (control === 'enum') {
