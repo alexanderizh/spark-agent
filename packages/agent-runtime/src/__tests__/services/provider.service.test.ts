@@ -1019,6 +1019,102 @@ describe('ProviderService', () => {
     )
   })
 
+  it('完整 URL 渠道（未填音色获取地址）给出可执行引导，而不是旧文案', async () => {
+    repo.rows.set('id-full-url-voice', {
+      id: 'id-full-url-voice',
+      provider_type: 'openai',
+      name: 'MiniMax 文字转语音（中转）',
+      config_json: JSON.stringify({
+        defaultModel: 'speech-2.8-hd',
+        modelIds: ['speech-2.8-hd'],
+        mediaProvider: 'minimax-hailuo',
+        // 真实痛点：中转 / 反代地址指向单个业务端点，用户改不了 Base URL，
+        // 改造前这里抛厂商 client 的「请改用标准 API Base URL」，人直接被卡死。
+        apiEndpoint: 'https://api.minimax.cn/v1/t2a_v2',
+        apiEndpointFullUrl: true,
+        mediaModelRefs: [{ manifestId: 'minimax:speech-2.8-hd', enabled: true }],
+      }),
+      enabled: 1,
+      keystore_ref: 'openai-id-full-url-voice',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-full-url' as never)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(service.syncMediaVoiceCatalog('id-full-url-voice')).rejects.toThrow(
+      /请在「音色获取」里填写完整请求地址后重试/,
+    )
+    // 引导必须在发请求之前给出（本来也推导不出地址）
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(repo.rows.get('id-full-url-voice')?.config_json).not.toContain(
+      'mediaDynamicParamOptions',
+    )
+  })
+
+  it('只声明语音识别的渠道不给音色落点：不写进没启用的 manifest，也不白跑请求', async () => {
+    repo.rows.set('id-asr-only', {
+      id: 'id-asr-only',
+      provider_type: 'openai',
+      name: 'MiniMax 语音转文字',
+      config_json: JSON.stringify({
+        defaultModel: 'asr-1.0',
+        modelIds: ['asr-1.0'],
+        mediaProvider: 'minimax-hailuo',
+        apiEndpoint: 'https://api.minimaxi.com/v1',
+        mediaModelRefs: [{ manifestId: 'minimax:asr-1.0', enabled: true }],
+      }),
+      enabled: 1,
+      keystore_ref: 'openai-id-asr-only',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-asr' as never)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    // 回落表指向 minimax:speech-2.8-*，而该渠道根本没启用它们：写进去谁也读不到
+    //（resolveProfileMediaModels 只吐渠道声明的模型），界面却报「同步成功」。
+    await expect(service.syncMediaVoiceCatalog('id-asr-only')).rejects.toThrow(
+      /没有声明语音合成模型/,
+    )
+    // 落点判定前置于取数：不做一次注定被丢弃的厂商请求
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(repo.rows.get('id-asr-only')?.config_json).not.toContain('mediaDynamicParamOptions')
+  })
+
+  it('历史渠道（没有 mediaModelRefs）继续按回落表写入候选，保持改造前行为', async () => {
+    repo.rows.set('id-legacy-zhipu', {
+      id: 'id-legacy-zhipu',
+      provider_type: 'openai',
+      name: '智谱开放平台语音（历史数据）',
+      config_json:
+        '{"defaultModel":"glm-tts","modelIds":["glm-tts"],' +
+        '"mediaProvider":"zhipu","apiEndpoint":"https://open.bigmodel.cn/api/paas/v4"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-legacy-zhipu',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-zhipu' as never)
+    zhipuVoiceMock.fetchZhipuVoiceCatalog.mockResolvedValue({
+      options: [{ value: 'tongtong' }],
+      privateVoices: [],
+      officialCount: 1,
+      privateCount: 0,
+    })
+
+    const result = await service.syncMediaVoiceCatalog('id-legacy-zhipu')
+
+    expect(result.manifestId).toBe('zhipu:glm-tts')
+    expect(result.paramName).toBe('voice')
+    expect(repo.rows.get('id-legacy-zhipu')?.config_json).toContain('tongtong')
+  })
+
   it('updateProvider updates codexApiKind without changing model config', async () => {
     repo.rows.set('id-codex', {
       id: 'id-codex',

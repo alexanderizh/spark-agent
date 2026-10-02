@@ -82,6 +82,39 @@ describe('resolveVoiceCatalogRequest', () => {
     expect(plan.body).toBeUndefined()
   })
 
+  it('显式空数组不算覆盖：不会清空模板默认的私有音色路径', () => {
+    // 回归：sanitizeList 曾把 `privateListPaths: []` 当成覆盖项，
+    // MiniMax 的 voice_cloning / voice_generation 会被清空，私有音色全部丢失。
+    const empty = resolveVoiceCatalogRequest({
+      templateId: 'minimax',
+      defaults: minimaxDefaults,
+      config: { url: 'https://relay.example.com/voices', privateListPaths: [] },
+      apiEndpoint: 'https://api.minimaxi.com',
+      action: '同步音色',
+    })
+    expect(empty.privateListPaths).toEqual(['voice_cloning', 'voice_generation'])
+
+    // 全空白数组与空数组同口径（与 hasVoiceCatalogOverrides 的判定一致）
+    const blank = resolveVoiceCatalogRequest({
+      templateId: 'minimax',
+      defaults: minimaxDefaults,
+      config: { url: 'https://relay.example.com/voices', privateListPaths: ['', '  '] },
+      apiEndpoint: 'https://api.minimaxi.com',
+      action: '同步音色',
+    })
+    expect(blank.privateListPaths).toEqual(['voice_cloning', 'voice_generation'])
+
+    // 真给了值仍然照用（覆盖能力本身不能被削弱）
+    const overridden = resolveVoiceCatalogRequest({
+      templateId: 'minimax',
+      defaults: minimaxDefaults,
+      config: { url: 'https://relay.example.com/voices', privateListPaths: ['my_private'] },
+      apiEndpoint: 'https://api.minimaxi.com',
+      action: '同步音色',
+    })
+    expect(overridden.privateListPaths).toEqual(['my_private'])
+  })
+
   it('完整 URL 渠道在没给地址时报可读错误（不猜路径）', () => {
     expect(() =>
       resolveVoiceCatalogRequest({
@@ -92,7 +125,7 @@ describe('resolveVoiceCatalogRequest', () => {
         apiEndpointFullUrl: true,
         action: '音色目录同步',
       }),
-    ).toThrow(/完整 URL.*音色获取里填写完整请求地址/)
+    ).toThrow(/完整 URL.*音色获取.*里填写完整请求地址/)
   })
 
   it('完整 URL 渠道给了地址即可用（用户痛点出口）', () => {

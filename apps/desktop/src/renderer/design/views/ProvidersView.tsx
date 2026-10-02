@@ -39,6 +39,7 @@ import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
 import { ProviderQuotaSection } from './provider/ProviderQuotaSection'
 import { ProviderVoiceCatalogModal, ProviderVoiceSection } from './provider/ProviderVoiceSection'
+import { channelSupportsAudioSpeech } from './provider/voiceCatalogAvailability'
 import { useProviderQuotas } from './provider/useProviderQuotas'
 import { ProviderModelScheduleSection } from './provider/ProviderModelScheduleSection'
 import { appendCustomMediaModelRef } from './provider/providerCustomMediaModelRefs'
@@ -2721,6 +2722,12 @@ export function ProviderEditPanel({
   const isCustomMediaChannel =
     (form.modelType === 'image' || form.modelType === 'video' || form.modelType === 'voice') &&
     effectiveMediaProvider === 'custom'
+  // 「音色获取」的候选只对声明 audio.speech 的模型有意义；判定逻辑抽到
+  // `provider/voiceCatalogAvailability.ts`（三态语义与理由见该文件注释）。
+  const voiceCatalogAvailable = useMemo(
+    () => channelSupportsAudioSpeech(selectedMediaCatalogModels),
+    [selectedMediaCatalogModels],
+  )
   const showMediaDefaults = useMemo(() => {
     if (form.modelType === 'image') return true
     if (form.modelType === 'voice') return true
@@ -4218,8 +4225,9 @@ export function ProviderEditPanel({
                     showCustomAdapter={isCustomMediaChannel}
                     onOpenCustomAdapter={openNewCustomManifestEditor}
                     showVoiceCatalog={
-                      isCustomMediaChannel ||
-                      VOICE_CATALOG_TEMPLATE_VENDORS.includes(effectiveMediaProvider)
+                      voiceCatalogAvailable &&
+                      (isCustomMediaChannel ||
+                        VOICE_CATALOG_TEMPLATE_VENDORS.includes(effectiveMediaProvider))
                     }
                     voiceCatalogTip={
                       VOICE_CATALOG_TIPS[effectiveMediaProvider] ??

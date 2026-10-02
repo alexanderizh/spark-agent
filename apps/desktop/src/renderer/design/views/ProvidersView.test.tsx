@@ -2355,6 +2355,55 @@ describe('ProviderEditPanel 自定义语音模型', () => {
     expect(container.textContent).not.toContain('音色复刻')
   })
 
+  it('只声明语音识别的渠道不展示「音色获取」入口（候选无处可落）', async () => {
+    // 回归：纯 ASR / 音乐生成渠道曾照常展示入口，点同步要么报错，要么把候选写进
+    // 该渠道根本没启用的 manifest —— 界面看着能用、实际一个音色都看不到。
+    mocks.invokers.set(
+      'canvas:media-models:list',
+      vi.fn(async () => ({
+        models: [
+          {
+            manifestId: 'minimax:asr-1.0',
+            providerKind: 'minimax-hailuo',
+            modelId: 'asr-1.0',
+            effectiveModelId: 'asr-1.0',
+            displayName: 'asr-1.0',
+            domains: ['audio'],
+            invocationMode: 'sync',
+            capabilities: [
+              {
+                id: 'audio.transcription',
+                label: '语音识别',
+                input: {},
+                output: {},
+                paramSchema: {},
+              },
+            ],
+            sourceUrls: [],
+            enabled: true,
+          },
+        ],
+      })),
+    )
+    const profile = {
+      ...customVoiceProfile,
+      id: 'provider-asr-only',
+      name: 'MiniMax 语音转文字',
+      mediaProvider: 'minimax-hailuo',
+      mediaCapabilities: ['audio.transcription'],
+      mediaModelRefs: [{ manifestId: 'minimax:asr-1.0', modelId: 'asr-1.0', enabled: true }],
+      defaultModel: 'asr-1.0',
+      modelIds: ['asr-1.0'],
+      keystoreRef: 'minimax-asr-only',
+    }
+    await renderPanel('provider-asr-only', profile)
+
+    expect(container.textContent).not.toContain('音色获取')
+    expect(container.textContent).not.toContain('同步音色')
+    // 该渠道仍是语音渠道：与音色获取无关的入口不受影响（不做连带隐藏）
+    expect(container.textContent).toContain('自定义模型 / 适配器')
+  })
+
   it('打开「音色获取设置」弹层可看到模板选择与字段映射入口', async () => {
     await renderPanel('provider-minimax-voice-2', {
       ...customVoiceProfile,

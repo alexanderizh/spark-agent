@@ -121,7 +121,7 @@ export function resolveVoiceCatalogRequest(
     if (input.apiEndpointFullUrl === true) {
       throw new MediaProviderError(
         'invalid_input',
-        `该渠道配置为「完整 URL」模式，无法推导${action}地址；请在音色获取里填写完整请求地址后重试`,
+        `该渠道配置为「完整 URL」模式，无法推导${action}地址；请在「音色获取」里填写完整请求地址后重试`,
       )
     }
     if (!input.apiEndpoint.trim()) {
@@ -382,9 +382,15 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === target)
 }
 
+/**
+ * 列表类覆盖项：显式空数组（或全为空白）等同「未覆盖」，与 `hasVoiceCatalogOverrides`
+ * 的判定口径保持一致 —— 否则 `privateListPaths: []` 会清空模板默认的私有音色路径
+ * （MiniMax 的 voice_cloning / voice_generation 就此消失，私有音色全丢）。
+ */
 function sanitizeList(values: string[] | undefined, fallback: string[]): string[] {
   if (values === undefined) return [...fallback]
-  return values.map((value) => value.trim()).filter((value) => value.length > 0)
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0)
+  return cleaned.length > 0 ? cleaned : [...fallback]
 }
 
 function nonEmpty(value: string | null | undefined): value is string {

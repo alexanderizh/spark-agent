@@ -1754,7 +1754,8 @@ export class ProviderService {
    *
    * 顺序上先看用户配置的模板（未配置则按渠道厂商推断），再分三种情形：
    *   1. 未填任何覆盖项 → 走模板的内置实现（厂商专用 client 或内置静态表），
-   *      与改造前行为一致，既有渠道升级后不受影响；
+   *      与改造前行为一致，既有渠道升级后不受影响；但「完整 URL」渠道除外 ——
+   *      内置 client 推导不出子路径，这里直接给「去音色获取里填完整地址」的引导；
    *   2. 内置静态表且未覆盖 `url` → 直接返回静态候选，不发网络请求；
    *   3. 其余 → 组装通用请求计划（改过地址 / 字段映射，或自定义媒体渠道）。
    *
@@ -1790,6 +1791,17 @@ export class ProviderService {
         }
       }
     } else if (defaults.builtin != null && !overrides) {
+      // 厂商内置 client 只能从「标准 API Base URL」推导音色子路径。「完整 URL」渠道的
+      // 地址指向单个业务端点（中转 / 反代），交给内置 client 只会抛「请改用标准 API
+      // Base URL」—— 而那条路对这类渠道走不通。这里换成唯一可行的出口：音色获取本身
+      // 就支持填完整地址，直接引导用户去填。
+      if (target.apiEndpointFullUrl === true) {
+        log.warn(`refused 完整 URL channel for ${action}, id=${id}, template=${templateId}`)
+        throw new Error(
+          `该渠道配置为「完整 URL」模式，无法推导${action}地址；` +
+            '请在「音色获取」里填写完整请求地址后重试',
+        )
+      }
       return { templateId, builtin: defaults.builtin, target }
     }
     return {
@@ -1824,10 +1836,10 @@ export class ProviderService {
         ? undefined
         : normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
     const builtinById = new Map(BUILTIN_MEDIA_MODEL_MANIFESTS.map((item) => [item.id, item]))
+    const refs = (config?.mediaModelRefs ?? []).filter((ref) => ref.enabled !== false)
     const resolved: { manifestId: string; paramName: string }[] = []
     const seen = new Set<string>()
-    for (const ref of config?.mediaModelRefs ?? []) {
-      if (ref.enabled === false) continue
+    for (const ref of refs) {
       if (seen.has(ref.manifestId)) continue
       const manifest = ref.manifest ?? builtinById.get(ref.manifestId)
       if (!manifest) continue
@@ -1837,6 +1849,12 @@ export class ProviderService {
       resolved.push({ manifestId: ref.manifestId, paramName })
     }
     if (resolved.length > 0) return resolved
+    // 渠道**声明了模型**却一个都不带 audio.speech 时不再回落：回落表指向厂商固定
+    // manifest（如 minimax:speech-2.8-hd），而该渠道根本没启用它 —— 候选写进去谁都
+    // 读不到（resolveProfileMediaModels 只吐渠道声明的模型），界面却报「同步成功」。
+    // 此时返回空，由调用方抛可执行错误。只有完全没有 mediaModelRefs 的历史渠道才继续
+    // 用回落表，保持改造前「智谱写 zhipu:glm-tts、MiniMax 写两个 Speech 2.8」的行为。
+    if (refs.length > 0) return []
     return (VOICE_CATALOG_FALLBACK_TARGETS[templateId] ?? []).map((item) => ({ ...item }))
   }
 
@@ -1857,13 +1875,14 @@ export class ProviderService {
     manifestId: string
     paramName: string
   }> {
-    const snapshot = await this.fetchVoiceCatalogSnapshot(source)
+    // 先定落点再取数：渠道没有可写入的音色落点时立刻报错，不白跑一次厂商请求。
     const targets = this.resolveVoiceCatalogTargets(id, source.templateId)
     if (targets.length === 0) {
       throw new Error(
         '该渠道没有声明语音合成模型，无法写入音色候选：请先在渠道里添加声明 audio.speech 的模型',
       )
     }
+    const snapshot = await this.fetchVoiceCatalogSnapshot(source)
     const row = this.repo.get(id)
     const existing =
       row == null
