@@ -51,6 +51,10 @@ function canServeTextCompletion(profile: ProviderProfile): boolean {
   // image / video / voice / embedding 做不了文本补全；'text' 与 'multimodal' 都可以。
   const modelType = profile.modelType
   if (modelType != null && modelType !== 'text' && modelType !== 'multimodal') return false
+  // 渠道级 modelType 挡不住「渠道标成 multimodal 但默认模型是 embedding」的配置
+  // （2026-10-02 线上：「glm向量模型」modelType=multimodal + defaultModel=embedding-3，
+  // 每轮都白占一档并发一次注定 429 的请求），按默认模型名再兜一层。
+  if (/embed/i.test(profile.defaultModel)) return false
   if (profile.defaultModel.trim().length === 0) return false
   // 必须有可用的调用目标：自定义端点，或至少已有凭据（官方 Anthropic 无端点但有 Key）。
   const hasEndpoint = (profile.apiEndpoint?.trim().length ?? 0) > 0

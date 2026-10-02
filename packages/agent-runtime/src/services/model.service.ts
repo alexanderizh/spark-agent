@@ -256,6 +256,12 @@ export class ModelService {
       temperature?: number
       /** 覆盖 HTTP 超时（默认 30s）；分流器传 8s 与轮次取消信号先到者为准 */
       timeoutMs?: number
+      /**
+       * 覆盖瞬时失败自动重试次数（默认 1，服务记忆抽取的可靠性诉求）。
+       * 自带降级链的调用方（如空会话问候语：单档失败即换下一档）应传 0，
+       * 否则"12s 超时 × 2 次请求"会把单档耗时翻倍，拖垮整条降级链的时效。
+       */
+      maxRetries?: number
       /** 调用方取消信号（轮次取消联动） */
       abortSignal?: AbortSignal
     },
@@ -404,7 +410,8 @@ export class ModelService {
         timeoutMs: opts?.timeoutMs ?? COMPLETE_HTTP_TIMEOUT_MS,
         ...(opts?.abortSignal != null ? { signal: opts.abortSignal } : {}),
         // 该路径只做确定性记忆抽取；瞬时失败允许一次重试，避免单次抖动静默丢记忆。
-        maxRetries: 1,
+        // 调用方可显式传 maxRetries:0 关闭（问候语等自带逐档降级的场景）。
+        maxRetries: opts?.maxRetries ?? 1,
         retryBackoffMs: 250,
         onRetry: ({ retryCount, error }) => {
           log.warn(

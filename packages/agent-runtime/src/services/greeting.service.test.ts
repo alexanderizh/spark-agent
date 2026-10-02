@@ -78,11 +78,25 @@ function makeHarness(
 }
 
 describe('GreetingService — 模型档位回退链', () => {
-  it('优先使用记忆抽取小模型（不经默认渠道）', async () => {
+  it('当前会话模型是第一档（用户明确选中的模型优先）', async () => {
     const h = makeHarness({
       memory: { extractionProviderId: 'mem-prov', extractionModel: 'haiku' },
       defaultChats: [{ providerId: 'default-prov', model: 'gpt-4o', source: 'default-chat' }],
       sessionChat: { providerId: 'sess-prov', model: 'sess-model', source: 'session' },
+    })
+    const res = await h.service.getGreeting({ sessionId: 'sess-1' })
+    expect(res).toMatchObject({ ok: true, source: 'model', model: 'sess-model' })
+    expect(h.complete).toHaveBeenCalledTimes(1)
+    expect(h.complete.mock.calls[0]?.[1]).toMatchObject({
+      providerId: 'sess-prov',
+      model: 'sess-model',
+    })
+  })
+
+  it('无会话模型时优先使用记忆抽取小模型（不经默认渠道）', async () => {
+    const h = makeHarness({
+      memory: { extractionProviderId: 'mem-prov', extractionModel: 'haiku' },
+      defaultChats: [{ providerId: 'default-prov', model: 'gpt-4o', source: 'default-chat' }],
     })
     const res = await h.service.getGreeting({})
     expect(res).toMatchObject({ ok: true, source: 'model', model: 'haiku' })
@@ -93,21 +107,20 @@ describe('GreetingService — 模型档位回退链', () => {
     })
   })
 
-  it('无抽取模型配置时回退到默认对话模型', async () => {
-    const h = makeHarness({
-      sessionChat: { providerId: 'sess-prov', model: 'sess-model', source: 'session' },
-    })
+  it('无会话、无抽取配置时使用默认对话模型', async () => {
+    const h = makeHarness({})
     await h.service.getGreeting({})
     expect(h.complete.mock.calls[0]?.[1]).toMatchObject({ providerId: 'default-prov' })
   })
 
-  it('默认对话模型也没有时回退到当前会话模型', async () => {
+  it('会话模型解析失败（如自动路由会话 model_id 为空）时落到记忆抽取档', async () => {
     const h = makeHarness({
+      memory: { extractionProviderId: 'mem-prov', extractionModel: 'haiku' },
       defaultChats: [],
-      sessionChat: { providerId: 'sess-prov', model: 'sess-model', source: 'session' },
+      sessionChat: null,
     })
     await h.service.getGreeting({ sessionId: 'sess-1' })
-    expect(h.complete.mock.calls[0]?.[1]).toMatchObject({ providerId: 'sess-prov' })
+    expect(h.complete.mock.calls[0]?.[1]).toMatchObject({ providerId: 'mem-prov' })
   })
 
   it('档位全空 → ok:false，不调用模型（渲染端回退写死文案）', async () => {
@@ -326,6 +339,13 @@ describe('GreetingService — 请求参数', () => {
     const opts = h.complete.mock.calls[0]?.[1] as Record<string, unknown>
     expect(opts.temperature).toBeGreaterThan(0)
     expect(String(opts.systemPrompt)).toContain('问候语')
+  })
+
+  it('单档不做瞬时重试（maxRetries=0）：超时不应把单档耗时翻倍，降级发生在档间', async () => {
+    const h = makeHarness()
+    await h.service.getGreeting({})
+    const opts = h.complete.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(opts.maxRetries).toBe(0)
   })
 
   it('prompt 带当前时段作氛围参考，但明确不要用时段称呼开头', async () => {

@@ -78,6 +78,8 @@ export type GreetingCompletion = (
     maxTokens: number
     timeoutMs: number
     temperature: number
+    /** greeting 自带逐档降级，单档失败即换下一档，不留在档内重试。 */
+    maxRetries: number
   },
 ) => Promise<GreetingCompletionResult>
 
@@ -225,6 +227,9 @@ export class GreetingService {
         maxTokens: GREETING_MAX_OUTPUT_TOKENS,
         timeoutMs: GREETING_REQUEST_TIMEOUT_MS,
         temperature: GREETING_TEMPERATURE,
+        // 档内重试会把"12s 超时"翻倍成 ~24s 再轮到下一档（2026-10-02 线上事故：
+        // 火山方舟端点慢时整链拖到 30s+ 才回退写死文案），greeting 的降级发生在档间。
+        maxRetries: 0,
       })
       if (!result.available) return { ok: false, reason: result.reason }
       const text = sanitizeGreeting(result.text)
@@ -236,19 +241,22 @@ export class GreetingService {
   }
 
   /**
-   * 模型档位候选，按用户约定的优先级（前一级优先，同级内保持调用方给序）：
-   *   1. 记忆抽取小模型（settings memory.extractionProviderId/Model，通常便宜且快）
-   *   2. 配置的默认对话模型（默认渠道在前，其后是其它可用对话渠道）
-   *   3. 当前会话模型（会话级 model_id）
+   * 模型档位候选，按优先级（前一级优先，同级内保持调用方给序）：
+   *   1. 当前会话模型（会话级 provider_profile_id + model_id）：用户在会话里
+   *      明确选中的模型（自动路由解析结果或手选渠道），可用性最高，理应最先。
+   *      ⚠️ 曾排到最后，被 extraction + default-chat 占满 3 个尝试上限后
+   *      永远轮不到 —— 用户换会话模型重试也毫无效果（2026-10-02 线上事故）。
+   *   2. 记忆抽取小模型（settings memory.extractionProviderId/Model，通常便宜且快）
+   *   3. 配置的默认对话模型（默认渠道在前，其后是其它可用对话渠道）
    * 去重后按上限截断 —— 返回多个而不是一个，是为了让某档必然失败时还能继续降级。
    */
   private async resolveCandidates(sessionId?: string): Promise<GreetingModelRef[]> {
     const list: GreetingModelRef[] = []
+    const session = this.deps.getSessionChatModel(sessionId)
+    if (session != null) list.push(session)
     const extraction = this.resolveExtractionModel()
     if (extraction != null) list.push(extraction)
     list.push(...(await this.deps.getDefaultChatModels()))
-    const session = this.deps.getSessionChatModel(sessionId)
-    if (session != null) list.push(session)
 
     const seen = new Set<string>()
     return list
