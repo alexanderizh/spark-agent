@@ -34,14 +34,15 @@ const FAILURE_NOTICE_MAX_DETAIL_CHARS = 80
 export type TtsFailureNoticeReason = 'no-channel' | 'other'
 
 /**
- * 「无可用语音合成渠道/能力不支持」类错误的特征串：
+ * 「无可用语音合成渠道/能力不支持」类错误的特征串（按 error.message 匹配，不含错误码字面量）：
  * - media-router 无候选渠道：`No provider supports capability audio.speech`
  * - ttsSynthesis 渠道列表为空：`未配置支持语音合成的多媒体渠道`
- * - 各媒体适配器能力不匹配：`capability_not_supported`
+ * - 钉选模型 manifest 未声明该能力：`Model X does not support capability audio.speech`
+ *   （MediaProviderError 只把错误码存到 error.code，message 不含 `capability_not_supported` 字面量）
  */
 const NO_TTS_CHANNEL_PATTERNS: readonly string[] = [
   'No provider supports',
-  'capability_not_supported',
+  'does not support capability',
   '未配置支持语音合成的多媒体渠道',
 ]
 

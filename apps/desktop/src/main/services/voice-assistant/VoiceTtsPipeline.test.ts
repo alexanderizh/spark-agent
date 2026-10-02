@@ -68,9 +68,9 @@ describe('classifyTtsFailureReason', () => {
     expect(classifyTtsFailureReason('未配置支持语音合成的多媒体渠道')).toBe('no-channel')
   })
 
-  it('适配器能力不匹配特征串归为 no-channel', () => {
+  it('钉选模型未声明该能力的真实文案归为 no-channel', () => {
     expect(
-      classifyTtsFailureReason('request failed: capability_not_supported (audio.speech)'),
+      classifyTtsFailureReason('Model speech-1.0 does not support capability audio.speech'),
     ).toBe('no-channel')
   })
 
