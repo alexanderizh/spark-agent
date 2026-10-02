@@ -19,8 +19,8 @@ import './FilePreviewPanel.less'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
-import { MarkdownText } from '../views/ChatView'
 import { MarkdownImage } from './MarkdownImage'
+import { FileMarkdownView } from './FileMarkdownView'
 import type { FileViewerProps } from '@file-viewer/react'
 import type { PreviewFileType } from './ClickableFilePath'
 import { FileTypeIcon } from './FileDisplay'
@@ -414,8 +414,7 @@ export function FilePreviewPanel({
         return {
           ...prev,
           error:
-            formatViewerError(state.error) ??
-            'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
+            formatViewerError(state.error) ?? 'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
         }
       })
     },
@@ -550,9 +549,10 @@ export function FilePreviewPanel({
         )}
         {!previewLoading && !previewError && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
-            <MarkdownText
+            <FileMarkdownView
               content={content}
               {...(markdownImageBasePath != null ? { imageBasePath: markdownImageBasePath } : {})}
+              {...(workspaceRootPath != null ? { workspaceRootPath } : {})}
             />
           </div>
         )}

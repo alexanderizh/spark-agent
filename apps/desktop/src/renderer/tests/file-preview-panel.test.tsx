@@ -7,11 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FilePreviewPanel } from '../design/components/FilePreviewPanel'
 import { getPreviewFileType } from '../design/components/FileDisplay'
 import { ToastProvider } from '../design/components/Toast'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-
-vi.mock('../design/views/ChatView', () => ({
-  MarkdownText: ({
+vi.mock('../design/components/FileMarkdownView', () => ({
+  FileMarkdownView: ({
     content,
     imageBasePath,
   }: {

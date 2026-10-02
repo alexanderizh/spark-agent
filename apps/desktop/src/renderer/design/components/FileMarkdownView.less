@@ -1,0 +1,187 @@
+/**
+ * FileMarkdownView — 文件预览 Markdown 文档样式
+ *
+ * 基础排版继承聊天侧 .md-surface（views.css：标题/段落/列表/引用/表格/链接/图片），
+ * 这里只补「文档级」差异：README 等项目文档大量使用的内嵌 HTML 布局
+ * （<div align>、<table> 双列卡片、badge 图标行）、嵌套列表、脚注、任务列表、
+ * 以及预览面板更宽的阅读容器适配。
+ */
+
+.file-markdown-view {
+  max-width: 920px;
+  margin: 0 auto;
+  font-size: 14px;
+}
+
+/* ---------- 行内 code（.md-surface 未覆盖，预览文档里高频出现） ---------- */
+.file-markdown-view :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border-radius: var(--r-xs);
+  background: var(--md-inline-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* ---------- badge 与显式尺寸图片（shields.io、头像、Star History） ---------- */
+.file-markdown-view a > img,
+.file-markdown-view .md-rich-link > img {
+  display: inline-block;
+  margin: 0 2px;
+  vertical-align: middle;
+  border-radius: var(--r-xs);
+}
+
+.file-markdown-view img {
+  max-width: 100%;
+}
+
+/* ---------- 内嵌 HTML 布局（<div align="center">、<table> 图卡） ---------- */
+.file-markdown-view div[align='center'],
+.file-markdown-view p[align='center'] {
+  text-align: center;
+}
+
+.file-markdown-view div[align='center'] > :only-child,
+.file-markdown-view div[align='center'] img {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* HTML 布局表格单元格：垂直置顶 + 收敛内部段落间距（README 能力图解双列卡片） */
+.file-markdown-view td {
+  vertical-align: top;
+}
+
+.file-markdown-view td > p:last-child,
+.file-markdown-view td > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- 嵌套列表（任意层级缩进，父项下子列表不额外撑开） ---------- */
+.file-markdown-view ul,
+.file-markdown-view ol {
+  padding-left: 1.6em;
+}
+
+.file-markdown-view li > ul,
+.file-markdown-view li > ol {
+  margin: 0.25em 0;
+}
+
+/* ---------- 任务列表（GFM checkbox；与聊天 li.md-task 视觉一致） ---------- */
+.file-markdown-view li.task-list-item {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.file-markdown-view li.task-list-item > input[type='checkbox'] {
+  margin-top: 0.35em;
+  accent-color: var(--primary);
+  flex: none;
+}
+
+.file-markdown-view li.task-list-item > ul,
+.file-markdown-view li.task-list-item > ol {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 脚注（remark-gfm 生成 section.footnotes） ---------- */
+.file-markdown-view section.footnotes {
+  margin-top: 2em;
+  padding-top: 0.75em;
+  border-top: 1px solid var(--md-divider);
+  color: var(--md-muted);
+  font-size: 0.9em;
+}
+
+.file-markdown-view sup a,
+.file-markdown-view a[data-footnote-backref] {
+  font-size: 0.8em;
+  text-decoration: none;
+}
+
+/* ---------- 语义标签（kbd / mark / details） ---------- */
+.file-markdown-view kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--md-block-border);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--md-block-bg);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  line-height: 1.5;
+}
+
+.file-markdown-view mark {
+  padding: 0 0.2em;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: inherit;
+}
+
+.file-markdown-view details {
+  margin: 0.8em 0;
+  padding: 0.6em 0.9em;
+  border: 1px solid var(--md-block-border);
+  border-radius: var(--r-md);
+  background: var(--md-block-bg);
+}
+
+.file-markdown-view details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--md-heading);
+}
+
+.file-markdown-view details[open] > summary {
+  margin-bottom: 0.5em;
+}
+
+/* ---------- 标题锚点目标：滚动定位时给一点呼吸空间 ---------- */
+.file-markdown-view h1,
+.file-markdown-view h2,
+.file-markdown-view h3,
+.file-markdown-view h4,
+.file-markdown-view h5,
+.file-markdown-view h6 {
+  scroll-margin-top: 16px;
+}
+
+/* ---------- 链接兜底 ---------- */
+.file-markdown-view .md-anchor-link,
+.file-markdown-view .md-rich-link {
+  color: var(--md-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.file-markdown-view .md-anchor-link:hover,
+.file-markdown-view .md-rich-link:hover {
+  text-decoration: underline;
+}
+
+.file-markdown-view .md-unsafe-link {
+  color: var(--md-muted);
+}
+
+/* ---------- 表格列对齐（remark-gfm 对齐信息落在 align 属性上） ---------- */
+.file-markdown-view th[align='center'],
+.file-markdown-view td[align='center'] {
+  text-align: center;
+}
+
+.file-markdown-view th[align='right'],
+.file-markdown-view td[align='right'] {
+  text-align: right;
+}
+
+/* 窄面板（tab 形态）下收紧阅读宽度与字号，避免横向溢出 */
+@media (max-width: 720px) {
+  .file-markdown-view {
+    font-size: 13px;
+  }
+}
