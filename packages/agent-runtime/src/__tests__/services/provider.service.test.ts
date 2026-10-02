@@ -7,6 +7,8 @@ import {
   LOCAL_CODEX_CLI_PROVIDER_ID,
   LOCAL_CODEX_CLI_PROVIDER_NAME,
   createBasicCustomMediaManifest,
+  ProviderExportPayloadSchema,
+  PROVIDER_EXPORT_VERSION,
 } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
 
@@ -2346,5 +2348,128 @@ describe('ProviderService · 模型级设置（modelSettings）', () => {
     const imported = (await importedService.listProviders()).find((item) => item.name === created.name)
     expect(imported?.modelSettings).toEqual({ 'glm-5.3': { reasoningEffort: 'max', hidden: true } })
     expect(imported?.modelContextWindows).toEqual({ 'glm-5.3': 400_000 })
+  })
+})
+
+describe('ProviderService · 导入导出字段完整性', () => {
+  let repo: ReturnType<typeof makeRepo>
+  let service: ProviderService
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    repo = makeRepo()
+    service = new ProviderService(repo as never)
+  })
+
+  const seedBuiltInLocalCliRow = (): void => {
+    repo.rows.set(LOCAL_CLI_PROVIDER_ID, {
+      id: LOCAL_CLI_PROVIDER_ID,
+      provider_type: 'anthropic',
+      name: LOCAL_CLI_PROVIDER_NAME,
+      config_json: JSON.stringify({
+        defaultModel: LOCAL_CLI_DEFAULT_MODEL,
+        modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+      }),
+      enabled: 1,
+      keystore_ref: '',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+  }
+
+  it('导出 / 导入保持完整 URL 开关、执行器开关与定时禁用时段对称', async () => {
+    const created = await service.createProvider({
+      name: '对称渠道',
+      provider: 'openai',
+      defaultModel: 'glm-5.3',
+      modelIds: ['glm-5.3', 'glm-5.3-flash'],
+      apiEndpoint: 'https://api.example.com/step_plan/v3/messages',
+      apiKey: 'sk-symmetry',
+    })
+
+    // 未设置时导出文件里不出现这三个键（缺省语义 = 关 / 无定时）
+    const baseline = await service.exportProviders([created.id])
+    expect(baseline.version).toBe(PROVIDER_EXPORT_VERSION)
+    expect(baseline.profiles[0]).not.toHaveProperty('apiEndpointFullUrl')
+    expect(baseline.profiles[0]).not.toHaveProperty('useSparkExecutor')
+    expect(baseline.profiles[0]).not.toHaveProperty('modelSchedules')
+
+    const schedules = [
+      { modelId: 'glm-5.3', enabled: true, days: [1, 2, 3], startMinute: 840, endMinute: 1080 },
+    ]
+    await service.updateProvider({
+      id: created.id,
+      apiEndpointFullUrl: true,
+      useSparkExecutor: true,
+      modelSchedules: schedules,
+    })
+
+    const exported = await service.exportProviders([created.id])
+    // 导出的 payload 必须能通过 schema 解析（v3 字段是 schema 的合法成员）
+    expect(ProviderExportPayloadSchema.parse(exported).profiles[0]?.apiEndpointFullUrl).toBe(true)
+    expect(exported.profiles[0]?.apiEndpointFullUrl).toBe(true)
+    expect(exported.profiles[0]?.useSparkExecutor).toBe(true)
+    expect(exported.profiles[0]?.modelSchedules).toEqual(schedules)
+
+    const importedRepo = makeRepo()
+    const importedService = new ProviderService(importedRepo as never)
+    const result = await importedService.importProviders(exported, 'merge')
+    expect(result).toMatchObject({ imported: 1, skipped: 0, errors: [] })
+
+    const importedRow = [...importedRepo.rows.values()][0]
+    expect(importedRow).toBeDefined()
+    const importedConfigJson = String(importedRow?.config_json ?? '{}')
+    const importedConfig = JSON.parse(importedConfigJson) as Record<string, unknown>
+    expect(importedConfig.apiEndpointFullUrl).toBe(true)
+    expect(importedConfig.useSparkExecutor).toBe(true)
+    expect(importedConfig.modelSchedules).toEqual(schedules)
+    // 请求地址决定性字段一并还原，导入后不会退化成自动拼裁
+    expect(importedConfig.apiEndpoint).toBe('https://api.example.com/step_plan/v3/messages')
+  })
+
+  it('导出时跳过内置本地 CLI 渠道（全部导出与按 id 导出都不写入）', async () => {
+    seedBuiltInLocalCliRow()
+    const custom = await service.createProvider({
+      name: '普通渠道',
+      provider: 'openai',
+      defaultModel: 'gpt-5',
+      modelIds: ['gpt-5'],
+      apiKey: 'sk-normal',
+    })
+
+    expect((await service.exportProviders([])).profiles).toEqual([
+      expect.objectContaining({ name: '普通渠道', id: custom.id }),
+    ])
+    expect((await service.exportProviders([LOCAL_CLI_PROVIDER_ID])).profiles).toHaveLength(0)
+  })
+
+  it('导入时拒绝覆盖内置本地 CLI 渠道', async () => {
+    seedBuiltInLocalCliRow()
+    const payload = ProviderExportPayloadSchema.parse({
+      version: PROVIDER_EXPORT_VERSION,
+      exportedAt: '2026-10-02T00:00:00.000Z',
+      exportedBy: 'spark-agent',
+      profiles: [
+        {
+          id: 'foreign-local-cli',
+          name: LOCAL_CLI_PROVIDER_NAME,
+          provider: 'anthropic',
+          apiEndpoint: 'https://evil.example',
+          defaultModel: 'hacked',
+          modelIds: ['hacked'],
+          supportsMillionContext: false,
+          isDefault: false,
+          useSparkExecutor: true,
+        },
+      ],
+    })
+
+    const result = await service.importProviders(payload, 'replace')
+    expect(result).toMatchObject({ imported: 0, skipped: 1 })
+    expect(result.errors[0]).toContain('不能被导入覆盖')
+    const row = repo.rows.get(LOCAL_CLI_PROVIDER_ID)
+    expect(String(row?.config_json)).not.toContain('evil.example')
+    expect(String(row?.config_json)).not.toContain('hacked')
   })
 })

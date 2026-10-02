@@ -24,15 +24,31 @@ import {
   AutoRouterConfigSchema,
   RouterReasoningEffortSchema,
 } from './auto-router-config.js'
+import { ProviderModelScheduleSchema } from './provider-model-schedule.js'
 
-/** 当前 schema 版本。导入时校验；不匹配则拒绝 */
-export const PROVIDER_EXPORT_VERSION = 2 as const
+/**
+ * 当前 schema 版本。导入时校验；不匹配则拒绝。
+ *
+ * 版本历史：
+ *   - v1：最小渠道字段（无 apiKey）
+ *   - v2：增加 apiKey（便于整机迁移备份）
+ *   - v3：补齐决定请求地址与执行链路的开关（apiEndpointFullUrl / useSparkExecutor）
+ *         以及模型定时禁用时段（modelSchedules）
+ */
+export const PROVIDER_EXPORT_VERSION = 3 as const
 
-/** 支持的版本范围：v1（不含 apiKey）和 v2（含 apiKey）均可导入 */
-export const ProviderExportVersionSchema = z.union([
-  z.literal(1),
-  z.literal(PROVIDER_EXPORT_VERSION),
-])
+/**
+ * 支持的导入版本白名单：v1 / v2 / v3 均可导入。
+ *
+ * 这里必须显式列出全部历史版本，不要写成「历史版本 + 当前常量」——那种写法在下次
+ * 升版本时会把上一版静默挤出白名单，旧导出文件被误判为「版本不支持」。
+ * 升到 v4 时在列表里追加 4、保留 3；导出恒用 `PROVIDER_EXPORT_VERSION`，
+ * 两者是否一致由「ProviderService · 导入导出字段完整性」用例守护。
+ *
+ * 高于白名单的版本会在 zod 字面量处直接校验失败，避免旧版 App 静默丢弃
+ * 决定请求地址的字段。
+ */
+export const ProviderExportVersionSchema = z.union([z.literal(1), z.literal(2), z.literal(3)])
 
 const ProviderIconStyleSchema = z.enum(['avatar', 'mono'])
 const ProviderIconConfigSchema = z.object({
@@ -47,6 +63,8 @@ const ProviderIconConfigSchema = z.object({
  *   - apiKey 随 profile 一起导出（方便迁移备份）
  *   - 不导出 keystoreRef（导入时新建）
  *   - 不导出 createdAt（导入时新生成）
+ *   - 不导出 mediaApiEndpoint / availableModelIds（仅平台受管渠道自动写入，而受管渠道不参与导出）
+ *   - 不导出 mediaDynamicParamOptions（厂商同步的音色等动态候选，导入后可在渠道内一键重同步）
  *   - provider 保留 Spark 文本模型 provider kind，避免第三方 OpenAI-compatible 配置导出后丢语义
  */
 export const ProviderExportProfileSchema = z.object({
@@ -65,6 +83,8 @@ export const ProviderExportProfileSchema = z.object({
   enabled: z.boolean().optional(),
   /** 自定义 API Endpoint；null 表示使用默认 */
   apiEndpoint: z.string().min(1).max(500).nullable(),
+  /** apiEndpoint 为完整请求地址：各调用点跳过自动拼裁，原样请求 */
+  apiEndpointFullUrl: z.boolean().optional(),
   /** AutoRouter 行无默认模型（恒为空串）；普通渠道始终非空。 */
   defaultModel: z.string().min(0).max(200),
   modelIds: z.array(z.string().min(1).max(200)).max(200),
@@ -89,6 +109,8 @@ export const ProviderExportProfileSchema = z.object({
         .strict(),
     )
     .optional(),
+  /** 模型定时禁用时段（峰谷定价规避）；缺省视为无定时 */
+  modelSchedules: z.array(ProviderModelScheduleSchema).max(200).optional(),
   /** 文本任务默认最大输出 tokens */
   maxTokens: z.number().int().min(0).max(10_000_000).optional(),
   isDefault: z.boolean(),
@@ -98,6 +120,8 @@ export const ProviderExportProfileSchema = z.object({
   opusModel: z.string().min(1).max(200).nullable().optional(),
   /** OpenAI/Codex API 风格 */
   codexApiKind: z.enum(['chat', 'responses', 'embedding']).optional(),
+  /** 该渠道会话默认使用 Spark 执行器（自研 spark-engine） */
+  useSparkExecutor: z.boolean().optional(),
   /** 模型能力类型 */
   modelType: z
     .enum(['image', 'text', 'multimodal', 'voice', 'video'])
@@ -135,7 +159,7 @@ export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>
  *
  * 格式示例：
  * {
- *   "version": 2,
+ *   "version": 3,
  *   "exportedAt": "2026-06-03T12:00:00.000Z",
  *   "exportedBy": "spark-agent",
  *   "profiles": [ { ..., "apiKey": "sk-..." }, ... ]

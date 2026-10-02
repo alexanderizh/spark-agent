@@ -2135,6 +2135,9 @@ export class ProviderService {
     for (const row of rows) {
       if (idSet !== null && !idSet.has(row.id)) continue
       if (isManagedProviderRow(row)) continue
+      // 内置本地 CLI 渠道由本机宿主 CLI 提供能力，跨机导入只会造出等名假渠道
+      // （且 replace 模式会去改写内置行），与受管渠道一致跳过。
+      if (isBuiltInLocalCliProvider(row)) continue
       if (row.provider_type === AUTO_ROUTER_PROVIDER_TYPE) {
         profiles.push(rowToAutoRouterExportProfile(row, rows))
         continue
@@ -2231,6 +2234,12 @@ export class ProviderService {
           if (isManagedProviderRow(match)) {
             result.skipped += 1
             result.errors.push(`平台官方 Provider「${profile.name}」不能被导入覆盖`)
+            continue
+          }
+          // 内置本地 CLI 渠道由本机宿主 CLI 提供能力，不接受导出文件改写其配置。
+          if (isBuiltInLocalCliProvider(match)) {
+            result.skipped += 1
+            result.errors.push(`内置「${profile.name}」不能被导入覆盖`)
             continue
           }
           if (mode === 'merge') {
@@ -2918,12 +2927,15 @@ function rowToExportProfile(
     row.provider_type,
     JSON.parse(row.config_json) as ProviderConfig,
   )
+  // 时段数组按入库口径清洗后再落盘/导出，保证导出文件里的形状与运行时一致。
+  const modelSchedules = sanitizeModelSchedules(config.modelSchedules)
   return {
     id: row.id,
     name: row.name,
     provider: normalizeProviderType(row.provider_type),
     enabled: row.enabled === 1,
     apiEndpoint: config.apiEndpoint ?? null,
+    ...(config.apiEndpointFullUrl === true && { apiEndpointFullUrl: true }),
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
@@ -2934,6 +2946,8 @@ function rowToExportProfile(
       modelContextWindows: config.modelContextWindows,
     }),
     ...(config.modelSettings !== undefined && { modelSettings: config.modelSettings }),
+    ...(config.useSparkExecutor === true && { useSparkExecutor: true }),
+    ...(modelSchedules.length > 0 && { modelSchedules }),
     ...(typeof config.maxTokens === 'number' &&
       config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     isDefault: row.is_default === 1,
@@ -2964,6 +2978,9 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   modelIds: string[]
   providerIcon?: ProviderIconConfig
   apiEndpoint?: string
+  apiEndpointFullUrl?: boolean
+  useSparkExecutor?: boolean
+  modelSchedules?: ProviderModelSchedule[]
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   contextWindow?: number
@@ -2982,11 +2999,17 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   mediaDefaults?: ProviderMediaDefaults
   mediaModelRefs?: ProviderMediaModelRef[]
 } {
+  // 与 rowToExportProfile 共用同一清洗口径，非法时段在导入侧直接被丢弃。
+  const modelSchedules = sanitizeModelSchedules(profile.modelSchedules)
   return {
     defaultModel: profile.defaultModel,
     modelIds: profile.modelIds,
     ...(profile.providerIcon !== undefined && { providerIcon: profile.providerIcon }),
     ...(profile.apiEndpoint != null && { apiEndpoint: profile.apiEndpoint }),
+    // 开关按「true 才落键」复用 create/update 的落库口径（缺省 = false）。
+    ...(profile.apiEndpointFullUrl === true && { apiEndpointFullUrl: true }),
+    ...(profile.useSparkExecutor === true && { useSparkExecutor: true }),
+    ...(modelSchedules.length > 0 && { modelSchedules }),
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,
     ...(typeof profile.contextWindow === 'number' &&

@@ -734,7 +734,7 @@ export const docsTopics: DocsTopicMeta[] = [
       'tool-package secret',
     ],
     readTime: 24,
-    updatedAt: '2026-09-19',
+    updatedAt: '2026-10-02',
     icon: 'KeyRound',
     relatedSlugs: ['governance', 'mcp-skills', 'custom-tools', 'desktop-guide'],
   },

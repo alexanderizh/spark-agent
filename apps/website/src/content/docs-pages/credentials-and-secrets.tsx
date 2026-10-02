@@ -908,7 +908,9 @@ const Body = () => (
     <p>
       <code>exportProviders</code> 的文档注释直说：「apiKey 从 Keychain 读取后附带到导出 profile
       中」。 导出 schema 里 <code>apiKey</code> 是合法字段，导出格式版本{' '}
-      <code>PROVIDER_EXPORT_VERSION = 2</code>， 注释标注「v2（含 apiKey）」。
+      <code>PROVIDER_EXPORT_VERSION = 3</code>（v2 起含 apiKey）， v3 起额外导出{' '}
+      <code>apiEndpointFullUrl</code>、<code>useSparkExecutor</code> 与 <code>modelSchedules</code>{' '}
+      三项，保证导入端不丢字段。
     </p>
     <p>
       「导出到文件」的 IPC 处理是：弹保存对话框（默认文件名
@@ -2363,7 +2365,7 @@ export default {
     {
       question: '我把 Provider 配置导出成 JSON 分享给同事，里面会有 Key 吗？',
       answer:
-        '会有，而且是明文。exportProviders 会从 keystore 读出明文 Key 并附带到导出 profile 里（导出格式 v2 的注释就写着「含 apiKey」），导出到文件时也没有任何「包含密钥」的提示。要分享配置请改用工作流包 .sparkflow，它会把 MCP 配置里的密钥替换成 {{secret:路径}} 占位符。注意工作流包只脱敏 MCP 配置，技能文件与 Agent 提示词是原样打包的。',
+        '会有，而且是明文。exportProviders 会从 keystore 读出明文 Key 并附带到导出 profile 里（导出格式从 v2 起就注明「含 apiKey」），导出到文件时也没有任何「包含密钥」的提示。要分享配置请改用工作流包 .sparkflow，它会把 MCP 配置里的密钥替换成 {{secret:路径}} 占位符。注意工作流包只脱敏 MCP 配置，技能文件与 Agent 提示词是原样打包的。',
     },
     {
       question: '退出登录会删掉我配的 Provider Key 吗？',
