@@ -5,9 +5,9 @@
  * 清洗、逐档降级）全部在 @spark/agent-runtime 的 GreetingService 里，便于单测。
  *
  * 模型档位（由 GreetingService 按序逐个尝试）：
- *   1. 记忆抽取小模型  settings memory.extractionProviderId + extractionModel
- *   2. 默认对话模型    默认渠道的 defaultModel（其后是其它可用对话渠道）
- *   3. 当前会话模型    sessions.model_id（配合 sessions.provider_profile_id）
+ *   1. 当前会话模型    sessions.model_id（配合 sessions.provider_profile_id）
+ *   2. 记忆抽取小模型  settings memory.extractionProviderId + extractionModel
+ *   3. 默认对话模型    默认渠道的 defaultModel（其后是其它可用对话渠道）
  * 全部落空或全部调用失败 → 返回 ok:false，渲染端回退到写死的「{时段}好，继续推进」。
  */
 
@@ -18,7 +18,11 @@ import {
   type GreetingCompletion,
   type GreetingModelRef,
 } from '@spark/agent-runtime'
-import { isBuiltInLocalCliProvider, type ProviderProfile } from '@spark/protocol'
+import {
+  canProviderHoldChatDefault,
+  isBuiltInLocalCliProvider,
+  type ProviderProfile,
+} from '@spark/protocol'
 import { createLogger } from '@spark/shared'
 import {
   ModelProfileRepository,
@@ -48,13 +52,12 @@ const log = createLogger('greeting-ipc')
 function canServeTextCompletion(profile: ProviderProfile): boolean {
   // 本地 CLI 伪渠道只服务于 claude / codex 适配器进程，不能直接发 HTTP 补全。
   if (isBuiltInLocalCliProvider(profile)) return false
-  // image / video / voice / embedding 做不了文本补全；'text' 与 'multimodal' 都可以。
-  const modelType = profile.modelType
-  if (modelType != null && modelType !== 'text' && modelType !== 'multimodal') return false
-  // 渠道级 modelType 挡不住「渠道标成 multimodal 但默认模型是 embedding」的配置
-  // （2026-10-02 线上：「glm向量模型」modelType=multimodal + defaultModel=embedding-3，
-  // 每轮都白占一档并发一次注定 429 的请求），按默认模型名再兜一层。
-  if (/embed/i.test(profile.defaultModel)) return false
+  // image / video / voice 做不了文本补全；'text' 与 'multimodal' 都可以。向量渠道
+  // 在本项目没有独立的 modelType 档位（线上「glm向量模型」的 modelType 就是 multimodal），
+  // 唯一可靠判据是协议格式 codexApiKind === 'embedding'——它只会走 /embeddings 端点，
+  // 做不了 /chat/completions 文本补全。复用 canProviderHoldChatDefault（auto-router
+  // 执行器资格、默认渠道资格同款口径），不按模型名猜「含 embed」。
+  if (!canProviderHoldChatDefault(profile)) return false
   if (profile.defaultModel.trim().length === 0) return false
   // 必须有可用的调用目标：自定义端点，或至少已有凭据（官方 Anthropic 无端点但有 Key）。
   const hasEndpoint = (profile.apiEndpoint?.trim().length ?? 0) > 0
