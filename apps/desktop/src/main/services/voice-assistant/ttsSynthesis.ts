@@ -51,12 +51,27 @@ export interface TtsSynthesisResult {
 export interface TtsResolvedRoute {
   /** 解析到的渠道 profile id（显式设置优先，取不到回落 null，缓存跳过） */
   providerId: string | null
-  /** 解析后的实际模型 id（显式 ttsModelId 优先，否则渠道默认模型；取不到为 null） */
+  /** 解析后的实际模型 id（显式 ttsModelId → 渠道首个 speech manifest → 渠默认模型；取不到为 null） */
   modelId: string | null
   /** 实际下发给渠道的合成参数（speed/voice/vol/pitch/emotion） */
   modelParams: Record<string, unknown>
   /** 下发给 invoke 的渠道锁定（仅显式设置时下发） */
   invokeProviderProfileId: string | null
+}
+
+/**
+ * 渠道默认 TTS 模型口径：与 media-router invoke 的 effectiveModelId 完全同源——
+ * 显式 modelId 优先，其后首个声明 audio.speech 的 manifest.modelId（invoke 内
+ * resolveManifestMatch 无显式 modelId 时取 candidates[0]），最后回落渠道
+ * defaultModel。缓存键必须用这个口径：manifest 增删/换序时 defaultModel 可能
+ * 没变但实际请求模型已变，键若只看 defaultModel 会命中旧模型音频。
+ */
+function effectiveSpeechModelId(provider: MediaProviderProfile | undefined): string | null {
+  if (provider == null) return null
+  const manifestModelId = provider.mediaModelManifests?.find((manifest) =>
+    manifest.capabilities.some((item) => item.id === 'audio.speech'),
+  )?.modelId
+  return manifestModelId ?? provider.defaultModel ?? null
 }
 
 /**
@@ -87,7 +102,7 @@ export function resolveTtsRoute(
   }
   return {
     providerId: chosen?.id ?? settings.ttsProviderProfileId ?? null,
-    modelId: settings.ttsModelId ?? chosen?.defaultModel ?? null,
+    modelId: settings.ttsModelId ?? effectiveSpeechModelId(chosen),
     modelParams,
     invokeProviderProfileId: settings.ttsProviderProfileId ?? null,
   }

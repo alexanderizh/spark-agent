@@ -3,7 +3,7 @@
  *
  * 覆盖：缓存键稳定性与因子敏感（渠道/模型/参数/文本任一变化即失效）、put/get 命中、
  * 空文件与外部删除按未命中处理、initialize 扫盘建索引（忽略非缓存文件）、同键覆盖、
- * 条数上限与 LRU touch 淘汰、put 源不存在回退。
+ * 条数上限与 LRU touch 淘汰、启动扫盘存量超额的一次性 prune 收敛、put 源不存在回退。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -179,6 +179,34 @@ describe('createTtsSpeechCache', () => {
     expect(existsSync(join(cacheDir, `${keyB}.wav`))).toBe(true)
     expect(existsSync(join(cacheDir, `${keyC}.wav`))).toBe(true)
     expect(await cache.get(keyA)).toBeNull()
+  })
+
+  it('启动扫盘一次性面对存量超额：一次 prune 收敛到 maxEntries（不残留超额）', async () => {
+    // 逐条 put 时每次最多超 1 条，旧实现偶然删对；initialize 扫盘（存量远超上限）
+    // 只触发一次 prune，才真正检验淘汰收敛：index.delete 已让 index.size 反映
+    // 真实剩余，break 条件不能再扣 removed，否则只删约应删的一半
+    const keyA = computeTtsCacheKey(keyParts({ text: 'A' }))
+    const keyB = computeTtsCacheKey(keyParts({ text: 'B' }))
+    const keyC = computeTtsCacheKey(keyParts({ text: 'C' }))
+    const keyD = computeTtsCacheKey(keyParts({ text: 'D' }))
+    const keyE = computeTtsCacheKey(keyParts({ text: 'E' }))
+    await mkdir(cacheDir, { recursive: true })
+    for (const key of [keyA, keyB, keyC, keyD, keyE]) {
+      await writeFile(join(cacheDir, `${key}.wav`), 'x')
+      await sleep(20) // mtime 升序决定淘汰顺序
+    }
+    const cache = createTtsSpeechCache({ cacheDir, maxEntries: 2 })
+    await cache.initialize()
+
+    // initialize 内部 fire-and-forget prune：等磁盘收敛
+    await waitFor(() => !existsSync(join(cacheDir, `${keyC}.wav`)))
+    await sleep(50)
+    expect(existsSync(join(cacheDir, `${keyA}.wav`))).toBe(false)
+    expect(existsSync(join(cacheDir, `${keyB}.wav`))).toBe(false)
+    expect(existsSync(join(cacheDir, `${keyD}.wav`))).toBe(true)
+    expect(existsSync(join(cacheDir, `${keyE}.wav`))).toBe(true)
+    expect(await cache.get(keyE)).toBe(join(cacheDir, `${keyE}.wav`))
+    expect(await cache.get(keyC)).toBeNull()
   })
 
   it('LRU touch：命中刷新 mtime，被访问过的旧项晚于未访问项淘汰', async () => {

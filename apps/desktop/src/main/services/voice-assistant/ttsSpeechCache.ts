@@ -95,6 +95,8 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
   /** 内存索引：磁盘是唯一事实源，索引仅用于免 readdir 的快速查找 */
   const index = new Map<string, TtsCacheEntry>()
   let initialized = false
+  /** prune 在途 Promise：连续 put（长消息几十句）并发触发时复用同一次淘汰，避免快照交叉早停 */
+  let pruneInFlight: Promise<void> | null = null
 
   function cacheFilePath(key: string, ext: string): string {
     const normalized = ext.startsWith('.') ? ext : `.${ext}`
@@ -130,7 +132,7 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
       return
     }
     log.info(`[voice-assistant] tts cache loaded (${index.size} entries, ${formatMb(sumSizes())})`)
-    void prune()
+    void pruneOnce()
   }
 
   async function get(key: string): Promise<string | null> {
@@ -147,6 +149,8 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
       index.delete(key) // 空文件/目录占位：当未命中，等待重合成覆盖
       return null
     }
+    // 以磁盘实际体积校准索引：文件被外部替换时体积统计不失真，prune 估算才准
+    entry.size = info.size
     // 近似 LRU：刷新 mtime 作为最近使用标记；touch 失败不影响本次命中
     try {
       const now = new Date()
@@ -180,7 +184,7 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
       log.info(
         `[voice-assistant] tts cached (key=${shortKey(key)}, ${(info.size / 1024).toFixed(1)} KB)`,
       )
-      void prune()
+      void pruneOnce()
       return destPath
     } catch (error) {
       // rename 成功但 stat 失败（几乎不可能）：清索引防脏，调用方回退原产物仍在盘上
@@ -188,6 +192,19 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
       log.warn(`[voice-assistant] tts cache stat failed (key=${shortKey(key)}): ${String(error)}`)
       return null
     }
+  }
+
+  /**
+   * 并发去重：prune 在途时复用同一次淘汰（put 与扫盘回调可能并发触发）。
+   * 落败的并发触发不用再跑：磁盘状态即目标状态，prune 天然幂等。
+   */
+  function pruneOnce(): Promise<void> {
+    if (pruneInFlight == null) {
+      pruneInFlight = prune().finally(() => {
+        pruneInFlight = null
+      })
+    }
+    return pruneInFlight
   }
 
   /** 惰性容量控制：双上限先到先淘汰（mtime 升序删最旧），并发触发安全 */
@@ -203,7 +220,9 @@ export function createTtsSpeechCache(options: TtsSpeechCacheOptions): TtsSpeechC
     let freed = 0
     let currentBytes = totalBytes
     for (const [key, entry] of sorted) {
-      if (index.size - removed <= targetCount && currentBytes <= maxBytes) break
+      // index.delete 已使 index.size 反映真实剩余，不能再扣 removed：否则条数超限
+      // 时只淘汰约应删的一半，缓存规模长期收敛不到目标上限
+      if (index.size <= targetCount && currentBytes <= maxBytes) break
       try {
         await rm(entry.filePath, { force: true })
       } catch {

@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaProviderProfile, MediaRouterService } from '@spark/agent-runtime'
+import type { MediaModelManifest } from '@spark/protocol'
 import { DEFAULT_VOICE_ASSISTANT_SETTINGS } from '@spark/protocol'
 
 // ttsSpeechCache.ts 由 ttsSynthesis 引入（computeTtsCacheKey 为运行时导入），模块
@@ -300,6 +301,68 @@ describe('synthesizeSpeechText 缓存分支', () => {
     )
     expect(harness.mediaRouter.invoke).toHaveBeenCalledTimes(2)
     expect(cache.put).toHaveBeenCalledTimes(2)
+  })
+
+  it('缓存键模型口径与 invoke 同源：未显式选模型时取首个 speech manifest，而非 defaultModel', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    // 渠道设置 defaultModel=hd，但 invoke（resolveManifestMatch 无显式 modelId 时取
+    // candidates[0]）实际请求 turbo。键必须记 turbo：manifest 换序/增删时 defaultModel
+    // 可能没变而请求模型已变，键若只跟 defaultModel 会错命中旧模型音频
+    const provider = makeProvider({
+      id: 'provider-tts',
+      defaultModel: 'speech-hd',
+      mediaModelManifests: [
+        { modelId: 'speech-turbo', capabilities: [{ id: 'audio.speech' }] },
+        { modelId: 'speech-hd', capabilities: [{ id: 'audio.speech' }] },
+      ] as unknown as MediaModelManifest[],
+    })
+    await synthesizeSpeechText(
+      {
+        ...makeTarget(harness, {}, [provider]),
+        useCache: true,
+        speechCache: cache,
+      },
+      sentence,
+    )
+    expect(cache.put).toHaveBeenCalledWith(
+      computeTtsCacheKey({
+        providerId: 'provider-tts',
+        modelId: 'speech-turbo',
+        params: { speed: 1.0 },
+        text: sentence,
+      }),
+      '/virtual/tts/a.wav',
+    )
+  })
+
+  it('显式 ttsModelId 优先于 manifest 口径进入缓存键', async () => {
+    const harness = makeHarness({ filePath: '/virtual/tts/a.wav' })
+    const cache = makeFakeCache()
+    const provider = makeProvider({
+      id: 'provider-tts',
+      defaultModel: 'speech-hd',
+      mediaModelManifests: [
+        { modelId: 'speech-turbo', capabilities: [{ id: 'audio.speech' }] },
+      ] as unknown as MediaModelManifest[],
+    })
+    await synthesizeSpeechText(
+      {
+        ...makeTarget(harness, { ttsModelId: 'speech-explicit' }, [provider]),
+        useCache: true,
+        speechCache: cache,
+      },
+      sentence,
+    )
+    expect(cache.put).toHaveBeenCalledWith(
+      computeTtsCacheKey({
+        providerId: 'provider-tts',
+        modelId: 'speech-explicit',
+        params: { speed: 1.0 },
+        text: sentence,
+      }),
+      '/virtual/tts/a.wav',
+    )
   })
 
   it('put 失败（返回 null）：回退临时产物路径，播放不受影响', async () => {
