@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" width="960" height="660" role="img" aria-label="上下文工程：目录元数据按需加载、超长工具输出归档读回、压缩无损档案与跨会话只读引用">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 11px; fill: #33415c; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .num { font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .div { stroke: #dde3f1; stroke-width: 1.5; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .st { fill: #c3cad8; } .bd { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="660"/>
+
+  <text class="h1" x="40" y="38">上下文工程 · 长上下文的节流与可信</text>
+  <text class="sub" x="40" y="60">目录只进元数据、全文按需加载；超长输出归档成制品、按需读回；压缩只追加事件、档案无损可检；跨会话只读引用须显式授权</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 长上下文主链路：注入、归档与逃生门</text>
+  <line class="div" x1="60" y1="126" x2="60" y2="510"/>
+
+  <circle cx="60" cy="134" r="13" fill="#5b6cff"/><text class="num" x="60" y="139" text-anchor="middle">1</text>
+  <rect class="card" x="84" y="112" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="139">system prompt 只进目录元数据：技能为 id + 名称 + 描述（截 220 字符）</text>
+
+  <circle cx="60" cy="186" r="13" fill="#5b6cff"/><text class="num" x="60" y="191" text-anchor="middle">2</text>
+  <rect class="card" x="84" y="164" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="191">需要全文再按需加载：skills_load 拉技能正文，recall_memory 拉记忆全文</text>
+
+  <circle cx="60" cy="238" r="13" fill="#5b6cff"/><text class="num" x="60" y="243" text-anchor="middle">3</text>
+  <rect class="card" x="84" y="216" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="243">工具输出超阈值触发归档：stdio 24K / 进程内 32K 字符（可配 4K–256K）</text>
+
+  <circle cx="60" cy="290" r="13" fill="#5b6cff"/><text class="num" x="60" y="295" text-anchor="middle">4</text>
+  <rect class="card" x="84" y="268" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="295">全量落内容寻址制品：.spark-agent/tool-results/&lt;sha256&gt;，7 天 / 512MB LRU</text>
+
+  <circle cx="60" cy="342" r="13" fill="#5b6cff"/><text class="num" x="60" y="347" text-anchor="middle">5</text>
+  <rect class="card" x="84" y="320" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="347">模型只收 envelope：智能预览 ≤8K（错误行优先）+ artifactId + 读回指引</text>
+
+  <circle cx="60" cy="394" r="13" fill="#5b6cff"/><text class="num" x="60" y="399" text-anchor="middle">6</text>
+  <rect class="card" x="84" y="372" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="399">需要时按需读回：read 分页续读 / search 全文检索 / list 最近制品</text>
+
+  <circle cx="60" cy="446" r="13" fill="#5b6cff"/><text class="num" x="60" y="451" text-anchor="middle">7</text>
+  <rect class="card" x="84" y="424" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="451">上下文压缩发生：只追加 context_compaction 事件，原始事件永不改删</text>
+
+  <circle cx="60" cy="498" r="13" fill="#16a34a"/><text class="num" x="60" y="503" text-anchor="middle">8</text>
+  <rect class="card" x="84" y="476" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="503">细节被压掉走逃生门：session_history_search 检索压缩前全量档案</text>
+
+  <text class="band" x="580" y="100">② 三个关键机制</text>
+
+  <rect class="soft" x="580" y="112" width="340" height="128" rx="10"/>
+  <text class="tt" x="600" y="140">按需加载全家桶</text>
+  <text class="bd" x="600" y="164">wiki_search 只回 id + 标题 + 摘要，正文走 wiki_read</text>
+  <text class="bd" x="600" y="184">子代理不继承宿主上下文，成员只收任务说明</text>
+  <text class="bd" x="600" y="204">每轮落 turn_prompt_snapshot 审计提示词分段</text>
+  <text class="bd" x="600" y="224">记忆摘要限 4000 token，全文须 recall_memory</text>
+
+  <rect class="soft" x="580" y="252" width="340" height="128" rx="10"/>
+  <text class="tt" x="600" y="280">读回预算钳制</text>
+  <text class="bd" x="600" y="304">read 单次 ≤40,000 字符，返回 nextOffset 续读</text>
+  <text class="bd" x="600" y="324">search 子串检索 ≤50 命中，各带上下文片段</text>
+  <text class="bd" x="600" y="344">历史检索单条 8K / 整页 24K / 定点 32K 字符</text>
+  <text class="bd" x="600" y="364">制品读回重算 sha256 校验完整性</text>
+
+  <rect class="soft" x="580" y="392" width="340" height="128" rx="10"/>
+  <text class="tt" x="600" y="420">跨会话只读引用</text>
+  <text class="bd" x="600" y="444">用户显式 attach：每会话 ≤10 个，不可引用自身</text>
+  <text class="bd" x="600" y="464">opaque referenceId 剥掉会话路由字段</text>
+  <text class="bd" x="600" y="484">只读快照水位前的完整轮次 transcript</text>
+  <text class="bd" x="600" y="504">system prompt 与密钥载荷永不外泄，全程审计</text>
+
+  <rect class="soft" x="40" y="580" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="602" font-size="11">workflow_run 结果超 2,000 字符同样归档并逐 key 摘要，长图执行不撑爆上下文。</text>
+  <text class="bd" x="60" y="620" font-size="11">「无损」= 压缩算法不可逆，但 append-only 档案在压缩前后都可全文检索。</text>
+</svg>

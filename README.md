@@ -4,7 +4,7 @@
 
 **本地优先的桌面 AI Agent 工作台：在一个应用里完成对话、开发、调研、文档、多媒体创作与自动化。**
 
-[官网](https://www.yiqibyte.com/) · [下载](#下载安装) · [功能特性](#功能特性) · [能力图解](#能力图解) · [快速开始](#快速开始) · [从源码构建](#从源码构建) · [工程手册](https://alexanderizh.github.io/spark-agent/) · [贡献指南](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
+[官网](https://www.yiqibyte.com/) · [下载](#下载安装) · [能力图解](#能力图解) · [功能特性](#功能特性) · [快速开始](#快速开始) · [从源码构建](#从源码构建) · [工程手册](https://alexanderizh.github.io/spark-agent/) · [贡献指南](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
 
 [![License](https://img.shields.io/badge/license-Personal%20Use-blue)](#许可证)
 [![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)](apps/desktop)
@@ -29,6 +29,95 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 ## 📷 界面预览
 
 ![SparkWork 工作台：项目、会话与使用足迹集中在同一界面](apps/website/public/showcase/workbench-home.png)
+
+## 能力图解
+
+下面八张图对应八条能力线的主链路；逐项细节见[官网文档中心](https://www.yiqibyte.com/docs)与[工程手册](https://alexanderizh.github.io/spark-agent/capabilities.html)。
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**长期记忆：一轮对话的写入与读取闭环**
+
+每轮结束异步抽取写入、每轮开始混合检索注入；写入过五道闸门，读取走 FTS5 与向量双路、RRF 融合后按 token 预算裁剪。
+
+![长期记忆一轮对话的写入与读取闭环](docs-site/assets/img/long-term-memory-pipeline.svg)
+
+</td>
+<td width="50%" valign="top">
+
+**知识库：零预注入与四层预算**
+
+内容从不常驻上下文，读取要过四层预算：常驻约 800 token、检索 top 8、正文 3000 token 每页、单轮总闸 8000。
+
+![知识库上下文预算分层](docs-site/assets/img/knowledge-base-budget.svg)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**工作流：一张图的真实执行**
+
+13 种节点类型经拓扑调度逐个真实派发：agent 节点是同一会话内的成员 turn，工具节点可配置成不经 LLM 的确定性直调；快照落库支持断点续跑。
+
+![工作流执行主链路](docs-site/assets/img/workflow-execution-flow.svg)
+
+</td>
+<td width="50%" valign="top">
+
+**自定义工具：从工程到 Agent 工具面**
+
+多文件工程安装为不可变版本，密钥只进系统凭据库；过完整门禁启用后挂进会话工具面，包变更下一轮热生效。
+
+![自定义工具生命周期](docs-site/assets/img/custom-tools-lifecycle.svg)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**自动路由：一轮分流与降级阶梯**
+
+分流器逐轮判强度，宿主在轮次开始前替换 provider 与 model；分流失败一律降级，不会中断本轮执行。
+
+![自动路由一轮分流与降级阶梯](docs-site/assets/img/auto-router-flow.svg)
+
+</td>
+<td width="50%" valign="top">
+
+**性能保护：采样、定级与四档滞回**
+
+2 秒采样六类指标、逐项定级后取最高档，升级快降级慢；只有危急档才弹窗提醒，前两档只在性能页可见。
+
+![性能监控：采样、定级与四档滞回](docs-site/assets/img/performance-pressure-levels.svg)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**安全与密钥：一枚密钥的受控旅程**
+
+密钥明文直接被拒，只走受保护表单进系统凭据库；环境变量按六级作用域合并注入子进程，hooks 分观察与可拦截双轨，全程日志脱敏。
+
+![安全与密钥边界](docs-site/assets/img/security-secrets-boundary.svg)
+
+</td>
+<td width="50%" valign="top">
+
+**上下文工程：长上下文的节流与可信**
+
+技能目录只注入元数据、全文按需加载；超长工具输出归档为内容寻址制品、按需读回；压缩只追加事件、档案无损可检；跨会话只读引用须显式授权。
+
+![上下文工程主链路](docs-site/assets/img/context-engineering-flow.svg)
+
+</td>
+</tr>
+</table>
+
+记忆生命周期、知识库沉淀管道、router 组成与双池闸门这四张图在[工程手册 · 能力架构](https://alexanderizh.github.io/spark-agent/capabilities.html)里。
 
 ## 功能特性
 
@@ -141,55 +230,6 @@ SparkWork（仓库名 Spark Agent）是一个运行在 macOS、Windows 和 Linux
 - 🔐 敏感凭据通过系统凭据能力与加密凭据库管理，不写入普通项目配置
 - 🛡 文件、命令、网络、桌面操作和外部工具受权限模式与工具策略控制
 - 🎨 深浅色主题、多窗口（画布 / 浏览器独立窗口）等桌面级体验
-
-## 能力图解
-
-复杂机制配一张图比堆一段文字好懂。下面四张图对应四条能力线的主链路；逐项细节见[官网文档中心](https://www.yiqibyte.com/docs)与[工程手册](https://alexanderizh.github.io/spark-agent/capabilities.html)。
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**长期记忆：一轮对话的写入与读取闭环**
-
-每轮结束异步抽取写入、每轮开始混合检索注入；写入过五道闸门，读取走 FTS5 与向量双路、RRF 融合后按 token 预算裁剪。
-
-![长期记忆一轮对话的写入与读取闭环](docs-site/assets/img/long-term-memory-pipeline.svg)
-
-</td>
-<td width="50%" valign="top">
-
-**知识库：零预注入与四层预算**
-
-内容从不常驻上下文，读取要过四层预算：常驻约 800 token、检索 top 8、正文 3000 token 每页、单轮总闸 8000。
-
-![知识库上下文预算分层](docs-site/assets/img/knowledge-base-budget.svg)
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-**自动路由：一轮分流与降级阶梯**
-
-分流器逐轮判强度，宿主在轮次开始前替换 provider 与 model；分流失败一律降级，不会中断本轮执行。
-
-![自动路由一轮分流与降级阶梯](docs-site/assets/img/auto-router-flow.svg)
-
-</td>
-<td width="50%" valign="top">
-
-**性能保护：采样、定级与四档滞回**
-
-2 秒采样六类指标、逐项定级后取最高档，升级快降级慢；只有危急档才弹窗提醒，前两档只在性能页可见。
-
-![性能监控：采样、定级与四档滞回](docs-site/assets/img/performance-pressure-levels.svg)
-
-</td>
-</tr>
-</table>
-
-记忆生命周期、知识库沉淀管道、router 组成与双池闸门这四张图在[工程手册 · 能力架构](https://alexanderizh.github.io/spark-agent/capabilities.html)里。
 
 ## 下载安装
 

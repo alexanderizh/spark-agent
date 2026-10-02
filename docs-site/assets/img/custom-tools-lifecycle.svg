@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 648" width="960" height="648" role="img" aria-label="自定义工具生命周期：受管工程、不可变版本、密钥保护、权限门禁与 Agent 工具面接入">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 11px; fill: #33415c; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .num { font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .div { stroke: #dde3f1; stroke-width: 1.5; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .st { fill: #c3cad8; } .bd { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="648"/>
+
+  <text class="h1" x="40" y="38">自定义工具 · 从工程到 Agent 工具面</text>
+  <text class="sub" x="40" y="60">把 API、脚本或业务能力封装成 Agent 可自主调用的工具：版本不可变、密钥只进系统凭据库、启用前过完整门禁</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 生命周期：从创建到热生效</text>
+  <line class="div" x1="60" y1="126" x2="60" y2="438"/>
+
+  <circle cx="60" cy="134" r="13" fill="#5b6cff"/><text class="num" x="60" y="139" text-anchor="middle">1</text>
+  <rect class="card" x="84" y="112" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="139">创建受管工程：spark-tool.json + 多文件源码，路径与符号链接全检</text>
+
+  <circle cx="60" cy="186" r="13" fill="#5b6cff"/><text class="num" x="60" y="191" text-anchor="middle">2</text>
+  <rect class="card" x="84" y="164" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="191">install / build 开发步骤，可按 lockfile 推断包管理器</text>
+
+  <circle cx="60" cy="238" r="13" fill="#5b6cff"/><text class="num" x="60" y="243" text-anchor="middle">3</text>
+  <rect class="card" x="84" y="216" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="243">安装为不可变版本：SHA-256 完整性两检，装完默认停用</text>
+
+  <circle cx="60" cy="290" r="13" fill="#5b6cff"/><text class="num" x="60" y="295" text-anchor="middle">4</text>
+  <rect class="card" x="84" y="268" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="295">配置环境变量：secret 只走应用内受保护表单，值进系统凭据库</text>
+
+  <circle cx="60" cy="342" r="13" fill="#5b6cff"/><text class="num" x="60" y="347" text-anchor="middle">5</text>
+  <rect class="card" x="84" y="320" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="347">审批权限：OS effects 与 Spark capability，必需项全部批准</text>
+
+  <circle cx="60" cy="394" r="13" fill="#5b6cff"/><text class="num" x="60" y="399" text-anchor="middle">6</text>
+  <rect class="card" x="84" y="372" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="399">真实测试后启用：版本已装 · 未拉黑 · 权限已批 · 环境已配齐</text>
+
+  <circle cx="60" cy="446" r="13" fill="#16a34a"/><text class="num" x="60" y="451" text-anchor="middle">7</text>
+  <rect class="card" x="84" y="424" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="451">包变更热生效：下一轮会话重建即见新工具，常驻进程联动失效</text>
+
+  <text class="band" x="580" y="100">② 三个关键机制</text>
+
+  <rect class="soft" x="580" y="112" width="340" height="150" rx="10"/>
+  <text class="tt" x="600" y="140">五种执行形态</text>
+  <text class="bd" x="600" y="164">process：本地多文件代码，子进程 + JSON 帧协议</text>
+  <text class="bd" x="600" y="184">remote-http：远端工具包服务，密钥走 header 模板</text>
+  <text class="bd" x="600" y="204">declarative-http：零代码声明式 HTTP 工具</text>
+  <text class="bd" x="600" y="224">mcp-import：从已配置 MCP 服务器导入</text>
+  <text class="bd" x="600" y="244">legacy-custom-tool：兼容旧 Tool Studio 工具</text>
+
+  <rect class="soft" x="580" y="274" width="340" height="160" rx="10"/>
+  <text class="tt" x="600" y="302">密钥与权限的硬边界</text>
+  <text class="bd" x="600" y="326">secret 明文不进 Agent 参数、不进数据库</text>
+  <text class="bd" x="600" y="346">数据库只存凭据引用，进程日志对密钥脱敏</text>
+  <text class="bd" x="600" y="366">运行期能力请求三重校验：</text>
+  <text class="bd" x="600" y="386">未声明 / 未授权 / 宿主未注册，一律拒绝</text>
+  <text class="bd" x="600" y="406">trusted-local：以当前用户权限执行，声明不等于沙箱</text>
+
+  <rect class="soft" x="580" y="446" width="340" height="100" rx="10"/>
+  <text class="tt" x="600" y="474">Agent 怎么调用</text>
+  <text class="bd" x="600" y="498">启用工具汇入统一目录，以 spark_plugins 挂进会话</text>
+  <text class="bd" x="600" y="518">参数经 JSON Schema 校验后才执行</text>
+  <text class="bd" x="600" y="538">每次调用写入追踪表，可在诊断页回看</text>
+
+  <rect class="soft" x="40" y="566" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="588" font-size="11">版本不可变：同 id 同版本异内容直接拒绝安装；启用中的版本不可删除，「回滚」= 保留旧不可变版本后切回启用。</text>
+  <text class="bd" x="60" y="606" font-size="11">与工作流打通：tool 节点选 platform 源即可对这些工具确定性直调，参数插值渲染后原生调用，完全不经 LLM。</text>
+</svg>

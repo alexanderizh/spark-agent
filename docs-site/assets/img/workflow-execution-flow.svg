@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 648" width="960" height="648" role="img" aria-label="工作流执行主链路：会话内挂载、图调度、确定性工具直调与断点续跑">
+  <defs>
+    <style>
+      text { font-family: 'Inter','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; }
+      .fig { fill: #ffffff; }
+      .h1 { font-size: 19px; font-weight: 700; fill: #10162f; }
+      .sub { font-size: 12.5px; fill: #6675a3; }
+      .band { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .tt { font-size: 12px; font-weight: 600; fill: #10162f; }
+      .st { font-size: 11px; fill: #33415c; }
+      .bd { font-size: 10.5px; fill: #465789; }
+      .num { font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .card { fill: #ffffff; stroke: #ccd5e6; stroke-width: 1; }
+      .soft { fill: #f5f7ff; stroke: #ccd5e6; stroke-width: 1; }
+      .div { stroke: #dde3f1; stroke-width: 1.5; }
+      @media (prefers-color-scheme: dark) {
+        .fig { fill: #15171c; }
+        .h1 { fill: #e9ebf1; } .tt { fill: #e9ebf1; } .band { fill: #e9ebf1; } .sub { fill: #8b93a6; }
+        .st { fill: #c3cad8; } .bd { fill: #aab2c3; }
+        .card { fill: #1b1e26; stroke: #384050; }
+        .soft { fill: #191c23; stroke: #384050; }
+        .div { stroke: #2f3644; }
+      }
+    </style>
+  </defs>
+  <rect class="fig" x="0" y="0" width="960" height="648"/>
+
+  <text class="h1" x="40" y="38">工作流 · 一张图怎么被真实执行</text>
+  <text class="sub" x="40" y="60">节点不是提示词模拟：agent 节点派发为同一会话内的一次真实成员 turn，工具节点可配置成完全不经 LLM 的原生直调</text>
+  <line class="div" x1="40" y1="76" x2="920" y2="76"/>
+
+  <text class="band" x="40" y="100">① 执行时序：从挂载到终态</text>
+  <line class="div" x1="60" y1="126" x2="60" y2="438"/>
+
+  <circle cx="60" cy="134" r="13" fill="#5b6cff"/><text class="num" x="60" y="139" text-anchor="middle">1</text>
+  <rect class="card" x="84" y="112" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="139">输入区挂载工作流：inherit / override / disabled，只作用于本会话</text>
+
+  <circle cx="60" cy="186" r="13" fill="#5b6cff"/><text class="num" x="60" y="191" text-anchor="middle">2</text>
+  <rect class="card" x="84" y="164" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="191">轮次开始解析生效图；存在可续跑 Run 时改用冻结图快照</text>
+
+  <circle cx="60" cy="238" r="13" fill="#5b6cff"/><text class="num" x="60" y="243" text-anchor="middle">3</text>
+  <rect class="card" x="84" y="216" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="243">构建本轮花名册：绑定真实 Agent + 合成 subagent / atomic worker</text>
+
+  <circle cx="60" cy="290" r="13" fill="#5b6cff"/><text class="num" x="60" y="295" text-anchor="middle">4</text>
+  <rect class="card" x="84" y="268" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="295">注入 Workflow Execution Plan 与 Edges，挂载 workflow_run 工具</text>
+
+  <circle cx="60" cy="342" r="13" fill="#5b6cff"/><text class="num" x="60" y="347" text-anchor="middle">5</text>
+  <rect class="card" x="84" y="320" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="347">Kahn 拓扑排序：原子节点串行执行，agent 节点按波并行</text>
+
+  <circle cx="60" cy="394" r="13" fill="#5b6cff"/><text class="num" x="60" y="399" text-anchor="middle">6</text>
+  <rect class="card" x="84" y="372" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="399">输出写入 state[outputKey]，条件边判定下游执行还是 skipped</text>
+
+  <circle cx="60" cy="446" r="13" fill="#16a34a"/><text class="num" x="60" y="451" text-anchor="middle">7</text>
+  <rect class="card" x="84" y="424" width="476" height="44" rx="8"/>
+  <text class="st" x="100" y="451">每节点完成即 checkpoint 落库，终态结果作为工具结果返回</text>
+
+  <text class="band" x="580" y="100">② 三个关键机制</text>
+
+  <rect class="soft" x="580" y="112" width="340" height="150" rx="10"/>
+  <text class="tt" x="600" y="140">13 种节点类型</text>
+  <text class="bd" x="600" y="164">input · plan · route · agent · subagent</text>
+  <text class="bd" x="600" y="184">skill · tool · mcp · approval · verify</text>
+  <text class="bd" x="600" y="204">review · artifact · loop</text>
+  <text class="bd" x="600" y="224">approval 拒绝即终止；loop 默认 5 轮上限 50</text>
+  <text class="bd" x="600" y="244">verify 在工作区真实执行验证命令</text>
+
+  <rect class="soft" x="580" y="274" width="340" height="160" rx="10"/>
+  <text class="tt" x="600" y="302">确定性工具直调</text>
+  <text class="bd" x="600" y="326">tool / mcp 节点配置 toolSource + toolName 后</text>
+  <text class="bd" x="600" y="346">原生调用，完全不经 LLM</text>
+  <text class="bd" x="600" y="366">三种源：mcp 直调、platform 工具、builtin 锁单工具</text>
+  <text class="bd" x="600" y="386">{{key}} 只插值 prompt 与 toolArgs</text>
+  <text class="bd" x="600" y="406">参数渲染完成后再执行，输出可预测</text>
+
+  <rect class="soft" x="580" y="446" width="340" height="100" rx="10"/>
+  <text class="tt" x="600" y="474">断点续跑</text>
+  <text class="bd" x="600" y="498">快照节流写入 workflow_runs</text>
+  <text class="bd" x="600" y="518">重开自动续跑，跳过已完成节点</text>
+  <text class="bd" x="600" y="538">进程重启后只重跑未提交节点</text>
+
+  <rect class="soft" x="40" y="566" width="880" height="52" rx="10"/>
+  <text class="bd" x="60" y="588" font-size="11">执行单元不是独立会话：每个节点是同一会话内的一次成员 turn，按成员自身的引擎与模型执行，触发消息的附件原样透传给每个被派发节点。</text>
+  <text class="bd" x="60" y="606" font-size="11">失控保护：单 run 派发总量预算、波宽分块、subagent 扇出钳制与 loop × 扇出乘积上限；进度卡实时展示节点状态、耗时与失败原因。</text>
+</svg>
