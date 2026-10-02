@@ -17,6 +17,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { getAssistantCaptureController } from './AssistantCaptureController'
 import { getVoicePlaybackController } from './VoicePlaybackController'
 import { VoiceHudWaveform, type VoiceHudWaveformState } from './VoiceHudWaveform'
+import { useVoiceHudDrag } from './useVoiceHudDrag'
 import './voiceAssistant.less'
 
 const STATE_META: Record<VoiceHudWaveformState, string> = {
@@ -124,6 +125,10 @@ export function VoiceAssistantHost(): React.ReactNode {
     setHud((previous) => (previous?.wake ? { ...previous, wake: false } : previous))
   }, [])
 
+  // HUD 矩形卡片自由拖拽（hook 必须在 early return 之前调用）
+  const hudCardRef = useRef<HTMLDivElement | null>(null)
+  const { isDragging, dragHandlers } = useVoiceHudDrag(hudCardRef)
+
   if (hud == null || !isWaveformState(hud.state)) return null
 
   const handleInterrupt = (): void => {
@@ -131,10 +136,20 @@ export function VoiceAssistantHost(): React.ReactNode {
   }
 
   return createPortal(
-    <div className={`voice-assistant-hud is-${hud.state}`} role="status">
-      <VoiceHudWaveform state={hud.state} wake={hud.wake === true} onWakeDone={handleWakeDone} />
+    <div
+      ref={hudCardRef}
+      className={`voice-assistant-hud is-${hud.state}${isDragging ? ' is-dragging' : ''}`}
+      role="status"
+      {...dragHandlers}
+    >
+      {/* 顶部大留白舞台：图标本体小巧，区域占比大（参考稿上中下三段式） */}
+      <div className="voice-hud-stage">
+        <VoiceHudWaveform state={hud.state} wake={hud.wake === true} onWakeDone={handleWakeDone} />
+      </div>
       <div className="voice-assistant-hud-body">
         <span className="voice-assistant-hud-label">
+          {/* 状态点：状态的彩色信息由点阵/光晕 + 状态点承担，文字保持中性色 */}
+          <span className="voice-assistant-hud-dot" aria-hidden="true" />
           {hud.state === 'listening' && hud.reason === 'confirm'
             ? '请继续说，停顿后将自动发送'
             : STATE_META[hud.state]}
@@ -143,14 +158,20 @@ export function VoiceAssistantHost(): React.ReactNode {
           <span className="voice-assistant-hud-partial">{hud.detail}</span>
         ) : null}
       </div>
-      <button
-        type="button"
-        className="voice-assistant-hud-stop"
-        onClick={handleInterrupt}
-        title="停止（再按唤醒快捷键效果相同）"
-      >
-        停止
-      </button>
+      {/* 底部停止：居中胶囊钮（方形图标与方块动画同语言 + 文字）；卡片是拖拽把手，
+          按钮不作为把手（pointerdown 不上冒泡到卡片） */}
+      <div className="voice-assistant-hud-footer">
+        <button
+          type="button"
+          className="voice-assistant-hud-stop"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={handleInterrupt}
+          title="停止（再按唤醒快捷键效果相同）"
+        >
+          <i aria-hidden="true" />
+          <span>停止</span>
+        </button>
+      </div>
     </div>,
     document.body,
   )
