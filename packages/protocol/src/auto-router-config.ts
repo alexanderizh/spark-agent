@@ -18,6 +18,16 @@ import type { SessionReasoningEffort } from './ipc/index.js'
 export const AUTO_ROUTER_PROVIDER_TYPE = 'auto-router' as const
 
 /**
+ * 分流器决策超时默认值（2 分钟）。
+ * 上限是故障兜底而非正常耗时：模型快返回时不产生等待，仅在真超时等满后才走规则降级；
+ * 默认值需覆盖带思考时间模型的完整思考链路，30s 对此类模型几乎必然超时降级。
+ */
+export const AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS = 120_000
+
+/** 分流器决策超时上限（5 分钟），给长思考模型留配置空间。 */
+export const AUTO_ROUTER_DISPATCHER_TIMEOUT_MAX_MS = 300_000
+
+/**
  * 旧伪 provider 魔法 id（已废弃）。仅用于识别存量会话引用并回退默认渠道，
  * 不得再用于新建任何 Provider 行。
  */
@@ -117,7 +127,12 @@ export const AutoRouterExecutorRefSchema = z.object({
 export const AutoRouterDispatcherConfigSchema = z.object({
   providerProfileId: z.string().min(1),
   modelId: z.string().min(1),
-  timeoutMs: z.number().int().positive().max(120_000).default(30_000),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .max(AUTO_ROUTER_DISPATCHER_TIMEOUT_MAX_MS)
+    .default(AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS),
 })
 
 export const AutoRouterConfigSchema = z.object({
@@ -174,7 +189,11 @@ export function createDefaultAutoRouterConfig(adapter: RouterAdapter): AutoRoute
     kind: 'auto-router',
     version: 1,
     adapter,
-    dispatcher: { providerProfileId: '', modelId: '', timeoutMs: 30_000 },
+    dispatcher: {
+      providerProfileId: '',
+      modelId: '',
+      timeoutMs: AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS,
+    },
     executors: [],
     fallbackIntensity: 'balanced',
     allowDecomposition: true,
@@ -188,11 +207,7 @@ export function findExecutorByIntensity(
   config: AutoRouterConfig,
   intensity: RouterIntensity,
 ): AutoRouterExecutorRef | null {
-  return (
-    config.executors.find(
-      (entry) => entry.enabled && entry.intensity === intensity,
-    ) ?? null
-  )
+  return config.executors.find((entry) => entry.enabled && entry.intensity === intensity) ?? null
 }
 
 // ─── 执行器资格校验（收敛多媒体 / 向量渠道过滤）──────────────────────────────
@@ -212,9 +227,7 @@ export interface ProviderEligibilityInput {
 const NON_TEXT_MODEL_TYPES: ReadonlySet<string> = new Set(['image', 'voice', 'video'])
 
 /** 多媒体生成渠道（图像/语音/视频）与向量渠道不能承接文本 turn。 */
-export function isConversationalProviderCandidate(
-  provider: ProviderEligibilityInput,
-): boolean {
+export function isConversationalProviderCandidate(provider: ProviderEligibilityInput): boolean {
   if (provider.modelType != null && NON_TEXT_MODEL_TYPES.has(provider.modelType)) {
     return false
   }

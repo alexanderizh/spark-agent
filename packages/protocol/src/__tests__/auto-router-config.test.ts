@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS,
   AUTO_ROUTER_PROVIDER_TYPE,
   AutoRouterConfigSchema,
   LEGACY_CLAUDE_AUTO_ROUTER_PROVIDER_ID,
@@ -32,7 +33,7 @@ describe('AutoRouterConfigSchema', () => {
   it('合法配置通过并补全默认值', () => {
     const parsed = AutoRouterConfigSchema.parse(validConfig())
     expect(parsed.version).toBe(1)
-    expect(parsed.dispatcher.timeoutMs).toBe(30_000)
+    expect(parsed.dispatcher.timeoutMs).toBe(AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS)
     expect(parsed.fallbackIntensity).toBe('balanced')
     expect(parsed.allowDecomposition).toBe(true)
     expect(parsed.maxConcurrentSubtasks).toBe(3)
@@ -43,8 +44,9 @@ describe('AutoRouterConfigSchema', () => {
   it('缺 dispatcher 或 executors 条目非法时报错', () => {
     expect(AutoRouterConfigSchema.safeParse({ kind: 'auto-router' }).success).toBe(false)
     expect(
-      AutoRouterConfigSchema.safeParse(validConfig({ dispatcher: { providerProfileId: '', modelId: 'm' } }))
-        .success,
+      AutoRouterConfigSchema.safeParse(
+        validConfig({ dispatcher: { providerProfileId: '', modelId: 'm' } }),
+      ).success,
     ).toBe(false)
     expect(
       AutoRouterConfigSchema.safeParse(
@@ -55,15 +57,15 @@ describe('AutoRouterConfigSchema', () => {
     ).toBe(false)
   })
 
-  it('决策超时支持到 120s 并拒绝超限值', () => {
+  it('决策超时支持到 300s 并拒绝超限值', () => {
     expect(
       AutoRouterConfigSchema.safeParse(
-        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 120_000 } }),
+        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 300_000 } }),
       ).success,
     ).toBe(true)
     expect(
       AutoRouterConfigSchema.safeParse(
-        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 120_001 } }),
+        validConfig({ dispatcher: { providerProfileId: 'p1', modelId: 'm1', timeoutMs: 300_001 } }),
       ).success,
     ).toBe(false)
   })
@@ -177,15 +179,26 @@ describe('isProviderAllowedForAutoRouter / isConversationalProviderCandidate', (
   })
 
   it('多媒体 / 向量渠道一律排除（multimodal 理解型 LLM 除外）', () => {
-    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'image' })).toBe(false)
-    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'voice' })).toBe(false)
-    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'video' })).toBe(false)
+    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'image' })).toBe(
+      false,
+    )
+    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'voice' })).toBe(
+      false,
+    )
+    expect(isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'video' })).toBe(
+      false,
+    )
     expect(
       isConversationalProviderCandidate({ provider: 'openai', codexApiKind: 'embedding' }),
     ).toBe(false)
-    expect(isConversationalProviderCandidate({ provider: 'anthropic', mediaProvider: 'minimax' })).toBe(false)
     expect(
-      isConversationalProviderCandidate({ provider: 'anthropic', mediaCapabilities: ['image.generate'] }),
+      isConversationalProviderCandidate({ provider: 'anthropic', mediaProvider: 'minimax' }),
+    ).toBe(false)
+    expect(
+      isConversationalProviderCandidate({
+        provider: 'anthropic',
+        mediaCapabilities: ['image.generate'],
+      }),
     ).toBe(false)
     expect(
       isConversationalProviderCandidate({ provider: 'anthropic', modelType: 'multimodal' }),

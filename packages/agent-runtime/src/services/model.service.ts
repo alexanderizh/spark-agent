@@ -7,6 +7,7 @@ import type {
 import type { ModelProfile } from '@spark/protocol'
 import { buildAnthropicAuthHeaders, createLogger, fetchJson, HttpError } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import { llmClientIdentityHeaders } from './llm-client-identity.js'
 
 const log = createLogger('model.service')
 
@@ -264,6 +265,12 @@ export class ModelService {
       maxRetries?: number
       /** 调用方取消信号（轮次取消联动） */
       abortSignal?: AbortSignal
+      /**
+       * 稳定的调用方会话标识，注入 `x-opencode-session` 身份头（缺省回退进程级
+       * 固定 id）。Agent 网关（OpenCode Zen 等）缺该头直接 400，见
+       * llm-client-identity.ts 模块注释；分流器传 `autorouter:<routerId>`。
+       */
+      sessionId?: string
     },
   ): Promise<CompleteResult> {
     // 记录开始时间，用于算 HTTP 耗时（让"1 秒返回是真调了还是短路"可验证）
@@ -380,10 +387,14 @@ export class ModelService {
               // 第三方 Anthropic 兼容渠道只认 x-api-key 或 Bearer 之一，统一双投放。
               ...(apiKey.length > 0 ? buildAnthropicAuthHeaders(apiEndpoint, apiKey) : {}),
               'anthropic-version': '2023-06-01',
+              // 客户端身份头（UA + x-opencode-session）：Agent 网关（OpenCode Zen
+              // 等）会 400 拒绝裸 HTTP 库调用特征请求，见 llm-client-identity.ts。
+              ...llmClientIdentityHeaders(opts?.sessionId),
             }
           : {
               'Content-Type': 'application/json',
               ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+              ...llmClientIdentityHeaders(opts?.sessionId),
             },
         body: JSON.stringify(
           isAnthropic

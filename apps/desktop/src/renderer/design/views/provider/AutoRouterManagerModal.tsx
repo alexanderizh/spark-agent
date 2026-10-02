@@ -5,6 +5,8 @@ import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { useToast } from '../../components/Toast'
 import {
+  AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS,
+  AUTO_ROUTER_DISPATCHER_TIMEOUT_MAX_MS,
   AUTO_ROUTER_PROVIDER_TYPE,
   type AutoRouterConfig,
   type AutoRouterExecutorRef,
@@ -451,7 +453,7 @@ export function AutoRouterManagerModal({
               <Input
                 type="number"
                 min={1_000}
-                max={120_000}
+                max={AUTO_ROUTER_DISPATCHER_TIMEOUT_MAX_MS}
                 step={1_000}
                 value={String(draft.dispatcher.timeoutMs)}
                 onChange={(e) => {
@@ -459,14 +461,18 @@ export function AutoRouterManagerModal({
                   patchConfig({
                     dispatcher: {
                       ...draft.dispatcher,
-                      timeoutMs: Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000,
+                      timeoutMs:
+                        Number.isFinite(parsed) && parsed > 0
+                          ? parsed
+                          : AUTO_ROUTER_DISPATCHER_TIMEOUT_DEFAULT_MS,
                     },
                   })
                 }}
               />
             </div>
             <div className="arm_hint">
-              分流器单次决策调用的等待上限，超时后走规则兜底不影响本轮执行。分流器只是轻量分类任务，优先选快且便宜的非思考模型；若选了带思考时间的模型，请按实际思考耗时放宽（如 60s）。
+              分流器单次决策调用的等待上限，超时后走规则兜底不影响本轮执行。分流器只是轻量分类任务，优先选快且便宜的非思考模型；若选了带思考时间的模型，请按实际思考耗时放宽（默认
+              120s 已覆盖多数带思考模型）。
             </div>
           </div>
 

@@ -349,7 +349,10 @@ export class AutoRouterService {
     // 5. 选执行器：该强度第一个有效条目 → fallbackIntensity → 任意第一个
     let executor: AutoRouterExecutorRef | null | undefined =
       findExecutorByIntensity({ ...input.config, executors: validExecutors }, intensity) ??
-      findExecutorByIntensity({ ...input.config, executors: validExecutors }, input.config.fallbackIntensity) ??
+      findExecutorByIntensity(
+        { ...input.config, executors: validExecutors },
+        input.config.fallbackIntensity,
+      ) ??
       validExecutors[0]
     if (executor != null && executor.intensity !== intensity) {
       // 强度档位未配置执行器 → 回落兜底强度（或任意第一条），必须把强度一起改成
@@ -411,7 +414,11 @@ export class AutoRouterService {
     const t0 = Date.now()
     const provider = this.deps.getProviderRow(config.dispatcher.providerProfileId)
     if (provider == null) {
-      return { ok: false, latencyMs: 0, error: `分流器渠道不存在（${config.dispatcher.providerProfileId}）` }
+      return {
+        ok: false,
+        latencyMs: 0,
+        error: `分流器渠道不存在（${config.dispatcher.providerProfileId}）`,
+      }
     }
     if (provider.enabled === 0) {
       return { ok: false, latencyMs: 0, error: `分流器渠道「${provider.name}」已禁用` }
@@ -424,10 +431,15 @@ export class AutoRouterService {
       model: config.dispatcher.modelId,
       maxTokens: 16,
       timeoutMs: config.dispatcher.timeoutMs,
+      // 手动探针是独立的"会话"，固定 id 与真实分流（autorouter:<routerId>）区分。
+      sessionId: 'autorouter:probe',
     })
     const latencyMs = Date.now() - t0
     if (result.available) {
-      log.info('dispatcher connectivity test ok', { latencyMs, textPreview: result.text.slice(0, 20) })
+      log.info('dispatcher connectivity test ok', {
+        latencyMs,
+        textPreview: result.text.slice(0, 20),
+      })
       return { ok: true, latencyMs }
     }
     const error = extractDispatchFailureDetail(result.reason)
@@ -447,15 +459,27 @@ export class AutoRouterService {
       if (!entry.enabled) continue
       const providerRow = this.deps.getProviderRow(entry.providerProfileId)
       if (providerRow == null) {
-        invalidEntries.push({ entryId: entry.id, providerId: entry.providerProfileId, reason: 'provider_missing' })
+        invalidEntries.push({
+          entryId: entry.id,
+          providerId: entry.providerProfileId,
+          reason: 'provider_missing',
+        })
         continue
       }
       if (providerRow.enabled === 0) {
-        invalidEntries.push({ entryId: entry.id, providerId: entry.providerProfileId, reason: 'provider_disabled' })
+        invalidEntries.push({
+          entryId: entry.id,
+          providerId: entry.providerProfileId,
+          reason: 'provider_disabled',
+        })
         continue
       }
       if (entry.modelId.length === 0) {
-        invalidEntries.push({ entryId: entry.id, providerId: entry.providerProfileId, reason: 'model_missing' })
+        invalidEntries.push({
+          entryId: entry.id,
+          providerId: entry.providerProfileId,
+          reason: 'model_missing',
+        })
         continue
       }
       validExecutors.push(entry)
@@ -486,8 +510,20 @@ export class AutoRouterService {
     input: AutoRouterRouteInput,
     prevIntensity: RouterIntensity | null,
   ): Promise<
-    | { decision: AutoRouterDispatchDecision; cancelled: false; attemptCount: number; failureStage?: undefined; failureDetail?: undefined }
-    | { decision: null; cancelled: true; attemptCount: number; failureStage?: undefined; failureDetail?: undefined }
+    | {
+        decision: AutoRouterDispatchDecision
+        cancelled: false
+        attemptCount: number
+        failureStage?: undefined
+        failureDetail?: undefined
+      }
+    | {
+        decision: null
+        cancelled: true
+        attemptCount: number
+        failureStage?: undefined
+        failureDetail?: undefined
+      }
     | {
         decision: null
         cancelled: false
@@ -538,6 +574,8 @@ export class AutoRouterService {
           maxTokens: 512,
           timeoutMs: input.config.dispatcher.timeoutMs,
           abortSignal: abortController.signal,
+          // 稳定会话标识：Agent 网关（OpenCode Zen）缺 x-opencode-session 直接 400。
+          sessionId: `autorouter:${input.routerId}`,
         })
         if (!result.available) {
           lastFailureStage = classifyDispatchFailure(result.reason)

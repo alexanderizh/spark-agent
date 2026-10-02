@@ -358,4 +358,41 @@ describe('ModelService.complete — agent chat model fallback', () => {
     if (!r.available) expect(r.reason).toMatch(/no extraction model configured/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('sends client identity headers (x-opencode-session) on OpenAI-compatible requests', async () => {
+    // OpenCode Zen 等 Agent 网关缺 x-opencode-session 直接 400（分流器降级根因）
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+          status: 200,
+        }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService()
+    await svc.complete('prompt', {
+      providerId: 'prov-1',
+      model: 'small-llm',
+      sessionId: 'autorouter:r-123',
+    })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const headers = new Headers(init.headers)
+    expect(headers.get('x-opencode-session')).toBe('autorouter:r-123')
+    expect(headers.get('user-agent')).toMatch(/^spark-agent-runtime\//)
+  })
+
+  it('falls back to the default session id when sessionId is omitted', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+          status: 200,
+        }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService()
+    await svc.complete('prompt')
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const headers = new Headers(init.headers)
+    // 缺省也要有非空 session 头 —— 网关只校验存在性，不校验具体值
+    expect(headers.get('x-opencode-session')?.length ?? 0).toBeGreaterThan(0)
+  })
 })
