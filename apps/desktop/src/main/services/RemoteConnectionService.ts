@@ -51,6 +51,11 @@ import {
   remoteRouteKey,
 } from './remoteSessionIsolation.js'
 import {
+  deliverWithRetry,
+  describeDeliveryError,
+  isTransientDeliveryError,
+} from './remoteDeliveryRetry.js'
+import {
   TelegramTurnFeedbackManager,
   type TelegramTurnDraftUpdate,
 } from './telegramTurnFeedback.js'
@@ -984,6 +989,8 @@ export class RemoteConnectionService {
     { msgId: string; sentCount: number; expiresAt: number }
   >()
   private changeListeners = new Set<(event: RemoteConnectionChangeEvent) => void>()
+  // 记录最近一次投递失败落过 lastError 的连接，恢复成功后用于精准清除。
+  private deliveryFailureMarked = new Set<string>()
   private readonly telegramTurnFeedback: TelegramTurnFeedbackManager
 
   constructor(
@@ -1426,7 +1433,7 @@ export class RemoteConnectionService {
   ): Promise<void> {
     const connection = this.readStore().connections.find((item) => item.id === connectionId)
     if (connection == null) throw new Error('Remote connection not found')
-    await this.sendDirectMessage(connection, externalId, {
+    await this.sendDirectMessageWithRetry(connection, externalId, {
       text,
       ...(attachments != null && attachments.length > 0
         ? {
@@ -1436,6 +1443,81 @@ export class RemoteConnectionService {
           }
         : {}),
     })
+  }
+
+  /**
+   * 带重试的远程出站投递：网络瞬断（fetch failed / 连接重置等）按指数退避重试，
+   * 避免一次代理切换或链路抖动就让整轮回复静默丢失。重试间期重新读取连接：
+   * 配置被删除/停用后不再继续投递。最终失败会落到连接 lastError，让桌面端可见。
+   */
+  private async sendDirectMessageWithRetry(
+    connection: RemoteConnectionConfig,
+    externalId: string,
+    message: string | RemoteOutboundMessage,
+  ): Promise<void> {
+    try {
+      await deliverWithRetry(
+        async () => {
+          // 重试间期连接可能被编辑/删除，以最新配置为准；消失则放弃本次投递。
+          const latest = this.readStore().connections.find((item) => item.id === connection.id)
+          if (latest == null) throw new Error('Remote connection not found')
+          await this.sendDirectMessage(latest, externalId, message)
+        },
+        {
+          onRetry: (attempt, delayMs, error) => {
+            log.warn(
+              `远程消息投递失败(第 ${attempt} 次，${Math.round(delayMs / 1000)}s 后重试): ` +
+                `connection=${connection.id} channel=${connection.channel} ` +
+                `${describeDeliveryError(error)}`,
+            )
+          },
+        },
+      )
+      this.clearDeliveryFailureMark(connection.id)
+    } catch (error) {
+      this.recordDeliveryFailure(connection.id, error)
+      throw error
+    }
+  }
+
+  /** 投递最终失败时把原因落到连接 lastError（不改 status/enabled，运行时照常自愈）。 */
+  private recordDeliveryFailure(connectionId: string, error: unknown): void {
+    const detail = describeDeliveryError(error).slice(0, 300)
+    log.error(
+      `远程消息投递最终失败: connection=${connectionId} ${detail}` +
+        (isTransientDeliveryError(error) ? '（重试已耗尽，疑似网络仍不可用）' : ''),
+    )
+    this.deliveryFailureMarked.add(connectionId)
+    try {
+      const store = this.readStore()
+      const current = store.connections.find((item) => item.id === connectionId)
+      if (current == null) return
+      this.writeConnections(store, {
+        ...current,
+        lastError: `消息投递失败：${detail}`,
+        updatedAt: nowIso(),
+      })
+    } catch (persistError) {
+      log.warn(
+        `记录远程投递失败状态时出错: ${persistError instanceof Error ? persistError.message : String(persistError)}`,
+      )
+    }
+  }
+
+  /** 投递恢复成功后清除此前落下的投递失败标记，避免设置页残留过期错误。 */
+  private clearDeliveryFailureMark(connectionId: string): void {
+    if (!this.deliveryFailureMarked.has(connectionId)) return
+    this.deliveryFailureMarked.delete(connectionId)
+    try {
+      const store = this.readStore()
+      const current = store.connections.find((item) => item.id === connectionId)
+      if (current == null || current.lastError == null) return
+      if (!current.lastError.startsWith('消息投递失败：')) return
+      const { lastError: _removed, ...rest } = current
+      this.writeConnections(store, { ...rest, updatedAt: nowIso() } as RemoteConnectionConfig)
+    } catch {
+      // 清理失败不影响投递成功的主流程。
+    }
   }
 
   startTurnFeedback(turnId: string, connectionId: string, externalId: string): void {
@@ -1450,6 +1532,14 @@ export class RemoteConnectionService {
 
   async finishTurnFeedback(turnId: string, finalText?: string): Promise<boolean> {
     return this.telegramTurnFeedback.finish(turnId, finalText)
+  }
+
+  /**
+   * 读取 Telegram 轮次反馈当前积累的草稿文本（流式预览内容）。
+   * 轮次终态事件的 final 内容缺失时，用它兜底投递，避免回复彻底丢失。
+   */
+  getTurnFeedbackDraft(turnId: string): string | null {
+    return this.telegramTurnFeedback.draftText(turnId)
   }
 
   async startRuntime(handler: RemoteInboundHandler): Promise<void> {
@@ -1676,9 +1766,24 @@ export class RemoteConnectionService {
     }
 
     const rawBody = await this.readRequestBody(req)
-    const body = rawBody.length > 0 ? JSON.parse(rawBody) : {}
-    const responseBody = await this.handleInboundWebhook(connection, body)
-    this.writeJson(res, 200, responseBody)
+    let body: unknown
+    try {
+      body = rawBody.length > 0 ? JSON.parse(rawBody) : {}
+    } catch {
+      // 非法 JSON 直接回 400，不让解析异常变成未处理的 promise rejection。
+      this.writeJson(res, 400, { ok: false, error: 'invalid json body' })
+      return
+    }
+    try {
+      const responseBody = await this.handleInboundWebhook(connection, body)
+      this.writeJson(res, 200, responseBody)
+    } catch (error) {
+      // 处理链异常必须转成 HTTP 500 留痕，不能让 webhook 请求静默悬死。
+      log.error(
+        `远程 webhook 处理异常: connection=${connection.id} ${describeDeliveryError(error)}`,
+      )
+      this.writeJson(res, 500, { ok: false, error: 'webhook handler failed' })
+    }
   }
 
   private async handleInboundWebhook(
@@ -1730,10 +1835,23 @@ export class RemoteConnectionService {
     if (!latest.enabled) return
     if (!this.isAuthorized(latest, message.externalId)) {
       const prefix = latest.commandPrefix.trim() || '/'
-      await this.sendDirectMessage(
+      // 配对被平台侧标识轮换打断（如 QQ openid 刷新）属于高频疑难场景，
+      // 远程端只能看到绑定提示，桌面端必须留痕才能定位“为什么要重新配对”。
+      log.warn(
+        `远程消息未授权(已拒绝): connection=${latest.id} channel=${latest.channel} ` +
+          `from=${message.externalId} 已配对设备数=${latest.pairedDevices.length}` +
+          (latest.pairedDevices.length > 0
+            ? '（远程平台可能已轮换用户标识，旧配对失效，需重新配对）'
+            : ''),
+      )
+      const rotationHint =
+        latest.channel === 'qq'
+          ? '\n提示：QQ 平台可能在更换设备、重装 QQ 或重新添加机器人后刷新用户标识，导致此前配对失效。这是 QQ 平台行为，与应用更新无关；重新生成配对码并绑定即可恢复。'
+          : ''
+      await this.sendDirectMessageWithRetry(
         latest,
         message.externalId,
-        `该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 ${prefix}bind <配对码>。配对失败时请重新生成未过期的配对码。`,
+        `该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 ${prefix}bind <配对码>。配对失败时请重新生成未过期的配对码。${rotationHint}`,
       )
       return
     }
@@ -1747,7 +1865,7 @@ export class RemoteConnectionService {
       (message.qqImages?.length ?? 0) > 0
     ) {
       if (!latest.capabilities.transferFiles) {
-        await this.sendDirectMessage(
+        await this.sendDirectMessageWithRetry(
           latest,
           message.externalId,
           '该连接未启用“传输文件”能力，无法接收图片。请在 SparkWork 的远程连接设置中开启后重试。',
@@ -1756,7 +1874,7 @@ export class RemoteConnectionService {
       }
       const attachmentRoot = this.telegramAttachmentRoot
       if (attachmentRoot == null) {
-        await this.sendDirectMessage(
+        await this.sendDirectMessageWithRetry(
           latest,
           message.externalId,
           '图片接收运行时尚未就绪，请稍后重试。',
@@ -1795,7 +1913,7 @@ export class RemoteConnectionService {
           )
         }
       } catch (error) {
-        await this.sendDirectMessage(
+        await this.sendDirectMessageWithRetry(
           latest,
           message.externalId,
           `图片接收失败：${error instanceof Error ? error.message : String(error)}`,
@@ -1805,7 +1923,7 @@ export class RemoteConnectionService {
     }
     if (this.inboundHandler == null) {
       const prefix = latest.commandPrefix.trim() || '/'
-      await this.sendDirectMessage(
+      await this.sendDirectMessageWithRetry(
         latest,
         message.externalId,
         `远程连接运行时尚未就绪，请稍后重试；如果持续失败，请在桌面端检查远程连接状态后发送 ${prefix}status。`,
@@ -1824,7 +1942,7 @@ export class RemoteConnectionService {
         ...(attachments != null ? { attachments } : {}),
       })
       if (response != null) {
-        await this.sendDirectMessage(latest, message.externalId, {
+        await this.sendDirectMessageWithRetry(latest, message.externalId, {
           title: response.title,
           text: response.text.trim(),
           ...(response.actions != null ? { actions: response.actions } : {}),
@@ -1832,7 +1950,8 @@ export class RemoteConnectionService {
         })
       }
     } catch (err) {
-      await this.sendDirectMessage(
+      // 命令/任务执行失败也必须回传远程端，不能只在桌面日志里沉默。
+      await this.sendDirectMessageWithRetry(
         latest,
         message.externalId,
         buildRemoteRuntimeErrorMessage(err, latest.commandPrefix),
@@ -1856,13 +1975,13 @@ export class RemoteConnectionService {
         displayName: senderName,
         channelThreadId: externalId,
       })
-      await this.sendDirectMessage(
+      await this.sendDirectMessageWithRetry(
         latest,
         externalId,
         `已绑定 SparkWork。后续消息会进入该连接的默认会话，发送 ${latest.commandPrefix.trim() || '/'}help 查看命令。`,
       )
     } catch (err) {
-      await this.sendDirectMessage(
+      await this.sendDirectMessageWithRetry(
         latest,
         externalId,
         `绑定失败：${err instanceof Error ? err.message : String(err)}\n\n建议：检查配对码是否过期；回到 SparkWork 重新生成配对码后，再发送 ${latest.commandPrefix.trim() || '/'}bind <配对码>。`,

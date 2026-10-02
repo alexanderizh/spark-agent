@@ -143,6 +143,20 @@ export class TelegramTurnFeedbackManager {
     await Promise.all(Array.from(this.states.keys(), (turnId) => this.finish(turnId)))
   }
 
+  /**
+   * 读取轮次当前积累的草稿文本（按 segment 顺序拼接），供终态兜底投递使用。
+   * 没有状态或尚无内容时返回 null。
+   */
+  draftText(turnId: string): string | null {
+    const state = this.states.get(turnId)
+    if (state == null) return null
+    const text = state.segmentOrder
+      .map((segmentId) => state.segments.get(segmentId) ?? '')
+      .join('\n\n')
+      .trim()
+    return text.length > 0 ? text : null
+  }
+
   private sendTyping(state: TelegramTurnFeedbackState): void {
     if (state.closed) return
     const request = this.transport

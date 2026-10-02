@@ -744,3 +744,161 @@ describe('clearDeletedProviderReferences', () => {
     expect(miss).toEqual({ connections: 0, routes: 0 })
   })
 })
+
+describe('remote delivery retry', () => {
+  it('sendReply 在瞬态网络失败后按退避重试并恢复投递', async () => {
+    vi.useFakeTimers()
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    let failures = 0
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).endsWith('/sendMessage') && failures < 2) {
+        failures += 1
+        throw new TypeError('fetch failed')
+      }
+      return new Response('{"ok":true,"result":{"message_id":1}}', { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(settings as never)
+    const connection = service.createBotDraft('telegram').connection
+    service.save({ ...connection, credentials: { botToken: 'test-token' } })
+
+    const pending = service.sendReply(connection.id, '42', 'hello')
+    // 推进重试间隔（1s + 4s），让三次投递机会全部发生。
+    await vi.advanceTimersByTimeAsync(6_000)
+    await pending
+    expect(failures).toBe(2)
+    const sendCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/sendMessage'))
+    expect(sendCalls).toHaveLength(3)
+    // 恢复成功后连接不应残留投递失败状态。
+    const saved = service
+      .list()
+      .connections.find((item) => item.id === connection.id) as RemoteConnectionConfig
+    expect(saved.lastError).toBeUndefined()
+  })
+
+  it('sendReply 重试耗尽后把失败原因落到连接 lastError 并抛出', async () => {
+    vi.useFakeTimers()
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('fetch failed')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(settings as never)
+    const connection = service.createBotDraft('telegram').connection
+    service.save({ ...connection, credentials: { botToken: 'test-token' } })
+
+    const pending = service.sendReply(connection.id, '42', 'hello')
+    const assertion = expect(pending).rejects.toThrow('fetch failed')
+    // 推进全部重试间隔（1s + 4s + 12s）。
+    await vi.advanceTimersByTimeAsync(20_000)
+    await assertion
+    const saved = service
+      .list()
+      .connections.find((item) => item.id === connection.id) as RemoteConnectionConfig
+    expect(saved.lastError ?? '').toContain('消息投递失败')
+  })
+
+  it('sendReply 对 4xx 业务错误不重试、直接失败', async () => {
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{"ok":false}', { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(settings as never)
+    const connection = service.createBotDraft('telegram').connection
+    service.save({ ...connection, credentials: { botToken: 'test-token' } })
+
+    await expect(service.sendReply(connection.id, '42', 'hello')).rejects.toThrow('400')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('unauthorized inbound handling', () => {
+  it('QQ 未配对消息回复中说明平台标识轮换，重新配对即可恢复', async () => {
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const fetchMock = vi.fn<typeof fetch>(async (url) =>
+      String(url).includes('bots.qq.com/app/getAppAccessToken')
+        ? new Response('{"access_token":"tk","expires_in":3600}', { status: 200 })
+        : new Response('{"ok":true}', { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(settings as never)
+    const connection = service.createBotDraft('qq').connection
+    service.save({
+      ...connection,
+      enabled: true,
+      credentials: { qqBotAppId: 'app', qqBotSecret: 'secret' },
+    })
+
+    const handle = (
+      service as unknown as {
+        handleInboundMessage: (
+          this: RemoteConnectionService,
+          connection: RemoteConnectionConfig,
+          message: { externalId: string; senderName: string; text: string },
+        ) => Promise<void>
+      }
+    ).handleInboundMessage
+    await handle.call(service, connection, {
+      externalId: 'qq-user:NEWOPENID',
+      senderName: 'user',
+      text: '你好',
+    })
+
+    const body = JSON.parse(
+      String(fetchMock.mock.calls.find(([url]) => String(url).includes('/v2/users/'))?.[1]?.body),
+    ) as { content: string }
+    expect(body.content).toContain('尚未绑定')
+    expect(body.content).toContain('QQ 平台可能在更换设备、重装 QQ 或重新添加机器人后刷新用户标识')
+  })
+})
+
+describe('turn feedback draft', () => {
+  it('getTurnFeedbackDraft 返回流式积累的草稿，未开始或空草稿返回 null', async () => {
+    vi.useFakeTimers()
+    let stored: unknown = null
+    const settings = {
+      get: () => stored,
+      set: (_category: string, _key: string, value: unknown) => {
+        stored = value
+      },
+    }
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response('{"ok":true,"result":{"message_id":9}}', { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const service = new RemoteConnectionService(settings as never)
+    const connection = service.createBotDraft('telegram').connection
+    service.save({ ...connection, credentials: { botToken: 'test-token' } })
+
+    expect(service.getTurnFeedbackDraft('turn-x')).toBeNull()
+    service.startTurnFeedback('turn-x', connection.id, '42')
+    service.updateTurnFeedback('turn-x', { content: '部分回答', mode: 'delta', segmentId: 'a' })
+    await vi.advanceTimersByTimeAsync(1_100)
+    expect(service.getTurnFeedbackDraft('turn-x')).toBe('部分回答')
+    await service.finishTurnFeedback('turn-x')
+    expect(service.getTurnFeedbackDraft('turn-x')).toBeNull()
+  })
+})

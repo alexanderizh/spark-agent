@@ -454,6 +454,7 @@ import type {
   RemoteInboundResponse,
 } from '../services/RemoteConnectionService.js'
 import {
+  buildRemoteDeliveryFailureNotice,
   buildRemoteErrorGuidance,
   buildRemoteProviderModelRows,
   buildRemoteSelectionActions,
@@ -469,6 +470,7 @@ import {
   resolveRemoteEffectiveModelSelection,
   resolveRemoteSelection,
 } from './remote-command-utils.js'
+import { describeDeliveryError } from '../services/remoteDeliveryRetry.js'
 import type {
   RemoteSelectionKind,
   RemoteSelectionRow,
@@ -2733,7 +2735,10 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
       event.turnId,
       target,
       event.content,
-    ).catch((err) => log.warn(`Failed to send remote assistant reply: ${String(err)}`))
+    ).catch((err) => {
+      log.warn(`Failed to send remote assistant reply: ${describeDeliveryError(err)}`)
+      notifyRemoteDeliveryFailure(target, err)
+    })
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
     const service = getRemoteConnectionService()
@@ -2750,7 +2755,7 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
         ),
       )
       .catch((err) => {
-        log.warn(`Failed to send remote error reply: ${String(err)}`)
+        log.warn(`Failed to send remote error reply: ${describeDeliveryError(err)}`)
       })
   } else if (event.type === 'agent_status' && event.status === 'completed') {
     // A terminal status can precede the persisted final message. Give the final
@@ -2763,12 +2768,42 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
       try {
         if (await sendRemoteTurnReplyFromHistory(sessionId, turnId, target)) return
       } catch (error) {
-        log.warn(`Failed to recover completed remote reply: ${String(error)}`)
+        log.warn(`Failed to recover completed remote reply: ${describeDeliveryError(error)}`)
+        notifyRemoteDeliveryFailure(target, error)
+        return
       }
       if (remoteTurnTargets.get(turnId) !== target) return
       remoteTurnTargets.delete(turnId)
-      await getRemoteConnectionService().finishTurnFeedback(turnId)
-    })().catch((error) => log.warn(`Failed to settle remote turn: ${String(error)}`))
+      const service = getRemoteConnectionService()
+      // 历史里找不到 final 事件时，用 Telegram 流式预览草稿兜底投递，
+      // 避免「turn 完成但终态事件丢失」导致回复整体丢失。
+      const draft = service.getTurnFeedbackDraft(turnId)
+      if (draft != null) {
+        await deliverRemoteTurnReply(service, turnId, target, draft).catch((err) => {
+          log.warn(`Failed to send draft remote reply: ${describeDeliveryError(err)}`)
+          notifyRemoteDeliveryFailure(target, err)
+        })
+        return
+      }
+      const settled = await service.finishTurnFeedback(turnId)
+      if (!settled) {
+        const commandPrefix = service
+          .list()
+          .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
+        const prefix = commandPrefix?.trim() || '/'
+        await service
+          .sendReply(
+            target.connectionId,
+            target.externalId,
+            `本轮任务已完成，但没有产生可发送的文本回复。发送 ${prefix}history 可查看本轮详情，发送 ${prefix}status 可检查连接状态。`,
+          )
+          .catch((err) => {
+            log.error(
+              `远程空回复通知投递失败: connection=${target.connectionId} ${describeDeliveryError(err)}`,
+            )
+          })
+      }
+    })().catch((error) => log.warn(`Failed to settle remote turn: ${describeDeliveryError(error)}`))
   } else if (
     event.type === 'agent_status' &&
     (event.status === 'cancelled' || event.status === 'error')
@@ -2776,6 +2811,35 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
     remoteTurnTargets.delete(event.turnId)
     void getRemoteConnectionService().finishTurnFeedback(event.turnId)
   }
+}
+
+/**
+ * 回复投递失败后的最后一搏：把「投递失败」本身告知远程端。
+ * sendReply 自带网络重试；这条通知的失败只落桌面日志，不再级联通知。
+ */
+function notifyRemoteDeliveryFailure(
+  target: { connectionId: string; externalId: string },
+  error: unknown,
+): void {
+  const service = getRemoteConnectionService()
+  const commandPrefix = service
+    .list()
+    .connections.find((connection) => connection.id === target.connectionId)?.commandPrefix
+  void service
+    .sendReply(
+      target.connectionId,
+      target.externalId,
+      buildRemoteDeliveryFailureNotice(
+        error instanceof Error ? error.message : String(error),
+        commandPrefix,
+      ),
+    )
+    .catch((notifyErr) => {
+      log.error(
+        `远程投递失败通知也无法送达: connection=${target.connectionId} ` +
+          `replyError=${describeDeliveryError(error)} notifyError=${describeDeliveryError(notifyErr)}`,
+      )
+    })
 }
 
 async function sendRemoteTurnReplyFromHistory(
@@ -3469,9 +3533,8 @@ async function cascadeProviderDeletion(deletedProviderId: string): Promise<void>
           : {}),
       })
     }
-    const remoteCleanup = getRemoteConnectionService().clearDeletedProviderReferences(
-      deletedProviderId,
-    )
+    const remoteCleanup =
+      getRemoteConnectionService().clearDeletedProviderReferences(deletedProviderId)
     if (dangling.length > 0 || remoteCleanup.connections > 0 || remoteCleanup.routes > 0) {
       log.info('provider delete cascade applied', {
         deletedProviderId,
@@ -4990,7 +5053,7 @@ async function handleRemoteInboundMessage(
   const storedTarget = registerRemoteTurn(result.turnId, sessionId, target)
   rememberRemoteTurnTarget(sessionId, target)
   void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, storedTarget).catch((err) => {
-    log.warn(`Failed to send remote reply from history: ${String(err)}`)
+    log.warn(`Failed to send remote reply from history: ${describeDeliveryError(err)}`)
     if (!remoteTurnTargets.has(result.turnId)) return
     remoteTurnTargets.delete(result.turnId)
     const service = getRemoteConnectionService()

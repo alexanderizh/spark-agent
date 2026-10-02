@@ -50,9 +50,7 @@ export function buildRemoteProviderModelRows(
  * 注意：会话列表里 providerProfileId 缺省时是空串（`?? ''`），这里统一按未设置处理。
  */
 export function resolveRemoteEffectiveModelSelection(
-  session:
-    | { providerProfileId: string; modelId: string | null | undefined }
-    | undefined,
+  session: { providerProfileId: string; modelId: string | null | undefined } | undefined,
   connectionDefaults: {
     defaultProviderProfileId?: string | undefined
     defaultModelId?: string | undefined
@@ -267,6 +265,22 @@ export function buildRemoteErrorGuidance(error: string, commandPrefix = '/'): st
     return `处理失败：${message}\n\n建议：发送 ${command('sessions')} 查看主机会话；需要继续其他会话时使用 ${command('use-session', '<序号|名称|sessionId>')}。`
   }
   return `处理失败：${message}\n\n建议：发送 ${command('status')} 查看当前连接，发送 ${command('help')} 查看可用命令；如果问题与模型有关，请依次使用 ${command('providers')}、${command('models')}、${command('use-model')}。`
+}
+
+/**
+ * 回复投递本身失败时发给远程端的通知：任务已完成但结果没送达，
+ * 必须明确告知而不是沉默。给出可操作的下一步（重发 / 查历史）。
+ */
+export function buildRemoteDeliveryFailureNotice(error: string, commandPrefix = '/'): string {
+  const message = error.trim().slice(0, 300) || '未知错误'
+  const prefix = commandPrefix.trim() || '/'
+  const command = (name: string, argument?: string): string =>
+    `${prefix}${name}${argument == null ? '' : ` ${argument}`}`
+  return [
+    '回复投递失败：本轮任务已完成，但结果没有送达远程渠道（通常是本机到渠道服务器的网络中断）。',
+    `原因：${message}`,
+    `建议：稍等网络恢复后重发一次；或发送 ${command('history')} 查看本轮结果，发送 ${command('status')} 检查连接状态。`,
+  ].join('\n')
 }
 
 export function formatRows(rows: RemoteSelectionRow[], empty: string): string {
