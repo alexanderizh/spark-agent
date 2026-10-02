@@ -82,7 +82,7 @@ const tool = {
 const htmlTool = {
   name: 'render_html',
   description:
-    'Render a bounded HTML fragment in the conversation. Use for diagrams, visual comparisons, compact interactive demos, and layouts that Markdown cannot express. Inline CSS/JS, HTTP(S) external resources, and data/blob media are supported; the host still applies a sandbox and CSP.',
+    'Render a bounded HTML fragment in the conversation. Use for diagrams, visual comparisons, compact interactive demos, and layouts that Markdown cannot express. Inline CSS/JS, HTTP(S) external resources, and data/blob media are supported; content runs with full script capabilities (eval, workers, forms, popups, storage), isolated from the host page.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -91,7 +91,7 @@ const htmlTool = {
         minLength: 1,
         maxLength: MAX_HTML_LENGTH,
         description:
-          'HTML document or fragment. Inline styles/scripts and trusted HTTP(S) resources are supported; use data: or blob: media where appropriate.',
+          'HTML document or fragment. Inline styles/scripts, HTTP(S) resources, iframes, and forms are all supported; use data: or blob: media where appropriate.',
       },
       title: { type: 'string', maxLength: MAX_HTML_TITLE_LENGTH },
       height: {
@@ -159,13 +159,7 @@ function normalizeHtml(input) {
       reason: `HTML title must not exceed ${MAX_HTML_TITLE_LENGTH} characters`,
     }
   }
-  const forbidden = html.match(/<(iframe|form|object|embed|base)\b/i)
-  if (forbidden != null) {
-    return { accepted: false, reason: `HTML content cannot contain ${forbidden[1]} tags` }
-  }
-  const warnings = /(?:src|href)\s*=\s*["']\s*https?:\/\//i.test(html)
-    ? ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信']
-    : []
+  const warnings = []
   return {
     accepted: true,
     html,

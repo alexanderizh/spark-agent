@@ -62,7 +62,7 @@ describe('RenderHtmlBlock', () => {
     vi.clearAllMocks()
   })
 
-  it('loads the sandbox doc via capability-asset in an allow-scripts-only iframe', async () => {
+  it('loads the sandbox doc via capability-asset in a full-capability iframe', async () => {
     root = createRoot(container)
     await act(async () => {
       root?.render(<RenderHtmlBlock block={block} />)
@@ -72,16 +72,21 @@ describe('RenderHtmlBlock', () => {
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts')
-    expect(iframe?.getAttribute('sandbox') ?? '').not.toContain('allow-same-origin')
+    const sandbox = iframe?.getAttribute('sandbox') ?? ''
+    expect(sandbox).toContain('allow-scripts')
+    expect(sandbox).toContain('allow-same-origin')
+    expect(sandbox).toContain('allow-forms')
+    expect(sandbox).toContain('allow-modals')
+    expect(sandbox).toContain('allow-popups')
+    expect(sandbox).not.toContain('allow-top-navigation')
     expect(iframe?.src).toMatch(/^capability-asset:\/\/html-render\/hr-[A-Za-z0-9_-]+\?v=1$/)
 
     const putCall = invoke.mock.calls.find(([channel]) => channel === 'html:put-runtime-doc')
     expect(putCall).toBeDefined()
     const payload = putCall?.[1] as { token: string; document: string }
     expect(payload.token).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{7,79}$/)
-    // 合成文档自带 meta CSP（安全姿态由登记文档承载，而非继承 renderer CSP）。
-    expect(payload.document).toContain('Content-Security-Policy')
+    // 合成文档不再注入 CSP（策略容器为空，能力与外部浏览器对齐）。
+    expect(payload.document).not.toContain('Content-Security-Policy')
     expect(payload.document).toContain('<main')
   })
 
@@ -116,13 +121,13 @@ describe('RenderHtmlBlock', () => {
     expect(src).toMatch(/\?v=2$/)
   })
 
-  it('gates external-resource HTML behind an explicit allow action', async () => {
+  it('renders external-resource HTML directly without a gate', async () => {
     const externalBlock = {
       ...block,
       toolCallId: 'html-ext-1',
       html: '<script src="https://cdn.example.com/mindmap.js"></script>',
       title: '外链思维导图',
-      warnings: ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'],
+      warnings: [],
     }
     root = createRoot(container)
     await act(async () => {
@@ -130,32 +135,18 @@ describe('RenderHtmlBlock', () => {
     })
     await act(async () => {})
 
-    // 门控态：警告 + 按钮可见，但不挂载 iframe。
-    expect(container.querySelector('iframe')).toBeNull()
-    expect(container.textContent).toContain('允许渲染')
-
-    const allowButton = [...container.querySelectorAll('button')].find(
-      (item) => item.textContent === '允许渲染',
-    )
-    expect(allowButton).toBeDefined()
-    await act(async () => {
-      allowButton?.click()
-    })
-    await act(async () => {})
-
-    // 点击后立即渲染。
-    const iframe = container.querySelector('iframe')
-    expect(iframe).not.toBeNull()
-    expect(iframe?.src).toMatch(/^capability-asset:\/\/html-render\/hr-/)
+    // 不再有「允许渲染」门控：外链脚本块直接挂载 iframe。
+    expect(container.querySelector('iframe')).not.toBeNull()
+    expect(container.textContent).not.toContain('允许渲染')
+    expect(container.querySelector('iframe')?.src).toMatch(/^capability-asset:\/\/html-render\/hr-/)
   })
 
-  it('remembers the external-resource allowance across remounts', async () => {
-    // 上一用例已允许 html-ext-1：重挂载（滚动重建/主题切换）后不再阻拦。
+  it('keeps rendering external-resource blocks across remounts', async () => {
     const externalBlock = {
       ...block,
       toolCallId: 'html-ext-1',
       html: '<script src="https://cdn.example.com/mindmap.js"></script>',
-      warnings: ['检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'],
+      warnings: [],
     }
     root = createRoot(container)
     await act(async () => {
@@ -163,10 +154,8 @@ describe('RenderHtmlBlock', () => {
     })
     await act(async () => {})
 
-    expect(container.textContent).not.toContain('允许渲染')
     expect(container.querySelector('iframe')).not.toBeNull()
-    // 外部资源警告已在确认时呈现过，不再常驻底部提示条。
-    expect(container.querySelector('.render-html-warning')).toBeNull()
+    expect(container.textContent).not.toContain('允许渲染')
   })
 
   it('shows a structured error state without executing failed content', () => {

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@lobehub/ui'
-import { findHtmlExternalResourceWarning } from '@spark/shared'
+import { HTML_FRAME_SANDBOX } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import { MarkdownCodeBlock } from '../../components/MarkdownCodeBlock'
@@ -39,10 +39,6 @@ const DEFAULT_HTML_RENDER_CONTEXT: HtmlRenderContextValue = {
 }
 
 const HtmlRenderContext = createContext<HtmlRenderContextValue>(DEFAULT_HTML_RENDER_CONTEXT)
-
-// 外部资源确认态：app 会话内按块记忆。点击「允许渲染」后，该块在滚动
-// 重建、主题切换、侧面板来回切换等重挂载场景下都不再被阻拦。
-const externalAllowedHtmlToolCallIds = new Set<string>()
 
 export function HtmlCodePreview({ code }: { code: string }) {
   return (
@@ -86,25 +82,6 @@ export function RenderHtmlBlock({
   const isOpenElsewhere = isOpenInSidePanel || remoteOpenMode != null
   const srcDoc = useMemo(() => buildRenderHtmlSrcDoc(block, resolvedTheme), [block, resolvedTheme])
   const docToken = useMemo(() => buildHtmlRenderToken(block.toolCallId), [block.toolCallId])
-
-  // 外部资源门控：内容含外链时先展示警告 + 「允许渲染」按钮，用户确认后才
-  // 挂载 iframe；判定直接来自 HTML 内容（与工具侧警告同源），不依赖工具
-  // 结果是否回传 warnings。
-  const externalWarning = useMemo(() => findHtmlExternalResourceWarning(block.html), [block.html])
-  const [externalAllowed, setExternalAllowed] = useState(() =>
-    externalAllowedHtmlToolCallIds.has(block.toolCallId),
-  )
-  const gateExternal = externalWarning != null && !externalAllowed
-  const allowExternalRender = () => {
-    externalAllowedHtmlToolCallIds.add(block.toolCallId)
-    setExternalAllowed(true)
-  }
-  // 底部提示条只承载非外部资源类警告；外部资源警告由门控 UI 呈现，
-  // 允许渲染后不再重复常驻。
-  const informationalWarnings = useMemo(() => {
-    if (externalWarning == null) return block.warnings
-    return block.warnings.filter((item) => item !== externalWarning)
-  }, [block.warnings, externalWarning])
 
   // 合成文档 → 主进程登记 → capability-asset 导航地址（机制同子应用，见
   // main/services/RuntimeDocRegistry.ts）。srcDoc 变化时复用 token 覆盖登记，
@@ -203,7 +180,7 @@ export function RenderHtmlBlock({
             >
               {sourceOpen ? '预览' : '源码'}
             </Button>
-            {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && !gateExternal && (
+            {!isSidePanel && !isOpenElsewhere && block.status === 'rendered' && (
               <Button
                 type="text"
                 size="middle"
@@ -263,21 +240,6 @@ export function RenderHtmlBlock({
             <HtmlCodePreview code={block.html} />
           </details>
         </div>
-      ) : gateExternal ? (
-        <div className="render-html-gate" role="note">
-          <div className="render-html-gate-message">
-            <Icons.AlertTriangle size={15} />
-            <span>{externalWarning}</span>
-          </div>
-          <div className="render-html-gate-actions">
-            <button type="button" onClick={() => setSourceOpen(true)}>
-              查看源码
-            </button>
-            <button type="button" className="render-html-gate-allow" onClick={allowExternalRender}>
-              允许渲染
-            </button>
-          </div>
-        </div>
       ) : (
         <div className="render-html-frame-wrap" style={{ height: `${block.height}px` }}>
           {!frameLoaded && <div className="render-html-loading">正在渲染 HTML…</div>}
@@ -285,7 +247,7 @@ export function RenderHtmlBlock({
             <iframe
               title={block.title}
               className="render-html-frame"
-              sandbox="allow-scripts"
+              sandbox={HTML_FRAME_SANDBOX}
               src={frame.src}
               onLoad={() => {
                 setLoadedVersion(frame.version)
@@ -297,9 +259,9 @@ export function RenderHtmlBlock({
         </div>
       )}
 
-      {informationalWarnings.length > 0 && (
+      {block.warnings.length > 0 && (
         <div className="render-html-warning" role="note">
-          {informationalWarnings.join('；')}
+          {block.warnings.join('；')}
         </div>
       )}
       {actionError != null && <div className="render-html-action-error">{actionError}</div>}
@@ -338,15 +300,11 @@ export function RenderHtmlBlock({
                 <div className="render-html-muted-state" role="status">
                   等待 HTML 安全校验…
                 </div>
-              ) : gateExternal ? (
-                <div className="render-html-muted-state" role="status">
-                  请先在卡片中允许渲染外部资源
-                </div>
               ) : frame != null ? (
                 <iframe
                   title={`${block.title}（全屏）`}
                   className="render-html-frame"
-                  sandbox="allow-scripts"
+                  sandbox={HTML_FRAME_SANDBOX}
                   src={frame.src}
                 />
               ) : (

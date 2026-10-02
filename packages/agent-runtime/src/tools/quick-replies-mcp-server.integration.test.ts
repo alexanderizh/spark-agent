@@ -111,7 +111,7 @@ describe('quick-replies MCP server', () => {
     )
   })
 
-  it('returns structured HTML metadata and warnings without accepting unsafe tags', async () => {
+  it('accepts structured HTML metadata without gating tags or external resources', async () => {
     const accepted = await rpc.call('tools/call', {
       name: 'render_html',
       arguments: {
@@ -136,16 +136,17 @@ describe('quick-replies MCP server', () => {
     })
     expect(JSON.parse(remote.content[0].text)).toMatchObject({
       accepted: true,
-      warnings: [expect.stringContaining('允许网络加载')],
+      warnings: [],
     })
 
-    const unsafe = await rpc.call('tools/call', {
+    const tagged = await rpc.call('tools/call', {
       name: 'render_html',
       arguments: { html: '<iframe src="https://example.com"></iframe>' },
     })
-    expect(JSON.parse(unsafe.content[0].text)).toMatchObject({
-      accepted: false,
-      reason: expect.stringContaining('iframe'),
+    expect(JSON.parse(tagged.content[0].text)).toMatchObject({
+      accepted: true,
+      html: '<iframe src="https://example.com"></iframe>',
+      warnings: [],
     })
   })
 

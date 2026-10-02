@@ -21,11 +21,12 @@ export type HtmlViewerPayload = {
   theme: HtmlRenderTheme
 }
 
-const HTML_RENDER_CSP =
-  "default-src 'none'; script-src 'unsafe-inline' https: http:; style-src 'unsafe-inline' https: http:; img-src data: blob: https: http:; media-src data: blob: https: http:; font-src data: https: http:; connect-src https: http: ws: wss:; worker-src blob: https: http:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
-
-const FORBIDDEN_HTML_TAG_PATTERN = /<(iframe|form|object|embed|base)\b/i
-const EXTERNAL_RESOURCE_PATTERN = /(?:src|href)\s*=\s*["']\s*https?:\/\//i
+// 产物渲染沙箱的统一 iframe sandbox 令牌。与外部浏览器对齐：脚本（含
+// eval/worker）、表单、弹窗、下载、模态、存储全部可用；隔离边界由
+// capability-asset origin（与父页面跨源）+ 无 allow-top-navigation 提供，
+// 产物 JS 无法触碰父文档与宿主 IPC。
+export const HTML_FRAME_SANDBOX =
+  'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads allow-pointer-lock allow-presentation'
 
 export function validateHtmlViewerPayload(
   value: unknown,
@@ -67,12 +68,6 @@ export function validateHtmlViewerPayload(
       reason: `HTML height must be an integer between ${MIN_HTML_RENDER_HEIGHT} and ${MAX_HTML_RENDER_HEIGHT}`,
     }
   }
-  if (FORBIDDEN_HTML_TAG_PATTERN.test(html)) {
-    return {
-      ok: false,
-      reason: 'HTML content cannot contain iframe, form, object, embed, or base tags',
-    }
-  }
   const theme = input.theme === 'dark' ? 'dark' : 'light'
   return {
     ok: true,
@@ -84,14 +79,11 @@ export function validateHtmlViewerPayload(
   }
 }
 
-export function findHtmlExternalResourceWarning(html: string): string | null {
-  return EXTERNAL_RESOURCE_PATTERN.test(html)
-    ? '检测到外部资源引用，沙盒 CSP 将允许网络加载；请确认来源可信'
-    : null
-}
-
 export function buildSandboxedHtml(html: string, theme: HtmlRenderTheme): string {
-  const head = `<meta http-equiv="Content-Security-Policy" content="${HTML_RENDER_CSP}"><meta name="color-scheme" content="${theme}"><style>html,body{min-height:100%;margin:0}html{color-scheme:${theme}}body{box-sizing:border-box;overflow:auto}</style>`
+  // 不注入 CSP meta：产物文档（协议加载/外存文件）拥有独立空策略容器，
+  // 能力与外部浏览器一致——脚本、eval、外联资源、iframe、表单全部可用。
+  // 仅注入主题与基础排版样式。
+  const head = `<meta name="color-scheme" content="${theme}"><style>html,body{min-height:100%;margin:0}html{color-scheme:${theme}}body{box-sizing:border-box;overflow:auto}</style>`
   const documentMatch = html.match(/<html(?:\s[^>]*)?>/i)
   if (documentMatch != null) {
     const documentIndex = documentMatch.index ?? 0
@@ -123,21 +115,16 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
-function escapeScriptJson(value: unknown): string {
-  return JSON.stringify(value)
-    .replaceAll('<', '\\u003c')
-    .replaceAll('>', '\\u003e')
-    .replaceAll('&', '\\u0026')
-}
-
 /**
- * The standalone window and system browser receive the same outer viewer:
- * untrusted markup is never the top-level document and always enters a sandboxed
- * iframe with an opaque origin.
+ * The standalone window hosts the composed document in an iframe served by the
+ * capability-asset protocol (independent empty CSP policy container — no CSP
+ * inheritance like srcdoc), so user content keeps full script/resource
+ * capabilities. The shell itself only renders a title header.
  */
-export function buildHtmlViewerDocument(payload: HtmlViewerPayload): string {
-  const srcdoc = buildSandboxedHtml(payload.html, payload.theme)
-  const serializedSrcdoc = escapeScriptJson(srcdoc)
+export function buildHtmlViewerDocument(payload: HtmlViewerPayload, frameSrc: string): string {
   const title = escapeHtml(payload.title)
-  return `<!doctype html><html data-spark-theme="${payload.theme}"><head><meta charset="utf-8"><meta name="color-scheme" content="${payload.theme}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'"><title>${title}</title><style>:root{color-scheme:${payload.theme};background:#fff;color:#20201d}*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${payload.theme === 'dark' ? '#262626' : '#fdfdfc'};color:${payload.theme === 'dark' ? '#e4e4e7' : '#20201d'}}header{height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid ${payload.theme === 'dark' ? '#3d3d3d' : '#e8e5df'};font-weight:600}iframe{display:block;flex:1;width:100%;min-height:0;border:0;background:transparent}</style></head><body><header>${title}</header><iframe id="spark-html-frame" title="${title}" sandbox="allow-scripts"></iframe><script>document.getElementById('spark-html-frame').srcdoc=${serializedSrcdoc};</script></body></html>`
+  const frameSrcAttr = escapeHtml(frameSrc)
+  // 壳 CSP 仅约束壳自身：壳内没有脚本，script-src 'none'；iframe 目标协议
+  // 需在 frame-src 放行。内层文档是独立策略容器，不受此壳 CSP 影响。
+  return `<!doctype html><html data-spark-theme="${payload.theme}"><head><meta charset="utf-8"><meta name="color-scheme" content="${payload.theme}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; frame-src capability-asset: data: blob: https: http:; base-uri 'none'; form-action 'none'"><title>${title}</title><style>:root{color-scheme:${payload.theme};background:#fff;color:#20201d}*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${payload.theme === 'dark' ? '#262626' : '#fdfdfc'};color:${payload.theme === 'dark' ? '#e4e4e7' : '#20201d'}}header{height:48px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid ${payload.theme === 'dark' ? '#3d3d3d' : '#e8e5df'};font-weight:600}iframe{display:block;flex:1;width:100%;min-height:0;border:0;background:transparent}</style></head><body><header>${title}</header><iframe id="spark-html-frame" title="${title}" sandbox="${HTML_FRAME_SANDBOX}" src="${frameSrcAttr}"></iframe></body></html>`
 }
